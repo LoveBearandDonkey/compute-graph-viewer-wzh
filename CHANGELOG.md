@@ -1,5 +1,17 @@
 # PTO Changelog
 
+- 2026-07-25 `launch-v2.html`: 执行与性能分析组新增「内存工作台」卡片（`Memory-Visual/index.html`），排在「内存查看器」之后。预览图 `assets/preview-memory-workbench.png` 取自该页 1600×900 实机截图（Ascend 910B / tileM=32 基线，内存布局视图 + 诊断栏 + 占用水位），与其他卡片一致走 `preview` + `fit: "contain"` 静态图路径。
+
+- 2026-07-25 `Memory-Visual/`: 新增**内存工作台**——昇腾算子片上内存可视化工具原型，落在设计系统 `ide-frame`（standalone host）的完整槽位上。覆盖规划文档 §4.3 的三个视图：内存布局条带图（地址空间分栏，实心=当前持有 / 半透明=预留未用 / 斜纹=碎片 / 红区=超容量）、生命周期与复用（整块复用 `memory-reuse-viewer` pattern）、流水×内存联合时序（`swimlane-task` 的 drawTaskBar 画六条流水线 + 焦点层级占用曲线）。底部 dock 承载六层级水位曲线与 `memviz analyze` CLI 形态日志（互斥）。数据层 `data/runs.js` 是中间格式**生成器**：给定 tiling 参数与各队列 buffer_num，用串行流水队列 + slot 释放约束模拟出事件序列，double buffer 是否生效由模型自然产生而非硬编码；五组候选覆盖超限 / 单份缓冲 / 双缓冲解 / 手工复用踩内存 / 过细切分。规则引擎输出「问题+位置+量化影响+建议」四元组并带 evidence 溯源。芯片容量、bank、对齐、流水单元集合走 `data/chip-specs.js` 表驱动（910B / 950B，占位规格）。已在 `launch.html` 执行与性能分析组挂入口。
+
+- 2026-07-24 `op-graph-integration/`: 「框架接入与入图」阶段的入图范围从局部 5 节点扩展到**整机模型**——以 DeepSeek V3.2 为例，复用设计系统 `model-graphviz` pattern（`window.PtoModelGraphvizPattern.render`）渲染完整解码器架构，用 pattern 内置的 `P0` 高亮标记本次入图算子 `FlashAttentionV2` 的落位（每个解码层的 **MLA 注意力核**，61 层复用）。原有的 Cast→算子→Add 融合边界图保留为「局部放大」。CSS 变量经 `.pto-model-graphviz-pattern-page` 作用域注入并就地中和其 `min-height:100vh`。
+
+- 2026-07-24 `op-graph-integration/`: 流水线从 5 步扩展为 **7 个任务阶段，完整覆盖 Ascend C 入图 9 步链路**。新增 ②③「Kernel & Tiling」核对阶段（UB/L1/L0 占用、blockDim/核间切分、动态 Shape tiling 策略）；识别阶段补充算子定义约束（format/动态 Shape/精度要求/目标 SoC/op_proto）；契约生成新增 ④ `ops-info.json` 注册产物（SoC 与 dtype-format 组合）；拆分 ⑤「编译与打包」（OPP 包 + `ASCEND_CUSTOM_OPP_PATH`）与 ⑧⑨「执行与验收调优」（Runtime 下发 + msprof/精度/动态 Shape/边界）；⑥⑦「框架接入与入图」增加**在线 GE / 离线 ATC 路径切换**。空状态新增 9 步→阶段覆盖图。
+
+- 2026-07-23 `op-graph-integration/`: 静态校验中的提醒现可直接定位关联产物；FP16 支持组合跳转至 OpDef，融合规则跳转至独立的 GE Fusion 注册文件。
+
+- 2026-07-23 `op-graph-integration/`: 补全端到端入图证据，覆盖框架自定义节点到 ONNX 导出、ATC/GE 编译、OPP 到 ACL Runtime 加载，以及动态 Shape、精度和 msprof 验收。
+
 > 开发日志，按时间倒序，每轮修改点逐条记录。
 > 格式：`[版本/日期] 模块 — 修改描述`
 
@@ -13,6 +25,15 @@
 ## 2026-07-24 — config-relation-observer：典型 Layer 并行分支改左右分栏
 
 - `js/config-relation-observer.js` / `css/config-relation-observer.css` — 典型 Layer 面板原先把每列算子一律竖排（`renderStructure` 直接把 bars 顺次塞进 `.cro-structure__stack`），把整网 deck 里本是并行的支路读成了串行。新增 `PARALLEL_GROUPS` 声明（按 deck 的 SIDE_ROWS 配对）：注意力 Q 路径 ∥ KV 路径、MoE 路由专家支路（Router→Dispatch→Expert Pool→Combine）∥ 共享专家支路；`renderStructure` 据此把连续同组的 bar 收进 `.cro-structure__lanes` 左右两条 `.cro-structure__lane` 子栈渲染，汇合节点（`attention_core` / `moe_branch_add`）本身不属任何分栏、自然收束回整条竖排。bar 的 `data-*`/点击/关系高亮全部不变（子栈仅作视觉容器，选择器都是后代匹配）。
+
+## 2026-07-23 — 新增 `op-graph-integration/` 算子入图交互 demo（编辑器发起 · 自动流水线）
+
+- 新建 IDE 内「算子入图（Op Graph-Integration）」工具原型：以**编辑器为主界面**（活动栏 + 源码 Tab + CodeLens），开发者在写完 AscendC 算子的源码上方点击「⚡ 算子入图」发起任务，右侧任务面板以 **CI 流水线时间线**自动往下跑。
+- 五步（识别算子 → 生成入图契约 → 静态校验 → 入图预览 → 构建部署）：识别/生成/校验**自动执行并直接呈现结果**，不再"先看一屏解释再点按钮"；每步保留一行常驻说明；只在**真正需要决策**处暂停——校验提醒的应用/忽略、入图预览确认、构建落盘确认。完成的步骤折叠为一行结果摘要，可点击重新展开。
+- 交互覆盖：解析源码填充签名、生成原型/信息库/框架适配三件套（文件 Tab + 自动补全高亮）、6 项入图校验（dtype 组合与融合规则提醒，可一键套用建议修复）、SVG 计算图节点预览（引擎 placement + 可融合边界）、构建日志流式回放至「已入图」成功页与回归指标。
+- 单文件自包含，复用 `vendor/pto-design-system` tokens 与 `.btn/.badge` 等类；纯 HTML/CSS/vanilla JS，无新增依赖。
+- 后续：整个 IDE 外壳改为消费设计系统标准 **`ide-frame` pattern**（`data-host="standalone"`：顶栏 chrome / 活动栏 / 三栏 split「资源管理器·编辑器·算子入图任务」/ pattern 自带 status strip），经 `PtoIdeFrame.initAll()` + `workbench-shell` 初始化可拖拽分栏；业务内容填入各 slot。同时修复底部状态栏位置异常——改用 pattern 的 `data-ide-slot="status"` 底部条，稳定固定在工作区底部。
+- 领域准确性修正（对齐 CANN 8.0 / AscendC OpDef 现代形态，不改交互骨架）：① 生成产物由旧 TBE 老三样（`.cc` `IMPLEMT_COMMON_INFERFUNC` / 手写 `.ini` `op_info_cfg` / `_plugin.cc` `REGISTER_CUSTOM_OP`）改为 `op_host` 的 **OpDef 原型（`Input().DataType().Format()` 支持列表 + `AICore().SetTiling()`）/ InferShape·InferDataType / Tiling** 三件套，并说明 `ops-info.json` 编译期自动生成、aclnn API 自动产出；② **Tiling 升为一等公民**：新增生成 Tab、静态校验项「Tiling 合法性」、预览「Tiling 绑定」、构建日志与确认文案均体现；③ 把入图核心的**「算子选择 CheckSupport」**在校验/预览/图注/构建日志中点明（FP16 组合缺失=CheckSupport 不命中；Cast 标注为 GE 插入的 format 转换节点）；④ 术语统一到 CANN 8.0：`build.sh`→`custom_opp_*.run`→`opp/vendors/custom`→注册 GE→回归确认被选中；文件树改为 `op_host`/`op_kernel` 结构。校验项 6→7（5 通过 + 2 提醒）。
 
 ## 2026-07-22 — TaskCompare：图表对比底部新增「Media 对比」栏
 
