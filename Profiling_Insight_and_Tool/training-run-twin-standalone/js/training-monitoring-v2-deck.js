@@ -237,7 +237,48 @@
       // 这里会改变视图,所以工具栏的高亮也要跟着回正。
       controller.setView(FOCUS_VIEW);
       syncSeg('deckViewSeg', 'data-deck-view', FOCUS_VIEW);
+      // setView() 内部 fit() 只会把"整层"塞进视口,红框(如问题一的 MoE FFN 分组框)在
+      // 整层里往往只占一小块,还得再手动缩放/拖拽才看得清楚 —— 这里紧接着再做一次
+      // 精确到命中区域的缩放平移,同步覆盖掉 fit() 刚写的 transform。
+      zoomToFocusTarget(layer, info);
     }
+  }
+
+  // 把画面缩放平移到本次命中的 cluster(优先,如「MoE FFN」红框)或节点并集的中心,
+  // 让红框在视口里保持合适大小,不需要用户再手动缩放/拖拽找它。坐标沿用 showExpertExpand()
+  // 的做法:cluster/节点是 .pto-model-deck__graph 内 left/top 绝对定位的 DOM,offsetLeft/Top
+  // 是 3D 变换前的原始布局坐标,与 pivot 的 x/y 同一套坐标系,不需要再做投影换算。
+  function zoomToFocusTarget(layer, info) {
+    var viewport = qs('.pto-model-deck__viewport', root);
+    if (!viewport) return;
+    var bounds = null;
+    var expand = function (el) {
+      if (!el) return;
+      var x = el.offsetLeft, y = el.offsetTop, w = el.offsetWidth, h = el.offsetHeight;
+      if (!w || !h) return;
+      if (!bounds) bounds = { x1: x, y1: y, x2: x + w, y2: y + h };
+      else {
+        bounds.x1 = Math.min(bounds.x1, x); bounds.y1 = Math.min(bounds.y1, y);
+        bounds.x2 = Math.max(bounds.x2, x + w); bounds.y2 = Math.max(bounds.y2, y + h);
+      }
+    };
+    // 1) 优先用命中的 cluster(红框本体)定边界
+    (info.clusterIds || []).forEach(function (cid) { expand(findCluster(cid, layer)); });
+    // 2) 没有 cluster 命中(纯节点类问题)则退化为命中节点的并集
+    if (!bounds) {
+      (info.nodeIds || []).forEach(function (id) { expand(findNode(mapId(id), layer)); });
+    }
+    if (!bounds) return;
+
+    var cx = (bounds.x1 + bounds.x2) / 2, cy = (bounds.y1 + bounds.y2) / 2;
+    var w = viewport.clientWidth, h = viewport.clientHeight;
+    var padX = 60, padY = 60;
+    var zoom = Math.min(w / (bounds.x2 - bounds.x1 + padX * 2), h / (bounds.y2 - bounds.y1 + padY * 2));
+    zoom = clamp(zoom, 0.4, 1.3);
+    controller.setPose({
+      view: FOCUS_VIEW, zoom: zoom, panX: 0, panY: 0,
+      pivot: { x: cx, y: cy, z: -layer * controller.config.depthGap },
+    });
   }
 
   /* ════════════════════════════════════════════════════════════════════════════

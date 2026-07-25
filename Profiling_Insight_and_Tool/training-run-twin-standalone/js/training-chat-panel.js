@@ -426,23 +426,23 @@ ${issuesText || '（暂无）'}
   }
 
   // ── 「调整图表」场景:同样固定脚本,不经 DeepSeek。用户的诉求不是单纯"想换个样式",而是先
-  // 指出 precision/recall/f1(分类指标)和 rollout_actor_probs_pearson_corr(RL 后训练 rollout-actor
-  // 概率相关系数)放在 task=pretrain 的预训练监控里本来就文不对题——这是本页 body[data-task]
-  // 已经声明的真实业务背景,借这个不一致给"为什么要换"一个站得住脚的理由,而不是凭空定制。
-  // 回答按「认同诊断 → 解释派生指标 → 表格列替换前/原因/替换后/提取结果 → 确认生效 + 邀请调整」
+  // 指出 precision/recall(分类指标)放在 task=pretrain 的预训练监控里本来就文不对题——这是
+  // 本页 body[data-task] 已经声明的真实业务背景,借这个不一致给"为什么要换"一个站得住脚的理由,
+  // 而不是凭空定制。(原本 f1/rollout 相关系数两张卡也在这份"文不对题"名单里,分别换成 Z loss /
+  // 数值 t 分布;现在 Z loss、AMP loss scale 已经是精度栏常驻默认卡,不用再临时演示,回复里顺带
+  // 提一句即可。)回答按「认同诊断 → 表格列替换前/原因/替换后/提取结果 → 确认生效 + 邀请调整」
   // 的套路分段,随后调用 training-run-twin.js 暴露的 window.twinDemoApplyAccuracyOverride() 把
   // 精度栏真的换成新指标(复用真实图表引擎,不是截图/贴图)。演示场景,关闭面板时
   // revertChartsOverrideIfActive() 会调用 window.twinDemoResetAccuracyOverride() 还原成默认 8 图。──
   function buildChartAdjustReplyMarkdown() {
-    return '你观察得对：当前任务是预训练（task=pretrain），precision / recall / f1 是分类任务的评估指标，rollout_actor_probs_pearson_corr 是 RL 后训练阶段（rollout 分布 vs actor 分布）才有意义的指标，放在预训练监控里确实文不对题，正好可以腾出来换成预训练更常看的指标。\n\n' +
-      '另外核对了一下训练日志："数值 t 分布"这类字段没有直接埋点，是把逐层激活值分布拟合成 t 分布后算出来的自由度 ν——ν 越低说明数值尾部越重，越容易在 FP8 下溢出，正好能覆盖之前定位到的问题四（低精训练 loss 不收敛）。四项替换结果：\n\n' +
+    return '你观察得对：当前任务是预训练（task=pretrain），precision / recall 是分类任务的评估指标，放在预训练监控里确实文不对题，正好可以腾出来换成预训练更常看的指标。\n\n' +
+      '（另外之前 f1 和 rollout 相关系数两张卡也是同样问题——已经分别换成 Z loss 和 AMP loss scale 了，这两个是低精度训练更该常驻盯的信号，现在精度栏里就有，不用再临时演示。）\n\n' +
+      '两项替换结果：\n\n' +
       '| 原图表 | 不适用原因 | 替换为 | 提取结果 |\n' +
       '| --- | --- | --- | --- |\n' +
       '| precision | 分类指标，预训练不适用 | WPLC val loss | 已从 eval 日志取到（每 500 step 一次） |\n' +
-      '| recall | 分类指标，预训练不适用 | LAMBADA val loss | 已从 eval 日志取到（每 500 step 一次） |\n' +
-      '| f1 | 分类指标，预训练不适用 | Z loss | 已从训练日志逐 step 取到 |\n' +
-      '| rollout 相关系数 | RL 后训练指标，预训练不适用 | 数值 t 分布（ν） | 日志无直接字段，按激活值分布派生计算 |\n\n' +
-      '已经帮你替换到精度栏了，左侧应该能看到新的 4 张图。如果这个组合不是你想要的，或者还想加别的指标，跟我说一声我再调；这是演示效果，关闭本对话框会自动还原成默认的 8 张。';
+      '| recall | 分类指标，预训练不适用 | LAMBADA val loss | 已从 eval 日志取到（每 500 step 一次） |\n\n' +
+      '已经帮你替换到精度栏了，左侧应该能看到新的 2 张图。如果还想加别的指标，跟我说一声我再调；这是演示效果，关闭本对话框会自动还原成默认的 8 张。';
   }
 
   function runChartAdjustScenario() {
@@ -450,7 +450,7 @@ ${issuesText || '（暂无）'}
     const msgEl = $('trainChatMessages');
     if (!msgEl) return;
 
-    const userText = '精度栏里的 precision/recall/f1，还有个 rollout 相关系数，这些看着不像预训练任务该盯的指标（更像分类/RL 场景搬过来的）。能不能换成跟预训练更相关的：WPLC val loss、LAMBADA val loss、Z loss；另外还听说有个"数值 t 分布"的指标，不太确定具体是什么，麻烦帮我从训练日志里抽一下看看有没有。';
+    const userText = '精度栏里的 precision/recall，这两个看着不像预训练任务该盯的指标（更像分类场景搬过来的）。能不能换成跟预训练更相关的：WPLC val loss、LAMBADA val loss？';
     appendUserMessage(userText);
     chatHistory.push({ role: 'user', content: userText });
 

@@ -631,7 +631,12 @@
     model: "deepseek",
     task: "pretrain",
     hardware: "cluster2048",
-    step: 48230,
+    // 「当前」step:需落在问题一(INCIDENT_STEP=15203)之后、问题五(nvlink, step 20000)之后,
+    // 且与两者的差距要小于精度栏默认滚动窗口跨度(ACC_WINDOW×ACC_STRIDE=200×100=19900 步),
+    // 否则两个事故都会滑出默认「精度」8 图的可视范围——之前误设成 48230(与 15203 相差 33027 步),
+    // 导致 loss_scale/z_loss 等默认卡片在冷启动时看起来是一条平直线,见 js/training-log-drawer.js
+    // 顶部注释同步说明。
+    step: 21000,
     totalSteps: 120000,
     stepsPerEpoch: 2000,
     loss: 2.182,
@@ -976,11 +981,12 @@
   }
   let accSteps = computeAccSteps();
 
-  /* 事故点 + 恢复窗口：step 41230 出现 NaN → AI 重跑定位 → 修复代码 → 恢复训练。
+  /* 事故点 + 恢复窗口：step 15203 出现 NaN → AI 重跑定位 → 修复代码 → 恢复训练。
      INCIDENT_STEP 为固定的绝对 step；RECOVERY_STEPS 为恢复所需的步数。
      事故步本身显示 NaN/inf；恢复期内指标从异常值平滑过渡回正常趋势；
-     恢复完成后继续朝好的方向发展（loss 降低、acc 升高等）。 */
-  const INCIDENT_STEP = 41230;
+     恢复完成后继续朝好的方向发展（loss 降低、acc 升高等）。
+     step 号与「问题一」案例文档(定位链-openPangu-2.0-Flash.md 案例一)保持一致。 */
+  const INCIDENT_STEP = 15203;
   // 时光机手动拖动很难像点击「问题一」标记那样精确落在单个 step 上,
   // 故给 W_gate/EP All-to-All 两张卡的事故态判定留一点容差(见 applyViewStep 里的回调)。
   const INCIDENT_STEP_TOLERANCE = 300;
@@ -1060,6 +1066,27 @@
     // loss≈3.21、grad_norm≈11.8,用于和上面的多卡曲线对照,证明问题只在多卡复现。
     const loss_single = +(3.21 + stepNoise(9, step, 0.05)).toFixed(3);
     const grad_norm_single = +(11.8 + stepNoise(10, step, 0.7)).toFixed(2);
+
+    // AMP 动态 loss scale(定位链.md 案例一 · 熔断/预警层):以 log2 存储而非原始值 65536~4096,
+    // 让折线图按等距台阶下降(每次减半=同等严重度),真实数值由 formatValue 换算回 2^v 展示。
+    // 衰减节点严格对齐案例一给出的 step 15000/15050/15100/15150/15200,事故步(15203)后
+    // 熔断修复(router 改 FP32 + z-loss)生效,scaler 不再衰减,回落维持在 16(65536)。
+    const lossScaleLog2 = (() => {
+      if (step === INCIDENT_STEP) return NaN;
+      if (step > INCIDENT_STEP) return 16;
+      if (step >= 15200) return 12;
+      if (step >= 15150) return 13;
+      if (step >= 15100) return 14;
+      if (step >= 15050) return 15;
+      return 16;
+    })();
+
+    // z-loss(定位链.md 案例一 · 熔断/预警层 + 超参/代码层 ⑥):事故发生时训练里从未开启过
+    // (根因之一),修复项②在 recovery 完成后加入 z_loss_coeff=1e-4——图上应看到一条从 0 开始、
+    // 在事故修复后才出现的线,而不是从头就存在的指标。
+    const zLossBase = step > INCIDENT_STEP ? 0.16 + stepNoise(33, step, 0.02) : 0;
+    const z_loss = atIncident ? NaN : +zLossBase.toFixed(4);
+
     return {
       train_loss: +tl.toFixed(4), val_loss: +vl.toFixed(4),
       train_acc: +ta.toFixed(4), val_acc: +va.toFixed(4),
@@ -1067,12 +1094,13 @@
       rollout_actor_probs_pearson_corr: +cr.toFixed(4),
       avg_mem: +avg_mem.toFixed(4),
       loss, grad_norm, loss_single, grad_norm_single, weight_diff,
+      loss_scale_log2: lossScaleLog2, z_loss,
     };
   }
 
   function buildAccuracyData(steps) {
     const n = steps.length;
-    const cols = { train_loss: [], val_loss: [], train_acc: [], val_acc: [], mfu: [], precision: [], recall: [], f1: [], rollout_actor_probs_pearson_corr: [], avg_mem: [], loss: [], grad_norm: [], loss_single: [], grad_norm_single: [], weight_diff: [] };
+    const cols = { train_loss: [], val_loss: [], train_acc: [], val_acc: [], mfu: [], precision: [], recall: [], f1: [], rollout_actor_probs_pearson_corr: [], avg_mem: [], loss: [], grad_norm: [], loss_single: [], grad_norm_single: [], weight_diff: [], loss_scale_log2: [], z_loss: [] };
     steps.forEach((s, i) => {
       const m = metricsAtStep(s, n > 1 ? i / (n - 1) : 1);
       const isEpoch = i % ACC_EPOCH_STRIDE === 0 || i === n - 1;
@@ -1091,6 +1119,8 @@
       cols.loss_single.push(m.loss_single);
       cols.grad_norm_single.push(m.grad_norm_single);
       cols.weight_diff.push(m.weight_diff);
+      cols.loss_scale_log2.push(m.loss_scale_log2);
+      cols.z_loss.push(m.z_loss);
     });
     return cols;
   }
@@ -1118,21 +1148,6 @@
       { id: "train_acc", label: "train acc", key: "train_acc", colorVar: "--twin-chart-acc" },
       { id: "val_acc", label: "val acc", key: "val_acc", colorVar: "--twin-chart-loss", emphasis: true },
     ] },
-    { id: "precision", name: "precision", legend: false, note: "预测正例中的准确率", formatValue: fmtAccPct,
-      tipCarryForward: false, markerStep: INCIDENT_STEP,
-      series: [
-      { id: "precision", label: "precision", key: "precision", colorVar: "--twin-chart-precision", emphasis: true },
-    ] },
-    { id: "recall", name: "recall", legend: false, note: "真实正例的召回率", formatValue: fmtAccPct,
-      tipCarryForward: false, markerStep: INCIDENT_STEP,
-      series: [
-      { id: "recall", label: "recall", key: "recall", colorVar: "--twin-chart-recall", emphasis: true },
-    ] },
-    { id: "f1", name: "f1", legend: false, note: "precision 与 recall 的调和平均", formatValue: fmtAccPct,
-      tipCarryForward: false, markerStep: INCIDENT_STEP,
-      series: [
-      { id: "f1", label: "f1", key: "f1", colorVar: "--twin-chart-f1", emphasis: true },
-    ] },
     { id: "gradnorm", name: "grad_norm", legend: false,
       note: `step ${INCIDENT_STEP} MoE all-to-all 超时 → grad_norm 跳至 inf，AI 定位修复后 ${RECOVERY_STEPS} 步内恢复`,
       formatValue: (v) => (v == null ? "—" : !isFinite(v) ? "inf" : v.toFixed(2)),
@@ -1140,6 +1155,18 @@
       series: [
         { id: "gradnorm", label: "grad_norm", key: "grad_norm", colorVar: "--twin-chart-gradnorm", emphasis: true },
       ] },
+    { id: "recall", name: "recall", legend: false, note: "真实正例的召回率", formatValue: fmtAccPct,
+      tipCarryForward: false, markerStep: INCIDENT_STEP,
+      series: [
+      { id: "recall", label: "recall", key: "recall", colorVar: "--twin-chart-recall", emphasis: true },
+    ] },
+    { id: "z_loss", name: "z-loss", legend: false,
+      note: "logits 归一化正则项;本次事故前训练从未开启,是根因之一——熔断修复后才加入抑制 router logits 极端值",
+      formatValue: (v) => (v == null || !isFinite(v) ? "—" : v.toFixed(4)),
+      tipCarryForward: false, markerStep: INCIDENT_STEP,
+      series: [
+      { id: "z_loss", label: "z-loss", key: "z_loss", colorVar: "--twin-chart-f1", emphasis: true },
+    ] },
     { id: "weightdiff", name: "weight_diff", legend: true,
       note: `参数更新幅度 ‖ΔW‖，与 grad_norm 同一根因同步观察；step ${INCIDENT_STEP} 梯度发散时同步跳至 inf`,
       formatValue: (v) => (v == null ? "—" : !isFinite(v) ? "inf" : v.toFixed(4)),
@@ -1149,10 +1176,17 @@
         // grad_norm 量级(约 12~50)远大于 ‖ΔW‖(约 0.4~3.2),放右轴独立定域,避免被压成贴底的平线
         { id: "gradnorm_ref", label: "grad_norm (右轴)", key: "grad_norm", colorVar: "--twin-chart-gradnorm", emphasis: true, axis: "right" },
       ] },
-    { id: "corr", name: "rollout_actor_probs_pearson_corr", legend: false, note: "rollout 与训练 actor 概率相关系数", formatValue: (v) => (v == null ? "—" : v.toFixed(3)),
+    { id: "loss_scale", name: "AMP loss scale", legend: false,
+      note: "动态混合精度的 loss scale(对数刻度显示,气泡内为实际值);持续减半是 FP 溢出的早期信号",
+      formatValue: (v) => (v == null || !isFinite(v) ? "—" : Math.round(Math.pow(2, v)).toLocaleString()),
       tipCarryForward: false, markerStep: INCIDENT_STEP,
       series: [
-      { id: "corr", label: "pearson corr", key: "rollout_actor_probs_pearson_corr", colorVar: "--twin-chart-corr", emphasis: true },
+      { id: "loss_scale", label: "loss scale", key: "loss_scale_log2", colorVar: "--twin-chart-mfu", emphasis: true },
+    ] },
+    { id: "precision", name: "precision", legend: false, note: "预测正例中的准确率", formatValue: fmtAccPct,
+      tipCarryForward: false, markerStep: INCIDENT_STEP,
+      series: [
+      { id: "precision", label: "precision", key: "precision", colorVar: "--twin-chart-precision", emphasis: true },
     ] },
   ];
 
@@ -1216,6 +1250,8 @@
   function buildAccCard(cfg) {
     const card = document.createElement("div");
     card.className = "twin-accuracy-metric-card";
+    // 聚光灯定位链(js/training-spotlight.js)按 [data-acc-card] 选中并照亮对应指标卡(如 loss / loss_scale)
+    card.dataset.accCard = cfg.id;
     const head = document.createElement("div");
     head.className = "twin-accuracy-metric-card__head";
     const name = document.createElement("span");
@@ -1255,7 +1291,7 @@
     const data = cfg.data || ACC_DATA;
     // x 轴刻度档数按实际绘图宽度动态收缩：窄卡(训练监控侧栏 2 列)硬塞 4 档会首尾数字交错重叠，
     // 宽一点的场景(如「问题一·迭代层」大图)才有空间摆下 3~4 档。阈值按 pad.l(40)+pad.r(10) 扣完后的
-    // plotW 估算：每档数字(如"41230")在 10px 等宽字体下约占 30~35px，需要档间留白避免贴边。
+    // plotW 估算：每档数字(如"15203")在 10px 等宽字体下约占 30~35px，需要档间留白避免贴边。
     const plotW = w - 50;
     const xTicks = plotW < 150 ? 2 : plotW < 260 ? 3 : 4;
     const renderOpts = {
@@ -1396,10 +1432,13 @@
     renderAccReadouts();
   }
 
-  // ── 智能对话「调整图表」演示场景专用:临时把精度栏 4 张卡换成新指标,关闭对话框(见
+  // ── 智能对话「调整图表」演示场景专用:临时把精度栏 2 张卡换成新指标,关闭对话框(见
   // js/training-chat-panel.js 的 revertChartsOverrideIfActive)即还原。复用真实图表引擎
   // (buildAccCard/renderMetricChart)与 metricsAtStep 同款"先快后缓收敛 + 事故态回弹"曲线形状,
   // 只是喂入虚构的新指标数据,不写回 ACC_DATA/ACC_CARD_DEFS,不影响其余联动逻辑。
+  // (原本 f1/corr 两张卡也在这份演示替换名单里,分别换成 Z loss / 数值 t 分布——现已把
+  // Z loss、AMP loss scale 提升为 ACC_CARD_DEFS 里的常驻默认卡,不再需要临时演示,
+  // 对应的 demoTDistSeries 也随之整体移除。)
   function demoMetricSeries(seed, base, span, noiseAmp, incidentBump) {
     return accSteps.map((step, i) => {
       const t = accSteps.length > 1 ? i / (accSteps.length - 1) : 1;
@@ -1415,21 +1454,6 @@
     });
   }
 
-  // 「数值 t 分布」自由度 ν:不跟随主事故步,而是在已定位的问题四(低精训练 loss 不收敛,
-  // step 28000~35000)窗口内走低,呼应 diagnosisCases["low-precision-training"] 的叙事。
-  function demoTDistSeries() {
-    const mid = 31500, half = 3500;
-    return accSteps.map((step) => {
-      if (step === INCIDENT_STEP) return NaN;
-      const baseNu = 7.2 + stepNoise(21, step, 0.35);
-      if (step >= 28000 && step <= 35000) {
-        const dipT = 1 - Math.min(1, Math.abs(step - mid) / half);
-        return +(baseNu - 3.6 * dipT).toFixed(2);
-      }
-      return +baseNu.toFixed(2);
-    });
-  }
-
   const fmtDemoLoss = (digits) => (v) => (v == null || !isFinite(v) ? "—" : v.toFixed(digits));
 
   const ACC_DEMO_REPLACEMENTS = [
@@ -1441,14 +1465,6 @@
       note: "LAMBADA 完形填空评测集验证 loss，衡量长程上下文理解能力",
       colorVar: "--twin-chart-recall", formatValue: fmtDemoLoss(3),
       genSeries: () => demoMetricSeries(32, 5.8, 2.4, 0.12, 2.0) },
-    { targetId: "f1", id: "z_loss", key: "z_loss", name: "Z loss",
-      note: "logits 归一化正则项(z-loss)，抑制 softmax 前 logits 幅值发散",
-      colorVar: "--twin-chart-f1", formatValue: fmtDemoLoss(4),
-      genSeries: () => demoMetricSeries(33, 0.18, 0.14, 0.012, 0.25) },
-    { targetId: "corr", id: "t_dist_nu", key: "t_dist_nu", name: "数值 t 分布 (ν)",
-      note: "逐层激活值分布拟合为 t 分布后的自由度 ν，越低代表尾部越重、越易在 FP8 下溢出；日志无直接字段，按激活值分布派生计算",
-      colorVar: "--twin-chart-corr", formatValue: fmtDemoLoss(2),
-      genSeries: () => demoTDistSeries() },
   ];
 
   let accDemoOverrideBackup = null; // null = 未应用；应用后存 [{idx, original, originalCardEl}]
@@ -1662,6 +1678,10 @@
     if (isWzhTwinPage()) {
       clearDiagnosisFocus();
       hideDiagnosisLocator();
+      // 进入问题透镜时关闭的「算子染色」在退出时恢复打开,见 activateProblemOneLens 里的对应调用。
+      window.setOpColorMode?.("cat");
+      // 收起「聚光灯定位链」覆盖层(其名片 × / ESC 亦通过 diagnosisLocatorClose 触发本函数)。
+      window.PtoTrainingSpotlight?.close();
     }
   }
 
@@ -2455,16 +2475,15 @@
       return { x: p.x + 1.5 + (cell % 2) * cellW + cellW / 2, y: p.y + 1.5 + Math.floor(cell / 2) * cellH + cellH / 2 };
     };
     var selected = lvSelectedExperts(ROUTED_EXPERT_HOT_ID);
-    var hotCards = {};
-    selected.forEach(function (s) { if (s.hot) hotCards[s.card] = true; });
 
+    // EP64(64×4)网格本身只作背景棋盘,不再给命中卡加红外框(命中态已由下面的 hotLabel
+    // /a2a-node/a2a-ring 红色叠层与 gauge 标题表达,网格描边统一走中性蓝,避免重复刷红)。
     var cardsSvg = "";
     for (var card = 0; card < 64; card += 1) {
       var p = cardPos(card);
-      var overloaded = !!hotCards[card];
       cardsSvg += '<rect x="' + p.x.toFixed(1) + '" y="' + p.y.toFixed(1) + '" width="' + cardW.toFixed(1) + '" height="' + cardH.toFixed(1) + '" rx="2"' +
         ' fill="color-mix(in srgb, ' + LV.cFlow + ' 6%, var(--surface-1))"' +
-        ' stroke="' + (overloaded ? LV.cHot : LV.cFlow) + '" stroke-opacity="' + (overloaded ? "1" : ".28") + '" stroke-width="' + (overloaded ? "1.6" : "0.7") + '"></rect>';
+        ' stroke="' + LV.cFlow + '" stroke-opacity=".28" stroke-width="0.7"></rect>';
       for (var cell = 0; cell < 4; cell += 1) {
         var c = cellCenter(card, cell);
         var hot = selected.some(function (s) { return s.card === card && s.cell === cell && s.hot; });
@@ -2506,18 +2525,20 @@
 
     var gaugeY = gY + gH + 16;
     var barX = gX + 40, barMaxW = gW - 100;
+    // send/recv 柱状图+数值改用中性蓝(LV.cFlow),不再跟着 cHot 刷红:红色只保留给上面
+    // 这行诊断标题和 hotLabel/EP rank 23 标注,避免整块卡片视觉上"全是红色"。
     var gauge =
       '<text x="' + gX + '" y="' + (gaugeY - 2).toFixed(1) + '" fill="' + LV.cHot + '" style="font-size:9.5px;font-weight:800;font-family:system-ui,sans-serif">EP rank 23 all-to-all buffer 失配 → 死锁</text>' +
       '<text x="' + gX + '" y="' + (gaugeY + 12).toFixed(1) + '" style="font-size:8.5px;font-family:system-ui,sans-serif" fill="var(--foreground-secondary)">send</text>' +
-      '<rect x="' + barX + '" y="' + (gaugeY + 6).toFixed(1) + '" width="3" height="8" rx="1" fill="none" stroke="' + LV.cHot + '" stroke-width="1"></rect>' +
-      '<text x="' + (barX + 10) + '" y="' + (gaugeY + 12).toFixed(1) + '" fill="' + LV.cHot + '" style="font-size:8.5px;font-weight:700;font-family:ui-monospace,monospace">0(无 token 外发)</text>' +
+      '<rect x="' + barX + '" y="' + (gaugeY + 6).toFixed(1) + '" width="3" height="8" rx="1" fill="none" stroke="' + LV.cFlow + '" stroke-width="1"></rect>' +
+      '<text x="' + (barX + 10) + '" y="' + (gaugeY + 12).toFixed(1) + '" fill="' + LV.cFlow + '" style="font-size:8.5px;font-weight:700;font-family:ui-monospace,monospace">0(无 token 外发)</text>' +
       '<text x="' + gX + '" y="' + (gaugeY + 26).toFixed(1) + '" style="font-size:8.5px;font-family:system-ui,sans-serif" fill="var(--foreground-secondary)">recv</text>' +
-      '<rect x="' + barX + '" y="' + (gaugeY + 20).toFixed(1) + '" width="' + Math.max(3, barMaxW).toFixed(1) + '" height="8" rx="1" fill="' + LV.cHot + '"></rect>' +
-      '<text x="' + (barX + barMaxW + 6).toFixed(1) + '" y="' + (gaugeY + 26).toFixed(1) + '" fill="' + LV.cHot + '" style="font-size:8.5px;font-weight:700;font-family:ui-monospace,monospace">2048×4608×8 ≈ 151MB</text>';
+      '<rect x="' + barX + '" y="' + (gaugeY + 20).toFixed(1) + '" width="' + Math.max(3, barMaxW).toFixed(1) + '" height="8" rx="1" fill="' + LV.cFlow + '"></rect>' +
+      '<text x="' + (barX + barMaxW + 6).toFixed(1) + '" y="' + (gaugeY + 26).toFixed(1) + '" fill="' + LV.cFlow + '" style="font-size:8.5px;font-weight:700;font-family:ui-monospace,monospace">2048×4608×8 ≈ 151MB</text>';
 
     return (
       '<rect x="' + ox + '" y="' + oy + '" width="' + W + '" height="' + H + '" rx="10"' +
-      ' fill="color-mix(in srgb, ' + LV.cExpert + ' 12%, var(--surface-1))" stroke="' + LV.cHot + '" stroke-width="1.6"' +
+      ' fill="color-mix(in srgb, ' + LV.cExpert + ' 12%, var(--surface-1))" stroke="var(--border-default)" stroke-width="1"' +
       ' style="filter:drop-shadow(0 8px 20px rgba(0,0,0,.38))"></rect>' +
       '<text x="' + (ox + padX) + '" y="' + (oy + 20) + '" style="font-size:12.5px;font-weight:800;font-family:system-ui,sans-serif" fill="var(--foreground)">routed experts · ' + LV.routedExperts + ' → EP64(64 卡 × 4)</text>' +
       cardsSvg + a2aMesh + a2aNodesSvg + hotLabel + gauge + a2aLabels
@@ -2657,6 +2678,7 @@
     if (!routedExpertExpandActive) return;
     applyDiagnosisFocus("moe-a2a");
     showRoutedExpertBankExpand();
+    pinDiagnosisLocator("moe-a2a"); // applyDiagnosisFocus 会先把顶栏问题定位卡片隐藏,这里配套重新钉回去
   });
 
   function hideDiagnosisLocator() {
@@ -2667,6 +2689,26 @@
   function showDiagnosisLocator() {
     const locator = $("diagnosisLocator");
     if (locator) locator.classList.add("is-visible");
+  }
+
+  // 用 caseKey 填充并钉住顶栏「问题定位」卡片。applyDiagnosisFocus() 内部每次都会先无条件
+  // hideDiagnosisLocator() 再交给调用方决定要不要重新显示,所以凡是重新调用了 applyDiagnosisFocus
+  // 的地方(含下面 resize 重新钉回聚焦的分支)都必须配套调用本函数,否则卡片会被那次隐藏静默冲掉。
+  function pinDiagnosisLocator(caseKey) {
+    var marker = diagnosisMarkers.find(function (m) { return m.key === caseKey; });
+    var info = diagnosisCases[caseKey];
+    var locator = $("diagnosisLocator");
+    if (locator && info && marker) {
+      $("diagnosisLocatorTitle").textContent = marker.label || "";
+      $("diagnosisLocatorLayerTag").textContent = info.layer || "";
+      $("diagnosisLocatorCategoryTag").textContent = marker.category || "";
+      var sevEl = $("diagnosisLocatorSeverityTag");
+      sevEl.textContent = (marker.severity || "").toUpperCase();
+      sevEl.className = "twin-diagnosis-locator-severity is-" + (marker.severity || "");
+      $("diagnosisLocatorDesc").textContent = marker.sub || "";
+      locator.title = marker.sub || "";
+      showDiagnosisLocator();
+    }
   }
 
   // ── 热力图 infra 问题高亮 ─────────────────────────────────────────────────
@@ -2874,7 +2916,6 @@
   // rank 23 all-to-all timeout 高亮,已经就是"问题 rank"),相当于原地复现事故时刻的全部细节。
   function activateProblemOneLens(caseKey) {
     var marker = diagnosisMarkers.find(function (m) { return m.key === caseKey; });
-    var info = diagnosisCases[caseKey];
     // 先展开 Timeline dock 面板再做整网图聚焦平移——PtoTrainingTwinDockTabs.select("timeline")
     // 会派发一次 window resize,opv-modelviz 的 centerView() 监听 resize 会无条件把画面 fit()
     // 回默认视图;顺序上让这次 resize 先发生,下面的 applyDiagnosisFocus 才是最后生效的那次。
@@ -2886,29 +2927,23 @@
     window.PtoTrainingTwinDockTabs?.select("timeline");
     applyViewStep(marker && marker.step != null ? marker.step : INCIDENT_STEP);
     applyDiagnosisFocus(caseKey);
+    // 问题聚焦时关掉整网图默认的「算子染色」类别底色,避免跟诊断命中节点的红色描边互相抢视觉焦点;
+    // 退出时光机(exitTimeMachine)会恢复打开。
+    window.setOpColorMode?.("off");
     // 问题一精准展开 routed_expert_bank 单节点(而不是下钻整块「模型层展开图」页面),
     // 全局/实时监控视图下都要看到,故不受 .twin-live-on 隐藏问题徽标的规则影响(见函数注释)。
     if (caseKey === "moe-a2a") showRoutedExpertBankExpand();
-    var locator = $("diagnosisLocator");
-    if (locator && info && marker) {
-      $("diagnosisLocatorTitle").textContent = marker.label || "";
-      $("diagnosisLocatorLayerTag").textContent = info.layer || "";
-      $("diagnosisLocatorCategoryTag").textContent = marker.category || "";
-      var sevEl = $("diagnosisLocatorSeverityTag");
-      sevEl.textContent = (marker.severity || "").toUpperCase();
-      sevEl.className = "twin-diagnosis-locator-severity is-" + (marker.severity || "");
-      $("diagnosisLocatorDesc").textContent = marker.sub || "";
-      // 卡片挪进顶栏后一行放不下描述,完整文字改走原生 title 提示(hover 卡片可见)
-      locator.title = marker.sub || "";
-      showDiagnosisLocator();
-    }
+    pinDiagnosisLocator(caseKey);
+    // 进入问题一默认开启「聚光灯定位链」覆盖层(js/training-spotlight.js):1→6 步进照亮各层举证图表,
+    // 顶栏问题卡被其名片遮住,读全文仍走名片「详情」→ window.openProblemOneLocateDrawer 抽屉。
+    window.PtoTrainingSpotlight?.open(caseKey);
   }
 
   // 定位链数据:对应 定位链.md 中三个案例各自实际走过的链路节点
   const locateChains = {
     "moe-a2a": {
       title: "定位链 · Router 数值溢出 → 路由塌缩 → NaN+死锁双发",
-      meta: "路径:迭代层 → 通信调度层 → 模型层 → 数值层 → infra层 → 超参/代码层",
+      meta: "路径:迭代层 → 日志/plog诊断层 → 通信调度层 → 模型层 → 数值层 → 熔断/预警层 → infra层 → 超参/代码层 → 止损链路总览",
       steps: [
         { label: "迭代层", short: `Step ${INCIDENT_STEP}`, sub: `WHEN · step ${INCIDENT_STEP} loss 跳变至 NaN`,
           showSmoothing: true,
@@ -2929,9 +2964,32 @@
               <p class="twin-locate-metric-note">↳ 多卡即出现，需在【通信调度层】的NCCL trace中检查异常位置</p>
             </div>
           ` },
+        { label: "日志/plog诊断层", short: "plog→可读诊断", sub: "TRANSLATE · 报错说人话，穿插在后续每层排查中",
+          content: `
+            <p class="twin-locate-metric-note" style="margin:0 0 8px">此层不改变定位方向，而是穿插在后续每一步排查中，解决"报错看不懂、plog 有信息但 Python 侧不显示"的痛点——这里单独演示一次。</p>
+            <p class="twin-locate-metric-note"><strong>现象</strong>：step ${INCIDENT_STEP} 训练中断，Python 侧仅报 <code>RuntimeError: NCCL timeout in all-to-all</code>，无法直接定位原因。若无翻译层，用户需要 ① 去 Device 侧 grep plog → ② 看不懂 HCCL/corner ops 报错 → ③ 逐层找框架负责人/算子开发 → 链路 2~7 天。</p>
+            <div style="border:1px solid var(--border-subtle);border-radius:8px;overflow:hidden;margin:10px 0">
+              <div style="padding:8px 12px;background:var(--surface-2);font-size:11px;font-weight:600;color:var(--foreground);font-family:ui-monospace,'SF Mono',Menlo,Consolas,monospace">$ grep -i "error\\|timeout\\|mismatch" /var/log/npu/plog/plog_*.log</div>
+              <div style="font-family:ui-monospace,'SF Mono',Menlo,Consolas,monospace;font-size:11px;line-height:1.7;padding:10px 12px;background:var(--surface-1);overflow-x:auto;color:var(--foreground-secondary)">
+                <div>[hcom_all_to_all_v_] rank=23 send_count=0 recv_count=9832 <span style="color:#dc2626">buffer size mismatch</span></div>
+                <div>[aclnnSoftmaxV2] input[router_logits] contains <span style="color:#dc2626">inf</span> values</div>
+              </div>
+            </div>
+            <p class="twin-locate-metric-note"><strong>翻译</strong>：① rank 23 的 <code>dist.all_to_all</code> send buffer 为空，但期望接收 9832 个 token 的数据——buffer 大小不匹配导致死锁；② <code>router.forward</code> 中的 <code>F.softmax(router_logits)</code> 收到了 inf 输入——上游 router_logits 在 FP8 下溢出。</p>
+            <div style="overflow-x:auto;margin:10px 0">
+              <table style="width:100%;border-collapse:collapse;font-size:11px;line-height:1.5">
+                <tr style="background:var(--surface-2)"><th style="padding:4px 8px;border:1px solid var(--border-subtle);text-align:left">Ascend C / plog 内部名</th><th style="padding:4px 8px;border:1px solid var(--border-subtle);text-align:left">torch_npu / PyTorch 可见接口</th></tr>
+                <tr><td style="padding:4px 8px;border:1px solid var(--border-subtle);font-family:ui-monospace,monospace">hcom_all_to_all_v_</td><td style="padding:4px 8px;border:1px solid var(--border-subtle)"><code>dist.all_to_all</code>（通信库）</td></tr>
+                <tr><td style="padding:4px 8px;border:1px solid var(--border-subtle);font-family:ui-monospace,monospace">aclnnSoftmaxV2</td><td style="padding:4px 8px;border:1px solid var(--border-subtle)"><code>F.softmax</code>（<code>router.forward</code> 中调用）</td></tr>
+                <tr><td style="padding:4px 8px;border:1px solid var(--border-subtle);font-family:ui-monospace,monospace">aclnnMatmulV3</td><td style="padding:4px 8px;border:1px solid var(--border-subtle)"><code>F.linear</code>（router 的 Linear 层）</td></tr>
+              </table>
+            </div>
+            <p class="twin-locate-metric-note"><strong>产出</strong>：翻译后的可读诊断 + 关联调用位置——<code>model.layers.38.mlp.router.forward</code> 中的 <code>F.softmax(router_logits)</code> 收到了 inf 输入，两条线索共同指向【通信调度层】的 rank 23 死锁表象与【数值层】的 router 溢出根因。</p>
+            <p style="margin:8px 0 0;font-size:12px;color:var(--foreground-secondary);line-height:1.5">↳ 已给出方向，进入【通信调度层】核实 rank 23 的 all-to-all 超时细节。</p>
+          ` },
         { label: "分叉判定", sub: "仅多卡异常 · 切入通信分支", branch: true },
         { label: "通信调度层", short: "EP rank 23", sub: "WHY(通信) · EP rank 23 all-to-all 死锁",
-          content: `<div class="opv-swim-embed" data-problem-one-timeline title="NCCL trace: node2 ranks 16-23, rank 23 all-to-all timeout"></div><p style="margin:10px 0 0;font-size:12px;color:var(--foreground-secondary);line-height:1.5">识别 EP rank 23（node2 GPU 7）在 <code>all-to-all</code> 调用处超时（30s timeout）。该调用时间上定位到 layer 38 MoE 的 expert dispatch 阶段。</p><p style="margin:8px 0 0;font-size:12px;color:var(--foreground-secondary);line-height:1.5">↳ 需在【模型层】提取 step ${INCIDENT_STEP} 各层 router 的 token-to-expert 分配统计。</p>` },
+          content: `<div class="opv-swim-embed" data-problem-one-timeline title="NCCL trace: node2 ranks 16-23, rank 23 all-to-all timeout"></div><p style="margin:10px 0 0;font-size:12px;color:var(--foreground-secondary);line-height:1.5">识别 EP rank 23（node2 GPU 7）在 <code>all-to-all</code> 调用处超时（30s timeout）。该调用时间上定位到 layer 38 MoE 的 expert dispatch 阶段。对比各 rank 的 send/recv buffer size：rank 23 的 send=0（没有 token 被 router 分发到其他 rank 的 expert），recv≈9832 token，size 不匹配导致死锁。</p><p style="margin:8px 0 0;font-size:12px;color:var(--foreground-secondary);line-height:1.5"><strong>EP=64 切分校验</strong>：256 个 expert 均匀分配到 64 个 EP rank，每个 rank 名义上承载 4 个 expert，切分看似均匀（256/64=4）。但当前 rank 23 的 send=0、recv≈9832 → <strong style="color:#dc2626">所有 token 被 router 判定应全部送往 rank 23 的 4 个 expert</strong>，其余 252 个 expert 无 token 流入，EP 切分名义均匀、实际塌缩为 1 个 rank 在工作，63 个 rank 空等。</p><p style="margin:8px 0 0;font-size:12px;color:var(--foreground-secondary);line-height:1.5">死锁只是"果"，需继续追"因"——为什么 router 会把几乎所有 token 分配给 rank 23 的 expert 193？↳ 需在【模型层】提取 step ${INCIDENT_STEP} 各层 router 的 token-to-expert 分配统计。</p>` },
         { label: "模型层", short: "layer 38", sub: "WHERE · layer 38 router 98% token 倾斜到 expert 193",
           content: `
             <div class="twin-layerview-cta" data-open-layer-view data-lv-expanded="38" data-lv-hot-expert="193" role="button" tabindex="0">
@@ -2965,6 +3023,59 @@
             <p style="margin:8px 0 0;font-size:12px;color:var(--foreground-secondary);line-height:1.5">dump step ${INCIDENT_STEP} 时 layer 38 router 的 raw logits（softmax 之前），发现 max(logits)=<strong style="color:#dc2626">1846</strong>，且存在 inf 值——FP8 E4M3 下 exp(1846) 直接溢出为 inf。</p>
             <p style="margin:8px 0 0;font-size:12px;color:var(--foreground-secondary);line-height:1.5">检查 router 计算精度路径：当前实现中 router 的 softmax 在 <strong style="color:#dc2626">FP8</strong> 下计算（<code>router_logits → FP8 cast → softmax</code>），而非业界建议的 FP32。AMP scaler 日志显示 loss scale 从 step 15000 起从 65536 持续衰减至 step 15202 的 4096，说明训练已处于持续 FP 溢出的临界状态。</p>
             <p style="margin:10px 0 0;font-size:12px;color:var(--foreground);font-weight:600;line-height:1.5">判据：FP8 下 router logits 溢出 → softmax 产生 NaN/inf → 路由概率退化 → top-k 集中于 expert 193 → <strong style="color:#dc2626">同时触发两个后果</strong>：A) NaN 沿 forward 传播到 loss；B) 所有 token 路由到 rank 23 → all-to-all 死锁。死锁和 NaN 是同一 root cause 的两个平行后果，而非因果关系。</p>
+            <p style="margin:8px 0 0;font-size:12px;color:var(--foreground-secondary);line-height:1.5">↳ AMP scaler 这条衰减轨迹从 step 15000 起就已持续报警——如果被实时监控，能否在 loss NaN 前拦截？见【熔断/预警层】。</p>
+          ` },
+        { label: "熔断/预警层", short: "scaler 65536→4096", sub: "GUARD · 能否在 NaN 前拦截？",
+          content: `
+            <p class="twin-locate-metric-note" style="margin:0 0 8px">此层回答一个关键问题：<strong>精度异常真的只能等到 loss NaN 才知道吗？</strong> 复盘本案例的 AMP loss-scale 衰减轨迹——它从 step 15000 起就已持续报警，只是当时无人监控。</p>
+            <svg viewBox="0 0 300 150" style="width:100%;height:auto;display:block;margin:8px 0" preserveAspectRatio="xMidYMid meet">
+              <title>AMP loss scale 衰减轨迹：step 15000(65536) → step 15202(4096) → step 15203(loss NaN)</title>
+              <line x1="16" y1="70" x2="292" y2="70" stroke="#ca8a04" stroke-width="1" stroke-dasharray="3 3" opacity="0.75"/>
+              <text x="14" y="67" text-anchor="end" font-size="7.5" fill="#ca8a04" font-family="ui-monospace,monospace">🟡1/4</text>
+              <line x1="16" y1="110" x2="292" y2="110" stroke="#ea580c" stroke-width="1" stroke-dasharray="3 3" opacity="0.75"/>
+              <text x="14" y="107" text-anchor="end" font-size="7.5" fill="#ea580c" font-family="ui-monospace,monospace">🟠1/16</text>
+              <polyline points="28,30 76,50 124,70 172,90 220,110 246,110" fill="none" stroke="var(--highlight-copy-blue-500,#3b6fe0)" stroke-width="1.6"/>
+              <line x1="246" y1="110" x2="270" y2="136" stroke="#dc2626" stroke-width="1.6" stroke-dasharray="2 2"/>
+              <circle cx="28" cy="30" r="3" fill="var(--highlight-copy-blue-500,#3b6fe0)"/>
+              <circle cx="76" cy="50" r="3" fill="var(--highlight-copy-blue-500,#3b6fe0)"/>
+              <circle cx="124" cy="70" r="3.6" fill="#ca8a04"/>
+              <circle cx="172" cy="90" r="3" fill="#ca8a04"/>
+              <circle cx="220" cy="110" r="3.6" fill="#ea580c"/>
+              <circle cx="246" cy="110" r="3" fill="#ea580c"/>
+              <circle cx="270" cy="136" r="4" fill="#dc2626"/>
+              <text x="28" y="21" text-anchor="middle" font-size="7.5" fill="var(--foreground-secondary)" font-family="ui-monospace,monospace">65536</text>
+              <text x="76" y="41" text-anchor="middle" font-size="7.5" fill="var(--foreground-secondary)" font-family="ui-monospace,monospace">32768</text>
+              <text x="124" y="61" text-anchor="middle" font-size="7.5" fill="#ca8a04" font-family="ui-monospace,monospace">16384</text>
+              <text x="172" y="81" text-anchor="middle" font-size="7.5" fill="var(--foreground-secondary)" font-family="ui-monospace,monospace">8192</text>
+              <text x="220" y="101" text-anchor="middle" font-size="7.5" fill="#ea580c" font-family="ui-monospace,monospace">4096</text>
+              <text x="246" y="122" text-anchor="middle" font-size="7" fill="var(--foreground-muted)">末窗</text>
+              <text x="282" y="132" text-anchor="start" font-size="7.5" fill="#dc2626" font-weight="700" font-family="ui-monospace,monospace">loss NaN</text>
+              <text x="28" y="146" text-anchor="middle" font-size="7.5" fill="var(--foreground-muted)">15000</text>
+              <text x="76" y="146" text-anchor="middle" font-size="7.5" fill="var(--foreground-muted)">15050</text>
+              <text x="124" y="146" text-anchor="middle" font-size="7.5" fill="var(--foreground-muted)">15100</text>
+              <text x="172" y="146" text-anchor="middle" font-size="7.5" fill="var(--foreground-muted)">15150</text>
+              <text x="220" y="146" text-anchor="middle" font-size="7.5" fill="var(--foreground-muted)">15200</text>
+              <text x="270" y="146" text-anchor="middle" font-size="7.5" fill="#dc2626" font-weight="700">15203</text>
+            </svg>
+            <div style="overflow-x:auto;margin:10px 0">
+              <table style="width:100%;border-collapse:collapse;font-size:11px;line-height:1.5">
+                <tr style="background:var(--surface-2)"><th style="padding:4px 8px;border:1px solid var(--border-subtle);text-align:left">预警级别</th><th style="padding:4px 8px;border:1px solid var(--border-subtle);text-align:left">触发条件</th><th style="padding:4px 8px;border:1px solid var(--border-subtle);text-align:left">自动动作</th><th style="padding:4px 8px;border:1px solid var(--border-subtle);text-align:left">本案例</th></tr>
+                <tr><td style="padding:4px 8px;border:1px solid var(--border-subtle)">🟡 注意</td><td style="padding:4px 8px;border:1px solid var(--border-subtle)">scaler 降至初始值 1/4（65536→16384）</td><td style="padding:4px 8px;border:1px solid var(--border-subtle)">记录日志，通知 on-call，不中断训练</td><td style="padding:4px 8px;border:1px solid var(--border-subtle);color:#ca8a04;font-weight:600">step 15100 触发</td></tr>
+                <tr style="background:#fff7ed"><td style="padding:4px 8px;border:1px solid var(--border-subtle);font-weight:700">🟠 警告</td><td style="padding:4px 8px;border:1px solid var(--border-subtle)">scaler 降至初始值 1/16（65536→4096）或 grad_norm 连续 50 step 翻倍</td><td style="padding:4px 8px;border:1px solid var(--border-subtle);font-weight:600">自动 dump 当前 step 激活张量 + router logits，发告警</td><td style="padding:4px 8px;border:1px solid var(--border-subtle);color:#ea580c;font-weight:700">step 15200 触发——最后的拦截窗口</td></tr>
+                <tr style="background:#fef2f2"><td style="padding:4px 8px;border:1px solid var(--border-subtle);font-weight:700">🔴 熔断</td><td style="padding:4px 8px;border:1px solid var(--border-subtle)">scaler &lt; 初始值 1/32 或 grad_norm=inf 或 loss=NaN</td><td style="padding:4px 8px;border:1px solid var(--border-subtle);font-weight:600">立即停训，保存 checkpoint，释放资源，通知值班</td><td style="padding:4px 8px;border:1px solid var(--border-subtle);color:#dc2626;font-weight:700">step 15203 loss NaN 才触发——已经晚了</td></tr>
+              </table>
+            </div>
+            <p class="twin-locate-metric-note"><strong>复盘时间线</strong>：15000 scaler=65536（健康）→ 15050 32768（临近🟡）→ 15100 16384（🟡 首次越线）→ 15150 8192（逼近🟠）→ <strong style="color:#ea580c">15200 4096（🟠 越线——应触发自动 dump，最后的拦截窗口）</strong> → 15202 loss=3.1 仍正常（距 NaN 只差 1 step）→ <strong style="color:#dc2626">15203 loss NaN（🔴 熔断级，但无人监控）</strong>。</p>
+            <p class="twin-locate-metric-note">若在 step 15150（🟡→🟠 临界）就人工介入排查止损，到 step 15203 NaN 共可提前 <strong>53 step</strong>：53 step × 2048 NPU × ¥2/卡时 ≈ <strong style="color:#dc2626">¥21.7 万</strong>；若是万卡集群同等模式，同样量级的空跑将是百万元级损失。</p>
+            <div style="border:1px solid var(--border-subtle);border-radius:8px;overflow:hidden;margin-top:10px">
+              <div style="padding:8px 12px;background:var(--surface-2);font-size:12px;font-weight:600;color:var(--foreground)">产出 · monitor_config.yaml 熔断规则建议</div>
+              <div style="font-family:ui-monospace,'SF Mono',Menlo,Consolas,monospace;font-size:11px;line-height:1.7;padding:10px 12px;background:var(--surface-1);overflow-x:auto">
+                <div style="background:rgba(22,163,74,.1);color:#16a34a">+ amp_scaler_warn_ratio: <strong>0.25</strong>&nbsp;&nbsp;<span style="color:var(--foreground-muted);font-family:system-ui"># 降至初始值 1/4 → 🟡 通知 on-call</span></div>
+                <div style="background:rgba(22,163,74,.1);color:#16a34a">+ amp_scaler_dump_ratio: <strong>0.0625</strong>&nbsp;&nbsp;<span style="color:var(--foreground-muted);font-family:system-ui"># 降至初始值 1/16 → 🟠 自动 dump 激活张量+router logits</span></div>
+                <div style="background:rgba(22,163,74,.1);color:#16a34a">+ amp_scaler_abort_ratio: <strong>0.03125</strong>&nbsp;&nbsp;<span style="color:var(--foreground-muted);font-family:system-ui"># 降至初始值 1/32 → 🔴 立即停训，释放资源</span></div>
+              </div>
+            </div>
+            <p style="margin:8px 0 0;font-size:12px;color:var(--foreground-secondary);line-height:1.5">↳ 熔断只是止损，不是根因——继续进入【infra层】看这次单点溢出如何扩散到全集群。</p>
           ` },
         { label: "infra层", short: "EP rank 23", sub: "CONTEXT · EP rank 23 / PP stage 3",
           // infra 示意图完全复用外层「训练监控 · infra」的集群热力图(#heat 的 DP8×PP4×EP64 网格),
@@ -2981,6 +3092,19 @@
                 <span style="display:inline-flex;align-items:center;gap:5px"><i style="width:10px;height:10px;border-radius:2px;outline:2px solid #ea580c;outline-offset:1px"></i>EP 16–22 空等</span>
               </div>
             </div>
+            <p class="twin-locate-metric-note" style="margin-top:12px"><strong>错误扩散路径</strong>：这是典型的"单点故障 → 全局扩散"模式——报错位置 ≠ 根因位置。</p>
+            <div style="display:flex;flex-direction:column;gap:6px;margin:8px 0;font-size:11px;line-height:1.5">
+              <div style="padding:6px 10px;border-radius:6px;background:#fef2f2;border:1px solid #fecaca;color:#dc2626;font-weight:600">① EP rank 23 router softmax FP8 overflow（数值层根因）</div>
+              <div style="text-align:center;color:var(--foreground-muted);font-size:10px">↓</div>
+              <div style="padding:6px 10px;border-radius:6px;background:#fff7ed;border:1px solid #fed7aa;color:#ea580c;font-weight:600">② rank 23 的 expert 193 吸收 98% token → all-to-all send=0 / recv≈9832 死锁</div>
+              <div style="text-align:center;color:var(--foreground-muted);font-size:10px">↓</div>
+              <div style="padding:6px 10px;border-radius:6px;background:var(--surface-2);border:1px solid var(--border-subtle);color:var(--foreground)">③ all-to-all 是同步屏障操作 → 其余 63 个 EP rank 全部卡在 barrier 上空等</div>
+              <div style="text-align:center;color:var(--foreground-muted);font-size:10px">↓</div>
+              <div style="padding:6px 10px;border-radius:6px;background:var(--surface-2);border:1px solid var(--border-subtle);color:var(--foreground)">④ rank 23 所属 PP stage 3 断裂 → 全部 4 个 PP stage 相互等待</div>
+              <div style="text-align:center;color:var(--foreground-muted);font-size:10px">↓</div>
+              <div style="padding:6px 10px;border-radius:6px;background:#fef2f2;border:1px solid #fecaca;color:#dc2626;font-weight:600">⑤ 2048 NPU 全部 hang，30s 后 NCCL timeout 报错——报的是"通信 timeout"而非"router 溢出"</div>
+            </div>
+            <p class="twin-locate-metric-note">关键教训：在 512+ rank 的大规模训练中，一个 rank 的数值溢出可通过 gather/all-to-all 扩散到数百 rank，必须自动做跨 rank 的首因定位，而非人工逐一比对几百张卡的日志。</p>
           ` },
         { label: "超参/代码层", short: "6 处代码改动", sub: "FIX · router 改 FP32 + z-loss + 降 lr + grad clip + n_group + 超时延长",
           content: `
@@ -3022,12 +3146,50 @@
                   <div style="background:rgba(22,163,74,.1);color:#16a34a">+ export NCCL_IB_TIMEOUT=<strong>60</strong>&nbsp;&nbsp;<span style="color:var(--foreground-muted);font-family:system-ui"># 训练不中断兜底</span></div>
                 </div>
               </div>
+              <div style="border:1px solid var(--border-subtle);border-radius:8px;overflow:hidden">
+                <div style="padding:8px 12px;background:var(--surface-2);font-size:12px;font-weight:600;color:var(--foreground)">⑥ monitor_config.yaml · 部署熔断规则</div>
+                <div style="font-family:ui-monospace,'SF Mono',Menlo,Consolas,monospace;font-size:11px;line-height:1.7;padding:10px 12px;background:var(--surface-1);overflow-x:auto">
+                  <div style="background:rgba(22,163,74,.1);color:#16a34a">+ amp_scaler_dump_ratio: <strong>0.0625</strong>&nbsp;&nbsp;<span style="color:var(--foreground-muted);font-family:system-ui"># scaler 降至初始值 1/16 → 🟠 自动 dump（见【熔断/预警层】三级阈值）</span></div>
+                  <div style="background:rgba(22,163,74,.1);color:#16a34a">+ amp_scaler_abort_ratio: <strong>0.03125</strong>&nbsp;&nbsp;<span style="color:var(--foreground-muted);font-family:system-ui"># scaler 降至初始值 1/32 → 🔴 立即停训</span></div>
+                </div>
+              </div>
             </div>
-            <p style="margin:12px 0 0;font-size:12px;color:#16a34a;font-weight:600;line-height:1.5">验证：①~④ 从 step 15000 续跑，router logits max 稳定在 18~35（安全范围），AMP scaler 维持在 65536 不衰减，256 expert 的 token CV 降至 8~15%。step 15203 正常通过，继续训练 5000 step 无 NaN 无死锁。</p>
+            <p style="margin:12px 0 0;font-size:12px;color:#16a34a;font-weight:600;line-height:1.5">验证：①~④ 从 step 15000 续跑，router logits max 稳定在 18~35（安全范围），AMP scaler 维持在 65536 不衰减，256 expert 的 token CV 降至 8~15%。step 15203 正常通过，继续训练 5000 step 无 NaN 无死锁。⑥ 熔断规则纳入监控后，同类衰减轨迹将在 step 15200 附近被自动 dump 拦截，不必再等到 loss NaN。</p>
+          ` },
+        { label: "止损链路总览", short: "30 分钟 vs 2~7 天", sub: "SUMMARY · 从 loss NaN 到修复上线的完整时间线",
+          content: `
+            <p class="twin-locate-metric-note" style="margin:0 0 10px">汇总本案例从"表象"到"修复"走过的全部 8 层，看这条定位链把原本 2~7 天的排查压缩到了哪里。</p>
+            <div style="overflow-x:auto;margin:10px 0">
+              <table style="width:100%;border-collapse:collapse;font-size:11px;line-height:1.5">
+                <tr style="background:var(--surface-2)"><th style="padding:4px 8px;border:1px solid var(--border-subtle);text-align:left">阶段</th><th style="padding:4px 8px;border:1px solid var(--border-subtle);text-align:left">事件</th></tr>
+                <tr><td style="padding:4px 8px;border:1px solid var(--border-subtle);white-space:nowrap">🔍 发现</td><td style="padding:4px 8px;border:1px solid var(--border-subtle)">step 15203 loss NaN，训练中断</td></tr>
+                <tr><td style="padding:4px 8px;border:1px solid var(--border-subtle);white-space:nowrap">📋 日志翻译</td><td style="padding:4px 8px;border:1px solid var(--border-subtle)">plog 翻译 → <code>dist.all_to_all</code> send/recv 不匹配 + <code>F.softmax</code> 输入 inf</td></tr>
+                <tr><td style="padding:4px 8px;border:1px solid var(--border-subtle);white-space:nowrap">🔀 分叉判定</td><td style="padding:4px 8px;border:1px solid var(--border-subtle)">单卡重跑正常，多卡复现 NaN → 切入通信分支</td></tr>
+                <tr><td style="padding:4px 8px;border:1px solid var(--border-subtle);white-space:nowrap">📡 通信调度</td><td style="padding:4px 8px;border:1px solid var(--border-subtle)">rank 23 all-to-all timeout，send=0/recv≈9832 → EP 切分校验失败</td></tr>
+                <tr><td style="padding:4px 8px;border:1px solid var(--border-subtle);white-space:nowrap">🧠 模型层</td><td style="padding:4px 8px;border:1px solid var(--border-subtle)">expert 193 收到 98% token，247 个 dead expert → 路由塌缩</td></tr>
+                <tr><td style="padding:4px 8px;border:1px solid var(--border-subtle);white-space:nowrap">🔢 数值层</td><td style="padding:4px 8px;border:1px solid var(--border-subtle)">router logits max=1846，FP8 softmax → inf，AMP scaler 65536→4096</td></tr>
+                <tr><td style="padding:4px 8px;border:1px solid var(--border-subtle);white-space:nowrap">🛡️ 熔断预警</td><td style="padding:4px 8px;border:1px solid var(--border-subtle)">复盘：若 step 15200 部署 🟠 自动 dump，可在 loss NaN 前捕获证据止损</td></tr>
+                <tr><td style="padding:4px 8px;border:1px solid var(--border-subtle);white-space:nowrap">🌐 扩散分析</td><td style="padding:4px 8px;border:1px solid var(--border-subtle)">rank 23 单点溢出 → all-to-all barrier → 64 EP rank 全卡 → PP pipeline 断裂</td></tr>
+                <tr><td style="padding:4px 8px;border:1px solid var(--border-subtle);white-space:nowrap">🔧 修复</td><td style="padding:4px 8px;border:1px solid var(--border-subtle)">6 项修改（softmax FP32 + z-loss/grad clip + router lr + n_group + 超时兜底 + 熔断规则），5000 step 验证通过</td></tr>
+              </table>
+            </div>
+            <div style="display:flex;gap:10px;margin-top:12px;flex-wrap:wrap">
+              <div style="flex:1;min-width:140px;border:1px solid var(--border-subtle);border-radius:8px;padding:10px 12px;background:var(--surface-2)">
+                <div style="font-size:11px;color:var(--foreground-muted)">无工具 / 无经验</div>
+                <div style="font-size:20px;font-weight:700;color:#dc2626;margin-top:4px">2~7 天</div>
+                <div style="font-size:11px;color:var(--foreground-muted);margin-top:2px">看不懂报错 → 逐层找人 → 定位 → 修复</div>
+              </div>
+              <div style="flex:1;min-width:140px;border:1px solid var(--border-subtle);border-radius:8px;padding:10px 12px;background:var(--surface-2)">
+                <div style="font-size:11px;color:var(--foreground-muted)">按本定位链 + plog 翻译 + 熔断</div>
+                <div style="font-size:20px;font-weight:700;color:#16a34a;margin-top:4px">~30 分钟</div>
+                <div style="font-size:11px;color:var(--foreground-muted);margin-top:2px">翻译即时 → 分叉 5min → 通信层 5min → 模型/数值层 10min → 修复 10min</div>
+              </div>
+            </div>
           ` },
       ],
       // 单/多卡均异常时会绕过「通信调度层」直接从迭代层进入模型层,用弧形虚线标出这条未被走到的旁路
-      bypass: [{ from: 0, to: 2 }],
+      // (索引按非 branch 节点计数:0=迭代层 1=日志/plog诊断层 2=通信调度层 3=模型层)
+      bypass: [{ from: 0, to: 3 }],
     },
     nvlink: {
       title: "定位链 · NVLINK 链路掉线导致 MFU 骤降",
