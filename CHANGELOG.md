@@ -21,6 +21,11 @@
 
 ---
 
+## 2026-07-25 — training-monitoring-v2：问题一「聚光灯定位链」覆盖层（真实页开洞 + 1→6 步进）
+
+- 新增 `Profiling_Insight_and_Tool/training-run-twin-standalone/js/training-spotlight.js` + `css/training-spotlight.css`（`window.PtoTrainingSpotlight`）。进入「问题一」时不再默认弹文字密集的详情抽屉，而是在实页之上覆盖暗遮罩、按 1→6 步进：每步把当前证据图表挪到可见（开场 `PtoTrainingTwinSideCols.setRightVisible` 展开 infra 列 / 侧栏 `scrollIntoView` / `PtoTrainingTwinDockTabs.select` 切底部 dock 页签，其中「日志」步点 `#trainLogToggle` 触发 `renderBody()` 才有内容），用**四片遮板围出光洞**照亮它（根容器 `pointer-events:none`、只遮板 `auto`，光洞区可穿透缩放/拖动底层实图），配编号徽标 + 引出线 + 一句话结论 + 关键数字标注（`迭代层`取 loss+grad_norm 两卡并集）。顶部问题名片 + 步进导轨（常显层名）+ 导航同处左上；「修改建议」聚光灯期间挤入 `.pto-ide-frame__workarea`（改行向 flex）作 split 右侧、**与底部 Timeline 左右并排的整页高列**（`is-spot-fixes` + `.wzh-col-spot-fixes`），遮板给它让出常亮右栏、始终显示 6 处代码修复并高亮当前步关联项（举证↔修复联动），关闭即移除该列并复原 workarea。名片「详情」/修复项点击走既有 `window.openProblemOneLocateDrawer` 全文抽屉，`←/→` 步进、自动播放、`ESC`/× 退出（× 经 `diagnosisLocatorClose` → `exitTimeMachine` 复位图表）。
+- `js/training-run-twin.js` — `buildAccCard` 给指标卡加 `data-acc-card`（供聚光灯选中 loss / loss_scale 卡）；`activateProblemOneLens` 末尾 `PtoTrainingSpotlight.open(caseKey)`、`exitTimeMachine` 内 `PtoTrainingSpotlight.close()`。`training-monitoring-v2.html` 引入上述 css/js。
+
 ## 2026-07-24 — config-relation-observer：点专家/EP 组全展开连线（连上所有相关 layer 与各 stage 的 rank）
 
 - `js/config-relation-observer.js` — 明确「路由槽位」的分布语义并全展开连线。一个专家编号 e 在**每个 MoE 层**都有一份实例（各层权重独立、互不相干，只共享编号与「编号→EP rank」分片公式），其 EP 组在**每个 PP stage** 内各占一块 rank。`resolveRelation` 的 `case "expert"/"epRank"` 连上全部 MoE 层 + 各 stage 的该 EP 组 rank（× DP 副本），`sharedExpert` 连上全部 MoE 层 + 各 stage 全部 rank。`drawRelationLinks` 新增 `clusterStageAnchors()`：集群侧不再把 4 段并成一个横跨整幅热力图的巨框，而是**按 PP stage 拆成多条线**（每段一条 + 一圈虚线框，总「Node… · N 卡」标签只挂离 hub 最近那条），直观表达「这个编号的 rank 散布在每个 stage」。`relationLabels` 主标签改为「`E37 · L2~L45 各一份`」，点明分布范围又不误导成「同一个专家横跨各层」。

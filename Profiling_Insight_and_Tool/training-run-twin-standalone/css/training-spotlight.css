@@ -1,0 +1,421 @@
+/* ══════════════════════════════════════════════════════════════════════════
+   问题一 · 聚光灯定位链（training-spotlight.js）
+   —— 进入「问题一」时在实页之上覆盖一层暗遮罩，按 1→6 步进，
+      逐步把当前证据图表挪到可见并「开洞」照亮，配编号徽标 + 引出线 + 一句话标注；
+      顶部问题名片常驻，右侧「修改建议」列展示 6 处代码修复并高亮当前步关联项。
+   全部用设计系统 token，浅/深色主题自适应；抽屉(z=2000)在本层(z=1500)之上，不被遮住。
+   ══════════════════════════════════════════════════════════════════════════ */
+
+.tw-spot {
+  position: fixed;
+  inset: 0;
+  z-index: 1500;
+  display: none;
+  font-family: var(--font-sans, system-ui);
+  color: var(--foreground);
+  /* 根容器不拦截：无遮板覆盖的光洞区，鼠标事件直接落到底层实图（缩放/拖动）。
+     只有四片遮板和下面几个交互面板显式开启 pointer-events。 */
+  pointer-events: none;
+}
+.tw-spot.is-open { display: block; }
+.tw-spot__card,
+.tw-spot__toolbar,
+.tw-spot__callout { pointer-events: auto; }
+
+/* 遮罩 + 开洞 + 光框 + 引出线：整块用一张全屏 SVG，hole 由 mask 挖出让实页透出 */
+.tw-spot__scene {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none; /* SVG 本身不拦截；仅四片遮板拦截，光洞区可穿透去缩放/拖动底层图表 */
+}
+/* 光洞四周的遮板：压暗并拦截交互；中间光洞不被覆盖 → 可直接操作底层实图（如缩放/平移整网图）*/
+.tw-spot__shutter { fill: rgba(9, 11, 16, 0.72); pointer-events: auto; }
+:root[data-theme="light"] .tw-spot__shutter { fill: rgba(15, 20, 30, 0.55); }
+.tw-spot__glow, .tw-spot__connector, .tw-spot__connector-dot { pointer-events: none; }
+/* 被照亮证据的光框：红色语义（问题一），带柔和外发光；换步时脉冲一次 */
+.tw-spot__glow {
+  fill: none;
+  stroke: var(--danger, #dc2626);
+  stroke-width: 2;
+  filter: drop-shadow(0 0 10px color-mix(in srgb, var(--danger, #dc2626) 55%, transparent));
+  transition: x .32s var(--easing-out, cubic-bezier(.2,.7,.2,1)),
+              y .32s var(--easing-out, cubic-bezier(.2,.7,.2,1)),
+              width .32s var(--easing-out, cubic-bezier(.2,.7,.2,1)),
+              height .32s var(--easing-out, cubic-bezier(.2,.7,.2,1));
+}
+.tw-spot.is-pulsing .tw-spot__glow { animation: tw-spot-pulse .6s ease-out; }
+@keyframes tw-spot-pulse {
+  0%   { stroke-width: 2;   filter: drop-shadow(0 0 4px  color-mix(in srgb, var(--danger,#dc2626) 40%, transparent)); }
+  45%  { stroke-width: 3.6; filter: drop-shadow(0 0 18px color-mix(in srgb, var(--danger,#dc2626) 80%, transparent)); }
+  100% { stroke-width: 2;   filter: drop-shadow(0 0 10px color-mix(in srgb, var(--danger,#dc2626) 55%, transparent)); }
+}
+.tw-spot__connector {
+  fill: none;
+  stroke: var(--danger, #dc2626);
+  stroke-width: 1.6;
+  stroke-dasharray: 5 4;
+  opacity: .9;
+}
+.tw-spot__connector-dot { fill: var(--danger, #dc2626); }
+
+/* ── 顶部问题名片 ─────────────────────────────────────────────── */
+.tw-spot__card {
+  position: absolute;
+  top: 12px;
+  left: 14px;
+  right: 14px;
+  z-index: 3;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 9px 12px 9px 14px;
+  border-radius: var(--radius-lg, 12px);
+  border: 1px solid var(--border-subtle);
+  background: color-mix(in srgb, #dc2626 6%, var(--surface-1));
+  box-shadow: 0 10px 30px -18px rgba(0,0,0,.7),
+              inset 0 12px 26px -22px color-mix(in srgb, #dc2626 60%, transparent);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+}
+.tw-spot__card-kicker {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 11px;
+  font-weight: var(--font-weight-semibold, 600);
+  color: var(--foreground-secondary);
+  letter-spacing: .02em;
+}
+.tw-spot__sev {
+  display: inline-flex;
+  align-items: center;
+  padding: 1px 8px;
+  border-radius: var(--radius-pill, 999px);
+  background: #dc2626;
+  color: #fff;
+  font-size: 11px;
+  font-weight: var(--font-weight-bold, 700);
+  letter-spacing: .03em;
+}
+.tw-spot__card-title {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-size: 13.5px;
+  font-weight: var(--font-weight-semibold, 600);
+  color: var(--foreground);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.tw-spot__card-tags { flex: none; display: flex; align-items: center; gap: 6px; }
+.tw-spot__tag {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 8px;
+  border-radius: var(--radius-pill, 999px);
+  background: color-mix(in srgb, var(--foreground-secondary) 16%, transparent);
+  color: var(--foreground-secondary);
+  font-size: 11px;
+  font-weight: var(--font-weight-medium, 500);
+  white-space: nowrap;
+}
+.tw-spot__card-actions { flex: none; display: flex; align-items: center; gap: 6px; }
+
+/* ── 顶部工具行：步进导轨 + 导航（移到名片下一行、123456 右侧，避开底部 Timeline/日志高亮区）── */
+.tw-spot__toolbar {
+  position: absolute;
+  top: 60px;
+  left: 14px;
+  z-index: 3;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  max-width: calc(100vw - 360px);
+}
+/* ── 步进导轨（1..6 刀锋，兼作锚点导航）───────────── */
+.tw-spot__rail {
+  display: flex;
+  align-items: stretch;
+  gap: 5px;
+  height: 30px;
+  min-width: 0;
+  flex: 0 1 auto;
+  padding: 4px 7px;
+  border-radius: var(--radius-md, 10px);
+  border: 1px solid var(--border-subtle);
+  background: color-mix(in srgb, var(--surface-1) 88%, transparent);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+}
+.tw-spot__step {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 9px;
+  border-radius: 6px;
+  cursor: pointer;
+  color: var(--foreground-secondary);
+  background: color-mix(in srgb, var(--foreground) 6%, transparent);
+  transition: background .18s ease, color .18s ease, flex-grow .28s var(--easing-out, ease);
+  flex: 0 0 auto;
+  overflow: hidden;
+  white-space: nowrap;
+}
+.tw-spot__step-n {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px; height: 16px;
+  border-radius: 50%;
+  font-size: 10px;
+  font-weight: var(--font-weight-bold, 700);
+  background: color-mix(in srgb, var(--foreground) 16%, transparent);
+  color: var(--foreground);
+  flex: none;
+}
+.tw-spot__step-name {
+  font-size: 11px;
+  font-weight: var(--font-weight-medium, 500);
+  white-space: nowrap;
+}
+.tw-spot__step.is-done { color: #fff; background: var(--highlight-copy-blue-500, #3b6fe0); }
+.tw-spot__step.is-done .tw-spot__step-n { background: rgba(255,255,255,.28); color:#fff; }
+.tw-spot__step.is-active {
+  color: #fff;
+  background: var(--danger, #dc2626);
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--danger,#dc2626) 45%, transparent),
+              0 4px 12px -4px color-mix(in srgb, var(--danger,#dc2626) 60%, transparent);
+}
+.tw-spot__step.is-active .tw-spot__step-n { background: rgba(255,255,255,.3); color:#fff; }
+.tw-spot__step:not(.is-active):not(.is-done):hover {
+  color: var(--foreground);
+  background: color-mix(in srgb, var(--danger,#dc2626) 14%, transparent);
+}
+
+/* ── 证据标注气泡（贴在当前光洞旁，引出线相连）─────────────────── */
+.tw-spot__callout {
+  position: absolute;
+  z-index: 3;
+  width: 300px;
+  max-width: calc(100vw - 40px);
+  padding: 12px 13px;
+  border-radius: var(--radius-lg, 12px);
+  border: 1px solid var(--border-subtle);
+  background: var(--surface-1);
+  box-shadow: 0 16px 40px -14px rgba(0,0,0,.65);
+  transition: left .3s var(--easing-out, cubic-bezier(.2,.7,.2,1)),
+              top .3s var(--easing-out, cubic-bezier(.2,.7,.2,1));
+}
+.tw-spot__callout-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 7px;
+}
+.tw-spot__callout-n {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px; height: 22px;
+  flex: none;
+  border-radius: 50%;
+  background: var(--danger, #dc2626);
+  color: #fff;
+  font-size: 12px;
+  font-weight: var(--font-weight-bold, 700);
+}
+.tw-spot__callout-layer {
+  font-size: 13px;
+  font-weight: var(--font-weight-semibold, 600);
+  color: var(--foreground);
+}
+.tw-spot__callout-body {
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--foreground-secondary);
+}
+.tw-spot__callout-nums {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 9px;
+}
+.tw-spot__num {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 8px;
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--danger,#dc2626) 12%, transparent);
+  color: var(--danger, #dc2626);
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: 11px;
+  font-weight: var(--font-weight-semibold, 600);
+}
+:root[data-theme="dark"] .tw-spot__num { color: #ff6b8a; background: color-mix(in srgb, #ff6b8a 16%, transparent); }
+/* 当前步关联的修复（举证↔修复联动，直接贴在证据旁）*/
+.tw-spot__callout-fix {
+  margin-top: 10px;
+  padding-top: 9px;
+  border-top: 1px dashed var(--border-subtle);
+  font-size: 11px;
+  color: var(--foreground-muted);
+}
+.tw-spot__callout-fix b { color: var(--foreground-secondary); font-weight: var(--font-weight-semibold,600); }
+.tw-spot__callout-fix[hidden] { display: none; }
+
+/* ── 「修改建议」整高右列：聚光灯期间挤入 .pto-ide-frame__workarea（包住「上半区 + 底部 Timeline」
+      的整块），把 workarea 改成行向 flex，本列即成为 split 右侧、和底部 Timeline 左右并排的整页高列，
+      作为真实页面列常驻显示；遮板会给它让出常亮区(见 js reflow 的 canvasRight)，不被遮暗也不与光洞抢边。
+      关闭聚光灯即移除本列并复原 workarea。 ── */
+.pto-ide-frame__workarea.is-spot-fixes { flex-direction: row; align-items: stretch; }
+.wzh-col-spot-fixes {
+  flex: 0 0 300px;
+  align-self: stretch;
+  min-width: 0;
+  min-height: 0;
+  margin: 8px 8px 8px 0;
+  display: flex;
+  flex-direction: column;
+  border-radius: var(--radius-lg, 12px);
+  border: 1px solid var(--border-subtle);
+  background: var(--surface-1);
+  overflow: hidden;
+}
+.tw-spot__fixes-head {
+  flex: none;
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 11px 13px 9px;
+  border-bottom: 1px solid var(--border-subtle);
+}
+.tw-spot__fixes-title { font-size: 13px; font-weight: var(--font-weight-semibold, 600); color: var(--foreground); }
+.tw-spot__fixes-sub { font-size: 10.5px; color: var(--foreground-muted); }
+.tw-spot__fixes-body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 10px 11px;
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+}
+.tw-spot__fix {
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md, 10px);
+  overflow: hidden;
+  background: var(--surface-1);
+  transition: border-color .2s ease, box-shadow .2s ease, opacity .2s ease;
+}
+.tw-spot__fix-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 10px;
+  background: var(--surface-2);
+}
+.tw-spot__fix-n {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 17px; height: 17px;
+  flex: none;
+  border-radius: 5px;
+  background: color-mix(in srgb, var(--foreground) 12%, transparent);
+  color: var(--foreground-secondary);
+  font-size: 10px;
+  font-weight: var(--font-weight-bold, 700);
+}
+.tw-spot__fix-file {
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: 11px;
+  font-weight: var(--font-weight-semibold, 600);
+  color: var(--foreground);
+}
+.tw-spot__fix-title { font-size: 10.5px; color: var(--foreground-muted); margin-left: auto; }
+.tw-spot__fix-diff {
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: 10px;
+  line-height: 1.7;
+  padding: 4px 0;
+}
+/* 每行 = 左侧行号 gutter + 右侧代码；行号列连续排布形成一条编辑器式的行号栏 */
+.tw-spot__diff-row { display: flex; align-items: stretch; }
+.tw-spot__diff-ln {
+  flex: none;
+  width: 30px;
+  padding-right: 8px;
+  text-align: right;
+  color: var(--foreground-muted);
+  background: var(--surface-2);
+  border-right: 1px solid var(--border-subtle);
+  user-select: none;
+  -webkit-user-select: none;
+}
+.tw-spot__diff-code {
+  flex: 1;
+  min-width: 0;
+  padding: 0 10px 0 8px;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+.tw-spot__diff-row.del .tw-spot__diff-code { color: #dc2626; background: rgba(220,38,38,.10); }
+.tw-spot__diff-row.add .tw-spot__diff-code { color: #16a34a; background: rgba(22,163,74,.10); }
+:root[data-theme="dark"] .tw-spot__diff-row.del .tw-spot__diff-code { color: #ff6b8a; }
+:root[data-theme="dark"] .tw-spot__diff-row.add .tw-spot__diff-code { color: #4ade80; }
+/* 当前步关联的修复项高亮 */
+.tw-spot__fix.is-linked {
+  border-color: var(--danger, #dc2626);
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--danger,#dc2626) 40%, transparent);
+}
+.tw-spot__fix.is-linked .tw-spot__fix-n { background: var(--danger, #dc2626); color: #fff; }
+.wzh-col-spot-fixes.has-link .tw-spot__fix:not(.is-linked) { opacity: .5; }
+
+/* ── 导航（顶部工具行内，导轨右侧）───────────────────────────── */
+.tw-spot__nav {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 7px;
+  border-radius: var(--radius-pill, 999px);
+  border: 1px solid var(--border-subtle);
+  background: color-mix(in srgb, var(--surface-1) 92%, transparent);
+  box-shadow: 0 12px 32px -14px rgba(0,0,0,.6);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+}
+.tw-spot__nav-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px; height: 26px;
+  border-radius: 50%;
+  border: 1px solid var(--border-subtle);
+  background: var(--surface-2);
+  color: var(--foreground);
+  cursor: pointer;
+  font-size: 14px;
+  line-height: 1;
+  transition: background .15s ease, border-color .15s ease, opacity .15s ease;
+}
+.tw-spot__nav-btn:hover { background: color-mix(in srgb, var(--danger,#dc2626) 14%, var(--surface-2)); border-color: var(--danger,#dc2626); }
+.tw-spot__nav-btn:disabled { opacity: .38; cursor: default; }
+.tw-spot__nav-btn:disabled:hover { background: var(--surface-2); border-color: var(--border-subtle); }
+.tw-spot__nav-count {
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: 12px;
+  color: var(--foreground-secondary);
+  min-width: 42px;
+  text-align: center;
+}
+.tw-spot__nav-count b { color: var(--foreground); font-weight: var(--font-weight-bold,700); }
+
+@media (max-width: 900px) {
+  .tw-spot__toolbar { max-width: calc(100vw - 28px); }
+}

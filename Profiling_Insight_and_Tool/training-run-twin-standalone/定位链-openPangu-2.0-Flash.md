@@ -177,9 +177,9 @@
 
 > **路径**：迭代层 → 日志/plog诊断层（穿插）→ 仅多卡异常 → 通信调度层（含 EP 切分校验）→ 模型层 → 数值层 → 熔断/预警层 → infra层（含错误扩散分析）→ 超参/代码层 → 止损链路总览
 
-**背景**：64 GPU 训练 openPangu-2.0-Flash，EP=64，TP=1，PP=4，FP8 精度，seq_len=4096，global_batch=1024。训练至 step ~15000 时 loss 突发 NaN。
+**背景**：2048 NPU 训练 openPangu-2.0-Flash，EP=64，TP=1，PP=4，DP=8，FP8 精度，seq_len=4096，global_batch=1024。训练至 step ~15000 时 loss 突发 NaN。
 
-**关键认知**：死锁本身不会产生 NaN（死锁的典型表现是 hang/无输出），但 router logits 的数值溢出会**同时**导致两个平行后果——softmax 出 NaN 污染 loss，与路由概率塌缩触发 all-to-all 死锁。本案例的诊断从通信表象出发，最终追溯到 router 的数值层根因。本案例覆盖了 **12 条用户原声痛点**，是完整的"从表象到底层再到修复"的专家诊断路径示范。
+**关键认知**：死锁本身不会产生 NaN（死锁的典型表现是 hang/无输出），但 router logits 的数值溢出会**同时**导致两个平行后果——softmax 出 NaN 污染 loss，与路由概率塌缩触发 all-to-all 死锁。本案例的诊断从通信表象出发，最终追溯到 router 的数值层根因。本案例覆盖了 **16 条用户原声痛点**，是完整的"从表象到底层再到修复"的专家诊断路径示范。
 
 ### 0. 日志/plog 诊断前置 — 报错"说人话"
 
@@ -211,7 +211,7 @@
 
 | 步骤 | 内容 |
 |------|------|
-| **操作** | 锁定 step 15203 的输入数据（dataloader seed 固定），分别在 1 GPU 和 64 GPU 上重跑该 step |
+| **操作** | 锁定 step 15203 的输入数据（dataloader seed 固定），分别在 1 NPU 和 2048 NPU 上重跑该 step |
 | **结果** | 单卡：loss=3.21，grad_norm=11.8，完全正常 / 多卡：loss=NaN，grad_norm=inf |
 | **判据** | 仅多卡复现，单卡正常 → **切入通信分支** |
 
@@ -261,7 +261,7 @@
 |------|------|
 | **复盘时间线** | step 15000：AMP scaler=65536（正常）。step 15050：AMP scaler → 32768（第 1 次减半，🟡 注意级）。step 15100：AMP scaler → 16384（第 2 次减半，仍 🟡）。step 15150：AMP scaler → 8192（第 3 次减半，接近 🟠 警告线）。step 15200：AMP scaler → 4096（第 4 次减半，🟠 警告级——**应触发自动 dump**）。step 15202：AMP scaler=4096，loss=3.1 尚正常——**这是最后的拦截窗口**。step 15203：loss NaN，🔴 熔断级——**但无人监控，训练在 NaN 后仍可能空跑日志** |
 | **如果部署了熔断** | step 15150（scaler=8192）触发 🟡 通知 → on-call 收到告警。step 15200（scaler=4096）触发 🟠 自动 dump router logits + 激活张量 → 可在 loss NaN 之前就发现 max(logits) 已从正常的 ~30 飙升至 ~800、z-loss 缺失使 logits 无约束。**如果 step 15202 触发 🔴 熔断（scaler < 65536/32=2048），可在 NaN 之前停训**——虽然本案例中 scaler=4096 尚未跌破 2048，但可设置更灵敏的规则：`scaler < 初始值/8 且持续 ≥100 step` 即熔断 |
-| **万卡成本核算** | 本案例 64 GPU，从 step 15000（scaler 开始衰减）到 step 15203（loss NaN）共 203 step。若在 step 15150 拦截，可省 53 step × 64 GPU × 2 元/卡时 ≈ **6,800 元**。若是万卡集群同样模式，203 step 空跑 ≈ **数万元损失** |
+| **万卡成本核算** | 本案例 2048 NPU，从 step 15000（scaler 开始衰减）到 step 15203（loss NaN）共 203 step。若在 step 15150 拦截，可省 53 step × 2048 NPU × 2 元/卡时 ≈ **21.7 万元**。若是万卡集群同样模式，203 step 空跑 ≈ **百万元级损失** |
 | **产出** | 熔断规则建议：将 `AMP scaler < 初始值/8 且连续 50 step 未恢复` 设为 🔴 熔断条件；将 `AMP scaler < 初始值/4` 设为 🟠 自动 dump 条件。本案例的 AMP scaler 衰减曲线应作为后续训练监控的 baseline 参考 |
 
 > **覆盖原声**：
@@ -275,11 +275,12 @@
 |------|------|
 | **观测** | 问题集中在 EP rank 23（node2 GPU 7），属于 PP stage 3（layers 34~45）。AMP scaler 衰减在全部 64 rank 上同步发生，但 only rank 23 因 expert 193 的地理位置成为死锁的"引爆点"——如果 expert 193 位于其他 rank，只会换一个 rank 触发死锁 |
 | **错误扩散路径** | 这是一个典型的"单点故障→全局扩散"模式：① EP rank 23 的 router softmax 最先溢出（数值层根因）→ ② rank 23 的 expert 193 被分配 98% token，all-to-all send=0 / recv=9832 导致死锁（通信调度层表象）→ ③ all-to-all 是同步屏障操作，rank 23 未完成意味着所有 64 个 EP rank 全部卡在 barrier 上（扩散到全集群）→ ④ PP stage 3 的 rank 23 卡死 → PP pipeline 断裂 → **所有 PP stage 的 rank 全部等待** → ⑤ NCCL timeout 30s 后报错，但报的是"通信 timeout"而非"router 溢出"——表象与根因分离，这正是"报错那句代码不一定是原因"的典型场景 |
-| **扩散可视化** | `EP rank 23 (node2 GPU 7) router FP8 overflow → rank 23 all-to-all 死锁 → 64 EP ranks barrier 同步等 → PP stage 3 断裂 → 4 PP stages 全卡 → 64 GPUs 全部 hang → 30s 后 NCCL timeout 报错` |
+| **扩散可视化** | `EP rank 23 (node2 GPU 7) router FP8 overflow → rank 23 all-to-all 死锁 → 64 EP ranks barrier 同步等 → PP stage 3 断裂 → 4 PP stages 全卡 → 2048 NPUs 全部 hang → 30s 后 NCCL timeout 报错` |
 | **判据** | 问题聚集在单个 EP rank → 局部路由塌缩，非全局硬件故障。但根因（router FP8 overflow）是系统性的——只是 expert 193 恰好落在 rank 23 上使其成为"引爆点"。这种"单点引爆、全局扩散"的模式是分布式训练中最具迷惑性的一类故障：报错位置 ≠ 根因位置 |
 | **产出** | 嫌疑范围：node2 GPU 7（EP rank 23），PP stage 3，layer 38 MoE / 扩散范围：全部 64 rank（因 all-to-all barrier + PP 依赖链）/ 关键教训：在 512+ rank 的大规模训练中，一个 rank 的数值溢出可通过 gather/all-to-all 扩散到数百 rank，必须自动做跨 rank 的首因定位而非人工逐一比对 |
 
 > **覆盖原声**：
+> - Row 22：「多卡多机训练，很多卡打日志，最终报通信 timeout，实为别的进程提早退出或某算子挂；要收集几百 rank 逐个找，日志对定位无用、全凭经验」→ 本节通过 5 步错误扩散路径分析，演示了"timeout 只是表象，rank 23 才是第一张多米诺"——从 64 rank 全部 hang 的通信 timeout 表象，逆流追溯到 rank 23 router FP8 overflow 首发根因，免去人工逐一收集比对几百 rank 日志
 > - Row 33：「512个rank某节点错误通过gather扩散到所有机器，不可能每台逐一比较，我们在代码里加打印写Python做逻辑比较。比如100个rank第8个节点最先出问题，现有诊断平台也诊断不到这么细」→ 本节通过 5 步错误扩散路径分析（rank 23 单点溢出 → all-to-all barrier → 64 rank 全卡 → PP pipeline 断裂），演示了如何自动定位"谁先出问题"而不需人工逐一比对 64 张卡
 
 ### 7. 超参/代码层
@@ -309,7 +310,7 @@
 | 🧠 模型层 | 排查中 | expert 193 收到 98% token，247 dead experts → 路由塌缩 | Row 20：HCCL all-to-all timeout 需逐层排查 |
 | 🔢 数值层 | 排查中 | router logits max=1846，FP8 softmax → inf，AMP scaler 65536→4096，z-loss 缺失 | Row 21：通信死锁是"果"，router FP8 溢出是"因"；Row 28：FP8 低精度训练 z-loss 缺失 |
 | 🛡️ 熔断预警 | 复盘 | 若 step 15200 部署 🟠 自动 dump，可在 NaN 前捕获证据；若 scaler < 2048 触发 🔴 熔断，可避免 NaN | Row 30：AMP scaler 衰减作为熔断预警；Row 32：报错即停，别占卡位 |
-| 🌐 扩散分析 | 排查中 | rank 23 单点溢出 → all-to-all barrier → 64 rank 全卡 → PP pipeline 断裂 | Row 33：512 rank 某节点错误经 gather 扩散到所有机器 |
+| 🌐 扩散分析 | 排查中 | rank 23 单点溢出 → all-to-all barrier → 64 EP rank 全卡 → PP pipeline 断裂 → 2048 NPU 全部 hang | Row 22：多卡多机日志淹没、通信 timeout 表象→首因定位；Row 33：512 rank 某节点错误经 gather 扩散到所有机器 |
 | 🔧 修复 | 诊断完成 | 6 项修改（softmax FP32 + z-loss + router lr + clip + n_group + 熔断），5000 step 验证通过 | Row 34：实时识别→定位根因→给出方案；Row 12/15/16：Expert System 诊断路径 |
 
 **总止损时间估算**：
@@ -322,7 +323,7 @@
 
 > **路径**：迭代层 → 单/多卡均异常 → 模型层 → 算子层 → 张量层 → infra层 → 超参/代码层
 
-**背景**：同上 64 GPU 训练 openPangu-2.0-Flash，EP=64，TP=1，PP=4，FP8 精度。训练至 step ~8000 后 grad_norm 持续上升，loss 缓慢恶化。
+**背景**：同上 2048 NPU 训练 openPangu-2.0-Flash，EP=64，TP=1，PP=4，DP=8，FP8 精度。训练至 step ~8000 后 grad_norm 持续上升，loss 缓慢恶化。
 
 ### 1. 迭代层
 
@@ -389,7 +390,7 @@
 
 > **路径**：迭代层 → 单/多卡均异常 → 张量数值分析（分布曲线 + 宏观指标 + 量化风险 + 算子定位）→ 误差传递路径（逐层对比高精度基线）→ infra层 → 超参/代码层
 
-**背景**：64 GPU 训练 openPangu-2.0-Flash，EP=64，TP=1，PP=4，HiF8 混合精度（forward: FP8 E4M3 hybrid, backward: BF16, master weights: FP32），同时跑 BF16 全精度对照组。训练至 step ~25000 后 HiF8 与 BF16 的 loss 曲线开始分叉——BF16 继续下降，HiF8 停滞不前。step ~31000 后 HiF8 loss 微幅反弹，grad_norm 持续衰减至接近 0——模型进入"低精训练陷阱"：梯度信号被量化噪声淹没。
+**背景**：2048 NPU 训练 openPangu-2.0-Flash，EP=64，TP=1，PP=4，DP=8，HiF8 混合精度（forward: FP8 E4M3 hybrid, backward: BF16, master weights: FP32），同时跑 BF16 全精度对照组。训练至 step ~25000 后 HiF8 与 BF16 的 loss 曲线开始分叉——BF16 继续下降，HiF8 停滞不前。step ~31000 后 HiF8 loss 微幅反弹，grad_norm 持续衰减至接近 0——模型进入"低精训练陷阱"：梯度信号被量化噪声淹没。
 
 ### 1. 迭代层
 
@@ -403,7 +404,7 @@
 
 | 步骤 | 内容 |
 |------|------|
-| **操作** | 固定 seed+dataloader，在单卡（1 GPU, BF16 全精度对照组）和多卡（64 GPU, HiF8 混合精度）上分别重跑 step 25000~35000 |
+| **操作** | 固定 seed+dataloader，在单卡（1 NPU, BF16 全精度对照组）和多卡（2048 NPU, HiF8 混合精度）上分别重跑 step 25000~35000 |
 | **结果** | 单卡 BF16：loss 继续从 2.5 下降至 1.95，grad_norm 稳定在 8~12 / 多卡 HiF8：loss 在 2.1 附近停滞，grad_norm 衰减至 0.3 |
 | **判据** | 单卡（BF16 全精度）正常、多卡（HiF8 混合精度）异常 → **沿计算主干，进入张量数值分析**。根因指向 FP8 量化引入的数值误差 |
 | **产出** | 精度模式差异确认为根因方向：HiF8 量化 → 数值退化 |
@@ -1129,3 +1130,96 @@ layer 35 → layer 36 残差连接传播受损的 hidden state
 | **修改 ③ — Redundant Expert Deployment（推理可用，训练需评估）** | 对于检测到的高负载 expert（如 expert 193），在 EP group 内做冗余部署：将 expert 193 复制到 rank 17 和 rank 18 两张卡，token 随机分流到两张卡（各 50%）。但这对训练的一致性有影响（两条梯度的 expert weight 不同）——仅适用于推理场景，训练不推荐 |
 | **修改 ④ — 训练侧兜底：增大 NCCL timeout** | 将 `NCCL_IB_TIMEOUT` 从 30s 增大到 **60s**，防止极端过载时 all-to-all 超时触发 NCCL 错误导致训练中断。不解决根因但防止训练 crash |
 | **验证** | ①+② 实施后：慢步占比从 10% 降至 < 2%，步耗时 CV 从 27% → 约 8%，all-to-all 耗时恢复到正常步 180~220ms 范围（慢步不再出现 >1s 的 all-to-all）。步耗时均值 10.3s → 约 10.0s（正常步小幅下降，因为减少了偶发的 all-to-all jitter 对流水线稳定性的影响）。MFU 均值 45% → 约 46% |
+
+
+---
+
+## 案例四：显存分支 — activation checkpoint 未开启导致显存峰值超标 + 分配器碎片触发 OOM
+
+> **路径**：性能表征层 → 瓶颈分类层（显存受限）→ 显存表征层（容量不足 + 分配碎片双因子）→ 显存峰值构成分析层 → 阶段/层定位层 → 代码/配置层
+
+**背景**：2048 NPU 训练 openPangu-2.0-Flash，EP=64，TP=1，PP=4，DP=8，FP8 精度，seq_len=4096，micro_batch=1，global_batch=1024，**未开启 activation checkpointing**。训练至 step ~12000 后，部分 rank 间歇性报 `ACL_ERROR_MEMORY_ALLOCATION`，训练不稳定中断。`ascend-dmi` 显示各 rank 显存峰值在 58~64 GB（单卡总容量 64 GB），部分 rank 触及上限后 OOM。
+
+### 1. 性能表征层
+
+| 步骤 | 内容 |
+|------|------|
+| **现象** | 显存占用时间序列（横轴 step，纵轴显存占用 GB）：step 8000 前显存稳定在 52~55 GB（安全线以下）。step 8000 起显存逐步爬升，step 12000 时峰值触及 64 GB（上限）。step 12003 rank 17 报 `ACL_ERROR_MEMORY_ALLOCATION`，训练中断。其他 rank 在 61~63 GB 间波动，同样逼近红线。与此同时 throughput 从 step 10000 起从 3200 tokens/s 下滑至 2800 tokens/s（↓12.5%），因为分配器频繁做碎片整理和换页 |
+| **判据** | 显存峰值 > 95% 总容量 + 伴有 OOM + 吞吐持续下滑 → 显存瓶颈，需深入分析 |
+| **产出** | 显存异常：峰值 64/64 GB（100%）/ OOM rank：17 / 吞吐劣化：−12.5% |
+
+### 2. 瓶颈分类层
+
+| 步骤 | 内容 |
+|------|------|
+| **观测** | Profiling 报告拆解：Computing=8520ms（71%），Communication=1420ms（12%），显存分配/释放 API 调用耗时 = **890ms（7.4%）**——分配器开销异常高（正常应 < 2%）。显存占用率 > 95%，HBM 带宽利用率正常（78%），排除纯带宽瓶颈 |
+| **判据** | 显存峰值 > 90% + 分配 API 耗时 > 3%（实际 7.4%）→ **显存受限，且同时存在容量不足和分配碎片两个子问题**。走显存分支 |
+| **产出** | 瓶颈类型：显存受限（容量不足 + 分配碎片双因子）/ 分配耗时 890ms（7.4%）/ 峰值占用 64/64 GB |
+
+### 3. 显存表征层 — 判定子类型
+
+| 步骤 | 内容 |
+|------|------|
+| **观测** | ① 容量维度：显存峰值 64 GB = 总容量 64 GB → **绝对容量不足**。② 碎片维度：`aclrtMalloc` / `aclrtFreePhysical` 调用频率在 step 10000 后从每步 ~25 次暴增至 ~180 次（碎片整理），单次 `aclrtMalloc` P99 耗时从 0.3ms 升至 4.2ms。③ 可用空间与碎片：step 12000 时 rank 17 的显存快照显示——总空闲 1.8 GB，但最大连续空闲块仅 **0.3 GB**（碎片化严重），无法满足下一个 0.5 GB 的临时 buffer 分配请求，触发 OOM |
+| **判据** | 显存占用 100% → 容量不足；空闲够但最大连续块 < 请求 size → 分配碎片。**双因子叠加**：容量不足是主因（若有余量碎片不会致命），碎片让 OOM 提前到来（若连续空闲块足够，1.8 GB 可多撑几十步） |
+| **产出** | 显存瓶颈子类型：容量不足（主）+ 分配碎片（辅）/ 碎片指标：最大连续空闲块 0.3 GB vs 空闲总量 1.8 GB |
+
+> **覆盖原声（CheckList Row 8）**：本节演示了「显存曲线→峰值标注→自动判定容量不足+碎片双因子」的完整能力——显存折线图自动标注 step 12000 为峰值点并标红，AI 同时给出"谁此刻吃显存最多"的初步诊断，用户无需手动盯曲线找峰值。
+
+### 4. 显存峰值构成分析层 — 锁定「什么占满了显存」
+
+| 步骤 | 内容 |
+|------|------|
+| **观测** | 提取 step 12000 时 rank 17 的显存快照（`torch.npu.memory_stats` / memory snapshot），按构成拆解： |
+|  | • **激活值（含中间张量）**：**36.2 GB（56.6%）**——远超正常范围（开启 activation checkpoint 后通常 < 12 GB）。46 层 × micro_batch=1 × seq_len=4096，每层的 attention QKV 展开 + FFN gate/up 中间张量 + MoE expert dispatch buffer 全部常驻显存 |
+|  | • **模型参数（FP8）**：8.1 GB（12.7%）——openPangu-2.0-Flash ~27B 参数，FP8 存储 ≈ 27 GB ÷ TP1 ÷ PP4 ≈ 6.8 GB，加上 embedding/lm_head 额外 ~1.3 GB |
+|  | • **梯度（FP8）**：8.1 GB（12.7%）——与参数等量 |
+|  | • **优化器状态（BF16 m+v）**：10.8 GB（16.9%）——BF16 优化器状态已减半，否则 FP32 将达 21.6 GB |
+|  | • **临时 workspace buffer**：0.8 GB（1.2%）——CANN 算子内部临时 buffer，正常范围 |
+| **判据** | 激活值占比 56.6% 是罪魁祸首——46 层全部激活常驻意味着每层约 0.79 GB 激活值。若开启 selective activation checkpointing（仅重计算 attention + FFN 中间激活），激活值可压缩至 ~8 GB，总显存降至 ~36 GB（安全线以下） |
+| **产出** | 显存构成：激活 36.2 GB（56.6%）/ 参数+梯度 16.2 GB（25.4%）/ 优化器 10.8 GB（16.9%）/ 临时 buffer 0.8 GB → **激活值是唯一可大幅缩减的项** |
+
+### 5. 阶段/层定位层 — 锁定「哪层显存压力最大」
+
+| 步骤 | 内容 |
+|------|------|
+| **观测** | 按 PP stage 拆解显存使用热力图（横轴 layer index 1~46，纵轴显存占用 GB，颜色区分参数/梯度/优化器/激活）： |
+|  | • PP stage 0（layers 1~11 + embedding）：激活 8.8 GB，参数+梯度+优化器 7.1 GB → 合计 15.9 GB |
+|  | • PP stage 1（layers 12~22）：激活 9.0 GB，参数+梯度+优化器 6.8 GB → 合计 15.8 GB |
+|  | • PP stage 2（layers 23~33）：激活 9.0 GB，参数+梯度+优化器 6.8 GB → 合计 15.8 GB |
+|  | • **PP stage 3（layers 34~45 + final_layernorm + lm_head + loss）**：激活 9.4 GB + lm_head 额外 1.8 GB 激活（vocab=151552 的 logits 张量 [4096, 151552] ≈ 1.2 GB FP8），参数+梯度+优化器 7.5 GB（lm_head 权重 [151552, 2560] ≈ 0.8 GB FP8）→ 合计 **18.7 GB** |
+|  | • 按层粒度：layer 38（MoE 层）激活值 1.2 GB，是普通 dense 层（0.7 GB）的 1.7×——MoE 的 expert dispatch buffer（256 experts × token 分配临时缓冲区）是额外开销 |
+| **判据** | Stage 3 显存峰值 18.7 GB 是 stage 0~2（~15.8 GB）的 1.18×，lm_head 的 logits 张量（1.2 GB）和 MoE 层（layer 38，+0.5 GB vs dense）是主要额外开销。若开启 activation checkpoint，每层激活值可降至 ~0.17 GB（仅保留 input 和 layernorm 输出），全部 46 层激活总计约 8 GB |
+| **产出** | 瓶颈 stage：PP stage 3（18.7 GB，因 lm_head + MoE）/ 热点层：layer 38 MoE（1.2 GB 激活）/ 最大单项：lm_head logits 张量（1.8 GB） |
+
+> **覆盖原声（CheckList Row 8）**：本节演示了完整的"显存曲线→峰值算子→时间线→Python 调用栈"下钻闭环——从显存峰值定位 stage 3 → 下钻到 layer 38 MoE 的 expert dispatch buffer → 时间线中看到该 buffer 在 forward 开始分配、backward 结束后释放 → 调用栈回溯到 `model.layers.38.mlp.router.forward` 中的 `expert_dispatch` 函数。AI 在峰值处自动标注"layer 38 expert_dispatch 临时 buffer 此刻吃显存最多（1.2 GB），建议开启 activation checkpoint 或减小 MoE expert buffer 预分配"。
+
+### 6. 内存快照分析 — 碎片与生命周期
+
+> 本层是对「显存表征层」的深入展开，利用内存快照的完整解析能力，可视化每块显存申请的生命周期与碎片分布。对标 Row 7 的痛点。
+
+| 步骤 | 内容 |
+|------|------|
+| **观测** | 导出 step 12000 时 rank 17 的完整内存快照（`memory_record.pkl`），解析后在界面中可视化： |
+|  | ① **碎片分布图**：横轴为显存地址空间（0~64 GB），纵轴为时间（step 12000 内的时间线），每块显存分配用矩形块表示（颜色按用途：激活=橙、参数=蓝、梯度=绿、优化器=紫、临时 buffer=灰）。可以清晰看到大量橙色小块（激活中间张量）在 forward 期间密集分配、backward 后才释放，导致显存空间中充斥"已释放但未合并"的空洞——即碎片 |
+|  | ② **单块生命周期**：点击任意矩形块，弹出该块显存的完整生命周期——申请时间、申请大小、申请堆栈（`torch.npu.empty` ← `q_b_proj.forward` ← `SelfAttn.forward` ← `TransformerLayer.forward` ← …）、释放时间、持有 duration。例如 layer 38 `q_b_proj` 输出的中间张量 [4096, 9216] FP8 ≈ 36 MB，从 forward 第 842ms 分配到 backward 第 7832ms 释放，持有近 7 秒 |
+|  | ③ **碎片热力图**：沿地址空间的热力颜色——红色区域表示碎片密集区（连续空闲块 < 100 MB），绿色表示大块连续空闲。step 12000 中红色区域占空闲空间的 83%，即 1.8 GB 空闲中有 1.5 GB 是"看得见用不上"的碎片 |
+| **判据** | 碎片率 = 不可用空闲 / 总空闲 = 1.5/1.8 = 83% → 严重碎片化。根因：46 层的大量不等大小中间张量在 forward 期间密集分配、backward 期间集中释放，分配器无法在短时间内合并碎片。开启 activation checkpoint 后，激活张量不再常驻，分配/释放频率大幅降低，碎片率可降至 20% 以下 |
+| **产出** | 碎片根因：激活张量的高频分配/释放 → 碎片率 83% / 关键证据：layer 38 q_b_proj 中间张量持有 7s，堆栈可追溯到 `TransformerLayer.forward` |
+
+> **覆盖原声（CheckList Row 7）**：本节演示了"内存快照→解析生命周期/堆栈→碎片分布可视化"的完整能力——不再需要导出 pkl 后用专门网页解析，直接在工具内看每块显存的"前世今生"（申请堆栈、持有时间、释放时机），碎片热力图一眼定位碎片密集区。
+
+### 7. 代码/配置层
+
+| 步骤 | 内容 |
+|------|------|
+| **诊断总结** | 根因是两个问题的叠加：① activation checkpoint 未开启 → 46 层激活全部常驻，占 56.6% 显存（36.2 GB）；② 大量不等大小的激活中间张量高频分配/释放 → 分配器碎片率 83%，OOM 提前到来。如果只开 checkpoint 而不解决碎片，碎片仍可能在更晚的 step 触发 OOM；如果只整理碎片而不缩减激活，64 GB 上限终将触及 |
+| **修改 ① — 开启 selective activation checkpointing** | 在训练配置中开启 `--recompute-activations` 或 `--checkpoint-activations`，使用 selective 策略：仅对 attention（QKV projection + core_attention）和 FFN（gate_up + down）的中间激活做重计算，layernorm 和残差连接的输出保留。预期激活值从 36.2 GB → **~8.5 GB**（↓76%），总显存从 64 GB → **~36.3 GB**（安全线 57% 以下）。每步增加约 8% 计算时间（重计算 attention + FFN），对吞吐影响可控 |
+| **修改 ② — 分配器碎片优化** | 设置 `PYTORCH_NPU_ALLOC_CONF=expandable_segments:True`，让 CANN 分配器使用可扩展 segment 策略，减少碎片。同时设置 `ACLNN_CACHE_LIMIT=2147483648`（2 GB），为算子 workspace 预留连续缓存空间，避免每次重新申请。预期分配器 API 耗时从 890ms → **~180ms**（↓80%），碎片率从 83% → **~25%** |
+| **修改 ③ — lm_head logits 即时释放** | 在 loss 计算完成后立即 `del logits` 并触发 `torch.npu.empty_cache()`（或依赖 PyTorch 的引用计数自动回收），避免 vocab=151552 的巨大 logits 张量（1.2 GB）在 backward 期间继续占用显存。lm_head 的 logits 仅在 loss 计算时需要，backward 中梯度直接从 loss 反传，不需保留 logits 本身 |
+| **修改 ④ — 调整 PP stage 层数分配（辅助）** | 从 [12,11,11,12] 调整为 [13,12,11,10]——stage 3 减 2 层减压，stage 0 和 1 各多 1 层。stage 3 的显存从 18.7 GB → 约 16.2 GB，与其余 stage 更均衡 |
+| **验证** | ①+②+③ 从 step 12000 续跑：显存峰值从 64 GB → 约 34 GB（↓47%），分配器 API 耗时从 890ms → 150ms（↓83%），碎片率从 83% → 22%。throughput 恢复至 3150 tokens/s（略低于初始 3200，因 activation checkpoint 重计算开销约 +8%，但稳定无 OOM）。继续训练 10000 step 无显存异常。④ 可选，实施后 stage 间显存更均衡（CV 从 8% 降至 3%） |
+
+> **覆盖原声（CheckList Row 7, 8）**：
+> - Row 7：「内存分析还要用内存快照，保存成pkl后用专门网页解析，看每一块内存申请的生命周期、堆栈是哪块代码触发的。MindStudio Insight现在看不出来内存碎片」→ 本节 §6 内存快照分析完整演示了碎片分布图、单块生命周期（含申请堆栈）、碎片热力图，AI 定位碎片成因（激活张量高频分配/释放）并给出复用/池化建议
+> - Row 8：「MindStudio Insight以折线图展示显存变化，还可以从峰值附近的算子跳转到时间线，再回到Python调用栈定位问题」→ 本节 §1~§5 演示了完整的"显存折线图→峰值自动标注→下钻到 stage/层/算子→时间线中看分配/释放时机→调用栈回溯到 `router.forward` 的 `expert_dispatch`"下钻闭环，AI 在峰值处自动标注"谁此刻吃显存最多、能否提前释放/重计算"
