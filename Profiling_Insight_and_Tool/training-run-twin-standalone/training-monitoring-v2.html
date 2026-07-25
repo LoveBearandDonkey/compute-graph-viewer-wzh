@@ -28,6 +28,8 @@
   <link rel="stylesheet" href="./css/model-training-graphviz-pattern.css">
   <link rel="stylesheet" href="./css/training-run-twin.css">
   <link rel="stylesheet" href="./css/timeline-swimlane.css">
+  <!-- 问题一「聚光灯定位链」覆盖层(js/training-spotlight.js)：进入问题一默认开启，1→6 步进照亮各层举证图表 -->
+  <link rel="stylesheet" href="./css/training-spotlight.css">
   <!-- 整网图组件(openPangu-2.0-Flash model-graphviz)：新版渲染引擎样式 + 组件样式,置于旧 pattern css 之后以覆盖 -->
   <link rel="stylesheet" href="./model-graphviz-embed/pattern.css">
   <link rel="stylesheet" href="./css/opv-modelviz.css">
@@ -1450,7 +1452,9 @@
     .twin-locate-chain-view,
     .wzh-col-infra-body,
     .twin-timeline-body,
-    .twin-dock-panel {
+    .twin-dock-panel,
+    .wzh-log-body,
+    .wzh-log-mapping {
       scrollbar-width: thin;              /* Firefox */
       scrollbar-color: transparent transparent;
     }
@@ -1459,7 +1463,9 @@
     .twin-locate-chain-view:hover,
     .wzh-col-infra-body:hover,
     .twin-timeline-body:hover,
-    .twin-dock-panel:hover {
+    .twin-dock-panel:hover,
+    .wzh-log-body:hover,
+    .wzh-log-mapping:hover {
       scrollbar-color: var(--border-default) transparent;
     }
     .twin-pane-scroll::-webkit-scrollbar,
@@ -1467,7 +1473,9 @@
     .twin-locate-chain-view::-webkit-scrollbar,
     .wzh-col-infra-body::-webkit-scrollbar,
     .twin-timeline-body::-webkit-scrollbar,
-    .twin-dock-panel::-webkit-scrollbar {
+    .twin-dock-panel::-webkit-scrollbar,
+    .wzh-log-body::-webkit-scrollbar,
+    .wzh-log-mapping::-webkit-scrollbar {
       width: 8px;
       height: 8px;
     }
@@ -1476,7 +1484,9 @@
     .twin-locate-chain-view::-webkit-scrollbar-track,
     .wzh-col-infra-body::-webkit-scrollbar-track,
     .twin-timeline-body::-webkit-scrollbar-track,
-    .twin-dock-panel::-webkit-scrollbar-track {
+    .twin-dock-panel::-webkit-scrollbar-track,
+    .wzh-log-body::-webkit-scrollbar-track,
+    .wzh-log-mapping::-webkit-scrollbar-track {
       background: transparent;
     }
     .twin-pane-scroll::-webkit-scrollbar-thumb,
@@ -1484,7 +1494,9 @@
     .twin-locate-chain-view::-webkit-scrollbar-thumb,
     .wzh-col-infra-body::-webkit-scrollbar-thumb,
     .twin-timeline-body::-webkit-scrollbar-thumb,
-    .twin-dock-panel::-webkit-scrollbar-thumb {
+    .twin-dock-panel::-webkit-scrollbar-thumb,
+    .wzh-log-body::-webkit-scrollbar-thumb,
+    .wzh-log-mapping::-webkit-scrollbar-thumb {
       background: transparent;            /* 默认隐藏 */
       border-radius: 4px;
       transition: background var(--duration-fast, 120ms) var(--easing-default, ease);
@@ -1494,7 +1506,9 @@
     .twin-locate-chain-view:hover::-webkit-scrollbar-thumb,
     .wzh-col-infra-body:hover::-webkit-scrollbar-thumb,
     .twin-timeline-body:hover::-webkit-scrollbar-thumb,
-    .twin-dock-panel:hover::-webkit-scrollbar-thumb {
+    .twin-dock-panel:hover::-webkit-scrollbar-thumb,
+    .wzh-log-body:hover::-webkit-scrollbar-thumb,
+    .wzh-log-mapping:hover::-webkit-scrollbar-thumb {
       background: var(--border-default);  /* 悬浮浮现 */
     }
     .twin-pane-scroll::-webkit-scrollbar-thumb:hover,
@@ -1502,7 +1516,9 @@
     .twin-locate-chain-view::-webkit-scrollbar-thumb:hover,
     .wzh-col-infra-body::-webkit-scrollbar-thumb:hover,
     .twin-timeline-body::-webkit-scrollbar-thumb:hover,
-    .twin-dock-panel::-webkit-scrollbar-thumb:hover {
+    .twin-dock-panel::-webkit-scrollbar-thumb:hover,
+    .wzh-log-body::-webkit-scrollbar-thumb:hover,
+    .wzh-log-mapping::-webkit-scrollbar-thumb:hover {
       background: var(--foreground-muted);
     }
 
@@ -1946,36 +1962,21 @@
       .wzh-chat-panel { left: 8px; width: auto; max-width: none; }
     }
 
-    /* ── 日志:训练全量/任务/系统日志抽屉,右上角 #trainLogToggle 入口,默认收起(见 js/training-log-drawer.js)。
-         日志行信息密度高、偏宽,采用底部滑出(而非 wzh-chat-panel 那种右侧竖版),不遮挡左侧整网图/指标。 ── */
-    .wzh-log-drawer {
-      position: fixed;
-      left: 0; right: 0; bottom: 0;
-      height: 46vh;
-      min-height: 340px;
-      max-height: 620px;
-      z-index: 1900;
+    /* ── 日志:训练全量/任务/系统日志,右上角 #trainLogToggle 入口,默认收起(见 js/training-log-drawer.js)。
+         原为独立底部滑出抽屉,现并入底部 Timeline dock 第四个页签(#dockPanelLog),与
+         Timeline/制品/事件流共用同一套页签切换逻辑;这里只保留内部 toolbar/status/split 布局。 ── */
+    #dockPanelLog {
       display: flex;
       flex-direction: column;
-      background: var(--surface-1);
-      border-top: 1px solid var(--border-default);
-      box-shadow: var(--shadow-lg);
-      transform: translateY(100%);
-      transition: transform var(--duration-base) var(--easing-default);
-      pointer-events: none;
+      overflow: hidden;
+      padding: 0;
     }
-    .wzh-log-drawer.is-open { transform: translateY(0); pointer-events: auto; }
-
-    .wzh-log-head {
-      display: flex; align-items: center; justify-content: space-between;
-      gap: var(--space-3); flex: 0 0 auto;
-      padding: var(--space-3) var(--space-4);
-      border-bottom: 1px solid var(--border-subtle);
+    #dockPanelLog[hidden] { display: none !important; }
+    #dockPanelLog > * { max-width: none; }
+    .wzh-log-context-inline {
+      font-size: 11px; color: var(--foreground-secondary);
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
     }
-    .wzh-log-head-title-row { display: flex; align-items: center; gap: var(--space-2); min-width: 0; }
-    .wzh-log-head-icon { width: 16px; height: 16px; flex-shrink: 0; fill: none; stroke: var(--accent); stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
-    .wzh-log-head-title { font: 600 13px/1.4 var(--font-sans); color: var(--foreground); }
-    .wzh-log-head-context { font-size: 11px; color: var(--foreground-secondary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
     .wzh-log-toolbar {
       display: flex; align-items: center; gap: var(--space-3); flex-wrap: wrap;
@@ -1992,11 +1993,6 @@
     }
     .wzh-log-search-input:focus { outline: none; border-color: color-mix(in srgb, var(--primary) 55%, transparent); }
     .wzh-log-search-input::placeholder { color: var(--foreground-muted); }
-    .wzh-log-search-hint {
-      flex: 1 1 100%; order: 3;
-      font-size: 10.5px; font-family: var(--font-mono); color: var(--foreground-muted);
-    }
-    .wzh-log-search-hint code { color: var(--foreground-secondary); }
 
     .wzh-log-status {
       display: flex; align-items: center; gap: var(--space-3); flex-wrap: wrap;
@@ -2010,16 +2006,22 @@
     .wzh-log-status-live { display: inline-flex; align-items: center; gap: 4px; margin-left: auto; }
     .wzh-log-status-live i { width: 6px; height: 6px; border-radius: 50%; background: var(--success); box-shadow: 0 0 0 3px color-mix(in srgb, var(--success) 20%, transparent); }
 
+    /* 日志区 7:3 分栏:左侧原始日志(可搜索/可选中) + 右侧「接口映射表」常驻参考。
+       点选左侧一行、右侧对应映射行高亮(见 js/training-log-drawer.js 的 initRowSelection),
+       所以左侧原始日志行不需要再额外拼一句人工翻译尾注——两边各司其职。 */
+    .wzh-log-split { flex: 1; min-height: 0; display: flex; overflow: hidden; }
     .wzh-log-body {
-      flex: 1; min-height: 0; overflow-y: auto;
+      flex: 7 1 0; min-height: 0; min-width: 0; overflow-y: auto;
       font-family: var(--font-mono); font-size: 11.5px; line-height: 1.6;
     }
     .wzh-log-row {
       display: flex; align-items: flex-start; gap: 10px;
       padding: 3px var(--space-4);
       border-bottom: 1px solid color-mix(in srgb, var(--border-subtle) 55%, transparent);
+      cursor: pointer;
     }
     .wzh-log-row:hover { background: var(--state-hover); }
+    .wzh-log-row.is-selected { background: color-mix(in srgb, var(--highlight-copy-blue-500, #3b6fe0) 14%, transparent); }
     .wzh-log-col-time { flex: 0 0 148px; color: var(--foreground-muted); white-space: nowrap; }
     .wzh-log-col-level {
       flex: 0 0 48px; font-weight: 700; letter-spacing: .02em;
@@ -2042,6 +2044,33 @@
     .wzh-log-row.lvl-WARN .wzh-log-col-msg { color: color-mix(in srgb, var(--warning) 85%, var(--foreground)); }
     .wzh-log-empty { padding: var(--space-4); text-align: center; color: var(--foreground-muted); font-size: 12px; font-family: var(--font-sans); }
 
+    .wzh-log-mapping {
+      flex: 3 1 0; min-width: 168px; min-height: 0; overflow-y: auto;
+      display: flex; flex-direction: column;
+      border-left: 1px solid var(--border-subtle); background: var(--surface-2);
+    }
+    .wzh-log-mapping-head {
+      flex: 0 0 auto; position: sticky; top: 0; z-index: 1;
+      padding: 7px var(--space-3);
+      font: 700 11px/1.3 var(--font-sans); letter-spacing: .02em; color: var(--foreground-secondary);
+      background: var(--surface-2); border-bottom: 1px solid var(--border-subtle);
+    }
+    .wzh-log-mapping-list { flex: 1; padding: 6px; display: flex; flex-direction: column; gap: 6px; }
+    .wzh-log-mapping-row {
+      padding: 6px 8px; border-radius: var(--radius-md); border: 1px solid var(--border-subtle);
+      background: var(--surface-1); transition: background var(--duration-fast), border-color var(--duration-fast);
+    }
+    .wzh-log-mapping-names { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; font-family: var(--font-mono); font-size: 18px; }
+    .wzh-log-mapping-ascend { color: var(--foreground); font-weight: 700; word-break: break-all; }
+    .wzh-log-mapping-arrow { color: var(--foreground-muted); font-size: 22px; }
+    .wzh-log-mapping-torch { color: var(--status-success, #22a06b); font-weight: 600; word-break: break-all; }
+    .wzh-log-mapping-desc { margin-top: 2px; font-size: 10px; color: var(--foreground-muted); }
+    .wzh-log-mapping-row.is-active {
+      border-color: var(--highlight-copy-blue-500, #3b6fe0);
+      background: color-mix(in srgb, var(--highlight-copy-blue-500, #3b6fe0) 14%, var(--surface-1));
+    }
+    @media (max-width: 720px) { .wzh-log-mapping { display: none; } }
+
     /* 抽屉打开/切换页签/搜索后自动滚到关键报错行(见 js/training-log-drawer.js 的 scrollToRelevantRow),
        用一次性红色脉冲把视线引导过去,而不是要求用户自己在几十行里找 */
     .wzh-log-row.is-flash { animation: wzh-log-flash 850ms ease-out 2; }
@@ -2054,7 +2083,6 @@
     #trainLogToggle.is-active .pto-ide-frame__window-icon { stroke: var(--accent); opacity: 1; }
 
     @media (max-width: 720px) {
-      .wzh-log-drawer { height: 68vh; }
       .wzh-log-col-time { flex-basis: 108px; }
       .wzh-log-col-comp { display: none; }
     }
@@ -2126,9 +2154,9 @@
           </div>
         </div>
         <div class="pto-ide-frame__window-actions" data-ide-slot="window-controls" aria-label="Window controls">
-          <!-- 日志:训练全量/任务/系统日志抽屉入口,默认收起,置于主题切换左侧;面板与逻辑见
-               js/training-log-drawer.js、#trainLogDrawer(从底部滑出,不遮挡整网图/指标) -->
-          <button class="pto-ide-frame__window-action" id="trainLogToggle" type="button" aria-controls="trainLogDrawer" aria-expanded="false" aria-pressed="false" title="打开日志" aria-label="打开日志">
+          <!-- 日志:训练全量/任务/系统日志入口,默认收起,置于主题切换左侧;点击后展开底部 Timeline
+               dock 并切到「日志」页签(#dockPanelLog),面板与逻辑见 js/training-log-drawer.js -->
+          <button class="pto-ide-frame__window-action" id="trainLogToggle" type="button" aria-controls="dockPanelLog" aria-expanded="false" aria-pressed="false" title="打开日志" aria-label="打开日志">
             <svg class="pto-ide-frame__window-icon" viewBox="0 0 24 24" aria-hidden="true">
               <path d="M6 3h9l5 5v13a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1z"></path>
               <path d="M15 3v5h5"></path>
@@ -2157,7 +2185,7 @@
               <path d="M9 3v18"></path>
             </svg>
           </button>
-          <button class="pto-ide-frame__window-action is-selected" id="twinRightColToggle" type="button" aria-controls="twinInfraCol" aria-expanded="true" aria-pressed="true" title="隐藏 infra 栏" aria-label="隐藏 infra 栏">
+          <button class="pto-ide-frame__window-action" id="twinRightColToggle" type="button" aria-controls="twinInfraCol" aria-expanded="false" aria-pressed="false" title="显示 infra 栏" aria-label="显示 infra 栏">
             <svg class="pto-ide-frame__window-icon" viewBox="0 0 24 24" aria-hidden="true">
               <rect x="3" y="3" width="18" height="18" rx="2"></rect>
               <path d="M15 3v18"></path>
@@ -2222,7 +2250,7 @@
       </nav>
 
       <div class="pto-ide-frame__workarea">
-        <div class="pto-ide-frame__split" data-ide-split="standalone-vertical" data-split-direction="vertical" data-sizes="72,28" data-min-size="360,140">
+        <div class="pto-ide-frame__split" data-ide-split="standalone-vertical" data-split-direction="vertical" data-sizes="72,28" data-min-size="360,140" data-pixel-sizes="0,320" data-storage-key="pto-ide-frame-standalone-standalone-vertical-v4">
           <section class="pto-ide-frame__pane pto-ide-frame__pane--stack" data-ide-pane="main-row">
             <!-- 分析记录 / 问题诊断 侧栏 + 水平分栏按新布局(容器2)去除；main-content 独占全宽 -->
             <div class="wzh-main-row">
@@ -2239,9 +2267,11 @@
                       </div>
                     </header>
 
-                    <div class="pto-ide-frame__pane-body twin-center-scroll">
+                    <div class="pto-ide-frame__pane-body twin-center-scroll is-right-collapsed">
                       <!-- 训练进度已迁回顶栏缩略部件(.wzh-tm-widget，见 topbar-right)，
-                           中央列不再单独占一行，整网图卡填满整列高度。 -->
+                           中央列不再单独占一行，整网图卡填满整列高度。
+                           右侧「集群监控(infra)」栏默认收起(is-right-collapsed)，与 #twinRightColToggle
+                           初始态保持一致，用户可点该按钮展开。 -->
                       <section class="twin-graph-card" aria-label="模型架构图">
           <div class="twin-architecture-stage">
             <!-- 整网图改用 pto-design-system 的 model-architecture-3d-deck pattern(CSS 3D 层叠,非 iframe):
@@ -2370,7 +2400,7 @@ MoE：256+1（top-8 路由 · EP 切分）">?</span>
                             </div>
 
                             <div class="wzh-tab-panel" id="wzhRouterPanel" data-wzh-panel="router" hidden>
-                              <p id="wzhRouterSubtitle" hidden>Step 41230：layer 38 router 倾斜到单一专家，其余 255 个专家几乎无 token。</p>
+                              <p id="wzhRouterSubtitle" hidden>Step 15203：layer 38 router 倾斜到单一专家，其余 255 个专家几乎无 token。</p>
                               <div class="wzh-router-kpis">
                                 <div class="wzh-router-kpi">
                                   <div class="wzh-router-kpi-lab"><i class="wzh-router-kpi-dot current"></i>Top1 专家占比（当前）</div>
@@ -2380,9 +2410,17 @@ MoE：256+1（top-8 路由 · EP 切分）">?</span>
                                   <div class="wzh-router-kpi-lab"><i class="wzh-router-kpi-dot baseline"></i>Top1 专家占比（基线）</div>
                                   <div class="wzh-router-kpi-val">0.39% · 均匀路由</div>
                                 </div>
+                                <div class="wzh-router-kpi">
+                                  <div class="wzh-router-kpi-lab"><i class="wzh-router-kpi-dot current"></i>Dead Expert 占比（当前）</div>
+                                  <div class="wzh-router-kpi-val is-bad" id="wzhRouterKpiDeadVal">96.5% · 247/256</div>
+                                </div>
+                                <div class="wzh-router-kpi">
+                                  <div class="wzh-router-kpi-lab"><i class="wzh-router-kpi-dot baseline"></i>Dead Expert 占比（基线）</div>
+                                  <div class="wzh-router-kpi-val">0% · 0/256</div>
+                                </div>
                               </div>
                               <svg viewBox="0 0 240 148" class="wzh-router-bar-svg" preserveAspectRatio="xMidYMid meet">
-                                <title id="wzhRouterSvgTitle">W_gate 专家负载：基线（健康 step）vs 当前（step 41230 事故）</title>
+                                <title id="wzhRouterSvgTitle">W_gate 专家负载：基线（健康 step）vs 当前（step 15203 事故）</title>
                                 <rect x="20" y="115.6" width="26" height="6.4" rx="2" fill="var(--highlight-l0a-violet-source)" opacity="0.75"/>
                                 <text x="33" y="111.6" text-anchor="middle" class="wzh-router-bar-val" fill="var(--foreground-secondary)">0.39%</text>
                                 <rect id="wzhRouterBarHotRect" x="50" y="20" width="26" height="102" rx="2" fill="var(--danger)" opacity="0.95"/>
@@ -2405,7 +2443,7 @@ MoE：256+1（top-8 路由 · EP 切分）">?</span>
                             </div>
 
                             <div class="wzh-tab-panel" id="wzhMeshPanel" data-wzh-panel="mesh">
-                            <p id="wzhMeshSubtitle" hidden>EP64 取 32 rank 代表性切片 · layer 38 · Step 41230</p>
+                            <p id="wzhMeshSubtitle" hidden>EP64 取 32 rank 代表性切片 · layer 38 · Step 15203</p>
                             <div class="twin-legend wzh-mesh-legend">
                               <span id="wzhMeshLegendHot"><i class="wzh-mesh-sw hot"></i>EP rank 23（异常）</span>
                               <span id="wzhMeshLegendFlow"><i class="wzh-mesh-sw flow"></i>dispatch 流向</span>
@@ -2535,6 +2573,11 @@ MoE：256+1（top-8 路由 · EP 切分）">?</span>
             <div class="pto-ide-frame__bottom-view" data-ide-bottom-panel="visualization" id="twinTimeline">
               <header class="pto-ide-frame__pane-header">
                 <div class="pto-ide-frame__terminal-tablist twin-dock-tablist" role="tablist" aria-label="底部面板">
+                  <!-- 「日志」页签:并入原右上角 #trainLogToggle 抽屉(js/training-log-drawer.js)的内容,
+                       打开入口不变(仍是 #trainLogToggle),点击后改为展开本 dock 并切到这个页签 -->
+                  <button class="pto-ide-frame__terminal-tab twin-dock-tab" type="button" role="tab"
+                          id="dockTabLog" data-dock-tab="log"
+                          aria-selected="false" aria-controls="dockPanelLog" tabindex="-1">日志</button>
                   <button class="pto-ide-frame__terminal-tab twin-dock-tab is-selected" type="button" role="tab"
                           id="dockTabTimeline" data-dock-tab="timeline"
                           aria-selected="true" aria-controls="twinTimelineBody">Timeline</button>
@@ -2545,7 +2588,14 @@ MoE：256+1（top-8 路由 · EP 切分）">?</span>
                           id="dockTabFeed" data-dock-tab="feed"
                           aria-selected="false" aria-controls="dockPanelFeed" tabindex="-1">事件流</button>
                 </div>
-                <p class="twin-timeline-subtitle" id="twinDockSubtitle">NCCL trace: node2 ranks 16–23 · EP rank 23（GPU 7）all-to-all 超时 30s → layer 38 MoE expert dispatch 死锁</p>
+                <!-- 底栏关闭:收起整个 Timeline dock(与顶栏 #twinTimelineToggle 是同一个开关,
+                     见下方脚本里 window.PtoTrainingTwinTimelineDock.setVisible(false)) -->
+                <button class="pto-ide-frame__window-action" id="bottomDockCloseBtn" type="button" title="隐藏 Timeline 面板" aria-label="隐藏 Timeline 面板">
+                  <svg class="pto-ide-frame__window-icon" viewBox="0 0 24 24" aria-hidden="true">
+                    <path d="M18 6 6 18"></path>
+                    <path d="M6 6l12 12"></path>
+                  </svg>
+                </button>
               </header>
               <div class="pto-ide-frame__pane-body twin-timeline-body" id="twinTimelineBody"
                    role="tabpanel" aria-labelledby="dockTabTimeline" data-dock-panel="timeline"></div>
@@ -2556,6 +2606,32 @@ MoE：256+1（top-8 路由 · EP 切分）">?</span>
               <div class="pto-ide-frame__pane-body twin-dock-panel" id="dockPanelFeed"
                    role="tabpanel" aria-labelledby="dockTabFeed" data-dock-panel="feed" hidden>
                 <div class="twin-feed" id="feed"></div>
+              </div>
+              <!-- 训练日志:数据/渲染逻辑见 js/training-log-drawer.js,原为独立抽屉(.wzh-log-drawer),
+                   现并入 Timeline dock 第四个页签,DOM id 保持不变以复用原 JS -->
+              <div class="pto-ide-frame__pane-body wzh-log-panel" id="dockPanelLog"
+                   role="tabpanel" aria-labelledby="dockTabLog" data-dock-panel="log" hidden>
+                <div class="wzh-log-toolbar">
+                  <span class="seg" id="trainLogTabSeg" role="tablist" aria-label="日志分类">
+                    <button class="segbtn on" type="button" data-log-tab="all" role="tab" aria-selected="true">全量日志</button>
+                    <button class="segbtn" type="button" data-log-tab="task" role="tab" aria-selected="false">任务日志</button>
+                    <button class="segbtn" type="button" data-log-tab="system" role="tab" aria-selected="false">系统日志</button>
+                  </span>
+                  <span class="wzh-log-context-inline" id="trainLogContext">--</span>
+                  <div class="wzh-log-search">
+                    <input class="wzh-log-search-input" id="trainLogSearchInput" type="text" spellcheck="false" placeholder="SQL 搜索，如 level='ERROR' AND message LIKE '%nan%'">
+                    <button class="btn btn-ghost btn-sm" id="trainLogSearchBtn" type="button">搜索</button>
+                    <button class="btn btn-ghost btn-sm" id="trainLogSearchClearBtn" type="button">清空</button>
+                  </div>
+                </div>
+                <div class="wzh-log-status" id="trainLogStatus"></div>
+                <div class="wzh-log-split">
+                  <div class="wzh-log-body" id="trainLogBody"></div>
+                  <aside class="wzh-log-mapping" aria-label="接口映射表">
+                    <div class="wzh-log-mapping-head">接口映射表</div>
+                    <div class="wzh-log-mapping-list" id="trainLogMappingList"></div>
+                  </aside>
+                </div>
               </div>
             </div>
           </section>
@@ -2645,6 +2721,7 @@ MoE：256+1（top-8 路由 · EP 切分）">?</span>
       var routerEls = {
         subtitle: document.getElementById('wzhRouterSubtitle'),
         kpiVal: document.getElementById('wzhRouterKpiCurrentVal'),
+        deadVal: document.getElementById('wzhRouterKpiDeadVal'),
         svgTitle: document.getElementById('wzhRouterSvgTitle'),
         hotRect: document.getElementById('wzhRouterBarHotRect'),
         hotText: document.getElementById('wzhRouterBarHotText'),
@@ -2671,6 +2748,7 @@ MoE：256+1（top-8 路由 · EP 切分）">?</span>
       var incident = {
         routerSubtitle: routerEls.subtitle.textContent,
         kpiVal: routerEls.kpiVal.textContent,
+        deadVal: routerEls.deadVal.textContent,
         routerSvgTitle: routerEls.svgTitle.textContent,
         hotRect: { y: routerEls.hotRect.getAttribute('y'), height: routerEls.hotRect.getAttribute('height'), fill: routerEls.hotRect.getAttribute('fill'), opacity: routerEls.hotRect.getAttribute('opacity') },
         hotText: { y: routerEls.hotText.getAttribute('y'), fill: routerEls.hotText.getAttribute('fill'), text: routerEls.hotText.textContent },
@@ -2686,6 +2764,7 @@ MoE：256+1（top-8 路由 · EP 切分）">?</span>
       var live = {
         routerSubtitle: '256 个路由专家负载均衡，暂无热点。',
         kpiVal: '0.41% · E193',
+        deadVal: '0% · 0/256',
         routerSvgTitle: 'W_gate 专家负载：基线 vs 当前（训练中，负载均衡）',
         hotRect: { y: '114.3', height: '7.7', fill: 'var(--highlight-copy-blue-source)', opacity: '0.85' },
         hotText: { y: '110.3', fill: 'var(--foreground-secondary)', text: '0.41%' },
@@ -2738,6 +2817,8 @@ MoE：256+1（top-8 路由 · EP 切分）">?</span>
         routerEls.subtitle.textContent = d.routerSubtitle;
         routerEls.kpiVal.textContent = d.kpiVal;
         routerEls.kpiVal.classList.toggle('is-bad', isIncident);
+        routerEls.deadVal.textContent = d.deadVal;
+        routerEls.deadVal.classList.toggle('is-bad', isIncident);
         routerEls.svgTitle.textContent = d.routerSvgTitle;
         applyRect(routerEls.hotRect, d.hotRect);
         applyText(routerEls.hotText, d.hotText);
@@ -2810,6 +2891,7 @@ MoE：256+1（top-8 路由 · EP 切分）">?</span>
       }
 
       btn.addEventListener('click', () => setVisible(dock.hidden));
+      document.getElementById('bottomDockCloseBtn')?.addEventListener('click', () => setVisible(false));
       window.PtoTrainingTwinTimelineDock = { setVisible };
 
       // 屏幕高度足够(>800)时默认展开底栏 Timeline，否则收起以给上半区留空间；
@@ -2822,15 +2904,9 @@ MoE：256+1（top-8 路由 · EP 切分）">?</span>
     // 「制品」「事件流」原为训练监控列的卡片，移到这里与 Timeline 并列。
     (() => {
       const tablist = document.querySelector('.twin-dock-tablist');
-      const subtitle = document.getElementById('twinDockSubtitle');
       if (!tablist) return;
 
       const tabs = Array.from(tablist.querySelectorAll('.twin-dock-tab'));
-      const SUBTITLE = {
-        timeline: 'NCCL trace: node2 ranks 16–23 · EP rank 23（GPU 7）all-to-all 超时 30s → layer 38 MoE expert dispatch 死锁',
-        artifacts: '训练 checkpoint 产出，标记验证集最佳权重。',
-        feed: 'checkpoint、HCCL、straggler 和 dataloader 事件。'
-      };
 
       function select(name) {
         tabs.forEach(tab => {
@@ -2842,7 +2918,6 @@ MoE：256+1（top-8 路由 · EP 切分）">?</span>
         document.querySelectorAll('[data-dock-panel]').forEach(panel => {
           panel.hidden = panel.dataset.dockPanel !== name;
         });
-        if (subtitle) subtitle.textContent = SUBTITLE[name] || '';
         // 泳道图在隐藏期间量不到尺寸，切回 Timeline 后补一次重排
         if (name === 'timeline') window.dispatchEvent(new Event('resize'));
       }
@@ -3034,6 +3109,8 @@ MoE：256+1（top-8 路由 · EP 切分）">?</span>
        window.PtoTwinGraphBridge,所以两边的加载顺序不构成循环依赖。 -->
   <script src="./js/training-monitoring-v2-deck.js"></script>
   <script src="./js/training-run-twin.js"></script>
+  <!-- 问题一「聚光灯定位链」：training-run-twin.js 的 activateProblemOneLens/exitTimeMachine 运行时调用 window.PtoTrainingSpotlight，需在其后加载 -->
+  <script src="./js/training-spotlight.js"></script>
   <script>
     // 「精度」8 图 + 「集群监控」infra 2 图标题旁补「?」说明气泡：解释指标含义 + 好坏判定标准。
     // training-run-twin.js 的 initAccuracyCharts()/initInfraCharts() 在 boot() 内同步建卡，
@@ -3046,10 +3123,10 @@ MoE：256+1（top-8 路由 · EP 切分）">?</span>
         acc: "训练 / 验证准确率(acc)：预测正确的样本占比，数值越高越好，应稳步逼近 100%。\n\n· train acc 远高于 val acc → 过拟合\n· 两者同步骤降 → 训练异常",
         precision: "精确率(precision)：模型判定为正例的样本中，真正例的占比，数值越高越好。\n\n· 走低 → 误报变多(把错的判成对的)",
         recall: "召回率(recall)：所有真实正例中，被模型正确识别出的占比，数值越高越好。\n\n· 走低 → 漏报变多(该抓的没抓到)",
-        f1: "F1：precision 与 recall 的调和平均，是兼顾两者的综合分，数值越高越好。\n\n· precision、recall 任一崩塌都会拉低 F1，适合一眼判断整体质量有无退化",
+        "z-loss": "z-loss：logits 归一化正则项，训练时主动对 softmax 前 logits 的幅值加惩罚，抑制其无约束发散，数值越接近 0 越好。\n\n· 本案例事故前从未开启(根因之一)：图上前半段应为 0，事故修复后才出现\n· 长期缺失 → router 等 logits 可能无约束地向极端漂移，是数值溢出的隐患",
         grad_norm: "梯度范数(grad_norm)：本 step 所有参数梯度的 L2 范数——把每个梯度分量平方后求和再开方，可理解为梯度这个高维向量的整体『长度』，反映参数更新的力度。正常应在小范围内平稳波动。\n\n· 持续增大或跳变为 inf/NaN → 梯度爆炸，训练不稳定甚至中断\n· 长期趋近 0 → 梯度消失，参数几乎不再更新",
         weight_diff: "‖ΔW‖(weight_diff)：本 step 参数更新量的 L2 范数(同 grad_norm 的算法，只是对象换成参数变化量)，可理解为这次更新在高维参数空间里挪动的整体幅度；与 grad_norm 同根同源，梯度决定了更新的方向和力度。\n\n· 正常训练早期较大、随收敛趋于平稳\n· 健康信号是两条曲线同步小幅波动\n· 若与 grad_norm 同步跳变为 inf → 优化器同步发散(本页事故的根因)；若只有一条异常、另一条正常，更可能是单条指标的计算/上报问题，而非训练本身崩溃",
-        rollout_actor_probs_pearson_corr: "rollout·actor 概率相关系数：rollout(推理生成)阶段的输出概率，与训练阶段 actor 网络算出的概率之间的皮尔逊相关系数，衡量『推理时的分布』与『训练时的分布』是否一致，取值 -1~1，越接近 1 越好。\n\n· 明显走低 → rollout 与训练分布不一致(off-policy 偏差)，可能导致策略更新方向有偏",
+        "AMP loss scale": "AMP loss scale：动态混合精度训练用来防止梯度下溢的缩放系数，健康时应长期钉在同一个 2 的幂次上不动(图表按 log2 显示，气泡内为实际值)。\n\n· 持续减半 → 每减半一次代表发生过一次 FP 溢出，是 loss NaN 前最早、最隐蔽的预警信号\n· 本案例：从 65536 一路减半到 4096 才最终 loss NaN，若在减半初期就介入排查可提前止损",
         MFU: "MFU(Model FLOPS Utilization)：实际算力 ÷ 理论峰值算力，衡量训练对硬件算力的利用效率，数值越高越好。\n\n· 本页场景健康区间约 45%~60%\n· 骤降至接近 0 → 通常是通信阻塞或集群故障导致训练停滞",
         显存利用率: "HBM 显存利用率：跨卡平均显存占用率。\n\n· 需落在健康区间内，本页场景约 72%~85%\n· 太低 → 资源浪费；太高 → 有 OOM(显存溢出)风险\n· 骤降至 0 → 通常代表训练中断/进程重启",
       };
@@ -3131,44 +3208,6 @@ MoE：256+1（top-8 路由 · EP 切分）">?</span>
   </aside>
 
   <script src="./js/training-chat-panel.js"></script>
-
-  <!-- 日志:右上角 #trainLogToggle 入口,默认收起。从底部滑出,含「全量日志｜任务日志｜系统日志」
-       页签 + SQL 风格搜索框(支持 level=/message LIKE/step 比较/AND 组合,解析不出结构化条件时
-       退化为对 时间/级别/组件/消息 的普通子串匹配)。日志数据与渲染逻辑见 js/training-log-drawer.js。 -->
-  <aside class="wzh-log-drawer" id="trainLogDrawer" aria-label="训练日志" aria-hidden="true">
-    <header class="wzh-log-head">
-      <div class="wzh-log-head-title-row">
-        <svg class="wzh-log-head-icon" viewBox="0 0 24 24" aria-hidden="true">
-          <path d="M6 3h9l5 5v13a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1z"></path>
-          <path d="M15 3v5h5"></path>
-          <path d="M8 13h8"></path>
-          <path d="M8 17h8"></path>
-          <path d="M8 9h3"></path>
-        </svg>
-        <span class="wzh-log-head-title">训练日志</span>
-        <span class="wzh-log-head-context" id="trainLogContext">--</span>
-      </div>
-      <button class="btn btn-ghost btn-icon btn-sm" id="trainLogCloseBtn" type="button" aria-label="关闭日志" title="关闭">✕</button>
-    </header>
-
-    <div class="wzh-log-toolbar">
-      <span class="seg" id="trainLogTabSeg" role="tablist" aria-label="日志分类">
-        <button class="segbtn on" type="button" data-log-tab="all" role="tab" aria-selected="true">全量日志</button>
-        <button class="segbtn" type="button" data-log-tab="task" role="tab" aria-selected="false">任务日志</button>
-        <button class="segbtn" type="button" data-log-tab="system" role="tab" aria-selected="false">系统日志</button>
-      </span>
-      <div class="wzh-log-search">
-        <input class="wzh-log-search-input" id="trainLogSearchInput" type="text" spellcheck="false" placeholder="SQL 搜索，如 level='ERROR' AND message LIKE '%nan%'">
-        <button class="btn btn-ghost btn-sm" id="trainLogSearchBtn" type="button">搜索</button>
-        <button class="btn btn-ghost btn-sm" id="trainLogSearchClearBtn" type="button">清空</button>
-      </div>
-      <span class="wzh-log-search-hint">支持列：level / comp / message / step，运算符 = != &gt; &gt;= &lt; &lt;= LIKE IN，多条件用 <code>AND</code> 连接；非结构化输入按关键字全文匹配。</span>
-    </div>
-
-    <div class="wzh-log-status" id="trainLogStatus"></div>
-
-    <div class="wzh-log-body" id="trainLogBody"></div>
-  </aside>
 
   <script src="./js/training-log-drawer.js"></script>
 </body>
