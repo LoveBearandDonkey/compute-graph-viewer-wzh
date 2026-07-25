@@ -892,6 +892,97 @@ body {
   scrollbar-color: color-mix(in srgb, var(--foreground) 18%, transparent) transparent;
 }
 
+/* ── 内联统一 diff 视图 ── */
+.sl-diff-code {
+  display: flex; flex-direction: column;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  overflow: hidden;
+  font-family: 'Cascadia Code', 'Consolas', 'SF Mono', 'Menlo', 'Monaco', 'Courier New', var(--font-mono), monospace;
+  font-size: 11px; line-height: 1.5;
+}
+/* 文件名区（代码区上方） */
+.sl-diff-code__files {
+  display: flex; flex-direction: column; gap: 2px;
+  padding: 7px 10px; flex: 0 0 auto;
+  background: var(--surface-2);
+  border-bottom: 1px solid var(--border-subtle);
+}
+.sl-diff-code__file-row {
+  display: flex; align-items: center; gap: 6px;
+  font-size: 11px; line-height: 1.4;
+}
+.sl-diff-code__dot { width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0; }
+.sl-diff-code__file-label {
+  font-weight: 600; color: var(--foreground); flex-shrink: 0; min-width: 28px;
+}
+.sl-diff-code__file-name {
+  color: var(--foreground-secondary); font-family: var(--font-mono);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.sl-diff-code__file-id {
+  color: var(--foreground-muted); font-size: 10px; font-family: var(--font-mono);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  margin-left: auto; max-width: 140px;
+}
+/* 代码行区 */
+.sl-diff-code__lines {
+  max-height: 340px;
+  overflow-y: auto;
+  background: var(--surface-1);
+}
+.sl-diff-line {
+  display: flex; min-height: 17px; align-items: flex-start;
+}
+/* 行号列 */
+.sl-diff-line__ln {
+  flex: 0 0 34px; text-align: right; padding-right: 6px;
+  font-family: var(--font-mono); font-size: 10px; user-select: none;
+  color: var(--foreground-disabled); line-height: 1.5; padding-top: 1px;
+}
+/* diff 标记列（−  /  +  / 空格  /  @@） */
+.sl-diff-line__mark {
+  flex: 0 0 14px; text-align: center; font-weight: 700; user-select: none;
+  line-height: 1.5; padding-top: 1px;
+}
+.sl-diff-line__text {
+  flex: 1 1 auto; white-space: pre-wrap; word-break: break-word; overflow-wrap: anywhere;
+  padding-right: 8px; line-height: 1.5;
+}
+/* hunk 头 */
+.sl-diff-line.is-hunk {
+  background: color-mix(in srgb, var(--accent) 10%, var(--surface-2));
+  color: var(--foreground-muted); font-size: 10px;
+}
+.sl-diff-line.is-hunk .sl-diff-line__mark { color: var(--accent); }
+/* 删除行 */
+.sl-diff-line.is-del {
+  background: color-mix(in srgb, var(--danger) 14%, transparent);
+}
+.sl-diff-line.is-del .sl-diff-line__mark { color: var(--danger); }
+/* 新增行 */
+.sl-diff-line.is-add {
+  background: color-mix(in srgb, var(--success) 12%, transparent);
+}
+.sl-diff-line.is-add .sl-diff-line__mark { color: var(--success); }
+/* 上下文行 */
+.sl-diff-line.is-ctx .sl-diff-line__mark { color: var(--foreground-disabled); }
+/* 关键行底色加强 */
+.sl-diff-line.is-key { background: color-mix(in srgb, var(--warning) 10%, transparent); }
+.sl-diff-line.is-del.is-key { background: color-mix(in srgb, var(--danger) 20%, transparent); }
+.sl-diff-line.is-add.is-key { background: color-mix(in srgb, var(--success) 16%, transparent); }
+/* diff 代码块内滚动条 */
+.sl-diff-code__lines::-webkit-scrollbar { width: 4px; }
+.sl-diff-code__lines::-webkit-scrollbar-track { background: transparent; }
+.sl-diff-code__lines::-webkit-scrollbar-thumb {
+  background: color-mix(in srgb, var(--foreground) 18%, transparent);
+  border-radius: 999px;
+}
+.sl-diff-code__lines {
+  scrollbar-width: thin;
+  scrollbar-color: color-mix(in srgb, var(--foreground) 18%, transparent) transparent;
+}
+
 /* ── 语义标签：渐变填充 pill（与被选节点颜色一致，圆角与泳道任务条一致）── */
 .sl-detail-label-pill {
   display: inline-flex; align-items: center;
@@ -1221,14 +1312,10 @@ body {
   border-right: 1px solid var(--border-subtle);
 }
 
-/* 对比框上下两栏固定等高：分隔条隐藏，pv 内部留滚动条空间 */
+/* 对比框上下两栏固定等高：分隔条隐藏 */
 [data-ide-split="swimlane-analysis"] > .pto-workbench-shell__split-gutter {
   display: none;
 }
-/* 面板之间 8px 间距 */
-#canvasPane { margin-bottom: 8px; }
-#canvasPane .sl-train-tl-viewport { margin-bottom: 0; }
-#blockGraphView .sl-train-tl-viewport { margin-top: 0; }
 
 .sl-timeline-head {
   flex: 0 0 auto;
@@ -3443,12 +3530,17 @@ function drawLanes() {
     lctx.fillStyle = dim ? 'rgba(255,255,255,0.3)' : (item.type === 'subcore' ? 'rgba(255,255,255,0.56)' : 'rgba(255,255,255,0.8)');
     lctx.font = item.type === 'subcore' ? "500 10px 'Inter', sans-serif" : "500 11px 'Inter', sans-serif";
     lctx.textAlign = 'left';
-    const label = item.type === 'subcore'
-      ? item.sublane
-      : (item.runSlot === 'compare' ? state.comparisonRunId : item.runSlot === 'base' ? state.selectedRunId : c.label);
     const labelX = item.type === 'subcore' ? 38 : (item.runSlot ? 24 : 24);
-    const labelMax = item.type === 'subcore' ? 62 : (item.runSlot ? 74 : 80);
-    lctx.fillText(label, labelX, y + rh / 2 + 0.5, labelMax);
+    const labelMax = item.type === 'subcore' ? 62 : (item.runSlot ? 80 : 80);
+    /* base/compare 两行的 run 名按像素宽度做中间省略（保留首尾），绘制时不再传 maxWidth
+       避免二次压扁；其余（core 名 / 子泳道名）沿用原来的定宽压缩即可。 */
+    if (item.runSlot === 'compare' || item.runSlot === 'base') {
+      const fullId = item.runSlot === 'compare' ? state.comparisonRunId : state.selectedRunId;
+      lctx.fillText(fitMiddleEllipsis(lctx, fullId, labelMax), labelX, y + rh / 2 + 0.5);
+    } else {
+      const label = item.type === 'subcore' ? item.sublane : c.label;
+      lctx.fillText(label, labelX, y + rh / 2 + 0.5, labelMax);
+    }
 
     const util = item.runSlot === 'compare'
       ? withRunContext(comparisonRun(), () => laneUtilForItem(item))
@@ -3726,6 +3818,24 @@ function truncateRunId(id, maxLen) {
   if (id.length <= maxLen) return id;
   var tail = Math.min(10, Math.floor(maxLen / 2));
   return id.slice(0, maxLen - tail - 1) + '…' + id.slice(id.length - tail);
+}
+
+/* 画布内按“像素宽度”做中间省略：保留名称首尾字符、中间用 … 省略，二分找出能塞进
+   maxWidth 的最长首尾组合。绘制时不要再给 fillText 传 maxWidth——否则 canvas 会把整串
+   横向压扁变形（就是聚合视图里两个 run 名都糊成“pangu-…”分不清的根因）。 */
+function fitMiddleEllipsis(ctx, text, maxWidth) {
+  if (!text) return '';
+  if (ctx.measureText(text).width <= maxWidth) return text;
+  var best = '…';
+  var lo = 0, hi = text.length;
+  while (lo <= hi) {
+    var keep = (lo + hi) >> 1;
+    var head = Math.ceil(keep / 2), tail = keep - head;
+    var cand = text.slice(0, head) + '…' + (tail > 0 ? text.slice(text.length - tail) : '');
+    if (ctx.measureText(cand).width <= maxWidth) { best = cand; lo = keep + 1; }
+    else hi = keep - 1;
+  }
+  return best;
 }
 
 function runCheckItemHtml(r, idx) {
@@ -4252,15 +4362,20 @@ function renderInspector() {
     title.innerHTML = '<button class="sl-detail-back" id="detailBackBtn" title="返回差异看板" aria-label="返回差异看板"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m19 12H5"></path><path d="m12 19-7-7 7-7"></path></svg></button><span>对比详情</span>';
     body.innerHTML = diffDetailHtml(state.detailTaskKey);
     bindInspector();
-    // 自动滚动内联代码块到高亮行（is-key），仅影响代码区自身滚动位置
+    // 随机滚动到某个 diff hunk，让每次切换对比任务都展示不同的差异代码段
     requestAnimationFrame(function () {
-      var container = body.querySelector('.sl-inline-code__lines');
+      var container = body.querySelector('.sl-diff-code__lines');
       if (!container) return;
-      var keyLine = container.querySelector('.sl-code-line.is-key');
-      if (keyLine) {
-        var lineTop = keyLine.offsetTop - container.offsetTop;
-        container.scrollTop = Math.max(0, lineTop - container.clientHeight / 2 + keyLine.offsetHeight / 2);
-      }
+      var hunks = container.querySelectorAll('.sl-diff-line.is-hunk');
+      if (!hunks.length) return;
+      /* 基于 taskKey 做确定性随机：同一任务对固定展示同一段，不同任务对自动换段 */
+      var seed = 0;
+      var tk = state.detailTaskKey;
+      if (tk) { for (var si = 0; si < (tk.coreName || '').length; si++) seed = (seed * 31 + (tk.coreName || '').charCodeAt(si)) | 0; }
+      var pick = Math.abs(seed) % hunks.length;
+      var target = hunks[pick];
+      var lineTop = target.offsetTop;
+      container.scrollTop = Math.max(0, lineTop - container.clientHeight / 3);
     });
     return;
   }
@@ -4460,8 +4575,10 @@ function buildAggregatedTrainingSwimlane(topRun, bottomRun) {
     return {
       id: `${node.id}§agg`, label: node.label,
       children: [
-        { id: baseLeafKey, label: truncateRunId(topRun.id, 22), leafKey: baseLeafKey },
-        { id: compareLeafKey, label: truncateRunId(bottomRun.id, 22), leafKey: compareLeafKey },
+        // 传完整 run.id：由组件按标签列可用像素宽做“中间省略”（labelEllipsis:'middle'），
+        // 不在这里预截断，否则会二次省略把中段/尾部区分点也丢掉。
+        { id: baseLeafKey, label: topRun.id, leafKey: baseLeafKey },
+        { id: compareLeafKey, label: bottomRun.id, leafKey: compareLeafKey },
       ],
     };
   };
@@ -4746,7 +4863,11 @@ function diffDetailHtml(taskKey) {
   var topOverlap = Math.round(topDur * rnd() * 0.35);
   var bottomOverlap = Math.round(bottomDur * rnd() * 0.38);
   var topIdle = Math.round(topDur * rnd() * 0.12);
+  var topIdleBefore = Math.round(topIdle * (0.35 + rnd() * 0.35));
+  var topIdleAfter = topIdle - topIdleBefore;
   var bottomIdle = Math.round(bottomDur * rnd() * 0.15);
+  var bottomIdleBefore = Math.round(bottomIdle * (0.3 + rnd() * 0.4));
+  var bottomIdleAfter = bottomIdle - bottomIdleBefore;
 
   var rows = [
     { label: '启动时间', unit: 'μs', top: topStart, bottom: bottomStart, better: 'low' },
@@ -4755,7 +4876,8 @@ function diffDetailHtml(taskKey) {
     { label: '执行耗时', unit: 'μs', top: topExec, bottom: bottomExec, better: 'low' },
     { label: '同步等待', unit: 'μs', top: topWait, bottom: bottomWait, better: 'low' },
     { label: '计算-通信重叠', unit: 'μs', top: topOverlap, bottom: bottomOverlap, better: 'high' },
-    { label: '空闲间隙', unit: 'μs', top: topIdle, bottom: bottomIdle, better: 'low' },
+    { label: '空闲间隙（任务前）', unit: 'μs', top: topIdleBefore, bottom: bottomIdleBefore, better: 'low' },
+    { label: '空闲间隙（任务后）', unit: 'μs', top: topIdleAfter, bottom: bottomIdleAfter, better: 'low' },
   ];
 
   var topDotClass = runDotClass(topRun.id);
@@ -4805,29 +4927,81 @@ function diffDetailHtml(taskKey) {
   return html;
 }
 
-/* ── 内联代码块（嵌入 inspector 面板，缩小版）── */
+/* ── 内联统一 diff 视图（inline，− / + 标记差异行）── */
+function computeUnifiedDiff(base, compare, ctxLines) {
+  ctxLines = ctxLines || 3;
+  var hunks = [];
+  var diffIdx = [];
+  for (var i = 0; i < base.length; i++) { diffIdx[i] = base[i].text !== compare[i].text; }
+  var inHunk = false, hunkStart = 0, lastDiff = -1;
+  for (var j = 0; j < base.length; j++) {
+    if (diffIdx[j]) {
+      if (!inHunk) { hunkStart = Math.max(0, j - ctxLines); inHunk = true; }
+      lastDiff = j;
+    } else if (inHunk && j - lastDiff > ctxLines) {
+      hunks.push({ start: hunkStart, end: Math.min(base.length - 1, lastDiff + ctxLines) });
+      inHunk = false;
+    }
+  }
+  if (inHunk) { hunks.push({ start: hunkStart, end: Math.min(base.length - 1, lastDiff + ctxLines) }); }
+  return hunks;
+}
+
+function renderDiffLine(type, mark, lineObj, lineNum) {
+  var cls = 'sl-diff-line is-' + type;
+  if (lineObj.key) cls += ' is-key';
+  var numStr = lineNum != null ? String(lineNum) : '';
+  var text = '<span class="sl-diff-line__ln">' + numStr + '</span>';
+  text += '<span class="sl-diff-line__mark">' + mark + '</span>';
+  text += '<span class="sl-diff-line__text">';
+  if (lineObj.cls) {
+    text += '<span class="' + lineObj.cls + '">' + escapeHtml(lineObj.text) + '</span>';
+  } else {
+    text += escapeHtml(lineObj.text);
+  }
+  text += '</span>';
+  return '<div class="' + cls + '">' + text + '</div>';
+}
+
 function renderInlineCodeBlock() {
+  var topRun = RUN_BY_ID[state.selectedRunId];
+  var bottomRun = RUN_BY_ID[state.comparisonRunId];
+  var topDotClass = topRun ? runDotClass(topRun.id) : 'red';
+  var bottomDotClass = bottomRun ? runDotClass(bottomRun.id) : 'blue';
+  var topLabel = topRun ? truncateRunId(topRun.id, 24) : '基线';
+  var bottomLabel = bottomRun ? truncateRunId(bottomRun.id, 24) : '对比对象';
+  var hunks = computeUnifiedDiff(MOCK_CODE_LINES_BASE, MOCK_CODE_LINES_COMPARE, 3);
   var h = '';
   h += '<div class="sl-report-card">';
   h += '<div class="sl-report-card__title">关联代码</div>';
-  h += '<div class="sl-inline-code">';
-  h += '<div class="sl-inline-code__header">';
-  h += '<svg class="sl-inline-code__icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8Z"/><path d="M14 2v6h6"/><path d="M12 18v-6"/><path d="M9 15h6"/></svg>';
-  h += '<span class="sl-inline-code__filename">ascend_kernels/attention/self_attention_fusion.py</span>';
+  h += '<div class="sl-diff-code">';
+  h += '<div class="sl-diff-code__files">';
+  h += '<div class="sl-diff-code__file-row"><span class="sl-diff-code__dot dot ' + topDotClass + '"></span><span class="sl-diff-code__file-label">基线</span><span class="sl-diff-code__file-name">self_attention_fusion.py</span><span class="sl-diff-code__file-id">' + escapeHtml(topLabel) + '</span></div>';
+  h += '<div class="sl-diff-code__file-row"><span class="sl-diff-code__dot dot ' + bottomDotClass + '"></span><span class="sl-diff-code__file-label">对比</span><span class="sl-diff-code__file-name">flash_attention_v2.py</span><span class="sl-diff-code__file-id">' + escapeHtml(bottomLabel) + '</span></div>';
   h += '</div>';
-  h += '<div class="sl-inline-code__lines">';
-  MOCK_CODE_LINES.forEach(function (line) {
-    var cls = line.key ? 'sl-code-line is-key' : 'sl-code-line';
-    var text = '<span class="sl-code-line__text">';
-    if (line.cls) {
-      text += '<span class="' + line.cls + '">' + escapeHtml(line.text) + '</span>';
-    } else {
-      text += escapeHtml(line.text);
+  h += '<div class="sl-diff-code__lines">';
+  hunks.forEach(function (hunk) {
+    var baseCount = 0, cmpCount = 0;
+    for (var k = hunk.start; k <= hunk.end; k++) { baseCount++; cmpCount++; }
+    var baseStart = hunk.start + 1;
+    var cmpStart  = hunk.start + 1;
+    h += '<div class="sl-diff-line is-hunk"><span class="sl-diff-line__ln"></span><span class="sl-diff-line__mark">@@</span><span class="sl-diff-line__text"> -' + baseStart + ',' + baseCount + ' +' + cmpStart + ',' + cmpCount + ' @@</span></div>';
+    var baseNum = hunk.start + 1, cmpNum = hunk.start + 1;
+    for (var i = hunk.start; i <= hunk.end; i++) {
+      var baseLine = MOCK_CODE_LINES_BASE[i];
+      var cmpLine = MOCK_CODE_LINES_COMPARE[i];
+      if (baseLine.text === cmpLine.text) {
+        h += renderDiffLine('ctx', ' ', baseLine, baseNum);
+        baseNum++; cmpNum++;
+      } else {
+        h += renderDiffLine('del', '\u2212', baseLine, baseNum);
+        baseNum++;
+        h += renderDiffLine('add', '+', cmpLine, cmpNum);
+        cmpNum++;
+      }
     }
-    text += '</span>';
-    h += '<div class="' + cls + '">' + text + '</div>';
   });
-  h += '</div></div>';
+  h += '</div></div></div>';
   return h;
 }
 
@@ -5058,6 +5232,9 @@ function mountTrainSwimlane(which, run) {
     trainRenderers[which] = renderer;
     bindTrainSwimlaneCoreSelectSync(which, renderer);
   }
+  // 分组视图叶子标签是 core 名，沿用默认尾部省略；top 实例与聚合视图共用，
+  // 聚合视图会把它切成 'middle'，这里切回 'tail' 保证分组视图不受影响。
+  renderer.labelEllipsis = 'tail';
   const built = buildTrainingSwimlaneData(run);
   const parsed = parseTraceJSON(built.coreTasks);
   let analysis;
@@ -5082,6 +5259,10 @@ function mountAggregatedTrainSwimlane(topRun, bottomRun) {
     trainRenderers.top = renderer;
     bindTrainSwimlaneCoreSelectSync('top', renderer);
   }
+  // 聚合视图的叶子行标签是两个 run.id（共享 pangu- 前缀、区分点在中段/尾部），
+  // 让组件按“中间省略”渲染，保留首尾字符才分得清谁是谁。top 实例与分组视图共用，
+  // 故每次挂载都显式指定，分组视图那边会再切回 'tail'。
+  renderer.labelEllipsis = 'middle';
   const built = buildAggregatedTrainingSwimlane(topRun, bottomRun);
   const parsed = parseTraceJSON(built.coreTasks);
   let analysis;
@@ -5533,7 +5714,7 @@ function openCodePanel() {
   }, 80);
 }
 
-var MOCK_CODE_LINES = [
+var MOCK_CODE_LINES_BASE = [
   { cls: 'c', text: '// 文件: ascend_kernels/attention/self_attention_fusion.py' },
   { cls: 'c', text: '// 归属: MindSpeed 训练框架 · Ascend 适配层' },
   { cls: '', text: '' },
@@ -5724,6 +5905,24 @@ var MOCK_CODE_LINES = [
   { cls: 'n', text: 'output' },
 ];
 
+/* ── 对比对象代码（基于 BASE 派生，diff 行加 diff:true 标记）── */
+var MOCK_CODE_LINES_COMPARE = (function () {
+  var lines = MOCK_CODE_LINES_BASE.map(function (l) { return Object.assign({}, l); });
+  /* 文件头 */
+  lines[0] = { cls: 'c', text: '// 文件: ascend_kernels/attention/flash_attention_v2.py', diff: true };
+  lines[1] = { cls: 'c', text: '// 归属: MindSpeed 训练框架 · Ascend 适配层 (FlashAttention 优化版)', diff: true };
+  /* num_heads 32 → 64 */
+  lines[23] = { cls: 'n', text: '64', diff: true };
+  /* docstring: 耗时 & 优化方向 */
+  lines[27] = { key: true, text: '    关键路径算子，step 内平均耗时 ~1.8 ms，占单层总耗时的 31%。', diff: true };
+  lines[28] = { key: true, text: '    优化方向：FlashAttention 替换 BMM + 算子融合减少访存往返。', diff: true };
+  /* Step 1 注释微调 */
+  lines[93] = { cls: 's', text: '"qkv_proj_fused"', diff: true };
+  /* annotate 名称换为 flash_attention */
+  lines[152] = { cls: 's', text: '"flash_attention"', diff: true };
+  return lines;
+})();
+
 function renderCodePanel() {
   var container = document.getElementById('codeView');
   if (!container) return;
@@ -5734,7 +5933,7 @@ function renderCodePanel() {
     '</span>' +
   '</div>';
   var linesHtml = '<div class="sl-code-view__lines">';
-  MOCK_CODE_LINES.forEach(function (line) {
+  MOCK_CODE_LINES_BASE.forEach(function (line) {
     var cls = line.key ? 'sl-code-line is-key' : 'sl-code-line';
     var text = '<span class="sl-code-line__text">';
     if (line.cls) {
@@ -5775,7 +5974,7 @@ function initCodeTabSwitch() {
   var copyBtn = document.getElementById('codeCopyBtn');
   if (copyBtn) {
     copyBtn.addEventListener('click', function () {
-      var text = MOCK_CODE_LINES.map(function (l) { return l.text; }).join('\n');
+      var text = MOCK_CODE_LINES_BASE.map(function (l) { return l.text; }).join('\n');
       navigator.clipboard?.writeText(text).catch(function () {});
     });
   }

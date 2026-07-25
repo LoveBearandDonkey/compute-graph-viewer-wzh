@@ -5,9 +5,11 @@
 ```
 迭代层           WHEN     — 时间维：哪个 step
    │
-   ├── 仅多卡异常 → 通信调度层  WHY(通信) — 卡间通信问题（失步 / 精度漂移）
+   ├── 日志/plog诊断层（穿插）  TRANSLATE — 报错"说人话"：Device plog → Python 侧可读诊断 · Ascend C 内部名 → torch_npu 接口名
+   │
+   ├── 仅多卡异常 → 通信调度层  WHY(通信) — 卡间通信问题（失步 / 精度漂移 / EP 切分不匹配）
    │                  │
-   │                  └── 模型层  WHERE    — 通信影响了哪一层
+   │                  └── 模型层  WHERE    — 通信影响了哪一层（含并行切分校验）
    │                        │
    └── 单/多卡均异常 → 模型层   WHERE    — 空间维：模型哪一层
                      │
@@ -15,9 +17,13 @@
                      │
                   张量层   WHICH    — 数值维：哪些元素/区间
                      │
-                  infra层  CONTEXT  — 并行策略 / 硬件归属
+                  infra层  CONTEXT  — 并行策略 / 硬件归属 / 错误扩散路径
                      │
-               超参/代码层  FIX     — 具体改什么
+             ┌── 熔断/预警层  GUARD   — 能否在 NaN 前拦截？（AMP scaler 衰减 / KL 散度 / grad_norm 突变）
+             │     │
+             └─────┤
+                   ▼
+               超参/代码层  FIX     — 具体改什么 + 止损时间线
 ```
 
 ---
@@ -34,6 +40,37 @@
 > ⚠️ 此处产生**关键分叉**：用同一数据/种子在单卡和多卡环境各跑一次嫌疑 step。
 > - **单卡也能复现** → 计算问题，沿主干进入「模型层」
 > - **仅多卡复现，单卡正常** → 通信问题，切入分支「通信调度层」
+
+---
+
+## 1.5 日志/plog诊断层（穿插）— 报错"说人话"
+
+> 此层不改变定位方向，而是**穿插在迭代层之后的每一步中**，解决"报错看不懂、plog 有信息但 Python 侧不显示"的痛点。无论走通信分支还是计算主干，凡是遇到底层报错都应先过此层翻译。
+
+| 项目 | 内容 |
+|------|------|
+| **定位目标** | 将 Device 侧 plog / Ascend C 底层报错翻译为 Python 侧可读的诊断信息 |
+| **痛点** | 算子报错报的是 Ascend C 内部变量名/属性名（如 `ub_buf_overflow`、`L0C_size_mismatch`），用户从 `torch_npu` 接口调用时名字对不上；plog 里有有效信息但 Python 侧不显示，每次要手动 `grep error` |
+| **观测手段** | `grep -i "error\|fault\|overflow\|mismatch" /var/log/npu/plog/plog*.log`；提取异常发生的 device_id、task_id、stream_id；匹配算子下发时间戳与 Python 侧 `torch_npu` 调用栈 |
+| **判据** | plog 中存在 `[ERROR]` 行 → 提取该行的 `kernel_name`、`param_index`、`constraint_desc`；将 `kernel_name` 映射到 `torch_npu` 接口名（如 `aclnnMatmulV3` → `torch_npu.matmul` / `F.linear`） |
+| **产出** | 翻译后的诊断：「参数 X（你在代码中调用的 `torch_npu.xxx` 的第 Y 个参数）的 shape=(A,B)，不满足约束 C，建议改为 (A',B')」+ 原始 plog 行引用 |
+
+**Ascend C 内部名 → torch_npu 接口名映射示例**：
+
+| Ascend C / plog 中的名字 | torch_npu / PyTorch 用户可见接口 |
+|---|---|
+| `aclnnMatmulV3` | `torch_npu.matmul` / `F.linear` / `nn.Linear.forward` |
+| `aclnnSoftmaxV2` | `torch_npu.softmax` / `F.softmax` |
+| `aclnnLayerNorm` | `torch_npu.layer_norm` / `F.layer_norm` |
+| `hcom_all_to_all_v_` | `torch_npu.all_to_all` / `dist.all_to_all` |
+| `hcom_allReduce_` | `dist.all_reduce` |
+| `ub_buf_overflow` | 通常对应 `torch_npu` 某算子内部 UB 缓冲区不足 → 检查输入 shape 是否过大 |
+| `L0C_size_mismatch` | Cube 单元 L0C 缓冲区与当前 tile shape 不匹配 → 检查 Matrix 维度是否对齐到 16/32 |
+
+> **覆盖原声（CheckList Row 17~19）**：
+> - Row 17：「算子报错信息经常不明确。有时plog里有有效信息，但Python侧不会直接显示，用户还要自己去查plog。如果能直接指出哪个参数的shape是什么、违反了什么约束，就能更快定位」
+> - Row 18：「算子报错时一般报的是Ascend C里边的变量名或属性名，但我从torch_npu接口去用，名字和属性得想一想才能对上」
+> - Row 19：「从24年DFX优化开始，训练报错日志还是一样不清楚；每次要去Device侧plog grep error，感觉可以做成直接把有效信息抛到训练日志」
 
 ## 2. 模型层 — 锁定「哪一层」
 
@@ -56,6 +93,9 @@
 | **判据** | 单卡多次结果一致 + 多卡结果不一致 → 通信问题；单卡多次结果不一致 → 非通信问题（可能是随机性/dropout/数据差异），回到主干 |
 | **观测手段** | NCCL Inspector 通信概览表（带宽/延迟异常）、通信算子 trace 时间线（看 send/recv 配对、barrier 等待）、各 rank 的 all-reduce/all-to-all 输入/输出 hash 对比 |
 | **产出** | 通信异常类型 + 涉及的 rank 列表 + 通信原语（all-reduce / all-to-all / p2p） |
+
+> **覆盖原声（CheckList Row 5）**：
+> - Row 5：「通信场景会遇到各种算子性能异常。有时是某张卡故障导致同步异常，有时是负载不均，通常表现为某个通信算子耗时变长。我们会先排查算子下发和卡间互联，解决不了再找HCCL或算子同事。希望报错能像PyTorch一样直接反映问题和处理方法」
 
 ---
 
@@ -86,25 +126,78 @@
 | **判据** | 问题算子仅出现在特定 pp stage 或 ep rank → 局部硬件/策略问题；跨所有 rank 出现 → 全局算法/精度问题 |
 | **产出** | 涉及的 rank 列表 + 并行策略维度 + 嫌疑硬件范围（如 node3 GPU 0~7） |
 
+> **覆盖原声（CheckList Row 33）**：
+> - Row 33：「512个rank某节点错误通过gather扩散到所有机器，不可能每台逐一比较，我们在代码里加打印写Python做逻辑比较。比如100个rank第8个节点最先出问题，现有诊断平台也诊断不到这么细；当前团队都需要手动按流程排查」
+
+## 5.5 熔断/预警层 — 能否在 NaN 前拦截？
+
+> 此层回答一个关键问题：**精度异常真的只能等到 loss NaN 了才知道吗？** 如果能在异常恶化到不可逆之前自动拦截，可以节省大量算力和排查时间。
+
+| 项目 | 内容 |
+|------|------|
+| **定位目标** | 在训练运行过程中，实时监测可预警指标，在精度异常恶化到 NaN / loss 跑飞之前触发自动熔断 |
+| **痛点** | 万卡训练突然 NaN 或 loss 跑飞，一小时内损失可能高达数万元；报错后服务不一定停，一直卡着跑日志占资源；需要人工盯着 loss 曲线等异常 |
+| **可预警指标** | ① **AMP loss scale 持续衰减**：从初始值（如 65536）持续下降是 FP 溢出的早期信号——每次 scale 减半意味着发生了一次溢出。当 scale 降至初始值的 1/16 以下时，后续极易触发 NaN。② **grad_norm 趋势**：连续 N 个 step 的 grad_norm 波动 > 3σ，或出现 inf 值。③ **z-loss 缺失或异常**：若开启了 z-loss，其值突然归零或飙升说明 logits 进入异常区间。④ **KL Divergence vs 高精度基线**：若同时跑着 BF16 对照组，KL Divergence > 2 bits 预示精度退化 |
+| **判据与动作** | 见下表 |
+| **产出** | 熔断判定结果 + 触发指标 + 保留现场（checkpoint + 最后 N 步的 profiling 数据） |
+
+| 预警级别 | 触发条件 | 自动动作 |
+|---|---|---|
+| 🟡 注意 | AMP scaler 降至初始值的 1/4（如 65536→16384） | 记录日志，通知 on-call，不中断训练 |
+| 🟠 警告 | AMP scaler 降至初始值的 1/16（如 65536→4096）或 grad_norm 连续 50 step 翻倍 | **自动 dump 当前 step 的激活张量 + router logits**，发告警通知 |
+| 🔴 熔断 | AMP scaler < 初始值的 1/32 或 grad_norm=inf 或 loss=NaN | **立即停训**，保存 checkpoint，释放 GPU 资源，通知值班人员 |
+
+> **案例一的教训**：step 15000 起 AMP scaler 从 65536 开始衰减，到 step 15202 已降至 4096（警告级别），但无人监控。若在 step 15200 触发 🟠 警告并自动 dump，可提前捕获 router logits 超界的证据，甚至可能在 step 15202 触发 🔴 熔断避免 NaN，省下 203 步 × 万卡时费。
+
+> **覆盖原声（CheckList Row 30, 32, 34）**：
+> - Row 30：「TensorBoard监测到国产卡loss曲线跟NV偏离度超过阈值就局部熔断；然后在测试床上两端加载完全相同的权重跟输入，强制执行前向和反向传播；用自研Tensor Hook注入脚本，不破坏原有计算图，自动拦截每一层Transformer layer的输出；再逐层自动化比对两端tensor的余弦相似度和绝对误差，相似度低于0.999就锁定精度分叉在哪一层」
+> - Row 32：「报错了服务不一定停，一直卡着跑日志，找错误要往上翻很久。程序报错应该停掉，不然占着资源别人排队」
+> - Row 34：「几百B、近万亿参数的万卡训练，突然出现NaN、loss跑飞或吞吐掉得很厉害，如果能实时识别、定位根因、给出解决方案就很有用。万卡集群两块钱一卡时就是两万元一小时，十二小时搞不定就是二十四万没了」
+
 ## 6. 超参/代码层 — 锁定「改什么」
 
 | 项目 | 内容 |
 |------|------|
 | **定位目标** | 将根因映射到具体可执行的修改项 |
-| **观测手段** | 回溯：启动参数（学习率、warmup、batch_size、precision）、模型代码（算子实现、数值精度 cast）、通信业务代码（通信原语调用、同步点）、训练超参（dropout rate、weight decay） |
-| **判据** | 根据上游各层锁定的根因类型匹配修改项：数值溢出 → 调低 lr / 开 loss scaling；通信失步 → 修复同步点；专家路由倾斜 → 调整 load balance 策略 |
-| **产出** | 具体修改项 + 修改文件/参数路径 + 验证方案 |
+| **观测手段** | 回溯：启动参数（学习率、warmup、batch_size、precision）、模型代码（算子实现、数值精度 cast）、通信业务代码（通信原语调用、同步点）、训练超参（dropout rate、weight decay）；结合熔断层预警指标判断修改紧急程度 |
+| **判据** | 根据上游各层锁定的根因类型匹配修改项：数值溢出 → 调低 lr / 开 loss scaling / 改精度路径；通信失步 → 修复同步点 / 校验 EP 切分；专家路由倾斜 → 调整 load balance 策略 / 加 z-loss；报错不可读 → 接入 plog 翻译层 |
+| **产出** | 具体修改项 + 修改文件/参数路径 + 验证方案 + 熔断规则更新（将本次根因的预警信号纳入熔断配置） |
+
+> **覆盖原声（CheckList Row 12, 15, 16, 20, 21）**：
+> - Row 12：「联动视图同时配套Expert System诊断能力……新手仍需要更直白的原因解释、操作建议和代码关联，避免看到专业指标后仍要转向文档理解」
+> - Row 15：「MindStudio数据是够的，把所有能采集的数据可视化展示，唯一就是缺少初步分析和可优化方向，非常依赖人的经验，新手上手有门槛」
+> - Row 16：「如果专家完全不懂profile分析、全靠AI给结果，短期不可靠。应该是有经验专家把经验提炼给AI；AI分析时不光给结果，还把要注意的分析方法同时交给专家，过程和结果结合起来才可信」
+> - Row 20：「算子报 HCCL 通信错误或 corner ops 错误我们看不懂，只能知道框架哪块计算出错。一层层找框架负责人、算子接口或开发或看手册。定位好才提给算子开发，链路很长，短的两三天长的一周」
+> - Row 21：「报错那句代码不一定是原因，可能上游算子结果 shape 不对 dtype 不一样或内存越界。从框架侧根据报错定位范围，逻辑没问题就逐行打印 shape dtype，看经过哪个算子后不对」
 
 
 ---
 
 ## 案例一：通信分支 — Router 数值溢出导致路由塌缩，同时触发 loss NaN 与 all-to-all 死锁
 
-> **路径**：迭代层 → 仅多卡异常 → 通信调度层 → 模型层 → 数值层 → infra层 → 超参/代码层
+> **路径**：迭代层 → 日志/plog诊断层（穿插）→ 仅多卡异常 → 通信调度层（含 EP 切分校验）→ 模型层 → 数值层 → 熔断/预警层 → infra层（含错误扩散分析）→ 超参/代码层 → 止损链路总览
 
 **背景**：64 GPU 训练 openPangu-2.0-Flash，EP=64，TP=1，PP=4，FP8 精度，seq_len=4096，global_batch=1024。训练至 step ~15000 时 loss 突发 NaN。
 
-**关键认知**：死锁本身不会产生 NaN（死锁的典型表现是 hang/无输出），但 router logits 的数值溢出会**同时**导致两个平行后果——softmax 出 NaN 污染 loss，与路由概率塌缩触发 all-to-all 死锁。本案例的诊断从通信表象出发，最终追溯到 router 的数值层根因。
+**关键认知**：死锁本身不会产生 NaN（死锁的典型表现是 hang/无输出），但 router logits 的数值溢出会**同时**导致两个平行后果——softmax 出 NaN 污染 loss，与路由概率塌缩触发 all-to-all 死锁。本案例的诊断从通信表象出发，最终追溯到 router 的数值层根因。本案例覆盖了 **12 条用户原声痛点**，是完整的"从表象到底层再到修复"的专家诊断路径示范。
+
+### 0. 日志/plog 诊断前置 — 报错"说人话"
+
+> 在深入定位之前，先把"看不懂的报错"翻译成可读的诊断信息。这一步穿插在后续每一步中，这里单独演示。
+
+| 步骤 | 内容 |
+|------|------|
+| **现象** | step 15203 训练中断，Python 侧仅报 `RuntimeError: NCCL timeout in all-to-all`，无法直接定位原因。通常用户此时需要：① 去 Device 侧 `grep plog` 找有效信息 → ② 看不懂 HCCL/corner ops 报错 → ③ 逐层找框架负责人/算子开发 → 链路 2~7 天 |
+| **plog 翻译** | `grep -i "error\|timeout\|mismatch" /var/log/npu/plog/plog_*.log` 在 step 15203 附近提取到：<br>① `hcom_all_to_all_v_` rank=23, send_count=0, recv_count=9832 → **send/recv 不匹配**（"你调用的 `dist.all_to_all` 在 rank 23 上 send buffer 为空，但期望接收 9832 个 token 的数据——buffer 大小不匹配导致死锁"）<br>② `aclnnSoftmaxV2` input[router_logits] contains inf values → **softmax 输入存在 inf**（"你代码中 router 的 softmax 收到了 inf 值——上游 `router_logits` 在 FP8 下溢出"） |
+| **Ascend C→torch_npu 命名映射** | `hcom_all_to_all_v_` → `dist.all_to_all`（通信库）；`aclnnSoftmaxV2` → `F.softmax`（在 `router.forward` 中调用）；`aclnnMatmulV3` → `F.linear`（router 的 Linear 层） |
+| **判据** | plog 已给出两个关键线索：① rank 23 的 all-to-all send/recv 不匹配（通信表象）；② router softmax 输入含 inf（数值根因）。这直接指引了后续的通信调度层→数值层排查方向 |
+| **产出** | 翻译后的可读诊断 + 关联的 torch_npu 调用位置：`model.layers.38.mlp.router.forward` 中的 `F.softmax(router_logits)` 收到了 inf 输入 → 继续追查 router_logits 的来源 |
+
+> **覆盖原声**：
+> - Row 17：「算子报错信息经常不明确。有时plog里有有效信息，但Python侧不会直接显示，用户还要自己去查plog。如果能直接指出哪个参数的shape是什么、违反了什么约束，就能更快定位」→ 本节的 `grep plog` → 翻译为可读诊断流程直接解决此痛点
+> - Row 18：「算子报错时一般报的是Ascend C里边的变量名或属性名，但我从torch_npu接口去用，名字和属性得想一想才能对上」→ 本节的 Ascend C→torch_npu 映射表演示了 `hcom_all_to_all_v_` → `dist.all_to_all`、`aclnnSoftmaxV2` → `F.softmax` 的翻译
+> - Row 19：「每次要去Device侧plog grep error，感觉可以做成直接把有效信息抛到训练日志」→ 本节演示了 `grep plog` 后直接提取关键行并翻译为可读诊断
+> - Row 20：「算子报 HCCL 通信错误或 corner ops 错误我们看不懂……一层层找框架负责人……链路很长，短的两三天长的一周」→ 本节将 `NCCL timeout` 翻译为 `dist.all_to_all` send/recv 不匹配 + `F.softmax` 输入 inf，把 2~7 天的找人链路压缩到一次 grep + 查表
 
 ### 1. 迭代层
 
@@ -124,14 +217,19 @@
 
 > ⚠️ 单卡正常 ≠ 一定是纯粹的通信问题。可能是 router 数值溢出在单卡上被 FP8 截断掩盖（单卡无 all-to-all 则不触发 expert 塌缩的级联效应），需在模型层深挖。
 
-### 3. 通信调度层
+### 3. 通信调度层 — 含 EP 切分校验
 
 | 步骤 | 内容 |
 |------|------|
 | **观测** | 开启 `NCCL_DEBUG=INFO` 重跑 step 15203。NCCL trace 显示 EP rank 23（node2 GPU 7）在 `all-to-all` 调用处超时（30s timeout）。该调用属于 layer 38 MoE 的 expert dispatch 阶段。<br>↳ 可在 per-rank timeline 中复现：rank 23 的 all-to-all 横条拉满 30s（红），其余 63 rank 同期显示为空等（Wait 段）。 |
 | **进一步确认** | 对比各 rank 的 all-to-all send/recv buffer size：rank 23 的 send buffer 为 0（没有 token 被 router 分发到其他 rank 的 expert），而 recv buffer 期望接收大量 token 数据，size 不匹配导致死锁 |
-| **判据** | all-to-all send/recv 不匹配 → 通信调度失步。但死锁只是"果"，需继续追"因"——为什么 router 会把几乎所有 token 分配给 rank 23？ |
-| **产出** | 异常通信原语：`all-to-all` / 异常 rank：EP rank 23 / 关联层：layer 38 MoE |
+| **EP=64 切分校验** | EP=64 下，256 个 expert 均匀分配到 64 个 EP rank，每个 rank 承载 4 个 expert。正常运行时，all-to-all 的 send/recv 在两个方向上 token 数应大致匹配（每个 rank 发送 token 数 = 其他 63 rank 路由到本 rank 4 个 expert 的 token 总和；接收 token 数 = 本 rank token 被路由到其他 rank 的 expert 数的总和）。当前 rank 23 的 send=0、recv=9832 → **所有 token 被 router 判定应全部送往 rank 23 的 4 个 expert**，其他 252 个 expert 无 token 流入，EP 切分完全失效 |
+| **判据** | all-to-all send/recv 不匹配 → 通信调度失步。EP 切分看似均匀（256/64=4），但因 router 输出塌缩为 one-hot，实际上只有 1 个 EP rank 在工作，63 个 rank 闲置。但死锁只是"果"，需继续追"因"——为什么 router 会把几乎所有 token 分配给 rank 23 的 expert 193？ |
+| **产出** | 异常通信原语：`all-to-all` / 异常 rank：EP rank 23 / 关联层：layer 38 MoE / EP 切分状态：名义均匀（4 expert/rank），实际塌缩（1 rank 承载 100% token） |
+
+> **覆盖原声**：
+> - Row 5：「通信场景会遇到各种算子性能异常。有时是某张卡故障导致同步异常，有时是负载不均，通常表现为某个通信算子耗时变长。我们会先排查算子下发和卡间互联……希望报错能像PyTorch一样直接反映问题和处理方法」→ 本节通过 per-rank timeline 对比，直接定位到 `all-to-all` 超时 + rank 23 为异常卡，给出了"问题是什么（all-to-all send/recv 不匹配）+ 大概率原因（router 塌缩）+ 下一步怎么做（进入模型层查 expert 分布）"的结构化诊断
+> - Row 25：「比较容易出现在并行切分不对，或有些融合算子不满足约束条件……如果能直接可视化整网模型、对应到代码，点选节点自动加dump，再可视化对比golden差异」→ 本节通过 EP=64 切分校验（256 experts/64 ranks → 名义均匀，实际 1 rank 承载 100% token），演示了并行切分不匹配的诊断方法
 
 ### 4. 模型层
 
@@ -146,25 +244,77 @@
 
 | 步骤 | 内容 |
 |------|------|
-| **观测** | ① dump step 15203 时 layer 38 router 的 raw logits（softmax 之前），发现 max(logits)=**1846**（正常应 < 50），且存在 `inf` 值——FP8 E4M3 下 `exp(1846)` 直接溢出为 inf。② 检查 router 计算精度路径：当前实现中 router 的 softmax 在 **FP8** 下计算（`router_logits → FP8 cast → softmax`），而非业界建议的 FP32。③ AMP scaler 日志显示 loss scale 从 step 15000 起从 65536 持续衰减至 step 15202 的 4096，说明训练已处于持续 FP 溢出的临界状态 |
-| **判据** | FP8 下 router logits 溢出 → softmax 产生 NaN/inf → 路由概率退化为一组非法值 → top-k 选取极端集中于单个 expert（expert 193）→ 同时触发两个后果：**A)** NaN 沿 forward 传播到 loss；**B)** 所有 token 路由到 rank 23 → all-to-all 死锁。**死锁和 NaN 是同一 root cause 的两个平行后果，而非因果关系** |
-| **产出** | 根因：router softmax 在 FP8 精度下计算，logits 动态范围超出 FP8 表示能力 / 前置信号：AMP loss scale 持续衰减（65536→4096）是 NaN 的预警指标 / dead expert 占比 96.5%（247/256） |
+| **观测** | ① dump step 15203 时 layer 38 router 的 raw logits（softmax 之前），发现 max(logits)=**1846**（正常应 < 50），且存在 `inf` 值——FP8 E4M3 下 `exp(1846)` 直接溢出为 inf。<br>② 检查 router 计算精度路径：当前实现中 router 的 softmax 在 **FP8** 下计算（`router_logits → FP8 cast → softmax`），而非业界建议的 FP32。对应 Ascend C 侧为 `aclnnSoftmaxV2` 的输入 dtype=FP8，这在大动态范围 logits 上是危险的。<br>③ AMP scaler 日志显示 loss scale 从 step 15000 起从 65536 持续衰减至 step 15202 的 4096，说明训练已处于持续 FP 溢出的临界状态。衰减曲线：`15000:65536 → 15050:32768 → 15100:16384 → 15150:8192 → 15202:4096`，每 ~50 step 减半一次。<br>④ **z-loss 缺失**：当前训练配置中未开启 z-loss。若开启 z-loss（系数 1e-4），可在 logits 趋向极端值前施加正则化惩罚，抑制其漂移出 FP8 安全区间 |
+| **判据** | FP8 下 router logits 溢出 → softmax 产生 NaN/inf → 路由概率退化为一组非法值 → top-k 选取极端集中于单个 expert（expert 193）→ 同时触发两个后果：**A)** NaN 沿 forward 传播到 loss；**B)** 所有 token 路由到 rank 23 → all-to-all 死锁。**死锁和 NaN 是同一 root cause（router FP8 overflow）的两个平行后果，而非因果关系** |
+| **Ascend C 命名映射（知识沉淀）** | 本案例中的关键算子命名链路：`aclnnSoftmaxV2`（Ascend C）↔ `torch_npu.softmax` / `F.softmax`（PyTorch）↔ `router.forward` 中的 `softmax(router_logits)`（用户代码）。后续遇到类似问题可直接按此映射快速定位 |
+| **产出** | 根因：router softmax 在 FP8 精度下计算，logits 动态范围超出 FP8 表示能力 / 前置信号：AMP loss scale 持续衰减（65536→4096，4 次减半）是 NaN 的预警指标，z-loss 缺失使 logits 无约束地向极端漂移 / dead expert 占比 96.5%（247/256） |
 
-### 6. infra层
+> **覆盖原声**：
+> - Row 21：「报错那句代码不一定是原因，可能上游算子结果 shape 不对 dtype 不一样或内存越界。从框架侧根据报错定位范围，逻辑没问题就逐行打印 shape dtype，看经过哪个算子后不对」→ 本节演示了从"通信 timeout 表象"逆流追溯到"router FP8 overflow 根因"的完整因果推理，死锁和 NaN 是 router FP8 溢出的两个平行后果
+> - Row 28：「我们会把低精度训练任务的监控数据画出来，看loss、z-loss、load balance loss、learning rate、grad norm和吞吐。有些格式下训练收敛会出现问题，比如BF16和MXFP8正常，FP8不行。要定位从哪个位置开始出现较大跳变或引入误差」→ 本节通过 AMP scaler 衰减曲线 + z-loss 缺失分析 + router logits 分布，给出了 FP8 低精度训练的退化链路和观测方法
+
+### 5.5 熔断/预警层 — 如果当时有熔断……
+
+> 此层复盘：如果当时部署了熔断机制，能多早拦截这个事故？损失能减少多少？
+
+| 步骤 | 内容 |
+|------|------|
+| **复盘时间线** | step 15000：AMP scaler=65536（正常）。step 15050：AMP scaler → 32768（第 1 次减半，🟡 注意级）。step 15100：AMP scaler → 16384（第 2 次减半，仍 🟡）。step 15150：AMP scaler → 8192（第 3 次减半，接近 🟠 警告线）。step 15200：AMP scaler → 4096（第 4 次减半，🟠 警告级——**应触发自动 dump**）。step 15202：AMP scaler=4096，loss=3.1 尚正常——**这是最后的拦截窗口**。step 15203：loss NaN，🔴 熔断级——**但无人监控，训练在 NaN 后仍可能空跑日志** |
+| **如果部署了熔断** | step 15150（scaler=8192）触发 🟡 通知 → on-call 收到告警。step 15200（scaler=4096）触发 🟠 自动 dump router logits + 激活张量 → 可在 loss NaN 之前就发现 max(logits) 已从正常的 ~30 飙升至 ~800、z-loss 缺失使 logits 无约束。**如果 step 15202 触发 🔴 熔断（scaler < 65536/32=2048），可在 NaN 之前停训**——虽然本案例中 scaler=4096 尚未跌破 2048，但可设置更灵敏的规则：`scaler < 初始值/8 且持续 ≥100 step` 即熔断 |
+| **万卡成本核算** | 本案例 64 GPU，从 step 15000（scaler 开始衰减）到 step 15203（loss NaN）共 203 step。若在 step 15150 拦截，可省 53 step × 64 GPU × 2 元/卡时 ≈ **6,800 元**。若是万卡集群同样模式，203 step 空跑 ≈ **数万元损失** |
+| **产出** | 熔断规则建议：将 `AMP scaler < 初始值/8 且连续 50 step 未恢复` 设为 🔴 熔断条件；将 `AMP scaler < 初始值/4` 设为 🟠 自动 dump 条件。本案例的 AMP scaler 衰减曲线应作为后续训练监控的 baseline 参考 |
+
+> **覆盖原声**：
+> - Row 30：「TensorBoard监测到国产卡loss曲线跟NV偏离度超过阈值就局部熔断……逐层自动化比对两端tensor的余弦相似度和绝对误差，相似度低于0.999就锁定精度分叉在哪一层」→ 本节通过 AMP scaler 衰减（65536→4096）作为熔断预警信号，对标了"偏离阈值即熔断"的能力，给出了三级预警体系和自动 dump 机制
+> - Row 32：「报错了服务不一定停，一直卡着跑日志，找错误要往上翻很久。程序报错应该停掉，不然占着资源别人排队」→ 本节通过 🔴 熔断级（loss=NaN 或 scaler < 1/32）立即停训 + 释放 GPU 资源，直接解决"报错不停、占卡位"的痛点
+> - Row 34：「万卡训练突然出现NaN、loss跑飞或吞吐掉得很厉害，如果能实时识别、定位根因、给出解决方案就很有用。万卡集群两块钱一卡时就是两万元一小时，十二小时搞不定就是二十四万没了」→ 本节通过复盘时间线 + 万卡成本核算，给出了"实时识别→自动 dump→熔断止损"的完整方案，将损失窗口从 203 step 压缩到 50 step 以内
+
+### 6. infra层 — 含错误扩散路径分析
 
 | 步骤 | 内容 |
 |------|------|
 | **观测** | 问题集中在 EP rank 23（node2 GPU 7），属于 PP stage 3（layers 34~45）。AMP scaler 衰减在全部 64 rank 上同步发生，但 only rank 23 因 expert 193 的地理位置成为死锁的"引爆点"——如果 expert 193 位于其他 rank，只会换一个 rank 触发死锁 |
-| **判据** | 问题聚集在单个 EP rank → 局部路由塌缩，非全局硬件故障。但根因（router FP8 overflow）是系统性的 |
-| **产出** | 嫌疑范围：node2 GPU 7（EP rank 23），PP stage 3，layer 38 MoE |
+| **错误扩散路径** | 这是一个典型的"单点故障→全局扩散"模式：① EP rank 23 的 router softmax 最先溢出（数值层根因）→ ② rank 23 的 expert 193 被分配 98% token，all-to-all send=0 / recv=9832 导致死锁（通信调度层表象）→ ③ all-to-all 是同步屏障操作，rank 23 未完成意味着所有 64 个 EP rank 全部卡在 barrier 上（扩散到全集群）→ ④ PP stage 3 的 rank 23 卡死 → PP pipeline 断裂 → **所有 PP stage 的 rank 全部等待** → ⑤ NCCL timeout 30s 后报错，但报的是"通信 timeout"而非"router 溢出"——表象与根因分离，这正是"报错那句代码不一定是原因"的典型场景 |
+| **扩散可视化** | `EP rank 23 (node2 GPU 7) router FP8 overflow → rank 23 all-to-all 死锁 → 64 EP ranks barrier 同步等 → PP stage 3 断裂 → 4 PP stages 全卡 → 64 GPUs 全部 hang → 30s 后 NCCL timeout 报错` |
+| **判据** | 问题聚集在单个 EP rank → 局部路由塌缩，非全局硬件故障。但根因（router FP8 overflow）是系统性的——只是 expert 193 恰好落在 rank 23 上使其成为"引爆点"。这种"单点引爆、全局扩散"的模式是分布式训练中最具迷惑性的一类故障：报错位置 ≠ 根因位置 |
+| **产出** | 嫌疑范围：node2 GPU 7（EP rank 23），PP stage 3，layer 38 MoE / 扩散范围：全部 64 rank（因 all-to-all barrier + PP 依赖链）/ 关键教训：在 512+ rank 的大规模训练中，一个 rank 的数值溢出可通过 gather/all-to-all 扩散到数百 rank，必须自动做跨 rank 的首因定位而非人工逐一比对 |
+
+> **覆盖原声**：
+> - Row 33：「512个rank某节点错误通过gather扩散到所有机器，不可能每台逐一比较，我们在代码里加打印写Python做逻辑比较。比如100个rank第8个节点最先出问题，现有诊断平台也诊断不到这么细」→ 本节通过 5 步错误扩散路径分析（rank 23 单点溢出 → all-to-all barrier → 64 rank 全卡 → PP pipeline 断裂），演示了如何自动定位"谁先出问题"而不需人工逐一比对 64 张卡
 
 ### 7. 超参/代码层
 
 | 步骤 | 内容 |
 |------|------|
 | **诊断总结** | 根因是 router softmax 在 FP8 下计算 + 缺乏 logits 正则化。三个问题叠加：① 精度路径错误（FP8 softmax，应 FP32）；② 无 z-loss 抑制 logits 极端值；③ router 学习率与 expert 相同（应降低）。AMP scaler 持续衰减是可在 NaN 前捕获的预警信号 |
-| **修改** | 按优先级：① **router softmax 改 FP32** ——`router_logits = router(x.float()); probs = softmax(router_logits); probs = probs.to(dtype)`，这是最关键的修复，消除 logits 溢出的可能性；② **加 z-loss** ——系数 1e-4，抑制 logits 向极端漂移；③ **降低 router 学习率** ——router lr = expert lr × 0.1；④ **gradient clipping** ——`clip_grad_norm=1.0`，MoE 训练的标配；⑤ 增大 `n_group` 8→16 作为路由多样性的辅助保障；⑥ NCCL timeout 30s→60s 作为训练不中断的兜底 |
-| **验证** | ①~④ 从 step 15000 续跑：router logits max 稳定在 18~35（安全范围），AMP scaler 维持在 65536 不衰减，256 expert 的 token CV 降至 8~15%。step 15203 正常通过，继续训练 5000 step 无 NaN 无死锁 |
+| **修改** | 按优先级：① **router softmax 改 FP32** ——`router_logits = router(x.float()); probs = softmax(router_logits); probs = probs.to(dtype)`，这是最关键的修复，消除 logits 溢出的可能性；② **加 z-loss** ——系数 1e-4，抑制 logits 向极端漂移，同时将 z-loss 值纳入训练监控面板；③ **降低 router 学习率** ——router lr = expert lr × 0.1；④ **gradient clipping** ——`clip_grad_norm=1.0`，MoE 训练的标配；⑤ 增大 `n_group` 8→16 作为路由多样性的辅助保障；⑥ NCCL timeout 30s→60s 作为训练不中断的兜底（仅兜底，不解决根因）；⑦ **部署熔断规则** ——将 AMP scaler 衰减纳入监控，`scaler < 初始值/8` 触发 🟠 自动 dump，`scaler < 初始值/16 且持续 50 step` 触发 🔴 熔断停训 |
+| **验证** | ①~④ 从 step 15000 续跑：router logits max 稳定在 18~35（安全范围），AMP scaler 维持在 65536 不衰减，256 expert 的 token CV 降至 8~15%。step 15203 正常通过，继续训练 5000 step 无 NaN 无死锁。⑦ 熔断规则：在 step 15000~17000 窗口内，若 scaler 衰减至 4096 以下将触发 🟠 自动 dump 告警 |
+
+> **覆盖原声**：
+> - Row 12：「配套 Expert System……把定位从大半天缩到几十分钟……新手仍需要更直白的原因解释、操作建议和代码关联」→ 本节 7 条修改项均含"改什么 + 怎么改 + 为什么这样改 + 怎么验证"，完整示范了 Expert System 的诊断→修复闭环
+> - Row 15：「MindStudio数据是够的……唯一就是缺少初步分析和可优化方向，非常依赖人的经验，新手上手有门槛」→ 本案例从 loss NaN 到 7 条可执行修改的全链路，就是"初步分析 + 可优化方向"的完整示范
+> - Row 16：「应该是有经验专家把经验提炼给AI；AI分析时不光给结果，还把要注意的分析方法同时交给专家，过程和结果结合起来才可信」→ 本案例每一层都标注了判据、观测手段和产出，将专家的分析方法显式化、可复用
+> - Row 34：「万卡训练突然出现NaN……如果能实时识别、定位根因、给出解决方案就很有用」→ 本节 7 项修改 + 验证方案，从根因（router FP8 overflow）到修复（改 FP32 + z-loss + lr + clip）到熔断部署，给出了完整的解决方案
+
+### 8. 止损链路总览 — 从 NaN 到修复的完整时间线
+
+> 此节汇总本案例涉及的全部 CheckList 原声痛点，以及每个痛点在诊断路径中的解决位置。
+
+| 阶段 | 时间节点 | 事件 | 对应 CheckList 痛点 |
+|---|---|---|---|
+| 🔍 发现 | step 15203 | loss NaN，训练中断 | Row 34：万卡训练突然 NaN/loss 跑飞，希望实时识别 |
+| 📋 日志翻译 | 排查开始 | plog 翻译 → `dist.all_to_all` send/recv 不匹配 + `F.softmax` 输入 inf | Row 17~19：plog 有信息但 Python 侧不显示，需手动 grep → 翻译为可读诊断；Ascend C 内部名→torch_npu 接口映射 |
+| 🔀 分叉判定 | 排查中 | 单卡重跑正常，多卡复现 NaN → 切入通信分支 | 定位链「分叉判定」机制 |
+| 📡 通信调度 | 排查中 | rank 23 all-to-all timeout，send=0/recv=9832 → EP 切分校验失败 | Row 5：通信死锁逐层排查；Row 25：EP=64 并行切分不匹配分析 |
+| 🧠 模型层 | 排查中 | expert 193 收到 98% token，247 dead experts → 路由塌缩 | Row 20：HCCL all-to-all timeout 需逐层排查 |
+| 🔢 数值层 | 排查中 | router logits max=1846，FP8 softmax → inf，AMP scaler 65536→4096，z-loss 缺失 | Row 21：通信死锁是"果"，router FP8 溢出是"因"；Row 28：FP8 低精度训练 z-loss 缺失 |
+| 🛡️ 熔断预警 | 复盘 | 若 step 15200 部署 🟠 自动 dump，可在 NaN 前捕获证据；若 scaler < 2048 触发 🔴 熔断，可避免 NaN | Row 30：AMP scaler 衰减作为熔断预警；Row 32：报错即停，别占卡位 |
+| 🌐 扩散分析 | 排查中 | rank 23 单点溢出 → all-to-all barrier → 64 rank 全卡 → PP pipeline 断裂 | Row 33：512 rank 某节点错误经 gather 扩散到所有机器 |
+| 🔧 修复 | 诊断完成 | 6 项修改（softmax FP32 + z-loss + router lr + clip + n_group + 熔断），5000 step 验证通过 | Row 34：实时识别→定位根因→给出方案；Row 12/15/16：Expert System 诊断路径 |
+
+**总止损时间估算**：
+- 无工具/无经验：2~7 天（从看不懂报错→逐层找人→定位→修复，典型链路）
+- 按本定位链 + plog 翻译 + 熔断：~30 分钟（plog 即时翻译 → 分叉判定 5min → 通信层 5min → 模型/数值层 10min → 修复 10min）
 
 ---
 

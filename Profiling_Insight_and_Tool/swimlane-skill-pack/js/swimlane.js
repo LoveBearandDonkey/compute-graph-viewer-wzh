@@ -288,6 +288,11 @@ class SwimlaneRenderer {
     // 标签列宽度可按实例覆盖（默认沿用全局配置），供带深层级树的场景加宽
     this.labelWidth = options.labelWidth || SWIMLANE_CONFIG.LABEL_WIDTH;
 
+    // 叶子标签超宽时的省略方式：'tail'（默认，尾部…）| 'middle'（保留首尾、中间…）。
+    // run.id 这类“共享前缀、区分点在尾部/中段”的名称用 'middle' 才分得清谁是谁；
+    // 实例创建后也可直接改这个属性，下一次渲染即生效。
+    this.labelEllipsis = options.labelEllipsis || 'tail';
+
     // 主题：'auto' 跟随 <html data-theme>（默认），也可锁定 'light' / 'dark'
     this.themeMode = options.theme || 'auto';
     this.theme = this.themeMode === 'auto' ? resolveDocumentTheme() : this.themeMode;
@@ -1280,7 +1285,10 @@ class SwimlaneRenderer {
         ctx.font = `${isSelected ? 600 : 400} 11px ${sans}`;
         ctx.textAlign = 'left';
         const nameMaxW = Math.max(20, W - rightZone - indent - 4);
-        ctx.fillText(this._ellipsize(ctx, meta.label, nameMaxW), indent, cy + 1.5);
+        const clippedLabel = this.labelEllipsis === 'middle'
+          ? this._middleEllipsize(ctx, meta.label, nameMaxW)
+          : this._ellipsize(ctx, meta.label, nameMaxW);
+        ctx.fillText(clippedLabel, indent, cy + 1.5);
 
         if (hasUtil) {
           // 泳道利用率 meter：蓝色，纯利用率指示（占比详情见悬浮气泡）
@@ -1582,6 +1590,24 @@ class SwimlaneRenderer {
       if (ctx.measureText(s.slice(0, mid) + ell).width <= maxW) lo = mid; else hi = mid - 1;
     }
     return lo > 0 ? s.slice(0, lo) + ell : ell;
+  }
+
+  /** 按像素宽中间省略：保留名称首尾、中间用 … 折叠（ctx.font 须已设好）。
+      二分找出能塞进 maxW 的最长“首尾字符数”，首段略长于尾段。 */
+  _middleEllipsize(ctx, text, maxW) {
+    const s = String(text ?? '');
+    if (maxW <= 0) return '';
+    if (ctx.measureText(s).width <= maxW) return s;
+    const ell = '…';
+    let best = ell, lo = 0, hi = s.length;
+    while (lo <= hi) {
+      const keep = (lo + hi) >> 1;
+      const head = Math.ceil(keep / 2), tail = keep - head;
+      const cand = s.slice(0, head) + ell + (tail > 0 ? s.slice(s.length - tail) : '');
+      if (ctx.measureText(cand).width <= maxW) { best = cand; lo = keep + 1; }
+      else hi = keep - 1;
+    }
+    return best;
   }
 
   /** 页面 --font-sans（供 canvas 文字用），带缓存。 */
