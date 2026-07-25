@@ -28,15 +28,10 @@
             <strong>Ascend A5 架构映射</strong>
           </div>
         </div>
-        <div class="pto-ide-frame__topbar-center">
-          <div class="mode-switch" role="tablist" aria-label="工作模式">
-            <button class="btn btn-sm is-selected" type="button" data-mode="migration" role="tab" aria-selected="true">迁移分类</button>
-            <button class="btn btn-sm" type="button" data-mode="flow" role="tab" aria-selected="false">执行流</button>
-          </div>
-        </div>
+        <div class="pto-ide-frame__topbar-center"></div>
         <div class="pto-ide-frame__topbar-right">
           <div class="pto-ide-frame__window-actions">
-            <button class="pto-ide-frame__window-action is-selected" type="button" id="inspectorToggle" aria-label="切换检查器" aria-pressed="true" title="Inspector">
+            <button class="pto-ide-frame__window-action is-selected" type="button" id="rightPaneToggle" aria-label="切换右侧可视化面板" aria-controls="visualizationPane" aria-expanded="true" aria-pressed="true" title="可视化">
               <svg class="pto-ide-frame__window-icon" viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="2"></rect><path d="M15 3v18"></path></svg>
             </button>
           </div>
@@ -60,30 +55,44 @@
         </nav>
 
         <div class="pto-ide-frame__workarea">
-          <div class="pto-ide-frame__split app-main-split" data-ide-split="standalone-main" data-split-direction="horizontal" data-sizes="20,55,25" data-pixel-sizes="300" data-min-size="240,520,300">
+          <div class="pto-ide-frame__split app-main-split" data-ide-split="standalone-main" data-split-direction="horizontal" data-sizes="20,35,45" data-pixel-sizes="300" data-min-size="240,300,520" data-persist-sizes="false">
             <aside class="pto-ide-frame__pane pto-ide-frame__explorer" data-ide-pane="explorer">
               <header class="pto-ide-frame__pane-header">
-                <span class="pto-ide-frame__pane-title" id="explorerTitle">迁移分类</span>
-                <span class="pto-ide-frame__pane-meta" id="explorerCount">10 项</span>
+                <span class="pto-ide-frame__pane-title">导航</span>
               </header>
               <div class="pto-ide-frame__pane-body explorer-body">
-                <section id="migrationExplorer">
-                  <div class="scenario-strip" aria-label="迁移判断">
-                    <button class="scenario-chip" type="button" data-scenario="A"><b>A</b><span>跨代兼容</span></button>
-                    <button class="scenario-chip" type="button" data-scenario="B"><b>B</b><span>950 原生</span></button>
-                    <button class="scenario-chip" type="button" data-scenario="C"><b>C</b><span>硬件假设</span></button>
+                <div class="nav-mode-control">
+                  <div class="nav-mode-select-wrap">
+                    <select class="btn btn-sm nav-mode-select" id="navigationMode" aria-label="导航模式">
+                      <option value="migration">A5 算子迁移</option>
+                      <option value="flow">执行流对比</option>
+                    </select>
+                    <svg class="nav-mode-chevron" viewBox="0 0 24 24" aria-hidden="true"><path d="m7 10 5 5 5-5"></path></svg>
                   </div>
-                  <div class="explorer-hint">选择一个变化项，查看硬件落点和迁移动作。</div>
-                  <ol class="entity-list" id="categoryList"></ol>
+                </div>
+                <section id="migrationExplorer">
+                  <div class="migration-tree" id="categoryTree" role="tree" aria-label="A5 算子迁移场景"></div>
                 </section>
                 <section id="flowExplorer" hidden>
-                  <div class="explorer-hint">选择一条执行流，逐步播放数据、控制和同步路径。</div>
                   <ol class="entity-list" id="flowList"></ol>
                 </section>
               </div>
             </aside>
 
-            <section class="pto-ide-frame__pane preview-pane" data-ide-pane="editor-preview">
+            <aside class="pto-ide-frame__pane inspector-pane" data-ide-pane="inspector" id="inspectorPane">
+              <header class="pto-ide-frame__pane-header">
+                <span class="pto-ide-frame__pane-title">文档</span>
+              </header>
+              <div class="pto-ide-frame__pane-body inspector-body" id="inspectorBody">
+                <div class="inspector-empty">
+                  <span>DOCUMENT CONTEXT</span>
+                  <strong>选择迁移项或执行流</strong>
+                  <p>这里会显示变化上下文、判断信号、硬件影响、迁移动作和执行步骤。</p>
+                </div>
+              </div>
+            </aside>
+
+            <section class="pto-ide-frame__pane preview-pane" id="visualizationPane" data-ide-pane="editor-preview">
               <div class="pto-ide-frame__tabstrip" data-ide-slot="preview-tabs">
                 <div class="tab-control" role="tablist" aria-label="中栏视图">
                   <button class="tab-control-item is-selected" id="hardwareViewTab" type="button" role="tab" data-preview-view="hardware" aria-selected="true" aria-controls="hardwareViewport">hardware-impact.view</button>
@@ -96,13 +105,13 @@
                     <div class="pto-hw-viewport__title">
                       <span>硬件架构图</span>
                       <div class="pto-hw-viewport__segmented" aria-label="架构切换">
-                        <button class="btn btn-sm is-selected" type="button" data-arch-id="ascend910b" aria-pressed="true">910B</button>
-                        <button class="btn btn-sm" type="button" data-arch-id="ascend950b" aria-pressed="false">950</button>
+                        <button class="btn btn-sm" type="button" data-arch-id="ascend910b" aria-pressed="false">910B</button>
+                        <button class="btn btn-sm is-selected" type="button" data-arch-id="ascend950b" aria-pressed="true">950</button>
                       </div>
                     </div>
                     <div class="pto-hw-viewport__controls">
                       <div class="pto-hw-viewport__tools">
-                        <button class="btn btn-sm btn-ghost pto-hw-viewport__tool" type="button" id="generationCompare" aria-pressed="false" hidden disabled title="切换到 950B 后查看代际对比">查看代际对比</button>
+                        <button class="btn btn-sm btn-ghost pto-hw-viewport__tool" type="button" id="generationCompare" aria-pressed="false" disabled title="切换到 950 后查看代际对比">查看代际对比</button>
                         <button class="btn btn-sm btn-ghost pto-hw-viewport__tool" type="button" data-detail aria-pressed="true">细节开</button>
                         <button class="btn btn-sm btn-ghost pto-hw-viewport__tool" type="button" data-fit title="适合窗口">适合</button>
                         <button class="btn btn-sm btn-ghost pto-hw-viewport__tool" type="button" data-zoom-out aria-label="缩小">−</button>
@@ -135,19 +144,6 @@
               </div>
             </section>
 
-            <aside class="pto-ide-frame__pane inspector-pane" data-ide-pane="inspector" id="inspectorPane">
-              <header class="pto-ide-frame__pane-header">
-                <span class="pto-ide-frame__pane-title">Inspector</span>
-                <span class="pto-ide-frame__pane-meta" id="inspectorMeta">等待选择</span>
-              </header>
-              <div class="pto-ide-frame__pane-body inspector-body" id="inspectorBody">
-                <div class="inspector-empty">
-                  <span>CONTEXTUAL INSPECTOR</span>
-                  <strong>选择迁移项或执行流</strong>
-                  <p>这里会显示变化上下文、判断信号、硬件影响、迁移动作和执行步骤。</p>
-                </div>
-              </div>
-            </aside>
           </div>
         </div>
       </div>
@@ -156,7 +152,7 @@
 
   <script src="../vendor/pto-design-system/patterns/workbench-shell/pattern.js"></script>
   <script src="../vendor/pto-design-system/patterns/floating-playback-control/pattern.js"></script>
-  <script src="../vendor/pto-design-system/patterns/ide-frame/pattern.js"></script>
+  <script src="../vendor/pto-design-system/patterns/ide-frame/pattern.js?v=20260725-1"></script>
   <script src="../vendor/pto-design-system/patterns/aiv-core-object/pattern.js"></script>
   <script src="../vendor/pto-design-system/patterns/aic-core-object/pattern.js"></script>
   <script src="../vendor/pto-design-system/patterns/memory-architecture/pattern.js"></script>
