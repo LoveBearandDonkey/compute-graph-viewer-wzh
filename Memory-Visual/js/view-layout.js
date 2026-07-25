@@ -69,7 +69,9 @@
         ctx.fillStyle = T['foreground-muted'];
         ctx.font = `500 10px ${T['font-sans']}`;
         ctx.fillText(KIT.truncate(ctx, region.label, LABEL_W - 12), 0, top + 28);
-        ctx.fillText(`${region.owner} · ${region.align}B 对齐`, 0, top + 42);
+        ctx.fillText(region.isRegister
+          ? `${region.owner} · ${region.regBytes}B/reg`
+          : `${region.owner} · ${region.align}B 对齐`, 0, top + 42);
 
         // --- 轨道 ---
         ctx.fillStyle = T['surface-2'];
@@ -145,10 +147,14 @@
         ctx.fillText(F.pct(region.reservedRatio, 0), metaX, top + 18);
         ctx.font = `500 10px ${T['font-mono']}`;
         ctx.fillStyle = T['foreground-secondary'];
-        ctx.fillText(`${F.bytes(region.reserved)} / ${F.bytes(region.capacity)}`, metaX, top + 32);
+        ctx.fillText(region.isRegister
+          ? `${region.reservedRegs} / ${region.capacityRegs} regs`
+          : `${F.bytes(region.reserved)} / ${F.bytes(region.capacity)}`, metaX, top + 32);
         ctx.fillStyle = T['foreground-muted'];
         const liveNow = region.series[Math.min(tick, region.series.length - 1)];
-        ctx.fillText(`此刻持有 ${F.bytes(liveNow)}`, metaX, top + 46);
+        ctx.fillText(region.isRegister
+          ? `此刻活跃 ${Math.round(liveNow / (region.regBytes || 1))} regs`
+          : `此刻持有 ${F.bytes(liveNow)}`, metaX, top + 46);
       });
     }
 
@@ -167,10 +173,14 @@
       const a = hit.alloc;
       const span = MET.liveSpan(a);
       const live = MET.liveAt(a, state.tick);
+      const regBytes = hit.region.regBytes || 1;
+      const location = a.isRegister
+        ? `v${a.regIndex} – v${a.regIndex + Math.round(a.size / regBytes) - 1}`
+        : `${F.hex(a.offset)} + ${F.bytes(a.size)}`;
       tip.show(`
         <div class="mv-tip__title">${F.escapeHtml(a.name)}</div>
         <div class="mv-tip__row"><span>层级</span><b>${a.region} · ${F.escapeHtml(a.queue)}</b></div>
-        <div class="mv-tip__row"><span>地址</span><b>${F.hex(a.offset)} + ${F.bytes(a.size)}</b></div>
+        <div class="mv-tip__row"><span>${a.isRegister ? '寄存器' : '地址'}</span><b>${location}</b></div>
         <div class="mv-tip__row"><span>数据 / 实占</span><b>${F.bytes(a.dataBytes)} / ${F.bytes(a.size)}</b></div>
         <div class="mv-tip__row"><span>dtype</span><b>${F.escapeHtml(a.dtype)} ${F.shape(a.shape)}</b></div>
         <div class="mv-tip__row"><span>buffer_num</span><b>${a.bufferNum}</b></div>

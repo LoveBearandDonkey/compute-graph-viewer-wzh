@@ -6,6 +6,14 @@
   与流水事件序列 (events)。这样 §3 场景 4「tiling 对比」的每个候选都由同一套
   规则推出，视图上的差异真实来自参数差异，而不是人工编的数字。
 
+  寄存器层级（芯片声明了 region.kind === 'register' 时启用，950 起）：
+    950 的 A5 写法把 Normalize / Cast 从 UB tensor API 下沉成 RegBase/VF ——
+    loadalign 把 mmOut 分片读进向量寄存器，VF 在寄存器上算完再 storealign 回 UB。
+    因此这类芯片上 normBuf 不再申请（UB 省一块），取而代之的是 VRF 上按
+    「寄存器个数」计的分配，以及 SIMT 侧按 warp 整块切分的 SRF 占用。
+    活跃寄存器数与展开度（unroll，随 tileM 变化）线性相关，放不下的部分
+    由编译器溢出到 UB —— 溢出量、溢出去向和它带来的额外 VF 往返都建模出来。
+
   片上调度用一个极简的顺序模型模拟：
     · 每条流水线（MTE1/MTE2/Cube/FixPipe/Vector/MTE3）是串行队列；
     · 一步的开始时刻 = max(本流水线空闲时刻, 所读分配的写完时刻, 目标 slot 的释放时刻)；
@@ -34,6 +42,8 @@
     FixPipe: 4096,
     VectorElem: 1024,
     VectorCast: 2048,
+    RegLoad: 8192,   // loadalign：UB → 向量寄存器
+    RegStore: 8192,  // storealign：向量寄存器 → UB
   };
 
   const UB_BLOCK = 32; // UB 每行按 32B block 对齐 —— 标量类张量的经典 padding 来源
@@ -51,11 +61,13 @@
    * 声明表：把 kernel 里的 TQue / TBuf 声明翻译成与 tiling 参数相关的分配描述。
    * logicalSize = 数据真实字节；physicalSize = 硬件对齐后实际占用。
    */
-  function declarations(tileM, db) {
+  function declarations(tileM, db, useRegisters) {
     const decl = (over) => ({
       slots: 1, dtype: 'float32', kind: 'buf', persistent: false, ...over,
     });
-    return [
+    // RegBase 芯片上 Normalize 直接在向量寄存器里完成，normBuf 不再申请
+    const keep = (list) => (useRegisters ? list.filter((d) => d.key !== 'normUb') : list);
+    return keep([
       // ---- L1 ----
       decl({
         key: 'bL1', region: 'L1', queue: 'bL1Buf', dtype: 'float16',
@@ -140,7 +152,74 @@
         declNeedle: 'InitBuffer(yQue', hotNeedle: 'Cast(y, norm',
         cce: 'VCONV %ub_y,%ub_n,f32->f16\nSET_FLAG V->MTE3',
       }),
+    ]);
+  }
+
+  // ---------------------------------------------------------------
+  // 寄存器规划（仅 chip.registers 存在时启用）
+  // ---------------------------------------------------------------
+
+  /** 展开度：一次 VF 循环体同时在寄存器里持有多少组数据，随 tileM 变化。 */
+  function unrollOf(tileM) {
+    return Math.max(2, Math.min(8, Math.round(tileM / 8)));
+  }
+
+  /**
+   * 把 RegBase 循环体翻译成向量寄存器分配，以及 SIMT 侧的 warp 切分。
+   * 单位是「寄存器个数」；字节数 = regs × regBytes，交给通用 region 逻辑处理。
+   */
+  function registerPlan(chip, tileM, db) {
+    if (!global.MemVizChips.hasRegisters(chip)) return null;
+    const cfg = chip.registers;
+    const vrf = chip.regions.find((r) => r.id === cfg.vectorRegionId);
+    const srf = chip.regions.find((r) => r.id === cfg.simtRegionId);
+    const unroll = unrollOf(tileM);
+
+    const vregs = [
+      {
+        key: 'vregConst', queue: 'RegBase 常量', kind: 'reg', regs: 4, slots: 1, persistent: true,
+        note: 'gamma / beta / eps 常驻寄存器，整个 kernel 不再回读 UB',
+        cce: 'LOADALIGN %v0,[%ub_g]\nLOADALIGN %v2,[%ub_b]',
+      },
+      {
+        key: 'vregSrc', queue: 'loadalign', kind: 'reg', regs: 4 * unroll, slots: db.mmOut,
+        note: `mmOut 分片读入寄存器，展开 ${unroll} 组 × 4 寄存器`,
+        cce: 'LOADALIGN %vsrc,[%ub_mm+off]  ; UB → VRF',
+      },
+      {
+        key: 'vregNorm', queue: 'VF 中间量', kind: 'reg', regs: 3 * unroll, slots: 1,
+        note: 'Sub / Mul / Add 的中间结果，全程不落 UB',
+        cce: 'VF.SUB %vn,%vsrc,%vmean\nVF.MUL %vn,%vn,%vrstd\nVF.FMA %vn,%vn,%v0,%v2',
+      },
+      {
+        key: 'vregOut', queue: 'storealign', kind: 'reg', regs: unroll, slots: 1,
+        note: 'Cast 后的 half 结果，storealign 写回 yQue',
+        cce: 'VF.CVT %vy,%vn,f32->f16\nSTOREALIGN [%ub_y+off],%vy',
+      },
     ];
+
+    const requestedRegs = vregs.reduce((sum, d) => sum + d.regs * d.slots, 0);
+    const capacityRegs = Math.floor(vrf.capacity / vrf.regBytes);
+    const spillRegs = Math.max(0, requestedRegs - capacityRegs);
+
+    // SIMT 侧：每线程寄存器用量决定一个 warp 的整块占用，进而决定并发 warp 数
+    const regsPerThread = 48 + unroll * 6;
+    const warpBytes = regsPerThread * cfg.threadsPerWarp * srf.regBytes;
+    const activeWarps = Math.max(1, Math.min(cfg.warpsMax, Math.floor(srf.capacity / warpBytes)));
+
+    return {
+      unroll, vregs, requestedRegs, capacityRegs, spillRegs,
+      regBytes: vrf.regBytes,
+      spillBytes: spillRegs * vrf.regBytes,
+      spillRegion: cfg.spillRegion,
+      spillCostPerReg: cfg.spillCostPerReg,
+      regsPerThread, warpBytes, activeWarps,
+      warpsMax: cfg.warpsMax,
+      threadsPerWarp: cfg.threadsPerWarp,
+      warpOccupancy: activeWarps / cfg.warpsMax,
+      vectorRegionId: cfg.vectorRegionId,
+      simtRegionId: cfg.simtRegionId,
+    };
   }
 
   /** GM 侧分配 —— 服务规划文档场景 6（workspace 与 GM 规划）。 */
@@ -170,13 +249,14 @@
     const hasTail = tailM !== tileM;
 
     const regionOf = (id) => chip.regions.find((r) => r.id === id);
+    const plan = registerPlan(chip, tileM, cfg.db);
     const allocations = [];
     const byId = new Map();
     const slotIds = new Map(); // declKey -> [allocId per slot]
     const cursors = {};
 
     // ---- 静态地址布局：按声明顺序在各 region 内顺序摆放 ----
-    declarations(tileM, cfg.db).forEach((d) => {
+    declarations(tileM, cfg.db, !!plan).forEach((d) => {
       const region = regionOf(d.region);
       const align = region.align;
       const physical = alignUp(d.physical || d.logical, align);
@@ -184,7 +264,10 @@
       for (let slot = 0; slot < d.slots; slot += 1) {
         const id = `${d.key}#${slot}`;
         let offset;
-        const reuseTarget = cfg.manualReuse && cfg.manualReuse[d.key];
+        // RegBase 芯片上 normBuf 已经不存在，同一种「手工复用」风险写法
+        // 落在 tmpSqBuf 上（见 CONFIGS 的 manualReuseRegBase）
+        const reuseTable = (plan && cfg.manualReuseRegBase) || cfg.manualReuse;
+        const reuseTarget = reuseTable && reuseTable[d.key];
         if (reuseTarget && slot === 0) {
           // 手工复用：直接落在目标分配的起始地址上，不推进游标（省容量、担风险）
           offset = byId.get(`${reuseTarget}#0`).offset;
@@ -226,6 +309,141 @@
       }
       slotIds.set(d.key, ids);
     });
+
+    // ---- 寄存器侧（950 起）----
+    // VRF 按寄存器序号顺序摆放；请求量超过物理寄存器数时不截断，
+    // 让超出容量线的那几个寄存器在布局图上显形，同时在 UB 上建一块
+    // 等量的 spill 区表示它们实际待的地方（两者由 REG_SPILL 规则串起来）。
+    if (plan) {
+      const vrf = regionOf(plan.vectorRegionId);
+      const srf = regionOf(plan.simtRegionId);
+      const declLine = SRC.lineOf('Normalize(i)');
+      const hotLine = SRC.lineOf('Sub(norm, mmOut, mean');
+
+      plan.vregs.forEach((d) => {
+        const ids = [];
+        for (let slot = 0; slot < d.slots; slot += 1) {
+          const id = `${d.key}#${slot}`;
+          cursors.VRF = cursors.VRF || 0;
+          const offset = cursors.VRF;
+          const size = d.regs * plan.regBytes;
+          cursors.VRF = offset + size;
+          const alloc = {
+            id,
+            declKey: d.key,
+            name: d.slots > 1 ? `${d.key}[${slot}]` : d.key,
+            region: vrf.id,
+            queue: d.queue,
+            kind: d.kind,
+            slot,
+            bufferNum: d.slots,
+            offset,
+            size,
+            logicalSize: size,
+            dataBytes: size,
+            align: vrf.align,
+            dtype: 'float32',
+            shape: [d.regs, plan.regBytes],
+            persistent: !!d.persistent,
+            isRegister: true,
+            regs: d.regs,
+            regIndex: offset / plan.regBytes,
+            padReason: null,
+            reuseOf: null,
+            manualReuse: false,
+            note: d.note,
+            src: { file: SRC.path, declLine, hotLine },
+            code: SRC.snippet(Math.max(0, hotLine - 1), hotLine + 2),
+            cce: d.cce,
+            intervals: [],
+          };
+          allocations.push(alloc);
+          byId.set(id, alloc);
+          ids.push(id);
+        }
+        slotIds.set(d.key, ids);
+      });
+
+      // SIMT：一个 warp 就是一整块寄存器切片，装得下几个就并发几个
+      const warpIds = [];
+      for (let w = 0; w < plan.activeWarps; w += 1) {
+        const id = `warp${w}#0`;
+        const alloc = {
+          id,
+          declKey: `warp${w}`,
+          name: `warp${w}`,
+          region: srf.id,
+          queue: 'SIMT warp slice',
+          kind: 'reg',
+          slot: 0,
+          bufferNum: 1,
+          offset: w * plan.warpBytes,
+          size: plan.warpBytes,
+          logicalSize: plan.warpBytes,
+          dataBytes: plan.warpBytes,
+          align: srf.align,
+          dtype: 'uint32',
+          shape: [plan.threadsPerWarp, plan.regsPerThread],
+          persistent: true,
+          isRegister: true,
+          regs: plan.regsPerThread * plan.threadsPerWarp,
+          regIndex: w * plan.regsPerThread * plan.threadsPerWarp,
+          regsPerThread: plan.regsPerThread,
+          padReason: null,
+          reuseOf: null,
+          manualReuse: false,
+          note: `每线程 ${plan.regsPerThread} 个寄存器 × ${plan.threadsPerWarp} 线程`,
+          src: { file: SRC.path, declLine, hotLine },
+          code: SRC.snippet(Math.max(0, hotLine - 1), hotLine + 2),
+          cce: `// warp${w}: ${plan.regsPerThread} regs/thread`,
+          intervals: [],
+        };
+        allocations.push(alloc);
+        byId.set(id, alloc);
+        warpIds.push(id);
+      }
+      slotIds.set('warps', warpIds);
+
+      // 溢出区：放不下的寄存器由编译器落回 UB
+      if (plan.spillRegs > 0) {
+        const ub = regionOf(plan.spillRegion);
+        const size = alignUp(plan.spillBytes, ub.align);
+        cursors[ub.id] = alignUp(cursors[ub.id] || 0, ub.align);
+        const offset = cursors[ub.id];
+        cursors[ub.id] = offset + size;
+        const alloc = {
+          id: 'vregSpill#0',
+          declKey: 'vregSpill',
+          name: 'vregSpill',
+          region: ub.id,
+          queue: '编译器溢出区',
+          kind: 'spill',
+          slot: 0,
+          bufferNum: 1,
+          offset,
+          size,
+          logicalSize: plan.spillBytes,
+          dataBytes: plan.spillBytes,
+          align: ub.align,
+          dtype: 'float32',
+          shape: [plan.spillRegs, plan.regBytes],
+          persistent: false,
+          isSpill: true,
+          spillRegs: plan.spillRegs,
+          padReason: null,
+          reuseOf: null,
+          manualReuse: false,
+          note: `${plan.spillRegs} 个装不下的向量寄存器被溢出到 ${ub.id}`,
+          src: { file: SRC.path, declLine, hotLine },
+          code: SRC.snippet(Math.max(0, hotLine - 1), hotLine + 2),
+          cce: 'STOREALIGN [%ub_spill],%vN   ; spill\nLOADALIGN %vN,[%ub_spill]    ; fill',
+          intervals: [],
+        };
+        allocations.push(alloc);
+        byId.set(alloc.id, alloc);
+        slotIds.set('vregSpill', [alloc.id]);
+      }
+    }
 
     // ---- GM 侧 ----
     const gmRegion = regionOf('GM');
@@ -349,6 +567,16 @@
     // bL1 首次也是唯一一次被读走后即可释放（工具应据此提示复用机会）
     release(first('bL1'), writeDoneAt[first('bL0B')]);
 
+    // RegBase：gamma/beta 一次性读进常驻寄存器，循环体里不再回读 UB
+    if (plan) {
+      emit({
+        pipe: 'VF', type: 'reg_load', label: 'gamma/beta→VRF', iter: -1,
+        reads: [first('gammaUb'), first('betaUb')], writes: [first('vregConst')],
+        bytes: 4 * plan.regBytes, dur: cyc(4 * plan.regBytes, RATE.RegLoad),
+        srcLine: SRC.lineOf('LocalTensor<float> g     = gammaBuf'),
+      });
+    }
+
     for (let i = 0; i < tileNum; i += 1) {
       const rows = i === tileNum - 1 ? tailM : tileM;
       const sA = slotOf('aL1', i);
@@ -397,22 +625,71 @@
       // tmpSq 只在 ReduceMeanVar 内部被写与被读，出了这一步就是死变量
       release(first('tmpSq'), reduceEnd);
 
-      const normEnd = emit({
-        pipe: 'Vector', type: 'compute', label: `Normalize ${tag}`, iter: i,
-        reads: [sMM, first('meanUb'), first('rstdUb'), first('gammaUb'), first('betaUb')],
-        writes: [first('normUb')],
-        bytes: 0, dur: cyc(tileM * N, RATE.VectorElem),
-        srcLine: SRC.lineOf('Sub(norm, mmOut, mean'),
-      });
-      release(sMM, normEnd);
+      if (plan) {
+        // ---- A5 RegBase 路径：UB → 向量寄存器 → VF 计算 → 写回 UB ----
+        const sVreg = slotOf('vregSrc', i);
+        emit({
+          pipe: 'VF', type: 'reg_load', label: `loadalign mmOut→VRF ${tag}`, iter: i,
+          reads: [sMM], writes: [sVreg],
+          bytes: tileM * N * 4, dur: cyc(tileM * N * 4, RATE.RegLoad),
+          srcLine: SRC.lineOf('LocalTensor<float> norm  = normBuf'),
+        });
 
-      const castEnd = emit({
-        pipe: 'Vector', type: 'compute', label: `Cast ${tag}`, iter: i,
-        reads: [first('normUb')], writes: [sY],
-        bytes: 0, dur: cyc(tileM * N, RATE.VectorCast),
-        srcLine: SRC.lineOf('Cast(y, norm'),
-      });
-      release(first('normUb'), castEnd);
+        const vfNormEnd = emit({
+          pipe: 'VF', type: 'compute', label: `VF Normalize ${tag}`, iter: i,
+          reads: [sVreg, first('vregConst'), first('meanUb'), first('rstdUb')],
+          writes: [first('vregNorm')],
+          bytes: 0, dur: cyc(tileM * N, RATE.VectorElem),
+          srcLine: SRC.lineOf('Sub(norm, mmOut, mean'),
+        });
+        release(sMM, vfNormEnd);
+
+        // 溢出往返：装不下的寄存器每次迭代都要多走一趟 UB
+        if (plan.spillRegs > 0) {
+          emit({
+            pipe: 'VF', type: 'spill', label: `spill/fill ${plan.spillRegs} regs ${tag}`, iter: i,
+            reads: [first('vregNorm')], writes: [first('vregSpill')],
+            bytes: plan.spillBytes * plan.spillCostPerReg,
+            dur: cyc(plan.spillBytes * plan.spillCostPerReg, RATE.RegStore),
+            srcLine: SRC.lineOf('Mul(norm, norm, rstd'),
+          });
+        }
+
+        const vfCastEnd = emit({
+          pipe: 'VF', type: 'compute', label: `VF Cast ${tag}`, iter: i,
+          reads: [first('vregNorm')], writes: [first('vregOut')],
+          bytes: 0, dur: cyc(tileM * N, RATE.VectorCast),
+          srcLine: SRC.lineOf('Cast(y, norm'),
+        });
+        release(first('vregNorm'), vfCastEnd);
+        if (plan.spillRegs > 0) release(first('vregSpill'), vfCastEnd);
+
+        const storeEnd = emit({
+          pipe: 'VF', type: 'reg_store', label: `storealign VRF→yUb ${tag}`, iter: i,
+          reads: [first('vregOut')], writes: [sY],
+          bytes: tileM * N * 2, dur: cyc(tileM * N * 2, RATE.RegStore),
+          srcLine: SRC.lineOf('yQue.EnQue(y)'),
+        });
+        release(sVreg, storeEnd);
+        release(first('vregOut'), storeEnd);
+      } else {
+        const normEnd = emit({
+          pipe: 'Vector', type: 'compute', label: `Normalize ${tag}`, iter: i,
+          reads: [sMM, first('meanUb'), first('rstdUb'), first('gammaUb'), first('betaUb')],
+          writes: [first('normUb')],
+          bytes: 0, dur: cyc(tileM * N, RATE.VectorElem),
+          srcLine: SRC.lineOf('Sub(norm, mmOut, mean'),
+        });
+        release(sMM, normEnd);
+
+        const castEnd = emit({
+          pipe: 'Vector', type: 'compute', label: `Cast ${tag}`, iter: i,
+          reads: [first('normUb')], writes: [sY],
+          bytes: 0, dur: cyc(tileM * N, RATE.VectorCast),
+          srcLine: SRC.lineOf('Cast(y, norm'),
+        });
+        release(first('normUb'), castEnd);
+      }
 
       const outEnd = emit({
         pipe: 'MTE3', type: 'copy_out', label: `yUb→yGm ${tag}`, iter: i,
@@ -442,6 +719,10 @@
       if (alloc.region === 'GM' && !alloc.unused) {
         alloc.intervals = [{ start: 0, end: totalTicks, iter: -1 }];
       }
+      // warp 切片是 kernel 启动时就定下的静态占用，全程有效
+      if (alloc.declKey.startsWith('warp')) {
+        alloc.intervals = [{ start: 0, end: totalTicks, iter: -1 }];
+      }
     });
 
     return {
@@ -449,7 +730,7 @@
       id: cfg.id,
       label: cfg.label,
       kicker: cfg.kicker,
-      note: cfg.note,
+      note: (plan && cfg.noteRegBase) || cfg.note,
       chip: { name: chip.name, specRef: chip.specRef },
       kernel: {
         name: 'MatmulLayerNorm_mix',
@@ -461,6 +742,7 @@
         tileM, tileNum, tailM, hasTail,
         bufferNum: { ...cfg.db },
       },
+      registers: plan,
       totalTicks,
       pipeCursor: { ...pipeCursor },
       allocations,
@@ -501,9 +783,11 @@
       label: 'tileM=32 + 手工复用',
       kicker: '风险写法',
       note: 'normBuf 手工复用 mmOutQue 首个 slot 的地址省下 32KB，但 Normalize 仍在读 mmOut。',
+      noteRegBase: 'tmpSqBuf 手工复用 mmOutQue 首个 slot 的地址，但 ReduceMeanVar 仍在读 mmOut。',
       tileM: 32,
       db: { aL1: 2, aL0A: 2, cL0C: 2, mmOut: 2, yUb: 2 },
       manualReuse: { normUb: 'mmOut' },
+      manualReuseRegBase: { tmpSq: 'mmOut' },
     },
     {
       id: 't16',
@@ -519,5 +803,5 @@
     return CONFIGS.map((cfg) => buildRun(cfg, chip));
   }
 
-  global.MemVizRuns = { buildAll, buildRun, CONFIGS, M_TOTAL, N, K, K0 };
+  global.MemVizRuns = { buildAll, buildRun, registerPlan, unrollOf, CONFIGS, M_TOTAL, N, K, K0 };
 })(window);

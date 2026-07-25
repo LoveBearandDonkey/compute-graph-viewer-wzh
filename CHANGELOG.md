@@ -1,5 +1,9 @@
 # PTO Changelog
 
+- 2026-07-25 `Memory-Visual/`: 内存布局页签下新增**布局切换**（地址布局 / 硬件架构）。硬件架构布局调用设计系统 `patterns/memory-architecture`（+ `aic-core-object` / `aiv-core-object`）的硬件架构图，把当前候选的读数直接挂回硬件本身：每块存储卡片下方给出物理容量、对齐要求、bank 数、静态预留、利用率（超限时写明超出量）、峰值持有，寄存器层级额外给展开度 / 溢出 / 每线程寄存器 / 并发 warp；卡片里的 cell 网格按时间游标着色（实色=此刻持有、灰=预留未用、警告色=该层级超限），悬停给完整读数，点击把焦点层级切过去。全部经 `renderArchitecture` / `createRouteOverlay` / `attachHoverInteractions` / `setBufferBlocks` / `createZoomController` 官方入口，读数行以派生 preset 的 `details` 传入，不复制 pattern 生成的 DOM、不用局部 CSS 改其内部视觉。新增 `js/view-arch.js`。
+
+- 2026-07-25 `Memory-Visual/`: **950 增加寄存器内存管理**。`data/chip-specs.js` 为 `ascend-950b` 增加两个 `kind: 'register'` 存储层级 —— `VRF`（Vector Register File，64×256B）与 `SRF`（SIMT Register File，64KB，按 warp 切分），并用 `chip.registers` 描述 warp 切分与溢出去向；新增 `VF` 流水。`data/runs.js` 据此把 950 的 Normalize/Cast 下沉为 A5 RegBase 路径（`loadalign` → VF 计算 → `storealign`，`normBuf` 不再申请），寄存器分配随展开度变化，装不下的部分溢出到 UB 并产生每次迭代的额外往返。诊断新增 `REG_SPILL` / `REG_OCCUPANCY` / `REG_HEADROOM` 三条规则，通用容量与复用规则对寄存器层级不再给「复用地址 / 增大 tileM」这类不适用的处方。布局图、水位曲线、状态条、分析日志、详情面板对寄存器层级一律按「寄存器个数」口径呈现。
+
 - 2026-07-25 `launch-v2.html`: 执行与性能分析组新增「内存工作台」卡片（`Memory-Visual/index.html`），排在「内存查看器」之后。预览图 `assets/preview-memory-workbench.png` 取自该页 1600×900 实机截图（Ascend 910B / tileM=32 基线，内存布局视图 + 诊断栏 + 占用水位），与其他卡片一致走 `preview` + `fit: "contain"` 静态图路径。
 
 - 2026-07-25 `Memory-Visual/`: 新增**内存工作台**——昇腾算子片上内存可视化工具原型，落在设计系统 `ide-frame`（standalone host）的完整槽位上。覆盖规划文档 §4.3 的三个视图：内存布局条带图（地址空间分栏，实心=当前持有 / 半透明=预留未用 / 斜纹=碎片 / 红区=超容量）、生命周期与复用（整块复用 `memory-reuse-viewer` pattern）、流水×内存联合时序（`swimlane-task` 的 drawTaskBar 画六条流水线 + 焦点层级占用曲线）。底部 dock 承载六层级水位曲线与 `memviz analyze` CLI 形态日志（互斥）。数据层 `data/runs.js` 是中间格式**生成器**：给定 tiling 参数与各队列 buffer_num，用串行流水队列 + slot 释放约束模拟出事件序列，double buffer 是否生效由模型自然产生而非硬编码；五组候选覆盖超限 / 单份缓冲 / 双缓冲解 / 手工复用踩内存 / 过细切分。规则引擎输出「问题+位置+量化影响+建议」四元组并带 evidence 溯源。芯片容量、bank、对齐、流水单元集合走 `data/chip-specs.js` 表驱动（910B / 950B，占位规格）。已在 `launch.html` 执行与性能分析组挂入口。

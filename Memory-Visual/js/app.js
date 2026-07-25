@@ -14,6 +14,7 @@
     chipId: 'ascend-910b',
     runId: 't32',
     view: 'layout',
+    layoutMode: 'address', // address = 地址条带图；arch = 硬件架构图
     focusRegionId: 'UB',
     tick: 0,
     playing: false,
@@ -87,6 +88,42 @@
     });
   }
 
+  const LAYOUT_MODES = [
+    {
+      id: 'address', label: '地址布局',
+      title: '按地址空间摊平的条带图',
+      note: '横轴是各层级自己的地址空间。实心块 = 当前时刻真正持有数据，半透明块 = 预留着但此刻是空的，'
+        + '斜纹 = 分配之间的碎片，竖线右侧的红区 = 超出容量的部分。',
+    },
+    {
+      id: 'arch', label: '硬件架构',
+      title: '把同一份读数贴回硬件架构图',
+      note: '同一份数据贴回硬件本身：每块存储下方是物理容量、对齐要求、静态预留与利用率，'
+        + '格子按此刻占用着色（实色 = 持有，灰色 = 预留未用，警告色 = 该层级已超限）。'
+        + '悬停看完整读数，点击把焦点层级切过去；拖拽平移，⌘/Ctrl + 滚轮缩放。',
+    },
+  ];
+
+  function renderLayoutModeSwitch() {
+    const host = $('layoutModeSwitch');
+    host.innerHTML = '';
+    LAYOUT_MODES.forEach((mode) => {
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = `btn btn-sm${mode.id === state.layoutMode ? ' is-selected' : ''}`;
+      btn.textContent = mode.label;
+      btn.title = mode.title;
+      btn.addEventListener('click', () => {
+        if (state.layoutMode === mode.id) return;
+        state.layoutMode = mode.id;
+        renderLayoutModeSwitch();
+        render();
+        window.requestAnimationFrame(redrawViews);
+      });
+      host.appendChild(btn);
+    });
+  }
+
   function renderRegionSwitch() {
     const host = $('regionSwitch');
     host.innerHTML = '';
@@ -95,7 +132,9 @@
       btn.type = 'button';
       btn.className = `btn btn-sm${region.id === state.focusRegionId ? ' is-selected' : ''}`;
       btn.textContent = region.id;
-      btn.title = `${region.label} · ${F.bytes(region.capacity)} · ${region.align}B 对齐`;
+      btn.title = region.kind === 'register'
+        ? `${region.label} · ${Math.round(region.capacity / region.regBytes)} regs × ${region.regBytes}B`
+        : `${region.label} · ${F.bytes(region.capacity)} · ${region.align}B 对齐`;
       btn.addEventListener('click', () => {
         state.focusRegionId = region.id;
         renderRegionSwitch();
@@ -112,6 +151,11 @@
       { cls: 'is-gap', label: '碎片' },
       { cls: 'is-over', label: '超出容量' },
     ],
+    arch: [
+      { cls: '', label: '当前持有' },
+      { cls: 'is-ghost', label: '预留未用' },
+      { cls: 'is-warn-fill', label: '超出容量' },
+    ],
     lifetime: [],
     pipeline: [
       { cls: '', label: '流水任务' },
@@ -122,7 +166,8 @@
 
   function renderLegend() {
     const host = $('viewLegend');
-    const items = LEGENDS[state.view] || [];
+    const key = state.view === 'layout' && state.layoutMode === 'arch' ? 'arch' : state.view;
+    const items = LEGENDS[key] || [];
     host.innerHTML = items.map((item) => `
       <span class="mv-legend-item"><span class="mv-legend-swatch ${item.cls}"></span>${item.label}</span>
     `).join('');
@@ -294,9 +339,17 @@
     const event = run.events.find((e) => e.id === state.selectedEventId);
 
     if (alloc) {
-      kicker.textContent = `${alloc.region} · ${alloc.kind === 'queue' ? 'TQue' : alloc.kind === 'gm' ? 'GlobalTensor' : 'TBuf'}`;
+      const kindLabel = alloc.isRegister ? '寄存器'
+        : alloc.isSpill ? '溢出区'
+          : alloc.kind === 'queue' ? 'TQue'
+            : alloc.kind === 'gm' ? 'GlobalTensor' : 'TBuf';
+      kicker.textContent = `${alloc.region} · ${kindLabel}`;
       const span = global.MemVizMetrics.liveSpan(alloc);
       const related = findings.filter((f) => f.refs.includes(alloc.id));
+      const regBytes = metrics.regionById[alloc.region]?.regBytes || 1;
+      const location = alloc.isRegister
+        ? `v${alloc.regIndex} – v${alloc.regIndex + Math.round(alloc.size / regBytes) - 1}`
+        : `${F.hex(alloc.offset)} – ${F.hex(alloc.offset + alloc.size)}`;
       host.innerHTML = `
         <div class="mv-sec" style="padding:0;border:0;gap:var(--space-2)">
           <div class="mv-detail-title">${F.escapeHtml(alloc.name)}</div>
@@ -305,9 +358,11 @@
             <span class="stat-chip">buffer_num ${alloc.bufferNum}</span>
             ${alloc.manualReuse ? '<span class="stat-chip mv-sev-danger">手工复用</span>' : ''}
           </div>
-          <div class="mv-kv"><span>地址区间</span><b>${F.hex(alloc.offset)} – ${F.hex(alloc.offset + alloc.size)}</b></div>
+          <div class="mv-kv"><span>${alloc.isRegister ? '寄存器区间' : '地址区间'}</span><b>${location}</b></div>
           <div class="mv-kv"><span>实占 / 数据</span><b>${F.bytes(alloc.size)} / ${F.bytes(alloc.dataBytes)}</b></div>
           <div class="mv-kv"><span>对齐粒度</span><b>${alloc.align}B</b></div>
+          ${alloc.regsPerThread ? `<div class="mv-kv"><span>每线程寄存器</span><b>${alloc.regsPerThread}</b></div>` : ''}
+          ${alloc.note ? `<div class="mv-kv"><span>说明</span><b>${F.escapeHtml(alloc.note)}</b></div>` : ''}
           <div class="mv-kv"><span>dtype · shape</span><b>${F.escapeHtml(alloc.dtype)} ${F.shape(alloc.shape)}</b></div>
           <div class="mv-kv"><span>生命周期</span><b>${span ? `${F.tick(span.start)} – ${F.tick(span.end)}` : '未被访问'}</b></div>
           <div class="mv-kv"><span>活跃区间数</span><b>${alloc.intervals.length}</b></div>
@@ -366,7 +421,10 @@
       ...metrics.regions.map((region) => {
         const over = region.reserved > region.capacity;
         const cls = over ? 'is-danger' : region.reservedRatio >= 0.9 ? 'is-warn' : 'is-ok';
-        return `<span class="is-dim">region  </span> ${region.id.padEnd(4)} ${String(F.bytes(region.reserved)).padStart(9)} / ${String(F.bytes(region.capacity)).padStart(9)}  <span class="${cls}">${F.pct(region.reservedRatio, 1).padStart(7)}</span>`;
+        const used = region.isRegister ? `${region.reservedRegs} regs` : F.bytes(region.reserved);
+        const cap = region.isRegister ? `${region.capacityRegs} regs` : F.bytes(region.capacity);
+        const tag = region.isRegister ? 'regfile ' : 'region  ';
+        return `<span class="is-dim">${tag}</span> ${region.id.padEnd(4)} ${String(used).padStart(9)} / ${String(cap).padStart(9)}  <span class="${cls}">${F.pct(region.reservedRatio, 1).padStart(7)}</span>`;
       }),
       '',
       ...findings.map((item) => {
@@ -386,12 +444,20 @@
   function renderStatus() {
     const region = metrics.regionById[state.focusRegionId];
     const summary = global.MemVizDiagnostics.summarize(findings);
+    const plan = run.registers;
+    const regItem = plan ? `
+      <span class="mv-status-item">寄存器 <b class="${plan.spillRegs ? 'mv-sev-danger' : ''}">${plan.requestedRegs} / ${plan.capacityRegs}</b>${plan.spillRegs ? `（溢出 ${plan.spillRegs}）` : ''}</span>
+      <span class="mv-status-item">warp <b class="${plan.activeWarps < plan.warpsMax ? 'mv-sev-warn' : ''}">${plan.activeWarps} / ${plan.warpsMax}</b></span>
+    ` : '';
     $('statusStrip').innerHTML = `
       <span class="mv-status-item">芯片 <b>${F.escapeHtml(chip.name)}</b></span>
       <span class="mv-status-item">候选 <b>${F.escapeHtml(run.label)}</b></span>
       <span class="mv-status-item">tileM <b>${run.tiling.tileM}</b> × <b>${run.tiling.tileNum}</b>${run.tiling.hasTail ? `（尾块 ${run.tiling.tailM}）` : ''}</span>
-      <span class="mv-status-item">${region.id} <b class="${region.reserved > region.capacity ? 'mv-sev-danger' : ''}">${F.bytes(region.reserved)} / ${F.bytes(region.capacity)}</b></span>
+      <span class="mv-status-item">${region.id} <b class="${region.reserved > region.capacity ? 'mv-sev-danger' : ''}">${region.isRegister
+        ? `${region.reservedRegs} / ${region.capacityRegs} regs`
+        : `${F.bytes(region.reserved)} / ${F.bytes(region.capacity)}`}</b></span>
       <span class="mv-status-item">峰值持有 <b>${F.bytes(region.peakLive)} @ ${F.tick(region.peakTick)}</b></span>
+      ${regItem}
       <span class="mv-status-item">游标 <b>${F.tick(state.tick)} / ${F.tick(run.totalTicks)}</b></span>
       <span class="mv-status-spacer"></span>
       <span class="mv-status-item">诊断 <b class="${summary.danger ? 'mv-sev-danger' : summary.warn ? 'mv-sev-warn' : 'mv-sev-success'}">${summary.danger}D / ${summary.warn}W / ${summary.info}I</b></span>
@@ -409,7 +475,22 @@
     });
     const marks = highlightSets();
 
-    if (state.view === 'layout') {
+    // 布局切换只影响「内存布局」页签内部：两种布局共用同一份 metrics 与时间游标
+    const archMode = state.view === 'layout' && state.layoutMode === 'arch';
+    const layoutPane = $('viewLayout');
+    layoutPane.classList.toggle('is-arch', archMode);
+    $('layoutModeSwitch').hidden = state.view !== 'layout';
+    $('layoutModeLabel').hidden = state.view !== 'layout';
+    const mode = LAYOUT_MODES.find((item) => item.id === state.layoutMode) || LAYOUT_MODES[0];
+    if (state.view === 'layout') $('layoutNote').textContent = mode.note;
+
+    if (state.view === 'layout' && archMode) {
+      views.arch.update({
+        run, metrics, chip, tick: state.tick,
+        selectedId: state.selectedAllocId,
+        focusRegionId: state.focusRegionId,
+      });
+    } else if (state.view === 'layout') {
       views.layout.update({
         run, metrics, chip, tick: state.tick,
         selectedId: state.selectedAllocId,
@@ -448,6 +529,7 @@
 
   function redrawViews() {
     views.layout?.redraw?.();
+    if (state.view === 'layout' && state.layoutMode === 'arch') views.arch?.redraw?.();
     views.pipeline?.redraw?.();
     views.watermark?.redraw?.();
     views.lifetime?.redraw?.();
@@ -631,6 +713,13 @@
         renderViews();
       },
     });
+    views.arch = global.MemVizArchView.create($('archHost'), {
+      onFocusRegion: (regionId) => {
+        state.focusRegionId = regionId;
+        renderRegionSwitch();
+        render();
+      },
+    });
     views.lifetime = global.MemVizLifetimeView.create($('viewLifetime'));
     views.pipeline = global.MemVizPipelineView.create($('pipelineHost'), {
       onSelectEvent: (event) => {
@@ -648,6 +737,7 @@
     });
 
     renderChipSwitch();
+    renderLayoutModeSwitch();
     renderRegionSwitch();
     initPlayback();
     bindPanelToggles();

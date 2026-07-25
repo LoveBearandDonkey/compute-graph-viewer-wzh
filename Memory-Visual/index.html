@@ -16,6 +16,8 @@
 
   设计系统: 复用 ../vendor/pto-design-system
     · patterns/ide-frame + workbench-shell —— 产品外壳、分栏、底部 dock
+    · patterns/memory-architecture        —— 内存布局页签的「硬件架构」布局
+      （+ patterns/aic-core-object、patterns/aiv-core-object 两个核心对象渲染器）
     · patterns/memory-reuse-viewer        —— 生命周期与复用视图（整块复用）
     · patterns/swimlane-task              —— 流水泳道任务条与悬浮提示
     · patterns/floating-playback-control  —— 时间游标播放条
@@ -40,6 +42,9 @@
 <link rel="stylesheet" href="../vendor/pto-design-system/patterns/ide-frame/pattern.css" />
 <link rel="stylesheet" href="../vendor/pto-design-system/patterns/swimlane-task/pattern.css" />
 <link rel="stylesheet" href="../vendor/pto-design-system/patterns/memory-reuse-viewer/pattern.css" />
+<link rel="stylesheet" href="../vendor/pto-design-system/patterns/aic-core-object/pattern.css" />
+<link rel="stylesheet" href="../vendor/pto-design-system/patterns/aiv-core-object/pattern.css" />
+<link rel="stylesheet" href="../vendor/pto-design-system/patterns/memory-architecture/pattern.css" />
 <style>
 /* ============================================================
    模块布局类（mv- 前缀）—— 只做排布，视觉一律取 token
@@ -129,6 +134,8 @@ body {
 .mv-legend-swatch.is-wait { background: repeating-linear-gradient(135deg, var(--warning) 0 1.5px, transparent 1.5px 4px); }
 .mv-legend-swatch.is-gap { background: repeating-linear-gradient(135deg, color-mix(in srgb, var(--foreground) 22%, transparent) 0 1px, transparent 1px 4px); }
 .mv-legend-swatch.is-over { background: color-mix(in srgb, var(--danger) 30%, transparent); box-shadow: inset 0 0 0 1px var(--danger); }
+/* 硬件架构布局里的超限走 setBufferBlocks 的 accumulating 态（警告色），图例跟随 */
+.mv-legend-swatch.is-warn-fill { background: color-mix(in srgb, var(--warning) 78%, transparent); }
 
 .mv-stage { position: relative; height: 100%; overflow: auto; }
 .mv-view { display: none; height: 100%; }
@@ -138,6 +145,17 @@ body {
 .mv-view-note {
   margin: 0 0 var(--space-2); padding: var(--space-2) 0 0;
   font: 400 11px/1.5 var(--font-sans); color: var(--foreground-muted);
+}
+
+/* ---- 内存布局的第二种布局：硬件架构图 ---- */
+/* 只负责把 memory-architecture 的 viewport 撑满舞台，不覆写 pattern 内部任何视觉。 */
+.mv-arch-host { display: none; position: relative; height: 100%; min-height: 380px; }
+#viewLayout.is-arch { display: flex; flex-direction: column; overflow: hidden; padding-bottom: var(--space-3); }
+#viewLayout.is-arch #layoutHost { display: none; }
+#viewLayout.is-arch .mv-arch-host { display: block; flex: 1 1 auto; min-height: 0; }
+.mv-arch-viewport {
+  border: 1px solid var(--border-subtle); border-radius: var(--radius-lg);
+  background: var(--surface-1);
 }
 
 /* ---- 悬浮提示（layout 视图；流水视图用 swimlane-task 的 tooltip） ---- */
@@ -297,6 +315,8 @@ body {
                 </div>
                 <header class="pto-ide-frame__pane-header">
                   <div class="mv-toolbar">
+                    <span class="mv-label" id="layoutModeLabel">布局</span>
+                    <div class="segmented-control segmented-control-muted" id="layoutModeSwitch" role="group" aria-label="内存模块布局"></div>
                     <span class="mv-label">焦点层级</span>
                     <div class="segmented-control segmented-control-muted" id="regionSwitch" role="group" aria-label="焦点存储层级"></div>
                     <button class="btn btn-sm btn-ghost" type="button" id="gotoPeak">跳到峰值</button>
@@ -307,11 +327,9 @@ body {
                 </header>
                 <div class="pto-ide-frame__pane-body mv-stage" data-ide-slot="preview" id="previewStage">
                   <div class="mv-view mv-view--scroll is-active" id="viewLayout" role="tabpanel">
-                    <p class="mv-view-note">
-                      横轴是各层级自己的地址空间。实心块 = 当前时刻真正持有数据，半透明块 = 预留着但此刻是空的，
-                      斜纹 = 分配之间的碎片，竖线右侧的红区 = 超出容量的部分。
-                    </p>
+                    <p class="mv-view-note" id="layoutNote"></p>
                     <div id="layoutHost" style="position:relative"></div>
+                    <div class="mv-arch-host" id="archHost"></div>
                   </div>
                   <div class="mv-view" id="viewLifetime" role="tabpanel"></div>
                   <div class="mv-view mv-view--scroll" id="viewPipeline" role="tabpanel">
@@ -392,6 +410,10 @@ body {
 <script src="../vendor/pto-design-system/patterns/ide-frame/pattern.js"></script>
 <script src="../vendor/pto-design-system/patterns/swimlane-task/pattern.js"></script>
 <script src="../vendor/pto-design-system/patterns/memory-reuse-viewer/pattern.js"></script>
+<!-- 硬件架构布局：核心对象渲染器必须先于 memory-architecture 加载 -->
+<script src="../vendor/pto-design-system/patterns/aiv-core-object/pattern.js"></script>
+<script src="../vendor/pto-design-system/patterns/aic-core-object/pattern.js"></script>
+<script src="../vendor/pto-design-system/patterns/memory-architecture/pattern.js"></script>
 
 <script src="data/kernel-source.js"></script>
 <script src="data/chip-specs.js"></script>
@@ -401,6 +423,7 @@ body {
 <script src="js/metrics.js"></script>
 <script src="js/diagnostics.js"></script>
 <script src="js/view-layout.js"></script>
+<script src="js/view-arch.js"></script>
 <script src="js/view-lifetime.js"></script>
 <script src="js/view-pipeline.js"></script>
 <script src="js/view-watermark.js"></script>
