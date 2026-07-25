@@ -245,6 +245,24 @@
     10: { primary: 'A', secondary: [] },
   };
 
+  const SUMMARY_HIGHLIGHTS = {
+    overview: ['A5 原生开发与跨代兼容', '简单 SIMD', '重写硬件假设'],
+    terminology: ['平台代际', '产品型号', '软件架构标识'],
+    'scenario-A': ['A5 原生能力', '独立实现分支'],
+    'scenario-B': ['改架构声明后验证', '不需要重写硬件路径'],
+    'scenario-C': ['旧代硬件假设不再成立', '重写数据与计算路径'],
+    'category-1': ['只说明“想跑哪一代”', '不能单独证明实现可运行'],
+    'category-2': ['寄存器张量、谓词与地址寄存器', 'GM → UB → Reg'],
+    'category-3': ['新增 SIMT 子系统', '不替换 SIMD'],
+    'category-4': ['旧直通路径移除', 'UB↔L1、L0C→UB、NDDMA'],
+    'category-5': ['移除部分 int4、结构化稀疏与边界绕回能力', 'MX 低比特路径'],
+    'category-6': ['L0A 的矩阵 A 分形从 ZZ 改为 NZ', '必须迁移'],
+    'category-7': ['不仅改变 dtype', 'scale 布局、搬运、舍入、饱和与量化融合'],
+    'category-8': ['UB bank group、每组 bank 数与单 bank 容量变化', '不再可靠'],
+    'category-9': ['Subnormal、核间同步和调试接口变化', '结果或诊断方式不同'],
+    'category-10': ['执行下沉至 CCU', '硬件资源与通算重叠'],
+  };
+
   const DIFF_950_NEW = {
     selectors: [N.simt, N.fp],
     routes: ['aic-to-aiv1', 'aiv2-to-aic', 'l2-to-aiv2', 'l2-to-aiv2-dcache', 'aiv2-to-l2'],
@@ -266,14 +284,36 @@
     };
   }
 
+  function syncHardwareToolbarLayout() {
+    const toolbar = $('#hardwareViewport .pto-hw-viewport__toolbar');
+    const title = toolbar?.querySelector('.pto-hw-viewport__title');
+    const label = title?.querySelector(':scope > span');
+    const segmented = title?.querySelector('.pto-hw-viewport__segmented');
+    const tools = toolbar?.querySelector('.pto-hw-viewport__tools');
+    if (!toolbar || !title || !label || !segmented || !tools) return;
+    const toolbarStyle = getComputedStyle(toolbar);
+    const rootStyle = getComputedStyle(document.documentElement);
+    const availableWidth = toolbar.clientWidth
+      - parseFloat(toolbarStyle.paddingLeft)
+      - parseFloat(toolbarStyle.paddingRight);
+    const titleGap = parseFloat(rootStyle.getPropertyValue('--space-2')) || 8;
+    const toolbarGap = parseFloat(toolbarStyle.columnGap) || parseFloat(rootStyle.getPropertyValue('--space-3')) || 12;
+    const requiredWidth = label.scrollWidth + titleGap + segmented.scrollWidth + toolbarGap + tools.scrollWidth;
+    toolbar.classList.toggle('is-title-stacked', Math.ceil(requiredWidth) > Math.floor(availableWidth));
+  }
+
   function observeHardwareSize() {
     state.hardwareResizeObserver?.disconnect?.();
     if (typeof ResizeObserver !== 'function') return;
-    state.hardwareResizeObserver = new ResizeObserver(() => scheduleHardwareFit());
+    state.hardwareResizeObserver = new ResizeObserver(() => {
+      syncHardwareToolbarLayout();
+      scheduleHardwareFit();
+    });
     const stage = $('#hardwareGraph [data-pto-mem-arch-stage]');
     if (stage) state.hardwareResizeObserver.observe(stage);
     const viewport = $('#hardwareViewport');
     if (viewport) state.hardwareResizeObserver.observe(viewport);
+    syncHardwareToolbarLayout();
   }
 
   function scheduleHardwareFit() {
@@ -302,6 +342,10 @@
       <button class="entity-button tree-document-button migration-overview-button" type="button" role="treeitem" aria-level="1" data-migration-overview>
         <span class="entity-main"><span class="entity-title">迁移场景总览</span><span class="entity-sub">三类场景定义与全量变化项映射</span></span>
       </button>`;
+    const terminologyDocument = `
+      <button class="entity-button tree-document-button migration-overview-button" type="button" role="treeitem" aria-level="1" data-terminology-document>
+        <span class="entity-main"><span class="entity-title">术语解释</span><span class="entity-sub">架构代际、产品型号与软件标识</span></span>
+      </button>`;
     const scenarioTrees = MIGRATION_SCENARIOS.map((scenario) => {
       const items = CATEGORIES.filter((item) => item.scenario === scenario.key);
       const groupId = `migration-scenario-${scenario.key}`;
@@ -327,7 +371,7 @@
           </ul>
         </section>`;
     }).join('');
-    $('#categoryTree').innerHTML = migrationOverview + scenarioTrees;
+    $('#categoryTree').innerHTML = migrationOverview + terminologyDocument + scenarioTrees;
     $('#flowList').innerHTML = FLOWS.map((item, index) => `
       <li><button class="entity-button" type="button" data-flow-id="${item.id}">
         <span class="entity-index">${String(index + 1).padStart(2, '0')}</span>
@@ -415,12 +459,19 @@
     </section>`;
   }
 
-  function renderDocumentHeader({ path, title, summary }) {
+  function renderHighlightedText(text, highlights = []) {
+    return highlights.reduce((html, phrase) => {
+      const escapedPhrase = escape(phrase);
+      return html.replace(escapedPhrase, `<mark>${escapedPhrase}</mark>`);
+    }, escape(text));
+  }
+
+  function renderDocumentHeader({ path, title, summary, highlights = [] }) {
     const breadcrumbs = path.map((item) => `<span>${escape(item)}</span>`).join('<i aria-hidden="true">/</i>');
     return `<section class="inspector-section inspector-document-header">
       <div class="inspector-document-path" aria-label="文档路径">${breadcrumbs}</div>
       <h2>${escape(title)}</h2>
-      <blockquote class="inspector-document-summary">${escape(summary)}</blockquote>
+      <blockquote class="inspector-document-summary">${renderHighlightedText(summary, highlights)}</blockquote>
     </section>`;
   }
 
@@ -437,9 +488,7 @@
   function comparisonMarker(label) {
     const key = label.includes('优化机会') ? 'opportunity' : (
       label.includes('删除') || label.includes('不支持') ? 'deleted' : (
-        label.includes('新增') ? 'new' : (
-          label.includes('/') ? 'mixed' : (label.includes('B') ? 'b' : (label.includes('C') ? 'c' : 'a'))
-        )
+        label.includes('新增') ? 'new' : 'scenario'
       )
     );
     return `<span class="comparison-marker comparison-marker--${escape(key)}">${escape(label)}</span>`;
@@ -479,7 +528,7 @@
     const comparison = CATEGORY_COMPARISONS[item.id];
     const related = item.related.map((id) => {
       const flow = FLOWS.find((entry) => entry.id === id);
-      return flow ? `<button class="btn btn-ghost related-flow" type="button" data-related-flow="${flow.id}">→ ${escape(flow.title)}</button>` : '';
+      return flow ? `<button class="btn btn-ghost related-flow" type="button" data-related-flow="${flow.id}"><span>→ ${escape(flow.title)}</span><span class="related-flow-action">跳转查看</span></button>` : '';
     }).join('');
     const scenarioTitle = MIGRATION_SCENARIOS.find((scenario) => scenario.key === item.scenario)?.title || item.scenario;
     renderInspector(`<div class="inspector-content">
@@ -487,6 +536,7 @@
         path: ['A5 算子迁移', `迁移场景 ${item.scenario}：${scenarioTitle}`],
         title: item.title,
         summary: item.essence,
+        highlights: SUMMARY_HIGHLIGHTS[`category-${item.id}`],
       })}
       ${renderContextCard(`<dl class="meta-grid">
         <div class="meta-row"><dt>变化来源</dt><dd>${escape(context.actor)}</dd></div>
@@ -522,13 +572,14 @@
     $$('[data-category-id]').forEach((button) => button.classList.toggle('is-selected', Number(button.dataset.categoryId) === item.id));
     $$('[data-scenario-overview]').forEach((button) => button.classList.remove('is-selected'));
     $('[data-migration-overview]')?.classList.remove('is-selected');
+    $('[data-terminology-document]')?.classList.remove('is-selected');
     syncEntitySelectionAccessibility();
     renderCategoryInspector(item);
     if (state.arch !== item.arch) setArch(item.arch);
     else { applyCurrentFocus(); scheduleHardwareFit(); }
   }
 
-  function selectFlow(id) {
+  function selectFlow(id, { syncArch = true } = {}) {
     stopPlayback();
     state.selectedId = id;
     state.activeStep = -1;
@@ -537,7 +588,7 @@
     $$('[data-flow-id]').forEach((button) => button.classList.toggle('is-selected', button.dataset.flowId === item.id));
     syncEntitySelectionAccessibility();
     renderFlowInspector(item);
-    if (state.arch !== item.arch) setArch(item.arch);
+    if (syncArch && state.arch !== item.arch) setArch(item.arch);
     else { applyCurrentFocus(); scheduleHardwareFit(); }
   }
 
@@ -564,7 +615,8 @@
     if (mode === 'migration') {
       showMigrationOverview();
     } else {
-      selectFlow(FLOWS[0].id);
+      if (state.arch !== 'ascend950b') setArch('ascend950b');
+      selectFlow(FLOWS[0].id, { syncArch: false });
     }
     syncPlayback();
   }
@@ -576,12 +628,14 @@
     $$('[data-scenario-overview]').forEach((button) => button.classList.toggle('is-selected', button.dataset.scenarioOverview === key));
     $$('[data-category-id]').forEach((button) => button.classList.remove('is-selected'));
     $('[data-migration-overview]')?.classList.remove('is-selected');
+    $('[data-terminology-document]')?.classList.remove('is-selected');
     syncEntitySelectionAccessibility();
     renderInspector(`<div class="inspector-content">
       ${renderDocumentHeader({
         path: ['A5 算子迁移', `迁移场景 ${key}：${scenario.title}`],
         title: '场景概述',
         summary: scenario.tagline,
+        highlights: SUMMARY_HIGHLIGHTS[`scenario-${key}`],
       })}
       ${section('识别特征（典型）', `<ul class="signal-list">${scenario.features.map((item) => `<li>${escape(item)}</li>`).join('')}</ul>`)}
       ${section('处理方式', `<ul class="action-list">${scenario.actions.map((item) => `<li>${escape(item)}</li>`).join('')}</ul>`)}
@@ -590,9 +644,66 @@
     scheduleHardwareFit();
   }
 
+  function showTerminology() {
+    state.selectedId = null;
+    $$('[data-scenario-overview], [data-category-id]').forEach((button) => button.classList.remove('is-selected'));
+    $('[data-migration-overview]')?.classList.remove('is-selected');
+    $('[data-terminology-document]')?.classList.add('is-selected');
+    syncEntitySelectionAccessibility();
+    const dimensionRows = [
+      ['平台代际', 'A5', 'A2/A3', '迁移场景、能力兼容和开发策略'],
+      ['产品型号', 'Ascend 950', 'Ascend 910B（当前对照视图）', '硬件架构图、产品能力和代际对比'],
+      ['软件架构标识', 'DAV_3510 / dav-3510', 'DAV_2201 / dav-2201', '源码枚举、编译参数和运行时分支'],
+      ['Device 宏值', '3510', '2201', '__NPU_ARCH__ 条件编译'],
+    ];
+    const dictionaryRows = [
+      ['A5', '平台代际', '文档的新平台主称谓；首次出现时可写作“A5（Ascend 950）”。'],
+      ['A2/A3', '平台代际组', '迁移语境中的旧平台集合，不等同于单一产品型号。'],
+      ['Ascend 950', '产品系列', 'A5 对应的当前硬件主题；950PR、950DT 是同系列产品形态。'],
+      ['Ascend 910B', '产品型号', '当前旧平台硬件对照视图；不代表整个 A2/A3 产品集合。'],
+      ['DAV_3510 / dav-3510', '软件架构标识', '前者常见于源码枚举，后者常见于 CMake 或编译参数。'],
+      ['DAV_2201 / dav-2201', '软件架构标识', '当前旧平台样例使用的软件目标标识；正确编号是 2201，不是 2210。'],
+      ['AIC / AIV', '计算单元', 'AIC 侧重 Cube / 矩阵计算，AIV 侧重 Vector / 向量计算。'],
+      ['UB / UnifiedBus', '存储与互联', 'UB 是 Unified Buffer；UnifiedBus 是 950 的互联对象，两者不可混写。'],
+    ];
+    renderInspector(`<div class="inspector-content terminology-content">
+      ${renderDocumentHeader({
+        path: ['A5 算子迁移'],
+        title: '术语解释',
+        summary: '用平台代际、产品型号和软件架构标识三层口径阅读文档；代码中还会出现对应的 Device 宏值。相邻称谓有关联，但不能在所有上下文中直接画等号。',
+        highlights: SUMMARY_HIGHLIGHTS.terminology,
+      })}
+      ${renderContextCard(`<dl class="meta-grid">
+        <div class="meta-row"><dt>文档用途</dt><dd>统一迁移文档、硬件视图与代码示例中的架构称谓</dd></div>
+        <div class="meta-row"><dt>阅读原则</dt><dd>先识别称谓所属维度，再判断它与当前视图的对应关系</dd></div>
+        <div class="meta-row"><dt>维护方式</dt><dd>作为可持续扩展的术语字典，新增术语时同时补充类型、定义与使用边界</dd></div>
+      </dl>`)}
+      ${section('架构指代维度', `<div class="comparison-table-wrap">
+        <table class="comparison-table terminology-dimension-table">
+          <thead><tr><th scope="col">维度</th><th scope="col">新平台侧</th><th scope="col">旧平台侧</th><th scope="col">主要使用位置</th></tr></thead>
+          <tbody>${dimensionRows.map((row) => `<tr>${row.map((cell) => `<td>${escape(cell)}</td>`).join('')}</tr>`).join('')}</tbody>
+        </table>
+      </div>`)}
+      ${section('在文档中怎么读', `<div class="terminology-rule-list">
+        <article class="inspector-card"><strong>迁移场景看平台代际</strong><p>导航、场景定义和迁移策略优先使用 A5 与 A2/A3。</p></article>
+        <article class="inspector-card"><strong>硬件架构图看产品型号</strong><p>画布切换使用 Ascend 950 与 Ascend 910B；910B 是当前旧平台对照视图。</p></article>
+        <article class="inspector-card"><strong>代码对照看软件标识</strong><p>保留 DAV_3510、DAV_2201、dav-3510、dav-2201 等原始字面量，并在周围说明所属维度。</p></article>
+      </div>`)}
+      ${section('术语字典', `<div class="comparison-table-wrap">
+        <table class="comparison-table terminology-dictionary-table">
+          <thead><tr><th scope="col">术语</th><th scope="col">类型</th><th scope="col">定义与边界</th></tr></thead>
+          <tbody>${dictionaryRows.map((row) => `<tr>${row.map((cell) => `<td>${escape(cell)}</td>`).join('')}</tr>`).join('')}</tbody>
+        </table>
+      </div>`)}
+    </div>`);
+    focusHardware();
+    scheduleHardwareFit();
+  }
+
   function showMigrationOverview() {
     state.selectedId = null;
     $$('[data-scenario-overview], [data-category-id]').forEach((button) => button.classList.remove('is-selected'));
+    $('[data-terminology-document]')?.classList.remove('is-selected');
     $('[data-migration-overview]')?.classList.add('is-selected');
     syncEntitySelectionAccessibility();
     const scenarioDefinitions = [
@@ -618,6 +729,7 @@
         path: ['A5 算子迁移'],
         title: '迁移场景总览',
         summary: '三类场景按 A5 代际主导后的常见工作顺序组织：优先处理 A5 原生开发与跨代兼容，其次处理可轻量迁移的简单 SIMD，最后处理必须重写硬件假设的旧代实现。',
+        highlights: SUMMARY_HIGHLIGHTS.overview,
       })}
       ${section('三类场景', `<div class="scenario-definition-list">${scenarioDefinitions.map(([key, title, description]) => `
         <article class="inspector-card scenario-definition-card">
@@ -626,7 +738,11 @@
         </article>`).join('')}</div>`)}
       ${section('全量变化项与场景映射', `<div class="comparison-table-wrap">
           <table class="comparison-table migration-map-table">
-            <thead><tr><th scope="col">变化项</th>${MIGRATION_SCENARIOS.map((scenario) => `<th scope="col" title="${escape(scenario.title)}">${scenario.key}</th>`).join('')}</tr></thead>
+            <thead><tr><th scope="col">变化项</th>${MIGRATION_SCENARIOS.map((scenario) => `<th scope="col">
+              <span class="migration-scenario-header" tabindex="0" data-scenario-header="${scenario.key}" data-tooltip="${escape(scenario.title)}" aria-describedby="migrationScenarioTooltip">
+                场景 ${scenario.key}
+              </span>
+            </th>`).join('')}</tr></thead>
             <tbody>${mappingRows}</tbody>
           </table>
         </div>`, `
@@ -785,6 +901,32 @@
     scheduleHardwareFit();
   }
 
+  function showMigrationScenarioTooltip(target) {
+    const tooltip = $('#migrationScenarioTooltip');
+    const content = target?.dataset.tooltip;
+    if (!tooltip || !content) return;
+    tooltip.textContent = content;
+    tooltip.hidden = false;
+    tooltip.classList.add('is-visible');
+    const targetRect = target.getBoundingClientRect();
+    const tooltipRect = tooltip.getBoundingClientRect();
+    const viewportPadding = 8;
+    const gap = 8;
+    const left = Math.min(
+      window.innerWidth - tooltipRect.width - viewportPadding,
+      Math.max(viewportPadding, targetRect.left + (targetRect.width - tooltipRect.width) / 2),
+    );
+    tooltip.style.left = `${left}px`;
+    tooltip.style.top = `${Math.max(viewportPadding, targetRect.top - tooltipRect.height - gap)}px`;
+  }
+
+  function hideMigrationScenarioTooltip() {
+    const tooltip = $('#migrationScenarioTooltip');
+    if (!tooltip) return;
+    tooltip.classList.remove('is-visible');
+    tooltip.hidden = true;
+  }
+
   function initEvents() {
     document.addEventListener('click', (event) => {
       const treeToggle = event.target.closest('[data-tree-toggle]');
@@ -800,6 +942,8 @@
       if (scenarioOverview) return showScenario(scenarioOverview.dataset.scenarioOverview);
       const migrationOverview = event.target.closest('[data-migration-overview]');
       if (migrationOverview) return showMigrationOverview();
+      const terminologyDocument = event.target.closest('[data-terminology-document]');
+      if (terminologyDocument) return showTerminology();
       const categoryJump = event.target.closest('[data-category-jump]');
       if (categoryJump) return selectCategory(categoryJump.dataset.categoryJump);
       const category = event.target.closest('[data-category-id]');
@@ -814,6 +958,23 @@
       if (preview?.dataset.previewView === 'memory') return openMemoryReuse();
       if (preview?.dataset.previewView === 'hardware') return closeMemoryReuse();
     });
+    document.addEventListener('pointerover', (event) => {
+      const target = event.target.closest?.('[data-scenario-header]');
+      if (target) showMigrationScenarioTooltip(target);
+    });
+    document.addEventListener('pointerout', (event) => {
+      const target = event.target.closest?.('[data-scenario-header]');
+      if (target && !target.contains(event.relatedTarget)) hideMigrationScenarioTooltip();
+    });
+    document.addEventListener('focusin', (event) => {
+      const target = event.target.closest?.('[data-scenario-header]');
+      if (target) showMigrationScenarioTooltip(target);
+    });
+    document.addEventListener('focusout', (event) => {
+      if (event.target.closest?.('[data-scenario-header]')) hideMigrationScenarioTooltip();
+    });
+    document.addEventListener('scroll', hideMigrationScenarioTooltip, true);
+    window.addEventListener('resize', hideMigrationScenarioTooltip);
     $('#navigationMode').addEventListener('change', (event) => {
       setMode(event.target.value);
       event.target.blur();
