@@ -1,5 +1,7 @@
 # PTO Changelog
 
+- 2026-07-25 `Memory-Visual/`: 新增**内存工作台**——昇腾算子片上内存可视化工具原型，落在设计系统 `ide-frame`（standalone host）的完整槽位上。覆盖规划文档 §4.3 的三个视图：内存布局条带图（地址空间分栏，实心=当前持有 / 半透明=预留未用 / 斜纹=碎片 / 红区=超容量）、生命周期与复用（整块复用 `memory-reuse-viewer` pattern）、流水×内存联合时序（`swimlane-task` 的 drawTaskBar 画六条流水线 + 焦点层级占用曲线）。底部 dock 承载六层级水位曲线与 `memviz analyze` CLI 形态日志（互斥）。数据层 `data/runs.js` 是中间格式**生成器**：给定 tiling 参数与各队列 buffer_num，用串行流水队列 + slot 释放约束模拟出事件序列，double buffer 是否生效由模型自然产生而非硬编码；五组候选覆盖超限 / 单份缓冲 / 双缓冲解 / 手工复用踩内存 / 过细切分。规则引擎输出「问题+位置+量化影响+建议」四元组并带 evidence 溯源。芯片容量、bank、对齐、流水单元集合走 `data/chip-specs.js` 表驱动（910B / 950B，占位规格）。已在 `launch.html` 执行与性能分析组挂入口。
+
 - 2026-07-24 `op-graph-integration/`: 「框架接入与入图」阶段的入图范围从局部 5 节点扩展到**整机模型**——以 DeepSeek V3.2 为例，复用设计系统 `model-graphviz` pattern（`window.PtoModelGraphvizPattern.render`）渲染完整解码器架构，用 pattern 内置的 `P0` 高亮标记本次入图算子 `FlashAttentionV2` 的落位（每个解码层的 **MLA 注意力核**，61 层复用）。原有的 Cast→算子→Add 融合边界图保留为「局部放大」。CSS 变量经 `.pto-model-graphviz-pattern-page` 作用域注入并就地中和其 `min-height:100vh`。
 
 - 2026-07-24 `op-graph-integration/`: 流水线从 5 步扩展为 **7 个任务阶段，完整覆盖 Ascend C 入图 9 步链路**。新增 ②③「Kernel & Tiling」核对阶段（UB/L1/L0 占用、blockDim/核间切分、动态 Shape tiling 策略）；识别阶段补充算子定义约束（format/动态 Shape/精度要求/目标 SoC/op_proto）；契约生成新增 ④ `ops-info.json` 注册产物（SoC 与 dtype-format 组合）；拆分 ⑤「编译与打包」（OPP 包 + `ASCEND_CUSTOM_OPP_PATH`）与 ⑧⑨「执行与验收调优」（Runtime 下发 + msprof/精度/动态 Shape/边界）；⑥⑦「框架接入与入图」增加**在线 GE / 离线 ATC 路径切换**。空状态新增 9 步→阶段覆盖图。
