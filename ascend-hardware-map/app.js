@@ -18,17 +18,26 @@
     fp: '[data-aic-node="buffer:FP"]',
   };
 
+  const MIGRATION_DIMENSIONS = [
+    { label: '工程适配', description: '检查编译目标、Device / Host 代际分支、算子注册与发布配置。' },
+    { label: '编程与执行', description: '检查编程模型、执行范式和指令能力是否需要替换或拆分实现。' },
+    { label: '数据通路', description: '检查数据在 GM、片上存储、Cube 与 Vector 之间的搬运路径。' },
+    { label: '数据与存储', description: '检查数据格式、矩阵布局、scale 生命周期、容量与 bank 组织。' },
+    { label: '运行语义', description: '检查数值行为、同步原语、调试接口及其跨代差异。' },
+    { label: '通信协同', description: '检查集合通信的执行落点、资源约束与通算重叠。' },
+  ];
+
   const CATEGORIES = [
-    { id: 1, badge: '开发者侧', title: '架构代际声明', sub: '声明目标架构', scenario: 'B', arch: 'ascend910b', essence: '架构号是编译与注册声明，只说明“想跑哪一代”，不能单独证明实现可运行。', signals: ['CMAKE_ASC_ARCHITECTURES', '--npu-arch=dav-3510', '__NPU_ARCH__', 'AddConfig("ascend950")'], actions: ['核对 Device 与 Host 两侧的代际分支', '双架构分别编译、运行并对比精度与性能'], selectors: [], routes: [], related: ['vector', 'cube'] },
-    { id: 2, badge: 'AIV 核', title: 'Membase → RegBase', sub: '编程对象变了', scenario: 'A', arch: 'ascend950b', essence: '950 AIV 把寄存器张量、谓词与地址寄存器变成一等编程对象，GM → UB → Reg 路径被显式化。', signals: ['RegTensor', 'MaskReg', 'AddrReg', 'LoadAlign / StoreAlign', 'LocalMemBar'], actions: ['把 UB 布局与寄存器压力一起评估', '为 910B 保留独立 Membase 实现'], selectors: [N.ub, N.vector, N.scalar], routes: ['l2-to-aiv1'], related: ['vector'] },
-    { id: 3, badge: 'Vector 核', title: '纯 SIMD → SIMD + SIMT', sub: '执行模型变了', scenario: 'A', arch: 'ascend950b', essence: '950 在 Vector 内新增 SIMT 子系统，不替换 SIMD；离散访存、线程分歧和线程级原子有了原生表达。', signals: ['--enable-simt', 'Warp / ThreadBlock', 'asc_atomic_add', 'Gather / Scatter'], actions: ['仅在离散访存或线程语义明确时启用 SIMT', '分别验证 SIMD 与 SIMT 路径的性能边界'], selectors: [N.simt, N.simd, N.ub], routes: [], related: ['vector'] },
-    { id: 4, badge: 'Cube 通路', title: '芯片内互连变了', sub: '物理数据通路重接', scenario: 'C', arch: 'ascend950b', essence: 'Cube 周围的物理连线发生变化：旧直通路径移除，同时增加 UB↔L1、L0C→UB、NDDMA 等新路径。', signals: ['删除 GM → L0A/L0B', '删除 L1 → GM', '新增 UB → L1', '新增 L0C → UB', 'NDDMA / SSBuf'], actions: ['按 950 真实通路重写搬运链', '寻找 C-V 直连带来的融合机会'], selectors: [N.gm, N.l1, N.l0a, N.l0b, N.l0c, N.fp, N.ub], routes: ['l2-to-aic', 'aic-to-aiv1'], related: ['cube', 'gemm-ar'] },
-    { id: 5, badge: 'Cube ISA', title: '计算指令移除 / 新增', sub: 'Cube 电路重新规划', scenario: 'C', arch: 'ascend950b', essence: '950 移除部分 int4、结构化稀疏与边界绕回能力，并为 MX 低比特路径重新配置 Cube 电路。', signals: ['MmadWithSparse 移除', 'int4 Cube Matmul 移除', 'SetLoadDataBoundary 移除', 'MX 系列新增'], actions: ['替换已移除指令与隐含硬件假设', '低比特方案转向 FP8 / MX 并重做精度验证'], selectors: [N.cube, N.l0a, N.l0b, N.l0c], routes: [], related: ['cube'] },
-    { id: 6, badge: '矩阵分形', title: 'Cube 喂数排布变了', sub: 'L0A 从 ZZ 改成 NZ', scenario: 'C', arch: 'ascend950b', essence: 'L0A 的矩阵 A 分形从 ZZ 改为 NZ；写死切分与地址计算的实现必须迁移。', signals: ['A / L0A: ZZ → NZ', 'B / L0B: ZN 不变', 'C / L0C: NZ 不变'], actions: ['定位写死 L0A 分形的地址公式', '按 950 分形重新生成 tiling 与搬运参数'], selectors: [N.l0a, N.l1, N.cube], routes: [], related: ['cube'] },
-    { id: 7, badge: '低比特', title: 'HiF8 / FP8 / MX 系列新增', sub: '低比特成为核心路径', scenario: 'A', arch: 'ascend950b', essence: '新格式不仅改变 dtype，还联动 scale 布局、搬运、舍入、饱和与量化融合。', signals: ['HiF8', 'FP8 E5M2 / E4M3', 'MXFP4 / MXFP8', 'MicroScaling', 'Histograms'], actions: ['把 scale 张量纳入 tiling 主路径', '补齐端到端精度和饱和行为验证'], selectors: [N.cube, N.fp, N.l1], routes: ['l2-to-aic'], related: ['cube'] },
-    { id: 8, badge: 'UB / SRAM', title: 'bank 拓扑变了', sub: 'UB SRAM 微架构', scenario: 'C', arch: 'ascend950b', essence: 'UB bank group、每组 bank 数与单 bank 容量变化，旧的错位地址经验不再可靠。', signals: ['bank group 16 → 8', '每组 3 → 2 banks', '单 bank 4KB → 16KB', 'UB 192KB → 256KB'], actions: ['删除写死容量与 bank 错位公式', '用 profiling 验证冲突与带宽'], selectors: [N.ub], routes: [], related: ['vector', 'tput-sync'] },
-    { id: 9, badge: '语义', title: '浮点 / 同步 / 调试语义', sub: '数值与控制原语', scenario: 'B', arch: 'ascend950b', essence: '即使结构不变，Subnormal、核间同步和调试接口变化也可能造成结果或诊断方式不同。', signals: ['Subnormal 默认不支持', '核间 Mutex 新增', 'CheckLocalMemoryIA 移除'], actions: ['建立跨代数值回归基线', '将同步与调试接口纳入迁移检查表'], selectors: [N.vector, N.scalar], routes: [], related: ['vector', 'gemm-ar'] },
-    { id: 10, badge: '通信', title: 'HCCL 软件通信 → CCU 硬化通信', sub: '集合通信专用引擎', scenario: 'A', arch: 'ascend950b', essence: 'HCCL 仍提供上层语义，但 950 把部分集合通信执行下沉至 CCU，需要联合观察硬件资源与通算重叠。', signals: ['CCU', 'ReduceScatter', 'AllGatherMatMul', 'Dispatch / Combine', 'CCU profiling'], actions: ['区分 HCCL 接口语义与 CCU 执行落点', '用 CCU profiling 验证通信、片上内存和 AI Core 协同'], selectors: [N.l2, N.scalar, N.cube, N.l0c], routes: [], related: ['ccu-collective', 'gemm-ar'] },
+    { id: 1, dimension: '工程适配', title: '目标架构声明与双代注册', sub: '编译、Host 分支与注册配置', scenario: 'B', arch: 'ascend950b', essence: '架构标识用于声明编译与注册目标；它只能证明实现面向哪一代产品，不能单独证明 kernel 已具备跨代可运行性。', signals: ['CMAKE_ASC_ARCHITECTURES', '--npu-arch=dav-3510', '__NPU_ARCH__', 'AddConfig("ascend950")'], actions: ['核对 Device 与 Host 两侧的代际分支', '双架构分别编译、运行并对比精度与性能'], selectors: [], routes: [], related: ['vector', 'cube'] },
+    { id: 2, dimension: '编程与执行', title: 'Vector 编程模型：Membase 到 RegBase', sub: '寄存器化执行与对象模型', scenario: 'A', arch: 'ascend950b', essence: '950 AIV 将寄存器张量、谓词寄存器与地址寄存器提升为显式编程对象，并明确 GM → UB → Reg 的数据生命周期。', signals: ['RegTensor', 'MaskReg', 'AddrReg', 'LoadAlign / StoreAlign', 'LocalMemBar'], actions: ['把 UB 布局与寄存器压力一起评估', '为 910B 保留独立 Membase 实现'], selectors: [N.ub, N.vector, N.scalar], routes: ['l2-to-aiv1'], related: ['vector'] },
+    { id: 3, dimension: '编程与执行', title: 'Vector 执行范式：SIMD 与 SIMT 并存', sub: '连续计算与离散计算分流', scenario: 'A', arch: 'ascend950b', essence: '950 在 Vector 侧新增 SIMT 执行能力，与 SIMD 形成互补：规则连续计算继续使用 SIMD，离散访存与线程语义可由 SIMT 表达。', signals: ['--enable-simt', 'Warp / ThreadBlock', 'asc_atomic_add', 'Gather / Scatter'], actions: ['仅在离散访存或线程语义明确时启用 SIMT', '分别验证 SIMD 与 SIMT 路径的性能边界'], selectors: [N.simt, N.simd, N.ub], routes: [], related: ['vector'] },
+    { id: 4, dimension: '数据通路', title: '片上数据通路重构', sub: '旧直通路径移除与 C-V 直连', scenario: 'C', arch: 'ascend950b', essence: '950 调整 Cube 周边片上数据通路：移除部分旧直通路径，并增加 UB↔L1、L0C→UB、NDDMA 等路径。', signals: ['删除 GM → L0A/L0B', '删除 L1 → GM', '新增 UB → L1', '新增 L0C → UB', 'NDDMA / SSBuf'], actions: ['按 950 真实通路重写搬运链', '寻找 C-V 直连带来的融合机会'], selectors: [N.gm, N.l1, N.l0a, N.l0b, N.l0c, N.fp, N.ub], routes: ['l2-to-aic', 'aic-to-aiv1'], related: ['cube', 'gemm-ar'] },
+    { id: 5, dimension: '编程与执行', title: 'Cube 指令能力调整', sub: '移除能力与低比特路径替换', scenario: 'C', arch: 'ascend950b', essence: '950 移除部分 int4、结构化稀疏与边界绕回能力，并围绕 MX 低比特计算重新组织 Cube 能力。', signals: ['MmadWithSparse 移除', 'int4 Cube Matmul 移除', 'SetLoadDataBoundary 移除', 'MX 系列新增'], actions: ['替换已移除指令与隐含硬件假设', '低比特方案转向 FP8 / MX 并重做精度验证'], selectors: [N.cube, N.l0a, N.l0b, N.l0c], routes: [], related: ['cube'] },
+    { id: 6, dimension: '数据与存储', title: 'L0A 矩阵分形迁移', sub: 'A 矩阵布局由 ZZ 调整为 NZ', scenario: 'C', arch: 'ascend950b', essence: '950 将 A 矩阵在 L0A 中的分形由 ZZ 调整为 NZ；依赖固定切分与地址公式的实现必须重新生成参数。', signals: ['A / L0A: ZZ → NZ', 'B / L0B: ZN 不变', 'C / L0C: NZ 不变'], actions: ['定位写死 L0A 分形的地址公式', '按 950 分形重新生成 tiling 与搬运参数'], selectors: [N.l0a, N.l1, N.cube], routes: [], related: ['cube'] },
+    { id: 7, dimension: '数据与存储', title: '低比特数据格式扩展', sub: 'HiF8、FP8 与 MX 系列', scenario: 'A', arch: 'ascend950b', essence: 'HiF8、FP8 与 MX 系列不仅扩展数据类型，还将 scale 布局、搬运、舍入、饱和与量化融合纳入主计算路径。', signals: ['HiF8', 'FP8 E5M2 / E4M3', 'MXFP4 / MXFP8', 'MicroScaling', 'Histograms'], actions: ['把 scale 张量纳入 tiling 主路径', '补齐端到端精度和饱和行为验证'], selectors: [N.cube, N.fp, N.l1], routes: ['l2-to-aic'], related: ['cube'] },
+    { id: 8, dimension: '数据与存储', title: 'UB Bank 组织调整', sub: '容量、分组与冲突策略重评估', scenario: 'C', arch: 'ascend950b', essence: '950 调整 UB bank group、每组 bank 数与单 bank 容量；旧代容量假设和地址错位策略需要重新验证。', signals: ['bank group 16 → 8', '每组 3 → 2 banks', '单 bank 4KB → 16KB', 'UB 192KB → 256KB'], actions: ['删除写死容量与 bank 错位公式', '用 profiling 验证冲突与带宽'], selectors: [N.ub], routes: [], related: ['vector', 'tput-sync'] },
+    { id: 9, dimension: '运行语义', title: '数值、同步与调试语义差异', sub: '跨代行为与诊断接口校验', scenario: 'B', arch: 'ascend950b', essence: '即使计算结构保持不变，Subnormal、核间同步与调试接口差异仍可能改变数值结果、同步行为和诊断方式。', signals: ['Subnormal 默认不支持', '核间 Mutex 新增', 'CheckLocalMemoryIA 移除'], actions: ['建立跨代数值回归基线', '将同步与调试接口纳入迁移检查表'], selectors: [N.vector, N.scalar], routes: [], related: ['vector', 'gemm-ar'] },
+    { id: 10, dimension: '通信协同', title: '集合通信执行路径下沉', sub: 'HCCL 语义与 CCU 执行协同', scenario: 'A', arch: 'ascend950b', essence: 'HCCL 继续提供上层集合通信语义，950 将部分执行下沉至 CCU，需要联合评估硬件资源、片上内存压力与通算重叠。', signals: ['CCU', 'ReduceScatter', 'AllGatherMatMul', 'Dispatch / Combine', 'CCU profiling'], actions: ['区分 HCCL 接口语义与 CCU 执行落点', '用 CCU profiling 验证通信、片上内存和 AI Core 协同'], selectors: [N.l2, N.scalar, N.cube, N.l0c], routes: [], related: ['ccu-collective', 'gemm-ar'] },
   ];
 
   const CATEGORY_CONTEXT = {
@@ -86,8 +95,8 @@
       rows: [
         ['LoadData', '数据搬运指令', '通用', '仍存在，但 GM → L0 直通已删', 'C'],
         ['Fixpipe', 'Cube 后处理流水', '通用', '仍存在；增加 L0C → UB', 'C'],
-        ['删除 GM → L0A / L0B 直通', '旧快捷路径', '有', '没了，需 GM → L1 → L0', 'C'],
-        ['删除 L1 → GM', 'L1 直接写回', '有', '没了，走 L0C / Fixpipe', 'C'],
+        ['删除 GM → L0A / L0B 直通', '旧快捷路径', '有', '已移除，需改为 GM → L1 → L0', 'C'],
+        ['删除 L1 → GM', 'L1 直接写回', '有', '已移除，需经 L0C / Fixpipe 承接', 'C'],
         ['新增 UB → L1', '减少绕路', '无', '有', '优化机会'],
         ['新增 L0C → UB', '后处理少绕路', '无', '有', '优化机会'],
         ['LoadData + MicroScaling', '搬运附带 scale', '不支持', '新增', 'A'],
@@ -215,12 +224,12 @@
       actions: ['默认按 3510 / 950 专用实现看待', '兼容 2201 时另写实现分支，并分别注册 ascend910b 与 ascend950', '按代际拆分 tiling、workspace、scale 布局和量化格式', '联合验证 HCCL 语义、CCU 硬化资源与 AI Core 计算重叠'],
     },
     B: {
-      title: '简单 SIMD 样例', tagline: '改架构声明后验证，通常不需要重写硬件路径',
+      title: '轻量迁移', tagline: '改架构声明后验证，通常不需要重写硬件路径',
       features: ['CMake 中 CMAKE_ASC_ARCHITECTURES 可声明 dav-2201, dav-3510', 'kernel 主要是 GM ↔ UB 搬运、逐元素计算或简单 reduce', '不写死矩阵分形、L0A/L0B/L1 复杂路径', '不使用 BuiltIn API 或内部 impl 接口'],
       actions: ['用 dav-2201 编译并在 2201 设备验证', '用 dav-3510 编译并在 3510 设备验证', '对照精度与性能，重点检查 Subnormal 和 UB bank 冲突'],
     },
     C: {
-      title: 'A2/A3 迁移 A5', tagline: '旧代硬件假设不再成立，需要重写数据与计算路径',
+      title: '深度迁移', tagline: '旧代硬件假设不再成立，需要重写数据与计算路径',
       features: ['使用 L0A/L0B/L0C、LoadData、Mmad、Fixpipe', '使用 int4 Cube Matmul、4:2 结构化稀疏或 SetLoadDataBoundary', '假设 GM → L0 或 L1 → GM 通路存在', '写死 UB 大小、bank group、核数或分形布局'],
       actions: ['不能只改 CMAKE_ASC_ARCHITECTURES', '先逐项检查数据通路和矩阵分形', '重写或拆分搬运路径，例如 GM → L1 → L0', 'int4 路径改为 Vector Cast 到 int8，或采用 950 的 MX / FP8 方案', '重新调优 tiling 与 bank 规避策略'],
     },
@@ -228,8 +237,187 @@
 
   const MIGRATION_SCENARIOS = [
     { key: 'A', title: 'A5 原生能力兼容 A2/A3', overview: 'A5 原生算子开发及跨代兼容', tag: 'A5 主导' },
-    { key: 'B', title: '简单 SIMD 样例', overview: '旧架构算子经简单调整迁移至 A5', tag: '轻量迁移' },
-    { key: 'C', title: 'A2/A3 迁移 A5', overview: '重写旧代硬件路径与实现假设', tag: '深度迁移' },
+    { key: 'B', title: '轻量迁移', overview: '旧架构算子经简单调整迁移至 A5', tag: '轻量迁移' },
+    { key: 'C', title: '深度迁移', overview: '重写旧代硬件路径与实现假设', tag: '深度迁移' },
+  ];
+
+  const GUIDE_DOCUMENTS = [
+    {
+      id: 'architecture-cognition',
+      title: '架构认知',
+      sub: '从代际称谓到 950 硬件拓扑',
+      group: 'architecture',
+      arch: 'ascend950b',
+      selectors: [],
+      routes: [],
+    },
+    {
+      id: 'guide-development',
+      title: 'A5 算子开发概览',
+      sub: '从数据流到优化验证',
+      group: 'development',
+      arch: 'ascend950b',
+      selectors: [],
+      routes: [],
+    },
+    {
+      id: 'guide-development-vector',
+      title: 'Vector 算子开发',
+      sub: 'SIMD 与 SIMT 的数据形态分流',
+      group: 'development',
+      arch: 'ascend950b',
+      scenarioKey: 'vector',
+      selectors: [],
+      routes: [],
+    },
+    {
+      id: 'guide-development-cube',
+      title: 'Cube 算子开发',
+      sub: '矩阵主计算与低比特路径',
+      group: 'development',
+      arch: 'ascend950b',
+      scenarioKey: 'cube',
+      selectors: [],
+      routes: [],
+    },
+    {
+      id: 'guide-development-fusion',
+      title: '融合算子开发',
+      sub: 'Cube-Vector 直连与协同',
+      group: 'development',
+      arch: 'ascend950b',
+      scenarioKey: 'fusion',
+      selectors: [],
+      routes: [],
+    },
+    {
+      id: 'guide-migration-checklist',
+      title: '迁移检查清单',
+      sub: '旧硬件假设与代码 review',
+      group: 'scenario-C',
+      arch: 'ascend950b',
+      selectors: [N.gm, N.ub, N.vector, N.l1, N.l0a, N.l0b, N.cube, N.l0c],
+      routes: ['l2-to-aiv1', 'l2-to-aic', 'aic-to-aiv1'],
+    },
+    {
+      id: 'generation-diff',
+      title: '代际差异速查',
+      sub: 'A5 与 A2/A3 的关键差异',
+      group: 'architecture',
+      arch: 'ascend950b',
+      selectors: [],
+      routes: [],
+    },
+  ];
+
+  const GUIDE_FOCUS = {
+    'development-vector': { selectors: [N.gm, N.ub, N.vector, N.simd], routes: ['l2-to-aiv1'] },
+    'development-simt': { selectors: [N.gm, N.ub, N.simt], routes: ['l2-to-aiv1'] },
+    'development-cube': { selectors: [N.gm, N.l1, N.l0a, N.l0b, N.cube, N.l0c], routes: ['l2-to-aic'] },
+    'development-fusion': { selectors: [N.l0c, N.fp, N.ub, N.vector], routes: ['aic-to-aiv1'] },
+    'migration-gm-detour': { selectors: [N.gm, N.l0c, N.ub, N.vector], routes: ['aic-to-aiv1', 'l2-to-aiv1'] },
+    'migration-regbase': { selectors: [N.gm, N.ub, N.vector, N.simd], routes: ['l2-to-aiv1'] },
+    'migration-lowbit': { selectors: [N.gm, N.ub, N.l1, N.l0a, N.l0b, N.cube], routes: ['l2-to-aic', 'l2-to-aiv1'] },
+    'migration-tiling': { selectors: [N.ub, N.l1, N.l0a, N.l0b, N.l0c], routes: ['l2-to-aic'] },
+  };
+
+  const DEVELOPMENT_SCENARIOS = [
+    {
+      key: 'vector',
+      title: 'Vector 算子开发',
+      feature: 'SIMD + SIMT',
+      summary: '按连续规则数据与离散线程语义选择 SIMD、SIMT 和 RegBase 路径。',
+      shape: '连续规则表达式、规整向量融合，以及离散索引、复杂分支、Gather/Scatter、Hash/Atomic。',
+      path: '连续数据：GM → UB → Vector Reg File；离散数据：GM → UB → SIMT Reg File，或 GM → SIMT Reg File。',
+      legacy: '910B 以 GM↔UB、LocalTensor 和 Memory-based SIMD 为主；离散逻辑常被展开为循环、mask 或多段搬运。',
+      current: '950 按数据形态分流：连续规则数据用 RegBase / SIMD VF，离散线程语义用 Thread Block / Warp / SIMT VF。',
+      focusId: 'development-vector',
+      flowId: 'vector',
+      codeSamples: [
+        {
+          title: '950 代码样例',
+          filename: 'vector_kernel_950.cpp',
+          code: `<span class="syntax-comment">// 伪代码：先按数据形态选 SIMD 或 SIMT，而不是按算子名称硬编码</span>
+<span class="syntax-keyword">if constexpr</span> (<span class="syntax-literal">is_contiguous</span> &amp;&amp; <span class="syntax-literal">expression_is_regular</span>) {
+  <span class="syntax-call">CopyGMToUB</span>();
+  <span class="syntax-call">LoadToVectorReg</span>();
+  <span class="syntax-call">RunSimdVf</span>();       <span class="syntax-comment">// RegBase / SIMD</span>
+  <span class="syntax-call">StoreVectorRegToUB</span>();
+} <span class="syntax-keyword">else</span> {
+  <span class="syntax-call">MapThreadBlockAndWarp</span>();
+  <span class="syntax-call">GatherScatterByLane</span>();
+  <span class="syntax-call">RunSimtVf</span>();       <span class="syntax-comment">// SIMT + bounds / sync check</span>
+}`,
+        },
+      ],
+    },
+    {
+      key: 'cube',
+      title: 'Cube 算子开发',
+      feature: '低比特',
+      summary: '围绕矩阵主计算、低比特数据与 scale 生命周期组织 Cube 数据路径。',
+      shape: 'MatMul、GEMM、GMM、qbmm、MoE 等矩阵主计算；低比特主数据与分组 scale 共同组成输入。',
+      path: 'GM / L2 → L1 → L0A / L0B → Cube → L0C；scale 优先按 tile group 预取并在 UB / L1 复用。',
+      legacy: '910B 典型实现围绕 L1、L0A/L0B/L0C 和 MMAD 主循环；低比特容易被当成 dtype 替换，scale 生命周期后置。',
+      current: '950 需要同时设计 HiF8 / FP8 / MXFP8 / MXFP4、scale cache、L0A NZ layout、尾块与精度策略。',
+      focusId: 'development-cube',
+      flowId: 'cube',
+      codeSamples: [
+        {
+          title: '950 代码样例',
+          filename: 'lowbit_matmul_950.cpp',
+          code: `<span class="syntax-comment">// 伪代码：先识别重复加载风险，再让主数据与 scale 共用 Tiling 计划</span>
+<span class="syntax-comment">// 风险写法：scale 随每个 tile 重复从 GM 读取</span>
+<span class="syntax-keyword">for</span> (<span class="syntax-type">Tile</span> tile : k_tiles) {
+  <span class="syntax-call">LoadA</span>(tile);
+  <span class="syntax-call">LoadB</span>(tile);
+  <span class="syntax-call">LoadScaleFromGM</span>(tile); <span class="syntax-comment">// 额外 GM 搬运可能抵消低比特收益</span>
+  <span class="syntax-call">MmadLowBitWithScale</span>();
+}
+
+<span class="syntax-comment">// 950 方向：按 tile group 预加载并复用 scale</span>
+<span class="syntax-type">ScaleTile</span> scale_ub = <span class="syntax-call">PreloadScaleToUB</span>(scale_gm);
+<span class="syntax-keyword">for</span> (<span class="syntax-type">Tile</span> tile : k_tiles) {
+  <span class="syntax-call">LoadAtoL0A_NZ</span>(tile.a);
+  <span class="syntax-call">LoadBtoL0B</span>(tile.b);
+  <span class="syntax-call">UseScaleFromUB</span>(scale_ub, tile.group);
+  <span class="syntax-call">MmadLowBit</span>();       <span class="syntax-comment">// Cube → L0C</span>
+}
+<span class="syntax-call">FixPipeOrEpilogue</span>();`,
+        },
+      ],
+    },
+    {
+      key: 'fusion',
+      title: '融合算子开发',
+      feature: 'C-V 直连',
+      summary: '围绕 Cube 主计算与 Vector 后处理重画数据流，减少 GM 中转和 Kernel Launch。',
+      shape: 'Cube 主计算 + Vector 后处理，例如 MatMul+Add/Activation、RmsNormQuant、FIA 与 Attention 后处理。',
+      path: '优先 L0C → UB → Vector Reg File，或 UB → L1；通过 MIX、DualDest / SSBuf 缩短 AIC 与 AIV 的协作路径。',
+      legacy: '910B 常把 AIC 结果写入 GM / workspace，再由 AIV 读回，算子边界和中间存储绑定较紧。',
+      current: '950 可围绕 AIC+AIV 协同、L0C→UB、UB→L1 与 DualDest 重画数据流，减少 GM 中转与 Kernel Launch。',
+      focusId: 'development-fusion',
+      flowId: 'gemm-ar',
+      codeSamples: [
+        {
+          title: '910B 代码样例',
+          filename: 'mix_epilogue_910b.cpp',
+          code: `<span class="syntax-comment">// 伪代码：910B 常见的 GM / workspace 中转路径</span>
+<span class="syntax-call">Mmad</span>(a_l0a, b_l0b, c_l0c);
+<span class="syntax-call">CopyL0CToGM</span>(c_l0c, workspace_gm);
+<span class="syntax-call">CopyGMToUB</span>(workspace_gm, x_ub);
+<span class="syntax-call">VectorEpilogue</span>(x_ub, out_gm);`,
+        },
+        {
+          title: '950 代码样例',
+          filename: 'mix_epilogue_950.cpp',
+          code: `<span class="syntax-comment">// 伪代码：满足约束时优先评估 C-V 直连</span>
+<span class="syntax-call">Mmad</span>(a_l0a, b_l0b, c_l0c);
+<span class="syntax-call">CopyL0CToUB</span>(c_l0c, x_ub); <span class="syntax-comment">// 或 DualDest</span>
+<span class="syntax-call">VectorEpilogue</span>(x_ub, out_gm);`,
+        },
+      ],
+    },
   ];
 
   const MIGRATION_MAP = {
@@ -246,8 +434,15 @@
   };
 
   const SUMMARY_HIGHLIGHTS = {
-    overview: ['A5 原生开发与跨代兼容', '简单 SIMD', '重写硬件假设'],
+    overview: ['A5 原生能力兼容 A2/A3', '轻量迁移', '深度迁移'],
     terminology: ['平台代际', '产品型号', '软件架构标识'],
+    'architecture-cognition': ['Cube-Vector 协同', '访存与互联', '新的算子表达空间'],
+    'guide-development': ['先画数据流', '按推荐路径逐层优化', '用指标验证收益'],
+    'guide-development-vector': ['SIMD 与 SIMT', '连续与离散数据', 'RegBase'],
+    'guide-development-cube': ['矩阵主计算', '低比特', 'scale cache'],
+    'guide-development-fusion': ['Cube-Vector 协同', 'C-V 直连', '减少 GM 中转'],
+    'generation-diff': ['执行范式', '数据通路', '片上存储', '低比特与通信'],
+    'guide-migration-checklist': ['迁移决策表', '架构升级检查项', '分层验收'],
     'scenario-A': ['A5 原生能力', '独立实现分支'],
     'scenario-B': ['改架构声明后验证', '不需要重写硬件路径'],
     'scenario-C': ['旧代硬件假设不再成立', '重写数据与计算路径'],
@@ -268,7 +463,7 @@
     routes: ['aic-to-aiv1', 'aiv2-to-aic', 'l2-to-aiv2', 'l2-to-aiv2-dcache', 'aiv2-to-l2'],
   };
 
-  const state = { mode: 'migration', arch: 'ascend950b', selectedId: null, activeStep: -1, playing: false, timer: null, overlay: null, viewport: null, playback: null, playbackHover: null, activation: null, hardwareResizeObserver: null, hardwareFitFrame: 0, diff: false, previewView: 'hardware', memoryReuseViewer: null, memoryReuseData: null };
+  const state = { mode: 'migration', arch: 'ascend950b', selectedId: null, guideFocusId: null, activeStep: -1, playing: false, timer: null, overlay: null, viewport: null, playback: null, playbackHover: null, hardwareResizeObserver: null, hardwareFitFrame: 0, diff: false };
   const $ = (selector, root = document) => root.querySelector(selector);
   const $$ = (selector, root = document) => Array.from(root.querySelectorAll(selector));
   const escape = (value) => String(value).replace(/[&<>"']/g, (char) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[char]));
@@ -287,18 +482,16 @@
   function syncHardwareToolbarLayout() {
     const toolbar = $('#hardwareViewport .pto-hw-viewport__toolbar');
     const title = toolbar?.querySelector('.pto-hw-viewport__title');
-    const label = title?.querySelector(':scope > span');
     const segmented = title?.querySelector('.pto-hw-viewport__segmented');
     const tools = toolbar?.querySelector('.pto-hw-viewport__tools');
-    if (!toolbar || !title || !label || !segmented || !tools) return;
+    if (!toolbar || !title || !segmented || !tools) return;
     const toolbarStyle = getComputedStyle(toolbar);
-    const rootStyle = getComputedStyle(document.documentElement);
     const availableWidth = toolbar.clientWidth
       - parseFloat(toolbarStyle.paddingLeft)
       - parseFloat(toolbarStyle.paddingRight);
-    const titleGap = parseFloat(rootStyle.getPropertyValue('--space-2')) || 8;
+    const rootStyle = getComputedStyle(document.documentElement);
     const toolbarGap = parseFloat(toolbarStyle.columnGap) || parseFloat(rootStyle.getPropertyValue('--space-3')) || 12;
-    const requiredWidth = label.scrollWidth + titleGap + segmented.scrollWidth + toolbarGap + tools.scrollWidth;
+    const requiredWidth = segmented.scrollWidth + toolbarGap + tools.scrollWidth;
     toolbar.classList.toggle('is-title-stacked', Math.ceil(requiredWidth) > Math.floor(availableWidth));
   }
 
@@ -321,7 +514,6 @@
     state.hardwareFitFrame = requestAnimationFrame(() => {
       state.hardwareFitFrame = requestAnimationFrame(() => {
         state.hardwareFitFrame = 0;
-        if (state.previewView !== 'hardware') return;
         const size = measureHardwareFrame();
         state.viewport?.setFrameSize?.(size.width, size.height);
         state.viewport?.fit?.();
@@ -330,52 +522,80 @@
     });
   }
 
-  function scheduleMemoryFit() {
-    requestAnimationFrame(() => requestAnimationFrame(() => {
-      if (state.previewView !== 'memory') return;
-      state.memoryReuseViewer?.resize?.();
-    }));
-  }
-
   function renderLists() {
-    const migrationOverview = `
-      <button class="entity-button tree-document-button migration-overview-button" type="button" role="treeitem" aria-level="1" data-migration-overview>
-        <span class="entity-main"><span class="entity-title">迁移场景总览</span><span class="entity-sub">三类场景定义与全量变化项映射</span></span>
-      </button>`;
-    const terminologyDocument = `
-      <button class="entity-button tree-document-button migration-overview-button" type="button" role="treeitem" aria-level="1" data-terminology-document>
-        <span class="entity-main"><span class="entity-title">术语解释</span><span class="entity-sub">架构代际、产品型号与软件标识</span></span>
-      </button>`;
+    const architectureDocs = [
+      { type: 'guide', ...GUIDE_DOCUMENTS.find((document) => document.id === 'architecture-cognition') },
+      { type: 'guide', ...GUIDE_DOCUMENTS.find((document) => document.id === 'generation-diff') },
+      { type: 'terminology', id: 'terminology', title: '术语表', sub: '平台代际、产品型号与软件标识' },
+    ];
+    const developmentDocs = [
+      { type: 'guide', ...GUIDE_DOCUMENTS.find((document) => document.id === 'guide-development') },
+      { type: 'guide', ...GUIDE_DOCUMENTS.find((document) => document.id === 'guide-development-vector') },
+      { type: 'guide', ...GUIDE_DOCUMENTS.find((document) => document.id === 'guide-development-cube') },
+      { type: 'guide', ...GUIDE_DOCUMENTS.find((document) => document.id === 'guide-development-fusion') },
+      { type: 'overview', id: 'migration-overview', title: 'A5 算子迁移概览', sub: '三类场景定义与全量变化项映射' },
+    ];
+    const renderDocumentTree = ({ branchId, title, documents }) => {
+      const groupId = `${branchId}-documents`;
+      return `
+      <section class="migration-tree-group" data-tree-branch="${escape(branchId)}">
+        <button class="migration-tree-toggle" type="button" role="treeitem" aria-level="1" aria-expanded="true" aria-controls="${groupId}" data-tree-toggle="${escape(branchId)}">
+          <svg class="migration-tree-chevron" viewBox="0 0 24 24" aria-hidden="true"><path d="m6 9 6 6 6-6"></path></svg>
+          <span class="migration-tree-toggle-title" data-nav-tooltip="${escape(title)}">${escape(title)}</span>
+        </button>
+        <ul class="migration-tree-children" id="${groupId}" role="group">
+          ${documents.map((document, index) => {
+            const dataAttribute = document.type === 'overview'
+              ? 'data-migration-overview'
+              : document.type === 'terminology'
+                ? 'data-terminology-document'
+                : `data-guide-document="${escape(document.id)}"`;
+            return `<li role="none"><button class="entity-button tree-document-button" type="button" role="treeitem" aria-level="2" ${dataAttribute}>
+              <span class="entity-index">${String(index + 1).padStart(2, '0')}</span>
+              <span class="entity-main"><span class="entity-title" data-nav-tooltip="${escape(document.title)}">${escape(document.title)}</span><span class="entity-sub" data-nav-tooltip="${escape(document.sub)}">${escape(document.sub)}</span></span>
+            </button></li>`;
+          }).join('')}
+        </ul>
+      </section>`;
+    };
+    const architectureTree = renderDocumentTree({ branchId: 'architecture', title: 'A5 架构', documents: architectureDocs });
+    const developmentTree = renderDocumentTree({ branchId: 'development', title: 'A5 算子开发', documents: developmentDocs });
     const scenarioTrees = MIGRATION_SCENARIOS.map((scenario) => {
       const items = CATEGORIES.filter((item) => item.scenario === scenario.key);
+      const supplementalDocs = GUIDE_DOCUMENTS.filter((document) => document.group === `scenario-${scenario.key}`);
       const groupId = `migration-scenario-${scenario.key}`;
       return `
         <section class="migration-tree-group" data-tree-branch="${scenario.key}">
           <button class="migration-tree-toggle" type="button" role="treeitem" aria-level="1" aria-expanded="true" aria-controls="${groupId}" data-tree-toggle="${scenario.key}">
             <svg class="migration-tree-chevron" viewBox="0 0 24 24" aria-hidden="true"><path d="m6 9 6 6 6-6"></path></svg>
-            <span class="migration-tree-toggle-title">迁移场景 ${scenario.key}：${escape(scenario.title)}</span>
+            <span class="migration-tree-toggle-title" data-nav-tooltip="迁移场景 ${scenario.key}：${escape(scenario.title)}">迁移场景 ${scenario.key}：${escape(scenario.title)}</span>
           </button>
           <ul class="migration-tree-children" id="${groupId}" role="group">
             <li role="none">
               <button class="entity-button tree-document-button scenario-overview-button" type="button" role="treeitem" aria-level="2" data-scenario-overview="${scenario.key}">
                 <span class="entity-index">01</span>
-                <span class="entity-main"><span class="entity-title">场景概述</span><span class="entity-sub">${escape(scenario.overview)}</span></span>
+                <span class="entity-main"><span class="entity-title" data-nav-tooltip="场景概述">场景概述</span><span class="entity-sub" data-nav-tooltip="${escape(scenario.overview)}">${escape(scenario.overview)}</span></span>
               </button>
             </li>
             ${items.map((item, index) => `
               <li role="none"><button class="entity-button tree-document-button" type="button" role="treeitem" aria-level="2" data-category-id="${item.id}">
                 <span class="entity-index">${String(index + 2).padStart(2, '0')}</span>
-                <span class="entity-main"><span class="entity-title">${escape(item.title)}</span><span class="entity-sub">${escape(item.sub)}</span></span>
-                <span class="mini-badge">${escape(item.badge)}</span>
+                <span class="entity-main"><span class="entity-title" data-nav-tooltip="${escape(item.title)}">${escape(item.title)}</span><span class="entity-sub" data-nav-tooltip="${escape(item.sub)}">${escape(item.sub)}</span></span>
+                <span class="mini-badge">${escape(item.dimension)}</span>
+              </button></li>`).join('')}
+            ${supplementalDocs.map((document, index) => `
+              <li role="none"><button class="entity-button tree-document-button guide-document-button" type="button" role="treeitem" aria-level="2" data-guide-document="${escape(document.id)}">
+                <span class="entity-index">${String(items.length + index + 2).padStart(2, '0')}</span>
+                <span class="entity-main"><span class="entity-title" data-nav-tooltip="${escape(document.title)}">${escape(document.title)}</span><span class="entity-sub" data-nav-tooltip="${escape(document.sub)}">${escape(document.sub)}</span></span>
               </button></li>`).join('')}
           </ul>
         </section>`;
     }).join('');
-    $('#categoryTree').innerHTML = migrationOverview + terminologyDocument + scenarioTrees;
+    $('#categoryTree').innerHTML = architectureTree + developmentTree + scenarioTrees;
     $('#flowList').innerHTML = FLOWS.map((item, index) => `
       <li><button class="entity-button" type="button" data-flow-id="${item.id}">
         <span class="entity-index">${String(index + 1).padStart(2, '0')}</span>
-        <span class="entity-main"><span class="entity-title">${escape(item.title)}</span><span class="entity-sub">${escape(item.short)}</span></span>
+        <span class="entity-main"><span class="entity-title" data-nav-tooltip="${escape(item.title)}">${escape(item.title)}</span><span class="entity-sub" data-nav-tooltip="${escape(item.short)}">${escape(item.short)}</span></span>
       </button></li>`).join('');
   }
 
@@ -387,16 +607,10 @@
 
   function renderHardware() {
     const host = $('#hardwareGraph');
-    state.activation?.destroy?.();
     renderHardwareArchitecture(host);
     state.overlay?.destroy?.();
     state.overlay = window.PtoMemoryArchitecturePattern.createRouteOverlay(host, state.arch);
     window.PtoMemoryArchitecturePattern.attachHoverInteractions(host, state.arch);
-    state.activation = window.PtoMemoryArchitecturePattern.attachNodeActivation(host, state.arch, {
-      selector: '[data-aiv-node="buffer:UB"]',
-      label: () => '打开 UB 内存可视化',
-      onActivate: (_target, detail) => openMemoryReuse(detail),
-    });
     observeHardwareSize();
     requestAnimationFrame(() => {
       state.overlay?.update?.();
@@ -409,6 +623,7 @@
     if (!arch || state.arch === arch) return;
     state.arch = arch;
     if (arch !== 'ascend950b') state.diff = false;
+    else if (state.mode === 'migration' && state.selectedId === 'generation-diff') state.diff = true;
     $$('[data-arch-id]').forEach((button) => {
       const selected = button.dataset.archId === arch;
       button.classList.toggle('is-selected', selected);
@@ -433,6 +648,12 @@
 
   function applyCurrentFocus() {
     if (state.selectedId === null) return focusHardware();
+    if (state.mode === 'migration' && typeof state.selectedId === 'string') {
+      const guide = GUIDE_DOCUMENTS.find((entry) => entry.id === state.selectedId);
+      const guideFocus = state.guideFocusId ? GUIDE_FOCUS[state.guideFocusId] : null;
+      if (guideFocus) return focusHardware(guideFocus.selectors || [], guideFocus.routes || []);
+      if (guide) return focusHardware(guide.selectors || [], guide.routes || []);
+    }
     const item = state.mode === 'migration'
       ? CATEGORIES.find((entry) => entry.id === Number(state.selectedId))
       : FLOWS.find((entry) => entry.id === state.selectedId);
@@ -446,7 +667,11 @@
 
   function section(title, content, help = '') {
     const helpId = title === '关键差异对照' ? 'comparison-legend-help' : 'migration-map-help';
-    const helpClass = title === '关键差异对照' ? ' is-comparison' : '';
+    const helpClass = title === '关键差异对照'
+      ? ' is-comparison'
+      : title === '全量变化项与场景映射'
+        ? ' is-mapping'
+        : '';
     return `<section class="inspector-section">
       <div class="inspector-section-heading">
         <h3>${escape(title)}</h3>
@@ -514,13 +739,335 @@
   function renderComparisonLegendHelp() {
     return `
       <span>${comparisonMarker('A')}<b>A5 原生能力；兼容旧代需独立分支</b></span>
-      <span>${comparisonMarker('B')}<b>简单 SIMD；改声明后验证</b></span>
-      <span>${comparisonMarker('C')}<b>旧代硬件假设失效；需重写路径</b></span>
+      <span>${comparisonMarker('B')}<b>轻量迁移；改声明后验证</b></span>
+      <span>${comparisonMarker('C')}<b>深度迁移；旧代硬件假设失效</b></span>
       <span>${comparisonMarker('B/C')}<b>轻量迁移风险与深度迁移风险并存</b></span>
       <span>${comparisonMarker('优化机会')}<b>新增能力，主动用</b></span>
       <span>${comparisonMarker('删除')}<b>2201 → 3510 移除</b></span>
       <span>${comparisonMarker('新增')}<b>3510 独有</b></span>
     `;
+  }
+
+  function renderGuideFocusButton(id, label = '聚焦硬件') {
+    const selected = state.guideFocusId === id;
+    return `<button class="btn btn-sm guide-focus-button${selected ? ' is-selected' : ''}" type="button" data-guide-focus="${escape(id)}" aria-pressed="${selected}">${escape(label)}</button>`;
+  }
+
+  function renderRelatedFlows(ids) {
+    return ids.map((id) => {
+      const flow = FLOWS.find((entry) => entry.id === id);
+      return flow ? `<button class="btn btn-ghost related-flow" type="button" data-related-flow="${flow.id}"><span>→ ${escape(flow.title)}</span><span class="related-flow-action">跳转查看</span></button>` : '';
+    }).join('');
+  }
+
+  function renderScenarioCodeBlock(filename, code) {
+    return `<div class="operator-code-surface">
+      <div class="operator-code-header">
+        <span>${escape(filename)}</span>
+      </div>
+      <pre class="guide-code-block operator-code-block"><code>${code}</code></pre>
+    </div>`;
+  }
+
+  function highlightTemplateCode(code) {
+    return String(code).split('\n').map((line) => {
+      const escapedLine = escape(line);
+      if (line.trimStart().startsWith('#')) return `<span class="syntax-comment">${escapedLine}</span>`;
+      return escapedLine
+        .replace(/\b([A-Za-z_][A-Za-z0-9_]*)(?=\()/g, '<span class="syntax-call">$1</span>')
+        .replace(/\b(if|for|else|return)\b/g, '<span class="syntax-keyword">$1</span>');
+    }).join('\n');
+  }
+
+  function renderArchitectureCognition() {
+    const dimensionRows = [
+      ['平台代际', 'A5', 'A2/A3', '开发策略、能力兼容与迁移场景'],
+      ['产品型号', 'Ascend 950', 'Ascend 910B', '硬件架构图、产品能力与代际对比'],
+      ['软件架构标识', 'DAV_3510 / dav-3510', 'DAV_2201 / dav-2201', '源码枚举、编译参数与运行时分支'],
+      ['Device 宏值', '3510', '2201', '__NPU_ARCH__ 条件编译'],
+    ];
+    const hardwareRows = [
+      ['Compute Die', '承载 AI Core、AI CPU、L2、Memory Interface、DVPP、DMA/Clink 与 STARS/D2D。'],
+      ['IO Die', '位于封装两侧，承载 PCIe、UnifiedBus 与互联控制。'],
+      ['AI CPU / CPU block', '承担设备侧控制、调度与辅助计算，是算子执行链中的控制对象。'],
+      ['AI Core', '由 AIC/Cube Core 与 AIV/Vector Core 组成，是算子计算资源的上层组合对象。'],
+      ['AIC / Cube Core', '执行矩阵计算，围绕 L1、L0A/L0B/L0C、Cube、MTE1/MTE2 与 FixPipe 工作。'],
+      ['AIV / Vector Core', '执行向量与线程级计算，围绕 Unified Buffer、Vector、SIMD/SIMT、MTE2/MTE3 工作。'],
+      ['L2 Cache / GM', '连接片外数据与片上计算；AIC/AIV 的通用数据协作仍以 GM/L2 为共享层。'],
+      ['UnifiedBus / URMA / CCU', '构成远程内存访问、集合通信卸载和通算重叠的互联能力层。'],
+    ];
+    const topologyRows = [
+      ['Compute Die', '2', '双 DIE 通过高速 Die-to-Die 通道形成 UMA。'],
+      ['IO Die', '2', '位于封装两侧，承载互联与控制对象。'],
+      ['AI CPU / CPU block', '4', '每个 Compute Die 2 个。'],
+      ['AI Core', '32', '每个 Compute Die 16 个。'],
+      ['AIC / Cube Core', '32', '每个 AI Core 1 个。'],
+      ['AIV / Vector Core', '64', '每个 AI Core 2 个。'],
+    ];
+    const memoryRows = [
+      ['GM / L2', '外层数据入口与跨核共享层；中间结果不应默认回到这里。', '把 workspace 当默认中转，导致 C-V 融合收益消失。'],
+      ['L1 / L0A / L0B', 'Cube 主计算前的数据组织层；layout、低比特 scale 与 bank 访问共同影响吞吐。', '沿用旧 Tiling 时忽略 L0A 分形、尾块、对齐和 scale 复用。'],
+      ['L0C', 'Cube 结果停留层；融合场景优先检查能否直接交给 AIV。', '仍按 L0C → GM → UB 旧路径实现，增加一次大块 GM 往返。'],
+      ['UB / Vector Reg File', 'AIV staging 与 SIMD Reg 计算路径；连续规则表达式尽量减少 UB 反复读写。', 'RegBase 临时变量过多导致 spill，把寄存器优化变成 stall 来源。'],
+      ['SIMT Reg File', '离散索引、复杂分支、Gather/Scatter 与线程式表达的寄存器路径。', '把离散数据硬套 SIMD，造成访存合并差且同步、边界更难排查。'],
+    ];
+    const differences = [
+      ['从单点算力到 C/V 协同', 'A5 的核心变化不是只提高 Cube 算力，而是同时增强 Cube、Vector、访存、同步与互联，让 Mix 任务成为主要优化对象。'],
+      ['从固定搬运到可编排数据通路', 'L0C→UB、UB→L1、NDDMA 与 128B Sector L2 扩大了减少 GM 往返和处理离散访问的空间。'],
+      ['从 SIMD 主导到 SIMD/SIMT 并存', '规则连续计算继续使用 SIMD；离散访存、条件分支、Gather/Scatter 与线程级原子可以由 SIMT 表达。'],
+      ['从单核调优到协作节奏调优', 'AIC/AIV 的 TileShape、Mix 子图边界与同步等待共同决定端到端性能。'],
+    ];
+    renderInspector(`<div class="inspector-content guide-document-content">
+      ${renderDocumentHeader({
+        path: ['A5 架构与编程指南', 'A5 架构'],
+        title: '架构认知',
+        summary: '先建立 A5 的硬件对象、拓扑和编程能力全景，再把算子设计落到 Cube-Vector 协同、访存与互联路径上。',
+        highlights: SUMMARY_HIGHLIGHTS['architecture-cognition'],
+      })}
+      ${renderContextCard(`<dl class="meta-grid">
+        <div class="meta-row"><dt>核心对象</dt><dd>Ascend 950、Compute Die、AI Core、AIC、AIV、L2、GM 与 IO Die</dd></div>
+        <div class="meta-row"><dt>开发主线</dt><dd>数据流、执行范式、片上复用、同步协同与跨代兼容</dd></div>
+        <div class="meta-row"><dt>文档定位</dt><dd>架构认知基线</dd></div>
+      </dl>`)}
+      ${section('架构指代维度', `<p class="section-lead">用平台代际、产品型号和软件架构标识三层口径阅读文档；代码中还会出现对应的 Device 宏值。相邻称谓有关联，但不能在所有上下文中直接画等号。</p>
+        <div class="comparison-table-wrap"><table class="comparison-table terminology-dimension-table">
+          <thead><tr><th scope="col">维度</th><th scope="col">新平台侧</th><th scope="col">旧平台侧</th><th scope="col">主要使用位置</th></tr></thead>
+          <tbody>${dimensionRows.map((row) => `<tr>${row.map((cell) => `<td>${escape(cell)}</td>`).join('')}</tr>`).join('')}</tbody>
+        </table></div>`)}
+      ${section('950 架构相关硬件对象', `<div class="comparison-table-wrap"><table class="comparison-table">
+        <thead><tr><th scope="col">对象</th><th scope="col">在算子开发中的作用</th></tr></thead>
+        <tbody>${hardwareRows.map((row) => `<tr>${row.map((cell) => `<td>${escape(cell)}</td>`).join('')}</tr>`).join('')}</tbody>
+      </table></div>`)}
+      ${section('硬件拓扑计数速览', `<div class="comparison-table-wrap"><table class="comparison-table">
+        <thead><tr><th scope="col">对象</th><th scope="col">数量</th><th scope="col">组织关系</th></tr></thead>
+        <tbody>${topologyRows.map((row) => `<tr>${row.map((cell) => `<td>${escape(cell)}</td>`).join('')}</tr>`).join('')}</tbody>
+      </table></div>`)}
+      ${section('片上存储层次速查', `<div class="comparison-table-wrap"><table class="comparison-table">
+        <thead><tr><th scope="col">层级</th><th scope="col">开发者心智</th><th scope="col">容易踩坑</th></tr></thead>
+        <tbody>${memoryRows.map((row) => `<tr>${row.map((cell) => `<td>${escape(cell)}</td>`).join('')}</tr>`).join('')}</tbody>
+      </table></div>`)}
+      ${section('查看执行机制', renderRelatedFlows(['vector', 'cube', 'gemm-ar']))}
+      ${section('A5 和上一代的最大区别', `<div class="terminology-rule-list">${differences.map(([title, description]) => `
+        <article class="inspector-card"><strong>${escape(title)}</strong><p>${escape(description)}</p></article>`).join('')}</div>`)}
+    </div>`);
+  }
+
+  function renderDevelopmentGuide() {
+    const workflow = [
+      ['01', '画数据流', '标出 GM、L2、L1、L0A/B/C、UB 与 Reg，先检查中间结果是否绕行 GM。'],
+      ['02', '选择执行范式', '连续规则数据优先 SIMD/RegBase，离散索引与复杂分支评估 SIMT，矩阵主计算使用 Cube。'],
+      ['03', '设计片上复用', '确定 UB、L1、L0 和 Reg 生命周期；低比特场景同时规划 scale 的加载与复用。'],
+      ['04', '验证性能假设', '先对齐 Golden 与边界 shape，再检查 pipe bubble、片上带宽、PC stall、寄存器压力和尾块。'],
+    ];
+    const layers = [
+      ['1', '建立正确性基线', '固定 Golden、边界 shape 与低比特误差预算，形成后续优化可重复对比的基准。', 'Correctness'],
+      ['2', '稳定 Tiling 与流水', '调整 Block 切分、Double Buffer 和尾块策略，让搬运与计算形成稳定重叠。', 'Tiling / Pipe'],
+      ['3', '优化数据通路与片上复用', '减少不必要的 GM 往返，规划 UB、L1、L0 与 scale cache 的停留和复用。', 'Memory Path'],
+      ['4', '优化执行范式与指令', '按数据形态选择 SIMD、SIMT 或 RegBase，并控制 GPR 占用、spill 与重复 scalar 控制。', 'Reg / VF'],
+      ['5', '优化融合与端到端调度', '评估 Cube 主计算、Vector 后处理与通信协同，减少 Kernel Launch 和跨算子中转。', 'Fusion / Stream'],
+    ];
+    const features = [
+      ['数据通路', 'L0C→UB、UB→L1、NDDMA 和 128B Sector L2 让中间结果、复杂搬运与小包访问有更多片上优化路径。'],
+      ['C/V 融合', 'Cube 主计算与 Vector 后处理可以围绕 Mix 子图协同设计，减少多对多依赖和不必要的 GM 往返。'],
+      ['SIMT / SIMD', 'SIMD 处理规则连续向量计算；SIMT 覆盖离散索引、复杂分支、Gather/Scatter 与线程级原子。'],
+      ['通信', 'UnifiedBus、URMA 与 CCU 扩展远程内存访问、集合通信卸载和通算重叠的设计空间。'],
+      ['低比特', 'HiF8、FP8、MXFP8、MXFP4 与 MicroScaling 把 dtype、scale、layout、搬运和精度验证连接成一条设计链。'],
+      ['RegBase', 'RegTensor、MaskReg、AddrReg 与显式 Load/Store 使 GM→UB→Reg 的数据生命周期和寄存器压力进入开发决策。'],
+    ];
+    const validationRows = [
+      ['功能与精度', 'Golden、边界 shape、round / saturate、极值样本', '结果一致且误差满足预算后，才能进入性能比较'],
+      ['流水与核间负载', 'Pipe View、各核耗时、尾块分布', 'MTE、Cube、Vector 是否持续工作，是否存在长 bubble 或少数核拖尾'],
+      ['访存与片上复用', 'GM 流量、片上带宽、L1 / UB bank 冲突', '数据是否停留在预期层级，GM 往返是否减少且未引入新的冲突'],
+      ['寄存器与指令效率', 'PC Sampling、GPR / Reg pressure、spill', 'RegBase、SIMT 或 VF 融合是否减少开销且未造成寄存器溢出'],
+      ['端到端协同', 'Kernel Launch、CCU profiling、HCCL 总耗时、通算重叠', '局部优化是否转化为端到端收益，而不是把瓶颈转移到通信或调度'],
+    ];
+    renderInspector(`<div class="inspector-content guide-document-content development-guide-content">
+      ${renderDocumentHeader({
+        path: ['A5 架构与编程指南', 'A5 算子开发'],
+        title: 'A5 算子开发概览',
+        summary: 'A5 算子开发不是先选语法，而是先画数据流、选择执行范式、设计片上复用，再用工具验证性能假设。',
+        highlights: SUMMARY_HIGHLIGHTS['guide-development'],
+      })}
+      ${renderContextCard(`<dl class="meta-grid">
+        <div class="meta-row"><dt>目标</dt><dd>把架构认知转成从 0-1 开发与优化的工作方法</dd></div>
+        <div class="meta-row"><dt>适用对象</dt><dd>A5 新算子开发、旧方案重构与性能方案评审</dd></div>
+        <div class="meta-row"><dt>文档定位</dt><dd>开发与优化方法概览</dd></div>
+      </dl>`)}
+      ${section('开发工作流', `<ol class="guide-workflow">${workflow.map(([number, title, description]) => `
+        <li class="inspector-card guide-workflow-card"><span class="step-number">${number}</span><div><strong>${escape(title)}</strong><p>${escape(description)}</p></div></li>`).join('')}</ol>`)}
+      ${section('A5 编程新特性', `<div class="guide-scenario-grid">${features.map(([title, description]) => `
+        <article class="inspector-card guide-scenario-card"><div><strong>${escape(title)}</strong><p>${escape(description)}</p></div></article>`).join('')}</div>`)}
+      ${section('A5 算子推荐优化路径', `<p class="section-lead">这是从正确性到端到端性能的推荐优化顺序。每一层稳定后再进入下一层，便于确认收益来源并及时发现副作用。</p>
+        <div class="guide-method-layers">${layers.map(([number, title, detail, target]) => `
+        <article class="inspector-card guide-method-layer"><span class="guide-method-number">${number}</span><div><strong>${escape(title)}</strong><p>${escape(detail)}</p></div><span class="mini-badge">${escape(target)}</span></article>`).join('')}</div>`)}
+      ${section('优化效果验证', `<p class="section-lead">本节用于验证前述优化是否真正生效，适合作为开发概览的收尾。建议每次只改变一类策略，并用对应指标确认结果和副作用。</p>
+        <div class="comparison-table-wrap"><table class="comparison-table">
+        <thead><tr><th scope="col">验证目标</th><th scope="col">关键观测</th><th scope="col">判断标准</th></tr></thead>
+        <tbody>${validationRows.map((row) => `<tr>${row.map((cell) => `<td>${escape(cell)}</td>`).join('')}</tr>`).join('')}</tbody>
+      </table></div>`)}
+    </div>`);
+  }
+
+  function renderDevelopmentScenarioGuide(document) {
+    const scenario = DEVELOPMENT_SCENARIOS.find((entry) => entry.key === document.scenarioKey);
+    if (!scenario) return;
+    renderInspector(`<div class="inspector-content guide-document-content development-scenario-guide">
+      ${renderDocumentHeader({
+        path: ['A5 架构与编程指南', 'A5 算子开发'],
+        title: scenario.title,
+        summary: scenario.summary,
+        highlights: SUMMARY_HIGHLIGHTS[document.id],
+      })}
+      ${renderContextCard(`<dl class="meta-grid">
+        <div class="meta-row"><dt>场景特征</dt><dd><span class="mini-badge">${escape(scenario.feature)}</span></dd></div>
+        <div class="meta-row"><dt>数据形态</dt><dd>${escape(scenario.shape)}</dd></div>
+        <div class="meta-row"><dt>优先路径</dt><dd><div class="scenario-path-detail"><span>${escape(scenario.path)}</span>${renderGuideFocusButton(scenario.focusId)}</div></dd></div>
+      </dl>`)}
+      ${section('代际实现对照', `<div class="operator-scenario-facts">
+        <div class="operator-scenario-fact"><span>910B 典型实现</span><p>${escape(scenario.legacy)}</p></div>
+        <div class="operator-scenario-fact"><span>950 实现差异</span><p>${escape(scenario.current)}</p></div>
+      </div>`)}
+      ${scenario.codeSamples.map((sample) => section(sample.title, renderScenarioCodeBlock(sample.filename, sample.code))).join('')}
+      ${section('关联执行流', renderRelatedFlows([scenario.flowId]))}
+    </div>`);
+  }
+
+  function renderMigrationChecklist() {
+    const reviewRows = [
+      ['AIC 输出经 GM / workspace 交给 AIV', '后处理是否满足 C-V 片上直连条件', '优先评估 L0C→UB、DualDest 或 UB→L1，减少中间结果回写'],
+      ['Vector 中间值反复落入 UB / LocalTensor', '是否属于规则连续且可融合的向量表达式', '评估 RegBase / SIMD VF，并同步检查寄存器压力与 spill'],
+      ['Gather / Scatter 或分支逻辑以 SIMD 循环实现', '访问模式是否具有离散索引、线程分歧或原子语义', '评估 SIMT，并按 Thread Block / Warp 重新建模'],
+      ['低比特实现仅替换 dtype，未规划 scale', 'scale 是否重复从 GM 读取，layout 是否匹配矩阵路径', '把 scale cache、cast、round、saturate 与精度校验纳入同一方案'],
+      ['Tiling 写死旧代容量、核数或矩阵分形', 'L1 / L0 / UB / Reg / L2 的容量与命中假设是否仍成立', '重建 A5 可运行基线，再逐项启用新通路和优化能力'],
+    ];
+    const risks = [
+      ['检查中间结果是否仍绕行 GM', '定位 L0C → GM → UB 或 workspace 中转；如果属于 Cube-Vector 融合场景，优先评估 C-V 直连。', 'migration-gm-detour', 4],
+      ['检查 Vector 是否仍按 Membase 实现', '定位 UB 中间变量和规则表达式，判断能否迁移到 RegBase；同时验证寄存器压力与 spill。', 'migration-regbase', 2],
+      ['检查低比特 scale 是否重复搬运', '把 scale 生命周期纳入 Tiling，避免在 inner loop 中反复从 GM 加载并抵消低比特收益。', 'migration-lowbit', 7],
+      ['检查 Tiling 与 layout 是否写死旧代假设', '重新核对 L0A 分形、UB bank、片上容量、Double Buffer 和尾块策略，不能直接复用旧参数。', 'migration-tiling', 6],
+      ['检查跨代 API 与调试接口', '扫描 L1/L0、DataCopy、LoadData、DumpTensor、低比特类型与调试接口，并按当前工具链逐项确认。', '', 5],
+      ['按正确顺序完成迁移验收', '先验证功能与精度，再检查内存和同步，最后比较性能，避免总耗时掩盖实现错误。', '', 9],
+    ];
+    const scanTemplate = `# 示例模板：先标硬件假设，再改路径；接口与参数以当前工具链为准
+scan_legacy_kernel() {
+  find_data_path("L0C -> GM -> UB");
+  find_memory_based_vector_temporaries();
+  find_lowbit_without_scale_cache();
+  find_generation_sensitive_api();
+}
+
+# 再找高风险硬件与编程模型关键字
+rg "L1Buffer|L0A|L0B|L0C|int4b_t|cube_only|LoadData|DataCopy|DumpTensor" ./operator_src
+rg "GM.*UB|workspace|LocalTensor|RegTensor|MaskReg|AddrReg" ./operator_src
+rg "MXFP|HiF8|FP8|scale|AntiQuant|Quant" ./operator_src`;
+    const profilingTemplate = `# 示例模板：迁移 review 固定观察流水、负载与 stall
+profile_pipeline() {
+  collect_pipe_view();
+  collect_core_load();
+  collect_pc_sampling();
+}
+
+retile_for_a5(shape) {
+  choose_block_shape(shape);
+  enable_double_buffer_when_memory_allows();
+  balance_tail_block_or_pad();
+  recheck_l1_bank_and_register_pressure();
+}`;
+    const simtDebugTemplate = `# 950 示例模板：具体编译参数以当前 CANN 版本为准
+ascendc_compile \\
+  --npu-arch=dav-3510 \\
+  --sanitizer \\
+  -g \\
+  -o simt_kernel.o
+
+# 先功能，再内存，再同步，最后比较性能
+run_correctness();
+run_memcheck();
+run_synccheck();
+run_tracecheck();
+profile_pipe_and_gpr();`;
+    renderInspector(`<div class="inspector-content guide-document-content">
+      ${renderDocumentHeader({
+        path: ['A5 架构与编程指南', '迁移场景 C：深度迁移'],
+        title: '迁移检查清单',
+        summary: '迁移到 A5 时先扫描旧硬件假设，再改数据路径与编程范式，最后按功能、内存、同步和性能顺序验证。',
+        highlights: SUMMARY_HIGHLIGHTS['guide-migration-checklist'],
+      })}
+      ${renderContextCard(`<dl class="meta-grid">
+        <div class="meta-row"><dt>检查目标</dt><dd>识别架构升级中最容易沿用的旧硬件假设，并落实为检查、调整和验证动作</dd></div>
+        <div class="meta-row"><dt>适用对象</dt><dd>A2/A3 算子迁移、跨代维护与迁移验收</dd></div>
+        <div class="meta-row"><dt>文档定位</dt><dd>迁移实施检查与验收</dd></div>
+      </dl>`)}
+      ${section('迁移检查顺序', `<ol class="guide-workflow">
+        <li class="inspector-card guide-workflow-card"><span class="step-number">01</span><div><strong>标记代际与注册分支</strong><p>确认 Device 宏、Host tiling、CMake 和 AddConfig 是否覆盖目标产品。</p></div></li>
+        <li class="inspector-card guide-workflow-card"><span class="step-number">02</span><div><strong>扫描旧硬件假设</strong><p>定位旧通路、矩阵分形、UB/bank、低比特、同步和调试接口。</p></div></li>
+        <li class="inspector-card guide-workflow-card"><span class="step-number">03</span><div><strong>重画数据路径</strong><p>明确数据停留层级、AIC/AIV 分工、scale 生命周期与可融合节点。</p></div></li>
+        <li class="inspector-card guide-workflow-card"><span class="step-number">04</span><div><strong>重建 Tiling baseline</strong><p>先得到可运行基线，再逐项启用 RegBase、SIMT、低比特或 C-V 新通路。</p></div></li>
+        <li class="inspector-card guide-workflow-card"><span class="step-number">05</span><div><strong>分层验收</strong><p>按功能、内存、同步、性能顺序验证并记录差异。</p></div></li>
+      </ol>`)}
+      ${section('旧实现迁移决策表', `<p class="section-lead">根据旧代码特征判断迁移方向，回答“这类实现需要改什么”。确定方向后，再用下方检查项落实到代码 review 与验收。</p>
+        <div class="comparison-table-wrap"><table class="comparison-table">
+        <thead><tr><th scope="col">旧实现特征</th><th scope="col">迁移判断问题</th><th scope="col">推荐改造方向</th></tr></thead>
+        <tbody>${reviewRows.map((row) => `<tr>${row.map((cell) => `<td>${escape(cell)}</td>`).join('')}</tr>`).join('')}</tbody>
+      </table></div>`)}
+      ${section('架构升级重点检查项', `<p class="section-lead">承接上方迁移决策，用于实施阶段逐项检查“是否改到位、是否验证充分”。每项可联动硬件路径或打开对应架构差异文档。</p>
+        <div class="guide-risk-list">${risks.map(([title, description, focusId, categoryId], index) => {
+          const categoryTitle = CATEGORIES.find((category) => category.id === categoryId)?.title || `变化项 ${categoryId}`;
+          return `
+        <article class="inspector-card card-demo guide-risk-card">
+          <span class="step-number">${String(index + 1).padStart(2, '0')}</span>
+          <div><strong>${escape(title)}</strong><p>${escape(description)}</p></div>
+          <div class="guide-card-actions">${focusId ? renderGuideFocusButton(focusId) : ''}<button class="btn btn-sm btn-ghost" type="button" data-category-jump="${categoryId}">查看“${escape(categoryTitle)}”</button></div>
+        </article>`;
+        }).join('')}</div>`)}
+      ${section('代码样例', `<div class="migration-code-samples">
+        ${renderScenarioCodeBlock('migration_scan.pseudo', highlightTemplateCode(scanTemplate))}
+        ${renderScenarioCodeBlock('profile_review.pseudo', highlightTemplateCode(profilingTemplate))}
+      </div>`)}
+      ${section('950 代码样例', renderScenarioCodeBlock('simt_debug_950.sh', highlightTemplateCode(simtDebugTemplate)))}
+      ${section('关联执行流', renderRelatedFlows(['vector', 'cube', 'gemm-ar']))}
+    </div>`);
+  }
+
+  function renderGenerationDiff() {
+    const rows = [
+      ['架构目标', 'A2/A3；常见对照为 Ascend 910B、DAV_2201', 'A5；当前主题为 Ascend 950、DAV_3510', '显式拆分编译、注册、Tiling 与回归配置', 1],
+      ['Vector 编程', 'Membase / LocalTensor，SIMD 主导', 'RegBase；SIMD 与 SIMT 并存', '按规则连续与离散分支选择执行范式', 2],
+      ['AIC/AIV 数据通路', '中间结果较多依赖 GM/L2 中转', '增加 L0C→UB、UB→L1 与 C/V 融合通路', '先画数据流，再决定 Mix 子图与融合边界', 4],
+      ['Cube 取数', 'L0A 使用 ZZ 分形', 'L0A 改为 NZ 分形', '重新生成 L0A 切分、地址与 Tiling 参数', 6],
+      ['Cube 指令', '支持 int4 Cube、4:2 稀疏与边界绕回', '相关能力移除，MX/FP8 路径增强', '替换旧指令和算法假设，重做精度基线', 5],
+      ['低比特', '以传统整数与浮点格式为主', 'HiF8、FP8、MXFP8、MXFP4 与 MicroScaling', '把 scale、layout、搬运与误差控制一起设计', 7],
+      ['片上存储', 'UB 192KB；16 bank groups × 3 banks × 4KB', 'UB 256KB；8 bank groups × 2 banks × 16KB', '删除写死容量与错位经验，重新评估 bank 冲突', 8],
+      ['通信', 'HCCL 软件调度与通用资源为主', 'CCU、UnifiedBus、URMA 扩展通信执行路径', '同时观察接口语义、硬件落点与通算重叠', 10],
+    ];
+    renderInspector(`<div class="inspector-content guide-document-content">
+      ${renderDocumentHeader({
+        path: ['A5 架构与编程指南', 'A5 架构'],
+        title: '代际差异速查',
+        summary: '从执行范式、数据通路、片上存储、低比特与通信五条主线，快速判断旧代实现需要保留、轻改还是重写。',
+        highlights: SUMMARY_HIGHLIGHTS['generation-diff'],
+      })}
+      ${renderContextCard(`<dl class="meta-grid">
+        <div class="meta-row"><dt>对照范围</dt><dd>A5 / Ascend 950 / DAV_3510 与 A2/A3 / Ascend 910B / DAV_2201</dd></div>
+        <div class="meta-row"><dt>使用方式</dt><dd>先定位差异维度，再进入对应变化项查看指令、路径与迁移动作</dd></div>
+        <div class="meta-row"><dt>文档定位</dt><dd>代际差异检索入口</dd></div>
+      </dl>`)}
+      ${section('关键代际差异', `<div class="comparison-table-wrap"><table class="comparison-table generation-diff-table">
+        <thead><tr><th scope="col">维度</th><th scope="col">A2/A3</th><th scope="col">A5</th><th scope="col">开发影响</th></tr></thead>
+        <tbody>${rows.map(([dimension, legacy, a5, impact, categoryId]) => `<tr>
+          <td><button class="migration-map-link generation-diff-link" type="button" data-category-jump="${categoryId}">${escape(dimension)}</button></td>
+          <td>${escape(legacy)}</td><td>${escape(a5)}</td><td>${escape(impact)}</td>
+        </tr>`).join('')}</tbody>
+      </table></div>`)}
+    </div>`);
+  }
+
+  function renderGuideDocument(document) {
+    if (document.id === 'architecture-cognition') renderArchitectureCognition();
+    else if (document.id === 'guide-development') renderDevelopmentGuide();
+    else if (document.scenarioKey) renderDevelopmentScenarioGuide(document);
+    else if (document.id === 'generation-diff') renderGenerationDiff();
+    else renderMigrationChecklist();
   }
 
   function renderCategoryInspector(item) {
@@ -533,7 +1080,7 @@
     const scenarioTitle = MIGRATION_SCENARIOS.find((scenario) => scenario.key === item.scenario)?.title || item.scenario;
     renderInspector(`<div class="inspector-content">
       ${renderDocumentHeader({
-        path: ['A5 算子迁移', `迁移场景 ${item.scenario}：${scenarioTitle}`],
+        path: ['A5 架构与编程指南', `迁移场景 ${item.scenario}：${scenarioTitle}`],
         title: item.title,
         summary: item.essence,
         highlights: SUMMARY_HIGHLIGHTS[`category-${item.id}`],
@@ -542,7 +1089,7 @@
         <div class="meta-row"><dt>变化来源</dt><dd>${escape(context.actor)}</dd></div>
         <div class="meta-row"><dt>设计目标</dt><dd>${escape(context.goal)}</dd></div>
         <div class="meta-row"><dt>直接影响</dt><dd>${escape(context.impact)}</dd></div>
-        <div class="meta-row"><dt>标签</dt><dd><span class="mini-badge">${escape(item.badge)}</span></dd></div>
+        <div class="meta-row"><dt>迁移关注</dt><dd><span class="mini-badge">${escape(item.dimension)}</span></dd></div>
       </dl>`)}
       ${section('关键差异对照', renderComparisonTable(comparison), renderComparisonLegendHelp())}
       ${section('判断信号', `<div class="tag-row">${item.signals.map((signal) => `<span class="path-chip">${escape(signal)}</span>`).join('')}</div>`)}
@@ -555,7 +1102,7 @@
   function renderFlowInspector(flow) {
     const visibleMeta = Object.entries(flow.meta);
     renderInspector(`<div class="inspector-content">
-      ${renderDocumentHeader({ path: ['执行流对比'], title: flow.title, summary: flow.summary })}
+      ${renderDocumentHeader({ path: ['跨代际执行流对比'], title: flow.title, summary: flow.summary })}
       ${section('执行路径', `<div class="inspector-card"><strong>路径</strong><small>${escape(flow.path)}</small></div>`)}
       ${section('上下文', `<dl class="meta-grid">${visibleMeta.map(([key, value]) => `<div class="meta-row"><dt>${escape(key)}</dt><dd>${escape(value)}</dd></div>`).join('')}</dl>`)}
       ${section('执行步骤', `<ol class="step-list">${flow.steps.map((step, index) => `<li><button class="step-button${state.activeStep === index ? ' is-selected' : ''}" type="button" data-step="${index}"><span class="step-number">${String(index + 1).padStart(2, '0')}</span><span class="step-copy"><strong>${escape(step.label)}</strong><small>${escape(step.text)}</small></span></button></li>`).join('')}</ol>`)}
@@ -563,9 +1110,27 @@
     syncPlayback();
   }
 
-  function selectCategory(id) {
+  function revealCategoryInNavigation(id) {
+    const button = $(`[data-category-id="${Number(id)}"]`);
+    if (!button) return;
+    const branch = button.closest('[data-tree-branch]');
+    const toggle = branch?.querySelector(':scope > [data-tree-toggle]');
+    const group = branch?.querySelector(':scope > [role="group"]');
+    if (branch?.classList.contains('is-collapsed')) {
+      branch.classList.remove('is-collapsed');
+      toggle?.setAttribute('aria-expanded', 'true');
+      if (group) group.hidden = false;
+    }
+    requestAnimationFrame(() => requestAnimationFrame(() => {
+      button.scrollIntoView({ block: 'center', inline: 'nearest', behavior: 'smooth' });
+    }));
+  }
+
+  function selectCategory(id, { revealInNavigation = false } = {}) {
     stopPlayback();
+    state.diff = false;
     state.selectedId = Number(id);
+    state.guideFocusId = null;
     state.activeStep = -1;
     const item = CATEGORIES.find((entry) => entry.id === state.selectedId);
     if (!item) return;
@@ -573,20 +1138,26 @@
     $$('[data-scenario-overview]').forEach((button) => button.classList.remove('is-selected'));
     $('[data-migration-overview]')?.classList.remove('is-selected');
     $('[data-terminology-document]')?.classList.remove('is-selected');
+    $$('[data-guide-document]').forEach((button) => button.classList.remove('is-selected'));
     syncEntitySelectionAccessibility();
+    syncGenerationCompare();
     renderCategoryInspector(item);
+    if (revealInNavigation) revealCategoryInNavigation(item.id);
     if (state.arch !== item.arch) setArch(item.arch);
     else { applyCurrentFocus(); scheduleHardwareFit(); }
   }
 
   function selectFlow(id, { syncArch = true } = {}) {
     stopPlayback();
+    state.diff = false;
     state.selectedId = id;
+    state.guideFocusId = null;
     state.activeStep = -1;
     const item = FLOWS.find((entry) => entry.id === id);
     if (!item) return;
     $$('[data-flow-id]').forEach((button) => button.classList.toggle('is-selected', button.dataset.flowId === item.id));
     syncEntitySelectionAccessibility();
+    syncGenerationCompare();
     renderFlowInspector(item);
     if (syncArch && state.arch !== item.arch) setArch(item.arch);
     else { applyCurrentFocus(); scheduleHardwareFit(); }
@@ -606,14 +1177,16 @@
     stopPlayback();
     state.mode = mode;
     state.selectedId = null;
+    state.guideFocusId = null;
     state.activeStep = -1;
+    state.diff = false;
     $('#navigationMode').value = mode;
     $('#migrationExplorer').hidden = mode !== 'migration';
     $('#flowExplorer').hidden = mode !== 'flow';
-    $('#playbackMount').hidden = mode !== 'flow' || state.previewView !== 'hardware';
+    $('#playbackMount').hidden = mode !== 'flow';
     $$('.entity-button').forEach((button) => button.classList.remove('is-selected'));
     if (mode === 'migration') {
-      showMigrationOverview();
+      selectGuideDocument('architecture-cognition');
     } else {
       if (state.arch !== 'ascend950b') setArch('ascend950b');
       selectFlow(FLOWS[0].id, { syncArch: false });
@@ -625,14 +1198,18 @@
     const scenario = SCENARIOS[key];
     if (!scenario) return;
     state.selectedId = null;
+    state.guideFocusId = null;
+    state.diff = false;
     $$('[data-scenario-overview]').forEach((button) => button.classList.toggle('is-selected', button.dataset.scenarioOverview === key));
     $$('[data-category-id]').forEach((button) => button.classList.remove('is-selected'));
     $('[data-migration-overview]')?.classList.remove('is-selected');
     $('[data-terminology-document]')?.classList.remove('is-selected');
+    $$('[data-guide-document]').forEach((button) => button.classList.remove('is-selected'));
     syncEntitySelectionAccessibility();
+    syncGenerationCompare();
     renderInspector(`<div class="inspector-content">
       ${renderDocumentHeader({
-        path: ['A5 算子迁移', `迁移场景 ${key}：${scenario.title}`],
+        path: ['A5 架构与编程指南', `迁移场景 ${key}：${scenario.title}`],
         title: '场景概述',
         summary: scenario.tagline,
         highlights: SUMMARY_HIGHLIGHTS[`scenario-${key}`],
@@ -646,49 +1223,42 @@
 
   function showTerminology() {
     state.selectedId = null;
+    state.guideFocusId = null;
+    state.diff = false;
     $$('[data-scenario-overview], [data-category-id]').forEach((button) => button.classList.remove('is-selected'));
     $('[data-migration-overview]')?.classList.remove('is-selected');
+    $$('[data-guide-document]').forEach((button) => button.classList.remove('is-selected'));
     $('[data-terminology-document]')?.classList.add('is-selected');
     syncEntitySelectionAccessibility();
-    const dimensionRows = [
-      ['平台代际', 'A5', 'A2/A3', '迁移场景、能力兼容和开发策略'],
-      ['产品型号', 'Ascend 950', 'Ascend 910B（当前对照视图）', '硬件架构图、产品能力和代际对比'],
-      ['软件架构标识', 'DAV_3510 / dav-3510', 'DAV_2201 / dav-2201', '源码枚举、编译参数和运行时分支'],
-      ['Device 宏值', '3510', '2201', '__NPU_ARCH__ 条件编译'],
-    ];
+    syncGenerationCompare();
     const dictionaryRows = [
-      ['A5', '平台代际', '文档的新平台主称谓；首次出现时可写作“A5（Ascend 950）”。'],
+      ['A5', '平台代际', 'Ascend 950 所属的平台代际；用于描述开发策略、能力与迁移方向。'],
       ['A2/A3', '平台代际组', '迁移语境中的旧平台集合，不等同于单一产品型号。'],
-      ['Ascend 950', '产品系列', 'A5 对应的当前硬件主题；950PR、950DT 是同系列产品形态。'],
-      ['Ascend 910B', '产品型号', '当前旧平台硬件对照视图；不代表整个 A2/A3 产品集合。'],
+      ['Ascend 950', '产品系列', 'A5 代际的产品系列；950PR、950DT 是同系列的不同产品形态。'],
+      ['Ascend 910B', '产品型号', 'A2/A3 范围内的当前硬件对照型号，不代表整个旧平台集合。'],
       ['DAV_3510 / dav-3510', '软件架构标识', '前者常见于源码枚举，后者常见于 CMake 或编译参数。'],
       ['DAV_2201 / dav-2201', '软件架构标识', '当前旧平台样例使用的软件目标标识；正确编号是 2201，不是 2210。'],
-      ['AIC / AIV', '计算单元', 'AIC 侧重 Cube / 矩阵计算，AIV 侧重 Vector / 向量计算。'],
-      ['UB / UnifiedBus', '存储与互联', 'UB 是 Unified Buffer；UnifiedBus 是 950 的互联对象，两者不可混写。'],
+      ['AI Core', '计算组合对象', '每个 AI Core 由 1 个 AIC / Cube Core 与 2 个 AIV / Vector Core 组成。'],
+      ['AIC / Cube Core', '计算单元', '矩阵计算侧，围绕 L1、L0A/L0B/L0C、Cube、MTE 与 FixPipe 工作。'],
+      ['AIV / Vector Core', '计算单元', '向量计算侧，围绕 Unified Buffer、Vector、SIMD/SIMT 与 MTE 工作。'],
+      ['UB / Unified Buffer', '片上存储', 'AIV 侧的片上缓冲区，承接 GM/L2 与 Vector/Reg 之间的数据。'],
+      ['UnifiedBus', '互联对象', '950 的 IO 与互联能力；名称与 Unified Buffer 相似，但不是同一对象。'],
+      ['RegBase', '编程模型', '以 RegTensor、MaskReg、AddrReg 和显式 Load/Store 组织向量计算。'],
+      ['NDDMA', '数据搬运', '覆盖 transpose、stride、broadcast、slice 等复杂搬运与格式转换。'],
+      ['CCU', '通信引擎', '面向集合通信卸载与通算协同的专用硬件对象。'],
     ];
     renderInspector(`<div class="inspector-content terminology-content">
       ${renderDocumentHeader({
-        path: ['A5 算子迁移'],
-        title: '术语解释',
-        summary: '用平台代际、产品型号和软件架构标识三层口径阅读文档；代码中还会出现对应的 Device 宏值。相邻称谓有关联，但不能在所有上下文中直接画等号。',
+        path: ['A5 架构与编程指南', 'A5 架构'],
+        title: '术语表',
+        summary: '统一架构、硬件对象、编程模型与软件标识的含义，让不同章节中的称谓可以稳定对应。',
         highlights: SUMMARY_HIGHLIGHTS.terminology,
       })}
       ${renderContextCard(`<dl class="meta-grid">
-        <div class="meta-row"><dt>文档用途</dt><dd>统一迁移文档、硬件视图与代码示例中的架构称谓</dd></div>
-        <div class="meta-row"><dt>阅读原则</dt><dd>先识别称谓所属维度，再判断它与当前视图的对应关系</dd></div>
-        <div class="meta-row"><dt>维护方式</dt><dd>作为可持续扩展的术语字典，新增术语时同时补充类型、定义与使用边界</dd></div>
+        <div class="meta-row"><dt>代际主称谓</dt><dd>A5 与 A2/A3</dd></div>
+        <div class="meta-row"><dt>产品主称谓</dt><dd>Ascend 950 与 Ascend 910B</dd></div>
+        <div class="meta-row"><dt>软件标识</dt><dd>DAV_3510 / dav-3510 与 DAV_2201 / dav-2201</dd></div>
       </dl>`)}
-      ${section('架构指代维度', `<div class="comparison-table-wrap">
-        <table class="comparison-table terminology-dimension-table">
-          <thead><tr><th scope="col">维度</th><th scope="col">新平台侧</th><th scope="col">旧平台侧</th><th scope="col">主要使用位置</th></tr></thead>
-          <tbody>${dimensionRows.map((row) => `<tr>${row.map((cell) => `<td>${escape(cell)}</td>`).join('')}</tr>`).join('')}</tbody>
-        </table>
-      </div>`)}
-      ${section('在文档中怎么读', `<div class="terminology-rule-list">
-        <article class="inspector-card"><strong>迁移场景看平台代际</strong><p>导航、场景定义和迁移策略优先使用 A5 与 A2/A3。</p></article>
-        <article class="inspector-card"><strong>硬件架构图看产品型号</strong><p>画布切换使用 Ascend 950 与 Ascend 910B；910B 是当前旧平台对照视图。</p></article>
-        <article class="inspector-card"><strong>代码对照看软件标识</strong><p>保留 DAV_3510、DAV_2201、dav-3510、dav-2201 等原始字面量，并在周围说明所属维度。</p></article>
-      </div>`)}
       ${section('术语字典', `<div class="comparison-table-wrap">
         <table class="comparison-table terminology-dictionary-table">
           <thead><tr><th scope="col">术语</th><th scope="col">类型</th><th scope="col">定义与边界</th></tr></thead>
@@ -702,14 +1272,18 @@
 
   function showMigrationOverview() {
     state.selectedId = null;
+    state.guideFocusId = null;
+    state.diff = false;
     $$('[data-scenario-overview], [data-category-id]').forEach((button) => button.classList.remove('is-selected'));
     $('[data-terminology-document]')?.classList.remove('is-selected');
+    $$('[data-guide-document]').forEach((button) => button.classList.remove('is-selected'));
     $('[data-migration-overview]')?.classList.add('is-selected');
     syncEntitySelectionAccessibility();
+    syncGenerationCompare();
     const scenarioDefinitions = [
-      ['A', 'A5 原生能力兼容 A2/A3', '以 A5 原生能力开发为主；需要覆盖 A2/A3 时，为旧代补充独立实现与注册分支。'],
-      ['B', '简单 SIMD 样例', '旧代算子只依赖通用 GM ↔ UB 与简单向量计算；调整架构声明后，重点验证精度和性能。'],
-      ['C', 'A2/A3 迁移 A5', '旧实现写死数据通路、矩阵分形、片上存储或已移除指令；必须重写硬件路径。'],
+      ['A', 'A5 原生能力兼容 A2/A3', '使用 RegBase、SIMT、低比特或 CCU 等 A5 原生能力；需要兼容 A2/A3 时，为旧代保留独立实现与注册分支。'],
+      ['B', '轻量迁移', '实现只依赖通用 SIMD、GM ↔ UB 与简单向量计算；调整代际声明后，重点完成精度与性能验证。'],
+      ['C', '深度迁移', '旧实现写死数据通路、矩阵分形、片上存储或已移除指令；需要重画数据流并重建实现。'],
     ];
     const mappingRows = CATEGORIES.map((item) => {
       const mapping = MIGRATION_MAP[item.id];
@@ -724,11 +1298,19 @@
         }).join('')}
       </tr>`;
     }).join('');
+    const dimensionRows = MIGRATION_DIMENSIONS.map((dimension) => {
+      const relatedItems = CATEGORIES.filter((item) => item.dimension === dimension.label);
+      return `<tr>
+        <td><span class="mini-badge">${escape(dimension.label)}</span></td>
+        <td>${escape(dimension.description)}</td>
+        <td>${relatedItems.map((item) => `<button class="migration-map-link migration-dimension-link" type="button" data-category-jump="${item.id}">${String(item.id).padStart(2, '0')} ${escape(item.title)}</button>`).join('')}</td>
+      </tr>`;
+    }).join('');
     renderInspector(`<div class="inspector-content migration-overview-content">
       ${renderDocumentHeader({
-        path: ['A5 算子迁移'],
-        title: '迁移场景总览',
-        summary: '三类场景按 A5 代际主导后的常见工作顺序组织：优先处理 A5 原生开发与跨代兼容，其次处理可轻量迁移的简单 SIMD，最后处理必须重写硬件假设的旧代实现。',
+        path: ['A5 架构与编程指南', 'A5 算子开发'],
+        title: 'A5 算子迁移概览',
+        summary: '三类场景按 A5 代际主导后的常见工作顺序组织：优先处理 A5 原生能力兼容 A2/A3，其次处理可轻量迁移的实现，最后处理必须重写硬件假设的深度迁移。',
         highlights: SUMMARY_HIGHLIGHTS.overview,
       })}
       ${section('三类场景', `<div class="scenario-definition-list">${scenarioDefinitions.map(([key, title, description]) => `
@@ -750,8 +1332,50 @@
           <span><i class="migration-map-dot is-secondary" aria-hidden="true"></i><b>空心圆：次要场景</b></span>
           <span><i class="migration-map-empty" aria-hidden="true">—</i><b>短横线：不映射</b></span>
         `)}
+      ${section('迁移关注维度', `<p class="section-lead">场景 A / B / C 回答“采用什么迁移策略”；导航与文档基本信息中的 tag 回答“这篇文档主要提醒你检查哪一层”。每篇变化文档只标一个主维度，跨层影响在正文的“直接影响”和“判断信号”中展开。</p>
+        <div class="comparison-table-wrap"><table class="comparison-table migration-dimension-table">
+          <thead><tr><th scope="col">标签</th><th scope="col">主要检查内容</th><th scope="col">对应变化文档</th></tr></thead>
+          <tbody>${dimensionRows}</tbody>
+        </table></div>`)}
     </div>`);
     focusHardware();
+    scheduleHardwareFit();
+  }
+
+  function selectGuideDocument(id) {
+    stopPlayback();
+    const document = GUIDE_DOCUMENTS.find((entry) => entry.id === id);
+    if (!document) return;
+    state.selectedId = document.id;
+    state.guideFocusId = null;
+    state.activeStep = -1;
+    state.diff = document.id === 'generation-diff';
+    $$('[data-category-id], [data-scenario-overview]').forEach((button) => button.classList.remove('is-selected'));
+    $('[data-migration-overview]')?.classList.remove('is-selected');
+    $('[data-terminology-document]')?.classList.remove('is-selected');
+    $$('[data-guide-document]').forEach((button) => button.classList.toggle('is-selected', button.dataset.guideDocument === document.id));
+    syncEntitySelectionAccessibility();
+    renderGuideDocument(document);
+    if (state.arch !== document.arch) setArch(document.arch);
+    else {
+      syncGenerationCompare();
+      applyCurrentFocus();
+      scheduleHardwareFit();
+    }
+  }
+
+  function selectGuideFocus(id) {
+    const focus = GUIDE_FOCUS[id];
+    if (!focus || !GUIDE_DOCUMENTS.some((document) => document.id === state.selectedId)) return;
+    const shouldClear = state.guideFocusId === id;
+    state.guideFocusId = shouldClear ? null : id;
+    $$('[data-guide-focus]').forEach((button) => {
+      const selected = !shouldClear && button.dataset.guideFocus === id;
+      button.classList.toggle('is-selected', selected);
+      button.setAttribute('aria-pressed', String(selected));
+    });
+    if (shouldClear) applyCurrentFocus();
+    else focusHardware(focus.selectors || [], focus.routes || []);
     scheduleHardwareFit();
   }
 
@@ -760,43 +1384,6 @@
       if (button.classList.contains('is-selected')) button.setAttribute('aria-current', 'page');
       else button.removeAttribute('aria-current');
     });
-  }
-
-  function syncPreviewView() {
-    $$('[data-preview-view]').forEach((tab) => {
-      const selected = tab.dataset.previewView === state.previewView;
-      tab.classList.toggle('is-selected', selected);
-      tab.setAttribute('aria-selected', String(selected));
-      tab.tabIndex = selected ? 0 : -1;
-    });
-    $$('[data-view-panel]').forEach((panel) => { panel.hidden = panel.dataset.viewPanel !== state.previewView; });
-    $('#playbackMount').hidden = state.previewView !== 'hardware' || state.mode !== 'flow';
-    if (state.previewView === 'hardware') scheduleHardwareFit();
-    else scheduleMemoryFit();
-  }
-
-  function openMemoryReuse(detail = {}) {
-    if (detail.node && detail.node !== 'buffer:UB') return;
-    const helper = window.PtoMemoryReuseViewer;
-    const host = $('#memoryReuseHost');
-    if (!helper || !host) return;
-    state.memoryReuseViewer?.destroy?.();
-    const coreLabel = detail.coreTitle || detail.coreId || 'AIV';
-    const data = helper.createDemoData({ coreId: detail.coreId, coreTitle: coreLabel });
-    state.memoryReuseData = data;
-    $('#memoryReuseTitle').textContent = 'UB 内存复用分析';
-    $('#memoryReuseSub').textContent = data.kernel || `${coreLabel} · MatMulAddRelu_mix_aic__kernel0`;
-    state.previewView = 'memory';
-    syncPreviewView();
-    state.memoryReuseViewer = helper.render(host, data, { initialBuffer: 'UB' });
-    scheduleMemoryFit();
-  }
-
-  function closeMemoryReuse() {
-    state.previewView = 'hardware';
-    state.memoryReuseViewer?.destroy?.();
-    state.memoryReuseViewer = null;
-    syncPreviewView();
   }
 
   function syncGenerationCompare() {
@@ -901,30 +1488,86 @@
     scheduleHardwareFit();
   }
 
-  function showMigrationScenarioTooltip(target) {
+  function positionFloatingTooltip(tooltip, target, pointerEvent) {
+    if (!tooltip || !target) return;
+    const tooltipRect = tooltip.getBoundingClientRect();
+    const viewportPadding = 8;
+    const gap = 12;
+    if (pointerEvent && Number.isFinite(pointerEvent.clientX) && Number.isFinite(pointerEvent.clientY)) {
+      let left = pointerEvent.clientX + gap;
+      let top = pointerEvent.clientY + gap;
+      if (left + tooltipRect.width > window.innerWidth - viewportPadding) left = pointerEvent.clientX - tooltipRect.width - gap;
+      if (top + tooltipRect.height > window.innerHeight - viewportPadding) top = pointerEvent.clientY - tooltipRect.height - gap;
+      tooltip.style.left = `${Math.max(viewportPadding, left)}px`;
+      tooltip.style.top = `${Math.max(viewportPadding, top)}px`;
+      return;
+    }
+    const targetRect = target.getBoundingClientRect();
+    const left = Math.min(
+      window.innerWidth - tooltipRect.width - viewportPadding,
+      Math.max(viewportPadding, targetRect.left),
+    );
+    const top = Math.min(
+      window.innerHeight - tooltipRect.height - viewportPadding,
+      targetRect.bottom + gap,
+    );
+    tooltip.style.left = `${left}px`;
+    tooltip.style.top = `${Math.max(viewportPadding, top)}px`;
+  }
+
+  let activeMigrationScenarioTooltipTarget = null;
+
+  function showMigrationScenarioTooltip(target, pointerEvent) {
     const tooltip = $('#migrationScenarioTooltip');
     const content = target?.dataset.tooltip;
     if (!tooltip || !content) return;
+    activeMigrationScenarioTooltipTarget = target;
     tooltip.textContent = content;
     tooltip.hidden = false;
     tooltip.classList.add('is-visible');
-    const targetRect = target.getBoundingClientRect();
-    const tooltipRect = tooltip.getBoundingClientRect();
-    const viewportPadding = 8;
-    const gap = 8;
-    const left = Math.min(
-      window.innerWidth - tooltipRect.width - viewportPadding,
-      Math.max(viewportPadding, targetRect.left + (targetRect.width - tooltipRect.width) / 2),
-    );
-    tooltip.style.left = `${left}px`;
-    tooltip.style.top = `${Math.max(viewportPadding, targetRect.top - tooltipRect.height - gap)}px`;
+    positionFloatingTooltip(tooltip, target, pointerEvent);
   }
 
   function hideMigrationScenarioTooltip() {
     const tooltip = $('#migrationScenarioTooltip');
     if (!tooltip) return;
+    activeMigrationScenarioTooltipTarget = null;
     tooltip.classList.remove('is-visible');
     tooltip.hidden = true;
+  }
+
+  let activeNavigationTooltipTarget = null;
+  let activeNavigationTooltipOwner = null;
+
+  function hideNavigationDescriptionTooltip() {
+    const tooltip = $('#navigationDescriptionTooltip');
+    if (!tooltip) return;
+    activeNavigationTooltipOwner?.removeAttribute('aria-describedby');
+    activeNavigationTooltipTarget = null;
+    activeNavigationTooltipOwner = null;
+    tooltip.classList.remove('is-visible');
+    tooltip.hidden = true;
+  }
+
+  function isNavigationTextTruncated(target) {
+    return Boolean(target && target.scrollWidth > target.clientWidth + 1);
+  }
+
+  function showNavigationDescriptionTooltip(target, pointerEvent) {
+    const tooltip = $('#navigationDescriptionTooltip');
+    const content = target?.dataset.navTooltip;
+    if (!tooltip || !content || !isNavigationTextTruncated(target)) {
+      hideNavigationDescriptionTooltip();
+      return;
+    }
+    activeNavigationTooltipOwner?.removeAttribute('aria-describedby');
+    activeNavigationTooltipTarget = target;
+    activeNavigationTooltipOwner = target.closest('button');
+    activeNavigationTooltipOwner?.setAttribute('aria-describedby', 'navigationDescriptionTooltip');
+    tooltip.textContent = content;
+    tooltip.hidden = false;
+    tooltip.classList.add('is-visible');
+    positionFloatingTooltip(tooltip, target, pointerEvent);
   }
 
   function initEvents() {
@@ -944,8 +1587,12 @@
       if (migrationOverview) return showMigrationOverview();
       const terminologyDocument = event.target.closest('[data-terminology-document]');
       if (terminologyDocument) return showTerminology();
+      const guideDocument = event.target.closest('[data-guide-document]');
+      if (guideDocument) return selectGuideDocument(guideDocument.dataset.guideDocument);
+      const guideFocus = event.target.closest('[data-guide-focus]');
+      if (guideFocus) return selectGuideFocus(guideFocus.dataset.guideFocus);
       const categoryJump = event.target.closest('[data-category-jump]');
-      if (categoryJump) return selectCategory(categoryJump.dataset.categoryJump);
+      if (categoryJump) return selectCategory(categoryJump.dataset.categoryJump, { revealInNavigation: true });
       const category = event.target.closest('[data-category-id]');
       if (category) return selectCategory(category.dataset.categoryId);
       const flow = event.target.closest('[data-flow-id]');
@@ -954,42 +1601,55 @@
       if (related) { setMode('flow'); selectFlow(related.dataset.relatedFlow); return; }
       const step = event.target.closest('[data-step]');
       if (step) { stopPlayback(); selectStep(step.dataset.step); return; }
-      const preview = event.target.closest('[data-preview-view]');
-      if (preview?.dataset.previewView === 'memory') return openMemoryReuse();
-      if (preview?.dataset.previewView === 'hardware') return closeMemoryReuse();
     });
     document.addEventListener('pointerover', (event) => {
-      const target = event.target.closest?.('[data-scenario-header]');
-      if (target) showMigrationScenarioTooltip(target);
+      const scenarioTarget = event.target.closest?.('[data-scenario-header]');
+      if (scenarioTarget) showMigrationScenarioTooltip(scenarioTarget, event);
+      const navigationTarget = event.target.closest?.('[data-nav-tooltip]');
+      if (navigationTarget) showNavigationDescriptionTooltip(navigationTarget, event);
+    });
+    document.addEventListener('pointermove', (event) => {
+      const scenarioTarget = event.target.closest?.('[data-scenario-header]');
+      if (scenarioTarget) {
+        if (scenarioTarget === activeMigrationScenarioTooltipTarget) positionFloatingTooltip($('#migrationScenarioTooltip'), scenarioTarget, event);
+        else showMigrationScenarioTooltip(scenarioTarget, event);
+      }
+      const navigationTarget = event.target.closest?.('[data-nav-tooltip]');
+      if (navigationTarget) {
+        if (navigationTarget === activeNavigationTooltipTarget) positionFloatingTooltip($('#navigationDescriptionTooltip'), navigationTarget, event);
+        else showNavigationDescriptionTooltip(navigationTarget, event);
+      }
     });
     document.addEventListener('pointerout', (event) => {
-      const target = event.target.closest?.('[data-scenario-header]');
-      if (target && !target.contains(event.relatedTarget)) hideMigrationScenarioTooltip();
+      const scenarioTarget = event.target.closest?.('[data-scenario-header]');
+      if (scenarioTarget && !scenarioTarget.contains(event.relatedTarget)) hideMigrationScenarioTooltip();
+      const navigationTarget = event.target.closest?.('[data-nav-tooltip]');
+      if (navigationTarget && !navigationTarget.contains(event.relatedTarget)) hideNavigationDescriptionTooltip();
     });
     document.addEventListener('focusin', (event) => {
-      const target = event.target.closest?.('[data-scenario-header]');
-      if (target) showMigrationScenarioTooltip(target);
+      const scenarioTarget = event.target.closest?.('[data-scenario-header]');
+      if (scenarioTarget) showMigrationScenarioTooltip(scenarioTarget);
+      const navigationOwner = event.target.closest?.('.entity-button, .migration-tree-toggle');
+      const navigationTarget = [...(navigationOwner?.querySelectorAll('[data-nav-tooltip]') || [])].find(isNavigationTextTruncated);
+      if (navigationTarget) showNavigationDescriptionTooltip(navigationTarget);
     });
     document.addEventListener('focusout', (event) => {
       if (event.target.closest?.('[data-scenario-header]')) hideMigrationScenarioTooltip();
+      if (event.target.closest?.('.entity-button, .migration-tree-toggle')) hideNavigationDescriptionTooltip();
     });
-    document.addEventListener('scroll', hideMigrationScenarioTooltip, true);
-    window.addEventListener('resize', hideMigrationScenarioTooltip);
+    document.addEventListener('scroll', () => {
+      hideMigrationScenarioTooltip();
+      hideNavigationDescriptionTooltip();
+    }, true);
+    window.addEventListener('resize', () => {
+      hideMigrationScenarioTooltip();
+      hideNavigationDescriptionTooltip();
+    });
     $('#navigationMode').addEventListener('change', (event) => {
       setMode(event.target.value);
       event.target.blur();
     });
     $$('[data-arch-id]').forEach((button) => button.addEventListener('click', () => setArch(button.dataset.archId)));
-    $$('[data-preview-view]').forEach((tab) => tab.addEventListener('keydown', (event) => {
-      if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return;
-      event.preventDefault();
-      const tabs = $$('[data-preview-view]');
-      const current = tabs.indexOf(tab);
-      const next = event.key === 'Home' ? 0 : event.key === 'End' ? tabs.length - 1 : (current + (event.key === 'ArrowRight' ? 1 : -1) + tabs.length) % tabs.length;
-      tabs[next].focus();
-      if (tabs[next].dataset.previewView === 'memory') openMemoryReuse();
-      else closeMemoryReuse();
-    }));
     $('#rightPaneToggle').addEventListener('click', () => {
       const pane = $('#visualizationPane');
       const hidden = !pane.hidden;
@@ -1001,12 +1661,8 @@
       $('#rightPaneToggle').setAttribute('aria-expanded', String(!hidden));
       $('#rightPaneToggle').setAttribute('aria-pressed', String(!hidden));
       window.dispatchEvent(new Event('resize'));
-      if (!hidden) {
-        if (state.previewView === 'hardware') scheduleHardwareFit();
-        else scheduleMemoryFit();
-      }
+      if (!hidden) scheduleHardwareFit();
     });
-    $('#memoryReuseClose').addEventListener('click', closeMemoryReuse);
     $('#generationCompare').addEventListener('click', toggleGenerationCompare);
     const frame = $('[data-ide-frame]');
     frame.addEventListener('pointermove', (event) => {
@@ -1023,14 +1679,7 @@
   initPlayback();
   initEvents();
   syncGenerationCompare();
-  syncPreviewView();
   setMode('migration');
-  window.addEventListener('load', () => {
-    if (state.previewView === 'hardware') scheduleHardwareFit();
-    else scheduleMemoryFit();
-  }, { once: true });
-  document.fonts?.ready?.then(() => {
-    if (state.previewView === 'hardware') scheduleHardwareFit();
-    else scheduleMemoryFit();
-  });
+  window.addEventListener('load', scheduleHardwareFit, { once: true });
+  document.fonts?.ready?.then(scheduleHardwareFit);
 })();
