@@ -34,6 +34,9 @@
     PIPE_STALL: { severity: 'warn', category: '流水', title: '流水等待空洞占比过高' },
     TAIL_BLOCK_WASTE: { severity: 'warn', category: '尾块', title: '尾块浪费' },
     GM_UNUSED: { severity: 'info', category: '容量', title: 'workspace 全程未被访问' },
+    REG_SPILL: { severity: 'danger', category: '寄存器', title: '向量寄存器溢出' },
+    REG_OCCUPANCY: { severity: 'warn', category: '寄存器', title: '寄存器用量压低 warp 并发' },
+    REG_HEADROOM: { severity: 'info', category: '寄存器', title: '寄存器余量可换更大展开' },
   };
 
   let seq = 0;
@@ -59,6 +62,10 @@
     const underutilized = [];
 
     metrics.regions.forEach((region) => {
+      // 寄存器层级不吃这套通用处方（"复用地址"/"增大 tileM" 对寄存器堆没有意义），
+      // 它们由下面的 registerRules 单独判定。
+      if (region.isRegister) return;
+
       // 预留 vs 实际持有 —— 超限时这条同样有价值（复用就是解超限的手段之一）
       if (region.scope === 'core' && region.idleReserved > 0
         && region.idleReserved / Math.max(1, region.reserved) > 0.2) {
@@ -167,6 +174,7 @@
   // ---------------------------------------------------------------
   function reuseRules(run, metrics, th, out) {
     metrics.regions.forEach((region) => {
+      if (region.isRegister) return; // 寄存器分配由寄存器分配器决定，不给地址复用建议
       const list = region.allocations.filter((a) => a.intervals.length);
       const candidates = [];
       for (let i = 0; i < list.length; i += 1) {
@@ -306,6 +314,73 @@
   }
 
   // ---------------------------------------------------------------
+  // 寄存器类（950 起：region.kind === 'register'）
+  // ---------------------------------------------------------------
+  function registerRules(run, metrics, th, out) {
+    const plan = run.registers;
+    if (!plan) return;
+    const vrf = metrics.regionById[plan.vectorRegionId];
+    const srf = metrics.regionById[plan.simtRegionId];
+
+    // --- 向量寄存器溢出 ---
+    if (plan.spillRegs > 0) {
+      const spill = run.allocations.find((a) => a.isSpill);
+      const spillEvents = run.events.filter((e) => e.type === 'spill');
+      const spillCycles = spillEvents.reduce((sum, e) => sum + e.dur, 0);
+      out.push(finding('REG_SPILL', {
+        region: vrf.id,
+        detail: `RegBase 循环体同时活跃 ${plan.requestedRegs} 个向量寄存器，${vrf.label} 只有 ${plan.capacityRegs} 个，超出 ${plan.spillRegs} 个。`,
+        impact: `编译器把这 ${plan.spillRegs} 个寄存器（${F.bytes(plan.spillBytes)}）溢出到 ${plan.spillRegion}，每次迭代多一趟 store+load，累计 ${spillCycles} cycle（占 ${F.pct(spillCycles / Math.max(1, metrics.ticks), 1)}）。`,
+        suggest: `把展开度从 ${plan.unroll} 降一档（tileM 减半即可），或减少同时活跃的中间量 —— 目标是把活跃寄存器压到 ${plan.capacityRegs} 个以内。`,
+        refs: [
+          ...run.allocations.filter((a) => a.region === vrf.id).slice(-2).map((a) => a.id),
+          ...(spill ? [spill.id] : []),
+        ],
+        eventRefs: spillEvents.map((e) => e.id),
+        evidence: [
+          { label: '活跃寄存器', value: `${plan.requestedRegs} / ${plan.capacityRegs}` },
+          { label: '溢出去向', value: `${plan.spillRegion} · ${F.bytes(plan.spillBytes)}` },
+          { label: '展开度', value: `${plan.unroll} 组` },
+          { label: '溢出往返', value: `${spillEvents.length} 次 · ${spillCycles} cycle` },
+        ],
+      }));
+    } else if (vrf.reservedRatio < 0.6) {
+      out.push(finding('REG_HEADROOM', {
+        region: vrf.id,
+        detail: `${vrf.label} 只用到 ${plan.requestedRegs} / ${plan.capacityRegs} 个寄存器（${F.pct(vrf.reservedRatio, 0)}）。`,
+        impact: `还有 ${plan.capacityRegs - plan.requestedRegs} 个寄存器闲置，当前展开度 ${plan.unroll} 组没有把 VF 喂满。`,
+        suggest: '增大 tileM 或手工提高循环展开度，用寄存器余量换更少的 loadalign/storealign 往返。',
+        refs: vrf.allocations.slice(0, 2).map((a) => a.id),
+        evidence: [
+          { label: '活跃寄存器', value: `${plan.requestedRegs} / ${plan.capacityRegs}` },
+          { label: '展开度', value: `${plan.unroll} 组` },
+        ],
+      }));
+    }
+
+    // --- SIMT 侧：每线程寄存器用量 vs 并发 warp 数 ---
+    if (plan.activeWarps < plan.warpsMax) {
+      const lostWarps = plan.warpsMax - plan.activeWarps;
+      // 反推：要多跑一个 warp，每线程寄存器数需要降到多少
+      const targetPerThread = Math.floor(srf.capacity
+        / ((plan.activeWarps + 1) * plan.threadsPerWarp * (srf.regBytes || 4)));
+      out.push(finding('REG_OCCUPANCY', {
+        region: srf.id,
+        detail: `每线程用掉 ${plan.regsPerThread} 个寄存器，一个 warp 就要 ${F.bytes(plan.warpBytes)}，${srf.label} 只装得下 ${plan.activeWarps} 个 warp。`,
+        impact: `并发 warp 从 ${plan.warpsMax} 降到 ${plan.activeWarps}（occupancy ${F.pct(plan.warpOccupancy, 0)}），少 ${lostWarps} 个 warp 用来掩盖访存延迟。`,
+        suggest: `把每线程寄存器压到 ${targetPerThread} 个以内可多跑一个 warp；展开度 ${plan.unroll} 是当前主要来源。`,
+        refs: srf.allocations.slice(0, 2).map((a) => a.id),
+        evidence: [
+          { label: '每线程寄存器', value: `${plan.regsPerThread}` },
+          { label: '单 warp 占用', value: F.bytes(plan.warpBytes) },
+          { label: '并发 warp', value: `${plan.activeWarps} / ${plan.warpsMax}` },
+          { label: 'SRF 占用', value: `${F.bytes(srf.reserved)} / ${F.bytes(srf.capacity)}` },
+        ],
+      }));
+    }
+  }
+
+  // ---------------------------------------------------------------
   // 尾块类
   // ---------------------------------------------------------------
   function tailRules(run, metrics, th, out) {
@@ -336,6 +411,7 @@
     alignRules(run, metrics, th, out);
     reuseRules(run, metrics, th, out);
     pipelineRules(run, metrics, th, out);
+    registerRules(run, metrics, th, out);
     tailRules(run, metrics, th, out);
     return out
       .filter((item) => !disabled.has(item.rule))

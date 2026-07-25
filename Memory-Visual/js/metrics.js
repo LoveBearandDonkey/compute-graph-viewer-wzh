@@ -80,6 +80,13 @@
         banks: spec.banks,
         note: spec.note,
         capacity: spec.capacity,
+        // 寄存器层级：单位换算成「寄存器个数」，视图与规则都按这个口径说话
+        kind: spec.kind || 'buffer',
+        isRegister: spec.kind === 'register',
+        regBytes: spec.regBytes || 0,
+        regCount: spec.regCount || 0,
+        reservedRegs: spec.regBytes ? Math.round(reserved / spec.regBytes) : 0,
+        capacityRegs: spec.regBytes ? Math.round(spec.capacity / spec.regBytes) : 0,
         allocations,
         reserved,
         reservedRatio: reserved / spec.capacity,
@@ -122,6 +129,7 @@
     return {
       ticks,
       regions,
+      registers: run.registers || null,
       regionById: Object.fromEntries(regions.map((r) => [r.id, r])),
       pipes,
       pipeById: Object.fromEntries(pipes.map((p) => [p.id, p])),
