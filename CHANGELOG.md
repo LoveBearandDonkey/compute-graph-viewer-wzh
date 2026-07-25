@@ -15,6 +15,15 @@
 
 ---
 
+## 2026-07-24 — config-relation-observer：点专家/EP 组全展开连线（连上所有相关 layer 与各 stage 的 rank）
+
+- `js/config-relation-observer.js` — 明确「路由槽位」的分布语义并全展开连线。一个专家编号 e 在**每个 MoE 层**都有一份实例（各层权重独立、互不相干，只共享编号与「编号→EP rank」分片公式），其 EP 组在**每个 PP stage** 内各占一块 rank。`resolveRelation` 的 `case "expert"/"epRank"` 连上全部 MoE 层 + 各 stage 的该 EP 组 rank（× DP 副本），`sharedExpert` 连上全部 MoE 层 + 各 stage 全部 rank。`drawRelationLinks` 新增 `clusterStageAnchors()`：集群侧不再把 4 段并成一个横跨整幅热力图的巨框，而是**按 PP stage 拆成多条线**（每段一条 + 一圈虚线框，总「Node… · N 卡」标签只挂离 hub 最近那条），直观表达「这个编号的 rank 散布在每个 stage」。`relationLabels` 主标签改为「`E37 · L2~L45 各一份`」，点明分布范围又不误导成「同一个专家横跨各层」。
+  - 同时移除上一轮为「单层收敛」方案加的 MoE 代表层步进器（`#croMoeRepLayer` / `moeRepLayer` / `.cro-replayer*` / `NAV_PREV·NAV_NEXT`）与其 `emitSelect` scopeLayer 注入——全展开语义下与之矛盾，故回退。
+
+## 2026-07-24 — config-relation-observer：典型 Layer 并行分支改左右分栏
+
+- `js/config-relation-observer.js` / `css/config-relation-observer.css` — 典型 Layer 面板原先把每列算子一律竖排（`renderStructure` 直接把 bars 顺次塞进 `.cro-structure__stack`），把整网 deck 里本是并行的支路读成了串行。新增 `PARALLEL_GROUPS` 声明（按 deck 的 SIDE_ROWS 配对）：注意力 Q 路径 ∥ KV 路径、MoE 路由专家支路（Router→Dispatch→Expert Pool→Combine）∥ 共享专家支路；`renderStructure` 据此把连续同组的 bar 收进 `.cro-structure__lanes` 左右两条 `.cro-structure__lane` 子栈渲染，汇合节点（`attention_core` / `moe_branch_add`）本身不属任何分栏、自然收束回整条竖排。bar 的 `data-*`/点击/关系高亮全部不变（子栈仅作视觉容器，选择器都是后代匹配）。
+
 ## 2026-07-23 — 新增 `op-graph-integration/` 算子入图交互 demo（编辑器发起 · 自动流水线）
 
 - 新建 IDE 内「算子入图（Op Graph-Integration）」工具原型：以**编辑器为主界面**（活动栏 + 源码 Tab + CodeLens），开发者在写完 AscendC 算子的源码上方点击「⚡ 算子入图」发起任务，右侧任务面板以 **CI 流水线时间线**自动往下跑。
@@ -23,6 +32,63 @@
 - 单文件自包含，复用 `vendor/pto-design-system` tokens 与 `.btn/.badge` 等类；纯 HTML/CSS/vanilla JS，无新增依赖。
 - 后续：整个 IDE 外壳改为消费设计系统标准 **`ide-frame` pattern**（`data-host="standalone"`：顶栏 chrome / 活动栏 / 三栏 split「资源管理器·编辑器·算子入图任务」/ pattern 自带 status strip），经 `PtoIdeFrame.initAll()` + `workbench-shell` 初始化可拖拽分栏；业务内容填入各 slot。同时修复底部状态栏位置异常——改用 pattern 的 `data-ide-slot="status"` 底部条，稳定固定在工作区底部。
 - 领域准确性修正（对齐 CANN 8.0 / AscendC OpDef 现代形态，不改交互骨架）：① 生成产物由旧 TBE 老三样（`.cc` `IMPLEMT_COMMON_INFERFUNC` / 手写 `.ini` `op_info_cfg` / `_plugin.cc` `REGISTER_CUSTOM_OP`）改为 `op_host` 的 **OpDef 原型（`Input().DataType().Format()` 支持列表 + `AICore().SetTiling()`）/ InferShape·InferDataType / Tiling** 三件套，并说明 `ops-info.json` 编译期自动生成、aclnn API 自动产出；② **Tiling 升为一等公民**：新增生成 Tab、静态校验项「Tiling 合法性」、预览「Tiling 绑定」、构建日志与确认文案均体现；③ 把入图核心的**「算子选择 CheckSupport」**在校验/预览/图注/构建日志中点明（FP16 组合缺失=CheckSupport 不命中；Cast 标注为 GE 插入的 format 转换节点）；④ 术语统一到 CANN 8.0：`build.sh`→`custom_opp_*.run`→`opp/vendors/custom`→注册 GE→回归确认被选中；文件树改为 `op_host`/`op_kernel` 结构。校验项 6→7（5 通过 + 2 提醒）。
+
+## 2026-07-22 — TaskCompare：图表对比底部新增「Media 对比」栏
+
+- `Profiling_Insight_and_Tool/training-run-twin-standalone/TaskCompare.html` — 图表对比页底部增加多模态产出对比分区：左侧勾选几个任务就渲染几张卡片，卡片自上而下为任务名（含状态点/基线标签）、圆角视频封面（取自 `pic/`，16:10 定比裁切 + 综合评分/分辨率·帧率/时长角标）、生成 prompt、产出质量指标（CLIP-T / 时序一致性 / 美学评分 / FVD）、来源 checkpoint 与单条生成耗时；沿用 `.cmp-group` 外壳支持折叠，「标记最优」开关下逐指标高亮最优任务。
+- 同页「最佳任务」榜单第 2 项由 `grad_norm` 换成 `media` 综合评分（与 Media 卡片角标同源），榜首任务不再包揽全部指标——第 1 名赢 loss / MFU，media 由基线任务 v2 拿下。
+- 同页左侧任务对比栏加 300px 宽度上限，拖拽分隔条不再能把它拉宽到挤压右侧栅格。
+
+## 2026-07-22 — config-relation-observer：Layer 导航分组名跟随选中态降噪
+
+- `js/config-relation-observer.js` / `css/config-relation-observer.css` — 选中层（或任意关系）后，Layer 导航上下两行分组名（PP / Dense / MoE / Emb / Norm / Head）中未被牵连的整条压到 0.35 透明度；Dense/MoE 注记新增 `data-segment`，由 `rel.segments` 判定归属。
+
+## 2026-07-22 — `config-relation-observer.html`：关系连线标注块加重阴影
+
+- `.cro-link-label__box` 原来只有 `--surface-1` 填充 + `--border-subtle` 描边，浮在整网/刻度带/热力图上时融进背景信息里。改为三层 `filter: drop-shadow`（`0 2px 4px /.7` 贴边定形 + `0 8px 16px /.7` 中距 + `0 16px 40px /.65` 大范围暗场，末层近乎无位移，等效把标注块四周底图压暗一圈挖空），描边提到 `--border-strong`。透明度高于 `--shadow-*` token，因为它压的是彩色 3D deck 与热力图而非纯色页面底。SVG 元素不吃 `box-shadow`，所以走 filter。
+
+## 2026-07-22 — training-run-twin-standalone：训练监控 / 任务对比 / 配置关系三页 rail 互跳
+
+- `training-monitoring-v2.html`、`TaskCompare.html`、`config-relation-observer.html` 的 activity rail 底部统一为「训练监控 / 对比 / 配置关系」同款同序三键，当前页保持 `is-selected` 且不绑定跳转，其余两键 `location.href` 跳转，三页任意一页可直达另两页。
+- 「配置关系」用 lucide `share-2` 节点连线图标（三个圆 + 两条斜线），比代码分支更贴「关系连线」语义，与 rail 上 Source control（circle 6,6 / circle 18,18 + 折线）也不会看混。
+- `config-relation-observer.html` 首个 rail 键原为「折叠整网网格区」（用 `is-selected` 表达展开态），与「选中 = 当前页」的 rail 语义冲突：改为与 TaskCompare 完全同款的文件夹图标 + 跳转训练监控大盘，不带 `is-selected`；整网折叠交互与 `croNetToggle` 脚本一并移除（`.is-net-collapsed` 的 CSS 规则留着未删）。三页 rail 至此完全同构：文件夹 / Search / Source control / Terminal / 对比 / 配置关系。
+
+## 2026-07-22 — `config-relation-observer` 关系映射统一排查：五处连线/高亮缺陷
+
+- 单值 `rel.segment` 换成 `rel.segments` / `rel.units` 集合。一次选择往往横跨多列（一个 rank 压住它那段 PP 的 Dense + MoE + 端点列），旧写法在 `case "rank"` 里把 segment 写死成 `"moe"`，导致点一个 rank 只连 MoE 典型层，Dense / Norm / Head 既不高亮也不去色。现按「有层落进关系集」逐列判定，端点列（Emb / Norm / Head）按驻留的 PP stage 判定，且只在整段 stage 被选中（点 PP 标签 / 点 rank）时才接上——避免 MoE 算子横跨全部 stage 时把 Norm/Head 一并拖亮。
+- 新增 `rel.deckStatic`：Emb / Final Norm / LM Head / MTP 这些算子画在 deck 的 input/output 静态段里，不属于任何一张层卡片，而 `selectNode(id, layer)` 会把查找限死在那张卡内 —— 静态节点永远选不中，于是点整网的 MTP Decoder 节点连自己都被取消选中、一条线都连不出去，点 Layer 导航的 Emb/Norm/Head 刻度也没有线连回整网。静态节点现在不带层作用域查找；同时修正传参必须是 `undefined` 而非 `null`（deck 里判的是 `Number.isFinite(Number(layer))`，`Number(null) === 0` 会把查找锁进 L0）。
+- 整网 deck 点算子不再强制 `scopeLayer`。同一个算子（EP Combine、Attn…）在同类型的每一层都存在，直接点它就该亮出整列的层；收敛到单层的规则（select.png 的「EP Combine in Layer 3」）统一由 `emitSelect` 在「先选层、再点算子」时施加，与结构条点击路径同语义。新增 `preferLayer`，让 deck 停在用户正看的那一层而不甩到该列中间。
+- Layer 导航的端点刻度（Emb / Norm / Head）原先 `is-related` 恒为 `false`，点 stage / rank 时它们明明在那段流水线上、刻度带却是灰的；现按 `rel.units` 点亮。
+- 典型层补列级去色：只选到层 / stage / rank 时没有任何 `.cro-bar.is-selected`，原先那条 `:has(.cro-bar.is-selected)` 去色规则整条不生效，五列之间只剩 0.5 的透明度差，点一个 MoE 层时 Dense / Emb / Norm / Head 照旧满色。
+- 整网同步补去色：新增 `markDeckRelated()`，按「层内节点看所在层卡的层号是否在关系集里、静态段节点看 id 是否在 `rel.staticNodes`」标注 `is-related`，配 `:has(.is-related)` 的去色规则。一个 rank 只持有它那个 PP stage 的层 + 一端的 Emb 或 Norm/Head/MTP，整网里其余流水线段现在会退到灰底。
+- 点 rank / PP 标签时补上 `rel.deckLayer = entry.lo`：整网转到这段流水线的首层（以前点末段的卡，图还停在中间层上）；`collectAnchors().net` 的兜底选择器加入 `.pto-model-deck__layer.is-related`，让这类粗粒度选择也能连出到整网（正视图下非 front 的层卡 rect 全 0，`unionRect` 会跳过，锚点落在当前正视的那张卡上）。
+- 删掉 `case "rank"` 里写死的 `rel.segment = "moe"`：一张卡不属于某一列典型层，相关列一律按 `rel.layers` 派生。
+- 补齐 `decoder / input / parameter / state` 四个 op 的 `--cro-bar-color` 映射与 `.cro-board` 兜底色。`syncDeckPalette` 的 `DECK_COLOR_VARS` 一直搬着这四个变量，但结构条的 op→色映射表漏了它们，于是 MTP Decoder（`op="decoder"`，`#0D9488` 绿）在整网里是绿的、在典型层里是灰的。
+- 关系连线新增 `clampRectTo()`：锚点先夹回所在视图的可视宿主、再夹回 `.cro-board`。deck 的 `__viewport` 是 `overflow:hidden`，而 input / output 静态段落在层卡上下 `top:-700px` / `top:520px` 处（Emb、Final Norm、LM Head、MTP 全在里面），`getBoundingClientRect()` 给出的坐标必定在 deck 可视区之外 —— 连线从可视区一头扎出屏幕，表现为「点 Emb/Norm/Head 刻度，整网和 Cluster 都高亮了，就是没有线」。夹取只作用于绘制坐标，锚点有效性仍判在原始 rect 上；夹扁成一条边时不再画分组虚线框。
+
+---
+
+## 2026-07-22 — 新增 `config-relation-observer.html`：整网-layer-Cluster-expert 的 T 型关系观测页
+
+- 新页面 `Profiling_Insight_and_Tool/training-run-twin-standalone/config-relation-observer.html`（配套 `css/config-relation-observer.css`、`js/config-relation-observer.js`），以 `patterns/ide-frame` 为 shell，单一 pane 内用 CSS Grid 切出四个不可见区：左「整网」通栏两行，右上「Model Architecture」与「MoE」并列，「Cluster」挂在 Model Architecture 正下方构成 T 型下竖笔。已挂到 `launch.html`。
+- 拓扑模型层 `CroTopology` 是全页唯一数据源。并行语义取 `world = DP×PP×TP×CP×EP`（EP 与 DP 正交，8×4×1×1×64 = 2048 对齐 openPangu-2.0-Flash 的 Total Rank）。层→PP stage、专家→EP rank、(stage,dp,ep,inner)→global rank、rank→node 全部确定性推导，无随机、无数据文件；11 个 stepper 改动后四视图整体重算，配置不自洽时标红对应 stepper 并写出原因。
+- 整网图直接消费 `patterns/model-architecture-3d-deck`，用 `options.config` 注入 topology 派生的 `layerCount / stageRanges / denseLayers / dsaLayers / representativeLayers`，`options.showChrome:false` 去掉 pattern 自带的视图切换与工具栏，只保留正视图 + pan/zoom。
+- 结构条颜色不再走 `buildColorMap`：本地 `model-graphviz-pattern.js` 未导出 `modelArchitectureColormap`，deck 实际取的是自己的 `COLOR_FALLBACKS`（attention 是 `#3B82F6` 而非 `#EC4899`），两边色相差了一整格。改为把 deck 根节点的 `--pto-model-deck-*` 原样搬到 `.cro-board`，bar 用同名 `data-op` 取同一变量，并照抄它的渐变与 inset 高光，做到同一个算子在两处逐位同色。
+- Layer 导航（一条 49 格刻度带：46 层 + Emb/Norm/Head 三个端点格）按 `default.png` 逐像素落地。初版做成的五栏网格（等宽栏 + `--space-4` 栏距 + 实心刻度 + PP 胶囊标签 + 一条横向分割线）与参考图不是一回事。改成一条**连续**刻度带 —— 刻度是空心细胶囊（1px `--border-default` 描边、`--radius-pill`、无填充），带子按「PP 边界 ∪ Dense/MoE 起止」断开成组，组间空当正中一条 1px `--foreground-muted` 竖分隔线：PP 边界与带子两端的线从 PP 标签行顶画到刻度行下方，Dense / MoE 起止的线从刻度行顶画到底部标签行下方，两种线等长（91px）交错咬合。PP0…PPn 在上、Dense / MoE 在下，都是 14px 纯文字，不套底色；首尾 stage 的标签框延伸到带子两端（参考图里 PP0 含 Emb 格），`Norm|Head` 两侧都不是层故该处无分隔线。几何解一个方程写死：`width = (2n−g)·t + g·6.5t`（n 格 g 组，间隙与刻度同宽 t，空当 : 刻度 = 26 : 4 量自参考图），t 夹在 [1.5, 8]、余量吃进空当，保证带子既不横向溢出也不在右侧留空；分隔线与标签的 x 仍按组的实测 `getBoundingClientRect` 写入。面板由 `--surface-2` 无边框卡片改为 `--surface-1` + `--border-default` 描边 + `--radius-lg`。五段结构条未改动。
+- 刻度改空心后 `.cro-board.is-focused` 的降噪从 `opacity:.12` 提到 `.4` —— 1px 描边压到 12% 会让整条带子消失（原来是实心块才压得住）；`.cro-tick.is-endpoint` 的淡化规则一并删除，参考图里端点格与层刻度取色完全一致，两者的区分交给下方 Dense / MoE 标签划出的层区范围。
+- 集群图参数化重建（原 `training-run-twin.js` 里是写死的 DP4×8行×64列，且列同时被当作 EP rank 和 PP stage 的 1/4）：列 = EP rank，行组 = DP 副本，组内每行一个 PP stage，格数恒等于 Total Rank。复用 `training-run-twin.css` 的 `.twin-heat*` 视觉，但补了一圈中性描边作为静息态 —— 基类只有 6% 的 `.ep-tint-N` 底色，原页面靠 `renderHeat()` 写 util 环才可见，本页不做 util 着色故会整片空白。
+- 关系引擎 `resolveRelation()` 把任一视图的点击解析成四者的全量关系集，layer ↔ 专家 ↔ rank ↔ 算子 双向互查；整网图侧经 `onNodeSelect` 反查回结构条，回写时静音回调避免自激。`attention_core`、`post_mlp_norm` 在 Dense/MoE 两列同名，按节点所在层的 FFN 类型消歧。连线画在 `position:fixed` 的 SVG 上，滚动/缩放/拖拽重画；聚焦降噪只动 opacity 不动尺寸线宽。
+- 集群 2048 个格子用 roving tabindex + 方向键导航（整张网格只占 1 个 Tab 站），其余可交互元素均为原生 `<button>`。container decoration 审计通过：无 `border-left`、无侧条伪元素、无横向渐变高亮，唯一的 `border` 在 `.cro-select` 表单控件上。
+- 修复 Emb / Norm / Head 三个端点算子点不出关系连线：`structureColumns()` 给这三列的 `layers` 是空数组，`resolveRelation()` 的 `segment` 分支被 `if (col.layers.length)` 挡掉，既不收 PP stage 也不收 rank，于是 nav / cluster 两个锚点为空，只剩结构条自己亮着。改为给端点列声明 `stageAnchor`（Emb 在首段、Final Norm / LM Head 在末段），走 `ranksOfStage()` 接回 PP 段与集群格子；标签在无层可报时退化成 `Token Embedding · PP0`，不再拼出尾巴空掉的 `名称 · `；Layer 导航的端点刻度改按 segment 匹配选中态，`.cro-tick.is-endpoint` 的 `opacity:.14` 补上 `:not(.is-selected)`（它写在 `.is-selected` 之后且同特异度，原本会把选中的端点格压回不可见）。
+- 算子选中态从「压 opacity」改成「保色 / 去色」：选中某个算子后，整网 deck 与五个典型层里只有它保留语义色，其余节点 `grayscale(1)` + `opacity:.62`，让选中项从一片灰底上跳出来（层 / EP rank / global rank 这类粗粒度选择仍走原来的 opacity 降噪，不动色相）。规则用 `:has(.is-selected)` 锁在「确实有节点被选中」时 —— 只选到层时 `rel.deckNode` 为空、一个 `.is-selected` 都没有，整幅图不该无缘无故变灰；悬停未选中项时把本色放回来，方便在灰底上确认目标。只在 `.cro-board.is-focused` 状态下叠一层 filter，不改写 deck pattern 自身的节点样式。
+- 典型层算子栈与路由专家列表的滚动条从系统默认（Windows 上 17px 实心灰槽，在算子条右侧劈出一条比内容还抢眼的硬边）压成 6px：轨道透明，滑块用 `2px transparent border + background-clip:content-box` 撑成胶囊，静息 14% 前景色、指针进容器 30%、压在滑块上 46%；`overscroll-behavior:contain` 断掉滚动链，滚到底不再带着 `.cro-board` 一起位移。
+- 选中项自动滚进可视区：算子栈（每列 30+ 条）与路由专家（64 个 EP 组）都远高于各自视口，选中项多半落在折叠区里，不滚出来等于没高亮。`applyRelation()` 末尾对 `.cro-structure__stack` 与 `#croRoutedExperts` 各补一次 `revealIn()`；没有直接选中物时退而露出第一个 `is-related`（选一层 → 该层用到的 EP 组）。实现上手算容器与目标的相对位置、只 `container.scrollBy()`，不用 `el.scrollIntoView()` —— 后者会把所有祖先滚动容器（`.cro-board` 是 `overflow:auto`，document 也可滚）一起滚，点一个专家会把整块面板连同整网图挪走；目标已经露着则一动不动。取元素用按优先级逐个 `querySelector` 而非选择器列表，后者按文档顺序返回，会出现「选中了某个专家却滚到排在它前面的 is-related 组」。
+- Cluster 区左右换位：`.cro-cluster__side`（标题 + stepper）移到左、`.cro-cluster__grid`（矩阵）移到右，容器是 flex，只调 DOM 顺序即可。同时去掉 `#croClusterMeta` 那行「2048 卡 · 256 节点…」说明文字，连带删掉写它的 `controller.onChange` 片段与已无引用的 `.cro-region__meta` 样式。
+- EP 组升级为可单独选中的实体：`applyRelation()` 里 `.cro-moe-group` 从只有 `is-related` 增加 `is-selected`（`primary.kind === "epRank"` 时命中），`collectAnchors().moe` 优先取 `.cro-moe-group.is-selected` 作锚点，连线直接接到组卡片本身，不再退化成组内专家的并集包围盒外加一圈虚线。选中态视觉去掉 `--state-selected` 那层蓝，改成整组一圈 1.5px 白描边（与 `.cro-expert.is-selected` 同一套语言），组内专家保留 `is-related` 供聚焦降噪判断但底色压回 `--surface-3`；`.cro-moe-groups` 补 2px padding，否则描边被滚动容器裁掉。
+- EP 组的选中热区从「只有组名那几个字」扩到整张卡片：click 挂在 `.cro-moe-group` 上，命中 `.cro-expert` 时放行给专家自己的 `kind:"expert"`，其余区域（组名、padding、专家行的间隙）一律选中整组；组名按钮不再单独挂 listener，靠冒泡走同一条路径，仍保留它作为键盘可达入口。清空选择的 `SELECTABLE` 白名单相应从 `.cro-moe-group__name` 放宽到 `.cro-moe-group`，否则点卡片空白处会先选中再被自己清掉。
+- 顺带修 `expert` / `epRank` / `sharedExpert` 三个分支不设 `rel.deckLayer` 的问题：`selectNode()` 拿不到层号，整网侧没有锚点，专家类选择的连线一直少一条。改为取中间那个 MoE 层作代表。
+- 三处高亮统一到「白描边」这一套选中语言：① 共享专家 SE 胶囊只有一个，任何指向它的选中都只落成 `is-related`，铺满整行的 `--state-selected` 蓝比真正的选中态还抢眼，`.cro-expert--shared.is-related` 改为与 `.cro-expert.is-selected` 同款（中性底 + 1.5px 白描边）；② 连线指向整组时画的包围盒虚线 `.cro-link-group` 从 `--foreground` @0.4（深底上偏灰蓝，像另一套弱提示）改成纯白 @0.9、线宽 1.25；③ `.cro-tick.is-selected` 在蓝色实心之外补一圈白描边 —— 刻度只有 ~4px 宽，白圈走 `border-color` 而非外扩 `box-shadow`，否则会盖住邻格。
+- 遗留待办：设计系统当前没有 select / form-control 组件，`.cro-select` 是用 tokens 拼的最小实现，后续应吸收进共享系统。
 
 ## 2026-07-22 — `TaskCompare.html` 统一全页字体
 

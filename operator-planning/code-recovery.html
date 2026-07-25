@@ -139,7 +139,7 @@
     .tiling-head { display: flex; align-items: flex-start; justify-content: space-between; gap: var(--space-3); }
     .tiling-head h2 { margin: 0; font-size: 12px; }
     .tiling-head p { margin: var(--space-1) 0 0; color: var(--foreground-muted); font: var(--text-body-sm); }
-    .core-strip { margin: 24px 0; }
+    .core-strip { margin: 12px 0; }
     .core-cell { min-height: 40px; width: 40px; margin-right: 10px;border: 0; border-radius: var(--radius-md); background: color-mix(in srgb, var(--primary) 9%, var(--surface-3)); color: var(--foreground-secondary); cursor: pointer; }
     .core-cell.is-selected { background: color-mix(in srgb, var(--primary) 52%, var(--surface-3)); color: var(--foreground); box-shadow: 0 0 0 1px var(--primary-hover); }
     .tiling-spaces { display: grid; grid-template-columns: minmax(0, 0.6fr) minmax(280px, .8fr); gap: var(--space-5); }
@@ -157,7 +157,7 @@
     .formula-buffer strong, .formula-buffer code { display: block; }
     .formula-buffer code { margin-top: var(--space-1); color: var(--foreground-secondary); font-size: 10px; }
     .formula-op { color: var(--success); font: var(--text-title-1); }
-    .tiling-factline { padding: var(--space-3); border-radius: var(--radius-md); background: var(--surface-2); color: var(--foreground-secondary); font: var(--text-body-sm); line-height: 1.55; }
+    .tiling-factline { padding: var(--space-1); border-radius: var(--radius-md); background: var(--surface-2); color: var(--foreground-secondary); font: var(--text-body-sm); line-height: 1.55; }
     .tiling-factline strong { color: var(--foreground); }
     .matmul-tiling-diagrams { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-5); margin-top: var(--space-4); }
     .matmul-tiling-figure { min-width: 0; margin: 0; }
@@ -171,7 +171,7 @@
     .matmul-matrix-svg .matrix-cell.is-output { fill: color-mix(in srgb, var(--success) 20%, var(--surface-3)); stroke: var(--success); stroke-width: 1.5; }
     .matmul-matrix-svg .matrix-label { fill: var(--foreground); font: 600 10px var(--font-sans); }
     .matmul-matrix-svg .matrix-axis { fill: var(--foreground-muted); font: 9px var(--font-mono); }
-    .matmul-tiling-formula { margin-top: var(--space-4); }
+    .matmul-tiling-formula { margin-top: var(--space-2); }
     .kv-list { display: grid; gap: var(--space-2); }
     .kv { display: grid; grid-template-columns: 76px minmax(0, 1fr); gap: var(--space-2); color: var(--foreground-secondary); font: var(--text-body-sm); }
     .kv span { color: var(--foreground-muted); }
@@ -748,7 +748,7 @@ int32_t main(int32_t argc, char* argv[])
       $('[data-model-view="tiling"]').innerHTML = '<div class="view-heading"><div><h1>Tiling</h1><p>GM-001 没有核内 tile loop，视图止于 per-core slice。</p></div><span class="evidence-chip is-confirmed">代码确认</span></div><div class="tiling-head"><div><h2>核间切分</h2><p>线性均分：8 cores × 2048 elements</p></div><span class="evidence-chip is-confirmed">no tail</span></div><div class="core-strip">' + coreButtons + '</div><div class="tiling-spaces"><section class="tiling-space"><div class="space-head"><strong>全局计算空间</strong><code>[8, 2048] · 16384 elements</code></div>' + tensorRows + '<div class="tiling-factline"><strong>映射规则：</strong>同一 core 的 x/y/z 使用相同连续范围。</div></section><section class="tiling-space"><div class="space-head"><strong>选中核 C' + String(selectedCore).padStart(2,'0') + '</strong><code>offset ' + offset + ' · length 2048</code></div><div class="selected-core-space"><div class="core-formula"><div class="formula-buffer"><strong>x slice</strong><code>[' + offset + ', ' + (offset + c.perCore) + ')</code></div><span class="formula-op">+</span><div class="formula-buffer"><strong>y slice</strong><code>same range</code></div><span class="formula-op">=</span><div class="formula-buffer"><strong>z slice</strong><code>same range</code></div></div><div class="tiling-factline"><strong>UB footprint：</strong>3 × 8 KiB；queue depth 均为 1。</div><div class="tiling-factline"><strong>Tail：</strong>当前样例无 tail；代码没有 remainder 分支。</div></div></section></div>';
     } else {
       const start = selectedCore * 128;
-      $('[data-model-view="tiling"]').innerHTML = '<div class="view-heading"><div><h1>Tiling</h1><p>GM-002 只有一个 base tile / core；A 与 C 沿 M 轴切分，B 被两个 core 完整读取。</p></div><span class="evidence-chip is-confirmed">代码确认</span></div><div class="tiling-head"><div><h2>M-axis partition</h2><p>2 cores × 128 M rows · base 128×64×256</p></div><span class="evidence-chip is-confirmed">no tail</span></div><div class="core-strip">' + coreButtons + '</div><div class="matmul-tiling-diagrams"><figure class="matmul-tiling-figure"><figcaption class="matmul-tiling-figure-head"><strong>全局矩阵空间</strong><span>A[256,64] × B[64,256] → C[256,256]</span></figcaption>' + matmulMatrixSvg('global', selectedCore) + '</figure><figure class="matmul-tiling-figure"><figcaption class="matmul-tiling-figure-head"><strong>选中核 C0' + selectedCore + ' 的 base tile</strong><span>M rows [' + start + ', ' + (start + 128) + ')</span></figcaption>' + matmulMatrixSvg('local', selectedCore) + '</figure></div><div class="tiling-factline matmul-tiling-formula"><strong>核间映射：</strong>A / C 按 M 轴二分；B 不分核、由两个 core 共享。每个 core 正好执行 1 个 128×64×256 base tile。</div><div class="tiling-factline"><strong>GM offsets：</strong>A = ' + (start * 64) + ' elements；C = ' + (start * 256) + ' elements；B = 0。当前 M/K/N 均整除，代码没有 tail 分支。</div>';
+      $('[data-model-view="tiling"]').innerHTML = '<div class="view-heading"><div><h1>Tiling</h1><p>GM-002 只有一个 base tile / core；A 与 C 沿 M 轴切分，B 被两个 core 完整读取。</p></div><span class="evidence-chip is-confirmed">代码确认</span></div><div class="tiling-head"><div><h2>M-axis partition</h2></div><span class="evidence-chip is-confirmed">no tail</span></div><div class="core-strip">' + coreButtons + '</div><div class="matmul-tiling-diagrams"><figure class="matmul-tiling-figure"><figcaption class="matmul-tiling-figure-head"><strong>全局矩阵空间</strong><span>A[256,64] × B[64,256] → C[256,256]</span></figcaption>' + matmulMatrixSvg('global', selectedCore) + '</figure><figure class="matmul-tiling-figure"><figcaption class="matmul-tiling-figure-head"><strong>选中核 C0' + selectedCore + ' 的 base tile</strong><span>M rows [' + start + ', ' + (start + 128) + ')</span></figcaption>' + matmulMatrixSvg('local', selectedCore) + '</figure></div><div class="tiling-factline matmul-tiling-formula"><strong>核间映射：</strong>A / C 按 M 轴二分；B 不分核、由两个 core 共享。每个 core 正好执行 1 个 128×64×256 base tile。</div><div class="tiling-factline"><strong>GM offsets：</strong>A = ' + (start * 64) + ' elements；C = ' + (start * 256) + ' elements；B = 0。当前 M/K/N 均整除，代码没有 tail 分支。</div>';
     }
   }
   function renderLifecycle() {
