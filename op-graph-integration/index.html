@@ -12,6 +12,7 @@
 <link rel="stylesheet" href="../vendor/pto-design-system/patterns/floating-playback-control/pattern.css">
 <link rel="stylesheet" href="../vendor/pto-design-system/patterns/ide-frame/pattern.css">
 <link rel="stylesheet" href="../vendor/pto-design-system/patterns/ide-frame/vscode.css">
+<link rel="stylesheet" href="../vendor/pto-design-system/patterns/model-graphviz/pattern.css">
 <style>
   /* ── make the standard IDE frame fill the viewport (full-bleed app host) ── */
   html, body { height: 100%; margin: 0; }
@@ -28,6 +29,9 @@
   .tree-row.dir { color: var(--foreground); }
   .tree-row.file { padding-left: 22px; }
   .tree-row.active { background: var(--state-selected); color: var(--foreground); }
+  .tree-row.linked { box-shadow: inset 2px 0 0 var(--warning); }
+  .tree-row.pending { color: var(--foreground-muted); font-style: italic; }
+  .tree-row.click { cursor: pointer; }
   .tree-row .d { width: 6px; height: 6px; border-radius: 999px; margin-left: auto; }
   .tree-row .d.mod { background: var(--warning); }
 
@@ -54,18 +58,25 @@
   .tp-status.wait .d { background: var(--primary); box-shadow: 0 0 7px var(--primary); }
   .tp-status.done .d { background: var(--success); box-shadow: 0 0 7px var(--success); }
   .tp-inner { padding: var(--space-4); }
-  .tp-mini { display: flex; gap: 4px; margin-bottom: var(--space-4); }
-  .tp-seg { flex: 1; }
+  .tp-mini { display: flex; gap: 3px; margin-bottom: var(--space-4); }
+  .tp-seg { flex: 1; min-width: 0; }
   .tp-seg .bar { height: 4px; border-radius: 999px; background: var(--surface-3); }
   .tp-seg.done .bar { background: var(--success); }
   .tp-seg.active .bar { background: var(--primary); }
-  .tp-seg .lb { font-size: 10px; color: var(--foreground-disabled); margin-top: 5px; text-align: center; white-space: nowrap; }
+  .tp-seg .lb { font-size: 9px; color: var(--foreground-disabled); margin-top: 5px; text-align: center; line-height: 1.2; }
   .tp-seg.done .lb, .tp-seg.active .lb { color: var(--foreground-secondary); }
 
-  .tp-empty { text-align: center; padding: 14% var(--space-5) 0; color: var(--foreground-muted); }
-  .tp-empty .big { font-size: 40px; margin-bottom: var(--space-3); opacity: .85; }
+  .tp-empty { text-align: center; padding: 8% var(--space-5) 0; color: var(--foreground-muted); }
+  .tp-empty .big { font-size: 40px; margin-bottom: var(--space-2); opacity: .85; }
   .tp-empty h3 { font-size: var(--font-size-title-sm); color: var(--foreground-secondary); font-weight: 600; }
-  .tp-empty p { margin-top: var(--space-2); font-size: var(--font-size-body-sm); max-width: 40ch; margin-inline: auto; line-height: 1.6; }
+  .tp-empty p { margin-top: var(--space-2); font-size: var(--font-size-body-sm); max-width: 42ch; margin-inline: auto; line-height: 1.6; }
+
+  /* canonical 9-step → stage coverage map */
+  .flow-map { text-align: left; margin: var(--space-4) auto 0; max-width: 340px; background: var(--surface-1); border: 1px solid var(--border-subtle); border-radius: var(--radius-lg); padding: var(--space-3); }
+  .flow-map .fm-t { font-size: 11px; color: var(--foreground-muted); text-transform: uppercase; letter-spacing: var(--letter-spacing-label); margin-bottom: var(--space-2); }
+  .flow-grid { display: grid; grid-template-columns: repeat(3,1fr); gap: 5px; }
+  .flow-chip { display: flex; align-items: center; gap: 6px; font-size: 11px; color: var(--foreground-secondary); background: var(--surface-2); border: 1px solid var(--border-subtle); border-radius: var(--radius-sm); padding: 4px 6px; }
+  .flow-chip .n { flex: none; width: 15px; height: 15px; border-radius: 999px; display: grid; place-items: center; font-size: 9px; font-weight: 700; background: var(--primary); color: #fff; }
 
   /* pipeline timeline */
   .pstage { position: relative; padding-left: 30px; padding-bottom: var(--space-3); }
@@ -80,6 +91,9 @@
   .pstage-head.click:hover .pstage-title { color: var(--foreground); }
   .pstage-title { font-weight: 600; font-size: var(--font-size-body-md); color: var(--foreground); }
   .pstage.idle .pstage-title { color: var(--foreground-muted); font-weight: 500; }
+  .step-badge { font-family: var(--font-mono); font-size: 10px; color: var(--foreground-muted); background: var(--surface-3); border-radius: var(--radius-sm); padding: 1px 5px; }
+  .pstage.done .step-badge { color: var(--success); }
+  .pstage.run .step-badge { color: var(--primary-hover); }
   .pstage-cap { font-size: var(--font-size-body-sm); color: var(--foreground-muted); }
   .pstage-head .spacer { flex: 1; }
   .chev { color: var(--foreground-disabled); font-size: 10px; }
@@ -96,6 +110,13 @@
   .kv .v { font-family: var(--font-mono); color: var(--foreground); text-align: right; }
   .sig-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0 var(--space-4); }
 
+  /* hardware usage bars (kernel buffers) */
+  .usebar { display: flex; align-items: center; gap: var(--space-2); padding: 4px 0; font-size: var(--font-size-body-sm); }
+  .usebar .u-k { color: var(--foreground-muted); font-family: var(--font-mono); width: 42px; flex: none; }
+  .usebar .u-track { flex: 1; height: 6px; border-radius: 999px; background: var(--surface-3); overflow: hidden; }
+  .usebar .u-fill { height: 100%; border-radius: 999px; background: linear-gradient(90deg,var(--primary),var(--primary-hover)); }
+  .usebar .u-v { font-family: var(--font-mono); color: var(--foreground-secondary); width: 62px; text-align: right; flex: none; }
+
   .badge { display: inline-flex; align-items: center; gap: 5px; border-radius: var(--radius-pill); padding: 2px 9px; font-size: var(--font-size-body-sm); font-weight: 500; background: var(--surface-3); }
   .badge::before { content:""; width: 6px; height: 6px; border-radius: 999px; background: currentColor; }
   .badge.b-ns::before { display: none; }
@@ -103,7 +124,7 @@
   .badge--warning { color: var(--warning); }
   .badge--info { color: var(--primary); }
 
-  .file-tabs { display: flex; gap: 2px; border-bottom: 1px solid var(--border-subtle); }
+  .file-tabs { display: flex; gap: 2px; border-bottom: 1px solid var(--border-subtle); flex-wrap: wrap; }
   .file-tab { padding: 6px 11px; font-family: var(--font-mono); font-size: var(--font-size-body-sm); color: var(--foreground-muted); cursor: pointer; border-bottom: 2px solid transparent; display: inline-flex; align-items: center; gap: 6px; }
   .file-tab:hover { color: var(--foreground-secondary); }
   .file-tab.active { color: var(--foreground); border-bottom-color: var(--primary); }
@@ -115,8 +136,16 @@
   pre.code .st { color: var(--success); }
   pre.code .hl { background: color-mix(in srgb, var(--success) 10%, transparent); display: inline-block; width: 100%; }
 
+  /* segmented toggle (offline / online graph path) */
+  .seg { display: inline-flex; background: var(--surface-2); border: 1px solid var(--border-subtle); border-radius: var(--radius-pill); padding: 2px; gap: 2px; }
+  .seg button { border: none; background: none; color: var(--foreground-muted); font-family: var(--font-sans); font-size: var(--font-size-body-sm); padding: 3px 12px; border-radius: var(--radius-pill); cursor: pointer; }
+  .seg button.on { background: var(--primary); color: #fff; }
+
   .check { display: flex; gap: var(--space-3); padding: 9px 0; border-bottom: 1px solid var(--border-subtle); }
   .check:last-child { border-bottom: none; }
+  .check-linkable { cursor: pointer; }
+  .check-linkable:hover .c-title { color: var(--primary-hover); }
+  .check-linkable.is-linked { box-shadow: inset 2px 0 0 var(--warning); padding-left: var(--space-2); }
   .check .ico { flex: none; width: 20px; height: 20px; border-radius: 999px; display: grid; place-items: center; font-size: 11px; font-weight: 700; }
   .check .ico.ok { background: rgba(4,215,147,.16); color: var(--success); }
   .check .ico.warn { background: rgba(255,170,59,.16); color: var(--warning); }
@@ -124,6 +153,12 @@
   .check .c-desc { color: var(--foreground-muted); font-size: var(--font-size-body-sm); margin-top: 2px; }
   .check .c-fix { margin-top: 5px; font-size: var(--font-size-body-sm); color: var(--foreground-muted); }
   .check .c-fix code { background: var(--surface-2); padding: 1px 6px; border-radius: var(--radius-sm); font-family: var(--font-mono); font-size: 11px; color: var(--warning); }
+
+  /* DeepSeek model-architecture graph host (design-system model-graphviz pattern) */
+  .ds-graph-host { max-height: 440px; overflow: auto; border: 1px solid var(--border-subtle); border-radius: var(--radius-md); background: var(--surface-1); }
+  .ds-graph-host svg { display: block; width: 100%; height: auto; }
+  .ds-graph-cap { font-size: var(--font-size-body-sm); color: var(--foreground-secondary); margin-top: var(--space-2); line-height: 1.6; }
+  .ds-graph-cap b { color: var(--foreground); }
 
   .graph-wrap { background: var(--surface-1); border: 1px solid var(--border-subtle); border-radius: var(--radius-lg); padding: var(--space-3); }
   .g-label { font-family: var(--font-mono); font-size: 11px; fill: var(--foreground); }
@@ -166,6 +201,27 @@
   @keyframes sp { to { transform: rotate(360deg); } }
   .fade { animation: fd .3s ease; }
   @keyframes fd { from { opacity: 0; transform: translateY(3px); } to { opacity: 1; transform: none; } }
+
+  /* Stage navigation stays compact in the inspector; execution details live below the workbench. */
+  .pto-ide-frame__workarea { display: flex; flex-direction: column; min-height: 0; }
+  .pto-ide-frame__workarea > .pto-ide-frame__split { flex: 1 1 auto; min-height: 0; }
+  .stage-tabs { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 3px; padding: var(--space-3) var(--space-4) 0; border-bottom: 1px solid var(--border-subtle); }
+  .stage-tab { min-width: 0; border: 0; border-bottom: 2px solid transparent; background: transparent; color: var(--foreground-muted); padding: 7px 4px 8px; cursor: pointer; font-size: 10px; line-height: 1.25; }
+  .stage-tab:hover { color: var(--foreground-secondary); background: var(--state-hover); }
+  .stage-tab.is-selected { color: var(--foreground); border-bottom-color: var(--primary); background: var(--state-selected); }
+  .stage-tab .num { display: block; font-family: var(--font-mono); font-size: 9px; margin-bottom: 3px; color: var(--foreground-disabled); }
+  .stage-tab.is-done .num { color: var(--success); }
+  .stage-tab.is-active .num { color: var(--primary-hover); }
+  .stage-tab.is-attn .num { color: var(--warning); }
+  .stage-panel { padding: var(--space-4); overflow: auto; min-height: 0; }
+  .exec-output { position: relative; flex: 0 0 238px; min-height: 150px; border-top: 1px solid var(--border-strong); background: var(--surface-1); display: flex; flex-direction: column; }
+  .exec-output__header { position: relative; display: flex; align-items: center; gap: var(--space-2); padding: 8px var(--space-4); border-bottom: 1px solid var(--border-subtle); font-size: var(--font-size-body-sm); }
+  .exec-output__header .spacer { flex: 1; }
+  .exec-output__body { min-height: 0; overflow: auto; padding: var(--space-3) var(--space-4); }
+  .exec-output__close { position: absolute; top: 7px; right: 10px; z-index: 2; }
+  .exec-output__header { padding-right: 42px; }
+  .exec-output .log { height: 142px; }
+  @media (max-width: 900px) { .stage-tabs { grid-template-columns: repeat(4, minmax(0, 1fr)); } .exec-output { flex-basis: 210px; } }
 </style>
 </head>
 <body>
@@ -191,6 +247,7 @@
         <button class="pto-ide-frame__window-action" type="button" aria-label="Back"><svg class="pto-ide-frame__window-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M15 18 9 12l6-6"></path></svg></button>
         <button class="pto-ide-frame__window-action" type="button" aria-label="Forward"><svg class="pto-ide-frame__window-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="m9 18 6-6-6-6"></path></svg></button>
         <span class="pto-ide-frame__window-separator" aria-hidden="true"></span>
+        <button class="pto-ide-frame__window-action" type="button" data-ide-toggle="terminal" aria-label="切换执行输出" aria-controls="ogi-bottom-dock" aria-expanded="true" aria-pressed="true" title="执行输出"><svg class="pto-ide-frame__window-icon" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="5" width="18" height="14" rx="2"></rect><path d="m7 9 3 3-3 3"></path><path d="M12 15h5"></path></svg></button>
         <button class="pto-ide-frame__window-action" type="button" aria-label="Settings"><svg class="pto-ide-frame__window-icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg></button>
         <button class="pto-ide-frame__window-action pto-ide-frame__window-action--danger" type="button" aria-label="Close"><svg class="pto-ide-frame__window-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M18 6 6 18"></path><path d="m6 6 12 12"></path></svg></button>
       </div>
@@ -217,7 +274,9 @@
 
     <!-- workarea: 3-pane split + status strip -->
     <div class="pto-ide-frame__workarea">
-      <div class="pto-ide-frame__split" data-ide-split="standalone-main" data-split-direction="horizontal" data-sizes="16,44,40" data-min-size="170,340,360">
+      <div class="pto-ide-frame__split" data-ide-split="standalone-dock" data-split-direction="vertical" data-sizes="1,0.34" data-min-size="260,150">
+        <section class="pto-ide-frame__pane pto-ide-frame__pane--stack" data-ide-pane="main-workspace">
+          <div class="pto-ide-frame__split" data-ide-split="standalone-main" data-split-direction="horizontal" data-sizes="16,44,40" data-min-size="170,340,380">
 
         <!-- explorer -->
         <aside class="pto-ide-frame__pane pto-ide-frame__explorer" data-ide-pane="explorer" id="ogi-explorer">
@@ -225,15 +284,17 @@
             <span class="pto-ide-frame__pane-title">资源管理器</span>
           </header>
           <div class="pto-ide-frame__pane-body" data-ide-slot="navigation">
-            <div class="tree">
+            <div class="tree" id="project-tree">
               <div class="tree-sec">CUSTOM_OPS</div>
-              <div class="tree-row dir">▾ flash_attention</div>
-              <div class="tree-row file active">flash_attention_v2.cpp <span class="d mod"></span></div>
-              <div class="tree-row file">flash_attention_tiling.h</div>
-              <div class="tree-row file">op_host.cpp</div>
-              <div class="tree-row dir" style="margin-top:6px">▸ op_proto</div>
-              <div class="tree-row dir">▸ op_info_cfg</div>
-              <div class="tree-row dir">▸ framework</div>
+              <div class="tree-row dir">▾ FlashAttentionV2</div>
+              <div class="tree-row dir" style="padding-left:16px">▾ op_host</div>
+              <div class="tree-row file" style="padding-left:34px">flash_attention_v2_def.cpp</div>
+              <div class="tree-row file" style="padding-left:34px">flash_attention_v2.cpp</div>
+              <div class="tree-row file" style="padding-left:34px">flash_attention_v2_tiling.h</div>
+              <div class="tree-row dir" style="padding-left:16px">▾ op_kernel</div>
+              <div class="tree-row file active" style="padding-left:34px">flash_attention_v2.cpp <span class="d mod"></span></div>
+              <div class="tree-row file" style="margin-top:6px">CMakeLists.txt</div>
+              <div class="tree-row file">build.sh</div>
             </div>
           </div>
         </aside>
@@ -241,13 +302,13 @@
         <!-- editor -->
         <section class="pto-ide-frame__pane" data-ide-pane="editor-preview">
           <div class="pto-ide-frame__tabstrip" data-ide-slot="preview-tabs">
-            <div class="tab-control" role="tablist">
+            <div class="tab-control" id="editor-tabs" role="tablist">
               <button class="tab-control-item is-selected" type="button" role="tab">flash_attention_v2.cpp</button>
               <button class="tab-control-item" type="button" role="tab">flash_attention_tiling.h</button>
             </div>
           </div>
           <header class="pto-ide-frame__pane-header" data-ide-slot="preview-header">
-            <span class="pto-ide-frame__pane-meta mono">custom_ops › flash_attention › flash_attention_v2.cpp</span>
+            <span class="pto-ide-frame__pane-meta mono">custom_ops › FlashAttentionV2 › op_kernel › flash_attention_v2.cpp</span>
             <span class="pto-ide-frame__pane-meta">AscendC · BF16</span>
           </header>
           <div class="pto-ide-frame__pane-body" data-ide-slot="preview">
@@ -270,14 +331,31 @@
           <div class="pto-ide-frame__pane-body" data-ide-slot="inspector">
             <div class="tp-inner">
               <div class="tp-mini" id="tp-mini"></div>
+              <div class="stage-tabs" id="stage-tabs" role="tablist" aria-label="入图阶段"></div>
               <div id="tp-body"></div>
             </div>
           </div>
         </aside>
 
+          </div>
+        </section>
+
+      <section class="pto-ide-frame__pane pto-ide-frame__bottom-dock exec-output" data-ide-pane="bottom-panel" data-ide-bottom-dock id="ogi-bottom-dock" aria-label="执行输出">
+        <div class="pto-ide-frame__bottom-view pto-ide-frame__terminal" data-ide-bottom-panel="terminal" id="ogi-terminal-pane">
+        <header class="exec-output__header">
+          <span class="spin" id="exec-spin" aria-hidden="true"></span>
+          <strong>执行输出</strong>
+          <span class="mono" id="exec-stage-label" style="color:var(--foreground-muted)">等待任务启动</span>
+          <span class="spacer"></span>
+          <span class="tp-status" id="exec-status"><span class="d"></span>未开始</span>
+        </header>
+        <div class="exec-output__body" id="exec-body"></div>
+        <button class="pto-ide-frame__terminal-action exec-output__close" type="button" data-ide-close="terminal" aria-label="关闭执行输出" title="关闭执行输出"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M18 6 6 18"></path><path d="m6 6 12 12"></path></svg></button>
+        </div>
+      </section>
       </div>
 
-      <!-- status strip (pattern-owned position; fixes the old floating bar) -->
+      <!-- status strip (pattern-owned position) -->
       <footer class="pto-ide-frame__status-strip pto-ide-frame__standalone-chrome" data-ide-slot="status">
         <div class="sb-seg" style="gap:14px">
           <span class="sb-seg">⎇ main</span>
@@ -297,13 +375,22 @@
 <script src="../vendor/pto-design-system/patterns/workbench-shell/pattern.js"></script>
 <script src="../vendor/pto-design-system/patterns/floating-playback-control/pattern.js"></script>
 <script src="../vendor/pto-design-system/patterns/ide-frame/pattern.js"></script>
+<script src="../vendor/pto-design-system/patterns/model-graphviz/pattern.js"></script>
 
 <script>
 // ════════════════════════════════════════════════════════════════
 //  算子入图 — editor-launched, auto-running pipeline
+//  覆盖昇腾 Ascend C 自定义算子入图完整链路（9 步 → 7 个任务阶段）
 // ════════════════════════════════════════════════════════════════
 const OP = {
   type: "FlashAttentionV2",
+  model: "DeepSeek V3.2",
+  landsAt: "解码层 MLA 注意力核（0–60，共 61 层复用）",
+  soc: ["Ascend910B", "Ascend310P"],
+  framework: "PyTorch custom_op → ONNX symbolic",
+  frameworks: ["PyTorch", "MindSpore", "TensorFlow"],
+  converter: "ATC / GE",
+  runtime: "ACL / GE Runtime",
   inputs: [
     { name: "query", dtype: "BF16", shape: "[B,N,S,D]" },
     { name: "key",   dtype: "BF16", shape: "[B,N,S,D]" },
@@ -317,34 +404,87 @@ const OP = {
   ],
   engine: "AI Core (Cube+Vector)",
   tiling: "FlashAttentionTilingData",
+  format: "ND",
+  dynamicShape: true,
+  precision: "max_rel < 4e-3（对齐 FP32 基准）",
+  proto: "op_proto::FlashAttentionV2",
+  // ② 内核实现事实（工具从 op_kernel 源码只读introspect）
+  kernel: {
+    file: "op_kernel/flash_attention_v2.cpp",
+    buffers: [
+      { k: "UB",  pct: 72, v: "184 / 256 KB" },
+      { k: "L1",  pct: 60, v: "307 / 512 KB" },
+      { k: "L0C", pct: 45, v: "58 / 128 KB" },
+    ],
+    coreSplit: "按 head_num × seq 切分至各 AI Core",
+    pipeline: "Cube(QK^T) ∥ Vector(softmax) 双缓冲流水",
+    sync: "CopyIn → ComputeQK → Softmax → ComputePV → CopyOut",
+  },
+  // ③ Tiling / Host 侧策略
+  tilingHost: {
+    blockDim: "min(head_num, aicoreNum) = 20",
+    perCore: "seqLen / blockDim = ⌈512/20⌉",
+    fields: "headNum · scale · seqLen · tileNum",
+    dynamic: "GE 编译期以真实 shape 调用 TilingFunc",
+  },
 };
 
 const STAGES = [
-  { id:"detect",   title:"识别算子",     cap:"解析当前源码，抽取入图所需算子签名" },
-  { id:"generate", title:"生成入图契约", cap:"产出原型定义 / 算子信息库 / 框架适配" },
-  { id:"validate", title:"静态校验",     cap:"检查 shape 推导、dtype·format、可入图性" },
-  { id:"preview",  title:"入图预览",     cap:"在计算图上下文中预览该节点与融合边界" },
-  { id:"deploy",   title:"构建部署",     cap:"编译算子包、注册 GE、回归确认被选中" },
+  { id:"detect",   steps:"①",   short:"识别定义",  title:"识别与定义",       cap:"抽取签名并校对算子定义 / 原型" },
+  { id:"kernel",   steps:"②③",  short:"Kernel",   title:"Kernel & Tiling",   cap:"核对内核实现与 Host tiling 策略" },
+  { id:"generate", steps:"④",   short:"契约注册",  title:"生成契约与注册",     cap:"OpDef 原型 / 推导 / Tiling / ops-info" },
+  { id:"validate", steps:"✓",   short:"校验",     title:"静态校验",           cap:"shape·dtype·format·tiling·可选择性" },
+  { id:"package",  steps:"⑤",   short:"编译打包",  title:"编译与打包",         cap:"编译 host+kernel · 生成 OPP 包 · 部署" },
+  { id:"graph",    steps:"⑥⑦", short:"框架入图",  title:"框架接入与入图",     cap:"前端封装 · 离线 ATC / 在线 GE · 图预览" },
+  { id:"runtime",  steps:"⑧⑨", short:"执行验收",  title:"执行与验收调优",     cap:"Runtime 下发 · 精度对齐 · msprof 调优" },
+];
+const NSTAGE = STAGES.length;
+
+// canonical 9-step → stage-index coverage (shown in empty state)
+const CANON = [
+  { n:1, t:"算子定义",     s:0 },
+  { n:2, t:"Kernel 开发",  s:1 },
+  { n:3, t:"Tiling / Host", s:1 },
+  { n:4, t:"信息与注册",   s:2 },
+  { n:5, t:"编译与打包",   s:4 },
+  { n:6, t:"框架接入",     s:5 },
+  { n:7, t:"图编译入图",   s:5 },
+  { n:8, t:"Runtime 执行", s:6 },
+  { n:9, t:"验证与调优",   s:6 },
 ];
 
 const S = {
   started: false,
   status: STAGES.map(()=> "idle"),
   active: -1,
+  selectedStage: 0,
+  lastRenderedActive: -2,
   expanded: new Set(),
   fileTab: 0,
+  editorFile: "kernel",
   checksShown: 0,
   warningsResolved: false,
+  linkedCheck: null,
   logLines: [],
   deployed: false,
+  graphMode: "online",   // ⑦ online GE / offline ATC
 };
 
 const $body = document.getElementById("tp-body");
 const $mini = document.getElementById("tp-mini");
+const $stageTabs = document.getElementById("stage-tabs");
+const $execBody = document.getElementById("exec-body");
+const $execStageLabel = document.getElementById("exec-stage-label");
+const $execStatus = document.getElementById("exec-status");
+const $execSpin = document.getElementById("exec-spin");
 const $tpStatus = document.getElementById("tp-status");
 const $sbMsg = document.getElementById("sb-msg");
 const $sbDot = document.getElementById("sb-dot");
 const $clRun = document.getElementById("cl-run");
+const $tree = document.getElementById("project-tree");
+const $editorTabs = document.getElementById("editor-tabs");
+const $editorMeta = document.querySelectorAll('[data-ide-slot="preview-header"] .pto-ide-frame__pane-meta');
+const $editorSource = document.getElementById("src");
 
 const sleep = ms => new Promise(r=>setTimeout(r,ms));
 let pending = null;
@@ -353,22 +493,52 @@ function decide(v){ if(pending){ const r=pending; pending=null; r(v); } }
 
 // ════ RENDER ════
 function render() {
+  if (S.active !== S.lastRenderedActive && S.active >= 0) {
+    S.selectedStage = S.active;
+    S.lastRenderedActive = S.active;
+  }
   renderMini();
   renderStatus();
-  if (!S.started) { $body.innerHTML = emptyState(); return; }
-  $body.innerHTML = STAGES.map((st,i)=> stageHTML(i)).join("");
+  renderTree();
+  renderEditor();
+  renderStageTabs();
+  if (!S.started) { $body.innerHTML = emptyState(); $execBody.innerHTML = `<div class="tp-empty" style="padding:var(--space-3)"><p>点击编辑器中的“算子入图”开始执行，运行日志将在此处显示。</p></div>`; bindEmpty(); return; }
+  const selected = Math.max(0, Math.min(S.selectedStage ?? S.active, STAGES.length - 1));
+  $body.innerHTML = `<div class="stage-panel fade">${bodyFor(selected, "result")}</div>`;
+  renderExecutionOutput();
   bind();
-  const act = $body.querySelector(".pstage.is-active");
-  if (act) act.scrollIntoView({ behavior:"smooth", block:"nearest" });
-  const log = document.getElementById("build-log");
-  if (log) log.scrollTop = log.scrollHeight;
+  renderDeepSeekGraph();
+  document.querySelectorAll(".log").forEach(log => { log.scrollTop = log.scrollHeight; });
+}
+
+function renderStageTabs() {
+  if (!$stageTabs) return;
+  const selected = S.selectedStage ?? (S.active >= 0 ? S.active : 0);
+  $stageTabs.innerHTML = STAGES.map((st, i) => {
+    const status = S.status[i];
+    const stateClass = status === "done" ? "is-done" : ["run","attn","review","confirm"].includes(status) ? `is-${status}` : "";
+    return `<button type="button" role="tab" aria-selected="${i===selected}" class="stage-tab ${stateClass} ${i===selected?'is-selected':''}" data-stage-tab="${i}"><span class="num">${i+1} / ${st.steps}</span>${st.short}</button>`;
+  }).join("");
+}
+
+function renderExecutionOutput() {
+  if (!$execBody) return;
+  const active = S.active >= 0 ? S.active : 0;
+  const status = S.status[active] || "idle";
+  $execStageLabel.textContent = S.started ? `${active + 1}. ${STAGES[active].title}` : "等待任务启动";
+  const cls = !S.started ? "" : S.deployed ? "done" : ["attn","review","confirm"].includes(status) ? "wait" : "run";
+  const label = !S.started ? "未开始" : S.deployed ? "已完成" : ["attn","review","confirm"].includes(status) ? "待确认" : "执行中";
+  $execStatus.className = "tp-status "+cls;
+  $execStatus.innerHTML = `<span class="d"></span>${label}`;
+  $execSpin.style.display = cls === "run" ? "inline-block" : "none";
+  $execBody.innerHTML = `<div class="stage-panel fade">${executionBodyFor(active)}</div>`;
 }
 
 function renderMini() {
   $mini.innerHTML = STAGES.map((st,i)=>{
     const done = S.status[i]==="done";
     const active = i===S.active && !done;
-    return `<div class="tp-seg ${done?'done':''} ${active?'active':''}"><div class="bar"></div><div class="lb">${st.title}</div></div>`;
+    return `<div class="tp-seg ${done?'done':''} ${active?'active':''}"><div class="bar"></div><div class="lb">${st.short}</div></div>`;
   }).join("");
 }
 
@@ -378,19 +548,70 @@ function renderStatus() {
   if (!S.started) { txt="未开始"; }
   else if (S.deployed) { cls="done"; txt="已入图"; }
   else if (["attn","review","confirm"].includes(S.status[S.active])) { cls="wait"; txt="待确认"; }
-  else { cls="run"; txt=`运行中 · ${done}/5`; }
+  else { cls="run"; txt=`运行中 · ${done}/${NSTAGE}`; }
   $tpStatus.className = "tp-status "+cls;
   $tpStatus.innerHTML = `<span class="d"></span>${txt}`;
 }
 
+function renderTree() {
+  if (!$tree) return;
+  const active = S.editorFile;
+  const hostReady = S.status[2] === "done";
+  const fusionVisible = hostReady && (S.status[3] !== "idle" || S.warningsResolved || S.linkedCheck === 8);
+  const row = (label, key, extra="", clickable=true) => `<div class="tree-row file ${active===key?'active':''} ${S.linkedCheck!==null && CHECKS[S.linkedCheck]?.file===Number(key.replace('host-','')) && active===key?'linked':''} ${clickable?'click':''} ${extra}" style="padding-left:34px" ${clickable?`data-tree-file="${key}"`:''}>${label}${key==="kernel"?'<span class="d mod"></span>':''}</div>`;
+  const hostRows = !S.started ? "" : hostReady ? GEN_FILES.slice(0, 3).map((f,i)=>row(f.name, `host-${i}`)).join("") : `<div class="tree-row file pending" style="padding-left:34px">(由入图任务生成)</div>`;
+  const fusionRow = fusionVisible ? row("flash_attention_v2_fusion.cpp", "host-3", S.warningsResolved ? "" : "pending") : "";
+  const opInfoRow = hostReady ? row("ops-info.json", "host-4", "", true) : "";
+  const hostSection = !S.started ? "" : `<div class="tree-row dir" style="padding-left:16px">${hostReady?'op_host':'op_host (生成中)'}</div>${hostRows}${fusionRow}${opInfoRow}`;
+  $tree.innerHTML = `<div class="tree-sec">CUSTOM_OPS</div>
+    <div class="tree-row dir">FlashAttentionV2</div>
+    ${hostSection}
+    <div class="tree-row dir" style="padding-left:16px">op_kernel</div>
+    ${row("flash_attention_v2.cpp", "kernel")}
+    <div class="tree-row file" style="margin-top:6px">CMakeLists.txt</div>
+    <div class="tree-row file">build.sh</div>`;
+  $tree.querySelectorAll("[data-tree-file]").forEach(node=>{
+    node.onclick = () => { S.editorFile=node.dataset.treeFile; render(); };
+  });
+}
+
+function renderEditor() {
+  if (!$editorSource || !$editorTabs) return;
+  const hostIndex = S.editorFile.indexOf("host-")===0 ? Number(S.editorFile.slice(5)) : -1;
+  const item = hostIndex >= 0 ? GEN_FILES[hostIndex] : null;
+  const name = item ? item.name : "flash_attention_v2.cpp";
+  const path = item ? `custom_ops / FlashAttentionV2 / op_host / ${name}` : "custom_ops / FlashAttentionV2 / op_kernel / flash_attention_v2.cpp";
+  const kind = item ? "AscendC Host / GE" : "AscendC Kernel / BF16";
+  const lines = item ? item.code.split("\n") : SRC_LINES;
+  $editorTabs.innerHTML = [
+    `<button class="tab-control-item ${!item?'is-selected':''}" type="button" role="tab" data-editor-file="kernel">flash_attention_v2.cpp</button>`,
+    ...(item ? [`<button class="tab-control-item is-selected" type="button" role="tab" data-editor-file="${S.editorFile}">${item.name}</button>`] : [])
+  ].join("");
+  if ($editorMeta.length > 0) $editorMeta[0].textContent = path;
+  if ($editorMeta.length > 1) $editorMeta[1].textContent = kind;
+  $editorSource.innerHTML = lines.map((line,i)=>`<span class="ln ${item && line.indexOf('hl')>=0?'mark':''}" data-n="${i+1}">${line||"&nbsp;"}</span>`).join("");
+  $editorTabs.querySelectorAll("[data-editor-file]").forEach(tab=>{
+    tab.onclick = () => { S.editorFile=tab.dataset.editorFile; render(); };
+  });
+}
+
 function emptyState() {
+  const chips = CANON.map(c=>`<div class="flow-chip"><span class="n">${c.n}</span>${c.t}</div>`).join("");
   return `<div class="tp-empty fade">
     <div class="big">⚡</div>
     <h3>从源码发起算子入图</h3>
     <p>你已在编辑器中完成 <span class="mono" style="color:var(--foreground-secondary)">FlashAttentionV2</span> 的实现。点击源码上方的
-    <span style="color:var(--primary-hover)">⚡ 算子入图</span>，工具会自动识别签名、生成入图契约、静态校验并预览，只在需要你决策时暂停。</p>
-    <div style="margin-top:var(--space-5)"><button class="btn btn-sm btn-solid" id="start-btn">⚡ 发起算子入图任务</button></div>
+    <span style="color:var(--primary-hover)">⚡ 算子入图</span>，工具将沿昇腾 Ascend C 完整入图链路执行，只在需要你决策时暂停。</p>
+    <div class="flow-map">
+      <div class="fm-t">覆盖入图 9 步 → 7 个任务阶段</div>
+      <div class="flow-grid">${chips}</div>
+    </div>
+    <div style="margin-top:var(--space-4)"><button class="btn btn-sm btn-solid" id="start-btn">⚡ 发起算子入图任务</button></div>
   </div>`;
+}
+function bindEmpty(){
+  const b = document.getElementById("start-btn");
+  if (b) b.onclick = runPipeline;
 }
 
 function stageHTML(i) {
@@ -407,12 +628,13 @@ function stageHTML(i) {
   return `<div class="pstage ${clsMap[status]} ${open?'open':''} ${isActive?'is-active':''}">
     <div class="pnode">${node}</div>
     <div class="pstage-head ${canClick?'click':''}" data-i="${i}">
+      <span class="step-badge">${st.steps}</span>
       <span class="pstage-title">${st.title}</span>
       <span class="pstage-cap">${capFor(i)}</span>
       <span class="spacer"></span>
       ${canClick? `<span class="chev">▶</span>`:""}
     </div>
-    ${open? `<div class="pstage-body fade">${bodyFor(i)}</div>` : ""}
+    ${open? `<div class="pstage-body fade">${bodyFor(i, "result")}</div>` : ""}
   </div>`;
 }
 
@@ -423,29 +645,66 @@ function capFor(i) {
   if (status==="done") return doneCap(i);
   return STAGES[i].cap;
 }
-function runCap(i){ return ["解析源码…","生成契约产物…","执行校验规则…","构建图上下文…","编译并注册…"][i]; }
+function runCap(i){ return ["解析源码抽取签名…","introspect 内核 & tiling…","补全 OpDef 契约…","执行校验规则…","编译并打包 OPP…","构建图上下文…","下发执行 & 采样…"][i]; }
 function doneCap(i){
   return [
-    `${OP.type} · 3 输入 / 1 输出 · 3 属性`,
-    `3 份契约产物已生成`,
-    S.warningsResolved ? `6 项通过（2 项建议已套用）` : `4 通过 · 2 提醒 · 0 阻断`,
-    `节点可放置 AI Core · 融合后 7→5`,
-    `已注册 GE · 回归 PASS`,
+    `${OP.type} · 3 输入 / 1 输出 · 3 属性 · 动态 Shape`,
+    `AI Core · UB 72% · blockDim 20 · 双流水`,
+    `OpDef / 推导 / Tiling / ops-info 已就绪`,
+    S.warningsResolved ? `9 项通过（2 项建议已套用）` : `7 通过 · 2 提醒 · 0 阻断`,
+    `OPP 包已安装 · ASCEND_CUSTOM_OPP_PATH 就绪`,
+    `${S.graphMode==="offline"?"离线 ATC → .om":"在线 GE"} · 融合后 7→5`,
+    `AI Core selected · max_rel 2.7e-3 · PASS`,
   ][i];
 }
 
-function bodyFor(i){ return [detectBody, generateBody, validateBody, previewBody, deployBody][i](); }
+function bodyFor(i, mode="exec"){
+  const builders = [detectBody, kernelBody, generateBody, validateBody, packageBody, graphBody, runtimeBody];
+  const build = builders[i];
+  if (mode !== "result") return build(mode);
 
-function detectBody() {
-  if (S.status[0]==="run") return skeleton("正在解析 AscendC 源码…");
+  const previousStatus = S.status[i];
+  const previousChecksShown = S.checksShown;
+  const keepActionState = (i === 3 && previousStatus === "attn") ||
+    (i === 4 && previousStatus === "confirm") ||
+    (i === 5 && previousStatus === "review");
+  if (!keepActionState) S.status[i] = "done";
+  if (i === 3) S.checksShown = CHECKS.length;
+  try {
+    return build(mode);
+  } finally {
+    S.status[i] = previousStatus;
+    S.checksShown = previousChecksShown;
+  }
+}
+
+function executionBodyFor(i){
+  const status = S.status[i];
+  if (status === "attn") return pendingAction("等待在右侧处理静态校验提醒");
+  if (status === "confirm") return pendingAction("等待在右侧确认编译与打包操作");
+  if (status === "review") return pendingAction("等待在右侧确认入图预览结构");
+  if (i === 4 && (status === "run" || status === "done")) {
+    return `<div class="log" id="build-log">${S.logLines.map(l=>`<div>${l}</div>`).join("")}</div>`;
+  }
+  if (i === 6 && (status === "run" || status === "done")) {
+    return `<div class="log" id="runtime-log">${S.logLines.map(l=>`<div>${l}</div>`).join("")}</div>`;
+  }
+  if (status === "run") return skeleton(runCap(i));
+  if (status === "done") return `<div class="log"><div><span class="ok">✓</span> ${doneCap(i)}</div></div>`;
+  return `<div class="log"><div>${STAGES[i].cap}</div></div>`;
+}
+
+// ── ① 识别与定义 ─────────────────────────────────────────────
+function detectBody(mode="exec") {
+  if (S.status[0]==="run") return skeleton("正在解析 AscendC 源码抽取算子签名…");
   const io = a => a.map(t=>`<div class="kv"><span class="k">${t.name}</span><span class="v">${t.dtype} · ${t.shape}</span></div>`).join("");
   return `<div class="soft">
     <div class="soft-head"><span class="t">算子签名</span><span class="spacer"></span><span class="badge badge--success">解析成功</span></div>
     <div class="sig-grid">
       <div class="kv"><span class="k">op type</span><span class="v">${OP.type}</span></div>
+      <div class="kv"><span class="k">op_proto</span><span class="v">${OP.proto}</span></div>
       <div class="kv"><span class="k">engine</span><span class="v">${OP.engine}</span></div>
       <div class="kv"><span class="k">tiling</span><span class="v">${OP.tiling}</span></div>
-      <div class="kv"><span class="k">attrs</span><span class="v">${OP.attrs.length}</span></div>
     </div>
     <div style="height:1px;background:var(--border-subtle);margin:8px 0"></div>
     <div class="sig-grid">
@@ -455,12 +714,58 @@ function detectBody() {
         ${OP.attrs.map(a=>`<div class="kv"><span class="k">${a.name}</span><span class="v">${a.type}</span></div>`).join("")}
       </div>
     </div>
+  </div>
+  <div class="soft">
+    <div class="soft-head"><span class="t">算子定义约束 · 步骤①</span><span class="spacer"></span><span class="badge badge--info">入图基线</span></div>
+    <div class="sig-grid">
+      <div class="kv"><span class="k">format</span><span class="v">${OP.format}</span></div>
+      <div class="kv"><span class="k">动态 Shape</span><span class="v" style="color:var(--success)">${OP.dynamicShape?"支持":"否"}</span></div>
+      <div class="kv"><span class="k">精度要求</span><span class="v">${OP.precision}</span></div>
+      <div class="kv"><span class="k">目标 SoC</span><span class="v">${OP.soc.join(" / ")}</span></div>
+    </div>
+  </div>
+  <div class="soft">
+    <div class="soft-head"><span class="t">完整入图边界</span><span class="spacer"></span><span class="badge badge--info">9 步链路</span></div>
+    <div class="sig-grid">
+      <div class="kv"><span class="k">目标模型</span><span class="v">${OP.model}</span></div>
+      <div class="kv"><span class="k">前端</span><span class="v">${OP.frameworks.join(" / ")}</span></div>
+      <div class="kv"><span class="k">图编译</span><span class="v">${OP.converter}</span></div>
+      <div class="kv"><span class="k">运行时</span><span class="v">${OP.runtime}</span></div>
+    </div>
+    <div class="kv"><span class="k">整机落位</span><span class="v">${OP.landsAt}</span></div>
   </div>`;
 }
 
+// ── ②③ Kernel & Tiling ──────────────────────────────────────
+function kernelBody(mode="exec") {
+  if (S.status[1]==="run") return skeleton("introspect op_kernel 与 Host tiling 策略…");
+  const k = OP.kernel, th = OP.tilingHost;
+  const bars = k.buffers.map(b=>`<div class="usebar"><span class="u-k">${b.k}</span>
+    <span class="u-track"><span class="u-fill" style="width:${b.pct}%"></span></span>
+    <span class="u-v">${b.v}</span></div>`).join("");
+  return `<div class="soft">
+    <div class="soft-head"><span class="t">内核实现 · 步骤②</span><span class="spacer"></span><span class="badge badge--info">只读 introspect</span></div>
+    <div class="kv"><span class="k">运行核</span><span class="v">${OP.engine}</span></div>
+    <div class="kv"><span class="k">核间切分</span><span class="v">${k.coreSplit}</span></div>
+    <div class="kv"><span class="k">流水并行</span><span class="v">${k.pipeline}</span></div>
+    <div style="height:1px;background:var(--border-subtle);margin:8px 0"></div>
+    <div class="kv" style="padding-bottom:2px"><span class="k" style="color:var(--foreground-secondary)">片上缓冲占用</span><span class="v"></span></div>
+    ${bars}
+  </div>
+  <div class="soft">
+    <div class="soft-head"><span class="t">Tiling / Host 侧 · 步骤③</span><span class="spacer"></span><span class="badge badge--success">动态 Shape</span></div>
+    <div class="kv"><span class="k">blockDim</span><span class="v">${th.blockDim}</span></div>
+    <div class="kv"><span class="k">每核范围</span><span class="v">${th.perCore}</span></div>
+    <div class="kv"><span class="k">TilingData 字段</span><span class="v">${th.fields}</span></div>
+    <div class="kv"><span class="k">动态策略</span><span class="v">${th.dynamic}</span></div>
+  </div>
+  <div class="note-card info">内核与 tiling 由工具从 <span class="mono">op_kernel</span> 源码只读解析，作为下一步生成 OpDef / InferShape / Tiling 契约的事实依据 —— 不修改你的实现。</div>`;
+}
+
+// ── ④ 生成契约与注册 ────────────────────────────────────────
 let runGenCaption = "生成契约产物…";
-function generateBody() {
-  if (S.status[1]==="run") return skeleton(runGenCaption);
+function generateBody(mode="exec") {
+  if (S.status[2]==="run") return skeleton(runGenCaption);
   const f = GEN_FILES[S.fileTab];
   return `<div class="soft" style="padding:0;overflow:hidden">
     <div class="file-tabs">
@@ -471,12 +776,15 @@ function generateBody() {
   <div class="note-card info" style="margin-top:var(--space-2)">${f.note}</div>`;
 }
 
-function validateBody() {
-  const shown = CHECKS.slice(0, S.checksShown);
-  const list = shown.map(c=>{
+// ── ✓ 静态校验 ──────────────────────────────────────────────
+function validateBody(mode="exec") {
+  const shown = CHECKS.slice(0, mode==="result" ? CHECKS.length : S.checksShown);
+  const list = shown.map((c, checkIndex)=>{
     const resolved = S.warningsResolved && c.level==="warn";
     const lvl = resolved ? "ok" : c.level;
-    return `<div class="check fade">
+    const linkable = c.file !== undefined && !resolved;
+    const linked = S.linkedCheck===checkIndex;
+    return `<div class="check fade ${linkable?'check-linkable':''} ${linked?'is-linked':''}" ${linkable?`data-check="${checkIndex}" role="button" tabindex="0" data-tooltip="打开关联文件"`:""}>
       <div class="ico ${lvl}">${lvl==="ok"?"✓":"!"}</div>
       <div class="c-body" style="flex:1">
         <div class="c-title">${c.title}
@@ -487,56 +795,166 @@ function validateBody() {
     </div>`;
   }).join("");
   let footer = "";
-  if (S.status[2]==="attn") {
+  if (mode==="exec" && S.status[3]==="attn") {
+    footer = pendingAction("等待在右侧处理静态校验提醒");
+  } else if (S.status[3]==="attn") {
     footer = `<div class="note-card" style="margin-top:var(--space-3)">
       <b>2 项提醒不阻断入图</b>，但建议处理以获得更好的 GE 选择率与融合效果。
       <div class="actions">
         <button class="btn btn-sm btn-solid" data-act="fix">应用建议修复</button>
         <button class="btn btn-sm" data-act="skip">忽略并继续</button>
       </div></div>`;
-  } else if (S.status[2]==="done" && S.warningsResolved) {
-    footer = `<div class="note-card info" style="margin-top:var(--space-3)">已套用 2 项建议：补充 FP16 组合、注册 UB Fusion 规则。全部规则通过。</div>`;
+  } else if (S.status[3]==="done" && S.warningsResolved) {
+    footer = `<div class="note-card info" style="margin-top:var(--space-3)">已套用 2 项建议：OpDef 增补 FP16 组合、注册 UB Fusion 规则。全部规则通过。</div>`;
   }
   return `<div class="soft">${list}</div>${footer}`;
 }
 
-function previewBody() {
-  const footer = S.status[3]==="review" ? `<div class="actions" style="margin-top:var(--space-3)">
-      <button class="btn btn-sm btn-solid" data-act="preview-ok">确认结构无误，继续</button></div>` : "";
-  return `<div class="graph-wrap">${GRAPH_SVG}
-    <div class="legend">
-      <span class="li"><span class="sw" style="background:var(--surface-3)"></span>上下游算子</span>
-      <span class="li"><span class="sw" style="background:var(--primary)"></span>本算子（新入图）</span>
-      <span class="li"><span class="sw" style="background:rgba(4,215,147,.25);border:1px dashed var(--success)"></span>可融合边界</span>
-    </div></div>
-  <div class="grid2" style="margin-top:var(--space-2)">
-    <div class="soft"><div class="kv"><span class="k">节点可放置</span><span class="v" style="color:var(--success)">AI Core</span></div>
-      <div class="kv"><span class="k">shape 推导</span><span class="v" style="color:var(--success)">闭合</span></div>
-      <div class="kv"><span class="k">回退 AICPU</span><span class="v" style="color:var(--success)">否</span></div></div>
-    <div class="soft"><div class="kv"><span class="k">上游 Cast</span><span class="v" style="color:var(--warning)">可融合</span></div>
-      <div class="kv"><span class="k">下游 Add</span><span class="v" style="color:var(--warning)">可融合</span></div>
-      <div class="kv"><span class="k">HBM 往返</span><span class="v" style="color:var(--success)">-38%</span></div></div>
-  </div>${footer}`;
-}
-
-function deployBody() {
+// ── ⑤ 编译与打包 ────────────────────────────────────────────
+function packageBody(mode="exec") {
+  if (mode==="exec" && S.status[4]==="confirm") {
+    return pendingAction("等待在右侧确认编译与打包操作");
+  }
   if (S.status[4]==="confirm") {
     return `<div class="note-card">
-      即将编译 custom op 包并<b> 注册到 GE</b>（写入 CANN 算子库 <span class="mono">opp/vendors/custom</span>）。这是本任务唯一有落盘副作用的步骤。
-      <div class="actions"><button class="btn btn-sm btn-solid" data-act="build">🚀 构建并注册</button>
+      即将执行 <span class="mono">build.sh</span> 用 CANN 工具链编译 <b>op_host + op_kernel</b>，打包为自定义算子 <b>OPP 包</b>并安装到
+      <span class="mono">opp/vendors/custom</span>（含编译期自动生成的 <span class="mono">ops-info.json</span> 与 aclnn API），随后设置 <span class="mono">ASCEND_CUSTOM_OPP_PATH</span>。<b>这是本任务唯一有落盘副作用的步骤。</b>
+      <div class="actions"><button class="btn btn-sm btn-solid" data-act="build">🚀 编译并打包</button>
       <button class="btn btn-sm" data-act="build-cancel">稍后</button></div></div>`;
   }
   if (S.status[4]==="run") {
     return `<div class="log" id="build-log">${S.logLines.map(l=>`<div>${l}</div>`).join("")}</div>`;
   }
+  // done
+  return `<div class="soft">
+      <div class="soft-head"><span class="t">算子包产物 · 步骤⑤</span><span class="spacer"></span><span class="badge badge--success">已安装</span></div>
+      <div class="kv"><span class="k">OPP 包</span><span class="v">custom_opp_ubuntu_aarch64.run</span></div>
+      <div class="kv"><span class="k">安装路径</span><span class="v">opp/vendors/custom</span></div>
+      <div class="kv"><span class="k">ops-info.json</span><span class="v" style="color:var(--success)">编译期自动生成</span></div>
+      <div class="kv"><span class="k">aclnn API</span><span class="v" style="color:var(--success)">已导出</span></div>
+      <div class="kv"><span class="k">ASCEND_CUSTOM_OPP_PATH</span><span class="v" style="color:var(--success)">已定位包</span></div>
+    </div>
+    <div class="note-card info">部署点检：运行时与图编译器均通过 <span class="mono">ASCEND_CUSTOM_OPP_PATH</span> 定位该 OPP 包；未设置将导致 GE 找不到自定义算子实现而回退。</div>`;
+}
+
+// ── ⑥⑦ 框架接入与入图 ──────────────────────────────────────
+function graphBody(mode="exec") {
+  if (S.status[5]==="run") return skeleton("构建框架前端封装与 GE 图上下文…");
+  const offline = S.graphMode==="offline";
+  const pathCard = offline
+    ? `<div class="soft"><div class="soft-head"><span class="t">离线路径 · ATC</span><span class="spacer"></span><span class="badge badge--info">导出 .om</span></div>
+        <div class="kv"><span class="k">导出</span><span class="v">framework model → ONNX</span></div>
+        <div class="kv"><span class="k">ATC 编译</span><span class="v">Parse → CheckSupport → AICore</span></div>
+        <div class="kv"><span class="k">模型产物</span><span class="v">flash_attention_v2.om</span></div>
+        <div class="kv"><span class="k">节点识别</span><span class="v" style="color:var(--success)">保留自定义节点</span></div></div>`
+    : `<div class="soft"><div class="soft-head"><span class="t">在线路径 · GE</span><span class="spacer"></span><span class="badge badge--info">图编译执行</span></div>
+        <div class="kv"><span class="k">识别注册算子</span><span class="v" style="color:var(--success)">OperatorFactory 命中</span></div>
+        <div class="kv"><span class="k">选择实现</span><span class="v">CheckSupport → AI Core</span></div>
+        <div class="kv"><span class="k">调用 Tiling</span><span class="v">真实 shape → TilingData</span></div>
+        <div class="kv"><span class="k">生成执行图</span><span class="v" style="color:var(--success)">融合后 7→5</span></div></div>`;
+  const footer = mode==="exec" && S.status[5]==="review"
+    ? pendingAction("等待在右侧确认入图预览结构")
+    : S.status[5]==="review" ? `<div class="actions" style="margin-top:var(--space-3)">
+      <button class="btn btn-sm btn-solid" data-act="preview-ok">确认结构无误，继续</button></div>` : "";
+  return `<div class="soft">
+      <div class="soft-head"><span class="t">框架侧接入 · 步骤⑥</span><span class="spacer"></span><span class="badge badge--success">节点保留</span></div>
+      <div class="kv"><span class="k">目标模型</span><span class="v">${OP.model}</span></div>
+      <div class="kv"><span class="k">前端封装</span><span class="v">torch.ops.custom.FlashAttentionV2</span></div>
+      <div class="kv"><span class="k">Shape/Type 推导</span><span class="v" style="color:var(--success)">前端已注册</span></div>
+      <div class="kv"><span class="k">回退检查</span><span class="v" style="color:var(--success)">不退回 Python / CPU</span></div>
+    </div>
+    <div style="display:flex;align-items:center;gap:var(--space-2);margin:var(--space-3) 0 var(--space-2)">
+      <span style="font-size:var(--font-size-body-sm);color:var(--foreground-muted)">图编译入图 · 步骤⑦</span>
+      <span class="spacer" style="flex:1"></span>
+      <div class="seg">
+        <button class="${offline?'':'on'}" data-mode="online">在线 GE</button>
+        <button class="${offline?'on':''}" data-mode="offline">离线 ATC</button>
+      </div>
+    </div>
+    ${pathCard}
+    <div class="soft" style="margin-top:var(--space-2)">
+      <div class="soft-head"><span class="t">算子在整机模型中的位置</span><span class="spacer"></span><span class="badge badge--info">${OP.model}</span></div>
+      <div class="pto-model-graphviz-pattern-page" style="min-height:0;background:transparent">
+        <div id="ds-model-graph" class="ds-graph-host"></div>
+      </div>
+      <div class="ds-graph-cap"><span class="mono" style="color:var(--foreground)">FlashAttentionV2</span> 入图后落位于 ${OP.model} 每个解码层的 <b>MLA 注意力核</b>（dense 0–2 / MoE 3–60，共 61 层复用）；上游 <span class="mono">attn_norm</span>、下游 <span class="mono">Attention Output Linear</span> 构成其融合上下文。</div>
+      <div class="legend">
+        <span class="li"><span class="sw" style="background:#FF2D7A"></span>本次入图算子落位（MLA 注意力核）</span>
+        <span class="li"><span class="sw" style="background:var(--model-graphviz-tensor-fill, var(--surface-4))"></span>张量 / 状态</span>
+      </div>
+    </div>
+    <div class="graph-wrap" style="margin-top:var(--space-2)">
+      <div style="font-size:11px;color:var(--foreground-muted);font-family:var(--font-mono);margin-bottom:6px">解码层内 · GE 融合边界（局部放大）</div>
+      ${GRAPH_SVG}
+    <div class="legend">
+      <span class="li"><span class="sw" style="background:var(--surface-3)"></span>上下游算子</span>
+      <span class="li"><span class="sw" style="background:var(--primary)"></span>本算子（新入图）</span>
+      <span class="li"><span class="sw" style="background:rgba(4,215,147,.25);border:1px dashed var(--success)"></span>可融合边界</span>
+    </div></div>
+    <div class="grid2" style="margin-top:var(--space-2)">
+    <div class="soft"><div class="kv"><span class="k">算子选择 CheckSupport</span><span class="v" style="color:var(--success)">命中 AI Core</span></div>
+      <div class="kv"><span class="k">shape 推导</span><span class="v" style="color:var(--success)">闭合</span></div>
+      <div class="kv"><span class="k">Tiling 绑定</span><span class="v" style="color:var(--success)">已就绪</span></div>
+      <div class="kv"><span class="k">回退 AICPU</span><span class="v" style="color:var(--success)">否</span></div></div>
+    <div class="soft"><div class="kv"><span class="k">上游 attn_norm</span><span class="v" style="color:var(--warning)">可融合</span></div>
+      <div class="kv"><span class="k">下游 Add</span><span class="v" style="color:var(--warning)">可融合</span></div>
+      <div class="kv"><span class="k">HBM 往返</span><span class="v" style="color:var(--success)">-38%</span></div></div>
+    </div>${footer}`;
+}
+
+// 调用设计系统 model-graphviz pattern 渲染 DeepSeek 整机架构图，并高亮本算子落位
+function buildDsGraph() {
+  const base = window.PtoModelGraphvizPattern?.defaultGraphs?.deepseekV32;
+  if (!base) return null;
+  const g = JSON.parse(JSON.stringify(base));
+  (g.clusters||[]).forEach(c=> { delete c.reportPriority; });
+  (g.nodes||[]).forEach(n=> { delete n.reportPriority; });
+  const mla = (g.nodes||[]).find(n=>n.id==="mla");
+  if (mla) { mla.label = "FlashAttentionV2"; mla.typeLabel = "MLA 注意力核 · 新入图"; mla.reportPriority = "P0"; }
+  return g;
+}
+function renderDeepSeekGraph() {
+  const hosts = document.querySelectorAll("#ds-model-graph");
+  if (!hosts.length) return;
+  const host = hosts[0];
+  if (!window.PtoModelGraphvizPattern) { host.innerHTML = `<div style="padding:14px;color:var(--foreground-muted);font-size:12px">模型图资源未加载（需经本地 HTTP 服务打开）</div>`; return; }
+  const g = buildDsGraph();
+  if (!g) return;
+  window.PtoModelGraphvizPattern.render(host, g, { width:g.width||720, height:g.height||1280, reportOverlays:true, ariaLabel:`${OP.model} 架构 · FlashAttentionV2 落位` });
+  requestAnimationFrame(()=>{
+    const scale = hosts[0].clientWidth / (g.width||720);
+    const mlaY = (g.nodes.find(n=>n.id==="mla")||{}).y || 486;
+    hosts[0].scrollTop = Math.max(0, mlaY*scale - hosts[0].clientHeight/2);
+  });
+}
+
+// ── ⑧⑨ Runtime 执行与验收调优 ───────────────────────────────
+function runtimeBody(mode="exec") {
+  if (S.status[6]==="run") {
+    return `<div class="log" id="build-log">${S.logLines.map(l=>`<div>${l}</div>`).join("")}</div>`;
+  }
   return `<div class="soft success-hero fade">
       <div class="ring">✓</div><h2>算子已成功入图</h2>
-      <p><span class="mono">${OP.type}</span> 已注册到 GE，回归图中被正确选中。</p></div>
+      <p><span class="mono">${OP.type}</span> 已注册到 GE，Runtime 按图正确下发到 AI Core。</p></div>
+    <div class="soft" style="margin-top:var(--space-2)">
+      <div class="soft-head"><span class="t">Runtime 执行 · 步骤⑧</span><span class="spacer"></span><span class="badge badge--success">已下发</span></div>
+      <div class="kv"><span class="k">加载链路</span><span class="v">OPP → GE → ACL Runtime</span></div>
+      <div class="kv"><span class="k">Tiling 传递</span><span class="v">Host 生成 → kernel 接收</span></div>
+      <div class="kv"><span class="k">核下发</span><span class="v" style="color:var(--success)">AICore kernel · 结果写回</span></div>
+    </div>
     <div class="grid2" style="margin-top:var(--space-2)">
-      <div class="metric"><div class="m-val" style="color:var(--success)">Selected</div><div class="m-lab">GE 选择（非 AICPU 回退）</div></div>
+      <div class="metric"><div class="m-val" style="color:var(--success)">Selected</div><div class="m-lab">GE CheckSupport（非 AICPU 回退）</div></div>
       <div class="metric"><div class="m-val">2.7e-3</div><div class="m-lab">回归精度误差（阈 4e-3）</div></div>
-      <div class="metric"><div class="m-val" style="font-size:14px">op_package_v2.run</div><div class="m-lab">算子包 · 已安装</div></div>
+      <div class="metric"><div class="m-val" style="color:var(--success)">83%</div><div class="m-lab">msprof AICore 利用率</div></div>
       <div class="metric"><div class="m-val" style="color:var(--success)">7 → 5</div><div class="m-lab">融合后图节点数</div></div>
+    </div>
+    <div class="soft" style="margin-top:var(--space-2)">
+      <div class="soft-head"><span class="t">验收与性能调优 · 步骤⑨</span><span class="spacer"></span><span class="badge badge--success">可交付</span></div>
+      <div class="kv"><span class="k">功能对齐</span><span class="v">max_rel 2.7e-3 &lt; 4e-3</span></div>
+      <div class="kv"><span class="k">动态 Shape</span><span class="v">[1,32,128,128] / [1,32,512,128]</span></div>
+      <div class="kv"><span class="k">边界 / 异常</span><span class="v" style="color:var(--success)">已覆盖</span></div>
+      <div class="kv"><span class="k">msprof</span><span class="v">AICore selected · 搬运 -38%</span></div>
+      <div class="kv"><span class="k">Tiling 合理性</span><span class="v" style="color:var(--success)">核利用均衡</span></div>
     </div>
     <div class="actions"><button class="btn btn-sm">在 Pass IR 查看</button><button class="btn btn-sm">打开性能泳道</button><button class="btn btn-sm">导出算子包</button></div>`;
 }
@@ -545,13 +963,35 @@ function skeleton(txt){
   return `<div class="soft" style="display:flex;align-items:center;gap:var(--space-3);color:var(--foreground-muted)">
     <span class="spin"></span><span style="font-size:var(--font-size-body-sm)">${txt}</span></div>`;
 }
+function pendingAction(txt){
+  return `<div class="soft" style="display:flex;align-items:center;gap:var(--space-3);color:var(--foreground-muted)">
+    <span class="spin" style="animation:none;border-top-color:var(--foreground-disabled)"></span>
+    <span style="font-size:var(--font-size-body-sm)">${txt}</span></div>`;
+}
 
 function bind() {
-  $body.querySelectorAll(".pstage-head.click").forEach(h=>{
-    h.onclick = () => { const i=+h.dataset.i; if(S.expanded.has(i)) S.expanded.delete(i); else S.expanded.add(i); render(); };
+  $stageTabs.querySelectorAll("[data-stage-tab]").forEach(tab=>{
+    tab.onclick = () => { S.selectedStage = +tab.dataset.stageTab; render(); };
   });
-  $body.querySelectorAll(".file-tab").forEach(t=>{ t.onclick = e=>{ e.stopPropagation(); S.fileTab=+t.dataset.f; render(); }; });
-  $body.querySelectorAll("[data-act]").forEach(b=>{ b.onclick = e => { e.stopPropagation(); handleAct(b.dataset.act); }; });
+  const interactiveRoots = [$body].filter(Boolean);
+  interactiveRoots.forEach(root => root.querySelectorAll(".pstage-head.click").forEach(h=>{
+    h.onclick = () => { const i=+h.dataset.i; if(S.expanded.has(i)) S.expanded.delete(i); else S.expanded.add(i); render(); };
+  }));
+  interactiveRoots.forEach(root => root.querySelectorAll(".file-tab").forEach(t=>{ t.onclick = e=>{ e.stopPropagation(); S.fileTab=+t.dataset.f; render(); }; }));
+  interactiveRoots.forEach(root => root.querySelectorAll("[data-mode]").forEach(t=>{ t.onclick = e=>{ e.stopPropagation(); S.graphMode=t.dataset.mode; render(); }; }));
+  interactiveRoots.forEach(root => root.querySelectorAll(".check-linkable").forEach(c=>{
+    c.onclick = () => openCheckFile(+c.dataset.check);
+    c.onkeydown = e => { if (e.key==="Enter" || e.key===" ") { e.preventDefault(); openCheckFile(+c.dataset.check); } };
+  }));
+  interactiveRoots.forEach(root => root.querySelectorAll("[data-act]").forEach(b=>{ b.onclick = e => { e.stopPropagation(); handleAct(b.dataset.act); }; }));
+}
+function openCheckFile(checkIndex) {
+  const check = CHECKS[checkIndex];
+  if (!check || check.file===undefined) return;
+  S.editorFile=`host-${check.file}`;
+  S.linkedCheck=checkIndex;
+  render();
+  requestAnimationFrame(() => document.querySelector(`[data-tree-file="host-${check.file}"]`)?.scrollIntoView({ behavior:"smooth", block:"center" }));
 }
 function handleAct(act){
   if (act==="fix"){ S.warningsResolved=true; decide("fix"); }
@@ -567,35 +1007,48 @@ async function runPipeline() {
   $clRun.classList.add("spent"); $clRun.textContent = "⚡ 入图任务进行中";
   setSb("识别算子…","run");
 
+  // ① 识别与定义
   S.active=0; S.status[0]="run"; render(); await sleep(950);
-  S.status[0]="done"; setSb("已识别签名 · 生成入图契约…","run");
+  S.status[0]="done"; setSb("已识别签名与定义约束 · 核对内核…","run");
 
-  S.active=1; S.status[1]="run"; render();
-  const gs=["原型定义 InferShape…","算子信息库 .ini…","框架适配 plugin…"];
-  for (let k=0;k<gs.length;k++){ runGenCaption=gs[k]; render(); await sleep(620); }
-  S.status[1]="done"; S.fileTab=0; setSb("契约已生成 · 静态校验…","run");
+  // ②③ Kernel & Tiling
+  S.active=1; S.status[1]="run"; render(); await sleep(900);
+  S.status[1]="done"; setSb("内核 & tiling 已核对 · 生成入图契约…","run");
 
-  S.active=2; S.status[2]="run"; S.checksShown=0; render();
-  for (let k=0;k<CHECKS.length;k++){ S.checksShown=k+1; render(); await sleep(340); }
-  S.status[2]="attn"; setSb("校验完成 · 2 项提醒待处理","wait"); render();
+  // ④ 生成契约与注册
+  S.active=2; S.status[2]="run"; render();
+  const gs=["OpDef 原型 + dtype/format 支持列表…","InferShape / InferDataType…","Tiling 契约…","ops-info.json 注册信息…"];
+  for (let k=0;k<gs.length;k++){ runGenCaption=gs[k]; render(); await sleep(560); }
+  S.status[2]="done"; S.fileTab=0; setSb("契约与注册信息已生成 · 静态校验…","run");
+
+  // ✓ 静态校验
+  S.active=3; S.status[3]="run"; S.checksShown=0; render();
+  for (let k=0;k<CHECKS.length;k++){ S.checksShown=k+1; render(); await sleep(300); }
+  S.status[3]="attn"; setSb("校验完成 · 2 项提醒待处理","wait"); render();
   const vChoice = await gate();
-  S.status[2]="done"; setSb(vChoice==="fix"?"建议已套用 · 生成入图预览…":"已忽略提醒 · 生成入图预览…","run");
+  S.status[3]="done"; setSb(vChoice==="fix"?"建议已套用 · 编译打包…":"已忽略提醒 · 编译打包…","run");
 
-  S.active=3; S.status[3]="run"; render(); await sleep(650);
-  S.status[3]="review"; setSb("入图预览就绪 · 请确认结构","wait"); render();
-  await gate();
-  S.status[3]="done"; setSb("预览已确认 · 待构建","wait");
-
+  // ⑤ 编译与打包（唯一落盘副作用，需确认）
   S.active=4; S.status[4]="confirm"; render();
   await gate();
-  S.status[4]="run"; S.logLines=[]; setSb("构建并注册中…","run"); render();
-  for (const l of BUILD_LOG){ S.logLines.push(l); render(); await sleep(340+Math.random()*240); }
-  S.deployed=true; S.status[4]="done"; setSb("✓ 算子已成功入图","done"); render();
+  S.status[4]="run"; S.logLines=[]; setSb("编译并打包 OPP…","run"); render();
+  for (const l of PACKAGE_LOG){ S.logLines.push(l); render(); await sleep(320+Math.random()*220); }
+  S.status[4]="done"; setSb("OPP 包已安装 · 框架接入与入图…","run");
+
+  // ⑥⑦ 框架接入与入图（需确认结构）
+  S.active=5; S.status[5]="run"; render(); await sleep(700);
+  S.status[5]="review"; setSb("入图预览就绪 · 请确认结构","wait"); render();
+  await gate();
+  S.status[5]="done"; setSb("预览已确认 · Runtime 下发与验收…","run");
+
+  // ⑧⑨ Runtime 执行与验收调优
+  S.active=6; S.status[6]="run"; S.logLines=[]; render();
+  for (const l of RUNTIME_LOG){ S.logLines.push(l); render(); await sleep(320+Math.random()*220); }
+  S.deployed=true; S.status[6]="done"; setSb("✓ 算子已成功入图","done"); render();
 }
 function setSb(t, tone){ $sbMsg.textContent=t; $sbDot.className = "sb-dot "+(tone||""); }
 
 $clRun.onclick = runPipeline;
-document.addEventListener("click", e=>{ if(e.target.id==="start-btn") runPipeline(); });
 
 // ════ STATIC CONTENT ════
 const SRC_LINES = [
@@ -624,65 +1077,109 @@ document.getElementById("src").innerHTML =
   SRC_LINES.map((l,i)=>`<span class="ln ${MARKED.has(i)?'mark':''}" data-n="${i+1}">${l||"&nbsp;"}</span>`).join("");
 
 const GEN_FILES = [
-  { name:"flash_attention_v2.cc", note:"InferShape 直接复用签名的 [B,N,S,D] 传播，输出 dtype 跟随 query；<b>绿底</b>为工具从签名自动补全。",
-    code:`<span class="cm">// op_proto — 原型定义 (InferShape / InferDataType)</span>
-<span class="fn">IMPLEMT_COMMON_INFERFUNC</span>(FlashAttentionV2InferShape) {
-  <span class="kw">auto</span> q = op.<span class="fn">GetInputDesc</span>(<span class="st">"query"</span>);
-<span class="hl">  Shape out = q.GetShape();            <span class="cm">// [B,N,S,D] 闭合传播</span></span>
-  <span class="kw">auto</span> y = op.<span class="fn">GetOutputDesc</span>(<span class="st">"attn_out"</span>);
-  y.<span class="fn">SetShape</span>(out);
-<span class="hl">  y.SetDataType(q.GetDataType());      <span class="cm">// BF16 跟随输入</span></span>
-  y.<span class="fn">SetFormat</span>(FORMAT_ND);
-  op.<span class="fn">UpdateOutputDesc</span>(<span class="st">"attn_out"</span>, y);
-  <span class="kw">return</span> GRAPH_SUCCESS;
+  { name:"flash_attention_v2_def.cpp", note:"op_host 的 <b>OpDef 原型</b>：输入/输出的 dtype·format 支持列表决定 GE 算子选择(CheckSupport)能否命中；<b>绿底</b>为工具据签名自动补全。<code>ops-info.json</code> 于编译期由 OpDef 自动生成，无需手写 .ini。",
+    code:`<span class="cm">// op_host — OpDef 原型注册（dtype/format 支持列表 + Tiling 绑定）</span>
+<span class="kw">class</span> <span class="ty">FlashAttentionV2</span> : <span class="kw">public</span> OpDef {
+  <span class="fn">FlashAttentionV2</span>(<span class="kw">const char</span>* name) : <span class="fn">OpDef</span>(name) {
+<span class="hl">    this-><span class="fn">Input</span>(<span class="st">"query"</span>).<span class="fn">DataType</span>({ge::DT_BF16}).<span class="fn">Format</span>({ge::FORMAT_ND});</span>
+<span class="hl">    this-><span class="fn">Input</span>(<span class="st">"key"</span>)  .<span class="fn">DataType</span>({ge::DT_BF16}).<span class="fn">Format</span>({ge::FORMAT_ND});</span>
+<span class="hl">    this-><span class="fn">Input</span>(<span class="st">"value"</span>).<span class="fn">DataType</span>({ge::DT_BF16}).<span class="fn">Format</span>({ge::FORMAT_ND});</span>
+<span class="hl">    this-><span class="fn">Output</span>(<span class="st">"attn_out"</span>).<span class="fn">DataType</span>({ge::DT_BF16}).<span class="fn">Format</span>({ge::FORMAT_ND});</span>
+    this-><span class="fn">Attr</span>(<span class="st">"scale"</span>).<span class="fn">Float</span>();
+    this-><span class="fn">Attr</span>(<span class="st">"head_num"</span>).<span class="fn">Int</span>();
+    this-><span class="fn">Attr</span>(<span class="st">"layout"</span>).<span class="fn">String</span>();
+    this-><span class="fn">SetInferShape</span>(FlashAttentionV2InferShape)
+        .<span class="fn">SetInferDataType</span>(FlashAttentionV2InferDataType);
+<span class="hl">    this-><span class="fn">AICore</span>().<span class="fn">SetTiling</span>(FlashAttentionV2TilingFunc);   <span class="cm">// 绑定 Tiling</span></span>
+  }
+};
+<span class="fn">OP_ADD</span>(FlashAttentionV2);   <span class="cm">// ops-info.json 由此在编译期自动生成</span>` },
+  { name:"flash_attention_v2.cpp", note:"op_host 的 <b>Shape / DataType 推导</b>：InferShape 让 GE 编译期完成 shape 传播与内存规划；InferDataType 使输出 dtype 跟随 query（BF16）。<b>绿底</b>为工具据签名自动补全。",
+    code:`<span class="cm">// op_host — InferShape / InferDataType</span>
+ge::graphStatus <span class="fn">FlashAttentionV2InferShape</span>(gert::InferShapeContext* ctx) {
+  <span class="kw">const</span> gert::Shape* q = ctx-><span class="fn">GetInputShape</span>(<span class="st">0</span>);
+  gert::Shape* out = ctx-><span class="fn">GetOutputShape</span>(<span class="st">0</span>);
+<span class="hl">  *out = *q;                              <span class="cm">// [B,N,S,D] 闭合传播</span></span>
+  <span class="kw">return</span> ge::GRAPH_SUCCESS;
 }
-<span class="fn">COMMON_INFER_FUNC_REG</span>(FlashAttentionV2, FlashAttentionV2InferShape);` },
-  { name:"flash_attention_v2.ini", note:"dtype/format 组合来自签名 BF16·ND；GE 用它匹配图中张量以决定能否选中此算子。",
-    code:`<span class="cm">; op_info_cfg — 算子信息库 (AI Core)</span>
-[FlashAttentionV2]
-<span class="hl">input0.name=query   input0.dtype=bf16   input0.format=ND</span>
-<span class="hl">input1.name=key     input1.dtype=bf16   input1.format=ND</span>
-<span class="hl">input2.name=value   input2.dtype=bf16   input2.format=ND</span>
-<span class="hl">output0.name=attn_out output0.dtype=bf16 output0.format=ND</span>
-attr.scale.type=float
-attr.head_num.type=int
-attr.layout.type=str` },
-  { name:"..._plugin.cc", note:"框架层算子 → Ascend 算子映射；scale / head_num / layout 三个属性自动接线透传。",
-    code:`<span class="cm">// framework plugin — 框架层 → Ascend 算子</span>
-<span class="fn">REGISTER_CUSTOM_OP</span>(<span class="st">"FlashAttentionV2"</span>)
-    .<span class="fn">FrameworkType</span>(TENSORFLOW)
-    .<span class="fn">OriginOpType</span>(<span class="st">"FlashAttention"</span>)
-    .<span class="fn">ParseParamsByOperatorFn</span>(ParseParams);
+ge::graphStatus <span class="fn">FlashAttentionV2InferDataType</span>(gert::InferDataTypeContext* ctx) {
+<span class="hl">  ctx-><span class="fn">SetOutputDataType</span>(<span class="st">0</span>, ctx-><span class="fn">GetInputDataType</span>(<span class="st">0</span>));   <span class="cm">// BF16 跟随 query</span></span>
+  <span class="kw">return</span> ge::GRAPH_SUCCESS;
+}` },
+  { name:"flash_attention_v2_tiling.h", note:"<b>Tiling</b> 在 GE 图编译期以真实 shape 被调用，产出 TilingData 并计算 BlockDim 绑定 kernel；缺失或非法将导致算子无法编译入图。",
+    code:`<span class="cm">// op_host — Tiling（GE 编译期以真实 shape 调用）</span>
+<span class="fn">BEGIN_TILING_DATA_DEF</span>(FlashAttentionTilingData)
+  <span class="fn">TILING_DATA_FIELD_DEF</span>(<span class="ty">uint32_t</span>, headNum);
+  <span class="fn">TILING_DATA_FIELD_DEF</span>(<span class="ty">float</span>,    scale);
+  <span class="fn">TILING_DATA_FIELD_DEF</span>(<span class="ty">uint32_t</span>, seqLen);
+<span class="fn">END_TILING_DATA_DEF</span>;
+<span class="fn">REGISTER_TILING_DATA_CLASS</span>(FlashAttentionV2, FlashAttentionTilingData);
 
-Status <span class="fn">ParseParams</span>(<span class="kw">const</span> Message* src, ge::Operator& op) {
-<span class="hl">  op.SetAttr("scale",    0.088f);    <span class="cm">// ← 签名属性</span></span>
-<span class="hl">  op.SetAttr("head_num", head_num);</span>
-<span class="hl">  op.SetAttr("layout",   "BNSD");</span>
-  <span class="kw">return</span> SUCCESS;
+<span class="kw">static</span> ge::graphStatus <span class="fn">FlashAttentionV2TilingFunc</span>(gert::TilingContext* ctx) {
+  FlashAttentionTilingData t;
+  <span class="kw">auto</span> s = ctx-><span class="fn">GetInputShape</span>(<span class="st">0</span>)-><span class="fn">GetStorageShape</span>();
+<span class="hl">  t.<span class="fn">set_seqLen</span>(s.<span class="fn">GetDim</span>(<span class="st">2</span>));   t.<span class="fn">set_headNum</span>(headNum);  <span class="cm">// 按 shape 切核内 tile</span></span>
+<span class="hl">  ctx-><span class="fn">SetBlockDim</span>(blockDim);   t.<span class="fn">SaveToBuffer</span>(...);</span>
+  <span class="kw">return</span> ge::GRAPH_SUCCESS;
+}` },
+  { name:"flash_attention_v2_fusion.cpp", note:"<b>Fusion rule</b> 决定编译图中哪些相邻节点可被合并。它独立于 Ascend C kernel，但必须与 OpDef 的 dtype、format 和属性约束保持一致。",
+    code:`<span class="cm">// op_host - GE Fusion rule registration</span>
+<span class="kw">class</span> <span class="ty">FlashAttentionV2FusionPass</span> : <span class="kw">public</span> ge::GraphPass {
+  <span class="kw">bool</span> <span class="fn">MatchAndReplace</span>(ge::NodePtr node) {
+<span class="hl">    <span class="kw">return</span> <span class="fn">RegisterPattern</span>(<span class="st">"Cast->FlashAttentionV2->Add"</span>);</span>
+  }
+};
+<span class="hl"><span class="fn">REGISTER_UB_FUSION_PASS</span>(FlashAttentionV2FusionPass);</span>` },
+  { name:"ops-info.json", note:"<b>算子信息库</b>（步骤④）：编译期由 OpDef 自动生成，声明支持的 SoC、dtype-format 组合、输入输出约束与动态 Shape 能力。GE / ATC 据此做算子选择；手写与 OpDef 不一致会导致 CheckSupport 不命中。",
+    code:`<span class="cm">// opp/vendors/custom/op_impl/.../ops-info.json（自动生成）</span>
+{
+  <span class="st">"FlashAttentionV2"</span>: {
+<span class="hl">    <span class="st">"soc"</span>: [<span class="st">"Ascend910B"</span>, <span class="st">"Ascend310P"</span>],</span>
+    <span class="st">"input0"</span>: { <span class="st">"name"</span>: <span class="st">"query"</span>,
+<span class="hl">      <span class="st">"dtype"</span>: <span class="st">"bf16,float16"</span>, <span class="st">"format"</span>: <span class="st">"ND,ND"</span> },</span>
+    <span class="st">"output0"</span>: { <span class="st">"name"</span>: <span class="st">"attn_out"</span>,
+      <span class="st">"dtype"</span>: <span class="st">"bf16,float16"</span>, <span class="st">"format"</span>: <span class="st">"ND,ND"</span> },
+    <span class="st">"attr"</span>: [<span class="st">"scale"</span>, <span class="st">"head_num"</span>, <span class="st">"layout"</span>],
+<span class="hl">    <span class="st">"dynamicShapeSupport"</span>: <span class="st">"true"</span>,</span>
+    <span class="st">"opFile"</span>: <span class="st">"flash_attention_v2"</span>,
+    <span class="st">"opInterface"</span>: <span class="st">"flash_attention_v2"</span>
+  }
 }` },
 ];
 
 const CHECKS = [
+  { level:"ok",   tag:"通过", title:"框架节点可导出", desc:"PyTorch custom_op 已绑定 ONNX symbolic；导出图保留 FlashAttentionV2，自定义节点没有被展开为 CPU 子图。" },
+  { level:"ok",   tag:"通过", title:"模型转换可追踪", desc:"ATC 解析到 custom domain 节点，GE OperatorFactory 与 OPP 中的 OpDef 名称一致。" },
   { level:"ok",   tag:"通过", title:"InferShape 闭合性", desc:"输出 [B,N,S,D] 可由输入完全推导，GE 编译期可做内存规划。" },
-  { level:"ok",   tag:"通过", title:"dtype / format 一致", desc:"签名(BF16·ND)、信息库、原型三处声明一致。" },
-  { level:"ok",   tag:"通过", title:"属性完整性", desc:"scale / head_num / layout 在三层均已接线。" },
-  { level:"ok",   tag:"通过", title:"可入图 / 可放置", desc:"算子可被 GE 放置到 AI Core，不会回退 AICPU。" },
-  { level:"warn", tag:"提醒", title:"缺少 FP16 支持组合", desc:"信息库仅声明 BF16，图中若有 FP16 分支将不被选中。", fix:"在 .ini 增补 <code>dtype=float16</code> 组合" },
-  { level:"warn", tag:"提醒", title:"未声明融合规则", desc:"上游 Cast、下游 Add 具融合潜力，但未注册 fusion pass。", fix:"注册 <code>UB Fusion</code> 规则减少 HBM 往返" },
+  { level:"ok",   tag:"通过", title:"dtype / format 一致", desc:"OpDef 支持列表、ops-info.json 与 InferDataType 一致声明 BF16·ND，无冲突。" },
+  { level:"ok",   tag:"通过", title:"Tiling 合法性", desc:"TilingFunc 已由 AICore().SetTiling 绑定，可据真实 shape 产出 TilingData 并计算 BlockDim。" },
+  { level:"ok",   tag:"通过", title:"动态 Shape 覆盖", desc:"ops-info 声明 dynamicShapeSupport；[1,32,128,128] 与 [1,32,512,128] 均可编译。" },
+  { level:"ok",   tag:"通过", title:"属性完整性", desc:"scale / head_num / layout 在 OpDef 与 Tiling 均已接线。" },
+  { level:"ok",   tag:"通过", title:"算子选择可命中", desc:"GE CheckSupport 以图中 BF16·ND 张量匹配 OpDef 支持列表 → 放置 AI Core，不回退 AICPU。" },
+  { level:"warn", tag:"提醒", title:"缺少 FP16 支持组合", desc:"OpDef 仅声明 BF16，图中若有 FP16 分支 CheckSupport 不命中、将不被选中。", fix:"在 OpDef 增补 <code>DataType({DT_FLOAT16})</code> 组合", file:0, target:"op_host/flash_attention_v2_def.cpp" },
+  { level:"warn", tag:"提醒", title:"未声明融合规则", desc:"上游 Cast、下游 Add 具融合潜力，但未注册 fusion pass。", fix:"注册 <code>UB Fusion</code> 规则减少 HBM 往返", file:3, target:"op_host/flash_attention_v2_fusion.cpp" },
 ];
 
-const BUILD_LOG = [
-  `<span class="ts">[00:00]</span> <span class="info">▶</span> msopgen 生成算子工程骨架`,
+const PACKAGE_LOG = [
+  `<span class="ts">[00:00]</span> <span class="info">&#9656;</span> build.sh 编译算子工程（op_host + op_kernel）`,
   `<span class="ts">[00:03]</span>   ccec 编译 AscendC kernel → .o`,
-  `<span class="ts">[00:05]</span>   <span class="ok">✓</span> op_proto / op_info / plugin 编译通过`,
-  `<span class="ts">[00:06]</span> <span class="info">▶</span> 打包 op_package_v2.run`,
-  `<span class="ts">[00:08]</span>   <span class="ok">✓</span> 安装到 opp/vendors/custom`,
-  `<span class="ts">[00:09]</span> <span class="info">▶</span> 向 GE 注册 FlashAttentionV2`,
-  `<span class="ts">[00:10]</span>   <span class="ok">✓</span> 原型 & 信息库已加载，GE 算子表更新`,
-  `<span class="ts">[00:11]</span> <span class="info">▶</span> 回归图 matmul→attn→add`,
-  `<span class="ts">[00:13]</span>   GE 选择 → <span class="ok">AI Core（未回退）</span>`,
-  `<span class="ts">[00:14]</span>   精度 max_rel=2.7e-3 &lt; 4e-3  <span class="ok">PASS</span>`,
-  `<span class="ts">[00:14]</span> <span class="ok">✓ 算子已成功入图</span>`,
+  `<span class="ts">[00:05]</span>   <span class="ok">&#10003;</span> OpDef / InferShape / Tiling 编译通过`,
+  `<span class="ts">[00:06]</span> <span class="info">&#9656;</span> 打包 custom_opp_ubuntu_aarch64.run`,
+  `<span class="ts">[00:08]</span>   <span class="ok">&#10003;</span> 安装到 opp/vendors/custom（自动生成 ops-info.json + aclnn API）`,
+  `<span class="ts">[00:09]</span>   <span class="ok">&#10003;</span> 设置 ASCEND_CUSTOM_OPP_PATH 定位 OPP 包`,
+  `<span class="ts">[00:10]</span> <span class="info">&#9656;</span> 向 GE 注册 FlashAttentionV2 原型 & 算子信息库`,
+  `<span class="ts">[00:11]</span>   <span class="ok">&#10003;</span> GE 算子表更新，OperatorFactory 可解析`,
+];
+
+const RUNTIME_LOG = [
+  `<span class="ts">[00:00]</span> <span class="info">&#9656;</span> Runtime 加载模型与算子包（OPP → GE → ACL）`,
+  `<span class="ts">[00:01]</span>   Host 生成 TilingData，下发 AICore kernel`,
+  `<span class="ts">[00:02]</span> <span class="info">&#9656;</span> 回归图 matmul→attn→add`,
+  `<span class="ts">[00:03]</span>   GE 算子选择 CheckSupport → <span class="ok">AI Core（未回退 AICPU）</span>`,
+  `<span class="ts">[00:04]</span>   动态 Shape [1,32,128,128] / [1,32,512,128] <span class="ok">PASS</span>`,
+  `<span class="ts">[00:05]</span>   精度 max_rel=2.7e-3 &lt; 4e-3  <span class="ok">PASS</span>`,
+  `<span class="ts">[00:06]</span>   msprof: AICore 利用率 83% · HBM 往返 -38%`,
+  `<span class="ts">[00:07]</span> <span class="ok">&#10003; 算子已成功入图</span>`,
 ];
 
 const GRAPH_SVG = `
@@ -702,7 +1199,7 @@ const GRAPH_SVG = `
     <text x="50" y="113" text-anchor="middle" class="g-sub">qkv proj</text></g>
   <g><rect x="146" y="80" width="110" height="44" rx="8" fill="var(--surface-3)" stroke="var(--warning)" stroke-dasharray="3 3"/>
     <text x="201" y="100" text-anchor="middle" class="g-label">Cast</text>
-    <text x="201" y="113" text-anchor="middle" class="g-sub">FP32→BF16 · 可融合</text></g>
+    <text x="201" y="113" text-anchor="middle" class="g-sub">GE 插入转换 · 可融合</text></g>
   <g><rect x="312" y="72" width="140" height="60" rx="9" fill="var(--primary)" stroke="var(--primary-hover)" stroke-width="1.5"/>
     <text x="382" y="96" text-anchor="middle" class="g-label" fill="#fff" style="font-weight:600">FlashAttentionV2</text>
     <text x="382" y="110" text-anchor="middle" class="g-sub" fill="rgba(255,255,255,.75)">AI Core · Cube+Vector</text>
@@ -712,7 +1209,7 @@ const GRAPH_SVG = `
     <text x="564" y="113" text-anchor="middle" class="g-sub">residual · 可融合</text></g>
   <g><rect x="662" y="80" width="44" height="44" rx="8" fill="var(--surface-3)" stroke="var(--border-strong)"/>
     <text x="684" y="106" text-anchor="middle" class="g-label">…</text></g>
-  <text x="360" y="180" text-anchor="middle" class="g-sub" fill="var(--foreground-muted)">GE 将节点放置到 AI Core · shape 推导闭合 · 无 AICPU 回退</text>
+  <text x="360" y="180" text-anchor="middle" class="g-sub" fill="var(--foreground-muted)">GE 算子选择 CheckSupport 命中 → AI Core · shape 闭合 · Tiling 就绪 · 无 AICPU 回退</text>
 </svg>`;
 
 render();

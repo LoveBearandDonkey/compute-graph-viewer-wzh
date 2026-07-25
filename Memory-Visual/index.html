@@ -1,0 +1,432 @@
+<!doctype html>
+<!--
+  PTO 内存工作台 —— 昇腾算子片上内存可视化
+  课题来源: Memory-Visual/昇腾算子内存可视化工具-规划.md
+
+  首版覆盖规划文档 §4.3 的三个视图：
+    1  内存布局图 + 占用水位（场景 1 buffer 规划 / 场景 2 超限定位）
+    2  生命周期与复用（场景 5 越界与复用冲突排查）
+    4  流水 × 内存联合时序（场景 3 搬运与计算重叠分析）
+  左栏的 tiling 候选列表同时是场景 4「tiling 对比」的数据基础。
+
+  数据等级: L2 / schema-generated / share-safe
+    MatmulLayerNorm_mix 是为演示构造的 mix 算子；芯片容量为规格量级的占位值，
+    实际以对应型号官方规格为准（见 data/chip-specs.js 的 specRef）。
+  分享级别: exploration-only
+
+  设计系统: 复用 ../vendor/pto-design-system
+    · patterns/ide-frame + workbench-shell —— 产品外壳、分栏、底部 dock
+    · patterns/memory-architecture        —— 内存布局页签的「硬件架构」布局
+      （+ patterns/aic-core-object、patterns/aiv-core-object 两个核心对象渲染器）
+    · patterns/memory-reuse-viewer        —— 生命周期与复用视图（整块复用）
+    · patterns/swimlane-task              —— 流水泳道任务条与悬浮提示
+    · patterns/floating-playback-control  —— 时间游标播放条
+    · 共享类: .btn / .tab-control / .segmented-control / .stat-chip / .pto-ide-frame__*
+  本页仅新增 mv- 前缀的布局类；canvas 内的层级配色属 data-viz exemption。
+
+  待设计系统吸收（quick-reference 已记录但当前 css/style.css 未实现）:
+    · .badge--success/warning/danger  → 本页用 .stat-chip + mv-sev-* 局部实现
+    · .inspector-section / .inspector-soft-card → 本页用 mv-sec / mv-soft 局部实现
+-->
+<html lang="zh-CN" data-theme="dark">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>PTO 内存工作台 · 昇腾算子片上内存可视化</title>
+<link rel="stylesheet" href="../vendor/pto-design-system/tokens/foundation.css" />
+<link rel="stylesheet" href="../vendor/pto-design-system/tokens/semantic.css" />
+<link rel="stylesheet" href="../vendor/pto-design-system/tokens/components.css" />
+<link rel="stylesheet" href="../vendor/pto-design-system/css/style.css" />
+<link rel="stylesheet" href="../vendor/pto-design-system/patterns/workbench-shell/pattern.css" />
+<link rel="stylesheet" href="../vendor/pto-design-system/patterns/floating-playback-control/pattern.css" />
+<link rel="stylesheet" href="../vendor/pto-design-system/patterns/ide-frame/pattern.css" />
+<link rel="stylesheet" href="../vendor/pto-design-system/patterns/swimlane-task/pattern.css" />
+<link rel="stylesheet" href="../vendor/pto-design-system/patterns/memory-reuse-viewer/pattern.css" />
+<link rel="stylesheet" href="../vendor/pto-design-system/patterns/aic-core-object/pattern.css" />
+<link rel="stylesheet" href="../vendor/pto-design-system/patterns/aiv-core-object/pattern.css" />
+<link rel="stylesheet" href="../vendor/pto-design-system/patterns/memory-architecture/pattern.css" />
+<style>
+/* ============================================================
+   模块布局类（mv- 前缀）—— 只做排布，视觉一律取 token
+   ============================================================ */
+html, body { margin: 0; height: 100%; }
+body {
+  background: var(--ide-frame-page-bg, var(--background));
+  color: var(--foreground);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+  overflow: hidden;
+}
+.mv-app { width: 100vw; height: 100vh; }
+.mv-frame {
+  width: 100%; max-width: none; height: 100vh;
+  aspect-ratio: auto; border-radius: 0; box-shadow: none;
+  --ide-dot-opacity: 0;
+}
+.mv-frame .pto-ide-frame__topbar { min-height: 48px; }
+.mv-frame .pto-ide-frame__workarea { padding-bottom: var(--space-2); }
+
+/* ---- 顶栏品牌 ---- */
+.mv-brand { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.mv-brand-mark {
+  width: 26px; height: 26px; flex: 0 0 auto; border-radius: 7px;
+  background: color-mix(in srgb, var(--foreground) 84%, var(--background));
+  color: var(--background); display: grid; place-items: center;
+  font: 700 11px/1 var(--font-mono);
+}
+.mv-brand-title { font: var(--text-title-2); white-space: nowrap; }
+.mv-topbar-center { display: flex; align-items: center; gap: var(--space-3); min-width: 0; }
+.mv-kernel-name { font: 500 12px/1.2 var(--font-mono); color: var(--foreground-secondary); }
+
+/* ---- 通用小件 ---- */
+.mv-label {
+  font: 500 10px/1.2 var(--font-sans); color: var(--foreground-muted);
+  text-transform: uppercase; letter-spacing: var(--letter-spacing-label);
+}
+.mv-sev-danger  { color: var(--danger); }
+.mv-sev-warn    { color: var(--warning); }
+.mv-sev-info    { color: var(--foreground-secondary); }
+.mv-sev-success { color: var(--success); }
+.mv-mono { font-family: var(--font-mono); }
+
+/* ---- 左栏 ---- */
+.mv-explorer-body { display: flex; flex-direction: column; overflow-y: auto; }
+
+/* 算子基本信息是「当前上下文」，不是可选项：不给卡片框，
+   用无填充的摘要块 + 下分隔线，与下方可点选的候选卡片拉开层级。 */
+.mv-kernel-block {
+  padding: var(--space-3); display: flex; flex-direction: column; gap: 7px;
+  border-bottom: 1px solid var(--border-subtle);
+}
+.mv-kernel-name { font: 600 14px/1.35 var(--font-mono); }
+.mv-kernel-facts { display: flex; flex-direction: column; gap: 3px; margin-top: 1px; }
+.mv-kv { display: flex; justify-content: space-between; gap: var(--space-2); font: 400 11px/1.4 var(--font-sans); color: var(--foreground-muted); }
+.mv-kv b { font: 500 11px/1.4 var(--font-mono); color: var(--foreground-secondary); }
+
+.mv-group { padding: var(--space-3); display: flex; flex-direction: column; gap: var(--space-2); }
+.mv-run-list { display: flex; flex-direction: column; gap: 6px; }
+.mv-run {
+  width: 100%; text-align: left; cursor: pointer;
+  background: var(--surface-2); border: 1px solid transparent;
+  border-radius: var(--radius-lg); padding: 10px var(--space-3);
+  display: flex; flex-direction: column; gap: 7px; color: inherit;
+  transition: background var(--duration-fast) var(--ease-standard);
+}
+.mv-run:hover { background: var(--surface-3); }
+.mv-run.is-selected { background: var(--surface-4); border-color: var(--border-strong); }
+.mv-run-head { display: flex; align-items: center; gap: var(--space-2); }
+.mv-run-title { font: 600 12px/1.3 var(--font-sans); flex: 1 1 auto; min-width: 0; }
+.mv-run-note { font: 400 11px/1.45 var(--font-sans); color: var(--foreground-muted); }
+.mv-run-metrics { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.mv-metric { display: flex; flex-direction: column; gap: 1px; min-width: 52px; }
+.mv-metric-value { font: 600 12px/1.2 var(--font-mono); }
+.mv-metric-label { font: 500 9px/1.2 var(--font-sans); color: var(--foreground-muted); letter-spacing: var(--letter-spacing-label); text-transform: uppercase; }
+.mv-bar { height: 4px; border-radius: var(--radius-pill); background: var(--surface-1); overflow: hidden; }
+.mv-bar > i { display: block; height: 100%; border-radius: var(--radius-pill); }
+
+/* ---- 主视图区 ---- */
+.mv-toolbar { display: flex; align-items: center; gap: var(--space-3); flex-wrap: wrap; width: 100%; }
+.mv-toolbar-spacer { flex: 1 1 auto; }
+.mv-legend { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.mv-legend-item { display: flex; align-items: center; gap: 5px; font: 500 10px/1.2 var(--font-sans); color: var(--foreground-muted); }
+.mv-legend-swatch { width: 10px; height: 10px; border-radius: 3px; flex: 0 0 auto; background: var(--accent); }
+.mv-legend-swatch.is-ghost { background: color-mix(in srgb, var(--accent) 26%, transparent); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 55%, transparent); }
+.mv-legend-swatch.is-wait { background: repeating-linear-gradient(135deg, var(--warning) 0 1.5px, transparent 1.5px 4px); }
+.mv-legend-swatch.is-gap { background: repeating-linear-gradient(135deg, color-mix(in srgb, var(--foreground) 22%, transparent) 0 1px, transparent 1px 4px); }
+.mv-legend-swatch.is-over { background: color-mix(in srgb, var(--danger) 30%, transparent); box-shadow: inset 0 0 0 1px var(--danger); }
+/* 硬件架构布局里的超限走 setBufferBlocks 的 accumulating 态（警告色），图例跟随 */
+.mv-legend-swatch.is-warn-fill { background: color-mix(in srgb, var(--warning) 78%, transparent); }
+
+.mv-stage { position: relative; height: 100%; overflow: auto; }
+.mv-view { display: none; height: 100%; }
+.mv-view.is-active { display: block; }
+.mv-view--scroll { overflow: auto; padding: 0 var(--space-3) var(--space-5); }
+.mv-canvas { display: block; width: 100%; }
+.mv-view-note {
+  margin: 0 0 var(--space-2); padding: var(--space-2) 0 0;
+  font: 400 11px/1.5 var(--font-sans); color: var(--foreground-muted);
+}
+
+/* ---- 内存布局的第二种布局：硬件架构图 ---- */
+/* 只负责把 memory-architecture 的 viewport 撑满舞台，不覆写 pattern 内部任何视觉。 */
+.mv-arch-host { display: none; position: relative; height: 100%; min-height: 380px; }
+#viewLayout.is-arch { display: flex; flex-direction: column; overflow: hidden; padding-bottom: var(--space-3); }
+#viewLayout.is-arch #layoutHost { display: none; }
+#viewLayout.is-arch .mv-arch-host { display: block; flex: 1 1 auto; min-height: 0; }
+.mv-arch-viewport {
+  border: 1px solid var(--border-subtle); border-radius: var(--radius-lg);
+  background: var(--surface-1);
+}
+
+/* ---- 悬浮提示（layout 视图；流水视图用 swimlane-task 的 tooltip） ---- */
+.mv-tip {
+  position: absolute; top: 0; left: 0; z-index: 40; pointer-events: none;
+  min-width: 190px; max-width: 300px;
+  background: color-mix(in srgb, var(--surface-1) 94%, transparent);
+  border: 1px solid var(--border-default); border-radius: var(--radius-md);
+  box-shadow: var(--shadow-lg, 0 12px 32px rgba(0,0,0,.4));
+  padding: var(--space-2) 10px; backdrop-filter: blur(12px);
+}
+.mv-tip__title { font: 600 12px/1.3 var(--font-mono); margin-bottom: 5px; }
+.mv-tip__row { display: flex; justify-content: space-between; gap: var(--space-3); font: 400 11px/1.6 var(--font-sans); color: var(--foreground-muted); }
+.mv-tip__row b { font: 500 11px/1.6 var(--font-mono); color: var(--foreground-secondary); }
+.mv-tip__row.is-bad b { color: var(--warning); }
+.mv-tip__src { margin-top: 5px; padding-top: 5px; border-top: 1px solid var(--border-subtle); font: 500 10px/1.4 var(--font-mono); color: var(--foreground-disabled); }
+
+/* ---- 右栏：诊断与详情 ---- */
+.mv-inspector-body { display: flex; flex-direction: column; overflow-y: auto; }
+.mv-sec { padding: var(--space-3); border-bottom: 1px solid var(--border-subtle); display: flex; flex-direction: column; gap: var(--space-2); }
+.mv-sec-head { display: flex; align-items: baseline; justify-content: space-between; gap: var(--space-2); }
+.mv-sec-title { font: var(--text-title-2); }
+.mv-finding {
+  width: 100%; text-align: left; cursor: pointer; color: inherit;
+  background: var(--surface-2); border: 0; border-left: 2px solid var(--border-strong);
+  border-radius: var(--radius-md); padding: 9px 10px;
+  display: flex; flex-direction: column; gap: 5px;
+}
+.mv-finding:hover { background: var(--surface-3); }
+.mv-finding.is-selected { background: var(--surface-4); }
+.mv-finding[data-severity="danger"] { border-left-color: var(--danger); }
+.mv-finding[data-severity="warn"]   { border-left-color: var(--warning); }
+.mv-finding[data-severity="info"]   { border-left-color: var(--accent); }
+.mv-finding-head { display: flex; align-items: center; gap: 6px; }
+.mv-finding-title { font: 600 12px/1.3 var(--font-sans); flex: 1 1 auto; }
+.mv-finding-rule { font: 500 9px/1.2 var(--font-mono); color: var(--foreground-disabled); }
+.mv-finding-text { font: 400 11px/1.5 var(--font-sans); color: var(--foreground-secondary); }
+.mv-finding-body { display: none; flex-direction: column; gap: 6px; }
+.mv-finding.is-selected .mv-finding-body { display: flex; }
+.mv-soft { border-radius: var(--radius-md); padding: 8px 10px; background: color-mix(in srgb, var(--foreground) 5%, transparent); display: flex; flex-direction: column; gap: 3px; }
+.mv-soft.is-warning { background: color-mix(in srgb, var(--warning) 12%, transparent); }
+.mv-soft.is-danger  { background: color-mix(in srgb, var(--danger) 12%, transparent); }
+.mv-soft-label { font: 500 9px/1.2 var(--font-sans); text-transform: uppercase; letter-spacing: var(--letter-spacing-label); color: var(--foreground-muted); }
+.mv-soft-text { font: 400 11px/1.5 var(--font-sans); color: var(--foreground); }
+.mv-evidence { display: flex; flex-direction: column; gap: 2px; }
+.mv-empty { font: 400 11px/1.5 var(--font-sans); color: var(--foreground-muted); padding: var(--space-2) 0; }
+.mv-code {
+  margin: 0; padding: 8px 10px; border-radius: var(--radius-md);
+  background: var(--surface-1); color: var(--foreground-secondary);
+  font: 500 10.5px/1.6 var(--font-mono); white-space: pre; overflow-x: auto;
+}
+.mv-detail-title { font: 600 13px/1.3 var(--font-mono); }
+.mv-chip-row { display: flex; gap: 5px; flex-wrap: wrap; }
+
+/* ---- 底部 dock ---- */
+.mv-dock-body { padding: 0 var(--space-3) var(--space-2); height: 100%; position: relative; }
+.mv-terminal-body { font: 500 11px/1.7 var(--font-mono); color: var(--foreground-secondary); padding: 10px 14px; overflow: auto; height: 100%; white-space: pre-wrap; }
+.mv-terminal-body .is-danger { color: var(--danger); }
+.mv-terminal-body .is-warn { color: var(--warning); }
+.mv-terminal-body .is-ok { color: var(--success); }
+.mv-terminal-body .is-dim { color: var(--foreground-disabled); }
+
+/* ---- 状态条 ---- */
+.mv-status { display: flex; align-items: center; gap: var(--space-3); flex-wrap: wrap; width: 100%; }
+.mv-status-item { display: flex; align-items: center; gap: 5px; font: 500 10px/1.2 var(--font-mono); color: var(--foreground-muted); }
+.mv-status-item b { color: var(--foreground-secondary); font-weight: 600; }
+.mv-status-spacer { flex: 1 1 auto; }
+
+.mv-frame .pto-floating-playback { --floating-playback-expanded-width: 660px; }
+</style>
+</head>
+<body>
+<div class="mv-app">
+  <section class="pto-ide-frame mv-frame" id="ideFrame" data-ide-frame data-host="standalone">
+
+    <header class="pto-ide-frame__topbar">
+      <div class="pto-ide-frame__topbar-left">
+        <div class="mv-brand">
+          <span class="mv-brand-mark">MV</span>
+          <span class="mv-brand-title">内存工作台</span>
+        </div>
+      </div>
+      <div class="pto-ide-frame__topbar-center mv-topbar-center">
+        <span class="mv-kernel-name" id="kernelName">—</span>
+        <div class="segmented-control segmented-control-muted" id="chipSwitch" role="group" aria-label="芯片型号"></div>
+      </div>
+      <div class="pto-ide-frame__topbar-right">
+        <div class="pto-ide-frame__window-actions" data-ide-slot="window-controls" aria-label="面板开关">
+          <button class="pto-ide-frame__window-action is-selected" type="button" id="topExplorerToggle"
+                  aria-label="切换 tiling 候选面板" aria-controls="explorerPane" aria-expanded="true" aria-pressed="true" title="Tiling 候选">
+            <svg class="pto-ide-frame__window-icon" viewBox="0 0 24 24" aria-hidden="true">
+              <rect x="3" y="3" width="18" height="18" rx="2"></rect><path d="M9 3v18"></path>
+            </svg>
+          </button>
+          <button class="pto-ide-frame__window-action is-selected" type="button" id="topInspectorToggle"
+                  aria-label="切换诊断面板" aria-controls="inspectorPane" aria-expanded="true" aria-pressed="true" title="诊断与详情">
+            <svg class="pto-ide-frame__window-icon" viewBox="0 0 24 24" aria-hidden="true">
+              <rect x="3" y="3" width="18" height="18" rx="2"></rect><path d="M15 3v18"></path>
+            </svg>
+          </button>
+          <button class="pto-ide-frame__window-action" type="button" data-ide-toggle="terminal"
+                  aria-label="切换分析日志" aria-controls="terminalPane" aria-expanded="false" aria-pressed="false" title="分析日志">
+            <svg class="pto-ide-frame__window-icon" viewBox="0 0 24 24" aria-hidden="true">
+              <rect x="3" y="5" width="18" height="14" rx="2"></rect><path d="m7 9 3 3-3 3"></path><path d="M12 15h5"></path>
+            </svg>
+          </button>
+        </div>
+      </div>
+    </header>
+
+    <div class="pto-ide-frame__body">
+      <nav class="pto-ide-frame__activity-rail" aria-label="一级导航">
+        <button class="btn btn-icon btn-ghost pto-ide-frame__rail-button is-selected" type="button" data-ide-toggle="explorer"
+                aria-label="展开 tiling 候选" aria-controls="explorerPane" aria-expanded="true" aria-pressed="true" title="Tiling 候选">
+          <svg class="pto-ide-frame__rail-icon" viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9l-.81-1.2A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"></path>
+          </svg>
+        </button>
+        <button class="btn btn-icon btn-ghost pto-ide-frame__rail-button" type="button" id="railDiagnosticsToggle"
+                aria-label="诊断" title="诊断">
+          <svg class="pto-ide-frame__rail-icon" viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0Z"></path>
+            <path d="M12 9v4"></path><path d="M12 17h.01"></path>
+          </svg>
+        </button>
+        <button class="btn btn-icon btn-ghost pto-ide-frame__rail-button" type="button" id="railTerminalToggle"
+                aria-label="分析日志" aria-controls="terminalPane" aria-expanded="false" aria-pressed="false" title="分析日志">
+          <svg class="pto-ide-frame__rail-icon" viewBox="0 0 24 24" aria-hidden="true">
+            <rect x="3" y="5" width="18" height="14" rx="2"></rect><path d="m7 9 3 3-3 3"></path><path d="M12 15h5"></path>
+          </svg>
+        </button>
+      </nav>
+
+      <div class="pto-ide-frame__workarea">
+        <div class="pto-ide-frame__split" data-ide-split="mv-vertical" data-split-direction="vertical"
+             data-storage-key="memviz-workbench-vertical-v1" data-sizes="74,26" data-min-size="360,120" data-pixel-sizes="0,168">
+
+          <section class="pto-ide-frame__pane pto-ide-frame__pane--stack" data-ide-pane="main-row">
+            <div class="pto-ide-frame__split" data-ide-split="mv-main" data-split-direction="horizontal"
+                 data-storage-key="memviz-workbench-main-v1" data-sizes="20,52,28" data-min-size="230,420,290" data-pixel-sizes="288,0,340">
+
+              <aside class="pto-ide-frame__pane pto-ide-frame__explorer" id="explorerPane" data-ide-pane="explorer">
+                <header class="pto-ide-frame__pane-header">
+                  <h2 class="pto-ide-frame__pane-title">算子</h2>
+                  <span class="pto-ide-frame__pane-meta" id="explorerMeta"></span>
+                </header>
+                <div class="pto-ide-frame__pane-body mv-explorer-body" data-ide-slot="navigation" id="explorerBody"></div>
+              </aside>
+
+              <section class="pto-ide-frame__pane" id="previewPane" data-ide-pane="editor-preview">
+                <div class="pto-ide-frame__tabstrip" data-ide-slot="preview-tabs">
+                  <div class="tab-control" role="tablist" id="viewTabs">
+                    <button class="tab-control-item is-selected" type="button" role="tab" data-view="layout" aria-selected="true">内存布局</button>
+                    <button class="tab-control-item" type="button" role="tab" data-view="lifetime" aria-selected="false">生命周期与复用</button>
+                    <button class="tab-control-item" type="button" role="tab" data-view="pipeline" aria-selected="false">流水 × 内存</button>
+                  </div>
+                </div>
+                <header class="pto-ide-frame__pane-header">
+                  <div class="mv-toolbar">
+                    <span class="mv-label" id="layoutModeLabel">布局</span>
+                    <div class="segmented-control segmented-control-muted" id="layoutModeSwitch" role="group" aria-label="内存模块布局"></div>
+                    <span class="mv-label">焦点层级</span>
+                    <div class="segmented-control segmented-control-muted" id="regionSwitch" role="group" aria-label="焦点存储层级"></div>
+                    <button class="btn btn-sm btn-ghost" type="button" id="gotoPeak">跳到峰值</button>
+                    <button class="btn btn-sm btn-ghost" type="button" id="gotoIssue">跳到首个问题</button>
+                    <span class="mv-toolbar-spacer"></span>
+                    <div class="mv-legend" id="viewLegend"></div>
+                  </div>
+                </header>
+                <div class="pto-ide-frame__pane-body mv-stage" data-ide-slot="preview" id="previewStage">
+                  <div class="mv-view mv-view--scroll is-active" id="viewLayout" role="tabpanel">
+                    <p class="mv-view-note" id="layoutNote"></p>
+                    <div id="layoutHost" style="position:relative"></div>
+                    <div class="mv-arch-host" id="archHost"></div>
+                  </div>
+                  <div class="mv-view" id="viewLifetime" role="tabpanel"></div>
+                  <div class="mv-view mv-view--scroll" id="viewPipeline" role="tabpanel">
+                    <p class="mv-view-note">
+                      上半是六条流水线，下半是焦点层级在同一时间轴上的占用。橙色斜纹是可归因到 buffer 未释放的等待段 ——
+                      如果搬运泳道和计算泳道错不开，且占用曲线始终贴着单份 buffer 的高度，说明 double buffer 没有生效。
+                      点击空白处可移动时间游标。
+                    </p>
+                    <div id="pipelineHost" style="position:relative"></div>
+                  </div>
+                </div>
+              </section>
+
+              <aside class="pto-ide-frame__pane" id="inspectorPane" data-ide-pane="inspector">
+                <header class="pto-ide-frame__pane-header">
+                  <h2 class="pto-ide-frame__pane-title">诊断与详情</h2>
+                  <span class="pto-ide-frame__pane-meta" id="inspectorMeta"></span>
+                </header>
+                <div class="pto-ide-frame__pane-body mv-inspector-body" data-ide-slot="inspector">
+                  <div class="mv-sec">
+                    <div class="mv-sec-head">
+                      <span class="mv-sec-title">诊断</span>
+                      <span class="mv-chip-row" id="severitySummary"></span>
+                    </div>
+                    <div class="mv-run-list" id="findingList"></div>
+                  </div>
+                  <div class="mv-sec">
+                    <div class="mv-sec-head">
+                      <span class="mv-sec-title">详情</span>
+                      <span class="mv-label" id="detailKicker">未选中</span>
+                    </div>
+                    <div id="detailBody"><p class="mv-empty">点击布局图色块、泳道任务或诊断条目查看详情。</p></div>
+                  </div>
+                </div>
+              </aside>
+            </div>
+          </section>
+
+          <section class="pto-ide-frame__pane pto-ide-frame__bottom-dock" data-ide-pane="bottom-panel" data-ide-bottom-dock id="bottomDock">
+            <div class="pto-ide-frame__bottom-view" data-ide-bottom-panel="visualization">
+              <header class="pto-ide-frame__pane-header">
+                <span class="pto-ide-frame__pane-title">占用水位</span>
+                <span class="pto-ide-frame__pane-meta" id="watermarkMeta">实线 = 实际持有 / 容量，虚线 = 静态预留，100% 为硬边界</span>
+              </header>
+              <div class="pto-ide-frame__pane-body mv-dock-body" data-ide-slot="bottom-visualization" id="watermarkHost"></div>
+            </div>
+
+            <div class="pto-ide-frame__bottom-view pto-ide-frame__terminal" data-ide-bottom-panel="terminal" id="terminalPane" hidden>
+              <div class="pto-ide-frame__terminal-tabs" aria-label="面板页签">
+                <div class="pto-ide-frame__terminal-tablist">
+                  <span class="pto-ide-frame__terminal-tab is-selected">分析日志</span>
+                </div>
+                <div class="pto-ide-frame__terminal-actions">
+                  <button class="pto-ide-frame__terminal-action" type="button" data-ide-close="terminal" aria-label="关闭日志">
+                    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M18 6 6 18"></path><path d="m6 6 12 12"></path></svg>
+                  </button>
+                </div>
+              </div>
+              <div class="mv-terminal-body" id="terminalBody"></div>
+            </div>
+          </section>
+        </div>
+
+        <footer class="pto-ide-frame__status-strip" data-ide-slot="status">
+          <div class="mv-status" id="statusStrip"></div>
+        </footer>
+      </div>
+    </div>
+
+    <!-- 播放条由 floating-playback-control 生成；本页保留自己的 step 状态与键盘快捷键，
+         与 mem_viewer v1/v2 的用法一致（见该 pattern 的 parityNote）。 -->
+    <div class="pto-ide-frame__floating-playback-mount" id="playbackMount"></div>
+  </section>
+</div>
+
+<script src="../vendor/pto-design-system/patterns/workbench-shell/pattern.js"></script>
+<script src="../vendor/pto-design-system/patterns/floating-playback-control/pattern.js"></script>
+<script src="../vendor/pto-design-system/patterns/ide-frame/pattern.js"></script>
+<script src="../vendor/pto-design-system/patterns/swimlane-task/pattern.js"></script>
+<script src="../vendor/pto-design-system/patterns/memory-reuse-viewer/pattern.js"></script>
+<!-- 硬件架构布局：核心对象渲染器必须先于 memory-architecture 加载 -->
+<script src="../vendor/pto-design-system/patterns/aiv-core-object/pattern.js"></script>
+<script src="../vendor/pto-design-system/patterns/aic-core-object/pattern.js"></script>
+<script src="../vendor/pto-design-system/patterns/memory-architecture/pattern.js"></script>
+
+<script src="data/kernel-source.js"></script>
+<script src="data/chip-specs.js"></script>
+<script src="data/runs.js"></script>
+<script src="js/format.js"></script>
+<script src="js/canvas-kit.js"></script>
+<script src="js/metrics.js"></script>
+<script src="js/diagnostics.js"></script>
+<script src="js/view-layout.js"></script>
+<script src="js/view-arch.js"></script>
+<script src="js/view-lifetime.js"></script>
+<script src="js/view-pipeline.js"></script>
+<script src="js/view-watermark.js"></script>
+<script src="js/app.js"></script>
+</body>
+</html>
