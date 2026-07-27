@@ -1,0 +1,104 @@
+{
+  "schemaVersion": "0.2",
+  "execution": {"mode": "logical-order", "durationStatus": "unknown"},
+  "operator": {
+    "id": "sample.conv_bias_relu",
+    "name": "conv_bias_relu_reference",
+    "displayName": "Conv2D + Bias + ReLU",
+    "kind": "conv2d-cube",
+    "sourceLanguage": "ascendc",
+    "apiLevel": "basic_api_reference",
+    "sourcePath": "conv_bias_relu_reference.asc",
+    "description": "Static code-recovery model; not a compiled or profiled trace."
+  },
+  "arch": {"npuArch": "dav-2201", "soc": "Ascend 910B", "kernelTag": "__cube__"},
+  "launch": {"entry": "conv_bias_relu_reference", "numBlocks": 0, "hostSteps": ["Host tiling and block mapping are unknown."]},
+  "context": {"source": "demo-input", "targetSoC": "Ascend 910B", "cannVersion": "9.1.0-beta.2 style; unverified", "note": "Demo context, not recovered from host tiling."},
+  "tiling": {
+    "type": "demo_context",
+    "params": {"batch": 1, "ci": 16, "hi": 8, "wi": 8, "co": 32, "ho": 8, "wo": 8, "kh": 3, "kw": 3, "strideH": 1, "strideW": 1, "padTop": 1, "padLeft": 1, "M": 64, "K": 144, "N": 32, "tileM": 32, "tileK": 48, "tileN": 16},
+    "derived": {"mTileCount": 2, "nTileCount": 2, "kLoopCount": 3},
+    "controls": [
+      {"id": "outputTileIndex", "label": "Output tile", "value": 0, "description": "Demo tile; block mapping is unknown."},
+      {"id": "kIndex", "label": "K slice", "value": 0, "description": "Ci×Kh×Kw reduction slice."}
+    ]
+  },
+  "source": {
+    "path": "conv_bias_relu_reference.asc",
+    "projectPath": "../../conv_bias_relu_reference.asc",
+    "lines": [
+      {"line": 24, "text": "struct ConvBiasReluTiling {"},
+      {"line": 39, "text": "    uint32_t tileM;"},
+      {"line": 40, "text": "    uint32_t tileK;"},
+      {"line": 41, "text": "    uint32_t tileN;"},
+      {"line": 59, "text": "    __aicore__ inline void Process()"},
+      {"line": 63, "text": "        auto fmapA1 = AscendC::LocalTensor<half>(AscendC::TPosition::A1, 0, FmapA1Elements());"},
+      {"line": 64, "text": "        auto weightB1 = AscendC::LocalTensor<half>(AscendC::TPosition::B1, 0, WeightB1Elements());"},
+      {"line": 65, "text": "        auto biasC1 = AscendC::LocalTensor<float>(AscendC::TPosition::C1, 0, AlignN(tiling_.tileN));"},
+      {"line": 66, "text": "        auto biasC2 = AscendC::LocalTensor<float>(AscendC::TPosition::C2, 0, AlignN(tiling_.tileN));"},
+      {"line": 67, "text": "        auto fmapA2 = AscendC::LocalTensor<half>(AscendC::TPosition::A2, 0, AlignM(tiling_.tileM) * AlignK(tiling_.tileK));"},
+      {"line": 68, "text": "        auto weightB2 = AscendC::LocalTensor<half>(AscendC::TPosition::B2, 0, AlignK(tiling_.tileK) * AlignN(tiling_.tileN));"},
+      {"line": 69, "text": "        auto accumCo1 = AscendC::LocalTensor<float>(AscendC::TPosition::CO1, 0, AlignM(tiling_.tileM) * AlignN(tiling_.tileN));"},
+      {"line": 74, "text": "        CopyFeatureTileGmToA1(fmapA1);"},
+      {"line": 75, "text": "        CopyFilterTileGmToB1(weightB1);"},
+      {"line": 76, "text": "        CopyBiasGmToC1(biasC1);"},
+      {"line": 77, "text": "        AscendC::SetFlag<AscendC::HardEvent::MTE2_MTE1>(EVENT_ID0);"},
+      {"line": 82, "text": "        for (uint32_t kOffset = 0; kOffset < K(); kOffset += tiling_.tileK) {"},
+      {"line": 83, "text": "            LoadFmapWindow3D(fmapA2, fmapA1, kOffset);"},
+      {"line": 84, "text": "            LoadFilterToL0B(weightB2, weightB1, kOffset);"},
+      {"line": 85, "text": "            AscendC::SetFlag<AscendC::HardEvent::MTE1_M>(EVENT_ID0);"},
+      {"line": 92, "text": "            params.cmatrixInitVal = (kOffset == 0);"},
+      {"line": 96, "text": "                AscendC::Mmad(accumCo1, fmapA2, weightB2, biasC2, params);"},
+      {"line": 98, "text": "                AscendC::Mmad(accumCo1, fmapA2, weightB2, params);"},
+      {"line": 102, "text": "        AscendC::SetFlag<AscendC::HardEvent::M_FIX>(EVENT_ID0);"},
+      {"line": 112, "text": "        epilogue.reluPre = 1;"},
+      {"line": 113, "text": "        epilogue.quantPre = QuantMode_t::F322F16;"},
+      {"line": 114, "text": "        AscendC::DataCopy(outC1, accumCo1, epilogue);"},
+      {"line": 115, "text": "        CopyOutputTileC1ToGm(outC1);"},
+      {"line": 124, "text": "    __aicore__ inline uint32_t FmapA1Elements() const { return 0; }"},
+      {"line": 125, "text": "    __aicore__ inline uint32_t WeightB1Elements() const { return 0; }"}
+    ]
+  },
+  "memory": {
+    "tiers": [
+      {"id": "feature", "label": "Feature GM", "role": "input", "capacity": "1×16×8×8 fp16"},
+      {"id": "filter", "label": "Filter GM", "role": "input", "capacity": "32×16×3×3 fp16"},
+      {"id": "bias", "label": "Bias GM", "role": "input", "capacity": "32 fp32"},
+      {"id": "a1", "label": "A1", "role": "local-input", "capacity": "unknown"},
+      {"id": "b1", "label": "B1", "role": "local-input", "capacity": "unknown"},
+      {"id": "a2", "label": "L0A A2", "role": "cube-input", "capacity": "32×48 fp16"},
+      {"id": "b2", "label": "L0B B2", "role": "cube-input", "capacity": "48×16 fp16"},
+      {"id": "co1", "label": "L0C CO1", "role": "cube-output", "capacity": "32×16 fp32"}
+    ],
+    "blocks": []
+  },
+  "stages": [
+    {"id": "init", "label": "Init GM Views", "unit": "cube", "operations": ["SetGlobalBuffer"]},
+    {"id": "allocate", "label": "Allocate Local Tensors", "unit": "cube", "operations": ["LocalTensor"]},
+    {"id": "copy-inputs", "label": "Copy Inputs", "unit": "cube", "operations": ["CopyFeature", "CopyFilter", "CopyBias"]},
+    {"id": "sync-mte2-mte1", "label": "MTE2 → MTE1", "unit": "control", "operations": ["SetFlag", "WaitFlag"]},
+    {"id": "load-k", "label": "Load K Slice", "unit": "cube", "operations": ["LoadData3D", "LoadData"]},
+    {"id": "sync-mte1-m", "label": "MTE1 → M", "unit": "control", "operations": ["SetFlag", "WaitFlag"]},
+    {"id": "mmad-init", "label": "Mmad + Bias", "unit": "cube", "operations": ["Mmad"]},
+    {"id": "mmad", "label": "Mmad Accumulate", "unit": "cube", "operations": ["Mmad"]},
+    {"id": "sync-m-fix", "label": "M → FIX", "unit": "control", "operations": ["SetFlag", "WaitFlag"]},
+    {"id": "epilogue", "label": "ReLU + Cast", "unit": "cube", "operations": ["DataCopy"]},
+    {"id": "copy-output", "label": "Copy Output", "unit": "cube", "operations": ["CopyOutputTileC1ToGm"]}
+  ],
+  "steps": [
+    {"id": "s1", "stageId": "init", "label": "Initialize GM views", "summary": "GlobalTensor views are established.", "sourceLines": [48,52,53,54,55], "evidenceKind": "confirmed"},
+    {"id": "s2", "stageId": "allocate", "label": "Allocate local tensors", "summary": "A1/B1 sizes remain unknown because helpers return zero.", "sourceLines": [63,64,65,66,67,68,69,124,125], "evidenceKind": "confirmed"},
+    {"id": "s3", "stageId": "copy-inputs", "label": "Copy feature, filter and bias", "summary": "Helper calls exist, but their bodies and exact ranges are missing.", "sourceLines": [74,75,76], "evidenceKind": "inferred"},
+    {"id": "s4", "stageId": "sync-mte2-mte1", "label": "Synchronize MTE2 to MTE1", "summary": "Input movement must complete before L1 to L0 loading.", "sourceLines": [77,78], "syncEvents": ["MTE2_MTE1"], "evidenceKind": "confirmed"},
+    {"id": "s5", "stageId": "load-k", "label": "Load K0 into A2/B2", "summary": "LoadData3D materializes feature windows; filter helper is unresolved.", "sourceLines": [82,83,84,132,151,154], "loop": {"kIndex": 0}, "evidenceKind": "inferred"},
+    {"id": "s6", "stageId": "sync-mte1-m", "label": "Synchronize MTE1 to Cube", "summary": "L0 inputs become available to Mmad.", "sourceLines": [85,86], "syncEvents": ["MTE1_M"], "evidenceKind": "confirmed"},
+    {"id": "s7", "stageId": "mmad-init", "label": "K0 Mmad with bias", "summary": "Mmad reads biasC2, but no C1→C2 path exists.", "sourceLines": [92,96], "loop": {"kIndex": 0}, "evidenceKind": "unknown"},
+    {"id": "s8", "stageId": "mmad", "label": "K1 accumulation", "summary": "The second K slice accumulates into CO1.", "sourceLines": [82,98], "loop": {"kIndex": 1}, "evidenceKind": "confirmed"},
+    {"id": "s9", "stageId": "mmad", "label": "K2 final accumulation", "summary": "The final demo K slice completes the reduction.", "sourceLines": [82,98], "loop": {"kIndex": 2}, "evidenceKind": "confirmed"},
+    {"id": "s10", "stageId": "sync-m-fix", "label": "Synchronize Cube to FIX", "summary": "The accumulated result becomes available to the epilogue.", "sourceLines": [102,103], "syncEvents": ["M_FIX"], "evidenceKind": "confirmed"},
+    {"id": "s11", "stageId": "epilogue", "label": "ReLU and FP32→FP16", "summary": "Code requests ReLU and conversion; target behavior remains unverified.", "sourceLines": [109,110,111,112,113,114], "evidenceKind": "inferred"},
+    {"id": "s12", "stageId": "copy-output", "label": "Copy C1 to output GM", "summary": "The helper call exists, but its implementation is missing.", "sourceLines": [115,130], "evidenceKind": "unknown"}
+  ],
+  "puzzles": [],
+  "evidence": {"profiling": {"status": "absent", "note": "Logical order only; no runtime timing."}}
+}

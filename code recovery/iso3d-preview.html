@@ -1,0 +1,401 @@
+<!doctype html>
+<html lang="zh-CN" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Iso-3D Tensor Viewport — Option B Preview</title>
+<style>
+  :root {
+    --bg: #1d1d1d;
+    --panel: #232323;
+    --panel-2: #292929;
+    --line: #3a3a3a;
+    --line-strong: #4a4a4a;
+    --ink: #e7e7e7;
+    --ink-dim: #9a9a9a;
+    --cell: #343434;
+    --cell-edge: #565656;
+    --accent: #e0a23c;     /* active tile */
+    --accent-soft: rgba(224,162,60,0.18);
+    --kfill: #4fd1c5;       /* K accumulation */
+    --kfill-soft: rgba(79,209,197,0.16);
+    --aic: #e0a23c;
+    --aiv: #7aa2f7;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; background: var(--bg); color: var(--ink);
+    font: 13px/1.5 -apple-system, "Segoe UI", Roboto, "PingFang SC", "Microsoft YaHei", sans-serif; }
+  .wrap { display: grid; grid-template-rows: auto 1fr auto; height: 100%; }
+  header { padding: 12px 18px; border-bottom: 1px solid var(--line);
+    display: flex; align-items: center; gap: 16px; flex-wrap: wrap; }
+  h1 { font-size: 14px; font-weight: 650; margin: 0; }
+  .tag { color: var(--ink-dim); font-size: 12px; }
+  .tabs { display: inline-flex; gap: 6px; }
+  .tab { background: var(--panel-2); color: var(--ink-dim); border: 1px solid var(--line);
+    padding: 5px 12px; border-radius: 8px; cursor: pointer; font-size: 12px; }
+  .tab.is-active { background: #333; color: var(--ink); border-color: var(--line-strong); }
+  .stage { position: relative; min-height: 0; }
+  canvas { display: block; width: 100%; height: 100%; cursor: grab; }
+  canvas:active { cursor: grabbing; }
+  .legend { position: absolute; left: 16px; top: 14px; background: rgba(25,25,25,0.78);
+    border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; font-size: 12px;
+    display: grid; gap: 5px; max-width: 280px; backdrop-filter: blur(4px); }
+  .legend b { color: var(--ink); font-weight: 600; }
+  .legend .row { display: flex; align-items: center; gap: 8px; color: var(--ink-dim); }
+  .sw { width: 12px; height: 12px; border-radius: 3px; flex: none; }
+  footer { padding: 12px 18px; border-top: 1px solid var(--line);
+    display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
+  button.ctrl { background: var(--panel-2); color: var(--ink); border: 1px solid var(--line);
+    padding: 6px 14px; border-radius: 8px; cursor: pointer; font-size: 12px; }
+  button.ctrl:hover { border-color: var(--line-strong); }
+  input[type=range] { flex: 1 1 240px; accent-color: var(--kfill); }
+  .readout { color: var(--ink-dim); font-size: 12px; min-width: 220px; }
+  .readout b { color: var(--ink); }
+  .hint { position: absolute; right: 16px; top: 14px; color: var(--ink-dim);
+    font-size: 11px; text-align: right; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>Iso-3D Tensor Viewport</h1>
+    <span class="tag">Option B 预览 · 固定视角等距投影 · 2D canvas · 无依赖</span>
+    <div class="tabs" id="tabs">
+      <button class="tab is-active" data-kind="vector">Vector Add</button>
+      <button class="tab" data-kind="cube">Cube Matmul</button>
+      <button class="tab" data-kind="fusion">Matmul + LeakyReLU Fusion</button>
+    </div>
+  </header>
+
+  <div class="stage" id="stage">
+    <canvas id="cv"></canvas>
+    <div class="legend" id="legend"></div>
+    <div class="hint">拖拽平移 · Cmd/Ctrl+滚轮缩放 · 视角固定（不旋转）</div>
+  </div>
+
+  <footer>
+    <button class="ctrl" id="prev">◀ Prev</button>
+    <button class="ctrl" id="play">▶ Play</button>
+    <button class="ctrl" id="next">Next ▶</button>
+    <input type="range" id="slider" min="0" max="10" value="0">
+    <span class="readout" id="readout"></span>
+  </footer>
+</div>
+
+<script>
+(() => {
+  // ---- real tiling dims (from data/fixtures) ----
+  const VECTOR = { total: 16384, blocks: 8, blockLen: 2048, tileLen: 128 };
+  const MM = { M: 512, N: 1024, K: 512, baseM: 128, baseN: 256, baseK: 64 };
+  MM.tilesM = MM.M / MM.baseM;     // 4
+  MM.tilesN = MM.N / MM.baseN;     // 4
+  MM.kSteps = MM.K / MM.baseK;     // 8
+
+  const cv = document.getElementById('cv');
+  const ctx = cv.getContext('2d');
+  const stage = document.getElementById('stage');
+  const slider = document.getElementById('slider');
+  const readout = document.getElementById('readout');
+  const legend = document.getElementById('legend');
+
+  const view = { kind: 'vector', step: 0, panX: 0, panY: 0, zoom: 1, playing: false, raf: 0 };
+
+  // ---- fixed isometric basis ----
+  const TH = Math.PI / 6;                 // 30°
+  const COS = Math.cos(TH), SIN = Math.sin(TH);
+  function iso(c, r, h, u) {
+    // c = column axis (N), r = row axis (M), h = height (K), u = cell size
+    return {
+      x: (c - r) * COS * u,
+      y: (c + r) * SIN * u - h
+    };
+  }
+
+  // ---- step model per kind ----
+  function stepCount() {
+    if (view.kind === 'vector') return VECTOR.blocks * (VECTOR.blockLen / VECTOR.tileLen); // 8*16=128
+    if (view.kind === 'cube') return MM.tilesM * MM.tilesN * MM.kSteps;                     // 4*4*8=128
+    return MM.tilesM * MM.tilesN * 2;                                                       // AIC tile then 2 AIV halves
+  }
+
+  function setKind(kind) {
+    view.kind = kind;
+    view.step = 0;
+    view.panX = 0; view.panY = 0; view.zoom = 1;
+    slider.max = stepCount() - 1;
+    slider.value = 0;
+    document.querySelectorAll('.tab').forEach(t => t.classList.toggle('is-active', t.dataset.kind === kind));
+    draw();
+  }
+
+  // ---- canvas sizing (DPR aware, only realloc on change) ----
+  function fit() {
+    const dpr = window.devicePixelRatio || 1;
+    const w = Math.floor(stage.clientWidth * dpr);
+    const h = Math.floor(stage.clientHeight * dpr);
+    if (cv.width !== w) cv.width = w;
+    if (cv.height !== h) cv.height = h;
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    return { w: stage.clientWidth, h: stage.clientHeight };
+  }
+
+  function css(name) { return getComputedStyle(document.documentElement).getPropertyValue(name).trim(); }
+
+  // draw one filled+stroked quad from 4 iso points (already offset to screen)
+  function quad(p0, p1, p2, p3, fill, stroke, lw) {
+    ctx.beginPath();
+    ctx.moveTo(p0.x, p0.y); ctx.lineTo(p1.x, p1.y);
+    ctx.lineTo(p2.x, p2.y); ctx.lineTo(p3.x, p3.y); ctx.closePath();
+    if (fill) { ctx.fillStyle = fill; ctx.fill(); }
+    if (stroke) { ctx.strokeStyle = stroke; ctx.lineWidth = lw || 1; ctx.stroke(); }
+  }
+
+  // draw a cuboid spanning [c,c+1]x[r,r+1]x[0,H] in tile units
+  function cuboid(ox, oy, u, c, r, H, faces) {
+    const P = (cc, rr, hh) => { const p = iso(cc, rr, hh * u, u); return { x: ox + p.x, y: oy + p.y }; };
+    // top face (at height H)
+    const t0 = P(c, r, H), t1 = P(c+1, r, H), t2 = P(c+1, r+1, H), t3 = P(c, r+1, H);
+    // bottom
+    const b1 = P(c+1, r, 0), b2 = P(c+1, r+1, 0), b3 = P(c, r+1, 0);
+    // left face (c+1 side, facing right-down), right face (r+1 side)
+    if (H > 0) {
+      quad(t1, b1, b2, t2, faces.rightFill, faces.edge, 1);   // east face
+      quad(t2, b2, b3, t3, faces.frontFill, faces.edge, 1);   // south face
+    }
+    quad(t0, t1, t2, t3, faces.topFill, faces.topEdge || faces.edge, faces.topLw || 1);
+    return { t0, t1, t2, t3 };
+  }
+
+  // ---------- VECTOR (1D strip in iso) ----------
+  function drawVector(W, H) {
+    const tilesPerBlock = VECTOR.blockLen / VECTOR.tileLen; // 16
+    const globalTile = view.step;
+    const activeBlock = Math.floor(globalTile / tilesPerBlock);
+    const tileInBlock = globalTile % tilesPerBlock;
+
+    const cols = VECTOR.blocks;            // 8 blocks along the strip
+    const u = 46 * view.zoom;
+    const ox = W / 2 + view.panX - (cols - 1) * COS * u / 2;
+    const oy = H / 2 + view.panY - 30;
+
+    // strip baseline: one row (r=0..1), c=0..cols
+    for (let c = 0; c < cols; c++) {
+      const active = c === activeBlock;
+      cuboid(ox, oy, u, c, 0, 0.14, {
+        topFill: active ? 'rgba(224,162,60,0.10)' : css('--cell'),
+        edge: css('--cell-edge'),
+        topEdge: active ? css('--accent') : css('--cell-edge'),
+        topLw: active ? 1.6 : 1,
+        frontFill: active ? 'rgba(224,162,60,0.16)' : '#2c2c2c',
+        rightFill: active ? 'rgba(224,162,60,0.22)' : '#303030',
+      });
+      // block label
+      const lp = iso(c + 0.5, 0.5, 0, u);
+      ctx.fillStyle = active ? css('--accent') : css('--ink-dim');
+      ctx.font = '600 11px sans-serif';
+      ctx.textAlign = 'center';
+      ctx.fillText('b' + c, ox + lp.x, oy + lp.y + 4);
+    }
+
+    // highlighted tile inside active block: filled slice on the TOP face
+    const frac = tileInBlock / tilesPerBlock;
+    const tw = 1 / tilesPerBlock;
+    const c0 = activeBlock + frac, c1 = c0 + tw;
+    const topH = 0.14 * u;            // block top-face height (matches cuboid above)
+    const T = (cc, rr) => { const p = iso(cc, rr, topH, u); return { x: ox + p.x, y: oy + p.y }; };
+    quad(T(c0, 0), T(c1, 0), T(c1, 1), T(c0, 1), 'rgba(224,162,60,0.55)', css('--accent'), 1.2);
+
+    // ruler ticks along N (element offset)
+    ctx.fillStyle = css('--ink-dim');
+    ctx.font = '10px sans-serif';
+    ctx.textAlign = 'center';
+    for (let c = 0; c <= cols; c++) {
+      const p = iso(c, 1.5, 0, u);
+      ctx.fillText((c * VECTOR.blockLen).toLocaleString(), ox + p.x, oy + p.y + 4);
+    }
+    const axp = iso(cols / 2, 2.4, 0, u);
+    ctx.fillStyle = css('--ink');
+    ctx.fillText('GM element offset →  (total ' + VECTOR.total.toLocaleString() + ')', ox + axp.x, oy + axp.y);
+
+    setLegend([
+      ['1D 逻辑 tensor', '整条 GM 线性地址 16384 elements'],
+      ['block', '8 个 block × blockLen 2048'],
+      ['accent', 'tile ' + tileInBlock + '/' + tilesPerBlock + ' @ block b' + activeBlock + '（tileLen 128）'],
+    ], [['--accent', '当前 tile'], ['--cell', '其它 block']]);
+
+    readout.innerHTML = `block <b>b${activeBlock}</b> · tile <b>${tileInBlock+1}/${tilesPerBlock}</b> · element offset <b>${(globalTile*VECTOR.tileLen).toLocaleString()}</b>`;
+  }
+
+  // ---------- CUBE matmul (M×N plane + K depth) ----------
+  function drawCube(W, H, fusion) {
+    const tilesM = MM.tilesM, tilesN = MM.tilesN, kSteps = MM.kSteps;
+    let mIdx, nIdx, kIdx, aivHalf = -1, phase = 'mmad';
+    if (!fusion) {
+      const per = kSteps;
+      const tileLinear = Math.floor(view.step / per);
+      kIdx = view.step % per;
+      nIdx = tileLinear % tilesN;
+      mIdx = Math.floor(tileLinear / tilesN);
+    } else {
+      const tileLinear = Math.floor(view.step / 2);
+      const sub = view.step % 2;       // 0 = AIC produce, 1.. = AIV consume halves
+      nIdx = tileLinear % tilesN;
+      mIdx = Math.floor(tileLinear / tilesN);
+      kIdx = kSteps;                   // AIC done before AIV
+      phase = sub === 0 ? 'aic' : 'aiv';
+      aivHalf = sub === 0 ? -1 : 0;
+    }
+
+    const kFilled = fusion ? kSteps : (kIdx + 1);
+
+    const u = 34 * view.zoom;
+    const zUnit = 30 * view.zoom;        // px per K cell (≈cubic voxels)
+    const ox = W / 2 + view.panX;
+    const oy = H * 0.62 + view.panY;
+    const g = 0.12;                      // gap so cells read as a grid
+
+    const HI = {
+      k:   { top:'#4fd1c5', east:'#3cb6ab', south:'#329b91', edge:'rgba(8,40,38,0.55)' },
+      aic: { top:'#e0a23c', east:'#c4852a', south:'#a66f20', edge:'rgba(45,30,8,0.55)' },
+      aiv: { top:'#7aa2f7', east:'#5f86db', south:'#4d70c2', edge:'rgba(12,20,45,0.55)' },
+    }[fusion ? (phase === 'aic' ? 'aic' : 'aiv') : 'k'];
+    const GRAY  = { top:'#474747', east:'#3a3a3a', south:'#2f2f2f', edge:'rgba(18,18,18,0.65)' };
+    const GHOST = { top:'rgba(79,209,197,0.08)', east:'rgba(79,209,197,0.06)', south:'rgba(79,209,197,0.04)', edge:'rgba(79,209,197,0.22)' };
+
+    // 1) full M×N×K voxel grid (gray), minus the active column — depth-sorted back→front
+    const cells = [];
+    for (let r = 0; r < tilesM; r++)
+      for (let c = 0; c < tilesN; c++)
+        for (let k = 0; k < kSteps; k++) {
+          if (c === nIdx && r === mIdx) continue;   // active column drawn last, on top
+          cells.push({ c, r, k });
+        }
+    cells.sort((a, b) => (a.c + a.r + a.k) - (b.c + b.r + b.k));
+    for (const cell of cells) voxel(ox, oy, u, zUnit, cell.c, cell.r, cell.k, g, GRAY);
+
+    // 2) active output-tile K column: filled = accumulated, ghost = remaining
+    for (let k = 0; k < kSteps; k++) {
+      voxel(ox, oy, u, zUnit, nIdx, mIdx, k, g, k < kFilled ? HI : GHOST);
+    }
+
+    // axes ticks + names along the visible front edges
+    ctx.textAlign = 'center';
+    ctx.fillStyle = css('--ink-dim'); ctx.font = '10px sans-serif';
+    for (let c = 0; c <= tilesN; c++) {       // N along front-left edge (r = tilesM)
+      const p = iso(c, tilesM + 0.5, 0, u);
+      ctx.fillText((c * MM.baseN).toString(), ox + p.x, oy + p.y + 4);
+    }
+    let np = iso(tilesN / 2, tilesM + 1.4, 0, u);
+    ctx.fillStyle = css('--ink'); ctx.font = '600 12px sans-serif';
+    ctx.fillText('N = ' + MM.N, ox + np.x, oy + np.y);
+
+    ctx.fillStyle = css('--ink-dim'); ctx.font = '10px sans-serif'; ctx.textAlign = 'left';
+    for (let r = 0; r <= tilesM; r++) {       // M along front-right edge (c = tilesN)
+      const p = iso(tilesN + 0.5, r, 0, u);
+      ctx.fillText((r * MM.baseM).toString(), ox + p.x, oy + p.y + 4);
+    }
+    let mp = iso(tilesN + 1.5, tilesM / 2, 0, u);
+    ctx.fillStyle = css('--ink'); ctx.font = '600 12px sans-serif'; ctx.textAlign = 'left';
+    ctx.fillText('M = ' + MM.M, ox + mp.x, oy + mp.y);
+
+    const kp = { x: ox + (nIdx - mIdx) * COS * u + 14, y: oy + (nIdx + mIdx) * SIN * u - kSteps * zUnit - 6 };
+    ctx.fillStyle = css('--kfill'); ctx.font = '600 12px sans-serif'; ctx.textAlign = 'left';
+    ctx.fillText('K = ' + MM.K + ' ↑', kp.x, kp.y);
+
+    if (!fusion) {
+      setLegend([
+        ['2D 输出 C[M,N]', 'M=512 × N=1024 · 平面网格按 baseM×baseN=128×256 分块'],
+        ['K 深度', 'K=512 沿高度累加，baseK=64 × ' + kSteps + ' 步'],
+        ['当前 tile', 'mIdx=' + mIdx + ' nIdx=' + nIdx + ' · K 累加 ' + (kIdx+1) + '/' + kSteps],
+      ], [['--accent', '当前输出 tile'], ['--kfill', 'K 累加进度'], ['--cell', '其它输出 tile']]);
+      readout.innerHTML = `output tile <b>(m${mIdx}, n${nIdx})</b> · C[${mIdx*MM.baseM}:${(mIdx+1)*MM.baseM}, ${nIdx*MM.baseN}:${(nIdx+1)*MM.baseN}] · Mmad K <b>${kIdx+1}/${kSteps}</b>`;
+    } else {
+      setLegend([
+        ['AIC → AIV 融合', 'Cube 产出 C tile，Vector 消费做 LeakyReLU'],
+        ['AIC', '产出 baseM×baseN=128×256 输出分区'],
+        ['AIV', '按 M-half 拆分消费（halfSelector = blockIdx % 2）'],
+      ], [['--aic', 'AIC 产出'], ['--aiv', 'AIV 消费'], ['--cell', '其它 tile']]);
+      readout.innerHTML = `tile <b>(m${mIdx}, n${nIdx})</b> · 阶段 <b>${phase === 'aic' ? 'AIC 产出' : 'AIV 消费 (M-half)'}</b>`;
+    }
+  }
+
+  // one voxel cube at integer cell (c,r,k); draws the 3 camera-facing faces
+  function voxel(ox, oy, u, zUnit, c, r, k, g, f) {
+    const P = (cc, rr, kk) => ({ x: ox + (cc - rr) * COS * u, y: oy + (cc + rr) * SIN * u - kk * zUnit });
+    const c0 = c + g, c1 = c + 1 - g, r0 = r + g, r1 = r + 1 - g, k0 = k + g, k1 = k + 1 - g;
+    const T0 = P(c0, r0, k1), T1 = P(c1, r0, k1), T2 = P(c1, r1, k1), T3 = P(c0, r1, k1);
+    const E2 = P(c1, r1, k0), E3 = P(c1, r0, k0);   // east face (c1 plane)
+    const S3 = P(c0, r1, k0);                        // south face (r1 plane)
+    quad(T1, E3, E2, T2, f.east, f.edge, 1);
+    quad(T3, T2, E2, S3, f.south, f.edge, 1);
+    quad(T0, T1, T2, T3, f.top, f.edge, 1);
+  }
+
+  function setLegend(rows, swatches) {
+    let html = '';
+    rows.forEach(([t, d]) => { html += `<div><b>${t}</b><br><span style="color:var(--ink-dim)">${d}</span></div>`; });
+    if (swatches) {
+      html += '<div style="margin-top:4px;display:grid;gap:4px">';
+      swatches.forEach(([v, label]) => {
+        html += `<div class="row"><span class="sw" style="background:var(${v})"></span>${label}</div>`;
+      });
+      html += '</div>';
+    }
+    legend.innerHTML = html;
+  }
+
+  // ---- main draw ----
+  function draw() {
+    const { w, h } = fit();
+    ctx.clearRect(0, 0, w, h);
+    ctx.fillStyle = css('--bg');
+    ctx.fillRect(0, 0, w, h);
+    if (view.kind === 'vector') drawVector(w, h);
+    else if (view.kind === 'cube') drawCube(w, h, false);
+    else drawCube(w, h, true);
+  }
+
+  // ---- interaction ----
+  let drag = null;
+  cv.addEventListener('pointerdown', e => { drag = { x: e.clientX, y: e.clientY, px: view.panX, py: view.panY }; cv.setPointerCapture(e.pointerId); });
+  cv.addEventListener('pointermove', e => {
+    if (!drag) return;
+    view.panX = drag.px + (e.clientX - drag.x);
+    view.panY = drag.py + (e.clientY - drag.y);
+    if (!view.raf) view.raf = requestAnimationFrame(() => { view.raf = 0; draw(); });
+  });
+  cv.addEventListener('pointerup', e => { drag = null; cv.releasePointerCapture(e.pointerId); });
+  cv.addEventListener('wheel', e => {
+    if (!(e.metaKey || e.ctrlKey)) return;   // zoom only with Cmd/Ctrl + wheel
+    e.preventDefault();
+    view.zoom = Math.max(0.45, Math.min(2.6, view.zoom * (e.deltaY < 0 ? 1.1 : 0.9)));
+    draw();
+  }, { passive: false });
+
+  function setStep(s) {
+    const n = stepCount();
+    view.step = ((s % n) + n) % n;
+    slider.value = view.step;
+    draw();
+  }
+  document.getElementById('prev').onclick = () => setStep(view.step - 1);
+  document.getElementById('next').onclick = () => setStep(view.step + 1);
+  slider.oninput = () => setStep(+slider.value);
+  document.getElementById('tabs').onclick = e => { const k = e.target.dataset.kind; if (k) setKind(k); };
+
+  let timer = null;
+  document.getElementById('play').onclick = (e) => {
+    view.playing = !view.playing;
+    e.target.textContent = view.playing ? '❚❚ Pause' : '▶ Play';
+    if (view.playing) timer = setInterval(() => setStep(view.step + 1), 280);
+    else clearInterval(timer);
+  };
+
+  let resizeRaf = 0;
+  new ResizeObserver(() => { if (resizeRaf) return; resizeRaf = requestAnimationFrame(() => { resizeRaf = 0; draw(); }); }).observe(stage);
+
+  setKind('vector');
+})();
+</script>
+</body>
+</html>

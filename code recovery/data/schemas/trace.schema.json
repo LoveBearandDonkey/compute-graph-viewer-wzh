@@ -1,0 +1,262 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://pto.local/schemas/ascend-viz-trace.schema.json",
+  "title": "Ascend Viz Trace",
+  "type": "object",
+  "required": ["schemaVersion", "operator", "arch", "launch", "tiling", "source", "memory", "stages", "steps", "puzzles"],
+  "properties": {
+    "schemaVersion": {
+      "type": "string"
+    },
+    "operator": {
+      "type": "object",
+      "required": ["id", "name", "kind", "sourceLanguage", "apiLevel", "sourcePath"],
+      "properties": {
+        "id": {"type": "string"},
+        "name": {"type": "string"},
+        "displayName": {"type": "string"},
+        "kind": {"type": "string"},
+        "sourceLanguage": {"type": "string"},
+        "apiLevel": {"type": "string"},
+        "sourcePath": {"type": "string"},
+        "description": {"type": "string"}
+      },
+      "additionalProperties": true
+    },
+    "arch": {
+      "type": "object",
+      "required": ["npuArch", "kernelTag"],
+      "properties": {
+        "npuArch": {"type": "string"},
+        "soc": {"type": "string"},
+        "kernelTag": {"type": "string"},
+        "unitRatio": {"type": "string"}
+      },
+      "additionalProperties": true
+    },
+    "launch": {
+      "type": "object",
+      "properties": {
+        "hostSteps": {
+          "type": "array",
+          "items": {"type": "string"}
+        },
+        "numBlocks": {"type": "integer"},
+        "entry": {"type": "string"}
+      },
+      "additionalProperties": true
+    },
+    "tiling": {
+      "type": "object",
+      "required": ["type", "params"],
+      "properties": {
+        "type": {"type": "string"},
+        "params": {
+          "type": "object",
+          "additionalProperties": true
+        },
+        "derived": {
+          "type": "object",
+          "additionalProperties": true
+        },
+        "controls": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["id", "label", "value"],
+            "properties": {
+              "id": {"type": "string"},
+              "label": {"type": "string"},
+              "value": {},
+              "unit": {"type": "string"},
+              "description": {"type": "string"}
+            },
+            "additionalProperties": true
+          }
+        }
+      },
+      "additionalProperties": true
+    },
+    "source": {
+      "type": "object",
+      "required": ["path", "lines"],
+      "properties": {
+        "path": {"type": "string"},
+        "lines": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["line", "text"],
+            "properties": {
+              "line": {"type": "integer"},
+              "text": {"type": "string"}
+            }
+          }
+        }
+      },
+      "additionalProperties": true
+    },
+    "memory": {
+      "type": "object",
+      "required": ["tiers"],
+      "properties": {
+        "tiers": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["id", "label", "role"],
+            "properties": {
+              "id": {"type": "string"},
+              "label": {"type": "string"},
+              "role": {"type": "string"},
+              "capacity": {"type": "string"},
+              "description": {"type": "string"}
+            },
+            "additionalProperties": true
+          }
+        },
+        "blocks": {
+          "type": "array",
+          "items": {"type": "object", "additionalProperties": true}
+        }
+      },
+      "additionalProperties": true
+    },
+    "stages": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "label", "unit", "operations"],
+        "properties": {
+          "id": {"type": "string"},
+          "label": {"type": "string"},
+          "semanticLabel": {"type": "string"},
+          "unit": {"type": "string"},
+          "operations": {
+            "type": "array",
+            "items": {"type": "string"}
+          },
+          "sourceRef": {
+            "type": "object",
+            "properties": {
+              "line": {"type": "integer"},
+              "symbol": {"type": "string"}
+            },
+            "additionalProperties": true
+          },
+          "description": {"type": "string"}
+        },
+        "additionalProperties": true
+      }
+    },
+    "steps": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "stageId", "label", "summary", "sourceLines"],
+        "properties": {
+          "id": {"type": "string"},
+          "stageId": {"type": "string"},
+          "label": {"type": "string"},
+          "summary": {"type": "string"},
+          "unit": {"type": "string"},
+          "blockIdx": {"type": "integer"},
+          "loop": {
+            "type": "object",
+            "additionalProperties": true
+          },
+          "sourceLines": {
+            "type": "array",
+            "items": {"type": "integer"}
+          },
+          "memoryRegions": {
+            "type": "array",
+            "items": {"type": "string"}
+          },
+          "queueEvents": {
+            "type": "array",
+            "items": {"type": "string"}
+          },
+          "syncEvents": {
+            "type": "array",
+            "items": {"type": "string"}
+          },
+          "metrics": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": ["label", "value"],
+              "properties": {
+                "label": {"type": "string"},
+                "value": {},
+                "unit": {"type": "string"}
+              },
+              "additionalProperties": true
+            }
+          },
+          "visualState": {
+            "type": "object",
+            "properties": {
+              "tensorViewport": {
+                "type": "object",
+                "additionalProperties": true
+              },
+              "onChipLens": {
+                "type": "object",
+                "additionalProperties": true
+              },
+              "architectureFocus": {
+                "type": "object",
+                "properties": {
+                  "selectors": {
+                    "type": "array",
+                    "items": {"type": "string"}
+                  },
+                  "routes": {
+                    "type": "array",
+                    "items": {"type": "string"}
+                  },
+                  "bufferBlocks": {
+                    "type": "array",
+                    "items": {"type": "object", "additionalProperties": true}
+                  }
+                },
+                "additionalProperties": true
+              }
+            },
+            "additionalProperties": true
+          }
+        },
+        "additionalProperties": true
+      }
+    },
+    "puzzles": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "kind", "prompt", "answer", "explanation"],
+        "properties": {
+          "id": {"type": "string"},
+          "kind": {"type": "string"},
+          "prompt": {"type": "string"},
+          "context": {
+            "type": "object",
+            "additionalProperties": true
+          },
+          "answer": {},
+          "sourceHint": {
+            "type": "object",
+            "additionalProperties": true
+          },
+          "explanation": {"type": "string"}
+        },
+        "additionalProperties": true
+      }
+    },
+    "evidence": {
+      "type": "object",
+      "additionalProperties": true
+    }
+  },
+  "additionalProperties": true
+}
