@@ -1765,6 +1765,118 @@
     return null;
   }
 
+  /* 运行态事件与 training-monitoring-v2 的问题一/问题二同源。事件保留自己的
+     性能语义；scope 描述“本次运行实际涉及谁”，不覆盖静态配置映射公式。 */
+  const INCIDENT_GROUPS = [
+    {
+      id: "problem-1",
+      name: "问题一 · Router 溢出与通信死锁",
+      summary: "6 个事件",
+      context: { layers: [38], experts: [193], ranks: [1559], segments: ["moe"] },
+      bridge: (event) => `「${event.title}」的传播源是 ${event.root}；沿“${event.path}”传导；最大影响：${event.impact}`,
+      events: [
+        {
+          id: "p1-warning", time: "15k", dimension: "数值 · 预警", title: "Loss scale 连续衰减",
+          focus: { kind: "layer", layer: 38 }, origin: { layers: [38], segments: ["moe"] },
+          conclusion: "Layer 38 的数值健康已提前恶化，AMP scaler 从 65536 衰减到 4096。",
+          root: "MoE Router 数值稳定性下降", path: "Layer 38 → AMP scaler 三级预警",
+          impact: "可提前 53 step 触发 dump，尚未扩散到通信。"
+        },
+        {
+          id: "p1-nan", time: "15203", dimension: "耗时 · 数值", title: "Loss NaN / grad_norm Inf",
+          focus: { kind: "layer", layer: 38 }, origin: { layers: [38], segments: ["moe"] },
+          propagation: { stages: [3] }, conclusion: "异常只在多卡复现，Layer 38 是首个数值病灶候选。",
+          root: "Router logits 出现 Inf", path: "Layer 38 → 梯度 Inf → Loss NaN",
+          impact: "PP stage 3 的本轮迭代失败，训练无法继续收敛。"
+        },
+        {
+          id: "p1-log", time: "+8ms", dimension: "通信 · 日志", title: "Plog 暴露 buffer 失配",
+          focus: { kind: "rank", rank: 1559 }, origin: { ranks: [1559] },
+          propagation: { layers: [38], experts: [193], segments: ["moe"] },
+          conclusion: "运行时 EP rank 23 的 send=0、recv=9832；通信报错同时携带 router_logits Inf 证据。",
+          root: "global rank 1559 的 send/recv buffer 失配", path: "Rank 1559 buffer 失配 → 通信阻塞",
+          impact: "首先影响 global rank 1559（PP3 / DP0 / EP23）。"
+        },
+        {
+          id: "p1-a2a", time: "+30s", dimension: "通信 · 耗时", title: "All-to-all 超时，63 rank 空等",
+          focus: { kind: "rank", rank: 1559 }, origin: { ranks: [1559] },
+          propagation: { layers: [38], experts: [193], segments: ["moe"], ranks: "ep-stage" },
+          victim: { ranks: "ep-stage-peers" },
+          conclusion: "EP rank 23 是首个阻塞者，其余 63 个 EP rank 是 barrier 受害者，不应被判为 64 个独立根因。",
+          root: "Rank 1559 recv 过载", path: "Rank 1559 → All-to-all barrier → 63 rank 空等",
+          impact: "PP stage 3 的一个 EP 通信组停止前进。"
+        },
+        {
+          id: "p1-root", time: "-30s", dimension: "数值 · 负载", title: "Router FP8 溢出，E193 吸收 98% token",
+          focus: { kind: "segment", segment: "moe", bar: "gate", scopeLayer: 38, deckNode: "gate" },
+          origin: { layers: [38], segments: ["moe"] },
+          propagation: { ranks: [1559] },
+          conclusion: "这是问题一的根因事件：FP8 softmax 溢出导致路由塌缩，而不是 HCCL 自身故障。",
+          root: "Layer 38 Router：max(logits)=1846 → exp=Inf", path: "Router → Expert 193（98% token）→ EP rank 23",
+          impact: "247 个 dead expert；单点负载被放大为通信阻塞。"
+        },
+        {
+          id: "p1-spread", time: "+30.1s", dimension: "通信 · 扩散", title: "PP3 断裂，2048 NPU hang",
+          focus: { kind: "stage", stage: 3 }, origin: { ranks: [1559] },
+          propagation: { stages: [3], ranks: "stage" }, victim: { ranks: "all" },
+          conclusion: "报错点是通信 timeout，异常震中却在 Layer 38 Router；单点经 EP barrier 和 PP 依赖扩散至整网。",
+          root: "global rank 1559 的 all-to-all 阻塞", path: "Rank 1559 阻塞 → EP barrier → PP3 断裂 → 全网等待",
+          impact: "4 个 PP stage、2048 NPU 均受影响。"
+        }
+      ]
+    },
+    {
+      id: "problem-2",
+      name: "问题二 · 显存峰值与碎片 OOM",
+      summary: "5 个事件",
+      context: {
+        layers: [34,35,36,37,38,39,40,41,42,43,44,45],
+        stages: [3], experts: "all", epRanks: "all", ranks: "stage", segments: ["moe", "head"]
+      },
+      bridge: (event) => `「${event.title}」的传播源是 ${event.root}；沿“${event.path}”传导；最大影响：${event.impact}`,
+      events: [
+        {
+          id: "p2-rise", time: "8000+", dimension: "显存 · 趋势", title: "显存从 55 GB 持续爬升",
+          focus: { kind: "stage", stage: 3 }, origin: { layers: [38], segments: ["moe"] },
+          conclusion: "PP stage 3 的显存不再回落，吞吐同期下降 12.5%。",
+          root: "PP stage 3 的激活常驻链", path: "46 层激活常驻 → 显存持续爬升",
+          impact: "高风险范围集中在 L34–45 与 LM Head。"
+        },
+        {
+          id: "p2-cost", time: "12000", dimension: "耗时 · 显存", title: "分配/释放 API 占时 7.4%",
+          focus: { kind: "stage", stage: 3 }, origin: { layers: [38], segments: ["moe"] },
+          propagation: { layers: [34,35,36,37,38,39,40,41,42,43,44,45] },
+          conclusion: "显存管理耗时 890 ms，明显高于正常值 2%；带宽利用率 78%，可排除纯带宽瓶颈。",
+          root: "Layer 38 所在阶段的分配器碎片整理", path: "碎片整理 / 换页 → step 耗时增加",
+          impact: "单 step 吞吐从 3200 降至 2800 tokens/s。"
+        },
+        {
+          id: "p2-peak", time: "12000", dimension: "显存 · 容量", title: "激活值占用 36.2 GB",
+          focus: { kind: "stage", stage: 3 }, origin: { layers: [38], segments: ["moe"] },
+          propagation: { segments: ["moe", "head"] },
+          conclusion: "激活值占峰值的 56.6%，是唯一可大幅缩减的组成。",
+          root: "46 层激活全部常驻", path: "逐层激活累积 → Stage 3 叠加 LM Head logits",
+          impact: "峰值逼近 64 GB，容量已无安全余量。"
+        },
+        {
+          id: "p2-layer", time: "12000", dimension: "显存 · Layer", title: "L38 单层激活达到 1.2 GB",
+          focus: { kind: "layer", layer: 38 }, origin: { layers: [38], segments: ["moe"] },
+          propagation: { stages: [3] }, conclusion: "Layer 38 比普通 Dense 层高 1.7 倍，额外占用来自 expert dispatch buffer。",
+          root: "L38 Expert Dispatch Buffer", path: "Layer 38 → PP stage 3 → 峰值叠加",
+          impact: "L34–45 与 LM Head 共同构成最重 stage。"
+        },
+        {
+          id: "p2-oom", time: "12003", dimension: "显存 · OOM", title: "Rank 17 触顶并发生碎片 OOM",
+          focus: { kind: "rank", rank: 1553 }, origin: { ranks: [1553] },
+          propagation: { stages: [3], ranks: "stage" }, victim: { ranks: "all" },
+          conclusion: "64/64 GB 容量不足是主因，83% 碎片率让 0.5 GB 临时 buffer 更早申请失败。",
+          root: "global rank 1553 的显存分配失败", path: "Rank 1553 OOM → PP3 中断 → 全网等待",
+          impact: "运行时 EP rank 17（global rank 1553）先失败，随后影响全部 2048 NPU。"
+        }
+      ]
+    }
+  ];
+
   /* ── 页面接线 ─────────────────────────────────────────────────────────── */
   function boot() {
     const controller = createController();
@@ -1813,9 +1925,18 @@
 
     const linkLayer = document.getElementById("croLinkLayer");
     let relation = null;
+    let incidentRootAnchor = null;
 
     function emitSelect(payload) {
       const topology = controller.topology;
+      if (!payload?.incidentId) {
+        activeIncident = null;
+        paintIncidentRoles(null, topology);
+        document.querySelectorAll(".cro-event").forEach((button) => {
+          button.classList.remove("is-selected");
+          button.setAttribute("aria-pressed", "false");
+        });
+      }
       // 「先选层、再点算子条」时把结构条收敛到那一层（select.png 的 EP Combine in Layer 3）
       if (payload && payload.kind === "segment" && !Number.isFinite(payload.scopeLayer)) {
         const prev = relation && relation.primary;
@@ -1830,7 +1951,26 @@
 
     function clearSelection() { emitSelect(null); }
 
-    function redrawLinks() { drawRelationLinks(linkLayer, relation); }
+    function updateRootTag() {
+      const tag = document.getElementById("croRootTag");
+      if (!tag || !incidentRootAnchor || !incidentRootAnchor.isConnected) {
+        if (tag) tag.hidden = true;
+        return;
+      }
+      const rect = incidentRootAnchor.getBoundingClientRect();
+      if (!rect.width && !rect.height) {
+        tag.hidden = true;
+        return;
+      }
+      tag.hidden = false;
+      tag.style.left = `${Math.min(global.innerWidth - 64, rect.right + 6)}px`;
+      tag.style.top = `${rect.top + rect.height / 2}px`;
+    }
+
+    function redrawLinks() {
+      drawRelationLinks(linkLayer, relation);
+      updateRootTag();
+    }
 
     /* 把关系集铺到四个视图。selected = 用户点中的那一个，related = 被它牵连出来的。
        rel 为 null 表示清空，回到「默认不预选、不高亮」的静息态。 */
@@ -1861,9 +2001,10 @@
       });
       layerNav?.querySelectorAll(".cro-pp-span").forEach((el) => {
         const s = Number(el.dataset.stage);
-        const selected = Boolean(p) && p.kind === "stage" && s === p.stage;
+        const incident = Boolean(p?.incidentId);
+        const selected = !incident && Boolean(p) && p.kind === "stage" && s === p.stage;
         el.classList.toggle("is-selected", selected);
-        el.classList.toggle("is-related", !selected && has("stages", s));
+        el.classList.toggle("is-related", !incident && !selected && has("stages", s));
       });
       // Dense / MoE / Emb / Norm / Head 注记：跟着关系集走，不在范围内的整条压暗，
       // 免得选中一层后五个分区名仍是同一亮度、读不出这一层属于哪一段。
@@ -1965,6 +2106,170 @@
     }
 
     const board = document.getElementById("croBoard");
+    let activeIncident = null;
+
+    function expandIncidentValues(spec, key, topology) {
+      if (!spec || spec[key] == null) return [];
+      const value = spec[key];
+      if (value === "all") {
+        const countByKey = {
+          ranks: topology.counts.totalRank,
+          experts: topology.counts.routedExpert,
+          epRanks: topology.counts.ep,
+          layers: topology.counts.totalLayer,
+        };
+        const count = countByKey[key];
+        return Number.isFinite(count) ? Array.from({ length: count }, (_, i) => i) : [];
+      }
+      if (value === "stage" && key === "ranks") return topology.ranksOfStage(3);
+      if (value === "ep-stage" && key === "ranks") {
+        const start = topology.rankOf(3, 0, 0);
+        return Array.from({ length: topology.counts.ep }, (_, i) => start + i);
+      }
+      if (value === "ep-stage-peers" && key === "ranks") {
+        const start = topology.rankOf(3, 0, 0);
+        return Array.from({ length: topology.counts.ep }, (_, i) => start + i).filter((rank) => rank !== 1559);
+      }
+      return Array.isArray(value) ? value : [];
+    }
+
+    function addIncidentScope(rel, event, topology) {
+      // 静态查询会把“某层/某算子理论上可关联的全部对象”铺开；运行态事件必须
+      // 改用本次采样的实际范围，否则 E193 病灶会误亮全部 256 专家和 2048 rank。
+      ["layers", "stages", "experts", "epRanks", "segments", "ranks", "shared", "units", "staticNodes"]
+        .forEach((key) => rel[key].clear());
+      ["context", "origin", "propagation", "victim"].forEach((role) => {
+        const spec = event[role];
+        if (!spec) return;
+        ["layers", "stages", "experts", "epRanks", "segments", "ranks"].forEach((key) => {
+          expandIncidentValues(spec, key, topology).forEach((value) => rel[key].add(value));
+        });
+      });
+      rel.layers.forEach((layer) => rel.stages.add(topology.stageOfLayer(layer)));
+      rel.nodes = topology.nodesOfRanks(Array.from(rel.ranks));
+      rel.labels = relationLabels(topology, rel, activeColumns(topology));
+      return rel;
+    }
+
+    function roleSelectors(spec, topology) {
+      const selectors = [];
+      expandIncidentValues(spec, "layers", topology).forEach((v) => selectors.push(`.cro-tick[data-layer="${v}"]`));
+      expandIncidentValues(spec, "experts", topology).forEach((v) => selectors.push(`.cro-expert[data-expert="${v}"]`));
+      expandIncidentValues(spec, "epRanks", topology).forEach((v) => selectors.push(`.cro-moe-group[data-ep-rank="${v}"]`));
+      expandIncidentValues(spec, "segments", topology)
+        .forEach((v) => selectors.push(`.cro-structure__col[data-segment="${v}"] .cro-structure__stack`));
+      expandIncidentValues(spec, "ranks", topology).forEach((v) => selectors.push(`#croHeat .twin-heat-cell[data-rank="${v}"]`));
+      return selectors;
+    }
+
+    function paintIncidentRoles(event, topology) {
+      board?.querySelectorAll(".is-incident-origin,.is-incident-propagation,.is-incident-victim")
+        .forEach((el) => el.classList.remove("is-incident-origin", "is-incident-propagation", "is-incident-victim"));
+      board?.classList.toggle("is-incident-mode", Boolean(event));
+      if (!event) {
+        incidentRootAnchor = null;
+        const banner = document.getElementById("croIncidentBanner");
+        const message = document.getElementById("croIncidentBannerMessage");
+        if (banner) {
+          banner.hidden = true;
+        }
+        if (message) message.textContent = "";
+        updateRootTag();
+        return;
+      }
+      roleSelectors(event.origin, topology).forEach((selector) => {
+        board?.querySelectorAll(selector).forEach((el) => {
+          el.classList.add("is-incident-origin");
+        });
+      });
+      incidentRootAnchor = firstMatch(board, [
+        ".cro-bar.is-selected",
+        ".cro-tick.is-selected",
+        ".cro-expert.is-selected",
+        "#croHeat .twin-heat-cell.is-selected",
+        ".cro-structure__col.is-selected",
+        ".is-incident-origin",
+      ]);
+      requestAnimationFrame(updateRootTag);
+    }
+
+    function selectIncident(event) {
+      activeIncident = event;
+      const topology = controller.topology;
+      relation = addIncidentScope(resolveRelation(topology, { ...event.focus, incidentId: event.id }), event, topology);
+      applyRelation(relation);
+      paintIncidentRoles(event, topology);
+      const banner = document.getElementById("croIncidentBanner");
+      const message = document.getElementById("croIncidentBannerMessage");
+      if (banner) {
+        banner.hidden = false;
+      }
+      if (message) message.textContent = event.banner || event.path || event.title;
+      document.querySelectorAll(".cro-event").forEach((button) => {
+        const selected = button.dataset.eventId === event.id;
+        button.classList.toggle("is-selected", selected);
+        button.setAttribute("aria-pressed", String(selected));
+      });
+      document.dispatchEvent(new CustomEvent("cro:incident", { detail: { event, relation } }));
+    }
+
+    function renderIncidentRail() {
+      const host = document.getElementById("croEventGroups");
+      if (!host) return;
+      host.innerHTML = "";
+      INCIDENT_GROUPS.forEach((group) => {
+        const section = document.createElement("section");
+        const expandedByDefault = group.id === "problem-1" || group.id === "problem-2";
+        section.className = `cro-event-group${expandedByDefault ? " is-expanded" : ""}`;
+        section.innerHTML = `
+          <button class="cro-event-group__toggle" type="button" aria-expanded="${expandedByDefault}">
+            <span class="cro-event-group__toggle-main">
+              <svg class="cro-event-group__chevron" viewBox="0 0 12 12" aria-hidden="true"><path d="m4 2 4 4-4 4"></path></svg>
+              <span class="cro-event-group__name">${group.name}</span>
+            </span>
+            <span class="cro-event-group__summary">${group.summary}</span>
+          </button>
+          <div class="cro-event-list"></div>`;
+        const toggle = section.querySelector(".cro-event-group__toggle");
+        toggle.addEventListener("click", () => {
+          const expanded = !section.classList.contains("is-expanded");
+          section.classList.toggle("is-expanded", expanded);
+          toggle.setAttribute("aria-expanded", String(expanded));
+        });
+        const list = section.querySelector(".cro-event-list");
+        group.events.forEach((event, index) => {
+          event.context = group.context;
+          event.banner = group.bridge(event);
+          const button = document.createElement("button");
+          button.type = "button";
+          button.className = "cro-event";
+          button.dataset.eventId = event.id;
+          button.setAttribute("aria-pressed", "false");
+          button.innerHTML = `
+            <span class="cro-event__index">${String(index + 1).padStart(2, "0")}</span>
+            <span>
+              <span class="cro-event__name">${event.title}</span>
+              <span class="cro-event__dimension">${event.dimension}</span>
+            </span>
+            <span class="cro-event__time">${event.time}</span>`;
+          button.addEventListener("click", () => selectIncident(event));
+          list.appendChild(button);
+        });
+        host.appendChild(section);
+      });
+    }
+
+    function setEventRailCollapsed(collapsed) {
+      const workarea = document.querySelector(".pto-ide-frame__workarea");
+      workarea?.classList.toggle("is-event-rail-collapsed", collapsed);
+      document.getElementById("navRelationEvents")?.setAttribute("aria-pressed", String(!collapsed));
+      if (collapsed) {
+        clearSelection();
+      } else {
+        selectIncident(INCIDENT_GROUPS[0].events[0]);
+      }
+      requestAnimationFrame(redrawLinks);
+    }
 
     controller.onChange((topology) => {
       // 配置非法时不重建 deck，保留上一版可读的图，错误信息由 #croConfigError 承担
@@ -1979,6 +2284,7 @@
         topology, emitSelect,
       );
       renderCluster(document.getElementById("croHeat"), topology, emitSelect);
+      if (activeIncident) requestAnimationFrame(() => selectIncident(activeIncident));
     });
 
     // 列宽随窗口变化，PP 带的实测定位要跟着重排
@@ -2012,17 +2318,34 @@
       ".cro-tick", ".cro-pp-span", ".cro-bar", ".cro-expert", ".cro-moe-group",
       ".cro-structure__col",
       ".twin-heat-cell", ".pto-model-deck__node", ".pto-model-deck__experts",
-      ".pto-model-deck__side-rule", ".cro-stepper", ".pto-ide-frame__topbar",
+      ".pto-model-deck__side-rule", ".cro-stepper", ".cro-event", ".pto-ide-frame__topbar",
     ].join(", ");
     document.addEventListener("click", (event) => {
       if (!relation) return;
+      // 运行事件是一次显式调查上下文：点击画布空白不应误退出。只有横幅关闭键
+      // 或其他可响应对象触发新的选择时，才结束当前事件关系。
+      if (activeIncident) {
+        if (event.target.closest?.(".cro-event")) return;
+        if (event.target.closest?.("button, select, input, [role='button']")) clearSelection();
+        return;
+      }
       if (!event.target.closest?.(SELECTABLE)) clearSelection();
     });
 
     global.croObserver = controller;
     global.croDeck = deck;
     global.croSelect = emitSelect;
+    global.croSelectIncident = selectIncident;
+    renderIncidentRail();
+    document.getElementById("croEventRailCollapse")?.addEventListener("click", () => setEventRailCollapsed(true));
+    document.getElementById("croEventRailExpand")?.addEventListener("click", () => setEventRailCollapsed(false));
+    document.getElementById("croIncidentBannerClose")?.addEventListener("click", clearSelection);
+    document.getElementById("navRelationEvents")?.addEventListener("click", () => {
+      const workarea = document.querySelector(".pto-ide-frame__workarea");
+      setEventRailCollapsed(!workarea?.classList.contains("is-event-rail-collapsed"));
+    });
     controller.refresh();
+    requestAnimationFrame(() => selectIncident(INCIDENT_GROUPS[0].events[0]));
   }
 
   if (document.readyState === "loading") {

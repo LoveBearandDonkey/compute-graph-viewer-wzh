@@ -999,6 +999,100 @@
     return ((x - Math.floor(x)) * 2 - 1) * amp;
   }
 
+  /* ══ 问题二(显存)数据源 ═══════════════════════════════════════════════════════
+     定位链-openPangu-2.0-Flash.md 案例四「activation checkpoint 未开启导致显存峰值超标
+     + 分配器碎片触发 OOM」。与问题一(step 15203)共处同一条 run 上,时间上在它之前:
+       · step < 8000     显存平稳 52~55 GB —— 46 层激活全量常驻,尚未触顶
+       · 8000 → 12003    逐步爬升至 64 GB(单卡 HBM 上限);分配器开始频繁碎片整理,
+                         malloc 次数 25→180/step、分配 API 耗时 180→890ms、碎片率 18%→83%,
+                         吞吐被换页与碎片整理拖累 3200→2800 tokens/s
+       · step 12003      rank 17 报 ACL_ERROR_MEMORY_ALLOCATION,进程中断 → 无有效读数(NaN)
+       · 12003 → 12027   开 selective activation checkpoint + expandable_segments 后重启,回落
+       · > 12027         稳定在 ~34 GB(占容量 53%,安全线以下),分配开销/碎片率同步回落
+
+     显存利用率(avg_mem)不再独立生成,改为由 mem_gb / MEM_CAPACITY_GB 派生 —— 保证 infra 栏
+     「显存利用率」「显存占用」两张卡与「关键指标」vMem 读数三者恒定自洽,显存故事只有一个真相源。 */
+  const MEM_INCIDENT_STEP = 12003;
+  const MEM_CLIMB_FROM = 8000;
+  const MEM_RECOVERY_STEPS = 24;
+  const MEM_RECOVERY_END = MEM_INCIDENT_STEP + MEM_RECOVERY_STEPS;
+  const MEM_CAPACITY_GB = 64;      // 单卡 HBM 总容量(910B1/B2/B3)
+  const MEM_BASE_GB = 53.2;        // 爬升前的平稳段
+  const MEM_PEAK_GB = 64.0;        // 触顶 = 容量本身
+  const MEM_FIXED_GB = 34.2;       // 修复后的新稳态
+
+  /* 返回「未叠加问题一事故效应」的原始显存读数;问题一的 NaN/恢复期回弹由 metricsAtStep 统一叠加,
+     两个事故因此可以同时存在于一条曲线上而互不覆盖。 */
+  function memoryAtStep(step) {
+    if (step === MEM_INCIDENT_STEP) {
+      return { mem_gb: NaN, alloc_api_ms: NaN, malloc_calls: NaN, frag_ratio: NaN, throughput: NaN };
+    }
+    if (step < MEM_INCIDENT_STEP) {
+      // 爬升进度 0→1,平方缓入:前期几乎看不出来,临近事故步陡升 —— 与"激活值累积 + 碎片放大"一致
+      const ramp = Math.pow(clamp((step - MEM_CLIMB_FROM) / (MEM_INCIDENT_STEP - MEM_CLIMB_FROM), 0, 1), 2);
+      return {
+        // 上限夹到容量本身:抖动不该把占用推到物理容量之上(触顶即 OOM,不存在 64.2/64 这种读数)
+        mem_gb: Math.min(MEM_PEAK_GB, MEM_BASE_GB + (MEM_PEAK_GB - MEM_BASE_GB) * ramp + stepNoise(41, step, 0.45)),
+        alloc_api_ms: 180 + 710 * ramp + stepNoise(42, step, 12),
+        malloc_calls: 25 + 155 * ramp + stepNoise(43, step, 3),
+        frag_ratio: 0.18 + 0.65 * ramp + stepNoise(44, step, 0.015),
+        throughput: 3200 - 400 * ramp + stepNoise(45, step, 18),
+      };
+    }
+    // 恢复期:进程重启,各项从 0 回升到修复后的新稳态;恢复完成后维持
+    const rec = clamp((step - MEM_INCIDENT_STEP) / MEM_RECOVERY_STEPS, 0, 1);
+    const ease = rec < 0.5 ? 2 * rec * rec : -1 + (4 - 2 * rec) * rec;
+    return {
+      mem_gb: MEM_FIXED_GB * ease + stepNoise(41, step, 0.3),
+      alloc_api_ms: 150 * ease + stepNoise(42, step, 6),
+      malloc_calls: 28 * ease + stepNoise(43, step, 2),
+      frag_ratio: 0.22 * ease + stepNoise(44, step, 0.01),
+      throughput: 3150 * ease + stepNoise(45, step, 15),
+    };
+  }
+
+  /* 案例四里不随 step 变化的静态事实:显存峰值构成、PP stage / 层级分布、内存快照摘要。
+     暂时只被聚光灯定位链的文案引用;后续「峰值构成堆叠图 / stage 热力图 / 碎片分布图」
+     三个可视化组件直接读这里,不要各自再抄一份数字(经 window.PtoTrainingTwinMemoryCase 暴露)。
+     数值口径 = 定位链-openPangu-2.0-Flash.md 案例四 §4/§5/§6。 */
+  const MEM_CASE_FACTS = {
+    incidentStep: MEM_INCIDENT_STEP,
+    oomRank: 17,
+    capacityGB: MEM_CAPACITY_GB,
+    peakGB: MEM_PEAK_GB,
+    fixedGB: MEM_FIXED_GB,
+    // §4 峰值构成(step 12000 · rank 17 快照)
+    // short:窄图里用的短名(如「峰值构成」的比例圆,圆下方只有一个圆的宽度可写字)
+    composition: [
+      { id: "activation", label: "激活值(含中间张量)", short: "激活值", gb: 36.2, pct: 0.566, reducible: true,
+        note: "46 层 × seq 4096 全部常驻;开 selective checkpoint 后可压到 ~8.5 GB" },
+      { id: "params", label: "模型参数(FP8)", short: "参数", gb: 8.1, pct: 0.127 },
+      { id: "grads", label: "梯度(FP8)", short: "梯度", gb: 8.1, pct: 0.127 },
+      { id: "optimizer", label: "优化器状态(BF16 m+v)", short: "优化器", gb: 10.8, pct: 0.169 },
+      { id: "workspace", label: "临时 workspace buffer", short: "workspace", gb: 0.8, pct: 0.012 },
+    ],
+    // §2 瓶颈分类层:profiling 报告耗时构成
+    timeBreakdown: { computingMs: 8520, communicationMs: 1420, allocApiMs: 890, allocApiPct: 0.074, allocApiHealthyPct: 0.02 },
+    // §5 PP stage 显存分布([lo,hi] 为层号区间)
+    stages: [
+      { stage: 0, layers: [1, 11], activationGB: 8.8, stateGB: 7.1, totalGB: 15.9 },
+      { stage: 1, layers: [12, 22], activationGB: 9.0, stateGB: 6.8, totalGB: 15.8 },
+      { stage: 2, layers: [23, 33], activationGB: 9.0, stateGB: 6.8, totalGB: 15.8 },
+      { stage: 3, layers: [34, 45], activationGB: 11.2, stateGB: 7.5, totalGB: 18.7, hot: true,
+        note: "含 lm_head logits [4096,151552] ≈ 1.2 GB + final_norm/loss" },
+    ],
+    hotLayer: { layer: 38, kind: "MoE", activationGB: 1.2, denseBaselineGB: 0.7,
+                reason: "expert dispatch buffer(256 expert × token 分配临时缓冲区)" },
+    // §3 + §6 碎片
+    fragment: { totalFreeGB: 1.8, largestFreeBlockGB: 0.3, unusableFreeGB: 1.5, ratio: 0.83,
+                mallocPerStepBefore: 25, mallocPerStepAfter: 180, mallocP99MsBefore: 0.3, mallocP99MsAfter: 4.2,
+                sampleBlock: { name: "L38 q_b_proj 输出中间张量", shape: "[4096, 9216] FP8", sizeMB: 36,
+                               allocMs: 842, freeMs: 7832, holdMs: 6990,
+                               stack: ["torch.npu.empty", "q_b_proj.forward", "SelfAttn.forward", "TransformerLayer.forward"] } },
+    // §7 验证
+    verify: { peakGB: [64, 34], allocApiMs: [890, 150], fragRatio: [0.83, 0.22], throughput: [3200, 3150] },
+  };
+
   function metricsAtStep(step, t) {
     const targetLoss = state.loss, targetMfu = state.mfu;
     // 恢复进度：0 = 事故步，1 = 完全恢复
@@ -1057,10 +1151,18 @@
     // F1 = precision、recall 的调和平均，随两者同步计算，事故/恢复处理与 precision、recall 一致
     const f1 = atIncident ? NaN : (pc + rc > 0 ? (2 * pc * rc) / (pc + rc) : 0);
 
-    // HBM 显存利用率：事故步进程死锁/超时崩溃，该 step 无有效显存读数，记 NaN（同 mf 口径）；
-    // 恢复期进程重启后从低位回升，恢复后继续正常波动
-    const memBase = clamp(0.72 + 0.12 * convUp + stepNoise(11, step, 0.03), 0.45, 0.95);
-    const avg_mem = atIncident ? NaN : inRecovery ? (memBase * ease) : memBase;
+    // 显存一族(占用 GB / 分配器开销 / 碎片率 / 吞吐)：基线由 memoryAtStep() 按「问题二·显存 OOM」
+    // 的时间线给出(见其注释)，这里再叠加问题一的事故效应 —— 事故步进程死锁崩溃、无有效读数记 NaN，
+    // 恢复期进程重启后从低位回升。两个事故因此共存于同一条曲线，互不覆盖。
+    const memRaw = memoryAtStep(step);
+    const shockMem = (v) => (atIncident ? NaN : inRecovery ? v * ease : v);
+    const mem_gb = shockMem(memRaw.mem_gb);
+    const alloc_api_ms = shockMem(memRaw.alloc_api_ms);
+    const malloc_calls = shockMem(memRaw.malloc_calls);
+    const frag_ratio = shockMem(memRaw.frag_ratio);
+    const throughput = shockMem(memRaw.throughput);
+    // HBM 显存利用率：不再独立生成，直接由 mem_gb / 单卡容量 派生，保证与「显存占用」卡恒定一致
+    const avg_mem = mem_gb / MEM_CAPACITY_GB;
 
     // 单卡重跑同一 step(定位链.md 案例一 · 分叉判定):不经历多卡 all-to-all,不受事故影响,全程健康——
     // loss≈3.21、grad_norm≈11.8,用于和上面的多卡曲线对照,证明问题只在多卡复现。
@@ -1093,6 +1195,9 @@
       mfu: +mf.toFixed(4), precision: +pc.toFixed(4), recall: +rc.toFixed(4), f1: +f1.toFixed(4),
       rollout_actor_probs_pearson_corr: +cr.toFixed(4),
       avg_mem: +avg_mem.toFixed(4),
+      mem_gb: +mem_gb.toFixed(2), alloc_api_ms: +alloc_api_ms.toFixed(1),
+      malloc_calls: +malloc_calls.toFixed(0), frag_ratio: +frag_ratio.toFixed(4),
+      throughput: +throughput.toFixed(0),
       loss, grad_norm, loss_single, grad_norm_single, weight_diff,
       loss_scale_log2: lossScaleLog2, z_loss,
     };
@@ -1100,7 +1205,7 @@
 
   function buildAccuracyData(steps) {
     const n = steps.length;
-    const cols = { train_loss: [], val_loss: [], train_acc: [], val_acc: [], mfu: [], precision: [], recall: [], f1: [], rollout_actor_probs_pearson_corr: [], avg_mem: [], loss: [], grad_norm: [], loss_single: [], grad_norm_single: [], weight_diff: [], loss_scale_log2: [], z_loss: [] };
+    const cols = { train_loss: [], val_loss: [], train_acc: [], val_acc: [], mfu: [], precision: [], recall: [], f1: [], rollout_actor_probs_pearson_corr: [], avg_mem: [], mem_gb: [], alloc_api_ms: [], malloc_calls: [], frag_ratio: [], throughput: [], loss: [], grad_norm: [], loss_single: [], grad_norm_single: [], weight_diff: [], loss_scale_log2: [], z_loss: [] };
     steps.forEach((s, i) => {
       const m = metricsAtStep(s, n > 1 ? i / (n - 1) : 1);
       const isEpoch = i % ACC_EPOCH_STRIDE === 0 || i === n - 1;
@@ -1114,6 +1219,11 @@
       cols.f1.push(m.f1);
       cols.rollout_actor_probs_pearson_corr.push(m.rollout_actor_probs_pearson_corr);
       cols.avg_mem.push(m.avg_mem);
+      cols.mem_gb.push(m.mem_gb);
+      cols.alloc_api_ms.push(m.alloc_api_ms);
+      cols.malloc_calls.push(m.malloc_calls);
+      cols.frag_ratio.push(m.frag_ratio);
+      cols.throughput.push(m.throughput);
       cols.loss.push(m.loss);
       cols.grad_norm.push(m.grad_norm);
       cols.loss_single.push(m.loss_single);
@@ -1228,6 +1338,10 @@
       series: [
         { id: "avg_mem", label: "HBM", key: "avg_mem", colorVar: "--twin-chart-mem", emphasis: true },
       ] },
+    /* 注：这里曾经并排放过一张「显存占用 (GB)」卡，已撤掉 —— avg_mem 就是 mem_gb / 单卡容量，
+       两张卡画的是同一条曲线、只差单位，集群监控栏里看着像重复了一张。绝对 GB 的读法
+       （离 64 GB 天花板还有多远、峰值构成、碎片）统一放到底部 dock「性能」页签，
+       见 js/training-memory-panel.js。 */
   ];
 
   let accSmoothing = 0.1;
@@ -1284,10 +1398,13 @@
     if (!window.PtoTrainingMetricsChart || !el) return null;
     const steps = cfg.steps || accSteps;
     let ctrl = null;
-    // regions 标记事故+恢复窗口（而非从事故点一直拉到图表末尾）
-    const regions = cfg.markerStep != null
-      ? [{ start: cfg.markerStep, end: Math.min(RECOVERY_END, steps[steps.length - 1]), label: "事故 · 恢复" }]
-      : (cfg.regions || null);
+    // regions 标记事故+恢复窗口（而非从事故点一直拉到图表末尾）。
+    // 显式给了 cfg.regions 的卡片优先用它 —— 问题二(显存 OOM, step 12003)的恢复窗口与问题一
+    // 的 RECOVERY_END 不同,不能套用下面那条按问题一口径算的默认区带。
+    const regions = cfg.regions
+      || (cfg.markerStep != null
+        ? [{ start: cfg.markerStep, end: Math.min(RECOVERY_END, steps[steps.length - 1]), label: "事故 · 恢复" }]
+        : null);
     const data = cfg.data || ACC_DATA;
     // x 轴刻度档数按实际绘图宽度动态收缩：窄卡(训练监控侧栏 2 列)硬塞 4 档会首尾数字交错重叠，
     // 宽一点的场景(如「问题一·迭代层」大图)才有空间摆下 3~4 档。阈值按 pad.l(40)+pad.r(10) 扣完后的
@@ -1623,10 +1740,19 @@
   // 回放态的集群热力图必须可复现：同一 step 拖过去几次都是同一张图，
   // 因此用 stepNoise(绝对 step 播种)代替 renderHeat() 里的随机游走。
   function applyReplayDevices(step) {
+    const baseList = state.devices.map((d, i) => (liveDeviceSnapshot ? liveDeviceSnapshot[i] : d));
+    /* 每张卡的 HBM 水位与「显存占用 / 显存利用率」两张曲线同源(见 memoryAtStep):把各卡相对基线
+       均值的偏移整体平移到该 step 的全局占用率上 —— 卡间差异照旧,水位跟着「问题二 · 显存」的故事走,
+       否则回放到 step 12003 时热力图气泡还写着 HBM 78%,和图上的 64/64 GB 自相矛盾。
+       事故步本身无有效读数(NaN),取前一步的峰值代入,以免平移量塌回基线、峰值反而看不见。 */
+    const rawGb = memoryAtStep(step).mem_gb;
+    const gb = isFinite(rawGb) ? rawGb : memoryAtStep(step - 1).mem_gb;
+    const baseMean = baseList.length ? baseList.reduce((sum, b) => sum + b.mem, 0) / baseList.length : 0;
+    const shift = isFinite(gb) ? gb / MEM_CAPACITY_GB - baseMean : 0;
     state.devices.forEach((device, index) => {
-      const base = liveDeviceSnapshot ? liveDeviceSnapshot[index] : device;
+      const base = baseList[index];
       device.util = clamp(base.util + stepNoise(20 + (index % 16), step, 0.06), 0.45, 1);
-      device.mem = clamp(base.mem + stepNoise(40 + (index % 16), step, 0.05), 0.3, 0.98);
+      device.mem = clamp(base.mem + shift + stepNoise(40 + (index % 16), step, 0.05), 0.3, 1);
       device.temp = clamp(54 + device.util * 23 + (device.bad ? 8 : 0) + stepNoise(60 + (index % 16), step, 2.2), 50, 92);
     });
   }
@@ -1669,17 +1795,21 @@
     if (!dragging) syncLocateMetricCharts(true);
     renderAccReadouts();
     renderInfraReadouts();
+    // 底部「性能」页签的显存曲线上有一根「当前 step」游标，跟着时光机走(拖动中不画，松手补齐)
+    if (!dragging) window.PtoTrainingMemoryPanel?.renderSoon();
   }
 
   function exitTimeMachine() {
     applyViewStep(liveStep);
-    // 只有 wzh 单屏页面的时光机才会触发问题一透镜(见 activateProblemOneLens),
+    // 只有 wzh 单屏页面的时光机才会触发问题透镜(见 activateProblemLens),
     // 返回最新 step 时一并收起,避免整网图/infra 热力图残留上一次的问题聚焦。
     if (isWzhTwinPage()) {
       clearDiagnosisFocus();
       hideDiagnosisLocator();
-      // 进入问题透镜时关闭的「算子染色」在退出时恢复打开,见 activateProblemOneLens 里的对应调用。
+      // 进入问题透镜时关闭的「算子染色」在退出时恢复打开,见 activateProblemLens 里的对应调用。
       window.setOpColorMode?.("cat");
+      // 同上:解除侧视图训练动画的「回顾模式」定格,回到最新 step 就该重新跑起来。
+      window.PtoTwinGraphAdapter?.setFrozen?.(false);
       // 收起「聚光灯定位链」覆盖层(其名片 × / ESC 亦通过 diagnosisLocatorClose 触发本函数)。
       window.PtoTrainingSpotlight?.close();
     }
@@ -1962,8 +2092,8 @@
       mfu: state.mfu,
       seenTokens: state.seen,
       phase: state.phase,
-      diagnosisMarkers: diagnosisMarkers.map((m) => ({
-        num: m.num,
+      diagnosisMarkers: visibleDiagnosisMarkers().map((m) => ({
+        num: m.displayNum,
         severity: m.severity,
         category: m.category,
         label: m.label,
@@ -1975,10 +2105,23 @@
     };
   };
 
+  /* 「问题二 · 显存 OOM」的数据出口:静态事实 + 按 step 取原始显存读数。
+     峰值构成堆叠图 / PP stage 热力图 / 碎片分布图三个待建组件都从这里取数,不要各自再抄一份。 */
+  window.PtoTrainingTwinMemoryCase = {
+    facts: MEM_CASE_FACTS,
+    at: function (step) { return memoryAtStep(step); },
+    constants: {
+      incidentStep: MEM_INCIDENT_STEP, climbFrom: MEM_CLIMB_FROM,
+      recoveryEnd: MEM_RECOVERY_END, capacityGB: MEM_CAPACITY_GB,
+    },
+  };
+
   // 供 training-monitoring-v2.html 的 3D deck 适配器复用本文件里的诊断联动入口
   // (适配器负责画图,业务语义仍只有这一份实现)。函数声明会提升,这里引用晚定义的函数是安全的。
   window.PtoTwinGraphBridge = {
-    activateProblemOneLens: function (key) { activateProblemOneLens(key); },
+    activateProblemLens: function (key) { activateProblemLens(key); },
+    // 旧名别名(「问题一」时期的命名),保留以兼容尚未改口的调用方
+    activateProblemOneLens: function (key) { activateProblemLens(key); },
     enterProblemOneLayerView: function () { enterProblemOneLayerView(); },
     lvSelectedExperts: function (hotExpert) { return lvSelectedExperts(hotExpert); },
   };
@@ -2076,15 +2219,39 @@
       clusterIds: ["attention-block", "moe-block"],
       note: "FP8 E4M3 深层激活值长尾超限 → 峰度 +15.3 → 梯度信号淹没。",
     },
+
+    // 问题二(仅 v2 单屏页):定位链-openPangu-2.0-Flash.md 案例四。命中的是"显存被谁占满"的三处:
+    // MoE expert dispatch buffer(热点层 38)、routed expert bank(激活大头)、lm_head(logits 1.2 GB)。
+    "mem-oom": {
+      layer: "PP stage 3 · L34-45 + LM Head",
+      nodeIds: ["moe_all_to_all_dispatch", "routed_expert_bank", "lm_head"],
+      edges: [
+        ["moe_all_to_all_dispatch", "routed_expert_bank"],
+        ["final_norm", "lm_head"]
+      ],
+      clusterIds: ["moe-block"],
+      note: "activation checkpoint 未开启 → 46 层激活全量常驻占 56.6% 显存;分配器碎片率 83% 让 OOM 提前到来。",
+    },
   };
 
-  // 进度条诊断标记:step 在 0~totalSteps 范围内,百分比自动换算
+  /* 进度条诊断标记:step 在 0~totalSteps 范围内,百分比自动换算。
+     ── 编号(num / wzhNum)──────────────────────────────────────────────────────
+     两个页面各有一套展示序号,不能共用一个字段:
+       · num    = training-monitoring.html 的序号,与它 markup 里硬编码的 5 张诊断卡片一一对应(一~五),
+                  改动它就要同步改那份 markup,因此保持不动;
+       · wzhNum = training-monitoring-v2.html(单屏)的序号。v2 把「显存 OOM」提为问题二,其余顺延,
+                  故与 num 整体错开一位。取值一律走 problemNum(marker)。
+     ── 页面归属(wzhOnly / wzhLens)────────────────────────────────────────────
+       · wzhOnly = 只在 v2 出现。training-monitoring.html 的诊断卡片列表是写死的 markup,没有对应卡片
+                   就不能在它的整网图上画徽标(点了没有卡片可联动);
+       · wzhLens = 在 v2 时光机进度条上画标记,点击即进入该问题的聚光灯定位链。 */
   const diagnosisMarkers = [
-    { key: "moe-a2a", step: INCIDENT_STEP, severity: "p0", category: "精度", num: "一", label: "Router 数值溢出 → 路由塌缩，同时触发 loss NaN 与 all-to-all 死锁", sub: "router softmax FP8 溢出 → 98% token 集中到 expert 193 → NaN + 死锁双发" },
-    { key: "perf-compute-bottleneck", stepFrom: 20000, stepTo: 120000, severity: "p1", category: "性能", num: "二", label: "算子带宽瓶颈 + AICPU 回退", sub: "lm_head vocab 非对齐, cube_util 49%, AICPU 526ms" },
-    { key: "qproj-overflow", step: 8500, severity: "p1", category: "精度", num: "三", label: "q_proj FP8 精度溢出 → grad_norm 发散", sub: "layer 33 q_proj 3.2% 超 FP8 max(448)" },
-    { key: "low-precision-training", stepFrom: 28000, stepTo: 35000, severity: "p1", category: "精度", num: "四", label: "低精训练 loss 不收敛 → 梯度消失", sub: "FP8 E4M3 深层激活值长尾, 峰度 +15.3, SNR 降至 6.8dB" },
-    { key: "nvlink", step: 20000, severity: "p1", category: "Infra", num: "五", label: "HCCS 链路掉线 → MFU 骤降", sub: "node2 NPU3 lane5 inactive, HCCL 回退 RoCE 慢路径" },
+    { key: "moe-a2a", step: INCIDENT_STEP, severity: "p0", category: "精度", num: "一", wzhNum: "一", wzhLens: true, label: "Router 数值溢出 → 路由塌缩，同时触发 loss NaN 与 all-to-all 死锁", sub: "router softmax FP8 溢出 → 98% token 集中到 expert 193 → NaN + 死锁双发" },
+    { key: "mem-oom", step: MEM_INCIDENT_STEP, severity: "p0", category: "显存", num: "六", wzhNum: "二", wzhLens: true, label: "activation checkpoint 未开启 → 显存峰值超标 + 分配器碎片触发 OOM", sub: `激活值占 56.6%(36.2 GB) → 峰值触顶 ${MEM_CAPACITY_GB} GB，碎片率 83% → rank ${MEM_CASE_FACTS.oomRank} OOM 中断` },
+    { key: "perf-compute-bottleneck", stepFrom: 20000, stepTo: 120000, severity: "p1", category: "性能", num: "二", wzhNum: "三", label: "算子带宽瓶颈 + AICPU 回退", sub: "lm_head vocab 非对齐, cube_util 49%, AICPU 526ms" },
+    { key: "qproj-overflow", step: 8500, severity: "p1", category: "精度", num: "三", wzhNum: "四", label: "q_proj FP8 精度溢出 → grad_norm 发散", sub: "layer 33 q_proj 3.2% 超 FP8 max(448)" },
+    { key: "low-precision-training", stepFrom: 28000, stepTo: 35000, severity: "p1", category: "精度", num: "四", wzhNum: "五", label: "低精训练 loss 不收敛 → 梯度消失", sub: "FP8 E4M3 深层激活值长尾, 峰度 +15.3, SNR 降至 6.8dB" },
+    { key: "nvlink", step: 20000, severity: "p1", category: "Infra", num: "五", wzhNum: "六", label: "HCCS 链路掉线 → MFU 骤降", sub: "node2 NPU3 lane5 inactive, HCCL 回退 RoCE 慢路径" },
   ];
 
   // wzh 单屏页面识别:该页面把「时光机」进度条搬进独立卡片(.wzh-timemachine-card),
@@ -2093,11 +2260,38 @@
     return !!document.querySelector('.wzh-timemachine-card');
   }
 
+  // 当前页面下该问题的展示序号(见 diagnosisMarkers 的编号说明)
+  function problemNum(marker) {
+    if (!marker) return "";
+    return (isWzhTwinPage() && marker.wzhNum) || marker.num || "";
+  }
+
+  /* 当前页面应当出现的诊断标记,并把 problemNum() 的结果固化为 displayNum ——
+     整网图适配器(training-monitoring-v2-deck.js)拿到的是这份数组的副本,画徽标时直接读 displayNum,
+     不必也不应再关心 num/wzhNum 的分页规则。 */
+  function visibleDiagnosisMarkers() {
+    const wzh = isWzhTwinPage();
+    return diagnosisMarkers
+      .filter((m) => wzh || !m.wzhOnly)
+      .map((m) => Object.assign({}, m, { displayNum: problemNum(m) }));
+  }
+
+  // 与 visibleDiagnosisMarkers() 同口径的 diagnosisCases 子集(键序保持原顺序)
+  function visibleDiagnosisCases() {
+    const keys = new Set(visibleDiagnosisMarkers().map((m) => m.key));
+    const out = {};
+    Object.keys(diagnosisCases).forEach((k) => { if (keys.has(k)) out[k] = diagnosisCases[k]; });
+    return out;
+  }
+
   function renderDiagnosisMarkers() {
     const track = document.getElementById('progressTrack');
     if (!track) return;
-    // wzh 单屏时光机只保留「问题一」标记,其余 4 个不再画;training-monitoring.html 仍是全量 5 个
-    const markers = isWzhTwinPage() ? diagnosisMarkers.filter((m) => m.key === 'moe-a2a') : diagnosisMarkers;
+    // wzh 单屏时光机只画「有聚光灯定位链」的问题(wzhLens:问题一 router 溢出 / 问题二 显存 OOM),
+    // 其余几个只在整网图上留徽标、不占进度条;training-monitoring.html 仍是全量。
+    const markers = isWzhTwinPage()
+      ? visibleDiagnosisMarkers().filter((m) => m.wzhLens)
+      : visibleDiagnosisMarkers();
     // 标记位置只取决于绝对 step / totalSteps,与当前展示的 step 无关;
     // 已经画好就直接复用,避免时光机拖动时每帧重建 DOM(还会打断 hover 气泡)
     if (track.querySelectorAll('.twin-progress-marker').length === markers.length) return;
@@ -2149,7 +2343,7 @@
     // 不是 SVG),节点几何与徽标绘制方式完全不同,由它自己注册的适配器接管;旧 v2/training-monitoring.html
     // 没有适配器,继续走下面这套 SVG 实现,行为不变。下同。
     if (window.PtoTwinGraphAdapter) {
-      window.PtoTwinGraphAdapter.renderMarkers(diagnosisCases, diagnosisMarkers, problemSeverityColor);
+      window.PtoTwinGraphAdapter.renderMarkers(visibleDiagnosisCases(), visibleDiagnosisMarkers(), problemSeverityColor);
       return;
     }
     var stage = document.getElementById('graphStage');
@@ -2277,7 +2471,8 @@
       stage.querySelectorAll(".pto-problem-marker").forEach(function(el) { el.remove(); });
       placedBadges = [];
 
-      Object.values(diagnosisCases).forEach(function(info) {
+      var visibleCases = visibleDiagnosisCases();
+      Object.values(visibleCases).forEach(function(info) {
         info.nodeIds.forEach(function(id) { markNodeActive(stage, id, "pto-diagnosis-active"); });
         info.edges.forEach(function(e) { markEdgeActive(stage, e[0], e[1], "pto-diagnosis-active"); });
         (info.clusterIds || []).forEach(function(cid) { markClusterActive(stage, cid, "pto-diagnosis-active"); });
@@ -2298,14 +2493,14 @@
         }
       }
 
-      Object.keys(diagnosisCases).forEach(function(key) {
-        var info = diagnosisCases[key];
+      Object.keys(visibleCases).forEach(function(key) {
+        var info = visibleCases[key];
         var marker = diagnosisMarkers.find(function(m) { return m.key === key; });
         if (!marker || !info.nodeIds.length) return;
         var color = problemSeverityColor(key);
         var nodeGroup = stage.querySelector('[data-node-id="' + info.nodeIds[0] + '"]');
         if (!nodeGroup) return;
-        drawBadge(nodeGroup, { key: key, label: marker.label, num: marker.num, sub: info.note || "" }, color);
+        drawBadge(nodeGroup, { key: key, label: marker.label, num: problemNum(marker), sub: info.note || "" }, color);
       });
     }
     tryApply();
@@ -2414,7 +2609,7 @@
           var card = document.querySelector('.diagnosis-card[data-diagnosis="' + m.diagnosisKey + '"]');
           if (card) { toggleDiagnosisCard(card); return; }
           // wzh 单屏页面没有「问题诊断」卡片列表,改走单屏问题一透镜联动
-          if (isWzhTwinPage()) activateProblemOneLens(m.diagnosisKey);
+          if (isWzhTwinPage()) activateProblemLens(m.diagnosisKey);
         });
       }
     });
@@ -2707,6 +2902,11 @@
       sevEl.className = "twin-diagnosis-locator-severity is-" + (marker.severity || "");
       $("diagnosisLocatorDesc").textContent = marker.sub || "";
       locator.title = marker.sub || "";
+      // 「详情与修复建议」按钮打开的是本问题的定位链长文抽屉;没有长文的问题(见 v2 页 DRAWER_CASES)
+      // 直接把按钮藏掉,而不是让它错开成另一个问题的详情。
+      locator.dataset.caseKey = caseKey;
+      var drawerBtn = $("diagnosisLocatorDrawerBtn");
+      if (drawerBtn) drawerBtn.hidden = !(window.hasLocateDrawer && window.hasLocateDrawer(caseKey));
       showDiagnosisLocator();
     }
   }
@@ -2719,7 +2919,10 @@
     "nvlink":            { hotCells: [19, 20], warmCells: [16,17,18,21,22,23],
                            hotWarn: "空等 · HCCS 链路掉线,HCCL 回退 RoCE 慢路径",
                            warmWarn: "空等 · PP pipeline 被慢路径拖住,等待上游数据" },
-
+    // 问题二(显存 OOM):rank 17 先触顶 OOM 中断,同 PP stage 3 的其余 rank 也都在 61~63 GB 逼近红线
+    "mem-oom":           { hotCells: [17], warmCells: [16,18,19,20,21,22,23],
+                           hotWarn: "OOM · ACL_ERROR_MEMORY_ALLOCATION,峰值触顶 64/64 GB",
+                           warmWarn: "逼近上限 · 显存 61~63 GB,同样处于 OOM 边缘" },
   };
 
   function applyInfraHeatHighlight(caseKey) {
@@ -2909,12 +3112,26 @@
     ctrl.setTransform({ zoom: zoom, tx: stageW / 2 - cx * zoom, ty: stageH / 2 - cy * zoom });
   }
 
-  // ── wzh 单屏页面专属:点击「时光机」上仅存的问题一红色标记时,不走 training-monitoring.html
-  // 那套「问题诊断卡片 → 定位链整块视图」下钻,而是原地把单屏各图表都联动到问题一事故时刻——
-  // 时光机拖块跳到事故 step(驱动精度/infra 图表与关键指标一并回放)、整网图聚焦 layer 38 router、
-  // infra 热力图叠加 rank 23 死锁标注、底部 Timeline 面板展开(默认即 node2 ranks 16-23 +
-  // rank 23 all-to-all timeout 高亮,已经就是"问题 rank"),相当于原地复现事故时刻的全部细节。
-  function activateProblemOneLens(caseKey) {
+  // ── wzh 单屏页面专属:点击「时光机」上的问题标记时,不走 training-monitoring.html
+  // 那套「问题诊断卡片 → 定位链整块视图」下钻,而是原地把单屏各图表都联动到该问题的事故时刻——
+  // 时光机拖块跳到事故 step(驱动精度/infra 图表与关键指标一并回放)、整网图聚焦命中节点、
+  // infra 热力图叠加该问题的 rank 标注、底部 Timeline 面板展开,相当于原地复现事故时刻的全部细节。
+  //
+  // 每个问题额外的「就位动作」写在 PROBLEM_LENS_ENTER 里(如问题一要原地展开 routed_expert_bank),
+  // 不再往本函数里堆 if (caseKey === ...) 分支。
+  var PROBLEM_LENS_ENTER = {
+    // 问题一:精准展开 routed_expert_bank 单节点(而不是下钻整块「模型层展开图」页面),
+    // 全局/实时监控视图下都要看到,故不受 .twin-live-on 隐藏问题徽标的规则影响。
+    "moe-a2a": function () { showRoutedExpertBankExpand(); },
+    // 问题二(显存 OOM):举证图全在底部 dock「性能」页签里(6 张,见 js/training-memory-panel.js),
+    // 进来就切过去 —— 否则默认停在 Timeline 页签,聚光灯第一步要照亮的卡还是隐藏的。
+    "mem-oom": function () {
+      window.PtoTrainingTwinDockTabs?.select("perf");
+      window.PtoTrainingMemoryPanel?.renderSoon();
+    },
+  };
+
+  function activateProblemLens(caseKey) {
     var marker = diagnosisMarkers.find(function (m) { return m.key === caseKey; });
     // 先展开 Timeline dock 面板再做整网图聚焦平移——PtoTrainingTwinDockTabs.select("timeline")
     // 会派发一次 window resize,opv-modelviz 的 centerView() 监听 resize 会无条件把画面 fit()
@@ -2930,12 +3147,13 @@
     // 问题聚焦时关掉整网图默认的「算子染色」类别底色,避免跟诊断命中节点的红色描边互相抢视觉焦点;
     // 退出时光机(exitTimeMachine)会恢复打开。
     window.setOpColorMode?.("off");
-    // 问题一精准展开 routed_expert_bank 单节点(而不是下钻整块「模型层展开图」页面),
-    // 全局/实时监控视图下都要看到,故不受 .twin-live-on 隐藏问题徽标的规则影响(见函数注释)。
-    if (caseKey === "moe-a2a") showRoutedExpertBankExpand();
+    // 整网图侧视图的「训练过程动画」定格:进了问题定位链就是在复盘一件已经发生完的事故,
+    // 层还在一层层点亮、指标还在往前描点会读成"训练正在跑"。退出时光机时解除。
+    window.PtoTwinGraphAdapter?.setFrozen?.(true);
+    if (PROBLEM_LENS_ENTER[caseKey]) { try { PROBLEM_LENS_ENTER[caseKey](); } catch (e) {} }
     pinDiagnosisLocator(caseKey);
-    // 进入问题一默认开启「聚光灯定位链」覆盖层(js/training-spotlight.js):1→6 步进照亮各层举证图表,
-    // 顶栏问题卡被其名片遮住,读全文仍走名片「详情」→ window.openProblemOneLocateDrawer 抽屉。
+    // 进入问题时默认开启「聚光灯定位链」覆盖层(js/training-spotlight.js):按步进照亮各层举证图表,
+    // 顶栏问题卡被其名片遮住,读全文仍走名片「详情」→ window.openLocateDrawer 抽屉。
     window.PtoTrainingSpotlight?.open(caseKey);
   }
 
@@ -3499,6 +3717,12 @@
 
   // 问题七 · HiF8 精度诊断工作台:定位链结构由自包含模块 hif8-case7.js 提供(五节对应工作台五页签)
   if (window.PtoHif8Case7) { locateChains["hif8-precision"] = window.PtoHif8Case7.chain(); locateChains["qproj-overflow"] = locateChains["hif8-precision"]; }
+  // 问题二 · 显存 OOM:定位链长文由自包含模块 training-memory-case4.js 提供(案例四七层对应七小节),
+  // 正文里的三张图与底部 dock「性能」页签共用 PtoTrainingMemoryPanel 的绘制代码。
+  if (window.PtoMemCase4) {
+    var memChain = window.PtoMemCase4.chain();
+    if (memChain) locateChains["mem-oom"] = memChain;
+  }
 
   let locateChainObserver = null;
 
@@ -4952,7 +5176,7 @@
       kicker.textContent = `${models[state.model].title} /`;
       kicker.hidden = false;
     }
-    $("architectureTitle").textContent = marker ? `问题${marker.num}：${marker.label}` : chain.title;
+    $("architectureTitle").textContent = marker ? `问题${problemNum(marker)}：${marker.label}` : chain.title;
     $("locateChainBack").hidden = false;
     const runTwinHeader = $("runTwinHeader");
     if (runTwinHeader) runTwinHeader.hidden = true;
@@ -4967,6 +5191,7 @@
     bindLayerViewCTA();
     renderProblemOneTimeline();
     if (caseKey === "low-precision-training") renderCase6AllCharts();
+    if (caseKey === "mem-oom") window.PtoMemCase4?.renderAll();
     if (caseKey === "hif8-precision" || caseKey === "qproj-overflow") {
       window.PtoHif8Case7?.renderAll();
       // 问题二默认收起底部泳道图(ide-frame 底部 dock 开关,见 training-monitoring.html 内联脚本)
@@ -5241,7 +5466,7 @@
       const stepText = m.stepFrom != null
         ? `Step ${m.stepFrom.toLocaleString()} ~ ${m.stepTo.toLocaleString()}`
         : `Step ${m.step.toLocaleString()}`;
-      bubble.innerHTML = `<strong style="color:${m.severity==='p0'?'#dc2626':'#ea580c'}">${sevLabel} ${m.category}</strong><br>${stepText}<br>问题${m.num}：${m.label}`;
+      bubble.innerHTML = `<strong style="color:${m.severity==='p0'?'#dc2626':'#ea580c'}">${sevLabel} ${m.category}</strong><br>${stepText}<br>问题${problemNum(m)}：${m.label}`;
       bubble.hidden = false;
       const rect = el.getBoundingClientRect();
       bubble.style.left = Math.max(6, rect.left + rect.width / 2 - 130) + 'px';
@@ -5262,8 +5487,8 @@
       const key = e.currentTarget.dataset.markerKey;
       const card = document.querySelector(`.diagnosis-card[data-diagnosis="${key}"]`);
       if (card) { toggleDiagnosisCard(card); return; }
-      // wzh 单屏页面没有「问题诊断」卡片列表,改走单屏问题一透镜联动(时光机跳转 + 整网图/infra 高亮 + 展开 Timeline)
-      if (isWzhTwinPage()) activateProblemOneLens(key);
+      // wzh 单屏页面没有「问题诊断」卡片列表,改走单屏问题透镜联动(时光机跳转 + 整网图/infra 高亮 + 展开 Timeline)
+      if (isWzhTwinPage()) activateProblemLens(key);
     };
 
     // 事件委托在进度条上(问题点纵向线挂在 track 内)
