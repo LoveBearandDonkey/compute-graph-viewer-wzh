@@ -1122,11 +1122,11 @@ torch_npu.npu.config.allow_internal_format = False
       current: 73, grade: 'A', estimated: 86, estGrade: 'A',
       subItems: [
         { name: '计算', value: 58 }, { name: '通信', value: 91 },
-        { name: '调度', value: 78 }, { name: '内存', value: null },
+        { name: '调度', value: 78 }, { name: '内存', value: 35 },
       ],
       estSubItems: [
         { name: '计算', value: 72 }, { name: '通信', value: 93 },
-        { name: '调度', value: 90 }, { name: '内存', value: null },
+        { name: '调度', value: 90 }, { name: '内存', value: 78 },
       ],
     },
     summary: {
@@ -1142,7 +1142,9 @@ torch_npu.npu.config.allow_internal_format = False
       max_lane_idle:  { value: 27.5, status: 'bad', note: '> 10% 判为异常' },
       step_cv:        { value: 0.0002, display: '0.02%', note: '> 10% 判为训练不稳定' },
       mfu:            { achieved_tflops: 298.5, e2e_pct: 42, note: 'MatMul shape+耗时聚合达成算力（step4）。stage0 达成 298.5 TF/s 已超 910B3/B4 峰值→判定芯片为 910B1（BF16 378.88 TF）：rank0/stage0 纯 transformer+MoE MatMul MFU ~79%，rank24/stage3 含 lm_head+loss 仅 ~61%（大 N lm_head GEMM + loss/MTP 小 M GEMM 拉低）。端到端 step MFU（激活参数口径，含 bubble+零重叠）≈ 42%，落实第 2 章 #1–#4 后预计升至 ~55–60%' },
-      mem_util:       { reserved_gb: 15, note: '⚠️ 估算（profile_memory 未开启），模型 ~2.5 GB + 优化器 ~5 GB + 激活 ~7 GB' },
+      mem_util:       { reserved_gb: 64, status: 'bad', note: 'rank 17 · step 12000 峰值 64/64 GB，step 12003 OOM；点击「显存」页签查看快照' },
+      alloc_api_ratio:{ value: 7.4, status: 'bad', note: '890 ms / step，正常应 < 2%' },
+      frag_ratio:     { value: 83, status: 'bad', note: '1.8 GB 空闲中最大连续块仅 0.3 GB' },
     },
     actions: [
       { id: 1, priority: 'P0', problem: 'PP 末级（stage3, rank24–31）计算过载，制造 ~26% 单步 bubble', benefit: '-20~25% 单步耗时（~3.2–4.1 s）', benefitNum: 22, difficulty: '中', location: '训练启动并行切分配置（Megatron/MindSpeed PP 层切分参数 --decoder-last-pipeline-num-layers）— 把末级 transformer 层数调少以抵消 lm_head+loss+深层 MoE 的额外开销', visualization: '算子视图 + Timeline 视图（系统调优）' },
@@ -1154,6 +1156,20 @@ torch_npu.npu.config.allow_internal_format = False
       { id: 7, priority: 'P2', problem: 'stage3 重载卡 AI Core 降频（rank24–31 低至 1200–1350 MHz）', benefit: '低', benefitNum: null, difficulty: '中', location: 'node4 散热/功耗策略 + 随 #1 负载均衡一并复核', visualization: '算子视图' },
     ],
     issues: [
+      { id: 'M.1', priority: 'P0', title: 'activation checkpoint 未开启，激活常驻导致峰值 64/64 GB',
+        evidence: 'rank 17 · step 12000 memory snapshot：激活与中间张量 36.2 GB（56.6%）；46 层激活持续持有到 backward，step 12003 触发 ACL_ERROR_MEMORY_ALLOCATION。',
+        impact: '训练中断；step 10000 后吞吐由 3200 降至 2800 tokens/s（−12.5%）。',
+        steps: ['开启 selective activation checkpointing，仅重计算 attention 与 FFN 中间激活', 'loss 完成后及时释放 lm_head logits', '将 PP 层分配从 [12,11,11,12] 调整为 [13,12,11,10]'],
+        verification: '峰值显存降至约 34 GB；续跑 10000 step 无 OOM；吞吐恢复约 3150 tokens/s。',
+        visualization: '显存视图 — 显存曲线、峰值构成、stage3/layer38 生命周期',
+        codeLocations: ['modeling_openpangu.py:438', 'modeling_openpangu.py:512', 'modeling_openpangu.py:701'] },
+      { id: 'M.2', priority: 'P1', title: '分配器碎片率 83%，有 1.8 GB 空闲仍无法申请 0.5 GB',
+        evidence: 'rank 17 快照：总空闲 1.8 GB，最大连续空闲块 0.3 GB；aclrtMalloc/Free 从约 25 次/step 增至约 180 次，P99 由 0.3 ms 升至 4.2 ms。',
+        impact: '碎片使 OOM 提前发生，分配/释放 API 占 step 7.4%（890 ms）。',
+        steps: ['设置 PYTORCH_NPU_ALLOC_CONF=expandable_segments:True', '为算子 workspace 保留连续缓存', '结合 activation checkpoint 降低高频分配/释放'],
+        verification: '碎片率降至约 22%；分配 API 耗时降至约 150 ms。',
+        visualization: '显存视图 — 碎片分布与生命周期；Timeline 视图 — alloc/free 时间段',
+        codeLocations: ['modeling_openpangu.py:438', 'optimizer.py:126'] },
       { id: '3.1', priority: 'P0', title: 'PP 末级（stage3, rank24–31）计算过载，制造 ~26% 单步 bubble',
         evidence: 'cluster_time_summary → ClusterTimeSummary 表（step4，8 个代表 rank）：32 卡 step 时间高度一致（16200.0±5 ms，CV≈0.02%）——典型全局同步训练，无硬件型快/慢卡。但 stage3（rank24–31）计算均值 ~12700 ms，stage0–2 均值 ~8292 ms——末级多算 ~4408 ms/step（1.54×）。末级「多出来的活」定位到落盘算子（compute_op_sum/kernel_details.csv）：MatMulV2（lm_head 投影 [4608→153600]，平均 ~20.0 ms/次 ×64 次≈1280 ms）仅出现在 stage3，rank0–23 完全没有；外加 stage3 独有的 loss 反向 GEMM（~500 ms 级）与更重的 vector 算子（RmsNorm/ElementWise 总耗时是 stage0 的 ~1.5×）。后果：rank0–23 每步在 PP P2P recv 上空等 communicationWaitStageTime≈4.05–4.50 s（均值 4.26 s，占 step ~26%）。hccl_sum 佐证：stage0–2 的 hcom_batchSendRecv_（PP P2P）Min 仅 ~1.3 ms、Max 达 120+ ms——绝大部分是等待而非传输',
         impact: '单步 ~16.20 s 被末级计算 gating。全集群每步约 24 卡 × 4.26 s ≈ 102.2 卡·秒空耗在 bubble（≈ 集群总算力时间的 20%）',
@@ -1217,6 +1233,17 @@ torch_npu.npu.config.allow_internal_format = False
       '算子内核效率高：cube（MAC 流水）利用率按耗时加权 84%–97%（cluster ~91%），MatMulV3 等主力 GEMM 形状规整、效率接近上限。MoE expert MatMul 在 M=64–256 时达成 ~55–72%（小 M GEMM 固有特性），shared expert MatMul 达成 ~85%（大 M 高效）',
       'Host 下发未饿死 device：各卡 Free（step_trace 口径）仅 249–300 ms（< step 的 2%），free_analysis 显示空闲多为 device 任务运行中的小间隙（EVENT_RECORD/EVENT_WAIT），非 host 下发跟不上',
       '数据采集完整：32 卡 profiler_info_{rank}.json 齐全（采集正常 Stop），ASCEND_PROFILER_OUTPUT 已解析，DB/CSV/trace 交付件齐备',
+    ],
+    codeExamplesFabricated: true,
+    codeExamples: [
+      {
+        label: 'activation checkpoint 与 expert_dispatch 显存修复',
+        lang: 'python',
+        issue: 'M.1',
+        note: '调用栈：TransformerLayer.forward → mlp.router.forward → expert_dispatch',
+        before: 'dispatched = expert_dispatch(tokens, routing)\nlogits = self.lm_head(hidden_states)\nloss = cross_entropy(logits, labels)',
+        after: 'with selective_checkpoint(attention=True, ffn=True):\n    dispatched = expert_dispatch(tokens, routing)\nlogits = self.lm_head(hidden_states)\nloss = cross_entropy(logits, labels)\ndel logits'
+      }
     ],
     meta: {
       date: '2026-07-15',
@@ -1906,7 +1933,8 @@ function refreshChipCard(card) {
   const hasE2e = isMfu && isFinite(card._e2ePct);
   valEl.textContent = hasE2e ? card._e2ePct.toFixed(0) : (isFinite(pct) ? pct.toFixed(1) : '—');
   setMetricCardProgress(card, hasE2e ? card._e2ePct : pct);
-  // 分母是用户手选的假设值，不做 ok/warn 着色，卡片保持中性
+  // 显存触顶是绝对风险：即使容量分母来自用户选择，>=95% 仍明确标为异常。
+  if (!isMfu && isFinite(pct) && pct >= 95) card.classList.add('ovm-bad');
 
   // 状态行：把换算依据写清楚（原始量 + 当前所选项），便于核对
   if (stEl) {
@@ -4076,6 +4104,12 @@ window.openCodeFileFromSwimlane = function(path, focusLine) {
   }
   if (idx >= 0) showCodeFile(idx, focusLine);
 };
+
+window.addEventListener('memory:open-code', e => {
+  document.querySelector('.tab[data-tab="code"]')?.click();
+  const idx = (window._codeExamples || []).findIndex(ex => ex.label?.includes('activation checkpoint'));
+  if (idx >= 0) window.showCodeExample(idx);
+});
 
 window.showCodeFile = async function(idx, focusLine) {
   const f = window._codeTreeFiles?.[idx];

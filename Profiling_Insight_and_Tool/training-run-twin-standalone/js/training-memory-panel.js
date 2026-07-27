@@ -1,0 +1,645 @@
+/* ══════════════════════════════════════════════════════════════════════════════
+   问题二 · 显存 OOM —— 底部 dock「性能」页签的 3 张举证图
+   ──────────────────────────────────────────────────────────────────────────────
+   对应 定位链-openPangu-2.0-Flash.md 案例四，与 js/training-spotlight.js 里
+   CASES["mem-oom"] 的步进联动（选择器 [data-mem-card]）：
+
+     ① mem-timeline   §1 性能表征层   显存占用曲线 + 吞吐（触顶 / OOM 断点）
+                                     兼作「容量维度」判据：峰值 = 容量 → 绝对容量不足
+     ② composition    §4 峰值构成层   显存峰值按用途堆叠（激活 56.6% = 根因）
+     ③ fragment-map   §6 内存快照层   地址×时间碎片分布 + 碎片热力条 + 碎片判据读数
+                                     点块弹出生命周期与申请堆栈
+
+   案例四另外三层不在本面板里取证，各自归到页面上已有的视图，避免重复造图：
+     · §2 瓶颈分类层   → 底部 dock 的「Timeline」页签（耗时构成本来就该在泳道上读）
+     · §3 显存表征层   → 容量维度看 ①、碎片维度看 ③ 的判据读数，不单独成卡
+     · §5 阶段/层定位  → 整网图「侧视图」的逐层指标曲线「单层激活值显存」
+                        （见 training-monitoring-v2-deck.js 的 layer_activation_gb）
+
+   数据全部取自 window.PtoTrainingTwinMemoryCase（training-run-twin.js）——
+   静态事实走 .facts，逐 step 读数走 .at(step)。本文件不自带任何业务数字。
+
+   布局：3 张卡在 dock 里一行铺满、各自等宽，不滚动（见 training-monitoring-v2.html
+   的 .wzh-mem-grid）。
+   ══════════════════════════════════════════════════════════════════════════════ */
+window.PtoTrainingMemoryPanel = (function () {
+  "use strict";
+
+  var host = null;
+  var built = false;
+  var canvases = {};      // id → <canvas>
+  var popover = null;     // ⑥ 的单块生命周期浮层
+
+  /* ── 主题感知取色 ────────────────────────────────────────────────────────────
+     页面可切浅/深色，canvas 里不能写死颜色；每次重绘前从 :root 读一次设计令牌。
+     语义色（激活/参数/梯度/优化器）与 hif8-case7.js 的 .h8-tag 同一套，跨案例保持一致。 */
+  function palette() {
+    var cs = getComputedStyle(document.documentElement);
+    function v(name, fallback) {
+      var got = cs.getPropertyValue(name);
+      return (got && got.trim()) || fallback;
+    }
+    return {
+      ink: v("--foreground", "#111827"),
+      dim: v("--foreground-secondary", "#4b5563"),
+      mute: v("--foreground-muted", "#6b7280"),
+      grid: v("--border-subtle", "rgba(128,128,128,.22)"),
+      inset: v("--surface-2", "rgba(128,128,128,.10)"),
+      crit: "#dc2626",
+      warn: "#ea580c",
+      ok: "#16a34a",
+      mem: "#0891b2",
+      activation: "#ea580c",
+      params: "#3b6fe0",
+      grads: "#16a34a",
+      optimizer: "#8b5cf6",
+      workspace: "#94a3b8",
+      accent: "#3b6fe0",
+    };
+  }
+
+  var MONO = "ui-monospace,'SF Mono',Menlo,Consolas,monospace";
+  var SANS = "system-ui,-apple-system,'Segoe UI',sans-serif";
+
+  function facts() {
+    var api = window.PtoTrainingTwinMemoryCase;
+    return api ? api.facts : null;
+  }
+  function constants() {
+    var api = window.PtoTrainingTwinMemoryCase;
+    return api ? api.constants : null;
+  }
+
+  /* ── canvas 助手 ─────────────────────────────────────────────────────────── */
+  // 卡片高度由 grid 决定，canvas 用绝对定位撑满 body，这里按实测 CSS 尺寸做 DPR 缩放
+  function ctx2d(cv) {
+    if (!cv) return null;
+    var r = cv.getBoundingClientRect();
+    var w = Math.max(1, Math.round(r.width));
+    var h = Math.max(1, Math.round(r.height));
+    if (w < 8 || h < 8) return null;           // 页签隐藏时量不到尺寸，跳过本次绘制
+    var dpr = window.devicePixelRatio || 1;
+    cv.width = Math.round(w * dpr);
+    cv.height = Math.round(h * dpr);
+    var c = cv.getContext("2d");
+    c.setTransform(dpr, 0, 0, dpr, 0, 0);
+    c.clearRect(0, 0, w, h);
+    return { c: c, w: w, h: h };
+  }
+  function roundRect(c, x, y, w, h, r) {
+    r = Math.min(r, w / 2, h / 2);
+    c.beginPath();
+    if (c.roundRect) { c.roundRect(x, y, w, h, r); return; }
+    c.moveTo(x + r, y);
+    c.arcTo(x + w, y, x + w, y + h, r);
+    c.arcTo(x + w, y + h, x, y + h, r);
+    c.arcTo(x, y + h, x, y, r);
+    c.arcTo(x, y, x + w, y, r);
+    c.closePath();
+  }
+  function text(c, str, x, y, opt) {
+    opt = opt || {};
+    c.fillStyle = opt.color || "#000";
+    c.font = (opt.weight || "400") + " " + (opt.size || 10) + "px " + (opt.mono ? MONO : SANS);
+    c.textAlign = opt.align || "left";
+    c.textBaseline = opt.baseline || "alphabetic";
+    c.fillText(str, x, y);
+  }
+  // 窄卡里文字很容易超出：超宽就逐字裁剪加省略号
+  function ellipsis(c, str, maxW) {
+    if (c.measureText(str).width <= maxW) return str;
+    var s = str;
+    while (s.length > 1 && c.measureText(s + "…").width > maxW) s = s.slice(0, -1);
+    return s + "…";
+  }
+
+  /* ══ ① 显存占用曲线 + 吞吐 ══════════════════════════════════════════════════
+     区间取 [climbFrom−4000, recoveryEnd+2000]：左边留一段平稳基线做对照，
+     右边留到修复后的新稳态，一屏讲完「平稳→爬升→触顶 OOM→回落」。 */
+  function drawTimeline(cv) {
+    var g = ctx2d(cv);
+    if (!g) return;
+    var api = window.PtoTrainingTwinMemoryCase;
+    var f = facts(), K = constants();
+    if (!api || !f || !K) return;
+    var c = g.c, w = g.w, h = g.h, p = palette();
+
+    var x0 = Math.max(0, K.climbFrom - 4000), x1 = K.recoveryEnd + 2000;
+    var legendH = 14;
+    var pad = { l: 26, r: 24, t: 12 + legendH, b: 16 };
+    var pw = w - pad.l - pad.r, ph = h - pad.t - pad.b;
+    var gbMax = f.capacityGB * 1.06, tpMax = 3600;
+    var mapX = function (s) { return pad.l + (s - x0) / (x1 - x0) * pw; };
+    var mapY = function (gb) { return pad.t + ph - gb / gbMax * ph; };
+    var mapT = function (t) { return pad.t + ph - t / tpMax * ph; };
+
+    /* 图例：显存占用 / 吞吐用各自曲线色，容量线与 OOM 断点共用「危险红」——
+       红色只留给真正的异常标记，避免整张图看起来「一片红都是坏的」。 */
+    var legendItems = [
+      { color: p.mem, label: "显存占用" },
+      { color: p.accent, label: "吞吐" },
+      { color: p.crit, label: "HBM 容量 / OOM" },
+    ];
+    var lx = pad.l, ly = 9;
+    c.font = "400 9px " + SANS;
+    legendItems.forEach(function (it) {
+      c.fillStyle = it.color;
+      roundRect(c, lx, ly - 6, 6, 6, 1.5); c.fill();
+      text(c, it.label, lx + 9, ly, { color: p.mute, size: 9 });
+      lx += 9 + c.measureText(it.label).width + 10;
+    });
+
+    // 采样：等距 + 强制插入事故步前后各一点，保证断点落在准确位置
+    var steps = [];
+    for (var i = 0; i <= 160; i++) steps.push(Math.round(x0 + (x1 - x0) * i / 160));
+    steps.push(K.incidentStep - 1, K.incidentStep, K.incidentStep + 1);
+    steps.sort(function (a, b) { return a - b; });
+
+    // 网格 + y 轴刻度（GB）
+    c.strokeStyle = p.grid; c.lineWidth = 1;
+    [0, 32, 64].forEach(function (gb) {
+      var y = Math.round(mapY(gb)) + 0.5;
+      c.beginPath(); c.moveTo(pad.l, y); c.lineTo(pad.l + pw, y); c.stroke();
+      text(c, gb, pad.l - 4, y + 3, { color: p.mute, size: 9, align: "right", mono: true });
+    });
+
+    // 容量红线
+    c.save();
+    c.strokeStyle = p.crit; c.lineWidth = 1; c.setLineDash([3, 3]);
+    var capY = Math.round(mapY(f.capacityGB)) + 0.5;
+    c.beginPath(); c.moveTo(pad.l, capY); c.lineTo(pad.l + pw, capY); c.stroke();
+    c.restore();
+    text(c, "HBM " + f.capacityGB + "GB", pad.l + pw, capY - 3, { color: p.crit, size: 9, align: "right", mono: true });
+
+    // 吞吐（右轴，弱化为背景参照）
+    c.strokeStyle = p.accent; c.globalAlpha = 0.5; c.lineWidth = 1.2;
+    c.beginPath();
+    var pen = false;
+    steps.forEach(function (s) {
+      var t = api.at(s).throughput;
+      if (!isFinite(t)) { pen = false; return; }
+      var X = mapX(s), Y = mapT(t);
+      if (!pen) { c.moveTo(X, Y); pen = true; } else c.lineTo(X, Y);
+    });
+    c.stroke();
+    c.globalAlpha = 1;
+
+    // 显存占用（主线 + 面积）
+    var pts = [];
+    steps.forEach(function (s) { pts.push({ s: s, gb: api.at(s).mem_gb }); });
+    // 面积：按连续段分批填充（NaN 处断开 = 训练中断，不能把断点连起来）
+    var seg = [];
+    function flushArea() {
+      if (seg.length < 2) { seg = []; return; }
+      c.beginPath();
+      c.moveTo(mapX(seg[0].s), mapY(0));
+      seg.forEach(function (q) { c.lineTo(mapX(q.s), mapY(q.gb)); });
+      c.lineTo(mapX(seg[seg.length - 1].s), mapY(0));
+      c.closePath();
+      c.fillStyle = p.mem; c.globalAlpha = 0.14; c.fill(); c.globalAlpha = 1;
+      c.beginPath();
+      seg.forEach(function (q, k) { var X = mapX(q.s), Y = mapY(q.gb); k ? c.lineTo(X, Y) : c.moveTo(X, Y); });
+      c.strokeStyle = p.mem; c.lineWidth = 1.6; c.stroke();
+      seg = [];
+    }
+    pts.forEach(function (q) { if (isFinite(q.gb)) seg.push(q); else flushArea(); });
+    flushArea();
+
+    // OOM 断点
+    var ox = Math.round(mapX(K.incidentStep)) + 0.5;
+    c.strokeStyle = p.crit; c.lineWidth = 1.2;
+    c.beginPath(); c.moveTo(ox, pad.t); c.lineTo(ox, pad.t + ph); c.stroke();
+    c.fillStyle = p.crit;
+    c.beginPath(); c.arc(ox, mapY(f.peakGB), 3, 0, Math.PI * 2); c.fill();
+    text(c, "OOM", ox + 3, pad.t + 8, { color: p.crit, size: 9, weight: "700" });
+
+    // 时光机当前 step 游标：让这张图和页面时钟对上
+    var cur = window.twinGetStep ? window.twinGetStep() : null;
+    if (cur != null && cur >= x0 && cur <= x1) {
+      var cx = Math.round(mapX(cur)) + 0.5;
+      c.save();
+      c.strokeStyle = p.ink; c.globalAlpha = 0.45; c.lineWidth = 1; c.setLineDash([2, 2]);
+      c.beginPath(); c.moveTo(cx, pad.t); c.lineTo(cx, pad.t + ph); c.stroke();
+      c.restore();
+    }
+
+    // x 轴刻度
+    [x0, K.incidentStep, x1].forEach(function (s, k) {
+      text(c, (s / 1000).toFixed(0) + "k", mapX(s), h - 4,
+        { color: p.mute, size: 9, mono: true, align: k === 0 ? "left" : k === 2 ? "right" : "center" });
+    });
+  }
+
+  /* ══ ② 显存峰值构成（面积比例气泡图）════════════════════════════════════════════
+     用气泡而不是堆叠柱：堆叠柱里「参数 8.1 / 梯度 8.1 / 优化器 10.8」这三段高度接近，
+     谁比谁大要贴着量；气泡按面积编码，大小差异一眼可比。
+     半径 ∝ √GB（面积才与数值成正比，直接拿 GB 当半径会把差距夸大成平方）。
+
+     排布不用一字排开，走贪心 packing：最大的钉在中心，其余按由大到小依次找「离中心最近
+     且不与已放置气泡相交」的位置落座 —— 于是大的自然居中、小的绕在外围，是那种有机的
+     热力气泡观感，而不是整齐一行。搜索起始角按下标取定值，布局随机但每次渲染完全一致。 */
+  // aspect = 目标区域的宽高比。搜索路径按它拉成椭圆（碰撞判定仍是真实圆距），
+  // 于是气泡簇整体跟着卡片的横向长条形状铺开，而不是挤成一个竖着的圆团、白白浪费两侧宽度。
+  function packBubbles(items, gap, aspect) {
+    var ax = Math.sqrt(aspect || 1), ay = 1 / Math.sqrt(aspect || 1);
+    var placed = [];
+    items.forEach(function (it, i) {
+      if (i === 0) { placed.push({ it: it, x: 0, y: 0, r: it.r }); return; }
+      // 起始角错开黄金角，避免所有小球都从同一个方向排过去、堆成一条边
+      var a0 = i * 2.39996;
+      var best = null;
+      for (var rho = it.r + gap; rho < placed[0].r * 8 && !best; rho += 2) {
+        for (var k = 0; k < 72; k++) {
+          var th = a0 + k * (Math.PI * 2 / 72);
+          var x = Math.cos(th) * rho * ax, y = Math.sin(th) * rho * ay;
+          var hitAny = placed.some(function (q) {
+            var dx = x - q.x, dy = y - q.y;
+            return Math.sqrt(dx * dx + dy * dy) < q.r + it.r + gap;
+          });
+          if (!hitAny) { best = { x: x, y: y }; break; }
+        }
+      }
+      if (!best) best = { x: (placed[0].r + it.r + gap) * Math.cos(a0) * ax, y: (placed[0].r + it.r + gap) * Math.sin(a0) * ay };
+      placed.push({ it: it, x: best.x, y: best.y, r: it.r });
+    });
+    return placed;
+  }
+
+  function drawComposition(cv) {
+    var g = ctx2d(cv);
+    if (!g) return;
+    var f = facts(); if (!f) return;
+    var c = g.c, w = g.w, h = g.h, p = palette();
+    var colorOf = { activation: p.activation, params: p.params, grads: p.grads, optimizer: p.optimizer, workspace: p.workspace };
+    var items = f.composition.slice().sort(function (a, b) { return b.gb - a.gb; });
+    var totalGB = f.composition.reduce(function (s, it) { return s + it.gb; }, 0);
+    var maxGB = items[0].gb;
+
+    var pad = 8, headH = 13, footH = 13, gap = 3;
+    var availW = w - pad * 2, availH = h - headH - footH;
+
+    text(c, "峰值 " + totalGB.toFixed(1) + " GB", pad, 9, { color: p.mute, size: 9.5, mono: true });
+
+    // 先按名义半径 100 packing，量出簇的外接框，再整体缩放到可用区域 —— 这样不用预估布局尺寸
+    var nominal = items.map(function (it) { return { id: it.id, gb: it.gb, pct: it.pct, short: it.short, label: it.label, reducible: it.reducible, r: 100 * Math.sqrt(it.gb / maxGB) }; });
+    var packed = packBubbles(nominal, gap * 4, availW / Math.max(1, availH));
+    var x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+    packed.forEach(function (q) {
+      x0 = Math.min(x0, q.x - q.r); y0 = Math.min(y0, q.y - q.r);
+      x1 = Math.max(x1, q.x + q.r); y1 = Math.max(y1, q.y + q.r);
+    });
+    var scale = Math.min(availW / (x1 - x0), availH / (y1 - y0));
+    var offX = pad + (availW - (x1 - x0) * scale) / 2 - x0 * scale;
+    var offY = headH + (availH - (y1 - y0) * scale) / 2 - y0 * scale;
+
+    packed.forEach(function (q) {
+      var it = q.it;
+      var cx = offX + q.x * scale, cy = offY + q.y * scale, r = q.r * scale;
+      c.fillStyle = colorOf[it.id] || p.workspace;
+      // 激活值(可缩减项)用满不透明、其余压到 0.8，靠明度区分主次即可，不再另加描边
+      c.globalAlpha = it.reducible ? 1 : 0.8;
+      c.beginPath(); c.arc(cx, cy, r, 0, Math.PI * 2); c.fill();
+      c.globalAlpha = 1;
+
+      /* 名称 + GB 写进圆里。可写宽度取圆内接矩形的宽（≈1.4r），字号随半径缩放；
+         小到写不下(r<18)的球把标签移到球外下方，仍然读得出来是哪一项。 */
+      var inner = r * 1.4;
+      var fs = Math.max(8, Math.min(13, r * 0.30));
+      if (r >= 18) {
+        c.font = "600 " + fs + "px " + SANS;
+        text(c, ellipsis(c, it.short || it.label, inner), cx, cy - 1,
+          { color: "#fff", size: fs, weight: "600", align: "center" });
+        text(c, it.gb.toFixed(1) + " GB", cx, cy + fs + 1,
+          { color: "#fff", size: fs * 0.92, weight: "500", align: "center", mono: true });
+        // 再大一点的球连百分比一起写下去
+        if (r >= 40) {
+          c.globalAlpha = 0.82;
+          text(c, (it.pct * 100).toFixed(1) + "%", cx, cy + fs * 2.1 + 2,
+            { color: "#fff", size: fs * 0.82, align: "center", mono: true });
+          c.globalAlpha = 1;
+        }
+      } else {
+        c.font = "400 8.5px " + SANS;
+        var outW = 56;
+        var lx = Math.max(pad + outW / 2, Math.min(cx, w - pad - outW / 2));
+        text(c, ellipsis(c, (it.short || it.label) + " " + it.gb.toFixed(1) + "GB", outW), lx, cy + r + 9,
+          { color: p.mute, size: 8.5, align: "center" });
+      }
+    });
+
+    // 底部结论
+    c.font = "600 9px " + SANS;
+    text(c, ellipsis(c, "激活值 " + (items[0].pct * 100).toFixed(1) + "% = 唯一可大幅缩减项 → ~8.5 GB", w - pad * 2),
+      pad, h - 2, { color: p.crit, size: 9, weight: "600" });
+  }
+
+  /* ══ ⑥ 碎片分布图（地址 × 时间）+ 碎片热力条 ═══════════════════════════════
+     块数据在模块内用定长种子生成，形态固定可复现：forward 期间大量不等大小的激活中间张量
+     密集分配、backward 后才集中释放 —— 正是碎片的成因。其中一块被替换成 MEM_CASE_FACTS
+     里的真实样本（L38 q_b_proj），点它能看到申请堆栈。 */
+  var blocksCache = null;
+  function buildBlocks() {
+    if (blocksCache) return blocksCache;
+    var f = facts(); if (!f) return [];
+    var seed = 20260727;
+    function rnd() { seed = (seed * 1103515245 + 12345) & 0x7fffffff; return seed / 0x7fffffff; }
+    var cap = f.capacityGB;
+    var list = [];
+    // 常驻区（参数/梯度/优化器）：低地址、整个 step 都在
+    [["params", 0, 8.1], ["grads", 8.1, 8.1], ["optimizer", 16.2, 10.8]].forEach(function (r) {
+      list.push({ kind: r[0], addr: r[1], size: r[2], t0: 0, t1: 1, resident: true });
+    });
+    // 激活中间张量：高地址、forward 分配 backward 释放，大小不等 → 释放后留空洞
+    var addr = 27.0;
+    for (var i = 0; i < 96 && addr < cap - 0.4; i++) {
+      var size = 0.08 + rnd() * 0.52;
+      var t0 = 0.06 + rnd() * 0.38;
+      var t1 = Math.min(1, t0 + 0.28 + rnd() * 0.62);
+      list.push({ kind: "activation", addr: addr, size: size, t0: t0, t1: t1, idx: i });
+      addr += size + rnd() * 0.12;         // 间隙 = 已释放未合并的空洞
+    }
+    // 临时 workspace：零散夹在中间
+    for (var j = 0; j < 10; j++) {
+      list.push({ kind: "workspace", addr: 27.0 + rnd() * (cap - 28), size: 0.05 + rnd() * 0.1,
+                  t0: rnd() * 0.7, t1: 0, transient: true });
+    }
+    list.forEach(function (b) { if (b.transient) b.t1 = Math.min(1, b.t0 + 0.06); });
+    // 指定其中一块为文档里的真实样本
+    var sample = f.fragment.sampleBlock;
+    var target = list.filter(function (b) { return b.kind === "activation"; })[37];
+    if (target) {
+      target.sample = sample;
+      target.size = sample.sizeMB / 1024;
+      target.t0 = sample.allocMs / 9000;
+      target.t1 = sample.freeMs / 9000;
+    }
+    blocksCache = list;
+    return list;
+  }
+
+  var fragGeom = null;   // 命中测试用：绘制时记下每块的屏幕矩形
+  function drawFragmentMap(cv) {
+    var g = ctx2d(cv);
+    if (!g) return;
+    var f = facts(); if (!f) return;
+    var c = g.c, w = g.w, h = g.h, p = palette();
+    var blocks = buildBlocks();
+    var colorOf = { params: p.params, grads: p.grads, optimizer: p.optimizer, activation: p.activation, workspace: p.workspace };
+
+    var pad = 8;
+    // 自上而下：标题行 → 图例行 → 块图 → 碎片热力条 → 碎片判据三格
+    var titleH = 11, legendH = 13, stripH = 10, judgeH = 30;
+    var top = titleH + legendH + 4, bot = h - judgeH - stripH - 8;
+    var plotW = w - pad * 2;
+    var cap = f.capacityGB;
+    var mapA = function (gb) { return pad + gb / cap * plotW; };
+
+    text(c, "地址空间 0–" + cap + " GB  ×  step 内时间", pad, 9, { color: p.mute, size: 9.5 });
+    text(c, "点红框块看生命周期", w - pad, 9, { color: p.mute, size: 9, align: "right" });
+
+    /* 图例：矩形块按用途着色（与「峰值构成」气泡同一套语义色），名称取 composition 的短名，
+       两处颜色永远一致；右侧另给碎片热力条的色标，说明绿→红是什么意思。 */
+    var LEGEND_KINDS = ["activation", "params", "grads", "optimizer", "workspace"];
+    var shortOf = {};
+    f.composition.forEach(function (it) { shortOf[it.id] = it.short || it.label; });
+    var ly = titleH + 9;
+    c.font = "400 9px " + SANS;
+    var lx = pad;
+    LEGEND_KINDS.forEach(function (kind) {
+      var name = shortOf[kind] || kind;
+      c.fillStyle = colorOf[kind] || p.workspace;
+      roundRect(c, lx, ly - 6, 6, 6, 1.5); c.fill();
+      text(c, name, lx + 9, ly, { color: p.mute, size: 9 });
+      lx += 9 + c.measureText(name).width + 8;
+    });
+    // 碎片热力条色标（贴右侧）：绿=整段由一块大分配独占或空闲 → 红=同一区间挤了三四笔
+    var keyW = 34, keyX = w - pad - keyW - 26;
+    if (keyX > lx + 6) {
+      text(c, "连续", keyX - 3, ly, { color: p.mute, size: 9, align: "right" });
+      [p.ok, p.warn, p.crit].forEach(function (col, i) {
+        c.fillStyle = col; c.globalAlpha = 0.75;
+        c.fillRect(keyX + i * (keyW / 3), ly - 6, keyW / 3, 6);
+        c.globalAlpha = 1;
+      });
+      text(c, "碎片", keyX + keyW + 3, ly, { color: p.mute, size: 9 });
+    }
+
+    // 块
+    fragGeom = [];
+    blocks.forEach(function (b) {
+      var x = mapA(b.addr), bw = Math.max(1.2, b.size / cap * plotW);
+      var y = top + b.t0 * (bot - top);
+      var bh = Math.max(1.5, (b.t1 - b.t0) * (bot - top));
+      c.fillStyle = colorOf[b.kind] || p.workspace;
+      c.globalAlpha = b.resident ? 0.55 : 0.9;
+      c.fillRect(x, y, bw, bh);
+      c.globalAlpha = 1;
+      if (b.sample) {                       // 样本块加高亮描边，提示"可点"
+        c.strokeStyle = p.crit; c.lineWidth = 1.5;
+        c.strokeRect(x - 1, y - 1, bw + 2, bh + 2);
+      }
+      fragGeom.push({ b: b, x: x, y: y, w: bw, h: bh });
+    });
+
+    // 碎片热力条：沿地址空间统计空隙密度，红=碎片密集（连续空闲块小）
+    var sy = bot + 6;
+    var BINS = 64;
+    var occupied = new Array(BINS).fill(0);
+    blocks.forEach(function (b) {
+      var i0 = Math.floor(b.addr / cap * BINS), i1 = Math.ceil((b.addr + b.size) / cap * BINS);
+      for (var i = Math.max(0, i0); i < Math.min(BINS, i1); i++) occupied[i]++;
+    });
+    for (var i = 0; i < BINS; i++) {
+      var x = pad + i / BINS * plotW, bw2 = plotW / BINS + 0.5;
+      /* 同一地址区间里的分配笔数越多 = 被切得越碎。基准是 1 笔(整段由一块大分配独占,
+         如常驻的参数/梯度/优化器区)→ 绿；空闲区 0 笔同样是绿(大块连续空闲);
+         激活区每 GB 挤进三四块不等大小的中间张量 → 红。 */
+      var d = Math.min(1, Math.max(0, occupied[i] - 1) / 3);
+      c.fillStyle = d > 0.6 ? p.crit : d > 0.25 ? p.warn : p.ok;
+      c.globalAlpha = 0.28 + d * 0.62;
+      c.fillRect(x, sy, bw2, stripH);
+      c.globalAlpha = 1;
+    }
+    c.strokeStyle = p.grid; c.lineWidth = 1;
+    c.strokeRect(pad + 0.5, sy + 0.5, plotW - 1, stripH - 1);
+
+    /* 碎片维度的判据读数（原本单独一张「双因子判定」卡，现并到这里 —— 判据紧挨着它的证据图）：
+       空闲够但最大连续块接不下请求 size，就是分配碎片。容量维度的判据在 ① 显存曲线上（峰值=容量）。 */
+    var fr = f.fragment;
+    var jy = sy + stripH + 6;
+    var cells = [
+      { lab: "空闲总量", val: fr.totalFreeGB + " GB", hot: false },
+      { lab: "最大连续块", val: fr.largestFreeBlockGB + " GB", hot: true },
+      { lab: "碎片率", val: (fr.ratio * 100).toFixed(0) + "%", hot: true },
+    ];
+    var cw = (w - pad * 2 - 8) / 3;
+    cells.forEach(function (cell, i) {
+      var cx = pad + i * (cw + 4);
+      c.fillStyle = p.inset;
+      roundRect(c, cx, jy, cw, judgeH - 4, 4); c.fill();
+      text(c, cell.lab, cx + cw / 2, jy + 11, { color: p.mute, size: 8.5, align: "center" });
+      text(c, cell.val, cx + cw / 2, jy + 23,
+        { color: cell.hot ? p.crit : p.dim, size: 11, weight: "600", align: "center", mono: true });
+    });
+  }
+
+  /* 单块生命周期浮层：点碎片图里的任意块弹出，样本块带真实申请堆栈。
+     按需创建而不是跟着 dock 面板一起建 —— 定位链长文里的碎片图（training-monitoring.html 上
+     根本没有 dock「性能」页签）也要能弹出它。 */
+  function ensurePopover() {
+    if (popover) return popover;
+    popover = document.createElement("div");
+    popover.className = "wzh-mem-pop";
+    popover.hidden = true;
+    document.body.appendChild(popover);
+    return popover;
+  }
+
+  function showBlockPopover(hit, clientX, clientY) {
+    ensurePopover();
+    var f = facts(); if (!f) return;
+    var b = hit.b;
+    var s = b.sample;
+    var name = s ? s.name : (b.kind === "activation" ? "激活中间张量 #" + (b.idx != null ? b.idx : "?") :
+                             b.kind === "params" ? "模型参数 (FP8)" :
+                             b.kind === "grads" ? "梯度 (FP8)" :
+                             b.kind === "optimizer" ? "优化器状态 (BF16 m+v)" : "临时 workspace buffer");
+    var sizeTxt = s ? s.shape + " ≈ " + s.sizeMB + " MB" : (b.size * 1024).toFixed(0) + " MB";
+    var allocMs = s ? s.allocMs : Math.round(b.t0 * 9000);
+    var freeMs = s ? s.freeMs : Math.round(b.t1 * 9000);
+    var holdMs = s ? s.holdMs : Math.max(0, freeMs - allocMs);
+    var stack = s ? s.stack : null;
+
+    popover.innerHTML =
+      '<div class="wzh-mem-pop__title"></div>' +
+      '<div class="wzh-mem-pop__rows">' +
+        '<div><span>地址</span><b>' + b.addr.toFixed(2) + ' GB</b></div>' +
+        '<div><span>大小</span><b>' + sizeTxt + '</b></div>' +
+        '<div><span>申请</span><b>forward +' + allocMs + ' ms</b></div>' +
+        '<div><span>释放</span><b>' + (b.resident ? 'step 结束' : 'backward +' + freeMs + ' ms') + '</b></div>' +
+        '<div><span>持有</span><b class="is-hot">' + (holdMs / 1000).toFixed(2) + ' s</b></div>' +
+      '</div>' +
+      (stack ? '<div class="wzh-mem-pop__stack"><span>申请堆栈</span>' +
+        stack.map(function (fn, i) { return '<code>' + (i ? '↳ ' : '') + fn + '</code>'; }).join("") + '</div>' : '');
+    popover.querySelector(".wzh-mem-pop__title").textContent = name;
+
+    popover.hidden = false;
+    // 贴着鼠标摆，越界时翻到另一侧
+    var r = popover.getBoundingClientRect();
+    var x = Math.min(clientX + 12, window.innerWidth - r.width - 8);
+    var y = clientY - r.height - 12;
+    if (y < 8) y = clientY + 14;
+    popover.style.left = Math.max(8, x) + "px";
+    popover.style.top = y + "px";
+  }
+  function hideBlockPopover() { if (popover) popover.hidden = true; }
+
+  // 碎片图的点击命中：绑在传入的 canvas 上，dock 里那张与定位链长文里那张各绑一次
+  function bindFragmentInteraction(cv) {
+    if (!cv || cv.dataset.bound) return;
+    cv.dataset.bound = "1";
+    cv.style.cursor = "crosshair";
+    cv.addEventListener("click", function (ev) {
+      if (!fragGeom) return;
+      var r = cv.getBoundingClientRect();
+      var px = ev.clientX - r.left, py = ev.clientY - r.top;
+      // 命中面积小，优先取样本块；其次取最后一个命中的（画在上层的）
+      // 激活块本身只有 1~3px 宽，命中框统一外扩；带堆栈的样本块再放宽一点，保证点得中
+      var hit = null;
+      fragGeom.forEach(function (q) {
+        var m = q.b.sample ? 5 : 2;
+        var inside = px >= q.x - m && px <= q.x + q.w + m && py >= q.y - m && py <= q.y + q.h + m;
+        if (!inside) return;
+        if (!hit || q.b.sample) hit = q;
+      });
+      if (hit) { ev.stopPropagation(); showBlockPopover(hit, ev.clientX, ev.clientY); }
+      else hideBlockPopover();
+    });
+    document.addEventListener("click", function (ev) {
+      if (popover && !popover.hidden && ev.target !== cv && !popover.contains(ev.target)) hideBlockPopover();
+    });
+  }
+
+  /* ── 装配 ───────────────────────────────────────────────────────────────── */
+  var CARDS = [
+    { id: "mem-timeline", title: "显存占用 & 吞吐" },
+    { id: "composition", title: "峰值构成" },
+    { id: "fragment-map", title: "碎片分布" },
+  ];
+
+  function build() {
+    if (built || !host) return;
+    var grid = document.createElement("div");
+    grid.className = "wzh-mem-grid";
+    CARDS.forEach(function (cd) {
+      var card = document.createElement("section");
+      card.className = "wzh-mem-card";
+      // 聚光灯定位链按 [data-mem-card] 选中并照亮对应卡（见 js/training-spotlight.js）
+      card.dataset.memCard = cd.id;
+      var head = document.createElement("div");
+      head.className = "wzh-mem-card__head";
+      head.innerHTML = '<span class="wzh-mem-card__title"></span>';
+      head.querySelector(".wzh-mem-card__title").textContent = cd.title;
+      var body = document.createElement("div");
+      body.className = "wzh-mem-card__body";
+      var cv = document.createElement("canvas");
+      body.appendChild(cv);
+      card.appendChild(head);
+      card.appendChild(body);
+      grid.appendChild(card);
+      canvases[cd.id] = cv;
+    });
+    host.innerHTML = "";
+    host.appendChild(grid);
+
+    built = true;
+    bindFragmentInteraction(canvases["fragment-map"]);
+  }
+
+  /* 卡片 DOM 无条件建好(哪怕页签还隐藏着)——聚光灯按 [data-mem-card] 找目标，
+     元素必须先存在；canvas 绘制则由 ctx2d() 在量不到尺寸时自行跳过。 */
+  var DRAWERS = { "mem-timeline": drawTimeline, "composition": drawComposition, "fragment-map": drawFragmentMap };
+
+  /* 把某张图画到任意一块 canvas 上。dock 面板用它画自己那三张；
+     「问题二」定位链长文(js/training-memory-case4.js)也用它把同样三张嵌进正文，
+     两处共用同一份绘制代码与同一份数据，不会画出两套口径。 */
+  function drawInto(id, cv) {
+    var fn = DRAWERS[id];
+    if (!fn || !cv) return;
+    if (id === "fragment-map") bindFragmentInteraction(cv);
+    try { fn(cv); } catch (e) {}
+  }
+
+  function render() {
+    if (!host) return;
+    build();
+    CARDS.forEach(function (cd) { drawInto(cd.id, canvases[cd.id]); });
+  }
+
+  var rafPending = 0;
+  var extraRedraw = [];   // 额外注册的重绘回调(定位链长文里的那几张图靠它跟着 resize/主题切换刷新)
+  function renderSoon() {
+    if (rafPending) return;
+    rafPending = window.requestAnimationFrame(function () {
+      rafPending = 0;
+      render();
+      extraRedraw.forEach(function (fn) { try { fn(); } catch (e) {} });
+    });
+  }
+  function onRedraw(fn) { if (typeof fn === "function" && extraRedraw.indexOf(fn) < 0) extraRedraw.push(fn); }
+
+  function mount() {
+    host = document.getElementById("dockPanelPerf");
+    window.addEventListener("resize", renderSoon);
+    // 主题切换（浅/深色）后配色要跟着变：监听 :root 的 data-theme
+    if (window.MutationObserver) {
+      new MutationObserver(renderSoon).observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme"] });
+    }
+    render();   // host 不存在(如 training-monitoring.html 没有这个 dock 页签)时内部直接返回
+  }
+
+  if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", mount);
+  else mount();
+
+  return { mount: mount, render: render, renderSoon: renderSoon, drawInto: drawInto, onRedraw: onRedraw };
+})();

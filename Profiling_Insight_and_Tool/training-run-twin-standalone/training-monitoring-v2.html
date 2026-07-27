@@ -125,7 +125,7 @@
        内部挤占图区高度)。单行紧凑布局,靠左对齐,吃满标题到进度条之间的剩余宽度(见下面
        topbar-left/-right 的 flex 覆写),问题标题跟着拿到更多空间、少截断,超宽兜底仍走
        省略号;完整描述收进原生 title 提示(hover 卡片可见,见 training-run-twin.js
-       activateProblemOneLens());填色仍复用顶栏进度条面板「问题1」条目(.wzh-tm-issue.is-p0)
+       activateProblemLens());填色仍复用顶栏进度条面板「问题1」条目(.wzh-tm-issue.is-p0)
        同一套中性描边 + 柔和 inset 光晕,保持"问题一"红色语义一致;右侧 × 图标按钮点击即退出
        时光机回放并收起本卡(见 exitTimeMachine())。 */
     .twin-diagnosis-locator {
@@ -149,12 +149,14 @@
       overflow: hidden;
     }
     .twin-diagnosis-locator-title {
-      flex: 1 1 auto; min-width: 0; font-size: 11px; font-weight: var(--font-weight-semibold);
+      /* 只按内容宽度占位（可收缩省略号，不再抢占剩余空间），让标签紧跟在标题文字后面而不是被推到右侧 */
+      flex: 0 1 auto; min-width: 0; font-size: 11px; font-weight: var(--font-weight-semibold);
       color: var(--foreground); line-height: 1.3;
       white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
     }
     .twin-diagnosis-locator-tags {
-      display: flex; align-items: center; gap: 5px; flex: none;
+      /* 吃掉标题让出的剩余宽度，标签仍从左侧紧贴标题排列 */
+      display: flex; align-items: center; gap: 5px; flex: 1 1 auto;
     }
     .twin-diagnosis-locator-tag {
       display: inline-flex; align-items: center; padding: 1px 6px;
@@ -609,6 +611,21 @@
       height: 170px;
       width: 100%;
     }
+
+
+    /* 「问题二 · 显存 OOM」定位链正文里的图表插槽：canvas 需要一个确定的 CSS 尺寸才能量出画布，
+       高度由 js/training-memory-case4.js 的 chartSlot() 内联指定，这里只管宽度与外观。
+       绘制代码与底部 dock「性能」页签共用 PtoTrainingMemoryPanel.drawInto()。 */
+    .twin-mem-chain-chart {
+      width: 100%;
+      margin: 8px 0 0;
+      padding: var(--space-2);
+      border: 1px solid var(--border-subtle);
+      border-radius: var(--radius-md);
+      background: color-mix(in srgb, var(--foreground) 3%, transparent);
+      box-sizing: border-box;
+    }
+    .twin-mem-chain-chart > canvas { display: block; width: 100%; height: 100%; }
 
     /* ── 问题三 Canvas 图表卡片（复用定位链视觉体系）── */
     .locate-canvas-card {
@@ -1142,6 +1159,104 @@
       padding: var(--space-2) var(--space-4) var(--space-3);
     }
     .twin-dock-panel > * { max-width: 760px; }
+
+    /* ── 「性能」页签:问题二(显存 OOM)的 3 张举证图 ────────────────────────────
+       3 张卡一行等宽铺满 dock，不滚动。案例四另外三层不在这里取证：耗时构成看 Timeline
+       页签、层级分布看整网图侧视图的「单层激活值显存」曲线、双因子判据分别并进第 1、3 张卡。
+       见 js/training-memory-panel.js 顶部注释。 */
+    .wzh-mem-panel {
+      overflow: hidden;                /* 明确不滚动:靠 grid 铺满，超出即压缩 */
+      padding: var(--space-2) var(--space-3) var(--space-3);
+      min-height: 0;
+    }
+    .wzh-mem-panel > * { max-width: none; }   /* 压过上面给制品/事件流用的 760px 限宽 */
+    .wzh-mem-grid {
+      height: 100%;
+      min-height: 0;
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: var(--space-2);
+    }
+    /* dock 被拖到很窄时 3 列也挤不下；退成单列纵向滚动 */
+    @media (max-width: 820px) {
+      .wzh-mem-grid { grid-template-columns: minmax(0, 1fr); grid-auto-rows: minmax(180px, 1fr); height: auto; }
+      .wzh-mem-panel { overflow: auto; }
+    }
+    .wzh-mem-card {
+      display: flex;
+      flex-direction: column;
+      min-width: 0;
+      min-height: 0;
+      gap: 4px;
+      padding: 7px 8px 6px;
+      border: 1px solid var(--border-subtle);
+      border-radius: var(--radius-md);
+      background: color-mix(in srgb, var(--foreground) 3%, transparent);
+    }
+    .wzh-mem-card__head {
+      flex: 0 0 auto;
+      display: flex;
+      align-items: center;
+      min-width: 0;
+    }
+    .wzh-mem-card__title {
+      flex: 0 1 auto;
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      font-size: 11px;
+      font-weight: var(--font-weight-semibold);
+      color: var(--foreground);
+    }
+    .wzh-mem-card__body { flex: 1 1 auto; min-height: 0; position: relative; }
+    .wzh-mem-card__body > canvas { position: absolute; inset: 0; width: 100%; height: 100%; }
+
+    /* 碎片分布图里点单块弹出的「生命周期 + 申请堆栈」浮层(挂在 body 上，避免被 dock 裁切) */
+    .wzh-mem-pop {
+      position: fixed;
+      z-index: 2100;                   /* 高于聚光灯覆盖层(1500)与详情抽屉(2000) */
+      width: 268px;
+      padding: 9px 11px;
+      border: 1px solid var(--border-subtle);
+      border-radius: var(--radius-md);
+      background: var(--surface-1);
+      box-shadow: 0 8px 28px rgba(0,0,0,.28);
+      font-size: 10.5px;
+      line-height: 1.5;
+      color: var(--foreground-secondary);
+    }
+    .wzh-mem-pop[hidden] { display: none; }
+    .wzh-mem-pop__title {
+      margin-bottom: 6px;
+      font-size: 11px;
+      font-weight: var(--font-weight-semibold);
+      color: var(--foreground);
+    }
+    .wzh-mem-pop__rows > div {
+      display: flex;
+      justify-content: space-between;
+      gap: 10px;
+      padding: 2px 0;
+    }
+    .wzh-mem-pop__rows span { color: var(--foreground-muted); }
+    .wzh-mem-pop__rows b { font-family: var(--font-mono); font-weight: 500; color: var(--foreground); }
+    .wzh-mem-pop__rows b.is-hot { color: #dc2626; font-weight: 600; }
+    .wzh-mem-pop__stack {
+      margin-top: 7px;
+      padding-top: 6px;
+      border-top: 1px solid var(--border-subtle);
+    }
+    .wzh-mem-pop__stack > span { display: block; margin-bottom: 3px; color: var(--foreground-muted); }
+    .wzh-mem-pop__stack code {
+      display: block;
+      font-family: var(--font-mono);
+      font-size: 10px;
+      color: var(--foreground);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
 
     /* wzh-main-row: 替换原水平分栏，main-content 独占全宽 */
     .wzh-main-row {
@@ -1707,6 +1822,13 @@
       border: 0;
       display: block;
     }
+    #locateDrawerNative {
+      height: 100%;
+      overflow: auto;
+      padding: var(--space-4);
+      background: var(--surface-1);
+    }
+    #locateDrawerNative .twin-locate-section { margin-bottom: var(--space-4); }
 
     /* ── 智能对话:训练场景 AI 助手,右侧滑出面板,默认收起(见 #trainChatToggle/js/training-chat-panel.js)。
          沿用 wzh-locate-drawer 的滑出手法但不加暗背景遮罩 —— 对话过程中仍要能看到左侧整网图/指标。
@@ -2104,7 +2226,7 @@
         </div>
         <!-- 点击进度轴问题点后浮现的「问题定位」卡片,紧跟标题挂在顶栏左侧的空白处
              (标题与右侧进度条之间大片留白,不遮挡任何元素),不再占用下方整网图卡的高度
-             (原位置见 activateProblemOneLens()/showDiagnosisLocator())。 -->
+             (原位置见 activateProblemLens()/showDiagnosisLocator())。 -->
         <div class="twin-diagnosis-locator" id="diagnosisLocator">
           <div class="twin-diagnosis-locator-body">
             <strong class="twin-diagnosis-locator-title" id="diagnosisLocatorTitle">--</strong>
@@ -2581,6 +2703,11 @@ MoE：256+1（top-8 路由 · EP 切分）">?</span>
                   <button class="pto-ide-frame__terminal-tab twin-dock-tab is-selected" type="button" role="tab"
                           id="dockTabTimeline" data-dock-tab="timeline"
                           aria-selected="true" aria-controls="twinTimelineBody">Timeline</button>
+                  <!-- 「性能」页签:问题二(显存 OOM)的 6 张举证图,与聚光灯定位链的 6 个步进一一对应,
+                       渲染逻辑见 js/training-memory-panel.js -->
+                  <button class="pto-ide-frame__terminal-tab twin-dock-tab" type="button" role="tab"
+                          id="dockTabPerf" data-dock-tab="perf"
+                          aria-selected="false" aria-controls="dockPanelPerf" tabindex="-1">性能</button>
                   <button class="pto-ide-frame__terminal-tab twin-dock-tab" type="button" role="tab"
                           id="dockTabArtifacts" data-dock-tab="artifacts"
                           aria-selected="false" aria-controls="dockPanelArtifacts" tabindex="-1">制品</button>
@@ -2599,6 +2726,9 @@ MoE：256+1（top-8 路由 · EP 切分）">?</span>
               </header>
               <div class="pto-ide-frame__pane-body twin-timeline-body" id="twinTimelineBody"
                    role="tabpanel" aria-labelledby="dockTabTimeline" data-dock-panel="timeline"></div>
+              <!-- 「性能」页签内容:6 张卡由 js/training-memory-panel.js 建入,一行铺满不滚动 -->
+              <div class="pto-ide-frame__pane-body twin-dock-panel wzh-mem-panel" id="dockPanelPerf"
+                   role="tabpanel" aria-labelledby="dockTabPerf" data-dock-panel="perf" hidden></div>
               <div class="pto-ide-frame__pane-body twin-dock-panel" id="dockPanelArtifacts"
                    role="tabpanel" aria-labelledby="dockTabArtifacts" data-dock-panel="artifacts" hidden>
                 <div class="twin-artifacts" id="artifacts"></div>
@@ -2642,58 +2772,112 @@ MoE：256+1（top-8 路由 · EP 切分）">?</span>
 
   <div id="diagnosisTooltip" class="diagnosis-bubble" hidden></div>
 
-  <!-- 问题一「详情与修复建议」抽屉:整网图上方「问题定位」卡片(#diagnosisLocator)里的
-       「详情与修复建议」按钮打开,内容为 iframe 内嵌 training-monitoring.html 的训练监控侧栏
-       (?embed=locate-sidebar,只取 .twin-monitor-sidebar,隐藏顶栏/rail/问题诊断列/整网图/Timeline),
-       带 ?diagnosis=moe-a2a 深链(见该页 js 的 applyDeepLinkDiagnosis)自动展开该问题的定位链分步叙事。
-       根因为 router softmax 在 FP8 下计算导致 logits 溢出,同时触发 loss NaN 与 all-to-all 死锁。 -->
-  <div class="wzh-locate-drawer-overlay" id="problemOneLocateDrawerOverlay" hidden>
-    <aside class="wzh-locate-drawer" role="dialog" aria-modal="true" aria-label="问题一 · 详情与修复建议">
+  <!-- 「详情与修复建议」抽屉(按问题切换):整网图上方「问题定位」卡片(#diagnosisLocator)里的
+       「详情与修复建议」按钮、以及聚光灯名片的「详情」按钮打开。内容为 iframe 内嵌
+       training-monitoring.html 的训练监控侧栏(?embed=locate-sidebar,只取 .twin-monitor-sidebar,
+       隐藏顶栏/rail/问题诊断列/整网图/Timeline),带 ?diagnosis=<caseKey> 深链
+       (见该页 js 的 applyDeepLinkDiagnosis)自动展开该问题的定位链分步叙事。
+       ⚠️ 只有在 training-monitoring.html 的 locateChains 里有对应条目的问题才能开抽屉;
+          问题二(显存 OOM)的定位链长文尚未落地,故未列入 DRAWER_CASES,其聚光灯名片不显示「详情」。 -->
+  <div class="wzh-locate-drawer-overlay" id="locateDrawerOverlay" hidden>
+    <aside class="wzh-locate-drawer" role="dialog" aria-modal="true" aria-label="详情与修复建议">
       <header class="wzh-locate-drawer-head">
         <div>
-          <div class="wzh-locate-drawer-kicker">问题一 · 详情与修复建议</div>
-          <div class="wzh-locate-drawer-title">Router 数值溢出 → 路由塌缩，同时触发 loss NaN 与 all-to-all 死锁</div>
+          <div class="wzh-locate-drawer-kicker" id="locateDrawerKicker">问题一 · 详情与修复建议</div>
+          <div class="wzh-locate-drawer-title" id="locateDrawerTitle">Router 数值溢出 → 路由塌缩，同时触发 loss NaN 与 all-to-all 死锁</div>
         </div>
         <div class="wzh-locate-drawer-actions">
-          <button class="btn btn-ghost btn-icon btn-sm" id="problemOneLocateDrawerClose" type="button" aria-label="关闭抽屉" title="关闭">✕</button>
+          <a class="btn btn-ghost btn-sm" id="locateDrawerProfilingLink" href="../AI_Profiling_Tool/index_v3.html?issue=mem-oom&tab=memory" target="_blank" rel="noopener" hidden>到性能分析工具深挖</a>
+          <button class="btn btn-ghost btn-icon btn-sm" id="locateDrawerClose" type="button" aria-label="关闭抽屉" title="关闭">✕</button>
         </div>
       </header>
       <div class="wzh-locate-drawer-body">
-        <iframe id="problemOneLocateDrawerFrame" title="问题一 · 详情与修复建议" src="" loading="lazy"></iframe>
+        <iframe id="locateDrawerFrame" title="详情与修复建议" src="" loading="lazy"></iframe>
+        <div id="locateDrawerNative" class="twin-locate-content" hidden></div>
       </div>
     </aside>
   </div>
   <script>
-    // 问题一「详情与修复建议」抽屉:iframe 首次打开时才赋值 src(懒加载),?diagnosis=moe-a2a 让
-    // training-monitoring.html 加载后自动展开对应问题诊断卡片的定位链面板;?embed=locate-sidebar
-    // 让该页只渲染 .twin-monitor-sidebar(见 css/training-run-twin.css);主题跟随本页当前
-    // documentElement[data-theme] 透传给 ?theme=,与本页保持一致。
+    // 「详情与修复建议」抽屉:iframe 在每次切换问题时才赋值 src(懒加载 + 换问题即换深链);
+    // ?diagnosis=<caseKey> 让 training-monitoring.html 加载后自动展开对应问题诊断卡片的定位链面板;
+    // ?embed=locate-sidebar 让该页只渲染 .twin-monitor-sidebar(见 css/training-run-twin.css);
+    // 主题跟随本页当前 documentElement[data-theme] 透传给 ?theme=,与本页保持一致。
     (function () {
-      function openDrawer() {
-        const overlay = document.getElementById("problemOneLocateDrawerOverlay");
-        const frame = document.getElementById("problemOneLocateDrawerFrame");
+      // caseKey → 抽屉抬头文案。键即 training-monitoring.html ?diagnosis= 深链可识别的问题;
+      // 新问题的定位链长文落地后,在这里补一行即可让它的「详情」按钮生效。
+      const DRAWER_CASES = {
+        "moe-a2a": {
+          kicker: "问题一 · 详情与修复建议",
+          title: "Router 数值溢出 → 路由塌缩，同时触发 loss NaN 与 all-to-all 死锁",
+        },
+        "mem-oom": {
+          kicker: "问题二 · 详情与修复建议",
+          title: "activation checkpoint 未开启 → 显存峰值超标 + 分配器碎片触发 OOM",
+        },
+      };
+      const DEFAULT_CASE = "moe-a2a";
+
+      function openDrawer(caseKey) {
+        const key = DRAWER_CASES[caseKey] ? caseKey : DEFAULT_CASE;
+        const info = DRAWER_CASES[key];
+        const overlay = document.getElementById("locateDrawerOverlay");
+        const frame = document.getElementById("locateDrawerFrame");
+        const native = document.getElementById("locateDrawerNative");
+        const profilingLink = document.getElementById("locateDrawerProfilingLink");
         if (!overlay || !frame) return;
-        if (!frame.getAttribute("src")) {
-          const theme = document.documentElement.dataset.theme === "light" ? "light" : "dark";
-          frame.src = `./training-monitoring.html?diagnosis=moe-a2a&embed=locate-sidebar&theme=${theme}`;
+        document.getElementById("locateDrawerKicker").textContent = info.kicker;
+        document.getElementById("locateDrawerTitle").textContent = info.title;
+        frame.title = info.kicker;
+        if (profilingLink) {
+          const base = window.PTO_BASE_PREFIX || "../../";
+          profilingLink.href = `${base}Profiling_Insight_and_Tool/AI_Profiling_Tool/index_v3.html?issue=mem-oom&tab=memory`;
+          profilingLink.hidden = key !== "mem-oom";
+        }
+        if (key === "mem-oom" && native && window.PtoMemCase4) {
+          const chain = window.PtoMemCase4.chain();
+          native.innerHTML = (chain.steps || []).map((step, index) =>
+            `<section class="twin-locate-section${index === 0 ? " is-active" : ""}">
+              <div class="twin-locate-section-head"><span class="twin-locate-section-index">${index + 1}</span>
+                <div><strong>${step.label || ""}</strong><small>${step.sub || ""}</small></div>
+              </div><div class="twin-locate-section-body">${step.content || ""}</div>
+            </section>`).join("");
+          frame.hidden = true;
+          native.hidden = false;
+          requestAnimationFrame(() => window.PtoMemCase4.renderAll?.());
+        } else {
+          if (frame.dataset.caseKey !== key) {
+            const theme = document.documentElement.dataset.theme === "light" ? "light" : "dark";
+            frame.src = `./training-monitoring.html?diagnosis=${key}&embed=locate-sidebar&theme=${theme}`;
+            frame.dataset.caseKey = key;
+          }
+          frame.hidden = false;
+          if (native) native.hidden = true;
         }
         overlay.hidden = false;
         requestAnimationFrame(() => overlay.classList.add("is-open"));
       }
       function closeDrawer() {
-        const overlay = document.getElementById("problemOneLocateDrawerOverlay");
+        const overlay = document.getElementById("locateDrawerOverlay");
         if (!overlay || overlay.hidden) return;
         overlay.classList.remove("is-open");
         setTimeout(() => { overlay.hidden = true; }, 220);
       }
-      window.openProblemOneLocateDrawer = openDrawer;
-      document.getElementById("diagnosisLocatorDrawerBtn")?.addEventListener("click", openDrawer);
-      document.getElementById("problemOneLocateDrawerClose")?.addEventListener("click", closeDrawer);
-      document.getElementById("problemOneLocateDrawerOverlay")?.addEventListener("click", (event) => {
-        if (event.target.id === "problemOneLocateDrawerOverlay") closeDrawer();
+      window.openLocateDrawer = openDrawer;
+      // 旧名别名(「问题一」时期的命名),保留以兼容尚未改口的调用方
+      window.openProblemOneLocateDrawer = () => openDrawer(DEFAULT_CASE);
+      // 抽屉是否支持某个问题 —— 聚光灯据此决定要不要显示名片上的「详情」按钮
+      window.hasLocateDrawer = (caseKey) => !!DRAWER_CASES[caseKey];
+
+      // 顶栏「问题定位」卡上的按钮:开当前钉住的那个问题(caseKey 由 pinDiagnosisLocator 写在卡片上)
+      document.getElementById("diagnosisLocatorDrawerBtn")?.addEventListener("click", () => {
+        openDrawer(document.getElementById("diagnosisLocator")?.dataset.caseKey || DEFAULT_CASE);
+      });
+      document.getElementById("locateDrawerClose")?.addEventListener("click", closeDrawer);
+      document.getElementById("locateDrawerOverlay")?.addEventListener("click", (event) => {
+        if (event.target.id === "locateDrawerOverlay") closeDrawer();
       });
       document.addEventListener("keydown", (event) => {
-        if (event.key === "Escape" && !document.getElementById("problemOneLocateDrawerOverlay")?.hidden) closeDrawer();
+        if (event.key === "Escape" && !document.getElementById("locateDrawerOverlay")?.hidden) closeDrawer();
       });
     })();
   </script>
@@ -2920,6 +3104,8 @@ MoE：256+1（top-8 路由 · EP 切分）">?</span>
         });
         // 泳道图在隐藏期间量不到尺寸，切回 Timeline 后补一次重排
         if (name === 'timeline') window.dispatchEvent(new Event('resize'));
+        // 「性能」页签的 6 张 canvas 同理：隐藏时 getBoundingClientRect 为 0，切回来才能画
+        if (name === 'perf') window.PtoTrainingMemoryPanel?.renderSoon();
       }
 
       tabs.forEach(tab => tab.addEventListener('click', () => select(tab.dataset.dockTab)));
@@ -3103,14 +3289,21 @@ MoE：256+1（top-8 路由 · EP 切分）">?</span>
   <script src="./js/swimlane-task.js"></script>
   <script src="./js/timeline-swimlane.js"></script>
   <script src="./js/hif8-case7.js"></script>
+  <!-- 问题二「显存 OOM」定位链长文：需先于 training-run-twin.js（后者求值时即读 window.PtoMemCase4
+       装配 locateChains）。本页长文走「详情」抽屉里的 training-monitoring.html 渲染，
+       这里加载是为了两页的 locateChains 保持一致。 -->
+  <script src="./js/training-memory-case4.js"></script>
   <!-- 整网图适配器:挂载 3D deck 并注册 window.PtoTwinGraphAdapter。必须先于 training-run-twin.js
        ——后者在求值时就跑完 boot()/applyDefaultDiagnosisMarkers(),那时适配器必须已经就位,
        否则问题标注会走进已经不存在的 SVG 分支。适配器反过来只在用户交互时才取
        window.PtoTwinGraphBridge,所以两边的加载顺序不构成循环依赖。 -->
   <script src="./js/training-monitoring-v2-deck.js"></script>
   <script src="./js/training-run-twin.js"></script>
-  <!-- 问题一「聚光灯定位链」：training-run-twin.js 的 activateProblemOneLens/exitTimeMachine 运行时调用 window.PtoTrainingSpotlight，需在其后加载 -->
+  <!-- 「聚光灯定位链」(问题一 router 溢出 / 问题二 显存 OOM)：training-run-twin.js 的 activateProblemLens/exitTimeMachine 运行时调用 window.PtoTrainingSpotlight，需在其后加载 -->
   <script src="./js/training-spotlight.js"></script>
+  <!-- 底部 dock「性能」页签的 6 张显存举证图：读 training-run-twin.js 暴露的
+       window.PtoTrainingTwinMemoryCase，需在其后加载 -->
+  <script src="./js/training-memory-panel.js"></script>
   <script>
     // 「精度」8 图 + 「集群监控」infra 2 图标题旁补「?」说明气泡：解释指标含义 + 好坏判定标准。
     // training-run-twin.js 的 initAccuracyCharts()/initInfraCharts() 在 boot() 内同步建卡，
@@ -3128,7 +3321,7 @@ MoE：256+1（top-8 路由 · EP 切分）">?</span>
         weight_diff: "‖ΔW‖(weight_diff)：本 step 参数更新量的 L2 范数(同 grad_norm 的算法，只是对象换成参数变化量)，可理解为这次更新在高维参数空间里挪动的整体幅度；与 grad_norm 同根同源，梯度决定了更新的方向和力度。\n\n· 正常训练早期较大、随收敛趋于平稳\n· 健康信号是两条曲线同步小幅波动\n· 若与 grad_norm 同步跳变为 inf → 优化器同步发散(本页事故的根因)；若只有一条异常、另一条正常，更可能是单条指标的计算/上报问题，而非训练本身崩溃",
         "AMP loss scale": "AMP loss scale：动态混合精度训练用来防止梯度下溢的缩放系数，健康时应长期钉在同一个 2 的幂次上不动(图表按 log2 显示，气泡内为实际值)。\n\n· 持续减半 → 每减半一次代表发生过一次 FP 溢出，是 loss NaN 前最早、最隐蔽的预警信号\n· 本案例：从 65536 一路减半到 4096 才最终 loss NaN，若在减半初期就介入排查可提前止损",
         MFU: "MFU(Model FLOPS Utilization)：实际算力 ÷ 理论峰值算力，衡量训练对硬件算力的利用效率，数值越高越好。\n\n· 本页场景健康区间约 45%~60%\n· 骤降至接近 0 → 通常是通信阻塞或集群故障导致训练停滞",
-        显存利用率: "HBM 显存利用率：跨卡平均显存占用率。\n\n· 需落在健康区间内，本页场景约 72%~85%\n· 太低 → 资源浪费；太高 → 有 OOM(显存溢出)风险\n· 骤降至 0 → 通常代表训练中断/进程重启",
+        显存利用率: "HBM 显存利用率：跨卡平均显存占用率，= 单卡显存占用 ÷ HBM 容量(64 GB)。\n\n· 太低 → 资源浪费；持续贴近 100% → 随时可能 OOM(显存溢出)\n· 本页问题二：step 8000 起一路爬升，step 12003 触顶 100%(64/64 GB)，rank 17 报 ACL_ERROR_MEMORY_ALLOCATION 中断；开启 activation checkpoint 后回落到约 53%\n· 骤降至 0 → 通常代表训练中断/进程重启\n· 要看绝对 GB、峰值构成与碎片分布，见底部「性能」页签",
       };
 
       function injectHelp(containerId) {

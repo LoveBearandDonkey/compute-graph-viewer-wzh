@@ -1,0 +1,41 @@
+{
+  "schemaVersion": "1.0",
+  "caseId": "mem-oom",
+  "model": "openPangu-2.0-Flash",
+  "step": 12000,
+  "rank": 17,
+  "summary": {
+    "capacityGB": 64,
+    "peakGB": 64,
+    "freeGB": 1.8,
+    "largestFreeBlockGB": 0.3,
+    "requestedGB": 0.5,
+    "fragmentationRatio": 83,
+    "allocApiRatio": 7.4,
+    "allocApiMs": 890,
+    "throughputBefore": 3200,
+    "throughputAtPeak": 2800
+  },
+  "trend": [
+    {"step": 4000, "reservedGB": 53, "throughput": 3200},
+    {"step": 8000, "reservedGB": 54, "throughput": 3200},
+    {"step": 10000, "reservedGB": 59, "throughput": 3050},
+    {"step": 11500, "reservedGB": 62, "throughput": 2900},
+    {"step": 12000, "reservedGB": 64, "throughput": 2800},
+    {"step": 12003, "reservedGB": 64, "throughput": 0}
+  ],
+  "composition": [
+    {"id":"activation","label":"激活与中间张量","gb":36.2,"kind":"temp"},
+    {"id":"parameters","label":"模型参数","gb":8.1,"kind":"resident"},
+    {"id":"gradients","label":"梯度","gb":8.1,"kind":"resident"},
+    {"id":"optimizer","label":"优化器状态","gb":10.8,"kind":"resident"},
+    {"id":"workspace","label":"临时 workspace","gb":0.8,"kind":"temp"}
+  ],
+  "lifetimes": [
+    {"id":"layer38-qb","name":"layer38.q_b_proj.output","offsetGB":27.1,"sizeGB":0.036,"allocMs":842,"freeMs":7832,"kind":"activation","source":"modeling_openpangu.py","line":438,"stack":"torch.npu.empty ← q_b_proj.forward ← SelfAttn.forward ← TransformerLayer.forward"},
+    {"id":"expert-dispatch","name":"layer38.expert_dispatch.buffer","offsetGB":31.0,"sizeGB":1.2,"allocMs":1040,"freeMs":7920,"kind":"activation","source":"modeling_openpangu.py","line":512,"stack":"expert_dispatch ← router.forward ← mlp.forward ← TransformerLayer.forward"},
+    {"id":"lm-head-logits","name":"lm_head.logits","offsetGB":55.0,"sizeGB":1.8,"allocMs":3660,"freeMs":8120,"kind":"activation","source":"modeling_openpangu.py","line":701,"stack":"linear ← lm_head.forward ← GPTModel.forward"},
+    {"id":"params","name":"stage3.parameters","offsetGB":0,"sizeGB":8.1,"allocMs":0,"freeMs":9000,"kind":"parameters","source":"modeling_openpangu.py","line":91,"stack":"load_state_dict ← model_provider"},
+    {"id":"optimizer","name":"AdamW.m_v","offsetGB":42,"sizeGB":10.8,"allocMs":0,"freeMs":9000,"kind":"optimizer","source":"optimizer.py","line":126,"stack":"NpuFusedAdamW.__init__ ← setup_model_and_optimizer"}
+  ]
+}

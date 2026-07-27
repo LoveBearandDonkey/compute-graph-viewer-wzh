@@ -54,8 +54,11 @@
   // 'input' / 'output' 表示挂在 deck 首尾两块静态区(Embedding / LM Head+MTP)。
   // nvlink 是跨整个 decoder stack 的链路问题,没有单一事故层,挂到 deck 的默认前置层 23
   // (PP2 的首层,本身就是全彩代表层)当作"任意一层的通信算子都受影响"的代表。
+  // mem-oom(问题二 · 显存 OOM)的热点层就是 38 —— MoE 的 expert dispatch buffer 让该层激活值
+  // 达 1.2 GB,是普通 dense 层的 1.7×;它与 moe-a2a 同层,徽标由下面的重叠避让逻辑纵向堆叠。
   var CASE_LAYER = {
     'moe-a2a': 38,
+    'mem-oom': 38,
     'qproj-overflow': 33,
     'low-precision-training': 35,
     nvlink: 23,
@@ -178,11 +181,13 @@
       badge.dataset.diagnosisKey = key;
       badge.style.cssText = 'left:' + left + 'px;top:' + top + 'px;width:' + w + 'px;height:' + H + 'px;' +
         '--v3-badge-color:' + (severityColor ? severityColor(key) : '#dc2626');
-      badge.innerHTML = '<b>问题' + marker.num + '</b><span>' + String(marker.label || '').replace(/[&<>]/g, '') + '</span>';
+      // displayNum 由 training-run-twin.js 的 visibleDiagnosisMarkers() 按当前页面算好(v2 有自己
+      // 一套序号,见那里的编号说明);老数据没有该字段时退回 num。
+      badge.innerHTML = '<b>问题' + (marker.displayNum || marker.num) + '</b><span>' + String(marker.label || '').replace(/[&<>]/g, '') + '</span>';
       badge.title = (marker.label || '') + '\n' + (info.note || '');
       badge.addEventListener('click', function (e) {
         e.stopPropagation();
-        global.PtoTwinGraphBridge && global.PtoTwinGraphBridge.activateProblemOneLens(key);
+        global.PtoTwinGraphBridge && global.PtoTwinGraphBridge.activateProblemLens(key);
       });
       graph.appendChild(badge);
     });
@@ -408,15 +413,24 @@
   // 颜色按类别分色系:精度=暖(红橙黄)、性能=蓝青、Infra=紫粉,类内 Top1 最饱和。
   // badHi/badLo:temp.md「判定异常」阈值,越界的点标红并贴数值(参考 precision-debugger 的坏点读数)
   var METRIC_DEFS = [
-    { key: 'grad_weight_l2_norm', name: '权重梯度 L2 范数', cat: '精度', catKey: 'acc', rank: 1, color: '#dc2626', unit: '', phase: 'Bwd', badHi: 1.0, badLo: 0.0001 },
+    { key: 'grad_weight_l2_norm', name: '权重梯度 L2 范数', cat: '精度', catKey: 'acc', rank: 1, color: '#92400e', unit: '', phase: 'Bwd', badHi: 1.0, badLo: 0.0001 },
     { key: 'hidden_states_std', name: 'hidden-state 标准差', cat: '精度', catKey: 'acc', rank: 2, color: '#f59e0b', unit: '', phase: 'Fwd', badHi: 2.0 },
     { key: 'attention_entropy', name: '注意力权重熵', cat: '精度', catKey: 'acc', rank: 3, color: '#eab308', unit: '', phase: 'Fwd', badHi: 7, badLo: 2 },
-    { key: 'layer_fwd_bwd_latency', name: '单层前反向总耗时', cat: '性能', catKey: 'perf', rank: 1, color: '#2563eb', unit: 'ms', phase: 'Fwd+Bwd', badHi: 26 },
+    { key: 'layer_fwd_bwd_latency', name: '单层总耗时', cat: '性能', catKey: 'perf', rank: 1, color: '#2563eb', unit: 'ms', phase: 'Fwd+Bwd', badHi: 26 },
     { key: 'layer_mfu', name: '单层 MFU 利用率', cat: '性能', catKey: 'perf', rank: 2, color: '#0891b2', unit: '%', phase: 'Fwd/Bwd', badLo: 40 },
     { key: 'effective_flops_ratio', name: '有效 FLOPs 占比', cat: '性能', catKey: 'perf', rank: 3, color: '#0d9488', unit: '%', phase: 'Fwd/Bwd', badLo: 70 },
     { key: 'peak_activation_mem', name: '激活峰值显存', cat: 'Infra', catKey: 'infra', rank: 1, color: '#7c3aed', unit: 'GB', phase: 'Fwd', badHi: 18 },
     { key: 'hbm_bandwidth_util', name: 'HBM 带宽利用率', cat: 'Infra', catKey: 'infra', rank: 2, color: '#c026d3', unit: '%', phase: 'Fwd+Bwd', badHi: 95 },
     { key: 'pp_transfer_bytes', name: 'PP 层间传输字节', cat: 'Infra', catKey: 'infra', rank: 3, color: '#db2777', unit: 'MB', phase: 'Fwd', badHi: 60 },
+    /* 「单层激活值显存」——问题二(显存 OOM)的层级举证,是本页显存故事的层级切面。
+       注意它与上面的 peak_activation_mem 不是一回事,两者口径不同、不可互换:
+         · peak_activation_mem  执行到本层时的显存水位,沿深度累积(8→19.5 GB);
+         · layer_activation_gb  本层自己持有的激活张量(dense 0.70 / MoE 约 0.78 / L38 1.2 GB),
+                                46 层求和 = 36.2 GB,正是「峰值构成」里激活值那一项。
+       阈值 badHi=1.0:正常层都在 0.7~0.81,只有 L38 因 expert dispatch buffer 越界标红。
+       defaultOn:常驻默认勾选(不按 rank===1 那条规则)——它是问题二定位链的层级切面,
+       默认就在场,进出问题二时才不必临时改动用户的指标勾选。 */
+    { key: 'layer_activation_gb', name: '单层激活值显存', cat: 'Infra', catKey: 'infra', rank: 4, defaultOn: true, color: '#4f46e5', unit: 'GB', phase: 'Fwd', badHi: 1.0 },
   ];
   function metricBad(def, v) {
     if (def.badHi != null && v > def.badHi) return true;
@@ -431,11 +445,12 @@
     grad_weight_l2_norm: 'bwd', hidden_states_std: 'fwd', attention_entropy: 'fwd',
     layer_fwd_bwd_latency: 'bwd', layer_mfu: 'bwd', effective_flops_ratio: 'bwd',
     peak_activation_mem: 'fwd', hbm_bandwidth_util: 'bwd', pp_transfer_bytes: 'fwd',
+    layer_activation_gb: 'fwd',
   };
   function metricFlow(key) { return METRIC_FLOW[key] || 'fwd'; }
-  // 默认只勾每一类的 Top1
+  // 默认勾每一类的 Top1,外加显式标了 defaultOn 的常驻项(单层激活值显存)
   var selectedMetrics = {};
-  METRIC_DEFS.forEach(function (m) { if (m.rank === 1) selectedMetrics[m.key] = true; });
+  METRIC_DEFS.forEach(function (m) { if (m.rank === 1 || m.defaultOn) selectedMetrics[m.key] = true; });
 
   // 事故层(与问题标注一致):L33 q_proj 溢出 / L35 低精长尾 / L38 router 塌缩。曲线在这些层做出
   // 与问题一致的形变,让"整网哪几层有问题"在曲线与红色标注上互相印证。
@@ -485,6 +500,14 @@
           v = 8 + depth * 9 + (dsa ? 1.2 : 0) + wob(L, 8) * 0.28;
           if (L === 38) v += 2.5;
           break;
+        /* GB;本层自己持有的激活张量。数值口径来自定位链-openPangu-2.0-Flash.md 案例四 §5:
+           dense 层 0.70、MoE 层约 0.78(DSA 层因注意力中间张量再多一点)、L38 因 expert
+           dispatch buffer 达 1.2(dense 的 1.7×)。46 层求和 ≈ 36.2 GB,与「峰值构成」里
+           激活值 36.2 GB / 56.6% 对得上 —— 改这里的常数要同步核对那个总和。 */
+        case 'layer_activation_gb':
+          v = dense ? 0.70 : 0.77 + (dsa ? 0.03 : 0) + wob(L, 11) * 0.012;
+          if (L === 38) v = 1.2;
+          break;
         case 'hbm_bandwidth_util':                // %;注意力/KV 重的层带宽高,L38 越 95 打满
           v = 78 + (dsa ? 12 : 0) + depth * 4 + wob(L, 9) * 1.6;
           if (L === 38) v = 98;
@@ -512,6 +535,11 @@
   var FWD_MS = 1000, BWD_MS = 200, HOLD_MS = 700;   // 前向 1s/层、反向 0.2s/层、相位间停顿
   var animStatic = !!(global.matchMedia && global.matchMedia('(prefers-reduced-motion: reduce)').matches);
   var anim = { running: false, raf: 0, t0: 0, fwdDone: 0, bwdDone: 0, phase: 'idle' };
+  /* 「回顾模式」：进入问题定位链时把动画定格。这时页面讲的是一件已经发生完的事故——
+     层还在一层层点亮、指标还在往前描点，会读成"训练正在跑"，与回放语义冲突。
+     定格 = 停 rAF + 把进度钉在"一个完整 step 已走完"，于是 46 层全亮、所有指标点都在，
+     曲线是这一步的最终形态，可以静态对照。退出时光机时解除(见 setFrozen)。 */
+  var animFrozen = false;
 
   function animProgress() {
     return animStatic
@@ -537,6 +565,7 @@
   }
   function updateAnimStatus() {
     if (!metricStatusEl) return;
+    if (animFrozen) { metricStatusEl.textContent = '回顾模式 · 已定格在完整一步'; return; }
     if (animStatic) { metricStatusEl.textContent = '训练过程动画（已按系统偏好关闭）'; return; }
     var p = animProgress();
     if (anim.phase === 'fwd') metricStatusEl.textContent = '前向传播 · L' + Math.min(p.fwd, LAYER_COUNT - 1) + ' / ' + (LAYER_COUNT - 1) + '（1s/层)';
@@ -585,6 +614,22 @@
     anim.raf = 0;
   }
 
+  /* 进入/退出「回顾模式」。定格时把进度钉满(46 层全亮、fwd/bwd 指标点全部画出),
+     解除后回到 renderMetricCurve 的常规判断——只要还在侧视就会重新 startAnim()。 */
+  function setFrozen(v) {
+    v = !!v;
+    if (animFrozen === v) return;
+    animFrozen = v;
+    if (v) {
+      stopAnim();
+      anim.fwdDone = LAYER_COUNT; anim.bwdDone = LAYER_COUNT; anim.phase = 'bwd-hold';
+      clearLayerLighting();
+      lastLitFwd = -1;
+    }
+    updateAnimStatus();
+    controller && controller.refresh();
+  }
+
   var curveSvg = null;         // viewport 里的曲线 SVG
   var hoverSvg = null;         // 悬浮数据线 + 气泡,独立于 curveSvg(curveSvg 每帧整体重画一次,
                                 // 悬浮态要跟着 pointermove 即时刷新,不能等下一次 overlay 帧)
@@ -608,6 +653,7 @@
     peak_activation_mem: '含义:本层激活张量峰值显存占用\n采集:前向 Fwd(激活在前向生成,反向复用)\n优秀:单层显存占用稳定,不随迭代持续递增\n异常:显存持续上涨;接近单卡 HBM 上限,会触发 OOM',
     hbm_bandwidth_util: '含义:本层张量读写对应的 HBM 带宽利用率\n采集:Fwd+Bwd(反向读取激活、梯度读写带宽更高)\n优秀:带宽利用率＜85%,留有余量\n异常:持续＞95% 带宽打满,访存阻塞拖累整体训练速度(KV-cache 层典型)',
     pp_transfer_bytes: '含义:PP 流水线,本层输出传递给下一层的传输字节\n采集:前向 Fwd(层间传递前向 hidden-state)\n优秀:层间传输数据量均衡,各切割点字节接近\n异常:某一层出口张量字节远大于其他层,产生通信瓶颈,PP 切分不合理',
+    layer_activation_gb: '含义:本层自己持有的激活张量显存(不含参数/梯度/优化器)。注意与「激活峰值显存」口径不同——那条是执行到本层时的累积水位,这条是本层单独占多少,46 层求和即整卡激活总量\n采集:前向 Fwd(激活在前向生成,反向用完才释放)\n优秀:各层接近,dense 约 0.7 GB、MoE 约 0.78 GB;总和留有余量\n异常:单层显著高于同类层(MoE 的 expert dispatch buffer 是典型);总和占满显存过半 → 未开 activation checkpoint,是 OOM 的头号来源',
   };
 
   function ensureCurveEls() {
@@ -803,8 +849,9 @@
   function renderMetricCurve(ctx) {
     ensureCurveEls();
     var inSide = ctx.view === 'right';
-    // 训练动画只在侧视播放:进入侧视启动扫层,离开则停并复位层透明度(其它视图层不受影响)
-    if (inSide && !anim.running) startAnim();
+    // 训练动画只在侧视播放:进入侧视启动扫层,离开则停并复位层透明度(其它视图层不受影响)。
+    // 「回顾模式」下不自动重启——那时页面在复盘已经发生完的事故,画面应当是定格的。
+    if (inSide && !anim.running && !animFrozen) startAnim();
     else if (!inSide && anim.running) { stopAnim(); clearLayerLighting(); }
     if (!curveSvg) return;
     if (!inSide) { curveSvg.innerHTML = ''; curveSvg.style.display = 'none'; resetHoverFrame(); return; }
@@ -919,7 +966,7 @@
       parts.push('<text class="deck-metric-curve__label" x="' + textX.toFixed(1) + '" y="' + (cy - 3).toFixed(1) +
         '" text-anchor="end">' + def.name + '</text>');
       parts.push('<text class="deck-metric-curve__sublabel" x="' + textX.toFixed(1) + '" y="' + (cy + 9).toFixed(1) +
-        '" text-anchor="end">Top' + def.rank + (def.unit ? ' · ' + def.unit : '') + '</text>');
+        '" text-anchor="end">' + def.cat + (def.unit ? ' · ' + def.unit : '') + '</text>');
     });
 
     curveSvg.innerHTML = parts.join('');
@@ -1009,6 +1056,19 @@
   // applyDefaultDiagnosisMarkers(),那时适配器必须已经在 window 上。而且一旦 mount()
   // 抛异常(组件没加载、DOM 结构对不上……),先注册能保证 training-run-twin.js 仍然走
   // 适配器分支安全空转,而不是回退去操作本页根本不存在的 #graphStage SVG。
+  /* 切回侧视总览 —— 聚光灯定位链的「阶段/层定位」步用它:46 层同时在场,逐层指标曲线
+     才读得出「哪几层压力最大」。不碰指标勾选:「单层激活值显存」是 defaultOn 的常驻项,
+     本来就在场,不需要为了讲一个问题去临时改动用户的勾选、事后再还原。 */
+  function showSideOverview() {
+    if (!controller) return;
+    // 先解掉「点问题后的聚焦」——那套是正视 + 命中节点留亮 + 同层其余压暗，与侧视总览互斥：
+    // 留着它会让 46 层里大半是暗的，逐层曲线要对照的层看不清。
+    clearFocus();
+    controller.setView(OVERVIEW_VIEW);
+    syncSeg('deckViewSeg', 'data-deck-view', OVERVIEW_VIEW);
+    controller.refresh();
+  }
+
   global.PtoTwinGraphAdapter = {
     renderMarkers: renderMarkers,
     highlightBadge: highlightBadge,
@@ -1018,6 +1078,8 @@
     hideExpertExpand: hideExpertExpand,
     refreshOverflowBadges: refreshOverflowBadges,
     clearOverflowBadges: clearOverflowBadges,
+    showSideOverview: showSideOverview,
+    setFrozen: setFrozen,
     get controller() { return controller; },
   };
 

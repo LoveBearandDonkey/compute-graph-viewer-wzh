@@ -22,6 +22,12 @@
 .tw-spot__toolbar,
 .tw-spot__callout { pointer-events: auto; }
 
+/* 名片「关闭定位链指引」：只关掉遮罩/光洞/步进导轨/标注气泡，名片（含「打开定位链指引」按钮）与
+   常驻的「修改建议」栏保持不变，不等同退出问题一（见 training-spotlight.js 的 setGuideVisible）。*/
+.tw-spot.is-guide-off .tw-spot__scene,
+.tw-spot.is-guide-off .tw-spot__toolbar,
+.tw-spot.is-guide-off .tw-spot__callout { display: none; }
+
 /* 遮罩 + 开洞 + 光框 + 引出线：整块用一张全屏 SVG，hole 由 mask 挖出让实页透出 */
 .tw-spot__scene {
   position: absolute;
@@ -63,14 +69,14 @@
 /* ── 顶部问题名片 ─────────────────────────────────────────────── */
 .tw-spot__card {
   position: absolute;
-  top: 12px;
+  top: 4px;
   left: 14px;
   right: 14px;
   z-index: 3;
   display: flex;
   align-items: center;
   gap: 14px;
-  padding: 9px 12px 9px 14px;
+  padding: 4px 12px 4px 14px;
   border-radius: var(--radius-lg, 12px);
   border: 1px solid var(--border-subtle);
   background: color-mix(in srgb, #dc2626 6%, var(--surface-1));
@@ -101,7 +107,8 @@
   letter-spacing: .03em;
 }
 .tw-spot__card-title {
-  flex: 1 1 auto;
+  /* 只按内容宽度占位（可收缩省略号，不再抢占剩余空间），让标签紧跟在标题文字后面而不是被推到右侧 */
+  flex: 0 1 auto;
   min-width: 0;
   font-size: 13.5px;
   font-weight: var(--font-weight-semibold, 600);
@@ -110,7 +117,8 @@
   overflow: hidden;
   text-overflow: ellipsis;
 }
-.tw-spot__card-tags { flex: none; display: flex; align-items: center; gap: 6px; }
+/* 吃掉标题让出的剩余宽度，把 actions 继续推靠右对齐；标签本身仍从左侧紧贴标题排列 */
+.tw-spot__card-tags { flex: 1 1 auto; display: flex; align-items: center; gap: 6px; }
 .tw-spot__tag {
   display: inline-flex;
   align-items: center;
@@ -127,7 +135,7 @@
 /* ── 顶部工具行：步进导轨 + 导航（移到名片下一行、123456 右侧，避开底部 Timeline/日志高亮区）── */
 .tw-spot__toolbar {
   position: absolute;
-  top: 60px;
+  top: 44px;
   left: 14px;
   z-index: 3;
   display: flex;
@@ -182,6 +190,17 @@
   font-weight: var(--font-weight-medium, 500);
   white-space: nowrap;
 }
+/* 步之间的箭头：强化「链路」观感，走过去的一段跟着 is-done 点亮 */
+.tw-spot__rail-arrow {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  font-size: 11px;
+  line-height: 1;
+  color: var(--foreground-muted);
+  transition: color .18s ease;
+}
+.tw-spot__rail-arrow.is-done { color: var(--highlight-copy-blue-500, #3b6fe0); }
 .tw-spot__step.is-done { color: #fff; background: var(--highlight-copy-blue-500, #3b6fe0); }
 .tw-spot__step.is-done .tw-spot__step-n { background: rgba(255,255,255,.28); color:#fff; }
 .tw-spot__step.is-active {
@@ -407,6 +426,22 @@
 .tw-spot__nav-btn:hover { background: color-mix(in srgb, var(--danger,#dc2626) 14%, var(--surface-2)); border-color: var(--danger,#dc2626); }
 .tw-spot__nav-btn:disabled { opacity: .38; cursor: default; }
 .tw-spot__nav-btn:disabled:hover { background: var(--surface-2); border-color: var(--border-subtle); }
+/* 反色强化：上一步/下一步做成实心白底，在导航条里视觉抓手最重 */
+.tw-spot__nav-btn--strong {
+  width: 28px; height: 28px;
+  background: #fff;
+  border-color: #fff;
+  color: #18181b;
+  font-size: 16px;
+  box-shadow: 0 2px 8px -2px rgba(0,0,0,.5);
+}
+.tw-spot__nav-btn--strong:hover {
+  background: var(--danger, #dc2626);
+  border-color: var(--danger, #dc2626);
+  color: #fff;
+}
+.tw-spot__nav-btn--strong:disabled { background: #fff; color: #18181b; opacity: .38; }
+.tw-spot__nav-btn--strong:disabled:hover { background: #fff; border-color: #fff; color: #18181b; }
 .tw-spot__nav-count {
   font-family: var(--font-mono, ui-monospace, monospace);
   font-size: 12px;
