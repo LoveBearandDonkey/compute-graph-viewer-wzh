@@ -30,6 +30,61 @@ python3 -m http.server 8765
 
 ---
 
+## 第二个页面：融合与 workspace（场景 6）
+
+入口 `Memory-Visual/workspace.html`，对应规划文档 §3 场景 6，方案见
+[场景6-workspace与GM规划-方案设计.md](场景6-workspace与GM规划-方案设计.md)。
+
+单算子页是**核内视角**（UB/L1/L0x/寄存器，时间轴是 cycle）；这一页是**片外视角**
+（GM，时间轴是子计算序），算子也换成融合体 `MLABlock_fused`。因此独立成页而不是加第四个页签
+—— 否则「焦点层级」「时间游标」两个控件要同时承担两种语义，而另外三个页签对融合算子无内容可显示。
+两页共享 `chip-specs` / `format` / `canvas-kit` 与设计系统 pattern，顶栏互相有入口。
+
+**只回答三个数**，其余都是它们的展开：
+
+| 数 | 含义 | 谁能改 |
+| --- | --- | --- |
+| `current` | 当前 tiling 上报的 workspace（溯源到 `ws[0] = ...` 那一行） | 现状 |
+| `packed` | 保持顺序与形状不变、仅做地址复用可达的值 | 改分配策略即可，**改动确定安全** |
+| `lowerBound` | 当前执行序与形状下的理论下界（最大同时存活字节） | 只能靠原地 / 留片上 / 换序再降 |
+
+差距刻意拆成两段：`current − packed` 是**策略浪费**（改地址就能拿回来），
+`packed − lowerBound` 是**装箱碎片**（要动结构）。只报一个够不着的最小值会让人放弃。
+
+| 视图 | 回答的问题 |
+| --- | --- |
+| Workspace 规划 | 每个子计算真正同时存活多少字节（柱子），三个数各在哪条线上，白占了多少 |
+| GM 布局与复用 | 当前布局 / 复用后布局的地址分配差别（`memory-reuse-viewer` 单实例换 data） |
+| 候选对比（底部） | 六个候选的 `[下界 + 碎片 + 浪费]` 三段分解与预算线 |
+| 可复用组合（右栏） | 哪几个张量能共用一段地址、省多少、生效条件，以及**被护栏排除**的组合 |
+
+**装箱只报可达值。** 这是 Dynamic Storage Allocation，NP 难。求解器跑三种排序
+（`by-size` / `by-lifespan` / `by-order`）取最紧者，三个高度都进 evidence ——
+演示数据上前两者都是 10244KB、只有拓扑序 first-fit 打到下界 10240KB，
+可见贪心的胜负是数据相关的，没有哪一种恒优。
+
+**GM 的复用安全判据和片上不同。** 片上 buffer 天然核内私有，GM 不是：`blockScope`
+为 `per-block` 的张量被各 block 各持一段，与 `shared` 张量共用地址即使生命周期完全错开也不安全
+（`ws-unsafe` 候选专门演示这种「甘特图上看不出问题」的错误）。护栏排除的组合会显式列出来，
+避免开发者自己去合。
+
+演示算子 `MLABlock_fused`：6 个子计算、10 个 GM 张量，基线 21.5MB → 下界 10.0MB（降 53.5%）。
+峰值刻意落在 QKV+RoPE 而不是 FFN —— 最大的那块张量砍到 0 也碰不到峰值，
+这正是 `WS_PEAK_NOT_LARGEST` 要说的话。
+
+```
+data/fusion-source.js   融合算子 kernel 与 tiling 源码（workspace 上报行 = 结论的溯源落点）
+data/fusion-runs.js     六个候选生成器：大小由 shape 推、生命周期由产消关系推
+js/workspace-planner.js 下界 + 装箱 + 复用组 + 护栏 + 冲突检查（纯函数，供 CLI/Python 复用）
+js/ws-diagnostics.js    13 条 workspace 规则
+js/view-ws-plan.js      主视图：子计算带 + 堆叠列 + 三条参考线
+js/view-ws-layout.js    GM 布局：memory-reuse-viewer 数据契约翻译
+js/view-ws-gap.js       底部候选对比条
+js/ws-app.js            状态与渲染编排
+```
+
+---
+
 ## IDE 框架分区映射
 
 整个产品外壳是设计系统的 `patterns/ide-frame`（standalone host）：
@@ -113,4 +168,6 @@ L2 / schema-generated / share-safe，exploration-only。
 ## 已知待补
 
 - `.badge--success/warning/danger` 与 `.inspector-section` / `.inspector-soft-card` 在 `quick-reference.md` 有约定但当前 `css/style.css` 未实现，本页用 `.stat-chip + mv-sev-*` 与 `mv-sec / mv-soft` 局部实现，待设计系统吸收后替换。
-- 采集层（§4.1）目前只有生成器一路。接真实数据时替换 `data/runs.js` 的输出即可，视图与规则引擎只认中间格式。
+- 采集层（§4.1）目前只有生成器一路。接真实数据时替换 `data/runs.js` / `data/fusion-runs.js` 的输出即可，视图与规则引擎只认中间格式。
+- `workspace.html` 复制了 `index.html` 的一份 mv- 布局 CSS，两页外观由构造保证一致，但同名类有了两处来源。抽成 `css/workbench-shell.css` 是正确做法，代价是要改动已在跑的 `index.html`，留到下次同时动两页时一起做。
+- `data/runs.js:719` 把 GM 分配的生命周期拉平成全程，所以**单算子页**的 GM 复用分析仍然是空的（场景 6 的分析在 `workspace.html`，不受影响）。
