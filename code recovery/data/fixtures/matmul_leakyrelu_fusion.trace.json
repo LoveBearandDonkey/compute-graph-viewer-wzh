@@ -1,0 +1,123 @@
+{
+  "schemaVersion": "0.1",
+  "operator": {
+    "id": "sample.matmul_leakyrelu_fusion",
+    "name": "mmad_vec_custom",
+    "displayName": "Fusion · Matmul + LeakyRelu",
+    "kind": "fusion",
+    "sourceLanguage": "ascendc",
+    "apiLevel": "basic_api_mix_aic_aiv",
+    "sourcePath": "/Users/yin/gitcode/asc-devkit-master/examples/01_simd_cpp_api/00_introduction/03_fusion_operation/matmul_leakyrelu_basic_api/matmul_leakyrelu_basic_api.asc",
+    "description": "Fusion sample showing __mix__(1, 2), AIC Cube Matmul, AIV Vector LeakyRelu, and cross-core synchronization."
+  },
+  "arch": {
+    "npuArch": "dav-2201",
+    "soc": "Atlas A2/A3/950PR compatible",
+    "kernelTag": "__mix__(1, 2)",
+    "unitRatio": "AIC:AIV = 1:2"
+  },
+  "launch": {
+    "entry": "mmad_vec_custom<M, K, N, singleCoreM, singleCoreK, singleCoreN, baseM, baseK, baseN><<<numBlocks, nullptr, stream>>>(aDevice, bDevice, cDevice)",
+    "numBlocks": 4,
+    "hostSteps": [
+      "Read A and B matrices",
+      "Launch __mix__(1, 2) kernel with 4 Cube blocks and paired Vector blocks",
+      "AIC writes Matmul output to GM",
+      "AIV waits and applies LeakyRelu on half tiles",
+      "Copy final C back for verification"
+    ]
+  },
+  "tiling": {
+    "type": "static_template_fusion_tiling",
+    "params": {
+      "M": 512,
+      "K": 512,
+      "N": 1024,
+      "singleCoreM": 256,
+      "singleCoreK": 512,
+      "singleCoreN": 512,
+      "baseM": 128,
+      "baseK": 64,
+      "baseN": 256,
+      "cubeVectorRatio": "1:2"
+    },
+    "derived": {
+      "cubeBlocks": 4,
+      "vectorBlocks": 8,
+      "vectorTile": "baseM/2 x baseN",
+      "aivPairExpr": "cubeBlockIdx = GetBlockIdx() / 2",
+      "aivHalfExpr": "halfSelector = GetBlockIdx() % 2"
+    },
+    "controls": [
+      {"id": "cubeBlockIdx", "label": "AIC block", "value": 0, "unit": "cube tile", "description": "Selected Cube producer."},
+      {"id": "vectorBlockIdx", "label": "AIV block", "value": 0, "unit": "vector half tile", "description": "Selected Vector consumer."}
+    ]
+  },
+  "source": {
+    "path": "matmul_leakyrelu_basic_api.asc",
+    "lines": [
+      {"line": 13, "text": "* \\brief 基于静态Tensor编程模式实现Matmul和LeakyRelu融合计算，展示Cube单元和Vector单元协同计算的编程模式。"},
+      {"line": 36, "text": "    if ASCEND_IS_AIC {"},
+      {"line": 39, "text": "    if ASCEND_IS_AIV {"},
+      {"line": 49, "text": "        // Matmul计算场景内存分配，需要在aic侧执行"},
+      {"line": 57, "text": "        // Vector计算场景内存分配，需要在aiv侧执行"},
+      {"line": 66, "text": "                if ASCEND_IS_AIC {"},
+      {"line": 68, "text": "                        CopyInA(a1Local, kIndex, mIndex);"},
+      {"line": 69, "text": "                        CopyInB(b1Local, kIndex, nIndex);"},
+      {"line": 80, "text": "                        Compute(cLocal, a2Local, b2Local, kIndex, mIndex, nIndex);"},
+      {"line": 87, "text": "                    CopyOut(cLocal, mIndex, nIndex);"},
+      {"line": 89, "text": "                    AscendC::CrossCoreSetFlag<0x2, PIPE_FIX>(0);"},
+      {"line": 91, "text": "                if ASCEND_IS_AIV {"},
+      {"line": 93, "text": "                    AscendC::CrossCoreWaitFlag(0);"},
+      {"line": 95, "text": "                    LeaklyGeluCompute(vecLocal, mIndex, nIndex, baseM / 2 * baseN);"},
+      {"line": 103, "text": "        uint32_t mIterIdx = AscendC::GetBlockIdx() % mIter;"},
+      {"line": 117, "text": "        uint32_t mIterIdx = AscendC::GetBlockIdx() / 2 % mIter;"},
+      {"line": 248, "text": "        uint32_t gmOffset = (mIndex * baseM * N + nIndex * baseN) + AscendC::GetBlockIdx() % 2 * (baseM / 2 * N);"},
+      {"line": 250, "text": "        AscendC::DataCopyPad<half>(vecLocal, cGM[gmOffset], copyParams, padParams);"},
+      {"line": 255, "text": "        AscendC::LeakyRelu(vecLocal, vecLocal, (half)0.001, tileLen);"},
+      {"line": 262, "text": "        AscendC::DataCopyPad<half>(cGM[gmOffset], vecLocal, copyParams);"},
+      {"line": 274, "text": "__global__ __mix__(1, 2) void mmad_vec_custom(GM_ADDR a, GM_ADDR b, GM_ADDR c)"}
+    ]
+  },
+  "memory": {
+    "tiers": [
+      {"id": "gm_a", "label": "GM A", "role": "input", "capacity": "512 x 512 half", "description": "Matmul left input."},
+      {"id": "gm_b", "label": "GM B", "role": "input", "capacity": "512 x 1024 half", "description": "Matmul right input."},
+      {"id": "gm_c", "label": "GM C", "role": "intermediate-output", "capacity": "512 x 1024 half", "description": "AIC writes Matmul result; AIV reads and overwrites activated result."},
+      {"id": "aic_l1_l0", "label": "AIC L1/L0", "role": "cube-pipeline", "capacity": "A1/B1/A2/B2/CO1", "description": "Cube-side Matmul path."},
+      {"id": "aiv_ub", "label": "AIV UB", "role": "vector-pipeline", "capacity": "baseM/2 x baseN half", "description": "Vector-side LeakyRelu tile."}
+    ],
+    "blocks": [
+      {"id": "aic0", "label": "AIC block 0", "range": "C[M 0:256, N 0:512]", "consumers": ["AIV block 0", "AIV block 1"]},
+      {"id": "aic1", "label": "AIC block 1", "range": "C[M 256:512, N 0:512]", "consumers": ["AIV block 2", "AIV block 3"]},
+      {"id": "aic2", "label": "AIC block 2", "range": "C[M 0:256, N 512:1024]", "consumers": ["AIV block 4", "AIV block 5"]},
+      {"id": "aic3", "label": "AIC block 3", "range": "C[M 256:512, N 512:1024]", "consumers": ["AIV block 6", "AIV block 7"]}
+    ]
+  },
+  "stages": [
+    {"id": "mix-launch", "label": "Mix Kernel", "semanticLabel": "__mix__(1,2)", "unit": "mixed", "operations": ["__mix__", "AIC path", "AIV path"], "sourceRef": {"line": 274, "symbol": "mmad_vec_custom"}, "description": "Launches a fused AIC/AIV kernel with one Cube producer for two Vector consumers."},
+    {"id": "aic-matmul", "label": "AIC Matmul", "semanticLabel": "Cube Producer", "unit": "aic", "operations": ["DataCopy", "LoadData", "Mmad", "Fixpipe"], "sourceRef": {"line": 66, "symbol": "ASCEND_IS_AIC"}, "description": "AIC computes each baseM x baseN C tile and writes it to GM."},
+    {"id": "cross-core-sync", "label": "Cross-core Sync", "semanticLabel": "Producer -> Consumers", "unit": "sync", "operations": ["CrossCoreSetFlag", "CrossCoreWaitFlag"], "sourceRef": {"line": 89, "symbol": "CrossCoreSetFlag"}, "description": "AIC notifies the paired AIV blocks that the Matmul result is ready."},
+    {"id": "aiv-leakyrelu", "label": "AIV LeakyRelu", "semanticLabel": "Vector Consumers", "unit": "aiv", "operations": ["DataCopyPad", "LeakyRelu", "DataCopyPad"], "sourceRef": {"line": 238, "symbol": "LeaklyGeluCompute"}, "description": "Each AIV block reads half of the AIC result tile, applies LeakyRelu, and writes it back."}
+  ],
+  "steps": [
+    {"id": "mix.launch", "stageId": "mix-launch", "label": "__mix__(1,2) launch", "summary": "The kernel creates a Cube:Vector execution relationship of 1:2.", "unit": "mixed", "sourceLines": [274], "memoryRegions": ["AIC lanes", "AIV lanes"], "metrics": [{"label": "ratio", "value": "1:2"}]},
+    {"id": "aic0.matmul.copy", "stageId": "aic-matmul", "label": "AIC0 copies A/B tiles", "summary": "AIC block 0 starts the Matmul pipeline for C[M 0:256, N 0:512].", "unit": "aic", "blockIdx": 0, "sourceLines": [66, 68, 69], "memoryRegions": ["GM:A", "GM:B", "AIC L1"], "metrics": [{"label": "producer", "value": "AIC0"}]},
+    {"id": "aic0.matmul.compute", "stageId": "aic-matmul", "label": "AIC0 Mmad + Fixpipe", "summary": "AIC0 accumulates through K and writes the Matmul output tile to GM C.", "unit": "aic", "blockIdx": 0, "sourceLines": [80, 87], "memoryRegions": ["AIC L0", "CO1", "GM:C[M 0:256, N 0:512]"], "syncEvents": ["MTE2_MTE1", "MTE1_M", "M_FIX"], "metrics": [{"label": "C tile", "value": "256x512 half"}], "visualState": {"architectureFocus": {"selectors": ["#mem950-aic [data-aic-node=\"buffer:L0A\"]", "#mem950-aic [data-aic-node=\"buffer:L0B\"]", "#mem950-aic [data-aic-node=\"cube:CUBE\"]", "#mem950-aic [data-aic-node=\"buffer:L0C\"]"], "routes": [], "bufferBlocks": [{"core": "mem950-aic", "buffer": "L0A", "label": "A tile", "sourceTile": "A[m0,k*]", "state": "loaded", "cellRange": [0, 15], "tone": "input", "operation": "Mmad"}, {"core": "mem950-aic", "buffer": "L0B", "label": "B tile", "sourceTile": "B[k*,n0]", "state": "loaded", "cellRange": [0, 15], "tone": "input", "operation": "Mmad"}, {"core": "mem950-aic", "buffer": "L0C", "label": "C partial", "sourceTile": "C[m0,n0]", "state": "accumulating", "cellRange": [0, 23], "tone": "accumulator", "operation": "Mmad/Fixpipe"}]}}},
+    {"id": "aic0.setflag", "stageId": "cross-core-sync", "label": "AIC0 signals AIV pair", "summary": "CrossCoreSetFlag releases AIV block 0 and AIV block 1.", "unit": "sync", "blockIdx": 0, "sourceLines": [89], "memoryRegions": ["Flag 0"], "syncEvents": ["CrossCoreSetFlag<0x2, PIPE_FIX>(0)"], "metrics": [{"label": "consumers", "value": "AIV0,AIV1"}], "visualState": {"architectureFocus": {"selectors": ["#mem950-aic [data-aic-node=\"buffer:L0C\"]", "#mem950-aiv1 [data-aiv-node=\"buffer:UB\"]", "#mem950-aiv2 [data-aiv-node=\"buffer:UB\"]"], "routes": ["aic-to-aiv1", "aiv2-to-aic"], "bufferBlocks": [{"core": "mem950-aic", "buffer": "L0C", "label": "C ready", "sourceTile": "C[m0,n0]", "state": "committed", "cellRange": [0, 23], "tone": "output", "operation": "CrossCoreSetFlag"}]}}},
+    {"id": "aiv0.wait", "stageId": "cross-core-sync", "label": "AIV0 waits for AIC0", "summary": "AIV0 cannot read GM C until the Cube producer has set the flag.", "unit": "aiv", "blockIdx": 0, "sourceLines": [91, 93], "memoryRegions": ["Flag 0"], "syncEvents": ["CrossCoreWaitFlag(0)"], "metrics": [{"label": "halfSelector", "value": 0}]},
+    {"id": "aiv0.relu", "stageId": "aiv-leakyrelu", "label": "AIV0 activates upper half", "summary": "AIV0 reads the upper baseM/2 x baseN half tile, applies LeakyRelu, and writes it back.", "unit": "aiv", "blockIdx": 0, "sourceLines": [248, 250, 255, 262], "memoryRegions": ["GM:C[M 0:64, N 0:256]", "AIV0 UB", "GM:C[M 0:64, N 0:256]"], "metrics": [{"label": "tileLen", "value": 16384, "unit": "elements"}], "visualState": {"architectureFocus": {"selectors": ["#mem950-aic [data-aic-node=\"buffer:L0C\"]", "#mem950-aiv1 [data-aiv-node=\"buffer:UB\"]", "#mem950-aiv1 [data-aiv-node=\"vector:Vector\"]"], "routes": ["aic-to-aiv1"], "bufferBlocks": [{"core": "mem950-aic", "buffer": "L0C", "label": "C source tile", "sourceTile": "C[m0,n0]", "state": "committed", "cellRange": [0, 23], "tone": "output", "operation": "C-V direct"}, {"core": "mem950-aiv1", "buffer": "UB", "label": "epilogue tile", "sourceTile": "C upper half", "state": "enqueued", "cellRange": [0, 31], "tone": "output", "operation": "LeakyRelu"}]}}},
+    {"id": "aiv1.relu", "stageId": "aiv-leakyrelu", "label": "AIV1 activates lower half", "summary": "AIV1 uses GetBlockIdx()%2=1, so its GM offset jumps by baseM/2*N.", "unit": "aiv", "blockIdx": 1, "sourceLines": [117, 248, 255], "memoryRegions": ["GM:C[M 64:128, N 0:256]", "AIV1 UB", "GM:C[M 64:128, N 0:256]"], "metrics": [{"label": "halfSelector", "value": 1}]}
+  ],
+  "puzzles": [
+    {"id": "fusion.ratio", "kind": "concept", "prompt": "What does __mix__(1, 2) mean in this sample?", "context": {"kernelTag": "__mix__(1,2)"}, "answer": "One Cube/AIC producer is paired with two Vector/AIV consumers.", "sourceHint": {"line": 274}, "explanation": "The sample uses Cube:Vector = 1:2 for Matmul followed by LeakyRelu."},
+    {"id": "fusion.pair", "kind": "block_mapping", "prompt": "Which AIV blocks consume AIC block 2?", "context": {"aicBlockIdx": 2}, "answer": "AIV block 4 and AIV block 5", "sourceHint": {"line": 117}, "explanation": "AIV pair maps by cubeBlockIdx=GetBlockIdx()/2, so AIC2 is consumed by AIV4 and AIV5."},
+    {"id": "fusion.half", "kind": "block_mapping", "prompt": "For AIV block 5, which halfSelector is used?", "context": {"aivBlockIdx": 5}, "answer": 1, "sourceHint": {"line": 248}, "explanation": "halfSelector = GetBlockIdx() % 2 = 5 % 2 = 1."},
+    {"id": "fusion.wait", "kind": "sync", "prompt": "Which event prevents AIV from reading an unfinished Matmul result?", "context": {"stage": "cross-core"}, "answer": "CrossCoreWaitFlag", "sourceHint": {"line": 93}, "explanation": "AIV waits on CrossCoreWaitFlag until AIC calls CrossCoreSetFlag after Fixpipe."},
+    {"id": "fusion.vector-tile", "kind": "tile_prediction", "prompt": "How large is the Vector LeakyRelu tile per AIV block?", "context": {"baseM": 128, "baseN": 256}, "answer": "baseM/2 x baseN = 64 x 256", "sourceHint": {"line": 95}, "explanation": "The AIC result baseM x baseN is split across two AIV blocks."}
+  ],
+  "evidence": {
+    "profiling": {"status": "placeholder", "note": "Attach per-lane AIC/AIV timing and overlap evidence later."},
+    "sanitizer": {"status": "placeholder", "note": "Attach cross-core and DataCopyPad findings later."}
+  }
+}
