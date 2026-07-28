@@ -17,10 +17,15 @@
     layoutMode: 'address', // address = 地址条带图；arch = 硬件架构图
     focusRegionId: 'UB',
     tick: 0,
-    playing: false,
     selectedAllocId: null,
     selectedEventId: null,
     selectedFindingId: null,
+    explorerView: 'files',
+    selectedFile: 'kernel_cpp',
+    expandedFolders: new Set(['root', 'op_host', 'op_kernel', 'scripts', 'tests']),
+    plannerLayoutMode: 'list',
+    plannerRegionId: 'UB',
+    plannerBufferName: 'gammaBuf',
   };
 
   let chip = null;
@@ -31,8 +36,7 @@
   let runIndex = new Map(); // runId -> { run, metrics, findings, summary }
   let views = {};
   let frameController = null;
-  let playback = null;
-  let playTimer = null;
+  let plannerArchController = null;
 
   // ---------------------------------------------------------------
   // 数据装载
@@ -174,11 +178,572 @@
   }
 
   // ---------------------------------------------------------------
-  // 左栏：tiling 候选
+  // 左栏：Ascend C 工程 / tiling 候选
   // ---------------------------------------------------------------
-  function renderExplorer() {
+  const ASCEND_C_PROJECT = [
+    {
+      id: 'root', label: 'MatmulLayerNorm_mix', type: 'folder', children: [
+        {
+          id: 'op_host', label: 'op_host', type: 'folder', children: [
+            { id: 'op_host_cpp', label: 'matmul_layernorm_mix.cpp', type: 'cpp' },
+            { id: 'tiling_h', label: 'matmul_layernorm_mix_tiling.h', type: 'header' },
+          ],
+        },
+        {
+          id: 'op_kernel', label: 'op_kernel', type: 'folder', children: [
+            { id: 'kernel_cpp', label: 'matmul_layernorm_mix.cpp', type: 'cpp', source: true },
+            { id: 'tiling_data_h', label: 'matmul_layernorm_mix_tiling_data.h', type: 'header' },
+          ],
+        },
+        {
+          id: 'scripts', label: 'scripts', type: 'folder', children: [
+            { id: 'gen_data', label: 'gen_data.py', type: 'python' },
+          ],
+        },
+        {
+          id: 'tests', label: 'tests', type: 'folder', children: [
+            { id: 'test_case', label: 'test_matmul_layernorm_mix.py', type: 'python' },
+          ],
+        },
+        { id: 'cmake', label: 'CMakeLists.txt', type: 'cmake' },
+        { id: 'build', label: 'build.sh', type: 'shell' },
+      ],
+    },
+  ];
+
+  const TREE_ICON = {
+    folder: '<path d="M3 6.5h6l2 2h10v9.5a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2Z"></path><path d="M3 9h18"></path>',
+    cpp: '<path d="M6 2h8l4 4v16H6Z"></path><path d="M14 2v5h5"></path><path d="m11 12-2 2 2 2"></path><path d="m14 12 2 2-2 2"></path>',
+    header: '<path d="M6 2h8l4 4v16H6Z"></path><path d="M14 2v5h5"></path><path d="M9 12h6M9 16h6"></path>',
+    python: '<path d="M6 2h8l4 4v16H6Z"></path><path d="M14 2v5h5"></path><path d="M9 13h6M12 10v6"></path>',
+    cmake: '<path d="M6 2h8l4 4v16H6Z"></path><path d="M14 2v5h5"></path><circle cx="12" cy="14" r="2.5"></circle>',
+    shell: '<path d="M6 2h8l4 4v16H6Z"></path><path d="M14 2v5h5"></path><path d="m9 12 2 2-2 2M12.5 16H15"></path>',
+  };
+
+  function treeIcon(type) {
+    return `<svg class="mv-tree-icon${type === 'folder' ? ' is-folder' : ''}" viewBox="0 0 24 24" aria-hidden="true">${TREE_ICON[type] || TREE_ICON.cpp}</svg>`;
+  }
+
+  const CPP_KEYWORDS = new Set([
+    'alignas', 'auto', 'break', 'case', 'class', 'const', 'constexpr', 'continue', 'default', 'do',
+    'else', 'for', 'if', 'inline', 'namespace', 'private', 'public', 'return', 'sizeof', 'static',
+    'struct', 'switch', 'template', 'typename', 'using', 'while', '__aicore__', '__global__',
+  ]);
+  const CPP_TYPES = new Set([
+    'bool', 'char', 'double', 'float', 'half', 'int', 'int8_t', 'int16_t', 'int32_t', 'int64_t',
+    'uint8_t', 'uint16_t', 'uint32_t', 'uint64_t', 'void', 'GM_ADDR', 'GlobalTensor', 'LocalTensor',
+    'TBuf', 'TPipe', 'TQue', 'QuePosition', 'MLNTiling', 'MatmulLayerNormMixKernel',
+  ]);
+
+  function highlightCppLine(line) {
+    const tokenPattern = /(\/\/.*$|\/\*.*?\*\/|#[A-Za-z_][A-Za-z0-9_]*|<[^>]+>|"(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*'|\b(?:0x[\dA-Fa-f]+|\d+(?:\.\d+)?)\b|\b[A-Za-z_][A-Za-z0-9_]*\b)/g;
+    let result = '';
+    let cursor = 0;
+    let match;
+    while ((match = tokenPattern.exec(line)) !== null) {
+      result += F.escapeHtml(line.slice(cursor, match.index));
+      const token = match[0];
+      const rest = line.slice(match.index + token.length);
+      let cls = 'mv-tok-variable';
+      if (token.startsWith('//') || token.startsWith('/*')) cls = 'mv-tok-comment';
+      else if (token.startsWith('#')) cls = 'mv-tok-preprocessor';
+      else if (token.startsWith('<') || token.startsWith('"') || token.startsWith("'")) cls = 'mv-tok-string';
+      else if (/^(?:0x[\dA-Fa-f]+|\d)/.test(token)) cls = 'mv-tok-number';
+      else if (CPP_KEYWORDS.has(token)) cls = 'mv-tok-keyword';
+      else if (/^\s*\(/.test(rest)) cls = 'mv-tok-function';
+      else if (/^[A-Z][A-Z0-9_]*$/.test(token)) cls = 'mv-tok-constant';
+      else if (CPP_TYPES.has(token) || /^[A-Z][A-Za-z0-9_]*$/.test(token)) cls = 'mv-tok-type';
+      result += `<span class="${cls}">${F.escapeHtml(token)}</span>`;
+      cursor = match.index + token.length;
+      if (token.startsWith('//')) break;
+    }
+    return result + F.escapeHtml(line.slice(cursor));
+  }
+
+  function renderSourceEditor() {
+    const source = global.MemVizKernelSource;
+    $('sourceEditor').innerHTML = `<div class="mv-source-list">${source.lines.map((line, index) => `
+      <div class="mv-source-line"><span class="mv-source-ln">${index + 1}</span><code class="mv-source-text">${highlightCppLine(line) || ' '}</code></div>
+    `).join('')}</div>`;
+  }
+
+  const QUEUE_POSITION_REGION = {
+    A1: 'L1', B1: 'L1', A2: 'L0A', B2: 'L0B', CO1: 'L0C',
+    VECIN: 'UB', VECOUT: 'UB', VECCALC: 'UB',
+  };
+
+  function evaluateArithmetic(expression, variables) {
+    let normalized = expression
+      .replace(/sizeof\s*\(\s*(half|float|double|int8_t|uint8_t|int16_t|uint16_t|int32_t|uint32_t|int64_t|uint64_t)\s*\)/g,
+        (_, type) => String({ half: 2, float: 4, double: 8, int8_t: 1, uint8_t: 1, int16_t: 2, uint16_t: 2, int32_t: 4, uint32_t: 4, int64_t: 8, uint64_t: 8 }[type]))
+      .replace(/\b[A-Za-z_][A-Za-z0-9_]*\b/g, (name) => Object.hasOwn(variables, name) ? String(variables[name]) : `?${name}?`)
+      .replace(/\s+/g, '');
+    if (/[^\d.+\-*/()?]/.test(normalized) || normalized.includes('?')) return NaN;
+
+    const tokens = normalized.match(/\d+(?:\.\d+)?|[()+\-*/]/g) || [];
+    let cursor = 0;
+    const parseFactor = () => {
+      const token = tokens[cursor];
+      if (token === '+' || token === '-') {
+        cursor += 1;
+        const value = parseFactor();
+        return token === '-' ? -value : value;
+      }
+      if (token === '(') {
+        cursor += 1;
+        const value = parseExpression();
+        if (tokens[cursor] !== ')') return NaN;
+        cursor += 1;
+        return value;
+      }
+      cursor += 1;
+      return Number(token);
+    };
+    const parseTerm = () => {
+      let value = parseFactor();
+      while (tokens[cursor] === '*' || tokens[cursor] === '/') {
+        const op = tokens[cursor++];
+        const right = parseFactor();
+        value = op === '*' ? value * right : value / right;
+      }
+      return value;
+    };
+    function parseExpression() {
+      let value = parseTerm();
+      while (tokens[cursor] === '+' || tokens[cursor] === '-') {
+        const op = tokens[cursor++];
+        const right = parseTerm();
+        value = op === '+' ? value + right : value - right;
+      }
+      return value;
+    }
+    const value = parseExpression();
+    return cursor === tokens.length && Number.isFinite(value) ? value : NaN;
+  }
+
+  function analyzeSourceBuffers() {
+    const source = global.MemVizKernelSource.text;
+    const variables = {
+      tileM_: run.tiling.tileM,
+      tileNum_: run.tiling.tileNum,
+      A_L1_DB: run.tiling.bufferNum.aL1,
+      A_L0A_DB: run.tiling.bufferNum.aL0A,
+      C_L0C_DB: run.tiling.bufferNum.cL0C,
+      MM_OUT_DB: run.tiling.bufferNum.mmOut,
+      Y_DB: run.tiling.bufferNum.yUb,
+    };
+    for (const match of source.matchAll(/constexpr\s+\w+\s+(\w+)\s*=\s*(\d+)/g)) {
+      variables[match[1]] = Number(match[2]);
+    }
+
+    const declarations = new Map();
+    for (const match of source.matchAll(/\b(TQue|TBuf)<QuePosition::([A-Z0-9]+)(?:,\s*[^>]+)?>\s+([^;]+);/g)) {
+      const kind = match[1];
+      const position = match[2];
+      match[3].split(',').forEach((part) => {
+        const name = part.trim().match(/([A-Za-z_][A-Za-z0-9_]*)$/)?.[1];
+        if (name) declarations.set(name, { kind, position, regionId: QUEUE_POSITION_REGION[position] || 'UB' });
+      });
+    }
+
+    const buffers = [];
+    for (const match of source.matchAll(/InitBuffer\(\s*(\w+)\s*,\s*([^,]+)\s*,\s*([^;]+?)\s*\);/g)) {
+      const name = match[1];
+      const declaration = declarations.get(name) || { kind: 'Buffer', position: 'UNKNOWN', regionId: 'UB' };
+      const slots = evaluateArithmetic(match[2], variables);
+      const bytesPerSlot = evaluateArithmetic(match[3], variables);
+      const region = chip.regions.find((item) => item.id === declaration.regionId);
+      if (!Number.isFinite(slots) || !Number.isFinite(bytesPerSlot) || !region) continue;
+      const alignedPerSlot = Math.ceil(bytesPerSlot / region.align) * region.align;
+      buffers.push({
+        name, ...declaration, slots, bytesPerSlot, alignedPerSlot,
+        bytes: alignedPerSlot * slots,
+        expression: match[3].trim(),
+        line: source.slice(0, match.index).split('\n').length,
+      });
+    }
+
+    const regions = chip.regions
+      .filter((region) => region.kind !== 'register' && region.id !== 'GM')
+      .map((region) => {
+        const items = buffers.filter((buffer) => buffer.regionId === region.id);
+        const used = items.reduce((sum, item) => sum + item.bytes, 0);
+        return { ...region, items, used, ratio: used / region.capacity, remaining: region.capacity - used };
+      })
+      .filter((region) => region.items.length);
+
+    return {
+      buffers, regions,
+      queueCount: buffers.filter((item) => item.kind === 'TQue').length,
+      tbufCount: buffers.filter((item) => item.kind === 'TBuf').length,
+      allocTensorCount: (source.match(/\.AllocTensor\s*</g) || []).length,
+    };
+  }
+
+  function plannerListMarkup(plan) {
+    return plan.regions.map((region) => {
+      const level = region.ratio > 1 ? 'danger' : region.ratio >= 0.85 ? 'warning' : '';
+      return `<div class="mv-plan-region">
+        <div class="mv-plan-region-head">
+          <span class="mv-plan-region-name">${region.id}</span>
+          <span class="mv-plan-region-value ${level ? `is-${level}` : ''}">${F.bytes(region.used)} / ${F.bytes(region.capacity)} · ${F.pct(region.ratio, 0)}</span>
+        </div>
+        <div class="mv-plan-layout" aria-label="${region.id} 静态内存布局">
+          ${region.items.map((item, index) => `<span class="mv-plan-block" style="flex:0 0 ${Math.max(0.5, item.bytes / region.capacity * 100).toFixed(2)}%;background:${region.accent};opacity:${(0.48 + index % 4 * 0.12).toFixed(2)}" title="${F.escapeHtml(item.name)} · ${F.bytes(item.bytes)}"></span>`).join('')}
+        </div>
+        <div class="mv-plan-waterline"><span>0</span><span>${region.remaining >= 0 ? `剩余 ${F.bytes(region.remaining)}` : `超出 ${F.bytes(-region.remaining)}`}</span><span>${F.bytes(region.capacity)}</span></div>
+        <div class="mv-plan-buffer-list">
+          ${region.items.map((item) => `<div class="mv-plan-buffer">
+            <span class="mv-plan-buffer-name">${F.escapeHtml(item.name)}</span>
+            <span class="mv-plan-buffer-size">${F.bytes(item.bytes)}</span>
+            <span class="mv-plan-buffer-meta">${item.kind}&lt;${item.position}&gt; · ${item.slots} × ${F.bytes(item.bytesPerSlot)} · align ${region.align}B · L${item.line}</span>
+          </div>`).join('')}
+        </div>
+      </div>`;
+    }).join('');
+  }
+
+  function plannerArchitectureMarkup() {
+    return `<div class="mv-plan-arch">
+      <div id="planArchitectureHost"></div>
+      <div>
+        <div class="mv-sec-head"><span class="mv-label" id="planArchRegionLabel">当前硬件节点</span><span class="mv-label">选择 Buffer</span></div>
+        <div class="mv-plan-arch-buffers" id="planArchBufferList"></div>
+      </div>
+      <div class="mv-plan-api-detail" id="planArchBufferDetail"></div>
+    </div>`;
+  }
+
+  function apiUsagesForBuffer(bufferName) {
+    const escaped = bufferName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const namePattern = new RegExp(`\\b${escaped}\\b`);
+    const methodPattern = new RegExp(`${escaped}\\.([A-Za-z_][A-Za-z0-9_]*)(?:<([^>]+)>)?`);
+    return global.MemVizKernelSource.lines.flatMap((line, index) => {
+      if (!namePattern.test(line)) return [];
+      const trimmed = line.trim();
+      const method = trimmed.match(methodPattern);
+      let api = '引用';
+      if (/\bInitBuffer\s*\(/.test(trimmed)) api = 'TPipe::InitBuffer';
+      else if (method) api = `${method[1]}${method[2] ? `<${method[2]}>` : ''}`;
+      else if (/\b(?:TQue|TBuf)</.test(trimmed)) api = 'Buffer 声明';
+      return [{ api, line: index + 1, code: trimmed }];
+    });
+  }
+
+  function renderPlannerArchSelection(plan, stage, preset) {
+    let region = plan.regions.find((item) => item.id === state.plannerRegionId);
+    if (!region?.items.length) region = plan.regions.find((item) => item.items.length);
+    if (!region) return;
+    state.plannerRegionId = region.id;
+    let buffer = region.items.find((item) => item.name === state.plannerBufferName);
+    if (!buffer) buffer = region.items.find((item) => item.name === 'gammaBuf') || region.items[0];
+    state.plannerBufferName = buffer.name;
+
+    $('planArchRegionLabel').textContent = `${region.id} · ${region.label}`;
+    $('planArchBufferList').innerHTML = plan.regions
+      .filter((item) => item.items.length)
+      .flatMap((item) => item.items.map((candidate) => `
+        <button class="btn btn-sm${candidate.name === buffer.name ? ' is-selected' : ''}" type="button" data-plan-region="${F.escapeHtml(item.id)}" data-plan-buffer="${F.escapeHtml(candidate.name)}">${F.escapeHtml(item.id)} · ${F.escapeHtml(candidate.name)}</button>
+      `)).join('');
+    const usages = apiUsagesForBuffer(buffer.name);
+    $('planArchBufferDetail').innerHTML = `
+      <div class="mv-plan-buffer-list">
+        <div class="mv-plan-buffer">
+          <span class="mv-plan-api-name">${F.escapeHtml(buffer.name)}</span>
+          <span class="mv-plan-api-size">${F.bytes(buffer.bytes)}</span>
+          <span class="mv-plan-buffer-meta">${buffer.kind}&lt;${buffer.position}&gt; · ${buffer.slots} × ${F.bytes(buffer.bytesPerSlot)} · align ${region.align}B · L${buffer.line}</span>
+        </div>
+      </div>
+      <div class="mv-sec-head"><span class="mv-label">使用该 Buffer 的 API</span><span class="mv-label">${usages.length} 处</span></div>
+      <div class="mv-plan-buffer-list">
+        ${usages.map((usage) => `<div class="mv-plan-buffer">
+          <span class="mv-plan-buffer-name">${F.escapeHtml(usage.api)}</span>
+          <span class="mv-plan-buffer-size">L${usage.line}</span>
+          <code class="mv-plan-api-code">${F.escapeHtml(usage.code)}</code>
+        </div>`).join('')}
+      </div>
+      <div class="mv-plan-buffer-list">
+        <div class="mv-plan-buffer">
+          <span class="mv-plan-buffer-name">大小表达式</span><span class="mv-plan-buffer-size">${F.escapeHtml(buffer.expression)}</span>
+          <span class="mv-plan-buffer-meta">硬件归属 · ${region.id} · ${F.escapeHtml(region.owner)}</span>
+        </div>
+      </div>
+    `;
+    $('planArchBufferList').querySelectorAll('[data-plan-buffer]').forEach((button) => {
+      button.addEventListener('click', () => {
+        state.plannerRegionId = button.dataset.planRegion;
+        state.plannerBufferName = button.dataset.planBuffer;
+        renderPlannerArchSelection(plan, stage, preset);
+      });
+    });
+
+    const helper = global.PtoMemoryArchitecturePattern;
+    const target = global.MemVizArchView?.TARGETS?.[region.id];
+    helper?.clearPathFocus?.(stage);
+    if (target?.detail) helper?.setPathFocus?.(stage, preset, { selectors: [target.detail], routes: [] });
+  }
+
+  function mountPlannerArchitecture(plan) {
+    const host = $('planArchitectureHost');
+    const helper = global.PtoMemoryArchitecturePattern;
+    if (!host || !helper) {
+      if (host) host.innerHTML = '<p class="mv-empty">未加载 memory-architecture pattern。</p>';
+      return;
+    }
+
+    const viewport = document.createElement('div');
+    viewport.className = 'pto-memory-architecture-viewport mv-plan-arch-viewport';
+    viewport.setAttribute('aria-label', '昇腾抽象硬件架构');
+    const sizer = document.createElement('div');
+    sizer.className = 'pto-memory-architecture-sizer';
+    const canvas = document.createElement('div');
+    canvas.className = 'pto-memory-architecture-canvas';
+    const stage = document.createElement('div');
+    canvas.appendChild(stage);
+    sizer.appendChild(canvas);
+    viewport.appendChild(sizer);
+    host.appendChild(viewport);
+
+    const presetKey = chip.id === 'ascend-910b' ? 'ascend910b' : 'ascend950b';
+    const preset = helper.presets?.[presetKey] || helper.resolvePreset?.(presetKey);
+    if (!preset) return;
+    helper.renderArchitecture(stage, preset);
+    helper.setDetailVisibility?.(stage, false);
+    const overlay = helper.createRouteOverlay?.(stage, preset);
+    overlay?.render?.();
+    const hover = helper.attachHoverInteractions?.(stage, preset);
+    const activation = helper.attachNodeActivation?.(stage, preset, {
+      selector: '[data-aic-node^="buffer:"], [data-aiv-node^="buffer:"]',
+      label: (target) => `查看 ${target.dataset.aicNode || target.dataset.aivNode || 'buffer'}`,
+      onActivate: (target) => {
+        const key = target.dataset.aicNode || target.dataset.aivNode || '';
+        const regionId = global.MemVizArchView?.REGION_BY_NODE?.[key];
+        const region = plan.regions.find((item) => item.id === regionId && item.items.length);
+        if (!region) return;
+        state.plannerRegionId = region.id;
+        state.plannerBufferName = region.items[0].name;
+        renderPlannerArchSelection(plan, stage, preset);
+      },
+    });
+    activation?.targets?.forEach((target) => target.setAttribute('data-no-pan', ''));
+    const zoom = helper.createZoomController?.({
+      viewport, sizer, canvas,
+      defaultZoom: 0.35, min: 0.35, max: 1.2, step: 0.1,
+      pan: true, wheelZoom: true, centerOnReset: true,
+      centerTarget: '.pto-mem950__rails, .pto-mem950__engine-stack, .pto-mem950__stack',
+      onZoom: () => overlay?.render?.(),
+      onPan: () => overlay?.render?.(),
+    });
+
+    const blocks = [];
+    const targets = global.MemVizArchView?.TARGETS || {};
+    plan.regions.forEach((region) => {
+      const target = targets[region.id];
+      if (!target?.cores) return;
+      target.cores.forEach((coreId) => {
+        const slot = stage.querySelector(`[id="${coreId}"]`);
+        const bufferNode = slot?.querySelector(
+          `[data-buffer-key="${target.buffer}"], [data-aic-node="buffer:${target.buffer}"], [data-aiv-node="buffer:${target.buffer}"]`,
+        );
+        const cells = bufferNode?.querySelectorAll('.pto-aiv-core__cell, .pto-aic-core__cell').length || 0;
+        if (!cells) return;
+        let cursor = 0;
+        region.items.forEach((item) => {
+          if (cursor >= cells) return;
+          const cellCount = Math.max(1, Math.round(item.bytes / region.capacity * cells));
+          const end = Math.min(cells - 1, cursor + cellCount - 1);
+          blocks.push({
+            core: coreId, buffer: target.buffer, state: region.ratio > 1 ? 'accumulating' : 'loaded', tone: region.ratio > 1 ? 'accumulator' : 'input',
+            label: `${item.name} · ${F.bytes(item.bytes)} · ${item.kind}<${item.position}> · ${item.slots} × ${F.bytes(item.bytesPerSlot)} · align ${region.align}B · L${item.line}`,
+            sourceTile: item.name, cellRange: [cursor, end],
+          });
+          cursor = end + 1;
+        });
+      });
+    });
+    helper.setBufferBlocks?.(stage, blocks);
+    stage.querySelectorAll('[data-buffer-block-source-tile]').forEach((cell) => cell.setAttribute('data-no-pan', ''));
+    const onArchitectureSelect = (event) => {
+      const cell = event.target?.closest?.('[data-buffer-block-source-tile]');
+      const node = event.target?.closest?.('[data-aic-node^="buffer:"], [data-aiv-node^="buffer:"]');
+      if ((!cell && !node) || (cell && !stage.contains(cell)) || (node && !stage.contains(node))) return;
+      const bufferName = cell?.dataset.bufferBlockSourceTile || '';
+      const nodeKey = node?.dataset.aicNode || node?.dataset.aivNode || '';
+      const regionId = bufferName
+        ? plan.regions.find((item) => item.items.some((buffer) => buffer.name === bufferName))?.id
+        : global.MemVizArchView?.REGION_BY_NODE?.[nodeKey];
+      const region = plan.regions.find((item) => item.id === regionId && item.items.length);
+      if (!region) return;
+      event.stopPropagation();
+      state.plannerRegionId = region.id;
+      state.plannerBufferName = bufferName || region.items[0].name;
+      renderPlannerArchSelection(plan, stage, preset);
+    };
+    stage.addEventListener('click', onArchitectureSelect, true);
+    renderPlannerArchSelection(plan, stage, preset);
+    window.requestAnimationFrame(() => {
+      zoom?.center?.();
+      overlay?.render?.();
+    });
+
+    plannerArchController = {
+      destroy() {
+        overlay?.destroy?.();
+        hover?.destroy?.();
+        activation?.destroy?.();
+        zoom?.destroy?.();
+        stage.removeEventListener('click', onArchitectureSelect, true);
+        helper.clearPathFocus?.(stage);
+      },
+    };
+  }
+
+  function renderBufferPlanner() {
+    plannerArchController?.destroy?.();
+    plannerArchController = null;
+    const plan = analyzeSourceBuffers();
+    const ub = plan.regions.find((region) => region.id === 'UB');
+    const critical = plan.regions.reduce((worst, region) => !worst || region.ratio > worst.ratio ? region : worst, null);
+    const severity = critical?.ratio > 1 ? 'danger' : critical?.ratio >= 0.85 ? 'warning' : 'success';
+    const summary = ub
+      ? `UB 已占 <b>${F.bytes(ub.used)}</b> / ${F.bytes(ub.capacity)}，${ub.remaining >= 0 ? `剩余 <b>${F.bytes(ub.remaining)}</b>` : `超出 <b>${F.bytes(-ub.remaining)}</b>`}`
+      : '源码中未解析到 UB buffer';
+
+    $('sourcePlannerBody').innerHTML = `
+      <section class="mv-sec">
+        <div class="mv-sec-head"><span class="mv-sec-title">TilingData 试算</span><span class="mv-label">实时</span></div>
+        <div class="segmented-control segmented-control-muted mv-plan-candidates" role="group" aria-label="TilingData 试算候选">
+          ${runs.map((item) => `<button class="btn btn-sm${item.id === state.runId ? ' is-selected' : ''}" type="button" data-plan-run="${item.id}" title="${F.escapeHtml(item.note)}">${F.escapeHtml(item.label)}</button>`).join('')}
+        </div>
+        <p class="mv-plan-source-note">${F.escapeHtml(run.note)}</p>
+      </section>
+      <section class="mv-sec">
+        <div class="mv-sec-head"><span class="mv-sec-title">静态规划结果</span><span class="stat-chip mv-sev-${severity === 'warning' ? 'warn' : severity}">${severity === 'danger' ? '超限' : severity === 'warning' ? '接近上限' : '容量安全'}</span></div>
+        <div class="mv-soft ${severity === 'danger' ? 'is-danger' : severity === 'warning' ? 'is-warning' : ''} mv-plan-summary">
+          <div class="mv-plan-summary-line">${summary}</div>
+          <div class="mv-chip-row">
+            <span class="stat-chip">tileM ${run.tiling.tileM}</span>
+            <span class="stat-chip">tileNum ${run.tiling.tileNum}</span>
+            <span class="stat-chip">block_dim ${run.kernel.blockDim}</span>
+          </div>
+        </div>
+        <p class="mv-plan-source-note">无需编译 · 基于 TilingData 与源码声明实时推导</p>
+      </section>
+      <section class="mv-sec">
+        <div class="mv-sec-head">
+          <span class="mv-sec-title">静态内存布局</span>
+          <div class="segmented-control segmented-control-muted mv-plan-layout-switch" role="group" aria-label="静态内存布局表达">
+            <button class="btn btn-sm${state.plannerLayoutMode === 'list' ? ' is-selected' : ''}" type="button" data-plan-layout-mode="list">列表布局</button>
+            <button class="btn btn-sm${state.plannerLayoutMode === 'architecture' ? ' is-selected' : ''}" type="button" data-plan-layout-mode="architecture">硬件架构</button>
+          </div>
+        </div>
+        ${state.plannerLayoutMode === 'architecture' ? plannerArchitectureMarkup() : plannerListMarkup(plan)}
+      </section>
+      <section class="mv-sec">
+        <div class="mv-sec-head"><span class="mv-sec-title">解析证据</span><span class="mv-label">SOURCE</span></div>
+        <div class="mv-kv"><span>InitBuffer</span><b>${plan.buffers.length}</b></div>
+        <div class="mv-kv"><span>TQue / TBuf</span><b>${plan.queueCount} / ${plan.tbufCount}</b></div>
+        <div class="mv-kv"><span>AllocTensor</span><b>${plan.allocTensorCount}</b></div>
+        <div class="mv-kv"><span>TilingData</span><b>tileM=${run.tiling.tileM}, tileNum=${run.tiling.tileNum}</b></div>
+        <p class="mv-plan-source-note">容量来自 ${F.escapeHtml(chip.specRef)}；当前 demo 为占位规格，接入工程后替换为目标 SoC 官方规格。</p>
+      </section>
+    `;
+    $('sourcePlannerBody').querySelectorAll('[data-plan-run]').forEach((button) => {
+      button.addEventListener('click', () => {
+        if (button.dataset.planRun === state.runId) return;
+        selectRun(button.dataset.planRun);
+        render();
+        window.requestAnimationFrame(redrawViews);
+      });
+    });
+    $('sourcePlannerBody').querySelectorAll('[data-plan-layout-mode]').forEach((button) => {
+      button.addEventListener('click', () => {
+        if (button.dataset.planLayoutMode === state.plannerLayoutMode) return;
+        state.plannerLayoutMode = button.dataset.planLayoutMode;
+        renderBufferPlanner();
+      });
+    });
+    if (state.plannerLayoutMode === 'architecture') mountPlannerArchitecture(plan);
+  }
+
+  function renderWorkspaceSurface() {
+    const sourceMode = state.explorerView === 'files';
+    $('sourceTabstrip').hidden = !sourceMode;
+    $('sourceEditor').hidden = !sourceMode;
+    $('analysisTabstrip').hidden = sourceMode;
+    $('analysisToolbarHeader').hidden = sourceMode;
+    $('previewStage').hidden = sourceMode;
+    document.querySelector('[data-ide-toggle="terminal"]').hidden = sourceMode;
+    $('railTerminalToggle').hidden = sourceMode;
+    $('statusStrip').parentElement.hidden = sourceMode;
+    $('sourcePlannerBody').hidden = !sourceMode;
+    $('analysisInspectorBody').hidden = sourceMode;
+    $('inspectorTitle').textContent = sourceMode ? 'Buffer 规划' : '诊断与详情';
+    $('inspectorMeta').textContent = sourceMode ? 'STATIC · 未编译' : `${findings.length} 条`;
+    if (sourceMode) {
+      renderSourceEditor();
+      renderBufferPlanner();
+    } else {
+      plannerArchController?.destroy?.();
+      plannerArchController = null;
+    }
+  }
+
+  function renderFileTree() {
     const host = $('explorerBody');
     host.innerHTML = '';
+    $('explorerTitle').textContent = 'Ascend C 工程';
+    $('explorerMeta').textContent = 'WORKSPACE';
+
+    const tree = document.createElement('div');
+    tree.className = 'mv-tree';
+    tree.setAttribute('role', 'tree');
+
+    const appendNodes = (nodes, depth) => {
+      nodes.forEach((node) => {
+        const folder = node.type === 'folder';
+        const expanded = folder && state.expandedFolders.has(node.id);
+        const row = document.createElement('button');
+        row.type = 'button';
+        row.className = `mv-tree-row${node.id === 'root' ? ' is-root' : ''}${!folder && state.selectedFile === node.id ? ' is-selected' : ''}`;
+        row.style.setProperty('--mv-tree-depth', String(depth));
+        row.setAttribute('role', 'treeitem');
+        row.dataset.nodeId = node.id;
+        if (folder) row.setAttribute('aria-expanded', String(expanded));
+        row.innerHTML = `${folder
+          ? '<svg class="mv-tree-chevron" viewBox="0 0 16 16" aria-hidden="true"><path d="m4 6 4 4 4-4" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"></path></svg>'
+          : '<span class="mv-tree-spacer"></span>'}
+          ${treeIcon(node.type)}<span class="mv-tree-name">${F.escapeHtml(node.label)}</span>${node.source ? '<span class="mv-tree-meta">KERNEL</span>' : ''}`;
+        row.addEventListener('click', () => {
+          if (folder) {
+            if (expanded) state.expandedFolders.delete(node.id);
+            else state.expandedFolders.add(node.id);
+          } else {
+            state.selectedFile = node.id;
+            state.selectedAllocId = null;
+            state.selectedEventId = null;
+            state.selectedFindingId = null;
+          }
+          renderFileTree();
+          if (!folder && node.source) {
+            renderSourceEditor();
+            renderBufferPlanner();
+            if ($('inspectorPane').hidden) $('topInspectorToggle').click();
+          }
+        });
+        tree.appendChild(row);
+        if (folder && expanded) appendNodes(node.children || [], depth + 1);
+      });
+    };
+
+    appendNodes(ASCEND_C_PROJECT, 0);
+    host.appendChild(tree);
+  }
+
+  function renderTilingCandidates() {
+    const host = $('explorerBody');
+    host.innerHTML = '';
+    $('explorerTitle').textContent = '算子与 Tiling';
     $('explorerMeta').textContent = chip.name;
 
     const info = document.createElement('div');
@@ -248,12 +813,16 @@
       btn.addEventListener('click', () => {
         if (state.runId === item.id) return;
         selectRun(item.id);
-        syncPlaybackRange();
         render();
       });
       list.appendChild(btn);
     });
     group.appendChild(list);
+  }
+
+  function renderExplorer() {
+    if (state.explorerView === 'tiling') renderTilingCandidates();
+    else renderFileTree();
   }
 
   // ---------------------------------------------------------------
@@ -511,7 +1080,6 @@
   }
 
   function render() {
-    $('kernelName').textContent = `${run.kernel.name} · ${run.label}`;
     document.querySelectorAll('#viewTabs .tab-control-item').forEach((tab) => {
       const active = tab.dataset.view === state.view;
       tab.classList.toggle('is-selected', active);
@@ -520,11 +1088,11 @@
     renderLegend();
     renderExplorer();
     renderFindings();
+    renderWorkspaceSurface();
     renderDetail();
     renderTerminal();
     renderStatus();
     renderViews();
-    syncPlaybackUi();
   }
 
   function redrawViews() {
@@ -536,7 +1104,7 @@
   }
 
   // ---------------------------------------------------------------
-  // 播放条（floating-playback-control）
+  // 时间游标
   // ---------------------------------------------------------------
   function setTick(next) {
     const clamped = Math.max(0, Math.min(run.totalTicks, Math.round(next)));
@@ -544,115 +1112,95 @@
     state.tick = clamped;
     renderStatus();
     renderViews();
-    syncPlaybackUi();
-  }
-
-  function initPlayback() {
-    const helper = global.PtoFloatingPlaybackControl;
-    const mount = $('playbackMount');
-    const ids = {
-      shell: 'mv-pb-shell', toggle: 'mv-pb-toggle',
-      collapsedButton: 'mv-pb-collapsed', collapsedIcon: 'mv-pb-collapsed-icon',
-      controls: 'mv-pb-controls', stepBack: 'mv-pb-back', play: 'mv-pb-play',
-      stepForward: 'mv-pb-fwd', replay: 'mv-pb-replay', scrubber: 'mv-pb-scrubber',
-      scrubberLabel: 'mv-pb-label', scrubberOpname: 'mv-pb-opname', scrubberHover: 'mv-pb-hover',
-    };
-    const control = helper.createControl({ ids, className: 'pto-ide-frame__floating-playback' });
-    mount.appendChild(control);
-
-    const scrubber = $(ids.scrubber);
-    const counter = $(ids.scrubberLabel);
-    const opname = $(ids.scrubberOpname);
-    const stepBack = $(ids.stepBack);
-    const play = $(ids.play);
-    const stepForward = $(ids.stepForward);
-    const replay = $(ids.replay);
-
-    const instance = helper.init({ root: control, ...ids, isPlaying: () => state.playing });
-    helper.initScrubberHover?.({
-      root: control,
-      totalSteps: run.totalTicks + 1,
-      getLabelForStep: (step) => `#${step}`,
-    });
-
-    const setPlaying = (next) => {
-      state.playing = next;
-      clearInterval(playTimer);
-      if (next) {
-        playTimer = setInterval(() => {
-          if (state.tick >= run.totalTicks) { setPlaying(false); return; }
-          setTick(state.tick + Math.max(1, Math.round(run.totalTicks / 120)));
-        }, 40);
-      }
-      syncPlaybackUi();
-    };
-
-    play?.addEventListener('click', () => setPlaying(!state.playing));
-    stepBack?.addEventListener('click', () => { setPlaying(false); setTick(state.tick - 1); });
-    stepForward?.addEventListener('click', () => { setPlaying(false); setTick(state.tick + 1); });
-    replay?.addEventListener('click', () => { setPlaying(false); setTick(0); });
-    scrubber?.addEventListener('input', () => { setPlaying(false); setTick(Number(scrubber.value)); });
-
-    playback = { control, instance, scrubber, counter, opname, play, setPlaying };
-    syncPlaybackRange();
-  }
-
-  function syncPlaybackRange() {
-    if (!playback) return;
-    playback.scrubber.min = '0';
-    playback.scrubber.max = String(run.totalTicks);
-  }
-
-  function eventAtTick(tick) {
-    return run.events.find((e) => tick >= e.t && tick < e.end) || null;
-  }
-
-  function syncPlaybackUi() {
-    if (!playback) return;
-    const helper = global.PtoFloatingPlaybackControl;
-    playback.scrubber.value = String(state.tick);
-    playback.counter.textContent = `${state.tick} / ${run.totalTicks}`;
-    const active = eventAtTick(state.tick);
-    playback.opname.textContent = active ? `${active.pipe} · ${active.label}` : '空闲';
-    if (playback.play && helper.iconLabel) {
-      playback.play.innerHTML = state.playing
-        ? helper.iconLabel('pause', 'Pause')
-        : helper.iconLabel('play', 'Play');
-    }
-    playback.instance?.sync?.({ playing: state.playing });
   }
 
   // ---------------------------------------------------------------
   // 面板开关（顶栏按钮镜像 activity rail 的行为）
   // ---------------------------------------------------------------
   function bindPanelToggles() {
-    const railExplorer = document.querySelector('.pto-ide-frame__activity-rail [data-ide-toggle="explorer"]');
+    const explorerCollapseControl = $('explorerCollapseControl');
+    const railExplorer = $('railFilesToggle');
+    const railTiling = $('railTilingToggle');
+    const explorerPane = $('explorerPane');
     const topExplorer = $('topExplorerToggle');
-    topExplorer.addEventListener('click', () => {
-      railExplorer.click();
-      const pressed = railExplorer.getAttribute('aria-pressed') === 'true';
-      topExplorer.classList.toggle('is-selected', pressed);
-      topExplorer.setAttribute('aria-pressed', String(pressed));
-      topExplorer.setAttribute('aria-expanded', String(pressed));
-      window.requestAnimationFrame(redrawViews);
-    });
-
     const inspectorPane = $('inspectorPane');
     const topInspector = $('topInspectorToggle');
-    const toggleInspector = () => {
-      const nextHidden = !inspectorPane.hidden;
-      inspectorPane.hidden = nextHidden;
-      inspectorPane.setAttribute('aria-hidden', String(nextHidden));
+    const bottomDock = $('bottomDock');
+
+    const setInspectorVisible = (visible) => {
+      inspectorPane.hidden = !visible;
+      inspectorPane.setAttribute('aria-hidden', String(!visible));
       const gutter = inspectorPane.previousElementSibling;
-      if (gutter?.classList.contains('pto-workbench-shell__split-gutter')) gutter.hidden = nextHidden;
-      topInspector.classList.toggle('is-selected', !nextHidden);
-      topInspector.setAttribute('aria-pressed', String(!nextHidden));
-      topInspector.setAttribute('aria-expanded', String(!nextHidden));
+      if (gutter?.classList.contains('pto-workbench-shell__split-gutter')) gutter.hidden = !visible;
+      topInspector.classList.toggle('is-selected', visible);
+      topInspector.setAttribute('aria-pressed', String(visible));
+      topInspector.setAttribute('aria-expanded', String(visible));
       frameController?.refresh?.();
       window.requestAnimationFrame(redrawViews);
     };
+
+    const setBottomDockVisible = (visible) => {
+      bottomDock.hidden = !visible;
+      bottomDock.setAttribute('aria-hidden', String(!visible));
+      const gutter = bottomDock.previousElementSibling;
+      if (gutter?.classList.contains('pto-workbench-shell__split-gutter')) gutter.hidden = !visible;
+      frameController?.refresh?.();
+      window.requestAnimationFrame(redrawViews);
+    };
+    const syncExplorerNavigation = () => {
+      const expanded = !explorerPane.hidden;
+      railExplorer.classList.toggle('is-selected', expanded && state.explorerView === 'files');
+      railExplorer.setAttribute('aria-pressed', String(expanded && state.explorerView === 'files'));
+      railExplorer.setAttribute('aria-expanded', String(expanded));
+      railTiling.classList.toggle('is-selected', expanded && state.explorerView === 'tiling');
+      railTiling.setAttribute('aria-pressed', String(expanded && state.explorerView === 'tiling'));
+      railTiling.setAttribute('aria-expanded', String(expanded));
+      topExplorer.classList.toggle('is-selected', expanded);
+      topExplorer.setAttribute('aria-pressed', String(expanded));
+      topExplorer.setAttribute('aria-expanded', String(expanded));
+    };
+
+    railExplorer.addEventListener('click', () => {
+      const collapseCurrent = state.explorerView === 'files' && !explorerPane.hidden;
+      if (collapseCurrent || explorerPane.hidden) explorerCollapseControl.click();
+      state.explorerView = 'files';
+      state.selectedFile = 'kernel_cpp';
+      state.selectedAllocId = null;
+      state.selectedEventId = null;
+      state.selectedFindingId = null;
+      render();
+      setInspectorVisible(true);
+      setBottomDockVisible(false);
+      syncExplorerNavigation();
+      window.requestAnimationFrame(redrawViews);
+    });
+
+    railTiling.addEventListener('click', () => {
+      const collapseCurrent = state.explorerView === 'tiling' && !explorerPane.hidden;
+      if (collapseCurrent || explorerPane.hidden) explorerCollapseControl.click();
+      state.explorerView = 'tiling';
+      state.selectedAllocId = null;
+      state.selectedEventId = null;
+      state.selectedFindingId = null;
+      render();
+      setInspectorVisible(true);
+      setBottomDockVisible(true);
+      syncExplorerNavigation();
+      window.requestAnimationFrame(redrawViews);
+    });
+
+    topExplorer.addEventListener('click', () => {
+      explorerCollapseControl.click();
+      syncExplorerNavigation();
+      window.requestAnimationFrame(redrawViews);
+    });
+
+    const toggleInspector = () => {
+      setInspectorVisible(inspectorPane.hidden);
+    };
     topInspector.addEventListener('click', toggleInspector);
     $('railDiagnosticsToggle').addEventListener('click', () => {
+      if (state.explorerView !== 'tiling') $('railTilingToggle').click();
       if (inspectorPane.hidden) toggleInspector();
       $('findingList').firstElementChild?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
     });
@@ -662,6 +1210,9 @@
       document.querySelector('[data-ide-toggle="terminal"]')?.click();
       window.requestAnimationFrame(redrawViews);
     });
+
+    setInspectorVisible(true);
+    setBottomDockVisible(false);
   }
 
   function bindTabs() {
@@ -680,6 +1231,7 @@
       setTick(region.peakTick);
     });
     $('gotoIssue').addEventListener('click', () => {
+      if (state.explorerView !== 'tiling') $('railTilingToggle').click();
       const first = findings.find((f) => f.severity === 'danger') || findings[0];
       if (!first) return;
       state.selectedFindingId = first.id;
@@ -694,9 +1246,8 @@
   function bindKeyboard() {
     window.addEventListener('keydown', (event) => {
       if (event.target.matches('input, textarea')) return;
-      if (event.key === 'ArrowRight') { playback?.setPlaying(false); setTick(state.tick + (event.shiftKey ? 10 : 1)); event.preventDefault(); }
-      if (event.key === 'ArrowLeft') { playback?.setPlaying(false); setTick(state.tick - (event.shiftKey ? 10 : 1)); event.preventDefault(); }
-      if (event.key === ' ') { playback?.setPlaying(!state.playing); event.preventDefault(); }
+      if (event.key === 'ArrowRight') { setTick(state.tick + (event.shiftKey ? 10 : 1)); event.preventDefault(); }
+      if (event.key === 'ArrowLeft') { setTick(state.tick - (event.shiftKey ? 10 : 1)); event.preventDefault(); }
     });
   }
 
@@ -707,6 +1258,7 @@
 
     views.layout = global.MemVizLayoutView.create($('layoutHost'), {
       onSelect: (alloc) => {
+        if (state.explorerView !== 'tiling') return;
         state.selectedAllocId = alloc ? alloc.id : null;
         state.selectedEventId = null;
         renderDetail();
@@ -723,6 +1275,7 @@
     views.lifetime = global.MemVizLifetimeView.create($('viewLifetime'));
     views.pipeline = global.MemVizPipelineView.create($('pipelineHost'), {
       onSelectEvent: (event) => {
+        if (state.explorerView !== 'tiling') return;
         state.selectedEventId = event.id;
         state.selectedAllocId = event.writes[0] || event.reads[0] || null;
         renderDetail();
@@ -739,7 +1292,6 @@
     renderChipSwitch();
     renderLayoutModeSwitch();
     renderRegionSwitch();
-    initPlayback();
     bindPanelToggles();
     bindTabs();
     bindToolbar();
