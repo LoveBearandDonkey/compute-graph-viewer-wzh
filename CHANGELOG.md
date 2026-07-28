@@ -1,5 +1,25 @@
 # PTO Changelog
 
+- 2026-07-28 `Memory-Visual/index.html`: 修复真实鼠标点击硬件 Buffer 时被画布拖拽逻辑吞掉的问题。按 `memory-architecture` 的 `data-no-pan` 交互约定标记全部可选硬件节点和着色 cell，避免 `createZoomController` 在 pointerdown 阶段阻止 click；L1/L0/UB 点击现在会实际切换底部选中项与 API 详情。
+- 2026-07-28 `Memory-Visual/index.html`: 硬件架构视图底部不再只列当前默认 UB，而是常驻平铺 UB/L1/L0A/L0B/L0C 的全部源码 Buffer；点击列表项、硬件层卡片或任一着色块统一更新硬件层、Buffer 选中态与 API 使用列表。
+- 2026-07-28 `Memory-Visual/index.html`: 修复硬件架构视图的 Buffer 命中与绘制范围。每个 UB/L1/L0A/L0B/L0C 着色块均可直接点击并打开对应 API 使用列表；网格占用改为按目标硬件 Buffer 的实际 cell 数计算，避免非 UB 区域的后续 Buffer 因范围越界而未绘制、无法选择。
+
+- 2026-07-28 `Memory-Visual/index.html`: 硬件架构模式的 buffer 详情改为与列表布局一致的连续平铺列表。选中 buffer 后扫描源码中的全部引用，逐行列出 `TPipe::InitBuffer`、`Get<T>`、`AllocTensor<T>`、`EnQue/DeQue/FreeTensor` 与声明位置，并展示 API 名、源码行和完整调用；buffer 基本信息与大小表达式也使用同一列表节奏，不再放在单一详情卡中。
+
+- 2026-07-28 `Memory-Visual/index.html`: 右侧「静态内存布局」新增「列表布局 / 硬件架构」切换。硬件模式直接调用设计系统 `memory-architecture` + AIC/AIV patterns，复用共享路由、平移缩放、节点激活和 `setBufferBlocks` API，把源码解析出的 buffer 映射到 UB/L1/L0A/L0B/L0C。点击硬件节点筛选其 buffer，点击具体 buffer 展示容量、`TQue/TBuf<QuePosition>`、buffer_num × 单份大小、对齐、源码行、`InitBuffer` 调用及大小表达式；默认 UB 选中 `gammaBuf`。
+
+- 2026-07-28 `Memory-Visual/index.html`: 源码模式新增右侧「Buffer 规划」面板。静态解析 `TQue/TBuf` 声明、`InitBuffer`、`AllocTensor` 与当前 TilingData，以目标芯片容量/对齐规格计算各 buffer 单份大小、buffer_num、对齐后占用、分层静态布局、水位与剩余容量；面板内可直接切换五组 TilingData 试算候选，芯片或候选变化后实时重算，无需编译即可提示容量安全、接近上限或超限。第二个 ICON 仍切换到原诊断/详情 inspector。
+
+- 2026-07-28 `Memory-Visual/index.html`: 移除顶栏中的当前算子与 Tiling 文本（`MatmulLayerNorm_mix · tileM=32`），顶栏中央仅保留芯片型号切换。
+
+- 2026-07-28 `Memory-Visual/index.html`: 修正源码模式的信息架构：默认第一个 ICON 下，中间编辑区直接显示 `op_kernel/matmul_layernorm_mix.cpp`，隐藏内存分析页签、工具栏、底部水位 dock、状态栏与右侧 inspector；第二个 ICON 才恢复完整分析工作区。源码编辑器新增行号及 Ascend C/C++ 语法高亮，区分预处理、类型、关键字、函数、变量、常量、数字、字符串与注释。
+
+- 2026-07-28 `Memory-Visual/index.html`: 左侧两个 ICON 明确拆成源码与分析模式。默认进入 Ascend C 工程并在右栏显示 `op_kernel/matmul_layernorm_mix.cpp` 完整源码；诊断列表默认隐藏，内存块与流水事件也不再覆盖源码。激活第二个「Tiling 候选」ICON 后才启用诊断、内存块和流水事件详情。
+
+- 2026-07-28 `Memory-Visual/index.html`: 移除左下角浮动播放组件及其资源依赖；点击 Ascend C 工程树中的 `op_kernel/matmul_layernorm_mix.cpp` 时，右侧详情面板展示完整只读算子源码，并在诊断栏被折叠时自动打开。
+
+- 2026-07-28 `Memory-Visual/index.html`: 左侧 activity rail 新增「Tiling 候选」入口，原资源管理器入口改为 Ascend C 算子工程文件树；原算子摘要与五组 tiling 候选完整迁移到新入口。两个入口复用同一 explorer 面板，并同步面板标题、选中态与折叠状态。
+
 - 2026-07-25 `Memory-Visual/`: 场景 6 落地为**产品原型 `workspace.html`**（融合与 workspace），已挂 `launch.html` 与 `launch-v2.html`（后者与单算子页并为同一张卡的两个 variant）。独立成页而非 `index.html` 的第四个页签：单算子页是核内视角（时间轴 cycle），这一页是片外视角（GM，时间轴子计算序），算子也换成融合体 `MLABlock_fused`，塞进同一页会让「焦点层级」「时间游标」同时承担两种语义。核心是 `js/workspace-planner.js`（纯函数、无 DOM，供后续 CLI/Python 复用）：MaxLive 理论下界 + 三种排序策略的装箱（`by-size` / `by-lifespan` / `by-order`，取最紧者，三个高度都进 evidence）+ 同尺寸桶内区间图着色的复用组 + `blockScope` 护栏 + 现有布局的冲突检查。三个数 current / packed / lowerBound，差距拆「策略浪费」与「装箱碎片」两段。主视图 `js/view-ws-plan.js` 用堆叠列画每个子计算真正同时存活的字节（柱顶即下界）+ 四条参考线 + 右侧留白里的差距带；GM 布局复用 `memory-reuse-viewer` 单实例做「当前 / 复用后」切换；底部 `js/view-ws-gap.js` 是六候选的三段分解对比条。诊断 `js/ws-diagnostics.js` 13 条规则，含两条 GM 独有的正确性规则（`WS_ADDR_CONFLICT` 与 `WS_CROSS_BLOCK_UNSAFE` —— 后者是生命周期完全错开、甘特图上看不出问题、但 per-block 与 shared 混用的错误）。演示算子 6 子计算 / 10 GM 张量，基线 21.5MB → 下界 10.0MB（降 53.5%），峰值刻意落在 QKV+RoPE 而非 FFN。实现中修正了方案设计 v0.1 的两处错误：手算认为 `by-lifespan` 能达下界（实测不能，纯生命周期排序会把 lifespan=0 的最大张量 `wsFfn` 推到末尾），以及「三栏并排 memory-reuse-viewer」（该 pattern 是 1013 行的整面板组件，并排必然挤成一团；且「理论下界」不是可实现的布局，用地址图画它是虚构一个不存在的地址分配）。新增 `data/fusion-source.js`、`data/fusion-runs.js`。未动 `index.html` 与既有 `js/*`。
 
 - 2026-07-25 `Memory-Visual/`: 补充**场景 6（融合算子 / 大算子的 workspace 与 GM 规划）方案设计**，新增 `场景6-workspace与GM规划-方案设计.md`。核心是把结论收敛成三个数 —— 当前上报值 `current`、仅做地址复用即可达的 `packed`、当前执行序下的理论下界 `lowerBound`（最大同时存活字节 MaxLive），并把差距拆成「策略浪费」（改分配即可，确定安全）与「装箱碎片」（要动结构）两段，避免只报一个够不着的最小值。文档给出：中间格式的向后兼容扩展（`subgraphs` 子计算实体、GM allocation 的 producer/consumers/liveSubgraphs/blockScope/aliasOf）、下界与装箱算法（DSA NP 难故只报可达值，实现 by-size 与 by-lifespan 两种排序并取优）、复用组推荐（同尺寸桶内区间图着色可证最优，跨尺寸退化为装箱）、GM 独有的跨 block 安全护栏、复用之外降低下界的三条路（原地 / 留片上 / 换序）、九条新增诊断规则、复用 `swimlane-task` 与三实例 `memory-reuse-viewer` 的第四页签视图设计（不自绘同类生命周期图，遵守其 forbiddenOverrides）、可手算复核的演示算子 `MLABlock_fused`（21.5MB → 10.0MB，峰值刻意落在 QKV+RoPE 而非 FFN）、以及 P0/P1/P2 的文件级改动清单。同时记录现状差距：`data/runs.js:719` 把 GM interval 拉平成全程、`js/view-lifetime.js:23` 过滤掉非 core 层级，是当前 GM 视图无信息的根因。
