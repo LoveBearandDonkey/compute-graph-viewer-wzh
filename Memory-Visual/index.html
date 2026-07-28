@@ -5,8 +5,7 @@
 
   首版覆盖规划文档 §4.3 的三个视图：
     1  内存布局图 + 占用水位（场景 1 buffer 规划 / 场景 2 超限定位）
-    2  生命周期与复用（场景 5 越界与复用冲突排查）
-    4  流水 × 内存联合时序（场景 3 搬运与计算重叠分析）
+    2  生命周期 × 流水联合时序（场景 3 搬运重叠 + 场景 5 复用冲突）
   左栏的 tiling 候选列表同时是场景 4「tiling 对比」的数据基础。
 
   数据等级: L2 / schema-generated / share-safe
@@ -18,7 +17,6 @@
     · patterns/ide-frame + workbench-shell —— 产品外壳、分栏、底部 dock
     · patterns/memory-architecture        —— 内存布局页签的「硬件架构」布局
       （+ patterns/aic-core-object、patterns/aiv-core-object 两个核心对象渲染器）
-    · patterns/memory-reuse-viewer        —— 生命周期与复用视图（整块复用）
     · patterns/swimlane-task              —— 流水泳道任务条与悬浮提示
     · 共享类: .btn / .tab-control / .segmented-control / .stat-chip / .pto-ide-frame__*
   本页仅新增 mv- 前缀的布局类；canvas 内的层级配色属 data-viz exemption。
@@ -39,7 +37,6 @@
 <link rel="stylesheet" href="../vendor/pto-design-system/patterns/workbench-shell/pattern.css" />
 <link rel="stylesheet" href="../vendor/pto-design-system/patterns/ide-frame/pattern.css" />
 <link rel="stylesheet" href="../vendor/pto-design-system/patterns/swimlane-task/pattern.css" />
-<link rel="stylesheet" href="../vendor/pto-design-system/patterns/memory-reuse-viewer/pattern.css" />
 <link rel="stylesheet" href="../vendor/pto-design-system/patterns/aic-core-object/pattern.css" />
 <link rel="stylesheet" href="../vendor/pto-design-system/patterns/aiv-core-object/pattern.css" />
 <link rel="stylesheet" href="../vendor/pto-design-system/patterns/memory-architecture/pattern.css" />
@@ -213,6 +210,7 @@ body {
 
 /* ---- 主视图区 ---- */
 .mv-toolbar { display: flex; align-items: center; gap: var(--space-3); flex-wrap: wrap; width: 100%; }
+#analysisToolbarHeader { flex: 0 0 auto; min-height: 0; padding-block: var(--space-2); }
 .mv-toolbar-spacer { flex: 1 1 auto; }
 .mv-legend { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
 .mv-legend-item { display: flex; align-items: center; gap: 5px; font: 500 10px/1.2 var(--font-sans); color: var(--foreground-muted); }
@@ -407,11 +405,10 @@ body {
                 </div>
                 <div class="pto-ide-frame__pane-body mv-source-editor" id="sourceEditor" aria-label="matmul_layernorm_mix.cpp 源码"></div>
 
-                <div class="pto-ide-frame__tabstrip mv-analysis-chrome" data-ide-slot="preview-tabs" id="analysisTabstrip" hidden>
+                <div class="pto-ide-frame__tabstrip mv-analysis-chrome" id="analysisTabstrip" hidden>
                   <div class="tab-control" role="tablist" id="viewTabs">
                     <button class="tab-control-item is-selected" type="button" role="tab" data-view="layout" aria-selected="true">内存布局</button>
-                    <button class="tab-control-item" type="button" role="tab" data-view="lifetime" aria-selected="false">生命周期与复用</button>
-                    <button class="tab-control-item" type="button" role="tab" data-view="pipeline" aria-selected="false">流水 × 内存</button>
+                    <button class="tab-control-item" type="button" role="tab" data-view="pipeline" aria-selected="false">生命周期 × 流水</button>
                   </div>
                 </div>
                 <header class="pto-ide-frame__pane-header mv-analysis-chrome" id="analysisToolbarHeader" hidden>
@@ -432,12 +429,10 @@ body {
                     <div id="layoutHost" style="position:relative"></div>
                     <div class="mv-arch-host" id="archHost"></div>
                   </div>
-                  <div class="mv-view" id="viewLifetime" role="tabpanel"></div>
                   <div class="mv-view mv-view--scroll" id="viewPipeline" role="tabpanel">
                     <p class="mv-view-note">
-                      上半是六条流水线，下半是焦点层级在同一时间轴上的占用。橙色斜纹是可归因到 buffer 未释放的等待段 ——
-                      如果搬运泳道和计算泳道错不开，且占用曲线始终贴着单份 buffer 的高度，说明 double buffer 没有生效。
-                      点击空白处可移动时间游标。
+                      上半是流水泳道，下半是同一时间轴上的 Buffer 生命周期。横轴是 cycle，纵轴是内存大小与地址偏移；
+                      矩形宽度表示存活时间，高度表示实际占用大小。复用同一地址的 Buffer 会在同一纵向区间前后接续。
                     </p>
                     <div id="pipelineHost" style="position:relative"></div>
                   </div>
@@ -507,7 +502,6 @@ body {
 <script src="../vendor/pto-design-system/patterns/workbench-shell/pattern.js"></script>
 <script src="../vendor/pto-design-system/patterns/ide-frame/pattern.js"></script>
 <script src="../vendor/pto-design-system/patterns/swimlane-task/pattern.js"></script>
-<script src="../vendor/pto-design-system/patterns/memory-reuse-viewer/pattern.js"></script>
 <!-- 硬件架构布局：核心对象渲染器必须先于 memory-architecture 加载 -->
 <script src="../vendor/pto-design-system/patterns/aiv-core-object/pattern.js"></script>
 <script src="../vendor/pto-design-system/patterns/aic-core-object/pattern.js"></script>
@@ -522,7 +516,6 @@ body {
 <script src="js/diagnostics.js"></script>
 <script src="js/view-layout.js"></script>
 <script src="js/view-arch.js"></script>
-<script src="js/view-lifetime.js"></script>
 <script src="js/view-pipeline.js"></script>
 <script src="js/view-watermark.js"></script>
 <script src="js/app.js"></script>

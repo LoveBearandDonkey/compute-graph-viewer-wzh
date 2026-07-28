@@ -2,7 +2,8 @@
   视图 C —— 流水 × 内存 联合时序（规划文档 §4.3-4）
   ------------------------------------------------------------------
   上半是 MTE1/MTE2/MTE3 + Cube/FixPipe/Vector 六条泳道，下半是同一时间轴上的
-  内存占用曲线。判断 double buffer 到底有没有生效，靠的就是这两半的对齐关系：
+  Buffer 生命周期空间图（横轴 cycle，纵轴地址与大小）。判断 double buffer 到底有没有生效，
+  靠的就是这两半的对齐关系：
   如果搬运泳道的色块和计算泳道的色块在时间上错不开，占用曲线又始终贴着单份
   buffer 的高度，那 ping-pong 就是没生效。
 
@@ -20,8 +21,8 @@
   const AXIS_H = 26;
   const LANE_H = 30;
   const BAR_H = 18;
-  const CHART_H = 128;
-  const CHART_GAP = 18;
+  const CHART_H = 220;
+  const CHART_GAP = 28;
 
   function withAlpha(hex, alpha) {
     const value = String(hex || '#888').replace('#', '');
@@ -44,7 +45,7 @@
       const rect = canvas.getBoundingClientRect();
       const x = event.clientX - rect.left;
       const y = event.clientY - rect.top;
-      return hitboxes.find((b) => x >= b.x && x <= b.x + b.w && y >= b.y && y <= b.y + b.h) || null;
+      return hitboxes.slice().reverse().find((b) => x >= b.x && x <= b.x + b.w && y >= b.y && y <= b.y + b.h) || null;
     }
 
     // 悬浮提示复用 swimlane-task 的 tooltip 外壳，只替换内容格式（getTooltipHtml）
@@ -55,6 +56,19 @@
       bounds: container,
       getTask: (target, event) => hitAt(event)?.task || null,
       getTooltipHtml: (task) => {
+        if (task.allocation) {
+          const a = task.allocation;
+          const interval = task.interval;
+          const reuse = a.reuseOf ? state.allocById.get(a.reuseOf)?.name || a.reuseOf : '';
+          return `
+            <div class="mv-tip__title">${F.escapeHtml(a.name)}</div>
+            <div class="mv-tip__row"><span>生命周期</span><b>${F.tick(interval.start)} – ${F.tick(interval.end)}</b></div>
+            <div class="mv-tip__row"><span>内存大小</span><b>${F.bytes(a.size)}</b></div>
+            <div class="mv-tip__row"><span>地址区间</span><b>${F.bytes(a.offset)} – ${F.bytes(a.offset + a.size)}</b></div>
+            ${reuse ? `<div class="mv-tip__row"><span>复用地址</span><b>${F.escapeHtml(reuse)}</b></div>` : ''}
+            <div class="mv-tip__src">${F.escapeHtml(a.src.file)}:${(a.src.hotLine || 0) + 1}</div>
+          `;
+        }
         const e = task.event;
         const writes = e.writes.map((id) => state.allocById.get(id)?.name).filter(Boolean).join(', ');
         const reads = e.reads.map((id) => state.allocById.get(id)?.name).filter(Boolean).join(', ');
@@ -75,7 +89,10 @@
 
     function draw() {
       if (!state) return;
-      const { run, metrics, tick, focusRegionId, highlightEventIds, selectedEventId } = state;
+      const {
+        run, metrics, tick, focusRegionId, highlightEventIds, selectedEventId,
+        highlightIds, conflictIds, selectedAllocId,
+      } = state;
       const pipes = metrics.pipes;
       const cssWidth = container.clientWidth;
       const cssHeight = AXIS_H + pipes.length * LANE_H + CHART_GAP + CHART_H + AXIS_H;
@@ -152,11 +169,11 @@
         });
       });
 
-      // ---- 占用曲线 ----
+      // ---- Buffer 生命周期：横轴时间，纵轴内存地址 / 大小 ----
       const region = metrics.regionById[focusRegionId] || metrics.regions[0];
       const chartTop = AXIS_H + pipes.length * LANE_H + CHART_GAP;
       const chartBottom = chartTop + CHART_H;
-      const scale = Math.max(region.capacity, region.reserved);
+      const scale = Math.max(1, region.capacity, region.reserved);
       const yOf = (bytes) => chartBottom - (bytes / scale) * CHART_H;
 
       ctx.fillStyle = T['surface-2'];
@@ -165,10 +182,26 @@
 
       ctx.font = `600 11px ${T['font-sans']}`;
       ctx.fillStyle = T['foreground-secondary'];
-      ctx.fillText(`${region.id} 占用`, 0, chartTop + 12);
+      ctx.fillText(`${region.id} 生命周期`, 0, chartTop - 8);
       ctx.font = `500 9px ${T['font-mono']}`;
       ctx.fillStyle = T['foreground-disabled'];
-      ctx.fillText(F.bytes(region.capacity), 0, chartTop + 26);
+      ctx.fillText('内存大小', 0, chartTop + 10);
+
+      // 纵轴刻度：每个生命周期块的高度就是实际占用字节数。
+      ctx.textAlign = 'right';
+      [0, 0.25, 0.5, 0.75, 1].forEach((ratio) => {
+        const bytes = scale * ratio;
+        const y = yOf(bytes);
+        ctx.strokeStyle = T['border-subtle'];
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.moveTo(PAD_L, y);
+        ctx.lineTo(PAD_L + plotW, y);
+        ctx.stroke();
+        ctx.fillStyle = T['foreground-muted'];
+        ctx.fillText(F.bytes(bytes), PAD_L - 7, y + (ratio === 0 ? -3 : 3));
+      });
+      ctx.textAlign = 'left';
 
       // 容量线
       const capY = yOf(region.capacity);
@@ -178,38 +211,53 @@
       ctx.moveTo(PAD_L, capY);
       ctx.lineTo(PAD_L + plotW, capY);
       ctx.stroke();
-      // 静态预留线
-      const resY = yOf(region.reserved);
-      ctx.strokeStyle = withAlpha(region.accent, 0.75);
-      ctx.beginPath();
-      ctx.moveTo(PAD_L, resY);
-      ctx.lineTo(PAD_L + plotW, resY);
-      ctx.stroke();
       ctx.setLineDash([]);
 
-      // 实际持有面积
-      ctx.beginPath();
-      ctx.moveTo(PAD_L, chartBottom);
-      for (let t = 0; t <= total; t += 1) {
-        ctx.lineTo(xOf(t), yOf(region.series[t] || 0));
-      }
-      ctx.lineTo(PAD_L + plotW, chartBottom);
-      ctx.closePath();
-      ctx.fillStyle = withAlpha(region.accent, 0.34);
-      ctx.fill();
-      ctx.beginPath();
-      for (let t = 0; t <= total; t += 1) {
-        const x = xOf(t);
-        const y = yOf(region.series[t] || 0);
-        if (t === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
-      }
-      ctx.strokeStyle = region.accent;
-      ctx.lineWidth = 1.5;
-      ctx.stroke();
+      region.allocations.forEach((alloc, allocIndex) => {
+        alloc.intervals.forEach((interval) => {
+          const x = xOf(interval.start);
+          const width = Math.max(2, xOf(interval.end) - x);
+          const actualTop = yOf(alloc.offset + alloc.size);
+          const actualBottom = yOf(alloc.offset);
+          const height = Math.max(3, actualBottom - actualTop);
+          const y = actualBottom - height;
+          const selected = alloc.id === selectedAllocId;
+          const highlighted = highlightIds.has(alloc.id);
+          const conflicting = conflictIds.has(alloc.id);
+          const reused = !!alloc.reuseOf || !!alloc.manualReuse;
+
+          ctx.fillStyle = conflicting
+            ? withAlpha(T.danger, 0.72)
+            : withAlpha(region.accent, selected || highlighted ? 0.82 : 0.48 + (allocIndex % 3) * 0.1);
+          KIT.roundRect(ctx, x, y, width, height, Math.min(3, height / 2));
+          ctx.fill();
+
+          ctx.strokeStyle = selected ? T.foreground : (reused ? T.warning : withAlpha(region.accent, 0.9));
+          ctx.lineWidth = selected ? 2 : 1;
+          ctx.setLineDash(reused ? [4, 3] : []);
+          KIT.roundRect(ctx, x + 0.5, y + 0.5, Math.max(1, width - 1), Math.max(1, height - 1), Math.min(3, height / 2));
+          ctx.stroke();
+          ctx.setLineDash([]);
+
+          if (width > 48 && height >= 10) {
+            ctx.save();
+            ctx.beginPath();
+            ctx.rect(x + 3, y + 1, width - 6, height - 2);
+            ctx.clip();
+            ctx.fillStyle = T.foreground;
+            ctx.font = `600 9px ${T['font-mono']}`;
+            ctx.fillText(alloc.name, x + 5, y + Math.min(height - 2, 11));
+            ctx.restore();
+          }
+
+          hitboxes.push({
+            kind: 'allocation', x, y, w: width, h: height,
+            task: { allocation: alloc, interval, label: alloc.name },
+          });
+        });
+      });
 
       ctx.font = `500 9px ${T['font-mono']}`;
-      ctx.fillStyle = withAlpha(region.accent, 0.95);
-      ctx.fillText(`预留 ${F.bytes(region.reserved)}`, PAD_L + 6, resY - 4);
       ctx.fillStyle = region.reserved > region.capacity ? T.danger : T['foreground-muted'];
       ctx.fillText(`容量 ${F.bytes(region.capacity)}`, PAD_L + 6, capY + 11);
 
@@ -233,6 +281,7 @@
 
     function onClick(event) {
       const hit = hitAt(event);
+      if (hit?.kind === 'allocation') { options.onSelectAllocation?.(hit.task.allocation); return; }
       if (hit) { options.onSelectEvent?.(hit.task.event); return; }
       // 空白处点击 = 把时间游标拖到该位置
       const rect = canvas.getBoundingClientRect();
@@ -255,9 +304,11 @@
     return {
       update(next) {
         state = {
-          highlightEventIds: new Set(),
           allocById: new Map((next.run?.allocations || []).map((a) => [a.id, a])),
           ...next,
+          highlightEventIds: new Set(next.highlightEventIds || []),
+          highlightIds: new Set(next.highlightIds || []),
+          conflictIds: new Set(next.conflictIds || []),
         };
         draw();
       },

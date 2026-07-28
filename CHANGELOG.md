@@ -1,5 +1,6 @@
 # PTO Changelog
 
+- 2026-07-28 `Memory-Visual/index.html`: 合并第二个 ICON 下的“生命周期与复用”和“流水 × 内存”为“生命周期 × 流水”联合页。上半区保留六条流水泳道，下半区改成与其共享 cycle 横轴的 Buffer 生命周期图；纵轴表示内存地址/大小，矩形宽度编码存活时间、高度编码实际字节数，同地址复用通过相同纵向区间与虚线边界表达。生命周期块支持悬浮查看周期、大小、地址和复用来源，并可点击联动右侧详情；同时移除导致分析页签被工具栏覆盖的错误 preview-slot 标记。
 - 2026-07-28 `Memory-Visual/index.html`: 修复真实鼠标点击硬件 Buffer 时被画布拖拽逻辑吞掉的问题。按 `memory-architecture` 的 `data-no-pan` 交互约定标记全部可选硬件节点和着色 cell，避免 `createZoomController` 在 pointerdown 阶段阻止 click；L1/L0/UB 点击现在会实际切换底部选中项与 API 详情。
 - 2026-07-28 `Memory-Visual/index.html`: 硬件架构视图底部不再只列当前默认 UB，而是常驻平铺 UB/L1/L0A/L0B/L0C 的全部源码 Buffer；点击列表项、硬件层卡片或任一着色块统一更新硬件层、Buffer 选中态与 API 使用列表。
 - 2026-07-28 `Memory-Visual/index.html`: 修复硬件架构视图的 Buffer 命中与绘制范围。每个 UB/L1/L0A/L0B/L0C 着色块均可直接点击并打开对应 API 使用列表；网格占用改为按目标硬件 Buffer 的实际 cell 数计算，避免非 UB 区域的后续 Buffer 因范围越界而未绘制、无法选择。
