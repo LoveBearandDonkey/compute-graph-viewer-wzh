@@ -461,6 +461,16 @@
       transition: opacity 140ms ease;
     }
 
+    .format-layout-arrows .format-reading-chevron {
+      fill: none;
+      stroke: #fff;
+      stroke-width: 2.4px;
+      vector-effect: non-scaling-stroke;
+      stroke-linecap: round;
+      stroke-linejoin: round;
+      filter: drop-shadow(0 1px 1px rgba(3, 5, 14, .78));
+    }
+
     .format-layout-arrows .format-fractal-outline.is-reading-block {
       fill: color-mix(in srgb, var(--primary) 11%, transparent);
       stroke: color-mix(in srgb, var(--primary-hover) 92%, white);
@@ -8331,13 +8341,27 @@
           const pathPoints = points.slice();
           pathPoints[0] = start;
           pathPoints[pathPoints.length - 1] = end;
-          return { first, start, end, left, right, top, bottom, path: buildRoundedPath(pathPoints, 24) };
+          const pointAlong = (a, b, distance) => {
+            const dx = b[0] - a[0]; const dy = b[1] - a[1]; const length = Math.hypot(dx, dy);
+            if (!length) return { x: a[0], y: a[1], angle: 0 };
+            const ratio = Math.min(.34, distance / length);
+            return { x: a[0] + dx * ratio, y: a[1] + dy * ratio, angle: Math.atan2(dy, dx) * 180 / Math.PI };
+          };
+          const startChevron = pointAlong(pathPoints[0], pathPoints[1], 14);
+          const middleStart = pathPoints[1]; const middleEnd = pathPoints[2];
+          const middleChevron = {
+            x: (middleStart[0] + middleEnd[0]) / 2,
+            y: (middleStart[1] + middleEnd[1]) / 2,
+            angle: Math.atan2(middleEnd[1] - middleStart[1], middleEnd[0] - middleStart[0]) * 180 / Math.PI
+          };
+          return { first, start, end, left, right, top, bottom, path: buildRoundedPath(pathPoints, 24), chevrons: [startChevron, middleChevron] };
         }).sort((a, b) => a.first.sequence - b.first.sequence);
         const outlines = routes.map((route) => `<rect class="format-fractal-outline"${route.first.blockId ? ` data-rt-format-block-outline="${route.first.blockId}"` : ''} x="${route.left}" y="${route.top}" width="${route.right - route.left}" height="${route.bottom - route.top}" rx="10" style="stroke-width:${stableStroke}px"></rect>`).join('');
-        const arrowMarker = `<defs><marker id="format-reading-arrow" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="4" markerHeight="4" markerUnits="strokeWidth" orient="auto"><polygon points="0,0 8,4 0,8" fill="rgba(255,255,255,.98)"></polygon></marker></defs>`;
-        const paths = routes.map((route) => `<path class="format-fractal-path" d="${route.path}" marker-mid="url(#format-reading-arrow)" marker-end="url(#format-reading-arrow)" style="stroke-width:${stableStroke}px"></path>`).join('');
-        const connectors = routes.slice(0, -1).map((route, index) => { const next = routes[index + 1]; return `<path class="format-fractal-connector" d="M ${route.end[0]} ${route.end[1]} L ${next.start[0]} ${next.start[1]}" marker-end="url(#format-reading-arrow)" style="stroke-width:${stableStroke}px"></path>`; }).join('');
-        return `${arrowMarker}${outlines}${paths}${connectors}`;
+        const paths = routes.map((route) => `<path class="format-fractal-path" d="${route.path}" style="stroke-width:${stableStroke}px"></path>`).join('');
+        const connectors = routes.slice(0, -1).map((route, index) => { const next = routes[index + 1]; return `<path class="format-fractal-connector" d="M ${route.end[0]} ${route.end[1]} L ${next.start[0]} ${next.start[1]}" style="stroke-width:${stableStroke}px"></path>`; }).join('');
+        const chevronScale = (1 / config.matrixZoom).toFixed(3);
+        const chevrons = routes.flatMap((route) => route.chevrons).map((chevron) => `<path class="format-reading-chevron" d="M -8 -5 L -3 0 L -8 5 M -1 -5 L 4 0 L -1 5" transform="translate(${chevron.x} ${chevron.y}) rotate(${chevron.angle}) scale(${chevronScale})"></path>`).join('');
+        return `${outlines}${paths}${connectors}${chevrons}`;
       };
 
       const rtFormatPhysicalSlots = (projection) => projection.physicalSlots.map((item, offset) => {
