@@ -34,10 +34,10 @@
      ─────────────────────────────────────────────────────────────────────── */
   var CASES = {};
 
-  // ══ 问题一 · Router FP8 softmax 溢出 → 路由塌缩 → NaN + all-to-all 死锁双发 ══
+  // ══ 问题二 · Router FP8 softmax 溢出 → 路由塌缩 → NaN + all-to-all 死锁双发 ══
   CASES["moe-a2a"] = {
     meta: {
-      kicker: "问题一",
+      kicker: "问题二",
       severity: "P0",
       title: "Router 数值溢出 → 路由塌缩，同时触发 loss NaN 与 all-to-all 死锁",
       tags: ["Layer 38 · MoE Router", "精度"],
@@ -125,7 +125,7 @@
     ],
   };
 
-  /* ══ 问题二 · activation checkpoint 未开启 → 显存峰值超标 + 分配器碎片触发 OOM ══
+  /* ══ 问题一 · activation checkpoint 未开启 → 显存峰值超标 + 分配器碎片触发 OOM ══
      叙事 / 数字 = 定位链-openPangu-2.0-Flash.md 案例四 §1~§7；曲线数据源见
      training-run-twin.js 的 memoryAtStep() 与 MEM_CASE_FACTS（window.PtoTrainingTwinMemoryCase）。
      取证分布在三处，都是页面上已有的视图，不为这个案例重复造图：
@@ -146,7 +146,7 @@
   }
   CASES["mem-oom"] = {
     meta: {
-      kicker: "问题二",
+      kicker: "问题一",
       severity: "P0",
       title: "activation checkpoint 未开启 → 显存峰值超标 + 分配器碎片触发 OOM",
       tags: ["PP stage 3 · L34-45 + LM Head", "显存"],
@@ -258,9 +258,18 @@
     var title = h("div", "tw-spot__card-title");
     var tags = h("div", "tw-spot__card-tags");
     var actions = h("div", "tw-spot__card-actions");
-    // 「关闭/打开定位链指引」：只挂关闭遮罩/光洞/步进导轨/标注气泡这层视觉引导，不等同「详情」左侧的 ✕（那个会退出整个问题定位，见 exit()）
-    var guideToggleBtn = h("button", "btn btn-ghost btn-sm"); guideToggleBtn.type = "button"; guideToggleBtn.style.fontSize = "11px";
-    guideToggleBtn.textContent = "关闭定位链指引";
+    // 「定位链指引」开关：只控制遮罩/光洞/步进导轨/标注气泡与修改建议联动高亮，
+    // 不等同「详情」左侧的 ✕（那个会退出整个问题定位，见 exit()）。
+    var guideToggleBtn = h("button", "tw-spot__guide-toggle");
+    guideToggleBtn.type = "button";
+    guideToggleBtn.setAttribute("role", "switch");
+    guideToggleBtn.setAttribute("aria-checked", "true");
+    guideToggleBtn.setAttribute("aria-label", "定位链指引");
+    var guideToggleTrack = h("span", "tw-spot__guide-track");
+    guideToggleTrack.setAttribute("aria-hidden", "true");
+    guideToggleTrack.appendChild(h("span", "tw-spot__guide-thumb"));
+    guideToggleBtn.appendChild(guideToggleTrack);
+    guideToggleBtn.appendChild(h("span", "tw-spot__guide-label", "定位链指引"));
     guideToggleBtn.addEventListener("click", toggleGuide);
     // 「详情」→ 该问题的定位链长文抽屉；没有长文的问题由 applyCase 把按钮藏掉
     var detailBtn = h("button", "btn btn-ghost btn-sm"); detailBtn.type = "button"; detailBtn.textContent = "详情"; detailBtn.style.fontSize = "11px";
@@ -377,7 +386,6 @@
         fd.appendChild(row);
       });
       f.appendChild(fh); f.appendChild(fd);
-      f.addEventListener("click", openDetail);
       e.fixesBody.appendChild(f);
       return f;
     });
@@ -439,10 +447,12 @@
         linkedFirst.file + " · " + linkedFirst.title + (st.fix.length > 1 ? " 等 " + st.fix.length + " 处" : "");
     }
 
-    // 右列修复高亮
-    e.fixes.classList.toggle("has-link", st.fix.length > 0);
-    e.fixEls.forEach(function (f, k) { f.classList.toggle("is-linked", st.fix.indexOf(k) >= 0); });
-    if (st.fix.length && e.fixEls[st.fix[0]]) {
+    // 右列修复高亮仅属于定位链指引；指引关闭时各项同权。
+    e.fixes.classList.toggle("has-link", guideOn && st.fix.length > 0);
+    e.fixEls.forEach(function (f, k) {
+      f.classList.toggle("is-linked", guideOn && st.fix.indexOf(k) >= 0);
+    });
+    if (guideOn && st.fix.length && e.fixEls[st.fix[0]]) {
       try { e.fixEls[st.fix[0]].scrollIntoView({ block: "nearest", behavior: "smooth" }); } catch (x) {}
     }
 
@@ -554,16 +564,24 @@
     node.setAttribute("width", b.w); node.setAttribute("height", b.h);
   }
 
-  // 名片「关闭/打开定位链指引」：只挂关闭遮罩/光洞/步进导轨/标注气泡这层视觉引导（.is-guide-off，
-  // 见 css/training-spotlight.css），名片本身、「修改建议」栏与问题一定位（routed_expert_bank 展开/
-  // 整网图聚焦/顶栏问题卡等）都不受影响；再点一次原地恢复到当前步。
+  function syncGuideControl() {
+    if (!els || !els.guideToggleBtn) return;
+    els.guideToggleBtn.setAttribute("aria-checked", guideOn ? "true" : "false");
+    els.guideToggleBtn.title = guideOn
+      ? "关闭定位链指引"
+      : "开启定位链指引";
+  }
+
+  // 名片「定位链指引」开关：关闭遮罩/光洞/步进导轨/标注气泡，并取消修改建议关联高亮；
+  // 名片本身、修改建议栏与当前问题定位仍保留。再开启时原地恢复到当前步。
   function setGuideVisible(v) {
     guideOn = v;
     if (els) {
       els.root.classList.toggle("is-guide-off", !v);
-      if (els.guideToggleBtn) {
-        els.guideToggleBtn.textContent = v ? "关闭定位链指引" : "打开定位链指引";
-        els.guideToggleBtn.title = v ? "关闭聚光灯定位链指引，保留问题一定位" : "重新开启聚光灯定位链指引";
+      syncGuideControl();
+      if (!v) {
+        els.fixes.classList.remove("has-link");
+        els.fixEls.forEach(function (f) { f.classList.remove("is-linked"); });
       }
     }
     if (v) {
@@ -594,7 +612,7 @@
     idx = 0;
     guideOn = true;
     els.root.classList.remove("is-guide-off");
-    if (els.guideToggleBtn) { els.guideToggleBtn.textContent = "关闭定位链指引"; els.guideToggleBtn.title = "关闭聚光灯定位链指引，保留当前问题定位"; }
+    syncGuideControl();
     syncInfraCol();
     var workarea = document.querySelector(".pto-ide-frame__workarea");
     if (workarea && els.fixes && els.fixes.parentNode !== workarea) {
@@ -623,7 +641,7 @@
     if (els) {
       els.root.classList.remove("is-open");
       els.root.classList.remove("is-guide-off");
-      if (els.guideToggleBtn) { els.guideToggleBtn.textContent = "关闭定位链指引"; els.guideToggleBtn.title = "关闭聚光灯定位链指引，保留当前问题定位"; }
+      syncGuideControl();
       // 移除挤入的「修改建议」整高右列，workarea 复原为纵向单块
       var g = els.fixes && els.fixes.parentNode;
       if (g) { g.removeChild(els.fixes); g.classList && g.classList.remove("is-spot-fixes"); window.dispatchEvent(new Event("resize")); }

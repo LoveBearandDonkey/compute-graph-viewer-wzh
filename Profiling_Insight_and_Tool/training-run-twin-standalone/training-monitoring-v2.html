@@ -994,7 +994,7 @@
        weight_diff/corr)2×4 布局，故高度也恢复默认 640px，不再压缩到 384px。 */
 
     /* infra 集群图：左侧 DP 标签(绝对定位在分组左外侧)在窄列里被容器裁掉，
-       给热力图留左内边距，让 DP0~DP3 标签落回可见区域。 */
+       给热力图留左内边距，让 DP0~DP7 标签落回可见区域。 */
     .wzh-col-infra .twin-heat {
       padding-left: 32px;
     }
@@ -1345,7 +1345,7 @@
     .wzh-tm-track {
       position: relative;
       flex: none;
-      width: 168px;
+      width: 220px;
       height: 5px;
       min-width: 0;
       border-radius: var(--radius-pill, 999px);
@@ -1422,26 +1422,36 @@
     }
     .wzh-tm-track .twin-progress-marker {
       position: absolute;
-      top: -3px;
-      bottom: -3px;
-      width: 3px;
-      transform: translateX(-50%);
-      border-radius: 2px;
-      box-shadow: 0 0 0 1.5px var(--surface-1);
+      top: 50%;
+      width: 11px;
+      height: 11px;
+      display: grid;
+      place-items: center;
+      padding-bottom: 1px;
+      box-sizing: border-box;
+      transform: translate(-50%, -50%);
+      border-radius: 50%;
+      background: var(--danger, #dc2626);
+      color: #fff;
+      font: 700 8px/1 var(--font-sans, system-ui);
+      box-shadow: 0 0 0 2px var(--surface-1), 0 1px 3px rgb(0 0 0 / 0.28);
       cursor: pointer;
       z-index: 3;
-      transition: transform 120ms ease, width 120ms ease;
+      transition: transform 120ms ease, box-shadow 120ms ease;
     }
     .wzh-tm-track .twin-progress-marker::after {
       content: "";
       position: absolute;
-      top: -6px; bottom: -6px;
-      left: -6px; right: -6px;
+      top: -7px; bottom: -7px;
+      left: -7px; right: -7px;
+      border-radius: 50%;
     }
     .wzh-tm-track .twin-progress-marker:hover {
-      transform: translateX(-50%) scaleY(1.4);
-      width: 4px;
+      transform: translate(-50%, -50%) scale(1.12);
+      box-shadow: 0 0 0 2px var(--surface-1), 0 2px 5px rgb(0 0 0 / 0.35);
     }
+    .wzh-tm-track .twin-progress-marker[data-problem-num="1"] { margin-left: -2px; }
+    .wzh-tm-track .twin-progress-marker[data-problem-num="2"] { margin-left: 2px; }
     .wzh-tm-track .twin-progress-checkpoint {
       position: absolute;
       top: 1px; bottom: 1px;
@@ -2516,12 +2526,12 @@ MoE：256+1（top-8 路由 · EP 切分）">?</span>
                           <section class="twin-monitor-card" aria-label="专家负载与通信" id="wzhRouterMeshCard">
                             <div class="wzh-tab-bar">
                               <span class="seg" id="wzhRouterMeshSeg" role="tablist" aria-label="专家负载 / 通信切换">
-                                <button class="segbtn on" type="button" role="tab" aria-selected="true" aria-controls="wzhMeshPanel" data-wzh-tab="mesh">EP All-to-All（取32 EP切片）<span class="wzh-help" tabindex="0" data-tooltip="衡量什么：MoE 专家并行(EP)域内，各 EP rank 的 all-to-all dispatch/combine 收发是否对称（健康时 send≈recv）。异常信号：某个 rank 的 send/recv 严重不对称（如 send=0 但 recv 远高于基线），或大量流量汇聚到单一 rank，形成通信热点/黑洞。能做什么判断：收发不对称通常意味着该 rank 命中的专家吸收了过量 token（切换到「W_gate (Router)」页签确认是否同一专家），其余 rank 会在 all-to-all 同步点空等、MFU 骤降，不处理会演变成超时死锁——根因常为 router softmax 在低精度下溢出（FP8/FP16 下 logits>100 即可触发），需优先将 router softmax 改 FP32 计算、加 z-loss 抑制 logits 极端值、降低 router 学习率；临时延长超时兜底。">?</span></button>
-                                <button class="segbtn" type="button" role="tab" aria-selected="false" tabindex="-1" aria-controls="wzhRouterPanel" data-wzh-tab="router">W_gate (Router)<span class="wzh-help" tabindex="0" data-tooltip="衡量什么：256 个路由专家各自拿到的 token 占比，理想应接近均匀（1/256≈0.39%）。异常信号：单个专家占比远超基线、其余专家趋近于 0，说明 router 打分坍缩到少数专家（专家坍缩/路由倾斜）。能做什么判断：看到「一家独大」的分布应立即预警——该专家所在 EP rank 的 all-to-all 通信会随之暴涨，若不及时干预会演变成「EP All-to-All」页签里的通信死锁。根因常为 router softmax 低精度溢出，核心修复为 router 改 FP32 计算 + z-loss + 降 router lr，n_group 增大为辅助保障。即本页问题一的事故链路。">?</span></button>
+                                <button class="segbtn on" type="button" role="tab" aria-selected="true" aria-controls="wzhRouterPanel" data-wzh-tab="router">W_gate (Router)<span class="wzh-help" tabindex="0" data-tooltip="衡量什么：256 个路由专家各自拿到的 token 占比，理想应接近均匀（1/256≈0.39%）。异常信号：单个专家占比远超基线、其余专家趋近于 0，说明 router 打分坍缩到少数专家（专家坍缩/路由倾斜）。能做什么判断：看到「一家独大」的分布应立即预警——该专家所在 EP rank 的 all-to-all 通信会随之暴涨，若不及时干预会演变成「EP All-to-All」页签里的通信死锁。根因常为 router softmax 低精度溢出，核心修复为 router 改 FP32 计算 + z-loss + 降 router lr，n_group 增大为辅助保障。即本页问题一的事故链路。">?</span></button>
+                                <button class="segbtn" type="button" role="tab" aria-selected="false" tabindex="-1" aria-controls="wzhMeshPanel" data-wzh-tab="mesh">EP All-to-All（取32 EP切片）<span class="wzh-help" tabindex="0" data-tooltip="衡量什么：MoE 专家并行(EP)域内，各 EP rank 的 all-to-all dispatch/combine 收发是否对称（健康时 send≈recv）。异常信号：某个 rank 的 send/recv 严重不对称（如 send=0 但 recv 远高于基线），或大量流量汇聚到单一 rank，形成通信热点/黑洞。能做什么判断：收发不对称通常意味着该 rank 命中的专家吸收了过量 token（切换到「W_gate (Router)」页签确认是否同一专家），其余 rank 会在 all-to-all 同步点空等、MFU 骤降，不处理会演变成超时死锁——根因常为 router softmax 在低精度下溢出（FP8/FP16 下 logits>100 即可触发），需优先将 router softmax 改 FP32 计算、加 z-loss 抑制 logits 极端值、降低 router 学习率；临时延长超时兜底。">?</span></button>
                               </span>
                             </div>
 
-                            <div class="wzh-tab-panel" id="wzhRouterPanel" data-wzh-panel="router" hidden>
+                            <div class="wzh-tab-panel" id="wzhRouterPanel" data-wzh-panel="router">
                               <p id="wzhRouterSubtitle" hidden>Step 15203：layer 38 router 倾斜到单一专家，其余 255 个专家几乎无 token。</p>
                               <div class="wzh-router-kpis">
                                 <div class="wzh-router-kpi">
@@ -2543,19 +2553,19 @@ MoE：256+1（top-8 路由 · EP 切分）">?</span>
                               </div>
                               <svg viewBox="0 0 240 148" class="wzh-router-bar-svg" preserveAspectRatio="xMidYMid meet">
                                 <title id="wzhRouterSvgTitle">W_gate 专家负载：基线（健康 step）vs 当前（step 15203 事故）</title>
-                                <rect x="20" y="115.6" width="26" height="6.4" rx="2" fill="var(--highlight-l0a-violet-source)" opacity="0.75"/>
-                                <text x="33" y="111.6" text-anchor="middle" class="wzh-router-bar-val" fill="var(--foreground-secondary)">0.39%</text>
+                                <rect id="wzhRouterBarBaselineHotRect" x="20" y="115.6" width="26" height="6.4" rx="2" fill="var(--highlight-l0a-violet-source)" opacity="0.75"/>
+                                <text id="wzhRouterBarBaselineHotText" x="33" y="111.6" text-anchor="middle" class="wzh-router-bar-val" fill="var(--foreground-secondary)">0.39%</text>
                                 <rect id="wzhRouterBarHotRect" x="50" y="20" width="26" height="102" rx="2" fill="var(--danger)" opacity="0.95"/>
                                 <text id="wzhRouterBarHotText" x="63" y="16" text-anchor="middle" class="wzh-router-bar-val" fill="var(--danger)">98%</text>
-                                <rect x="106" y="115.6" width="26" height="6.4" rx="2" fill="var(--highlight-l0a-violet-source)" opacity="0.75"/>
-                                <text x="119" y="111.6" text-anchor="middle" class="wzh-router-bar-val" fill="var(--foreground-secondary)">0.39%</text>
+                                <rect id="wzhRouterBarBaselineRestRect" x="106" y="115.6" width="26" height="6.4" rx="2" fill="var(--highlight-l0a-violet-source)" opacity="0.75"/>
+                                <text id="wzhRouterBarBaselineRestText" x="119" y="111.6" text-anchor="middle" class="wzh-router-bar-val" fill="var(--foreground-secondary)">0.39%</text>
                                 <rect id="wzhRouterBarRestRect" x="136" y="119.2" width="26" height="2.8" rx="2" fill="var(--foreground-muted)" opacity="0.5"/>
                                 <text id="wzhRouterBarRestText" x="149" y="115.2" text-anchor="middle" class="wzh-router-bar-val" fill="var(--foreground-secondary)">0.008%</text>
                                 <line x1="12" y1="122" x2="232" y2="122" stroke="var(--border-subtle)" stroke-width="1"/>
                                 <text x="48" y="134" text-anchor="middle" class="wzh-router-bar-cat">E193</text>
                                 <text x="134" y="134" text-anchor="middle" class="wzh-router-bar-cat">其余255专家(均值)</text>
-                                <line x1="12" y1="115.6" x2="232" y2="115.6" stroke="var(--foreground-secondary)" stroke-width="1" stroke-dasharray="3 3" opacity="0.75"/>
-                                <text x="230" y="112.2" text-anchor="end" class="wzh-router-bar-cat" fill="var(--foreground-secondary)">基线</text>
+                                <line id="wzhRouterBaselineLine" x1="12" y1="115.6" x2="232" y2="115.6" stroke="var(--foreground-secondary)" stroke-width="1" stroke-dasharray="3 3" opacity="0.75"/>
+                                <text id="wzhRouterBaselineLabel" x="230" y="112.2" text-anchor="end" class="wzh-router-bar-cat" fill="var(--foreground-secondary)">基线</text>
                               </svg>
                               <div class="wzh-router-legend twin-legend">
                                 <span id="wzhRouterLegendHot"><i class="wzh-router-sw hot"></i>当前 · 命中专家</span>
@@ -2564,7 +2574,7 @@ MoE：256+1（top-8 路由 · EP 切分）">?</span>
                               <div class="wzh-router-caption" id="wzhRouterScaleCaption">高度取 sqrt 刻度以便同框显示 98% 与 0.39%/0.008%；实际差距达 4 个数量级。</div>
                             </div>
 
-                            <div class="wzh-tab-panel" id="wzhMeshPanel" data-wzh-panel="mesh">
+                            <div class="wzh-tab-panel" id="wzhMeshPanel" data-wzh-panel="mesh" hidden>
                             <p id="wzhMeshSubtitle" hidden>EP64 取 32 rank 代表性切片 · layer 38 · Step 15203</p>
                             <div class="twin-legend wzh-mesh-legend">
                               <span id="wzhMeshLegendHot"><i class="wzh-mesh-sw hot"></i>EP rank 23（异常）</span>
@@ -2783,7 +2793,7 @@ MoE：256+1（top-8 路由 · EP 切分）">?</span>
     <aside class="wzh-locate-drawer" role="dialog" aria-modal="true" aria-label="详情与修复建议">
       <header class="wzh-locate-drawer-head">
         <div>
-          <div class="wzh-locate-drawer-kicker" id="locateDrawerKicker">问题一 · 详情与修复建议</div>
+          <div class="wzh-locate-drawer-kicker" id="locateDrawerKicker">问题二 · 详情与修复建议</div>
           <div class="wzh-locate-drawer-title" id="locateDrawerTitle">Router 数值溢出 → 路由塌缩，同时触发 loss NaN 与 all-to-all 死锁</div>
         </div>
         <div class="wzh-locate-drawer-actions">
@@ -2807,11 +2817,11 @@ MoE：256+1（top-8 路由 · EP 切分）">?</span>
       // 新问题的定位链长文落地后,在这里补一行即可让它的「详情」按钮生效。
       const DRAWER_CASES = {
         "moe-a2a": {
-          kicker: "问题一 · 详情与修复建议",
+          kicker: "问题二 · 详情与修复建议",
           title: "Router 数值溢出 → 路由塌缩，同时触发 loss NaN 与 all-to-all 死锁",
         },
         "mem-oom": {
-          kicker: "问题二 · 详情与修复建议",
+          kicker: "问题一 · 详情与修复建议",
           title: "activation checkpoint 未开启 → 显存峰值超标 + 分配器碎片触发 OOM",
         },
       };
@@ -2909,6 +2919,12 @@ MoE：256+1（top-8 路由 · EP 切分）">?</span>
         svgTitle: document.getElementById('wzhRouterSvgTitle'),
         hotRect: document.getElementById('wzhRouterBarHotRect'),
         hotText: document.getElementById('wzhRouterBarHotText'),
+        baselineHotRect: document.getElementById('wzhRouterBarBaselineHotRect'),
+        baselineRestRect: document.getElementById('wzhRouterBarBaselineRestRect'),
+        baselineHotText: document.getElementById('wzhRouterBarBaselineHotText'),
+        baselineRestText: document.getElementById('wzhRouterBarBaselineRestText'),
+        baselineLine: document.getElementById('wzhRouterBaselineLine'),
+        baselineLabel: document.getElementById('wzhRouterBaselineLabel'),
         restRect: document.getElementById('wzhRouterBarRestRect'),
         restText: document.getElementById('wzhRouterBarRestText'),
         legendHot: document.getElementById('wzhRouterLegendHot'),
@@ -2935,6 +2951,10 @@ MoE：256+1（top-8 路由 · EP 切分）">?</span>
         deadVal: routerEls.deadVal.textContent,
         routerSvgTitle: routerEls.svgTitle.textContent,
         hotRect: { y: routerEls.hotRect.getAttribute('y'), height: routerEls.hotRect.getAttribute('height'), fill: routerEls.hotRect.getAttribute('fill'), opacity: routerEls.hotRect.getAttribute('opacity') },
+        baselineRect: { y: routerEls.baselineHotRect.getAttribute('y'), height: routerEls.baselineHotRect.getAttribute('height') },
+        baselineTextY: routerEls.baselineHotText.getAttribute('y'),
+        baselineLineY: routerEls.baselineLine.getAttribute('y1'),
+        baselineLabelY: routerEls.baselineLabel.getAttribute('y'),
         hotText: { y: routerEls.hotText.getAttribute('y'), fill: routerEls.hotText.getAttribute('fill'), text: routerEls.hotText.textContent },
         restRect: { y: routerEls.restRect.getAttribute('y'), height: routerEls.restRect.getAttribute('height'), fill: routerEls.restRect.getAttribute('fill'), opacity: routerEls.restRect.getAttribute('opacity') },
         restText: { y: routerEls.restText.getAttribute('y'), fill: routerEls.restText.getAttribute('fill'), text: routerEls.restText.textContent },
@@ -2950,11 +2970,15 @@ MoE：256+1（top-8 路由 · EP 切分）">?</span>
         kpiVal: '0.41% · E193',
         deadVal: '0% · 0/256',
         routerSvgTitle: 'W_gate 专家负载：基线 vs 当前（训练中，负载均衡）',
-        hotRect: { y: '114.3', height: '7.7', fill: 'var(--highlight-copy-blue-source)', opacity: '0.85' },
-        hotText: { y: '110.3', fill: 'var(--foreground-secondary)', text: '0.41%' },
-        restRect: { y: '115.6', height: '6.4', fill: 'var(--highlight-copy-blue-source)', opacity: '0.85' },
-        restText: { y: '111.6', fill: 'var(--foreground-secondary)', text: '0.39%' },
-        scaleCaption: '',
+        hotRect: { y: '38', height: '84', fill: 'var(--highlight-copy-blue-source)', opacity: '0.85' },
+        hotText: { y: '34', fill: 'var(--foreground-secondary)', text: '0.41%' },
+        baselineRect: { y: '42', height: '80' },
+        baselineTextY: '38',
+        baselineLineY: '42',
+        baselineLabelY: '38',
+        restRect: { y: '42', height: '80', fill: 'var(--highlight-copy-blue-source)', opacity: '0.85' },
+        restText: { y: '38', fill: 'var(--foreground-secondary)', text: '0.39%' },
+        scaleCaption: '健康态按当前负载区间自适应缩放，充分展示 0.39%–0.41% 的细微波动。',
         meshSubtitle: 'EP64 取 32 rank 代表性切片 · layer 38 · 训练中',
         meshSvgTitle: 'EP All-to-All：32 个代表性 rank 收发对称 ≈19MB，通信正常（训练中）',
         hotRankGroupHTML: '<circle cx="478" cy="108.67" r="6" fill="color-mix(in srgb, var(--highlight-ub-green-source) 68%, transparent)" stroke="var(--border-strong)" stroke-width="1"><title>EP rank 23 · node2 GPU7 · send≈recv≈19MB · 正常</title></circle>',
@@ -3006,6 +3030,15 @@ MoE：256+1（top-8 路由 · EP 切分）">?</span>
         routerEls.svgTitle.textContent = d.routerSvgTitle;
         applyRect(routerEls.hotRect, d.hotRect);
         applyText(routerEls.hotText, d.hotText);
+        routerEls.baselineHotRect.setAttribute('y', d.baselineRect.y);
+        routerEls.baselineHotRect.setAttribute('height', d.baselineRect.height);
+        routerEls.baselineRestRect.setAttribute('y', d.baselineRect.y);
+        routerEls.baselineRestRect.setAttribute('height', d.baselineRect.height);
+        routerEls.baselineHotText.setAttribute('y', d.baselineTextY);
+        routerEls.baselineRestText.setAttribute('y', d.baselineTextY);
+        routerEls.baselineLine.setAttribute('y1', d.baselineLineY);
+        routerEls.baselineLine.setAttribute('y2', d.baselineLineY);
+        routerEls.baselineLabel.setAttribute('y', d.baselineLabelY);
         applyRect(routerEls.restRect, d.restRect);
         applyText(routerEls.restText, d.restText);
         routerEls.legendHot.style.display = isIncident ? '' : 'none';
