@@ -82,8 +82,6 @@
         state.chipId = item.id;
         loadChip(item.id);
         selectRun(state.runId);
-        views.lifetime?.destroy?.();
-        views.lifetime = global.MemVizLifetimeView.create($('viewLifetime'));
         renderChipSwitch();
         renderRegionSwitch();
         render();
@@ -160,11 +158,11 @@
       { cls: 'is-ghost', label: '预留未用' },
       { cls: 'is-warn-fill', label: '超出容量' },
     ],
-    lifetime: [],
     pipeline: [
       { cls: '', label: '流水任务' },
+      { cls: 'is-ghost', label: 'Buffer 生命周期' },
       { cls: 'is-wait', label: '可归因等待' },
-      { cls: 'is-gap', label: '启动/空闲' },
+      { cls: 'is-gap', label: '复用同一地址' },
     ],
   };
 
@@ -1038,7 +1036,7 @@
   // 视图
   // ---------------------------------------------------------------
   function renderViews() {
-    ['layout', 'lifetime', 'pipeline'].forEach((id) => {
+    ['layout', 'pipeline'].forEach((id) => {
       const el = $(`view${id[0].toUpperCase()}${id.slice(1)}`);
       el.classList.toggle('is-active', state.view === id);
     });
@@ -1066,13 +1064,14 @@
         highlightIds: marks.highlightIds,
         conflictIds: marks.conflictIds,
       });
-    } else if (state.view === 'lifetime') {
-      views.lifetime.update({ run, chip, selectedId: state.selectedAllocId });
     } else {
       views.pipeline.update({
         run, metrics, tick: state.tick,
         focusRegionId: state.focusRegionId,
         highlightEventIds: marks.highlightEventIds,
+        highlightIds: marks.highlightIds,
+        conflictIds: marks.conflictIds,
+        selectedAllocId: state.selectedAllocId,
         selectedEventId: state.selectedEventId,
       });
     }
@@ -1100,7 +1099,6 @@
     if (state.view === 'layout' && state.layoutMode === 'arch') views.arch?.redraw?.();
     views.pipeline?.redraw?.();
     views.watermark?.redraw?.();
-    views.lifetime?.redraw?.();
   }
 
   // ---------------------------------------------------------------
@@ -1272,12 +1270,18 @@
         render();
       },
     });
-    views.lifetime = global.MemVizLifetimeView.create($('viewLifetime'));
     views.pipeline = global.MemVizPipelineView.create($('pipelineHost'), {
       onSelectEvent: (event) => {
         if (state.explorerView !== 'tiling') return;
         state.selectedEventId = event.id;
         state.selectedAllocId = event.writes[0] || event.reads[0] || null;
+        renderDetail();
+        renderViews();
+      },
+      onSelectAllocation: (alloc) => {
+        if (state.explorerView !== 'tiling') return;
+        state.selectedAllocId = alloc.id;
+        state.selectedEventId = null;
         renderDetail();
         renderViews();
       },
