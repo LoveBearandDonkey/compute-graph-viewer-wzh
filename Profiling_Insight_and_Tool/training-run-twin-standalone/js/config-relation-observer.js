@@ -1769,8 +1769,8 @@
      性能语义；scope 描述“本次运行实际涉及谁”，不覆盖静态配置映射公式。 */
   const INCIDENT_GROUPS = [
     {
-      id: "problem-1",
-      name: "问题一 · Router 溢出与通信死锁",
+      id: "problem-2",
+      name: "问题二 · Router 溢出与通信死锁",
       summary: "6 个事件",
       context: { layers: [38], experts: [193], ranks: [1559], segments: ["moe"] },
       bridge: (event) => `「${event.title}」的传播源是 ${event.root}；沿“${event.path}”传导；最大影响：${event.impact}`,
@@ -1811,7 +1811,7 @@
           focus: { kind: "segment", segment: "moe", bar: "gate", scopeLayer: 38, deckNode: "gate" },
           origin: { layers: [38], segments: ["moe"] },
           propagation: { ranks: [1559] },
-          conclusion: "这是问题一的根因事件：FP8 softmax 溢出导致路由塌缩，而不是 HCCL 自身故障。",
+          conclusion: "这是问题二的根因事件：FP8 softmax 溢出导致路由塌缩，而不是 HCCL 自身故障。",
           root: "Layer 38 Router：max(logits)=1846 → exp=Inf", path: "Router → Expert 193（98% token）→ EP rank 23",
           impact: "247 个 dead expert；单点负载被放大为通信阻塞。"
         },
@@ -1826,8 +1826,8 @@
       ]
     },
     {
-      id: "problem-2",
-      name: "问题二 · 显存峰值与碎片 OOM",
+      id: "problem-1",
+      name: "问题一 · 显存峰值与碎片 OOM",
       summary: "5 个事件",
       context: {
         layers: [34,35,36,37,38,39,40,41,42,43,44,45],
@@ -1875,7 +1875,7 @@
         }
       ]
     }
-  ];
+  ].sort((a, b) => a.id.localeCompare(b.id));
 
   /* ── 页面接线 ─────────────────────────────────────────────────────────── */
   function boot() {

@@ -3,6 +3,7 @@
   "caseId": "mem-oom",
   "model": "openPangu-2.0-Flash",
   "step": 12000,
+  "incidentStep": 12003,
   "rank": 17,
   "summary": {
     "capacityGB": 64,
@@ -16,6 +17,36 @@
     "throughputBefore": 3200,
     "throughputAtPeak": 2800
   },
+  "fragmentationWindow": {
+    "startGB": 57.5,
+    "label": "OOM 前分配器碎片密集区"
+  },
+  "fragmentationMap": [
+    {"kind":"free","sizeGB":0.30},
+    {"kind":"blocker","sizeGB":0.12,"allocationId":"frag-router-indices"},
+    {"kind":"free","sizeGB":0.28},
+    {"kind":"blocker","sizeGB":0.10,"allocationId":"frag-expert-offsets"},
+    {"kind":"free","sizeGB":0.26},
+    {"kind":"blocker","sizeGB":0.14,"allocationId":"frag-dispatch-meta"},
+    {"kind":"free","sizeGB":0.24},
+    {"kind":"blocker","sizeGB":0.09,"allocationId":"frag-attn-mask"},
+    {"kind":"free","sizeGB":0.22},
+    {"kind":"blocker","sizeGB":0.11,"allocationId":"frag-expert-counts"},
+    {"kind":"free","sizeGB":0.20},
+    {"kind":"blocker","sizeGB":0.08,"allocationId":"frag-token-permute"},
+    {"kind":"free","sizeGB":0.18},
+    {"kind":"blocker","sizeGB":0.13,"allocationId":"frag-combine-workspace"},
+    {"kind":"free","sizeGB":0.12}
+  ],
+  "fragmentAllocations": [
+    {"id":"frag-router-indices","name":"layer38.router.topk_indices","kind":"activation","allocMs":1180,"freeMs":8010,"source":"modeling_openpangu.py","line":486,"stack":"topk_expert_select → router.forward → TransformerLayer.forward"},
+    {"id":"frag-expert-offsets","name":"layer38.expert_offsets","kind":"activation","allocMs":1210,"freeMs":7960,"source":"moe_router.py","line":233,"stack":"build_expert_offsets → expert_dispatch → MoELayer.forward"},
+    {"id":"frag-dispatch-meta","name":"layer38.dispatch_metadata","kind":"workspace","allocMs":1250,"freeMs":7920,"source":"moe_dispatch.py","line":174,"stack":"alloc_dispatch_metadata → all_to_all_dispatch → MoELayer.forward"},
+    {"id":"frag-attn-mask","name":"layer39.attention_mask.tmp","kind":"activation","allocMs":1540,"freeMs":7480,"source":"attention.py","line":319,"stack":"build_attention_mask → SelfAttn.forward → TransformerLayer.forward"},
+    {"id":"frag-expert-counts","name":"layer39.tokens_per_expert","kind":"activation","allocMs":1680,"freeMs":7750,"source":"moe_router.py","line":257,"stack":"bincount_experts → router.forward → MoELayer.forward"},
+    {"id":"frag-token-permute","name":"layer40.token_permute.workspace","kind":"workspace","allocMs":2030,"freeMs":7310,"source":"moe_dispatch.py","line":208,"stack":"token_permute → expert_dispatch → MoELayer.forward"},
+    {"id":"frag-combine-workspace","name":"layer40.combine.workspace","kind":"workspace","allocMs":2360,"freeMs":8240,"source":"moe_combine.py","line":141,"stack":"alloc_combine_buffer → all_to_all_combine → MoELayer.forward"}
+  ],
   "trend": [
     {"step": 4000, "reservedGB": 53, "throughput": 3200},
     {"step": 8000, "reservedGB": 54, "throughput": 3200},

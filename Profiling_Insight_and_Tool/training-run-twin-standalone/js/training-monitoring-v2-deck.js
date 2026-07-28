@@ -892,12 +892,12 @@
     var keys = METRIC_DEFS.filter(function (m) { return selectedMetrics[m.key]; }).map(function (m) { return m.key; });
     if (!keys.length) { curveSvg.innerHTML = ''; resetHoverFrame(); return; }
 
-    // 各指标一条 lane,自模型层顶部往上依次堆叠,紧贴模型层。lane 高度按条数自适应压缩,
-    // 保证多选时也不会顶出画面;抖动大部分靠"小 lane 高 + 平滑 + 阈值下限"一起压下去。
+    // 曲线组以 layer 顶边为锚点：拖拽或缩放侧视图时，两者保持固定间隔同步移动。
+    // lane 尺寸只由 viewport 和指标数量决定，不随拖拽位置变化，避免移动时曲线被挤压变形。
     var LANE_GAP = 9;
-    var anchor = Math.max(70, cardTop - 14);                 // lane 堆叠区的底(贴着卡片顶上方一点)
-    var avail = anchor - 8;                                  // 顶部留 8px
-    var laneH = clamp(avail / keys.length - LANE_GAP, 10, 20);
+    var anchor = cardTop - 14;
+    var curveBudget = Math.max(24, height * 0.30 - 8);
+    var laneH = clamp((curveBudget - LANE_GAP * Math.max(0, keys.length - 1)) / keys.length, 6, 20);
     // x0 就是曲线最左侧数据点(第0层)的真实 x,不再额外向右夹到「给标签留 96px」的固定下限——
     // 那样夹会导致缩放/平移把模型第0层拉近视口左边时,标签仍摆在夹出来的固定位置,曲线本体
     // (用未夹过的层中心 x 连线)反而画到标签底下。这里情愿让标签在极端情况下被 SVG viewBox

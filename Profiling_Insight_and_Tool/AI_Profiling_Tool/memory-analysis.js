@@ -16,14 +16,32 @@
   }
   function drawTrend() {
     var g=canvas("memoryTrendChart"); if(!g||!data)return;
-    var c=g.c,w=g.w,h=g.h,p={l:42,r:18,t:16,b:28}, rows=data.trend;
-    var x=function(v){return p.l+(v-4000)/(12003-4000)*(w-p.l-p.r);};
-    var y=function(v){return p.t+(64-v)/14*(h-p.t-p.b);};
-    c.strokeStyle=css("--border-subtle","#ddd"); c.fillStyle=css("--foreground-secondary","#666"); c.font="11px sans-serif";
+    var c=g.c,w=g.w,h=g.h,p={l:46,r:18,t:16,b:28},rows=data.trend;
+    var capacity=Number(data.summary.capacityGB)||64,threshold=capacity*.95,yMin=50;
+    var minStep=rows[0].step,maxStep=rows[rows.length-1].step;
+    var x=function(v){return p.l+(v-minStep)/(maxStep-minStep)*(w-p.l-p.r);};
+    var y=function(v){return p.t+(capacity-v)/(capacity-yMin)*(h-p.t-p.b);};
+    var primary=css("--primary","#4369ef"),danger=css("--danger","#d33"),warning=css("--warning","#d88a00");
+    function linePath(){
+      c.beginPath();
+      rows.forEach(function(r,i){i?c.lineTo(x(r.step),y(r.reservedGB)):c.moveTo(x(r.step),y(r.reservedGB));});
+    }
+    function areaPath(){
+      c.beginPath();c.moveTo(x(rows[0].step),h-p.b);
+      rows.forEach(function(r){c.lineTo(x(r.step),y(r.reservedGB));});
+      c.lineTo(x(rows[rows.length-1].step),h-p.b);c.closePath();
+    }
+    c.strokeStyle=css("--border-subtle","#ddd");c.fillStyle=css("--foreground-secondary","#666");c.font="11px sans-serif";c.lineWidth=1;
     [52,56,60,64].forEach(function(v){c.beginPath();c.moveTo(p.l,y(v));c.lineTo(w-p.r,y(v));c.stroke();c.fillText(v+"GB",3,y(v)+4);});
-    c.beginPath(); rows.forEach(function(r,i){i?c.lineTo(x(r.step),y(r.reservedGB)):c.moveTo(x(r.step),y(r.reservedGB));});
-    c.strokeStyle=css("--danger","#d33");c.lineWidth=2;c.stroke();
-    c.fillStyle=css("--danger","#d33");c.beginPath();c.arc(x(12000),y(64),4,0,Math.PI*2);c.fill();c.fillText("OOM · step 12003",Math.max(p.l,x(12000)-105),y(64)+18);
+    c.save();c.setLineDash([4,4]);c.strokeStyle=warning;c.beginPath();c.moveTo(p.l,y(threshold));c.lineTo(w-p.r,y(threshold));c.stroke();c.restore();
+    c.fillStyle=warning;c.font="10px sans-serif";c.fillText("95% 阈值 · "+threshold.toFixed(1)+" GB",p.l+5,y(threshold)-5);
+    c.save();c.globalAlpha=.13;c.fillStyle=primary;areaPath();c.fill();c.restore();
+    c.lineJoin="round";c.lineCap="round";c.strokeStyle=primary;c.lineWidth=2;linePath();c.stroke();
+    c.save();c.beginPath();c.rect(p.l,p.t,w-p.l-p.r,Math.max(0,y(threshold)-p.t));c.clip();
+    c.globalAlpha=.16;c.fillStyle=danger;areaPath();c.fill();c.globalAlpha=1;c.strokeStyle=danger;c.lineWidth=2;linePath();c.stroke();c.restore();
+    var incident=rows[rows.length-2]||rows[rows.length-1];
+    c.fillStyle=danger;c.beginPath();c.arc(x(incident.step),y(incident.reservedGB),4,0,Math.PI*2);c.fill();
+    c.font="11px sans-serif";c.fillText("OOM · step "+(data.incidentStep||12003),Math.max(p.l,x(incident.step)-105),y(incident.reservedGB)+18);
   }
   function drawComposition() {
     var g=canvas("memoryCompositionChart"); if(!g||!data)return;

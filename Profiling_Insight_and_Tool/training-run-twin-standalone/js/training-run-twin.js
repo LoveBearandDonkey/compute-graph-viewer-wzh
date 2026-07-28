@@ -724,8 +724,11 @@
     "rgba(6,182,212,0.06)", "rgba(239,68,68,0.06)", "rgba(34,197,94,0.06)", "rgba(168,85,247,0.06)"
   ];
 
+  var DP_GROUP_COUNT = 8;
   var PP_STAGE_COUNT = 4;
-  var PP_COLS_PER_STAGE = 16; // 64 cols / 4 PP stages = 16 cols per stage
+  var EP_RANK_COUNT = 64;
+  var EP_ROWS_PER_STAGE = 4;
+  var EP_COLS_PER_STAGE = EP_RANK_COUNT / EP_ROWS_PER_STAGE;
 
   // 本页是演示 demo,集群热力图不需要"实时"——着色只在外壳重建后(初始加载/切硬件)
   // 算一次并冻结,之后 tick/时光机/renderAll 再调用 renderHeat() 都直接跳过,
@@ -735,13 +738,10 @@
   function renderHeatShell(heatEl) {
     const heat = heatEl || $("heat");
     if (!heatEl) heatPainted = false; // 只有主热力图(#heat)外壳重建才需要重新着色
-    const profile = hardwareProfiles[state.hardware];
-    const cols = profile.cols; // 64
-    const rows = profile.devices / cols; // 32
-
-    // DP4: 4 组,每组 8 行 × 64 列
-    var dpGroups = 4;
-    var rowsPerDp = rows / dpGroups; // 8
+    // Match config-relation-observer's rank address:
+    // rank = stage * (DP * EP) + dp * EP + ep (TP=CP=1).
+    var dpGroups = DP_GROUP_COUNT;
+    var ranksPerStage = dpGroups * EP_RANK_COUNT;
 
     heat.style.display = "flex";
     heat.style.flexDirection = "column";
@@ -771,29 +771,32 @@
       dpGroup.className = "twin-heat-dp-group";
       dpGroup.dataset.dpLabel = "DP" + dp;
       dpGroup.style.display = "grid";
-      dpGroup.style.gridTemplateColumns = "repeat(" + cols + ", minmax(0, 1fr))";
-      dpGroup.style.gap = "2px";
+      dpGroup.style.gridTemplateColumns = "repeat(" + PP_STAGE_COUNT + ", minmax(0, 1fr))";
+      // Stage 块之间空出约一个 rank 格宽；块内 rank 仍保持紧凑的 2px 间距。
+      dpGroup.style.gap = "6px";
       dpGroup.style.padding = "3px";
       dpGroup.style.borderRadius = "4px";
       dpGroup.style.border = "1.5px solid var(--border-default)";
 
-      for (var row = 0; row < rowsPerDp; row++) {
-        for (var col = 0; col < cols; col++) {
-          var index = dp * rowsPerDp * cols + row * cols + col;
-          var ppStage = Math.floor(col / PP_COLS_PER_STAGE);
+      for (var ppStage = 0; ppStage < PP_STAGE_COUNT; ppStage++) {
+        var stageBlock = document.createElement("div");
+        stageBlock.className = "twin-heat-stage-block";
+        stageBlock.style.display = "grid";
+        stageBlock.style.gridTemplateColumns = "repeat(" + EP_COLS_PER_STAGE + ", minmax(0, 1fr))";
+        stageBlock.style.gap = "2px";
+        stageBlock.style.minWidth = "0";
+        for (var epRank = 0; epRank < EP_RANK_COUNT; epRank++) {
+          var index = ppStage * ranksPerStage + dp * EP_RANK_COUNT + epRank;
           var cell = document.createElement("div");
           // ep-tint-N 类携带底色(见 training-run-twin.css),避免给每个格子单独写内联 background
-          cell.className = "twin-heat-cell ep-tint-" + (col % EP_TINT_COLORS.length);
+          cell.className = "twin-heat-cell ep-tint-" + (epRank % EP_TINT_COLORS.length);
           cell.dataset.index = String(index);
-          cell.dataset.epRank = String(col);
+          cell.dataset.dp = String(dp);
+          cell.dataset.epRank = String(epRank);
           cell.dataset.ppStage = String(ppStage);
-          // PP 阶段分界：每 8 列右侧加粗分隔
-          if ((col + 1) % PP_COLS_PER_STAGE === 0 && col < cols - 1) {
-            cell.style.marginRight = "3px";
-            cell.style.boxShadow = "inset -3px 0 0 0 var(--border-strong)";
-          }
-          dpGroup.appendChild(cell);
+          stageBlock.appendChild(cell);
         }
+        dpGroup.appendChild(stageBlock);
       }
       heat.appendChild(dpGroup);
     }
@@ -802,14 +805,12 @@
     var epLabelRow = document.createElement("div");
     epLabelRow.className = "twin-heat-ep-labels";
     epLabelRow.style.display = "grid";
-    epLabelRow.style.gridTemplateColumns = "repeat(" + cols + ", minmax(0, 1fr))";
+    epLabelRow.style.gridTemplateColumns = "repeat(" + PP_STAGE_COUNT + ", minmax(0, 1fr))";
     epLabelRow.style.gap = "2px";
     epLabelRow.style.padding = "0 3px";
-    for (var c = 0; c < cols; c++) {
+    for (var c = 0; c < PP_STAGE_COUNT; c++) {
       var el = document.createElement("span");
-      if (c % 8 === 0) {
-        el.textContent = "EP" + c;
-      }
+      el.textContent = "EP0-EP63 (4x16)";
       el.style.textAlign = "center";
       el.style.fontSize = "8px";
       el.style.fontWeight = "500";
@@ -821,46 +822,42 @@
 
   function renderHeat() {
     if (heatPainted) return; // 已经着色过一次,固定着色,不再逐帧重绘 2048 个格子
-    var cells = $("heat").querySelectorAll(".twin-heat-cell");
     var profile = hardwareProfiles[state.hardware];
-    var cols = profile.cols;
+    var cellsByRank = new Map(Array.from($("heat").querySelectorAll(".twin-heat-cell"))
+      .map(function (cell) { return [Number(cell.dataset.index), cell]; }));
     let peak = 0;
     let thermalRisk = 0;
     let lowUtil = 0;
     let total = 0;
     let totalUtil = 0;
     state.devices.forEach((device, index) => {
-      var col = index % cols;
+      var epRank = index % EP_RANK_COUNT;
       peak = Math.max(peak, device.temp);
       total += device.temp;
       totalUtil += device.util;
       if (device.temp > 82 || device.bad) thermalRisk += 1;
       if (device.util < 0.7) lowUtil += 1;
-      const cell = cells[index];
+      const cell = cellsByRank.get(index);
       if (!cell) return;
       // 在 EP 底色之上叠加 util 着色（ep-tint-N 类保留 EP rank 列背景作为基底,
       // 避免像之前那样对每个格子重新解析一次内联 background 颜色字符串）
-      cell.className = "twin-heat-cell ep-tint-" + (col % EP_TINT_COLORS.length);
+      cell.className = "twin-heat-cell ep-tint-" + (epRank % EP_TINT_COLORS.length);
       var utilOverlay = "";
-      // PP 分界线保留
-      var ppShadow = (col + 1) % PP_COLS_PER_STAGE === 0 && col < cols - 1
-        ? ", inset -3px 0 0 0 var(--border-strong)" : "";
       if (device.util < 0.7) utilOverlay = "var(--twin-util-low)";
       else if (device.util > 0.92) utilOverlay = "var(--twin-util-high)";
       else utilOverlay = "var(--twin-util-mid)";
-      cell.style.boxShadow = "inset 0 0 0 2px " + utilOverlay + ppShadow;
+      cell.style.boxShadow = "inset 0 0 0 2px " + utilOverlay;
       if (device.temp > 82 || device.bad) cell.classList.add("is-thermal-risk");
       if (device.bad) cell.classList.add("is-straggler");
-      var dpGroup = Math.floor(index / (8 * cols)); // DP0~3
-      var ppStage = Math.floor(col / PP_COLS_PER_STAGE) + 1;
-      var epRank = col + 1;
+      var ppStage = Math.floor(index / (DP_GROUP_COUNT * EP_RANK_COUNT));
+      var dpGroup = Math.floor((index % (DP_GROUP_COUNT * EP_RANK_COUNT)) / EP_RANK_COUNT);
       const tip = [
         `${profile.unit} ${index}`,
         `node-${Math.floor(index / 8)} / rank-${index}`,
         `算力占用率 ${(device.util * 100).toFixed(0)}%`,
         `温度 ${device.temp.toFixed(0)}°C`,
         `HBM ${(device.mem * 100).toFixed(0)}%`,
-        `DP${dpGroup} · Stage${Math.floor(col / 8)} · EP${col}`,
+        `DP${dpGroup} · Stage${ppStage} · EP${epRank}`,
         device.bad ? `风险 ${device.bad}` : "",
       ].filter(Boolean).join("\n");
       cell.dataset.tip = tip;
@@ -2239,15 +2236,16 @@
      两个页面各有一套展示序号,不能共用一个字段:
        · num    = training-monitoring.html 的序号,与它 markup 里硬编码的 5 张诊断卡片一一对应(一~五),
                   改动它就要同步改那份 markup,因此保持不动;
-       · wzhNum = training-monitoring-v2.html(单屏)的序号。v2 把「显存 OOM」提为问题二,其余顺延,
-                  故与 num 整体错开一位。取值一律走 problemNum(marker)。
+       · wzhNum = training-monitoring-v2.html(单屏)的序号。v2 按事故发生时间编号：
+                  step 12003 的「显存 OOM」为问题一，step 15203 的 Router 事故为问题二。
+                  取值一律走 problemNum(marker)。
      ── 页面归属(wzhOnly / wzhLens)────────────────────────────────────────────
        · wzhOnly = 只在 v2 出现。training-monitoring.html 的诊断卡片列表是写死的 markup,没有对应卡片
                    就不能在它的整网图上画徽标(点了没有卡片可联动);
        · wzhLens = 在 v2 时光机进度条上画标记,点击即进入该问题的聚光灯定位链。 */
   const diagnosisMarkers = [
-    { key: "moe-a2a", step: INCIDENT_STEP, severity: "p0", category: "精度", num: "一", wzhNum: "一", wzhLens: true, label: "Router 数值溢出 → 路由塌缩，同时触发 loss NaN 与 all-to-all 死锁", sub: "router softmax FP8 溢出 → 98% token 集中到 expert 193 → NaN + 死锁双发" },
-    { key: "mem-oom", step: MEM_INCIDENT_STEP, severity: "p0", category: "显存", num: "六", wzhNum: "二", wzhLens: true, label: "activation checkpoint 未开启 → 显存峰值超标 + 分配器碎片触发 OOM", sub: `激活值占 56.6%(36.2 GB) → 峰值触顶 ${MEM_CAPACITY_GB} GB，碎片率 83% → rank ${MEM_CASE_FACTS.oomRank} OOM 中断` },
+    { key: "moe-a2a", step: INCIDENT_STEP, severity: "p0", category: "精度", num: "一", wzhNum: "二", wzhLens: true, label: "Router 数值溢出 → 路由塌缩，同时触发 loss NaN 与 all-to-all 死锁", sub: "router softmax FP8 溢出 → 98% token 集中到 expert 193 → NaN + 死锁双发" },
+    { key: "mem-oom", step: MEM_INCIDENT_STEP, severity: "p0", category: "显存", num: "六", wzhNum: "一", wzhLens: true, label: "activation checkpoint 未开启 → 显存峰值超标 + 分配器碎片触发 OOM", sub: `激活值占 56.6%(36.2 GB) → 峰值触顶 ${MEM_CAPACITY_GB} GB，碎片率 83% → rank ${MEM_CASE_FACTS.oomRank} OOM 中断` },
     { key: "perf-compute-bottleneck", stepFrom: 20000, stepTo: 120000, severity: "p1", category: "性能", num: "二", wzhNum: "三", label: "算子带宽瓶颈 + AICPU 回退", sub: "lm_head vocab 非对齐, cube_util 49%, AICPU 526ms" },
     { key: "qproj-overflow", step: 8500, severity: "p1", category: "精度", num: "三", wzhNum: "四", label: "q_proj FP8 精度溢出 → grad_norm 发散", sub: "layer 33 q_proj 3.2% 超 FP8 max(448)" },
     { key: "low-precision-training", stepFrom: 28000, stepTo: 35000, severity: "p1", category: "精度", num: "四", wzhNum: "五", label: "低精训练 loss 不收敛 → 梯度消失", sub: "FP8 E4M3 深层激活值长尾, 峰度 +15.3, SNR 降至 6.8dB" },
@@ -2295,7 +2293,7 @@
     // 标记位置只取决于绝对 step / totalSteps,与当前展示的 step 无关;
     // 已经画好就直接复用,避免时光机拖动时每帧重建 DOM(还会打断 hover 气泡)
     if (track.querySelectorAll('.twin-progress-marker').length === markers.length) return;
-    // 问题点标注改为进度条内的「带白边纵向线」,直接用百分比定位,无需测量几何
+    // 问题点标注是带序号的红色圆点，直接用百分比定位，无需测量几何。
     track.querySelectorAll('.twin-progress-marker, .twin-progress-checkpoint').forEach((el) => el.remove());
     const total = state.totalSteps || 120000;
     markers.forEach((m) => {
@@ -2304,7 +2302,14 @@
       const mk = document.createElement('div');
       mk.className = `twin-progress-marker is-${m.severity}`;
       mk.style.left = (pct * 100).toFixed(2) + '%';
+      const trackNum = isWzhTwinPage()
+        ? ({ "一": "1", "二": "2" }[m.displayNum] || m.displayNum)
+        : m.displayNum;
+      mk.textContent = trackNum;
       mk.dataset.markerKey = m.key;
+      mk.dataset.problemNum = trackNum;
+      mk.setAttribute('role', 'button');
+      mk.setAttribute('aria-label', `问题${m.displayNum}：${m.label}`);
       track.appendChild(mk);
     });
     // checkpoint 标记：已到达=绿色菱形，未到达=灰色
@@ -2929,12 +2934,13 @@
     clearInfraHeatHighlight();
     var map = INFRA_HEAT_MAP[caseKey];
     if (!map) return;
-    var cells = $("heat").querySelectorAll(".twin-heat-cell");
     (map.hotCells || []).forEach(function (idx) {
-      if (cells[idx]) cells[idx].classList.add("is-infra-hot");
+      var cell = $("heat").querySelector('.twin-heat-cell[data-index="' + idx + '"]');
+      if (cell) cell.classList.add("is-infra-hot");
     });
     (map.warmCells || []).forEach(function (idx) {
-      if (cells[idx]) cells[idx].classList.add("is-infra-warm");
+      var cell = $("heat").querySelector('.twin-heat-cell[data-index="' + idx + '"]');
+      if (cell) cell.classList.add("is-infra-warm");
     });
   }
 
@@ -2972,14 +2978,16 @@
     var map = INFRA_HEAT_MAP[caseKey];
     if (!map) return;
     (map.hotCells || []).forEach(function (idx) {
-      if (!dstCells[idx]) return;
-      dstCells[idx].classList.add("is-infra-hot");
-      if (map.hotWarn) dstCells[idx].dataset.tipWarn = map.hotWarn;
+      var cell = dst.querySelector('.twin-heat-cell[data-index="' + idx + '"]');
+      if (!cell) return;
+      cell.classList.add("is-infra-hot");
+      if (map.hotWarn) cell.dataset.tipWarn = map.hotWarn;
     });
     (map.warmCells || []).forEach(function (idx) {
-      if (!dstCells[idx]) return;
-      dstCells[idx].classList.add("is-infra-warm");
-      if (map.warmWarn) dstCells[idx].dataset.tipWarn = map.warmWarn;
+      var cell = dst.querySelector('.twin-heat-cell[data-index="' + idx + '"]');
+      if (!cell) return;
+      cell.classList.add("is-infra-warm");
+      if (map.warmWarn) cell.dataset.tipWarn = map.warmWarn;
     });
   }
 
