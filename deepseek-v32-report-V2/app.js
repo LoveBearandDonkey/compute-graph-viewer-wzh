@@ -53,6 +53,7 @@
     fusionAdvisorSubtitle: document.getElementById("fusionAdvisorSubtitle"),
     fusionAdvisorResize: document.getElementById("fusionAdvisorResize"),
     fusionMarkerToggle: document.getElementById("fusionMarkerToggle"),
+    heatmapToggle: document.getElementById("heatmapToggle"),
   };
 
   const state = {
@@ -77,6 +78,7 @@
     fusionAdvisorWidth: 460,
     fusionExpandedIds: new Set(),
     fusionMarkersVisible: true,
+    heatmapEnabled: false,
     activeFusionRec: "",
     language: document.documentElement.lang.startsWith("zh") ? "zh" : "en",
     theme: document.documentElement.dataset.theme === "light" ? "light" : "dark",
@@ -218,6 +220,7 @@
       fusionPrioMedium: "MED",
       fusionLocate: "Locate on graph",
       fusionMarkersLabel: "Toggle fusion markers",
+      heatmapToggleLabel: "Toggle operator time heatmap",
       close: "Close",
     },
     zh: {
@@ -355,6 +358,7 @@
       fusionPrioMedium: "中",
       fusionLocate: "在图中定位",
       fusionMarkersLabel: "切换融合标记",
+      heatmapToggleLabel: "切换算子耗时热力图",
       close: "关闭",
     },
   };
@@ -441,6 +445,7 @@
   let architectureGraphSpec;
   let architectureOverlayMap;
   let architectureGraph;
+  let runtimeAuxiliaryBackendIds = new Set();
   try {
     const [analysis, perf, timeline, graphSpec, overlayMap] = await Promise.all([
       loadJson("./data/ds3_2_analysis_config.json"),
@@ -450,11 +455,28 @@
       loadJson("./outputs/architecture_overlay_map.json"),
     ]);
     analysisConfig = analysis;
-    architectureGraphSpec = graphSpec;
+    const runtimeAuxiliaryRoot = (graphSpec.roots || [])
+      .find((root) => root.id === "section/runtime_auxiliary");
+    (function collectRuntimeBackendIds(item) {
+      if (!item) return;
+      if (item.backendNodeId) runtimeAuxiliaryBackendIds.add(item.backendNodeId);
+      (item.children || []).forEach(collectRuntimeBackendIds);
+    }(runtimeAuxiliaryRoot));
+    architectureGraphSpec = {
+      ...graphSpec,
+      roots: (graphSpec.roots || []).filter((root) => root.id !== "section/runtime_auxiliary"),
+      metadata: {
+        ...(graphSpec.metadata || {}),
+        backendNodeCount: Math.max(
+          0,
+          Number(graphSpec.metadata?.backendNodeCount || 0) - runtimeAuxiliaryBackendIds.size,
+        ),
+      },
+    };
     architectureOverlayMap = overlayMap;
     reportModel = window.DeepSeekReportData.createReportModel(analysis, perf, timeline);
-    architectureGraph = window.DeepSeekArchitectureData.createArchitectureGraph(graphSpec, reportModel.reports);
-    state.collapsedArchitectureIds = new Set(window.DeepSeekArchitectureData.defaultCollapsedIds(graphSpec));
+    architectureGraph = window.DeepSeekArchitectureData.createArchitectureGraph(architectureGraphSpec, reportModel.reports);
+    state.collapsedArchitectureIds = new Set(window.DeepSeekArchitectureData.defaultCollapsedIds(architectureGraphSpec));
   } catch (error) {
     els.architectureStatus.textContent = t("architectureLoadFailed");
     els.footerStatus.textContent = error.message;
@@ -464,6 +486,10 @@
 
   const REPORTS = reportModel.reports;
   const REPORT_ORDER = reportModel.reportOrder;
+  const VISIBLE_REPORT_ORDER = REPORT_ORDER.filter((nodeId) => (
+    !runtimeAuxiliaryBackendIds.has(nodeId)
+    && window.DeepSeekArchitectureData.backendToGraphId(architectureGraphSpec, nodeId)
+  ));
   const TIMELINE = reportModel.timeline;
   const STREAM_SUMMARY = reportModel.streamSummary;
   const STEP_SUMMARY = reportModel.stepSummary;
@@ -475,7 +501,7 @@
   const OPERATOR_TREE_PARENTS = new Map();
   indexOperatorTree(OPERATOR_TREE, "", OPERATOR_TREE_PARENTS);
   OPERATOR_TREE.forEach((group) => state.operatorTreeExpandedIds.add(group.id));
-  state.selectedNodeId = REPORT_ORDER[0] || "";
+  state.selectedNodeId = VISIBLE_REPORT_ORDER[0] || "";
   expandOperatorAncestors(state.selectedNodeId);
 
   // ----- Fusion recommendation ↔ architecture-graph index -----
@@ -593,7 +619,6 @@
     return [
       group("group/stages", "stagesGroup", Object.values(config.stages || {})),
       group("group/layers", "layersGroup", Object.values(config.layer_structure || {})),
-      group("group/runtime", "runtimeGroup", config.runtime_auxiliary || []),
     ].filter((item) => item.children.length);
   }
 
@@ -934,7 +959,7 @@
 
   function syncArchitectureViewStatus() {
     if (state.activeArchitectureView === "operators") {
-      els.architectureStatus.textContent = t("operatorTreeStatus", REPORT_ORDER.length);
+      els.architectureStatus.textContent = t("operatorTreeStatus", VISIBLE_REPORT_ORDER.length);
       return;
     }
     els.architectureStatus.textContent = t(
@@ -1057,8 +1082,10 @@
       });
     }
     syncArchitectureViewStatus();
-    els.graphCount.textContent = `${architectureOverlayMap.validation.mapped_or_classified_backend_node_count} / ${reportModel.counts.analysisNodes}`;
+    els.graphCount.textContent = `${architectureGraph.metadata.interactiveItemCount} / ${VISIBLE_REPORT_ORDER.length}`;
+    applyArchitectureCapsules();
     applyFusionMarkers();
+    applyArchitectureHeatmap();
   }
 
   function streamBounds() {
@@ -1329,7 +1356,7 @@
     const selected = REPORTS[state.selectedNodeId];
     els.footerStatus.textContent = t(
       "footerStatus",
-      reportModel.counts.analysisNodes,
+      VISIBLE_REPORT_ORDER.length,
       reportModel.counts.timelineEvents,
       selected?.metricShort || t("noSelectionShort"),
     );
@@ -1474,6 +1501,96 @@
     return state.architectureController?.svg || els.architectureGraph.querySelector("svg");
   }
 
+  function applyArchitectureCapsules() {
+    const svg = fusionGraphSvg();
+    if (!svg) return;
+    const helper = window.PtoModelGraphvizCapsule;
+    if (!helper?.apply) throw new Error("model-graphviz capsule adapter is unavailable");
+    helper.apply(svg, state.architectureViewGraph);
+    const nodeById = new Map((state.architectureViewGraph?.nodes || []).map((node) => [node.id, node]));
+    svg.querySelectorAll(".opv-pass-ir-capsule-node[data-node-id]").forEach((group) => {
+      const node = nodeById.get(group.dataset.nodeId);
+      if (!node) return;
+      const pill = group.querySelector(".op-pill");
+      const card = group.querySelector(".node-card");
+      if (card) card.dataset.architectureNodeId = node.id;
+      if (node.metricBadge && pill) {
+        let metric = pill.querySelector(".op-pill-latency");
+        if (!metric) {
+          metric = document.createElement("span");
+          metric.className = "op-pill-latency";
+          pill.appendChild(metric);
+        }
+        metric.textContent = node.metricBadge;
+        metric.classList.add("is-performance-metric");
+        group.classList.add("has-capsule-metric");
+      }
+      group.querySelectorAll(
+        ":scope > .pto-model-graphviz-metric-badge, :scope > .pto-model-graphviz-metric-badge-text",
+      ).forEach((badge) => badge.remove());
+    });
+  }
+
+  const HEATMAP_COLOR_STOPS = [
+    { at: 0, color: [35, 99, 166] },
+    { at: 0.38, color: [102, 82, 174] },
+    { at: 0.72, color: [202, 105, 22] },
+    { at: 1, color: [220, 45, 45] },
+  ];
+  const HEATMAP_MAX_TIME_SHARE = Math.max(
+    0,
+    ...architectureGraph.nodes
+      .filter((node) => node.kind === "op" && node.backendNodeId && !runtimeAuxiliaryBackendIds.has(node.backendNodeId))
+      .map((node) => Number(REPORTS[node.backendNodeId]?.timeSharePct || 0)),
+  );
+
+  function heatmapColor(timeSharePct) {
+    const rawRatio = HEATMAP_MAX_TIME_SHARE > 0 ? timeSharePct / HEATMAP_MAX_TIME_SHARE : 0;
+    const ratio = Math.pow(Math.max(0, Math.min(1, rawRatio)), 0.64);
+    const upperIndex = HEATMAP_COLOR_STOPS.findIndex((stop) => stop.at >= ratio);
+    const safeUpperIndex = Math.max(
+      1,
+      upperIndex < 0 ? HEATMAP_COLOR_STOPS.length - 1 : upperIndex,
+    );
+    const upper = HEATMAP_COLOR_STOPS[safeUpperIndex];
+    const lower = HEATMAP_COLOR_STOPS[safeUpperIndex - 1];
+    const mix = (ratio - lower.at) / (upper.at - lower.at || 1);
+    const rgb = lower.color.map((channel, index) => Math.round(
+      channel + (upper.color[index] - channel) * mix,
+    ));
+    return `rgb(${rgb.join(", ")})`;
+  }
+
+  function applyArchitectureHeatmap() {
+    const svg = fusionGraphSvg();
+    els.architectureGraph?.classList.toggle("is-heatmap", state.heatmapEnabled);
+    els.heatmapToggle?.classList.toggle("is-selected", state.heatmapEnabled);
+    els.heatmapToggle?.setAttribute("aria-pressed", String(state.heatmapEnabled));
+    if (els.heatmapToggle) els.heatmapToggle.title = t("heatmapToggleLabel");
+    if (!svg) return;
+    svg.querySelectorAll(".is-heatmap-node").forEach((node) => {
+      node.classList.remove("is-heatmap-node");
+      node.style.removeProperty("--operator-heatmap-fill");
+      node.removeAttribute("data-heatmap-time-share");
+    });
+    if (!state.heatmapEnabled) return;
+    (state.architectureViewGraph?.nodes || []).forEach((node) => {
+      if (node.kind !== "op" || !node.backendNodeId || runtimeAuxiliaryBackendIds.has(node.backendNodeId)) return;
+      const timeSharePct = Number(REPORTS[node.backendNodeId]?.timeSharePct);
+      if (!Number.isFinite(timeSharePct)) return;
+      const host = svg.querySelector(`[data-node-id="${node.id}"]`);
+      if (!host) return;
+      host.classList.add("is-heatmap-node");
+      host.style.setProperty("--operator-heatmap-fill", heatmapColor(timeSharePct));
+      host.setAttribute("data-heatmap-time-share", String(timeSharePct));
+    });
+  }
+
+  function setHeatmapEnabled(enabled) {
+    state.heatmapEnabled = Boolean(enabled);
+    applyArchitectureHeatmap();
+  }
+
   // Resolve the currently-visible element that should carry a leaf's fusion marker:
   // the leaf itself if shown, otherwise its nearest visible ancestor cluster.
   function fusionRepresentativeId(leafId) {
@@ -1503,6 +1620,9 @@
 
   function applyFusionMarkers() {
     const svg = fusionGraphSvg();
+    els.fusionMarkerToggle?.classList.toggle("is-selected", state.fusionMarkersVisible);
+    els.fusionMarkerToggle?.setAttribute("aria-pressed", String(state.fusionMarkersVisible));
+    if (els.fusionMarkerToggle) els.fusionMarkerToggle.title = t("fusionMarkersLabel");
     if (!svg) return;
     // Markers live inside their host group so they inherit its coordinate space
     // (node groups are translated; cluster groups use absolute coords).
@@ -1542,17 +1662,24 @@
       const title = svgEl("title");
       title.textContent = fusionMarkerTitle(recIds);
       marker.appendChild(title);
-      marker.appendChild(svgEl("circle", { class: "fusion-marker__halo", cx: 0, cy: 0, r: 12 }));
-      marker.appendChild(svgEl("circle", { class: "fusion-marker__dot", cx: 0, cy: 0, r: 9 }));
-      const glyph = svgEl("text", {
-        class: "fusion-marker__glyph",
-        x: 0,
-        y: 0,
-        "text-anchor": "middle",
-        "dominant-baseline": "central",
-      });
-      glyph.textContent = recIds.length > 1 ? String(recIds.length) : "⚡";
-      marker.appendChild(glyph);
+      marker.appendChild(svgEl("circle", { class: "fusion-marker__halo", cx: 0, cy: 0, r: 18 }));
+      marker.appendChild(svgEl("circle", { class: "fusion-marker__dot", cx: 0, cy: 0, r: 13 }));
+      if (recIds.length > 1) {
+        const glyph = svgEl("text", {
+          class: "fusion-marker__glyph",
+          x: 0,
+          y: 0,
+          "text-anchor": "middle",
+          "dominant-baseline": "central",
+        });
+        glyph.textContent = String(recIds.length);
+        marker.appendChild(glyph);
+      } else {
+        marker.appendChild(svgEl("path", {
+          class: "fusion-marker__bolt",
+          d: "M1 -9 -6 1h5l-2 8L7 -3H2Z",
+        }));
+      }
 
       const activate = (event) => {
         event.preventDefault();
@@ -1724,6 +1851,7 @@
     state.fusionMarkersVisible = Boolean(visible);
     els.fusionMarkerToggle?.classList.toggle("is-selected", state.fusionMarkersVisible);
     els.fusionMarkerToggle?.setAttribute("aria-pressed", String(state.fusionMarkersVisible));
+    if (els.fusionMarkerToggle) els.fusionMarkerToggle.title = t("fusionMarkersLabel");
     if (!state.fusionMarkersVisible) setActiveFusionRec("");
     applyFusionMarkers();
   }
@@ -2100,6 +2228,7 @@
   }
 
   els.fusionMarkerToggle?.addEventListener("click", () => setFusionMarkersVisible(!state.fusionMarkersVisible));
+  els.heatmapToggle?.addEventListener("click", () => setHeatmapEnabled(!state.heatmapEnabled));
   els.fusionAdvisorToggle?.addEventListener("click", () => setFusionAdvisorOpen(!state.fusionAdvisorOpen));
   els.fusionAdvisorClose?.addEventListener("click", () => setFusionAdvisorOpen(false));
   els.fusionAdvisorBackdrop?.addEventListener("click", () => setFusionAdvisorOpen(false));

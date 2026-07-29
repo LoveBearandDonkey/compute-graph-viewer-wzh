@@ -23,6 +23,10 @@ const [
   sharedStyle,
   graphPatternStyle,
   graphPatternSource,
+  passIrPatternStyle,
+  passIrPatternSource,
+  capsuleStyle,
+  capsuleSource,
   analysisConfig,
   perfData,
   timelineData,
@@ -40,6 +44,10 @@ const [
   readFile(resolve(root, "vendor/pto-design-system/css/style.css"), "utf8"),
   readFile(resolve(root, "vendor/pto-design-system/patterns/model-graphviz/pattern.css"), "utf8"),
   readFile(resolve(root, "vendor/pto-design-system/patterns/model-graphviz/pattern.js"), "utf8"),
+  readFile(resolve(root, "vendor/pto-design-system/patterns/pass-ir-graph-node/pattern.css"), "utf8"),
+  readFile(resolve(root, "vendor/pto-design-system/patterns/pass-ir-graph-node/pattern.js"), "utf8"),
+  readFile(resolve(root, "vendor/pto-design-system/patterns/model-graphviz/capsule.css"), "utf8"),
+  readFile(resolve(root, "vendor/pto-design-system/patterns/model-graphviz/capsule.js"), "utf8"),
   readJson("data/ds3_2_analysis_config.json"),
   readJson("data/ds3_2_perf_data.json"),
   readJson("data/ds3_2_timeline.json"),
@@ -71,6 +79,8 @@ new vm.Script(appSource, { filename: "app.js" });
 new vm.Script(reportDataSource, { filename: "report-data.js" });
 new vm.Script(architectureDataSource, { filename: "architecture-data.js" });
 new vm.Script(graphPatternSource, { filename: "pattern.js" });
+new vm.Script(passIrPatternSource, { filename: "pass-ir-graph-node/pattern.js" });
+new vm.Script(capsuleSource, { filename: "model-graphviz/capsule.js" });
 
 const dataSandbox = { window: {} };
 vm.runInNewContext(reportDataSource, dataSandbox, { filename: "report-data.js" });
@@ -184,6 +194,10 @@ const colorKeysAreSemantic = allGraphItems.every((item) => /^(?:sem|module|io|op
 const assertions = [
   [indexHtml.includes('src="./report-data.js"') && indexHtml.includes('src="./architecture-data.js"') && indexHtml.includes('src="./app.js"'), "entry loads report, architecture, and application adapters"],
   [indexHtml.includes("patterns/model-graphviz/pattern.js"), "entry loads the shared model-graphviz renderer"],
+  [indexHtml.includes("patterns/pass-ir-graph-node/pattern.js") && indexHtml.includes("patterns/model-graphviz/capsule.js") && indexHtml.includes("patterns/model-graphviz/capsule.css"), "entry loads the shared PTO capsule stack"],
+  [passIrPatternSource.includes("buildNodeCardElement") && capsuleSource.includes("PtoPassIrGraphNodePattern") && capsuleStyle.includes("opv-pass-ir-capsule-node") && passIrPatternStyle.includes(".op-pill"), "vendored capsule dependencies expose the shared node contract"],
+  [appSource.includes("function applyArchitectureCapsules()") && appSource.includes("helper.apply(svg, state.architectureViewGraph)") && appSource.includes("is-performance-metric"), "architecture render applies capsules before report-specific performance overlays"],
+  [appStyle.includes(".is-heatmap-node .op-pill") && appStyle.includes("has-capsule-metric") && appStyle.includes("opv-pass-ir-capsule-hit"), "heatmap, metric badge, and fusion state are adapted to capsule nodes"],
   [appSource.includes('loadJson("./outputs/model_architecture_graph.json")') && appSource.includes('loadJson("./outputs/architecture_overlay_map.json")'), "application loads generated hybrid graph and explicit mapping"],
   [appSource.includes('loadJson("./data/ds3_2_analysis_config.json")') && appSource.includes('loadJson("./data/ds3_2_perf_data.json")') && appSource.includes('loadJson("./data/ds3_2_timeline.json")'), "application retains all three backend inputs"],
   [!indexHtml.includes("timelineTabCoverage") && !indexHtml.includes("coverageTimelinePanel"), "Coverage tab is absent"],
@@ -192,7 +206,7 @@ const assertions = [
   [!indexHtml.includes('id="reportExplorerPane"') && indexHtml.includes('id="architectureViewTab"') && indexHtml.includes('id="operatorListViewTab"'), "performance nodes and architecture are merged into two node-view tabs"],
   [indexHtml.includes('id="nodeViewsRailButton"') && appSource.includes('activateArchitectureView("operators")'), "activity rail retains an entry into the merged operator-list view"],
   [appSource.includes("function createOperatorTree(config)") && appSource.includes("rawNode.children || []") && appSource.includes("operatorTreeExpandedIds"), "operator list derives expandable indentation from backend parent-child relationships"],
-  [appSource.includes('state.selectedNodeId = REPORT_ORDER[0] || ""') && appSource.includes("renderArchitecture({ activeNodeId: initialGraphNodeId })"), "the first backend performance node is selected on initial render"],
+  [appSource.includes('state.selectedNodeId = VISIBLE_REPORT_ORDER[0] || ""') && appSource.includes("renderArchitecture({ activeNodeId: initialGraphNodeId })"), "the hottest visible non-runtime performance node is selected on initial render"],
   [appStyle.includes("#timelinePanel > .pto-ide-frame__pane-header .tab-control") && appStyle.includes("height: 28px"), "timeline tabs stay within the compact panel header"],
   [indexHtml.includes('id="streamZoomIn"') && indexHtml.includes('id="streamZoomReset"') && appSource.includes("STREAM_ZOOM_LEVELS") && appSource.includes("setStreamZoom"), "swimlane timeline provides bounded horizontal zoom controls"],
   [appStyle.includes(".stream-lane-header") && appStyle.includes("position: sticky;") && appStyle.includes(".stream-lane-scroller"), "swimlane ruler and lane context remain fixed while the zoomed timeline scrolls"],
