@@ -4,7 +4,7 @@
 
 The bundled architecture is a snapshot of the PTO design-system asset:
 
-- Viewer source: `/Users/yin/pto-design-system/patterns/model-graphviz/assets/openpangu_2_0_flash_modelviz.html`
+- Viewer source: `/Users/yin/pto-design-system/patterns/model-graphviz/assets/openpangu_2_0_flash_pass_ir_capsule_modelviz.html`
 - Canonical schema source: `/Users/yin/pto-design-system/patterns/model-graphviz/assets/openpangu_2_0_flash_model_architecture.json`
 - Bundled validation report: `../vendor/pto-design-system/patterns/model-graphviz/assets/openpangu_2_0_flash_model_architecture_validation.md`
 

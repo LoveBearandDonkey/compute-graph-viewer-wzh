@@ -114,12 +114,14 @@
                     </div>
                   </div>
                   <div class="pto-ide-frame__toolbar-group">
+                    <button id="modelLayoutToggle" class="btn btn-sm btn-ghost" type="button" aria-pressed="false">Horizontal</button>
+                    <button id="modelColorToggle" class="btn btn-sm btn-ghost" type="button" aria-pressed="false">Light Color</button>
                     <button id="overlayToggle" class="btn btn-sm is-selected" type="button" aria-pressed="true">Overlay</button>
                     <button id="refreshOverlay" class="btn btn-sm btn-ghost" type="button">Refresh</button>
                   </div>
                 </div>
                 <div class="pto-ide-frame__pane-body source-pane-body">
-                  <iframe id="sourceFrame" class="source-frame" title="openPangu-2.0-Flash Model Architecture" src="./vendor/pto-design-system/patterns/model-graphviz/assets/openpangu_2_0_flash_modelviz.html?embed=1&amp;theme=dark&amp;report=1"></iframe>
+                  <iframe id="sourceFrame" class="source-frame" title="openPangu-2.0-Flash Model Architecture" src="./vendor/pto-design-system/patterns/model-graphviz/assets/openpangu_2_0_flash_pass_ir_capsule_modelviz.html?embed=1&amp;theme=dark&amp;report=1"></iframe>
                 </div>
               </section>
 
@@ -194,7 +196,7 @@
                 <button class="btn btn-icon btn-ghost" type="button" data-ide-close="terminal" aria-label="Close terminal">✕</button>
               </div>
               <pre id="terminalOutput" class="report-terminal-output">$ pto mock-profile-overlay
-source: openpangu_2_0_flash_modelviz.html
+source: openpangu_2_0_flash_pass_ir_capsule_modelviz.html
 profile: synthetic demonstration data
 status: waiting for model-graphviz render
 selection: none</pre>
@@ -292,6 +294,8 @@ selection: none</pre>
         operatorList: document.getElementById("operatorList"),
         actionList: document.getElementById("actionList"),
         nodeList: document.getElementById("nodeList"),
+        modelLayoutToggle: document.getElementById("modelLayoutToggle"),
+        modelColorToggle: document.getElementById("modelColorToggle"),
         overlayToggle: document.getElementById("overlayToggle"),
         refreshOverlay: document.getElementById("refreshOverlay"),
         timelinePanel: document.getElementById("timelinePanel"),
@@ -1320,15 +1324,13 @@ selection: none</pre>
         }
 
         const group = event.currentTarget;
+        const nearestGroup = target.closest?.(`.${NODE_CLASS}, .${BOUNDARY_CLASS}`);
+        if (nearestGroup && nearestGroup !== group) return;
         const nodeId = nodeIdFromGroup(group);
         const report = REPORTS[nodeId];
         if (!report || !isReportOverlayEnabled() || !isReportVisible(report)) return;
 
-        event.preventDefault();
-        event.stopPropagation();
-        event.stopImmediatePropagation();
-        hideSourcePopup();
-        selectNode(nodeId, { toggle: true, userInteraction: true });
+        selectNode(nodeId, { preserveSourcePopup: true, userInteraction: true });
       }
 
       function decorateSourceGraph() {
@@ -1762,10 +1764,29 @@ selection: none</pre>
         try {
           const doc = els.frame.contentDocument || els.frame.contentWindow.document;
           waitForSourceGraph(doc);
+          window.requestAnimationFrame(() => syncViewerControls());
         } catch (error) {
           els.sourceStatus.textContent = "model graph access blocked";
           console.error(error);
         }
+      }
+
+      function syncViewerControls(nextState) {
+        const bridge = els.frame.contentWindow?.PtoOpenPanguReportBridge;
+        const viewState = nextState || bridge?.getViewState?.();
+        if (!viewState) return;
+        const isHorizontal = viewState.layout === "horizontal";
+        els.modelLayoutToggle.textContent = isHorizontal ? "Vertical" : "Horizontal";
+        els.modelLayoutToggle.setAttribute("aria-pressed", String(isHorizontal));
+        els.modelLayoutToggle.setAttribute("title", isHorizontal ? "Switch model graph to vertical layout" : "Switch model graph to horizontal layout");
+        els.modelColorToggle.classList.toggle("is-selected", Boolean(viewState.colorPanelOpen));
+        els.modelColorToggle.setAttribute("aria-pressed", String(Boolean(viewState.colorPanelOpen)));
+      }
+
+      function invokeViewerControl(method) {
+        const bridge = els.frame.contentWindow?.PtoOpenPanguReportBridge;
+        const nextState = bridge?.[method]?.();
+        if (nextState) syncViewerControls(nextState);
       }
 
       function selectNode(nodeId, options = {}) {
@@ -1780,7 +1801,7 @@ selection: none</pre>
         }
         state.selectedNodeId = nodeId;
         renderInspector();
-        hideSourcePopup();
+        if (!options.preserveSourcePopup) hideSourcePopup();
         if (options.focusSource) focusSourceNode(nodeId);
       }
 
@@ -1858,6 +1879,9 @@ selection: none</pre>
         selectNode(button.dataset.nodeId, { focusSource: true, toggle: true, userInteraction: true });
       });
 
+      els.modelLayoutToggle?.addEventListener("click", () => invokeViewerControl("toggleLayout"));
+      els.modelColorToggle?.addEventListener("click", () => invokeViewerControl("toggleColorPanel"));
+
       els.overlayToggle?.addEventListener("click", () => {
         state.overlayEnabled = !state.overlayEnabled;
         hideSourcePopup();
@@ -1904,7 +1928,7 @@ selection: none</pre>
       window.addEventListener("message", (event) => {
         if (event.source !== els.frame.contentWindow) return;
         if (event.data?.type === "pto-model-node-select" && REPORTS[event.data.nodeId]) {
-          selectNode(event.data.nodeId, { userInteraction: true });
+          selectNode(event.data.nodeId, { preserveSourcePopup: true, userInteraction: true });
         } else if (event.data?.type === "pto-model-node-clear" && state.selectedNodeId) {
           clearSelection();
         }

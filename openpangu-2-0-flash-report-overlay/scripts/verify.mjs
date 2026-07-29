@@ -16,7 +16,7 @@ await Promise.all(requiredPaths.map((path) => access(resolve(root, path))));
 const paths = {
   index: resolve(root, "index.html"),
   mock: resolve(root, "mock-profiling-data.js"),
-  modelHtml: resolve(root, "vendor/pto-design-system/patterns/model-graphviz/assets/openpangu_2_0_flash_modelviz.html"),
+  modelHtml: resolve(root, "vendor/pto-design-system/patterns/model-graphviz/assets/openpangu_2_0_flash_pass_ir_capsule_modelviz.html"),
   modelJson: resolve(root, "vendor/pto-design-system/patterns/model-graphviz/assets/openpangu_2_0_flash_model_architecture.json"),
   modelPatternCss: resolve(root, "vendor/pto-design-system/patterns/model-graphviz/pattern.css"),
   modelPatternJs: resolve(root, "vendor/pto-design-system/patterns/model-graphviz/pattern.js"),
@@ -52,7 +52,7 @@ const parseInlineScripts = (html, fileName) => {
 };
 
 const indexScriptCount = parseInlineScripts(indexHtml, "index.html");
-const modelScriptCount = parseInlineScripts(modelHtml, "openpangu_2_0_flash_modelviz.html");
+const modelScriptCount = parseInlineScripts(modelHtml, "openpangu_2_0_flash_pass_ir_capsule_modelviz.html");
 const mockSandbox = { window: {} };
 new vm.Script(mockScript, { filename: "mock-profiling-data.js" }).runInNewContext(mockSandbox);
 const profile = mockSandbox.window.OPENPANGU_MOCK_PROFILE;
@@ -105,7 +105,7 @@ const moeLayerRepeat = architecture.repeats?.find((item) => item.id === "repeat_
 const mtpLayerRepeat = architecture.repeats?.find((item) => item.id === "repeat_mtp_layers");
 
 const assertions = [
-  [indexHtml.includes("openpangu_2_0_flash_modelviz.html?embed=1&amp;theme=dark&amp;report=1"), "entry embeds the bundled openPangu model viewer"],
+  [indexHtml.includes("openpangu_2_0_flash_pass_ir_capsule_modelviz.html?embed=1&amp;theme=dark&amp;report=1"), "entry embeds the bundled openPangu Pass IR capsule model viewer"],
   [indexHtml.includes('<script src="./mock-profiling-data.js"></script>'), "entry loads the explicit mock profile data layer"],
   [!indexHtml.includes("deepseek") && !indexHtml.includes("dsv32arch_"), "entry has no stale DeepSeek graph identifiers"],
   [!mockScript.includes("dsv32arch_"), "mock data uses openPangu node identifiers"],
@@ -113,6 +113,10 @@ const assertions = [
   [!modelHtml.includes("file:///"), "model viewer has no machine-local file URL"],
   [modelHtml.includes("PtoModelGraphvizPattern.renderController"), "model viewer uses the shared model-graphviz renderer"],
   [modelHtml.includes("PtoOpenPanguReportBridge"), "model viewer exposes the local report-selection bridge"],
+  [modelHtml.includes("PtoOpenPanguEmbedBridge") && modelHtml.includes("hostControls"), "model viewer exposes the generic host-owned control contract"],
+  [!indexHtml.includes("stopImmediatePropagation") && indexHtml.includes("preserveSourcePopup: true"), "mapped source clicks preserve the viewer detail popover"],
+  [indexHtml.includes('id="modelLayoutToggle"') && indexHtml.includes('id="modelColorToggle"') && modelHtml.includes("toggleColorPanel()"), "viewer layout and color controls are hosted by the report toolbar"],
+  [modelHtml.includes("width: min(360px") && modelHtml.includes('class="opv-attribute-grid"') && modelHtml.includes('class="opv-popover-details"'), "viewer detail popover uses the compact information design"],
   [modelPatternJs.includes("PtoModelGraphvizPattern"), "bundled model-graphviz behavior is present"],
   [architecture.model?.name === "openPangu-2.0-Flash", "canonical schema identifies openPangu-2.0-Flash"],
   [mainLayerRepeat?.count === 46 && denseLayerRepeat?.count === 2 && moeLayerRepeat?.count === 44 && mtpLayerRepeat?.count === 3, "canonical layer counts are 46 main, 2 dense, 44 MoE, and 3 MTP"],

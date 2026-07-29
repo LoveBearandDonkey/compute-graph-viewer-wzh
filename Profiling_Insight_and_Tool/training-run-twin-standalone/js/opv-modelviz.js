@@ -1,4 +1,4 @@
-// openPangu-2.0-Flash 整网图组件逻辑（从 openpangu_2_0_flash_modelviz.html 主 <script> 抽出）
+// openPangu-2.0-Flash 整网图组件逻辑（从 openpangu_2_0_flash_pass_ir_capsule_modelviz.html 主 <script> 抽出）
 // 改动：IIFE 包裹；themeToggle→opvTopThemeToggle 避与父页冲突；schema 读 window.OPV_DEFAULT_SCHEMA；
 //       新增 data-theme MutationObserver 与父页主题联动。渲染引擎复用 model-graphviz-embed/pattern.js。
 (function () {

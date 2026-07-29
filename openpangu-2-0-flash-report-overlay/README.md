@@ -29,12 +29,13 @@ openpangu-2-0-flash-report-overlay/
 ├── mock-profiling-data.js
 ├── dependency-manifest.json
 ├── vendor/pto-design-system/
+│   ├── assets/fx.svg
 │   ├── tokens/
 │   ├── css/style.css
 │   └── patterns/
 │       ├── model-graphviz/
 │       │   └── assets/
-│       │       ├── openpangu_2_0_flash_modelviz.html
+│       │       ├── openpangu_2_0_flash_pass_ir_capsule_modelviz.html
 │       │       └── openpangu_2_0_flash_model_architecture.json
 │       ├── ide-frame/
 │       ├── workbench-shell/

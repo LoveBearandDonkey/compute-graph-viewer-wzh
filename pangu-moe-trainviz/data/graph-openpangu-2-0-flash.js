@@ -1,6 +1,6 @@
 /* openPangu-2.0-Flash MoE 计算轴架构图 · 图数据 builder
    Source visualization object:
-   /Users/yin/pto-design-system/patterns/model-graphviz/assets/openpangu_2_0_flash_modelviz.html
+   /Users/yin/pto-design-system/patterns/model-graphviz/assets/openpangu_2_0_flash_pass_ir_capsule_modelviz.html
 
    只画健康拓扑。布局对齐 model-graphviz / DeepSeek V3.2：单列从上到下、禁止折叠模块间多条平行代表边。
 
@@ -76,7 +76,7 @@ window.buildOpenPanguFlashGraph = (function () {
   // ── 展开态：MoE 代表层单列 · 路由/共享并列 · 专家可再下钻 ──
   function buildExpanded(expertExpanded) {
     // MoE 列上半（两种专家态共用），主干中线 CX。
-    // Attention 子图对齐 openpangu_2_0_flash_modelviz.html 中的 Sparse MLA 细节：
+    // Attention 子图对齐 openpangu_2_0_flash_pass_ir_capsule_modelviz.html 中的 Sparse MLA 细节：
     // Q/KV latent branches -> Query/Key/Value -> Sparse FlashAttention -> output causal conv/projection。
     const headNodes = [
       { id: 'mla', label: 'Sparse MLA Attention', typeLabel: 'Module', kind: 'op', x: CX, y: 470, width: 320, height: 56, colorKey: 'sem:attention', desc: 'Sparse MLA Attention：Flash schema 中的低秩 Q/KV 路径，包含 DSA/SWA 分支、RoPE、KV Cache 与 MoME local context。' },
