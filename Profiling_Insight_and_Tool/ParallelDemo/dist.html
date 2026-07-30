@@ -144,6 +144,21 @@
   .ep-chip:hover{border-color:var(--border-strong)}
   .ep-chip.on{border-color:var(--danger);color:var(--danger);background:rgba(255,75,123,.12);font-weight:var(--font-weight-semibold)}
   .ep-chips.disabled{opacity:.4;pointer-events:none}
+  /* ── FFN 类型模式切换：MoE | 稠密 FFN（替代原来的勾选框）── */
+  .mode-tabs{display:inline-flex;gap:3px;background:var(--surface-2);border:1px solid var(--border-strong);border-radius:var(--radius-pill);padding:3px;flex-shrink:0}
+  .mode-tab{font-size:var(--font-size-body-sm);font-weight:var(--font-weight-semibold);padding:3px var(--space-3);border:none;border-radius:var(--radius-pill);background:transparent;color:var(--foreground-muted);cursor:pointer;white-space:nowrap;transition:color var(--duration-base),background var(--duration-base)}
+  .mode-tab:hover{color:var(--foreground)}
+  .mode-tab.on{background:var(--primary);color:#fff}
+  .mode-tabs.disabled{opacity:.5;pointer-events:none}
+  /* ── 折叠区：把「业界一般不动」的项收起来（EP 组大小 / 专家是否再做 TP）── */
+  .adv{margin:var(--space-2) 0 var(--space-1)}
+  .adv-toggle{display:flex;align-items:center;gap:5px;width:100%;text-align:left;font-size:var(--font-size-body-sm);color:var(--foreground-secondary);background:var(--surface-1);border:1px solid var(--border-subtle);border-radius:var(--radius-sm);padding:5px var(--space-2);cursor:pointer;transition:border-color var(--duration-base),color var(--duration-base)}
+  .adv-toggle:hover{border-color:var(--border-strong);color:var(--foreground)}
+  .adv-caret{font-size:9px;width:9px;flex-shrink:0;color:var(--foreground-muted)}
+  .adv-toggle b{color:var(--primary);font-weight:var(--font-weight-semibold);flex-shrink:0}
+  .adv-note{margin-left:auto;font-size:var(--font-size-label-xs);color:var(--foreground-muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0}
+  .adv-body{display:none;padding:var(--space-2) 0 0}
+  .adv.open .adv-body{display:block}
   select{width:100%;background:var(--surface-1);border:1px solid var(--border-default);color:var(--foreground);border-radius:var(--radius-sm);padding:5px var(--space-2);font-size:var(--font-size-body-sm)}
   /* ── Header repo switch: pill tabs (Transformer / CNN) ── */
   .lib-tabs{display:inline-flex;gap:3px;background:var(--surface-2);border:1px solid var(--border-strong);border-radius:var(--radius-pill);padding:3px}
@@ -172,18 +187,23 @@
   /* ── World box / mid column ── */
   .worldbox{padding:var(--space-3) var(--space-4);font-size:var(--font-size-body-sm);margin-bottom:var(--space-3);position:sticky;top:41px;z-index:1}
   .col-mid{display:flex;flex-direction:column;overflow:hidden;padding:0}
-  .col-mid>.worldbox{position:static;margin:0 var(--space-4) var(--space-4);flex:1;overflow-y:auto;min-height:0}
+  /* overflow:auto（不是 overflow-y）：拓扑图比面板宽时横向滚动查看，而不是把卡片挤瘦 */
+  .col-mid>.worldbox{position:static;margin:0 var(--space-4) var(--space-4);flex:1;overflow:auto;min-height:0}
   .col-code{overflow-y:auto;padding:0 var(--space-4) var(--space-4);border-right:none}
   .code-sticky-hdr{position:sticky;top:0;background:var(--background);z-index:5;padding:var(--space-4) 0 var(--space-1);margin-bottom:var(--space-1)}
   .code-sticky-hdr h2{position:static!important;padding:0 0 var(--space-2);margin:0}
-  .worldbox b{font-size:20px;color:var(--primary)}
+  /* 20px 蓝只给顶部「总卡数」那个数字。别写成 .worldbox b —— 拓扑图 #worldDiagram 也在
+     .worldbox 里，那样 MoE 框里的 <b>无 all-to-all</b> 之类强调词会全变成 20px 大蓝字。 */
+  .worldbox #world{font-size:20px;color:var(--primary)}
 
   /* ── World diagram ── */
-  .wdiag{margin-top:var(--space-2)}
+  /* 卡片有 210px 最小宽度（见 .wdiag-card-outer），装不下就整张拓扑图变宽、由 .worldbox 横向滚动。
+     所以这里不能再让 dp-row 换行、也不能用 min-width:0 吃掉最小宽度 —— 否则会挤成一团而不是滚动。 */
+  .wdiag{margin-top:var(--space-2);width:fit-content;min-width:100%}
   .wdiag-stages{display:flex;flex-direction:column}
   .wdiag-stage-row{display:flex;gap:var(--space-2);align-items:stretch}
-  .wdiag-dp-row{display:flex;gap:var(--space-2);flex-wrap:wrap;flex:1;min-width:0}
-  .wdiag-dp{border:1px solid var(--success);border-radius:var(--radius-sm);padding:7px var(--space-3);flex:1;min-width:0;background:rgba(4,215,147,.04);display:flex;flex-direction:column}
+  .wdiag-dp-row{display:flex;gap:var(--space-2);flex:1}
+  .wdiag-dp{border:1px solid var(--success);border-radius:var(--radius-sm);padding:7px var(--space-3);flex:1;background:rgba(4,215,147,.04);display:flex;flex-direction:column}
   .wdiag-dp-label{font-size:var(--font-size-label-xs);color:var(--success);font-weight:700;margin-bottom:5px;text-align:center;letter-spacing:.05em}
   .wdiag-stage{margin:1px 0}
   .wdiag-stage-label{font-size:var(--font-size-label-xs);color:var(--warning);font-weight:600;margin-bottom:3px}
@@ -195,6 +215,18 @@
   .wdiag-card .wdiag-layer-box{font-size:var(--font-size-label-xs);padding:3px var(--space-2);line-height:1.4;margin:1px 0}
   .wdiag-tp-arr{color:var(--primary);font-size:var(--font-size-body-sm);flex-shrink:0;opacity:.6;align-self:center}
   .wdiag-pp-arr{text-align:center;color:var(--warning);font-size:var(--font-size-body-sm);margin:4px 0;opacity:.75}
+  /* PP 横向布局：PP stage 横着分大列，DP 往下分大行（内容与纵向完全一致）。
+     入口（batch/shard）挪到最左一列、logits/loss 挪到最右一列，数据流方向变成左→右。 */
+  .wdiag-hrow{display:flex;align-items:stretch;gap:var(--space-2)}
+  .wdiag-h{gap:var(--space-3);flex:1}
+  .wdiag-dp-band{display:flex;gap:var(--space-2);align-items:stretch}
+  .wdiag-pp-arr-h{display:flex;flex-direction:column;align-items:center;justify-content:center;margin:0;flex:0 0 auto;line-height:1.15;white-space:nowrap;text-align:center}
+  .wdiag-split-left{flex:0 0 auto;width:104px;margin-bottom:0;display:flex}
+  .wdiag-split-left .wdiag-batch-full{flex:1;display:flex;align-items:center;justify-content:center}
+  .wdiag-split-left .wdiag-split-pieces{flex-direction:column}
+  .wdiag-logits-side{flex:0 0 auto;display:flex;align-items:center;gap:var(--space-1)}
+  .wdiag-logits-side .wdiag-logits-arr{margin:0}
+  .wdiag-logits-side .wdiag-logits-card{margin-bottom:0;width:118px}
   .wdiag-dp-bar{text-align:center;color:var(--success);font-size:var(--font-size-label-xs);margin-top:var(--space-2);padding-top:5px;border-top:1px dashed rgba(4,215,147,.35);opacity:.85}
   .wdiag-cp-label{font-size:var(--font-size-label-xs);color:var(--dv-purple);margin-bottom:3px}
   .wdiag-ep-label{font-size:9px;color:var(--danger);font-weight:700;margin-bottom:3px;opacity:.75;letter-spacing:.02em}
@@ -234,6 +266,8 @@
   .moe-mega .moe-hdr{font-size:9px;font-weight:700;color:var(--danger);display:flex;align-items:center;gap:3px;line-height:1.3;white-space:normal}
   .moe-svg{position:absolute;inset:0;width:100%;height:100%;pointer-events:none;overflow:visible;z-index:4}
   .moe-band{font-size:8.5px;font-weight:600;color:var(--foreground-muted);padding:2px 5px;border-radius:3px;background:rgba(255,255,255,.03);border:1px solid var(--border-subtle);display:flex;align-items:center;gap:4px;line-height:1.35;position:relative;z-index:2;transition:background .25s,color .25s,border-color .25s,box-shadow .25s}
+  /* 带内强调词（无 all-to-all / 不跨 DP …）与正文同字号同色，只靠字重区分 */
+  .moe-band b,.moe-hdr b{font-size:8.5px;color:inherit}
   .moe-step{display:inline-flex;align-items:center;justify-content:center;font-size:9px;flex-shrink:0;opacity:.75}
   .moe-sel-hint{margin-left:auto;font-size:8px;color:var(--danger);font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
   /* ③ 计算带：改为纵向容器，向下包住专家头像 */
@@ -249,6 +283,23 @@
   .moe-exp-slice{font-size:6.5px;color:var(--dv-purple);line-height:1;font-weight:700}
   .moe-exp-local::after{content:'';position:absolute;top:-2px;right:0;width:6px;height:6px;border-radius:50%;background:var(--success);border:1.5px solid var(--card);box-shadow:0 0 0 1px rgba(4,215,147,.5)}
   .moe-exp.moe-exp-sel{opacity:1;filter:grayscale(0)}
+  /* ⓪ token 带：本卡自己的 token（抽样示意）—— top-k 是「每个 token 各选 k 个」，不是每卡/每组选一次 */
+  .moe-band-tok{flex-wrap:wrap}
+  .moe-tok-strip{display:flex;gap:2px;margin-left:auto;flex-shrink:0}
+  .moe-tok{width:9px;height:9px;border-radius:2px;border:1px solid var(--border-strong);background:rgba(255,255,255,.04);transition:background .25s,border-color .25s,box-shadow .25s}
+  .moe-tok.on{background:rgba(255,170,59,.6);border-color:var(--warning);box-shadow:0 0 4px rgba(255,170,59,.5)}
+  /* Router 打分是「本地、零通讯」：探测线只画在卡内，band 下方标注说明（故 gate 带改纵向） */
+  .moe-band-gate{flex-direction:column;align-items:stretch;gap:2px}
+  .moe-gate-lab{display:flex;align-items:center;gap:4px;min-width:0}
+  .moe-gate-note{font-size:7.5px;color:var(--foreground-muted);opacity:.85;line-height:1.35;white-space:normal;padding:0 1px}
+  /* 共享专家：常开、不参与路由、也不进 A2A（DeepSeek-V3 / Pangu 口径） */
+  .moe-exp-shared{opacity:1;filter:none}
+  .moe-exp-shared img{border-color:rgba(4,215,147,.85)}
+  .moe-exp-shared .moe-exp-id{color:var(--success);font-weight:700}
+  .mcb-exp.mcb-shared img{border-color:rgba(4,215,147,.85)}
+  /* EP 布局说明条（EP 嵌套在单个 DP 副本内部、a2a 不跨 DP）*/
+  .wdiag-ep-banner{font-size:9.5px;line-height:1.55;color:var(--foreground-secondary);background:rgba(255,75,123,.05);border:1px dashed rgba(255,75,123,.4);border-radius:var(--radius-sm);padding:5px 8px;margin-bottom:7px}
+  .wdiag-ep-banner b{color:var(--danger)}
   .moe-exp.moe-exp-sel img{border-color:var(--danger);box-shadow:0 0 7px rgba(255,75,123,.65)}
   .moe-exp.moe-exp-sel .moe-exp-id{color:var(--danger);font-weight:700}
   /* phase band highlight — driven by .moe-ph-* on the mega box */
@@ -314,7 +365,8 @@
   .gpu-outer{flex:1;min-width:158px;display:flex;flex-direction:column;gap:var(--space-1)}
   .gpu{background:var(--surface-1);border:1px solid var(--border-subtle);border-radius:var(--radius-md);padding:var(--space-2)}
   .gpu-outer .mem{font-size:10px}
-  .wdiag-card-outer{display:flex;flex-direction:column;align-items:stretch;flex:1;min-width:0}
+  /* 单张卡最小 210px（任何视图都一样）：装不下就整图变宽，交给 .worldbox 横向滚动 */
+  .wdiag-card-outer{display:flex;flex-direction:column;align-items:stretch;flex:1;min-width:210px}
   .wdiag-g-label{font-size:var(--font-size-label-xs);font-weight:700;color:var(--primary);text-align:center;margin-bottom:3px;line-height:1.3}
   .wdiag-mem{font-size:10px;color:var(--foreground-secondary);margin-top:5px;padding:0 1px;cursor:help;border-bottom:1px dashed var(--border-strong)}
   .wdiag-mem .membar{height:4px;margin-top:3px}
@@ -399,6 +451,7 @@
   .col::-webkit-scrollbar,
   .col-code::-webkit-scrollbar,
   .col-mid>.worldbox::-webkit-scrollbar { width: 5px }
+  .col-mid>.worldbox::-webkit-scrollbar:horizontal { height: 8px }   /* 拓扑图过宽时的横向滚动条 */
   .col::-webkit-scrollbar-track,
   .col-code::-webkit-scrollbar-track,
   .col-mid>.worldbox::-webkit-scrollbar-track { background: transparent }
@@ -595,17 +648,40 @@
         <div class="para-hint" id="hintTP"></div>
       </div>
       <div id="ctrlMoE">
-        <div class="row"><label><input type="checkbox" id="enMoE" data-tab="launch" checked> MoE / 专家并行 EP</label></div>
-        <!-- 默认值设为高哨兵，readState 的 snapEP() 会吸附到当前 DP×CP/专家数下最大的合法 EP -->
-        <input type="hidden" id="ep" data-tab="launch" value="64">
-        <div class="ep-chips disabled" id="epChips"></div>
-        <div class="para-hint" id="hintEP"></div>
+        <!-- ① 只管选型：MoE 还是稠密 FFN。真值仍是隐藏的 #enMoE（readState / DEFAULTS / lockPangu 都读它） -->
+        <div class="row">
+          <span>FFN 类型</span>
+          <div class="mode-tabs" id="moeModeTabs">
+            <button class="mode-tab on" data-moe="1" type="button">MoE</button>
+            <button class="mode-tab" data-moe="0" type="button">稠密 FFN</button>
+          </div>
+          <input type="checkbox" id="enMoE" data-tab="launch" checked style="display:none">
+        </div>
+        <div class="para-hint" id="hintMoE"></div>
+        <!-- ② 主控：EP 组的个数（每个 DP 副本内几个 EP 组）。真值仍是「组大小」#ep，本控件是它的派生视图 -->
+        <div id="ctrlEPG">
+          <div class="row"><label>EP 组的个数 <span class="pill">每 DP 副本</span></label><input class="deg derived" type="number" id="epg" min="1" max="8" value="1"></div>
+          <input type="range" class="par-slider" id="epgSlider" min="1" max="8" value="1">
+          <div class="para-hint" id="hintEP"></div>
+        </div>
+        <!-- ③ 折叠：业界一般不动的两项（EP 组大小 / 专家是否再做 TP） -->
+        <div class="adv" id="epAdv">
+          <button class="adv-toggle" id="epAdvToggle"><span class="adv-caret">▸</span>高级 · EP 组的大小 <b id="epSizeBadge">= 2</b><span class="adv-note" id="epAdvNote">业界常用</span></button>
+          <div class="adv-body">
+            <!-- 默认值设为高哨兵，readState 的 snapEP() 会吸附到当前 TP/专家数下最大的合法 EP -->
+            <input type="hidden" id="ep" data-tab="launch" value="64">
+            <div class="ep-chips disabled" id="epChips"></div>
+            <div class="para-hint" id="hintEPSize"></div>
+            <div class="row" id="etpRow" style="display:none"><label><span class="switch"><input type="checkbox" id="enETP"><span class="switch-slider"></span></span> 专家也做 TP（ETP 模式）</label></div>
+            <div class="para-hint" id="hintETP"></div>
+          </div>
+        </div>
         <div class="slabel" id="expRow" style="display:none"><span>专家数 (每 MoE 层)</span><b id="vExperts">8</b></div>
         <input type="range" id="experts" min="2" max="16" step="2" value="8" style="display:none">
         <div class="para-hint" id="hintExperts"></div>
         <div id="ctrlEPX" style="display:none">
-          <div class="row" id="etpRow" style="display:none"><label><span class="switch"><input type="checkbox" id="enETP"><span class="switch-slider"></span></span> 专家也做 TP（ETP 模式）</label></div>
-          <div class="para-hint" id="hintETP"></div>
+          <div class="row" id="sharedRow"><label><span class="switch"><input type="checkbox" id="enShared"><span class="switch-slider"></span></span> 共享专家（常开·不路由）</label></div>
+          <div class="para-hint" id="hintShared"></div>
           <div class="slabel" id="topkRow"><span>Top-k · 每 token 激活专家</span><b id="vTopk">2</b></div>
           <input type="range" id="topk" min="1" max="8" step="1" value="2">
           <div class="slabel" id="seqRow"><span>序列长 L · tokens/样本</span><b id="vSeq">2048</b></div>
@@ -710,6 +786,11 @@
     <div style="display:flex;align-items:center;justify-content:space-between;gap:var(--space-2);margin:0 14px;padding:14px 0 6px;flex-shrink:0">
       <h2 id="midTitle" style="margin:0;padding:0;position:static;flex-shrink:0">训练拓扑及计算流动可视化</h2>
       <label title="开启后，鼠标悬浮拓扑图会显示层/算子的说明气泡" style="display:flex;align-items:center;gap:5px;font-size:var(--font-size-body-sm);color:var(--foreground-secondary);cursor:pointer;flex-shrink:0;white-space:nowrap"><span class="switch"><input type="checkbox" id="hoverTipToggle"><span class="switch-slider"></span></span>悬浮气泡</label>
+      <!-- 紧跟「悬浮气泡」右侧，视觉间距 20px：父级 flex 已有 gap:8px，这里再补 12px -->
+      <div class="panel-mode-tabs" id="ppLayoutTabs" style="flex-shrink:0;margin-left:calc(20px - var(--space-2))">
+        <button class="pmode on" data-pplay="v" title="PP stage 纵向分大行，DP 往右分大列">PP纵向</button>
+        <button class="pmode" data-pplay="h" title="PP stage 横向分大列，DP 往下分大行">PP横向</button>
+      </div>
       <div style="flex:1;min-width:0;display:flex;align-items:center;justify-content:flex-end;gap:var(--space-2)">
         <div class="moe-count-bar" id="moeCountBar"></div>
         <button class="flow-toggle" id="flowToggleBtn" title="停止计算流动动画">⏸ 停止播放</button>
@@ -1007,6 +1088,8 @@ const PANGU={ layers:61, dense:3, hidden:7680, routed:256, topk:8, shared:1, tp:
 // Pangu 是推理发布包,非训练:超参数行复用为推理参数(对应 tp32.yaml 的 data_config / sampling_config)。
 const PANGU_INFER={ batch:1, maxNewTokens:28000, temperature:0.7 };
 let panguShowAll=false;   // Pangu 拓扑图:false=只展示 2 列,true=展开全部 32 列
+// 拓扑图布局:'v'=PP 纵向(PP 分大行、DP 分大列,默认) / 'h'=PP 横向(PP 分大列、DP 分大行)。内容两者一致。
+let ppLayout='v';
 // Pangu 卡内层分组折叠:默认收起,只展示一个典型 (mla+mlp / mla+moe);展开后列出全部层
 let panguGroupCollapsed={dense:true, moe:true};
 // 复用 stageLayers 的 {kind,name} schema → 直接套用 cardLayerHTML 的格子/配色/贴图/流动。
@@ -1026,6 +1109,7 @@ function panguAllLayers(){
 const PANGU_SCROLL={
   enTP:{tab:'tp',hint:'attn_tp_size'},  tp:{tab:'tp',hint:'attn_tp_size'},  tpSlider:{tab:'tp',hint:'attn_tp_size'},
   enMoE:{tab:'tp',hint:'moe_tp_size'},  ep:{tab:'tp',hint:'moe_tp_size'},
+  epg:{tab:'tp',hint:'moe_tp_size'},    epgSlider:{tab:'tp',hint:'moe_tp_size'},
   enCP:{tab:'tp',hint:'embed_tp_size'}, cp:{tab:'tp',hint:'embed_tp_size'},  cpSlider:{tab:'tp',hint:'embed_tp_size'},
   enDP:{tab:'tp',hint:'parallel_config'}, dp:{tab:'tp',hint:'parallel_config'}, dpSlider:{tab:'tp',hint:'parallel_config'},
   enPP:{tab:'tp',hint:'parallel_config'}, pp:{tab:'tp',hint:'parallel_config'}, ppSlider:{tab:'tp',hint:'parallel_config'},
@@ -1044,16 +1128,19 @@ function readState(){
   state.dp=state.enDP?+$('dp').value:1; state.pp=state.enPP?+$('pp').value:1;
   state.cp=state.enCP?+$('cp').value:1; state.tp=state.enTP?+$('tp').value:1;
   state.blocks=+$('blocks').value; state.hidden=+$('hidden').value; state.experts=+$('experts').value;
-  // EP 从 DP×CP 借卡：吸附到「整除 DP×CP 且整除专家数」的最近合法值（dp×cp=1 时强制为 1）
-  state.ep=state.enMoE?snapEP(+$('ep').value):1;
-  state.topk=+$('topk').value; state.seq=+$('seq').value; state.etp=$('enETP').checked;
+  // EP 在副本内沿 TP 切。两个表单（组个数 / 组大小）是同一个自由度，由 EP_PIN 决定听谁的；
+  // 用户没显式选过时跟随 TP —— 即业界常用的「每副本 1 个 EP 组、组大小 = TP」。
+  state.ep=state.enMoE?_resolveEP():1;
+  state.topk=+$('topk').value; state.seq=+$('seq').value; state.etp=state.enMoE?_resolveETP():false;
+  // 共享专家：常开（每个 token 都过），不参与 router 打分、不进 all-to-all；按 dense MLP 口径随 TP 切、跨 EP 复制
+  state.shared=($('enShared')&&$('enShared').checked)?1:0;
   const tile=document.querySelector('.card-tile.selected'); state.cardType=tile?tile.dataset.name:'NVIDIA H100 80GB'; state.cardGB=tile?+tile.dataset.gb:80;
   state.batch=+$('batch').value; state.steps=+$('steps').value;
   state.lr=Math.pow(10,-6+(+$('lr').value/100)*4);
   // CNN:强制关闭 TP/CP/MoE,层数取 ResNet 总层段数,供 PP 分段与 hint 使用
   if(isCNN()){
     state.enCP=false; state.enTP=false; state.enMoE=false;
-    state.cp=1; state.tp=1; state.ep=1; state.etp=false;
+    state.cp=1; state.tp=1; state.ep=1; state.etp=false; state.shared=0;
     state.cnnVariant=cnnVariant();
     state.blocks=cnnAllLayers().length;
   }
@@ -1063,6 +1150,7 @@ function readState(){
     state.enDP=false; state.enPP=false; state.enCP=false; state.enTP=true; state.enMoE=true;
     state.dp=1; state.pp=1; state.cp=1; state.tp=PANGU.tp; state.ep=1; state.etp=false;
     state.blocks=PANGU.layers; state.hidden=PANGU.hidden; state.experts=PANGU.routed; state.topk=PANGU.topk;
+    state.shared=PANGU.shared;   // 发布配置带 1 个共享专家
   }
   state.world=state.dp*state.pp*state.cp*state.tp;
 }
@@ -1080,26 +1168,98 @@ function cpGroup(d,p,t){ const a=[]; for(let c=0;c<state.cp;c++)a.push(rankOf(d,
 function ppGroup(d,c,t){ const a=[]; for(let p=0;p<state.pp;p++)a.push(rankOf(d,p,c,t)); return a; }
 function dpGroup(p,c,t){ const a=[]; for(let d=0;d<state.dp;d++)a.push(rankOf(d,p,c,t)); return a; }
 
-// =================== 专家并行 EP（Megatron 式：从 DP×CP 借卡）===================
-// EP 不增加总卡数（world 仍 = DP×PP×CP×TP）；它把 MoE 层里本来互为副本的
-// DP×CP 张卡，改成「各持一部分专家」。约束：EP 必须整除 DP×CP，且整除专家数。
-function epCap(){ return state.dp*state.cp; }                       // 可借用的副本卡上限
+// =================== 专家并行 EP（EP 嵌套在单个 DP 副本内部，绝不跨 DP）===================
+// 布局：World = PP × DP × CP × TP。EP 不增加卡数，也**不从 DP 借卡**：
+//   1) 每个 DP 副本独立持有**完整一套** E 个专家；
+//   2) EP 域 = 当前 DP 副本内部的那 TP 张卡 —— EP 把这套专家沿 TP 方向切成 EP 份；
+//      不同 DP 副本各自是独立的 EP 域，互不通信；
+//   3) all-to-all 只在同一副本内的这 EP 张卡之间发生，**永不跨 DP**；
+//   4) 反向时专家梯度与其它权重一样，在 DP(×CP) 副本之间 all-reduce。
+// 约束：EP 整除 TP，且整除专家数。TP/EP = 同一批专家由几张卡共同承担（ETP 度）。
+// 前提：MoE 层与序列并行(SP)配合 —— TP 组内每卡持 1/TP 的 token。否则 EP 组内
+//       各卡 token 完全相同，a2a 就变成「和自己交换」，没有意义。
+function epCap(){ return state.tp; }                                // EP 只能在副本内的 TP 卡之间切
 function epDivisors(){ const cap=epCap(),E=state.experts,ds=[]; for(let k=1;k<=cap;k++) if(cap%k===0 && E%k===0) ds.push(k); return ds; }
 function snapEP(req){ let best=1; for(const k of epDivisors()) if(k<=req) best=k; return best; }  // 向下吸附到最近合法值
-// 卡 (d,c) 在 MoE 层持有哪些专家：EP 切「专家个数」，TP 再切每个专家的矩阵
-function expertAssign(d,c){
-  const idx=d*state.cp+c, epr=idx%state.ep, perEP=state.experts/state.ep;
-  return { epr, edp:Math.floor(idx/state.ep), lo:epr*perEP, hi:epr*perEP+perEP-1, perEP };
+// TP/EP：同一 EP 位由几张卡承担。ETP 开 = 每个专家矩阵再切 etpDeg 片；关 = 各存整份副本（冗余）
+function etpDeg(){ return state.tp/state.ep; }
+// TP 组内第 t 张卡的分工：(EP 位 epr, ETP 位 etpr) → 它持有哪几个专家
+function expertAssign(t){
+  const eg=etpDeg(), epr=Math.floor(t/eg), etpr=t%eg, perEP=state.experts/state.ep;
+  return { epr, etpr, eg, lo:epr*perEP, hi:epr*perEP+perEP-1, perEP };
 }
-// EP 卡片单选：只列出合法取值（整除 DP×CP 且整除专家数）。隐藏 #ep 为真值源。
-function renderEpChips(){
-  const box=$('epChips'); if(!box) return;
+// 同一 EP 组的成员（all-to-all 对端）= 本副本内、ETP 位相同、EP 位 0..ep-1 的那 EP 张 TP 卡。
+// 全部成员都在同一个 DP 框内 → 连线不会跨 DP。
+function epGroupMembers(t){
+  const {etpr,eg}=expertAssign(t), out=[];
+  for(let r=0;r<state.ep;r++) out.push({epr:r, t:etpr+r*eg});
+  return out;
+}
+// 专家梯度的同步范围：每个 DP 副本各有完整一套专家 → 与普通权重同组（DP×CP 副本之间）
+function expertDpSize(){ return state.dp*state.cp; }
+// 本卡对「自己持有的那几个专家」是独占，还是与同 EP 位的其它卡分片 / 存冗余副本
+function expertHoldText(){
+  const eg=etpDeg();
+  if(eg<=1) return '本卡独占';
+  return state.etp
+    ? `与同位另 ${eg-1} 张卡各持 1/${eg} 片`
+    : `与同位另 ${eg-1} 张卡各存整份副本`;
+}
+// ── 两个表单、一个自由度 ──────────────────────────────────────────────
+// EP 组大小(state.ep) × 每副本 EP 组个数 = TP。两者互为倒数，真值统一存在隐藏的 #ep 上：
+//   · #epg（可见主控，滑块+数字）＝ 组个数，改它 → 换算成组大小写回 #ep
+//   · #epChips（折叠在高级里）＝ 组大小，改它 → 直接写 #ep
+// 业界最常见配置＝「每副本 1 个 EP 组、组大小 = TP」（每卡独占自己的专家、不再切专家矩阵，
+// 即 SGLang tp8ep8 / Megatron expert-tensor-parallel-size=1 那一档），所以组大小默认折叠。
+function epGroupChoices(){ return epDivisors().map(s=>state.tp/s).sort((a,b)=>a-b); }
+function snapEPGroups(req){ const cs=epGroupChoices(); let best=cs[0]; for(const c of cs) if(c<=req) best=c; return best; }
+// 用户显式动过哪一侧就以哪一侧为准；都没动过则跟随 TP（组大小=TP、每副本 1 组＝业界常用档）。
+// 这样单独调 TP 时不会悄悄漂离推荐配置，而用户的显式选择又能在 TP 变化后保持语义。
+const EP_PIN={mode:null,val:0};                            // 'count' | 'size' | null
+function _resolveEP(){
+  if(EP_PIN.mode==='count') return state.tp/snapEPGroups(EP_PIN.val);
+  if(EP_PIN.mode==='size')  return snapEP(EP_PIN.val);
+  return snapEP(state.tp);
+}
+// ETP 同样自动取常用解：同一 EP 位由 eg=TP/EP 张卡承担时，业界做法是把专家矩阵切成 1/eg
+// （各存一份整份副本纯属浪费显存，没人这么配）。所以 eg>1 就自动开 ETP，用户动过之后才听他的。
+const ETP_PIN={touched:false};
+function _resolveETP(){ return ETP_PIN.touched ? $('enETP').checked : etpDeg()>1; }
+const EP_ADV_STATE={open:false};                           // 高级区展开状态（跨 update 保留）
+function renderEpControls(){
+  const on=state.enMoE, eg=etpDeg(), sizeIsDefault=(state.ep===state.tp);
+  // FFN 类型 tab 的选中态由真值 #enMoE 反推（Pangu 锁定为只读）
+  const tabs=$('moeModeTabs');
+  if(tabs){
+    tabs.querySelectorAll('.mode-tab').forEach(b=>b.classList.toggle('on',(b.dataset.moe==='1')===on));
+    tabs.classList.toggle('disabled', isPangu());
+  }
   $('ep').value=state.ep;                                  // 回写真值（已吸附为合法值）
-  box.style.display=state.enMoE?'flex':'none';
-  if(!state.enMoE) return;
-  const vals=epDivisors();
+  const show=(id,v)=>{ const el=$(id); if(el) el.style.display=v?'':'none'; };
+  show('ctrlEPG',on); show('epAdv',on);
+  // ① 组个数：可见主控（派生视图 = TP/EP）
+  const locked=isPangu()||!on||epGroupChoices().length<=1;  // 只有一种合法取值时没什么可调
+  [['epg',eg],['epgSlider',eg]].forEach(([id,v])=>{
+    const el=$(id); if(!el) return;
+    el.max=state.tp; el.value=v; el.disabled=locked;
+  });
+  if(!on) return;
+  // ② 组大小：折叠区里的卡片单选 + 折叠标题上的摘要徽标
+  const badge=$('epSizeBadge'), note=$('epAdvNote'), adv=$('epAdv');
+  if(badge) badge.textContent=`= ${state.ep}`;
+  // 摘要只陈述事实：要么「就是常用档」，要么「由组个数换算而来」。不做偏离提醒，也不催用户改。
+  if(note) note.textContent = state.tp<=1 ? 'TP=1，无从切分'
+    : sizeIsDefault ? '业界常用档 · 每卡独占专家'
+    : `TP${state.tp} ÷ ${eg} 组，自动换算`;
+  if($('enETP')) $('enETP').checked=state.etp;              // 回写自动选出的 ETP 值
+  if(adv) adv.classList.toggle('open', EP_ADV_STATE.open);
+  const box=$('epChips'); if(!box) return;
+  box.style.display='flex';
   box.classList.toggle('disabled', isPangu());             // Pangu 锁定为只读
-  box.innerHTML=vals.map(v=>`<div class="ep-chip${v===state.ep?' on':''}" data-ep="${v}" title="EP=${v}：每卡持有 ${state.experts/v} 个专家">${v}</div>`).join('');
+  box.innerHTML=epDivisors().map(v=>{
+    const g=state.tp/v;
+    return `<div class="ep-chip${v===state.ep?' on':''}" data-ep="${v}" title="组大小 ${v}：副本内 ${state.tp} 张 TP 卡 → ${g} 个 EP 组 × ${v} 张卡/组，每卡 ${state.experts/v} 个专家${v===state.tp?'（业界常用）':''}">${v}</div>`;
+  }).join('');
 }
 
 const TENSOR_ICON=`<svg viewBox="0 0 16 16" xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="none" style="display:inline-block;vertical-align:-3px;margin-right:2px;flex-shrink:0"><rect width="3" height="3" x="2" y="5" stroke="currentColor" stroke-width="1"/><rect width="3" height="3" x="5" y="5" stroke="currentColor" stroke-width="1"/><rect width="3" height="3" x="8" y="5" stroke="currentColor" stroke-width="1"/><rect width="3" height="3" x="11" y="5" stroke="currentColor" stroke-width="1"/><rect width="3" height="3" x="2" y="8" stroke="currentColor" stroke-width="1"/><rect width="3" height="3" x="5" y="8" stroke="currentColor" stroke-width="1"/><rect width="3" height="3" x="8" y="8" stroke="currentColor" stroke-width="1"/><rect width="3" height="3" x="11" y="8" stroke="currentColor" stroke-width="1"/></svg>`;
@@ -1156,13 +1316,13 @@ function cardLayerHTML(p, t, d=0, c=0){
       case 'attn': label=tp>1?`Attn-${bi} (第${t+1}/${tp}片)`:`Attn-${bi}`; break;
       case 'mlp':  label=tp>1?`MLP-${bi} (第${t+1}/${tp}片)`:`MLP-${bi}`; break;
       case 'moe':{
-        const etpSlice=tp>1&&state.etp;   // 专家仅在 ETP 模式下才被 TP 再切；EP-only(主流)时整块不切
+        // 专家沿 TP 切成 EP 份；同一 EP 位由 TP/EP 张卡承担，仅 ETP 模式下才把矩阵再切片
+        const {lo,hi,eg}=expertAssign(t), etpSlice=eg>1&&state.etp;
         if(state.enMoE && state.ep>1){
-          const {lo,hi}=expertAssign(d,c);
           const er=lo===hi?`E${lo}`:`E${lo}~E${hi}`;
-          label=etpSlice?`MoE-${bi} [${er}·第${t+1}/${tp}片]`:`MoE-${bi} [${er}]`;
+          label=etpSlice?`MoE-${bi} [${er}·第${(t%eg)+1}/${eg}片]`:`MoE-${bi} [${er}]`;
         } else {
-          label=etpSlice?`MoE-${bi} (第${t+1}/${tp}片)`:`MoE-${bi}`;
+          label=etpSlice?`MoE-${bi} (第${(t%eg)+1}/${eg}片)`:`MoE-${bi}`;
         }
         break;
       }
@@ -1193,90 +1353,134 @@ function applyNpuBg(){
 }
 
 // =================== MoE 放大示意框（每层的 MoE 矩形撑大）===================
-// 参考 images/moe.png：卡内每个 MoE 层展开成多行 —— Router 路由 → A2A Dispatch →
-// 专家 FFN 计算 → A2A Combine（开启 ETP 再加一行示意每专家按 TP 再切片）。
+// 参考 images/moe.png：卡内每个 MoE 层展开成多行 —— 本卡 token ⓪ → Router 本地打分 ① →
+// A2A Dispatch ② → 专家 FFN 计算 ③ → A2A Combine ④（开启 ETP 时每专家再按 TP 切片）。
 // 每张卡只画「本卡实际持有」的专家头像（perEP = E/ep 个，用 images/1~10.png，超出取模复用）。
-// 本卡 Router 把 token 路由到全局 top-k 专家：命中本卡的走卡内短线，命中远端卡的则
-// 在根 SVG 上画「跨卡连线」到目标卡对应的专家头像（A2A Dispatch/Combine）。
+// 关键口径（与真实框架对齐）：
+//   · top-k 是「每个 token 各选 k 个专家」，不是每卡/每 EP 组选一次 → ⓪ 带画出抽样 token。
+//   · Router 打分纯本地：router 权重 H×E 在每张卡上复制，打分不需要任何通讯 → ① 的探测线只在卡内。
+//   · 跨卡通讯只发生在 ②/④ 的 all-to-all；EP=1 时退化为卡内 permute/unpermute，没有 a2a。
+//   · 共享专家（若开启）常开、不参与路由、也不进 a2a → 画在专家条尾部，只在 ③ 点亮。
+const MOE_TOK_SHOWN=6;                           // 每卡抽样展示的 token 数（真实是几千个，只能示意）
 function moeMegaHTML(bi,p,t,d,c){
-  const E=state.experts, k=Math.max(1,Math.min(state.topk,E)), tp=state.tp;
-  const idx=d*state.cp+c, epr=idx%state.ep, edp=Math.floor(idx/state.ep), perEP=E/state.ep;
-  const lo=epr*perEP, hi=lo+perEP-1, etp=(state.etp && tp>1);
-  const epgDisp = p*(state.dp*state.cp/state.ep)+edp;   // 跨 stage 的全局 EP 组号：每个 PP stage 自成一批 EP 组
-  const holdTxt = state.ep>1 ? `EP组${epgDisp}·EP位${epr}·本卡 ${perEP} 专家 E${lo}~E${hi}` : `本卡全部 ${E} 专家 E0~E${E-1}`;
-  // ETP 时每专家再被 TP 切成 tp 片、本卡只持第 t 片：头像做 (t+1)/tp 的「分片蒙版」（挡掉未持有的部分）
-  const p1=(t/tp*100).toFixed(2), p2=((t+1)/tp*100).toFixed(2), C='rgba(0,0,0,.62)';
+  const E=state.experts, k=Math.max(1,Math.min(state.topk,E)), tp=state.tp, ep=state.ep;
+  const {epr,etpr,eg,lo,hi,perEP}=expertAssign(t);
+  const etp=(state.etp && eg>1);
+  // EP 组号：每个 (PP stage, DP 副本, CP 位, ETP 位) 各自一个独立 EP 域
+  const epgDisp = ((p*state.dp+d)*state.cp+c)*eg+etpr;
+  const holdTxt = ep>1
+    ? `EP组${epgDisp}·EP位${epr}/${ep}·本卡 ${perEP} 专家 E${lo}~E${hi}`
+    : `本卡全部 ${E} 专家 E0~E${E-1}`;
+  // 本卡 token 数 = (batch/DP)×(L/CP)÷TP —— MoE 与序列并行(SP)配合，TP 组内每卡只持 1/TP 的 token，
+  // 否则 EP 组（=副本内 TP 卡）各成员 token 相同，a2a 无意义。
+  const tokRep=Math.max(1,Math.round(state.batch/state.dp))*Math.max(1,Math.round(state.seq/state.cp));
+  const tokN=Math.max(1,Math.round(tokRep/tp));
+  const fmtTok=n=>n>=1e6?(n/1e6).toFixed(1)+'M':n>=1e3?(n/1e3).toFixed(1)+'K':''+n;
+  // ETP 时每专家再被切成 eg 片、本卡只持第 etpr 片：头像做 (etpr+1)/eg 的「分片蒙版」
+  const p1=(etpr/eg*100).toFixed(2), p2=((etpr+1)/eg*100).toFixed(2), C='rgba(0,0,0,.62)';
   const maskStyle=`background:linear-gradient(90deg,${C} 0,${C} ${p1}%,transparent ${p1}%,transparent ${p2}%,${C} ${p2}%,${C} 100%)`;
   let strip='';
-  for(let i=lo;i<=hi;i++){                       // 只画本卡持有的专家
+  for(let i=lo;i<=hi;i++){                       // 只画本卡持有的路由专家
     const img=(i%10)+1;
-    strip += `<div class="moe-exp" data-ei="${i}" title="专家 E${i}${etp?`（本卡持第 ${t+1}/${tp} 片）`:'（本卡持有）'}">`
+    strip += `<div class="moe-exp" data-ei="${i}" title="路由专家 E${i}${etp?`（本卡持第 ${etpr+1}/${eg} 片）`:eg>1?'（本卡存整份，同位另有冗余副本）':'（本卡独占）'}">`
            + `<span class="moe-exp-av"><img src="images/${img}.png" alt="E${i}" loading="lazy">`
            + (etp?`<span class="moe-exp-mask" style="${maskStyle}"></span>`:'')
            + `</span>`
            + `<span class="moe-exp-id">E${i}</span>`
-           + (etp?`<span class="moe-exp-slice">${t+1}/${tp}片</span>`:'')
+           + (etp?`<span class="moe-exp-slice">${etpr+1}/${eg}片</span>`:'')
            + `</div>`;
   }
-  return `<div class="wdiag-layer-box wdiag-lb-moe moe-mega" data-kind="moe" data-bi="${bi}" data-p="${p}" data-t="${t}" data-d="${d}" data-c="${c}" data-e="${E}" data-k="${k}" data-perep="${perEP}" data-edp="${edp}" data-epr="${epr}" data-etp="${etp?1:0}">`
+  if(state.shared)                               // 共享专家：每卡都有一份（跨 EP 复制、随 TP 切），恒激活
+    strip += `<div class="moe-exp moe-exp-shared" data-shared="1" title="共享专家：每个 token 都过，不参与 router 打分、不进 all-to-all；每张卡都有一份${tp>1?`（随 TP 切第 ${t+1}/${tp} 片）`:''}">`
+           + `<span class="moe-exp-av"><img src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAADwAAAA8CAYAAAA6/NlyAAAeBUlEQVR4Ae3gAZAkSZIkSRKLqpm7R0REZmZmVlVVVVV3d3d3d/fMzMzMzMzMzMzMzMzMzMzMzMzMzMzMzMzMzMzMzMzMzMzMzMzMzMzMzMzMzMzMzMzMzMzMzMzMzMzMzMzMzMzMzMzMzMzMzMzMzMzMzMzMzMzMzMzMdHd3d3dXV1VVVVVmZkZGRIS7m5kKz0xmV3d1d3dPz8zMzMxMovhPcuKTPunYTbMTr3ohx5e/58J9L9bgodg3lFk98fCta+Yvec31bPTd6g/veurFJ++eu4uMp0W2f5Dbn7fW/pBv/dZL/MdD/Ed6/4+4iV7vLPut5133yg8/dX05Nx5x38XzJAbEiY0tXuL4Dbz4Ndchwx/e93T++uztiEIXQQ2Y9/N2tFz/8WqYfjpL+2G+7uvu4D8G4j9A/YiPeX239jEt802E5ALHFps86OQ13LF7nt2jA5CZ9T0P3TnNwzdOcv32MZ68d5a/vHAHu8MRp+bbPOqam9gslbGZu3bPc9t99xFd+DVufPgvFfmrfuETPvTX+fdB/Du87Od91eveenD+Cy/t770SQNoIyCKu2TnOddsnuG33HJeODhDJse1tXvqam7mu2+BEv8kf3f00/ub8HYRNRZzY3KaEWK0nDoeB0ab0hZe78SHUNOeO9v9kvph/6l9+wsf8Jv82iH+Lj/iIm7bmG1//yO1r3uq2w10uXNpDYcwVWeCGY6c4tbHN087fw3K9BiUnj5/g1R/8aI5R2KTnry7cxZ/f8SQ0mBamRYIMKSAgChV4yMkzPOrMTUQmTzs4z5PO3vUzwzh+OF/3dXfwr4P4V7r5Uz/rfe/Zv/jls8XGicfuXM/TDy5yfvciCmPAAoe46fgpTs63eMqFe1it1wjou8rNx06yNdugJLRa+Ps7nk7LJAWOBCU0IQkRWKIKjs0W9FG4uDxilQ3ZF4vqx49f95XfyYsO8SJ67c/6rvlT691feeFg/0NWyyN2Nnd4sZ3recrhec6ePwcyBjJACm45cZqT8y2eePFu1ssVBixQEQDOpEbBzWDRBFaCEtIIIYQUgPGUBOAQIAA25gvObB//pszlx976OZ+z4l+GeBE8/FO+8Exs1Z+762j3lZb7hxhzZusEjzlxA4/fu49zFy8gJ4nJEEThIceu4/rt4/z9xbs42rtEkRFgEgRjTqgr1AZyMLqQMg6jBCNCBiABnIAAkCEkrjl5mq0y4969S3+yt25vwdd90VleOMS/5KM/+vqu5W+qxKPHbMjggJu3z/CI49fx17t3sbu/T7SGERlQaFwzn/HIY9sc7O2ydXTII/qO6IJuPUI2shN3nz/LKpPzsy3Oz3c4Fz2HwOhECFkYcAA2z2LYWWxy/c5pDpdH3Hd0QIonTG31unz1V9/NC4Z4YT7iI84Q+l3EozGEQUAKHn7iBm7ZOsVfXbyTSwd71DYREsdY8XJec+LgLubDAddvHmNuoSrmXYdXa44OD+g3Zpy84Qz33Xeeg7U43+YcbBznSWXG35cF69JT0qQaCYABAQLBg09ew5l+m6ftnefS6gjbpKcneBpek6/7urM8f4gX5L3fe66tY79t8Uo8kIQEN22fYXu+yTN272FxeJ6Hru7jusOBazGL6ZDKmgDCwc5ig+NbG7Q2QgFobG4t2Nra4sYH3cztd9zJnffcy2337nJx2uYfbrqOf5ifIts2jiWpgm2QwCJCPOLYNWzVnsfv3cdqPQImswH+Ey7tvDbf/TkrnhfiBYiP+MhvtPUhFg8gkBCwaIVag1v2z/Lwc09na7mPPHHtmVNs9R133Xknm4sFZ06e4szJnu3NZLUamBrYARYXLu4y39zgxV/ixbl4aZf9wxVPfsLdPOlw4gkPewiPL2cIxFQCWyCBhYBjtaMILk5rnAbANgCYb+Jrv/JDeV6I5+cjPvp9kb8D87wkJLE1BTcenufF9+7iQVxgnPXceOpaehWOjpbs7+5xcLiPgI2ZuP7aY3Sl8JSnP5XFxgZb2zuU2nPf2XOcOnWSa6+/jtnGAqvnaU+5kz9aL/mD049lqQ1aARAgQAiQDBgn2AbANgA4wbwfX/fV38lzQjy3j/iIm0B/i3SC+5kHMEVw/fKAl7nvHzg9HnHjmWu55tgJhuWa3UsHDGPjzrvvQCEWGzOODo8gk53tBSdPHuP8hbNgc/r0NWSa+86e5eEPfxjL1ZrrbrgBJVzMiV9bneC3Fhs4KyFhQFwhAWnSAALANgA4wXkR/JJ83dfdwbMhnttHfORPI70VD2SeRcAik1c9vIvr7/57Hn7mRjbmc3Yv7nHp8Ii7z51j9+AAKZjPO2iN1QCHRxOeRs6cOs6DH3Q9bkvGYeDM6TOcu3COa6+9lkt7e9S+Z1gOPPxhJ1lu38A3XppzW7cFBknIBWGQsY2BNM/JCTbgn+HrvvateTbEA334h78uod8AAQEGMA8ki4dNE+8w3MM8d4mE3YuXuHBhlzFhcWyLO+6+i2kaufm6kzgnLu4n+0PH3uEBZ48ucd3OjJd6yC209ZrFxgYHR4dsb21xcHjE4cEhh0dH3Hjz9bzYS700f3bfip/buJ69mCMZCCCxDE5snsU2z2JzRbweX//Vv8kViAf6yI/8Y8wrgQBxhbmfDNXJa/mA1x0uUNRYLY84XC65dHGfYRjYOb7Nen1ACfOw649zeLjHwcHAMFWGydw7Nm6/6xw95ubTJygSXVeotWM9jNxzz70MNlvHd3iVV3s1zq/X/Gx3gmfU62kCDFZiN8DY5nnYYK4Qf8LXf+0rcwXifh/xMa8P+Ws8i7jCAMggYJEDH7B1xCOGQ8bVmvVqxfkLF9k7OMCGUpJj2zOOHzvOvffdRykdy+UaNyEF61VjFXMu7u3RecWJrU0edOP1XHPmFEeHS/7+CU9ibxhYnNjhxMmTUAt/c+I0fzl/MCt67MQYOwFjm+cmG8xlFiC/AV/3db8OIO734R/zCyjfNICSQQtIDJgwz3IiB778oVssdu9mPR1RUuzuXuT8xYtcuHiRrc0Nrr3mDG1q7F3cZXk4sLt/ROnn7B0MTK0xtOT4iePccN0pHnLz9dx4zTXMSkCa83uH/PWTn8zZwwOmNP1si/tOXMvvbp/ifGyDjQHbANjmgcJgGwwIDCB+ka//2jcDEAAf8RE34XKbkGalskNht60YlEAQFpBIcEbJVz5ih5PrC0Q3cHzes3fpEpcuXGT33HmwMcHhas04wuHRwKXDgYPDFbN+zrXXnOa6a6/h2mtPsbm1YGdrk64UBNhiGM1dFy/y+Dvv4L5z51mNhYP+BH925kae1G1gGwCby2zzQGHARgYDFmDbhVv4uq+7QwB85Ed/PNaXCXjY9TfxiK1T/PndT+PswSUgAJAhlJyw+bwzM17hxso0HPIPT/h7Tuxsc3x7C2Uiw2o1sX8wsH+4YpySYTKzvuPaM6c5eeI4G5sLuoCuLxCBAEuQgQkOx4F7zp/j6fec5/Z79zjKBX915kb+uM7INM/JYJ5F5jKZyywus/gEvv5rv1wAfMTH/D7wagJe4eGP4eVO38SvPu1veep99wACCzBSsrD5yNObvPLigLN33cNiPuOlX/ol2N+9yM7OFrVU5v2c5XJkWI8IIyemUQNKCEUhwiBjmyTITGQwYsrkYHnAnbtLnvD0e7nn0pq/OHktf9Rt4jSXSVxm8ywGcYXMs1gA+gN/w9e8uvjADzzGbPM8uBTgdR/+4rzUqev5+Vv/jifdcw+BmCSQgaQKXkMjr3l0D6cWc177lV+DG266gakN1FqQjQweG1NrKCfIEdoInsCJMdBoOTGsR5pFZpIGyziT1bjmvktHPP2uizzprgv88fYp/mh2DLfkMonLbO4nc4VBXGFxmUVjWJ1S+eiPexM7fxGbm3ZO8EaPfEluWmzyi0//B/7urjvIZiZBqQXLZGs8rA28lS/wSjdfz2u8+usym88xBkwYIoXdyDbRxgG3AbU1TCPOCTuxG61NrFdrGmBDMzRMI5mmib2DI+69cMTjnnGW3y/b/Fa/wZTmMonLbDCIK2SexQKLKwQ431RbH/2Jn7Hy9LknZgte5rpbeKkbHsTWvONPbn8av3PH01ivB070mzz41Bn2pzVPvXAPD16teJ/jI2/w4o/hoQ9+JP18hiWIgijIAdnINtKGNZ5WxDTQ1ge0aUAC3BjHgXEYSQlbNKBhJpvWJsapsXvxiL96+n38wfmJ3zp+iktqgEHBZTYYxBUyGEBcZgECEEifqZf9/K/+4TuPLr7TTTsnedjmCU5tbnJie5MnnruXX7/tyRwsl5zsN3nk6esYqvn783dwZv+Qj7thzms9/MHcdOODmc8XUAITQAEEmbiNtGGNciTawLS8xDSskcBuDOOKaWykAYsmkTLNkJmkzd7Bmj99/G38xW27/M6pazlbgyGEI7jM5jKDeC4Ci2cShH5EL/tFX/On9673XuFhx85w02yHeS1sbyx48v4FfufpT2C1GigJG7XiGux74Jop+dTrel7n0Q/n+mtvYr7YQBHYkFzhltAStwncKG2F1weM4wqngYmxDYzDRGtgwBINmFqSBgOXDlb86eOezt8+4wK/efok986P01phKhOQYPMs5jIJQFg8J/FnWnzsJ9wxkTe++KkbeaXrH8pquWTFyJP3z/PX992Om3EzliEEwMnJfMoNPW/xUi/GqZOnmc83EMaACSzhBCWoTdAGmNZoWuIcmdoEOTKNa1bjxJhiPQwM4wQhSq3YHaJx6XDNz//hX/OMs/tsPPoMD7n5JfmKp9zOxSiAweb5kngONpg7pY/46ENLGzdun+TVbn44+6tDLqwOOZjWPOHcnbRMcCCEJExQGfmwkzM+8GVfnDOnTzKb9eAEBFEhKlCQA41H5OoITxNua4KJaRqhTRzsH3LHxbPccfc9XDh/kWk90Xc9D7r5QWxtHWM57PL4Z+zytweNjekSb/vKD2GxPuIzd3t+ebcAApvnS+J52EeKD/+4ZhGdxImNDdZKMpNqcWl1SKOBg0DIAoTUeJ/5yAe97IvzsIc+BEjkJAW1zjCViIobsNxjXB7Q1muaJ+TGOK7Z3d3jb5/wJJ545+1cunCeeb+gzhc0Cnt7S+47OmD79IN59GMfyvpwjwcd73mNR97I0VPu5tcWW3z8bUsaApvnS+J5iFR8+Mc1QwQJNJoAAwYhrASEEEKACCWvMx3w/jef5LVf81XoapA2B4eH3HbbnSyPRpZHa7KZG09tc828oyoYYqSt1+wd7PPnf/8PPP5pd3H+0prFvHDdNSdZzCu1mtOnTvEtv/AbvO6rvzZv+tovx6233sWNm5vceMMmW0PP7996H+9zT+MozItMAikVH/7xh5AbkNgJMhgguMI8kCls1J6HHN7Lm4xHvM87vRXHjx9jtVzyjKc9nbtuv4ML585x7uwFbLPBxJn5HNU5/enj3HfXffz5U5/AfGvGvAXrYcG6GXWFl3nxh6K927nxxlv4k6c8nbd44zfk1KLn0nriGB1tdRc3Xn8Lj7tn4K0fd5bdaMhg8aKRjhQf9nF3IN8IiZ2AeTbxQBaExQc98pG8+Y0df/bHfwmrxqu84ivxt3/1F1y7tcl2F5y7uMuywVOf9Hi2NPDwGx/EFAt+4fd/m1d7pVfgj/78T3mxl3wsy7MXuO7MLezu77K5tcErvNxLkOtL9F3H3z/5Vl79lV+JjQ4OIyhHI/f95R9y8sw17F//aN7q7+/ikhIAAyD+ZbpT+oiP/VOZVwBjJwCoAQYEFkYgQCDgvW8+zme+2PUcxDZ/+XdP4/f+6A85e+edfPy7vwt3POnvuWeE1daD+NPf/y1e+8Vu5MHXnOLmhzyKX/yTP+C93/WduPVxf81v/cFfcM3mDprEydM9p0+dYL6YE10hSuWJT34aL/XSL0nUYAzTq3Dp7/6a9X0XGV/61XnLJ9zJGpMWRkDwLwr9meLDP/aHwe8ExgYwqPFAdoCAAGweXgu/8Govzs0PexB/+6QnctO1N/Ft3/IdvNNbvzm3PunvcJ0x3zzB3rm76CXOnDjNUqI7foxHP/IR7N9zG7/8u3/I2bvv5aEPvpHNrcp8VvDQ2N/dp5bKIx/9aKKvpMCIXsHZpzyeulpyz/UvwTs8/g4mAiMAjADxQkk/ovjwj/4M0OeCsQ0YMMhgAWAEAgKwOYb4/Td/XV78hk3O330vsbXJn/zJ3/DwRzyYrc2e9f4B4+EhhxcuYgcnTl/L7/zpn/Bmb/U2RN+xvO9O7r7vPv7sz/6Uc2fvZWt7i83NDR5yy01cc/wE88056iqEGG2azTwLR3ffyamTm/zA2eDTb7tIRgAiDSBeKAnszxQf/tFvEugXwdjJsxkQAAYQEICTvk189su9JB/72Ju55xlP5/jDHkRrhT/90z/h2PYxaoNhuWJ9cEAAd919Jw9/zGN4yZd+OdY2qwv3cPb22zg42kduhMTmxpyoQb9YUGcdiWlO1m5MaWZj0E8D42rkU88VfursRcwVJniRuL2p+MAPPBbdxnlEsRMADOIKCwwgQIBNMPIyp67nZ1/9pZi3i3DqFEGhRqWNsNo74uDSHuPRIUESJTh17Rk2to8xKBgvnWPvvjvZv3QJkexduohz4tiJY2zsbNPNeywztsayTUwEMQa9Ju4q27z3H97F7THyr2I3htUpAejDP+b3hV/NTmSehwUGEGAImVPZ8Wtv84Y8bLbPpY0d5kzMoqOvc0qD4eCIw/1L5LhGVSyOHUelkAUO7zvH3l138bSnPJFSKpubC4bxADRw+trr2NjawoLJSXPH+brBl//dX3Fm4xh/fdTxV4eQNv9Kf8DXfc2rCyA+/KM/HvxltpFBPJsBi+dgwYzgE17isXzCSz6SYS7G1QW2+g36OqNkYzpYcuniOVbLFVtnjjEMA0//87/h+I03wOHI/rnz7B7tEl1lsXmcUkdaHhCYze0tFhubXNrfZ75zgieXBe/9e09g5U2mrsNlBASIf4nMZQ59Al/71V8uAD7iI25SchtGGCQhrjBgHkCADCFuLObH3uyteMzJjoOjs+zUTWrfw7Ride4+7rvnPjZ2zrB9w01MzUxnd1ktDzh/6+3sXriXcWbKrKebbwKJtEJe03c9x47tcP78BbZOX8tvDsEn//1TGNVDzpAFEhbPnwSADNhg24Vb+Lqvu0M8kz70w38B600BEAjxgjgSSVSZj3nxl+STXv4lOTi6m9onM1W6oXHXk/8OqGxd/1CiO0ZxkK2xvnSJS8+4g1lpjLUxTCNjFcO05tKl84zrA645dZrjx49x4cJFNk6c5sd2xZffehd2QQ4SgQQCA4jnIQQ2thH+RX/j178ZgLjfR3zE62vi1wAQCPHcBBhACYLtfpu3edQjea8HP4if+LPf531f9cW4ZgH90Yp7n/EENk6cZjXboa/bbGnOrHYsd3cZzl6kHe6xf7DLcnXE/kbh7rvv4olP+HtuuvkaHvKgB3HTTTezf3BAmW/yA/dNfOM950gqysASSCAuM4B4FgFCYGMbmzfgm77u1wHEA5QP/cg/NrySbR5IQAIhCAQkXa287C2P4qbFNuPRIX9/722886NO8/4vdj2LAY729jg4POTOO+8jmHHN6WsoFgfLJSERi0AzsXvXWS6dPcfy7nNc96ibSI2omJMnz7BcrxhiztffusdPHRzQqCgLAJKwuMwA4jKZyySBTcKf8A1f+8pcgXiA+uEf/bqZ+Ru2uZ8wkthYbBCIYVjT2kitlZe88aFsZyGd3Lrcpa7u40ff/HW4wROkefrTb2Xv4iVObxxnNTTmJ49T+p6uVNbjIXt33836SXdzInrG649Rr9lkGPdxJKFKsznsN/m4v3wK/xBzTEBWBEjCAAIDiMtkLpMENql8Pb7+63+TKxDPpXzoR/409lslQJoAbjp2iodeeyPraeSui+e4++JZXGAxXyCJiGB0ksPAp7/0g3nPh50B91w6e46jgyNuvPFmRGXcX1EPV4x7R6yXB2QOLJcrSt8znNxgmI6w1zQlDbCC9c5xPvBP/o7b2EIOcAFAiMsEFphnE0KA7Z/xN3ztW/NsiOf2ER9xE+ZvaT6hNEXBqz7kMTzs2LU8Zf8+zh7s8oyL9zKMI0hYXGZBSLzazoJve6OXJVpHv16yf2mfYydPsphtIQfr3Usc3H2Ww4vnGT3SbNQF6gqtNFokoxstTXSV7tg1fMJfP4m/PEiIwkRB5tkElrB4FhmEL6b8knzd193BsyGenw/7sPel6TvCUEvhtR/xktzUb/PHu7fhceKOS2c5XK+AAASABaUWHrF5nO997ZdnpxuYjUfk1IjSs7Wxgy2WRwfs3XOWgwvnsAdajihM7StNZsjGcpgggtliwc6xa/nlc4XvesrTeEauMMEDGTBg8Vz0fnzdV38nzwnxAsSHfMQ3OvND+qi84i2P4Mxswd8d3E11cNuFsxwOI0JIAoIUyMk7PPYV+NDrem7aKijWFAWhSl87aKZNjfXBAePykNZWtLYmc6Jl42C1ZjmMrIaBjY05x44fY9Zv8MN/8A9svtpb8FV/+vscrkdacFkKDBiweAB/E1/3tR/K80K8IO/93nNtbP32Tj9/pZe7/iFsdT2X1gdcGFc88ezdjFMCgSRAgDjWz/jGd/9g5n//q7zSQ2/icHURGbLBrFZqFIoDZeJxzdHRJaa25OBgn6OjJbsHR4xTUmphZ2eTnZ0tDHzLz/0uj3nN9+bOa8/wrb/3iwyt0QJSXJaAxRXiT9i79Np893eveF6IF+YjPuLMS117y+8+8tT1j96Y9dSjkT87dxt/f98d2AICSeBACt70pV6Oz3qjt+O+P/05XuFBp1itd9m7dIlhPYDNzuY2vQpFMK2O2N8/z+HhHvt7exwtlxwcrSldz/Hjx9je2WQ262jZ+M6f+G1uedl34obXe33++r7b+Pbf/UWWOWKBbJrAAuAJkK/J133dWZ4/xL/g3b/l+65f9Nu/2dd4dI6N33jG43ny2TvBAoQkcMei6/j2D/hoHnX8FHnr43jo5gHkIfsH+9x331kOD/aZdz2z0lFslkd77O+eZ3l4wMHhIVOb2NjcZntnm/nGjMV8DiTjeuC7fuhXefhbfBQPf8XXZrc2/uKOp/B9v/2LLIsRyShAPIGi1+Wrv/puXjDEi+BTfvQXz9y3u/dzT7l07pX+/PancjROACABASq8+Uu/Ip/z5m9Pj2l3P4OTq2ewvTDTNHJ4tORg/4D93UscHe6zt7vL/t4F9i+eRzmx6Dc4dvw4x44fo+97uq4QVZjkzttu5+d//a941ff5Ik4+8qUYcmKdE7/6lL/hx//6d5iAFv4Tq70FX/d1Z3nhEC+i9/6u75r/4j886SvPLfc/BAcgUoJItrqO736Xj+axN11H1KSNI6u//T0ecqZDQNqMUzKMa9o00caBvUvn2T17D8P+AV2pdH3PrJ8BUKqwkvWw4k/+6A956sWeV3vXz2frpocy5MTYGufryC/+3R/xZ7c+4ZvOnb3tY/nu717xL0P8K5UP+4j3tfXlUE4QAV3yli/9CnzW67wdm7OAOtG3kTv//vHsHD2Fm66/FhApyGYmT7RpInMgl0eMuwccHu4xThNgJBGYySO3PuPp/Nlf/C3dg1+Xx7zhe7N56jrGTNbZWDJenFsf/16ve8t38qJD/Ft8xEfcVFv39TfuXPNWj3nEg3mfV31NXurktYQaYmRLI7v75u9/6bt5hYffyLFTJ2gIGxpJa4k9UtvEcHGPCxfO0jKRTIQgG+cvnOfv//5veMbdIw97i4/n9Iu9NFBpCWNrPzMUf/gHvM5Nd/Cvg/h3+MF/2H/dG2v/hddu11dSSZAJkr4EzsLT/+Yvuf0PfpTXe61XZ7a5gRU0kswk3dB6xe5d97JeHeEwRSLUWA8Dt936DJ7+tFs52noZHvyWH8hsc5OU/sQjn/qur3fdb/Jvg/gP8KR7/frW9DGYNwlZIahRODi/z9/99s+i+/6Ol32Fl2Xn2AlUK5nGTtYHe+zdd5aWE7YJGZzsXjjPnffcwd23HXH6jT7M8xsf/ktS91Xv9DrX/jr/Poj/QE8+75s8rd857bcO6iu7Rbnvznv4y1//Qa7LXV7yxR7O1jWnqV0HNsuDQ1b7e0zrNa015GRYrbhw/kK7eOG+Pz533j/9sHf91B9+09d5xB38x0D8J/nzp144FhuzVz3Yn17+wp23vdiTf+77H/qwk3nDQx794BOnTl8z72rHMAyr4ejo4uHR0V00P43Mf1geHv75wYWLf/gGn/wll/iPxz8Cn1T+41IEqXsAAAAASUVORK5CYII=" alt="Shared" loading="lazy"></span>`
+           + `<span class="moe-exp-id">共享</span></div>`;
+  // token 抽样格子：具体去了哪几个专家由动画阶段（_moeGate）写进 title
+  const tokStrip=Array.from({length:MOE_TOK_SHOWN},(_,i)=>`<span class="moe-tok" data-ti="${i}"></span>`).join('');
+  const a2a = ep>1;
+  return `<div class="wdiag-layer-box wdiag-lb-moe moe-mega" data-kind="moe" data-bi="${bi}" data-p="${p}" data-t="${t}" data-d="${d}" data-c="${c}" data-e="${E}" data-k="${k}" data-perep="${perEP}" data-epr="${epr}" data-etpr="${etpr}" data-eg="${eg}" data-etp="${etp?1:0}" data-tokn="${tokN}">`
     + `<div class="moe-hdr">${TENSOR_ICON}MoE-${bi} · ${holdTxt}</div>`
-    + `<div class="moe-band moe-band-gate"><span class="moe-step">①</span>Router 路由<span class="moe-sel-hint"></span></div>`
-    + `<div class="moe-band moe-band-dispatch"><span class="moe-step">②</span>A2A Dispatch · 本卡 token → top-${k} 专家（可跨卡）</div>`
-    + `<div class="moe-band moe-band-compute"><div class="moe-compute-lab"><span class="moe-step">③</span>专家 FFN 计算</div><div class="moe-strip">${strip}</div></div>`
-    + `<div class="moe-band moe-band-combine"><span class="moe-step">④</span>A2A Combine · 专家结果 → 回原卡</div>`
+    + `<div class="moe-band moe-band-tok"><span class="moe-step">⓪</span>本卡 token ${fmtTok(tokN)} 个${tp>1?`（SP：副本 ${fmtTok(tokRep)} 的 1/${tp}）`:''}·抽样 ${MOE_TOK_SHOWN}<span class="moe-tok-strip">${tokStrip}</span></div>`
+    + `<div class="moe-band moe-band-gate">`
+    + `<div class="moe-gate-lab"><span class="moe-step">①</span>Router 打分 · 每 token 各选 top-${k}<span class="moe-sel-hint"></span></div>`
+    + `<div class="moe-gate-note">本地计算、零通讯：router 权重 H×${E} 每卡复制，对全部 ${E} 个专家打分（故探测线只在卡内）</div></div>`
+    + `<div class="moe-band moe-band-dispatch"><span class="moe-step">②</span>`
+    + (a2a?`A2A Dispatch · 重排后发给<b>本副本内</b>的 ${ep} 张 EP 卡（各卡收发量不等，<b>不跨 DP</b>）`:`本地 permute · EP=1，专家都在本卡，<b>无 all-to-all</b>`)
+    + `</div>`
+    + `<div class="moe-band moe-band-compute"><div class="moe-compute-lab"><span class="moe-step">③</span>专家 FFN 计算${state.shared?'（含常开的共享专家）':''}</div><div class="moe-strip">${strip}</div></div>`
+    + `<div class="moe-band moe-band-combine"><span class="moe-step">④</span>`
+    + (a2a?`A2A Combine · 专家结果按原 token 次序送回原卡（仍在本副本内）`:`本地 unpermute · 结果按原 token 次序还原，<b>无 all-to-all</b>`)
+    + `</div>`
     + `</div>`;
 }
 
 // MoE 分阶段动画：所有 MoE 框同步推进（与 flow-toggle 联动，暂停即停）。每个循环随机
 // 换选 top-k 专家，依次 Router①→Dispatch②(画分发线,含跨卡)→计算③→Combine④(画回收线)。
 let _moeTimers=[], _moeCycle=0, _moeGateLines=[];
-let _moeCounts={};   // 各专家（按全局编号）被 Router 选中计算的累计次数；跨 step 累计，刷新页面或改配置才清零
-// 重建标题栏「各专家累计计算次数」列表（专家数/模式变化时调用）
+let _moeCounts={};   // 各专家累计接收的（抽样）token 数；跨 step 累计，刷新页面或改配置才清零
+// 重建标题栏「各专家累计接收 token 数」列表（专家数/模式变化时调用）
 function renderMoeCountBar(){
   const bar=$('moeCountBar'); if(!bar) return;
   if(!state.enMoE || (typeof isPangu==='function'&&isPangu()) || (typeof isCNN==='function'&&isCNN())){ bar.innerHTML=''; return; }
-  const E=state.experts; let h='<span class="mcb-lab">各专家累计计算次数：</span>';
+  const E=state.experts;
+  let h='<span class="mcb-lab" title="每个 token 各自选 top-k，所以专家收到的 token 数天然不均 —— 这就是负载均衡 aux loss / capacity factor 要解决的问题">各专家累计接收 token 数（抽样）：</span>';
   for(let i=0;i<E;i++){
     const img=(i%10)+1, n=_moeCounts[i]||0;
-    h+=`<span class="mcb-exp" title="专家 E${i}"><img src="images/${img}.png" alt="E${i}" loading="lazy"><b class="mcb-n${n?'':' mcb-zero'}" data-ei="${i}">：${n}</b></span>`;
+    h+=`<span class="mcb-exp" title="路由专家 E${i}"><img src="images/${img}.png" alt="E${i}" loading="lazy"><b class="mcb-n${n?'':' mcb-zero'}" data-key="${i}">：${n}</b></span>`;
+  }
+  if(state.shared){
+    const n=_moeCounts.S||0;
+    h+=`<span class="mcb-exp mcb-shared" title="共享专家：每个 token 都过，恒等于 token 总数"><img src="data:image/png;base64,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" alt="Shared" loading="lazy"><b class="mcb-n${n?'':' mcb-zero'}" data-key="S">：${n}</b></span>`;
   }
   bar.innerHTML=h;
 }
 function _moeUpdateCountBar(){
   const bar=$('moeCountBar'); if(!bar) return;
-  bar.querySelectorAll('.mcb-n').forEach(el=>{ const n=_moeCounts[+el.dataset.ei]||0; el.textContent='：'+n; el.classList.toggle('mcb-zero', !n); });
+  bar.querySelectorAll('.mcb-n').forEach(el=>{ const n=_moeCounts[el.dataset.key]||0; el.textContent='：'+n; el.classList.toggle('mcb-zero', !n); });
 }
 function _moeResetCounts(){ _moeCounts={}; _moeUpdateCountBar(); }
 function _moeClearTimers(){ _moeTimers.forEach(t=>clearTimeout(t)); _moeTimers=[]; }
 function _moeAt(ms,fn){ _moeTimers.push(setTimeout(fn,ms)); }
-// 确定性伪随机洗牌，选 k 个专家（seed 决定，每 step、每卡不同）
-function _moePick(E,k,seed){
-  const a=[...Array(E).keys()]; let s=(seed*2654435761)>>>0;
+// 每层一份「专家亲和度」：同一层各卡共用同一份 router 权重，所以打分偏好一致。
+// 亲和度不均 → 专家接收的 token 数天然不均（真实 router 就是这样，也正是
+// 负载均衡 aux loss / capacity factor 要治的病）。
+function _moeAffinity(E,seed){
+  let s=(seed*2246822519)>>>0; const w=[];
   const rnd=()=>{ s=(s*1664525+1013904223)>>>0; return s/4294967296; };
-  for(let i=E-1;i>0;i--){ const j=Math.floor(rnd()*(i+1)); [a[i],a[j]]=[a[j],a[i]]; }
-  return a.slice(0,k).sort((x,y)=>x-y);
+  for(let i=0;i<E;i++) w.push(0.35+rnd());     // 相对热度 0.35~1.35
+  return w;
+}
+// 单个 token 的 top-k：亲和度 × 该 token 自己的噪声后取前 k 个。
+// 每个 token 各算一次 —— top-k 是 per-token 的，不是每卡或每 EP 组选一次。
+function _moePickTok(E,k,aff,seed){
+  let s=(seed*2654435761)>>>0;
+  const rnd=()=>{ s=(s*1664525+1013904223)>>>0; return s/4294967296; };
+  return [...Array(E).keys()].map(i=>({i,sc:aff[i]*(0.3+rnd())}))
+    .sort((a,b)=>b.sc-a.sc).slice(0,k).map(o=>o.i).sort((a,b)=>a-b);
 }
 function _moeRootSvg(){ return $('wMoeSvg'); }
 function _moeClearSvg(){ const s=_moeRootSvg(); if(s) s.innerHTML=''; }
 // 把当前 SVG 里所有连线标记为「已完成」：不删除，保留显示并淡到 30%（本 step 持续累积）
 function _moeDimDone(){ const s=_moeRootSvg(); if(!s) return; s.querySelectorAll('.moe-curve').forEach(p=>{ p.classList.add('moe-curve-done'); p.style.opacity='0.3'; }); }
 function _moePt(el,rr){ const r=el.getBoundingClientRect(); return {x:r.left+r.width/2-rr.left, y:r.top+r.height/2-rr.top}; }
-// 给定源框与全局专家号 ex，定位持有该专家的目标卡（同 stage/同 TP 列/同 CP、EP 组内）及其头像
+// 给定源框与全局专家号 ex，定位持有该专家的目标卡及其头像。
+// 目标一定在**同一个 DP 副本内**（同 d / 同 c / 同 stage）：EP 沿 TP 轴切，
+// 对端是同 ETP 位、EP 位为 floor(ex/perEP) 的那张 TP 卡 → t = etpr + epr*eg。
 function _moeTarget(box,ex){
-  const ep=state.ep, cp=state.cp, perEP=+box.dataset.perep, edp=+box.dataset.edp;
-  const eprPeer=Math.floor(ex/perEP), idxPeer=edp*ep+eprPeer;
-  const dPeer=Math.floor(idxPeer/cp), cPeer=idxPeer%cp;
-  const tbox=document.querySelector(`.moe-mega[data-bi="${box.dataset.bi}"][data-p="${box.dataset.p}"][data-t="${box.dataset.t}"][data-d="${dPeer}"][data-c="${cPeer}"]`);
+  const perEP=+box.dataset.perep, etpr=+box.dataset.etpr, eg=+box.dataset.eg;
+  const tPeer=etpr+Math.floor(ex/perEP)*eg;
+  const tbox=document.querySelector(`.moe-mega[data-bi="${box.dataset.bi}"][data-p="${box.dataset.p}"][data-d="${box.dataset.d}"][data-c="${box.dataset.c}"][data-t="${tPeer}"]`);
   const av=tbox?tbox.querySelector(`.moe-exp[data-ei="${ex}"]`):null;
   return {av, remote: tbox!==box};
 }
-function _moeLine(a,b,cls){
+// n = 走这条边的 token 数：线越粗代表这个方向搬的 token 越多（a2a 的收发量本就不对称）
+function _moeLine(a,b,cls,n){
   const svg=_moeRootSvg(); if(!svg) return;
   const NS='http://www.w3.org/2000/svg';
   const cx=(a.x+b.x)/2, cy=(a.y+b.y)/2 - Math.min(64, Math.abs(b.x-a.x)*0.28+16);
   const path=document.createElementNS(NS,'path');
   path.setAttribute('d',`M${a.x},${a.y} Q${cx},${cy} ${b.x},${b.y}`);
   path.setAttribute('class',`moe-curve moe-curve-${cls}`);
+  if(n>0) path.style.strokeWidth=(1+Math.min(3,(n-1)*0.7)).toFixed(2);
   svg.appendChild(path);
   const len=path.getTotalLength()||1;
   path.style.strokeDasharray=len; path.style.strokeDashoffset=len;
@@ -1301,94 +1505,127 @@ function clearMoeAnim(){
   document.querySelectorAll('.moe-mega').forEach(box=>{
     box.classList.remove('moe-ph-gate','moe-ph-dispatch','moe-ph-compute','moe-ph-combine');
     box.querySelectorAll('.moe-exp').forEach(e=>e.classList.remove('moe-exp-sel'));
+    box.querySelectorAll('.moe-tok').forEach(e=>{ e.classList.remove('on'); e.removeAttribute('title'); });
     const hint=box.querySelector('.moe-sel-hint'); if(hint) hint.textContent='';
-    box._moeSel=null;
+    box._moeSel=null; box._moeTok=null; box._moeCnt=null;
   });
 }
-// ① Router：按「专家副本 / EP 组」选一次 top-k —— 每层每个 EP 组一共 k 个专家参与计算。
-// EP 组由 edp 标识（edp=(d*cp+c)/ep）：ep 把 DP×CP 的副本折成「各持一部分专家、靠 A2A
-// 共享同一份 token」的一个组。独立 EP 组数 = DP×CP/ep（= 不同 edp 的个数）。种子按 edp|层，
-// 不含 t（TP 只切权重、同批 token 路由一致）。于是：
-//   · ep=DP×CP（如 dp=2,ep=2）→ 只有 1 个 EP 组 → 整层就 k 个专家（跨列 A2A 连线）。
-//   · ep=1 → 每个 DP 列各是一个独立副本(各吃各的数据) → 各选各的 k 个、全本地无连线。
-// Router 打分分三小步演示（拆成 3 个独立相位，纳入 _moeStep 状态机，暂停/恢复不丢步）：
-//   ①_moeGate      从 Router 带向本 EP 组全部专家（含其他 EP 位远端卡）连黄色「打分探测线」
-//   ②_moeGateDim   未命中的线变灰、淡出到 50%（不匹配）
-//   ③_moeGateResult 探测线淡到 30% 保留、显示「本组选 …」结果并点亮命中专家
+// ① Router：**每张卡**、**每个 token** 各自选一次 top-k。
+//   · 路由单位是 token：本卡这一步有 (batch/DP)×(L/CP)÷TP 个 token（MoE 与 SP 配合，
+//     TP 组内每卡持 1/TP），各选各的 top-k，所以一层里几乎所有专家都会被激活，
+//     只是收到的 token 数不同（负载不均）。
+//   · EP 组 = 本 DP 副本内的 TP 卡，各成员持**不同的 token 分片** → 路由结果各不相同，
+//     这正是 a2a 收发量不对称的根源。故 routeCache 按 (d,c,t,p,层) 缓存，每卡一份。
+//   · Router 打分是**本地**运算：router 权重 H×E 每卡复制，打分不需要通讯，
+//     所以探测线只画在卡内；跨卡连线只出现在 ②/④ 的 all-to-all，且**不跨 DP 框**。
+// 打分分三小步演示（3 个独立相位，纳入 _moeStep 状态机，暂停/恢复不丢步）：
+//   ①_moeGate      点亮抽样 token，并从 Router 带向**本卡持有的**专家连黄色打分探测线
+//   ②_moeGateDim   本卡未被任何 token 命中的专家，其探测线变灰、淡出到 50%
+//   ③_moeGateResult 探测线淡到 30% 保留、显示命中统计并点亮命中专家
 function _moeGate(boxes){
   _moeGateLines=[];   // 不清 SVG：上一层已完成的连线保留（淡显），本 step 持续累积
   const rr=$('wdiagRoot').getBoundingClientRect();
-  const groupSel={};                            // 每个 EP 组只算一次，组内共用
+  const affCache={}, routeCache={};
   boxes.forEach(box=>{
     const E=+box.dataset.e, k=+box.dataset.k;
-    const gkey=`${box.dataset.edp}|${box.dataset.p}|${box.dataset.bi}`;
-    if(!groupSel[gkey]){
-      const seed=_moeCycle*997 + (+box.dataset.edp)*131 + (+box.dataset.p)*17 + (+box.dataset.bi||0)*13 + 1;
-      groupSel[gkey]=_moePick(E,k,seed);
-      groupSel[gkey].forEach(e=>{ _moeCounts[e]=(_moeCounts[e]||0)+1; });   // 该专家被选中计算 +1（跨 step 累计）
+    // 同一层共用一份 router 权重 → 共用一份专家亲和度
+    const lkey=`${box.dataset.p}|${box.dataset.bi}`;
+    if(!affCache[lkey]) affCache[lkey]=_moeAffinity(E, _moeCycle*7919+(+box.dataset.p)*17+(+box.dataset.bi||0)*13+1);
+    const aff=affCache[lkey];
+    // 每张卡各持一个 token 分片（SP）→ 每卡 (d,c,t) 一份独立路由
+    const rkey=`${box.dataset.d}|${box.dataset.c}|${box.dataset.t}|${box.dataset.p}|${box.dataset.bi}`;
+    if(!routeCache[rkey]){
+      const base=_moeCycle*104729+(+box.dataset.d)*613+(+box.dataset.c)*97+(+box.dataset.t)*53+(+box.dataset.p)*17+(+box.dataset.bi||0)*13;
+      const toks=[], cnt={};
+      for(let i=0;i<MOE_TOK_SHOWN;i++){
+        const pick=_moePickTok(E,k,aff,base+i*31+1);
+        toks.push(pick);
+        pick.forEach(e=>{ cnt[e]=(cnt[e]||0)+1; _moeCounts[e]=(_moeCounts[e]||0)+1; });
+      }
+      if(state.shared) _moeCounts.S=(_moeCounts.S||0)+MOE_TOK_SHOWN;   // 共享专家：每个 token 都过
+      routeCache[rkey]={toks,cnt};
     }
-    box._moeSel=groupSel[gkey];
+    const {toks,cnt}=routeCache[rkey];
+    box._moeTok=toks; box._moeCnt=cnt;
+    box._moeSel=Object.keys(cnt).map(Number).sort((a,b)=>a-b);   // 本卡这批 token 触达的专家集合
     box.classList.remove('moe-ph-dispatch','moe-ph-compute','moe-ph-combine');
     box.classList.add('moe-ph-gate');
     box.querySelectorAll('.moe-exp').forEach(e=>e.classList.remove('moe-exp-sel'));
-    const hint=box.querySelector('.moe-sel-hint'); if(hint) hint.textContent='评分中…';   // 结果延后显示
-    // ① 从 Router 带向本 EP 组「全部专家」（含其他 EP 位的远端卡）各连一条黄色打分探测线——
-    //    Router 要对整层所有专家打分比匹配度，不只看本卡持有的那几个
+    // ⓪ 点亮抽样 token，并把「这个 token 选了谁」写进 title
+    box.querySelectorAll('.moe-tok').forEach(el=>{
+      const pick=toks[+el.dataset.ti]||[];
+      el.classList.add('on');
+      el.title=`token #${el.dataset.ti} → ${pick.map(i=>'E'+i).join(', ')}（本 token 自己的 top-${k}）`;
+    });
+    const hint=box.querySelector('.moe-sel-hint'); if(hint) hint.textContent='打分中…';   // 结果延后显示
+    // ① 打分探测线：只连**本卡持有**的专家（本地运算、零通讯）
     const band=box.querySelector('.moe-band-gate'); if(!band) return;
-    const src=_moePt(band,rr), sel=new Set(box._moeSel);
-    for(let ex=0; ex<E; ex++){
-      const {av}=_moeTarget(box,ex); if(!av) continue;
+    const src=_moePt(band.querySelector('.moe-gate-lab')||band,rr), sel=new Set(box._moeSel);
+    box.querySelectorAll('.moe-exp[data-ei]').forEach(av=>{
       const path=_moeGateLine(src,_moePt(av,rr));
-      if(path) _moeGateLines.push({path, sel:sel.has(ex)});
-    }
+      if(path) _moeGateLines.push({path, sel:sel.has(+av.dataset.ei)});
+    });
   });
 }
-// ② 未命中专家的连线变灰、淡出到 50%，表示不匹配（放慢，便于观察匹配过程）
+// ② 本卡未被任何 token 命中的专家：探测线变灰、淡出到 50%
 function _moeGateDim(boxes){
   _moeGateLines.forEach(o=>{ if(!o.sel && o.path) o.path.classList.add('moe-curve-dim'); });
 }
-// ③ 打分探测线淡到 30% 保留（不再消失）→ 显示「本组选 …」结果并点亮命中专家，同时刷新标题栏计算次数
+// 命中统计文案：本卡这批 token 一共要用几个专家、其中几个在本卡、几个要跨卡取
+function _moeHintText(box){
+  const sel=box._moeSel||[], perEP=+box.dataset.perep, lo=(+box.dataset.epr)*perEP, hi=lo+perEP-1;
+  const loc=sel.filter(e=>e>=lo&&e<=hi).length;
+  return state.ep>1
+    ? `${MOE_TOK_SHOWN} token → ${sel.length} 专家（本地 ${loc} · 远端 ${sel.length-loc}）`
+    : `${MOE_TOK_SHOWN} token → ${sel.length} 专家（全在本卡）`;
+}
+// ③ 打分探测线淡到 30% 保留（不再消失）→ 显示命中统计并点亮命中专家，同时刷新标题栏计数
 function _moeGateResult(boxes){
   _moeDimDone(); _moeGateLines=[];
   _moeUpdateCountBar();
   boxes.forEach(box=>{
-    const hint=box.querySelector('.moe-sel-hint'); if(hint) hint.textContent='本组选 '+(box._moeSel||[]).map(i=>'E'+i).join(',');
+    const hint=box.querySelector('.moe-sel-hint'); if(hint) hint.textContent=_moeHintText(box);
     const sel=new Set(box._moeSel||[]);
-    box.querySelectorAll('.moe-exp').forEach(av=>{ if(sel.has(+av.dataset.ei)) av.classList.add('moe-exp-sel'); });
+    box.querySelectorAll('.moe-exp[data-ei]').forEach(av=>{ if(sel.has(+av.dataset.ei)) av.classList.add('moe-exp-sel'); });
   });
 }
-// ② Dispatch：从本卡 dispatch 带 → 目标卡专家头像画线（跨卡加粗），点亮被命中的专家
+// ② Dispatch：从本卡 dispatch 带 → 持有目标专家的卡上的专家头像画线。
+//    线宽 ∝ 走这条边的 token 数 —— 各卡各方向的搬运量本就不等（a2a 的长尾来源）。
+//    ep=1 时目标恒为本卡，退化成卡内 permute，不产生跨卡流量。
 function _moeDispatch(boxes){
   _moeDimDone();
   const rr=$('wdiagRoot').getBoundingClientRect();
   boxes.forEach(box=>{
     box.classList.remove('moe-ph-gate'); box.classList.add('moe-ph-dispatch');
-    const hint=box.querySelector('.moe-sel-hint'); if(hint) hint.textContent='本组选 '+(box._moeSel||[]).map(i=>'E'+i).join(',');
+    const hint=box.querySelector('.moe-sel-hint'); if(hint) hint.textContent=_moeHintText(box);
     const band=box.querySelector('.moe-band-dispatch'); if(!band) return;
-    const src=_moePt(band,rr);
+    const src=_moePt(band,rr), cnt=box._moeCnt||{};
     (box._moeSel||[]).forEach(ex=>{
       const {av,remote}=_moeTarget(box,ex); if(!av) return;
       av.classList.add('moe-exp-sel');
-      _moeLine(src,_moePt(av,rr), remote?'remote-d':'local-d');
+      _moeLine(src,_moePt(av,rr), remote?'remote-d':'local-d', cnt[ex]);
     });
   });
 }
-// ③ Compute：命中的专家跳动
+// ③ Compute：命中的专家跳动；共享专家（若开启）此刻一并点亮 —— 它没经过路由与 a2a，但每个 token 都要过它
 function _moeCompute(boxes){
   _moeDimDone();
-  boxes.forEach(box=>{ box.classList.remove('moe-ph-dispatch'); box.classList.add('moe-ph-compute'); });
+  boxes.forEach(box=>{
+    box.classList.remove('moe-ph-dispatch'); box.classList.add('moe-ph-compute');
+    const sh=box.querySelector('.moe-exp-shared'); if(sh) sh.classList.add('moe-exp-sel');
+  });
 }
-// ④ Combine：从专家头像 → 本卡 combine 带画回线（跨卡加粗）
+// ④ Combine：从专家头像 → 本卡 combine 带画回线（线宽同样 ∝ token 数）
 function _moeCombine(boxes){
   _moeDimDone();
   const rr=$('wdiagRoot').getBoundingClientRect();
   boxes.forEach(box=>{
     box.classList.remove('moe-ph-compute'); box.classList.add('moe-ph-combine');
     const band=box.querySelector('.moe-band-combine'); if(!band) return;
-    const dst=_moePt(band,rr);
+    const dst=_moePt(band,rr), cnt=box._moeCnt||{};
     (box._moeSel||[]).forEach(ex=>{
       const {av,remote}=_moeTarget(box,ex); if(!av) return;
-      _moeLine(_moePt(av,rr),dst, remote?'remote-c':'local-c');
+      _moeLine(_moePt(av,rr),dst, remote?'remote-c':'local-c', cnt[ex]);
     });
   });
 }
@@ -1409,7 +1646,7 @@ function _moeStep(){
   else if(idx===3){ _moeDispatch(boxes); }
   else if(idx===4){ _moeCompute(boxes); }
   else if(idx===5){ _moeCombine(boxes); }
-  else {                                     // 收尾：连线淡到 30% 保留（不清）、复位相位（专家高亮/本组选/连线保留到 logits/loss 完成后统一清）
+  else {                                     // 收尾：连线淡到 30% 保留（不清）、复位相位（专家高亮/命中统计/连线保留到 logits/loss 完成后统一清）
     _moeDimDone();
     boxes.forEach(b=>{
       b.classList.remove('moe-ph-combine','moe-ph-compute','moe-ph-dispatch','moe-ph-gate');
@@ -1423,55 +1660,105 @@ function _moeStep(){
 function renderWorldDiagram(){
   const el=$('worldDiagram'); if(!el) return;
   const {dp,pp,cp,tp}=state;
+  const horiz=ppLayout==='h';   // PP 横向：数据流从左往右，入口在最左、logits 在最右
   let h='<div class="wdiag" id="wdiagRoot" style="position:relative">';
+  // ── 入口：整批数据 / 按 DP 切分的 shard（纵向=顶部一条，横向=最左一列）──
+  let splitHTML='';
   {
     const micro=Math.max(1,Math.round(state.batch/dp));
-    h+=`<div class="wdiag-split-top">`;
-    h+=`<div class="wdiag-batch-full">${isPangu()?'输入 prompt · 一次前向（推理）':'one step batch · '+state.batch+' 训练样本'}</div>`;
+    splitHTML+=`<div class="wdiag-split-top${horiz?' wdiag-split-left':''}">`;
+    splitHTML+=`<div class="wdiag-batch-full">${isPangu()?'输入 prompt · 一次前向（推理）':'one step batch · '+state.batch+' 训练样本'}</div>`;
     if(dp>1){
-      h+=`<div class="wdiag-split-pieces">`;
-      for(let d=0;d<dp;d++){const s=d*micro,e=Math.min(state.batch,s+micro)-1;h+=`<div class="wdiag-split-piece" id="wSplitPiece${d}">shard ${d}<br>${s}~${e}</div>`;}
+      splitHTML+=`<div class="wdiag-split-pieces">`;
+      for(let d=0;d<dp;d++){const s=d*micro,e=Math.min(state.batch,s+micro)-1;splitHTML+=`<div class="wdiag-split-piece" id="wSplitPiece${d}">shard ${d}<br>${s}~${e}</div>`;}
+      splitHTML+=`</div>`;
+    }
+    splitHTML+=`</div>`;
+  }
+  // ── 出口：logits / loss（纵向=底部，横向=最右）──
+  const logitsHTML=`<div id="wLogitsArrow" class="wdiag-logits-arr">${horiz?'→':'↓'}</div>`
+    +`<div id="wLogitsCard" class="wdiag-logits-card">${isPangu()?'生成 logits → 采样下一个 token':'生成 logits 原始得分，计算 loss'}</div>`;
+  if(!horiz) h+=splitHTML;
+  // EP>1 时：说明 EP 嵌套在单个 DP 副本内部 —— a2a 只在绿框内部横向发生，绝不跨 DP
+  if(state.enMoE && state.ep>1){
+    const eg=etpDeg();
+    h+=`<div class="wdiag-ep-banner">`
+      +`<b>EP 嵌套在每个 DP 副本内部，连线不跨 DP 框</b>：每个绿框（DP 副本）都独立持有<b>完整一套 ${state.experts} 个专家</b>，`
+      +`在副本内部沿 TP 方向切成 EP=${state.ep} 份，每份 ${state.experts/state.ep} 个专家${eg>1?`（每份由 ${eg} 张卡承担）`:''}。`
+      +`② / ④ 的 all-to-all 只在<b>同一个绿框内</b>的 ${state.ep} 张 TP 卡之间横向发生。`
+      +`<br>不同 DP 副本是<b>各自独立的 EP 域</b>，彼此之间没有 all-to-all；反向时专家梯度和 attn / dense 一样，`
+      +`在 <b>${dp} 个 DP 副本${cp>1?`×CP=${expertDpSize()} 张卡`:''}</b> 之间做梯度 all-reduce。`
+      +`</div>`;
+  }
+  // Pangu:默认只展示 2 列 TP 卡,绿框右上角按钮可展开/收起其余列
+  const tpCollapsed=isPangu()&&!panguShowAll&&tp>2;
+  const tpN=tpCollapsed?2:tp;
+  // 单个「DP 副本 × PP stage」绿框：PP 纵向 / PP 横向两种布局共用同一份内容
+  const dpBox=(d,p)=>{
+    let h=`<div class="wdiag-dp${p===0?' wdiag-dp-top':''}" id="wDpBox${d}_${p}">`;
+    if(isPangu()&&p===0&&d===0&&tp>2)
+      h+=`<button class="pangu-col-btn" id="panguColBtn">${panguShowAll?'收起':'展示剩下 '+(tp-2)+' 列'}</button>`;
+    if(dp>1) h+=`<div class="wdiag-dp-label">DP ${d}</div>`;
+    if(pp>1) h+=`<div class="wdiag-stage-label">Stage ${p}</div>`;
+    for(let c=0;c<cp;c++){
+      if(cp>1) h+=`<div class="wdiag-cp"><div class="wdiag-cp-label">CP ${c}</div>`;
+      if(state.enMoE){
+        // EP 结构现在沿 TP 轴展开（每张卡各自的 EP 位画在卡内 MoE 框里），
+        // 这里的红字描述的是「本副本这一整行 TP 卡构成的 EP 域」。
+        const E=state.experts, eg=etpDeg(), per=E/state.ep;
+        if(state.ep>1){
+          const groups=[];
+          for(let e=0;e<eg;e++) groups.push('{'+epGroupMembers(e).map(m=>'TP'+m.t).join('↔')+'}');
+          const tip=`本 DP 副本内共 ${eg} 个 EP 组，a2a 只在组内发生、不跨 DP：${groups.join('  ')}；`
+            +`每个 EP 位持 ${per} 个专家；反向时专家梯度在 ${dp} 个 DP 副本${cp>1?`×CP=${cp}`:''}（${expertDpSize()} 张卡）之间 all-reduce`;
+          h+=`<div class="wdiag-ep-label" title="${tip}">EP 域 ＝ 本副本内 ${tp} 张 TP 卡 · 完整一套 ${E} 专家 → ${state.ep} 个 EP 位 × ${per} 专家${eg>1?` × ${eg} 卡/位`:''} · a2a 不出本框</div>`;
+        } else {
+          h+=`<div class="wdiag-ep-label" title="EP=1：本副本内每张卡都持有全部 ${E} 个专家，MoE 层无 all-to-all">EP=1 · 本副本每卡各持全部 ${E} 专家 E0~E${E-1} · 无 all-to-all</div>`;
+        }
+      }
+      h+=`<div class="wdiag-tp-row">`;
+      for(let t=0;t<tpN;t++){
+        if(t>0) h+=`<span class="wdiag-tp-arr">↔</span>`;
+        const _r=rankOf(d,p,c,t);
+        h+=`<div class="wdiag-card-outer"><div class="wdiag-g-label" title="rank ${_r}">${cardShortName()}_${_r}</div><div class="wdiag-card" data-d="${d}" data-p="${p}">${cardLayerHTML(p,t,d,c)}</div><div class="wdiag-mem mem-wrap" data-p="${p}" data-t="${t}">${memBarHTML(p,t)}</div></div>`;
+      }
+      if(tpCollapsed) h+=`<span class="wdiag-tp-arr">↔</span><div class="wdiag-tp-more">⋯<br>其余<br>${tp-2} 卡</div>`;
       h+=`</div>`;
+      if(cp>1) h+=`</div>`;
     }
     h+=`</div>`;
-  }
-  h+='<div class="wdiag-stages">';
-  for(let p=0;p<pp;p++){
-    if(p>0) h+=`<div class="wdiag-pp-arr" data-top="${p}">↓ PP</div>`;
-    h+=`<div class="wdiag-stage-row" data-p="${p}">`;
-    // dp replicas for this stage
-    h+='<div class="wdiag-dp-row">';
-    // Pangu:默认只展示 2 列 TP 卡,绿框右上角按钮可展开/收起其余列
-    const tpCollapsed=isPangu()&&!panguShowAll&&tp>2;
-    const tpN=tpCollapsed?2:tp;
+    return h;
+  };
+  if(horiz){
+    // PP 横向：入口列 | 每行 = 一个 DP 副本（行内从左到右 Stage 0..pp-1）| logits 列
+    h+='<div class="wdiag-hrow">';
+    h+=splitHTML;
+    h+='<div class="wdiag-stages wdiag-h">';
     for(let d=0;d<dp;d++){
-      h+=`<div class="wdiag-dp${p===0?' wdiag-dp-top':''}" id="wDpBox${d}_${p}">`;
-      if(isPangu()&&p===0&&d===0&&tp>2)
-        h+=`<button class="pangu-col-btn" id="panguColBtn">${panguShowAll?'收起':'展示剩下 '+(tp-2)+' 列'}</button>`;
-      if(dp>1) h+=`<div class="wdiag-dp-label">DP ${d}</div>`;
-      if(pp>1) h+=`<div class="wdiag-stage-label">Stage ${p}</div>`;
-      for(let c=0;c<cp;c++){
-        if(cp>1) h+=`<div class="wdiag-cp"><div class="wdiag-cp-label">CP ${c}</div>`;
-        if(state.enMoE){ const idx=d*cp+c, per=state.experts/state.ep, lo=(idx%state.ep)*per, hi=lo+per-1, hold=state.tp>1?state.tp+' 张 TP 卡共持':'本卡持有', expr=`E${lo}${per>1?'~E'+hi:''}`, gps=dp*cp/state.ep, epg=p*gps+Math.floor(idx/state.ep); h+= state.ep>1 ? `<div class="wdiag-ep-label">EP组${epg} · EP位${idx%state.ep} · 专家 ${expr}（${hold}）</div>` : `<div class="wdiag-ep-label">EP组${p*dp*cp+idx} · 全部专家 ${expr}（${hold}）</div>`; }
-        h+=`<div class="wdiag-tp-row">`;
-        for(let t=0;t<tpN;t++){
-          if(t>0) h+=`<span class="wdiag-tp-arr">↔</span>`;
-          const _r=rankOf(d,p,c,t);
-          h+=`<div class="wdiag-card-outer"><div class="wdiag-g-label" title="rank ${_r}">${cardShortName()}_${_r}</div><div class="wdiag-card" data-d="${d}" data-p="${p}">${cardLayerHTML(p,t,d,c)}</div><div class="wdiag-mem mem-wrap" data-p="${p}" data-t="${t}">${memBarHTML(p,t)}</div></div>`;
-        }
-        if(tpCollapsed) h+=`<span class="wdiag-tp-arr">↔</span><div class="wdiag-tp-more">⋯<br>其余<br>${tp-2} 卡</div>`;
-        h+=`</div>`;
-        if(cp>1) h+=`</div>`;
+      h+=`<div class="wdiag-dp-band" data-d="${d}">`;
+      for(let p=0;p<pp;p++){
+        if(p>0) h+=`<div class="wdiag-pp-arr wdiag-pp-arr-h" data-top="${p}">→<br>PP</div>`;
+        h+=dpBox(d,p);
       }
-      h+=`</div>`;
+      h+=`</div>`; // dp-band
     }
-    h+=`</div>`; // dp-row
-    h+=`</div>`; // stage-row
+    h+=`</div>`; // wdiag-stages
+    h+=`<div class="wdiag-logits-side">${logitsHTML}</div>`;
+    h+=`</div>`; // wdiag-hrow
+  } else {
+    // PP 纵向（默认）：每行 = 一个 Stage，行内从左到右依次是 DP 0..dp-1
+    h+='<div class="wdiag-stages">';
+    for(let p=0;p<pp;p++){
+      if(p>0) h+=`<div class="wdiag-pp-arr" data-top="${p}">↓ PP</div>`;
+      h+=`<div class="wdiag-stage-row" data-p="${p}">`;
+      h+='<div class="wdiag-dp-row">';
+      for(let d=0;d<dp;d++) h+=dpBox(d,p);
+      h+=`</div>`; // dp-row
+      h+=`</div>`; // stage-row
+    }
+    h+=`</div>`; // wdiag-stages
+    h+=logitsHTML;
   }
-  h+=`</div>`; // wdiag-stages
-
-  h+=`<div id="wLogitsArrow" class="wdiag-logits-arr">↓</div>`;
-  h+=`<div id="wLogitsCard" class="wdiag-logits-card">${isPangu()?'生成 logits → 采样下一个 token':'生成 logits 原始得分，计算 loss'}</div>`;
 
   h+=`<svg id="wSplitSvg" style="position:absolute;top:0;left:0;width:100%;height:100%;pointer-events:none;overflow:visible"></svg>`;
   h+=`<svg id="wMoeSvg" style="position:absolute;top:0;left:0;width:100%;height:100%;pointer-events:none;overflow:visible;z-index:6"></svg>`;
@@ -1533,13 +1820,16 @@ function opsForLayer(layer,t,d=0,c=0){
     case 'moe':{
       const ops=[{op:'router',shard:'复制',cls:'rep'}];
       const E=state.experts;
-      const etpSlice=tp>1&&state.etp;             // 仅 ETP 模式下专家才被 TP 再切
+      const {lo,hi,etpr,eg}=expertAssign(t);
+      const etpSlice=eg>1&&state.etp;             // 同一 EP 位由 eg 张卡承担时，ETP 才把矩阵切片
       if(ep>1){
-        const {lo,hi}=expertAssign(d,c), ids=[];
+        const ids=[];
         for(let x=lo;x<=hi;x++)ids.push(x);
-        ops.push({op:'Experts (本卡持有)',shard:`专家 ${ids.join(',')||'—'}${etpSlice?` · 各第${t+1}/${tp}片(ETP)`:tp>1?'（整块·不随TP切）':''}`,cls:'exp'});
-        ops.push({op:'all-to-all dispatch/combine',shard:'token 路由',cls:'exp'});
-      }else ops.push({op:`Experts ×${E}`,shard:etpSlice?`各第${t+1}/${tp}片(ETP)`:'全部复制',cls:etpSlice?'':'rep'});
+        ops.push({op:'Experts (本卡持有)',shard:`专家 ${ids.join(',')||'—'}${etpSlice?` · 各第${etpr+1}/${eg}片(ETP)`:eg>1?'（整份·同位冗余）':'（本卡独占）'}`,cls:'exp'});
+        ops.push({op:'all-to-all dispatch/combine',shard:`副本内 ${ep} 卡·不跨DP`,cls:'exp'});
+      }else ops.push({op:`Experts ×${E}`,shard:etpSlice?`各第${etpr+1}/${eg}片(ETP)`:'本卡全部',cls:etpSlice?'':'rep'});
+      // 共享专家：不参与路由、不进 a2a；按 dense FFN 口径随 TP 切、跨 EP 复制
+      if(state.shared) ops.push({op:'shared expert FFN (常开·不路由)',...(tp>1?{shard:`第 ${t+1}/${tp} 片`,cls:''}:{shard:'整块',cls:'rep'})});
       return ops;
     }
     case 'norm': return [{op:'LayerNorm',shard:'复制',cls:'rep'}];
@@ -1557,9 +1847,11 @@ function cardMemGB(p,t){
     if(l.kind==='attn') params += 4*H*H/state.tp;
     else if(l.kind==='mlp') params += 8*H*H/state.tp;
     else if(l.kind==='moe'){
-      const perEP=state.experts/state.ep;          // EP 切专家数（ep=1 时即全部专家）
-      // ETP 时每专家矩阵再按 TP 切；EP-only(主流) 时专家整块不切 TP；router 复制
-      params += perEP*8*H*H/(state.etp?state.tp:1) + H*state.experts;
+      const perEP=state.experts/state.ep;          // 本卡持有的专家个数（EP 沿 TP 切；ep=1 时即全部）
+      // 同一 EP 位由 eg=TP/EP 张卡承担：ETP 开则每个专家矩阵再切 1/eg，关则各存整份；router 每卡复制
+      params += perEP*8*H*H/(state.etp?etpDeg():1) + H*state.experts;
+      // 共享专家：跨 EP 复制（每卡都有），按 dense FFN 口径随 TP 切
+      params += state.shared*8*H*H/state.tp;
     }
     else if(l.kind==='emb'||l.kind==='head') params += V*H/state.tp;
   }
@@ -1575,12 +1867,17 @@ function actBreakdown(p){
   const tok=Math.max(1,Math.round(micro*(state.seq/state.cp)));   // 本卡处理的 token 数
   const rows=[]; let total=0;
   for(const l of stageLayers(p)){
-    let el=0,mul='';
+    let el=0,mul='',extra=null;
     if(l.kind==='attn'){      el=tok*H*5/tp;               mul=`tok×H×5${tp>1?' ÷TP':''}`; }
     else if(l.kind==='mlp'){  el=tok*H*8/tp;               mul=`tok×H×8${tp>1?' ÷TP':''}`; }
-    else if(l.kind==='moe'){  const dv=state.etp?tp:1; el=tok*H*8/dv; mul=`tok×H×8${dv>1?' ÷TP(ETP)':''}`; }
+    else if(l.kind==='moe'){
+      const dv=state.etp?etpDeg():1; el=tok*H*8/dv; mul=`tok×H×8${dv>1?` ÷${dv}(ETP)`:''}`;
+      // 共享专家常开：每个 token 都过它，额外一份 dense FFN 的激活
+      if(state.shared) extra={name:l.name+' · 共享专家',mul:`tok×H×8${tp>1?' ÷TP':''}`,el:tok*H*8/tp};
+    }
     else if(l.kind==='emb'||l.kind==='head'){ el=tok*H;    mul='tok×H'; }
     if(el>0){ rows.push({name:l.name,mul,el}); total+=el; }
+    if(extra){ rows.push(extra); total+=extra.el; }
   }
   return {tok,rows,total};   // el 为元素数；字节 = total×2
 }
@@ -1627,9 +1924,14 @@ function memTooltipHTML(p,t){
         ?`8 × H² ÷ TP<br><span style="opacity:.55">up/down 权重矩阵，= 8 × ${H}² ÷ ${tp}</span>`
         :`8 × H²<br><span style="opacity:.55">up 权重矩阵(4H²) + down 权重矩阵(4H²)</span>`;
     } else if(l.kind==='moe'){
-      const perEP=state.experts/state.ep;
-      cnt=perEP*8*H*H/tp+H*state.experts;
-      formula=`${perEP} 专家 × 8H²${tp>1?' ÷ TP':''}<br><span style="opacity:.55">EP 切专家数 E/ep=${state.experts}/${state.ep}=${perEP}${tp>1?'，每专家矩阵再 ÷ TP':''} + router H×E</span>`;
+      // 与显存条口径一致：EP 沿 TP 切专家个数；同一 EP 位的 eg=TP/EP 张卡才有 ETP 切片之分
+      const perEP=state.experts/state.ep, eg=etpDeg(), etpOn=state.etp&&eg>1;
+      cnt=perEP*8*H*H/(state.etp?eg:1)+H*state.experts+state.shared*8*H*H/tp;
+      formula=`${perEP} 专家 × 8H²${etpOn?` ÷ ${eg}`:''}${state.shared?` + 共享 8H²${tp>1?' ÷ TP':''}`:''}<br>`
+        +`<span style="opacity:.55">EP 沿 TP 切专家数 E/EP=${state.experts}/${state.ep}=${perEP}（每个 DP 副本一整套）；`
+        +(etpOn?`ETP 开：同位 ${eg} 卡各持 1/${eg} 矩阵`:eg>1?`ETP 关：同位 ${eg} 卡各存<b>整份</b>（冗余）`:`EP=TP：本卡独占这 ${perEP} 个专家`)
+        +` + router H×E（每卡复制）`
+        +(state.shared?`；共享专家每卡一份、随 TP 切`:'')+`</span>`;
     } else if(l.kind==='emb'||l.kind==='head'){
       cnt=V*H/tp;
       formula=tp>1
@@ -1707,8 +2009,9 @@ function renderViz(){
   const viz=$('viz'); if(!viz) return; viz.innerHTML='';
   for(let d=0;d<state.dp;d++){
     const rep=document.createElement('div'); rep.className='replica';
-    const micro=Math.max(1,Math.round(state.batch/(state.dp*state.cp)));
-    rep.innerHTML=`<div class="replica-h">📦 DP 副本 #${d} · 处理不同数据分片（每卡 micro-batch ≈ ${micro}）</div>`;
+    // DP 切 batch；CP 切的是序列长度，不再分 batch（每卡 token = micro × L/CP）
+    const micro=Math.max(1,Math.round(state.batch/state.dp));
+    rep.innerHTML=`<div class="replica-h">📦 DP 副本 #${d} · 处理不同数据分片（micro-batch ≈ ${micro} 条${state.cp>1?` · 每条再按 CP=${state.cp} 切序列`:''}）</div>`;
     for(let p=0;p<state.pp;p++){
       const st=document.createElement('div'); st.className='stage';
       st.innerHTML=`<div class="stage-h">流水线 Stage ${p}${state.pp>1?` / ${state.pp}`:''}</div>`;
@@ -1884,7 +2187,7 @@ loader  = DataLoader(dataset, batch_size=micro_batch, sampler=sampler)`,
   launch:{ label:'create_config.py', file:'create_config.py',
     code(s){
       const world=s.dp*s.pp*s.cp*s.tp;
-      const micro=Math.max(1,Math.floor(s.batch/(s.dp*s.cp)));
+      const micro=Math.max(1,Math.floor(s.batch/s.dp));   // CP 切序列不切 batch，故 mbs 只除 DP
       const lrStr=s.lr.toExponential(1);
       return `# Step 1: 生成 config.json（所有具体数值写在这里）
 python create_config.py \\
@@ -1907,7 +2210,7 @@ torchrun --nproc_per_node=${world} train.py --config ./tmp/my_run/config.json
 # }`;
     },
     hl(s){
-      const micro=Math.max(1,Math.floor(s.batch/(s.dp*s.cp)));
+      const micro=Math.max(1,Math.floor(s.batch/s.dp));
       const lrStr=s.lr.toExponential(1);
       return [
         `--dp ${s.dp} --pp ${s.pp} --cp ${s.cp} --tp ${s.tp}`,
@@ -2272,7 +2575,9 @@ function renderCode(scrollToHl, scrollCtrlId){
 function renderHints(){
   const s=state;
   // Pangu:控件虽锁定只读,但各表单的解释照常显示(基于锁定后的真实配置:tp=32、61 层、hidden=7680 等)。
-  const micro=Math.max(1,Math.round(s.batch/(s.dp*s.cp)));
+  // micro-batch 只由 DP 决定：CP 切的是序列长度，不参与分 batch（每卡 token = micro × L/CP）
+  const micro=Math.max(1,Math.round(s.batch/s.dp));
+  const k=Math.max(1,Math.min(s.topk,s.experts));   // 实际生效的 top-k（受专家数上限约束）
 
   // DP
   const dpEl=$('hintDP');
@@ -2283,7 +2588,13 @@ function renderHints(){
       ?`（每个副本由 <b>${cardsPerReplica}</b> 张卡组成，PP×CP×TP=${s.pp}×${s.cp}×${s.tp}）`:
       ``;
     dpEl.innerHTML=`<b>切分数据集。</b>把 global batch（<b>${s.batch}</b> 条）拆成 <b>${s.dp}</b> 份，每份 <b>${micro}</b> 条，`+
-      `<b>${s.dp}</b> 个完整模型副本各跑一份${replicaDesc}；反向结束后梯度 all-reduce 平均，参数保持一致`;
+      `<b>${s.dp}</b> 个完整模型副本各跑一份${replicaDesc}；反向结束后梯度 all-reduce 平均，参数保持一致`+
+      // EP 嵌套在副本内部：DP「完整副本」的语义对专家权重同样成立，这里点明以免误读
+      (s.enMoE&&s.ep>1
+        ? `<br><b>MoE 层也遵守这个语义</b>：EP=${s.ep} 只在<b>每个副本内部</b>沿 TP 切专家，`
+          +`每个副本仍独立持有完整一套 <b>${s.experts}</b> 个专家；all-to-all 只在副本内部发生、<b>不跨 DP</b>，`
+          +`所以专家梯度和 attn / dense 一样在这 <b>${s.dp}</b> 个副本${s.cp>1?`×CP=${s.cp}`:''}之间 all-reduce。`
+        : ``);
   } else {
     dpEl.className='para-hint';
     dpEl.innerHTML=`不做数据并行，全部 <b>${s.batch}</b> 条数据由同一组卡处理`;
@@ -2317,7 +2628,8 @@ function renderHints(){
     const cpGroupDesc=cpGroups>1?`，共 <b>${cpGroups}</b> 个独立 CP 组（DP×PP=${s.dp}×${s.pp}）`:
       ``;
     cpEl.innerHTML=`<b>切分序列长度。</b>把每条序列沿 token 轴均切成 <b>${s.cp}</b> 段，每段由同一 CP 组内不同的卡独立做自注意力${cpGroupDesc}；`+
-      `做跨段注意力时 KV 通过 all-gather 在组内共享（Ring Attention 风格）`;
+      `做跨段注意力时，K/V 分块在组内以 <b>P2P 环形逐块传递</b>并做在线 softmax 累加（Ring Attention，Megatron CP 口径）——`+
+      `不是一次性 all-gather 全部 KV；另一路 DeepSpeed-Ulysses 则改用 all-to-all 交换头维，本 demo 按 Ring 口径画`;
   } else {
     cpEl.className='para-hint';
     cpEl.innerHTML=`不做序列并行，每张卡处理完整序列`;
@@ -2338,40 +2650,68 @@ function renderHints(){
     tpEl.innerHTML=`不做张量并行，每张卡存并计算完整权重`;
   }
 
-  // MoE / EP
+  // MoE 开关本身（只讲用不用 MoE，不掺 EP 取值）
+  const moeEl=$('hintMoE');
+  if(moeEl){
+    moeEl.className='para-hint'+(s.enMoE?' on':'');
+    moeEl.innerHTML = s.enMoE
+      ? `<b>MoE：</b>每层 FFN 换成 <b>${s.experts}</b> 个专家 + 一个 router（稀疏激活）。下面两个表单只决定这些专家<b>怎么摆到卡上</b>，`+
+        `不改变模型结构、也不改变总卡数：World = PP×DP×CP×TP = <b>${s.dp*s.pp*s.cp*s.tp}</b>。`
+      : `<b>稠密 FFN：</b>每层就是一个标准 MLP，所有 token 走同一套权重 —— 没有 router、没有专家、也就没有 EP 可谈。`+
+        `切到 <b>MoE</b> 才会出现下面的专家并行表单。`;
+  }
+  // ① EP 组的个数（每 DP 副本）—— 可见主控
   const epEl=$('hintEP');
   if(s.enMoE){
-    const cap=s.dp*s.cp;
-    if(s.ep>1){
-      const perEP=s.experts/s.ep;
-      const cardTags=Array.from({length:s.ep},(_,r)=>{
-        const lo=r*perEP, hi=lo+perEP-1, label=lo===hi?`E${lo}`:`E${lo}~E${hi}`;
-        return `<span style="display:inline-block;margin:1px 2px;padding:0 5px;border-radius:3px;background:rgba(255,75,123,.13);color:var(--danger);font-size:10px;white-space:nowrap">EP位${r}:${label}</span>`;
-      }).join('');
-      const edp=cap/s.ep;
-      epEl.className='para-hint on';
-      epEl.innerHTML=`<b>EP=${s.ep} ：即 1 个 EP 组，会分 ${s.ep} 个专家位组成，一组共跨 EP×TP = ${s.ep}×${s.tp} = ${s.ep*s.tp} 张卡。</b>`+
-        `<br> 1 个 EP 组内 <b>${s.ep}</b> 个专家位各持 <b>${perEP}</b> 个专家，共 <b>${s.experts}</b> 个专家：`+
-        cardTags+
-        `<br><b>${s.pp>1?`每个 PP stage 内有 DP×CP÷EP = ${cap}÷${s.ep} = ${edp} 个 EP 组，PP=${s.pp} 即 ${s.pp} 个 stage ，则模型共 ${s.pp*edp} 个 EP 组。全局 <b>${s.pp*edp}</b> 个 EP 组正好占满全局 <b>${s.dp*s.pp*s.cp*s.tp}</b> 张卡。`:`DP×CP÷EP = ${cap}÷${s.ep} = ${edp}，一共 ${edp} 个 EP 组。`}</b>（${s.pp>1?`EP位 vs EP 组：EP位（专家位）是EP组内的「槽」，${s.ep} 个专家位拼成 1 个 EP 组, 合起来覆盖全部专家。`:`拓扑图（中间那栏）红字里的组号从 0 到 ${edp-1}${edp===1?'——只有「EP组0」是正常的，不是 bug':''}。`}）`;
+    const eg=etpDeg(), domains=s.pp*s.dp*s.cp*eg, perEP=s.experts/s.ep;
+    epEl.className='para-hint on';
+    if(s.tp<=1){
+      epEl.innerHTML=`<b>每副本 1 个 EP 组</b>（副本内只有 1 张卡）。`+
+        `<b style="color:var(--danger)">TP=1 时无从切分专家</b>——EP 沿 TP 轴切，要让专家分散到多张卡，得先把 <b>TP</b> 提到 ≥2（与 DP 无关）。`;
     } else {
-      epEl.className='para-hint on';
-      epEl.innerHTML=`<b>EP=1 : 1 个 EP 组由 1 个专家位（EP=1，即专家不分批）组成，一组共有 EP×TP = 1×${s.tp} = ${s.tp} 张卡。${s.pp>1?`每个 PP stage 内有 DP×CP÷EP = ${cap}÷1 = ${cap} 个 EP 组，PP=${s.pp} 即 ${s.pp} 个 stage ，共 ${s.pp*cap} 个 EP 组。`:`DP×CP÷EP = ${cap}÷1 = ${cap}，一共 ${cap} 个 EP 组。`}</b>（${s.pp>1?`全局 <b>${s.pp*cap}</b> 个 EP 组正好占满全部 <b>${s.dp*s.pp*s.cp*s.tp}</b> 张卡。PP 各 stage 存不同的层，拓扑图（中间那栏）里每行 Stage 的红字组号都从 0 起。`:`拓扑图（中间那栏）红字里的组号从 0 到 ${cap-1}。`}）`+
-        `<br><b>EP=1 表示不切专家：</b><b>${s.experts}</b> 个专家在每个 EP 组里完整保有${s.tp>1&&s.etp?`（ETP：每个专家矩阵仍按 TP=${s.tp} 切片）`:''}，${cap>1?`这 ${cap} 个组互为副本（EDP），`:''}无 all-to-all 路由。`+
-        (cap<=1
-          ?`<br><b style="color:var(--danger)">当前 DP×CP=${cap}，没有可借用的副本卡，EP 只能为 1</b>——要开专家并行，得先把 DP 或 CP 提到 ≥2。`
-          :`<br>当前 DP×CP=${cap}，可把 EP 调到「整除 ${cap} 且整除 ${s.experts}」的值（如 ${epDivisors().filter(k=>k>1).join('、')||'—'}）来真正切分专家。`);
+      epEl.innerHTML=`<b>每个 DP 副本内部有 ${eg} 个 EP 组</b>，每组 <b>${s.ep}</b> 张卡（组大小见下方折叠项）：${eg} × ${s.ep} = TP = ${s.tp}。`+
+        `<br>全局 <b>${domains}</b> 个独立 EP 域 = PP${s.pp} × DP${s.dp}${s.cp>1?` × CP${s.cp}`:''} × 每副本${eg}。`+
+        `<b>不同 DP 副本各自独立</b>，彼此没有 all-to-all。`+
+        `<br>① 每个副本独立持有<b>完整一套 ${s.experts} 个专家</b>；② EP 组范围＝副本内的 TP 卡；`+
+        `③ <b>all-to-all 永不跨 DP</b>（拓扑图 ②/④ 的连线只在同一绿框内横向走）；`+
+        `④ 反向时专家梯度在 <b>${s.dp} 个 DP 副本${s.cp>1?`×CP=${expertDpSize()} 张卡`:''}</b>之间 all-reduce，与 attn / dense 同组。`+
+        (s.ep>1
+          ? `<br><b>路由是 per-token 的：</b>MoE 层与序列并行(SP)配合，本卡持 <b>${micro}×${Math.round(s.seq/s.cp)}÷${s.tp}</b> 个 token，`+
+            `每个 token 各自选 top-${k}；同组各卡拿的是<b>不同的 token 分片</b> → 路由结果不同 → a2a 各方向收发量不等`+
+            `（真实系统靠 aux loss / capacity factor 压这个不均）。`
+          : `<br>当前组大小=1，等于<b>专家不按 EP 切</b>：每张卡都覆盖全部 ${s.experts} 个专家`+
+            `（${eg>1?`矩阵按 TP 切 1/${eg} 片，即退化成 dense 那样的张量并行`:'整份持有'}），MoE 层<b>无 all-to-all</b>（只有卡内 permute / unpermute）。`+
+            `把「组的个数」调小即可增大组大小、让专家真正按 EP 分散到不同卡。`);
     }
   } else {
     epEl.className='para-hint';
-    epEl.innerHTML=`未启用 MoE，每层使用标准密集 FFN（无专家路由）`;
+    epEl.innerHTML=``;
+  }
+  // ② EP 组的大小（折叠区）—— 业界惯例说明
+  const epsEl=$('hintEPSize');
+  if(epsEl){
+    if(s.enMoE && s.tp>1){
+      const eg=etpDeg(), perEP=s.experts/s.ep;
+      epsEl.className='para-hint on';
+      epsEl.innerHTML=`<b>组大小 = 一次 all-to-all 有几张卡参与</b>，也等于「那套专家被切成几份」：当前 ${s.ep} 份 × 每份 ${perEP} 个专家。`+
+        `<br>它<b>不是独立的自由度</b>：组大小 × 组个数 = TP = ${s.tp}，所以它由上面的「组个数」自动换算而来`+
+        `（这里改它 = 反向改组个数，两个表单是同一件事的两种说法）。`+
+        (s.ep===s.tp
+          ? `<br>当前 = TP，正是业界最常用的那一档 <b style="color:var(--success)">✓</b>：每卡独占自己的 ${perEP} 个专家，`+
+            `专家 GEMM 保持最"胖"、MFU 最高，也没有冗余副本（如 SGLang <code>tp8 ep8</code>、Megatron <code>expert-tensor-parallel-size=1</code>）。`
+          : `<br>组大小 ${s.ep} < TP ${s.tp}，于是同一个 EP 位由 ${eg} 张卡承担 —— 已按业界做法自动开启 <b>ETP</b>，`+
+            `把每个专家矩阵切成 1/${eg} 分给这 ${eg} 张卡（不留冗余副本）。代价是专家 GEMM 变"瘦"、MFU 下降，`+
+            `这也是为什么真实系统多数直接取「组大小 = TP」。`);
+    } else { epsEl.className='para-hint'; epsEl.innerHTML=''; }
   }
 
   // EP/TP 扩展面板（Top-k / 序列长 / ETP 开关 / 通讯量对比）
   const epx=$('ctrlEPX');
   if(epx){
     epx.style.display = s.enMoE && !isCNN() ? 'block' : 'none';
-    const showEtp = s.enMoE && s.ep>1 && s.tp>1 && !isPangu();
+    // ETP 只有在「同一 EP 位由多张卡承担」时才存在选择（eg=TP/EP>1）；eg=1 时每卡独占专家，无从再切
+    const eg=etpDeg();
+    const showEtp = s.enMoE && eg>1 && !isPangu();
     const etpRow=$('etpRow'); if(etpRow) etpRow.style.display = showEtp ? 'flex' : 'none';
     if($('vTopk')) $('vTopk').textContent=s.topk;
     if($('vSeq'))  $('vSeq').textContent=s.seq;
@@ -2380,9 +2720,22 @@ function renderHints(){
       if(showEtp){
         etpEl.className='para-hint on';
         etpEl.innerHTML = s.etp
-          ? `<b>ETP（先 EP、再对每个专家做 TP）：</b>专家权重被 TP 再切 ${s.tp} 片，每卡只存 ${s.experts/s.ep} 个专家 × 1/${s.tp} 矩阵。<b style="color:var(--danger)">专家本就小，再切会让 GEMM 变「瘦长」、MFU 下降</b>，故开源社区少见。`
-          : `<b>EP-only（主流，如 SGLang tp8 ep8）：</b>专家只按 EP 分（每卡 ${s.experts/s.ep} 个<b>完整</b>专家，不随 TP 切）；TP 只作用于 attn / dense linear。勾选切到 ETP 看区别（显存条、算子图 W_exp 形状会变）。`;
-      } else etpEl.className='para-hint';
+          ? `<b>ETP 开（当前 · 自动选取）：</b>同一 EP 位的 ${eg} 张卡把每个专家矩阵切成 1/${eg} 分着存，`+
+            `每卡 ${s.experts/s.ep} 个专家 × 1/${eg} 矩阵，<b>副本内没有冗余</b>。代价是专家 GEMM 变「瘦长」、MFU 下降，每层还多一次 TP all-reduce。`
+          : `<b>ETP 关（你手动关掉了自动值）：</b>这 ${eg} 张卡各存一份<b>完整</b>专家 —— GEMM 最胖、MFU 最高，`+
+            `但同一 EP 位存了 ${eg} 份<b>冗余副本</b>，专家显存 ×${eg}。留着这一档是为了对比，真实系统一般不这么配。`;
+      } else { etpEl.className='para-hint'; etpEl.innerHTML=''; }   // 清掉上一份配置留下的 ETP 文案
+    }
+    // 共享专家：常开、不路由、不进 a2a（DeepSeek-V3 / openPangu 都是 1 个）
+    const shEl=$('hintShared');
+    if(shEl){
+      shEl.className='para-hint on';
+      shEl.innerHTML = s.shared
+        ? `<b>已开启 1 个共享专家：</b>它<b>不参与 router 打分</b>、也<b>不进 all-to-all</b>——每个 token 都要过它，`+
+          `其输出与 top-${k} 路由专家的输出相加。存储上按 dense FFN 口径：<b>每张卡都有一份</b>（跨 EP 复制），随 TP 切 1/${s.tp} 片。`+
+          `作用是兜住「所有 token 都需要的通用知识」，让路由专家专注差异化，缓解路由抖动。DeepSeek-V3、openPangu-718B 都是 1 个。`
+        : `<b>未开启共享专家。</b>现代大 MoE（DeepSeek-V3、openPangu-718B）通常在 top-k 路由专家之外再放 <b>1 个常开的共享专家</b>：`+
+          `所有 token 都过它、不参与路由、不进 a2a。打开开关可看它对显存条与算子图的影响。`;
     }
     renderCommCompare(s);
   }
@@ -2427,12 +2780,15 @@ function renderHints(){
   const expertsEl=$('hintExperts');
   if(s.enMoE){
     expertsEl.className='para-hint on';
-    const activeRatio=Math.round(2/s.experts*100);
+    // 稀疏度口径：k/E 是「专家参数」里被激活的比例，不是整个模型的比例（attn/emb/head 每 token 全激活）
+    const activeRatio=Math.round(k/s.experts*100);
     const epDesc=s.ep>1
       ?`EP=${s.ep}，每卡持有 <b>${s.experts/s.ep} 个专家</b>${s.tp>1&&s.etp?`（ETP：每专家矩阵再 ÷ TP=${s.tp}）`:''}，token 经 all-to-all 路由`
       :`专家在每个 DP×CP 副本完整保有${s.tp>1&&s.etp?`（ETP：矩阵按 TP 切）`:''}，无需 all-to-all`;
-    expertsEl.innerHTML=`<b>${s.experts}</b> 个专家，每个专家为独立 FFN（${H}→${H*4}→${H}）；`+
-      `router 为每个 token 选 top-2，每次激活 ≈ <b>${activeRatio}%</b> 的参数；${epDesc}`;
+    expertsEl.innerHTML=`<b>${s.experts}</b> 个路由专家，每个专家为独立 FFN（${H}→${H*4}→${H}）${s.shared?` + <b>1 个常开共享专家</b>`:''}；`+
+      `router 为<b>每个 token</b> 各选 top-<b>${k}</b> → 每个 token 只激活 <b>${activeRatio}%</b> 的<b>专家</b>参数`+
+      `（attn / emb / head 仍然全激活，所以这不是整模型的激活占比）；`+
+      `<b>但一层里几乎所有专家都会被用到</b>——几千个 token 各选各的，只是每个专家收到的 token 数不同（负载不均）；${epDesc}`;
   } else {
     expertsEl.className='para-hint';
     expertsEl.innerHTML='';
@@ -2466,7 +2822,10 @@ function renderCommCompare(s){
     return;
   }
   const N=s.ep, k=Math.min(s.topk,s.experts);
-  const S=s.batch*s.seq*s.hidden*2;               // 激活字节（bf16，2 B/元素）
+  // S = **单卡本层**的激活字节：token 数 = (batch/DP)×(L/CP)÷TP（MoE 与 SP 配合，每卡持 1/TP）
+  const microB=Math.max(1,Math.round(s.batch/s.dp)), seqC=Math.max(1,Math.round(s.seq/s.cp));
+  const tokCard=Math.max(1,Math.round(microB*seqC/s.tp));
+  const S=tokCard*s.hidden*2;                     // 激活字节（bf16，2 B/元素）
   const commTP=2*(N-1)/N*S;                        // ≈2S，与 k 无关
   const commEP=2*(N-1)/N*(k/N)*S;                  // ≈2kS/N
   const max=Math.max(commTP,commEP)||1;
@@ -2486,19 +2845,25 @@ function renderCommCompare(s){
     +`<div class="cc-verdict ${epWin?'ep-win':'tp-win'}">${epWin
         ? `EP 更省：比值 = k/N = ${k}/${N} = ${(k/N).toFixed(2)}，EP 单卡只需 TP 的 ${(k/N*100).toFixed(0)}%（k&lt;N）。`
         : `TP 更省或持平：k=${k} ≥ N=${N}，EP 的 all-to-all 反而搬得更多。`}</div>`
-    +`<div class="cc-note">Comm_TP ≈ 2·(N-1)/N·S ≈ 2S（与 k 无关，全量激活雷打不动同步）；Comm_EP ≈ 2·(N-1)/N·(k/N)·S ≈ 2kS/N。S = B×L×H×2B = ${s.batch}×${s.seq}×${s.hidden}×2 = ${fmt(S)}。</div>`;
+    +`<div class="cc-note">Comm_TP ≈ 2·(N-1)/N·S ≈ 2S（与 k 无关，全量激活雷打不动同步）；Comm_EP ≈ 2·(N-1)/N·(k/N)·S ≈ 2kS/N。`
+      +`S = <b>单卡</b>本层激活字节 = (B/DP)×(L/CP)÷TP×H×2B = ${microB}×${seqC}÷${s.tp}×${s.hidden}×2 = ${fmt(S)}（MoE 与 SP 配合，每卡持 1/TP 的 token）。</div>`;
 
   // ── 2) 通讯延迟 / 带宽域（时间 = 字节 / 带宽）──
-  const NVLINK=900e9, RDMA=75e9;                  // TP 机内 NVLink；EP 跨节点 RDMA（50–100 取中值）
-  const tTP=commTP/NVLINK, tEP=commEP/RDMA;
+  const NVLINK=900e9, RDMA=75e9, NODE=8;          // 机内 NVLink；跨节点 RDMA（50–100 取中值）；单机 8 卡
+  // 本布局下 EP 组 = 单个 DP 副本内部的 TP 卡（TP 通常不跨机）→ a2a 天然在机内 NVLink 域。
+  // 只有 EP（≤TP）大到超过单机卡数时才会跨节点。
+  const epIntra=N<=NODE, epBW=epIntra?NVLINK:RDMA;
+  const tTP=commTP/NVLINK, tEP=commEP/epBW;
   const tmax=Math.max(tTP,tEP)||1;
   const ft=t=> t>=1e-3?(t*1e3).toFixed(2)+' ms':(t*1e6).toFixed(1)+' µs';
-  const epFast=tEP<tTP, bwGap=NVLINK/RDMA, timeRatio=(k/N)*bwGap;
+  const epFast=tEP<tTP, bwGap=NVLINK/RDMA, timeRatio=(k/N)*(NVLINK/epBW);
   h+=`<div class="cc-sec"><div class="cc-title">② 通讯延迟 · 叠加带宽域（raw 传输时间）</div>`
-    +bar('tp','用 TP',tTP/tmax*100,ft(tTP))
-    +bar('ep','用 EP',tEP/tmax*100,ft(tEP))
-    +`<div class="cc-verdict info">带宽域差 ${bwGap.toFixed(0)}× 抵消了字节优势：raw 时延比 = (k/N)×(NVLink/RDMA) = ${timeRatio.toFixed(1)}×，本例 N=${N} 较小，EP raw 传输 ${ft(tEP)} ${epFast?'快于':'慢于'} TP ${ft(tTP)}。</div>`
-    +`<div class="cc-note"><b>但别把方向搞反</b>——这只是「裸传输时间」。文档的真正论点是：① TP 的 all-reduce 是<b>每层同步锁、卡在关键路径</b>上，难掩盖；EP 的 all-to-all 粗粒度、<b>可与专家计算重叠</b>（DeepEP 掩盖），暴露延迟趋近 0。② N 越大越偏向 EP（DeepSeek N=256、k=8 → 时延比≈0.4×），且 TP 出不了单机 NVLink 域（8 卡），EP 能扩到万卡。All-to-All 本质是 N²=${N*N} 个小连接，握手/长尾/负载不均的等待还未计入。</div></div>`;
+    +bar('tp','用 TP',tTP/tmax*100,ft(tTP)+' · NVLink')
+    +bar('ep','用 EP',tEP/tmax*100,ft(tEP)+(epIntra?' · NVLink':' · RDMA'))
+    +`<div class="cc-verdict info">${epIntra
+        ? `EP 组＝副本内 <b>${N}</b> 张 TP 卡（≤ 单机 ${NODE} 卡），a2a 同样走机内 NVLink，<b>没有带宽域降级</b>：时延比 = k/N = ${timeRatio.toFixed(2)}×，EP raw 传输 ${ft(tEP)} ${epFast?'快于':'慢于'} TP ${ft(tTP)}。`
+        : `EP 组 <b>${N}</b> 张卡放不进单机（${NODE} 卡），a2a 要走 RDMA：带宽域差 ${bwGap.toFixed(0)}× 吃掉部分字节优势，时延比 = (k/N)×(NVLink/RDMA) = ${timeRatio.toFixed(1)}×，EP raw 传输 ${ft(tEP)} ${epFast?'快于':'慢于'} TP ${ft(tTP)}。`}</div>`
+    +`<div class="cc-note"><b>这只是「裸传输时间」，别据此下结论</b>：① TP 的 all-reduce 是<b>每层同步锁、卡在关键路径</b>上，难掩盖；EP 的 all-to-all 粗粒度、<b>可与专家计算重叠</b>（DeepEP 掩盖），暴露延迟趋近 0。② N 越大越偏向 EP（DeepSeek N=256、k=8 → 字节比 k/N≈0.03），且 TP 出不了单机 NVLink 域（${NODE} 卡），EP 能扩到万卡。All-to-All 本质是 N²=${N*N} 个小连接，握手 / 长尾 / 负载不均的等待还未计入。</div></div>`;
 
   // ── 3) 计算效率 MFU（专家 GEMM 内维是否够「胖」）──
   const dimEP=4*s.hidden, dimTP=Math.round(4*s.hidden/N);
@@ -2509,23 +2874,25 @@ function renderCommCompare(s){
     +`<div class="cc-verdict ${mEP>=mTP?'ep-win':'tp-win'}">EP 保持专家矩阵完整（内维 4H=${dimEP}）；TP 把它切成 4H/N=${dimTP}，越切越「瘦长」，Tensor Core 填不满 → MFU 掉到 ${mTP.toFixed(0)}%。细粒度专家（专家本就小）下这点尤其致命。</div>`
     +`<div class="cc-note">饱满度为示意启发式（d/(d+1024)），非实测；仅说明「TP 切细 → GEMM 变瘦 → 算力利用率下降」的趋势。这也是 TP 一般不跨机、MoE 偏爱 EP 的核心原因。</div></div>`;
 
-  // ═══ demo 可操作对比：EP 之上是否再叠 TP（EP-only vs ETP）═══
-  h+=`<div class="cc-sec2"><div class="cc-head">在 EP 之上：EP-only vs ETP（demo 开关）</div>`
-    +`<div class="cc-sub">这才是 demo 里<b>真正可操作</b>的选择（上方「专家也做 TP」开关）：ETP = 在 EP 之上<b>再</b>对每个专家做 TP，<b>不是</b> EP 的替代。当前：<b>${s.etp?'ETP':'EP-only'}</b>。</div>`;
-  if(s.tp<=1){
-    h+=`<div class="cc-note">当前 TP=1，无 ETP 可谈（ETP 需 TP≥2）。把 TP 提到 ≥2，再勾选上方开关即可对比。</div></div>`;
+  // ═══ demo 可操作对比：同一 EP 位由多张卡承担时，是切矩阵(ETP)还是各存整份 ═══
+  const eg=etpDeg();
+  h+=`<div class="cc-sec2"><div class="cc-head">同一 EP 位内部：整份副本 vs ETP 切片（demo 开关）</div>`
+    +`<div class="cc-sub">EP=${s.ep} 把副本内 ${s.tp} 张 TP 卡分成 ${s.ep} 个 EP 位，每位由 TP/EP = <b>${eg}</b> 张卡承担。`
+    +`这 ${eg} 张卡要么<b>各存整份</b>（冗余、GEMM 胖），要么<b>各切 1/${eg}</b>（ETP，省显存、GEMM 瘦）。当前：<b>${s.etp?'ETP 切片':'各存整份'}</b>。</div>`;
+  if(eg<=1){
+    h+=`<div class="cc-note">当前 EP=TP=${s.tp}，每张卡独占自己的 ${s.experts/s.ep} 个专家，<b>没有冗余、也无从再切</b>——ETP 开关在这种配置下无意义（已隐藏）。把 EP 调小到 TP 的真因子（如 ${epDivisors().filter(v=>v>1&&v<s.tp).join('、')||'—'}）才会出现「同位多卡」的选择。</div></div>`;
   } else {
     const perEP=s.experts/s.ep;
-    const dimFull=4*s.hidden, dimSlice=Math.round(4*s.hidden/s.tp);
+    const dimFull=4*s.hidden, dimSlice=Math.round(4*s.hidden/eg);
     const mFull=mfu(dimFull)*100, mSlice=mfu(dimSlice)*100;
-    const gbFull=perEP*8*s.hidden*s.hidden*16/1e9, gbETP=gbFull/s.tp;  // 专家权重+Adam(16 B/param)
+    const gbFull=perEP*8*s.hidden*s.hidden*16/1e9, gbETP=gbFull/eg;  // 专家权重+Adam(16 B/param)
     h+=`<div class="cc-title">每卡专家显存（权重+优化器态，16 B/param）</div>`
-      +bar('ep','EP-only',100,`${gbFull.toFixed(1)} GB · ${perEP}个`)
-      +bar('tp','ETP',100/s.tp,`${gbETP.toFixed(1)} GB · ${perEP}×1/${s.tp}`)
+      +bar('ep','整份副本',100,`${gbFull.toFixed(1)} GB · ${perEP}个`)
+      +bar('tp','ETP 切片',100/eg,`${gbETP.toFixed(1)} GB · ${perEP}×1/${eg}`)
       +`<div class="cc-title" style="margin-top:8px">专家 GEMM 饱满度（MFU）</div>`
-      +bar('ep','EP-only',mFull,`${mFull.toFixed(0)}% · 4H=${dimFull}`)
-      +bar('tp','ETP',mSlice,`${mSlice.toFixed(0)}% · 4H/${s.tp}=${dimSlice}`)
-      +`<div class="cc-verdict ${s.etp?'tp-win':'ep-win'}">ETP 把每卡专家显存再省 <b>${s.tp}×</b>（perEP×1/${s.tp}），代价是：① 每个专家层在 all-to-all 之外<b>多一次 TP all-reduce</b>（通讯更多）；② MFU ${mFull.toFixed(0)}%→${mSlice.toFixed(0)}%。只有当单个专家大到 EP-only 一张卡都装不下时才划算；细粒度专家下通常不值，故社区少用。</div>`
+      +bar('ep','整份副本',mFull,`${mFull.toFixed(0)}% · 4H=${dimFull}`)
+      +bar('tp','ETP 切片',mSlice,`${mSlice.toFixed(0)}% · 4H/${eg}=${dimSlice}`)
+      +`<div class="cc-verdict ${s.etp?'tp-win':'ep-win'}">ETP 把每卡专家显存省 <b>${eg}×</b>（perEP×1/${eg}）并消除同位冗余，代价是：① 每个专家层在 all-to-all 之外<b>多一次 TP all-reduce</b>；② MFU ${mFull.toFixed(0)}%→${mSlice.toFixed(0)}%。<b>第三条路更常用</b>：直接把 EP 提到 TP=${s.tp}，每卡独占专家 —— 既无冗余、又保持 GEMM 最胖。</div>`
       +`<div class="cc-note">显存 / MFU 随开关精确联动（对应左侧显存条与算子图 W_exp 形状）；ETP 的额外 all-reduce 只定性标注，未画进①的字节条——① 比较的是「用 TP vs 用 EP」两种替代方案，非叠加。</div></div>`;
   }
 
@@ -2599,12 +2966,15 @@ function renderConclusion(){
   // ——稀疏轴（MoE / EP）——
   // MoE 解决「想要更多参数但不等比增加计算」
   if(hasMoE){
-    const pct=Math.round(2/s.experts*100);
+    const k=Math.max(1,Math.min(s.topk,s.experts));
+    const pct=Math.round(k/s.experts*100);         // 每 token 激活的「专家参数」占比
     tags.push('<span class="ctag">稀疏MoE</span>');
+    const shDesc=s.shared?` + 1 个常开共享专家`:``;
     if(s.ep>1){
-      clauses.push(`<b>MoE + EP=${s.ep}</b>：${s.experts} 专家从 DP×CP=${s.dp}×${s.cp} 借 ${s.ep} 个 EP 位分担（每位 ${s.experts/s.ep} 个专家${s.tp>1?`，每位再 ×TP=${s.tp} 张物理卡`:''}），top-2 稀疏激活（≈${pct}%）——适用于<b>专家数多、单卡放不下全部专家</b>、需跨卡分摊专家显存的场景`);
+      const eg=etpDeg();
+      clauses.push(`<b>MoE + EP=${s.ep}</b>：每个 DP 副本内部把自己那套 ${s.experts} 专家沿 TP 切成 ${s.ep} 个 EP 位（每位 ${s.experts/s.ep} 个专家${eg>1?`，由 ${eg} 张卡承担`:''}）${shDesc}，每 token top-${k} 稀疏激活（≈${pct}% 专家参数）；a2a 只在副本内部、<b>不跨 DP</b>——适用于<b>专家数多、单卡放不下全部专家</b>、需在副本内分摊专家显存的场景`);
     } else {
-      clauses.push(`<b>MoE</b>：${s.experts} 专家在每个副本完整保有，top-2 稀疏激活（≈${pct}%）——适用于<b>以稀疏方式扩大模型容量</b>而每步计算量保持不变的场景`);
+      clauses.push(`<b>MoE</b>：${s.experts} 专家在每个副本完整保有${shDesc}，每 token top-${k} 稀疏激活（≈${pct}% 专家参数）——适用于<b>以稀疏方式扩大模型容量</b>而每步计算量保持不变的场景`);
     }
   }
 
@@ -2646,8 +3016,9 @@ function _waClear(){
   wd.querySelectorAll('.wdiag-card').forEach(el=>el.classList.remove('af'));
   wd.querySelectorAll('.wdiag-pp-arr').forEach(el=>el.classList.remove('af'));
   wd.querySelectorAll('.wdiag-layer-box').forEach(el=>el.classList.remove('af'));
-  // logits/loss 完成（或新一轮开始）时，统一清掉整轮累积的专家高亮、「本组选」标签、以及本 step 累积保留的全部 MoE 连线
+  // logits/loss 完成（或新一轮开始）时，统一清掉整轮累积的专家高亮、token 格子、命中统计标签、以及本 step 累积保留的全部 MoE 连线
   wd.querySelectorAll('.moe-exp.moe-exp-sel').forEach(e=>e.classList.remove('moe-exp-sel'));
+  wd.querySelectorAll('.moe-tok.on').forEach(e=>e.classList.remove('on'));
   wd.querySelectorAll('.moe-sel-hint').forEach(h=>h.textContent='');
   _moeClearSvg();
   const la=$('wLogitsArrow'),lc=$('wLogitsCard');
@@ -2674,12 +3045,12 @@ function _waStep(p, li){
     _waArm(()=>{ _waFlowActive=false; _waClear(); const cb=_waDoneCb; if(cb)cb(); }, WA_LOGITS_MS);
     return;
   }
-  const stageRow=wd.querySelector(`.wdiag-stage-row[data-p="${p}"]`);
-  if(!stageRow){ _waArm(()=>_waStep(p+1,0), 50); return; }
-  const cards=Array.from(stageRow.querySelectorAll('.wdiag-card'));
-  const numLayers=cards.length?cards[0].querySelectorAll('.wdiag-layer-box').length:0;
+  // 按 data-p 取本 stage 的全部卡（跨 DP/CP/TP）：PP 纵向、PP 横向两种布局都成立
+  const cards=Array.from(wd.querySelectorAll(`.wdiag-card[data-p="${p}"]`));
+  if(!cards.length){ _waArm(()=>_waStep(p+1,0), 50); return; }
+  const numLayers=cards[0].querySelectorAll('.wdiag-layer-box').length;
   if(li>=numLayers){                                     // 本 stage 走完 → PP 段间停留 → 下一 stage
-    stageRow.querySelectorAll('.wdiag-layer-box.af').forEach(b=>b.classList.remove('af'));
+    cards.forEach(c=>c.querySelectorAll('.wdiag-layer-box.af').forEach(b=>b.classList.remove('af')));
     _waArm(()=>_waStep(p+1,0), WA_PP_MS);
     return;
   }
@@ -2725,9 +3096,10 @@ function resumeWorldAnim(){
 // =================== BATCH SPLIT ANIMATION ===================
 let _splitTmr=null,_splitPaths=null,_splitCycleId=0;
 
-function _makeSvgArrow(svg,rootRect,x1,y1,x2,y2,spread){
+function _makeSvgArrow(svg,rootRect,x1,y1,x2,y2,spread,horiz){
   const NS='http://www.w3.org/2000/svg';
-  const midX=(x1+x2)/2+(spread||0),midY=(y1+y2)/2;
+  // spread = 多条箭头的错开量：纵向铺开时错 X，横向铺开时错 Y
+  const midX=(x1+x2)/2+(horiz?0:(spread||0)),midY=(y1+y2)/2+(horiz?(spread||0):0);
   const tdx=x2-midX,tdy=y2-midY,tmag=Math.sqrt(tdx*tdx+tdy*tdy)||1;
   const ux=tdx/tmag,uy=tdy/tmag,bk=6,sd=3.5;
   const a1x=x2-ux*bk-uy*sd,a1y=y2-uy*bk+ux*sd;
@@ -2790,33 +3162,31 @@ function initSplitArrows(){
   svg.innerHTML='';
   _splitPaths=[];
 
+  // PP 横向：入口在最左，箭头从 shard 右边射向 Stage 0 绿框左边（纵向则是自上而下）
+  const horiz=ppLayout==='h';
+  const arrowPts=(from,to)=>horiz
+    ? [from.right-rootRect.left+1, from.top+from.height/2-rootRect.top,
+       to.left-rootRect.left-2,    to.top+to.height/2-rootRect.top]
+    : [from.left+from.width/2-rootRect.left, from.bottom-rootRect.top+1,
+       to.left+to.width/2-rootRect.left,     to.top-rootRect.top-2];
+
   if(state.dp>1){
     const pieces=Array.from(document.querySelectorAll('.wdiag-split-piece'));
     const dpBoxes=Array.from(document.querySelectorAll('.wdiag-dp-top'));
     const n=Math.min(pieces.length,dpBoxes.length);
     if(!n){_runSplitCycle();return;}
     for(let i=0;i<n;i++){
-      const pRect=pieces[i].getBoundingClientRect();
-      const dRect=dpBoxes[i].getBoundingClientRect();
-      const x1=pRect.left+pRect.width/2-rootRect.left;
-      const y1=pRect.bottom-rootRect.top+1;
-      const x2=dRect.left+dRect.width/2-rootRect.left;
-      const y2=dRect.top-rootRect.top-2;
+      const [x1,y1,x2,y2]=arrowPts(pieces[i].getBoundingClientRect(),dpBoxes[i].getBoundingClientRect());
       const spread=(n<=1)?0:(i-(n-1)/2)*Math.max(14,42/n);
-      _splitPaths.push(_makeSvgArrow(svg,rootRect,x1,y1,x2,y2,spread));
+      _splitPaths.push(_makeSvgArrow(svg,rootRect,x1,y1,x2,y2,spread,horiz));
     }
   } else {
-    // dp=1: single arrow from batch card down to stage0
+    // dp=1: single arrow from batch card to stage0（纵向朝下 / 横向朝右）
     const batchCard=document.querySelector('.wdiag-batch-full');
     const stage0=document.querySelector('.wdiag-dp-top');
     if(!batchCard||!stage0){_runSplitCycle();return;}
-    const bRect=batchCard.getBoundingClientRect();
-    const dRect=stage0.getBoundingClientRect();
-    const x1=bRect.left+bRect.width/2-rootRect.left;
-    const y1=bRect.bottom-rootRect.top+1;
-    const x2=dRect.left+dRect.width/2-rootRect.left;
-    const y2=dRect.top-rootRect.top-2;
-    _splitPaths.push(_makeSvgArrow(svg,rootRect,x1,y1,x2,y2,0));
+    const [x1,y1,x2,y2]=arrowPts(batchCard.getBoundingClientRect(),stage0.getBoundingClientRect());
+    _splitPaths.push(_makeSvgArrow(svg,rootRect,x1,y1,x2,y2,0,horiz));
   }
   _runSplitCycle();
 }
@@ -2929,7 +3299,7 @@ function layerDagHTML(kind, t, noHeader) {
       h+=erow(wN('γ','[H]'), cn(), opN('RMSNorm (pre-attn)')); h+=arr();
       h+=erow(wN('W_Q/K/V',`H×${Htp}`), cn(), opN('QKV Linear (col-∥)'));
       h+=arr(); h+=sh(`Q/K/V [B, ${S}, ${Htp}]`); h+=arr();
-      if(cp>1){h+=commN('ring all-gather K/V (CP)'); h+=arr();}
+      if(cp>1){h+=commN('ring P2P 交换 K/V 分块 (CP)'); h+=arr();}
       h+=actN('RoPE → Scaled Dot-Product'); h+=arr();
       h+=sh(`attn [B, ${S}, ${Htp}]`); h+=arr();
       h+=erow(wN('W_O',`${Htp}×H`), cn(), opN('Out Proj (row-∥)'));
@@ -2948,13 +3318,25 @@ function layerDagHTML(kind, t, noHeader) {
       break;
     case 'moe': {
       const perCard=ep>1?Math.ceil(E/ep):E;
+      const k=Math.max(1,Math.min(state.topk,E));
       h+=sh(`x [B, ${S}, H]`); h+=arr();
       h+=erow(wN('γ','[H]'), cn(), opN('RMSNorm (pre-moe)')); h+=arr();
-      h+=erow(wN('W_router',`H×${E}`), cn(), opN('router (top-2)'));
+      // router 权重每卡复制 → 打分是本地运算，图上不该出现通信节点
+      h+=erow(wN('W_router',`H×${E}`), cn(), opN(`router (每 token top-${k}，本地)`));
       h+=arr();
-      if(ep>1){h+=commN('all-to-all dispatch');h+=arr();}
-      h+=erow(wN(`W_exp×${perCard}`,(tp>1&&state.etp)?`H×4H÷${tp}`:'H×4H'), cn(), opN(`Expert FFN ×${perCard}`));
-      if(ep>1){h+=arr();h+=commN('all-to-all combine');}
+      const eg=etpDeg(), etpOn=(state.etp&&eg>1);
+      if(ep>1){h+=commN(`all-to-all dispatch（副本内 ${ep} 卡·不跨 DP）`);h+=arr();}
+      else {h+=opN('permute（本地重排，无 a2a）');h+=arr();}
+      h+=erow(wN(`W_exp×${perCard}`,etpOn?`H×4H÷${eg}`:'H×4H'), cn(), opN(`Expert FFN ×${perCard}`));
+      if(etpOn){h+=arr();h+=commN('all-reduce（ETP：同位 '+eg+' 卡合并）');}
+      if(ep>1){h+=arr();h+=commN('all-to-all combine（副本内）');}
+      else {h+=arr();h+=opN('unpermute（本地还原）');}
+      // 共享专家：与路由专家并行的一条旁路，不打分、不 a2a
+      if(state.shared){
+        h+=arr();
+        h+=erow(wN('W_shared',tp>1?`H×4H÷${tp}`:'H×4H'), cn(), opN('shared expert FFN（常开·旁路）'));
+        if(tp>1){h+=arr();h+=commN('all-reduce');}
+      }
       h+=arr(); h+=sh(`x + res [B, ${S}, H]`);
       break;
     }
@@ -2991,9 +3373,11 @@ const DAG_NOTES = {
     ['miss','缺反向传播'],
   ],
   moe: [
-    ['ok','router top-2、all-to-all dispatch/combine 流程正确'],
-    ['miss','网格无真实 EP 轴：此处每卡按 E/ep，世界图卡片框仍按 E/tp，两者不一致'],
-    ['miss','缺负载均衡 aux loss、容量因子 capacity factor、反向'],
+    ['ok','router 打分本地（权重每卡复制、零通讯）、每 token 各选 top-k、a2a dispatch/combine 流程正确'],
+    ['ok','EP 嵌套在单个 DP 副本内、沿 TP 切：每卡 E/EP 个专家，a2a 不跨 DP，专家梯度按 DP 组 all-reduce'],
+    ['warn','MoE 层按「与 SP 配合」建模：TP 组内每卡持 1/TP 的 token，a2a 才有意义'],
+    ['warn','拓扑图每卡只抽样 6 个 token 演示路由；真实是 (batch/DP)×(L/CP)÷TP 个'],
+    ['miss','缺负载均衡 aux loss、容量因子 capacity factor / token drop、反向'],
   ],
   norm: [
     ['ok','Final RMSNorm 全卡复制、不切分，正确'],
@@ -3032,9 +3416,9 @@ function _fnetNodeBody(cat,label){
   const has=s=>label.indexOf(s)>=0;
   if(cat==='comm'){
     if(has('CrossEntropy')) return '词表并行交叉熵：每卡用自己那片 logits 算局部 loss，只 all-reduce 标量 loss，无需聚合完整 logits，省显存与带宽。';
-    if(has('all-gather'))   return '环形 all-gather：上下文并行(CP)把序列切到各卡，注意力前需把其它卡的 K/V 收集齐。';
-    if(has('dispatch'))     return 'all-to-all 派发：按路由结果，把每个 token 发送到持有其目标专家的卡上。';
-    if(has('combine'))      return 'all-to-all 回收：专家算完后，把结果按原顺序送回各 token 所在的卡。';
+    if(has('ring P2P'))     return '环形 P2P 交换：上下文并行(CP)把序列切到各卡，注意力时把 K/V 分块沿环逐步传给邻居、配合在线 softmax 累加（Ring Attention）。不是一次性 all-gather 全部 KV。';
+    if(has('dispatch'))     return 'all-to-all 派发：按每个 token 自己的路由结果，把它发送到持有其目标专家的卡上。EP 嵌套在单个 DP 副本内部（沿 TP 轴切专家），所以这条通信只在本副本的 EP 张卡之间发生、<b>永不跨 DP</b>；各卡收发量并不相等。';
+    if(has('combine'))      return 'all-to-all 回收：专家算完后，把结果按原 token 次序送回各 token 原本所在的卡，同样只在本 DP 副本内部。';
     return 'all-reduce 全规约：张量并行下每卡只算出部分和，相加得到完整结果并同步回每张卡。';
   }
   if(cat==='act'){
@@ -3050,8 +3434,9 @@ function _fnetNodeBody(cat,label){
     if(has('W_O'))      return '注意力输出投影权重，行并行(row-∥)按输入维切分。';
     if(has('W_gate'))   return 'SwiGLU 升维的两路权重(gate 门控 / up 主路)，列并行切分。';
     if(has('W_dn'))     return '降维(down_proj)权重，行并行 + all-reduce。';
-    if(has('W_router')) return '路由器权重：把每个 token 映射成各专家的打分。';
-    if(has('W_exp'))    return '各专家 FFN 的权重，按专家并行(EP)分散到不同卡。';
+    if(has('W_router')) return '路由器权重：把每个 token 映射成各专家的打分。每张卡都复制一份完整的 H×E，所以打分是纯本地运算、不需要任何通信。';
+    if(has('W_shared')) return '共享专家的 FFN 权重：常开、不参与路由，每张卡都有一份（跨 EP 复制），按 dense FFN 的方式随 TP 切分。';
+    if(has('W_exp'))    return '各专家 FFN 的权重。EP 在单个 DP 副本内部沿 TP 轴把专家分散到不同卡（每个副本一整套）；EP=TP 时每卡独占，EP<TP 时同一 EP 位的多张卡要么各存整份、要么开 ETP 各切一片。';
     if(has('W_head'))   return '输出头权重，列并行切到 V/tp，常与词嵌入共享同一份参数。';
     if(has('conv'))     return '卷积核权重：在图像上滑动做局部加权求和，提取空间特征。';
     if(has('W_fc'))     return '分类头权重矩阵：特征向量 → 各类别得分。';
@@ -3064,8 +3449,10 @@ function _fnetNodeBody(cat,label){
   if(has('Out Proj'))   return '线性算子：把多头注意力结果投影回隐藏维。行并行 + all-reduce。';
   if(has('gate & up'))  return 'SwiGLU 的两路升维线性投影(gate 门控 / up 主路)，列并行。';
   if(has('down_proj'))  return '降维线性算子：把中间表示降回隐藏维。行并行 + all-reduce。';
-  if(has('router'))     return 'MoE 路由：给每个 token 打分并选出 top-2 专家，决定它走哪几个专家网络。';
-  if(has('Expert FFN')) return '专家前馈网络：一个独立的小 MLP。每卡只放 E/ep 个专家，token 经 all-to-all 派发到对应卡计算。';
+  if(has('router'))     return 'MoE 路由：给每个 token 对全部专家打分，各自选出 top-k 个专家。粒度是「每个 token 一次」，不是每卡或每 EP 组一次——所以一层里几乎所有专家都会被激活，只是收到的 token 数不同。';
+  if(has('permute'))    return '本地重排：按目标专家把 token 排序、分组（unpermute 是反向还原）。EP=1 时专家都在本卡，只需这步本地重排，没有 all-to-all。';
+  if(has('shared expert')) return '共享专家：一条与路由专家并行的常开旁路 FFN，每个 token 都过它，不参与 router 打分、不进 all-to-all。用来承载「所有 token 都需要的通用知识」。';
+  if(has('Expert FFN')) return '专家前馈网络：一个独立的小 MLP。每卡只放 E/EP 个专家，token 经 all-to-all 派发到本 DP 副本内持有该专家的卡上计算。';
   if(has('lm_head'))    return '输出头线性算子：把隐状态投影到词表维得到 logits。列并行切到 V/tp。';
   if(has('BN'))         return 'BatchNorm：按通道把激活规整到稳定分布，加速并稳定训练。';
   if(has('shortcut'))   return '残差相加：把块输入直接加到输出(跳连)，让梯度直达浅层，支撑深层网络。';
@@ -3227,7 +3614,7 @@ const LAYER_DESC={
   emb: '将离散 token ID 映射为连续向量，是模型的<b>输入门户</b>。词表按 TP 组切分（VocabParallel），每卡存 vocab/tp 行嵌入权重。',
   attn:'<b>自注意力权重矩阵（Q / K / V / O）</b>：让每个位置动态关注序列中所有位置，捕捉长程依赖。Q/K/V 投影权重矩阵按注意力头做列切（Column Parallel），Out 投影权重矩阵按输入做行切（Row Parallel），行切后 all-reduce 汇总结果。',
   mlp: '<b>前馈网络权重矩阵（up / down）</b>：注意力之后对每个位置做升维 → 激活函数 → 降维，增强模型表达能力。up_proj 权重矩阵列切，down_proj 权重矩阵行切后 all-reduce。',
-  moe: '<b>混合专家 FFN 权重矩阵</b>：可学习 router 为每个 token 选 top-2 专家，以稀疏激活换取更大参数量。Expert Parallel 时不同卡持有不同专家子集（各自的权重矩阵），token 经 all-to-all 路由到对应卡计算。',
+  moe: '<b>混合专家 FFN 权重矩阵</b>：可学习 router 为<b>每个 token</b> 各选 top-k 专家（打分在本卡完成、不需通信），以稀疏激活换取更大参数量。Expert Parallel 在<b>每个 DP 副本内部</b>沿 TP 轴把专家分散到不同卡（每个副本各有完整一套），token 经 all-to-all 路由到本副本内对应的卡计算，<b>不跨 DP</b>；反向时专家梯度在各 DP 副本之间 all-reduce。',
   norm:'<b>Final LayerNorm 权重（scale / bias）</b>：在输出 logits 之前对隐状态做归一化，稳定数值分布。权重体积极小，全量复制在每张卡上，无需切分。',
   head:'<b>LM Head 输出权重矩阵（hidden → vocab）</b>：将最终隐状态线性投影到词表维度，输出每个位置的下一 token logits。按 Column Parallel 切分，通常与 Embedding 共享同一权重矩阵。',
   // CNN kinds（来自 cnn_model.js 的 CNN_KIND_DESC）
@@ -3243,7 +3630,7 @@ const MINI_DESC={
   emb:{title:'Embedding 词嵌入', body:'把每个离散的 <b>token（词 / 子词编号）</b>映射成一串连续数字组成的向量，让模型能用数学方式处理语言。<br><br><b>为什么是第一层：</b>神经网络只会做数值运算，不认识文字。Embedding 就是“文字 → 向量”的翻译入口，必须先把输入翻译成向量，后面的层才有东西可算。'},
   attn:{title:'Self-Attention 自注意力', body:'让序列里<b>每个位置都去“看”其他所有位置</b>，按相关程度加权汇总信息，从而捕捉上下文与长程依赖（如代词指代、跨句呼应）。<br><br>这是 Transformer 区别于 RNN / CNN 的核心：一步到位地建立全局联系，而不是逐步传递。'},
   mlp:{title:'MLP 前馈网络', body:'注意力把不同位置的信息“混合”之后，对<b>每个位置单独</b>做一次“升维 → 非线性激活 → 降维”的变换，增强模型的表达与记忆能力。<br><br>一句话：注意力负责<b>交流信息</b>，MLP 负责<b>加工信息</b>，两者交替组成一个 Transformer 块。'},
-  moe:{title:'MoE 混合专家', body:'把单个大 MLP 换成<b>多个并列的“专家”小网络</b>，由一个可学习的 router 给每个 token 只挑 1~2 个专家计算（稀疏激活）。<br><br><b>好处：</b>总参数量可以做得很大，但每个 token 实际只过一小部分，算力开销几乎不变。'},
+  moe:{title:'MoE 混合专家', body:'把单个大 MLP 换成<b>多个并列的“专家”小网络</b>，由一个可学习的 router 给<b>每个 token</b> 只挑 top-k 个专家计算（稀疏激活）。<br><br><b>好处：</b>总参数量可以做得很大，但每个 token 实际只过一小部分，算力开销几乎不变。<br><br><b>注意：</b>稀疏是对<b>单个 token</b> 而言——一批几千个 token 各挑各的，所以一层里几乎每个专家都会被用到，只是收到的 token 数不同（负载不均，需要 aux loss 来压）。'},
   block:{title:'Transformer Block 基本块', body:'一个标准块 = <b>Self-Attention + 前馈网络（MLP / MoE）</b>，外加残差连接和归一化。<br><br>整个模型就是把这种块<b>堆叠 N 层</b>（这里的 L0、L1… 就是第几层）。层数越多，模型越深、表达力越强，显存与算力开销也越大。'},
   norm:{title:'Final Norm 最终归一化', body:'在输出之前对隐状态做一次<b>归一化</b>（把数值缩放到稳定范围），避免深层网络数值漂移、让训练更稳定。<br><br>参数极少，几乎不占显存。'},
   head:{title:'LM Head 输出头', body:'把最后的隐状态<b>线性投影到词表大小</b>，得到“下一个 token 是词表里每个词的可能性（logits）”。<br><br>这是模型的“出口”，与 Embedding 入口相对，二者常共享同一份权重。'},
@@ -3383,14 +3770,15 @@ function renderModelDiagram(){
 // =================== WIRE UP ===================
 function syncDisabled(){
   if(isPangu()) return;   // Pangu:控件由 lockPangu 统一锁为只读,勿按勾选状态重新启用
-  [['dp','enDP'],['pp','enPP'],['cp','enCP'],['tp','enTP'],['ep','enMoE']].forEach(([id,chk])=>{
+  // 注意：EP 的两个表单（#epg 组个数 / #epChips 组大小）由 renderEpControls 统一管禁用态
+  [['dp','enDP'],['pp','enPP'],['cp','enCP'],['tp','enTP']].forEach(([id,chk])=>{
     const dis=!$(chk).checked; $(id).disabled=dis; const sl=$(id+'Slider'); if(sl) sl.disabled=dis;
   });
   const moe=$('enMoE').checked; $('expRow').style.display=moe?'flex':'none'; $('experts').style.display=moe?'block':'none';
 }
 function update(scrollToHl, scrollCtrlId){
   syncDisabled(); readState();
-  renderEpChips();   // EP 合法取值有限，渲染成卡片单选（state.ep 已在 readState 吸附为合法值）
+  renderEpControls();   // EP 两个表单：组个数（可见主控）+ 组大小（折叠卡片单选）
   // 中间区域头部:World Size。Pangu 即 32(纯推理张量并行 TP=32)。
   if($('world')) $('world').textContent=state.world;
   $('worldFormula').textContent=isPangu()
@@ -3398,7 +3786,7 @@ function update(scrollToHl, scrollCtrlId){
     : `dp=${state.dp}、pp=${state.pp}、cp=${state.cp}、tp=${state.tp}`
       + (state.enMoE
           ? (state.ep>1
-              ? ` ｜ ep=${state.ep}（${state.pp*state.dp*state.cp/state.ep} 个EP组＝${state.pp} stage×${state.dp*state.cp/state.ep}，借自DP×CP不计入总卡）`
+              ? ` ｜ ep=${state.ep}（嵌套在每个DP副本内·沿TP切·不跨DP，共 ${state.pp*state.dp*state.cp*etpDeg()} 个EP域）`
               : ` ｜ ep=1`)
             + ` ｜ top-${Math.min(state.topk,state.experts)}`
           : ``);
@@ -3426,7 +3814,12 @@ function onControlChange(e){
   if(!isTabSwitch) _moeResetCounts();         // 改模型/并行配置就清零重新统计；纯切换代码 Tab 不清零
   update(scroll, e.target.id);
 }
-document.querySelectorAll('input:not(.par-slider),select').forEach(el=>{el.addEventListener('input',onControlChange);el.addEventListener('change',onControlChange);});
+// ETP 开关被用户动过之后就以用户的选择为准（否则由 _resolveETP 自动跟随 TP/EP）。
+// 必须注册在下面的通用绑定之前：同元素同事件按注册顺序触发，否则 onControlChange 会先跑完
+// update() → renderEpControls 把开关又写回自动值，用户这一次点击就被吞掉了。
+$('enETP').addEventListener('input',()=>{ ETP_PIN.touched=true; });
+// .derived 的控件（#epg）不直接进 onControlChange：它是 #ep 的派生视图，另行换算后转发
+document.querySelectorAll('input:not(.par-slider):not(.derived),select').forEach(el=>{el.addEventListener('input',onControlChange);el.addEventListener('change',onControlChange);});
 // Pangu:控件已禁用(不触发 input 事件),改用整行点击 → 定位右侧代码对应行
 $('ctrl').addEventListener('click',e=>{
   if(!isPangu()) return;
@@ -3441,17 +3834,41 @@ $('ctrl').addEventListener('click',e=>{
   if(map && currentSources()[map.tab]){ activeTab=map.tab; renderTabs(); renderCode(true,id); }
 });
 // 滑动条 → 更新数字输入并转发 input 事件；数字输入 → 回写滑动条位置
-[['dp','dpSlider'],['pp','ppSlider'],['cp','cpSlider'],['tp','tpSlider']].forEach(([nid,sid])=>{
+[['dp','dpSlider'],['pp','ppSlider'],['cp','cpSlider'],['tp','tpSlider'],['epg','epgSlider']].forEach(([nid,sid])=>{
   const num=$(nid),sl=$(sid); if(!num||!sl) return;
   sl.addEventListener('input',()=>{num.value=sl.value; num.dispatchEvent(new Event('input',{bubbles:true}));});
   num.addEventListener('input',()=>{sl.value=num.value;});
 });
-// EP 卡片单选 → 写入隐藏 #ep 并转发 input 事件（→ onControlChange → update）
+// FFN 类型 tab（MoE | 稠密 FFN）→ 写入隐藏的真值 #enMoE 并转发（→ onControlChange → update）
+$('moeModeTabs').addEventListener('click',e=>{
+  const btn=e.target.closest('.mode-tab'); if(!btn) return;
+  if($('moeModeTabs').classList.contains('disabled')) return;
+  const want=btn.dataset.moe==='1';
+  if(want===$('enMoE').checked) return;                    // 点已选中的那个不做事
+  $('enMoE').checked=want;
+  $('enMoE').dispatchEvent(new Event('input',{bubbles:true}));
+});
+// EP 组个数（可见主控）→ 吸附到合法值 → 换算成组大小写回真值 #ep → 转发（→ update）
+$('epg').addEventListener('input',()=>{
+  if($('epg').disabled) return;
+  const g=snapEPGroups(Math.max(1,+$('epg').value||1));
+  EP_PIN.mode='count'; EP_PIN.val=g;
+  $('ep').value=state.tp/g;
+  $('ep').dispatchEvent(new Event('input',{bubbles:true}));
+});
+// EP 组大小卡片单选（折叠区）→ 直接写入隐藏 #ep 并转发（→ onControlChange → update）
 $('epChips').addEventListener('click',e=>{
   const chip=e.target.closest('.ep-chip'); if(!chip) return;
   if($('epChips').classList.contains('disabled')) return;
+  EP_PIN.mode='size'; EP_PIN.val=+chip.dataset.ep;
   $('ep').value=chip.dataset.ep;
   $('ep').dispatchEvent(new Event('input',{bubbles:true}));
+});
+// 高级区展开/收起（状态存在 EP_ADV_STATE，update 重渲染后保持）
+$('epAdvToggle').addEventListener('click',()=>{
+  EP_ADV_STATE.open=!EP_ADV_STATE.open;
+  const adv=$('epAdv'); if(adv) adv.classList.toggle('open',EP_ADV_STATE.open);
+  const car=$('epAdvToggle').querySelector('.adv-caret'); if(car) car.textContent=EP_ADV_STATE.open?'▾':'▸';
 });
 document.querySelectorAll('.card-tile').forEach(tile=>{tile.onclick=()=>{document.querySelectorAll('.card-tile').forEach(t=>t.classList.remove('selected'));tile.classList.add('selected');update(false);};});
 
@@ -3460,6 +3877,10 @@ const DEFAULTS=[...document.querySelectorAll('#ctrl input,#ctrl select')].map(el
   v:el.type==='checkbox'?el.checked:el.value}));
 $('resetBtn').onclick=()=>{
   if(_prePangu) unlockPangu();   // 若处于 Pangu 锁定态,先还原控件可编辑性
+  EP_PIN.mode=null; EP_PIN.val=0;        // 回到「组大小跟随 TP」的业界常用档
+  ETP_PIN.touched=false;                 // ETP 回到自动跟随
+  EP_ADV_STATE.open=false;               // 高级区收起
+  const car=$('epAdvToggle')&&$('epAdvToggle').querySelector('.adv-caret'); if(car) car.textContent='▸';
   DEFAULTS.forEach(d=>{ if(d.el.type==='checkbox') d.el.checked=d.v; else d.el.value=d.v; d.el.disabled=false; });
   document.querySelectorAll('.card-tile').forEach((t,i)=>t.classList.toggle('selected',i===0));
   currentLib='picotron';
@@ -3467,7 +3888,7 @@ $('resetBtn').onclick=()=>{
 };
 
 // ── Pangu:把现有滑块锁定为只读发布配置（保留 Transformer 控件形态，仅禁用 + 改值）──
-const _SYNC=[['dp','dpSlider'],['pp','ppSlider'],['cp','cpSlider'],['tp','tpSlider']];
+const _SYNC=[['dp','dpSlider'],['pp','ppSlider'],['cp','cpSlider'],['tp','tpSlider'],['epg','epgSlider']];
 let _prePangu=null;
 function _syncSliders(){ _SYNC.forEach(([n,s])=>{const sl=$(s),nu=$(n); if(sl&&nu){sl.max=nu.max; sl.value=nu.value; sl.disabled=nu.disabled;}}); }
 function lockPangu(){
@@ -3479,6 +3900,8 @@ function lockPangu(){
   $('enDP').checked=false; setv('dp',1);  $('enPP').checked=false; setv('pp',1);
   $('enCP').checked=false; setv('cp',1);  $('enTP').checked=true;  setv('tp',PANGU.tp,PANGU.tp);
   $('enMoE').checked=true; setv('ep',1);
+  // 发布配置：256 路由专家 · top-8 · 1 个共享专家
+  setv('topk',PANGU.topk); if($('enShared')) $('enShared').checked=!!PANGU.shared;
   // 模型结构：61 层、hidden 7680、256 路由专家
   setv('blocks',PANGU.layers,PANGU.layers); setv('hidden',PANGU.hidden); setv('experts',PANGU.routed,PANGU.routed);
   // 超参数行复用为推理参数(batch_size / max_new_tokens),滑块位置与显示值对齐;lr 行改作温度,数值另由 update() 覆盖
@@ -3538,6 +3961,15 @@ $('libTabs').addEventListener('click',e=>{
 
 // 拓扑栏右上角：播放/停止 计算流动动画（绿色高亮流动）
 $('flowToggleBtn').onclick=()=>setFlowPlaying(!_flowPlaying);
+
+// 拓扑栏右上角：PP纵向 / PP横向 视图切换（内容不变，只换大行大列的方向）
+if($('ppLayoutTabs')) $('ppLayoutTabs').addEventListener('click',e=>{
+  const btn=e.target.closest('.pmode'); if(!btn) return;
+  const v=btn.dataset.pplay; if(v===ppLayout) return;
+  ppLayout=v;
+  $('ppLayoutTabs').querySelectorAll('.pmode').forEach(b=>b.classList.toggle('on',b.dataset.pplay===ppLayout));
+  renderWorldDiagram();   // 内部会重启拆分/流动动画
+});
 if($('hoverTipToggle')) $('hoverTipToggle').onchange=e=>{ _hoverTipOn=e.target.checked; if(!_hoverTipOn){const t=$('wdiagTip'); if(t)t.classList.remove('vis');} };
 
 // =================== MEM TOOLTIP BUBBLE ===================

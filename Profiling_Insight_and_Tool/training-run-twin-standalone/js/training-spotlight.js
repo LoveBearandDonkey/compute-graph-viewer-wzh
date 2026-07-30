@@ -68,7 +68,7 @@
       { n: 1, layer: "熔断 / 预警层", short: "熔断/预警",
         target: function () { return document.querySelector('#accuracyCharts [data-acc-card="loss_scale"]'); },
         prep: function () { scrollCardIntoView('#accuracyCharts [data-acc-card="loss_scale"]'); },
-        body: "其实从 step 15000 起，AMP loss scale 就在 65536→4096 一路衰减、连越三级阈值——但无人监控，直到 15203 才爆发。",
+        body: "请看 AMP loss scale：65536→32768→16384→8192→4096，五个台阶记录了连续四次浮点溢出。loss 还没有 NaN，训练已经在求救。注意级可在连续减半初期通知值班人员；现场规则在初始值 1/16 自动保存 checkpoint、dump Router logits 与激活张量；若继续跌至 1/32，则立即停训、保留现场并释放资源。阈值可按任务健康基线调整。",
         nums: ["scaler 65536→4096", "本可提前 53 step 止损"],
         fix: [5] },
       { n: 2, layer: "迭代层", short: "迭代层",

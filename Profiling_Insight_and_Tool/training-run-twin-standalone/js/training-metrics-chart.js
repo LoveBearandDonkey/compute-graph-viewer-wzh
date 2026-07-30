@@ -3,7 +3,7 @@
    抽自 component-preview.html 的提案 pattern；scope: .pto-tmchart*
    render(container, spec) -> controller
    spec = { steps[], series[{id,label,key,colorVar,axis,emphasis}], data{key:[]},
-            anomalies[{step,seriesId}], interestWindow, cursor,
+            anomalies[{step,seriesId}], referenceLines[{value,label,color,axis}], interestWindow, cursor,
             onBrush(win), onCursorHover(step), options, legend }
    controller = { setInterestWindow, setCursor, setData, setAnomalyVisible, destroy }
    ============================================================ */
@@ -68,6 +68,32 @@
     }
     svg.appendChild(gGrid);
 
+    // 水平参考线（阈值/健康基线等）。标签贴在绘图区右侧，避免占用左轴刻度空间。
+    const gReference = el('g', { class: 'pto-tmchart__reference-lines' });
+    (spec.referenceLines || []).forEach(r => {
+      const ax = r.axis || 'left';
+      const a = axes[ax];
+      if (!a || !isFinite(r.value) || r.value < a.min || r.value > a.max) return;
+      const y = mapY(r.value, ax);
+      const color = r.color || '#ea580c';
+      const line = el('line', {
+        x1: P.l, y1: y, x2: P.l + plotW, y2: y,
+        stroke: color, 'stroke-width': r.width || 1,
+        'stroke-dasharray': r.dash || '4 3',
+      });
+      line.setAttribute('opacity', r.opacity == null ? '0.9' : String(r.opacity));
+      gReference.appendChild(line);
+      if (r.label) {
+        const t = el('text', {
+          x: P.l + plotW - 3, y: y - 4, 'text-anchor': 'end',
+          fill: color, 'font-size': '9', 'font-weight': '600',
+        });
+        t.textContent = r.label;
+        gReference.appendChild(t);
+      }
+    });
+    svg.appendChild(gReference);
+
     // 左轴数值
     const gAxis = el('g', { class: 'pto-tmchart__axis' });
     const la = axes.left;
@@ -130,12 +156,17 @@
 
     // 折线（spec.smoothing>0：原曲线淡化、叠加 EMA 平滑曲线；默认 0 = 原行为）
     const smoothing = Math.max(0, Math.min(0.99, +spec.smoothing || 0));
-    const buildPath = (arr, ax) => {
+    const buildPath = (arr, ax, stepped) => {
       let d = '';
+      let prev = null;
       steps.forEach((st, i) => {
         const v = arr[i];
-        if (v == null || !isFinite(v)) return;
-        d += (d ? ' L ' : 'M ') + mapX(st).toFixed(1) + ' ' + mapY(v, ax).toFixed(1);
+        if (v == null || !isFinite(v)) { prev = null; return; }
+        const x = mapX(st).toFixed(1), y = mapY(v, ax).toFixed(1);
+        if (!prev) d += 'M ' + x + ' ' + y;
+        else if (stepped) d += ' L ' + x + ' ' + prev.y + ' L ' + x + ' ' + y;
+        else d += ' L ' + x + ' ' + y;
+        prev = { x, y };
       });
       return d;
     };
@@ -162,12 +193,12 @@
       const raw = spec.data[s.key];
       const cls = 'pto-tmchart__line' + (s.emphasis ? ' pto-tmchart__line--emph' : '');
       if (smoothing > 0) {
-        const base = el('path', { class: 'pto-tmchart__line', d: buildPath(raw, s.axis), stroke: color });
+        const base = el('path', { class: 'pto-tmchart__line', d: buildPath(raw, s.axis, s.curve === 'step'), stroke: color });
         base.style.opacity = '0.22';  // 原走势淡化但不消失
         gLines.appendChild(base);
-        gLines.appendChild(el('path', { class: cls, d: buildPath(smoothSeries(raw, smoothing), s.axis), stroke: color }));
+        gLines.appendChild(el('path', { class: cls, d: buildPath(smoothSeries(raw, smoothing), s.axis, s.curve === 'step'), stroke: color }));
       } else {
-        gLines.appendChild(el('path', { class: cls, d: buildPath(raw, s.axis), stroke: color }));
+        gLines.appendChild(el('path', { class: cls, d: buildPath(raw, s.axis, s.curve === 'step'), stroke: color }));
       }
     });
 

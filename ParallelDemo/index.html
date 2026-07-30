@@ -462,10 +462,18 @@ function tpGroup(d,p,c){ const a=[]; for(let t=0;t<state.tp;t++)a.push(rankOf(d,
 function cpGroup(d,p,t){ const a=[]; for(let c=0;c<state.cp;c++)a.push(rankOf(d,p,c,t)); return a; }
 function ppGroup(d,c,t){ const a=[]; for(let p=0;p<state.pp;p++)a.push(rankOf(d,p,c,t)); return a; }
 function dpGroup(p,c,t){ const a=[]; for(let d=0;d<state.dp;d++)a.push(rankOf(d,p,c,t)); return a; }
+// EP 复用当前 DP 副本内的 TP ranks；通信域绝不能跨 d。
+// 当 TP 包含多个 EP 组时，按连续 rank 分组。
+function epGroup(d,p,c,t){
+  const size=Math.max(1,Math.min(state.ep,state.tp));
+  const start=Math.floor(t/size)*size, a=[];
+  for(let i=start;i<Math.min(start+size,state.tp);i++) a.push(rankOf(d,p,c,i));
+  return a;
+}
 
 const TENSOR_ICON=`<svg viewBox="0 0 16 16" xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="none" style="display:inline-block;vertical-align:-3px;margin-right:2px;flex-shrink:0"><rect width="3" height="3" x="2" y="5" stroke="currentColor" stroke-width="1"/><rect width="3" height="3" x="5" y="5" stroke="currentColor" stroke-width="1"/><rect width="3" height="3" x="8" y="5" stroke="currentColor" stroke-width="1"/><rect width="3" height="3" x="11" y="5" stroke="currentColor" stroke-width="1"/><rect width="3" height="3" x="2" y="8" stroke="currentColor" stroke-width="1"/><rect width="3" height="3" x="5" y="8" stroke="currentColor" stroke-width="1"/><rect width="3" height="3" x="8" y="8" stroke="currentColor" stroke-width="1"/><rect width="3" height="3" x="11" y="8" stroke="currentColor" stroke-width="1"/></svg>`;
 
-function cardLayerHTML(p, t){
+function cardLayerHTML(d, p, c, t){
   const layers=stageLayers(p), tp=state.tp;
   return layers.map(l=>{
     const m=l.name.match(/Block (\d+)/), bi=m?m[1]:'';
@@ -479,7 +487,8 @@ function cardLayerHTML(p, t){
       case 'head': label=tp>1?`Head (第${t+1}/${tp}片)`:'Head'; break;
       default:     label=l.name;
     }
-    return `<div class="wdiag-layer-box wdiag-lb-${l.kind}" data-kind="${l.kind}" data-bi="${bi}" data-p="${p}" data-t="${t}">${TENSOR_ICON}${label}</div>`;
+    const nodeKey=`d${d}-p${p}-c${c}-t${t}-${l.kind}-${bi||'global'}`;
+    return `<div class="wdiag-layer-box wdiag-lb-${l.kind}" data-node-key="${nodeKey}" data-kind="${l.kind}" data-bi="${bi}" data-d="${d}" data-p="${p}" data-c="${c}" data-t="${t}">${TENSOR_ICON}${label}</div>`;
   }).join('');
 }
 
@@ -531,7 +540,7 @@ function renderWorldDiagram(){
         for(let t=0;t<tp;t++){
           if(t>0) h+=`<span class="wdiag-tp-arr">↔</span>`;
           const _r=rankOf(d,p,c,t),_gb=cardMemGB(p,t),_pct=Math.min(100,_gb/state.cardGB*100),_mc=_pct>100?'over':_pct>80?'warn':'';
-          h+=`<div class="wdiag-card-outer"><div class="wdiag-g-label" title="rank ${_r}">${cardShortName()}_${_r}</div><div class="wdiag-card" data-d="${d}" data-p="${p}">${cardLayerHTML(p,t)}</div><div class="wdiag-mem mem-wrap" data-p="${p}" data-t="${t}">显存 ≈ <b>${_gb.toFixed(1)}</b> / ${state.cardGB} GB<div class="membar"><i class="${_mc}" style="width:${Math.min(100,_pct)}%"></i></div></div></div>`;
+          h+=`<div class="wdiag-card-outer"><div class="wdiag-g-label" title="rank ${_r}">${cardShortName()}_${_r}</div><div class="wdiag-card" data-d="${d}" data-p="${p}" data-c="${c}" data-t="${t}">${cardLayerHTML(d,p,c,t)}</div><div class="wdiag-mem mem-wrap" data-p="${p}" data-t="${t}">显存 ≈ <b>${_gb.toFixed(1)}</b> / ${state.cardGB} GB<div class="membar"><i class="${_mc}" style="width:${Math.min(100,_pct)}%"></i></div></div></div>`;
         }
         h+=`</div>`;
         if(cp>1) h+=`</div>`;
@@ -595,7 +604,7 @@ function opsForLayer(layer,t){
       const ops=[{op:'router / gate',shard:'复制',cls:'rep'}];
       const E=state.experts;
       if(ep>1){
-        const per=Math.ceil(E/tp), s=t*per, e=Math.min(E,s+per), ids=[];
+        const per=Math.ceil(E/ep), epRank=t%ep, s=epRank*per, e=Math.min(E,s+per), ids=[];
         for(let x=s;x<e;x++)ids.push(x);
         ops.push({op:'Experts (本卡持有)',shard:`专家 ${ids.join(',')||'—'}`,cls:'exp'});
         ops.push({op:'all-to-all dispatch/combine',shard:'token 路由',cls:'exp'});
@@ -616,7 +625,7 @@ function cardMemGB(p,t){
     if(l.kind==='attn') params += 4*H*H/state.tp;
     else if(l.kind==='mlp') params += 8*H*H/state.tp;
     else if(l.kind==='moe'){
-      const per=state.ep>1?Math.ceil(state.experts/state.tp):state.experts;
+      const per=state.ep>1?Math.ceil(state.experts/state.ep):state.experts;
       params += per*8*H*H + H*state.experts; // experts + router
     }
     else if(l.kind==='emb'||l.kind==='head') params += V*H/state.tp;
@@ -641,7 +650,7 @@ function memTooltipHTML(p,t){
         ?`8 × H² ÷ TP<br><span style="opacity:.55">up/down 权重矩阵，= 8 × ${H}² ÷ ${tp}</span>`
         :`8 × H²<br><span style="opacity:.55">up 权重矩阵(4H²) + down 权重矩阵(4H²)</span>`;
     } else if(l.kind==='moe'){
-      const per=state.ep>1?Math.ceil(state.experts/tp):state.experts;
+      const per=state.ep>1?Math.ceil(state.experts/state.ep):state.experts;
       cnt=per*8*H*H+H*state.experts;
       formula=`${per} 专家权重矩阵 × 8H²<br><span style="opacity:.55">+ router 权重矩阵 H×E</span>`;
     } else if(l.kind==='emb'||l.kind==='head'){
@@ -1647,7 +1656,7 @@ function _animSplitPath(path,len,dur){
 }
 
 // =================== OPERATOR DAG (per-layer tooltip) ===================
-function layerDagHTML(kind, t) {
+function layerDagHTML(kind, d, p, c, t) {
   const H=state.hidden, tp=state.tp, V=32000, E=state.experts, ep=state.ep;
   const Htp  = tp>1 ? `H/${tp}`  : 'H';
   const H4tp = tp>1 ? `4H/${tp}` : '4H';
@@ -1687,13 +1696,15 @@ function layerDagHTML(kind, t) {
       h+=arr(); h+=sh('x + res [B, seq, H]');
       break;
     case 'moe': {
-      const perCard=ep>1?Math.ceil(E/tp):E;
+      const perCard=ep>1?Math.ceil(E/ep):E;
+      const group=epGroup(d,p,c,t);
+      const commScope=group.length>1?` · DP ${d} 内 ranks [${group.join(', ')}]`:'';
       h+=sh('x [B, seq, H]'); h+=arr();
       h+=erow(wN('W_router',`H×${E}`), cn(), opN('gate / router'));
       h+=arr();
-      if(ep>1){h+=commN('all-to-all dispatch');h+=arr();}
+      if(ep>1){h+=commN(`all-to-all dispatch${commScope}`);h+=arr();}
       h+=erow(wN(`W_exp×${perCard}`,'H×4H'), cn(), opN(`Expert FFN ×${perCard}`));
-      if(ep>1){h+=arr();h+=commN('all-to-all combine');}
+      if(ep>1){h+=arr();h+=commN(`all-to-all combine${commScope}`);}
       h+=arr(); h+=sh('x + res [B, seq, H]');
       break;
     }
@@ -1728,12 +1739,12 @@ function bindWdiagTooltips(){
   const tip=$('wdiagTip');
   wd.querySelectorAll('.wdiag-layer-box[data-kind]').forEach(el=>{
     el.addEventListener('mouseenter',e=>{
-      const {kind,bi,t}=el.dataset;
+      const {kind,bi,d,p,c,t}=el.dataset;
       const blockTitle=bi?`Block ${bi} · `:'';
       tip.innerHTML=
         `<div class="tip-title">${blockTitle}${LAYER_KIND_LABEL[kind]||kind}</div>`+
         `<div class="tip-desc">${LAYER_DESC[kind]||''}</div>`+
-        layerDagHTML(kind, +t);
+        layerDagHTML(kind, +d, +p, +c, +t);
       _moveTip(e); tip.classList.add('vis');
     });
     el.addEventListener('mousemove',_moveTip);
