@@ -2,7 +2,7 @@
   'use strict';
 
   const FIXTURES = [
-    { id: 'sample.conv_bias_relu', path: 'data/fixtures/conv_bias_relu.trace.json' },
+    { id: 'sample.conv_bias_relu', path: 'data/fixtures/conv_bias_relu.trace.json?v=20260728-complete-demo-v1' },
   ];
 
   const TENSOR_TONES = {
@@ -100,15 +100,17 @@
   const state = {
     traces: [],
     sampleId: null,
+    sourceFileId: null,
     stepIndex: 0,
     evidence: false,
     playing: false,
+    executionView: 'instructions',
     timer: null,
     playback: null,
     webglAvailable: null,
-    inspectorOpen: false,
     infoOpen: false,
-    selectedObject: null,
+    tensorTabStepId: null,
+    tensorTabKey: null,
     tensorView: {
       scale: 1,
       panX: 0,
@@ -173,6 +175,7 @@
     stepMeta: byId('stepMeta'),
     prevStep: byId('prevStep'),
     nextStep: byId('nextStep'),
+    tensorTabs: byId('tensorTabs'),
     tensorStage: byId('tensorStage'),
     tensorCanvas: byId('tensorCanvas'),
     tensorFallback: byId('tensorFallback'),
@@ -194,14 +197,13 @@
     archZoomReadout: byId('archZoomReadout'),
     timelineKicker: byId('timelineKicker'),
     timelineCanvas: byId('timelineCanvas'),
+    instructionsView: byId('instructionsView'),
+    estimatedTimelineView: byId('estimatedTimelineView'),
+    executionTabs: Array.from(document.querySelectorAll('[data-execution-view]')),
     traceInfoPanel: byId('traceInfoPanel'),
     traceInfoMeta: byId('traceInfoMeta'),
     traceInfoContent: byId('traceInfoContent'),
     closeTraceInfo: byId('closeTraceInfo'),
-    inspectorDrawer: byId('inspectorDrawer'),
-    inspectorMeta: byId('inspectorMeta'),
-    closeInspector: byId('closeInspector'),
-    inspector: byId('inspector'),
     statusText: byId('statusText'),
     statusSample: byId('statusSample'),
     statusStep: byId('statusStep'),
@@ -233,35 +235,49 @@
       if (!response.ok) throw new Error(`Failed to load ${fixture.path}: ${response.status}`);
       return response.json();
     }));
-    await Promise.all(traces.map(loadTraceSource));
+    await Promise.all(traces.map(loadTraceSources));
     state.traces = traces;
     state.sampleId = traces[0]?.operator?.id || null;
+    state.sourceFileId = sourceFilesForTrace(traces[0])[0]?.id || null;
   }
 
-  async function loadTraceSource(trace) {
-    if (!trace?.source) return;
-    trace.source.keyLines = trace.source.lines || [];
-    for (const url of sourceUrlCandidates(trace)) {
+  async function loadTraceSources(trace) {
+    await Promise.all(sourceFilesForTrace(trace).map((source) => loadSourceFile(trace, source)));
+  }
+
+  async function loadSourceFile(trace, source) {
+    source.keyLines = source.lines || [];
+    for (const url of sourceUrlCandidates(trace, source)) {
       try {
         const response = await fetch(url);
         if (!response.ok) continue;
         const text = await response.text();
-        trace.source.fullLines = normalizeSourceLines(text);
-        trace.source.sourceUrl = url;
-        trace.source.partial = false;
+        source.fullLines = normalizeSourceLines(text);
+        source.sourceUrl = url;
+        source.partial = false;
         return;
       } catch {
         // Try the next static source candidate.
       }
     }
-    trace.source.fullLines = trace.source.keyLines;
-    trace.source.partial = true;
+    source.fullLines = source.keyLines;
+    source.partial = true;
   }
 
-  function sourceUrlCandidates(trace) {
-    const path = trace.source?.path || '';
+  function sourceFilesForTrace(trace) {
+    if (Array.isArray(trace?.sources) && trace.sources.length) return trace.sources;
+    return trace?.source ? [{ id: 'kernel', label: trace.source.path, ...trace.source }] : [];
+  }
+
+  function activeSourceFile(trace) {
+    const sources = sourceFilesForTrace(trace);
+    return sources.find((source) => source.id === state.sourceFileId) || sources[0] || null;
+  }
+
+  function sourceUrlCandidates(trace, source) {
+    const path = source?.path || '';
     const candidates = [];
-    if (trace.source?.projectPath) candidates.push(trace.source.projectPath);
+    if (source?.projectPath) candidates.push(source.projectPath);
     if (path) candidates.push(`data/sources/${encodeURIComponent(path)}`);
     const sourcePath = trace.operator?.sourcePath || '';
     const marker = '/asc-devkit-master/';
@@ -289,7 +305,6 @@
       state.evidence = !state.evidence;
       els.evidenceToggle.setAttribute('aria-pressed', state.evidence ? 'true' : 'false');
       els.evidenceToggle.classList.toggle('is-selected', state.evidence);
-      renderInspector();
     });
     els.zoomOut?.addEventListener('click', () => zoomTensorView(0.86));
     els.zoomIn?.addEventListener('click', () => zoomTensorView(1.16));
@@ -299,9 +314,6 @@
     });
     els.closeTraceInfo?.addEventListener('click', () => {
       setInfoOpen(false);
-    });
-    els.closeInspector?.addEventListener('click', () => {
-      setInspectorOpen(false);
     });
     els.frameActions.forEach((button) => {
       button.addEventListener('click', () => handleFrameCommand(button.dataset.frameCommand));
@@ -320,18 +332,8 @@
     els.archFitView?.addEventListener('click', () => {
       resetArchitectureViewport();
     });
-    els.sourceLines?.addEventListener('click', (event) => {
-      const btn = event.target.closest('[data-line]');
-      if (!btn || !els.sourceLines.contains(btn)) return;
-      const line = Number(btn.dataset.line);
-      const trace = currentTrace();
-      if (!trace) return;
-      const nextIndex = trace.steps.findIndex((step) => step.sourceLines?.includes(line));
-      if (nextIndex >= 0) {
-        state.selectedObject = { type: 'source', line };
-        state.inspectorOpen = true;
-        selectStep(nextIndex);
-      }
+    els.executionTabs.forEach((button) => {
+      button.addEventListener('click', () => setExecutionView(button.dataset.executionView));
     });
     initTensorViewportInteractions();
     initArchitecturePan();
@@ -350,12 +352,6 @@
       setInfoOpen(!state.infoOpen);
       return;
     }
-    if (command === 'toggle-inspector') {
-      if (!state.inspectorOpen && !state.selectedObject) {
-        state.selectedObject = { type: 'timeline step', stepIndex: state.stepIndex };
-      }
-      setInspectorOpen(!state.inspectorOpen);
-    }
   }
 
   function setInfoOpen(open) {
@@ -364,18 +360,37 @@
     syncFrameActions();
   }
 
-  function setInspectorOpen(open) {
-    state.inspectorOpen = !!open;
-    renderInspector();
-    syncFrameActions();
+  function setExecutionView(view) {
+    state.executionView = view === 'timeline' ? 'timeline' : 'instructions';
+    renderExecutionDock();
+    if (state.executionView === 'instructions') {
+      window.requestAnimationFrame(() => renderTimeline(currentTrace()));
+    }
+  }
+
+  function renderExecutionDock() {
+    const isInstructions = state.executionView === 'instructions';
+    els.executionTabs.forEach((button) => {
+      const selected = button.dataset.executionView === state.executionView;
+      button.classList.toggle('is-selected', selected);
+      button.setAttribute('aria-selected', String(selected));
+      button.tabIndex = selected ? 0 : -1;
+    });
+    if (els.instructionsView) els.instructionsView.hidden = !isInstructions;
+    if (els.estimatedTimelineView) els.estimatedTimelineView.hidden = isInstructions;
+    if (els.timelineKicker) {
+      const step = currentStep();
+      els.timelineKicker.textContent = isInstructions
+        ? `${step?.evidenceKind || 'unknown'} · logical order only`
+        : 'Estimated Timeline unavailable · Not Profiling Data';
+    }
   }
 
   function syncFrameActions() {
     els.frameActions.forEach((button) => {
       const command = button.dataset.frameCommand;
-      const selected = (command === 'toggle-info' && state.infoOpen)
-        || (command === 'toggle-inspector' && state.inspectorOpen);
-      if (command === 'toggle-info' || command === 'toggle-inspector') {
+      const selected = command === 'toggle-info' && state.infoOpen;
+      if (command === 'toggle-info') {
         button.classList.toggle('is-selected', selected);
         button.setAttribute('aria-expanded', String(selected));
         button.setAttribute('aria-pressed', String(selected));
@@ -602,9 +617,7 @@
     });
     canvas.addEventListener('pointerup', (event) => {
       canvas.releasePointerCapture?.(event.pointerId);
-      const moved = state.tensorView.moved;
       state.tensorView.dragging = false;
-      if (!moved) openInspector('tensor');
     });
     canvas.addEventListener('pointercancel', () => {
       state.tensorView.dragging = false;
@@ -633,12 +646,6 @@
     state.tensorView.panX = 0;
     state.tensorView.panY = 0;
     renderTensorViewport(currentTrace());
-  }
-
-  function openInspector(type, payload = {}) {
-    state.selectedObject = { type, ...payload };
-    state.inspectorOpen = true;
-    renderInspector();
   }
 
   function initPlayback() {
@@ -697,6 +704,7 @@
     stopPlayback();
     state.sampleId = sampleId;
     state.stepIndex = 0;
+    state.sourceFileId = sourceFilesForTrace(currentTrace())[0]?.id || null;
     render();
   }
 
@@ -704,8 +712,23 @@
     const trace = currentTrace();
     const max = Math.max(0, (trace?.steps?.length || 1) - 1);
     state.stepIndex = Math.max(0, Math.min(max, index));
+    const primaryRef = sourceRefsForStep(currentStep(trace))[0];
+    if (!options.keepSource && primaryRef?.fileId && primaryRef.fileId !== state.sourceFileId) {
+      state.sourceFileId = primaryRef.fileId;
+      renderSourceTabs(trace);
+      renderSource(trace);
+    }
     if (!options.keepPlaying) stopPlayback();
     renderStep();
+  }
+
+  function selectSourceFile(fileId) {
+    const trace = currentTrace();
+    if (!trace || fileId === state.sourceFileId) return;
+    state.sourceFileId = fileId;
+    renderSourceTabs(trace);
+    renderSource(trace);
+    renderChrome(trace);
   }
 
   function syncPlayback() {
@@ -734,7 +757,7 @@
     const trace = currentTrace();
     if (!trace) return;
     state.stepIndex = Math.max(0, Math.min(state.stepIndex, trace.steps.length - 1));
-    renderSamples(trace);
+    renderSourceTabs(trace);
     renderSource(trace);
     renderStep();
   }
@@ -747,29 +770,29 @@
     state.stepIndex = Math.max(0, Math.min(state.stepIndex, trace.steps.length - 1));
     renderChrome(trace);
     updateSourceHighlight(trace);
+    renderTensorTabs(trace);
     renderTensorViewport(trace);
     renderTileLens(trace);
     renderArchitectureFocus(trace);
+    renderExecutionDock();
     renderTimeline(trace);
     renderInfoPanel(trace);
-    renderInspector(trace);
     syncPlayback();
   }
 
   function renderChrome(trace) {
     const step = currentStep(trace);
-    const sourceLines = sourceLinesForTrace(trace);
+    const source = activeSourceFile(trace);
+    const sourceLines = sourceLinesForTrace(trace, source);
     if (els.operatorMeta) els.operatorMeta.textContent = '';
     if (els.archReadout) els.archReadout.textContent = 'Ascend 910B';
     if (els.architectureMeta) els.architectureMeta.textContent = 'Ascend 910B';
     if (els.sourceMeta) {
-      const suffix = trace.source?.partial ? '关键行' : `${sourceLines.length} 行`;
-      els.sourceMeta.textContent = `${trace.source?.path || 'source'} · ${suffix}`;
+      const suffix = source?.partial ? '关键行' : `${sourceLines.length} 行`;
+      els.sourceMeta.textContent = `${source?.path || 'source'} · ${suffix}`;
     }
-    if (els.visualTitle) els.visualTitle.textContent = 'Conv Execution Model';
+    if (els.visualTitle) els.visualTitle.textContent = 'Tensor State & Transformation';
     if (els.stepMeta) els.stepMeta.textContent = step ? `${state.stepIndex + 1}/${trace.steps.length}` : '';
-    if (els.inspectorMeta) els.inspectorMeta.textContent = inspectorTypeLabel(state.selectedObject?.type) || '选中对象';
-    if (els.timelineKicker) els.timelineKicker.textContent = `${step?.evidenceKind || 'unknown'} · order only`;
     if (els.statusText) els.statusText.textContent = step ? zh(step.label) : 'Ready';
     if (els.statusSample) els.statusSample.textContent = sampleShortName(trace);
     if (els.statusStep) els.statusStep.textContent = step ? `${state.stepIndex + 1}/${trace.steps.length}` : '0/0';
@@ -777,18 +800,58 @@
     syncFrameActions();
   }
 
-  function renderSamples(trace) {
-    const items = state.traces.map((item) => {
-      const active = item.operator.id === trace.operator.id;
-      return `<button class="tab-control-item ${active ? 'is-selected' : ''}" type="button" role="tab" aria-selected="${active ? 'true' : 'false'}" data-sample="${escapeHtml(item.operator.id)}">${escapeHtml(sampleShortName(item))}</button>`;
+  function tensorTabsForStep(trace, step) {
+    if (trace?.operator?.kind !== 'conv2d-cube' || !step) return [];
+    const snapshots = step.tensorSnapshots || [];
+    if (snapshots.length < 2) return [];
+    const definitions = [...(trace.tensors || []), ...(trace.buffers || [])];
+    return snapshots.map((snapshot) => {
+      const definition = definitions.find((item) => item.id === snapshot.tensorId);
+      return {
+        key: snapshot.tensorId,
+        label: definition?.name || snapshot.tensorId?.replace(/^(tensor|buffer):/, '') || 'Tensor',
+        location: snapshot.location || definition?.location || '',
+      };
+    });
+  }
+
+  function renderTensorTabs(trace) {
+    if (!els.tensorTabs) return;
+    const step = currentStep(trace);
+    const tabs = tensorTabsForStep(trace, step);
+    if (state.tensorTabStepId !== step?.id || !tabs.some((tab) => tab.key === state.tensorTabKey)) {
+      state.tensorTabStepId = step?.id || null;
+      state.tensorTabKey = tabs[0]?.key || null;
+    }
+    els.tensorTabs.hidden = tabs.length < 2;
+    if (tabs.length < 2) {
+      els.tensorTabs.innerHTML = '';
+      return;
+    }
+    els.tensorTabs.innerHTML = tabs.map((tab) => {
+      const selected = tab.key === state.tensorTabKey;
+      return `<button class="tab-control-item ${selected ? 'is-selected' : ''}" type="button" role="tab" aria-selected="${selected ? 'true' : 'false'}" data-tensor-tab="${escapeHtml(tab.key)}" title="${escapeHtml(tab.location)}">${escapeHtml(tab.label)}</button>`;
     }).join('');
-    els.sampleList.innerHTML = `<div class="tab-control" role="tablist" aria-label="Operator samples">${items}</div>`;
-    els.sampleList.querySelectorAll('[data-sample]').forEach((button) => {
+    els.tensorTabs.querySelectorAll('[data-tensor-tab]').forEach((button) => {
       button.addEventListener('click', () => {
-        state.inspectorOpen = false;
-        state.selectedObject = null;
-        selectSample(button.dataset.sample);
+        if (button.dataset.tensorTab === state.tensorTabKey) return;
+        state.tensorTabKey = button.dataset.tensorTab;
+        renderTensorTabs(trace);
+        renderTensorViewport(trace);
+        renderTileLens(trace);
+        renderInfoPanel(trace);
       });
+    });
+  }
+
+  function renderSourceTabs(trace) {
+    const items = sourceFilesForTrace(trace).map((source) => {
+      const active = source.id === state.sourceFileId;
+      return `<button class="tab-control-item ${active ? 'is-selected' : ''}" type="button" role="tab" aria-selected="${active ? 'true' : 'false'}" data-source-file="${escapeHtml(source.id)}" title="${escapeHtml(source.path)}">${escapeHtml(source.label || source.path)}</button>`;
+    }).join('');
+    els.sampleList.innerHTML = `<div class="tab-control avz-source-tabs" role="tablist" aria-label="Source files">${items}</div>`;
+    els.sampleList.querySelectorAll('[data-source-file]').forEach((button) => {
+      button.addEventListener('click', () => selectSourceFile(button.dataset.sourceFile));
     });
   }
 
@@ -806,13 +869,14 @@
   // Build the source listing once per trace. The per-step active highlight is
   // applied separately by updateSourceHighlight (class toggle only).
   function renderSource(trace) {
-    const lines = sourceLinesForTrace(trace);
-    const keyLines = new Set((trace.source?.keyLines || trace.source?.lines || []).map((line) => line.line));
-    trace.steps.forEach((step) => (step.sourceLines || []).forEach((line) => keyLines.add(line)));
+    const source = activeSourceFile(trace);
+    const lines = sourceLinesForTrace(trace, source);
+    const keyLines = new Set((source?.keyLines || source?.lines || []).map((line) => line.line));
+    trace.steps.forEach((step) => sourceLinesForStep(step, source?.id).forEach((line) => keyLines.add(line)));
     const stageByLine = new Map();
     trace.steps.forEach((step) => {
       const stage = trace.stages.find((item) => item.id === step.stageId) || null;
-      (step.sourceLines || []).forEach((ln) => { if (!stageByLine.has(ln)) stageByLine.set(ln, stage); });
+      sourceLinesForStep(step, source?.id).forEach((ln) => { if (!stageByLine.has(ln)) stageByLine.set(ln, stage); });
     });
     els.sourceLines.innerHTML = lines.map((line) => {
       const stage = stageByLine.get(line.line) || null;
@@ -830,13 +894,21 @@
         </${element}>
       `;
     }).join('');
+    els.sourceLines.querySelectorAll('[data-line]').forEach((button) => {
+      button.addEventListener('click', () => {
+        const line = Number(button.dataset.line);
+        const nextIndex = trace.steps.findIndex((step) => sourceLinesForStep(step, source?.id).includes(line));
+        if (nextIndex >= 0) selectStep(nextIndex, { keepSource: true });
+      });
+    });
     updateSourceHighlight(trace);
   }
 
   function updateSourceHighlight(trace) {
     const container = els.sourceLines;
     if (!container) return;
-    const activeLines = new Set(currentStep(trace)?.sourceLines || []);
+    const source = activeSourceFile(trace);
+    const activeLines = new Set(sourceLinesForStep(currentStep(trace), source?.id));
     let firstActive = null;
     container.querySelectorAll('[data-line]').forEach((el) => {
       const isActive = activeLines.has(Number(el.dataset.line));
@@ -857,30 +929,41 @@
     container.scrollTop += delta;
   }
 
-  function sourceLinesForTrace(trace) {
-    return trace?.source?.fullLines?.length ? trace.source.fullLines : trace?.source?.lines || [];
+  function sourceLinesForTrace(trace, source = activeSourceFile(trace)) {
+    return source?.fullLines?.length ? source.fullLines : source?.lines || [];
+  }
+
+  function sourceRefsForStep(step) {
+    if (Array.isArray(step?.sourceRefs) && step.sourceRefs.length) return step.sourceRefs;
+    return (step?.sourceLines || []).length ? [{ fileId: 'kernel', lines: step.sourceLines }] : [];
+  }
+
+  function sourceLinesForStep(step, fileId) {
+    return sourceRefsForStep(step)
+      .filter((ref) => ref.fileId === fileId)
+      .flatMap((ref) => ref.lines || []);
   }
 
   function sourceStageForLine(trace, lineNo) {
+    const fileId = activeSourceFile(trace)?.id;
     const current = currentStep(trace);
-    if (current?.sourceLines?.includes(lineNo)) return trace.stages.find((stage) => stage.id === current.stageId) || null;
-    const step = trace.steps.find((item) => item.sourceLines?.includes(lineNo));
+    if (sourceLinesForStep(current, fileId).includes(lineNo)) return trace.stages.find((stage) => stage.id === current.stageId) || null;
+    const step = trace.steps.find((item) => sourceLinesForStep(item, fileId).includes(lineNo));
     return trace.stages.find((stage) => stage.id === step?.stageId) || null;
   }
 
   function stageKind(stage) {
     const id = String(stage?.id || '').toLowerCase();
     const label = String(stage?.label || '').toLowerCase();
-    if (id.includes('sync') || label.includes('sync') || id.includes('init') || id.includes('launch')) return 'control';
-    if (id.includes('copy') || id.includes('load') || id.includes('fixpipe')) return 'memory';
-    if (id.includes('compute') || id.includes('mmad') || id.includes('matmul') || id.includes('leakyrelu')) return 'compute';
+    if (id.startsWith('host-') || id === 'k-loop' || id.includes('sync') || label.includes('sync') || id.includes('init') || id.includes('launch')) return 'control';
+    if (id.includes('copy') || id.includes('load') || id.includes('fixpipe') || id.includes('bias-')) return 'memory';
+    if (id.includes('compute') || id.includes('mmad') || id.includes('loop-body') || id.includes('matmul') || id.includes('leakyrelu')) return 'compute';
     return '';
   }
 
   function sourceLineTag(stage) {
     if (!stage) return 'trace';
     const map = {
-      'host-launch': '启动',
       init: 'block 切分',
       'copy-in': 'GM -> UB',
       compute: 'Vector 计算',
@@ -1061,59 +1144,131 @@
     const d = trace?.tiling?.derived || {};
     const stage = step?.stageId || '';
     const kIndex = Number(step?.loop?.kIndex || 0);
-    const kLoops = num(d.kLoopCount, 3);
-    const finished = ['sync-m-fix', 'epilogue', 'copy-output'].includes(stage);
-    const tracksK = ['load-k', 'mmad-init', 'mmad'].includes(stage);
-    const kCurrent = finished ? kLoops : tracksK ? Math.min(kLoops, kIndex + 1) : 0;
+    const kLoops = num(d.kLoopCount, 9);
+    const M = num(p.M, 64);
+    const K = num(p.K, 144);
+    const N = num(p.N, 32);
+    const tileM = num(p.tileM, 16);
+    const tileK = num(p.tileK, 16);
+    const tileN = num(p.tileN, 16);
+    const kRange = step?.loop?.kRange || [kIndex * tileK, Math.min(K, (kIndex + 1) * tileK)];
+    const finished = ['sync-m-fix', 'fixpipe-output'].includes(stage);
+    const tracksK = ['load-k', 'mmad-init', 'loop-body-middle', 'loop-body-final'].includes(stage);
+    const kCurrent = finished ? kLoops
+      : stage === 'k-loop' ? 1
+      : tracksK ? Math.min(kLoops, kIndex + 1)
+      : 0;
     const blocks = convBufferBlocks(stage, kIndex);
+    const scene = convSceneForStage(stage);
+    const event = (trace?.events || []).find((item) => (step?.eventDependencies || []).includes(item.id)) || null;
     return {
       tensorViewport: {
         kind: 'conv2d',
         layout: 'conv2d',
-        title: `Y[1, ${p.co}, ${p.ho}, ${p.wo}] · demo context`,
+        title: `Y logical [1, ${p.co}, ${p.ho}, ${p.wo}] · GM ND [${M}, ${N}]`,
         axisLabels: ['Ho×Wo 输出位置', 'Co 输出通道', 'K=Ci×Kh×Kw 归约'],
         conv: {
-          ho: p.ho, wo: p.wo, co: p.co, M: p.M, N: p.N, K: p.K,
-          tileM: p.tileM, tileN: p.tileN, tileK: p.tileK,
-          kIndex, kCurrent, kLoops,
+          scene,
+          n: num(p.batch, 1),
+          ci: num(p.ci, 16),
+          hi: num(p.hi, 8),
+          wi: num(p.wi, 8),
+          co: num(p.co, 32),
+          ho: num(p.ho, 8),
+          wo: num(p.wo, 8),
+          kh: num(p.kh, 3),
+          kw: num(p.kw, 3),
+          strideH: num(p.strideH, 1),
+          strideW: num(p.strideW, 1),
+          padTop: Number(p.padTop ?? 1),
+          padLeft: Number(p.padLeft ?? 1),
+          M, N, K, tileM, tileN, tileK,
+          kIndex, kRange, kCurrent, kLoops,
+          outputPosition: step?.loop?.representativeOutputPosition || [0, 0],
+          snapshots: step?.tensorSnapshots || [],
+          dataFlows: step?.dataFlows || [],
+          event,
         },
         highlight: {
-          tone: stage.includes('mmad') ? 'reduction' : finished ? 'output' : 'input',
-          label: stage === 'mmad-init' ? 'K0 Mmad · Bias C1→C2 unresolved' : `Output tile M[0:${p.tileM}], Co[0:${p.tileN}]`,
+          tone: (stage.includes('mmad') || stage.includes('loop-body')) ? 'reduction' : finished ? 'output' : 'input',
+          label: convSceneLabel(scene, kIndex, tileM, tileN),
           sub: `${step?.evidenceKind || 'unknown'} · logical order only`,
         },
-        operationChips: ['LoadData3D', 'Mmad', 'ReLU epilogue'],
+        operationChips: convOperationChips(scene),
       },
       onChipLens: { blocks },
       architectureFocus: { selectors: convSelectors(stage), routes: [], bufferBlocks: blocks },
     };
   }
 
+  function convSceneForStage(stage) {
+    if (stage.startsWith('host-') || stage === 'allocate') return 'overview';
+    if (stage === 'copy-inputs' || stage === 'bias-c1-c2') return 'copy-in';
+    if (stage === 'load-k') return 'load3d';
+    if (stage === 'mmad-init') return 'mmad';
+    if (stage === 'k-loop') return 'loop-group';
+    if (stage === 'loop-body-middle' || stage === 'loop-body-final') return 'loop-body';
+    if (stage === 'fixpipe-output') return 'epilogue';
+    if (stage.startsWith('sync-')) return 'event';
+    return 'overview';
+  }
+
+  function convSceneLabel(scene, kIndex, tileM, tileN) {
+    if (scene === 'copy-in') return 'GM inputs → A1 / B1 / C1';
+    if (scene === 'load3d') return `Feature window → A2[M=${tileM}, K${kIndex}]`;
+    if (scene === 'mmad') return `A2 × B2 ${kIndex === 0 ? '+ Bias' : '+ CO1'} → CO1`;
+    if (scene === 'loop-group') return 'Iter 1～8：复用同步 → Load Kk → 就绪同步 → Mmad';
+    if (scene === 'loop-body') return `完整 Iter ${kIndex} Loop Body：Load K${kIndex} → Mmad accumulate`;
+    if (scene === 'epilogue') return 'CO1 FP32 NZ → ReLU → FP16 ND → GM';
+    if (scene === 'event') return 'Producer → Event dependency → Consumer';
+    return 'Conv2D tensors and local buffers';
+  }
+
+  function convOperationChips(scene) {
+    const map = {
+      overview: ['Shape', '16×16×16 tiling', 'blockDim=8'],
+      'copy-in': ['MTE2 / MTE1', 'DataCopy', 'exact bytes'],
+      load3d: ['LoadData3D', 'feature window', 'M×K'],
+      'loop-group': ['Loop Group ×8', 'A2/B2 still K0', 'not hardware instruction'],
+      'loop-body': ['M_MTE1', 'Load Kk', 'MTE1_M', 'Mmad'],
+      event: ['SetFlag', 'WaitFlag', 'dependency'],
+      epilogue: ['Fixpipe', 'ReLU', 'FP32→FP16'],
+      'copy-out': ['Fixpipe', 'output tile', 'exact offset'],
+    };
+    return map[scene] || ['Mmad', 'Cube', 'K accumulate'];
+  }
+
   function convBufferBlocks(stage, kIndex) {
     if (stage === 'allocate') {
       return [
-        { core: 'mem950-aic', buffer: 'L1', label: 'A1/B1 size ?', state: 'unknown', tone: 'avoided', cellRange: [0, 9], sourceTile: 'helpers return 0' },
-        { core: 'mem950-aic', buffer: 'L0C', label: 'CO1 reserve', state: 'allocated', tone: 'output', cellRange: [0, 11], sourceTile: '32×16 fp32' },
+        { core: 'mem950-aic', buffer: 'L1', label: 'A1 2048B · B1 4608B · C1 64B', state: 'allocated', tone: 'input', cellRange: [0, 29], sourceTile: 'exact address map' },
+        { core: 'mem950-aic', buffer: 'L0C', label: 'CO1 1024B', state: 'allocated', tone: 'output', cellRange: [0, 11], sourceTile: '16×16 fp32' },
       ];
     }
-    if (stage === 'copy-inputs' || stage === 'sync-mte2-mte1') {
-      return [{ core: 'mem950-aic', buffer: 'L1', label: 'Feature / Filter / Bias', state: 'inferred', tone: 'input', cellRange: [0, 29], sourceTile: 'GM → A1/B1/C1', operation: 'helper calls' }];
+    if (stage === 'copy-inputs' || stage === 'sync-mte2-mte1' || stage === 'bias-c1-c2') {
+      return [{ core: 'mem950-aic', buffer: 'L1', label: 'Feature / Filter / Bias', state: 'loaded', tone: 'input', cellRange: [0, 29], sourceTile: '2048B + 4608B + 64B', operation: 'DataCopy' }];
+    }
+    if (stage === 'k-loop') {
+      return [
+        { core: 'mem950-aic', buffer: 'L0A', label: 'A2 · K0 reusable', state: 'read-complete', tone: 'input', cellRange: [0, 15], sourceTile: 'K1 not loaded yet', operation: 'Loop entry' },
+        { core: 'mem950-aic', buffer: 'L0B', label: 'B2 · K0 reusable', state: 'read-complete', tone: 'input', cellRange: [0, 11], sourceTile: 'K1 not loaded yet', operation: 'Loop entry' },
+      ];
     }
     if (stage === 'load-k' || stage === 'sync-mte1-m') {
       return [
-        { core: 'mem950-aic', buffer: 'L0A', label: `A2 · K${kIndex}`, state: 'loaded', tone: 'input', cellRange: [0, 15], sourceTile: '32×48', operation: 'LoadData3D' },
-        { core: 'mem950-aic', buffer: 'L0B', label: `B2 · K${kIndex}`, state: 'inferred', tone: 'input', cellRange: [0, 11], sourceTile: '48×16', operation: 'helper missing' },
+        { core: 'mem950-aic', buffer: 'L0A', label: `A2 · K${kIndex}`, state: 'loaded', tone: 'input', cellRange: [0, 15], sourceTile: '16×16 · 512B', operation: 'LoadData3D' },
+        { core: 'mem950-aic', buffer: 'L0B', label: `B2 · K${kIndex}`, state: 'loaded', tone: 'input', cellRange: [0, 11], sourceTile: '16×16 · 512B', operation: 'LoadData2D' },
       ];
     }
-    if (stage === 'mmad-init' || stage === 'mmad') {
+    if (stage === 'mmad-init' || stage === 'loop-body-middle' || stage === 'loop-body-final') {
       return [
-        { core: 'mem950-aic', buffer: 'L0A', label: `A2 · K${kIndex}`, state: 'consumed', tone: 'input', cellRange: [0, 15], sourceTile: '32×48', operation: 'Mmad' },
-        { core: 'mem950-aic', buffer: 'L0B', label: `B2 · K${kIndex}`, state: 'consumed', tone: 'input', cellRange: [0, 11], sourceTile: '48×16', operation: 'Mmad' },
-        { core: 'mem950-aic', buffer: 'L0C', label: stage === 'mmad-init' ? 'CO1 + Bias ?' : 'CO1 partial', state: stage === 'mmad-init' ? 'unknown' : 'accumulating', tone: 'reduction', cellRange: [0, 23], sourceTile: 'M[0:32],Co[0:16]', operation: 'Mmad' },
+        { core: 'mem950-aic', buffer: 'L0A', label: `A2 · K${kIndex}`, state: 'consumed', tone: 'input', cellRange: [0, 15], sourceTile: '16×16 · 512B', operation: 'Mmad' },
+        { core: 'mem950-aic', buffer: 'L0B', label: `B2 · K${kIndex}`, state: 'consumed', tone: 'input', cellRange: [0, 11], sourceTile: '16×16 · 512B', operation: 'Mmad' },
+        { core: 'mem950-aic', buffer: 'L0C', label: stage === 'mmad-init' ? 'CO1 + Bias' : stage === 'loop-body-final' ? 'CO1 · Acc8 final' : 'CO1 · Acc1～Acc7', state: 'accumulating', tone: 'reduction', cellRange: [0, 23], sourceTile: 'M[0:16],Co[0:16] · 1024B', operation: 'Mmad' },
       ];
     }
-    if (['sync-m-fix', 'epilogue', 'copy-output'].includes(stage)) {
-      return [{ core: 'mem950-aic', buffer: 'L0C', label: 'CO1 output', state: stage === 'copy-output' ? 'unknown' : 'committed', tone: 'output', cellRange: [0, 23], sourceTile: '32×16', operation: stage === 'epilogue' ? 'ReLU + Cast' : 'CopyOut' }];
+    if (['sync-m-fix', 'fixpipe-output'].includes(stage)) {
+      return [{ core: 'mem950-aic', buffer: 'L0C', label: 'CO1 output', state: 'committed', tone: 'output', cellRange: [0, 23], sourceTile: '16×16 · 1024B', operation: stage === 'fixpipe-output' ? 'ReLU + Cast + GM write' : 'M_FIX' }];
     }
     return [];
   }
@@ -1121,8 +1276,9 @@
   function convSelectors(stage) {
     if (stage === 'copy-inputs') return ['[data-mem950-node="rail:GM"]', '#mem950-aic [data-aic-node="buffer:L1"]'];
     if (stage === 'load-k' || stage === 'sync-mte1-m') return ['#mem950-aic [data-aic-node="buffer:L1"]', '#mem950-aic [data-aic-node="buffer:L0A"]', '#mem950-aic [data-aic-node="buffer:L0B"]'];
-    if (stage === 'mmad-init' || stage === 'mmad') return ['#mem950-aic [data-aic-node="buffer:L0A"]', '#mem950-aic [data-aic-node="buffer:L0B"]', '#mem950-aic [data-aic-node="cube:CUBE"]', '#mem950-aic [data-aic-node="buffer:L0C"]'];
-    if (stage === 'epilogue' || stage === 'copy-output') return ['#mem950-aic [data-aic-node="buffer:L0C"]', '[data-mem950-node="rail:GM"]'];
+    if (stage === 'k-loop') return ['#mem950-aic [data-aic-node="buffer:L0A"]', '#mem950-aic [data-aic-node="buffer:L0B"]'];
+    if (stage === 'mmad-init' || stage === 'loop-body-middle' || stage === 'loop-body-final') return ['#mem950-aic [data-aic-node="buffer:L1"]', '#mem950-aic [data-aic-node="buffer:L0A"]', '#mem950-aic [data-aic-node="buffer:L0B"]', '#mem950-aic [data-aic-node="cube:CUBE"]', '#mem950-aic [data-aic-node="buffer:L0C"]'];
+    if (stage === 'fixpipe-output') return ['#mem950-aic [data-aic-node="buffer:L0C"]', '[data-mem950-node="rail:GM"]'];
     return [];
   }
 
@@ -1343,12 +1499,25 @@
     if (visual.layout === '1d') {
       parts.push('1D 逻辑 tensor：整条 GM 线性地址；高亮块 = 当前 tile 实际访问的 element 区间。');
     } else if (visual.layout === 'conv2d') {
-      parts.push('二维输出 tile + K reduction：K 是归约进度，不是输出 tensor 的第三维。');
+      if (visual.conv?.scene === 'load3d') {
+        if (state.tensorTabKey === 'buffer:filter:b2') {
+          parts.push('LoadData2D：从 B1 的当前 K0 分形取数，按转置语义生成 B2 [16,16] ZN。');
+        } else {
+          parts.push('LoadData3D：A1 是物理 NC1HWC0 [1,1,8,8,16]；padList 只定义越界读取时写入 A2 的虚拟 PAD 值，不会扩张 A1 的物理 shape。');
+        }
+      } else {
+        parts.push('二维输出 tile + K reduction：K 是归约进度，不是输出 tensor 的第三维。');
+      }
     } else {
       parts.push('二维输出 tile：高亮区域 = 当前 M×N 输出分区；K 只作为规约进度展示。Cmd/Ctrl+滚轮缩放。');
     }
     if (visual.title) parts.push(visual.title);
-    if ((visual.operationChips || []).length) parts.push(`当前操作：${visual.operationChips.join(', ')}`);
+    const operations = visual.layout === 'conv2d'
+      && visual.conv?.scene === 'load3d'
+      && state.tensorTabKey === 'buffer:filter:b2'
+      ? ['LoadData2D', 'K fractal', 'NZ→ZN']
+      : (visual.operationChips || []);
+    if (operations.length) parts.push(`当前操作：${operations.join(', ')}`);
     return parts.join('\n');
   }
 
@@ -1362,56 +1531,412 @@
     else drawTensorStrip(ctx, width, height, visual);
     ctx.textAlign = 'left';
     ctx.textBaseline = 'alphabetic';
-    if (visual.highlight) {
+    if (visual.highlight && visual.layout !== 'conv2d') {
       drawTileLabels(ctx, width, [{ label: visual.highlight.label, tone: visual.highlight.tone }]);
     }
   }
 
   function drawConvExecution(ctx, width, height, visual) {
     const c = visual.conv || {};
-    const scale = state.tensorView.scale || 1;
-    const left = 42 + (state.tensorView.panX || 0);
-    const top = 108 + (state.tensorView.panY || 0);
-    const gridSize = Math.max(150, Math.min(270, height - 190, width * 0.42)) * scale;
-    const cell = gridSize / Math.max(1, c.wo);
+    const callout = c.scene === 'load3d' && state.tensorTabKey === 'buffer:filter:b2'
+      ? {
+          ...visual.highlight,
+          label: `Filter K tile → B2[K${c.kIndex}, N=${c.tileN}]`,
+          sub: 'confirmed · B1 NZ → B2 ZN',
+        }
+      : visual.highlight;
+    drawTensorCallout(ctx, width, height, callout, { x: 24, y: 44 });
+    const sceneTop = 78 + (state.tensorView.panY || 0);
+    const scale = Math.max(0.7, Math.min(1.5, state.tensorView.scale || 1));
+    const sceneLeft = 24 + (state.tensorView.panX || 0);
+    const sceneWidth = Math.max(360, width - 48);
+    // The tile lens is an overlay, not a reserved second canvas. Keeping more
+    // vertical room here lets spatial LoadData3D windows remain readable in
+    // the narrow middle workbench pane.
+    const sceneHeight = Math.max(190, height - sceneTop - 70);
+    ctx.save();
+    ctx.translate(sceneLeft, sceneTop);
+    ctx.scale(scale, scale);
+    const scaledWidth = sceneWidth / scale;
+    const scaledHeight = sceneHeight / scale;
+    if (c.scene === 'copy-in') drawConvCopyIn(ctx, scaledWidth, scaledHeight, c);
+    else if (c.scene === 'load3d') drawConvLoad3D(ctx, scaledWidth, scaledHeight, c);
+    else if (c.scene === 'mmad') drawConvMmad(ctx, scaledWidth, scaledHeight, c);
+    else if (c.scene === 'epilogue') drawConvEpilogue(ctx, scaledWidth, scaledHeight, c);
+    else if (c.scene === 'copy-out') drawConvCopyOut(ctx, scaledWidth, scaledHeight, c);
+    else if (c.scene === 'event') drawConvEvent(ctx, scaledWidth, scaledHeight, c);
+    else drawConvOverview(ctx, scaledWidth, scaledHeight, c);
+    ctx.restore();
+  }
+
+  function drawConvOverview(ctx, width, height, c) {
+    const gap = 12;
+    const top = 26;
+    const boxW = Math.max(118, (width - gap * 3) / 4);
+    const boxH = Math.min(104, Math.max(76, height - 54));
+    const items = [
+      { label: 'Feature X', shape: `[1,${c.ci},${c.hi},${c.wi}]`, meta: 'FP16 · GM', tone: 'input' },
+      { label: 'Filter W', shape: `[${c.co},${c.ci},${c.kh},${c.kw}]`, meta: 'FP16 · GM', tone: 'input' },
+      { label: 'Bias', shape: `[${c.co}]`, meta: 'FP32 · GM', tone: 'reduction' },
+      { label: 'Output Y', shape: `[1,${c.co},${c.ho},${c.wo}]`, meta: 'FP16 · GM', tone: 'output' },
+    ];
+    items.forEach((item, index) => {
+      drawConvObjectBox(ctx, gap + index * (boxW + gap), top, boxW, boxH, item);
+    });
+    drawConvFooter(ctx, width, height, `M=${c.ho}×${c.wo}=${c.M}   K=${c.ci}×${c.kh}×${c.kw}=${c.K}   N=${c.co}`, 'Host-confirmed fixed tiling: 16×16×16 · blockDim 8');
+  }
+
+  function drawConvCopyIn(ctx, width, height, c) {
+    const rows = [
+      { source: 'Feature X · GM', target: 'fmapA1 · A1/L1', meta: 'NC1HWC0 · 2048 B', tone: 'input', unknown: false },
+      { source: 'Filter W[Nj] · GM', target: 'weightB1 · B1/L1', meta: 'ND → NZ · 4608 B', tone: 'input', unknown: false },
+      { source: 'Bias[Nj] · GM', target: 'biasC1 → biasC2', meta: 'FP32 · 64 B', tone: 'reduction', unknown: false },
+    ];
+    const rowH = Math.min(58, Math.max(44, (height - 34) / 3));
+    rows.forEach((row, index) => {
+      const y = index * rowH + 2;
+      drawConvObjectBox(ctx, 0, y, width * 0.34, rowH - 10, { label: row.source, shape: '', meta: 'source tensor', tone: row.tone });
+      drawConvFlowArrow(ctx, width * 0.37, y + (rowH - 10) / 2, width * 0.20, row.unknown);
+      drawConvObjectBox(ctx, width * 0.60, y, width * 0.40, rowH - 10, { label: row.target, shape: '', meta: row.meta, tone: row.tone, unknown: row.unknown });
+    });
+    drawConvFooter(ctx, width, height, 'MTE2 CopyIn + MTE1 Bias Table transfer', 'Ranges, formats and bytes are confirmed by the fixed source');
+  }
+
+  function drawConvLoad3D(ctx, width, height, c) {
+    if (state.tensorTabKey === 'buffer:filter:b2') {
+      drawConvLoadB2(ctx, width, height, c);
+      return;
+    }
+    drawConvLoadA2(ctx, width, height, c);
+  }
+
+  function drawConvLoadA2(ctx, width, height, c) {
+    const top = 28;
+    const a1X = 0;
+    const a1W = Math.max(190, width * 0.62);
+    const matrixX = a1W + 26;
+    const oh = c.outputPosition?.[0] || 0;
+    const ow = c.outputPosition?.[1] || 0;
+    const sourceH0 = oh * c.strideH - c.padTop;
+    const sourceW0 = ow * c.strideW - c.padLeft;
+    const window = {
+      h0: Math.max(0, sourceH0),
+      h1: Math.min(c.hi, sourceH0 + c.kh),
+      w0: Math.max(0, sourceW0),
+      w1: Math.min(c.wi, sourceW0 + c.kw),
+    };
+
+    drawConvSpatialVolume(ctx, a1X, top, a1W, height - 72, {
+      label: `fmapA1 · A1 NC1HWC0 [1,1,${c.hi},${c.wi},16]`,
+      rows: c.hi,
+      cols: c.wi,
+      channels: c.ci,
+      channelLabel: 'C0',
+      tone: 'input',
+      window: { h0: window.h0, h1: window.h1, w0: window.w0, w1: window.w1 },
+      note: `physical A1 · output(${oh},${ow}) reads logical H[${sourceH0}:${sourceH0 + c.kh}), W[${sourceW0}:${sourceW0 + c.kw})`,
+    });
+    drawConvFlowArrow(ctx, a1X + a1W - 4, top + Math.min(120, height * 0.32), 22, false);
+    const matrixW = Math.max(92, width - matrixX);
+    const matrixH = Math.min(104, Math.max(70, height * 0.34));
+    drawMiniMatrix(ctx, matrixX, top + 28, matrixW, matrixH, 6, 8, 'input');
     ctx.fillStyle = getCss('--foreground');
-    ctx.font = '700 13px Inter, sans-serif';
-    ctx.fillText(`Output spatial tile · Ho×Wo = ${c.ho}×${c.wo}`, left, top - 24);
-    for (let r = 0; r < c.ho; r += 1) {
+    ctx.font = '700 11px ui-monospace, monospace';
+    ctx.fillText(`A2 [M=${c.tileM}, K=${c.tileK}]`, matrixX, top + 14);
+    ctx.fillStyle = getCss('--foreground-secondary');
+    ctx.font = '600 10px Inter, sans-serif';
+    ctx.fillText(`K${c.kIndex} [${c.kRange[0]}:${c.kRange[1]}]`, matrixX, top + matrixH + 48);
+    ctx.fillText('Ci × Kh × Kw → matrix K', matrixX, top + matrixH + 64);
+    ctx.fillStyle = getCss('--foreground-muted');
+    ctx.font = '600 9px ui-monospace, monospace';
+    ctx.fillText('A1 NC1HWC0 → A2 ZZ · 512 B', matrixX, top + matrixH + 80);
+    drawConvFooter(ctx, width, height, 'fmapA1 / A1 → LoadData3D → fmapA2 / A2', `padList=[${c.padLeft},${c.padLeft},${c.padTop},${c.padTop}] is virtual · padValue=0`);
+  }
+
+  function drawConvLoadB2(ctx, width, height, c) {
+    const top = 42;
+    const sourceW = Math.max(156, width * 0.42);
+    const targetX = width * 0.64;
+    const targetW = Math.max(120, width - targetX);
+    const matrixH = Math.min(160, Math.max(92, height * 0.42));
+    drawMiniMatrix(ctx, 0, top, sourceW, matrixH, 9, 8, 'default');
+    drawMiniMatrix(ctx, 0, top, sourceW, Math.max(18, matrixH / 9), 1, 8, 'input');
+    drawMatrixLabel(ctx, 0, 16, 'weightB1 [K=144, N=16]', `B1 / L1 · NZ · select K${c.kIndex}`);
+    drawConvFlowArrow(ctx, sourceW + 18, top + matrixH * 0.48, Math.max(34, targetX - sourceW - 36), false);
+    drawMiniMatrix(ctx, targetX, top, targetW, matrixH, 8, 8, 'input');
+    drawMatrixLabel(ctx, targetX, 16, `weightB2 [K=${c.tileK}, N=${c.tileN}]`, 'B2 / L0B · ZN · FP16');
+    ctx.fillStyle = getCss('--foreground-secondary');
+    ctx.font = '600 10px Inter, sans-serif';
+    ctx.fillText(`K${c.kIndex} [${c.kRange[0]}:${c.kRange[1]}] · LoadData2D`, targetX, top + matrixH + 22);
+    ctx.fillStyle = getCss('--foreground-muted');
+    ctx.font = '600 9px ui-monospace, monospace';
+    ctx.fillText('startIndex + transpose semantics', targetX, top + matrixH + 38);
+    drawConvFooter(ctx, width, height, 'weightB1 / B1 → LoadData2D → weightB2 / B2', 'NZ → ZN · 16×16 FP16 · 512 B');
+  }
+
+  function drawConvSpatialVolume(ctx, x, y, width, height, options) {
+    const rows = Math.max(1, options.rows || 1);
+    const cols = Math.max(1, options.cols || 1);
+    const channels = Math.max(1, options.channels || 1);
+    const shownChannels = Math.min(channels, options.maxChannels || channels);
+    const fitW = (width - 16) / Math.max(1, cols + shownChannels * 0.52);
+    const fitH = (height - 62) / Math.max(1, rows + shownChannels * 0.38);
+    const unit = Math.max(3, Math.min(14, fitW, fitH));
+    const depthX = unit * 0.52;
+    const depthY = unit * 0.38;
+    const objectW = cols * unit + shownChannels * depthX;
+    const objectH = rows * unit + shownChannels * depthY;
+    const ox = x + Math.max(4, (width - objectW) / 2);
+    const oy = y + 34 + shownChannels * depthY + Math.max(0, (height - 58 - objectH) / 2);
+    const hi = voxelTone(options.tone || 'input');
+    const pad = options.padding;
+    const window = options.window;
+    const cells = [];
+    for (let r = 0; r < rows; r += 1) {
+      for (let col = 0; col < cols; col += 1) {
+        for (let channel = 0; channel < shownChannels; channel += 1) cells.push({ col, r, channel });
+      }
+    }
+    cells.sort((a, b) => (b.channel - a.channel) || (b.r - a.r) || (a.col - b.col));
+    cells.forEach((cell) => {
+      const isPad = pad && (cell.r < pad.top || cell.r >= rows - pad.bottom || cell.col < pad.left || cell.col >= cols - pad.right);
+      const isWindow = window && cell.r >= window.h0 && cell.r < window.h1 && cell.col >= window.w0 && cell.col < window.w1;
+      const faces = isWindow ? (isPad ? VOXEL_TONES.compute : hi) : (isPad ? VOXEL_GHOST : VOXEL_GRAY);
+      drawDepthVoxel(ctx, ox, oy, unit, depthX, depthY, cell.col, cell.r, cell.channel, faces);
+    });
+    drawDepthAxes(ctx, ox, oy, unit, depthX, depthY, cols, rows, shownChannels, options.channelLabel || 'Ci');
+    ctx.fillStyle = getCss('--foreground');
+    ctx.font = '700 10px Inter, sans-serif';
+    ctx.textAlign = 'left';
+    ctx.fillText(options.label, x, y + 10);
+    ctx.fillStyle = getCss('--foreground-muted');
+    ctx.font = '600 8.5px ui-monospace, monospace';
+    ctx.fillText(options.note, x, y + 24);
+    ctx.fillText(`${options.channelLabel || 'Ci'}=${channels} · full physical tensor`, x, y + height - 10);
+  }
+
+  function depthPoint(originX, originY, unit, depthX, depthY, col, row, depth) {
+    return {
+      x: originX + col * unit + depth * depthX,
+      y: originY + row * unit - depth * depthY,
+    };
+  }
+
+  function drawDepthVoxel(ctx, originX, originY, unit, depthX, depthY, col, row, depth, faces) {
+    const gap = 0.065;
+    const point = (cc, rr, dd) => depthPoint(originX, originY, unit, depthX, depthY, cc, rr, dd);
+    const c0 = col + gap;
+    const c1 = col + 1 - gap;
+    const r0 = row + gap;
+    const r1 = row + 1 - gap;
+    const d0 = depth + gap;
+    const d1 = depth + 1 - gap;
+    const f0 = point(c0, r0, d0);
+    const f1 = point(c1, r0, d0);
+    const f2 = point(c1, r1, d0);
+    const f3 = point(c0, r1, d0);
+    const b0 = point(c0, r0, d1);
+    const b1 = point(c1, r0, d1);
+    const b2 = point(c1, r1, d1);
+    isoQuad(ctx, f0, f1, b1, b0, faces.top, faces.edge, 1);
+    isoQuad(ctx, f1, f2, b2, b1, faces.east, faces.edge, 1);
+    isoQuad(ctx, f0, f1, f2, f3, faces.south, faces.edge, 1);
+  }
+
+  function drawDepthAxes(ctx, originX, originY, unit, depthX, depthY, cols, rows, channels, channelLabel) {
+    const frontTop = depthPoint(originX, originY, unit, depthX, depthY, 0, 0, 0);
+    const frontBottomLeft = depthPoint(originX, originY, unit, depthX, depthY, 0, rows, 0);
+    const frontBottomRight = depthPoint(originX, originY, unit, depthX, depthY, cols, rows, 0);
+    const backTop = depthPoint(originX, originY, unit, depthX, depthY, 0, 0, channels);
+    ctx.fillStyle = getCss('--foreground-secondary');
+    ctx.font = '700 10px ui-monospace, monospace';
+    ctx.textAlign = 'center';
+    ctx.fillText('Wi', (frontBottomLeft.x + frontBottomRight.x) / 2, frontBottomRight.y + 15);
+    ctx.textAlign = 'right';
+    ctx.fillText('Hi', frontBottomLeft.x - 7, (frontTop.y + frontBottomLeft.y) / 2);
+    ctx.textAlign = 'center';
+    ctx.fillText(channelLabel, (frontTop.x + backTop.x) / 2, (frontTop.y + backTop.y) / 2 - 8);
+  }
+
+  function drawConvMmad(ctx, width, height, c) {
+    const matrixTop = 28;
+    const matrixH = Math.min(96, Math.max(68, height - 62));
+    const aX = 0;
+    const aW = width * 0.23;
+    const bX = width * 0.32;
+    const bW = width * 0.18;
+    const cX = width * 0.70;
+    const cW = width * 0.30;
+    drawMiniMatrix(ctx, aX, matrixTop, aW, matrixH, 8, 6, 'input');
+    drawMiniMatrix(ctx, bX, matrixTop, bW, matrixH, 6, 5, 'input');
+    drawMiniMatrix(ctx, cX, matrixTop, cW, matrixH, 8, 5, 'reduction', c.kCurrent / c.kLoops);
+    drawConvMathGlyph(ctx, width * 0.275, matrixTop + matrixH * 0.52, '×');
+    drawConvMathGlyph(ctx, width * 0.57, matrixTop + matrixH * 0.52, c.kIndex === 0 ? '+ Bias' : '+ CO1');
+    drawConvFlowArrow(ctx, width * 0.61, matrixTop + matrixH * 0.52, width * 0.07, false);
+    drawMatrixLabel(ctx, aX, 10, `A2 [${c.tileM},${c.tileK}]`, `K${c.kIndex} · FP16`);
+    drawMatrixLabel(ctx, bX, 10, `B2 [${c.tileK},${c.tileN}]`, `K${c.kIndex} · FP16`);
+    drawMatrixLabel(ctx, cX, 10, `CO1 [${c.tileM},${c.tileN}]`, `FP32 · ${c.kCurrent}/${c.kLoops}`);
+    const kBarY = matrixTop + matrixH + 14;
+    for (let index = 0; index < c.kLoops; index += 1) {
+      const segmentW = (cW - 4) / c.kLoops;
+      ctx.fillStyle = index < c.kCurrent ? 'rgba(255,154,84,0.78)' : 'rgba(165,175,185,0.12)';
+      ctx.fillRect(cX + index * segmentW, kBarY, segmentW - 3, 5);
+    }
+    ctx.fillStyle = c.kIndex === 0 ? getCss('--success') : getCss('--foreground-muted');
+    ctx.font = '600 9px Inter, sans-serif';
+    ctx.fillText(c.kIndex === 0 ? 'Bias C1 → C2 confirmed · I0 only' : 'Bias is not added again', width * 0.49, kBarY + 18);
+    drawConvFooter(ctx, width, height, `K${c.kIndex} [${c.kRange[0]}:${c.kRange[1]}]`, 'K is reduction progress, not an output tensor axis');
+  }
+
+  function drawConvEpilogue(ctx, width, height, c) {
+    const items = [
+      { label: 'CO1', shape: `[${c.tileM},${c.tileN}]`, meta: 'FP32 · L0C', tone: 'reduction' },
+      { label: 'ReLU', shape: 'max(x, 0)', meta: 'reluEn=true', tone: 'compute' },
+      { label: 'Cast', shape: 'FP32 → FP16', meta: 'QuantMode F322F16', tone: 'compute' },
+      { label: 'GM Output', shape: `[${c.tileM},${c.tileN}]`, meta: 'FP16 ND · 512 B', tone: 'output' },
+    ];
+    const gap = 28;
+    const boxW = Math.max(86, (width - gap * 3) / 4);
+    const boxH = Math.min(104, Math.max(70, height - 54));
+    items.forEach((item, index) => {
+      const x = index * (boxW + gap);
+      drawConvObjectBox(ctx, x, 24, boxW, boxH, item);
+      if (index < items.length - 1) drawConvFlowArrow(ctx, x + boxW + 4, 24 + boxH / 2, gap - 8, false);
+    });
+    drawConvFooter(ctx, width, height, 'CO1 / L0C → Fixpipe → GM [M,Co]', 'NZ→ND · FP32→FP16 · ReLU · target compile/run unverified');
+  }
+
+  function drawConvCopyOut(ctx, width, height, c) {
+    const leftW = width * 0.28;
+    const matrixH = Math.min(104, height - 48);
+    drawMatrixLabel(ctx, 0, 10, `CO1 [${c.tileM},${c.tileN}]`, 'FP32 NZ · 1024 B');
+    drawMiniMatrix(ctx, 0, 30, leftW, matrixH, 8, 5, 'output');
+    drawConvFlowArrow(ctx, leftW + 18, 30 + matrixH / 2, width * 0.18, false);
+    const gridX = width * 0.56;
+    const gridSide = Math.min(matrixH, width - gridX);
+    drawMatrixLabel(ctx, gridX, 10, `Output Y[1,${c.co},${c.ho},${c.wo}]`, `M[0:${c.tileM}] · Co[0:${c.tileN}]`);
+    const cell = gridSide / c.wo;
+    for (let row = 0; row < c.ho; row += 1) {
       for (let col = 0; col < c.wo; col += 1) {
-        const active = r * c.wo + col < c.tileM;
-        ctx.fillStyle = active ? 'rgba(77,151,255,0.72)' : 'rgba(116,128,142,0.18)';
-        ctx.strokeStyle = active ? 'rgba(184,218,255,0.88)' : getCss('--border-default');
-        ctx.fillRect(left + col * cell, top + r * cell, cell - 2, cell - 2);
-        ctx.strokeRect(left + col * cell, top + r * cell, cell - 2, cell - 2);
+        const active = row * c.wo + col < c.tileM;
+        ctx.fillStyle = active ? 'rgba(41,199,166,0.76)' : 'rgba(116,128,142,0.15)';
+        ctx.strokeStyle = active ? getCss('--success') : getCss('--border-subtle');
+        ctx.fillRect(gridX + col * cell, 30 + row * cell, cell - 1, cell - 1);
+        ctx.strokeRect(gridX + col * cell, 30 + row * cell, cell - 1, cell - 1);
       }
     }
     ctx.fillStyle = getCss('--foreground-secondary');
-    ctx.font = '600 11px ui-monospace, monospace';
-    ctx.fillText(`M[0:${c.tileM}] · Co[0:${c.tileN}]`, left, top + gridSize + 22);
+    ctx.font = '600 9px Inter, sans-serif';
+    ctx.fillText('offset = mStart × 32 + nStart', leftW + 20, 30 + matrixH / 2 + 20);
+    drawConvFooter(ctx, width, height, 'CO1 → Fixpipe → GM', 'Direct strided write · one core writes 512 B');
+  }
 
-    const bx = Math.min(width - 230, left + gridSize + 54);
-    const bw = Math.max(150, width - bx - 28);
+  function drawConvEvent(ctx, width, height, c) {
+    const event = c.event || {};
+    const boxW = width * 0.28;
+    const boxH = Math.min(92, height - 58);
+    const y = 30;
+    drawConvObjectBox(ctx, 0, y, boxW, boxH, { label: event.producerEngine || 'Producer', shape: 'SetFlag', meta: 'upstream complete', tone: 'input' });
+    drawConvFlowArrow(ctx, boxW + 12, y + boxH / 2, width * 0.13, false);
+    const eventX = width * 0.44;
+    drawConvObjectBox(ctx, eventX, y, width * 0.18, boxH, { label: event.eventType || 'Event', shape: 'dependency', meta: 'confirmed', tone: 'fusion' });
+    drawConvFlowArrow(ctx, width * 0.64, y + boxH / 2, width * 0.10, false);
+    drawConvObjectBox(ctx, width * 0.76, y, width * 0.24, boxH, { label: event.consumerEngine || 'Consumer', shape: 'WaitFlag', meta: 'blocked until ready', tone: 'compute' });
+    drawConvFooter(ctx, width, height, event.explanation || 'Execution dependency', 'Event edge is not a data-transfer path');
+  }
+
+  function drawConvObjectBox(ctx, x, y, w, h, item) {
+    const tone = TENSOR_TONES[item.tone] || TENSOR_TONES.default;
+    ctx.beginPath();
+    ctx.roundRect(x, y, Math.max(4, w), Math.max(4, h), 8);
+    ctx.fillStyle = colorMixCanvas(tone.fill, item.unknown ? 0.35 : 0.72);
+    ctx.fill();
+    ctx.strokeStyle = item.unknown ? getCss('--danger') : tone.stroke;
+    ctx.setLineDash(item.unknown ? [5, 4] : []);
+    ctx.stroke();
+    ctx.setLineDash([]);
     ctx.fillStyle = getCss('--foreground');
-    ctx.font = '700 13px Inter, sans-serif';
-    ctx.fillText(`K reduction · Ci×Kh×Kw = ${c.K}`, bx, top - 24);
-    for (let i = 0; i < c.kLoops; i += 1) {
-      const y = top + i * 58;
-      const active = i < c.kCurrent;
-      ctx.fillStyle = active ? 'rgba(255,154,84,0.72)' : 'rgba(165,175,185,0.09)';
-      ctx.strokeStyle = active ? 'rgba(255,214,184,0.88)' : getCss('--border-default');
-      ctx.beginPath();
-      ctx.roundRect(bx, y, bw, 40, 6);
-      ctx.fill();
-      ctx.stroke();
-      ctx.fillStyle = active ? getCss('--foreground') : getCss('--foreground-muted');
-      ctx.font = '700 11px ui-monospace, monospace';
-      ctx.fillText(`K${i} [${i * c.tileK}:${Math.min(c.K, (i + 1) * c.tileK)}]`, bx + 12, y + 25);
+    ctx.font = '700 11px Inter, sans-serif';
+    drawFittedText(ctx, item.label, x + 10, y + 20, w - 20);
+    if (item.shape) {
+      ctx.fillStyle = getCss('--foreground-secondary');
+      ctx.font = '700 10px ui-monospace, monospace';
+      drawFittedText(ctx, item.shape, x + 10, y + 40, w - 20);
     }
+    ctx.fillStyle = item.unknown ? getCss('--danger') : getCss('--foreground-muted');
+    ctx.font = '600 9px Inter, sans-serif';
+    drawFittedText(ctx, item.meta || '', x + 10, y + h - 12, w - 20);
+  }
+
+  function drawConvFlowArrow(ctx, x, y, length, unknown) {
+    const end = x + Math.max(12, length);
+    ctx.save();
+    ctx.strokeStyle = unknown ? getCss('--danger') : getCss('--foreground-muted');
+    ctx.fillStyle = ctx.strokeStyle;
+    ctx.lineWidth = 1.4;
+    ctx.setLineDash(unknown ? [5, 4] : []);
+    ctx.beginPath();
+    ctx.moveTo(x, y);
+    ctx.lineTo(end, y);
+    ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.beginPath();
+    ctx.moveTo(end, y);
+    ctx.lineTo(end - 6, y - 4);
+    ctx.lineTo(end - 6, y + 4);
+    ctx.closePath();
+    ctx.fill();
+    ctx.restore();
+  }
+
+  function drawMiniMatrix(ctx, x, y, w, h, rows, cols, toneKey, fillRatio = 1) {
+    const tone = TENSOR_TONES[toneKey] || TENSOR_TONES.default;
+    const gap = 2;
+    const cellW = (w - gap * (cols - 1)) / cols;
+    const cellH = (h - gap * (rows - 1)) / rows;
+    const total = rows * cols;
+    const activeCount = Math.round(total * Math.max(0, Math.min(1, fillRatio)));
+    for (let row = 0; row < rows; row += 1) {
+      for (let col = 0; col < cols; col += 1) {
+        const index = row * cols + col;
+        ctx.fillStyle = index < activeCount ? tone.fill : 'rgba(116,128,142,0.12)';
+        ctx.fillRect(x + col * (cellW + gap), y + row * (cellH + gap), Math.max(1, cellW), Math.max(1, cellH));
+      }
+    }
+  }
+
+  function drawMatrixLabel(ctx, x, y, title, meta) {
+    ctx.fillStyle = getCss('--foreground');
+    ctx.font = '700 10px ui-monospace, monospace';
+    ctx.fillText(title, x, y);
     ctx.fillStyle = getCss('--foreground-muted');
-    ctx.font = '600 11px Inter, sans-serif';
-    ctx.fillText('K is reduction progress, not a tensor axis.', bx, top + c.kLoops * 58 + 8);
-    drawTensorCallout(ctx, width, height, visual.highlight, { x: left, y: 44 });
+    ctx.font = '600 9px Inter, sans-serif';
+    ctx.fillText(meta, x, y + 13);
+  }
+
+  function drawConvMathGlyph(ctx, x, y, label) {
+    ctx.fillStyle = getCss('--foreground-secondary');
+    ctx.font = '700 12px Inter, sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(label, x, y);
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'alphabetic';
+  }
+
+  function drawConvFooter(ctx, width, height, primary, secondary) {
+    const y = Math.max(20, height - 24);
+    ctx.fillStyle = getCss('--foreground-secondary');
+    ctx.font = '700 9px ui-monospace, monospace';
+    drawFittedText(ctx, primary, 0, y, width);
+    ctx.fillStyle = getCss('--foreground-muted');
+    ctx.font = '600 9px Inter, sans-serif';
+    drawFittedText(ctx, secondary, 0, y + 13, width);
+  }
+
+  function colorMixCanvas(color, alpha) {
+    if (!color || !color.startsWith('rgba(')) return color;
+    return color.replace(/rgba\(([^)]+),\s*[\d.]+\)/, `rgba($1, ${alpha})`);
   }
 
   function drawTensorBackdrop(ctx, width, height) {
@@ -1660,28 +2185,88 @@
   }
 
   function renderTileLens(trace) {
-    const visual = visualStateForStep(trace, currentStep(trace));
+    const step = currentStep(trace);
+    const visual = visualStateForStep(trace, step);
+    if (trace?.operator?.kind === 'conv2d-cube' && step?.tensorSnapshots?.length) {
+      const tabs = tensorTabsForStep(trace, step);
+      const snapshots = tabs.length > 1
+        ? step.tensorSnapshots.filter((snapshot) => snapshot.tensorId === state.tensorTabKey)
+        : step.tensorSnapshots;
+      els.tileLens.innerHTML = snapshots.slice(0, 3).map((snapshot) => renderSnapshotLensCard(trace, snapshot)).join('');
+      return;
+    }
     const blocks = visual.onChipLens?.blocks || visual.architectureFocus?.bufferBlocks || [];
     if (!blocks.length) {
       els.tileLens.innerHTML = '';
       return;
     }
-    els.tileLens.innerHTML = blocks.slice(0, 3).map((block, index) => `
-      <button class="avz-lens-card" type="button" data-block-index="${index}" title="${escapeHtml(block.state || 'loaded')} · ${escapeHtml(block.sourceTile || '')}">
+    els.tileLens.innerHTML = blocks.slice(0, 3).map((block) => `
+      <div class="avz-lens-card" title="${escapeHtml(block.state || 'loaded')} · ${escapeHtml(block.sourceTile || '')}">
         <header class="avz-lens-card__head">
           <span>${escapeHtml(block.label || block.buffer)}</span>
           <span>${escapeHtml(displayBufferTarget(block))}</span>
         </header>
         <div class="avz-lens-grid">${renderLensCells(block)}</div>
         <div class="avz-card-meta">${escapeHtml(block.state || 'loaded')} · ${escapeHtml(block.sourceTile || '')}</div>
-      </button>
+      </div>
     `).join('');
-    els.tileLens.querySelectorAll('[data-block-index]').forEach((button) => {
-      button.addEventListener('click', () => {
-        const block = blocks[Number(button.dataset.blockIndex) || 0];
-        openInspector('buffer', { block });
-      });
-    });
+  }
+
+  function renderSnapshotLensCard(trace, snapshot) {
+    const definition = [...(trace?.tensors || []), ...(trace?.buffers || [])]
+      .find((item) => item.id === snapshot.tensorId);
+    const title = definition?.name || snapshot.tensorId?.replace(/^(tensor|buffer):/, '') || 'Tensor';
+    const shape = formatShape(snapshot.logicalShape);
+    const bytes = snapshot.validBytes ?? snapshot.allocatedBytes;
+    const confidence = snapshot.confidence || 'unknown';
+    const tone = snapshotTone(snapshot);
+    return `
+      <div class="avz-lens-card avz-lens-card--snapshot" title="${escapeHtml(snapshot.transformation || '')}">
+        <header class="avz-lens-card__head">
+          <span>${escapeHtml(title)}</span>
+          <span>${escapeHtml(snapshot.location || 'unknown')}</span>
+        </header>
+        <div class="avz-snapshot-line">
+          <strong>${escapeHtml(shape)}</strong>
+          <span>${escapeHtml(String(snapshot.dtype || '').toUpperCase())}</span>
+        </div>
+        <div class="avz-snapshot-meter" aria-hidden="true">
+          ${Array.from({ length: 12 }, (_, index) => `<span class="${index < snapshotFillCount(snapshot) ? `is-active is-${tone}` : ''}"></span>`).join('')}
+        </div>
+        <div class="avz-card-meta">
+          <span>${escapeHtml(formatBytes(bytes))}</span>
+          <span class="avz-confidence is-${escapeHtml(confidence)}">${escapeHtml(confidence)}</span>
+        </div>
+      </div>
+    `;
+  }
+
+  function snapshotTone(snapshot) {
+    const role = String(snapshot?.role || '');
+    if (role.includes('output')) return 'output';
+    if (role.includes('accumulator') || role.includes('bias')) return 'accumulator';
+    return 'input';
+  }
+
+  function snapshotFillCount(snapshot) {
+    const valid = Number(snapshot?.validElements);
+    const allocated = Number(snapshot?.allocatedElements);
+    if (Number.isFinite(valid) && Number.isFinite(allocated) && allocated > 0) {
+      return Math.max(1, Math.min(12, Math.round((valid / allocated) * 12)));
+    }
+    return snapshot?.confidence === 'unknown' ? 4 : 12;
+  }
+
+  function formatShape(shape) {
+    return Array.isArray(shape) && shape.length ? `[${shape.join('×')}]` : 'shape unknown';
+  }
+
+  function formatBytes(value) {
+    if (value == null) return 'bytes unknown';
+    const bytes = Number(value);
+    if (!Number.isFinite(bytes)) return 'bytes unknown';
+    if (bytes >= 1024 && bytes % 1024 === 0) return `${bytes / 1024} KiB`;
+    return `${bytes} B`;
   }
 
   function renderLensCells(block) {
@@ -1776,11 +2361,15 @@
   }
 
   function renderTimeline(trace) {
-    if (!trace || !els.timelineCanvas) return;
+    if (!trace || !els.timelineCanvas || state.executionView !== 'instructions') return;
     const canvas = els.timelineCanvas;
+    const viewportWidth = Math.max(320, Math.floor(canvas.parentElement?.clientWidth || canvas.clientWidth || 640));
+    const minStepWidth = 174;
+    const minContentWidth = 20 + trace.steps.length * minStepWidth + Math.max(0, trace.steps.length - 1) * 5;
+    const width = Math.max(viewportWidth, minContentWidth);
+    canvas.style.width = `${width}px`;
     const rect = canvas.getBoundingClientRect();
-    const width = Math.max(320, Math.floor(rect.width || canvas.clientWidth || 640));
-    const height = 92;
+    const height = Math.max(104, Math.floor(rect.height || canvas.clientHeight || 112));
     const ctx = fitCanvas(canvas, width, height);
     ctx.clearRect(0, 0, width, height);
     ctx.fillStyle = getCss('--surface-2');
@@ -1823,8 +2412,6 @@
       const x = event.clientX - bounds.left;
       const index = Math.floor((x - left) / (barWidth + gap));
       if (index >= 0 && index < trace.steps.length) {
-        state.selectedObject = { type: 'timeline step', stepIndex: index };
-        state.inspectorOpen = true;
         selectStep(index);
       }
     };
@@ -1873,6 +2460,7 @@
   }
 
   function timelineStageTitle(stage, step) {
+    if (step?.label) return zh(step.label);
     const map = {
       'host-launch': 'Host 启动',
       init: 'Tiling 初始化',
@@ -1896,7 +2484,21 @@
   function timelineStageFlow(stage, step) {
     const id = stage?.id || step?.stageId || '';
     const map = {
-      'host-launch': 'Host -> GM',
+      'host-shape': 'Host config',
+      'host-tiling': 'Host config',
+      'host-launch': 'Host/Runtime config',
+      allocate: 'Kernel prepare',
+      'copy-inputs': 'GM -> L1',
+      'sync-mte2-mte1': 'MTE2 -> MTE1',
+      'bias-c1-c2': 'C1 -> C2',
+      'load-k': 'L1 -> L0A/B',
+      'sync-mte1-m': 'MTE1 -> Cube',
+      'mmad-init': 'A2/B2 + Bias -> CO1',
+      'k-loop': 'Loop container ×8',
+      'loop-body-middle': 'Sync + Load + Mmad ×7',
+      'loop-body-final': 'Sync + Load + Mmad ×1',
+      'sync-m-fix': 'Cube -> Fixpipe',
+      'fixpipe-output': 'L0C -> GM',
       init: 'block/tile',
       'copy-in': 'GM -> UB',
       compute: 'UB -> SIMD',
@@ -1921,72 +2523,6 @@
     const value = getComputedStyle(document.documentElement).getPropertyValue(name).trim();
     cssCache.set(name, value);
     return value;
-  }
-
-  function renderInspector(trace = currentTrace()) {
-    if (els.inspectorDrawer) els.inspectorDrawer.hidden = !state.inspectorOpen;
-    if (!state.inspectorOpen) return;
-    const step = currentStep(trace);
-    const stage = trace.stages.find((item) => item.id === step?.stageId);
-    if (!step || !stage) return;
-    const visual = visualStateForStep(trace, step);
-    const selected = selectedObjectNarrative(trace, step, stage, visual);
-    els.inspectorMeta.textContent = selected.meta;
-    const metrics = (step.metrics || []).map((metric) => (
-      `${metric.label}=${metric.value}${metric.unit ? ` ${metric.unit}` : ''}`
-    ));
-    const events = [...(step.queueEvents || []), ...(step.syncEvents || [])];
-    const regions = step.memoryRegions || [];
-    const blocks = visual.architectureFocus?.bufferBlocks || [];
-
-    els.inspector.innerHTML = `
-      <section class="inspector-section inspector-soft-card avz-inspector-hero">
-        <p class="avz-inspector-eyebrow">${escapeHtml(selected.meta)}</p>
-        <h3>${escapeHtml(selected.title)}</h3>
-        <p>${escapeHtml(selected.body)}</p>
-      </section>
-
-      <section class="inspector-section">
-        <header class="inspector-section-head">
-          <span class="inspector-section-title">当前步骤</span>
-        </header>
-        <p class="avz-inspector-copy">${escapeHtml(stepNarrative(trace, step, stage))}</p>
-      </section>
-
-      ${regions.length ? `
-        <section class="inspector-section">
-          <header class="inspector-section-head">
-            <span class="inspector-section-title">数据位置</span>
-          </header>
-          <p class="avz-inspector-copy">${escapeHtml(memoryNarrative(regions, blocks))}</p>
-        </section>
-      ` : ''}
-
-      ${events.length ? `
-        <section class="inspector-section">
-          <header class="inspector-section-head">
-            <span class="inspector-section-title">队列和同步</span>
-          </header>
-          <p class="avz-inspector-copy">${escapeHtml(`这一帧会触发 ${formatListCn(events)}。这些事件用于表达 LocalTensor 入队/出队、buffer 释放，或者 AIC 与 AIV 之间的 flag 同步关系。`)}</p>
-        </section>
-      ` : ''}
-
-      ${metrics.length ? `
-        <section class="inspector-section">
-          <header class="inspector-section-head">
-            <span class="inspector-section-title">关键参数</span>
-          </header>
-          <dl class="avz-inspector-facts">
-            ${(step.metrics || []).map((metric) => `
-              <div>
-                <dt>${escapeHtml(metric.label)}</dt>
-                <dd>${escapeHtml(metric.value)}${metric.unit ? ` ${escapeHtml(metric.unit)}` : ''}</dd>
-              </div>
-            `).join('')}
-          </dl>
-        </section>
-      ` : ''}
-    `;
   }
 
   function renderInfoPanel(trace = currentTrace()) {
@@ -2025,58 +2561,6 @@
     `;
   }
 
-  function selectedObjectNarrative(trace, step, stage, visual) {
-    const selected = state.selectedObject;
-    if (selected.block) {
-      const block = selected.block;
-      return {
-        title: block.label || block.buffer || '本地数据块',
-        meta: 'Architecture Buffer',
-        body: `${displayBufferTarget(block)} 正在承载 ${block.sourceTile || '当前 tile'}。状态是 ${block.state || 'unknown'}，对应操作是 ${block.operation || stage.label}。这个对象只表示片上 buffer 中的一小块驻留数据，不代表完整 tensor；输出分区与 K 规约进度要看中央 Conv2D 视口。`,
-      };
-    }
-    if (selected.type === 'source') {
-      return {
-        title: `源码第 ${selected.line} 行`,
-        meta: 'Source Line',
-        body: `这一行源码被 trace 映射到当前执行步骤。选中它时，左侧代码、中央逻辑 tensor、右侧硬件链路和底部时间线会同步到同一帧，帮助你从代码语句追到实际搬运或计算的数据范围。`,
-      };
-    }
-    if (selected.type === 'timeline step') {
-      return {
-        title: `时间线步骤 ${Number(selected.stepIndex || 0) + 1}`,
-        meta: 'Execution Step',
-        body: `这是执行序列中的一个可播放切片。时间线负责表达阶段顺序和当前帧位置；播放按钮只控制上一步、下一步、播放和重播，不改变 trace 本身。`,
-      };
-    }
-    if (selected?.type === 'tensor') {
-      return {
-        title: 'Conv2D Output Tile + K Reduction',
-        meta: 'Tensor View',
-        body: '这是中央 Trace Visual 的 logical tensor 视口对象，用来显示当前步骤在 logical tensor 上触碰的 tile 或 element 区间。Inspector 这里只保留对象级说明；完整读图语义由右上角 info 面板承载。',
-      };
-    }
-    return {
-      title: zh(step.label),
-      meta: unitLabel(step.unit || stage.unit) || 'Trace Step',
-      body: zh(step.summary),
-    };
-  }
-
-  function stepNarrative(trace, step, stage) {
-    const sourceLines = (step.sourceLines || []).length ? `源码行 ${step.sourceLines.join(', ')}` : '当前源码片段';
-    const opText = (stage.operations || []).length ? `涉及 ${formatListCn(stage.operations)}。` : '';
-    return `${sourceLines} 对应 ${zh(stage.label)} 阶段。${zh(stage.description)} ${opText}${zh(step.summary)}`;
-  }
-
-  function visualNarrative(trace, step, stage, visual, axes, blocks) {
-    const axisText = axes.length ? `当前轴名是 ${formatListCn(axes)}。` : '';
-    const blockText = blocks.length
-      ? `右侧架构图会把 ${blocks.length} 个片上本地数据块标在对应 buffer grid 上，例如 ${formatListCn(blocks.map((block) => `${displayBufferTarget(block)} ${block.label || ''}`))}。`
-      : '当前步骤没有片上 buffer data block 需要单独标出。';
-    return `${axisText}${tensorSceneNarrative(trace, step, stage, visual)} ${blockText}`;
-  }
-
   function tensorSceneNarrative(trace, step, stage, visual) {
     const kind = trace?.operator?.kind || visual.tensorViewport?.kind || 'vector';
     const intro = `中央视口参考 Triton-Viz 的 trace-driven 逻辑：画的是完整的 logical tensor，高亮块是当前这一步实际触碰的 element 区间。坐标轴有真实刻度和单位（element 数），不是抽象的折叠维度。GM 始终是线性地址，shape、blockIdx 和循环偏移决定高亮落在哪里。静止画面只是当前帧；播放或切换步骤时，高亮块会跟着 CopyIn、Compute、CopyOut 或同步阶段移动。`;
@@ -2089,6 +2573,34 @@
       return `${intro} 这个 Cube Matmul 的输出是二维 C[M,N]，视口就把它画成真实的 M×N 网格，每格是一个 baseM×baseN 的输出 tile。高亮块是当前 Cube block 负责的 singleCoreM×singleCoreN 输出分区。K 是规约维、不是输出 tensor 的轴，所以单独用右侧的 K 累加进度条表示：Mmad 沿 K 把部分和累加到 L0C/CO1，Fixpipe 再把完成的 C tile 写回 GM。`;
     }
 
+    if (kind === 'conv2d-cube') {
+      const c = visual.tensorViewport?.conv || {};
+      const scene = c.scene || 'overview';
+      const base = `M=${c.ho}×${c.wo}=${c.M} 是输出位置，N=${c.N} 是输出通道，K=${c.ci}×${c.kh}×${c.kw}=${c.K} 只表示规约范围，不是 Y 的第三个轴。`;
+      if (scene === 'copy-in') {
+        return `${intro} ${base} 当前显示 Feature、Filter 和 Bias 的确定搬运：X0 以 NC1HWC0 完整进入 A1，W[Nj] 以 ND→NZ 进入 B1，D[Nj] 进入 C1 并继续进入 C2 Bias Table。`;
+      }
+      if (scene === 'load3d') {
+        if (state.tensorTabKey === 'buffer:filter:b2') {
+          return `${intro} ${base} 当前页签显示 weightB1→weightB2：从 B1 NZ [K=144,N=16] 选中 K${c.kIndex} [${c.kRange?.[0]}:${c.kRange?.[1]}] 分形，经 LoadData2D 的转置语义生成 B2 ZN [${c.tileK},${c.tileN}]。`;
+        }
+        return `${intro} ${base} 当前页签显示 fmapA1→fmapA2：左侧是物理 A1 NC1HWC0 [1,1,${c.hi},${c.wi},16]，蓝色格是代表性输出位置在 A1 内实际命中的值；越界部分由 LoadData3D 的 padList/padValue 虚拟生成，不扩张 A1。右侧把当前 K[${c.kRange?.[0]}:${c.kRange?.[1]}] 展开成 A2[${c.tileM},${c.tileK}]。`;
+      }
+      if (scene === 'mmad') {
+        return `${intro} ${base} 当前是 K${c.kIndex}：A2[${c.tileM},${c.tileK}] × B2[${c.tileK},${c.tileN}] → CO1[${c.tileM},${c.tileN}]。I0 从 C2 加入 Bias；I1～I8 只累加 partial sum，不重复加入 Bias。`;
+      }
+      if (scene === 'epilogue') {
+        return `${intro} ${base} 完成的 CO1[${c.tileM},${c.tileN}] 由 Fixpipe 直接写入 GM：NZ→ND、FP32→FP16 并融合 ReLU；输出物理视图是 [64,32]，等价 NHWC，不是 NCHW。API 能否在目标 CANN 编译运行仍需验证。`;
+      }
+      if (scene === 'copy-out') {
+        return `${intro} ${base} 当前 tile 覆盖 M[0:${c.tileM}]、Co[0:${c.tileN}]，写入 Y[1,${c.co},${c.ho},${c.wo}]；helper 没有函数体，因此精确 GM offset 和 block 映射保持 unknown。`;
+      }
+      if (scene === 'event') {
+        return `${intro} ${base} 当前画面表达 SetFlag/WaitFlag 的 producer→consumer 依赖；这条边用于阻止下游过早读取，不表示 Tensor 搬运路径。`;
+      }
+      return `${intro} ${base} 固定参考源码明确给出 M×K×N tile = ${c.tileM}×${c.tileK}×${c.tileN}、4×9×2 个 tile 与 blockDim=8；它是代码事实，但不是自动 tiling 或性能最优结论。`;
+    }
+
     if (kind === 'fusion') {
       return `${intro} 这个 Fusion 同样画 C[M,N] 真实网格：AIC/Cube 先生产一块 singleCore 的 C 分区，CrossCoreSetFlag 把它标记为 ready，AIV0 和 AIV1 再分别消费这块分区的上半和下半 M rows 做 LeakyRelu——所以 AIV 步骤的高亮只覆盖一半行。AIC/AIV 的 handoff 是同步关系，要看底部 Execution Timeline 和右侧 Memory Architecture 的链路高亮，而不是 tensor 的某个轴。`;
     }
@@ -2097,8 +2609,9 @@
   }
 
   function timelineInfoNarrative(trace, step, stage) {
-    const sourceLines = (step.sourceLines || []).length ? `源码行 ${step.sourceLines.join(', ')}` : '当前源码片段';
-    return `底部时间线按 trace step 展示执行顺序，当前步骤是 ${state.stepIndex + 1}/${trace.steps.length}：${zh(step.label)}。阶段数据流是 ${timelineStageFlow(stage, step)}，对应 ${sourceLines}。播放只是在这些离散步骤之间移动当前帧，高亮块和右侧链路会跟着当前步骤切换。`;
+    const refs = sourceRefsForStep(step).map((ref) => `${ref.fileId}:${(ref.lines || []).join(',')}`).join('；');
+    const sourceText = refs ? `源码 ${refs}` : '当前源码片段';
+    return `底部时间线按 trace step 展示执行顺序，当前步骤是 ${state.stepIndex + 1}/${trace.steps.length}：${zh(step.label)}。阶段数据流是 ${timelineStageFlow(stage, step)}，对应 ${sourceText}。播放只是在这些离散步骤之间移动当前帧，高亮块和右侧链路会跟着当前步骤切换。`;
   }
 
   function memoryArchitectureInfoNarrative(visual, blocks) {
@@ -2113,29 +2626,11 @@
     return `${routeText}${blockText}`;
   }
 
-  function memoryNarrative(regions, blocks) {
-    const local = blocks.length
-      ? `片上驻留点是 ${formatListCn(blocks.map((block) => `${block.core || 'core'} ${block.buffer || 'buffer'} 中的 ${block.label || 'tile'}`))}。`
-      : '';
-    return `这一步读写的数据区域包括 ${formatListCn(regions)}。${local}`;
-  }
-
   function formatListCn(items) {
     const values = (items || []).filter(Boolean).map(String);
     if (values.length <= 1) return values[0] || '无';
     if (values.length === 2) return `${values[0]} 和 ${values[1]}`;
     return `${values.slice(0, -1).join('、')} 和 ${values[values.length - 1]}`;
-  }
-
-  function inspectorTypeLabel(type) {
-    const labels = {
-      tensor: '逻辑 Tensor 视口',
-      buffer: '片上数据块',
-      'architecture buffer': '架构图数据块',
-      source: '源码行',
-      'timeline step': '时间线步骤',
-    };
-    return labels[type] || type || '';
   }
 
   function unitLabel(unit) {
@@ -2167,7 +2662,7 @@
       });
     } catch (error) {
       if (els.statusText) els.statusText.textContent = error.message;
-      if (els.inspector) els.inspector.innerHTML = `<div class="inspector-soft-card is-danger">${escapeHtml(error.message)}</div>`;
+      console.error(error);
     }
   }
 

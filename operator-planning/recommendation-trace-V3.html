@@ -7401,29 +7401,63 @@
         return patches;
       };
 
-      const load3dTotalSteps = (patches) => patches.reduce((sum, patch) => sum + patch.elements.length, 0);
+      const load3dSampleGroups = (patch) => {
+        if (!patch) return [];
+        const groups = new Map();
+        patch.elements.forEach((element) => {
+          const key = `${element.kh},${element.kw}`;
+          if (!groups.has(key)) {
+            groups.set(key, { kh: element.kh, kw: element.kw, elements: [] });
+          }
+          groups.get(key).elements.push(element);
+        });
+        return Array.from(groups.values());
+      };
+
+      const load3dTotalSteps = (patches) =>
+        patches.reduce((sum, patch) => sum + load3dSampleGroups(patch).length, 0);
 
       const load3dContextAtStep = (patches, step) => {
-        if (!patches.length) return { patch: null, element: null, step: 0, maxStep: 0 };
+        if (!patches.length) {
+          return {
+            patch: null,
+            element: null,
+            sampleElements: [],
+            step: 0,
+            maxStep: 0
+          };
+        }
         const maxStep = Math.max(0, load3dTotalSteps(patches) - 1);
         const boundedStep = Math.max(0, Math.min(maxStep, Number(step) || 0));
         let cursor = boundedStep;
         let patch = patches[0];
-        let element = patch.elements[0];
+        let sampleGroups = load3dSampleGroups(patch);
+        let sampleGroup = sampleGroups[0];
         let patchIndex = 0;
-        let elementIndex = 0;
+        let sampleIndex = 0;
         for (let index = 0; index < patches.length; index += 1) {
           const candidate = patches[index];
-          if (cursor < candidate.elements.length) {
+          const candidateGroups = load3dSampleGroups(candidate);
+          if (cursor < candidateGroups.length) {
             patch = candidate;
-            element = candidate.elements[cursor];
+            sampleGroups = candidateGroups;
+            sampleGroup = candidateGroups[cursor];
             patchIndex = index;
-            elementIndex = cursor;
+            sampleIndex = cursor;
             break;
           }
-          cursor -= candidate.elements.length;
+          cursor -= candidateGroups.length;
         }
-        return { patch, element, patchIndex, elementIndex, step: boundedStep, maxStep };
+        return {
+          patch,
+          element: sampleGroup?.elements[0] || patch.elements[0],
+          sampleElements: sampleGroup?.elements || [],
+          sampleGroups,
+          patchIndex,
+          sampleIndex,
+          step: boundedStep,
+          maxStep
+        };
       };
 
       const load3dContext = (patches) => load3dContextAtStep(patches, load3dApiStep);
@@ -7546,8 +7580,8 @@
         }
       };
 
-      const load3dDrawA1Canvas = (canvas, p, shape, patch, element) => {
-        if (!canvas || !patch || !element) return;
+      const load3dDrawA1Canvas = (canvas, p, shape, patch, sample) => {
+        if (!canvas || !patch || !sample) return;
         const rect = canvas.getBoundingClientRect();
         const dpr = window.devicePixelRatio || 1;
         canvas.width = Math.max(1, Math.floor(rect.width * dpr));
@@ -7603,7 +7637,7 @@
               if (skippedCoords.has(key)) kind = 'skipped';
               if (windowCoords.has(key)) kind = 'window';
               if (sampledKeys.has(key)) kind = 'sampled';
-              if (key === `${element.srcH},${element.srcW},${element.c}`) kind = 'current';
+              if (h === sample.srcH && w === sample.srcW) kind = 'current';
               items.push({ ph, pw, h, w, c, kind, isPadding, isChannelPad });
             }
           }
@@ -7615,7 +7649,8 @@
         const showPaddingLabels = totalH * totalW <= 36;
         for (const item of items) {
           const result = load3dDrawVoxel(ctx, originX, originY, unit, depthX, depthY, item.pw, item.ph, item.c, load3dFaces(item.kind));
-          const isMappedLabel = item.kind === 'current' || item.kind === 'sampled' || item.kind === 'window';
+          const itemKey = `${item.h},${item.w},${item.c}`;
+          const isMappedLabel = sampledKeys.has(itemKey) || windowCoords.has(itemKey);
           if (item.kind !== 'skipped' && !item.isChannelPad && (isMappedLabel || (item.isPadding && showPaddingLabels))) {
             ctx.fillStyle = item.kind === 'current' ? '#211603' : 'rgba(240,247,252,0.86)';
             ctx.fillText(item.isPadding ? 'PAD' : `x${item.h}${item.w}${item.c}`, result.center.x, result.center.y + 1);
@@ -7667,10 +7702,13 @@
             </section>
           `;
         }
-        const { patch, element } = context;
-        const currentSourceText = element.isPadding
-          ? `PAD(${p.padValue})`
-          : `x[h=${element.srcH}, w=${element.srcW}, c=${element.srcC}]`;
+        const { patch, element, sampleElements } = context;
+        const sampleIsPadding = sampleElements.some((item) => item.isPadding);
+        const currentSourceText = sampleIsPadding
+          ? `${sampleElements.length} 个逻辑通道值，全部为 PAD(${p.padValue})`
+          : `${sampleElements.length} 个逻辑通道值`;
+        const firstSampleCol = sampleElements[0]?.col ?? element.col;
+        const lastSampleCol = sampleElements[sampleElements.length - 1]?.col ?? element.col;
         const cols = Math.max(1, shape.cols);
         const rows = Math.max(1, shape.rows);
         const cellMin = cols > 28 ? '14px' : cols > 16 ? '22px' : '34px';
@@ -7679,19 +7717,23 @@
         const written = new Set();
         let priorSteps = 0;
         patches.forEach((candidate) => {
-          candidate.elements.forEach((item, elementIndex) => {
-            if (priorSteps + elementIndex <= context.step) written.add(`${item.row},${item.col}`);
+          const groups = load3dSampleGroups(candidate);
+          groups.forEach((group, sampleIndex) => {
+            if (priorSteps + sampleIndex <= context.step) {
+              group.elements.forEach((item) => written.add(`${item.row},${item.col}`));
+            }
           });
-          priorSteps += candidate.elements.length;
+          priorSteps += groups.length;
         });
         const cells = [];
         for (let row = 0; row < rows; row += 1) {
           for (let col = 0; col < cols; col += 1) {
             const mapped = patches[row]?.elements[col];
-            const active = row === element.row && col === element.col;
+            const isCurrentSample = mapped?.kh === element.kh && mapped?.kw === element.kw;
+            const active = row === element.row && isCurrentSample;
             const classes = ['op-load3d-cell'];
             if (row === element.row) classes.push('is-current-row');
-            if (col === element.col) classes.push('is-current-col');
+            if (isCurrentSample) classes.push('is-current-col');
             if (written.has(`${row},${col}`)) classes.push('is-written');
             if (mapped?.isPadding) classes.push('is-pad');
             if (active) classes.push('is-active');
@@ -7722,7 +7764,7 @@
                         <div><b>N=1, C1=${shape.C1}, H=${p.Hi}, W=${p.Wi}, C0=${p.C0}</b></div>
                         <div class="op-load3d-viz-note">填充：${p.padTop} ${p.padRight} ${p.padBottom} ${p.padLeft}${!p.showChannelPadding && shape.paddingChannels > 0 ? ` · 隐藏的 C0 padding lanes：${shape.paddingChannels}` : ''}</div>
                       </div>
-                      <div class="op-load3d-viz-status">当前：行 ${element.row}, 列 ${element.col}</div>
+                      <div class="op-load3d-viz-status">当前：窗口行 ${element.row}, 采样 (${element.kh}, ${element.kw})，沿 C 轴</div>
                     </div>
                     <canvas class="op-load3d-canvas" id="opLoad3dA1Canvas" aria-label="NC1HWC0 A1 layout"></canvas>
                   </div>
@@ -7733,8 +7775,8 @@
                     <div class="op-load3d-kv-row"><span>当前输出位置</span><code>oh=${patch.oh}, ow=${patch.ow}</code></div>
                     <div class="op-load3d-kv-row"><span>左上角 H / W</span><code>${patch.baseH}, ${patch.baseW}</code></div>
                     <div class="op-load3d-kv-row"><span>取滤窗 H / W</span><code>kh=${element.kh}, kw=${element.kw}</code></div>
-                    <div class="op-load3d-kv-row"><span>C1 索引 / c</span><code>c1=0, c=${element.c}</code></div>
-                    <div class="op-load3d-kv-row"><span>源坐标</span><code>${currentSourceText}</code></div>
+                    <div class="op-load3d-kv-row"><span>C1 索引 / C 轴</span><code>c1=0, c=0…${p.Ci - 1}</code></div>
+                    <div class="op-load3d-kv-row"><span>本步搬运</span><code>${currentSourceText}</code></div>
                     <div class="op-load3d-kv-row"><span>C1</span><code>ceil(${p.Ci} / ${p.C0}) = ${shape.C1}</code></div>
                     <div class="op-load3d-kv-row"><span>物理通道</span><code>${shape.physicalSlots}</code></div>
                     <div class="op-load3d-kv-row"><span>padding 通道</span><code>${shape.paddingChannels}</code></div>
@@ -7742,7 +7784,7 @@
                   <div class="op-load3d-formula">
                     <div><code>srcH = leftTopH + kh * dilationH</code></div>
                     <div><code>srcW = leftTopW + kw * dilationW</code></div>
-                    <div>当前点会写入 A2 的第 <code>${element.row}</code> 行、第 <code>${element.col}</code> 列。</div>
+                    <div>当前位置会沿 C 轴搬运，在 A2 第 <code>${element.row}</code> 行一次写入第 <code>${firstSampleCol}…${lastSampleCol}</code> 列，共 ${sampleElements.length} 个 cell。</div>
                   </div>
                 </aside>
               </section>
@@ -7754,15 +7796,15 @@
                     <div>C0 padding lane 只表示物理对齐槽位，不进入逻辑 A2 展开矩阵。</div>
                     <div class="op-load3d-legend" aria-label="A2 矩阵颜色图例">
                       <span><i class="op-load3d-swatch row"></i>当前窗口行</span>
-                      <span><i class="op-load3d-swatch col"></i>当前采样列</span>
+                      <span><i class="op-load3d-swatch col"></i>当前 C 轴向量</span>
                       <span><i class="op-load3d-swatch written"></i>已写入</span>
                       <span><i class="op-load3d-swatch pad"></i>PAD 来源</span>
-                      <span><i class="op-load3d-swatch active"></i>当前写入 cell</span>
+                      <span><i class="op-load3d-swatch active"></i>当前 C 轴写入</span>
                     </div>
                   </div>
                   <div class="op-load3d-pills">
                     <span class="op-load3d-pill is-hot">row = oh × Wo + ow = ${element.row}</span>
-                    <span class="op-load3d-pill">col = ((kh × Wk) + kw) × Ci + c = ${element.col}</span>
+                    <span class="op-load3d-pill">cols ${firstSampleCol}…${lastSampleCol}：固定 kh=${element.kh}, kw=${element.kw}，遍历 c</span>
                   </div>
                 </div>
                 <div class="op-load3d-matrix-scroll" aria-label="A2 逻辑矩阵滚动区域">
@@ -7804,7 +7846,9 @@
           totalSteps: () => load3dTotalSteps(patches),
           getLabelForStep: (step) => {
             const context = load3dContextAtStep(patches, step);
-            return context.element ? `oh ${context.element.oh}, ow ${context.element.ow}` : `Step ${step + 1}`;
+            return context.element
+              ? `oh ${context.element.oh}, ow ${context.element.ow}, kh ${context.element.kh}, kw ${context.element.kw}`
+              : `Step ${step + 1}`;
           }
         });
         const sync = () => {
@@ -7815,7 +7859,9 @@
           const scrubber = control.querySelector(`#${ids.scrubber}`);
           const play = control.querySelector(`#${ids.play}`);
           if (label) label.textContent = `${load3dApiStep + 1} / ${Math.max(1, load3dTotalSteps(patches))}`;
-          if (opname) opname.textContent = context.element ? `patch ${context.patch.row}, element ${context.elementIndex}` : '-';
+          if (opname) opname.textContent = context.element
+            ? `patch ${context.patch.row}, sample ${context.element.kh},${context.element.kw} · C axis`
+            : '-';
           if (scrubber) {
             scrubber.min = '0';
             scrubber.max = String(Math.max(0, load3dTotalSteps(patches) - 1));
@@ -8040,7 +8086,7 @@
         setText(
           '[data-api-mode-note]',
           apiVisualizationMode === 'Load3D'
-            ? 'Load3D 展示滑窗如何从 NCHW 输入映射到 NC1HWC0 A1 布局，再逐元素写入 A2 逻辑矩阵。'
+            ? 'Load3D 展示滑窗如何从 NCHW 输入映射到 NC1HWC0 A1 布局，再按采样位置沿 C 轴批量写入 A2 逻辑矩阵。'
             : 'Add 按 load → src → dst → process 阶段逐 block 推进；输入值与 dstLocal 结果均在网格中可见。'
         );
         const centerScroll = $('[data-ide-pane="editor-preview"] .pane-scroll');

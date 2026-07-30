@@ -77,6 +77,18 @@
       },
       "additionalProperties": true
     },
+    "tensors": {
+      "type": "array",
+      "items": {"$ref": "#/$defs/tensorDefinition"}
+    },
+    "buffers": {
+      "type": "array",
+      "items": {"$ref": "#/$defs/bufferDefinition"}
+    },
+    "events": {
+      "type": "array",
+      "items": {"$ref": "#/$defs/eventDependency"}
+    },
     "source": {
       "type": "object",
       "required": ["path", "lines"],
@@ -95,6 +107,11 @@
         }
       },
       "additionalProperties": true
+    },
+    "sources": {
+      "type": "array",
+      "minItems": 1,
+      "items": {"$ref": "#/$defs/sourceFile"}
     },
     "memory": {
       "type": "object",
@@ -169,6 +186,10 @@
             "type": "array",
             "items": {"type": "integer"}
           },
+          "sourceRefs": {
+            "type": "array",
+            "items": {"$ref": "#/$defs/sourceReference"}
+          },
           "memoryRegions": {
             "type": "array",
             "items": {"type": "string"}
@@ -193,6 +214,18 @@
               },
               "additionalProperties": true
             }
+          },
+          "tensorSnapshots": {
+            "type": "array",
+            "items": {"$ref": "#/$defs/tensorSnapshot"}
+          },
+          "dataFlows": {
+            "type": "array",
+            "items": {"$ref": "#/$defs/dataFlow"}
+          },
+          "eventDependencies": {
+            "type": "array",
+            "items": {"type": "string"}
           },
           "visualState": {
             "type": "object",
@@ -255,6 +288,139 @@
     },
     "evidence": {
       "type": "object",
+      "additionalProperties": true
+    }
+  },
+  "$defs": {
+    "sourceFile": {
+      "type": "object",
+      "required": ["id", "label", "path"],
+      "properties": {
+        "id": {"type": "string"},
+        "label": {"type": "string"},
+        "path": {"type": "string"},
+        "projectPath": {"type": "string"},
+        "language": {"type": "string"},
+        "lines": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["line", "text"],
+            "properties": {
+              "line": {"type": "integer"},
+              "text": {"type": "string"}
+            }
+          }
+        }
+      },
+      "additionalProperties": true
+    },
+    "sourceReference": {
+      "type": "object",
+      "required": ["fileId", "lines"],
+      "properties": {
+        "fileId": {"type": "string"},
+        "lines": {
+          "type": "array",
+          "items": {"type": "integer"}
+        },
+        "symbol": {"type": "string"},
+        "note": {"type": "string"}
+      },
+      "additionalProperties": true
+    },
+    "shape": {
+      "anyOf": [
+        {"type": "array", "items": {"type": "integer", "minimum": 0}},
+        {"type": "null"}
+      ]
+    },
+    "tensorDefinition": {
+      "type": "object",
+      "required": ["id", "name", "role", "dtype", "confidence"],
+      "properties": {
+        "id": {"type": "string"},
+        "name": {"type": "string"},
+        "role": {"type": "string"},
+        "logicalShape": {"$ref": "#/$defs/shape"},
+        "logicalLayout": {"type": "string"},
+        "dtype": {"type": "string"},
+        "validElements": {"type": ["integer", "null"]},
+        "validBytes": {"type": ["integer", "null"]},
+        "confidence": {"enum": ["confirmed", "derived", "inferred", "unverified", "unknown", "demo-input"]},
+        "source": {"type": "string"}
+      },
+      "additionalProperties": true
+    },
+    "bufferDefinition": {
+      "type": "object",
+      "required": ["id", "name", "location", "dtype", "confidence"],
+      "properties": {
+        "id": {"type": "string"},
+        "name": {"type": "string"},
+        "location": {"type": "string"},
+        "dtype": {"type": "string"},
+        "logicalShape": {"$ref": "#/$defs/shape"},
+        "allocatedElements": {"type": ["integer", "null"]},
+        "allocatedBytes": {"type": ["integer", "null"]},
+        "confidence": {"enum": ["confirmed", "derived", "inferred", "unverified", "unknown", "demo-input"]},
+        "source": {"type": "string"},
+        "missingEvidence": {"type": "string"}
+      },
+      "additionalProperties": true
+    },
+    "tensorSnapshot": {
+      "type": "object",
+      "required": ["tensorId", "role", "dtype", "location", "transformation", "confidence", "source"],
+      "properties": {
+        "tensorId": {"type": "string"},
+        "role": {"type": "string"},
+        "logicalShape": {"$ref": "#/$defs/shape"},
+        "physicalShape": {"$ref": "#/$defs/shape"},
+        "logicalLayout": {"type": "string"},
+        "physicalLayout": {"type": "string"},
+        "dtype": {"type": "string"},
+        "validElements": {"type": ["integer", "null"]},
+        "allocatedElements": {"type": ["integer", "null"]},
+        "validBytes": {"type": ["integer", "null"]},
+        "allocatedBytes": {"type": ["integer", "null"]},
+        "paddingElements": {"type": ["integer", "null"]},
+        "location": {"type": "string"},
+        "transformation": {"type": "string"},
+        "confidence": {"enum": ["confirmed", "derived", "inferred", "unverified", "unknown", "demo-input"]},
+        "source": {"type": "string"},
+        "missingEvidence": {"type": "string"}
+      },
+      "additionalProperties": true
+    },
+    "dataFlow": {
+      "type": "object",
+      "required": ["from", "to", "transferEngine", "status", "confidence"],
+      "properties": {
+        "from": {"type": "string"},
+        "to": {"type": "string"},
+        "tensorId": {"type": "string"},
+        "bufferId": {"type": "string"},
+        "bytes": {"type": ["integer", "null"]},
+        "transferEngine": {"type": "string"},
+        "status": {"type": "string"},
+        "confidence": {"enum": ["confirmed", "derived", "inferred", "unverified", "unknown", "demo-input"]}
+      },
+      "additionalProperties": true
+    },
+    "eventDependency": {
+      "type": "object",
+      "required": ["id", "eventType", "producerEngine", "consumerEngine", "setStepId", "waitStepId", "confidence", "explanation"],
+      "properties": {
+        "id": {"type": "string"},
+        "eventType": {"type": "string"},
+        "producerEngine": {"type": "string"},
+        "consumerEngine": {"type": "string"},
+        "setStepId": {"type": "string"},
+        "waitStepId": {"type": "string"},
+        "confidence": {"enum": ["confirmed", "derived", "inferred", "unverified", "unknown", "demo-input"]},
+        "explanation": {"type": "string"}
+      },
       "additionalProperties": true
     }
   },
