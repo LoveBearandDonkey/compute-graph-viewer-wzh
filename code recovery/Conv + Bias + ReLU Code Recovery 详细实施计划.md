@@ -1,239 +1,389 @@
 # Conv + Bias + ReLU Code Recovery 详细实施计划
 
-## 1. 目标与交付边界
+## 1. 文档定位
 
-将 [code recovery](</Users/songchenfei/Documents/ascend c/pto_compute-graph-viewer/code recovery>) 收敛为单一的 `Conv2D + Bias + ReLU` 静态 Code Recovery 专题，复用现有三栏 PTO Workbench：
+本文档是 `code recovery` HTML Demo 的唯一实施顺序和进度记录。它把产品目标、代码事实、实现依赖和验收工作组织为阶段 1～5；文中不再存在另一套 Phase 1～5。
 
-- 左栏：源码与证据定位。
-- 中栏：Conv tiling、Load3D 滑窗、Cube tile、逻辑执行序列。
-- 右栏：Ascend 910B memory architecture 与当前数据路径。
-- 播放器：按源码逻辑顺序回放，不表达真实耗时。
+配套规范见 `spec.md`。执行语义基线见 `Conv2D + Bias + ReLU 执行过程.md`。
 
-首版只展示：
+## 2. 2026-07-28 新代码基线
 
-- `confirmed`：源码或演示输入直接确认。
-- `inferred`：从控制流、命名和 API 语义进行的静态推断。
-- `unknown`：当前参考文件无法确认的事实。
+### 2.1 权威输入
 
-不展示真实 duration、overlap、stall、吞吐或 profiling 结论；页面常驻显示“Static implementation model · no runtime timing”。
+本轮以以下三份本地材料为直接依据：
 
-实施开始时，先将本计划落盘为 `code recovery/PLAN.md`。
+1. Host Tiling：`src/conv_bias_relu_complete_demo/op_host/conv_bias_relu_tiling.cpp`
+2. Device Kernel：`src/conv_bias_relu_complete_demo/op_kernel/conv_bias_relu_reference_complete.asc`
+3. 执行解读：`Conv2D + Bias + ReLU 执行过程.md`
 
-## 2. 数据模型与可信度设计
+目录实际名称是 `conv_bias_relu_complete_demo`。
 
-### 演示上下文
+### 2.2 已被新源码确认的事实
 
-由于参考文件没有真实 host tiling，使用一组明确标为“演示输入，非源码恢复”的固定 context：
+| 对象 | 新基线 |
+| --- | --- |
+| Feature | 逻辑 `[1,16,8,8]`；GM `NC1HWC0 [1,1,8,8,16]`；FP16；2048 B |
+| Filter | 逻辑 `[32,16,3,3]`；GM `ND [144,32]`；FP16；9216 B |
+| Bias | `ND [32]`；FP32；128 B |
+| Output | 逻辑 `[1,32,8,8]`；GM `ND [64,32]`；FP16；4096 B |
+| Cube | `A[64,144] × B[144,32] + Bias[32] → C[64,32]` |
+| Tile | `tileM=16`、`tileK=16`、`tileN=16` |
+| Tile 数量 | M=4、K=9、N=2；输出 Tile=8 |
+| Core 映射 | `OT=Mi×2+Nj`；`blockDim=8`；每核一个 `[16,16]` 输出 Tile |
+| K 迭代 | I0～I8，共 9 次；I0 加 Bias，I1～I8 只累加 |
+| Output 写回 | Fixpipe 从 CO1 直接写 GM，融合 NZ→ND、FP32→FP16、ReLU |
 
-- `batch=1`
-- `Ci=16, Hi=8, Wi=8`
-- `Co=32, Kh=3, Kw=3`
-- `stride=1, pad=1, dilation=1`
-- 派生：`Ho=8, Wo=8`
-- Cube 映射：`M=Ho×Wo=64`、`K=Ci×Kh×Kw=144`、`N=Co=32`
-- 演示 tile：`tileM=32, tileK=48, tileN=16`
-- 派生循环：M tile 2 个、N tile 2 个、K reduction 3 次
+输出 `[64,32]` 等价于 NHWC `[1,8,8,32]`，不等价于 NCHW。界面不得仅显示逻辑 NCHW 而隐藏实际 GM 合约。
 
-这些数值只用于让视图可播放；不得标成从 `tilingGm`、host tiling 或真实运行恢复的结果。
+### 2.3 已消除的旧缺口
 
-### Trace schema 最小扩展
+以下旧 fixture 结论已经失效，必须从 UI、fixture 和文档中删除：
 
-在现有 trace fixture 结构上增加：
+- `tileM=32、tileK=48、tileN=16`
+- K loop=3
+- A1/B1 大小未知或为 0
+- Feature/Filter Copy helper 无函数体
+- Bias C1→C2 缺失
+- LoadFilterToL0B 无函数体
+- blockDim 和 block→output tile 映射未知
+- CopyOut helper 和 GM offset 未知
+- CO1 先到 outC1、再单独 CopyOut 的两段式路径
 
-- `execution.mode = "logical-order"`，同时记录 `durationStatus = "unknown"`。
-- stage、step、memory object 增加：
-  - `objectId`：跨源码、tiling、timeline、memory view 使用的稳定身份。
-  - `evidenceKind`：`confirmed | inferred | unknown`。
-  - `sourceRefs`：一到多个源码行和 symbol。
-  - `applicability`：演示 shape、目标 SoC、CANN 版本及限制。
-- `tensorViewport.kind = "conv2d-cube"`，包含：
-  - feature-map window；
-  - output spatial tile；
-  - channel range；
-  - 当前 K slice；
-  - A2/B2/CO1 矩阵 tile。
-- unknown 对象必须携带 `missingEvidence`，说明需要 host tiling、函数实现、目标头文件或 profiling 中的哪一种证据。
+### 2.4 仍需保留的不确定性
 
-### 必须暴露的未解析事实
+新源码是“固定参数、内部一致的静态参考”，不是已编译和已测量的真实 trace：
 
-不能用 mock 补齐以下缺口：
+- 未使用目标环境的 BiSheng/CANN 编译；
+- 未在 910B/Atlas A2/A3 上运行；
+- API 字段、重载和注册名尚未按目标 CANN 版本验证；
+- 无 correctness、dump、profiling 或真实 duration；
+- 固定 tiling 是源码事实，但不是自动 tiling 结果或性能最优结论；
+- 页面硬件总容量仍是 Demo 配置，不能宣称为真实 910B 规格。
 
-- `FmapA1Elements()`、`WeightB1Elements()` 返回 0，真实 L1 分配未知。
-- `outputTileIndex` 与 block/core 的映射没有实现。
-- `CopyFeatureTileGmToA1`、`CopyFilterTileGmToB1`、`CopyBiasGmToC1`、`CopyOutputTileC1ToGm` 只有声明。
-- `LoadFilterToL0B` 没有函数体。
-- Load3D 的 pad、start position、extension 仍待目标版本确认。
-- Bias 已搬入 C1，Mmad 却读取 `biasC2`，源码中缺少明确的 `C1→C2` 转换/搬运；UI 必须显示为“断开的依赖/待补全路径”，不能自行补一条连线。
-- Cube epilogue 的 `reluPre`、量化字段及 C1→GM 路径标为“代码存在、目标 API 行为待验证”。
-- 没有运行证据，因此阶段长度和硬件并发全部未知。
+## 3. 产品目标
 
-## 3. 页面与交互改造
+用户在同一工作台内完成四个连续判断：
 
-### PTO Shell
+1. Host 如何把逻辑 Shape 推导成 Cube M/K/N、Tile 数和 blockDim；
+2. Kernel 当前代码属于哪一步，涉及哪个 Tensor、Buffer 和 Event；
+3. Tensor 如何在 GM、L1、L0A/L0B、Bias Table、L0C 和 GM Output 之间变化；
+4. 当前结论是代码确认、计算派生、语义推断，还是仍需目标环境验证。
 
-保留现有 dark-mode `ide-frame`、可拖拽 `workbench-shell`、activity rail、inspector drawer、status strip 和 `floating-playback-control`。
+统一关系：
 
-页面身份改为：
+```text
+Host Tiling source ─┐
+                    ├─ sourceRefs ─→ TraceStep ─→ Tensor / DataFlow / Event / Hardware
+Kernel source ──────┘                       └────→ Instructions / Timeline / Playback
+```
 
-- 标题：`Ascend Code Recovery`
-- 副标题：`Conv2D · Static Implementation Model`
-- 默认架构：`Ascend 910B`
-- 删除旧 Add/MatMul/Fusion 样例切换入口；旧 fixture 文件暂时保留但不注册、不加载。
-- 使用目录专属 split/localStorage key，避免读取原 tiling 页布局状态。
+所有视图只消费统一的 `selectedStepId`。任何区域不得维护独立步骤状态。
 
-### 左栏：Source & Evidence
+## 4. 页面结构
 
-- 把参考源码复制为 `data/sources/conv_bias_relu_reference.asc`，完整显示真实行号。
-- 当前 step 同步高亮相关源码行。
-- 行级标记只表达三类证据，不用颜色暗示错误严重度。
-- 点击源码行打开 inspector，展示：
-  - 对应 stage、buffer、tile；
-  - 代码确认事实；
-  - 静态推断；
-  - unresolved dependency；
-  - 所需验证材料。
-- 特别标出四类关键位置：tiling struct、LocalTensor 分配、K loop/Mmad、epilogue/未实现 helper。
+### 4.1 上方三栏
 
-### 中栏：Conv Execution Visual
+- 左栏：Source，内部提供 Host/Kernel 两个文件 Tab；
+- 中栏：Tensor State & Transformation；
+- 右栏：Hardware Participation。
 
-替换误导性的 “Tensor 3D Viewport”，标题改为 `Conv Execution Model`，采用联动的二维视图：
+### 4.2 下方全宽 Dock
 
-1. **Feature Map / Load3D**
-   - 展示 `Hi×Wi` 空间网格。
-   - 高亮当前 output position 对应的 `Kh×Kw` receptive field。
-   - padding 区使用明确的空值样式。
-   - channel 不画成空间第三轴；以 `Ci range / C0 group` 标签表达。
+- Instructions：逻辑执行顺序，不表达真实时间比例；
+- Timeline：只有 fixture 具备 `startTime/duration` 时才作为 Estimated Timeline 启用；
+- Playback：控制同一 `selectedStepId`；
+- Terminal 与 Visualization Dock 互斥。
 
-2. **Output Tile**
-   - 展示 `Ho×Wo` 空间网格和当前 `tileM` 覆盖。
-   - 单独显示当前 `Co` 范围，对应 Cube N tile。
-   - 显示 `M=Ho×Wo` 是空间位置 flatten，不是原始 tensor rank。
+Inspector 已永久移出产品范围，任何阶段都不得恢复。
 
-3. **Cube Tile Lens**
-   - A2：`tileM×currentK`
-   - B2：`currentK×tileN`
-   - CO1：`tileM×tileN`
-   - K 仅显示为 reduction slice/progress，不把 `M×N×K` 称为三维 tensor。
-   - 首个 K step 显示 Bias initialization；后续显示 accumulation。
-   - Bias C1→C2 缺口用 unknown connection 表达。
+## 5. Source 双文件体验
 
-4. **Logical Execution Sequence**
-   - 标题明确写 `Order only · duration unavailable`。
-   - 使用等宽离散步骤，不设置时间刻度。
-   - 调用共享 `swimlane-task` 的单段 task bar renderer 和 colormap，不在业务代码中重写 task bar 视觉规则。
-   - 播放器驱动步骤选择；步骤宽度不代表耗时。
+### 5.1 Tab
 
-### 逻辑回放步骤
+左栏固定显示：
 
-固定为以下源码顺序：
+- `op_host/tiling.cpp`
+- `op_kernel/kernel.asc`
 
-1. 初始化 GM tensor views。
-2. 分配 A1/B1/C1/C2/A2/B2/CO1/outC1。
-3. Feature、Filter、Bias 从 GM 进入本地输入区。
-4. `MTE2 → MTE1` 同步。
-5. K0：Load3D feature window 到 A2，同时准备 B2。
-6. `MTE1 → M` 同步。
-7. K0 Mmad：以 Bias 初始化 CO1。
-8. K1 Mmad：累加部分和。
-9. K2 Mmad：完成 K reduction。
-10. `M → FIX` 同步。
-11. CO1→C1：FP32→FP16，并请求 ReLU epilogue。
-12. C1→GM：helper 存在但实现未知。
+Tab 切换只改变当前可见源码，不改变 `selectedStepId`。
 
-每步同时更新源码、feature/output tile、Cube lens、memory path、status strip；只有用户主动选择对象时才打开 inspector。
+### 5.2 双文件事件标记
 
-### 右栏：Memory Architecture
+这里的“事件标记”包括两类：
 
-- 使用 `hardware-architecture-viewport` + `memory-architecture-layout` 的 Ascend 910B preset。
-- 复用 pattern 的 path focus、buffer occupancy、pan、zoom 和 iframe message 协议。
-- 映射路径：
-  - Feature GM → L1/A1 → L0A/A2
-  - Filter GM → L1/B1 → L0B/B2
-  - Bias GM → C1 → C2（最后一段 unknown）
-  - A2 + B2 + Bias → Cube → L0C/CO1
-  - L0C → C1 → Output GM
-- 共享架构图不存在精确 C1/C2 节点时，只高亮其可确认的上层硬件区域；精细 C1/C2 状态留在 on-chip lens，不在架构图中虚构硬件节点。
-- 默认不选中节点、不 dim 全图；path focus 只随用户选择或播放步骤出现。
+1. 逻辑步骤标记：Shape、Tiling、容量、blockDim、LocalTensor、CopyIn、Load、Mmad、Fixpipe；
+2. 同步事件标记：`MTE2_MTE1`、`M_MTE1`、`MTE1_M`、`M_FIX`。
 
-## 4. 实施顺序
+Host 文件至少标记：
 
-1. **文档与数据基线**
-   - 写入 `PLAN.md`。
-   - 复制 Conv 源码到 fixture source。
-   - 创建单一 Conv trace fixture。
-   - 扩展 schema 并注册证据字段、logical-order mode 和 Conv viewport payload。
+- 行 20～43：固定 Shape、卷积参数、Ho/Wo；
+- 行 45～56：M/K/N、16×16×16、4×9×2、8 个 OT；
+- 行 58～70：GM 与片上元素数；
+- 行 73～91：Tiling callback、`SetBlockDim(8)`、workspace=0。
 
-2. **应用模型**
-   - 将 fixture registry 收敛为 Conv 单案例。
-   - 新增 `conv2d-cube` visual-state derivation。
-   - 建立统一 stable object id，确保 source、step、tile、buffer、architecture 使用同一身份。
-   - 删除运行路径中对旧 vector/cube/fusion dispatch 的依赖；旧代码可暂留为未调用参考，第二轮再清理。
+Kernel 文件至少标记：
 
-3. **可视化**
-   - 将中心 canvas 改为 Feature Window + Output Tile 的二维联动视图。
-   - 改造 on-chip lens 为 A2/B2/CO1/Bias。
-   - 将 timeline 改为无 duration 的逻辑步骤。
-   - 将架构 preset 切至 910B，并接入 Conv buffer/path payload。
+- 行 54～64：blockIdx→Mi/Nj→mStart/nStart；
+- 行 82～108：Local Memory 地址图；
+- 行 110～127、191～219：三路 CopyIn、`MTE2_MTE1`、Bias C1→C2；
+- 行 129～165、221～268：K loop、`M_MTE1`、Load3D、Load2D、`MTE1_M`、Mmad；
+- 行 167～187：`M_FIX`、Fixpipe、outputOffset。
 
-4. **证据与 Inspector**
-   - 给所有可见对象增加 evidence badge。
-   - Inspector 按“正在发生什么 / 代码证据 / 静态推断 / 未知 / 下一步验证”组织。
-   - 把 Bias C1→C2 缺口、0 长度 L1 allocation、未实现 helper 作为首版的三项核心静态发现。
+### 5.3 联动规则
 
-5. **样式与文档收尾**
-   - 保留 PTO tokens/patterns，不创建私有 button、card、badge 或 architecture 样式。
-   - 只允许 Conv 网格、tile、padding、reduction 状态使用 data-viz 颜色。
-   - 更新复制目录中的 README/CLAUDE 运行入口，去除过期 `/Users/yin/pto` 路径。
-   - 修改 JS/CSS 后更新 `index.html` cache-busting query。
+- 点击已标记代码行：切换到对应 TraceStep，并停留在当前文件 Tab；
+- 从播放、Instructions 或 Timeline 进入新步骤：自动切到该步骤的 primary `sourceRef` 文件；
+- 一个步骤可同时引用 Host 和 Kernel；例如 block 映射同时关联 Host `SetBlockDim` 与 Kernel `GetBlockIdx`；
+- 当前文件不存在该步骤的引用时，不伪造高亮；
+- Tab、源码行、播放和执行块最终都只更新同一 `selectedStepId`。
 
-预计首版完整实施与验证工作量：约 3–5 个工作日；不包含 host tiling、编译、上板 correctness 和 profiling。
+## 6. Trace 数据改造
 
-## 5. 测试与验收
+### 6.1 多源码
 
-### 数据一致性
+Trace 根对象新增：
 
-- Fixture 可通过 JSON schema 校验。
-- 每个 `sourceRef` 都能定位到真实源码行。
-- 每个 step 的 stage、objectId、memory region 均存在。
-- `Ho/Wo/M/K/N`、tile 数、K loop 数和尾块公式计算正确。
-- 不允许出现没有 evidenceKind 的可见对象。
+```json
+{
+  "sources": [
+    {
+      "id": "host",
+      "label": "op_host/tiling.cpp",
+      "path": "op_host/conv_bias_relu_tiling.cpp",
+      "projectPath": "src/conv_bias_relu_complete_demo/op_host/conv_bias_relu_tiling.cpp"
+    },
+    {
+      "id": "kernel",
+      "label": "op_kernel/kernel.asc",
+      "path": "op_kernel/conv_bias_relu_reference_complete.asc",
+      "projectPath": "src/conv_bias_relu_complete_demo/op_kernel/conv_bias_relu_reference_complete.asc"
+    }
+  ]
+}
+```
 
-### 交互验收
+旧 `source` 字段暂时保留为兼容入口，新 UI 以 `sources` 为准。
 
-- 首次打开只加载 Conv 案例。
-- 前进、后退、播放和 scrubber 都能稳定驱动 12 个逻辑步骤。
-- 每一步同步更新源码、二维 tiling、Cube lens、architecture focus 和状态栏。
-- 点击 source line、tile、timeline step、buffer 后，inspector 展示同一个 stable object。
-- Explorer、Inspector、zoom、fit、拖拽和 pane resize 可重复开关并正确持久化。
+### 6.2 文件感知的源码引用
 
-### 语义验收
+每个步骤使用：
 
-- 页面中不存在 `Tensor 3D Viewport` 或把 K 描述为输出 tensor 第三维的文案。
-- 清楚区分语义 tensor：
-  - `X[N,Ci,Hi,Wi]`
-  - `W[Co,Ci,Kh,Kw]`
-  - `Y[N,Co,Ho,Wo]`
-- 清楚解释 Cube execution domain：
-  - `M=Ho×Wo`
-  - `K=Ci×Kh×Kw`
-  - `N=Co`
-- timeline 不出现毫秒、cycle、比例 duration 或 overlap。
-- 未实现的函数和未验证 API 不显示为完整、确定的数据路径。
-- Bias C1→C2 缺口始终可追溯到源码。
+```json
+{
+  "sourceRefs": [
+    {"fileId": "host", "lines": [84, 85]},
+    {"fileId": "kernel", "lines": [55, 61, 62]}
+  ]
+}
+```
 
-### 视觉与兼容验收
+`sourceLines` 暂时保留为 Kernel 兼容字段，但不得再作为多文件身份的唯一来源。
 
-- 在 1440×900、1920×1080 和当前高分辨率窗口验证。
-- 中栏缩窄时保持 feature/output 两个主视图可读，tile lens 可降为纵向排列。
-- 910B 架构视图支持拖拽、Fit 和缩放，路径线宽不随 focus 改变。
-- 检查 legacy decoration residue；generic panel/card 不残留私有左色条、inset rail、重复 border 或私有 gradient。
-- 通过本地 HTTP 服务打开 `/code%20recovery/index.html` 完成最终视觉检查。
+### 6.3 可信度
 
-## 6. 明确假设
+- `confirmed`：当前两份源码直接给出；
+- `derived`：由源码参数确定性计算；
+- `inferred`：依据 API 语义解释，但源码未直接声明；
+- `unverified`：源码表达目标行为，尚未在目标 CANN/硬件验证；
+- `unknown`：当前材料不足。
 
-- 首版是 Conv 单案例，不是通用源码导入器。
-- 默认 dark mode，并保留执行回放控制。
-- `conv_bias_relu_reference.asc` 是实现参考，不是可编译 Golden Model。
-- 演示 shape/tiling 是 fixture 输入，不是从源码、host 或硬件观测恢复。
-- 目标架构按文件注释采用 Ascend 910B；CANN API 的实际可用性仍为待验证状态。
-- 不修改原始 `pto_compute-graph-viewer/tiling/`；所有实现仅发生在复制的 `code recovery/` 目录。
+代码确认与目标验证是两个维度。例如 `reluEn=true` 是 confirmed；该参数在目标 CANN 上成功编译执行仍是 unverified。
+
+## 7. 新逻辑回放
+
+前 10 步沿用当前阶段命名，但必须区分“Host/Kernel 准备信息”和“运行时硬件动作”。Host Shape、Host Tiling、Buffer 元素数和 blockDim 是执行配置，不得画成 GM 搬运或 AI Core 指令。
+
+| Step | 阶段 | 主要内容 | 执行性质 | 主源码 |
+| ---: | --- | --- | --- | --- |
+| 1 | Input Shape | 固定 N/C/H/W、卷积参数并推导 Ho/Wo | Host 配置 | Host |
+| 2 | Host Tiling | 定义 Cube M/K/N、`16×16×16` Tile 和 `4×9×2` Tile 数 | Host 配置 | Host |
+| 3 | 不单独回放 | 原 Host Memory 内容并入 Step 4；只作为 Buffer Size 证据展示 | 非执行步骤 | Host |
+| 4 | Host执行配置 | 计算 GM/Local Buffer 元素数；设置 `blockDim=8`；建立 `OT→Mi/Nj` 映射；workspace=0 | Host/Runtime 配置，不访问 GM | Host + Kernel |
+| 5 | Allocate Memory | 建立 A1/B1/C1 地址范围以及 A2/B2/C2/CO1 LocalTensor 视图 | Kernel 准备 | Kernel |
+| 6 | Copy Inputs | MTE2：GM X0 NC1HWC0→A1；GM W[Nj] ND→B1(NZ)；GM Bias[Nj]→C1 | 运行时数据搬运 | Kernel |
+| 7 | Sync | `MTE2_MTE1`：MTE2 发布 L1 ready；MTE1 等待后才能读取 A1/B1/C1 | 运行时同步 | Kernel |
+| 8 | Copy Data C2 | MTE1：Bias C1→C2 / Bias Table，FP32 `[16]`，64 B | 运行时数据搬运 | Kernel |
+| 9 | Load Data A2 B2 | Iter 0：LoadData3D 生成 A[Mi,K0]；LoadData2D 生成 B[K0,Nj] | 运行时数据搬运 | Kernel |
+| 10 | Sync | `MTE1_M`：MTE1 发布 A2/B2 ready；Cube 等待后才能执行 Iter 0 | 运行时同步 | Kernel |
+| 11 | Iter 0 Mmad | `A[Mi,K0] × B[K0,Nj] + Bias[Nj] → Acc0/CO1`；Bias 只在本轮加入 | Cube 计算 | Kernel |
+| 12 | K Loop · Iter 1～8 ×8 | 后续 8 轮的可展开 Loop Group；不是一条独立硬件指令 | 循环容器 | Kernel |
+| 13 | Iter 1～7 Loop Body ×7 | 每轮依次执行 `M_MTE1 → Load Kk → MTE1_M → Mmad accumulate`，得到 Acc1～Acc7 | 同步 + 搬运 + Cube 计算 | Kernel |
+| 14 | Iter 8 Final Loop Body ×1 | 执行同一完整 Loop Body，读取 K8 `[128:144]`，最终得到 Acc8 | 同步 + 搬运 + Cube 计算 | Kernel |
+| 15 | M_FIX Sync | Cube 发布 Acc8 ready；Fixpipe 等待最终 CO1 | 运行时同步 | Kernel |
+| 16 | Fixpipe Output | CO1 FP32 NZ→GM FP16 ND，融合 ReLU，并按 `outputOffset` 直接写回 | 运行时输出 | Kernel |
+
+### 7.1 K Loop 的真实结构
+
+`Iter` 是 `Iteration` 的缩写，用于避免大写 `I` 和小写 `l` 在界面字体中混淆。`Iter 0` 表示执行轮次，`K0` 表示该轮读取的数据 Tile。
+
+首次迭代：
+
+```text
+Load K0
+→ MTE1_M：A2/B2 ready
+→ Iter 0 Mmad：A×B+Bias→Acc0
+```
+
+后续每次迭代 `Iter k`，其中 `k=1..8`：
+
+```text
+M_MTE1
+Cube 表示上一轮 A2/B2 已读取完成，MTE1 可以覆盖
+→
+LoadData3D A[Mi,Kk] + LoadData2D B[Kk,Nj]
+→
+MTE1_M
+MTE1 表示新的 A2/B2 已准备好，Cube 可以读取
+→
+Mmad
+Acck = Acc(k-1) + A[Mi,Kk] × B[Kk,Nj]
+```
+
+因此，Step 13 不是“重复 7 次 Step 11～12”，而是折叠展示 7 个完整 Loop Body；Step 14 是相同 Loop Body 的最后一次执行。Step 12 只作为父级 Loop Group，不应在 Instructions 中与 Step 13、14 表现成三个同级、依次只执行一次的硬件动作。
+
+### 7.2 Step 12 同步画面
+
+`M_MTE1` 发生在下一轮 Load 之前。以 Iter 1 为例，此时 A2/B2 仍保存 K0：
+
+```text
+A2/B2 · K0
+Cube read complete
+→ reusable
+→ MTE1 may overwrite with K1
+```
+
+因此 Step 12 的 Tensor 视图不得提前显示“K1 已加载”。K1 只能在 `M_MTE1` 通过后的 Load 阶段显示。
+
+### 7.3 Instructions 展示层级
+
+```text
+Iter 0
+├─ Load K0
+├─ MTE1_M
+└─ Mmad + Bias
+
+K Loop · Iter 1～8 ×8
+├─ Iter 1～7 ×7
+│  ├─ M_MTE1
+│  ├─ Load Kk
+│  ├─ MTE1_M
+│  └─ Mmad accumulate
+└─ Iter 8 ×1
+   ├─ M_MTE1
+   ├─ Load K8
+   ├─ MTE1_M
+   └─ Final Mmad
+```
+
+默认折叠时必须显示循环次数；展开后允许定位每个 `Iter k` 的源码、Tensor、Event 和硬件状态。无论折叠或展开，总次数都必须保持每核 9 次 Mmad、全 8 核共 72 次 Mmad。
+
+## 8. Tensor 和 Memory 表达
+
+每核固定驻留：
+
+| Buffer | Shape/元素 | Bytes | 地址/对齐 |
+| --- | ---: | ---: | --- |
+| A1 | 1024 FP16 | 2048 | 0 / 512 B |
+| B1 | 2304 FP16 | 4608 | 2048 / 512 B |
+| C1 | 16 FP32 | 64 | 6656 / 128 B |
+| C2 | 16 FP32 | 64 | 0 / 64 B |
+| A2 | `[16,16]` FP16 | 512 | 0 / 512 B |
+| B2 | `[16,16]` FP16 | 512 | 0 / 512 B |
+| CO1 | `[16,16]` FP32 | 1024 | 0 |
+
+中栏按步骤展示：
+
+- Host Shape/Tiling：逻辑→物理合约与 M/K/N；
+- CopyIn：完整 Feature、一个 Filter N Tile、一个 Bias N Tile；
+- Load：Feature window→A2 ZZ；Filter fractal→B2 ZN；
+- I0：A2、B2、C2、CO1；
+- I1～I8：A2、B2、已有 CO1，不再加入 Bias；
+- Fixpipe：CO1 FP32 NZ→Output FP16 ND，并明确 NHWC 等价关系。
+
+## 9. 实施顺序与进度
+
+| 阶段 | 本阶段交付 | 状态 |
+| --- | --- | --- |
+| 阶段 1：Workbench MVP | 上方三栏、全宽 Dock、两种执行 Tab、播放、Terminal 互斥、统一步骤状态、移除 Inspector | **已完成（2026-07-27）** |
+| 阶段 2：Tensor Code Recovery | 双源码 Tab、file-aware sourceRefs、新固定 tiling、精确 Buffer、9 次 K 语义、Bias C1→C2、Fixpipe 直写 GM | **已完成并按新源码刷新（2026-07-28）** |
+| 阶段 3：Hardware Participation | 910B 路径、真实步骤参与节点、Buffer occupancy、Active/Idle/Waiting、4 类 Event dependency | **下一阶段，未开始** |
+| 阶段 4：Execution Dock 深化 | Instructions 泳道、Loop Group 展开、事件因果；有估算数据后再做 Estimated Timeline | **未开始** |
+| 阶段 5：验证与交付 | 错误/空状态、布局/播放回归、schema/PTO 审计、目标环境验证记录 | **未开始** |
+
+当前整体进度：**2/5 个阶段完成**。
+
+阶段 2 的“完成”表示静态模型和交互基线完成，不表示源码已经通过 CANN 编译或上板运行。
+
+## 10. 后续阶段安排
+
+### 阶段 3：Hardware Participation
+
+1. 将每个步骤映射到 MTE2、MTE1、Cube、Fixpipe 和相应存储节点；
+2. 使用 fixture 中的每核字节数计算 Demo occupancy；
+3. 执行单元显示 Active/Idle/Waiting，不显示“空间占用”；
+4. `MTE2_MTE1`、`M_MTE1`、`MTE1_M`、`M_FIX` 使用独立依赖边；
+5. Demo capacity 与真实芯片总容量分层标注；
+6. 不确定的硬件连线使用 unverified，不因图上存在节点就宣称代码使用它。
+
+### 阶段 4：Execution Dock 深化
+
+1. Instructions 按 Host/Scalar、MTE2、MTE1、Cube、Fixpipe、Event 分泳道；
+2. I1～I7 Loop Group 支持展开；
+3. 点击事件块展示 producer、consumer、阻止的提前执行；
+4. Timeline 保持 unavailable，直至有明确估算值或 profiling；
+5. 如增加估算值，必须显示 `Estimated Timeline · Not Profiling Data`。
+
+### 阶段 5：验证与交付
+
+1. JSON/schema 验证；
+2. 两份源码所有 sourceRefs 行号存在；
+3. 双 Tab 切换不丢失步骤；
+4. 播放跨 Host→Kernel 自动切 Tab；
+5. file:// 错误提示和 HTTP 启动说明；
+6. 窄窗口、长文件名、滚动定位和键盘可访问性；
+7. PTO design-system residue check；
+8. 记录未完成的 CANN 编译、设备运行和 profiling 验证。
+
+## 11. 验收标准
+
+### 双源码
+
+- 两个 Tab 都加载完整源码，而不是关键行摘录；
+- 两个文件都存在可点击的步骤标记；
+- 点击 Host `SetBlockDim` 选择 Launch Mapping；
+- 点击 Kernel `GetBlockIdx` 选择同一 Launch Mapping；
+- 点击 Kernel 任一 HardEvent 行选择对应 Event Step。
+
+### Tiling
+
+- 页面显示 `M/K/N=64/144/32`；
+- 页面显示 `tile=16/16/16`；
+- 页面显示 `M/K/N tile count=4/9/2`；
+- 页面显示 `blockDim=8` 和 OT0～OT7。
+
+### Tensor
+
+- LoadData3D 显示 NC1HWC0→ZZ、`[16,16]`、512 B；
+- LoadData2D 显示 NZ→ZN、`[16,16]`、512 B；
+- I0 明确包含 Bias C2；
+- I1～I8 不重复加入 Bias；
+- CO1 为 `[16,16]` FP32、1024 B；
+- Fixpipe 显示 FP32→FP16、NZ→ND、ReLU、512 B/核。
+
+### 可信度
+
+- 不再显示已被新源码解决的 missing implementation；
+- 固定参数标为代码确认，不标为 profiler 观测；
+- 页面明确“未编译、未上板、无真实 duration”；
+- Output 明确 ND `[64,32]` 与 NHWC 等价，不误称为 NCHW 物理布局；
+- Inspector 永不出现。
+
+## 12. 启动
+
+必须通过本地 HTTP 服务打开。页面会使用 `fetch()` 读取 JSON 和两份源码，`file://` 无法工作。
+
+从工作区根目录 `/Users/songchenfei/Documents/ascend c` 启动服务后访问：
+
+```text
+http://127.0.0.1:4180/pto_compute-graph-viewer/code%20recovery/index.html
+```
