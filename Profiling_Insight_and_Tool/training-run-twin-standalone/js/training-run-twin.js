@@ -974,7 +974,13 @@
     const stride = right >= (ACC_WINDOW - 1) * ACC_STRIDE
       ? ACC_STRIDE
       : Math.max(1, Math.floor(right / (ACC_WINDOW - 1)));
-    return Array.from({ length: ACC_WINDOW }, (_, i) => Math.max(0, right - (ACC_WINDOW - 1 - i) * stride));
+    const regular = Array.from({ length: ACC_WINDOW }, (_, i) => Math.max(0, right - (ACC_WINDOW - 1 - i) * stride));
+    const left = regular[0];
+    // 常规监控每 100 step 采样一次，但 AMP scaler 在 15000~15203 内每 50 step 减半；
+    // 把事故关键点补进共享时间轴，避免 65536→32768→16384→8192→4096 被抽稀成两次四倍跳变。
+    const ampIncidentSteps = [15000, 15050, 15100, 15150, 15200, 15202, 15203];
+    return [...new Set(regular.concat(ampIncidentSteps.filter((step) => step >= left && step <= right)))]
+      .sort((a, b) => a - b);
   }
   let accSteps = computeAccSteps();
 
@@ -1284,11 +1290,18 @@
         { id: "gradnorm_ref", label: "grad_norm (右轴)", key: "grad_norm", colorVar: "--twin-chart-gradnorm", emphasis: true, axis: "right" },
       ] },
     { id: "loss_scale", name: "AMP loss scale", legend: false,
-      note: "动态混合精度的 loss scale(对数刻度显示,气泡内为实际值);持续减半是 FP 溢出的早期信号",
+      note: "首次连续减半即通知；降至初始值 1/16 自动 dump，降至 1/32 立即停训",
       formatValue: (v) => (v == null || !isFinite(v) ? "—" : Math.round(Math.pow(2, v)).toLocaleString()),
-      tipCarryForward: false, markerStep: INCIDENT_STEP,
+      tipCarryForward: false, markerStep: INCIDENT_STEP, smoothing: 0,
+      // 固定为 2^10.5~2^16.5：让 65536→4096 的四级衰减占据主要纵向空间，
+      // 同时给尚未触发的 1/32 停训线（2048 / log2=11）留出可见位置。
+      yDomain: { left: [10.5, 16.5] },
+      referenceLines: [
+        { value: 12, label: "已触发：自动 dump · 1/16", color: "#ea580c" },
+        { value: 11, label: "若继续：停训 · 1/32", color: "#dc2626" },
+      ],
       series: [
-      { id: "loss_scale", label: "loss scale", key: "loss_scale_log2", colorVar: "--twin-chart-mfu", emphasis: true },
+      { id: "loss_scale", label: "loss scale", key: "loss_scale_log2", colorVar: "--twin-chart-mfu", emphasis: true, curve: "step" },
     ] },
     { id: "precision", name: "precision", legend: false, note: "预测正例中的准确率", formatValue: fmtAccPct,
       tipCarryForward: false, markerStep: INCIDENT_STEP,
@@ -1415,11 +1428,12 @@
       regions,
       // cfg.yDomain 可为函数(按当前窗口数据算)或常量对象;不给则由引擎自适应
       yDomain: typeof cfg.yDomain === "function" ? cfg.yDomain(steps, data) : (cfg.yDomain || null),
+      referenceLines: cfg.referenceLines || null,
       // markerStep：常驻红色虚线(事故点)，与 cursor(仅 hover 时临时出现的中性色游标)彻底分开，
       // 故这里 cursor 恒为 null，不再借用 markerStep 当初始值
       markerStep: cfg.markerStep,
       cursor: null,
-      smoothing: accSmoothing,
+      smoothing: cfg.smoothing == null ? accSmoothing : cfg.smoothing,
       cursorTooltip: true,
       tipCarryForward: cfg.tipCarryForward !== false,
       formatValue: cfg.formatValue,

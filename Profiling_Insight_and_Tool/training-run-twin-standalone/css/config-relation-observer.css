@@ -77,7 +77,10 @@
   box-shadow: var(--ide-frame-pane-shadow);
   backdrop-filter: var(--ide-frame-pane-backdrop-filter);
   -webkit-backdrop-filter: var(--ide-frame-pane-backdrop-filter);
-  transition: flex-basis 160ms ease, opacity 120ms ease;
+  /* 宽度不做过渡：flex-basis 是布局属性，160ms 里每一帧都要重排整个 workarea
+     （deck + 46 刻度 + 结构条 + 256 专家 + 2048 个热力格），同时上面那层 18px
+     backdrop 模糊要跟着尺寸逐帧重新采样底图。两者叠加就是折叠/展开时的长帧。
+     宽度直接切换，视觉上是干净的瞬时开合，没有信息损失。 */
 }
 
 .pto-ide-frame__workarea.is-event-rail-collapsed .cro-event-rail {
@@ -145,11 +148,11 @@
 }
 
 .cro-event-rail__actions .btn svg {
-  width: 14px;
-  height: 14px;
+  width: 18px;
+  height: 18px;
   fill: none;
   stroke: currentColor;
-  stroke-width: 2;
+  stroke-width: 2.25;
   stroke-linecap: round;
   stroke-linejoin: round;
 }
@@ -195,7 +198,6 @@
   flex: 1 1 auto;
   min-height: 160px;
   overflow-y: auto;
-  border-top: 1px solid var(--border-subtle);
 }
 
 .cro-event-group {
@@ -458,6 +460,30 @@
   letter-spacing: -0.01em;
 }
 
+/* 范围切换紧跟标题（间距 20px），不推到行尾：它限定的是「Layer 导航」这四个字
+   的查询口径，贴着标题读才是一句话；顶到右端会读成一个独立于本段的全局开关。 */
+.cro-section__heading {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: var(--space-5);
+  flex: 0 0 auto;
+}
+
+.cro-dp-scope {
+  flex: 0 0 auto;
+}
+
+/* .segmented-control 自带 display:inline-flex，会盖掉 [hidden] 的 UA display:none，
+   必须显式关掉。运行事件模式下由 syncDpScope() 挂 hidden，见 js。 */
+.cro-dp-scope[hidden] { display: none; }
+
+.cro-dp-scope > .btn {
+  min-height: 22px;
+  padding-block: 1px;
+  font-size: var(--font-size-label-xs);
+}
+
 .cro-section__subtitle {
   font-size: var(--font-size-label-xs);
   color: var(--foreground-muted);
@@ -594,6 +620,34 @@
 /* 校验失败时用 danger 描边提示，不新造 error 视觉 */
 .cro-stepper.is-invalid .cro-stepper__control {
   box-shadow: inset 0 0 0 1px var(--danger);
+}
+
+/* 用户调整一个字段后，被自动配平的其他字段高亮 3 秒；锚点字段本身不提示。 */
+.cro-stepper.is-auto-adjusted .cro-stepper__label {
+  color: var(--accent);
+}
+
+.cro-stepper.is-auto-adjusted .cro-stepper__control {
+  animation: cro-auto-adjusted-highlight 3s ease-out;
+}
+
+@keyframes cro-auto-adjusted-highlight {
+  0%, 72% {
+    background: var(--state-selected);
+    box-shadow: inset 0 0 0 1px var(--accent), 0 0 0 3px var(--focus-ring);
+  }
+  100% {
+    background: var(--surface-2);
+    box-shadow: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .cro-stepper.is-auto-adjusted .cro-stepper__control {
+    animation: none;
+    background: var(--state-selected);
+    box-shadow: inset 0 0 0 1px var(--accent);
+  }
 }
 
 /* 无错误时不占位（原来留了 min-height:1em 的空行） */
@@ -739,8 +793,12 @@
   filter: brightness(1.04);
   opacity: 1;
 }
+/* 只过渡 opacity，不过渡 filter：上面几条降噪规则一翻转就有几百个节点同时进入
+   filter 动画，Chrome 会为每一个动画中的元素单独提一个合成层、动画结束再全部
+   销毁 —— profile 里 25.8% 的 Layerize 就是这么来的。去色改成瞬时生效，观感上
+   仍是「其余节点退到背景」，只是不再有 140ms 的灰阶淡入。 */
 .cro-board #croDeckHost :is(.pto-model-deck__node, .pto-model-deck__experts) {
-  transition: filter 140ms ease, opacity 140ms ease;
+  transition: opacity 140ms ease;
 }
 
 /* ── 左：整网 deck ───────────────────────────────────────────────────────── */
@@ -1047,7 +1105,8 @@
   overflow: hidden;
   text-overflow: ellipsis;
   cursor: pointer;
-  transition: filter 140ms ease, opacity 140ms ease;
+  /* 同 #croDeckHost 节点：filter 不进 transition，避免整条结构条一次性提层。 */
+  transition: opacity 140ms ease;
 }
 
 /* op → 色变量映射，与 model-architecture-3d-deck-pattern.css 的

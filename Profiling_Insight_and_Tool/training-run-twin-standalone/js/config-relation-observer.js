@@ -101,6 +101,104 @@
     return errors;
   }
 
+  /* ── 自动配平：保留用户刚调整的字段，只改满足约束所需的最少依赖项 ─────── */
+  const PARALLEL_FIELDS = ["dp", "pp", "tp", "cp", "ep"];
+
+  function parallelWorld(config) {
+    return PARALLEL_FIELDS.reduce((product, field) => product * config[field], 1);
+  }
+
+  function isAllowedParallelValue(field, value, config) {
+    const spec = FIELD_SPECS[field];
+    if (!Number.isInteger(value) || value < spec.min || value > spec.max) return false;
+    if (spec.pow2 && (value & (value - 1)) !== 0) return false;
+    if (field === "pp" && value > config.totalLayer) return false;
+    if (field === "ep" && config.routedExpert % value !== 0) return false;
+    return true;
+  }
+
+  function nearestDivisorNode(totalRank, preferred) {
+    let node = Math.min(preferred, totalRank, FIELD_SPECS.node.max);
+    while (node > FIELD_SPECS.node.min && totalRank % node !== 0) node = Math.floor(node / 2);
+    return Math.max(FIELD_SPECS.node.min, node);
+  }
+
+  function fitParallelWorld(config, target, anchor) {
+    const candidates = ["dp", "ep", "tp", "cp", "pp"].filter((field) => field !== anchor);
+
+    // 常见的 Rank ±2 倍只需改一个并行维度；优先 DP，避免扰动模型切分。
+    for (const field of candidates) {
+      const otherProduct = parallelWorld(config) / config[field];
+      const value = target / otherProduct;
+      if (isAllowedParallelValue(field, value, config)) {
+        config[field] = value;
+        return;
+      }
+    }
+
+    // 单字段无法容纳时，再按优先级逐级配平；所有 stepper 都是 2 的幂，
+    // 因而在字段范围允许时可精确收敛到目标值。
+    let world = parallelWorld(config);
+    const direction = target > world ? 2 : 0.5;
+    while (world !== target) {
+      const field = candidates.find((name) => {
+        const next = config[name] * direction;
+        return isAllowedParallelValue(name, next, config)
+          && (direction > 1 ? world * direction <= target : world * direction >= target);
+      });
+      if (!field) break;
+      config[field] *= direction;
+      world = parallelWorld(config);
+    }
+  }
+
+  function reconcile(config, anchor) {
+    // 模型结构约束：锚点不回退，调整与它直接相依的字段。
+    if (config.totalLayer < config.pp) {
+      if (anchor === "totalLayer") {
+        while (config.pp > config.totalLayer) config.pp = Math.max(1, Math.floor(config.pp / 2));
+      } else {
+        config.totalLayer = config.pp;
+      }
+    }
+
+    if (config.topK > config.routedExpert) {
+      if (anchor === "topK") {
+        while (config.routedExpert < config.topK) config.routedExpert *= 2;
+      } else {
+        config.topK = config.routedExpert;
+      }
+    }
+
+    if (config.routedExpert % config.ep !== 0) {
+      if (anchor === "ep") {
+        while (config.routedExpert < config.ep) config.routedExpert *= 2;
+      } else {
+        while (config.ep > config.routedExpert || config.routedExpert % config.ep !== 0) {
+          config.ep = Math.max(1, Math.floor(config.ep / 2));
+        }
+      }
+    }
+
+    if (anchor === "totalRank") {
+      fitParallelWorld(config, config.totalRank, anchor);
+    } else if (anchor === "node" && config.node > parallelWorld(config)) {
+      fitParallelWorld(config, config.node, anchor);
+      config.totalRank = parallelWorld(config);
+    } else {
+      let world = parallelWorld(config);
+      const maxRank = FIELD_SPECS.totalRank.max;
+      if (world > maxRank) {
+        fitParallelWorld(config, maxRank, anchor);
+        world = parallelWorld(config);
+      }
+      config.totalRank = world;
+    }
+
+    // Node 是集群展示维度：能沿用就不动，不能整除时取不大于原值的最近合法节点数。
+    config.node = nearestDivisorNode(config.totalRank, config.node);
+  }
+
   /* ── 派生：把配置展开成四个视图共用的实体表 ───────────────────────────── */
   function derive(config) {
     const preset = MODEL_PRESETS[config.model] || MODEL_PRESETS["openpangu-flash"];
@@ -166,6 +264,15 @@
       return ranksOfStage(stageOfLayer[layerIndex]);
     }
 
+    function ranksOfLayerInDp(layerIndex, dpIdx = 0) {
+      const stage = stageOfLayer[layerIndex];
+      const safeDpIdx = Math.max(0, Math.min(dp - 1, dpIdx));
+      const out = [];
+      const start = rankOf(stage, safeDpIdx, 0);
+      for (let i = 0; i < ranksPerDp; i += 1) out.push(start + i);
+      return out;
+    }
+
     /* 某层里某个专家实际落在哪些 rank 上：该层所在 stage × 全部 DP 副本 × 该专家的 EP rank */
     function ranksOfExpertInLayer(layerIndex, expert) {
       const stage = stageOfLayer[layerIndex];
@@ -218,7 +325,8 @@
       epRankOfExpert,
       expertsOfEpRank: (p) => (epRanks[p] ? epRanks[p].experts : []),
       rankOf, nodeOfRank, coordsOfRank,
-      ranksOfStage, ranksOfLayer, ranksOfExpertInLayer, ranksOfEpRankInStage, nodesOfRanks,
+      ranksOfStage, ranksOfLayer, ranksOfLayerInDp,
+      ranksOfExpertInLayer, ranksOfEpRankInStage, nodesOfRanks,
     };
   }
 
@@ -270,6 +378,7 @@
     const config = Object.assign({ model: modelId }, MODEL_PRESETS[modelId].defaults, options.config);
     const readouts = new Map();
     const wraps = new Map();
+    const linkedHighlightTimers = new Map();
     const listeners = [];
 
     function mount(container, group) {
@@ -283,16 +392,40 @@
       });
     }
 
+    function highlightLinkedChanges(before, anchor) {
+      Object.keys(FIELD_SPECS).forEach((field) => {
+        if (field === anchor || before[field] === config[field]) return;
+        const wrap = wraps.get(field);
+        if (!wrap) return;
+
+        clearTimeout(linkedHighlightTimers.get(field));
+        // 先移除并触发布局，再加回 class，使连续联动也能重新播放 3 秒提示。
+        wrap.classList.remove("is-auto-adjusted");
+        void wrap.offsetWidth;
+        wrap.classList.add("is-auto-adjusted");
+        linkedHighlightTimers.set(field, setTimeout(() => {
+          wrap.classList.remove("is-auto-adjusted");
+          linkedHighlightTimers.delete(field);
+        }, 3000));
+      });
+    }
+
     function apply(field, direction) {
       const next = stepValue(field, config[field], direction);
       if (next === config[field]) return;
+      const before = { ...config };
       config[field] = next;
+      reconcile(config, field);
+      highlightLinkedChanges(before, field);
       emit();
     }
 
     function set(field, value) {
       if (config[field] === value) return;
+      const before = { ...config };
       config[field] = value;
+      reconcile(config, field);
+      highlightLinkedChanges(before, field);
       emit();
     }
 
@@ -363,6 +496,7 @@
   function createDeck(hostId, options = {}) {
     const host = document.getElementById(hostId);
     if (!host || !global.PtoModelArchitecture3dDeck) return null;
+    const initialPanY = -18; // 正视图视觉重心略偏下，本页默认上移少许，免去每次手拖。
     let controller = null;
     let signature = null;
     let muted = false;   // applyRelation 回写 deck 时，屏蔽它的回调，避免自激
@@ -381,6 +515,7 @@
         // 整网图 → 其余三个视图的反查入口
         onNodeSelect: (selected) => { if (!muted) options.onNodeSelect?.(selected); },
       });
+      controller.setPose?.({ panY: initialPanY });
       global.croDeckController = controller;
       return controller;
     }
@@ -1244,7 +1379,9 @@
         const layer = topology.layers[payload.layer];
         rel.segment = layer.ffn;
         if (layer.ffn === "moe") { allRoutedExperts(); allEpRanks(); allShared(); }
-        addRanks(topology.ranksOfLayer(payload.layer));
+        addRanks(Number.isFinite(payload.dpIdx)
+          ? topology.ranksOfLayerInDp(payload.layer, payload.dpIdx)
+          : topology.ranksOfLayer(payload.layer));
         break;
       }
       case "stage": {
@@ -1725,6 +1862,7 @@
     validate,
     derive,
     stepValue,
+    reconcile,
     createController,
     deckConfigFrom,
     structureColumns,
@@ -1926,11 +2064,44 @@
     const linkLayer = document.getElementById("croLinkLayer");
     let relation = null;
     let incidentRootAnchor = null;
+    let railLayoutTimer = 0;
+    let layerDpScope = "single";
+    let incidentDpHint = 0;
+
+    function firstIncidentDp(event, topology) {
+      for (const role of ["origin", "context", "propagation", "victim"]) {
+        const ranks = event?.[role]?.ranks;
+        if (!Array.isArray(ranks)) continue;
+        const rank = ranks.find(Number.isFinite);
+        if (Number.isFinite(rank)) return topology.coordsOfRank(rank).dpIdx;
+      }
+      return 0;
+    }
+
+    function scopeLayerPayload(payload) {
+      if (!payload || payload.kind !== "layer") return payload;
+      const scoped = { ...payload };
+      if (layerDpScope === "single") scoped.dpIdx = incidentDpHint;
+      else delete scoped.dpIdx;
+      return scoped;
+    }
+
+    /* 单 DP / 所有 DP 是**静态查询口径**：没有事件上下文时，「点一层要牵出哪些
+       rank」本身是欠定的，得让用户选查一个 DP 副本还是全部。
+       运行事件模式下这个口径不成立 —— 关系集由 addIncidentScope 按本次采样的
+       实际范围重建（origin/propagation/victim 里写死的 ranks），静态口径整个被
+       覆盖掉，切它不会改变任何高亮。留一个点了没反应的开关，等于告诉用户此刻
+       看到的 rank 范围是可调的，而它恰恰是实测值。所以直接收起。 */
+    function syncDpScope() {
+      document.getElementById("croDpScope")?.toggleAttribute("hidden", Boolean(activeIncident));
+    }
 
     function emitSelect(payload) {
       const topology = controller.topology;
+      payload = scopeLayerPayload(payload);
       if (!payload?.incidentId) {
         activeIncident = null;
+        syncDpScope();
         paintIncidentRoles(null, topology);
         document.querySelectorAll(".cro-event").forEach((button) => {
           button.classList.remove("is-selected");
@@ -1970,6 +2141,26 @@
     function redrawLinks() {
       drawRelationLinks(linkLayer, relation);
       updateRootTag();
+    }
+
+    let rankCellMap = new Map();
+    let rankCellMapHost = null;
+    let rankCellMapFirst = null;
+    let paintedRankCells = new Set();
+    let paintedSelectedRankCell = null;
+
+    function currentRankCellMap() {
+      const host = document.getElementById("croHeat");
+      const cells = host?.querySelectorAll(".twin-heat-cell") || [];
+      // Cluster 在配置变化时会整体重建；只在宿主或子节点数量变化时重建索引。
+      if (host !== rankCellMapHost || cells.length !== rankCellMap.size || cells[0] !== rankCellMapFirst) {
+        rankCellMapHost = host;
+        rankCellMapFirst = cells[0] || null;
+        rankCellMap = new Map(Array.from(cells, (cell) => [Number(cell.dataset.rank), cell]));
+        paintedRankCells = new Set();
+        paintedSelectedRankCell = null;
+      }
+      return rankCellMap;
     }
 
     /* 把关系集铺到四个视图。selected = 用户点中的那一个，related = 被它牵连出来的。
@@ -2059,12 +2250,25 @@
       });
 
       // ── 集群 ──
-      document.querySelectorAll("#croHeat .twin-heat-cell").forEach((cell) => {
-        const r = Number(cell.dataset.rank);
-        const selected = Boolean(p) && p.kind === "rank" && r === p.rank;
-        cell.classList.toggle("is-selected", selected);
-        cell.classList.toggle("is-related", !selected && has("ranks", r));
-      });
+      const cellsByRank = currentRankCellMap();
+      paintedRankCells.forEach((cell) => cell.classList.remove("is-related"));
+      paintedRankCells.clear();
+      paintedSelectedRankCell?.classList.remove("is-selected");
+      paintedSelectedRankCell = null;
+
+      if (rel) {
+        rel.ranks.forEach((rank) => {
+          const cell = cellsByRank.get(rank);
+          if (!cell) return;
+          if (p?.kind === "rank" && rank === p.rank) {
+            cell.classList.add("is-selected");
+            paintedSelectedRankCell = cell;
+          } else {
+            cell.classList.add("is-related");
+            paintedRankCells.add(cell);
+          }
+        });
+      }
 
       // ── 整网 deck（回写时静音它的 onNodeSelect，否则会自激成死循环）──
       deck?.silently((api) => {
@@ -2195,7 +2399,9 @@
 
     function selectIncident(event) {
       activeIncident = event;
+      syncDpScope();
       const topology = controller.topology;
+      incidentDpHint = firstIncidentDp(event, topology);
       relation = addIncidentScope(resolveRelation(topology, { ...event.focus, incidentId: event.id }), event, topology);
       applyRelation(relation);
       paintIncidentRoles(event, topology);
@@ -2268,7 +2474,13 @@
       } else {
         selectIncident(INCIDENT_GROUPS[0].events[0]);
       }
-      requestAnimationFrame(redrawLinks);
+      // 侧栏宽度不再走过渡（见 css 里 .cro-event-rail 的说明），class 翻转后
+      // 宽度即已确定。下一帧读一次几何就够，不必再等一个动画时长。
+      cancelAnimationFrame(railLayoutTimer);
+      railLayoutTimer = requestAnimationFrame(() => {
+        layoutLayerNav(layerNav);
+        redrawLinks();
+      });
     }
 
     controller.onChange((topology) => {
@@ -2291,8 +2503,8 @@
     if (layerNav && global.ResizeObserver) {
       let pending = 0;
       new ResizeObserver(() => {
-        cancelAnimationFrame(pending);
-        pending = requestAnimationFrame(() => layoutLayerNav(layerNav));
+        clearTimeout(pending);
+        pending = setTimeout(() => layoutLayerNav(layerNav), 48);
       }).observe(layerNav);
     }
     // 主题切换会重算 deck 调色板，重新搬一次
@@ -2325,7 +2537,12 @@
       // 运行事件是一次显式调查上下文：点击画布空白不应误退出。只有横幅关闭键
       // 或其他可响应对象触发新的选择时，才结束当前事件关系。
       if (activeIncident) {
-        if (event.target.closest?.(".cro-event")) return;
+        // 整条运行事件栏都不算「离开当前事件」：除了事件条目本身，分组标题
+        // （.cro-event-group__toggle）和收起键也都是 <button>，只判 .cro-event
+        // 会让它们掉进下面那条通用 button 分支 —— 点一下展开箭头就白跑一整轮
+        // applyRelation（2048 格 + 256 专家）＋ deck 反选 ＋ 连线重画 ＋ 横幅
+        // 收起（又改变 board 高度再触发一次全量重排）。
+        if (event.target.closest?.(".cro-event-rail")) return;
         if (event.target.closest?.("button, select, input, [role='button']")) clearSelection();
         return;
       }
@@ -2337,6 +2554,23 @@
     global.croSelect = emitSelect;
     global.croSelectIncident = selectIncident;
     renderIncidentRail();
+    document.getElementById("croDpScope")?.addEventListener("click", (event) => {
+      const button = event.target.closest?.("[data-dp-scope]");
+      if (!button) return;
+      event.stopPropagation();
+      const nextScope = button.dataset.dpScope === "all" ? "all" : "single";
+      if (nextScope === layerDpScope) return;
+      layerDpScope = nextScope;
+      document.querySelectorAll("#croDpScope [data-dp-scope]").forEach((item) => {
+        const selected = item.dataset.dpScope === layerDpScope;
+        item.classList.toggle("is-selected", selected);
+        item.setAttribute("aria-pressed", String(selected));
+      });
+      // 事件关系展示的是采样到的实际范围，不受静态 Layer 查询口径影响。
+      if (!activeIncident && relation?.primary?.kind === "layer") {
+        emitSelect({ ...relation.primary });
+      }
+    });
     document.getElementById("croEventRailCollapse")?.addEventListener("click", () => setEventRailCollapsed(true));
     document.getElementById("croEventRailExpand")?.addEventListener("click", () => setEventRailCollapsed(false));
     document.getElementById("croIncidentBannerClose")?.addEventListener("click", clearSelection);
