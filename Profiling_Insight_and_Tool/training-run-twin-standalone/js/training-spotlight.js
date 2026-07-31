@@ -271,12 +271,17 @@
     guideToggleBtn.appendChild(guideToggleTrack);
     guideToggleBtn.appendChild(h("span", "tw-spot__guide-label", "定位链指引"));
     guideToggleBtn.addEventListener("click", toggleGuide);
+    // 「到性能调优工具查看」→ 与抽屉抬头上同一个入口（#locateDrawerProfilingLink）；
+    // 目前只有问题一（mem-oom）在性能调优工具里有对应视图，其余问题由 applyCase 藏掉
+    var profilingLink = h("a", "btn btn-ghost btn-sm");
+    profilingLink.target = "_blank"; profilingLink.rel = "noopener";
+    profilingLink.textContent = "到性能调优工具查看"; profilingLink.style.fontSize = "11px";
     // 「详情」→ 该问题的定位链长文抽屉；没有长文的问题由 applyCase 把按钮藏掉
     var detailBtn = h("button", "btn btn-ghost btn-sm"); detailBtn.type = "button"; detailBtn.textContent = "详情"; detailBtn.style.fontSize = "11px";
     detailBtn.addEventListener("click", openDetail);
     var closeBtn = h("button", "pto-ide-frame__window-action"); closeBtn.type = "button"; closeBtn.title = "退出聚光灯，回到最新 step"; closeBtn.setAttribute("aria-label", "退出聚光灯"); closeBtn.innerHTML = "&#10005;";
     closeBtn.addEventListener("click", exit);
-    actions.appendChild(guideToggleBtn); actions.appendChild(detailBtn); actions.appendChild(closeBtn);
+    actions.appendChild(guideToggleBtn); actions.appendChild(profilingLink); actions.appendChild(detailBtn); actions.appendChild(closeBtn);
     card.appendChild(kicker); card.appendChild(title); card.appendChild(tags); card.appendChild(actions);
 
     // 步进导轨（内容由 applyCase 填）
@@ -323,7 +328,7 @@
       rail: rail, stepEls: [], arrowEls: [], callout: callout,
       fixes: fixes, fixesSub: fixesSub, fixesBody: fbody, fixEls: [],
       nav: nav, prev: prev, next: next, count: count,
-      guideToggleBtn: guideToggleBtn, detailBtn: detailBtn,
+      guideToggleBtn: guideToggleBtn, detailBtn: detailBtn, profilingLink: profilingLink,
       kickerText: kickerText, sev: sev, title: title, tags: tags,
     };
     return els;
@@ -346,6 +351,12 @@
     });
     // 该问题的定位链长文还没落地时,「详情」按钮没有去处 —— 直接藏掉,不给死链
     e.detailBtn.hidden = !(window.hasLocateDrawer && window.hasLocateDrawer(key));
+    // 「到性能调优工具查看」目标页与抽屉抬头入口保持一致,只对问题一(mem-oom)开放
+    if (e.profilingLink) {
+      var pBase = window.PTO_BASE_PREFIX || "../../";
+      e.profilingLink.href = pBase + "Profiling_Insight_and_Tool/AI_Profiling_Tool/index_v3.html?issue=mem-oom&tab=memory";
+      e.profilingLink.hidden = key !== "mem-oom";
+    }
 
     // 步进导轨：相邻步之间插入箭头，强化「链路」观感；箭头随 go() 同步点亮已走过的一段
     e.rail.innerHTML = "";

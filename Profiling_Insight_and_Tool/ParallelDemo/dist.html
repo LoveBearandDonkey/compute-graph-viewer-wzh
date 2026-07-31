@@ -25,7 +25,7 @@
 
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>并行训练可视化 Demo</title>
+<title>Transformer 并行训练关系可视化</title>
 <style>
   /* ── PTO Design System Tokens (inlined) ── */
   :root {
@@ -269,7 +269,9 @@
   /* 带内强调词（无 all-to-all / 不跨 DP …）与正文同字号同色，只靠字重区分 */
   .moe-band b,.moe-hdr b{font-size:8.5px;color:inherit}
   .moe-step{display:inline-flex;align-items:center;justify-content:center;font-size:9px;flex-shrink:0;opacity:.75}
-  .moe-sel-hint{margin-left:auto;font-size:8px;color:var(--danger);font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  /* 相位统计文案：已移进 .moe-gate-topk 的定高行里（原来放在 .moe-gate-lab 这个 flex 行中，
+     它一变长就把标题文字挤到换行 → ① 带变高 → 连线错位）。这里只管字体色，尺寸由 .gk-r 定死。 */
+  .moe-sel-hint{color:var(--danger);font-weight:700}
   /* ③ 计算带：改为纵向容器，向下包住专家头像 */
   .moe-band-compute{flex-direction:column;align-items:stretch;gap:4px}
   .moe-compute-lab{display:flex;align-items:center;gap:4px}
@@ -286,12 +288,37 @@
   /* ⓪ token 带：本卡自己的 token（抽样示意）—— top-k 是「每个 token 各选 k 个」，不是每卡/每组选一次 */
   .moe-band-tok{flex-wrap:wrap}
   .moe-tok-strip{display:flex;gap:2px;margin-left:auto;flex-shrink:0}
-  .moe-tok{width:9px;height:9px;border-radius:2px;border:1px solid var(--border-strong);background:rgba(255,255,255,.04);transition:background .25s,border-color .25s,box-shadow .25s}
+  .moe-tok{width:9px;height:9px;border-radius:2px;border:1px solid var(--border-strong);background:rgba(255,255,255,.04);transition:background .25s,border-color .25s,box-shadow .25s,transform .25s,opacity .25s}
   .moe-tok.on{background:rgba(255,170,59,.6);border-color:var(--warning);box-shadow:0 0 4px rgba(255,170,59,.5)}
+  /* 聚焦的样例 token：本相位专门演示「它自己恰好选 k 个」 */
+  .moe-tok.moe-tok-focus{background:var(--danger);border-color:var(--danger);transform:scale(1.35);box-shadow:0 0 0 2px rgba(255,75,123,.3),0 0 6px rgba(255,75,123,.8)}
+  .moe-tok.moe-tok-dim{opacity:.28}
   /* Router 打分是「本地、零通讯」：探测线只画在卡内，band 下方标注说明（故 gate 带改纵向） */
-  .moe-band-gate{flex-direction:column;align-items:stretch;gap:2px}
-  .moe-gate-lab{display:flex;align-items:center;gap:4px;min-width:0}
+  /* ① 带的几何必须完全恒定：Router 带 → 专家头像的连线坐标是画的那一刻算死的，
+     这条带子一旦变高或变宽，下面的头像整体位移，已画的线立刻指不到头上。
+     ⒜ .moe-gate-lab 改成单行 nowrap 定高 —— 原来是 flex 行，里面那段标题文字可以内部换行，
+        统计文案一变长就把它挤成 2~3 行，这就是「高度在变」的主因；
+     ⒝ 所有逐相位变化的文字统统关进 .moe-gate-topk，并 position:absolute —— 既不占高度
+        （高度由 padding-bottom 预留），也**完全不参与卡片固有宽度计算**，
+        这对 Pangu 视图很关键：.pangu-view .wdiag-card 是 flex:0 0 auto，按内容定宽，
+        在流内的 nowrap 长文本会真的把卡片撑宽（这就是「宽度也在变」的来源）。 */
+  .moe-band-gate{flex-direction:column;align-items:stretch;gap:2px;padding-bottom:37px}
+  .moe-gate-lab{display:block;height:13px;line-height:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
   .moe-gate-note{font-size:7.5px;color:var(--foreground-muted);opacity:.85;line-height:1.35;white-space:normal;padding:0 1px}
+  /* top-k 明细行：把「恰好 k 个」写死成可数的 chip —— 这是 top-k 的硬约束所在 */
+  /* top-k 明细行：**高度写死 2 行 = 22px**，不随相位文字长短变化。
+     原因：Router 带 → 专家头像的 SVG 连线，坐标是「画的那一刻」算死写进 path 的 d 属性的；
+     只要这块文字把盒子撑高/缩矮，下面的头像就会整体位移，已经画好的线立刻对不上头像。
+     所以两行各 11px 定高，超长内容用横向滚动（第 1 行）或省略号（第 2 行）消化，完整内容进 tooltip。 */
+  .moe-gate-topk{position:absolute;left:5px;right:5px;bottom:2px;height:33px;font-size:7.5px;color:var(--foreground-secondary);overflow:hidden;cursor:help;z-index:3}
+  .moe-gate-topk .gk-r{height:11px;line-height:11px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .moe-gate-topk .gk-r1{overflow-x:auto;overflow-y:hidden;text-overflow:clip;scrollbar-width:none}
+  .moe-gate-topk .gk-r1::-webkit-scrollbar{display:none}
+  .moe-gate-topk .gk-lab{color:var(--foreground-muted)}
+  .moe-gate-topk .gk-e{display:inline-block;vertical-align:top;font-family:var(--font-mono);font-weight:700;font-size:7px;line-height:9px;border-radius:2px;padding:0 2px;margin:0 1px;border:1px solid}
+  .moe-gate-topk .gk-loc{color:var(--danger);border-color:rgba(255,75,123,.6);background:rgba(255,75,123,.14)}
+  .moe-gate-topk .gk-rem{color:var(--dv-purple);border-color:rgba(155,123,255,.6);background:rgba(155,123,255,.14)}
+  .moe-gate-topk .gk-k{font-weight:700;color:var(--danger)}
   /* 共享专家：常开、不参与路由、也不进 A2A（DeepSeek-V3 / Pangu 口径） */
   .moe-exp-shared{opacity:1;filter:none}
   .moe-exp-shared img{border-color:rgba(4,215,147,.85)}
@@ -314,9 +341,15 @@
   .moe-curve{fill:none;stroke-linecap:round;stroke-width:1.3;opacity:.8}
   .moe-curve-local-d,.moe-curve-remote-d{stroke:#f5b74a}
   .moe-curve-local-c,.moe-curve-remote-c{stroke:#f5b74a}
-  /* Router 打分探测线：先连本卡全部专家（黄），未命中的淡出到 50% 且变灰表示不匹配 */
-  .moe-curve-gate{stroke:#f5b74a;stroke-width:1.2;opacity:1;transition:opacity .3s ease,stroke .3s ease}
-  .moe-curve-gate.moe-curve-dim{stroke:#8a8f99;opacity:.5}
+  /* Router 打分探测线：先连本卡全部专家（黄）＝「对每个专家都打分」；随后只有中选的 k 条留亮 */
+  .moe-curve-gate{stroke:#f5b74a;stroke-width:1.2;opacity:1;transition:opacity .3s ease,stroke .3s ease,stroke-width .3s ease}
+  .moe-curve-gate.moe-curve-dim{stroke:#8a8f99;opacity:.35}
+  /* 中选线：样例 token 的 top-k 里落在本卡的那几条（数得出来 = k − 远端个数） */
+  .moe-curve-gate.moe-curve-topk{stroke:var(--danger);stroke-width:2.2;opacity:1}
+  /* 专家头像右上角徽标：本卡这批抽样 token 里有几个落到它 —— 每 token 恒选 k 个，落点却不均 */
+  .moe-exp-cnt{position:absolute;top:-4px;right:-5px;min-width:10px;height:10px;padding:0 1.5px;border-radius:5px;background:var(--danger);color:#fff;font-family:var(--font-mono);font-size:6.5px;font-weight:700;line-height:10px;text-align:center;border:1px solid var(--card);cursor:help;transition:background .3s ease}
+  /* 紫色 = 这个数里含 a2a 从其它 EP 卡送来的 token（② Dispatch 之后才可能出现） */
+  .moe-exp-cnt.moe-cnt-in{background:var(--dv-purple)}
   /* 已完成的连线：不清除，保留显示并淡到 30%（直到 logits/loss 完成后统一清空整 step 连线） */
   .moe-curve-done{opacity:.3!important;transition:opacity .4s ease}
   /* 本 step 各专家计算次数条（拓扑标题栏，播放按钮左侧） */
@@ -327,6 +360,9 @@
   .mcb-exp img{width:15px;height:15px;border-radius:50%;border:1px solid var(--border-strong);object-fit:cover;background:var(--surface-3);display:block}
   .mcb-n{font-family:var(--font-mono);font-weight:700;color:var(--danger);min-width:12px;text-align:left}
   .mcb-n.mcb-zero{color:var(--foreground-muted);font-weight:400}
+  /* top-k 守恒式：Σ 路由激活次数 恒 ＝ token 数 × k（共享专家不占 k 的名额，故不计入） */
+  .mcb-sum{flex-shrink:0;font-size:9.5px;font-family:var(--font-mono);color:var(--foreground-secondary);border-left:1px solid var(--border-subtle);padding-left:6px;margin-left:2px}
+  .mcb-sum b{color:var(--danger)}
   /* soften outer flow-anim glow so it reads as "flow reached here", not a full green fill */
   .moe-mega.af{background:rgba(255,75,123,.09)!important;border-color:rgba(4,215,147,.7)!important;color:var(--danger)!important;box-shadow:0 0 7px rgba(4,215,147,.4)!important}
 
@@ -617,12 +653,15 @@
       <path d="M3.5 6.5V14H12.5V6.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
     </svg>
   </a>
-  <h1>🧩 并行训练可视化 Demo</h1>
-  <div class="lib-tabs" id="libTabs">
-    <button class="lib-tab on" data-lib="picotron">Transformer</button>
-    <button class="lib-tab" data-lib="pangu">Pangu 718B MoE</button>
-    <button class="lib-tab" data-lib="pytorch-cifar">CNN</button>
-  </div>
+  <h1>🧩 Transformer 并行训练关系可视化</h1>
+  <!-- 一级导航（Transformer / Pangu 718B MoE / CNN 的切换胶囊）已下线：本页只保留 Transformer 视图。
+       currentLib 固定为 'picotron'，isPangu()/isCNN() 恒为 false，两条支路的代码保持休眠但完好，
+       将来要恢复入口，把下面这段 markup 放回来即可（CSS .lib-tabs/.lib-tab 与切换逻辑都还在）：
+       <div class="lib-tabs" id="libTabs">
+         <button class="lib-tab on" data-lib="picotron">Transformer</button>
+         <button class="lib-tab" data-lib="pangu">Pangu 718B MoE</button>
+         <button class="lib-tab" data-lib="pytorch-cifar">CNN</button>
+       </div> -->
   <span class="sub" id="headerSub">基于 huggingface/picotron 真实逻辑</span>
 </header>
 <div class="app">
@@ -682,8 +721,9 @@
         <div id="ctrlEPX" style="display:none">
           <div class="row" id="sharedRow"><label><span class="switch"><input type="checkbox" id="enShared"><span class="switch-slider"></span></span> 共享专家（常开·不路由）</label></div>
           <div class="para-hint" id="hintShared"></div>
-          <div class="slabel" id="topkRow"><span>Top-k · 每 token 激活专家</span><b id="vTopk">2</b></div>
+          <div class="slabel" id="topkRow"><span>Top-k · 每 token <b>每层</b>激活专家</span><b id="vTopk">2</b></div>
           <input type="range" id="topk" min="1" max="8" step="1" value="2">
+          <div class="para-hint" id="hintTopk"></div>
           <div class="slabel" id="seqRow"><span>序列长 L · tokens/样本</span><b id="vSeq">2048</b></div>
           <input type="range" id="seq" min="512" max="8192" step="512" value="2048">
           <div id="commCompare"></div>
@@ -1131,7 +1171,14 @@ function readState(){
   // EP 在副本内沿 TP 切。两个表单（组个数 / 组大小）是同一个自由度，由 EP_PIN 决定听谁的；
   // 用户没显式选过时跟随 TP —— 即业界常用的「每副本 1 个 EP 组、组大小 = TP」。
   state.ep=state.enMoE?_resolveEP():1;
-  state.topk=+$('topk').value; state.seq=+$('seq').value; state.etp=state.enMoE?_resolveETP():false;
+  // top-k 是「每个 token 恰好激活 k 个路由专家」的硬约束 → k 必须落在 1..E，
+  // 否则面板显示 top-8 而示意图只能点亮 2 个，数目对不上。这里统一夹紧，并把滑杆上界同步到 E。
+  {
+    const tk=$('topk'), maxK=Math.min(+tk.max||8, state.experts);
+    if(+tk.value>maxK) tk.value=maxK;
+    state.topk=Math.max(1,Math.min(+tk.value, state.experts));
+  }
+  state.seq=+$('seq').value; state.etp=state.enMoE?_resolveETP():false;
   // 共享专家：常开（每个 token 都过），不参与 router 打分、不进 all-to-all；按 dense MLP 口径随 TP 切、跨 EP 复制
   state.shared=($('enShared')&&$('enShared').checked)?1:0;
   const tile=document.querySelector('.card-tile.selected'); state.cardType=tile?tile.dataset.name:'NVIDIA H100 80GB'; state.cardGB=tile?+tile.dataset.gb:80;
@@ -1401,8 +1448,13 @@ function moeMegaHTML(bi,p,t,d,c){
     + `<div class="moe-hdr">${TENSOR_ICON}MoE-${bi} · ${holdTxt}</div>`
     + `<div class="moe-band moe-band-tok"><span class="moe-step">⓪</span>本卡 token ${fmtTok(tokN)} 个${tp>1?`（SP：副本 ${fmtTok(tokRep)} 的 1/${tp}）`:''}·抽样 ${MOE_TOK_SHOWN}<span class="moe-tok-strip">${tokStrip}</span></div>`
     + `<div class="moe-band moe-band-gate">`
-    + `<div class="moe-gate-lab"><span class="moe-step">①</span>Router 打分 · 每 token 各选 top-${k}<span class="moe-sel-hint"></span></div>`
-    + `<div class="moe-gate-note">本地计算、零通讯：router 权重 H×${E} 每卡复制，对全部 ${E} 个专家打分（故探测线只在卡内）</div></div>`
+    + `<div class="moe-gate-lab"><span class="moe-step">①</span>本层 Router 打分 · 每个 token <b>恰好</b>选 ${k}/${E}</div>`
+    + `<div class="moe-gate-note">本地计算、零通讯：本层 router 权重 H×${E} 每卡复制，对<b>本层</b>全部 ${E} 个专家打分、取最高的 ${k} 个${state.shared?'（共享专家不参与打分，不占 k 的名额）':''}；下一个 MoE 层由它自己的 router 重新选一次（故探测线只在卡内）</div>`
+    // 三行定高、绝对定位的容器：本带里所有逐相位变化的文字都在这里面，
+    // 从首次渲染就占满 33px，后续只换文字 —— 高度、宽度均不受影响，连线坐标恒定有效
+    + `<div class="moe-gate-topk">`
+    +   `<div class="gk-r gk-r0"><span class="moe-sel-hint"></span></div>`
+    +   `<div class="gk-r gk-r1"></div><div class="gk-r gk-r2"></div></div></div>`
     + `<div class="moe-band moe-band-dispatch"><span class="moe-step">②</span>`
     + (a2a?`A2A Dispatch · 重排后发给<b>本副本内</b>的 ${ep} 张 EP 卡（各卡收发量不等，<b>不跨 DP</b>）`:`本地 permute · EP=1，专家都在本卡，<b>无 all-to-all</b>`)
     + `</div>`
@@ -1417,27 +1469,37 @@ function moeMegaHTML(bi,p,t,d,c){
 // 换选 top-k 专家，依次 Router①→Dispatch②(画分发线,含跨卡)→计算③→Combine④(画回收线)。
 let _moeTimers=[], _moeCycle=0, _moeGateLines=[];
 let _moeCounts={};   // 各专家累计接收的（抽样）token 数；跨 step 累计，刷新页面或改配置才清零
+let _moeTokTotal=0;  // 累计路由过的（抽样）token 数 —— 用于展示 top-k 守恒式 Σ 激活次数 = token 数 × k
 // 重建标题栏「各专家累计接收 token 数」列表（专家数/模式变化时调用）
 function renderMoeCountBar(){
   const bar=$('moeCountBar'); if(!bar) return;
   if(!state.enMoE || (typeof isPangu==='function'&&isPangu()) || (typeof isCNN==='function'&&isCNN())){ bar.innerHTML=''; return; }
   const E=state.experts;
-  let h='<span class="mcb-lab" title="每个 token 各自选 top-k，所以专家收到的 token 数天然不均 —— 这就是负载均衡 aux loss / capacity factor 要解决的问题">各专家累计接收 token 数（抽样）：</span>';
+  let h='<span class="mcb-lab" title="每个 token 恰好选 k 个，但选谁由分数决定 —— 所以各专家收到的 token 数天然不均，这就是负载均衡 aux loss / capacity factor 要解决的问题">各专家累计接收 token 数（抽样）：</span>';
   for(let i=0;i<E;i++){
     const img=(i%10)+1, n=_moeCounts[i]||0;
     h+=`<span class="mcb-exp" title="路由专家 E${i}"><img src="images/${img}.png" alt="E${i}" loading="lazy"><b class="mcb-n${n?'':' mcb-zero'}" data-key="${i}">：${n}</b></span>`;
   }
   if(state.shared){
     const n=_moeCounts.S||0;
-    h+=`<span class="mcb-exp mcb-shared" title="共享专家：每个 token 都过，恒等于 token 总数"><img src="data:image/png;base64,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" alt="Shared" loading="lazy"><b class="mcb-n${n?'':' mcb-zero'}" data-key="S">：${n}</b></span>`;
+    h+=`<span class="mcb-exp mcb-shared" title="共享专家：每个 token 都过，恒等于 token 总数；它不参与 router 打分，也不占 top-k 的名额"><img src="data:image/png;base64,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" alt="Shared" loading="lazy"><b class="mcb-n${n?'':' mcb-zero'}" data-key="S">：${n}</b></span>`;
   }
-  bar.innerHTML=h;
+  // top-k 守恒式：上面这排数字加起来必然 = 路由过的 token 数 × k（共享专家不计入）
+  h+='<span class="mcb-sum" id="mcbSum" title="top-k 是硬约束：每个 token 在每个 MoE 层各恰好激活 k 个路由专家，所以总激活次数恒等于（token×层×卡 的路由次数）× k。数字分布不均，但总量分毫不差。"></span>';
+  bar.innerHTML=h; _moeUpdateCountBar();
 }
 function _moeUpdateCountBar(){
   const bar=$('moeCountBar'); if(!bar) return;
   bar.querySelectorAll('.mcb-n').forEach(el=>{ const n=_moeCounts[el.dataset.key]||0; el.textContent='：'+n; el.classList.toggle('mcb-zero', !n); });
+  const sum=$('mcbSum');
+  if(sum){
+    const k=Math.max(1,Math.min(state.topk,state.experts));
+    let tot=0; for(const key in _moeCounts) if(key!=='S') tot+=_moeCounts[key];
+    // _moeTokTotal 累计的是「token×层×卡」的路由次数：每张卡、每个 MoE 层各路由一次它自己的 token 分片
+    sum.innerHTML=`Σ ＝ <b>${tot}</b> ＝ ${_moeTokTotal} 次路由（token·层·卡）× top-<b>${k}</b>`;
+  }
 }
-function _moeResetCounts(){ _moeCounts={}; _moeUpdateCountBar(); }
+function _moeResetCounts(){ _moeCounts={}; _moeTokTotal=0; _moeUpdateCountBar(); }
 function _moeClearTimers(){ _moeTimers.forEach(t=>clearTimeout(t)); _moeTimers=[]; }
 function _moeAt(ms,fn){ _moeTimers.push(setTimeout(fn,ms)); }
 // 每层一份「专家亲和度」：同一层各卡共用同一份 router 权重，所以打分偏好一致。
@@ -1505,10 +1567,30 @@ function clearMoeAnim(){
   document.querySelectorAll('.moe-mega').forEach(box=>{
     box.classList.remove('moe-ph-gate','moe-ph-dispatch','moe-ph-compute','moe-ph-combine');
     box.querySelectorAll('.moe-exp').forEach(e=>e.classList.remove('moe-exp-sel'));
-    box.querySelectorAll('.moe-tok').forEach(e=>{ e.classList.remove('on'); e.removeAttribute('title'); });
+    box.querySelectorAll('.moe-exp-cnt').forEach(e=>e.remove());
+    box.querySelectorAll('.moe-tok').forEach(e=>{ e.classList.remove('on','moe-tok-focus','moe-tok-dim'); e.removeAttribute('title'); });
     const hint=box.querySelector('.moe-sel-hint'); if(hint) hint.textContent='';
-    box._moeSel=null; box._moeTok=null; box._moeCnt=null;
+    _moeGk(box,'','','');   // 只清文字，两行定高容器保留 → 高度不变
+    box._moeSel=null; box._moeTok=null; box._moeCnt=null; box._moeFocus=null;
   });
+}
+// 本卡持有的专家区间 [lo,hi]（EP 位 epr 的那一段）；ep=1 时即全部专家
+function _moeHold(box){ const perEP=+box.dataset.perep, lo=(+box.dataset.epr)*perEP; return {lo, hi:lo+perEP-1}; }
+// 写 top-k 明细行。只改这两行**已定高**容器里的文字，绝不新增/删除节点层级，
+// 因此各相位间盒子高度恒定，先前画好的 SVG 连线不会与专家头像错位。完整说明放 tooltip。
+function _moeGk(box,r1,r2,title){
+  const gk=box.querySelector('.moe-gate-topk'); if(!gk) return;
+  const a=gk.querySelector('.gk-r1'), b=gk.querySelector('.gk-r2');
+  if(a){ a.innerHTML=r1||''; a.scrollLeft=0; }
+  if(b) b.innerHTML=r2||'';
+  gk.title=title||'';
+}
+// 专家头像右上角的接收数徽标。hasRemote=true（紫）表示这个数里含 a2a 从其它 EP 卡送来的 token。
+function _moeBadge(av,n,hasRemote,title){
+  let b=av.querySelector('.moe-exp-cnt');
+  if(!b){ b=document.createElement('span'); b.className='moe-exp-cnt'; av.appendChild(b); }
+  b.textContent=n; b.title=title; b.classList.toggle('moe-cnt-in', !!hasRemote);
+  return b;
 }
 // ① Router：**每张卡**、**每个 token** 各自选一次 top-k。
 //   · 路由单位是 token：本卡这一步有 (batch/DP)×(L/CP)÷TP 个 token（MoE 与 SP 配合，
@@ -1520,12 +1602,17 @@ function clearMoeAnim(){
 //     所以探测线只画在卡内；跨卡连线只出现在 ②/④ 的 all-to-all，且**不跨 DP 框**。
 // 打分分三小步演示（3 个独立相位，纳入 _moeStep 状态机，暂停/恢复不丢步）：
 //   ①_moeGate      点亮抽样 token，并从 Router 带向**本卡持有的**专家连黄色打分探测线
-//   ②_moeGateDim   本卡未被任何 token 命中的专家，其探测线变灰、淡出到 50%
-//   ③_moeGateResult 探测线淡到 30% 保留、显示命中统计并点亮命中专家
+//                  ＝「对每个专家都打了分」，此时还没有任何取舍
+//   ②_moeGateTopk  **top-k 约束现场**：挑一个样例 token，只有它选中的 k 个留亮（红），
+//                  其余 E−k 个探测线全部灰化；明细行把这 k 个专家号逐个列出来，数目恒 = k
+//   ③_moeGateResult 回到整批视角：6 个 token 各选 k 个 → 6k 次激活、去重后触达 N 个专家，
+//                  每个专家头像挂上「收到几个 token」的徽标（k 恒定、落点不均 = 负载不均）
+// 实现上分两趟：**先把所有 DOM 写完，再统一测量画线**。混着做的话，给后面的卡写文字
+// 可能触发重排，而前面的卡已经按旧坐标把线画死了（path 的 d 一旦写入就不会再跟着元素动）。
 function _moeGate(boxes){
   _moeGateLines=[];   // 不清 SVG：上一层已完成的连线保留（淡显），本 step 持续累积
-  const rr=$('wdiagRoot').getBoundingClientRect();
   const affCache={}, routeCache={};
+  // ── 第 1 趟：只写 DOM，不读任何几何 ──
   boxes.forEach(box=>{
     const E=+box.dataset.e, k=+box.dataset.k;
     // 同一层共用一份 router 权重 → 共用一份专家亲和度
@@ -1538,10 +1625,11 @@ function _moeGate(boxes){
       const base=_moeCycle*104729+(+box.dataset.d)*613+(+box.dataset.c)*97+(+box.dataset.t)*53+(+box.dataset.p)*17+(+box.dataset.bi||0)*13;
       const toks=[], cnt={};
       for(let i=0;i<MOE_TOK_SHOWN;i++){
-        const pick=_moePickTok(E,k,aff,base+i*31+1);
+        const pick=_moePickTok(E,k,aff,base+i*31+1);   // 长度恒为 k
         toks.push(pick);
         pick.forEach(e=>{ cnt[e]=(cnt[e]||0)+1; _moeCounts[e]=(_moeCounts[e]||0)+1; });
       }
+      _moeTokTotal+=MOE_TOK_SHOWN;                                     // 守恒式的分母：累计路由过的 token 数
       if(state.shared) _moeCounts.S=(_moeCounts.S||0)+MOE_TOK_SHOWN;   // 共享专家：每个 token 都过
       routeCache[rkey]={toks,cnt};
     }
@@ -1551,60 +1639,137 @@ function _moeGate(boxes){
     box.classList.remove('moe-ph-dispatch','moe-ph-compute','moe-ph-combine');
     box.classList.add('moe-ph-gate');
     box.querySelectorAll('.moe-exp').forEach(e=>e.classList.remove('moe-exp-sel'));
-    // ⓪ 点亮抽样 token，并把「这个 token 选了谁」写进 title
+    box.querySelectorAll('.moe-exp-cnt').forEach(e=>e.remove());
+    // 本轮拿来做「恰好 k 个」演示的样例 token（逐轮轮换，避免总盯着同一个）
+    box._moeFocus=_moeCycle%MOE_TOK_SHOWN;
+    const {lo,hi}=_moeHold(box);
+    // ⓪ 点亮抽样 token，并把「这个 token 选了哪 k 个」写进 title
     box.querySelectorAll('.moe-tok').forEach(el=>{
       const pick=toks[+el.dataset.ti]||[];
-      el.classList.add('on');
-      el.title=`token #${el.dataset.ti} → ${pick.map(i=>'E'+i).join(', ')}（本 token 自己的 top-${k}）`;
+      el.classList.add('on'); el.classList.remove('moe-tok-focus','moe-tok-dim');
+      el.title=`token #${el.dataset.ti}：对 ${E} 个专家打分 → 恰好激活 ${pick.length} 个（top-${k}）\n`
+             + pick.map(i=>`E${i}${i>=lo&&i<=hi?'（本卡）':'（远端卡）'}`).join('、');
     });
-    const hint=box.querySelector('.moe-sel-hint'); if(hint) hint.textContent='打分中…';   // 结果延后显示
-    // ① 打分探测线：只连**本卡持有**的专家（本地运算、零通讯）
+    const hint=box.querySelector('.moe-sel-hint'); if(hint) hint.textContent=`打分中… 全部 ${E} 个`;   // 取舍延后
+    _moeGk(box,
+      `<span class="gk-lab">每个 token 先对全部 ${E} 个专家各算一个分数</span>`,
+      `<span class="gk-lab">此刻还没有任何取舍，下一步才取分数最高的 ${k} 个</span>`,
+      `① Router 打分：本层 router 权重 H×${E} 在每张卡上都有一份复制品，对全部 ${E} 个专家打分，纯本地运算、零通讯。`);
+  });
+  // ── 第 2 趟：DOM 已全部写完、布局稳定，此时才读坐标画线 ──
+  // ① 打分探测线：只连**本卡持有**的专家（本地运算、零通讯）
+  const rr=$('wdiagRoot').getBoundingClientRect();
+  boxes.forEach(box=>{
     const band=box.querySelector('.moe-band-gate'); if(!band) return;
-    const src=_moePt(band.querySelector('.moe-gate-lab')||band,rr), sel=new Set(box._moeSel);
+    const src=_moePt(band.querySelector('.moe-gate-lab')||band,rr);
     box.querySelectorAll('.moe-exp[data-ei]').forEach(av=>{
       const path=_moeGateLine(src,_moePt(av,rr));
-      if(path) _moeGateLines.push({path, sel:sel.has(+av.dataset.ei)});
+      if(path) _moeGateLines.push({path, box, ei:+av.dataset.ei});
     });
   });
 }
-// ② 本卡未被任何 token 命中的专家：探测线变灰、淡出到 50%
-function _moeGateDim(boxes){
-  _moeGateLines.forEach(o=>{ if(!o.sel && o.path) o.path.classList.add('moe-curve-dim'); });
+// ② top-k 约束现场：只看**一个**样例 token —— 它选中的 k 个留亮（红、可数），
+//    其余 E−k 个探测线灰化。k 在所有卡、所有层、所有 token 上都是同一个数，
+//    「点亮个数不一致」只会出现在下一相位（整批去重后的触达集合），那是另一回事。
+function _moeGateTopk(boxes){
+  boxes.forEach(box=>{
+    const E=+box.dataset.e, k=+box.dataset.k, fi=box._moeFocus|0;
+    const pick=(box._moeTok||[])[fi]||[], pk=new Set(pick);
+    const {lo,hi}=_moeHold(box);
+    // ⓪ 只聚焦这一个 token
+    box.querySelectorAll('.moe-tok').forEach(el=>{
+      const on=(+el.dataset.ti===fi);
+      el.classList.toggle('moe-tok-focus',on); el.classList.toggle('moe-tok-dim',!on);
+    });
+    // ① 中选的探测线转红加粗，落选的全部灰化
+    _moeGateLines.forEach(o=>{
+      if(o.box!==box||!o.path) return;
+      o.path.classList.add(pk.has(o.ei)?'moe-curve-topk':'moe-curve-dim');
+    });
+    // ③ 本卡持有的中选专家先点亮（远端的那几个要等 ② Dispatch 才拿得到）
+    box.querySelectorAll('.moe-exp[data-ei]').forEach(av=>{
+      av.classList.toggle('moe-exp-sel', pk.has(+av.dataset.ei));
+    });
+    const locN=pick.filter(e=>e>=lo&&e<=hi).length, remN=pick.length-locN;
+    const hint=box.querySelector('.moe-sel-hint');
+    if(hint) hint.textContent=`token#${fi} → 恰好 ${pick.length}/${E}`;
+    _moeGk(box,
+      `<span class="gk-lab">token#${fi} 取分数最高的</span><span class="gk-k">${k}</span><span class="gk-lab">个：</span>`
+      + pick.map(e=>{
+          const loc=(e>=lo&&e<=hi);
+          return `<span class="gk-e ${loc?'gk-loc':'gk-rem'}">E${e}${loc?'':'↗'}</span>`;
+        }).join(''),
+      `<span class="gk-lab">其余 ${E-k} 个一律不算 · 激活 ${(k/E*100).toFixed(k/E*100<10?1:0)}% 的本层专家参数`
+      + (state.ep>1?` · 其中 ${locN} 个在本卡、${remN} 个要跨卡取`:'')
+      + `</span>`,
+      `top-k 的硬约束现场：token#${fi} 对 ${E} 个专家的分数排序后，恰好取前 ${k} 个 —— ${pick.map(e=>'E'+e).join('、')}，`
+      + `其余 ${E-k} 个一律不算。\n每张卡、每一层、每个 token 都是同一个 k=${k}。`
+      + (state.ep>1?`\n带 ↗ 的专家在同副本内的另一张 EP 卡上，② Dispatch 时把 token 发过去。`:''));
+  });
 }
-// 命中统计文案：本卡这批 token 一共要用几个专家、其中几个在本卡、几个要跨卡取
+// 命中统计文案：把「每 token 恰好 k 个」与「整批去重后触达 N 个」的关系写清楚 ——
+// N 各卡不同不是画错了：各卡持有的 token 分片不同，而 k 是恒定的。
 function _moeHintText(box){
-  const sel=box._moeSel||[], perEP=+box.dataset.perep, lo=(+box.dataset.epr)*perEP, hi=lo+perEP-1;
+  const sel=box._moeSel||[], k=+box.dataset.k, {lo,hi}=_moeHold(box);
   const loc=sel.filter(e=>e>=lo&&e<=hi).length;
-  return state.ep>1
-    ? `${MOE_TOK_SHOWN} token → ${sel.length} 专家（本地 ${loc} · 远端 ${sel.length-loc}）`
-    : `${MOE_TOK_SHOWN} token → ${sel.length} 专家（全在本卡）`;
+  return `${MOE_TOK_SHOWN}×top-${k}=${MOE_TOK_SHOWN*k} 次 → 触达 ${sel.length} 专家`
+    + (state.ep>1?`（本地 ${loc}·远端 ${sel.length-loc}）`:'（全在本卡）');
 }
-// ③ 打分探测线淡到 30% 保留（不再消失）→ 显示命中统计并点亮命中专家，同时刷新标题栏计数
+// ③ 回到整批视角：探测线淡到 30% 保留 → 点亮本批触达的全部专家、挂上「收到几个 token」徽标
 function _moeGateResult(boxes){
   _moeDimDone(); _moeGateLines=[];
   _moeUpdateCountBar();
   boxes.forEach(box=>{
+    const k=+box.dataset.k;
+    box.querySelectorAll('.moe-tok').forEach(el=>el.classList.remove('moe-tok-focus','moe-tok-dim'));
     const hint=box.querySelector('.moe-sel-hint'); if(hint) hint.textContent=_moeHintText(box);
-    const sel=new Set(box._moeSel||[]);
-    box.querySelectorAll('.moe-exp[data-ei]').forEach(av=>{ if(sel.has(+av.dataset.ei)) av.classList.add('moe-exp-sel'); });
+    const sel=new Set(box._moeSel||[]), cnt=box._moeCnt||{};
+    box.querySelectorAll('.moe-exp[data-ei]').forEach(av=>{
+      const ei=+av.dataset.ei, on=sel.has(ei);
+      av.classList.toggle('moe-exp-sel', on);
+      // 徽标（gate 阶段口径）＝ 本卡自己这 6 个抽样 token 里有几个选了它。
+      // 此刻 a2a 还没发生，兄弟卡送来的那部分要等 ② Dispatch 才计入（届时徽标会跳到真实到货量）。
+      if(on) _moeBadge(av, cnt[ei]||0, false,
+              `E${ei}：本卡 ${MOE_TOK_SHOWN} 个抽样 token 里有 ${cnt[ei]||0} 个选了它\n（尚未计入其它 EP 卡经 a2a 送来的 token）`);
+      else { const b=av.querySelector('.moe-exp-cnt'); if(b) b.remove(); }
+    });
+    const selN=(box._moeSel||[]).length;
+    _moeGk(box,
+      `<span class="gk-lab">${MOE_TOK_SHOWN} 个 token <b>各自</b>选 ${k} 个 → 合计 ${MOE_TOK_SHOWN*k} 次激活</span>`,
+      `<span class="gk-lab">去重后触达 ${selN} 个专家 · 角标 = 各自接收数（不均）</span>`,
+      `k=${k} 恒定，触达数不恒定：${MOE_TOK_SHOWN} 个 token 各选 ${k} 个＝${MOE_TOK_SHOWN*k} 次激活，去重后落在 ${selN} 个专家上。\n`
+      + `各卡触达数不同，不是画错了 —— 每张卡持有的 token 分片不同，而 k 在每卡每层每 token 上都相同。\n`
+      + `头像角标就是各专家分到的 token 数，差异即负载不均（aux loss / capacity factor 要治的病，也是 a2a 收发量不对称的根源）。`);
   });
 }
 // ② Dispatch：从本卡 dispatch 带 → 持有目标专家的卡上的专家头像画线。
 //    线宽 ∝ 走这条边的 token 数 —— 各卡各方向的搬运量本就不等（a2a 的长尾来源）。
 //    ep=1 时目标恒为本卡，退化成卡内 permute，不产生跨卡流量。
+//    a2a 结束后专家角标换口径：从「本卡自己有几个 token 选它」→「它本轮实际要算多少 token」
+//    （＝ 同 EP 域各卡送来的总和）。这才是负载不均真正的度量：k 恒定，到货量却能差几倍。
 function _moeDispatch(boxes){
   _moeDimDone();
-  const rr=$('wdiagRoot').getBoundingClientRect();
-  boxes.forEach(box=>{
+  const inbound=new Map(), own=new Map();   // 专家头像 → 到货总量 / 其中来自持有它那张卡自己的量
+  boxes.forEach(box=>{                      // 第 1 趟：只写 DOM（同 _moeGate，避免边写边量读到过期坐标）
     box.classList.remove('moe-ph-gate'); box.classList.add('moe-ph-dispatch');
     const hint=box.querySelector('.moe-sel-hint'); if(hint) hint.textContent=_moeHintText(box);
+  });
+  const rr=$('wdiagRoot').getBoundingClientRect();
+  boxes.forEach(box=>{                      // 第 2 趟：布局稳定后再测量画线
     const band=box.querySelector('.moe-band-dispatch'); if(!band) return;
     const src=_moePt(band,rr), cnt=box._moeCnt||{};
     (box._moeSel||[]).forEach(ex=>{
       const {av,remote}=_moeTarget(box,ex); if(!av) return;
       av.classList.add('moe-exp-sel');
+      inbound.set(av,(inbound.get(av)||0)+(cnt[ex]||0));
+      if(!remote) own.set(av,(own.get(av)||0)+(cnt[ex]||0));
       _moeLine(src,_moePt(av,rr), remote?'remote-d':'local-d', cnt[ex]);
     });
+  });
+  inbound.forEach((n,av)=>{
+    const ei=av.dataset.ei, o=own.get(av)||0, rem=n-o;
+    _moeBadge(av, n, rem>0,
+      `E${ei} 本轮实际要算 ${n} 个（抽样）token：本卡 ${o} 个` + (rem>0?` + 经 a2a 从其它 EP 卡送来 ${rem} 个`:'（EP=1，无跨卡）'));
   });
 }
 // ③ Compute：命中的专家跳动；共享专家（若开启）此刻一并点亮 —— 它没经过路由与 a2a，但每个 token 都要过它
@@ -1618,9 +1783,9 @@ function _moeCompute(boxes){
 // ④ Combine：从专家头像 → 本卡 combine 带画回线（线宽同样 ∝ token 数）
 function _moeCombine(boxes){
   _moeDimDone();
-  const rr=$('wdiagRoot').getBoundingClientRect();
+  boxes.forEach(box=>{ box.classList.remove('moe-ph-compute'); box.classList.add('moe-ph-combine'); });
+  const rr=$('wdiagRoot').getBoundingClientRect();   // 相位类写完再测量（同 _moeGate 的两趟做法）
   boxes.forEach(box=>{
-    box.classList.remove('moe-ph-compute'); box.classList.add('moe-ph-combine');
     const band=box.querySelector('.moe-band-combine'); if(!band) return;
     const dst=_moePt(band,rr), cnt=box._moeCnt||{};
     (box._moeSel||[]).forEach(ex=>{
@@ -1632,16 +1797,16 @@ function _moeCombine(boxes){
 // 单次 MoE 内部动画（流动到达该层时调用）：相位链 Router①→Dispatch②→计算③→Combine④→收尾。
 // 用 _moeCtx 记录进度，做到「暂停冻结当前相位、恢复从下一相位续播」。全部播完调用 cb 让流动继续。
 let _moeCtx=null;                            // {boxes, cb, idx}；idx=下一个待执行相位
-// 相位：0 Gate 画线 · 1 Gate 灰化未命中 · 2 Gate 出结果 · 3 Dispatch · 4 计算 · 5 Combine · 6 收尾
-// Gate 拆成 3 个独立相位后，暂停可冻结在任一小步、恢复从下一小步续播（不再丢失灰化/结果动画）
-const _MOE_DWELL=[900,900,1100,900,1850,900];   // 各相位后停留时长（前 3 项合计 2900 = 原 Router 停留）
+// 相位：0 Gate 全员打分 · 1 Gate 单 token 取 top-k · 2 Gate 整批汇总 · 3 Dispatch · 4 计算 · 5 Combine · 6 收尾
+// Gate 拆成 3 个独立相位后，暂停可冻结在任一小步、恢复从下一小步续播（不再丢失取 k / 汇总动画）
+const _MOE_DWELL=[900,1400,1400,900,1850,900];   // 相位 1（top-k 取舍）与 2（汇总）是本段的重点，给足停留
 const MOE_ONCE_MS=_MOE_DWELL.reduce((a,b)=>a+b,0);   // 全流程时长（供停留计时/算子扫描）
 function _moeStartOnce(boxes, cb){ _moeCtx={boxes, cb, idx:0}; _moeStep(); }
 function _moeStep(){
   if(!_moeCtx) return;
   const {boxes, cb, idx}=_moeCtx;
   if(idx===0){ _moeCycle++; _moeGate(boxes); }
-  else if(idx===1){ _moeGateDim(boxes); }
+  else if(idx===1){ _moeGateTopk(boxes); }
   else if(idx===2){ _moeGateResult(boxes); }
   else if(idx===3){ _moeDispatch(boxes); }
   else if(idx===4){ _moeCompute(boxes); }
@@ -2713,8 +2878,34 @@ function renderHints(){
     const eg=etpDeg();
     const showEtp = s.enMoE && eg>1 && !isPangu();
     const etpRow=$('etpRow'); if(etpRow) etpRow.style.display = showEtp ? 'flex' : 'none';
-    if($('vTopk')) $('vTopk').textContent=s.topk;
+    if($('vTopk')) $('vTopk').textContent=k;   // 已在 readState 夹紧到 1..E，与示意图点亮的个数一致
     if($('vSeq'))  $('vSeq').textContent=s.seq;
+    // Top-k 的业务含义：路由的硬约束 —— 每个 token 在**每个 MoE 层**各激活 k 个，算力恒定、参数稀疏、负载不均。
+    // 两处必须写准，否则示意会误导：① 作用域是「每 token × 每层」，不是每 token 一辈子只用 k 个；
+    // ② 「恰好 k」说的是 token-choice 路由的**决策**，dropless 时决策=实际（本 demo 与 DS-V3/Pangu 口径）。
+    const tkEl=$('hintTopk');
+    if(tkEl){
+      // 本卡 token 数 = (batch/DP)×(L/CP)÷TP（MoE 与 SP 配合，TP 组内每卡只持 1/TP）
+      const tokEach=Math.max(1,Math.round(Math.max(1,Math.round(s.batch/s.dp))*Math.max(1,Math.round(s.seq/s.cp))/Math.max(1,s.tp)));
+      const fmtTok=n=>n>=1e6?(n/1e6).toFixed(1)+'M':n>=1e3?(n/1e3).toFixed(1)+'K':''+n;
+      const moeLayers=Math.max(1,s.blocks-(isPangu()?PANGU.dense:0));
+      tkEl.className='para-hint on';
+      tkEl.innerHTML=`<b>路由的硬约束：每个 token 在<u>每个 MoE 层</u>各激活 ${k} 个专家</b>`
+        +`——不是「每张卡选 ${k} 个」，不是「每个 batch 选 ${k} 个」，也不是「一个 token 全程只用 ${k} 个」：`
+        +`每层有各自独立的 router 与各自一套 ${s.experts} 个专家，同一个 token 走完 ${moeLayers} 个 MoE 层会被路由 ${moeLayers} 次，`
+        +`每次都<b>重新</b>选 ${k} 个（层与层之间选谁互不相干）。`
+        +`<br>router 对本层全部 <b>${s.experts}</b> 个专家打分，取分数最高的 <b>${k}</b> 个，其余一律不算；`
+        +`所以每个 token 每层的 FFN 计算量恒定 = ${k} 个专家（<b>${(k/s.experts*100).toFixed(k/s.experts*100<10?1:0)}%</b> 的本层专家参数被激活）`
+        +`${s.shared?`，另加 1 个常开的共享专家（不参与打分、不占 k 的名额）`:''}。`
+        +`<br><b>k 恒定 ≠ 被点亮的专家个数恒定</b>：本 step 一张卡有 ${fmtTok(tokEach)} 个 token，各选各的 ${k} 个，`
+        +`合计 token×${k} 次激活分摊到 ${s.experts} 个专家上 —— 于是一层里几乎每个专家都会被点亮，只是收到的 token 数差很多。`
+        +`这就是<b>负载不均</b>的来源（aux loss / capacity factor 要治的病），也是 a2a 收发量不对称的根源。`
+        +`<br><span style="opacity:.85">两点前提说明：本图是 <b>token-choice + dropless</b> 口径（DeepSeek-V3 / openPangu 同）——`
+        +`「恰好 ${k} 个」严格成立。若改用<b>带容量上限</b>的 dispatch（capacity factor 不足时丢 token），`
+        +`路由<i>决策</i>仍是 ${k} 个，但被丢的那份不参与计算，<i>实际</i>算的可能少于 ${k}；`
+        +`另有 <b>expert-choice</b> 路由是反过来的（每个专家挑 top-k 个 token），那种口径下每 token 的激活数才是不固定的。</span>`
+        +`<br>调大 k：效果更好但算力线性上涨；调小 k：更省算力但每 token 能用的知识更少。DeepSeek-V3 = top-8/256，openPangu-718B = top-8/256。`;
+    }
     const etpEl=$('hintETP');
     if(etpEl){
       if(showEtp){
@@ -3947,7 +4138,9 @@ function updateLibUI(){
     ? '盘古模型结构 · 推理张量并行 TP=32（横向 32 卡）'
     : '训练拓扑及计算流动可视化';
 }
-$('libTabs').addEventListener('click',e=>{
+// 一级导航已从 markup 中移除（#libTabs 不存在）→ 这里必须判空，否则整段脚本在此抛错中断。
+// 逻辑本身保留：把那段 markup 放回来，切换功能即刻复活。
+if($('libTabs')) $('libTabs').addEventListener('click',e=>{
   const btn=e.target.closest('.lib-tab'); if(!btn) return;
   const lib=btn.dataset.lib; if(lib===currentLib) return;
   const prevLib=currentLib;
