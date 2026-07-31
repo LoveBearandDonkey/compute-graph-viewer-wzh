@@ -53,8 +53,8 @@ The kernel explicitly uses the following physical formats:
 - Feature GM：`NC1HWC0 [1,1,8,8,16]`。  
   Feature GM: `NC1HWC0 [1,1,8,8,16]`.
 
-- Filter GM：行优先 ND，`[K,Co] = [144,32]`。逻辑 OIHW 权重必须在执行 Kernel 前完成展平和转置。  
-  Filter GM: row-major ND, `[K,Co] = [144,32]`. The logical OIHW filter must be flattened and transposed before kernel launch.
+- Weight GM：行优先 ND，`[K,Co] = [144,32]`。逻辑 OIHW 权重必须在执行 Kernel 前完成展平和转置。
+  Weight GM: row-major ND, `[K,Co] = [144,32]`. The logical OIHW weight must be flattened and transposed before kernel launch.
 
 - Bias GM：ND `[32]`。  
   Bias GM: ND `[32]`.

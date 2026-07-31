@@ -1,8 +1,13 @@
-## Annotation 1
+# Conv2D + Bias + ReLU Tensor 数据
 
-已按你的要求改写：每一行只描述一个 Tensor 变量或一个明确的逻辑 Tensor 对象，不再使用“A1/B1/C1”作为 Tensor 名字，也不再把多个 Tensor、位置、shape 合并在一个单元格里。
+## 文档定位
 
-先说明当前基线：以下内容来自 `conv_bias_relu_complete_demo` 固定 Demo。`padding=1、stride=1、dilation=1` 是 Demo 补全时选择的参数，不代表已经从真实业务代码验证。
+本文按执行 Stage 整理固定 Demo 中每个 Tensor 的 Shape、Tile 身份、存储位置、dtype、format 和状态变化。
+
+- 每一行只描述一个 Tensor 变量或一个明确的逻辑 Tensor 对象。
+- `fmapA1`、`weightB2` 等是 Tensor 变量名；A1、B2、CO1 等是存储位置。
+- K Loop 使用 `Iter 0` 与 `Iter 1～8 ×8` 两栏表达两类迭代语义。
+- 当前基线来自 `conv_bias_relu_complete_demo`。`padding=1、stride=1、dilation=1` 是固定 Demo 参数，尚未由真实业务代码和板端运行验证。
 
 ## 全局 Shape 与分块参数
 
@@ -30,6 +35,23 @@
 
 ------
 
+## 整体执行结构
+
+| Stage | 内容 | Tensor 状态变化 |
+| ---: | --- | --- |
+| 1 | Input Shape | 定义 GM 输入输出逻辑与物理契约 |
+| 2 | Host Tiling | 建立 A/B/C/D 逻辑 Cube 视图与 Tile 划分 |
+| 3 | Host 执行配置 | 设置元素数、`blockDim=8`、workspace 和 OT→Mi/Nj 映射 |
+| 4 | Allocate Memory | 建立 GM Tensor 句柄与 LocalTensor 地址视图 |
+| 5 | Copy Inputs | `featureGm_ / weightGm_ / biasGm_ → fmapA1 / weightB1 / biasC1` |
+| 6 | MTE2_MTE1 Sync | 发布 A1/B1/C1 ready |
+| 7 | Copy Data C2 | `biasC1 → biasC2` |
+| 8 | K Loop · Iter 0～8 | Iter 0 初始化 Acc0；Iter 1～8 原位累加到 Acc8 |
+| 9 | M_FIX Sync | 发布最终 `accumCo1` ready |
+| 10 | Fixpipe Output | NZ→ND、FP32→FP16、ReLU、写回 GM |
+
+------
+
 ## 阶段 1：Input Shape
 
 Host 固定输入、权重、Bias、输出的逻辑契约。
@@ -37,7 +59,7 @@ Host 固定输入、权重、Bias、输出的逻辑契约。
 | Tensor / 变量 | Shape                                  | Tile        | Shape 相关参数             | 位置    | dtype | format                                 | Align                   |
 | ------------- | -------------------------------------- | ----------- | -------------------------- | ------- | ----- | -------------------------------------- | ----------------------- |
 | `Feature X0`  | 逻辑 `[1,16,8,8]`；物理 `[1,1,8,8,16]` | 尚未分 Tile | `n=1, ci=16, hi=8, wi=8`   | GM 输入 | FP16  | 逻辑 NCHW；物理 NC1HWC0                | GM 基址对齐未在源码声明 |
-| `Filter W0`   | 逻辑 `[32,16,3,3]`；物理 `[144,32]`    | 尚未分 Tile | `co=32, ci=16, kh=3, kw=3` | GM 输入 | FP16  | 逻辑 OIHW；物理 ND `[K,Co]`            | GM 基址对齐未在源码声明 |
+| `Weight W0`   | 逻辑 `[32,16,3,3]`；物理 `[144,32]`    | 尚未分 Tile | `co=32, ci=16, kh=3, kw=3` | GM 输入 | FP16  | 逻辑 OIHW；物理 ND `[K,Co]`            | GM 基址对齐未在源码声明 |
 | `Bias D0`     | `[32]`                                 | 尚未分 Tile | `co=32`                    | GM 输入 | FP32  | ND / linear                            | GM 基址对齐未在源码声明 |
 | `Output Y0`   | 语义 `[1,32,8,8]`；物理 `[64,32]`      | 尚未分 Tile | `ho=8, wo=8, co=32`        | GM 输出 | FP16  | 语义 NCHW；物理 ND `[M,Co]`，等价 NHWC | GM 基址对齐未在源码声明 |
 
@@ -60,14 +82,18 @@ Host 将卷积转换成 Cube 的 M/K/N 计算空间。
 
 ## 阶段 3：Host 执行配置
 
-建立 GM Tensor 句柄、输出 Tile 与 AI Core 的映射。
+Host 计算 Buffer 元素数并设置 Kernel 启动参数。本阶段是配置，不建立 LocalTensor，也不访问 GM。
 
-| Tensor / 变量 | Shape                         | Tile / Core 映射                     | Shape 相关参数                  | 位置 | dtype | format      | Align          |
-| ------------- | ----------------------------- | ------------------------------------ | ------------------------------- | ---- | ----- | ----------- | -------------- |
-| `featureGm_`  | `[1,1,8,8,16]`；1024 elements | 所有核读取完整 Feature               | `featureGmElements=1024`        | GM   | FP16  | NC1HWC0     | 基址对齐未声明 |
-| `filterGm_`   | `[144,32]`；4608 elements     | 当前核读取 `Nj` 对应的 `[144,16]`    | `nStart=Nj×16`                  | GM   | FP16  | ND `[K,Co]` | 基址对齐未声明 |
-| `biasGm_`     | `[32]`                        | 当前核读取 `D[Nj]`，shape `[16]`     | `nStart=Nj×16`                  | GM   | FP32  | ND / linear | 基址对齐未声明 |
-| `outputGm_`   | `[64,32]`；2048 elements      | 当前核写 `C[Mi,Nj]`，shape `[16,16]` | `outputOffset=mStart×32+nStart` | GM   | FP16  | ND `[M,Co]` | 基址对齐未声明 |
+| 配置对象 | 当前值 | 作用 |
+| --- | ---: | --- |
+| `featureGmElements` | 1024 FP16 | 完整 Feature GM 元素数 |
+| `weightGmElements` | 4608 FP16 | Weight GM `[144,32]` 元素数 |
+| `biasGmElements` | 32 FP32 | Bias GM 元素数 |
+| `outputGmElements` | 2048 FP16 | Output GM `[64,32]` 元素数 |
+| A1 / B1 / C1 元素数 | 1024 / 2304 / 16 | 每核 L1 视图规格 |
+| A2 / B2 / CO1 元素数 | 256 / 256 / 256 | 每核 L0 视图规格 |
+| `blockDim` | 8 | 启动 8 个 Block 任务 |
+| workspace | 0 B | 当前 Kernel 不使用 workspace |
 
 Core 映射：
 
@@ -83,7 +109,14 @@ nStart = Nj × 16
 
 ## 阶段 4：Allocate Memory
 
-本阶段只建立 LocalTensor 视图，不搬运数据。
+本阶段在 Kernel 中建立 GM Tensor 句柄和 LocalTensor 地址视图，不搬运数据。这里的 “Allocate” 表示绑定静态地址范围，不是通用意义上的动态内存申请。
+
+| GM Tensor 变量 | Shape | 当前核使用范围 | dtype | format | Align |
+| --- | --- | --- | --- | --- | --- |
+| `featureGm_` | `[1,1,8,8,16]` | 所有核读取完整 Feature | FP16 | NC1HWC0 | 基址对齐未声明 |
+| `weightGm_` | `[144,32]` | 读取 `Nj` 对应的 `[144,16]` | FP16 | ND `[K,Co]` | 基址对齐未声明 |
+| `biasGm_` | `[32]` | 读取 `D[Nj] [16]` | FP32 | ND / linear | 基址对齐未声明 |
+| `outputGm_` | `[64,32]` | 写入 `C[Mi,Nj] [16,16]` | FP16 | ND `[M,Co]` | 基址对齐未声明 |
 
 | Tensor 变量名 | Shape          | Tile 身份                   | 位置            | dtype | format  | 大小   | 起始地址 | Align                               |
 | ------------- | -------------- | --------------------------- | --------------- | ----- | ------- | ------ | -------- | ----------------------------------- |
@@ -104,7 +137,7 @@ MTE2 将 GM 数据搬入 L1。
 | 目标 Tensor 变量 | 来源 Tensor  | 目标 Shape     | Tile 身份    | Shape 相关参数 | 目标位置 | dtype | 格式变化        | 搬运/对齐                           |
 | ---------------- | ------------ | -------------- | ------------ | -------------- | -------- | ----- | --------------- | ----------------------------------- |
 | `fmapA1`         | `featureGm_` | `[1,1,8,8,16]` | 完整 Feature | `1024 FP16`    | A1 / L1  | FP16  | NC1HWC0→NC1HWC0 | DataCopy 2048 B；A1 地址 512 B 对齐 |
-| `weightB1`       | `filterGm_`  | `[144,16]`     | 当前 `Nj`    | `nStart=Nj×16` | B1 / L1  | FP16  | ND→NZ           | 4608 B；B1 地址 512 B 对齐          |
+| `weightB1`       | `weightGm_`  | `[144,16]`     | 当前 `Nj`    | `nStart=Nj×16` | B1 / L1  | FP16  | ND→NZ           | 4608 B；B1 地址 512 B 对齐          |
 | `biasC1`         | `biasGm_`    | `[16]`         | 当前 `D[Nj]` | `nStart=Nj×16` | C1 / L1  | FP32  | ND→linear       | 64 B；C1 地址 128 B 对齐            |
 
 `fmapA1` 仍然是 `[1,1,8,8,16]`，没有物化 padding。
@@ -137,9 +170,11 @@ MTE1 将 Bias 从 L1 搬到 Bias Table。
 
 ------
 
-## 阶段 8：K Loop 容器 · Iter 0～8
+## 阶段 8：K Loop · Iter 0～8
 
 这是源码中真实的 `for (kTileIndex = 0; kTileIndex < 9; ++kTileIndex)` 控制结构，包含全部 9 次 K 迭代。循环容器本身不是硬件指令，不独立搬运或计算 Tensor。
+
+### 8.1 进入循环时的 Tensor 状态
 
 进入循环前：
 
@@ -159,28 +194,22 @@ MTE1 将 Bias 从 L1 搬到 Bias Table。
 | Iter 0   | 1    | 无；A2/B2 尚未保存上一轮数据 | 使用 `A[Mi,K0]`、`B[K0,Nj]` 和 `D[Nj]` 初始化 `Acc0` |
 | Iter 1～8 | 8   | 先执行 `M_MTE1`，确认 Cube 已读完上一轮 A2/B2 | 读取新的 K Tile，原位累加到 `accumCo1`，不再加入 Bias |
 
-执行结构：
+两类迭代的 Instruction 结构：
 
-```text
-K Loop · Iter 0～8
-├─ Iter 0 · Initialize
-│  ├─ LoadData3D / LoadData2D
-│  ├─ MTE1_M
-│  └─ Mmad + Bias → Acc0
-└─ Iter 1～8 · Accumulate ×8
-   ├─ M_MTE1
-   ├─ LoadData3D / LoadData2D
-   ├─ MTE1_M
-   └─ Mmad accumulate → Acc1…Acc8
-```
+| Iter 0 · Initialize | Iter 1～8 · Accumulate ×8 |
+| --- | --- |
+| `LoadData3D / LoadData2D` | `M_MTE1 Sync` |
+| `MTE1_M Sync` | `LoadData3D / LoadData2D` |
+| `Mmad + Bias → Acc0` | `MTE1_M Sync` |
+|  | `Mmad accumulate → Acc1…Acc8` |
 
 ------
 
-## 阶段 9：Load Data A2/B2 · Iter 0
+### 8.2 Iter 0：Load Data A2/B2
 
 这是 Iter 0 的数据装载，也是 padding、stride、filter、dilation 第一次真正参与取窗的阶段。
 
-### Feature 路径
+#### Feature 路径
 
 | Tensor 变量名 | Shape               | Tile 身份               | Shape 相关参数                                               | 位置     | dtype | format  | Align        |
 | ------------- | ------------------- | ----------------------- | ------------------------------------------------------------ | -------- | ----- | ------- | ------------ |
@@ -189,7 +218,7 @@ K Loop · Iter 0～8
 
 Padding 不增加 `fmapA1` 的 shape。LoadData3D 遇到 A1 边界外坐标时，直接向 `fmapA2` 生成 FP16 零值。
 
-### Filter 路径
+#### Weight 路径
 
 | Tensor 变量名 | Shape      | Tile 身份               | Shape 相关参数                     | 位置     | dtype | format | Align        |
 | ------------- | ---------- | ----------------------- | ---------------------------------- | -------- | ----- | ------ | ------------ |
@@ -198,7 +227,7 @@ Padding 不增加 `fmapA1` 的 shape。LoadData3D 遇到 A1 边界外坐标时�
 
 ------
 
-## 阶段 10：MTE1_M Sync · Iter 0
+### 8.3 Iter 0：MTE1_M Sync
 
 本阶段不改变 Tensor 内容，只发布 Iter 0 的 A2/B2 ready。
 
@@ -211,7 +240,7 @@ Padding 不增加 `fmapA1` 的 shape。LoadData3D 遇到 A1 边界外坐标时�
 
 ------
 
-## 阶段 11：Iter 0 Mmad · Initialize
+### 8.4 Iter 0：Mmad + Bias · Initialize
 
 首次 Mmad 使用 Bias 初始化 `accumCo1`。
 
@@ -230,7 +259,7 @@ Acc0 = A[Mi,K0] × B[K0,Nj] + D[Nj]
 
 ------
 
-## 阶段 12：Iter 1～8 Loop Body · Accumulate ×8
+### 8.5 Iter 1～8：Loop Body · Accumulate ×8
 
 Iter 1～8 使用完全相同的循环体。Iter 8 没有独有指令或条件分支；它只是最后一次产生后续 Fixpipe 所需的最终 `Acc8`。
 
@@ -268,7 +297,7 @@ M_MTE1
 
 ------
 
-## 阶段 13：M_FIX Sync
+## 阶段 9：M_FIX Sync
 
 本阶段不改变 Tensor shape。
 
@@ -280,7 +309,7 @@ M_MTE1
 
 ------
 
-## 阶段 14：Fixpipe Output
+## 阶段 10：Fixpipe Output
 
 完成格式转换、dtype 转换、ReLU 和 GM 写回。
 

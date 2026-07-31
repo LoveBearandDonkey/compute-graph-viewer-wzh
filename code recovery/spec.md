@@ -72,7 +72,7 @@ Ascend C 开发者需要同时连接 Host tiling 与 Kernel 执行，但常见�
 | Tensor | 逻辑 Shape | GM 物理 Shape | 物理 Format | Dtype | Bytes |
 | --- | --- | --- | --- | --- | ---: |
 | Feature X0 | `[1,16,8,8]` | `[1,1,8,8,16]` | NC1HWC0 | FP16 | 2048 |
-| Filter W0 | `[32,16,3,3]` | `[144,32]` | ND | FP16 | 9216 |
+| Weight W0 | `[32,16,3,3]` | `[144,32]` | ND | FP16 | 9216 |
 | Bias D0 | `[32]` | `[32]` | ND | FP32 | 128 |
 | Output Y0 | `[1,32,8,8]` | `[64,32]` | ND | FP16 | 4096 |
 
@@ -279,7 +279,7 @@ type TraceModel = {
 | 3 | `host-memory` | GM/Local 元素数 | host |
 | 4 | `host-launch` | blockDim 与 block→OT | host + kernel |
 | 5 | `allocate` | LocalTensor 地址与容量 | kernel |
-| 6 | `copy-inputs` | Feature/Filter/Bias GM→L1 | kernel |
+| 6 | `copy-inputs` | Feature/Weight/Bias GM→L1 | kernel |
 | 7 | `sync-mte2-mte1` | L1 ready | kernel |
 | 8 | `bias-c1-c2` | Bias Table 搬运 | kernel |
 | 9 | `load-k` | K0 Load3D + Load2D | kernel |
