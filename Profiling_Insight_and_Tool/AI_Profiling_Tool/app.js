@@ -1935,16 +1935,29 @@ function refreshChipCard(card) {
   setMetricCardProgress(card, hasE2e ? card._e2ePct : pct);
   // 显存触顶是绝对风险：即使容量分母来自用户选择，>=95% 仍明确标为异常。
   if (!isMfu && isFinite(pct) && pct >= 95) card.classList.add('ovm-bad');
+  if (!isMfu && isFinite(pct) && pct >= 85 && pct < 95) card.classList.add('ovm-warn');
 
-  // 状态行：把换算依据写清楚（原始量 + 当前所选项），便于核对
+  // 状态行：把换算依据写清楚（原始量 + 当前所选项），便于核对。
+  // 显存卡在告警/异常态还要补一句「为什么红 / 怎么办」——只给分子分母，用户看不出这是风险。
   if (stEl) {
     const opt = sel.options[sel.selectedIndex]?.textContent || '';
     stEl.textContent = hasE2e
       ? `端到端（拆 PP bubble/通信/优化器后）；cube 达成 ${raw} TF/s ÷ ${opt} ≈ ${isFinite(pct) ? pct.toFixed(0) : '—'}%`
       : isMfu
         ? `达成 ${raw} TF/s ÷ ${opt}`
-        : `占用 ${raw} GB ÷ ${opt}`;
+        : `占用 ${raw} GB ÷ ${opt}${memUtilRiskNote(raw, denom, pct)}`;
   }
+}
+
+// 显存利用率的风险话术：接近/达到 HBM 容量意味着随时 OOM，必须点名后果与可执行动作
+function memUtilRiskNote(raw, denom, pct) {
+  if (!isFinite(pct) || !(denom > 0)) return '';
+  const free = Math.max(0, denom - raw);
+  const freeTxt = free < 1 ? `${(free * 1024).toFixed(0)} MB` : `${free.toFixed(1)} GB`;
+  if (pct >= 99) return ` · ⚠ 已打满，仅剩 ${freeTxt}：随时 OOM，分配器反复回收还会拖慢 step。先开重计算 / 调小 micro-batch，再查碎片率`;
+  if (pct >= 95) return ` · ⚠ 已触顶，剩 ${freeTxt}：batch 或序列长度再涨就会 OOM。建议开重计算、调小 micro-batch 或调整 TP/PP 切分`;
+  if (pct >= 85) return ` · 余量仅 ${freeTxt}，接近上限，暂不建议再加 batch`;
+  return '';
 }
 
 function renderOverview(r) {
@@ -2569,13 +2582,20 @@ const FIX_REVIEW_DATA = {
 window.frTab = function (btn, idx) {
   const root = btn.closest('.ac-fr');
   if (!root) return;
-  root.querySelectorAll('.ac-fr-tab').forEach((t, i) => t.classList.toggle('active', i === idx));
+  // active = 本模块状态位；is-selected = 设计系统 tab-control 的选中态
+  root.querySelectorAll('.ac-fr-tab').forEach((t, i) => {
+    t.classList.toggle('active', i === idx);
+    t.classList.toggle('is-selected', i === idx);
+  });
   root.querySelectorAll('.ac-fr-scheme').forEach((p, i) => p.classList.toggle('active', i === idx));
 };
 window.frDiffView = function (mode) {
   window._frDiffMode = mode;
   document.querySelectorAll('.ac-fr-diff2').forEach(d => d.setAttribute('data-mode', mode));
-  document.querySelectorAll('.ac-fr-vt-btn').forEach(b => b.classList.toggle('active', b.dataset.mode === mode));
+  document.querySelectorAll('.ac-fr-vt-btn').forEach(b => {
+    b.classList.toggle('active', b.dataset.mode === mode);
+    b.classList.toggle('is-selected', b.dataset.mode === mode);
+  });
 };
 window.frCopy = function (btn) {
   const text = decodeURIComponent(btn.dataset.copy || '');
@@ -2599,7 +2619,7 @@ function fixReviewHtml(r, a) {
   if (!fr || !fr.schemes?.length) return '';
 
   const tabsHtml = fr.schemes.map((s, i) =>
-    `<button class="ac-fr-tab${i === 0 ? ' active' : ''}" onclick="frTab(this,${i})">`
+    `<button class="tab-control-item ac-fr-tab${i === 0 ? ' active is-selected' : ''}" onclick="frTab(this,${i})">`
     + `<span class="ac-fr-tab-name">${escHtml(s.name)}</span>`
     + (s.recommended ? `<span class="ac-fr-badge ac-fr-badge-rec">推荐</span>` : '')
     + (s.conceptual ? `<span class="ac-fr-badge ac-fr-badge-con">示意</span>` : '')
@@ -2656,9 +2676,9 @@ function fixReviewHtml(r, a) {
         <div class="ac-fr-path">${crumb}</div>
         <div class="ac-fr-diff2" data-mode="${mode}">
           <div class="ac-fr-diff2-bar">
-            <div class="ac-fr-vtoggle">
-              <button class="ac-fr-vt-btn${mode === 'split' ? ' active' : ''}" data-mode="split" onclick="frDiffView('split')">Split</button>
-              <button class="ac-fr-vt-btn${mode === 'unified' ? ' active' : ''}" data-mode="unified" onclick="frDiffView('unified')">Inline</button>
+            <div class="tab-control ac-fr-vtoggle">
+              <button class="tab-control-item ac-fr-vt-btn${mode === 'split' ? ' active is-selected' : ''}" data-mode="split" onclick="frDiffView('split')">Split</button>
+              <button class="tab-control-item ac-fr-vt-btn${mode === 'unified' ? ' active is-selected' : ''}" data-mode="unified" onclick="frDiffView('unified')">Inline</button>
             </div>
             <button class="ac-fr-copy" data-copy="${copyAttr}" onclick="frCopy(this)">复制</button>
           </div>
@@ -2673,12 +2693,12 @@ function fixReviewHtml(r, a) {
   return `
     <div class="ac-section-title ac-fr-title">智能修复预览</div>
     <div class="ac-fr">
-      <div class="ac-fr-tabs">${tabsHtml}</div>
+      <div class="tab-control ac-fr-tabs">${tabsHtml}</div>
       ${schemesHtml}
       ${fr.caveat ? `<div class="ac-fr-caveat">⚠️ ${escHtml(fr.caveat)}</div>` : ''}
       <div class="ac-fr-actions">
-        <button class="ac-fr-btn ac-fr-btn-primary" onclick="frAction('branch')">新建分支并提交</button>
-        <button class="ac-fr-btn ac-fr-btn-ghost" onclick="frAction('edit')">修改到本分支</button>
+        <button class="btn btn-sm btn-solid ac-fr-btn" type="button" onclick="frAction('branch')">新建分支并提交</button>
+        <button class="btn btn-sm ac-fr-btn" type="button" onclick="frAction('edit')">修改到本分支</button>
       </div>
     </div>
   `;
@@ -3267,10 +3287,12 @@ function buildFreeAnalysisSwimlane(faEntry) {
 
 function renderOpPieCharts(wrap, entry, rid, aid) {
   const PALETTE = ['#3A7BFF','#FF8C42','#2EC4B6','#9B59B6','#F1C40F','#1ABC9C','#FF6B6B','#16A085','#8E44AD','#2980B9'];
-  const makeOpt = (title, data) => ({
+  const makeOpt = (title, data, unit) => ({
     backgroundColor: 'transparent',
     title: { text: title, textStyle: { color: '#94a3b8', fontSize: 10, fontWeight: 'normal' }, top: 4, left: 'center' },
-    tooltip: { trigger: 'item', formatter: p => `${p.name}: ${p.value.toLocaleString()} μs (${p.percent}%)` },
+    tooltip: { trigger: 'item', formatter: p => unit === '%'
+      ? `${p.name}: ${p.percent}%`
+      : `${p.name}: ${p.value.toLocaleString()} ${unit || 'μs'} (${p.percent}%)` },
     series: [{
       type: 'pie', radius: ['28%', '58%'],
       center: ['50%', '58%'],
@@ -3280,14 +3302,20 @@ function renderOpPieCharts(wrap, entry, rid, aid) {
       emphasis: { label: { show: true, fontSize: 10, fontWeight: 'bold', color: '#e2e8f0' } },
     }],
   });
-  const coreData = entry.byCore.map(d => ({
+  const coreData = (entry.byCore || []).map(d => ({
     name: d.name, value: d.value,
     color: d.name === 'AI_CPU' ? '#FF4B7B' : d.name === 'MIX_AIC' ? '#FF8C42' : d.name === 'AI_CORE' ? '#3A7BFF' : undefined,
   }));
+  // 默认两环 = 按算子类型 / 按加速核（kernel_details.csv 运行时聚合走这条）；
+  // curated 条目可用 charts:[{title,data,unit}] 覆盖成与该问题直接相关的两个口径。
+  const charts = entry.charts?.length ? entry.charts : [
+    { title: '按算子类型分组总耗时（μs）', data: entry.byType },
+    { title: '按加速核分组总耗时（μs）', data: coreData },
+  ];
   const tc = echarts.init(document.getElementById(`op-chart-type-${rid}-${aid}`));
   const cc = echarts.init(document.getElementById(`op-chart-core-${rid}-${aid}`));
-  tc.setOption(makeOpt('按算子类型分组总耗时（μs）', entry.byType));
-  cc.setOption(makeOpt('按加速核分组总耗时（μs）', coreData));
+  tc.setOption(makeOpt(charts[0].title, charts[0].data, charts[0].unit));
+  if (charts[1]) cc.setOption(makeOpt(charts[1].title, charts[1].data, charts[1].unit));
   _opCharts.push(tc, cc);
 }
 
@@ -5474,8 +5502,11 @@ function graphCenterView() {
   applyGraphTransform();
 }
 
-/* 左侧「整网图」面板开合会改变 stage 宽度，index_v3 的面板逻辑调用此钩子重新适配 */
+/* 右侧「整网图」面板开合会改变 stage 宽度，index_v3 的面板逻辑调用此钩子重新适配 */
 window.msnextRefitGraph = function () {
+  /* 面板收起时 SVG 处于 display:none，问题标签量不到文字宽度只能按字宽粗估；
+     面板一打开就重画一次，让胶囊宽度回到真实测量值。幂等，重复调用无副作用。 */
+  applyOpvProblemMarks();
   if (!graphTabState.svg) return;
   graphTabState.zoom = computeGraphFitZoom();
   graphCenterView();
@@ -5577,8 +5608,8 @@ function renderGraphNodeDetail(nodeId) {
   if (!hasProb) {
     body.innerHTML = infoHTML || `
       <div class="gd-empty">
-        <div class="gd-empty-icon">⬅</div>
-        <div class="gd-empty-text">点击左侧标红的算子节点，查看问题详情与修复方案</div>
+        <div class="gd-empty-icon">➡</div>
+        <div class="gd-empty-text">点击右侧「整网图」面板中标红的算子节点，查看问题详情与修复方案</div>
       </div>`;
     return;
   }
@@ -5620,6 +5651,214 @@ function renderGraphNodeDetail(nodeId) {
     ${infoHTML ? `<div class="gd-info-divider-row">算子背景</div>${infoHTML}` : ''}`;
 }
 
+/* ── openPangu 整网图（#opvHost）的问题标注 ─────────────────────────────────────────
+   Qwen2-7B 计算图靠 GRAPH_PROBLEMS + is-problem-p0/p1/p2 标红（见 buildQwenGraphData），
+   openPangu 整网图此前没有对应机制。这里按「一条问题 → 一组命中节点」组织：命中节点全部加
+   is-problem-* 红/橙描边，anchor 节点上方再画一枚「问题N + 标题」的红色标签条，否则只有一片
+   红点、看不出哪个点对应哪条问题。标签条形态取自 training-run-twin 的 drawBadge（与节点等宽、
+   贴在节点上方、重叠则往上堆叠）。
+
+   badge  = 「关键问题」列表里的序号。该列表渲染的是 report.actions（见 renderIssues），
+            actions[].id 1..7 与 issues[].id '3.1'..'3.7' 一一对应（renderIssueDetail 里
+            靠 +i.id.split('.')[1] === a.id 关联），所以序号直接取 actionId 转中文数字。
+            M.x 是显存专题问题，不在 actions 列表里，标签直接写 ref。
+   nodes  = 该问题命中的所有节点（全部标红）；anchor 缺省取 nodes[0]，只有它画标签。
+   rollup = 节点被层级下拉折进上级模块时（L4 折 moe_ffn、L3 折 ffn_choice、L2 折 decoder_layer）
+            顺链往上找第一个还画在图上的落点，避免切粗粒度层级时标注凭空消失。
+
+   只标有明确网络位置的问题：3.3（全局零重叠）、3.5（环境变量）、3.7（AI Core 降频）、
+   M.2（分配器碎片）属于调度/运行时/硬件层面，网络图上没有对应的点，刻意不标——宁可少标，
+   也不要把红点铺满一张图。 */
+const OPV_GRAPH_PROBLEMS = {
+  r20260715pangu: [
+    { ref: '3.1', actionId: 1, priority: 'P0', title: 'PP 末级计算过载',
+      nodes: ['lm_head', 'logits'],
+      desc: 'lm_head 投影 [4608→153600] ~20 ms×64 次仅出现在 stage3，叠加末级独有的 loss 反向 GEMM 与重 vector 算子，制造 ~26% 单步 bubble' },
+    { ref: '3.2', actionId: 2, priority: 'P0', title: 'EP all-to-all 零重叠',
+      nodes: ['routed_expert_bank', 'moe_combine'], rollup: ['moe_ffn', 'ffn_choice', 'decoder_layer'],
+      desc: 'forward dispatch ~792 ms + backward combine ~528 ms，44 层累计 ~1.32 s/step 完全暴露在关键路径，未与 expert FFN 重叠' },
+    { ref: '3.4', actionId: 4, priority: 'P1', title: 'MoGE 路由负载不均',
+      nodes: ['router_gate', 'route_topk'], rollup: ['moe_ffn', 'ffn_choice', 'decoder_layer'],
+      desc: 'L36 group3 中 expert 27 的 gate score 均值 0.87，独占该组 ~65% token；EP 组内低负载 rank 空等同步' },
+    { ref: '3.6', actionId: 6, priority: 'P1', title: '动态 Shape 触发在线编译',
+      nodes: ['routed_expert_bank'], rollup: ['moe_ffn', 'ffn_choice', 'decoder_layer'],
+      desc: 'expert dispatch 后 token 数随路由变化，expert FFN 的 MatMul M 维不固定，走在线编译路径' },
+    { ref: 'M.1', priority: 'P0', title: 'activation checkpoint 未开启',
+      nodes: ['decoder_layer'],
+      desc: '46 层激活持续持有到 backward，占峰值显存 36.2 GB（56.6%），rank 17 step 12000 触顶 64/64 GB' },
+  ],
+};
+
+const CN_NUM = ['', '一', '二', '三', '四', '五', '六', '七', '八', '九', '十'];
+
+// 当前报告在 openPangu 整网图上的问题列表；null = 该报告不标（非 Pangu 或无映射）
+let opvProblems = null;
+
+/* 给 opv stage 上的节点打问题标记 + 标签条。整网图在染色切换、层级切换、主题切换时都会整体
+   重建 SVG（组件重建后广播 opv-graph-rendered），标注随旧 SVG 一起没掉，所以这里既在切报告时
+   直接调一次，也订阅该事件在每次重建后补回。 */
+function applyOpvProblemMarks() {
+  const stage = document.getElementById('graphStage');
+  if (!stage) return;
+  stage.querySelectorAll('.opv-problem-badge').forEach(el => el.remove());
+  stage.querySelectorAll('.is-problem-p0, .is-problem-p1, .is-problem-p2').forEach(el => {
+    el.classList.remove('is-problem-p0', 'is-problem-p1', 'is-problem-p2');
+    el.querySelector(':scope > title')?.remove();
+  });
+  if (!opvProblems || !opvProblems.length) return;
+
+  const findGroup = id => stage.querySelector(`[data-node-id="${id}"], [data-cluster-id="${id}"]`);
+  const RANK = { P0: 0, P1: 1, P2: 2 };
+  // 顺 rollup 链找第一个还画在图上的落点
+  const resolve = (id, rollup) => findGroup(id) || (rollup || []).reduce((g, up) => g || findGroup(up), null);
+
+  /* 先归拢再落笔：折叠后多条问题会并到同一落点（L4 时 MoE 内部四个节点全归 moe_ffn），
+     严重度取最高的一档——否则 P0/P1 两个 class 同时挂上，颜色由样式表书写顺序决定
+     （P1 写在后面会盖掉 P0），把一个 P0 点画成橙色。 */
+  const marks = new Map();   // group → { priority, lines[] }
+  const badges = [];         // { group, problem } —— anchor 命中的才画标签
+  for (const p of opvProblems) {
+    const anchorId = p.anchor || p.nodes[0];
+    for (const nodeId of p.nodes) {
+      const g = resolve(nodeId, p.rollup);
+      if (!g) continue;
+      const mark = marks.get(g);
+      const line = `${opvBadgeText(p)} · ${p.title}\n${p.desc}`;
+      if (!mark) marks.set(g, { priority: p.priority, lines: [line] });
+      else {
+        if (RANK[p.priority] < RANK[mark.priority]) mark.priority = p.priority;
+        if (!mark.lines.includes(line)) mark.lines.push(line);
+      }
+      if (nodeId === anchorId) badges.push({ group: g, problem: p });
+    }
+  }
+
+  for (const [g, mark] of marks) {
+    g.classList.add('is-problem-' + mark.priority.toLowerCase());
+    // 原生 <title>：鼠标停住给出完整举证，标签条上只放得下问题号 + 标题
+    const title = document.createElementNS('http://www.w3.org/2000/svg', 'title');
+    title.textContent = mark.lines.join('\n\n');
+    g.insertBefore(title, g.firstChild);
+  }
+
+  /* 避让要跟整张图上的所有节点比，所以先把它们的包围盒统一换算到 stage 全局坐标；
+     已放置的标签也进同一个池子，标签之间同样不重叠。 */
+  const occupied = opvCollectNodeBoxes(stage);
+  badges.forEach(({ group, problem }) => drawOpvProblemBadge(group, problem, occupied));
+}
+
+// 标签上的短标识：能对上「关键问题」列表就用「问题N」，否则退回报告里的条目号
+function opvBadgeText(p) {
+  return p.actionId ? `问题${CN_NUM[p.actionId] || p.actionId}` : `问题 ${p.ref}`;
+}
+
+/* 节点 group 带 transform="translate(x, y)"、rect 坐标相对节点中心；cluster group 无
+   transform、rect 直接是绝对坐标。统一解析出这个平移量，好把两者的 rect 换算到同一套坐标里。 */
+function opvGroupOffset(group) {
+  const m = /translate\(\s*(-?[\d.]+)[ ,]+(-?[\d.]+)/.exec(group.getAttribute('transform') || '');
+  return m ? { x: parseFloat(m[1]), y: parseFloat(m[2]) } : { x: 0, y: 0 };
+}
+
+function opvNodeBox(group) {
+  const rect = group.querySelector('rect');
+  if (!rect) return null;
+  const off = opvGroupOffset(group);
+  const w = parseFloat(rect.getAttribute('width') || '0');
+  const h = parseFloat(rect.getAttribute('height') || '0');
+  if (!w || !h) return null;
+  return { x: off.x + parseFloat(rect.getAttribute('x') || '0'), y: off.y + parseFloat(rect.getAttribute('y') || '0'), w, h, group };
+}
+
+// 全图节点的包围盒（全局坐标）。cluster 是大框、内部本来就要放东西，不参与避让。
+function opvCollectNodeBoxes(stage) {
+  return [...stage.querySelectorAll('.pto-model-graphviz-node')].map(opvNodeBox).filter(Boolean);
+}
+
+const opvBoxesOverlap = (a, b, pad = 0) => (
+  a.x < b.x + b.w + pad && a.x + a.w + pad > b.x &&
+  a.y < b.y + b.h + pad && a.y + a.h + pad > b.y
+);
+
+/* 在命中节点旁画一枚「问题N」标签。只放问题号（问题名移到 hover 的 <title> 里），
+   于是标签足够小，可以在节点四周挑一个不压住任何别的节点的位置放——依次试右侧居中、
+   左侧居中、上方左/右对齐、下方左/右对齐，六个都不行才退回节点正上方。
+   这样标签不会盖住邻近节点的文字。
+   标签挂进节点 group，跟着画布平移缩放走，不需要另外同步坐标。
+   occupied = 全局坐标的占位盒数组（全图节点 + 已放置的标签），本函数会把自己也加进去。 */
+function drawOpvProblemBadge(group, problem, occupied) {
+  const NS = 'http://www.w3.org/2000/svg';
+  const self = opvNodeBox(group);
+  if (!self) return;
+  const off = opvGroupOffset(group);
+  const nodeW = self.w, nodeH = self.h;
+
+  const badge = document.createElementNS(NS, 'g');
+  badge.setAttribute('class', `opv-problem-badge is-${problem.priority.toLowerCase()}`);
+  badge.setAttribute('data-ref', problem.ref);
+
+  // 先把文字挂上去量真实宽度（CJK/拉丁混排算不准），再据此定标签尺寸与位置
+  const label = document.createElementNS(NS, 'text');
+  label.setAttribute('class', 'opv-problem-badge-num');
+  label.textContent = opvBadgeText(problem);
+  badge.appendChild(label);
+  group.appendChild(badge);
+
+  const PAD_X = 12, PILL_H = 40, GAP = 10;
+  let textW = 0;
+  try { textW = label.getComputedTextLength(); } catch { textW = 0; }
+  // 整网图面板收起时（.v2-panel-netgraph display:none）量不到，按字宽粗估兜底：
+  // 24px 下 CJK 约一个字宽、拉丁/数字约半个，宁可略宽也别让文字溢出胶囊
+  if (!textW) textW = [...opvBadgeText(problem)].reduce((w, ch) => w + (/[一-龥]/.test(ch) ? 24 : 13), 0);
+  const pillW = Math.max(textW + PAD_X * 2, 88);
+
+  // 候选位置（节点局部坐标，即相对节点中心）
+  const candidates = [
+    { x: nodeW / 2 + GAP,          y: -PILL_H / 2 },                 // 右侧居中
+    { x: -nodeW / 2 - GAP - pillW, y: -PILL_H / 2 },                 // 左侧居中
+    { x: -nodeW / 2,               y: -nodeH / 2 - GAP - PILL_H },   // 正上方左对齐
+    { x: -nodeW / 2,               y: nodeH / 2 + GAP },             // 正下方左对齐
+    { x: nodeW / 2 - pillW,        y: -nodeH / 2 - GAP - PILL_H },   // 上方右对齐
+    { x: nodeW / 2 - pillW,        y: nodeH / 2 + GAP },             // 下方右对齐
+  ];
+  const toGlobal = c => ({ x: off.x + c.x, y: off.y + c.y, w: pillW, h: PILL_H });
+  const pick = candidates.find(c => {
+    const box = toGlobal(c);
+    return !occupied.some(o => o.group !== group && opvBoxesOverlap(box, o, 4));
+  }) || candidates[2];
+  occupied.push({ ...toGlobal(pick), group: null });
+
+  const pill = document.createElementNS(NS, 'rect');
+  pill.setAttribute('class', 'opv-problem-badge-bg');
+  pill.setAttribute('x', pick.x);
+  pill.setAttribute('y', pick.y);
+  pill.setAttribute('width', pillW);
+  pill.setAttribute('height', PILL_H);
+  pill.setAttribute('rx', 9);
+  badge.insertBefore(pill, label);   // 底板要在文字之前，否则盖住文字
+
+  label.setAttribute('x', pick.x + pillW / 2);
+  label.setAttribute('y', pick.y + PILL_H / 2);
+
+  // 标签只剩问题号，问题名与举证收进悬浮提示
+  const tip = document.createElementNS(NS, 'title');
+  tip.textContent = `${opvBadgeText(problem)} · ${problem.title}\n${problem.desc}`;
+  badge.appendChild(tip);
+
+  /* 点击标签 → 选中「关键问题」列表里对应的那张卡（M.x 无对应卡，不绑）。
+     这里只负责命中同一条问题，避免用户在图和列表之间自己对号入座。 */
+  if (problem.actionId) {
+    badge.classList.add('is-clickable');
+    badge.addEventListener('click', e => {
+      e.stopPropagation();
+      const card = document.querySelector(`.ic-card[data-id="${problem.actionId}"]`);
+      if (!card) return;
+      card.click();
+      card.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+    });
+  }
+}
+document.addEventListener('opv-graph-rendered', applyOpvProblemMarks);
+
 function renderGraph(report) {
   // Pangu 2.0 flash 报告：整网图面板切到 openPangu model-graphviz 组件（#opvHost），
   // 和下面 Qwen2-7B 计算图（#graphTabStage/#graphMapBtn）互斥，两者共用同一个「整网图」面板。
@@ -5630,6 +5869,10 @@ function renderGraph(report) {
   const mapBtn = $('graphMapBtn');
   if (stage) stage.hidden = isPangu;
   if (mapBtn) mapBtn.hidden = isPangu;
+
+  // 切报告即刷新 openPangu 整网图上的问题标注（非 Pangu 报告置空，避免残留上一份的红点/标签）
+  opvProblems = isPangu ? (OPV_GRAPH_PROBLEMS[report.id] || null) : null;
+  applyOpvProblemMarks();
 
   if (isPangu) return;
 

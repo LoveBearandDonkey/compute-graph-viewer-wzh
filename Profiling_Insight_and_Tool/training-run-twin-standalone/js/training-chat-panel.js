@@ -124,6 +124,48 @@
     localStorage.setItem(QUOTA_STORE, JSON.stringify(q));
   }
 
+  // ── 消息区滚动手感 ────────────────────────────────────────────────────────
+  // 原来每次追加消息都是 msgEl.scrollTop = msgEl.scrollHeight 硬跳,新内容"啪"地闪到底,
+  // 加上默认的系统滚动条,整体观感很生硬。这里统一收口成三件事:
+  //   1) 普通追加走 scrollTo({behavior:'smooth'}),让视线跟着滑下去而不是瞬移;
+  //   2) 用户往回翻历史时(onlyIfNearBottom)不再被强行拽回底部;
+  //   3) 滚动位置变化时同步上下渐隐类名(见 .wzh-chat-messages 的 --wzh-chat-fade-* 遮罩),
+  //      内容在标题栏/提示语栏边界处淡出,而不是被一刀切断。
+  const STICK_THRESHOLD = 64;  // 距底部小于这个像素数即视为"贴着底部看最新消息"
+  const FADE_EPSILON = 6;      // 滚动余量小于这个像素数就当作已经到顶/到底,不再渐隐
+  let fadeRaf = 0;
+
+  function isNearBottom(el) {
+    return el.scrollHeight - el.scrollTop - el.clientHeight <= STICK_THRESHOLD;
+  }
+
+  function updateChatFade(el) {
+    const msgEl = el || $('trainChatMessages');
+    if (!msgEl) return;
+    const rest = msgEl.scrollHeight - msgEl.clientHeight;
+    const canScroll = rest > FADE_EPSILON;
+    msgEl.classList.toggle('is-fade-top', canScroll && msgEl.scrollTop > FADE_EPSILON);
+    msgEl.classList.toggle('is-fade-bottom', canScroll && rest - msgEl.scrollTop > FADE_EPSILON);
+  }
+
+  // 滚动/流式刷新期间调用很密集,合并到下一帧统一算一次
+  function scheduleFadeUpdate(el) {
+    if (fadeRaf) return;
+    fadeRaf = requestAnimationFrame(() => { fadeRaf = 0; updateChatFade(el); });
+  }
+
+  function scrollChatToBottom(el, opts) {
+    if (!el) return;
+    const o = opts || {};
+    if (o.onlyIfNearBottom && !isNearBottom(el)) { scheduleFadeUpdate(el); return; }
+    try {
+      el.scrollTo({ top: el.scrollHeight, behavior: o.instant ? 'auto' : 'smooth' });
+    } catch (e) {
+      el.scrollTop = el.scrollHeight; // 老引擎不支持 scrollTo(options) 时退回硬跳
+    }
+    scheduleFadeUpdate(el);
+  }
+
   function escHtml(s) {
     return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
   }
@@ -293,7 +335,7 @@ ${issuesText || '（暂无）'}
     div.className = 'wzh-chat-message user';
     div.innerHTML = escHtml(text).replace(/\n/g, '<br>');
     msgEl.appendChild(div);
-    msgEl.scrollTop = msgEl.scrollHeight;
+    scrollChatToBottom(msgEl);
   }
 
   // AI 回复统一走"头像行 + 缩进正文"外壳(不追加背景气泡——表格/卡片这类内容挤在有色
@@ -319,7 +361,7 @@ ${issuesText || '（暂无）'}
     const { el, bodyEl } = createAiMessageShell();
     bodyEl.innerHTML = renderMarkdown(text);
     msgEl.appendChild(el);
-    msgEl.scrollTop = msgEl.scrollHeight;
+    scrollChatToBottom(msgEl);
   }
 
   function setChatBusy(busy) {
@@ -345,6 +387,7 @@ ${issuesText || '（暂无）'}
         '<div class="wzh-chat-welcome-text"></div>' +
       '</div>';
     playWelcomeTypewriter();
+    updateChatFade(msgEl); // 回到欢迎屏后不再有滚动余量,撤掉上下渐隐
   }
 
   // ── 「消息设置」场景:固定的演示流程,不经 DeepSeek——用户已经把回答内容和消息预览卡片都
@@ -410,7 +453,7 @@ ${issuesText || '（暂无）'}
     const { el: aiDiv, bodyEl } = createAiMessageShell();
     bodyEl.innerHTML = '<span class="wzh-chat-typing"><span></span><span></span><span></span></span>';
     msgEl.appendChild(aiDiv);
-    msgEl.scrollTop = msgEl.scrollHeight;
+    scrollChatToBottom(msgEl);
 
     chatStreaming = true;
     setChatBusy(true);
@@ -421,7 +464,7 @@ ${issuesText || '（暂无）'}
       chatHistory.push({ role: 'assistant', content: leadText + '\n\n' + tailText });
       chatStreaming = false;
       setChatBusy(false);
-      msgEl.scrollTop = msgEl.scrollHeight;
+      scrollChatToBottom(msgEl);
     }, 650);
   }
 
@@ -457,7 +500,7 @@ ${issuesText || '（暂无）'}
     const { el: aiDiv, bodyEl } = createAiMessageShell();
     bodyEl.innerHTML = '<span class="wzh-chat-typing"><span></span><span></span><span></span></span>';
     msgEl.appendChild(aiDiv);
-    msgEl.scrollTop = msgEl.scrollHeight;
+    scrollChatToBottom(msgEl);
 
     chatStreaming = true;
     setChatBusy(true);
@@ -470,7 +513,7 @@ ${issuesText || '（暂无）'}
       }
       chatStreaming = false;
       setChatBusy(false);
-      msgEl.scrollTop = msgEl.scrollHeight;
+      scrollChatToBottom(msgEl);
     }, 700);
   }
 
@@ -507,7 +550,7 @@ ${issuesText || '（暂无）'}
     const { el: aiDiv, bodyEl } = createAiMessageShell();
     bodyEl.innerHTML = '<span class="wzh-chat-typing"><span></span><span></span><span></span></span>';
     msgEl.appendChild(aiDiv);
-    msgEl.scrollTop = msgEl.scrollHeight;
+    scrollChatToBottom(msgEl);
 
     const messages = [
       { role: 'system', content: buildSystemPrompt(getTrainingContext()) },
@@ -519,7 +562,9 @@ ${issuesText || '（暂无）'}
     try {
       const full = await streamChat(messages, (partial) => {
         bodyEl.innerHTML = renderMarkdown(partial);
-        msgEl.scrollTop = msgEl.scrollHeight;
+        // 流式增量:每个 token 都会走到这里,用瞬时对齐(平滑动画被反复重启反而更顿),
+        // 且只在用户本来就贴着底部时才跟随——往回翻历史时不会被硬拽回来。
+        scrollChatToBottom(msgEl, { instant: true, onlyIfNearBottom: true });
       });
       if (full && full.trim()) {
         chatHistory.push({ role: 'assistant', content: full });
@@ -537,7 +582,7 @@ ${issuesText || '（暂无）'}
     } finally {
       chatStreaming = false;
       setChatBusy(false);
-      msgEl.scrollTop = msgEl.scrollHeight;
+      scrollChatToBottom(msgEl);
     }
   }
 
@@ -572,6 +617,7 @@ ${issuesText || '（暂无）'}
       if (open) {
         triggerOpenGlow(panel);
         playWelcomeTypewriter();
+        scheduleFadeUpdate(); // 面板收起期间内容高度可能变过,展开时重算一次渐隐
       } else {
         revertChartsOverrideIfActive(); // 关闭对话框即撤销「调整图表」演示对精度栏的改动
       }
@@ -618,6 +664,7 @@ ${issuesText || '（暂无）'}
     initPanelToggle();
     initInput();
     initAnchorChip();
+    $('trainChatMessages')?.addEventListener('scroll', () => scheduleFadeUpdate(), { passive: true });
     $('trainChatKeyBtn')?.addEventListener('click', () => window.promptTrainChatApiKey());
     $('trainChatNewBtn')?.addEventListener('click', resetConversation);
   }

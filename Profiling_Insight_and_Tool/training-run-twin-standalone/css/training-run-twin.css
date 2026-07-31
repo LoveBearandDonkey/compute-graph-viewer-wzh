@@ -931,11 +931,31 @@ html[data-theme="light"] .train-twin-page .twin-status,
 .pto-tmchart__marker { stroke: var(--danger); stroke-width: 0.9; stroke-dasharray: 4 3; opacity: .5; pointer-events: none; }
 .pto-tmchart__cursor-chip { fill: var(--surface-4); stroke: var(--border-strong); stroke-width: 1; }
 .pto-tmchart__cursor-chip-text { font-family: var(--font-mono); font-size: 10px; fill: var(--foreground); }
+/* SVG 内嵌气泡样式：training-metrics-chart 已改用下面的 body 浮层，这三条现由
+   js/training-monitoring-v2-deck.js 的侧视层堆悬浮气泡复用（同一套视觉语言，不另起一套）。 */
 .pto-tmchart__cursor-tip-bg { fill: var(--surface-4); stroke: var(--border-strong); stroke-width: 1; filter: drop-shadow(0 4px 12px rgba(0,0,0,.28)); }
 .pto-tmchart__cursor-tip-step { font-family: var(--font-mono); font-size: 10px; font-weight: 700; fill: var(--foreground); }
 .pto-tmchart__cursor-tip-val { font-family: var(--font-mono); font-size: 10px; fill: var(--foreground-secondary); }
-.pto-tmchart__cursor-tip-tag-bg { fill: var(--danger); }
-.pto-tmchart__cursor-tip-tag { font-family: var(--font-sans); font-size: 9px; font-weight: 700; fill: #fff; }
+
+/* hover 气泡：挂在 <body> 上的 position:fixed 浮层(不是 SVG 里的 <g>),
+   这样卡片 overflow:hidden 裁不到它,窄卡上也能完整显示;位置由 JS 按游标屏幕 x 每次重算,
+   气泡因此跟着鼠标左右走,而不是被夹在绘图区左侧长期挡住曲线。视觉沿用图表既有的 surface-4 面板语言。 */
+.pto-tmchart-tip {
+  position: fixed; left: 0; top: 0; z-index: 9000; pointer-events: none;
+  display: flex; flex-direction: column; gap: 2px;
+  padding: 6px 8px; border-radius: 5px;
+  background: var(--surface-4); border: 1px solid var(--border-strong);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, .28);
+  font-family: var(--font-mono); font-size: 10px; line-height: 14px;
+  color: var(--foreground-secondary); white-space: nowrap;
+}
+.pto-tmchart-tip[hidden] { display: none; }
+.pto-tmchart-tip__head { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.pto-tmchart-tip__step { font-weight: 700; color: var(--foreground); }
+.pto-tmchart-tip__tag { font-family: var(--font-sans); font-size: 9px; font-weight: 700; color: #fff; background: var(--danger); border-radius: 3px; padding: 0 5px; }
+.pto-tmchart-tip__row { display: flex; align-items: center; gap: 5px; }
+.pto-tmchart-tip__row i { width: 8px; height: 8px; border-radius: 2px; flex: none; }
+.pto-tmchart-tip__val { margin-left: auto; padding-left: 8px; color: var(--foreground); }
 .pto-tmchart__plot-hit { fill: transparent; cursor: crosshair; }
 .pto-tmchart__legend { display: flex; flex-wrap: wrap; gap: 14px; margin-top: 8px; }
 .pto-tmchart__legend-item { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: var(--foreground-secondary); }

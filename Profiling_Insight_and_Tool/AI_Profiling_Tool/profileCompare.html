@@ -648,12 +648,27 @@ body {
 .sl-diff-card__vals { margin-top: 4px; font: 500 11px / 1.3 var(--font-sans); color: var(--foreground-muted); }
 .sl-diff-card__val { color: var(--foreground); font-family: var(--font-mono); font-weight: 600; }
 .sl-diff-card__val.is-warn { color: #d23b3b; }
+/* 三方对比：一行塞不下三组「名称 + 数值」，改成竖排的 dot·名称·数值 */
+.sl-diff-card__vals.is-multi { display: flex; flex-direction: column; gap: 2px; }
+.sl-diff-card__val-row { display: flex; align-items: center; gap: 5px; min-width: 0; }
+.sl-diff-card__val-dot { width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0; }
+.sl-diff-card__val-name { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* 该 run 里这条泳道没有任务条（多/少任务条的直接体现） */
+.sl-diff-card__val.is-absent { color: var(--foreground-muted); font-weight: 400; }
+.sl-diff-card__count { color: var(--foreground-muted); font: 400 10px / 1.3 var(--font-mono); flex-shrink: 0; }
 
 /* ── 对比双方左右卡片 ── */
 .sl-compare-cards {
   display: grid; grid-template-columns: 1fr 1fr; gap: var(--space-3);
   margin-bottom: var(--space-3);
 }
+/* 三方对比：右侧面板宽度不变，卡片压成三列，仪表盘同步缩一档 */
+.sl-compare-cards.is-triple { grid-template-columns: repeat(3, 1fr); gap: var(--space-2); }
+.sl-compare-cards.is-triple .sl-compare-card__head { padding: 8px 8px 0; gap: 5px; }
+.sl-compare-cards.is-triple .sl-compare-card__name { font-size: 10px; -webkit-line-clamp: 3; }
+.sl-compare-cards.is-triple .sl-compare-card__gauge { height: 104px; }
+.sl-compare-cards.is-triple .sl-compare-gauge-score { font-size: 19px; }
+.sl-compare-cards.is-triple .sl-compare-gauge-sub { font-size: 9px; }
 .sl-compare-card {
   position: relative;
   display: flex; flex-direction: column;
@@ -715,6 +730,37 @@ body {
   padding: 1px 6px; border-radius: 999px;
 }
 
+/* ── 三栏对比：把对比框从「按比例分高的 split」切成「等高堆叠 + 整体滚动」──
+   split 组件给每个 pane 写的是内联 flex（applyPaneSizes），所以这里必须 !important 覆盖。
+   flex:1 1 400px + min-height:400px = 空间够就一起长高、不够就各自停在 400px 让整块滚，
+   正是"每栏最小高度 400，显示不完中间整个区域滚动"。两栏时不加这个类，维持原来的 50/50。 */
+#analysisSplit.is-stacked {
+  overflow-y: auto;
+  overflow-x: hidden;
+  scrollbar-width: thin;
+  scrollbar-color: color-mix(in srgb, var(--foreground) 20%, transparent) transparent;
+}
+/* min-height 也得 !important：pane 上写着内联 min-height:0（两栏模式下要它能被压扁），
+   不盖掉的话 flex 会把 400px 的 basis 一路压到 0，整个堆叠就不滚了。 */
+#analysisSplit.is-stacked > [data-ide-pane] {
+  flex: 1 1 400px !important;
+  min-height: 400px !important;
+  height: auto !important;
+}
+/* 堆叠模式下分隔条不再有意义（本来也是禁止拖拽的固定分栏） */
+#analysisSplit.is-stacked > .pto-workbench-shell__split-gutter { display: none; }
+#analysisSplit.is-stacked::-webkit-scrollbar { width: 8px; }
+#analysisSplit.is-stacked::-webkit-scrollbar-track { background: transparent; }
+#analysisSplit.is-stacked::-webkit-scrollbar-thumb {
+  background-color: color-mix(in srgb, var(--foreground) 20%, transparent);
+  background-clip: padding-box;
+  border: 2px solid transparent;
+  border-radius: var(--radius-pill);
+}
+#analysisSplit.is-stacked:hover::-webkit-scrollbar-thumb {
+  background-color: color-mix(in srgb, var(--foreground) 32%, transparent);
+}
+
 /* ── 跨栏 Bezier 连线（SVG overlay，白色曲线，高层级）── */
 #crossLaneSvgOverlay {
   position: absolute; inset: 0; z-index: 200; pointer-events: none;
@@ -767,39 +813,36 @@ body {
 .sl-detail-compare__col--label {
   font: 500 11px / 1.3 var(--font-sans); color: var(--foreground-secondary);
 }
-.sl-detail-compare__col--top,
-.sl-detail-compare__col--bottom {
+.sl-detail-compare__col--val {
   font: 500 11px / 1.35 var(--font-mono); color: var(--foreground);
   text-align: right;
 }
-.sl-detail-compare__col--top.is-better {
-  color: var(--success); font-weight: 700;
-}
-.sl-detail-compare__col--bottom.is-better {
+.sl-detail-compare__col--val.is-better {
   color: var(--success); font-weight: 700;
 }
 .sl-detail-compare__head .sl-detail-compare__col--label {
   font: 500 10px / 1.25 var(--font-sans); color: var(--foreground-muted);
 }
-.sl-detail-compare__head .sl-detail-compare__col--top,
-.sl-detail-compare__head .sl-detail-compare__col--bottom {
-  font: 500 10px / 1.25 var(--font-sans); color: var(--foreground-muted);
-  text-align: right; gap: 4px;
-}
 /* 表头行用 flex 承载 dot + 截断名称 */
-.sl-detail-compare__head .sl-detail-compare__col--top,
-.sl-detail-compare__head .sl-detail-compare__col--bottom {
+.sl-detail-compare__head .sl-detail-compare__col--val {
+  font: 500 10px / 1.25 var(--font-sans); color: var(--foreground-muted);
   display: flex; align-items: center; justify-content: flex-end; gap: 4px;
   min-width: 0; overflow: hidden;
 }
-.sl-detail-compare__head .sl-detail-compare__col--top .sl-detail-compare__dot,
-.sl-detail-compare__head .sl-detail-compare__col--bottom .sl-detail-compare__dot {
+.sl-detail-compare__head .sl-detail-compare__col--val .sl-detail-compare__dot {
   flex-shrink: 0;
 }
-.sl-detail-compare__head .sl-detail-compare__col--top span:last-child,
-.sl-detail-compare__head .sl-detail-compare__col--bottom span:last-child {
+.sl-detail-compare__head .sl-detail-compare__col--val span:last-child {
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0;
 }
+/* 三方对比：指标列多一栏，指标名收窄给数值让位 */
+.sl-detail-compare.is-triple .sl-detail-compare__head,
+.sl-detail-compare.is-triple .sl-detail-compare__row {
+  grid-template-columns: minmax(56px, 0.9fr) 1fr 1fr 1fr; gap: 3px;
+}
+.sl-detail-compare.is-triple .sl-detail-compare__col--val { font-size: 10px; }
+/* 某一侧没有对应任务条（另一个 run 多/少了任务）时的占位 */
+.sl-detail-compare__col--val.is-missing { color: var(--foreground-muted); font-weight: 400; }
 .sl-detail-compare__dot {
   width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0;
 }
@@ -892,12 +935,13 @@ body {
   scrollbar-color: color-mix(in srgb, var(--foreground) 18%, transparent) transparent;
 }
 
-/* ── 内联统一 diff 视图 ── */
+/* ── 内联统一 diff 视图 ──
+   注意这里不能用 overflow:hidden 收圆角：文件名下拉的弹出层是这一层的后代，
+   一裁就没了。改成上下两个子块各自带一半圆角，外层放开 overflow。 */
 .sl-diff-code {
   display: flex; flex-direction: column;
   border: 1px solid var(--border-subtle);
   border-radius: var(--radius-md);
-  overflow: hidden;
   font-family: 'Cascadia Code', 'Consolas', 'SF Mono', 'Menlo', 'Monaco', 'Courier New', var(--font-mono), monospace;
   font-size: 11px; line-height: 1.5;
 }
@@ -907,6 +951,7 @@ body {
   padding: 7px 10px; flex: 0 0 auto;
   background: var(--surface-2);
   border-bottom: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md) var(--radius-md) 0 0;
 }
 .sl-diff-code__file-row {
   display: flex; align-items: center; gap: 6px;
@@ -920,6 +965,60 @@ body {
   color: var(--foreground-secondary); font-family: var(--font-mono);
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
+/* 三方对比时文件名变成可切换的下拉。全套自绘（不用原生 select，它的弹出列表由 UA 画、
+   跟不了本页的深浅色 token），静态时看起来跟原来的纯文件名一致，悬停/展开才浮出底色。 */
+.sl-diff-code__file-picker {
+  position: relative; display: inline-flex; align-items: center; min-width: 0;
+}
+.sl-diff-code__file-btn {
+  display: inline-flex; align-items: center; gap: 3px; min-width: 0;
+  border: 1px solid transparent; border-radius: var(--radius-sm);
+  background: transparent; cursor: pointer;
+  color: inherit; font: inherit;
+  padding: 1px 3px 1px 4px; margin-left: -4px;
+}
+.sl-diff-code__file-btn:hover,
+.sl-diff-code__file-btn[aria-expanded="true"] {
+  background: var(--state-hover); border-color: var(--border-subtle);
+  outline: none;
+}
+.sl-diff-code__file-btn:hover .sl-diff-code__file-name,
+.sl-diff-code__file-btn[aria-expanded="true"] .sl-diff-code__file-name { color: var(--foreground); }
+.sl-diff-code__file-caret {
+  width: 11px; height: 11px; flex-shrink: 0;
+  fill: none; stroke: var(--foreground-muted); stroke-width: 2;
+  stroke-linecap: round; stroke-linejoin: round;
+  transition: transform var(--duration-fast) var(--easing-default);
+}
+.sl-diff-code__file-btn:hover .sl-diff-code__file-caret { stroke: var(--foreground); }
+.sl-diff-code__file-btn[aria-expanded="true"] .sl-diff-code__file-caret { transform: rotate(180deg); }
+/* 弹出层：只列当前没在显示的那个文件 */
+.sl-diff-code__file-menu {
+  position: absolute; top: calc(100% + 4px); left: 0; z-index: 40;
+  min-width: max(100%, 200px);
+  display: flex; flex-direction: column; gap: 2px;
+  padding: 4px;
+  background: var(--surface-3, var(--surface-2));
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-md, 0 6px 18px rgba(0, 0, 0, 0.28));
+}
+.sl-diff-code__file-menu[hidden] { display: none; }
+.sl-diff-code__file-option {
+  display: flex; align-items: center; gap: 6px; width: 100%;
+  padding: 5px 7px; border: 0; border-radius: var(--radius-sm);
+  background: transparent; cursor: pointer; text-align: left;
+  color: var(--foreground); font: inherit;
+}
+.sl-diff-code__file-option:hover { background: var(--state-hover); }
+.sl-diff-code__file-opt-name {
+  flex: 1 1 auto; min-width: 0;
+  font-family: var(--font-mono); font-size: 11px;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.sl-diff-code__file-opt-tag {
+  flex-shrink: 0; font-size: 10px; color: var(--foreground-muted);
+}
 .sl-diff-code__file-id {
   color: var(--foreground-muted); font-size: 10px; font-family: var(--font-mono);
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
@@ -930,6 +1029,7 @@ body {
   max-height: 340px;
   overflow-y: auto;
   background: var(--surface-1);
+  border-radius: 0 0 var(--radius-md) var(--radius-md);
 }
 .sl-diff-line {
   display: flex; min-height: 17px; align-items: flex-start;
@@ -1449,10 +1549,10 @@ body {
 
 /* ── 左侧「分析记录」勾选面板：移植自 compute-graph-viewer-wzh 的
    training-run-twin-standalone/TaskCompare.html 任务勾选栏，替换原先的运行记录卡片
-   （展开/产物菜单那一套）。本工具固定两两对比：勾中的固定是「基线」(state.selectedRunId，
-   对比框上栏) + 一个「对比对象」(state.comparisonRunId，对比框下栏)，两者的 checkbox 常态
-   disabled——基线只能靠点另一行的「基线」标签切换；对比对象靠勾选一行新的来替换，
-   不支持直接取消勾选到 0/1 个（该工具不支持多于两路对比）。 */
+   （展开/产物菜单那一套）。勾中的第一条固定是「基线」(state.selectedRunId)，checkbox 常态
+   disabled——基线只能靠点另一行的「基线」标签切换；其余最多两条是对比对象
+   (state.comparisonRunId / comparisonRunId2，见 COMPARE_SLOTS)：勾两条 = 上下两栏的分组视图，
+   勾第三条会自动切到聚合视图（分组视图放不下第三个 run，页签会被禁用）。 */
 .cmp-task-list {
   display: flex;
   flex-direction: column;
@@ -1918,7 +2018,10 @@ body {
               <section class="pto-ide-frame__pane pto-ide-frame__pane--stack" data-ide-pane="content-row">
                 <main class="pto-ide-frame__split" data-ide-split="swimlane-content" data-split-direction="horizontal" data-storage-key="pyptoux-mix-sync-workbench-content-v4" data-sizes="73,27" data-min-size="520,300" data-pixel-sizes="0,332">
                   <section class="pto-ide-frame__pane pto-ide-frame__pane--stack" id="analysisColumn" data-ide-pane="analysis-column">
-                    <div class="pto-ide-frame__split" data-ide-split="swimlane-analysis" data-split-direction="vertical" data-storage-key="pyptoux-mix-sync-workbench-analysis-v2-fixed-50-50" data-sizes="50,50" data-min-size="240,180">
+                    <!-- 三栏对比时这个 split 会被切成「等分 + 整体纵向滚动」的堆叠模式（.is-stacked，
+                         见 setGroupedPanelVisibility）：每栏最小 400px，装不下就整块滚。两栏时维持原来的
+                         上下 50/50。第三栏隐藏时 flex 不参与分配，两栏依旧各占一半。 -->
+                    <div class="pto-ide-frame__split" id="analysisSplit" data-ide-split="swimlane-analysis" data-split-direction="vertical" data-storage-key="pyptoux-mix-sync-workbench-analysis-v3-3pane" data-sizes="34,33,33" data-min-size="240,180,180">
                       <section class="pto-ide-frame__pane" id="canvasPane" data-ide-pane="editor-preview">
                         <div class="pto-ide-frame__pane-header sl-cmp-header-pad">
                           <h2 class="pto-ide-frame__pane-title" id="swimlanePaneTitle">mix-sync-run-20260709-001</h2>
@@ -1997,6 +2100,25 @@ body {
                             <div class="sl-train-tl-inner">
                               <div class="sl-train-tl-label" id="trainTimelineBottomLabel"></div>
                               <div class="sl-train-tl-canvas" id="trainTimelineBottomCanvas"></div>
+                            </div>
+                          </div>
+                        </div>
+                      </section>
+
+                      <section class="pto-ide-frame__pane" id="blockGraphView2" data-ide-pane="block-graph-2" style="min-width:0;min-height:0;height:100%;display:flex;flex-direction:column" hidden aria-hidden="true">
+                        <div class="pto-ide-frame__pane-header sl-cmp-header-pad">
+                          <h2 class="pto-ide-frame__pane-title" id="blockGraphTitle2"></h2>
+                          <span class="sl-searchbox sl-header-searchbox" id="cmpThirdSearchbox" hidden>
+                            <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"></circle><path d="m21 21-4-4"></path></svg>
+                            <input type="search" placeholder="搜索对比任务" />
+                          </span>
+                        </div>
+                        <div class="sl-train-tl-layout" id="trainTimelineThird">
+                          <div class="sl-train-tl-viewport" id="trainTimelineThirdViewport">
+                            <div class="sl-train-tl-corner"></div>
+                            <div class="sl-train-tl-inner">
+                              <div class="sl-train-tl-label" id="trainTimelineThirdLabel"></div>
+                              <div class="sl-train-tl-canvas" id="trainTimelineThirdCanvas"></div>
                             </div>
                           </div>
                         </div>
@@ -2206,6 +2328,8 @@ const state = {
   selectedRunId: CURRENT_RUN_ID,
   secondaryViewMode: null,
   comparisonRunId: null,
+  comparisonRunId2: null,     // 第三方对比对象（勾选第 3 条记录时启用，分组视图下多一栏）
+  codeDiffSides: null,        // 关联代码上下两侧各显示哪个槽位的文件（三方对比时可用下拉切换）
   diffSelectedLane: null,
   inspectorView: 'dashboard', // dashboard | detail
   detailTaskKey: null,        // { coreName, subGraphId, label, ordinal } — 点击泳道任务条时置入，驱动详情下钻
@@ -2233,6 +2357,30 @@ function isAggregatedSwimlane() {
 }
 function comparisonRun() {
   return state.comparisonRunId ? RUN_BY_ID[state.comparisonRunId] : null;
+}
+
+/* ---- 对比槽位（基线 + 最多 2 个对比对象）----
+   槽位名同时用作聚合视图里叶子行 coreName 的后缀（`${leafKey}§base` / `…§compare` /
+   `…§compare2`），两两对比时的 base/compare 命名原样保留，第三方只是往后追加一个槽。
+   activeCompareRunIds() 的返回顺序 = 槽位顺序 = 聚合视图里三条子行自上而下的顺序。 ---- */
+const COMPARE_SLOTS = ['base', 'compare', 'compare2'];
+const MAX_COMPARE_RUNS = COMPARE_SLOTS.length;
+const COMPARE_SLOT_LABELS = { base: '基线', compare: '对比 A', compare2: '对比 B' };
+const COMPARE_SLOT_SUFFIX_RE = /§(base|compare2|compare)$/;
+
+function activeCompareRunIds() {
+  return [state.selectedRunId, state.comparisonRunId, state.comparisonRunId2]
+    .filter((id, i, arr) => id && RUN_BY_ID[id] && arr.indexOf(id) === i);
+}
+function activeCompareRuns() {
+  return activeCompareRunIds().map((id) => RUN_BY_ID[id]);
+}
+/* 当前生效的槽位名数组，长度与 activeCompareRunIds() 对齐 */
+function activeCompareSlots() {
+  return COMPARE_SLOTS.slice(0, activeCompareRunIds().length);
+}
+function isTripleCompare() {
+  return activeCompareRunIds().length > 2;
 }
 function coreLaneOrder(a, b) {
   if (a.laneGroup !== b.laneGroup) return a.idx - b.idx;
@@ -2396,6 +2544,7 @@ const swimlanePaneTitle = document.getElementById('swimlanePaneTitle');
 const swimlaneObjectTitle = document.getElementById('swimlaneObjectTitle');
 const cmpTopSearchbox = document.getElementById('cmpTopSearchbox');
 const cmpBottomSearchbox = document.getElementById('cmpBottomSearchbox');
+const cmpThirdSearchbox = document.getElementById('cmpThirdSearchbox');
 const tooltip = document.getElementById('tooltip');
 const frameEl = document.querySelector('[data-ide-frame]');
 const canvasPane = document.getElementById('canvasPane');
@@ -2405,9 +2554,13 @@ const topInspectorToggle = document.getElementById('topInspectorToggle');
 const railTerminalToggle = document.getElementById('railTerminalToggle');
 const blockGraphView = document.getElementById('blockGraphView');
 const blockGraphTitle = document.getElementById('blockGraphTitle');
+const blockGraphView2 = document.getElementById('blockGraphView2');
+const blockGraphTitle2 = document.getElementById('blockGraphTitle2');
+const analysisSplitEl = document.getElementById('analysisSplit');
 const swimlaneWorkbenchEl = document.querySelector('.sl-swimlane-workbench');
 const trainTimelineTop = document.getElementById('trainTimelineTop');
 const trainTimelineBottom = document.getElementById('trainTimelineBottom');
+const trainTimelineThird = document.getElementById('trainTimelineThird');
 let bctx, actx, lctx, crispCtx;
 let frameController = null;
 let canvasTooltipController = null;
@@ -3839,16 +3992,20 @@ function fitMiddleEllipsis(ctx, text, maxWidth) {
 }
 
 function runCheckItemHtml(r, idx) {
+  const slotIdx = activeCompareRunIds().indexOf(r.id);
   const isBase = r.id === state.selectedRunId;
-  const isCompared = r.id === state.comparisonRunId;
+  const isCompared = slotIdx > 0;
   const checked = isBase || isCompared;
   const dotClass = runDotClass(r.id);
   const cbDisabled = isBase ? 'disabled' : '';
+  const full = activeCompareRunIds().length >= MAX_COMPARE_RUNS;
   const cbTitle = isBase
     ? '基线固定参与对比（对比框上栏）；如需换掉，请点另一条记录的"基线"标签'
     : isCompared
-      ? '取消勾选以退出对比模式'
-      : '勾选后作为对比对象（对比框下栏）';
+      ? `当前为「${COMPARE_SLOT_LABELS[COMPARE_SLOTS[slotIdx]]}」，取消勾选可移出对比`
+      : full
+        ? `最多同时对比 ${MAX_COMPARE_RUNS} 条；勾选后将替换掉当前的「${COMPARE_SLOT_LABELS.compare2}」`
+        : '勾选后作为对比对象（对比框下方新增一栏）';
   return `<div class="cmp-task-item ${checked ? 'is-selected' : ''}" data-id="${escapeHtml(r.id)}">
     <input type="checkbox" class="cmp-cb" data-id="${escapeHtml(r.id)}" ${checked ? 'checked' : ''} ${cbDisabled} title="${escapeHtml(cbTitle)}">
     <span class="dot ${dotClass}"></span>
@@ -3874,24 +4031,41 @@ function extraRunItemHtml(r) {
   </div>`;
 }
 
-// 勾选一条未勾中的记录 = 把它设为新的对比对象（替换旧的），本工具固定两两对比。
-// 取消勾选已勾中的对比对象 = 退出对比模式，恢复只有基线的状态。
+// 勾选一条未勾中的记录 = 把它追加成新的对比对象（基线 + 最多 2 个对比对象）；
+// 槽位满了再勾 = 替换掉最后一个（对比 B），基线和对比 A 保持不动。
+// 取消勾选某个对比对象 = 把它移出对比；移光了就退出对比模式，恢复只有基线的状态。
 function toggleCompareCheck(runId) {
-  if (runId !== state.selectedRunId && runId !== state.comparisonRunId) {
-    openRunComparison(runId);
-  } else if (runId === state.comparisonRunId) {
-    closeRunComparison();
+  // EXTRA_PANGU_RUNS 里的补充场景没有真实 swimlane 数据，静默忽略（勾选状态由重渲染复位）
+  if (runId === state.selectedRunId || !RUN_BY_ID[runId]) { renderRunHistory(); return; }
+  const compares = activeCompareRunIds().slice(1);
+  const at = compares.indexOf(runId);
+  if (at >= 0) {
+    const rest = compares.filter((id) => id !== runId);
+    if (rest.length) openRunComparison(rest);
+    else closeRunComparison();
+  } else if (compares.length < MAX_COMPARE_RUNS - 1) {
+    openRunComparison(compares.concat([runId]));
+  } else {
+    openRunComparison(compares.slice(0, MAX_COMPARE_RUNS - 2).concat([runId]));
   }
   renderRunHistory();
 }
 
-// 「基线」标签：把该行切换为基线（对比框上栏）。若它正是当前对比对象，则与旧基线互换；
-// 否则保留原对比对象不变，旧基线被顶掉。
+// 「基线」标签：把该行切换为基线（对比框上栏）。若它本来就在对比列表里，旧基线顶替它的位置
+// 继续参与对比；否则保留原对比对象不变，旧基线被顶掉。
 function setCompareBaseline(runId) {
-  if (runId === state.selectedRunId) return;
-  const swapTarget = runId === state.comparisonRunId ? state.selectedRunId : state.comparisonRunId;
-  loadRun(runId);
-  openRunComparison(swapTarget && swapTarget !== runId ? swapTarget : pickDefaultComparisonRunId(runId));
+  if (runId === state.selectedRunId || !RUN_BY_ID[runId]) return;
+  const oldBaseId = state.selectedRunId;
+  const compares = activeCompareRunIds().slice(1);
+  const wasCompared = compares.indexOf(runId) >= 0;
+  let next = compares.filter((id) => id !== runId);
+  if (wasCompared) next = [oldBaseId].concat(next);
+  loadRun(runId);   // 注意：loadRun 会清空全部对比槽位，随后由 openRunComparison 重新建立
+  if (!next.length) {
+    const fallback = pickDefaultComparisonRunId(runId);
+    if (fallback) next = [fallback];
+  }
+  openRunComparison(next);
   renderRunHistory();
 }
 
@@ -3949,6 +4123,7 @@ function loadRun(runId) {
     hoverSubtask: null,
     hoverWrapBandKey: null,
     comparisonRunId: null,
+    comparisonRunId2: null,
     diffSelectedLane: null,
     detailTaskKey: null,
     inspectorView: 'dashboard',
@@ -3960,6 +4135,8 @@ function loadRun(runId) {
   state.collapsedLaneGroups = new Set(['host', 'ai_core_worker_phases']);
   state.secondaryViewMode = null;
   state.comparisonRunId = null;
+  state.comparisonRunId2 = null;
+  state.codeDiffSides = null;
   state.diffSelectedLane = null;
   state.detailTaskKey = null;
   state.inspectorView = 'dashboard';
@@ -4355,6 +4532,9 @@ function runMetricChips() {
   </div>`;
 }
 
+// 上一次关联代码滚到的 hunk 序号，用来保证下一次一定换一段（见 renderInspector）
+let lastCodeHunkPick = -1;
+
 function renderInspector() {
   const title = document.getElementById('inspTitle');
   const body = document.getElementById('inspBody');
@@ -4362,30 +4542,39 @@ function renderInspector() {
     title.innerHTML = '<button class="sl-detail-back" id="detailBackBtn" title="返回差异看板" aria-label="返回差异看板"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m19 12H5"></path><path d="m12 19-7-7 7-7"></path></svg></button><span>对比详情</span>';
     body.innerHTML = diffDetailHtml(state.detailTaskKey);
     bindInspector();
-    // 随机滚动到某个 diff hunk，让每次切换对比任务都展示不同的差异代码段
+    // 随机滚动到某个 diff hunk：每切换一条对比任务条都换一段差异代码看。
+    // 之前是按 taskKey.coreName 做确定性哈希，同一条泳道里换任务条时算出来是同一段、
+    // 滚动条纹丝不动；这里改成真随机 + 保证与上一次不同段（示意用，不追求业务对应）。
     requestAnimationFrame(function () {
       var container = body.querySelector('.sl-diff-code__lines');
       if (!container) return;
       var hunks = container.querySelectorAll('.sl-diff-line.is-hunk');
       if (!hunks.length) return;
-      /* 基于 taskKey 做确定性随机：同一任务对固定展示同一段，不同任务对自动换段 */
-      var seed = 0;
-      var tk = state.detailTaskKey;
-      if (tk) { for (var si = 0; si < (tk.coreName || '').length; si++) seed = (seed * 31 + (tk.coreName || '').charCodeAt(si)) | 0; }
-      var pick = Math.abs(seed) % hunks.length;
-      var target = hunks[pick];
-      var lineTop = target.offsetTop;
-      container.scrollTop = Math.max(0, lineTop - container.clientHeight / 3);
+      var pick = Math.floor(Math.random() * hunks.length);
+      if (hunks.length > 1 && pick === lastCodeHunkPick) {
+        pick = (pick + 1 + Math.floor(Math.random() * (hunks.length - 1))) % hunks.length;
+      }
+      lastCodeHunkPick = pick;
+      var maxScroll = Math.max(0, container.scrollHeight - container.clientHeight);
+      // 再叠一点随机偏移：只有一段 hunk 时也能看出滚动位置变了
+      var jitter = (Math.random() - 0.35) * container.clientHeight * 0.45;
+      var next = Math.max(0, Math.min(maxScroll, hunks[pick].offsetTop - container.clientHeight / 3 + jitter));
+      // 万一算出来正好还是当前位置（内容短、段落少），强制挪开一段
+      if (maxScroll > 0 && Math.abs(next - container.scrollTop) < 2) {
+        next = next > maxScroll / 2
+          ? Math.max(0, next - maxScroll * 0.3)
+          : Math.min(maxScroll, next + maxScroll * 0.3);
+      }
+      container.scrollTop = next;
     });
     return;
   }
   title.textContent = '差异看板';
   body.innerHTML = diffDashboardHtml();
-  // 渲染缩小版仪表盘
-  var topRun = RUN_BY_ID[state.selectedRunId];
-  var bottomRun = RUN_BY_ID[state.comparisonRunId];
-  if (topRun) renderCompareGauge(document.getElementById('compareGaugeTop'), computeRunPhs(topRun));
-  if (bottomRun) renderCompareGauge(document.getElementById('compareGaugeBottom'), computeRunPhs(bottomRun));
+  // 渲染缩小版仪表盘（每个参与对比的 run 一个）
+  activeCompareRuns().forEach(function (run, i) {
+    renderCompareGauge(document.getElementById('compareGauge' + i), computeRunPhs(run));
+  });
   bindInspector();
 }
 
@@ -4428,11 +4617,52 @@ if (typeof colorForTask === 'function') {
   };
 }
 
+/* ---- 每个 run 的「训练形态」------------------------------------------------
+   同一份构造器要能造出三份**结构上真的不一样**的训练：不只是时长抖动（那个由
+   run.id 哈希天然带来），还包括任务条数量的增减与通信泳道的增删——
+   - steps / kernelBase / kernelSpread：AI Core 任务条的条数
+   - aivRate：每条 AIC kernel 之后跟一条 AIV kernel 的概率（调低 = AIV 泳道任务条明显变少）
+   - commLanes：该次训练实际用到的通信泳道（换并行策略会整条泳道地增/减）
+   - *Scale：计算 / 通信 / 空泡三段时长的整体倍率
+   默认形态的参数与改造前的写死值完全一致，两两对比的既有数据一字不变；
+   只有显式登记在 TRAIN_RUN_SHAPES 里的 run 才走差异化形态。 ---- */
+const TRAIN_SHAPE_DEFAULT = {
+  steps: 4,
+  kernelBase: 6, kernelSpread: 4,
+  aivRate: 0.5,
+  computeScale: 1, commScale: 1, freeScale: 1,
+  // [泳道, 语义标签, 取哪一段时长, 任务名]；顺序即 step 内通信段的先后顺序
+  commLanes: [
+    { lane: 'G1·collective', label: 'Comm-Transmit', part: 'overlap', name: 'AllReduce 传输' },
+    { lane: 'G2·p2p', label: 'Comm-Wait', part: 'notOverlap', name: 'P2P 等待同步' },
+  ],
+};
+const TRAIN_RUN_SHAPES = {
+  /* 第三份数据（三方对比时的「对比 B」）：FFN + MoE 的另一套并行切分。
+     相对基线：多跑一个 step、每 step 的 Cube kernel 更多（任务条变多）；
+     Vector 算子被融合进 Cube，AIV 泳道任务条大幅变少；通信侧换成 AllToAll，
+     没有 P2P 流水（少一条泳道），并且通信整体更慢、空泡更大。 */
+  'pangu-ffn-a5-g2-20260701-211806': {
+    steps: 5,
+    kernelBase: 8, kernelSpread: 3,
+    aivRate: 0.18,
+    computeScale: 0.88, commScale: 1.35, freeScale: 1.5,
+    commLanes: [
+      { lane: 'G1·collective', label: 'Comm-Transmit', part: 'overlap', name: 'AllReduce 传输' },
+      { lane: 'G3·alltoall', label: 'Comm-Transmit', part: 'notOverlap', name: 'MoE AllToAll 派发/回收' },
+    ],
+  },
+};
+function trainShapeOf(run) {
+  return Object.assign({}, TRAIN_SHAPE_DEFAULT, TRAIN_RUN_SHAPES[String(run?.id || '')] || {});
+}
+
 function buildTrainingSwimlaneData(run) {
   const rnd = mulberry32(hashSeed(String(run?.id || 'run')));
+  const shape = trainShapeOf(run);
   // STEP_GAP_US 刻意压小：真实训练里 step 之间几乎背靠背，间隔不该比 step 本身还长，
   // 否则整条泳道乍看全是空隙（此前 20000us 的间隔比一个 step 的内容还长好几倍）。
-  const HOSTS = 2, RANKS_PER_HOST = 2, STEPS = 4, STEP_GAP_US = 400;
+  const HOSTS = 2, RANKS_PER_HOST = 2, STEPS = shape.steps, STEP_GAP_US = 400;
   const jitter = () => 0.85 + rnd() * 0.3;
   // 每次 run 的整体健康度偏置：由 run.id 哈希决定，让两次对比的训练看起来不同
   const commWaitBias = 0.15 + rnd() * 0.35;
@@ -4452,20 +4682,21 @@ function buildTrainingSwimlaneData(run) {
       const rankNode = { id: P, label: `Rank ${rankId}`, children: [], collapsed: !(h === 0 && r === 0) };
 
       const hwTasks = { AI_CORE: [], AI_VECTOR_CORE: [] };
-      const commTasks = { 'G1·collective': [], 'G2·p2p': [] };
+      const commTasks = {};
+      shape.commLanes.forEach((spec) => { commTasks[spec.lane] = []; });
       const overlapTasks = { Computing: [], Communication: [], 'Communication(Not Overlapped)': [], Free: [] };
 
       let cursor = 0;
       for (let s = 0; s < STEPS; s++) {
         const stepStart = cursor;
-        const computeUs = (2200 + rnd() * 800) * jitter();
-        const commUs = (900 + rnd() * 500) * (1 + commWaitBias);
+        const computeUs = (2200 + rnd() * 800) * jitter() * shape.computeScale;
+        const commUs = (900 + rnd() * 500) * (1 + commWaitBias) * shape.commScale;
         const commOverlapUs = Math.max(0, commUs * (1 - commWaitBias)) * 0.6;
         const commNotOverlapUs = Math.max(0, commUs - commOverlapUs);
-        const freeUs = (150 + rnd() * 300) * (1 + freeBias);
+        const freeUs = (150 + rnd() * 300) * (1 + freeBias) * shape.freeScale;
 
         let t = stepStart;
-        const nKernels = 6 + Math.floor(rnd() * 4);
+        const nKernels = shape.kernelBase + Math.floor(rnd() * shape.kernelSpread);
         for (let k = 0; k < nKernels; k++) {
           const dur = (computeUs / nKernels) * jitter();
           hwTasks.AI_CORE.push({
@@ -4475,7 +4706,7 @@ function buildTrainingSwimlaneData(run) {
             taskName: `Rank ${rankId} · Step ${s} · MatMul/FA kernel ${(dur / 1000).toFixed(2)}ms`,
           });
           t += dur;
-          if (rnd() > 0.5) {
+          if (rnd() > 1 - shape.aivRate) {
             const vdur = dur * 0.3;
             hwTasks.AI_VECTOR_CORE.push({
               taskId: tid++, subGraphId: s,
@@ -4487,26 +4718,26 @@ function buildTrainingSwimlaneData(run) {
         }
         const computeEnd = stepStart + computeUs;
 
+        // 通信段按 shape.commLanes 顺序背靠背铺开：泳道构成随并行策略变化，
+        // 每段取 overlap（可被计算掩盖的传输）/ notOverlap（掩盖不住的那截）两种时长之一。
         let ct = computeEnd;
-        commTasks['G1·collective'].push({
-          taskId: tid++, subGraphId: s,
-          execStart: Number(ct.toFixed(2)), execEnd: Number((ct + commOverlapUs).toFixed(2)),
-          semanticLabel: 'Comm-Transmit',
-          taskName: `Rank ${rankId} · Step ${s} · AllReduce 传输 ${(commOverlapUs / 1000).toFixed(2)}ms`,
+        shape.commLanes.forEach((spec) => {
+          const segUs = spec.part === 'overlap' ? commOverlapUs : commNotOverlapUs;
+          commTasks[spec.lane].push({
+            taskId: tid++, subGraphId: s,
+            execStart: Number(ct.toFixed(2)), execEnd: Number((ct + segUs).toFixed(2)),
+            semanticLabel: spec.label,
+            taskName: `Rank ${rankId} · Step ${s} · ${spec.name} ${(segUs / 1000).toFixed(2)}ms`,
+          });
+          ct += segUs;
         });
-        ct += commOverlapUs;
-        commTasks['G2·p2p'].push({
-          taskId: tid++, subGraphId: s,
-          execStart: Number(ct.toFixed(2)), execEnd: Number((ct + commNotOverlapUs).toFixed(2)),
-          semanticLabel: 'Comm-Wait',
-          taskName: `Rank ${rankId} · Step ${s} · P2P 等待同步 ${(commNotOverlapUs / 1000).toFixed(2)}ms`,
-        });
-        const commEnd = ct + commNotOverlapUs;
+        const commEnd = ct;
+        const commTotalUs = commEnd - computeEnd;
         const stepEnd = commEnd + freeUs;
 
         overlapTasks.Computing.push({ taskId: tid++, subGraphId: s, execStart: stepStart, execEnd: computeEnd, semanticLabel: 'Computing', taskName: `Rank ${rankId} · Step ${s} · Computing ${(computeUs / 1000).toFixed(2)}ms` });
-        overlapTasks.Communication.push({ taskId: tid++, subGraphId: s, execStart: computeEnd, execEnd: commEnd, semanticLabel: 'Communication', taskName: `Rank ${rankId} · Step ${s} · Communication ${(commUs / 1000).toFixed(2)}ms` });
-        overlapTasks['Communication(Not Overlapped)'].push({ taskId: tid++, subGraphId: s, execStart: computeEnd + commOverlapUs, execEnd: commEnd, semanticLabel: 'Communication', taskName: `Rank ${rankId} · Step ${s} · 未掩盖通信 ${(commNotOverlapUs / 1000).toFixed(2)}ms` });
+        overlapTasks.Communication.push({ taskId: tid++, subGraphId: s, execStart: computeEnd, execEnd: commEnd, semanticLabel: 'Communication', taskName: `Rank ${rankId} · Step ${s} · Communication ${(commTotalUs / 1000).toFixed(2)}ms` });
+        overlapTasks['Communication(Not Overlapped)'].push({ taskId: tid++, subGraphId: s, execStart: computeEnd + commOverlapUs, execEnd: commEnd, semanticLabel: 'Communication', taskName: `Rank ${rankId} · Step ${s} · 未掩盖通信 ${((commEnd - computeEnd - commOverlapUs) / 1000).toFixed(2)}ms` });
         overlapTasks.Free.push({ taskId: tid++, subGraphId: s, execStart: commEnd, execEnd: stepEnd, semanticLabel: 'Free', taskName: `Rank ${rankId} · Step ${s} · Free（调度空泡）${(freeUs / 1000).toFixed(2)}ms` });
 
         cursor = stepEnd + STEP_GAP_US;
@@ -4558,32 +4789,55 @@ function buildTrainingSwimlaneData(run) {
    直接按 leafKey 对应拼接即可，不需要改 SwimlaneRenderer 本身。子行 coreName 里
    带 §base/§compare 后缀，天然跟 positionalKeyOfEvent 的按 coreName 定位方式对齐，
    不会和另一侧的任务条撞 key。 */
-function buildAggregatedTrainingSwimlane(topRun, bottomRun) {
-  const topBuilt = buildTrainingSwimlaneData(topRun);
-  const bottomBuilt = buildTrainingSwimlaneData(bottomRun);
-  const topTasksByLeaf = new Map(topBuilt.coreTasks.map((c) => [c.coreType, c.tasks]));
-  const bottomTasksByLeaf = new Map(bottomBuilt.coreTasks.map((c) => [c.coreType, c.tasks]));
+/* 各 run 的泳道树按 id 取并集：换并行策略会让某个 run 多出/少掉整条通信泳道
+   （见 TRAIN_RUN_SHAPES 的 commLanes），只按基线那棵树走会把第三份数据里多出来的
+   泳道整条吞掉。合并时按「首次出现顺序」保留，后面的 run 独有的节点追加在同级末尾；
+   某个 run 没有的泳道在它那一行就是一条空行——这正是「少了任务条」的直观呈现。 */
+function mergeLaneTreeNodes(nodes) {
+  const order = [];
+  const byId = new Map();
+  nodes.forEach((node) => {
+    if (!node) return;
+    if (!byId.has(node.id)) { byId.set(node.id, []); order.push(node.id); }
+    byId.get(node.id).push(node);
+  });
+  return order.map((id) => {
+    const group = byId.get(id);
+    const first = group[0];
+    if (!Array.isArray(first.children)) return first;
+    const childNodes = [];
+    group.forEach((n) => (n.children || []).forEach((c) => childNodes.push(c)));
+    return Object.assign({}, first, { children: mergeLaneTreeNodes(childNodes) });
+  });
+}
+
+function buildAggregatedTrainingSwimlane(runs) {
+  const activeRuns = (Array.isArray(runs) ? runs : Array.prototype.slice.call(arguments)).filter(Boolean);
+  if (activeRuns.length < 2) return null;
+  const builtList = activeRuns.map(buildTrainingSwimlaneData);
+  const tasksByLeafList = builtList.map((built) => new Map(built.coreTasks.map((c) => [c.coreType, c.tasks])));
+  const slots = COMPARE_SLOTS.slice(0, activeRuns.length);
   const mergedCoreTasks = [];
   const walkNode = (node) => {
     if (Array.isArray(node.children)) {
       return Object.assign({}, node, { children: node.children.map(walkNode) });
     }
     const leafKey = node.leafKey;
-    const baseLeafKey = `${leafKey}§base`, compareLeafKey = `${leafKey}§compare`;
-    mergedCoreTasks.push({ blockIdx: mergedCoreTasks.length, coreType: baseLeafKey, tasks: topTasksByLeaf.get(leafKey) || [] });
-    mergedCoreTasks.push({ blockIdx: mergedCoreTasks.length, coreType: compareLeafKey, tasks: bottomTasksByLeaf.get(leafKey) || [] });
-    return {
-      id: `${node.id}§agg`, label: node.label,
-      children: [
-        // 传完整 run.id：由组件按标签列可用像素宽做“中间省略”（labelEllipsis:'middle'），
-        // 不在这里预截断，否则会二次省略把中段/尾部区分点也丢掉。
-        { id: baseLeafKey, label: topRun.id, leafKey: baseLeafKey },
-        { id: compareLeafKey, label: bottomRun.id, leafKey: compareLeafKey },
-      ],
-    };
+    const children = slots.map((slot, i) => {
+      const slotLeafKey = `${leafKey}§${slot}`;
+      mergedCoreTasks.push({ blockIdx: mergedCoreTasks.length, coreType: slotLeafKey, tasks: tasksByLeafList[i].get(leafKey) || [] });
+      // 传完整 run.id：由组件按标签列可用像素宽做“中间省略”（labelEllipsis:'middle'），
+      // 不在这里预截断，否则会二次省略把中段/尾部区分点也丢掉。
+      return { id: slotLeafKey, label: activeRuns[i].id, leafKey: slotLeafKey };
+    });
+    // 叶子标签里的 "(n)" 是**某一个** run 的任务条数，聚合后各 run 条数本就不同，
+    // 挂在共用的分组行上会误导；条数差异交给右侧差异卡片说明，这里只留泳道名。
+    return { id: `${node.id}§agg`, label: String(node.label || '').replace(/\s*\(\d+\)$/, ''), children };
   };
-  const mergedLaneTree = { children: (topBuilt.laneTree.children || []).map(walkNode) };
-  return { coreTasks: mergedCoreTasks, laneTree: mergedLaneTree };
+  const unionChildren = mergeLaneTreeNodes(
+    builtList.reduce((acc, built) => acc.concat(built.laneTree.children || []), []),
+  );
+  return { coreTasks: mergedCoreTasks, laneTree: { children: unionChildren.map(walkNode) } };
 }
 
 /* ============================================================
@@ -4598,6 +4852,7 @@ const TRAIN_LEAF_LABELS = {
   AI_VECTOR_CORE: 'AI Vector Core',
   'G1·collective': 'G1 · Collective',
   'G2·p2p': 'G2 · P2P',
+  'G3·alltoall': 'G3 · AllToAll',
   Computing: 'Computing',
   Communication: 'Communication',
   'Communication(Not Overlapped)': 'Communication（未掩盖）',
@@ -4629,40 +4884,47 @@ function laneBusyStats(run) {
   return stats;
 }
 
-function computeLaneDiffCards() {
-  const topRun = RUN_BY_ID[state.selectedRunId];
-  const bottomRun = RUN_BY_ID[state.comparisonRunId];
-  if (!topRun || !bottomRun) return [];
-  const topStats = laneBusyStats(topRun);
-  const bottomStats = laneBusyStats(bottomRun);
-  const leafKeys = new Set([...topStats.keys(), ...bottomStats.keys()]);
-  const cards = [];
-  leafKeys.forEach((leafKey) => {
-    const top = topStats.get(leafKey) || { busyUs: 0, count: 0 };
-    const bottom = bottomStats.get(leafKey) || { busyUs: 0, count: 0 };
-    const base = Math.max(top.busyUs, bottom.busyUs, 1e-6);
-    const diffPct = (Math.abs(top.busyUs - bottom.busyUs) / base) * 100;
-    cards.push({
-      leafKey,
-      path: laneKeyPath(leafKey),
-      topUs: top.busyUs, bottomUs: bottom.busyUs, diffPct,
-      itemCount: top.count + bottom.count,
-      direction: bottom.busyUs > top.busyUs ? 'up' : (bottom.busyUs < top.busyUs ? 'down' : 'flat'),
-    });
+/* 差异幅度：N 个 run 里 busy 最大值与最小值的相对差（N=2 时退化为原来的 |a−b|/max）。
+   values 按槽位顺序（基线 → 对比 A → 对比 B）排好，卡片直接照着渲染。 */
+function laneDiffCardOf(leafKey, statsList, runIds) {
+  const values = statsList.map((stats, i) => {
+    const info = stats.get(leafKey) || { busyUs: 0, count: 0 };
+    return { runId: runIds[i], slot: COMPARE_SLOTS[i], busyUs: info.busyUs, count: info.count };
   });
+  const busy = values.map((v) => v.busyUs);
+  const maxUs = Math.max.apply(null, busy), minUs = Math.min.apply(null, busy);
+  return {
+    leafKey,
+    path: laneKeyPath(leafKey),
+    values,
+    topUs: values[0].busyUs, bottomUs: values[1].busyUs,
+    diffPct: ((maxUs - minUs) / Math.max(maxUs, 1e-6)) * 100,
+    itemCount: values.reduce((sum, v) => sum + v.count, 0),
+    direction: values[1].busyUs > values[0].busyUs ? 'up' : (values[1].busyUs < values[0].busyUs ? 'down' : 'flat'),
+  };
+}
+
+function computeLaneDiffCards() {
+  const runs = activeCompareRuns();
+  if (runs.length < 2) return [];
+  const runIds = runs.map((run) => run.id);
+  const statsList = runs.map(laneBusyStats);
+  const leafKeys = new Set();
+  statsList.forEach((stats) => stats.forEach((_, leafKey) => leafKeys.add(leafKey)));
+  const cards = [];
+  leafKeys.forEach((leafKey) => { cards.push(laneDiffCardOf(leafKey, statsList, runIds)); });
   cards.sort((a, b) => b.diffPct - a.diffPct);
   return cards;
 }
 
 /* ── 按泳道聚合：把同一泳道类型（AI Core / AIV / Comm …）跨 Host/Rank 汇总 ── */
 function computeLaneAggregatedDiffCards() {
-  var topRun = RUN_BY_ID[state.selectedRunId];
-  var bottomRun = RUN_BY_ID[state.comparisonRunId];
-  if (!topRun || !bottomRun) return [];
-  var topStats = laneBusyStats(topRun);
-  var bottomStats = laneBusyStats(bottomRun);
+  var runs = activeCompareRuns();
+  if (runs.length < 2) return [];
+  var runIds = runs.map(function (run) { return run.id; });
+  var statsList = runs.map(laneBusyStats);
   var agg = new Map();
-  function ingest(stats, side) {
+  statsList.forEach(function (stats, slotIdx) {
     stats.forEach(function (info, leafKey) {
       var path = laneKeyPath(leafKey);
       var segs = path.split(' › ');
@@ -4670,24 +4932,28 @@ function computeLaneAggregatedDiffCards() {
       var leafLabel = segs[2] || leafKey;
       var key = groupLabel + ' › ' + leafLabel;
       var entry = agg.get(key);
-      if (!entry) { entry = { laneType: key, groupLabel: groupLabel, leafLabel: leafLabel, topUs: 0, bottomUs: 0, topCount: 0, bottomCount: 0, leafKeys: [] }; agg.set(key, entry); }
-      if (side === 'top') { entry.topUs += info.busyUs; entry.topCount += info.count; }
-      else { entry.bottomUs += info.busyUs; entry.bottomCount += info.count; }
+      if (!entry) {
+        entry = { laneType: key, groupLabel: groupLabel, leafLabel: leafLabel, leafKeys: [], values: [] };
+        runIds.forEach(function (runId, i) { entry.values.push({ runId: runId, slot: COMPARE_SLOTS[i], busyUs: 0, count: 0 }); });
+        agg.set(key, entry);
+      }
+      entry.values[slotIdx].busyUs += info.busyUs;
+      entry.values[slotIdx].count += info.count;
       if (entry.leafKeys.indexOf(leafKey) < 0) entry.leafKeys.push(leafKey);
     });
-  }
-  ingest(topStats, 'top');
-  ingest(bottomStats, 'bottom');
+  });
   var cards = [];
   agg.forEach(function (entry) {
-    var base = Math.max(entry.topUs, entry.bottomUs, 1e-6);
-    var diffPct = (Math.abs(entry.topUs - entry.bottomUs) / base) * 100;
+    var busy = entry.values.map(function (v) { return v.busyUs; });
+    var maxUs = Math.max.apply(null, busy), minUs = Math.min.apply(null, busy);
     cards.push({
       leafKey: entry.leafKeys[0] || '',
       path: entry.laneType,
-      topUs: entry.topUs, bottomUs: entry.bottomUs, diffPct: diffPct,
-      itemCount: entry.topCount + entry.bottomCount,
-      direction: entry.bottomUs > entry.topUs ? 'up' : (entry.bottomUs < entry.topUs ? 'down' : 'flat'),
+      values: entry.values,
+      topUs: entry.values[0].busyUs, bottomUs: entry.values[1].busyUs,
+      diffPct: ((maxUs - minUs) / Math.max(maxUs, 1e-6)) * 100,
+      itemCount: entry.values.reduce(function (sum, v) { return sum + v.count; }, 0),
+      direction: entry.values[1].busyUs > entry.values[0].busyUs ? 'up' : (entry.values[1].busyUs < entry.values[0].busyUs ? 'down' : 'flat'),
     });
   });
   cards.sort(function (a, b) { return b.diffPct - a.diffPct; });
@@ -4825,64 +5091,90 @@ function labelColorForTag(label) {
   return map[label] || '#5A92E6';
 }
 
-/* ── 对比详情：点击泳道任务条后下钻到单任务左右对比视图 ── */
+/* 把「被点中的那一条任务条」换算成每个参与对比的 run 各自的同位任务条。
+   - 聚合视图：只有 top 一个实例，同位任务条靠 coreName 的 §base/§compare/§compare2 后缀区分；
+   - 分组视图：top/bottom 两个实例共用同一个裸 coreName。
+   某个 run 没有这条任务条（它那条泳道任务条更少、或整条泳道就没有）时 event 为 null，
+   由调用方按「—」占位显示。 */
+function compareSlotEvents(taskKey) {
+  var runs = activeCompareRuns();
+  if (!taskKey || runs.length < 2) return [];
+  var bareCoreName = trainStripRunSuffix(taskKey.coreName).coreName;
+  if (isAggregatedSwimlane()) {
+    var renderer = trainRenderers.top;
+    return runs.map(function (run, i) {
+      var key = Object.assign({}, taskKey, { coreName: bareCoreName + '§' + COMPARE_SLOTS[i] });
+      return { run: run, slot: COMPARE_SLOTS[i], event: renderer ? renderer.findEventByPositionalKey(key) : null };
+    });
+  }
+  var bareKey = Object.assign({}, taskKey, { coreName: bareCoreName });
+  return runs.map(function (run, i) {
+    var r = trainRenderers[TRAIN_PANEL_KEYS[i]];
+    return { run: run, slot: COMPARE_SLOTS[i], event: r ? r.findEventByPositionalKey(bareKey) : null };
+  });
+}
+
+/* ── 对比详情：点击泳道任务条后下钻到逐 run 的指标对比视图 ── */
 function diffDetailHtml(taskKey) {
-  var topRun = RUN_BY_ID[state.selectedRunId];
-  var bottomRun = RUN_BY_ID[state.comparisonRunId];
-  if (!topRun || !bottomRun || !taskKey) return '<div class="sl-empty-state">未找到可对比的运行。</div>';
+  var slots = compareSlotEvents(taskKey);
+  if (!slots.length || !taskKey) return '<div class="sl-empty-state">未找到可对比的运行。</div>';
 
-  var topEvent = trainRenderers.top ? trainRenderers.top.findEventByPositionalKey(taskKey) : null;
-  var bottomEvent = trainRenderers.bottom ? trainRenderers.bottom.findEventByPositionalKey(taskKey) : null;
-
-  // 基线侧事件不存在则 fallback 到对比侧
-  var primaryEvent = topEvent || bottomEvent;
-  if (!primaryEvent) return '<div class="sl-empty-state">所选任务在当前数据中未找到。</div>';
+  // 基线侧事件不存在（该任务条只在某个对比 run 里有）则 fallback 到第一个有事件的 run
+  var primarySlot = null;
+  for (var pi = 0; pi < slots.length; pi++) { if (slots[pi].event) { primarySlot = slots[pi]; break; } }
+  if (!primarySlot) return '<div class="sl-empty-state">所选任务在当前数据中未找到。</div>';
+  var primaryEvent = primarySlot.event;
 
   // 提取任务元信息
   var taskName = primaryEvent.displayName || primaryEvent.name || '';
-  var laneName = taskKey.coreName || '';
+  var laneName = trainStripRunSuffix(taskKey.coreName || '').coreName;
   var label = primaryEvent.label || '';
   var stepId = primaryEvent.subGraphId != null ? 'Step ' + primaryEvent.subGraphId : '';
 
-  // 构造示意对比项（用两 run 的 seed 派生差异值）
-  var seedVal = hashSeed(topRun.id + '|' + bottomRun.id + '|' + taskKey.coreName + '|' + taskKey.label + '|' + taskKey.ordinal);
+  // 构造示意对比项：种子里带上全部参与对比的 run.id，换一组对比对象就换一组派生值
+  var seedVal = hashSeed(slots.map(function (s) { return s.run.id; }).join('|') + '|' + taskKey.coreName + '|' + taskKey.label + '|' + taskKey.ordinal);
   var rnd = mulberry32(seedVal);
 
-  var topDur = topEvent ? Math.round(topEvent.dur) : 0;
-  var bottomDur = bottomEvent ? Math.round(bottomEvent.dur) : 0;
-  var topStart = topEvent ? Math.round(topEvent.ts) : 0;
-  var bottomStart = bottomEvent ? Math.round(bottomEvent.ts) : 0;
-  var topEnd = topStart + topDur;
-  var bottomEnd = bottomStart + bottomDur;
+  var metrics = slots.map(function (slot) {
+    var ev = slot.event;
+    if (!ev) {
+      // 该 run 没有这条任务条：所有指标留空（渲染成 "—"），不参与"谁更优"的比较
+      rnd(); rnd(); rnd(); rnd(); rnd();   // 保持每个槽位消耗同样多的随机数，值不随缺失错位
+      return { missing: true };
+    }
+    var dur = Math.round(ev.dur);
+    var start = Math.round(ev.ts);
+    var exec = Math.round(dur * (0.62 + rnd() * 0.28));
+    var overlap = Math.round(dur * rnd() * 0.38);
+    var idle = Math.round(dur * rnd() * 0.15);
+    var idleBefore = Math.round(idle * (0.3 + rnd() * 0.4));
+    rnd();
+    return {
+      missing: false,
+      start: start, end: start + dur, dur: dur,
+      exec: exec, wait: dur - exec, overlap: overlap,
+      idleBefore: idleBefore, idleAfter: idle - idleBefore,
+    };
+  });
 
-  // 额外构造项
-  var topExec = Math.round(topDur * (0.65 + rnd() * 0.25));
-  var bottomExec = Math.round(bottomDur * (0.62 + rnd() * 0.28));
-  var topWait = topDur - topExec;
-  var bottomWait = bottomDur - bottomExec;
-  var topOverlap = Math.round(topDur * rnd() * 0.35);
-  var bottomOverlap = Math.round(bottomDur * rnd() * 0.38);
-  var topIdle = Math.round(topDur * rnd() * 0.12);
-  var topIdleBefore = Math.round(topIdle * (0.35 + rnd() * 0.35));
-  var topIdleAfter = topIdle - topIdleBefore;
-  var bottomIdle = Math.round(bottomDur * rnd() * 0.15);
-  var bottomIdleBefore = Math.round(bottomIdle * (0.3 + rnd() * 0.4));
-  var bottomIdleAfter = bottomIdle - bottomIdleBefore;
-
+  function rowOf(labelText, field, better) {
+    return {
+      label: labelText, unit: 'μs', better: better,
+      vals: metrics.map(function (m) { return m.missing ? null : m[field]; }),
+    };
+  }
   var rows = [
-    { label: '启动时间', unit: 'μs', top: topStart, bottom: bottomStart, better: 'low' },
-    { label: '结束时间', unit: 'μs', top: topEnd, bottom: bottomEnd, better: 'low' },
-    { label: '持续时长', unit: 'μs', top: topDur, bottom: bottomDur, better: 'low' },
-    { label: '执行耗时', unit: 'μs', top: topExec, bottom: bottomExec, better: 'low' },
-    { label: '同步等待', unit: 'μs', top: topWait, bottom: bottomWait, better: 'low' },
-    { label: '计算-通信重叠', unit: 'μs', top: topOverlap, bottom: bottomOverlap, better: 'high' },
-    { label: '空闲间隙（任务前）', unit: 'μs', top: topIdleBefore, bottom: bottomIdleBefore, better: 'low' },
-    { label: '空闲间隙（任务后）', unit: 'μs', top: topIdleAfter, bottom: bottomIdleAfter, better: 'low' },
+    rowOf('启动时间', 'start', 'low'),
+    rowOf('结束时间', 'end', 'low'),
+    rowOf('持续时长', 'dur', 'low'),
+    rowOf('执行耗时', 'exec', 'low'),
+    rowOf('同步等待', 'wait', 'low'),
+    rowOf('计算-通信重叠', 'overlap', 'high'),
+    rowOf('空闲间隙（任务前）', 'idleBefore', 'low'),
+    rowOf('空闲间隙（任务后）', 'idleAfter', 'low'),
   ];
 
-  var topDotClass = runDotClass(topRun.id);
-  var bottomDotClass = runDotClass(bottomRun.id);
-
+  var isTriple = slots.length > 2;
   var html = '';
   // 任务信息摘要
   html += '<div class="sl-report-card">';
@@ -4892,39 +5184,97 @@ function diffDetailHtml(taskKey) {
   html += '<div class="sl-detail-meta__row"><span class="sl-detail-meta__key">任务名称</span><span class="sl-detail-meta__val monospace" title="' + escapeHtml(taskName) + '">' + escapeHtml(taskName) + '</span></div>';
   html += '<div class="sl-detail-meta__row"><span class="sl-detail-meta__key">归属泳道</span><span class="sl-detail-meta__val">' + escapeHtml(laneName) + '</span></div>';
   html += '<div class="sl-detail-meta__row"><span class="sl-detail-meta__key">' + escapeHtml(stepId ? '所属 Step' : 'Wrap') + '</span><span class="sl-detail-meta__val monospace">' + escapeHtml(stepId || '—') + '</span></div>';
+  // 有 run 缺这条任务条时明确说明，避免整列 "—" 被当成渲染出错
+  var missingRuns = slots.filter(function (s) { return !s.event; });
+  if (missingRuns.length) {
+    html += '<div class="sl-detail-meta__row"><span class="sl-detail-meta__key">缺失</span><span class="sl-detail-meta__val">' +
+      escapeHtml(missingRuns.map(function (s) { return COMPARE_SLOT_LABELS[s.slot] || s.slot; }).join('、')) + ' 没有同位任务条</span></div>';
+  }
   html += '</div></div>';
 
-  // 左右对比表
+  // 逐 run 对比表
   html += '<div class="sl-report-card">';
   html += '<div class="sl-report-card__title">指标对比</div>';
-  html += '<div class="sl-detail-compare">';
+  html += '<div class="sl-detail-compare' + (isTriple ? ' is-triple' : '') + '">';
   // 表头
   html += '<div class="sl-detail-compare__head">';
   html += '<div class="sl-detail-compare__col sl-detail-compare__col--label">指标</div>';
-  html += '<div class="sl-detail-compare__col sl-detail-compare__col--top"><span class="sl-detail-compare__dot dot ' + topDotClass + '"></span>' + escapeHtml(truncateRunId(topRun.id, 18)) + '</div>';
-  html += '<div class="sl-detail-compare__col sl-detail-compare__col--bottom"><span class="sl-detail-compare__dot dot ' + bottomDotClass + '"></span>' + escapeHtml(truncateRunId(bottomRun.id, 18)) + '</div>';
+  slots.forEach(function (slot) {
+    html += '<div class="sl-detail-compare__col sl-detail-compare__col--val" title="' + escapeHtml(slot.run.id) + '">' +
+      '<span class="sl-detail-compare__dot dot ' + runDotClass(slot.run.id) + '"></span>' +
+      '<span>' + escapeHtml(truncateRunId(slot.run.id, isTriple ? 14 : 18)) + '</span></div>';
+  });
   html += '</div>';
-  // 数据行
-  for (var ri = 0; ri < rows.length; ri++) {
-    var r = rows[ri];
-    var topBetter = false, bottomBetter = false;
-    if (r.better === 'low') {
-      topBetter = r.top < r.bottom;
-      bottomBetter = r.bottom < r.top;
-    } else {
-      topBetter = r.top > r.bottom;
-      bottomBetter = r.bottom > r.top;
-    }
+  // 数据行：只把「最优」的那一列标绿；全部相等或只剩一个有效值时不标
+  rows.forEach(function (r) {
+    var valid = r.vals.filter(function (v) { return Number.isFinite(v); });
+    var best = valid.length > 1
+      ? (r.better === 'low' ? Math.min.apply(null, valid) : Math.max.apply(null, valid))
+      : null;
+    var uniqueBest = best !== null && valid.filter(function (v) { return v === best; }).length === 1;
     html += '<div class="sl-detail-compare__row">';
     html += '<div class="sl-detail-compare__col sl-detail-compare__col--label">' + escapeHtml(r.label) + '</div>';
-    html += '<div class="sl-detail-compare__col sl-detail-compare__col--top' + (topBetter ? ' is-better' : '') + '">' + formatCompareVal(r.top, r.unit) + '</div>';
-    html += '<div class="sl-detail-compare__col sl-detail-compare__col--bottom' + (bottomBetter ? ' is-better' : '') + '">' + formatCompareVal(r.bottom, r.unit) + '</div>';
+    r.vals.forEach(function (v) {
+      if (!Number.isFinite(v)) {
+        html += '<div class="sl-detail-compare__col sl-detail-compare__col--val is-missing">—</div>';
+        return;
+      }
+      html += '<div class="sl-detail-compare__col sl-detail-compare__col--val' + (uniqueBest && v === best ? ' is-better' : '') + '">' + formatCompareVal(v, r.unit) + '</div>';
+    });
     html += '</div>';
-  }
+  });
   html += '</div></div>';
   // 关联代码（嵌入右侧面板，不再使用底部栏）
   html += renderInlineCodeBlock();
   return html;
+}
+
+/* ── 关联代码：槽位 ↔ 代码文件 ──────────────────────────────────
+   每个对比槽位配一份 mock 源码；下方的文件下拉就是在这三份之间换。
+   MOCK_CODE_LINES_* 是 var 声明在本文件后面，这里用函数惰性取值，避免取到 undefined。 */
+function codeVariantForSlot(slot) {
+  if (slot === 'compare') return { file: 'flash_attention_v2.py', dir: 'ascend_kernels/attention', lines: MOCK_CODE_LINES_COMPARE };
+  if (slot === 'compare2') return { file: 'moe_ffn_alltoall.py', dir: 'ascend_kernels/moe', lines: MOCK_CODE_LINES_MOE };
+  return { file: 'self_attention_fusion.py', dir: 'ascend_kernels/attention', lines: MOCK_CODE_LINES_BASE };
+}
+
+/* 关联代码上下两侧当前各自显示哪个槽位的文件。三方对比时用户可以用文件名后的下拉
+   把任一侧换成第三个 run 的代码；两方对比时固定 base / compare，下拉不出现。
+   对比对象一变就复位（见 openRunComparison），免得指向一个已经退出对比的槽位。 */
+function codeDiffSides() {
+  // 没进对比模式时 activeCompareSlots() 只有 base 一个，兜底回默认的 base/compare 两侧，
+  // 保证这个函数任何时候都返回两项（调用方按下标取 [0]/[1]）。
+  var slots = activeCompareSlots();
+  if (slots.length < 2) return ['base', 'compare'];
+  var sides = (state.codeDiffSides || []).filter(function (s) { return slots.indexOf(s) >= 0; });
+  if (sides.length < 2 || sides[0] === sides[1]) sides = slots.slice(0, 2);
+  return sides;
+}
+
+/* 关联代码文件下拉的展开/收起。inspector 每次重渲染都会重建 DOM，所以「点空白处收起」
+   只在 document 上绑一次（bindInspector 会被反复调用，不做守卫会越堆越多个监听）。 */
+function closeCodeFileMenus() {
+  document.querySelectorAll('.sl-diff-code__file-menu').forEach(function (menu) { menu.hidden = true; });
+  document.querySelectorAll('[data-code-picker]').forEach(function (btn) { btn.setAttribute('aria-expanded', 'false'); });
+}
+var codeFileMenuDismissBound = false;
+function bindCodeFileMenuDismiss() {
+  if (codeFileMenuDismissBound) return;
+  codeFileMenuDismissBound = true;
+  document.addEventListener('click', function () { closeCodeFileMenus(); });
+  document.addEventListener('keydown', function (event) {
+    if (event.key === 'Escape') closeCodeFileMenus();
+  });
+}
+
+/* 下拉选中：把某一侧换成 slot；若另一侧正占着它，两侧互换（不允许左右选到同一个 run） */
+function setCodeDiffSide(sideIndex, slot) {
+  var sides = codeDiffSides().slice();
+  var other = sideIndex === 0 ? 1 : 0;
+  if (sides[other] === slot) sides[other] = sides[sideIndex];
+  sides[sideIndex] = slot;
+  state.codeDiffSides = sides;
+  renderInspector();
 }
 
 /* ── 内联统一 diff 视图（inline，− / + 标记差异行）── */
@@ -4963,21 +5313,64 @@ function renderDiffLine(type, mark, lineObj, lineNum) {
   return '<div class="' + cls + '">' + text + '</div>';
 }
 
+/* 文件名后的下拉：三方对比时才出现，用来把这一侧换成**当前没在显示的**那个 run 的代码文件。
+   三个 run 里已经摆了两个，可切换的就只剩一个，所以菜单里只有一项——列出三项让人从
+   两项里挑"已经在看的那个"没有意义。两方对比时没有第三份可换，退化成原来的纯文本。
+   没用原生 <select>：它的下拉列表由 UA 绘制，跟不了本页的深浅色 token（实测深色主题下
+   弹出来是一片白），这里改成自己的 popup，配色一律走 var(--surface-*)/var(--foreground-*)。 */
+function codeFilePickerHtml(sideIndex, slot, slots, runs, sides) {
+  var variant = codeVariantForSlot(slot);
+  var hidden = slots.filter(function (s) { return sides.indexOf(s) < 0; });
+  if (slots.length < 3 || !hidden.length) {
+    return '<span class="sl-diff-code__file-name">' + escapeHtml(variant.file) + '</span>';
+  }
+  var options = hidden.map(function (s) {
+    var v = codeVariantForSlot(s);
+    var run = runs[slots.indexOf(s)];
+    return '<button type="button" class="sl-diff-code__file-option" data-code-side="' + sideIndex + '" data-code-slot="' + escapeHtml(s) + '">' +
+      '<span class="sl-diff-code__dot dot ' + (run ? runDotClass(run.id) : 'green') + '"></span>' +
+      '<span class="sl-diff-code__file-opt-name">' + escapeHtml(v.file) + '</span>' +
+      '<span class="sl-diff-code__file-opt-tag">' + escapeHtml(COMPARE_SLOT_LABELS[s] || s) + '</span>' +
+    '</button>';
+  }).join('');
+  return '<span class="sl-diff-code__file-picker">' +
+    '<button type="button" class="sl-diff-code__file-btn" data-code-picker="' + sideIndex + '" aria-haspopup="true" aria-expanded="false" title="换成' + escapeHtml(codeVariantForSlot(hidden[0]).file) + '">' +
+      '<span class="sl-diff-code__file-name">' + escapeHtml(variant.file) + '</span>' +
+      '<svg class="sl-diff-code__file-caret" viewBox="0 0 24 24" aria-hidden="true"><path d="m6 9 6 6 6-6"></path></svg>' +
+    '</button>' +
+    '<div class="sl-diff-code__file-menu" hidden>' + options + '</div>' +
+  '</span>';
+}
+
 function renderInlineCodeBlock() {
-  var topRun = RUN_BY_ID[state.selectedRunId];
-  var bottomRun = RUN_BY_ID[state.comparisonRunId];
-  var topDotClass = topRun ? runDotClass(topRun.id) : 'red';
-  var bottomDotClass = bottomRun ? runDotClass(bottomRun.id) : 'blue';
-  var topLabel = topRun ? truncateRunId(topRun.id, 24) : '基线';
-  var bottomLabel = bottomRun ? truncateRunId(bottomRun.id, 24) : '对比对象';
-  var hunks = computeUnifiedDiff(MOCK_CODE_LINES_BASE, MOCK_CODE_LINES_COMPARE, 3);
+  var slots = activeCompareSlots();
+  var sides = codeDiffSides();
+  var runs = activeCompareRuns();
+  var sideInfo = sides.map(function (slot, i) {
+    var run = runs[slots.indexOf(slot)];
+    return {
+      slot: slot,
+      variant: codeVariantForSlot(slot),
+      dotClass: run ? runDotClass(run.id) : (i === 0 ? 'red' : 'blue'),
+      runLabel: run ? truncateRunId(run.id, 24) : (i === 0 ? '基线' : '对比对象'),
+      sideLabel: slots.length < 3 ? (i === 0 ? '基线' : '对比') : COMPARE_SLOT_LABELS[slot],
+    };
+  });
+  var leftLines = sideInfo[0].variant.lines, rightLines = sideInfo[1].variant.lines;
+  var hunks = computeUnifiedDiff(leftLines, rightLines, 3);
   var h = '';
   h += '<div class="sl-report-card">';
   h += '<div class="sl-report-card__title">关联代码</div>';
   h += '<div class="sl-diff-code">';
   h += '<div class="sl-diff-code__files">';
-  h += '<div class="sl-diff-code__file-row"><span class="sl-diff-code__dot dot ' + topDotClass + '"></span><span class="sl-diff-code__file-label">基线</span><span class="sl-diff-code__file-name">self_attention_fusion.py</span><span class="sl-diff-code__file-id">' + escapeHtml(topLabel) + '</span></div>';
-  h += '<div class="sl-diff-code__file-row"><span class="sl-diff-code__dot dot ' + bottomDotClass + '"></span><span class="sl-diff-code__file-label">对比</span><span class="sl-diff-code__file-name">flash_attention_v2.py</span><span class="sl-diff-code__file-id">' + escapeHtml(bottomLabel) + '</span></div>';
+  sideInfo.forEach(function (info, i) {
+    h += '<div class="sl-diff-code__file-row">' +
+      '<span class="sl-diff-code__dot dot ' + info.dotClass + '"></span>' +
+      '<span class="sl-diff-code__file-label">' + escapeHtml(info.sideLabel) + '</span>' +
+      codeFilePickerHtml(i, info.slot, slots, runs, sides) +
+      '<span class="sl-diff-code__file-id" title="' + escapeHtml(info.runLabel) + '">' + escapeHtml(info.runLabel) + '</span>' +
+    '</div>';
+  });
   h += '</div>';
   h += '<div class="sl-diff-code__lines">';
   hunks.forEach(function (hunk) {
@@ -4988,8 +5381,8 @@ function renderInlineCodeBlock() {
     h += '<div class="sl-diff-line is-hunk"><span class="sl-diff-line__ln"></span><span class="sl-diff-line__mark">@@</span><span class="sl-diff-line__text"> -' + baseStart + ',' + baseCount + ' +' + cmpStart + ',' + cmpCount + ' @@</span></div>';
     var baseNum = hunk.start + 1, cmpNum = hunk.start + 1;
     for (var i = hunk.start; i <= hunk.end; i++) {
-      var baseLine = MOCK_CODE_LINES_BASE[i];
-      var cmpLine = MOCK_CODE_LINES_COMPARE[i];
+      var baseLine = leftLines[i];
+      var cmpLine = rightLines[i];
       if (baseLine.text === cmpLine.text) {
         h += renderDiffLine('ctx', ' ', baseLine, baseNum);
         baseNum++; cmpNum++;
@@ -5016,18 +5409,39 @@ function formatCompareVal(val, unit) {
 function diffCardHtml(card, index) {
   const active = state.diffSelectedLane === card.leafKey;
   const barPct = Math.min(100, Math.max(2, card.diffPct));
-  const topMs = (card.topUs / 1000).toFixed(2);
-  const bottomMs = (card.bottomUs / 1000).toFixed(2);
-  const topBigger = card.topUs >= card.bottomUs;
-  const bottomBigger = card.bottomUs >= card.topUs;
   const topClass = index < 3 ? ' is-top' : '';
+  const values = card.values || [
+    { runId: state.selectedRunId, slot: 'base', busyUs: card.topUs, count: 0 },
+    { runId: state.comparisonRunId, slot: 'compare', busyUs: card.bottomUs, count: 0 },
+  ];
+  const maxUs = Math.max.apply(null, values.map(function (v) { return v.busyUs; }));
+  let valsHtml;
+  if (values.length <= 2) {
+    // 两两对比维持原来的单行「基线任务 x ms | 对比任务 y ms」
+    valsHtml = '<div class="sl-diff-card__vals">' + values.map(function (v, i) {
+      const warn = v.busyUs >= maxUs ? ' is-warn' : '';
+      return (i === 0 ? '基线任务 ' : '对比任务 ') + '<span class="sl-diff-card__val' + warn + '">' + (v.busyUs / 1000).toFixed(2) + 'ms</span>';
+    }).join(' &nbsp;|&nbsp; ') + '</div>';
+  } else {
+    // 三方对比：一行塞不下，改成每个 run 一行，并带上任务条数（这才看得出谁多了/少了任务条）
+    valsHtml = '<div class="sl-diff-card__vals is-multi">' + values.map(function (v) {
+      const warn = v.busyUs >= maxUs ? ' is-warn' : '';
+      const absent = v.count === 0 ? ' is-absent' : '';
+      return '<div class="sl-diff-card__val-row">' +
+        '<span class="sl-diff-card__val-dot dot ' + runDotClass(v.runId) + '"></span>' +
+        '<span class="sl-diff-card__val-name">' + escapeHtml(COMPARE_SLOT_LABELS[v.slot] || v.slot) + '</span>' +
+        '<span class="sl-diff-card__val' + warn + absent + '">' + (v.count === 0 ? '无任务条' : (v.busyUs / 1000).toFixed(2) + 'ms') + '</span>' +
+        '<span class="sl-diff-card__count">×' + v.count + '</span>' +
+      '</div>';
+    }).join('') + '</div>';
+  }
   return '<div class="sl-diff-card' + (active ? ' is-active' : '') + topClass + '" data-diff-lane="' + escapeHtml(card.leafKey) + '" role="button" tabindex="0">' +
     '<div class="sl-diff-card__path">' + escapeHtml(card.path) + '</div>' +
     '<div class="sl-diff-card__meter-row">' +
       '<span class="sl-diff-card__pct">' + card.diffPct.toFixed(1) + '%</span>' +
       '<div class="sl-meter"><div class="sl-meter-fill" style="width:' + barPct + '%"></div></div>' +
     '</div>' +
-    '<div class="sl-diff-card__vals">基线任务 <span class="sl-diff-card__val' + (topBigger ? ' is-warn' : '') + '">' + topMs + 'ms</span> &nbsp;|&nbsp; 对比任务 <span class="sl-diff-card__val' + (bottomBigger ? ' is-warn' : '') + '">' + bottomMs + 'ms</span></div>' +
+    valsHtml +
   '</div>';
 }
 
@@ -5045,26 +5459,19 @@ function diffDashboardHtml() {
     '</svg>' +
     '<span>请勾选对比数据</span>' +
   '</div>';
-  var topPhs = computeRunPhs(topRun);
-  var bottomPhs = computeRunPhs(bottomRun);
-  var topDotClass = runDotClass(topRun.id);
-  var bottomDotClass = runDotClass(bottomRun.id);
-  return '<div class="sl-compare-cards">' +
-    '<div class="sl-compare-card is-baseline">' +
-      '<div class="sl-compare-card__head">' +
-        '<span class="sl-compare-card__dot dot ' + topDotClass + '"></span>' +
-        '<span class="sl-compare-card__name" title="' + escapeHtml(topRun.id) + '">' + escapeHtml(topRun.id) + '</span>' +
-      '</div>' +
-      '<span class="sl-compare-card__badge">基线</span>' +
-      '<div class="sl-compare-card__gauge" id="compareGaugeTop"></div>' +
-    '</div>' +
-    '<div class="sl-compare-card is-compared">' +
-      '<div class="sl-compare-card__head">' +
-        '<span class="sl-compare-card__dot dot ' + bottomDotClass + '"></span>' +
-        '<span class="sl-compare-card__name" title="' + escapeHtml(bottomRun.id) + '">' + escapeHtml(bottomRun.id) + '</span>' +
-      '</div>' +
-      '<div class="sl-compare-card__gauge" id="compareGaugeBottom"></div>' +
-    '</div>' +
+  var runs = activeCompareRuns();
+  return '<div class="sl-compare-cards' + (runs.length > 2 ? ' is-triple' : '') + '">' +
+    runs.map(function (run, i) {
+      return '<div class="sl-compare-card ' + (i === 0 ? 'is-baseline' : 'is-compared') + '">' +
+        '<div class="sl-compare-card__head">' +
+          '<span class="sl-compare-card__dot dot ' + runDotClass(run.id) + '"></span>' +
+          '<span class="sl-compare-card__name" title="' + escapeHtml(run.id) + '">' + escapeHtml(run.id) + '</span>' +
+        '</div>' +
+        (i === 0 ? '<span class="sl-compare-card__badge">基线</span>'
+                 : (runs.length > 2 ? '<span class="sl-compare-card__badge">' + escapeHtml(COMPARE_SLOT_LABELS[COMPARE_SLOTS[i]]) + '</span>' : '')) +
+        '<div class="sl-compare-card__gauge" id="compareGauge' + i + '"></div>' +
+      '</div>';
+    }).join('') +
   '</div>' +
   (function () {
     var isTaskTab = state.diffTab === 'task';
@@ -5086,7 +5493,7 @@ function diffDashboardHtml() {
       '</div>' +
       '<div class="sl-insp-section">' +
         '<div class="sl-diff-card-list">' + cards.map(function (c, i) { return diffCardHtml(c, i); }).join('') + '</div>' +
-        '<div class="sl-insp-hint">差异幅度 = |基线 − 对比对象| 的 busy 时长占两者较大值的比例；差异泳道 / 差异任务按差异幅度 ≥ ' + DIFF_WARN_THRESHOLD + '% 统计。点击卡片可在上下两栏泳道中定位并高亮对应行。</div>' +
+        '<div class="sl-insp-hint">差异幅度 = ' + (runs.length > 2 ? '各 run busy 时长的最大值与最小值之差占最大值的比例' : '|基线 − 对比对象| 的 busy 时长占两者较大值的比例') + '；差异泳道 / 差异任务按差异幅度 ≥ ' + DIFF_WARN_THRESHOLD + '% 统计。点击卡片可在各栏泳道中定位并高亮对应行。</div>' +
       '</div>';
   })();
 }
@@ -5103,23 +5510,26 @@ function selectDiffLane(leafKey) {
   state.diffSelectedLane = leafKey;
   const groupId = laneGroupIdOf(leafKey);
   if (isAggregatedSwimlane()) {
-    // 聚合视图下同一个叶子泳道被拆成 §base/§compare 两行紧邻显示，rowMeta 里没有
+    // 聚合视图下同一个叶子泳道被拆成 §base/§compare(/§compare2) 若干行紧邻显示，rowMeta 里没有
     // 裸 leafKey 这一行了——直接 scrollToCore(leafKey) 会因为找不到行而定位失败。
     const renderer = trainRenderers.top;
     if (renderer?.parsedData) {
       expandLaneGroupOn(renderer, groupId);
-      const baseKey = `${leafKey}§base`, compareKey = `${leafKey}§compare`;
+      const slotKeys = activeCompareSlots().map((slot) => `${leafKey}§${slot}`);
+      const baseKey = slotKeys[0];
       const baseEvents = renderer.parsedData.coreEvents?.get(baseKey) || [];
-      const compareEvents = renderer.parsedData.coreEvents?.get(compareKey) || [];
+      const otherEvents = slotKeys.slice(1).reduce(
+        (acc, k) => acc.concat(renderer.parsedData.coreEvents?.get(k) || []), [],
+      );
       if (baseEvents.length > 0) {
         // 首条事件临时归零时长 → 不可见但仍驱动暗化；其余事件全进 relatedEvents 保持明亮
         var selEvent = baseEvents[0];
         var savedEnd = selEvent.execEnd;
         selEvent.execEnd = selEvent.execStart;
         renderer.selectedEvent = selEvent;
-        renderer.relatedEvents = baseEvents.slice(1).concat(compareEvents);
+        renderer.relatedEvents = baseEvents.slice(1).concat(otherEvents);
         renderer.selectedCore = baseKey;
-        renderer.extraActiveLaneKeys = [compareKey];
+        renderer.extraActiveLaneKeys = slotKeys.slice(1);
         renderer._render();
         renderer._renderLabels();
         selEvent.execEnd = savedEnd;
@@ -5127,7 +5537,7 @@ function selectDiffLane(leafKey) {
       renderer.scrollToCore(baseKey);
     }
   } else {
-    ['top', 'bottom'].forEach((key) => {
+    activeTrainPanelKeys().forEach((key) => {
       const renderer = trainRenderers[key];
       if (!renderer?.parsedData) return;
       expandLaneGroupOn(renderer, groupId);
@@ -5167,7 +5577,7 @@ function drillToTaskDetail(leafKey) {
       requestAnimationFrame(function () { renderer.scrollToCore(baseKey); });
     }
   } else {
-    ['top', 'bottom'].forEach(function (key) {
+    activeTrainPanelKeys().forEach(function (key) {
       var r = trainRenderers[key];
       if (r) expandLaneGroupOn(r, groupId);
     });
@@ -5179,8 +5589,7 @@ function drillToTaskDetail(leafKey) {
       if (key) {
         selectGroupedTrainEvent(key);
         requestAnimationFrame(function () {
-          trainRenderers.top?.scrollToCore(leafKey);
-          trainRenderers.bottom?.scrollToCore(leafKey);
+          activeTrainPanelKeys().forEach(function (pk) { trainRenderers[pk]?.scrollToCore(leafKey); });
           // scrollToCore 改的是 viewport.scrollTop，各自的 yScrollTop 与上下两栏镜像同步
           // 都在随后的 scroll 事件里异步落定；连线在滚动前已画过一次，这里等两帧同步做完
           // 再按最终 scrollTop 重画，否则下端会停在滚动前的旧位置、对不上下面的任务条。
@@ -5212,11 +5621,23 @@ function goBackToDashboard() {
   renderInspector();
 }
 
-const trainRenderers = { top: null, bottom: null };
+const trainRenderers = { top: null, bottom: null, third: null };
 const TRAIN_TL_IDS = {
-  top: { canvas: 'trainTimelineTopCanvas', label: 'trainTimelineTopLabel' },
-  bottom: { canvas: 'trainTimelineBottomCanvas', label: 'trainTimelineBottomLabel' },
+  top: { canvas: 'trainTimelineTopCanvas', label: 'trainTimelineTopLabel', viewport: 'trainTimelineTopViewport' },
+  bottom: { canvas: 'trainTimelineBottomCanvas', label: 'trainTimelineBottomLabel', viewport: 'trainTimelineBottomViewport' },
+  third: { canvas: 'trainTimelineThirdCanvas', label: 'trainTimelineThirdLabel', viewport: 'trainTimelineThirdViewport' },
 };
+/* 分组视图的面板顺序 = 对比槽位顺序（基线 → 对比 A → 对比 B），与 COMPARE_SLOTS 一一对应 */
+const TRAIN_PANEL_KEYS = ['top', 'bottom', 'third'];
+function activeTrainPanelKeys() {
+  return TRAIN_PANEL_KEYS.slice(0, activeCompareRunIds().length);
+}
+/* 当前分组视图下已挂载、且正参与对比的渲染器（按面板顺序） */
+function activeGroupedRenderers() {
+  return activeTrainPanelKeys()
+    .map((key) => ({ key: key, renderer: trainRenderers[key] }))
+    .filter((entry) => entry.renderer?.parsedData);
+}
 
 function mountTrainSwimlane(which, run) {
   if (!run || typeof SwimlaneRenderer !== 'function' || typeof parseTraceJSON !== 'function') return;
@@ -5240,13 +5661,21 @@ function mountTrainSwimlane(which, run) {
   let analysis;
   try { analysis = (typeof analyzePerformance === 'function') ? analyzePerformance(parsed) : undefined; }
   catch (e) { analysis = undefined; }
+  // loadData 换的是数据集，但 selectedEvent/relatedEvents 里存的是**旧数据集的事件对象**，
+  // 不清掉的话换对比对象后画布上会残留一条指向已卸载数据的高亮（切视图时的选中恢复
+  // 走 restoreTrainSelection，在这之后执行，不受影响）。
+  renderer.selectedEvent = null;
+  renderer.selectedCore = null;
+  renderer.relatedEvents = [];
+  renderer.extraActiveLaneKeys = [];
   renderer.loadData(parsed, analysis, built.laneTree);
 }
 
 /* 聚合视图：复用 top 面板实例装载合并数据集，bottom 面板整体隐藏（见 setMergedTrainPanelHidden），
    不再单独装载 bottom——避免两个实例各画一份，桌面空间也不用被两个面板对半分。 */
-function mountAggregatedTrainSwimlane(topRun, bottomRun) {
-  if (!topRun || !bottomRun || typeof SwimlaneRenderer !== 'function' || typeof parseTraceJSON !== 'function') return;
+function mountAggregatedTrainSwimlane(runs) {
+  const activeRuns = (runs || []).filter(Boolean);
+  if (activeRuns.length < 2 || typeof SwimlaneRenderer !== 'function' || typeof parseTraceJSON !== 'function') return;
   const ids = TRAIN_TL_IDS.top;
   let renderer = trainRenderers.top;
   if (!renderer) {
@@ -5259,46 +5688,59 @@ function mountAggregatedTrainSwimlane(topRun, bottomRun) {
     trainRenderers.top = renderer;
     bindTrainSwimlaneCoreSelectSync('top', renderer);
   }
-  // 聚合视图的叶子行标签是两个 run.id（共享 pangu- 前缀、区分点在中段/尾部），
+  // 聚合视图的叶子行标签是各个 run.id（共享 pangu- 前缀、区分点在中段/尾部），
   // 让组件按“中间省略”渲染，保留首尾字符才分得清谁是谁。top 实例与分组视图共用，
   // 故每次挂载都显式指定，分组视图那边会再切回 'tail'。
   renderer.labelEllipsis = 'middle';
-  const built = buildAggregatedTrainingSwimlane(topRun, bottomRun);
+  const built = buildAggregatedTrainingSwimlane(activeRuns);
+  if (!built) return;
   const parsed = parseTraceJSON(built.coreTasks);
   let analysis;
   try { analysis = (typeof analyzePerformance === 'function') ? analyzePerformance(parsed) : undefined; }
   catch (e) { analysis = undefined; }
+  // loadData 换的是数据集，但 selectedEvent/relatedEvents 里存的是**旧数据集的事件对象**，
+  // 不清掉的话换对比对象后画布上会残留一条指向已卸载数据的高亮（切视图时的选中恢复
+  // 走 restoreTrainSelection，在这之后执行，不受影响）。
+  renderer.selectedEvent = null;
+  renderer.selectedCore = null;
+  renderer.relatedEvents = [];
+  renderer.extraActiveLaneKeys = [];
   renderer.loadData(parsed, analysis, built.laneTree);
 }
 
 function renderTrainingComparison(onComplete) {
+  const runs = activeCompareRuns();
   const topRun = RUN_BY_ID[state.selectedRunId];
   const bottomRun = RUN_BY_ID[state.comparisonRunId];
   if (state.swimlaneViewMode === 'aggregated') {
-    if (!bottomRun) {
+    if (runs.length < 2) {
       setSwimlaneViewMode('grouped');
       showBottomPlaceholder();
       if (onComplete) onComplete();
       return;
     }
-    mountAggregatedTrainSwimlane(topRun, bottomRun);
+    mountAggregatedTrainSwimlane(runs);
     window.requestAnimationFrame(() => window.requestAnimationFrame(() => {
       try { trainRenderers.top?.fitToView?.(); } catch (e) {}
       if (onComplete) onComplete();
     }));
     return;
   }
-  if (topRun) mountTrainSwimlane('top', topRun);
-  if (bottomRun) {
-    mountTrainSwimlane('bottom', bottomRun);
+  if (runs.length >= 2) {
+    // 每个参与对比的 run 一栏，自上而下按槽位顺序铺；第三栏只在三方对比时出现。
+    runs.forEach((run, i) => mountTrainSwimlane(TRAIN_PANEL_KEYS[i], run));
+    setGroupedPanelVisibility(runs.length);
     bindTrainSwimlaneSync();
     window.requestAnimationFrame(() => window.requestAnimationFrame(() => {
-      try { trainRenderers.top?.fitToView?.(); } catch (e) {}
-      try { trainRenderers.bottom?.fitToView?.(); } catch (e) {}
+      activeTrainPanelKeys().forEach((key) => {
+        try { trainRenderers[key]?.fitToView?.(); } catch (e) {}
+      });
       alignTrainSwimlaneZoom();
       if (onComplete) onComplete();
     }));
   } else {
+    if (topRun) mountTrainSwimlane('top', topRun);
+    setGroupedPanelVisibility(1);
     showBottomPlaceholder();
     window.requestAnimationFrame(() => window.requestAnimationFrame(() => {
       try { trainRenderers.top?.fitToView?.(); } catch (e) {}
@@ -5307,16 +5749,34 @@ function renderTrainingComparison(onComplete) {
   }
 }
 
+/* 分组视图下按参与对比的 run 数摆栏：
+   - 2 栏：维持原来的上下 50/50（split 组件自己分高）
+   - 3 栏：切到堆叠模式（.is-stacked），每栏最小 400px，装不下整块纵向滚
+   隐藏第三栏时把它前面那条分隔条一起藏掉，否则两栏之间会多出一条悬空的分隔条。 */
+function setGroupedPanelVisibility(count) {
+  const showThird = count >= 3;
+  if (blockGraphView2) {
+    blockGraphView2.hidden = !showThird;
+    blockGraphView2.setAttribute('aria-hidden', String(!showThird));
+    const gutter = blockGraphView2.previousElementSibling;
+    if (gutter?.classList.contains('pto-workbench-shell__split-gutter')) gutter.hidden = !showThird;
+  }
+  if (cmpThirdSearchbox) cmpThirdSearchbox.hidden = !showThird;
+  if (analysisSplitEl) analysisSplitEl.classList.toggle('is-stacked', showThird);
+  if (showThird && trainTimelineThird) trainTimelineThird.removeAttribute('hidden');
+}
+
 // 上下两栏对齐到同一 xScale（取两者各自 fitToView 后较小的一个，再额外放大一档），
 // 保证同一屏幕像素对应同一段时间，后续 scrollLeft 像素镜像和滚轮缩放联动才有意义；
 // 额外放大是因为按「铺满整段时长」的缩放下，任务条相对 step 间隔太窄，一眼看去全是空隙。
 const TRAIN_TL_EXTRA_ZOOM = 2.2;
 function alignTrainSwimlaneZoom() {
-  const top = trainRenderers.top, bottom = trainRenderers.bottom;
-  if (!top?.parsedData || !bottom?.parsedData) return;
-  const scale = Math.min(top.xScale, bottom.xScale) * TRAIN_TL_EXTRA_ZOOM;
-  if (top.xScale !== scale) { top.xScale = scale; top.onResize(); }
-  if (bottom.xScale !== scale) { bottom.xScale = scale; bottom.onResize(); }
+  const entries = activeGroupedRenderers();
+  if (entries.length < 2) return;
+  const scale = Math.min.apply(null, entries.map((e) => e.renderer.xScale)) * TRAIN_TL_EXTRA_ZOOM;
+  entries.forEach(({ renderer }) => {
+    if (renderer.xScale !== scale) { renderer.xScale = scale; renderer.onResize(); }
+  });
 }
 
 // 上下两栏「移动·选中·缩放」完全同步：
@@ -5339,60 +5799,77 @@ function pinTrainSwimlaneLabel(vp, label) {
 function bindTrainSwimlaneSync() {
   if (trainSwimlaneSyncBound) return;
   trainSwimlaneSyncBound = true;
-  ['top', 'bottom'].forEach((key) => {
-    const other = key === 'top' ? 'bottom' : 'top';
-    const vp = document.getElementById(key === 'top' ? 'trainTimelineTopViewport' : 'trainTimelineBottomViewport');
-    const label = document.getElementById(key === 'top' ? 'trainTimelineTopLabel' : 'trainTimelineBottomLabel');
+  // 三栏都先绑上；某一栏没参与对比时 activeTrainPanelKeys() 里没有它，事件里自然会被跳过。
+  TRAIN_PANEL_KEYS.forEach((key) => {
+    const others = () => activeTrainPanelKeys().filter((k) => k !== key).map((k) => trainRenderers[k]).filter(Boolean);
+    const vp = document.getElementById(TRAIN_TL_IDS[key].viewport);
+    const label = document.getElementById(TRAIN_TL_IDS[key].label);
     pinTrainSwimlaneLabel(vp, label);
     if (vp) {
       vp.addEventListener('scroll', () => {
         if (trainSwimlaneScrollSyncing) return;
-        const source = trainRenderers[key];
-        const target = trainRenderers[other];
-        const sv = source?._viewport?.();
-        const tv = target?._viewport?.();
-        if (sv && tv && (tv.scrollLeft !== sv.scrollLeft || tv.scrollTop !== sv.scrollTop)) {
+        const sv = trainRenderers[key]?._viewport?.();
+        let mirrored = false;
+        if (sv) {
+          others().forEach((target) => {
+            const tv = target._viewport?.();
+            if (!tv || (tv.scrollLeft === sv.scrollLeft && tv.scrollTop === sv.scrollTop)) return;
+            tv.scrollLeft = sv.scrollLeft;
+            tv.scrollTop = sv.scrollTop;
+            mirrored = true;
+          });
+        }
+        if (mirrored) {
           trainSwimlaneScrollSyncing = true;
-          tv.scrollLeft = sv.scrollLeft;
-          tv.scrollTop = sv.scrollTop;
           window.requestAnimationFrame(() => window.requestAnimationFrame(() => { trainSwimlaneScrollSyncing = false; }));
         }
         // 仅差异详情模式下才同步连线位置；泳道高亮模式不画连线
         if (trainRenderers.top?.selectedEvent && state.inspectorView === 'detail') updateCrossLaneConnectors();
       }, { passive: true });
     }
-    const canvasHost = document.getElementById(key === 'top' ? 'trainTimelineTopCanvas' : 'trainTimelineBottomCanvas');
+    const canvasHost = document.getElementById(TRAIN_TL_IDS[key].canvas);
     if (canvasHost) {
       canvasHost.addEventListener('wheel', (e) => {
         const source = trainRenderers[key];
-        const target = trainRenderers[other];
-        if (source?.canvas && target?.canvas && target.parsedData) {
+        if (source?.canvas) {
           const factor = e.deltaY < 0 ? SWIMLANE_CONFIG.ZOOM_FACTOR : 1 / SWIMLANE_CONFIG.ZOOM_FACTOR;
           const sourceRect = source.canvas.getBoundingClientRect();
-          const targetRect = target.canvas.getBoundingClientRect();
           const ratio = sourceRect.width ? (e.clientX - sourceRect.left) / sourceRect.width : 0.5;
-          target._zoom(factor, ratio * targetRect.width);
+          others().forEach((target) => {
+            if (!target.canvas || !target.parsedData) return;
+            const targetRect = target.canvas.getBoundingClientRect();
+            target._zoom(factor, ratio * targetRect.width);
+          });
         }
         if (state.inspectorView === 'detail') requestAnimationFrame(function () { updateCrossLaneConnectors(); });
       }, { passive: true });
     }
   });
+  // 堆叠模式下整块对比区会纵向滚动，滚完各栏在屏幕上的位置变了，连线要跟着重画
+  if (analysisSplitEl) {
+    analysisSplitEl.addEventListener('scroll', () => {
+      if (trainRenderers.top?.selectedEvent && state.inspectorView === 'detail') updateCrossLaneConnectors();
+    }, { passive: true });
+  }
 }
 
-// 聚合视图下叶子行的 coreName 带 §base/§compare 后缀（见 buildAggregatedTrainingSwimlane），
-// 找同一逻辑任务在另一侧的定位 key，只需要把后缀换个边，其余（subGraphId/label/ordinal）不变。
-function trainSiblingPositionalKey(key) {
-  if (!key || !key.coreName) return null;
-  if (key.coreName.endsWith('§base')) return Object.assign({}, key, { coreName: key.coreName.replace(/§base$/, '§compare') });
-  if (key.coreName.endsWith('§compare')) return Object.assign({}, key, { coreName: key.coreName.replace(/§compare$/, '§base') });
-  return null;
+// 聚合视图下叶子行的 coreName 带 §base/§compare/§compare2 后缀（见 buildAggregatedTrainingSwimlane），
+// 找同一逻辑任务在**其余各 run** 的定位 key，只需要把后缀换成对应槽位，其余
+//（subGraphId/label/ordinal）不变。返回的顺序即槽位顺序，两两对比时就退化成一个元素。
+function trainSiblingPositionalKeys(key) {
+  if (!key || !key.coreName) return [];
+  const stripped = trainStripRunSuffix(key.coreName);
+  if (!stripped.side) return [];
+  return activeCompareSlots()
+    .filter((slot) => slot !== stripped.side)
+    .map((slot) => Object.assign({}, key, { coreName: `${stripped.coreName}§${slot}` }));
 }
 
-// 剥掉 §base/§compare 后缀，拿到跟视图模式无关的"裸" coreName + 记一下原来选的是哪一侧
+// 剥掉槽位后缀，拿到跟视图模式无关的"裸" coreName + 记一下原来选的是哪一侧
 // （聚合视图专用，分组视图下 side 恒为 null）。用于分组⇄聚合切换时换算回对应模式的 key。
 function trainStripRunSuffix(coreName) {
-  const m = /§(base|compare)$/.exec(coreName || '');
-  return { coreName: (coreName || '').replace(/§(base|compare)$/, ''), side: m ? m[1] : null };
+  const m = COMPARE_SLOT_SUFFIX_RE.exec(coreName || '');
+  return { coreName: (coreName || '').replace(COMPARE_SLOT_SUFFIX_RE, ''), side: m ? m[1] : null };
 }
 
 // 记录当前选中的任务（跟视图模式无关），供切换 分组⇄聚合 视图后原样换算回对应 key 找回选中。
@@ -5416,10 +5893,11 @@ function selectAggregatedTrainEvent(renderer, event) {
   renderer.selectedEvent = event || null;
   renderer.selectedCore = null;
   const key = event ? renderer.positionalKeyOfEvent(event) : null;
-  const siblingKey = key ? trainSiblingPositionalKey(key) : null;
-  const siblingEvent = siblingKey ? renderer.findEventByPositionalKey(siblingKey) : null;
-  renderer.relatedEvents = siblingEvent ? [siblingEvent] : [];
-  renderer.extraActiveLaneKeys = siblingKey ? [siblingKey.coreName] : [];
+  const siblingKeys = key ? trainSiblingPositionalKeys(key) : [];
+  renderer.relatedEvents = siblingKeys
+    .map((k) => renderer.findEventByPositionalKey(k))
+    .filter(Boolean);
+  renderer.extraActiveLaneKeys = siblingKeys.map((k) => k.coreName);
   renderer._render();
   renderer._renderLabels();
   state.detailTaskKey = key;
@@ -5428,10 +5906,10 @@ function selectAggregatedTrainEvent(renderer, event) {
   updateCrossLaneConnectors();
 }
 
-// 分组视图选中态的唯一入口：baseKey 为空表示清除选中。top/bottom 两栏树结构一致，
-// 直接用同一个 key 在两侧各自找回对应任务，驱动跨栏连线。
+// 分组视图选中态的唯一入口：baseKey 为空表示清除选中。各栏树结构一致，
+// 直接用同一个 key 在每一栏各自找回对应任务，驱动跨栏连线。
 function selectGroupedTrainEvent(baseKey) {
-  const topR = trainRenderers.top, bottomR = trainRenderers.bottom;
+  const topR = trainRenderers.top;
   const event = baseKey && topR ? topR.findEventByPositionalKey(baseKey) : null;
   // 真·任务选中 → 退出「按泳道」高亮态，避免 diffSelectedLane 残留导致切视图时被误判为泳道模式
   if (event) state.diffSelectedLane = null;
@@ -5443,25 +5921,27 @@ function selectGroupedTrainEvent(baseKey) {
     topR._render();
     topR._renderLabels();
   }
-  if (bottomR) {
-    bottomR.selectedCore = null;
-    bottomR.extraActiveLaneKeys = [];
-    bottomR.setSelectedEventByKey(event ? baseKey : null);
-  }
+  activeTrainPanelKeys().slice(1).forEach((key) => {
+    const r = trainRenderers[key];
+    if (!r) return;
+    r.selectedCore = null;
+    r.extraActiveLaneKeys = [];
+    r.setSelectedEventByKey(event ? baseKey : null);
+  });
   state.detailTaskKey = event ? baseKey : null;
   state.inspectorView = event ? 'detail' : 'dashboard';
   renderInspector();
   updateCrossLaneConnectors();
 }
 
-// 上下两栏「泳道行选中 / 任务条选中 / 分组展开折叠」全部跨栏同步：两栏树结构一致（见
+// 各栏「泳道行选中 / 任务条选中 / 分组展开折叠」全部跨栏同步：各栏树结构一致（见
 // buildTrainingSwimlaneData 的 id 命名），泳道行 key、分组 id 可以直接跨栏复用；任务条走
 // positionalKeyOfEvent 的结构性定位。全部走目标实例的 set* 方法直接改状态，不触发目标自身的
 // onXxx 回调，避免 A→B→A 的联动死循环。
 function bindTrainSwimlaneCoreSelectSync(key, renderer) {
-  const other = key === 'top' ? 'bottom' : 'top';
+  const others = () => activeTrainPanelKeys().filter((k) => k !== key).map((k) => trainRenderers[k]).filter(Boolean);
   renderer.onCoreClick = (coreName) => {
-    // 再次点击同一行 = 取消选中 → 清空两侧
+    // 再次点击同一行 = 取消选中 → 清空所有栏
     if (!renderer.selectedCore) {
       renderer.selectedEvent = null;
       renderer.relatedEvents = [];
@@ -5469,15 +5949,14 @@ function bindTrainSwimlaneCoreSelectSync(key, renderer) {
       renderer._render();
       renderer._renderLabels();
       if (!isAggregatedSwimlane()) {
-        const target = trainRenderers[other];
-        if (target) {
+        others().forEach((target) => {
           target.selectedEvent = null;
           target.selectedCore = null;
           target.relatedEvents = [];
           target.extraActiveLaneKeys = [];
           target._render();
           target._renderLabels();
-        }
+        });
       }
       hideCrossLaneConnectors();
       renderInspector();
@@ -5485,17 +5964,19 @@ function bindTrainSwimlaneCoreSelectSync(key, renderer) {
     }
 
     if (isAggregatedSwimlane()) {
-      // 聚合视图：只有 top 一个实例。coreName 带 §base/§compare 后缀，
-      // 找出对侧 sibling 一起高亮，其余行暗化。
+      // 聚合视图：只有 top 一个实例。coreName 带槽位后缀，
+      // 找出其余各 run 的同位行一起高亮，其余行暗化。
       const stripped = trainStripRunSuffix(coreName);
-      const baseKey = `${stripped.coreName}§base`;
-      const compareKey = `${stripped.coreName}§compare`;
+      const slotKeys = activeCompareSlots().map((slot) => `${stripped.coreName}§${slot}`);
+      const baseKey = slotKeys[0];
       const baseEvents = renderer.parsedData?.coreEvents?.get(baseKey) || [];
-      const compareEvents = renderer.parsedData?.coreEvents?.get(compareKey) || [];
       renderer.selectedEvent = baseEvents.length > 0 ? baseEvents[0] : null;
       renderer.selectedCore = baseKey;
-      renderer.relatedEvents = compareEvents.length > 0 ? [compareEvents[0]] : [];
-      renderer.extraActiveLaneKeys = [compareKey];
+      renderer.relatedEvents = slotKeys.slice(1).reduce(function (acc, k) {
+        const events = renderer.parsedData?.coreEvents?.get(k) || [];
+        return events.length > 0 ? acc.concat([events[0]]) : acc;
+      }, []);
+      renderer.extraActiveLaneKeys = slotKeys.slice(1);
       renderer._render();
       renderer._renderLabels();
       hideCrossLaneConnectors();
@@ -5503,23 +5984,25 @@ function bindTrainSwimlaneCoreSelectSync(key, renderer) {
       return;
     }
 
-    // 分组视图：两侧同步，选中行高亮 + 其余行暗化
-    const target = trainRenderers[other];
-    if (!target || !target.rowMeta?.has(coreName)) return;
+    // 分组视图：各栏同步，选中行高亮 + 其余行暗化
+    const targets = others().filter((t) => t.rowMeta?.has(coreName));
+    if (!targets.length) return;
     const srcEvents = renderer.parsedData?.coreEvents?.get(coreName) || [];
-    const tgtEvents = target.parsedData?.coreEvents?.get(coreName) || [];
     renderer.selectedEvent = srcEvents.length > 0 ? srcEvents[0] : null;
     renderer.selectedCore = coreName;
     renderer.relatedEvents = [];
     renderer.extraActiveLaneKeys = [];
     renderer._render();
     renderer._renderLabels();
-    target.selectedEvent = tgtEvents.length > 0 ? tgtEvents[0] : null;
-    target.selectedCore = coreName;
-    target.relatedEvents = [];
-    target.extraActiveLaneKeys = [];
-    target._render();
-    target._renderLabels();
+    targets.forEach((target) => {
+      const tgtEvents = target.parsedData?.coreEvents?.get(coreName) || [];
+      target.selectedEvent = tgtEvents.length > 0 ? tgtEvents[0] : null;
+      target.selectedCore = coreName;
+      target.relatedEvents = [];
+      target.extraActiveLaneKeys = [];
+      target._render();
+      target._renderLabels();
+    });
     hideCrossLaneConnectors();
     renderInspector();
   };
@@ -5534,9 +6017,10 @@ function bindTrainSwimlaneCoreSelectSync(key, renderer) {
     selectGroupedTrainEvent(baseKey);
   };
   renderer.onGroupToggle = (groupId, collapsed) => {
-    const target = trainRenderers[other];
-    if (!target || !target.rowMeta?.has(`§g§${groupId}`)) return;
-    target.setGroupCollapsed(groupId, collapsed);
+    others().forEach((target) => {
+      if (!target.rowMeta?.has(`§g§${groupId}`)) return;
+      target.setGroupCollapsed(groupId, collapsed);
+    });
   };
 }
 
@@ -5550,6 +6034,7 @@ function renderSecondaryViewMode() {
     if (placeholder) placeholder.remove();
     blockGraphView.hidden = true;
     blockGraphView.setAttribute('aria-hidden', 'true');
+    setGroupedPanelVisibility(1);
   }
   updateCompareHeaderSearch();
 }
@@ -5560,6 +6045,7 @@ function updateCompareHeaderSearch() {
   if (swimlanePaneTitle) swimlanePaneTitle.hidden = aggregated;
   if (cmpTopSearchbox) cmpTopSearchbox.hidden = !comparisonMode;
   if (cmpBottomSearchbox) cmpBottomSearchbox.hidden = !comparisonMode;
+  if (cmpThirdSearchbox) cmpThirdSearchbox.hidden = !comparisonMode || aggregated || !isTripleCompare();
 }
 
 /* ── 跨栏 Bezier 连线（SVG overlay，白色曲线）── */
@@ -5603,84 +6089,94 @@ function crossLaneConnectorPoint(renderer, event, viewportId, labelW) {
   return { vpRect: vpRect, sx: sx, ex: ex, y: y };
 }
 
-// 分组视图（两个独立实例/viewport）和聚合视图（同一实例内两行）共用这一份连线绘制：
+// 分组视图（两个独立实例/viewport）和聚合视图（同一实例内 2~3 行）共用这一份连线绘制：
 // 只是喂进来的 {renderer, event, viewportId} 不同，端点/贝塞尔曲线/端点圆的画法原样不变。
-function drawTaskConnector(specA, specB) {
+// specs 按自上而下的顺序传入，相邻两条之间各画一对（首端 + 尾端）曲线——三方对比时
+// 就是 基线→对比A、对比A→对比B 两段接力，视觉上连成一条贯穿三行的走廊。
+function drawTaskConnector(specs) {
   ensureCrossLaneOverlay();
   if (!crossLaneSvg) return;
-  var labelW = specA.renderer.labelWidth || 200;
-  var pa = crossLaneConnectorPoint(specA.renderer, specA.event, specA.viewportId, labelW);
-  var pb = crossLaneConnectorPoint(specB.renderer, specB.event, specB.viewportId, labelW);
-  if (!pa || !pb) { hideCrossLaneConnectors(); return; }
+  var list = Array.isArray(specs) ? specs : Array.prototype.slice.call(arguments);
+  if (list.length < 2) { hideCrossLaneConnectors(); return; }
+  var labelW = list[0].renderer.labelWidth || 200;
+  var pts = list.map(function (spec) {
+    return crossLaneConnectorPoint(spec.renderer, spec.event, spec.viewportId, labelW);
+  });
+  if (pts.some(function (p) { return !p; })) { hideCrossLaneConnectors(); return; }
 
   // ── 容器坐标 ──
   var containerRect = crossLaneSvg.parentElement.getBoundingClientRect();
   function cvx(vpRect, vpX) { return vpRect.left - containerRect.left + vpX; }
   function cvy(vpRect, vpY) { return vpRect.top - containerRect.top + vpY; }
+  var anchors = pts.map(function (p) {
+    return {
+      start: { x: cvx(p.vpRect, p.sx), y: cvy(p.vpRect, p.y) },
+      end: { x: cvx(p.vpRect, p.ex), y: cvy(p.vpRect, p.y) },
+    };
+  });
 
-  var pTopStart  = { x: cvx(pa.vpRect, pa.sx), y: cvy(pa.vpRect, pa.y) };
-  var pTopEnd    = { x: cvx(pa.vpRect, pa.ex), y: cvy(pa.vpRect, pa.y) };
-  var pBotStart  = { x: cvx(pb.vpRect, pb.sx), y: cvy(pb.vpRect, pb.y) };
-  var pBotEnd    = { x: cvx(pb.vpRect, pb.ex), y: cvy(pb.vpRect, pb.y) };
-
-  // ── 曲线：纵向进出（控制点 x 与各自端点相同，y 取中点）──
-  var midYS = (pTopStart.y + pBotStart.y) / 2;
-  var midYE = (pTopEnd.y + pBotEnd.y) / 2;
-
-  var d1 = 'M ' + pTopStart.x.toFixed(1) + ' ' + pTopStart.y.toFixed(1) +
-    ' C ' + pTopStart.x.toFixed(1) + ' ' + midYS.toFixed(1) +
-    ' ' + pBotStart.x.toFixed(1) + ' ' + midYS.toFixed(1) +
-    ' ' + pBotStart.x.toFixed(1) + ' ' + pBotStart.y.toFixed(1);
-  var d2 = 'M ' + pTopEnd.x.toFixed(1) + ' ' + pTopEnd.y.toFixed(1) +
-    ' C ' + pTopEnd.x.toFixed(1) + ' ' + midYE.toFixed(1) +
-    ' ' + pBotEnd.x.toFixed(1) + ' ' + midYE.toFixed(1) +
-    ' ' + pBotEnd.x.toFixed(1) + ' ' + pBotEnd.y.toFixed(1);
-
-  var w = containerRect.width, h = containerRect.height;
-  crossLaneSvg.setAttribute('width', String(w));
-  crossLaneSvg.setAttribute('height', String(h));
+  crossLaneSvg.setAttribute('width', String(containerRect.width));
+  crossLaneSvg.setAttribute('height', String(containerRect.height));
   crossLaneSvg.innerHTML = '';
 
-  var path1 = document.createElementNS('http://www.w3.org/2000/svg', 'path');
-  path1.setAttribute('d', d1); crossLaneSvg.appendChild(path1);
-  var path2 = document.createElementNS('http://www.w3.org/2000/svg', 'path');
-  path2.setAttribute('d', d2); crossLaneSvg.appendChild(path2);
+  // ── 曲线：纵向进出（控制点 x 与各自端点相同，y 取中点）──
+  function curve(a, b) {
+    var midY = (a.y + b.y) / 2;
+    var path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+    path.setAttribute('d', 'M ' + a.x.toFixed(1) + ' ' + a.y.toFixed(1) +
+      ' C ' + a.x.toFixed(1) + ' ' + midY.toFixed(1) +
+      ' ' + b.x.toFixed(1) + ' ' + midY.toFixed(1) +
+      ' ' + b.x.toFixed(1) + ' ' + b.y.toFixed(1));
+    crossLaneSvg.appendChild(path);
+  }
+  for (var i = 0; i + 1 < anchors.length; i++) {
+    curve(anchors[i].start, anchors[i + 1].start);
+    curve(anchors[i].end, anchors[i + 1].end);
+  }
 
   // 端点圆
-  [pTopStart, pTopEnd, pBotStart, pBotEnd].forEach(function (pt) {
-    var c = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
-    c.setAttribute('cx', pt.x.toFixed(1)); c.setAttribute('cy', pt.y.toFixed(1));
-    c.setAttribute('r', '3'); c.setAttribute('fill', 'rgba(255,255,255,0.85)');
-    crossLaneSvg.appendChild(c);
+  anchors.forEach(function (a) {
+    [a.start, a.end].forEach(function (pt) {
+      var c = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+      c.setAttribute('cx', pt.x.toFixed(1)); c.setAttribute('cy', pt.y.toFixed(1));
+      c.setAttribute('r', '3'); c.setAttribute('fill', 'rgba(255,255,255,0.85)');
+      crossLaneSvg.appendChild(c);
+    });
   });
 }
 
 function updateCrossLaneConnectors() {
   if (state.swimlaneViewMode === 'aggregated') {
-    // 聚合视图：同一个实例内，选中任务条 + 它在对侧（base/compare）的同位任务条，
-    // 两个点都来自 trainTimelineTopViewport，画法和分组视图完全一样。
+    // 聚合视图：同一个实例内，选中任务条 + 它在其余各 run 子行的同位任务条，
+    // 所有点都来自 trainTimelineTopViewport，画法和分组视图完全一样。
     var topR = trainRenderers.top;
     var event = topR?.selectedEvent;
     if (!event || !topR.parsedData) { hideCrossLaneConnectors(); return; }
     var key = topR.positionalKeyOfEvent(event);
-    var siblingKey = trainSiblingPositionalKey(key);
-    var siblingEvent = siblingKey ? topR.findEventByPositionalKey(siblingKey) : null;
-    if (!siblingEvent) { hideCrossLaneConnectors(); return; }
-    drawTaskConnector(
-      { renderer: topR, event: event, viewportId: 'trainTimelineTopViewport' },
-      { renderer: topR, event: siblingEvent, viewportId: 'trainTimelineTopViewport' }
-    );
+    var stripped = trainStripRunSuffix(key?.coreName || '');
+    if (!stripped.side) { hideCrossLaneConnectors(); return; }
+    // 按槽位顺序（而不是"选中的在前"）串起来，连线才是自上而下贯穿的
+    var specs = [];
+    activeCompareSlots().forEach(function (slot) {
+      var slotEvent = slot === stripped.side
+        ? event
+        : topR.findEventByPositionalKey(Object.assign({}, key, { coreName: stripped.coreName + '§' + slot }));
+      // 某个 run 缺这条任务条时跳过它，剩下的仍然连起来
+      if (slotEvent) specs.push({ renderer: topR, event: slotEvent, viewportId: 'trainTimelineTopViewport' });
+    });
+    if (specs.length < 2) { hideCrossLaneConnectors(); return; }
+    drawTaskConnector(specs);
     return;
   }
-  var topR = trainRenderers.top, bottomR = trainRenderers.bottom;
-  var event = topR?.selectedEvent;
-  if (!event || !topR.parsedData) { hideCrossLaneConnectors(); return; }
-  var bottomEvent = bottomR?.selectedEvent;
-  if (!bottomEvent) { hideCrossLaneConnectors(); return; }
-  drawTaskConnector(
-    { renderer: topR, event: event, viewportId: 'trainTimelineTopViewport' },
-    { renderer: bottomR, event: bottomEvent, viewportId: 'trainTimelineBottomViewport' }
-  );
+  // 分组视图：每栏一个实例，按栏序把各自的选中任务条串起来（缺的那栏跳过）
+  if (!trainRenderers.top?.selectedEvent || !trainRenderers.top.parsedData) { hideCrossLaneConnectors(); return; }
+  var specs = activeGroupedRenderers()
+    .filter(function (entry) { return entry.renderer.selectedEvent; })
+    .map(function (entry) {
+      return { renderer: entry.renderer, event: entry.renderer.selectedEvent, viewportId: TRAIN_TL_IDS[entry.key].viewport };
+    });
+  if (specs.length < 2) { hideCrossLaneConnectors(); return; }
+  drawTaskConnector(specs);
 }
 
 /* ── 关联代码面板 ── */
@@ -5923,6 +6419,26 @@ var MOCK_CODE_LINES_COMPARE = (function () {
   return lines;
 })();
 
+/* 第三份数据（MoE / AllToAll 那条并行策略）对应的关联代码。改动点刻意挑在与
+   MOCK_CODE_LINES_COMPARE 完全不同的行号上——这样两两组合出来的 diff hunk 落在
+   代码的不同段落，切换文件时看到的是真的另一处改动，而不是同一段换个名字。 */
+var MOCK_CODE_LINES_MOE = (function () {
+  var lines = MOCK_CODE_LINES_BASE.map(function (l) { return Object.assign({}, l); });
+  function put(i, obj) {
+    if (i >= 0 && i < lines.length) lines[i] = Object.assign({}, lines[i], obj, { diff: true });
+  }
+  put(0, { cls: 'c', text: '// 文件: ascend_kernels/moe/moe_ffn_alltoall.py' });
+  put(1, { cls: 'c', text: '// 归属: MindSpeed 训练框架 · Ascend 适配层 (MoE 专家并行版)' });
+  put(6, { cls: 'f', text: 'moe_ffn_alltoall_fwd' });
+  put(26, { key: true, text: '    关键路径算子，step 内平均耗时 ~3.1 ms，占单层总耗时的 44%。' });
+  put(46, { cls: 'c', text: '  # Step 1: Router 打分 + top-k 选专家（Gate 在 AIV 上算）' });
+  put(77, { cls: 'c', text: '  # Step 2: AllToAll 派发 token 到目标 rank 的专家（未掩盖通信主要来源）' });
+  put(109, { cls: 'n', text: 'expert_ids', key: true });
+  put(140, { cls: 'n', text: 'router_logits' });
+  put(169, { cls: 'n', text: 'capacity' });
+  return lines;
+})();
+
 function renderCodePanel() {
   var container = document.getElementById('codeView');
   if (!container) return;
@@ -5981,10 +6497,13 @@ function initCodeTabSwitch() {
 }
 
 /* ── 分组视图 | 聚合视图 页签 ── */
+// 聚合视图只用 top 一个面板，下面两栏（含分隔条）整体收起；分组视图则按参与对比的 run 数摆栏。
 function setMergedTrainPanelHidden(hidden) {
   if (!blockGraphView) return;
   blockGraphView.hidden = hidden;
   blockGraphView.setAttribute('aria-hidden', String(hidden));
+  if (hidden) setGroupedPanelVisibility(1);
+  else setGroupedPanelVisibility(activeCompareRunIds().length);
   window.requestAnimationFrame(() => {
     frameController?.refresh?.();
     layout();
@@ -5993,14 +6512,7 @@ function setMergedTrainPanelHidden(hidden) {
 
 function setSwimlaneViewMode(mode) {
   mode = mode === 'aggregated' ? 'aggregated' : 'grouped';
-  const tabs = document.getElementById('swimlaneViewTabs');
-  if (tabs) {
-    tabs.querySelectorAll('[data-swimlane-view]').forEach((btn) => {
-      const active = btn.dataset.swimlaneView === mode;
-      btn.classList.toggle('is-selected', active);
-      btn.setAttribute('aria-selected', String(active));
-    });
-  }
+  paintSwimlaneViewTabs(mode);
   if (state.swimlaneViewMode === mode) return;
   // 切换前先记下当前选中的任务和泳道差异高亮，挂载新数据后再恢复
   const pendingSelection = captureTrainSelection();
@@ -6076,15 +6588,17 @@ function restoreTrainSelection(pending, mode) {
       });
     }
   } else {
-    if (trainRenderers.top) expandLaneGroupOn(trainRenderers.top, groupId);
-    if (trainRenderers.bottom) expandLaneGroupOn(trainRenderers.bottom, groupId);
+    activeTrainPanelKeys().forEach((key) => {
+      if (trainRenderers[key]) expandLaneGroupOn(trainRenderers[key], groupId);
+    });
     selectGroupedTrainEvent(pending.baseKey);
     revealAndRedraw(function () {
-      const t = trainRenderers.top, b = trainRenderers.bottom;
-      t?.scrollToCore(pending.baseKey.coreName);
-      b?.scrollToCore(pending.baseKey.coreName);
-      centerTrainViewportOnEventX(t, 'trainTimelineTopViewport', t?.selectedEvent);
-      centerTrainViewportOnEventX(b, 'trainTimelineBottomViewport', b?.selectedEvent);
+      activeTrainPanelKeys().forEach((key) => {
+        const r = trainRenderers[key];
+        if (!r) return;
+        r.scrollToCore(pending.baseKey.coreName);
+        centerTrainViewportOnEventX(r, TRAIN_TL_IDS[key].viewport, r.selectedEvent);
+      });
     });
   }
 }
@@ -6106,23 +6620,58 @@ function bindSwimlaneViewTabs() {
   });
 }
 
-function openRunComparison(runId) {
-  if (!runId || runId === state.selectedRunId || !blockGraphView) return;
-  var comparedRun = RUN_BY_ID[runId];
-  if (!comparedRun) return;
+/* 分组视图是写死的上下两栏，只承载得下「基线 + 1 个对比对象」；三方对比必须走聚合视图
+   （每个叶子泳道拆成三条子行）。这里统一维护：三方时锁到聚合视图并禁掉分组页签，
+   退回两方时把页签解锁（视图模式保持不变，由用户自己决定要不要切回分组）。 */
+function paintSwimlaneViewTabs(mode) {
+  var tabs = document.getElementById('swimlaneViewTabs');
+  if (!tabs) return;
+  tabs.querySelectorAll('[data-swimlane-view]').forEach(function (btn) {
+    var active = btn.dataset.swimlaneView === mode;
+    btn.classList.toggle('is-selected', active);
+    btn.setAttribute('aria-selected', String(active));
+  });
+}
+
+// 参与对比的 run 数变了：分组视图要加/减一栏，聚合视图要重排子行——两种模式都靠
+// setMergedTrainPanelHidden 把面板摆好，随后由 renderTrainingComparison 重新挂载数据。
+function syncSwimlaneViewAvailability() {
+  paintSwimlaneViewTabs(state.swimlaneViewMode);
+  if (state.secondaryViewMode === 'comparison') {
+    setMergedTrainPanelHidden(state.swimlaneViewMode === 'aggregated');
+  }
+}
+
+// runIds：对比对象 id 数组（不含基线），也接受单个 id。空数组/全部无效时不做任何事。
+function openRunComparison(runIds) {
+  var ids = (Array.isArray(runIds) ? runIds : [runIds])
+    .filter(function (id, i, arr) { return id && id !== state.selectedRunId && RUN_BY_ID[id] && arr.indexOf(id) === i; })
+    .slice(0, MAX_COMPARE_RUNS - 1);
+  if (!ids.length || !blockGraphView) return;
   state.secondaryViewMode = 'comparison';
-  state.comparisonRunId = runId;
+  state.comparisonRunId = ids[0];
+  state.comparisonRunId2 = ids[1] || null;
   state.diffSelectedLane = null;
-  blockGraphTitle.textContent = comparedRun.id;
+  // 对比对象换了，之前下钻的那条任务条在新数据里未必还存在：统一退回差异看板，
+  // 免得右侧详情停在一份已经被卸载的数据上。关联代码的左右选择也一并复位，
+  // 否则可能指向一个已经退出对比的槽位。
+  state.detailTaskKey = null;
+  state.inspectorView = 'dashboard';
+  state.codeDiffSides = null;
+  hideCrossLaneConnectors();
+  blockGraphTitle.textContent = RUN_BY_ID[ids[0]].id;
+  if (blockGraphTitle2) blockGraphTitle2.textContent = ids[1] ? RUN_BY_ID[ids[1]].id : '';
   blockGraphView.hidden = false;
   blockGraphView.setAttribute('aria-hidden', 'false');
-  // 确保 trainTimelineTop / trainTimelineBottom 的 hidden 属性被清除
+  // 确保各栏 train timeline 的 hidden 属性被清除（第三栏的显隐由 setGroupedPanelVisibility 决定）
   if (trainTimelineTop) trainTimelineTop.removeAttribute('hidden');
   if (trainTimelineBottom) trainTimelineBottom.removeAttribute('hidden');
+  if (trainTimelineThird) trainTimelineThird.removeAttribute('hidden');
   // 清除占位提示
   var placeholder = blockGraphView.querySelector('.sl-comparison-placeholder');
   if (placeholder) placeholder.remove();
   renderSecondaryViewMode();
+  syncSwimlaneViewAvailability();
   renderInspector();
   window.requestAnimationFrame(function () {
     frameController?.refresh?.();
@@ -6135,16 +6684,21 @@ function closeRunComparison() {
   // 保持对比模式布局（上下两栏），只清空对比数据源。
   // 顶部继续渲染基线训练泳道，底部和右侧显示"请勾选对比数据"占位。
   state.comparisonRunId = null;
+  state.comparisonRunId2 = null;
+  state.codeDiffSides = null;
   state.diffSelectedLane = null;
   state.detailTaskKey = null;
   state.inspectorView = 'dashboard';
   hideCrossLaneConnectors();
-  if (trainRenderers.bottom) {
-    trainRenderers.bottom.selectedEvent = null;
-    trainRenderers.bottom.selectedCore = null;
-    trainRenderers.bottom.relatedEvents = [];
-    trainRenderers.bottom.extraActiveLaneKeys = [];
-  }
+  ['bottom', 'third'].forEach(function (key) {
+    var r = trainRenderers[key];
+    if (!r) return;
+    r.selectedEvent = null;
+    r.selectedCore = null;
+    r.relatedEvents = [];
+    r.extraActiveLaneKeys = [];
+  });
+  setGroupedPanelVisibility(1);
   renderInspector();
   window.requestAnimationFrame(function () {
     frameController?.refresh?.();
@@ -6173,8 +6727,9 @@ function showBottomPlaceholder() {
     '</div>';
     blockGraphView.appendChild(div);
   }
-  // 隐藏旧的 train timeline bottom 内容
+  // 隐藏旧的 train timeline bottom / third 内容
   if (trainTimelineBottom) trainTimelineBottom.setAttribute('hidden', '');
+  if (trainTimelineThird) trainTimelineThird.setAttribute('hidden', '');
 }
 
 function applyDefaultCompareMode() {
@@ -6193,6 +6748,25 @@ function bindInspector() {
   if (backBtn) {
     backBtn.addEventListener('click', goBackToDashboard);
   }
+  // 关联代码：文件名下拉，把某一侧换成当前没在显示的那个 run 的代码文件
+  body.querySelectorAll('[data-code-picker]').forEach(function (btn) {
+    btn.addEventListener('click', function (event) {
+      event.stopPropagation();
+      var menu = btn.parentElement?.querySelector('.sl-diff-code__file-menu');
+      if (!menu) return;
+      var willOpen = menu.hidden;
+      closeCodeFileMenus();
+      menu.hidden = !willOpen;
+      btn.setAttribute('aria-expanded', String(willOpen));
+    });
+  });
+  body.querySelectorAll('[data-code-slot]').forEach(function (opt) {
+    opt.addEventListener('click', function (event) {
+      event.stopPropagation();
+      setCodeDiffSide(Number(opt.dataset.codeSide), opt.dataset.codeSlot);
+    });
+  });
+  bindCodeFileMenuDismiss();
   // 差异粒度页签（按任务 | 按泳道）
   body.querySelectorAll('[data-diff-tab]').forEach(function (btn) {
     btn.addEventListener('click', function () {
@@ -6366,13 +6940,14 @@ function init() {
       },
     },
   });
-  // 对比框上下两栏固定 50/50、禁止拖拽：CSS 已去掉分隔条的指针交互，这里再把键盘焦点也
+  // 对比框各栏固定等分、禁止拖拽：CSS 已去掉分隔条的指针交互，这里再把键盘焦点也
   // 断掉（split 库创建分隔条时 tabIndex 默认可聚焦+方向键调整，光 pointer-events:none 拦不住）。
-  const analysisGutter = document.querySelector('[data-ide-split="swimlane-analysis"] > .pto-workbench-shell__split-gutter');
-  if (analysisGutter) {
-    analysisGutter.tabIndex = -1;
-    analysisGutter.setAttribute('aria-hidden', 'true');
-  }
+  // 三栏后分隔条有两条，要全部处理。
+  document.querySelectorAll('[data-ide-split="swimlane-analysis"] > .pto-workbench-shell__split-gutter').forEach((gutter) => {
+    gutter.tabIndex = -1;
+    gutter.setAttribute('aria-hidden', 'true');
+  });
+  setGroupedPanelVisibility(1);   // 第三栏默认收起，等勾到第 3 条对比对象再打开
   buildOrder();
   renderRunHistory();
   layout();
@@ -6391,11 +6966,11 @@ function init() {
   if ('ResizeObserver' in window && canvasPane && blockGraphView) {
     const trainTlResizeObserver = new ResizeObserver(() => window.requestAnimationFrame(() => {
       if (state.secondaryViewMode !== 'comparison') return;
-      trainRenderers.top?.onResize();
-      trainRenderers.bottom?.onResize();
+      TRAIN_PANEL_KEYS.forEach((key) => trainRenderers[key]?.onResize());
     }));
     trainTlResizeObserver.observe(canvasPane);
     trainTlResizeObserver.observe(blockGraphView);
+    if (blockGraphView2) trainTlResizeObserver.observe(blockGraphView2);
   }
 }
 init();

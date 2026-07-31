@@ -462,10 +462,16 @@ const NODE_SPEC = {"input_tokens": {"w": 170, "h": 48, "colorKey": "io:input"}, 
     }
 
     function currentLightColormap(graph) {
-      if (document.documentElement.dataset.theme !== 'light') return undefined;
+      // 关闭算子染色：类别色统一压成中性灰（只保留红色诊断信号）。浅/深主题各取合适明度，
+      // 且必须放在「非 light 就提前 return undefined」之前判断——否则暗色模式下 off 分支
+      // 永远走不到、开关形同虚设（与 training-run-twin-standalone 的同名函数保持一致）。
       if (window._opColorMode === 'off') {
-        return { coreColors: ['#94a3b8'], saturation: 0.3, lightness: 0.72, ioColors: {} };
+        return document.documentElement.dataset.theme === 'light'
+          ? { coreColors: ['#94a3b8'], saturation: 0.3, lightness: 0.72, ioColors: {} }
+          // 暗色下几乎不留饱和 + 偏暗明度，让类别色彻底退成一片扁平深灰，而非仍带蓝调的 slate
+          : { coreColors: ['#64748b'], saturation: 0.06, lightness: 0.34, ioColors: {} };
       }
+      if (document.documentElement.dataset.theme !== 'light') return undefined;
       return window.PtoOpvGraphvizPattern.modelArchitectureColormap(graph, { lightHsl: state.lightHsl });
     }
 

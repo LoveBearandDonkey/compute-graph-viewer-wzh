@@ -1572,7 +1572,7 @@
       font-size: 13px;
     }
 
-    /* 问题诊断 / 训练监控 / 问题详情 / 底部 Timeline：滚动条默认隐藏，悬浮容器时才浮现（不占布局、无跳动） */
+    /* 问题诊断 / 训练监控 / 问题详情 / 底部 Timeline / 智能对话：滚动条默认隐藏，悬浮容器时才浮现（不占布局、无跳动） */
     .twin-pane-scroll,
     .twin-sidebar-body,
     .twin-locate-chain-view,
@@ -1580,7 +1580,8 @@
     .twin-timeline-body,
     .twin-dock-panel,
     .wzh-log-body,
-    .wzh-log-mapping {
+    .wzh-log-mapping,
+    .wzh-chat-messages {
       scrollbar-width: thin;              /* Firefox */
       scrollbar-color: transparent transparent;
     }
@@ -1591,7 +1592,8 @@
     .twin-timeline-body:hover,
     .twin-dock-panel:hover,
     .wzh-log-body:hover,
-    .wzh-log-mapping:hover {
+    .wzh-log-mapping:hover,
+    .wzh-chat-messages:hover {
       scrollbar-color: var(--border-default) transparent;
     }
     .twin-pane-scroll::-webkit-scrollbar,
@@ -1601,7 +1603,8 @@
     .twin-timeline-body::-webkit-scrollbar,
     .twin-dock-panel::-webkit-scrollbar,
     .wzh-log-body::-webkit-scrollbar,
-    .wzh-log-mapping::-webkit-scrollbar {
+    .wzh-log-mapping::-webkit-scrollbar,
+    .wzh-chat-messages::-webkit-scrollbar {
       width: 8px;
       height: 8px;
     }
@@ -1612,7 +1615,8 @@
     .twin-timeline-body::-webkit-scrollbar-track,
     .twin-dock-panel::-webkit-scrollbar-track,
     .wzh-log-body::-webkit-scrollbar-track,
-    .wzh-log-mapping::-webkit-scrollbar-track {
+    .wzh-log-mapping::-webkit-scrollbar-track,
+    .wzh-chat-messages::-webkit-scrollbar-track {
       background: transparent;
     }
     .twin-pane-scroll::-webkit-scrollbar-thumb,
@@ -1622,7 +1626,8 @@
     .twin-timeline-body::-webkit-scrollbar-thumb,
     .twin-dock-panel::-webkit-scrollbar-thumb,
     .wzh-log-body::-webkit-scrollbar-thumb,
-    .wzh-log-mapping::-webkit-scrollbar-thumb {
+    .wzh-log-mapping::-webkit-scrollbar-thumb,
+    .wzh-chat-messages::-webkit-scrollbar-thumb {
       background: transparent;            /* 默认隐藏 */
       border-radius: 4px;
       transition: background var(--duration-fast, 120ms) var(--easing-default, ease);
@@ -1634,7 +1639,8 @@
     .twin-timeline-body:hover::-webkit-scrollbar-thumb,
     .twin-dock-panel:hover::-webkit-scrollbar-thumb,
     .wzh-log-body:hover::-webkit-scrollbar-thumb,
-    .wzh-log-mapping:hover::-webkit-scrollbar-thumb {
+    .wzh-log-mapping:hover::-webkit-scrollbar-thumb,
+    .wzh-chat-messages:hover::-webkit-scrollbar-thumb {
       background: var(--border-default);  /* 悬浮浮现 */
     }
     .twin-pane-scroll::-webkit-scrollbar-thumb:hover,
@@ -1644,7 +1650,8 @@
     .twin-timeline-body::-webkit-scrollbar-thumb:hover,
     .twin-dock-panel::-webkit-scrollbar-thumb:hover,
     .wzh-log-body::-webkit-scrollbar-thumb:hover,
-    .wzh-log-mapping::-webkit-scrollbar-thumb:hover {
+    .wzh-log-mapping::-webkit-scrollbar-thumb:hover,
+    .wzh-chat-messages::-webkit-scrollbar-thumb:hover {
       background: var(--foreground-muted);
     }
 
@@ -1933,11 +1940,30 @@
 
     .wzh-chat-body { flex: 1; display: flex; flex-direction: column; overflow: hidden; min-height: 0; }
 
+    /* 消息区上下边缘做渐隐:内容不再在标题栏/提示语栏边界上被"一刀切",滚动到中段时
+       两端各淡出一小截,视觉上比硬边缘柔和。渐隐宽度用 @property 注册成 <length> 才能被
+       transition 平滑插值(直接 transition mask-image 不生效);到顶/到底时对应一侧收回 0，
+       首屏欢迎语和最后一条消息不会无谓地被压暗。类名由 js/training-chat-panel.js 按滚动位置切换。 */
+    @property --wzh-chat-fade-top { syntax: '<length>'; inherits: false; initial-value: 0px; }
+    @property --wzh-chat-fade-bottom { syntax: '<length>'; inherits: false; initial-value: 0px; }
     .wzh-chat-messages {
       flex: 1; overflow-y: auto; padding: var(--space-3) 12px;
       display: flex; flex-direction: column; gap: 16px;
       font-size: 12px; line-height: 1.65; color: var(--foreground-secondary); word-break: break-word;
+      overscroll-behavior: contain;       /* 消息区滚到头不再把整页/底层面板带着一起滚 */
+      --wzh-chat-fade-top: 0px;
+      --wzh-chat-fade-bottom: 0px;
+      -webkit-mask-image: linear-gradient(to bottom,
+        transparent 0, #000 var(--wzh-chat-fade-top),
+        #000 calc(100% - var(--wzh-chat-fade-bottom)), transparent 100%);
+      mask-image: linear-gradient(to bottom,
+        transparent 0, #000 var(--wzh-chat-fade-top),
+        #000 calc(100% - var(--wzh-chat-fade-bottom)), transparent 100%);
+      transition: --wzh-chat-fade-top var(--duration-base, 200ms) var(--easing-default, ease),
+                  --wzh-chat-fade-bottom var(--duration-base, 200ms) var(--easing-default, ease);
     }
+    .wzh-chat-messages.is-fade-top { --wzh-chat-fade-top: 28px; }
+    .wzh-chat-messages.is-fade-bottom { --wzh-chat-fade-bottom: 32px; }
     .wzh-chat-welcome {
       flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center;
       gap: 10px; padding: 20px 14px; text-align: center;
