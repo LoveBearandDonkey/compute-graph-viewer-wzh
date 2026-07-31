@@ -18,7 +18,7 @@ body {
   --twin-chart-f1: var(--highlight-copy-blue-300);
   --twin-chart-gradnorm: var(--highlight-l0b-deep-violet-source);
   --twin-chart-corr: var(--danger);
-  --twin-chart-mem: var(--highlight-ub-blue-source);
+  --twin-chart-mem: var(--highlight-copy-blue-400);
   --twin-chart-weightdiff: var(--highlight-copy-blue-source);
 }
 
@@ -31,7 +31,7 @@ html[data-theme="light"] {
   --twin-chart-f1: color-mix(in srgb, var(--highlight-copy-blue-300) 72%, black);
   --twin-chart-gradnorm: color-mix(in srgb, var(--highlight-l0b-deep-violet-source) 72%, black);
   --twin-chart-corr: color-mix(in srgb, var(--danger) 82%, black);
-  --twin-chart-mem: color-mix(in srgb, var(--highlight-ub-blue-source) 72%, black);
+  --twin-chart-mem: color-mix(in srgb, var(--highlight-copy-blue-400) 72%, black);
   --twin-chart-weightdiff: color-mix(in srgb, var(--highlight-copy-blue-source) 72%, black);
 }
 
@@ -75,6 +75,7 @@ html[data-theme="light"] {
   --twin-chart-f1: var(--highlight-copy-blue-300);
   --twin-chart-gradnorm: var(--highlight-l0b-deep-violet-source);
   --twin-chart-corr: var(--danger);
+  --twin-chart-mem: var(--highlight-copy-blue-400);
   --twin-chart-weightdiff: var(--highlight-copy-blue-source);
   --twin-util-low: color-mix(in srgb, var(--highlight-copy-blue-300) 42%, var(--background));
   --twin-util-mid: color-mix(in srgb, var(--success) 54%, var(--background));
@@ -107,6 +108,7 @@ html[data-theme="light"] .train-twin-page {
   --twin-chart-f1: color-mix(in srgb, var(--highlight-copy-blue-300) 72%, black);
   --twin-chart-gradnorm: color-mix(in srgb, var(--highlight-l0b-deep-violet-source) 72%, black);
   --twin-chart-corr: color-mix(in srgb, var(--danger) 82%, black);
+  --twin-chart-mem: color-mix(in srgb, var(--highlight-copy-blue-400) 72%, black);
   --twin-chart-weightdiff: color-mix(in srgb, var(--highlight-copy-blue-source) 72%, black);
   --twin-util-low: color-mix(in srgb, var(--highlight-copy-blue-300) 18%, white);
   --twin-util-mid: color-mix(in srgb, var(--success) 34%, white);
@@ -1524,35 +1526,29 @@ html[data-embed="locate-sidebar"] .twin-monitor-sidebar {
 .twin-layerview .lv-hot { fill: #dc2626; }
 .twin-layerview .lv-legend { fill: color-mix(in srgb, var(--foreground-muted) 88%, transparent); font-size: 11px; font-weight: 600; }
 
-/* top-8 专家 all-to-all 动画(体现 定位链.md L128):all-to-all 发生在该 token 命中的 8 个专家(所在 rank)之间。
-   ① dispatch:8 个专家互相收发 token → 每个被输入的 rank「变红」(recv 到数据);
-   ② combine:7 个专家完成输出 → 恢复原色,而 rank 23 send=0 无法输出 → 保持红色(死锁)。
-   蓝色 mesh 连线的描边生长与红色节点态由 js/training-run-twin.js 的 startLayerA2A() 用 rAF 逐帧驱动;
-   这里只定义初始态与配色。lv-a2a-node 是盖在参与 rank(卡)上的红色状态层,lv-a2a-ring 是标出 8 个参与者的高亮环。
-   .pto-node-expand-card 是整网图面板里 routed_expert_bank 节点原地撑开的卡片(见 buildExpertBankExpandMarkup()/
-   showRoutedExpertBankExpand()),和 .twin-layerview(定位链「模型层展开图」)共用同一套 mesh 视觉与同一个
-   startLayerA2A() 驱动器,故选择器一并覆盖。 */
-.twin-layerview .lv-a2a-mesh,
-.pto-node-expand-card .lv-a2a-mesh {
-  fill: none;
-  stroke: #4f6df6;
-  stroke-linecap: round;
-  stroke-dasharray: var(--lv-dash);
-  stroke-dashoffset: var(--lv-dash);
-  opacity: 0;
+/* 256 专家负载热力动画(取代原 top-8 all-to-all mesh 连线动画)。
+   原实现在命中的 8 个专家之间画 C(8,2)=28 条 mesh 并逐条描边生长,但 top-k 是逐 token 算的——
+   一个 step 几万 token 就是几十万条路由,连线既画不全也读不动,还会被误读成「只有 8 条链路」。
+   现在每个专家小格的色温/亮度 ∝ 它承接的 token 量:载入时 256 格全是「均衡基准 1/256」的同一档色,
+   js/training-run-twin.js 的 startExpertHeat() 在首帧上屏后把各自的真实负载写进行内样式,
+   由下面这条 2s 过渡演出「路由坍缩」——整片退回冷蓝、只剩一格烫红。色阶蓝→绿→红,
+   与 infra 集群热力图(renderInfraHeatSnapshot)同一套语义色系。
+   不加祖先作用域:三个展开入口共用同一套格子,规则要都覆盖到——
+     · .twin-layerview        定位链「模型层展开图」(lvBuildSvg)
+     · .pto-node-expand-card  整网图里 routed_expert_bank 节点原地撑开的卡片(buildExpertBankExpandMarkup)
+     · .v3-expert-expand      v2 页 3D deck 上的同一张卡片(training-monitoring-v2-deck.js) */
+.lv-heat-cell {
+  transition: fill 2s cubic-bezier(0.35, 0, 0.2, 1), opacity 2s cubic-bezier(0.35, 0, 0.2, 1);
 }
-.twin-layerview .lv-a2a-ring,
-.pto-node-expand-card .lv-a2a-ring { fill: none; stroke: #4f6df6; stroke-width: 1.4; opacity: 0.55; }
-.twin-layerview .lv-a2a-node,
-.pto-node-expand-card .lv-a2a-node { fill: #dc2626; opacity: 0; }
-.twin-layerview .lv-a2a-label,
-.pto-node-expand-card .lv-a2a-label { transition: opacity 0.2s ease; }
-/* 尊重「减少动态效果」偏好:不做动画,静态展示 mesh 淡蓝 + 仅 rank 23 保持红(终态) */
+/* 揭示动画跑完后 startExpertHeat() 给网格挂上 is-heat-live:之后每推进一个 step 都会
+   重新着色一次(syncExpertHeatToStep),2s 跟不上步进节奏、看起来像卡住,缩到 .6s。 */
+.lv-heat-grid.is-heat-live .lv-heat-cell {
+  transition-duration: 0.6s;
+}
+/* 尊重「减少动态效果」偏好:不做过渡,startExpertHeat() 直接落到热力终态 */
 @media (prefers-reduced-motion: reduce) {
-  .twin-layerview .lv-a2a-mesh,
-  .pto-node-expand-card .lv-a2a-mesh { stroke-dashoffset: 0; opacity: 0.25; }
-  .twin-layerview .lv-a2a-node[data-hot="1"],
-  .pto-node-expand-card .lv-a2a-node[data-hot="1"] { opacity: 0.8; }
+  .lv-heat-cell,
+  .lv-heat-grid.is-heat-live .lv-heat-cell { transition: none; }
 }
 
 /* 模型层展开图右上角「最大化」按钮 + 全屏态。逻辑见 js/training-run-twin.js 的 setLayerMax()。

@@ -1297,8 +1297,8 @@
       // 同时给尚未触发的 1/32 停训线（2048 / log2=11）留出可见位置。
       yDomain: { left: [10.5, 16.5] },
       referenceLines: [
-        { value: 12, label: "已触发：自动 dump · 1/16", color: "#ea580c" },
-        { value: 11, label: "若继续：停训 · 1/32", color: "#dc2626" },
+        { value: 12, label: "1/16 告警", color: "#ea580c" },
+        { value: 11, label: "1/32 停训", color: "#dc2626" },
       ],
       series: [
       { id: "loss_scale", label: "loss scale", key: "loss_scale_log2", colorVar: "--twin-chart-mfu", emphasis: true, curve: "step" },
@@ -1796,6 +1796,8 @@
     refreshAccuracyData();
     renderVitals();
     renderProgress();
+    // 展开着的 256 专家热力跟着时光机走(拖动中也刷,路由坍缩的形成过程就是拖过去看的)
+    syncExpertHeatToStep();
     if (!dragging) {
       renderHeat();
       if (activeLocateCase) syncLocateInfraHeat(activeLocateCase);
@@ -2055,6 +2057,7 @@
     // 否则用户正在看的那一步会被实时时钟顶走
     if (isReplaying) { renderProgress(); return; }
     renderAll();
+    syncExpertHeatToStep();   // 展开着的 256 专家热力跟着实时步进重新着色
     // 精度图表窗口跟着 state.step 一起往前滑,和右上角进度条同一个时钟
     refreshAccuracyData();
     syncAccCards(true);
@@ -2073,6 +2076,7 @@
     liveStep = Math.min(state.totalSteps, liveStep + delta);
     if (!isReplaying) state.step = liveStep;
     renderProgress();
+    syncExpertHeatToStep();   // 展开着的 256 专家热力跟着实时步进重新着色
     return state.step;
   };
   window.twinGetStep = function () { return state.step; };
@@ -2135,6 +2139,9 @@
     activateProblemOneLens: function (key) { activateProblemLens(key); },
     enterProblemOneLayerView: function () { enterProblemOneLayerView(); },
     lvSelectedExperts: function (hotExpert) { return lvSelectedExperts(hotExpert); },
+    // deck 上点 router(节点 id 'gate')时调用:就地开/关 256 专家负载热力卡片,
+    // 不进问题详情、不动时光机 —— 训练中随时可看当前 step 的路由分布。
+    toggleExpertExpand: function () { toggleRoutedExpertBankExpand(); },
   };
 
   function renderAll() {
@@ -2512,6 +2519,15 @@
         }
       }
 
+      // 点一下就地展开 256 专家负载热力,再点收起。不进问题详情、不动时光机——
+      // 训练过程中随时可以打开看当前这一步 token 是怎么分到 256 个专家上的,
+      // 步数推进/时光机拖动时热力跟着重画(见 syncExpertHeatToStep)。
+      // router_gate(做出路由决策的算子)是语义入口,routed_expert_bank(展开卡片就长在它身上)
+      // 是几何入口——从"点哪个能看到专家"的直觉出发,用户更可能点后者,两个都绑。
+      ["router_gate", "routed_expert_bank"].forEach(function (id) {
+        bindRouterExpandToggle(stage.querySelector('[data-node-id="' + id + '"]'));
+      });
+
       Object.keys(visibleCases).forEach(function(key) {
         var info = visibleCases[key];
         var marker = diagnosisMarkers.find(function(m) { return m.key === key; });
@@ -2672,7 +2688,90 @@
   var ROUTED_EXPERT_HOT_ID = 193; // 与 diagnosisMarkers/locateChains 的「问题一」口径一致(expert 193)
   var EXPAND_W = 560, EXPAND_H = 210; // 卡片尺寸,同时供下面「挤开邻居节点」的避让计算复用
 
-  function buildExpertBankExpandMarkup() {
+  // ── 展开卡片里两处随 step 变化的读数 ──────────────────────────────────────────
+  // 卡片本体(64×4 网格 + 色阶)是固定几何,只有这两处文案/柱子跟着 step 走,
+  // 所以步进时由 updateExpertHeatReadout() 就地改,不重建整张卡片(重建会打断热力过渡)。
+
+  // 最热/最冷专家 + 相对均衡基准(1/256)的倍数,健康态与坍缩态共用这组统计
+  function lvHeatStats(loads) {
+    var even = 1 / LV_BASE.routedExperts;
+    var hi = 0, lo = 0;
+    for (var i = 1; i < loads.length; i += 1) {
+      if (loads[i] > loads[hi]) hi = i;
+      if (loads[i] < loads[lo]) lo = i;
+    }
+    return {
+      even: even,
+      hiId: hi, hiLoad: loads[hi], hiX: loads[hi] / even,
+      loId: lo, loLoad: loads[lo], loX: loads[lo] / even,
+    };
+  }
+  function lvPct(v) { return (v * 100).toFixed(v >= 0.01 ? 1 : 2) + "%"; }
+
+  function lvHeatCaption(loads, step) {
+    var st = lvHeatStats(loads);
+    if (lvRouteSkew(step) >= 0.5) {
+      return "色温 ∝ token 量:" + lvPct(st.hiLoad) + " → E" + st.hiId + "(路由坍缩)";
+    }
+    return "色温 ∝ token 量 · 最热 E" + st.hiId + " " + lvPct(st.hiLoad) + "(均衡 " + lvPct(st.even) + ")";
+  }
+
+  // 底部读数:坍缩态讲 rank 23 的 all-to-all buffer 失配(事故根因链路的下一环);
+  // 健康态讲负载均衡度(最热/最冷专家占比 + 相对均衡的倍数)。两者共用同一块版面与三行几何。
+  function lvHeatGaugeMarkup(loads, step, gX, gaugeY, barX, barMaxW) {
+    var LV = LV_BASE;
+    var head = 'style="font-size:9.5px;font-weight:800;font-family:system-ui,sans-serif"';
+    var lbl = 'style="font-size:8.5px;font-family:system-ui,sans-serif" fill="var(--foreground-secondary)"';
+    var val = 'style="font-size:8.5px;font-weight:700;font-family:ui-monospace,monospace"';
+    if (lvRouteSkew(step) >= 0.5) {
+      return '<text x="' + gX + '" y="' + (gaugeY - 2).toFixed(1) + '" fill="' + LV.cHot + '" ' + head + '>EP rank 23 all-to-all buffer 失配 → 死锁</text>' +
+        '<text x="' + gX + '" y="' + (gaugeY + 12).toFixed(1) + '" ' + lbl + '>send</text>' +
+        '<rect x="' + barX + '" y="' + (gaugeY + 6).toFixed(1) + '" width="3" height="8" rx="1" fill="none" stroke="' + LV.cHot + '" stroke-width="1"></rect>' +
+        '<text x="' + (barX + 10) + '" y="' + (gaugeY + 12).toFixed(1) + '" fill="' + LV.cFlow + '" ' + val + '>0(无 token 外发)</text>' +
+        '<text x="' + gX + '" y="' + (gaugeY + 26).toFixed(1) + '" ' + lbl + '>recv</text>' +
+        '<rect x="' + barX + '" y="' + (gaugeY + 20).toFixed(1) + '" width="' + Math.max(3, barMaxW).toFixed(1) + '" height="8" rx="1" fill="' + LV.cFlow + '"></rect>' +
+        '<text x="' + (barX + barMaxW + 6).toFixed(1) + '" y="' + (gaugeY + 26).toFixed(1) + '" fill="' + LV.cFlow + '" ' + val + '>2048×4608×8 ≈ 151MB</text>';
+    }
+    var st = lvHeatStats(loads);
+    // 柱长按「相对均衡的倍数 / 4×」归一,与热力色阶的 4× 打满口径一致,读起来是同一把尺子;
+    // 柱色直接取该专家自己的热力色(同一个 lvHeatFill/lvHeatOpacity),柱子就是那一格的放大版,
+    // 配合网格上的 lv-heat-mark 描边圈,数字、柱子、格子三者一眼能对上。
+    var wOf = function (x) { return Math.max(3, Math.min(1, x / 4) * barMaxW); };
+    var hiT = lvHeatT(st.hiLoad), loT = lvHeatT(st.loLoad);
+    var hiC = lvHeatFill(hiT, false), loC = lvHeatFill(loT, false);
+    var hiW = wOf(st.hiX), loW = wOf(st.loX);
+    // step 用精确值(fmtBig 会压成 24.3k,步号必须逐步可读——这卡片就是拿来逐 step 对比的)
+    return '<text x="' + gX + '" y="' + (gaugeY - 2).toFixed(1) + '" fill="var(--foreground)" ' + head + '>路由负载均衡 · step ' + (step == null ? "—" : Math.round(step)) + '</text>' +
+      '<text x="' + gX + '" y="' + (gaugeY + 12).toFixed(1) + '" ' + lbl + '>最热</text>' +
+      '<rect x="' + barX + '" y="' + (gaugeY + 6).toFixed(1) + '" width="' + hiW.toFixed(1) + '" height="8" rx="1" fill="' + hiC + '" opacity="' + lvHeatOpacity(hiT).toFixed(3) + '"></rect>' +
+      '<text x="' + (barX + hiW + 6).toFixed(1) + '" y="' + (gaugeY + 12).toFixed(1) + '" fill="' + hiC + '" ' + val + '>E' + st.hiId + " " + lvPct(st.hiLoad) + "(" + st.hiX.toFixed(2) + '×均衡)</text>' +
+      '<text x="' + gX + '" y="' + (gaugeY + 26).toFixed(1) + '" ' + lbl + '>最冷</text>' +
+      '<rect x="' + barX + '" y="' + (gaugeY + 20).toFixed(1) + '" width="' + loW.toFixed(1) + '" height="8" rx="1" fill="' + loC + '" opacity="' + lvHeatOpacity(loT).toFixed(3) + '"></rect>' +
+      '<text x="' + (barX + loW + 6).toFixed(1) + '" y="' + (gaugeY + 26).toFixed(1) + '" fill="' + loC + '" ' + val + '>E' + st.loId + " " + lvPct(st.loLoad) + "(" + st.loX.toFixed(2) + '×均衡)</text>';
+  }
+
+  // step 变化后就地刷新卡片上的读数:顶行说明、底部 gauge、EP rank 23 标注的开合。
+  // 网格本体由 paintExpertHeat() 单独重着色,两者都不动 DOM 结构,过渡不被打断。
+  function updateExpertHeatReadout(step) {
+    var loads = null;
+    document.querySelectorAll(".lv-heat-caption").forEach(function (el) {
+      if (!loads) loads = lvExpertLoads(ROUTED_EXPERT_HOT_ID, step);
+      var collapsed = lvRouteSkew(step) >= 0.5;
+      el.textContent = lvHeatCaption(loads, step);
+      el.setAttribute("fill", collapsed ? LV_BASE.cHot : "var(--foreground-secondary)");
+    });
+    document.querySelectorAll(".lv-heat-gauge").forEach(function (g) {
+      if (!loads) loads = lvExpertLoads(ROUTED_EXPERT_HOT_ID, step);
+      g.innerHTML = lvHeatGaugeMarkup(loads, step,
+        Number(g.dataset.gx), Number(g.dataset.gy), Number(g.dataset.barx), Number(g.dataset.barw));
+    });
+    var showHot = lvRouteSkew(step) >= 0.5 ? "1" : "0";
+    document.querySelectorAll(".lv-heat-hotlabel").forEach(function (el) { el.setAttribute("opacity", showHot); });
+  }
+
+  // step:按哪一步的路由分布出图。不传 = 取当前视图 step(实时训练/时光机拖块所在那一步)。
+  function buildExpertBankExpandMarkup(step) {
+    if (step == null) step = state.step;
     var LV = LV_BASE;
     var W = EXPAND_W, H = EXPAND_H;
     var ox = -W / 2, oy = -H / 2;
@@ -2688,11 +2787,17 @@
       var p = cardPos(card);
       return { x: p.x + 1.5 + (cell % 2) * cellW + cellW / 2, y: p.y + 1.5 + Math.floor(cell / 2) * cellH + cellH / 2 };
     };
-    var selected = lvSelectedExperts(ROUTED_EXPERT_HOT_ID);
-
-    // EP64(64×4)网格本身只作背景棋盘,不再给命中卡加红外框(命中态已由下面的 hotLabel
-    // /a2a-node/a2a-ring 红色叠层与 gauge 标题表达,网格描边统一走中性蓝,避免重复刷红)。
-    var cardsSvg = "";
+    // EP64(64×4)网格本身只作背景棋盘,不给命中卡加红外框(命中态由 hotLabel/gauge 标题表达,
+    // 网格描边统一走中性蓝,避免重复刷红)。每个小格 = 一个 routed expert 的负载热力:
+    // 这里只写「均衡同色」初值,真实负载挂在 data-fill/data-op 上,由 startExpertHeat() 用 2s 过渡推过去
+    // (与「模型层展开图」lvBuildSvg 同一套 lvExpertLoads/lvHeat* 口径)。
+    // 负载按传进来的 step 取:训练中点开 router 看到的是当前这一步的真实分布,
+    // 时光机拖动/步数推进时由 syncExpertHeatToStep() 就地重新着色,不重建卡片。
+    var loads = lvExpertLoads(ROUTED_EXPERT_HOT_ID, step);
+    var collapsed = lvRouteSkew(step) >= 0.5;
+    var evenT = lvHeatT(1 / LV.routedExperts);
+    var evenFill = lvHeatFill(evenT, false), evenOp = lvHeatOpacity(evenT).toFixed(3);
+    var cardsSvg = "", cellBox = {};
     for (var card = 0; card < 64; card += 1) {
       var p = cardPos(card);
       cardsSvg += '<rect x="' + p.x.toFixed(1) + '" y="' + p.y.toFixed(1) + '" width="' + cardW.toFixed(1) + '" height="' + cardH.toFixed(1) + '" rx="2"' +
@@ -2700,62 +2805,87 @@
         ' stroke="' + LV.cFlow + '" stroke-opacity=".28" stroke-width="0.7"></rect>';
       for (var cell = 0; cell < 4; cell += 1) {
         var c = cellCenter(card, cell);
-        var hot = selected.some(function (s) { return s.card === card && s.cell === cell && s.hot; });
-        var fill = hot ? LV.cHot : LV.cExpert;
-        var op = hot ? 1 : 0.32;
-        cardsSvg += '<rect x="' + (c.x - cellW / 2).toFixed(1) + '" y="' + (c.y - cellH / 2).toFixed(1) + '" width="' + Math.max(0, cellW - 1).toFixed(1) + '" height="' + Math.max(0, cellH - 1).toFixed(1) + '" rx="1" fill="' + fill + '" opacity="' + op + '"></rect>';
+        var eid = lvExpertIdAt(card, cell, ROUTED_EXPERT_HOT_ID);
+        var load = loads[eid], t = lvHeatT(load);
+        var bx = c.x - cellW / 2, by = c.y - cellH / 2;
+        var bw = Math.max(0, cellW - 1), bh = Math.max(0, cellH - 1);
+        cellBox[eid] = { x: bx, y: by, w: bw, h: bh };   // 供最热/最冷描边圈定位
+        cardsSvg += '<rect class="lv-heat-cell" data-e="' + eid + '" data-fill="' + lvHeatFill(t, false) + '" data-op="' + lvHeatOpacity(t).toFixed(3) + '"' +
+          ' x="' + bx.toFixed(1) + '" y="' + by.toFixed(1) + '"' +
+          ' width="' + bw.toFixed(1) + '" height="' + bh.toFixed(1) + '" rx="1"' +
+          ' fill="' + evenFill + '" opacity="' + evenOp + '">' +
+          '<title>' + lvHeatCellTitle(eid, load) + '</title></rect>';
       }
     }
+    // 最热/最冷两格加描边圈:底部 gauge 报的就是这两个专家,圈出来让数字和图能一一对上。
+    // 位置由 paintExpertHeat() 在每次重着色后按新的极值搬过去(读格子自己的 x/y/w/h)。
+    var mStat = lvHeatStats(loads);
+    var markSvg = [["hi", mStat.hiId], ["lo", mStat.loId]].map(function (m) {
+      var g = cellBox[m[1]];
+      if (!g) return "";
+      return '<rect class="lv-heat-mark" data-kind="' + m[0] + '"' +
+        ' x="' + (g.x - 1.2).toFixed(1) + '" y="' + (g.y - 1.2).toFixed(1) + '"' +
+        ' width="' + (g.w + 2.4).toFixed(1) + '" height="' + (g.h + 2.4).toFixed(1) + '" rx="2"' +
+        ' fill="none" stroke="var(--foreground)" stroke-width="1.1" stroke-opacity=".85"></rect>';
+    }).join("");
+
+    // 网格整体包一层:paintExpertHeat() 靠 data-heat-hot/data-heat-neutral 就地重着色,
+    // is-heat-live 由 startExpertHeat() 在首次揭示动画跑完后挂上(把过渡从 2s 缩到 .6s)。
+    cardsSvg = '<g class="lv-heat-grid" data-heat-hot="' + ROUTED_EXPERT_HOT_ID + '" data-heat-neutral="0">' + cardsSvg + markSvg + '</g>';
+
+    // EP rank 23 标注只在坍缩态出现:健康训练下 token 均摊到 64 张卡,没有"那张卡"可指。
+    // 元素常在、靠 opacity 开合,这样时光机拖过事故点时由 updateExpertHeatReadout() 直接切,
+    // 不必重建整张卡片。
     var rHot = cardPos(23);
-    var hotLabel = '<text x="' + (rHot.x + cardW / 2).toFixed(1) + '" y="' + (rHot.y - 4).toFixed(1) + '" text-anchor="middle" fill="' + LV.cHot + '" style="font-size:8px;font-weight:800;font-family:ui-monospace,monospace">EP rank 23</text>';
+    var hotLabel = '<text class="lv-heat-hotlabel" x="' + (rHot.x + cardW / 2).toFixed(1) + '" y="' + (rHot.y - 4).toFixed(1) + '"' +
+      ' text-anchor="middle" fill="' + LV.cHot + '" opacity="' + (collapsed ? 1 : 0) + '"' +
+      ' style="font-size:8px;font-weight:800;font-family:ui-monospace,monospace;transition:opacity .4s ease">EP rank 23</text>';
 
-    // top-8 专家 all-to-all mesh(与「模型层展开图」lvBuildSvg 同一套视觉语言,见 startLayerA2A):
-    // 8 个参与者(selected)两两连线 C(8,2)=28 条,ring/node 盖在整张 rank 卡上(dispatch 命中的是
-    // 整个 rank,不止单个 expert cell)。动画分两阶段由 startLayerA2A() 用 rAF 逐帧驱动:
-    // ① dispatch:8 条…28 条 mesh 描边生长,8 个 rank 陆续变红(收到数据);
-    // ② combine:7 个非 rank23 专家依次淡出恢复原色,rank 23 send=0 保持红(死锁)。
-    var a2aNodesData = selected.map(function (s, k) {
-      var c = cellCenter(s.card, s.cell), p = cardPos(s.card);
-      return { k: k, hot: !!s.hot, cx: c.x, cy: c.y, px: p.x, py: p.y };
-    });
-    var a2aMesh = "";
-    var mi = 0;
-    for (var ai = 0; ai < a2aNodesData.length; ai += 1) {
-      for (var bi = ai + 1; bi < a2aNodesData.length; bi += 1) {
-        var A = a2aNodesData[ai], B = a2aNodesData[bi];
-        var len = Math.hypot(B.cx - A.cx, B.cy - A.cy).toFixed(1);
-        a2aMesh += '<path class="lv-a2a-mesh" data-mi="' + mi + '" data-len="' + len + '" style="--lv-dash:' + len + '" d="M' + A.cx + ' ' + A.cy + ' L' + B.cx + ' ' + B.cy + '"></path>';
-        mi += 1;
-      }
+    // 热力色阶图例 + 说明(取代原来的 top-8 all-to-all mesh 连线动画)。
+    // 原实现在 8 个参与者之间画 C(8,2)=28 条 mesh 逐条生长,但 top-k 是逐 token 算的——
+    // 一个 step 几万 token 就是几十万条路由,连线画不全也读不动,反而误导成「只有 8 条链路」。
+    var swW = 8, swH = 6, swX = ox + padX + 232;
+    var heatStops = "";
+    for (var si = 0; si < 12; si += 1) {
+      var st = si / 11;
+      heatStops += '<rect x="' + (swX + si * swW).toFixed(1) + '" y="' + (oy + 30) + '" width="' + swW + '" height="' + swH + '"' +
+        ' fill="' + lvHeatFill(st, false) + '" opacity="' + lvHeatOpacity(st).toFixed(3) + '"></rect>';
     }
-    var a2aNodesSvg = "";
-    a2aNodesData.forEach(function (n) {
-      a2aNodesSvg += '<rect class="lv-a2a-ring" x="' + (n.px - 1.5).toFixed(1) + '" y="' + (n.py - 1.5).toFixed(1) + '" width="' + (cardW + 3).toFixed(1) + '" height="' + (cardH + 3).toFixed(1) + '" rx="3.5"></rect>';
-      a2aNodesSvg += '<rect class="lv-a2a-node" data-k="' + n.k + '" data-hot="' + (n.hot ? 1 : 0) + '" x="' + n.px.toFixed(1) + '" y="' + n.py.toFixed(1) + '" width="' + cardW.toFixed(1) + '" height="' + cardH.toFixed(1) + '" rx="2.5"></rect>';
-    });
-    var a2aLabels =
-      '<text class="lv-a2a-label" data-phase="disp" x="' + (ox + padX) + '" y="' + (oy + 36) + '" style="font-size:9.5px;font-weight:700;font-family:system-ui,sans-serif" fill="' + LV.cHot + '">① all-to-all dispatch:top-8 专家互发 token,8 个 rank 收到数据 → 变红(rank 23 recv≈151MB)</text>' +
-      '<text class="lv-a2a-label" data-phase="comb" x="' + (ox + padX) + '" y="' + (oy + 36) + '" style="font-size:9.5px;font-weight:700;font-family:system-ui,sans-serif;opacity:0" fill="' + LV.cFlow + '">② all-to-all combine:7 个专家输出完成 → 恢复原色,rank 23 send=0 → 保持红色(死锁)</text>';
+    // 顶行读数随 step 变(updateExpertHeatReadout 就地改文案,不重建卡片),故给它一个类名做锚点
+    var heatLegend =
+      '<text class="lv-heat-caption" x="' + (ox + padX) + '" y="' + (oy + 36) + '" style="font-size:9.5px;font-weight:700;font-family:system-ui,sans-serif" fill="' + (collapsed ? LV.cHot : "var(--foreground-secondary)") + '">' + lvHeatCaption(loads, step) + '</text>' +
+      heatStops +
+      '<text x="' + (swX + 12 * swW + 5).toFixed(1) + '" y="' + (oy + 36) + '" style="font-size:8px;font-family:ui-monospace,monospace" fill="var(--foreground-secondary)">≈0 → ≥4× 均衡(1/256)</text>';
 
+    // 底部读数:坍缩态讲 rank 23 的 all-to-all buffer 失配(事故根因链路的下一环);
+    // 健康态讲负载均衡度(最热/最冷专家占比 + 相对均衡的倍数),两者共用同一块版面。
+    // send/recv 柱状图+数值用中性蓝(LV.cFlow),红色只留给诊断标题和 EP rank 23 标注,
+    // 避免整块卡片视觉上"全是红色"。
     var gaugeY = gY + gH + 16;
     var barX = gX + 40, barMaxW = gW - 100;
-    // send/recv 柱状图+数值改用中性蓝(LV.cFlow),不再跟着 cHot 刷红:红色只保留给上面
-    // 这行诊断标题和 hotLabel/EP rank 23 标注,避免整块卡片视觉上"全是红色"。
-    var gauge =
-      '<text x="' + gX + '" y="' + (gaugeY - 2).toFixed(1) + '" fill="' + LV.cHot + '" style="font-size:9.5px;font-weight:800;font-family:system-ui,sans-serif">EP rank 23 all-to-all buffer 失配 → 死锁</text>' +
-      '<text x="' + gX + '" y="' + (gaugeY + 12).toFixed(1) + '" style="font-size:8.5px;font-family:system-ui,sans-serif" fill="var(--foreground-secondary)">send</text>' +
-      '<rect x="' + barX + '" y="' + (gaugeY + 6).toFixed(1) + '" width="3" height="8" rx="1" fill="none" stroke="' + LV.cFlow + '" stroke-width="1"></rect>' +
-      '<text x="' + (barX + 10) + '" y="' + (gaugeY + 12).toFixed(1) + '" fill="' + LV.cFlow + '" style="font-size:8.5px;font-weight:700;font-family:ui-monospace,monospace">0(无 token 外发)</text>' +
-      '<text x="' + gX + '" y="' + (gaugeY + 26).toFixed(1) + '" style="font-size:8.5px;font-family:system-ui,sans-serif" fill="var(--foreground-secondary)">recv</text>' +
-      '<rect x="' + barX + '" y="' + (gaugeY + 20).toFixed(1) + '" width="' + Math.max(3, barMaxW).toFixed(1) + '" height="8" rx="1" fill="' + LV.cFlow + '"></rect>' +
-      '<text x="' + (barX + barMaxW + 6).toFixed(1) + '" y="' + (gaugeY + 26).toFixed(1) + '" fill="' + LV.cFlow + '" style="font-size:8.5px;font-weight:700;font-family:ui-monospace,monospace">2048×4608×8 ≈ 151MB</text>';
+    // 几何参数挂在 group 上,updateExpertHeatReadout() 重算读数时不必再拿一遍卡片尺寸
+    var gauge = '<g class="lv-heat-gauge" data-gx="' + gX + '" data-gy="' + gaugeY.toFixed(1) +
+      '" data-barx="' + barX + '" data-barw="' + Math.max(3, barMaxW).toFixed(1) + '">' +
+      lvHeatGaugeMarkup(loads, step, gX, gaugeY, barX, barMaxW) + '</g>';
 
+    // 收起按钮:卡片撑开后把 router / expert bank 两个节点都盖住了,再点节点收不回来,
+    // 必须在卡片自己身上留一个出口(点击由 bindExpertHeatClose() 在 document 捕获阶段接)。
+    var clX = ox + W - 17, clY = oy + 16;
+    var closeBtn = '<g class="lv-heat-close" style="cursor:pointer">' +
+      '<circle cx="' + clX + '" cy="' + clY + '" r="9" fill="color-mix(in srgb, var(--surface-2) 90%, transparent)" stroke="var(--border-default)" stroke-width="1"></circle>' +
+      '<path d="M' + (clX - 3.6) + ' ' + (clY - 3.6) + ' l7.2 7.2 M' + (clX + 3.6) + ' ' + (clY - 3.6) + ' l-7.2 7.2"' +
+      ' stroke="var(--foreground-secondary)" stroke-width="1.5" stroke-linecap="round" fill="none"></path>' +
+      '<title>收起专家分布图</title></g>';
+
+    // 底板配色对齐「精度/性能」那组曲线图表卡(.twin-accuracy-metric-card:border-subtle +
+    // foreground 3% 中性底),不再用 cExpert 黄调 —— 卡片浮在整网图上必须不透明,
+    // 所以把那 3% 叠在 --surface-1 上而不是 transparent 上,浅/深色主题都跟着 token 走。
     return (
       '<rect x="' + ox + '" y="' + oy + '" width="' + W + '" height="' + H + '" rx="10"' +
-      ' fill="color-mix(in srgb, ' + LV.cExpert + ' 12%, var(--surface-1))" stroke="var(--border-default)" stroke-width="1"' +
+      ' fill="color-mix(in srgb, var(--foreground) 3%, var(--surface-1))" stroke="var(--border-subtle)" stroke-width="1"' +
       ' style="filter:drop-shadow(0 8px 20px rgba(0,0,0,.38))"></rect>' +
       '<text x="' + (ox + padX) + '" y="' + (oy + 20) + '" style="font-size:12.5px;font-weight:800;font-family:system-ui,sans-serif" fill="var(--foreground)">routed experts · ' + LV.routedExperts + ' → EP64(64 卡 × 4)</text>' +
-      cardsSvg + a2aMesh + a2aNodesSvg + hotLabel + gauge + a2aLabels
+      cardsSvg + hotLabel + gauge + heatLegend + closeBtn
     );
   }
 
@@ -2831,7 +2961,7 @@
   function showRoutedExpertBankExpand() {
     if (window.PtoTwinGraphAdapter) {
       routedExpertExpandActive = true;
-      window.PtoTwinGraphAdapter.showExpertExpand(buildExpertBankExpandMarkup, startLayerA2A);
+      window.PtoTwinGraphAdapter.showExpertExpand(buildExpertBankExpandMarkup, startExpertHeat);
       return;
     }
     var stage = document.getElementById("graphStage");
@@ -2852,9 +2982,8 @@
     wrap.setAttribute("transform", group.getAttribute("transform") || "");
     wrap.innerHTML = buildExpertBankExpandMarkup();
     group.parentNode.appendChild(wrap);
-    // top-8 专家 all-to-all mesh 动画:与「模型层展开图」共用同一个 startLayerA2A() rAF 驱动器
-    // (全页仅一个展开图会用到它,两个入口互斥,不会抢同一个 lvAnimRaf 句柄)。
-    startLayerA2A(wrap);
+    // 256 专家负载热力动画:与「模型层展开图」共用同一个 startExpertHeat() 驱动器
+    startExpertHeat(wrap);
     // 卡片比原节点大得多,几何上会盖住的邻居节点顺势挤开,让"节点变大"看起来更像真实的展开
     pushRoutedExpertNeighborsAway(stage, group);
     // model-graphviz-embed/pattern.js 用 ResizeObserver 盯着 #graphStage 容器尺寸,只要没有
@@ -2871,9 +3000,51 @@
     }
   }
 
+  // 点 router 节点 = 开/关 256 专家负载热力卡片。整网图重建后节点是新的 DOM,
+  // 用 data-routerExpandBound 去重,避免同一个节点被绑多次。
+  function bindRouterExpandToggle(nodeEl) {
+    if (!nodeEl || nodeEl.dataset.routerExpandBound) return;
+    nodeEl.dataset.routerExpandBound = "1";
+    nodeEl.style.cursor = "pointer";
+    if (!nodeEl.querySelector("title")) {
+      var hint = document.createElementNS("http://www.w3.org/2000/svg", "title");
+      hint.textContent = "展开 / 收起 256 专家负载热力";
+      nodeEl.appendChild(hint);
+    }
+    nodeEl.addEventListener("click", function (e) {
+      e.stopPropagation();
+      toggleRoutedExpertBankExpand();
+    });
+  }
+
+  // 卡片撑开后有 560×210,把 router 与 expert bank 两个节点连同邻居一起盖住/淡出,
+  // 于是"再点一次收起"点不着了 —— 卡片右上角自带一个 × ,由 document 捕获阶段兜底监听
+  // (两条渲染路径共用同一份卡片 markup,监听放在这里就都覆盖到了,不必各绑一次)。
+  function bindExpertHeatClose() {
+    var inClose = function (t) { return !!(t && t.closest && t.closest(".lv-heat-close")); };
+    // 整网图(deck / opv 两套)都在容器上用 pointerdown + setPointerCapture 做拖拽平移。
+    // 捕获一旦生效,浏览器会把随后的 click 派发到捕获元素而不是真正被点的元素,卡片上的 ×
+    // 就永远收不到 click。这里在 document 捕获阶段先把落在 × 上的 pointerdown 截断,
+    // 让容器的拖拽逻辑压根不启动,click 才能正常落到 × 上。
+    document.addEventListener("pointerdown", function (e) {
+      if (inClose(e.target)) e.stopPropagation();
+    }, true);
+    document.addEventListener("click", function (e) {
+      if (!inClose(e.target)) return;
+      e.stopPropagation();
+      e.preventDefault();
+      hideRoutedExpertBankExpand();
+    }, true);
+  }
+
+  function toggleRoutedExpertBankExpand() {
+    if (routedExpertExpandActive) hideRoutedExpertBankExpand();
+    else showRoutedExpertBankExpand();
+  }
+
   function hideRoutedExpertBankExpand() {
     routedExpertExpandActive = false;
-    if (lvAnimRaf) { cancelAnimationFrame(lvAnimRaf); lvAnimRaf = null; }
+    lastHeatStep = null;   // 下次展开重新按当前 step 着色
     if (window.PtoTwinGraphAdapter) { window.PtoTwinGraphAdapter.hideExpertExpand(); return; }
     var stage = document.getElementById("graphStage");
     document.querySelectorAll('[data-node-expand="routed_expert_bank"]').forEach(function (el) { el.remove(); });
@@ -4302,6 +4473,192 @@
     ];
   }
 
+  /* ── 事故层 256 个 routed expert 的负载热力 ──────────────────────────────────
+     为什么用热力而不是连线:top-k 是逐 token 计算的,一个 step 里几万个 token 各自选 8 个专家,
+     真要画路由连线就是几十万条,既画不出也读不动,还会被误读成「只有 8 条链路」。改成
+     「每个专家格子的色温 ∝ 它承接的 token 量」,一屏 256 格就能把「路由坍缩」讲清楚:
+     均衡时整片同色,坍缩后其余 255 格退回冷蓝、只剩一格烫红。
+     两个展开入口共用这组函数:「模型层展开图」lvBuildSvg() 与 wzh 单屏的原地展开卡片
+     buildExpertBankExpandMarkup(),保证两处的负载口径与配色完全一致。
+
+     负载随 step 变化(所以训练中点开 router 能逐 step 看热力怎么走):
+     倾斜度 lvRouteSkew(step) 从「均衡」渐变到「坍缩」,再随修复回落,与页面其它图表
+     (loss/grad_norm/z-loss)共用 INCIDENT_STEP / RECOVERY_END 这条时间线。 */
+
+  // step → 路由倾斜度 ∈[0,1]:0=完全均衡,1=98% 全压在一个专家(定位链案例一的事故终态)。
+  // 事故不是瞬间发生的——router softmax 低精度溢出是慢慢积累的,所以事故前几千步就开始爬坡;
+  // 修复(router 改 FP32 + z-loss + 降 router lr)之后回到接近均衡,但不会绝对平,留一点自然抖动。
+  // step 传 null = 不挂时间线,直接给事故终态(定位链/问题详情里的静态举证图用这个口径)。
+  const LV_SKEW_CLIMB_FROM = INCIDENT_STEP - 4200;
+  // 底噪要足够小:倾斜分量把 98% 压给单个专家,哪怕 5% 的权重也让它拿到 13× 均衡份额、
+  // 直接烫红,健康训练下会误读成"一直有个专家过载"。0.002 对应最热专家约 1.5× 均衡,
+  // 是正常 MoE 训练该有的轻微不均。
+  const LV_SKEW_FLOOR = 0.002;
+  function lvRouteSkew(step) {
+    if (step == null) return 1;
+    if (step >= INCIDENT_STEP && step < RECOVERY_END) return 1;
+    if (step >= RECOVERY_END) {
+      // 修复(router 改 FP32 + z-loss + 降 router lr)生效后,负载重新摊平。
+      // 收敛比 loss 慢一些但同量级:RECOVERY_STEPS(15 步)后再给 300 步把分布拉回底噪。
+      const back = clamp((step - RECOVERY_END) / 300, 0, 1);
+      return LV_SKEW_FLOOR + (1 - LV_SKEW_FLOOR) * (1 - back);
+    }
+    if (step <= LV_SKEW_CLIMB_FROM) return LV_SKEW_FLOOR;
+    const ramp = clamp((step - LV_SKEW_CLIMB_FROM) / (INCIDENT_STEP - LV_SKEW_CLIMB_FROM), 0, 1);
+    return LV_SKEW_FLOOR + (1 - LV_SKEW_FLOOR) * Math.pow(ramp, 2.6);
+  }
+
+  // 256 个 routed expert 在给定 step 的 token 份额(和为 1)。
+  // 两个分量按倾斜度插值:
+  //   · 均衡分量 —— 每专家 ≈1/256,叠一层随 step 缓慢游走的确定性抖动(同一 step 反复渲染结果一致,
+  //     但 step 一变热力就跟着变,这正是「逐 step 看热力变化」要的东西);
+  //   · 坍缩分量 —— hotExpert 拿 98%,其余 255 个分剩下的 2%。
+  function lvExpertLoads(hotExpert, step) {
+    const N = LV_BASE.routedExperts;
+    const skew = lvRouteSkew(step);
+    const s = step == null ? INCIDENT_STEP : step;
+    const even = [];
+    let evenSum = 0, restSum = 0;
+    for (let i = 0; i < N; i += 1) {
+      // 三个不同频率的正弦叠加:空间上专家之间有高低,时间上随 step 缓慢漂移。
+      // 振幅取到 0.72/0.42/0.2,权重跨度约 0.15~2.3 倍均衡 —— 原来 0.5/0.28 的跨度只有
+      // 0.22~1.78 倍,换算成热力档位挤在 t=0.055~0.445 的一小段里,整片看着都是蓝绿、
+      // 分不出冷热。第三个高频分量再打散一点,避免正弦叠加出肉眼可见的条纹。
+      const v = Math.max(0.15,
+        1 + 0.72 * Math.sin(i * 12.9898 + s * 0.013)
+          + 0.42 * Math.sin(i * 4.113 + s * 0.037)
+          + 0.2 * Math.sin(i * 29.417 + s * 0.021));
+      even.push(v);
+      evenSum += v;
+      if (i !== hotExpert) restSum += v;
+    }
+    return even.map((v, i) => {
+      const balanced = v / evenSum;
+      const collapsed = i === hotExpert ? 0.98 : (restSum > 0 ? (0.02 * v) / restSum : 0);
+      return balanced * (1 - skew) + collapsed * skew;
+    });
+  }
+
+  // 负载 → 热力档位 t∈[0,1]。基准取「均衡时每专家 1/256」,4× 基准即打满:
+  // 于是均衡态整片恰好落在 t=0.25 的同一档(= 动画的初始同色状态),
+  // 坍缩后只有 hotExpert 冲到 1、其余 255 个掉到 ≈0,对比一眼可辨。
+  function lvHeatT(load) {
+    return Math.max(0, Math.min(1, load / ((1 / LV_BASE.routedExperts) * 4)));
+  }
+  // 热力色阶:冷(蓝)→ 中(绿)→ 烫(红)。与页面 infra 集群热力图(renderInfraHeatSnapshot 的
+  // LOW/MID 蓝→绿)同一套语义色系,顶端再接 cHot 红表示过载,读者在两张图之间不用换尺子。
+  // neutral=true(算子染色关闭)时蓝/绿两端压成中性灰蓝,红色诊断信号保留。
+  // 调用方显式传 neutral,不隐式读 lvColorMode——单屏展开卡片不参与展开图的染色切换。
+  function lvHeatFill(t, neutral) {
+    const cold = neutral ? [203, 213, 225] : [147, 197, 253];   // slate-300 / ≈--twin-util-low 蓝
+    const mid = neutral ? [148, 163, 184] : [34, 197, 94];      // slate-400 / ≈--twin-util-high 绿
+    const hot = [220, 38, 38];                                  // cHot 红
+    const a = t <= 0.5 ? cold : mid, b = t <= 0.5 ? mid : hot;
+    const p = t <= 0.5 ? t / 0.5 : (t - 0.5) / 0.5;
+    return `rgb(${a.map((v, i) => Math.round(v + (b[i] - v) * p)).join(",")})`;
+  }
+  // 低负载除了偏蓝,还要暗一档才有层次;但不再压到近乎不可见——蓝/绿/红的色相差本身已经
+  // 足够区分,冷端留住可读的蓝比"整片消失"更像一张热力图(幂次<1 让中低段拉开)。
+  function lvHeatOpacity(t) { return 0.2 + 0.8 * Math.pow(t, 0.55); }
+
+  // 专家 id ↔ 网格位置。默认按 EP64 连续排布(expert = card*4 + cell);事故层要让倾斜专家落在
+  // 页面其它处口径一致的 EP rank 23 首格上(与 lvSelectedExperts 的 hotCard=23/cell=0 对齐),
+  // 故把它与该格原本的专家对调,保证 0~255 不重不漏。
+  const LV_HOT_SLOT = 23 * 4;
+  function lvExpertIdAt(card, cell, hotExpert) {
+    const natural = card * 4 + cell;
+    if (hotExpert == null) return natural;
+    if (natural === LV_HOT_SLOT) return hotExpert;
+    if (natural === hotExpert) return LV_HOT_SLOT;
+    return natural;
+  }
+
+  // 首次揭示:元素带着「均衡同色」初值上屏,首帧之后把真实负载写进行内样式,
+  // 由 css/training-run-twin.css 的 .lv-heat-cell(2s transition)演出从同色到热力的过渡。
+  // 揭示跑完给网格挂 is-heat-live,把过渡缩到 .6s —— 之后每推进一个 step 都要重新着色一次
+  // (见 syncExpertHeatToStep),2s 会跟不上步进节奏、看起来像卡住。
+  // 不循环、不占 rAF 句柄,随 innerHTML 重画自然消失。
+  const LV_HEAT_REVEAL_MS = 2000;
+  function startExpertHeat(host) {
+    const cells = Array.from(host.querySelectorAll(".lv-heat-cell"));
+    if (!cells.length) return;
+    const grids = Array.from(host.querySelectorAll(".lv-heat-grid"));
+    const apply = () => cells.forEach((el) => {
+      el.style.fill = el.dataset.fill;
+      el.style.opacity = el.dataset.op;
+    });
+    const goLive = () => grids.forEach((g) => g.classList.add("is-heat-live"));
+    const reduce = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    if (reduce) { apply(); goLive(); return; }   // CSS 里同偏好下已关掉 transition,直接落终态
+
+    // 揭示动画:整片同色 → 2s 过渡到各自的真实负载。
+    // 不靠 rAF 排队来"等初值上屏"——卡片是刚 innerHTML 进去的,同一帧里既设初值又设终值,
+    // 浏览器会把两次样式合并成一次,过渡直接被吃掉(表现就是一打开已经是终态、没有动画)。
+    // 这里显式走一遍标准套路:transition:none 写死初值 → 强制回流让初值真正生效 → 恢复
+    // transition 再写终值。无论调用时机在哪一帧,动画都必定播放。
+    grids.forEach((g) => g.classList.remove("is-heat-live"));
+    cells.forEach((el) => {
+      el.style.transition = "none";
+      el.style.fill = el.getAttribute("fill");
+      el.style.opacity = el.getAttribute("opacity");
+    });
+    void host.getBoundingClientRect();          // 强制回流:同色初值落地
+    cells.forEach((el) => { el.style.transition = ""; });
+    apply();
+    setTimeout(goLive, LV_HEAT_REVEAL_MS + 60);
+    // 卡片是按当前 step 生成的,记下来,免得紧接着的一次 syncExpertHeatToStep() 又原值重写一遍
+    // (重写会把刚起步的 2s 揭示动画从头打断)
+    if (grids.some((g) => !g.dataset.heatStatic)) lastHeatStep = state.step;
+  }
+
+  // 按给定 step 给一块热力网格重新着色(含格子 <title> 的占比读数)。
+  // 网格自带 data-heat-hot(倾斜专家 id)/data-heat-neutral(是否走中性灰),
+  // 所以同一个函数能服务不同入口的网格,不需要调用方再传上下文。
+  function paintExpertHeat(grid, step) {
+    const hot = Number(grid.dataset.heatHot);
+    const neutral = grid.dataset.heatNeutral === "1";
+    const loads = lvExpertLoads(hot, step);
+    grid.querySelectorAll(".lv-heat-cell").forEach((el) => {
+      const eid = Number(el.dataset.e);
+      const load = loads[eid];
+      if (load == null) return;
+      const t = lvHeatT(load);
+      el.dataset.fill = lvHeatFill(t, neutral);
+      el.dataset.op = lvHeatOpacity(t).toFixed(3);
+      el.style.fill = el.dataset.fill;
+      el.style.opacity = el.dataset.op;
+      const title = el.querySelector("title");
+      if (title) title.textContent = lvHeatCellTitle(eid, load);
+    });
+    // 最热/最冷描边圈搬到本 step 的新极值格上(读目标格自己的几何,不用再算一遍网格坐标)
+    const st = lvHeatStats(loads);
+    [["hi", st.hiId], ["lo", st.loId]].forEach(([kind, eid]) => {
+      const mark = grid.querySelector('.lv-heat-mark[data-kind="' + kind + '"]');
+      const cell = grid.querySelector('.lv-heat-cell[data-e="' + eid + '"]');
+      if (!mark || !cell) return;
+      const num = (name) => Number(cell.getAttribute(name)) || 0;
+      mark.setAttribute("x", (num("x") - 1.2).toFixed(1));
+      mark.setAttribute("y", (num("y") - 1.2).toFixed(1));
+      mark.setAttribute("width", (num("width") + 2.4).toFixed(1));
+      mark.setAttribute("height", (num("height") + 2.4).toFixed(1));
+    });
+  }
+  function lvHeatCellTitle(eid, load) {
+    return `E${eid} · ${(load * 100).toFixed(load >= 0.01 ? 1 : 3)}% token`;
+  }
+
+  // step 推进/时光机拖动后把在场的热力网格重画一遍。data-heat-static 的网格(定位链「模型层
+  // 展开图」的事故举证图)钉在事故终态,不跟时钟走,跳过。
+  let lastHeatStep = null;
+  function syncExpertHeatToStep() {
+    const grids = document.querySelectorAll(".lv-heat-grid:not([data-heat-static])");
+    if (!grids.length) { lastHeatStep = null; return; }
+    if (state.step === lastHeatStep) return;
+    lastHeatStep = state.step;
+    grids.forEach((g) => paintExpertHeat(g, state.step));
+    updateExpertHeatReadout(state.step);
+  }
+
   function lvBuildSvg(expandedLayer, hotExpert) {
     // 算子染色:'off' 模式把类别色统一压成中性灰(仅保留 cHot 红色诊断信号),'cat' 用原类别配色。
     // 局部 LV 遮蔽模块级 LV_BASE,函数内所有 LV.cXxx 引用随染色模式切换。
@@ -4394,6 +4751,14 @@
     const hotCards = new Set(selected.filter((s) => s.hot).map((s) => s.card));
 
     // 64 张卡 + 每卡 4 个 expert 小格
+    // 事故层:每个小格 = 一个 routed expert 的负载热力。这里只写「初始同色态」(= 均衡基准 1/256),
+    // 真实负载放在 data-fill/data-op 上,挂载后由 startExpertHeat() 用 2s 过渡推过去。
+    const neutral = lvColorMode === "off";
+    // step 传 null:这张图是定位链里的事故举证图,整页文案都在讲事故那一刻,
+    // 热力也钉在坍缩终态,不跟时光机走(网格上的 data-heat-static 让 syncExpertHeatToStep 跳过它)。
+    const loads = isMoe && hotExpert != null ? lvExpertLoads(hotExpert, null) : null;
+    const evenT = lvHeatT(1 / LV.routedExperts);
+    const evenFill = lvHeatFill(evenT, neutral), evenOp = lvHeatOpacity(evenT).toFixed(3);
     let cardsSvg = "";
     for (let card = 0; card < 64; card += 1) {
       const p = cardPos(card);
@@ -4403,23 +4768,28 @@
         stroke="${overloaded ? LV.cHot : LV.cFlow}" stroke-opacity="${overloaded ? "1" : ".28"}" stroke-width="${overloaded ? "2" : "0.8"}"></rect>`;
       for (let cell = 0; cell < 4; cell += 1) {
         const c = cellCenter(card, cell);
-        const hot = selected.find((s) => s.card === card && s.cell === cell && s.hot);
-        let fill, op, extra = "";
-        if (hotExpert != null) {
-          // 事故层:格子亮度 ∝ 该 expert 的 token 量。98% 全压在 E47(亮红),其余 63 个用可见底色——
-          // 直接体现模型层 §4「98% token → expert 193,其余 255 expert 几乎无 token」的路由倾斜。
-          fill = hot ? LV.cHot : LV.cExpert;
-          op = hot ? 1 : 0.35;
-        } else {
-          // 均衡层:高亮该 token 命中的 top-8
-          const sel = selKey.has(`${card}.${cell}`);
-          fill = hot ? LV.cHot : sel ? LV.cFlow : LV.cExpert;
-          op = hot ? 1 : sel ? 0.92 : 0.5;
-          if (sel) extra = `stroke="#fff" stroke-width="1"`;
+        const cx = c.x - cellW / 2, cy = c.y - cellH / 2;
+        if (loads) {
+          const eid = lvExpertIdAt(card, cell, hotExpert);
+          const load = loads[eid], t = lvHeatT(load);
+          cardsSvg += `<rect class="lv-heat-cell" data-e="${eid}" data-fill="${lvHeatFill(t, neutral)}" data-op="${lvHeatOpacity(t).toFixed(3)}"
+            x="${cx}" y="${cy}" width="${cellW - 1}" height="${cellH - 1}" rx="1"
+            fill="${evenFill}" opacity="${evenOp}"><title>${lvHeatCellTitle(eid, load)}</title></rect>`;
+          continue;
         }
-        cardsSvg += `<rect x="${c.x - cellW / 2}" y="${c.y - cellH / 2}" width="${cellW - 1}" height="${cellH - 1}" rx="1"
-          fill="${fill}" opacity="${op}" ${extra}></rect>`;
+        // 均衡层:高亮该 token 命中的 top-8
+        const hot = selected.find((s) => s.card === card && s.cell === cell && s.hot);
+        const sel = selKey.has(`${card}.${cell}`);
+        const fill = hot ? LV.cHot : sel ? LV.cFlow : LV.cExpert;
+        const op = hot ? 1 : sel ? 0.92 : 0.5;
+        cardsSvg += `<rect x="${cx}" y="${cy}" width="${cellW - 1}" height="${cellH - 1}" rx="1"
+          fill="${fill}" opacity="${op}" ${sel ? 'stroke="#fff" stroke-width="1"' : ""}></rect>`;
       }
+    }
+    // 事故层的网格包一层,供 startExpertHeat() 找到并在揭示动画后转入短过渡;
+    // data-heat-static 表示这块钉在事故终态,不跟时光机的 step 走(见 syncExpertHeatToStep)。
+    if (loads) {
+      cardsSvg = `<g class="lv-heat-grid" data-heat-static="1" data-heat-hot="${hotExpert}" data-heat-neutral="${neutral ? 1 : 0}">${cardsSvg}</g>`;
     }
     // 卡编号:每 4 卡标一次 rank,外加倾斜卡 r23(缩小字号避免与邻近 r20/r24 标签重叠)
     let cardLabels = "";
@@ -4445,34 +4815,24 @@
       });
     }
 
-    // top-8 专家 all-to-all(体现 定位链.md L128):all-to-all 发生在该 token 命中的 8 个专家(所在 rank)之间。
-    // 8 个参与者用高亮环标出,它们之间画满 all-to-all mesh(C(8,2)=28 条蓝线)。动画分两阶段(见 startLayerA2A):
-    //   ① dispatch:mesh 逐条生长,8 个 rank 陆续收到数据 → 全部「变红」(recv);
-    //   ② combine:7 个专家完成输出 → 恢复原色,而 rank 23 send=0 无法输出 → 保持红色(死锁)。
-    let a2aMesh = "", a2aNodes = "", a2aLabels = "";
+    // 热力色阶图例(取代原来的 top-8 all-to-all mesh 连线动画)。
+    // 原实现在命中的 8 个专家之间画 C(8,2)=28 条 mesh 并逐条描边生长,但 top-k 是逐 token 算的——
+    // 一个 step 几万 token 就是几十万条路由,连线既画不全也读不动,反而误导成「只有 8 条链路」。
+    // 现在改为整片 256 格的负载热力:动画只做「同色 → 热力」这一次过渡,坍缩本身就是画面。
+    let heatLegend = "";
     if (isMoe && hotExpert != null) {
-      const sel = lvSelectedExperts(hotExpert); // 8 个,sel[0] 为倾斜的 rank 23(hot)
-      const nodes = sel.map((s, k) => {
-        const c = cellCenter(s.card, s.cell), p = cardPos(s.card);
-        return { k, hot: !!s.hot, cx: c.x, cy: c.y, px: p.x, py: p.y };
-      });
-      let mi = 0;
-      for (let a = 0; a < nodes.length; a += 1) {
-        for (let b = a + 1; b < nodes.length; b += 1) {
-          const A = nodes[a], B = nodes[b];
-          const len = Math.hypot(B.cx - A.cx, B.cy - A.cy).toFixed(1);
-          a2aMesh += `<path class="lv-a2a-mesh" data-mi="${mi}" data-len="${len}" style="--lv-dash:${len}" d="M${A.cx} ${A.cy} L${B.cx} ${B.cy}"></path>`;
-          mi += 1;
-        }
+      const ly = gY + gH + 13;
+      const swW = 11, swH = 8, swX = cardPos(0).x + 330;
+      let stops = "";
+      for (let i = 0; i < 12; i += 1) {
+        const t = i / 11;
+        stops += `<rect x="${(swX + i * swW).toFixed(1)}" y="${ly - swH}" width="${swW}" height="${swH}" fill="${lvHeatFill(t, neutral)}" opacity="${lvHeatOpacity(t).toFixed(3)}"></rect>`;
       }
-      nodes.forEach((n) => {
-        a2aNodes += `<rect class="lv-a2a-ring" x="${n.px - 1.5}" y="${n.py - 1.5}" width="${cardW + 3}" height="${cardH + 3}" rx="3.5"></rect>`;
-        a2aNodes += `<rect class="lv-a2a-node" data-k="${n.k}" data-hot="${n.hot ? 1 : 0}" x="${n.px}" y="${n.py}" width="${cardW}" height="${cardH}" rx="2.5"></rect>`;
-      });
-      const ly = gY + gH + 12;
-      a2aLabels = `
-        <text class="lv-tiny lv-a2a-label" data-phase="disp" x="${cardPos(0).x}" y="${ly}" fill="${LV.cHot}" style="font-weight:800">① all-to-all dispatch:top-8 专家互相收发 token,8 个 rank 收到数据 → 变红(rank 23 recv=2048×4608×8≈151MB)</text>
-        <text class="lv-tiny lv-a2a-label" data-phase="comb" x="${cardPos(0).x}" y="${ly}" fill="${LV.cFlow}" style="font-weight:800;opacity:0">② all-to-all combine:7 个专家输出完成→恢复原色,rank 23 send=0 无法输出 → 保持红色(死锁)</text>`;
+      heatLegend = `
+        <text class="lv-tiny" x="${cardPos(0).x}" y="${ly}" fill="${LV.cHot}" style="font-weight:800">色温/亮度 ∝ 专家承接的 token 量 · 悬停看占比</text>
+        ${stops}
+        <text class="lv-tiny mono" x="${(swX - 6).toFixed(1)}" y="${ly}" text-anchor="end" opacity=".7">≈0</text>
+        <text class="lv-tiny mono" x="${(swX + 12 * swW + 6).toFixed(1)}" y="${ly}" opacity=".7">≥4× 均衡(1/256)</text>`;
     }
 
     // shared expert:1 个,处理全部 token,不走 all-to-all(左侧独立支路 + 虚线旁路)
@@ -4506,7 +4866,7 @@
       : `routed experts · ${LV.routedExperts} → EP64:64 卡 × 4/卡 · 激活 top-${LV.topK}`;
     // 模型层 §4 路由倾斜说明(事故层):点明 98%→E47、其余 expert≈0,与网格热力配色对应
     const skewCaption = isMoe && hotExpert != null
-      ? `<text class="lv-tiny" x="${px + 52}" y="${em + 31}" fill="${LV.cHot}" style="font-weight:700">router 输出:98% token → E${hotExpert} · 其余 63 expert ≈ 0(格子亮度 ∝ token 量)</text>`
+      ? `<text class="lv-tiny" x="${px + 52}" y="${em + 31}" fill="${LV.cHot}" style="font-weight:700">router 输出:98% token → E${hotExpert} · 其余 ${LV.routedExperts - 1} 个专家分摊剩下 2%(路由坍缩)</text>`
       : "";
     const expertsGroup = isMoe ? `
       <rect x="${px + 40}" y="${em}" width="${panelW - 80}" height="${modules.find((m) => m.id === "experts").h}" rx="8"
@@ -4565,9 +4925,7 @@
         ${hotNote}
         ${boxes}
         ${expertsGroup}
-        ${a2aMesh}
-        ${a2aNodes}
-        ${a2aLabels}
+        ${heatLegend}
         ${routeLines}
         ${residual}
         ${flow}
@@ -4594,103 +4952,10 @@
         </g>
         ${layerTicks.join("")}
         ${panelBox}
-        <text class="lv-legend" x="150" y="812">自底(输入)向上(输出) · 格子亮度 ∝ token 量(仅 E${hotExpert} 亮=98%,其余 255≈0)· 蓝环=all-to-all 的 8 个参与 rank · 红=rank 收到数据/rank 23 死锁 · 虚线=残差 / shared 旁路</text>
+        <text class="lv-legend" x="150" y="812">自底(输入)向上(输出) · 专家格子色温 ∝ token 量(载入时 2s 从均衡同色过渡到实际负载:仅 E${hotExpert} 烫红=98%,其余 255 个退回冷蓝 ≈0)· 红框=倾斜专家所在 EP rank 23(a2a buffer 失配 → 死锁)· 虚线=残差 / shared 旁路</text>
       </svg>`;
   }
 
-  // top-8 专家 all-to-all 动画(一个循环):
-  //   ① dispatch(0~2600):8 条 mesh 陆续生长(专家互发 token),1600~2200 间 8 个 rank 依次「变红」(收到数据);
-  //   ② combine(2600~5800):7 个非 rank23 专家依次输出完成 → 红色淡出恢复原色,rank 23 始终保持红(send=0,死锁);
-  //   ③ 收尾(5800~6800):rank 23 红色淡出、mesh 淡出,回到起点循环。
-  // 单个 rAF 句柄(全页仅一个展开图),重画前先取消,避免泄漏。
-  let lvAnimRaf = null;
-  let lvAnimIO = null;
-  let lvAnimVisHandler = null;
-  function startLayerA2A(host) {
-    if (lvAnimRaf) { cancelAnimationFrame(lvAnimRaf); lvAnimRaf = null; }
-    if (lvAnimIO) { lvAnimIO.disconnect(); lvAnimIO = null; }
-    if (lvAnimVisHandler) { document.removeEventListener("visibilitychange", lvAnimVisHandler); lvAnimVisHandler = null; }
-    const mesh = Array.from(host.querySelectorAll(".lv-a2a-mesh"));
-    const nodes = Array.from(host.querySelectorAll(".lv-a2a-node"));
-    if (!mesh.length && !nodes.length) return;
-    const labelDisp = host.querySelector('.lv-a2a-label[data-phase="disp"]');
-    const labelComb = host.querySelector('.lv-a2a-label[data-phase="comb"]');
-    const reduce = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-    if (reduce) { // 静态终态:mesh/rank23 红由 CSS 处理,这里只固定标签
-      if (labelDisp) labelDisp.style.opacity = "1";
-      if (labelComb) labelComb.style.opacity = "0";
-      return;
-    }
-    const clamp01 = (v) => Math.max(0, Math.min(1, v));
-    const M = mesh.length, meshWin = 1500, meshDur = 520;
-    const nonHot = nodes.filter((n) => n.dataset.hot !== "1");
-    const T = 6800;
-    let t0 = null;
-    const frame = (now) => {
-      if (t0 == null) t0 = now;
-      const t = (now - t0) % T;
-
-      // ① mesh 描边生长(dispatch 阶段),combine 阶段保持淡蓝,收尾淡出
-      mesh.forEach((el, i) => {
-        const len = parseFloat(el.dataset.len) || 10;
-        const start = (i / Math.max(1, M)) * meshWin;
-        if (t < start) { el.style.strokeDashoffset = len; el.style.opacity = 0; return; }
-        const p = clamp01((t - start) / meshDur);
-        el.style.strokeDashoffset = len * (1 - p);
-        el.style.opacity = t < 2400 ? 0.55 * Math.min(p * 1.5, 1)
-          : t < 6000 ? 0.2
-          : 0.2 * (1 - clamp01((t - 6000) / 800));
-      });
-
-      // ② 节点红色状态层
-      nodes.forEach((el) => {
-        const hot = el.dataset.hot === "1";
-        let op = 0;
-        if (t < 1600) op = 0;                                   // dispatch 在途,尚未收到
-        else if (t < 2600) op = clamp01((t - 1600) / 600) * 0.8; // 8 个 rank 一起变红(收到)
-        else if (t < 5800) {                                    // combine
-          op = 0.8;
-          if (!hot) {
-            const k = nonHot.indexOf(el);                       // 7 个非 rank23 依次淡出
-            const s = 2700 + k * ((5600 - 2700) / Math.max(1, nonHot.length));
-            op = 0.8 * (1 - clamp01((t - s) / 520));
-          }
-        } else {                                                // 收尾:仅 rank 23 仍红,再淡出复位
-          op = hot ? 0.8 * (1 - clamp01((t - 6000) / 800)) : 0;
-        }
-        el.style.opacity = op;
-      });
-
-      if (labelDisp) labelDisp.style.opacity = t < 2600 ? "1" : "0.15";
-      if (labelComb) labelComb.style.opacity = t >= 2600 ? "1" : "0.15";
-      lvAnimRaf = requestAnimationFrame(frame);
-    };
-    // 该动画会一直循环播放;面板被折叠/滚出可视区或页面切到后台标签时暂停,
-    // 避免看不见的动画常驻占用主线程(IntersectionObserver 对 hidden/display:none 也会报 not-intersecting)。
-    let running = false;
-    const play = () => {
-      if (running) return;
-      running = true;
-      t0 = null; // 纯装饰性动画,恢复时重新起算相位即可,无需保留暂停前的进度
-      lvAnimRaf = requestAnimationFrame(frame);
-    };
-    const pause = () => {
-      running = false;
-      if (lvAnimRaf) { cancelAnimationFrame(lvAnimRaf); lvAnimRaf = null; }
-    };
-    let intersecting = true;
-    const sync = () => { if (!document.hidden && intersecting) play(); else pause(); };
-    if (typeof IntersectionObserver === "function") {
-      lvAnimIO = new IntersectionObserver((entries) => {
-        intersecting = entries[entries.length - 1]?.isIntersecting ?? true;
-        sync();
-      }, { threshold: 0 });
-      lvAnimIO.observe(host);
-    }
-    lvAnimVisHandler = sync;
-    document.addEventListener("visibilitychange", lvAnimVisHandler);
-    sync();
-  }
 
   // 最大化:给 .twin-layerview 加 is-maximized(CSS 变 position:fixed 铺满) + 一层背板;
   // 动画仍跑在同一个 host 上(只是 CSS 放大),无需重建。Esc / 点背板 / 再点按钮都可还原。
@@ -4727,10 +4992,7 @@
   }
 
   function renderTwinLayerViews() {
-    // 切换案例/重画前先停掉旧动画及其可见性监听,避免 [data-layer-view] 为空时残留观察者
-    if (lvAnimRaf) { cancelAnimationFrame(lvAnimRaf); lvAnimRaf = null; }
-    if (lvAnimIO) { lvAnimIO.disconnect(); lvAnimIO = null; }
-    if (lvAnimVisHandler) { document.removeEventListener("visibilitychange", lvAnimVisHandler); lvAnimVisHandler = null; }
+    // 热力动画是一次性 CSS 过渡,跟着 innerHTML 重画自然消失,不再需要取消 rAF 句柄/可见性监听
     document.querySelectorAll("[data-layer-view]").forEach((host) => {
       const draw = () => {
         const expanded = Number(host.dataset.lvExpanded ?? 38);
@@ -4752,7 +5014,7 @@
         btn.innerHTML = on ? LV_MIN_ICON : LV_MAX_ICON;
         btn.addEventListener("click", () => setLayerMax(host, !host.classList.contains("is-maximized")));
         host.appendChild(btn);
-        startLayerA2A(host);
+        startExpertHeat(host);
       };
       draw();
     });
@@ -4814,7 +5076,7 @@
         g.style.animation = `twinLayerTickIn .5s ease ${100 + dist * 20}ms both`;
       }
     });
-    startLayerA2A(host);
+    startExpertHeat(host);
     lvApplyZoom(); // 重绘会新建 svg,重新施加当前缩放倍率
   }
 
@@ -4865,7 +5127,6 @@
   function closeModelLayerView() {
     if (!modelLayerOpen) return;
     modelLayerOpen = false;
-    if (lvAnimRaf) { cancelAnimationFrame(lvAnimRaf); lvAnimRaf = null; }
     const stageWrap = document.querySelector(".twin-architecture-stage");
     const overlay = $("modelLayerStage");
     stageWrap?.classList.remove("is-layer-active"); // 整网图缩放/淡出还原
@@ -5401,7 +5662,6 @@
   function hideLocateChainPanel() {
     window.PtoHif8Case7?.stop(); // 关闭定位链时停掉 HiF8 案例的训练步回放,避免遗留 interval 空转
     applyHif8SidePanel(null);    // 复位:恢复整网图,清掉搬到左侧的量化误差表
-    if (lvAnimRaf) { cancelAnimationFrame(lvAnimRaf); lvAnimRaf = null; } // 关闭定位链时停掉 all-to-all 动画
     closeModelLayerView(); // 收起在整网图区域展示的模型层展开图,还原整网图
     closeLayerMax(); // 若展开图正处于最大化,先还原,避免 fixed 层残留在关闭后的界面上
     locateChainObserver?.disconnect();
@@ -5547,6 +5807,7 @@
     bindDiagnosisMarkers();
     bindTimeMachine();
     bindLayerViewTopbar();
+    bindExpertHeatClose();
     applyTheme(currentTheme, { skipRender: true });
     seedHistory();
     state.seen = models[state.model].target * 0.42;

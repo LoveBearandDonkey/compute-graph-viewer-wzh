@@ -4,7 +4,7 @@
    v2 新版把旧 v2 的 SVG 整网图(opv-modelviz)换成了 pto-design-system 的
    model-architecture-3d-deck pattern —— CSS 3D 层叠 + DOM 节点,46 层沿深度铺开。
    两者的 DOM 结构、节点 id、坐标系都不一样,但 v2 在整网图上加出来的那几样东西
-   (常驻问题标注、点问题后的聚焦、routed_expert_bank 原地展开 + all-to-all 连线动画、
+   (常驻问题标注、点问题后的聚焦、routed_expert_bank 原地展开 + 专家负载热力动画、
    算子去色、问题二的溢出率徽标)都要原样保留。
 
    做法是把「画在图上」这件事抽成一层适配器:training-run-twin.js 里那些函数一旦发现
@@ -72,6 +72,9 @@
   var controller = null;       // pattern 的 controller
   var focusedCase = null;
   var pendingMarkers = null;   // 首次 renderMarkers 的入参,resize/重画时复用
+  // 专家热力卡片挂在哪一层:由节点点击写入(点哪层展哪层);null = 用事故层。
+  // 进问题定位链时由 focus() 复位成 null,保证问题一永远展在 L38。
+  var expandLayer = null;
 
   function qs(sel, ctx) { return (ctx || document).querySelector(sel); }
   function qsa(sel, ctx) { return Array.prototype.slice.call((ctx || document).querySelectorAll(sel)); }
@@ -150,6 +153,42 @@
       });
     }
 
+    // 点一下就地展开 256 专家负载热力,再点收起。不进问题详情、不动时光机 ——
+    // 训练过程中随时可以打开看当前这一步 token 是怎么分到 256 个专家上的,
+    // 步数推进/时光机拖动时热力跟着重画(twin.js 的 syncExpertHeatToStep)。
+    //
+    // 两个节点都绑:'gate'(Router · Top-8,做出路由决策的算子)是语义入口,
+    // 'expert_pool'(Expert Pool,展开卡片就长在它身上)是几何入口——从"点哪个能看到专家"
+    // 的直觉出发,用户更可能点后者。pattern 自己的 syncExpertExpansion() 只会把 pool 收起、
+    // 没有展开行为,原先点它除了 selectNode 高亮什么都不发生。
+    //
+    // 逐层绑、点哪层在哪层展开:正视下 pattern 把非前置层整个 display:none(见 pattern.css
+    // 「正视只显示当前一层」),而默认前置层是 23、不是事故层 38 —— 只绑事故层的话,用户在
+    // 别的层上看到的 Expert Pool 根本不是被绑的那个元素,点了没有任何反应。
+    // (dense 层没有这两个节点,自然跳过;侧视总览下全部层 pointer-events:none,点不动是 pattern 的既有行为。)
+    qsa('.pto-model-deck__layer[data-layer]', root).forEach(function (card) {
+      var layer = Number(card.dataset.layer);
+      ['gate', 'expert_pool'].forEach(function (id) {
+        var el = qs('[data-node="' + id + '"]', card);
+        if (!el || el.dataset.routerExpandBound) return;
+        el.dataset.routerExpandBound = '1';
+        el.style.cursor = 'pointer';
+        el.title = '展开 / 收起 256 专家负载热力';
+        // pattern 的 pointerDown 只对 <button>/[data-stage-ui] 让路,其余一律给 viewport
+        // 设 pointer capture 用于拖拽平移。捕获一旦生效,浏览器就把随后的 click 派发到捕获
+        // 元素(viewport)而不是真正被点的元素 —— expert_pool 是个 <div role="button">,
+        // 不在让路名单里,于是它身上的 click 永远收不到(pattern 自己的 selectNode 同样收不到)。
+        // 这里在目标阶段截住 pointerdown、不让它冒泡到 viewport,capture 就不会建立,click 恢复正常。
+        // 代价是不能从这个节点上起手拖拽平移 —— 与 pattern 里 <button> 类节点的既有行为一致。
+        el.addEventListener('pointerdown', function (e) { e.stopPropagation(); });
+        el.addEventListener('click', function (e) {
+          e.stopPropagation();
+          expandLayer = layer;
+          global.PtoTwinGraphBridge && global.PtoTwinGraphBridge.toggleExpertExpand();
+        });
+      });
+    });
+
     // 标签条:每层各自维护一份"已占位矩形"用于避让
     var placed = {};
     Object.keys(cases).forEach(function (key) {
@@ -221,6 +260,8 @@
   function focus(caseKey, info) {
     if (!root || !controller) return;
     clearFocus();
+    // 进问题定位链:展开卡片回到该问题的事故层,不再沿用用户上次手点的那一层
+    expandLayer = null;
     focusedCase = { key: caseKey, info: info };
     highlightBadge(caseKey);
 
@@ -287,9 +328,9 @@
   }
 
   /* ════════════════════════════════════════════════════════════════════════════
-     3. routed_expert_bank(deck 里叫 expert_pool)原地展开 + all-to-all 连线动画
+     3. routed_expert_bank(deck 里叫 expert_pool)原地展开 + 256 专家负载热力动画
      卡片内容与动画驱动完全复用 training-run-twin.js 的 buildExpertBankExpandMarkup()
-     与 startLayerA2A()(通过参数传进来),这里只负责把那段 SVG 放到 deck 上正确的位置:
+     与 startExpertHeat()(通过参数传进来),这里只负责把那段 SVG 放到 deck 上正确的位置:
      以 expert_pool 节点中心为原点、560×210 的 viewBox —— 与 markup 自身的坐标系
      (ox=-W/2, oy=-H/2)恰好对齐,一个数都不用改。
      ════════════════════════════════════════════════════════════════════════════ */
@@ -304,8 +345,10 @@
 
   function showExpertExpand(buildMarkup, startA2A) {
     if (!root || !controller) return;
+    // 先取层号再 hideExpertExpand():点击写进 expandLayer,问题定位链走 null → 事故层
+    var layer = expandLayer == null ? ROUTED_EXPAND_LAYER : expandLayer;
     hideExpertExpand();
-    var pool = findNode('expert_pool', ROUTED_EXPAND_LAYER);
+    var pool = findNode('expert_pool', layer);
     if (!pool || !pool.parentElement) return;
     var graph = pool.parentElement;
 
@@ -314,17 +357,20 @@
     var left = cx - EXPAND_W / 2, top = cy - EXPAND_H / 2;
 
     var svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
-    // pto-node-expand-card 是 css/training-run-twin.css 里 lv-a2a-* 动画样式的作用域,
-    // 沿用同一个类名,mesh/ring/状态层的配色与过渡直接复用,无需在本文件重复一遍。
+    // pto-node-expand-card 沿用单屏原地展开卡片的类名,卡片视觉与整网图一致;
+    // 卡片内 256 个专家格子的热力过渡由 css/training-run-twin.css 的 .lv-heat-cell 负责
+    // (无祖先作用域,三个展开入口共用一条规则),无需在本文件重复一遍。
     svg.setAttribute('class', 'v3-expert-expand pto-node-expand-card');
     svg.setAttribute('viewBox', (-EXPAND_W / 2) + ' ' + (-EXPAND_H / 2) + ' ' + EXPAND_W + ' ' + EXPAND_H);
     svg.style.cssText = 'position:absolute;left:' + left + 'px;top:' + top + 'px;width:' + EXPAND_W + 'px;height:' + EXPAND_H + 'px;overflow:visible;z-index:6';
     svg.innerHTML = buildMarkup();
     graph.appendChild(svg);
 
-    // 卡片比原节点大得多,几何上被盖住的同层节点与连到 expert_pool 的连线先淡出,
-    // 收起时原样淡回(deck 的节点是 DOM 绝对定位,判包围盒相交即可,不必解析 transform)
-    qsa('.pto-model-deck__node,.pto-model-deck__experts', graph).forEach(function (el) {
+    // 卡片比原节点大得多,几何上被盖住的同层节点、问题标注与连到 expert_pool 的连线先淡出,
+    // 收起时原样淡回(deck 的节点是 DOM 绝对定位,判包围盒相交即可,不必解析 transform)。
+    // 问题标注(.v3-problem-badge)也要算进来 —— 它是贴在锚点节点上方的两行标签条,
+    // 卡片一撑开就会有标注浮在卡片上面,读起来像是这张热力图在讲那个问题,必须一起让开。
+    qsa('.pto-model-deck__node,.pto-model-deck__experts,.v3-problem-badge', graph).forEach(function (el) {
       if (el === pool) return;
       var hitX = el.offsetLeft < left + EXPAND_W && el.offsetLeft + el.offsetWidth > left;
       var hitY = el.offsetTop < top + EXPAND_H && el.offsetTop + el.offsetHeight > top;
@@ -339,8 +385,14 @@
       p.dataset.expandDimmed = 'expert_pool';
     });
 
-    // 展开卡片所在层必须是当前前置层,否则正视下它会被压在背景里看不清
-    controller.setFrontLayer(ROUTED_EXPAND_LAYER);
+    // 展开卡片所在层必须是当前前置层,否则正视下它整层都是 display:none
+    controller.setFrontLayer(layer);
+    // 侧视下 46 层是侧着排的,卡片会跟着该层一起被压成一条,读不出任何东西 ——
+    // 训练中点 router/expert pool 展开时可能正停在侧视总览,这里一并切回正视。
+    if (controller.state.view !== FOCUS_VIEW) {
+      controller.setView(FOCUS_VIEW);
+      syncSeg('deckViewSeg', 'data-deck-view', FOCUS_VIEW);
+    }
     startA2A(svg);
   }
 
