@@ -400,6 +400,50 @@ body {
   gap: 0;
 }
 
+.avz-load-core-context {
+  padding: var(--space-3) var(--space-3) 0;
+  z-index: 2;
+}
+
+.avz-load-core-context[hidden] {
+  display: none;
+}
+
+.avz-load-core-select {
+  width: min(320px, 100%);
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.avz-load-core-select__label {
+  color: var(--foreground-muted);
+  font: var(--text-label);
+}
+
+.avz-load-core-select select {
+  flex: 1 1 auto;
+  width: auto;
+  height: var(--input-height-md);
+  appearance: auto;
+  border: 1px solid var(--input-border);
+  border-radius: var(--input-radius);
+  background: var(--input-bg);
+  color: var(--foreground);
+  padding: 0 var(--space-3);
+  font: var(--text-body-sm);
+}
+
+.avz-load-core-select__label {
+  flex: 0 0 auto;
+  margin-right: 0;
+}
+
+.avz-load-core-select select:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px var(--button-focus-ring);
+}
+
 .avz-tensor-tabs {
   width: fit-content;
   max-width: calc(100% - var(--space-6));
@@ -407,6 +451,20 @@ body {
   overflow-x: auto;
   scrollbar-width: thin;
   z-index: 2;
+}
+
+/* Place the load-core selector and tensor tabs on one line */
+.avz-tensor-controls {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: 0 var(--space-3) 0;
+}
+.avz-tensor-controls .avz-load-core-context {
+  padding: 0; /* move outer padding to the controls container */
+}
+.avz-tensor-controls .avz-tensor-tabs {
+  margin: 0; /* align with container padding */
 }
 
 .avz-tensor-tabs[hidden] {
@@ -451,15 +509,6 @@ body {
   stroke-linejoin: round;
 }
 
-.avz-timeline-canvas {
-  width: 100%;
-  height: 100%;
-  min-height: 104px;
-  display: block;
-  border-radius: var(--radius-md);
-  background: var(--surface-2);
-}
-
 .avz-bottom-dock {
   position: relative;
   overflow: visible;
@@ -479,6 +528,13 @@ body {
   min-width: 0;
 }
 
+.avz-execution-controls {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
 .avz-execution-body {
   min-height: 0;
   padding: var(--space-3);
@@ -492,8 +548,187 @@ body {
 }
 
 #instructionsView {
-  overflow-x: auto;
-  overflow-y: hidden;
+  overflow: auto;
+  overscroll-behavior: contain;
+}
+
+.avz-instruction-sequence {
+  display: flex;
+  align-items: safe center;
+  width: 100%;
+  min-height: 100%;
+  color: var(--foreground);
+}
+
+.avz-instruction-track {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-3);
+  width: max-content;
+  min-width: 100%;
+  padding-top: var(--space-6);
+  padding-bottom: var(--space-6);
+}
+
+.avz-instruction-track > .avz-instruction-card {
+  margin-top: calc(var(--space-3) + var(--tag-height) + var(--space-2));
+}
+
+.avz-instruction-card {
+  display: grid;
+  flex: 0 0 auto;
+  gap: var(--space-1);
+  width: max-content;
+  min-height: 56px;
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid transparent;
+  border-radius: var(--radius-md);
+  background: var(--surface-1);
+  color: var(--foreground);
+  text-align: left;
+  cursor: pointer;
+  transition:
+    background var(--duration-fast) var(--easing-default),
+    border-color var(--duration-fast) var(--easing-default);
+}
+
+.avz-instruction-card:hover {
+  background: var(--surface-3);
+}
+
+.avz-instruction-card:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px var(--focus-ring);
+}
+
+.avz-instruction-card.is-selected {
+  border-color: var(--border-strong);
+  background: var(--state-selected);
+}
+
+.avz-instruction-card__title {
+  align-self: end;
+  overflow: hidden;
+  color: var(--foreground);
+  font: var(--text-body-sm);
+  font-weight: var(--font-weight-semibold);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.avz-instruction-card__flow {
+  overflow: hidden;
+  color: var(--foreground-secondary);
+  font: var(--text-mono);
+  font-size: var(--font-size-label-xs);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.avz-instruction-loop {
+  position: relative;
+  flex: 0 0 auto;
+  width: max-content;
+  padding: var(--space-4);
+  border: 1px dashed var(--border-default);
+  border-radius: var(--radius-md);
+  background: color-mix(in srgb, var(--surface-1) 44%, transparent);
+}
+
+.avz-instruction-loop.is-active {
+  border-color: var(--border-strong);
+  background: color-mix(in srgb, var(--state-selected) 42%, var(--surface-1));
+}
+
+.avz-instruction-loop__title {
+  position: absolute;
+  top: 0;
+  left: var(--space-2);
+  padding: 0 var(--space-2);
+  transform: translateY(-50%);
+  background: var(--background);
+  color: var(--foreground);
+  font: var(--text-body-sm);
+  font-weight: var(--font-weight-semibold);
+}
+
+.avz-instruction-loop__rows,
+.avz-instruction-repeat,
+.avz-instruction-repeat__rows {
+  display: grid;
+  gap: var(--space-3);
+}
+
+.avz-instruction-row {
+  display: grid;
+  grid-template-columns: max-content;
+  align-items: start;
+  gap: var(--space-2);
+}
+
+.avz-instruction-row.is-label-hidden .avz-instruction-row__flow {
+  grid-column: 1;
+}
+
+.avz-instruction-row__label {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+.avz-iteration-tag {
+  flex: 0 0 auto;
+  color: var(--foreground);
+  font-family: var(--font-mono);
+  font-weight: var(--font-weight-semibold);
+}
+
+.avz-instruction-row.is-active .avz-iteration-tag {
+  color: var(--foreground);
+}
+
+.avz-instruction-row__meta {
+  overflow: hidden;
+  color: var(--foreground-secondary);
+  font: var(--text-mono);
+  font-size: var(--font-size-label-xs);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.avz-instruction-row__flow {
+  display: flex;
+  gap: var(--space-2);
+  width: max-content;
+}
+
+.avz-instruction-repeat {
+  padding-top: var(--space-3);
+  border-top: 1px solid var(--border-subtle);
+}
+
+.avz-instruction-repeat__rows {
+  gap: var(--space-4);
+}
+
+.avz-instruction-repeat__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-4);
+  min-height: 28px;
+}
+
+.avz-instruction-loop-toggle {
+  min-height: 28px;
+  color: var(--foreground-secondary);
+}
+
+.avz-instruction-loop-toggle[aria-expanded="true"] {
+  background: var(--state-selected);
+  color: var(--foreground);
 }
 
 .avz-execution-panel[hidden] {
@@ -560,10 +795,31 @@ body {
   min-height: 0;
   height: 100%;
   position: relative;
+  container-type: inline-size;
   border-radius: var(--radius-md);
   background: var(--surface-2);
   overflow: hidden;
   isolation: isolate;
+}
+
+/* Ensure tensor stage fills its container and children can stretch */
+.avz-tensor-stage {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  height: 100%;
+  align-items: stretch;
+  flex: 1 1 auto;
+}
+
+.avz-tensor-stage > .avz-tensor-overview,
+.avz-tensor-stage > .avz-tensor-pattern-view,
+.avz-tensor-stage > .avz-tensor-pattern-view > .pto-matrix-canvas-host,
+.avz-tensor-stage > .avz-mmad-matrix-view,
+.avz-tensor-stage > canvas.avz-tensor-canvas,
+.avz-tensor-stage > .avz-load-data-view {
+  flex: 1 1 auto;
+  min-height: 0;
 }
 
 .avz-tensor-canvas {
@@ -575,8 +831,541 @@ body {
   touch-action: none;
 }
 
+.avz-tensor-pattern-view,
+.avz-tensor-matrix-host {
+  width: 100%;
+  height: 100%;
+  min-width: 0;
+  min-height: 0;
+}
+
+.avz-mmad-matrix-view {
+  width: 100%;
+  height: 100%;
+  min-width: 0;
+  min-height: 0;
+  box-sizing: border-box;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  gap: var(--space-3);
+  padding: var(--space-4);
+  overflow: auto;
+}
+
+.avz-mmad-matrix-view[hidden] {
+  display: none;
+}
+
+.avz-mmad-matrix-view__summary,
+.avz-mmad-matrix-view__footer {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+
+.avz-mmad-matrix-view__summary > div {
+  min-width: 0;
+  display: grid;
+  gap: var(--space-1);
+}
+
+.avz-mmad-matrix-view__summary strong {
+  color: var(--foreground);
+  font: var(--text-title-3);
+}
+
+.avz-mmad-matrix-view__summary span:not(.tag),
+.avz-mmad-matrix-view__footer {
+  color: var(--foreground-muted);
+  font: var(--text-label);
+}
+
+.avz-mmad-matrix-view__summary .tag {
+  flex: 0 0 auto;
+  color: var(--warning);
+}
+
+.avz-mmad-matrix-view__equation {
+  width: 100%;
+  min-width: 0;
+  min-height: 280px;
+  display: grid;
+  grid-template-columns:
+    minmax(0, 1fr)
+    16px
+    minmax(0, 1fr)
+    48px
+    minmax(0, 1fr);
+  align-items: stretch;
+  gap: var(--space-1);
+}
+
+.avz-mmad-matrix-view__operand {
+  min-width: 0;
+  min-height: 0;
+  margin: 0;
+  display: grid;
+  grid-template-rows: auto minmax(220px, 1fr);
+  gap: var(--space-2);
+}
+
+.avz-mmad-matrix-view__operand figcaption {
+  min-width: 0;
+  display: grid;
+  gap: 2px;
+}
+
+.avz-mmad-matrix-view__operand figcaption strong {
+  color: var(--foreground);
+  font: var(--text-mono);
+}
+
+.avz-mmad-matrix-view__operand figcaption span {
+  color: var(--foreground-muted);
+  font: var(--text-label);
+}
+
+.avz-mmad-matrix-view__canvas {
+  width: 100%;
+  height: 100%;
+  min-width: 0;
+  min-height: 220px;
+}
+
+.avz-mmad-matrix-view__operator,
+.avz-mmad-matrix-view__transform {
+  align-self: center;
+  color: var(--foreground-secondary);
+}
+
+.avz-mmad-matrix-view__operator {
+  font: var(--text-title-2);
+  text-align: center;
+}
+
+.avz-mmad-matrix-view__transform {
+  display: grid;
+  place-items: center;
+  gap: var(--space-2);
+}
+
+.avz-mmad-matrix-view__transform strong {
+  color: var(--foreground-secondary);
+  font: var(--text-body-sm);
+  white-space: nowrap;
+}
+
+.avz-mmad-matrix-view__transform svg {
+  width: 56px;
+  height: 20px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.5;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.avz-mmad-matrix-view__footer span:first-child.is-confirmed {
+  color: var(--success);
+}
+
+.avz-host-tiling-view__equation {
+  min-height: 0;
+  grid-template-columns: minmax(0, 1fr) 64px minmax(0, 1fr);
+}
+
+.avz-host-tiling-view .avz-mmad-matrix-view__operand {
+  grid-template-rows: auto minmax(160px, 1fr);
+}
+
+.avz-host-tiling-view .avz-mmad-matrix-view__canvas {
+  min-height: 160px;
+}
+
+@container (max-width: 380px) {
+  .avz-host-tiling-view__equation {
+    min-height: 560px;
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: minmax(220px, 1fr) 48px minmax(220px, 1fr);
+  }
+
+  .avz-host-tiling-view__equation .avz-mmad-matrix-view__transform svg {
+    transform: rotate(90deg);
+  }
+}
+
+.avz-tensor-overview {
+  width: 100%;
+  height: 100%;
+  min-width: 0;
+  min-height: 0;
+  box-sizing: border-box;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  gap: var(--space-2);
+  padding: var(--space-3);
+  overflow: auto;
+}
+
+.avz-tensor-overview[hidden] {
+  display: none;
+}
+
+.avz-tensor-overview__summary,
+.avz-tensor-overview__derivation {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.avz-tensor-overview__summary {
+  justify-content: space-between;
+}
+
+.avz-tensor-overview__summary .tag {
+  flex: 0 0 auto;
+  white-space: nowrap;
+}
+
+.avz-tensor-overview__summary > div {
+  min-width: 0;
+  display: grid;
+  gap: var(--space-1);
+}
+
+.avz-tensor-overview__summary strong {
+  color: var(--foreground);
+  font: var(--text-title-3);
+}
+
+.avz-tensor-overview__summary span:not(.tag) {
+  overflow: hidden;
+  color: var(--foreground-secondary);
+  font: var(--text-mono);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.avz-tensor-overview__grid {
+  min-width: 0;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(160px, 1fr));
+  grid-template-rows: repeat(2, minmax(118px, 1fr));
+  gap: var(--space-2);
+}
+
+@container (max-width: 520px) {
+  .avz-tensor-overview {
+    grid-template-rows: auto auto auto;
+  }
+
+  .avz-tensor-overview__grid {
+    height: calc(600px + var(--space-2) + var(--space-2) + var(--space-2));
+    min-height: calc(600px + var(--space-2) + var(--space-2) + var(--space-2));
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: repeat(4, 150px);
+  }
+}
+
+.avz-tensor-overview__item {
+  min-width: 0;
+  min-height: 0;
+  margin: 0;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  gap: var(--space-1);
+  padding: var(--space-2);
+  border-radius: var(--radius-md);
+  background: color-mix(in srgb, var(--surface-1) 72%, transparent);
+}
+
+.avz-tensor-overview__item figcaption {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: baseline;
+  column-gap: var(--space-2);
+  row-gap: 2px;
+}
+
+.avz-tensor-overview__role {
+  color: var(--foreground-muted);
+  font: var(--text-label);
+  letter-spacing: var(--letter-spacing-label);
+  text-transform: uppercase;
+}
+
+.avz-tensor-overview__item strong {
+  min-width: 0;
+  color: var(--foreground);
+  font: var(--text-body-sm);
+  font-weight: var(--font-weight-semibold);
+}
+
+.avz-tensor-overview__item code {
+  color: var(--foreground-secondary);
+  font: var(--text-mono);
+}
+
+.avz-tensor-overview__item small {
+  grid-column: 2 / -1;
+  overflow: hidden;
+  color: var(--foreground-muted);
+  font: var(--text-label);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.avz-tensor-overview__canvas {
+  width: 100%;
+  height: 100%;
+  min-width: 0;
+  min-height: 72px;
+  position: relative;
+}
+
+.avz-weight-volume {
+  overflow: hidden;
+}
+
+.avz-weight-volume > canvas {
+  position: relative;
+  z-index: 1;
+}
+
+.avz-weight-volume__count {
+  position: absolute;
+  z-index: 2;
+  pointer-events: none;
+}
+
+.avz-weight-volume__count {
+  top: var(--space-1);
+  left: var(--space-1);
+  display: grid;
+  line-height: 1;
+}
+
+.avz-weight-volume__count strong {
+  color: var(--foreground);
+  font-family: var(--font-mono);
+  font-size: var(--font-size-title-md);
+  font-weight: var(--font-weight-semibold);
+}
+
+.avz-weight-volume__count span {
+  color: var(--foreground-secondary);
+  font: var(--text-label);
+}
+
+.avz-weight-volume__count span {
+  margin-top: var(--space-1);
+  text-transform: uppercase;
+  letter-spacing: var(--letter-spacing-label);
+}
+
+.avz-tensor-overview__item--bias .avz-tensor-overview__canvas {
+  min-height: 64px;
+}
+
+.avz-tensor-overview__derivation {
+  flex-wrap: wrap;
+  color: var(--foreground-muted);
+  font: var(--text-label);
+}
+
+.avz-tensor-overview__derivation span {
+  display: inline-flex;
+  align-items: center;
+}
+
+.avz-tensor-overview__derivation span + span::before {
+  content: "·";
+  margin-right: var(--space-3);
+  color: var(--foreground-muted);
+}
+
+.avz-tensor-overview__derivation code {
+  color: var(--foreground-secondary);
+  font: var(--text-mono);
+}
+
+.avz-tensor-pattern-view[hidden],
+.avz-tensor-pattern-view > [hidden],
+.avz-tensor-canvas[hidden],
+.avz-tile-lens[hidden] {
+  display: none;
+}
+
 .avz-tensor-canvas:active {
   cursor: grabbing;
+}
+
+.avz-load-data-view {
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: minmax(280px, 1fr) minmax(92px, 0.18fr) minmax(320px, 0.92fr);
+  gap: var(--space-4);
+  padding: var(--space-5);
+  overflow: auto;
+}
+
+.avz-load-data-view[hidden] {
+  display: none;
+}
+
+.avz-load-data-source,
+.avz-load-data-output {
+  min-width: 0;
+  min-height: 0;
+  display: grid;
+  grid-template-rows: auto minmax(280px, 1fr) auto;
+  gap: var(--space-3);
+}
+
+.avz-load-data-copy {
+  display: grid;
+  gap: var(--space-1);
+}
+
+.avz-load-data-copy h3,
+.avz-load-data-copy p {
+  margin: 0;
+}
+
+.avz-load-data-copy h3 {
+  color: var(--foreground);
+  font: var(--text-title-3);
+}
+
+.avz-load-data-copy p {
+  color: var(--foreground-secondary);
+  font: var(--text-body-sm);
+}
+
+.avz-load-data-volume {
+  min-width: 0;
+  min-height: 280px;
+  position: relative;
+  overflow: hidden;
+}
+
+.avz-load-data-transform {
+  min-width: 0;
+  display: grid;
+  place-content: center;
+  justify-items: center;
+  gap: var(--space-3);
+}
+
+.avz-load-data-transform .tag {
+  color: var(--foreground);
+}
+
+.avz-load-data-transform svg {
+  width: 48px;
+  height: 20px;
+  fill: none;
+  stroke: var(--foreground-secondary);
+  stroke-width: 1.5;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.avz-load-data-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+  color: var(--foreground-muted);
+  font: var(--text-label);
+}
+
+.avz-load-data-legend span {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.avz-load-data-legend i,
+.avz-load-data-result__swatch {
+  width: 12px;
+  height: 12px;
+  display: inline-block;
+  border-radius: 2px;
+}
+
+.avz-load-data-legend i.is-valid,
+.avz-load-data-result__swatch {
+  background: var(--primary);
+}
+
+.avz-load-data-legend i.is-padding {
+  background: var(--warning);
+}
+
+.avz-load-data-output {
+  grid-template-rows: auto minmax(240px, 1fr) auto;
+}
+
+.avz-load-data-matrix-wrap {
+  width: 100%;
+  height: 100%;
+  min-width: 0;
+  min-height: 240px;
+  position: relative;
+}
+
+.avz-load-data-result {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-3);
+}
+
+.avz-load-data-result__swatch {
+  margin-top: 3px;
+}
+
+.avz-load-data-result > div {
+  display: grid;
+  gap: var(--space-1);
+}
+
+.avz-load-data-result strong {
+  color: var(--foreground);
+  font: var(--text-title-3);
+}
+
+.avz-load-data-result span {
+  color: var(--foreground-secondary);
+  font: var(--text-body-sm);
+}
+
+@container (max-width: 760px) {
+  .avz-load-data-view {
+    grid-template-columns: 1fr;
+    grid-template-rows: minmax(420px, auto) auto minmax(360px, auto);
+    overflow-x: hidden;
+    overflow-y: auto;
+  }
+
+  .avz-load-data-transform {
+    grid-auto-flow: column;
+  }
+
+  .avz-load-data-transform svg {
+    transform: rotate(90deg);
+  }
+
+  .avz-load-data-source,
+  .avz-load-data-output {
+    min-height: 0;
+  }
 }
 
 .avz-tensor-fallback {

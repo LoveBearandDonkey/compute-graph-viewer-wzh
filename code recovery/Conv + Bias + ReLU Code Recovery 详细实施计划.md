@@ -23,7 +23,7 @@
 | 对象 | 新基线 |
 | --- | --- |
 | Feature | 逻辑 `[1,16,8,8]`；GM `NC1HWC0 [1,1,8,8,16]`；FP16；2048 B |
-| Filter | 逻辑 `[32,16,3,3]`；GM `ND [144,32]`；FP16；9216 B |
+| Weight | 逻辑 `[32,16,3,3]`；GM `ND [144,32]`；FP16；9216 B |
 | Bias | `ND [32]`；FP32；128 B |
 | Output | 逻辑 `[1,32,8,8]`；GM `ND [64,32]`；FP16；4096 B |
 | Cube | `A[64,144] × B[144,32] + Bias[32] → C[64,32]` |
@@ -42,9 +42,9 @@
 - `tileM=32、tileK=48、tileN=16`
 - K loop=3
 - A1/B1 大小未知或为 0
-- Feature/Filter Copy helper 无函数体
+- Feature/Weight Copy helper 无函数体
 - Bias C1→C2 缺失
-- LoadFilterToL0B 无函数体
+- LoadWeightToL0B 无函数体
 - blockDim 和 block→output tile 映射未知
 - CopyOut helper 和 GM offset 未知
 - CO1 先到 outC1、再单独 CopyOut 的两段式路径
@@ -191,59 +191,44 @@ Trace 根对象新增：
 
 ## 7. 新逻辑回放
 
-前 10 步沿用当前阶段命名，但必须区分“Host/Kernel 准备信息”和“运行时硬件动作”。Host Shape、Host Tiling、Buffer 元素数和 blockDim 是执行配置，不得画成 GM 搬运或 AI Core 指令。
+逻辑回放统一为 10 个顶层 Stage。必须区分“Host/Kernel 准备信息”和“运行时硬件动作”：Input Shape、Host Tiling、Buffer 元素数和 blockDim 是执行配置，不得画成 GM 搬运或 AI Core 指令。
 
-| Step | 阶段 | 主要内容 | 执行性质 | 主源码 |
+| Stage | 阶段 | 主要内容 | 执行性质 | 主源码 |
 | ---: | --- | --- | --- | --- |
 | 1 | Input Shape | 固定 N/C/H/W、卷积参数并推导 Ho/Wo | Host 配置 | Host |
 | 2 | Host Tiling | 定义 Cube M/K/N、`16×16×16` Tile 和 `4×9×2` Tile 数 | Host 配置 | Host |
-| 3 | 不单独回放 | 原 Host Memory 内容并入 Step 4；只作为 Buffer Size 证据展示 | 非执行步骤 | Host |
-| 4 | Host执行配置 | 计算 GM/Local Buffer 元素数；设置 `blockDim=8`；建立 `OT→Mi/Nj` 映射；workspace=0 | Host/Runtime 配置，不访问 GM | Host + Kernel |
-| 5 | Allocate Memory | 建立 A1/B1/C1 地址范围以及 A2/B2/C2/CO1 LocalTensor 视图 | Kernel 准备 | Kernel |
-| 6 | Copy Inputs | MTE2：GM X0 NC1HWC0→A1；GM W[Nj] ND→B1(NZ)；GM Bias[Nj]→C1 | 运行时数据搬运 | Kernel |
-| 7 | Sync | `MTE2_MTE1`：MTE2 发布 L1 ready；MTE1 等待后才能读取 A1/B1/C1 | 运行时同步 | Kernel |
-| 8 | Copy Data C2 | MTE1：Bias C1→C2 / Bias Table，FP32 `[16]`，64 B | 运行时数据搬运 | Kernel |
-| 9 | Load Data A2 B2 | Iter 0：LoadData3D 生成 A[Mi,K0]；LoadData2D 生成 B[K0,Nj] | 运行时数据搬运 | Kernel |
-| 10 | Sync | `MTE1_M`：MTE1 发布 A2/B2 ready；Cube 等待后才能执行 Iter 0 | 运行时同步 | Kernel |
-| 11 | Iter 0 Mmad | `A[Mi,K0] × B[K0,Nj] + Bias[Nj] → Acc0/CO1`；Bias 只在本轮加入 | Cube 计算 | Kernel |
-| 12 | K Loop · Iter 1～8 ×8 | 后续 8 轮的可展开 Loop Group；不是一条独立硬件指令 | 循环容器 | Kernel |
-| 13 | Iter 1～7 Loop Body ×7 | 每轮依次执行 `M_MTE1 → Load Kk → MTE1_M → Mmad accumulate`，得到 Acc1～Acc7 | 同步 + 搬运 + Cube 计算 | Kernel |
-| 14 | Iter 8 Final Loop Body ×1 | 执行同一完整 Loop Body，读取 K8 `[128:144]`，最终得到 Acc8 | 同步 + 搬运 + Cube 计算 | Kernel |
-| 15 | M_FIX Sync | Cube 发布 Acc8 ready；Fixpipe 等待最终 CO1 | 运行时同步 | Kernel |
-| 16 | Fixpipe Output | CO1 FP32 NZ→GM FP16 ND，融合 ReLU，并按 `outputOffset` 直接写回 | 运行时输出 | Kernel |
+| 3 | Host 执行配置 | 计算 GM/Local Buffer 元素数；设置 `blockDim=8`、workspace=0；建立 `OT→Mi/Nj` 映射 | Host/Runtime 配置，不访问 GM | Host + Kernel |
+| 4 | Allocate Memory | 建立 GM Tensor 句柄、A1/B1/C1 地址范围以及 A2/B2/C2/CO1 LocalTensor 视图 | Kernel 准备 | Kernel |
+| 5 | Copy Inputs | MTE2：GM X0→A1；GM W[Nj] ND→B1(NZ)；GM Bias[Nj]→C1 | 运行时数据搬运 | Kernel |
+| 6 | Sync | `MTE2_MTE1`：发布 A1/B1/C1 ready | 运行时同步 | Kernel |
+| 7 | Copy Data C2 | MTE1：Bias C1→C2 / Bias Table，FP32 `[16]`，64 B | 运行时数据搬运 | Kernel |
+| 8 | K Loop · Iter 0～8 | Iter 0 初始化 Acc0；Iter 1～8 复用 A2/B2 并累加到 Acc8 | 循环容器 + 搬运 + 同步 + Cube 计算 | Kernel |
+| 9 | M_FIX Sync | Cube 发布 Acc8 ready；Fixpipe 等待最终 CO1 | 运行时同步 | Kernel |
+| 10 | Fixpipe Output | CO1 FP32 NZ→GM FP16 ND，融合 ReLU，并按 `outputOffset` 写回 | 运行时输出 | Kernel |
 
 ### 7.1 K Loop 的真实结构
 
 `Iter` 是 `Iteration` 的缩写，用于避免大写 `I` 和小写 `l` 在界面字体中混淆。`Iter 0` 表示执行轮次，`K0` 表示该轮读取的数据 Tile。
 
-首次迭代：
+页面用两栏区分初始化轮和后续累加轮：
 
-```text
-Load K0
-→ MTE1_M：A2/B2 ready
-→ Iter 0 Mmad：A×B+Bias→Acc0
-```
+| Iter 0 · Initialize | Iter 1～8 · Accumulate ×8 |
+| --- | --- |
+| `Load Data A2/B2` | `M_MTE1 Sync` |
+| `MTE1_M Sync` | `Load Data A2/B2` |
+| `Mmad + Bias → Acc0` | `MTE1_M Sync` |
+|  | `Mmad accumulate → Acc1…Acc8` |
 
-后续每次迭代 `Iter k`，其中 `k=1..8`：
+其中：
 
-```text
-M_MTE1
-Cube 表示上一轮 A2/B2 已读取完成，MTE1 可以覆盖
-→
-LoadData3D A[Mi,Kk] + LoadData2D B[Kk,Nj]
-→
-MTE1_M
-MTE1 表示新的 A2/B2 已准备好，Cube 可以读取
-→
-Mmad
-Acck = Acc(k-1) + A[Mi,Kk] × B[Kk,Nj]
-```
+- Iter 0 没有 `M_MTE1`，因为 A2/B2 尚未保存上一轮数据。
+- Iter 0 的同步必须明确标记为 `MTE1_M Sync`。
+- Bias 通过带 `biasC2` 参数的 Mmad 加入，不展示成 Mmad 后的独立 Add Bias 指令。
+- Iter 1～8 每轮都先执行 `M_MTE1 Sync`，再覆盖单缓冲 A2/B2。
 
-因此，Step 13 不是“重复 7 次 Step 11～12”，而是折叠展示 7 个完整 Loop Body；Step 14 是相同 Loop Body 的最后一次执行。Step 12 只作为父级 Loop Group，不应在 Instructions 中与 Step 13、14 表现成三个同级、依次只执行一次的硬件动作。
+### 7.2 K Loop 状态规则
 
-### 7.2 Step 12 同步画面
-
-`M_MTE1` 发生在下一轮 Load 之前。以 Iter 1 为例，此时 A2/B2 仍保存 K0：
+`M_MTE1` 发生在每个后续迭代的 Load 之前。以 Iter 1 为例，此时 A2/B2 仍保存 K0：
 
 ```text
 A2/B2 · K0
@@ -252,30 +237,35 @@ Cube read complete
 → MTE1 may overwrite with K1
 ```
 
-因此 Step 12 的 Tensor 视图不得提前显示“K1 已加载”。K1 只能在 `M_MTE1` 通过后的 Load 阶段显示。
+因此进入 Iter 1 时，Tensor 视图不得提前显示“K1 已加载”。K1 只能在 `M_MTE1 Sync` 通过后的 Load 阶段显示。
 
 ### 7.3 Instructions 展示层级
 
 ```text
-Iter 0
-├─ Load K0
-├─ MTE1_M
-└─ Mmad + Bias
-
-K Loop · Iter 1～8 ×8
-├─ Iter 1～7 ×7
-│  ├─ M_MTE1
-│  ├─ Load Kk
-│  ├─ MTE1_M
-│  └─ Mmad accumulate
-└─ Iter 8 ×1
-   ├─ M_MTE1
-   ├─ Load K8
-   ├─ MTE1_M
-   └─ Final Mmad
+K Loop · Iter 0～8
+├─ Iter 0 · Initialize
+│  ├─ Load Data A2/B2
+│  ├─ MTE1_M Sync
+│  └─ Mmad + Bias → Acc0
+└─ Iter 1～8 · Accumulate ×8
+   ├─ M_MTE1 Sync
+   ├─ Load Data A2/B2
+   ├─ MTE1_M Sync
+   └─ Mmad accumulate → Acc1…Acc8
 ```
 
-默认折叠时必须显示循环次数；展开后允许定位每个 `Iter k` 的源码、Tensor、Event 和硬件状态。无论折叠或展开，总次数都必须保持每核 9 次 Mmad、全 8 核共 72 次 Mmad。
+页面允许用左右两栏展示 Iter 0 与 Iter 1～8，不要求额外绘制串行箭头。默认折叠时必须显示 `×8`；展开后允许定位每个 `Iter k` 的源码、Tensor、Event 和硬件状态。无论折叠或展开，总次数都必须保持每核 9 次 Mmad、全 8 核共 72 次 Mmad。
+
+### 7.4 M_FIX 与输出
+
+`M_FIX Sync` 只在 Iter 8 产生最终 `Acc8` 后执行。随后 Fixpipe 读取 `accumCo1`，完成：
+
+```text
+NZ → ND
+FP32 → FP16
+ReLU
+写入 outputGm_[mStart×32+nStart]
+```
 
 ## 8. Tensor 和 Memory 表达
 
@@ -294,8 +284,8 @@ K Loop · Iter 1～8 ×8
 中栏按步骤展示：
 
 - Host Shape/Tiling：逻辑→物理合约与 M/K/N；
-- CopyIn：完整 Feature、一个 Filter N Tile、一个 Bias N Tile；
-- Load：Feature window→A2 ZZ；Filter fractal→B2 ZN；
+- CopyIn：完整 Feature、一个 Weight N Tile、一个 Bias N Tile；
+- Load：Feature window→A2 ZZ；Weight fractal→B2 ZN；
 - I0：A2、B2、C2、CO1；
 - I1～I8：A2、B2、已有 CO1，不再加入 Bias；
 - Fixpipe：CO1 FP32 NZ→Output FP16 ND，并明确 NHWC 等价关系。
