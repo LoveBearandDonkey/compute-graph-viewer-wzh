@@ -22,7 +22,7 @@
   <link rel="stylesheet" href="../../vendor/pto-design-system/css/style.css?v=ideframe-2">
   <link rel="stylesheet" href="../../vendor/pto-design-system/patterns/workbench-shell/pattern.css?v=ideframe-2">
   <link rel="stylesheet" href="../../vendor/pto-design-system/patterns/ide-frame/pattern.css?v=ideframe-2">
-  <link rel="stylesheet" href="styles.css?v=20260723-3">
+  <link rel="stylesheet" href="styles.css?v=20260731-1">
   <link rel="stylesheet" href="hbm-memory-snapshot/pattern.css?v=20260728-11">
   <!-- openPangu 整网图组件（从 training-run-twin-standalone 搬入并去除对该文件夹的依赖，见 #opvHost）。
        所有 --model-graphviz-*/.pto-model-graphviz-* 规则均已收敛到 #opvHost 作用域下，
@@ -207,6 +207,9 @@
     /* 三个 pane 保留旧 class 作为后代选择器锚点；容器装饰改由
        .pto-ide-frame__pane（共享半透明模糊 pane well）统一提供 */
     .v2-panel-left, .v2-panel-center, .v2-panel-right { min-width: 0; }
+    /* 分析记录只放文件名/时间等短文本，宽屏下按 split 百分比会被拉得过宽；
+       上限 320px，多出的空间由 flex 自动回流给中间与右侧 pane。 */
+    .v2-panel-left { max-width: 320px; }
 
     /* Inspector（AI 对话）开合 —— 对齐 ide-frame 的 inspector toggle 约定。
        workbench-shell 用 flex-grow 比例定宽（basis:0%），故隐藏 inspector 及其
@@ -239,7 +242,7 @@
     }
     .v2-panel-left-body .history-list { overflow: visible; }
 
-    /* ── 整网图面板（最左侧独立列，与「分析记录」互斥；页面篇幅有限，同时只开一个）──
+    /* ── 整网图面板（最右侧独立列，与「分析记录」互斥；页面篇幅有限，同时只开一个）──
        它刻意放在 workbench split 之外：split 的 grow/sizes 逻辑（含 explorer 折叠）保持
        三栏原状，整网图只是定宽 32vw 的一列，开合不会牵动分析记录的宽度。 */
     .v2-workrow {
@@ -247,12 +250,15 @@
       display: flex; gap: 7px;               /* 7px = workbench gutter 宽度，视觉对齐 */
     }
     .v2-workrow > .pto-ide-frame__split { flex: 1 1 auto; min-width: 0; }
-    .v2-panel-netgraph { flex: 0 0 32vw; width: 32vw; min-width: 0; margin-bottom: 8px; }
+    /* 右边距 8px = 原本由 split 的 padding-right 承担的整框内缩，面板移到最右后改由它自己给 */
+    .v2-panel-netgraph { flex: 0 0 32vw; width: 32vw; min-width: 0; margin: 0 8px 8px 0; }
+    /* 面板打开时撤掉 split 的右内边距，否则 8px padding + 7px gap 会叠成 15px 的空隙 */
+    .pto-ide-frame[data-netgraph-open="true"] .pto-ide-frame__split { padding-right: 0; }
     .pto-ide-frame[data-netgraph-open="false"] .v2-panel-netgraph { display: none; }
     .v2-panel-netgraph > .pto-ide-frame__pane-body { display: flex; overflow: visible; }
     .netgraph-view { position: relative; flex: 1 1 auto; min-width: 0; min-height: 0; display: flex; }
     /* stage 在 pane 内铺满，覆盖计算图页签里 58% 两栏宽度的旧约定 */
-    .netgraph-view .graph-left-pane { flex: 1 1 auto; width: auto; border-right: 0; background: #fff; }
+    .netgraph-view .graph-left-pane { flex: 1 1 auto; width: auto; border-right: 0; background: var(--bg-elevated); }
 
     /* ── openPangu 整网图（#opvHost）：与上面 Qwen2-7B 计算图（#graphTabStage/#graphMapBtn）互斥，
        app.js 的 renderGraph() 按 report.id 切 hidden。.opv-app 自带 display:grid 优先级和 UA 的
@@ -318,13 +324,71 @@
     }
     #opvHost .hsel-item:hover { background: var(--surface-2); }
     #opvHost .hsel-item.is-sel { background: color-mix(in srgb, var(--primary) 14%, transparent); color: var(--primary); font-weight: 600; }
-    /* 整网图面板统一用纯白底，不垫 --opv-shell-bg/--model-graphviz-stage-bg 这类灰色 surface token
-       （和上面 .graph-left-pane 的白底一致；这几条选择器都要比对应组件样式里的原选择器更具体才压得住）。 */
+    /* 整网图面板统一用「抬升面」底色，不垫 --opv-shell-bg/--model-graphviz-stage-bg 这类灰色 surface token
+       （和上面 .graph-left-pane 一致；这几条选择器都要比对应组件样式里的原选择器更具体才压得住）。
+       --bg-elevated 随 data-theme 翻转：light #ffffff（保持原来的纯白底）、dark #16171b，
+       所以不能写死 #fff，否则暗色模式下整网图会是一块刺眼的白板。 */
     .netgraph-view #opvHost,
     .netgraph-view #opvHost .opv-topbar,
     .netgraph-view #opvHost .opv-status,
     .netgraph-view #opvHost .pto-model-architecture-stage {
-      background: #fff;
+      background: var(--bg-elevated);
+    }
+
+    /* ── 问题节点标红（app.js 的 applyOpvProblemMarks 打上 is-problem-p0/p1/p2）──
+       颜色与呼吸动画沿用 Qwen2-7B 计算图那套（见 .graph-left-pane .is-problem-*），
+       两张图共用同一套「红=P0 / 橙=P1 / 黄=P2」语义，用户不必学两遍。
+       这里选择器必须比组件的 `.opv-stage .pto-model-graphviz-node rect` 更具体才压得住描边。
+       cluster 用 `rect:first-of-type` 而不是组件惯用的 `:first-child`——标记会往 group 里插一个
+       <title> 做悬浮提示，它会挤掉 rect 的 first-child 身份，:first-of-type 不受影响。 */
+    #opvHost .opv-stage .pto-model-graphviz-node.is-problem-p0 rect,
+    #opvHost .opv-stage .pto-model-graphviz-cluster.is-problem-p0 > rect:first-of-type {
+      stroke: #FF2D7A; stroke-width: 4;
+      animation: graph-node-breathe 2s ease-in-out infinite;
+    }
+    #opvHost .opv-stage .pto-model-graphviz-node.is-problem-p1 rect,
+    #opvHost .opv-stage .pto-model-graphviz-cluster.is-problem-p1 > rect:first-of-type {
+      stroke: #FF9D00; stroke-width: 4;
+      animation: graph-node-breathe 2.4s ease-in-out infinite;
+    }
+    #opvHost .opv-stage .pto-model-graphviz-node.is-problem-p2 rect,
+    #opvHost .opv-stage .pto-model-graphviz-cluster.is-problem-p2 > rect:first-of-type {
+      stroke: #FFE600; stroke-width: 4;
+      animation: graph-node-breathe 2.8s ease-in-out infinite;
+    }
+    /* 选中环（--opv-selected，黑/白）压过问题描边，与组件既有的 is-selected 规则同序 */
+    #opvHost .opv-stage .pto-model-graphviz-node.is-selected rect {
+      stroke: var(--opv-selected); stroke-width: 3px; animation: none;
+    }
+
+    /* ── 问题标签（app.js 的 drawOpvProblemBadge 画）：命中节点旁的单行胶囊，只放「问题N」，
+          问题名与举证收进 hover 的 <title>。实心底 + 白字，与节点本体的半透明填充明显区分开。
+          注意底板 rect 要显式免疫上面的 is-problem-* 描边规则——它和节点 rect 同处一个
+          group，选择器 `.pto-model-graphviz-node.is-problem-p0 rect` 会一并命中它。 */
+    #opvHost .opv-stage .opv-problem-badge rect.opv-problem-badge-bg {
+      stroke: none; animation: none; fill-opacity: 1;
+    }
+    #opvHost .opv-stage .opv-problem-badge.is-p0 rect.opv-problem-badge-bg { fill: #FF2D7A; }
+    #opvHost .opv-stage .opv-problem-badge.is-p1 rect.opv-problem-badge-bg { fill: #FF9D00; }
+    #opvHost .opv-stage .opv-problem-badge.is-p2 rect.opv-problem-badge-bg { fill: #FFE600; }
+    #opvHost .opv-stage .opv-problem-badge text {
+      font-family: var(--font-sans);
+      dominant-baseline: middle;
+      text-anchor: middle;
+      fill: #fff;
+      pointer-events: none;
+    }
+    /* 黄底白字读不出来，P2 单独换成深色字 */
+    #opvHost .opv-stage .opv-problem-badge.is-p2 text { fill: #0c0c12; }
+    /* 24px = 原 12px 的两倍。字号由 drawOpvProblemBadge 量出来定胶囊宽度，改这里胶囊会跟着变宽 */
+    #opvHost .opv-stage .opv-problem-badge-num { font-size: 24px; font-weight: 700; }
+    #opvHost .opv-stage .opv-problem-badge.is-clickable { cursor: pointer; }
+    #opvHost .opv-stage .opv-problem-badge.is-clickable:hover .opv-problem-badge-bg { filter: brightness(1.1); }
+    @media (prefers-reduced-motion: reduce) {
+      #opvHost .opv-stage .pto-model-graphviz-node[class*="is-problem-p"] rect,
+      #opvHost .opv-stage .pto-model-graphviz-cluster[class*="is-problem-p"] > rect:first-of-type {
+        animation: none;
+      }
     }
 
     /* ── Center panel 视图切换：PTO `.tab-control` / `.tab-control-item` ──
@@ -729,7 +793,7 @@
     .graph-tab-layout {
       flex: 1; display: flex; overflow: hidden; position: relative;
     }
-    /* 图形已迁到左侧「整网图」面板，页签内只剩节点详情，铺满可用宽度 */
+    /* 图形已迁到右侧「整网图」面板，页签内只剩节点详情，铺满可用宽度 */
     .graph-tab-layout > .graph-right-pane { flex: 1 1 auto; width: auto; }
 
     /* ═══════════════════════════════════════════════════════
@@ -1094,8 +1158,9 @@
     }
     .graph-map-btn:hover { background: var(--bg-elevated); color: var(--fg); border-color: var(--border-strong); }
     .graph-map-btn.active {
-      background: rgba(24,99,220,0.09); color: var(--primary);
-      border-color: rgba(24,99,220,0.30);
+      /* 原来写死 light 主题的 --primary(#1863dc)；改走 color-mix 跟随 data-theme */
+      background: color-mix(in srgb, var(--primary) 9%, transparent); color: var(--primary);
+      border-color: color-mix(in srgb, var(--primary) 30%, transparent);
     }
 
     /* ── Graph: name-mapping popover ── */
@@ -1508,6 +1573,11 @@
       display: -webkit-box; -webkit-box-orient: vertical;
       -webkit-line-clamp: 2; line-clamp: 2; overflow: hidden;
     }
+    /* 告警/异常态的状态行要说清后果与动作，2 行装不下 → 放宽到 4 行 */
+    .ovm-card.ovm-warn .ovm-status, .ovm-card.ovm-bad .ovm-status {
+      -webkit-line-clamp: 4; line-clamp: 4;
+    }
+    .ovm-card.ovm-bad .ovm-status { color: var(--danger); }
     .ovm-meter {
       height: 4px; margin-top: auto; overflow: hidden;
       border-radius: var(--radius-pill); background: var(--surface-3);
@@ -2037,11 +2107,15 @@
           </button>
           <!-- 主题切换（light / dark），图标由 JS 按当前主题切换 -->
           <button class="pto-ide-frame__window-action" type="button" id="themeToggle" title="切换到暗色模式" aria-label="切换到暗色模式" aria-pressed="false"></button>
-          <!-- 左侧栏：整网图面板（panel-left 图标，与右侧 inspector 图标镜像，成对相邻） -->
+          <!-- 整网图面板（现为最右侧列）。这里不用 panel-right 图标：那个字形已被右邻的
+               inspector 占用，两枚相同方框会分不清；改用 lucide network 语义字形。 -->
           <button class="pto-ide-frame__window-action" type="button" id="netGraphToggle" title="打开整网图" aria-label="打开整网图" aria-controls="netGraphPanel" aria-expanded="false" aria-pressed="false">
             <svg class="pto-ide-frame__window-icon" viewBox="0 0 24 24" aria-hidden="true">
-              <rect x="3" y="3" width="18" height="18" rx="2"></rect>
-              <path d="M9 3v18"></path>
+              <rect x="9" y="2" width="6" height="6" rx="1"></rect>
+              <rect x="2" y="16" width="6" height="6" rx="1"></rect>
+              <rect x="16" y="16" width="6" height="6" rx="1"></rect>
+              <path d="M5 16v-3a1 1 0 0 1 1-1h12a1 1 0 0 1 1 1v3"></path>
+              <path d="M12 12V8"></path>
             </svg>
           </button>
           <!-- 右侧栏：控制 AI 对话 inspector -->
@@ -2094,95 +2168,6 @@
 
       <div class="pto-ide-frame__workarea">
        <div class="v2-workrow">
-
-        <!-- ── 整网图面板：split 之外的定宽列，与「分析记录」互斥（顶栏 netGraphToggle 开合）── -->
-        <aside class="pto-ide-frame__pane v2-panel-netgraph" id="netGraphPanel" aria-label="整网图">
-          <header class="pto-ide-frame__pane-header">
-            <span class="pto-ide-frame__pane-title">整网图</span>
-            <button class="v2-ph-btn" id="netGraphCloseBtn" title="关闭整网图" aria-label="关闭整网图">
-              <svg width="9" height="9" viewBox="0 0 10 10" fill="none">
-                <path d="M2.2 2.2L7.8 7.8M7.8 2.2L2.2 7.8" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/>
-              </svg>
-            </button>
-          </header>
-          <div class="pto-ide-frame__pane-body">
-            <div class="netgraph-view" id="netGraphView">
-              <div class="graph-left-pane" id="graphTabStage">
-                <div class="graph-zoom-hint" id="graphZoomHint">滚轮缩放 · 拖拽平移 · Ctrl+0 重置</div>
-              </div>
-              <!-- 名称映射按钮：挂在 netgraph-view（position:relative），不受 stage.innerHTML='' 影响 -->
-              <button class="graph-map-btn" id="graphMapBtn" aria-label="名称映射表">
-                <svg width="11" height="11" viewBox="0 0 12 12" fill="none">
-                  <rect x="0.75" y="0.75" width="10.5" height="10.5" rx="1.5" stroke="currentColor" stroke-width="1.2"/>
-                  <path d="M3.5 4h5M3.5 6h5M3.5 8h3" stroke="currentColor" stroke-width="1.1" stroke-linecap="round"/>
-                </svg>
-                名称映射
-              </button>
-
-              <!-- openPangu-2.0-Flash 整网图（model-graphviz 组件，从 training-run-twin-standalone/wzh_index.html
-                   搬入并去除对该文件夹的依赖）：仅 Pangu 报告显示，与上面的 Qwen2-7B 计算图（#graphTabStage）
-                   互斥，由 app.js 的 renderGraph() 按 report.id 切换 hidden。 -->
-              <section id="opvHost" class="opv-app pto-model-graphviz-pattern-page" data-embed="1" hidden>
-                <header class="opv-topbar" style="justify-content:flex-end; border-bottom:0;">
-                  <div class="opv-actions">
-                    <button class="btn btn-ghost" type="button" id="zoomOut">-</button>
-                    <button class="btn btn-ghost" type="button" id="zoomReset">Fit</button>
-                    <button class="btn btn-ghost" type="button" id="zoomIn">+</button>
-                    <span class="tsep"></span>
-                    <span class="seg-lbl">算子染色</span>
-                    <span class="seg" id="opColorSeg" title="整网算子染色方式">
-                      <button class="segbtn" data-c="off" onclick="setOpColorMode('off')" title="不染色（中性）">关</button>
-                      <button class="segbtn on" data-c="cat" onclick="setOpColorMode('cat')" title="按算子类别：归一化/线性/注意力/MoE">类别</button>
-                    </span>
-                    <span class="tsep"></span>
-                    <span class="seg-lbl">层级</span>
-                    <span class="hsel-dd" id="flatLevelDD">
-                      <button type="button" class="hsel hsel-btn" id="flatLevelBtn" onclick="toggleFlatLevelMenu(event)" title="展开层级">
-                        <span id="flatLevelLabel">L5</span>
-                        <svg class="hsel-chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg>
-                      </button>
-                      <div class="hsel-menu" id="flatLevelMenu" hidden role="listbox">
-                        <button type="button" class="hsel-item" data-v="1" onclick="pickFlatLevel('1')">L1 · Model</button>
-                        <button type="button" class="hsel-item" data-v="2" onclick="pickFlatLevel('2')">L2 · DecoderLayer</button>
-                        <button type="button" class="hsel-item" data-v="3" onclick="pickFlatLevel('3')">L3 · Attention / MoE</button>
-                        <button type="button" class="hsel-item" data-v="4" onclick="pickFlatLevel('4')">L4 · Q·K·V / Expert</button>
-                        <button type="button" class="hsel-item is-sel" data-v="5" onclick="pickFlatLevel('5')">L5 · Operator</button>
-                      </div>
-                    </span>
-                    <!-- 以下元素被 opv-modelviz.js 的初始化代码直接引用，不能删除，否则 JS 报错导致整网图无法加载 -->
-                    <input id="schemaFileInput" type="file" accept=".json,application/json" hidden>
-                  </div>
-                </header>
-                <section class="opv-color-panel" id="colorPanel" aria-label="Light mode HSL controls" hidden>
-                  <div class="opv-color-head">
-                    <div class="opv-color-title">Light HSL</div>
-                    <button class="btn btn-ghost" type="button" id="colorReset">Reset</button>
-                  </div>
-                  <label class="opv-color-row" for="colorHue">
-                    <span>Hue</span>
-                    <input id="colorHue" type="range" min="-180" max="180" step="1">
-                    <output id="colorHueValue" for="colorHue">2</output>
-                  </label>
-                  <label class="opv-color-row" for="colorSaturation">
-                    <span>Saturation</span>
-                    <input id="colorSaturation" type="range" min="30" max="88" step="1">
-                    <output id="colorSaturationValue" for="colorSaturation">79%</output>
-                  </label>
-                  <label class="opv-color-row" for="colorLightness">
-                    <span>Lightness</span>
-                    <input id="colorLightness" type="range" min="58" max="86" step="1">
-                    <output id="colorLightnessValue" for="colorLightness">76%</output>
-                  </label>
-                  <div class="opv-color-swatches" id="colorPreview" aria-hidden="true"></div>
-                </section>
-                <section class="opv-stage pto-model-architecture-stage" id="graphStage" aria-label="openPangu model architecture graph">
-                  <div class="opv-node-popover" id="nodePopover" hidden></div>
-                </section>
-                <div class="opv-status" id="statusText">Loading schema.</div>
-              </section>
-            </div>
-          </div>
-        </aside>
 
         <div class="pto-ide-frame__split" data-ide-split="standalone-main" data-storage-key="msnext-v3-main-v2" data-split-direction="horizontal" data-sizes="21,55,24" data-pixel-sizes="280" data-min-size="220,440,300">
 
@@ -2401,15 +2386,15 @@
             <div class="report-scroll" id="reportMdContent"></div>
           </div>
 
-          <!-- 计算图：图形已迁至左侧「整网图」面板，此处只保留节点详情（点击节点联动到这里） -->
+          <!-- 计算图：图形已迁至右侧「整网图」面板，此处只保留节点详情（点击节点联动到这里） -->
           <div class="tab-pane" id="tab-graph">
             <div class="graph-tab-layout">
               <div class="graph-right-pane" id="graphTabDetail">
                 <div class="gd-node-nameplate" id="graphNodeNameplate"></div>
                 <div class="gd-detail-body" id="graphDetailBody">
                   <div class="gd-empty">
-                    <div class="gd-empty-icon">⬅</div>
-                    <div class="gd-empty-text">在左侧「整网图」面板点击标红的算子节点，查看问题详情与修复方案</div>
+                    <div class="gd-empty-icon">➡</div>
+                    <div class="gd-empty-text">在右侧「整网图」面板点击标红的算子节点，查看问题详情与修复方案</div>
                   </div>
                 </div>
               </div>
@@ -2527,6 +2512,95 @@
           </aside><!-- .v2-panel-right (inspector pane) -->
 
         </div><!-- .pto-ide-frame__split -->
+
+        <!-- ── 整网图面板：split 之外的最右定宽列，与「分析记录」互斥（顶栏 netGraphToggle 开合）── -->
+        <aside class="pto-ide-frame__pane v2-panel-netgraph" id="netGraphPanel" aria-label="整网图">
+          <header class="pto-ide-frame__pane-header">
+            <span class="pto-ide-frame__pane-title">整网图</span>
+            <button class="v2-ph-btn" id="netGraphCloseBtn" title="关闭整网图" aria-label="关闭整网图">
+              <svg width="9" height="9" viewBox="0 0 10 10" fill="none">
+                <path d="M2.2 2.2L7.8 7.8M7.8 2.2L2.2 7.8" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/>
+              </svg>
+            </button>
+          </header>
+          <div class="pto-ide-frame__pane-body">
+            <div class="netgraph-view" id="netGraphView">
+              <div class="graph-left-pane" id="graphTabStage">
+                <div class="graph-zoom-hint" id="graphZoomHint">滚轮缩放 · 拖拽平移 · Ctrl+0 重置</div>
+              </div>
+              <!-- 名称映射按钮：挂在 netgraph-view（position:relative），不受 stage.innerHTML='' 影响 -->
+              <button class="graph-map-btn" id="graphMapBtn" aria-label="名称映射表">
+                <svg width="11" height="11" viewBox="0 0 12 12" fill="none">
+                  <rect x="0.75" y="0.75" width="10.5" height="10.5" rx="1.5" stroke="currentColor" stroke-width="1.2"/>
+                  <path d="M3.5 4h5M3.5 6h5M3.5 8h3" stroke="currentColor" stroke-width="1.1" stroke-linecap="round"/>
+                </svg>
+                名称映射
+              </button>
+
+              <!-- openPangu-2.0-Flash 整网图（model-graphviz 组件，从 training-run-twin-standalone/wzh_index.html
+                   搬入并去除对该文件夹的依赖）：仅 Pangu 报告显示，与上面的 Qwen2-7B 计算图（#graphTabStage）
+                   互斥，由 app.js 的 renderGraph() 按 report.id 切换 hidden。 -->
+              <section id="opvHost" class="opv-app pto-model-graphviz-pattern-page" data-embed="1" hidden>
+                <header class="opv-topbar" style="justify-content:flex-end; border-bottom:0;">
+                  <div class="opv-actions">
+                    <button class="btn btn-ghost" type="button" id="zoomOut">-</button>
+                    <button class="btn btn-ghost" type="button" id="zoomReset">Fit</button>
+                    <button class="btn btn-ghost" type="button" id="zoomIn">+</button>
+                    <span class="tsep"></span>
+                    <span class="seg-lbl">算子染色</span>
+                    <span class="seg" id="opColorSeg" title="整网算子染色方式">
+                      <button class="segbtn on" data-c="off" onclick="setOpColorMode('off')" title="不染色（中性）">关</button>
+                      <button class="segbtn" data-c="cat" onclick="setOpColorMode('cat')" title="按算子类别：归一化/线性/注意力/MoE">类别</button>
+                    </span>
+                    <span class="tsep"></span>
+                    <span class="seg-lbl">层级</span>
+                    <span class="hsel-dd" id="flatLevelDD">
+                      <button type="button" class="hsel hsel-btn" id="flatLevelBtn" onclick="toggleFlatLevelMenu(event)" title="展开层级">
+                        <span id="flatLevelLabel">L5</span>
+                        <svg class="hsel-chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg>
+                      </button>
+                      <div class="hsel-menu" id="flatLevelMenu" hidden role="listbox">
+                        <button type="button" class="hsel-item" data-v="1" onclick="pickFlatLevel('1')">L1 · Model</button>
+                        <button type="button" class="hsel-item" data-v="2" onclick="pickFlatLevel('2')">L2 · DecoderLayer</button>
+                        <button type="button" class="hsel-item" data-v="3" onclick="pickFlatLevel('3')">L3 · Attention / MoE</button>
+                        <button type="button" class="hsel-item" data-v="4" onclick="pickFlatLevel('4')">L4 · Q·K·V / Expert</button>
+                        <button type="button" class="hsel-item is-sel" data-v="5" onclick="pickFlatLevel('5')">L5 · Operator</button>
+                      </div>
+                    </span>
+                    <!-- 以下元素被 opv-modelviz.js 的初始化代码直接引用，不能删除，否则 JS 报错导致整网图无法加载 -->
+                    <input id="schemaFileInput" type="file" accept=".json,application/json" hidden>
+                  </div>
+                </header>
+                <section class="opv-color-panel" id="colorPanel" aria-label="Light mode HSL controls" hidden>
+                  <div class="opv-color-head">
+                    <div class="opv-color-title">Light HSL</div>
+                    <button class="btn btn-ghost" type="button" id="colorReset">Reset</button>
+                  </div>
+                  <label class="opv-color-row" for="colorHue">
+                    <span>Hue</span>
+                    <input id="colorHue" type="range" min="-180" max="180" step="1">
+                    <output id="colorHueValue" for="colorHue">2</output>
+                  </label>
+                  <label class="opv-color-row" for="colorSaturation">
+                    <span>Saturation</span>
+                    <input id="colorSaturation" type="range" min="30" max="88" step="1">
+                    <output id="colorSaturationValue" for="colorSaturation">79%</output>
+                  </label>
+                  <label class="opv-color-row" for="colorLightness">
+                    <span>Lightness</span>
+                    <input id="colorLightness" type="range" min="58" max="86" step="1">
+                    <output id="colorLightnessValue" for="colorLightness">76%</output>
+                  </label>
+                  <div class="opv-color-swatches" id="colorPreview" aria-hidden="true"></div>
+                </section>
+                <section class="opv-stage pto-model-architecture-stage" id="graphStage" aria-label="openPangu model architecture graph">
+                  <div class="opv-node-popover" id="nodePopover" hidden></div>
+                </section>
+                <div class="opv-status" id="statusText">Loading schema.</div>
+              </section>
+            </div>
+          </div>
+        </aside>
        </div><!-- .v2-workrow -->
       </div><!-- .pto-ide-frame__workarea -->
     </div><!-- .pto-ide-frame__body -->
@@ -2754,7 +2828,9 @@
   <script src="vendor/opv-modelviz/js/opv-modelviz-schema.js"></script>
   <script>
     // ── 整网图工具栏全局函数：算子染色 + 层级下拉（从 training-run-twin-standalone/wzh_index.html 搬入）──
-    window._opColorMode = 'cat';
+    // 默认「关」：整网图上要一眼看到的是当前记录命中的红色问题节点，类别底色会跟它抢视觉焦点
+    // （同 training-run-twin 进问题透镜时 setOpColorMode("off") 的取舍）。要看类别配色再手动切。
+    window._opColorMode = 'off';
     function setOpColorMode(mode) {
       window._opColorMode = mode;
       document.querySelectorAll('#opColorSeg .segbtn').forEach(function (b) {
@@ -2792,7 +2868,7 @@
   <script src="vendor/opv-modelviz/js/opv-modelviz.js"></script>
   <script src="hbm-memory-snapshot/pattern.js?v=20260728-11"></script>
   <script src="memory-analysis.js?v=20260728-2"></script>
-  <script type="module" src="app.js?v=20260727-1"></script>
+  <script type="module" src="app.js?v=20260731-1"></script>
   <script>
     /* ── PTO ide-frame shell logic（retrofit）── */
     const _ideFrame = document.querySelector('[data-ide-frame]');
@@ -2892,7 +2968,7 @@
       if (_explorerToggle) _explorerToggle.click();
     });
 
-    /* ── 整网图面板：workbench split 之外的最左定宽列（32vw），顶栏 netGraphToggle 开合。
+    /* ── 整网图面板：workbench split 之外的最右定宽列（32vw），顶栏 netGraphToggle 开合。
        页面篇幅有限，它与「分析记录」互斥：开整网图就折叠分析记录，关掉再让分析记录归位。
        rail 上的 explorer 按钮语义不变（只表达/控制分析记录），整网图状态只由顶栏图标反映。
        计算图页签只保留节点详情，点整网图节点仍联动到该页签。 */

@@ -1130,7 +1130,9 @@
 
     const tlBase = Math.max(0.15, targetLoss * (1.0 + 0.7 * convDown) + stepNoise(1, step, 0.11));
     const tl = atIncident ? NaN : inRecovery ? (tlBase + 0.8 * (1 - ease)) : tlBase;
-    const vlBase = tlBase + 0.05 + stepNoise(2, step, 0.06);
+    // val 与 train 的差距(泛化 gap)随收敛逐步拉开 0.18→0.30，且 val 是 epoch 级评测、抖动比逐 step
+    // 训练损失小(±0.03 vs ±0.11)。原来只高 0.05、抖动却有 ±0.06，两条线一直缠在一起、看着像只有一条。
+    const vlBase = tlBase + 0.18 + 0.12 * convUp + stepNoise(2, step, 0.03);
     const vl = atIncident ? NaN : inRecovery ? (vlBase + 0.5 * (1 - ease)) : vlBase;
 
     const taBase = clamp(1 - tlBase / 6, 0.05, 0.99);
@@ -1247,47 +1249,57 @@
 
   const fmtAccPct = (v) => (v == null ? "—" : `${(v * 100).toFixed(1)}%`);
 
+  /* 曲线配色统一为两档，不再一指标一色：第一条(或唯一一条)曲线用 grad_norm 原来那支蓝紫
+     (--twin-chart-gradnorm / l0b-deep-violet #4F46E5)，图内第二条曲线用 train loss 原来那支绿
+     (--twin-chart-loss / success·ark-green-500 #04D793) —— 蓝紫与绿是对比色，同图两条线一眼分得开。
+     并列十来张卡时彩虹配色只是噪声——真正需要区分的是"同一张图里的两条线"，
+     其余语义(事故点红虚线、异常带、参考线)另有自己的颜色，不受这两档影响。 */
+  const LINE_1 = "--twin-chart-gradnorm";  // 主线 · 蓝紫
+  const LINE_2 = "--twin-chart-loss";      // 同图第二条线 · 绿
+
   const ACC_CARD_DEFS = [
     { id: "loss", name: "loss", legend: true,
       formatValue: (v) => (v == null ? "—" : v.toFixed(3)),
       tipCarryForward: false, markerStep: INCIDENT_STEP,
       series: [
-        { id: "train_loss", label: "train loss", key: "train_loss", colorVar: "--twin-chart-loss" },
-        { id: "val_loss", label: "val loss", key: "val_loss", colorVar: "--twin-chart-gradnorm", emphasis: true },
+        { id: "train_loss", label: "train loss", key: "train_loss", colorVar: LINE_1 },
+        // connectNulls：val 只在 epoch 采样点有值(其余为 null)，不连空点的话每个点都是孤立
+        // moveto、整条线一段都画不出来 —— 图上看着就是"少画了一条曲线"
+        { id: "val_loss", label: "val loss", key: "val_loss", colorVar: LINE_2, emphasis: true, connectNulls: true },
       ] },
     { id: "acc", name: "acc", legend: true, formatValue: fmtAccPct,
       tipCarryForward: false, markerStep: INCIDENT_STEP,
       series: [
-      { id: "train_acc", label: "train acc", key: "train_acc", colorVar: "--twin-chart-acc" },
-      { id: "val_acc", label: "val acc", key: "val_acc", colorVar: "--twin-chart-loss", emphasis: true },
+      { id: "train_acc", label: "train acc", key: "train_acc", colorVar: LINE_1 },
+      { id: "val_acc", label: "val acc", key: "val_acc", colorVar: LINE_2, emphasis: true, connectNulls: true },
     ] },
     { id: "gradnorm", name: "grad_norm", legend: false,
       note: `step ${INCIDENT_STEP} MoE all-to-all 超时 → grad_norm 跳至 inf，AI 定位修复后 ${RECOVERY_STEPS} 步内恢复`,
       formatValue: (v) => (v == null ? "—" : !isFinite(v) ? "inf" : v.toFixed(2)),
       tipCarryForward: false, markerStep: INCIDENT_STEP,
       series: [
-        { id: "gradnorm", label: "grad_norm", key: "grad_norm", colorVar: "--twin-chart-gradnorm", emphasis: true },
+        { id: "gradnorm", label: "grad_norm", key: "grad_norm", colorVar: LINE_1, emphasis: true },
       ] },
     { id: "recall", name: "recall", legend: false, note: "真实正例的召回率", formatValue: fmtAccPct,
       tipCarryForward: false, markerStep: INCIDENT_STEP,
       series: [
-      { id: "recall", label: "recall", key: "recall", colorVar: "--twin-chart-recall", emphasis: true },
+      { id: "recall", label: "recall", key: "recall", colorVar: LINE_1, emphasis: true },
     ] },
     { id: "z_loss", name: "z-loss", legend: false,
       note: "logits 归一化正则项;本次事故前训练从未开启,是根因之一——熔断修复后才加入抑制 router logits 极端值",
       formatValue: (v) => (v == null || !isFinite(v) ? "—" : v.toFixed(4)),
       tipCarryForward: false, markerStep: INCIDENT_STEP,
       series: [
-      { id: "z_loss", label: "z-loss", key: "z_loss", colorVar: "--twin-chart-f1", emphasis: true },
+      { id: "z_loss", label: "z-loss", key: "z_loss", colorVar: LINE_1, emphasis: true },
     ] },
     { id: "weightdiff", name: "weight_diff", legend: true,
       note: `参数更新幅度 ‖ΔW‖，与 grad_norm 同一根因同步观察；step ${INCIDENT_STEP} 梯度发散时同步跳至 inf`,
       formatValue: (v) => (v == null ? "—" : !isFinite(v) ? "inf" : v.toFixed(4)),
       tipCarryForward: false, markerStep: INCIDENT_STEP,
       series: [
-        { id: "weight_diff", label: "‖ΔW‖", key: "weight_diff", colorVar: "--twin-chart-weightdiff" },
+        { id: "weight_diff", label: "‖ΔW‖", key: "weight_diff", colorVar: LINE_1 },
         // grad_norm 量级(约 12~50)远大于 ‖ΔW‖(约 0.4~3.2),放右轴独立定域,避免被压成贴底的平线
-        { id: "gradnorm_ref", label: "grad_norm (右轴)", key: "grad_norm", colorVar: "--twin-chart-gradnorm", emphasis: true, axis: "right" },
+        { id: "gradnorm_ref", label: "grad_norm (右轴)", key: "grad_norm", colorVar: LINE_2, emphasis: true, axis: "right" },
       ] },
     { id: "loss_scale", name: "AMP loss scale", legend: false,
       note: "首次连续减半即通知；降至初始值 1/16 自动 dump，降至 1/32 立即停训",
@@ -1301,12 +1313,12 @@
         { value: 11, label: "1/32 停训", color: "#dc2626" },
       ],
       series: [
-      { id: "loss_scale", label: "loss scale", key: "loss_scale_log2", colorVar: "--twin-chart-mfu", emphasis: true, curve: "step" },
+      { id: "loss_scale", label: "loss scale", key: "loss_scale_log2", colorVar: LINE_1, emphasis: true, curve: "step" },
     ] },
     { id: "precision", name: "precision", legend: false, note: "预测正例中的准确率", formatValue: fmtAccPct,
       tipCarryForward: false, markerStep: INCIDENT_STEP,
       series: [
-      { id: "precision", label: "precision", key: "precision", colorVar: "--twin-chart-precision", emphasis: true },
+      { id: "precision", label: "precision", key: "precision", colorVar: LINE_1, emphasis: true },
     ] },
   ];
 
@@ -1338,15 +1350,16 @@
       markerStep: INCIDENT_STEP,
       yDomain: (steps, data) => ({ left: healthyDomain(data.mfu, steps) }),
       series: [
-        { id: "mfu", label: "MFU", key: "mfu", colorVar: "--twin-chart-mfu", emphasis: true },
+        { id: "mfu", label: "MFU", key: "mfu", colorVar: LINE_1, emphasis: true },
       ] },
-    { id: "avg_mem", name: "显存利用率", legend: false,
+    // linkCursor:false —— 不与精度栏 6 张卡做悬浮联动(见 renderMetricChart),只显示自己的游标气泡
+    { id: "avg_mem", name: "显存利用率", legend: false, linkCursor: false,
       note: `HBM 平均占用率 · 跨卡均值；step ${INCIDENT_STEP} 进程死锁崩溃，无有效读数记为 NaN`,
       formatValue: (v) => (v == null ? "—" : `${(v * 100).toFixed(1)}%`),
       markerStep: INCIDENT_STEP,
       yDomain: (steps, data) => ({ left: healthyDomain(data.avg_mem, steps) }),
       series: [
-        { id: "avg_mem", label: "HBM", key: "avg_mem", colorVar: "--twin-chart-mem", emphasis: true },
+        { id: "avg_mem", label: "HBM", key: "avg_mem", colorVar: LINE_1, emphasis: true },
       ] },
     /* 注：这里曾经并排放过一张「显存占用 (GB)」卡，已撤掉 —— avg_mem 就是 mem_gb / 单卡容量，
        两张卡画的是同一条曲线、只差单位，集群监控栏里看着像重复了一张。绝对 GB 的读法
@@ -1443,14 +1456,18 @@
       // 需要图例时改由调用方在容器外自行渲染(见 mountLocateMetricCharts 的 buildAccLegend)
       legend: false,
     };
-    // 精度 6 图联动：鼠标悬浮任一图表时同步游标 + 指标气泡到所有精度图表
-    renderOpts.onCursorHover = (step) => {
-      accCards.forEach((c) => { if (c.ctrl) { c.ctrl.setCursor(step); c.ctrl.setTooltip(true); } });
-    };
-    // 鼠标离开后收起所有图表的气泡(事故点红线是常驻标注，不随 hover 变化，不需要在这里复位)
-    renderOpts.onCursorLeave = () => {
-      accCards.forEach((c) => { if (c.ctrl) c.ctrl.setTooltip(false); });
-    };
+    // 精度 6 图联动：鼠标悬浮任一图表时同步游标 + 指标气泡到所有精度图表。
+    // cfg.linkCursor === false 的卡不参与联动(如集群监控「显存利用率」——它讲的是问题二那条独立的
+    // 显存故事,划过它没必要把精度栏 6 张卡的气泡一起唤起来);该卡自身的游标/气泡照常显示。
+    if (cfg.linkCursor !== false) {
+      renderOpts.onCursorHover = (step) => {
+        accCards.forEach((c) => { if (c.ctrl) { c.ctrl.setCursor(step); c.ctrl.setTooltip(true); } });
+      };
+      // 鼠标离开后收起所有图表的气泡(事故点红线是常驻标注，不随 hover 变化，不需要在这里复位)
+      renderOpts.onCursorLeave = () => {
+        accCards.forEach((c) => { if (c.ctrl) c.ctrl.setTooltip(false); });
+      };
+    }
     ctrl = window.PtoTrainingMetricsChart.render(el, renderOpts);
     return ctrl;
   }
@@ -1587,11 +1604,11 @@
   const ACC_DEMO_REPLACEMENTS = [
     { targetId: "precision", id: "wplc_val_loss", key: "wplc_val_loss", name: "WPLC val loss",
       note: "WPLC(Wikipedia+Pile 混合语料)验证集 loss，衡量通用语言建模能力",
-      colorVar: "--twin-chart-precision", formatValue: fmtDemoLoss(3),
+      colorVar: LINE_1, formatValue: fmtDemoLoss(3),
       genSeries: () => demoMetricSeries(31, 4.6, 1.7, 0.08, 1.4) },
     { targetId: "recall", id: "lambada_val_loss", key: "lambada_val_loss", name: "LAMBADA val loss",
       note: "LAMBADA 完形填空评测集验证 loss，衡量长程上下文理解能力",
-      colorVar: "--twin-chart-recall", formatValue: fmtDemoLoss(3),
+      colorVar: LINE_1, formatValue: fmtDemoLoss(3),
       genSeries: () => demoMetricSeries(32, 5.8, 2.4, 0.12, 2.0) },
   ];
 
@@ -4044,10 +4061,10 @@
   // 「迭代层」专用:在多卡曲线(会跳变为 NaN/inf)之外叠加一条单卡重跑同一 step 的曲线——
   // 单卡不经历 all-to-all,全程健康,用来对照出「仅多卡复现」(定位链.md 115 行·分叉判定)。
   // 只在这里叠加第二条曲线,不改「关键指标」面板本身用的 ACC_CARD_DEFS。
+  // 多卡线沿用基础卡的主线蓝紫(LINE_1),叠加的单卡线是"图内第二条线",按统一配色走绿(LINE_2)
   const LOCATE_SINGLE_SERIES = {
-    loss: { id: "loss_single", label: "单卡(正常)", key: "loss_single", colorVar: "--twin-chart-mfu" },
-    // grad_norm 多卡曲线本就是深紫(--twin-chart-gradnorm),单卡改用绿色(--twin-chart-acc),避免同为紫色系难以区分
-    gradnorm: { id: "grad_norm_single", label: "单卡(正常)", key: "grad_norm_single", colorVar: "--twin-chart-acc" },
+    loss: { id: "loss_single", label: "单卡(正常)", key: "loss_single", colorVar: LINE_2 },
+    gradnorm: { id: "grad_norm_single", label: "单卡(正常)", key: "grad_norm_single", colorVar: LINE_2 },
   };
   function buildLocateMetricCfg(baseCfg) {
     const single = LOCATE_SINGLE_SERIES[baseCfg.id];
@@ -5395,8 +5412,8 @@
     if (lossEl) {
       const cw = Math.round(lossEl.getBoundingClientRect().width) || 600;
       const lossSeries = [
-        { id: 'case6-loss-hif8', label: 'HiF8', key: 'case6-loss-hif8', colorVar: '--twin-chart-loss', emphasis: true, axis: 'left' },
-        { id: 'case6-loss-bf16', label: 'BF16', key: 'case6-loss-bf16', colorVar: '--twin-chart-mfu', axis: 'left' },
+        { id: 'case6-loss-hif8', label: 'HiF8', key: 'case6-loss-hif8', colorVar: LINE_1, emphasis: true, axis: 'left' },
+        { id: 'case6-loss-bf16', label: 'BF16', key: 'case6-loss-bf16', colorVar: LINE_2, axis: 'left' },
       ];
       window.PtoTrainingMetricsChart.render(lossEl, {
         steps,
@@ -5422,7 +5439,7 @@
         smoothing: accSmoothing,
         legend: false,
         options: { compact: false, width: cw, height: 170, pad: { t: 10, r: 14, b: 22, l: 42 } },
-        series: [{ id: 'case6-gradnorm', label: 'grad_norm', key: 'case6-gradnorm', colorVar: '--twin-chart-gradnorm', axis: 'left' }],
+        series: [{ id: 'case6-gradnorm', label: 'grad_norm', key: 'case6-gradnorm', colorVar: LINE_1, axis: 'left' }],
         data: d,
         anomalies: [{ step: 25000, seriesId: 'case6-gradnorm' }],
         interestWindow: { start: 24000, end: 35000 },
