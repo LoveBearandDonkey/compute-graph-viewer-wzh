@@ -44,7 +44,7 @@ struct ConvBiasReluTilingData {
 
     // Exact storage sizes, expressed in elements.
     uint32_t featureGmElements;
-    uint32_t filterGmElements;
+    uint32_t weightGmElements;
     uint32_t biasGmElements;
     uint32_t outputGmElements;
     uint32_t fmapA1Elements;

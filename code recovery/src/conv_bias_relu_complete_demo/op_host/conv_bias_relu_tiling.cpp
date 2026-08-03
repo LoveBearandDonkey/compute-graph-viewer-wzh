@@ -57,7 +57,7 @@ void FillFixedDemoTiling(ConvBiasReluTilingData& t)
 
     // Exact element counts.
     t.featureGmElements = t.n * t.ci * t.hi * t.wi; // 1024 half
-    t.filterGmElements = t.k * t.co;                // 4608 half, ND [K,Co]
+    t.weightGmElements = t.k * t.co;                // 4608 half, ND [K,Co]
     t.biasGmElements = t.co;                        // 32 float
     t.outputGmElements = t.m * t.co;                // 2048 half, ND [M,Co]
 
