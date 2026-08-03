@@ -2,7 +2,7 @@
   'use strict';
 
   const FIXTURES = [
-    { id: 'sample.conv_bias_relu', path: 'data/fixtures/conv_bias_relu.trace.json?v=20260728-complete-demo-v1' },
+    { id: 'sample.conv_bias_relu', path: 'data/fixtures/conv_bias_relu.trace.json?v=20260803-allocate-memory-map-v1' },
   ];
 
   const TENSOR_TONES = {
@@ -109,6 +109,7 @@
     instructionIterationFocus: null,
     instructionIterationRange: null,
     instructionOperationFocus: null,
+    allocatedTensorId: null,
     timer: null,
     playback: null,
     webglAvailable: null,
@@ -127,11 +128,31 @@
       source: null,
       cube: null,
     },
+    hostLaunchControllers: {
+      a: null,
+      b: null,
+      c: null,
+    },
+    copyInputControllers: {
+      source: null,
+      destination: null,
+      sourceKind: null,
+      destinationKind: null,
+    },
+    biasC1C2Controllers: {
+      source: null,
+      destination: null,
+    },
+    fixpipeOutputControllers: {
+      accum: null,
+      output: null,
+    },
     tensorVolumeController: null,
     tensorMatrixController: null,
-    mmadMatrixControllers: {
+   mmadMatrixControllers: {
       a2: null,
       b2: null,
+      addend: null,
       co1: null,
     },
     fmapA1VolumeController: null,
@@ -201,10 +222,11 @@
     prevStep: byId('prevStep'),
     nextStep: byId('nextStep'),
     convCoreContext: byId('convCoreContext'),
-    convCoreSelect: byId('convCoreSelect'),
+    convCoreOptions: byId('convCoreOptions'),
     tensorTabs: byId('tensorTabs'),
     tensorStage: byId('tensorStage'),
     convTensorOverview: byId('convTensorOverview'),
+    memoryAllocationView: byId('memoryAllocationView'),
     featureOverviewCanvas: byId('featureOverviewCanvas'),
     weightOverviewCanvas: byId('weightOverviewCanvas'),
     biasOverviewCanvas: byId('biasOverviewCanvas'),
@@ -216,15 +238,66 @@
     hostTilingSourceTitle: byId('hostTilingSourceTitle'),
     hostTilingSourceMeta: byId('hostTilingSourceMeta'),
     hostTilingSourceCanvas: byId('hostTilingSourceCanvas'),
+    hostTilingWeightCount: byId('hostTilingWeightCount'),
+    hostTilingWeightCountValue: byId('hostTilingWeightCountValue'),
     hostTilingTransform: byId('hostTilingTransform'),
     hostTilingCubeTitle: byId('hostTilingCubeTitle'),
     hostTilingCubeMeta: byId('hostTilingCubeMeta'),
     hostTilingCubeCanvas: byId('hostTilingCubeCanvas'),
     hostTilingFormula: byId('hostTilingFormula'),
+    hostLaunchView: byId('hostLaunchView'),
+    hostLaunchEquation: byId('hostLaunchEquation'),
+    hostLaunchEvidence: byId('hostLaunchEvidence'),
+    hostLaunchBlockDim: byId('hostLaunchBlockDim'),
+    hostLaunchATitle: byId('hostLaunchATitle'),
+    hostLaunchAMeta: byId('hostLaunchAMeta'),
+    hostLaunchACanvas: byId('hostLaunchACanvas'),
+    hostLaunchBTitle: byId('hostLaunchBTitle'),
+    hostLaunchBMeta: byId('hostLaunchBMeta'),
+    hostLaunchBCanvas: byId('hostLaunchBCanvas'),
+    hostLaunchCTitle: byId('hostLaunchCTitle'),
+    hostLaunchCMeta: byId('hostLaunchCMeta'),
+    hostLaunchCCanvas: byId('hostLaunchCCanvas'),
+    hostLaunchMapping: byId('hostLaunchMapping'),
+    hostLaunchReduction: byId('hostLaunchReduction'),
     tensorPatternView: byId('tensorPatternView'),
     tensorVolumeCanvas: byId('tensorVolumeCanvas'),
     tensorMatrixHost: byId('tensorMatrixHost'),
     tensorMatrixCanvas: byId('tensorMatrixCanvas'),
+    copyInputPatternView: byId('copyInputPatternView'),
+    copyInputSummary: byId('copyInputSummary'),
+    copyInputContext: byId('copyInputContext'),
+    copyInputSourceTitle: byId('copyInputSourceTitle'),
+    copyInputSourceShape: byId('copyInputSourceShape'),
+    copyInputSourceMeta: byId('copyInputSourceMeta'),
+    copyInputSourceCanvas: byId('copyInputSourceCanvas'),
+    copyInputEngine: byId('copyInputEngine'),
+    copyInputTransformation: byId('copyInputTransformation'),
+    copyInputDestinationTitle: byId('copyInputDestinationTitle'),
+    copyInputDestinationShape: byId('copyInputDestinationShape'),
+    copyInputDestinationMeta: byId('copyInputDestinationMeta'),
+    copyInputDestinationCanvas: byId('copyInputDestinationCanvas'),
+    copyInputLensMount: byId('copyInputLensMount'),
+    biasC1C2View: byId('biasC1C2View'),
+    biasC1C2Summary: byId('biasC1C2Summary'),
+    biasC1C2Context: byId('biasC1C2Context'),
+    biasC1C2Engine: byId('biasC1C2Engine'),
+    biasC1Title: byId('biasC1Title'),
+    biasC1Shape: byId('biasC1Shape'),
+    biasC1Meta: byId('biasC1Meta'),
+    biasC1Canvas: byId('biasC1Canvas'),
+    biasC2Title: byId('biasC2Title'),
+    biasC2Shape: byId('biasC2Shape'),
+    biasC2Meta: byId('biasC2Meta'),
+    biasC2Canvas: byId('biasC2Canvas'),
+    fixpipeOutputView: byId('fixpipeOutputView'),
+    fixpipeOutputSummary: byId('fixpipeOutputSummary'),
+    fixpipeOutputContext: byId('fixpipeOutputContext'),
+    fixpipeAccumTitle: byId('fixpipeAccumTitle'),
+    fixpipeAccumCanvas: byId('fixpipeAccumCanvas'),
+    fixpipeOutputCanvas: byId('fixpipeOutputCanvas'),
+    fixpipeAddressCore: byId('fixpipeAddressCore'),
+    fixpipeAddress: byId('fixpipeAddress'),
     convMmadMatrixView: byId('convMmadMatrixView'),
     mmadEquation: byId('mmadEquation'),
     mmadEvidence: byId('mmadEvidence'),
@@ -240,6 +313,9 @@
     mmadCo1Meta: byId('mmadCo1Meta'),
     mmadCo1Canvas: byId('mmadCo1Canvas'),
     mmadBiasStatus: byId('mmadBiasStatus'),
+    addendMatrixTitle: byId('mmadAddendTitle'),
+    addendMatrixMeta: byId('mmadAddendMeta'),
+    addendMatrixCanvas: byId('mmadAddendCanvas'),
     tensorCanvas: byId('tensorCanvas'),
     convLoadDataView: byId('convLoadDataView'),
     fmapA1VolumeCanvas: byId('fmapA1VolumeCanvas'),
@@ -398,10 +474,28 @@
       button.addEventListener('click', () => setExecutionView(button.dataset.executionView));
     });
     els.instructionSequence?.addEventListener('click', handleInstructionSequenceClick);
-    els.convCoreSelect?.addEventListener('change', () => {
-      state.convCoreIndex = Math.max(0, Number(els.convCoreSelect.value) || 0);
+    els.memoryAllocationView?.addEventListener('click', handleAllocatedTensorClick);
+    els.convCoreOptions?.addEventListener('click', (event) => {
+      const button = event.target.closest('[data-conv-core-index]');
+      if (!button) return;
+      state.convCoreIndex = Math.max(0, Number(button.dataset.convCoreIndex) || 0);
+      renderConvCoreContext(currentTrace());
       renderTensorViewport(currentTrace());
       renderInfoPanel(currentTrace());
+    });
+    els.convCoreOptions?.addEventListener('keydown', (event) => {
+      if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return;
+      const buttons = Array.from(els.convCoreOptions.querySelectorAll('[data-conv-core-index]'));
+      if (!buttons.length) return;
+      const currentIndex = Math.max(0, buttons.indexOf(event.target.closest('[data-conv-core-index]')));
+      const nextIndex = event.key === 'Home'
+        ? 0
+        : event.key === 'End'
+          ? buttons.length - 1
+          : (currentIndex + (event.key === 'ArrowRight' ? 1 : -1) + buttons.length) % buttons.length;
+      event.preventDefault();
+      buttons[nextIndex].click();
+      buttons[nextIndex].focus();
     });
     initTensorViewportInteractions();
     initArchitecturePan();
@@ -737,6 +831,23 @@
       state.hostTilingControllers.cube?.fit?.();
       return;
     }
+    if (state.activeTensorRenderer === 'host-launch') {
+      Object.values(state.hostLaunchControllers).forEach((controller) => controller?.fit?.());
+      return;
+    }
+    if (state.activeTensorRenderer === 'copy-input-pattern') {
+      ['source', 'destination'].forEach((slot) => {
+        const controller = state.copyInputControllers[slot];
+        const kind = state.copyInputControllers[`${slot}Kind`];
+        if (kind === 'volume') controller?.resize?.();
+        else controller?.fit?.();
+      });
+      return;
+    }
+    if (state.activeTensorRenderer === 'bias-c1-c2-matrix') {
+      Object.values(state.biasC1C2Controllers).forEach((controller) => controller?.fit?.());
+      return;
+    }
     if (state.activeTensorRenderer === 'volume' && state.tensorVolumeController) {
       state.tensorVolumeController.resize();
       return;
@@ -907,8 +1018,16 @@
       const suffix = source?.partial ? '关键行' : `${sourceLines.length} 行`;
       els.sourceMeta.textContent = `${source?.path || 'source'} · ${suffix}`;
     }
-    if (els.visualTitle) els.visualTitle.textContent = 'Tensor State & Transformation';
-    if (els.stepMeta) els.stepMeta.textContent = step ? `${state.stepIndex + 1}/${trace.steps.length}` : '';
+    if (els.visualTitle) {
+      els.visualTitle.textContent = step?.stageId === 'allocate'
+        ? 'Local Memory Map'
+        : 'Tensor State & Transformation';
+    }
+    if (els.stepMeta) {
+      els.stepMeta.textContent = step?.stageId === 'allocate'
+        ? 'LocalTensor views · no data movement'
+        : step ? `${state.stepIndex + 1}/${trace.steps.length}` : '';
+    }
     if (els.statusText) els.statusText.textContent = step ? zh(step.label) : 'Ready';
     if (els.statusSample) els.statusSample.textContent = sampleShortName(trace);
     if (els.statusStep) els.statusStep.textContent = step ? `${state.stepIndex + 1}/${trace.steps.length}` : '0/0';
@@ -918,12 +1037,28 @@
 
   function tensorTabsForStep(trace, step) {
     if (trace?.operator?.kind !== 'conv2d-cube' || !step) return [];
+    if (step.stageId === 'allocate' || step.stageId === 'fixpipe-output') return [];
     if (step.stageId === 'host-tiling') {
       return [
         { key: 'host-tiling:feature', label: 'Input X', location: 'Logical X → Cube A[M,K]' },
         { key: 'host-tiling:weight', label: 'Weight W', location: 'Logical W → Cube B[K,N]' },
         { key: 'host-tiling:output', label: 'Output Y', location: 'Logical Y → Cube C[M,N]' },
       ];
+    }
+    if (step.stageId === 'copy-inputs') {
+      return (step.dataFlows || []).map((flow, index) => {
+        const source = (trace.tensors || []).find((item) => item.id === flow.tensorId);
+        const labelByRole = {
+          input: 'Feature X',
+          weight: 'Weight W',
+          bias: 'Bias',
+        };
+        return {
+          key: flow.bufferId || flow.tensorId || `copy-input:${index}`,
+          label: labelByRole[source?.role] || source?.name || flow.from || `Input ${index + 1}`,
+          location: `${flow.from || 'GM'} → ${flow.to || 'L1'}`,
+        };
+      });
     }
     const snapshots = step.tensorSnapshots || [];
     if (snapshots.length < 2) return [];
@@ -936,6 +1071,77 @@
         location: snapshot.location || definition?.location || '',
       };
     });
+  }
+
+  function selectedCopyInputTransfer(trace, step) {
+    if (step?.stageId !== 'copy-inputs') return null;
+    const flows = step.dataFlows || [];
+    const flow = flows.find((item) => item.bufferId === state.tensorTabKey || item.tensorId === state.tensorTabKey)
+      || flows[0]
+      || null;
+    if (!flow) return null;
+    const source = (trace?.tensors || []).find((item) => item.id === flow.tensorId) || null;
+    const destination = (trace?.buffers || []).find((item) => item.id === flow.bufferId) || null;
+    const snapshot = (step.tensorSnapshots || []).find((item) => item.tensorId === flow.bufferId) || null;
+    const gateEvent = (trace?.events || []).find((item) => item.eventType === 'MTE2_MTE1') || null;
+    const partition = convCorePartition(trace);
+    const params = trace?.tiling?.params || {};
+    const tileN = num(params.tileN, 16);
+    const nStart = partition.nTile * tileN;
+    const nEnd = Math.min(num(params.N, 32), nStart + tileN);
+    const sourceRole = source?.role || '';
+    const coreSource = sourceRole === 'weight'
+      ? {
+          label: 'GM / Weight W · full matrix',
+          slice: `W[K 0:${num(params.K, 144)}, N ${nStart}:${nEnd}]`,
+          gmOffsetBytes: nStart * 2,
+          addressing: `row stride N=${num(params.N, 32)}`,
+        }
+      : sourceRole === 'bias'
+        ? {
+            label: `GM / Bias D · N${nStart}:${nEnd}`,
+            slice: `Bias[N ${nStart}:${nEnd}]`,
+            gmOffsetBytes: nStart * 4,
+            addressing: 'contiguous FP32',
+          }
+        : {
+            label: 'GM / Feature X0 · full input',
+            slice: `X[0:1, 0:${num(params.ci, 16)}, 0:${num(params.hi, 8)}, 0:${num(params.wi, 8)}]`,
+            gmOffsetBytes: 0,
+            addressing: 'shared by all output tiles',
+          };
+    return {
+      flow,
+      source,
+      destination,
+      snapshot,
+      gateEvent,
+      partition,
+      coreSource,
+      transferCount: flows.length,
+      totalBytes: flows.reduce((total, item) => total + (Number(item.bytes) || 0), 0),
+    };
+  }
+
+  function convCorePartition(trace, coreIndex = state.convCoreIndex) {
+    const params = trace?.tiling?.params || {};
+    const derived = trace?.tiling?.derived || {};
+    const mTiles = Math.max(1, Number(derived.mTileCount) || Math.ceil(params.M / params.tileM));
+    const nTiles = Math.max(1, Number(derived.nTileCount) || Math.ceil(params.N / params.tileN));
+    const blockCount = Math.max(
+      1,
+      Number(derived.outputTileCount) || Number(trace?.launch?.numBlocks) || mTiles * nTiles,
+    );
+    const index = Math.min(Math.max(0, Number(coreIndex) || 0), blockCount - 1);
+    return {
+      index,
+      outputTile: index,
+      mTile: Math.floor(index / nTiles),
+      nTile: index % nTiles,
+      mTiles,
+      nTiles,
+      blockCount,
+    };
   }
 
   function renderTensorTabs(trace) {
@@ -1271,9 +1477,12 @@
       : null;
     const focusedIterationRange = state.instructionIterationRange;
     const isFocusedLoad = state.instructionOperationFocus === 'load-a2-b2';
-    const kIndex = isFocusedLoad && focusedIteration != null
+    const isFocusedMte1MSync = state.instructionOperationFocus === 'mte1-m';
+    const isFocusedMmad = state.instructionOperationFocus === 'mmad-accumulate';
+    const isFocusedIterationOperation = isFocusedLoad || isFocusedMte1MSync || isFocusedMmad;
+    const kIndex = isFocusedIterationOperation && focusedIteration != null
       ? focusedIteration
-      : isFocusedLoad && focusedIterationRange
+      : isFocusedIterationOperation && focusedIterationRange
         ? Number(focusedIterationRange[0])
         : Number(step?.loop?.kIndex || 0);
     const kLoops = num(d.kLoopCount, 9);
@@ -1283,18 +1492,28 @@
     const tileM = num(p.tileM, 16);
     const tileK = num(p.tileK, 16);
     const tileN = num(p.tileN, 16);
-    const kRange = isFocusedLoad
+    const kRange = isFocusedIterationOperation
       ? [kIndex * tileK, Math.min(K, (kIndex + 1) * tileK)]
       : step?.loop?.kRange || [kIndex * tileK, Math.min(K, (kIndex + 1) * tileK)];
+    const presentationStage = isFocusedMte1MSync ? 'sync-mte1-m' : stage;
     const finished = ['sync-m-fix', 'fixpipe-output'].includes(stage);
-    const tracksK = ['load-k', 'mmad-init', 'loop-body-middle', 'loop-body-final'].includes(stage);
+    const tracksK = ['load-k', 'mmad-init', 'loop-body-middle', 'loop-body-final'].includes(presentationStage);
     const kCurrent = finished ? kLoops
       : stage === 'k-loop' ? 1
       : tracksK ? Math.min(kLoops, kIndex + 1)
       : 0;
-    const blocks = convBufferBlocks(stage, kIndex);
-    const scene = isFocusedLoad ? 'load3d' : convSceneForStage(stage);
-    const event = (trace?.events || []).find((item) => (step?.eventDependencies || []).includes(item.id)) || null;
+    const blocks = convBufferBlocks(presentationStage, kIndex);
+    const scene = isFocusedLoad
+      ? 'load3d'
+      : isFocusedMte1MSync
+        ? 'event'
+      : isFocusedMmad
+        ? 'mmad'
+        : convSceneForStage(stage);
+    const event = isFocusedMte1MSync
+      ? (trace?.events || []).find((item) => item.eventType === 'MTE1_M') || null
+      : (trace?.events || []).find((item) => (step?.eventDependencies || []).includes(item.id)) || null;
+    const copyTransfer = selectedCopyInputTransfer(trace, step);
     return {
       tensorViewport: {
         kind: 'conv2d',
@@ -1318,29 +1537,35 @@
           padLeft: Number(p.padLeft ?? 1),
           M, N, K, tileM, tileN, tileK,
           kIndex, kRange, kCurrent, kLoops,
-          kTileSelection: isFocusedLoad && focusedIterationRange
+          kTileSelection: isFocusedIterationOperation && focusedIterationRange
             ? focusedIterationRange
             : [kIndex, kIndex],
           outputPosition: step?.loop?.representativeOutputPosition || [0, 0],
           snapshots: step?.tensorSnapshots || [],
           dataFlows: step?.dataFlows || [],
           event,
+          copyTransfer,
         },
         highlight: {
-          tone: (stage.includes('mmad') || stage.includes('loop-body')) ? 'reduction' : finished ? 'output' : 'input',
-          label: convSceneLabel(scene, kIndex, tileM, tileN),
-          sub: `${step?.evidenceKind || 'unknown'} · logical order only`,
+          tone: (presentationStage.includes('mmad') || presentationStage.includes('loop-body')) ? 'reduction' : finished ? 'output' : 'input',
+          label: scene === 'copy-in' && copyTransfer
+            ? `MTE2 · ${copyTransfer.transferCount} transfers · ${copyTransfer.totalBytes} B · GM → L1`
+            : convSceneLabel(scene, kIndex, tileM, tileN),
+          sub: scene === 'copy-in' && copyTransfer
+            ? `AIC${copyTransfer.partition.index} · OT${copyTransfer.partition.outputTile} · M${copyTransfer.partition.mTile}/N${copyTransfer.partition.nTile} · ${step?.evidenceKind || 'unknown'}`
+            : `${step?.evidenceKind || 'unknown'} · logical order only`,
         },
         operationChips: convOperationChips(scene),
       },
       onChipLens: { blocks },
-      architectureFocus: { selectors: convSelectors(stage), routes: [], bufferBlocks: blocks },
+      architectureFocus: { selectors: convSelectors(presentationStage), routes: [], bufferBlocks: blocks },
     };
   }
 
   function convSceneForStage(stage) {
     if (stage.startsWith('host-') || stage === 'allocate') return 'overview';
-    if (stage === 'copy-inputs' || stage === 'bias-c1-c2') return 'copy-in';
+    if (stage === 'copy-inputs') return 'copy-in';
+    if (stage === 'bias-c1-c2') return 'bias-copy';
     if (stage === 'load-k') return 'load3d';
     if (stage === 'mmad-init') return 'mmad';
     if (stage === 'k-loop') return 'loop-group';
@@ -1351,9 +1576,14 @@
   }
 
   function convSceneLabel(scene, kIndex, tileM, tileN) {
-    if (scene === 'copy-in') return 'GM inputs → A1 / B1 / C1';
+    if (scene === 'copy-in') return 'MTE2 · 3 transfers · 6720 B · GM → L1';
+    if (scene === 'bias-copy') return 'Bias C1 → C2 / Bias Table';
     if (scene === 'load3d') return `Feature window → A2[M=${tileM}, K${kIndex}]`;
-    if (scene === 'mmad') return `A2 × B2 ${kIndex === 0 ? '+ Bias' : '+ CO1'} → CO1`;
+    if (scene === 'mmad') {
+      return kIndex === 0
+        ? 'A[Mi,K0] × B[K0,Nj] + Bias[Nj] → Acc0'
+        : `A[Mi,K${kIndex}] × B[K${kIndex},Nj] + Acc${kIndex - 1} → Acc${kIndex}`;
+    }
     if (scene === 'loop-group') return 'Iter 1～8：复用同步 → Load Kk → 就绪同步 → Mmad';
     if (scene === 'loop-body') return `完整 Iter ${kIndex} Loop Body：Load K${kIndex} → Mmad accumulate`;
     if (scene === 'epilogue') return 'CO1 FP32 NZ → ReLU → FP16 ND → GM';
@@ -1364,7 +1594,8 @@
   function convOperationChips(scene) {
     const map = {
       overview: ['Shape', '16×16×16 tiling', 'blockDim=8'],
-      'copy-in': ['MTE2 / MTE1', 'DataCopy', 'exact bytes'],
+      'copy-in': ['MTE2', 'DataCopy', 'awaiting sync'],
+      'bias-copy': ['MTE1', 'DataCopy', 'Bias Table'],
       load3d: ['LoadData3D', 'feature window', 'M×K'],
       'loop-group': ['Loop Group ×8', 'A2/B2 still K0', 'not hardware instruction'],
       'loop-body': ['M_MTE1', 'Load Kk', 'MTE1_M', 'Mmad'],
@@ -1382,8 +1613,11 @@
         { core: 'mem950-aic', buffer: 'L0C', label: 'CO1 1024B', state: 'allocated', tone: 'output', cellRange: [0, 11], sourceTile: '16×16 fp32' },
       ];
     }
-    if (stage === 'copy-inputs' || stage === 'sync-mte2-mte1' || stage === 'bias-c1-c2') {
+    if (stage === 'copy-inputs' || stage === 'sync-mte2-mte1') {
       return [{ core: 'mem950-aic', buffer: 'L1', label: 'Feature / Weight / Bias', state: 'loaded', tone: 'input', cellRange: [0, 29], sourceTile: '2048B + 4608B + 64B', operation: 'DataCopy' }];
+    }
+    if (stage === 'bias-c1-c2') {
+      return [{ core: 'mem950-aic', buffer: 'BT', label: 'Bias C2', state: 'loaded', tone: 'reduction', cellRange: [0, 3], sourceTile: '16×FP32 · 64B', operation: 'MTE1 / DataCopy' }];
     }
     if (stage === 'k-loop') {
       return [
@@ -1609,6 +1843,12 @@
     const snapshot = selectedTensorSnapshot(step);
     const snapshotShape = tensorSnapshotShape(snapshot);
     const isConvLoad = visual.layout === 'conv2d' && visual.conv?.scene === 'load3d';
+    const isConvEvent = visual.layout === 'conv2d' && visual.conv?.scene === 'event';
+    const isConvCopyInputs = trace.operator?.kind === 'conv2d-cube' && step?.stageId === 'copy-inputs';
+    const isBiasC1C2 = trace.operator?.kind === 'conv2d-cube' && step?.stageId === 'bias-c1-c2';
+    const useMemoryAllocationMap = trace.operator?.kind === 'conv2d-cube'
+      && step?.stageId === 'allocate'
+      && !!els.memoryAllocationView;
     const useConvOverview = trace.operator?.kind === 'conv2d-cube'
       && step?.stageId === 'host-shape'
       && !!window.PtoTensorVolumeCanvas
@@ -1621,6 +1861,13 @@
       && !!els.hostTilingView
       && !!els.hostTilingSourceCanvas
       && !!els.hostTilingCubeCanvas;
+    const useHostLaunchPatterns = trace.operator?.kind === 'conv2d-cube'
+      && step?.stageId === 'host-launch'
+      && !!window.PtoMatrixCanvas
+      && !!els.hostLaunchView
+      && !!els.hostLaunchACanvas
+      && !!els.hostLaunchBCanvas
+      && !!els.hostLaunchCCanvas;
     const useLoadDataPatterns = isConvLoad
       && state.tensorTabKey !== 'buffer:weight:b2'
       && !!window.PtoTensorVolumeCanvas
@@ -1634,12 +1881,34 @@
       && !!els.convMmadMatrixView
       && !!els.mmadA2Canvas
       && !!els.mmadB2Canvas
+      && !!els.addendMatrixCanvas
       && !!els.mmadCo1Canvas;
-    const useVolumePattern = !useLoadDataPatterns
+    const useCopyInputPatterns = isConvCopyInputs
+      && !!window.PtoTensorVolumeCanvas
+      && !!window.PtoMatrixCanvas
+      && !!els.copyInputPatternView
+      && !!els.copyInputSourceCanvas
+      && !!els.copyInputDestinationCanvas;
+    const useBiasC1C2MatrixPattern = isBiasC1C2
+      && !!window.PtoMatrixCanvas
+      && !!els.biasC1C2View
+      && !!els.biasC1Canvas
+      && !!els.biasC2Canvas;
+    const useFixpipeOutputPattern = trace.operator?.kind === 'conv2d-cube'
+      && step?.stageId === 'fixpipe-output'
+      && !!window.PtoMatrixCanvas
+      && !!els.fixpipeOutputView
+      && !!els.fixpipeAccumCanvas
+      && !!els.fixpipeOutputCanvas;
+    const useVolumePattern = !useCopyInputPatterns
+      && !useLoadDataPatterns
+      && !isConvEvent
       && snapshotShape.length >= 3
       && !!window.PtoTensorVolumeCanvas
       && !!els.tensorVolumeCanvas;
-    const useMatrixPattern = !useLoadDataPatterns
+    const useMatrixPattern = !useCopyInputPatterns
+      && !useLoadDataPatterns
+      && !isConvEvent
       && !!window.PtoMatrixCanvas
       && !!els.tensorMatrixCanvas
       && (
@@ -1648,11 +1917,20 @@
         || (isConvLoad && state.tensorTabKey === 'buffer:weight:b2')
       );
 
-    renderConvCoreContext(visual, isConvLoad);
-    const renderer = useConvOverview
+    const renderer = useMemoryAllocationMap
+      ? 'allocate-memory'
+      : useConvOverview
       ? 'overview'
       : useHostTilingPatterns
         ? 'host-tiling'
+      : useHostLaunchPatterns
+        ? 'host-launch'
+      : useCopyInputPatterns
+        ? 'copy-input-pattern'
+      : useBiasC1C2MatrixPattern
+        ? 'bias-c1-c2-matrix'
+      : useFixpipeOutputPattern
+        ? 'fixpipe-output'
       : useLoadDataPatterns
       ? 'load-data'
       : useMmadMatrixPattern
@@ -1667,13 +1945,19 @@
       if (button) button.disabled = renderer === 'volume'
         || renderer === 'load-data'
         || renderer === 'overview'
-        || renderer === 'host-tiling';
+        || renderer === 'host-tiling'
+        || renderer === 'host-launch';
     });
     if (els.fitView) els.fitView.disabled = renderer === 'volume';
 
     const tip = tensorViewportTip(visual);
     if (els.tensorStage) els.tensorStage.title = tip;
     if (els.viewportInfo) els.viewportInfo.title = tip;
+    if (renderer === 'allocate-memory') {
+      renderMemoryAllocationMap(trace);
+      if (els.tensorFallback) els.tensorFallback.hidden = true;
+      return;
+    }
     if (renderer === 'overview') {
       renderConvTensorOverview(trace);
       if (els.tensorFallback) els.tensorFallback.hidden = true;
@@ -1681,6 +1965,26 @@
     }
     if (renderer === 'host-tiling') {
       renderHostTilingMatrixView(trace);
+      if (els.tensorFallback) els.tensorFallback.hidden = true;
+      return;
+    }
+    if (renderer === 'host-launch') {
+      renderHostLaunchMatrixView(trace);
+      if (els.tensorFallback) els.tensorFallback.hidden = true;
+      return;
+    }
+    if (renderer === 'copy-input-pattern') {
+      renderCopyInputPatternView(trace, step, visual);
+      if (els.tensorFallback) els.tensorFallback.hidden = true;
+      return;
+    }
+    if (renderer === 'bias-c1-c2-matrix') {
+      renderBiasC1C2MatrixView(trace, step);
+      if (els.tensorFallback) els.tensorFallback.hidden = true;
+      return;
+    }
+    if (renderer === 'fixpipe-output') {
+      renderFixpipeOutputView(trace, step);
       if (els.tensorFallback) els.tensorFallback.hidden = true;
       return;
     }
@@ -1733,18 +2037,621 @@
   function setActiveTensorRenderer(renderer) {
     state.activeTensorRenderer = renderer;
     const patternVisible = renderer === 'matrix' || renderer === 'volume';
+    if (els.tileLens) {
+      if (renderer === 'copy-input-pattern' && els.copyInputLensMount) {
+        if (els.tileLens.parentElement !== els.copyInputLensMount) els.copyInputLensMount.appendChild(els.tileLens);
+      } else if (els.tensorStage && els.tileLens.parentElement !== els.tensorStage) {
+        els.tensorStage.insertBefore(els.tileLens, els.tensorFallback || null);
+      }
+    }
     if (els.convTensorOverview) els.convTensorOverview.hidden = renderer !== 'overview';
+    if (els.memoryAllocationView) els.memoryAllocationView.hidden = renderer !== 'allocate-memory';
     if (els.hostTilingView) els.hostTilingView.hidden = renderer !== 'host-tiling';
+    if (els.hostLaunchView) els.hostLaunchView.hidden = renderer !== 'host-launch';
+    if (els.copyInputPatternView) els.copyInputPatternView.hidden = renderer !== 'copy-input-pattern';
+    if (els.biasC1C2View) els.biasC1C2View.hidden = renderer !== 'bias-c1-c2-matrix';
+    if (els.fixpipeOutputView) els.fixpipeOutputView.hidden = renderer !== 'fixpipe-output';
     if (els.tensorPatternView) els.tensorPatternView.hidden = !patternVisible;
     if (els.convMmadMatrixView) els.convMmadMatrixView.hidden = renderer !== 'mmad-matrix';
     if (els.tensorVolumeCanvas) els.tensorVolumeCanvas.hidden = renderer !== 'volume';
     if (els.tensorMatrixHost) els.tensorMatrixHost.hidden = renderer !== 'matrix';
     if (els.convLoadDataView) els.convLoadDataView.hidden = renderer !== 'load-data';
     if (els.tensorCanvas) els.tensorCanvas.hidden = renderer !== 'legacy';
-    if (els.tileLens) els.tileLens.hidden = renderer !== 'legacy';
+    if (els.tileLens) els.tileLens.hidden = renderer !== 'legacy' && renderer !== 'copy-input-pattern';
   }
 
-  function createMmadMatrixScene(rows, columns, tone, stateName, axes, prefix) {
+  const ALLOCATION_MEMORY_MODEL = {
+    'buffer:feature:a1': {
+      position: 'A1 / L1', format: 'NC1HWC0', logicalIdentity: 'complete Feature',
+      filledBy: 'DataCopy from featureGm_', consumedBy: 'LoadData3D', lifetime: 'staged feature map',
+    },
+    'buffer:weight:b1': {
+      position: 'B1 / L1', format: 'NZ', logicalIdentity: 'B[:,Nj]',
+      filledBy: 'DataCopy ND → NZ', consumedBy: 'LoadData2D', lifetime: 'one N tile',
+    },
+    'buffer:bias:c1': {
+      position: 'C1 / L1', format: 'linear', logicalIdentity: 'D[Nj]',
+      filledBy: 'DataCopy from biasGm_', consumedBy: 'DataCopy to biasC2', lifetime: 'L1 bias staging',
+    },
+    'buffer:feature:a2': {
+      position: 'A2 / L0A', format: 'ZZ', logicalIdentity: 'A[Mi,Kk]',
+      filledBy: 'LoadData3D', consumedBy: 'Mmad', lifetime: 'reused and overwritten across K iterations',
+    },
+    'buffer:weight:b2': {
+      position: 'B2 / L0B', format: 'ZN', logicalIdentity: 'B[Kk,Nj]',
+      filledBy: 'LoadData2D', consumedBy: 'Mmad', lifetime: 'reused and overwritten across K iterations',
+    },
+    'buffer:bias:c2': {
+      position: 'C2 / Bias Table', format: 'linear', logicalIdentity: 'D[Nj]',
+      filledBy: 'DataCopy from biasC1', consumedBy: 'Iter 0 Mmad', lifetime: 'read by the first Mmad only',
+    },
+    'buffer:accum:co1': {
+      position: 'CO1 / L0C', format: 'NZ', logicalIdentity: 'C[Mi,Nj]',
+      filledBy: 'Mmad', consumedBy: 'Fixpipe', lifetime: 'Acc0 → Acc8', writeLabel: 'Written by',
+    },
+  };
+
+  function allocationTensor(trace, id) {
+    const buffer = (trace.buffers || []).find((item) => item.id === id);
+    const model = ALLOCATION_MEMORY_MODEL[id];
+    if (!buffer || !model) return null;
+    const start = Number(buffer.addressBytes) || 0;
+    const size = Number(buffer.allocatedBytes) || 0;
+    return {
+      ...buffer,
+      ...model,
+      start,
+      end: start + size,
+      size,
+      dtypeLabel: String(buffer.dtype || '').toUpperCase(),
+      shapeLabel: `[${(buffer.logicalShape || []).join(',')}]`,
+      alignmentLabel: Number(buffer.alignmentBytes) ? `${Number(buffer.alignmentBytes)} B` : 'Not specified',
+    };
+  }
+
+  function allocationBlock(tensor, compact = false) {
+    if (!tensor) return '';
+    const selected = state.allocatedTensorId === tensor.id;
+    const compactClass = compact ? ' avz-memory-block--compact' : '';
+    return `<button class="avz-memory-block${compactClass}${selected ? ' is-selected' : ''}" type="button" data-allocation-tensor="${escapeHtml(tensor.id)}" aria-pressed="${selected}" aria-label="${escapeHtml(`${tensor.name}, ${tensor.position}, [${tensor.start},${tensor.end})`)}">
+      <strong>${escapeHtml(tensor.name)}</strong>
+      ${compact ? '' : `<span>${escapeHtml(tensor.shapeLabel)}</span><span>${escapeHtml(`${tensor.dtypeLabel} · ${tensor.format}`)}</span>`}
+      <span>${escapeHtml(`${tensor.size} B`)}</span>
+      ${compact ? '' : `<code>${escapeHtml(`[${tensor.start},${tensor.end})`)}</code>`}
+    </button>`;
+  }
+
+  function singleAllocationLane(title, tensor) {
+    return `<section class="avz-memory-lane" aria-label="${escapeHtml(title)} independent address space">
+      <header><strong>${escapeHtml(title)}</strong><span>${tensor.size} B</span></header>
+      <div class="avz-memory-axis"><span>0</span><span>${tensor.end}</span></div>
+      <div class="avz-memory-track">${allocationBlock(tensor)}</div>
+    </section>`;
+  }
+
+  function allocationDetail(tensor) {
+    if (!tensor) {
+      return `<div class="avz-memory-detail__empty"><strong>Tensor details</strong><span>选择任一 Tensor 块，查看完整地址属性与后续生命周期。</span></div>`;
+    }
+    const rows = [
+      ['Variable', tensor.name], ['Position', tensor.position], ['Address', `[${tensor.start},${tensor.end})`],
+      ['Size', `${tensor.size} B`], ['Shape', tensor.shapeLabel], ['dtype', tensor.dtypeLabel],
+      ['format', tensor.format], ['Logical identity', tensor.logicalIdentity], ['Alignment', tensor.alignmentLabel],
+      [tensor.writeLabel || 'Filled by', tensor.filledBy], ['Consumed by', tensor.consumedBy], ['Lifetime', tensor.lifetime],
+    ];
+    return `<header><strong>${escapeHtml(tensor.name)}</strong><span>${escapeHtml(tensor.position)}</span></header>
+      <table><tbody>${rows.map(([key, value]) => `<tr><th>${escapeHtml(key)}</th><td><code>${escapeHtml(value)}</code></td></tr>`).join('')}</tbody></table>`;
+  }
+
+  function renderMemoryAllocationMap(trace) {
+    const ids = Object.keys(ALLOCATION_MEMORY_MODEL);
+    const tensors = Object.fromEntries(ids.map((id) => [id, allocationTensor(trace, id)]));
+    const selected = tensors[state.allocatedTensorId] || null;
+    const fmapA1 = tensors['buffer:feature:a1'];
+    const weightB1 = tensors['buffer:weight:b1'];
+    const biasC1 = tensors['buffer:bias:c1'];
+    if (!fmapA1 || !weightB1 || !biasC1) return;
+    els.memoryAllocationView.innerHTML = `
+      <div class="avz-memory-allocation__intro">
+        <div><strong>Local Memory Map</strong><span>当前 AI Core 的本地内存地图</span></div>
+        <p>Allocate Memory 只建立 LocalTensor 视图并绑定硬件 Buffer 与本地地址；不搬运数据，也不执行计算。</p>
+        <small>GM input/output addresses were bound in the previous stage. This stage only creates LocalTensor views.</small>
+      </div>
+      <div class="avz-memory-lanes">
+        <section class="avz-memory-lane avz-memory-lane--l1" aria-label="L1 shared address space">
+          <header><strong>L1 Buffer</strong><span>Used: 6720 B · [0,6720)</span></header>
+          <div class="avz-memory-axis avz-memory-axis--l1"><span>0</span><span>2048</span><span>6656</span><span>6720</span></div>
+          <div class="avz-memory-track avz-memory-track--l1">
+            <div>${allocationBlock(fmapA1)}</div>
+            <div>${allocationBlock(weightB1)}</div>
+            <div>${allocationBlock(biasC1, true)}</div>
+          </div>
+        </section>
+        ${singleAllocationLane('L0A Buffer', tensors['buffer:feature:a2'])}
+        ${singleAllocationLane('L0B Buffer', tensors['buffer:weight:b2'])}
+        ${singleAllocationLane('Bias Table', tensors['buffer:bias:c2'])}
+        ${singleAllocationLane('L0C Buffer', tensors['buffer:accum:co1'])}
+      </div>
+      <section class="avz-address-spaces" aria-label="Independent address spaces explanation">
+        <div class="avz-address-spaces__diagram">
+          ${[['L0A', 'fmapA2'], ['L0B', 'weightB2'], ['Bias Table', 'biasC2'], ['L0C', 'accumCo1']].map(([lane, name]) => `<div><strong>${lane}</strong><span>0</span><i></i><code>${name}</code></div>`).join('')}
+        </div>
+        <p><code>fmapA2</code>、<code>weightB2</code>、<code>biasC2</code>、<code>accumCo1</code> 都从地址 0 开始，但它们属于不同的物理 Buffer，因此不存在地址覆盖或冲突。</p>
+      </section>
+      <section class="avz-memory-detail" aria-live="polite">${allocationDetail(selected)}</section>
+      <footer class="avz-memory-legend">
+        <span><i></i> LocalTensor view exists · memory range assigned · data not loaded</span>
+        <span>Tensor 块宽经过可读性调整；地址标签和字节数表示真实内存范围。</span>
+        <span>所有地址区间均为左闭右开 <code>[start, end)</code>。</span>
+      </footer>
+      <div class="avz-memory-tooltip" id="memoryAllocationTooltip" role="tooltip" hidden></div>`;
+
+    els.memoryAllocationView.querySelectorAll('[data-allocation-tensor]').forEach((button) => {
+      button.addEventListener('pointerenter', showAllocationTooltip);
+      button.addEventListener('pointermove', positionAllocationTooltip);
+      button.addEventListener('pointerleave', hideAllocationTooltip);
+      button.addEventListener('focus', showAllocationTooltip);
+      button.addEventListener('blur', hideAllocationTooltip);
+    });
+  }
+
+  function handleAllocatedTensorClick(event) {
+    const button = event.target.closest('[data-allocation-tensor]');
+    if (!button) return;
+    state.allocatedTensorId = button.dataset.allocationTensor;
+    renderMemoryAllocationMap(currentTrace());
+  }
+
+  function allocationTooltipMarkup(tensor) {
+    const rows = [
+      ['Position', tensor.position], ['Address', `[${tensor.start},${tensor.end})`], ['Size', `${tensor.size} B`],
+      ['Shape', tensor.shapeLabel], ['dtype', tensor.dtypeLabel], ['format', tensor.format],
+      ['Logical tile', tensor.logicalIdentity], ['Alignment', tensor.alignmentLabel],
+      [tensor.writeLabel || 'Filled by', tensor.filledBy], ['Consumed by', tensor.consumedBy], ['Lifetime', tensor.lifetime],
+    ];
+    return `<strong>${escapeHtml(tensor.name)}</strong>${rows.map(([key, value]) => `<span><b>${escapeHtml(key)}</b><code>${escapeHtml(value)}</code></span>`).join('')}`;
+  }
+
+  function showAllocationTooltip(event) {
+    const trace = currentTrace();
+    const tensor = allocationTensor(trace, event.currentTarget.dataset.allocationTensor);
+    const tooltip = byId('memoryAllocationTooltip');
+    if (!tensor || !tooltip) return;
+    tooltip.innerHTML = allocationTooltipMarkup(tensor);
+    tooltip.hidden = false;
+    positionAllocationTooltip(event);
+  }
+
+  function positionAllocationTooltip(event) {
+    const tooltip = byId('memoryAllocationTooltip');
+    if (!tooltip || tooltip.hidden) return;
+    const rootRect = els.memoryAllocationView.getBoundingClientRect();
+    const targetRect = event.currentTarget.getBoundingClientRect();
+    const x = 'clientX' in event ? event.clientX - rootRect.left + 12 : targetRect.left - rootRect.left + 12;
+    const y = 'clientY' in event ? event.clientY - rootRect.top + 12 : targetRect.bottom - rootRect.top + 8;
+    tooltip.style.left = `${Math.min(x, Math.max(8, rootRect.width - tooltip.offsetWidth - 12))}px`;
+    tooltip.style.top = `${Math.min(y, Math.max(8, rootRect.height - tooltip.offsetHeight - 12))}px`;
+  }
+
+  function hideAllocationTooltip() {
+    const tooltip = byId('memoryAllocationTooltip');
+    if (tooltip) tooltip.hidden = true;
+  }
+
+  function createFixpipeAggregateScene(rows, columns, blockRows, blockColumns, activeRange = null) {
+    const cells = [];
+    const aggregateRows = Math.max(1, Math.min(rows, num(blockRows, rows)));
+    const aggregateColumns = Math.max(1, Math.min(columns, num(blockColumns, columns)));
+    for (let row = 0; row < rows; row += aggregateRows) {
+      const rowSpan = Math.min(aggregateRows, rows - row);
+      for (let column = 0; column < columns; column += aggregateColumns) {
+        const columnSpan = Math.min(aggregateColumns, columns - column);
+        const selected = !!activeRange
+          && row < activeRange.rowEnd
+          && row + rowSpan > activeRange.rowStart
+          && column < activeRange.columnEnd
+          && column + columnSpan > activeRange.columnStart;
+        cells.push({
+          id: `fixpipe-${row}-${column}`,
+          row,
+          column,
+          rowSpan,
+          columnSpan,
+          style: 'aggregate',
+          tone: 'neutral',
+          states: selected ? ['selected'] : [],
+          summary: {
+            rows: rowSpan,
+            columns: columnSpan,
+            count: rowSpan * columnSpan,
+            intensity: selected ? 1 : 0.42,
+          },
+        });
+      }
+    }
+    return {
+      extent: { rows, columns },
+      axes: { rows: 'M', columns: 'Co' },
+      cells,
+    };
+  }
+
+  function renderFixpipeOutputView(trace, step) {
+    const params = trace?.tiling?.params || {};
+    const partition = convCorePartition(trace);
+    const rows = num(params.M, 64);
+    const columns = num(params.N, 32);
+    const tileRows = num(params.tileM, 16);
+    const tileColumns = num(params.tileN, 16);
+    const rowStart = partition.mTile * tileRows;
+    const columnStart = partition.nTile * tileColumns;
+    const rowEnd = Math.min(rows, rowStart + tileRows);
+    const columnEnd = Math.min(columns, columnStart + tileColumns);
+    const elementOffset = rowStart * columns + columnStart;
+    const byteOffset = elementOffset * 2;
+    const coreLabel = `AIC${partition.index} · OT${partition.outputTile}`;
+
+    if (els.fixpipeOutputSummary) els.fixpipeOutputSummary.textContent = 'accumCo1 → outputGm';
+    if (els.fixpipeOutputContext) {
+      els.fixpipeOutputContext.textContent = `${coreLabel} · M${partition.mTile}/N${partition.nTile}`;
+    }
+    if (els.fixpipeAccumTitle) els.fixpipeAccumTitle.textContent = `accumCo1 · AIC${partition.index}`;
+    if (els.fixpipeAddressCore) els.fixpipeAddressCore.textContent = coreLabel;
+    if (els.fixpipeAddress) {
+      els.fixpipeAddress.textContent = `outputGm + ${byteOffset} B · M[${rowStart}:${rowEnd}] · Co[${columnStart}:${columnEnd}] · row stride ${columns} half`;
+    }
+
+    const fixtures = {
+      accum: {
+        canvas: els.fixpipeAccumCanvas,
+        scene: createFixpipeAggregateScene(tileRows, tileColumns, tileRows, tileColumns),
+        options: {
+          ariaLabel: `AIC ${partition.index} accumCo1 one aggregate cell representing ${tileRows} by ${tileColumns} values`,
+          showAxes: true,
+          showGrid: true,
+          interactive: true,
+          showTooltip: true,
+          autoFit: true,
+          padding: { top: 30, right: 20, bottom: 36, left: 42 },
+        },
+      },
+      output: {
+        canvas: els.fixpipeOutputCanvas,
+        scene: createFixpipeAggregateScene(rows, columns, tileRows, tileColumns, {
+          rowStart,
+          rowEnd,
+          columnStart,
+          columnEnd,
+        }),
+        options: {
+          ariaLabel: `outputGm ${rows} by ${columns} values grouped into ${Math.ceil(rows / tileRows) * Math.ceil(columns / tileColumns)} aggregate cells; ${coreLabel} destination M ${rowStart} to ${rowEnd}, Co ${columnStart} to ${columnEnd} selected`,
+          showAxes: true,
+          showGrid: true,
+          interactive: true,
+          showTooltip: true,
+          autoFit: true,
+          padding: { top: 30, right: 20, bottom: 36, left: 42 },
+        },
+      },
+    };
+
+    Object.entries(fixtures).forEach(([key, fixture]) => {
+      const controller = state.fixpipeOutputControllers[key];
+      if (controller) {
+        controller.update(fixture.scene, { ...fixture.options, preserveView: false });
+        controller.fit();
+      } else {
+        state.fixpipeOutputControllers[key] = window.PtoMatrixCanvas.render(
+          fixture.canvas,
+          fixture.scene,
+          fixture.options
+        );
+      }
+    });
+  }
+
+  function createBiasTileMatrixScene(prefix, stateName, columns = 16) {
+    const resolvedColumns = Math.max(1, Number(columns) || 16);
+    return {
+      extent: { rows: 1, columns: resolvedColumns },
+      axes: { rows: 'Bias tile', columns: `N0:N${resolvedColumns}` },
+      cells: Array.from({ length: resolvedColumns }, (_, column) => ({
+        id: `${prefix}-${column}`,
+        row: 0,
+        column,
+        label: `N${column}`,
+        tone: 'neutral',
+        style: 'value',
+        states: stateName ? [stateName] : [],
+      })),
+    };
+  }
+
+  function renderBiasC1C2MatrixView(trace, step) {
+    if (!window.PtoMatrixCanvas || !step) return;
+    const flow = step.dataFlows?.[0] || {};
+    const snapshot = step.tensorSnapshots?.[0] || {};
+    const source = (trace?.buffers || []).find((item) => item.id === 'buffer:bias:c1') || {};
+    const destination = (trace?.buffers || []).find((item) => item.id === 'buffer:bias:c2') || {};
+    const elements = Number(snapshot.validElements) || Number(destination.allocatedElements) || 16;
+    const bytes = Number(flow.bytes) || Number(snapshot.validBytes) || Number(destination.allocatedBytes) || 64;
+    const dtype = String(snapshot.dtype || destination.dtype || source.dtype || 'fp32').toUpperCase();
+    const sourceAddress = Number.isFinite(Number(source.addressBytes)) ? `@${Number(source.addressBytes)}` : '@unknown';
+    const destinationAddress = Number.isFinite(Number(destination.addressBytes)) ? `@${Number(destination.addressBytes)}` : '@unknown';
+
+    if (els.biasC1C2Summary) els.biasC1C2Summary.textContent = 'Bias C1 → C2 / Bias Table';
+    if (els.biasC1C2Context) els.biasC1C2Context.textContent = `MTE1 · ${elements} × ${dtype} · ${formatBytes(bytes)}`;
+    if (els.biasC1C2Engine) els.biasC1C2Engine.textContent = flow.transferEngine || 'MTE1 / DataCopy';
+    if (els.biasC1Title) els.biasC1Title.textContent = `${source.name || 'biasC1'} · ${flow.from || source.location || 'C1 / L1'}`;
+    if (els.biasC1Shape) els.biasC1Shape.textContent = `linear [1,${elements}]`;
+    if (els.biasC1Meta) els.biasC1Meta.textContent = `${dtype} · ${sourceAddress} · ${formatBytes(bytes)} · readable after MTE2_MTE1`;
+    if (els.biasC2Title) els.biasC2Title.textContent = `${destination.name || 'biasC2'} · ${flow.to || destination.location || 'C2 / Bias Table'}`;
+    if (els.biasC2Shape) els.biasC2Shape.textContent = `${snapshot.physicalLayout || 'linear Bias Table'} [1,${elements}]`;
+    if (els.biasC2Meta) els.biasC2Meta.textContent = `${dtype} · ${destinationAddress} · ${formatBytes(bytes)} · ready for first Mmad`;
+
+    const options = {
+      showAxes: true,
+      showGrid: true,
+      interactive: true,
+      showTooltip: true,
+      autoFit: true,
+      minZoom: 0.45,
+      padding: { top: 34, right: 24, bottom: 40, left: 50 },
+    };
+    const fixtures = {
+      source: {
+        canvas: els.biasC1Canvas,
+        scene: createBiasTileMatrixScene('bias-c1', 'current', elements),
+        ariaLabel: `C1 source Bias tile, ${elements} ${dtype} values, readable by MTE1`,
+      },
+      destination: {
+        canvas: els.biasC2Canvas,
+        scene: createBiasTileMatrixScene('bias-c2', 'written', elements),
+        ariaLabel: `C2 Bias Table destination, ${elements} ${dtype} values, ready for first Mmad`,
+      },
+    };
+
+    Object.entries(fixtures).forEach(([key, fixture]) => {
+      if (!fixture.canvas) return;
+      const controller = state.biasC1C2Controllers[key];
+      const nextOptions = { ...options, ariaLabel: fixture.ariaLabel };
+      if (controller) {
+        controller.update(fixture.scene, { ...nextOptions, preserveView: false });
+        controller.fit();
+      } else {
+        state.biasC1C2Controllers[key] = window.PtoMatrixCanvas.render(
+          fixture.canvas,
+          fixture.scene,
+          nextOptions
+        );
+      }
+    });
+  }
+
+  function renderCopyInputPatternView(trace, step, visual) {
+    const transfer = visual?.conv?.copyTransfer || selectedCopyInputTransfer(trace, step);
+    if (!transfer) return;
+    const { flow, source, destination, snapshot, partition, coreSource } = transfer;
+    const sourceRole = String(source?.role || '');
+    const tone = sourceRole === 'input'
+      ? 'neutral'
+      : sourceRole === 'bias'
+        ? 'reduction'
+        : 'input';
+    const shape = tensorSnapshotShape(snapshot);
+    const sourceLayout = String(source?.physicalLayout || source?.logicalLayout || 'layout unknown').split(' ')[0];
+    const destinationLayout = snapshot?.physicalLayout || destination?.physicalLayout || 'layout unknown';
+    const dtype = String(snapshot?.dtype || destination?.dtype || source?.dtype || 'dtype unknown').toUpperCase();
+    const bytes = Number(flow?.bytes) || Number(snapshot?.validBytes) || 0;
+    const allocatedBytes = Number(destination?.allocatedBytes) || Number(snapshot?.allocatedBytes) || bytes;
+    const address = Number.isFinite(Number(destination?.addressBytes)) ? Number(destination.addressBytes) : null;
+    const alignment = Number.isFinite(Number(destination?.alignmentBytes)) ? Number(destination.alignmentBytes) : null;
+    const transformation = sourceRole === 'bias'
+      ? `${sourceLayout} → ${destinationLayout} · Bias staging`
+      : flow?.status === 'ND-to-NZ'
+        ? 'ND → NZ'
+        : sourceLayout === destinationLayout
+          ? 'layout unchanged'
+          : `${sourceLayout} → ${destinationLayout}`;
+    const useVolume = sourceRole === 'input' && shape.length >= 3;
+    const kind = useVolume ? 'volume' : 'matrix';
+    const weightMatrixAggregation = sourceRole === 'weight'
+      ? {
+          forceAggregate: true,
+          blockRows: Math.max(1, num(trace?.tiling?.params?.tileK, 16)),
+          blockColumns: Math.max(1, num(trace?.tiling?.params?.tileN, 16)),
+        }
+      : null;
+    const sourcePhysicalShape = Array.isArray(source?.physicalShape)
+      ? source.physicalShape.map(Number)
+      : shape;
+    const sourceMatrixAggregation = weightMatrixAggregation
+      ? {
+          ...weightMatrixAggregation,
+          rows: Math.max(1, sourcePhysicalShape.at(-2) || shape.at(-2) || 1),
+          columns: Math.max(1, sourcePhysicalShape.at(-1) || shape.at(-1) || 1),
+          selection: {
+            rowStart: 0,
+            rowEnd: Math.max(1, sourcePhysicalShape.at(-2) || shape.at(-2) || 1),
+            columnStart: (partition?.nTile || 0) * Math.max(1, num(trace?.tiling?.params?.tileN, 16)),
+            columnEnd: Math.min(
+              Math.max(1, sourcePhysicalShape.at(-1) || shape.at(-1) || 1),
+              ((partition?.nTile || 0) + 1) * Math.max(1, num(trace?.tiling?.params?.tileN, 16)),
+            ),
+          },
+        }
+      : null;
+    const sourceScene = useVolume
+      ? copyInputVolumeScene(snapshot, tone, 'source')
+      : copyInputMatrixScene(snapshot, tone, 'source', sourceMatrixAggregation);
+    const destinationScene = useVolume
+      ? copyInputVolumeScene(snapshot, tone, 'destination')
+      : copyInputMatrixScene(snapshot, tone, 'destination', weightMatrixAggregation);
+
+    if (els.copyInputSummary) {
+      els.copyInputSummary.textContent = `MTE2 · ${transfer.transferCount} transfers · ${transfer.totalBytes} B · GM → L1`;
+    }
+    if (els.copyInputContext) {
+      els.copyInputContext.textContent = `AIC${partition?.index ?? 0} · OT${partition?.outputTile ?? 0} · M${partition?.mTile ?? 0}/N${partition?.nTile ?? 0}`;
+    }
+    if (els.copyInputSourceTitle) els.copyInputSourceTitle.textContent = coreSource?.label || source?.name || flow?.from || 'GM source';
+    if (els.copyInputSourceShape) {
+      const displayShape = sourceRole === 'weight' ? sourcePhysicalShape : shape;
+      const sliceLabel = sourceRole === 'weight' ? `selected ${coreSource?.slice}` : coreSource?.slice || 'current slice';
+      els.copyInputSourceShape.textContent = `${sourceLayout} ${formatShape(displayShape)} · ${sliceLabel}`;
+    }
+    if (els.copyInputSourceMeta) {
+      els.copyInputSourceMeta.textContent = `${dtype} · ${formatBytes(bytes)} · GM + ${coreSource?.gmOffsetBytes || 0} B`;
+    }
+    if (els.copyInputEngine) els.copyInputEngine.textContent = flow?.transferEngine || 'MTE2 / DataCopy';
+    if (els.copyInputTransformation) els.copyInputTransformation.textContent = transformation;
+    if (els.copyInputDestinationTitle) {
+      els.copyInputDestinationTitle.textContent = `${destination?.name || flow?.to || 'L1 buffer'} · ${destination?.location || flow?.to || 'L1'}`;
+    }
+    if (els.copyInputDestinationShape) {
+      els.copyInputDestinationShape.textContent = `${destinationLayout} ${formatShape(shape)}`;
+    }
+    if (els.copyInputDestinationMeta) {
+      const addressText = address == null ? '@unknown' : `@${address}`;
+      const alignmentText = alignment == null ? 'alignment unknown' : `align ${alignment} B`;
+      els.copyInputDestinationMeta.textContent = `${addressText} · ${formatBytes(bytes)} / ${formatBytes(allocatedBytes)} · ${alignmentText}`;
+    }
+
+    renderCopyInputPatternCanvas('source', kind, sourceScene, {
+      ariaLabel: `${coreSource?.label || source?.name || 'GM source'} ${sourceLayout} ${formatShape(sourceRole === 'weight' ? sourcePhysicalShape : shape)}${sourceRole === 'weight' ? `, selected ${coreSource?.slice}` : ''}`,
+    });
+    renderCopyInputPatternCanvas('destination', kind, destinationScene, {
+      ariaLabel: `${destination?.name || 'L1 destination'} ${destinationLayout} ${formatShape(shape)}`,
+    });
+  }
+
+  function copyInputVolumeScene(snapshot, tone, side) {
+    const shape = tensorSnapshotShape(snapshot);
+    const isNc1hwc0 = String(snapshot?.logicalLayout || snapshot?.physicalLayout || '').toUpperCase().includes('NC1HWC0');
+    const columns = Math.max(1, isNc1hwc0 ? shape.at(-2) : shape.at(-1));
+    const rows = Math.max(1, isNc1hwc0 ? shape.at(-3) : shape.at(-2));
+    const depth = Math.max(1, isNc1hwc0 ? shape.at(-1) : shape.at(-3));
+    const voxels = [];
+    for (let z = 0; z < depth; z += 1) {
+      for (let row = 0; row < rows; row += 1) {
+        for (let column = 0; column < columns; column += 1) {
+          voxels.push({
+            id: `copy-${side}-${column}-${row}-${z}`,
+            column,
+            row,
+            depth: z,
+            tone,
+            state: 'base',
+          });
+        }
+      }
+    }
+    return {
+      extent: { columns, rows, depth },
+      axes: isNc1hwc0
+        ? { columns: 'W', rows: 'H', depth: 'C0' }
+        : { columns: 'column', rows: 'row', depth: 'depth' },
+      voxels,
+    };
+  }
+
+  function copyInputMatrixScene(snapshot, tone, side, aggregation = null) {
+    const shape = tensorSnapshotShape(snapshot);
+    const rows = Math.max(1, aggregation?.rows || (shape.length === 1 ? 1 : shape.at(-2)));
+    const columns = Math.max(1, aggregation?.columns || shape.at(-1) || shape[0] || 1);
+    const rowSpan = Math.max(
+      1,
+      aggregation?.blockRows || Math.ceil(rows / 12),
+    );
+    const columnSpan = Math.max(
+      1,
+      aggregation?.blockColumns || Math.ceil(columns / 16),
+    );
+    const cells = [];
+    for (let row = 0; row < rows; row += rowSpan) {
+      for (let column = 0; column < columns; column += columnSpan) {
+        const resolvedRowSpan = Math.min(rowSpan, rows - row);
+        const resolvedColumnSpan = Math.min(columnSpan, columns - column);
+        const aggregate = aggregation?.forceAggregate
+          || resolvedRowSpan > 1
+          || resolvedColumnSpan > 1;
+        const selection = aggregation?.selection;
+        const selected = !selection
+          || (
+            row < selection.rowEnd
+            && row + resolvedRowSpan > selection.rowStart
+            && column < selection.columnEnd
+            && column + resolvedColumnSpan > selection.columnStart
+          );
+        cells.push({
+          id: `copy-${side}-${row}-${column}`,
+          row,
+          column,
+          rowSpan: resolvedRowSpan,
+          columnSpan: resolvedColumnSpan,
+          tone,
+          style: aggregate ? 'aggregate' : 'value',
+          states: side === 'source'
+            ? selected ? ['current'] : []
+            : ['written'],
+          summary: aggregate ? {
+            rows: resolvedRowSpan,
+            columns: resolvedColumnSpan,
+            count: resolvedRowSpan * resolvedColumnSpan,
+            intensity: side === 'source' ? 0.48 : 0.72,
+          } : undefined,
+        });
+      }
+    }
+    return {
+      extent: { rows, columns },
+      axes: rows === 1
+        ? { rows: 'Bias slice', columns: 'N tile' }
+        : { rows: 'K', columns: 'N tile' },
+      cells,
+    };
+  }
+
+  function renderCopyInputPatternCanvas(slot, kind, scene, customOptions) {
+    const canvas = slot === 'source' ? els.copyInputSourceCanvas : els.copyInputDestinationCanvas;
+    if (!canvas) return;
+    const controllerKey = slot;
+    const kindKey = `${slot}Kind`;
+    if (state.copyInputControllers[kindKey] !== kind) {
+      state.copyInputControllers[controllerKey]?.destroy?.();
+      state.copyInputControllers[controllerKey] = null;
+      state.copyInputControllers[kindKey] = kind;
+    }
+    canvas.classList.toggle('pto-tensor-volume-canvas', kind === 'volume');
+    canvas.classList.toggle('pto-matrix-canvas', kind === 'matrix');
+    canvas.parentElement?.classList.toggle('pto-matrix-canvas-host', kind === 'matrix');
+    const options = kind === 'volume'
+      ? {
+          ...customOptions,
+          padding: { top: 34, right: 30, bottom: 36, left: 46 },
+          showAxes: true,
+          autoLabelDensity: true,
+        }
+      : {
+          ...customOptions,
+          showAxes: true,
+          showGrid: true,
+          interactive: true,
+          showTooltip: true,
+          autoFit: true,
+          padding: { top: 30, right: 24, bottom: 38, left: 48 },
+        };
+    const controller = state.copyInputControllers[controllerKey];
+    const api = kind === 'volume' ? window.PtoTensorVolumeCanvas : window.PtoMatrixCanvas;
+    if (controller) {
+      controller.update(scene, { ...options, preserveView: false });
+      kind === 'volume' ? controller.resize() : controller.fit();
+    } else {
+      state.copyInputControllers[controllerKey] = api.render(canvas, scene, options);
+    }
+  }
+
+  function createMmadMatrixScene(rows, columns, axes, prefix) {
     const cells = [];
     for (let row = 0; row < rows; row += 1) {
       for (let column = 0; column < columns; column += 1) {
@@ -1752,15 +2659,32 @@
           id: `${prefix}-${row}-${column}`,
           row,
           column,
-          tone,
-          style: 'value',
-          states: stateName ? [stateName] : [],
         });
       }
     }
     return {
       extent: { rows, columns },
       axes,
+      cells,
+    };
+  }
+
+  function createMmadBiasBroadcastScene(rows, columns) {
+    const cells = [];
+    for (let row = 0; row < rows; row += 1) {
+      for (let column = 0; column < columns; column += 1) {
+        const isSourceRow = row === 0;
+        cells.push({
+          id: `mmad-bias-${row}-${column}`,
+          row,
+          column,
+          ...(isSourceRow ? {} : { style: 'broadcast' }),
+        });
+      }
+    }
+    return {
+      extent: { rows, columns },
+      axes: { rows: 'M broadcast', columns: 'N' },
       cells,
     };
   }
@@ -1773,32 +2697,44 @@
     const tileM = Math.max(1, Number(c.tileM) || 16);
     const tileK = Math.max(1, Number(c.tileK) || 16);
     const tileN = Math.max(1, Number(c.tileN) || 16);
-    const addend = kIndex === 0 ? '+ Bias' : '+ CO1';
+    const result = `Acc${kIndex}`;
+    const equation = kIndex === 0
+      ? 'A[Mi,K0] × B[K0,Nj] + Bias[Nj] → Acc0'
+      : `A[Mi,K${kIndex}] × B[K${kIndex},Nj] + Acc${kIndex - 1} → ${result}`;
 
-    if (els.mmadEquation) els.mmadEquation.textContent = `A2 × B2 ${addend} → CO1`;
+    if (els.mmadEquation) els.mmadEquation.textContent = equation;
     if (els.mmadEvidence) els.mmadEvidence.textContent = visual?.highlight?.sub || 'confirmed · logical order only';
     if (els.mmadProgress) els.mmadProgress.textContent = `K ${kCurrent}/${kLoops}`;
-    if (els.mmadA2Title) els.mmadA2Title.textContent = `A2 [${tileM},${tileK}]`;
-    if (els.mmadA2Meta) els.mmadA2Meta.textContent = `K${kIndex} · FP16 · L0A`;
-    if (els.mmadB2Title) els.mmadB2Title.textContent = `B2 [${tileK},${tileN}]`;
-    if (els.mmadB2Meta) els.mmadB2Meta.textContent = `K${kIndex} · FP16 · L0B`;
-    if (els.mmadAddend) els.mmadAddend.textContent = addend;
-    if (els.mmadCo1Title) els.mmadCo1Title.textContent = `CO1 [${tileM},${tileN}]`;
-    if (els.mmadCo1Meta) els.mmadCo1Meta.textContent = `FP32 · ${kCurrent}/${kLoops} · L0C`;
+    if (els.mmadA2Title) els.mmadA2Title.textContent = `A[Mi,K${kIndex}] · A2`;
+    if (els.mmadA2Meta) els.mmadA2Meta.textContent = `[${tileM},${tileK}] · FP16 · L0A`;
+    if (els.mmadB2Title) els.mmadB2Title.textContent = `B[K${kIndex},Nj] · B2`;
+    if (els.mmadB2Meta) els.mmadB2Meta.textContent = `[${tileK},${tileN}] · FP16 · L0B`;
+    if (els.mmadAddend) els.mmadAddend.textContent = '+';
+    if (els.addendMatrixTitle) {
+      els.addendMatrixTitle.textContent = kIndex === 0
+        ? 'Bias[Nj] broadcast'
+        : `Acc${kIndex - 1} · CO1`;
+    }
+    if (els.addendMatrixMeta) {
+      els.addendMatrixMeta.textContent = kIndex === 0
+        ? `[${tileM},${tileN}] · FP32 · C2 / Bias Table`
+        : `[${tileM},${tileN}] · FP32 · L0C · previous partial sum`;
+    }
+    if (els.mmadCo1Title) els.mmadCo1Title.textContent = `${result} · CO1`;
+    if (els.mmadCo1Meta) els.mmadCo1Meta.textContent = `[${tileM},${tileN}] · FP32 · L0C · K ${kCurrent}/${kLoops}`;
     if (els.mmadBiasStatus) {
       els.mmadBiasStatus.textContent = kIndex === 0
         ? 'Bias C1 → C2 confirmed · I0 only'
-        : 'Bias is not added again';
+        : `Acc${kIndex - 1} is read from CO1 · Bias is not added again`;
       els.mmadBiasStatus.classList.toggle('is-confirmed', kIndex === 0);
     }
 
     const matrixOptions = {
       showAxes: false,
       showGrid: true,
-      interactive: true,
-      showTooltip: true,
+      interactive: false,
+      showTooltip: false,
       autoFit: true,
-      minZoom: 0.35,
       padding: { top: 8, right: 8, bottom: 8, left: 8 },
     };
     const fixtures = {
@@ -1807,8 +2743,6 @@
         scene: createMmadMatrixScene(
           tileM,
           tileK,
-          'input',
-          'written',
           { rows: 'M', columns: 'K' },
           'mmad-a2'
         ),
@@ -1819,20 +2753,30 @@
         scene: createMmadMatrixScene(
           tileK,
           tileN,
-          'input',
-          'written',
           { rows: 'K', columns: 'N' },
           'mmad-b2'
         ),
         ariaLabel: `B2 current matrix operand, K ${tileK} by N ${tileN}, K iteration ${kIndex}`,
+      },
+      addend: {
+        canvas: els.addendMatrixCanvas,
+        scene: kIndex === 0
+          ? createMmadBiasBroadcastScene(tileM, tileN)
+          : createMmadMatrixScene(
+              tileM,
+              tileN,
+              { rows: 'M', columns: 'N' },
+              `mmad-acc${kIndex - 1}`
+            ),
+        ariaLabel: kIndex === 0
+          ? `Bias vector with ${tileN} values logically broadcast across ${tileM} M rows for iteration zero`
+          : `Previous accumulator Acc${kIndex - 1} in CO1, M ${tileM} by N ${tileN}, used as the addend for iteration ${kIndex}`,
       },
       co1: {
         canvas: els.mmadCo1Canvas,
         scene: createMmadMatrixScene(
           tileM,
           tileN,
-          'reduction',
-          'current',
           { rows: 'M', columns: 'N' },
           'mmad-co1'
         ),
@@ -1844,7 +2788,7 @@
       const options = { ...matrixOptions, ariaLabel: fixture.ariaLabel };
       const controller = state.mmadMatrixControllers[key];
       if (controller) {
-        controller.update(fixture.scene, { ...options, preserveView: true });
+        controller.update(fixture.scene, { ...options, preserveView: false });
         controller.resize();
       } else {
         state.mmadMatrixControllers[key] = window.PtoMatrixCanvas.render(
@@ -1910,31 +2854,26 @@
     };
   }
 
-  function createHostTilingFeatureVolume({ ci, hi, wi, kh, kw, padTop, padRight, padBottom, padLeft }) {
-    const scene = createVolumeScene({
-      columns: wi + padLeft + padRight,
-      rows: hi + padTop + padBottom,
-      depth: ci,
-      tone: 'neutral',
-      axes: { columns: `Wi=${wi}`, rows: `Hi=${hi}`, depth: `Ci=${ci}` },
-      prefix: 'host-tiling-x-volume',
-    });
-    return {
-      ...scene,
-      voxels: scene.voxels.map((voxel) => {
-        const isPadding = voxel.column < padLeft
-          || voxel.column >= padLeft + wi
-          || voxel.row < padTop
-          || voxel.row >= padTop + hi;
-        const isWindow = voxel.column < padLeft + kw
-          && voxel.row < padTop + kh;
-        return {
-          ...voxel,
-          tone: isWindow && !isPadding ? 'input' : 'neutral',
-          state: isPadding ? 'padding' : isWindow ? 'current' : 'ghost',
-        };
-      }),
-    };
+  function createHostTilingFeatureVolume({
+    ci, hi, wi, kh, kw, padTop, padLeft, M, tileM, wo, strideH, strideW,
+  }) {
+    // Reuse the exact Load Data voxel model. Host Tiling has already fixed
+    // padList, so its logical read domain must include the same virtual PAD
+    // voxels even though those voxels are not physically stored in GM or A1.
+    return convFmapA1VolumeScene({
+      ci,
+      hi,
+      wi,
+      kh,
+      kw,
+      padTop,
+      padLeft,
+      M,
+      tileM,
+      wo,
+      strideH,
+      strideW,
+    }, 0);
   }
 
   function createHostTilingWeightVolume({ ci, kh, kw }) {
@@ -1967,15 +2906,11 @@
     });
     return {
       ...scene,
-      voxels: scene.voxels.map((voxel) => {
-        const mIndex = voxel.row * wo + voxel.column;
-        const inTile = mIndex < tileM && voxel.depth < tileN;
-        return {
-          ...voxel,
-          tone: inTile ? 'output' : 'neutral',
-          state: inTile ? 'current' : 'ghost',
-        };
-      }),
+      voxels: scene.voxels.map((voxel) => ({
+        ...voxel,
+        tone: 'neutral',
+        state: voxel.depth === 0 ? 'window' : 'base',
+      })),
     };
   }
 
@@ -1995,6 +2930,8 @@
     const tileM = num(params.tileM, 16);
     const tileK = num(params.tileK, 16);
     const tileN = num(params.tileN, 16);
+    const strideH = num(params.strideH, 1);
+    const strideW = num(params.strideW, 1);
     const padTop = Math.max(0, Number(params.padTop ?? 1));
     const padRight = Math.max(0, Number(params.padRight ?? padTop));
     const padBottom = Math.max(0, Number(params.padBottom ?? padTop));
@@ -2003,15 +2940,15 @@
 
     const configs = {
       'host-tiling:feature': {
-        equation: 'Input X → Cube A[M,K]',
+        equation: 'Logical Input X → Cube A[M,K]',
         tileCount: `${Math.ceil(M / tileM)}×${Math.ceil(K / tileK)} tiles`,
-        sourceTitle: 'Feature X',
-        sourceMeta: `NCHW [1,${ci},${hi},${wi}] · FP16 · pad=[${padTop},${padRight},${padBottom},${padLeft}]`,
+        sourceTitle: 'Feature X · logical padded view',
+        sourceMeta: `NCHW [1,${ci},${hi},${wi}] · FP16 · padList=[${padLeft},${padRight},${padTop},${padBottom}]`,
         sourceScene: createHostTilingFeatureVolume({
-          ci, hi, wi, kh, kw, padTop, padRight, padBottom, padLeft,
+          ci, hi, wi, kh, kw, padTop, padLeft, M, tileM, wo, strideH, strideW,
         }),
-        transform: 'LoadData3D mapping',
-        cubeTitle: `Cube A [M=${M}, K=${K}]`,
+        transform: 'logical M/K mapping',
+        cubeTitle: `Logical Cube A [M=${M}, K=${K}]`,
         cubeMeta: `tileM=${tileM} · tileK=${tileK} · ${Math.ceil(M / tileM)}×${Math.ceil(K / tileK)} tiles`,
         cubeScene: createOverviewMatrixScene({
           rows: M,
@@ -2022,18 +2959,18 @@
           axes: { rows: `M=${M}`, columns: `K=${K}` },
           prefix: 'host-tiling-a',
         }),
-        formula: `M=Ho×Wo=${ho}×${wo}=${M} · K=Ci×Kh×Kw=${ci}×${kh}×${kw}=${K}`,
-        sourceAria: `Feature X tensor volume, NCHW 1 by ${ci} by ${hi} by ${wi}, with padding and one representative convolution window`,
+        formula: `M=Ho×Wo=${ho}×${wo}=${M} · K=Ci×Kh×Kw=${ci}×${kh}×${kw}=${K} · padList fixed by Host Tiling`,
+        sourceAria: `Feature X logical padded read domain for NCHW 1 by ${ci} by ${hi} by ${wi}; blue shows valid samples and orange shows virtual padding fixed by Host Tiling`,
         cubeAria: `Cube A logical matrix, M ${M} by K ${K}, divided into ${tileM} by ${tileK} tiles`,
       },
       'host-tiling:weight': {
-        equation: 'Weight W → Cube B[K,N]',
+        equation: 'Logical Weight W → Cube B[K,N]',
         tileCount: `${Math.ceil(K / tileK)}×${Math.ceil(N / tileN)} tiles`,
-        sourceTitle: 'Weight W · representative Filter',
+        sourceTitle: 'Logical Weight W · GM',
         sourceMeta: `OIHW [${co},${ci},${kh},${kw}] · ${co} filters × [${ci},${kh},${kw}] · FP16`,
         sourceScene: createHostTilingWeightVolume({ ci, kh, kw }),
-        transform: 'LoadData2D mapping',
-        cubeTitle: `Cube B [K=${K}, N=${N}]`,
+        transform: 'logical K/N mapping',
+        cubeTitle: `Logical Cube B [K=${K}, N=${N}]`,
         cubeMeta: `tileK=${tileK} · tileN=${tileN} · ${Math.ceil(K / tileK)}×${Math.ceil(N / tileN)} tiles`,
         cubeScene: createOverviewMatrixScene({
           rows: K,
@@ -2049,20 +2986,20 @@
         cubeAria: `Cube B logical matrix, K ${K} by N ${N}, divided into ${tileK} by ${tileN} tiles`,
       },
       'host-tiling:output': {
-        equation: 'Output Y → Cube C[M,N]',
+        equation: 'Logical Output Y → Cube C[M,N]',
         tileCount: `${Math.ceil(M / tileM)}×${Math.ceil(N / tileN)} tiles`,
-        sourceTitle: 'Output Y',
+        sourceTitle: 'Logical Output Y · GM',
         sourceMeta: `NCHW [1,${co},${ho},${wo}] · FP16 · representative [tileM,tileN] region`,
         sourceScene: createHostTilingOutputVolume({ co, ho, wo, tileM, tileN }),
-        transform: 'Fixpipe mapping',
-        cubeTitle: `Cube C [M=${M}, N=${N}]`,
+        transform: 'logical M/N mapping',
+        cubeTitle: `Logical Cube C [M=${M}, N=${N}]`,
         cubeMeta: `tileM=${tileM} · tileN=${tileN} · ${Math.ceil(M / tileM)}×${Math.ceil(N / tileN)} tiles`,
         cubeScene: createOverviewMatrixScene({
           rows: M,
           columns: N,
           rowSpan: tileM,
           columnSpan: tileN,
-          tone: 'output',
+          tone: 'neutral',
           axes: { rows: `M=${M}`, columns: `N=Co=${N}` },
           prefix: 'host-tiling-c',
         }),
@@ -2075,11 +3012,22 @@
 
     if (els.hostTilingEquation) els.hostTilingEquation.textContent = config.equation;
     if (els.hostTilingEvidence) {
-      els.hostTilingEvidence.textContent = 'confirmed · Host Tiling defines logical mapping and tile counts';
+      els.hostTilingEvidence.textContent = 'planning only · global logical mapping and tile counts';
     }
     if (els.hostTilingTileCount) els.hostTilingTileCount.textContent = config.tileCount;
     if (els.hostTilingSourceTitle) els.hostTilingSourceTitle.textContent = config.sourceTitle;
     if (els.hostTilingSourceMeta) els.hostTilingSourceMeta.textContent = config.sourceMeta;
+    if (els.hostTilingWeightCount) {
+      const showWeightCount = key === 'host-tiling:weight';
+      els.hostTilingWeightCount.hidden = !showWeightCount;
+      els.hostTilingWeightCount.setAttribute(
+        'aria-label',
+        showWeightCount ? `Co equals ${co} output channels` : 'Output channel count'
+      );
+    }
+    if (els.hostTilingWeightCountValue) {
+      els.hostTilingWeightCountValue.textContent = `Co=${co}`;
+    }
     if (els.hostTilingTransform) els.hostTilingTransform.textContent = config.transform;
     if (els.hostTilingCubeTitle) els.hostTilingCubeTitle.textContent = config.cubeTitle;
     if (els.hostTilingCubeMeta) els.hostTilingCubeMeta.textContent = config.cubeMeta;
@@ -2088,7 +3036,7 @@
     const volumeOptions = {
       showAxes: true,
       autoLabelDensity: true,
-      padding: { top: 24, right: 28, bottom: 30, left: 36 },
+      padding: { top: 24, right: 24, bottom: 42, left: 48 },
       ariaLabel: config.sourceAria,
     };
     const sourceController = state.hostTilingControllers.source;
@@ -2126,6 +3074,128 @@
       );
       state.hostTilingControllers.cube.fit();
     }
+  }
+
+  function renderHostLaunchMatrixView(trace) {
+    const params = trace?.tiling?.params || {};
+    const derived = trace?.tiling?.derived || {};
+    const M = num(params.M, 64);
+    const K = num(params.K, 144);
+    const N = num(params.N, 32);
+    const tileM = num(params.tileM, 16);
+    const tileK = num(params.tileK, 16);
+    const tileN = num(params.tileN, 16);
+    const mTiles = num(derived.mTileCount, Math.ceil(M / tileM));
+    const kTiles = num(derived.kLoopCount, Math.ceil(K / tileK));
+    const nTiles = num(derived.nTileCount, Math.ceil(N / tileN));
+    const outputTileCount = num(derived.outputTileCount, mTiles * nTiles);
+    const blockDim = num(trace?.launch?.numBlocks, outputTileCount);
+    const activePartition = convCorePartition(trace);
+    const activeBlockIdx = activePartition.index;
+    const activeMTile = activePartition.mTile;
+    const activeNTile = activePartition.nTile;
+    const selectSceneCells = (scene, predicate) => ({
+      ...scene,
+      cells: scene.cells.map((cell) => ({
+        ...cell,
+        states: predicate(cell) ? ['selected'] : [],
+      })),
+    });
+
+    if (els.hostLaunchEquation) {
+      els.hostLaunchEquation.textContent = `A[M=${M},K=${K}] × B[K=${K},N=${N}] → C[M=${M},N=${N}]`;
+    }
+    if (els.hostLaunchEvidence) {
+      els.hostLaunchEvidence.textContent = `confirmed · AIC${activeBlockIdx} / OT${activePartition.outputTile} reads A[M${activeMTile},K0…K${kTiles - 1}] + B[K0…K${kTiles - 1},N${activeNTile}] → writes C[M${activeMTile},N${activeNTile}]`;
+    }
+    if (els.hostLaunchBlockDim) {
+      els.hostLaunchBlockDim.textContent = `blockDim = ${mTiles}×${nTiles} = ${blockDim}`;
+    }
+    if (els.hostLaunchATitle) els.hostLaunchATitle.textContent = `Input X → A [M=${M},K=${K}]`;
+    if (els.hostLaunchAMeta) els.hostLaunchAMeta.textContent = `${mTiles} M tiles × ${kTiles} K tiles`;
+    if (els.hostLaunchBTitle) els.hostLaunchBTitle.textContent = `Weight W → B [K=${K},N=${N}]`;
+    if (els.hostLaunchBMeta) els.hostLaunchBMeta.textContent = `${kTiles} K tiles × ${nTiles} N tiles`;
+    if (els.hostLaunchCTitle) els.hostLaunchCTitle.textContent = `Output Y → C [M=${M},N=${N}]`;
+    if (els.hostLaunchCMeta) {
+      els.hostLaunchCMeta.textContent = `AIC${activeBlockIdx} owns M${activeMTile}/N${activeNTile} · ${mTiles}×${nTiles} = ${outputTileCount} output tiles`;
+    }
+    if (els.hostLaunchMapping) {
+      els.hostLaunchMapping.textContent = `blockIdx → Mi=floor(blockIdx/${nTiles}), Nj=blockIdx%${nTiles}`;
+    }
+    if (els.hostLaunchReduction) {
+      els.hostLaunchReduction.textContent = `每个 AIC block 沿 K0…K${kTiles - 1} 归约，只写回一个 C[${tileM},${tileN}] tile`;
+    }
+
+    const fixtures = {
+      a: {
+        canvas: els.hostLaunchACanvas,
+        scene: selectSceneCells(createOverviewMatrixScene({
+          rows: M,
+          columns: K,
+          rowSpan: tileM,
+          columnSpan: tileK,
+          tone: 'input',
+          axes: { rows: `M=${M}`, columns: `K=${K}` },
+          prefix: 'host-launch-a',
+        }), (cell) => cell.row === activeMTile * tileM),
+        ariaLabel: `Input X logical Cube A matrix, M ${M} by K ${K}, ${mTiles} by ${kTiles} tiles`,
+      },
+      b: {
+        canvas: els.hostLaunchBCanvas,
+        scene: selectSceneCells(createOverviewMatrixScene({
+          rows: K,
+          columns: N,
+          rowSpan: tileK,
+          columnSpan: tileN,
+          tone: 'input',
+          axes: { rows: `K=${K}`, columns: `N=${N}` },
+          prefix: 'host-launch-b',
+        }), (cell) => cell.column === activeNTile * tileN),
+        ariaLabel: `Weight W logical Cube B matrix, K ${K} by N ${N}, ${kTiles} by ${nTiles} tiles`,
+      },
+      c: {
+        canvas: els.hostLaunchCCanvas,
+        scene: selectSceneCells(createOverviewMatrixScene({
+          rows: M,
+          columns: N,
+          rowSpan: tileM,
+          columnSpan: tileN,
+          tone: 'output',
+          axes: { rows: `M=${M}`, columns: `N=${N}` },
+          prefix: 'host-launch-c',
+        }), (cell) => (
+          cell.row === activeMTile * tileM
+          && cell.column === activeNTile * tileN
+        )),
+        ariaLabel: `Output Y logical Cube C matrix, M ${M} by N ${N}, ${outputTileCount} output tiles`,
+      },
+    };
+    const matrixOptions = {
+      showAxes: true,
+      showGrid: true,
+      interactive: true,
+      showTooltip: true,
+      autoFit: true,
+      minZoom: 0.015,
+      padding: { top: 22, right: 12, bottom: 32, left: 42 },
+    };
+
+    Object.entries(fixtures).forEach(([key, fixture]) => {
+      const options = { ...matrixOptions, ariaLabel: fixture.ariaLabel };
+      const controller = state.hostLaunchControllers[key];
+      if (controller) {
+        controller.update(fixture.scene, options);
+        controller.fit();
+      } else {
+        state.hostLaunchControllers[key] = window.PtoMatrixCanvas.render(
+          fixture.canvas,
+          fixture.scene,
+          options
+        );
+        state.hostLaunchControllers[key].fit();
+      }
+    });
+
   }
 
   function renderConvTensorOverview(trace) {
@@ -2415,25 +3485,37 @@
     };
   }
 
-  function renderConvCoreContext(visual, visible) {
-    if (!els.convCoreContext || !els.convCoreSelect) return;
+  function renderConvCoreContext(trace) {
+    if (!els.convCoreContext || !els.convCoreOptions) return;
+    const visible = trace?.operator?.kind === 'conv2d-cube';
     els.convCoreContext.hidden = !visible;
     if (!visible) return;
-    const c = visual.conv || {};
-    const mTiles = Math.max(1, Math.ceil(c.M / c.tileM));
-    const nTiles = Math.max(1, Math.ceil(c.N / c.tileN));
-    const blockCount = mTiles * nTiles;
-    state.convCoreIndex = Math.min(Math.max(0, state.convCoreIndex), blockCount - 1);
+    const partition = convCorePartition(trace);
+    const { blockCount, mTiles, nTiles } = partition;
+    state.convCoreIndex = partition.index;
     const signature = `${blockCount}:${mTiles}:${nTiles}`;
-    if (els.convCoreSelect.dataset.signature !== signature) {
-      els.convCoreSelect.dataset.signature = signature;
-      els.convCoreSelect.innerHTML = Array.from({ length: blockCount }, (_, index) => {
+    if (els.convCoreOptions.dataset.signature !== signature) {
+      els.convCoreOptions.dataset.signature = signature;
+      const buttons = Array.from({ length: blockCount }, (_, index) => {
         const mTile = Math.floor(index / nTiles);
         const nTile = index % nTiles;
-        return `<option value="${index}">AIC${index} · OT${index} · M${mTile}/N${nTile}</option>`;
-      }).join('');
+        const button = document.createElement('button');
+        button.className = 'btn btn-compact btn-ghost';
+        button.type = 'button';
+        button.role = 'radio';
+        button.dataset.convCoreIndex = String(index);
+        button.textContent = `AIC${index} · OT${index} · M${mTile}/N${nTile}`;
+        button.setAttribute('aria-label', `AIC ${index}, output tile ${index}, M tile ${mTile}, N tile ${nTile}`);
+        return button;
+      });
+      els.convCoreOptions.replaceChildren(...buttons);
     }
-    els.convCoreSelect.value = String(state.convCoreIndex);
+    els.convCoreOptions.querySelectorAll('[data-conv-core-index]').forEach((button) => {
+      const selected = Number(button.dataset.convCoreIndex) === state.convCoreIndex;
+      button.classList.toggle('is-selected', selected);
+      button.setAttribute('aria-checked', String(selected));
+      button.tabIndex = selected ? 0 : -1;
+    });
   }
 
   function renderConvLoadDataView(c) {
@@ -2603,7 +3685,14 @@
     if (visual.layout === '1d') {
       parts.push('1D 逻辑 tensor：整条 GM 线性地址；高亮块 = 当前 tile 实际访问的 element 区间。');
     } else if (visual.layout === 'conv2d') {
-      if (visual.conv?.scene === 'load3d') {
+      if (visual.conv?.scene === 'copy-in') {
+        const transfer = visual.conv.copyTransfer;
+        const core = transfer?.partition;
+        const source = transfer?.coreSource;
+        parts.push(`AIC${core?.index ?? 0} · M${core?.mTile ?? 0}/N${core?.nTile ?? 0}：${source?.slice || transfer?.flow?.from || 'GM input'}（GM + ${source?.gmOffsetBytes || 0} B）→ ${transfer?.flow?.to || 'L1'}。数据已由 MTE2 写入目标 Buffer，但必须经过 MTE2_MTE1 同步后，MTE1 才能读取。`);
+      } else if (visual.conv?.scene === 'bias-copy') {
+        parts.push('Bias C1→C2：MTE2_MTE1 已使 L1 可读，MTE1 再把 16 个 FP32 Bias 值搬入 Bias Table。');
+      } else if (visual.conv?.scene === 'load3d') {
         if (state.tensorTabKey === 'buffer:weight:b2') {
           parts.push('LoadData2D：从 B1 的当前 K0 分形取数，按转置语义生成 B2 [16,16] ZN。');
         } else {
@@ -2664,6 +3753,7 @@
     const scaledWidth = sceneWidth / scale;
     const scaledHeight = sceneHeight / scale;
     if (c.scene === 'copy-in') drawConvCopyIn(ctx, scaledWidth, scaledHeight, c);
+    else if (c.scene === 'bias-copy') drawConvBiasCopy(ctx, scaledWidth, scaledHeight, c);
     else if (c.scene === 'load3d') drawConvLoad3D(ctx, scaledWidth, scaledHeight, c);
     else if (c.scene === 'mmad') drawConvMmad(ctx, scaledWidth, scaledHeight, c);
     else if (c.scene === 'epilogue') drawConvEpilogue(ctx, scaledWidth, scaledHeight, c);
@@ -2691,19 +3781,124 @@
   }
 
   function drawConvCopyIn(ctx, width, height, c) {
-    const rows = [
-      { source: 'Feature X · GM', target: 'fmapA1 · A1/L1', meta: 'NC1HWC0 · 2048 B', tone: 'input', unknown: false },
-      { source: 'Weight W[Nj] · GM', target: 'weightB1 · B1/L1', meta: 'ND → NZ · 4608 B', tone: 'input', unknown: false },
-      { source: 'Bias[Nj] · GM', target: 'biasC1 → biasC2', meta: 'FP32 · 64 B', tone: 'reduction', unknown: false },
-    ];
-    const rowH = Math.min(58, Math.max(44, (height - 34) / 3));
-    rows.forEach((row, index) => {
-      const y = index * rowH + 2;
-      drawConvObjectBox(ctx, 0, y, width * 0.34, rowH - 10, { label: row.source, shape: '', meta: 'source tensor', tone: row.tone });
-      drawConvFlowArrow(ctx, width * 0.37, y + (rowH - 10) / 2, width * 0.20, row.unknown);
-      drawConvObjectBox(ctx, width * 0.60, y, width * 0.40, rowH - 10, { label: row.target, shape: '', meta: row.meta, tone: row.tone, unknown: row.unknown });
+    const transfer = c.copyTransfer;
+    if (!transfer) {
+      drawConvFooter(ctx, width, height, 'Copy input data unavailable', 'No DataFlow is linked to the selected tensor');
+      return;
+    }
+    const { flow, source, destination, snapshot, gateEvent, partition, coreSource } = transfer;
+    const shape = formatShape(snapshot?.physicalShape || snapshot?.logicalShape || destination?.logicalShape);
+    const sourceLayout = String(source?.physicalLayout || source?.logicalLayout || 'layout unknown').split(' ')[0];
+    const destinationLayout = snapshot?.physicalLayout || destination?.physicalLayout || 'layout unknown';
+    const dtype = String(snapshot?.dtype || destination?.dtype || source?.dtype || 'dtype unknown').toUpperCase();
+    const address = Number.isFinite(Number(destination?.addressBytes)) ? `@${Number(destination.addressBytes)}` : '@unknown';
+    const alignment = Number.isFinite(Number(destination?.alignmentBytes))
+      ? `align ${Number(destination.alignmentBytes)} B`
+      : 'alignment unknown';
+    const bytes = Number(flow?.bytes) || Number(snapshot?.validBytes) || 0;
+    const sourceBoxW = width * 0.35;
+    const destinationX = width * 0.65;
+    const destinationBoxW = width - destinationX;
+    const boxY = 32;
+    const boxH = Math.min(108, Math.max(78, height - 112));
+    const tone = source?.role === 'bias' ? 'reduction' : 'input';
+    const transformation = flow.status === 'ND-to-NZ'
+      ? 'ND → NZ'
+      : sourceLayout === destinationLayout
+        ? 'layout unchanged'
+        : `${sourceLayout} → ${destinationLayout}`;
+
+    drawConvObjectBox(ctx, 0, boxY, sourceBoxW, boxH, {
+      label: coreSource?.label || flow.from || source?.name || 'GM source',
+      shape: coreSource?.slice ? `${sourceLayout} · ${coreSource.slice}` : `${sourceLayout} ${shape}`,
+      meta: `${dtype} · ${formatBytes(bytes)} · GM + ${coreSource?.gmOffsetBytes || 0} B`,
+      tone,
     });
-    drawConvFooter(ctx, width, height, 'MTE2 CopyIn + MTE1 Bias Table transfer', 'Ranges, formats and bytes are confirmed by the fixed source');
+    drawConvFlowArrow(ctx, sourceBoxW + 14, boxY + boxH / 2, destinationX - sourceBoxW - 28, false);
+    drawConvObjectBox(ctx, destinationX, boxY, destinationBoxW, boxH, {
+      label: `${destination?.name || flow.to || 'L1 buffer'} · ${destination?.location || flow.to || 'L1'}`,
+      shape: `${destinationLayout} ${shape}`,
+      meta: `${address} · ${formatBytes(bytes)} / ${formatBytes(destination?.allocatedBytes)} · ${alignment}`,
+      tone,
+    });
+
+    ctx.textAlign = 'center';
+    ctx.fillStyle = getCss('--foreground');
+    ctx.font = '700 10px ui-monospace, monospace';
+    drawFittedText(ctx, transformation, width * 0.5, boxY + 24, 96);
+    ctx.fillStyle = getCss('--foreground-muted');
+    ctx.font = '600 9px Inter, sans-serif';
+    drawFittedText(ctx, flow.transferEngine || 'MTE2 / DataCopy', width * 0.5, boxY + boxH - 12, 124);
+    ctx.textAlign = 'left';
+
+    drawCopyReadiness(ctx, width, Math.min(height - 54, boxY + boxH + 24));
+    drawConvFooter(
+      ctx,
+      width,
+      height,
+      `Copied by MTE2 → Awaiting ${gateEvent?.eventType || 'MTE2_MTE1'}`,
+      `MTE1 blocked · AIC${partition?.index ?? 0} / OT${partition?.outputTile ?? 0} · ${coreSource?.addressing || 'GM source'} → local ${address}`
+    );
+  }
+
+  function drawCopyReadiness(ctx, width, y) {
+    const stages = [
+      { label: 'Copied by MTE2', color: getCss('--success') },
+      { label: 'Awaiting MTE2_MTE1', color: getCss('--warning') },
+      { label: 'MTE1 blocked', color: getCss('--foreground-muted') },
+    ];
+    const gap = Math.min(178, width / stages.length);
+    const startX = Math.max(8, (width - gap * (stages.length - 1)) / 2);
+    ctx.save();
+    ctx.font = '600 9px Inter, sans-serif';
+    ctx.textBaseline = 'middle';
+    stages.forEach((stage, index) => {
+      const x = startX + index * gap;
+      if (index < stages.length - 1) {
+        ctx.strokeStyle = getCss('--border-default');
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.moveTo(x + 5, y);
+        ctx.lineTo(x + gap - 5, y);
+        ctx.stroke();
+      }
+      ctx.beginPath();
+      ctx.arc(x, y, 4, 0, Math.PI * 2);
+      ctx.fillStyle = stage.color;
+      ctx.fill();
+      ctx.fillStyle = stage.color;
+      ctx.textAlign = index === stages.length - 1 ? 'right' : index === 0 ? 'left' : 'center';
+      const labelX = index === stages.length - 1 ? x + 4 : index === 0 ? x - 4 : x;
+      ctx.fillText(stage.label, labelX, y - 13);
+    });
+    ctx.restore();
+  }
+
+  function drawConvBiasCopy(ctx, width, height, c) {
+    const flow = c.dataFlows?.[0] || {};
+    const snapshot = c.snapshots?.[0] || {};
+    const boxH = Math.min(96, Math.max(72, height - 70));
+    const boxW = width * 0.34;
+    const targetX = width * 0.66;
+    drawConvObjectBox(ctx, 0, 28, boxW, boxH, {
+      label: flow.from || 'C1 / L1',
+      shape: `linear ${formatShape(snapshot.logicalShape)}`,
+      meta: `${String(snapshot.dtype || 'fp32').toUpperCase()} · ${formatBytes(flow.bytes)}`,
+      tone: 'reduction',
+    });
+    drawConvFlowArrow(ctx, boxW + 14, 28 + boxH / 2, targetX - boxW - 28, false);
+    drawConvObjectBox(ctx, targetX, 28, width - targetX, boxH, {
+      label: flow.to || snapshot.location || 'C2 / Bias Table',
+      shape: `${snapshot.physicalLayout || 'linear Bias Table'} ${formatShape(snapshot.physicalShape)}`,
+      meta: `@0 · ${formatBytes(flow.bytes)} · ready for first Mmad`,
+      tone: 'reduction',
+    });
+    ctx.fillStyle = getCss('--foreground-muted');
+    ctx.font = '600 9px Inter, sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText(flow.transferEngine || 'MTE1 / DataCopy', width / 2, 48);
+    ctx.textAlign = 'left';
+    drawConvFooter(ctx, width, height, 'C1 → C2 / Bias Table', 'This is the next stage after MTE2_MTE1 makes L1 readable');
   }
 
   function drawConvLoad3D(ctx, width, height, c) {
@@ -2937,16 +4132,17 @@
 
   function drawConvEvent(ctx, width, height, c) {
     const event = c.event || {};
+    const l1Ready = event.eventType === 'MTE2_MTE1';
     const boxW = width * 0.28;
     const boxH = Math.min(92, height - 58);
     const y = 30;
-    drawConvObjectBox(ctx, 0, y, boxW, boxH, { label: event.producerEngine || 'Producer', shape: 'SetFlag', meta: 'upstream complete', tone: 'input' });
+    drawConvObjectBox(ctx, 0, y, boxW, boxH, { label: event.producerEngine || 'Producer', shape: 'SetFlag', meta: l1Ready ? 'L1 writes complete' : 'upstream complete', tone: 'input' });
     drawConvFlowArrow(ctx, boxW + 12, y + boxH / 2, width * 0.13, false);
     const eventX = width * 0.44;
     drawConvObjectBox(ctx, eventX, y, width * 0.18, boxH, { label: event.eventType || 'Event', shape: 'dependency', meta: 'confirmed', tone: 'fusion' });
     drawConvFlowArrow(ctx, width * 0.64, y + boxH / 2, width * 0.10, false);
-    drawConvObjectBox(ctx, width * 0.76, y, width * 0.24, boxH, { label: event.consumerEngine || 'Consumer', shape: 'WaitFlag', meta: 'blocked until ready', tone: 'compute' });
-    drawConvFooter(ctx, width, height, event.explanation || 'Execution dependency', 'Event edge is not a data-transfer path');
+    drawConvObjectBox(ctx, width * 0.76, y, width * 0.24, boxH, { label: event.consumerEngine || 'Consumer', shape: 'WaitFlag', meta: l1Ready ? 'L1 readable after wait' : 'blocked until ready', tone: 'compute' });
+    drawConvFooter(ctx, width, height, event.explanation || 'Execution dependency', l1Ready ? 'Synchronization completes readiness; it does not move tensor data' : 'Event edge is not a data-transfer path');
   }
 
   function drawConvObjectBox(ctx, x, y, w, h, item) {
@@ -3291,7 +4487,10 @@
   function renderTileLens(trace) {
     const step = currentStep(trace);
     const visual = visualStateForStep(trace, step);
-    if (state.activeTensorRenderer !== 'legacy') {
+    const supportsLens = state.activeTensorRenderer === 'legacy'
+      || state.activeTensorRenderer === 'copy-input-pattern';
+    els.tileLens.classList.toggle('avz-tile-lens--single', state.activeTensorRenderer === 'copy-input-pattern');
+    if (!supportsLens) {
       els.tileLens.innerHTML = '';
       els.tileLens.hidden = true;
       return;
@@ -3591,7 +4790,7 @@
       {
         key: 'mmad-accumulate',
         title: 'Mmad Accumulate',
-        flow: `Acc${iteration - 1} → Acc${iteration}`,
+        flow: `A[Mi,K${iteration}] × B[K${iteration},Nj] + Acc${iteration - 1} → Acc${iteration}`,
         stepIndex,
         sourceStepIndexes: [stepIndex],
         iteration,
@@ -3601,6 +4800,7 @@
 
   function renderInstructionPanel(trace) {
     if (!trace || !els.instructionSequence || state.executionView !== 'instructions') return;
+    renderConvCoreContext(trace);
     const model = instructionPanelModel(trace);
     const track = document.createElement('div');
     track.className = 'avz-instruction-track';
@@ -3920,7 +5120,20 @@
       const scene = c.scene || 'overview';
       const base = `M=${c.ho}×${c.wo}=${c.M} 是输出位置，N=${c.N} 是输出通道，K=${c.ci}×${c.kh}×${c.kw}=${c.K} 只表示规约范围，不是 Y 的第三个轴。`;
       if (scene === 'copy-in') {
-        return `${intro} ${base} 当前显示 Feature、Weight 和 Bias 的确定搬运：X0 以 NC1HWC0 完整进入 A1，W[Nj] 以 ND→NZ 进入 B1，D[Nj] 进入 C1 并继续进入 C2 Bias Table。`;
+        const transfer = c.copyTransfer;
+        const flow = transfer?.flow || {};
+        const snapshot = transfer?.snapshot || {};
+        const destination = transfer?.destination || {};
+        const source = transfer?.source || {};
+        const core = transfer?.partition || {};
+        const coreSource = transfer?.coreSource || {};
+        const shape = formatShape(snapshot.physicalShape || snapshot.logicalShape || destination.logicalShape);
+        const sourceLayout = String(source.physicalLayout || source.logicalLayout || 'unknown').split(' ')[0];
+        const destinationLayout = snapshot.physicalLayout || destination.physicalLayout || 'unknown';
+        return `${intro} ${base} 当前是 AIC${core.index ?? 0} / OT${core.outputTile ?? 0} / M${core.mTile ?? 0}/N${core.nTile ?? 0}，页签显示 ${coreSource.slice || flow.from || 'GM input'}（GM + ${coreSource.gmOffsetBytes || 0} B）→ ${flow.to || destination.location || 'L1'}：${sourceLayout} ${shape} 经 ${flow.transferEngine || 'MTE2 / DataCopy'} 写入 ${destinationLayout}，共 ${formatBytes(flow.bytes)}。切换核时 Instruction 步骤保持不变，只比较该步骤下各核的 GM 范围与本地搬运结果。此时状态是 Copied by MTE2，但 MTE1 仍被阻塞；只有下一步 MTE2_MTE1 完成后，A1/B1/C1 才成为 MTE1 可读输入。`;
+      }
+      if (scene === 'bias-copy') {
+        return `${intro} ${base} 当前只表达下一阶段的 Bias C1→C2：MTE2_MTE1 已使 C1 可读，MTE1 再搬运 16 个 FP32 值、共 64 B 到 C2 / Bias Table，供第一次 Mmad 使用。它不属于上一阶段的 GM→L1 Copy Inputs。`;
       }
       if (scene === 'load3d') {
         if (state.tensorTabKey === 'buffer:weight:b2') {

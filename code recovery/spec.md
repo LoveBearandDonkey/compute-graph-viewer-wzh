@@ -301,6 +301,21 @@ W[Nj] GM ND [144,16] → B1 NZ, 4608 B
 D[Nj] GM ND [16] → C1 linear, 64 B
 ```
 
+Tensor State 使用 Feature X、Weight W、Bias 三个页签逐一表达 source slice、目标 Buffer、layout、dtype、bytes、L1 地址与对齐信息。切换页签不得改变当前 TraceStep、源码高亮、Timeline 或 Hardware Participation。
+
+- Feature 的 GM source 与 A1 destination 复用 PTO `tensor-volume-canvas`，以 `neutral + base` 的 `W × H × C0` 物理体积对照 NC1HWC0 搬运，不对 source 或 destination 添加语义色。
+- Weight 的 GM ND slice 与 B1 NZ destination 复用 PTO `matrix-canvas`，保持 `[K=144,N tile=16]` 源坐标范围，由中间 transformation 明确表达 `ND → NZ`。
+- Bias 的 GM slice 与 C1 staging destination 复用 PTO `matrix-canvas`，按 `1 × N tile` 表达 16 个 FP32 值。
+- Pattern 只承担 tensor 几何、轴与当前/已写入状态；MTE2、bytes、地址、对齐与同步状态由 Tensor State 页面层提供。
+
+CopyIn 完成只表示三路数据已由 MTE2 写入 A1/B1/C1：
+
+```text
+Copied by MTE2 → Awaiting MTE2_MTE1 → MTE1 blocked
+```
+
+下一步 `sync-mte2-mte1` 的 `SetFlag/WaitFlag` 完成后，A1/B1/C1 才进入 `Readable by MTE1`。Event 只改变可消费状态，不再次搬运 Tensor 数据。Bias C1→C2 属于后续独立步骤，不得合并进 CopyIn。
+
 ### 12.2 Bias
 
 ```text
