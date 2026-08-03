@@ -66,12 +66,14 @@
     // ①熔断 ②迭代 ③日志 ④通信 ⑤模型 ⑥infra
     steps: [
       { n: 1, layer: "熔断 / 预警层", short: "熔断/预警",
+        eventId: "p1-warning",
         target: function () { return document.querySelector('#accuracyCharts [data-acc-card="loss_scale"]'); },
         prep: function () { scrollCardIntoView('#accuracyCharts [data-acc-card="loss_scale"]'); },
         body: "请看 AMP loss scale：65536→32768→16384→8192→4096，五个台阶记录了连续四次浮点溢出。loss 还没有 NaN，训练已经在求救。注意级可在连续减半初期通知值班人员；现场规则在初始值 1/16 自动保存 checkpoint、dump Router logits 与激活张量；若继续跌至 1/32，则立即停训、保留现场并释放资源。阈值可按任务健康基线调整。",
         nums: ["scaler 65536→4096", "本可提前 53 step 止损"],
         fix: [5] },
       { n: 2, layer: "迭代层", short: "迭代层",
+        eventId: "p1-nan",
         // loss 与 grad_norm 两张卡一起框（都在 step 15203 跳变），取二者并集
         target: function () {
           return [
@@ -84,6 +86,7 @@
         nums: ["loss→NaN", "grad_norm→inf", "仅多卡复现"],
         fix: [] },
       { n: 3, layer: "日志 / plog 诊断层", short: "日志/plog",
+        eventId: "p1-log",
         target: function () { return document.getElementById("dockPanelLog") || document.getElementById("bottomDock"); },
         prep: function () {
           // 幂等地展开 dock、切日志页签并渲染日志行（training-log-drawer.js 暴露的 show()）。
@@ -99,6 +102,7 @@
         nums: ["send=0 / recv=9832", "router_logits 含 inf"],
         fix: [] },
       { n: 4, layer: "通信调度层", short: "通信调度",
+        eventId: "p1-a2a",
         target: function () { return document.getElementById("twinTimeline") || document.getElementById("bottomDock"); },
         prep: function () {
           window.PtoTrainingTwinTimelineDock && window.PtoTrainingTwinTimelineDock.setVisible(true);
@@ -108,12 +112,14 @@
         nums: ["rank 23 timeout", "63 rank 空等"],
         fix: [4] },
       { n: 5, layer: "模型层 → 数值层（根因）", short: "模型·数值",
+        eventId: "p1-root",
         target: function () { return document.getElementById("deckStage"); },
         prep: function () { /* activateProblemLens 已聚焦 layer 38 router 并展开 routed_expert_bank */ },
         body: "layer 38 router 把 98% token 路由到 expert 193，247 个 dead expert = 路由彻底塌缩。根因：router softmax 在 FP8 下 max(logits)=1846 → exp 溢出为 inf。",
         nums: ["98% token → E193", "max(logits)=1846→inf", "FP8 softmax 溢出"],
         fix: [0, 1, 2, 3] },
       { n: 6, layer: "infra 层（扩散）", short: "infra 扩散",
+        eventId: "p1-spread",
         target: function () { return document.getElementById("heat"); },
         prep: function () {
           window.PtoTrainingTwinSideCols && window.PtoTrainingTwinSideCols.setRightVisible(true);
@@ -170,24 +176,28 @@
     // ①性能表征(兼容量判据) ②瓶颈分类 ③峰值构成(根因) ④阶段/层定位 ⑤内存快照(兼碎片判据)
     steps: [
       { n: 1, layer: "性能表征层 → 容量判据", short: "显存曲线",
+        eventId: "p2-rise",
         target: memCard("mem-timeline"),
         prep: openPerfDock,
         body: "step 8000 前显存稳在 52~55 GB，之后一路爬升；step 12003 rank 17 触顶 64/64 GB 报 ACL_ERROR_MEMORY_ALLOCATION 中断。峰值 = 总容量，这一条就判定了「绝对容量不足」——它是主因。同期吞吐已从 3200 掉到 2800 tokens/s，分配器在反复做碎片整理和换页。",
         nums: ["峰值 64/64 GB", "rank 17 OOM", "吞吐 −12.5%"],
         fix: [] },
       { n: 2, layer: "瓶颈分类层", short: "瓶颈分类",
+        eventId: "p2-cost",
         target: function () { return document.getElementById("twinTimelineBody") || document.getElementById("bottomDock"); },
         prep: openDockTab("timeline"),
         body: "回到 Timeline 看这一步的耗时构成：Computing 8520ms(71%)、Communication 1420ms(12%)，而显存分配/释放 API 占了 890ms(7.4%)——正常应 <2%。HBM 带宽利用率 78% 正常，排除纯带宽瓶颈，走显存分支。",
         nums: ["分配 API 890ms · 7.4%", "正常应 <2%", "带宽 78% 正常"],
         fix: [1] },
       { n: 3, layer: "显存峰值构成层（根因）", short: "峰值构成",
+        eventId: "p2-peak",
         target: memCard("composition"),
         prep: openPerfDock,
         body: "拆开 step 12000 rank 17 的快照：激活值 36.2 GB 占 56.6%，比参数+梯度(16.2)、优化器(10.8)之和还多。46 层激活全部常驻 = 每层约 0.79 GB——这是唯一能大幅缩减的一项。",
         nums: ["激活 36.2 GB · 56.6%", "参数+梯度 16.2 GB", "优化器 10.8 GB"],
         fix: [0] },
       { n: 4, layer: "阶段 / 层定位层", short: "层级切面",
+        eventId: "p2-layer",
         target: function () { return document.getElementById("deckStage"); },
         // 只把整网图切回侧视总览：46 层同时在场，哪几层显存压力最大一眼可见，
         // 比再画一张 stage 柱状图更直接。逐层曲线里的「单层激活值显存」是常驻默认指标，
@@ -200,6 +210,7 @@
         nums: ["L38 = 1.2 GB · 1.7×", "46 层求和 36.2 GB", "stage 3 最重"],
         fix: [2, 3] },
       { n: 5, layer: "内存快照层 → 碎片判据", short: "内存快照",
+        eventId: "p2-oom",
         target: memCard("fragment-map"),
         prep: openPerfDock,
         body: "解析 memory_record.pkl：1.8 GB 空闲里有 1.5 GB 是「看得见用不上」的碎片，最大连续块只剩 0.3 GB，接不下 0.5 GB 的临时 buffer——这就是碎片判据，它让 OOM 提前到来。成因是 46 层不等大小的中间张量在 forward 密集分配、backward 集中释放；点图里的红框块可看到 L38 q_b_proj 的 36 MB 张量持有近 7 秒及其申请堆栈。",
@@ -448,7 +459,9 @@
       '<div class="tw-spot__callout-body"></div>' +
       '<div class="tw-spot__callout-nums">' + numsHtml + '</div>' +
       '<div class="tw-spot__callout-fix"' + (linkedFirst ? '' : ' hidden') + '>' +
-      '<b>→ 修复</b> <span class="tw-spot__callout-fix-txt"></span></div>';
+      '<b>→ 修复</b> <span class="tw-spot__callout-fix-txt"></span></div>' +
+      '<div class="tw-spot__callout-impact"' + (st.eventId ? '' : ' hidden') + '>' +
+      '<button type="button" class="tw-spot__callout-impact-btn">查看事件影响范围</button></div>';
     e.callout.querySelector(".tw-spot__callout-layer").textContent = st.layer;
     e.callout.querySelector(".tw-spot__callout-body").textContent = st.body;
     var numEls = e.callout.querySelectorAll(".tw-spot__num");
@@ -456,6 +469,12 @@
     if (linkedFirst) {
       e.callout.querySelector(".tw-spot__callout-fix-txt").textContent =
         linkedFirst.file + " · " + linkedFirst.title + (st.fix.length > 1 ? " 等 " + st.fix.length + " 处" : "");
+    }
+    var impactBtn = e.callout.querySelector(".tw-spot__callout-impact-btn");
+    if (impactBtn && st.eventId) {
+      impactBtn.addEventListener("click", function () {
+        window.open("config-relation-observer.html?event=" + encodeURIComponent(st.eventId), "_blank", "noopener");
+      });
     }
 
     // 右列修复高亮仅属于定位链指引；指引关闭时各项同权。
