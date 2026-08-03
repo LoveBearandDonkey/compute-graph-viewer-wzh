@@ -14,7 +14,7 @@
   <link rel="stylesheet" href="../vendor/pto-design-system/patterns/hardware-architecture-viewport/pattern.css?v=20260703-950-standard-v1">
   <link rel="stylesheet" href="../../pto-design-system/patterns/tensor-volume-canvas/pattern.css?v=20260730-load-data-v1">
   <link rel="stylesheet" href="../../pto-design-system/patterns/matrix-canvas/pattern.css?v=20260731-bounded-neutral-v1">
-  <link rel="stylesheet" href="src/styles.css?v=20260731-host-tiling-volume-v1">
+  <link rel="stylesheet" href="src/styles.css?v=20260803-allocate-memory-map-v1">
 </head>
 <body class="avz-page">
   <section class="pto-ide-frame avz-frame" data-ide-frame data-host="standalone" aria-label="Ascend tiling visualization workbench">
@@ -126,12 +126,6 @@
             <div class="pto-ide-frame__pane-body avz-pane-body avz-visual-pane">
               <section class="avz-section avz-section--tensor">
                 <div class="avz-tensor-controls">
-                  <div class="avz-load-core-context" id="convCoreContext" hidden>
-                    <label class="avz-load-core-select" for="convCoreSelect">
-                      <span class="avz-load-core-select__label">Execution block</span>
-                      <select id="convCoreSelect" aria-label="Select AIC execution block"></select>
-                    </label>
-                  </div>
                   <div class="tab-control avz-tensor-tabs" id="tensorTabs" role="tablist" aria-label="Tensors in current stage" hidden></div>
                 </div>
                 <div class="avz-tensor-stage" id="tensorStage">
@@ -203,13 +197,111 @@
                       <span>stride 1 · pad 1 · Ho/Wo preserved at 8×8</span>
                     </footer>
                   </div>
+                  <div class="avz-memory-allocation" id="memoryAllocationView" hidden aria-label="Allocate Memory local memory map"></div>
                   <div class="avz-tensor-pattern-view" id="tensorPatternView" hidden>
                     <canvas class="pto-tensor-volume-canvas" id="tensorVolumeCanvas" aria-label="Three-dimensional tensor volume" hidden></canvas>
                     <div class="pto-matrix-canvas-host avz-tensor-matrix-host" id="tensorMatrixHost" hidden>
                       <canvas class="pto-matrix-canvas" id="tensorMatrixCanvas" aria-label="Two-dimensional tensor matrix"></canvas>
                     </div>
                   </div>
-                  <div class="avz-mmad-matrix-view" id="convMmadMatrixView" hidden>
+                  <div class="avz-copy-input-view" id="copyInputPatternView" hidden>
+                    <header class="avz-copy-input-view__summary">
+                      <div>
+                        <strong id="copyInputSummary">MTE2 · 3 transfers · 6720 B · GM → L1</strong>
+                        <span id="copyInputContext">AIC0 · OT0 · M0/N0</span>
+                      </div>
+                      <span class="tag status-success">confirmed</span>
+                    </header>
+                    <div class="avz-copy-input-view__comparison">
+                      <figure class="avz-copy-input-view__tensor">
+                        <figcaption>
+                          <span class="avz-copy-input-view__role">GM source</span>
+                          <strong id="copyInputSourceTitle">Feature X0</strong>
+                          <code id="copyInputSourceShape">NC1HWC0 [1,1,8,8,16]</code>
+                          <small id="copyInputSourceMeta">FP16 · 2048 B · GM + 0 B</small>
+                        </figcaption>
+                        <div class="avz-copy-input-view__canvas">
+                          <canvas id="copyInputSourceCanvas" aria-label="Selected GM source tensor"></canvas>
+                        </div>
+                      </figure>
+                      <div class="avz-copy-input-view__transform">
+                        <span class="tag" id="copyInputEngine">MTE2 / DataCopy</span>
+                        <strong id="copyInputTransformation">layout unchanged</strong>
+                        <svg viewBox="0 0 56 20" aria-hidden="true">
+                          <path d="M2 10h48"></path>
+                          <path d="m43 3 8 7-8 7"></path>
+                        </svg>
+                      </div>
+                      <figure class="avz-copy-input-view__tensor">
+                        <figcaption>
+                          <span class="avz-copy-input-view__role">L1 destination</span>
+                          <strong id="copyInputDestinationTitle">fmapA1 · A1 / L1</strong>
+                          <code id="copyInputDestinationShape">NC1HWC0 [1,1,8,8,16]</code>
+                          <small id="copyInputDestinationMeta">@0 · 2048 B / 2048 B · align 512 B</small>
+                        </figcaption>
+                        <div class="avz-copy-input-view__canvas">
+                          <canvas id="copyInputDestinationCanvas" aria-label="Selected L1 destination tensor"></canvas>
+                        </div>
+                      </figure>
+                    </div>
+                    <footer class="avz-copy-input-view__readiness" aria-label="Copy readiness">
+                      <span class="tag status-success">Copied by MTE2</span>
+                      <span aria-hidden="true">→</span>
+                      <span class="tag status-warning">Awaiting MTE2_MTE1</span>
+                      <span aria-hidden="true">→</span>
+                      <span class="tag">MTE1 blocked</span>
+                    </footer>
+                    <div class="avz-copy-input-view__lens" id="copyInputLensMount"></div>
+                  </div>
+                  <div class="avz-copy-input-view" id="biasC1C2View" hidden>
+                    <header class="avz-copy-input-view__summary">
+                      <div>
+                        <strong id="biasC1C2Summary">Bias C1 → C2 / Bias Table</strong>
+                        <span id="biasC1C2Context">MTE1 · 16 × FP32 · 64 B</span>
+                      </div>
+                      <span class="tag status-success">confirmed</span>
+                    </header>
+                    <div class="avz-copy-input-view__comparison">
+                      <figure class="avz-copy-input-view__tensor">
+                        <figcaption>
+                          <span class="avz-copy-input-view__role">MTE1 source</span>
+                          <strong id="biasC1Title">biasC1 · C1 / L1</strong>
+                          <code id="biasC1Shape">linear [1,16]</code>
+                          <small id="biasC1Meta">FP32 · @6656 · 64 B · readable after MTE2_MTE1</small>
+                        </figcaption>
+                        <div class="pto-matrix-canvas-host avz-copy-input-view__canvas">
+                          <canvas class="pto-matrix-canvas" id="biasC1Canvas" aria-label="Bias values in C1 source buffer"></canvas>
+                        </div>
+                      </figure>
+                      <div class="avz-copy-input-view__transform">
+                        <span class="tag" id="biasC1C2Engine">MTE1 / DataCopy</span>
+                        <strong>layout unchanged</strong>
+                        <svg viewBox="0 0 56 20" aria-hidden="true">
+                          <path d="M2 10h48"></path>
+                          <path d="m43 3 8 7-8 7"></path>
+                        </svg>
+                      </div>
+                      <figure class="avz-copy-input-view__tensor">
+                        <figcaption>
+                          <span class="avz-copy-input-view__role">Bias Table destination</span>
+                          <strong id="biasC2Title">biasC2 · C2 / Bias Table</strong>
+                          <code id="biasC2Shape">linear Bias Table [1,16]</code>
+                          <small id="biasC2Meta">FP32 · @0 · 64 B · ready for first Mmad</small>
+                        </figcaption>
+                        <div class="pto-matrix-canvas-host avz-copy-input-view__canvas">
+                          <canvas class="pto-matrix-canvas" id="biasC2Canvas" aria-label="Bias values copied into C2 Bias Table"></canvas>
+                        </div>
+                      </figure>
+                    </div>
+                    <footer class="avz-copy-input-view__readiness" aria-label="Bias copy readiness">
+                      <span class="tag status-success">C1 readable by MTE1</span>
+                      <span aria-hidden="true">→</span>
+                      <span class="tag status-success">Copied to C2</span>
+                      <span aria-hidden="true">→</span>
+                      <span class="tag">Ready for Iter 0 Mmad</span>
+                    </footer>
+                  </div>
+                  <div class="avz-mmad-matrix-view avz-mmad-matrix-view--compute" id="convMmadMatrixView" hidden>
                     <header class="avz-mmad-matrix-view__summary">
                       <div>
                         <strong id="mmadEquation">A2 × B2 + Bias → CO1</strong>
@@ -218,7 +310,7 @@
                       <span class="tag" id="mmadProgress">K 1/9</span>
                     </header>
                     <div class="avz-mmad-matrix-view__equation">
-                      <figure class="avz-mmad-matrix-view__operand">
+                      <figure class="avz-mmad-matrix-view__operand avz-mmad-matrix-view__operand--a2">
                         <figcaption>
                           <strong id="mmadA2Title">A2 [16,16]</strong>
                           <span id="mmadA2Meta">K0 · FP16 · L0A</span>
@@ -228,7 +320,7 @@
                         </div>
                       </figure>
                       <span class="avz-mmad-matrix-view__operator" aria-hidden="true">×</span>
-                      <figure class="avz-mmad-matrix-view__operand">
+                      <figure class="avz-mmad-matrix-view__operand avz-mmad-matrix-view__operand--b2">
                         <figcaption>
                           <strong id="mmadB2Title">B2 [16,16]</strong>
                           <span id="mmadB2Meta">K0 · FP16 · L0B</span>
@@ -237,8 +329,17 @@
                           <canvas class="pto-matrix-canvas" id="mmadB2Canvas" aria-label="B2 matrix operand"></canvas>
                         </div>
                       </figure>
+                      <span class="avz-mmad-matrix-view__operator" id="mmadAddend" aria-hidden="true">+</span>
+                      <figure class="avz-mmad-matrix-view__operand avz-mmad-matrix-view__operand--addend">
+                        <figcaption>
+                          <strong id="mmadAddendTitle">Bias[Nj] broadcast</strong>
+                          <span id="mmadAddendMeta">[16,16] · FP32 · C2 / Bias Table</span>
+                        </figcaption>
+                        <div class="pto-matrix-canvas-host avz-mmad-matrix-view__canvas">
+                          <canvas class="pto-matrix-canvas" id="mmadAddendCanvas" aria-label="Current MMAD addend matrix"></canvas>
+                        </div>
+                      </figure>
                       <div class="avz-mmad-matrix-view__transform">
-                        <strong id="mmadAddend">+ Bias</strong>
                         <svg viewBox="0 0 56 20" aria-hidden="true">
                           <path d="M2 10h48"></path>
                           <path d="m43 3 8 7-8 7"></path>
@@ -259,6 +360,53 @@
                       <span>K is reduction progress, not an output tensor axis</span>
                     </footer>
                   </div>
+                  <div class="avz-copy-input-view avz-fixpipe-output-view" id="fixpipeOutputView" hidden>
+                    <header class="avz-copy-input-view__summary">
+                      <div>
+                        <strong id="fixpipeOutputSummary">accumCo1 → outputGm</strong>
+                        <span id="fixpipeOutputContext">AIC1 · OT1 · M0/N1</span>
+                      </div>
+                      <span class="tag">Fixpipe · confirmed</span>
+                    </header>
+                    <div class="avz-copy-input-view__comparison">
+                      <figure class="avz-copy-input-view__tensor">
+                        <figcaption>
+                          <span class="avz-copy-input-view__role">Fixpipe source</span>
+                          <strong id="fixpipeAccumTitle">accumCo1</strong>
+                          <code>1 aggregate cell · 16×16 values</code>
+                          <small>FP32 · NZ · CO1 / L0C · 1024 B</small>
+                        </figcaption>
+                        <div class="pto-matrix-canvas-host avz-copy-input-view__canvas">
+                          <canvas class="pto-matrix-canvas" id="fixpipeAccumCanvas" aria-label="Current core accumCo1: one aggregate cell representing 16 by 16 values"></canvas>
+                        </div>
+                      </figure>
+                      <div class="avz-copy-input-view__transform">
+                        <span class="tag">Fixpipe</span>
+                        <strong>NZ → ND</strong>
+                        <svg viewBox="0 0 56 20" aria-hidden="true">
+                          <path d="M2 10h48"></path>
+                          <path d="m43 3 8 7-8 7"></path>
+                        </svg>
+                        <small>ReLU · F32→F16</small>
+                      </div>
+                      <figure class="avz-copy-input-view__tensor">
+                        <figcaption>
+                          <span class="avz-copy-input-view__role">GM destination</span>
+                          <strong>outputGm</strong>
+                          <code>8 aggregate cells · each 16×16</code>
+                          <small>FP16 · ND [M,Co] · 4096 B</small>
+                        </figcaption>
+                        <div class="pto-matrix-canvas-host avz-copy-input-view__canvas">
+                          <canvas class="pto-matrix-canvas" id="fixpipeOutputCanvas" aria-label="outputGm grouped into eight 16 by 16 aggregate cells with the current core destination highlighted"></canvas>
+                        </div>
+                      </figure>
+                    </div>
+                    <footer class="avz-copy-input-view__readiness" aria-label="Fixpipe output address">
+                      <span class="tag" id="fixpipeAddressCore">AIC1 · OT1</span>
+                      <span aria-hidden="true">→</span>
+                      <code id="fixpipeAddress">outputGm + 32 B · M[0:16] · Co[16:32]</code>
+                    </footer>
+                  </div>
                   <div class="avz-mmad-matrix-view avz-host-tiling-view" id="hostTilingView" hidden>
                     <header class="avz-mmad-matrix-view__summary">
                       <div>
@@ -273,7 +421,11 @@
                           <strong id="hostTilingSourceTitle">Feature X</strong>
                           <span id="hostTilingSourceMeta">NCHW [1,16,8,8] · FP16 · pad=[1,1,1,1]</span>
                         </figcaption>
-                        <div class="avz-mmad-matrix-view__canvas">
+                        <div class="avz-mmad-matrix-view__canvas avz-weight-volume">
+                          <div class="avz-weight-volume__count" id="hostTilingWeightCount" aria-label="Output channel count" hidden>
+                            <strong id="hostTilingWeightCountValue">Co=32</strong>
+                            <span>channels</span>
+                          </div>
                           <canvas class="pto-tensor-volume-canvas" id="hostTilingSourceCanvas" aria-label="Logical source tensor volume before Cube mapping"></canvas>
                         </div>
                       </figure>
@@ -296,7 +448,53 @@
                     </div>
                     <footer class="avz-mmad-matrix-view__footer">
                       <span id="hostTilingFormula">M=Ho×Wo · K=Ci×Kh×Kw</span>
-                      <span>Host defines mapping and tiles; physical conversion happens in later data-movement stages.</span>
+                      <span>PAD voxels show the Host-defined logical read domain; they are not physically stored in GM or A1.</span>
+                    </footer>
+                  </div>
+                  <div class="avz-host-launch-view" id="hostLaunchView" hidden>
+                    <header class="avz-host-launch-view__summary">
+                      <div>
+                        <strong id="hostLaunchEquation">A[M,K] × B[K,N] → C[M,N]</strong>
+                        <span id="hostLaunchEvidence">Host execution partition · logical matrices only</span>
+                      </div>
+                      <span class="tag" id="hostLaunchBlockDim">blockDim = 4×2 = 8</span>
+                    </header>
+
+                    <div class="avz-host-launch-view__matrices">
+                      <figure class="avz-host-launch-view__operand">
+                        <figcaption>
+                          <strong id="hostLaunchATitle">Input X → A [M=64,K=144]</strong>
+                          <span id="hostLaunchAMeta">4 M tiles × 9 K tiles</span>
+                        </figcaption>
+                        <div class="pto-matrix-canvas-host avz-host-launch-view__canvas">
+                          <canvas class="pto-matrix-canvas" id="hostLaunchACanvas" aria-label="Input X logical Cube A matrix"></canvas>
+                        </div>
+                      </figure>
+
+                      <figure class="avz-host-launch-view__operand">
+                        <figcaption>
+                          <strong id="hostLaunchBTitle">Weight W → B [K=144,N=32]</strong>
+                          <span id="hostLaunchBMeta">9 K tiles × 2 N tiles</span>
+                        </figcaption>
+                        <div class="pto-matrix-canvas-host avz-host-launch-view__canvas">
+                          <canvas class="pto-matrix-canvas" id="hostLaunchBCanvas" aria-label="Weight W logical Cube B matrix"></canvas>
+                        </div>
+                      </figure>
+
+                      <figure class="avz-host-launch-view__operand avz-host-launch-view__operand--output">
+                        <figcaption>
+                          <strong id="hostLaunchCTitle">Output Y → C [M=64,N=32]</strong>
+                          <span id="hostLaunchCMeta">4 M tiles × 2 N tiles = 8 output tiles</span>
+                        </figcaption>
+                        <div class="pto-matrix-canvas-host avz-host-launch-view__canvas">
+                          <canvas class="pto-matrix-canvas" id="hostLaunchCCanvas" aria-label="Output Y logical Cube C matrix"></canvas>
+                        </div>
+                      </figure>
+                    </div>
+
+                    <footer class="avz-host-launch-view__footer">
+                      <span id="hostLaunchMapping">blockIdx → Mi=floor(blockIdx/2), Nj=blockIdx%2</span>
+                      <span id="hostLaunchReduction">每个 AIC block 沿 K0…K8 归约，只写回一个 C[16,16] tile</span>
                     </footer>
                   </div>
                   <canvas class="avz-tensor-canvas" id="tensorCanvas" width="960" height="520" aria-label="Conv output tiling and K reduction view"></canvas>
@@ -402,6 +600,10 @@
               </header>
               <div class="pto-ide-frame__pane-body avz-execution-body">
                 <section class="avz-execution-panel" id="instructionsView" role="tabpanel" aria-labelledby="instructionsTab">
+                  <div class="avz-core-switcher" id="convCoreContext" hidden>
+                    <span class="avz-core-switcher__label">Execution block</span>
+                    <div class="segmented-control segmented-control-muted avz-core-switcher__options" id="convCoreOptions" role="radiogroup" aria-label="Select AIC execution block"></div>
+                  </div>
                   <div class="avz-instruction-sequence" id="instructionSequence" role="list" aria-label="Logical instruction sequence with repeated iterations grouped"></div>
                 </section>
                 <section class="avz-execution-panel avz-execution-empty" id="estimatedTimelineView" role="tabpanel" aria-labelledby="timelineTab" hidden>
@@ -446,6 +648,6 @@
   <script src="../vendor/pto-design-system/patterns/hardware-architecture-viewport/pattern.js?v=20260703-950-standard-v1"></script>
   <script src="../../pto-design-system/patterns/tensor-volume-canvas/pattern.js?v=20260730-load-data-v1"></script>
   <script src="../../pto-design-system/patterns/matrix-canvas/pattern.js?v=20260731-bounded-neutral-v1"></script>
-  <script src="src/app.js?v=20260731-host-tiling-volume-v1"></script>
+  <script src="src/app.js?v=20260803-allocate-memory-map-v1"></script>
 </body>
 </html>
