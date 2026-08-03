@@ -1950,11 +1950,13 @@
     document.getElementById("diagnosisLocatorClose")?.addEventListener("click", exitTimeMachine);
   }
 
+  // 制品(ckpt)列表：step/时间与 js/training-log-drawer.js 的日志时间线量级对齐(总步数 120000，
+  // world_size=2048、tp=4·pp=8·ep=64·cp=2)；分片数取 TP×PP×CP=64(DP 副本互为镜像，不重复计入分片)。
   const artifacts = [
-    { name: "ckpt-40000", meta: "loss 0.44" },
-    { name: "ckpt-30000", meta: "loss 0.50" },
-    { name: "ckpt-20000", meta: "loss 0.58" },
-    { name: "ckpt-10000", meta: "loss 0.72" },
+    { name: "ckpt-40000", step: 40000, loss: 0.44, time: "2026-07-17 19:48:50", size: "119.1GB", shards: "64 分片（TP4×PP8×CP2）", path: "obs://pangu-ckpt/2.0-flash/step_40000" },
+    { name: "ckpt-30000", step: 30000, loss: 0.50, time: "2026-07-17 12:51:32", size: "118.9GB", shards: "64 分片（TP4×PP8×CP2）", path: "obs://pangu-ckpt/2.0-flash/step_30000" },
+    { name: "ckpt-20000", step: 20000, loss: 0.58, time: "2026-07-17 06:14:40", size: "118.6GB", shards: "64 分片（TP4×PP8×CP2）", path: "obs://pangu-ckpt/2.0-flash/step_20000" },
+    { name: "ckpt-10000", step: 10000, loss: 0.72, time: "2026-07-16 16:35:12", size: "118.4GB", shards: "64 分片（TP4×PP8×CP2）", path: "obs://pangu-ckpt/2.0-flash/step_10000" },
   ];
 
   const checkpointMarkers = [
@@ -1972,18 +1974,45 @@
     const node = $("artifacts");
     let bestIdx = 0;
     let bestLoss = Infinity;
-    artifacts.forEach((a, i) => {
-      const m = a.meta.match(/loss ([\d.]+)/);
-      if (m) { const v = parseFloat(m[1]); if (v < bestLoss) { bestLoss = v; bestIdx = i; } }
-    });
-    node.innerHTML = artifacts.map((artifact, i) => `
-      <div class="twin-artifact">
-        <span class="twin-artifact-main">
-          <span class="twin-artifact-name">${artifact.name}</span>
-          <span class="twin-artifact-meta">${artifact.meta}</span>
-        </span>
-        ${i === bestIdx ? '<span class="twin-artifact-badge">最佳</span>' : ""}
-      </div>`).join("");
+    artifacts.forEach((a, i) => { if (a.loss < bestLoss) { bestLoss = a.loss; bestIdx = i; } });
+    const latestIdx = 0; // 数组按 step 降序排列，首项即最新落盘的 ckpt
+    node.innerHTML = `
+      <table class="twin-artifacts-table">
+        <thead>
+          <tr>
+            <th>制品名称</th>
+            <th>Step</th>
+            <th>Epoch</th>
+            <th>Loss</th>
+            <th>保存时间</th>
+            <th>大小</th>
+            <th>并行分片</th>
+            <th>存储路径</th>
+            <th>校验</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody>
+          ${artifacts.map((a, i) => {
+            const epoch = Math.ceil(a.step / state.stepsPerEpoch);
+            const tags = (i === latestIdx ? '<span class="twin-artifact-badge twin-artifact-badge-latest">最新</span>' : "")
+              + (i === bestIdx ? '<span class="twin-artifact-badge">最佳</span>' : "");
+            return `
+            <tr>
+              <td class="twin-artifacts-cell-name"><span class="twin-artifact-name">${a.name}</span>${tags}</td>
+              <td class="twin-artifacts-cell-num">${a.step.toLocaleString()}</td>
+              <td class="twin-artifacts-cell-num">${epoch}</td>
+              <td class="twin-artifacts-cell-num">${a.loss.toFixed(2)}</td>
+              <td class="twin-artifacts-cell-mono">${a.time}</td>
+              <td class="twin-artifacts-cell-num">${a.size}</td>
+              <td>${a.shards}</td>
+              <td class="twin-artifacts-cell-mono twin-artifacts-cell-path" title="${a.path}">${a.path}</td>
+              <td class="twin-artifacts-cell-verify">✓ SHA256 已校验</td>
+              <td><button class="btn btn-ghost btn-sm" type="button" title="仅示意，暂不提供实际下载">下载</button></td>
+            </tr>`;
+          }).join("")}
+        </tbody>
+      </table>`;
   }
 
   const eventPool = [

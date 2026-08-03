@@ -375,6 +375,32 @@ body {
   padding-top: 8px;
 }
 
+/* 聚合视图专属的说明入口：跟标题/搜索框同一 flex 行，只在聚合模式下由
+   updateCompareHeaderSearch() 取消 hidden——分组视图下这一行照旧只有标题+搜索框。 */
+.sl-view-info {
+  flex: 0 0 auto;
+}
+
+/* 气泡本体挂在 body 末尾（跟 #tooltip 同级），不嵌在 pane 内部——
+   .pto-ide-frame__pane / -header 都带 backdrop-filter，会各自开一个新的层叠上下文，
+   嵌在里面的绝对定位气泡再高的 z-index 也可能被 pane-body 里的画布内容盖住。
+   这里改成 fixed + JS 算坐标（见 showAggViewInfoBubble），彻底跳出所有祖先的层叠上下文。 */
+.sl-view-info-bubble {
+  position: fixed;
+  width: 300px;
+  font: var(--text-body-sm);
+  line-height: 1.6;
+  color: var(--foreground-secondary);
+}
+
+.sl-view-info__body p {
+  margin: 0 0 6px;
+}
+
+.sl-view-info__body p:last-child {
+  margin-bottom: 0;
+}
+
 .sl-tool-spacer {
   flex: 1 1 auto;
 }
@@ -2029,6 +2055,9 @@ body {
                             <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"></circle><path d="m21 21-4-4"></path></svg>
                             <input type="search" placeholder="搜索对比任务" />
                           </span>
+                          <span class="sl-view-info" id="aggViewInfo" hidden>
+                            <button class="btn btn-sm btn-ghost" type="button" id="aggViewInfoBtn">视图说明</button>
+                          </span>
                         </div>
                         <div class="pto-ide-frame__pane-body sl-pane-body">
                           <div class="sl-swimlane-workbench">
@@ -2193,6 +2222,14 @@ body {
 </div>
 
 <div class="pto-swimlane-task-tooltip sl-task-tooltip" id="tooltip" role="tooltip" aria-hidden="true"></div>
+<div class="pto-swimlane-task-tooltip sl-view-info-bubble" id="aggViewInfoBubble" role="tooltip" aria-hidden="true">
+  <div class="pto-swimlane-task-tooltip__title">跨 run 任务条匹配的可信依据</div>
+  <div class="sl-view-info__body">
+    <p>更可信的匹配应落在算子在计算图上的身份（node id / 结构指纹：算子类型 + 拓扑位置），而非它在时间轴上出现的先后顺序。</p>
+    <p>图身份来自编译产物本身，不随调度顺序、局部算子增减而漂移；两侧对不上号时应明确留空，而不是给出一条看似合理实则配对错误的连线。</p>
+    <p>可行性取决于 profiling 落盘能否带稳定节点标识，拿不到时可退化为按（算子类型 + 拓扑位置 + shape）构造结构指纹；两次训练图结构本就差异较大时，部分节点没有对应物是正常现象。</p>
+  </div>
+</div>
 <script src="../../vendor/pto-design-system/patterns/workbench-shell/pattern.js"></script>
 <script src="../../vendor/pto-design-system/patterns/ide-frame/pattern.js"></script>
 <script src="../../vendor/pto-design-system/patterns/swimlane-task/pattern.js"></script>
@@ -2543,6 +2580,9 @@ const runHistoryBody = document.getElementById('runHistoryBody');
 const swimlanePaneTitle = document.getElementById('swimlanePaneTitle');
 const swimlaneObjectTitle = document.getElementById('swimlaneObjectTitle');
 const cmpTopSearchbox = document.getElementById('cmpTopSearchbox');
+const aggViewInfo = document.getElementById('aggViewInfo');
+const aggViewInfoBtn = document.getElementById('aggViewInfoBtn');
+const aggViewInfoBubble = document.getElementById('aggViewInfoBubble');
 const cmpBottomSearchbox = document.getElementById('cmpBottomSearchbox');
 const cmpThirdSearchbox = document.getElementById('cmpThirdSearchbox');
 const tooltip = document.getElementById('tooltip');
@@ -6043,6 +6083,7 @@ function updateCompareHeaderSearch() {
   var comparisonMode = state.secondaryViewMode === 'comparison';
   var aggregated = comparisonMode && state.swimlaneViewMode === 'aggregated';
   if (swimlanePaneTitle) swimlanePaneTitle.hidden = aggregated;
+  if (aggViewInfo) aggViewInfo.hidden = !aggregated;
   if (cmpTopSearchbox) cmpTopSearchbox.hidden = !comparisonMode;
   if (cmpBottomSearchbox) cmpBottomSearchbox.hidden = !comparisonMode;
   if (cmpThirdSearchbox) cmpThirdSearchbox.hidden = !comparisonMode || aggregated || !isTripleCompare();
@@ -6620,6 +6661,29 @@ function bindSwimlaneViewTabs() {
   });
 }
 
+// 「视图说明」气泡挂在 body 末尾（跟 #tooltip 同级，见 .sl-view-info-bubble 的样式注释），
+// 坐标靠 JS 按钮 getBoundingClientRect 现算，贴着按钮左下角展开，右边界超出视口时整体左移。
+function bindAggViewInfoBubble() {
+  if (!aggViewInfoBtn || !aggViewInfoBubble) return;
+  const show = () => {
+    const r = aggViewInfoBtn.getBoundingClientRect();
+    const width = aggViewInfoBubble.offsetWidth || 300;
+    const left = Math.max(8, Math.min(r.right - width, window.innerWidth - width - 8));
+    aggViewInfoBubble.style.left = `${left}px`;
+    aggViewInfoBubble.style.top = `${r.bottom + 6}px`;
+    aggViewInfoBubble.classList.add('is-visible');
+    aggViewInfoBubble.setAttribute('aria-hidden', 'false');
+  };
+  const hide = () => {
+    aggViewInfoBubble.classList.remove('is-visible');
+    aggViewInfoBubble.setAttribute('aria-hidden', 'true');
+  };
+  aggViewInfoBtn.addEventListener('mouseenter', show);
+  aggViewInfoBtn.addEventListener('mouseleave', hide);
+  aggViewInfoBtn.addEventListener('focus', show);
+  aggViewInfoBtn.addEventListener('blur', hide);
+}
+
 /* 分组视图是写死的上下两栏，只承载得下「基线 + 1 个对比对象」；三方对比必须走聚合视图
    （每个叶子泳道拆成三条子行）。这里统一维护：三方时锁到聚合视图并禁掉分组页签，
    退回两方时把页签解锁（视图模式保持不变，由用户自己决定要不要切回分组）。 */
@@ -6923,6 +6987,7 @@ function applyResponsivePaneState() {
    ============================================================ */
 function init() {
   bindSwimlaneViewTabs();
+  bindAggViewInfoBubble();
   const initialFrameWidth = frameEl.getBoundingClientRect().width;
   if (initialFrameWidth <= 1180) {
     frameEl.dataset.explorerCollapsed = 'true';
