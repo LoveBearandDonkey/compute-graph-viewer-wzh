@@ -60,8 +60,8 @@
         ["-", "export NCCL_IB_TIMEOUT=30"],
         ["+", "export NCCL_IB_TIMEOUT=60  # 训练不中断兜底"] ] },
       { file: "monitor_config.yaml", line: 53, title: "部署熔断规则", diff: [
-        ["+", "amp_scaler_dump_ratio: 0.0625   # 1/16 → 🟠 自动 dump"],
-        ["+", "amp_scaler_abort_ratio: 0.03125 # 1/32 → 🔴 停训"] ] },
+        ["+", "amp_scaler_dump_ratio: 0.0625   # 1/16 → 自动 dump"],
+        ["+", "amp_scaler_abort_ratio: 0.03125 # 1/32 → 停训"] ] },
     ],
     // ①熔断 ②迭代 ③日志 ④通信 ⑤模型 ⑥infra
     steps: [
