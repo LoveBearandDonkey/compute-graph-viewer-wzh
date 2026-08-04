@@ -109,7 +109,6 @@
     instructionIterationFocus: null,
     instructionIterationRange: null,
     instructionOperationFocus: null,
-    allocatedTensorId: null,
     timer: null,
     playback: null,
     webglAvailable: null,
@@ -474,7 +473,6 @@
       button.addEventListener('click', () => setExecutionView(button.dataset.executionView));
     });
     els.instructionSequence?.addEventListener('click', handleInstructionSequenceClick);
-    els.memoryAllocationView?.addEventListener('click', handleAllocatedTensorClick);
     els.convCoreOptions?.addEventListener('click', (event) => {
       const button = event.target.closest('[data-conv-core-index]');
       if (!button) return;
@@ -1476,10 +1474,11 @@
       ? state.instructionIterationFocus
       : null;
     const focusedIterationRange = state.instructionIterationRange;
+    const isFocusedMMte1Sync = state.instructionOperationFocus === 'm-mte1';
     const isFocusedLoad = state.instructionOperationFocus === 'load-a2-b2';
     const isFocusedMte1MSync = state.instructionOperationFocus === 'mte1-m';
     const isFocusedMmad = state.instructionOperationFocus === 'mmad-accumulate';
-    const isFocusedIterationOperation = isFocusedLoad || isFocusedMte1MSync || isFocusedMmad;
+    const isFocusedIterationOperation = isFocusedMMte1Sync || isFocusedLoad || isFocusedMte1MSync || isFocusedMmad;
     const kIndex = isFocusedIterationOperation && focusedIteration != null
       ? focusedIteration
       : isFocusedIterationOperation && focusedIterationRange
@@ -1495,7 +1494,11 @@
     const kRange = isFocusedIterationOperation
       ? [kIndex * tileK, Math.min(K, (kIndex + 1) * tileK)]
       : step?.loop?.kRange || [kIndex * tileK, Math.min(K, (kIndex + 1) * tileK)];
-    const presentationStage = isFocusedMte1MSync ? 'sync-mte1-m' : stage;
+    const presentationStage = isFocusedMMte1Sync
+      ? 'sync-m-mte1'
+      : isFocusedMte1MSync
+        ? 'sync-mte1-m'
+        : stage;
     const finished = ['sync-m-fix', 'fixpipe-output'].includes(stage);
     const tracksK = ['load-k', 'mmad-init', 'loop-body-middle', 'loop-body-final'].includes(presentationStage);
     const kCurrent = finished ? kLoops
@@ -1503,16 +1506,18 @@
       : tracksK ? Math.min(kLoops, kIndex + 1)
       : 0;
     const blocks = convBufferBlocks(presentationStage, kIndex);
-    const scene = isFocusedLoad
-      ? 'load3d'
+    const scene = isFocusedMMte1Sync || isFocusedMte1MSync
+      ? 'event'
+      : isFocusedLoad
+        ? 'load3d'
+        : isFocusedMmad
+          ? 'mmad'
+          : convSceneForStage(stage);
+    const event = isFocusedMMte1Sync
+      ? (trace?.events || []).find((item) => item.eventType === 'M_MTE1') || null
       : isFocusedMte1MSync
-        ? 'event'
-      : isFocusedMmad
-        ? 'mmad'
-        : convSceneForStage(stage);
-    const event = isFocusedMte1MSync
-      ? (trace?.events || []).find((item) => item.eventType === 'MTE1_M') || null
-      : (trace?.events || []).find((item) => (step?.eventDependencies || []).includes(item.id)) || null;
+        ? (trace?.events || []).find((item) => item.eventType === 'MTE1_M') || null
+        : (trace?.events || []).find((item) => (step?.eventDependencies || []).includes(item.id)) || null;
     const copyTransfer = selectedCopyInputTransfer(trace, step);
     return {
       tensorViewport: {
@@ -1625,6 +1630,13 @@
         { core: 'mem950-aic', buffer: 'L0B', label: 'B2 · K0 reusable', state: 'read-complete', tone: 'input', cellRange: [0, 11], sourceTile: 'K1 not loaded yet', operation: 'Loop entry' },
       ];
     }
+    if (stage === 'sync-m-mte1') {
+      const previousK = Math.max(0, kIndex - 1);
+      return [
+        { core: 'mem950-aic', buffer: 'L0A', label: `A2 · K${previousK} read complete`, state: 'read-complete', tone: 'input', cellRange: [0, 15], sourceTile: `safe to overwrite with K${kIndex}`, operation: 'M_MTE1' },
+        { core: 'mem950-aic', buffer: 'L0B', label: `B2 · K${previousK} read complete`, state: 'read-complete', tone: 'input', cellRange: [0, 11], sourceTile: `safe to overwrite with K${kIndex}`, operation: 'M_MTE1' },
+      ];
+    }
     if (stage === 'load-k' || stage === 'sync-mte1-m') {
       return [
         { core: 'mem950-aic', buffer: 'L0A', label: `A2 · K${kIndex}`, state: 'loaded', tone: 'input', cellRange: [0, 15], sourceTile: '16×16 · 512B', operation: 'LoadData3D' },
@@ -1646,6 +1658,7 @@
 
   function convSelectors(stage) {
     if (stage === 'copy-inputs') return ['[data-mem950-node="rail:GM"]', '#mem950-aic [data-aic-node="buffer:L1"]'];
+    if (stage === 'sync-m-mte1') return ['#mem950-aic [data-aic-node="buffer:L0A"]', '#mem950-aic [data-aic-node="buffer:L0B"]', '#mem950-aic [data-aic-node="cube:CUBE"]'];
     if (stage === 'load-k' || stage === 'sync-mte1-m') return ['#mem950-aic [data-aic-node="buffer:L1"]', '#mem950-aic [data-aic-node="buffer:L0A"]', '#mem950-aic [data-aic-node="buffer:L0B"]'];
     if (stage === 'k-loop') return ['#mem950-aic [data-aic-node="buffer:L0A"]', '#mem950-aic [data-aic-node="buffer:L0B"]'];
     if (stage === 'mmad-init' || stage === 'loop-body-middle' || stage === 'loop-body-final') return ['#mem950-aic [data-aic-node="buffer:L1"]', '#mem950-aic [data-aic-node="buffer:L0A"]', '#mem950-aic [data-aic-node="buffer:L0B"]', '#mem950-aic [data-aic-node="cube:CUBE"]', '#mem950-aic [data-aic-node="buffer:L0C"]'];
@@ -2091,6 +2104,40 @@
     },
   };
 
+  const ALLOCATION_LANES = [
+    {
+      id: 'l1',
+      title: 'L1',
+      capacityBytes: 512 * 1024,
+      tensorIds: ['buffer:feature:a1', 'buffer:weight:b1', 'buffer:bias:c1'],
+    },
+    {
+      id: 'l0a',
+      title: 'L0A',
+      capacityBytes: 64 * 1024,
+      tensorIds: ['buffer:feature:a2'],
+    },
+    {
+      id: 'l0b',
+      title: 'L0B',
+      capacityBytes: 64 * 1024,
+      tensorIds: ['buffer:weight:b2'],
+    },
+    {
+      id: 'bias-table',
+      title: 'Bias Table',
+      capacityBytes: 64 * 1024,
+      tensorIds: ['buffer:bias:c2'],
+    },
+    {
+      id: 'l0c',
+      title: 'L0C',
+      capacityBytes: 512 * 1024,
+      tensorIds: ['buffer:accum:co1'],
+    },
+  ];
+  const ALLOCATION_VISIBLE_RATIO = 80;
+
   function allocationTensor(trace, id) {
     const buffer = (trace.buffers || []).find((item) => item.id === id);
     const model = ALLOCATION_MEMORY_MODEL[id];
@@ -2109,97 +2156,106 @@
     };
   }
 
-  function allocationBlock(tensor, compact = false) {
+  function allocationBlock(tensor, referenceBytes) {
     if (!tensor) return '';
-    const selected = state.allocatedTensorId === tensor.id;
-    const compactClass = compact ? ' avz-memory-block--compact' : '';
-    return `<button class="avz-memory-block${compactClass}${selected ? ' is-selected' : ''}" type="button" data-allocation-tensor="${escapeHtml(tensor.id)}" aria-pressed="${selected}" aria-label="${escapeHtml(`${tensor.name}, ${tensor.position}, [${tensor.start},${tensor.end})`)}">
-      <strong>${escapeHtml(tensor.name)}</strong>
-      ${compact ? '' : `<span>${escapeHtml(tensor.shapeLabel)}</span><span>${escapeHtml(`${tensor.dtypeLabel} · ${tensor.format}`)}</span>`}
-      <span>${escapeHtml(`${tensor.size} B`)}</span>
-      ${compact ? '' : `<code>${escapeHtml(`[${tensor.start},${tensor.end})`)}</code>`}
-    </button>`;
+    const startRatio = referenceBytes > 0 ? (tensor.start / referenceBytes) * 100 : 0;
+    const sizeRatio = referenceBytes > 0 ? (tensor.size / referenceBytes) * 100 : 0;
+    return `<div class="avz-memory-block" tabindex="0" data-allocation-tensor="${escapeHtml(tensor.id)}" style="--avz-block-start:${startRatio}%;--avz-block-size:${sizeRatio}%" aria-label="${escapeHtml(`${tensor.name}, ${tensor.position}, [${tensor.start},${tensor.end}), ${tensor.size} bytes`)}"></div>`;
   }
 
-  function singleAllocationLane(title, tensor) {
-    return `<section class="avz-memory-lane" aria-label="${escapeHtml(title)} independent address space">
-      <header><strong>${escapeHtml(title)}</strong><span>${tensor.size} B</span></header>
-      <div class="avz-memory-axis"><span>0</span><span>${tensor.end}</span></div>
-      <div class="avz-memory-track">${allocationBlock(tensor)}</div>
+  function allocationCapacityLabel(bytes) {
+    if (bytes % (1024 * 1024) === 0) return `${bytes / (1024 * 1024)} MiB`;
+    if (bytes % 1024 === 0) return `${bytes / 1024} KiB`;
+    return `${bytes} B`;
+  }
+
+  function allocationUsageLabel(usedBytes, capacityBytes) {
+    const ratio = capacityBytes > 0 ? (usedBytes / capacityBytes) * 100 : 0;
+    return `${ratio.toFixed(1)}%`;
+  }
+
+  function allocationTicks(tensors, referenceBytes, capacityBytes) {
+    const ticks = [{ address: tensors[0]?.start || 0, position: 0 }];
+    tensors.forEach((tensor) => {
+      ticks.push({
+        address: tensor.end,
+        position: referenceBytes > 0 ? Math.min(100, (tensor.end / referenceBytes) * 100) : 0,
+      });
+    });
+    return `<div class="avz-memory-scale__used">${ticks.map((tick, index) => {
+      const previousPosition = ticks[index - 1]?.position;
+      const nextPosition = ticks[index + 1]?.position;
+      const isCrowded = index > 0 && (
+        (previousPosition !== undefined && tick.position - previousPosition < 18)
+        || (nextPosition !== undefined && nextPosition - tick.position < 18)
+      );
+      const edgeClass = [
+        index === 0 ? 'is-start' : '',
+        index === ticks.length - 1 ? 'is-reference-end' : '',
+        isCrowded && index % 2 === 1 ? 'is-staggered' : '',
+      ].filter(Boolean).map((name) => ` ${name}`).join('');
+      return `<span class="avz-memory-tick${edgeClass}" style="--avz-tick-position:${tick.position}%"><code>${tick.address}</code></span>`;
+    }).join('')}</div>
+      <div class="avz-memory-scale__capacity"><span class="avz-memory-tick is-capacity-end"><code>${capacityBytes}</code></span></div>`;
+  }
+
+  function allocationLane(lane, tensorsById, referenceBytes) {
+    const tensors = lane.tensorIds.map((id) => tensorsById[id]).filter(Boolean);
+    if (!tensors.length) return '';
+    const usedBytes = Math.max(...tensors.map((tensor) => tensor.end));
+    return `<section class="avz-memory-lane avz-memory-lane--${escapeHtml(lane.id)}" aria-label="${escapeHtml(`${lane.title} address space`)}">
+      <div class="avz-memory-lane__map">
+        <strong class="avz-memory-lane__title">${escapeHtml(lane.title)}</strong>
+        <div class="avz-memory-lane__plot">
+          <div class="avz-memory-scale">
+            ${allocationTicks(tensors, referenceBytes, lane.capacityBytes)}
+          </div>
+          <div class="avz-memory-capacity-bar">
+            <div class="avz-memory-used">
+              ${tensors.map((tensor) => allocationBlock(tensor, referenceBytes)).join('')}
+            </div>
+            <div class="avz-memory-collapsed" aria-label="Collapsed unused address space"><span>⋯</span></div>
+          </div>
+        </div>
+      </div>
+      <div class="avz-memory-lane__summary">
+        <div class="avz-memory-lane__names">${tensors.map((tensor) => `<code>${escapeHtml(tensor.name)}</code>`).join('<span aria-hidden="true">·</span>')}</div>
+        <div class="avz-memory-lane__capacity">
+          <strong>${allocationUsageLabel(usedBytes, lane.capacityBytes)}</strong>
+          <span aria-hidden="true"></span>
+          <strong>${allocationCapacityLabel(lane.capacityBytes)}</strong>
+        </div>
+      </div>
     </section>`;
-  }
-
-  function allocationDetail(tensor) {
-    if (!tensor) {
-      return `<div class="avz-memory-detail__empty"><strong>Tensor details</strong><span>选择任一 Tensor 块，查看完整地址属性与后续生命周期。</span></div>`;
-    }
-    const rows = [
-      ['Variable', tensor.name], ['Position', tensor.position], ['Address', `[${tensor.start},${tensor.end})`],
-      ['Size', `${tensor.size} B`], ['Shape', tensor.shapeLabel], ['dtype', tensor.dtypeLabel],
-      ['format', tensor.format], ['Logical identity', tensor.logicalIdentity], ['Alignment', tensor.alignmentLabel],
-      [tensor.writeLabel || 'Filled by', tensor.filledBy], ['Consumed by', tensor.consumedBy], ['Lifetime', tensor.lifetime],
-    ];
-    return `<header><strong>${escapeHtml(tensor.name)}</strong><span>${escapeHtml(tensor.position)}</span></header>
-      <table><tbody>${rows.map(([key, value]) => `<tr><th>${escapeHtml(key)}</th><td><code>${escapeHtml(value)}</code></td></tr>`).join('')}</tbody></table>`;
   }
 
   function renderMemoryAllocationMap(trace) {
     const ids = Object.keys(ALLOCATION_MEMORY_MODEL);
     const tensors = Object.fromEntries(ids.map((id) => [id, allocationTensor(trace, id)]));
-    const selected = tensors[state.allocatedTensorId] || null;
-    const fmapA1 = tensors['buffer:feature:a1'];
-    const weightB1 = tensors['buffer:weight:b1'];
-    const biasC1 = tensors['buffer:bias:c1'];
-    if (!fmapA1 || !weightB1 || !biasC1) return;
+    if (!tensors['buffer:feature:a1']) return;
+    const referenceBytes = Math.max(...ALLOCATION_LANES.map((lane) => {
+      const laneTensors = lane.tensorIds.map((id) => tensors[id]).filter(Boolean);
+      return laneTensors.length ? Math.max(...laneTensors.map((tensor) => tensor.end)) : 0;
+    }));
     els.memoryAllocationView.innerHTML = `
-      <div class="avz-memory-allocation__intro">
-        <div><strong>Local Memory Map</strong><span>当前 AI Core 的本地内存地图</span></div>
-        <p>Allocate Memory 只建立 LocalTensor 视图并绑定硬件 Buffer 与本地地址；不搬运数据，也不执行计算。</p>
-        <small>GM input/output addresses were bound in the previous stage. This stage only creates LocalTensor views.</small>
-      </div>
       <div class="avz-memory-lanes">
-        <section class="avz-memory-lane avz-memory-lane--l1" aria-label="L1 shared address space">
-          <header><strong>L1 Buffer</strong><span>Used: 6720 B · [0,6720)</span></header>
-          <div class="avz-memory-axis avz-memory-axis--l1"><span>0</span><span>2048</span><span>6656</span><span>6720</span></div>
-          <div class="avz-memory-track avz-memory-track--l1">
-            <div>${allocationBlock(fmapA1)}</div>
-            <div>${allocationBlock(weightB1)}</div>
-            <div>${allocationBlock(biasC1, true)}</div>
-          </div>
-        </section>
-        ${singleAllocationLane('L0A Buffer', tensors['buffer:feature:a2'])}
-        ${singleAllocationLane('L0B Buffer', tensors['buffer:weight:b2'])}
-        ${singleAllocationLane('Bias Table', tensors['buffer:bias:c2'])}
-        ${singleAllocationLane('L0C Buffer', tensors['buffer:accum:co1'])}
+        ${ALLOCATION_LANES.map((lane) => allocationLane(lane, tensors, referenceBytes)).join('')}
       </div>
-      <section class="avz-address-spaces" aria-label="Independent address spaces explanation">
-        <div class="avz-address-spaces__diagram">
-          ${[['L0A', 'fmapA2'], ['L0B', 'weightB2'], ['Bias Table', 'biasC2'], ['L0C', 'accumCo1']].map(([lane, name]) => `<div><strong>${lane}</strong><span>0</span><i></i><code>${name}</code></div>`).join('')}
-        </div>
-        <p><code>fmapA2</code>、<code>weightB2</code>、<code>biasC2</code>、<code>accumCo1</code> 都从地址 0 开始，但它们属于不同的物理 Buffer，因此不存在地址覆盖或冲突。</p>
-      </section>
-      <section class="avz-memory-detail" aria-live="polite">${allocationDetail(selected)}</section>
       <footer class="avz-memory-legend">
-        <span><i></i> LocalTensor view exists · memory range assigned · data not loaded</span>
-        <span>Tensor 块宽经过可读性调整；地址标签和字节数表示真实内存范围。</span>
+        <span><i class="avz-memory-legend__tensor"></i> Tensor 色块表示 LocalTensor 视图，数据尚未装载</span>
+        <span><i class="avz-memory-legend__collapsed"></i> 斜线区域表示折叠的未使用容量，不按真实剩余比例绘制</span>
+        <span>所有 Tensor 共用同一比例尺；当前最大占用 ${referenceBytes} B 映射为泳道宽度的 ${ALLOCATION_VISIBLE_RATIO}%。</span>
         <span>所有地址区间均为左闭右开 <code>[start, end)</code>。</span>
       </footer>
       <div class="avz-memory-tooltip" id="memoryAllocationTooltip" role="tooltip" hidden></div>`;
 
-    els.memoryAllocationView.querySelectorAll('[data-allocation-tensor]').forEach((button) => {
-      button.addEventListener('pointerenter', showAllocationTooltip);
-      button.addEventListener('pointermove', positionAllocationTooltip);
-      button.addEventListener('pointerleave', hideAllocationTooltip);
-      button.addEventListener('focus', showAllocationTooltip);
-      button.addEventListener('blur', hideAllocationTooltip);
+    els.memoryAllocationView.querySelectorAll('[data-allocation-tensor]').forEach((block) => {
+      block.addEventListener('pointerenter', showAllocationTooltip);
+      block.addEventListener('pointermove', positionAllocationTooltip);
+      block.addEventListener('pointerleave', hideAllocationTooltip);
+      block.addEventListener('focus', showAllocationTooltip);
+      block.addEventListener('blur', hideAllocationTooltip);
     });
-  }
-
-  function handleAllocatedTensorClick(event) {
-    const button = event.target.closest('[data-allocation-tensor]');
-    if (!button) return;
-    state.allocatedTensorId = button.dataset.allocationTensor;
-    renderMemoryAllocationMap(currentTrace());
   }
 
   function allocationTooltipMarkup(tensor) {
@@ -4132,17 +4188,64 @@
 
   function drawConvEvent(ctx, width, height, c) {
     const event = c.event || {};
-    const l1Ready = event.eventType === 'MTE2_MTE1';
+    const eventType = event.eventType || 'Event';
+    const previousK = Math.max(0, Number(c.kIndex || 0) - 1);
+    const eventCopy = {
+      MTE2_MTE1: {
+        producerMeta: 'L1 writes complete',
+        consumerMeta: 'L1 readable after wait',
+        producerTone: 'input',
+        consumerTone: 'input',
+        footer: 'Synchronization completes readiness; it does not move tensor data',
+      },
+      M_MTE1: {
+        producerMeta: `A2/B2 K${previousK} reads complete`,
+        consumerMeta: `overwrite with K${c.kIndex} after wait`,
+        producerTone: 'reduction',
+        consumerTone: 'input',
+        footer: 'Dependency only · A2/B2 remain in L0A/L0B',
+      },
+      MTE1_M: {
+        producerMeta: `A2/B2 K${c.kIndex} loads complete`,
+        consumerMeta: `K${c.kIndex} readable after wait`,
+        producerTone: 'input',
+        consumerTone: 'reduction',
+        footer: 'Readiness only · no tensor data moves through the event edge',
+      },
+      M_FIX: {
+        producerMeta: 'Acc8 accumulation complete',
+        consumerMeta: 'CO1 readable after wait',
+        producerTone: 'reduction',
+        consumerTone: 'output',
+        footer: 'Readiness only · CO1 remains in L0C',
+      },
+    }[eventType] || {
+      producerMeta: 'upstream complete',
+      consumerMeta: 'unblocked after wait',
+      producerTone: 'input',
+      consumerTone: 'compute',
+      footer: 'Event edge is not a data-transfer path',
+    };
     const boxW = width * 0.28;
     const boxH = Math.min(92, height - 58);
     const y = 30;
-    drawConvObjectBox(ctx, 0, y, boxW, boxH, { label: event.producerEngine || 'Producer', shape: 'SetFlag', meta: l1Ready ? 'L1 writes complete' : 'upstream complete', tone: 'input' });
+    drawConvObjectBox(ctx, 0, y, boxW, boxH, {
+      label: event.producerEngine || 'Producer',
+      shape: 'SetFlag',
+      meta: eventCopy.producerMeta,
+      tone: eventCopy.producerTone,
+    });
     drawConvFlowArrow(ctx, boxW + 12, y + boxH / 2, width * 0.13, false);
     const eventX = width * 0.44;
-    drawConvObjectBox(ctx, eventX, y, width * 0.18, boxH, { label: event.eventType || 'Event', shape: 'dependency', meta: 'confirmed', tone: 'fusion' });
+    drawConvObjectBox(ctx, eventX, y, width * 0.18, boxH, { label: eventType, shape: 'dependency', meta: 'confirmed', tone: 'fusion' });
     drawConvFlowArrow(ctx, width * 0.64, y + boxH / 2, width * 0.10, false);
-    drawConvObjectBox(ctx, width * 0.76, y, width * 0.24, boxH, { label: event.consumerEngine || 'Consumer', shape: 'WaitFlag', meta: l1Ready ? 'L1 readable after wait' : 'blocked until ready', tone: 'compute' });
-    drawConvFooter(ctx, width, height, event.explanation || 'Execution dependency', l1Ready ? 'Synchronization completes readiness; it does not move tensor data' : 'Event edge is not a data-transfer path');
+    drawConvObjectBox(ctx, width * 0.76, y, width * 0.24, boxH, {
+      label: event.consumerEngine || 'Consumer',
+      shape: 'WaitFlag',
+      meta: eventCopy.consumerMeta,
+      tone: eventCopy.consumerTone,
+    });
+    drawConvFooter(ctx, width, height, event.explanation || 'Execution dependency', eventCopy.footer);
   }
 
   function drawConvObjectBox(ctx, x, y, w, h, item) {
@@ -4496,7 +4599,9 @@
       return;
     }
     els.tileLens.hidden = false;
-    if (trace?.operator?.kind === 'conv2d-cube' && step?.tensorSnapshots?.length) {
+    const useFocusedMMte1Blocks = trace?.operator?.kind === 'conv2d-cube'
+      && state.instructionOperationFocus === 'm-mte1';
+    if (!useFocusedMMte1Blocks && trace?.operator?.kind === 'conv2d-cube' && step?.tensorSnapshots?.length) {
       const tabs = tensorTabsForStep(trace, step);
       const snapshots = tabs.length > 1
         ? step.tensorSnapshots.filter((snapshot) => snapshot.tensorId === state.tensorTabKey)
