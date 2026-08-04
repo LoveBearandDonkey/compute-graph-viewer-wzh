@@ -2049,6 +2049,8 @@
       overflow-y: auto; line-height: 1.5; transition: border-color var(--duration-fast);
     }
     .wzh-chat-input:focus { outline: none; border-color: color-mix(in srgb, var(--primary) 55%, transparent); }
+    /* 回答期间输入框置灰(见 setChatBusy),答完立刻恢复并自动拿回焦点 */
+    .wzh-chat-input:disabled { opacity: .5; cursor: not-allowed; }
     .wzh-chat-input::placeholder { color: var(--foreground-muted); }
     .wzh-chat-send-btn {
       position: absolute; right: 16px; bottom: 20px;
@@ -2101,11 +2103,11 @@
       border-bottom: 1px solid var(--border-subtle);
     }
     .wzh-chat-notify-app { display: flex; align-items: center; gap: 6px; font-size: 11px; font-weight: 600; color: var(--foreground-secondary); }
+    /* WeLink 应用图标：用 pic/welink.png 真图，图片本身自带红底圆角，这里只控制尺寸，
+       不再叠加 background/字形（见 js/training-chat-panel.js 的 buildNotifyPreviewCard）。 */
     .wzh-chat-notify-app-dot {
       width: 15px; height: 15px; border-radius: 4px; flex-shrink: 0;
-      background: var(--primary); color: var(--primary-foreground);
-      display: inline-flex; align-items: center; justify-content: center;
-      font-size: 9px; font-weight: 700;
+      display: block; object-fit: cover;
     }
     .wzh-chat-notify-body { padding: 10px 12px; }
     .wzh-chat-notify-task { font-size: 12px; font-weight: 600; color: var(--foreground); margin-bottom: 2px; font-family: var(--font-mono); }
@@ -2115,6 +2117,16 @@
     .wzh-chat-notify-item { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; }
     .wzh-chat-notify-item-label { font-size: 10px; color: var(--foreground-muted); text-transform: uppercase; letter-spacing: .02em; flex-shrink: 0; }
     .wzh-chat-notify-item-value { font-size: 12px; font-weight: 600; color: var(--foreground-secondary); font-family: var(--font-mono); text-align: right; }
+    /* 越界指标（当前示意 MFU 跌破 55% 阈值）：只有数值本身标红，旁边的阈值角标走中性色，
+       一张小卡片里不重复堆红。 */
+    .wzh-chat-notify-item.is-alert .wzh-chat-notify-item-value { color: var(--danger); }
+    .wzh-chat-notify-item-value { display: inline-flex; align-items: center; justify-content: flex-end; gap: 6px; }
+    .wzh-chat-notify-item-flag {
+      font-family: var(--font-sans); font-size: 9px; font-weight: 600; line-height: 1.4;
+      padding: 1px 5px; border-radius: var(--radius-sm); white-space: nowrap;
+      color: var(--foreground-muted); background: var(--surface-3);
+      border: 1px solid var(--border-subtle);
+    }
 
     #trainChatToggle.is-active { background: var(--state-selected); color: var(--foreground); }
     #trainChatToggle.is-active .pto-ide-frame__window-icon { stroke: var(--accent); opacity: 1; }

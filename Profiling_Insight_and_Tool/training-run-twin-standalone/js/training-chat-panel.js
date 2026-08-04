@@ -364,12 +364,36 @@ ${issuesText || '（暂无）'}
     scrollChatToBottom(msgEl);
   }
 
+  // ── 输入框待命 ───────────────────────────────────────────────────────────
+  // 只要不在回答中,底部输入框就保持"随时可以敲"的状态:打开面板、回答结束、新建对话之后
+  // 都自动拿回焦点,不用再点一下输入框;面板已打开而焦点落在别处(建议按钮/消息区)时,直接
+  // 敲可见字符也会自动落进输入框。回答期间输入框置灰,避免一边流式输出一边输入产生歧义。
+  function isChatPanelOpen() {
+    const panel = $('trainChatPanel');
+    return !!panel && panel.classList.contains('is-open');
+  }
+
+  function focusChatInput() {
+    if (chatStreaming || !isChatPanelOpen()) return;
+    const input = $('trainChatInput');
+    if (!input || input.disabled) return;
+    try { input.focus({ preventScroll: true }); } catch (e) { input.focus(); }
+    const end = input.value.length;
+    try { input.setSelectionRange(end, end); } catch (e) { /* 非文本控件时忽略 */ }
+  }
+
   function setChatBusy(busy) {
     document.querySelectorAll('.wzh-chat-suggestion').forEach((b) => { b.disabled = busy; });
     const sendBtn = $('trainChatSendBtn');
     if (sendBtn) sendBtn.disabled = busy;
     const newBtn = $('trainChatNewBtn');
     if (newBtn) newBtn.disabled = busy;
+    const input = $('trainChatInput');
+    if (input) {
+      input.disabled = busy;
+      input.placeholder = busy ? '回答中…' : '请输入';
+    }
+    if (!busy) focusChatInput(); // 调用方都是先置 chatStreaming=false 再调本函数,这里能正常拿回焦点
   }
 
   // 新建对话:按用户诉求只是"清空当前面板内容"——重置消息区回到欢迎屏 + 重放一次打字机效果,
@@ -388,6 +412,7 @@ ${issuesText || '（暂无）'}
       '</div>';
     playWelcomeTypewriter();
     updateChatFade(msgEl); // 回到欢迎屏后不再有滚动余量,撤掉上下渐隐
+    focusChatInput();
   }
 
   // ── 「消息设置」场景:固定的演示流程,不经 DeepSeek——用户已经把回答内容和消息预览卡片都
@@ -396,6 +421,7 @@ ${issuesText || '（暂无）'}
   // 运维助手套路分段,样例卡片是"任务开始运行约 6 小时后的第一次播报",不是当下这一刻的读数——
   // 任务还在排队,不能预览成"已经在跑"的样子,否则和上文的排队状态自相矛盾。──
   const REMINDER_TASK_NAME = 'openPanGu2.0flash预训练_v1';
+  const MFU_THRESHOLD = '55%'; // 播报方案里声明的 MFU 阈值，样例卡片按它判定越界标红
 
   function buildReminderScenarioLeadMarkdown() {
     return `识别到"**${REMINDER_TASK_NAME}**"的基本信息：\n\n` +
@@ -405,8 +431,9 @@ ${issuesText || '（暂无）'}
       '结合规模和改动量，给你配置了一个强度相对较高的提醒方案：\n\n' +
       '- 定时播报：每 6 小时一次\n' +
       '- 事件通知：任务启动 / 结束 / checkpoint，额外单独提醒\n' +
+      `- 阈值告警：MFU 低于 **${MFU_THRESHOLD}**、loss 出现 NaN 或尖刺，越界项在播报里标红并单独推一条\n` +
       '- 异常升级：出现异常即刻通报 + 系统电话\n\n' +
-      '播报内容固定包含：任务名、执行时长、step 进度、loss、acc、MFU、显存利用率。下面是任务运行约 6 小时后、第一次定时播报的样例：';
+      '播报内容固定包含：任务名、执行时长、step 进度、loss、acc、MFU、显存利用率。下面是任务运行约 6 小时后、第一次定时播报的样例，正好赶上一次 MFU 跌破阈值：';
   }
 
   function buildReminderScenarioTailMarkdown() {
@@ -417,21 +444,29 @@ ${issuesText || '（暂无）'}
     // 5.6 天 ≈ 134.4 小时的总时长下，运行 6 小时 12 分对应约 4.6% 进度（≈900 step/h）；
     // loss/acc 按本页 metricsAtStep() 的同款 acc≈1-loss/6 关系换算，避免"刚跑 6 小时"却
     // 展示成收敛后期读数的业务错误。
+    // MFU 53.8% 故意压在 MFU_THRESHOLD 之下：样例要顺带示意"指标越界长什么样"——只有数值
+    // 本身标红，旁边的阈值角标走中性色，避免一张小卡片里出现两处红。
     const items = [
       { label: '执行时长', value: '6 小时 12 分' },
       { label: 'Step 进度', value: '5,570 / 120,000（4.6%）' },
       { label: 'loss', value: '3.862' },
       { label: 'acc', value: '35.7%' },
-      { label: 'MFU', value: '53.8%' },
+      { label: 'MFU', value: '53.8%', flag: '低于阈值 ' + MFU_THRESHOLD },
       { label: '显存利用率', value: '79.1%' },
     ];
     const itemsHtml = items.map((it) =>
-      '<div class="wzh-chat-notify-item"><span class="wzh-chat-notify-item-label">' + escHtml(it.label) + '</span><span class="wzh-chat-notify-item-value">' + escHtml(it.value) + '</span></div>'
+      '<div class="wzh-chat-notify-item' + (it.flag ? ' is-alert' : '') + '">' +
+        '<span class="wzh-chat-notify-item-label">' + escHtml(it.label) + '</span>' +
+        '<span class="wzh-chat-notify-item-value">' +
+          (it.flag ? '<span class="wzh-chat-notify-item-flag">' + escHtml(it.flag) + '</span>' : '') +
+          escHtml(it.value) +
+        '</span>' +
+      '</div>'
     ).join('');
     return '' +
       '<div class="wzh-chat-notify-card">' +
         '<div class="wzh-chat-notify-head">' +
-          '<span class="wzh-chat-notify-app"><span class="wzh-chat-notify-app-dot">W</span>WeLink 消息提醒</span>' +
+          '<span class="wzh-chat-notify-app"><img class="wzh-chat-notify-app-dot" src="./pic/welink.png" alt="" aria-hidden="true">WeLink 消息提醒</span>' +
         '</div>' +
         '<div class="wzh-chat-notify-body">' +
           '<div class="wzh-chat-notify-task">' + escHtml(REMINDER_TASK_NAME) + '</div>' +
@@ -465,7 +500,7 @@ ${issuesText || '（暂无）'}
       chatStreaming = false;
       setChatBusy(false);
       scrollChatToBottom(msgEl);
-    }, 650);
+    }, 1300);
   }
 
   // ── 「调整图表」场景:同样固定脚本,不经 DeepSeek。用户的诉求不是单纯"想换个样式",而是先
@@ -485,7 +520,7 @@ ${issuesText || '（暂无）'}
       '| --- | --- | --- | --- |\n' +
       '| precision | 分类指标，预训练不适用 | WPLC val loss | 已从 eval 日志取到（每 500 step 一次） |\n' +
       '| recall | 分类指标，预训练不适用 | LAMBADA val loss | 已从 eval 日志取到（每 500 step 一次） |\n\n' +
-      '已经帮你替换到精度栏了，左侧应该能看到新的 2 张图。如果还想加别的指标，跟我说一声我再调；这是演示效果，关闭本对话框会自动还原成默认的 8 张。';
+      '已经帮你替换到精度栏了，左侧应该能看到新的 2 张图。如果还想加别的指标，跟我说一声我再调。';
   }
 
   function runChartAdjustScenario() {
@@ -514,7 +549,7 @@ ${issuesText || '（暂无）'}
       chatStreaming = false;
       setChatBusy(false);
       scrollChatToBottom(msgEl);
-    }, 700);
+    }, 1400);
   }
 
   function revertChartsOverrideIfActive() {
@@ -618,8 +653,11 @@ ${issuesText || '（暂无）'}
         triggerOpenGlow(panel);
         playWelcomeTypewriter();
         scheduleFadeUpdate(); // 面板收起期间内容高度可能变过,展开时重算一次渐隐
+        focusChatInput();     // 展开即待输入,不用再点一下输入框
       } else {
         revertChartsOverrideIfActive(); // 关闭对话框即撤销「调整图表」演示对精度栏的改动
+        const input = $('trainChatInput');
+        if (input && document.activeElement === input) input.blur(); // 收起后别把焦点留在看不见的输入框里
       }
     }
 
@@ -650,6 +688,20 @@ ${issuesText || '（暂无）'}
     input.addEventListener('input', () => {
       input.style.height = 'auto';
       input.style.height = Math.min(120, input.scrollHeight) + 'px';
+    });
+
+    // 面板开着且不在回答中时,焦点无论落在建议按钮还是消息区,敲可见字符都直接进输入框。
+    // 这里只抢焦点、不 preventDefault——keydown 阶段换焦点后,这个字符本身会落到新的焦点上,
+    // 首字母不会丢。功能键(Tab/Esc/方向键,key.length>1)和带修饰键的快捷键一律放行。
+    document.addEventListener('keydown', (e) => {
+      if (chatStreaming || !isChatPanelOpen()) return;
+      if (e.ctrlKey || e.metaKey || e.altKey) return;
+      if (!e.key || e.key.length !== 1) return;
+      const t = e.target;
+      if (!t || t === input) return;
+      const tag = t.tagName;
+      if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || t.isContentEditable) return;
+      focusChatInput();
     });
   }
 
