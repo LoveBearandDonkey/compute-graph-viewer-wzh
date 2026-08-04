@@ -19,7 +19,7 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>PTO性能分析</title>
+<title>PTO性能分析 · 任务时间对比 V2</title>
 <link rel="stylesheet" href="../../vendor/pto-design-system/css/style.css" />
 <link rel="stylesheet" href="../../vendor/pto-design-system/patterns/workbench-shell/pattern.css" />
 <link rel="stylesheet" href="../../vendor/pto-design-system/patterns/ide-frame/pattern.css" />
@@ -787,16 +787,28 @@ body {
   background-color: color-mix(in srgb, var(--foreground) 32%, transparent);
 }
 
-/* ── 跨栏 Bezier 连线（SVG overlay，白色曲线，高层级）── */
+/* ── 跨文件任务时间对比：边界直线 + 中性时间窗口 ──
+   这层只表达时间位置和耗时差异，不表达依赖、上下游或数据流关系。 */
 #crossLaneSvgOverlay {
   position: absolute; inset: 0; z-index: 200; pointer-events: none;
+  overflow: visible;
 }
-#crossLaneSvgOverlay line,
-#crossLaneSvgOverlay path {
-  stroke: rgba(255, 255, 255, 0.85);
-  stroke-width: 1.5;
-  fill: none;
+#crossLaneSvgOverlay .sl-compare-window {
+  fill: color-mix(in srgb, var(--foreground) 5%, transparent);
+}
+#crossLaneSvgOverlay .sl-compare-boundary-halo {
+  stroke: color-mix(in srgb, var(--background) 72%, transparent);
+  stroke-width: 4;
   stroke-linecap: round;
+}
+#crossLaneSvgOverlay .sl-compare-boundary {
+  stroke: color-mix(in srgb, var(--foreground) 82%, transparent);
+  stroke-width: 1.5;
+  stroke-linecap: round;
+}
+#crossLaneSvgOverlay .sl-compare-boundary-cap {
+  stroke: color-mix(in srgb, var(--foreground) 82%, transparent);
+  stroke-width: 1.5;
 }
 
 /* ── 对比详情（下钻视图）── */
@@ -811,10 +823,19 @@ body {
 .sl-detail-back svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
 
 .sl-detail-meta { display: flex; flex-direction: column; gap: 2px; }
-.sl-detail-meta__row { display: flex; justify-content: space-between; gap: 10px; padding: 4px 0; font: var(--text-body-sm); }
+.sl-detail-meta__row { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; padding: 4px 0; font: var(--text-body-sm); }
 .sl-detail-meta__row + .sl-detail-meta__row { border-top: 1px solid var(--border-subtle); }
 .sl-detail-meta__key { color: var(--foreground-secondary); flex-shrink: 0; }
-.sl-detail-meta__val { color: var(--foreground); text-align: right; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* 任务名称 / 结构指纹这类长值一行装不下：允许折到第二行再省略，别一行就截断。
+   长 token（node 名、指纹里的路径）没有空格可断，靠 overflow-wrap: anywhere 强制换行。 */
+.sl-detail-meta__val {
+  color: var(--foreground); text-align: right; min-width: 0;
+  display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-clamp: 2;
+  overflow: hidden; white-space: normal; overflow-wrap: anywhere; word-break: break-word;
+}
+/* 语义标签那行的值是个 inline-flex pill，放进 -webkit-box 会被当成盒子子项拉成整行宽，
+   这行本来也不可能超长，直接退回普通块。 */
+.sl-detail-meta__val:has(.sl-detail-label-pill) { display: block; }
 .sl-detail-meta__val.monospace { font-family: var(--font-mono); }
 
 /* 对比详情：三列表格（行高缩小、表头自适应） */
@@ -5154,6 +5175,26 @@ function compareSlotEvents(taskKey) {
   });
 }
 
+/* 跨 run 同位任务条的匹配身份，对应泳道标题栏「视图说明」里那条规则：两侧是靠算子在计算图上
+   的身份对上的，不是靠它在时间轴上的先后顺序。所以这里只用与 run 无关的定位要素（剥掉槽位
+   后缀的泳道名 + 语义标签 + Step + 桶内序号）派生，绝不掺 ts/dur——同一逻辑算子在各 run 里
+   必须得到同一个 id，否则详情面板里显示的 id 就没有对账价值。
+   演示数据没有落盘真实 node id，这里派生一个稳定值占位；真实接入时 nodeId 直接换成 profiling
+   落盘的节点标识，取不到再退化用 fingerprint（算子类型 + 拓扑位置）。 */
+function graphIdentityOf(taskKey, primaryEvent) {
+  var bare = trainStripRunSuffix((taskKey && taskKey.coreName) || '').coreName;
+  var label = (taskKey && taskKey.label) || (primaryEvent && primaryEvent.label) || '';
+  var step = primaryEvent && primaryEvent.subGraphId != null
+    ? primaryEvent.subGraphId
+    : (taskKey && taskKey.subGraphId != null ? taskKey.subGraphId : '');
+  var ordinal = (taskKey && taskKey.ordinal != null) ? taskKey.ordinal : 0;
+  var sig = bare + '|' + label + '|' + step + '|' + ordinal;
+  return {
+    nodeId: 'node#' + (hashSeed(sig) % 900000 + 100000),
+    fingerprint: (label || '?') + '@' + (bare || '?') + (step === '' ? '' : '/step' + step) + '#' + ordinal,
+  };
+}
+
 /* ── 对比详情：点击泳道任务条后下钻到逐 run 的指标对比视图 ── */
 function diffDetailHtml(taskKey) {
   var slots = compareSlotEvents(taskKey);
@@ -5170,6 +5211,7 @@ function diffDetailHtml(taskKey) {
   var laneName = trainStripRunSuffix(taskKey.coreName || '').coreName;
   var label = primaryEvent.label || '';
   var stepId = primaryEvent.subGraphId != null ? 'Step ' + primaryEvent.subGraphId : '';
+  var identity = graphIdentityOf(taskKey, primaryEvent);
 
   // 构造示意对比项：种子里带上全部参与对比的 run.id，换一组对比对象就换一组派生值
   var seedVal = hashSeed(slots.map(function (s) { return s.run.id; }).join('|') + '|' + taskKey.coreName + '|' + taskKey.label + '|' + taskKey.ordinal);
@@ -5222,6 +5264,10 @@ function diffDetailHtml(taskKey) {
   html += '<div class="sl-detail-meta">';
   html += '<div class="sl-detail-meta__row"><span class="sl-detail-meta__key">语义标签</span><span class="sl-detail-meta__val"><span class="sl-detail-label-pill" style="background:' + (labelColorForTag(label)) + '">' + escapeHtml(label) + '</span></span></div>';
   html += '<div class="sl-detail-meta__row"><span class="sl-detail-meta__key">任务名称</span><span class="sl-detail-meta__val monospace" title="' + escapeHtml(taskName) + '">' + escapeHtml(taskName) + '</span></div>';
+  // 各 run 是按图节点身份对上的（见「视图说明」），把这个身份摆在任务名下面，用户才能自己核对
+  // 两侧比的是不是同一个算子；node id 取不到时的退化依据就是下面这条结构指纹。
+  html += '<div class="sl-detail-meta__row"><span class="sl-detail-meta__key" title="跨 run 同位任务条按算子在计算图上的身份匹配，而非时间轴上的先后顺序（详见泳道标题栏的「视图说明」）">图节点 ID</span><span class="sl-detail-meta__val monospace">' + escapeHtml(identity.nodeId) + '</span></div>';
+  html += '<div class="sl-detail-meta__row"><span class="sl-detail-meta__key" title="node id 取不到时的退化匹配依据：算子类型 + 拓扑位置">结构指纹</span><span class="sl-detail-meta__val monospace" title="' + escapeHtml(identity.fingerprint) + '">' + escapeHtml(identity.fingerprint) + '</span></div>';
   html += '<div class="sl-detail-meta__row"><span class="sl-detail-meta__key">归属泳道</span><span class="sl-detail-meta__val">' + escapeHtml(laneName) + '</span></div>';
   html += '<div class="sl-detail-meta__row"><span class="sl-detail-meta__key">' + escapeHtml(stepId ? '所属 Step' : 'Wrap') + '</span><span class="sl-detail-meta__val monospace">' + escapeHtml(stepId || '—') + '</span></div>';
   // 有 run 缺这条任务条时明确说明，避免整列 "—" 被当成渲染出错
@@ -5687,8 +5733,8 @@ function mountTrainSwimlane(which, run) {
     const canvasEl = document.getElementById(ids.canvas);
     const labelEl = document.getElementById(ids.label);
     if (!canvasEl || !labelEl) return;
-    // showRelationLines:false —— 跨栏/跨行连线统一由 profileCompare.html 自己的
-    // SVG overlay（drawTaskConnector）负责，组件自带的细箭头关掉，避免两条线叠在一起。
+    // showRelationLines:false —— 跨文件任务只由本页的时间窗口 overlay 表达，关闭组件自带
+    // 的关系箭头，避免把“对比”误读成依赖或上下游。
     renderer = new SwimlaneRenderer(canvasEl, labelEl, { labelWidth: 200, colorMode: 'semantic', showRelationLines: false });
     trainRenderers[which] = renderer;
     bindTrainSwimlaneCoreSelectSync(which, renderer);
@@ -5722,8 +5768,8 @@ function mountAggregatedTrainSwimlane(runs) {
     const canvasEl = document.getElementById(ids.canvas);
     const labelEl = document.getElementById(ids.label);
     if (!canvasEl || !labelEl) return;
-    // showRelationLines:false —— 跨栏/跨行连线统一由 profileCompare.html 自己的
-    // SVG overlay（drawTaskConnector）负责，组件自带的细箭头关掉，避免两条线叠在一起。
+    // showRelationLines:false —— 跨文件任务只由本页的时间窗口 overlay 表达，关闭组件自带
+    // 的关系箭头，避免把“对比”误读成依赖或上下游。
     renderer = new SwimlaneRenderer(canvasEl, labelEl, { labelWidth: 200, colorMode: 'semantic', showRelationLines: false });
     trainRenderers.top = renderer;
     bindTrainSwimlaneCoreSelectSync('top', renderer);
@@ -6089,7 +6135,7 @@ function updateCompareHeaderSearch() {
   if (cmpThirdSearchbox) cmpThirdSearchbox.hidden = !comparisonMode || aggregated || !isTripleCompare();
 }
 
-/* ── 跨栏 Bezier 连线（SVG overlay，白色曲线）── */
+/* ── 跨文件任务时间对比（V2：边界直线 + 时间窗口）── */
 var crossLaneSvg = null;
 
 function ensureCrossLaneOverlay() {
@@ -6108,9 +6154,8 @@ function hideCrossLaneConnectors() {
   if (crossLaneSvg) crossLaneSvg.innerHTML = '';
 }
 
-// 取一个任务条在自己所在 viewport 内的连线锚点（首尾 X + 行中 Y）。
-// 分组视图两侧各自一个 viewport 各调一次；聚合视图两侧共用同一个 viewport 调两次
-// （同一实例内不同的行/事件），端点坐标算法完全一致，不用另外调参。
+// 取任务条在自身 viewport 内的时间几何。分组视图是多个 viewport，聚合视图是同一
+// viewport 内的多行；两者最终都换算到 analysisColumn 的统一坐标系中。
 function crossLaneConnectorPoint(renderer, event, viewportId, labelW) {
   var vp = document.getElementById(viewportId);
   if (!vp || !renderer?.parsedData) return null;
@@ -6127,21 +6172,44 @@ function crossLaneConnectorPoint(renderer, event, viewportId, labelW) {
   // 任务条的行 Y（viewport 内，取条正中）
   var pos = renderer._getEventPos(event);
   var y = pos ? pos.y - (renderer.yScrollTop || 0) + pos.h / 2 : vpRect.height * 0.5;
-  return { vpRect: vpRect, sx: sx, ex: ex, y: y };
+  var duration = Math.max(0, event.dur || 0);
+  return {
+    vpRect: vpRect,
+    viewportId: viewportId,
+    sx: sx,
+    ex: ex,
+    y: y,
+    startTime: event.ts,
+    endTime: event.ts + duration,
+    duration: duration,
+  };
 }
 
-// 分组视图（两个独立实例/viewport）和聚合视图（同一实例内 2~3 行）共用这一份连线绘制：
-// 只是喂进来的 {renderer, event, viewportId} 不同，端点/贝塞尔曲线/端点圆的画法原样不变。
-// specs 按自上而下的顺序传入，相邻两条之间各画一对（首端 + 尾端）曲线——三方对比时
-// 就是 基线→对比A、对比A→对比B 两段接力，视觉上连成一条贯穿三行的走廊。
-function drawTaskConnector(specs) {
+function createCompareSvgNode(tag, attrs, className, textContent) {
+  var node = document.createElementNS('http://www.w3.org/2000/svg', tag);
+  if (className) node.setAttribute('class', className);
+  Object.keys(attrs || {}).forEach(function (key) { node.setAttribute(key, String(attrs[key])); });
+  if (textContent != null) node.textContent = textContent;
+  return node;
+}
+
+function drawCompareBoundary(svg, x, yTop, yBottom) {
+  svg.appendChild(createCompareSvgNode('line', { x1: x, y1: yTop, x2: x, y2: yBottom }, 'sl-compare-boundary-halo'));
+  svg.appendChild(createCompareSvgNode('line', { x1: x, y1: yTop, x2: x, y2: yBottom }, 'sl-compare-boundary'));
+  svg.appendChild(createCompareSvgNode('line', { x1: x - 4, y1: yTop, x2: x + 4, y2: yTop }, 'sl-compare-boundary-cap'));
+  svg.appendChild(createCompareSvgNode('line', { x1: x - 4, y1: yBottom, x2: x + 4, y2: yBottom }, 'sl-compare-boundary-cap'));
+}
+
+// specs 按「基线 → 对比 A → 对比 B」传入。任务组的外沿决定两根全高边界线；
+// 不再绘制任何跨任务曲线或端点圆，避免暗示任务依赖。
+function drawTaskCompareWindow(specs) {
   ensureCrossLaneOverlay();
   if (!crossLaneSvg) return;
   var list = Array.isArray(specs) ? specs : Array.prototype.slice.call(arguments);
   if (list.length < 2) { hideCrossLaneConnectors(); return; }
-  var labelW = list[0].renderer.labelWidth || 200;
   var pts = list.map(function (spec) {
-    return crossLaneConnectorPoint(spec.renderer, spec.event, spec.viewportId, labelW);
+    var point = crossLaneConnectorPoint(spec.renderer, spec.event, spec.viewportId, spec.renderer.labelWidth || 200);
+    return point;
   });
   if (pts.some(function (p) { return !p; })) { hideCrossLaneConnectors(); return; }
 
@@ -6153,6 +6221,10 @@ function drawTaskConnector(specs) {
     return {
       start: { x: cvx(p.vpRect, p.sx), y: cvy(p.vpRect, p.y) },
       end: { x: cvx(p.vpRect, p.ex), y: cvy(p.vpRect, p.y) },
+      startTime: p.startTime,
+      endTime: p.endTime,
+      duration: p.duration,
+      vpRect: p.vpRect,
     };
   });
 
@@ -6160,30 +6232,30 @@ function drawTaskConnector(specs) {
   crossLaneSvg.setAttribute('height', String(containerRect.height));
   crossLaneSvg.innerHTML = '';
 
-  // ── 曲线：纵向进出（控制点 x 与各自端点相同，y 取中点）──
-  function curve(a, b) {
-    var midY = (a.y + b.y) / 2;
-    var path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
-    path.setAttribute('d', 'M ' + a.x.toFixed(1) + ' ' + a.y.toFixed(1) +
-      ' C ' + a.x.toFixed(1) + ' ' + midY.toFixed(1) +
-      ' ' + b.x.toFixed(1) + ' ' + midY.toFixed(1) +
-      ' ' + b.x.toFixed(1) + ' ' + b.y.toFixed(1));
-    crossLaneSvg.appendChild(path);
-  }
-  for (var i = 0; i + 1 < anchors.length; i++) {
-    curve(anchors[i].start, anchors[i + 1].start);
-    curve(anchors[i].end, anchors[i + 1].end);
-  }
+  var earliest = anchors.reduce(function (best, item) { return item.startTime < best.startTime ? item : best; }, anchors[0]);
+  var latest = anchors.reduce(function (best, item) { return item.endTime > best.endTime ? item : best; }, anchors[0]);
+  var startX = earliest.start.x;
+  var endX = latest.end.x;
+  var leftX = Math.min(startX, endX);
+  var rightX = Math.max(startX, endX);
+  var yTop = Math.min.apply(null, pts.map(function (p) { return p.vpRect.top - containerRect.top; }));
+  var yBottom = Math.max.apply(null, pts.map(function (p) { return p.vpRect.bottom - containerRect.top; }));
 
-  // 端点圆
-  anchors.forEach(function (a) {
-    [a.start, a.end].forEach(function (pt) {
-      var c = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
-      c.setAttribute('cx', pt.x.toFixed(1)); c.setAttribute('cy', pt.y.toFixed(1));
-      c.setAttribute('r', '3'); c.setAttribute('fill', 'rgba(255,255,255,0.85)');
-      crossLaneSvg.appendChild(c);
-    });
+  // 高亮只铺在泳道 viewport 内，不越过面板标题与分隔区。
+  var seenViewports = new Set();
+  pts.forEach(function (p) {
+    if (seenViewports.has(p.viewportId)) return;
+    seenViewports.add(p.viewportId);
+    crossLaneSvg.appendChild(createCompareSvgNode('rect', {
+      x: leftX,
+      y: p.vpRect.top - containerRect.top,
+      width: Math.max(1, rightX - leftX),
+      height: p.vpRect.height,
+    }, 'sl-compare-window'));
   });
+
+  drawCompareBoundary(crossLaneSvg, startX, yTop, yBottom);
+  drawCompareBoundary(crossLaneSvg, endX, yTop, yBottom);
 }
 
 function updateCrossLaneConnectors() {
@@ -6196,7 +6268,7 @@ function updateCrossLaneConnectors() {
     var key = topR.positionalKeyOfEvent(event);
     var stripped = trainStripRunSuffix(key?.coreName || '');
     if (!stripped.side) { hideCrossLaneConnectors(); return; }
-    // 按槽位顺序（而不是"选中的在前"）串起来，连线才是自上而下贯穿的
+    // 按槽位顺序收集，保证任务组的时间边界计算稳定。
     var specs = [];
     activeCompareSlots().forEach(function (slot) {
       var slotEvent = slot === stripped.side
@@ -6206,7 +6278,7 @@ function updateCrossLaneConnectors() {
       if (slotEvent) specs.push({ renderer: topR, event: slotEvent, viewportId: 'trainTimelineTopViewport' });
     });
     if (specs.length < 2) { hideCrossLaneConnectors(); return; }
-    drawTaskConnector(specs);
+    drawTaskCompareWindow(specs);
     return;
   }
   // 分组视图：每栏一个实例，按栏序把各自的选中任务条串起来（缺的那栏跳过）
@@ -6214,10 +6286,14 @@ function updateCrossLaneConnectors() {
   var specs = activeGroupedRenderers()
     .filter(function (entry) { return entry.renderer.selectedEvent; })
     .map(function (entry) {
-      return { renderer: entry.renderer, event: entry.renderer.selectedEvent, viewportId: TRAIN_TL_IDS[entry.key].viewport };
+      return {
+        renderer: entry.renderer,
+        event: entry.renderer.selectedEvent,
+        viewportId: TRAIN_TL_IDS[entry.key].viewport,
+      };
     });
   if (specs.length < 2) { hideCrossLaneConnectors(); return; }
-  drawTaskConnector(specs);
+  drawTaskCompareWindow(specs);
 }
 
 /* ── 关联代码面板 ── */
@@ -7032,6 +7108,9 @@ function init() {
     const trainTlResizeObserver = new ResizeObserver(() => window.requestAnimationFrame(() => {
       if (state.secondaryViewMode !== 'comparison') return;
       TRAIN_PANEL_KEYS.forEach((key) => trainRenderers[key]?.onResize());
+      if (trainRenderers.top?.selectedEvent && state.inspectorView === 'detail') {
+        window.requestAnimationFrame(updateCrossLaneConnectors);
+      }
     }));
     trainTlResizeObserver.observe(canvasPane);
     trainTlResizeObserver.observe(blockGraphView);
