@@ -25,7 +25,7 @@
   <!-- 集群热力图样式（复用 training-monitoring-v2 的 .twin-heat* 视觉） -->
   <link rel="stylesheet" href="./css/training-run-twin.css">
   <!-- 本页模块私有 layout -->
-  <link rel="stylesheet" href="./css/config-relation-observer.css?v=20260803-legend-collapse">
+  <link rel="stylesheet" href="./css/config-relation-observer.css?v=20260805-incident-threshold-3">
 </head>
 <body data-theme="dark">
   <section class="pto-ide-frame" data-ide-frame data-host="standalone" aria-label="Config and Relation Observer">
@@ -132,10 +132,71 @@
              grid-areas:  net | arch | moe
                           net | cluster cluster                                    -->
         <section class="pto-ide-frame__pane" data-ide-pane="observer" aria-label="配置与关系观测">
+          <!-- 上区 · 事件关系横幅：一句桥接句带过，不是重点，别喧宾夺主 -->
           <div class="cro-incident-banner" id="croIncidentBanner" role="status" aria-live="polite" hidden>
+            <span class="cro-incident-banner__tag" id="croIncidentBannerTag"></span>
             <span class="cro-incident-banner__message" id="croIncidentBannerMessage"></span>
             <button class="pto-ide-frame__window-action cro-incident-banner__close" id="croIncidentBannerClose" type="button" aria-label="关闭事件关系" title="关闭事件关系">&#10005;</button>
           </div>
+          <!-- ═══ 事件详情视图（上=横幅 / 中=传播源→受影响 / 下=事件内涵）═══
+               运行事件是已发生的既成事实：配置表单不可调、四域静态查询口径不成立，
+               所以事件模式下 .cro-board 整块隐藏，由这一块接管。关闭横幅或收起
+               运行事件栏回到配置仿真态。 -->
+          <div class="cro-incident-view" id="croIncidentView" hidden>
+
+            <!-- ── 中区 · 一块编排画布 ──
+                 传播源 / 连接线 / 受影响不是三个各自带滚动条的容器，而是同一张图上
+                 的三个部位。舞台（.cro-incident-stage）按内容排到自然尺寸，视口只负责
+                 「看哪一块、看多大」：进场自动适配屏幕，滚轮缩放、拖拽平移。 -->
+            <div class="cro-incident-flow" id="croIncidentFlow" aria-label="传播关系画布">
+              <div class="cro-incident-stage" id="croIncidentStage">
+                <!-- 连线层在内容底下（pointer-events:none）：贝塞尔从传播源那个具体
+                     对象/整体的右缘出发，落到受影响那个对象/整体的左缘，两端各圈一道
+                     虚线框标出「连的是哪一坨」。坐标是舞台自身坐标系，跟着画布一起缩放。 -->
+                <svg class="cro-stage-links" id="croStageLinks" aria-hidden="true"></svg>
+
+                <section class="cro-stage-role" data-role="origin" aria-label="传播源">
+                  <header class="cro-stage-role__head">
+                    <span class="cro-stage-role__badge">传播源</span>
+                  </header>
+                  <div class="cro-stage-role__domains" id="croOriginDomains"></div>
+                </section>
+
+                <section class="cro-stage-role" data-role="victim" aria-label="受影响">
+                  <header class="cro-stage-role__head">
+                    <span class="cro-stage-role__badge">受影响</span>
+                  </header>
+                  <div class="cro-stage-role__domains" id="croVictimDomains"></div>
+                </section>
+
+                <!-- 路径节点：骑在连线中点上的一枚标签（path 拆出的链路步骤 +
+                     event.propagation 的途经范围），读起来就是这条边的名字。
+                     位置由 JS 按曲线中点算，故绝对定位。 -->
+                <div class="cro-incident-arrow" id="croIncidentArrow" aria-label="传播路径">
+                  <ol class="cro-incident-arrow__chain" id="croIncidentArrowChain"></ol>
+                  <div class="cro-incident-arrow__via" id="croIncidentArrowVia"></div>
+                </div>
+              </div>
+
+              <div class="cro-stage-zoom" aria-label="画布缩放">
+                <button class="btn btn-icon btn-ghost btn-sm" id="croStageZoomOut" type="button" aria-label="缩小" title="缩小">
+                  <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h14"></path></svg>
+                </button>
+                <span class="cro-stage-zoom__readout" id="croStageZoomReadout">100%</span>
+                <button class="btn btn-icon btn-ghost btn-sm" id="croStageZoomIn" type="button" aria-label="放大" title="放大">
+                  <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14"></path><path d="M5 12h14"></path></svg>
+                </button>
+                <button class="btn btn-sm btn-ghost" id="croStageZoomFit" type="button" title="适配屏幕">适配</button>
+              </div>
+            </div>
+
+            <!-- ── 下区 · 问题详情（图表 + 文字）── -->
+            <section class="cro-incident-detail" aria-label="问题详情">
+              <h2 class="cro-incident-detail__title">问题详情</h2>
+              <div class="cro-incident-detail__body" id="croIncidentDetail"></div>
+            </section>
+          </div>
+
           <div class="pto-ide-frame__pane-body cro-board" id="croBoard">
 
             <!-- ═══ 区域 A · 整网（3D deck · 正视图） ═══ -->
@@ -218,7 +279,9 @@
                   <div class="cro-stepper-row" id="croClusterSteppers"></div>
                 </div>
                 <div class="cro-cluster__grid">
-                  <div class="twin-heat" id="croHeat"></div>
+                  <!-- .cro-heat 是集群矩阵的样式钩子（原先挂在 #croHeat 上）。
+                       事件详情的角色卡里会再开若干份同款矩阵，故改成类。 -->
+                  <div class="twin-heat cro-heat" id="croHeat"></div>
                 </div>
               </div>
             </section>
@@ -229,15 +292,15 @@
     </div>
   </section>
 
-  <!-- 关系连线 overlay 宿主（第 7 项接入），置于 frame 之上、pointer-events:none -->
+  <!-- 关系连线 overlay 宿主（配置仿真模式专用），置于 frame 之上、pointer-events:none。
+       事件详情模式下四域收起，没有可连的锚点，这层会被清空。 -->
   <svg class="cro-link-layer" id="croLinkLayer" aria-hidden="true"></svg>
-  <div class="cro-root-tag" id="croRootTag" hidden>传播源</div>
 
   <script src="./js/workbench-shell-pattern.js"></script>
   <script src="./js/ide-frame-pattern.js"></script>
   <script src="./js/model-graphviz-pattern.js"></script>
   <script src="./js/model-architecture-3d-deck-pattern.js"></script>
-  <script src="./js/config-relation-observer.js?v=20260730-dp-scope-incident"></script>
+  <script src="./js/config-relation-observer.js?v=20260805-incident-threshold-3"></script>
   <script>
     // 主题切换：与 training-monitoring-v2.html 同款单图标按钮，只改 data-theme。
     (() => {

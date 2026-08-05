@@ -21,13 +21,15 @@
   min-width: 0;
 }
 
+/* 上区 · 事件关系横幅。只带一句桥接句 —— 它是「当前在看哪个事件」的提示条，
+   不是详情的主角，重点在中区的传播源→受影响与下区的问题详情。 */
 .cro-incident-banner {
   display: flex;
   align-items: center;
   gap: var(--space-2);
   flex: 0 0 auto;
   margin: var(--space-2) var(--space-2) 0;
-  padding: var(--space-2) var(--space-3);
+  padding: var(--space-1) var(--space-3);
   border: 1px solid color-mix(in srgb, var(--danger) 28%, transparent);
   border-radius: var(--radius-md);
   background: linear-gradient(
@@ -40,11 +42,12 @@
   line-height: 1.45;
 }
 
-.cro-incident-banner::before {
+/* 原来是恒定的「事件关系」四个字，换成本次事件的编号（问题1.3），一眼知道
+   自己停在哪条问题线的第几步。文本由 selectIncident 写入。 */
+.cro-incident-banner__tag {
   flex: 0 0 auto;
   color: var(--danger);
   font-weight: var(--font-weight-semibold);
-  content: "事件关系";
 }
 
 .cro-incident-banner__message {
@@ -340,52 +343,9 @@
   font-size: var(--font-size-label-xs);
 }
 
-.cro-board.is-incident-mode .is-incident-origin {
-  box-shadow: 0 0 0 2px var(--danger) !important;
-  opacity: 1 !important;
-}
-
-/* 根节点沿用视图自身轮廓：具体 Layer 直接改 tick 边线，典型 Layer 则在
-   stack 容器内部描边，避免给整列再套一层不贴合内容的外框。 */
-.cro-board.is-incident-mode .cro-tick.is-incident-origin {
-  border-color: var(--danger) !important;
-  box-shadow: none !important;
-}
-
-.cro-board.is-incident-mode .cro-structure__stack.is-incident-origin {
-  border-radius: var(--radius-lg);
-  box-shadow: inset 0 0 0 2px var(--danger) !important;
-}
-
-/* 受影响最大（橙）：与传播源（红）是独立角色，同一元素可能同时命中——
-   用 outline 而非 box-shadow，避免和上面几条抢同一个属性，两圈能同时显示。
-   .cro-tick 例外：刻度只有 4px 宽、逐格贴邻，外扩描边会连到邻格，改走内嵌
-   描边（呼应它 is-incident-origin 时改 border-color 的思路）。 */
-.cro-board.is-incident-mode .is-incident-victim {
-  outline: 2px solid var(--warning) !important;
-  outline-offset: 2px !important;
-  opacity: 1 !important;
-}
-
-.cro-board.is-incident-mode .cro-tick.is-incident-victim {
-  outline: none !important;
-  box-shadow: inset 0 0 0 1px var(--warning) !important;
-}
-
-.cro-root-tag {
-  position: fixed;
-  z-index: 42;
-  padding: 3px var(--space-2);
-  border: 1px solid color-mix(in srgb, var(--danger) 36%, transparent);
-  border-radius: var(--radius-pill);
-  background: color-mix(in srgb, var(--danger) 16%, var(--surface-1));
-  color: var(--danger);
-  font-size: var(--font-size-label-xs);
-  font-weight: var(--font-weight-semibold);
-  line-height: 1;
-  pointer-events: none;
-  transform: translateY(-50%);
-}
+/* 事件的角色范围曾经直接描在四域上（红框=传播源、橙框=受影响，外加一枚跟着
+   震中飘的「传播源」浮标）。事件模式下四域已整块收起，这套描边随之下线 ——
+   角色范围改由中区两张卡各自重建的域承担，见 .cro-stage-role__domains .is-hit。 */
 
 @media (max-width: 1180px) {
   .cro-event-rail { flex-basis: 252px; }
@@ -395,10 +355,12 @@
    整页只有一个 ide-frame pane。T 型的 整网 / Model Architecture / MoE /
    Cluster 是同一面板里的 grid area，彼此没有 pane 边界、gutter 或卡片描边，
    只靠 grid 间距与大标题分区。 */
-.cro-board {
-  /* deck 语义色兜底：与 model-architecture-3d-deck-pattern.js 的 COLOR_FALLBACKS
-     同值。deck 挂载后 syncDeckPalette 会用 deck 根节点的实际值覆盖这些，
-     这里只保证 deck 未就绪时结构条不会没有颜色。 */
+/* deck 语义色兜底：与 model-architecture-3d-deck-pattern.js 的 COLOR_FALLBACKS
+   同值。deck 挂载后 syncPalette 会用 deck 根节点的实际值覆盖这些，这里只保证
+   deck 未就绪时结构条不会没有颜色。四域（.cro-board）与事件详情里重建的那几份
+   （.cro-incident-view）是两棵互不包含的子树，两边都要有。 */
+.cro-board,
+.cro-incident-view {
   --pto-model-deck-embedding: #14B8A6;
   --pto-model-deck-norm: #38BDF8;
   --pto-model-deck-attention: #3B82F6;
@@ -414,7 +376,9 @@
   --pto-model-deck-input: #A855F7;
   --pto-model-deck-parameter: #3B82F6;
   --pto-model-deck-state: #8B5CF6;
+}
 
+.cro-board {
   display: grid;
   grid-template-columns:
     [net-start] minmax(220px, 0.85fr)
@@ -810,7 +774,7 @@
   filter: brightness(1.04);
   opacity: 1;
 }
-.cro-board.is-focused #croHeat .twin-heat-cell:not(.is-selected):not(.is-related) { opacity: 0.35; }
+.cro-board.is-focused .cro-heat .twin-heat-cell:not(.is-selected):not(.is-related) { opacity: 0.35; }
 
 /* 算子粒度的「保色」：点中某个算子后，整网 deck 与五个典型层里只有它留语义色，
    其余节点整体去色，让选中项从一片灰底上跳出来（层/EP/rank 那些粗粒度选择
@@ -1401,7 +1365,7 @@
 /* 集群网格：几何全部由 JS 按 rank 编址算，这里只补 training-run-twin.css 里
    原本由 training-run-twin.js 写成内联样式的那几条布局规则（列数除外）。
    .twin-heat 基类自带 grid + 32 列，这里改成纵向堆叠 Stage标签 / DP组 / EP标签。 */
-#croHeat {
+.cro-heat {
   display: flex;
   flex-direction: column;
   gap: 4px;
@@ -1413,44 +1377,44 @@
 }
 
 /* Stage 标签行 / stage 块容器 / EP 标签行三者用同一套 pp 列模板，左右对齐 */
-#croHeat .twin-heat-pp-labels,
-#croHeat .cro-heat-dp,
-#croHeat .cro-heat-ep-labels {
+.cro-heat .twin-heat-pp-labels,
+.cro-heat .cro-heat-dp,
+.cro-heat .cro-heat-ep-labels {
   display: grid;
   column-gap: var(--space-2);
 }
 
 /* 每个 DP 副本一个横贯全宽的分组盒（基类提供左侧 DP 标签与边框） */
-#croHeat .cro-heat-body {
+.cro-heat .cro-heat-body {
   display: flex;
   flex-direction: column;
   gap: 3px;
 }
 
-#croHeat .cro-heat-dp {
+.cro-heat .cro-heat-dp {
   padding: 2px;
   border-radius: 3px;
 }
 
 /* 组内每个 stage 一个小方阵：epRows × epCols（默认 4×16） */
-#croHeat .cro-heat-block {
+.cro-heat .cro-heat-block {
   display: grid;
   gap: 1px;
 }
 
-#croHeat .twin-heat-ep-labels {
+.cro-heat .twin-heat-ep-labels {
   display: grid;
   gap: 0;
 }
 
-#croHeat .twin-heat-pp-labels span {
+.cro-heat .twin-heat-pp-labels span {
   text-align: center;
   font-size: 9px;
   font-weight: var(--font-weight-semibold);
   color: var(--foreground-muted);
 }
 
-#croHeat .cro-heat-ep-labels span {
+.cro-heat .cro-heat-ep-labels span {
   text-align: center;
   font-size: 9px;
   font-weight: var(--font-weight-medium);
@@ -1467,7 +1431,7 @@
    描边颜色走 --cro-cell-ring，让 stage 分隔 / 关联 / 选中三种状态叠加不打架。 */
 /* 折成 4×16 后格子约 10px 宽，1px 描边足够表达，不再填色 ——
    .ep-tint-N 的 EP 列底色也就能透出来。 */
-#croHeat .twin-heat-cell {
+.cro-heat .twin-heat-cell {
   --cro-cell-ring: color-mix(in srgb, var(--foreground-muted) 45%, transparent);
   background: transparent;   /* 不要 .ep-tint-N 的 8 色循环底色 */
   /* 基类是 aspect-ratio:1，格高会被列宽牵着走；这里显式定高、与宽度解耦 */
@@ -1480,7 +1444,7 @@
 }
 
 /* 关系高亮：默认全中性，只有被关系引擎点亮时才着色 */
-#croHeat .twin-heat-cell:focus-visible {
+.cro-heat .twin-heat-cell:focus-visible {
   outline: none;
   --cro-cell-ring: var(--foreground);
   z-index: 1;
@@ -1490,9 +1454,9 @@
    节点的选中语言一致。原来关联用 --accent、选中用 --primary，选中一组 rank 时
    组里每格都描一圈偏蓝的边，读起来像另一套和语义色无关的状态。
    层级交给粗细：关联 1px，选中 2px + 外圈 1px。 */
-#croHeat .twin-heat-cell.is-related { --cro-cell-ring: #fff; }
+.cro-heat .twin-heat-cell.is-related { --cro-cell-ring: #fff; }
 
-#croHeat .twin-heat-cell.is-selected {
+.cro-heat .twin-heat-cell.is-selected {
   --cro-cell-ring: #fff;
   box-shadow: inset 0 0 0 2px #fff, 0 0 0 1px #fff;
   z-index: 1;
@@ -1510,4 +1474,667 @@
   background: var(--surface-2);
   color: var(--foreground-muted);
   font-size: var(--font-size-body-sm);
+}
+
+/* ══ 事件详情视图 · 上/中/下 ═══════════════════════════════════════════════
+   运行事件是已发生的既成事实：配置表单不可调、四域「点一个对象看它理论上牵连
+   谁」的静态查询口径也不成立（范围由本次采样写死）。所以事件模式下 .cro-board
+   整块隐藏，由这里接管：
+     上 = .cro-incident-banner（事件关系横幅，仍在 pane 顶部）
+     中 = .cro-incident-flow  （传播源 → 受影响，两侧各自重建所涉及的域）
+     下 = .cro-incident-detail（该事件的内涵：图表 + 文字）
+   两个模式互斥，靠 [hidden] 切换。 */
+.cro-board[hidden] { display: none; }
+
+/* 中 : 下 = 3 : 2 固定，两区各自内滚，整页不滚 —— 传播源→受影响是主视图，
+   问题详情是常驻的证据区，两者的相对分量不该随内容多少浮动。 */
+.cro-incident-view {
+  display: grid;
+  grid-template-rows: 3fr 2fr;
+  flex: 1 1 auto;
+  /* 分隔靠下区自己那道 border-top + padding，这里不必再拉一个双倍间距 */
+  gap: var(--space-4);
+  min-height: 0;
+  padding: var(--space-3) var(--space-4) var(--space-4);
+  overflow: hidden;
+}
+
+.cro-incident-view[hidden] { display: none; }
+
+/* ── 中区 · 编排画布 ─────────────────────────────────────────────────────
+   视口只负责裁剪与承接手势；舞台在里面按内容排到自然尺寸，整体一起平移缩放。
+   传播源 / 连接线 / 受影响没有各自的滚动条，也没有各自的边界。 */
+.cro-incident-flow {
+  position: relative;
+  min-height: 0;
+  overflow: hidden;
+  border-radius: var(--radius-lg);
+  cursor: grab;
+  touch-action: none;
+  /* 点阵底纹：给「这是一块可以推着走的画布」一点触感。密度不随缩放变，
+     但底纹会跟着平移量走（见 apply() 里写的 background-position）。 */
+  background-image: radial-gradient(
+    circle,
+    color-mix(in srgb, var(--foreground) 10%, transparent) 0.8px,
+    transparent 0.8px
+  );
+  background-size: 11px 11px;
+}
+
+.cro-incident-flow.is-panning { cursor: grabbing; }
+
+.cro-incident-stage {
+  position: absolute;
+  top: 0;
+  left: 0;
+  transform-origin: 0 0;
+  /* 三栏宽度写死：舞台必须有确定的自然尺寸，适配倍率才算得出来。
+     中间那栏是空的，只为连线让出横向空间 —— 路径标签是绝对定位骑在曲线上的。 */
+  display: grid;
+  grid-template-columns: 560px 164px 560px;
+  align-items: start;
+  gap: var(--space-4);
+  width: max-content;
+  /* 拖拽平移时不选中文本 */
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.cro-stage-role[data-role="origin"] { grid-column: 1; }
+.cro-stage-role[data-role="victim"] { grid-column: 3; }
+
+/* 连线层铺满舞台、垫在内容底下 */
+.cro-stage-links {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+  pointer-events: none;
+}
+
+/* 连线走红→黄渐变：起点接传播源的红、终点接受影响的橙，线本身就成了两个角色
+   之间的过渡，而不是叠在它们之上的第三种颜色。渐变在 drawLinks 里按端点坐标
+   建（userSpaceOnUse），所以走向永远跟着实际的两端走。
+   笔画规格仍与配置态的 .cro-link 一致（1.25）：同一页里两种关系连线不该有两种
+   粗细。non-scaling-stroke —— 画布可以缩到 40%，笔画跟着缩就只剩半个像素了；
+   描边按屏幕像素算，任何缩放级别下都是同一根细线。 */
+.cro-stage-link {
+  fill: none;
+  stroke: url(#croStageLinkGradient);
+  stroke-width: 1.25;
+  stroke-opacity: 0.85;
+  stroke-linecap: round;
+  vector-effect: non-scaling-stroke;
+}
+
+/* 两端各自取所在角色的颜色，与线的渐变两头对齐 */
+.cro-stage-link-dot {
+  fill: var(--danger);
+  stroke: none;
+}
+
+.cro-stage-link-head {
+  fill: var(--warning);
+  stroke: none;
+}
+
+/* 「连的是哪一坨」：一整组时把范围虚线圈出来，虚线规格同 .cro-link-group */
+.cro-stage-link-group {
+  fill: none;
+  stroke-width: 1.25;
+  stroke-opacity: 0.9;
+  stroke-dasharray: 3 3;
+  vector-effect: non-scaling-stroke;
+}
+
+.cro-stage-zoom {
+  position: absolute;
+  right: var(--space-3);
+  bottom: var(--space-3);
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 2px;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-pill);
+  background: var(--surface-1);
+  cursor: default;
+}
+
+/* 这几个内联 svg 没有 fill/stroke 属性，本页也没有通用的「按钮里的 svg」规则，
+   不显式给就是默认的 fill:black / stroke:none —— 纯路径图标什么都画不出来。 */
+.cro-stage-zoom svg {
+  width: 14px;
+  height: 14px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+}
+
+.cro-stage-zoom__readout {
+  min-width: 44px;
+  text-align: center;
+  color: var(--foreground-secondary);
+  font-family: var(--font-mono);
+  font-size: var(--font-size-label-xs);
+}
+
+/* 两张角色卡不画容器：没有描边、没有底色。它们是同一张图的左右两半，不是两个
+   需要被感知的盒子 —— 角色身份由标题旁的小圆点和域内命中色承担，边界交给中间
+   那条箭头列去分。 */
+.cro-stage-role {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  min-width: 0;
+  min-height: 0;
+}
+
+/* 角色色与运行事件栏底部的图例（传播源 / 受影响最大）同源 */
+.cro-stage-role[data-role="origin"] { --cro-role-tone: var(--danger); }
+.cro-stage-role[data-role="victim"] { --cro-role-tone: var(--warning); }
+
+/* 只剩角色标题本身；「发生了什么」已经并进第一个域头那一行 */
+.cro-stage-role__head {
+  display: flex;
+  min-width: 0;
+}
+
+/* 角色标识只是个标题，与四域的区域大标题同字号 —— 它俩是这块画布上仅有的两个
+   顶层分区名。角色色留给域里的命中态去承载，标题前不挂色点。 */
+.cro-stage-role__badge {
+  flex: 0 0 auto;
+  color: var(--foreground);
+  font-size: var(--font-size-title-md);
+  font-weight: var(--font-weight-semibold);
+  letter-spacing: -0.01em;
+}
+
+/* 一个角色里可能同时出现 Layer 导航 / 结构条 / MoE / 集群，逐个纵向堆叠，
+   全部按自然高度铺开 —— 画布上不再有第二层滚动区，要看别处靠平移。 */
+.cro-stage-role__domains {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+/* 路径节点：不套卡片。它已经让开了连线，不需要一个盒子把自己从画布上分出来 ——
+   链路步骤与「途经」chip 本身就是可读的内容，直接落在画布上。 */
+.cro-incident-arrow {
+  position: absolute;
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-2);
+  /* 比中间那栏的净空（16 + 164 + 16 = 196）窄一点，两侧各留 6px */
+  width: 184px;
+  text-align: center;
+  transform: translate(-50%, -50%);
+}
+
+
+/* 下区：问题详情。与中区之间只靠间距和一道细分隔线分区，不套卡片。
+   标题固定，内容在下面那层自己滚。 */
+.cro-incident-detail {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  min-width: 0;
+  min-height: 0;
+  padding-top: var(--space-4);
+  border-top: 1px solid var(--border-subtle);
+}
+
+/* 与左侧「运行事件」标题同字号：两者是同一层级的分区名 */
+.cro-incident-detail__title {
+  margin: 0;
+  flex: 0 0 auto;
+  color: var(--foreground);
+  font-size: var(--font-size-title-sm);
+  font-weight: var(--font-weight-semibold);
+}
+
+.cro-incident-detail__body {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  gap: var(--space-3);
+  min-height: 0;
+  overflow: auto;
+  overscroll-behavior: contain;
+}
+
+/* 窄屏不改结构：舞台是固定尺寸的画布，装不下时由自动适配缩小，不重排成单列。 */
+
+/* ── 角色卡内的域重建 ────────────────────────────────────────────────────
+   卡里的 Layer 导航 / 结构条 / MoE / 集群与四域里的是同一批 class、同一套
+   渲染器，视觉上一模一样。差别只有两点：命中对象按角色色点亮、其余压暗；
+   整卡只读（不接受点击与 Tab）。 */
+.cro-role-domain {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+/* 一行读成一句话：左边的范围 chip 是主语，右边的 summary 是「发生了什么」。
+   域名（Model Architecture / MoE / Cluster）不单列 —— chip 已经点明了对象类型。 */
+.cro-role-domain__head {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+.cro-role-domain__summary {
+  margin: 0;
+  flex: 1 1 auto;
+  min-width: 0;
+  color: var(--foreground-secondary);
+  font-size: var(--font-size-body-sm);
+  line-height: 1.45;
+}
+
+.cro-role-domain__chip {
+  padding: 2px var(--space-2);
+  border-radius: var(--radius-pill);
+  background: var(--surface-2);
+  color: var(--foreground);
+  font-family: var(--font-mono);
+  font-size: var(--font-size-label-xs);
+  line-height: 1.5;
+}
+
+.cro-role-domain__body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  min-width: 0;
+}
+
+/* 只读：整卡不接点击。容器自身保持可滚（结构条与 EP 组各有内部滚动区）。 */
+.cro-stage-role__domains :is(button, [role="gridcell"]) {
+  pointer-events: none;
+  cursor: default;
+}
+
+/* ── 命中着色 ──
+   角色色由卡上的 --cro-role-tone 决定（传播源红 / 受影响橙）。命中态本身只用
+   一个中性的 .is-hit —— 「这是哪一角色」由所在的卡提供，不再靠两套 class。 */
+.cro-stage-role__domains .is-hit {
+  box-shadow: 0 0 0 2px var(--cro-role-tone);
+  opacity: 1;
+}
+
+/* 刻度只有几 px 宽、逐格贴邻，外扩描边会连到邻格，改走 border/内嵌描边 */
+.cro-stage-role__domains .cro-tick.is-hit {
+  border-color: var(--cro-role-tone);
+  background: color-mix(in srgb, var(--cro-role-tone) 55%, transparent);
+  box-shadow: none;
+}
+
+.cro-stage-role__domains .twin-heat-cell.is-hit {
+  --cro-cell-ring: var(--cro-role-tone);
+  background: color-mix(in srgb, var(--cro-role-tone) 42%, transparent);
+  box-shadow: inset 0 0 0 1px var(--cro-role-tone);
+  z-index: 1;
+}
+
+.cro-stage-role__domains .cro-structure__col.is-hit > .cro-structure__stack {
+  border-radius: var(--radius-lg);
+  box-shadow: inset 0 0 0 2px var(--cro-role-tone);
+}
+
+.cro-stage-role__domains .cro-structure__col.is-hit {
+  box-shadow: none;
+}
+
+.cro-stage-role__domains .cro-ffn-span.is-hit {
+  color: var(--cro-role-tone);
+  box-shadow: none;
+}
+
+/* 事件 focus 指向具体算子时，那根算子条单独点亮，同列其余条退到背景。
+   四域里这件事原来由整网 deck 承担；deck 在事件详情里已撤（同一层的图对 7 个
+   事件长得一模一样，不区分事件），结构条现在是唯一的层内算子视图。 */
+.cro-stage-role__domains .cro-bar.is-hit {
+  opacity: 1;
+  box-shadow: 0 0 0 2px var(--cro-role-tone);
+}
+
+.cro-stage-role__domains .cro-structure__col:has(.cro-bar.is-hit) .cro-bar:not(.is-hit) {
+  opacity: 0.4;
+}
+
+/* 未命中的压暗到与四域 is-focused 同一档，保持「范围之外仍在场」的读法 */
+.cro-stage-role__domains :is(.cro-tick, .cro-expert, .twin-heat-cell):not(.is-hit) { opacity: 0.35; }
+.cro-stage-role__domains :is(.cro-pp-span, .cro-ffn-span):not(.is-hit) { opacity: 0.45; }
+.cro-stage-role__domains .cro-structure__col:not(.is-hit) .cro-bar { opacity: 0.4; }
+.cro-stage-role__domains .cro-moe-group:not(.is-hit) { opacity: 0.5; }
+
+/* 解除各域自带的内部滚动区。它们在四域里靠自己滚是对的（那边高度受限），
+   放到画布上就必须全量铺开，否则「整体缩放」缩的是一堆各自裁过的窗口。 */
+.cro-stage-role__domains .cro-structure { height: auto; }
+.cro-stage-role__domains .cro-structure__stack { overflow: visible; min-height: 0; }
+.cro-stage-role__domains .cro-moe-groups { max-height: none; overflow: visible; }
+.cro-stage-role__domains .cro-heat { max-height: none; overflow: visible; }
+
+/* ── 箭头列 · 传播路径 ──────────────────────────────────────────────────── */
+.cro-incident-arrow__chain {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  counter-reset: cro-chain;
+}
+
+.cro-incident-arrow__step {
+  position: relative;
+  padding: 3px var(--space-2);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+  color: var(--foreground-secondary);
+  font-size: var(--font-size-label-xs);
+  line-height: 1.35;
+}
+
+/* 步骤之间一道细竖线，读成一条链而不是三个并列标签 */
+.cro-incident-arrow__step + .cro-incident-arrow__step::before {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: -4px;
+  width: 1px;
+  height: 3px;
+  background: var(--border-subtle);
+}
+
+.cro-incident-arrow__via {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  align-items: baseline;
+  gap: 4px;
+}
+
+.cro-incident-arrow__via-label {
+  color: var(--foreground-muted);
+  font-size: var(--font-size-label-xs);
+}
+
+.cro-incident-arrow__via-chip {
+  padding: 2px var(--space-2);
+  border-radius: var(--radius-pill);
+  background: var(--surface-2);
+  color: var(--foreground-secondary);
+  font-family: var(--font-mono);
+  font-size: var(--font-size-label-xs);
+  line-height: 1.5;
+}
+
+/* ══ 下区 · 事件内涵 ═══════════════════════════════════════════════════════
+   一句结论 + 一张证据图 + 关键读数 + 根因/影响。图表的取色一律走 token：
+   --primary 是常规量，--warning/--danger 只标「确实是问题」的那一段。
+   数值、类目、图例文字一律用文字色，不染系列色 —— 颜色只管身份，读数看字。 */
+.cro-incident-detail__grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.7fr) minmax(220px, 1fr);
+  align-items: start;
+  gap: var(--space-4);
+}
+
+/* 右栏：一句结论压在读数上面。两者是同一件事的两种粒度（一句话 / 几个数），
+   合起来与左边的图形成左右对读。 */
+.cro-incident-detail__aside {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  min-width: 0;
+}
+
+.cro-incident-detail__conclusion {
+  margin: 0;
+  color: var(--foreground);
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+/* 图表宿主：图按它的实测宽度出图（见 paintDetailChart），不靠 SVG 缩放去填满 */
+.cro-figure__chart {
+  min-width: 0;
+}
+
+.cro-figure {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  margin: 0;
+  min-width: 0;
+  padding: var(--space-3);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-lg);
+  background: var(--surface-1);
+}
+
+.cro-figure__caption {
+  color: var(--foreground-secondary);
+  font-size: var(--font-size-label-xs);
+  font-weight: var(--font-weight-semibold);
+}
+
+.cro-figure__note {
+  margin: 0;
+  color: var(--foreground-muted);
+  font-size: var(--font-size-label-xs);
+  line-height: 1.55;
+}
+
+.cro-chart {
+  width: 100%;
+  height: auto;
+  overflow: visible;
+}
+
+/* 高度由 chartStack 按预算内联写死（preserveAspectRatio:none 需要显式高度）；
+   这里只留个兜底值。 */
+.cro-chart--stack {
+  height: 34px;
+}
+
+/* 网格与坐标是背景，不是内容 */
+.cro-chart__grid {
+  stroke: var(--border-subtle);
+  stroke-width: 1;
+}
+
+.cro-chart__tick,
+.cro-chart__cat {
+  fill: var(--foreground-muted);
+  font-size: 10px;
+  font-family: var(--font-mono);
+}
+
+.cro-chart__value {
+  fill: var(--foreground-secondary);
+  font-size: 10px;
+  font-family: var(--font-mono);
+}
+
+.cro-chart__line {
+  fill: none;
+  stroke: var(--primary);
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+/* 面积填充 + 警戒线 + 越线标红，与 AI_Profiling_Tool 显存页签的显存曲线同一套
+   画法（那边是 canvas，这里是 SVG，透明度沿用 0.13 / 0.16）。越线的那一段不是
+   另一条数据，只是同一条线被裁剪框切出来重画一遍成红色。 */
+.cro-chart__area {
+  fill: var(--primary);
+  fill-opacity: 0.13;
+  stroke: none;
+}
+
+.cro-chart__area.is-over {
+  fill: var(--danger);
+  fill-opacity: 0.16;
+}
+
+.cro-chart__line.is-over { stroke: var(--danger); }
+
+.cro-chart__threshold {
+  fill: none;
+  stroke: var(--warning);
+  stroke-width: 1;
+  stroke-dasharray: 4 4;
+}
+
+.cro-chart__threshold-label {
+  fill: var(--warning);
+  font-size: 10px;
+}
+
+/* 斜纹：标「超出参考水位的那一部分」。底色与水位内那截同为 danger，斜纹本身
+   只是一层纹理，不再引入第二种颜色去暗示第二种严重度。 */
+.cro-chart__hatch-base { fill: var(--danger); }
+
+.cro-chart__hatch-line {
+  stroke: color-mix(in srgb, var(--foreground) 55%, transparent);
+  stroke-width: 2.5;
+}
+
+/* 标记点外圈用底色描一圈，让它从线上浮起来 */
+.cro-chart__mark-ring { fill: var(--surface-1); }
+
+.cro-chart__mark-label {
+  fill: var(--foreground);
+  font-size: 10px;
+  font-weight: var(--font-weight-semibold);
+}
+
+.cro-chart__track { fill: var(--surface-2); }
+
+.cro-chart__seg { stroke: none; }
+
+.cro-chart-stack {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.cro-chart-legend {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.cro-chart-legend__item {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+.cro-chart-legend__dot {
+  flex: 0 0 auto;
+  width: 8px;
+  height: 8px;
+  border-radius: 2px;
+}
+
+.cro-chart-legend__label {
+  flex: 1 1 auto;
+  min-width: 0;
+  color: var(--foreground-secondary);
+  font-size: var(--font-size-label-xs);
+}
+
+.cro-chart-legend__value {
+  flex: 0 0 auto;
+  color: var(--foreground);
+  font-family: var(--font-mono);
+  font-size: var(--font-size-label-xs);
+}
+
+/* 关键读数：与图表并列，承载量纲不同、不该并轴的第二/第三个指标 */
+.cro-readout {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  margin: 0;
+}
+
+.cro-readout__row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-3);
+  padding: var(--space-2) 0;
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.cro-readout__row:last-child { border-bottom: none; }
+
+.cro-readout dt {
+  color: var(--foreground-muted);
+  font-size: var(--font-size-label-xs);
+}
+
+.cro-readout dd {
+  margin: 0;
+  color: var(--foreground);
+  font-family: var(--font-mono);
+  font-size: var(--font-size-label-xs);
+  text-align: right;
+}
+
+.cro-readout dd[data-tone="danger"] { color: var(--danger); }
+.cro-readout dd[data-tone="warning"] { color: var(--warning); }
+
+@media (max-width: 1080px) {
+  .cro-incident-detail__grid { grid-template-columns: minmax(0, 1fr); }
+}
+
+/* ── 画布上的面板要读作实心 ──────────────────────────────────────────────
+   深色主题的 --surface-* 全是半透明白叠加（semantic.css: surface-1 = 7.5% 白、
+   surface-2 = 9.5% 白），点阵铺在画布底层，于是任何用这些 token 的面板都会把点
+   透上来；悬浮时 --state-hover（9% 白）会把 background 简写整个换掉，连底色一起
+   顶没了，透出来更明显。
+   这里给画布内的几块背板垫一层不透明底，再把原来的表面色作为渐变叠回去 ——
+   观感与四域里的同款一致，但不透底。悬浮态一并锁住：画布是只读证据，本来就不该
+   给出「可点」的反馈。 */
+.cro-stage-role__domains .cro-structure__stack,
+.cro-stage-role__domains .cro-structure__col:hover .cro-structure__stack,
+.cro-stage-role__domains .cro-moe-group,
+.cro-stage-role__domains .cro-moe-group:hover {
+  background-color: var(--background);
+  background-image: linear-gradient(var(--surface-2), var(--surface-2));
+}
+
+/* 路径节点自己不铺底，但它内部那些 chip 直接浮在点阵上，同样要不透底 */
+.cro-incident-arrow__step,
+.cro-incident-arrow__via-chip {
+  background-color: var(--background);
+  background-image: linear-gradient(var(--surface-2), var(--surface-2));
+}
+
+/* 缩放控件是浮在画布之上的一层，不属于画布内容：不透底 + 投影拉开 z 轴关系 */
+.cro-stage-zoom {
+  background-color: var(--background);
+  background-image: linear-gradient(var(--surface-1), var(--surface-1));
+  box-shadow: var(--shadow-md);
 }
