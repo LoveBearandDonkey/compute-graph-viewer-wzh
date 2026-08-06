@@ -2000,8 +2000,82 @@
       font-size: 9px; font-weight: 500; opacity: 0.72; margin-left: 6px;
       font-family: var(--font-sans);
     }
+    /* 类目小计：贴在类目标题行右端，与「占 T_iter」列同为百分比口径 */
+    .mfd-cat-sum {
+      float: right; font-family: var(--font-mono); font-size: 10.5px; font-weight: 700;
+      letter-spacing: 0.2px; opacity: 0.9;
+    }
     .mfd-item { color: var(--fg); font-weight: 500; }
     .mfd-tbl td.mfd-item { padding-left: 30px; }
+    /* 占 T_iter 列：每行耗时 ÷ T_iter，让 66.6% 可以被逐行验算 */
+    .mfd-pct { font-family: var(--font-mono); color: var(--fg-secondary); font-weight: 600; }
+    /* 明细行（是上一行的子集，不计入小计）：缩进 + 降权，视觉上不参与求和 */
+    .mfd-tbl tbody tr.mfd-row-sub td.mfd-item { padding-left: 42px; }
+    .mfd-row-sub td { opacity: 0.78; }
+    .mfd-row-sub .mfd-pct { font-weight: 500; }
+    .mfd-chip {
+      display: inline-block; margin-left: 6px; padding: 1px 5px; border-radius: var(--radius-sm, 4px);
+      font-family: var(--font-sans); font-size: 9px; font-weight: 600; line-height: 1.5;
+      vertical-align: 1px; white-space: nowrap; cursor: help;
+    }
+    .mfd-chip-sub { color: var(--fg-muted); background: color-mix(in srgb, var(--fg-muted) 14%, transparent); }
+    .mfd-chip-ov  { color: var(--warning); background: color-mix(in srgb, var(--warning) 16%, transparent); }
+    /* 求和条：点页签不只是筛行，还把筛出来的行实时聚合成算式，把百分比的来源摊开 */
+    .mfd-sumbar {
+      padding: 12px 14px; border-radius: var(--radius-lg); background: var(--surface-2);
+      display: flex; flex-direction: column; gap: 9px;
+    }
+    /* 保持行内流（不能用 flex：会把 T<sub>compute</sub> 的下标拆成独立 flex item） */
+    .mfd-sumbar-eq {
+      font-family: var(--font-mono); font-size: 11.5px; line-height: 1.9; color: var(--fg-secondary);
+    }
+    .mfd-sumbar-eq sub, .mfd-sumbar-note sub { font-size: 0.68em; vertical-align: -0.28em; font-family: var(--font-sans); }
+    /* 步骤标签独占一行左端，算式跟在同一行——两步算式各占一行，不挤成一长串 */
+    .mfd-sb-line { display: block; }
+    .mfd-sb-line + .mfd-sb-line { margin-top: 2px; }
+    .mfd-sumbar-eq .mfd-sb-lbl {
+      display: inline-block; min-width: 132px; font-family: var(--font-sans); font-size: 10.5px;
+      color: var(--fg-muted); margin-right: 8px;
+    }
+    .mfd-sumbar-eq .mfd-sb-n { color: var(--fg); font-weight: 600; }
+    .mfd-sumbar-eq .mfd-sb-r { font-weight: 700; font-size: 13px; }
+    /* T_iter = 100% 时间预算条：三段含义固定，切页签只改高亮/压暗，不改坐标轴 */
+    .mfd-sumbar-track {
+      display: flex; height: 20px; border-radius: 999px; overflow: hidden;
+      background: color-mix(in srgb, var(--fg-muted) 18%, transparent);
+    }
+    .mfd-sb-seg {
+      display: flex; align-items: center; justify-content: center; min-width: 0; overflow: hidden;
+      font-family: var(--font-sans); font-size: 9.5px; font-weight: 700; color: #fff;
+      white-space: nowrap; transition: width 240ms ease;
+    }
+    .mfd-sb-seg.is-dim { background: color-mix(in srgb, var(--fg-muted) 26%, transparent); color: var(--fg-muted); }
+    :root[data-theme='light'] .mfd-sb-seg { color: #fff; }
+    :root[data-theme='light'] .mfd-sb-seg.is-dim { color: var(--fg-secondary); }
+    /* 引导线：负 margin 抵掉 .mfd-body 的两道 20px gap，让这条 34px 的带子正好落在求和条与表格之间 */
+    .mfd-sb-link {
+      position: relative; height: 34px; margin: -20px 0; pointer-events: none;
+      color: var(--fg-secondary);
+    }
+    .mfd-sb-link[hidden] { display: none; }
+    .mfd-sb-link svg { position: absolute; left: 0; top: 0; overflow: visible; }
+    /* 被引导线指到的表头列：加重字色 + 淡底，让「线指到哪」一眼可辨 */
+    .mfd-tbl th.is-linked {
+      color: var(--fg); background: color-mix(in srgb, var(--fg-muted) 12%, var(--surface-3));
+    }
+    :root[data-theme='light'] .mfd-tbl th.is-linked { background: #DCE4EF; }
+    .mfd-sumbar-note { font-size: 10.5px; line-height: 1.75; color: var(--fg-muted); }
+    .mfd-sumbar-note b { color: var(--fg-secondary); font-weight: 600; }
+    /* 表下口径说明 */
+    .mfd-tbl-note {
+      margin: 0; padding: 12px 14px; border-radius: var(--radius-lg);
+      background: var(--surface-2); color: var(--fg-secondary);
+      font-size: 11px; line-height: 1.85;
+    }
+    .mfd-tbl-note b { color: var(--fg); font-weight: 700; }
+    .mfd-tbl-note b.mfd-hi { color: var(--primary); }
+    .mfd-tbl-note b.mfd-hi2 { color: var(--success); }
+    .mfd-tbl-note sub { font-size: 0.72em; vertical-align: -0.25em; }
     .mfd-v1 { font-family: var(--font-mono); color: var(--fg-secondary); }
     .mfd-num { color: var(--fg); font-weight: 600; }
     .mfd-na { color: var(--fg-muted); opacity: 0.6; font-style: italic; }
@@ -2791,61 +2865,79 @@
 
       <!-- ② 拆解结果表（下 2/3） -->
       <div class="mfd-stats">
-        <div class="mfd-stat" title="由模型结构决定，训练过程中为常量"><div class="mfd-stat-v">≈11.95 P</div><div class="mfd-stat-k">模型 FLOPs</div><div class="mfd-stat-sub">6ND 估算·N≈7.6B</div></div>
-        <div class="mfd-stat" title="由芯片规格决定，训练过程中为常量"><div class="mfd-stat-v">320 T</div><div class="mfd-stat-k">峰值 FLOPS</div><div class="mfd-stat-sub">910B BF16</div></div>
-        <div class="mfd-stat" title="唯一自由变量：模型 FLOPs 与峰值 FLOPS 均为常量，只有 T_iter 随调度/通信/负载波动，是 MFU 优化的核心抓手"><div class="mfd-stat-v">10763</div><div class="mfd-stat-k">T_iter</div><div class="mfd-stat-sub">ms·device6</div></div>
-        <div class="mfd-stat"><div class="mfd-stat-v mfd-hi">64.0%</div><div class="mfd-stat-k">算子达成率</div><div class="mfd-stat-sub">stage0≈80%</div></div>
-        <div class="mfd-stat"><div class="mfd-stat-v mfd-hi2">66.6%</div><div class="mfd-stat-k">计算占用率</div><div class="mfd-stat-sub">(CUBE+FA)÷T_iter</div></div>
+        <div class="mfd-stat" title="由模型结构决定，训练过程中为常量。6ND 口径：6 × 参数量 7.6B × 单次迭代全局 token 数（≈262k），为全局 batch 的总计算量"><div class="mfd-stat-v">≈11.95 P</div><div class="mfd-stat-k">模型 FLOPs</div><div class="mfd-stat-sub">6ND·N≈7.6B·全局 batch</div></div>
+        <div class="mfd-stat" title="由芯片规格决定，训练过程中为常量。分子「模型 FLOPs」是全局 batch 口径，因此分母的峰值算力必须按参与本次迭代的卡数聚合：320 T/卡 × 8 卡 = 2560 T"><div class="mfd-stat-v">2560 T</div><div class="mfd-stat-k">峰值 FLOPS</div><div class="mfd-stat-sub">320 T/卡 × 8 卡·910B BF16</div></div>
+        <div class="mfd-stat" title="唯一自由变量：模型 FLOPs 与峰值 FLOPS 均为常量，只有 T_iter 随调度/通信/负载波动，是 MFU 优化的核心抓手。取 device6 的单卡迭代墙钟时间"><div class="mfd-stat-v">10763</div><div class="mfd-stat-k">T_iter</div><div class="mfd-stat-sub">ms·单卡迭代墙钟(device6)</div></div>
+        <div class="mfd-stat" title="算子达成率 = 模型 FLOPs ÷ (T_compute × 峰值 FLOPS)，T_compute = CUBE 6448.4 + FA 722.9 = 7171.3 ms。各 stage 分布：stage0≈80% / stage3≈64%"><div class="mfd-stat-v mfd-hi">64.0%</div><div class="mfd-stat-k">算子达成率</div><div class="mfd-stat-sub">11.95P ÷ (7171ms × 2560T)</div></div>
+        <div class="mfd-stat" title="计算占用率 = T_compute ÷ T_iter，即下表 CUBE 与 FA 两个类目的耗时之和占单卡迭代墙钟的比例"><div class="mfd-stat-v mfd-hi2">66.6%</div><div class="mfd-stat-k">计算占用率</div><div class="mfd-stat-sub">7171.3 ÷ 10763 ms</div></div>
       </div>
       <div class="mfd-view-toggle" role="tablist">
         <button type="button" class="mfd-view-btn active" data-view="table">表格视图</button>
         <button type="button" class="mfd-view-btn" data-view="lane">泳道视图</button>
       </div>
+      <!-- 求和条：点上方页签时，把被筛出来的行实时加成算式，说明 64.0%/66.6% 从哪几行来 -->
+      <div class="mfd-sumbar" id="mfuSumBar">
+        <div class="mfd-sumbar-eq" id="mfuSumEq"></div>
+        <div class="mfd-sumbar-note" id="mfuSumNote"></div>
+        <!-- 柱状图放在卡片最末：下面紧跟引导线，中间不能再隔一段文字，否则线看着是从卡片底边冒出来的 -->
+        <div class="mfd-sumbar-track" id="mfuSumTrack" title="T_iter = 100% 的时间预算：有效算力 / 在算但没跑到峰值 / 压根没在算"></div>
+      </div>
+      <!-- 柱状图「选中行合计 33.4%」那一段 → 表头「占 T_iter」列的引导线，路径由 JS 实测两端坐标绘制 -->
+      <div class="mfd-sb-link" id="mfuSumLink" hidden aria-hidden="true"></div>
       <div class="mfd-tbl-wrap" id="mfuTblWrap">
       <table class="mfd-tbl">
         <thead>
-          <tr><th style="width:22%;">拆解细项</th><th style="width:18%;">解析数据</th><th style="width:14%;">预估结果</th><th style="width:46%;"><span class="mfd-ai-label">调优建议</span></th></tr>
+          <tr><th style="width:20%;">拆解细项</th><th style="width:16%;">解析数据</th><th style="width:9%;" id="mfuPctTh" title="该项耗时 ÷ T_iter 10763 ms">占 T_iter</th><th style="width:13%;">预估结果</th><th style="width:42%;"><span class="mfd-ai-label">调优建议</span></th></tr>
         </thead>
         <tbody>
-          <tr class="mfd-cat mfd-cat-occ"><td colspan="4">PP / VPP <span class="mfd-cat-tag">计算占用率</span></td></tr>
-          <tr><td class="mfd-item">未掩盖 send/receive</td><td class="mfd-v1"><span class="mfd-num">460.3</span> ms<span class="mfd-worse">+360</span></td><td class="mfd-est">&lt;100 ms</td><td class="mfd-advice">增大 send/recv 与前后向计算的重叠调度窗口，或提高 micro-batch 数降低单次通信占比</td></tr>
-          <tr><td class="mfd-item">PP 空泡</td><td class="mfd-v1"><span class="mfd-num">≈3767</span> ms<span class="mfd-worse">+2153</span></td><td class="mfd-est">≈1614 ms（理论1F1B）</td><td class="mfd-advice">增大 micro-batch 数（M）或均衡各 stage 负载（末级 lm_head/loss 过重），降低 1F1B 空泡</td></tr>
-          <tr><td class="mfd-item">stage 间等待</td><td class="mfd-v1"><span class="mfd-num">0</span> ms</td><td class="mfd-est">≈0 ms</td><td class="mfd-na">-</td></tr>
+          <tr class="mfd-cat mfd-cat-occ"><td colspan="5">PP / VPP <span class="mfd-cat-tag">计算占用率</span><span class="mfd-cat-sum">小计 39.3%</span></td></tr>
+          <tr><td class="mfd-item">未掩盖 send/receive</td><td class="mfd-v1"><span class="mfd-num">460.3</span> ms<span class="mfd-worse">+360</span></td><td class="mfd-pct">4.3%</td><td class="mfd-est">&lt;100 ms</td><td class="mfd-advice">增大 send/recv 与前后向计算的重叠调度窗口，或提高 micro-batch 数降低单次通信占比</td></tr>
+          <tr><td class="mfd-item">PP 空泡 <span class="mfd-chip mfd-chip-ov" title="空泡窗口内同时发生 send/recv、DP 通信与 free，与下方各行存在时间重叠，不可直接相加">含重叠</span></td><td class="mfd-v1"><span class="mfd-num">≈3767</span> ms<span class="mfd-worse">+2153</span></td><td class="mfd-pct">35.0%</td><td class="mfd-est">≈1614 ms（理论1F1B）</td><td class="mfd-advice">增大 micro-batch 数（M）或均衡各 stage 负载（末级 lm_head/loss 过重），降低 1F1B 空泡</td></tr>
+          <tr><td class="mfd-item">stage 间等待</td><td class="mfd-v1"><span class="mfd-num">0</span> ms</td><td class="mfd-pct">0%</td><td class="mfd-est">≈0 ms</td><td class="mfd-na">-</td></tr>
 
-          <tr class="mfd-cat mfd-cat-occ"><td colspan="4">通信 <span class="mfd-cat-tag">计算占用率</span></td></tr>
-          <tr><td class="mfd-item">DP 未掩盖通信(含muon)</td><td class="mfd-v1"><span class="mfd-num">390.8</span> ms<span class="mfd-worse">+240.8</span></td><td class="mfd-est">&lt;150 ms</td><td class="mfd-advice">DP allReduce 与反向计算重叠不足，检查梯度桶(bucket)切分粒度，提高计算/通信 overlap 调度优先级</td></tr>
-          <tr><td class="mfd-item">DP通信，其他通信做差</td><td class="mfd-na">N/A</td><td class="mfd-na">N/A</td><td class="mfd-na">-</td></tr>
-          <tr><td class="mfd-item">EP未掩盖/EP通信</td><td class="mfd-na">N/A</td><td class="mfd-na">N/A</td><td class="mfd-na">-</td></tr>
-          <tr><td class="mfd-item">TP通信</td><td class="mfd-na">N/A</td><td class="mfd-na">N/A</td><td class="mfd-na">-</td></tr>
-          <tr><td class="mfd-item">step拖尾同步通信</td><td class="mfd-v1"><span class="mfd-num">352</span> ms<span class="mfd-worse">+302</span></td><td class="mfd-est">&lt;50 ms</td><td class="mfd-advice">合并 grad-norm 与末级同步 allReduce，减少 step 拖尾同步次数</td></tr>
+          <tr class="mfd-cat mfd-cat-occ"><td colspan="5">通信 <span class="mfd-cat-tag">计算占用率</span><span class="mfd-cat-sum">小计 6.9%</span></td></tr>
+          <tr><td class="mfd-item">DP 未掩盖通信(含muon)</td><td class="mfd-v1"><span class="mfd-num">390.8</span> ms<span class="mfd-worse">+240.8</span></td><td class="mfd-pct">3.6%</td><td class="mfd-est">&lt;150 ms</td><td class="mfd-advice">DP allReduce 与反向计算重叠不足，检查梯度桶(bucket)切分粒度，提高计算/通信 overlap 调度优先级</td></tr>
+          <tr class="mfd-row-sub"><td class="mfd-item">DP通信，其他通信做差 <span class="mfd-chip mfd-chip-sub" title="上一行的进一步拆解，已包含在其中，不计入类目小计">明细</span></td><td class="mfd-na">N/A</td><td class="mfd-pct mfd-na">—</td><td class="mfd-na">N/A</td><td class="mfd-na">-</td></tr>
+          <tr><td class="mfd-item">EP未掩盖/EP通信</td><td class="mfd-na">N/A</td><td class="mfd-pct mfd-na">—</td><td class="mfd-na">N/A</td><td class="mfd-na">-</td></tr>
+          <tr><td class="mfd-item">TP通信</td><td class="mfd-na">N/A</td><td class="mfd-pct mfd-na">—</td><td class="mfd-na">N/A</td><td class="mfd-na">-</td></tr>
+          <tr><td class="mfd-item">step拖尾同步通信</td><td class="mfd-v1"><span class="mfd-num">352</span> ms<span class="mfd-worse">+302</span></td><td class="mfd-pct">3.3%</td><td class="mfd-est">&lt;50 ms</td><td class="mfd-advice">合并 grad-norm 与末级同步 allReduce，减少 step 拖尾同步次数</td></tr>
 
-          <tr class="mfd-cat mfd-cat-occ"><td colspan="4">优化器更新 <span class="mfd-cat-tag">计算占用率</span></td></tr>
-          <tr><td class="mfd-item">cube 计算</td><td class="mfd-v1"><span class="mfd-num">0</span> ms</td><td class="mfd-est">0 ms</td><td class="mfd-na">-</td></tr>
-          <tr><td class="mfd-item">vector 计算</td><td class="mfd-v1"><span class="mfd-num">≈64</span> ms<span class="mfd-worse">+24</span></td><td class="mfd-est">&lt;40 ms</td><td class="mfd-advice">用 foreach/fused AdamW 融合算子替代逐参数更新，降低 vector 侧优化器开销</td></tr>
-          <tr><td class="mfd-item">未掩盖通信(zero域)</td><td class="mfd-v1"><span class="mfd-num">0.7</span> ms</td><td class="mfd-est">&lt;5 ms</td><td class="mfd-na">-</td></tr>
+          <tr class="mfd-cat mfd-cat-occ"><td colspan="5">优化器更新 <span class="mfd-cat-tag">计算占用率</span><span class="mfd-cat-sum">小计 0.6%</span></td></tr>
+          <tr><td class="mfd-item">cube 计算</td><td class="mfd-v1"><span class="mfd-num">0</span> ms</td><td class="mfd-pct">0%</td><td class="mfd-est">0 ms</td><td class="mfd-na">-</td></tr>
+          <tr><td class="mfd-item">vector 计算</td><td class="mfd-v1"><span class="mfd-num">≈64</span> ms<span class="mfd-worse">+24</span></td><td class="mfd-pct">0.6%</td><td class="mfd-est">&lt;40 ms</td><td class="mfd-advice">用 foreach/fused AdamW 融合算子替代逐参数更新，降低 vector 侧优化器开销</td></tr>
+          <tr><td class="mfd-item">未掩盖通信(zero域)</td><td class="mfd-v1"><span class="mfd-num">0.7</span> ms</td><td class="mfd-pct">&lt;0.1%</td><td class="mfd-est">&lt;5 ms</td><td class="mfd-na">-</td></tr>
 
-          <tr class="mfd-cat mfd-cat-rate"><td colspan="4">CUBE <span class="mfd-cat-tag">算子达成率</span></td></tr>
-          <tr><td class="mfd-item">除FA/优化器的cube</td><td class="mfd-v1"><span class="mfd-num">6448.4</span> ms</td><td class="mfd-na">N/A</td><td class="mfd-na">-</td></tr>
-          <tr><td class="mfd-item">…含 mc2</td><td class="mfd-na">N/A</td><td class="mfd-na">N/A</td><td class="mfd-na">-</td></tr>
+          <tr class="mfd-cat mfd-cat-rate"><td colspan="5">CUBE <span class="mfd-cat-tag">算子达成率</span><span class="mfd-cat-sum">小计 59.9%</span></td></tr>
+          <tr><td class="mfd-item">除FA/优化器的cube</td><td class="mfd-v1"><span class="mfd-num">6448.4</span> ms</td><td class="mfd-pct">59.9%</td><td class="mfd-na">N/A</td><td class="mfd-na">-</td></tr>
+          <tr class="mfd-row-sub"><td class="mfd-item">…含 mc2 <span class="mfd-chip mfd-chip-sub" title="上一行的进一步拆解，已包含在其中，不计入类目小计">明细</span></td><td class="mfd-na">N/A</td><td class="mfd-pct mfd-na">—</td><td class="mfd-na">N/A</td><td class="mfd-na">-</td></tr>
 
-          <tr class="mfd-cat mfd-cat-rate"><td colspan="4">FA <span class="mfd-cat-tag">算子达成率</span></td></tr>
-          <tr><td class="mfd-item">前向+重计算+反向</td><td class="mfd-v1"><span class="mfd-num">722.9</span> ms</td><td class="mfd-na">N/A</td><td class="mfd-na">-</td></tr>
+          <tr class="mfd-cat mfd-cat-rate"><td colspan="5">FA <span class="mfd-cat-tag">算子达成率</span><span class="mfd-cat-sum">小计 6.7%</span></td></tr>
+          <tr><td class="mfd-item">前向+重计算+反向</td><td class="mfd-v1"><span class="mfd-num">722.9</span> ms</td><td class="mfd-pct">6.7%</td><td class="mfd-na">N/A</td><td class="mfd-na">-</td></tr>
 
-          <tr class="mfd-cat mfd-cat-occ"><td colspan="4">Vector <span class="mfd-cat-tag">计算占用率</span></td></tr>
-          <tr><td class="mfd-item">MHC/MOME/router+permute</td><td class="mfd-na">N/A</td><td class="mfd-na">N/A</td><td class="mfd-na">-</td></tr>
-          <tr><td class="mfd-item">耗时最大单算子</td><td class="mfd-v1"><span class="mfd-num">658.3</span> ms<span class="mfd-worse">+358.3</span></td><td class="mfd-est">&lt;300 ms</td><td class="mfd-advice">排查该 Add 算子是否可与相邻 elementwise 算子融合（如 bias-add），减少零碎 vector 算子数</td></tr>
-          <tr><td class="mfd-item">loss 计算</td><td class="mfd-v1"><span class="mfd-num">≈525</span> ms<span class="mfd-worse">+325</span></td><td class="mfd-est">&lt;200 ms</td><td class="mfd-advice">loss 计算算子零碎（Exp/RealDiv/Sub/ArgMax/ReduceSum 等 5+ 算子），建议替换为融合 CrossEntropyLoss 算子</td></tr>
-          <tr><td class="mfd-item">muon 优化器更新</td><td class="mfd-na">N/A</td><td class="mfd-na">N/A</td><td class="mfd-na">-</td></tr>
-          <tr><td class="mfd-item">mla / rope 等其他vector</td><td class="mfd-v1"><span class="mfd-num">41.2</span> ms</td><td class="mfd-est">&lt;50 ms</td><td class="mfd-na">-</td></tr>
+          <tr class="mfd-cat mfd-cat-occ"><td colspan="5">Vector <span class="mfd-cat-tag">计算占用率</span><span class="mfd-cat-sum">小计 5.3%</span></td></tr>
+          <tr><td class="mfd-item">MHC/MOME/router+permute</td><td class="mfd-na">N/A</td><td class="mfd-pct mfd-na">—</td><td class="mfd-na">N/A</td><td class="mfd-na">-</td></tr>
+          <tr class="mfd-row-sub"><td class="mfd-item">耗时最大单算子 <span class="mfd-chip mfd-chip-sub" title="本类目内单个最慢算子，其耗时已包含在其余 vector 行中，不计入类目小计">明细</span></td><td class="mfd-v1"><span class="mfd-num">658.3</span> ms<span class="mfd-worse">+358.3</span></td><td class="mfd-pct">6.1%</td><td class="mfd-est">&lt;300 ms</td><td class="mfd-advice">排查该 Add 算子是否可与相邻 elementwise 算子融合（如 bias-add），减少零碎 vector 算子数</td></tr>
+          <tr><td class="mfd-item">loss 计算</td><td class="mfd-v1"><span class="mfd-num">≈525</span> ms<span class="mfd-worse">+325</span></td><td class="mfd-pct">4.9%</td><td class="mfd-est">&lt;200 ms</td><td class="mfd-advice">loss 计算算子零碎（Exp/RealDiv/Sub/ArgMax/ReduceSum 等 5+ 算子），建议替换为融合 CrossEntropyLoss 算子</td></tr>
+          <tr><td class="mfd-item">muon 优化器更新</td><td class="mfd-na">N/A</td><td class="mfd-pct mfd-na">—</td><td class="mfd-na">N/A</td><td class="mfd-na">-</td></tr>
+          <tr><td class="mfd-item">mla / rope 等其他vector</td><td class="mfd-v1"><span class="mfd-num">41.2</span> ms</td><td class="mfd-pct">0.4%</td><td class="mfd-est">&lt;50 ms</td><td class="mfd-na">-</td></tr>
 
-          <tr class="mfd-cat mfd-cat-occ"><td colspan="4">free / 误差 <span class="mfd-cat-tag">计算占用率</span></td></tr>
-          <tr><td class="mfd-item">free</td><td class="mfd-v1"><span class="mfd-num">248.4</span> ms<span class="mfd-worse">+148.4</span></td><td class="mfd-est">&lt;100 ms</td><td class="mfd-advice">排查 host 下发节奏，减少 device 空闲等待（Free），确认是否为 launch 瓶颈</td></tr>
-          <tr><td class="mfd-item">误差</td><td class="mfd-na">N/A</td><td class="mfd-na">N/A</td><td class="mfd-na">-</td></tr>
+          <tr class="mfd-cat mfd-cat-occ"><td colspan="5">free / 误差 <span class="mfd-cat-tag">计算占用率</span><span class="mfd-cat-sum">小计 2.3%</span></td></tr>
+          <tr><td class="mfd-item">free</td><td class="mfd-v1"><span class="mfd-num">248.4</span> ms<span class="mfd-worse">+148.4</span></td><td class="mfd-pct">2.3%</td><td class="mfd-est">&lt;100 ms</td><td class="mfd-advice">排查 host 下发节奏，减少 device 空闲等待（Free），确认是否为 launch 瓶颈</td></tr>
+          <tr><td class="mfd-item">误差</td><td class="mfd-na">N/A</td><td class="mfd-pct mfd-na">—</td><td class="mfd-na">N/A</td><td class="mfd-na">-</td></tr>
 
-          <tr class="mfd-highlight-row"><td class="mfd-item">当前 MFU</td><td class="mfd-v1"><span class="mfd-num">42.6%</span></td><td class="mfd-est">≥55%</td><td class="mfd-advice">落实上述 PP 空泡、DP/拖尾通信、vector 零碎算子、free 空闲等优化项后，预计可提升至 ~55–60%</td></tr>
+          <tr class="mfd-highlight-row"><td class="mfd-item">当前 MFU</td><td class="mfd-v1"><span class="mfd-num">42.6%</span></td><td class="mfd-pct mfd-na">—</td><td class="mfd-est">≥55%</td><td class="mfd-advice">落实上述 PP 空泡、DP/拖尾通信、vector 零碎算子、free 空闲等优化项后，预计可提升至 ~55–60%</td></tr>
         </tbody>
       </table>
       </div>
+      <!-- 口径说明：解释「占 T_iter」列怎么用、哪些行能相加哪些不能，避免用户验算对不上后放弃 -->
+      <p class="mfd-tbl-note" id="mfuTblNote">
+        <b>怎么读这张表：</b>「占 T_iter」= 该行耗时 ÷ T<sub>iter</sub> 10763 ms。
+        <b class="mfd-hi2">计算占用率 66.6%</b> 就是 CUBE 小计 <b>59.9%</b> + FA 小计 <b>6.7%</b>（6448.4 + 722.9 = 7171.3 ms）。
+        <b class="mfd-hi">算子达成率 64.0%</b> 则用这 7171.3 ms 作分母时间：11.95 P ÷ (7171.3 ms × 2560 T)。
+        标 <span class="mfd-chip mfd-chip-sub">明细</span> 的行是上一行的进一步拆解，已被包含在内，<b>不计入</b>类目小计；标
+        <span class="mfd-chip mfd-chip-ov">含重叠</span> 的行与其他行在时间上交叠。
+        因此除 CUBE + FA 外，其余类目小计<b>不能直接相加</b>凑出 33.4%，它们是迭代内的耗时分布而非严格划分。
+      </p>
       <!-- 泳道视图：iframe 内嵌本页 ?embed=timeline，只渲染 Timeline 页签内容，不带其余 chrome -->
       <div class="mfd-lane-wrap" id="mfuLaneWrap" style="display:none;">
         <iframe class="mfd-lane-iframe" src="index_v3.html?embed=timeline" title="Timeline 泳道视图"></iframe>
@@ -3911,6 +4003,7 @@
     window.mfuDetailOpen = function () {
       document.getElementById('mfuDetailOverlay').classList.add('open');
       document.getElementById('mfuDetailDrawer').classList.add('open');
+      if (window.mfuSumBarRedraw) window.mfuSumBarRedraw();  // 引导线坐标需在可见布局下重测
     };
     window.mfuDetailClose = function () {
       document.getElementById('mfuDetailOverlay').classList.remove('open');
@@ -3946,6 +4039,142 @@
         var fRect = formula.getBoundingClientRect();
         indicator.style.left = (bRect.left + bRect.width / 2 - fRect.left) + 'px';
       }
+      // ── 求和条：把「被筛出来的行」现场加成算式，让 64.0%/66.6% 可以逐行验算 ──
+      // 加数从 DOM 里实时读，改了表格数据求和条自动跟着变；百分比结果沿用页签自身的
+      // 标称值（模型 FLOPs 为 6ND 估算值，回代重算会与标称值差零点几个百分点，不另行造数）
+      var T_ITER = 10763;          // ms，单卡迭代墙钟，与顶部 T_iter 卡片一致
+      var MFU_PCT = 42.6;          // 与公式行结果页签一致
+      var RATE_PCT = '64.0';       // 算子达成率标称值
+      var sumEq = document.getElementById('mfuSumEq');
+      var sumTrack = document.getElementById('mfuSumTrack');
+      var sumNote = document.getElementById('mfuSumNote');
+      var sumLink = document.getElementById('mfuSumLink');
+      var pctTh = document.getElementById('mfuPctTh');
+      var tblWrap = document.getElementById('mfuTblWrap');
+      var curFilter = 'all';
+      // 汇总参与求和的行：类目标题行、汇总行、明细行（上一行的子集）均不计入
+      function collectTerms(filter) {
+        var terms = [];
+        Array.prototype.forEach.call(tbl.querySelectorAll('tbody tr'), function (tr) {
+          if (tr.classList.contains('mfd-cat') || tr.classList.contains('mfd-highlight-row')) return;
+          if (tr.classList.contains('mfd-row-sub')) return;
+          if (tr.dataset.cat !== filter) return;
+          var numEl = tr.querySelector('.mfd-v1 .mfd-num');
+          if (!numEl) return;
+          var v = parseFloat(numEl.textContent.replace(/[^\d.]/g, ''));
+          if (!isFinite(v) || v === 0) return;
+          terms.push(v);
+        });
+        return terms;
+      }
+      function fmt(n) { return (Math.round(n * 10) / 10).toString(); }
+      function n(v) { return '<span class="mfd-sb-n">' + v + '</span>'; }
+      function line(lbl, body) { return '<div class="mfd-sb-line"><span class="mfd-sb-lbl">' + lbl + '</span>' + body + '</div>'; }
+      // 进度条恒为一条 T_iter = 100% 的时间预算条，三段固定含义（有效算力 / 算子未达峰 / 非计算），
+      // 只按当前页签决定哪几段高亮、哪几段压暗——避免切页签时坐标轴跟着变，读者对不上。
+      function setBar(segs) {
+        sumTrack.innerHTML = segs.map(function (s) {
+          return '<span class="mfd-sb-seg' + (s.dim ? ' is-dim' : '') + '"' + (s.link ? ' data-link="1"' : '') +
+            ' style="width:' + s.pct.toFixed(1) + '%;' + (s.color ? 'background:' + s.color + ';' : '') + '">' +
+            (s.label || '') + '</span>';
+        }).join('');
+      }
+      // 引导线：把打了 data-link 的柱段接到表头「占 T_iter」列，说明这一段的逐行明细就在那一列。
+      // 起终点每次实测（列宽是百分比、抽屉宽度随视口变），抽屉关闭时靠 transform 移出屏幕而非
+      // display:none，量出来的坐标仍然有效。
+      function drawLink(show) {
+        if (!sumLink) return;
+        if (pctTh) pctTh.classList.toggle('is-linked', !!show);
+        var seg = show && sumTrack.querySelector('.mfd-sb-seg[data-link="1"]');
+        var laneOn = tblWrap && tblWrap.style.display === 'none';
+        if (!seg || !pctTh || laneOn) { sumLink.hidden = true; sumLink.innerHTML = ''; return; }
+        sumLink.hidden = false;
+        var base = sumLink.getBoundingClientRect();
+        if (!base.width) { sumLink.hidden = true; return; }
+        var sr = seg.getBoundingClientRect(), tr = pctTh.getBoundingClientRect();
+        var x1 = sr.left + sr.width / 2 - base.left;
+        var x2 = tr.left + tr.width / 2 - base.left;
+        var h = base.height;
+        // 起点吸附到柱段底边本身。柱段在求和条卡片内、引导线容器之上，换算出来 y1 是负值；
+        // svg 设了 overflow:visible，负坐标照常绘制，线就从那一段上长出来而不是从卡片底边冒出来。
+        var y1 = sr.bottom - base.top;
+        var y2 = h - 6, dy = y2 - y1;
+        sumLink.innerHTML =
+          '<svg width="' + base.width + '" height="' + h + '" aria-hidden="true">' +
+          '<circle cx="' + x1 + '" cy="' + y1 + '" r="2.2" fill="currentColor"/>' +
+          '<path d="M' + x1 + ' ' + y1 + ' C' + x1 + ' ' + (y1 + dy * 0.55) + ', ' + x2 + ' ' + (y1 + dy * 0.45) + ', ' + x2 + ' ' + y2 + '" ' +
+          'fill="none" stroke="currentColor" stroke-width="1.2" stroke-dasharray="3 2.5"/>' +
+          '<path d="M' + (x2 - 3.6) + ' ' + (h - 7) + ' L' + x2 + ' ' + (h - 0.5) + ' L' + (x2 + 3.6) + ' ' + (h - 7) + ' Z" fill="currentColor"/>' +
+          '</svg>';
+      }
+      function renderSumBar(filter) {
+        if (!sumEq) return;
+        var rateTerms = collectTerms('rate');
+        var rateSum = rateTerms.reduce(function (a, b) { return a + b; }, 0);
+        var occSum = collectTerms('occ').reduce(function (a, b) { return a + b; }, 0);
+        var occPct = rateSum / T_ITER * 100;              // 计算占用率
+        var idlePct = 100 - occPct;                        // 非计算时间占比
+        var gapPct = occPct - MFU_PCT;                     // 计算时间里没跑到峰值的部分
+        var html, note;
+        if (filter === 'rate') {
+          // 选中 CUBE/FA：先把两行加出 T_compute，再代进达成率公式，两步各占一行不挤在一起
+          html = line('第一步 · 把选中行加起来',
+              rateTerms.map(function (v) { return n(fmt(v)); }).join(' + ') +
+              ' = ' + n(fmt(rateSum)) + ' ms，这就是 T<sub>compute</sub>') +
+            line('第二步 · 代进达成率公式',
+              '模型 FLOPs ' + n('11.95 P') + ' ÷ ( T<sub>compute</sub> ' + n(fmt(rateSum)) + ' ms × 峰值 ' + n('2560 T') + ' ) = ' +
+              '<span class="mfd-sb-r mfd-hi">' + RATE_PCT + '%</span>');
+          note = 'CUBE 与 FA 是<b>真正在算数的时间</b>。达成率问的是「这段时间里芯片跑到峰值算力的几成」——所以分母是 T<sub>compute</sub> 而不是 T<sub>iter</sub>。' +
+            '峰值取 <b>2560 T</b>（320 T/卡 × 8 卡），与全局 batch 口径的模型 FLOPs 对齐。';
+          setBar([
+            { pct: MFU_PCT, color: 'var(--primary)', label: '有效算力 ' + MFU_PCT + '%' },
+            { pct: gapPct, color: 'color-mix(in srgb, var(--primary) 38%, transparent)', label: '未达峰 ' + gapPct.toFixed(1) + '%' },
+            { pct: idlePct, dim: true, label: '' }
+          ]);
+        } else if (filter === 'occ') {
+          // 选中非计算类目：主算式仍正向给出 66.6%（÷ 一步不省），选中行只作为「剩下那部分」的构成
+          html = line('计算占用率怎么来的',
+              'T<sub>compute</sub> ' + n(fmt(rateSum)) + ' ms ÷ T<sub>iter</sub> ' + n(T_ITER) + ' ms = ' +
+              '<span class="mfd-sb-r mfd-hi2">' + occPct.toFixed(1) + '%</span>') +
+            line('下方选中行 = 剩下那部分',
+              'T<sub>iter</sub> ' + n(T_ITER) + ' − T<sub>compute</sub> ' + n(fmt(rateSum)) + ' = ' + n(fmt(T_ITER - rateSum)) + ' ms，' +
+              '再 ÷ T<sub>iter</sub> ' + n(T_ITER) + ' ms = <span class="mfd-sb-r">' + idlePct.toFixed(1) + '%</span>');
+          note = '占用率的分子分母都是时间，跟这些行没有直接关系——它们解释的是<b>剩下的 ' + idlePct.toFixed(1) + '% 被谁占走了</b>，' +
+            '压掉它们才能把 ' + occPct.toFixed(1) + '% 推高；柱状图左段的逐行明细，就是下表<b>「占 T_iter」</b>那一列（见引导线）。' +
+            '注意选中各行直接相加是 <b>' + fmt(occSum) + ' ms</b>，大于 ' + fmt(T_ITER - rateSum) + ' ms——' +
+            'PP 空泡窗口内同时发生着 send/recv、DP 通信与 free，<b>时间上互相重叠</b>，所以这是耗时分布而非严格划分，<b>不能直接相加</b>。';
+          // 选中行（=非计算）放左段并接引导线到表头「占 T_iter」列，绿色留给右段的计算 66.6%
+          setBar([
+            { pct: idlePct, dim: true, link: true, label: '选中行合计 ' + idlePct.toFixed(1) + '%' },
+            { pct: occPct, color: 'var(--success)', label: '计算 ' + occPct.toFixed(1) + '%' }
+          ]);
+        } else {
+          html = line('两个环节各自的算式',
+              '占用率 = ' + n(fmt(rateSum)) + ' ÷ ' + n(T_ITER) + ' ms = <span class="mfd-sb-r mfd-hi2">' + occPct.toFixed(1) + '%</span>' +
+              ' &nbsp;&nbsp;|&nbsp;&nbsp; 达成率 = 11.95 P ÷ (' + n(fmt(rateSum)) + ' ms × ' + n('2560 T') + ') = ' +
+              '<span class="mfd-sb-r mfd-hi">' + RATE_PCT + '%</span>') +
+            line('相乘得 MFU',
+              '<span class="mfd-sb-r mfd-hi">' + RATE_PCT + '%</span> × <span class="mfd-sb-r mfd-hi2">' + occPct.toFixed(1) + '%</span> = ' +
+              '<span class="mfd-sb-r">' + MFU_PCT + '%</span>');
+          note = '把 T<sub>iter</sub> 看成 100% 的时间预算：只有 <b>' + MFU_PCT + '%</b> 变成了有效算力，<b>' + gapPct.toFixed(1) + '%</b> 是在算但没跑到峰值，' +
+            '<b>' + idlePct.toFixed(1) + '%</b> 压根没在算。分子 ' + fmt(rateSum) + ' ms = CUBE ' + fmt(rateTerms[0] || 0) + ' + FA ' + fmt(rateTerms[1] || 0) + '。' +
+            '点上方 <b>' + RATE_PCT + '%</b> / <b>' + occPct.toFixed(1) + '%</b> 页签可分别看这两个环节各由哪些行构成。';
+          setBar([
+            { pct: MFU_PCT, color: 'var(--fg-secondary)', label: '有效算力 ' + MFU_PCT + '%' },
+            { pct: gapPct, color: 'color-mix(in srgb, var(--fg-secondary) 40%, transparent)', label: '算子未达峰 ' + gapPct.toFixed(1) + '%' },
+            { pct: idlePct, dim: true, label: '非计算 ' + idlePct.toFixed(1) + '%' }
+          ]);
+        }
+        sumEq.innerHTML = html;
+        if (sumNote) sumNote.innerHTML = note;
+        curFilter = filter;
+        drawLink(filter === 'occ');
+      }
+      // 列宽是百分比、抽屉宽度跟着视口走，视口变化后引导线的起终点要重新实测
+      window.addEventListener('resize', function () { drawLink(curFilter === 'occ'); });
+      // 抽屉刚打开时布局可能还没稳定，开屏后补画一次
+      window.mfuSumBarRedraw = function () { requestAnimationFrame(function () { drawLink(curFilter === 'occ'); }); };
+
       Array.prototype.forEach.call(tabs, function (btn) {
         btn.addEventListener('click', function () {
           Array.prototype.forEach.call(tabs, function (b) { b.classList.remove('active'); });
@@ -3953,15 +4182,18 @@
           tbl.setAttribute('data-filter', btn.dataset.filter);
           if (stats) stats.setAttribute('data-filter', btn.dataset.filter);
           moveIndicator(btn);
+          renderSumBar(btn.dataset.filter);
         });
       });
       var initialTab = document.querySelector('#mfuDetailBody .mfd-eq-tab.active');
       if (initialTab) moveIndicator(initialTab);
+      renderSumBar(initialTab ? initialTab.dataset.filter : 'all');
 
       // 表格视图 / 泳道视图 切换
       var viewBtns = document.querySelectorAll('#mfuDetailBody .mfd-view-btn');
-      var tblWrap = document.getElementById('mfuTblWrap');
       var laneWrap = document.getElementById('mfuLaneWrap');
+      var sumBar = document.getElementById('mfuSumBar');
+      var tblNote = document.getElementById('mfuTblNote');
       Array.prototype.forEach.call(viewBtns, function (btn) {
         btn.addEventListener('click', function () {
           Array.prototype.forEach.call(viewBtns, function (b) { b.classList.remove('active'); });
@@ -3969,6 +4201,10 @@
           var isLane = btn.dataset.view === 'lane';
           if (tblWrap) tblWrap.style.display = isLane ? 'none' : '';
           if (laneWrap) laneWrap.style.display = isLane ? 'flex' : 'none';
+          // 求和条与口径说明都是解释表格的，切到泳道视图时一并收起
+          if (sumBar) sumBar.style.display = isLane ? 'none' : '';
+          if (tblNote) tblNote.style.display = isLane ? 'none' : '';
+          drawLink(!isLane && curFilter === 'occ');
         });
       });
     }());
