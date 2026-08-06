@@ -1,0 +1,276 @@
+/* ══════════════════════════════════════════════════════════════════════════
+   时光全景 · 顶部浮窗（js/training-timeline-panorama.js）
+   —— 点击顶栏「训练进度」部件（非问题 1/2 标记点）落下一张贴住视口顶部的浮窗：
+      一条与顶栏进度条同口径的 step 轴，把整段训练里已发生 / 计划中的关键事件
+      （异常 · 告警 · 产出 · 消息推送 · 事件）全部铺开，已发生的可点击跳转时光机。
+   仅 training-monitoring-v2.html 引用；全部走设计系统 token，浅/深色自适应。
+   层级：浮窗 2100 / 背板 2090，压过聚光灯(1500) 与定位链抽屉(2000)。
+   ══════════════════════════════════════════════════════════════════════════ */
+
+.tw-pano { position: fixed; inset: 0; z-index: 2090; font-family: var(--font-sans, system-ui); }
+.tw-pano[hidden] { display: none; }
+
+/* 遮罩:浮窗展开期间压暗整页,把注意力收在这条时间轴上；面板外的任意一击都关闭 */
+.tw-pano__backdrop {
+  position: absolute;
+  inset: 0;
+  background: rgb(0 0 0 / 0.45);
+  animation: tw-pano-fade 140ms ease;
+}
+
+.tw-pano__panel {
+  position: absolute;
+  z-index: 2100;
+  left: var(--space-4);
+  right: var(--space-4);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding: var(--space-4) var(--space-5) var(--space-3);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-xl, 16px);
+  background: var(--surface-1);
+  box-shadow: var(--shadow-lg);
+  color: var(--foreground);
+  /* 浮窗不出滚动条:纵向由 laneBudget() 把可用高度换算成车道数、内容自己收进来,
+     横向靠标签排布时夹在 [0, 场宽-标签宽] 内;这里只做兜底裁切。 */
+  overflow: hidden;
+  animation: tw-pano-drop 160ms cubic-bezier(0.2, 0.8, 0.3, 1);
+}
+@keyframes tw-pano-fade { from { opacity: 0; } to { opacity: 1; } }
+@keyframes tw-pano-drop {
+  from { opacity: 0; transform: translateY(-10px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .tw-pano__backdrop, .tw-pano__panel { animation: none; }
+}
+
+/* ── 顶部指标行（总step / 总epoch / 已训练时长 / 预计剩余 / 总进度）── */
+.tw-pano__head {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-4);
+  padding-top: var(--space-2);
+}
+.tw-pano__kpis {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2) 32px;
+}
+.tw-pano__kpi { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.tw-pano__kpi span { font-size: 11px; line-height: 1; color: var(--foreground-secondary); }
+.tw-pano__kpi strong {
+  font: 600 20px/1.15 var(--font-sans, system-ui);
+  color: var(--foreground);
+  white-space: nowrap;
+}
+.tw-pano__kpi--num strong { font-family: var(--font-mono, ui-monospace, monospace); letter-spacing: -0.01em; }
+.tw-pano__kpi-total { color: var(--foreground-muted); font-weight: 500; }
+
+/* ── 类型筛选（兼图例）：点一下只看某一类,再点一下放回来 ── */
+.tw-pano__filters {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  padding-bottom: var(--space-3);
+}
+.tw-pano__chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 10px;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-pill, 999px);
+  background: transparent;
+  color: var(--foreground-secondary);
+  font: 500 11px/1.6 var(--font-sans, system-ui);
+  cursor: pointer;
+  transition: background 140ms ease, border-color 140ms ease, opacity 140ms ease;
+}
+.tw-pano__chip:hover { background: var(--surface-2); }
+.tw-pano__chip i {
+  width: 8px; height: 8px;
+  border-radius: 50%;
+  background: var(--c, var(--foreground-muted));
+}
+.tw-pano__chip[data-shape="diamond"] i { border-radius: 1.5px; transform: rotate(45deg); }
+.tw-pano__chip b { font-weight: 600; color: var(--foreground-muted); }
+.tw-pano__chip.is-on {
+  border-color: color-mix(in srgb, var(--c, var(--foreground)) 45%, transparent);
+  background: color-mix(in srgb, var(--c, var(--foreground)) 10%, transparent);
+  color: var(--foreground);
+}
+.tw-pano__chip.is-off { opacity: 0.4; }
+.tw-pano__filters-hint {
+  margin-left: auto;
+  font-size: 11px;
+  color: var(--foreground-muted);
+  white-space: nowrap;
+}
+
+/* ── step 轴 ── */
+.tw-pano__stage { position: relative; }
+.tw-pano__ticks {
+  position: relative;
+  height: 14px;
+  margin-bottom: 2px;
+}
+.tw-pano__tick {
+  position: absolute;
+  top: 0;
+  transform: translateX(-50%);
+  font: 500 10px/1.2 var(--font-mono, ui-monospace, monospace);
+  color: var(--foreground-muted);
+  white-space: nowrap;
+}
+.tw-pano__tick:first-child { transform: none; }
+.tw-pano__tick:last-child { transform: translateX(-100%); }
+
+.tw-pano__axis {
+  position: relative;
+  height: 12px;
+  border-radius: var(--radius-pill, 999px);
+  background: color-mix(in srgb, var(--foreground) 8%, transparent);
+}
+.tw-pano__axis-fill {
+  position: absolute;
+  left: 0; top: 0; bottom: 0;
+  border-radius: inherit;
+  background: color-mix(in srgb, var(--highlight-copy-blue-500, #3b6fe0) 45%, transparent);
+}
+/* 「现在」游标:已发生与计划中的分界线,与顶栏进度条的 thumb 同一个 step */
+.tw-pano__now {
+  position: absolute;
+  top: -6px; bottom: -6px;
+  width: 2px;
+  background: var(--foreground);
+  border-radius: 1px;
+  transform: translateX(-1px);
+}
+.tw-pano__now span {
+  position: absolute;
+  left: 50%;
+  bottom: calc(100% + 4px);
+  transform: translateX(-50%);
+  padding: 1px 7px;
+  border-radius: var(--radius-pill, 999px);
+  background: var(--foreground);
+  color: var(--surface-1);
+  font: 600 10px/1.6 var(--font-mono, ui-monospace, monospace);
+  white-space: nowrap;
+}
+/* 轴左端「现在」标签会顶到面板外,贴左/贴右两个兜底 */
+.tw-pano__now.is-near-start span { left: 0; transform: none; }
+.tw-pano__now.is-near-end span { left: auto; right: 0; transform: none; }
+
+/* 轴上事件点:已发生=实心,计划中=空心+虚线圈 */
+.tw-pano__dot {
+  position: absolute;
+  top: 50%;
+  width: 13px; height: 13px;
+  margin: 0;
+  transform: translate(-50%, -50%);
+  border-radius: 50%;
+  background: var(--c);
+  box-shadow: 0 0 0 2.5px var(--surface-1), var(--shadow-sm);
+  cursor: pointer;
+  transition: transform 120ms ease, box-shadow 120ms ease;
+}
+.tw-pano__dot[data-shape="diamond"] {
+  border-radius: 2px;
+  transform: translate(-50%, -50%) rotate(45deg);
+  width: 11px; height: 11px;
+}
+.tw-pano__dot.is-planned {
+  background: var(--surface-1);
+  border: 2px dashed color-mix(in srgb, var(--c) 60%, transparent);
+  box-shadow: 0 0 0 2.5px var(--surface-1);
+  cursor: default;
+}
+.tw-pano__dot.is-hot,
+.tw-pano__dot:hover { transform: translate(-50%, -50%) scale(1.35); z-index: 4; }
+.tw-pano__dot[data-shape="diamond"].is-hot,
+.tw-pano__dot[data-shape="diamond"]:hover { transform: translate(-50%, -50%) rotate(45deg) scale(1.35); }
+
+/* ── 事件标签场：引出线(SVG) + 分层排布的标签卡 ── */
+.tw-pano__field { position: relative; margin-top: 2px; }
+.tw-pano__leads {
+  position: absolute;
+  inset: 0;
+  width: 100%; height: 100%;
+  pointer-events: none;
+  overflow: visible;
+}
+.tw-pano__lead {
+  fill: none;
+  stroke: var(--border-strong, var(--border-subtle));
+  stroke-width: 1;
+  transition: stroke 120ms ease, stroke-width 120ms ease;
+}
+.tw-pano__lead.is-hot { stroke: var(--c); stroke-width: 1.6; }
+
+.tw-pano__label {
+  position: absolute;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 3px;
+  padding: 4px 6px 5px;
+  border: 1px solid transparent;
+  border-radius: var(--radius-md, 8px);
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
+  transition: background 120ms ease, border-color 120ms ease;
+}
+.tw-pano__label:hover,
+.tw-pano__label:focus-visible,
+.tw-pano__label.is-hot {   /* 悬浮轴上标记点时,对应标签同步提亮 */
+  background: var(--surface-2);
+  border-color: var(--border-subtle);
+  outline: none;
+}
+.tw-pano__label.is-planned,
+.tw-pano__label[aria-disabled="true"] { cursor: default; }
+.tw-pano__tag {
+  padding: 1px 7px;
+  border-radius: var(--radius-pill, 999px);
+  background: color-mix(in srgb, var(--c) 16%, transparent);
+  color: color-mix(in srgb, var(--c) 88%, var(--foreground));
+  font: 600 10px/1.6 var(--font-sans, system-ui);
+  white-space: nowrap;
+}
+.tw-pano__label.is-planned .tw-pano__tag {
+  background: transparent;
+  border: 1px dashed color-mix(in srgb, var(--c) 45%, transparent);
+  color: var(--foreground-muted);
+}
+.tw-pano__name {
+  width: 100%;
+  font: 500 12px/1.35 var(--font-sans, system-ui);
+  color: var(--foreground);
+  /* 两行封顶,更长的全文留给 title 悬浮 */
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.tw-pano__label.is-planned .tw-pano__name { color: var(--foreground-secondary); }
+.tw-pano__time {
+  font: 500 10px/1.35 var(--font-mono, ui-monospace, monospace);
+  color: var(--foreground-muted);
+}
+/* 问题 1/2:标签左侧留一道语义色竖条,和顶栏进度条上的编号标记点呼应 */
+.tw-pano__label.is-problem { border-left: 2px solid var(--c); border-radius: 3px var(--radius-md, 8px) var(--radius-md, 8px) 3px; }
+.tw-pano__label.is-problem .tw-pano__tag::after {
+  content: " · 问题" attr(data-problem);
+}
+
+/* 筛选掉的类型:淡出但保留占位,避免重排时标签整片跳动 */
+.tw-pano__dot.is-dimmed,
+.tw-pano__label.is-dimmed { opacity: 0.16; pointer-events: none; }
+.tw-pano__lead.is-dimmed { opacity: 0.16; }

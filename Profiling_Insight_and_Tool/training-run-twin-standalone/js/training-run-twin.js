@@ -1932,10 +1932,39 @@
     };
 
     thumb.addEventListener("pointerdown", onDown);
-    // 轨道上点击即跳转到该 step；问题点标注保留原有的 hover 气泡 + 点击展开诊断卡,不当作拖拽起点
+    /* 轨道上的按下:问题点标注保留原有的 hover 气泡 + 点击展开诊断卡,不当作拖拽起点。
+       v2 单屏页有「时光全景」浮窗(js/training-timeline-panorama.js)后,轨道的一击有了两种语义,
+       按是否拖动区分:
+         · 按下后拖过 3px  → 和以前一样跟手回放到落点 step；
+         · 没拖动的干净一击 → 展开时光全景(整段训练的关键事件全貌)。
+       没有全景模块的页面(training-monitoring.html)保持原行为:按下即跳步。 */
+    const DRAG_SLOP = 3;
     track.addEventListener("pointerdown", (e) => {
       if (e.target === thumb || e.target.closest?.(".twin-progress-marker")) return;
-      onDown(e);
+      if (!window.PtoTrainingPanorama) { onDown(e); return; }
+      if (e.button != null && e.button !== 0) return;
+      const origin = { x: e.clientX, y: e.clientY };
+      let moved = false;
+      const cleanup = () => {
+        window.removeEventListener("pointermove", onSlopMove);
+        window.removeEventListener("pointerup", onSlopUp);
+        window.removeEventListener("pointercancel", onSlopUp);
+      };
+      const onSlopMove = (ev) => {
+        if (Math.abs(ev.clientX - origin.x) < DRAG_SLOP && Math.abs(ev.clientY - origin.y) < DRAG_SLOP) return;
+        moved = true;
+        cleanup();
+        // 转交给拖拽回放。pointermove 的 button 是 -1,onDown 会当成非左键直接返回,
+        // 因此这里合成一个只带它需要的两个字段的事件对象。
+        onDown({ button: 0, clientX: ev.clientX });
+      };
+      const onSlopUp = () => {
+        cleanup();
+        if (!moved) window.PtoTrainingPanorama.toggle();
+      };
+      window.addEventListener("pointermove", onSlopMove);
+      window.addEventListener("pointerup", onSlopUp);
+      window.addEventListener("pointercancel", onSlopUp);
     });
 
     // 键盘：←/→ 单步、PageUp/PageDown 粗调、Home/End 到两端
@@ -2175,6 +2204,25 @@
       incidentStep: MEM_INCIDENT_STEP, climbFrom: MEM_CLIMB_FROM,
       recoveryEnd: MEM_RECOVERY_END, capacityGB: MEM_CAPACITY_GB,
     },
+  };
+
+  /* 「时光全景」浮窗(js/training-timeline-panorama.js)的数据/跳转出口:
+     它要按同一套时钟(step ↔ 墙钟)铺事件,并把点中的事件交回时光机,因此只读取汇总态,
+     跳转一律走 applyViewStep / activateProblemLens,不另起一套 step 语义。 */
+  window.PtoTrainingTimeMachine = {
+    getState: function () {
+      return {
+        step: state.step,
+        liveStep: liveStep,
+        totalSteps: state.totalSteps,
+        stepsPerEpoch: state.stepsPerEpoch,
+        stepSeconds: TIME_MACHINE_STEP_SECONDS,
+        replaying: isReplaying,
+      };
+    },
+    gotoStep: function (step) { applyViewStep(step); },
+    activateProblemLens: function (key) { activateProblemLens(key); },
+    exit: function () { exitTimeMachine(); },
   };
 
   // 供 training-monitoring-v2.html 的 3D deck 适配器复用本文件里的诊断联动入口
