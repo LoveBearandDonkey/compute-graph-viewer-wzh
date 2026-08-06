@@ -1,6 +1,49 @@
 (() => {
   'use strict';
 
+  // ---- Synthetic Tensor Data (fixed seed 20260805) ----
+  var syntheticData = (function() {
+    var SEED = 20260805;
+
+    function mulberry32(a) {
+      return function() {
+        a |= 0; a = a + 0x6D2B79F5 | 0;
+        var t = Math.imul(a ^ a >>> 15, 1 | a);
+        t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t;
+        return ((t ^ t >>> 14) >>> 0) / 4294967296;
+      };
+    }
+
+    var rand = mulberry32(SEED);
+
+    // X0 logical shape: [1, 16, 8, 8] → value range [-1, 1]
+    var x0Data = {};
+    function getX0Value(n, c, h, w) {
+      var key = n + ',' + c + ',' + h + ',' + w;
+      if (x0Data[key] !== undefined) return x0Data[key];
+      // Use deterministic seed based on coordinates
+      var subSeed = SEED + n * 10000 + c * 1000 + h * 100 + w;
+      var r = mulberry32(subSeed)();
+      var value = Math.round((r * 2 - 1) * 100) / 100; // round to 2 decimals in [-1, 1]
+      x0Data[key] = value;
+      return value;
+    }
+
+    // fmapA1 value = X0 value (DataCopy doesn't change values)
+    // Physical: NC1HWC0 -> c1=floor(c/16), c0=c%16
+    function getA1Value(n, c1, h, w, c0) {
+      var c = c1 * 16 + c0;
+      return getX0Value(n, c, h, w);
+    }
+
+    return {
+      getX0Value: getX0Value,
+      getA1Value: getA1Value,
+      seed: SEED
+    };
+  })();
+
+
   const FIXTURES = [
     { id: 'sample.conv_bias_relu', path: 'data/fixtures/conv_bias_relu.trace.json?v=20260803-allocate-memory-map-v1' },
   ];
@@ -113,6 +156,11 @@
     playback: null,
     webglAvailable: null,
     infoOpen: false,
+    selectedTensorId: null,
+    dataViewMode: 'data-dump',
+    selectedChannel: 0,
+    selectedDataElement: null,
+    sourceExplorerWidth: 350,
     tensorTabStepId: null,
     tensorTabKey: null,
     convCoreIndex: 1,
@@ -123,6 +171,7 @@
       bias: null,
       output: null,
     },
+    titleControllers: {},
     hostTilingControllers: {
       source: null,
       cube: null,
@@ -156,6 +205,10 @@
     },
     fmapA1VolumeController: null,
     a2LogicalMatrixController: null,
+    loadDataBControllers: {
+      source: null,
+      target: null,
+    },
     tensorView: {
       scale: 1,
       panX: 0,
@@ -223,7 +276,9 @@
     convCoreContext: byId('convCoreContext'),
     convCoreOptions: byId('convCoreOptions'),
     tensorTabs: byId('tensorTabs'),
+    tensorSection: byId('tensorSection'),
     tensorStage: byId('tensorStage'),
+    sourceExplorerPane: byId('standalone-explorer-pane'),
     convTensorOverview: byId('convTensorOverview'),
     memoryAllocationView: byId('memoryAllocationView'),
     featureOverviewCanvas: byId('featureOverviewCanvas'),
@@ -234,28 +289,18 @@
     hostTilingEquation: byId('hostTilingEquation'),
     hostTilingEvidence: byId('hostTilingEvidence'),
     hostTilingTileCount: byId('hostTilingTileCount'),
-    hostTilingSourceTitle: byId('hostTilingSourceTitle'),
-    hostTilingSourceMeta: byId('hostTilingSourceMeta'),
     hostTilingSourceCanvas: byId('hostTilingSourceCanvas'),
     hostTilingWeightCount: byId('hostTilingWeightCount'),
     hostTilingWeightCountValue: byId('hostTilingWeightCountValue'),
     hostTilingTransform: byId('hostTilingTransform'),
-    hostTilingCubeTitle: byId('hostTilingCubeTitle'),
-    hostTilingCubeMeta: byId('hostTilingCubeMeta'),
     hostTilingCubeCanvas: byId('hostTilingCubeCanvas'),
     hostTilingFormula: byId('hostTilingFormula'),
     hostLaunchView: byId('hostLaunchView'),
     hostLaunchEquation: byId('hostLaunchEquation'),
     hostLaunchEvidence: byId('hostLaunchEvidence'),
     hostLaunchBlockDim: byId('hostLaunchBlockDim'),
-    hostLaunchATitle: byId('hostLaunchATitle'),
-    hostLaunchAMeta: byId('hostLaunchAMeta'),
     hostLaunchACanvas: byId('hostLaunchACanvas'),
-    hostLaunchBTitle: byId('hostLaunchBTitle'),
-    hostLaunchBMeta: byId('hostLaunchBMeta'),
     hostLaunchBCanvas: byId('hostLaunchBCanvas'),
-    hostLaunchCTitle: byId('hostLaunchCTitle'),
-    hostLaunchCMeta: byId('hostLaunchCMeta'),
     hostLaunchCCanvas: byId('hostLaunchCCanvas'),
     hostLaunchMapping: byId('hostLaunchMapping'),
     hostLaunchReduction: byId('hostLaunchReduction'),
@@ -266,33 +311,20 @@
     copyInputPatternView: byId('copyInputPatternView'),
     copyInputSummary: byId('copyInputSummary'),
     copyInputContext: byId('copyInputContext'),
-    copyInputSourceTitle: byId('copyInputSourceTitle'),
-    copyInputSourceShape: byId('copyInputSourceShape'),
-    copyInputSourceMeta: byId('copyInputSourceMeta'),
     copyInputSourceCanvas: byId('copyInputSourceCanvas'),
     copyInputEngine: byId('copyInputEngine'),
     copyInputTransformation: byId('copyInputTransformation'),
-    copyInputDestinationTitle: byId('copyInputDestinationTitle'),
-    copyInputDestinationShape: byId('copyInputDestinationShape'),
-    copyInputDestinationMeta: byId('copyInputDestinationMeta'),
     copyInputDestinationCanvas: byId('copyInputDestinationCanvas'),
     copyInputLensMount: byId('copyInputLensMount'),
     biasC1C2View: byId('biasC1C2View'),
     biasC1C2Summary: byId('biasC1C2Summary'),
     biasC1C2Context: byId('biasC1C2Context'),
     biasC1C2Engine: byId('biasC1C2Engine'),
-    biasC1Title: byId('biasC1Title'),
-    biasC1Shape: byId('biasC1Shape'),
-    biasC1Meta: byId('biasC1Meta'),
     biasC1Canvas: byId('biasC1Canvas'),
-    biasC2Title: byId('biasC2Title'),
-    biasC2Shape: byId('biasC2Shape'),
-    biasC2Meta: byId('biasC2Meta'),
     biasC2Canvas: byId('biasC2Canvas'),
     fixpipeOutputView: byId('fixpipeOutputView'),
     fixpipeOutputSummary: byId('fixpipeOutputSummary'),
     fixpipeOutputContext: byId('fixpipeOutputContext'),
-    fixpipeAccumTitle: byId('fixpipeAccumTitle'),
     fixpipeAccumCanvas: byId('fixpipeAccumCanvas'),
     fixpipeOutputCanvas: byId('fixpipeOutputCanvas'),
     fixpipeAddressCore: byId('fixpipeAddressCore'),
@@ -301,28 +333,26 @@
     mmadEquation: byId('mmadEquation'),
     mmadEvidence: byId('mmadEvidence'),
     mmadProgress: byId('mmadProgress'),
-    mmadA2Title: byId('mmadA2Title'),
-    mmadA2Meta: byId('mmadA2Meta'),
     mmadA2Canvas: byId('mmadA2Canvas'),
-    mmadB2Title: byId('mmadB2Title'),
-    mmadB2Meta: byId('mmadB2Meta'),
     mmadB2Canvas: byId('mmadB2Canvas'),
     mmadAddend: byId('mmadAddend'),
-    mmadCo1Title: byId('mmadCo1Title'),
-    mmadCo1Meta: byId('mmadCo1Meta'),
     mmadCo1Canvas: byId('mmadCo1Canvas'),
     mmadBiasStatus: byId('mmadBiasStatus'),
-    addendMatrixTitle: byId('mmadAddendTitle'),
-    addendMatrixMeta: byId('mmadAddendMeta'),
     addendMatrixCanvas: byId('mmadAddendCanvas'),
     tensorCanvas: byId('tensorCanvas'),
     convLoadDataView: byId('convLoadDataView'),
     fmapA1VolumeCanvas: byId('fmapA1VolumeCanvas'),
-    fmapA1Meta: byId('fmapA1Meta'),
-    fmapA1Params: byId('fmapA1Params'),
-    a2LogicalShape: byId('a2LogicalShape'),
     a2LogicalMatrixCanvas: byId('a2LogicalMatrixCanvas'),
-    fmapA2TileMeta: byId('fmapA2TileMeta'),
+    loadDataBView: byId('loadDataBView'),
+    weightB1MatrixCanvas: byId('weightB1MatrixCanvas'),
+    weightB2MatrixCanvas: byId('weightB2MatrixCanvas'),
+    loadDataBSummary: byId('loadDataBSummary'),
+    loadDataBContext: byId('loadDataBContext'),
+    loadDataBEngine: byId('loadDataBEngine'),
+    loadDataBTransformation: byId('loadDataBTransformation'),
+    loadDataBDetail: byId('loadDataBDetail'),
+    loadDataBKRange: byId('loadDataBKRange'),
+    loadDataBAddress: byId('loadDataBAddress'),
     tensorFallback: byId('tensorFallback'),
     // viewport controls removed: zoomOut/zoomIn/fitView/viewportInfo
     tileLens: byId('tileLens'),
@@ -341,6 +371,23 @@
     instructionSequence: byId('instructionSequence'),
     instructionsView: byId('instructionsView'),
     estimatedTimelineView: byId('estimatedTimelineView'),
+    tensorJourneyView: byId('tensorJourneyView'),
+    tensorJourneyContent: byId('tensorJourneyContent'),
+    tensorDataDumpPanel: byId('tensorDataDumpPanel'),
+    dataDumpTensorInfo: byId('dataDumpTensorInfo'),
+    dataDumpVolumeCanvas: byId('dataDumpVolumeCanvas'),
+    dataDumpVolumeMeta: byId('dataDumpVolumeMeta'),
+    channelControls: byId('channelControls'),
+    channelSelect: byId('channelSelect'),
+    prevChannelBtn: byId('prevChannelBtn'),
+    nextChannelBtn: byId('nextChannelBtn'),
+    channelTotal: byId('channelTotal'),
+    heatmapGrid: byId('heatmapGrid'),
+    heatmapHeader: byId('heatmapHeader'),
+    dataDumpHeatmap: byId('dataDumpHeatmap'),
+    cellInspector: byId('cellInspector'),
+    cellInspectorBody: byId('cellInspectorBody'),
+    closeInspectorBtn: byId('closeInspectorBtn'),
     executionTabs: Array.from(document.querySelectorAll('[data-execution-view]')),
     traceInfoPanel: byId('traceInfoPanel'),
     traceInfoMeta: byId('traceInfoMeta'),
@@ -473,6 +520,41 @@
       button.addEventListener('click', () => setExecutionView(button.dataset.executionView));
     });
     els.instructionSequence?.addEventListener('click', handleInstructionSequenceClick);
+    // Tensor Data Dump event listeners
+    els.prevChannelBtn?.addEventListener('click', function() {
+      if (state.selectedChannel > 0) {
+        state.selectedChannel -= 1;
+        renderTensorDataDump(currentTrace());
+      }
+    });
+    els.nextChannelBtn?.addEventListener('click', function() {
+      if (state.selectedChannel < 15) {
+        state.selectedChannel += 1;
+        renderTensorDataDump(currentTrace());
+      }
+    });
+    els.channelSelect?.addEventListener('change', function() {
+      state.selectedChannel = parseInt(els.channelSelect.value, 10) || 0;
+      renderTensorDataDump(currentTrace());
+    });
+    els.closeInspectorBtn?.addEventListener('click', function() {
+      state.selectedDataElement = null;
+      els.cellInspector.hidden = true;
+    });
+    // Data Dump tab buttons
+    var dumpTabs = document.querySelectorAll('[data-dump-tab]');
+    dumpTabs.forEach(function(btn) {
+      btn.addEventListener('click', function() {
+        var mode = btn.dataset.dumpTab;
+        if (mode === 'dump') mode = 'data-dump';
+        state.dataViewMode = mode;
+        dumpTabs.forEach(function(b) {
+          b.classList.toggle('is-selected', b.dataset.dumpTab === btn.dataset.dumpTab);
+          b.setAttribute('aria-selected', String(b.dataset.dumpTab === btn.dataset.dumpTab));
+        });
+        renderTensorDataDump(currentTrace());
+      });
+    });
     els.convCoreOptions?.addEventListener('click', (event) => {
       const button = event.target.closest('[data-conv-core-index]');
       if (!button) return;
@@ -521,28 +603,81 @@
   }
 
   function setExecutionView(view) {
-    state.executionView = view === 'timeline' ? 'timeline' : 'instructions';
+    if (view === 'tensor-journey') state.executionView = 'tensor-journey';
+    else if (view === 'timeline') state.executionView = 'timeline';
+    else state.executionView = 'instructions';
+
+    // Switching away from tensor-journey clears Data Dump mode
+    if (view === 'instructions' || view === 'timeline') {
+      if (state.selectedTensorId) {
+        state.selectedTensorId = null;
+        state.selectedDataElement = null;
+        // Restore standard views immediately
+        renderDataDumpPanelVisibility(false);
+        var trace = currentTrace();
+        renderTensorTabs(trace);
+        renderTensorViewport(trace);
+        renderTileLens(trace);
+        renderArchitectureFocus(trace);
+      }
+    }
+
     renderExecutionDock();
     if (state.executionView === 'instructions') {
       renderInstructionPanel(currentTrace());
     }
+    if (state.executionView === 'tensor-journey') {
+      renderTensorJourney(currentTrace());
+    }
+  }
+
+  function renderDataDumpPanelVisibility(visible) {
+    // Hide the entire tensor section during data dump, instead of hiding inner children.
+    if (els.tensorSection) els.tensorSection.hidden = visible;
+    if (els.tensorStage) els.tensorStage.hidden = visible;
+    if (els.tensorTabs) els.tensorTabs.hidden = visible;
+    if (els.tensorDataDumpPanel) els.tensorDataDumpPanel.hidden = !visible;
+
+    // Hide hardware participation panel during data dump
+    if (els.architectureViewportRoot) {
+      els.architectureViewportRoot.style.display = visible ? 'none' : '';
+    }
+
+    // Update pane title
+    if (els.visualTitle) {
+      els.visualTitle.textContent = visible ? 'Tensor' : 'Tensor State & Transformation';
+    }
   }
 
   function renderExecutionDock() {
-    const isInstructions = state.executionView === 'instructions';
     els.executionTabs.forEach((button) => {
       const selected = button.dataset.executionView === state.executionView;
       button.classList.toggle('is-selected', selected);
       button.setAttribute('aria-selected', String(selected));
       button.tabIndex = selected ? 0 : -1;
     });
-    if (els.instructionsView) els.instructionsView.hidden = !isInstructions;
-    if (els.estimatedTimelineView) els.estimatedTimelineView.hidden = isInstructions;
+    if (els.sourceExplorerPane) {
+      if (!Number.isFinite(state.sourceExplorerWidth) || state.sourceExplorerWidth <= 0) {
+        state.sourceExplorerWidth = 350;
+      }
+      const width = `${state.sourceExplorerWidth}px`;
+      els.sourceExplorerPane.style.flex = `0 0 ${width}`;
+      els.sourceExplorerPane.style.width = width;
+      els.sourceExplorerPane.style.minWidth = width;
+      els.sourceExplorerPane.style.maxWidth = width;
+    }
+    if (els.instructionsView) els.instructionsView.hidden = state.executionView !== 'instructions';
+    if (els.tensorJourneyView) els.tensorJourneyView.hidden = state.executionView !== 'tensor-journey';
+    if (els.estimatedTimelineView) els.estimatedTimelineView.hidden = state.executionView !== 'timeline';
     if (els.timelineKicker) {
       const step = currentStep();
-      els.timelineKicker.textContent = isInstructions
-        ? `${step?.evidenceKind || 'unknown'} · logical order · repeated iterations grouped`
-        : 'Estimated Timeline unavailable · Not Profiling Data';
+      if (state.executionView === 'instructions') {
+        els.timelineKicker.textContent = `${step?.evidenceKind || 'unknown'} · logical order · repeated iterations grouped`;
+      } else if (state.executionView === 'tensor-journey') {
+        els.timelineKicker.textContent = 'Tensor data flow by memory location';
+      } else {
+        els.timelineKicker.textContent = 'Estimated Timeline unavailable · Not Profiling Data';
+      }
     }
   }
 
@@ -846,6 +981,11 @@
       Object.values(state.biasC1C2Controllers).forEach((controller) => controller?.fit?.());
       return;
     }
+    if (state.activeTensorRenderer === 'load-data-b') {
+      state.loadDataBControllers.source?.fit?.();
+      state.loadDataBControllers.target?.fit?.();
+      return;
+    }
     if (state.activeTensorRenderer === 'volume' && state.tensorVolumeController) {
       state.tensorVolumeController.resize();
       return;
@@ -995,12 +1135,25 @@
     state.stepIndex = Math.max(0, Math.min(state.stepIndex, trace.steps.length - 1));
     renderChrome(trace);
     updateSourceHighlight(trace);
-    renderTensorTabs(trace);
-    renderTensorViewport(trace);
-    renderTileLens(trace);
-    renderArchitectureFocus(trace);
+
+    // Data Dump mode: show tensor panel, hide standard views
+    var isDataDump = state.selectedTensorId === 'buffer:feature:a1';
+    renderDataDumpPanelVisibility(isDataDump);
+
+    if (isDataDump) {
+      renderTensorDataDump(trace);
+    } else {
+      renderTensorTabs(trace);
+      renderTensorViewport(trace);
+      renderTileLens(trace);
+      renderArchitectureFocus(trace);
+    }
+
     renderExecutionDock();
     renderInstructionPanel(trace);
+    if (state.executionView === 'tensor-journey') {
+      renderTensorJourney(trace);
+    }
     renderInfoPanel(trace);
     syncPlayback();
   }
@@ -1057,6 +1210,12 @@
           location: `${flow.from || 'GM'} → ${flow.to || 'L1'}`,
         };
       });
+    }
+    if (state.instructionOperationFocus === 'load-a2-b2') {
+      return [
+        { key: 'buffer:feature:a2', label: 'fmapA2', location: 'A2 / L0A' },
+        { key: 'buffer:weight:b2', label: 'weightB2', location: 'B2 / L0B' },
+      ];
     }
     const snapshots = step.tensorSnapshots || [];
     if (snapshots.length < 2) return [];
@@ -1888,6 +2047,12 @@
       && !!els.convLoadDataView
       && !!els.fmapA1VolumeCanvas
       && !!els.a2LogicalMatrixCanvas;
+    const useLoadDataBPatterns = isConvLoad
+      && state.tensorTabKey === 'buffer:weight:b2'
+      && !!window.PtoMatrixCanvas
+      && !!els.loadDataBView
+      && !!els.weightB1MatrixCanvas
+      && !!els.weightB2MatrixCanvas;
     const useMmadMatrixPattern = visual.layout === 'conv2d'
       && visual.conv?.scene === 'mmad'
       && !!window.PtoMatrixCanvas
@@ -1927,7 +2092,6 @@
       && (
         snapshotShape.length === 2
         || visual.layout === '2d'
-        || (isConvLoad && state.tensorTabKey === 'buffer:weight:b2')
       );
 
     const renderer = useMemoryAllocationMap
@@ -1944,8 +2108,10 @@
         ? 'bias-c1-c2-matrix'
       : useFixpipeOutputPattern
         ? 'fixpipe-output'
+      : useLoadDataBPatterns
+        ? 'load-data-b'
       : useLoadDataPatterns
-      ? 'load-data'
+        ? 'load-data'
       : useMmadMatrixPattern
         ? 'mmad-matrix'
       : useVolumePattern
@@ -1998,6 +2164,11 @@
     }
     if (renderer === 'fixpipe-output') {
       renderFixpipeOutputView(trace, step);
+      if (els.tensorFallback) els.tensorFallback.hidden = true;
+      return;
+    }
+    if (renderer === 'load-data-b') {
+      renderConvLoadDataBView(trace, visual.conv);
       if (els.tensorFallback) els.tensorFallback.hidden = true;
       return;
     }
@@ -2069,8 +2240,21 @@
     if (els.tensorVolumeCanvas) els.tensorVolumeCanvas.hidden = renderer !== 'volume';
     if (els.tensorMatrixHost) els.tensorMatrixHost.hidden = renderer !== 'matrix';
     if (els.convLoadDataView) els.convLoadDataView.hidden = renderer !== 'load-data';
+    if (els.loadDataBView) els.loadDataBView.hidden = renderer !== 'load-data-b';
     if (els.tensorCanvas) els.tensorCanvas.hidden = renderer !== 'legacy';
     if (els.tileLens) els.tileLens.hidden = renderer !== 'legacy' && renderer !== 'copy-input-pattern';
+  }
+
+  function renderTensorTitle(key, scene, options) {
+    const host = document.getElementById(`${key}TitleMount`);
+    if (!host || !window.PtoTensorTitle) return;
+    const controller = state.titleControllers[key];
+    const nextOptions = options || {};
+    if (controller) {
+      controller.update(scene, nextOptions);
+      return;
+    }
+    state.titleControllers[key] = window.PtoTensorTitle.render(host, scene, nextOptions);
   }
 
   const ALLOCATION_MEMORY_MODEL = {
@@ -2351,11 +2535,31 @@
     if (els.fixpipeOutputContext) {
       els.fixpipeOutputContext.textContent = `${coreLabel} · M${partition.mTile}/N${partition.nTile}`;
     }
-    if (els.fixpipeAccumTitle) els.fixpipeAccumTitle.textContent = `accumCo1 · AIC${partition.index}`;
     if (els.fixpipeAddressCore) els.fixpipeAddressCore.textContent = coreLabel;
     if (els.fixpipeAddress) {
       els.fixpipeAddress.textContent = `outputGm + ${byteOffset} B · M[${rowStart}:${rowEnd}] · Co[${columnStart}:${columnEnd}] · row stride ${columns} half`;
     }
+    renderTensorTitle('fixpipeAccum', {
+      label: `accumCo1 · AIC${partition.index}`,
+      role: 'reduction',
+      logicalShape: { label: 'aggregate', dims: [tileRows, tileColumns] },
+      dtype: 'FP32',
+      format: 'NZ · CO1 / L0C',
+      memory: { tier: 'L0C', sizeBytes: tileRows * tileColumns * 4 },
+      state: 'produced',
+      constraints: ['1 aggregate cell · 16×16 values'],
+    });
+    renderTensorTitle('fixpipeOutput', {
+      label: 'outputGm',
+      role: 'output',
+      logicalShape: { label: 'ND [M,Co]', dims: [rows, columns] },
+      dtype: 'FP16',
+      format: 'ND',
+      memory: { tier: 'GM', sizeBytes: rows * columns * 2 },
+      state: 'ready',
+      constraints: ['8 aggregate cells · each 16×16'],
+      status: `${coreLabel} · M${rowStart}:${rowEnd} · Co${columnStart}:${columnEnd}`,
+    });
 
     const fixtures = {
       accum: {
@@ -2432,18 +2636,39 @@
     const elements = Number(snapshot.validElements) || Number(destination.allocatedElements) || 16;
     const bytes = Number(flow.bytes) || Number(snapshot.validBytes) || Number(destination.allocatedBytes) || 64;
     const dtype = String(snapshot.dtype || destination.dtype || source.dtype || 'fp32').toUpperCase();
-    const sourceAddress = Number.isFinite(Number(source.addressBytes)) ? `@${Number(source.addressBytes)}` : '@unknown';
-    const destinationAddress = Number.isFinite(Number(destination.addressBytes)) ? `@${Number(destination.addressBytes)}` : '@unknown';
 
     if (els.biasC1C2Summary) els.biasC1C2Summary.textContent = 'Bias C1 → C2 / Bias Table';
     if (els.biasC1C2Context) els.biasC1C2Context.textContent = `MTE1 · ${elements} × ${dtype} · ${formatBytes(bytes)}`;
     if (els.biasC1C2Engine) els.biasC1C2Engine.textContent = flow.transferEngine || 'MTE1 / DataCopy';
-    if (els.biasC1Title) els.biasC1Title.textContent = `${source.name || 'biasC1'} · ${flow.from || source.location || 'C1 / L1'}`;
-    if (els.biasC1Shape) els.biasC1Shape.textContent = `linear [1,${elements}]`;
-    if (els.biasC1Meta) els.biasC1Meta.textContent = `${dtype} · ${sourceAddress} · ${formatBytes(bytes)} · readable after MTE2_MTE1`;
-    if (els.biasC2Title) els.biasC2Title.textContent = `${destination.name || 'biasC2'} · ${flow.to || destination.location || 'C2 / Bias Table'}`;
-    if (els.biasC2Shape) els.biasC2Shape.textContent = `${snapshot.physicalLayout || 'linear Bias Table'} [1,${elements}]`;
-    if (els.biasC2Meta) els.biasC2Meta.textContent = `${dtype} · ${destinationAddress} · ${formatBytes(bytes)} · ready for first Mmad`;
+    renderTensorTitle('biasC1', {
+      label: source.name || 'biasC1',
+      role: 'bias',
+      logicalShape: { label: 'linear', dims: [1, elements] },
+      dtype,
+      format: 'C1 / L1',
+      memory: {
+        tier: 'L1',
+        sizeBytes: bytes,
+        offset: Number.isFinite(Number(source.addressBytes)) ? Number(source.addressBytes) : undefined,
+        alignment: Number.isFinite(Number(source.alignmentBytes)) ? Number(source.alignmentBytes) : undefined,
+      },
+      state: 'current',
+      constraints: ['readable after MTE2_MTE1'],
+    });
+    renderTensorTitle('biasC2', {
+      label: destination.name || 'biasC2',
+      role: 'bias',
+      logicalShape: { label: snapshot.physicalLayout || 'linear Bias Table', dims: [1, elements] },
+      dtype,
+      format: 'C2 / Bias Table',
+      memory: {
+        tier: 'Bias Table',
+        sizeBytes: bytes,
+        offset: Number.isFinite(Number(destination.addressBytes)) ? Number(destination.addressBytes) : undefined,
+      },
+      state: 'written',
+      constraints: ['ready for first Mmad'],
+    });
 
     const options = {
       showAxes: true,
@@ -2499,7 +2724,6 @@
     const destinationLayout = snapshot?.physicalLayout || destination?.physicalLayout || 'layout unknown';
     const dtype = String(snapshot?.dtype || destination?.dtype || source?.dtype || 'dtype unknown').toUpperCase();
     const bytes = Number(flow?.bytes) || Number(snapshot?.validBytes) || 0;
-    const allocatedBytes = Number(destination?.allocatedBytes) || Number(snapshot?.allocatedBytes) || bytes;
     const address = Number.isFinite(Number(destination?.addressBytes)) ? Number(destination.addressBytes) : null;
     const alignment = Number.isFinite(Number(destination?.alignmentBytes)) ? Number(destination.alignmentBytes) : null;
     const transformation = sourceRole === 'bias'
@@ -2550,28 +2774,36 @@
     if (els.copyInputContext) {
       els.copyInputContext.textContent = `AIC${partition?.index ?? 0} · OT${partition?.outputTile ?? 0} · M${partition?.mTile ?? 0}/N${partition?.nTile ?? 0}`;
     }
-    if (els.copyInputSourceTitle) els.copyInputSourceTitle.textContent = coreSource?.label || source?.name || flow?.from || 'GM source';
-    if (els.copyInputSourceShape) {
-      const displayShape = sourceRole === 'weight' ? sourcePhysicalShape : shape;
-      const sliceLabel = sourceRole === 'weight' ? `selected ${coreSource?.slice}` : coreSource?.slice || 'current slice';
-      els.copyInputSourceShape.textContent = `${sourceLayout} ${formatShape(displayShape)} · ${sliceLabel}`;
-    }
-    if (els.copyInputSourceMeta) {
-      els.copyInputSourceMeta.textContent = `${dtype} · ${formatBytes(bytes)} · GM + ${coreSource?.gmOffsetBytes || 0} B`;
-    }
     if (els.copyInputEngine) els.copyInputEngine.textContent = flow?.transferEngine || 'MTE2 / DataCopy';
     if (els.copyInputTransformation) els.copyInputTransformation.textContent = transformation;
-    if (els.copyInputDestinationTitle) {
-      els.copyInputDestinationTitle.textContent = `${destination?.name || flow?.to || 'L1 buffer'} · ${destination?.location || flow?.to || 'L1'}`;
-    }
-    if (els.copyInputDestinationShape) {
-      els.copyInputDestinationShape.textContent = `${destinationLayout} ${formatShape(shape)}`;
-    }
-    if (els.copyInputDestinationMeta) {
-      const addressText = address == null ? '@unknown' : `@${address}`;
-      const alignmentText = alignment == null ? 'alignment unknown' : `align ${alignment} B`;
-      els.copyInputDestinationMeta.textContent = `${addressText} · ${formatBytes(bytes)} / ${formatBytes(allocatedBytes)} · ${alignmentText}`;
-    }
+    const sourceDisplayShape = sourceRole === 'weight' ? sourcePhysicalShape : shape;
+    const sourceSliceLabel = sourceRole === 'weight'
+      ? `selected ${coreSource?.slice}`
+      : coreSource?.slice || 'current slice';
+    renderTensorTitle('copyInputSource', {
+      label: coreSource?.label || source?.name || flow?.from || 'GM source',
+      role: sourceRole === 'bias' ? 'broadcast' : sourceRole === 'weight' ? 'weight' : 'input',
+      logicalShape: { label: sourceLayout, dims: sourceDisplayShape },
+      dtype,
+      format: sourceLayout,
+      memory: { tier: 'GM', sizeBytes: bytes, offset: coreSource?.gmOffsetBytes || 0 },
+      state: 'current',
+      constraints: [sourceSliceLabel],
+    });
+    renderTensorTitle('copyInputDestination', {
+      label: destination?.name || flow?.to || 'L1 buffer',
+      role: 'scratch',
+      logicalShape: { label: destinationLayout, dims: shape },
+      dtype,
+      format: destinationLayout,
+      memory: {
+        tier: destination?.location || 'L1',
+        sizeBytes: bytes,
+        offset: address,
+        alignment,
+      },
+      state: 'written',
+    });
 
     renderCopyInputPatternCanvas('source', kind, sourceScene, {
       ariaLabel: `${coreSource?.label || source?.name || 'GM source'} ${sourceLayout} ${formatShape(sourceRole === 'weight' ? sourcePhysicalShape : shape)}${sourceRole === 'weight' ? `, selected ${coreSource?.slice}` : ''}`,
@@ -2761,23 +2993,57 @@
     if (els.mmadEquation) els.mmadEquation.textContent = equation;
     if (els.mmadEvidence) els.mmadEvidence.textContent = visual?.highlight?.sub || 'confirmed · logical order only';
     if (els.mmadProgress) els.mmadProgress.textContent = `K ${kCurrent}/${kLoops}`;
-    if (els.mmadA2Title) els.mmadA2Title.textContent = `A[Mi,K${kIndex}] · A2`;
-    if (els.mmadA2Meta) els.mmadA2Meta.textContent = `[${tileM},${tileK}] · FP16 · L0A`;
-    if (els.mmadB2Title) els.mmadB2Title.textContent = `B[K${kIndex},Nj] · B2`;
-    if (els.mmadB2Meta) els.mmadB2Meta.textContent = `[${tileK},${tileN}] · FP16 · L0B`;
     if (els.mmadAddend) els.mmadAddend.textContent = '+';
-    if (els.addendMatrixTitle) {
-      els.addendMatrixTitle.textContent = kIndex === 0
-        ? 'Bias[Nj] broadcast'
-        : `Acc${kIndex - 1} · CO1`;
-    }
-    if (els.addendMatrixMeta) {
-      els.addendMatrixMeta.textContent = kIndex === 0
-        ? `[${tileM},${tileN}] · FP32 · C2 / Bias Table`
-        : `[${tileM},${tileN}] · FP32 · L0C · previous partial sum`;
-    }
-    if (els.mmadCo1Title) els.mmadCo1Title.textContent = `${result} · CO1`;
-    if (els.mmadCo1Meta) els.mmadCo1Meta.textContent = `[${tileM},${tileN}] · FP32 · L0C · K ${kCurrent}/${kLoops}`;
+    renderTensorTitle('mmadA2', {
+      label: `A[Mi,K${kIndex}] · A2`,
+      role: 'input',
+      logicalShape: { label: 'A2', dims: [tileM, tileK] },
+      dtype: 'FP16',
+      format: 'A2',
+      memory: { tier: 'L0A' },
+      state: 'current',
+      status: `K ${kCurrent}/${kLoops}`,
+    });
+    renderTensorTitle('mmadB2', {
+      label: `B[K${kIndex},Nj] · B2`,
+      role: 'input',
+      logicalShape: { label: 'B2', dims: [tileK, tileN] },
+      dtype: 'FP16',
+      format: 'B2',
+      memory: { tier: 'L0B' },
+      state: 'current',
+      status: `K ${kCurrent}/${kLoops}`,
+    });
+    renderTensorTitle('mmadAddend', kIndex === 0
+      ? {
+          label: 'Bias[Nj] broadcast',
+          role: 'broadcast',
+          logicalShape: { label: 'broadcast', dims: [tileM, tileN] },
+          dtype: 'FP32',
+          format: 'C2 / Bias Table',
+          memory: { tier: 'Bias Table' },
+          state: 'current',
+        }
+      : {
+          label: `Acc${kIndex - 1} · CO1`,
+          role: 'reduction',
+          logicalShape: { label: 'CO1', dims: [tileM, tileN] },
+          dtype: 'FP32',
+          format: 'CO1 / L0C',
+          memory: { tier: 'L0C' },
+          state: 'accumulating',
+          constraints: ['previous partial sum'],
+        });
+    renderTensorTitle('mmadCo1', {
+      label: `${result} · CO1`,
+      role: 'output',
+      logicalShape: { label: 'CO1', dims: [tileM, tileN] },
+      dtype: 'FP32',
+      format: 'CO1 / L0C',
+      memory: { tier: 'L0C' },
+      state: 'accumulating',
+      status: `K ${kCurrent}/${kLoops}`,
+    });
     if (els.mmadBiasStatus) {
       els.mmadBiasStatus.textContent = kIndex === 0
         ? 'Bias C1 → C2 confirmed · I0 only'
@@ -3071,8 +3337,63 @@
       els.hostTilingEvidence.textContent = 'planning only · global logical mapping and tile counts';
     }
     if (els.hostTilingTileCount) els.hostTilingTileCount.textContent = config.tileCount;
-    if (els.hostTilingSourceTitle) els.hostTilingSourceTitle.textContent = config.sourceTitle;
-    if (els.hostTilingSourceMeta) els.hostTilingSourceMeta.textContent = config.sourceMeta;
+    const sourceTitleScene = key === 'host-tiling:feature'
+      ? {
+          label: 'Feature X',
+          role: 'input',
+          logicalShape: { label: 'NCHW', dims: [1, ci, hi, wi] },
+          dtype: 'FP16',
+          format: 'NCHW',
+          memory: { tier: 'GM' },
+          constraints: [config.sourceMeta],
+        }
+      : key === 'host-tiling:weight'
+        ? {
+            label: 'Weight W',
+            role: 'weight',
+            logicalShape: { label: 'OIHW', dims: [co, ci, kh, kw] },
+            dtype: 'FP16',
+            format: 'logical OIHW',
+            memory: { tier: 'GM' },
+            constraints: [config.sourceMeta],
+          }
+        : {
+            label: 'Output Y',
+            role: 'output',
+            logicalShape: { label: 'NCHW', dims: [1, co, ho, wo] },
+            dtype: 'FP16',
+            format: 'NCHW semantic',
+            memory: { tier: 'GM' },
+            constraints: [config.sourceMeta],
+          };
+    const cubeTitleScene = key === 'host-tiling:feature'
+      ? {
+          label: 'Cube A',
+          role: 'input',
+          logicalShape: { label: 'logical matrix', dims: [M, K] },
+          format: 'Cube A',
+          constraints: [config.cubeMeta],
+          status: config.tileCount,
+        }
+      : key === 'host-tiling:weight'
+        ? {
+            label: 'Cube B',
+            role: 'weight',
+            logicalShape: { label: 'logical matrix', dims: [K, N] },
+            format: 'Cube B',
+            constraints: [config.cubeMeta],
+            status: config.tileCount,
+          }
+        : {
+            label: 'Cube C',
+            role: 'output',
+            logicalShape: { label: 'logical matrix', dims: [M, N] },
+            format: 'Cube C',
+            constraints: [config.cubeMeta],
+            status: config.tileCount,
+          };
+    renderTensorTitle('hostTilingSource', sourceTitleScene);
+    renderTensorTitle('hostTilingCube', cubeTitleScene);
     if (els.hostTilingWeightCount) {
       const showWeightCount = key === 'host-tiling:weight';
       els.hostTilingWeightCount.hidden = !showWeightCount;
@@ -3085,8 +3406,6 @@
       els.hostTilingWeightCountValue.textContent = `Co=${co}`;
     }
     if (els.hostTilingTransform) els.hostTilingTransform.textContent = config.transform;
-    if (els.hostTilingCubeTitle) els.hostTilingCubeTitle.textContent = config.cubeTitle;
-    if (els.hostTilingCubeMeta) els.hostTilingCubeMeta.textContent = config.cubeMeta;
     if (els.hostTilingFormula) els.hostTilingFormula.textContent = config.formula;
 
     const volumeOptions = {
@@ -3167,14 +3486,30 @@
     if (els.hostLaunchBlockDim) {
       els.hostLaunchBlockDim.textContent = `blockDim = ${mTiles}×${nTiles} = ${blockDim}`;
     }
-    if (els.hostLaunchATitle) els.hostLaunchATitle.textContent = `Input X → A [M=${M},K=${K}]`;
-    if (els.hostLaunchAMeta) els.hostLaunchAMeta.textContent = `${mTiles} M tiles × ${kTiles} K tiles`;
-    if (els.hostLaunchBTitle) els.hostLaunchBTitle.textContent = `Weight W → B [K=${K},N=${N}]`;
-    if (els.hostLaunchBMeta) els.hostLaunchBMeta.textContent = `${kTiles} K tiles × ${nTiles} N tiles`;
-    if (els.hostLaunchCTitle) els.hostLaunchCTitle.textContent = `Output Y → C [M=${M},N=${N}]`;
-    if (els.hostLaunchCMeta) {
-      els.hostLaunchCMeta.textContent = `AIC${activeBlockIdx} owns M${activeMTile}/N${activeNTile} · ${mTiles}×${nTiles} = ${outputTileCount} output tiles`;
-    }
+    renderTensorTitle('hostLaunchA', {
+      label: 'Input X',
+      role: 'input',
+      logicalShape: { label: 'Cube A', dims: [M, K] },
+      format: 'Cube A',
+      constraints: [`${mTiles} M tiles × ${kTiles} K tiles`],
+      status: `AIC${activeBlockIdx}`,
+    });
+    renderTensorTitle('hostLaunchB', {
+      label: 'Weight W',
+      role: 'weight',
+      logicalShape: { label: 'Cube B', dims: [K, N] },
+      format: 'Cube B',
+      constraints: [`${kTiles} K tiles × ${nTiles} N tiles`],
+      status: `AIC${activeBlockIdx}`,
+    });
+    renderTensorTitle('hostLaunchC', {
+      label: 'Output Y',
+      role: 'output',
+      logicalShape: { label: 'Cube C', dims: [M, N] },
+      format: 'Cube C',
+      constraints: [`${mTiles}×${nTiles} = ${outputTileCount} output tiles`],
+      status: `AIC${activeBlockIdx} owns M${activeMTile}/N${activeNTile}`,
+    });
     if (els.hostLaunchMapping) {
       els.hostLaunchMapping.textContent = `blockIdx → Mi=floor(blockIdx/${nTiles}), Nj=blockIdx%${nTiles}`;
     }
@@ -3290,6 +3625,14 @@
         }),
         options: { ...volumeOptions, ariaLabel: `Feature X NCHW 1 by ${ci} by ${hi} by ${wi}` },
         api: window.PtoTensorVolumeCanvas,
+        title: {
+          label: 'Feature X',
+          role: 'input',
+          logicalShape: { label: 'NCHW', dims: [1, ci, hi, wi] },
+          dtype: 'FP16',
+          format: 'NCHW',
+          memory: { tier: 'GM' },
+        },
       },
       weight: {
         canvas: els.weightOverviewCanvas,
@@ -3308,6 +3651,15 @@
           ariaLabel: `Weight W logical OIHW tensor with ${co} filters; representative filter is Ci ${ci} by Kh ${kh} by Kw ${kw}`,
         },
         api: window.PtoTensorVolumeCanvas,
+        title: {
+          label: 'Weight W',
+          role: 'weight',
+          logicalShape: { label: 'OIHW [Co,Ci,Kh,Kw]', dims: [co, ci, kh, kw] },
+          dtype: 'FP16',
+          format: 'logical OIHW',
+          memory: { tier: 'GM' },
+          constraints: ['representative filter volume'],
+        },
       },
       bias: {
         canvas: els.biasOverviewCanvas,
@@ -3322,6 +3674,15 @@
         }),
         options: { ...matrixOptions, padding: { top: 18, right: 20, bottom: 28, left: 54 }, ariaLabel: `Bias vector with one value for each of ${co} output channels` },
         api: window.PtoMatrixCanvas,
+        title: {
+          label: 'Bias',
+          role: 'broadcast',
+          logicalShape: { label: 'one value per output channel', dims: [co] },
+          dtype: 'FP32',
+          format: 'GM',
+          memory: { tier: 'GM', sizeBytes: co * 4 },
+          constraints: ['broadcast across output channels'],
+        },
       },
       output: {
         canvas: els.outputOverviewCanvas,
@@ -3335,11 +3696,20 @@
         }),
         options: { ...volumeOptions, ariaLabel: `Output Y NCHW 1 by ${co} by ${ho} by ${wo}` },
         api: window.PtoTensorVolumeCanvas,
+        title: {
+          label: 'Output Y',
+          role: 'output',
+          logicalShape: { label: 'NCHW semantic', dims: [1, co, ho, wo] },
+          dtype: 'FP16',
+          format: 'NCHW semantic',
+          memory: { tier: 'GM' },
+        },
       },
     };
 
     Object.entries(fixtures).forEach(([key, fixture]) => {
       if (!fixture.canvas || !fixture.api) return;
+      if (fixture.title) renderTensorTitle(`${key}Overview`, fixture.title);
       const controller = state.overviewControllers[key];
       if (controller) {
         controller.update(fixture.scene, { ...fixture.options, preserveView: true });
@@ -3583,20 +3953,40 @@
     const selectionStart = Math.max(0, Math.min(kTiles - 1, Number(c.kTileSelection?.[0] ?? kTile)));
     const selectionEnd = Math.max(selectionStart, Math.min(kTiles - 1, Number(c.kTileSelection?.[1] ?? kTile)));
     const isRangeSelection = selectionEnd > selectionStart;
-    if (els.fmapA1Meta) {
-      els.fmapA1Meta.textContent = `NC1HWC0 [${c.n},1,${c.hi},${c.wi},${c.ci}]`;
-    }
-    if (els.fmapA1Params) {
-      els.fmapA1Params.textContent = `FP16 · padList=[${c.padLeft},${c.padLeft},${c.padTop},${c.padTop}] · padValue=0`;
-    }
-    if (els.a2LogicalShape) {
-      els.a2LogicalShape.textContent = `M=Ho×Wo=${c.M} · K=Ci×Kh×Kw=${c.K}`;
-    }
-    if (els.fmapA2TileMeta) {
-      els.fmapA2TileMeta.textContent = isRangeSelection
-        ? `M${mTile} × K${selectionStart}–K${selectionEnd} · ${selectionEnd - selectionStart + 1} tiles`
-        : `M${mTile} × K${kTile} = ${c.tileM} × ${c.tileK}`;
-    }
+    const fmapA1Shape = [num(c.n, 1), 1, num(c.hi, 8), num(c.wi, 8), num(c.ci, 16)];
+    const padLeft = num(c.padLeft, 1);
+    const padTop = num(c.padTop, 1);
+    const fmapA2TileText = isRangeSelection
+      ? `M${mTile} × K${selectionStart}–K${selectionEnd} · ${selectionEnd - selectionStart + 1} tiles`
+      : `M${mTile} × K${kTile} = ${c.tileM} × ${c.tileK}`;
+    renderTensorTitle('fmapA1', {
+      label: 'fmapA1',
+      role: 'scratch',
+      logicalShape: { label: 'NC1HWC0', dims: fmapA1Shape },
+      dtype: 'FP16',
+      format: 'A1 / L1',
+      memory: { tier: 'L1' },
+      constraints: [`padList=[${padLeft},${padLeft},${padTop},${padTop}]`, 'padValue=0'],
+      status: `M${mTile} · K${kTile}`,
+    });
+    renderTensorTitle('a2Logical', {
+      label: 'A2 逻辑展开矩阵',
+      role: 'reduction',
+      logicalShape: { label: 'M × K', dims: [num(c.M, 64), num(c.K, 144)] },
+      format: 'A2 / L0A',
+      memory: { tier: 'L0A' },
+      constraints: ['每格代表一个 [tileM, tileK] tile'],
+      status: `M${mTile} × K${kTile}`,
+    });
+    renderTensorTitle('fmapA2', {
+      label: 'fmapA2',
+      role: 'output',
+      logicalShape: { label: 'tile', dims: [num(c.tileM, 16), num(c.tileK, 16)] },
+      dtype: 'FP16',
+      format: 'ZZ · A2 / L0A',
+      memory: { tier: 'L0A', sizeBytes: 512 },
+      status: fmapA2TileText,
+    });
     if (els.a2LogicalMatrixCanvas && window.PtoMatrixCanvas) {
       const cells = [];
       for (let row = 0; row < c.M; row += c.tileM) {
@@ -3669,6 +4059,148 @@
         options
       );
     }
+  }
+
+  function renderConvLoadDataBView(trace, c) {
+    if (!window.PtoMatrixCanvas || !els.weightB1MatrixCanvas || !els.weightB2MatrixCanvas) return;
+    const params = trace?.tiling?.params || {};
+    const tileK = Math.max(1, Number(c?.tileK) || num(params.tileK, 16));
+    const tileN = Math.max(1, Number(c?.tileN) || num(params.tileN, 16));
+    const K = Math.max(1, Number(c?.K) || num(params.K, 144));
+    const N = tileN;
+    const kIndex = Math.max(0, Number(c?.kIndex) || 0);
+    const kTiles = Math.ceil(K / tileK);
+    const kTile = Math.min(kTiles - 1, kIndex);
+    const kStart = kTile * tileK;
+    const kEnd = Math.min(K, kStart + tileK);
+    const selectedRow = kTile * tileK;
+
+    if (els.loadDataBSummary) els.loadDataBSummary.textContent = `weightB1 → weightB2 · K${kTile}`;
+    if (els.loadDataBContext) {
+      els.loadDataBContext.textContent = `MTE1 / LoadData2D · B1 NZ → B2 ZN · ${tileK}×${tileN} FP16 · ${tileK * tileN * 2} B`;
+    }
+    if (els.loadDataBEngine) els.loadDataBEngine.textContent = 'MTE1 / LoadData2D';
+    if (els.loadDataBTransformation) els.loadDataBTransformation.textContent = 'NZ → ZN';
+    if (els.loadDataBDetail) {
+      els.loadDataBDetail.textContent = `startIndex=${kStart} · ifTranspose=true`;
+    }
+    renderTensorTitle('weightB1Matrix', {
+      label: 'weightB1',
+      role: 'weight',
+      logicalShape: { label: 'NZ', dims: [K, N] },
+      dtype: 'FP16',
+      format: 'NZ · B1 / L1',
+      memory: { tier: 'L1', sizeBytes: K * N * 2 },
+      constraints: [`${kTiles}×${Math.ceil(N / tileN)} aggregate cells`],
+      status: `K${kTile} [${kStart}:${kEnd}]`,
+    });
+    renderTensorTitle('weightB2Matrix', {
+      label: 'weightB2',
+      role: 'weight',
+      logicalShape: { label: 'ZN', dims: [tileK, tileN] },
+      dtype: 'FP16',
+      format: 'ZN · B2 / L0B',
+      memory: { tier: 'L0B', sizeBytes: tileK * tileN * 2 },
+      constraints: ['1 aggregate cell'],
+      status: `K${kTile}`,
+    });
+    if (els.loadDataBKRange) els.loadDataBKRange.textContent = `K${kTile} [${kStart}:${kEnd}]`;
+    if (els.loadDataBAddress) {
+      els.loadDataBAddress.textContent = `weightB1 + ${kStart * tileN * 2} B → weightB2 @0 · ${tileK * tileN * 2} B`;
+    }
+
+    const fixtures = {
+      source: {
+        canvas: els.weightB1MatrixCanvas,
+        scene: createWeightB1MatrixScene(K, N, tileK, tileN, selectedRow),
+        ariaLabel: `weightB1 NZ matrix, K ${K} by N ${N}, grouped into ${kTiles} by ${Math.ceil(N / tileN)} aggregate cells; K${kTile} aggregate cell selected`,
+      },
+      target: {
+        canvas: els.weightB2MatrixCanvas,
+        scene: createWeightB2MatrixScene(tileK, tileN, kTile),
+        ariaLabel: `weightB2 ZN matrix, K ${tileK} by N ${tileN}, one aggregate cell selected`,
+      },
+    };
+    const matrixOptions = {
+      showAxes: true,
+      showGrid: true,
+      interactive: true,
+      showTooltip: true,
+      autoFit: true,
+      minZoom: 0.015,
+      padding: { top: 30, right: 24, bottom: 38, left: 54 },
+    };
+
+    Object.entries(fixtures).forEach(([key, fixture]) => {
+      const options = { ...matrixOptions, ariaLabel: fixture.ariaLabel };
+      const controller = state.loadDataBControllers[key];
+      if (controller) {
+        controller.update(fixture.scene, options);
+        controller.fit();
+      } else {
+        state.loadDataBControllers[key] = window.PtoMatrixCanvas.render(
+          fixture.canvas,
+          fixture.scene,
+          options
+        );
+        state.loadDataBControllers[key].fit();
+      }
+    });
+  }
+
+  function createWeightB1MatrixScene(rows, columns, rowSpan, columnSpan, selectedRow) {
+    const cells = [];
+    for (let row = 0; row < rows; row += rowSpan) {
+      for (let column = 0; column < columns; column += columnSpan) {
+        const resolvedRowSpan = Math.min(rowSpan, rows - row);
+        const resolvedColumnSpan = Math.min(columnSpan, columns - column);
+        const selected = row === selectedRow && column === 0;
+        cells.push({
+          id: `weight-b1-${row}-${column}`,
+          row,
+          column,
+          rowSpan: resolvedRowSpan,
+          columnSpan: resolvedColumnSpan,
+          tone: selected ? 'input' : 'neutral',
+          style: 'aggregate',
+          states: selected ? ['selected'] : [],
+          summary: {
+            rows: resolvedRowSpan,
+            columns: resolvedColumnSpan,
+            count: resolvedRowSpan * resolvedColumnSpan,
+            intensity: selected ? 1 : 0.36,
+          },
+        });
+      }
+    }
+    return {
+      extent: { rows, columns },
+      axes: { rows: `K=${rows}`, columns: `N=${columns}` },
+      cells,
+    };
+  }
+
+  function createWeightB2MatrixScene(rows, columns, kTile = 0) {
+    return {
+      extent: { rows, columns },
+      axes: { rows: `K${kTile}=${rows}`, columns: `N=${columns}` },
+      cells: [{
+        id: 'weight-b2-0-0',
+        row: 0,
+        column: 0,
+        rowSpan: rows,
+        columnSpan: columns,
+        tone: 'input',
+        style: 'aggregate',
+        states: ['selected'],
+        summary: {
+          rows,
+          columns,
+          count: rows * columns,
+          intensity: 1,
+        },
+      }],
+    };
   }
 
   function convFmapA1VolumeScene(c, mTile) {
@@ -4915,6 +5447,489 @@
     model.after.forEach((card) => track.appendChild(createInstructionCard(card)));
 
     els.instructionSequence.replaceChildren(track);
+  }
+
+  function renderTensorJourney(trace) {
+    if (!trace || !els.tensorJourneyContent || state.executionView !== 'tensor-journey') return;
+
+    const params = trace?.tiling?.params || {};
+    const derived = trace?.tiling?.derived || {};
+
+    // Find relevant steps for journey mapping
+    const allSteps = trace.steps || [];
+    const loadData3DStep = allSteps.find(s => s.label && s.label.toLowerCase().includes('loaddata3d'));
+    const loadData2DStep = allSteps.find(s => s.label && s.label.toLowerCase().includes('loaddata2d'));
+    const mmadStep = allSteps.find(s => s.label && s.label.toLowerCase().includes('mmad'));
+    const fixpipeStep = allSteps.find(s => s.stageId === 'fixpipe-output');
+
+    const ci = num(params.ci, 16);
+    const co = num(params.Co ?? params.co, 32);
+    const hi = num(params.hi, 8);
+    const wi = num(params.wi, 8);
+    const ho = num(derived.Ho ?? derived.ho, 8);
+    const wo = num(derived.Wo ?? derived.wo, 8);
+
+    // Column definitions
+    const columns = [
+      { id: 'gm-in', label: 'GM', location: 'GM' },
+      { id: 'l1', label: 'L1', location: 'L1' },
+      { id: 'a2b2', label: 'A2 B2', location: 'A2 / B2' },
+      { id: 'co1', label: 'CO1', location: 'CO1' },
+      { id: 'gm-out', label: 'GM', location: 'GM' },
+    ];
+
+    // Tensor definitions per column
+    const columnTensors = {
+      'gm-in': [
+        { id: 'tensor:feature', tensorId: 'tensor:feature', name: 'feature X0', shape: '[1,1,8,8,16]', bytes: '2048 B', dtype: 'FP16', physicalLayout: 'NC1HWC0', role: 'Input Feature' },
+        { id: 'tensor:weight', tensorId: 'tensor:weight', name: 'weight W', shape: '[144,32]', bytes: '9216 B', dtype: 'FP16', physicalLayout: 'ND [K,Co]', role: 'Weight' },
+      ],
+      'l1': [
+        { id: 'buffer:feature:a1', tensorId: 'buffer:feature:a1', name: 'fmapA1', shape: '[1,1,8,8,16]', bytes: '2048 B', dtype: 'FP16', physicalLayout: 'NC1HWC0', role: 'Feature staging buffer' },
+        { id: 'buffer:weight:b1', tensorId: 'buffer:weight:b1', name: 'weightB1', shape: '[144,16]', bytes: '4608 B', dtype: 'FP16', physicalLayout: 'NZ', role: 'Weight staging buffer' },
+      ],
+      'a2b2': [
+        { id: 'buffer:feature:a2', tensorId: 'buffer:feature:a2', name: 'fmapA2', shape: '[16,16]', bytes: '512 B', dtype: 'FP16', physicalLayout: 'ZZ', role: 'Cube input A' },
+        { id: 'buffer:weight:b2', tensorId: 'buffer:weight:b2', name: 'weightB2', shape: '[16,16]', bytes: '512 B', dtype: 'FP16', physicalLayout: 'ZN', role: 'Cube input B' },
+      ],
+      'co1': [
+        { id: 'buffer:accum:co1', tensorId: 'buffer:accum:co1', name: 'accumCo1', shape: '[16,16]', bytes: '1024 B', dtype: 'FP32', physicalLayout: 'NZ', role: 'Accumulator' },
+      ],
+      'gm-out': [
+        { id: 'tensor:output', tensorId: 'tensor:output', name: 'outputGM', shape: '[64,32]', bytes: '4096 B', dtype: 'FP16', physicalLayout: 'ND', role: 'Output' },
+      ],
+    };
+
+    // Transform definitions (between columns)
+    const transforms = [
+      {
+        fromCol: 'gm-in', toCol: 'l1', fromTensor: 'tensor:feature', toTensor: 'buffer:feature:a1',
+        label: 'DataCopy', stepId: 'copy-inputs', engine: 'MTE2', detail: 'GM → L1 · NC1HWC0 unchanged',
+      },
+      {
+        fromCol: 'gm-in', toCol: 'l1', fromTensor: 'tensor:weight', toTensor: 'buffer:weight:b1',
+        label: 'DataCopy / ND2NZ', stepId: 'copy-inputs', engine: 'MTE2', detail: 'GM → L1 · ND → NZ',
+      },
+      {
+        fromCol: 'l1', toCol: 'a2b2', fromTensor: 'buffer:feature:a1', toTensor: 'buffer:feature:a2',
+        label: 'LoadData3D', stepId: 'load-k', engine: 'MTE1', detail: 'NC1HWC0 → ZZ · im2col + padding',
+      },
+      {
+        fromCol: 'l1', toCol: 'a2b2', fromTensor: 'buffer:weight:b1', toTensor: 'buffer:weight:b2',
+        label: 'LoadData2D', stepId: 'load-k', engine: 'MTE1', detail: 'NZ → ZN · transpose',
+      },
+      {
+        fromCol: 'a2b2', toCol: 'co1', fromTensor: null, toTensor: 'buffer:accum:co1',
+        label: 'Mmad', stepId: 'mmad-init', engine: 'Cube', detail: 'A2 × B2 + Bias → CO1 · K0–K8 accumulate',
+        isMerge: true, mergeSources: ['buffer:feature:a2', 'buffer:weight:b2'],
+      },
+      {
+        fromCol: 'co1', toCol: 'gm-out', fromTensor: 'buffer:accum:co1', toTensor: 'tensor:output',
+        label: 'Fixpipe', stepId: 'fixpipe-output', engine: 'Fixpipe', detail: 'ReLU · FP32→FP16 · NZ→ND · Write GM',
+      },
+    ];
+
+    // Build HTML
+    let html = '<div class="avz-journey-grid">';
+
+    // Column headers
+    html += '<div class="avz-journey-header">';
+    columns.forEach(col => {
+      html += `<div class="avz-journey-col-header">${escapeHtml(col.label)}<span class="avz-journey-col-loc">${escapeHtml(col.location)}</span></div>`;
+    });
+    html += '</div>';
+
+    // Column bodies
+    html += '<div class="avz-journey-body">';
+    columns.forEach(col => {
+      html += '<div class="avz-journey-col">';
+      const tensors = columnTensors[col.id] || [];
+      tensors.forEach(t => {
+        html += `<button class="avz-journey-tensor${t.tensorId === state.selectedTensorId ? ' is-selected' : ''}" type="button" data-tensor-id="${escapeHtml(t.tensorId)}" data-journey-action="tensor">
+          <span class="avz-journey-tensor-name">${escapeHtml(t.name)}</span>
+          <span class="avz-journey-tensor-shape">${escapeHtml(t.shape)}</span>
+        </button>`;
+      });
+      html += '</div>';
+    });
+    html += '</div>';
+
+    // Transforms row
+    html += '<div class="avz-journey-transforms">';
+    columns.forEach((col, idx) => {
+      if (idx < columns.length - 1) {
+        const colTransforms = transforms.filter(t => t.fromCol === col.id && t.toCol === columns[idx + 1].id);
+        html += '<div class="avz-journey-transform-col">';
+        colTransforms.forEach(t => {
+          let stepId = t.stepId;
+          if (t.label === 'LoadData3D' && loadData3DStep) stepId = loadData3DStep.id;
+          if (t.label === 'LoadData2D' && loadData2DStep) stepId = loadData2DStep.id;
+          if (t.label === 'Mmad' && mmadStep) stepId = mmadStep.id;
+          if (t.label === 'Fixpipe' && fixpipeStep) stepId = fixpipeStep.id;
+          html += `<button class="avz-journey-transform" type="button" data-step-id="${escapeHtml(stepId)}" data-journey-action="transform" data-transform-label="${escapeHtml(t.label)}">
+            <span class="avz-journey-transform-label">${escapeHtml(t.label)}</span>
+            <span class="avz-journey-transform-detail">${escapeHtml(t.detail)}</span>
+          </button>`;
+        });
+        html += '</div>';
+      } else {
+        html += '<div class="avz-journey-transform-col"></div>';
+      }
+    });
+    html += '</div>';
+
+    html += '</div>';
+
+    // Journey path summary
+    html += '<div class="avz-journey-paths">';
+    html += '<div class="avz-journey-path"><span class="avz-journey-path-label">Feature:</span> feature X0 → fmapA1 → fmapA2</div>';
+    html += '<div class="avz-journey-path"><span class="avz-journey-path-label">Weight:</span> weight W → weightB1 → weightB2</div>';
+    html += '<div class="avz-journey-path"><span class="avz-journey-path-label">Compute:</span> fmapA2 + weightB2 → Mmad → accumCo1 → Fixpipe → outputGM</div>';
+    html += '</div>';
+
+    els.tensorJourneyContent.innerHTML = html;
+
+    // Bind click handlers
+    els.tensorJourneyContent.querySelectorAll('[data-journey-action="tensor"]').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const tensorId = btn.dataset.tensorId;
+        handleJourneyTensorClick(tensorId);
+      });
+    });
+
+    els.tensorJourneyContent.querySelectorAll('[data-journey-action="transform"]').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const stepId = btn.dataset.stepId;
+        const label = btn.dataset.transformLabel;
+        handleJourneyTransformClick(stepId, label);
+      });
+    });
+  }
+
+  function handleJourneyTensorClick(tensorId) {
+    var trace = currentTrace();
+    if (!trace) return;
+
+    // Only fmapA1 is clickable in this iteration
+    var clickableTensors = ['buffer:feature:a1'];
+
+    if (clickableTensors.indexOf(tensorId) === -1) {
+      // Not yet implemented — show status feedback
+      if (els.statusText) {
+        els.statusText.textContent = 'Data view not implemented in current MVP: ' + tensorId;
+      }
+      return;
+    }
+
+    // Toggle selection
+    var wasSelected = state.selectedTensorId === tensorId;
+    state.selectedTensorId = wasSelected ? null : tensorId;
+
+    // Map tensorId to relevant step
+    var stepMap = {
+      'tensor:feature': 'copy-inputs',
+      'tensor:weight': 'copy-inputs',
+      'buffer:feature:a1': 'copy-inputs',
+      'buffer:weight:b1': 'copy-inputs',
+      'buffer:feature:a2': 'load-k',
+      'buffer:weight:b2': 'load-k',
+      'buffer:accum:co1': 'mmad-init',
+      'tensor:output': 'fixpipe-output',
+    };
+
+    // Find the tensor name for status feedback
+    var tensorNames = {
+      'tensor:feature': 'Feature X0',
+      'tensor:weight': 'Weight W',
+      'buffer:feature:a1': 'fmapA1',
+      'buffer:weight:b1': 'weightB1',
+      'buffer:feature:a2': 'fmapA2',
+      'buffer:weight:b2': 'weightB2',
+      'buffer:accum:co1': 'accumCo1',
+      'tensor:output': 'Output Y0',
+    };
+
+    var targetStageId = stepMap[tensorId];
+    if (targetStageId && state.selectedTensorId) {
+      var steps = trace.steps || [];
+      var stepIndex = steps.findIndex(function(s) { return s.stageId === targetStageId; });
+      if (stepIndex >= 0) {
+        // Navigate to the step so the main tensor view shows this tensor's context
+        selectStep(stepIndex, { journeyTensorId: tensorId });
+      }
+    } else {
+      // Deselect: restore standard views
+      renderStep();
+      renderTensorJourney(trace);
+    }
+
+    // Status feedback
+    var name = tensorNames[tensorId] || tensorId;
+    if (els.statusText) {
+      els.statusText.textContent = state.selectedTensorId
+        ? 'Selected: ' + name + ' — click again to deselect'
+        : 'Ready';
+    }
+  }
+
+  function handleJourneyTransformClick(stepId, label) {
+    var trace = currentTrace();
+    if (!trace) return;
+
+    var steps = trace.steps || [];
+    var stepIndex = steps.findIndex(function(s) { return s.id === stepId; });
+    if (stepIndex < 0) {
+      // Find by stageId
+      var labelLower = (label || '').toLowerCase();
+      stepIndex = steps.findIndex(function(s) {
+        var stageId = (s.stageId || '').toLowerCase();
+        if (labelLower.includes('loaddata3d') && stageId === 'load-k') return true;
+        if (labelLower.includes('loaddata2d') && stageId === 'load-k') return true;
+        if (labelLower.includes('mmad') && (stageId === 'mmad-init' || stageId === 'k-loop')) return true;
+        if (labelLower.includes('fixpipe') && stageId === 'fixpipe-output') return true;
+        if (labelLower.includes('datacopy') && stageId === 'copy-inputs') return true;
+        return false;
+      });
+    }
+
+    if (stepIndex >= 0) {
+      selectStep(stepIndex, { instructionOperation: label });
+      // Switch to instructions view to show the step
+      setExecutionView('instructions');
+    }
+  }
+
+
+
+  function renderTensorDataDump(trace) {
+    if (!trace || !els.tensorDataDumpPanel) return;
+    var isDumpMode = state.dataViewMode === 'data-dump' || state.dataViewMode === 'dump';
+    if (els.dataDumpBody) {
+      els.dataDumpBody.hidden = !isDumpMode;
+      els.dataDumpBody.style.display = isDumpMode ? '' : 'none';
+    }
+    if (!isDumpMode) return;
+    var tensorId = state.selectedTensorId;
+    if (!tensorId || tensorId !== 'buffer:feature:a1') return;
+    renderDataDumpHeader(trace, tensorId);
+    renderDataDumpVolume(trace);
+    renderChannelSelector();
+    renderHeatmap(trace);
+    if (state.selectedDataElement && els.cellInspector) {
+      els.cellInspector.hidden = false;
+      renderCellInspector(trace, state.selectedDataElement);
+    } else if (els.cellInspector) {
+      els.cellInspector.hidden = true;
+    }
+  }
+
+  function renderDataDumpHeader(trace, tensorId) {
+    if (!els.dataDumpTensorInfo) return;
+    var name = 'fmapA1';
+    var role = 'Feature staging buffer';
+    var location = 'A1 / L1';
+    var logicalLayout = 'NCHW';
+    var physicalLayout = 'NC1HWC0';
+    var dtype = 'FP16';
+    var bytes = '2048 B';
+    els.dataDumpTensorInfo.innerHTML = [
+      fieldHtml(null, name, true, true),
+      fieldHtml('Role', role),
+      fieldHtml('Location', location),
+      fieldHtml('LOGICAL', '[1,1,8,8,16] NCHW', false, true),
+      fieldHtml('PHYSICAL', '[1,1,8,8,16] NC1HWC0', false, true),
+      fieldHtml('Dtype', dtype),
+      fieldHtml('Bytes', bytes),
+    ].join('');
+  }
+
+  function fieldHtml(label, value, isName, isMono) {
+    var valClass = 'avz-data-dump-field-value';
+    if (isName) valClass += ' avz-data-dump-field-value--name';
+    if (isMono) valClass += ' avz-data-dump-field-value--mono';
+    var labelHtml = label != null
+      ? '<span class="avz-data-dump-field-label">' + escapeHtml(label) + '</span>'
+      : '';
+    return '<div class="avz-data-dump-field">' + labelHtml +
+      '<span class="' + valClass + '">' + escapeHtml(value) + '</span></div>';
+  }
+
+  function renderChannelSelector() {
+    if (!els.channelSelect || !els.channelTotal) return;
+    var c = state.selectedChannel;
+    els.channelSelect.innerHTML = '';
+    for (var i = 0; i < 16; i++) {
+      var opt = document.createElement('option');
+      opt.value = String(i);
+      opt.textContent = 'C' + i;
+      if (i === c) opt.selected = true;
+      els.channelSelect.appendChild(opt);
+    }
+    els.channelTotal.textContent = '/ 16';
+    if (els.prevChannelBtn) els.prevChannelBtn.disabled = c <= 0;
+    if (els.nextChannelBtn) els.nextChannelBtn.disabled = c >= 15;
+  }
+
+  function renderDataDumpVolume(trace) {
+    var canvas = els.dataDumpVolumeCanvas;
+    if (!canvas) return;
+    var c = state.selectedChannel;
+    var H = 8, W = 8, Ci = 16;
+    var c1 = Math.floor(c / 16);
+    var c0 = c % 16;
+    var scene = createVolumeScene({
+      columns: W, rows: H, depth: Ci, tone: 'neutral',
+      axes: { columns: 'W=8', rows: 'H=8', depth: 'Ci=16' },
+      prefix: 'fmapa1-dump'
+    });
+    for (var row = 0; row < H; row++) {
+      for (var col = 0; col < W; col++) {
+        for (var d = 0; d < Ci; d++) {
+          var vid = 'fmapa1-dump-' + col + '-' + row + '-' + d;
+          var voxel = scene.voxels.find(function(v) { return v.id === vid; });
+          if (voxel) {
+            voxel.tone = d === c0 ? 'input' : 'neutral';
+            voxel.state = d === c0 ? 'current' : 'base';
+          }
+        }
+      }
+    }
+    var PtoVolume = window.PtoTensorVolumeCanvas;
+    var options = { showAxes: true, showGrid: true, ariaLabel: 'fmapA1 volume channel ' + c };
+    if (PtoVolume) {
+      if (!state._dataDumpVolumeController) {
+        state._dataDumpVolumeController = PtoVolume.render(canvas, scene, options);
+      } else {
+        state._dataDumpVolumeController.update(scene, options);
+      }
+    }
+    if (els.dataDumpVolumeMeta) {
+      els.dataDumpVolumeMeta.textContent = 'H=8 \u00b7 W=8 \u00b7 C=16 \u00b7 Ci=' + c + ' (c1=' + c1 + ', c0=' + c0 + ')';
+    }
+  }
+
+  function computeSliceStats(values) {
+    var n = values.length, min = Infinity, max = -Infinity, sum = 0, zeros = 0, nans = 0, infs = 0;
+    for (var i = 0; i < n; i++) {
+      var v = values[i];
+      if (typeof v !== 'number' || isNaN(v)) { nans++; continue; }
+      if (!isFinite(v)) { infs++; continue; }
+      if (v === 0) zeros++;
+      if (v < min) min = v;
+      if (v > max) max = v;
+      sum += v;
+    }
+    var validN = n - nans - infs;
+    var mean = validN > 0 ? sum / validN : 0;
+    var sumSq = 0;
+    for (var i = 0; i < n; i++) {
+      var v = values[i];
+      if (typeof v !== 'number' || isNaN(v) || !isFinite(v)) continue;
+      sumSq += (v - mean) * (v - mean);
+    }
+    return {
+      min: validN > 0 ? min : 0, max: validN > 0 ? max : 0,
+      mean: mean, stdDev: validN > 1 ? Math.sqrt(sumSq / validN) : 0,
+      zeros: zeros, nans: nans, infs: infs
+    };
+  }
+
+  function renderHeatmap(trace) {
+    var grid = document.getElementById('heatmapGrid');
+    var headerEl = document.getElementById('heatmapHeader');
+    if (!grid || !headerEl) return;
+    var c = state.selectedChannel;
+    var H = 8, W = 8;
+    var maxAbs = 0;
+    for (var h = 0; h < H; h++)
+      for (var w = 0; w < W; w++)
+        maxAbs = Math.max(maxAbs, Math.abs(syntheticData.getA1Value(0, 0, h, w, c)));
+    if (maxAbs === 0) maxAbs = 1;
+    headerEl.textContent = 'Channel C' + c + ' \u00b7 Slice H\u00d7W = ' + H + '\u00d7' + W;
+    var html = '<thead><tr><th></th>';
+    for (var w = 0; w < W; w++) html += '<th>W' + w + '</th>';
+    html += '</tr></thead><tbody>';
+    for (var h = 0; h < H; h++) {
+      html += '<tr><th>H' + h + '</th>';
+      for (var w = 0; w < W; w++) {
+        var val = syntheticData.getA1Value(0, 0, h, w, c);
+        var bg = heatmapColor(val, maxAbs);
+        var sel = state.selectedDataElement;
+        var sc = (sel && sel.h === h && sel.w === w && sel.channel === c) ? ' is-selected' : '';
+        html += '<td><div class="avz-heatmap-cell' + sc + (val === 0 ? ' is-zero' : '') + '" style="' + bg + '" data-h="' + h + '" data-w="' + w + '" data-channel="' + c + '" data-value="' + val + '">' + val.toFixed(2) + '</div></td>';
+      }
+      html += '</tr>';
+    }
+    html += '</tbody>';
+    grid.innerHTML = html;
+    var cells = grid.querySelectorAll('.avz-heatmap-cell');
+    for (var ci = 0; ci < cells.length; ci++) {
+      (function(cell) {
+        cell.addEventListener('click', function() {
+          var h = parseInt(cell.dataset.h, 10), w = parseInt(cell.dataset.w, 10);
+          var ch = parseInt(cell.dataset.channel, 10), v = parseFloat(cell.dataset.value);
+          state.selectedDataElement = { tensorId: 'buffer:feature:a1', h: h, w: w, channel: ch, value: v };
+          renderHeatmap(trace);
+          renderCellInspector(trace, state.selectedDataElement);
+          if (els.cellInspector) els.cellInspector.hidden = false;
+        });
+      })(cells[ci]);
+    }
+
+    // Stats bar — inserted between header and grid, never touches existing elements
+    var values = [];
+    for (var h = 0; h < H; h++) {
+      for (var w = 0; w < W; w++) {
+        values.push(syntheticData.getA1Value(0, 0, h, w, c));
+      }
+    }
+    var stats = computeSliceStats(values);
+    var oldStats = headerEl.parentNode.querySelector('.avz-heatmap-stats');
+    if (oldStats) oldStats.remove();
+    var sd = [
+      ['Min', stats.min.toFixed(2), '检查是否出现异常负值、数值范围是否超出预期'],
+      ['Max', stats.max.toFixed(2), '检查溢出、异常峰值，以及激活后的上界变化'],
+      ['Mean', stats.mean.toFixed(2), '观察数据整体是否偏正或偏负，判断分布中心是否发生漂移'],
+      ['Std Dev', stats.stdDev.toFixed(2), '表示数值分布的离散程度；越大说明数值差异越明显'],
+      ['Zeros', String(stats.zeros), '可用于识别 padding、稀疏性，以及 ReLU 后有多少负值被置零'],
+      ['NaNs', String(stats.nans), '通常意味着非法运算，如 0/0、无效开方或数值传播异常'],
+      ['Infs', String(stats.infs), '通常表示溢出、除以零或计算结果超过数据类型可表达范围'],
+    ];
+    var sh = '<div class="avz-heatmap-stats">';
+    for (var si = 0; si < sd.length; si++) {
+      var d = sd[si];
+      sh += '<div class="avz-heatmap-stat" title="' + escapeHtml(d[2]) + '"><span class="avz-heatmap-stat-label">' + escapeHtml(d[0]) + '</span><span class="avz-heatmap-stat-value">' + escapeHtml(d[1]) + '</span></div>';
+    }
+    sh += '</div>';
+    headerEl.insertAdjacentHTML('afterend', sh);
+  }
+
+  function heatmapColor(value, maxAbs) {
+    var intensity = Math.abs(value) / maxAbs;
+    var r, g, b;
+    if (value > 0) { r = Math.round(48 + intensity * 180); g = Math.round(48 + intensity * 100); b = Math.round(56 - intensity * 30); }
+    else if (value < 0) { r = Math.round(48 + intensity * 40); g = Math.round(48 + intensity * 100); b = Math.round(56 + intensity * 180); }
+    else { r = 48; g = 48; b = 56; }
+    return 'background-color: rgb(' + r + ',' + g + ',' + b + ')';
+  }
+
+  function renderCellInspector(trace, element) {
+    if (!els.cellInspectorBody) return;
+    var ch = element.channel, h = element.h, w = element.w, value = element.value;
+    var c1 = Math.floor(ch / 16), c0 = ch % 16;
+    var items = [
+      { label: 'Value', value: '<span class="avz-inspector-value--number">' + value.toFixed(2) + '</span>' },
+      { label: 'Dtype', value: 'FP16' },
+      { label: 'Logical', value: '[n=0,c=' + ch + ',h=' + h + ',w=' + w + ']' },
+      { label: 'Physical', value: '[n=0,c1=' + c1 + ',h=' + h + ',w=' + w + ',c0=' + c0 + ']' },
+      { label: 'Source', value: 'X0[n=0,c=' + ch + ',h=' + h + ',w=' + w + ']' },
+      { label: 'Transform', value: 'DataCopy' },
+      { label: 'Value Changed', value: 'No' },
+      { label: 'Downstream', value: 'Multiple LoadData3D refs' },
+    ];
+    els.cellInspectorBody.innerHTML = items.map(function(item) {
+      return '<div class="avz-inspector-item"><span class="avz-inspector-item-label">' + escapeHtml(item.label) + '</span><span class="avz-inspector-item-value">' + item.value + '</span></div>';
+    }).join('');
   }
 
   function createLoopGroup(trace, loop) {

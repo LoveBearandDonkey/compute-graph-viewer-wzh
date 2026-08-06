@@ -1,378 +1,442 @@
-# Conv + Bias + ReLU Code Recovery 详细实施计划
+# Conv + Bias + ReLU Code Recovery 实施计划
+
+> 当前版本：2026-08-05  
+> 当前进度：阶段 2/5 已完成，阶段 3 待开始
 
 ## 1. 文档定位
 
-本文档是 `code recovery` HTML Demo 的唯一实施顺序和进度记录。它把产品目标、代码事实、实现依赖和验收工作组织为阶段 1～5；文中不再存在另一套 Phase 1～5。
+本文档是 Code Recovery HTML Demo 的唯一实施顺序和进度记录。它服务于 UX 概念验证与体验 Pattern 提炼，不代表真实 Ascend C 工程建议或产品规划。
 
-配套规范见 `spec.md`。执行语义基线见 `Conv2D + Bias + ReLU 执行过程.md`。
+本 Demo 的目标不是证明可以自动理解所有 kernel，而是验证：通过 KEM 约束下的一组稳定体验范式，能否帮助用户从源码建立正确的 kernel execution mental model。
 
-## 2. 2026-07-28 新代码基线
+配套材料：
 
-### 2.1 权威输入
+- 产品规范：`spec.md`
+- 执行语义：`Conv2D + Bias + ReLU 执行过程.md`
+- 跨产品设计框架：`../../Kernel Execution Model v0.1.md`
 
-本轮以以下三份本地材料为直接依据：
+## 2. 体验目标与统一原则
+
+用户应能沿着同一条理解路径完成判断：
+
+```text
+定位源码
+→ 理解当前 instruction / event
+→ 查看 Tensor 与 Memory 状态
+→ 查看硬件参与
+→ 理解前后逻辑关系
+→ 回到源码继续阅读
+```
+
+### 2.1 统一执行上下文
+
+Source、Tensor State、Hardware Participation 和 Execution Dock 共同解释同一个执行上下文。上下文可以是：
+
+- 一个 instruction；
+- 一个 event dependency；
+- 一个循环或逻辑阶段。
+
+切换任一区域时，其他区域保持同一上下文，不各自形成独立叙事。
+
+### 2.2 当前采用的 KEM UX Pattern
+
+- **Source-anchored explanation**：所有执行解释可回到源码；
+- **Context-preserving synchronized views**：跨视图保持同一上下文；
+- **Tensor lifecycle visualization**：区分地址存在、数据有效、消费与复用；
+- **Loop compression with drill-down**：保留循环骨架和次数，按需展开；
+- **Dependency-as-causality**：当前只实现 Event 位置、方向与联动，深度因果解释暂缓；
+- **Evidence-aware visualization**：当前只保留基本边界声明，完整证据体系暂缓。
+
+### 2.3 静态 Demo 边界
+
+当前内容是固定参数的静态执行解释：
+
+- 不代表已通过目标 CANN 编译；
+- 不代表已在 910B/Atlas A2/A3 上运行；
+- 不提供真实性能、duration、stall、overlap 或利用率；
+- Timeline 当前保持 unavailable；
+- Hardware capacity 和 occupancy 均为 Demo context；
+- 不确定内容不得表现为真实运行结论。
+
+## 3. Demo 基线
+
+### 3.1 权威输入
 
 1. Host Tiling：`src/conv_bias_relu_complete_demo/op_host/conv_bias_relu_tiling.cpp`
 2. Device Kernel：`src/conv_bias_relu_complete_demo/op_kernel/conv_bias_relu_reference_complete.asc`
 3. 执行解读：`Conv2D + Bias + ReLU 执行过程.md`
 
-目录实际名称是 `conv_bias_relu_complete_demo`。
+### 3.2 固定执行上下文
 
-### 2.2 已被新源码确认的事实
-
-| 对象 | 新基线 |
+| 对象 | 当前 Demo |
 | --- | --- |
-| Feature | 逻辑 `[1,16,8,8]`；GM `NC1HWC0 [1,1,8,8,16]`；FP16；2048 B |
-| Weight | 逻辑 `[32,16,3,3]`；GM `ND [144,32]`；FP16；9216 B |
-| Bias | `ND [32]`；FP32；128 B |
-| Output | 逻辑 `[1,32,8,8]`；GM `ND [64,32]`；FP16；4096 B |
+| Feature | 逻辑 `[1,16,8,8]`；GM `NC1HWC0 [1,1,8,8,16]`；FP16 |
+| Weight | 逻辑 `[32,16,3,3]`；GM `ND [144,32]`；FP16 |
+| Bias | `ND [32]`；FP32 |
+| Output | GM `ND [64,32]`；FP16；语义等价于 NHWC `[1,8,8,32]` |
 | Cube | `A[64,144] × B[144,32] + Bias[32] → C[64,32]` |
-| Tile | `tileM=16`、`tileK=16`、`tileN=16` |
-| Tile 数量 | M=4、K=9、N=2；输出 Tile=8 |
-| Core 映射 | `OT=Mi×2+Nj`；`blockDim=8`；每核一个 `[16,16]` 输出 Tile |
-| K 迭代 | I0～I8，共 9 次；I0 加 Bias，I1～I8 只累加 |
-| Output 写回 | Fixpipe 从 CO1 直接写 GM，融合 NZ→ND、FP32→FP16、ReLU |
+| Tiling | `tileM/tileK/tileN = 16/16/16`；Tile 数 `4/9/2` |
+| Core mapping | `OT=Mi×2+Nj`；`blockDim=8`；每核一个 `[16,16]` Output Tile |
+| K loop | Iter 0～8，共 9 次；Iter 0 加 Bias，Iter 1～8 只累加 |
+| Output | Fixpipe 从 CO1 直写 GM，完成 NZ→ND、FP32→FP16 和 ReLU |
 
-输出 `[64,32]` 等价于 NHWC `[1,8,8,32]`，不等价于 NCHW。界面不得仅显示逻辑 NCHW 而隐藏实际 GM 合约。
+这些值是当前参考源码和确定性计算所确认的 Demo 事实，不代表自动 tiling 或性能最优方案。
 
-### 2.3 已消除的旧缺口
+## 4. 已敲定的体验基础
 
-以下旧 fixture 结论已经失效，必须从 UI、fixture 和文档中删除：
+本节只记录结论；已完成的页面细节不在计划中重复展开。
 
-- `tileM=32、tileK=48、tileN=16`
-- K loop=3
-- A1/B1 大小未知或为 0
-- Feature/Weight Copy helper 无函数体
-- Bias C1→C2 缺失
-- LoadWeightToL0B 无函数体
-- blockDim 和 block→output tile 映射未知
-- CopyOut helper 和 GM offset 未知
-- CO1 先到 outC1、再单独 CopyOut 的两段式路径
-
-### 2.4 仍需保留的不确定性
-
-新源码是“固定参数、内部一致的静态参考”，不是已编译和已测量的真实 trace：
-
-- 未使用目标环境的 BiSheng/CANN 编译；
-- 未在 910B/Atlas A2/A3 上运行；
-- API 字段、重载和注册名尚未按目标 CANN 版本验证；
-- 无 correctness、dump、profiling 或真实 duration；
-- 固定 tiling 是源码事实，但不是自动 tiling 结果或性能最优结论；
-- 页面硬件总容量仍是 Demo 配置，不能宣称为真实 910B 规格。
-
-## 3. 产品目标
-
-用户在同一工作台内完成四个连续判断：
-
-1. Host 如何把逻辑 Shape 推导成 Cube M/K/N、Tile 数和 blockDim；
-2. Kernel 当前代码属于哪一步，涉及哪个 Tensor、Buffer 和 Event；
-3. Tensor 如何在 GM、L1、L0A/L0B、Bias Table、L0C 和 GM Output 之间变化；
-4. 当前结论是代码确认、计算派生、语义推断，还是仍需目标环境验证。
-
-统一关系：
+### 4.1 页面结构
 
 ```text
-Host Tiling source ─┐
-                    ├─ sourceRefs ─→ TraceStep ─→ Tensor / DataFlow / Event / Hardware
-Kernel source ──────┘                       └────→ Instructions / Timeline / Playback
+Source | Tensor State & Transformation | Hardware Participation
+---------------------------------------------------------------
+Instructions / Timeline(unavailable) / Playback
 ```
 
-所有视图只消费统一的 `selectedStepId`。任何区域不得维护独立步骤状态。
+- Source 包含 Host / Kernel 双文件 Tab；
+- Execution Dock 横跨页面底部；
+- Terminal 与 Visualization Dock 互斥；
+- Inspector 已移出范围；
+- 页面结构继续复用 PTO IDE Frame。
 
-## 4. 页面结构
+### 4.2 Source 与执行联动
 
-### 4.1 上方三栏
+- Host 与 Kernel 均使用完整源码，不使用关键行摘录；
+- 源码标记、播放和执行图共享同一执行上下文；
+- 切换文件只改变可见源码，不改变当前上下文；
+- 当前文件没有对应引用时不伪造高亮。
 
-- 左栏：Source，内部提供 Host/Kernel 两个文件 Tab；
-- 中栏：Tensor State & Transformation；
-- 右栏：Hardware Participation。
+### 4.3 顶层执行叙事
 
-### 4.2 下方全宽 Dock
+| Stage | 内容 | 性质 |
+| ---: | --- | --- |
+| 1 | Input Shape | Host 配置 |
+| 2 | Host Tiling | M/K/N、Tile 和 Tile 数 |
+| 3 | Host 执行配置 | Buffer 元素数、blockDim、OT→Mi/Nj |
+| 4 | Allocate Memory | 建立 GM 句柄和 LocalTensor 地址视图 |
+| 5 | Copy Inputs | MTE2：GM→L1 |
+| 6 | MTE2_MTE1 Sync | 发布 L1 输入 ready |
+| 7 | Copy Data C2 | MTE1：Bias C1→C2 |
+| 8 | K Loop · Iter 0～8 | Load、同步、Mmad 初始化与累加 |
+| 9 | M_FIX Sync | 发布最终 Acc8 ready |
+| 10 | Fixpipe Output | CO1→GM，格式/类型转换与 ReLU |
 
-- Instructions：逻辑执行顺序，不表达真实时间比例；
-- Timeline：只有 fixture 具备 `startTime/duration` 时才作为 Estimated Timeline 启用；
-- Playback：控制同一 `selectedStepId`；
-- Terminal 与 Visualization Dock 互斥。
+Host Shape、Tiling、Buffer 配置和 blockDim 不是 AI Core 数据搬运，不得画成 GM 数据流。
 
-Inspector 已永久移出产品范围，任何阶段都不得恢复。
+### 4.4 K Loop
 
-## 5. Source 双文件体验
+```text
+Iter 0 · Initialize
+  Load A2/B2 → MTE1_M → Mmad + Bias → Acc0
 
-### 5.1 Tab
-
-左栏固定显示：
-
-- `op_host/tiling.cpp`
-- `op_kernel/kernel.asc`
-
-Tab 切换只改变当前可见源码，不改变 `selectedStepId`。
-
-### 5.2 双文件事件标记
-
-这里的“事件标记”包括两类：
-
-1. 逻辑步骤标记：Shape、Tiling、容量、blockDim、LocalTensor、CopyIn、Load、Mmad、Fixpipe；
-2. 同步事件标记：`MTE2_MTE1`、`M_MTE1`、`MTE1_M`、`M_FIX`。
-
-Host 文件至少标记：
-
-- 行 20～43：固定 Shape、卷积参数、Ho/Wo；
-- 行 45～56：M/K/N、16×16×16、4×9×2、8 个 OT；
-- 行 58～70：GM 与片上元素数；
-- 行 73～91：Tiling callback、`SetBlockDim(8)`、workspace=0。
-
-Kernel 文件至少标记：
-
-- 行 54～64：blockIdx→Mi/Nj→mStart/nStart；
-- 行 82～108：Local Memory 地址图；
-- 行 110～127、191～219：三路 CopyIn、`MTE2_MTE1`、Bias C1→C2；
-- 行 129～165、221～268：K loop、`M_MTE1`、Load3D、Load2D、`MTE1_M`、Mmad；
-- 行 167～187：`M_FIX`、Fixpipe、outputOffset。
-
-### 5.3 联动规则
-
-- 点击已标记代码行：切换到对应 TraceStep，并停留在当前文件 Tab；
-- 从播放、Instructions 或 Timeline 进入新步骤：自动切到该步骤的 primary `sourceRef` 文件；
-- 一个步骤可同时引用 Host 和 Kernel；例如 block 映射同时关联 Host `SetBlockDim` 与 Kernel `GetBlockIdx`；
-- 当前文件不存在该步骤的引用时，不伪造高亮；
-- Tab、源码行、播放和执行块最终都只更新同一 `selectedStepId`。
-
-## 6. Trace 数据改造
-
-### 6.1 多源码
-
-Trace 根对象新增：
-
-```json
-{
-  "sources": [
-    {
-      "id": "host",
-      "label": "op_host/tiling.cpp",
-      "path": "op_host/conv_bias_relu_tiling.cpp",
-      "projectPath": "src/conv_bias_relu_complete_demo/op_host/conv_bias_relu_tiling.cpp"
-    },
-    {
-      "id": "kernel",
-      "label": "op_kernel/kernel.asc",
-      "path": "op_kernel/conv_bias_relu_reference_complete.asc",
-      "projectPath": "src/conv_bias_relu_complete_demo/op_kernel/conv_bias_relu_reference_complete.asc"
-    }
-  ]
-}
+Iter 1–8 · Accumulate ×8
+  M_MTE1 → Load A2/B2 → MTE1_M → Mmad → Acc1…Acc8
 ```
 
-旧 `source` 字段暂时保留为兼容入口，新 UI 以 `sources` 为准。
+规则：
 
-### 6.2 文件感知的源码引用
+- Iter 0 没有 `M_MTE1`；
+- Iter 1～8 每轮先等待 A2/B2 可复用，再覆盖为下一 K Tile；
+- Bias 只在 Iter 0 加入；
+- 默认压缩显示 `×8`，展开后可定位具体 Iter；
+- 每核共 9 次 Mmad，全 8 核共 72 次。
 
-每个步骤使用：
+### 4.5 Allocate Memory
 
-```json
-{
-  "sourceRefs": [
-    {"fileId": "host", "lines": [84, 85]},
-    {"fileId": "kernel", "lines": [55, 61, 62]}
-  ]
-}
-```
+Allocate Memory 只回答 Tensor 位于哪里、地址范围和 Buffer 归属，不表达数据已经搬入。
 
-`sourceLines` 暂时保留为 Kernel 兼容字段，但不得再作为多文件身份的唯一来源。
-
-### 6.3 可信度
-
-- `confirmed`：当前两份源码直接给出；
-- `derived`：由源码参数确定性计算；
-- `inferred`：依据 API 语义解释，但源码未直接声明；
-- `unverified`：源码表达目标行为，尚未在目标 CANN/硬件验证；
-- `unknown`：当前材料不足。
-
-代码确认与目标验证是两个维度。例如 `reluEn=true` 是 confirmed；该参数在目标 CANN 上成功编译执行仍是 unverified。
-
-## 7. 新逻辑回放
-
-逻辑回放统一为 10 个顶层 Stage。必须区分“Host/Kernel 准备信息”和“运行时硬件动作”：Input Shape、Host Tiling、Buffer 元素数和 blockDim 是执行配置，不得画成 GM 搬运或 AI Core 指令。
-
-| Stage | 阶段 | 主要内容 | 执行性质 | 主源码 |
-| ---: | --- | --- | --- | --- |
-| 1 | Input Shape | 固定 N/C/H/W、卷积参数并推导 Ho/Wo | Host 配置 | Host |
-| 2 | Host Tiling | 定义 Cube M/K/N、`16×16×16` Tile 和 `4×9×2` Tile 数 | Host 配置 | Host |
-| 3 | Host 执行配置 | 计算 GM/Local Buffer 元素数；设置 `blockDim=8`、workspace=0；建立 `OT→Mi/Nj` 映射 | Host/Runtime 配置，不访问 GM | Host + Kernel |
-| 4 | Allocate Memory | 建立 GM Tensor 句柄、A1/B1/C1 地址范围以及 A2/B2/C2/CO1 LocalTensor 视图 | Kernel 准备 | Kernel |
-| 5 | Copy Inputs | MTE2：GM X0→A1；GM W[Nj] ND→B1(NZ)；GM Bias[Nj]→C1 | 运行时数据搬运 | Kernel |
-| 6 | Sync | `MTE2_MTE1`：发布 A1/B1/C1 ready | 运行时同步 | Kernel |
-| 7 | Copy Data C2 | MTE1：Bias C1→C2 / Bias Table，FP32 `[16]`，64 B | 运行时数据搬运 | Kernel |
-| 8 | K Loop · Iter 0～8 | Iter 0 初始化 Acc0；Iter 1～8 复用 A2/B2 并累加到 Acc8 | 循环容器 + 搬运 + 同步 + Cube 计算 | Kernel |
-| 9 | M_FIX Sync | Cube 发布 Acc8 ready；Fixpipe 等待最终 CO1 | 运行时同步 | Kernel |
-| 10 | Fixpipe Output | CO1 FP32 NZ→GM FP16 ND，融合 ReLU，并按 `outputOffset` 写回 | 运行时输出 | Kernel |
-
-### 7.1 K Loop 的真实结构
-
-`Iter` 是 `Iteration` 的缩写，用于避免大写 `I` 和小写 `l` 在界面字体中混淆。`Iter 0` 表示执行轮次，`K0` 表示该轮读取的数据 Tile。
-
-页面用两栏区分初始化轮和后续累加轮：
-
-| Iter 0 · Initialize | Iter 1～8 · Accumulate ×8 |
+| Buffer | Tensor 与真实地址 |
 | --- | --- |
-| `Load Data A2/B2` | `M_MTE1 Sync` |
-| `MTE1_M Sync` | `Load Data A2/B2` |
-| `Mmad + Bias → Acc0` | `MTE1_M Sync` |
-|  | `Mmad accumulate → Acc1…Acc8` |
+| L1 | `fmapA1 [0,2048)`、`weightB1 [2048,6656)`、`biasC1 [6656,6720)` |
+| L0A | `fmapA2 [0,512)` |
+| L0B | `weightB2 [0,512)` |
+| Bias Table | `biasC2 [0,64)` |
+| L0C | `accumCo1 [0,1024)` |
 
-其中：
+L1 中三个 Tensor 共用连续地址空间；L0A、L0B、Bias Table、L0C 相互独立，因此都可以从地址 0 开始。块宽使用统一可读比例，地址和字节数保持真实；Tensor 保留 Hover，不打开固定点击详情。
 
-- Iter 0 没有 `M_MTE1`，因为 A2/B2 尚未保存上一轮数据。
-- Iter 0 的同步必须明确标记为 `MTE1_M Sync`。
-- Bias 通过带 `biasC2` 参数的 Mmad 加入，不展示成 Mmad 后的独立 Add Bias 指令。
-- Iter 1～8 每轮都先执行 `M_MTE1 Sync`，再覆盖单缓冲 A2/B2。
+## 5. 阶段与进度
 
-### 7.2 K Loop 状态规则
-
-`M_MTE1` 发生在每个后续迭代的 Load 之前。以 Iter 1 为例，此时 A2/B2 仍保存 K0：
-
-```text
-A2/B2 · K0
-Cube read complete
-→ reusable
-→ MTE1 may overwrite with K1
-```
-
-因此进入 Iter 1 时，Tensor 视图不得提前显示“K1 已加载”。K1 只能在 `M_MTE1 Sync` 通过后的 Load 阶段显示。
-
-### 7.3 Instructions 展示层级
-
-```text
-K Loop · Iter 0～8
-├─ Iter 0 · Initialize
-│  ├─ Load Data A2/B2
-│  ├─ MTE1_M Sync
-│  └─ Mmad + Bias → Acc0
-└─ Iter 1～8 · Accumulate ×8
-   ├─ M_MTE1 Sync
-   ├─ Load Data A2/B2
-   ├─ MTE1_M Sync
-   └─ Mmad accumulate → Acc1…Acc8
-```
-
-页面允许用左右两栏展示 Iter 0 与 Iter 1～8，不要求额外绘制串行箭头。默认折叠时必须显示 `×8`；展开后允许定位每个 `Iter k` 的源码、Tensor、Event 和硬件状态。无论折叠或展开，总次数都必须保持每核 9 次 Mmad、全 8 核共 72 次 Mmad。
-
-### 7.4 M_FIX 与输出
-
-`M_FIX Sync` 只在 Iter 8 产生最终 `Acc8` 后执行。随后 Fixpipe 读取 `accumCo1`，完成：
-
-```text
-NZ → ND
-FP32 → FP16
-ReLU
-写入 outputGm_[mStart×32+nStart]
-```
-
-## 8. Tensor 和 Memory 表达
-
-每核固定驻留：
-
-| Buffer | Shape/元素 | Bytes | 地址/对齐 |
-| --- | ---: | ---: | --- |
-| A1 | 1024 FP16 | 2048 | 0 / 512 B |
-| B1 | 2304 FP16 | 4608 | 2048 / 512 B |
-| C1 | 16 FP32 | 64 | 6656 / 128 B |
-| C2 | 16 FP32 | 64 | 0 / 64 B |
-| A2 | `[16,16]` FP16 | 512 | 0 / 512 B |
-| B2 | `[16,16]` FP16 | 512 | 0 / 512 B |
-| CO1 | `[16,16]` FP32 | 1024 | 0 |
-
-中栏按步骤展示：
-
-- Host Shape/Tiling：逻辑→物理合约与 M/K/N；
-- CopyIn：完整 Feature、一个 Weight N Tile、一个 Bias N Tile；
-- Load：Feature window→A2 ZZ；Weight fractal→B2 ZN；
-- I0：A2、B2、C2、CO1；
-- I1～I8：A2、B2、已有 CO1，不再加入 Bias；
-- Fixpipe：CO1 FP32 NZ→Output FP16 ND，并明确 NHWC 等价关系。
-
-## 9. 实施顺序与进度
-
-| 阶段 | 本阶段交付 | 状态 |
+| 阶段 | 交付 | 状态 |
 | --- | --- | --- |
-| 阶段 1：Workbench MVP | 上方三栏、全宽 Dock、两种执行 Tab、播放、Terminal 互斥、统一步骤状态、移除 Inspector | **已完成（2026-07-27）** |
-| 阶段 2：Tensor Code Recovery | 双源码 Tab、file-aware sourceRefs、新固定 tiling、精确 Buffer、9 次 K 语义、Bias C1→C2、Fixpipe 直写 GM | **已完成并按新源码刷新（2026-07-28）** |
-| 阶段 3：Hardware Participation | 910B 路径、真实步骤参与节点、Buffer occupancy、Active/Idle/Waiting、4 类 Event dependency | **下一阶段，未开始** |
-| 阶段 4：Execution Dock 深化 | Instructions 泳道、Loop Group 展开、事件因果；有估算数据后再做 Estimated Timeline | **未开始** |
-| 阶段 5：验证与交付 | 错误/空状态、布局/播放回归、schema/PTO 审计、目标环境验证记录 | **未开始** |
+| 1. Workbench MVP | 三栏工作台、全宽 Dock、播放、Terminal 互斥、移除 Inspector | **已完成 · 2026-07-27** |
+| 2. Tensor Code Recovery | 双源码、新固定 tiling、精确 Local Memory、9 次 K 语义、Bias C1→C2、Fixpipe 直写 GM | **已完成 · 2026-07-28** |
+| 3. Hardware Participation | 当前步骤的执行单元、存储节点、Demo occupancy 与 Event 方向 | **下一阶段** |
+| 4. Execution UX Patterns | 通用 Instruction 图、Event 主载体、Tensor Lifecycle、Loop 展开、Tensor Data Dump（具体 Tile 数值查看） | **未开始** |
+| 5. 验证与交付 | 跨视图一致性、状态边界、响应式、可访问性与文档回归 | **未开始** |
 
-当前整体进度：**2/5 个阶段完成**。
+阶段 2 的“完成”只表示 Demo 的静态体验基线完成，不表示源码已经编译、运行或 profiling。
 
-阶段 2 的“完成”表示静态模型和交互基线完成，不表示源码已经通过 CANN 编译或上板运行。
+## 6. 后续实施
 
-## 10. 后续阶段安排
+### 6.1 阶段 3：Hardware Participation
 
-### 阶段 3：Hardware Participation
+#### 体验目标
 
-1. 将每个步骤映射到 MTE2、MTE1、Cube、Fixpipe 和相应存储节点；
-2. 使用 fixture 中的每核字节数计算 Demo occupancy；
-3. 执行单元显示 Active/Idle/Waiting，不显示“空间占用”；
-4. `MTE2_MTE1`、`M_MTE1`、`MTE1_M`、`M_FIX` 使用独立依赖边；
-5. Demo capacity 与真实芯片总容量分层标注；
-6. 不确定的硬件连线使用 unverified，不因图上存在节点就宣称代码使用它。
+帮助用户把当前源码操作映射到参与的执行单元和存储位置，而不是展示一张与当前任务无关的完整芯片架构图。
 
-### 阶段 4：Execution Dock 深化
+#### 待办
 
-1. Instructions 按 Host/Scalar、MTE2、MTE1、Cube、Fixpipe、Event 分泳道；
-2. I1～I7 Loop Group 支持展开；
-3. 点击事件块展示 producer、consumer、阻止的提前执行；
-4. Timeline 保持 unavailable，直至有明确估算值或 profiling；
-5. 如增加估算值，必须显示 `Estimated Timeline · Not Profiling Data`。
+1. 将当前 instruction 映射到 MTE2、MTE1、Cube、Fixpipe 和相关存储节点；
+2. 存储节点显示当前使用字节数和 Demo capacity；
+3. 执行单元只表达当前逻辑状态：
+   - `Participating`
+   - `Waiting on dependency`
+   - `Not involved`
+4. 不用 `Idle` 暗示真实硬件空闲，不给执行单元显示空间占用；
+5. `MTE2_MTE1`、`M_MTE1`、`MTE1_M`、`M_FIX` 可在 Hardware 中显示依赖方向，但 Event 的主叙事仍在 Execution Dock；
+6. Demo capacity 与真实芯片容量概念分层；
+7. 未被当前代码使用或无法确认的硬件连接不高亮。
 
-### 阶段 5：验证与交付
+#### 完成标准
 
-1. JSON/schema 验证；
-2. 两份源码所有 sourceRefs 行号存在；
-3. 双 Tab 切换不丢失步骤；
-4. 播放跨 Host→Kernel 自动切 Tab；
-5. file:// 错误提示和 HTTP 启动说明；
-6. 窄窗口、长文件名、滚动定位和键盘可访问性；
-7. PTO design-system residue check；
-8. 记录未完成的 CANN 编译、设备运行和 profiling 验证。
+- 用户能看出当前 instruction 由哪个单元参与、访问哪个存储；
+- Buffer occupancy 与执行单元状态不会混淆；
+- Hardware 中的 Event 方向与 Dock 保持一致；
+- 页面不会暗示真实利用率、stall 或硬件时序。
 
-## 11. 验收标准
+### 6.2 阶段 4：Execution UX Patterns
 
-### 双源码
+阶段 4 同时验证三个可复用 Pattern：Event execution context、Tensor Lifecycle 和 Instruction Visualization。它们共享执行上下文，但分别回答不同问题。
 
-- 两个 Tab 都加载完整源码，而不是关键行摘录；
-- 两个文件都存在可点击的步骤标记；
-- 点击 Host `SetBlockDim` 选择 Launch Mapping；
-- 点击 Kernel `GetBlockIdx` 选择同一 Launch Mapping；
-- 点击 Kernel 任一 HardEvent 行选择对应 Event Step。
+#### 6.2.1 Event 主载体与跨视图联动
 
-### Tiling
+##### 产品分层
 
-- 页面显示 `M/K/N=64/144/32`；
-- 页面显示 `tile=16/16/16`；
-- 页面显示 `M/K/N tile count=4/9/2`；
-- 页面显示 `blockDim=8` 和 OT0～OT7。
+```text
+Recommendation Trace / Pipeline
+  候选方案应该具有怎样的 Event dependency
 
-### Tensor
+Code Recovery / Execution Dock
+  代码中的同步 instruction 位于什么逻辑位置
 
-- LoadData3D 显示 NC1HWC0→ZZ、`[16,16]`、512 B；
-- LoadData2D 显示 NZ→ZN、`[16,16]`、512 B；
-- I0 明确包含 Bias C2；
-- I1～I8 不重复加入 Bias；
-- CO1 为 `[16,16]` FP32、1024 B；
-- Fixpipe 显示 FP32→FP16、NZ→ND、ReLU、512 B/核。
+Observation
+  未来回答是否真实等待、等待多久
+```
 
-### 可信度
+##### Code Recovery 区域分工
 
-- 不再显示已被新源码解决的 missing implementation；
-- 固定参数标为代码确认，不标为 profiler 观测；
-- 页面明确“未编译、未上板、无真实 duration”；
-- Output 明确 ND `[64,32]` 与 NHWC 等价，不误称为 NCHW 物理布局；
-- Inspector 永不出现。
+| 区域 | Event 表达 |
+| --- | --- |
+| Source | 高亮同步代码 |
+| Execution Dock | Event 主要载体；使用 Event lane 或位于相关 instruction 之间的 Event block |
+| Tensor State | 显示 waiting、ready、reusable 等状态影响 |
+| Hardware Participation | 显示涉及的执行单元和依赖方向 |
 
-## 12. 启动
+当前范围只实现 Event 的位置、类型、方向与跨视图联动，不展开完整因果诊断。
 
-必须通过本地 HTTP 服务打开。页面会使用 `fetch()` 读取 JSON 和两份源码，`file://` 无法工作。
+#### 6.2.2 实现执行层 Tensor Lifecycle
 
-从工作区根目录 `/Users/songchenfei/Documents/ascend c` 启动服务后访问：
+##### 与 Memory Map 的边界
+
+| 视图 | 回答 |
+| --- | --- |
+| Memory Map | 放在哪里、地址是多少、哪些 Tensor 共用地址空间 |
+| Tensor Lifecycle | 何时具有有效数据、何时被读取、何时可以复用、下一次承载哪个 Tile |
+
+实现态生命周期使用“物理 Buffer 泳道 × 逻辑执行位置”：
+
+```text
+                 Allocate  Copy In  Load K0  Mmad K0  Load K1  Mmad K1  Fixpipe
+L1  fmapA1       view ───── ready ─────────── consumed ────────────────────────
+L0A fmapA2                          K0 ready ─ consume │ K1 overwrite ─ consume
+L0B weightB2                        K0 ready ─ consume │ K1 overwrite ─ consume
+L0C accumCo1                                  Acc0 ───── Acc1 ─────── Acc8 ─ consume
+```
+
+视觉规则：
+
+1. 横轴命名为 `Logical execution order`，不叫 Timeline；
+2. 逻辑位置等宽，不用长度表达真实 duration；
+3. 纵向按物理 Buffer 分泳道；
+4. 生命周期块表达逻辑有效区间，不画实际 Tensor 数据；
+5. 同一地址被后续 Tile 复用时，显示连续版本块；
+6. 复用关系只连接相同地址范围的前后对象；
+7. 当前 instruction 使用垂直焦点线；
+8. 地址范围和字节数保持真实；
+9. Allocate Memory 只显示 `View created`，不提前显示 ready、K0 loaded 或 Acc0；
+10. 无运行数据时不显示 duration、stall 或 overlap。
+
+Memory Reuse Viewer 可作为视觉结构参考，但层次由数据来源决定：Demo tick 是概念演示，源码或编译材料对应静态实现恢复，只有仿真或 profiling 数据才能标为观测态。
+
+#### 6.2.3 通用 Instruction Visualization Pattern
+
+##### 目标与边界
+
+对能够识别语义角色的 instruction，使用一套与算子类型无关的视觉语法生成执行图。无法识别的内容保留为 `Unknown / Source-only`，不隐藏、不猜测。
+
+##### 通用语义
+
+| 维度 | 示例 |
+| --- | --- |
+| Instruction | `DataCopy`、`LoadData3D`、`Mmad`、`Fixpipe` |
+| Execution role | Host、Scalar、MTE2、MTE1、Cube、Vector、Fixpipe、Event |
+| Action type | Configure、Allocate、Move、Transform、Compute、Sync、Store |
+| Operands | `fmapA1 → fmapA2`、`A2/B2 → CO1` |
+| Memory | GM、L1、L0A、L0B、Bias Table、L0C |
+| Scope | Once、Per core、Per tile、Per iteration、Conditional |
+| Structure | Sequence、Loop、Branch |
+| Dependency | Data、Event、Control |
+| Recognition | Recognized、Inferred、Unknown |
+| Evidence | Source、Compiler/IR、API Registry、Runtime |
+
+这些语义是 Demo 的设计输入，不代表真实解析器或工程数据结构。
+
+Pattern 首期只要求 Instruction、Execution role、Action type、Structure、Dependency、Recognition，以及 Source 与 Hardware 联动。Tensor、Memory 语义在后续 Pattern 中下钻，不阻塞基本 Instruction Flow。
+
+##### 视觉语法
+
+1. **泳道**：按执行职责分组；未使用的空泳道隐藏；
+2. **逻辑轴**：只表示顺序，节点宽度不表示耗时；
+3. **Instruction block**：默认显示 instruction 和主要输入→输出，补充信息通过 Hover 或渐进披露；
+4. **硬件联动**：选中 instruction 时高亮参与的执行单元；
+5. **关系**：区分 Data、Event、Control，不共用同一种视觉编码；
+6. **循环**：统一表达 Initialize、Repeated body ×N、Tail/Finalize；
+7. **分支**：显示共同条件和分支路径，不冒充真实已执行路径；
+8. **Event**：不画成普通计算；紧凑模式使用依赖线，展开模式可显示 signal/wait block；
+9. **Unknown**：保留源码位置和 unresolved 状态，不推断硬件或数据流。
+
+##### 自动组织规则
+
+```text
+区分 Host / Kernel
+→ 识别 Loop / Branch
+→ 保持结构内逻辑顺序
+→ 按 execution role 放入泳道
+→ 连接明确数据关系
+→ 添加 Event dependency
+→ 压缩重复循环
+→ 保留 Unknown
+→ 默认聚焦主执行路径
+```
+
+通用性来自稳定的视觉语法、信息层级和 Unknown 降级规则，不要求不同算子生成相同形状的图。
+
+##### Source 与 Hardware 联动
+
+- 点击源码聚焦对应 instruction，点击 instruction 返回对应源码；
+- 一个 instruction 可以关联多处源码；
+- 切换 Host / Kernel 不丢失当前执行上下文；
+- 当前文件没有对应引用时不伪造高亮；
+- Loop 折叠或展开后保持 Source 与 Hardware 上下文；
+- 无法确认执行角色时不高亮硬件单元。
+
+##### 识别与 AI 边界
+
+确定性识别优先使用 AST / CFG / Compiler IR、API 语义注册表、类型、符号和定义—使用关系。大模型只辅助解释陌生封装、复杂函数和未登记 API，其结果必须标为 `Inferred`，不能覆盖确定性事实。
+
+| 状态 | 含义 |
+| --- | --- |
+| Recognized | 有源码、编译材料或已登记 API 语义支持 |
+| Inferred | 根据上下文形成的候选解释，并保留依据 |
+| Unknown | 当前证据不足，只显示源码位置 |
+
+##### Pattern 首期验收
+
+- 能从源码进入对应 instruction，并从 instruction 返回源码；
+- 能看出主要顺序、循环和依赖；
+- 能识别当前参与的硬件单元；
+- Unknown 不被隐藏或包装成事实；
+- 逻辑轴不暗示真实耗时；
+- 不依赖 Tensor、Memory 视图也能完成基本执行理解。
+
+#### 6.2.4 Loop Group
+
+- Iter 0 与 Iter 1～8 始终分开；
+- Iter 1～8 默认显示 `×8`；
+- 展开后复用同一 Instruction Visualization Pattern；
+- 展开或折叠不改变当前 Source、Tensor、Hardware 上下文；
+- 不用横向长度暗示各 Iter 的真实耗时。
+
+#### 6.2.5 Timeline
+
+当前范围内 Timeline 始终显示 unavailable。只有未来存在明确来源和适用范围的估算或 profiling 数据时才重新评估：
+
+- 估算必须标记 `Estimated Timeline · Not Profiling Data`；
+- profiling 才能使用真实时间尺度；
+- 仅出现 `startTime/duration` fixture 字段不足以启用 Timeline。
+
+#### 6.2.6 Tensor Data Dump
+
+##### 用户需求
+
+用户需要从抽象 shape 下钻到具体数据：例如一个 `16×16` 的 Output Tile，能看到每个坐标分别是什么数值，而不只是看到 Tensor 的存在、地址或生命周期。
+
+##### 定义与边界
+
+- Data Dump 在 Tensor 视图中展示具体 Tile 的实际矩阵数据；
+- 数据必须关联具体运行、Instruction、Tile、dtype、layout 和存储位置；
+- 实际数值只能来自 Data Dump 或其他明确的运行数据；
+- 没有 dump 数据时只显示 shape 与元数据，不生成或猜测矩阵内容；
+- 展示内容随当前执行上下文联动，例如当前 Iter 的 A2/B2、当前 Acc 或 Fixpipe 输出 Tile。
+
+##### 体验要求
+
+- 使用坐标网格表达 Tile（如 `16×16`），每个单元格显示对应数值；
+- 数值格式必须匹配 dtype（FP16 / FP32 等）与 layout；
+- 与 Instruction、Tensor State 和 Hardware Participation 保持同一执行上下文；
+- 无数据状态明确显示 `No dump data` 或等价表述，不伪造数值。
+
+##### 阶段 4 验收
+
+- 用户能进入具体 Tensor / Tile，看到每个坐标的数值或明确的“无 dump 数据”状态；
+- 数值与当前 instruction / 迭代 / buffer 上下文一致；
+- 无 dump 数据时页面不生成或猜测矩阵内容；
+- 数值展示不暗示真实性能或运行时长。
+
+### 6.3 阶段 5：验证与交付
+
+#### 功能与一致性
+
+- Host / Kernel 源码引用有效；
+- Source、Tensor、Hardware、Dock 保持同一执行上下文；
+- instruction 与 event dependency 均可成为上下文；
+- Iter 1～8 折叠和展开不丢失上下文；
+- Event 在 Pipeline、Dock、Tensor 和 Hardware 中职责一致；
+- Memory Map 不显示数据已经 ready；
+- Tensor Lifecycle 不暗示真实时间；
+- Timeline 保持 unavailable。
+
+#### 内容正确性
+
+- `M/K/N=64/144/32`，Tile 为 `16/16/16`，Tile 数为 `4/9/2`；
+- Iter 0 有 Bias，Iter 1～8 无 Bias；
+- 每核 9 次、全 8 核 72 次 Mmad；
+- A2/B2 的 K Tile 只在相应 Load 后更新；
+- Fixpipe 显示 NZ→ND、FP32→FP16、ReLU 和 GM 写回；
+- Local Memory 地址统一使用 `[start,end)`。
+
+#### 体验与视觉
+
+- 窄屏不出现整页水平溢出；
+- 长文件名、滚动定位、Hover 和键盘焦点可用；
+- 小 Tensor 块保持可见；
+- 逻辑依赖、数据搬运和控制关系不会使用同一种视觉编码；
+- 使用 PTO 共享 token、component 和 pattern，不新增私有视觉体系；
+- 错误、空状态与本地 HTTP 启动提示完整。
+
+## 7. Future Work
+
+以下内容已记录，但不阻塞当前五阶段计划：
+
+1. **Dependency-as-causality 深化**  
+   点击 Event 后解释 producer、consumer、保护的 Tensor/Buffer、阻止的提前执行、潜在错配和串行化原因。
+
+2. **Evidence-aware visualization 深化**  
+   系统区分代码确认、静态推断、设计估计、运行观测和 Unknown，并支持 Recommendation / Recovery / Observation 对照。
+
+3. **Observation overlay**  
+   接入仿真或 profiling 后，再表达真实 duration、等待、stall、overlap 和运行时 Tensor residency。
+
+4. **Tensor Data Dump 数据源接入**  
+   阶段 4 已定义具体 Tile 数值查看与无数据降级；接入真实 dump / correctness 数据后，再验证数值到 instruction、迭代、dtype、layout 和存储位置的完整映射，以及格式 / layout 转换后的数值一致性。
+
+## 8. 启动
+
+页面通过 `fetch()` 加载 JSON 和源码，必须使用本地 HTTP 服务，不能直接以 `file://` 打开。
+
+从工作区根目录启动服务后访问：
 
 ```text
 http://127.0.0.1:4180/pto_compute-graph-viewer/code%20recovery/index.html

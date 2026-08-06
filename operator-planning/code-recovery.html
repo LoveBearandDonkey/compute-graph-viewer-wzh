@@ -15,6 +15,7 @@
   <link rel="stylesheet" href="../vendor/pto-design-system/patterns/aiv-core-object/pattern.css">
   <link rel="stylesheet" href="../vendor/pto-design-system/patterns/memory-architecture/pattern.css">
   <link rel="stylesheet" href="../vendor/pto-design-system/patterns/hardware-architecture-viewport/pattern.css">
+  <link rel="stylesheet" href="../vendor/pto-design-system/patterns/tensor-title/pattern.css">
   <style>
     * { box-sizing: border-box; }
     html, body { width: 100%; min-height: 100%; margin: 0; overflow: auto; background: var(--ide-frame-page-bg); color: var(--foreground); font-family: var(--font-sans); }
@@ -120,9 +121,6 @@
     .lifecycle-table { display: grid; gap: var(--space-2); min-width: 0; }
     .lifecycle-row { min-width: 0; display: grid; grid-template-columns: 92px repeat(6, minmax(58px, 1fr)); gap: var(--space-1); align-items: center; padding: var(--space-2); border-radius: var(--radius-md); }
     .lifecycle-row.is-selected { background: var(--surface-2); }
-    .lifecycle-label { display: grid; gap: 2px; }
-    .lifecycle-label strong { font: var(--text-body-sm); }
-    .lifecycle-label span { color: var(--foreground-muted); font: var(--text-label); }
     .lifecycle-state { min-height: 48px; min-width: 0; display: grid; align-content: center; gap: 2px; padding: 6px; border: 0; border-radius: var(--radius-sm); background: var(--surface-2); color: var(--foreground-secondary); text-align: left; cursor: pointer; overflow: hidden; }
     .lifecycle-state strong { color: var(--foreground); font: var(--text-label); }
     .lifecycle-state span { font: 500 9px/1.2 var(--font-mono); }
@@ -144,9 +142,6 @@
     .core-cell.is-selected { background: color-mix(in srgb, var(--primary) 52%, var(--surface-3)); color: var(--foreground); box-shadow: 0 0 0 1px var(--primary-hover); }
     .tiling-spaces { display: grid; grid-template-columns: minmax(0, 0.6fr) minmax(280px, .8fr); gap: var(--space-5); }
     .tiling-space { min-width: 0; }
-    .space-head { display: flex; align-items: baseline; justify-content: space-between; gap: var(--space-2); margin-bottom: var(--space-3); }
-    .space-head strong { font: var(--text-title-2); font-size: 12px;}
-    .space-head code { color: var(--foreground-muted); }
     .tensor-partition {gap: var(--space-1); align-items: center; margin-bottom: var(--space-2); }
     .tensor-partition > strong { color: var(--foreground-secondary);margin-right:10px; font: var(--text-body-sm); }
     .tensor-slice { min-height: 32px;width:32px;margin-right:10px; border: 0; border-radius: var(--radius-sm); background: var(--surface-2); color: var(--foreground-muted); cursor: pointer; }
@@ -161,9 +156,10 @@
     .tiling-factline strong { color: var(--foreground); }
     .matmul-tiling-diagrams { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-5); margin-top: var(--space-4); }
     .matmul-tiling-figure { min-width: 0; margin: 0; }
-    .matmul-tiling-figure-head { display: flex; align-items: baseline; justify-content: space-between; gap: var(--space-2); margin-bottom: var(--space-2); }
-    .matmul-tiling-figure-head strong { font: var(--text-title-2); font-size: 12px; }
-    .matmul-tiling-figure-head span { color: var(--foreground-muted); font: var(--text-body-sm); }
+    .tensor-title-slot { min-width: 0; }
+    .tiling-space > .tensor-title-slot,
+    .matmul-tiling-figure > .tensor-title-slot { margin-bottom: var(--space-2); }
+    .lifecycle-row .tensor-title-slot { width: 92px; }
     .matmul-matrix-svg { display: block; width: 100%; min-width: 0; color: var(--foreground-muted); }
     .matmul-matrix-svg .matrix-cell { fill: color-mix(in srgb, var(--foreground) 3%, transparent); stroke: color-mix(in srgb, var(--foreground) 30%, transparent); stroke-width: 1; }
     .matmul-matrix-svg .matrix-cell.is-active { fill: color-mix(in srgb, var(--primary) 35%, var(--surface-3)); stroke: var(--primary-hover); stroke-width: 1.5; }
@@ -227,6 +223,7 @@
   <script src="../vendor/pto-design-system/patterns/aic-core-object/pattern.js"></script>
   <script src="../vendor/pto-design-system/patterns/memory-architecture/pattern.js"></script>
   <script src="../vendor/pto-design-system/patterns/hardware-architecture-viewport/pattern.js"></script>
+  <script src="../vendor/pto-design-system/patterns/tensor-title/pattern.js"></script>
   <script type="text/plain" id="source-vector-add">
 /**
  * Copyright (c) 2025 Huawei Technologies Co., Ltd.
@@ -722,6 +719,85 @@ int32_t main(int32_t argc, char* argv[])
     const c = model.context;
     return '<div class="context-strip"><div class="context-fact"><span>Kernel</span><code>' + c.operator + ' · ' + c.kind + '</code></div><div class="context-fact"><span>Tensor contract</span><code>' + c.dtype + ' · ' + c.format + ' · ' + c.shape + '</code></div><div class="context-fact"><span>Partition</span><code>' + c.cores + ' cores × ' + c.perCore + ' ' + c.partitionUnit + '</code></div><div class="context-fact"><span>Runtime evidence</span><strong>Not attached</strong></div></div>';
   }
+  const tensorTitleControllers = new Map();
+  function mountTensorTitle(key, selector, scene, options) {
+    tensorTitleControllers.get(key)?.destroy();
+    const host = $(selector);
+    if (!host || !window.PtoTensorTitle) return;
+    const controller = window.PtoTensorTitle.render(host, scene, options || {});
+    tensorTitleControllers.set(key, controller);
+  }
+  function mountTilingTensorTitles() {
+    const c = model.context;
+    const padCore = String(selectedCore).padStart(2, '0');
+    if (activeKey === 'vector') {
+      const offset = selectedCore * c.perCore;
+      mountTensorTitle('vector-global', '[data-tensor-title="vector-global"]', {
+        label: '全局计算空间',
+        role: 'temp',
+        logicalShape: { label: 'elements', dims: [c.total] },
+        physicalShape: { label: 'GM linear', dims: [c.total] },
+        tileShape: { label: 'block', dims: [c.perCore] },
+        dtype: c.dtype,
+        format: c.format,
+        memory: { tier: 'GM', sizeBytes: c.total * 4 },
+        partition: { blockCount: c.cores, blockLength: c.perCore, tileLength: 128, blockIndex: selectedCore },
+        constraints: ['同一 core 的 x/y/z 使用相同连续范围'],
+        status: `${c.cores} blocks × ${c.perCore}`,
+      }, { ariaLabel: '全局计算空间' });
+      mountTensorTitle('vector-core', '[data-tensor-title="vector-core"]', {
+        label: `选中核 C${padCore}`,
+        role: 'temp',
+        logicalShape: { label: 'core slice', dims: [c.perCore] },
+        dtype: c.dtype,
+        format: c.format,
+        memory: { tier: 'GM', offset, range: `${offset} → ${offset + c.perCore}` },
+        partition: { blockIndex: selectedCore, blockLength: c.perCore, tileLength: 128 },
+        constraints: ['UB footprint 3 × 8 KiB', 'queue depth 均为 1', 'no tail'],
+        status: `offset ${offset} · length ${c.perCore}`,
+      }, { ariaLabel: `选中核 C${padCore}` });
+    } else {
+      const start = selectedCore * 128;
+      mountTensorTitle('matmul-global', '[data-tensor-title="matmul-global"]', {
+        label: '全局矩阵空间',
+        role: 'temp',
+        logicalShape: { label: 'A × B → C', dims: ['256×64', '64×256', '256×256'] },
+        physicalShape: { label: 'NZ/ZN → ND', dims: ['256×64', '64×256', '256×256'] },
+        tileShape: { label: 'base tile', dims: ['128×64', '64×256', '128×256'] },
+        dtype: c.dtype,
+        format: c.format,
+        axes: ['M', 'K', 'N'],
+        memory: { tier: 'GM' },
+        partition: { blockCount: c.cores, blockLength: c.perCore, tileLength: 128, blockIndex: selectedCore },
+        constraints: ['B 由两个 core 共享'],
+        status: `${c.cores} cores × ${c.perCore} M rows`,
+      }, { ariaLabel: '全局矩阵空间' });
+      mountTensorTitle('matmul-core', '[data-tensor-title="matmul-core"]', {
+        label: `选中核 C${padCore} 的 base tile`,
+        role: 'temp',
+        logicalShape: { label: 'A × B → C', dims: ['128×64', '64×256', '128×256'] },
+        tileShape: { label: 'base tile', dims: ['128×64', '64×256', '128×256'] },
+        dtype: c.dtype,
+        format: c.format,
+        axes: ['M', 'K', 'N'],
+        memory: { tier: 'L1 → L0A/L0B → L0C', range: `M rows [${start}, ${start + 128})` },
+        partition: { blockIndex: selectedCore, tileIndex: 0, tileRange: `M rows [${start}, ${start + 128})` },
+        state: 'loaded',
+        direction: 'A1 → L0A · B1 → L0B · L0C → GM',
+        constraints: ['no tail'],
+        status: `M rows [${start}, ${start + 128})`,
+      }, { ariaLabel: `选中核 C${padCore} 的 base tile` });
+    }
+  }
+  function mountLifecycleTensorTitles() {
+    model.buffers.forEach((buffer) => {
+      mountTensorTitle('lifecycle:' + buffer.id, '[data-tensor-title="lifecycle:' + buffer.id + '"]', {
+        label: buffer.label,
+        role: buffer.tone === 'output' ? 'output' : 'input',
+        direction: buffer.owner,
+      }, { density: 'compact', showStatus: false });
+    });
+  }
   function renderPipeline() {
     const count = model.stages.length;
     const rows = model.stages.map((stage, laneIndex) => '<div class="pipeline-row"><div class="pipeline-label"><strong>' + stage.lane + '</strong><span>' + stage.laneDetail + '</span></div><div class="pipeline-track" style="--stage-count:' + count + '">' + model.stages.map((_, column) => column === laneIndex ? '<button class="pipeline-block' + (selectedId === 'stage:' + stage.id ? ' is-selected' : '') + '" type="button" data-stage="' + stage.id + '" style="--block-color:' + stage.color + '"><strong>' + stage.label + '</strong><span>' + stage.detail + '</span></button>' : '<div class="pipeline-spacer"></div>').join('') + '</div></div>').join('');
@@ -745,16 +821,18 @@ int32_t main(int32_t argc, char* argv[])
     if (activeKey === 'vector') {
       const tensorRows = ['x','y','z'].map((tensor) => '<div class="tensor-partition"><strong>' + tensor + '</strong>' + Array.from({ length:c.cores }, (_, index) => '<button class="tensor-slice' + (index === selectedCore ? ' is-selected' : '') + '" type="button" data-core="' + index + '">' + index + '</button>').join('') + '</div>').join('');
       const offset = selectedCore * c.perCore;
-      $('[data-model-view="tiling"]').innerHTML = '<div class="view-heading"><div><h1>Tiling</h1><p>GM-001 没有核内 tile loop，视图止于 per-core slice。</p></div><span class="evidence-chip is-confirmed">代码确认</span></div><div class="tiling-head"><div><h2>核间切分</h2><p>线性均分：8 cores × 2048 elements</p></div><span class="evidence-chip is-confirmed">no tail</span></div><div class="core-strip">' + coreButtons + '</div><div class="tiling-spaces"><section class="tiling-space"><div class="space-head"><strong>全局计算空间</strong><code>[8, 2048] · 16384 elements</code></div>' + tensorRows + '<div class="tiling-factline"><strong>映射规则：</strong>同一 core 的 x/y/z 使用相同连续范围。</div></section><section class="tiling-space"><div class="space-head"><strong>选中核 C' + String(selectedCore).padStart(2,'0') + '</strong><code>offset ' + offset + ' · length 2048</code></div><div class="selected-core-space"><div class="core-formula"><div class="formula-buffer"><strong>x slice</strong><code>[' + offset + ', ' + (offset + c.perCore) + ')</code></div><span class="formula-op">+</span><div class="formula-buffer"><strong>y slice</strong><code>same range</code></div><span class="formula-op">=</span><div class="formula-buffer"><strong>z slice</strong><code>same range</code></div></div><div class="tiling-factline"><strong>UB footprint：</strong>3 × 8 KiB；queue depth 均为 1。</div><div class="tiling-factline"><strong>Tail：</strong>当前样例无 tail；代码没有 remainder 分支。</div></div></section></div>';
+      $('[data-model-view="tiling"]').innerHTML = '<div class="view-heading"><div><h1>Tiling</h1><p>GM-001 没有核内 tile loop，视图止于 per-core slice。</p></div><span class="evidence-chip is-confirmed">代码确认</span></div><div class="tiling-head"><div><h2>核间切分</h2><p>线性均分：8 cores × 2048 elements</p></div><span class="evidence-chip is-confirmed">no tail</span></div><div class="core-strip">' + coreButtons + '</div><div class="tiling-spaces"><section class="tiling-space"><div class="tensor-title-slot" data-tensor-title="vector-global"></div>' + tensorRows + '<div class="tiling-factline"><strong>映射规则：</strong>同一 core 的 x/y/z 使用相同连续范围。</div></section><section class="tiling-space"><div class="tensor-title-slot" data-tensor-title="vector-core"></div><div class="selected-core-space"><div class="core-formula"><div class="formula-buffer"><strong>x slice</strong><code>[' + offset + ', ' + (offset + c.perCore) + ')</code></div><span class="formula-op">+</span><div class="formula-buffer"><strong>y slice</strong><code>same range</code></div><span class="formula-op">=</span><div class="formula-buffer"><strong>z slice</strong><code>same range</code></div></div><div class="tiling-factline"><strong>UB footprint：</strong>3 × 8 KiB；queue depth 均为 1。</div><div class="tiling-factline"><strong>Tail：</strong>当前样例无 tail；代码没有 remainder 分支。</div></div></section></div>';
     } else {
       const start = selectedCore * 128;
-      $('[data-model-view="tiling"]').innerHTML = '<div class="view-heading"><div><h1>Tiling</h1><p>GM-002 只有一个 base tile / core；A 与 C 沿 M 轴切分，B 被两个 core 完整读取。</p></div><span class="evidence-chip is-confirmed">代码确认</span></div><div class="tiling-head"><div><h2>M-axis partition</h2></div><span class="evidence-chip is-confirmed">no tail</span></div><div class="core-strip">' + coreButtons + '</div><div class="matmul-tiling-diagrams"><figure class="matmul-tiling-figure"><figcaption class="matmul-tiling-figure-head"><strong>全局矩阵空间</strong><span>A[256,64] × B[64,256] → C[256,256]</span></figcaption>' + matmulMatrixSvg('global', selectedCore) + '</figure><figure class="matmul-tiling-figure"><figcaption class="matmul-tiling-figure-head"><strong>选中核 C0' + selectedCore + ' 的 base tile</strong><span>M rows [' + start + ', ' + (start + 128) + ')</span></figcaption>' + matmulMatrixSvg('local', selectedCore) + '</figure></div><div class="tiling-factline matmul-tiling-formula"><strong>核间映射：</strong>A / C 按 M 轴二分；B 不分核、由两个 core 共享。每个 core 正好执行 1 个 128×64×256 base tile。</div><div class="tiling-factline"><strong>GM offsets：</strong>A = ' + (start * 64) + ' elements；C = ' + (start * 256) + ' elements；B = 0。当前 M/K/N 均整除，代码没有 tail 分支。</div>';
+      $('[data-model-view="tiling"]').innerHTML = '<div class="view-heading"><div><h1>Tiling</h1><p>GM-002 只有一个 base tile / core；A 与 C 沿 M 轴切分，B 被两个 core 完整读取。</p></div><span class="evidence-chip is-confirmed">代码确认</span></div><div class="tiling-head"><div><h2>M-axis partition</h2></div><span class="evidence-chip is-confirmed">no tail</span></div><div class="core-strip">' + coreButtons + '</div><div class="matmul-tiling-diagrams"><figure class="matmul-tiling-figure"><figcaption class="tensor-title-slot" data-tensor-title="matmul-global"></figcaption>' + matmulMatrixSvg('global', selectedCore) + '</figure><figure class="matmul-tiling-figure"><figcaption class="tensor-title-slot" data-tensor-title="matmul-core"></figcaption>' + matmulMatrixSvg('local', selectedCore) + '</figure></div><div class="tiling-factline matmul-tiling-formula"><strong>核间映射：</strong>A / C 按 M 轴二分；B 不分核、由两个 core 共享。每个 core 正好执行 1 个 128×64×256 base tile。</div><div class="tiling-factline"><strong>GM offsets：</strong>A = ' + (start * 64) + ' elements；C = ' + (start * 256) + ' elements；B = 0。当前 M/K/N 均整除，代码没有 tail 分支。</div>';
     }
+    mountTilingTensorTitles();
   }
   function renderLifecycle() {
-    const rows = model.buffers.map((buffer) => '<div class="lifecycle-row' + (selectedId === 'buffer:' + buffer.id ? ' is-selected' : '') + '"><div class="lifecycle-label"><strong>' + buffer.label + '</strong><span>' + buffer.owner + '</span></div>' + buffer.states.map((state, index) => '<button class="lifecycle-state' + (index === 2 ? ' is-queue' : index === 3 || index === 4 ? ' is-consume' : index === 5 ? ' is-release' : '') + '" type="button" data-buffer="' + buffer.id + '" data-state="' + index + '"><strong>' + state[0] + '</strong><span>' + state[1] + '</span></button>').join('') + '</div>').join('');
+    const rows = model.buffers.map((buffer) => '<div class="lifecycle-row' + (selectedId === 'buffer:' + buffer.id ? ' is-selected' : '') + '"><div class="tensor-title-slot" data-tensor-title="lifecycle:' + buffer.id + '"></div>' + buffer.states.map((state, index) => '<button class="lifecycle-state' + (index === 2 ? ' is-queue' : index === 3 || index === 4 ? ' is-consume' : index === 5 ? ' is-release' : '') + '" type="button" data-buffer="' + buffer.id + '" data-state="' + index + '"><strong>' + state[0] + '</strong><span>' + state[1] + '</span></button>').join('') + '</div>').join('');
     const owners = model.buffers.map((buffer) => '<div class="queue-owner"><span>' + buffer.position + '</span><strong>' + buffer.owner + ' owns ' + buffer.label + '</strong><code>' + buffer.states.map((state) => state[0]).join(' → ') + '</code></div>').join('');
     $('[data-model-view="lifecycle"]').innerHTML = '<div class="view-heading"><div><h1>Buffer Lifecycle</h1><p>保持统一的资源生命周期表：何时分配、由哪个阶段写入、何时 ready、被谁读取，以及何时结束。</p></div><span class="evidence-chip is-confirmed">代码确认</span></div>' + contextStrip() + '<div class="lifecycle-layout"><div class="lifecycle-table">' + rows + '</div><aside class="queue-ownership">' + owners + '<div class="unknown-note"><strong>当前事实：</strong>' + model.lifecycleNote + '</div></aside></div>';
+    mountLifecycleTensorTitles();
   }
   function memoryMarkup() {
     const steps = model.memorySteps.map((step) => '<button class="path-step" type="button" data-memory-focus="' + step[0] + '"><span>' + step[1] + '</span><strong>' + step[2] + '</strong><code>' + step[3] + '</code></button>').join('');
