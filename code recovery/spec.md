@@ -4,13 +4,15 @@
 
 - 产品：Ascend Code Recovery Workbench
 - 案例：固定参数 Conv2D + Bias + ReLU
-- Spec 版本：0.3
-- 更新日期：2026-07-28
+- Spec 版本：0.5
+- 更新日期：2026-08-05
 - 当前里程碑：阶段 2/5 完成；阶段 3 待开始
 - 模型性质：Static Code-Recovery Model
 - 非运行事实：未编译、未上板、未做 correctness/profiling
 
 本文档定义产品行为与验收边界；实施进度详见 `Conv + Bias + ReLU Code Recovery 详细实施计划.md`。
+
+本 Spec 服务于 UX 概念验证和体验 Pattern 提炼，不代表真实 Ascend C 工程建议或产品规划。
 
 ## 2. 问题定义
 
@@ -20,13 +22,13 @@ Ascend C 开发者需要同时连接 Host tiling 与 Kernel 执行，但常见�
 - Kernel 决定 block 映射、搬运、LocalTensor、同步、Mmad 和 Fixpipe；
 - 单看任一文件都难以回答“当前代码为什么处理这一块数据、由哪个硬件单元执行”。
 
-本工具通过统一 TraceStep 将两份源码、Tensor 变化、硬件参与和执行顺序连接起来。
+本工具通过统一执行上下文将两份源码、Tensor 变化、硬件参与、Event 和执行顺序连接起来。执行上下文可以是逻辑步骤、instruction、event dependency 或 Loop Group。
 
 ## 3. 产品目标
 
 ### 3.1 一句话目标
 
-让用户从 Host/Kernel 任一代码位置进入，都能看到同一执行步骤下的数据形态、搬运路径、硬件参与、存储用量和同步依赖。
+让用户从 Host/Kernel 任一代码位置进入，都能在同一执行上下文中理解数据形态、搬运路径、硬件参与、存储用量和同步依赖。
 
 ### 3.2 用户
 
@@ -160,9 +162,22 @@ OT0～OT7 各负责一个 `[16,16]` 输出 Tile。
 - transformation；
 - confidence/source/verification note。
 
+### 8.2.1 Tensor Data Dump
+
+用户需要从抽象 shape 下钻到具体 Tile 的数值，例如一个 `16×16` 的 Output Tile，看到每个坐标分别是什么数据。
+
+- Data Dump 在 Tensor 视图中展示具体 Tile 的实际矩阵数据；
+- 数据必须关联具体运行、Instruction、Tile、dtype、layout 和存储位置；
+- 实际数值只能来自 Data Dump 或其他明确的运行数据；
+- 没有 dump 数据时只显示 shape 与元数据，不生成或猜测矩阵内容；
+- 使用坐标网格表达 Tile，每个单元格显示对应数值；
+- 数值格式必须匹配 dtype（FP16 / FP32 等）与 layout；
+- 与 Instruction、Tensor State 和 Hardware Participation 保持同一执行上下文；
+- 无数据状态显示 `No dump data` 或等价表述，不伪造数值。
+
 ### 8.3 Hardware Participation
 
-存储节点显示 used bytes / demo capacity；执行单元显示 Active/Idle/Waiting。不得给 MTE/Cube/Fixpipe绘制“空间占用”。
+存储节点显示 used bytes / demo capacity；执行单元只表达当前逻辑状态：`Participating`、`Waiting on dependency`、`Not involved`。不得用 `Idle` 暗示真实硬件空闲，也不得给 MTE/Cube/Fixpipe 绘制“空间占用”。
 
 当前阶段使用简化 910B 架构图。硬件总容量属于 Demo 配置；精确参与路径在阶段 3 完成。
 
@@ -170,12 +185,14 @@ OT0～OT7 各负责一个 `[16,16]` 输出 Tile。
 
 Instructions 表达逻辑顺序和依赖，不使用时间比例。
 
-Timeline 在缺少 `startTime/duration` 时显示 unavailable：
+当前范围内 Timeline 始终显示 unavailable：
 
 ```text
 Estimated Timeline unavailable
 Not Profiling Data
 ```
+
+只有未来存在明确来源和适用范围的估算或 profiling 数据时才重新评估。仅出现 fixture `startTime/duration` 字段不足以启用 Timeline。
 
 Playback 只推进离散步骤。
 
@@ -184,20 +201,22 @@ Playback 只推进离散步骤。
 ### 9.1 状态
 
 ```text
-selectedStepId
+selectedExecutionContext
 activeSourceFileId
 executionView
 playing
 ```
 
-`selectedStepId` 是跨区域唯一执行状态；`activeSourceFileId` 只控制左栏显示哪个文件。
+`selectedExecutionContext` 是跨区域共享的执行上下文，可以聚焦 step、instruction、event dependency 或 Loop Group。`activeSourceFileId` 只控制左栏显示哪个文件，不创建第二套执行上下文。
+
+当前阶段的实现可以继续使用 `selectedStepId` 作为兼容锚点；阶段 4 的体验验收以共享执行上下文为准，不要求对外暴露内部状态结构。
 
 ### 9.2 规则
 
-1. 切换 Source Tab 不改变 selectedStep；
+1. 切换 Source Tab 不改变当前执行上下文；
 2. 点击代码行选择与 `fileId + line` 匹配的步骤；
 3. 点击代码行后保留当前 Tab；
-4. 播放或点击执行块时，自动切到步骤第一个 `sourceRef.fileId`；
+4. 播放或聚焦执行对象时，自动切到当前上下文的 primary `sourceRef.fileId`；
 5. 一个步骤可关联两个文件；
 6. 当前 Tab 无该步骤引用时不显示虚假高亮；
 7. 代码滚动只定位当前文件中的首个 active line。
@@ -286,10 +305,9 @@ type TraceModel = {
 | 10 | `sync-mte1-m` | A2/B2 ready | kernel |
 | 11 | `mmad-init` | I0 + Bias | kernel |
 | 12 | `sync-m-mte1` | I1～I8 Buffer reuse | kernel |
-| 13 | `mmad` | I1～I7 Loop Group | kernel |
-| 14 | `mmad` | I8 final | kernel |
-| 15 | `sync-m-fix` | Acc8 ready | kernel |
-| 16 | `fixpipe-output` | ReLU/cast/layout/write GM | kernel |
+| 13 | `mmad-loop` | I1～I8 Loop Group，包含 I8 final | kernel |
+| 14 | `sync-m-fix` | Acc8 ready | kernel |
+| 15 | `fixpipe-output` | ReLU/cast/layout/write GM | kernel |
 
 ## 12. 数据变化规范
 
@@ -301,7 +319,7 @@ W[Nj] GM ND [144,16] → B1 NZ, 4608 B
 D[Nj] GM ND [16] → C1 linear, 64 B
 ```
 
-Tensor State 使用 Feature X、Weight W、Bias 三个页签逐一表达 source slice、目标 Buffer、layout、dtype、bytes、L1 地址与对齐信息。切换页签不得改变当前 TraceStep、源码高亮、Timeline 或 Hardware Participation。
+Tensor State 使用 Feature X、Weight W、Bias 三个页签逐一表达 source slice、目标 Buffer、layout、dtype、bytes、L1 地址与对齐信息。切换页签不得改变当前执行上下文、源码高亮、Timeline 或 Hardware Participation。
 
 - Feature 的 GM source 与 A1 destination 复用 PTO `tensor-volume-canvas`，以 `neutral + base` 的 `W × H × C0` 物理体积对照 NC1HWC0 搬运，不对 source 或 destination 添加语义色。
 - Weight 的 GM ND slice 与 B1 NZ destination 复用 PTO `matrix-canvas`，保持 `[K=144,N tile=16]` 源坐标范围，由中间 transformation 明确表达 `ND → NZ`。
@@ -370,6 +388,8 @@ CO1 [16,16] FP32 NZ
 
 Event 是执行依赖，不是 Tensor 搬运；视觉上必须与 DataFlow Edge 区分。
 
+Event 在 Code Recovery 中的主载体是 Execution Dock；Source 回链同步代码，Tensor State 表达 waiting/ready/reusable 等状态影响，Hardware Participation 只表达执行单元和依赖方向。当前阶段只要求位置、类型、方向和跨视图联动；完整 producer/consumer 因果解释属于 Future Work。
+
 ## 14. Local Memory 规范
 
 | Buffer | Bytes | 位置 | 证据 |
@@ -393,7 +413,7 @@ A1/B1/C1 共享 L1，地址不得重叠。A2/B2/C2/CO1 位于不同物理 Buffer
 | 阶段 1：Workbench MVP | 已完成 | 2026-07-27 |
 | 阶段 2：Tensor Code Recovery | 已完成；已按完整双源码刷新 | 2026-07-28 |
 | 阶段 3：Hardware Participation | 下一阶段 | — |
-| 阶段 4：Execution Dock 深化 | 未开始 | — |
+| 阶段 4：Execution UX Patterns | 未开始；包含 Tensor Data Dump | — |
 | 阶段 5：验证与交付 | 未开始 | — |
 
 当前进度：**2/5**。
@@ -409,7 +429,7 @@ A1/B1/C1 共享 L1，地址不得重叠。A2/B2/C2/CO1 位于不同物理 Buffer
 - Bias C1→C2；
 - Fixpipe 直写 GM。
 
-阶段 3 才完成硬件参与路径和占用的产品化表达；阶段 4 才深化泳道与 Loop Group；阶段 5 才做完整交付回归。
+阶段 3 完成硬件参与路径和 Demo occupancy；阶段 4 完成通用 Instruction Visualization、Event 主载体、实现态 Tensor Lifecycle、Loop Group 和 Tensor Data Dump；阶段 5 完成交付回归。
 
 ## 16. 验收测试
 
@@ -440,12 +460,19 @@ A1/B1/C1 共享 L1，地址不得重叠。A2/B2/C2/CO1 位于不同物理 Buffer
 - A2/B2 是二维 `[16,16]`；
 - I0 有 Bias，I1～I8 无 Bias；
 - I8 后 K progress=9/9；
-- Fixpipe 输出 ND `[M,Co]`，不显示为 NCHW 物理布局。
+- Fixpipe 输出 ND `[M,Co]`，不显示为 NCHW 物理布局；
+- 用户能进入具体 Tensor / Tile，看到每个坐标的数值或明确的 `No dump data` 状态；
+- 有 dump 数据时，数值与当前 instruction / 迭代 / buffer 上下文一致；
+- 无 dump 数据时只显示 shape 与元数据，不生成或猜测矩阵内容；
+- 数值格式与 dtype / layout 一致。
 
 ### 16.4 状态
 
-- 代码、Tensor、Hardware、Instructions、Playback 使用同一 selectedStep；
-- Source Tab 是独立的显示状态，不创建第二套 selectedStep；
+- Source、Tensor、Hardware、Instructions、Playback 使用同一执行上下文；
+- instruction 与 event dependency 均可成为执行上下文；
+- Source Tab 是独立显示状态，不创建第二套执行上下文；
+- Event 在 Dock、Tensor 和 Hardware 中职责一致；
+- Iter 1～8 折叠或展开不丢失上下文；
 - Timeline 保持 duration unavailable；
 - Inspector 不存在。
 
@@ -468,9 +495,17 @@ http://127.0.0.1:4180/pto_compute-graph-viewer/code%20recovery/index.html
 
 ## 18. 后续演进
 
-1. 阶段 3：将精确 Buffer bytes 映射到 Hardware Participation；
-2. 阶段 4：展开 I1～I7 Loop Group；
-3. 接入目标 CANN 编译结果，增加 compile evidence；
-4. 接入设备 correctness/dump；
-5. 接入 profiling 后再生成真实 Timeline；
-6. 增加 NHWC→NCHW 可选后处理步骤，而不是修改当前 Kernel 事实。
+### 当前五阶段计划
+
+1. 阶段 3：将精确 Buffer bytes、执行单元和 Event 方向映射到 Hardware Participation；
+2. 阶段 4：建立通用 Instruction Visualization、Event 主载体、实现态 Tensor Lifecycle、Tensor Data Dump，并展开 Iter 1～8 Loop Group；
+3. 阶段 5：完成跨视图上下文、内容边界、响应式、可访问性和文档回归。
+
+### Future Work
+
+1. **Dependency-as-causality 深化**：点击 Event 后解释 producer、consumer、保护的 Tensor/Buffer、阻止的提前执行、潜在错配和串行化原因；
+2. **Evidence-aware visualization 深化**：完整区分设计意图、代码确认、静态推断、估计、观测和 Unknown；
+3. 接入目标 CANN 编译结果、设备 correctness/dump 或 profiling observation；
+4. 只有获得明确时间证据后才生成 Estimated 或 Observed Timeline；
+5. 增加 NHWC→NCHW 可选后处理步骤，而不是修改当前 Kernel 事实；
+6. **Tensor Data Dump 数据源接入**：阶段 4 已定义具体 Tile 数值查看与无数据降级；接入真实 dump / correctness 数据后，再验证数值到 instruction、迭代、dtype、layout 和存储位置的完整映射。

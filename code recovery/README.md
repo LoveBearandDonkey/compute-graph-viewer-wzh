@@ -40,7 +40,7 @@ Any UI built in this module should consume the PTO shared tokens and components 
 - Stage 1 — Workbench MVP: **completed**
 - Stage 2 — Tensor Code Recovery: **completed**
 - Stage 3 — Hardware Participation: **next**
-- Stage 4 — Execution Dock enrichment: not started
+- Stage 4 — Execution UX Patterns: not started
 - Stage 5 — Validation and delivery: not started
 
 Current progress: **2/5 stages completed**.
@@ -50,7 +50,7 @@ Conv + Bias + ReLU 代码恢复进度
 - 阶段 1 — 工作台 MVP：**已完成**
 - 阶段 2 — 张量代码恢复：**已完成**
 - 阶段 3 — 硬件参与：**下一个**
-- 阶段 4 — 执行码头增强：未开始
+- 阶段 4 — 执行体验 Pattern：未开始
 - 阶段 5 — 验证与交付：未开始
 
 当前进度：**已完成 2/5 阶段**。
