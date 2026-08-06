@@ -387,9 +387,17 @@
     [net-start] minmax(220px, 0.85fr)
     [net-end arch-start] minmax(420px, 1.9fr)
     [arch-end moe-start] minmax(300px, 1.05fr) [moe-end];
-  /* 第 1 行不要设过大的 min：deck 有自己的 min-height，这里再加一道 420px
-     下限会和底部 Cluster 抢高度，把矩阵挤到滚动区之外。 */
-  grid-template-rows: minmax(0, 1fr) auto;
+  /* 第 2 行（Cluster）以前是 auto —— rank 一多（行数 = dp×tp×cp）这一行就按
+     内容一路长高，把 1fr 那行挤到 0；Model Architecture 里的刻度带与典型层是
+     有固定高度的，格子被压没了它们照画不误，于是溢出到下面，看着就是两块内容
+     叠在一起。两头都要堵：
+       · 第 2 行 fit-content(46%)：内容少时照旧按内容高（小矩阵不平白占半屏），
+         超过板面 46% 就封顶，多出来的由 .cro-cluster__grid 自己滚；
+       · 第 1 行给 260px 下限，杜绝被压到 0。窗口实在太矮时两行之和超过板面，
+         由 .cro-board 自身的 overflow:auto 整体滚 —— 滚动可以接受，重叠不行。
+     下限只给 260px 而不是按内容全给（deck 那边动辄 420px）：那样又会反过来把
+     矩阵挤出滚动区。 */
+  grid-template-rows: minmax(260px, 1fr) fit-content(46%);
   /* 四大模块之间的间距：--space-4(16px) 再加 16px */
   column-gap: calc(var(--space-4) * 2);
   row-gap: calc(var(--space-4) * 2);
@@ -479,6 +487,44 @@
   flex: 0 0 auto;
 }
 
+/* 播放键顶到标题行最右侧：它是这一段的动作，不属于左边那组查询口径 */
+.cro-flow-play {
+  flex: 0 0 auto;
+  margin-left: auto;
+  gap: var(--space-1);
+}
+
+.cro-flow-play__icon {
+  width: 14px;
+  height: 14px;
+  /* 播放/暂停都是实心字形，与 rail 上那批描边图标不同源，故单独给 fill */
+  fill: currentColor;
+  stroke: none;
+}
+
+/* 播放中：按钮保持"按下"读法，与 segmented-control 的 is-selected 同一套 */
+.cro-flow-play[aria-pressed="true"] {
+  background: var(--state-selected);
+  color: var(--foreground);
+}
+
+/* 播放中关掉四域的高亮过渡。这些 120~140ms 的淡入淡出是给"手点一下"设计的，
+   而播放每 190ms 换一步：上一格的白描边还在往回淡，下一格已经填上了，两格
+   同时亮着 —— 看起来就是残影、跟不上节拍。播放时改成瞬时切换，一步一格干净
+   利落；停播后恢复过渡。 */
+.cro-board.is-flowing :is(
+  .cro-tick,
+  .cro-bar,
+  .cro-expert,
+  .cro-moe-group,
+  .cro-structure__stack,
+  .cro-structure__name,
+  .cro-pp-span,
+  .cro-ffn-span
+) {
+  transition: none;
+}
+
 /* .segmented-control 自带 display:inline-flex，会盖掉 [hidden] 的 UA display:none，
    必须显式关掉。运行事件模式下由 syncDpScope() 挂 hidden，见 js。 */
 .cro-dp-scope[hidden] { display: none; }
@@ -502,25 +548,29 @@
    同时 overscroll-behavior:contain —— 滚到底不把滚动链传给 .cro-board，
    免得再往下滚一格整块面板跟着位移。 */
 .cro-structure__stack,
-.cro-moe-groups {
+.cro-moe-groups,
+.cro-cluster__grid {
   scrollbar-width: thin;
   scrollbar-color: color-mix(in srgb, var(--foreground) 14%, transparent) transparent;
   overscroll-behavior: contain;
 }
 
 .cro-structure__stack::-webkit-scrollbar,
-.cro-moe-groups::-webkit-scrollbar {
+.cro-moe-groups::-webkit-scrollbar,
+.cro-cluster__grid::-webkit-scrollbar {
   width: 6px;
   height: 6px;
 }
 
 .cro-structure__stack::-webkit-scrollbar-track,
-.cro-moe-groups::-webkit-scrollbar-track {
+.cro-moe-groups::-webkit-scrollbar-track,
+.cro-cluster__grid::-webkit-scrollbar-track {
   background: transparent;
 }
 
 .cro-structure__stack::-webkit-scrollbar-thumb,
-.cro-moe-groups::-webkit-scrollbar-thumb {
+.cro-moe-groups::-webkit-scrollbar-thumb,
+.cro-cluster__grid::-webkit-scrollbar-thumb {
   border: 2px solid transparent;
   border-radius: var(--radius-pill);
   background: color-mix(in srgb, var(--foreground) 14%, transparent);
@@ -528,25 +578,29 @@
 }
 
 .cro-structure__stack:hover,
-.cro-moe-groups:hover {
+.cro-moe-groups:hover,
+.cro-cluster__grid:hover {
   scrollbar-color: color-mix(in srgb, var(--foreground) 30%, transparent) transparent;
 }
 
 .cro-structure__stack:hover::-webkit-scrollbar-thumb,
-.cro-moe-groups:hover::-webkit-scrollbar-thumb {
+.cro-moe-groups:hover::-webkit-scrollbar-thumb,
+.cro-cluster__grid:hover::-webkit-scrollbar-thumb {
   background: color-mix(in srgb, var(--foreground) 30%, transparent);
   background-clip: content-box;
 }
 
 .cro-structure__stack::-webkit-scrollbar-thumb:hover,
-.cro-moe-groups::-webkit-scrollbar-thumb:hover {
+.cro-moe-groups::-webkit-scrollbar-thumb:hover,
+.cro-cluster__grid::-webkit-scrollbar-thumb:hover {
   background: color-mix(in srgb, var(--foreground) 46%, transparent);
   background-clip: content-box;
 }
 
 /* 两轴同时可滚时右下角那块方板，默认是不透明灰，一并抹平 */
 .cro-structure__stack::-webkit-scrollbar-corner,
-.cro-moe-groups::-webkit-scrollbar-corner {
+.cro-moe-groups::-webkit-scrollbar-corner,
+.cro-cluster__grid::-webkit-scrollbar-corner {
   background: transparent;
 }
 
@@ -688,6 +742,45 @@
   box-shadow: var(--focus-ring);
 }
 
+/* ── 悬浮气泡：body 级 fixed，位置由 installTipLayer() 现算 ────────────────
+   全页只此一枚。之所以不用原生 title（~1s 延迟）、也不用画在元素内部的伪元素
+   气泡（会被 .cro-heat / 刻度带的滚动裁掉半个），见 js 里 installTipLayer 的注释。
+   z-index 压过关系连线层（40），否则悬浮到被连线穿过的格子上会被曲线划一道。 */
+.cro-tip {
+  position: fixed;
+  top: 0;
+  left: 0;
+  z-index: 60;
+  max-width: 280px;
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  background: color-mix(in srgb, var(--surface-1) 96%, black);
+  color: var(--foreground);
+  font-family: var(--font-sans);
+  font-size: var(--font-size-body-sm);
+  line-height: 1.45;
+  white-space: pre-line;   /* data-tip 里用 \n 分行 */
+  box-shadow: var(--shadow-lg, 0 8px 24px rgba(0, 0, 0, 0.45));
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  transform: translateY(3px);
+  transition:
+    opacity var(--duration-fast) var(--easing-default),
+    transform var(--duration-fast) var(--easing-default);
+}
+
+.cro-tip.is-visible {
+  opacity: 1;
+  visibility: visible;
+  transform: translateY(0);
+}
+
+/* 关掉 training-run-twin.css 给格子内置的伪元素气泡：本页统一走 .cro-tip，
+   两者同时在就会一次弹两个（其中一个还是被裁的那个）。 */
+.twin-heat-cell::after { content: none; }
+
 /* ── 关系连线 overlay（第 7 项）：覆盖全视口，不吃指针事件 ───────────────── */
 .cro-link-layer {
   position: fixed;
@@ -736,6 +829,12 @@
   fill: var(--foreground);
   font-family: var(--font-sans);
   font-size: var(--font-size-body-sm);
+}
+
+/* 连线卡片的第二行：口径说明（如 TP 切分份额），弱于首行的主标签 */
+.cro-link-label__sub {
+  fill: var(--foreground-secondary);
+  font-size: var(--font-size-label-xs);
 }
 
 /* 有选中关系时，未被牵连的对象整体降噪；被牵连的保持原样。
@@ -1337,17 +1436,25 @@
 /* ── 底：Cluster（T 型的下竖笔，挂在 arch 列正下方）─────────────────────
    左右排：标题 / stepper 在左，矩阵在右吃满剩余宽度。
    纵向堆叠会多占约 80px 高度，容易把矩阵推到滚动区之外。 */
+/* 行高被 fit-content(46%) 封顶后，这一层要把「高度不够」如实传下去：
+   min-height:0 允许它被压到比内容矮，align-items:stretch 让右侧矩阵拿到
+   确定高度（原来的 flex-start 会让它保持内容高度、直接溢出格子）。 */
 .cro-cluster {
   display: flex;
   gap: var(--space-4);
-  align-items: flex-start;
+  align-items: stretch;
   min-width: 0;
+  min-height: 0;
 }
 
+/* 矩阵超过封顶高度时在**区域内**纵向滚动，不再顶穿到 Model Architecture 上 */
 .cro-cluster__grid {
   flex: 1 1 auto;
   min-width: 0;
+  min-height: 0;
   overflow-x: hidden;   /* 要求密集显示完，不给横向滚动 */
+  overflow-y: auto;
+  overscroll-behavior: contain;
 }
 
 .cro-cluster__side {
@@ -1457,7 +1564,16 @@
    节点的选中语言一致。原来关联用 --accent、选中用 --primary，选中一组 rank 时
    组里每格都描一圈偏蓝的边，读起来像另一套和语义色无关的状态。
    层级交给粗细：关联 1px，选中 2px + 外圈 1px。 */
-.cro-heat .twin-heat-cell.is-related { --cro-cell-ring: #fff; }
+/* TP 斑马纹：TP>1 时同一层的权重被切成 tp 份，被点亮的这批 rank 并不等价 ——
+   谁拿第 1 份、谁拿第 2 份，全白一片是读不出来的。分片由描边亮度**间隔**表达
+   （100% / 50% / 100% / 40% …，见 renderCluster 的 tpFade）：明暗交替才切得出
+   一条一条的分片边界，单调递减的斜坡只会糊成一团渐变。分片是编址最内维
+   （inner = cpIdx·tp + tpIdx），而 inner 就是 DP 组内的行序，所以明暗按行铺开，
+   正好是横向斑马纹。
+   --cro-tp-fade 由 renderCluster 逐格写入；tp=1 时不写，回落 100%。 */
+.cro-heat .twin-heat-cell.is-related {
+  --cro-cell-ring: color-mix(in srgb, #fff var(--cro-tp-fade, 100%), transparent);
+}
 
 .cro-heat .twin-heat-cell.is-selected {
   --cro-cell-ring: #fff;

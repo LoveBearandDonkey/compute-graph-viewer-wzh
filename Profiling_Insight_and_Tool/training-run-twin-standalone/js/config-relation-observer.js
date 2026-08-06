@@ -264,14 +264,21 @@
       return ranksOfStage(stageOfLayer[layerIndex]);
     }
 
-    function ranksOfLayerInDp(layerIndex, dpIdx = 0) {
-      const stage = stageOfLayer[layerIndex];
+    /* 单 DP 口径下某个 PP stage 的 rank：整段 stage 里只取一个 DP 副本那一块。
+       Emb / Final Norm / LM Head 这类端点对象没有层号、只有驻留的 stage，
+       与「层」走的是同一个查询口径，所以口径函数要按 stage 提供一份。 */
+    function ranksOfStageInDp(stage, dpIdx = 0) {
       const safeDpIdx = Math.max(0, Math.min(dp - 1, dpIdx));
       const out = [];
       const start = rankOf(stage, safeDpIdx, 0);
       for (let i = 0; i < ranksPerDp; i += 1) out.push(start + i);
       return out;
     }
+
+    function ranksOfLayerInDp(layerIndex, dpIdx = 0) {
+      return ranksOfStageInDp(stageOfLayer[layerIndex], dpIdx);
+    }
+
 
     /* 某层里某个专家实际落在哪些 rank 上：该层所在 stage × 全部 DP 副本 × 该专家的 EP rank */
     function ranksOfExpertInLayer(layerIndex, expert) {
@@ -325,7 +332,7 @@
       epRankOfExpert,
       expertsOfEpRank: (p) => (epRanks[p] ? epRanks[p].experts : []),
       rankOf, nodeOfRank, coordsOfRank,
-      ranksOfStage, ranksOfLayer, ranksOfLayerInDp,
+      ranksOfStage, ranksOfLayer, ranksOfStageInDp, ranksOfLayerInDp,
       ranksOfExpertInLayer, ranksOfEpRankInStage, nodesOfRanks,
     };
   }
@@ -572,14 +579,24 @@
   function markDeckRelated(rel) {
     const host = document.getElementById("croDeckHost");
     if (!host) return;
+    /* deck 正视图一次只显示 rel.deckLayer 那一张卡，而"相关"是按真实层号判的。
+       两者平时是同一个层（deckLayer 一律取自 rel.layers），但数据流播放会让
+       整段 MoE 共用该段首层那张卡（见 startFlow：逐层换卡纯闪烁）——这时正在
+       显示的卡不在 rel.layers 里，它的节点全被判成不相关，而"亮"在 deck 上是
+       靠**其余节点变灰**表达的，结果就是整张卡一个节点都不亮。
+       所以把当前展示的那一层也算作相关。只在关系确实覆盖到层时才生效：Emb /
+       Norm / Head 这类端点选择 rel.layers 是空的，它们该亮的是 staticNodes 里
+       那几个静态节点，不能顺手把 L0 整张卡点亮。 */
+    const proxy = rel && rel.layers.size && Number.isFinite(rel.deckLayer) ? rel.deckLayer : null;
+    const relatedLayer = (l) => Boolean(rel) && (rel.layers.has(l) || l === proxy);
     const layerOf = (el) => Number(el.closest(".pto-model-deck__layer")?.dataset.layer);
     host.querySelectorAll(".pto-model-deck__layer").forEach((card) => {
-      card.classList.toggle("is-related", Boolean(rel) && rel.layers.has(Number(card.dataset.layer)));
+      card.classList.toggle("is-related", relatedLayer(Number(card.dataset.layer)));
     });
     host.querySelectorAll(".pto-model-deck__node, .pto-model-deck__experts").forEach((node) => {
       const layer = layerOf(node);
       const related = Boolean(rel) && (Number.isFinite(layer)
-        ? rel.layers.has(layer)
+        ? relatedLayer(layer)
         : rel.staticNodes.has(node.dataset.node));
       node.classList.toggle("is-related", related);
     });
@@ -823,6 +840,89 @@
     };
   }
 
+  /* ══ 悬浮气泡（全页统一）══════════════════════════════════════════════════
+     两条老路都不好使：
+       · 原生 title —— 要按住不动 ~1s 才弹，Layer 刻度只有 3~4px 宽，光是"停稳"
+         就够费劲，再等一秒等于查不了层号；样式也完全不可控。
+       · 伪元素气泡（training-run-twin.css 的 .twin-heat-cell::after）—— 画在格子
+         内部，会被 .cro-heat / 刻度带自己的滚动裁剪切掉，边缘一圈格子只能看到
+         半个气泡。
+     所以统一挂一个 body 级的 position:fixed 气泡，事件委托到 document：谁带
+     data-tip 就给谁弹，位置按目标 rect 现算并夹在视口内，与任何祖先的 overflow
+     都无关。 */
+  let tipEl = null;
+  let tipTarget = null;
+  let tipTimer = 0;
+
+  function placeTip(target) {
+    const rect = target.getBoundingClientRect();
+    const box = tipEl.getBoundingClientRect();
+    const GAP = 8;
+    const EDGE = 8;
+    // 默认贴在目标上方；上方装不下（刻度带在页面顶部、集群图首行同理）翻到下方
+    let top = rect.top - box.height - GAP;
+    if (top < EDGE) top = Math.min(rect.bottom + GAP, global.innerHeight - box.height - EDGE);
+    const half = box.width / 2;
+    const left = Math.min(
+      Math.max(rect.left + rect.width / 2 - half, EDGE),
+      Math.max(EDGE, global.innerWidth - box.width - EDGE),
+    );
+    tipEl.style.top = `${Math.max(EDGE, top)}px`;
+    tipEl.style.left = `${left}px`;
+  }
+
+  function hideTip() {
+    global.clearTimeout(tipTimer);
+    tipTarget = null;
+    if (tipEl) tipEl.classList.remove("is-visible");
+  }
+
+  function showTip(target) {
+    const text = target.dataset.tip;
+    if (!text) return;
+    tipTarget = target;
+    tipEl.textContent = text;
+    tipEl.classList.add("is-visible");
+    // 先可见才量得到尺寸（气泡宽度随文字走），再定位
+    placeTip(target);
+  }
+
+  function installTipLayer() {
+    if (tipEl) return;
+    tipEl = document.createElement("div");
+    tipEl.className = "cro-tip";
+    tipEl.setAttribute("role", "tooltip");
+    document.body.appendChild(tipEl);
+
+    // 60ms 只为压掉快速划过时的连闪，不构成"等待"
+    const arm = (target) => {
+      if (target === tipTarget) return;
+      global.clearTimeout(tipTimer);
+      tipTimer = global.setTimeout(() => showTip(target), 60);
+    };
+    document.addEventListener("pointerover", (event) => {
+      const target = event.target.closest?.("[data-tip]");
+      if (target) arm(target);
+      else if (tipTarget) hideTip();
+    });
+    document.addEventListener("pointerdown", hideTip);
+    // 滚动/缩放后 rect 已经不是气泡当初贴的那个位置，直接收掉而不是跟着漂
+    global.addEventListener("scroll", hideTip, true);
+    global.addEventListener("resize", hideTip);
+    // 键盘走查同样要看得到（刻度带/集群网格用方向键、Tab 移动焦点）。
+    // 只认 :focus-visible —— 鼠标点击也会 focus，那时刚被 pointerdown 收掉的气泡
+    // 会立刻弹回来挡住刚选中的东西。
+    document.addEventListener("focusin", (event) => {
+      const target = event.target.closest?.("[data-tip]");
+      if (target && target.matches?.(":focus-visible")) showTip(target);
+      else hideTip();
+    });
+    document.addEventListener("focusout", hideTip);
+    // 配置一改，集群网格/刻度带整体重建，气泡贴着的那个元素已经不在了 ——
+    // 光标没动就不会有 pointerover，得主动收掉，否则悬在半空
+    document.addEventListener("cro:change", hideTip);
+  }
+
   function renderLayerNav(container, topology, emit) {
     if (!container) return;
     const model = navModel(topology);
@@ -847,7 +947,9 @@
           const col = slot.column;
           tick.classList.add("is-endpoint");
           tick.dataset.unit = col.id;
-          tick.title = col.name;
+          // 用 data-tip 而不是 title：原生 title 有 ~1s 延迟，刻度只有几像素宽，
+          // 悬浮查层号是这条带子的主要用法，等不起（见 installTipLayer）
+          tick.dataset.tip = col.name;
           tick.setAttribute("aria-label", col.name);
           tick.addEventListener("click", () => emit({
             kind: "segment", segment: col.id, bar: col.bars[0].id,
@@ -858,8 +960,8 @@
           tick.dataset.layer = String(slot.layer);
           tick.dataset.ffn = layer.ffn;
           tick.dataset.attn = layer.attention;
-          tick.title = `L${slot.layer} · PP${layer.stage} · ${layer.ffn === "dense" ? "Dense" : "MoE"} · ${layer.attention.toUpperCase()}`;
-          tick.setAttribute("aria-label", tick.title);
+          tick.dataset.tip = `L${slot.layer} · PP${layer.stage} · ${layer.ffn === "dense" ? "Dense" : "MoE"} · ${layer.attention.toUpperCase()}`;
+          tick.setAttribute("aria-label", tick.dataset.tip);
           tick.addEventListener("click", () => emit({ kind: "layer", layer: slot.layer }));
         }
         cell.appendChild(tick);
@@ -877,7 +979,7 @@
       span.dataset.g0 = String(entry.g0);
       span.dataset.g1 = String(entry.g1);
       span.textContent = `PP${entry.stage}`;
-      span.title = entry.title;
+      span.dataset.tip = entry.title;
       span.setAttribute("aria-label", entry.title);
       span.addEventListener("click", () => emit({ kind: "stage", stage: entry.stage }));
       band.appendChild(span);
@@ -1089,7 +1191,7 @@
           chip.dataset.shared = String(i);
           chip.dataset.op = "mlp";           // 与结构条 shared_expert bar 同色
           chip.textContent = `SE${i}`;
-          chip.title = `共享专家 SE${i} · 每个 token 都经过，不参与 top-${counts.topK} 路由`;
+          chip.dataset.tip = `共享专家 SE${i} · 每个 token 都经过，不参与 top-${counts.topK} 路由`;
           chip.setAttribute("aria-label", chip.title);
           chip.addEventListener("click", () => emit({
             kind: "sharedExpert", shared: i, deckNode: "shared_expert",
@@ -1123,7 +1225,7 @@
          专家胶囊有自己的 kind:"expert"，让它们的 click 冒到这里就会被这一组
          盖掉，所以命中 .cro-expert 时直接放行。组名按钮不再单独挂 listener，
          它的 click 冒上来走同一条路径，键盘可达性照旧由它承担。 */
-      group.title = `EP rank ${entry.epRank} · 持有专家 E${entry.lo}~E${entry.hi}（${entry.experts.length} 个）`;
+      group.dataset.tip = `EP rank ${entry.epRank} · 持有专家 E${entry.lo}~E${entry.hi}（${entry.experts.length} 个）`;
       group.addEventListener("click", (event) => {
         if (event.target.closest(".cro-expert")) return;
         emit({ kind: "epRank", epRank: entry.epRank, experts: entry.experts, deckNode: "expert_pool" });
@@ -1145,7 +1247,7 @@
         dot.dataset.epRank = String(entry.epRank);
         dot.dataset.op = "moe";            // 与结构条 expert_pool bar 同色
         dot.textContent = `E${e}`;
-        dot.title = `路由专家 E${e} · 驻留 EP rank ${entry.epRank}`;
+        dot.dataset.tip = `路由专家 E${e} · 驻留 EP rank ${entry.epRank}`;
         dot.setAttribute("aria-label", dot.title);
         dot.addEventListener("click", () => emit({
           kind: "expert", expert: e, epRank: entry.epRank, deckNode: "expert_pool",
@@ -1180,7 +1282,7 @@
   function renderCluster(host, topology, emit) {
     if (!host) return;
     const { counts } = topology;
-    const { pp, dp, ep, totalRank } = counts;
+    const { pp, dp, ep, tp, cp, totalRank } = counts;
     const innerRows = counts.ranksPerEp;   // tp × cp
     host.innerHTML = "";
 
@@ -1211,6 +1313,27 @@
     const epCols = Math.ceil(ep / epRows);
     const stageTemplate = `repeat(${pp}, minmax(0, 1fr))`;
     const cellTemplate = `repeat(${epCols}, minmax(0, 1fr))`;
+
+    /* ── TP 分片 → 具体哪几张卡 ────────────────────────────────────────────
+       编址里 TP 是最内的一维：inner = cpIdx·tp + tpIdx，于是同一个 TP 组的 tp
+       张卡全局编号连号（rank, rank+1, … rank+tp-1），优先落在同一节点内 ——
+       TP 每层前反向都要 all-reduce 一次激活，是通信最密的一维，必须吃机内互联
+       （HCCS/NVLink），把它排在最内是各家框架（Megatron 的 tp-cp-ep-dp-pp 序）
+       的一致做法。CP 次之，两者共同占满 ranksPerEp。
+       所以分片序号 tpIdx = inner % tp，而 inner 正是集群图里 DP 组内的行序 ——
+       每 tp 行走完一轮分片，横向天然成条带，斑马纹按行铺就是客观的分片分布。 */
+    const tpShardOf = (inner) => inner % tp;
+    const cpIdxOf = (inner) => Math.floor(inner / tp);
+    /* 亮度是**间隔**的，不是渐变的：单调递减的斜坡在整片格子上会读成一团渐变，
+       看不出"一份一份"的边界；明暗交替才切得出条带。
+         偶数份 → 100%（与单 TP 时的高亮同强度）
+         奇数份 → 50% / 40% 交替（tp≥4 时两条暗纹也分得出先后）
+       最暗一档仍亮于静息态的 45% 中性灰描边（白 40% ≠ 灰 45%），"暗的那条也是
+       被点亮的"这层意思不能丢。 */
+    const tpFade = (shard) => {
+      if (tp <= 1 || shard % 2 === 0) return 100;
+      return shard % 4 === 1 ? 50 : 40;
+    };
 
     // ── 上：PP stage 标签，与下方 stage 块同列 ──
     const stageLabels = document.createElement("div");
@@ -1259,11 +1382,24 @@
             cell.dataset.dp = String(d);
             cell.dataset.ep = String(p);
             cell.dataset.node = String(node);
-            cell.dataset.tip = `rank ${rank}\nStage${s} · DP${d} · EP${p}\nNode ${node}`;
+            const shard = tpShardOf(inner);
+            // TP/CP 展开时把这张卡在最内两维里的位置写进提示：光看格子只知道
+            // 「被点亮了」，知道是第几份权重才谈得上定位。
+            const shardTip = tp > 1 ? `\nTP 分片 ${shard + 1}/${tp}（持有该层权重的 1/${tp}）` : "";
+            const cpTip = cp > 1 ? `\nCP ${cpIdxOf(inner) + 1}/${cp}` : "";
+            cell.dataset.tip = `rank ${rank}\nStage${s} · DP${d} · EP${p}${shardTip}${cpTip}\nNode ${node}`;
+            if (tp > 1) {
+              cell.dataset.tpShard = String(shard);
+              // 高亮亮度分档由 CSS 读这枚变量（见 .twin-heat-cell.is-related）。
+              // tp=1 时不写，回落到 100% —— 单 TP 的观感与改动前完全一致。
+              cell.style.setProperty("--cro-tp-fade", `${tpFade(shard).toFixed(1)}%`);
+            }
             // 2048 个格子不能各占一个 Tab 站；用 roving tabindex + 方向键在网格内移动
             cell.setAttribute("role", "gridcell");
             cell.setAttribute("tabindex", rank === 0 ? "0" : "-1");
-            cell.setAttribute("aria-label", `rank ${rank}，Stage${s}、DP${d}、EP${p}，节点 ${node}`);
+            cell.setAttribute("aria-label", tp > 1
+              ? `rank ${rank}，Stage${s}、DP${d}、EP${p}，TP 分片 ${shard + 1}/${tp}，节点 ${node}`
+              : `rank ${rank}，Stage${s}、DP${d}、EP${p}，节点 ${node}`);
             cell.addEventListener("click", () => emit({
               kind: "rank", rank, stage: s, dpIdx: d, epRank: p, node,
             }));
@@ -1368,6 +1504,16 @@
     const allShared = () => { for (let i = 0; i < counts.sharedExpert; i += 1) rel.shared.add(i); };
     // 端点列（Emb / Norm / Head）驻留的 PP stage
     const anchorStage = (col) => (col.stageAnchor === "first" ? 0 : Math.max(0, counts.pp - 1));
+    /* 单 DP / 所有 DP 的查询口径：payload.dpIdx 由 scopeLayerPayload 按当前
+       口径写入。层、典型层算子、Emb / Norm / Head 端点走的是同一个问题
+       ——「这个结构对象落在哪些卡上」——口径必须一致，不能只有层生效。
+       不区分「分片 / 副本」：Dense 层与 Emb / Norm / Head 在 EP 维度上确实是
+       副本，但副本也是"这张卡上有这一层"，照样要亮 —— 只亮一份会读成"这个 DP
+       里其余的卡不含这一层"，那是错的。副本结构本身由斑马纹表达：同一亮度的
+       那批卡持有同一份 TP 切片，彼此互为副本。 */
+    const stageRanks = (stage) => (Number.isFinite(payload.dpIdx)
+      ? topology.ranksOfStageInDp(stage, payload.dpIdx)
+      : topology.ranksOfStage(stage));
     // 整段 stage 被选中（点 PP 标签 / 点某张卡）时，端点列也在这段流水线上；
     // 点某个算子条时不算 —— MoE 算子横跨全部 stage，不该把 Norm/Head 也拖亮。
     let wholeStage = false;
@@ -1379,9 +1525,7 @@
         const layer = topology.layers[payload.layer];
         rel.segment = layer.ffn;
         if (layer.ffn === "moe") { allRoutedExperts(); allEpRanks(); allShared(); }
-        addRanks(Number.isFinite(payload.dpIdx)
-          ? topology.ranksOfLayerInDp(payload.layer, payload.dpIdx)
-          : topology.ranksOfLayer(payload.layer));
+        addRanks(stageRanks(topology.stageOfLayer(payload.layer)));
         break;
       }
       case "stage": {
@@ -1414,7 +1558,7 @@
             ? payload.preferLayer
             : col.layers[Math.floor(col.layers.length / 2)];
           rel.deckLayer = scoped ? payload.scopeLayer : prefer;
-          rel.stages.forEach((s) => addRanks(topology.ranksOfStage(s)));
+          rel.stages.forEach((s) => addRanks(stageRanks(s)));
         } else if (col && col.stageAnchor) {
           // Emb / Norm / Head：没有层，但驻留在首/末 PP stage，按 stage 接回集群
           const stage = anchorStage(col);
@@ -1428,7 +1572,7 @@
           // 端点列（Emb/Norm/Head）就一个概念块，整列点击时用它的代表算子做 deck 静态
           // 节点，让 net 侧仍能连到 deck 里的 embedding / final_norm / lm_head。
           if (payload.wholeColumn && col.bars[0]) rel.deckNode = col.bars[0].deckNode;
-          addRanks(topology.ranksOfStage(stage));
+          addRanks(stageRanks(stage));
         }
         if (payload.wholeColumn && col && col.id === "moe") {
           // 整列点 MoE：这一整段 MoE 典型层横跨全部路由专家 + 共享专家 + 全部 EP rank
@@ -1611,7 +1755,27 @@
       const span = runs.length <= 2
         ? formatRuns(rel.nodes, "", 2)
         : `${rel.nodes[0]}…${rel.nodes[rel.nodes.length - 1]}（${rel.nodes.length} 个）`;
+      /* 光看卡数容易读成"每张卡各存一份完整层权重"，所以 TP≥2 时补两行口径。
+         份额分两种：Attn / 共享专家 / Dense MLP 是纯 TP 切，单卡 1/tp；MoE 层的
+         大头是路由专家，先被 EP 切成 1/ep 再被 TP 切一刀，单卡实际持有 1/(tp×ep)
+         —— 只写 1/tp 会把真实份额高估两个数量级。
+         不解释 EP 对 Dense / Emb / Norm / Head 是副本这件事：这几段本来就不涉及
+         专家，是业务常识，写在气泡里是噪音。
+         卡片挂在连线中点上，行不能长：一行控制在 ~24 个汉字内。 */
       labels.cluster = `Node ${span} · ${rel.ranks.size} 卡`;
+      // 只给「结构对象 → 卡」这类选择加口径说明：点 rank / 专家问的是别的事
+      const structural = rel.primary
+        && (rel.primary.kind === "layer" || rel.primary.kind === "segment");
+      if (structural && c.tp > 1) {
+        const withMoe = Array.from(rel.layers).some((l) => topology.layers[l]?.ffn === "moe");
+        labels.cluster = [
+          labels.cluster,
+          `明暗相间 = TP 切出的 ${c.tp} 份，每条一份`,
+          withMoe
+            ? `单卡持有 Attn/共享专家 1/${c.tp} · 路由专家 1/(${c.tp}×${c.ep})`
+            : `单卡持有 1/${c.tp}（只按 TP 切）`,
+        ];
+      }
     }
     return labels;
   }
@@ -1705,7 +1869,9 @@
         ".cro-expert.is-related, .cro-moe-group.is-related",
         ".cro-region--moe",
       ),
-      cluster: pick("#croHeat .twin-heat-cell.is-selected", "#croHeat .twin-heat-cell.is-related", "#croHeat"),
+      // 夹取宿主是滚动视口 .cro-cluster__grid 而不是矩阵本身 —— rank 多到矩阵
+      // 要内部滚动时，#croHeat 的 rect 比看得见的那块高，锚点会落到区域之外
+      cluster: pick("#croHeat .twin-heat-cell.is-selected", "#croHeat .twin-heat-cell.is-related", ".cro-cluster__grid"),
     };
   }
 
@@ -1715,9 +1881,11 @@
      而不是把 4 段并成一个横跨整幅热力图的巨框。 */
   function clusterStageAnchors() {
     const host = document.querySelector("#croHeat");
+    const viewport = document.querySelector(".cro-cluster__grid") || host;
     const board = document.getElementById("croBoard");
     if (!host) return [];
-    const fit = (rect) => clampRectTo(clampRectTo(rect, host), board);
+    // 同 collectAnchors：夹在滚动视口上，矩阵内部滚动时锚点不跑出可视区
+    const fit = (rect) => clampRectTo(clampRectTo(rect, viewport), board);
     const byStage = new Map();
     host.querySelectorAll(".twin-heat-cell.is-related, .twin-heat-cell.is-selected").forEach((cell) => {
       const s = Number(cell.dataset.stage);
@@ -1831,7 +1999,12 @@
     }
   }
 
+  /* text 可以是一行字符串，也可以是多行数组（第二行起是补充说明，用 __sub 弱化）。
+     多行时整块以 (x, y) 为竖直中心排布，行距 LINE_H。 */
   function appendLinkLabel(layer, text, x, y) {
+    const lines = (Array.isArray(text) ? text : [text]).filter(Boolean);
+    if (!lines.length) return;
+    const LINE_H = 16;
     const group = document.createElementNS(SVG_NS, "g");
     const box = document.createElementNS(SVG_NS, "rect");
     const label = document.createElementNS(SVG_NS, "text");
@@ -1840,7 +2013,15 @@
     label.setAttribute("y", String(y));
     label.setAttribute("dominant-baseline", "middle");
     label.setAttribute("text-anchor", "middle");
-    label.textContent = text;
+    const top = y - ((lines.length - 1) * LINE_H) / 2;
+    lines.forEach((line, i) => {
+      const tspan = document.createElementNS(SVG_NS, "tspan");
+      tspan.setAttribute("x", String(x));
+      tspan.setAttribute("y", String(top + i * LINE_H));
+      if (i > 0) tspan.setAttribute("class", "cro-link-label__sub");
+      tspan.textContent = line;
+      label.appendChild(tspan);
+    });
     box.setAttribute("class", "cro-link-label__box");
     group.append(box, label);
     layer.appendChild(group);
@@ -2181,7 +2362,7 @@
       seg.className = over ? "cro-meter__seg cro-meter__seg--over" : "cro-meter__seg";
       seg.style.width = `${share * 100}%`;
       seg.style.setProperty("--cro-seg", CHART_TONE[tone] || tone);
-      if (tip) seg.title = tip;
+      if (tip) seg.dataset.tip = tip;
       meter.appendChild(seg);
     };
 
@@ -2554,6 +2735,7 @@
 
   /* ── 页面接线 ─────────────────────────────────────────────────────────── */
   function boot() {
+    installTipLayer();
     const controller = createController();
     controller.mount(document.getElementById("croParallelSteppers"), "parallel");
     controller.mount(document.getElementById("croMoeSteppers"), "moe");
@@ -2614,8 +2796,15 @@
       return 0;
     }
 
+    /* 口径只管「结构对象 → 哪些卡」这一类查询：层、典型层里的算子/整列、以及
+       Emb / Final Norm / LM Head 这三个端点（它们在 Layer 导航里就是三格刻度，
+       用户读到的也是"选中一格"，凭什么只有它们恒定查全部 DP）。
+       专家 / EP 组 / 共享专家不在此列：那边问的是"这个编号散布在哪里"，跨 DP
+       副本铺开正是答案本身（见 resolveRelation 里 expert 分支的说明）。 */
+    const DP_SCOPED_KINDS = new Set(["layer", "segment"]);
+
     function scopeLayerPayload(payload) {
-      if (!payload || payload.kind !== "layer") return payload;
+      if (!payload || !DP_SCOPED_KINDS.has(payload.kind)) return payload;
       const scoped = { ...payload };
       if (layerDpScope === "single") scoped.dpIdx = incidentDpHint;
       else delete scoped.dpIdx;
@@ -2634,6 +2823,9 @@
 
     function emitSelect(payload) {
       const topology = controller.topology;
+      // 用户一动手就停播：紧接着要铺的是他这次的选择，别再让播放覆盖回去。
+      // restore:false —— 下面这两行马上就会重铺，不必先还原上一个选中态。
+      stopFlow({ restore: false });
       payload = scopeLayerPayload(payload);
       if (!payload?.incidentId) {
         activeIncident = null;
@@ -2659,15 +2851,152 @@
 
     function clearSelection() { emitSelect(null); }
 
+    /* ══ 数据流播放 ═══════════════════════════════════════════════════════════
+       一个 step 的前向：Emb → L0 → L1 → … → Final Norm → LM Head 逐格点亮，
+       每亮一格，整网 deck / 典型层 / MoE / Cluster 跟着亮同一套关系集。
+       实现上不新造一套渲染，直接复用 applyRelation 的四域铺色，只是走 quiet。
+
+       性能取舍（这页四域加起来两千多个格子，值得写下来）：
+         · 步序与关系集在**开播时一次性**解出来（navModel 的 slots 就是刻度带
+           从左到右的真实顺序），播放中每一 tick 只做 class 切换，不建 DOM、
+           不重解析、不量几何；
+         · 用 rAF 打拍而不是 setInterval —— 标签页切到后台时 rAF 自动停摆，
+           不会在看不见的地方空转，回来接着走；
+         · 不画连线、不做 revealIn（见 applyRelation 的 quiet）。 */
+    const FLOW_STEP_MS = 190;
+    let flowSteps = null;
+    let flowIndex = 0;
+    let flowRaf = 0;
+    let flowLast = 0;
+    let flowRestore = null;
+
+    /* 每一步的 payload 与「手点这一格刻度」逐字一致，并同样过 scopeLayerPayload
+       —— 单 DP / 所有 DP 是当前生效的查询口径，播放亮出来的 rank 范围不能自成一套。 */
+    function flowPayloadOfSlot(slot) {
+      if (!slot.unit) return scopeLayerPayload({ kind: "layer", layer: slot.layer });
+      // Emb / Final Norm / LM Head：不是层，按端点列走
+      const col = slot.column;
+      return scopeLayerPayload({
+        kind: "segment", segment: col.id, bar: col.bars[0].id,
+        deckNode: col.bars[0].deckNode, layers: [],
+      });
+    }
+
+    function setFlowButton(playing) {
+      const button = document.getElementById("croFlowPlay");
+      const icon = document.getElementById("croFlowPlayIcon");
+      const label = document.getElementById("croFlowPlayLabel");
+      if (!button) return;
+      button.setAttribute("aria-pressed", String(playing));
+      // 播放期间关掉四域高亮的淡入淡出（见 css 的 .is-flowing）：190ms 一步，
+      // 120ms 的回淡会让上一格还亮着、下一格已填上，读起来就是残影
+      document.getElementById("croBoard")?.classList.toggle("is-flowing", playing);
+      button.title = playing ? "停止播放" : "播放一个 step 的数据流";
+      if (label) label.textContent = playing ? "停止" : "播放数据流";
+      // ▶ / ■：停止而非暂停 —— 一趟只有 ~9 秒，断点续播不如重看一遍
+      icon?.querySelector("path")?.setAttribute("d", playing ? "M6 6h12v12H6z" : "M8 5v14l11-7z");
+    }
+
+    function stopFlow({ restore = true } = {}) {
+      if (!flowSteps) return;
+      cancelAnimationFrame(flowRaf);
+      flowRaf = 0;
+      flowSteps = null;
+      setFlowButton(false);
+      // 播放期间 relation 一直没动过（播放走的是另一条铺色路径），
+      // 收尾把它原样铺回去，连线也随之恢复
+      if (restore) applyRelation(flowRestore);
+      flowRestore = null;
+    }
+
+    function flowTick(now) {
+      if (!flowSteps) return;
+      if (now - flowLast >= FLOW_STEP_MS) {
+        flowLast = now;
+        if (flowIndex >= flowSteps.length) { stopFlow(); return; }
+        applyRelation(flowSteps[flowIndex], true);
+        flowIndex += 1;
+      }
+      flowRaf = requestAnimationFrame(flowTick);
+    }
+
+    function startFlow() {
+      const topology = controller.topology;
+      if (!topology.valid) return;
+      flowRestore = relation;
+      /* 整网只在**真会换成另一张卡**时才动。正视图下 44 个 MoE 层是同一张卡的
+         44 份副本（除层号外一模一样），逐层换卡 = 每 190ms 整卡 display 重绘
+         一次，读不出任何新信息，只剩闪烁。所以同一段（同一结构列 + 同一 PP
+         stage）内的层共用该段首层那张卡，deck 只在 Emb→Dense→MoE→Norm→Head
+         与 PP 段边界上换 —— 这几下换卡才是有信息量的。段内的"流到第几层"由
+         Layer 导航、典型层、MoE、Cluster 四处照常逐层表达。 */
+      let bandKey = null;
+      let bandLayer = null;
+      flowSteps = navModel(topology).slots.map((slot) => {
+        const rel = resolveRelation(topology, flowPayloadOfSlot(slot));
+        const key = slot.unit
+          ? `unit:${slot.unit}`
+          : `${topology.layers[slot.layer].ffn}@PP${topology.stageOfLayer(slot.layer)}`;
+        if (key === bandKey && Number.isFinite(bandLayer)) rel.deckLayer = bandLayer;
+        else { bandKey = key; bandLayer = rel.deckLayer; }
+        return rel;
+      });
+      flowIndex = 0;
+      // 第一拍立刻出效果，不空等一个 FLOW_STEP_MS
+      flowLast = -Infinity;
+      // 起播前把上一次选择留下的连线收掉：那组线指向的对象马上就不再是亮着的
+      linkLayer?.replaceChildren();
+      setFlowButton(true);
+      flowRaf = requestAnimationFrame(flowTick);
+    }
+
+    function toggleFlow() {
+      if (flowSteps) stopFlow(); else startFlow();
+    }
+
+    /* 配置一改，四域整块重建：选中/关联的 class 挂在旧 DOM 上，跟着一起没了，
+       而关系连线画在独立的 overlay 上、不随重建消失 —— 于是留下「线还在、
+       高亮没了」这种半截状态。何况关系集本来就是配置的函数（rank 集合跟着
+       TP/DP/EP 走），调完 TP 旧连线指向的已经是另一批卡，光补高亮也不对。
+       所以按新 topology 把同一个选择重解析一遍再铺；选中对象在新配置里已经
+       不存在（层数/卡数/专家数被调小）就整体清空，不留悬空高亮。 */
+    function reapplySelection(topology) {
+      const p = relation?.primary;
+      if (!p) return;
+      const c = topology.counts;
+      const survives = {
+        layer: () => p.layer < c.totalLayer,
+        stage: () => p.stage < c.pp,
+        rank: () => p.rank < c.totalRank,
+        expert: () => p.expert < c.routedExpert,
+        epRank: () => p.epRank < c.ep,
+        sharedExpert: () => p.shared < c.sharedExpert,
+      }[p.kind];
+      if (survives && !survives()) { clearSelection(); return; }
+      const next = { ...p };
+      // 专家 ↔ EP rank 的归属是 (routedExpert, ep) 的函数，配置一变就得重算，
+      // 否则拿旧 epRank 去点亮新分组，亮的是别的组
+      if (next.kind === "expert") next.epRank = topology.epRankOfExpert(next.expert);
+      if (next.kind === "epRank") next.experts = topology.expertsOfEpRank(next.epRank);
+      emitSelect(next);
+    }
+
     function redrawLinks() {
       // 事件模式下四域整块隐藏，没有可连的锚点：连线直接收掉，否则 scroll/resize
       // 会把线画到 0×0 的隐藏元素上（退化成射向视口左上角的射线）。
-      if (activeIncident) {
+      // 播放中同理：画面上高亮的是当前这一步，relation 还是用户上次的选择，
+      // 照着它画等于给一组没亮着的东西连线。播放本身也不需要线。
+      if (activeIncident || flowSteps) {
         linkLayer?.replaceChildren();
         return;
       }
       drawRelationLinks(linkLayer, relation);
     }
+
+    // deck 当前实际处在的状态，用于去重（见 applyRelation 里的 deck.silently）。
+    // deck 重建后 DOM 是全新的，这两个缓存要一并作废。
+    let deckFrontLayer = null;
+    let deckNodeKey = null;
 
     let rankCellMap = new Map();
     let rankCellMapHost = null;
@@ -2690,8 +3019,12 @@
     }
 
     /* 把关系集铺到四个视图。selected = 用户点中的那一个，related = 被它牵连出来的。
-       rel 为 null 表示清空，回到「默认不预选、不高亮」的静息态。 */
-    function applyRelation(rel) {
+       rel 为 null 表示清空，回到「默认不预选、不高亮」的静息态。
+       quiet：只铺色，跳过"滚进可视区"和关系连线。数据流播放每 ~190ms 换一步，
+       这两件事按步重放会出问题 —— 平滑滚动永远稳定不下来（还抢用户的滚动条），
+       而 collectAnchors + 整层 SVG 重建是单步里最贵的一项，比全部 class 切换
+       加起来还贵。播放本来也不画线。 */
+    function applyRelation(rel, quiet = false) {
       const p = rel ? rel.primary : null;
       // 收关系集时必须传属性名而不是 rel.xxx —— 后者是实参，会在 has 执行
       // 之前就求值，rel 为 null（清空）时第一次调用就 TypeError，整个清空中断。
@@ -2799,22 +3132,35 @@
       }
 
       // ── 整网 deck（回写时静音它的 onNodeSelect，否则会自激成死循环）──
+      /* deck 的两个写入都做**幂等去重**：setFrontLayer 内部会遍历全部 46 张层卡、
+         逐张重置专家池（replaceChildren + 四条内联几何）再重算边线，正视图下换卡
+         还是一次 display:none → block 的整卡重绘。值没变还照写一遍，画面上就是
+         每 190ms 无谓地闪一下 —— 播放时这条路每步都会走到，最扎眼。
+         selectNode 与 front layer 绑在一起：换了卡，同名节点要在新卡里重新标。 */
       deck?.silently((api) => {
         if (!api) return;
-        if (rel) {
-          if (Number.isFinite(rel.deckLayer)) api.setFrontLayer?.(rel.deckLayer);
-          // 没有对应算子节点时也要清掉上一次的：正视图下非 front 层是
-          // display:none，留在旧层里的 .is-selected 节点会退化成 0×0 矩形，
-          // collectAnchors 拿到它后关系连线就朝视口左上角画出去。
-          // 第二参必须是 undefined 而不是 null —— deck 里判的是
-          // Number.isFinite(Number(layer))，Number(null) === 0 会把查找锁进 L0。
-          const scope = rel.deckStatic || !Number.isFinite(rel.deckLayer) ? undefined : rel.deckLayer;
-          api.selectNode?.(rel.deckNode || null, scope);
-        } else {
-          api.selectNode?.(null);
+        const nextLayer = rel && Number.isFinite(rel.deckLayer) ? rel.deckLayer : null;
+        // 第二参必须是 undefined 而不是 null —— deck 里判的是
+        // Number.isFinite(Number(layer))，Number(null) === 0 会把查找锁进 L0。
+        const scope = !rel || rel.deckStatic || nextLayer === null ? undefined : nextLayer;
+        // 没有对应算子节点时也要清掉上一次的：正视图下非 front 层是 display:none，
+        // 留在旧层里的 .is-selected 节点会退化成 0×0 矩形，collectAnchors 拿到它
+        // 之后关系连线就朝视口左上角画出去。
+        const nextNode = rel ? (rel.deckNode || null) : null;
+        const movedFront = nextLayer !== null && nextLayer !== deckFrontLayer;
+        if (movedFront) {
+          api.setFrontLayer?.(nextLayer);
+          deckFrontLayer = nextLayer;
+        }
+        const nodeKey = `${nextNode}|${scope}`;
+        if (movedFront || nodeKey !== deckNodeKey) {
+          api.selectNode?.(nextNode, scope);
+          deckNodeKey = nodeKey;
         }
       });
       markDeckRelated(rel);
+
+      if (quiet) return;
 
       // ── 把选中项滚进可视区 ──
       // 典型层的算子条（每列各有一条 44 层长的滚动栈）与路由专家（64 个 EP 组）
@@ -2831,6 +3177,13 @@
           ".cro-moe-group.is-selected",
           ".cro-expert.is-related",
           ".cro-moe-group.is-related",
+        ]));
+
+        // 集群矩阵 rank 多到要内部滚动时同理：被点亮的那批卡可能整个在折叠区里
+        const clusterView = document.querySelector(".cro-cluster__grid");
+        revealIn(clusterView, firstMatch(clusterView, [
+          ".twin-heat-cell.is-selected",
+          ".twin-heat-cell.is-related",
         ]));
       }
 
@@ -3522,8 +3875,14 @@
     }
 
     controller.onChange((topology) => {
+      // 配置一改，预解出来的那 49 步全是旧拓扑的（层数、rank 集合都可能变），
+      // 而且四域马上要整块重建：先停播，别让下一拍去点亮已经不存在的 DOM
+      stopFlow({ restore: false });
       // 配置非法时不重建 deck，保留上一版可读的图，错误信息由 #croConfigError 承担
       if (topology.valid || !deck?.controller) deck?.build(topology);
+      // deck 可能整棵重建了，去重缓存记的是旧 DOM 的状态，作废
+      deckFrontLayer = null;
+      deckNodeKey = null;
       // deck 的语义色变量搬到 board 上，结构条 bar 与整网节点取到同一个色值
       syncPalette();
       renderLayerNav(layerNav, topology, emitSelect);
@@ -3535,6 +3894,7 @@
       );
       renderCluster(document.getElementById("croHeat"), topology, emitSelect);
       if (activeIncident) requestAnimationFrame(() => selectIncident(activeIncident));
+      else if (relation) reapplySelection(topology);
     });
 
     // 列宽随窗口变化，PP 带的实测定位要跟着重排
@@ -3578,6 +3938,8 @@
       ".cro-structure__col",
       ".twin-heat-cell", ".pto-model-deck__node", ".pto-model-deck__experts",
       ".pto-model-deck__side-rule", ".cro-stepper", ".cro-event", ".pto-ide-frame__topbar",
+      // 播放键：点它不是「点空白」，不能顺手把当前选中清掉
+      ".cro-flow-play",
     ].join(", ");
     document.addEventListener("click", (event) => {
       if (!relation) return;
@@ -3617,9 +3979,16 @@
         item.setAttribute("aria-pressed", String(selected));
       });
       // 事件关系展示的是采样到的实际范围，不受静态 Layer 查询口径影响。
-      if (!activeIncident && relation?.primary?.kind === "layer") {
+      // 受口径管辖的选择（层 / 算子 / 端点）都要就地按新口径重查一遍。
+      if (!activeIncident && DP_SCOPED_KINDS.has(relation?.primary?.kind)) {
         emitSelect({ ...relation.primary });
       }
+    });
+    document.getElementById("croFlowPlay")?.addEventListener("click", (event) => {
+      // 播放键在 .cro-board 里，不 stopPropagation 的话冒泡到 board 的空白点击
+      // 会走 clearSelection（SELECTABLE 白名单外一律清空），刚起播就被停掉
+      event.stopPropagation();
+      toggleFlow();
     });
     document.getElementById("croEventRailCollapse")?.addEventListener("click", () => setEventRailCollapsed(true));
     document.getElementById("croEventRailExpand")?.addEventListener("click", () => setEventRailCollapsed(false));
