@@ -1618,6 +1618,114 @@
     /* ── 指标看板「编辑」入口 + 控制面板（显示/隐藏 + 拖动排序，默认只显 4 个）── */
     .ov3-section-metrics { position: relative; }
     .ovm-card.ovm-hidden { display: none; }
+
+    /* ── 指标看板分区（结果层 / 构成层 / 结构层）──
+       分区是为了让"这次多快"（绝对量）、"时间去哪了"（构成）、"结构哪里不对"（比率）
+       各自成段，而不是把 12 张同权重卡片平铺后让用户自己挑 4 个显示。 */
+    .ovm-zone { margin-bottom: 20px; }
+    .ovm-zone[hidden] { display: none; }
+    .ovm-zone-head { display: flex; align-items: baseline; gap: 10px; margin-bottom: 10px; }
+    .ovm-zone-title {
+      font-size: 12px; font-weight: 600; color: var(--fg-secondary);
+      font-family: var(--font-sans); letter-spacing: .02em;
+    }
+    .ovm-zone-note { font-size: 11px; color: var(--fg-muted); }
+    .ovm-zone-note.is-warn { color: var(--warning); }
+    .ovm-struct-head { position: relative; display: flex; align-items: center; margin-bottom: 10px; }
+    /* 编辑面板改为锚在结构层标题行（原锚在 section 上），落在按钮正下方，作用域一目了然 */
+    .ovm-struct-head .metric-editor { top: 38px; }
+
+    /* 结果层卡片：沿用 .ovm-card 骨架，只是没有阈值着色（绝对量无"健康区间"可言） */
+    .ovm-result-board { margin-bottom: 10px; }
+    .ovm-card.ovm-result { min-height: 108px; }
+    .ovm-card.ovm-result .ovm-value { font-size: 30px; }
+    .ovm-card.ovm-result .ovm-status { min-height: 16px; -webkit-line-clamp: 1; line-clamp: 1; }
+
+    /* 可信层口径条：贴在结果卡片下方，作为"以上数字什么口径"的脚注 */
+    .ovm-trust {
+      display: flex; flex-wrap: wrap; align-items: center; gap: 6px 16px;
+      padding: 9px 12px; border-radius: var(--radius-lg); background: var(--surface-2, var(--bg-elevated));
+      font-size: 11.5px; color: var(--fg-muted); font-family: var(--font-sans);
+    }
+    .ovm-trust b { color: var(--fg-secondary); font-weight: 600; }
+    .ovm-trust__warn { color: var(--warning); font-weight: 500; }
+    .ovm-trust.is-shaky { box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--warning) 40%, transparent); }
+
+    /* 构成层堆叠条 */
+    .ovm-stack__bar {
+      display: flex; height: 22px; overflow: hidden;
+      border-radius: var(--radius-pill); background: var(--surface-3);
+    }
+    .ovm-stack__seg { display: block; height: 100%; min-width: 2px; }
+    .ovm-stack__legend {
+      display: flex; flex-wrap: wrap; gap: 6px 18px; margin-top: 9px;
+      font-size: 11.5px; color: var(--fg-muted); font-family: var(--font-sans);
+    }
+    .ovm-stack__legend i { display: inline-block; width: 8px; height: 8px; border-radius: 2px; margin-right: 6px; }
+    .ovm-stack__legend b { color: var(--fg); font-weight: 600; }
+    .ovm-stack__legend small { opacity: .8; margin-left: 4px; }
+
+    /* ═══════════ 算子页签（规则 11）═══════════ */
+    .ops-scroll { flex: 1; overflow-y: auto; padding: 16px 20px 24px; }
+    .ops-scope-tabs { display: inline-flex; gap: 4px; margin-left: 12px; }
+    .ops-scope-tabs button {
+      height: 26px; padding: 0 10px; border: 0; border-radius: var(--input-radius);
+      font-size: 11.5px; font-family: var(--font-sans); font-weight: 500; cursor: pointer;
+      color: var(--fg-secondary); background: var(--surface-3);
+    }
+    .ops-scope-tabs button.is-selected { color: var(--fg); background: var(--surface-4, var(--surface-3)); box-shadow: inset 0 0 0 1px var(--border-subtle); }
+    .ops-hint { margin-left: 10px; font-size: 11px; font-weight: 400; color: var(--fg-muted); }
+    .ops-filter {
+      margin-left: auto; height: 30px; width: 240px; padding: 0 10px;
+      font-size: 12px; font-family: var(--font-sans); color: var(--fg);
+      background: var(--input-bg); border: 1px solid var(--input-border); border-radius: var(--input-radius);
+    }
+    .ops-filter:focus-visible { outline: 0; box-shadow: 0 0 0 2px var(--focus-ring); }
+
+    /* 分类汇总：一行一类，条形宽度按占比，直接看出算力花在哪一类核上 */
+    .ops-cat { display: flex; flex-direction: column; gap: 8px; }
+    .ops-cat__row { display: grid; grid-template-columns: 132px 1fr 78px 62px 76px; align-items: center; gap: 12px; }
+    .ops-cat__name { font-size: 12px; font-weight: 600; color: var(--fg); font-family: var(--font-sans); }
+    .ops-cat__bar { height: 10px; border-radius: var(--radius-pill); background: var(--surface-3); overflow: hidden; }
+    .ops-cat__fill { display: block; height: 100%; border-radius: inherit; }
+    .ops-cat__num { font-size: 12px; font-family: var(--font-mono); color: var(--fg); text-align: right; }
+    .ops-cat__sub { font-size: 11px; font-family: var(--font-mono); color: var(--fg-muted); text-align: right; }
+
+    /* Top-N 表：横向可滚，页面本身不横向滚 */
+    .ops-table-wrap { overflow-x: auto; border-radius: var(--radius-lg); background: var(--surface-2, var(--bg-elevated)); }
+    .ops-table { width: 100%; border-collapse: collapse; font-family: var(--font-sans); font-size: 12px; }
+    .ops-table th, .ops-table td { padding: 8px 10px; text-align: left; white-space: nowrap; }
+    .ops-table thead th {
+      position: sticky; top: 0; z-index: 1;
+      font-size: 11px; font-weight: 600; color: var(--fg-muted);
+      background: var(--surface-3); cursor: pointer; user-select: none;
+    }
+    .ops-table thead th.is-static { cursor: default; }
+    .ops-table thead th.is-sorted { color: var(--fg); }
+    .ops-table thead th .ops-caret { margin-left: 3px; opacity: .7; }
+    .ops-table tbody tr { border-top: 1px solid var(--border-subtle); }
+    .ops-table tbody tr:hover { background: var(--state-hover); }
+    .ops-table td.num { text-align: right; font-family: var(--font-mono); }
+    .ops-table td.name { font-weight: 600; color: var(--fg); }
+    .ops-table td.dim { color: var(--fg-muted); }
+    .ops-state-dyn { color: var(--warning); font-weight: 600; }
+    .ops-diag {
+      display: inline-flex; align-items: center; gap: 4px; padding: 1px 7px;
+      border: 0; border-radius: var(--radius-pill); cursor: pointer;
+      font-size: 10.5px; font-weight: 600; font-family: var(--font-sans);
+    }
+    .ops-foot { margin-top: 10px; font-size: 11px; line-height: 1.6; color: var(--fg-muted); }
+    .ops-foot b { color: var(--fg-secondary); }
+    /* 问题详情 → 算子表的反向入口 */
+    .id-ops-link {
+      margin-top: 10px; height: 28px; padding: 0 11px;
+      display: inline-flex; align-items: center; gap: 5px; cursor: pointer;
+      font-size: 11.5px; font-family: var(--font-sans); font-weight: 500;
+      color: var(--fg-secondary); background: var(--surface-3);
+      border: 0; border-radius: var(--input-radius);
+    }
+    .id-ops-link:hover { color: var(--fg); background: var(--surface-4, var(--surface-3)); }
+
     .metric-edit-btn {
       margin-left: auto; height: 32px;
       font-size: 12px; font-family: var(--font-sans); font-weight: 500;
@@ -2201,6 +2309,7 @@
             <div class="pto-ide-frame__tabstrip v2-center-tabstrip" data-ide-slot="preview-tabs">
               <div class="tab-control v2-center-tabs" role="tablist" aria-label="分析结果视图">
                 <button class="tab-control-item v2-center-tab tab is-selected active" type="button" role="tab" aria-selected="true" data-tab="overview">性能总览</button>
+                <button class="tab-control-item v2-center-tab tab" type="button" role="tab" aria-selected="false" id="opsTabBtn" data-tab="ops" disabled data-disabled-tip="落盘报告中暂无算子统计表">算子</button>
                 <button class="tab-control-item v2-center-tab tab" type="button" role="tab" aria-selected="false" data-tab="taskinfo">任务信息</button>
                 <button class="tab-control-item v2-center-tab tab" type="button" role="tab" aria-selected="false" data-tab="code">代码</button>
                 <button class="tab-control-item v2-center-tab tab" type="button" role="tab" aria-selected="false" data-tab="report">报告原文</button>
@@ -2241,11 +2350,37 @@
                    data-dir 越界方向(high=越高越好/low=越低越好)、data-warn 警告阈值。
                    无数据时保留 .ovm-na 占位，由 app.js renderMetricBoard(r) 按 r.metrics 填充。 -->
               <section class="ov3-section ov3-section-metrics">
-                <h2 class="ov3-section-title">指标看板
-                  <button class="metric-edit-btn" id="metricEditBtn" type="button" title="编辑看板显示的指标与顺序"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg><span>编辑</span></button>
+                <h2 class="ov3-section-title">指标看板</h2>
+
+                <!-- ── 结果层：端到端绝对量（规则 9.1）。回答"这次跑多久、多快"，
+                     由 app.js renderResultBoard(r) 按 r.results 填充；报告未提供该表时整块隐藏。
+                     下方紧跟"可信层"口径条：CV / 有效 step / warmup / 采集档位，
+                     它决定上面这些数字（以及下面所有比率）能不能信，故贴着结果卡片作脚注。 -->
+                <div class="ovm-zone" id="metricResultZone" hidden>
+                  <div class="ov3-metrics-board ovm-result-board" id="metricResultBoard"></div>
+                  <div class="ovm-trust" id="metricTrustBar"></div>
+                </div>
+
+                <!-- ── 构成层：step 时间去向（规则 9.2），闭合到单步耗时的堆叠条。
+                     色板与 Timeline 页签泳道图例同源（计算绿 / 通信蓝 / 空闲灰），跨页签语义一致。 -->
+                <div class="ovm-zone" id="metricBreakdownZone" hidden>
+                  <div class="ovm-zone-head"><span class="ovm-zone-title">step 时间构成</span><span class="ovm-zone-note" id="metricBreakdownNote"></span></div>
+                  <div class="ovm-stack" id="metricBreakdown"></div>
+                </div>
+
+                <!-- ── 结构层：比率类诊断指标。「编辑」只作用于本区，故按钮挂在本区标题行上。 -->
+                <div class="ovm-struct-head">
+                  <span class="ovm-zone-title">结构指标</span>
+                  <button class="metric-edit-btn" id="metricEditBtn" type="button" title="编辑结构指标区显示的指标与顺序"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg><span>编辑</span></button>
                   <div class="metric-editor" id="metricEditor"></div>
-                </h2>
+                </div>
                 <div class="ov3-metrics-board" id="metricBoard">
+
+                  <div class="ovm-card ovm-na" data-metric="rank_spread" data-unit="%" data-dir="low" data-warn="5">
+                    <div class="ovm-head"><span class="ovm-name">Rank 间 step 离散度</span><button class="ovm-info" type="button" aria-label="查看 Rank 间 step 离散度说明" data-tip="(最慢 rank − 最快 rank) ÷ 中位数。集合通信是同步点，慢卡会把所有卡拖到同一时长，所以要先看离散度定位是否存在离群 rank；> 5% 通常意味着存在慢卡或负载不均。状态行给出报告判定的慢卡，判定缺失时回退为「最晚进入通信」的 rank。">?</button></div>
+                    <div class="ovm-body"><span class="ovm-value">—</span><span class="ovm-unit">%</span></div>
+                    <div class="ovm-status">暂无数据</div>
+                  </div>
 
                   <div class="ovm-card ovm-na" data-metric="critical_path_ratio" data-unit="%" data-dir="high" data-warn="80">
                     <div class="ovm-head"><span class="ovm-name">关键路径占比</span><button class="ovm-info" type="button" aria-label="查看关键路径占比说明" data-tip="关键路径（最长链路）÷ step 总耗时。< 80% 说明存在可被掩盖的空泡，应优先做重叠/下发优化，而非压单算子。">?</button></div>
@@ -2350,6 +2485,30 @@
                 </div>
               </section>
 
+            </div>
+          </div>
+
+          <!-- 算子（规则 11）：报告自带的证据表。第 3 章问题详情里写"算子视图 — 载入
+               kernel_details.csv 按 Duration 倒序"，就是把读者支使到外部工具去看证据；
+               这一页让读者在同一个页面里把结论验一遍，并与"关键问题"双向跳转。 -->
+          <div class="tab-pane" id="tab-ops">
+            <div class="ops-scroll ov3-scroll">
+              <section class="ov3-section">
+                <h2 class="ov3-section-title">分类汇总
+                  <div class="ops-scope-tabs" id="opsScopeTabs" role="tablist" aria-label="分类口径"></div>
+                </h2>
+                <div class="ops-cat" id="opsCatBoard"></div>
+              </section>
+              <section class="ov3-section">
+                <h2 class="ov3-section-title">算子 Top-N
+                  <span class="ops-hint" id="opsCoverage"></span>
+                  <input class="ops-filter" id="opsFilter" type="search" placeholder="过滤算子 / Type / Core Type" aria-label="过滤算子">
+                </h2>
+                <div class="ops-table-wrap">
+                  <table class="ops-table"><thead id="opsThead"></thead><tbody id="opsTbody"></tbody></table>
+                </div>
+                <div class="ops-foot">按<b>总耗时</b>降序（不是单次耗时）——单次 20 ms 但只调 64 次的算子，未必比单次 874 us 调 2816 次的更值得先看。点击表头可换排序列；「诊断」列有徽标的行已在「关键问题」中定位，点击可跳转。</div>
+              </section>
             </div>
           </div>
 
@@ -3718,35 +3877,33 @@
 
       function cardName(el) {
         var card = el.closest('.ovm-card');
-        return card ? card.querySelector('.ovm-name').textContent : '';
+        var nameEl = card ? card.querySelector('.ovm-name') : null;
+        return nameEl ? nameEl.textContent : '';
       }
 
-      // ? 图标：完整名称 + 说明文字
-      document.querySelectorAll('.ovm-info').forEach(function (icon) {
-        icon.addEventListener('mouseenter', function () {
-          showTip(cardName(icon), icon.dataset.tip || '', icon, icon.dataset.hasDetail);
-        });
-        icon.addEventListener('mouseleave', hideTip);
-      });
+      // 三类悬浮提示统一走事件委托：结果层卡片由 app.js renderResultBoard() 动态生成，
+      // 逐元素 addEventListener 只能绑到加载时已存在的静态卡片上，动态卡片会没有提示。
+      // mouseenter 不冒泡，故用 mouseover / mouseout。
+      document.addEventListener('mouseover', function (e) {
+        var icon = e.target.closest && e.target.closest('.ovm-info');
+        if (icon) { showTip(cardName(icon), icon.dataset.tip || '', icon, icon.dataset.hasDetail); return; }
 
-      // 状态行截断：悬浮显示全文
-      document.querySelectorAll('.ovm-status').forEach(function (st) {
-        st.addEventListener('mouseenter', function () {
-          if (st.scrollWidth <= st.clientWidth) return;
-          showTip(cardName(st), st.textContent, st);
-        });
-        st.addEventListener('mouseleave', hideTip);
-      });
+        var st = e.target.closest && e.target.closest('.ovm-status');
+        if (st) {                                    // 状态行截断时才提示全文
+          if (st.scrollWidth > st.clientWidth) showTip(cardName(st), st.textContent, st);
+          return;
+        }
 
-      // 指标名截断：悬浮显示全名 + 说明
-      document.querySelectorAll('.ovm-name').forEach(function (nm) {
-        nm.addEventListener('mouseenter', function () {
+        var nm = e.target.closest && e.target.closest('.ovm-name');
+        if (nm) {                                    // 指标名截断时提示全名 + 说明
           if (nm.scrollWidth <= nm.clientWidth) return;
           var card = nm.closest('.ovm-card');
           var infoEl = card ? card.querySelector('.ovm-info') : null;
           showTip(nm.textContent, infoEl ? infoEl.dataset.tip || '' : '', nm);
-        });
-        nm.addEventListener('mouseleave', hideTip);
+        }
+      });
+      document.addEventListener('mouseout', function (e) {
+        if (e.target.closest && e.target.closest('.ovm-info, .ovm-status, .ovm-name')) hideTip();
       });
     }());
 

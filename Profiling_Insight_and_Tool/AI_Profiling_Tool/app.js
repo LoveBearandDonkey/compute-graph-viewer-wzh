@@ -1146,6 +1146,67 @@ torch_npu.npu.config.allow_internal_format = False
       alloc_api_ratio:{ value: 7.4, status: 'bad', note: '890 ms / step，正常应 < 2%' },
       frag_ratio:     { value: 83, status: 'bad', note: '1.8 GB 空闲中最大连续块仅 0.3 GB' },
     },
+    /* ── UI 测试用构造数据（规则 9/10/11 四张契约表）──
+       本记录是专供 UI 验证的样例，以下四块为构造值，非实测；数字沿用本报告已有口径以保持自洽：
+       单步 16.20 s、op_utilization 58%、pp_bubble 26.3%（= 4.26 s）、overlap=0（通信全暴露）、
+       stage3 计算 12.70 s vs 其余 8.29 s、EP all-to-all ~1.32 s/step、吞吐 3200 tokens/s。
+       其余报告的这四个字段为 undefined，对应看板分区会整块隐藏。 */
+    results: {
+      step_time_median: { value: 16200, raw: '16.20 s', note: '稳定区间 step 12002–12009' },
+      step_time_p90:    { value: 16440, raw: '16.44 s', note: '长尾来自 ckpt 保存 step' },
+      throughput:       { value: 3200, unit: 'tokens/s', raw: '3200 tokens/s', note: 'step 10000 前稳定值' },
+      e2e_duration:     { value: 129600, raw: '129.6 s', note: 'active 采集窗口 8 step' },
+      active_steps:     { value: 8, raw: '8', note: '' },
+      warmup_steps:     { value: 2, raw: '2', note: '已从统计中剔除' },
+      profiling_level:  { raw: 'level1 / with_stack=False', note: '采集扰动实测 <2%' },
+    },
+    // 四项之和 = 16200 ms，与 step_time_median 闭合
+    breakdown: {
+      items: [
+        { key: 'compute',      label: '计算',         ms: 9396, pct: 58.0 },
+        { key: 'comm_exposed', label: '通信(未掩盖)', ms: 2050, pct: 12.7 },
+        { key: 'bubble',       label: '调度空泡',     ms: 4260, pct: 26.3 },
+        { key: 'host_launch',  label: 'Host 下发',    ms: 494,  pct: 3.0 },
+      ],
+      totalMs: 16200,
+    },
+    /* 32 卡按规则 10 只列代表行（stage0–3 各取首尾）。这份数据正好演示本页最容易被误读的一点：
+       各 rank 的 step 耗时几乎相同（极差 0.12%），只看 step 时长永远找不出问题卡；
+       真正的信号在「计算 / 通信等待」的拆分和「首次通信进入」时刻上——
+       stage3 在 12.7 s 才进通信，stage0–2 早在 8.3 s 就进了，之后空等 4.26 s。 */
+    rankStats: {
+      rows: [
+        { rank: 0,  stepMs: 16200, computeMs: 8290,  commExposedMs: 2050, commWaitMs: 4260, freeMs: 1600, commEntryMs: 8310,  verdict: null },
+        { rank: 7,  stepMs: 16190, computeMs: 8280,  commExposedMs: 2060, commWaitMs: 4270, freeMs: 1580, commEntryMs: 8300,  verdict: null },
+        { rank: 8,  stepMs: 16200, computeMs: 8300,  commExposedMs: 2040, commWaitMs: 4250, freeMs: 1610, commEntryMs: 8320,  verdict: null },
+        { rank: 16, stepMs: 16210, computeMs: 8310,  commExposedMs: 2050, commWaitMs: 4240, freeMs: 1610, commEntryMs: 8330,  verdict: null },
+        { rank: 24, stepMs: 16210, computeMs: 12700, commExposedMs: 2050, commWaitMs: 80,   freeMs: 1380, commEntryMs: 12720, verdict: 'slow' },
+        { rank: 31, stepMs: 16200, computeMs: 12680, commExposedMs: 2060, commWaitMs: 90,   freeMs: 1370, commEntryMs: 12700, verdict: 'slow' },
+      ],
+      median: 16200, max: 16210, min: 16190,
+      spreadPct: 0.1235, maxOverMedian: 1.0006,
+      slowRanks: [24, 31],
+    },
+    opStats: {
+      byCategory: [
+        { label: 'AI_CORE',         scope: 'core', count: 28640, totalMs: 7180, pct: 44.3, avgUs: 251 },
+        { label: 'HCCL',            scope: 'core', count: 1408,  totalMs: 2050, pct: 12.7, avgUs: 1456 },
+        { label: 'AI_VECTOR_CORE',  scope: 'core', count: 15320, totalMs: 2216, pct: 13.7, avgUs: 145 },
+        { label: 'AI_CPU',          scope: 'core', count: 264,   totalMs: 890,  pct: 5.5,  avgUs: 3371 },
+      ],
+      top: [
+        { name: 'MatMulV2_lm_head',        type: 'MatMul',       coreType: 'MIX_AIC', count: 64,   totalMs: 1280, pct: 7.9, avgUs: 20000, p90Us: 21400, shape: '4608,153600', opState: 'dynamic' },
+        { name: 'hcom_alltoall__moe_ep',   type: 'HcomAllToAll', coreType: 'HCCL',    count: 88,   totalMs: 1320, pct: 8.1, avgUs: 15000, p90Us: 18600, shape: '—',           opState: 'static' },
+        { name: 'MatMulV3_expert_ffn_up',  type: 'MatMul',       coreType: 'AI_CORE', count: 2816, totalMs: 2460, pct: 15.2, avgUs: 874,  p90Us: 1610,  shape: '4608,2048',   opState: 'dynamic' },
+        { name: 'MatMulV3_expert_ffn_down',type: 'MatMul',       coreType: 'AI_CORE', count: 2816, totalMs: 2180, pct: 13.5, avgUs: 774,  p90Us: 1420,  shape: '2048,4608',   opState: 'dynamic' },
+        { name: 'FlashAttentionScore',     type: 'FlashAttn',    coreType: 'MIX_AIC', count: 176,  totalMs: 940,  pct: 5.8, avgUs: 5341,  p90Us: 5980,  shape: '4608,64,4',   opState: 'static' },
+        { name: 'IndexPut',                type: 'IndexPut',     coreType: 'AI_CPU',  count: 264,  totalMs: 890,  pct: 5.5, avgUs: 3371,  p90Us: 4120,  shape: '—',           opState: 'static' },
+        { name: 'hcom_allReduce__dp_grad', type: 'HcomAllReduce',coreType: 'HCCL',    count: 44,   totalMs: 620,  pct: 3.8, avgUs: 14090, p90Us: 16200, shape: '—',           opState: 'static' },
+        { name: 'RmsNormGrad',             type: 'RmsNorm',      coreType: 'AI_CORE', count: 3872, totalMs: 580,  pct: 3.6, avgUs: 150,   p90Us: 214,   shape: '4608',        opState: 'static' },
+        { name: 'MoeGatingTopKSoftmax',    type: 'MoeGating',    coreType: 'AI_CORE', count: 176,  totalMs: 410,  pct: 2.5, avgUs: 2330,  p90Us: 3180,  shape: '4608,64',     opState: 'dynamic' },
+        { name: 'ApplyAdamWV2',            type: 'Optimizer',    coreType: 'AI_CORE', count: 1936, totalMs: 386,  pct: 2.4, avgUs: 199,   p90Us: 245,   shape: '—',           opState: 'static' },
+      ],
+    },
     actions: [
       { id: 1, priority: 'P0', problem: 'PP 末级（stage3, rank24–31）计算过载，制造 ~26% 单步 bubble', benefit: '-20~25% 单步耗时（~3.2–4.1 s）', benefitNum: 22, difficulty: '中', location: '训练启动并行切分配置（Megatron/MindSpeed PP 层切分参数 --decoder-last-pipeline-num-layers）— 把末级 transformer 层数调少以抵消 lm_head+loss+深层 MoE 的额外开销', visualization: '算子视图 + Timeline 视图（系统调优）' },
       { id: 2, priority: 'P0', problem: 'EP all-to-all 通信入关键路径且零重叠，44 层 MoE 累计 ~1.32 s/step', benefit: '-6~8% 单步耗时（~1.0–1.3 s）', benefitNum: 7, difficulty: '中', location: 'MindSpeed/Megatron MoE 层前向/反向调度逻辑 — 开启 EP communication overlap，dispatch 发起后立即执行本地 expert FFN', visualization: 'Timeline 视图（系统调优）' },
@@ -1735,10 +1796,429 @@ function setMetricCardProgress(card, value) {
   meter.querySelector('.ovm-meter-fill').style.width = `${pct}%`;
 }
 
+// ============================================================
+// 算子页签（规则 11）：分类汇总 + Top-N，与「关键问题」双向联动
+// ============================================================
+// 差异化不在"有一张算子表"——MindStudio 也有；而在于这张表里哪几行已经被诊断成问题。
+// 所以 Top-N 每行都去匹配行动清单，命中的打徽标、可点击跳转；问题详情侧也给反向入口。
+const opsState = { scope: 'core', sortKey: 'totalMs', sortDir: 'desc', filter: '' };
+const OPS_PRIO_RANK = { P0: 0, P1: 1, P2: 2 };
+const OPS_PRIO_COLOR = { P0: '#FF4B7B', P1: '#FF8C42', P2: '#666666' };
+
+// 匹配前把两侧归一：小写 + 去掉非字母数字。这样报告里写的 "all-to-all" 能对上算子名里的
+// "alltoall"，"MatMulV3" 能对上 "matmulv3"。中文字符一并去掉，只作为分隔存在。
+function opsNorm(text) {
+  return String(text || '').toLowerCase().replace(/[^a-z0-9]+/g, '');
+}
+
+// 算子 → 行动清单条目，**两级匹配**：
+//   tier1（具体）= 全名 / 首段 / 去掉首段的剩余 / 长度 ≥5 的中间段，如 MatMulV2_lm_head → lm_head
+//   tier2（泛化）= Type，如 MatMul —— 一个 Type 往往横跨多条问题，只在 tier1 全落空时兜底
+// 不分级的话 "MatMul" 会把 lm_head 投影错配到 MoE 路由问题上：两者都是 MatMul，
+// 但报告里点名 lm_head 的是另一条 P0。命中多条时取优先级最高的。
+// 可靠性最终由规则 11 约束 4 保证（第 3 章点名的算子必须能在表中找到同名行）。
+function opsCandidates(op) {
+  const parts = String(op.name || '').split(/[_.]+/).filter(Boolean);
+  const tier1 = [op.name, parts[0], parts.slice(1).join('_')]
+    .concat(parts.filter((p) => p.length >= 5));
+  return {
+    tier1: [...new Set(tier1)].filter((c) => c && c.length >= 5).map(opsNorm).filter(Boolean),
+    tier2: [op.type].filter((c) => c && c.length >= 4).map(opsNorm).filter(Boolean),
+  };
+}
+
+function opIssueMatch(op, r) {
+  if (!r || !r.actions || !r.actions.length) return null;
+  const { tier1, tier2 } = opsCandidates(op);
+  if (!tier1.length && !tier2.length) return null;
+  const pick = (cands) => {
+    if (!cands.length) return null;
+    let best = null;
+    for (const a of r.actions) {
+      const issue = (r.issues || []).find((i) => +String(i.id).split('.')[1] === a.id);
+      const text = opsNorm([a.problem, a.location, issue && issue.title, issue && issue.evidence, issue && issue.impact]
+        .filter(Boolean).join(' '));
+      if (!cands.some((c) => text.includes(c))) continue;
+      if (!best || (OPS_PRIO_RANK[a.priority] ?? 9) < (OPS_PRIO_RANK[best.priority] ?? 9)) best = a;
+    }
+    return best;
+  };
+  return pick(tier1) || pick(tier2);
+}
+
+// 反向：某个行动项涉及哪些算子（供问题详情的「在算子表中查看」入口）
+function issueOpMatches(a, r) {
+  if (!r || !r.opStats || !r.opStats.top) return [];
+  return r.opStats.top.filter((op) => {
+    const m = opIssueMatch(op, r);
+    return m && m.id === a.id;
+  });
+}
+
+const OPS_COLUMNS = [
+  { key: 'idx', label: '#', cls: 'num dim', sortable: false },
+  { key: 'name', label: '算子', cls: 'name', sortable: false },
+  { key: 'type', label: 'Type', cls: 'dim', sortable: false },
+  { key: 'coreType', label: 'Core Type', cls: 'dim', sortable: false },
+  { key: 'count', label: '次数', cls: 'num', sortable: true },
+  { key: 'totalMs', label: '总耗时', cls: 'num', sortable: true },
+  { key: 'pct', label: '占比', cls: 'num', sortable: true },
+  { key: 'avgUs', label: '单次均值', cls: 'num', sortable: true },
+  { key: 'p90Us', label: 'P90', cls: 'num', sortable: true },
+  { key: 'shape', label: 'Input Shape', cls: 'dim', sortable: false },
+  { key: 'opState', label: 'OP State', cls: 'dim', sortable: false },
+  { key: 'diag', label: '诊断', cls: '', sortable: false },
+];
+
+function fmtUs(us) {
+  if (us == null || !isFinite(us)) return '—';
+  if (us >= 1000) { const d = fmtDuration(us / 1000); return `${d.value} ${d.unit}`; }
+  return `${us.toFixed(0)} us`;
+}
+function fmtMsCell(ms) {
+  const d = fmtDuration(ms);
+  return d ? `${d.value} ${d.unit}` : '—';
+}
+
+function renderOpsTab(r) {
+  const btn = document.getElementById('opsTabBtn');
+  const catBoard = document.getElementById('opsCatBoard');
+  const thead = document.getElementById('opsThead');
+  const tbody = document.getElementById('opsTbody');
+  if (!catBoard || !thead || !tbody) return;
+  const os = r && r.opStats;
+
+  // 报告未按规则 11 出表 → 页签禁用（与「计算图」页签同一处理），避免点进去看空壳
+  if (btn) {
+    const has = !!(os && (os.byCategory.length || os.top.length));
+    btn.disabled = !has;
+    if (!has && btn.classList.contains('active')) document.querySelector('.tab[data-tab="overview"]')?.click();
+  }
+  if (!os) { catBoard.innerHTML = ''; thead.innerHTML = ''; tbody.innerHTML = ''; return; }
+
+  // ── 分类汇总：口径页签（core / phase），只在报告确实给了两种口径时才出现 ──
+  const scopes = [...new Set(os.byCategory.map((c) => c.scope))];
+  const scopeTabs = document.getElementById('opsScopeTabs');
+  if (scopeTabs) {
+    if (scopes.length <= 1) { scopeTabs.innerHTML = ''; opsState.scope = scopes[0] || 'core'; }
+    else {
+      scopeTabs.innerHTML = scopes.map((s) => {
+        const label = s === 'phase' ? '按阶段' : '按核类型';
+        return `<button type="button" role="tab" data-ops-scope="${s}" class="${opsState.scope === s ? 'is-selected' : ''}" aria-selected="${opsState.scope === s}">${label}</button>`;
+      }).join('');
+    }
+  }
+  const cats = os.byCategory.filter((c) => c.scope === opsState.scope);
+  const catMax = Math.max(1, ...cats.map((c) => c.totalMs || 0));
+  catBoard.innerHTML = cats.map((c) => {
+    const w = ((c.totalMs || 0) / catMax) * 100;
+    return `
+      <div class="ops-cat__row">
+        <span class="ops-cat__name">${escapeHtml(c.label)}</span>
+        <span class="ops-cat__bar"><span class="ops-cat__fill" style="width:${w.toFixed(1)}%;background:${opsCatColor(c.label)}"></span></span>
+        <span class="ops-cat__num">${fmtMsCell(c.totalMs)}</span>
+        <span class="ops-cat__num">${c.pct != null ? c.pct.toFixed(1) + '%' : '—'}</span>
+        <span class="ops-cat__sub">${c.count != null ? '×' + c.count : ''} · ${fmtUs(c.avgUs)}</span>
+      </div>`;
+  }).join('') || '<div class="ops-hint">报告未提供分类汇总表</div>';
+
+  // ── Top-N 表 ──
+  thead.innerHTML = '<tr>' + OPS_COLUMNS.map((col) => {
+    const sorted = opsState.sortKey === col.key;
+    const caret = sorted ? `<span class="ops-caret">${opsState.sortDir === 'desc' ? '▾' : '▴'}</span>` : '';
+    return `<th class="${col.sortable ? '' : 'is-static'}${sorted ? ' is-sorted' : ''}"${col.sortable ? ` data-ops-sort="${col.key}"` : ''}>${escapeHtml(col.label)}${caret}</th>`;
+  }).join('') + '</tr>';
+
+  const q = opsState.filter.trim().toLowerCase();
+  let rows = os.top.slice();
+  if (q) rows = rows.filter((op) => `${op.name} ${op.type} ${op.coreType}`.toLowerCase().includes(q));
+  const dir = opsState.sortDir === 'desc' ? -1 : 1;
+  rows.sort((a, b) => {
+    const av = a[opsState.sortKey], bv = b[opsState.sortKey];
+    if (av == null && bv == null) return 0;
+    if (av == null) return 1;                 // 缺数据一律沉底，不参与排序方向
+    if (bv == null) return -1;
+    return (av - bv) * dir;
+  });
+
+  tbody.innerHTML = rows.map((op, i) => {
+    const act = opIssueMatch(op, r);
+    const diag = act
+      ? `<button type="button" class="ops-diag" data-ops-action="${act.id}" style="background:${OPS_PRIO_COLOR[act.priority]}22;color:${OPS_PRIO_COLOR[act.priority]}" title="${escapeHtml(act.problem)}">${act.priority} · 已诊断</button>`
+      : '<span class="dim">—</span>';
+    const dyn = /dynamic/i.test(op.opState || '');
+    return `<tr>
+      <td class="num dim">${i + 1}</td>
+      <td class="name">${escapeHtml(op.name)}</td>
+      <td class="dim">${escapeHtml(op.type || '—')}</td>
+      <td class="dim">${escapeHtml(op.coreType || '—')}</td>
+      <td class="num">${op.count != null ? op.count : '—'}</td>
+      <td class="num">${fmtMsCell(op.totalMs)}</td>
+      <td class="num">${op.pct != null ? op.pct.toFixed(1) + '%' : '—'}</td>
+      <td class="num">${fmtUs(op.avgUs)}</td>
+      <td class="num">${fmtUs(op.p90Us)}</td>
+      <td class="dim">${escapeHtml(op.shape || '—')}</td>
+      <td class="dim${dyn ? ' ops-state-dyn' : ''}">${escapeHtml(op.opState || '—')}</td>
+      <td>${diag}</td>
+    </tr>`;
+  }).join('') || `<tr><td colspan="${OPS_COLUMNS.length}" class="dim" style="padding:20px;text-align:center">无匹配算子</td></tr>`;
+
+  const cov = document.getElementById('opsCoverage');
+  if (cov) {
+    const sum = os.top.reduce((s, op) => s + (op.pct || 0), 0);
+    cov.textContent = `共 ${os.top.length} 条，累计占 device 总耗时 ${sum.toFixed(1)}%`;
+  }
+}
+
+// 分类条颜色：与总览构成条 / Timeline 图例同源，同一语义跨页签保持一致
+function opsCatColor(label) {
+  const l = String(label).toUpperCase();
+  if (l.includes('HCCL') || l.includes('COMM')) return BREAKDOWN_COLOR.comm_exposed;
+  if (l.includes('CPU')) return BREAKDOWN_COLOR.host_launch;
+  if (l.includes('VECTOR')) return '#5aa86f';
+  if (l.includes('FREE') || l.includes('空')) return BREAKDOWN_COLOR.bubble;
+  return BREAKDOWN_COLOR.compute;
+}
+
+// 算子页签的交互一次性委托（排序 / 口径 / 过滤 / 诊断跳转），幂等
+function bindOpsTab() {
+  if (bindOpsTab._bound) return;
+  bindOpsTab._bound = true;
+  document.addEventListener('click', (e) => {
+    const sortTh = e.target.closest && e.target.closest('[data-ops-sort]');
+    if (sortTh) {
+      const key = sortTh.dataset.opsSort;
+      if (opsState.sortKey === key) opsState.sortDir = opsState.sortDir === 'desc' ? 'asc' : 'desc';
+      else { opsState.sortKey = key; opsState.sortDir = 'desc'; }
+      renderOpsTab(currentReport);
+      return;
+    }
+    const scopeBtn = e.target.closest && e.target.closest('[data-ops-scope]');
+    if (scopeBtn) { opsState.scope = scopeBtn.dataset.opsScope; renderOpsTab(currentReport); return; }
+
+    // 诊断徽标 → 回总览并选中对应问题（算子表 → 关键问题）
+    const diagBtn = e.target.closest && e.target.closest('[data-ops-action]');
+    if (diagBtn) {
+      const aid = +diagBtn.dataset.opsAction;
+      document.querySelector('.tab[data-tab="overview"]')?.click();
+      const card = document.querySelector(`.ic-card[data-id="${aid}"]`);
+      if (card) { window.selectIssueCard(card); card.scrollIntoView({ behavior: 'smooth', block: 'nearest' }); }
+      return;
+    }
+
+    // 问题详情 →「在算子表中查看」（关键问题 → 算子表，按算子名过滤）
+    const opsLink = e.target.closest && e.target.closest('[data-ops-filter]');
+    if (opsLink) {
+      opsState.filter = opsLink.dataset.opsFilter;
+      opsState.sortKey = 'totalMs'; opsState.sortDir = 'desc';
+      const btn = document.getElementById('opsTabBtn');
+      if (btn && !btn.disabled) btn.click();
+      const input = document.getElementById('opsFilter');
+      if (input) input.value = opsState.filter;
+      renderOpsTab(currentReport);
+    }
+  });
+  const input = document.getElementById('opsFilter');
+  if (input) input.addEventListener('input', () => { opsState.filter = input.value; renderOpsTab(currentReport); });
+}
+
+// ============================================================
+// 指标看板 · 结果层（规则 9.1）
+// ============================================================
+// 绝对量，回答"这次跑多久、多快"。不做阈值着色——810 ms 是快是慢取决于模型和集群规模，
+// 没有普适健康区间，硬套阈值只会误导；判断留给下面的结构层比率和跨任务对比。
+function escapeHtml(value) {
+  return String(value == null ? '' : value).replace(/[&<>"']/g, (ch) => ({
+    '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;',
+  }[ch]));
+}
+
+const RESULT_CARDS = [
+  { key: 'step_time_median', name: '单步耗时(中位)', kind: 'dur', tip: '剔除 warmup 后稳定区间的 step 耗时中位数。训练本身抖动 3~5%，故用中位数而非均值，也不用单个 step。' },
+  { key: 'step_time_p90', name: '单步耗时(P90)', kind: 'dur', tip: '90 分位 step 耗时。与中位数拉开较大差距时说明存在长尾慢 step（常见于 dataloader、ckpt 保存、通信重传）。' },
+  { key: 'throughput', name: '吞吐', kind: 'raw', tip: '端到端吞吐，单位随任务类型而定（tokens/s、samples/s、it/s）。跨任务对比时这是最直接的收益口径。' },
+  { key: 'e2e_duration', name: '端到端时长', kind: 'dur', tip: 'active 采集窗口的墙钟时长。与「有效 step 数 × 单步耗时」差距过大时，说明采集窗口里混入了非稳态阶段。' },
+];
+
+// 时长格式化：内部一律 ms，展示时按量级切到 s
+function fmtDuration(ms) {
+  if (ms == null || !isFinite(ms)) return null;
+  if (Math.abs(ms) >= 1000) return { value: (ms / 1000).toFixed(2), unit: 's' };
+  if (Math.abs(ms) >= 10) return { value: ms.toFixed(0), unit: 'ms' };
+  return { value: ms.toFixed(2), unit: 'ms' };
+}
+
+function renderResultBoard(r) {
+  const zone = document.getElementById('metricResultZone');
+  const board = document.getElementById('metricResultBoard');
+  if (!zone || !board) return;
+  const results = (r && r.results) || null;
+  // 报告未按规则 9.1 提供结果指标表 → 整块隐藏，而不是摆一排"暂无数据"占位
+  if (!results || !Object.keys(results).length) { zone.hidden = true; board.innerHTML = ''; return; }
+  zone.hidden = false;
+  board.innerHTML = RESULT_CARDS.map((def) => {
+    const m = results[def.key];
+    if (!m) return '';
+    let valText = '—', unitText = '';
+    if (def.kind === 'dur') {
+      const d = fmtDuration(m.value);
+      if (d) { valText = d.value; unitText = d.unit; }
+    } else if (m.value != null) {
+      valText = String(m.value);
+      unitText = m.unit || '';
+    } else {
+      valText = m.raw || '—';
+    }
+    return `
+      <div class="ovm-card ovm-result" data-metric="${def.key}">
+        <div class="ovm-head"><span class="ovm-name">${escapeHtml(def.name)}</span><button class="ovm-info" type="button" aria-label="查看${escapeHtml(def.name)}说明" data-tip="${escapeHtml(def.tip)}">?</button></div>
+        <div class="ovm-body"><span class="ovm-value">${escapeHtml(valText)}</span><span class="ovm-unit">${escapeHtml(unitText)}</span></div>
+        <div class="ovm-status">${escapeHtml(m.note || '')}</div>
+      </div>`;
+  }).join('');
+}
+
+// ============================================================
+// 指标看板 · 可信层（口径条）
+// ============================================================
+// step CV 决定上面绝对量和下面所有比率能不能信：CV 超阈值时，单点采样的比率全是噪声。
+// 所以它不与其他指标平级摆成一张卡，而是作为整块看板的口径脚注常驻。
+const STEP_CV_WARN = 10;
+
+function renderTrustBar(r) {
+  const bar = document.getElementById('metricTrustBar');
+  if (!bar) return;
+  const results = (r && r.results) || {};
+  // step_cv 与指标卡走同一展示口径：display 优先（部分报告 value 存的是小数、由 display 给百分比），
+  // 阈值判断也用展示值取数，避免卡片显示 0.02% 而口径条按 0.0002 去比阈值。
+  const cvM = r && r.metrics && r.metrics.step_cv;
+  let cvText = null, cvNum = null;
+  if (cvM && cvM.value != null && cvM.value !== '') {
+    cvText = cvM.display != null ? String(cvM.display) : `${cvM.value}%`;
+    const parsed = cellNum(cvText);
+    cvNum = parsed != null ? parsed : Number(cvM.value);
+  }
+  const parts = [];
+  const shaky = cvNum != null && isFinite(cvNum) && cvNum > STEP_CV_WARN;
+
+  if (cvText) {
+    parts.push(`step 抖动 CV <b>${escapeHtml(cvText)}</b>`);
+  }
+  if (results.active_steps) {
+    const warm = results.warmup_steps ? `，warmup ${results.warmup_steps.value} 已剔除` : '';
+    parts.push(`有效 step <b>${results.active_steps.value}</b>${warm}`);
+  } else if (results.warmup_steps) {
+    parts.push(`warmup step <b>${results.warmup_steps.value}</b>`);
+  }
+  if (results.profiling_level) {
+    parts.push(`采集档位 <b>${escapeHtml(results.profiling_level.raw)}</b>`);
+  }
+  if (!parts.length) { bar.innerHTML = ''; bar.hidden = true; return; }
+  bar.hidden = false;
+  bar.classList.toggle('is-shaky', shaky);
+  const warnText = shaky
+    ? `<span class="ovm-trust__warn">⚠ CV ${escapeHtml(cvText)} > ${STEP_CV_WARN}%，训练不稳定，以下比率类指标基于抖动区间，仅供参考</span>`
+    : '';
+  bar.innerHTML = parts.map((p) => `<span>${p}</span>`).join('') + warnText;
+}
+
+// ============================================================
+// 指标看板 · 构成层（规则 9.2）
+// ============================================================
+// 色板与 Timeline 页签泳道图例同源，同一语义在两个页签里不能是两种颜色。
+const BREAKDOWN_COLOR = {
+  compute: '#1a8f52',        // 计算 —— 同泳道图例「计算（内核 / 聚合）」
+  comm_exposed: '#2f6fce',   // 通信（未掩盖）—— 同「通信·传输」
+  bubble: '#566173',         // 调度空泡 —— 同「空闲」
+  host_launch: '#c15a1c',    // Host 下发 —— 同「通信（聚合）」暖色位
+  other: '#6b7280',
+};
+
+function renderBreakdown(r) {
+  const zone = document.getElementById('metricBreakdownZone');
+  const stack = document.getElementById('metricBreakdown');
+  const note = document.getElementById('metricBreakdownNote');
+  if (!zone || !stack) return;
+  const bd = r && r.breakdown;
+  if (!bd || !bd.items || !bd.items.length) { zone.hidden = true; stack.innerHTML = ''; return; }
+  zone.hidden = false;
+
+  const total = bd.totalMs || bd.items.reduce((sum, it) => sum + it.ms, 0);
+  stack.innerHTML =
+    '<div class="ovm-stack__bar">' +
+      bd.items.map((it) => {
+        const pct = it.pct != null ? it.pct : (total > 0 ? (it.ms / total) * 100 : 0);
+        const d = fmtDuration(it.ms);
+        return `<span class="ovm-stack__seg" style="width:${pct.toFixed(2)}%;background:${BREAKDOWN_COLOR[it.key] || BREAKDOWN_COLOR.other}" title="${escapeHtml(it.label)} ${d ? d.value + ' ' + d.unit : ''} · ${pct.toFixed(1)}%"></span>`;
+      }).join('') +
+    '</div>' +
+    '<div class="ovm-stack__legend">' +
+      bd.items.map((it) => {
+        const pct = it.pct != null ? it.pct : (total > 0 ? (it.ms / total) * 100 : 0);
+        const d = fmtDuration(it.ms);
+        return `<span><i style="background:${BREAKDOWN_COLOR[it.key] || BREAKDOWN_COLOR.other}"></i>${escapeHtml(it.label)} <b>${d ? d.value + ' ' + d.unit : '—'}</b><small>${pct.toFixed(1)}%</small></span>`;
+      }).join('') +
+    '</div>';
+
+  // 闭合校验（规则 9.2 硬性约束 1）：与单步耗时中位数偏差 > 2% 时点出来，
+  // 否则用户会把一条不闭合的堆叠条当成完整的时间去向读。
+  if (note) {
+    const stepMs = r.results && r.results.step_time_median ? r.results.step_time_median.value : null;
+    if (stepMs && total > 0) {
+      const devPct = Math.abs(total - stepMs) / stepMs * 100;
+      if (devPct > 2) {
+        note.textContent = `合计 ${fmtDuration(total).value} ${fmtDuration(total).unit}，与单步耗时偏差 ${devPct.toFixed(1)}%，未闭合`;
+        note.classList.add('is-warn');
+      } else {
+        note.textContent = `合计 ${fmtDuration(total).value} ${fmtDuration(total).unit}，与单步耗时一致`;
+        note.classList.remove('is-warn');
+      }
+    } else {
+      note.textContent = '';
+      note.classList.remove('is-warn');
+    }
+  }
+}
+
+// ============================================================
+// 指标看板 · 结构层阈值（按任务类型取，不再全局硬编码）
+// ============================================================
+// 同一个「算子利用率 60%」阈值，训练场景合理，推理和 RL rollout 场景就会天天误报——
+// 推理本来就有大量 host 下发与小 batch 空隙，RL rollout 更是 host 串行主导。
+// 只覆写有明确依据的项，其余仍回落到卡片 data-warn。
+const METRIC_WARN_BY_TASK = {
+  '推理诊断': { op_utilization: 40, host_launch_gap_ratio: 10, critical_path_ratio: 65 },
+  'RL 训练': { op_utilization: 30, host_launch_gap_ratio: 20, critical_path_ratio: 55 },
+  '算子调优': { host_launch_gap_ratio: 15 },
+};
+function metricWarnFor(taskType, key, fallback) {
+  const over = METRIC_WARN_BY_TASK[taskType];
+  const v = over && over[key];
+  return v != null ? String(v) : fallback;
+}
+
+// rankStats（规则 10）→ 结构层「Rank 间 step 离散度」卡片。
+// 把派生结果写回 metrics，让它与其他结构指标走同一套渲染与阈值逻辑。
+function injectRankMetric(r, metrics) {
+  const rs = r && r.rankStats;
+  if (!rs || rs.spreadPct == null) return metrics;
+  const slow = rs.slowRanks && rs.slowRanks.length
+    ? `最慢 Rank ${rs.slowRanks.join(' / ')}`
+    : '无离群 rank';
+  const src = rs.rows.some((row) => row.verdict === 'slow') ? '报告判定' : '按最晚进入通信推定';
+  const dur = (ms) => { const d = fmtDuration(ms); return d ? `${d.value} ${d.unit}` : '—'; };
+  return Object.assign({}, metrics, {
+    rank_spread: {
+      value: Math.round(rs.spreadPct * 10) / 10,
+      note: `${slow}（${src}）；中位 ${dur(rs.median)}，极值 ${dur(rs.min)}–${dur(rs.max)}`,
+    },
+  });
+}
+
 function renderMetricBoard(r) {
   const board = document.getElementById('metricBoard');
   if (!board) return;
-  const metrics = (r && r.metrics) || {};
+  const metrics = injectRankMetric(r, (r && r.metrics) || {});
   board.querySelectorAll('.ovm-card').forEach(card => {
     const key = card.dataset.metric;
     const valEl = card.querySelector('.ovm-value');
@@ -1774,7 +2254,7 @@ function renderMetricBoard(r) {
     valEl.textContent = (m.display != null) ? m.display : (isFinite(v) ? v : m.value);
 
     let status = m.status;                                // 显式状态优先
-    const warnAttr = card.dataset.warn;
+    const warnAttr = metricWarnFor(r && r.taskType, key, card.dataset.warn);
     if (!status && warnAttr != null && warnAttr !== '' && isFinite(v)) {
       const warn = Number(warnAttr);
       const breach = card.dataset.dir === 'high' ? v < warn : v > warn;
@@ -1802,8 +2282,14 @@ function renderMetricBoard(r) {
   initMetricEditor();   // 「编辑」控制面板（显示/隐藏 + 拖动排序），幂等
 }
 
-// ── 指标看板「编辑」控制面板：默认只显示 4 个指标，可勾选增减、拖动排序 ──
-const METRIC_BOARD_DEFAULT = ['critical_path_ratio', 'op_utilization', 'mfu', 'mem_util'];
+// ── 结构层「编辑」控制面板：默认显示下列指标，可勾选增减、拖动排序 ──
+// MFU 与显存利用率是结构层的必备项：前者是"算力用出来多少"的唯一口径，后者决定能不能
+// 加 batch / 关重计算，两者都是优化决策的直接输入，不能只藏在「编辑」里。
+// 它们的分母（芯片峰值算力 / HBM 容量）落盘数据里没有、要用户下拉选型号，
+// 这个不确定性由卡片自己的说明气泡承担，不作为把它们移出默认集的理由。
+const METRIC_BOARD_DEFAULT = [
+  'critical_path_ratio', 'op_utilization', 'overlap_ratio', 'rank_spread', 'mfu', 'mem_util',
+];
 
 function metricCardLabel(card) {
   return (card.querySelector('.ovm-name')?.textContent || card.dataset.metric || '').trim();
@@ -2050,8 +2536,17 @@ function renderOverview(r) {
     });
   }
 
-  // 指标看板（仪表盘与关键问题之间）；当前 r.metrics 未提供时各卡保持空占位
+  // 指标看板（仪表盘与关键问题之间），四段分区自上而下：
+  //   结果层（绝对量，规则 9.1）→ 可信层口径条 → 构成层堆叠条（规则 9.2）→ 结构层比率
+  // 结果层/构成层的数据源是报告契约里的可选表，报告没写就整块隐藏；结构层始终在位、缺数据留空占位。
+  renderResultBoard(r);
+  renderTrustBar(r);
+  renderBreakdown(r);
   renderMetricBoard(r);
+
+  // 算子页签（规则 11）；报告未出表时页签置灰
+  bindOpsTab();
+  renderOpsTab(r);
 
   // 子项雷达图（固定 5 维度，缺失记 N/A）
   const subWrap = $('subItemsChartWrap');
@@ -2754,6 +3249,17 @@ function evidenceTableHtml(text) {
   return `<table class="id-evidence-table"><thead><tr><th>来源</th><th>细节</th></tr></thead><tbody>${rows}</tbody></table>`;
 }
 
+// 问题详情 →「在算子表中查看」：把这条问题涉及的算子带过去并自动过滤。
+// 与算子表侧的「诊断」徽标构成闭环——结论 → 证据表 → 自己验一遍 → 回到结论。
+function issueOpsLinkHtml(r, a) {
+  const ops = issueOpMatches(a, r);
+  if (!ops.length) return '';
+  // 多个算子时用共同前缀做过滤词（如 MatMulV3_expert_ffn_up / _down → MatMulV3_expert）
+  const filter = ops.length === 1 ? ops[0].name : (ops[0].type || String(ops[0].name).split('_')[0]);
+  const total = ops.reduce((sum, op) => sum + (op.totalMs || 0), 0);
+  return `<button type="button" class="id-ops-link" data-ops-filter="${escapeHtml(filter)}">在算子表中查看 ${ops.length} 个相关算子 · 合计 ${fmtMsCell(total)}</button>`;
+}
+
 function renderIssueDetail(r, a) {
   const detailEl = $('issueDetail');
   if (!detailEl) return;
@@ -2787,6 +3293,7 @@ function renderIssueDetail(r, a) {
       <div>
         <div class="id-impact-label">影响</div>
         <div class="id-impact-text ac-md">${marked.parse(issue.impact || '')}</div>
+        ${issueOpsLinkHtml(r, a)}
       </div>
     </div>
     <div class="id-panel id-fix">
@@ -4314,6 +4821,13 @@ function parseReport(md, filename = '') {
     }
   }
 
+  // 结果层 / 构成层 / 多卡 / 算子四张契约表（规则 9/10/11，均为可选：报告没写就是 null，
+  // 前端对应区块保持空占位）。这些是「总览—结果层与构成条」「算子页签」「慢卡定位」的数据来源。
+  const results = parseResultMetrics(md);
+  const breakdown = parseStepBreakdown(md);
+  const rankStats = parseRankStats(md);
+  const opStats = parseOpStats(md);
+
   // Actions table
   const actSec = (md.match(/##\s+2[\s\S]*?(?=\n##\s+3\.)/)||[])[0]||'';
   const actions = [];
@@ -4364,7 +4878,226 @@ function parseReport(md, filename = '') {
     taskType = multiNode ? '多机多卡训练' : singleCard ? '单机单卡训练' : '单机多卡训练';
   }
 
-  return { id:`parsed-${Date.now()}`, filename, title, subtitle:subtitleM?.[1]||'', taskType, reportDate:meta.date||new Date().toISOString().slice(0,10), phs, summary, actions, issues, noProblems:noPs, meta, metrics, diskFileInfo, codeExamplesFabricated:false, codeExamples:[], rawMd:md };
+  return { id:`parsed-${Date.now()}`, filename, title, subtitle:subtitleM?.[1]||'', taskType, reportDate:meta.date||new Date().toISOString().slice(0,10), phs, summary, actions, issues, noProblems:noPs, meta, metrics, results, breakdown, rankStats, opStats, diskFileInfo, codeExamplesFabricated:false, codeExamples:[], rawMd:md };
+}
+
+// ============================================================
+// 报告内可见表格的通用解析工具（规则 7 / 9 / 10 / 11 共用）
+// ============================================================
+// 报告作者容易在中英文括号、全半角空格上写岔，首列名一律先归一再匹配，
+// 免得因为一个「（」导致整行不被看板识别。
+function normLabel(text) {
+  return String(text || '')
+    .replace(/[（(]/g, '(').replace(/[）)]/g, ')')
+    .replace(/\s+/g, ' ')
+    .replace(/\*\*/g, '')
+    .trim();
+}
+
+// 截取 `### <标题>` 到下一个 ##/### 或文末之间的区段
+function sliceReportSection(md, title) {
+  const esc = title.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  return (md.match(new RegExp(`###?\\s*${esc}[\\s\\S]*?(?=\\n###?\\s|\\n##\\s|$)`)) || [])[0] || null;
+}
+
+// Markdown 表格 → { header: [...], body: [[...], ...] }，按分隔行定位表头
+function parseMdTable(sec) {
+  if (!sec) return null;
+  const rows = [];
+  for (const line of sec.split('\n')) {
+    const m = line.match(/^\s*\|(.+)\|\s*$/);
+    if (!m) continue;
+    rows.push(m[1].split('|').map((s) => s.trim()));
+  }
+  const sepAt = rows.findIndex((r) => r.length && r.every((c) => /^:?-+:?$/.test(c)));
+  if (sepAt < 1) return null;
+  return { header: rows[sepAt - 1].map(normLabel), body: rows.slice(sepAt + 1) };
+}
+
+// 单元格取数：'810 ms' → 810，'49.6%' → 49.6，'—' → null
+function cellNum(text) {
+  const m = String(text == null ? '' : text).replace(/,/g, '').match(/-?\d+(?:\.\d+)?/);
+  return m ? parseFloat(m[0]) : null;
+}
+
+// 单元格取时长并统一到 ms（无单位按 ms）。注意 us/ms 要在裸 s 之前判断。
+function cellMs(text) {
+  const v = cellNum(text);
+  if (v == null) return null;
+  const t = String(text).toLowerCase();
+  if (/(?:^|[\d\s])(?:us|μs|µs)\b/.test(t)) return v / 1000;
+  if (/(?:^|[\d\s])ms\b/.test(t)) return v;
+  if (/(?:^|[\d\s])s\b/.test(t)) return v * 1000;
+  return v;
+}
+
+// 单元格取时长并统一到 us
+function cellUs(text) {
+  const ms = cellMs(text);
+  return ms == null ? null : ms * 1000;
+}
+
+// 按表头中文名建列索引，取值时用 col('总耗时', row)
+function headerIndexer(header) {
+  const idx = {};
+  header.forEach((h, i) => { if (!(h in idx)) idx[h] = i; });
+  return (name, row) => {
+    const at = idx[normLabel(name)];
+    return at == null ? '' : (row[at] || '');
+  };
+}
+
+// ── 规则 9.1：结果指标表 → r.results ──
+const RESULT_METRIC_KEY = {
+  '单步耗时(中位)': { key: 'step_time_median', kind: 'ms' },
+  '单步耗时(P90)': { key: 'step_time_p90', kind: 'ms' },
+  '吞吐': { key: 'throughput', kind: 'num+unit' },
+  '端到端时长': { key: 'e2e_duration', kind: 'ms' },
+  '有效 step 数': { key: 'active_steps', kind: 'num' },
+  'warmup step 数': { key: 'warmup_steps', kind: 'num' },
+  'Profiling 档位': { key: 'profiling_level', kind: 'text' },
+};
+function parseResultMetrics(md) {
+  const table = parseMdTable(sliceReportSection(md, '结果指标'));
+  if (!table) return null;
+  const col = headerIndexer(table.header);
+  const out = {};
+  table.body.forEach((row) => {
+    const def = RESULT_METRIC_KEY[normLabel(col('指标', row))];
+    if (!def) return;
+    const raw = String(col('值', row) || '').trim();
+    if (!raw || raw === '—') return;
+    const entry = { raw, note: (col('说明', row) || '').replace(/^—$/, '').trim() };
+    if (def.kind === 'ms') entry.value = cellMs(raw);
+    else if (def.kind === 'num' || def.kind === 'num+unit') entry.value = cellNum(raw);
+    if (def.kind === 'num+unit') entry.unit = raw.replace(/[\d.,\s]+/, '').trim();   // '1240 tokens/s' → 'tokens/s'
+    out[def.key] = entry;
+  });
+  return Object.keys(out).length ? out : null;
+}
+
+// ── 规则 9.2：step 时间构成表 → r.breakdown（有序，供堆叠条直接渲染）──
+const BREAKDOWN_KEY = {
+  '计算': 'compute',
+  '通信(未掩盖)': 'comm_exposed',
+  '调度空泡': 'bubble',
+  'Host 下发': 'host_launch',
+  '其他': 'other',
+};
+function parseStepBreakdown(md) {
+  const table = parseMdTable(sliceReportSection(md, 'step 时间构成'));
+  if (!table) return null;
+  const col = headerIndexer(table.header);
+  const items = [];
+  table.body.forEach((row) => {
+    const label = normLabel(col('构成项', row));
+    const key = BREAKDOWN_KEY[label];
+    if (!key) return;
+    const ms = cellMs(col('耗时', row));
+    if (ms == null) return;
+    items.push({ key, label, ms, pct: cellNum(col('占比', row)) });
+  });
+  if (!items.length) return null;
+  // 占比缺失时按耗时自算，保证堆叠条总能画出来
+  const total = items.reduce((sum, it) => sum + it.ms, 0);
+  items.forEach((it) => { if (it.pct == null && total > 0) it.pct = (it.ms / total) * 100; });
+  return { items, totalMs: total };
+}
+
+// ── 规则 10：Rank 级 step 统计表 → r.rankStats ──
+function parseRankStats(md) {
+  const table = parseMdTable(sliceReportSection(md, 'Rank 级 step 统计'));
+  if (!table) return null;
+  const col = headerIndexer(table.header);
+  const rows = [];
+  table.body.forEach((row) => {
+    const rank = cellNum(col('Rank', row));
+    if (rank == null) return;
+    const verdict = String(col('判定', row) || '').trim().toLowerCase();
+    rows.push({
+      rank,
+      stepMs: cellMs(col('step 耗时', row)),
+      computeMs: cellMs(col('计算', row)),
+      commExposedMs: cellMs(col('通信(未掩盖)', row)),
+      commWaitMs: cellMs(col('通信等待', row)),
+      freeMs: cellMs(col('空泡', row)),
+      commEntryMs: cellMs(col('首次通信进入', row)),
+      verdict: (verdict === 'slow' || verdict === 'fast') ? verdict : null,
+    });
+  });
+  if (!rows.length) return null;
+  // 派生慢卡信号：离散度按 step 耗时算；慢卡优先取报告显式判定，
+  // 缺判定时回退到「最晚进入通信」——集合通信的结束时间天然对齐，进入时刻才是真凶信号。
+  const steps = rows.map((r) => r.stepMs).filter((v) => v != null).sort((a, b) => a - b);
+  // 偶数个 rank 取中间两值的平均：rank 数是偶数（8/16/32 卡）才是常态，
+  // 直接取上侧值会把中位抬高、离散度算偏。
+  const mid = Math.floor(steps.length / 2);
+  const median = !steps.length ? null
+    : (steps.length % 2 ? steps[mid] : (steps[mid - 1] + steps[mid]) / 2);
+  const max = steps.length ? steps[steps.length - 1] : null;
+  const min = steps.length ? steps[0] : null;
+  let slowest = rows.filter((r) => r.verdict === 'slow');
+  if (!slowest.length) {
+    const entries = rows.filter((r) => r.commEntryMs != null);
+    if (entries.length) {
+      const latest = Math.max.apply(null, entries.map((r) => r.commEntryMs));
+      slowest = entries.filter((r) => r.commEntryMs === latest);
+    }
+  }
+  return {
+    rows,
+    median, max, min,
+    spreadPct: (median && max != null && min != null) ? ((max - min) / median) * 100 : null,
+    maxOverMedian: (median && max != null) ? max / median : null,
+    slowRanks: slowest.map((r) => r.rank),
+  };
+}
+
+// ── 规则 11：算子分类汇总 + Top-N → r.opStats ──
+function parseOpStats(md) {
+  const out = { byCategory: [], top: [] };
+
+  const catTable = parseMdTable(sliceReportSection(md, '算子分类汇总'));
+  if (catTable) {
+    const col = headerIndexer(catTable.header);
+    catTable.body.forEach((row) => {
+      const label = String(col('类别', row) || '').trim();
+      if (!label || /^-+$/.test(label)) return;
+      out.byCategory.push({
+        label,
+        scope: (String(col('口径', row) || '').trim().toLowerCase() === 'phase') ? 'phase' : 'core',
+        count: cellNum(col('次数', row)),
+        totalMs: cellMs(col('总耗时', row)),
+        pct: cellNum(col('占比', row)),
+        avgUs: cellUs(col('单次均值', row)),
+      });
+    });
+  }
+
+  const topTable = parseMdTable(sliceReportSection(md, '算子 Top-N'));
+  if (topTable) {
+    const col = headerIndexer(topTable.header);
+    topTable.body.forEach((row) => {
+      const name = String(col('算子', row) || '').trim();
+      if (!name || /^-+$/.test(name)) return;
+      out.top.push({
+        name,
+        type: String(col('Type', row) || '').trim(),
+        coreType: String(col('Core Type', row) || '').trim(),
+        count: cellNum(col('次数', row)),
+        totalMs: cellMs(col('总耗时', row)),
+        pct: cellNum(col('占比', row)),
+        avgUs: cellUs(col('单次均值', row)),
+        p90Us: cellUs(col('P90', row)),
+        shape: String(col('Input Shape', row) || '').replace(/^—$/, '').trim(),
+        opState: String(col('OP State', row) || '').replace(/^—$/, '').trim(),
+      });
+    });
+    // 规则 11 要求按总耗时降序；报告写错顺序时前端兜底重排，不让排序错误传导到界面
+    out.top.sort((a, b) => (b.totalMs || 0) - (a.totalMs || 0));
+  }
+
+  return (out.byCategory.length || out.top.length) ? out : null;
 }
 
 // 可见的「时序结构指标看板」表格 → r.metrics（规则 7）。中文指标名↔看板 key 固定映射。
