@@ -25,7 +25,7 @@
   <!-- 集群热力图样式（复用 training-monitoring-v2 的 .twin-heat* 视觉） -->
   <link rel="stylesheet" href="./css/training-run-twin.css">
   <!-- 本页模块私有 layout -->
-  <link rel="stylesheet" href="./css/config-relation-observer.css?v=20260806-share-note">
+  <link rel="stylesheet" href="./css/config-relation-observer.css?v=20260806-flow-legend">
 </head>
 <body data-theme="dark">
   <section class="pto-ide-frame" data-ide-frame data-host="standalone" aria-label="Config and Relation Observer">
@@ -234,17 +234,46 @@
                     <button class="btn btn-sm is-selected" type="button" data-dp-scope="single" aria-pressed="true" title="默认查询 DP0；存在异常上下文时查询异常所在 DP">单 DP（默认第一个 DP）</button>
                     <button class="btn btn-sm" type="button" data-dp-scope="all" aria-pressed="false" title="查询所有 DP 副本关联的物理 Rank">所有 DP</button>
                   </div>
-                  <!-- 一个 step 的数据流：Emb → L0…Ln → Norm → Head 逐格点亮，四域跟着亮。
-                       默认不播放；播放期间不画关系连线（见 js 的 quiet 铺色）。 -->
-                  <button class="btn btn-sm btn-ghost cro-flow-play" id="croFlowPlay" type="button" aria-pressed="false" title="播放一个 step 的数据流">
-                    <svg class="cro-flow-play__icon" id="croFlowPlayIcon" viewBox="0 0 24 24" aria-hidden="true">
-                      <path d="M8 5v14l11-7z"></path>
-                    </svg>
-                    <span id="croFlowPlayLabel">播放数据流</span>
-                  </button>
+                  <!-- 一个 step 的数据流：前向 Emb→…→Head、反向倒回、收尾 Optimizer step，
+                       逐格点亮四域并驱动下方 6 条数据线。默认不播放；播放期间不画关系连线
+                       （见 js 的 quiet 铺色）。
+                       播放中拆成两枚键：主键在 暂停/继续 之间翻转（画面定在当前这一步，
+                       方便看中间状态），退出才是真正结束并还原上一次选择。 -->
+                  <div class="cro-flow-actions">
+                    <button class="btn btn-sm btn-ghost cro-flow-play" id="croFlowPlay" type="button" aria-pressed="false" title="播放一个 step 的数据流">
+                      <svg class="cro-flow-play__icon" id="croFlowPlayIcon" viewBox="0 0 24 24" aria-hidden="true">
+                        <path d="M8 5v14l11-7z"></path>
+                      </svg>
+                      <span id="croFlowPlayLabel">播放数据流</span>
+                    </button>
+                    <button class="btn btn-sm btn-ghost cro-flow-exit" id="croFlowExit" type="button" title="退出播放，回到播放前的选择" hidden>
+                      <svg class="cro-flow-exit__icon" viewBox="0 0 24 24" aria-hidden="true">
+                        <path d="M18 6 6 18"></path>
+                        <path d="m6 6 12 12"></path>
+                      </svg>
+                      <span>退出</span>
+                    </button>
+                  </div>
                 </div>
                 <div class="cro-layer-nav" id="croLayerNav">
                   <div class="cro-placeholder">46 层刻度 · PP 分段 · Dense/MoE 分区 · 第 4 项接入</div>
+                </div>
+                <!-- 数据线：一个 step 里发生变化的 6 类数据，仅播放时展开。
+                     必须紧贴 Layer 导航之下、且与刻度带同宽同锚点 —— 泳道的 x 轴
+                     就是层号，小点从第 i 格垂直落到泳道上，落点即第 i 层。位置一挪
+                     这层投影关系就没了。x 坐标由 JS 实测刻度中心写入（见 lanesMeasure），
+                     不靠 CSS padding 碰巧对齐。 -->
+                <div class="cro-flow-lanes" id="croFlowLanes" hidden>
+                  <div class="cro-flow-lanes__head">
+                    <span class="cro-flow-lanes__phase" id="croFlowPhase"></span>
+                    <span class="cro-flow-lanes__note" id="croFlowNote"></span>
+                  </div>
+                  <!-- 6 条泳道共用一张 canvas：46 层 × （点 + 脉冲 + 刻痕 + 面积 + 填块）
+                       用 DOM 画会在每步建/删几十个节点，canvas 全量重绘反而更便宜。
+                       标签留在 DOM 里（静态文本，可无障碍读取），由 --i 定位。 -->
+                  <div class="cro-flow-lanes__plot" id="croFlowPlot">
+                    <canvas class="cro-flow-lanes__canvas" id="croFlowCanvas" aria-hidden="true"></canvas>
+                  </div>
                 </div>
               </div>
 
@@ -310,7 +339,7 @@
   <script src="./js/ide-frame-pattern.js"></script>
   <script src="./js/model-graphviz-pattern.js"></script>
   <script src="./js/model-architecture-3d-deck-pattern.js"></script>
-  <script src="./js/config-relation-observer.js?v=20260806-share-note"></script>
+  <script src="./js/config-relation-observer.js?v=20260806-flow-legend"></script>
   <script>
     // 主题切换：与 training-monitoring-v2.html 同款单图标按钮，只改 data-theme。
     (() => {

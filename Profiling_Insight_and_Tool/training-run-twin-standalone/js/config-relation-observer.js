@@ -2803,10 +2803,10 @@
        副本铺开正是答案本身（见 resolveRelation 里 expert 分支的说明）。 */
     const DP_SCOPED_KINDS = new Set(["layer", "segment"]);
 
-    function scopeLayerPayload(payload) {
+    function scopeLayerPayload(payload, scope = layerDpScope) {
       if (!payload || !DP_SCOPED_KINDS.has(payload.kind)) return payload;
       const scoped = { ...payload };
-      if (layerDpScope === "single") scoped.dpIdx = incidentDpHint;
+      if (scope === "single") scoped.dpIdx = incidentDpHint;
       else delete scoped.dpIdx;
       return scoped;
     }
@@ -2816,9 +2816,12 @@
        运行事件模式下这个口径不成立 —— 关系集由 addIncidentScope 按本次采样的
        实际范围重建（origin/propagation/victim 里写死的 ranks），静态口径整个被
        覆盖掉，切它不会改变任何高亮。留一个点了没反应的开关，等于告诉用户此刻
-       看到的 rank 范围是可调的，而它恰恰是实测值。所以直接收起。 */
+       看到的 rank 范围是可调的，而它恰恰是实测值。所以直接收起。
+       播放数据流时同理收起：一趟前向讲的是「这一格在整网哪些 rank 上跑」，
+       固定按所有 DP 铺（见 flowPayloadOfSlot），口径同样不由用户选。 */
     function syncDpScope() {
-      document.getElementById("croDpScope")?.toggleAttribute("hidden", Boolean(activeIncident));
+      const hidden = Boolean(activeIncident) || Boolean(flowSteps);
+      document.getElementById("croDpScope")?.toggleAttribute("hidden", hidden);
     }
 
     function emitSelect(payload) {
@@ -2852,49 +2855,599 @@
     function clearSelection() { emitSelect(null); }
 
     /* ══ 数据流播放 ═══════════════════════════════════════════════════════════
-       一个 step 的前向：Emb → L0 → L1 → … → Final Norm → LM Head 逐格点亮，
-       每亮一格，整网 deck / 典型层 / MoE / Cluster 跟着亮同一套关系集。
-       实现上不新造一套渲染，直接复用 applyRelation 的四域铺色，只是走 quiet。
+       一趟完整的 step 分三段：
+         前向  Emb → L0 → … → Final Norm → LM Head   （49 格）
+         反向  LM Head → … → L0 → Emb                 （49 格，同一条 x 轴反着走）
+         更新  Optimizer step                          （1 格，多停一会儿）
+       每亮一格，整网 deck / 典型层 / MoE / Cluster 跟着亮同一套关系集；同时
+       下方 6 条数据线（见「数据线」一节）画出这一格改写了哪几类数据。
+       实现上不新造一套四域渲染，直接复用 applyRelation 的铺色，只是走 quiet。
 
        性能取舍（这页四域加起来两千多个格子，值得写下来）：
-         · 步序与关系集在**开播时一次性**解出来（navModel 的 slots 就是刻度带
-           从左到右的真实顺序），播放中每一 tick 只做 class 切换，不建 DOM、
-           不重解析、不量几何；
+         · 步序、关系集与每步的文案在**开播时一次性**解出来（navModel 的 slots
+           就是刻度带从左到右的真实顺序），播放中每一 tick 只做 class 切换与
+           canvas 重绘，不建 DOM、不重解析、不量几何；
          · 用 rAF 打拍而不是 setInterval —— 标签页切到后台时 rAF 自动停摆，
            不会在看不见的地方空转，回来接着走；
-         · 不画连线、不做 revealIn（见 applyRelation 的 quiet）。 */
+         · 不画连线、不做 revealIn（见 applyRelation 的 quiet）。
+       与旧版的唯一让步：数据线要逐帧重画（点在飞），所以 rAF 回调里现在多了
+       一次 canvas 全量重绘。一张 ~600×172 的 2D 画布画六条线加几十个标记，
+       比原先每步的两千次 class 切换便宜得多，这点开销换得起。 */
     const FLOW_STEP_MS = 190;
     let flowSteps = null;
     let flowIndex = 0;
     let flowRaf = 0;
     let flowLast = 0;
+    let flowHold = FLOW_STEP_MS;
     let flowRestore = null;
+    // 暂停 = 冻住时钟，不是结束：步序、泳道进度、四域高亮全都留着（见 flowClock）
+    let flowPaused = false;
+    let flowPausedAt = 0;
+    let flowPausedTotal = 0;
 
-    /* 每一步的 payload 与「手点这一格刻度」逐字一致，并同样过 scopeLayerPayload
-       —— 单 DP / 所有 DP 是当前生效的查询口径，播放亮出来的 rank 范围不能自成一套。 */
+    /* ══ 数据线：一个 step 里会变的 6 类数据 ══════════════════════════════════
+       x 轴与上方刻度带**共用**：第 i 格刻度正下方就是第 i 层在这 6 条线上的
+       状态，小点从刻度垂直落到泳道，落点即第 i 层。对齐靠实测刻度中心
+       （lanesSync），不靠两边 padding 碰巧相等。
+
+       六条线的变化性质完全不同，所以标记也各不相同 —— 全画成"线 + 小点"会
+       把差异压平，反而读不出区别：
+         残差流   位置在移动（左→右）      流动点 + 落点脉冲 + 身后留实线
+         路由决策 离散事件（只在 MoE 层）  竖刻痕，Dense 段整段留空
+         显存     标量随进度涨落            面积填充：前向堆成山、反向从右往左融化
+         层间 dX  位置在移动（右→左）      流动点（从线飞回刻度）+ 身后留实线
+         权重 dW  累积量，只增不减          逐格填块，MoE 层半高半透（稀疏更新）
+         权重 W   一次性事件                最后一格整条扫亮
+       槽位恒定占 6 行：没轮到的那条画成极淡虚线而不是不存在 —— 逐条"长出来"
+       会把下面的线一路往下推，播放中一直在抖。 */
+    const FLOW_LANES = [
+      { id: "residual", label: "残差流 · 激活",       token: "--pto-model-deck-attention" },
+      { id: "routing",  label: "路由决策 · 门控权重", token: "--pto-model-deck-gate" },
+      { id: "memory",   label: "显存占用",            token: "--pto-model-deck-embedding" },
+      { id: "gradx",    label: "层间梯度 dX",         token: "--pto-model-deck-mlp" },
+      { id: "gradw",    label: "权重梯度 dW",         token: "--pto-model-deck-moe" },
+      { id: "weight",   label: "权重 W · 优化器状态", token: "--pto-model-deck-head" },
+    ];
+    // 与 css 的 --cro-lane-h / .cro-flow-lanes__canvas 一一对应，改一处要改两处
+    const LANE_H = 26;          // 一条泳道占的行高（11px 标签 + 轨道区）
+    const LANE_BASE = 24;       // 基线在行内的位置：标记一律从基线向上长
+    const LANE_MARK_H = 11;     // 标记的最大高度
+    const LANE_OVERHANG = 16;   // canvas 向上探出的高度，小点从这里"落"下来
+    const DOT_MS = 165;         // 点的行程。必须短于 FLOW_STEP_MS：留一批点在
+                                // 空中就够读出"飞"，两批以上就成噪点雨了
+    const PULSE_MS = 420;
+    const MEM_FLOOR = 0.07;     // 常驻显存（权重 + 优化器状态），反向释放到此为止
+
+    let flowCtx = null;
+    let flowXs = [];            // 每个 slot 的刻度中心 x（泳道坐标系）
+    let flowPitch = 8;
+    let flowColors = null;
+    let flowLaneState = null;
+    let flowLabels = [];
+    let flowDots = [];
+    let flowSlots = [];
+    let flowTopology = null;
+    let flowPlotW = 0;
+    let flowPlotH = 0;
+    let flowLanesOk = false;
+
+    const laneY = (i) => i * LANE_H + LANE_BASE + LANE_OVERHANG;
+
+    function lanesPalette() {
+      const board = document.getElementById("croBoard");
+      const cs = board ? getComputedStyle(board) : null;
+      const read = (name, fallback) => ((cs && cs.getPropertyValue(name)) || "").trim() || fallback;
+      flowColors = {
+        idle: read("--border-default", "#333333"),
+        rail: read("--foreground-muted", "#777777"),
+      };
+      const out = {};
+      FLOW_LANES.forEach((lane) => { out[lane.id] = read(lane.token, "#3B82F6"); });
+      return out;
+    }
+
+    // 主题切换会重算 deck 调色板；泳道的颜色是开播时读进来的副本，得跟着换，
+    // 但不能整体 reset —— 那会把已经跑过的那半趟抹掉
+    function lanesRecolor() {
+      if (!flowLaneState) return;
+      const rgb = lanesPalette();
+      FLOW_LANES.forEach((lane) => { flowLaneState[lane.id].rgb = rgb[lane.id]; });
+    }
+
+    function lanesEnsureLabels() {
+      const plot = document.getElementById("croFlowPlot");
+      if (!plot || flowLabels.length) return;
+      flowLabels = FLOW_LANES.map((lane, i) => {
+        const el = document.createElement("span");
+        el.className = "cro-flow-lane__label";
+        el.style.setProperty("--i", String(i));
+        el.textContent = lane.label;
+        plot.appendChild(el);
+        return el;
+      });
+    }
+
+    function lanesSyncLabels() {
+      if (!flowLaneState) return;
+      FLOW_LANES.forEach((lane, i) => {
+        const el = flowLabels[i];
+        if (!el) return;
+        const st = flowLaneState[lane.id];
+        el.classList.toggle("is-active", Boolean(st.active) && !st.done);
+        el.classList.toggle("is-done", Boolean(st.done));
+      });
+    }
+
+    /* 量几何：canvas 尺寸 + 每格刻度的中心 x。
+       起播时算一次；之后刻度带宽度一变（板面出滚动条、窗口缩放、事件栏收展）
+       就跟着重算 —— 见 layerNav 的 ResizeObserver。 */
+    function lanesSync() {
+      const plot = document.getElementById("croFlowPlot");
+      const canvas = document.getElementById("croFlowCanvas");
+      if (!plot || !canvas) { flowLanesOk = false; return; }
+      flowPlotW = plot.clientWidth;
+      flowPlotH = plot.clientHeight;
+      if (!flowPlotW || !flowPlotH) { flowLanesOk = false; return; }
+      const h = flowPlotH + LANE_OVERHANG;
+      const dpr = Math.min(2, global.devicePixelRatio || 1);
+      canvas.width = Math.round(flowPlotW * dpr);
+      canvas.height = Math.round(h * dpr);
+      flowCtx = canvas.getContext("2d");
+      flowCtx.setTransform(dpr, 0, 0, dpr, 0, 0);
+
+      const base = plot.getBoundingClientRect();
+      const ticks = layerNav ? layerNav.querySelectorAll(".cro-tick") : [];
+      // 刻度的 DOM 顺序就是 slot 顺序（renderLayerNav 按 groups→slots 依次建）
+      flowXs = Array.from(ticks, (tick) => {
+        const r = tick.getBoundingClientRect();
+        return r.left + r.width / 2 - base.left;
+      });
+      flowPitch = flowXs.length > 1
+        ? Math.max(2, (flowXs[flowXs.length - 1] - flowXs[0]) / (flowXs.length - 1))
+        : 8;
+      // 刻度带还是占位符（配置非法 / 尚未渲染）时格数对不上，宁可不画泳道，
+      // 也不能拿 undefined 的 x 去画出一堆 NaN
+      flowLanesOk = flowXs.length > 1 && flowXs.length === flowSlots.length;
+    }
+
+    function lanesReset(topology, slots) {
+      flowTopology = topology;
+      flowSlots = slots;
+      flowDots = [];
+      const rgb = lanesPalette();
+      flowLaneState = {
+        residual: { active: false, done: false, head: -1, pending: null, pulses: [], rgb: rgb.residual },
+        routing:  { active: false, notches: [], rgb: rgb.routing },
+        // 起手就是一条贴地的薄面积：权重与优化器状态是常驻的，不是从 0 开始涨
+        memory:   { active: true, h: new Float64Array(slots.length).fill(MEM_FLOOR), rgb: rgb.memory },
+        gradx:    { active: false, head: -1, pulses: [], rgb: rgb.gradx },
+        gradw:    { active: false, blocks: [], clearedAt: 0, rgb: rgb.gradw },
+        weight:   { active: false, t0: 0, rgb: rgb.weight },
+      };
+      lanesSyncLabels();
+    }
+
+    function lanesShow(on) {
+      const host = document.getElementById("croFlowLanes");
+      if (host) host.hidden = !on;
+    }
+
+    /* 显存曲线：随已经算过的层数单调爬升，峰值落在 logits（[B,S,V] 是全程
+       最大的张量）。反向不是整体回落，而是**从右往左**逐格释放 —— 算完第 j
+       层的梯度，第 j 层前向存的激活就没用了。于是这座山堆起来是左→右，
+       融化是右→左，任一时刻都还是一条单值曲线。 */
+    function memHeight(i, n, slot) {
+      if (slot.unit === "head") return 1;
+      return 0.12 + 0.72 * ((i + 1) / n);
+    }
+
+    function lanesStep(step, now) {
+      if (!flowLanesOk || !flowLaneState) return;
+      const S = flowLaneState;
+      const i = step.slot;
+      const slot = i >= 0 ? flowSlots[i] : null;
+      const x = i >= 0 ? flowXs[i] : 0;
+      const layer = slot && !slot.unit ? flowTopology.layers[slot.layer] : null;
+
+      if (step.phase === "forward") {
+        S.memory.h[i] = memHeight(i, flowSlots.length, slot);
+        S.residual.active = true;
+        /* 每层只发 1 个点。attn / ffn 两次残差改写在结构条上已经分开点亮过了，
+           这里再拆成 2 个点是同一件事说两遍，代价却是密度翻倍。 */
+        flowDots.push({ x, y0: 0, y1: laneY(0), t0: now, color: S.residual.rgb });
+        // 实线在点**落地时**才伸过去，不是发点时就伸 —— 否则线跑在点前面
+        S.residual.pending = { head: i, at: now + DOT_MS };
+        S.residual.pulses.push({ x, t0: now + DOT_MS });
+        if (layer && layer.ffn === "moe") {
+          S.routing.active = true;
+          S.routing.notches.push({ x, t0: now + DOT_MS });
+        }
+        if (slot.unit === "head") {
+          // loss 与 dLogits 在这一格产出：反向的起点有了，梯度线从此刻亮起
+          S.residual.done = true;
+          S.gradx.active = true;
+        }
+      } else if (step.phase === "backward") {
+        S.gradx.active = true;
+        S.gradx.head = i;
+        flowDots.push({ x, y0: laneY(3), y1: 0, t0: now, color: S.gradx.rgb });
+        S.gradx.pulses.push({ x, t0: now });
+        S.gradw.active = true;
+        // MoE 层只有被路由到的专家有梯度：填块画成半高半透，表示这一格的 dW
+        // 是稀疏的，不是每个专家都攒到了
+        S.gradw.blocks.push({ x, sparse: Boolean(layer && layer.ffn === "moe"), t0: now + DOT_MS });
+        S.memory.h[i] = MEM_FLOOR;
+      } else {
+        S.weight.active = true;
+        S.weight.t0 = now;
+        S.gradw.clearedAt = now + 260;   // Adam 写回之后梯度清零
+        S.gradw.done = true;
+        S.memory.h.fill(MEM_FLOOR);
+      }
+      lanesSyncLabels();
+    }
+
+    function paintPulses(ctx, st, y, now) {
+      ctx.save();
+      ctx.strokeStyle = st.rgb;
+      ctx.lineCap = "round";
+      for (let i = st.pulses.length - 1; i >= 0; i -= 1) {
+        const p = st.pulses[i];
+        if (now < p.t0) continue;
+        const k = 1 - (now - p.t0) / PULSE_MS;
+        if (k <= 0) { st.pulses.splice(i, 1); continue; }
+        ctx.globalAlpha = k;
+        ctx.lineWidth = 2 + 5 * k;
+        const half = Math.max(3, flowPitch * 0.9);
+        ctx.beginPath();
+        ctx.moveTo(p.x - half, y);
+        ctx.lineTo(p.x + half, y);
+        ctx.stroke();
+      }
+      ctx.restore();
+    }
+
+    const LANE_PAINT = {
+      residual(ctx, st, y, now) {
+        if (st.pending && now >= st.pending.at) { st.head = st.pending.head; st.pending = null; }
+        if (st.head >= 0) {
+          ctx.save();
+          ctx.strokeStyle = st.rgb;
+          // 前向跑完后退居背景：痕迹留着，但主角已经换成梯度线了
+          ctx.globalAlpha = st.done ? 0.4 : 0.9;
+          ctx.lineWidth = 2;
+          ctx.beginPath();
+          ctx.moveTo(flowXs[0], y);
+          ctx.lineTo(flowXs[st.head], y);
+          ctx.stroke();
+          ctx.restore();
+        }
+        paintPulses(ctx, st, y, now);
+      },
+      routing(ctx, st, y, now) {
+        ctx.save();
+        ctx.strokeStyle = st.rgb;
+        ctx.lineCap = "round";
+        st.notches.forEach((n) => {
+          if (now < n.t0) return;
+          const k = Math.max(0, 1 - (now - n.t0) / PULSE_MS);
+          ctx.globalAlpha = 0.55 + 0.45 * k;
+          ctx.lineWidth = 1.5 + 2 * k;
+          ctx.beginPath();
+          ctx.moveTo(n.x, y);
+          ctx.lineTo(n.x, y - 7 - 3 * k);
+          ctx.stroke();
+        });
+        ctx.restore();
+      },
+      memory(ctx, st, y) {
+        ctx.save();
+        const top = (i) => y - st.h[i] * LANE_MARK_H;
+        ctx.beginPath();
+        ctx.moveTo(flowXs[0], y);
+        for (let i = 0; i < flowXs.length; i += 1) ctx.lineTo(flowXs[i], top(i));
+        ctx.lineTo(flowXs[flowXs.length - 1], y);
+        ctx.closePath();
+        ctx.globalAlpha = 0.2;
+        ctx.fillStyle = st.rgb;
+        ctx.fill();
+        ctx.globalAlpha = 0.85;
+        ctx.strokeStyle = st.rgb;
+        ctx.lineWidth = 1.2;
+        ctx.beginPath();
+        for (let i = 0; i < flowXs.length; i += 1) {
+          if (i === 0) ctx.moveTo(flowXs[i], top(i)); else ctx.lineTo(flowXs[i], top(i));
+        }
+        ctx.stroke();
+        ctx.restore();
+      },
+      gradx(ctx, st, y, now) {
+        if (st.head >= 0) {
+          // 反向是右→左：已回传的区间是 [head, 右端]，与残差线正好镜像
+          ctx.save();
+          ctx.strokeStyle = st.rgb;
+          ctx.globalAlpha = 0.9;
+          ctx.lineWidth = 2;
+          ctx.beginPath();
+          ctx.moveTo(flowXs[st.head], y);
+          ctx.lineTo(flowXs[flowXs.length - 1], y);
+          ctx.stroke();
+          ctx.restore();
+        }
+        paintPulses(ctx, st, y, now);
+      },
+      gradw(ctx, st, y, now) {
+        const w = Math.max(2, flowPitch * 0.72);
+        const fade = st.clearedAt ? Math.max(0, 1 - (now - st.clearedAt) / 420) : 1;
+        if (fade <= 0) return;
+        ctx.save();
+        ctx.fillStyle = st.rgb;
+        st.blocks.forEach((b) => {
+          if (now < b.t0) return;
+          const h = LANE_MARK_H * (b.sparse ? 0.5 : 0.85);
+          ctx.globalAlpha = (b.sparse ? 0.5 : 0.85) * fade;
+          ctx.fillRect(b.x - w / 2, y - h, w, h);
+        });
+        ctx.restore();
+      },
+      weight(ctx, st, y, now) {
+        const k = Math.min(1, Math.max(0, (now - st.t0) / 340));
+        ctx.save();
+        ctx.strokeStyle = st.rgb;
+        ctx.lineCap = "round";
+        ctx.globalAlpha = 0.35 + 0.65 * k;
+        ctx.lineWidth = 2 + 3 * k;
+        ctx.beginPath();
+        ctx.moveTo(flowXs[0], y);
+        ctx.lineTo(flowXs[0] + (flowXs[flowXs.length - 1] - flowXs[0]) * k, y);
+        ctx.stroke();
+        ctx.restore();
+      },
+    };
+
+    function lanesDraw(now) {
+      if (!flowLanesOk || !flowCtx || !flowLaneState) return;
+      const ctx = flowCtx;
+      ctx.clearRect(0, 0, flowPlotW, flowPlotH + LANE_OVERHANG);
+      const xa = flowXs[0];
+      const xb = flowXs[flowXs.length - 1];
+
+      FLOW_LANES.forEach((lane, i) => {
+        const st = flowLaneState[lane.id];
+        const y = laneY(i);
+        // 基线：槽位一直在，只是这条数据还没开始变 → 极淡虚线
+        ctx.save();
+        ctx.beginPath();
+        ctx.moveTo(xa, y);
+        ctx.lineTo(xb, y);
+        ctx.lineWidth = 1;
+        if (st.active) {
+          ctx.globalAlpha = 0.5;
+          ctx.strokeStyle = flowColors.rail;
+        } else {
+          ctx.globalAlpha = 0.55;
+          ctx.setLineDash([2, 4]);
+          ctx.strokeStyle = flowColors.idle;
+        }
+        ctx.stroke();
+        ctx.restore();
+        if (st.active) LANE_PAINT[lane.id](ctx, st, y, now);
+      });
+
+      // 飞点：整趟里唯一逐帧移动的东西。拖尾让"从哪来"看得出来
+      for (let i = flowDots.length - 1; i >= 0; i -= 1) {
+        const d = flowDots[i];
+        const k = (now - d.t0) / DOT_MS;
+        if (k >= 1) { flowDots.splice(i, 1); continue; }
+        if (k < 0) continue;
+        const e = k * k * (3 - 2 * k);
+        const yy = d.y0 + (d.y1 - d.y0) * e;
+        ctx.save();
+        const grad = ctx.createLinearGradient(d.x, d.y0, d.x, yy);
+        grad.addColorStop(0, "transparent");
+        grad.addColorStop(1, d.color);
+        ctx.strokeStyle = grad;
+        ctx.lineWidth = 1.5;
+        ctx.globalAlpha = 0.5;
+        ctx.beginPath();
+        ctx.moveTo(d.x, d.y0);
+        ctx.lineTo(d.x, yy);
+        ctx.stroke();
+        ctx.globalAlpha = 1;
+        ctx.fillStyle = d.color;
+        ctx.beginPath();
+        ctx.arc(d.x, yy, 2.4, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.restore();
+      }
+    }
+
+    /* 每一步一句话：这一格**对哪条数据做了什么**。
+       写法定死成「谁 对 谁 做什么」并按泳道分段（`部位｜泳道名 动作`），
+       让文案与下面 6 条线一一对上——只写"Attn → 残差"读不出那是覆盖、
+       累加还是消费，而这三者在业务上完全不是一回事：
+         残差流   Emb 从无到有 → 每层被**累加**两次（不是覆盖）→ Norm 最后
+                  一次**改写** → Head 把它**消费**掉
+         dW       只**增**不减，反向逐层各加一份；MoE 层只有被路由到的专家加
+         权重 W   整趟只在收尾那格被改写一次
+
+       ⚠️ 硬规矩：**每个分段必须挂在某条泳道名下，挂不上的就不写。**
+       原先每条末尾都缀着 `TP All-Reduce ×2` / `EP A2A ×2` 这类通信注记——
+       通信不是这 6 条线里的任何一条（当初把它列为"第 7 条线"但没有实现），
+       读者顺着分段格式去下面找对应的线，永远找不到。要写通信只能写成某条
+       泳道的动作（如收尾格的「dW 跨 DP All-Reduce 取平均」），不能自成一段。
+
+       开播时一次性生成（99 条字符串），播放中只做 textContent 赋值。 */
+    function flowNote(topology, slots, phase, i) {
+      if (phase === "optimizer") {
+        return "Optimizer step｜dW 跨 DP All-Reduce 取平均 → 裁剪全局范数 → 随即清零｜权重W W ← W − lr·m̂/(√v̂+ε)，整趟唯一一次改写权重｜显存 回落到常驻（权重 + m/v）";
+      }
+      const slot = slots[i];
+      const unit = slot.unit;
+      const layer = unit ? null : topology.layers[slot.layer];
+      const head = layer ? `L${slot.layer} · PP${layer.stage}` : "";
+      if (phase === "forward") {
+        if (unit === "emb") {
+          return "Emb｜残差流 从无到有：按 token id 查 E 表取行，写出 h[B,S,H]，此前不存在｜显存 +h、+token id 入栈（反向要靠 id 回填词表）";
+        }
+        if (unit === "norm") {
+          return "Final Norm｜残差流 最后一次被改写：按 RMS 归一化再乘 gamma，此后不再累加，转成可解码表示｜显存 +rstd，供反向复原";
+        }
+        if (unit === "head") {
+          return "LM Head｜残差流 被消费掉：h[B,S,H] × Wᵀ → logits[B,S,V]，残差流到此不再存在｜显存 logits 是全程最大张量，涨到峰值｜dX CE 产出 loss 与 dLogits，梯度线从这里亮起";
+        }
+        if (layer.ffn === "moe") {
+          // 「不是覆盖」这句由 Dense 那条承担（它有余量），MoE 这条挤不下
+          return `${head} MoE｜残差流 被累加两次：h += Attn(RMSNorm h)、h += Σ g·E(h) + Shared(h)｜路由 Router 新建 token→专家表与门控权重 g，前向独有｜显存 +本层激活入栈`;
+        }
+        return `${head} Dense｜残差流 被累加两次（不是覆盖）：h += Attn(RMSNorm h)、h += SwiGLU(RMSNorm h)，权重全程只读不改｜显存 +本层激活入栈`;
+      }
+      if (unit === "head") {
+        return "LM Head 反向｜dX 从无到有：dLogits = (softmax − onehot)/N｜dW W_head 首次入账，累加进 grad buffer，权重本身不动｜显存 logits 释放，峰值回落";
+      }
+      if (unit === "norm") {
+        return "Final Norm 反向｜dX 用前向存的 rstd 变形后继续往左传｜dW dGamma 累加一份｜显存 本格激活释放";
+      }
+      if (unit === "emb") {
+        return "Emb 反向｜dX 到此终止｜dW 按 token id 把梯度 scatter-add 回词表——只有本 step 出现过的那几行被加，其余行一份不加｜显存 释放完毕";
+      }
+      if (layer.ffn === "moe") {
+        return `${head} MoE 反向｜dX 变形后继续往左传｜dW 只有被路由到的专家加一份，其余专家本步一份不加（稀疏）；门控梯度另经 Top-K 回到 router｜路由 只读前向那张表，不再改`;
+      }
+      return `${head} Dense 反向｜dX 变形后继续往左传｜dW dW_qkv/dW_o、dW_gate/up/down 各累加一份（只增不减，仍不写权重）｜显存 本层前向激活释放，回落一格`;
+    }
+
+    /* 文案分段 → 泳道 id。段首那几个字既是分段名也是图例文字，必须和
+       FLOW_LANES 的线一一对得上（审计脚本按这张表查"孤段"）。
+       按长度倒序匹配：dW / dX 共享首字母，短的先匹配会串段。 */
+    const NOTE_LANE_ID = {
+      残差流: "residual",
+      路由: "routing",
+      显存: "memory",
+      dX: "gradx",
+      dW: "gradw",
+      权重W: "weight",
+    };
+    const NOTE_LANE_KEYS = Object.keys(NOTE_LANE_ID).sort((a, b) => b.length - a.length);
+
+    /* 每段前面缀一枚该泳道颜色的圆点、段名也上色 —— 六条线在下面各有各的颜色，
+       文案却是一整片同色文字，读者得逐字找"这句说的是哪条线"。上色之后
+       `｜` 分隔符就多余了（点本身就是分隔），撤掉换成段间距，省下的宽度还给正文。
+       色值取 --pto-model-deck-*，与 canvas 上那条线同源（syncPalette 会重算，
+       主题一换两边一起变）。
+       开播时一次性生成 99 段 HTML，播放中只做一次 innerHTML 赋值。 */
+    function noteToHtml(note) {
+      const esc = (s) => s.replace(/[&<>]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" }[c]));
+      const parts = note.split("｜");
+      const out = [`<b class="cro-flow-lanes__where">${esc(parts[0])}</b>`];
+      parts.slice(1).forEach((seg) => {
+        const key = NOTE_LANE_KEYS.find((k) => seg.startsWith(k));
+        // 挂不到泳道的段本不该存在（见 flowNote 的硬规矩），真漏了也别丢内容
+        if (!key) { out.push(`<span class="cro-flow-lanes__seg">${esc(seg)}</span>`); return; }
+        out.push(
+          `<span class="cro-flow-lanes__seg" data-lane="${NOTE_LANE_ID[key]}">`
+          + '<i class="cro-flow-lanes__dot"></i>'
+          + `<b class="cro-flow-lanes__seg-name">${esc(key)}</b> ${esc(seg.slice(key.length).trim())}`
+          + "</span>",
+        );
+      });
+      return out.join("");
+    }
+
+    function setFlowHead(step) {
+      const n = flowSlots.length;
+      const phase = document.getElementById("croFlowPhase");
+      const note = document.getElementById("croFlowNote");
+      if (phase) {
+        phase.textContent = step.phase === "forward" ? `前向 ${step.slot + 1}/${n}`
+          : step.phase === "backward" ? `反向 ${n - step.slot}/${n}`
+          : "更新 · Optimizer step";
+      }
+      if (note) {
+        note.innerHTML = step.noteHtml;
+        // 窄视口下两行也可能装不下（line-clamp 会截断），全文兜在 title 里。
+        // title 用带 ｜ 的原串：纯文本没有颜色可依，分隔符还得留着
+        note.title = step.note;
+      }
+    }
+
+    /* 每一步的 payload 与「手点这一格刻度」逐字一致，只有 DP 口径不随当前开关：
+       播放恒定走**所有 DP**。这一趟看的是一个 step 铺满整网的样子，收在单个 DP
+       副本里会漏掉其余副本此刻正在算同一层这件事——而那正是数据流要讲的。
+       口径既然固定，开关也一并收起（syncDpScope）。 */
     function flowPayloadOfSlot(slot) {
-      if (!slot.unit) return scopeLayerPayload({ kind: "layer", layer: slot.layer });
+      if (!slot.unit) return scopeLayerPayload({ kind: "layer", layer: slot.layer }, "all");
       // Emb / Final Norm / LM Head：不是层，按端点列走
       const col = slot.column;
       return scopeLayerPayload({
         kind: "segment", segment: col.id, bar: col.bars[0].id,
         deckNode: col.bars[0].deckNode, layers: [],
-      });
+      }, "all");
     }
 
-    function setFlowButton(playing) {
+    /* 三态：静息 / 播放中 / 已暂停。全部从 flowSteps + flowPaused 推出来，
+       不再由调用方传 —— 暂停也是"在播"（步序、泳道状态、四域高亮都还在），
+       只是时钟停了，用一个布尔参数表达不了。 */
+    const FLOW_ICON_PLAY = "M8 5v14l11-7z";
+    const FLOW_ICON_PAUSE = "M7 5h3v14H7zM14 5h3v14h-3z";
+
+    function setFlowButton() {
+      const playing = Boolean(flowSteps);
       const button = document.getElementById("croFlowPlay");
       const icon = document.getElementById("croFlowPlayIcon");
       const label = document.getElementById("croFlowPlayLabel");
+      const exit = document.getElementById("croFlowExit");
       if (!button) return;
-      button.setAttribute("aria-pressed", String(playing));
+      // aria-pressed 表达的是"正在跑"：暂停时松开，与图标翻回 ▶ 一致
+      button.setAttribute("aria-pressed", String(playing && !flowPaused));
       // 播放期间关掉四域高亮的淡入淡出（见 css 的 .is-flowing）：190ms 一步，
-      // 120ms 的回淡会让上一格还亮着、下一格已填上，读起来就是残影
+      // 120ms 的回淡会让上一格还亮着、下一格已填上，读起来就是残影。
+      // 暂停时不摘：画面本来就不动，摘掉反而会让定格的那一帧整体重新淡入一次
       document.getElementById("croBoard")?.classList.toggle("is-flowing", playing);
-      button.title = playing ? "停止播放" : "播放一个 step 的数据流";
-      if (label) label.textContent = playing ? "停止" : "播放数据流";
-      // ▶ / ■：停止而非暂停 —— 一趟只有 ~9 秒，断点续播不如重看一遍
-      icon?.querySelector("path")?.setAttribute("d", playing ? "M6 6h12v12H6z" : "M8 5v14l11-7z");
+      document.getElementById("croFlowLanes")?.classList.toggle("is-paused", playing && flowPaused);
+      if (!playing) {
+        button.title = "播放一个 step 的数据流";
+        if (label) label.textContent = "播放数据流";
+        icon?.querySelector("path")?.setAttribute("d", FLOW_ICON_PLAY);
+      } else if (flowPaused) {
+        button.title = "继续播放";
+        if (label) label.textContent = "继续";
+        icon?.querySelector("path")?.setAttribute("d", FLOW_ICON_PLAY);
+      } else {
+        button.title = "暂停，画面定在当前这一步";
+        if (label) label.textContent = "暂停";
+        icon?.querySelector("path")?.setAttribute("d", FLOW_ICON_PAUSE);
+      }
+      // 退出只在播放中出现：静息态没有可退出的东西，摆一枚灰键是噪声
+      if (exit) exit.hidden = !playing;
+      // 播放期间 DP 口径固定为所有 DP，开关跟着起播收起、停播放回
+      syncDpScope();
+    }
+
+    /* 暂停走「虚拟时钟」而不是逐个平移时间戳：泳道上的点、脉冲、刻痕、填块、
+       扫亮全是按绝对时间戳算进度的，续播时 rAF 的 now 已经跳过去了，挨个补偿
+       容易漏一处（漏掉的那一项会在续播瞬间直接跳到终态）。改成所有时间一律
+       减掉累计暂停时长，暂停期间这个差值不再增长，等价于把整条时间轴冻住。 */
+    function flowClock(now) {
+      return (flowPaused ? flowPausedAt : now) - flowPausedTotal;
+    }
+
+    function pauseFlow() {
+      if (!flowSteps || flowPaused) return;
+      flowPaused = true;
+      // rAF 的 timestamp 与 performance.now() 同一时间原点，可以混用
+      flowPausedAt = performance.now();
+      cancelAnimationFrame(flowRaf);
+      flowRaf = 0;
+      setFlowButton();
+    }
+
+    function resumeFlow() {
+      if (!flowSteps || !flowPaused) return;
+      flowPausedTotal += performance.now() - flowPausedAt;
+      flowPaused = false;
+      setFlowButton();
+      flowRaf = requestAnimationFrame(flowTick);
     }
 
     function stopFlow({ restore = true } = {}) {
@@ -2902,7 +3455,11 @@
       cancelAnimationFrame(flowRaf);
       flowRaf = 0;
       flowSteps = null;
-      setFlowButton(false);
+      flowDots = [];
+      flowPaused = false;
+      setFlowButton();
+      lanesShow(false);
+      document.getElementById("croBoard")?.classList.remove("is-flow-optimizer");
       // 播放期间 relation 一直没动过（播放走的是另一条铺色路径），
       // 收尾把它原样铺回去，连线也随之恢复
       if (restore) applyRelation(flowRestore);
@@ -2910,19 +3467,40 @@
     }
 
     function flowTick(now) {
-      if (!flowSteps) return;
-      if (now - flowLast >= FLOW_STEP_MS) {
-        flowLast = now;
+      if (!flowSteps || flowPaused) return;
+      // 一律走虚拟时钟：暂停期间的墙钟时间不计入，续播时点还停在半空、
+      // 脉冲还剩多少就是多少
+      const t = now - flowPausedTotal;
+      // flowHold 而不是常量：收尾那格（Optimizer step）要多停一会儿，
+      // 它是一句独立的话，跟层格不是一个节奏
+      if (t - flowLast >= flowHold) {
+        flowLast = t;
         if (flowIndex >= flowSteps.length) { stopFlow(); return; }
-        applyRelation(flowSteps[flowIndex], true);
+        const step = flowSteps[flowIndex];
+        applyRelation(step.rel, true);
+        // 收尾这一下 DP All-Reduce 平均梯度 + Adam 写回，集群里每张卡都参与：
+        // 整块铺满，而不是逐格点亮
+        document.getElementById("croBoard")?.classList.toggle("is-flow-optimizer", step.phase === "optimizer");
+        setFlowHead(step);
+        lanesStep(step, t);
+        flowHold = step.hold || FLOW_STEP_MS;
         flowIndex += 1;
       }
+      lanesDraw(t);
       flowRaf = requestAnimationFrame(flowTick);
     }
 
     function startFlow() {
       const topology = controller.topology;
       if (!topology.valid) return;
+      /* 起播先收起运行事件栏：这一趟看的是整网 49 格从左到右走一遍，刻度带越宽
+         每格越大；而事件列表在播放期间既不参与也点不动（点条目会 stopFlow）。
+         select:false —— 选择留给下面的 flowRestore，退出时原样还回去。
+         收完必须**同步**重排一次刻度带：栏宽是 class 翻转的、当场就变，但
+         --cro-tick-w 要 layoutLayerNav 才重解，不补这一下，紧接着的 lanesSync
+         量到的还是旧格宽下的刻度中心，头几格的小点会落偏。 */
+      setEventRailCollapsed(true, { select: false });
+      layoutLayerNav(layerNav);
       flowRestore = relation;
       /* 整网只在**真会换成另一张卡**时才动。正视图下 44 个 MoE 层是同一张卡的
          44 份副本（除层号外一模一样），逐层换卡 = 每 190ms 整卡 display 重绘
@@ -2932,7 +3510,8 @@
          Layer 导航、典型层、MoE、Cluster 四处照常逐层表达。 */
       let bandKey = null;
       let bandLayer = null;
-      flowSteps = navModel(topology).slots.map((slot) => {
+      const slots = navModel(topology).slots;
+      const forward = slots.map((slot) => {
         const rel = resolveRelation(topology, flowPayloadOfSlot(slot));
         const key = slot.unit
           ? `unit:${slot.unit}`
@@ -2941,17 +3520,53 @@
         else { bandKey = key; bandLayer = rel.deckLayer; }
         return rel;
       });
+
+      /* 反向直接反用前向解出来的那批 rel，不再解一遍：一是省掉 49 次
+         resolveRelation（每次要展开 rank 集合），二是段内共卡的去重结果原样
+         保留 —— 同一段里所有层的 deckLayer 本来就相等，反着走 deck 依然只在
+         段边界换卡，不会每 190ms 重绘整张卡。 */
+      const n = slots.length;
+      // note 是纯文本（挂 title），noteHtml 是带泳道色点的那份（挂 innerHTML）。
+      // 两份都在这里一次性算完，播放中不再解析字符串
+      const noteOf = (phase, i) => {
+        const note = flowNote(topology, slots, phase, i);
+        return { note, noteHtml: noteToHtml(note) };
+      };
+      flowSteps = [];
+      for (let i = 0; i < n; i += 1) {
+        flowSteps.push({ rel: forward[i], phase: "forward", slot: i, ...noteOf("forward", i) });
+      }
+      for (let i = n - 1; i >= 0; i -= 1) {
+        flowSteps.push({ rel: forward[i], phase: "backward", slot: i, ...noteOf("backward", i) });
+      }
+      // 收尾那格不属于任何一层：四域清空（rel = null），舞台交给数据线与集群
+      flowSteps.push({ rel: null, phase: "optimizer", slot: -1, hold: 1200, ...noteOf("optimizer", -1) });
+
       flowIndex = 0;
       // 第一拍立刻出效果，不空等一个 FLOW_STEP_MS
       flowLast = -Infinity;
+      flowHold = FLOW_STEP_MS;
+      flowPaused = false;
+      flowPausedTotal = 0;
       // 起播前把上一次选择留下的连线收掉：那组线指向的对象马上就不再是亮着的
       linkLayer?.replaceChildren();
-      setFlowButton(true);
+      setFlowButton();
+      /* 顺序要紧：先把泳道放出来，量几何时板面（可能新出的滚动条在内）已经
+         按新高度排好版了 —— clientWidth / getBoundingClientRect 都会强制一次
+         同步布局，读到的就是最终位置。 */
+      lanesShow(true);
+      lanesEnsureLabels();
+      flowSlots = slots;
+      lanesSync();
+      lanesReset(topology, slots);
       flowRaf = requestAnimationFrame(flowTick);
     }
 
+    // 主键：静息 → 起播，播放中 → 暂停，暂停中 → 续播。结束整趟走退出键。
     function toggleFlow() {
-      if (flowSteps) stopFlow(); else startFlow();
+      if (!flowSteps) startFlow();
+      else if (flowPaused) resumeFlow();
+      else pauseFlow();
     }
 
     /* 配置一改，四域整块重建：选中/关联的 class 挂在旧 DOM 上，跟着一起没了，
@@ -3250,6 +3865,9 @@
        .cro-board 整块收起，换成上（横幅）/ 中（传播源→受影响）/ 下（事件内涵）
        三段视图；关闭横幅或收起运行事件栏再切回来。 */
     function setIncidentLayout(on) {
+      // 进事件模式要先停播：.cro-board 整块 hidden 之后刻度带量不到宽度，
+      // 下一拍的泳道几何会解出一堆 0，而四域铺色也是点在看不见的 DOM 上空转
+      if (on) stopFlow({ restore: false });
       const view = document.getElementById("croIncidentView");
       if (view && view.hidden !== !on) view.hidden = !on;
       if (board && board.hidden !== on) {
@@ -3856,14 +4474,17 @@
       });
     }
 
-    function setEventRailCollapsed(collapsed) {
+    /* select:false 只翻栏宽、不动选择 —— 给「顺手收起」的调用方用（起播、关闭
+       事件横幅）。它们各自已经把选择处理妥当了：起播要留着 relation 供退出时
+       还原，横幅关闭自己就调了 clearSelection，这里再来一次会把刚定好的状态
+       又推翻一遍。rail 键本身仍走默认的 true。 */
+    function setEventRailCollapsed(collapsed, { select = true } = {}) {
       const workarea = document.querySelector(".pto-ide-frame__workarea");
       workarea?.classList.toggle("is-event-rail-collapsed", collapsed);
       document.getElementById("navRelationEvents")?.setAttribute("aria-pressed", String(!collapsed));
-      if (collapsed) {
-        clearSelection();
-      } else {
-        selectIncident(INCIDENT_GROUPS[0].events[0]);
+      if (select) {
+        if (collapsed) clearSelection();
+        else selectIncident(INCIDENT_GROUPS[0].events[0]);
       }
       // 侧栏宽度不再走过渡（见 css 里 .cro-event-rail 的说明），class 翻转后
       // 宽度即已确定。下一帧读一次几何就够，不必再等一个动画时长。
@@ -3902,11 +4523,29 @@
       let pending = 0;
       new ResizeObserver(() => {
         clearTimeout(pending);
-        pending = setTimeout(() => layoutLayerNav(layerNav), 48);
+        pending = setTimeout(() => {
+          layoutLayerNav(layerNav);
+          // 刻度宽度重解了，泳道的 x 轴（= 刻度中心）跟着重量一次，否则小点
+          // 会落在离目标层几像素外的地方 —— 刻度只有 3~4px 宽，差几像素就是差一层
+          if (flowSteps) {
+            lanesSync();
+            // 改 canvas 的 width/height 会清空画布，而暂停期间 rAF 已经停了、
+            // 没人来补这一帧 —— 定格的画面会当场变白，必须手动重画一次
+            if (flowPaused) lanesDraw(flowClock(performance.now()));
+          }
+        }, 48);
       }).observe(layerNav);
     }
     // 主题切换会重算 deck 调色板，重新搬一次
     document.addEventListener("cro:theme", syncPalette);
+    // 泳道颜色是开播时读进来的副本，主题一换要跟着换（但不能 reset：那会把
+    // 已经跑过的那半趟抹掉）
+    document.addEventListener("cro:theme", () => {
+      if (!flowSteps) return;
+      lanesRecolor();
+      // 暂停时没有下一帧来应用新颜色，就地重画定格的这一帧
+      if (flowPaused) lanesDraw(flowClock(performance.now()));
+    });
 
     /* ── 连线是画在 viewport 坐标上的，任何位移都要重画 ── */
     ["scroll", "wheel"].forEach((type) => {
@@ -3929,7 +4568,12 @@
 
     /* ── 清空选择：Esc，或点击 board 空白处 ── */
     document.addEventListener("keydown", (event) => {
-      if (event.key === "Escape" && relation) clearSelection();
+      if (event.key !== "Escape") return;
+      // 播放（含暂停）期间 Esc 是「退出播放」而不是「清空选择」：那时四域上亮着
+      // 的是当前这一步，clearSelection 会把它抹掉，而暂停时已经没有下一拍来补画，
+      // 定格的画面会当场变空
+      if (flowSteps) { stopFlow(); return; }
+      if (relation) clearSelection();
     });
     /* 挂在 document 而不是 board：点顶栏、activity rail、集群右侧留白这些
        board 之外的地方也要能清空。命中任一可选对象则不清。 */
@@ -3938,10 +4582,15 @@
       ".cro-structure__col",
       ".twin-heat-cell", ".pto-model-deck__node", ".pto-model-deck__experts",
       ".pto-model-deck__side-rule", ".cro-stepper", ".cro-event", ".pto-ide-frame__topbar",
-      // 播放键：点它不是「点空白」，不能顺手把当前选中清掉
-      ".cro-flow-play",
+      // 播放键组（播放/暂停/继续 + 退出）：点它不是「点空白」，不能顺手把当前选中清掉
+      ".cro-flow-actions",
     ].join(", ");
     document.addEventListener("click", (event) => {
+      /* 播放（含暂停）是一次显式模式，和运行事件同理：四域上亮着的是当前这一步，
+         不是 relation。点空白走 clearSelection 会把这一步的高亮抹掉 —— 播放中
+         下一拍会补回来（闪一下），暂停中就再也补不回来了，定格的画面直接变空。
+         整趟播放期间一律不响应空白点击，要结束请用退出键或 Esc。 */
+      if (flowSteps) return;
       if (!relation) return;
       // 运行事件是一次显式调查上下文：点击画布空白不应误退出。只有横幅关闭键
       // 或其他可响应对象触发新的选择时，才结束当前事件关系。
@@ -3990,9 +4639,21 @@
       event.stopPropagation();
       toggleFlow();
     });
+    document.getElementById("croFlowExit")?.addEventListener("click", (event) => {
+      // 同 croFlowPlay：不 stopPropagation 会冒泡到 board 的空白点击去 clearSelection，
+      // 把 stopFlow 刚还原回来的那个选择又清掉
+      event.stopPropagation();
+      stopFlow();
+    });
     document.getElementById("croEventRailCollapse")?.addEventListener("click", () => setEventRailCollapsed(true));
     document.getElementById("croEventRailExpand")?.addEventListener("click", () => setEventRailCollapsed(false));
-    document.getElementById("croIncidentBannerClose")?.addEventListener("click", clearSelection);
+    /* 关闭事件横幅 = 结束这次调查，回配置仿真态。事件栏跟着收起：留着它等于
+       还在「挑事件看」的上下文里，而横幅一关四域就接管了整块画布，那份列表
+       只是在左边占宽。select:false —— clearSelection 上一行刚调过。 */
+    document.getElementById("croIncidentBannerClose")?.addEventListener("click", () => {
+      clearSelection();
+      setEventRailCollapsed(true, { select: false });
+    });
     document.getElementById("navRelationEvents")?.addEventListener("click", () => {
       const workarea = document.querySelector(".pto-ide-frame__workarea");
       setEventRailCollapsed(!workarea?.classList.contains("is-event-rail-collapsed"));
