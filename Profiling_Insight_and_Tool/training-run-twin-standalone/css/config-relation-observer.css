@@ -146,14 +146,17 @@
 }
 
 .cro-event-rail__actions .btn {
-  --button-height-sm: 24px;
-  width: 24px;
-  min-width: 24px;
+  --button-height-sm: 28px;
+  width: 28px;
+  min-width: 28px;
 }
 
+/* 收起箭头：光放大图标框没用——默认那个 chevron 在 24 的视口里只占中间 12 格，
+   放到 22px 也才 11px 高。故 html 里把路径本身改画成 16 格高（m16 20-8-8 8-8），
+   字形吃满图标框，视觉大小才对得上旁边的标题。 */
 .cro-event-rail__actions .btn svg {
-  width: 18px;
-  height: 18px;
+  width: 22px;
+  height: 22px;
   fill: none;
   stroke: currentColor;
   stroke-width: 2.25;
@@ -1944,12 +1947,6 @@
   overflow: visible;
 }
 
-/* 高度由 chartStack 按预算内联写死（preserveAspectRatio:none 需要显式高度）；
-   这里只留个兜底值。 */
-.cro-chart--stack {
-  height: 34px;
-}
-
 /* 网格与坐标是背景，不是内容 */
 .cro-chart__grid {
   stroke: var(--border-subtle);
@@ -2005,15 +2002,6 @@
   font-size: 10px;
 }
 
-/* 斜纹：标「超出参考水位的那一部分」。底色与水位内那截同为 danger，斜纹本身
-   只是一层纹理，不再引入第二种颜色去暗示第二种严重度。 */
-.cro-chart__hatch-base { fill: var(--danger); }
-
-.cro-chart__hatch-line {
-  stroke: color-mix(in srgb, var(--foreground) 55%, transparent);
-  stroke-width: 2.5;
-}
-
 /* 标记点外圈用底色描一圈，让它从线上浮起来 */
 .cro-chart__mark-ring { fill: var(--surface-1); }
 
@@ -2025,18 +2013,45 @@
 
 .cro-chart__track { fill: var(--surface-2); }
 
-.cro-chart__seg { stroke: none; }
-
 .cro-chart-stack {
   display: flex;
   flex-direction: column;
   gap: var(--space-2);
 }
 
+/* 构成条：与 pto-swimlane-profiler inspector 的 .sl-meter 同款——一条 pill 轨道，
+   几段并排铺满，圆角只在轨道两端，段与段之间不留缝，只用一道底色内阴影分隔。 */
+.cro-meter {
+  display: flex;
+  height: 14px;
+  border-radius: var(--radius-pill);
+  background: var(--surface-3);
+  overflow: hidden;
+}
+
+.cro-meter__seg {
+  height: 100%;
+  min-width: 0;
+  background: var(--cro-seg, var(--primary));
+}
+
+.cro-meter__seg + .cro-meter__seg {
+  box-shadow: inset 1px 0 0 color-mix(in srgb, var(--background) 60%, transparent);
+}
+
+/* 超出参考水位的那一截：不换色，只把同一色换成 135° 细斜纹（同色两档透明度，
+   与 swimlane 标 blocked interval 的画法一致）。纹理只说「多出来的是这截」，
+   不引入第二种颜色去暗示第二种严重度。 */
+.cro-meter__seg--over {
+  background: repeating-linear-gradient(135deg,
+    color-mix(in srgb, var(--cro-seg) 88%, transparent) 0 3px,
+    color-mix(in srgb, var(--cro-seg) 30%, transparent) 3px 6px);
+}
+
+/* 直标行按 .sl-kv 的写法：细分隔线分行，不靠行间距 */
 .cro-chart-legend {
   display: flex;
   flex-direction: column;
-  gap: 4px;
   margin: 0;
   padding: 0;
   list-style: none;
@@ -2047,6 +2062,25 @@
   align-items: baseline;
   gap: var(--space-2);
   min-width: 0;
+  padding: 4px 0;
+}
+
+.cro-chart-legend__item + .cro-chart-legend__item {
+  border-top: 1px solid var(--border-subtle);
+}
+
+/* 斜纹那截的图例：挂在它所属那行下面，不再另起一段，故不带分隔线 */
+.cro-chart-legend__item--sub {
+  padding: 2px 0 4px var(--space-4);
+}
+
+.cro-chart-legend__item + .cro-chart-legend__item--sub {
+  border-top: none;
+}
+
+.cro-chart-legend__item--sub .cro-chart-legend__label,
+.cro-chart-legend__item--sub .cro-chart-legend__value {
+  color: var(--foreground-muted);
 }
 
 .cro-chart-legend__dot {
@@ -2054,6 +2088,16 @@
   width: 8px;
   height: 8px;
   border-radius: 2px;
+  background: var(--cro-seg, var(--primary));
+}
+
+/* 纹样即图例键：斜纹要看得出是斜纹，色块得比实心的宽一点 */
+.cro-chart-legend__dot--over {
+  width: 16px;
+  border-radius: var(--radius-pill);
+  background: repeating-linear-gradient(135deg,
+    color-mix(in srgb, var(--cro-seg) 88%, transparent) 0 3px,
+    color-mix(in srgb, var(--cro-seg) 30%, transparent) 3px 6px);
 }
 
 .cro-chart-legend__label {

@@ -2163,88 +2163,76 @@
     return svg;
   }
 
-  function chartStack(spec, width, budget) {
-    const W = width || 560, GAP = 2;
-    // 图例每项约 20px；剩下的才是条本身的高度，小屏下条先变细
-    const legendH = spec.items.length * 20 + 8;
-    const H = Math.max(14, Math.min((budget || 200) - legendH, 34));
+  /* 构成条：与 pto-swimlane-profiler inspector 里的 .sl-meter + .sl-kv 同款——
+     一条 pill 轨道，几段并排铺满不留缝，读数一律落到下面的直标行里。
+     不再走 SVG：这张图没有坐标轴，用 DOM 反而能直接吃到 token 和 pill 圆角。 */
+  function chartStack(spec) {
     const items = spec.items;
     const total = items.reduce((sum, item) => sum + item.value, 0) || 1;
-    const usable = W - GAP * Math.max(0, items.length - 1);
     const wrap = document.createElement("div");
     wrap.className = "cro-chart-stack";
 
-    const svg = svgNode("svg", {
-      class: "cro-chart cro-chart--stack", viewBox: `0 0 ${W} ${H}`,
-      preserveAspectRatio: "none", role: "img", "aria-label": spec.title,
-    });
-    svg.style.height = `${H}px`;   // 条高由预算算出，覆盖 CSS 里那个固定值
-    const addSeg = (x, width, tone, tip) => {
-      const seg = svgNode("rect", { x, y: 0, width: Math.max(0, width), height: H, rx: 3 });
-      seg.setAttribute("class", "cro-chart__seg");
-      seg.style.fill = CHART_TONE[tone] || tone;
-      if (tip) seg.appendChild(svgNode("title", {}, tip));
-      return seg;
+    const meter = document.createElement("div");
+    meter.className = "cro-meter";
+    meter.setAttribute("role", "img");
+    meter.setAttribute("aria-label", spec.title);
+    const addSeg = (share, tone, tip, over) => {
+      const seg = document.createElement("div");
+      seg.className = over ? "cro-meter__seg cro-meter__seg--over" : "cro-meter__seg";
+      seg.style.width = `${share * 100}%`;
+      seg.style.setProperty("--cro-seg", CHART_TONE[tone] || tone);
+      if (tip) seg.title = tip;
+      meter.appendChild(seg);
     };
 
-    /* 超出水位的那一截：底色仍是 danger（它和水位内那截是同一件事，不该被读成
-       两种严重度），只叠一层 45° 斜纹把「这部分是多出来的」标出来。 */
-    let hatchId = null;
-    const hatchFill = () => {
-      if (hatchId) return `url(#${hatchId})`;
-      hatchId = `croHatch-${chartClipSeq += 1}`;
-      const defs = svgNode("defs");
-      const pattern = svgNode("pattern", {
-        id: hatchId, width: 7, height: 7,
-        patternUnits: "userSpaceOnUse", patternTransform: "rotate(45)",
-      });
-      pattern.appendChild(svgNode("rect", { class: "cro-chart__hatch-base", width: 7, height: 7 }));
-      pattern.appendChild(svgNode("line", { class: "cro-chart__hatch-line", x1: 0, y1: 0, x2: 0, y2: 7 }));
-      defs.appendChild(pattern);
-      svg.appendChild(defs);
-      return `url(#${hatchId})`;
-    };
-
-    let x = 0;
     items.forEach((item) => {
       const share = item.value / total;
-      const width = share * usable;
       const tip = `${item.label}：${fmtValue(item.value, spec.unit)}`;
-      /* limitShare = 这一段「本该占多少」。实际超出时就地切两截：两截同为红色
-         （它们是同一件事，不该被读成两种严重度），超出的那截叠 45° 斜纹 ——
-         一眼读出「多出来的是哪一块、有多大」，而不是只知道总数偏大。 */
+      /* limitShare = 这一段「本该占多少」。实际超出时就地切两截：两截同色
+         （它们是同一件事，不该被读成两种严重度），超出的那截换成同色细斜纹
+         —— 一眼读出「多出来的是哪一块、有多大」，而不是只知道总数偏大。 */
       const limit = Number.isFinite(item.limitShare) ? item.limitShare / 100 : null;
+      const tone = item.tone || "neutral";
       if (limit !== null && share > limit) {
-        const normalW = limit * usable;
-        svg.appendChild(addSeg(x, normalW, "danger", `${tip}（其中正常水位 ${item.limitShare}%）`));
-        svg.appendChild(addSeg(x + normalW, width - normalW, hatchFill(), `${tip}（超出水位的部分）`));
+        addSeg(limit, tone, `${tip}（其中正常水位 ${item.limitShare}%）`, false);
+        addSeg(share - limit, tone, `${tip}（超出水位的部分）`, true);
       } else {
-        svg.appendChild(addSeg(x, width, item.tone || "neutral", tip));
+        addSeg(share, tone, tip, false);
       }
-      x += width + GAP;
     });
-    wrap.appendChild(svg);
+    wrap.appendChild(meter);
 
     // 图例即直标：色块只管身份，数值与占比一律用文字色，不靠颜色读数
     const legend = document.createElement("ul");
     legend.className = "cro-chart-legend";
-    items.forEach((item) => {
+    const addRow = (dotClass, tone, label, value, sub) => {
       const li = document.createElement("li");
-      li.className = "cro-chart-legend__item";
+      li.className = sub ? "cro-chart-legend__item cro-chart-legend__item--sub" : "cro-chart-legend__item";
       const dot = document.createElement("span");
-      dot.className = "cro-chart-legend__dot";
-      dot.style.background = CHART_TONE[item.tone || "neutral"];
+      dot.className = dotClass;
+      dot.style.setProperty("--cro-seg", CHART_TONE[tone] || tone);
       const name = document.createElement("span");
       name.className = "cro-chart-legend__label";
-      name.textContent = item.label;
-      const value = document.createElement("span");
-      value.className = "cro-chart-legend__value";
-      const pct = (item.value / total) * 100;
-      value.textContent = Number.isFinite(item.limitShare)
-        ? `${fmtValue(item.value, spec.unit)} · ${pct.toFixed(1)}%（正常 ${item.limitShare}%）`
-        : `${fmtValue(item.value, spec.unit)} · ${Math.round(pct)}%`;
-      li.append(dot, name, value);
+      name.textContent = label;
+      const val = document.createElement("span");
+      val.className = "cro-chart-legend__value";
+      val.textContent = value;
+      li.append(dot, name, val);
       legend.appendChild(li);
+    };
+    items.forEach((item) => {
+      const tone = item.tone || "neutral";
+      const pct = (item.value / total) * 100;
+      const overrun = Number.isFinite(item.limitShare) && pct > item.limitShare;
+      addRow("cro-chart-legend__dot", tone, item.label, Number.isFinite(item.limitShare)
+        ? `${fmtValue(item.value, spec.unit)} · ${pct.toFixed(1)}%（正常 ${item.limitShare}%）`
+        : `${fmtValue(item.value, spec.unit)} · ${Math.round(pct)}%`);
+      // 斜纹那截自己占一行，纹样即图例键——否则条上多出来的纹理没人解释
+      if (overrun) {
+        const excess = item.value - (item.limitShare / 100) * total;
+        addRow("cro-chart-legend__dot cro-chart-legend__dot--over", tone, "超出正常水位",
+          `${fmtValue(excess, spec.unit)} · ${(pct - item.limitShare).toFixed(1)}%`, true);
+      }
     });
     wrap.appendChild(legend);
     return wrap;
@@ -3430,7 +3418,7 @@
     /* 图按宿主的实测宽高出图。高度预算 = 下区可用净高 − figure 里图表之外的部分
        （图题 + 读法那两行）。小屏下预算变小，各图各自的收敛方式不同：
          line  —— 压扁（趋势靠横向读，压矮不失真）
-         stack —— 条变细（图例行数是固定开销，先从条身上省）
+         stack —— 不吃预算（DOM 构成条本来就只有一条 pill + 几行直标，够矮）
          bars  —— 条目多就整个换成竖排柱，高度不再随条目数长
        目的只有一个：这一栏不出滚动条。 */
     function paintDetailChart() {

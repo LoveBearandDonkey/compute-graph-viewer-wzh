@@ -114,8 +114,6 @@ body {
 .sl-kv + .sl-kv { border-top: 1px solid var(--border-subtle); }
 .sl-kv-key { color: var(--foreground-secondary); }
 .sl-kv-val { color: var(--foreground); font-family: var(--font-mono); text-align: right; }
-.sl-meter { height: 4px; border-radius: var(--radius-pill); background: var(--surface-3); overflow: hidden; margin: 6px 0 2px; }
-.sl-meter-fill { height: 100%; background: var(--accent); }
 .sl-insp-hint { font: var(--text-body-sm); color: var(--foreground-muted); line-height: 1.65; }
 .sl-insp-hint b { color: var(--foreground); font-weight: 600; }
 .sl-row {
@@ -648,6 +646,12 @@ body {
 .sl-diff-stat-card__row + .sl-diff-stat-card__row { border-top: 1px solid var(--border-subtle); }
 .sl-diff-stat-card__label { color: var(--foreground-muted); font: 500 11px / 1.2 var(--font-sans); }
 .sl-diff-stat-card__num { color: var(--foreground); font: 600 14px / 1.3 var(--font-mono); }
+.sl-diff-stat-card__num small { color: var(--foreground-muted); font-size: 10px; font-weight: 500; }
+.sl-diff-stat-card__num.is-slower { color: #d23b3b; }
+.sl-diff-stat-card__num.is-faster { color: #1a8f52; }
+/* 总账条：差异看板第一层，视觉上比下面的计数卡重一档 */
+.sl-diff-ledger { border: 1px solid var(--border-subtle); }
+.sl-diff-ledger .sl-diff-stat-card__label { display: flex; align-items: center; gap: 5px; }
 .sl-diff-card-list { display: flex; flex-direction: column; gap: 8px; }
 .sl-diff-card {
   padding: 7px 10px; border-radius: var(--radius-lg); cursor: pointer;
@@ -666,94 +670,193 @@ body {
   color-mix(in srgb, var(--danger) 22%, var(--surface-1)),
   var(--surface-1) 72%); }
 .sl-diff-card.is-active { background: var(--state-selected); border-color: color-mix(in srgb, var(--accent) 55%, transparent); }
-.sl-diff-card__path { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: var(--text-body-sm); color: var(--foreground); }
+.sl-diff-card__path-row { display: flex; align-items: center; gap: 5px; min-width: 0; overflow: hidden; }
+/* 路径「Rank 3 › Overlap Analysis › 空等同步」放不下时中间省略，不是尾部省略：
+   末段才是这张卡指认的那个东西（哪条泳道），砍掉它整行就没有识别力了；分隔符 ›
+   单独成元素、不参与压缩，省略号因此只会落在中间层级的文字里，不会啃到 › 上。 */
+.sl-diff-card__path { display: flex; align-items: center; min-width: 0; flex: 1 1 auto; font: var(--text-body-sm); color: var(--foreground); }
+.sl-diff-card__path-mid { min-width: 0; flex: 0 1 auto; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sl-diff-card__path-sep { flex: 0 0 auto; padding: 0 4px; color: var(--foreground-muted); }
+.sl-diff-card__path-leaf { flex: 0 0 auto; white-space: nowrap; }
+/* 单段路径（按任务 / 按 Rank 的卡）没有可让的中间层级，只能自己省略 */
+.sl-diff-card__path.is-single .sl-diff-card__path-leaf { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 .sl-diff-card__path small { color: var(--foreground-muted); font-weight: 400; }
-.sl-diff-card__meter-row { display: flex; align-items: center; gap: 8px; margin-top: 4px; }
-.sl-diff-card__pct { flex: 0 0 auto; font: 600 12px / 1.3 var(--font-mono); color: var(--foreground); min-width: 50px; }
-.sl-diff-card__meter-row .sl-meter { flex: 1 1 auto; margin: 0; }
+/* 新增 / 消失：一侧无任务条（融合掉或新拆出），A/B 验证的核心证据。
+   一律中性色——红绿留给"变快/变慢"这一个语义，标签再上色会让卡片列表整片发花，
+   而且"新增"本身无所谓好坏（融合是 N→1，切分是 1→N），套上绿色反而误导。 */
+.sl-diff-card__flag {
+  flex: 0 0 auto; padding: 0 5px; border-radius: var(--radius-pill);
+  font: 600 9px / 14px var(--font-sans);
+  background: var(--surface-3); color: var(--foreground-secondary);
+}
+.sl-diff-card__flag.is-noise { color: var(--foreground-muted); }
+/* 噪声带内：整卡压暗，避免用户把训练自身抖动读成改动带来的差异 */
+.sl-diff-card.is-noise { opacity: .55; }
+
+/* ── 差异健康度卡（差异总览最顶部的定调卡片）──
+   评级色阶与 index_v3 总览页 PHS 仪表盘同源，只是档位换成 A+/A/B+/B/C+/C。 */
+.sl-health {
+  padding: 12px var(--space-3) 11px; margin-bottom: var(--space-3);
+  border-radius: var(--radius-lg); background: var(--surface-2);
+  border: 1px solid var(--border-subtle);
+}
+/* 卡片标题（左上角），与其下的结论行分行排 */
+.sl-health__label {
+  display: flex; align-items: center; gap: 5px;   /* 容纳标题后的评分口径问号 */
+  font: 500 10px / 1.2 var(--font-sans); letter-spacing: .06em;
+  color: var(--foreground-muted);
+}
+/* 与标题行的间距全部由下一块的 margin-top 给，避免和 label 的 margin-bottom 折叠后取值不确定 */
+.sl-health__top { display: flex; align-items: center; gap: 9px; margin-top: 16px; }
+/* 评级块用反色（评级色填底 + 白字）：这是整张卡的结论徽标，实心块比淡底描边更压得住场；
+   DIFF_GRADE_COLOR 六档都是深色阶，白字对比度足够 */
+.sl-health__grade {
+  flex: 0 0 auto; min-width: 40px; height: 32px; padding: 0 9px;
+  display: inline-flex; align-items: center; justify-content: center;
+  border-radius: var(--radius-md); font: 700 16px / 1 var(--font-sans); letter-spacing: -0.3px;
+  color: #fff;
+}
+/* 结论文案是这张卡的主角；栏宽有限，长文案（如"整体变快 11.3%"）允许折行而不是截断 */
+.sl-health__title {
+  flex: 1 1 auto; min-width: 0;
+  font: 700 18px / 1.3 var(--font-sans); letter-spacing: -0.4px; color: var(--foreground);
+  overflow-wrap: anywhere;
+}
+/* 刻度条：整条铺 6 档渐变，指针给出分数位置——位置本身就是主编码 */
+.sl-health__scale {
+  position: relative; height: 5px; margin: 15px 0 8px; border-radius: var(--radius-pill);
+  background: linear-gradient(90deg, #ff4b7b 0%, #ff7051 30%, #ff9737 45%, #e9b51b 60%, #a3cb45 75%, #04d793 90%);
+}
+/* 分数不再单独占顶行的一个字号最大的位置：它本来就只是刻度条上那个点的读数，
+   直接印进指针里，位置（在哪一档）和数值（多少分）由同一个物件给出。
+   指针底色用评级色（深色阶）而不是渐变取色，白字才读得清。 */
+.sl-health__marker {
+  position: absolute; top: 50%; min-width: 21px; height: 17px; padding: 0 4px;
+  display: inline-flex; align-items: center; justify-content: center;
+  border-radius: var(--radius-pill); transform: translate(-50%, -50%);
+  border: 2px solid var(--surface-2); box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.18);
+  font: 700 10px / 1 var(--font-sans); letter-spacing: -0.3px; color: #fff;
+}
+.sl-health__ticks {
+  display: flex; justify-content: space-between;
+  font: 500 8.5px / 1.2 var(--font-mono); color: var(--foreground-muted);
+}
+.sl-health__ticks .is-current { font-weight: 700; }
+.sl-health__verdict {
+  margin-top: 16px; font: 400 11px / 1.65 var(--font-sans); color: var(--foreground-secondary);
+}
+
+/* ── 每 step 时间构成对比条（取代原先的假仪表盘）── */
+.sl-comp-compare { padding: 10px var(--space-3) 12px; border-radius: var(--radius-lg); background: var(--surface-2); margin-bottom: var(--space-3); }
+.sl-comp-compare__title { font: 600 11px / 1.2 var(--font-sans); color: var(--foreground-muted); margin-bottom: 9px; }
+.sl-comp-row + .sl-comp-row { margin-top: 9px; }
+.sl-comp-row__head { display: flex; align-items: center; gap: 6px; margin-bottom: 4px; }
+.sl-comp-row__name { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: 500 11px / 1.3 var(--font-sans); color: var(--foreground-secondary); }
+.sl-comp-row__total { font: 600 11px / 1.3 var(--font-mono); color: var(--foreground); }
+/* 条形按各 run 总时长等比缩放，谁长谁短一眼可见（不是各自拉满 100%）。
+   track 是与最长柱同宽的弱色垫底，bar 才是实际数据 —— 没有垫底时几条长短不一的
+   悬空柱子会被读成"界面出问题了"，而不是"这次确实更快"。 */
+/* 高度与健康度刻度条 .sl-health__scale 一致（5px）：差异总览里三条横向柱
+   （健康度 / 构成 / 差异卡片）应当是同一套度量语言，粗细不一会读成层级不同 */
+.sl-comp-row__track {
+  width: 100%; height: 5px; overflow: hidden;
+  border-radius: var(--radius-pill); background: var(--surface-3);
+}
+.sl-comp-row__bar { position: relative; height: 100%; border-radius: inherit; overflow: hidden; }
+/* 段用绝对定位铺在 bar 上，而不是当 flex 项依次排列：flex 下每段的百分比宽高各自
+   独立取整，在 5px 这么薄的条上，某一段的盒子被舍到相邻的亚像素行，抗锯齿就会在它
+   上下补出半透明像素，读起来像这一段整体挪了 1px。改成 inset 0 贴死上下边，
+   四段的顶边和底边由同一个盒子边界决定，横向接缝也由累计偏移直接给出。
+   不设 min-width：某段为 0（如慢卡的空等）时就该不占位，
+   强行留 1px 会在条中间留一道与相邻色错开的细线，看着像渲染错位 */
+.sl-comp-seg { position: absolute; top: 0; bottom: 0; display: block; }
+.sl-comp-legend { display: flex; flex-wrap: wrap; gap: 4px 12px; margin-top: 10px; font: 500 10px / 1.3 var(--font-sans); color: var(--foreground-muted); }
+.sl-comp-legend i { display: inline-block; width: 7px; height: 7px; border-radius: 2px; margin-right: 5px; }
+
+/* ── 多卡视角：rank 行 ── */
+.sl-rank-rows { display: flex; flex-direction: column; gap: 8px; }
+.sl-rank-row {
+  padding: 8px 10px; border-radius: var(--radius-lg); background: var(--surface-2); cursor: pointer;
+  border: 1px solid transparent;      /* 选中时换色，不用 box-shadow：慢卡态已经占了 inset shadow */
+  transition: background var(--duration-fast), border-color var(--duration-fast);
+}
+.sl-rank-row:hover { background: var(--state-hover); }
+.sl-rank-row.is-slow { box-shadow: inset 0 0 0 1px rgba(210, 59, 59, 0.45); }
+/* 选中态：与差异卡片 .sl-diff-card.is-active 同一套观感（选中底 + accent 描边） */
+.sl-rank-row.is-active {
+  background: var(--state-selected);
+  border-color: color-mix(in srgb, var(--accent) 55%, transparent);
+}
+.sl-rank-row:focus-visible { outline: 0; border-color: var(--accent); }
+
+/* 指标问号：沿用 index_v3 指标卡 .ovm-info 的形制，悬浮出解释气泡 */
+.sl-rank-info {
+  width: 13px; height: 13px; padding: 0; flex-shrink: 0;   /* 与 label 的间距由 .sl-diff-ledger 的 gap 给 */
+  display: inline-flex; align-items: center; justify-content: center;
+  border: 0; border-radius: 50%; cursor: help;
+  font: 600 9px/1 var(--font-sans); color: var(--foreground-muted); background: var(--surface-3);
+}
+.sl-rank-info:hover { color: var(--foreground); background: var(--surface-4, var(--surface-3)); }
+.sl-rank-tip {
+  position: fixed; z-index: 90; max-width: 300px; display: none;
+  padding: 9px 11px; border-radius: var(--radius-lg);
+  background: var(--surface-1, var(--bg-elevated));
+  box-shadow: var(--shadow-soft, 0 10px 30px rgba(0, 0, 0, 0.18));
+  border: 1px solid var(--border-subtle);
+  font: 400 11px / 1.65 var(--font-sans); color: var(--foreground-secondary);
+  white-space: pre-wrap;              /* 提示文案里用 \n 分段 */
+}
+.sl-rank-tip.is-visible { display: block; }
+.sl-rank-row__head { display: flex; align-items: center; gap: 6px; margin-bottom: 5px; }
+.sl-rank-row__name { flex: 1 1 auto; display: flex; align-items: center; gap: 5px; font: 600 11px / 1.3 var(--font-sans); color: var(--foreground); }
+/* 「最慢」保留告警红：这里只有一个标签，且它就是本视图要指认的那张卡，
+   与差异卡片上那些中性标签不同（那边是并列的分类标记，不是结论） */
+.sl-rank-row__badge {
+  flex: 0 0 auto; padding: 0 5px; border-radius: var(--radius-pill);
+  font: 600 9px / 14px var(--font-sans);
+  background: rgba(210, 59, 59, 0.16); color: #d23b3b;
+}
+.sl-rank-row__step { font: 600 11px / 1.3 var(--font-mono); color: var(--foreground); }
+/* 同上：track 垫底与最长 rank 等宽，bar 按该 rank 的 step 时长占比 */
+.sl-rank-row__track {
+  width: 100%; height: 5px; overflow: hidden;      /* 同 .sl-comp-row__track，见其注释 */
+  border-radius: var(--radius-pill); background: var(--surface-3);
+}
+.sl-rank-row__bar { position: relative; height: 100%; border-radius: inherit; overflow: hidden; }  /* 同 .sl-comp-row__bar，段是绝对定位 */
+.sl-rank-row__meta { margin-top: 5px; font: 500 10px / 1.3 var(--font-mono); color: var(--foreground-muted); }
+/* 慢卡判定的结论文字贴在它所指认的那张 rank 卡里，而不是在列表上方另起一张说明卡：
+   那段话通篇只讲 Rank N 一张卡，脱离对象单独摆着就只是一段浮着的旁白。 */
+.sl-rank-row__note {
+  margin-top: 7px; padding-top: 7px; border-top: 1px solid var(--border-subtle);
+  font: 400 10.5px / 1.6 var(--font-sans); color: var(--foreground-secondary);
+}
+.sl-rank-row__note b { color: #d23b3b; font-weight: 600; }
+/* 差值贴在基线行名称右侧（不再单独占一行、也不再配进度条与百分比）：
+   列表已按绝对差值排序，卡内再来一条红绿条 + 百分比就是同一信息说三遍，
+   几十张卡叠起来整页都是彩条，反而看不出哪张要紧。 */
+.sl-diff-card__delta {
+  flex: 0 0 auto;                          /* 与名称、新增/消失标签成组贴左，右侧数值由 __val 的 margin-left:auto 顶开 */
+  font: 600 11px / 1.3 var(--font-mono); color: var(--foreground-secondary);
+}
+.sl-diff-card__delta.is-slower { color: #d23b3b; }
+.sl-diff-card__delta.is-faster { color: #1a8f52; }
 .sl-diff-card__vals { margin-top: 4px; font: 500 11px / 1.3 var(--font-sans); color: var(--foreground-muted); }
-.sl-diff-card__val { color: var(--foreground); font-family: var(--font-mono); font-weight: 600; }
-.sl-diff-card__val.is-warn { color: #d23b3b; }
+/* busy 数值一律中性：快慢方向由同一行的差值着色承担，这里再标红是重复编码。
+   margin-left:auto 把它顶到行尾——左边一组（名称·差值·标签）长短不一，各行的 ms 仍右对齐 */
+.sl-diff-card__val { margin-left: auto; color: var(--foreground); font-family: var(--font-mono); font-weight: 600; }
 /* 三方对比：一行塞不下三组「名称 + 数值」，改成竖排的 dot·名称·数值 */
 .sl-diff-card__vals.is-multi { display: flex; flex-direction: column; gap: 2px; }
 .sl-diff-card__val-row { display: flex; align-items: center; gap: 5px; min-width: 0; }
 .sl-diff-card__val-dot { width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0; }
-.sl-diff-card__val-name { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* 名称不再撑满：差值要紧跟其后。基线行没有差值，仍渲染一个空的差值容器占位。 */
+.sl-diff-card__val-name { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 /* 该 run 里这条泳道没有任务条（多/少任务条的直接体现） */
 .sl-diff-card__val.is-absent { color: var(--foreground-muted); font-weight: 400; }
-.sl-diff-card__count { color: var(--foreground-muted); font: 400 10px / 1.3 var(--font-mono); flex-shrink: 0; }
 
 /* ── 对比双方左右卡片 ── */
-.sl-compare-cards {
-  display: grid; grid-template-columns: 1fr 1fr; gap: var(--space-3);
-  margin-bottom: var(--space-3);
-}
-/* 三方对比：右侧面板宽度不变，卡片压成三列，仪表盘同步缩一档 */
-.sl-compare-cards.is-triple { grid-template-columns: repeat(3, 1fr); gap: var(--space-2); }
-.sl-compare-cards.is-triple .sl-compare-card__head { padding: 8px 8px 0; gap: 5px; }
-.sl-compare-cards.is-triple .sl-compare-card__name { font-size: 10px; -webkit-line-clamp: 3; line-clamp: 3; }
-.sl-compare-cards.is-triple .sl-compare-card__gauge { height: 104px; }
-.sl-compare-cards.is-triple .sl-compare-gauge-score { font-size: 19px; }
-.sl-compare-cards.is-triple .sl-compare-gauge-sub { font-size: 9px; }
-.sl-compare-card {
-  position: relative;
-  display: flex; flex-direction: column;
-  border-radius: var(--radius-lg); overflow: hidden;
-  background: var(--surface-2);
-}
-.sl-compare-card__head {
-  display: flex; align-items: center; gap: 8px;
-  padding: 10px 12px 0;
-}
+/* 构成对比条仍复用 .sl-compare-card__dot 作 run 身份点 */
 .sl-compare-card__dot {
   width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0;
-}
-.sl-compare-card__name {
-  flex: 1 1 auto; min-width: 0;
-  padding: 2px 0;
-  font: 500 11px / 1.35 var(--font-mono); color: var(--foreground);
-  display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-clamp: 2;
-  overflow: hidden; word-break: break-all;
-}
-.sl-compare-card__badge {
-  position: absolute; top: 0; right: 0; z-index: 2;
-  font: 500 10px / 1.3 var(--font-sans);
-  padding: 1px 7px 2px 7px;
-  border-radius: 0 var(--radius-lg) 0 var(--radius-lg);
-  background: color-mix(in srgb, var(--accent) 18%, transparent);
-  color: var(--foreground-secondary);
-  pointer-events: none;
-}
-/* 缩小版仪表盘 */
-.sl-compare-card__gauge {
-  position: relative; width: 100%; height: 144px;
-}
-.sl-compare-card__gauge svg {
-  display: block; width: 100%; height: 100%; overflow: visible;
-}
-.sl-compare-gauge-center {
-  position: absolute; inset: 0;
-  display: flex; flex-direction: column;
-  align-items: center; justify-content: center;
-  transform: translateY(8%);
-  pointer-events: none; text-align: center;
-}
-.sl-compare-gauge-grade {
-  font-size: 10px; font-weight: 700; line-height: 1;
-  padding: 2px 8px; border-radius: 999px; margin-bottom: 2px;
-}
-.sl-compare-gauge-score {
-  font-size: 26px; font-weight: 700; line-height: 1.04;
-  font-family: var(--font-sans); letter-spacing: -0.5px;
-}
-.sl-compare-gauge-sub {
-  font-size: 10px; color: var(--foreground-muted); margin-top: 2px;
-  display: flex; align-items: center; gap: 4px;
-}
-.sl-compare-gauge-sub b { color: var(--foreground-secondary); font-weight: 600; }
-.sl-compare-gauge-estbadge {
-  font-size: 9px; font-weight: 700; line-height: 1.4;
-  padding: 1px 6px; border-radius: 999px;
 }
 
 /* ── 三栏对比：把对比框从「按比例分高的 split」切成「等高堆叠 + 整体滚动」──
@@ -1997,7 +2100,7 @@ body {
               <path d="M9 3v18"></path>
             </svg>
           </button>
-          <button class="pto-ide-frame__window-action is-selected" type="button" id="topInspectorToggle" aria-label="切换差异看板面板" aria-controls="inspectorPane" aria-expanded="true" aria-pressed="true" title="差异看板">
+          <button class="pto-ide-frame__window-action is-selected" type="button" id="topInspectorToggle" aria-label="切换差异总览面板" aria-controls="inspectorPane" aria-expanded="true" aria-pressed="true" title="差异总览">
             <svg class="pto-ide-frame__window-icon" viewBox="0 0 24 24" aria-hidden="true">
               <rect x="3" y="3" width="18" height="18" rx="2"></rect>
               <path d="M15 3v18"></path>
@@ -2178,7 +2281,7 @@ body {
 
                   <aside class="pto-ide-frame__pane" id="inspectorPane" data-ide-pane="inspector">
                     <div class="pto-ide-frame__pane-header">
-                      <h2 class="pto-ide-frame__pane-title" id="inspTitle">差异看板</h2>
+                      <h2 class="pto-ide-frame__pane-title" id="inspTitle">差异总览 · 单任务内快慢卡</h2>
                     </div>
                     <div class="sl-insp-body" id="inspBody"></div>
                   </aside>
@@ -2391,7 +2494,7 @@ const state = {
   diffSelectedLane: null,
   inspectorView: 'dashboard', // dashboard | detail
   detailTaskKey: null,        // { coreName, subGraphId, label, ordinal } — 点击泳道任务条时置入，驱动详情下钻
-  diffTab: 'task',            // task | lane —— 差异看板「按任务 / 按泳道」页签
+  diffTab: 'task',            // task | lane | rank —— 差异总览的粒度页签（仅跨任务 A/B 内容有）
   swimlaneViewMode: 'grouped', // grouped | aggregated —— 对比模式下「分组视图/聚合视图」页签
   collapsedLaneGroups: new Set(['host', 'ai_core_worker_phases']),
   expandedLaneCores: new Set(),
@@ -4600,7 +4703,7 @@ function renderInspector() {
   const title = document.getElementById('inspTitle');
   const body = document.getElementById('inspBody');
   if (state.inspectorView === 'detail' && state.detailTaskKey) {
-    title.innerHTML = '<button class="sl-detail-back" id="detailBackBtn" title="返回差异看板" aria-label="返回差异看板"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m19 12H5"></path><path d="m12 19-7-7 7-7"></path></svg></button><span>对比详情</span>';
+    title.innerHTML = '<button class="sl-detail-back" id="detailBackBtn" title="返回差异总览" aria-label="返回差异总览"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m19 12H5"></path><path d="m12 19-7-7 7-7"></path></svg></button><span>对比详情</span>';
     body.innerHTML = diffDetailHtml(state.detailTaskKey);
     bindInspector();
     // 随机滚动到某个 diff hunk：每切换一条对比任务条都换一段差异代码看。
@@ -4630,12 +4733,11 @@ function renderInspector() {
     });
     return;
   }
-  title.textContent = '差异看板';
+  // 标题带上当前在看哪一种对比：勾一条是同一次训练内部的快慢卡，勾多条是任务之间的差异
+  title.textContent = RUN_BY_ID[state.comparisonRunId]
+    ? '差异总览 · 多任务间对比'
+    : '差异总览 · 单任务内快慢卡';
   body.innerHTML = diffDashboardHtml();
-  // 渲染缩小版仪表盘（每个参与对比的 run 一个）
-  activeCompareRuns().forEach(function (run, i) {
-    renderCompareGauge(document.getElementById('compareGauge' + i), computeRunPhs(run));
-  });
   bindInspector();
 }
 
@@ -4666,6 +4768,9 @@ const TRAIN_LABEL_KIND_COLOR = {
   'Comm-Wait': OPERATOR_TASK_COLORMAP.colorForTask({ colorKey: 'Resid' }, 'semantic'),         // 粉
   'Communication': OPERATOR_TASK_COLORMAP.colorForTask({ colorKey: 'KV-Upd' }, 'semantic'),    // 金
   'Communication(Not Overlapped)': OPERATOR_TASK_COLORMAP.colorForTask({ colorKey: 'FFN-Up' }, 'semantic'), // 橙
+  // 空等同步：慢卡定位的核心信号，用告警红与"真在传输"的青/橙拉开——
+  // 这段时间设备什么都没干，只是在等最慢的那张卡进通信。
+  'Comm-Idle-Wait': '#d23b3b',
   'Free': OPERATOR_TASK_COLORMAP.colorForLaneKind('other'),                                    // 中性灰，空闲不抢视觉
 };
 if (typeof colorForTask === 'function') {
@@ -4688,7 +4793,10 @@ if (typeof colorForTask === 'function') {
    默认形态的参数与改造前的写死值完全一致，两两对比的既有数据一字不变；
    只有显式登记在 TRAIN_RUN_SHAPES 里的 run 才走差异化形态。 ---- */
 const TRAIN_SHAPE_DEFAULT = {
-  steps: 4,
+  // 12 步（原 4 步）：差异显著性判据比的是多个 step 的**均值**，判据分母是均值的标准误
+  // σ/√n —— n=4 时标准误几乎和单步抖动一样大，10% 以内的真实差异根本分辨不出来，
+  // 差异健康度会一律给出"无显著变化"。真实 profiling 也不会只采 4 步。
+  steps: 12,
   kernelBase: 6, kernelSpread: 4,
   aivRate: 0.5,
   computeScale: 1, commScale: 1, freeScale: 1,
@@ -4704,7 +4812,7 @@ const TRAIN_RUN_SHAPES = {
      Vector 算子被融合进 Cube，AIV 泳道任务条大幅变少；通信侧换成 AllToAll，
      没有 P2P 流水（少一条泳道），并且通信整体更慢、空泡更大。 */
   'pangu-ffn-a5-g2-20260701-211806': {
-    steps: 5,
+    steps: 15,
     kernelBase: 8, kernelSpread: 3,
     aivRate: 0.18,
     computeScale: 0.88, commScale: 1.35, freeScale: 1.5,
@@ -4724,85 +4832,144 @@ function buildTrainingSwimlaneData(run) {
   // STEP_GAP_US 刻意压小：真实训练里 step 之间几乎背靠背，间隔不该比 step 本身还长，
   // 否则整条泳道乍看全是空隙（此前 20000us 的间隔比一个 step 的内容还长好几倍）。
   const HOSTS = 2, RANKS_PER_HOST = 2, STEPS = shape.steps, STEP_GAP_US = 400;
+  const NRANKS = HOSTS * RANKS_PER_HOST;
   const jitter = () => 0.85 + rnd() * 0.3;
   // 每次 run 的整体健康度偏置：由 run.id 哈希决定，让两次对比的训练看起来不同
   const commWaitBias = 0.15 + rnd() * 0.35;
   const freeBias = 0.05 + rnd() * 0.22;
 
+  /* ---- 慢卡与集合通信同步点 ------------------------------------------------
+     改造前每个 rank 各自独立推进时间轴，谁也不等谁——这与真实训练相反：
+     集合通信是同步点，最晚进入通信的那张卡决定所有卡的通信起始时刻，其余卡在此之前
+     只能空等。没有这个模型，「通信等待」泳道就无从谈起，慢卡也无从定位。
+     故改为 step 外循环、rank 内循环：先算出各 rank 本步的计算结束时刻，取最大值作为
+     同步点，再给每个 rank 补一段 [自己算完, 同步点] 的空等。
+     哪张卡慢（或没有慢卡）由 run.id 决定，让不同 run 呈现不同的多卡形态。 ---- */
+  const slowPick = hashSeed(String(run?.id || 'run') + 'slowrank') % (NRANKS + 2);
+  const slowRank = slowPick < NRANKS ? slowPick : -1;      // >= NRANKS → 本次无慢卡
+  const rankComputeBias = Array.from({ length: NRANKS }, (_, i) => (
+    i === slowRank ? 1.26 + rnd() * 0.24 : 0.97 + rnd() * 0.06
+  ));
+
   const coreTasks = [];
   let tid = 0;
-  const hostNodes = [];
 
+  // per-rank 容器先建好，时间轴推进改由下面的 step 外循环统一驱动
+  const RANKS = Array.from({ length: NRANKS }, (_, rankId) => {
+    const hostId = `node-${Math.floor(rankId / RANKS_PER_HOST)}`;
+    const commTasks = {};
+    shape.commLanes.forEach((spec) => { commTasks[spec.lane] = []; });
+    return {
+      rankId, hostId,
+      // 节点 id 不带 run.id 前缀：两栏结构完全一致的字符串，才能按行做跨栏选中同步。
+      P: `${hostId}▸R${rankId}`,
+      hwTasks: { AI_CORE: [], AI_VECTOR_CORE: [] },
+      commTasks,
+      overlapTasks: { Computing: [], Communication: [], 'Communication(Not Overlapped)': [], 'Communication(Wait)': [], Free: [] },
+      cursor: 0,
+    };
+  });
+
+  for (let s = 0; s < STEPS; s++) {
+    // ① 先定各 rank 本步的计算量 → 计算结束时刻
+    // 计算量基数**每步共享**：真实训练里各 rank 跑的是同样的模型、同样的 micro-batch，
+    // 单步计算量本该基本相同，rank 间差异来自硬件降频/负载切分不均。若让每个 rank 各自
+    // 独立取随机基数（±30%），纯抖动就会盖过慢卡的系统性偏置，"跨 step 一致的 straggler"
+    // 这个判据也就失去意义——每步最晚的都是随机一张卡。
+    const stepBaseUs = (2200 + rnd() * 800) * jitter() * shape.computeScale;
+    const plan = RANKS.map((rk) => {
+      const computeUs = stepBaseUs * rankComputeBias[rk.rankId] * (0.98 + rnd() * 0.04);
+      return {
+        rk,
+        stepStart: rk.cursor,
+        computeUs,
+        computeEnd: rk.cursor + computeUs,
+        commUs: (900 + rnd() * 500) * (1 + commWaitBias) * shape.commScale,
+        freeUs: (150 + rnd() * 300) * (1 + freeBias) * shape.freeScale,
+      };
+    });
+    // ② 同步点 = 最晚进入通信的那张卡的时刻
+    const syncAt = Math.max.apply(null, plan.map((p) => p.computeEnd));
+
+    // ③ 按同步点铺开每个 rank 的泳道
+    plan.forEach((p) => {
+      const { rk, stepStart, computeUs, computeEnd, commUs, freeUs } = p;
+      const rankId = rk.rankId;
+      const commOverlapUs = Math.max(0, commUs * (1 - commWaitBias)) * 0.6;
+      const commNotOverlapUs = Math.max(0, commUs - commOverlapUs);
+
+      let t = stepStart;
+      const nKernels = shape.kernelBase + Math.floor(rnd() * shape.kernelSpread);
+      for (let k = 0; k < nKernels; k++) {
+        const dur = (computeUs / nKernels) * jitter();
+        rk.hwTasks.AI_CORE.push({
+          taskId: tid++, subGraphId: s,
+          execStart: Number(t.toFixed(2)), execEnd: Number((t + dur).toFixed(2)),
+          semanticLabel: 'Computing-AIC',
+          taskName: `Rank ${rankId} · Step ${s} · MatMul/FA kernel ${(dur / 1000).toFixed(2)}ms`,
+        });
+        t += dur;
+        if (rnd() > 1 - shape.aivRate) {
+          const vdur = dur * 0.3;
+          rk.hwTasks.AI_VECTOR_CORE.push({
+            taskId: tid++, subGraphId: s,
+            execStart: Number(t.toFixed(2)), execEnd: Number((t + vdur).toFixed(2)),
+            semanticLabel: 'Computing-AIV',
+            taskName: `Rank ${rankId} · Step ${s} · Vector kernel ${(vdur / 1000).toFixed(2)}ms`,
+          });
+        }
+      }
+
+      // 空等段 [自己算完, 同步点]：最慢的那张卡这段为 0，其余卡的长短就是它拖出来的
+      const waitUs = Math.max(0, syncAt - computeEnd);
+      if (waitUs > 0) {
+        rk.overlapTasks['Communication(Wait)'].push({
+          taskId: tid++, subGraphId: s,
+          execStart: Number(computeEnd.toFixed(2)), execEnd: Number(syncAt.toFixed(2)),
+          semanticLabel: 'Comm-Idle-Wait',
+          taskName: `Rank ${rankId} · Step ${s} · 空等同步 ${(waitUs / 1000).toFixed(2)}ms（等最晚进入通信的 rank）`,
+        });
+      }
+
+      // 通信段按 shape.commLanes 顺序背靠背铺开：泳道构成随并行策略变化，
+      // 每段取 overlap（可被计算掩盖的传输）/ notOverlap（掩盖不住的那截）两种时长之一。
+      // 起点是同步点而非各自的算完时刻——集合通信要所有卡到齐才能开始。
+      let ct = syncAt;
+      shape.commLanes.forEach((spec) => {
+        const segUs = spec.part === 'overlap' ? commOverlapUs : commNotOverlapUs;
+        rk.commTasks[spec.lane].push({
+          taskId: tid++, subGraphId: s,
+          execStart: Number(ct.toFixed(2)), execEnd: Number((ct + segUs).toFixed(2)),
+          semanticLabel: spec.label,
+          taskName: `Rank ${rankId} · Step ${s} · ${spec.name} ${(segUs / 1000).toFixed(2)}ms`,
+        });
+        ct += segUs;
+      });
+      const commEnd = ct;
+      const commTotalUs = commEnd - syncAt;
+      const stepEnd = commEnd + freeUs;
+
+      rk.overlapTasks.Computing.push({ taskId: tid++, subGraphId: s, execStart: stepStart, execEnd: computeEnd, semanticLabel: 'Computing', taskName: `Rank ${rankId} · Step ${s} · Computing ${(computeUs / 1000).toFixed(2)}ms` });
+      rk.overlapTasks.Communication.push({ taskId: tid++, subGraphId: s, execStart: syncAt, execEnd: commEnd, semanticLabel: 'Communication', taskName: `Rank ${rankId} · Step ${s} · Communication ${(commTotalUs / 1000).toFixed(2)}ms` });
+      rk.overlapTasks['Communication(Not Overlapped)'].push({ taskId: tid++, subGraphId: s, execStart: syncAt + commOverlapUs, execEnd: commEnd, semanticLabel: 'Communication', taskName: `Rank ${rankId} · Step ${s} · 未掩盖通信 ${(commNotOverlapUs / 1000).toFixed(2)}ms` });
+      rk.overlapTasks.Free.push({ taskId: tid++, subGraphId: s, execStart: commEnd, execEnd: stepEnd, semanticLabel: 'Free', taskName: `Rank ${rankId} · Step ${s} · Free（调度空泡）${(freeUs / 1000).toFixed(2)}ms` });
+
+      rk.cursor = stepEnd + STEP_GAP_US;
+    });
+  }
+
+  const hostNodes = [];
   for (let h = 0; h < HOSTS; h++) {
     const hostId = `node-${h}`;
-    // 节点 id 不带 run.id 前缀：两栏结构完全一致的字符串，才能按行做跨栏选中同步。
     const hostNode = { id: hostId, label: `Host ${hostId}`, children: [] };
     for (let r = 0; r < RANKS_PER_HOST; r++) {
       const rankId = h * RANKS_PER_HOST + r;
-      const P = `${hostId}▸R${rankId}`;
-      const rankNode = { id: P, label: `Rank ${rankId}`, children: [], collapsed: !(h === 0 && r === 0) };
-
-      const hwTasks = { AI_CORE: [], AI_VECTOR_CORE: [] };
-      const commTasks = {};
-      shape.commLanes.forEach((spec) => { commTasks[spec.lane] = []; });
-      const overlapTasks = { Computing: [], Communication: [], 'Communication(Not Overlapped)': [], Free: [] };
-
-      let cursor = 0;
-      for (let s = 0; s < STEPS; s++) {
-        const stepStart = cursor;
-        const computeUs = (2200 + rnd() * 800) * jitter() * shape.computeScale;
-        const commUs = (900 + rnd() * 500) * (1 + commWaitBias) * shape.commScale;
-        const commOverlapUs = Math.max(0, commUs * (1 - commWaitBias)) * 0.6;
-        const commNotOverlapUs = Math.max(0, commUs - commOverlapUs);
-        const freeUs = (150 + rnd() * 300) * (1 + freeBias) * shape.freeScale;
-
-        let t = stepStart;
-        const nKernels = shape.kernelBase + Math.floor(rnd() * shape.kernelSpread);
-        for (let k = 0; k < nKernels; k++) {
-          const dur = (computeUs / nKernels) * jitter();
-          hwTasks.AI_CORE.push({
-            taskId: tid++, subGraphId: s,
-            execStart: Number(t.toFixed(2)), execEnd: Number((t + dur).toFixed(2)),
-            semanticLabel: 'Computing-AIC',
-            taskName: `Rank ${rankId} · Step ${s} · MatMul/FA kernel ${(dur / 1000).toFixed(2)}ms`,
-          });
-          t += dur;
-          if (rnd() > 1 - shape.aivRate) {
-            const vdur = dur * 0.3;
-            hwTasks.AI_VECTOR_CORE.push({
-              taskId: tid++, subGraphId: s,
-              execStart: Number(t.toFixed(2)), execEnd: Number((t + vdur).toFixed(2)),
-              semanticLabel: 'Computing-AIV',
-              taskName: `Rank ${rankId} · Step ${s} · Vector kernel ${(vdur / 1000).toFixed(2)}ms`,
-            });
-          }
-        }
-        const computeEnd = stepStart + computeUs;
-
-        // 通信段按 shape.commLanes 顺序背靠背铺开：泳道构成随并行策略变化，
-        // 每段取 overlap（可被计算掩盖的传输）/ notOverlap（掩盖不住的那截）两种时长之一。
-        let ct = computeEnd;
-        shape.commLanes.forEach((spec) => {
-          const segUs = spec.part === 'overlap' ? commOverlapUs : commNotOverlapUs;
-          commTasks[spec.lane].push({
-            taskId: tid++, subGraphId: s,
-            execStart: Number(ct.toFixed(2)), execEnd: Number((ct + segUs).toFixed(2)),
-            semanticLabel: spec.label,
-            taskName: `Rank ${rankId} · Step ${s} · ${spec.name} ${(segUs / 1000).toFixed(2)}ms`,
-          });
-          ct += segUs;
-        });
-        const commEnd = ct;
-        const commTotalUs = commEnd - computeEnd;
-        const stepEnd = commEnd + freeUs;
-
-        overlapTasks.Computing.push({ taskId: tid++, subGraphId: s, execStart: stepStart, execEnd: computeEnd, semanticLabel: 'Computing', taskName: `Rank ${rankId} · Step ${s} · Computing ${(computeUs / 1000).toFixed(2)}ms` });
-        overlapTasks.Communication.push({ taskId: tid++, subGraphId: s, execStart: computeEnd, execEnd: commEnd, semanticLabel: 'Communication', taskName: `Rank ${rankId} · Step ${s} · Communication ${(commTotalUs / 1000).toFixed(2)}ms` });
-        overlapTasks['Communication(Not Overlapped)'].push({ taskId: tid++, subGraphId: s, execStart: computeEnd + commOverlapUs, execEnd: commEnd, semanticLabel: 'Communication', taskName: `Rank ${rankId} · Step ${s} · 未掩盖通信 ${((commEnd - computeEnd - commOverlapUs) / 1000).toFixed(2)}ms` });
-        overlapTasks.Free.push({ taskId: tid++, subGraphId: s, execStart: commEnd, execEnd: stepEnd, semanticLabel: 'Free', taskName: `Rank ${rankId} · Step ${s} · Free（调度空泡）${(freeUs / 1000).toFixed(2)}ms` });
-
-        cursor = stepEnd + STEP_GAP_US;
-      }
+      const rk = RANKS[rankId];
+      const P = rk.P;
+      // 默认展开前两个 rank：只展开一个时看不出 rank 之间的关系，而"谁在等谁"
+      // 恰恰要至少两条泳道并排才读得出来（一条算完了、另一条还在算）。
+      const rankNode = { id: P, label: `Rank ${rankId}`, children: [], collapsed: rankId > 1 };
+      const hwTasks = rk.hwTasks, commTasks = rk.commTasks, overlapTasks = rk.overlapTasks;
 
       const hwNode = { id: `${P}▸AHW`, label: 'Ascend Hardware', children: [] };
       const streamNode = { id: `${P}▸AHW▸S0`, label: 'Stream 0', children: [] };
@@ -4841,7 +5008,7 @@ function buildTrainingSwimlaneData(run) {
     hostNodes.push(hostNode);
   }
 
-  return { coreTasks, laneTree: { children: hostNodes } };
+  return { coreTasks, laneTree: { children: hostNodes }, steps: STEPS, slowRank };
 }
 
 /* 聚合视图：把基线/对比两个 run 的训练泳道树按叶子泳道两两拼接，每个叶子下拆成
@@ -4917,6 +5084,7 @@ const TRAIN_LEAF_LABELS = {
   Computing: 'Computing',
   Communication: 'Communication',
   'Communication(Not Overlapped)': 'Communication（未掩盖）',
+  'Communication(Wait)': 'Communication（空等同步）',
   Free: 'Free（调度空泡）',
 };
 const DIFF_WARN_THRESHOLD = 10;
@@ -4935,17 +5103,98 @@ function laneKeyPath(leafKey) {
   return `${rankLabel} › ${groupLabel} › ${leafLabel}`;
 }
 
+/* 构造结果按 run 缓存：差异看板、按 Rank 页签、多卡面板、构成对比条都要用同一份数据，
+   而 buildTrainingSwimlaneData 里有随机推进，重复调用不仅费时、也不该多次消耗同一个 rnd 序列。 */
+const trainBuildCache = new Map();
+function trainBuilt(run) {
+  if (!run) return null;
+  if (!trainBuildCache.has(run.id)) trainBuildCache.set(run.id, buildTrainingSwimlaneData(run));
+  return trainBuildCache.get(run.id);
+}
+
+/* busy 时长一律归一到「每 step 平均」：不同 run 的采集步数可能不同（shape.steps 随形态变化），
+   直接比整条时间轴的 busy 总和，比的是"采了多少步"而不是"每步多慢"。 */
 function laneBusyStats(run) {
-  const built = buildTrainingSwimlaneData(run);
+  const built = trainBuilt(run);
+  const steps = Math.max(1, built.steps || 1);
   const stats = new Map();
   built.coreTasks.forEach(({ coreType, tasks }) => {
     const busyUs = tasks.reduce((sum, t) => sum + Math.max(0, t.execEnd - t.execStart), 0);
-    stats.set(coreType, { busyUs, count: tasks.length });
+    stats.set(coreType, { busyUs: busyUs / steps, count: tasks.length, rawBusyUs: busyUs, steps });
   });
   return stats;
 }
 
-/* 差异幅度：N 个 run 里 busy 最大值与最小值的相对差（N=2 时退化为原来的 |a−b|/max）。
+/* ---- 每个 run 的 step 级统计：用于把差异阈值挂到该 run 自身的抖动上 ----
+   训练本身抖 3~5%，落在抖动带宽内的"差异"多半是噪声。用基线 run 的 step CV 定一条噪声带，
+   低于它的差异项在看板上灰掉、也不计入「差异任务/差异泳道」计数，避免那个数字被噪声撑大。 */
+const trainStepStatsCache = new Map();
+function runStepStats(run) {
+  if (!run) return null;
+  if (trainStepStatsCache.has(run.id)) return trainStepStatsCache.get(run.id);
+  const built = trainBuilt(run);
+  // 每个 rank 的每个 step：从 Computing 起点到 Free 终点
+  const perStep = new Map();      // `${rank}#${step}` → { start, end }
+  built.coreTasks.forEach(({ coreType, tasks }) => {
+    const m = /▸R(\d+)▸OVL▸(Computing|Free)$/.exec(coreType);
+    if (!m) return;
+    tasks.forEach((t) => {
+      const key = `${m[1]}#${t.subGraphId}`;
+      const cur = perStep.get(key) || { start: Infinity, end: -Infinity };
+      if (m[2] === 'Computing') cur.start = Math.min(cur.start, t.execStart);
+      else cur.end = Math.max(cur.end, t.execEnd);
+      perStep.set(key, cur);
+    });
+  });
+  /* CV 必须**按 rank 分组后再算**，取各 rank 的中位数。
+     把所有 rank 的所有 step 混在一个数组里算，会把「慢卡造成的 rank 间系统性差异」
+     也算进噪声——那不是噪声，是要被检出的结论。混算出来的 CV 明显偏高（实测 7~10%
+     vs 分组后 2~4%），噪声带被撑宽到能吞掉 10% 的真实差异。 */
+  const byRank = new Map();
+  perStep.forEach((v, key) => {
+    if (!isFinite(v.start) || !isFinite(v.end) || v.end <= v.start) return;
+    const rank = key.split('#')[0];
+    if (!byRank.has(rank)) byRank.set(rank, []);
+    byRank.get(rank).push(v.end - v.start);
+  });
+  const cvOf = (arr) => {
+    if (arr.length < 2) return null;
+    const mean = arr.reduce((a, b) => a + b, 0) / arr.length;
+    if (!(mean > 0)) return null;
+    const varr = arr.reduce((a, b) => a + (b - mean) * (b - mean), 0) / arr.length;
+    return (Math.sqrt(varr) / mean) * 100;
+  };
+  const perRankCv = [...byRank.values()].map(cvOf).filter((v) => v != null).sort((a, b) => a - b);
+  let cv = 0;
+  if (perRankCv.length) {
+    const mid = Math.floor(perRankCv.length / 2);
+    cv = perRankCv.length % 2 ? perRankCv[mid] : (perRankCv[mid - 1] + perRankCv[mid]) / 2;
+  }
+  const samples = [...byRank.values()].reduce((s, a) => s + a.length, 0);
+  const out = { cv, samples, ranks: byRank.size, steps: built.steps };
+  trainStepStatsCache.set(run.id, out);
+  return out;
+}
+
+/* 噪声带：判定的是**两组 step 均值之差**是否显著，所以分母是均值的标准误 σ/√n，
+   而不是单次观测的标准差 σ 本身——用 σ 会把带宽撑大 √n 倍，采样越多反而越迟钝，
+   与统计直觉相反。两侧各有一份误差，故再乘 √2；取 2 倍标准误作 ~95% 置信的近似。
+   仍夹在 [1.5%, 25%]：下限防止采样极多时带宽塌到 0（系统性偏差、时钟精度等
+   不随 n 缩小的误差项这里没有建模），上限防止极端抖动的 run 把一切差异都吞掉。 */
+function diffNoiseBandPct() {
+  const base = RUN_BY_ID[state.selectedRunId];
+  const st = base ? runStepStats(base) : null;
+  if (!st || !isFinite(st.cv) || !st.cv) return DIFF_WARN_THRESHOLD;
+  const n = Math.max(1, st.steps || 1);
+  const band = 2 * st.cv * Math.SQRT2 / Math.sqrt(n);
+  return Math.min(25, Math.max(1.5, band));
+}
+
+/* 差异度量：
+   - absDiffUs   —— 绝对差值（max − min），**卡片排序的唯一依据**。相对幅度会让 0.2ms vs 0.1ms
+                    这种小体量泳道以 50% 霸榜，压住真正贡献耗时的大泳道，故只作副标展示。
+   - signedDiffUs—— 两两对比时的有符号差（对比 − 基线，正=变慢）；三方对比无单一方向，置 null。
+   - diffPct     —— 保留原相对幅度，用于「差异任务/差异泳道」计数阈值与副标。
    values 按槽位顺序（基线 → 对比 A → 对比 B）排好，卡片直接照着渲染。 */
 function laneDiffCardOf(leafKey, statsList, runIds) {
   const values = statsList.map((stats, i) => {
@@ -4959,6 +5208,8 @@ function laneDiffCardOf(leafKey, statsList, runIds) {
     path: laneKeyPath(leafKey),
     values,
     topUs: values[0].busyUs, bottomUs: values[1].busyUs,
+    absDiffUs: maxUs - minUs,
+    signedDiffUs: values.length === 2 ? values[1].busyUs - values[0].busyUs : null,
     diffPct: ((maxUs - minUs) / Math.max(maxUs, 1e-6)) * 100,
     itemCount: values.reduce((sum, v) => sum + v.count, 0),
     direction: values[1].busyUs > values[0].busyUs ? 'up' : (values[1].busyUs < values[0].busyUs ? 'down' : 'flat'),
@@ -4974,7 +5225,7 @@ function computeLaneDiffCards() {
   statsList.forEach((stats) => stats.forEach((_, leafKey) => leafKeys.add(leafKey)));
   const cards = [];
   leafKeys.forEach((leafKey) => { cards.push(laneDiffCardOf(leafKey, statsList, runIds)); });
-  cards.sort((a, b) => b.diffPct - a.diffPct);
+  cards.sort((a, b) => b.absDiffUs - a.absDiffUs);   // 按绝对差值，不按相对幅度
   return cards;
 }
 
@@ -5012,129 +5263,152 @@ function computeLaneAggregatedDiffCards() {
       path: entry.laneType,
       values: entry.values,
       topUs: entry.values[0].busyUs, bottomUs: entry.values[1].busyUs,
+      absDiffUs: maxUs - minUs,
+      signedDiffUs: entry.values.length === 2 ? entry.values[1].busyUs - entry.values[0].busyUs : null,
       diffPct: ((maxUs - minUs) / Math.max(maxUs, 1e-6)) * 100,
       itemCount: entry.values.reduce(function (sum, v) { return sum + v.count; }, 0),
       direction: entry.values[1].busyUs > entry.values[0].busyUs ? 'up' : (entry.values[1].busyUs < entry.values[0].busyUs ? 'down' : 'flat'),
     });
   });
-  cards.sort(function (a, b) { return b.diffPct - a.diffPct; });
+  cards.sort(function (a, b) { return b.absDiffUs - a.absDiffUs; });   // 同上：按绝对差值
   return cards;
 }
 
-/* ── PHS 仪表盘（缩小版，复用 index_v3.html app.js 的 renderPhsGauge / gradeColorAt / gradeToColor / hexA）── */
-function compareGradeColorAt(v) {
-  const stops = [
-    [0, [255, 75, 123]],
-    [30, [255, 112, 81]],
-    [45, [255, 151, 55]],
-    [60, [233, 181, 27]],
-    [75, [163, 203, 69]],
-    [90, [4, 215, 147]],
-    [100, [4, 215, 147]],
-  ];
-  v = Math.max(0, Math.min(100, v));
-  for (let i = 0; i < stops.length - 1; i++) {
-    const [v0, c0] = stops[i], [v1, c1] = stops[i + 1];
-    if (v <= v1) {
-      const t = (v - v0) / (v1 - v0 || 1);
-      const r = Math.round(c0[0] + (c1[0] - c0[0]) * t);
-      const g = Math.round(c0[1] + (c1[1] - c0[1]) * t);
-      const b = Math.round(c0[2] + (c1[2] - c0[2]) * t);
-      return `rgb(${r},${g},${b})`;
-    }
-  }
-  return 'rgb(2,153,49)';
-}
-function compareHexA(hex, a) {
-  const h = hex.replace('#', '');
-  const full = h.length === 3 ? h.split('').map(function (c) { return c + c; }).join('') : h;
-  const n = parseInt(full, 16);
-  return 'rgba(' + ((n >> 16) & 255) + ',' + ((n >> 8) & 255) + ',' + (n & 255) + ',' + a + ')';
-}
-function compareGradeToColor(g) {
-  return { S: '#13a692', A: '#00782d', 'B+': '#929710', B: '#845a00', C: '#eb5a04', D: '#b60254' }[g] || '#999999';
-}
-function compareScoreToGrade(v) {
-  if (v >= 85) return 'S';
-  if (v >= 70) return 'A';
-  if (v >= 55) return 'B+';
-  if (v >= 40) return 'B';
-  if (v >= 25) return 'C';
-  return 'D';
-}
-
-/* 从训练级泳道数据推算 PHS 近似值（busy 比例 × 100） */
-function computeRunPhs(run) {
-  if (!run) return { current: 0, estimated: 0, grade: 'N/A', estGrade: 'N/A' };
-  // 基线 > 对比：以 run.id 中是否含 baseline/base 等关键词区分
-  var id = String(run.id || '');
-  var isBase = /baseline|base|001/.test(id);
-  var current = isBase ? 82 + (hashSeed(id) % 8) : 58 + (hashSeed(id) % 14);
-  var estimated = Math.min(100, Math.round(current * 1.14 + (hashSeed(id + 'est') % 7)));
-  return { current: current, estimated: estimated, grade: compareScoreToGrade(current), estGrade: compareScoreToGrade(estimated) };
+/* ── 按 Rank 聚合：把同一 rank 的所有泳道汇总 ──
+   「按泳道」页签是跨 rank 汇总，正好把 rank 间差异抹平了；多卡场景要的是反方向。 */
+function computeRankDiffCards() {
+  var runs = activeCompareRuns();
+  if (runs.length < 2) return [];
+  var runIds = runs.map(function (run) { return run.id; });
+  var statsList = runs.map(laneBusyStats);
+  var agg = new Map();
+  statsList.forEach(function (stats, slotIdx) {
+    stats.forEach(function (info, leafKey) {
+      var m = /▸R(\d+)▸/.exec(leafKey);
+      if (!m) return;
+      var key = 'Rank ' + m[1];
+      var entry = agg.get(key);
+      if (!entry) {
+        entry = { path: key, leafKeys: [], values: [] };
+        runIds.forEach(function (runId, i) { entry.values.push({ runId: runId, slot: COMPARE_SLOTS[i], busyUs: 0, count: 0 }); });
+        agg.set(key, entry);
+      }
+      entry.values[slotIdx].busyUs += info.busyUs;
+      entry.values[slotIdx].count += info.count;
+      if (entry.leafKeys.indexOf(leafKey) < 0) entry.leafKeys.push(leafKey);
+    });
+  });
+  var cards = [];
+  agg.forEach(function (entry) {
+    var busy = entry.values.map(function (v) { return v.busyUs; });
+    var maxUs = Math.max.apply(null, busy), minUs = Math.min.apply(null, busy);
+    cards.push({
+      leafKey: entry.leafKeys[0] || '',
+      path: entry.path,
+      values: entry.values,
+      topUs: entry.values[0].busyUs, bottomUs: entry.values[1].busyUs,
+      absDiffUs: maxUs - minUs,
+      signedDiffUs: entry.values.length === 2 ? entry.values[1].busyUs - entry.values[0].busyUs : null,
+      diffPct: ((maxUs - minUs) / Math.max(maxUs, 1e-6)) * 100,
+      itemCount: entry.values.reduce(function (sum, v) { return sum + v.count; }, 0),
+      direction: 'flat',
+    });
+  });
+  cards.sort(function (a, b) { return b.absDiffUs - a.absDiffUs; });
+  return cards;
 }
 
-/* 缩小版仪表盘 SVG 渲染（原 300×200 → 220×140） */
-function renderCompareGauge(box, phs) {
-  if (!box) return;
-  var cur = Math.max(0, Math.min(100, Math.round(phs.current || 0)));
-  var est = Math.max(cur, Math.min(100, Math.round(phs.estimated || cur)));
-  var grade = phs.grade || 'N/A';
-  var estGrade = phs.estGrade || grade;
-  var curColor = compareGradeToColor(grade);
-  var estColor = compareGradeToColor(estGrade);
+/* ============================================================
+   任务内多卡视角：单个 run 内的 rank 间对比（不是跨 run diff）
+   ------------------------------------------------------------
+   跨任务 A/B 问的是"赚了还是亏了"，多卡问的是"谁在拖后腿、是真慢还是在等"——
+   两者的第一屏本就不该是同一个。这里从 OVL 组按 rank 取四段构成：
+   计算 / 未掩盖通信 / 空等同步 / 调度空泡，并给出"最晚进入通信"的那张卡。
+   ============================================================ */
+/* 顺序必须与 step 内的真实时序一致，否则堆叠条读起来是错的：
+     计算 → 空等同步（算完了等最慢的卡到齐）→ 通信 → 调度空泡
+   空等发生在计算结束到同步点之间，也就是**通信之前**；把它排在通信之后，
+   红块的位置就与泳道上看到的对不上。 */
+const RANK_SEG_DEFS = [
+  { key: 'Computing', label: '计算', color: '#1a8f52' },
+  { key: 'Communication(Wait)', label: '空等同步', color: '#d23b3b' },
+  { key: 'Communication(Not Overlapped)', label: '通信（未掩盖）', color: '#2f6fce' },
+  { key: 'Free', label: '调度空泡', color: '#566173' },
+];
 
-  var W = 180, H = 100, cx = 90, cy = 78;
-  var rOut = 74, rIn = 58;
-  var N = 52;
-  var A0 = 180, A1 = 0;
-  var polar = function (r, aDeg) {
-    var a = aDeg * Math.PI / 180;
-    return [cx + r * Math.cos(a), cy - r * Math.sin(a)];
+/* 慢卡判定两个条件缺一不可：
+   - 一致性：某 rank 在 ≥60% 的 step 里都最晚进入通信（排除"每步碰巧最晚"的随机 straggler）
+   - 显著性：进入通信时刻的极差 ≥ step 中位的 5%（排除虽然一致、但只差一点点的情况——
+     那种差距被通信本身吸收掉了，不值得当成慢卡去查） */
+const STRAGGLER_CONSISTENCY = 0.6;
+const STRAGGLER_GAP_RATIO = 0.05;
+
+function rankProfileOf(run) {
+  const built = trainBuilt(run);
+  if (!built) return null;
+  const steps = Math.max(1, built.steps || 1);
+  const byRank = new Map();
+  const touch = (rank) => {
+    if (!byRank.has(rank)) byRank.set(rank, { rank, segs: {}, commEntryUs: 0 });
+    return byRank.get(rank);
   };
-  var angOf = function (v) { return A0 - (v / 100) * (A0 - A1); };
+  // entryByStep[step][rank] = 该 rank 在该 step 进入通信的时刻（= 计算结束时刻）
+  const entryByStep = new Map();
+  built.coreTasks.forEach(({ coreType, tasks }) => {
+    const m = /▸R(\d+)▸OVL▸(.+)$/.exec(coreType);
+    if (!m) return;
+    const rank = Number(m[1]);
+    const rec = touch(rank);
+    const seg = m[2];
+    rec.segs[seg] = tasks.reduce((s, t) => s + Math.max(0, t.execEnd - t.execStart), 0) / steps;
+    if (seg === 'Computing') {
+      // 「进入通信的时刻」= 计算结束。集合通信的结束时间天然对齐，
+      // 只有进入时刻能分辨谁是真凶——这是慢卡定位里最容易被误判的一点。
+      rec.commEntryUs = rec.segs.Computing;
+      tasks.forEach((t) => {
+        if (!entryByStep.has(t.subGraphId)) entryByStep.set(t.subGraphId, new Map());
+        entryByStep.get(t.subGraphId).set(rank, t.execEnd - t.execStart);
+      });
+    }
+  });
+  const rows = [...byRank.values()].map((rec) => {
+    const segs = RANK_SEG_DEFS.map((d) => ({ ...d, us: rec.segs[d.key] || 0 }));
+    return { ...rec, segs, stepUs: segs.reduce((s, x) => s + x.us, 0) };
+  }).sort((a, b) => a.rank - b.rank);
+  if (!rows.length) return null;
 
-  var ticks = '';
-  for (var i = 0; i < N; i++) {
-    var v = (i + 0.5) / N * 100;
-    var aDeg = angOf(v);
-    var p1 = polar(rIn, aDeg), p2 = polar(rOut, aDeg);
-    var color, opacity;
-    if (v <= cur)      { color = compareGradeColorAt(v); opacity = 1; }
-    else if (v <= est) { color = compareGradeColorAt(v); opacity = 0.42; }
-    else               { color = '#8a8a96'; opacity = 0.5; }
-    ticks += '<line x1="' + p1[0].toFixed(1) + '" y1="' + p1[1].toFixed(1) + '" x2="' + p2[0].toFixed(1) + '" y2="' + p2[1].toFixed(1) + '" stroke="' + color + '" stroke-width="3" stroke-linecap="round" opacity="' + opacity + '"/>';
-  }
+  const stepDurs = rows.map((r) => r.stepUs).slice().sort((a, b) => a - b);
+  const mid = Math.floor(stepDurs.length / 2);
+  const median = stepDurs.length % 2 ? stepDurs[mid] : (stepDurs[mid - 1] + stepDurs[mid]) / 2;
+  const spreadPct = median > 0 ? ((stepDurs[stepDurs.length - 1] - stepDurs[0]) / median) * 100 : 0;
 
-  var aCur = angOf(cur);
-  var fmtPt = function (r, a) { var p = polar(r, a); return p[0].toFixed(1) + ',' + p[1].toFixed(1); };
-  var pointer = '<polygon points="' + fmtPt(rIn - 1, aCur) + ' ' + fmtPt(rIn - 10, aCur - 3) + ' ' + fmtPt(rIn - 10, aCur + 3) + '" fill="var(--foreground)"/>';
+  /* 系统性慢卡 vs 随机抖动：每步都会有"碰巧最晚"的那张卡，只看平均值必然能挑出一个 rank，
+     那是抖动不是慢卡。真正的慢卡特征是**跨 step 一致**——统计每步的 straggler 频次，
+     只有某张卡在多数 step 里都最晚，才判为慢卡。 */
+  const stragglerCount = new Map();
+  entryByStep.forEach((perRank) => {
+    let worst = null, worstUs = -Infinity;
+    perRank.forEach((us, rank) => { if (us > worstUs) { worstUs = us; worst = rank; } });
+    if (worst != null) stragglerCount.set(worst, (stragglerCount.get(worst) || 0) + 1);
+  });
+  let topRank = null, topCount = 0;
+  stragglerCount.forEach((c, rank) => { if (c > topCount) { topCount = c; topRank = rank; } });
+  const nSteps = entryByStep.size || steps;
+  const consistency = nSteps > 0 ? topCount / nSteps : 0;
 
-  var gainArrow = '';
-  if (est > cur + 1) {
-    var aEst = angOf(est);
-    var r2 = rOut + 10;
-    var sx = polar(r2, aCur), ex = polar(r2, aEst);
-    gainArrow += '<path d="M ' + sx[0].toFixed(1) + ' ' + sx[1].toFixed(1) + ' A ' + r2 + ' ' + r2 + ' 0 0 1 ' + ex[0].toFixed(1) + ' ' + ex[1].toFixed(1) + '" fill="none" stroke="' + estColor + '" stroke-width="1.6" stroke-linecap="round"/>';
-    var bx = polar(r2, aEst + 4);
-    var dx = ex[0] - bx[0], dy = ex[1] - bx[1];
-    var len = Math.hypot(dx, dy) || 1; dx /= len; dy /= len;
-    var px = -dy, py = dx;
-    if (px * (ex[0] - cx) + py * (ex[1] - cy) < 0) { px = -px; py = -py; }
-    var l = 6, w = 4;
-    var barb = (ex[0] - dx * l + px * w).toFixed(1) + ',' + (ex[1] - dy * l + py * w).toFixed(1);
-    var shaft = (ex[0] - dx * l).toFixed(1) + ',' + (ex[1] - dy * l).toFixed(1);
-    gainArrow += '<polygon points="' + ex[0].toFixed(1) + ',' + ex[1].toFixed(1) + ' ' + barb + ' ' + shaft + '" fill="' + estColor + '"/>';
-  }
-
-  box.innerHTML = '<svg viewBox="0 0 ' + W + ' ' + H + '" preserveAspectRatio="xMidYMid meet">' + ticks + gainArrow + pointer + '</svg>' +
-    '<div class="sl-compare-gauge-center">' +
-      '<span class="sl-compare-gauge-grade" style="background:' + compareHexA(curColor, 0.15) + ';color:' + curColor + '">' + grade + '</span>' +
-      '<div class="sl-compare-gauge-score" style="color:' + curColor + '">' + cur + '</div>' +
-      '<div class="sl-compare-gauge-sub">优化后预估可达 <b>' + est + '</b>' +
-        '<span class="sl-compare-gauge-estbadge" style="background:' + compareHexA(estColor, 0.15) + ';color:' + estColor + '">' + estGrade + '</span>' +
-      '</div>' +
-    '</div>';
+  const latest = rows.reduce((a, b) => (b.commEntryUs > a.commEntryUs ? b : a), rows[0]);
+  const earliest = rows.reduce((a, b) => (b.commEntryUs < a.commEntryUs ? b : a), rows[0]);
+  const maxWait = rows.reduce((m, r) => Math.max(m, (r.segs.find((s) => s.key === 'Communication(Wait)') || { us: 0 }).us), 0);
+  return {
+    rows, median, spreadPct,
+    slowRank: topRank != null ? topRank : latest.rank,
+    consistency, stragglerSteps: topCount, totalSteps: nSteps,
+    entryGapUs: latest.commEntryUs - earliest.commEntryUs,
+    maxWaitUs: maxWait,
+    hasSlow: consistency >= STRAGGLER_CONSISTENCY
+      && maxWait > 0
+      && (latest.commEntryUs - earliest.commEntryUs) >= median * STRAGGLER_GAP_RATIO,
+  };
 }
 
 /* ── 语义标签 → 渐变填充色（与泳道任务条配色一致）── */
@@ -5492,96 +5766,502 @@ function formatCompareVal(val, unit) {
   return num.toFixed(2) + ' ' + (unit || '');
 }
 
-function diffCardHtml(card, index) {
+/* 差值文案：每个对比行相对基线的有符号差（正=变慢、负=变快），贴在该行名称右侧。
+   三方对比过去只给一个无方向的「Δ 极差」（最大值−最小值），那个数既说不清谁快谁慢、
+   也无法定位到具体是哪一次；改为逐行各算各的后，两方与三方是同一套读法，Δ 不再需要。 */
+const DIFF_NEGLIGIBLE_US = 1;   // < 1us 视为无差异，不着色也不标方向
+function diffDeltaOf(signedUs) {
+  if (signedUs == null) return { text: '', cls: '' };
+  if (Math.abs(signedUs) < DIFF_NEGLIGIBLE_US) return { text: '±0.00 ms', cls: '' };
+  return {
+    text: (signedUs > 0 ? '+' : '−') + (Math.abs(signedUs) / 1000).toFixed(2) + ' ms',
+    cls: signedUs > 0 ? ' is-slower' : ' is-faster',
+  };
+}
+
+/* 新增 / 消失标记：两方对比下一侧无任务条 = 算子被融合掉或新拆出来，是 A/B 验证的核心证据，
+   必须显性打标，不能只靠数值 0 让用户自己看出来。标签跟在对比行的数值后面（不再挂在
+   标题行）：它讲的是「对比这一侧发生了什么」，贴着那一行的读数才知道说的是谁。 */
+function diffPresenceLabel(values) {
+  if (values.length !== 2) return '';
+  if (values[0].count === 0 && values[1].count > 0) return '新增';
+  if (values[1].count === 0 && values[0].count > 0) return '消失';
+  return '';
+}
+
+/* 路径拆成「中间层级 + › + 末段」三块交给 CSS 排（见 .sl-diff-card__path 注释）：
+   只有中间那块可压缩并带省略号，末段和分隔符原样保留。 */
+function diffPathHtml(path) {
+  const segs = String(path).split(' › ');
+  const leaf = escapeHtml(segs.pop());
+  if (!segs.length) return '<span class="sl-diff-card__path is-single"><span class="sl-diff-card__path-leaf">' + leaf + '</span></span>';
+  return '<span class="sl-diff-card__path" title="' + escapeHtml(path) + '">' +
+    '<span class="sl-diff-card__path-mid">' + escapeHtml(segs.join(' › ')) + '</span>' +
+    '<span class="sl-diff-card__path-sep">›</span>' +
+    '<span class="sl-diff-card__path-leaf">' + leaf + '</span>' +
+  '</span>';
+}
+
+// bandPct：噪声带，相对幅度低于它的卡片整卡置灰——落在训练自身抖动里的差异不构成结论
+function diffCardHtml(card, index, bandPct) {
   const active = state.diffSelectedLane === card.leafKey;
-  const barPct = Math.min(100, Math.max(2, card.diffPct));
-  const topClass = index < 3 ? ' is-top' : '';
+  const noisy = bandPct != null && card.diffPct < bandPct;
+  const topClass = (index < 3 && !noisy) ? ' is-top' : '';
   const values = card.values || [
     { runId: state.selectedRunId, slot: 'base', busyUs: card.topUs, count: 0 },
     { runId: state.comparisonRunId, slot: 'compare', busyUs: card.bottomUs, count: 0 },
   ];
-  const maxUs = Math.max.apply(null, values.map(function (v) { return v.busyUs; }));
-  let valsHtml;
-  if (values.length <= 2) {
-    // 两两对比维持原来的单行「基线任务 x ms | 对比任务 y ms」
-    valsHtml = '<div class="sl-diff-card__vals">' + values.map(function (v, i) {
-      const warn = v.busyUs >= maxUs ? ' is-warn' : '';
-      return (i === 0 ? '基线任务 ' : '对比任务 ') + '<span class="sl-diff-card__val' + warn + '">' + (v.busyUs / 1000).toFixed(2) + 'ms</span>';
-    }).join(' &nbsp;|&nbsp; ') + '</div>';
-  } else {
-    // 三方对比：一行塞不下，改成每个 run 一行，并带上任务条数（这才看得出谁多了/少了任务条）
-    valsHtml = '<div class="sl-diff-card__vals is-multi">' + values.map(function (v) {
-      const warn = v.busyUs >= maxUs ? ' is-warn' : '';
-      const absent = v.count === 0 ? ' is-absent' : '';
-      return '<div class="sl-diff-card__val-row">' +
-        '<span class="sl-diff-card__val-dot dot ' + runDotClass(v.runId) + '"></span>' +
-        '<span class="sl-diff-card__val-name">' + escapeHtml(COMPARE_SLOT_LABELS[v.slot] || v.slot) + '</span>' +
-        '<span class="sl-diff-card__val' + warn + absent + '">' + (v.count === 0 ? '无任务条' : (v.busyUs / 1000).toFixed(2) + 'ms') + '</span>' +
-        '<span class="sl-diff-card__count">×' + v.count + '</span>' +
-      '</div>';
-    }).join('') + '</div>';
-  }
-  return '<div class="sl-diff-card' + (active ? ' is-active' : '') + topClass + '" data-diff-lane="' + escapeHtml(card.leafKey) + '" role="button" tabindex="0">' +
-    '<div class="sl-diff-card__path">' + escapeHtml(card.path) + '</div>' +
-    '<div class="sl-diff-card__meter-row">' +
-      '<span class="sl-diff-card__pct">' + card.diffPct.toFixed(1) + '%</span>' +
-      '<div class="sl-meter"><div class="sl-meter-fill" style="width:' + barPct + '%"></div></div>' +
+  // 两方对比槽位标签用「基线 / 对比」，三方才用「基线 / 对比 A / 对比 B」
+  const slotLabel = function (slot) {
+    if (values.length === 2) return slot === 'base' ? '基线' : '对比';
+    return COMPARE_SLOT_LABELS[slot] || slot;
+  };
+  // 统一多行渲染：每个 run 一行。任务条数（×N）不再逐行列出——「有没有任务条」这个
+  // 唯一有结论价值的部分已经由「无任务条 / 新增 / 消失」说清楚，具体条数放在这里
+  // 只是每行末尾多一列谁也不会去读的数字。
+  // 差值贴在各对比行的名称右侧（基线行是参照系，本身没有差值）：卡片列表本身已按绝对
+  // 差值排序，再给每张卡配一条红绿进度条 + 百分比，等于把同一个信息说三遍，
+  // 几十张卡叠起来页面全是彩条。
+  const presence = diffPresenceLabel(values);
+  const valsHtml = '<div class="sl-diff-card__vals is-multi">' + values.map(function (v, i) {
+    // busy 数值本身不再着色：方向已经由该行的差值承担，最大值再标一次红是重复编码
+    const absent = v.count === 0 ? ' is-absent' : '';
+    const d = i === 0 ? { text: '', cls: '' } : diffDeltaOf(v.busyUs - values[0].busyUs);
+    // 标签紧跟在对比行的红绿差值右侧：它和差值讲的是同一件事——「对比这一侧发生了什么」
+    const flag = (presence && i === 1) ? '<span class="sl-diff-card__flag">' + presence + '</span>' : '';
+    return '<div class="sl-diff-card__val-row">' +
+      '<span class="sl-diff-card__val-dot dot ' + runDotClass(v.runId) + '"></span>' +
+      '<span class="sl-diff-card__val-name">' + escapeHtml(slotLabel(v.slot)) + '</span>' +
+      '<span class="sl-diff-card__delta' + (noisy ? '' : d.cls) + '">' + d.text + '</span>' +
+      flag +
+      '<span class="sl-diff-card__val' + absent + '">' + (v.count === 0 ? '无任务条' : (v.busyUs / 1000).toFixed(2) + 'ms') + '</span>' +
+    '</div>';
+  }).join('') + '</div>';
+  return '<div class="sl-diff-card' + (active ? ' is-active' : '') + topClass + (noisy ? ' is-noise' : '') + '" data-diff-lane="' + escapeHtml(card.leafKey) + '" role="button" tabindex="0"' +
+      (noisy ? ' title="相对幅度低于基线自身抖动，视为噪声"' : '') + '>' +
+    '<div class="sl-diff-card__path-row">' +
+      diffPathHtml(card.path) +
+      (noisy ? '<span class="sl-diff-card__flag is-noise">噪声带内</span>' : '') +
     '</div>' +
     valsHtml +
   '</div>';
 }
 
+/* ── 总账条：对比看板的第一层，回答「总共差多少、差异集中在几条上」──
+   过去看板顶部只有「差异任务 N / 差异泳道 M」两个计数，用户一进来就掉进泳道明细里，
+   缺了「总耗时 A→B、差 X ms、其中 Y ms 来自 Top 3」这句最该先说的话。
+   总量按任务级卡片求和（泳道级是它的聚合，两者总量一致，取其一避免重复计数）。 */
+function diffLedgerHtml(taskCards, runs, extraRows) {
+  if (!taskCards.length) return '';
+  var totals = runs.map(function (_, i) {
+    return taskCards.reduce(function (sum, c) {
+      return sum + ((c.values && c.values[i]) ? c.values[i].busyUs : 0);
+    }, 0);
+  });
+  var ms = function (us) { return (us / 1000).toFixed(2) + ' ms'; };
+  // 各泳道差值的绝对值之和：正负会相互抵消，用它做分母才能如实说明「差异集中度」
+  var absSum = taskCards.reduce(function (sum, c) { return sum + c.absDiffUs; }, 0);
+  var top3 = taskCards.slice(0, 3).reduce(function (sum, c) { return sum + c.absDiffUs; }, 0);
+  var top3Pct = absSum > 0 ? (top3 / absSum) * 100 : 0;
+
+  var rows = '';
+  if (runs.length === 2) {
+    var signed = totals[1] - totals[0];
+    var cls = Math.abs(signed) < DIFF_NEGLIGIBLE_US ? '' : (signed > 0 ? ' is-slower' : ' is-faster');
+    var pct = totals[0] > 0 ? (signed / totals[0]) * 100 : 0;
+    var sign = signed > 0 ? '+' : (signed < 0 ? '−' : '±');
+    rows += '<div class="sl-diff-stat-card__row"><span class="sl-diff-stat-card__label">总 busy 时长</span>' +
+      '<span class="sl-diff-stat-card__num">' + ms(totals[0]) + ' → ' + ms(totals[1]) + '</span></div>';
+    rows += '<div class="sl-diff-stat-card__row"><span class="sl-diff-stat-card__label">总差值</span>' +
+      '<span class="sl-diff-stat-card__num' + cls + '">' + sign + ms(Math.abs(signed)) +
+      ' <small>(' + sign + Math.abs(pct).toFixed(1) + '%)</small></span></div>';
+  } else {
+    var maxT = Math.max.apply(null, totals), minT = Math.min.apply(null, totals);
+    rows += runs.map(function (run, i) {
+      return '<div class="sl-diff-stat-card__row">' +
+        '<span class="sl-diff-stat-card__label"><span class="sl-diff-card__val-dot dot ' + runDotClass(run.id) + '"></span> ' +
+        escapeHtml(COMPARE_SLOT_LABELS[COMPARE_SLOTS[i]] || '') + '</span>' +
+        '<span class="sl-diff-stat-card__num">' + ms(totals[i]) + '</span></div>';
+    }).join('');
+    rows += '<div class="sl-diff-stat-card__row"><span class="sl-diff-stat-card__label">极差</span>' +
+      '<span class="sl-diff-stat-card__num">Δ ' + ms(maxT - minT) + '</span></div>';
+  }
+  rows += '<div class="sl-diff-stat-card__row"><span class="sl-diff-stat-card__label">Top 3 贡献</span>' +
+    '<span class="sl-diff-stat-card__num">' + ms(top3) + ' <small>(占差异 ' + top3Pct.toFixed(0) + '%)</small></span></div>';
+  rows += extraRows || '';        // 显著差异计数与噪声带并进同一张卡，不另起一张
+  return '<div class="sl-diff-stat-card sl-diff-ledger">' + rows + '</div>';
+}
+
+/* ── 各 run 的时间构成对比条（替代原先的两个大仪表盘）──
+   原来那两个仪表盘的分数是 run.id 哈希出来的假值、「优化后预估可达」更无依据，
+   却占着对比页最贵的视觉位置。换成按 rank 汇总的四段构成：计算 / 未掩盖通信 / 空等 / 空泡，
+   同一排并列即可直接看出"多出来的时间落在哪一类"，这才是漏斗第一层该给的东西。 */
+function compositionOf(run) {
+  const prof = rankProfileOf(run);
+  if (!prof) return null;
+  const segs = RANK_SEG_DEFS.map((d) => ({
+    ...d,
+    us: prof.rows.reduce((sum, r) => sum + (r.segs.find((s) => s.key === d.key) || { us: 0 }).us, 0) / prof.rows.length,
+  }));
+  return { segs, totalUs: segs.reduce((s, x) => s + x.us, 0), prof };
+}
+
+/* 构成条的四段（构成对比条与 rank 行共用）。段是绝对定位的，位置按累计占比给，
+   零宽段跳过渲染但仍要把偏移累加进去，否则后面几段会整体左移。 */
+function compSegsHtml(segs, totalUs, titleFn) {
+  let left = 0, html = '';
+  segs.forEach((s) => {
+    const pct = totalUs > 0 ? (s.us / totalUs) * 100 : 0;
+    const x = left;
+    left += pct;
+    if (pct < 0.05) return;             // 见 .sl-comp-seg 注释：零宽段不占位
+    html += '<span class="sl-comp-seg" style="left:' + x.toFixed(3) + '%;width:' + pct.toFixed(3) +
+      '%;background:' + s.color + '" title="' + escapeHtml(titleFn(s, pct)) + '"></span>';
+  });
+  return html;
+}
+
+function compositionCompareHtml(runs) {
+  const comps = runs.map((run) => ({ run, comp: compositionOf(run) })).filter((x) => x.comp);
+  if (!comps.length) return '';
+  const maxTotal = Math.max.apply(null, comps.map((x) => x.comp.totalUs));
+  const ms = (us) => (us / 1000).toFixed(2) + ' ms';
+  return '<div class="sl-comp-compare">' +
+    '<div class="sl-comp-compare__title">每 step 时间构成（各 rank 平均）</div>' +
+    comps.map(({ run, comp }, i) => {
+      const scale = maxTotal > 0 ? (comp.totalUs / maxTotal) * 100 : 100;
+      return '<div class="sl-comp-row">' +
+        '<div class="sl-comp-row__head">' +
+          '<span class="sl-compare-card__dot dot ' + runDotClass(run.id) + '"></span>' +
+          '<span class="sl-comp-row__name" title="' + escapeHtml(run.id) + '">' + escapeHtml(COMPARE_SLOT_LABELS[COMPARE_SLOTS[i]] || run.id) + '</span>' +
+          '<span class="sl-comp-row__total">' + ms(comp.totalUs) + '</span>' +
+        '</div>' +
+        '<div class="sl-comp-row__track"><div class="sl-comp-row__bar" style="width:' + scale.toFixed(1) + '%">' +
+          compSegsHtml(comp.segs, comp.totalUs, (s, pct) => s.label + ' ' + ms(s.us) + ' · ' + pct.toFixed(1) + '%') +
+        '</div></div>' +
+      '</div>';
+    }).join('') +
+    '<div class="sl-comp-legend">' + RANK_SEG_DEFS.map((d) =>
+      '<span><i style="background:' + d.color + '"></i>' + escapeHtml(d.label) + '</span>').join('') +
+    '</div>' +
+  '</div>';
+}
+
+/* ── 任务内多卡视角面板：慢卡定位 ── */
+function rankScopeHtml() {
+  const run = RUN_BY_ID[state.selectedRunId];
+  const prof = run ? rankProfileOf(run) : null;
+  if (!prof) return '<div class="sl-empty-state">当前记录没有可用的 rank 数据。</div>';
+  const ms = (us) => (us / 1000).toFixed(2) + ' ms';
+  const maxStep = Math.max.apply(null, prof.rows.map((r) => r.stepUs));
+
+  const pct = (v) => (v * 100).toFixed(0) + '%';
+  /* 慢卡判定的结论只讲 prof.slowRank 那一张卡，所以它就挂在那张卡的行里（见 .sl-rank-row__note）。
+     判否时同样挂在它上面——"这张卡最常最晚，但不算慢卡"本来就是对同一张卡的判词。
+     原先那段话里的方法论（集合通信是同步点、别看通信耗时）不在这里重复：
+     账目卡「最晚进入通信」的问号里已经讲过一遍。 */
+  const slowNote = prof.hasSlow
+    ? '在 ' + prof.stragglerSteps + '/' + prof.totalSteps + ' 个 step 里<b>最晚进入通信</b>（' +
+      pct(prof.consistency) + ' 一致），平均比最早的卡晚 ' + ms(prof.entryGapUs) +
+      '；其余 rank 因此最多空等 ' + ms(prof.maxWaitUs) + '。拉平它的计算量即可回收这段时间。'
+    : '本记录里最常最晚进入通信的一张（' + prof.stragglerSteps + '/' + prof.totalSteps + ' 个 step，' +
+      pct(prof.consistency) + ' 一致），但进入时刻极差只有 ' + ms(prof.entryGapUs) + '（占 step ' +
+      (prof.median > 0 ? (prof.entryGapUs / prof.median * 100).toFixed(1) : '0') + '%），' +
+      '未同时满足「≥' + pct(STRAGGLER_CONSISTENCY) + ' 一致」与「极差 ≥ step 的 ' + pct(STRAGGLER_GAP_RATIO) +
+      '」，判为抖动而非系统性慢卡。';
+
+  // 平均空等占比：健康度评分的主驱动，也是"能回收多少时间"的直接读数，
+  // 放进本账目卡而不是散在健康度卡里（同一个数字不该在两处出现）。
+  const avgWaitUs = prof.rows.reduce((s, r) => s + (r.segs.find((x) => x.key === 'Communication(Wait)') || { us: 0 }).us, 0) / prof.rows.length;
+  const waitPct = prof.median > 0 ? (avgWaitUs / prof.median) * 100 : 0;
+  const TIPS = {
+    wait: '平均空等占比 = 各 rank 每 step 平均空等时长 ÷ step 中位。\n\n'
+      + '空等是设备什么都没干、纯粹被集合通信同步点拖住的时间，也是多卡侧最直接可回收的部分：'
+      + '把最晚进入通信的那张卡拉平，这段时间就能拿回来。它是上方「差异健康度」评分的主驱动。',
+    spread: 'rank 间 step 离散度 =（最慢 rank − 最快 rank）÷ 中位数。\n\n'
+      + '注意它接近 0 并不等于"没有慢卡"：集合通信是同步点，慢卡会把所有卡拉到同一 step 时长，'
+      + '所以多卡训练里各 rank 的 step 耗时天然高度一致。这个数只用来发现"连同步都对不齐"的异常'
+      + '（掉线、重传、部分卡不参与集合通信），真正的慢卡要看下面的「最晚进入通信」。',
+    median: 'step 中位 = 各 rank 每 step 平均耗时的中位数，即"一步大概多久"的基准值。\n\n'
+      + '用中位数而不是均值，是为了不被个别长尾 step（ckpt 保存、通信重传）带偏；'
+      + '下面每个 rank 的构成条按它归一，慢卡判定的显著性阈值也以它为分母。',
+    slow: '最晚进入通信 = 各 rank 里最后一个结束计算、进入集合通信的那张卡。\n\n'
+      + '这是慢卡定位的关键读数：集合通信要所有卡到齐才开始、也几乎同时结束，'
+      + '所以看通信耗时永远分不出谁慢（慢卡的通信条反而最短，因为它不用等）。'
+      + '判定为慢卡需同时满足「≥60% 的 step 里都是它最晚」与「进入时刻极差 ≥ step 的 5%」。',
+  };
+  const q = (key) => '<button type="button" class="sl-rank-info" data-rank-tip="' + escapeHtml(TIPS[key]) + '" aria-label="查看指标说明">?</button>';
+  return '<div class="sl-diff-stat-card sl-diff-ledger">' +
+      '<div class="sl-diff-stat-card__row"><span class="sl-diff-stat-card__label">平均空等占比' + q('wait') + '</span>' +
+        '<span class="sl-diff-stat-card__num' + (waitPct > 10 ? ' is-slower' : '') + '">' + waitPct.toFixed(1) + '%</span></div>' +
+      '<div class="sl-diff-stat-card__row"><span class="sl-diff-stat-card__label">rank 间 step 离散度' + q('spread') + '</span>' +
+        '<span class="sl-diff-stat-card__num' + (prof.spreadPct > 5 ? ' is-slower' : '') + '">' + prof.spreadPct.toFixed(2) + '%</span></div>' +
+      '<div class="sl-diff-stat-card__row"><span class="sl-diff-stat-card__label">step 中位' + q('median') + '</span>' +
+        '<span class="sl-diff-stat-card__num">' + ms(prof.median) + '</span></div>' +
+      '<div class="sl-diff-stat-card__row"><span class="sl-diff-stat-card__label">最晚进入通信' + q('slow') + '</span>' +
+        '<span class="sl-diff-stat-card__num' + (prof.hasSlow ? ' is-slower' : '') + '">Rank ' + prof.slowRank + '</span></div>' +
+    '</div>' +
+    '<div class="sl-insp-section"><div class="sl-rank-rows">' +
+      prof.rows.map((r) => {
+        const isSlow = prof.hasSlow && r.rank === prof.slowRank;
+        const w = maxStep > 0 ? (r.stepUs / maxStep) * 100 : 100;
+        const laneKey = 'node-' + Math.floor(r.rank / 2) + '▸R' + r.rank + '▸OVL▸Communication(Wait)';
+        const active = state.diffSelectedLane === laneKey;
+        return '<div class="sl-rank-row' + (isSlow ? ' is-slow' : '') + (active ? ' is-active' : '') +
+          '" data-rank-lane="' + escapeHtml(laneKey) + '" role="button" tabindex="0" aria-pressed="' + active + '">' +
+          '<div class="sl-rank-row__head">' +
+            '<span class="sl-rank-row__name">Rank ' + r.rank + (isSlow ? '<span class="sl-rank-row__badge">最慢</span>' : '') + '</span>' +
+            '<span class="sl-rank-row__step">' + ms(r.stepUs) + '</span>' +
+          '</div>' +
+          '<div class="sl-rank-row__track"><div class="sl-rank-row__bar" style="width:' + w.toFixed(1) + '%">' +
+            compSegsHtml(r.segs, r.stepUs, (s) => s.label + ' ' + ms(s.us)) +
+          '</div></div>' +
+          '<div class="sl-rank-row__meta">进入通信 ' + ms(r.commEntryUs) + ' · 空等 ' +
+            ms((r.segs.find((s) => s.key === 'Communication(Wait)') || { us: 0 }).us) + '</div>' +
+          (r.rank === prof.slowRank ? '<div class="sl-rank-row__note">' + slowNote + '</div>' : '') +
+        '</div>';
+      }).join('') +
+    '</div>' +
+  '</div>';
+}
+
+/* ============================================================
+   差异健康度（差异总览最顶部的定调卡片）
+   ------------------------------------------------------------
+   下面那些读数（总差值、Top3 集中度、空等占比、慢卡一致性…）单看每一个都需要用户
+   自己换算、再横向权衡，才能回答最朴素的那个问题："差异大不大？健康吗？"。
+   这张卡把该权衡替用户做掉：先给结论（等级 + 一句话），再把支撑读数列在下面备查。
+
+   评级体系与配色完全沿用 index_v3 总览页的 PHS 仪表盘（app.js 的 gradeToColor /
+   gradeColorAt），只把档位换成本页要求的 6 级 A+/A/B+/B/C+/C —— 同一个产品里
+   "绿=好、红=差"的色阶不能有两套。
+   ============================================================ */
+const DIFF_GRADE_COLOR = {                 // 徽标/分数文字色，取自 app.js gradeToColor 的深色阶
+  'A+': '#13a692', 'A': '#00782d', 'B+': '#929710', 'B': '#845a00', 'C+': '#eb5a04', 'C': '#b60254',
+};
+const DIFF_GRADE_CUTS = [[90, 'A+'], [75, 'A'], [60, 'B+'], [45, 'B'], [30, 'C+'], [0, 'C']];
+function diffScoreToGrade(v) {
+  for (const [cut, g] of DIFF_GRADE_CUTS) if (v >= cut) return g;
+  return 'C';
+}
+/* 评级块与刻度条指针都改用 DIFF_GRADE_COLOR 的深色阶实心填充（白字），
+   原先按分数在渐变上取色的 diffGradeColorAt / 淡底用的 diffHexA 已无调用方，随之删除。 */
+
+// 评分口径说明（标题旁的问号）。分档线与加减分规则都写明，避免这个分数变成不可追问的黑箱。
+const HEALTH_TIP_HEAD = '差异健康度：把下方那些读数压成一个 0–100 的分数，六档 '
+  + 'A+ ≥90 / A ≥75 / B+ ≥60 / B ≥45 / C+ ≥30 / C 其余。\n\n';
+const HEALTH_TIP_FOOT = '\n\n分数只用来定调"要不要往下看"，具体结论仍以下方账目卡与差异列表为准。';
+const HEALTH_TIP_AB = HEALTH_TIP_HEAD
+  + '跨任务对比的算法：\n'
+  + '· 基准 60 分 = 无显著变化，即总差值落在基线自身的抖动带内\n'
+  + '· 整体变快加分、变慢扣分，幅度按总差值百分比换算\n'
+  + '· 再看差异是否好定位：Top 3 占比 ≥60% 加 5 分，<30% 扣 5 分 —— 同样是变慢，'
+  + '集中在两三条上的可以直接去修，摊在几十条上的连从哪下手都不知道\n'
+  + '· 三方对比没有单一方向，改评三者一致性：总耗时极差越小越健康'
+  + HEALTH_TIP_FOOT;
+const HEALTH_TIP_RANK = HEALTH_TIP_HEAD
+  + '单任务多卡的算法：\n'
+  + '· 主项是平均空等占比 —— 设备什么都没干、纯粹被集合通信同步点拖住的时间，'
+  + '是多卡侧最直接可回收的部分\n'
+  + '· 100 分起扣，空等每占 step 1% 扣 3.2 分\n'
+  + '· 存在跨 step 一致的慢卡再扣 8 分：同样的空等总量，集中在一张卡上造成的比均匀分布的更该管，也更好修'
+  + HEALTH_TIP_FOOT;
+
+/* 跨任务 A/B 的健康度：主信号是"这次改动赚还是亏"，修正项是"差异好不好定位"。
+   基准 60 分 = 无显著变化（B+）；变快加分、变慢扣分；差异弥散再扣一点，
+   因为同样是变慢，集中在 2~3 条上的可以直接去修，摊在几十条上的连从哪下手都不知道。 */
+function abHealth(runs) {
+  const cards = computeLaneDiffCards();
+  if (!cards.length) return null;
+  const totals = runs.map((_, i) => cards.reduce((s, c) => s + ((c.values && c.values[i]) ? c.values[i].busyUs : 0), 0));
+  const band = diffNoiseBandPct();
+  const absSum = cards.reduce((s, c) => s + c.absDiffUs, 0);
+  const top3 = cards.slice(0, 3).reduce((s, c) => s + c.absDiffUs, 0);
+  const focus = absSum > 0 ? (top3 / absSum) * 100 : 0;
+  const ms = (us) => (us / 1000).toFixed(2) + ' ms';
+
+  if (runs.length > 2) {
+    // 三方对比无单一方向，改评"三者一致性"：极差越小越健康
+    const maxT = Math.max.apply(null, totals), minT = Math.min.apply(null, totals);
+    const spread = minT > 0 ? ((maxT - minT) / minT) * 100 : 0;
+    const score = Math.max(10, Math.min(95, 100 - spread * 3));
+    return {
+      score, tip: HEALTH_TIP_AB, headline: spread < band ? '三者表现一致' : '三者存在显著差异',
+      verdict: spread < band
+        ? `三条记录的总耗时极差 ${spread.toFixed(1)}%，落在基线自身抖动（±${band.toFixed(1)}%）内，可视为等效。`
+        : `总耗时极差 ${spread.toFixed(1)}%（${ms(maxT - minT)}），超出抖动带宽，三者不等效；差异最大的 3 条泳道贡献了 ${focus.toFixed(0)}%。`,
+    };
+  }
+
+  const deltaUs = totals[1] - totals[0];
+  const deltaPct = totals[0] > 0 ? (deltaUs / totals[0]) * 100 : 0;
+  const withinBand = Math.abs(deltaPct) < band;
+  let score;
+  if (withinBand) score = 62;
+  else if (deltaPct < 0) score = 60 + Math.min(35, Math.abs(deltaPct) * 3.5);
+  else {
+    score = 60 - Math.min(45, deltaPct * 3);
+    // 同样是变慢，集中在 2~3 条上的可以直接去修，摊在几十条上的连从哪下手都不知道
+    score += focus >= 60 ? 5 : (focus < 30 ? -5 : 0);
+  }
+  score = Math.max(5, Math.min(98, score));
+  const dir = deltaPct < 0 ? '变快' : '变慢';
+  return {
+    score, tip: HEALTH_TIP_AB,
+    headline: withinBand ? '无显著变化' : (deltaPct < 0 ? `整体变快 ${Math.abs(deltaPct).toFixed(1)}%` : `整体变慢 ${deltaPct.toFixed(1)}%`),
+    verdict: withinBand
+      ? `总耗时差 ${ms(Math.abs(deltaUs))}（${Math.abs(deltaPct).toFixed(1)}%），落在基线自身抖动（±${band.toFixed(1)}%）内——这次改动没有可测量的影响，不必据此下结论。`
+      : `总耗时${dir} ${ms(Math.abs(deltaUs))}（超出抖动带宽 ±${band.toFixed(1)}%，可以据此下结论）。` +
+        (deltaPct > 0
+          ? (focus >= 60
+            ? `退化集中：差异最大的 3 条泳道就占了 ${focus.toFixed(0)}%，直接从下面的 Top 3 入手。`
+            : `退化较弥散：Top 3 只占 ${focus.toFixed(0)}%，剩下的摊在大量泳道上，先切到「按泳道」看是哪一类整体退化。`)
+          : `收益集中度 ${focus.toFixed(0)}%，主要来自下面的 Top 3。`),
+  };
+}
+
+/* 任务内多卡的健康度：主信号是"空等占 step 的比例"——那是设备什么都没干、
+   纯粹被同步点拖住的时间，是多卡协同里最直接的浪费。存在系统性慢卡再额外扣分：
+   同样的空等总量，集中在一张卡造成的比均匀分布的更该管，也更好修。 */
+function rankHealth(run) {
+  const prof = rankProfileOf(run);
+  if (!prof) return null;
+  const avgWait = prof.rows.reduce((s, r) => s + (r.segs.find((x) => x.key === 'Communication(Wait)') || { us: 0 }).us, 0) / prof.rows.length;
+  const waitPct = prof.median > 0 ? (avgWait / prof.median) * 100 : 0;
+  let score = 100 - waitPct * 3.2;
+  if (prof.hasSlow) score -= 8;
+  score = Math.max(5, Math.min(98, score));
+  const ms = (us) => (us / 1000).toFixed(2) + ' ms';
+  return {
+    score, tip: HEALTH_TIP_RANK,
+    headline: prof.hasSlow ? `Rank ${prof.slowRank} 拖慢全局` : (waitPct < 5 ? '多卡协同良好' : '同步等待偏高'),
+    verdict: prof.hasSlow
+      ? `各卡平均有 ${waitPct.toFixed(1)}% 的 step 时间在空等同步，主因是 Rank ${prof.slowRank} 在 ${prof.stragglerSteps}/${prof.totalSteps} 个 step 里最晚进入通信（晚 ${ms(prof.entryGapUs)}）。拉平它的计算量即可回收这部分时间。`
+      : (waitPct < 5
+        ? `各卡进入通信的时刻接近，平均空等仅占 step 的 ${waitPct.toFixed(1)}%，多卡侧没有明显可回收的时间；若仍需提速，方向在通信掩盖与调度空泡。`
+        : `平均空等占 step 的 ${waitPct.toFixed(1)}%，但没有跨 step 一致的慢卡（最频繁的 Rank ${prof.slowRank} 只占 ${prof.stragglerSteps}/${prof.totalSteps}）——属于整体抖动而非某张卡的问题，优先查数据加载与网络稳定性。`),
+  };
+}
+
+function diffHealthCardHtml(health) {
+  if (!health) return '';
+  const score = Math.round(health.score);
+  const grade = diffScoreToGrade(score);
+  const color = DIFF_GRADE_COLOR[grade];
+  return '<div class="sl-health">' +
+    '<div class="sl-health__label">差异健康度' +
+      (health.tip ? '<button type="button" class="sl-rank-info" data-rank-tip="' + escapeHtml(health.tip) + '" aria-label="查看评分口径">?</button>' : '') +
+    '</div>' +
+    '<div class="sl-health__top">' +
+      '<span class="sl-health__grade" style="background:' + color + '">' + grade + '</span>' +
+      '<span class="sl-health__title">' + escapeHtml(health.headline) + '</span>' +
+    '</div>' +
+    '<div class="sl-health__scale"><span class="sl-health__marker" style="left:' + score + '%;background:' + color + '">' + score + '</span></div>' +
+    '<div class="sl-health__ticks">' + DIFF_GRADE_CUTS.slice().reverse().map(function (g) {
+      return '<span' + (g[1] === grade ? ' class="is-current" style="color:' + color + '"' : '') + '>' + g[1] + '</span>';
+    }).join('') + '</div>' +
+    // 支撑读数不在这里重复：它们已经在下方那张账目卡里，指标散落在多处会让用户
+    // 反复对同一个数字做二次确认。这张卡只负责"结论 + 为什么"。
+    '<div class="sl-health__verdict">' + escapeHtml(health.verdict) + '</div>' +
+  '</div>';
+}
+
+/* ── 差异总览的两套内容，由「勾了几条记录」直接决定，不给用户额外的视角开关 ──
+   只有基线一条 → 问题必然是"这次训练内部谁在拖后腿"，给多卡慢卡定位；
+   勾了两条以上 → 问题变成"两次之间赚了还是亏了、亏在哪"，给跨任务 A/B。
+   这两条流程的第一屏本就不同，而勾选状态已经把意图表达清楚了。 */
 function diffDashboardHtml() {
   var topRun = RUN_BY_ID[state.selectedRunId];
   var bottomRun = RUN_BY_ID[state.comparisonRunId];
   if (!topRun) return '<div class="sl-empty-state">未找到基线运行数据。</div>';
-  if (!bottomRun) return '<div class="sl-empty-state" style="display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;padding:48px var(--space-4);gap:var(--space-3)">' +
-    '<svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.2" opacity="0.4" aria-hidden="true">' +
-      '<rect x="3" y="3" width="8" height="8" rx="1.5"></rect>' +
-      '<rect x="13" y="3" width="8" height="8" rx="1.5"></rect>' +
-      '<rect x="3" y="13" width="8" height="8" rx="1.5"></rect>' +
-      '<rect x="13" y="13" width="8" height="8" rx="1.5"></rect>' +
-      '<path d="M11 3v18"></path>' +
-    '</svg>' +
-    '<span>请勾选对比数据</span>' +
-  '</div>';
+  // 未勾选对比对象 → 任务内多卡（它比的是同一次训练内部的各 rank，本就不需要第二个 run）
+  if (!bottomRun) return diffHealthCardHtml(rankHealth(topRun)) + rankScopeHtml();
   var runs = activeCompareRuns();
-  return '<div class="sl-compare-cards' + (runs.length > 2 ? ' is-triple' : '') + '">' +
-    runs.map(function (run, i) {
-      return '<div class="sl-compare-card ' + (i === 0 ? 'is-baseline' : 'is-compared') + '">' +
-        '<div class="sl-compare-card__head">' +
-          '<span class="sl-compare-card__dot dot ' + runDotClass(run.id) + '"></span>' +
-          '<span class="sl-compare-card__name" title="' + escapeHtml(run.id) + '">' + escapeHtml(run.id) + '</span>' +
-        '</div>' +
-        (i === 0 ? '<span class="sl-compare-card__badge">基线</span>'
-                 : (runs.length > 2 ? '<span class="sl-compare-card__badge">' + escapeHtml(COMPARE_SLOT_LABELS[COMPARE_SLOTS[i]]) + '</span>' : '')) +
-        '<div class="sl-compare-card__gauge" id="compareGauge' + i + '"></div>' +
-      '</div>';
-    }).join('') +
-  '</div>' +
+  return diffHealthCardHtml(abHealth(runs)) + compositionCompareHtml(runs) +
   (function () {
-    var isTaskTab = state.diffTab === 'task';
+    var tab = state.diffTab;
     var taskCards = computeLaneDiffCards();
     var laneCards = computeLaneAggregatedDiffCards();
-    var cards = isTaskTab ? taskCards : laneCards;
+    var rankCards = computeRankDiffCards();
+    var cards = tab === 'task' ? taskCards : (tab === 'rank' ? rankCards : laneCards);
     if (!taskCards.length && !laneCards.length) return '';
-    // 统计数字始终基于任务级数据，不随页签切换变化
-    var differingTaskCards = taskCards.filter(function (c) { return c.diffPct >= DIFF_WARN_THRESHOLD; });
-    var taskItemsDiffering = differingTaskCards.reduce(function (sum, c) { return sum + c.itemCount; }, 0);
+    // 噪声带：低于基线 run 自身抖动的差异不计入统计，也不该被当成结论
+    var band = diffNoiseBandPct();
+    var significant = taskCards.filter(function (c) { return c.diffPct >= band; });
+    var laneSignificant = laneCards.filter(function (c) { return c.diffPct >= band; });
+    var TABS = [
+      { id: 'task', label: '按任务', n: taskCards.length },
+      { id: 'lane', label: '按泳道', n: laneCards.length },
+      { id: 'rank', label: '按 Rank', n: rankCards.length },
+    ];
+    var extraRows =
+      '<div class="sl-diff-stat-card__row"><span class="sl-diff-stat-card__label">显著差异任务</span><span class="sl-diff-stat-card__num">' + significant.length + ' <small>/ ' + taskCards.length + '</small></span></div>' +
+      '<div class="sl-diff-stat-card__row"><span class="sl-diff-stat-card__label">显著差异泳道</span><span class="sl-diff-stat-card__num">' + laneSignificant.length + ' <small>/ ' + laneCards.length + '</small></span></div>' +
+      '<div class="sl-diff-stat-card__row"><span class="sl-diff-stat-card__label">噪声带（基线抖动）</span><span class="sl-diff-stat-card__num"><small>±</small>' + band.toFixed(1) + '%</span></div>';
     return '' +
-      '<div class="sl-diff-stat-card">' +
-        '<div class="sl-diff-stat-card__row"><span class="sl-diff-stat-card__label">差异任务</span><span class="sl-diff-stat-card__num">' + taskCards.length + '</span></div>' +
-        '<div class="sl-diff-stat-card__row"><span class="sl-diff-stat-card__label">差异泳道</span><span class="sl-diff-stat-card__num">' + laneCards.length + '</span></div>' +
-      '</div>' +
+      diffLedgerHtml(taskCards, runs, extraRows) +
       '<div class="sl-diff-tabs" role="tablist" aria-label="差异粒度">' +
-        '<button class="btn sl-report-tab' + (isTaskTab ? ' is-selected' : '') + '" type="button" role="tab" data-diff-tab="task" aria-selected="' + isTaskTab + '">按任务 <small>' + taskCards.length + '</small></button>' +
-        '<button class="btn sl-report-tab' + (!isTaskTab ? ' is-selected' : '') + '" type="button" role="tab" data-diff-tab="lane" aria-selected="' + !isTaskTab + '">按泳道 <small>' + laneCards.length + '</small></button>' +
+        TABS.map(function (t) {
+          var on = tab === t.id;
+          return '<button class="btn sl-report-tab' + (on ? ' is-selected' : '') + '" type="button" role="tab" data-diff-tab="' + t.id + '" aria-selected="' + on + '">' + t.label + ' <small>' + t.n + '</small></button>';
+        }).join('') +
       '</div>' +
       '<div class="sl-insp-section">' +
-        '<div class="sl-diff-card-list">' + cards.map(function (c, i) { return diffCardHtml(c, i); }).join('') + '</div>' +
-        '<div class="sl-insp-hint">差异幅度 = ' + (runs.length > 2 ? '各 run busy 时长的最大值与最小值之差占最大值的比例' : '|基线 − 对比对象| 的 busy 时长占两者较大值的比例') + '；差异泳道 / 差异任务按差异幅度 ≥ ' + DIFF_WARN_THRESHOLD + '% 统计。点击卡片可在各栏泳道中定位并高亮对应行。</div>' +
+        '<div class="sl-diff-card-list">' + cards.map(function (c, i) { return diffCardHtml(c, i, band); }).join('') + '</div>' +
       '</div>';
   })();
+}
+
+/* ── 指标问号的解释气泡 ──
+   挂到 body 末尾 + position:fixed，跳出 .pto-ide-frame__pane 那层带 backdrop-filter 的
+   层叠上下文（同「视图说明」气泡的处理，否则再高的 z-index 也会被 pane 内的画布盖住）。 */
+let rankTipEl = null;
+function rankMetricTipEl() {
+  if (!rankTipEl) {
+    rankTipEl = document.createElement('div');
+    rankTipEl.className = 'sl-rank-tip';
+    rankTipEl.setAttribute('role', 'tooltip');
+    document.body.appendChild(rankTipEl);
+  }
+  return rankTipEl;
+}
+function bindRankMetricTips(scope) {
+  scope.querySelectorAll('[data-rank-tip]').forEach(function (btn) {
+    const show = function () {
+      const tip = rankMetricTipEl();
+      tip.textContent = btn.dataset.rankTip;
+      tip.classList.add('is-visible');
+      const r = btn.getBoundingClientRect();
+      const w = tip.offsetWidth || 300, h = tip.offsetHeight || 120;
+      // 右侧栏靠窗口右缘，气泡一律向左展开；上方放不下时翻到下方
+      tip.style.left = Math.max(8, Math.min(window.innerWidth - w - 8, r.right - w)) + 'px';
+      tip.style.top = (r.top - h - 8 >= 8 ? r.top - h - 8 : r.bottom + 8) + 'px';
+    };
+    const hide = function () {
+      if (rankTipEl) rankTipEl.classList.remove('is-visible');
+    };
+    btn.addEventListener('mouseenter', show);
+    btn.addEventListener('focus', show);
+    btn.addEventListener('mouseleave', hide);
+    btn.addEventListener('blur', hide);
+  });
+}
+
+/* 取消泳道选中：把 selectDiffLane 造成的高亮/暗化全部撤掉 */
+function clearDiffLaneSelection() {
+  state.diffSelectedLane = null;
+  activeTrainPanelKeys().forEach((key) => {
+    const renderer = trainRenderers[key];
+    if (!renderer) return;
+    renderer.selectedEvent = null;
+    renderer.selectedCore = null;
+    renderer.relatedEvents = [];
+    renderer.extraActiveLaneKeys = [];
+    renderer._render?.();
+    renderer._renderLabels?.();
+  });
+  hideCrossLaneConnectors();
+  renderInspector();
 }
 
 function expandLaneGroupOn(renderer, groupId) {
@@ -6803,6 +7483,9 @@ function openRunComparison(runIds) {
   if (blockGraphTitle2) blockGraphTitle2.textContent = ids[1] ? RUN_BY_ID[ids[1]].id : '';
   blockGraphView.hidden = false;
   blockGraphView.setAttribute('aria-hidden', 'false');
+  // 底栏此前可能被 showBottomPlaceholder() 连同分隔条一起收起，这里一并恢复
+  var bottomGutter = blockGraphView.previousElementSibling;
+  if (bottomGutter && bottomGutter.classList.contains('pto-ide-frame__gutter')) bottomGutter.hidden = false;
   // 确保各栏 train timeline 的 hidden 属性被清除（第三栏的显隐由 setGroupedPanelVisibility 决定）
   if (trainTimelineTop) trainTimelineTop.removeAttribute('hidden');
   if (trainTimelineBottom) trainTimelineBottom.removeAttribute('hidden');
@@ -6847,26 +7530,17 @@ function closeRunComparison() {
   });
 }
 
-/** 底部面板无对比数据时显示"请勾选对比数据"占位 */
+/** 只勾选基线一条时收起底栏 —— 没有第二条 run 就没有可画的下栏泳道，
+ *  留一块"请勾选对比数据"的空占位只是白占高度；直接隐藏，让上方泳道占满。 */
 function showBottomPlaceholder() {
   if (!blockGraphView) return;
-  // 清除旧的占位
   var existing = blockGraphView.querySelector('.sl-comparison-placeholder');
-  if (!existing) {
-    var div = document.createElement('div');
-    div.className = 'sl-comparison-placeholder';
-    div.innerHTML = '<div style="display:flex;flex-direction:column;align-items:center;justify-content:center;height:100%;min-height:140px;gap:var(--space-3);color:var(--foreground-muted);font:var(--text-body-sm)">' +
-      '<svg width="44" height="44" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.2" opacity="0.35" aria-hidden="true">' +
-        '<rect x="3" y="3" width="8" height="8" rx="1.5"></rect>' +
-        '<rect x="13" y="3" width="8" height="8" rx="1.5"></rect>' +
-        '<rect x="3" y="13" width="8" height="8" rx="1.5"></rect>' +
-        '<rect x="13" y="13" width="8" height="8" rx="1.5"></rect>' +
-        '<path d="M11 3v18"></path>' +
-      '</svg>' +
-      '<span>请勾选对比数据</span>' +
-    '</div>';
-    blockGraphView.appendChild(div);
-  }
+  if (existing) existing.remove();
+  blockGraphView.hidden = true;
+  blockGraphView.setAttribute('aria-hidden', 'true');
+  // 分隔条一并收起，否则上下之间会留一条没有下文的拖拽把手
+  var gutter = blockGraphView.previousElementSibling;
+  if (gutter && gutter.classList.contains('pto-ide-frame__gutter')) gutter.hidden = true;
   // 隐藏旧的 train timeline bottom / third 内容
   if (trainTimelineBottom) trainTimelineBottom.setAttribute('hidden', '');
   if (trainTimelineThird) trainTimelineThird.setAttribute('hidden', '');
@@ -6907,7 +7581,7 @@ function bindInspector() {
     });
   });
   bindCodeFileMenuDismiss();
-  // 差异粒度页签（按任务 | 按泳道）
+  // 差异粒度页签（按任务 | 按泳道 | 按 Rank）
   body.querySelectorAll('[data-diff-tab]').forEach(function (btn) {
     btn.addEventListener('click', function () {
       var tab = btn.dataset.diffTab;
@@ -6919,6 +7593,18 @@ function bindInspector() {
       }
     });
   });
+  // 多卡视角：点某个 rank → 在泳道里定位它的「空等同步」行（再点一次取消选中）
+  body.querySelectorAll('[data-rank-lane]').forEach(function (el) {
+    const act = function () {
+      if (state.diffSelectedLane === el.dataset.rankLane) clearDiffLaneSelection();
+      else selectDiffLane(el.dataset.rankLane);
+    };
+    el.addEventListener('click', act);
+    el.addEventListener('keydown', function (e) {
+      if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); act(); }
+    });
+  });
+  bindRankMetricTips(body);
   // 差异看板视图：泳道卡片点击 —— "按任务"页签下钻到差异详情，"按泳道"仅高亮泳道行
   body.querySelectorAll('[data-diff-lane]').forEach((el) => {
     el.addEventListener('click', () => {
