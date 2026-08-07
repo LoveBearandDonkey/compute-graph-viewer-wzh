@@ -1210,7 +1210,9 @@ body {
   box-shadow: 0 12px 34px rgba(0, 0, 0, 0.42),
     0 3px 10px rgba(0, 0, 0, 0.2),
     0 1px 0 rgba(255, 255, 255, 0.04) inset;
+  transform: translate3d(0, var(--sl-lifecycle-inline-y, 0px), 0);
   transition: box-shadow 160ms ease;
+  will-change: transform;
 }
 
 .sl-lifecycle-lens.is-inline::after {
@@ -1244,13 +1246,8 @@ body {
   background: color-mix(in srgb, var(--surface-2) 94%, transparent);
 }
 
-.sl-lifecycle-lens.is-inline .sl-lifecycle-lane[data-lifecycle-row="core"] {
-  background: var(--surface-2);
-}
-
 .sl-lifecycle-lane.is-hovered,
-.sl-lifecycle-lens.is-inline .sl-lifecycle-lane.is-hovered,
-.sl-lifecycle-lens.is-inline .sl-lifecycle-lane[data-lifecycle-row="core"].is-hovered {
+.sl-lifecycle-lens.is-inline .sl-lifecycle-lane.is-hovered {
   background: color-mix(in srgb, var(--surface-2) 94.5%, white);
 }
 
@@ -1441,28 +1438,14 @@ body {
   background: color-mix(in srgb, var(--surface-1) 95.5%, white);
 }
 
-.sl-lifecycle-lens.is-inline .sl-lifecycle-row-background[data-lifecycle-row="core"] {
-  background: var(--surface-1);
-}
-
-.sl-lifecycle-lens.is-inline .sl-lifecycle-row-background[data-lifecycle-row="core"].is-hovered {
-  background: color-mix(in srgb, var(--surface-1) 95.5%, white);
-}
-
-.sl-lifecycle-lens.is-inline[data-anchor-row="worker"] .sl-lifecycle-row-background[data-lifecycle-row="core"] {
-  background: var(--surface-1);
-}
-
-.sl-lifecycle-lens.is-inline[data-anchor-row="worker"] .sl-lifecycle-row-background[data-lifecycle-row="core"].is-hovered {
-  background: color-mix(in srgb, var(--surface-1) 95.5%, white);
-}
-
+.sl-lifecycle-lens.is-inline[data-anchor-row="core"] .sl-lifecycle-row-background[data-lifecycle-row="core"],
 .sl-lifecycle-lens.is-inline[data-anchor-row="worker"] .sl-lifecycle-row-background[data-lifecycle-row="worker"] {
-  background: var(--surface-1);
+  background: var(--ide-frame-pane-bg, var(--background));
 }
 
+.sl-lifecycle-lens.is-inline[data-anchor-row="core"] .sl-lifecycle-row-background[data-lifecycle-row="core"].is-hovered,
 .sl-lifecycle-lens.is-inline[data-anchor-row="worker"] .sl-lifecycle-row-background[data-lifecycle-row="worker"].is-hovered {
-  background: color-mix(in srgb, var(--surface-1) 95.5%, white);
+  background: color-mix(in srgb, var(--ide-frame-pane-bg, var(--background)) 95.5%, white);
 }
 
 .sl-lifecycle-canvas {
@@ -2554,6 +2537,8 @@ let lifecycleInlineGapAfterRow = -1;
 let lifecycleInlineGapAfterHeight = 0;
 let lifecyclePendingScrollDelta = 0;
 let lifecycleGapScrollPending = false;
+let lifecycleCanvasScrollLeft = null;
+let lifecycleScrollRenderFrame = 0;
 function coreLaneOrder(a, b) {
   if (a.laneGroup !== b.laneGroup) return a.idx - b.idx;
   if (a.die == null || b.die == null) return a.idx - b.idx;
@@ -3293,7 +3278,6 @@ function drawLifecycleAnchorRow(ctx, context, viewportWidth) {
   ctx.rect(0, destTop, viewportWidth, LIFECYCLE_ROW_H);
   ctx.clip();
   ctx.translate(-scrollLeft, destTop - sourceTop);
-  drawForegroundLayerMarks(ctx, MODEL.layerMarks, scale, bodyH(), viewport);
 
   for (const task of MODEL.tasks) {
     if (!isAiCoreDieTask(task) || state.expandedLaneCores.has(task.coreIdx) || taskRow(task) !== mainRow) continue;
@@ -3387,6 +3371,25 @@ function drawLifecycleCanvas(context = lifecycleContext()) {
     ctx.setLineDash([]);
   }
 
+  let renderedDevTaskGuides = 0;
+  if (lifecycleLens.dataset.placement === 'inline') {
+    ctx.save();
+    ctx.translate(-scrollLeft, 0);
+    renderedDevTaskGuides = drawForegroundLayerMarks(
+      ctx,
+      MODEL.layerMarks,
+      scale,
+      height,
+      {
+        left: scrollLeft,
+        top: 0,
+        right: scrollLeft + viewportWidth,
+        bottom: height,
+      },
+    );
+    ctx.restore();
+  }
+
   const anchorRender = drawLifecycleAnchorRow(ctx, context, viewportWidth);
   let renderedTaskBars = anchorRender.taskBars;
   renderedEnvelopeMargins += anchorRender.envelopeMargins;
@@ -3419,6 +3422,16 @@ function drawLifecycleCanvas(context = lifecycleContext()) {
   lifecycleCanvas.dataset.renderedRows = String(context.rows.length);
   lifecycleCanvas.dataset.renderedTaskBars = String(renderedTaskBars);
   lifecycleCanvas.dataset.renderedEnvelopeMargins = String(renderedEnvelopeMargins);
+  lifecycleCanvas.dataset.renderedDevTaskGuides = String(renderedDevTaskGuides);
+  lifecycleCanvasScrollLeft = scrollLeft;
+}
+
+function scheduleLifecycleScrollRender() {
+  if (lifecycleCanvasScrollLeft === bodyWrap.scrollLeft || lifecycleScrollRenderFrame) return;
+  lifecycleScrollRenderFrame = window.requestAnimationFrame(() => {
+    lifecycleScrollRenderFrame = 0;
+    drawLifecycleCanvas();
+  });
 }
 
 const LIFECYCLE_PLACEMENT_ICON = {
@@ -3447,6 +3460,7 @@ function applyLifecyclePlacement(context = lifecycleContext()) {
   if (state.lifecyclePlacement !== 'inline') {
     lifecycleLens.classList.remove('is-inline', 'is-placement-fallback');
     lifecycleLens.style.removeProperty('bottom');
+    lifecycleLens.style.removeProperty('--sl-lifecycle-inline-y');
     lifecycleLens.dataset.placement = 'docked';
     lifecycleLens.dataset.anchor = 'flow';
     lifecycleLens.dataset.edgeOffset = '0';
@@ -3457,13 +3471,15 @@ function applyLifecyclePlacement(context = lifecycleContext()) {
   const wasInline = lifecycleLens.classList.contains('is-inline');
   lifecycleLens.classList.remove('is-placement-fallback');
   lifecycleLens.classList.add('is-inline');
-  if (!wasInline) lifecycleLens.style.bottom = '0px';
+  lifecycleLens.style.removeProperty('bottom');
+  if (!wasInline) lifecycleLens.style.setProperty('--sl-lifecycle-inline-y', '0px');
   const lensHeight = lifecycleLens.getBoundingClientRect().height;
   const availableHeight = bodyWrap.clientHeight;
   if (lensHeight + 8 > availableHeight) {
     lifecycleLens.classList.remove('is-inline');
     lifecycleLens.classList.add('is-placement-fallback');
     lifecycleLens.style.removeProperty('bottom');
+    lifecycleLens.style.removeProperty('--sl-lifecycle-inline-y');
     lifecycleLens.dataset.placement = 'docked-fallback';
     lifecycleLens.dataset.anchor = 'flow';
     lifecycleLens.dataset.edgeOffset = '0';
@@ -3489,8 +3505,8 @@ function applyLifecyclePlacement(context = lifecycleContext()) {
   const minTop = bodyTop;
   const maxTop = Math.max(minTop, bodyTop + availableHeight - lensHeight);
   const top = Math.min(maxTop, Math.max(minTop, desiredTop));
-  const bottom = Math.max(0, shellRect.height - top - lensHeight);
-  lifecycleLens.style.bottom = `${Math.round(bottom)}px`;
+  const restingTop = shellRect.height - lensHeight;
+  lifecycleLens.style.setProperty('--sl-lifecycle-inline-y', `${Math.round(top - restingTop)}px`);
   lifecycleLens.dataset.placement = 'inline';
   lifecycleLens.dataset.anchor = Math.abs(top - desiredTop) < 1 ? 'exact' : 'edge';
   lifecycleLens.dataset.edgeOffset = String(top - desiredTop);
@@ -3563,6 +3579,7 @@ function renderLifecycleLens() {
     lifecycleLens.hidden = true;
     lifecycleLens.classList.remove('is-inline', 'is-placement-fallback');
     lifecycleLens.style.removeProperty('bottom');
+    lifecycleLens.style.removeProperty('--sl-lifecycle-inline-y');
     lifecycleLens.removeAttribute('data-anchor-row');
     lifecycleHitSpecs = [];
     lifecycleHoverTask = null;
@@ -5320,6 +5337,8 @@ function hitTest(px, py) {
    8. 交互
    ============================================================ */
 bodyWrap.addEventListener('scroll', () => {
+  // 先更新就地透镜的合成层位置，垂直滚动时不重绘其 Canvas。
+  if (!lifecycleGapScrollPending) applyLifecyclePlacement();
   axisWrap.scrollLeft = bodyWrap.scrollLeft;
   overviewWrap.scrollLeft = bodyWrap.scrollLeft;
   laneWrap.scrollTop = bodyWrap.scrollTop;
@@ -5331,8 +5350,7 @@ bodyWrap.addEventListener('scroll', () => {
   syncGlobalRulerBrush();
   renderSelectedTaskProjection();
   hideOverviewTooltip();
-  drawLifecycleCanvas();
-  if (!lifecycleGapScrollPending) applyLifecyclePlacement();
+  scheduleLifecycleScrollRender();
   scheduleCrispTaskLayer();
 });
 function forwardLaneWheel(event, targetWrap) {
@@ -5344,10 +5362,13 @@ function forwardLaneWheel(event, targetWrap) {
   const beforeTop = targetWrap.scrollTop;
   targetWrap.scrollLeft += deltaX;
   targetWrap.scrollTop += deltaY;
-  if (targetWrap.scrollLeft !== beforeLeft || targetWrap.scrollTop !== beforeTop) event.preventDefault();
+  if (targetWrap.scrollLeft !== beforeLeft || targetWrap.scrollTop !== beforeTop) {
+    if (targetWrap === bodyWrap && !lifecycleGapScrollPending) applyLifecyclePlacement();
+    event.preventDefault();
+  }
 }
 laneWrap.addEventListener('wheel', (event) => forwardLaneWheel(event, bodyWrap), { passive: false });
-lifecycleCanvasWrap?.addEventListener('wheel', (event) => forwardLaneWheel(event, bodyWrap), { passive: false });
+lifecycleLens?.addEventListener('wheel', (event) => forwardLaneWheel(event, bodyWrap), { passive: false });
 lifecyclePlacementToggle?.addEventListener('click', () => {
   state.lifecyclePlacement = state.lifecyclePlacement === 'inline' ? 'docked' : 'inline';
   layout();
@@ -5361,11 +5382,16 @@ lifecycleSourceToggle?.addEventListener('click', () => {
   layout();
   if (preservedBottom != null && lifecycleLens.dataset.placement === 'inline') {
     const lensRect = lifecycleLens.getBoundingClientRect();
-    const currentBottom = lifecycleLens.getBoundingClientRect().bottom;
-    const currentInset = Number.parseFloat(lifecycleLens.style.bottom) || 0;
+    const currentBottom = lensRect.bottom;
+    const currentTranslate = Number.parseFloat(
+      lifecycleLens.style.getPropertyValue('--sl-lifecycle-inline-y'),
+    ) || 0;
     const bottomDelta = currentBottom - preservedBottom;
     if (lensRect.top - bottomDelta >= bodyWrap.getBoundingClientRect().top) {
-      lifecycleLens.style.bottom = `${currentInset + bottomDelta}px`;
+      lifecycleLens.style.setProperty(
+        '--sl-lifecycle-inline-y',
+        `${Math.round(currentTranslate - bottomDelta)}px`,
+      );
       lifecycleLens.dataset.anchor = 'bottom';
     }
   }
