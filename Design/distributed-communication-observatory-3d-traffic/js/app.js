@@ -68,6 +68,10 @@
     sankeyOverlay: document.getElementById('sankey-overlay'),
     sankeyOverlayTitle: document.getElementById('sankey-overlay-title'),
     sankeyOverlayMeta: document.getElementById('sankey-overlay-meta'),
+    sankeyLegendTitle: document.getElementById('sankey-legend-title'),
+    sankeyLegendColor: document.getElementById('sankey-legend-color'),
+    sankeyLegendWidth: document.getElementById('sankey-legend-width'),
+    sankeyLegendLocal: document.getElementById('sankey-legend-local'),
     workspaceNavigation: document.getElementById('workspace-navigation'),
     phaseScope: document.getElementById('phase-scope'),
     visualSubtitle: document.getElementById('visual-subtitle'),
@@ -99,6 +103,9 @@
     evidenceFacts: document.getElementById('evidence-facts'),
     evidenceAlternatives: document.getElementById('evidence-alternatives'),
     evidenceActionCopy: document.getElementById('evidence-action-copy'),
+    viewExplanationSection: document.getElementById('view-explanation-section'),
+    viewExplanationTitle: document.getElementById('view-explanation-title'),
+    viewExplanation: document.getElementById('view-explanation'),
     validationAction: document.getElementById('validation-action'),
     layerViewAction: document.getElementById('layer-view-action'),
     validationPlan: document.getElementById('validation-plan'),
@@ -185,6 +192,10 @@
     elements.sankeyOverlayMeta.textContent = `Server 05 · EP8 · ${state.window.start}–${state.window.end} ms`;
     elements.sankeyOverlayTitle.textContent = bilingual(`Rank traffic details · ${label}`, `Rank 流量详情 · ${label}`);
     elements.sankeyClose.setAttribute('aria-label', bilingual('Close Sankey', '关闭 Sankey'));
+    elements.sankeyLegendTitle.textContent = bilingual('Legend', '图例');
+    elements.sankeyLegendColor.textContent = bilingual('Color = source Rank', '颜色 = 来源 Rank');
+    elements.sankeyLegendWidth.textContent = bilingual('Ribbon width = Token count', '带宽宽度 = Token 数量');
+    elements.sankeyLegendLocal.textContent = bilingual('LOCAL stays on card and is not drawn', 'LOCAL 留在卡内，不绘制为跨 Rank 流量');
     if (!trafficAvailable && state.sankeyOpen) setSankeyOpen(false);
   }
 
@@ -315,7 +326,10 @@
         state.selectedLayer = nextState.layer;
         state.selectedToken = nextState.tokenId;
         syncRoutingControls();
-        if (state.primaryView === 'routing') updatePrimaryView();
+        if (state.primaryView === 'routing') {
+          updatePrimaryView();
+          if (!elements.evidenceDock.hidden && state.selection?.type === 'diagnosis') openEvidence({ type: 'diagnosis' });
+        }
       },
     });
     syncRoutingControls();
@@ -528,6 +542,22 @@
     });
   }
 
+  function setViewExplanation(items = []) {
+    elements.viewExplanation.replaceChildren();
+    elements.viewExplanationSection.hidden = items.length === 0;
+    elements.viewExplanationTitle.textContent = bilingual('View explanation', '视图说明');
+    items.forEach(({ label, copy: description, anomaly = false }) => {
+      const item = document.createElement('div');
+      item.className = `observatory-view-explanation__item${anomaly ? ' is-anomaly' : ''}`;
+      const title = document.createElement('strong');
+      title.textContent = label;
+      const body = document.createElement('p');
+      body.textContent = description;
+      item.append(title, body);
+      elements.viewExplanation.appendChild(item);
+    });
+  }
+
   function ensureDockOpen() {
     if (!elements.evidenceDock.hidden) return;
     elements.evidenceDock.hidden = false;
@@ -563,12 +593,13 @@
   function evidenceFor(selection) {
     const diagnosis = currentDiagnosis();
     if ((!selection || selection.type === 'diagnosis') && state.primaryView === 'routing') {
+      const layerView = state.routingView === 'layer';
       return {
-        title: state.routingView === 'layer'
+        title: layerView
           ? bilingual(`Layer ${state.selectedLayer} routing context`, `Layer ${state.selectedLayer} 路由上下文`)
           : bilingual(`Token T${String(state.selectedToken).padStart(3, '0')} whole-network journey`, `Token T${String(state.selectedToken).padStart(3, '0')} 整网路径`),
         kicker: bilingual('MODEL + ROUTING · LINKED WORKSPACE', '模型 + 路由 · 联动工作区'),
-        impact: state.routingView === 'layer'
+        impact: layerView
           ? bilingual('The model structure and the full 128-rank routing surface share the same active MoE layer.', '模型结构与完整 128-Rank 路由视图共享同一个活动 MoE Layer。')
           : bilingual('The whole-network view follows one token across Dense L0-L1 and MoE L2-L45.', '整网视图跟踪一个 Token 经过 Dense L0-L1 与 MoE L2-L45。'),
         facts: [
@@ -576,6 +607,35 @@
           { label: bilingual('Token', 'Token'), value: `T${String(state.selectedToken).padStart(3, '0')}`, source: bilingual('MOCK · routing trace', 'MOCK · 路由 Trace') },
           { label: bilingual('Routed experts', '路由专家'), value: '256 · Top-8', source: bilingual('MODEL · openPangu config', '模型 · openPangu 配置') },
           { label: bilingual('Rank placement', 'Rank 部署'), value: '128 · 2 experts/rank', source: bilingual('DEMO · visualization mapping', 'DEMO · 可视化映射') },
+        ],
+        viewExplanation: layerView ? [
+          {
+            label: bilingual('Scenario', '适用场景'),
+            copy: bilingual(`Fix Layer ${state.selectedLayer} and compare one batch of 128 tokens across 256 routed experts placed on 128 ranks. Use it to find overloaded, idle, or imbalanced experts.`, `固定 Layer ${state.selectedLayer}，比较一批 128 个 Token 在 128 Rank、256 个路由专家上的分发，用于发现专家过载、空闲或负载不均。`),
+          },
+          {
+            label: bilingual('How to read', '阅读方式'),
+            copy: bilingual('Each Rank owns two experts. Token dots show queue occupancy; highlighted routes trace the selected token from Router to its Top-8 experts.', '每个 Rank 承载两个专家；圆点表示队列中的 Token，占用高亮线路表示当前 Token 从 Router 分发到 Top-8 专家的路径。'),
+          },
+          {
+            label: bilingual('Current anomaly', '当前异常点'),
+            copy: bilingual('R42 · E64/E65 receives 2.1× the mean load; E64 reaches 842/896 capacity and contributes 4.8 ms of exposed wait.', 'R42 · E64/E65 接收均值 2.1× 的负载；E64 容量达到 842/896，并产生 4.8 ms 暴露等待。'),
+            anomaly: true,
+          },
+        ] : [
+          {
+            label: bilingual('Scenario', '适用场景'),
+            copy: bilingual(`Fix Token T${String(state.selectedToken).padStart(3, '0')} and follow it through Dense L0–L1 and MoE L2–L45. Use it to explain why this token reaches particular experts.`, `固定 Token T${String(state.selectedToken).padStart(3, '0')}，跟踪它经过 Dense L0–L1 与 MoE L2–L45，用于解释该 Token 为何在不同层命中特定专家。`),
+          },
+          {
+            label: bilingual('How to read', '阅读方式'),
+            copy: bilingual('Each MoE layer shows all 256 experts in gray, its Top-8 experts in black, and their weighted-sum hidden state as a blue node. The blue path connects weighted results between layers.', '每个 MoE Layer 以灰色展示全部 256 个专家，黑色表示 Top-8，蓝点表示 8 个专家输出的加权和；蓝线连接相邻层的加权结果。'),
+          },
+          {
+            label: bilingual('Current anomaly', '当前异常点'),
+            copy: bilingual(`At Layer ${state.selectedLayer}, T${String(state.selectedToken).padStart(3, '0')} contributes to the R42 · E64/E65 hotspot. A single-token journey explains the route but must be paired with the layer-load view to prove overload.`, `在 Layer ${state.selectedLayer}，T${String(state.selectedToken).padStart(3, '0')} 命中 R42 · E64/E65 热点；单 Token 路径只能解释路由，需要结合单层负载视图才能证明过载。`),
+            anomaly: true,
+          },
         ],
         alternatives: bilingual('The 128-rank placement is a demo mapping, not a claim about the official training topology.', '128-Rank 部署是 Demo 映射，不代表官方训练拓扑。'),
         action: bilingual('Select a Rank, routed expert, or weighted-sum node to inspect linked evidence.', '选择 Rank、路由专家或加权和节点，查看联动证据。'),
@@ -767,6 +827,7 @@
     elements.evidenceImpact.textContent = content.impact;
     elements.evidenceAlternatives.textContent = content.alternatives;
     elements.evidenceActionCopy.textContent = content.action;
+    setViewExplanation(content.viewExplanation || []);
     elements.validationPlan.hidden = true;
     const rankContext = ['rank-deck-overview', 'rank-overview', 'communication-group'].includes(state.selection.type);
     elements.validationAction.hidden = rankContext;
