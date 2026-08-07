@@ -960,7 +960,7 @@
           tick.dataset.layer = String(slot.layer);
           tick.dataset.ffn = layer.ffn;
           tick.dataset.attn = layer.attention;
-          tick.dataset.tip = `L${slot.layer} · PP${layer.stage} · ${layer.ffn === "dense" ? "Dense" : "MoE"} · ${layer.attention.toUpperCase()}`;
+          tick.dataset.tip = `Layer ${slot.layer} · PP${layer.stage} · ${layer.ffn === "dense" ? "Dense" : "MoE"} · ${layer.attention.toUpperCase()}`;
           tick.setAttribute("aria-label", tick.dataset.tip);
           tick.addEventListener("click", () => emit({ kind: "layer", layer: slot.layer }));
         }
@@ -2892,12 +2892,12 @@
 
        六条线的变化性质完全不同，所以标记也各不相同 —— 全画成"线 + 小点"会
        把差异压平，反而读不出区别：
-         残差流   位置在移动（左→右）      流动点 + 落点脉冲 + 身后留实线
-         路由决策 离散事件（只在 MoE 层）  竖刻痕，Dense 段整段留空
-         显存     标量随进度涨落            面积填充：前向堆成山、反向从右往左融化
-         层间 dX  位置在移动（右→左）      流动点（从线飞回刻度）+ 身后留实线
-         权重 dW  累积量，只增不减          逐格填块，MoE 层半高半透（稀疏更新）
-         权重 W   一次性事件                最后一格整条扫亮
+         残差流      位置在移动（左→右）      流动点 + 落点脉冲 + 身后留实线
+         路由决策    离散事件（只在 MoE 层）  竖刻痕，Dense 段整段留空
+         显存        标量随进度涨落            面积填充：前向堆成山、反向从右往左融化
+         层间梯度 dX 位置在移动（右→左）      流动点（从线飞回刻度）+ 身后留实线
+         权重梯度 dW 累积量，只增不减          逐格填块，MoE 层半高半透（稀疏更新）
+         权重 W      一次性事件                最后一格整条扫亮
        槽位恒定占 6 行：没轮到的那条画成极淡虚线而不是不存在 —— 逐条"长出来"
        会把下面的线一路往下推，播放中一直在抖。 */
     const FLOW_LANES = [
@@ -3271,7 +3271,17 @@
          dW       只**增**不减，反向逐层各加一份；MoE 层只有被路由到的专家加
          权重 W   整趟只在收尾那格被改写一次
 
-       ⚠️ 硬规矩：**每个分段必须挂在某条泳道名下，挂不上的就不写。**
+       ⚠️ 硬规矩一：**反向每一格的 dW 段都要带一句「只算不改」。**
+       「反向按梯度改了每层权重」是读者最容易带进来的错觉——反向只做两件事，
+       算 dX 往左传、算 dW 进 grad buffer，W 本身一个字节不动（链式法则要求
+       整趟反向踩在同一份权重快照上，中途改了，左边各层算出的就不是当前 loss
+       的梯度了）。权重唯一一次改写在收尾那格，两边措辞要对得上：反向说
+       「只算不改」，收尾说「整趟唯一一次改写权重」。新增反向文案照此办理。
+
+       段的先后不用在这里操心：noteSegments 会按泳道自上而下重排，怎么顺口
+       怎么写就行。
+
+       ⚠️ 硬规矩二：**每个分段必须挂在某条泳道名下，挂不上的就不写。**
        原先每条末尾都缀着 `TP All-Reduce ×2` / `EP A2A ×2` 这类通信注记——
        通信不是这 6 条线里的任何一条（当初把它列为"第 7 条线"但没有实现），
        读者顺着分段格式去下面找对应的线，永远找不到。要写通信只能写成某条
@@ -3280,12 +3290,12 @@
        开播时一次性生成（99 条字符串），播放中只做 textContent 赋值。 */
     function flowNote(topology, slots, phase, i) {
       if (phase === "optimizer") {
-        return "Optimizer step｜dW 跨 DP All-Reduce 取平均 → 裁剪全局范数 → 随即清零｜权重W W ← W − lr·m̂/(√v̂+ε)，整趟唯一一次改写权重｜显存 回落到常驻（权重 + m/v）";
+        return "Optimizer step｜权重梯度 dW 跨 DP All-Reduce 取平均 → 裁剪全局范数 → 随即清零｜权重W W ← W − lr·m̂/(√v̂+ε)，整趟唯一一次改写权重｜显存 回落到常驻（权重 + m/v）";
       }
       const slot = slots[i];
       const unit = slot.unit;
       const layer = unit ? null : topology.layers[slot.layer];
-      const head = layer ? `L${slot.layer} · PP${layer.stage}` : "";
+      const head = layer ? `Layer ${slot.layer} · PP${layer.stage}` : "";
       if (phase === "forward") {
         if (unit === "emb") {
           return "Emb｜残差流 从无到有：按 token id 查 E 表取行，写出 h[B,S,H]，此前不存在｜显存 +h、+token id 入栈（反向要靠 id 回填词表）";
@@ -3294,41 +3304,70 @@
           return "Final Norm｜残差流 最后一次被改写：按 RMS 归一化再乘 gamma，此后不再累加，转成可解码表示｜显存 +rstd，供反向复原";
         }
         if (unit === "head") {
-          return "LM Head｜残差流 被消费掉：h[B,S,H] × Wᵀ → logits[B,S,V]，残差流到此不再存在｜显存 logits 是全程最大张量，涨到峰值｜dX CE 产出 loss 与 dLogits，梯度线从这里亮起";
+          return "LM Head｜残差流 被消费掉：h[B,S,H] × Wᵀ → logits[B,S,V]，到此不再存在｜显存 logits 是全程最大张量，涨到峰值｜层间梯度 dX CE 产出 loss 与 dLogits，梯度线从这里亮起";
         }
         if (layer.ffn === "moe") {
           // 「不是覆盖」这句由 Dense 那条承担（它有余量），MoE 这条挤不下
-          return `${head} MoE｜残差流 被累加两次：h += Attn(RMSNorm h)、h += Σ g·E(h) + Shared(h)｜路由 Router 新建 token→专家表与门控权重 g，前向独有｜显存 +本层激活入栈`;
+          return `${head} MoE｜残差流 被累加两次：h += Attn(RMSNorm h)、h += Σ g·E(h) + Shared(h)｜路由 Router 给每个 token 打分，选出 Top-K 个专家并算出各自的权重 g，本层的分派表就此定下｜显存 +本层激活入栈`;
         }
         return `${head} Dense｜残差流 被累加两次（不是覆盖）：h += Attn(RMSNorm h)、h += SwiGLU(RMSNorm h)，权重全程只读不改｜显存 +本层激活入栈`;
       }
       if (unit === "head") {
-        return "LM Head 反向｜dX 从无到有：dLogits = (softmax − onehot)/N｜dW W_head 首次入账，累加进 grad buffer，权重本身不动｜显存 logits 释放，峰值回落";
+        return "LM Head 反向｜层间梯度 dX 从无到有：dLogits = (softmax − onehot)/N｜权重梯度 dW W_head 首次入 grad buffer——只算不改，权重到收尾那格才动｜显存 logits 释放，峰值回落";
       }
       if (unit === "norm") {
-        return "Final Norm 反向｜dX 用前向存的 rstd 变形后继续往左传｜dW dGamma 累加一份｜显存 本格激活释放";
+        return "Final Norm 反向｜层间梯度 dX 用前向存的 rstd 变形后继续往左传｜权重梯度 dW dGamma 累加一份，只算不改｜显存 本格激活释放";
       }
       if (unit === "emb") {
-        return "Emb 反向｜dX 到此终止｜dW 按 token id 把梯度 scatter-add 回词表——只有本 step 出现过的那几行被加，其余行一份不加｜显存 释放完毕";
+        return "Emb 反向｜层间梯度 dX 到此终止｜权重梯度 dW 按 token id scatter-add 进词表梯度——只有本 step 出现过的那几行被加，其余不加；词表本身只算不改｜显存 释放完毕";
       }
       if (layer.ffn === "moe") {
-        return `${head} MoE 反向｜dX 变形后继续往左传｜dW 只有被路由到的专家加一份，其余专家本步一份不加（稀疏）；门控梯度另经 Top-K 回到 router｜路由 只读前向那张表，不再改`;
+        return `${head} MoE 反向｜路由 只读前向那张表，照它把梯度发回同一批专家｜层间梯度 dX 变形后继续往左传｜权重梯度 dW 只有被路由到的专家加一份，其余不加（稀疏），只算不改；门控梯度沿 Top-K 回到 router`;
       }
-      return `${head} Dense 反向｜dX 变形后继续往左传｜dW dW_qkv/dW_o、dW_gate/up/down 各累加一份（只增不减，仍不写权重）｜显存 本层前向激活释放，回落一格`;
+      return `${head} Dense 反向｜层间梯度 dX 变形后继续往左传｜权重梯度 dW dW_qkv/dW_o、dW_gate/up/down 各累加一份（只增不减、只算不改）｜显存 本层激活释放，回落一格`;
     }
 
     /* 文案分段 → 泳道 id。段首那几个字既是分段名也是图例文字，必须和
        FLOW_LANES 的线一一对得上（审计脚本按这张表查"孤段"）。
-       按长度倒序匹配：dW / dX 共享首字母，短的先匹配会串段。 */
+       段名写全称（「层间梯度 dX」而不是光秃秃的「dX」）：这行文案往往是读者
+       第一次遇到这两个符号的地方，缩写读不出"梯度传给谁"。
+       按长度倒序匹配：「权重梯度 dW」与「权重W」共享前缀，短的先匹配会串段。 */
     const NOTE_LANE_ID = {
       残差流: "residual",
       路由: "routing",
       显存: "memory",
-      dX: "gradx",
-      dW: "gradw",
+      "层间梯度 dX": "gradx",
+      "权重梯度 dW": "gradw",
       权重W: "weight",
     };
     const NOTE_LANE_KEYS = Object.keys(NOTE_LANE_ID).sort((a, b) => b.length - a.length);
+    const NOTE_LANE_ORDER = new Map(FLOW_LANES.map((lane, i) => [lane.id, i]));
+
+    /* 分段一律按**泳道自上而下的顺序**重排，不按文案里写的先后。
+       这排色点就是下面 6 条线的图例，读者是拿它当索引用的：看到第 2 枚点就往
+       第 2 条线上找。两边顺序一旦不一致（反向那句原先把「路由」甩到最末，而轴上
+       它是第 2 条），这层对应关系就废了，只能逐段回去比对颜色。
+       在这里排而不是逐句手写顺序：flowNote 有 9 条分支、往后还会加，
+       靠人肉维护迟早再错一次。挂不到泳道的段（本不该存在）统一沉底。 */
+    function noteSegments(note) {
+      const parts = note.split("｜");
+      const segs = parts.slice(1).map((seg, i) => {
+        const key = NOTE_LANE_KEYS.find((k) => seg.startsWith(k));
+        // 兜底 order 用 FLOW_LANES.length 而不是 Infinity：两个 Infinity 相减
+        // 得 NaN，比较器返回 NaN 时排序结果是未定义的
+        const order = key ? NOTE_LANE_ORDER.get(NOTE_LANE_ID[key]) : FLOW_LANES.length;
+        return { seg, key, order, i };
+      });
+      // 次键 i：同泳道的两段（目前没有）保持原文顺序
+      segs.sort((a, b) => a.order - b.order || a.i - b.i);
+      return { where: parts[0], segs };
+    }
+
+    // 纯文本那份（挂 title）也要跟着重排，否则和眼前看到的顺序对不上
+    function noteToText(note) {
+      const { where, segs } = noteSegments(note);
+      return [where, ...segs.map((s) => s.seg)].join("｜");
+    }
 
     /* 每段前面缀一枚该泳道颜色的圆点、段名也上色 —— 六条线在下面各有各的颜色，
        文案却是一整片同色文字，读者得逐字找"这句说的是哪条线"。上色之后
@@ -3338,10 +3377,9 @@
        开播时一次性生成 99 段 HTML，播放中只做一次 innerHTML 赋值。 */
     function noteToHtml(note) {
       const esc = (s) => s.replace(/[&<>]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" }[c]));
-      const parts = note.split("｜");
-      const out = [`<b class="cro-flow-lanes__where">${esc(parts[0])}</b>`];
-      parts.slice(1).forEach((seg) => {
-        const key = NOTE_LANE_KEYS.find((k) => seg.startsWith(k));
+      const { where, segs } = noteSegments(note);
+      const out = [`<b class="cro-flow-lanes__where">${esc(where)}</b>`];
+      segs.forEach(({ seg, key }) => {
         // 挂不到泳道的段本不该存在（见 flowNote 的硬规矩），真漏了也别丢内容
         if (!key) { out.push(`<span class="cro-flow-lanes__seg">${esc(seg)}</span>`); return; }
         out.push(
@@ -3404,9 +3442,9 @@
       // 120ms 的回淡会让上一格还亮着、下一格已填上，读起来就是残影。
       // 暂停时不摘：画面本来就不动，摘掉反而会让定格的那一帧整体重新淡入一次
       document.getElementById("croBoard")?.classList.toggle("is-flowing", playing);
-      document.getElementById("croFlowLanes")?.classList.toggle("is-paused", playing && flowPaused);
+      // 暂停态只由按钮自身表达（图标翻回 ▶ + 文案「继续」），进度行不再挂标记
       if (!playing) {
-        button.title = "播放一个 step 的数据流";
+        button.title = "循环播放一个 step 的数据流，播完自动重来，退出才停";
         if (label) label.textContent = "播放数据流";
         icon?.querySelector("path")?.setAttribute("d", FLOW_ICON_PLAY);
       } else if (flowPaused) {
@@ -3475,7 +3513,17 @@
       // 它是一句独立的话，跟层格不是一个节奏
       if (t - flowLast >= flowHold) {
         flowLast = t;
-        if (flowIndex >= flowSteps.length) { stopFlow(); return; }
+        /* 播完不自停，整趟从头再来一遍 —— 一个 step 本来就是循环往复的，
+           训练跑的是成千上万个 step；停在收尾那格反而像"训练结束了"。
+           退出（stopFlow）只由用户点「退出」触发。
+           回绕必须清一次泳道状态：dW 填块、显存面积、残差流实线都是整趟
+           攒下来的量，不清就会把第二轮画在第一轮的残留上（尤其 dW 只增不减，
+           叠两轮会直接顶满）。 */
+        if (flowIndex >= flowSteps.length) {
+          flowIndex = 0;
+          document.getElementById("croBoard")?.classList.remove("is-flow-optimizer");
+          lanesReset(flowTopology, flowSlots);
+        }
         const step = flowSteps[flowIndex];
         applyRelation(step.rel, true);
         // 收尾这一下 DP All-Reduce 平均梯度 + Adam 写回，集群里每张卡都参与：
@@ -3529,8 +3577,8 @@
       // note 是纯文本（挂 title），noteHtml 是带泳道色点的那份（挂 innerHTML）。
       // 两份都在这里一次性算完，播放中不再解析字符串
       const noteOf = (phase, i) => {
-        const note = flowNote(topology, slots, phase, i);
-        return { note, noteHtml: noteToHtml(note) };
+        const raw = flowNote(topology, slots, phase, i);
+        return { note: noteToText(raw), noteHtml: noteToHtml(raw) };
       };
       flowSteps = [];
       for (let i = 0; i < n; i += 1) {
