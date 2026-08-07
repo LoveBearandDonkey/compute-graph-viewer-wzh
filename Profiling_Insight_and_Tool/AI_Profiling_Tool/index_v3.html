@@ -231,6 +231,25 @@
     /* 中间 pane：tab 组走 ide-frame tabstrip slot，位于 pane-header 下方独占一行 */
     /* 左内距与其他 pane-header 的 0 10px 同一竖线；下方 4px 与页签内容拉开 */
     .v2-center-tabstrip { padding-left: 10px; padding-bottom: 4px; }
+    /* 页签行右端的「报告形态」出口：同一条记录的第二种读法（report.html）。
+       刻意不做成第 9 个 tab —— 它是离开本页的跳转，不是页签切换，所以用
+       margin-left:auto 推到最右，弱化成 ghost 链接而非 tab-control-item。 */
+    .v2-report-form-link {
+      margin-left: auto; flex: 0 0 auto;
+      display: inline-flex; align-items: center; gap: 5px;
+      height: 26px; padding: 0 9px; border-radius: var(--radius-md);
+      border: 1px solid transparent; background: transparent;
+      color: var(--foreground-secondary); font-size: 12px;
+      text-decoration: none; white-space: nowrap;
+      transition: background 0.12s, color 0.12s, border-color 0.12s;
+    }
+    .v2-report-form-link:hover {
+      background: var(--state-hover); color: var(--foreground);
+      border-color: var(--border-subtle);
+    }
+    .v2-report-form-link .v2-rf-arrow { font-size: 13px; line-height: 1; }
+    /* display:inline-flex 会盖掉 UA 的 [hidden]{display:none}，显式补一条 */
+    .v2-report-form-link[hidden] { display: none; }
     .pto-ide-frame__pane-header .pto-ide-frame__pane-title { font-size: 13px; }
     /* pane-body 内的分析结果 tab 容器铺满 */
     .pto-ide-frame__pane > .v2-tab-body { flex: 1 1 0; min-height: 0; }
@@ -2391,6 +2410,12 @@
                 <button class="tab-control-item v2-center-tab tab" type="button" role="tab" aria-selected="false" id="timelineTabBtn" data-tab="timeline">Timeline</button>
                 <button class="tab-control-item v2-center-tab tab" type="button" role="tab" aria-selected="false" id="memoryTabBtn" data-tab="memory">显存</button>
               </div>
+              <!-- href 里的 ?r= 由 selectReport() 同步到当前记录 id；此处的默认值只在
+                   app.js 未初始化时兜底 -->
+              <a class="v2-report-form-link" id="reportFormLink" href="report.html"
+                 title="以报告形态查看当前这条分析记录（可打印 / 导出 PDF）">
+                <span class="v2-rf-arrow" aria-hidden="true">→</span>报告形态
+              </a>
             </div>
             <!-- Tab pane body -->
             <div class="v2-tab-body">

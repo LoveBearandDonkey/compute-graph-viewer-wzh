@@ -2121,10 +2121,10 @@ body {
   padding: var(--space-5, 20px) var(--space-6, 24px);
   overflow: auto;
 }
-/* 泳道路径与关闭按钮独占顶部一行；关闭按钮是 .sl-immersive 的绝对定位子元素，
-   这里靠 min-height + padding-right 给它留出位置。 */
+/* 泳道路径与右上角操作区独占顶部一行；操作区（上一条 / 下一条 / 关闭）是 .sl-immersive 的
+   绝对定位子元素，这里靠 min-height + padding-right 给它留出位置（38+38+44 加三段间距）。 */
 .sl-immersive__header {
-  flex: 0 0 auto; min-height: 44px; padding-right: 72px;
+  flex: 0 0 auto; min-height: 44px; padding-right: 156px;
   display: flex; align-items: center;
 }
 /* 下面两列：左列第一个元素是选中任务卡、右列第一个是时间轴，同起于本行顶部，
@@ -2142,14 +2142,6 @@ body {
 .sl-immersive__path-value {
   font: 600 17px / 1.35 var(--font-sans); color: var(--foreground);
   overflow-wrap: anywhere;
-}
-/* 时间轴 0 点说明：轴上和起止胶囊标的都是相对偏移，绝对时刻整屏只在这里出现一次 */
-.sl-immersive__origin {
-  margin-left: auto; flex: 0 0 auto;
-  display: flex; flex-direction: column; gap: 2px; text-align: right;
-}
-.sl-immersive__origin .sl-immersive__path-value {
-  font: 500 12px / 1.35 var(--font-mono); color: var(--foreground-secondary);
 }
 .sl-immersive__side .sl-report-card {
   background: color-mix(in srgb, var(--surface-2) 92%, transparent);
@@ -2216,9 +2208,25 @@ body {
 .sl-imm-bar.is-focus {
   top: 78px; height: 48px;
   display: flex; overflow: hidden;
+  container-type: inline-size;
   background: var(--bar-color, #5A92E6);
   box-shadow: 0 0 0 2px color-mix(in srgb, var(--bar-color, #5A92E6) 40%, transparent),
               0 10px 26px color-mix(in srgb, var(--bar-color, #5A92E6) 30%, transparent);
+}
+/* 语义标签直接写进色块里：条子放大到 48px 后装得下，标签不必再单独占位。
+   浮在两段之上（不参与 flex 分配，免得挤动执行/等待的切分点），条子太窄时整块收掉，
+   免得只剩一个省略号。 */
+.sl-imm-bar__label {
+  position: absolute; inset: 0; z-index: 1; pointer-events: none;
+  padding: 0 8px; text-align: center;
+  /* 行高必须写在 font 简写里：单独一条 line-height 会被后面的简写重置成 normal，
+     文字就贴着条子顶边了。48px = 条高，行盒撑满即垂直居中。 */
+  font: 600 12px / 48px var(--font-sans); color: #fff;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, .45);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+@container (max-width: 72px) {
+  .sl-imm-bar__label { display: none; }
 }
 /* 执行耗时 / 同步等待：两段合起来正好是持续时长，所以在条子内部切开——
    但只留深浅/斜纹这层视觉切分，数字一律走下方的标注箭头，不往条子上写。 */
@@ -2273,16 +2281,33 @@ body {
 .sl-imm-edge.is-end { transform: translateX(-100%); }
 .sl-imm-edge .sl-imm-chip { position: static; transform: none; }
 
-.sl-immersive__close {
+/* 右上角操作区：上一条 / 下一条挨着关闭按钮左侧，整块绝对定位在遮罩右上角
+   （.sl-immersive__header 的 padding-right 按这块的总宽留位）。 */
+.sl-immersive__actions {
   position: absolute; top: var(--space-5, 20px); right: var(--space-6, 24px);
-  width: 44px; height: 44px; border-radius: 50%;
+  display: flex; align-items: center; gap: 8px;
+}
+.sl-immersive__step,
+.sl-immersive__close {
+  border-radius: 50%;
   display: inline-flex; align-items: center; justify-content: center;
   border: 1px solid var(--border-default); cursor: pointer;
   background: color-mix(in srgb, var(--surface-3) 92%, transparent);
   color: var(--foreground-secondary);
 }
+.sl-immersive__step:hover:not(:disabled),
 .sl-immersive__close:hover { background: var(--state-hover); color: var(--foreground); }
-.sl-immersive__close svg { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; }
+.sl-immersive__step svg,
+.sl-immersive__close svg { fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.sl-immersive__close { width: 44px; height: 44px; }
+.sl-immersive__close svg { width: 20px; height: 20px; }
+/* 切换按钮比关闭小一号：关闭是这一区的主操作，前后翻页是次级动作 */
+.sl-immersive__step { width: 38px; height: 38px; }
+.sl-immersive__step svg { width: 18px; height: 18px; }
+/* 泳道到头（没有上一条 / 下一条）时按钮置灰但保留在原位，免得两个按钮的位置来回跳 */
+.sl-immersive__step:disabled { opacity: .35; cursor: default; }
+/* 关闭按钮与切换按钮之间多留一点，避免误点退出 */
+.sl-immersive__actions .sl-immersive__close { margin-left: 4px; }
 
 .sl-immersive__empty {
   display: flex; align-items: center; justify-content: center; height: 100%;
@@ -2575,9 +2600,20 @@ body {
         <div class="sl-immersive" id="immersiveOverlay" hidden aria-hidden="true">
           <div class="sl-immersive__scrim" data-immersive-scrim></div>
           <div class="sl-immersive__inner" id="immersiveInner"></div>
-          <button class="sl-immersive__close" type="button" id="immersiveClose" aria-label="退出沉浸式对比" title="退出沉浸式对比（Esc）">
-            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M18 6 6 18"></path><path d="m6 6 12 12"></path></svg>
-          </button>
+          <!-- 右上角操作区：上一条 / 下一条（同泳道相邻任务，翻到头自动跨到相邻泳道）+ 关闭
+               （= 收掉下钻回到差异总览，对比对象与滚动位置都保留）。放在 immersiveInner 外面，
+               renderImmersive() 重写内容时这三个按钮不会被连带重建，焦点也不会丢。 -->
+          <div class="sl-immersive__actions">
+            <button class="sl-immersive__step" type="button" id="immersivePrev" aria-label="上一条任务" title="上一条任务（←）：同泳道往前翻，翻到头接上一条泳道的最后一条">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m15 5-7 7 7 7"></path></svg>
+            </button>
+            <button class="sl-immersive__step" type="button" id="immersiveNext" aria-label="下一条任务" title="下一条任务（→）：同泳道往后翻，翻到头接下一条泳道的第一条">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 5 7 7-7 7"></path></svg>
+            </button>
+            <button class="sl-immersive__close" type="button" id="immersiveClose" aria-label="退出对比详情" title="退出对比详情（Esc）：回到进来前的对比视图，勾选的对比对象与滚动位置都保留">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M18 6 6 18"></path><path d="m6 6 12 12"></path></svg>
+            </button>
+          </div>
         </div>
       </div>
     </div>
@@ -2969,6 +3005,8 @@ const immersiveOverlay = document.getElementById('immersiveOverlay');
 const immersiveInner = document.getElementById('immersiveInner');
 const immersiveSwitch = document.getElementById('immersiveSwitch');
 const immersiveToggle = document.getElementById('immersiveToggle');
+const immersivePrevBtn = document.getElementById('immersivePrev');
+const immersiveNextBtn = document.getElementById('immersiveNext');
 let bctx, actx, lctx, crispCtx;
 let frameController = null;
 let canvasTooltipController = null;
@@ -5779,8 +5817,8 @@ function diffDetailModel(taskKey) {
   });
 
   // 时间轴 0 点：本次对比里最早启动的那条任务条。启动/结束是「时刻」不是「时长」，
-  // 摆绝对时间戳会被当成时长读（同样是一串 μs），所以两处一律显示相对这个 0 点的偏移，
-  // 绝对时刻退到 title / 沉浸式表头。
+  // 摆绝对时间戳容易被当成时长读（同样是一串 μs），所以右侧「指标对比」表显示相对这个 0 点的
+  // 偏移。沉浸式视图不用它：那边有时间轴，标绝对时刻才对得上轴，也不会一翻页数字就全变。
   var liveStarts = metrics.filter(function (m) { return !m.missing; }).map(function (m) { return m.start; });
   var timeOrigin = liveStarts.length ? Math.min.apply(null, liveStarts) : 0;
 
@@ -5922,13 +5960,14 @@ function immersiveTickStep(span, target) {
   return mult * mag;
 }
 
-/* 刻度文案：轴上标的是相对 0 点（本次对比里最早启动的那条任务条）的偏移，带符号，
-   免得一串绝对时间戳被读成时长。窗口跨度小于 2ms 时用 μs，否则换算成 ms（跨度越大小数越少） */
-function immersiveTickLabel(delta, span) {
-  var mag = Math.abs(delta);
-  var body = span < 2000 ? Math.round(mag) + ' μs' : (mag / 1000).toFixed(span >= 20000 ? 1 : 2) + ' ms';
-  if (parseFloat(body) === 0) return body;
-  return (delta < 0 ? '-' : '+') + body;
+/* 刻度文案：轴上标的是绝对时刻，与任务条上的启动/结束胶囊同一口径。
+   过去标的是相对「本次对比里最早启动的那条任务条」的偏移——数字短，但那个 0 点会随选中任务
+   一起漂，翻一条任务整条轴的数字就全变了，既没法跟别的视图对账，也没法拿两次截图比。
+   小数位按刻度步长取（不按窗口跨度），保证相邻两格的读数不会被四舍五入成同一个值。 */
+function immersiveTickLabel(t, span, step) {
+  if (span < 2000) return Math.round(t) + ' μs';
+  var decimals = Math.max(0, Math.min(3, Math.ceil(-Math.log10(step / 1000))));
+  return (t / 1000).toFixed(decimals) + ' ms';
 }
 
 function renderImmersive() {
@@ -5971,17 +6010,19 @@ function renderImmersive() {
     var row = model.rowByField[field];
     return (row && row.bestVal !== null && val === row.bestVal) ? ' is-better' : '';
   }
-  /* 标注胶囊：文案与取值口径全部走 rowByField，跟右侧表是同一份定义——
-     时刻显示成相对 0 点的偏移，指标含义挂在 title 上（同步等待 / 空闲间隙的区别就靠它交代）。 */
+  /* 标注胶囊：文案与取值口径走 rowByField，跟右侧表是同一份定义；指标含义挂在 title 上
+     （同步等待 / 空闲间隙的区别就靠它交代）。
+     只有「时刻」这一类在这里与右侧表分道：本视图一律标绝对时刻，跟时间轴同口径；右侧表继续
+     标相对 0 点的偏移（那张表是拿来横向比几个 run 的，偏移更好读）。 */
   function chipHtml(name, field, val) {
     var row = model.rowByField[field];
     var tip = row && row.hint ? row.hint : '';
-    if (row && row.kind === 'offset' && Number.isFinite(val)) {
-      tip += (tip ? '\n' : '') + '绝对时刻 ' + formatCompareVal(val, row.unit);
-    }
+    var text = (row && row.kind === 'offset')
+      ? formatCompareVal(val, row.unit)
+      : compareCellText(row, val, model.timeOrigin);
     return '<span class="sl-imm-chip' + betterCls(field, val) + '"' +
       (tip ? ' title="' + escapeHtml(tip) + '"' : '') + '>' + escapeHtml(name) +
-      ' <b>' + escapeHtml(compareCellText(row, val, model.timeOrigin)) + '</b></span>';
+      ' <b>' + escapeHtml(text) + '</b></span>';
   }
   function arrowHtml(cls, leftPct, rightPct, name, field, val, barTint) {
     var w = Math.max(0.08, rightPct - leftPct);
@@ -5995,7 +6036,7 @@ function renderImmersive() {
   for (var t = Math.ceil(lo / step) * step; t <= hi; t += step) {
     var p = pctOf(t);
     ruler += '<div class="sl-immersive__tick' + (p > 86 ? ' is-flip' : '') + '" style="left:' + p.toFixed(3) + '%">' +
-      '<span>' + escapeHtml(immersiveTickLabel(t - model.timeOrigin, span)) + '</span></div>';
+      '<span>' + escapeHtml(immersiveTickLabel(t, span, step)) + '</span></div>';
   }
 
   // 跨行对齐参考线：每个 run 任务条的起止时刻，一眼看出偏移了多少
@@ -6011,6 +6052,7 @@ function renderImmersive() {
   });
 
   var barColor = labelColorForTag(model.label);
+  var barLabel = model.label || '';
   var rowsHtml = slots.map(function (slot, i) {
     var m = metrics[i];
     var head = '<div class="sl-imm-run__head">' +
@@ -6035,12 +6077,14 @@ function renderImmersive() {
     });
 
     // 主角任务条：执行耗时 / 同步等待在条子内部切开，但只保留深浅这层视觉切分，
-    // 数字统一走下方的标注箭头（条子上写字既挤又跟其它指标不是一套读法）
+    // 指标数字统一走下方的标注箭头；条子上只写语义标签（放大后的色块装得下，
+    // 也省得为了看这条是「算」还是「通信」再扭头去左栏的选中任务卡）
     var execPct = m.dur > 0 ? (m.exec / m.dur) * 100 : 100;
     var execRatio = execPct / 100;
     track += '<div class="sl-imm-bar is-focus" style="left:' + fl.toFixed(3) + '%;width:' + fw.toFixed(3) + '%;--bar-color:' + barColor + '">' +
       '<span class="sl-imm-seg is-exec" style="width:' + execPct.toFixed(2) + '%"></span>' +
       '<span class="sl-imm-seg is-wait" style="width:' + (100 - execPct).toFixed(2) + '%"></span>' +
+      (barLabel ? '<span class="sl-imm-bar__label" title="' + escapeHtml(barLabel) + '">' + escapeHtml(barLabel) + '</span>' : '') +
       '</div>';
 
     // 计算-通信重叠：从任务条起点起画一段占比等于 overlap/dur 的粗线（条子上方）
@@ -6070,16 +6114,12 @@ function renderImmersive() {
   }).join('');
 
   immersiveInner.innerHTML =
-    // 顶部整行：泳道路径在左，关闭按钮（.sl-immersive 的绝对定位子元素）落在右端
+    // 顶部整行：泳道路径在左，右上角操作区（.sl-immersive 的绝对定位子元素）落在右端。
+    // 时间轴改标绝对时刻后，原先那句「时间轴 0 点 · 最早启动的任务条」已无对象，一并去掉。
     '<header class="sl-immersive__header">' +
       '<div class="sl-immersive__path">' +
         '<span class="sl-immersive__path-label">泳道路径</span>' +
         '<span class="sl-immersive__path-value">' + escapeHtml(model.laneName) + '</span>' +
-      '</div>' +
-      // 轴上是相对偏移，这里交代 0 点落在哪，绝对时刻整屏只出现这一次
-      '<div class="sl-immersive__origin" title="时间轴与起止胶囊标的都是相对这个 0 点的偏移">' +
-        '<span class="sl-immersive__path-label">时间轴 0 点</span>' +
-        '<span class="sl-immersive__path-value">最早启动的任务条 · ' + escapeHtml(formatCompareVal(model.timeOrigin, 'μs')) + '</span>' +
       '</div>' +
     '</header>' +
     '<div class="sl-immersive__cols">' +
@@ -6091,6 +6131,106 @@ function renderImmersive() {
     '</div>';
 }
 
+/* ── 前后翻页（同泳道优先，到头跨泳道）──────────────────────────
+   右上角的 ← / → 走的是「基准侧那条泳道上时间序的相邻任务」：先在参与对比的槽位里取第一个
+   有事件的（与 diffDetailModel 的 primarySlot 同一口径），再用 neighborEventsOf 拿它在本泳道上
+   的前/后一条——也就是沉浸式视图里那两个灰色上下文块所指的那条，点过去所见即所得。
+   选中态复用点击任务条的那两个入口，泳道高亮、跨栏连线、右侧详情都会跟着一起更新。 */
+function immersiveStepTarget(dir) {
+  if (!state.detailTaskKey) return null;
+  var slots = compareSlotEvents(state.detailTaskKey);
+  var primary = null;
+  for (var i = 0; i < slots.length; i++) { if (slots[i].event) { primary = slots[i]; break; } }
+  if (!primary || !primary.renderer) return null;
+  var nb = neighborEventsOf(primary);
+  var event = dir < 0 ? nb.prev : nb.next;
+  // 本泳道翻到头就跨到相邻泳道去，接着从那条泳道的末尾/开头继续
+  if (!event) event = immersiveLaneHopEvent(primary.renderer, primary.coreName, dir);
+  return event ? { renderer: primary.renderer, event: event } : null;
+}
+
+/* 泳道行序 = 渲染器 sortedCores：屏幕上看到的顺序（含分组折叠的影响），去掉分组标题行。
+   翻页跨泳道时按这个序走，用户看到的「下一条泳道」就是屏幕上紧挨着的下一条。 */
+function immersiveLaneRows(renderer) {
+  var rows = (renderer && renderer.sortedCores) || [];
+  return rows.filter(function (k) {
+    var meta = renderer.rowMeta && renderer.rowMeta.get(k);
+    return !meta || meta.type === 'leaf';
+  });
+}
+
+function immersiveLaneEvents(renderer, coreName) {
+  var list = (renderer.parsedData && renderer.parsedData.coreEvents.get(coreName)) || [];
+  return list.slice().sort(function (a, b) { return a.ts - b.ts; });
+}
+
+/* 跨到相邻泳道的第一条 / 最后一条任务。
+   聚合视图里同一条逻辑泳道会按槽位摊成相邻好几行（…§base / …§compare），所以：
+   - 剥掉槽位后缀同名的行要跳过，否则「下一条」只会翻到对侧同一个任务上；
+   - 落点统一归到该泳道的第一行（基线侧），免得往回翻时选中态落在对比侧那行。
+   空泳道（该行一条任务都没有）继续往下找。 */
+function immersiveLaneHopEvent(renderer, coreName, dir) {
+  var rows = immersiveLaneRows(renderer);
+  var at = rows.indexOf(coreName);
+  if (at < 0) return null;
+  var bare = trainStripRunSuffix(coreName).coreName;
+  for (var i = at + dir; i >= 0 && i < rows.length; i += dir) {
+    var hopBare = trainStripRunSuffix(rows[i]).coreName;
+    if (hopBare === bare) continue;
+    var row = rows[i];
+    for (var j = 0; j < rows.length; j++) {
+      if (trainStripRunSuffix(rows[j]).coreName === hopBare) { row = rows[j]; break; }
+    }
+    var list = immersiveLaneEvents(renderer, row);
+    if (!list.length && row !== rows[i]) list = immersiveLaneEvents(renderer, rows[i]);
+    if (!list.length) { bare = hopBare; continue; }   // 空泳道：换个基准名继续往前/往后找
+    return dir < 0 ? list[list.length - 1] : list[0];
+  }
+  return null;
+}
+
+function immersiveStep(dir) {
+  var target = immersiveStepTarget(dir);
+  if (!target) return;
+  if (isAggregatedSwimlane()) selectAggregatedTrainEvent(target.renderer, target.event);
+  else selectGroupedTrainEvent(target.renderer.positionalKeyOfEvent(target.event));
+}
+
+function syncImmersiveSteps() {
+  if (immersivePrevBtn) immersivePrevBtn.disabled = !immersiveStepTarget(-1);
+  if (immersiveNextBtn) immersiveNextBtn.disabled = !immersiveStepTarget(1);
+}
+
+/* 下钻前各栏泳道的滚动位置。进遮罩的那一刻记一次，关掉时原样滚回去——遮罩里翻页会换选中
+   任务、跨泳道，底下的视图不该因为「看了一圈详情」就停在别的地方。
+   只在 隐藏→显示 的那一次快照；遮罩开着时换任务不重记，否则退出时回到的是最后一条的位置。 */
+var immersiveViewportSnapshot = null;
+
+function captureImmersiveViewports() {
+  var snap = {};
+  TRAIN_PANEL_KEYS.forEach(function (key) {
+    var vp = document.getElementById(TRAIN_TL_IDS[key].viewport);
+    if (vp) snap[TRAIN_TL_IDS[key].viewport] = { left: vp.scrollLeft, top: vp.scrollTop };
+  });
+  immersiveViewportSnapshot = snap;
+}
+
+/* snap 由调用方在退出前先取走：退出动作本身会走一遍 syncImmersive，把全局那份清掉。 */
+function restoreImmersiveViewports(snap) {
+  if (!snap) return;
+  var apply = function () {
+    Object.keys(snap).forEach(function (id) {
+      var vp = document.getElementById(id);
+      if (!vp) return;
+      vp.scrollLeft = snap[id].left;
+      vp.scrollTop = snap[id].top;
+    });
+  };
+  apply();
+  // 退出会触发一次重绘/重排（选中态清空 + 右侧面板换回总览），重排后再落一次才稳
+  window.requestAnimationFrame(apply);
+}
+
 /* 遮罩显隐的唯一入口：renderInspector() 每次都会调它，所以换选中任务 / 退出对比模式 /
    拨顶栏开关，都会走到这里重算一次。 */
 function syncImmersive() {
@@ -6099,13 +6239,15 @@ function syncImmersive() {
   if (immersiveToggle) immersiveToggle.checked = Boolean(state.immersiveCompare);
   if (!immersiveOverlay) return;
   var open = available && state.immersiveCompare && state.inspectorView === 'detail' && Boolean(state.detailTaskKey);
+  if (open && immersiveOverlay.hidden) captureImmersiveViewports();
+  if (!open) immersiveViewportSnapshot = null;
   immersiveOverlay.hidden = !open;
   immersiveOverlay.setAttribute('aria-hidden', String(!open));
   // 泳道上那两条「最前开始 / 最后结束」的对比边界竖线画在 analysisColumn 的 SVG 覆盖层上，
   // 亮度足以透过遮罩；沉浸式视图自己已经有各 run 起止的竖虚线，这两条留着只会串味。
   // 走 class 而不是直接改 crossLaneSvg.style：首次选中时那个 SVG 还没被 ensureCrossLaneOverlay 建出来。
   if (frameEl) frameEl.classList.toggle('is-immersive', open);
-  if (open) renderImmersive();
+  if (open) { renderImmersive(); syncImmersiveSteps(); }
   else immersiveInner.innerHTML = '';
 }
 
@@ -6116,17 +6258,33 @@ function bindImmersive() {
       syncImmersive();
     });
   }
+  /* 关掉遮罩 = 这次下钻看完了：收掉任务选中回到差异总览（goBackToDashboard，与右侧面板
+     标题上那个返回箭头同一个入口），并把泳道滚回下钻前的位置——勾选的对比对象一个不动。
+     两个刻意不做的事：
+     - 不清对比对象：那是「取消勾选」这个动作的事，不该由关一层遮罩代劳；
+     - 不动 `state.immersiveCompare`：那个顶栏开关表达的是「下钻时要不要进沉浸式」这个偏好，
+       下次再点任务条仍然直接进沉浸式。 */
   var close = function () {
-    if (!state.immersiveCompare) return;
-    state.immersiveCompare = false;
-    syncImmersive();
+    if (!immersiveOverlay || immersiveOverlay.hidden) return;
+    var snap = immersiveViewportSnapshot;   // goBackToDashboard 会走一遍 syncImmersive 把它清掉，先取走
+    goBackToDashboard();
+    restoreImmersiveViewports(snap);
   };
   var closeBtn = document.getElementById('immersiveClose');
   if (closeBtn) closeBtn.addEventListener('click', close);
   var scrim = immersiveOverlay ? immersiveOverlay.querySelector('[data-immersive-scrim]') : null;
   if (scrim) scrim.addEventListener('click', close);
+  if (immersivePrevBtn) immersivePrevBtn.addEventListener('click', function () { immersiveStep(-1); });
+  if (immersiveNextBtn) immersiveNextBtn.addEventListener('click', function () { immersiveStep(1); });
   document.addEventListener('keydown', function (event) {
-    if (event.key === 'Escape' && immersiveOverlay && !immersiveOverlay.hidden) close();
+    if (!immersiveOverlay || immersiveOverlay.hidden) return;
+    if (event.key === 'Escape') { close(); return; }
+    // 左右方向键 = 同泳道翻页。遮罩打开时下面的滑杆/输入框都被罩住了，但键盘焦点可能还留在
+    // 上面，所以仍然避开表单控件，免得抢走它们自己的方向键行为。
+    var tag = event.target && event.target.tagName;
+    if (tag === 'INPUT' || tag === 'SELECT' || tag === 'TEXTAREA') return;
+    if (event.key === 'ArrowLeft') { event.preventDefault(); immersiveStep(-1); }
+    else if (event.key === 'ArrowRight') { event.preventDefault(); immersiveStep(1); }
   });
 }
 
