@@ -72,7 +72,7 @@ body.observatory-page {
   top: 42px;
   right: var(--space-3);
   z-index: 30;
-  width: 320px;
+  width: 390px;
   max-height: calc(100% - 58px);
   overflow: auto;
   padding: var(--space-4);
@@ -485,6 +485,77 @@ body.observatory-page {
   overflow: hidden;
 }
 
+.observatory-routing-canvas {
+  min-width: 0;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: minmax(0, 1fr);
+  overflow: hidden;
+  background: var(--background);
+}
+
+.observatory-routing-canvas.is-comparing {
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: repeat(2, minmax(0, 1fr));
+}
+
+.observatory-routing-pane {
+  position: relative;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  background: var(--background);
+}
+
+.observatory-routing-pane--detail {
+  display: block;
+  box-shadow: 0 -1px color-mix(in srgb, var(--foreground) 10%, transparent);
+}
+
+.observatory-routing-pane--journey > .observatory-moe-routing-host {
+  position: absolute;
+  inset: 0;
+}
+
+.observatory-routing-pane--detail[hidden] {
+  display: none;
+}
+
+.observatory-routing-pane__label {
+  position: absolute;
+  top: var(--space-3);
+  right: var(--space-3);
+  z-index: 3;
+  color: var(--foreground-muted);
+  font: var(--type-mono);
+  pointer-events: none;
+}
+
+.observatory-routing-pane--detail > .observatory-moe-routing-host {
+  position: absolute;
+  inset: 0;
+}
+
+.observatory-routing-detail-actions {
+  position: absolute;
+  top: var(--space-2);
+  right: var(--space-2);
+  z-index: 5;
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  padding: 4px;
+  border-radius: var(--radius-lg);
+  background: color-mix(in srgb, var(--background-elevated) 88%, transparent);
+  box-shadow: var(--shadow-sm);
+  backdrop-filter: blur(10px);
+}
+
+.observatory-routing-detail-actions .btn {
+  height: 28px;
+}
+
 .observatory-model-deck-canvas {
   position: absolute;
   inset: 0;
@@ -573,23 +644,72 @@ body.observatory-page {
   right: var(--space-4);
   bottom: var(--space-4);
   z-index: 24;
-  width: 236px;
+  width: 92px;
   display: grid;
-  gap: 6px;
-  padding: 12px 14px;
+  gap: 0;
+  padding: 10px 12px;
   border-radius: var(--radius-lg);
   background: color-mix(in srgb, var(--observatory-sankey-background) 86%, var(--foreground) 14%);
   box-shadow: var(--shadow-sm);
   color: var(--foreground-secondary);
-  pointer-events: none;
+  overflow: hidden;
+  pointer-events: auto;
+  cursor: help;
+  outline: none;
+  transition: width var(--duration-fast) var(--easing-default), padding var(--duration-fast) var(--easing-default);
 }
 
 .observatory-sankey-legend > strong {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
   color: var(--foreground);
   font: var(--type-label);
+  white-space: nowrap;
 }
 
-.observatory-sankey-legend > p {
+.observatory-sankey-legend > strong::after {
+  content: '⌃';
+  color: var(--foreground-muted);
+  font: var(--type-mono);
+  transform: rotate(-90deg);
+  transition: transform var(--duration-fast) var(--easing-default);
+}
+
+.observatory-sankey-legend__content {
+  max-height: 0;
+  display: grid;
+  gap: 6px;
+  overflow: hidden;
+  opacity: 0;
+  transform: translateY(4px);
+  transition: max-height var(--duration-fast) var(--easing-default), opacity var(--duration-fast) var(--easing-default), transform var(--duration-fast) var(--easing-default), margin-top var(--duration-fast) var(--easing-default);
+}
+
+.observatory-sankey-legend:hover,
+.observatory-sankey-legend:focus,
+.observatory-sankey-legend:focus-within {
+  width: 236px;
+  padding: 12px 14px;
+}
+
+.observatory-sankey-legend:hover > strong::after,
+.observatory-sankey-legend:focus > strong::after,
+.observatory-sankey-legend:focus-within > strong::after {
+  transform: rotate(0deg);
+}
+
+.observatory-sankey-legend:hover .observatory-sankey-legend__content,
+.observatory-sankey-legend:focus .observatory-sankey-legend__content,
+.observatory-sankey-legend:focus-within .observatory-sankey-legend__content {
+  max-height: 220px;
+  margin-top: 8px;
+  opacity: 1;
+  transform: translateY(0);
+}
+
+.observatory-sankey-legend__content > p {
   margin: 0;
   font: var(--type-mono);
   line-height: 1.35;

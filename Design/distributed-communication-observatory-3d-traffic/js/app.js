@@ -15,8 +15,9 @@
 
   const copy = {
     en: {
-      product: 'Communication Observatory', lens: 'MoE Route & Capacity', runContext: 'Run context',
+      product: 'Communication Observatory', lens: 'MoE Route & Capacity', runContext: 'Run context', demoGuide: 'Demo guide',
       run: 'Run', step: 'Step', stage: 'Context', parallel: 'Parallel plan', baseline: 'Baseline',
+      useCase: 'Use case', scope: 'Scope', views: 'Views', interaction: 'Interaction', finding: 'Finding', dataBasis: 'Data', demoTip: 'Start with Rank & Traffic, then inspect L27 in Model & Routing.',
       evidence: 'Evidence', inspector: 'Inspector', mockNotice: 'Mock artifacts for interaction validation', derived: 'DERIVED',
       router: 'Router', dispatch: 'Dispatch', compute: 'Expert Compute', combine: 'Combine',
       tokenCount: 'Token count', attribution: 'Hierarchical route attribution', aggregated: 'AGGREGATED',
@@ -26,10 +27,12 @@
       complete: 'complete', comparable: 'Comparable', viewLayer: 'Open Model & Routing',
       modelOverview: 'Rank & Traffic', layerOverview: 'Model & Routing', globalRanks: 'Global Rank Deck',
       workspaceCommunication: 'Rank & Traffic', workspaceRouting: 'Model & Routing', singleLayer: 'Layer routing', tokenJourney: 'Token journey', mockSummary: 'PROFILE SCOPE',
+      compareLayerLoad: 'Compare L27 layer load', closeComparison: 'Close comparison',
     },
     zh: {
-      product: '通信观测台', lens: 'MoE 路由与容量', runContext: '运行上下文',
+      product: '通信观测台', lens: 'MoE 路由与容量', runContext: '运行上下文', demoGuide: 'Demo 说明',
       run: '运行', step: '步次', stage: '执行位置', parallel: '并行方案', baseline: '基线',
+      useCase: '使用场景', scope: '分析范围', views: '核心视图', interaction: '主要功能', finding: '当前发现', dataBasis: '数据说明', demoTip: '先查看 Rank 与流量，再进入模型与路由检查 L27。',
       evidence: '证据', inspector: '检查器', mockNotice: '用于交互验证的 Mock 数据产物', derived: '推导结论',
       router: '路由', dispatch: '分发', compute: '专家计算', combine: '回传',
       tokenCount: 'Token 数量', attribution: '分层路由归因', aggregated: '窗口聚合',
@@ -39,6 +42,7 @@
       complete: '完整', comparable: '可比较', viewLayer: '打开模型与路由',
       modelOverview: 'Rank 与流量', layerOverview: '模型与路由', globalRanks: '全局 Rank Deck',
       workspaceCommunication: 'Rank 与流量', workspaceRouting: '模型与路由', singleLayer: '单层路由', tokenJourney: 'Token 整网', mockSummary: 'Profiling 范围',
+      compareLayerLoad: '对比 L27 单层负载', closeComparison: '关闭对比',
     },
   };
 
@@ -84,7 +88,15 @@
     rankTrafficLegend: document.getElementById('rank-traffic-legend'),
     rankTrafficWorkspace: document.getElementById('rank-traffic-workspace'),
     modelRoutingWorkspace: document.getElementById('model-routing-workspace'),
+    routingCanvas: document.getElementById('routing-canvas'),
     moeRoutingHost: document.getElementById('moe-routing-host'),
+    moeRoutingDetailHost: document.getElementById('moe-routing-detail-host'),
+    routingDetailPane: document.getElementById('routing-detail-pane'),
+    routingJourneyLabel: document.getElementById('routing-journey-label'),
+    routingCompareClose: document.getElementById('routing-compare-close'),
+    routingDetailZoomOut: document.getElementById('routing-detail-zoom-out'),
+    routingDetailFit: document.getElementById('routing-detail-fit'),
+    routingDetailZoomIn: document.getElementById('routing-detail-zoom-in'),
     routingViewControl: document.getElementById('routing-view-control'),
     routingPrevious: document.getElementById('routing-previous'),
     routingNext: document.getElementById('routing-next'),
@@ -107,6 +119,7 @@
     viewExplanationTitle: document.getElementById('view-explanation-title'),
     viewExplanation: document.getElementById('view-explanation'),
     validationAction: document.getElementById('validation-action'),
+    routingCompareAction: document.getElementById('routing-compare-action'),
     layerViewAction: document.getElementById('layer-view-action'),
     validationPlan: document.getElementById('validation-plan'),
     timelineRoot: document.getElementById('timeline-root'),
@@ -142,21 +155,15 @@
     primaryView: new URLSearchParams(window.location.search).get('view') === 'routing' ? 'routing' : 'communication',
     selectedLayer: 27,
     selectedToken: 37,
-    routingView: 'layer',
+    routingView: 'journey',
+    routingCompare: false,
     selectedCommunicationGroup: null,
     deckController: null,
     trafficController: null,
     moeRoutingController: null,
+    moeLayerDetailController: null,
     sankeyOpen: false,
   };
-
-  elements.run.textContent = mock.context.run;
-  elements.step.textContent = mock.context.step;
-  elements.stage.textContent = mock.context.stage;
-  elements.group.textContent = mock.context.group;
-  elements.baseline.textContent = mock.context.baseline;
-  elements.source.textContent = mock.context.source;
-  elements.contextEvidence.textContent = mock.context.evidence;
 
   function t(key) {
     return copy[state.language][key] || copy.en[key] || key;
@@ -164,6 +171,19 @@
 
   function bilingual(en, zh) {
     return state.language === 'zh' ? zh : en;
+  }
+
+  function updateDemoGuide() {
+    elements.source.textContent = bilingual('MoE communication diagnosis', 'MoE 通信诊断');
+    elements.run.textContent = bilingual('Locate routing skew and correlate it with Rank traffic and critical-path waits.', '定位路由偏斜，并关联 Rank 流量与关键路径等待。');
+    elements.step.textContent = '128 ranks · 16 servers × 8 cards · Server 05 EP8';
+    elements.stage.textContent = bilingual('Rank & Traffic shows placement and transfers; Model & Routing shows layer load and token journeys.', '“Rank 与流量”展示部署与传输；“模型与路由”展示单层负载和 Token 整网路径。');
+    elements.group.textContent = bilingual('Select L27 to inspect the anomaly, then compare its layer load in a linked split view. The timeline controls the active window.', '选择 L27 查看异常，再通过联动分屏对比该层负载；时间线控制当前分析窗口。');
+    elements.baseline.textContent = bilingual('L27 routes excess load to R42 · E64/E65, exposing 4.8 ms of wait.', 'L27 向 R42 · E64/E65 路由过量负载，产生 4.8 ms 暴露等待。');
+    elements.contextEvidence.textContent = bilingual('Model configuration, routing trace, Rank traffic, and timeline events.', '模型配置、路由 Trace、Rank 流量与时间线事件。');
+    elements.contextToggle.title = t('demoGuide');
+    elements.contextToggle.setAttribute('aria-label', t('demoGuide'));
+    elements.contextClose.setAttribute('aria-label', bilingual('Close demo guide', '关闭 Demo 说明'));
   }
 
   function currentDiagnosis(phase = state.phase) {
@@ -301,7 +321,15 @@
       button.tabIndex = selected ? 0 : -1;
     });
     elements.modelRoutingWorkspace.dataset.routingView = state.routingView;
-    elements.routingReadout.textContent = state.routingView === 'layer'
+    elements.routingCanvas.classList.toggle('is-comparing', state.routingCompare);
+    elements.routingDetailPane.hidden = !state.routingCompare;
+    elements.routingJourneyLabel.textContent = state.routingView === 'journey'
+      ? bilingual(`TOKEN T${String(state.selectedToken).padStart(3, '0')} · WHOLE-NETWORK ROUTE`, `TOKEN T${String(state.selectedToken).padStart(3, '0')} · 整网路径`)
+      : bilingual(`L${state.selectedLayer} · LAYER LOAD`, `L${state.selectedLayer} · 单层负载`);
+    elements.routingCompareClose.textContent = t('closeComparison');
+    elements.routingReadout.textContent = state.routingCompare
+      ? `T${String(state.selectedToken).padStart(3, '0')} · L${state.selectedLayer}`
+      : state.routingView === 'layer'
       ? `L${state.selectedLayer}`
       : `T${String(state.selectedToken).padStart(3, '0')}`;
   }
@@ -314,6 +342,15 @@
       initialLayer: state.selectedLayer,
       initialToken: state.selectedToken,
       activeRanks: ACTIVE_RANKS,
+      anomalyLayers: [{
+        layer: 27,
+        rankIds: [42],
+        expertIds: [64, 65],
+        tooltip: bilingual(
+          'L27 anomaly · T037 contributes to the R42 · E64/E65 hotspot; verify overload in Layer routing.',
+          'L27 异常 · T037 命中 R42 · E64/E65 热点；需在单层路由中验证过载。',
+        ),
+      }],
       showChrome: false,
       theme: document.documentElement.dataset.theme || 'dark',
       language: state.language,
@@ -322,11 +359,12 @@
         openEvidence({ type: 'moe-routing', selection });
       },
       onStateChange(nextState) {
+        const structuralChange = state.routingView !== nextState.view || state.selectedLayer !== nextState.layer || state.selectedToken !== nextState.tokenId;
         state.routingView = nextState.view;
         state.selectedLayer = nextState.layer;
         state.selectedToken = nextState.tokenId;
         syncRoutingControls();
-        if (state.primaryView === 'routing') {
+        if (structuralChange && state.primaryView === 'routing') {
           updatePrimaryView();
           if (!elements.evidenceDock.hidden && state.selection?.type === 'diagnosis') openEvidence({ type: 'diagnosis' });
         }
@@ -336,12 +374,59 @@
     return state.moeRoutingController;
   }
 
+  function ensureMoeLayerDetail() {
+    if (state.moeLayerDetailController) return state.moeLayerDetailController;
+    state.moeLayerDetailController = moeRoutingPattern.render(elements.moeRoutingDetailHost, {
+      dataApi: moeRoutingData,
+      initialView: 'layer',
+      initialLayer: state.selectedLayer,
+      initialToken: state.selectedToken,
+      activeRanks: ACTIVE_RANKS,
+      anomalyLayers: [{
+        layer: 27,
+        rankIds: [42],
+        expertIds: [64, 65],
+        tooltip: bilingual(
+          'L27 overload · R42 · E64/E65 receive 2.1× the mean load.',
+          'L27 过载 · R42 · E64/E65 接收均值 2.1× 的负载。',
+        ),
+      }],
+      showChrome: false,
+      theme: document.documentElement.dataset.theme || 'dark',
+      language: state.language,
+      showJourneyLegend: false,
+      onSelect(selection) {
+        openEvidence({ type: 'moe-routing', selection });
+      },
+    });
+    return state.moeLayerDetailController;
+  }
+
+  function setRoutingComparison(open, layer = 27) {
+    state.routingCompare = Boolean(open);
+    if (state.routingCompare) {
+      state.selectedLayer = layer;
+      state.routingView = 'journey';
+      ensureMoeRouting().setView('journey');
+      const detail = ensureMoeLayerDetail();
+      detail.setLayer(layer);
+      detail.setToken(state.selectedToken);
+      detail.setActiveRanks(ACTIVE_RANKS);
+    }
+    syncRoutingControls();
+    requestAnimationFrame(() => requestAnimationFrame(() => {
+      state.moeRoutingController?.fit();
+      if (state.routingCompare) state.moeLayerDetailController?.fit();
+    }));
+  }
+
   function selectDemoCommunicationGroup() {
     const controller = ensureModelDeck();
     state.selectedCommunicationGroup = controller.focusRankSet(ACTIVE_RANKS, {
       id: 'server-05-ep8', label: 'Server 05 · EP8', server: ACTIVE_SERVER, sourceLevel: 'demo',
     });
     state.moeRoutingController?.setActiveRanks(state.selectedCommunicationGroup.ranks);
+    state.moeLayerDetailController?.setActiveRanks(state.selectedCommunicationGroup.ranks);
     state.selection = { type: 'communication-group', group: state.selectedCommunicationGroup };
     syncTrafficOverlay();
     elements.phaseScope.textContent = bilingual('Server 05 · 8-rank EP group', 'Server 05 · 8-Rank EP 通信组');
@@ -351,6 +436,7 @@
   function fitRoutingAfterLayout() {
     requestAnimationFrame(() => requestAnimationFrame(() => {
       state.moeRoutingController?.fit();
+      state.moeLayerDetailController?.fit();
     }));
   }
 
@@ -448,12 +534,9 @@
     const languageTarget = state.language === 'en' ? '中文' : 'English';
     elements.languageToggle.title = state.language === 'en' ? '切换为中文' : 'Switch to English';
     elements.languageToggle.setAttribute('aria-label', `${state.language === 'en' ? '切换为' : 'Switch to '}${languageTarget}`);
-    elements.contextEvidence.textContent = state.language === 'zh'
-      ? mock.context.evidence.replace('complete', t('complete'))
-      : mock.context.evidence;
-    elements.baseline.textContent = state.language === 'zh'
-      ? `${mock.context.baseline} · ${t('comparable')}`
-      : `${mock.context.baseline} · ${t('comparable')}`;
+    updateDemoGuide();
+    elements.routingCompareAction.textContent = t('compareLayerLoad');
+    syncRoutingControls();
     elements.statusLeft.textContent = mock.context.group;
     elements.statusRight.textContent = `${state.window.start}–${state.window.end} ms · MOCK`;
     state.timelineController?.setData(timelineData());
@@ -726,6 +809,21 @@
       const item = selection.selection || {};
       const layer = Number.isInteger(item.layer) ? item.layer : state.selectedLayer;
       const tokenLabel = `T${String(Number.isInteger(item.tokenId) ? item.tokenId : state.selectedToken).padStart(3, '0')}`;
+      if (item.type === 'layer-anomaly') {
+        return {
+          title: bilingual('Layer 27 routing overload', 'Layer 27 路由过载'),
+          kicker: bilingual('ANOMALY · ROUTING SKEW', '异常 · 路由偏斜'),
+          impact: bilingual('T037 contributes to the R42 · E64/E65 hotspot. The layer receives 2.1× the mean load and exposes 4.8 ms of critical-path wait.', 'T037 命中 R42 · E64/E65 热点；该位置接收均值 2.1× 的负载，并产生 4.8 ms 关键路径暴露等待。'),
+          facts: [
+            { label: bilingual('Hot placement', '热点位置'), value: 'R42 · E64/E65', source: bilingual('Layer 27 routing trace', 'Layer 27 路由 Trace') },
+            { label: bilingual('Max / mean load', '最大值 / 均值负载'), value: '2.1×', source: bilingual('Router token counts', 'Router Token 计数') },
+            { label: bilingual('Expert capacity', '专家容量'), value: '842 / 896', source: bilingual('Layer queue occupancy', '单层队列占用') },
+            { label: bilingual('Exposed wait', '暴露等待'), value: '4.8 ms', source: bilingual('Critical-path timeline', '关键路径时间线') },
+          ],
+          alternatives: bilingual('The token journey explains where T037 was routed; overload is confirmed by the layer queue and timeline evidence.', 'Token 整网路径解释 T037 被路由到哪里；过载由单层队列与时间线证据共同确认。'),
+          action: bilingual('Switch to Layer routing at L27 and inspect R42 · E64/E65 queue occupancy.', '切换到 L27 单层路由，检查 R42 · E64/E65 的队列占用。'),
+        };
+      }
       const title = item.type === 'rank'
         ? `Rank ${item.rankId}`
         : item.type === 'expert' || item.type === 'route'
@@ -823,14 +921,16 @@
     ensureDockOpen();
     elements.evidenceTitle.textContent = content.title;
     elements.evidenceKicker.textContent = content.kicker;
-    elements.evidenceKicker.classList.toggle('is-diagnosis', state.selection.type === 'diagnosis');
+    elements.evidenceKicker.classList.toggle('is-diagnosis', state.selection.type === 'diagnosis' || state.selection.selection?.type === 'layer-anomaly');
     elements.evidenceImpact.textContent = content.impact;
     elements.evidenceAlternatives.textContent = content.alternatives;
     elements.evidenceActionCopy.textContent = content.action;
     setViewExplanation(content.viewExplanation || []);
     elements.validationPlan.hidden = true;
     const rankContext = ['rank-deck-overview', 'rank-overview', 'communication-group'].includes(state.selection.type);
-    elements.validationAction.hidden = rankContext;
+    const layerAnomaly = state.selection.type === 'moe-routing' && state.selection.selection?.type === 'layer-anomaly';
+    elements.routingCompareAction.hidden = !layerAnomaly;
+    elements.validationAction.hidden = rankContext || layerAnomaly;
     elements.layerViewAction.hidden = state.primaryView !== 'communication';
     setEvidenceFacts(content.facts);
     elements.timelineSelection.textContent = content.kicker;
@@ -1000,6 +1100,7 @@
       state.timelineController?.setActiveRows([state.phase]);
       state.deckController?.setTheme(nextTheme).refresh();
       state.moeRoutingController?.setTheme(nextTheme);
+      state.moeLayerDetailController?.setTheme(nextTheme);
       renderTimeline();
     });
   }
@@ -1069,6 +1170,7 @@
     updateDiagnosis();
     sankeyController.setData(phaseData(state.phase));
     state.moeRoutingController?.setLanguage(state.language);
+    state.moeLayerDetailController?.setLanguage(state.language);
     state.timelineController?.setActiveRows([state.phase]);
     if (state.selection && !elements.evidenceDock.hidden) openEvidence(state.selection);
     renderTimeline();
@@ -1085,6 +1187,7 @@
   elements.routingViewControl.addEventListener('click', (event) => {
     const button = event.target.closest('[data-routing-view]');
     if (!button) return;
+    setRoutingComparison(false);
     state.routingView = button.dataset.routingView === 'journey' ? 'journey' : 'layer';
     ensureMoeRouting().setView(state.routingView);
     updatePrimaryView();
@@ -1094,6 +1197,14 @@
   elements.routingZoomOut.addEventListener('click', () => ensureMoeRouting().zoomOut());
   elements.routingFit.addEventListener('click', () => ensureMoeRouting().fit());
   elements.routingZoomIn.addEventListener('click', () => ensureMoeRouting().zoomIn());
+  elements.routingDetailZoomOut.addEventListener('click', () => ensureMoeLayerDetail().zoomOut());
+  elements.routingDetailFit.addEventListener('click', () => ensureMoeLayerDetail().fit());
+  elements.routingDetailZoomIn.addEventListener('click', () => ensureMoeLayerDetail().zoomIn());
+  elements.routingCompareAction.addEventListener('click', () => {
+    if (state.primaryView !== 'routing') setPrimaryView('routing');
+    setRoutingComparison(true, 27);
+  });
+  elements.routingCompareClose.addEventListener('click', () => setRoutingComparison(false));
   elements.railEvidence.addEventListener('click', () => openEvidence(state.primaryView === 'communication'
     ? (state.selectedCommunicationGroup
       ? { type: 'communication-group', group: state.selectedCommunicationGroup }
@@ -1142,6 +1253,7 @@
     renderTimeline();
     state.deckController?.refresh();
     state.moeRoutingController?.refresh();
+    state.moeLayerDetailController?.refresh();
   }));
 
   initializeTimeline();
