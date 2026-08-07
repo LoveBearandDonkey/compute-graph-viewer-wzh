@@ -138,7 +138,15 @@
           <div class="cro-incident-banner" id="croIncidentBanner" role="status" aria-live="polite" hidden>
             <span class="cro-incident-banner__tag" id="croIncidentBannerTag"></span>
             <span class="cro-incident-banner__message" id="croIncidentBannerMessage"></span>
-            <button class="pto-ide-frame__window-action cro-incident-banner__close" id="croIncidentBannerClose" type="button" aria-label="关闭事件关系" title="关闭事件关系">&#10005;</button>
+            <!-- ✕ 必须是 SVG 不能是 &#10005; 文本：文本走基线排版，place-items:center
+                 居中的是含 descender 空白的行盒，而 ✕ 没有下伸笔画，视觉上就偏下半个
+                 descender。SVG 是 block 盒，没有这个偏差。 -->
+            <button class="pto-ide-frame__window-action cro-incident-banner__close" id="croIncidentBannerClose" type="button" aria-label="关闭事件关系" title="关闭事件关系">
+              <svg class="pto-ide-frame__window-icon" viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M18 6 6 18"></path>
+                <path d="m6 6 12 12"></path>
+              </svg>
+            </button>
           </div>
           <!-- ═══ 事件详情视图（上=横幅 / 中=传播源→受影响 / 下=事件内涵）═══
                运行事件是已发生的既成事实：配置表单不可调、四域静态查询口径不成立，
@@ -237,10 +245,12 @@
                   <!-- 一个 step 的数据流：前向 Emb→…→Head、反向倒回、收尾 Optimizer step，
                        逐格点亮四域并驱动下方 6 条数据线。默认不播放；播放期间不画关系连线
                        （见 js 的 quiet 铺色）。
+                       播完不自停而是**循环重播**（训练本来就是成千上万个 step 连着跑，
+                       停在收尾格反倒像"训练结束了"）。
                        播放中拆成两枚键：主键在 暂停/继续 之间翻转（画面定在当前这一步，
                        方便看中间状态），退出才是真正结束并还原上一次选择。 -->
                   <div class="cro-flow-actions">
-                    <button class="btn btn-sm btn-ghost cro-flow-play" id="croFlowPlay" type="button" aria-pressed="false" title="播放一个 step 的数据流">
+                    <button class="btn btn-sm btn-ghost cro-flow-play" id="croFlowPlay" type="button" aria-pressed="false" title="循环播放一个 step 的数据流，播完自动重来，退出才停">
                       <svg class="cro-flow-play__icon" id="croFlowPlayIcon" viewBox="0 0 24 24" aria-hidden="true">
                         <path d="M8 5v14l11-7z"></path>
                       </svg>

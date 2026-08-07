@@ -2098,9 +2098,11 @@ body {
   background: #fff;
   transition: transform var(--duration-fast, 120ms) ease;
 }
-.sl-immersive-switch input:checked + .sl-immersive-switch__track { background: var(--accent); }
+/* 开启态走 --primary（交互状态色，与界面其余选中态同源），不是 --accent——后者是
+   辅助域配色（#7c8db8，去饱和灰蓝），摊在 34×18px 的轨道上根本读不出"开着" */
+.sl-immersive-switch input:checked + .sl-immersive-switch__track { background: var(--primary); }
 .sl-immersive-switch input:checked + .sl-immersive-switch__track .sl-immersive-switch__thumb { transform: translateX(16px); }
-.sl-immersive-switch input:focus-visible + .sl-immersive-switch__track { outline: 2px solid var(--accent); outline-offset: 2px; }
+.sl-immersive-switch input:focus-visible + .sl-immersive-switch__track { outline: 2px solid var(--primary); outline-offset: 2px; }
 
 .sl-immersive { position: absolute; inset: 0; z-index: 40; }
 .sl-immersive[hidden] { display: none; }
@@ -2140,6 +2142,14 @@ body {
 .sl-immersive__path-value {
   font: 600 17px / 1.35 var(--font-sans); color: var(--foreground);
   overflow-wrap: anywhere;
+}
+/* 时间轴 0 点说明：轴上和起止胶囊标的都是相对偏移，绝对时刻整屏只在这里出现一次 */
+.sl-immersive__origin {
+  margin-left: auto; flex: 0 0 auto;
+  display: flex; flex-direction: column; gap: 2px; text-align: right;
+}
+.sl-immersive__origin .sl-immersive__path-value {
+  font: 500 12px / 1.35 var(--font-mono); color: var(--foreground-secondary);
 }
 .sl-immersive__side .sl-report-card {
   background: color-mix(in srgb, var(--surface-2) 92%, transparent);
@@ -5768,7 +5778,15 @@ function diffDetailModel(taskKey) {
     };
   });
 
-  function rowOf(labelText, field, better) {
+  // 时间轴 0 点：本次对比里最早启动的那条任务条。启动/结束是「时刻」不是「时长」，
+  // 摆绝对时间戳会被当成时长读（同样是一串 μs），所以两处一律显示相对这个 0 点的偏移，
+  // 绝对时刻退到 title / 沉浸式表头。
+  var liveStarts = metrics.filter(function (m) { return !m.missing; }).map(function (m) { return m.start; });
+  var timeOrigin = liveStarts.length ? Math.min.apply(null, liveStarts) : 0;
+
+  /* kind 决定显示方式：'offset' 是时刻（显示成相对 0 点的有符号偏移），'length' 是时长。
+     hint 是该指标的口径说明，右侧表的行名和沉浸式的标注胶囊共用同一份文案。 */
+  function rowOf(labelText, field, better, kind, hint) {
     var vals = metrics.map(function (m) { return m.missing ? null : m[field]; });
     var valid = vals.filter(function (v) { return Number.isFinite(v); });
     // 「最优」只在唯一时成立：全部相等或只剩一个有效值时不标绿
@@ -5776,24 +5794,39 @@ function diffDetailModel(taskKey) {
       ? (better === 'low' ? Math.min.apply(null, valid) : Math.max.apply(null, valid))
       : null;
     var uniqueBest = best !== null && valid.filter(function (v) { return v === best; }).length === 1;
-    return { label: labelText, field: field, unit: 'μs', better: better, vals: vals, bestVal: uniqueBest ? best : null };
+    // 时刻类比较仍用绝对值：0 点对各 run 是同一个，减不减都不影响谁最早
+    return {
+      label: labelText, field: field, unit: 'μs', better: better,
+      vals: vals, bestVal: uniqueBest ? best : null,
+      kind: kind || 'length', hint: hint || '',
+    };
   }
   var rows = [
-    rowOf('启动时间', 'start', 'low'),
-    rowOf('结束时间', 'end', 'low'),
-    rowOf('持续时长', 'dur', 'low'),
-    rowOf('执行耗时', 'exec', 'low'),
-    rowOf('同步等待', 'wait', 'low'),
-    rowOf('计算-通信重叠', 'overlap', 'high'),
-    rowOf('空闲间隙（任务前）', 'idleBefore', 'low'),
-    rowOf('空闲间隙（任务后）', 'idleAfter', 'low'),
+    rowOf('启动时刻', 'start', 'low', 'offset',
+      '任务条开始的时刻，以本次对比里最早启动的那条为 0 点；正值表示比它晚这么多。'),
+    rowOf('结束时刻', 'end', 'low', 'offset',
+      '任务条结束的时刻（启动 + 持续时长），同样以最早启动的那条为 0 点。'),
+    rowOf('持续时长', 'dur', 'low', 'length',
+      '任务条从启动到结束占住核的墙上时间 = 执行耗时 + 同步等待。'),
+    rowOf('执行耗时', 'exec', 'low', 'length',
+      '任务条内部真正在算的那一段，对应条子里颜色较深的部分。'),
+    rowOf('同步等待', 'wait', 'low', 'length',
+      '任务条内部、计算已结束但任务还没退场的尾段：等数据搬运、等 AIC↔AIV 同步、'
+      + '或算完了等各 rank 到齐才能进集合通信。这段时间核仍被这条任务占着，'
+      + '区别于发生在任务条之间的「空闲间隙」。'),
+    rowOf('计算-通信重叠', 'overlap', 'high', 'length',
+      '被通信掩盖掉的计算时间，越大越好。'),
+    rowOf('空闲间隙（任务前）', 'idleBefore', 'low', 'length',
+      '与泳道上前一条任务之间的空白：核上没有任务在跑，属于调度空泡；它在任务条外部，与「同步等待」不是一回事。'),
+    rowOf('空闲间隙（任务后）', 'idleAfter', 'low', 'length',
+      '与泳道上后一条任务之间的空白：核上没有任务在跑，属于调度空泡；它在任务条外部，与「同步等待」不是一回事。'),
   ];
   var rowByField = {};
   rows.forEach(function (r) { rowByField[r.field] = r; });
 
   return {
     error: null,
-    slots: slots, metrics: metrics, rows: rows, rowByField: rowByField,
+    slots: slots, metrics: metrics, rows: rows, rowByField: rowByField, timeOrigin: timeOrigin,
     isTriple: slots.length > 2,
     taskName: primaryEvent.displayName || primaryEvent.name || '',
     laneName: trainStripRunSuffix(taskKey.coreName || '').coreName,
@@ -5851,13 +5884,16 @@ function diffDetailHtml(taskKey) {
   // 数据行：只把「最优」的那一列标绿（bestVal 由 diffDetailModel 算好）
   model.rows.forEach(function (r) {
     html += '<div class="sl-detail-compare__row">';
-    html += '<div class="sl-detail-compare__col sl-detail-compare__col--label">' + escapeHtml(r.label) + '</div>';
+    html += '<div class="sl-detail-compare__col sl-detail-compare__col--label"' +
+      (r.hint ? ' title="' + escapeHtml(r.hint) + '"' : '') + '>' + escapeHtml(r.label) + '</div>';
     r.vals.forEach(function (v) {
       if (!Number.isFinite(v)) {
         html += '<div class="sl-detail-compare__col sl-detail-compare__col--val is-missing">—</div>';
         return;
       }
-      html += '<div class="sl-detail-compare__col sl-detail-compare__col--val' + (r.bestVal !== null && v === r.bestVal ? ' is-better' : '') + '">' + formatCompareVal(v, r.unit) + '</div>';
+      html += '<div class="sl-detail-compare__col sl-detail-compare__col--val' + (r.bestVal !== null && v === r.bestVal ? ' is-better' : '') + '"' +
+        (r.kind === 'offset' ? ' title="绝对时刻 ' + escapeHtml(formatCompareVal(v, r.unit)) + '"' : '') +
+        '>' + compareCellText(r, v, model.timeOrigin) + '</div>';
     });
     html += '</div>';
   });
@@ -5886,10 +5922,13 @@ function immersiveTickStep(span, target) {
   return mult * mag;
 }
 
-/* 刻度文案：窗口跨度小于 2ms 时用 μs，否则换算成 ms（跨度越大小数越少） */
-function immersiveTickLabel(us, span) {
-  if (span < 2000) return Math.round(us) + ' μs';
-  return (us / 1000).toFixed(span >= 20000 ? 1 : 2) + ' ms';
+/* 刻度文案：轴上标的是相对 0 点（本次对比里最早启动的那条任务条）的偏移，带符号，
+   免得一串绝对时间戳被读成时长。窗口跨度小于 2ms 时用 μs，否则换算成 ms（跨度越大小数越少） */
+function immersiveTickLabel(delta, span) {
+  var mag = Math.abs(delta);
+  var body = span < 2000 ? Math.round(mag) + ' μs' : (mag / 1000).toFixed(span >= 20000 ? 1 : 2) + ' ms';
+  if (parseFloat(body) === 0) return body;
+  return (delta < 0 ? '-' : '+') + body;
 }
 
 function renderImmersive() {
@@ -5932,9 +5971,17 @@ function renderImmersive() {
     var row = model.rowByField[field];
     return (row && row.bestVal !== null && val === row.bestVal) ? ' is-better' : '';
   }
+  /* 标注胶囊：文案与取值口径全部走 rowByField，跟右侧表是同一份定义——
+     时刻显示成相对 0 点的偏移，指标含义挂在 title 上（同步等待 / 空闲间隙的区别就靠它交代）。 */
   function chipHtml(name, field, val) {
-    return '<span class="sl-imm-chip' + betterCls(field, val) + '">' + escapeHtml(name) +
-      ' <b>' + escapeHtml(formatCompareVal(val, 'μs')) + '</b></span>';
+    var row = model.rowByField[field];
+    var tip = row && row.hint ? row.hint : '';
+    if (row && row.kind === 'offset' && Number.isFinite(val)) {
+      tip += (tip ? '\n' : '') + '绝对时刻 ' + formatCompareVal(val, row.unit);
+    }
+    return '<span class="sl-imm-chip' + betterCls(field, val) + '"' +
+      (tip ? ' title="' + escapeHtml(tip) + '"' : '') + '>' + escapeHtml(name) +
+      ' <b>' + escapeHtml(compareCellText(row, val, model.timeOrigin)) + '</b></span>';
   }
   function arrowHtml(cls, leftPct, rightPct, name, field, val, barTint) {
     var w = Math.max(0.08, rightPct - leftPct);
@@ -5948,7 +5995,7 @@ function renderImmersive() {
   for (var t = Math.ceil(lo / step) * step; t <= hi; t += step) {
     var p = pctOf(t);
     ruler += '<div class="sl-immersive__tick' + (p > 86 ? ' is-flip' : '') + '" style="left:' + p.toFixed(3) + '%">' +
-      '<span>' + escapeHtml(immersiveTickLabel(t, span)) + '</span></div>';
+      '<span>' + escapeHtml(immersiveTickLabel(t - model.timeOrigin, span)) + '</span></div>';
   }
 
   // 跨行对齐参考线：每个 run 任务条的起止时刻，一眼看出偏移了多少
@@ -6011,8 +6058,8 @@ function renderImmersive() {
     }
 
     // 起止时刻贴在任务条左右边界下方
-    track += '<div class="sl-imm-edge is-start" style="left:' + fl.toFixed(3) + '%">' + chipHtml('启动', 'start', m.start) + '</div>';
-    track += '<div class="sl-imm-edge is-end" style="left:' + fr.toFixed(3) + '%">' + chipHtml('结束', 'end', m.end) + '</div>';
+    track += '<div class="sl-imm-edge is-start" style="left:' + fl.toFixed(3) + '%">' + chipHtml('启动时刻', 'start', m.start) + '</div>';
+    track += '<div class="sl-imm-edge is-end" style="left:' + fr.toFixed(3) + '%">' + chipHtml('结束时刻', 'end', m.end) + '</div>';
 
     // 执行耗时 / 同步等待：跨在条子内部各自那一段的正下方，胶囊挂在线下
     var execSplit = fl + fw * execRatio;
@@ -6028,6 +6075,11 @@ function renderImmersive() {
       '<div class="sl-immersive__path">' +
         '<span class="sl-immersive__path-label">泳道路径</span>' +
         '<span class="sl-immersive__path-value">' + escapeHtml(model.laneName) + '</span>' +
+      '</div>' +
+      // 轴上是相对偏移，这里交代 0 点落在哪，绝对时刻整屏只出现这一次
+      '<div class="sl-immersive__origin" title="时间轴与起止胶囊标的都是相对这个 0 点的偏移">' +
+        '<span class="sl-immersive__path-label">时间轴 0 点</span>' +
+        '<span class="sl-immersive__path-value">最早启动的任务条 · ' + escapeHtml(formatCompareVal(model.timeOrigin, 'μs')) + '</span>' +
       '</div>' +
     '</header>' +
     '<div class="sl-immersive__cols">' +
@@ -6245,6 +6297,21 @@ function renderInlineCodeBlock() {
   });
   h += '</div></div></div>';
   return h;
+}
+
+/* 时刻类指标的显示：给相对 0 点的偏移加符号，0 点自身不带符号 */
+function formatOffsetVal(delta, unit) {
+  if (!Number.isFinite(delta)) return '— ' + (unit || 'μs');
+  var body = formatCompareVal(Math.abs(delta), unit || 'μs');
+  if (parseFloat(body) === 0) return body;
+  return (delta < 0 ? '-' : '+') + body;
+}
+
+/* 右侧对比表与沉浸式标注共用的取值文案：时刻走相对 0 点的偏移，时长照原样 */
+function compareCellText(row, val, timeOrigin) {
+  if (!row) return formatCompareVal(val, 'μs');
+  if (row.kind === 'offset') return formatOffsetVal(val - (timeOrigin || 0), row.unit);
+  return formatCompareVal(val, row.unit);
 }
 
 function formatCompareVal(val, unit) {
