@@ -12,7 +12,7 @@
    确定性映射（无随机、无数据文件）：
      layer  ℓ → PP stage  s     : 按 PP 把 L 层尽量均分，前 (L mod PP) 段多 1 层
      expert e → EP rank   p     : p = floor(e / (E / EP))
-     (s,d,p) → global rank r    : r = s·(DP·EP·TP·CP) + d·(EP·TP·CP) + p·(TP·CP)
+     (s,d,p,t,c) → global rank r: r = s·(DP·EP·TP·CP) + d·(EP·TP·CP) + p·(TP·CP) + c·TP + t
      rank   r → node n          : n = floor(r / ranksPerNode)
    ══════════════════════════════════════════════════════════════════════════ */
 (function (global) {
@@ -250,6 +250,8 @@
 
     const rankOf = (stage, dpIdx, epIdx, inner = 0) =>
       stage * ranksPerStage + dpIdx * ranksPerDp + epIdx * ranksPerEp + inner;
+    const rankOfCoords = (stage, dpIdx, epIdx, tpIdx = 0, cpIdx = 0) =>
+      rankOf(stage, dpIdx, epIdx, cpIdx * tp + tpIdx);
     const nodeOfRank = (rank) => (ranksPerNode ? Math.floor(rank / ranksPerNode) : 0);
 
     /* ── 关系查询（第 7 项的双向互查全部走这几个函数） ── */
@@ -312,7 +314,10 @@
       const dpIdx = Math.floor(withinStage / ranksPerDp);
       const withinDp = withinStage - dpIdx * ranksPerDp;
       const epIdx = Math.floor(withinDp / ranksPerEp);
-      return { rank, stage, dpIdx, epIdx, inner: withinDp - epIdx * ranksPerEp, node: nodeOfRank(rank) };
+      const inner = withinDp - epIdx * ranksPerEp;
+      const tpIdx = inner % tp;
+      const cpIdx = Math.floor(inner / tp);
+      return { rank, stage, dpIdx, epIdx, tpIdx, cpIdx, inner, node: nodeOfRank(rank) };
     }
 
     return {
@@ -331,7 +336,7 @@
       stageOfLayer: (l) => stageOfLayer[l],
       epRankOfExpert,
       expertsOfEpRank: (p) => (epRanks[p] ? epRanks[p].experts : []),
-      rankOf, nodeOfRank, coordsOfRank,
+      rankOf, rankOfCoords, nodeOfRank, coordsOfRank,
       ranksOfStage, ranksOfLayer, ranksOfStageInDp, ranksOfLayerInDp,
       ranksOfExpertInLayer, ranksOfEpRankInStage, nodesOfRanks,
     };
@@ -1381,13 +1386,16 @@
             cell.dataset.stage = String(s);
             cell.dataset.dp = String(d);
             cell.dataset.ep = String(p);
-            cell.dataset.node = String(node);
             const shard = tpShardOf(inner);
+            const cpIdx = cpIdxOf(inner);
+            cell.dataset.tp = String(shard);
+            cell.dataset.cp = String(cpIdx);
+            cell.dataset.node = String(node);
             // TP/CP 展开时把这张卡在最内两维里的位置写进提示：光看格子只知道
             // 「被点亮了」，知道是第几份权重才谈得上定位。
             const shardTip = tp > 1 ? `\nTP 分片 ${shard + 1}/${tp}（持有该层权重的 1/${tp}）` : "";
-            const cpTip = cp > 1 ? `\nCP ${cpIdxOf(inner) + 1}/${cp}` : "";
-            cell.dataset.tip = `rank ${rank}\nStage${s} · DP${d} · EP${p}${shardTip}${cpTip}\nNode ${node}`;
+            const cpTip = cp > 1 ? `\nCP 分片 ${cpIdx + 1}/${cp}` : "";
+            cell.dataset.tip = `rank ${rank}\nStage${s} · DP${d} · EP${p} · TP${shard} · CP${cpIdx}${shardTip}${cpTip}\nNode ${node}`;
             if (tp > 1) {
               cell.dataset.tpShard = String(shard);
               // 高亮亮度分档由 CSS 读这枚变量（见 .twin-heat-cell.is-related）。
@@ -1397,11 +1405,11 @@
             // 2048 个格子不能各占一个 Tab 站；用 roving tabindex + 方向键在网格内移动
             cell.setAttribute("role", "gridcell");
             cell.setAttribute("tabindex", rank === 0 ? "0" : "-1");
-            cell.setAttribute("aria-label", tp > 1
-              ? `rank ${rank}，Stage${s}、DP${d}、EP${p}，TP 分片 ${shard + 1}/${tp}，节点 ${node}`
-              : `rank ${rank}，Stage${s}、DP${d}、EP${p}，节点 ${node}`);
+            cell.setAttribute("aria-label",
+              `rank ${rank}，Stage${s}、DP${d}、EP${p}、TP${shard}、CP${cpIdx}，节点 ${node}`);
             cell.addEventListener("click", () => emit({
-              kind: "rank", rank, stage: s, dpIdx: d, epRank: p, node,
+              kind: "rank", rank, stage: s, dpIdx: d, epRank: p,
+              tpIdx: shard, cpIdx, node,
             }));
             block.appendChild(cell);
           }
@@ -1763,6 +1771,10 @@
          专家，是业务常识，写在气泡里是噪音。
          卡片挂在连线中点上，行不能长：一行控制在 ~24 个汉字内。 */
       labels.cluster = `Node ${span} · ${rel.ranks.size} 卡`;
+      if (pk === "rank" && Number.isFinite(rel.primary.rank)) {
+        const co = topology.coordsOfRank(rel.primary.rank);
+        labels.cluster = `global rank ${co.rank} · PP${co.stage} / DP${co.dpIdx} / EP${co.epIdx} / TP${co.tpIdx} / CP${co.cpIdx} · Node ${co.node}`;
+      }
       // 只给「结构对象 → 卡」这类选择加口径说明：点 rank / 专家问的是别的事
       const structural = rel.primary
         && (rel.primary.kind === "layer" || rel.primary.kind === "segment");
@@ -2421,6 +2433,429 @@
 
   const CHART_BUILDERS = { line: chartLine, bars: chartBars, stack: chartStack };
 
+  /* ══ 计算血缘 ════════════════════════════════════════════════════════════
+     这里刻意不把 FX / GE / Runtime 写进 CroTopology：拓扑是配置映射，血缘是
+     编译与执行映射，两者生命周期不同。本页尚未接 profiler / compiler dump，
+     因此下面构造一条完整、可交互的演示链。 */
+  const LINEAGE_LOWERING = {
+    embedding: {
+      fx: ["aten.embedding.default"], ge: ["GatherV2"],
+      runtime: ["GatherV2 task"], kernel: ["gather_v2_aicore_tiling_v3"],
+    },
+    norm: {
+      fx: ["aten.rms_norm.default"], ge: ["RmsNorm"],
+      runtime: ["RmsNorm task"], kernel: ["rms_norm_vector_tiling_v2"],
+    },
+    attention: {
+      fx: ["aten.matmul.default", "aten.softmax.int", "aten.matmul.default"],
+      ge: ["FlashAttentionScore"], runtime: ["FlashAttentionScore task"],
+      kernel: ["flash_attention_score_aicore_v4"],
+    },
+    linear: {
+      fx: ["aten.linear.default"], ge: ["MatMul", "Add"],
+      runtime: ["MatMul task", "Vector Add task"],
+      kernel: ["matmul_cube_tiling_v5", "add_vector_tiling_v2"],
+    },
+    head: {
+      fx: ["aten.linear.default"], ge: ["MatMul"],
+      runtime: ["LM Head MatMul task"], kernel: ["matmul_cube_split_k_v3"],
+    },
+    mlp: {
+      fx: ["aten.linear.default", "aten.silu.default", "aten.linear.default"],
+      ge: ["MatMul", "Swish", "MatMul"], runtime: ["Fused MLP task"],
+      kernel: ["fused_mlp_cube_vector_v2"],
+    },
+    act: {
+      fx: ["aten.silu.default"], ge: ["Swish"],
+      runtime: ["Swish task"], kernel: ["swish_vector_tiling_v2"],
+    },
+    gate: {
+      fx: ["aten.linear.default", "aten.softmax.int", "aten.topk.default"],
+      ge: ["MatMul", "SoftmaxV2", "TopK"],
+      runtime: ["Router MatMul task", "Router select task"],
+      kernel: ["router_matmul_cube_v3", "softmax_topk_vector_v4"],
+    },
+    moe: {
+      fx: ["call_function.moe_expert_pool"], ge: ["MoeGatingTopK", "MoeFinalizeRouting"],
+      runtime: ["MoE expert task group"], kernel: ["moe_expert_ffn_aicore_v3"],
+    },
+    comm: {
+      fx: ["call_function.npu_all_to_all"], ge: ["HcomAllToAll"],
+      runtime: ["HCCL collective task"], kernel: ["HCCL AllToAll executor"],
+    },
+    output: {
+      fx: ["call_function.output"], ge: ["NetOutput"],
+      runtime: ["Graph output task"], kernel: ["device_to_host_completion"],
+    },
+    decoder: {
+      fx: ["call_module.decoder_block"], ge: ["PartitionedCall"],
+      runtime: ["Decoder task group"], kernel: ["decoder_kernel_group"],
+    },
+    input: {
+      fx: ["placeholder.input"], ge: ["Data"],
+      runtime: ["Graph input task"], kernel: ["host_to_device_enqueue"],
+    },
+    parameter: {
+      fx: ["get_attr.parameter"], ge: ["Const"],
+      runtime: ["Weight binding"], kernel: ["parameter_address_binding"],
+    },
+    state: {
+      fx: ["get_attr.state"], ge: ["Variable"],
+      runtime: ["State binding"], kernel: ["state_address_binding"],
+    },
+  };
+
+  const LINEAGE_DEFAULT = {
+    fx: ["call_function.custom_op"], ge: ["CustomOp"],
+    runtime: ["Custom operator task"], kernel: ["custom_aicore_kernel"],
+  };
+
+  const LINEAGE_STAGE_META = [
+    { id: "model", title: "模型语义", system: "模型语义层，用于定位用户模型中的结构与算子意图" },
+    { id: "fx", title: "FX Graph", system: "PyTorch FX 图层，用于记录框架捕获后的算子级表达" },
+    { id: "ge", title: "GE Graph", system: "GE 图编译层，用于呈现昇腾侧 Lowering、融合与图优化结果" },
+    { id: "runtime", title: "Runtime", system: "CANN 运行时层，用于展示任务下发、Stream 与 Rank 执行位置" },
+    { id: "kernel", title: "Kernel / Executor", system: "Kernel 执行层，用于说明最终 Kernel、通信执行器与 Tiling 选择" },
+  ];
+
+  const lineageStageMeta = (id) => LINEAGE_STAGE_META.find((stage) => stage.id === id);
+  const LINEAGE_NODE_NAME_TIPS = {
+    model: "模型语义节点名称：表示用户模型中的结构或算子意图。",
+    fx: "FX 节点名称：表示 PyTorch 捕获后的算子级表达。",
+    ge: "GE 算子名称：表示 Lowering、融合与图优化后的昇腾侧算子。",
+    runtime: "Runtime 任务名称：表示 CANN 下发到 Stream 的执行任务。",
+    kernel: "Kernel / Executor 名称：表示设备侧最终执行的 Kernel 或通信执行器。",
+  };
+  const LINEAGE_NODE_ID_TIP = "节点 ID：用于在当前定位链中标识节点并建立跨层映射。点击后可打开节点证据详情，查看输入输出、转换依据及关联日志（暂未上线）。";
+
+  function lineageIdPart(value) {
+    return String(value || "node").toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_|_$/g, "");
+  }
+
+  function lineageTransition(stageId, sourceCount, targetCount) {
+    if (stageId === "model") return { kind: "capture", label: sourceCount < targetCount ? "捕获展开" : "捕获" };
+    if (stageId === "fx") {
+      if (sourceCount > targetCount) return { kind: "fusion", label: "融合" };
+      if (sourceCount < targetCount) return { kind: "split", label: "拆分" };
+      return { kind: "lowering", label: "Lowering" };
+    }
+    if (stageId === "ge") {
+      return sourceCount > targetCount
+        ? { kind: "fusion", label: "任务聚合" }
+        : { kind: "dispatch", label: "任务下发" };
+    }
+    return sourceCount > targetCount
+      ? { kind: "fusion", label: "执行融合" }
+      : sourceCount < targetCount
+        ? { kind: "split", label: "Kernel 拆分" }
+        : { kind: "dispatch", label: "Kernel 选择" };
+  }
+
+  function buildLineageEdges(stages) {
+    const edges = [];
+    stages.slice(0, -1).forEach((stage, stageIndex) => {
+      const next = stages[stageIndex + 1];
+      const sources = stage.available === false ? [] : stage.nodes.filter((node) => node.id);
+      const targets = next.available === false ? [] : next.nodes.filter((node) => node.id);
+      if (!sources.length || !targets.length) return;
+      const relation = lineageTransition(stage.id, sources.length, targets.length);
+      const pairs = [];
+      if (sources.length === 1 || targets.length === 1) {
+        sources.forEach((source) => targets.forEach((target) => pairs.push([source, target])));
+      } else if (sources.length === targets.length) {
+        sources.forEach((source, index) => pairs.push([source, targets[index]]));
+      } else {
+        sources.forEach((source, index) => {
+          pairs.push([source, targets[Math.min(targets.length - 1, Math.floor(index * targets.length / sources.length))]]);
+        });
+        targets.forEach((target, index) => {
+          pairs.push([sources[Math.min(sources.length - 1, Math.floor(index * sources.length / targets.length))], target]);
+        });
+      }
+      const seen = new Set();
+      pairs.forEach(([source, target]) => {
+        const key = `${source.id}>${target.id}`;
+        if (seen.has(key)) return;
+        seen.add(key);
+        edges.push({
+          id: key,
+          from: source.id,
+          to: target.id,
+          fromStage: stage.id,
+          toStage: next.id,
+          kind: relation.kind,
+          label: relation.label,
+        });
+      });
+    });
+    return edges;
+  }
+
+  function completeLineage(data) {
+    data.edges = buildLineageEdges(data.stages);
+    return data;
+  }
+
+  const INCIDENT_LINEAGE_ROLES = [
+    { id: "origin", label: "传播源" },
+    { id: "victim", label: "受影响" },
+  ];
+
+  function incidentRoleStage(scope, spec, roleId) {
+    const nodeRef = spec?.[`${roleId}Node`];
+    if (LINEAGE_STAGE_META.some((stage) => stage.id === nodeRef?.stage)) return nodeRef.stage;
+    const explicit = spec?.[`${roleId}Stage`];
+    if (LINEAGE_STAGE_META.some((stage) => stage.id === explicit)) return explicit;
+    if (scope?.ranks != null || scope?.stages != null || scope?.experts != null) return "runtime";
+    if (scope?.layers != null || scope?.segments != null) return "model";
+    const stages = spec?.stages || [];
+    return roleId === "origin" ? stages[0] : stages[stages.length - 1];
+  }
+
+  function attachIncidentLineageRoles(data, event, spec) {
+    INCIDENT_LINEAGE_ROLES.forEach((role) => {
+      const stageId = incidentRoleStage(event?.[role.id], spec, role.id);
+      const stage = data.stages.find((entry) => entry.id === stageId);
+      if (!stage) return;
+      const nodeRef = spec?.[`${role.id}Node`];
+      const node = nodeRef?.stage === stage.id ? stage.nodes[nodeRef.index] : null;
+      // 只有事件显式声明了层与节点序号，角色才下沉到卡片；不能靠“该层恰好只有
+      // 一张卡”猜测异常落点，否则会把层级证据误读成节点级证据。
+      if (stage.available && node?.id) {
+        node.roles.push(role);
+      } else {
+        stage.roles.push(role);
+      }
+    });
+    return data;
+  }
+
+  function buildMockLineage(topology, rel) {
+    if (!rel?.bar || rel.primary?.kind !== "segment" || rel.primary.wholeColumn) return null;
+    const col = activeColumns(topology).find((entry) => entry.id === rel.bar.segment);
+    const bar = col?.bars.find((entry) => entry.id === rel.bar.bar);
+    if (!bar) return null;
+
+    const p = rel.primary;
+    const layers = Array.from(rel.layers).sort((a, b) => a - b);
+    const explicitLayer = [p.scopeLayer, p.preferLayer]
+      .find((value) => Number.isFinite(value) && (!layers.length || layers.includes(value)));
+    const representativeLayer = Number.isFinite(explicitLayer)
+      ? explicitLayer
+      : Number.isFinite(rel.deckLayer) ? rel.deckLayer : null;
+    const scopeText = Number.isFinite(explicitLayer)
+      ? `Layer ${explicitLayer}`
+      : layers.length
+        ? `${formatRuns(layers, "L", 2)} · 代表实例 L${representativeLayer}`
+        : `${col.name} · PP${Array.from(rel.stages)[0] ?? 0}`;
+
+    const ranks = Array.from(rel.ranks).sort((a, b) => a - b);
+    const representativeStage = Number.isFinite(representativeLayer)
+      ? topology.stageOfLayer(representativeLayer)
+      : Array.from(rel.stages)[0];
+    const rank = ranks.find((value) => topology.coordsOfRank(value).stage === representativeStage) ?? ranks[0];
+    const co = Number.isFinite(rank) ? topology.coordsOfRank(rank) : null;
+    const placement = co
+      ? `global rank ${co.rank} · PP${co.stage} / DP${co.dpIdx} / EP${co.epIdx} / TP${co.tpIdx} / CP${co.cpIdx} · Node ${co.node}`
+      : "未绑定代表执行 Rank";
+    const layerKey = Number.isFinite(representativeLayer) ? `l${representativeLayer}` : col.id;
+    const nodeKey = lineageIdPart(bar.deckNode || bar.id);
+    const lowering = LINEAGE_LOWERING[bar.op] || LINEAGE_DEFAULT;
+    const stream = Number.isFinite(representativeLayer) ? representativeLayer % 8 : 0;
+
+    const nodes = (stage, names, detail) => names.map((name, index) => ({
+      name,
+      id: `lineage:${stage}:${layerKey}:${nodeKey}:${index}`,
+      detail: typeof detail === "function" ? detail(name, index) : detail,
+    }));
+
+    return completeLineage({
+      key: `${layerKey}/${col.id}/${bar.id}/${rank}`,
+      operator: bar.label,
+      scope: scopeText,
+      placement,
+      stages: [
+        {
+          ...lineageStageMeta("model"),
+          nodes: nodes("model", [bar.label], `${scopeText} · ${col.name}`),
+        },
+        {
+          ...lineageStageMeta("fx"),
+          nodes: nodes("fx", lowering.fx, (_name, index) => `call_function · node ${index + 1}/${lowering.fx.length}`),
+        },
+        {
+          ...lineageStageMeta("ge"),
+          nodes: nodes("ge", lowering.ge, (_name, index) => `lowering / fusion result · op ${index + 1}/${lowering.ge.length}`),
+        },
+        {
+          ...lineageStageMeta("runtime"),
+          nodes: nodes("runtime", lowering.runtime, () => `stream ${stream} · ${placement}`),
+        },
+        {
+          ...lineageStageMeta("kernel"),
+          nodes: nodes("kernel", lowering.kernel, (name) => name.startsWith("HCCL")
+            ? "communication executor · execution selection"
+            : "AI Core / Vector Core · tiling selection"),
+        },
+      ],
+    });
+  }
+
+  function buildIncidentLineage(event, topology) {
+    const spec = event?.lineage || {};
+    const available = new Set(spec.stages || []);
+    const columns = activeColumns(topology);
+    const col = spec.segment ? columns.find((entry) => entry.id === spec.segment) : null;
+    const bar = spec.bar ? col?.bars.find((entry) => entry.id === spec.bar) : null;
+    const lowering = bar ? (LINEAGE_LOWERING[bar.op] || LINEAGE_DEFAULT) : null;
+    const operator = spec.operator || bar?.label || event?.title || "未定位算子";
+    const scope = Number.isFinite(spec.layer)
+      ? `Layer ${spec.layer}${col ? ` · ${col.name}` : ""}`
+      : "尚未定位到具体 Layer";
+    const co = Number.isFinite(spec.rank) ? topology.coordsOfRank(spec.rank) : null;
+    const placement = co
+      ? `global rank ${co.rank} · PP${co.stage} / DP${co.dpIdx} / EP${co.epIdx} / TP${co.tpIdx} / CP${co.cpIdx} · Node ${co.node}`
+      : "尚未定位到具体执行 Rank";
+    const layerKey = Number.isFinite(spec.layer) ? `l${spec.layer}` : "unscoped";
+    const nodeKey = lineageIdPart(bar?.deckNode || spec.bar || operator);
+    const stream = Number.isFinite(spec.layer) ? spec.layer % 8 : 0;
+
+    const namesByStage = {
+      model: [operator],
+      fx: lowering?.fx || [],
+      ge: lowering?.ge || [],
+      runtime: lowering?.runtime || (available.has("runtime") ? [operator] : []),
+      kernel: lowering?.kernel || (available.has("kernel") ? [operator] : []),
+    };
+    const detailByStage = {
+      model: scope,
+      fx: "框架捕获后的算子表达",
+      ge: "Lowering / 融合结果",
+      runtime: `${placement} · stream ${stream}`,
+      kernel: "Kernel / Executor 与 Tiling 选择",
+    };
+
+    const data = {
+      event: `${event.code || event.id} · ${event.title}`,
+      operator,
+      scope,
+      placement,
+      stages: LINEAGE_STAGE_META.map((meta) => {
+        const isAvailable = available.has(meta.id);
+        const names = isAvailable && namesByStage[meta.id]?.length
+          ? namesByStage[meta.id]
+          : ["本事件未定位到该层"];
+        return {
+          ...meta,
+          available: isAvailable,
+          roles: [],
+          nodes: names.map((name, index) => ({
+            name,
+            id: isAvailable ? `event:${event.id}:${meta.id}:${layerKey}:${nodeKey}:${index}` : "",
+            detail: isAvailable ? detailByStage[meta.id] : "缺少该层的直接定位信息",
+            roles: [],
+          })),
+        };
+      }),
+    };
+    return completeLineage(attachIncidentLineageRoles(data, event, spec));
+  }
+
+  function createLineageDrawer() {
+    const drawer = document.getElementById("croLineageDrawer");
+    const closeButton = document.getElementById("croLineageClose");
+    const summary = document.getElementById("croLineageSummary");
+    const stages = document.getElementById("croLineageStages");
+    let currentKey = null;
+
+    const close = () => {
+      if (!drawer) return;
+      drawer.hidden = true;
+      currentKey = null;
+    };
+
+    const addSummaryRow = (list, label, value) => {
+      const row = document.createElement("div");
+      row.className = "cro-lineage-summary__row";
+      const dt = document.createElement("dt");
+      dt.textContent = label;
+      const dd = document.createElement("dd");
+      dd.textContent = value;
+      row.append(dt, dd);
+      list.appendChild(row);
+    };
+
+    const open = (data) => {
+      if (!drawer || !summary || !stages || !data) return;
+      currentKey = data.key;
+      summary.replaceChildren();
+      stages.replaceChildren();
+
+      const list = document.createElement("dl");
+      list.className = "cro-lineage-summary__list";
+      addSummaryRow(list, "模型算子", data.operator);
+      addSummaryRow(list, "结构范围", data.scope);
+      addSummaryRow(list, "代表执行位置", data.placement);
+      summary.appendChild(list);
+
+      data.stages.forEach((stage, stageIndex) => {
+        const item = document.createElement("li");
+        item.className = "cro-lineage-stage";
+        item.dataset.stage = stage.id;
+
+        const head = document.createElement("div");
+        head.className = "cro-lineage-stage__head";
+        const index = document.createElement("span");
+        index.className = "cro-lineage-stage__index";
+        index.textContent = String(stageIndex + 1).padStart(2, "0");
+        const heading = document.createElement("div");
+        const title = document.createElement("h3");
+        title.className = "cro-lineage-stage__title";
+        title.textContent = stage.title;
+        const system = document.createElement("p");
+        system.className = "cro-lineage-stage__system";
+        system.textContent = stage.system;
+        heading.append(title, system);
+        head.append(index, heading);
+        item.appendChild(head);
+
+        const nodeList = document.createElement("div");
+        nodeList.className = "cro-lineage-stage__nodes";
+        stage.nodes.forEach((node) => {
+          const nodeEl = document.createElement("article");
+          nodeEl.className = "cro-lineage-node";
+          const name = document.createElement("div");
+          name.className = "cro-lineage-node__name";
+          name.textContent = node.name;
+          name.dataset.tip = LINEAGE_NODE_NAME_TIPS[stage.id] || "当前血缘层的节点名称。";
+          const id = document.createElement("code");
+          id.className = "cro-lineage-node__id";
+          id.textContent = node.id;
+          id.dataset.tip = LINEAGE_NODE_ID_TIP;
+          const detail = document.createElement("p");
+          detail.className = "cro-lineage-node__detail";
+          detail.textContent = node.detail;
+          nodeEl.append(name, id, detail);
+          nodeList.appendChild(nodeEl);
+        });
+        item.appendChild(nodeList);
+        stages.appendChild(item);
+      });
+      drawer.hidden = false;
+    };
+
+    closeButton?.addEventListener("click", (event) => {
+      event.stopPropagation();
+      close();
+    });
+
+    return {
+      open, close,
+      get isOpen() { return Boolean(drawer && !drawer.hidden); },
+      get currentKey() { return currentKey; },
+    };
+  }
+
   /* 运行态事件与 training-monitoring-v2 的问题一/问题二同源。事件保留自己的
      性能语义；scope 描述“本次运行实际涉及谁”，不覆盖静态配置映射公式。
      evidence 是本事件的「内涵」：一张证据图 + 几个关键读数，落在详情下区。 */
@@ -2436,6 +2871,7 @@
         {
           id: "p1-warning", time: "15k", dimension: "数值 · 预警", title: "Loss scale 连续衰减",
           focus: { kind: "layer", layer: 38 }, origin: { layers: [38], segments: ["moe"] },
+          lineage: { operator: "Layer 38 Router", layer: 38, segment: "moe", bar: "gate", stages: ["model"] },
           victim: { layers: [38], segments: ["moe"] },
           conclusion: "Layer 38 的数值健康已提前恶化，AMP scaler 从 65536 衰减到 4096。",
           root: "Router 输出的数值分布右移，AMP scaler 连续四次减半", path: "Layer 38 → AMP scaler 三级预警",
@@ -2459,6 +2895,7 @@
         {
           id: "p1-nan", time: "15203", dimension: "耗时 · 数值", title: "Loss NaN / grad_norm Inf",
           focus: { kind: "layer", layer: 38 }, origin: { layers: [38], segments: ["moe"] },
+          lineage: { operator: "Layer 38 Router", layer: 38, segment: "moe", bar: "gate", stages: ["model"] },
           propagation: { stages: [3] },
           victim: { layers: [34,35,36,37,38,39,40,41,42,43,44,45], ranks: "stage" },
           conclusion: "异常只在多卡复现，Layer 38 是首个数值病灶候选。",
@@ -2486,6 +2923,7 @@
         {
           id: "p1-log", time: "+8ms", dimension: "通信 · 日志", title: "Plog 暴露 buffer 失配",
           focus: { kind: "rank", rank: 1559 }, origin: { ranks: [1559] },
+          lineage: { operator: "EP Dispatch / All-to-All", layer: 38, segment: "moe", bar: "a2a_dispatch", rank: 1559, stages: ["runtime", "kernel"], originNode: { stage: "runtime", index: 0 } },
           propagation: { layers: [38], experts: [193], segments: ["moe"] },
           victim: { ranks: [1559] },
           conclusion: "运行时 EP rank 23 的 send=0、recv=9832；通信报错同时携带 router_logits Inf 证据。",
@@ -2511,6 +2949,7 @@
         {
           id: "p1-a2a", time: "+30s", dimension: "通信 · 耗时", title: "All-to-all 超时，63 rank 空等",
           focus: { kind: "rank", rank: 1559 }, origin: { ranks: [1559] },
+          lineage: { operator: "HCCL All-to-All", layer: 38, segment: "moe", bar: "a2a_dispatch", rank: 1559, stages: ["runtime", "kernel"] },
           propagation: { layers: [38], experts: [193], segments: ["moe"], ranks: "ep-stage" },
           victim: { ranks: "ep-stage-peers" },
           conclusion: "EP rank 23 是首个阻塞者，其余 63 个 EP rank 是 barrier 受害者，不应被判为 64 个独立根因。",
@@ -2535,6 +2974,7 @@
         {
           id: "p1-root", time: "-30s", dimension: "数值 · 负载", title: "Router FP8 溢出，E193 吸收 98% token",
           focus: { kind: "segment", segment: "moe", bar: "gate", scopeLayer: 38, deckNode: "gate" },
+          lineage: { operator: "Layer 38 Router", layer: 38, segment: "moe", bar: "gate", rank: 1559, stages: ["model", "fx", "ge", "runtime", "kernel"], originNode: { stage: "model", index: 0 }, victimStage: "runtime" },
           origin: { layers: [38], segments: ["moe"] },
           propagation: { ranks: [1559] },
           victim: { experts: "all" },
@@ -2550,7 +2990,7 @@
                 { label: "其余 8 个活跃专家", value: 2 },
                 { label: "247 个 dead expert", value: 0 },
               ],
-              note: "top-k 路由本该把 token 摊到 256 个专家上；softmax 里出现 Inf 后，argmax 恒定落在同一个专家。",
+              note: "在一个 batch / 观测窗口内，负载均衡应避免 token 长期塌缩到单个专家；softmax 出现 Inf 后，路由选择持续落在 E193。",
             },
             metrics: [
               { label: "max(router logits)", value: "1846", tone: "danger" },
@@ -2563,6 +3003,7 @@
         {
           id: "p1-spread", time: "+30.1s", dimension: "通信 · 扩散", title: "PP3 断裂，2048 NPU hang",
           focus: { kind: "stage", stage: 3 }, origin: { ranks: [1559] },
+          lineage: { operator: "EP Barrier / PP3 等待链", layer: 38, segment: "moe", bar: "a2a_dispatch", rank: 1559, stages: ["runtime", "kernel"] },
           propagation: { stages: [3], ranks: "stage" }, victim: { ranks: "all" },
           conclusion: "报错点是通信 timeout，异常震中却在 Layer 38 Router；单点经 EP barrier 和 PP 依赖扩散至整网。",
           root: "all-to-all 就阻塞在这里，它是整网停摆的起点", path: "Expert 193 过载 → Rank 1559 阻塞 → EP barrier → PP3 断裂 → 全网等待",
@@ -2600,6 +3041,7 @@
         {
           id: "p2-rise", time: "8000+", dimension: "显存 · 趋势", title: "显存从 55 GB 持续爬升",
           focus: { kind: "stage", stage: 3 },
+          lineage: { operator: "PP3 激活生命周期", layer: 38, stages: ["model"] },
           origin: { layers: [34,35,36,37,38,39,40,41,42,43,44,45], segments: ["moe"] },
           victim: { layers: [34,35,36,37,38,39,40,41,42,43,44,45], segments: ["head"] },
           conclusion: "PP stage 3 的显存不再回落，吞吐同期下降 12.5%。",
@@ -2625,6 +3067,7 @@
         {
           id: "p2-cost", time: "12000", dimension: "耗时 · 显存", title: "分配/释放 API 占时 7.4%",
           focus: { kind: "stage", stage: 3 }, origin: { layers: [38], segments: ["moe"] },
+          lineage: { operator: "显存分配 / 释放 API", stages: ["runtime"] },
           propagation: { layers: [34,35,36,37,38,39,40,41,42,43,44,45] },
           victim: { ranks: "stage" },
           conclusion: "显存管理耗时 890 ms，明显高于正常值 2%；带宽利用率 78%，可排除纯带宽瓶颈。",
@@ -2651,6 +3094,7 @@
         {
           id: "p2-peak", time: "12000", dimension: "显存 · 容量", title: "激活值占用 36.2 GB",
           focus: { kind: "stage", stage: 3 }, origin: { layers: [38], segments: ["moe"] },
+          lineage: { operator: "PP3 激活值生命周期", layer: 38, stages: ["model"] },
           propagation: { segments: ["moe", "head"] },
           victim: { segments: ["moe", "head"] },
           conclusion: "激活值占峰值的 56.6%，是唯一可大幅缩减的组成。",
@@ -2677,6 +3121,7 @@
         {
           id: "p2-layer", time: "12000", dimension: "显存 · Layer", title: "L38 单层激活达到 1.2 GB",
           focus: { kind: "layer", layer: 38 }, origin: { layers: [38], segments: ["moe"] },
+          lineage: { operator: "Layer 38 Expert Dispatch Buffer", layer: 38, segment: "moe", bar: "a2a_dispatch", stages: ["model"] },
           propagation: { stages: [3] },
           victim: { layers: [34,35,36,37,38,39,40,41,42,43,44,45], segments: ["head"] },
           conclusion: "Layer 38 比普通 Dense 层高 1.7 倍，额外占用来自 expert dispatch buffer。",
@@ -2705,8 +3150,9 @@
           },
         },
         {
-          id: "p2-oom", time: "12003", dimension: "显存 · OOM", title: "Rank 17 触顶并发生碎片 OOM",
+          id: "p2-oom", time: "12003", dimension: "显存 · OOM", title: "EP rank 17（global rank 1553）触顶并发生碎片 OOM",
           focus: { kind: "rank", rank: 1553 }, origin: { ranks: [1553] },
+          lineage: { operator: "0.5 GB 临时 Buffer 申请", rank: 1553, stages: ["runtime"], originNode: { stage: "runtime", index: 0 }, victimStage: "runtime" },
           propagation: { stages: [3], ranks: "stage" }, victim: { ranks: "all" },
           conclusion: "64/64 GB 容量不足是主因，83% 碎片率让 0.5 GB 临时 buffer 更早申请失败。",
           root: "64 GB 占满，0.5 GB 的临时 buffer 申请失败", path: "Rank 1553 OOM → PP3 中断 → 全网等待",
@@ -3612,7 +4058,9 @@
 
     // 主键：静息 → 起播，播放中 → 暂停，暂停中 → 续播。结束整趟走退出键。
     function toggleFlow() {
-      if (!flowSteps) startFlow();
+      if (!flowSteps) {
+        startFlow();
+      }
       else if (flowPaused) resumeFlow();
       else pauseFlow();
     }
@@ -3915,14 +4363,16 @@
     function setIncidentLayout(on) {
       // 进事件模式要先停播：.cro-board 整块 hidden 之后刻度带量不到宽度，
       // 下一拍的泳道几何会解出一堆 0，而四域铺色也是点在看不见的 DOM 上空转
-      if (on) stopFlow({ restore: false });
+      if (on) {
+        stopFlow({ restore: false });
+      }
       const view = document.getElementById("croIncidentView");
       if (view && view.hidden !== !on) view.hidden = !on;
       if (board && board.hidden !== on) {
         board.hidden = on;
         if (!on) {
           // 回配置态时清掉详情内容：角色卡里那两套域各带着 2048 个格子，留着白占内存
-          ["croOriginDomains", "croVictimDomains", "croIncidentDetail"].forEach((id) => {
+          ["croOriginDomains", "croVictimDomains", "croIncidentDetail", "croIncidentLineage"].forEach((id) => {
             const el = document.getElementById(id);
             if (el) el.innerHTML = "";
           });
@@ -4346,6 +4796,383 @@
       });
     }
 
+    let incidentDetailMode = "detail";
+
+    function setIncidentDetailMode(mode) {
+      incidentDetailMode = mode === "lineage" ? "lineage" : "detail";
+      const detailTab = document.getElementById("croIncidentDetailTab");
+      const lineageTab = document.getElementById("croIncidentLineageTab");
+      const detail = document.getElementById("croIncidentDetail");
+      const lineage = document.getElementById("croIncidentLineage");
+      const showDetail = incidentDetailMode === "detail";
+      detailTab?.classList.toggle("is-selected", showDetail);
+      detailTab?.setAttribute("aria-selected", String(showDetail));
+      lineageTab?.classList.toggle("is-selected", !showDetail);
+      lineageTab?.setAttribute("aria-selected", String(!showDetail));
+      if (detail) detail.hidden = !showDetail;
+      if (lineage) lineage.hidden = showDetail;
+      if (showDetail) requestAnimationFrame(paintDetailChart);
+      else requestAnimationFrame(() => lineage?.repaintLineage?.());
+    }
+
+    function lineageNodeById(data, id) {
+      for (const stage of data.stages) {
+        const node = stage.nodes.find((entry) => entry.id === id);
+        if (node) return { ...node, stage };
+      }
+      return null;
+    }
+
+    function lineageSelection(data, nodeId, recursive) {
+      const selected = new Set(nodeId ? [nodeId] : []);
+      if (!nodeId) return selected;
+      if (!recursive) {
+        data.edges.forEach((edge) => {
+          if (edge.from === nodeId) selected.add(edge.to);
+          if (edge.to === nodeId) selected.add(edge.from);
+        });
+        return selected;
+      }
+      const queue = [nodeId];
+      while (queue.length) {
+        const current = queue.shift();
+        data.edges.forEach((edge) => {
+          const adjacent = edge.from === current ? edge.to : edge.to === current ? edge.from : null;
+          if (adjacent && !selected.has(adjacent)) {
+            selected.add(adjacent);
+            queue.push(adjacent);
+          }
+        });
+      }
+      return selected;
+    }
+
+    function lineageRoleNodeIds(data, roleId) {
+      const ids = new Set();
+      data.stages.forEach((stage) => {
+        stage.nodes.forEach((node) => {
+          if (node.id && node.roles.some((role) => role.id === roleId)) ids.add(node.id);
+        });
+        if (stage.roles.some((role) => role.id === roleId)) {
+          stage.nodes.forEach((node) => {
+            if (node.id) ids.add(node.id);
+          });
+        }
+      });
+      return ids;
+    }
+
+    function lineagePathBetween(data, origins, victims) {
+      if (!origins.size || !victims.size) return new Set();
+      const forward = new Set(origins);
+      const forwardQueue = Array.from(origins);
+      while (forwardQueue.length) {
+        const current = forwardQueue.shift();
+        data.edges.forEach((edge) => {
+          if (edge.from !== current || forward.has(edge.to)) return;
+          forward.add(edge.to);
+          forwardQueue.push(edge.to);
+        });
+      }
+      const backward = new Set(victims);
+      const backwardQueue = Array.from(victims);
+      while (backwardQueue.length) {
+        const current = backwardQueue.shift();
+        data.edges.forEach((edge) => {
+          if (edge.to !== current || backward.has(edge.from)) return;
+          backward.add(edge.from);
+          backwardQueue.push(edge.from);
+        });
+      }
+      const path = new Set(Array.from(forward).filter((id) => backward.has(id)));
+      const hasPathEdge = data.edges.some((edge) => path.has(edge.from) && path.has(edge.to));
+      return hasPathEdge ? path : new Set();
+    }
+
+    function renderLineageInspector(host, data, nodeId, pinned) {
+      host.replaceChildren();
+      const node = nodeId ? lineageNodeById(data, nodeId) : null;
+      if (!node) {
+        host.hidden = true;
+        return;
+      }
+
+      const incoming = data.edges.filter((edge) => edge.to === nodeId);
+      const outgoing = data.edges.filter((edge) => edge.from === nodeId);
+      if (!incoming.length && !outgoing.length) {
+        host.hidden = true;
+        return;
+      }
+      host.hidden = false;
+      const connectedText = (edges, side) => edges.length
+        ? edges.map((edge) => lineageNodeById(data, edge[side])?.name).filter(Boolean).join("、")
+        : "无直接节点";
+      const reasons = Array.from(new Set([...incoming, ...outgoing].map((edge) => edge.label)));
+
+      const heading = document.createElement("div");
+      heading.className = "cro-incident-lineage__inspector-heading";
+      const title = document.createElement("strong");
+      title.textContent = node.name;
+      const state = document.createElement("span");
+      state.textContent = pinned ? "路径已固定" : "当前悬浮";
+      heading.append(title, state);
+
+      const grid = document.createElement("dl");
+      grid.className = "cro-incident-lineage__inspector-grid";
+      const add = (label, value) => {
+        const cell = document.createElement("div");
+        const dt = document.createElement("dt");
+        const dd = document.createElement("dd");
+        dt.textContent = label;
+        dd.textContent = value;
+        cell.append(dt, dd);
+        grid.appendChild(cell);
+      };
+      add("所在层", node.stage.title);
+      add("直接输入", connectedText(incoming, "from"));
+      add("直接输出", connectedText(outgoing, "to"));
+      add("转换依据", reasons.length ? `${reasons.join(" / ")}；${node.detail}` : node.detail);
+      host.append(heading, grid);
+    }
+
+    function paintIncidentLineageEdges(shell, svg, data, initialSelection = new Set()) {
+      const width = shell.offsetWidth;
+      const height = shell.offsetHeight;
+      if (!width || !height) return;
+      svg.replaceChildren();
+      svg.setAttribute("viewBox", `0 0 ${width} ${height}`);
+      const shellRect = shell.getBoundingClientRect();
+      const scaleX = shellRect.width / width || 1;
+      const scaleY = shellRect.height / height || 1;
+      const nodes = new Map(Array.from(shell.querySelectorAll("[data-lineage-id]"))
+        .map((element) => [element.dataset.lineageId, element]));
+      const labels = [];
+      data.edges.forEach((edge) => {
+        const source = nodes.get(edge.from);
+        const target = nodes.get(edge.to);
+        if (!source || !target) return;
+        const a = source.getBoundingClientRect();
+        const b = target.getBoundingClientRect();
+        const x1 = (a.right - shellRect.left) / scaleX;
+        const y1 = (a.top + a.height / 2 - shellRect.top) / scaleY;
+        const x2 = (b.left - shellRect.left) / scaleX;
+        const y2 = (b.top + b.height / 2 - shellRect.top) / scaleY;
+        const bend = Math.max(12, (x2 - x1) * 0.5);
+        const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
+        path.setAttribute("d", `M ${x1} ${y1} C ${x1 + bend} ${y1}, ${x2 - bend} ${y2}, ${x2} ${y2}`);
+        path.classList.add("cro-incident-lineage__edge", `is-${edge.kind}`);
+        path.dataset.from = edge.from;
+        path.dataset.to = edge.to;
+        const isInitiallyActive = initialSelection.has(edge.from) && initialSelection.has(edge.to);
+        path.classList.toggle("is-active", isInitiallyActive);
+        path.classList.toggle("is-muted", initialSelection.size > 0 && !isInitiallyActive);
+        svg.appendChild(path);
+
+        const label = document.createElementNS("http://www.w3.org/2000/svg", "text");
+        label.classList.add("cro-incident-lineage__edge-label");
+        label.setAttribute("x", String((x1 + x2) / 2));
+        label.setAttribute("y", String((y1 + y2) / 2 - 5));
+        label.setAttribute("text-anchor", "middle");
+        label.dataset.from = edge.from;
+        label.dataset.to = edge.to;
+        label.textContent = edge.label;
+        label.classList.toggle("is-active", isInitiallyActive);
+        labels.push(label);
+      });
+      labels.forEach((label) => svg.appendChild(label));
+    }
+
+    function appendIncidentLineageRoleTags(host, roles) {
+      (roles || []).forEach((role) => {
+        const tag = document.createElement("span");
+        tag.className = `cro-incident-lineage__role-tag is-${role.id}`;
+        tag.textContent = role.label;
+        tag.title = role.id === "origin"
+          ? "当前事件的传播源"
+          : "当前事件中受影响的对象";
+        host.appendChild(tag);
+      });
+    }
+
+    function renderIncidentLineage(host, event, topology) {
+      if (!host) return;
+      host.replaceChildren();
+      const data = buildIncidentLineage(event, topology);
+
+      const trackShell = document.createElement("div");
+      trackShell.className = "cro-incident-lineage__track-shell";
+      const edgeLayer = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+      edgeLayer.classList.add("cro-incident-lineage__edges");
+      edgeLayer.setAttribute("aria-hidden", "true");
+      const track = document.createElement("ol");
+      track.className = "cro-incident-lineage__track";
+      data.stages.forEach((stage, stageIndex) => {
+        const item = document.createElement("li");
+        item.className = `cro-incident-lineage__stage${stage.available ? " is-available" : " is-dimmed"}`;
+        item.dataset.stage = stage.id;
+
+        const head = document.createElement("div");
+        head.className = "cro-incident-lineage__stage-head";
+        const index = document.createElement("span");
+        index.className = "cro-incident-lineage__stage-index";
+        index.textContent = String(stageIndex + 1).padStart(2, "0");
+        const heading = document.createElement("div");
+        const titleRow = document.createElement("div");
+        titleRow.className = "cro-incident-lineage__stage-title-row";
+        const stageTitle = document.createElement("h3");
+        stageTitle.className = "cro-incident-lineage__stage-title";
+        stageTitle.textContent = stage.title;
+        titleRow.appendChild(stageTitle);
+        appendIncidentLineageRoleTags(titleRow, stage.roles);
+        const system = document.createElement("p");
+        system.className = "cro-incident-lineage__stage-system";
+        system.textContent = stage.system;
+        heading.append(titleRow, system);
+        head.append(index, heading);
+        item.appendChild(head);
+
+        const nodes = document.createElement("div");
+        nodes.className = "cro-incident-lineage__nodes";
+        stage.nodes.forEach((node) => {
+          const nodeEl = document.createElement("article");
+          nodeEl.className = "cro-lineage-node";
+          const hasCrossStageEdge = node.id && data.edges.some(
+            (edge) => edge.from === node.id || edge.to === node.id,
+          );
+          if (hasCrossStageEdge) {
+            nodeEl.dataset.lineageId = node.id;
+            nodeEl.tabIndex = 0;
+            nodeEl.setAttribute("role", "button");
+            nodeEl.setAttribute("aria-pressed", "false");
+            const roleText = node.roles.length ? `，${node.roles.map((role) => role.label).join("、")}` : "";
+            nodeEl.setAttribute("aria-label", `${stage.title}：${node.name}${roleText}。悬浮查看直接上下游，点击固定关联路径。`);
+          }
+          const name = document.createElement("div");
+          name.className = "cro-lineage-node__name";
+          name.textContent = node.name;
+          name.dataset.tip = stage.available
+            ? (LINEAGE_NODE_NAME_TIPS[stage.id] || "当前血缘层的节点名称。")
+            : "本事件没有定位到该层，因此这里保留链条位置并暗化。";
+          const nameRow = document.createElement("div");
+          nameRow.className = "cro-incident-lineage__node-name-row";
+          nameRow.appendChild(name);
+          appendIncidentLineageRoleTags(nameRow, node.roles);
+          nodeEl.appendChild(nameRow);
+          if (node.id) {
+            const id = document.createElement("code");
+            id.className = "cro-lineage-node__id";
+            id.textContent = node.id;
+            id.dataset.tip = LINEAGE_NODE_ID_TIP;
+            // ID 的点击下钻尚未上线，先阻止它冒泡成“固定整张卡片路径”。
+            id.addEventListener("click", (clickEvent) => clickEvent.stopPropagation());
+            nodeEl.appendChild(id);
+          }
+          const detail = document.createElement("p");
+          detail.className = "cro-lineage-node__detail";
+          detail.textContent = node.detail;
+          nodeEl.appendChild(detail);
+          nodes.appendChild(nodeEl);
+        });
+        item.appendChild(nodes);
+        track.appendChild(item);
+      });
+      trackShell.append(edgeLayer, track);
+      const inspector = document.createElement("section");
+      inspector.className = "cro-incident-lineage__inspector";
+      inspector.setAttribute("aria-live", "polite");
+      inspector.hidden = true;
+      host.append(trackShell, inspector);
+
+      const defaultOrigins = lineageRoleNodeIds(data, "origin");
+      const defaultVictims = lineageRoleNodeIds(data, "victim");
+      const defaultSelection = lineagePathBetween(data, defaultOrigins, defaultVictims);
+      let pinnedId = null;
+      const paintSelection = (selected, nodeId = null, pinned = false) => {
+        host.classList.toggle("is-tracing", selected.size > 0);
+        track.querySelectorAll("[data-lineage-id]").forEach((element) => {
+          const isActive = element.dataset.lineageId === nodeId;
+          const isRelated = selected.has(element.dataset.lineageId);
+          element.classList.toggle("is-lineage-active", isActive);
+          element.classList.toggle("is-lineage-related", isRelated && !isActive);
+          element.classList.toggle("is-lineage-muted", selected.size > 0 && !isRelated);
+          element.setAttribute("aria-pressed", String(Boolean(pinnedId && element.dataset.lineageId === pinnedId)));
+        });
+        edgeLayer.querySelectorAll(".cro-incident-lineage__edge").forEach((edge) => {
+          const active = selected.has(edge.dataset.from) && selected.has(edge.dataset.to);
+          edge.classList.toggle("is-active", active);
+          edge.classList.toggle("is-muted", selected.size > 0 && !active);
+        });
+        edgeLayer.querySelectorAll(".cro-incident-lineage__edge-label").forEach((label) => {
+          const active = selected.has(label.dataset.from) && selected.has(label.dataset.to);
+          label.classList.toggle("is-active", active);
+        });
+        // 悬浮只做原位高亮，不能展开下方检查区：检查区改变容器高度后会让指针
+        // 反复进出卡片，造成详情、高亮与连线一起闪烁。只有点击固定路径才显示详情。
+        renderLineageInspector(inspector, data, pinned ? nodeId : null, pinned);
+      };
+      const applyDefault = () => paintSelection(
+        defaultSelection,
+        null,
+        false,
+      );
+      const applySelection = (nodeId, recursive, pinned = false) => {
+        const hasCrossStageEdge = nodeId && data.edges.some((edge) => edge.from === nodeId || edge.to === nodeId);
+        if (nodeId && !hasCrossStageEdge) nodeId = null;
+        paintSelection(lineageSelection(data, nodeId, recursive), nodeId, pinned);
+      };
+
+      track.querySelectorAll("[data-lineage-id]").forEach((nodeEl) => {
+        const restore = () => pinnedId
+          ? applySelection(pinnedId, true, true)
+          : applyDefault();
+        const hasCrossStageEdge = data.edges.some(
+          (edge) => edge.from === nodeEl.dataset.lineageId || edge.to === nodeEl.dataset.lineageId,
+        );
+        const preview = () => hasCrossStageEdge
+          ? applySelection(nodeEl.dataset.lineageId, false, false)
+          : restore();
+        const togglePin = () => {
+          if (!hasCrossStageEdge) return;
+          pinnedId = pinnedId === nodeEl.dataset.lineageId ? null : nodeEl.dataset.lineageId;
+          if (pinnedId) applySelection(pinnedId, true, true);
+          else applyDefault();
+        };
+        nodeEl.addEventListener("pointerenter", preview);
+        nodeEl.addEventListener("pointerleave", restore);
+        nodeEl.addEventListener("focus", preview);
+        nodeEl.addEventListener("blur", restore);
+        nodeEl.addEventListener("click", (clickEvent) => {
+          clickEvent.stopPropagation();
+          togglePin();
+        });
+        nodeEl.addEventListener("keydown", (keyEvent) => {
+          if (keyEvent.key !== "Enter" && keyEvent.key !== " ") return;
+          keyEvent.preventDefault();
+          togglePin();
+        });
+      });
+      trackShell.addEventListener("click", () => {
+        pinnedId = null;
+        applyDefault();
+      });
+      host.addEventListener("keydown", (keyEvent) => {
+        if (keyEvent.key !== "Escape") return;
+        pinnedId = null;
+        applyDefault();
+      });
+      host.repaintLineage = () => {
+        // 刷新后默认页签是“事件详情”，此时血缘面板 hidden，首次量宽高会得到 0。
+        // 页签真正可见时必须重画；若用户已固定卡片，则保留固定路径。
+        const selection = pinnedId
+          ? lineageSelection(data, pinnedId, true)
+          : defaultSelection;
+        paintIncidentLineageEdges(trackShell, edgeLayer, data, selection);
+        if (pinnedId) applySelection(pinnedId, true, true);
+        else applyDefault();
+      };
+      requestAnimationFrame(() => host.repaintLineage());
+    }
+
     /* 中区两张角色卡 + 下区事件内涵。第 6–8 项接入下区图表。 */
     function renderIncidentView(event) {
       const topology = controller.topology;
@@ -4363,6 +5190,8 @@
       renderRoleDomains(document.getElementById("croVictimDomains"), event.victim, topology,
         { summary: event.impact });
       renderIncidentDetail(document.getElementById("croIncidentDetail"), event);
+      renderIncidentLineage(document.getElementById("croIncidentLineage"), event, topology);
+      setIncidentDetailMode(incidentDetailMode);
       // 舞台尺寸随事件变（涉及的域不同，高度差一大截），每次换事件重新适配一次
       requestAnimationFrame(() => stage.fit());
     }
@@ -4692,6 +5521,19 @@
       // 把 stopFlow 刚还原回来的那个选择又清掉
       event.stopPropagation();
       stopFlow();
+    });
+    document.getElementById("croIncidentDetailTab")?.addEventListener("click", () => {
+      setIncidentDetailMode("detail");
+    });
+    document.getElementById("croIncidentLineageTab")?.addEventListener("click", () => {
+      setIncidentDetailMode("lineage");
+    });
+    document.querySelector(".cro-incident-detail__tabs")?.addEventListener("keydown", (event) => {
+      if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;
+      event.preventDefault();
+      const next = incidentDetailMode === "detail" ? "lineage" : "detail";
+      setIncidentDetailMode(next);
+      document.getElementById(next === "detail" ? "croIncidentDetailTab" : "croIncidentLineageTab")?.focus();
     });
     document.getElementById("croEventRailCollapse")?.addEventListener("click", () => setEventRailCollapsed(true));
     document.getElementById("croEventRailExpand")?.addEventListener("click", () => setEventRailCollapsed(false));

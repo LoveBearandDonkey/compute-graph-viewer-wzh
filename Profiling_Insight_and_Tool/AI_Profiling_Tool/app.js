@@ -1500,6 +1500,18 @@ function selectReport(report) {
   renderGraph(report);
   renderTimeline(report);
   initChat(report);
+  syncReportFormLink(report);
+}
+
+/* 页签行右端「报告形态」出口：把当前记录 id 带到 report.html。
+   本地上传解析出的临时记录不在 report.html 的 REPORTS 里，那边会回落到最后一条，
+   故此类记录直接隐藏入口，避免点过去看到的是别人的数据。 */
+function syncReportFormLink(report) {
+  const link = $('reportFormLink');
+  if (!link) return;
+  const known = REPORTS.some(r => r.id === report.id);
+  link.hidden = !known;
+  if (known) link.href = `report.html?r=${encodeURIComponent(report.id)}`;
 }
 
 async function renderRawReport(report) {
@@ -6787,4 +6799,6 @@ function setupGraphTabPanZoom() {
   });
 }
 
-init();
+// 报告形态（report.html）只复用本文件的 REPORTS 数据与 parseReport()，页面里没有工具形态的
+// DOM，故用该开关跳过 init()。与 PTO_DISABLE_NAV_AUTOLOAD 同类：宿主页面在加载本脚本前置位。
+if (!window.PTO_DISABLE_APP_INIT) init();

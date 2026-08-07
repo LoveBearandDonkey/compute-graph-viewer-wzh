@@ -69,6 +69,7 @@
 .cro-incident-banner[hidden] { display: none; }
 
 .pto-ide-frame__workarea {
+  position: relative;
   flex-direction: row;
   gap: var(--space-2);
   padding: 0 var(--space-2) 0 var(--space-2);
@@ -2022,6 +2023,11 @@
   font-weight: var(--font-weight-semibold);
 }
 
+.cro-incident-detail__tabs {
+  flex: 0 0 auto;
+  align-self: flex-start;
+}
+
 .cro-incident-detail__body {
   display: flex;
   flex: 1 1 auto;
@@ -2030,6 +2036,259 @@
   min-height: 0;
   overflow: auto;
   overscroll-behavior: contain;
+}
+
+.cro-incident-detail__body[hidden],
+.cro-incident-lineage[hidden] {
+  display: none;
+}
+
+/* 事件内的计算血缘固定横向排五层：层级位置不因证据缺失而消失，未定位到的层
+   只降权暗化，让读者同时看见「链条应该经过哪里」和「本事件实际定位到哪里」。 */
+.cro-incident-lineage {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  gap: var(--space-3);
+  min-width: 0;
+  min-height: 0;
+  padding-inline: 8px;
+  box-sizing: border-box;
+  overflow: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+  scrollbar-color: var(--border-default) transparent;
+}
+
+.cro-incident-lineage__track-shell {
+  position: relative;
+  flex: 0 0 auto;
+  min-width: 1124px;
+}
+
+.cro-incident-lineage__edges {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+  pointer-events: none;
+}
+
+.cro-incident-lineage__edge {
+  fill: none;
+  stroke: var(--border-default);
+  stroke-width: 1.25;
+  vector-effect: non-scaling-stroke;
+  transition: opacity var(--duration-fast) var(--easing-default),
+    stroke var(--duration-fast) var(--easing-default),
+    stroke-width var(--duration-fast) var(--easing-default);
+}
+
+.cro-incident-lineage__edge.is-active {
+  stroke: var(--primary-hover);
+  stroke-width: 2;
+}
+
+.cro-incident-lineage__edge.is-muted { opacity: 0.12; }
+
+.cro-incident-lineage__edge-label {
+  fill: var(--primary-hover);
+  stroke: var(--surface-1);
+  stroke-width: 3px;
+  paint-order: stroke;
+  font-family: var(--font-mono);
+  font-size: var(--font-size-label-xs);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity var(--duration-fast) var(--easing-default);
+}
+
+.cro-incident-lineage__edge-label.is-active { opacity: 1; }
+
+.cro-incident-lineage__track {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(180px, 1fr));
+  gap: 56px;
+  min-width: 1124px;
+  margin: 0;
+  padding: 0 0 var(--space-2);
+  list-style: none;
+}
+
+.cro-incident-lineage__stage {
+  position: relative;
+  z-index: 1;
+  min-width: 0;
+  transition: opacity var(--duration-fast) var(--easing-default), filter var(--duration-fast) var(--easing-default);
+}
+
+.cro-incident-lineage__stage.is-dimmed .cro-incident-lineage__stage-index,
+.cro-incident-lineage__stage.is-dimmed .cro-incident-lineage__stage-title,
+.cro-incident-lineage__stage.is-dimmed .cro-incident-lineage__stage-system,
+.cro-incident-lineage__stage.is-dimmed .cro-incident-lineage__nodes {
+  opacity: 0.34;
+  filter: grayscale(1);
+}
+
+.cro-incident-lineage__stage:not(:last-child)::after {
+  content: "→";
+  position: absolute;
+  top: 0;
+  right: -56px;
+  display: grid;
+  height: 17px;
+  width: 56px;
+  place-items: center;
+  color: var(--foreground-muted);
+  font-family: var(--font-mono);
+  font-size: var(--font-size-label-xs);
+  line-height: 1;
+  text-align: center;
+  white-space: nowrap;
+}
+
+.cro-incident-lineage__stage-head {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-2);
+  margin-bottom: var(--space-2);
+}
+
+.cro-incident-lineage__stage-index {
+  flex: 0 0 auto;
+  color: var(--foreground-muted);
+  font: var(--text-mono);
+}
+
+.cro-incident-lineage__stage-title {
+  margin: 0;
+  color: var(--foreground);
+  font: var(--text-body);
+  font-weight: var(--font-weight-semibold);
+}
+
+.cro-incident-lineage__stage-title-row,
+.cro-incident-lineage__node-name-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+.cro-incident-lineage__node-name-row .cro-lineage-node__name {
+  min-width: 0;
+}
+
+.cro-incident-lineage__role-tag {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  min-height: 18px;
+  padding: 1px var(--space-2);
+  border-radius: var(--radius-pill);
+  box-shadow: inset 0 0 0 1px currentColor;
+  font: var(--text-label);
+  line-height: 1;
+}
+
+.cro-incident-lineage__role-tag.is-origin { color: var(--danger); }
+.cro-incident-lineage__role-tag.is-victim { color: var(--warning); }
+
+.cro-incident-lineage__stage-system {
+  margin: var(--space-1) 0 0;
+  color: var(--foreground-secondary);
+  font: var(--text-body-sm);
+  line-height: 1.45;
+}
+
+.cro-incident-lineage__nodes {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.cro-incident-lineage .cro-lineage-node {
+  padding: var(--space-2) var(--space-3);
+}
+
+.cro-incident-lineage .cro-lineage-node[data-lineage-id] {
+  cursor: pointer;
+  transition: opacity var(--duration-fast) var(--easing-default),
+    outline-color var(--duration-fast) var(--easing-default),
+    background var(--duration-fast) var(--easing-default);
+}
+
+.cro-incident-lineage .cro-lineage-node[data-lineage-id]:focus-visible,
+.cro-incident-lineage .cro-lineage-node.is-lineage-active {
+  outline: 2px solid var(--primary);
+  outline-offset: 1px;
+}
+
+.cro-incident-lineage .cro-lineage-node.is-lineage-related {
+  outline: 2px solid var(--primary-hover);
+  outline-offset: 1px;
+}
+
+.cro-incident-lineage .cro-lineage-node.is-lineage-muted { opacity: 0.22; }
+
+.cro-incident-lineage .cro-lineage-node__id {
+  font-size: var(--font-size-label-xs);
+}
+
+.cro-incident-lineage .cro-lineage-node__detail {
+  margin-top: var(--space-1);
+}
+
+.cro-incident-lineage__inspector {
+  flex: 0 0 auto;
+  padding-top: var(--space-3);
+  border-top: 1px solid var(--border-subtle);
+}
+
+.cro-incident-lineage__inspector-heading {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  margin-bottom: var(--space-2);
+}
+
+.cro-incident-lineage__inspector-heading strong {
+  color: var(--foreground);
+  font: var(--text-body);
+  font-weight: var(--font-weight-semibold);
+}
+
+.cro-incident-lineage__inspector-heading span {
+  color: var(--primary-hover);
+  font: var(--text-label);
+}
+
+.cro-incident-lineage__inspector-grid {
+  display: grid;
+  grid-template-columns: minmax(110px, 0.7fr) repeat(2, minmax(180px, 1fr)) minmax(260px, 1.6fr);
+  gap: var(--space-4);
+  min-width: 980px;
+  margin: 0;
+}
+
+.cro-incident-lineage__inspector-grid > div { min-width: 0; }
+
+.cro-incident-lineage__inspector-grid dt {
+  margin-bottom: var(--space-1);
+  color: var(--foreground-muted);
+  font: var(--text-label);
+}
+
+.cro-incident-lineage__inspector-grid dd {
+  margin: 0;
+  color: var(--foreground-secondary);
+  font: var(--text-body-sm);
+  line-height: 1.45;
+  overflow-wrap: anywhere;
 }
 
 /* 窄屏不改结构：舞台是固定尺寸的画布，装不下时由自动适配缩小，不重排成单列。 */
@@ -2502,4 +2761,199 @@
   background-color: var(--background);
   background-image: linear-gradient(var(--surface-1), var(--surface-1));
   box-shadow: var(--shadow-md);
+}
+
+/* ══ 计算血缘抽屉 ══════════════════════════════════════════════════════════
+   非模态辅助面板：沿用 design system 的 panel-shell 外壳，覆盖在四域右侧，
+   不挤压既有 grid，也不改变「整网 / Architecture / MoE / Cluster」布局。 */
+.cro-lineage-drawer {
+  position: absolute;
+  z-index: 40;
+  top: var(--space-2);
+  right: var(--space-2);
+  bottom: var(--space-2);
+  display: flex;
+  flex-direction: column;
+  width: min(420px, calc(100% - var(--space-4)));
+  min-height: 0;
+  overflow: hidden;
+  background-color: var(--background-elevated);
+}
+
+.cro-lineage-drawer[hidden] { display: none; }
+
+.cro-lineage-drawer .panel-shell-header {
+  flex: 0 0 auto;
+  align-items: flex-start;
+}
+
+.cro-lineage-drawer__heading {
+  min-width: 0;
+}
+
+.cro-lineage-drawer__heading .panel-shell-meta {
+  gap: var(--space-2);
+  margin-bottom: var(--space-1);
+}
+
+.cro-lineage-drawer__eyebrow {
+  font: var(--text-label);
+  letter-spacing: 0.06em;
+}
+
+.cro-lineage-drawer__eyebrow { color: var(--foreground-muted); }
+
+.cro-lineage-drawer .panel-shell-close {
+  width: 28px;
+  height: 28px;
+}
+
+.cro-lineage-drawer .panel-shell-close svg {
+  width: 16px;
+  height: 16px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+}
+
+.cro-lineage-drawer__body {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
+  scrollbar-width: thin;
+  scrollbar-color: var(--border-default) transparent;
+}
+
+.cro-lineage-summary {
+  margin-bottom: var(--space-4);
+}
+
+.cro-lineage-summary__list {
+  margin: 0;
+}
+
+.cro-lineage-summary__row {
+  display: grid;
+  grid-template-columns: 88px minmax(0, 1fr);
+  gap: var(--space-3);
+  padding: var(--space-2) 0;
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.cro-lineage-summary__row dt {
+  color: var(--foreground-muted);
+  font: var(--text-label);
+}
+
+.cro-lineage-summary__row dd {
+  min-width: 0;
+  margin: 0;
+  color: var(--foreground);
+  font: var(--text-body-sm);
+  overflow-wrap: anywhere;
+}
+
+.cro-lineage-stages {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.cro-lineage-stage {
+  position: relative;
+  padding: var(--space-4) 0;
+  border-top: 1px solid var(--border-subtle);
+}
+
+.cro-lineage-stage:first-child { border-top: none; padding-top: 0; }
+
+.cro-lineage-stage:not(:last-child)::after {
+  content: "↓";
+  position: absolute;
+  left: 11px;
+  bottom: -8px;
+  z-index: 1;
+  color: var(--foreground-muted);
+  font-family: var(--font-mono);
+  font-size: 14px;
+  line-height: 16px;
+}
+
+.cro-lineage-stage__head {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-3);
+  margin-bottom: var(--space-3);
+}
+
+.cro-lineage-stage__index {
+  flex: 0 0 auto;
+  color: var(--foreground-muted);
+  font: var(--text-mono);
+}
+
+.cro-lineage-stage__title {
+  margin: 0;
+  color: var(--foreground);
+  font: var(--text-body);
+  font-weight: var(--font-weight-semibold);
+}
+
+.cro-lineage-stage__system {
+  margin: var(--space-1) 0 0;
+  color: var(--foreground-muted);
+  font: var(--text-body-sm);
+}
+
+.cro-lineage-stage__nodes {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding-left: 36px;
+}
+
+.cro-lineage-node {
+  min-width: 0;
+  padding: var(--space-3);
+  border-radius: var(--radius-md);
+  background: var(--surface-2);
+}
+
+.cro-lineage-node__name {
+  color: var(--foreground);
+  font: var(--text-body-sm);
+  font-weight: var(--font-weight-medium);
+  overflow-wrap: anywhere;
+}
+
+.cro-lineage-node__id {
+  display: block;
+  margin-top: var(--space-1);
+  color: var(--primary-hover);
+  font: var(--text-mono);
+  overflow-wrap: anywhere;
+}
+
+.cro-lineage-node__name[data-tip],
+.cro-lineage-node__id[data-tip] {
+  cursor: help;
+}
+
+.cro-lineage-node__detail {
+  margin: var(--space-2) 0 0;
+  color: var(--foreground-secondary);
+  font: var(--text-body-sm);
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+
+@media (max-width: 720px) {
+  .cro-lineage-drawer {
+    left: var(--space-2);
+    width: auto;
+  }
 }
