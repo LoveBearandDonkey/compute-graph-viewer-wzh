@@ -41,7 +41,7 @@ Run、Step、执行位置、并行方案、Baseline 和 Mock 来源收进右上�
 
 从仓库根目录启动 HTTP Server 后访问：
 
-`http://127.0.0.1:8773/Design/distributed-communication-observatory-3d-traffic/`
+`http://127.0.0.1:8773/distributed-communication-observatory-3d-traffic/`
 
 ## 验收重点
 
