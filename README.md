@@ -59,6 +59,7 @@ git submodule update --init --recursive
 | Ascend A5 架构映射 | `ascend-hardware-map/index.html` | A3/A5 代际对比、数据搬运路径、通信指令和硬件流向地图 |
 | A5 PMU 诊断工作台 | `pmu/06-a5-pmu-visualization-group2-loop.html` | PMU 数据、循环分组和泳道式性能诊断 |
 | 训练任务监控 | `Profiling_Insight_and_Tool/training-run-twin-standalone/training-monitoring-v2.html` | 训练任务拉起、监控、对比、诊断与配置关系观测 |
+| MC2 算子异常定位 | `Profiling_Insight_and_Tool/training-run-twin-standalone/mc2-incident-monitoring.html` | vLLM 推理下 MC2 融合算子 CCU mission 污染的双页定位链路（监控页定界 → 观测页根因与配置耦合） |
 | TrainScope 盘古训练透视 | `pangu-moe-trainviz/index.html` | Pangu Pro MoE 训练正确性排障、时空透视与 rank 下钻 |
 | Pass IR 计算图 | `pass-ir/index.html` | 编译 Pass 快照浏览、节点分组、语义染色和计算流锁定 |
 | 模型 Profiling 报告叠加图 | `deepseek-v32-report-overlay/index.html` | 源码验证的完整模型架构与后端 Profiling、Timeline 局部覆盖层 |
