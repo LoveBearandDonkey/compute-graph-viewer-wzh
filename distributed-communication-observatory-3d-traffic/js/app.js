@@ -213,7 +213,7 @@
     elements.sankeyOverlayTitle.textContent = bilingual(`Rank traffic details · ${label}`, `Rank 流量详情 · ${label}`);
     elements.sankeyClose.setAttribute('aria-label', bilingual('Close Sankey', '关闭 Sankey'));
     elements.sankeyLegendTitle.textContent = bilingual('Legend', '图例');
-    elements.sankeyLegendColor.textContent = bilingual('Color = source Rank', '颜色 = 来源 Rank');
+    elements.sankeyLegendColor.textContent = bilingual('Color = source → target gradient', '颜色 = 来源 → 目标渐变');
     elements.sankeyLegendWidth.textContent = bilingual('Ribbon width = Token count', '带宽宽度 = Token 数量');
     elements.sankeyLegendLocal.textContent = bilingual('LOCAL stays on card and is not drawn', 'LOCAL 留在卡内，不绘制为跨 Rank 流量');
     if (!trafficAvailable && state.sankeyOpen) setSankeyOpen(false);
@@ -307,7 +307,8 @@
   function syncTrafficOverlay() {
     if (!state.trafficController) return;
     const { flows, localByRank } = trafficData();
-    state.trafficController.setFloorTrafficData({ ranks: ACTIVE_RANKS, flows, localByRank });
+    const rankColorSlots = Object.fromEntries(mock.ranks.map(({ rank, slot }) => [rank, slot]));
+    state.trafficController.setFloorTrafficData({ ranks: ACTIVE_RANKS, flows, localByRank, rankColorSlots });
     const total = flows.reduce((sum, flow) => sum + flow.value, 0);
     const local = Object.values(localByRank).reduce((sum, record) => sum + record.value, 0);
     elements.rankTrafficLegend.textContent = `${state.window.start}–${state.window.end} MS · NETWORK ${total.toLocaleString()} · LOCAL ${local.toLocaleString()}`;
