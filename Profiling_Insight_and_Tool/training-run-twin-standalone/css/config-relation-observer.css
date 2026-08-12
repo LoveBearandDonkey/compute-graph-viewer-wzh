@@ -656,7 +656,7 @@
 }
 
 .cro-stepper__label {
-  font-size: 10px;
+  font-size: 11px;
   color: var(--foreground-secondary);
   white-space: nowrap;
 }
@@ -665,22 +665,25 @@
    所以默认是 36+8+34+8+36 ≈ 126×30。这里只在本作用域覆盖尺寸 token 与
    --zoom-control-gap，不改写 .btn / .zoom-control-group 的规则本身。 */
 .cro-stepper__control {
-  --button-height-md: 22px;
-  --button-height-sm: 22px;
+  --button-height-md: 28px;
+  --button-height-sm: 28px;
   --zoom-control-gap: 2px;
-  padding: 1px;
+  padding: 2px;
   border-radius: var(--radius-pill);
   background: var(--surface-2);
 }
 
+/* 加减号是这一行里唯一要「瞄准点击」的东西，尺寸不能按图标装饰来给：
+   22px 圆键 + 14px 符号仍然读成两个小灰点。圆键放到 28px、符号放到 18px
+   （键内左右各余 5px），配合 JS 里 3 格的描边才有分量。 */
 .cro-stepper__control .btn svg {
-  width: 11px;
-  height: 11px;
+  width: 18px;
+  height: 18px;
 }
 
 .cro-stepper__control .zoom-control-readout {
-  min-width: 28px;
-  font-size: var(--font-size-label-xs);
+  min-width: 32px;
+  font-size: var(--font-size-body-sm);
   color: var(--foreground);
 }
 
@@ -703,8 +706,8 @@
 }
 
 .cro-region--moe .cro-stepper__control {
-  --button-height-md: 20px;
-  --button-height-sm: 20px;
+  --button-height-md: 26px;
+  --button-height-sm: 26px;
   min-width: 0;
 }
 
@@ -761,13 +764,19 @@
    ⚠️ 设计系统当前没有 select / form-control 组件（css/style.css 无 .select）。
    这里只用 tokens 拼一个最小实现，视觉与 .cro-stepper__control 对齐；
    属于「缺失样式」，已在交付说明里向用户标出，待批准后应吸收进共享系统。 */
+/* 几何与 .cro-stepper__control 逐条对齐：同一行里「卡型号」和 Total Rank / Node /
+   Micro Batch / Seq Length 是同级的配置控件，圆角、底色、高度不一致就会读成两类
+   东西。stepper 那边是 padding 2px + 28px 圆键 = 32px 高、pill 圆角、surface-2 底
+   且不描边，这里照抄：8px 圆角 + 1px 描边的原样式在它旁边显得像另一套表单。 */
 .cro-select {
   appearance: none;
   width: 100%;
-  /* 右侧留出箭头的位置，否则长选项文本会压在箭头上 */
-  padding: 4px 24px 4px var(--space-2);
-  border: 1px solid var(--border-default);
-  border-radius: var(--radius-md);
+  height: 32px;
+  /* 右侧留出箭头的位置，否则长选项文本会压在箭头上。左侧给 pill 圆角留出弧度，
+     用 --space-3 而不是 --space-2（8px 在 999px 圆角下会贴到弧线上）。 */
+  padding: 0 24px 0 var(--space-3);
+  border: 0;
+  border-radius: var(--radius-pill);
   background-color: var(--surface-2);
   color: var(--foreground);
   font: inherit;
@@ -1657,6 +1666,9 @@
   display: flex;
   gap: var(--space-4);
   align-items: stretch;
+  /* 区标题已抬到 .cro-region--cluster 下做通栏行，这一层只剩「矩阵 | 单卡容量」
+     两半，要吃掉标题之外的全部剩余高度，并允许被 fit-content(46%) 压矮。 */
+  flex: 1 1 auto;
   min-width: 0;
   min-height: 0;
 }
@@ -1681,20 +1693,21 @@
   gap: var(--space-3);
 }
 
-/* 标题独占一行、表单在其下一行 —— 与整网 / Model Architecture / MoE 三个区
-   同一个排法（.cro-region 就是 column + gap），Cluster 不该是唯一的例外。 */
-.cro-cluster__head {
+/* 区标题通栏一行：与整网 / Model Architecture / MoE 三个区同一个排法
+   （.cro-region 就是 column + gap），Cluster 不该是唯一的例外。它横跨矩阵与
+   单卡容量两半，底部整块才读成一个 Cluster 区。 */
+.cro-region--cluster > .cro-region__title {
   flex: 0 0 auto;
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-2);
 }
 
-/* 表单行：Total Rank / Node / 卡型号 横排一行读完。
+/* 表单行：Total Rank / Node / 卡型号 / Micro Batch / Seq Length 横排一行读完
+   （后两项从 Model Architecture 那行搬来：它们不切模型，只决定往这张卡里装多少，
+   和卡型号给出的容量框高度是同一句话的两半）。
    原先这一块是左侧竖栏（max-width 210px、stepper 纵向堆叠），矩阵只能吃剩下的
    宽度；而矩阵默认要画 4 个 stage 块 × 64 EP 列且不给横向滚动，宽度比高度值钱，
    所以把表单抬成一行、把整个左半宽度让给矩阵。 */
 .cro-cluster__form {
+  flex: 0 0 auto;
   display: flex;
   align-items: flex-end;
   flex-wrap: wrap;
@@ -2661,6 +2674,39 @@
     color-mix(in srgb, var(--cro-seg) 30%, transparent) 3px 6px);
 }
 
+/* ── 等距容器图（chart.kind = "capacity"）──────────────────────────────────
+   盒子在左、直标在右。与 Cluster 区「单卡容量」栏的 .cro-capacity__main 同一个
+   排法：盒子是竖长的、宽度吃不满一行，右边那半留给读数正好。
+   盒子本身（SVG 几何与配色）由 config-relation-capacity.js 的 buildBox 画，这里
+   只管它在 figure 里占多大。 */
+.cro-chart-capacity {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+}
+
+.cro-chart-capacity__scene {
+  /* 高度由 JS 按下区预算写内联，宽度固定：等距盒的宽高比是几何定的，
+     宽度给太多只会在两侧留白。 */
+  flex: 0 0 auto;
+  width: 132px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.cro-chart-capacity__scene svg {
+  width: 100%;
+  height: 100%;
+  /* 阈值环左侧的百分比标签伸在盒外，viewBox 已经留了位，别再被容器裁一次 */
+  overflow: visible;
+}
+
+.cro-chart-capacity .cro-chart-legend {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
 /* 直标行按 .sl-kv 的写法：细分隔线分行，不靠行间距 */
 .cro-chart-legend {
   display: flex;
@@ -2711,6 +2757,18 @@
   background: repeating-linear-gradient(135deg,
     color-mix(in srgb, var(--cro-seg) 88%, transparent) 0 3px,
     color-mix(in srgb, var(--cro-seg) 30%, transparent) 3px 6px);
+}
+
+/* 空当段（碎片空洞 / 预留）的图例键：等距容器里它们画的是虚线棱 + 半透明，
+   图例这边对应成 45° 细斜纹 + 描边 —— 与「单卡容量」栏预留段的色块同款，
+   一眼读出「这不是装进去的东西，是留下的空当」。 */
+.cro-chart-legend__dot--void {
+  width: 14px;
+  border-radius: 2px;
+  background: repeating-linear-gradient(45deg,
+    color-mix(in srgb, var(--cro-seg) 72%, transparent) 0 2px,
+    transparent 2px 4px);
+  border: 1px solid color-mix(in srgb, var(--cro-seg) 52%, transparent);
 }
 
 .cro-chart-legend__label {
