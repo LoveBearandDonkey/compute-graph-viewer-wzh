@@ -25,7 +25,7 @@
   <!-- 集群热力图样式（复用 training-monitoring-v2 的 .twin-heat* 视觉） -->
   <link rel="stylesheet" href="./css/training-run-twin.css">
   <!-- 本页模块私有 layout -->
-  <link rel="stylesheet" href="./css/config-relation-observer.css?v=20260807-lineage-padding">
+  <link rel="stylesheet" href="./css/config-relation-observer.css?v=20260812-capacity-figure">
   <!-- 单卡容量（Cluster 区右栏）：容量是「卡」的属性，与集群矩阵同区并排 -->
   <link rel="stylesheet" href="./css/config-relation-capacity.css?v=20260812-capacity">
 </head>
@@ -330,27 +330,33 @@
 
             <!-- ═══ 区域 D · Cluster（横跨 arch＋moe 两列的下行）═══ -->
             <section class="cro-region cro-region--cluster" aria-label="Cluster">
+              <!-- 区标题独占通栏一行（横跨矩阵＋单卡容量两半）：单卡容量是 Cluster
+                   区里的一栏而不是与它并列的第五个区，标题只压在左半上会读成两块
+                   各自为政的内容。与整网 / Model Architecture / MoE 三个区的排法
+                   一致（.cro-region__title 后跟内容）。 -->
+              <h2 class="cro-region__title">Cluster</h2>
               <div class="cro-cluster">
                 <!-- 左半是「表单在上、矩阵在下」的纵向两段，右半是单卡容量栏。
-                     表单横排（Total Rank / Node / 卡型号 一行读完）之后，矩阵拿到了
+                     表单横排（Total Rank / Node / 卡型号 / Micro Batch / Seq Length
+                     一行读完）之后，矩阵拿到了
                      整个左半宽度 —— 默认 4 个 stage 块 × 64 EP 列要在不横向滚动的
                      前提下画完，宽度比高度值钱。 -->
                 <div class="cro-cluster__main">
-                  <!-- 标题独占一行、表单在其下一行，与整网 / Model Architecture / MoE
-                       三个区的排法一致（.cro-region__title 后跟控件）。 -->
-                  <div class="cro-cluster__head">
-                    <h2 class="cro-region__title">Cluster</h2>
-                    <div class="cro-cluster__form">
-                      <div class="cro-stepper-row" id="croClusterSteppers"></div>
-                      <!-- 卡型号：硬件属性，和 Total Rank / Node 同属集群配置，接在 Node 之后。
-                           用 select 而不是 stepper —— 型号是枚举不是量。选项与显存规格由
-                           config-relation-observer.js 的 CARD_SPECS 生成，它同时是「单卡容量」
-                           那个线框盒高度的来源。 -->
-                      <div class="cro-stepper cro-cluster__card">
-                        <label class="cro-stepper__label" for="croCardSelect">卡型号</label>
-                        <select class="cro-select" id="croCardSelect"></select>
-                      </div>
+                  <div class="cro-cluster__form">
+                    <div class="cro-stepper-row" id="croClusterSteppers"></div>
+                    <!-- 卡型号：硬件属性，和 Total Rank / Node 同属集群配置，接在 Node 之后。
+                         用 select 而不是 stepper —— 型号是枚举不是量。选项与显存规格由
+                         config-relation-observer.js 的 CARD_SPECS 生成，它同时是「单卡容量」
+                         那个线框盒高度的来源。 -->
+                    <div class="cro-stepper cro-cluster__card">
+                      <label class="cro-stepper__label" for="croCardSelect">卡型号</label>
+                      <select class="cro-select" id="croCardSelect"></select>
                     </div>
+                    <!-- Micro Batch / Seq Length：不参与切分、不进 world_size，只决定
+                         往这张卡里装多少，所以接在卡型号之后 —— 型号给容量框的高度，
+                         这两项给装进去的体积，一行读完就是「单卡容量」的全部输入。
+                         由 config-relation-observer.js 的 FIELD_ORDER.batch 渲染。 -->
+                    <div class="cro-stepper-row" id="croBatchSteppers"></div>
                   </div>
                   <div class="cro-cluster__grid">
                     <!-- .cro-heat 是集群矩阵的样式钩子（原先挂在 #croHeat 上）。
@@ -381,10 +387,10 @@
                        因为 .cro-board 与 .cro-cluster 都是 overflow:auto，弹出去会被裁。 -->
                   <div class="cro-capacity__basis" id="croCapacityBasis" role="tooltip" hidden></div>
 
-                  <!-- 口径里那三个可调量（MBS / Seq / 单卡显存）不在这里，而在
-                       Model Architecture 那一行的 stepper 里 —— 它们和 DP/PP/TP/CP
-                       一样是开训前要拍板的配置，不是这一栏的局部开关。本栏渲染前
-                       由 syncBasis() 从 topology.config 同步过来。 -->
+                  <!-- 口径里那三个可调量（Micro Batch / Seq Length / 单卡显存）不在
+                       这一栏里，而在同区左半的表单行（卡型号下拉 + 其后两个 stepper）
+                       —— 它们是开训前要拍板的配置，不是这一栏的局部开关。本栏渲染前
+                       由 syncBasis() 从 topology.config / topology.card 同步过来。 -->
                   <p class="cro-capacity__empty" id="croCapacityEmpty" hidden></p>
 
                   <div class="cro-capacity__body" id="croCapacityBody" hidden>
@@ -437,9 +443,9 @@
   <script src="./js/ide-frame-pattern.js"></script>
   <script src="./js/model-graphviz-pattern.js"></script>
   <script src="./js/model-architecture-3d-deck-pattern.js"></script>
-  <script src="./js/config-relation-observer.js?v=20260807-lineage-visible-repaint"></script>
+  <script src="./js/config-relation-observer.js?v=20260812-capacity-figure"></script>
   <!-- 单卡容量：必须排在主脚本之后（要读它导出的 croObserver / croSelect） -->
-  <script src="./js/config-relation-capacity.js?v=20260812-capacity"></script>
+  <script src="./js/config-relation-capacity.js?v=20260812-capacity-figure"></script>
   <script>
     // 主题切换：与 training-monitoring-v2.html 同款单图标按钮，只改 data-theme。
     (() => {

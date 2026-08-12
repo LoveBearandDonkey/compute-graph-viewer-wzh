@@ -38,8 +38,8 @@
 
   /* 口径常量。前三项（microBatch / seq / capGB）是**用户可调**的：它们是除并行维
      之外仅有的、能改变单卡占用的输入，写死了「事前配置校验」就缺一角。它们由
-     Model Architecture 那一行的 MBS / Seq 两个 stepper（训练超参）与 Cluster 区的
-     卡型号下拉（硬件属性，HBM 决定容量）持有，每次渲染前由 syncBasis() 从
+     Cluster 区表单那一行持有：Micro Batch / Seq Length 两个 stepper（训练超参）与
+     卡型号下拉（硬件属性，HBM 决定容量）并排，每次渲染前由 syncBasis() 从
      topology.config / topology.card 同步过来；这里的值只是它们还没就绪时的兜底。
      其余是估算模型本身的系数，改它等于改整栏口径，同一组值也要出现在 basisHtml()
      （标题右侧那枚问号）里说给用户听 —— 不写等于让人猜。 */
@@ -140,14 +140,49 @@
     return `rgb(${out[0]}, ${out[1]}, ${out[2]})`;
   }
 
-  function cssVar(name, fallback) {
-    const raw = global.getComputedStyle(el.root).getPropertyValue(name).trim();
+  /* host 决定从哪个节点取值。deck 语义色定义在 .cro-board / .cro-incident-view
+     上而不是 :root，调用方在哪棵子树里就得传哪棵的节点，否则拿到空串。 */
+  function cssVar(name, fallback, host) {
+    const node = host || el.root || doc.documentElement;
+    if (!node) return fallback;
+    const raw = global.getComputedStyle(node).getPropertyValue(name).trim();
     return raw || fallback;
   }
 
-  /* 建场景：一个虚线线框（容量）+ 若干实心盒（内容）+ 两道阈值环 + 溢出盒。
-     视觉语法三条铁律：容量是线框、内容是实心、越界摞在盒口之上。 */
-  function buildScene(m, segColors) {
+  /* 颜色允许写成 `var(--token)` 或 `var(--token, #fallback)`：三个面要按受光度分
+     明暗，必须先解析成 RGB 分量。浏览器计算自定义属性时已经把嵌套的 var() 代换
+     掉了，但深浅主题切换 / 未定义 token 的兜底链仍可能再套一层，故最多递归 3 层。 */
+  function resolveColor(input, host, depth) {
+    if (Array.isArray(input)) return input;                 // 已经是分量
+    const str = String(input || "").trim();
+    const m = str.match(/^var\(\s*(--[\w-]+)\s*(?:,\s*([\s\S]+))?\)$/);
+    if (!m) return parseColor(str);
+    const raw = cssVar(m[1], "", host);
+    const level = depth || 0;
+    if (raw && level < 3) {
+      const hit = resolveColor(raw, host, level + 1);
+      if (hit) return hit;
+    }
+    return m[2] && level < 3 ? resolveColor(m[2].trim(), host, level + 1) : null;
+  }
+
+  /* 建场景：一个虚线线框（容量）+ 若干实心盒（内容）+ 阈值环 + 溢出盒。
+     视觉语法三条铁律：容量是线框、内容是实心、越界摞在盒口之上。
+
+     ── 这个函数不认识「单卡显存」，只认识「一个容量 + 一摞内容」 ──
+     事件详情里那两张显存构成图（问题1.3 的 64 GB 峰值构成、1.5 的触顶分布）讲的
+     是同一件事，故走同一个 builder（见 config-relation-observer.js 的
+     chartCapacity），经 global.croCapacityBox 导出。spec：
+       cap        容量，与 segments[].value 同单位且 > 0
+       segments   [{ label, value, color, dashed, opacity }]，**自底向上**摞
+       thresholds [{ at, color }]，at ∈ (0,1) 的水位环，可省
+       host       解析 var(--token) 的上下文节点（须已在文档里）
+       format     (value) => "12.3 GB"，写进各段的原生 <title>
+       ariaLabel  整幅图的可读名 */
+  function buildBox(spec) {
+    const cap = spec.cap > 0 ? spec.cap : 1;
+    const host = spec.host || el.root;
+    const fmt = spec.format || ((v) => String(v));
     const bounds = { x0: Infinity, y0: Infinity, x1: -Infinity, y1: -Infinity };
     const P = (x, y, z) => {
       const px = (x - z) * ISO_C;
@@ -160,7 +195,7 @@
     };
     const pts = (list) => list.map((p) => `${p[0].toFixed(3)},${p[1].toFixed(3)}`).join(" ");
 
-    const svg = svgNode("svg", { role: "img", "aria-label": "单卡容量等距示意" });
+    const svg = svgNode("svg", { role: "img", "aria-label": spec.ariaLabel || "容量等距示意" });
     const g = svgNode("g", {});
     svg.appendChild(g);
 
@@ -199,20 +234,22 @@
     /* ── 内容：从底往上摞，超出容量的部分不进框 ── */
     let cursor = 0;
     let overflow = 0;
-    SEGS.forEach((seg) => {
-      const v = m.values[seg.key];
+    let loaded = 0;
+    (spec.segments || []).forEach((seg) => {
+      const v = seg.value;
       if (!(v > 0)) return;
-      const hFull = v / m.cap * BOX.h;
+      loaded += v;
+      const hFull = v / cap * BOX.h;
       const room = Math.max(0, BOX.h - cursor);
       const h = Math.min(hFull, room);
       overflow += hFull - h;
       if (h > 0.012) {
-        g.appendChild(solid(cursor, h, segColors[seg.key], {
+        g.appendChild(solid(cursor, h, resolveColor(seg.color, host), {
           cls: "cro-capacity__solid",
-          // 预留段是「留出来的余量」不是「已装进去的东西」，虚线棱以示区别
-          dashed: seg.key === "reserve",
-          opacity: seg.key === "reserve" ? 0.62 : null,
-          title: `${seg.label} ${gb(v)} GB`,
+          // 「留出来的余量 / 用不上的空当」不是「已装进去的东西」，虚线棱以示区别
+          dashed: seg.dashed,
+          opacity: seg.opacity,
+          title: `${seg.label} ${fmt(v)}`,
         }));
       }
       cursor += h;
@@ -220,15 +257,15 @@
 
     /* ── 越界：摞在盒口之上，不涂红盒身。OOM 是结构性溢出，不是颜色变深。 ── */
     if (overflow > 0.012) {
-      const dangerRgb = parseColor(cssVar("--danger", "#E5484D"));
+      const dangerRgb = resolveColor(cssVar("--danger", "#E5484D", host), host);
       g.appendChild(solid(BOX.h + 0.30, Math.max(0.5, overflow), dangerRgb, {
         cls: "cro-capacity__solid",
-        title: `溢出 ${gb(m.total - m.cap)} GB → OOM`,
+        title: `溢出 ${fmt(loaded - cap)} → OOM`,
       }));
     }
 
     /* ── 容量：虚线线框（12 条棱）。画在实心之后，才有「装在笼子里」的读法。 ── */
-    const wireStroke = cssVar("--border-strong", "rgba(255,255,255,0.24)");
+    const wireStroke = cssVar("--border-strong", "rgba(255,255,255,0.24)", host);
     const W = BOX.w;
     const D = BOX.d;
     const H = BOX.h;
@@ -245,12 +282,13 @@
       }));
     });
 
-    /* ── 两道阈值环：贴着盒壁的一圈虚线 + 左侧百分比标签 ── */
-    [
-      { at: THRESHOLD.tight, color: cssVar("--warning", "#F5A524") },
-      { at: THRESHOLD.alert, color: cssVar("--danger", "#E5484D") },
-    ].forEach((mark) => {
+    /* ── 阈值环：贴着盒壁的一圈虚线 + 左侧百分比标签 ── */
+    (spec.thresholds || []).forEach((mark) => {
       const y = mark.at * H;
+      /* 颜色先落地成具体值：这些是 SVG 呈现属性（不是 CSS 声明），把 `var(--danger)`
+         原样写进 stroke/fill 各浏览器行为不一，解析不出来就整条线不显示。 */
+      const rgb = resolveColor(mark.color, host);
+      const color = rgb ? shade(rgb, 0) : mark.color;
       [
         [[0, y, 0], [W, y, 0]], [[0, y, 0], [0, y, D]],
         [[W, y, 0], [W, y, D]], [[0, y, D], [W, y, D]],
@@ -259,7 +297,7 @@
         const b = P(edge[1][0], edge[1][1], edge[1][2]);
         g.appendChild(svgNode("line", {
           x1: a[0], y1: a[1], x2: b[0], y2: b[1],
-          stroke: mark.color, "stroke-width": 0.062,
+          stroke: color, "stroke-width": 0.062,
           "stroke-dasharray": "0.2 0.18", opacity: 0.8,
         }));
       });
@@ -268,7 +306,7 @@
         x: anchor[0] - 0.26, y: anchor[1] + 0.24,
         "text-anchor": "end", "font-size": 0.78,
         "font-family": "ui-monospace, Menlo, Consolas, monospace",
-        "font-weight": 600, fill: mark.color, opacity: 0.9,
+        "font-weight": 600, fill: color, opacity: 0.9,
       });
       label.textContent = `${Math.round(mark.at * 100)}%`;
       g.appendChild(label);
@@ -284,6 +322,33 @@
       (bounds.y1 - bounds.y0 + pad * 2).toFixed(2),
     ].join(" "));
     return svg;
+  }
+
+  /* 导出给事件详情用。写在 boot 之外（模块解析时就挂上）：主脚本比本文件先加载，
+     但它建图是在 DOMContentLoaded 之后的 rAF 里，那时这个导出早已就绪。
+     一并给出阈值档位，两处的水位环才是同两道线。 */
+  global.croCapacityBox = { build: buildBox, THRESHOLD };
+
+  /* 本栏自己的那一幅：把「一张卡的显存」翻译成通用 spec。段色是 CSS 变量而不是
+     解析好的分量 —— 主题切换后变量会变，交给 buildBox 每次现解析。 */
+  function buildScene(m) {
+    return buildBox({
+      cap: m.cap,
+      host: el.root,
+      ariaLabel: "单卡容量等距示意",
+      format: (v) => `${gb(v)} GB`,
+      segments: SEGS.map((seg) => ({
+        label: seg.label,
+        value: m.values[seg.key],
+        color: `var(--cro-cap-${seg.key}, #7C8A94)`,
+        dashed: seg.key === "reserve",
+        opacity: seg.key === "reserve" ? 0.62 : null,
+      })),
+      thresholds: [
+        { at: THRESHOLD.tight, color: cssVar("--warning", "#F5A524") },
+        { at: THRESHOLD.alert, color: cssVar("--danger", "#E5484D") },
+      ],
+    });
   }
 
   /* ── 参数量：逐层分算，每项除以真正切它的那一维 ───────────────────────── */
@@ -466,12 +531,8 @@
         + `（Stage${fullest.stage} 的首卡，同 stage 内其余副本容量相同）`;
 
     /* 等距容器：段色取自 deck 语义色变量（主题切换后会变，所以每次重解） */
-    const segColors = {};
-    SEGS.forEach((seg) => {
-      segColors[seg.key] = parseColor(cssVar(`--cro-cap-${seg.key}`, "#7C8A94"));
-    });
     el.scene.innerHTML = "";
-    el.scene.appendChild(buildScene(m, segColors));
+    el.scene.appendChild(buildScene(m));
 
     /* 图例读数。SEGS 是**从底往上**的堆叠顺序，图例是从上往下读的，所以倒过来
        —— 两边顺序不一致时，眼睛要在柱子和文字之间做一次映射才对得上，白费一次

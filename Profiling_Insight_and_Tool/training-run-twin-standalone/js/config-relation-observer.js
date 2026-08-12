@@ -83,16 +83,17 @@
     pp:           { label: "PP",             group: "parallel", min: 1,  max: 128,  pow2: true },
     tp:           { label: "TP",             group: "parallel", min: 1,  max: 64,   pow2: true },
     cp:           { label: "CP",             group: "parallel", min: 1,  max: 64,   pow2: true },
-    /* 下面两项不参与切分、不进 world_size，只决定**单卡装多少**（见 Cluster 区
-       的「单卡容量」栏）。放在这一行是因为它们和上面五个一样是「开训前要拍板的
-       配置」，而不是观测出来的量。容量的另一半——单卡显存——来自 Cluster 区的
-       卡型号下拉（CARD_SPECS），那是硬件属性不是训练超参，不该混在这一行。
+    /* 下面两项不参与切分、不进 world_size，只决定**单卡装多少**，所以排在 Cluster
+       区、接在卡型号之后：卡型号给容量框的高度（单卡显存），这两项给往框里装的量，
+       三者凑成「单卡容量」那一栏的全部可调输入，读下来是一句完整的话。
+       （早先它们和 DP/PP/TP/CP 同排在 Model Architecture，那一行讲的是「模型怎么
+       切开」，而这两项一刀不切，混在里面反而要多解释一遍。）
        注意是 micro-batch 不是 global batch：GBS 只决定梯度累积步数
        GBS/(MBS×DP)，一步也不进显存 —— 与「DP 不减容器」是同一件事。 */
     /* 写全称不写 MBS / Seq：DP·PP·TP·CP 是这个领域里没人会认错的通用缩写，这两个
        不是 —— MBS 还容易和 GBS 混，而两者对显存的作用完全相反（见容量栏口径）。 */
-    microBatch:   { label: "Micro Batch",    group: "parallel", min: 1,  max: 64,   step: 1 },
-    seqLen:       { label: "Seq Length",     group: "parallel", min: 128, max: 131072, pow2: true },
+    microBatch:   { label: "Micro Batch",    group: "batch",    min: 1,  max: 64,   step: 1 },
+    seqLen:       { label: "Seq Length",     group: "batch",    min: 128, max: 131072, pow2: true },
     routedExpert: { label: "Routed",         group: "moe",      min: 1,  max: 1024, pow2: true },
     topK:         { label: "Top-K",          group: "moe",      min: 1,  max: 64,   step: 1 },
     sharedExpert: { label: "Shared",         group: "moe",      min: 0,  max: 8,    step: 1 },
@@ -101,10 +102,13 @@
     node:         { label: "Node",           group: "cluster",  min: 1,  max: 8192, pow2: true },
   };
 
+  /* batch 单独成组而不是并进 cluster：它要挂到卡型号下拉**之后**的那个容器里
+     （#croBatchSteppers），而 cluster 组的容器排在下拉之前。 */
   const FIELD_ORDER = {
-    parallel: ["totalLayer", "dp", "pp", "tp", "cp", "microBatch", "seqLen"],
+    parallel: ["totalLayer", "dp", "pp", "tp", "cp"],
     moe: ["routedExpert", "topK", "sharedExpert", "ep"],
     cluster: ["totalRank", "node"],
+    batch: ["microBatch", "seqLen"],
   };
 
   /* ── 取值增减 ─────────────────────────────────────────────────────────── */
@@ -388,8 +392,12 @@
   }
 
   /* ══ stepper UI：复用 .zoom-control-group / .zoom-control-readout / .btn ══ */
-  const MINUS = '<svg viewBox="0 0 24 24" aria-hidden="true" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M5 12h14"></path></svg>';
-  const PLUS = '<svg viewBox="0 0 24 24" aria-hidden="true" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 5v14"></path><path d="M5 12h14"></path></svg>';
+  /* stroke-width 3（不是图标常用的 2）：这两枚画在 28px 的圆键里、实际渲染 18px，
+     24 格坐标系下的 2 格描边落地不到 1.5px，在深色底上几乎看不见笔画。
+     笔画长度也收到 ±7 而不是满格 ±14，粗笔画配满格会糊成一坨。
+     width/height 只是没有 CSS 时的兜底，真实尺寸由 .cro-stepper__control .btn svg 给。 */
+  const MINUS = '<svg viewBox="0 0 24 24" aria-hidden="true" width="18" height="18" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round"><path d="M5.5 12h13"></path></svg>';
+  const PLUS = '<svg viewBox="0 0 24 24" aria-hidden="true" width="18" height="18" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round"><path d="M12 5.5v13"></path><path d="M5.5 12h13"></path></svg>';
 
   function buildStepper(field, value, onChange) {
     const spec = FIELD_SPECS[field];
@@ -2440,7 +2448,17 @@
     });
     wrap.appendChild(meter);
 
-    // 图例即直标：色块只管身份，数值与占比一律用文字色，不靠颜色读数
+    wrap.appendChild(chartLegend(items, total, spec.unit));
+    return wrap;
+  }
+
+  /* 图例即直标：色块只管身份，数值与占比一律用文字色，不靠颜色读数。
+     构成条与等距容器（chartCapacity）共用这一份 —— 两张图讲的是同一种「构成」，
+     直标行长得不一样会让人以为是两套读数。
+     total 由调用方给：构成条按各段之和算占比，等距容器按**容量**算（装了 80%
+     和「这一段占已装部分的 80%」是两回事）。 */
+  function chartLegend(items, total, unit, options) {
+    const opts = options || {};
     const legend = document.createElement("ul");
     legend.className = "cro-chart-legend";
     const addRow = (dotClass, tone, label, value, sub) => {
@@ -2458,25 +2476,70 @@
       li.append(dot, name, val);
       legend.appendChild(li);
     };
-    items.forEach((item) => {
+    (opts.reverse ? items.slice().reverse() : items).forEach((item) => {
       const tone = item.tone || "neutral";
       const pct = (item.value / total) * 100;
       const overrun = Number.isFinite(item.limitShare) && pct > item.limitShare;
-      addRow("cro-chart-legend__dot", tone, item.label, Number.isFinite(item.limitShare)
-        ? `${fmtValue(item.value, spec.unit)} · ${pct.toFixed(1)}%（正常 ${item.limitShare}%）`
-        : `${fmtValue(item.value, spec.unit)} · ${Math.round(pct)}%`);
+      // 空当段（碎片/预留）在等距容器里画的是虚线棱，图例键也换成同义的斜纹块
+      addRow(item.void ? "cro-chart-legend__dot cro-chart-legend__dot--void" : "cro-chart-legend__dot",
+        tone, item.label, Number.isFinite(item.limitShare)
+          ? `${fmtValue(item.value, unit)} · ${pct.toFixed(1)}%（正常 ${item.limitShare}%）`
+          : `${fmtValue(item.value, unit)} · ${Math.round(pct)}%`);
       // 斜纹那截自己占一行，纹样即图例键——否则条上多出来的纹理没人解释
       if (overrun) {
         const excess = item.value - (item.limitShare / 100) * total;
         addRow("cro-chart-legend__dot cro-chart-legend__dot--over", tone, "超出正常水位",
-          `${fmtValue(excess, spec.unit)} · ${(pct - item.limitShare).toFixed(1)}%`, true);
+          `${fmtValue(excess, unit)} · ${(pct - item.limitShare).toFixed(1)}%`, true);
       }
     });
-    wrap.appendChild(legend);
+    return legend;
+  }
+
+  /* 等距容器：与 Cluster 区「单卡容量」栏同一个 builder（config-relation-capacity.js
+     的 global.croCapacityBox），不在这里再画一份 3D。
+     用它而不是构成条的判据是「有没有一个固定的容量上限」：显存构成图的分母是那张
+     卡的 64 GB，装不下就是 OOM —— 平面色条只能表达比例，表达不了「框满了」。
+     spec 比 stack 多一个 cap（容量，与 items[].value 同单位）；items 自底向上排，
+     图例按视觉从上往下读，所以倒序。 */
+  function chartCapacity(spec, width, budget, host) {
+    const api = global.croCapacityBox;
+    // 容量脚本没加载（或被单独引用本文件的页面复用）时退回构成条，不留空白
+    if (!api || !(spec.cap > 0)) return chartStack(spec);
+
+    const wrap = document.createElement("div");
+    wrap.className = "cro-chart-capacity";
+    const scene = document.createElement("div");
+    scene.className = "cro-chart-capacity__scene";
+    /* 盒子是竖长的，高度就是它的「量纲」——给到预算上限（下限 148px，再矮
+       阈值环上的百分比标签会挤成一团）。宽度由 CSS 固定，SVG 自己等比缩放。 */
+    scene.style.height = `${Math.max(148, Math.min(budget || 220, 260))}px`;
+    wrap.appendChild(scene);
+    wrap.appendChild(chartLegend(spec.items, spec.cap, spec.unit, { reverse: true }));
+
+    /* var(--token) 要在**已挂到文档上**的节点上解析（deck 语义色定义在
+       .cro-incident-view 上，不在 :root）。wrap 此刻还是游离的，所以传 host。 */
+    scene.appendChild(api.build({
+      cap: spec.cap,
+      host: host || document.body,
+      ariaLabel: spec.title,
+      format: (v) => fmtValue(v, spec.unit),
+      segments: spec.items.map((item) => ({
+        label: item.label,
+        value: item.value,
+        color: CHART_TONE[item.tone || "neutral"],
+        // 空当不是「装进去的东西」，与单卡容量栏的预留段同一种画法
+        dashed: !!item.void,
+        opacity: item.void ? 0.62 : null,
+      })),
+      thresholds: [
+        { at: api.THRESHOLD.tight, color: CHART_TONE.warning },
+        { at: api.THRESHOLD.alert, color: CHART_TONE.danger },
+      ],
+    }));
     return wrap;
   }
 
-  const CHART_BUILDERS = { line: chartLine, bars: chartBars, stack: chartStack };
+  const CHART_BUILDERS = { line: chartLine, bars: chartBars, stack: chartStack, capacity: chartCapacity };
 
   /* ══ 计算血缘 ════════════════════════════════════════════════════════════
      这里刻意不把 FX / GE / Runtime 写进 CroTopology：拓扑是配置映射，血缘是
@@ -3146,13 +3209,16 @@
           root: "激活在反向用到之前一直留在显存里，逐层累加不释放", path: "逐层激活累积 → Stage 3 叠加 LM Head logits",
           impact: "两段合计 36.2 GB 激活，占满 64 GB 峰值的 56.6%，容量再无余量",
           evidence: {
+            /* 用等距容器而不是构成条：这张图的分母是**一张卡的 64 GB**，不是各段
+               之和。装满了就是 OOM，平面色条表达不了「框满了」这件事。
+               items 自底向上摞，读法与 Cluster 区「单卡容量」栏完全一致。 */
             chart: {
-              kind: "stack", title: "64 GB 显存峰值的构成", unit: " GB",
+              kind: "capacity", title: "64 GB 显存峰值的构成", unit: " GB", cap: 64,
               items: [
-                { label: "激活值", value: 36.2, tone: "warning" },
                 { label: "权重", value: 14.1 },
                 { label: "优化器状态", value: 9.8, tone: "good" },
-                { label: "碎片空洞", value: 3.9, tone: "danger" },
+                { label: "激活值", value: 36.2, tone: "warning" },
+                { label: "碎片空洞", value: 3.9, tone: "danger", void: true },
               ],
               note: "权重与优化器状态由并行切分固定，改不动；能靠重计算换回来的只有那 36.2 GB 激活。",
             },
@@ -3203,14 +3269,20 @@
           root: "64 GB 占满，0.5 GB 的临时 buffer 申请失败", path: "Rank 1553 OOM → PP3 中断 → 全网等待",
           impact: "它一崩 PP3 就断，全网跟着停在等待上",
           evidence: {
+            /* 与上一张同款等距容器（同一个 builder），两张图并排看就是「装满了」
+               和「装满之后长什么样」。
+               空闲的 3.9 GB 在这里拆成两段：3.58 的零碎 + 0.32 的最大连续块。原先
+               三段并列（60.1 + 3.9 + 0.32）把最大块又数了一遍，合计 64.32 GB 超过
+               容量本身；拆开之后总量正好是 64，而且盒顶那道薄片就是「最大的一个洞
+               只有这么薄」——这正是这条证据要说的话。 */
             chart: {
-              kind: "stack", title: "rank 1553 触顶时的 64 GB 分布", unit: " GB",
+              kind: "capacity", title: "rank 1553 触顶时的 64 GB 分布", unit: " GB", cap: 64,
               items: [
                 { label: "已分配", value: 60.1 },
-                { label: "碎片空洞（不可用）", value: 3.9, tone: "danger" },
-                { label: "最大连续可用块", value: 0.32, tone: "warning" },
+                { label: "碎片空洞 · 零碎", value: 3.58, tone: "danger", void: true },
+                { label: "碎片空洞 · 最大连续块", value: 0.32, tone: "warning", void: true },
               ],
-              note: "空闲量 3.9 GB > 申请量 0.5 GB，申请照样失败——决定成败的是最大连续块，不是空闲总量。",
+              note: "空闲共 3.9 GB（3.58 零碎 + 0.32 最大连续块）＞ 申请量 0.5 GB，申请照样失败——决定成败的是最大连续块，不是空闲总量。",
             },
             metrics: [
               { label: "容量", value: "64 / 64 GB", tone: "danger" },
@@ -3231,6 +3303,8 @@
     controller.mount(document.getElementById("croParallelSteppers"), "parallel");
     controller.mount(document.getElementById("croMoeSteppers"), "moe");
     controller.mount(document.getElementById("croClusterSteppers"), "cluster");
+    // Micro Batch / Seq Length：与卡型号一起决定单卡装多少，故排在下拉之后
+    controller.mount(document.getElementById("croBatchSteppers"), "batch");
 
     /* 卡型号：硬件属性，和 Total Rank / Node 同属 Cluster 区。两个选项而不是
        stepper —— 型号是枚举不是量，±键在两项之间来回跳读不出「选了哪个」。
@@ -5338,9 +5412,10 @@
 
     /* 图按宿主的实测宽高出图。高度预算 = 下区可用净高 − figure 里图表之外的部分
        （图题 + 读法那两行）。小屏下预算变小，各图各自的收敛方式不同：
-         line  —— 压扁（趋势靠横向读，压矮不失真）
-         stack —— 不吃预算（DOM 构成条本来就只有一条 pill + 几行直标，够矮）
-         bars  —— 条目多就整个换成竖排柱，高度不再随条目数长
+         line     —— 压扁（趋势靠横向读，压矮不失真）
+         stack    —— 不吃预算（DOM 构成条本来就只有一条 pill + 几行直标，够矮）
+         bars     —— 条目多就整个换成竖排柱，高度不再随条目数长
+         capacity —— 盒子高度按预算取（148–260px），SVG 自己等比缩放
        目的只有一个：这一栏不出滚动条。 */
     function paintDetailChart() {
       if (!detailChart) return;
@@ -5353,7 +5428,9 @@
       // figure 当前高度里除掉图表自身，剩下的就是图题 + 读法 + 内边距的固定开销
       const overhead = figure ? Math.max(0, figure.offsetHeight - host.offsetHeight) : 60;
       const budget = Math.round(Math.max(96, (body?.clientHeight || 260) - overhead - 8));
-      host.replaceChildren(build(spec, width, budget));
+      // 第四参 host：等距容器要在一个**已挂到文档上**的节点上解析 var(--token)，
+      // 其余 builder 用不到，多传一个参数无害。
+      host.replaceChildren(build(spec, width, budget, host));
     }
 
     function selectIncident(event) {
@@ -5488,6 +5565,11 @@
     }
     // 主题切换会重算 deck 调色板，重新搬一次
     document.addEventListener("cro:theme", syncPalette);
+    /* 等距容器图（chart.kind = "capacity"）的三个面明暗是建图时按 token 值算死写进
+       SVG 的，不像其余图那样靠 CSS 类跟主题走 —— 换主题得整幅重画。 */
+    document.addEventListener("cro:theme", () => {
+      if (detailChart && detailChart.spec.kind === "capacity") requestAnimationFrame(paintDetailChart);
+    });
     // 泳道颜色是开播时读进来的副本，主题一换要跟着换（但不能 reset：那会把
     // 已经跑过的那半趟抹掉）
     document.addEventListener("cro:theme", () => {
