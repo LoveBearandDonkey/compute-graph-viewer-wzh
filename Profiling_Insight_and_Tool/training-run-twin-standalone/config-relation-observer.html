@@ -26,6 +26,8 @@
   <link rel="stylesheet" href="./css/training-run-twin.css">
   <!-- 本页模块私有 layout -->
   <link rel="stylesheet" href="./css/config-relation-observer.css?v=20260807-lineage-padding">
+  <!-- 单卡容量（Cluster 区右栏）：容量是「卡」的属性，与集群矩阵同区并排 -->
+  <link rel="stylesheet" href="./css/config-relation-capacity.css?v=20260812-capacity">
 </head>
 <body data-theme="dark">
   <section class="pto-ide-frame" data-ide-frame data-host="standalone" aria-label="Config and Relation Observer">
@@ -326,20 +328,94 @@
               </div>
             </section>
 
-            <!-- ═══ 区域 D · Cluster ═══ -->
+            <!-- ═══ 区域 D · Cluster（横跨 arch＋moe 两列的下行）═══ -->
             <section class="cro-region cro-region--cluster" aria-label="Cluster">
               <div class="cro-cluster">
-                <!-- Cluster 标题与 stepper 在左，矩阵在右吃满剩余宽度。
-                     纵向堆叠会多吃 ~80px 高度，把矩阵顶到滚动区外面。 -->
-                <div class="cro-cluster__side">
-                  <h2 class="cro-region__title">Cluster</h2>
-                  <div class="cro-stepper-row" id="croClusterSteppers"></div>
+                <!-- 左半是「表单在上、矩阵在下」的纵向两段，右半是单卡容量栏。
+                     表单横排（Total Rank / Node / 卡型号 一行读完）之后，矩阵拿到了
+                     整个左半宽度 —— 默认 4 个 stage 块 × 64 EP 列要在不横向滚动的
+                     前提下画完，宽度比高度值钱。 -->
+                <div class="cro-cluster__main">
+                  <div class="cro-cluster__head">
+                    <h2 class="cro-region__title">Cluster</h2>
+                    <div class="cro-stepper-row" id="croClusterSteppers"></div>
+                    <!-- 卡型号：硬件属性，和 Total Rank / Node 同属集群配置，接在 Node 之后。
+                         用 select 而不是 stepper —— 型号是枚举不是量。选项与显存规格由
+                         config-relation-observer.js 的 CARD_SPECS 生成，它同时是「单卡容量」
+                         那个线框盒高度的来源。 -->
+                    <div class="cro-stepper cro-cluster__card">
+                      <label class="cro-stepper__label" for="croCardSelect">卡型号</label>
+                      <select class="cro-select" id="croCardSelect"></select>
+                    </div>
+                  </div>
+                  <div class="cro-cluster__grid">
+                    <!-- .cro-heat 是集群矩阵的样式钩子（原先挂在 #croHeat 上）。
+                         事件详情的角色卡里会再开若干份同款矩阵，故改成类。 -->
+                    <div class="twin-heat cro-heat" id="croHeat"></div>
+                  </div>
                 </div>
-                <div class="cro-cluster__grid">
-                  <!-- .cro-heat 是集群矩阵的样式钩子（原先挂在 #croHeat 上）。
-                       事件详情的角色卡里会再开若干份同款矩阵，故改成类。 -->
-                  <div class="twin-heat cro-heat" id="croHeat"></div>
-                </div>
+
+                <!-- ── 单卡容量 ──
+                     矩阵回答「是哪张卡」，这一栏回答「这张卡里装了什么、还剩多少」，
+                     所以两者同区并排而不是各自成区。数值与阈值全部由
+                     js/config-relation-capacity.js 写入（它只吃 cro:change / cro:select
+                     两个事件，不改主控制器）。 -->
+                <aside class="cro-capacity" id="croCapacity" aria-label="单卡容量">
+                  <div class="cro-capacity__head">
+                    <h2 class="cro-region__title cro-capacity__title">单卡容量</h2>
+                    <!-- 口径收在这枚问号里：它是「这些数怎么算出来的」，属于随时可查、
+                         但不该常驻占版面的东西。常驻会把一栏窄面板压掉十几行。
+                         悬浮即出（触屏与键盘各留一条通路，见 js 的 showBasis），
+                         故不写 title —— 原生 tooltip 会和浮层同时冒出来读成两份。 -->
+                    <button class="cro-capacity__help" id="croCapacityHelp" type="button"
+                            aria-expanded="false" aria-describedby="croCapacityBasis"
+                            aria-label="容量口径">?</button>
+                    <span class="cro-capacity__scope" id="croCapacityScope"></span>
+                  </div>
+
+                  <!-- 口径浮层：宽度锁在面板内、绝对定位盖住下方内容。不往面板外弹是
+                       因为 .cro-board 与 .cro-cluster 都是 overflow:auto，弹出去会被裁。 -->
+                  <div class="cro-capacity__basis" id="croCapacityBasis" role="tooltip" hidden></div>
+
+                  <!-- 口径里那三个可调量（MBS / Seq / 单卡显存）不在这里，而在
+                       Model Architecture 那一行的 stepper 里 —— 它们和 DP/PP/TP/CP
+                       一样是开训前要拍板的配置，不是这一栏的局部开关。本栏渲染前
+                       由 syncBasis() 从 topology.config 同步过来。 -->
+                  <p class="cro-capacity__empty" id="croCapacityEmpty" hidden></p>
+
+                  <div class="cro-capacity__body" id="croCapacityBody" hidden>
+                    <div class="cro-capacity__main">
+                      <!-- 容器是立体的：卡的容量是一个有体积的盒子，装进去的四段各有各的
+                           体积，装不下的那截摞在盒口之上。等距投影（SVG，见
+                           config-relation-capacity.js 的 buildScene）比平面色条更贴近
+                           「容器」这个隐喻，也把「越界」画成结构性的溢出而不是变色。 -->
+                      <div class="cro-capacity__scene" id="croCapacityScene"></div>
+                      <div class="cro-capacity__readouts">
+                        <!-- 占比是这一栏的头条读数：安全档不出判定横幅之后，它就是唯一
+                             一眼能看出「险不险」的东西，所以放大、并按档位换色。绝对值
+                             压小压暗——需要时才看。 -->
+                        <div class="cro-capacity__ratio" id="croCapacityRatio" data-level="safe">
+                          <b id="croCapacityPct"></b>
+                          <span id="croCapacityAbs"></span>
+                        </div>
+                        <ul class="cro-capacity__legend" id="croCapacityLegend"></ul>
+                      </div>
+                    </div>
+
+                    <div class="cro-capacity__verdict" id="croCapacityVerdict" role="status" aria-live="polite" data-level="safe">
+                      <span class="cro-capacity__badge" id="croCapacityBadge"></span>
+                      <span id="croCapacityVerdictText"></span>
+                    </div>
+
+                    <div class="cro-capacity__spread">
+                      <div class="cro-capacity__spread-head">
+                        <span>各 PP Stage 峰值</span>
+                        <span id="croCapacitySpreadNote"></span>
+                      </div>
+                      <div class="cro-capacity__stages" id="croCapacityStages" role="group" aria-label="各 PP Stage 单卡占用"></div>
+                    </div>
+                  </div>
+                </aside>
               </div>
             </section>
 
@@ -358,6 +434,8 @@
   <script src="./js/model-graphviz-pattern.js"></script>
   <script src="./js/model-architecture-3d-deck-pattern.js"></script>
   <script src="./js/config-relation-observer.js?v=20260807-lineage-visible-repaint"></script>
+  <!-- 单卡容量：必须排在主脚本之后（要读它导出的 croObserver / croSelect） -->
+  <script src="./js/config-relation-capacity.js?v=20260812-capacity"></script>
   <script>
     // 主题切换：与 training-monitoring-v2.html 同款单图标按钮，只改 data-theme。
     (() => {
