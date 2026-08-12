@@ -89,8 +89,10 @@
        卡型号下拉（CARD_SPECS），那是硬件属性不是训练超参，不该混在这一行。
        注意是 micro-batch 不是 global batch：GBS 只决定梯度累积步数
        GBS/(MBS×DP)，一步也不进显存 —— 与「DP 不减容器」是同一件事。 */
-    microBatch:   { label: "MBS",            group: "parallel", min: 1,  max: 64,   step: 1 },
-    seqLen:       { label: "Seq",            group: "parallel", min: 128, max: 131072, pow2: true },
+    /* 写全称不写 MBS / Seq：DP·PP·TP·CP 是这个领域里没人会认错的通用缩写，这两个
+       不是 —— MBS 还容易和 GBS 混，而两者对显存的作用完全相反（见容量栏口径）。 */
+    microBatch:   { label: "Micro Batch",    group: "parallel", min: 1,  max: 64,   step: 1 },
+    seqLen:       { label: "Seq Length",     group: "parallel", min: 128, max: 131072, pow2: true },
     routedExpert: { label: "Routed",         group: "moe",      min: 1,  max: 1024, pow2: true },
     topK:         { label: "Top-K",          group: "moe",      min: 1,  max: 64,   step: 1 },
     sharedExpert: { label: "Shared",         group: "moe",      min: 0,  max: 8,    step: 1 },
