@@ -37,11 +37,44 @@
       defaults: {
         totalLayer: 46,
         dp: 8, pp: 4, tp: 1, cp: 1,
+        microBatch: 1, seqLen: 4096,
         routedExpert: 256, topK: 8, sharedExpert: 1, ep: 64,
-        totalRank: 2048, node: 256,
+        totalRank: 2048, node: 256, card: "910b",
       },
     },
   };
+
+  /* ── 卡型号 ───────────────────────────────────────────────────────────────
+     只有 hbmGB 参与计算（它是「单卡容量」那个线框盒的高度）；specs 是纯说明，
+     出现在容量栏口径浮层里。
+
+     ⚠️ 两个 HBM 数字的来源强度不一样，别当成同一档证据：
+       · 910B —— 本仓 AI_Profiling_Tool/AscendProfKit/skills/performance-health-score/
+         SKILL.md 记「常见 32GB / 64GB 两种规格，需从 NPU_INFO 表确认型号后定」。
+         这里取 64GB 那一款。
+       · 950  —— Profiling_Insight_and_Tool/KNOWLEDGE.md §3.1 只给了**整片** DDR
+         128 GB / 1.6 TB/s，没有单卡 HBM 容量。64 是按「两款都按 64G 对齐」的
+         要求取的占位值，**待确认**。
+     拿到准确规格后只改这一个表，容量栏与集群下拉会一起跟上。 */
+  const CARD_SPECS = {
+    /* label 给口径浮层（那里空间宽裕，带「昇腾」读着完整）；short 给下拉选项
+       （集群表单那一格只有 128px，选项文本还要缀上容量）。 */
+    "910b": {
+      id: "910b", label: "昇腾 910B", short: "910B", hbmGB: 64,
+      hbmNote: "常见 32 / 64 GB 两种规格，此处取 64 GB 款",
+      specs: "HBM2e 1.6 TB/s（来源：本仓 performance-health-score 技能卡）",
+    },
+    "950": {
+      id: "950", label: "昇腾 950", short: "950", hbmGB: 64,
+      hbmNote: "KNOWLEDGE.md 未给单卡 HBM 容量，64 GB 为占位值，待确认",
+      specs: "32 Cube × 64 Vector @1.65 GHz；FP16 432 / FP8 864 / FP4 1728 TFLOPS；"
+        + "整片 DDR 128 GB · 1.6 TB/s；Chiplet 2×Compute Die + 2×IO Die，CCU 在 IO-Die；"
+        + "超节点 128P / 1024P（来源：KNOWLEDGE.md §3.1、§4.4）",
+    },
+  };
+
+  const CARD_ORDER = ["910b", "950"];
+  const DEFAULT_CARD = "910b";
 
   /* ── stepper 字段规格：min/max/step 与取值方式（pow2 = 按 2 的幂增减） ── */
   const FIELD_SPECS = {
@@ -50,6 +83,16 @@
     pp:           { label: "PP",             group: "parallel", min: 1,  max: 128,  pow2: true },
     tp:           { label: "TP",             group: "parallel", min: 1,  max: 64,   pow2: true },
     cp:           { label: "CP",             group: "parallel", min: 1,  max: 64,   pow2: true },
+    /* 下面两项不参与切分、不进 world_size，只决定**单卡装多少**（见 Cluster 区
+       的「单卡容量」栏）。放在这一行是因为它们和上面五个一样是「开训前要拍板的
+       配置」，而不是观测出来的量。容量的另一半——单卡显存——来自 Cluster 区的
+       卡型号下拉（CARD_SPECS），那是硬件属性不是训练超参，不该混在这一行。
+       注意是 micro-batch 不是 global batch：GBS 只决定梯度累积步数
+       GBS/(MBS×DP)，一步也不进显存 —— 与「DP 不减容器」是同一件事。 */
+    /* 写全称不写 MBS / Seq：DP·PP·TP·CP 是这个领域里没人会认错的通用缩写，这两个
+       不是 —— MBS 还容易和 GBS 混，而两者对显存的作用完全相反（见容量栏口径）。 */
+    microBatch:   { label: "Micro Batch",    group: "parallel", min: 1,  max: 64,   step: 1 },
+    seqLen:       { label: "Seq Length",     group: "parallel", min: 128, max: 131072, pow2: true },
     routedExpert: { label: "Routed",         group: "moe",      min: 1,  max: 1024, pow2: true },
     topK:         { label: "Top-K",          group: "moe",      min: 1,  max: 64,   step: 1 },
     sharedExpert: { label: "Shared",         group: "moe",      min: 0,  max: 8,    step: 1 },
@@ -59,7 +102,7 @@
   };
 
   const FIELD_ORDER = {
-    parallel: ["totalLayer", "dp", "pp", "tp", "cp"],
+    parallel: ["totalLayer", "dp", "pp", "tp", "cp", "microBatch", "seqLen"],
     moe: ["routedExpert", "topK", "sharedExpert", "ep"],
     cluster: ["totalRank", "node"],
   };
@@ -322,6 +365,8 @@
 
     return {
       config, preset, errors, valid: errors.length === 0,
+      // 卡型号：只有 hbmGB 参与计算（单卡容量框的高度），其余是说明性规格
+      card: CARD_SPECS[config.card] || CARD_SPECS[DEFAULT_CARD],
       stages, layers, epRanks,
       counts: {
         totalLayer,
@@ -3187,6 +3232,34 @@
     controller.mount(document.getElementById("croMoeSteppers"), "moe");
     controller.mount(document.getElementById("croClusterSteppers"), "cluster");
 
+    /* 卡型号：硬件属性，和 Total Rank / Node 同属 Cluster 区。两个选项而不是
+       stepper —— 型号是枚举不是量，±键在两项之间来回跳读不出「选了哪个」。
+       它只影响单卡容量框的高度（CARD_SPECS[].hbmGB）与口径说明，不进 world_size。 */
+    (() => {
+      const select = document.getElementById("croCardSelect");
+      if (!select) return;
+      select.innerHTML = "";
+      CARD_ORDER.forEach((id) => {
+        const spec = CARD_SPECS[id];
+        const option = document.createElement("option");
+        option.value = id;
+        // 容量直接写进选项：选卡的当下就是在选容量框的高度，不该等到看口径才知道
+        option.textContent = `${spec.short}（${spec.hbmGB}G）`;
+        option.title = `${spec.label} · ${spec.hbmGB} GB HBM · ${spec.hbmNote}`;
+        if (id === controller.config.card) option.selected = true;
+        select.appendChild(option);
+      });
+      const syncTitle = () => {
+        const spec = CARD_SPECS[select.value] || CARD_SPECS[DEFAULT_CARD];
+        select.title = `${spec.label} · ${spec.hbmGB} GB HBM（${spec.hbmNote}）`;
+      };
+      syncTitle();
+      select.addEventListener("change", () => {
+        controller.set("card", select.value);
+        syncTitle();
+      });
+    })();
+
     /* 整网图 → 其余视图：点 deck 里的算子节点，反查成结构条的 (segment, bar)
        再走同一条 emitSelect 通路，与其他三个方向完全对称。 */
     const deck = createDeck("croDeckHost", {
@@ -5458,6 +5531,10 @@
       ".cro-tick", ".cro-pp-span", ".cro-bar", ".cro-expert", ".cro-moe-group",
       ".cro-structure__col",
       ".twin-heat-cell", ".pto-model-deck__node", ".pto-model-deck__experts",
+      // 单卡容量栏：点 stage 小柱是「选中该 stage 首卡」，不是点空白。
+      // 口径浮层被挂到 body 上（避开 pane 的 overflow/backdrop-filter），不在
+      // .cro-capacity 子树里，得单独列一条，否则点它选中文字会清掉当前选择。
+      ".cro-capacity", ".cro-capacity__basis",
       ".pto-model-deck__side-rule", ".cro-stepper", ".cro-event", ".pto-ide-frame__topbar",
       // 播放键组（播放/暂停/继续 + 退出）：点它不是「点空白」，不能顺手把当前选中清掉
       ".cro-flow-actions",
@@ -5549,13 +5626,25 @@
       setEventRailCollapsed(!workarea?.classList.contains("is-event-rail-collapsed"));
     });
     controller.refresh();
-    // 深链接:聚光灯定位链「查看事件影响范围」按 ?event=<id> 从别的问题页跳过来,
-    // 命中就直接选中该运行事件;查不到(未传参 / id 拼错)时回退默认首个事件。
+    /* 深链接:聚光灯定位链「查看事件影响范围」按 ?event=<id> 从别的问题页跳过来,
+       命中就直接选中该运行事件、进事件详情。
+       没带参数时**留在配置关系态**:这一页的主业是四域关系图与配置仿真,自动展开
+       第一个事件等于替用户做了一次他没提的调查——一进来就是某次故障的详情,四域
+       整块被顶掉,反倒要先关掉横幅才能看正事。事件栏一并收起(与关闭事件横幅同一
+       套处理:留着它等于还在「挑事件看」的上下文里),左侧那条竖标签随时能展开。 */
     const requestedEventId = new URLSearchParams(global.location.search).get("event");
     const requestedEvent = requestedEventId
       ? INCIDENT_GROUPS.flatMap((group) => group.events).find((event) => event.id === requestedEventId)
       : null;
-    requestAnimationFrame(() => selectIncident(requestedEvent || INCIDENT_GROUPS[0].events[0]));
+    if (requestedEvent) {
+      requestAnimationFrame(() => selectIncident(requestedEvent));
+    } else {
+      // select:false —— 此刻还没有任何选择,不必再走一次 clearSelection
+      setEventRailCollapsed(true, { select: false });
+      // Layer Rank 查询范围那个 segmented control 在 HTML 里是 hidden 的（原先默认
+      // 进事件态、静态查询口径不成立），配置态下要放出来
+      syncDpScope();
+    }
   }
 
   if (document.readyState === "loading") {

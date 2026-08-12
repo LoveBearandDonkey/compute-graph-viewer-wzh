@@ -413,13 +413,16 @@
   overflow: auto;
 }
 
-/* T 型：arch 是横笔，cluster 是挂在它正下方的竖笔（只占 arch 一列）。
-   net 与 moe 都通栏两行 —— moe 只占第 1 行的话，右下角会空出一个没有内容的
-   格子，屏幕高度用不满。 */
+/* ⊥ 型：net 通栏两行留在最左，上行是 arch | moe 左右并排，下行 cluster 横跨
+   arch＋moe 两列。
+   cluster 从「只挂在 arch 下」改成横跨两列，是为了给它右侧腾出「单卡容量」栏
+   （见 config-relation-capacity.css）—— 容量是**卡**的属性，天然与集群矩阵同源：
+   矩阵回答「是哪张卡」，容量柱回答「这张卡里装了什么、还剩多少」，两者并排才成
+   一句话。moe 因此退回只占第 1 行，右下角不再空出格子。 */
 .cro-region--net     { grid-column: net-start / net-end;   grid-row: 1 / 3; }
 .cro-region--arch    { grid-column: arch-start / arch-end; grid-row: 1; }
-.cro-region--moe     { grid-column: moe-start / moe-end;   grid-row: 1 / 3; }
-.cro-region--cluster { grid-column: arch-start / arch-end; grid-row: 2; }
+.cro-region--moe     { grid-column: moe-start / moe-end;   grid-row: 1; }
+.cro-region--cluster { grid-column: arch-start / moe-end;  grid-row: 2; }
 
 /* Explorer rail 键折叠「整网」区：整列塌掉，其余区域自然吃掉宽度 */
 .cro-board.is-net-collapsed {
@@ -761,14 +764,25 @@
 .cro-select {
   appearance: none;
   width: 100%;
-  padding: 4px var(--space-2);
+  /* 右侧留出箭头的位置，否则长选项文本会压在箭头上 */
+  padding: 4px 24px 4px var(--space-2);
   border: 1px solid var(--border-default);
   border-radius: var(--radius-md);
-  background: var(--surface-2);
+  background-color: var(--surface-2);
   color: var(--foreground);
   font: inherit;
   font-size: var(--font-size-body-sm);
   cursor: pointer;
+
+  /* appearance:none 把系统的下拉箭头一并抹掉了，看上去就是个普通输入框、不像
+     可展开的东西，得自己补一枚。用内联 SVG 的 data URI 而不是伪元素：select
+     不能有子元素、::after 也不渲染，只能走 background。
+     描边色写死成中性灰而不是 currentColor —— data URI 里取不到 CSS 变量，而这
+     个灰在深浅两套底色（#1c1c1c / #F2F2F2）上都够看。 */
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12' fill='none' stroke='%238A8A8A' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M3 4.5 6 7.5 9 4.5'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right var(--space-2) center;
+  background-size: 11px 11px;
 }
 
 .cro-select:focus-visible {
@@ -1657,19 +1671,38 @@
   overscroll-behavior: contain;
 }
 
-.cro-cluster__side {
+/* 左半：表单在上、矩阵在下的纵向两段 */
+.cro-cluster__main {
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+/* 标题独占一行、表单在其下一行 —— 与整网 / Model Architecture / MoE 三个区
+   同一个排法（.cro-region 就是 column + gap），Cluster 不该是唯一的例外。 */
+.cro-cluster__head {
+  flex: 0 0 auto;
   display: flex;
   flex-direction: column;
   gap: var(--space-2);
-  flex: 0 0 auto;
-  max-width: 210px;
 }
 
-/* Total Rank / Node 纵向堆叠：侧栏本来就窄，左右排会把两个 label 挤到换行 */
-.cro-cluster__side .cro-stepper-row {
-  flex-direction: column;
-  flex-wrap: nowrap;
-  gap: var(--space-2);
+/* 表单行：Total Rank / Node / 卡型号 横排一行读完。
+   原先这一块是左侧竖栏（max-width 210px、stepper 纵向堆叠），矩阵只能吃剩下的
+   宽度；而矩阵默认要画 4 个 stage 块 × 64 EP 列且不给横向滚动，宽度比高度值钱，
+   所以把表单抬成一行、把整个左半宽度让给矩阵。 */
+.cro-cluster__form {
+  display: flex;
+  align-items: flex-end;
+  flex-wrap: wrap;
+  gap: var(--space-4);
+}
+
+.cro-cluster__card {
+  min-width: 128px;
 }
 
 /* 集群网格：几何全部由 JS 按 rank 编址算，这里只补 training-run-twin.css 里
