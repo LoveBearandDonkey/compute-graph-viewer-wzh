@@ -1553,7 +1553,7 @@
     .twin-timeline-body,
     .twin-dock-panel,
     .wzh-log-body,
-    .wzh-log-mapping,
+    .wzh-log-mapping-list,
     .wzh-chat-messages {
       scrollbar-width: thin;              /* Firefox */
       scrollbar-color: transparent transparent;
@@ -1565,7 +1565,7 @@
     .twin-timeline-body:hover,
     .twin-dock-panel:hover,
     .wzh-log-body:hover,
-    .wzh-log-mapping:hover,
+    .wzh-log-mapping-list:hover,
     .wzh-chat-messages:hover {
       scrollbar-color: var(--border-default) transparent;
     }
@@ -1576,7 +1576,7 @@
     .twin-timeline-body::-webkit-scrollbar,
     .twin-dock-panel::-webkit-scrollbar,
     .wzh-log-body::-webkit-scrollbar,
-    .wzh-log-mapping::-webkit-scrollbar,
+    .wzh-log-mapping-list::-webkit-scrollbar,
     .wzh-chat-messages::-webkit-scrollbar {
       width: 8px;
       height: 8px;
@@ -1588,7 +1588,7 @@
     .twin-timeline-body::-webkit-scrollbar-track,
     .twin-dock-panel::-webkit-scrollbar-track,
     .wzh-log-body::-webkit-scrollbar-track,
-    .wzh-log-mapping::-webkit-scrollbar-track,
+    .wzh-log-mapping-list::-webkit-scrollbar-track,
     .wzh-chat-messages::-webkit-scrollbar-track {
       background: transparent;
     }
@@ -1599,7 +1599,7 @@
     .twin-timeline-body::-webkit-scrollbar-thumb,
     .twin-dock-panel::-webkit-scrollbar-thumb,
     .wzh-log-body::-webkit-scrollbar-thumb,
-    .wzh-log-mapping::-webkit-scrollbar-thumb,
+    .wzh-log-mapping-list::-webkit-scrollbar-thumb,
     .wzh-chat-messages::-webkit-scrollbar-thumb {
       background: transparent;            /* 默认隐藏 */
       border-radius: 4px;
@@ -1612,7 +1612,7 @@
     .twin-timeline-body:hover::-webkit-scrollbar-thumb,
     .twin-dock-panel:hover::-webkit-scrollbar-thumb,
     .wzh-log-body:hover::-webkit-scrollbar-thumb,
-    .wzh-log-mapping:hover::-webkit-scrollbar-thumb,
+    .wzh-log-mapping-list:hover::-webkit-scrollbar-thumb,
     .wzh-chat-messages:hover::-webkit-scrollbar-thumb {
       background: var(--border-default);  /* 悬浮浮现 */
     }
@@ -1623,7 +1623,7 @@
     .twin-timeline-body::-webkit-scrollbar-thumb:hover,
     .twin-dock-panel::-webkit-scrollbar-thumb:hover,
     .wzh-log-body::-webkit-scrollbar-thumb:hover,
-    .wzh-log-mapping::-webkit-scrollbar-thumb:hover,
+    .wzh-log-mapping-list::-webkit-scrollbar-thumb:hover,
     .wzh-chat-messages::-webkit-scrollbar-thumb:hover {
       background: var(--foreground-muted);
     }
@@ -2189,21 +2189,52 @@
     .wzh-log-row.lvl-WARN .wzh-log-col-msg { color: color-mix(in srgb, var(--warning) 85%, var(--foreground)); }
     .wzh-log-empty { padding: var(--space-4); text-align: center; color: var(--foreground-muted); font-size: 12px; font-family: var(--font-sans); }
 
+    /* 右栏「plog → 可读诊断」是智能映射的产物,底色不用中性灰:横向蓝→紫弱渐变 +
+       纵向从上到下渐隐,与 training-monitoring-v2.html 的同名栏保持一套(改一边记得同步)。
+       不铺任何不透明底色,透出的是 dock 自身的 --ide-frame-pane-fill,底部不留灰带。 */
     .wzh-log-mapping {
-      flex: 3 1 0; min-width: 168px; min-height: 0; overflow-y: auto;
+      flex: 3 1 0; min-width: 168px; min-height: 0;
+      position: relative; overflow: hidden;
       display: flex; flex-direction: column;
-      border-left: 1px solid var(--border-subtle); background: var(--surface-2);
+      border-left: 1px solid var(--border-subtle);
+    }
+    /* 染色层单独占一层 ::before:纵向渐隐靠 mask,而 mask 挂在 .wzh-log-mapping 上会把
+       标题和映射卡片一起淡掉。滚动条移到内层 .wzh-log-mapping-list,本体不再是滚动容器,
+       ::before 才能 absolute 铺满而不随内容滚走;表头也因此不用 sticky + 不透明底色挡内容。 */
+    .wzh-log-mapping::before {
+      content: ''; position: absolute; inset: 0; z-index: 0; pointer-events: none;
+      background: linear-gradient(90deg,
+        color-mix(in srgb, var(--primary) 8%, transparent) 0%,
+        color-mix(in srgb, var(--highlight-l0a-violet-400, #9B3CF6) 8%, transparent) 100%);
+      -webkit-mask-image: linear-gradient(180deg, #000 0%, rgba(0, 0, 0, .45) 46%, transparent 100%);
+      mask-image: linear-gradient(180deg, #000 0%, rgba(0, 0, 0, .45) 46%, transparent 100%);
     }
     .wzh-log-mapping-head {
-      flex: 0 0 auto; position: sticky; top: 0; z-index: 1;
+      flex: 0 0 auto; position: relative; z-index: 1;
       padding: 7px var(--space-3);
       font: 700 11px/1.3 var(--font-sans); letter-spacing: .02em; color: var(--foreground-secondary);
-      background: var(--surface-2); border-bottom: 1px solid var(--border-subtle);
+      background: transparent;
+      --wzh-map-title-violet: var(--highlight-l0a-violet-300, #B977F9);
     }
-    .wzh-log-mapping-list { flex: 1; padding: 6px; display: flex; flex-direction: column; gap: 6px; }
+    /* 标题文字也走蓝→紫。渐变填充挂在内层 span 上:background-clip 会把整个 background
+       裁成文字形状,head 自身若还要用 background 就没得共存。
+       紫端按主题换档——深色底用 violet-300,浅色底 violet-300 太飘,换回 violet-500。 */
+    :root[data-theme='light'] .wzh-log-mapping-head { --wzh-map-title-violet: var(--highlight-l0a-violet-500, #820BF4); }
+    .wzh-log-mapping-head > span {
+      background: linear-gradient(90deg, var(--primary) 0%, var(--wzh-map-title-violet) 100%);
+      -webkit-background-clip: text; background-clip: text;
+      -webkit-text-fill-color: transparent; color: transparent;
+    }
+    .wzh-log-mapping-list {
+      position: relative; z-index: 1;
+      flex: 1; min-height: 0; overflow-y: auto;
+      padding: 6px; display: flex; flex-direction: column; gap: 6px;
+    }
     .wzh-log-mapping-row {
       padding: 6px 8px; border-radius: var(--radius-md); border: 1px solid var(--border-subtle);
-      background: var(--surface-1); transition: background var(--duration-fast), border-color var(--duration-fast);
+      /* 卡片半透明,让底层的智能渐变透上来一点,而不是被一整片 surface-1 盖死 */
+      background: color-mix(in srgb, var(--surface-1) 82%, transparent);
+      transition: background var(--duration-fast), border-color var(--duration-fast);
     }
     .wzh-log-mapping-names { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; font-family: var(--font-mono); font-size: 18px; }
     .wzh-log-mapping-ascend { color: var(--foreground); font-weight: 700; word-break: break-all; }
@@ -2239,9 +2270,41 @@
    ══════════════════════════════════════════════════════════════════════════ */
 
 /* ── ① 推理指标 ─────────────────────────────────────────────────────────── */
+/* 两张图上下排，各吃半列高：左列只有这一张卡，横排会让每张图只剩 ~170px 宽 ——
+   带坐标轴的折线在那个宽度里，轴标签比曲线还占地方。竖排后每张图拿到整列宽度，
+   横轴的时刻标签也放得下。图本身按容器实测像素作图（见 js 的 drawChart），
+   格子被撑高撑扁都不会再变形。 */
 .mc2-metric-cards {
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  grid-template-rows: minmax(0, 1fr);
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: repeat(2, minmax(0, 1fr));
+}
+
+/* 让「推理指标」卡从侧栏顶一直吃到底，两张图才有高度可分 */
+.twin-monitor-sidebar #runTwinDefaultView {
+  flex: 1;
+  min-height: 0;
+}
+
+.twin-monitor-sidebar #runTwinDefaultView > .twin-accuracy-card {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+/* 高度改由列高决定：training-run-twin.css 的固定 640px 是 7 张卡 2×4 的排面，
+   本页只有 2 张，照搬会把每张图撑到 300+px 高、宽只有半列 —— 正是变形的来源。
+   min-height 是矮视口下的兜底（低于它侧栏自己滚动，图不会被压到画不出轴）。 */
+.twin-monitor-sidebar #accuracyCharts {
+  flex: 1;
+  min-height: 320px;
+  height: auto;
+}
+
+/* 竖排后卡片有整列宽度，注脚（时间区间 / 换算口径）放得下，不再隐藏 */
+#accuracyCharts .mc2-metric-cards .twin-accuracy-metric-card__note {
+  display: block;
 }
 
 .mc2-metric-note {
@@ -2251,9 +2314,8 @@
   line-height: 1.55;
 }
 
+/* SVG 自带实测的 width/height（1 单位 = 1 像素），这里不再拉伸它 */
 .mc2-spark {
-  width: 100%;
-  height: 100%;
   display: block;
   overflow: visible;
 }
@@ -2262,7 +2324,6 @@
   fill: none;
   stroke: var(--danger, #dc2626);
   stroke-width: 1.6;
-  vector-effect: non-scaling-stroke;
   stroke-linejoin: round;
 }
 
@@ -2273,12 +2334,116 @@
 
 .mc2-spark__dot {
   fill: var(--danger, #dc2626);
-  vector-effect: non-scaling-stroke;
 }
 
 .mc2-spark__dot.is-last {
   stroke: var(--surface-1);
   stroke-width: 1.5;
+}
+
+/* 坐标轴：轴线实、网格虚，网格不能盖过数据线 */
+.mc2-spark__axis {
+  stroke: var(--border-strong, var(--border-subtle));
+  stroke-width: 1;
+  shape-rendering: crispEdges;
+}
+
+.mc2-spark__grid {
+  stroke: var(--border-subtle);
+  stroke-width: 1;
+  stroke-dasharray: 2 3;
+  shape-rendering: crispEdges;
+}
+
+.mc2-spark__tick {
+  fill: var(--foreground-muted);
+  font-family: var(--font-mono);
+  font-size: 9px;
+}
+
+.mc2-spark__cap {
+  fill: var(--foreground-muted);
+  font-family: var(--font-sans);
+  font-size: 9px;
+}
+
+/* ── 悬浮读数：十字线 + 焦点环 + 气泡 ──────────────────────────────────────
+   捕获面铺满绘图区，鼠标不必压在 1.6px 的线上；十字线按 x 就近吸附到整轮采样，
+   所以竖线永远落在真实数据点上（只有 4 个点，落在两点之间会读成有连续采样）。 */
+.mc2-spark__capture {
+  fill: transparent;
+  cursor: crosshair;
+}
+
+.mc2-spark__hover {
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 90ms ease-out;
+}
+
+.mc2-spark.is-hovering .mc2-spark__hover {
+  opacity: 1;
+}
+
+.mc2-spark__hover-line {
+  stroke: var(--foreground-secondary);
+  stroke-width: 1;
+  stroke-dasharray: 3 3;
+  shape-rendering: crispEdges;
+}
+
+/* 横线只是把读数引回纵轴刻度，压得比竖线更淡，免得和网格线抢 */
+.mc2-spark__hover-line.is-h {
+  stroke: var(--foreground-muted);
+  opacity: .6;
+}
+
+.mc2-spark__hover-dot {
+  fill: none;
+  stroke: var(--danger, #dc2626);
+  stroke-width: 1.6;
+}
+
+.mc2-chart-tip {
+  position: fixed;
+  z-index: 1400;   /* 高过「?」气泡(1000)与聚光灯遮罩，取景时也要读得到 */
+  display: grid;
+  gap: 1px;
+  padding: 6px 9px;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  background: var(--surface-1);
+  box-shadow: 0 6px 20px rgba(0, 0, 0, .32);
+  pointer-events: none;
+  white-space: nowrap;
+}
+
+.mc2-chart-tip[hidden] {
+  display: none;
+}
+
+.mc2-chart-tip__name {
+  font-size: 9px;
+  color: var(--foreground-muted);
+  letter-spacing: .02em;
+}
+
+.mc2-chart-tip__time {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--foreground-secondary);
+}
+
+.mc2-chart-tip__val {
+  font-family: var(--font-mono);
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--danger, #dc2626);
+}
+
+.mc2-chart-tip__delta {
+  font-size: 10px;
+  color: var(--foreground-muted);
 }
 
 /* ── ② 四卡热力与报错时序 ───────────────────────────────────────────────── */
@@ -2516,7 +2681,45 @@
   padding: 0 var(--space-3) var(--space-3);
 }
 
-/* 舞台是一竖列：kernel 横幅 / 三单元一行 / 结论句。宽度由中间那行撑出来，
+/* 滚动条：与左栏 / infra 栏 / 日志区同一套 —— 平时隐形，悬浮容器才浮现。
+   原来是系统默认那条实心横杠，横在图底下像一道分隔线，把「还能往右看」
+   讲成了「这里到底了」。8px 细杠 + 全圆角 + 无轨道底色。 */
+.mc2-unit-viewport {
+  scrollbar-width: thin;                                    /* Firefox */
+  scrollbar-color: transparent transparent;
+}
+
+.mc2-unit-viewport:hover {
+  scrollbar-color: color-mix(in srgb, var(--foreground) 22%, transparent) transparent;
+}
+
+.mc2-unit-viewport::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+.mc2-unit-viewport::-webkit-scrollbar-track,
+.mc2-unit-viewport::-webkit-scrollbar-corner {
+  background: transparent;
+}
+
+.mc2-unit-viewport::-webkit-scrollbar-thumb {
+  background: transparent;                                  /* 默认隐藏 */
+  border-radius: 999px;
+  border: 2px solid transparent;                            /* 内缩，杠更细 */
+  background-clip: padding-box;
+  transition: background-color var(--duration-fast, 120ms) var(--easing-default, ease);
+}
+
+.mc2-unit-viewport:hover::-webkit-scrollbar-thumb {
+  background-color: color-mix(in srgb, var(--foreground) 18%, transparent);
+}
+
+.mc2-unit-viewport::-webkit-scrollbar-thumb:hover {
+  background-color: color-mix(in srgb, var(--foreground) 32%, transparent);
+}
+
+/* 舞台是一竖列：kernel 横幅 / 单元编排一块。宽度由下面那块撑出来，
    整块 scale 由 JS 按视口宽度算。 */
 .mc2-unit-stage {
   display: flex;
@@ -2584,11 +2787,42 @@
   color: var(--foreground-secondary);
 }
 
-/* 三单元与两条边同处一行，边在 flex 间隙里 */
+/* ── 三单元的编排 ─────────────────────────────────────────────────────────
+   曾经是三块一字排开。AIC 与 AIV 都是设计系统的定尺寸对象，横着摆一行要
+   2000+ px，中列根本装不下：要么整块缩到 50% 看不清格子，要么一路横向拖。
+   而这两块是**同一侧**的东西（一个 MIX 算子的两个计算部位，靠 crossCoreSync
+   配对），CCU 才是对面。所以按语义叠成两列：
+       AIC                          左列 = 计算侧
+        ↓ crossCoreSync
+       AIV  ── NotifyWait ✕ ──►  CCU     右列 = 通信侧
+   横向省下一整个 AIC 的宽度，纵向填的是原先空着的地方。
+   断掉的那条边落在 AIV 与 CCU 之间，位置即语义，不能挪到 AIC 那一行去。 */
 .mc2-unit-row {
-  display: flex;
-  align-items: stretch;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);   /* 窄屏兜底：全部单列纵向排 */
   gap: var(--space-2);
+}
+
+@media (min-width: 1181px) {
+  .mc2-unit-row {
+    grid-template-columns: max-content max-content max-content;
+    align-items: center;
+  }
+
+  .mc2-unit-row > [data-unit="aic"] { grid-area: 1 / 1; }
+  .mc2-unit-row > .mc2-unit-link--y { grid-area: 2 / 1; }
+  .mc2-unit-row > [data-unit="aiv"] { grid-area: 3 / 1; }
+  /* 横边与 CCU 都落在 AIV 这一行：notify 是 AIV 在等，不是整列在等。CCU 原先跨
+     三行居中，等于把它挂在 AIC 与 AIV 中间那个不存在的位置上 —— 连线看着从 AIV
+     出发却指向半空。AIV 与 CCU 两框同时 stretch，上下缘严丝合缝对齐，谁高谁矮
+     都不用猜；横边居中，落点正对两框的腰。 */
+  .mc2-unit-row > .mc2-unit-link--x { grid-area: 3 / 2; align-self: center; }
+  .mc2-unit-row > [data-unit="aiv"],
+  .mc2-unit-row > [data-unit="ccu"] { align-self: stretch; }
+  .mc2-unit-row > [data-unit="ccu"] { grid-area: 3 / 3; }
+
+  /* 框被拉到与对面一样高时，内部对象跟着长满，别在红框里留一块空地 */
+  .mc2-unit-row > [data-unit="ccu"] .mc2-ccu { flex: 1 1 auto; }
 }
 
 /* 单元外框：状态语义挂在这里，不挂进 pattern 内部。
@@ -2679,35 +2913,40 @@
   font-weight: 700;
 }
 
-/* pattern 渲染进这个盒子。它自己带 title 和几何，这里只给它一个定位上下文。 */
+/* pattern 渲染进这个盒子。它自己带 title 和几何，这里只给它一个定位上下文。
+   AIC 与 AIV 同处一列、列宽取两者较大的那个，窄的那块居中摆，不靠左留空。 */
 .mc2-unit-frame__object {
   display: flex;
+  justify-content: center;
 }
 
 /* ── 单元之间的边 ─────────────────────────────────────────────────────────
    本案的断点就在其中一条上，所以边不是装饰：带名字（谁等谁）、带凭据
-   （notify id）、带判读（正常 / 等不到）。 */
+   （notify id）、带判读（正常 / 等不到）。
+   默认朝向是**竖**的（AIC ↓ AIV、以及窄屏下全部纵向排都用这一份）；
+   横着那条由 .mc2-unit-link--x 在宽屏下改写。 */
 .mc2-unit-link {
-  flex: 0 0 auto;
   align-self: center;
+  justify-self: center;
   display: flex;
   flex-direction: column;
   align-items: center;
   gap: 3px;
-  width: 118px;
   text-align: center;
 }
 
+/* 边上的三行字与 CCU 同理：整块缩放后 9.5px 就没了，而「NotifyWait 等不到」
+   正是这张图的重点。抬到与单元内部同一档（12 / 11px）。 */
 .mc2-unit-link__label {
   font-family: var(--font-mono);
-  font-size: 10px;
+  font-size: 12px;
   color: var(--foreground-secondary);
 }
 
 .mc2-unit-link__line {
   position: relative;
-  width: 100%;
-  height: 2px;
+  width: 2px;
+  height: 34px;
   border-radius: 1px;
   background: var(--border-strong, var(--border-default));
 }
@@ -2716,22 +2955,48 @@
 .mc2-unit-link__line::after {
   content: "";
   position: absolute;
-  right: -1px;
-  top: 50%;
+  left: 50%;
+  bottom: -1px;
   width: 6px;
   height: 6px;
   border-top: 2px solid currentColor;
   border-right: 2px solid currentColor;
   color: var(--border-strong, var(--border-default));
-  transform: translateY(-50%) rotate(45deg);
+  transform: translateX(-50%) rotate(135deg);
 }
 
 .mc2-unit-link.is-broken .mc2-unit-link__line {
   background: repeating-linear-gradient(
-    90deg,
+    180deg,
     var(--danger, #dc2626) 0 6px,
     transparent 6px 11px
   );
+}
+
+/* 宽屏下 AIV → CCU 那条转回横向（两列并排，边横跨在中间） */
+@media (min-width: 1181px) {
+  .mc2-unit-link--x { width: 152px; }
+
+  .mc2-unit-link--x .mc2-unit-link__line {
+    width: 100%;
+    height: 2px;
+  }
+
+  .mc2-unit-link--x .mc2-unit-link__line::after {
+    left: auto;
+    right: -1px;
+    bottom: auto;
+    top: 50%;
+    transform: translateY(-50%) rotate(45deg);
+  }
+
+  .mc2-unit-link--x.is-broken .mc2-unit-link__line {
+    background: repeating-linear-gradient(
+      90deg,
+      var(--danger, #dc2626) 0 6px,
+      transparent 6px 11px
+    );
+  }
 }
 
 .mc2-unit-link.is-broken .mc2-unit-link__line::after {
@@ -2746,27 +3011,27 @@
   transform: translate(-50%, -50%);
   display: grid;
   place-items: center;
-  width: 16px;
-  height: 16px;
+  width: 20px;
+  height: 20px;
   border-radius: 50%;
   background: var(--danger, #dc2626);
   color: #fff;
-  font-size: 9px;
+  font-size: 11px;
   font-weight: 700;
   line-height: 1;
 }
 
 .mc2-unit-link__meta {
   font-family: var(--font-mono);
-  font-size: 9.5px;
+  font-size: 11px;
   color: var(--foreground-muted);
   overflow-wrap: anywhere;
 }
 
 .mc2-unit-link__verdict {
-  padding: 0 5px;
+  padding: 0 6px;
   border-radius: var(--radius-sm);
-  font-size: 10px;
+  font-size: 12px;
   color: var(--foreground-muted);
   background: color-mix(in srgb, var(--foreground) 7%, transparent);
 }
@@ -2777,29 +3042,61 @@
   font-weight: 700;
 }
 
-/* 结论句：这张图存在的理由，不让读者自己去凑 */
-.mc2-unit-verdict {
-  margin: 0;
-  max-width: 1080px;
+/* ── 区域置顶横幅：这张图的读法 ───────────────────────────────────────────
+   原先是舞台末尾的一行 11.5px 小字，跟着 stage 一起 scale —— 缩到 60% 就没法
+   读了，而它恰恰是这张图存在的理由（「两个 0 不等于计算单元无关」）。
+   挪到缩放之外、图之前，字号回到正常正文，视觉与观测页事件内容顶部的
+   .cro-incident-banner 同族（danger 描边 + 横向渐变底 + danger 色标签）。 */
+.mc2-unit-banner {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-2);
+  margin: 0 var(--space-3);
   padding: var(--space-2) var(--space-3);
-  border-left: 3px solid var(--danger, #dc2626);
-  border-radius: var(--radius-sm);
-  background: color-mix(in srgb, var(--danger, #dc2626) 7%, transparent);
-  font-size: 11.5px;
-  line-height: 1.6;
+  border: 1px solid color-mix(in srgb, var(--danger, #dc2626) 28%, transparent);
+  border-radius: var(--radius-md);
+  background: linear-gradient(
+    90deg,
+    color-mix(in srgb, var(--danger, #dc2626) 16%, var(--surface-1)),
+    color-mix(in srgb, var(--danger, #dc2626) 5%, var(--surface-1))
+  );
   color: var(--foreground-secondary);
+  font-size: var(--font-size-body-sm, 12px);
+  line-height: 1.55;
 }
 
-.mc2-unit-verdict strong { color: var(--foreground); }
+.mc2-unit-banner__tag {
+  flex: 0 0 auto;
+  color: var(--danger, #dc2626);
+  font-weight: var(--font-weight-semibold, 600);
+}
+
+.mc2-unit-banner__message {
+  flex: 1 1 auto;
+  min-width: 0;
+  margin: 0;
+}
+
+.mc2-unit-banner__message strong {
+  color: var(--foreground);
+  font-weight: var(--font-weight-semibold, 600);
+}
 
 /* ── CCU 对象（设计系统无对应 pattern，本页自建）──────────────────────────
    只画 history.md 里指名到具体位置的两处结构：mission 槽与 WaitGroup 的 rank 位。
-   没有证据支撑的内部结构一律不画 —— 画出来就成了看着像真的的臆测。 */
+   没有证据支撑的内部结构一律不画 —— 画出来就成了看着像真的的臆测。
+
+   尺度必须与对面的 AIC / AIV 同族。整块舞台是**同一个** transform 等比缩放的，
+   不存在谁缩得多，但原来 268px 宽、10px 字的 CCU 摆在 1000/1080px 宽、11~14px
+   字的两个 pattern 对象旁边，缩到 50% 时 pattern 的 14px 还剩 7px 勉强能认，
+   CCU 的 10px 只剩 5px —— 看起来就是「CCU 被缩得更狠」。对齐到 pattern 的字号
+   与格子尺度（12~15px 字、28px 以上的格），同一个缩放比下才一起可读。 */
 .mc2-ccu {
   display: flex;
   flex-direction: column;
   gap: var(--space-3);
-  width: 268px;
+  width: 404px;
   padding: var(--space-3);
   border-radius: var(--radius-md);
   background: color-mix(in srgb, var(--foreground) 4%, transparent);
@@ -2808,31 +3105,31 @@
 .mc2-ccu__engine {
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: 3px;
   padding-bottom: var(--space-2);
   border-bottom: 1px solid var(--border-subtle);
 }
 
 .mc2-ccu__engine-label {
   font-family: var(--font-mono);
-  font-size: 12px;
+  font-size: 15px;
   font-weight: 600;
   color: var(--foreground);
 }
 
 .mc2-ccu__engine-note {
-  font-size: 10px;
+  font-size: 12px;
   color: var(--foreground-muted);
 }
 
 .mc2-ccu__section {
   display: flex;
   flex-direction: column;
-  gap: 5px;
+  gap: 6px;
 }
 
 .mc2-ccu__section-label {
-  font-size: 10px;
+  font-size: 12px;
   color: var(--foreground-muted);
   font-family: var(--font-mono);
 }
@@ -2840,18 +3137,20 @@
 .mc2-ccu__missions {
   display: grid;
   grid-template-columns: repeat(8, minmax(0, 1fr));
-  gap: 3px;
+  gap: 4px;
 }
 
+/* 格子高度对齐 AIV pattern 的 28px 档，不用 aspect-ratio 1 —— 8 列铺满 404px
+   会摊出 44px 见方的大方块，比对面 pattern 的格子还大一圈 */
 .mc2-ccu__mission {
-  aspect-ratio: 1;
+  height: 30px;
   display: grid;
   place-items: center;
   border: 1px solid var(--border-default);
   border-radius: var(--radius-sm);
   background: var(--surface-1);
   font-family: var(--font-mono);
-  font-size: 10px;
+  font-size: 13px;
   color: var(--foreground-muted);
   cursor: help;
 }
@@ -2867,18 +3166,18 @@
 .mc2-ccu__waitgroup {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 3px;
+  gap: 4px;
 }
 
 .mc2-ccu__rank {
   display: grid;
   place-items: center;
-  height: 22px;
+  height: 30px;
   border: 1px solid var(--border-default);
   border-radius: var(--radius-sm);
   background: var(--surface-1);
   font-family: var(--font-mono);
-  font-size: 10px;
+  font-size: 13px;
   color: var(--foreground-muted);
   cursor: help;
 }
@@ -2893,21 +3192,21 @@
 .mc2-ccu__error {
   display: flex;
   flex-direction: column;
-  gap: 2px;
-  padding: var(--space-2);
+  gap: 3px;
+  padding: var(--space-2) var(--space-3);
   border-radius: var(--radius-sm);
   background: color-mix(in srgb, var(--danger, #dc2626) 12%, transparent);
 }
 
 .mc2-ccu__error-code {
   font-family: var(--font-mono);
-  font-size: 10px;
+  font-size: 13px;
   font-weight: 700;
   color: var(--danger, #dc2626);
 }
 
 .mc2-ccu__error-text {
-  font-size: 10px;
+  font-size: 12px;
   line-height: 1.45;
   color: var(--foreground-secondary);
 }
@@ -2916,34 +3215,6 @@
    边跟着转 90°：线改成竖的，断口仍在中点。 */
 @media (max-width: 1180px) {
   .mc2-unit-stage { width: auto; }
-
-  .mc2-unit-row {
-    flex-direction: column;
-    align-items: stretch;
-  }
-
-  .mc2-unit-link {
-    width: auto;
-    align-self: center;
-  }
-
-  .mc2-unit-link__line {
-    width: 2px;
-    height: 34px;
-  }
-
-  .mc2-unit-link__line::after {
-    right: 50%;
-    top: auto;
-    bottom: -1px;
-    transform: translateX(50%) rotate(135deg);
-  }
-
-  .mc2-unit-link.is-broken .mc2-unit-link__line {
-    background: repeating-linear-gradient(
-      180deg,
-      var(--danger, #dc2626) 0 6px,
-      transparent 6px 11px
-    );
-  }
+  /* 单列纵向排 —— .mc2-unit-row 的基线布局本来就是这个，边也本来就是竖的，
+     这里只用取消舞台的 max-content 宽度。两条边的朝向见上面的 --x 宽屏改写。 */
 }

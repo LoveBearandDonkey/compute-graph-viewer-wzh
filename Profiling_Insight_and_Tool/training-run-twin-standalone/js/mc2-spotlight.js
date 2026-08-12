@@ -112,7 +112,9 @@
         // 中区的三个单元对象是主证据（AIC/AIV 压暗、CCU 描红到 mission 粒度），
         // infra 栏那张小卡是同一件事的读数，一起框进来
         target: function () {
+          // 横幅在舞台之外（不跟着 scale），要单列进来，否则这一步的结论句被框在外面
           return [
+            document.getElementById("mc2UnitBanner"),
             document.getElementById("mc2UnitStage"),
             document.getElementById("mc2UnitCard"),
           ];

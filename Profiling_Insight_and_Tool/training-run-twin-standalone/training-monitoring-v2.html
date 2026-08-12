@@ -1592,7 +1592,7 @@
     .twin-timeline-body,
     .twin-dock-panel,
     .wzh-log-body,
-    .wzh-log-mapping,
+    .wzh-log-mapping-list,
     .wzh-chat-messages {
       scrollbar-width: thin;              /* Firefox */
       scrollbar-color: transparent transparent;
@@ -1604,7 +1604,7 @@
     .twin-timeline-body:hover,
     .twin-dock-panel:hover,
     .wzh-log-body:hover,
-    .wzh-log-mapping:hover,
+    .wzh-log-mapping-list:hover,
     .wzh-chat-messages:hover {
       scrollbar-color: var(--border-default) transparent;
     }
@@ -1615,7 +1615,7 @@
     .twin-timeline-body::-webkit-scrollbar,
     .twin-dock-panel::-webkit-scrollbar,
     .wzh-log-body::-webkit-scrollbar,
-    .wzh-log-mapping::-webkit-scrollbar,
+    .wzh-log-mapping-list::-webkit-scrollbar,
     .wzh-chat-messages::-webkit-scrollbar {
       width: 8px;
       height: 8px;
@@ -1627,7 +1627,7 @@
     .twin-timeline-body::-webkit-scrollbar-track,
     .twin-dock-panel::-webkit-scrollbar-track,
     .wzh-log-body::-webkit-scrollbar-track,
-    .wzh-log-mapping::-webkit-scrollbar-track,
+    .wzh-log-mapping-list::-webkit-scrollbar-track,
     .wzh-chat-messages::-webkit-scrollbar-track {
       background: transparent;
     }
@@ -1638,7 +1638,7 @@
     .twin-timeline-body::-webkit-scrollbar-thumb,
     .twin-dock-panel::-webkit-scrollbar-thumb,
     .wzh-log-body::-webkit-scrollbar-thumb,
-    .wzh-log-mapping::-webkit-scrollbar-thumb,
+    .wzh-log-mapping-list::-webkit-scrollbar-thumb,
     .wzh-chat-messages::-webkit-scrollbar-thumb {
       background: transparent;            /* 默认隐藏 */
       border-radius: 4px;
@@ -1651,7 +1651,7 @@
     .twin-timeline-body:hover::-webkit-scrollbar-thumb,
     .twin-dock-panel:hover::-webkit-scrollbar-thumb,
     .wzh-log-body:hover::-webkit-scrollbar-thumb,
-    .wzh-log-mapping:hover::-webkit-scrollbar-thumb,
+    .wzh-log-mapping-list:hover::-webkit-scrollbar-thumb,
     .wzh-chat-messages:hover::-webkit-scrollbar-thumb {
       background: var(--border-default);  /* 悬浮浮现 */
     }
@@ -1662,7 +1662,7 @@
     .twin-timeline-body::-webkit-scrollbar-thumb:hover,
     .twin-dock-panel::-webkit-scrollbar-thumb:hover,
     .wzh-log-body::-webkit-scrollbar-thumb:hover,
-    .wzh-log-mapping::-webkit-scrollbar-thumb:hover,
+    .wzh-log-mapping-list::-webkit-scrollbar-thumb:hover,
     .wzh-chat-messages::-webkit-scrollbar-thumb:hover {
       background: var(--foreground-muted);
     }
@@ -2166,7 +2166,8 @@
       display: flex; align-items: center; gap: var(--space-3); flex-wrap: wrap;
       flex: 0 0 auto; padding: 8px var(--space-4);
       border-bottom: 1px solid var(--border-subtle);
-      background: var(--surface-2);
+      /* 不自带底色,透出 dock 自身的 --ide-frame-pane-fill,与底部面板其余部分同色 */
+      background: transparent;
     }
     .wzh-log-search { flex: 1 1 320px; min-width: 220px; display: flex; align-items: center; gap: 6px; }
     .wzh-log-search-input {
@@ -2228,23 +2229,56 @@
     .wzh-log-row.lvl-WARN .wzh-log-col-msg { color: color-mix(in srgb, var(--warning) 85%, var(--foreground)); }
     .wzh-log-empty { padding: var(--space-4); text-align: center; color: var(--foreground-muted); font-size: 12px; font-family: var(--font-sans); }
 
+    /* 右栏是「智能映射」的产物(内部名 → torch_npu 可见接口),底色不用中性灰,而是一道
+       从左到右的蓝→紫弱渐变(primary → l0a-violet),和左侧原始日志的灰底拉开语义差别。
+       渐变两端都调到 transparent 之上、不铺任何不透明底色,所以底下透出的仍是 dock 自身的
+       --ide-frame-pane-fill —— 与 .wzh-log-toolbar 同一个做法,底部不会再留一条灰色。 */
     .wzh-log-mapping {
-      flex: 3 1 0; min-width: 168px; min-height: 0; overflow-y: auto;
+      flex: 3 1 0; min-width: 168px; min-height: 0;
+      position: relative; overflow: hidden;
       display: flex; flex-direction: column;
-      border-left: 1px solid var(--border-subtle); background: var(--surface-2);
+      border-left: 1px solid var(--border-subtle);
+    }
+    /* 染色层单独占一层 ::before:横向蓝→紫,再用 mask 做纵向渐隐(上面见色、往下化到没有)。
+       mask 只能挂在这一层——挂在 .wzh-log-mapping 上会把标题和映射卡片一起淡掉。
+       滚动条移到内层 .wzh-log-mapping-list,本体不再是滚动容器,所以 absolute 铺满即可,
+       不会随内容滚走;也因此表头不需要 sticky + 不透明底色去挡内容了。 */
+    .wzh-log-mapping::before {
+      content: ''; position: absolute; inset: 0; z-index: 0; pointer-events: none;
+      background: linear-gradient(90deg,
+        color-mix(in srgb, var(--primary) 8%, transparent) 0%,
+        color-mix(in srgb, var(--highlight-l0a-violet-400, #9B3CF6) 8%, transparent) 100%);
+      -webkit-mask-image: linear-gradient(180deg, #000 0%, rgba(0, 0, 0, .45) 46%, transparent 100%);
+      mask-image: linear-gradient(180deg, #000 0%, rgba(0, 0, 0, .45) 46%, transparent 100%);
     }
     .wzh-log-mapping-head {
-      flex: 0 0 auto; position: sticky; top: 0; z-index: 1;
+      flex: 0 0 auto; position: relative; z-index: 1;
       padding: 7px var(--space-3);
       font: 700 11px/1.3 var(--font-sans); letter-spacing: .02em; color: var(--foreground-secondary);
-      background: var(--surface-2); border-bottom: 1px solid var(--border-subtle);
+      background: transparent;
+      --wzh-map-title-violet: var(--highlight-l0a-violet-300, #B977F9);
     }
-    .wzh-log-mapping-list { flex: 1; padding: 6px; display: flex; flex-direction: column; gap: 6px; }
+    /* 标题文字本身也走蓝→紫。渐变填充挂在内层 span 上:background-clip 会把整个 background
+       裁成文字形状,head 自身若还要用 background 就没得共存。
+       紫端按主题换档——深色底用 violet-300,浅色底 violet-300 太飘,换回 violet-500。 */
+    :root[data-theme='light'] .wzh-log-mapping-head { --wzh-map-title-violet: var(--highlight-l0a-violet-500, #820BF4); }
+    .wzh-log-mapping-head > span {
+      background: linear-gradient(90deg, var(--primary) 0%, var(--wzh-map-title-violet) 100%);
+      -webkit-background-clip: text; background-clip: text;
+      -webkit-text-fill-color: transparent; color: transparent;
+    }
+    .wzh-log-mapping-list {
+      position: relative; z-index: 1;
+      flex: 1; min-height: 0; overflow-y: auto;
+      padding: 6px; display: flex; flex-direction: column; gap: 6px;
+    }
     .wzh-log-mapping-row {
       padding: 6px 8px; border-radius: var(--radius-md); border: 1px solid var(--border-subtle);
-      background: var(--surface-1); transition: background var(--duration-fast), border-color var(--duration-fast);
+      /* 卡片半透明,让底层的智能渐变透上来一点,而不是被一整片 surface-1 盖死 */
+      background: color-mix(in srgb, var(--surface-1) 82%, transparent);
+      transition: background var(--duration-fast), border-color var(--duration-fast);
     }
-    .wzh-log-mapping-names { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; font-family: var(--font-mono); font-size: 18px; }
+    .wzh-log-mapping-names { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; font-family: var(--font-mono); font-size: 16px; }
     .wzh-log-mapping-ascend { color: var(--foreground); font-weight: 700; word-break: break-all; }
     .wzh-log-mapping-arrow { color: var(--foreground-muted); font-size: 22px; }
     .wzh-log-mapping-torch { color: var(--status-success, #22a06b); font-weight: 600; word-break: break-all; }
@@ -2269,6 +2303,200 @@
     @media (max-width: 720px) {
       .wzh-log-col-time { flex-basis: 108px; }
       .wzh-log-col-comp { display: none; }
+    }
+
+    /* ── 关键通知卡片堆叠(activity rail 底部)───────────────────────────────────
+       状态传达参照灵动岛:默认只收敛成一枚"两张卡叠在一起"的占位卡,封面直接放最新
+       (即展开后最上方)那条的状态图标,右上角配未读数,不占版面也说得清"有几条、最新的
+       是什么";常驻的东西不做循环动效(试过呼吸涟漪,余光里一直在闪);悬浮/聚焦后占位卡隐去、卡堆以弹性曲线
+       逐张抽开(2 张以上时上层卡片带递增逆时针角度,模拟被按住左下角抽开的实体卡堆)。
+       单卡是 watchOS 式的微型信息卡:左侧语义色圆底线性图标读状态,中间两行读事由,
+       右下角读相对时间——卡堆自上而下由新到旧,右下那一列连起来就是时间线。
+       此处为静态演示数据,后续接告警流时只需替换卡片节点。 */
+    .wzh-notif-dock {
+      --notif-w: 327px;          /* 展开卡片宽度(1.5×) */
+      --notif-step: 66px;        /* 相邻卡片纵向步距 = 卡高 ~59 + 7 间距(原间距的一半) */
+      --notif-tilt: -1.05deg;    /* 每层递增角度,逆时针(i=0 的底卡不倾斜) */
+      --notif-spring: cubic-bezier(.22, 1.16, .32, 1);
+      position: relative;
+      margin-top: auto;          /* 吸到 rail 最下方,与上方图标组拉开 */
+      /* rail 自带 10px 下内边距,再补 4px 让整个模块(含垫卡)离页面底边 16px */
+      margin-bottom: 4px;
+      width: 34px; height: 40px; /* 34 封面 + 6 垫卡露出的部分 */
+      z-index: 40;
+    }
+    /* rail 本身不定位时,展开的卡堆会被右侧工作区盖住 */
+    .pto-ide-frame__activity-rail { position: relative; z-index: 20; }
+
+    /* 垫在下面那张较小的卡:露 6px(露 4px 时几乎看不出背后还压着一张),是"不止一条"的隐喻,不承载信息。
+       圆角要比封面更小:12px 圆角摊在 4px 高的露出条上,两个下角整条都在拐弯,看着就不像一张卡 */
+    .wzh-notif-under {
+      position: absolute; left: 4px; right: 4px; bottom: 0; height: 22px;
+      border: 1px solid var(--border-subtle);
+      border-radius: var(--radius-sm);
+      background: var(--surface-2);
+      transition:
+        opacity var(--duration-base) var(--easing-default),
+        transform var(--duration-base) var(--notif-spring);
+    }
+
+    /* 收起态封面:方块 + 最新一条的状态图标 + 未读徽标 */
+    .wzh-notif-trigger {
+      position: absolute; left: 0; right: 0; top: 0; height: 34px;
+      display: flex; align-items: center; justify-content: center;
+      padding: 0; border: 1px solid var(--border-default);
+      border-radius: var(--radius-md);
+      background: var(--surface-3); cursor: pointer;
+      transition:
+        transform var(--duration-base) var(--notif-spring),
+        opacity var(--duration-base) var(--easing-default),
+        background var(--duration-base) var(--easing-default),
+        border-color var(--duration-base) var(--easing-default),
+        box-shadow var(--duration-base) var(--easing-default);
+    }
+    .wzh-notif-trigger:hover { background: var(--surface-4); border-color: var(--border-strong); }
+    /* 展开时占位卡整体隐去(含垫卡),位置让给刚抽出来的 i=0 卡 */
+    .wzh-notif-dock.is-open .wzh-notif-trigger,
+    .wzh-notif-dock.is-open .wzh-notif-under {
+      opacity: 0; transform: scale(.86) translateY(4px);
+    }
+    /* 封面图标直接复用卡片上的 .wzh-notif-icon(同一个圆底+线性图标),只是尺寸收到 34px 方块里放得下;
+       换最新条目时把这里的 data-tone 和图标路径跟最上方那张卡一起换 */
+    .wzh-notif-trigger .wzh-notif-icon { width: 24px; height: 24px; }
+    .wzh-notif-trigger .wzh-notif-icon svg { width: 14px; height: 14px; }
+
+    /* 用 flex 居中而不是 line-height + text-align:数字在 pill 里要两个方向都正,
+       行高对齐吃字体的 baseline/ascender,单字符时肉眼能看出偏下。
+       flex 居中的是行盒不是字形,字形在行盒里仍偏下(下方留了 descender 的位置),
+       用 2px 下内边距把内容盒抬 1px 补回来——比给文字加 transform 稳,不会糊字。 */
+    .wzh-notif-badge {
+      position: absolute; top: -5px; right: -6px; z-index: 1;
+      min-width: 16px; height: 16px; padding: 0 4px 2px;
+      display: flex; align-items: center; justify-content: center;
+      border-radius: var(--radius-pill);
+      background: var(--danger); color: #fff;
+      font: 700 10px/1 var(--font-sans); font-variant-numeric: tabular-nums;
+      box-shadow: 0 0 0 2px var(--background);
+      transition: opacity var(--duration-fast) var(--easing-default), transform var(--duration-base) var(--notif-spring);
+    }
+    .wzh-notif-dock.is-open .wzh-notif-badge { opacity: 0; transform: scale(.6); }
+
+    /* 展开层:收起时不吃指针事件,展开后整片区域接管 hover,避免卡片间隙导致闪烁 */
+    .wzh-notif-shelf {
+      position: absolute; left: 0; bottom: 0;
+      width: var(--notif-w); height: 34px;
+      pointer-events: none;
+    }
+    .wzh-notif-dock.is-open .wzh-notif-shelf {
+      height: calc(var(--notif-step) * 5 + 66px);
+      pointer-events: auto;
+    }
+
+    .wzh-notif-card {
+      position: absolute; left: 0; bottom: 0;
+      display: flex; align-items: center; gap: 12px;
+      width: var(--notif-w); padding: 11px 14px;
+      border: 1px solid var(--border-default);
+      border-radius: var(--radius-xl);
+      /* 渐变毛玻璃:半透明双色渐变 + backdrop blur(blur 只在 .is-open 时挂,见下方注释);
+         顶边一道 inset 高光交代卡片是"一片玻璃"而不是实心块 */
+      background: linear-gradient(148deg,
+        color-mix(in srgb, var(--surface-4) 92%, transparent) 0%,
+        color-mix(in srgb, var(--surface-2) 84%, transparent) 100%);
+      box-shadow: var(--shadow-md), inset 0 1px 0 rgba(255, 255, 255, .07);
+      transform-origin: 10px 100%;   /* 支点在左下角:像拇指按住卡堆一角抽开 */
+      transform: translate3d(0, 0, 0) scale(.4);
+      opacity: 0;
+      transition:
+        transform 420ms var(--notif-spring),
+        opacity 180ms var(--easing-out),
+        box-shadow var(--duration-base) var(--easing-default),
+        background var(--duration-fast) var(--easing-default),
+        border-color var(--duration-fast) var(--easing-default);
+      transition-delay: calc((5 - var(--i)) * 16ms);   /* 收起:自上而下依次落回 */
+    }
+    /* 展开后每张卡都要投影:卡堆浮在工作区内容之上,没有投影就分不出层。
+       投影一律用黑色——语义色留给图标与描边,投影跟着状态变色会让同一堆卡看起来深浅不一。
+
+       backdrop-filter 只挂在展开态、且砍到 blur(10px) 不带 saturate:这块背板底下是常年在跑的
+       进度条流光 / mesh 流点 / 图表重绘,每一帧都会让 6 张卡各做一次背板取样+模糊,展开动画期间
+       卡片还互相重叠 —— 重叠的 backdrop-filter 在 Chromium 里是串行渲染通道,叠 6 层就是每帧 6 遍
+       全区域模糊,悬浮几次后合成层留着不回收,越用越卡。收起态本来就看不见,没必要占着模糊层。 */
+    .wzh-notif-dock.is-open .wzh-notif-card {
+      opacity: 1;
+      /* 描边走中性灰而不是状态色:6 张卡里 4 张是红的,描边再跟着状态走整堆就成了一片红框,
+         状态色留给图标圆底那一处就够认。展开态比收起态亮一档,把卡沿从背景里拉出来 */
+      border-color: var(--border-strong);
+      backdrop-filter: blur(10px);
+      -webkit-backdrop-filter: blur(10px);
+      box-shadow:
+        var(--shadow-lg),
+        0 2px 8px rgba(0, 0, 0, .32),
+        inset 0 1px 0 rgba(255, 255, 255, .07);
+      /* 停住时必须是整数像素平移 + 无缩放:带一个 0.988 之类的残留 scale,合成层会按缩放后的
+         尺寸光栅化,卡里的字就发虚(旋转本身只影响边缘抗锯齿,不糊字)。层次感改由描边与
+         底色差承担,不靠缩放。 */
+      transform:
+        translate3d(calc(var(--i) * -2px), calc(var(--i) * var(--notif-step) * -1), 0)
+        rotate(calc(var(--i) * var(--notif-tilt)));
+      transition-delay: calc(var(--i) * 28ms);         /* 展开:自下而上依次抽出 */
+    }
+    /* 有对应事件的卡才可点(排队条目没有事件可跳,保持默认光标、不给悬浮反馈) */
+    .wzh-notif-card[data-event] { cursor: pointer; }
+    .wzh-notif-card[data-event]:hover {
+      /* 逐卡悬浮再亮一档灰,仍不带状态色;用 foreground 混色以便浅色主题下自动变成深灰 */
+      border-color: color-mix(in srgb, var(--foreground) 30%, transparent);
+      background: linear-gradient(148deg,
+        color-mix(in srgb, var(--surface-4) 96%, transparent) 0%,
+        color-mix(in srgb, var(--surface-3) 86%, transparent) 100%);
+    }
+
+    /* 语义色挂在 data-tone 上,卡片与占位卡封面共用同一套 */
+    .wzh-notif-dock [data-tone="warning"] { --tone: var(--warning); }
+    .wzh-notif-dock [data-tone="danger"]  { --tone: var(--danger); }
+    .wzh-notif-dock [data-tone="success"] { --tone: var(--success); }
+
+    /* 状态图标:半透明语义色圆底 + 线性图标(对勾/时钟/断裂错位…),圆底把状态色摊成一片
+       低饱和背景,比一个实心小圆点更容易在余光里认出来 */
+    .wzh-notif-icon {
+      flex: 0 0 auto; width: 30px; height: 30px; border-radius: 50%;
+      display: flex; align-items: center; justify-content: center;
+      background: color-mix(in srgb, var(--tone) 16%, transparent);
+      box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--tone) 26%, transparent);
+    }
+    .wzh-notif-icon svg {
+      width: 16px; height: 16px; color: var(--tone); fill: none;
+      stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round;
+    }
+    .wzh-notif-text { flex: 1 1 auto; min-width: 0; }
+    .wzh-notif-title {
+      font: 600 13px/1.35 var(--font-sans); color: var(--foreground);
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    }
+    .wzh-notif-desc {
+      margin-top: 2px;
+      font: 400 12px/1.35 var(--font-sans); color: var(--foreground-secondary);
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    }
+    /* 相对时间贴右下角:align-self 落到底,与副文那一行齐平,不参与垂直居中。
+       卡堆自上而下由新到旧,这一列读下来就是时间线 */
+    .wzh-notif-time {
+      flex: 0 0 auto; align-self: flex-end;
+      font: 400 11px/1.35 var(--font-sans); font-variant-numeric: tabular-nums;
+      color: var(--foreground-muted); white-space: nowrap;
+    }
+
+    /* 矮屏收紧步距,保证 6 张卡不越过 rail 顶部 */
+    @media (max-height: 820px) {
+      .wzh-notif-dock { --notif-step: 58px; --notif-w: 286px; }
+      .wzh-notif-card { padding: 8px 11px; }
+      .wzh-notif-title { font-size: 12px; }
+      .wzh-notif-desc { font-size: 11px; }
+      .wzh-notif-icon { width: 26px; height: 26px; }
+    }
+    @media (prefers-reduced-motion: reduce) {
+      .wzh-notif-card { transition-duration: 1ms; transition-delay: 0ms !important; }
+      .wzh-notif-dock.is-open .wzh-notif-card { transform: translate3d(0, calc(var(--i) * var(--notif-step) * -1), 0); }
     }
   </style>
 </head>
@@ -2443,6 +2671,122 @@
             <path d="m15.4 6.5-6.8 4"></path>
           </svg>
         </button>
+
+        <!-- 关键通知堆叠:收起态是一枚"两张卡叠在一起"的占位卡,封面放最新一条的状态图标;
+             悬浮/聚焦后占位卡隐去、卡堆抽开(交互逻辑见页尾 initNotifDock)。
+             --i 自下而上递增,时间也自下而上由旧到新 —— i=5 在最顶、是最新那条(封面图标即取它);
+             越往上角度越大(逆时针)。占位卡与垫卡写在 shelf 之前,保证展开时卡片盖在它们之上。
+             演示数据,接真实告警流时只替换这些 <article> 即可。 -->
+        <div class="wzh-notif-dock" id="trainNotifDock">
+          <span class="wzh-notif-under" aria-hidden="true"></span>
+          <button class="wzh-notif-trigger" id="trainNotifTrigger" type="button" data-tone="warning"
+                  aria-expanded="false" aria-controls="trainNotifDock"
+                  title="关键通知（6 条：最新 SFT-0716 排队中 / 4 条告警 / 1 条完成）" aria-label="关键通知，6 条">
+            <!-- 封面图标 = 最上方 i=5 那张卡的状态图标,连圆底一起复用(排队 = 黄底 + 时钟) -->
+            <span class="wzh-notif-icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24">
+                <circle cx="12" cy="12" r="9"></circle>
+                <path d="M12 7v5l3.5 2"></path>
+              </svg>
+            </span>
+          </button>
+          <span class="wzh-notif-badge" aria-hidden="true">6</span>
+          <div class="wzh-notif-shelf">
+            <!-- i=0 · 绿:训练完成(最旧)。没有诊断事件可跳,落到任务对比页做复盘 -->
+            <article class="wzh-notif-card" data-tone="success" style="--i:0"
+                     data-event data-href="./TaskCompare.html" tabindex="0"
+                     title="打开任务对比，复盘这次已完成的训练">
+              <span class="wzh-notif-icon" aria-hidden="true">
+                <svg viewBox="0 0 24 24"><path d="M4 12.5l5 5L20 6.5"></path></svg>
+              </span>
+              <div class="wzh-notif-text">
+                <div class="wzh-notif-title">openPangu-Flash · Pretrain-0701</div>
+                <div class="wzh-notif-desc">训练完成 · 耗时 23h · ckpt 已归档</div>
+              </div>
+              <span class="wzh-notif-time">12 天前</span>
+            </article>
+            <!-- i=1 · 红:显存 OOM → 进度条「显存」问题点 -->
+            <article class="wzh-notif-card" data-tone="danger" style="--i:1"
+                     data-event data-diagnosis="mem-oom" tabindex="0"
+                     title="跳到该事件：时光机定位 + 整网图聚焦 + 聚光灯定位链">
+              <span class="wzh-notif-icon" aria-hidden="true">
+                <svg viewBox="0 0 24 24">
+                  <rect x="6" y="6" width="12" height="12" rx="2"></rect>
+                  <path d="M9.5 2.5v3M14.5 2.5v3M9.5 18.5v3M14.5 18.5v3M2.5 9.5h3M2.5 14.5h3M18.5 9.5h3M18.5 14.5h3"></path>
+                </svg>
+              </span>
+              <div class="wzh-notif-text">
+                <div class="wzh-notif-title">openPangu-Flash · Pretrain-0708</div>
+                <div class="wzh-notif-desc">12003 step · 显存 OOM 62.4/64GB</div>
+              </div>
+              <span class="wzh-notif-time">5 天前</span>
+            </article>
+            <!-- i=2 · 红:loss NaN → 进度条「Router 溢出 / loss NaN」问题点 -->
+            <article class="wzh-notif-card" data-tone="danger" style="--i:2"
+                     data-event data-diagnosis="moe-a2a" tabindex="0"
+                     title="跳到该事件：时光机定位 + 整网图聚焦 + 聚光灯定位链">
+              <span class="wzh-notif-icon" aria-hidden="true">
+                <svg viewBox="0 0 24 24">
+                  <path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0Z"></path>
+                  <path d="M12 9.5v4M12 17.2h.01"></path>
+                </svg>
+              </span>
+              <div class="wzh-notif-text">
+                <div class="wzh-notif-title">openPangu-Flash · Pretrain-0713</div>
+                <div class="wzh-notif-desc">15203 step · loss NaN</div>
+              </div>
+              <span class="wzh-notif-time">2 天前</span>
+            </article>
+            <!-- i=3 · 红:AMP loss scale 1/16 告警 → FP8 溢出问题点(loss scale 回退的直接诱因) -->
+            <article class="wzh-notif-card" data-tone="danger" style="--i:3"
+                     data-event data-diagnosis="qproj-overflow" tabindex="0"
+                     title="跳到该事件：时光机定位 + 整网图聚焦 + 聚光灯定位链">
+              <span class="wzh-notif-icon" aria-hidden="true">
+                <svg viewBox="0 0 24 24">
+                  <path d="M22 17 13.5 8.5l-5 5L2 7"></path>
+                  <path d="M16 17h6v-6"></path>
+                </svg>
+              </span>
+              <div class="wzh-notif-text">
+                <div class="wzh-notif-title">openPangu-Flash · Pretrain-0713</div>
+                <div class="wzh-notif-desc">loss scale 降至 1/16 · 连续 3 次回退</div>
+              </div>
+              <span class="wzh-notif-time">1 天前</span>
+            </article>
+            <!-- i=4 · 红:AMP loss scale 1/32 熔断 → 低精训练不收敛问题点 -->
+            <article class="wzh-notif-card" data-tone="danger" style="--i:4"
+                     data-event data-diagnosis="low-precision-training" tabindex="0"
+                     title="跳到该事件：时光机定位 + 整网图聚焦 + 聚光灯定位链">
+              <span class="wzh-notif-icon" aria-hidden="true">
+                <svg viewBox="0 0 24 24">
+                  <path d="M2 8h8"></path>
+                  <path d="M14 16h8"></path>
+                  <path d="M10 8l2.6 4H10l2.6 4"></path>
+                </svg>
+              </span>
+              <div class="wzh-notif-text">
+                <div class="wzh-notif-title">openPangu-Flash · Pretrain-0713</div>
+                <div class="wzh-notif-desc">loss scale 降至 1/32 · 已熔断停训</div>
+              </div>
+              <span class="wzh-notif-time">20 小时前</span>
+            </article>
+            <!-- i=5 · 黄:排队等资源(最新、进行中)。还没开跑,没有可跳的事件,不给 data-event -->
+            <article class="wzh-notif-card" data-tone="warning" style="--i:5"
+                     title="任务尚在排队，暂无可查看的事件">
+              <span class="wzh-notif-icon" aria-hidden="true">
+                <svg viewBox="0 0 24 24">
+                  <circle cx="12" cy="12" r="9"></circle>
+                  <path d="M12 7v5l3.5 2"></path>
+                </svg>
+              </span>
+              <div class="wzh-notif-text">
+                <div class="wzh-notif-title">openPangu-Flash · SFT-0716</div>
+                <div class="wzh-notif-desc">排队中 · 预计还需 2.5h（等 512 卡）</div>
+              </div>
+              <span class="wzh-notif-time">3 分钟前</span>
+            </article>
+          </div>
+        </div>
       </nav>
 
       <div class="pto-ide-frame__workarea">
@@ -2771,12 +3115,12 @@ MoE：256+1（top-8 路由 · EP 切分）">?</span>
                 <div class="pto-ide-frame__terminal-tablist twin-dock-tablist" role="tablist" aria-label="底部面板">
                   <!-- 「日志」页签:并入原右上角 #trainLogToggle 抽屉(js/training-log-drawer.js)的内容,
                        打开入口不变(仍是 #trainLogToggle),点击后改为展开本 dock 并切到这个页签 -->
-                  <button class="pto-ide-frame__terminal-tab twin-dock-tab" type="button" role="tab"
-                          id="dockTabLog" data-dock-tab="log"
-                          aria-selected="false" aria-controls="dockPanelLog" tabindex="-1">日志</button>
                   <button class="pto-ide-frame__terminal-tab twin-dock-tab is-selected" type="button" role="tab"
+                          id="dockTabLog" data-dock-tab="log"
+                          aria-selected="true" aria-controls="dockPanelLog">日志</button>
+                  <button class="pto-ide-frame__terminal-tab twin-dock-tab" type="button" role="tab"
                           id="dockTabTimeline" data-dock-tab="timeline"
-                          aria-selected="true" aria-controls="twinTimelineBody">Timeline</button>
+                          aria-selected="false" aria-controls="twinTimelineBody" tabindex="-1">Timeline</button>
                   <!-- 「性能」页签:问题二(显存 OOM)的 6 张举证图,与聚光灯定位链的 6 个步进一一对应,
                        渲染逻辑见 js/training-memory-panel.js -->
                   <button class="pto-ide-frame__terminal-tab twin-dock-tab" type="button" role="tab"
@@ -2799,7 +3143,7 @@ MoE：256+1（top-8 路由 · EP 切分）">?</span>
                 </button>
               </header>
               <div class="pto-ide-frame__pane-body twin-timeline-body" id="twinTimelineBody"
-                   role="tabpanel" aria-labelledby="dockTabTimeline" data-dock-panel="timeline"></div>
+                   role="tabpanel" aria-labelledby="dockTabTimeline" data-dock-panel="timeline" hidden></div>
               <!-- 「性能」页签内容:6 张卡由 js/training-memory-panel.js 建入,一行铺满不滚动 -->
               <div class="pto-ide-frame__pane-body twin-dock-panel wzh-mem-panel" id="dockPanelPerf"
                    role="tabpanel" aria-labelledby="dockTabPerf" data-dock-panel="perf" hidden></div>
@@ -2814,7 +3158,7 @@ MoE：256+1（top-8 路由 · EP 切分）">?</span>
               <!-- 训练日志:数据/渲染逻辑见 js/training-log-drawer.js,原为独立抽屉(.wzh-log-drawer),
                    现并入 Timeline dock 第四个页签,DOM id 保持不变以复用原 JS -->
               <div class="pto-ide-frame__pane-body wzh-log-panel" id="dockPanelLog"
-                   role="tabpanel" aria-labelledby="dockTabLog" data-dock-panel="log" hidden>
+                   role="tabpanel" aria-labelledby="dockTabLog" data-dock-panel="log">
                 <div class="wzh-log-toolbar">
                   <span class="seg" id="trainLogTabSeg" role="tablist" aria-label="日志分类">
                     <button class="segbtn on" type="button" data-log-tab="all" role="tab" aria-selected="true">全量日志</button>
@@ -2831,8 +3175,8 @@ MoE：256+1（top-8 路由 · EP 切分）">?</span>
                 <div class="wzh-log-status" id="trainLogStatus"></div>
                 <div class="wzh-log-split">
                   <div class="wzh-log-body" id="trainLogBody"></div>
-                  <aside class="wzh-log-mapping" aria-label="接口映射表">
-                    <div class="wzh-log-mapping-head">接口映射表</div>
+                  <aside class="wzh-log-mapping" aria-label="接口映射">
+                    <div class="wzh-log-mapping-head"><span>接口映射</span></div>
                     <div class="wzh-log-mapping-list" id="trainLogMappingList"></div>
                   </aside>
                 </div>
@@ -3316,6 +3660,75 @@ MoE：256+1（top-8 路由 · EP 切分）">?</span>
       if (btn) btn.addEventListener('click', () => { window.location.href = './TaskCompare.html'; });
       const cfg = document.getElementById('navConfigRelation');
       if (cfg) cfg.addEventListener('click', () => { window.location.href = './config-relation-observer.html'; });
+    })();
+
+    // rail 底部「关键通知」卡堆的开合。hover 展开、移出延时收起(留出斜向滑向卡片的余量,
+    // 避免边界抖动);点击可钉住保持展开,Esc 或点空白处取消。键盘 focus 同样能展开。
+    (function initNotifDock() {
+      const dock = document.getElementById('trainNotifDock');
+      const trigger = document.getElementById('trainNotifTrigger');
+      if (!dock || !trigger) return;
+      let timer = 0;
+      const open = () => {
+        window.clearTimeout(timer);
+        dock.classList.add('is-open');
+        trigger.setAttribute('aria-expanded', 'true');
+      };
+      const close = (delay) => {
+        window.clearTimeout(timer);
+        timer = window.setTimeout(() => {
+          if (dock.classList.contains('is-pinned')) return;
+          dock.classList.remove('is-open');
+          trigger.setAttribute('aria-expanded', 'false');
+        }, delay == null ? 180 : delay);
+      };
+      dock.addEventListener('mouseenter', open);
+      dock.addEventListener('mouseleave', () => close());
+      dock.addEventListener('focusin', open);
+      dock.addEventListener('focusout', () => close(0));
+      /* 点卡片前往对应事件:优先复用进度条上的问题点(.twin-progress-marker),它的 click 走
+         training-run-twin.js 的 activateProblemLens —— 时光机跳到出事那一步 + 整网图聚焦命中节点
+         + 展开 Timeline + 开聚光灯定位链,与用户自己去进度条上点那个红点完全同一条路径;
+         进度条还没渲染出来(或该问题没有进度条标记)时退回「详情与修复建议」抽屉。
+         data-href 的卡走页面跳转(训练完成没有诊断事件,落到任务对比页复盘)。
+         排队中的任务还没开跑,不带 data-event,点了不跳。 */
+      const goToEvent = (card) => {
+        const href = card.dataset.href;
+        if (href) { window.location.href = href; return; }
+        const key = card.dataset.diagnosis;
+        if (!key) return;
+        const marker = document.querySelector(`.twin-progress-marker[data-marker-key="${key}"]`);
+        if (marker) marker.click();
+        else if (window.hasLocateDrawer?.(key)) window.openLocateDrawer(key);
+        else return;                       // 两条路都没有就别把卡堆收掉,免得点了像没反应
+        dock.classList.remove('is-pinned');
+        close(0);
+      };
+      // 钉住挂在 dock 上而不是占位卡上:展开后占位卡已经隐去并被 i=0 卡盖住,点不到它;
+      // 键盘 Enter 落在占位卡按钮上,click 冒泡到这里同样生效。点无事件的卡等同点空白 = 钉住/取消。
+      dock.addEventListener('click', (e) => {
+        const card = e.target.closest('.wzh-notif-card[data-event]');
+        if (card) { goToEvent(card); return; }
+        const pinned = dock.classList.toggle('is-pinned');
+        if (pinned) open(); else close(0);
+      });
+      dock.addEventListener('keydown', (e) => {
+        if (e.key !== 'Enter' && e.key !== ' ') return;
+        const card = e.target.closest?.('.wzh-notif-card[data-event]');
+        if (!card) return;
+        e.preventDefault();
+        goToEvent(card);
+      });
+      document.addEventListener('keydown', (e) => {
+        if (e.key !== 'Escape' || !dock.classList.contains('is-open')) return;
+        dock.classList.remove('is-pinned');
+        close(0);
+      });
+      document.addEventListener('pointerdown', (e) => {
+        if (dock.contains(e.target)) return;
+        dock.classList.remove('is-pinned');
+        close(0);
+      });
     })();
   </script>
   <script>

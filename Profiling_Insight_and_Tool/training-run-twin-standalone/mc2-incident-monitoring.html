@@ -46,7 +46,7 @@
   <link rel="stylesheet" href="./css/training-run-twin.css">
   <link rel="stylesheet" href="./css/training-spotlight.css">
   <!-- 本页私有：v2 内联样式的搬出版 + 文末「MC2 增补」 -->
-  <link rel="stylesheet" href="./css/mc2-incident-monitoring.css?v=20260811-mc2">
+  <link rel="stylesheet" href="./css/mc2-incident-monitoring.css?v=20260812-mapgrad2">
 </head>
 <body data-theme="dark">
   <section class="pto-ide-frame" data-ide-frame data-host="standalone" aria-label="MC2 Incident Monitoring">
@@ -209,7 +209,13 @@
                           <section class="twin-monitor-card twin-accuracy-card" aria-label="推理运行指标">
                             <div class="twin-card-heading">
                               <div>
-                                <h2>推理指标</h2>
+                                <div class="wzh-card-title-row">
+                                  <h2>推理指标</h2>
+                                  <span class="wzh-help" tabindex="0" data-tooltip="数据来源：Run#4 的 vLLM 服务端日志 server_mxfp8_all_withmc2.log，每完成一次 forward 打一次点，共取 14:07:00 → 14:09:48 的四轮。
+这一栏回答的是「异常长什么样、从什么时候开始」，不回答「是谁坏了」——后者在右侧 infra 栏（哪张卡）与中央执行图（哪个单元）。
+两张图是同一份数据的两种读法：左图看绝对耗时，右图看相对稳态的倍数（可直接设告警阈值）。
+纵轴均为 log10；点上悬停可读该时刻的精确值。">?</span>
+                                </div>
                                 <p>server_mxfp8_all_withmc2.log · 单次 forward</p>
                               </div>
                             </div>
@@ -245,6 +251,15 @@
                             </div>
                           </div>
                         </header>
+                        <!-- 区域置顶横幅：这张图的读法（三个 flag 里两个是 0 该怎么理解）。
+                             原先是舞台末尾的一行小字，跟着 stage 一起 scale —— 缩到 60%
+                             就没法读了，而它恰恰是这张图存在的理由。挪到缩放之外、图之前，
+                             样式与观测页事件内容顶部的 .cro-incident-banner 同族。
+                             文本由 js/mc2-incident-monitoring.js 的 renderUnitStage 写入。 -->
+                        <div class="mc2-unit-banner" id="mc2UnitBanner" role="note">
+                          <span class="mc2-unit-banner__tag">怎么读</span>
+                          <p class="mc2-unit-banner__message" id="mc2UnitVerdict"></p>
+                        </div>
                         <!-- viewport 负责取景与滚动，stage 按内容排到自然尺寸后整体 scale -->
                         <div class="mc2-unit-viewport" id="mc2UnitViewport">
                           <div class="mc2-unit-stage" id="mc2UnitStage"></div>
@@ -336,8 +351,8 @@
                 </div>
                 <div class="wzh-log-split">
                   <div class="wzh-log-body" id="trainLogBody"></div>
-                  <aside class="wzh-log-mapping" aria-label="接口映射表">
-                    <div class="wzh-log-mapping-head">plog → 可读诊断</div>
+                  <aside class="wzh-log-mapping" aria-label="plog 可读诊断">
+                    <div class="wzh-log-mapping-head"><span>plog → 可读诊断</span></div>
                     <div class="wzh-log-mapping-list" id="trainLogMappingList"></div>
                   </aside>
                 </div>
@@ -349,14 +364,60 @@
     </div>
   </section>
 
+  <!-- 「?」说明气泡的浮层：挂在 body 上，避免被 overflow 祖先（侧栏滚动区）截断 -->
+  <div id="diagnosisTooltip" class="diagnosis-bubble" hidden></div>
+
+  <script>
+    // 「?」/ 热力格说明气泡：与 v2 同一套 show/position/hide（v2 内联脚本的搬出版）。
+    // 暴露 window.wzhBindHelpTooltips 供 mc2-incident-monitoring.js 建完卡片后重扫绑定。
+    (() => {
+      const bubble = document.getElementById("diagnosisTooltip");
+      if (!bubble) return;
+      let activeDesc = null;
+
+      function position() {
+        if (!activeDesc) return;
+        const rect = activeDesc.getBoundingClientRect();
+        bubble.style.left = Math.max(6, Math.min(rect.left - 6, window.innerWidth - 272)) + "px";
+        bubble.style.top = (rect.bottom + 4) + "px";
+      }
+      function show(e) {
+        const desc = e.currentTarget;
+        if (!desc.dataset.tooltip) return;
+        activeDesc = desc;
+        bubble.textContent = desc.dataset.tooltip;
+        bubble.hidden = false;
+        position();
+      }
+      function hide() {
+        activeDesc = null;
+        bubble.hidden = true;
+      }
+
+      function bindHelpTooltips(root) {
+        (root || document).querySelectorAll(".diagnosis-desc, .wzh-help, [data-tooltip]").forEach((desc) => {
+          if (desc.dataset.wzhHelpBound) return;
+          desc.dataset.wzhHelpBound = "1";
+          desc.addEventListener("mouseenter", show);
+          desc.addEventListener("mouseleave", hide);
+          desc.addEventListener("mousemove", position);
+          desc.addEventListener("focus", show);
+          desc.addEventListener("blur", hide);
+        });
+      }
+      window.wzhBindHelpTooltips = bindHelpTooltips;
+      bindHelpTooltips();
+    })();
+  </script>
+
   <script src="./js/workbench-shell-pattern.js"></script>
   <script src="./js/ide-frame-pattern.js"></script>
   <!-- 中央主区的两个单元对象直接由 pattern 自己渲染（render 进容器），
        本页不复制它们的 DOM，也不在页面私有 CSS 里改它们的壳。 -->
   <script src="./js/aic-core-object-pattern.js"></script>
   <script src="./js/aiv-core-object-pattern.js"></script>
-  <script src="./js/mc2-incident-monitoring.js?v=20260811-mc2"></script>
-  <script src="./js/mc2-spotlight.js?v=20260811-mc2"></script>
+  <script src="./js/mc2-incident-monitoring.js?v=20260812-fit"></script>
+  <script src="./js/mc2-spotlight.js?v=20260812-fit"></script>
   <script>
     // 主题切换：与 v2 / 观测页同款单图标按钮
     (() => {
