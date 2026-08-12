@@ -37,7 +37,7 @@
     { t: "2026-07-16 23:18:01.115", level: "ERROR", comp: "npu-driver", step: 15203, msg: "device rank23(node2 GPU7) AICORE task timeout on stream14, HCCL watchdog killed pid=88213" },
     { t: "2026-07-16 23:18:01.560", level: "ERROR", comp: "scheduler", step: 15203, msg: "pod pangu20flash-pretrain-7f3a2-worker-23 CrashLoopBackOff restartCount=1" },
     { t: "2026-07-16 23:18:32.220", level: "WARN", comp: "node-health", step: 15203, msg: "node2 GPU7 temperature=78°C, ECC errors=0 — 硬件自检未见异常，判断为数值溢出触发的软件故障" },
-    { t: "2026-07-16 23:18:50.000", level: "INFO", comp: "oncall", step: 15203, msg: "plog 翻译：grep -i 'error|timeout|mismatch' plog_*.log → [hcom_all_to_all_v_] rank=23 send_count=0 recv_count=9832 buffer size mismatch；[aclnnSoftmaxV2] input[router_logits] contains inf — 点选本行对照右侧接口映射表", mapKeys: ["hcom_all_to_all_v_", "aclnnSoftmaxV2"] },
+    { t: "2026-07-16 23:18:50.000", level: "INFO", comp: "oncall", step: 15203, msg: "plog 翻译：grep -i 'error|timeout|mismatch' plog_*.log → [hcom_all_to_all_v_] rank=23 send_count=0 recv_count=9832 buffer size mismatch；[aclnnSoftmaxV2] input[router_logits] contains inf — 点选本行对照右侧接口映射", mapKeys: ["hcom_all_to_all_v_", "aclnnSoftmaxV2"] },
     { t: "2026-07-16 23:19:10.004", level: "INFO", comp: "trainer", step: 15203, msg: "auto-recovery triggered: rollback to last stable checkpoint step_15200" },
     { t: "2026-07-16 23:21:42.881", level: "INFO", comp: "ckpt", step: 15200, msg: "restored optimizer/model state from obs://pangu-ckpt/2.0-flash/step_15200" },
     { t: "2026-07-16 23:22:03.556", level: "INFO", comp: "scheduler", step: 15203, msg: "worker-23 pod restarted, rejoined process group, rank23 healthy" },
@@ -295,6 +295,11 @@
     return ctx.model.name + " · step " + ctx.step.toLocaleString() + "/" + ctx.totalSteps.toLocaleString() + "（" + pct + "%）";
   }
 
+  function renderContextLabel() {
+    const label = $("trainLogContext");
+    if (label) label.textContent = fmtContextLabel(getTrainingContext());
+  }
+
   // 日志页签现在是底部 Timeline dock(#bottomDock)的第四个页签,不再是独立浮层:
   // 「打开」= 展开 dock(若已收起) + 切到日志页签;「关闭」= 收起整个 dock(与原抽屉的
   // 完全隐藏行为对齐)。dock 展开/收起、页签切换分别由 training-monitoring-v2.html 里
@@ -321,8 +326,7 @@
     function open() {
       window.PtoTrainingTwinTimelineDock?.setVisible(true);
       window.PtoTrainingTwinDockTabs?.select("log");
-      const label = $("trainLogContext");
-      if (label) label.textContent = fmtContextLabel(getTrainingContext());
+      renderContextLabel();
       renderBody();
       syncToggle();
     }
@@ -343,8 +347,7 @@
       syncToggle();
       const tab = e.target.closest && e.target.closest(".twin-dock-tab");
       if (tab && tab.dataset.dockTab === "log") {
-        const label = $("trainLogContext");
-        if (label) label.textContent = fmtContextLabel(getTrainingContext());
+        renderContextLabel();
         renderBody();
       }
     });
@@ -353,7 +356,7 @@
     // 不管从哪条路径关闭都能让「打开日志」按钮的高亮态跟着同步。
     new MutationObserver(syncToggle).observe(dock, { attributes: true, attributeFilter: ["hidden"] });
 
-    syncToggle(); // 默认收起(dock 初始展示 Timeline 页签,日志页签未选中)
+    syncToggle(); // dock 初始就选中日志页签,按钮高亮态取决于 dock 本身是否展开
   }
 
   function boot() {
@@ -362,14 +365,18 @@
     initPanelToggle();
     initRowSelection();
     renderMapping();
+    // 日志现在是底部 dock 的默认页签(页面加载即可见),必须在这里就渲染一次。
+    // 原来内容只在 open() / 点「日志」页签时才渲染(懒加载,因为那时默认页签是 Timeline),
+    // 默认页签改成日志后那套策略会让面板一进来就是空的。
+    renderContextLabel();
+    renderBody();
     // 供外部（如聚光灯定位链 js/training-spotlight.js 的「日志」步）幂等地展开并渲染日志：
-    // renderBody() 只在 initPanelToggle 的 open() 里被调用，故切页签而不点入口按钮时日志区为空。
+    // 展开 dock + 切到日志页签 + 刷新一次内容（页签本已默认选中时也要重渲，取最新训练态）。
     window.PtoTrainingLogDrawer = {
       show: function () {
         window.PtoTrainingTwinTimelineDock?.setVisible(true);
         window.PtoTrainingTwinDockTabs?.select("log");
-        const label = $("trainLogContext");
-        if (label) label.textContent = fmtContextLabel(getTrainingContext());
+        renderContextLabel();
         renderBody();
       },
       render: renderBody,

@@ -121,60 +121,231 @@
     return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
   }
 
-  /* 折线图。数据点只有 4 个且跨两个数量级（2 → 168），线性轴会把前三点压成一条
-     贴底的直线 —— 那恰好会把「一路在涨」读成「突然崩了」。改用 log 轴，四段涨幅
-     才都看得见。轴的选择在卡片注脚里写明，不让读者误判斜率。 */
-  function sparkline(values, options = {}) {
-    const W = 240, H = 84, PAD_X = 6, PAD_T = 8, PAD_B = 6;
-    const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
-    svg.setAttribute("viewBox", `0 0 ${W} ${H}`);
-    svg.setAttribute("preserveAspectRatio", "none");
-    svg.classList.add("mc2-spark");
+  /* ── 折线图 ─────────────────────────────────────────────────────────────
+     按容器实测像素作图：1 SVG 单位 = 1 CSS 像素，preserveAspectRatio 用默认值。
+     旧版是一张 240×84 的 viewBox 配 preserveAspectRatio="none"，塞进又窄又高的
+     卡片格子后被纵向拉伸数倍 —— 线宽、圆点、斜率一起失真，而斜率恰恰是这张图要
+     讲的事。改成实测尺寸后，格子怎么变图都不变形，字号与描边也都是真实尺寸。
 
-    const logScale = options.log !== false;
-    const t = (v) => (logScale ? Math.log10(Math.max(v, 0.01)) : v);
-    const lo = Math.min(...values.map(t));
-    const hi = Math.max(...values.map(t));
-    const span = hi - lo || 1;
-    const x = (i) => PAD_X + (i / Math.max(1, values.length - 1)) * (W - PAD_X * 2);
-    const y = (v) => H - PAD_B - ((t(v) - lo) / span) * (H - PAD_T - PAD_B);
+     纵轴取 log10：4 个点跨两个数量级（1.97 → 168），线性轴会把前三点压成贴底的
+     一条直线，「一路在涨」就会被读成「突然崩了」。刻度按十倍档画出并标注，读者
+     不必猜轴；轴的选择理由写在卡片标题旁的「?」里。 */
+  const SVG_NS = "http://www.w3.org/2000/svg";
+
+  function svgNode(tag, attrs) {
+    const node = document.createElementNS(SVG_NS, tag);
+    Object.keys(attrs || {}).forEach((k) => node.setAttribute(k, attrs[k]));
+    return node;
+  }
+
+  function fmtNum(v) {
+    if (v >= 100) return String(Math.round(v));
+    if (v >= 10) return String(Math.round(v * 10) / 10);
+    return String(Math.round(v * 100) / 100);
+  }
+
+  /* 悬浮读数气泡：position:fixed 挂在 body 上，而不是塞进卡片里 —— 卡片是
+     overflow:hidden 的窄格子，气泡贴边就会被切掉。与「?」说明气泡各用各的元素：
+     两者都靠 #diagnosisTooltip 的话，鼠标从「?」滑到图上会互相抢内容。 */
+  let chartTip = null;
+
+  function ensureChartTip() {
+    if (chartTip) return chartTip;
+    chartTip = el("div", "mc2-chart-tip");
+    chartTip.hidden = true;
+    chartTip.append(
+      el("span", "mc2-chart-tip__name"),
+      el("span", "mc2-chart-tip__time"),
+      el("span", "mc2-chart-tip__val"),
+      el("span", "mc2-chart-tip__delta"),
+    );
+    document.body.appendChild(chartTip);
+    return chartTip;
+  }
+
+  function showChartTip(spec, i, evt) {
+    const tip = ensureChartTip();
+    const v = spec.values[i];
+    tip.querySelector(".mc2-chart-tip__name").textContent = spec.name || "";
+    tip.querySelector(".mc2-chart-tip__time").textContent = (spec.labels && spec.labels[i]) || `#${i + 1}`;
+    tip.querySelector(".mc2-chart-tip__val").textContent = `${fmtNum(v)}${spec.suffix || ""}`;
+    // 相对上一轮的倍数：本案要看的是「每一轮都比上一轮慢」，绝对差值说明不了这件事
+    tip.querySelector(".mc2-chart-tip__delta").textContent = i === 0
+      ? "稳态基线"
+      : `较上一轮 ×${fmtNum(v / spec.values[i - 1])}`;
+    tip.hidden = false;
+    const box = tip.getBoundingClientRect();
+    const left = Math.min(evt.clientX + 14, window.innerWidth - box.width - 8);
+    const top = Math.max(8, Math.min(evt.clientY - box.height - 12, window.innerHeight - box.height - 8));
+    tip.style.left = `${Math.max(8, left)}px`;
+    tip.style.top = `${top}px`;
+  }
+
+  function hideChartTip() {
+    if (chartTip) chartTip.hidden = true;
+  }
+
+  function drawChart(host) {
+    const spec = host.__mc2Chart;
+    if (!spec) return;
+    const W = Math.max(160, Math.round(host.clientWidth));
+    const H = Math.max(96, Math.round(host.clientHeight));
+    const PAD = { l: 38, r: 12, t: 16, b: 20 };
+    const plotW = W - PAD.l - PAD.r;
+    const plotH = H - PAD.t - PAD.b;
+
+    const values = spec.values;
+    const tf = (v) => Math.log10(Math.max(v, 1e-6));
+    const rawLo = Math.min(...values.map(tf));
+    const rawHi = Math.max(...values.map(tf));
+    const margin = ((rawHi - rawLo) || 1) * 0.14;   // 端点不贴轴，最后一个点要留得下圆点
+    const lo = rawLo - margin;
+    const hi = rawHi + margin;
+    const x = (i) => PAD.l + (i / Math.max(1, values.length - 1)) * plotW;
+    const y = (v) => PAD.t + (1 - (tf(v) - lo) / (hi - lo)) * plotH;
+
+    const svg = svgNode("svg", { class: "mc2-spark", width: W, height: H, viewBox: `0 0 ${W} ${H}` });
+
+    // 纵轴刻度：值域内的十倍档（…1 / 10 / 100…）；不足两条时退回数据两端
+    let ticks = [];
+    for (let d = Math.ceil(lo); d <= Math.floor(hi); d += 1) ticks.push(Math.pow(10, d));
+    if (ticks.length < 2) ticks = [Math.pow(10, rawLo), Math.pow(10, rawHi)];
+    ticks.forEach((tv) => {
+      const ty = y(tv).toFixed(1);
+      svg.appendChild(svgNode("line", { class: "mc2-spark__grid", x1: PAD.l, x2: W - PAD.r, y1: ty, y2: ty }));
+      const label = svgNode("text", {
+        class: "mc2-spark__tick", x: PAD.l - 6, y: ty,
+        "text-anchor": "end", "dominant-baseline": "middle",
+      });
+      label.textContent = fmtNum(tv);
+      svg.appendChild(label);
+    });
+
+    // 轴线（纵 + 横）
+    svg.appendChild(svgNode("line", { class: "mc2-spark__axis", x1: PAD.l, x2: PAD.l, y1: PAD.t, y2: PAD.t + plotH }));
+    svg.appendChild(svgNode("line", { class: "mc2-spark__axis", x1: PAD.l, x2: W - PAD.r, y1: PAD.t + plotH, y2: PAD.t + plotH }));
+
+    // 纵轴量纲（含刻度类型）：不写出来，读者会默认它是线性轴而误判斜率
+    if (spec.unit) {
+      const cap = svgNode("text", { class: "mc2-spark__cap", x: 2, y: PAD.t - 6 });
+      cap.textContent = spec.unit;
+      svg.appendChild(cap);
+    }
 
     const points = values.map((v, i) => `${x(i).toFixed(1)},${y(v).toFixed(1)}`);
 
     // 面积 + 折线：面积让「越来越高」在余光里也成立
-    const area = document.createElementNS("http://www.w3.org/2000/svg", "path");
-    area.setAttribute("d", `M ${x(0)},${H - PAD_B} L ${points.join(" L ")} L ${x(values.length - 1)},${H - PAD_B} Z`);
-    area.setAttribute("class", "mc2-spark__area");
-    svg.appendChild(area);
+    svg.appendChild(svgNode("path", {
+      class: "mc2-spark__area",
+      d: `M ${x(0).toFixed(1)},${(PAD.t + plotH).toFixed(1)} L ${points.join(" L ")} L ${x(values.length - 1).toFixed(1)},${(PAD.t + plotH).toFixed(1)} Z`,
+    }));
+    svg.appendChild(svgNode("polyline", { class: "mc2-spark__line", points: points.join(" ") }));
 
-    const line = document.createElementNS("http://www.w3.org/2000/svg", "polyline");
-    line.setAttribute("points", points.join(" "));
-    line.setAttribute("class", "mc2-spark__line");
-    svg.appendChild(line);
-
+    // 数据点不挂 <title>：原生 tooltip 会和下面这套悬浮气泡同时冒出来，读成两份
     values.forEach((v, i) => {
-      const dot = document.createElementNS("http://www.w3.org/2000/svg", "circle");
-      dot.setAttribute("cx", x(i).toFixed(1));
-      dot.setAttribute("cy", y(v).toFixed(1));
-      dot.setAttribute("r", i === values.length - 1 ? "3.2" : "2");
-      dot.setAttribute("class", `mc2-spark__dot${i === values.length - 1 ? " is-last" : ""}`);
-      svg.appendChild(dot);
+      const last = i === values.length - 1;
+      svg.appendChild(svgNode("circle", {
+        class: `mc2-spark__dot${last ? " is-last" : ""}`,
+        cx: x(i).toFixed(1), cy: y(v).toFixed(1), r: last ? "3.4" : "2.4",
+      }));
     });
-    return svg;
+
+    // 横轴：首末两个时刻（4 个点全标会在 ~150px 的卡宽里叠在一起）
+    if (spec.labels && spec.labels.length) {
+      const first = svgNode("text", { class: "mc2-spark__tick", x: PAD.l, y: H - 5, "text-anchor": "start" });
+      first.textContent = spec.labels[0];
+      svg.appendChild(first);
+      const lastLabel = svgNode("text", { class: "mc2-spark__tick", x: W - PAD.r, y: H - 5, "text-anchor": "end" });
+      lastLabel.textContent = spec.labels[spec.labels.length - 1];
+      svg.appendChild(lastLabel);
+    }
+
+    /* 悬浮层：竖线（定位到哪一轮）+ 横线（把该值读回纵轴刻度）+ 焦点环。
+       只有 4 个采样点，鼠标不必精确压在点上 —— 按 x 就近吸附到整轮，
+       竖线因此永远落在真实数据点上，不会让人以为中间还有连续采样。 */
+    const hover = svgNode("g", { class: "mc2-spark__hover", "aria-hidden": "true" });
+    const vLine = svgNode("line", { class: "mc2-spark__hover-line", x1: 0, x2: 0, y1: PAD.t, y2: PAD.t + plotH });
+    const hLine = svgNode("line", { class: "mc2-spark__hover-line is-h", x1: PAD.l, x2: 0, y1: 0, y2: 0 });
+    const ring = svgNode("circle", { class: "mc2-spark__hover-dot", cx: 0, cy: 0, r: 4.6 });
+    hover.append(vLine, hLine, ring);
+    svg.appendChild(hover);
+
+    // 捕获面：铺满绘图区的透明矩形，鼠标不用压在细线上也能触发
+    const capture = svgNode("rect", {
+      class: "mc2-spark__capture",
+      x: PAD.l, y: PAD.t, width: Math.max(1, plotW), height: Math.max(1, plotH),
+    });
+    svg.appendChild(capture);
+
+    const nearestIndex = (clientX) => {
+      const rect = svg.getBoundingClientRect();
+      const px = clientX - rect.left;
+      const ratio = plotW > 0 ? (px - PAD.l) / plotW : 0;
+      const idx = Math.round(ratio * (values.length - 1));
+      return Math.max(0, Math.min(values.length - 1, idx));
+    };
+
+    const onMove = (evt) => {
+      const i = nearestIndex(evt.clientX);
+      const cx = x(i);
+      const cy = y(values[i]);
+      vLine.setAttribute("x1", cx.toFixed(1));
+      vLine.setAttribute("x2", cx.toFixed(1));
+      hLine.setAttribute("x2", cx.toFixed(1));
+      hLine.setAttribute("y1", cy.toFixed(1));
+      hLine.setAttribute("y2", cy.toFixed(1));
+      ring.setAttribute("cx", cx.toFixed(1));
+      ring.setAttribute("cy", cy.toFixed(1));
+      svg.classList.add("is-hovering");
+      showChartTip(spec, i, evt);
+    };
+    const onLeave = () => {
+      svg.classList.remove("is-hovering");
+      hideChartTip();
+    };
+    capture.addEventListener("mousemove", onMove);
+    capture.addEventListener("mouseleave", onLeave);
+    svg.addEventListener("mouseleave", onLeave);
+
+    hideChartTip();   // 重画（改尺寸）时旧气泡的坐标已失效
+    host.replaceChildren(svg);
   }
 
-  function metricCard(key, name, value, chartValues, note, tone) {
+  // 卡片格子会随侧栏收放改变尺寸；实测作图意味着每次改尺寸都要重画一次
+  const chartObserver = typeof ResizeObserver === "function"
+    ? new ResizeObserver((entries) => entries.forEach((entry) => drawChart(entry.target)))
+    : null;
+
+  function mountChart(host, spec) {
+    host.__mc2Chart = spec;
+    drawChart(host);
+    if (chartObserver) chartObserver.observe(host);
+  }
+
+  function metricCard(spec) {
     const card = el("div", "twin-accuracy-metric-card");
-    card.dataset.accCard = key;              // 聚光灯按 [data-acc-card] 取景
+    card.dataset.accCard = spec.key;         // 聚光灯按 [data-acc-card] 取景
     const head = el("div", "twin-accuracy-metric-card__head");
-    head.append(el("span", "twin-accuracy-metric-card__name", name));
-    const val = el("span", `twin-accuracy-metric-card__val${tone ? ` is-${tone}` : ""}`, value);
-    head.appendChild(val);
+    // 标题 + 「?」打包进 title-row，head 仍是两个直接子元素（两端对齐不受影响）
+    const titleRow = el("div", "wzh-card-title-row");
+    titleRow.appendChild(el("span", "twin-accuracy-metric-card__name", spec.name));
+    if (spec.help) {
+      const help = el("span", "wzh-help", "?");
+      help.tabIndex = 0;
+      help.dataset.tooltip = spec.help;
+      titleRow.appendChild(help);
+    }
+    head.appendChild(titleRow);
+    head.appendChild(el("span", `twin-accuracy-metric-card__val${spec.tone ? ` is-${spec.tone}` : ""}`, spec.value));
     card.appendChild(head);
     const chart = el("div", "twin-accuracy-metric-card__chart");
-    chart.appendChild(sparkline(chartValues));
     card.appendChild(chart);
-    if (note) card.appendChild(el("div", "twin-accuracy-metric-card__note", note));
+    if (spec.note) card.appendChild(el("div", "twin-accuracy-metric-card__note", spec.note));
+    card.__mc2ChartHost = chart;
+    card.__mc2ChartSpec = {
+      name: spec.name, values: spec.values, labels: spec.labels,
+      unit: spec.unit, suffix: spec.suffix,
+    };
     return card;
   }
 
@@ -186,22 +357,54 @@
     const cards = el("div", "twin-accuracy-cards mc2-metric-cards");
 
     const values = FORWARD_TIME.map((p) => p.value);
+    const labels = FORWARD_TIME.map((p) => p.at);
     const base = values[0];
-    cards.appendChild(metricCard(
-      "forward_time", "forward_time", `${values[values.length - 1]} s`, values,
-      "14:07:00 → 14:09:48（log 轴）· 每一轮都比上一轮慢", "danger",
-    ));
-    cards.appendChild(metricCard(
-      "degrade_ratio", "相对稳态倍数", `${Math.round(values[values.length - 1] / base)}x`,
-      values.map((v) => v / base),
-      "同一份数据换算：1x → 11x → 54x → 85x", "danger",
-    ));
+    cards.appendChild(metricCard({
+      key: "forward_time",
+      name: "forward_time",
+      value: `${values[values.length - 1]} s`,
+      values, labels,
+      unit: "秒（log10）",
+      suffix: " s",
+      tone: "danger",
+      note: "14:07:00 → 14:09:48 · 每一轮都比上一轮慢",
+      help: "衡量什么：vLLM 单次 forward 的墙钟耗时，取自 server_mxfp8_all_withmc2.log 每轮打点（1.97 → 21.9 → 107 → 168 s）。\n"
+        + "为什么是 log 轴：四个点跨两个数量级，线性轴会把前三点压成贴底的一条直线，看上去像「一直正常、最后突然崩」。\n"
+        + "异常信号：逐轮线性累积上涨，中间没有一次回落。\n"
+        + "能做什么判断：零星尖刺是调度抖动或长尾请求，不必追；这种只涨不回的形状说明某个资源被逐次污染（本案是 CCU 的 mission 5），三分钟后必然走到 20:26:52 的同步超时。",
+    }));
+    cards.appendChild(metricCard({
+      key: "degrade_ratio",
+      name: "相对稳态倍数",
+      value: `${Math.round(values[values.length - 1] / base)}x`,
+      values: values.map((v) => v / base),
+      labels,
+      unit: "倍（log10）",
+      suffix: "x",
+      tone: "danger",
+      note: "同一份数据换算：1x → 11x → 54x → 85x",
+      help: "衡量什么：同一份 forward_time 除以 14:07:00 的稳态值（1.97 s），得到与量纲无关的恶化倍数。\n"
+        + "为什么要看它：绝对耗时依赖 batch 与序列长度，跨机型不可比；倍数可以直接设阈值告警（>2x 关注，>10x 立即介入）。\n"
+        + "异常信号：三分钟内到 85x。\n"
+        + "能做什么判断：倍数曲线与绝对耗时同形，说明恶化不是请求变重（负载变化会改变形状），而是执行侧自身在退化 —— 这一步把嫌疑从「业务流量」转到了「硬件/通信」。",
+    }));
 
     host.appendChild(cards);
+    // 卡片入 DOM 后才有实际尺寸，这时再作图（实测像素）
+    Array.prototype.forEach.call(cards.children, (card) => {
+      if (card.__mc2ChartHost) mountChart(card.__mc2ChartHost, card.__mc2ChartSpec);
+    });
 
     const note = el("p", "mc2-metric-note");
     note.textContent = "线性累积而不是零星尖刺 —— 这是资源被逐次污染的形状，不是调度抖动。两段证据分别来自 server log（恶化）与 debug_plog（崩溃）。";
     host.appendChild(note);
+    bindHelp(host);
+  }
+
+  // 「?」气泡：浮层与 show/position/hide 由页面内联脚本提供（与 v2 同一套），
+  // 本文件建完 DOM 后按需重扫一次即可，不重复实现。
+  function bindHelp(root) {
+    if (typeof global.wzhBindHelpTooltips === "function") global.wzhBindHelpTooltips(root);
   }
 
   /* ── ③ 四卡热力 + 报错时序 ────────────────────────────────────────────── */
@@ -218,6 +421,7 @@
         cell.appendChild(el("span", "mc2-rank-cell__id", `r${entry.rank}`));
         heat.appendChild(cell);
       });
+      bindHelp(heat);   // 格子的 data-tooltip 也走同一套浮层
     }
 
     const table = $("mc2RankTable");
@@ -446,9 +650,11 @@
   }
 
   /* 两个单元之间的那条边。本案的断点就在其中一条上，所以边不是装饰：
-     它要带名字（谁等谁）、带凭据（notify id）、带判读（等到了 / 等不到）。 */
-  function unitLink({ label, meta, verdict, broken }) {
-    const link = el("div", `mc2-unit-link${broken ? " is-broken" : ""}`);
+     它要带名字（谁等谁）、带凭据（notify id）、带判读（等到了 / 等不到）。
+     axis：边的朝向。AIC 与 AIV 上下叠放（省横向空间），它们之间那条是竖的；
+     计算列 → CCU 那条是横的。CSS 里默认竖排，--x 在宽屏下改回横排。 */
+  function unitLink({ label, meta, verdict, broken, axis = "x" }) {
+    const link = el("div", `mc2-unit-link mc2-unit-link--${axis}${broken ? " is-broken" : ""}`);
     link.append(el("span", "mc2-unit-link__label", label));
     const line = el("div", "mc2-unit-link__line");
     if (broken) line.appendChild(el("span", "mc2-unit-link__break", "✕"));
@@ -540,12 +746,14 @@
     ));
     global.PtoAicCorePattern?.render?.(aicBody, "aicDraftV1");
 
-    // AIC ↔ AIV：MIX 算子内部的正常协作，这条边是好的
+    // AIC ↔ AIV：MIX 算子内部的正常协作，这条边是好的。AIV 叠在 AIC 下面，
+    // 所以这条边是竖的（两个计算单元并排会把整行拉到 2000+ px，横向全是空转）
     row.appendChild(unitLink({
       label: "crossCoreSync = 1",
       meta: "taskRation 1 : 2",
       verdict: "正常",
       broken: false,
+      axis: "y",
     }));
 
     // AIV —— 故障环境是 Ascend 950，用 ascend950b 预设
@@ -573,55 +781,111 @@
 
     stage.appendChild(row);
 
-    // 结论句：这张图存在的理由，别让读者自己去凑
-    const verdict = el("p", "mc2-unit-verdict");
-    verdict.innerHTML = "三个 flag 里两个是 0，但那不是「计算单元与本案无关」——"
-      + "<strong>它们就在这个 kernel 里，只是停在同步点上等 CCU 的 notify</strong>。"
-      + "断点在 AIV → CCU 那条边上，不在任何一个盒子里；"
-      + "Run#2 的 AIC 访问 GM 越界（errcode=264）也是卡死之后的连带表现。";
-    stage.appendChild(verdict);
+    /* 结论句：这张图存在的理由，别让读者自己去凑。它不进舞台 —— 舞台整块 scale
+       到 60% 时这行小字就没法读了。写进区域置顶横幅（#mc2UnitBanner，见 html），
+       在缩放之外、在图之前。 */
+    const verdict = $("mc2UnitVerdict");
+    if (verdict) {
+      verdict.innerHTML = "三个 flag 里两个是 0，但那不是「计算单元与本案无关」——"
+        + "<strong>它们就在这个 kernel 里，只是停在同步点上等 CCU 的 notify</strong>。"
+        + "断点在 AIV → CCU 那条边上，不在任何一个盒子里；"
+        + "Run#2 的 AIC 访问 GM 越界（errcode=264）也是卡死之后的连带表现。";
+    }
 
-    requestAnimationFrame(fitUnitStage);
+    // 重渲染（如切主题）不该顶掉用户手调的倍率，交给 schedule 判断
+    scheduleUnitFit();
   }
 
-  /* 缩放：pattern 是定尺寸的设计对象，列宽不够时整块等比缩放，不让它们各自压扁
+  /* 缩放：pattern 是定尺寸的设计对象，装不下时整块等比缩放，不让它们各自压扁
      （压扁会改掉 pattern 的版式契约）。scale 走 transform，不重排内部上千个格子。 */
+  const UNIT_SCALE_MIN = 0.2;
+  const UNIT_SCALE_MAX = 2;
   let unitScale = 1;
+  // 是否还跟着容器走。适配态下窗口/侧栏/分栏一动就重算；用户手动缩放后就钉住，
+  // 不能因为拖了一下分栏条就把人家调好的倍率抹掉。
+  let unitFollowsViewport = true;
+  let unitFitPending = false;
+
+  const clampUnitScale = (v) => Math.max(UNIT_SCALE_MIN, Math.min(UNIT_SCALE_MAX, v));
+
+  /* 舞台的自然尺寸。stage 的 height 被 --mc2-unit-scaled-h 顶着（见 css），直接读
+     scrollHeight 量到的是上一次缩放的结果，越量越小。量之前先临时摘掉这个高度。
+     transform 不影响 scrollWidth/scrollHeight（它们是布局值），无需拆 transform。 */
+  function naturalUnitSize(stage) {
+    const prev = stage.style.height;
+    stage.style.height = "auto";
+    const size = { w: stage.scrollWidth, h: stage.scrollHeight };
+    stage.style.height = prev;
+    return size;
+  }
 
   function applyUnitScale() {
     const stage = $("mc2UnitStage");
     const viewport = $("mc2UnitViewport");
     if (!stage || !viewport) return;
+    const natural = naturalUnitSize(stage);
     stage.style.transform = `scale(${unitScale})`;
-    // transform 不改变布局盒，父容器要按缩放后的尺寸留高度，否则底部被裁
-    viewport.style.setProperty("--mc2-unit-scaled-h", `${stage.scrollHeight * unitScale}px`);
+    // transform 不改变布局盒，父容器要按缩放后的尺寸留位，否则底部被裁 / 底下空一片
+    viewport.style.setProperty("--mc2-unit-scaled-h", `${natural.h * unitScale}px`);
     const readout = $("mc2UnitZoomReadout");
     if (readout) readout.textContent = `${Math.round(unitScale * 100)}%`;
   }
 
+  /* 适配 = 装进视口，两个方向都算。原先只除宽度，高度溢出多少不管 —— 点了「适配」
+     图还是被下边缘切掉、竖滚动条照在，所以它看起来根本没适配。取两轴比例的较小值
+     才是「整张图都在窗口里」。 */
   function fitUnitStage() {
     const stage = $("mc2UnitStage");
     const viewport = $("mc2UnitViewport");
     if (!stage || !viewport) return;
-    const natural = stage.scrollWidth;
-    const available = viewport.clientWidth;
-    if (!natural || !available) return;
-    // 上限 1：内容比视口窄时不放大 —— 设计对象按 1:1 看最准
-    unitScale = Math.max(0.2, Math.min(1, (available - 8) / natural));
+    const natural = naturalUnitSize(stage);
+    if (!natural.w || !natural.h) return;
+
+    // clientWidth/Height 含 padding，可用区要把 padding 扣掉，否则右下总差一截
+    const cs = global.getComputedStyle(viewport);
+    const availW = viewport.clientWidth
+      - (parseFloat(cs.paddingLeft) || 0) - (parseFloat(cs.paddingRight) || 0);
+    const availH = viewport.clientHeight
+      - (parseFloat(cs.paddingTop) || 0) - (parseFloat(cs.paddingBottom) || 0);
+    if (availW <= 0 || availH <= 0) return;
+
+    unitScale = clampUnitScale(Math.min(availW / natural.w, availH / natural.h));
     applyUnitScale();
   }
 
+  // 容器尺寸变化期间连续触发，合到下一帧只算一次
+  function scheduleUnitFit() {
+    if (unitFitPending) return;
+    unitFitPending = true;
+    global.requestAnimationFrame(() => {
+      unitFitPending = false;
+      if (unitFollowsViewport) fitUnitStage();
+      else applyUnitScale();
+    });
+  }
+
   function zoomUnitStage(factor) {
-    unitScale = Math.max(0.2, Math.min(2, unitScale * factor));
+    unitFollowsViewport = false;      // 手动调过就不再自动改
+    unitScale = clampUnitScale(unitScale * factor);
     applyUnitScale();
   }
 
   function bindUnitZoom() {
+    const viewport = $("mc2UnitViewport");
     $("mc2UnitZoomIn")?.addEventListener("click", () => zoomUnitStage(1.15));
     $("mc2UnitZoomOut")?.addEventListener("click", () => zoomUnitStage(1 / 1.15));
-    $("mc2UnitZoomFit")?.addEventListener("click", fitUnitStage);
-    // 侧栏开合、窗口变化都会改中列宽度，重新适配一次
-    global.addEventListener("resize", fitUnitStage);
+    $("mc2UnitZoomFit")?.addEventListener("click", () => {
+      unitFollowsViewport = true;     // 点「适配」= 交还给容器
+      fitUnitStage();
+    });
+
+    /* 改变可视区的不止窗口：收起左栏 / infra 栏、拖上下分栏条、开合底部 dock 都会
+       改这块的宽高，而它们一个 resize 事件都不发。盯容器本身才盯得住。 */
+    if (viewport && typeof global.ResizeObserver === "function") {
+      new global.ResizeObserver(scheduleUnitFit).observe(viewport);
+    } else {
+      global.addEventListener("resize", scheduleUnitFit);
+    }
   }
 
   /* ── 页面级开关：聚光灯的 prep() 会调这几个 ───────────────────────────── */
@@ -686,8 +950,9 @@
         toggle.setAttribute("aria-expanded", String(!!on));
         toggle.title = `${on ? "隐藏" : "显示"} ${side === "right" ? "infra" : "推理监控"} 栏`;
       }
-      // 中列宽度跟着变，单元舞台要重新适配（等这一帧的布局落定）
-      requestAnimationFrame(fitUnitStage);
+      // 中列宽度跟着变，单元舞台要重新适配（等这一帧的布局落定）。走 schedule 而不是
+      // 直接 fit：用户手动缩放过就该保住他的倍率，收个侧栏不是重置的理由。
+      scheduleUnitFit();
     }
 
     global.PtoTrainingTwinSideCols = {
