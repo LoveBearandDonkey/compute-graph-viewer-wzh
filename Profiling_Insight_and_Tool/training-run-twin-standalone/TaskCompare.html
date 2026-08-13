@@ -109,8 +109,8 @@
     background: var(--primary); border: 2px solid var(--surface-1); cursor: pointer; }
   .smooth-ctrl .smooth-val { font-family: var(--font-mono); font-size: 11px; color: var(--foreground-muted); min-width: 26px; text-align: right; }
 
-  /* 标记最优：开关而非按钮（用户明确要求）。PTO 组件库无通用 switch 原语，token 化后保留为
-     page-local 组件，与「只看差异」等过滤按钮做视觉区分（开关=常驻状态位，按钮=一次性过滤动作）。 */
+  /* 常驻状态位开关（用户明确要求）：标记最优 / 只看差异 共用同一开关组件，与一次性触发的按钮
+     做视觉区分。PTO 组件库无通用 switch 原语，token 化后保留为 page-local 组件。 */
   .cmp-switch { display: inline-flex; align-items: center; gap: 7px; cursor: pointer; user-select: none;
     font-size: 12px; color: var(--foreground-secondary); }
   .cmp-switch input { position: absolute; opacity: 0; width: 0; height: 0; }
@@ -254,25 +254,62 @@
 
   /* ===== 参数对比：智能帮比条 ===== */
   .smart-bar { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 10px; }
-  .smart-label { font-size: 12px; font-weight: 600; color: var(--accent); font-family: var(--font-mono); white-space: nowrap; }
+  /* AI 语义分组：标签 + 三个预置项包一层蓝紫渐变底，与右侧自由输入框区分「AI 推荐」和「自定义」两种路径 */
+  .smart-ai-group { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding: 5px 12px 5px 12px;
+    border-radius: var(--radius-lg);
+    background: linear-gradient(135deg, color-mix(in srgb, var(--ark-blue-500) 9%, transparent), color-mix(in srgb, var(--highlight-l0a-violet-500) 9%, transparent));
+    border: 1px solid color-mix(in srgb, var(--highlight-l0b-deep-violet-500) 28%, transparent); }
+  .smart-label { font-size: 12px; font-weight: 700; font-family: var(--font-mono); white-space: nowrap;
+    background: linear-gradient(135deg, var(--ark-blue-500), var(--highlight-l0a-violet-500));
+    -webkit-background-clip: text; background-clip: text; color: transparent; }
+  /* 预置项按钮：常态为渐变描边的幽灵按钮，选中态填满蓝紫渐变 + 外发光，呼应「AI 已算出推荐项」 */
+  .smart-preset { border-color: color-mix(in srgb, var(--highlight-l0b-deep-violet-500) 45%, transparent); }
+  .smart-preset:hover { background: color-mix(in srgb, var(--highlight-l0a-violet-500) 16%, transparent);
+    border-color: var(--highlight-l0a-violet-500); color: var(--foreground); }
+  .smart-bar .btn.smart-preset.is-selected,
+  .smart-bar .btn.smart-preset.is-selected:hover {
+    background: linear-gradient(135deg, var(--ark-blue-500), var(--highlight-l0a-violet-500));
+    border-color: transparent; color: #fff;
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--highlight-l0a-violet-500) 24%, transparent),
+      0 2px 10px color-mix(in srgb, var(--highlight-l0b-deep-violet-500) 45%, transparent); }
   /* 已引入的样式表未定义通用 .input 类，保留 page-local token 化输入框样式（与 quick-reference 对
      缺失 .badge--* 时"page-local + 打 flag"的处理方式一致） */
-  .smart-input { flex: 1; min-width: 200px; padding: 7px 13px; border-radius: 999px; border: 1px solid var(--border-default);
+  .smart-input { flex: 1; min-width: 200px; padding: 7px 13px; border-radius: var(--radius-lg); border: 1px solid var(--border-default);
     font-family: var(--font-sans); font-size: 12px; background: var(--surface-1); color: var(--foreground); }
   .smart-input:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 22%, transparent); }
   .smart-clear { font-size: 11px; color: var(--foreground-muted); cursor: pointer; font-family: var(--font-mono); white-space: nowrap; }
   .smart-clear:hover { color: var(--danger); }
-  .smart-hint { font-size: 11px; color: var(--foreground-muted); margin: -2px 0 12px; font-family: var(--font-mono); }
-  .smart-hint b { color: var(--accent); font-weight: 600; }
+  /* 状态提示行改为可关闭的标签组：智能帮比结果 / 只看差异统计 / 标记最优统计，各自独立，
+     点标签上的 × 直接取消对应筛选（等价于关掉对应开关或清除智能帮比），比纯文字行更可操作 */
+  .smart-hint-row { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin: -2px 0 12px; }
+  .hint-tag { display: inline-flex; align-items: center; gap: 6px; font-size: 11px; font-family: var(--font-mono);
+    color: var(--foreground-secondary); background: var(--surface-3); border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-md); padding: 3px 6px 3px 10px; white-space: nowrap; }
+  .hint-tag b { color: var(--foreground); font-weight: 600; }
+  .hint-tag--smart b { background: linear-gradient(135deg, var(--ark-blue-500), var(--highlight-l0a-violet-500));
+    -webkit-background-clip: text; background-clip: text; color: transparent; }
+  .hint-tag--best b { color: var(--success); }
+  .hint-tag-x { display: inline-flex; align-items: center; justify-content: center; width: 14px; height: 14px;
+    border-radius: 50%; color: var(--foreground-muted); cursor: pointer; font-size: 12px; line-height: 1; flex-shrink: 0; }
+  .hint-tag-x:hover { background: var(--state-hover); color: var(--danger); }
 
   /* ===== 参数对比：泳道卡片（Kanban 式看板，无对应 PTO pattern，保留 page-local 结构） ===== */
   .lane-area { display: flex; gap: 12px; align-items: flex-start; }
-  .lane-wrap { flex: 1; min-width: 0; display: flex; gap: 12px; overflow: auto; padding: 4px 2px 14px;
+  /* 顶部不留 padding：滚动容器的 padding 不随内容滚动，会在 sticky 卡头上方露出一条固定缝隙，
+     scroll 时能看到卡片内容从缝隙里漏出来；改用 .lane-card 的 margin-top 让内容一起滚走 */
+  .lane-wrap { flex: 1; min-width: 0; display: flex; gap: 12px; overflow: auto; padding: 0 2px 14px;
     align-items: flex-start; scroll-behavior: smooth; overscroll-behavior: contain; }
-  .lane-card { flex: 0 0 250px; width: 250px; background: var(--surface-2);
+  .lane-card { flex: 0 0 250px; width: 250px; margin-top: 4px; background: var(--surface-2);
     border: 1px solid var(--border-default); border-radius: var(--radius-xl); }
   .lane-card.baseline { position: sticky; left: 0; z-index: 5; border: 2px solid var(--border-strong); background: var(--surface-3); }
-  .lane-card.picked { border: 2px solid var(--accent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 18%, transparent); }
+  /* 智能帮比命中列：描边用蓝紫渐变呼应「✦ 智能帮比」区域，双层 background 实现圆角渐变描边
+     （padding-box 铺实底色、border-box 露出渐变），baseline 叠加时改铺 surface-3 对齐基线卡片底色 */
+  .lane-card.picked { border: 2px solid transparent;
+    background: linear-gradient(var(--surface-2), var(--surface-2)) padding-box,
+      linear-gradient(135deg, var(--ark-blue-500), var(--highlight-l0a-violet-500)) border-box;
+    box-shadow: 0 4px 18px color-mix(in srgb, var(--highlight-l0b-deep-violet-500) 35%, transparent); }
+  .lane-card.baseline.picked { background: linear-gradient(var(--surface-3), var(--surface-3)) padding-box,
+      linear-gradient(135deg, var(--ark-blue-500), var(--highlight-l0a-violet-500)) border-box; }
   .lane-card.drag-over { border-style: dashed; border-color: var(--primary); }
   .lane-head { display: flex; align-items: center; gap: 7px; padding: 13px 14px; border-bottom: 1px solid var(--border-default);
     position: sticky; top: 0; z-index: 4; background: var(--surface-2); border-radius: var(--radius-xl) var(--radius-xl) 0 0; }
@@ -282,8 +319,10 @@
   .lane-pin { font-size: 12px; }
   .lane-name { flex: 1; font-weight: 600; font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .lane-base-tag { font-size: 9px; font-family: var(--font-mono); background: var(--surface-4); color: var(--foreground); border-radius: 999px; padding: 1px 7px; flex-shrink: 0; }
-  .lane-smart-badge { font-size: 9px; font-family: var(--font-mono); background: color-mix(in srgb, var(--accent) 14%, transparent); color: var(--accent);
-    border: 1px solid var(--accent); border-radius: 999px; padding: 1px 7px; flex-shrink: 0; white-space: nowrap; }
+  /* 命中徽标：填满蓝紫渐变呼应「✦ 智能帮比」，方角化（radius 8）与旁边全圆角的 lane-base-tag 区分角色 */
+  .lane-smart-badge { font-size: 9px; font-weight: 600; font-family: var(--font-mono); color: #fff;
+    background: linear-gradient(135deg, var(--ark-blue-500), var(--highlight-l0a-violet-500));
+    border: none; border-radius: 8px; padding: 1px 7px; flex-shrink: 0; white-space: nowrap; }
   .lane-body { padding: 4px 14px 14px; }
   .lane-group { margin-top: 10px; }
   .lane-group-title { font-size: 11.5px; font-family: var(--font-mono); color: var(--foreground); letter-spacing: .04em; font-weight: 700;
@@ -292,11 +331,13 @@
   .lane-row { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; padding: 5px 8px; margin: 0 -8px;
     font-size: 12px; border-radius: 6px; transition: background .12s; }
   .lane-row.row-hi { background: var(--state-hover); }
+  /* 标记最优：只给数值上色在密集表格里太弱，整行加浅绿底，扫一眼就能定位到胜出行 */
+  .lane-row.row-best { background: color-mix(in srgb, var(--success) 12%, transparent); }
   .lane-k { color: var(--foreground-muted); white-space: nowrap; }
   .lane-v { font-family: var(--font-mono); color: var(--foreground); font-weight: 500; text-align: right; word-break: break-all;
     display: flex; align-items: center; gap: 4px; justify-content: flex-end; }
   .lane-v.best { color: var(--success); font-weight: 700; }
-  .lane-medal { font-size: 11px; }
+  .lane-medal { font-size: 12px; filter: drop-shadow(0 0 3px color-mix(in srgb, var(--success) 60%, transparent)); }
   .lane-empty { font-size: 11px; color: var(--foreground-muted); padding: 16px 0; text-align: center; }
   .lane-rail { flex: 0 0 60px; align-self: flex-start; display: flex; flex-direction: column; align-items: stretch; }
   .lane-add { width: 56px; height: 56px; align-self: center; border: 1.5px dashed var(--border-strong);
@@ -1227,6 +1268,19 @@ function bindMarkBestSwitch(container, rerender){
   if(!input) return;
   input.addEventListener('change', ()=>{ markBest = input.checked; rerender(); });
 }
+// 「只看差异」开关控件 HTML + 事件绑定（与「标记最优」同款开关，状态用全局 compareDiffOnly）
+function diffSwitchHtml(){
+  return `<label class="cmp-switch">
+    <input type="checkbox" data-switch="diff" ${compareDiffOnly?'checked':''}>
+    <span class="cmp-switch-track"></span>
+    <span class="cmp-switch-label${compareDiffOnly?' is-on':''}">只看差异</span>
+  </label>`;
+}
+function bindDiffSwitch(container, rerender){
+  const input = container.querySelector('[data-switch="diff"]');
+  if(!input) return;
+  input.addEventListener('change', ()=>{ compareDiffOnly = input.checked; rerender(); });
+}
 // SVG stroke/内联样式字符串拼接场景无法用 var()，这里取与上面 .dot.* 完全对应的字面量值
 // （copy-blue-400 / ub-green-700 / accum-orange-700 / l0a-violet-400 / mte-amber-700，
 // 经 dataviz 技能校验脚本在 light/dark 两种 surface 下都通过 CVD 区分度与对比度检查）。
@@ -1886,7 +1940,7 @@ function laneCardHtml(id, model, sel){
       const val = it ? it.value : '—';
       const better = g.better.get(key);
       const best = markBest && better && optimalIds(g.group, key, better, sel).has(id);
-      return `<div class="lane-row" data-rk="${g.group}::${key}">
+      return `<div class="lane-row ${best?'row-best':''}" data-rk="${g.group}::${key}">
         <span class="lane-k">${key}</span>
         <span class="lane-v ${best?'best':''}">${best?'<span class="lane-medal">🏅</span>':''}${val}</span>
       </div>`;
@@ -1925,13 +1979,8 @@ function laneRailHtml(model, sel){
 function renderParamCompare(){
   if(smartLabel) applySmart(smartLabel);          // 选择集变化后保持命中结果同步
   const right = document.getElementById('cmpTopRight');
-  right.innerHTML = `
-    <button type="button" class="btn btn-ghost btn-sm${compareDiffOnly?' is-selected':''}" data-toggle="diff">只看差异</button>
-    ${markBestSwitchHtml()}`;
-  right.querySelector('[data-toggle="diff"]').addEventListener('click', ()=>{
-    compareDiffOnly = !compareDiffOnly;
-    renderParamCompare();
-  });
+  right.innerHTML = `${diffSwitchHtml()}${markBestSwitchHtml()}`;
+  bindDiffSwitch(right, renderParamCompare);
   bindMarkBestSwitch(right, renderParamCompare);
 
   const body = document.getElementById('cmpBody');
@@ -1940,14 +1989,30 @@ function renderParamCompare(){
   const model = buildParamModel(sel);
   const freeVal = smartLabel && !isPreset(smartLabel) ? smartLabel : '';
 
+  // 状态提示行：把「智能帮比结果」「只看差异覆盖了多少参数项」「标记最优命中了多少可比参数」拆成三个可关闭的
+  // 标签，随各自开关状态出现/消失，点 × 直接取消对应筛选，而不只是只读文字
+  const totalKeys = model.reduce((s,g)=> s+g.keys.length, 0);
+  const diffKeys = model.reduce((s,g)=> s+g.keys.filter(key=> rowDiffers(g.group, key, sel)).length, 0);
+  const bestKeys = model.reduce((s,g)=> s+g.keys.filter(key=>{
+    const better = g.better.get(key);
+    return better && optimalIds(g.group, key, better, sel).size>0;
+  }).length, 0);
+  const hintTags = [];
+  if(smartLabel) hintTags.push(`<span class="hint-tag hint-tag--smart">✦ 已按「<b>${smartLabel}</b>」评估：${smartPickIds.length?smartPickIds.map(id=>shortName(id)).join('、')+' 胜出':'当前所选任务中无可比项'}（Demo）<span class="hint-tag-x" data-hint-close="smart" title="取消智能帮比">×</span></span>`);
+  if(compareDiffOnly) hintTags.push(`<span class="hint-tag hint-tag--diff">${totalKeys} 个参数项中展示了差异的 <b>${diffKeys}</b> 项<span class="hint-tag-x" data-hint-close="diff" title="关闭只看差异">×</span></span>`);
+  if(markBest) hintTags.push(`<span class="hint-tag hint-tag--best">${totalKeys} 个参数项中为 <b>${bestKeys}</b> 项可比参数标记了最优<span class="hint-tag-x" data-hint-close="best" title="关闭标记最优">×</span></span>`);
+  const hintHtml = hintTags.length ? `<div class="smart-hint-row">${hintTags.join('')}</div>` : '';
+
   body.innerHTML = `
     <div class="smart-bar">
-      <span class="smart-label">✦ 智能帮比</span>
-      ${SMART_PRESETS.map(p=>`<button type="button" class="btn btn-ghost btn-sm${smartLabel===p.label?' is-selected':''}" data-preset="${p.label}">${p.label}</button>`).join('')}
+      <div class="smart-ai-group">
+        <span class="smart-label">✦ 智能帮比</span>
+        ${SMART_PRESETS.map(p=>`<button type="button" class="btn btn-ghost btn-sm smart-preset${smartLabel===p.label?' is-selected':''}" data-preset="${p.label}">${p.label}</button>`).join('')}
+      </div>
       <input class="smart-input" id="smartInput" placeholder="输入你的比较条件，回车评估（如：显存最省 / 速度最快）" value="${freeVal}">
       ${smartLabel?'<span class="smart-clear" id="smartClear">清除</span>':''}
     </div>
-    ${smartLabel?`<div class="smart-hint">已按「<b>${smartLabel}</b>」评估：${smartPickIds.length?smartPickIds.map(id=>shortName(id)).join('、')+' 胜出 ✦':'当前所选任务中无可比项'}（Demo）</div>`:''}
+    ${hintHtml}
     <div class="lane-area">
       <div class="lane-wrap" id="laneWrap">
         ${sel.map(id=> laneCardHtml(id, model, sel)).join('')}
@@ -1956,11 +2021,22 @@ function renderParamCompare(){
     </div>`;
 
   bindSmart();
+  bindHintTags();
   bindLaneDnd();
   bindLaneAdd();
   bindLaneAnchors();
   bindLaneRowHover();
   sizeLaneWrap();
+}
+// 状态提示标签的 × ：点击直接取消对应筛选（智能帮比清除 / 只看差异关闭 / 标记最优关闭）并重渲染
+function bindHintTags(){
+  document.querySelectorAll('[data-hint-close]').forEach(x=> x.addEventListener('click', ()=>{
+    const kind = x.dataset.hintClose;
+    if(kind==='smart') applySmart('');
+    else if(kind==='diff') compareDiffOnly = false;
+    else if(kind==='best') markBest = false;
+    renderParamCompare();
+  }));
 }
 
 // 对比框为独立滚动容器：按可用视口高度限定其高度，框内出现纵向/横向滚动条
@@ -2020,15 +2096,22 @@ function bindLaneRowHover(){
   });
 }
 
+// 命中列可能在泳道横向滚动区外，评估后自动把第一张命中卡片滚入可视范围
+function scrollPickedIntoView(){
+  const wrap = document.getElementById('laneWrap');
+  const card = wrap && wrap.querySelector('.lane-card.picked');
+  if(card) card.scrollIntoView({ behavior:'smooth', inline:'center', block:'nearest' });
+}
 function bindSmart(){
   document.querySelectorAll('[data-preset]').forEach(c=> c.addEventListener('click', ()=>{
     const label = c.dataset.preset;
     applySmart(smartLabel===label ? '' : label);   // 再次点击取消
     renderParamCompare();
+    scrollPickedIntoView();
   }));
   const input = document.getElementById('smartInput');
   if(input) input.addEventListener('keydown', e=>{
-    if(e.key==='Enter'){ const v = input.value.trim(); applySmart(v); renderParamCompare(); }
+    if(e.key==='Enter'){ const v = input.value.trim(); applySmart(v); renderParamCompare(); scrollPickedIntoView(); }
   });
   const clr = document.getElementById('smartClear');
   if(clr) clr.addEventListener('click', ()=>{ applySmart(''); renderParamCompare(); });

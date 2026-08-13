@@ -7,7 +7,7 @@
      ① mem-timeline   §1 性能表征层   显存占用曲线 + 吞吐（触顶 / OOM 断点）
                                      兼作「容量维度」判据：峰值 = 容量 → 绝对容量不足
      ② composition    §4 峰值构成层   显存峰值按用途堆叠（激活 56.6% = 根因）
-     ③ fragment-map   §6 内存快照层   地址×时间碎片分布 + 碎片热力条 + 碎片判据读数
+     ③ fragment-map   §6 内存快照层   时间×地址碎片分布 + 碎片轴 + 碎片判据读数
                                      点块弹出生命周期与申请堆栈
 
    案例四另外三层不在本面板里取证，各自归到页面上已有的视图，避免重复造图：
@@ -45,11 +45,15 @@ window.PtoTrainingMemoryPanel = (function () {
       mute: v("--foreground-muted", "#6b7280"),
       grid: v("--border-subtle", "rgba(128,128,128,.22)"),
       inset: v("--surface-2", "rgba(128,128,128,.10)"),
+      bg: v("--background", "#ffffff"),   // 不透明底色：给压在图上的标注文字垫底
+
       crit: "#dc2626",
       warn: "#ea580c",
       ok: "#16a34a",
       mem: "#0891b2",
       activation: "#ea580c",
+      // 碎片图专用：那里的红色被「最大连续空闲块」的标注占了，碎片块换青色，免得抢眼
+      frag: "#0891b2",
       params: "#3b6fe0",
       grads: "#16a34a",
       optimizer: "#8b5cf6",
@@ -104,6 +108,14 @@ window.PtoTrainingMemoryPanel = (function () {
     c.textAlign = opt.align || "left";
     c.textBaseline = opt.baseline || "alphabetic";
     c.fillText(str, x, y);
+  }
+  // 竖排文字（逆时针 90°）：碎片图里给又高又窄的常驻块贴名字用
+  function vtext(c, str, x, y, opt) {
+    c.save();
+    c.translate(x, y);
+    c.rotate(-Math.PI / 2);
+    text(c, str, 0, 0, opt);
+    c.restore();
   }
   // 窄卡里文字很容易超出：超宽就逐字裁剪加省略号
   function ellipsis(c, str, maxW) {
@@ -333,10 +345,15 @@ window.PtoTrainingMemoryPanel = (function () {
       pad, h - 2, { color: p.crit, size: 9, weight: "600" });
   }
 
-  /* ══ ⑥ 碎片分布图（地址 × 时间）+ 碎片热力条 ═══════════════════════════════
+  /* ══ ⑥ 碎片分布图（时间 × 地址）+ 碎片轴 ═══════════════════════════════════
      块数据在模块内用定长种子生成，形态固定可复现：forward 期间大量不等大小的激活中间张量
-     密集分配、backward 后才集中释放 —— 正是碎片的成因。其中一块被替换成 MEM_CASE_FACTS
-     里的真实样本（L38 q_b_proj），点它能看到申请堆栈。 */
+     密集分配、backward 后才集中释放 —— 正是碎片的成因。其中一块挂上 MEM_CASE_FACTS
+     里的真实样本（L38 q_b_proj），点它能看到申请堆栈。
+
+     生成参数对齐 facts.fragment 的读数，图上量出来的和判据格里写的是同一回事：
+       · 空洞尺寸压在 largestFreeBlockGB 以下，只在 BIG_GAP_AT 处留一个正好 = 该读数的大空洞
+         → 碎片轴上标红的「最大连续空闲块」就是它；
+       · 激活区一路铺到 cap，不留尾巴，空闲总量 ≈ totalFreeGB。 */
   var blocksCache = null;
   function buildBlocks() {
     if (blocksCache) return blocksCache;
@@ -344,29 +361,39 @@ window.PtoTrainingMemoryPanel = (function () {
     var seed = 20260727;
     function rnd() { seed = (seed * 1103515245 + 12345) & 0x7fffffff; return seed / 0x7fffffff; }
     var cap = f.capacityGB;
+    var largestFree = f.fragment.largestFreeBlockGB;
     var list = [];
     // 常驻区（参数/梯度/优化器）：低地址、整个 step 都在
     [["params", 0, 8.1], ["grads", 8.1, 8.1], ["optimizer", 16.2, 10.8]].forEach(function (r) {
       list.push({ kind: r[0], addr: r[1], size: r[2], t0: 0, t1: 1, resident: true });
     });
     // 激活中间张量：高地址、forward 分配 backward 释放，大小不等 → 释放后留空洞
+    var acts = [];
     var addr = 27.0;
-    for (var i = 0; i < 96 && addr < cap - 0.4; i++) {
-      var size = 0.08 + rnd() * 0.52;
+    var BIG_GAP_AT = 62;                   // 这一块之后留唯一的大空洞
+    for (var i = 0; addr < cap - 0.06; i++) {
+      var size = Math.min(0.08 + rnd() * 0.52, cap - addr);
       var t0 = 0.06 + rnd() * 0.38;
       var t1 = Math.min(1, t0 + 0.28 + rnd() * 0.62);
-      list.push({ kind: "activation", addr: addr, size: size, t0: t0, t1: t1, idx: i });
-      addr += size + rnd() * 0.12;         // 间隙 = 已释放未合并的空洞
+      var b = { kind: "activation", addr: addr, size: size, t0: t0, t1: t1, idx: i };
+      list.push(b); acts.push(b);
+      // 间隙 = 已释放未合并的空洞：平时都是零头，只有一处放到 largestFreeBlockGB
+      addr += size + (i === BIG_GAP_AT ? largestFree : 0.002 + rnd() * 0.021);
     }
-    // 临时 workspace：零散夹在中间
+    /* 临时 workspace：复用某块激活让出来的地址（同地址、不同时间 = 典型的槽位复用），
+       这样它不会掉进空洞里、把标红的最大连续块切开。 */
     for (var j = 0; j < 10; j++) {
-      list.push({ kind: "workspace", addr: 27.0 + rnd() * (cap - 28), size: 0.05 + rnd() * 0.1,
+      var hostBlk = acts[Math.floor(rnd() * acts.length)];
+      var wsSize = Math.min(0.05 + rnd() * 0.1, hostBlk.size);
+      list.push({ kind: "workspace", addr: hostBlk.addr, size: wsSize,
                   t0: rnd() * 0.7, t1: 0, transient: true });
     }
     list.forEach(function (b) { if (b.transient) b.t1 = Math.min(1, b.t0 + 0.06); });
-    // 指定其中一块为文档里的真实样本
+    /* 指定其中一块为文档里的真实样本：挑中段里最小的一块，改成样本尺寸后留下的零头
+       仍远小于那个大空洞，不会抢走「最大连续」的标注。 */
     var sample = f.fragment.sampleBlock;
-    var target = list.filter(function (b) { return b.kind === "activation"; })[37];
+    var target = null;
+    acts.slice(30, 70).forEach(function (b) { if (!target || b.size < target.size) target = b; });
     if (target) {
       target.sample = sample;
       target.size = sample.sizeMB / 1024;
@@ -377,102 +404,216 @@ window.PtoTrainingMemoryPanel = (function () {
     return list;
   }
 
-  var fragGeom = null;   // 命中测试用：绘制时记下每块的屏幕矩形
+  /* 沿地址轴求空闲区段：常驻块 + 激活块的占用取并集，剩下的就是空洞。
+     transient 的 workspace 不算（它压在激活块的地址上，不改变空闲版图）。 */
+  function freeRuns(blocks, cap) {
+    var iv = blocks.filter(function (b) { return !b.transient; })
+                   .map(function (b) { return [b.addr, b.addr + b.size]; })
+                   .sort(function (a, b) { return a[0] - b[0]; });
+    var runs = [], cursor = 0;
+    iv.forEach(function (r) {
+      if (r[0] > cursor) runs.push([cursor, r[0]]);
+      cursor = Math.max(cursor, r[1]);
+    });
+    if (cursor < cap) runs.push([cursor, cap]);
+    return runs;
+  }
+
+  /* 坐标约定：横轴 = step 内时间（左→右，符合读时序图的习惯），纵轴 = 显存地址（下低上高）。
+     于是常驻块画成贯穿整幅的长横条、激活块画成一小段一小段的短横条，"谁一直占着、谁随用随放"
+     不用看图例就读得出来。
+
+     颜色只有一条硬规则：红色专门留给「最大连续空闲块」的标注，别的地方一概不用红 ——
+     碎片块本身改用青色（p.frag），免得和标注抢眼。
+
+     右侧「碎片轴」= 同一根地址轴上的占用版图：底子是一个空框（框内空白 = 空闲），
+     按用途填参数/梯度/优化器/碎片的图例色，最后把最大的那段连续空闲用红框标出来。 */
   function drawFragmentMap(cv) {
     var g = ctx2d(cv);
     if (!g) return;
     var f = facts(); if (!f) return;
     var c = g.c, w = g.w, h = g.h, p = palette();
     var blocks = buildBlocks();
-    var colorOf = { params: p.params, grads: p.grads, optimizer: p.optimizer, activation: p.activation, workspace: p.workspace };
+    var colorOf = { params: p.params, grads: p.grads, optimizer: p.optimizer, activation: p.frag, workspace: p.workspace };
 
     var pad = 8;
-    // 自上而下：标题行 → 图例行 → 块图 → 碎片热力条 → 碎片判据三格
-    var titleH = 11, legendH = 13, stripH = 10, judgeH = 30;
-    var top = titleH + legendH + 4, bot = h - judgeH - stripH - 8;
-    var plotW = w - pad * 2;
+    var gutL = 30;                    // 左栏：区名（竖排）+ 地址刻度
+    var stripW = 9, stripGap = 5;     // 右侧碎片轴
+    var titleH = 11, legendH = 12, axisH = 11, capH = 10, judgeH = 30;
+    var top = titleH + legendH + 4;
+    var bot = Math.max(top + 40, h - judgeH - capH - axisH - 4);
+    var plotX = pad + gutL, plotW = Math.max(20, w - pad * 2 - gutL - stripW - stripGap);
+    var stripX = w - pad - stripW;
     var cap = f.capacityGB;
-    var mapA = function (gb) { return pad + gb / cap * plotW; };
+    var mapT = function (t) { return plotX + t * plotW; };               // 时间 → x
+    var mapA = function (gb) { return bot - gb / cap * (bot - top); };   // 地址 → y（低地址在下）
+    // 常驻区/激活区的地址分界：常驻块的最高地址，不写死数字
+    var split = 0;
+    blocks.forEach(function (b) { if (b.resident) split = Math.max(split, b.addr + b.size); });
 
-    text(c, "地址空间 0–" + cap + " GB  ×  step 内时间", pad, 9, { color: p.mute, size: 9.5 });
-    text(c, "点红框块看生命周期", w - pad, 9, { color: p.mute, size: 9, align: "right" });
+    // ── 轴说明：一句话把两根轴交代掉
+    c.font = "400 9.5px " + SANS;
+    text(c, ellipsis(c, "横轴 = step 内时间 →　　纵轴 = 显存地址 0–" + cap + " GB（下低上高）", w - pad * 2),
+      pad, 9, { color: p.mute, size: 9.5 });
 
-    /* 图例：矩形块按用途着色（与「峰值构成」气泡同一套语义色），名称取 composition 的短名，
-       两处颜色永远一致；右侧另给碎片热力条的色标，说明绿→红是什么意思。 */
-    var LEGEND_KINDS = ["activation", "params", "grads", "optimizer", "workspace"];
+    /* 图例只剩两项：常驻的参数/梯度/优化器已直接把名字写在长横条上，不再重复占图例位。
+       右侧留「碎片轴」的栏名，正对下面那根竖条。 */
     var shortOf = {};
     f.composition.forEach(function (it) { shortOf[it.id] = it.short || it.label; });
     var ly = titleH + 9;
     c.font = "400 9px " + SANS;
     var lx = pad;
-    LEGEND_KINDS.forEach(function (kind) {
-      var name = shortOf[kind] || kind;
-      c.fillStyle = colorOf[kind] || p.workspace;
+    [["activation", "碎片块(激活中间张量)"], ["workspace", shortOf.workspace || "workspace"]].forEach(function (it) {
+      var name = it[1];
+      c.fillStyle = colorOf[it[0]] || p.workspace;
       roundRect(c, lx, ly - 6, 6, 6, 1.5); c.fill();
       text(c, name, lx + 9, ly, { color: p.mute, size: 9 });
       lx += 9 + c.measureText(name).width + 8;
     });
-    // 碎片热力条色标（贴右侧）：绿=整段由一块大分配独占或空闲 → 红=同一区间挤了三四笔
-    var keyW = 34, keyX = w - pad - keyW - 26;
-    if (keyX > lx + 6) {
-      text(c, "连续", keyX - 3, ly, { color: p.mute, size: 9, align: "right" });
-      [p.ok, p.warn, p.crit].forEach(function (col, i) {
-        c.fillStyle = col; c.globalAlpha = 0.75;
-        c.fillRect(keyX + i * (keyW / 3), ly - 6, keyW / 3, 6);
-        c.globalAlpha = 1;
-      });
-      text(c, "碎片", keyX + keyW + 3, ly, { color: p.mute, size: 9 });
-    }
+    c.font = "400 8.5px " + SANS;
+    if (stripX - 30 > lx + 6) text(c, "碎片轴", stripX + stripW, ly, { color: p.mute, size: 8.5, align: "right" });
 
-    // 块
-    fragGeom = [];
+    // ── 左栏：地址刻度（0 / 分界 / 容量）+ 竖排区名，说明下段常驻、上段激活
+    c.strokeStyle = p.grid; c.lineWidth = 1;
+    c.beginPath(); c.moveTo(plotX - 4.5, top); c.lineTo(plotX - 4.5, bot); c.stroke();
+    [[0, "0"], [split, String(Math.round(split))], [cap, cap + " GB"]].forEach(function (tk) {
+      var y = mapA(tk[0]);
+      c.beginPath(); c.moveTo(plotX - 4.5, y + 0.5); c.lineTo(plotX - 1.5, y + 0.5); c.stroke();
+      text(c, tk[1], plotX - 7, y + (tk[0] === 0 ? 0 : tk[0] === cap ? 7 : 3),
+        { color: p.mute, size: 8, align: "right" });
+    });
+    c.font = "400 8.5px " + SANS;
+    [[0, split, "常驻区"], [split, cap, "激活区"]].forEach(function (seg) {
+      var y0 = mapA(seg[0]), y1 = mapA(seg[1]);
+      if (y0 - y1 < 26) return;
+      vtext(c, seg[2], pad + 5, (y0 + y1) / 2,
+        { color: p.mute, size: 8.5, align: "center", baseline: "middle" });
+    });
+    // 常驻区/激活区分界：横虚线贯穿块图直插碎片轴，点明两者共用同一根地址轴
+    c.save();
+    c.setLineDash([2, 2]); c.strokeStyle = p.mute; c.globalAlpha = 0.5;
+    c.beginPath(); c.moveTo(plotX - 4, mapA(split) + 0.5); c.lineTo(w - pad, mapA(split) + 0.5); c.stroke();
+    c.restore();
+
+    // ── 时间轴：底边一条线 + 前向/反向/结束三个刻度
+    var BWD = 0.45;        // buildBlocks() 里激活块的申请全部落在 forward 段（t0 ≤ 0.44）
+    c.strokeStyle = p.grid; c.lineWidth = 1;
+    c.beginPath(); c.moveTo(plotX, bot + 0.5); c.lineTo(plotX + plotW, bot + 0.5); c.stroke();
+    [[0, "前向", "left"], [BWD, "反向", "center"], [1, "结束", "right"]].forEach(function (tk) {
+      var x = mapT(tk[0]);
+      c.beginPath(); c.moveTo(x + 0.5, bot + 0.5); c.lineTo(x + 0.5, bot + 3.5); c.stroke();
+      text(c, tk[1], x, bot + axisH, { color: p.mute, size: 8, align: tk[2] });
+    });
+    // 反向起点：竖虚线一划，就能看出「申请都在线左边、释放都在线右边」
+    c.save();
+    c.setLineDash([2, 3]); c.strokeStyle = p.grid;
+    c.beginPath(); c.moveTo(mapT(BWD) + 0.5, top); c.lineTo(mapT(BWD) + 0.5, bot); c.stroke();
+    c.restore();
+
+    // ── 块：常驻的贯穿整幅（整个 step 都在），激活/workspace 只占一段时间
+    var fragGeom = [];
     blocks.forEach(function (b) {
-      var x = mapA(b.addr), bw = Math.max(1.2, b.size / cap * plotW);
-      var y = top + b.t0 * (bot - top);
-      var bh = Math.max(1.5, (b.t1 - b.t0) * (bot - top));
+      var x = mapT(b.t0), bw = Math.max(1.2, (b.t1 - b.t0) * plotW);
+      var y = mapA(b.addr + b.size);
+      var bh = Math.max(1.5, b.size / cap * (bot - top));
       c.fillStyle = colorOf[b.kind] || p.workspace;
-      c.globalAlpha = b.resident ? 0.55 : 0.9;
+      c.globalAlpha = b.resident ? 0.7 : 0.9;
       c.fillRect(x, y, bw, bh);
       c.globalAlpha = 1;
-      if (b.sample) {                       // 样本块加高亮描边，提示"可点"
-        c.strokeStyle = p.crit; c.lineWidth = 1.5;
+      if (b.sample) {                       // 带真实申请堆栈的样本块：描边 + 贴名字，别让人猜这框是什么
+        c.strokeStyle = p.ink; c.lineWidth = 1.5;
         c.strokeRect(x - 1, y - 1, bw + 2, bh + 2);
+        c.font = "600 8px " + SANS;
+        text(c, ellipsis(c, "样本块：点开看申请堆栈", bw), x + 1, y - 4,
+          { color: p.ink, size: 8, weight: "600" });
       }
       fragGeom.push({ b: b, x: x, y: y, w: bw, h: bh });
     });
-
-    // 碎片热力条：沿地址空间统计空隙密度，红=碎片密集（连续空闲块小）
-    var sy = bot + 6;
-    var BINS = 64;
-    var occupied = new Array(BINS).fill(0);
+    /* 命中框存在 canvas 自己身上：同一页上碎片图有两张（dock「性能」页签 + 定位链长文），
+       两张宽高不同，早先存在模块级变量里会被后画的那张覆盖，先画的那张就点不动了。 */
+    cv.__fragGeom = fragGeom;
+    // 常驻三条直接把名字写在条上（横过来以后条子够高，横排写得下）
     blocks.forEach(function (b) {
-      var i0 = Math.floor(b.addr / cap * BINS), i1 = Math.ceil((b.addr + b.size) / cap * BINS);
-      for (var i = Math.max(0, i0); i < Math.min(BINS, i1); i++) occupied[i]++;
+      if (!b.resident) return;
+      var y = mapA(b.addr + b.size), bh = b.size / cap * (bot - top);
+      if (bh < 9) return;
+      c.font = "600 8.5px " + SANS;
+      text(c, ellipsis(c, shortOf[b.kind] || b.kind, plotW - 12), plotX + 6, y + bh / 2 + 3,
+        { color: "#fff", size: 8.5, weight: "600" });
     });
-    for (var i = 0; i < BINS; i++) {
-      var x = pad + i / BINS * plotW, bw2 = plotW / BINS + 0.5;
-      /* 同一地址区间里的分配笔数越多 = 被切得越碎。基准是 1 笔(整段由一块大分配独占,
-         如常驻的参数/梯度/优化器区)→ 绿；空闲区 0 笔同样是绿(大块连续空闲);
-         激活区每 GB 挤进三四块不等大小的中间张量 → 红。 */
-      var d = Math.min(1, Math.max(0, occupied[i] - 1) / 3);
-      c.fillStyle = d > 0.6 ? p.crit : d > 0.25 ? p.warn : p.ok;
-      c.globalAlpha = 0.28 + d * 0.62;
-      c.fillRect(x, sy, bw2, stripH);
-      c.globalAlpha = 1;
-    }
+
+    /* ── 碎片轴：同一根地址轴上的占用版图。空框垫底 = 空闲，按用途填图例色。
+       激活区被切成上百块 0.1~0.6 GB 的小块，填色后连成一片 —— 空白少得可怜正是碎片率 83% 的样子。 */
     c.strokeStyle = p.grid; c.lineWidth = 1;
-    c.strokeRect(pad + 0.5, sy + 0.5, plotW - 1, stripH - 1);
+    c.strokeRect(stripX + 0.5, top + 0.5, stripW - 1, bot - top - 1);
+    blocks.forEach(function (b) {
+      if (b.transient) return;            // workspace 压在激活块地址上，不另占版图
+      var y = mapA(b.addr + b.size), bh = Math.max(0.6, b.size / cap * (bot - top));
+      c.fillStyle = colorOf[b.kind] || p.workspace;
+      c.globalAlpha = b.resident ? 0.75 : 0.9;
+      c.fillRect(stripX + 1, y, stripW - 2, bh);
+      c.globalAlpha = 1;
+    });
+
+    /* 最大连续空闲块的标注：它本身没有对错 —— 0.3 GB 只是个事实，真正出事的是
+       "下一笔 0.5 GB 的临时 buffer 请求接不下它"。所以这块空闲用中性描边标位置，
+       红色留给那笔装不进去的请求（红条画在空闲块正上方、按同一地址比例延伸出去，
+       露在描边外的那截就是差的量）。 */
+    var runs = freeRuns(blocks, cap);
+    var best = null;
+    runs.forEach(function (r) { if (!best || r[1] - r[0] > best[1] - best[0]) best = r; });
+    if (best) {
+      var freeGB = best[1] - best[0];
+      var reqGB = f.fragment.maxRequestGB || 0;
+      var gb2px = (bot - top) / cap;
+      var by1 = mapA(best[1]), by0 = mapA(best[0]);
+      var bhh = Math.max(3, by0 - by1), byc = (by0 + by1) / 2;
+      var fy = byc + bhh / 2;                                  // 空闲块下沿：请求条也从这里起算
+      // 块图里对应的地址带：这一条地址全程空着，指得出红框标的是哪一段
+      c.fillStyle = p.mute; c.globalAlpha = 0.10;
+      c.fillRect(plotX, byc - bhh / 2, plotW, bhh);
+      c.globalAlpha = 1;
+      // 空闲块本身：中性描边
+      c.strokeStyle = p.dim; c.lineWidth = 1;
+      c.strokeRect(stripX - 2.5, byc - bhh / 2 - 0.5, stripW + 5, bhh + 1);
+      c.beginPath(); c.moveTo(plotX + plotW + 1, byc); c.lineTo(stripX - 3, byc); c.stroke();
+      if (reqGB > 0) {
+        // 装不下的那笔请求：等比放大到能看清，超出空闲块的部分就是"差的量"
+        var scale = Math.max(1, 3 / Math.max(0.001, freeGB * gb2px));
+        var reqH = Math.max(4, reqGB * gb2px * scale);
+        var rx = stripX - 2.5 - 6;
+        c.fillStyle = p.crit; c.globalAlpha = 0.85;
+        c.fillRect(rx - 3, fy - reqH, 4, reqH);
+        c.globalAlpha = 1;
+        c.font = "600 8px " + SANS;
+        var lab = "最大申请 " + reqGB + " GB > 最大连续 " + freeGB.toFixed(1) + " GB";
+        var lw = c.measureText(lab).width;
+        var lxr = rx - 6 - lw, lyr = fy - reqH - 3;
+        c.fillStyle = p.bg; c.globalAlpha = 0.9;
+        roundRect(c, lxr - 3, lyr - 9, lw + 6, 12, 2); c.fill();
+        c.globalAlpha = 1;
+        text(c, lab, lxr, lyr, { color: p.crit, size: 8, weight: "600" });
+      }
+    }
+
+    // 一行说明：碎片轴的读法 + 红色的含义 + 交互提示，不再另开一套色标
+    c.font = "400 8.5px " + SANS;
+    text(c, ellipsis(c, "碎片轴：填色=已占用，空白=空闲，灰框=最大连续空闲块，红=接不下的那笔申请 · 点任意块看生命周期与堆栈", w - pad * 2),
+      pad, bot + axisH + capH - 3, { color: p.mute, size: 8.5 });
 
     /* 碎片维度的判据读数（原本单独一张「双因子判定」卡，现并到这里 —— 判据紧挨着它的证据图）：
        空闲够但最大连续块接不下请求 size，就是分配碎片。容量维度的判据在 ① 显存曲线上（峰值=容量）。 */
     var fr = f.fragment;
-    var jy = sy + stripH + 6;
+    var jy = bot + axisH + capH + 2;
+    /* 前三格都是中性事实（空闲总量 / 最大连续 / 最大申请），单看谁都不算错；
+       标红的是「最大申请 > 最大连续」这个关系本身，以及它推出来的碎片率。 */
     var cells = [
       { lab: "空闲总量", val: fr.totalFreeGB + " GB", hot: false },
-      { lab: "最大连续块", val: fr.largestFreeBlockGB + " GB", hot: true },
+      { lab: "最大连续", val: fr.largestFreeBlockGB + " GB", hot: false },
+      { lab: "最大申请", val: fr.maxRequestGB + " GB", hot: fr.maxRequestGB > fr.largestFreeBlockGB },
       { lab: "碎片率", val: (fr.ratio * 100).toFixed(0) + "%", hot: true },
     ];
-    var cw = (w - pad * 2 - 8) / 3;
+    var cw = (w - pad * 2 - (cells.length - 1) * 4) / cells.length;
     cells.forEach(function (cell, i) {
       var cx = pad + i * (cw + 4);
       c.fillStyle = p.inset;
@@ -540,14 +681,15 @@ window.PtoTrainingMemoryPanel = (function () {
     cv.dataset.bound = "1";
     cv.style.cursor = "crosshair";
     cv.addEventListener("click", function (ev) {
+      var fragGeom = cv.__fragGeom;
       if (!fragGeom) return;
       var r = cv.getBoundingClientRect();
       var px = ev.clientX - r.left, py = ev.clientY - r.top;
       // 命中面积小，优先取样本块；其次取最后一个命中的（画在上层的）
-      // 激活块本身只有 1~3px 宽，命中框统一外扩；带堆栈的样本块再放宽一点，保证点得中
+      // 激活块本身只有 1~3px 高，命中框统一外扩；带堆栈的样本块再放宽一点，保证点得中
       var hit = null;
       fragGeom.forEach(function (q) {
-        var m = q.b.sample ? 5 : 2;
+        var m = q.b.sample ? 6 : 2.5;
         var inside = px >= q.x - m && px <= q.x + q.w + m && py >= q.y - m && py <= q.y + q.h + m;
         if (!inside) return;
         if (!hit || q.b.sample) hit = q;

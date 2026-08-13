@@ -467,6 +467,11 @@
       [net-start net-end arch-start] minmax(0, 1.6fr)
       [arch-end moe-start] minmax(0, 1fr) [moe-end];
   }
+
+  /* 「矩阵 | 单卡容量」照抄后两列的窄屏模板，容量栏才继续与 MoE 列等宽 */
+  .cro-cluster {
+    grid-template-columns: minmax(0, 1.6fr) minmax(0, 1fr);
+  }
 }
 
 /* ── 通用：区块标题（复用 pane-header 语义，但用于 pane body 内的次级分区） ── */
@@ -976,6 +981,93 @@
   min-height: 300px;
 }
 
+/* ── 整网视图切换（只看整网 / 只看典型 Layer / 两者并看）─────────────────────
+   三档口径由 html 末尾的 croNetView 脚本落成 .cro-board 上的三个类：
+     is-view-net    只看整网 —— arch 列的「典型 Layer」整节收起；
+     is-view-layer  只看典型 Layer —— deck 画布收起，典型层那一节被**整节搬进**
+                    整网列（搬 DOM 节点本身而不是另画一份：#croStructure 的 id、
+                    click 监听、选中态和关系连线锚点都还是同一批节点，四域联动
+                    一行不用改），并改成 2+2+1 宫格；
+     is-view-single 上面两档都加，表示「典型 Layer 不占 arch 列了」。右半边
+                    （Layer 导航、Cluster）的排布一律挂在它上面 —— 那两档之间
+                    右侧必须完全不动，只有左边那块在换。
+     两者并看       一个类都不加 = 改动前的现状。
+   通栏一行、三档等分：左列窄（min 220px），让它自己撑满比缩成一小坨稳。 */
+.cro-net-view {
+  display: flex;
+  flex: 0 0 auto;
+  width: 100%;
+}
+
+.cro-net-view > .tab-control-item {
+  flex: 1 1 auto;
+  min-width: 0;
+  padding: 0 var(--space-2);
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.cro-board.is-view-net .cro-section--structure { display: none; }
+
+/* ── 只看一边（is-view-single = net 档或 layer 档）时，右半边的排布 ──────────
+   两档的共同事实是「典型 Layer 不占 arch 列了」（一档收起、一档搬去整网列），
+   所以 Layer 导航与 Cluster 在两档里必须长得一模一样 —— 切档时右侧不动，只有
+   左边那块在换。规则一律挂在 is-view-single 上，别按档写两份。 */
+
+/* 空出来的高度归 Layer 导航：那一节、导航盒、band 逐层放开伸缩，刻度带一直
+   撑到列底。刻度是 height:100% 的空心胶囊，band 长多高它们就长多高。 */
+.cro-board.is-view-single .cro-region--arch > .cro-section:not(.cro-section--structure) {
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+.cro-board.is-view-single .cro-layer-nav {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+.cro-board.is-view-single .cro-layer-nav__band {
+  flex: 1 1 auto;
+  height: auto;
+  min-height: 0;
+}
+
+/* 第 2 行（Cluster）的封顶从 46% 抬到 62%。这道封顶同时是 clusterHeightBudget
+   里的 capRatio —— 矩阵折几行就是照着它算出来的，两处改要一起改。
+   第 1 行仍是 minmax(260px, 1fr)，压不到下限。 */
+.cro-board.is-view-single {
+  grid-template-rows: minmax(260px, 1fr) fit-content(62%);
+}
+
+/* 模型下拉留着（换模型与看哪一边无关），只收起 deck 画布本身 */
+.cro-board.is-view-layer #croDeckHost { display: none; }
+
+/* 搬进整网列之后：这一节接手本列的高度伸缩（原先是 deck 在吃） */
+.cro-region--net > .cro-section--structure {
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+/* 2 + 2 + 1 宫格。renderStructure 每次重渲染都会把 grid-template-columns 内联
+   写成「与 Layer 导航同宽的五等分」，那条对齐口径在整网列里不成立（这里根本
+   没有刻度带），故必须 !important 压过内联样式。 */
+.cro-region--net .cro-structure {
+  grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+  grid-auto-rows: minmax(0, 1fr);
+}
+
+/* 第 5 个盒子（Head）落末行，凑成 2+2+1。它跨两列只是为了拿到「整行」这个
+   定位区间，宽度仍锁死成**一格**（半宽减掉半个列间距）并水平居中 —— 撑满通栏
+   会让它比上面四张卡宽一倍，读成"Head 比别的段更重要"，而它只是最后一段。
+   列数不足 5 时（配置里没有 Dense 层或没有 MoE 层）这条不命中，自然退化成 2+2。 */
+.cro-region--net .cro-structure > .cro-structure__col:nth-child(5) {
+  grid-column: 1 / -1;
+  width: calc((100% - var(--space-3)) / 2);
+  justify-self: center;
+}
+
 /* ── 中：Layer 导航 ─────────────────────────────────────────────────────── */
 /* 严格照 default.png（几何逐像素量自参考图）：
      一条连续刻度带 —— Emb 1 格 + 46 层 + Norm/Head 2 格，全带等宽等距，
@@ -992,7 +1084,7 @@
   --cro-nav-split: 26px;
   --cro-nav-pp-h: 16px;      /* PP 标签行 */
   --cro-nav-ticks-h: 30px;   /* 刻度行 */
-  --cro-nav-rule-h: 46px;    /* 分隔线长度（两种分隔线等长） */
+  --cro-nav-ffn-h: 17px;     /* Dense/MoE 标签行 */
   flex: 0 0 auto;
   border: 1px solid var(--border-default);
   border-radius: var(--radius-lg);
@@ -1004,15 +1096,19 @@
    按实测组位置写入（PP 边界会落在 Dense|MoE 之间，比例硬算会错位）。 */
 .cro-layer-nav__band {
   position: relative;
-  height: 63px;    /* 16（PP 行）+ 30（刻度行）+ 17（Dense/MoE 行） */
+  height: calc(var(--cro-nav-pp-h) + var(--cro-nav-ticks-h) + var(--cro-nav-ffn-h));
 }
 
 .cro-layer-nav__strip {
   position: absolute;
   left: 0;
   right: 0;
+  /* 上下都锚死，高度由 band 剩多少决定，而不是自己写死 —— 「典型 Layer 不占
+     arch 列」的两档里 band 会被拉伸去填满空出的高度（见 is-view-single），
+     刻度（height:100%）随之整条长高。常规档 band 是
+     pp+ticks+ffn 的固定高，这里解出来正好等于 --cro-nav-ticks-h。 */
   top: var(--cro-nav-pp-h);
-  height: var(--cro-nav-ticks-h);
+  bottom: var(--cro-nav-ffn-h);
   display: flex;
   /* 两端各留半个空当：带子两端的分隔线正落在 padding-box 边上 */
   padding: 0 calc(var(--cro-nav-split) / 2);
@@ -1032,13 +1128,14 @@
 .cro-nav-rule {
   position: absolute;
   width: 1px;
-  height: var(--cro-nav-rule-h);
   visibility: hidden;          /* 实测定位写入前不闪 */
   background: var(--border-default);
 }
 
-.cro-nav-rule--pp  { top: 0; }
-.cro-nav-rule--ffn { top: var(--cro-nav-pp-h); }
+/* 两条分隔线同样上下锚死，不写长度：常规档解出来都是 46px（= pp 行 + 刻度行），
+   band 被拉伸时它们跟着刻度一起长，不会停在半空。 */
+.cro-nav-rule--pp  { top: 0;                    bottom: var(--cro-nav-ffn-h); }
+.cro-nav-rule--ffn { top: var(--cro-nav-pp-h);  bottom: 1px; }
 
 /* 同理：标题、stepper 行、错误行都不参与伸缩 */
 .cro-region__title,
@@ -1086,8 +1183,9 @@
   transition: color 120ms ease, opacity 140ms ease;
 }
 
-/* 刻度行下沿（16 + 30）再留 1px */
-.cro-ffn-span { top: 47px; }
+/* 底排注记贴着 band 下沿排（12px 行高落在 17px 的 ffn 行里，下留 4px），
+   改成 bottom 锚定后 band 拉伸也不会跟丢刻度行的下沿。 */
+.cro-ffn-span { top: auto; bottom: calc(var(--cro-nav-ffn-h) - 13px); }
 
 .cro-pp-span:hover { color: var(--primary); }
 
@@ -1519,39 +1617,47 @@
   min-height: 0;
   overflow-y: auto;
   overflow-x: hidden;
-  /* 2px 是整组选中时那圈 1.5px 白描边的让位，否则它会被滚动容器裁掉 */
+  /* 2px 的让位：组卡自己的描边已改成 inset，但组内专家胶囊选中时那圈 1.5px
+     白描边是外扩的，贴边的那一列仍会被滚动容器裁掉。 */
   padding: 2px var(--space-1) 2px 2px;
 }
 
 /* 组名一行、专家一行。padding 要留够，否则专家选中的 1.5px 白描边会被
    卡片边缘裁掉。 */
+/* EP 组卡片是**空心**的：不铺底色，只有一圈细描边，与 Layer 导航里代表单个
+   layer 的 .cro-tick 同一套语言（空心细胶囊 + --border-default 描边）。
+   铺 surface-2 会让每个组都成为一块实底，MoE 列一屏十几个组连成一片灰板，
+   而组内的专家胶囊本身就是实心的（.cro-expert 的 surface-3）—— 实心装在实心
+   里，"组"这一层边界反而看不出来。空心描边把卡片降回一个纯粹的框，实心的
+   只剩专家。
+   四种状态全部只改描边，不碰填充，所以统一收在 --cro-group-ring 一个变量上，
+   由同一条 box-shadow 渲染（与集群格子的 --cro-cell-ring 同写法）：
+     静息 --border-default → 悬浮 --foreground-secondary（同 .cro-tick:hover）
+     → 关联 --border-strong → 选中 白、加粗到 1.5px。 */
 .cro-moe-group {
+  --cro-group-ring: var(--border-default);
   display: flex;
   flex-direction: column;
   gap: 2px;
   padding: 3px 5px;
   border-radius: var(--radius-sm);
-  background: var(--surface-2);
+  background: transparent;
+  box-shadow: inset 0 0 0 1px var(--cro-group-ring);
   /* 整卡都是选中该 EP 组的热区（专家胶囊除外，见 renderMoe 的 click 处理） */
   cursor: pointer;
-  transition: background-color 120ms ease;
+  transition: box-shadow 120ms ease;
 }
 
-.cro-moe-group:hover { background: var(--state-hover); }
+.cro-moe-group:hover { --cro-group-ring: var(--foreground-secondary); }
 
-/* 被牵连的组：不铺蓝底。EP 组是一整块卡片，--state-selected 铺满后连同组内
-   专家一起变成一片蓝，粒度读不出来。改成一圈中性描边，与下面选中态的白描边
-   同一套语言，只是弱一档。 */
-.cro-moe-group.is-related {
-  background: var(--surface-2);
-  box-shadow: 0 0 0 1px var(--border-strong);
-}
+/* 被牵连的组：描边提一档。原先这里要专门写一句"不铺蓝底"，现在没有底可铺了。 */
+.cro-moe-group.is-related { --cro-group-ring: var(--border-strong); }
 
-/* 整个 EP 组被选中：不铺 --state-selected 那层蓝，只给整组一圈白描边，
-   与 .cro-expert.is-selected 的单体白描边同一套语言、粗细一致。 */
+/* 整个 EP 组被选中：整组一圈白描边，与 .cro-expert.is-selected 的单体白描边
+   同一套语言。描边改到 inset，卡片外缘不再外扩，滚动容器也就不必替它让位。 */
 .cro-moe-group.is-selected {
-  background: var(--surface-2);
-  box-shadow: 0 0 0 1.5px #fff;
+  --cro-group-ring: #fff;
+  box-shadow: inset 0 0 0 1.5px var(--cro-group-ring);
 }
 
 /* 整组被点亮（直接选中 or 被牵连）时，组内专家保留 is-related 供聚焦降噪
@@ -1663,8 +1769,14 @@
    min-height:0 允许它被压到比内容矮，align-items:stretch 让右侧矩阵拿到
    确定高度（原来的 flex-start 会让它保持内容高度、直接溢出格子）。 */
 .cro-cluster {
-  display: flex;
-  gap: var(--space-4);
+  /* 单卡容量栏与正上方的 MoE 区**恒等宽**：本区横跨 arch＋moe 两列，内部就照抄
+     .cro-board 后两列的模板与列间距（1.9fr | 1.05fr，gap = --space-4 × 2）——
+     可用总宽相同、比例相同、间距相同，右栏解出来的宽度必然等于 MoE 列，窗口
+     怎么拉都不会错开。原先是 flex + 固定 300px 基准，只在某一个窗宽下碰巧对齐。
+     两列的 min 也要照抄，否则窄屏下两套模板的塌缩点不一致，又会错开。 */
+  display: grid;
+  grid-template-columns: minmax(420px, 1.9fr) minmax(300px, 1.05fr);
+  column-gap: calc(var(--space-4) * 2);
   align-items: stretch;
   /* 区标题已抬到 .cro-region--cluster 下做通栏行，这一层只剩「矩阵 | 单卡容量」
      两半，要吃掉标题之外的全部剩余高度，并允许被 fit-content(46%) 压矮。 */
@@ -1790,9 +1902,12 @@
 .cro-heat .twin-heat-cell {
   --cro-cell-ring: color-mix(in srgb, var(--foreground-muted) 45%, transparent);
   background: transparent;   /* 不要 .ep-tint-N 的 8 色循环底色 */
-  /* 基类是 aspect-ratio:1，格高会被列宽牵着走；这里显式定高、与宽度解耦 */
+  /* 基类是 aspect-ratio:1，格高会被列宽牵着走；这里显式定高、与宽度解耦。
+     具体值由 renderCluster 随折行数一并写在 #croHeat 上（CLUSTER_CELL_H：
+     2 行→4px / 3 行→6px / 4 行→8px）——列数减半格子就宽一倍，高度不同步
+     放大就成了扁条。回落值 4px = 折 2 行时的原值。 */
   aspect-ratio: auto;
-  height: 4px;
+  height: var(--cro-cell-h, 4px);
   max-height: none;
   border-radius: 1px;
   box-shadow: inset 0 0 0 1px var(--cro-cell-ring);
@@ -2832,10 +2947,10 @@
    这里给画布内的几块背板垫一层不透明底，再把原来的表面色作为渐变叠回去 ——
    观感与四域里的同款一致，但不透底。悬浮态一并锁住：画布是只读证据，本来就不该
    给出「可点」的反馈。 */
+/* EP 组卡片不在此列：它已经改成空心描边（见 .cro-moe-group），没有底色可透，
+   再给它垫一层不透明底反而会让画布里的组卡与配置态里的对不上。 */
 .cro-stage-role__domains .cro-structure__stack,
-.cro-stage-role__domains .cro-structure__col:hover .cro-structure__stack,
-.cro-stage-role__domains .cro-moe-group,
-.cro-stage-role__domains .cro-moe-group:hover {
+.cro-stage-role__domains .cro-structure__col:hover .cro-structure__stack {
   background-color: var(--background);
   background-image: linear-gradient(var(--surface-2), var(--surface-2));
 }

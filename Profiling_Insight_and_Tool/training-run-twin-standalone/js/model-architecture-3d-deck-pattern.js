@@ -163,7 +163,7 @@
     const readout=root.querySelector('[data-deck-readout]');
     const initialTheme=THEMES.has(options.initialTheme)?options.initialTheme:(document.documentElement.dataset.theme==='light'?'light':'dark');
     const state={view:VIEWS.has(options.initialView)?options.initialView:'iso',theme:initialTheme,zoom:Number(options.initialZoom)||.5,rx:-18,ry:-34,panX:0,panY:0,selected:null};
-    let drag=null,raf=0,destroyed=false,resizeRaf=0;
+    let drag=null,raf=0,destroyed=false;
 
     function applySemanticPalette(){
       const shared=global.PtoModelGraphvizPattern?.modelArchitectureColormap?.({nodes:[],clusters:[]},{theme:state.theme});
@@ -247,10 +247,18 @@
       interlayerSpine.setAttribute('viewBox',`0 0 ${ctx.width} ${ctx.height}`);
       interlayerGeometry().forEach(link=>{const points=link.points.map(point=>project(point,ctx.matrix,ctx.metrics)),path=document.createElementNS('http://www.w3.org/2000/svg','path'),selectedLayer=Number(state.selected?.layer);path.dataset.sourceLayer=String(link.sourceLayer);path.dataset.targetLayer=String(link.targetLayer);if(link.kind)path.dataset.kind=link.kind;if(link.stageBoundary)path.dataset.stageBoundary='true';if(Number.isFinite(selectedLayer)&&(link.sourceLayer===selectedLayer||link.targetLayer===selectedLayer))path.classList.add('is-selected');path.setAttribute('d',`M${points[0].x.toFixed(1)},${points[0].y.toFixed(1)}C${points[1].x.toFixed(1)},${points[1].y.toFixed(1)} ${points[2].x.toFixed(1)},${points[2].y.toFixed(1)} ${points[3].x.toFixed(1)},${points[3].y.toFixed(1)}`);interlayerSpine.appendChild(path);});
     }
-    function renderSideGuides(cards,cardRects){
+    function renderSideGuides(){
       sideGuides.innerHTML='';if(state.view!=='right')return;
-      const width=viewport.clientWidth,height=viewport.clientHeight,base=viewport.getBoundingClientRect();if(!width||!height||!cards.length)return;
+      const width=viewport.clientWidth,height=viewport.clientHeight,cards=Array.from(root.querySelectorAll('.pto-model-deck__layer[data-layer]')),base=viewport.getBoundingClientRect();if(!width||!height||!cards.length)return;
       sideGuides.setAttribute('viewBox',`0 0 ${width} ${height}`);
+      const ffnBand=(lo,hi,nodeIds,kind,label)=>{
+        const bandCards=cards.filter(card=>Number(card.dataset.layer)>=lo&&Number(card.dataset.layer)<=hi),nodes=bandCards.flatMap(card=>nodeIds.map(id=>card.querySelector(`[data-node="${id}"]`)).filter(Boolean));if(!bandCards.length||!nodes.length)return;
+        const layerRects=bandCards.map(card=>card.getBoundingClientRect()),nodeRects=nodes.map(node=>node.getBoundingClientRect()),x1=Math.min(...layerRects.map(rect=>rect.left))-base.left-7,x2=Math.max(...layerRects.map(rect=>rect.right))-base.left+7,y1=Math.min(...nodeRects.map(rect=>rect.top))-base.top-9,y2=Math.max(...nodeRects.map(rect=>rect.bottom))-base.top+9;
+        const rect=document.createElementNS('http://www.w3.org/2000/svg','rect');rect.classList.add('pto-model-deck__side-ffn-band',`is-${kind}`);rect.setAttribute('x',x1.toFixed(1));rect.setAttribute('y',y1.toFixed(1));rect.setAttribute('width',Math.max(8,x2-x1).toFixed(1));rect.setAttribute('height',Math.max(8,y2-y1).toFixed(1));rect.setAttribute('rx','8');sideGuides.appendChild(rect);
+        const text=document.createElementNS('http://www.w3.org/2000/svg','text');text.classList.add('pto-model-deck__side-ffn-label',`is-${kind}`);text.setAttribute('x',((x1+x2)/2).toFixed(1));text.setAttribute('y',(y1-8).toFixed(1));text.textContent=label;sideGuides.appendChild(text);
+      };
+      ffnBand(0,Math.min(1,config.layerCount-1),['moe_all_gather','dense_gate_up','dense_silu','dense_down','moe_reduce_scatter'],'dense','Dense FFN · L0–L1 · ×2');
+      if(config.layerCount>config.firstMoeLayer)ffnBand(config.firstMoeLayer,config.layerCount-1,['gate','a2a_dispatch','expert_pool','shared_expert','a2a_combine','moe_branch_add'],'moe',`MoE FFN · L${config.firstMoeLayer}–L${config.layerCount-1} · ×${config.layerCount-config.firstMoeLayer}`);
       const statePoints=cards.map(card=>card.querySelector('[data-node="mhc_state_in"]')).filter(Boolean).map(node=>{const rect=node.getBoundingClientRect();return{x:rect.left+rect.width/2-base.left,y:rect.top+rect.height/2-base.top};}).sort((a,b)=>a.x-b.x);if(!statePoints.length)return;
       const y=statePoints.reduce((sum,point)=>sum+point.y,0)/statePoints.length,residualOffsets=[-6,-2,2,6],projectedCenter=node=>{const rect=node?.getBoundingClientRect();return rect?{x:rect.left+rect.width/2-base.left,y:rect.top+rect.height/2-base.top}:null;},inputPoint=projectedCenter(root.querySelector('.pto-model-deck__static--input [data-node="embedding"]')),outputPoint=projectedCenter(root.querySelector('.pto-model-deck__static--output [data-node="final_norm"]'));
       residualOffsets.forEach((offset,index)=>{const railY=y+offset,first=statePoints[0],last=statePoints[statePoints.length-1];
@@ -260,12 +268,13 @@
       const label=document.createElementNS('http://www.w3.org/2000/svg','text');label.classList.add('pto-model-deck__side-residual-label');label.setAttribute('x',(statePoints[0].x+8).toFixed(1));label.setAttribute('y',(y-10).toFixed(1));label.textContent='mHC residual state ×4';sideGuides.appendChild(label);
     }
     // 4 段 PP 分组的简单标注:灰字 + 灰色短分割线,贴在侧视层堆顶部,常显不随任何开关切换。
-    function renderPpGroups(cards,cardRects){
-      ppGroups.innerHTML='';if(state.view!=='right'||!cards.length)return;
-      const base=ppGroups.getBoundingClientRect(),allRects=cards.map(card=>cardRects.get(card));
-      const top=Math.max(70,Math.min(...allRects.map(rect=>rect.top))-base.top-14);
+    function renderPpGroups(){
+      ppGroups.innerHTML='';if(state.view!=='right')return;
+      const cards=Array.from(root.querySelectorAll('.pto-model-deck__layer[data-layer]'));if(!cards.length)return;
+      const base=ppGroups.getBoundingClientRect(),cardRects=cards.map(card=>card.getBoundingClientRect());
+      const top=Math.max(70,Math.min(...cardRects.map(rect=>rect.top))-base.top-14);
       config.stageRanges.forEach(([lo,hi],stage)=>{
-        const stageCards=cards.filter(card=>Number(card.dataset.layer)>=lo&&Number(card.dataset.layer)<=hi),rects=stageCards.map(card=>cardRects.get(card));if(!rects.length)return;
+        const stageCards=cards.filter(card=>Number(card.dataset.layer)>=lo&&Number(card.dataset.layer)<=hi),rects=stageCards.map(card=>card.getBoundingClientRect());if(!rects.length)return;
         const left=Math.min(...rects.map(rect=>rect.left))-base.left,right=Math.max(...rects.map(rect=>rect.right))-base.left;
         if(stage>0){
           const divider=document.createElement('div');divider.className='pto-model-deck__pp-group-divider';divider.style.left=`${left}px`;divider.style.top=`${top}px`;ppGroups.appendChild(divider);
@@ -273,11 +282,11 @@
         const label=document.createElement('div');label.className='pto-model-deck__pp-group-label';label.textContent=`PP${stage} · L${lo}–L${hi}`;label.style.left=`${(left+right)/2}px`;label.style.top=`${top}px`;ppGroups.appendChild(label);
       });
     }
-    function renderSideLabels(allCards,cardRectsByCard){
-      sideLabels.innerHTML='';if(options.showSideLabels===false||state.view!=='right'||!allCards.length)return;
-      const base=sideLabels.getBoundingClientRect();
+    function renderSideLabels(){
+      sideLabels.innerHTML='';if(options.showSideLabels===false||state.view!=='right')return;
+      const base=sideLabels.getBoundingClientRect(),allCards=Array.from(root.querySelectorAll('.pto-model-deck__layer[data-layer]'));if(!allCards.length)return;
       const representative=allCards.find(card=>Number(card.dataset.layer)===config.frontLayer)||allCards[0],cards=[representative,...allCards.filter(card=>card!==representative)];
-      const cardRects=allCards.map(card=>cardRectsByCard.get(card)),g={left:Math.min(...cardRects.map(rect=>rect.left))-base.left,right:Math.max(...cardRects.map(rect=>rect.right))-base.left};
+      const cardRects=allCards.map(card=>card.getBoundingClientRect()),g={left:Math.min(...cardRects.map(rect=>rect.left))-base.left,right:Math.max(...cardRects.map(rect=>rect.right))-base.left};
       const rows=config.sideRows.map(row=>{const nodes=row.ids.flatMap(id=>cards.map(card=>card.querySelector(`[data-node="${CSS.escape(id)}"]`)).filter(Boolean));if(!nodes.length)return null;const rects=nodes.map(node=>node.getBoundingClientRect()),y=rects.reduce((sum,rect)=>sum+rect.top+rect.height/2,0)/rects.length-base.top,color=getComputedStyle(nodes[0]).backgroundColor;return{row,nodes,y,color};}).filter(Boolean).sort((a,b)=>a.y-b.y);
       // x 只由模型层边缘 + 固定间距决定,不再向视口边界回夹:回夹会在缩放/平移使模型贴近
       // 容器边缘时把标注挤回模型上方,盖住层内容。宁可让标注被 side-labels 的 overflow:hidden
@@ -288,25 +297,14 @@
     // options.onOverlay:每帧覆盖层重绘的收尾钩子(training-monitoring-v2 用它画对齐每层的逐层指标曲线)。
     // 在所有内置覆盖层画完后调用,与 side-guides/pp/annotations 共享同一套 viewport 屏幕坐标系,
     // 因此消费方只要按相同方式读 layer card 的 getBoundingClientRect() 就能与本体逐帧对齐。
-    // 侧视图拖拽(平移)时每帧都会走到这里:side-guides/pp-groups/side-labels 三个函数原先
-    // 各自独立 querySelectorAll + getBoundingClientRect 全部层卡片,同一帧里测量了 3 遍。
-    // 这里统一测一次、传下去复用,消掉拖动整网侧视图时最大头的重复强制回流。
-    function renderOverlays(){
-      raf=0;if(destroyed)return;
-      const cards=state.view==='right'?Array.from(root.querySelectorAll('.pto-model-deck__layer[data-layer]')):[];
-      const cardRects=new Map(cards.map(card=>[card,card.getBoundingClientRect()]));
-      renderInterlayerSpine();renderSideGuides(cards,cardRects);renderPpGroups(cards,cardRects);renderSideLabels(cards,cardRects);
-      options.onOverlay?.({view:state.view,viewport,root,config,api});
-    }
+    function renderOverlays(){raf=0;if(destroyed)return;renderInterlayerSpine();renderSideGuides();renderPpGroups();renderSideLabels();options.onOverlay?.({view:state.view,viewport,root,config,api});}
     function scheduleOverlay(){if(raf)return;raf=requestAnimationFrame(renderOverlays);}
     function pointerDown(event){if(event.button!==0||event.target.closest('[data-stage-ui],button'))return;drag={id:event.pointerId,x:event.clientX,y:event.clientY,rx:state.rx,ry:state.ry,panX:state.panX,panY:state.panY,pan:state.view!=='iso'||event.metaKey||event.ctrlKey};viewport.setPointerCapture?.(event.pointerId);viewport.classList.add('is-grabbing');}
     function pointerMove(event){if(!drag||event.pointerId!==drag.id)return;const dx=event.clientX-drag.x,dy=event.clientY-drag.y;if(drag.pan){state.panX=drag.panX+dx;state.panY=drag.panY+dy;}else{state.ry=clamp(drag.ry+dx*.24,-82,82);state.rx=clamp(drag.rx-dy*.24,-74,74);}apply();}
     function pointerUp(event){if(!drag||event.pointerId!==drag.id)return;drag=null;viewport.classList.remove('is-grabbing');try{viewport.releasePointerCapture?.(event.pointerId);}catch(_){}}
     function wheel(event){if(event.target.closest('[data-stage-ui]'))return;event.preventDefault();setZoom(state.zoom*Math.exp(-event.deltaY*.0012));}
     function nodeClick(event){const node=event.target.closest('.pto-model-deck__node,.pto-model-deck__experts');if(!node)return;event.stopPropagation();selectNode(node.dataset.node,Number(node.closest('.pto-model-deck__layer')?.dataset.layer));}
-    // 拖拽分栏等连续 resize 场景下,多个组件各自的 ResizeObserver 可能在同一帧收到通知;
-    // 合并到下一帧再读 clientWidth/clientHeight,避免和其他观察者的读写交叉造成多次强制回流。
-    function resize(){if(resizeRaf)cancelAnimationFrame(resizeRaf);resizeRaf=requestAnimationFrame(()=>{resizeRaf=0;fit();});}
+    function resize(){fit();}
     root.querySelectorAll('[data-deck-view]').forEach(button=>button.addEventListener('click',()=>setView(button.dataset.deckView)));
     root.querySelector('[data-theme-toggle]')?.addEventListener('click',()=>setTheme(state.theme==='light'?'dark':'light'));
     root.querySelector('[data-deck-fit]')?.addEventListener('click',fit);
@@ -314,7 +312,7 @@
     if(!externallyManaged){viewport.addEventListener('pointerdown',pointerDown);viewport.addEventListener('pointermove',pointerMove);viewport.addEventListener('pointerup',pointerUp);viewport.addEventListener('pointercancel',pointerUp);viewport.addEventListener('wheel',wheel,{passive:false});scene.addEventListener('click',nodeClick);}
     const resizeObserver=!externallyManaged&&global.ResizeObserver?new ResizeObserver(resize):null;resizeObserver?.observe(root);
     function setPose(pose={}){if(VIEWS.has(pose.view))state.view=pose.view;if(Number.isFinite(Number(pose.rx)))state.rx=Number(pose.rx);if(Number.isFinite(Number(pose.ry)))state.ry=Number(pose.ry);if(Number.isFinite(Number(pose.zoom)))state.zoom=clamp(Number(pose.zoom),.12,1.35);if(Number.isFinite(Number(pose.panX)))state.panX=Number(pose.panX);if(Number.isFinite(Number(pose.panY)))state.panY=Number(pose.panY);if(pose.pivot&&['x','y','z'].every(key=>Number.isFinite(Number(pose.pivot[key]))))state.pivot={x:Number(pose.pivot.x),y:Number(pose.pivot.y),z:Number(pose.pivot.z)};syncButtons();syncExpertExpansion();apply();return api;}
-    const api={root,state,config,setView,setTheme,setZoom,setPose,refresh:scheduleOverlay,fit,setFrontLayer,selectNode,destroy(){destroyed=true;cancelAnimationFrame(raf);if(resizeRaf)cancelAnimationFrame(resizeRaf);resizeObserver?.disconnect();if(!externallyManaged){viewport.removeEventListener('pointerdown',pointerDown);viewport.removeEventListener('pointermove',pointerMove);viewport.removeEventListener('pointerup',pointerUp);viewport.removeEventListener('pointercancel',pointerUp);viewport.removeEventListener('wheel',wheel);scene.removeEventListener('click',nodeClick);}}};
+    const api={root,state,config,setView,setTheme,setZoom,setPose,refresh:scheduleOverlay,fit,setFrontLayer,selectNode,destroy(){destroyed=true;cancelAnimationFrame(raf);resizeObserver?.disconnect();if(!externallyManaged){viewport.removeEventListener('pointerdown',pointerDown);viewport.removeEventListener('pointermove',pointerMove);viewport.removeEventListener('pointerup',pointerUp);viewport.removeEventListener('pointercancel',pointerUp);viewport.removeEventListener('wheel',wheel);scene.removeEventListener('click',nodeClick);}}};
     setTheme(state.theme);Object.assign(state,VIEW_POSES[state.view]);syncExpertExpansion();if(externallyManaged){syncButtons();apply();}else requestAnimationFrame(fit);return api;
   }
 

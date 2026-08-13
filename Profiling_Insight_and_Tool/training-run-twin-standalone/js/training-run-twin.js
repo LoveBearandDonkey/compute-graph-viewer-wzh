@@ -1087,7 +1087,10 @@
     hotLayer: { layer: 38, kind: "MoE", activationGB: 1.2, denseBaselineGB: 0.7,
                 reason: "expert dispatch buffer(256 expert × token 分配临时缓冲区)" },
     // §3 + §6 碎片
-    fragment: { totalFreeGB: 1.8, largestFreeBlockGB: 0.3, unusableFreeGB: 1.5, ratio: 0.83,
+    /* maxRequestGB:单笔最大分配申请。定位链 §3「观测」原话:总空闲 1.8 GB、最大连续空闲块仅
+       0.3 GB,"无法满足下一个 0.5 GB 的临时 buffer 分配请求"——0.3 GB 本身没有对错,
+       是"最大申请 0.5 GB > 最大连续 0.3 GB"这层关系才成为故障判据,碎片图的红色标注按这个口径给。 */
+    fragment: { totalFreeGB: 1.8, largestFreeBlockGB: 0.3, maxRequestGB: 0.5, unusableFreeGB: 1.5, ratio: 0.83,
                 mallocPerStepBefore: 25, mallocPerStepAfter: 180, mallocP99MsBefore: 0.3, mallocP99MsAfter: 4.2,
                 sampleBlock: { name: "L38 q_b_proj 输出中间张量", shape: "[4096, 9216] FP8", sizeMB: 36,
                                allocMs: 842, freeMs: 7832, holdMs: 6990,
