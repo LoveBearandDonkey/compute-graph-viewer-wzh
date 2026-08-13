@@ -144,8 +144,9 @@ window.PtoMemCase4 = (function () {
             ["① 容量", "显存峰值 " + f.peakGB + " GB = 总容量 " + f.capacityGB + " GB", "占用率 100%",
              '<strong style="color:#dc2626">绝对容量不足（主因）</strong>'],
             ["② 碎片",
-             "空闲总量 " + fr.totalFreeGB + " GB，但最大连续空闲块仅 " + fr.largestFreeBlockGB + " GB",
-             "空闲够但最大连续块 &lt; 请求 size",
+             "空闲总量 " + fr.totalFreeGB + " GB，但最大连续空闲块仅 " + fr.largestFreeBlockGB +
+               " GB，接不下 " + fr.maxRequestGB + " GB 的最大申请（临时 buffer）",
+             "最大连续 " + fr.largestFreeBlockGB + " GB &lt; 最大申请 " + fr.maxRequestGB + " GB",
              '<strong style="color:#dc2626">分配碎片（辅因）</strong>'],
           ]) +
           readouts([

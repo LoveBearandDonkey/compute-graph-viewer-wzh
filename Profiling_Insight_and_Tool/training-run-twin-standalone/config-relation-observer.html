@@ -25,9 +25,9 @@
   <!-- 集群热力图样式（复用 training-monitoring-v2 的 .twin-heat* 视觉） -->
   <link rel="stylesheet" href="./css/training-run-twin.css">
   <!-- 本页模块私有 layout -->
-  <link rel="stylesheet" href="./css/config-relation-observer.css?v=20260812-capacity-figure">
+  <link rel="stylesheet" href="./css/config-relation-observer.css?v=20260813-cluster-fit-2">
   <!-- 单卡容量（Cluster 区右栏）：容量是「卡」的属性，与集群矩阵同区并排 -->
-  <link rel="stylesheet" href="./css/config-relation-capacity.css?v=20260812-capacity">
+  <link rel="stylesheet" href="./css/config-relation-capacity.css?v=20260813-cluster-fit-2">
 </head>
 <body data-theme="dark">
   <section class="pto-ide-frame" data-ide-frame data-host="standalone" aria-label="Config and Relation Observer">
@@ -222,6 +222,20 @@
             <!-- ═══ 区域 A · 整网（3D deck · 正视图） ═══ -->
             <section class="cro-region cro-region--net" id="croNetRegion" aria-label="整网">
               <h2 class="cro-region__title">整网</h2>
+              <!-- 视图口径：整网 deck 的层卡展开的就是「典型 Layer」里那串算子，
+                   两块信息重复度高。与其硬删一边，不如把「看哪一边」交给用户 ——
+                   只看整网 / 只看典型 Layer / 两者并看（= 改动前的现状，默认值）。
+                   选「只看典型 Layer」时 deck 收起，典型层那一节整节搬进本列，改
+                   2+2+1 宫格（见 html 末尾的 croNetView 脚本与 .cro-region--net
+                   .cro-structure 的排布）。 -->
+              <div class="tab-control cro-net-view" id="croNetView" role="group" aria-label="整网视图">
+                <button class="tab-control-item" type="button" data-net-view="net"
+                        aria-pressed="false" title="只看整网">整网</button>
+                <button class="tab-control-item" type="button" data-net-view="layer"
+                        aria-pressed="false" title="只看典型 Layer">典型 Layer</button>
+                <button class="tab-control-item is-selected" type="button" data-net-view="both"
+                        aria-pressed="true" title="同时看整网与典型 Layer">两者并看</button>
+              </div>
               <div class="cro-stepper">
                 <label class="cro-stepper__label" for="croModelSelect">模型</label>
                 <select class="cro-select" id="croModelSelect">
@@ -443,7 +457,7 @@
   <script src="./js/ide-frame-pattern.js"></script>
   <script src="./js/model-graphviz-pattern.js"></script>
   <script src="./js/model-architecture-3d-deck-pattern.js"></script>
-  <script src="./js/config-relation-observer.js?v=20260812-capacity-figure"></script>
+  <script src="./js/config-relation-observer.js?v=20260813-cluster-fit-2"></script>
   <!-- 单卡容量：必须排在主脚本之后（要读它导出的 croObserver / croSelect） -->
   <script src="./js/config-relation-capacity.js?v=20260812-capacity-figure"></script>
   <script>
@@ -464,6 +478,49 @@
       };
       btn.addEventListener("click", () => {
         apply(document.documentElement.dataset.theme === "light" ? "dark" : "light");
+      });
+    })();
+
+    // 整网视图三档：只看整网 / 只看典型 Layer / 两者并看（默认，= 改动前现状）。
+    // 「只看典型 Layer」把 .cro-section--structure **整节搬进**整网列，而不是在
+    // 那边另画一份 —— 搬的是 DOM 节点本身，#croStructure 的 id、每根算子条的
+    // click 监听、is-selected / is-related 类和关系连线的锚点选择器全部原样有效，
+    // 主脚本一行都不用动。退出该档时 appendChild 回 arch 列：它本来就是那一列的
+    // 最后一个子节点，位置自动还原。
+    (() => {
+      const board = document.getElementById("croBoard");
+      const tabs = document.getElementById("croNetView");
+      const net = document.getElementById("croNetRegion");
+      const arch = document.querySelector(".cro-region--arch");
+      const structure = document.querySelector(".cro-section--structure");
+      if (!board || !tabs || !net || !arch || !structure) return;
+
+      const apply = (view) => {
+        board.classList.toggle("is-view-net", view === "net");
+        board.classList.toggle("is-view-layer", view === "layer");
+        /* 第三个类：只看一边（net / layer 都算）。两档的共同事实是「典型 Layer
+           不占 arch 列了」，右半边（Layer 导航拉满、集群矩阵折 4 行放大）该长
+           得一模一样 —— 切档时右侧不动，只有左边那块在换。挂成一个类而不是把
+           每条规则都写两遍，就是为了让这份「两档相同」在样式里只有一处来源。
+           is-view-net / is-view-layer 只留给两档真正不同的显隐。 */
+        board.classList.toggle("is-view-single", view !== "both");
+        (view === "layer" ? net : arch).appendChild(structure);
+        tabs.querySelectorAll("[data-net-view]").forEach((btn) => {
+          const on = btn.dataset.netView === view;
+          btn.classList.toggle("is-selected", on);
+          btn.setAttribute("aria-pressed", String(on));
+        });
+        // 集群矩阵每个 DP 折几行是建 DOM 时定的（renderCluster 的 epRows），
+        // 只加类改不动，得让主脚本重建一次。
+        document.dispatchEvent(new CustomEvent("cro:view", { detail: { view } }));
+        // 版面变了：关系连线画在 viewport 坐标上、刻度带宽度也是实测的，
+        // 借主脚本已有的 resize 通路重排一次，别在这儿另写一份重画逻辑。
+        window.dispatchEvent(new Event("resize"));
+      };
+
+      tabs.addEventListener("click", (event) => {
+        const btn = event.target.closest("[data-net-view]");
+        if (btn) apply(btn.dataset.netView);
       });
     })();
 

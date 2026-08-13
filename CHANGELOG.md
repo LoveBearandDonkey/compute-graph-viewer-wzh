@@ -1,5 +1,39 @@
 # PTO Changelog
 
+> 开发日志，按时间倒序，每轮修改点逐条记录。
+> 格式：`[版本/日期] 模块 — 修改描述`
+
+---
+
+## 2026-08-13 — 碎片图：红色改标「接不下的申请」，修样本块点不动
+
+- 红色标注口径纠正：0.3 GB 的最大连续空闲块本身无对错，出事的是「最大申请 0.5 GB 接不下它」（定位链 §3 观测：无法满足下一个 0.5 GB 的临时 buffer 分配请求）。`facts.fragment` 新增 `maxRequestGB: 0.5`；碎片轴上最大连续块改中性灰框标位置，红色改画那笔装不下的申请条（等比放大后露在灰框外的部分 = 差的量）+ 「最大申请 0.5 GB > 最大连续 0.3 GB」标签。
+- 判据格 3 格 → 4 格：空闲总量 / 最大连续 / 最大申请 / 碎片率，前两格转为中性色，只有「最大申请」（因其 > 最大连续）与碎片率标红。`training-memory-case4.js` 的双因子表同步写明「最大连续 0.3 GB < 最大申请 0.5 GB」。
+- 修 bug：碎片图命中框存在模块级 `fragGeom` 上，而同一页有两张碎片图（dock 性能页签 + 定位链长文），后画的覆盖先画的 → 先画那张所有块都点不动。改为存 `cv.__fragGeom`，各自独立；样本块命中外扩 5→6 px。
+- 样本块描边旁补「样本块：点开看申请堆栈」标签，不再让人猜那个框是什么。
+
+## 2026-08-13 — `training-monitoring-v2.html` 性能页签「碎片分布」图可读性重做
+
+- `js/training-memory-panel.js` 的 `drawFragmentMap()`：补首行轴说明（横轴=地址 0–64 GB / 纵轴=step 内时间自上而下）与左侧时间刻度栏（前向 / 反向 / 结束）+ 反向起点虚线，说明左边三根常驻柱与右边碎块同属一副坐标。
+- 横轴按常驻块最高地址自动切成「常驻区 0–27 GB」「激活区 27–64 GB」两段并加括号标注；分隔虚线贯穿块图与底部碎片热力条，点明两者共用同一根地址轴（热力条改为与块图同宽同起点、贴紧无间隙，左侧加「碎片」栏标）。
+- 两套图例合并为一套：常驻的参数/梯度/优化器把名字直接写在自己的条上，图例只留碎片块/workspace 两色。
+- 坐标转 90°：横轴改为 step 内时间（前向 / 反向 / 结束），纵轴改为显存地址（下低上高，左栏标 0 / 27 / 64 GB 与竖排区名）。常驻块因此画成贯穿整幅的长横条、激活块画成短横条，「谁一直占着 / 谁随用随放」不看图例也读得出。
+- 颜色规则收紧为「红色只标最大连续空闲块」：碎片块由橙 `#ea580c` 改青 `#0891b2`（新增 `palette().frag`），样本块的红描边改深色描边。
+- 底部热力条改为右侧竖向「碎片轴」：空框垫底（空白=空闲）+ 按用途填参数/梯度/优化器/碎片图例色，最大连续空闲块用红框标注、并在块图里配一条淡红地址带与引线。
+- `buildBlocks()` 生成参数对齐 `facts.fragment` 读数：空洞压到 0.002–0.023 GB、只在第 62 块后留一个正好 0.3 GB 的大空洞，激活区铺满到 64 GB 不留尾巴 —— 实测空闲总量 1.79 GB / 最大连续 0.300 GB，与判据格的 1.8 GB / 0.3 GB 对得上；workspace 改为复用激活块地址，不再掉进空洞里把标红区切开。
+
+## 2026-08-13 — `config-relation-observer.html` 整网视图三档切换
+
+- 整网区标题与「模型」下拉之间新增 tab（`#croNetView`）：只看整网 / 只看典型 Layer / 两者并看（默认，即改动前现状），解决整网 deck 与「典型 Layer」结构条信息重复的反馈。
+- 「只看整网」收起 arch 列的典型 Layer 一节；「只看典型 Layer」收起 deck 画布，并把 `.cro-section--structure` 整节搬进整网列（搬 DOM 节点本身，选中态与关系连线锚点原样有效），排成 2+2+1 宫格，末行那张卡锁半宽居中、与上方四张等宽。
+- 典型 Layer 不占 arch 列的两档里，Layer 导航撑满整列：`.cro-layer-nav__strip` / `.cro-nav-rule` / `.cro-ffn-span` 由写死高度改成 top+bottom 双向锚定（删掉 `--cro-nav-rule-h`），band 放开 flex 伸缩，`height:100%` 的刻度随之整条长高。
+- 「只看一边」的两档把 Cluster 行封顶从 46% 抬到 62%（该封顶同时是矩阵折行预算的 `capRatio`）。行数是建 DOM 时定的，故新增 `cro:view` 事件由 tab 触发重建。
+- 集群矩阵折几行改成由可用高度倒推（`pickEpRows` / `clusterHeightBudget`），不再写死 2 行或按视图档给 4 行：预算 = `.cro-board` 视口高 × 行高封顶 − 实测 chrome，逐档试 2/3/4 行取放得下的最大值，格高随行数走（`CLUSTER_CELL_H`，经 `--cro-cell-h` 落到 CSS）。候选行数须能整除 EP，避免末行缺格（64 EP 折 3 行是 3×22=66，右下角空两格，会读成少了两张卡）——故 ep=64 时只在 2 / 4 之间选：1080p 只看一边得 4 行，其余维持 2 行。窗口 resize 防抖 180ms 后按目标行数判断是否需要重建。右半边（Layer 导航拉满、集群矩阵折 4 行 + 格高 8px、Cluster 行封顶 62%）一律挂它，两档间切换时右侧完全不动；`is-view-net` / `is-view-layer` 只留给两档真正不同的显隐。
+- 单卡容量栏改成「高度只跟随、不驱动」：`.cro-capacity` 加 `height:0` + `min-height:100%`，在 Cluster 行的 fit-content 行高计算里贡献恒为 0，行高由左半的 rank 矩阵独自决定，柱子在剩余高度里缩放；`.cro-capacity__scene` 的两道 px 下限一并去掉（窄屏档单独给回）。
+- 单卡容量的等距柱改成高度自适应：`.cro-capacity__scene` 去掉固定 `width:124px`，改为 `aspect-ratio: 10.7/14.9`（viewBox 长宽比）+ `width:auto`，宽度随拉伸后的高度按比例走。宽高必须一起放开——SVG 是 `meet` 缩放，宽度钉死时容器高过 ~173px 就再也长不动。封顶 `max-height:288px` 留在 svg 上而不是盒子上：截短盒子会让 `align-items:stretch` 退化成 flex-start，整幅图贴到 `__main` 顶部。
+- `.cro-moe-group`（EP 组卡片）去掉 `surface-2` 填充，改成与 `.cro-tick` 同款空心描边；静息/悬浮/关联/选中四态统一收在 `--cro-group-ring` 上，选中描边由外扩改 inset。事件详情画布里给它垫不透明底的那条规则一并撤销。
+- `.cro-cluster` 由 flex + 固定 300px 基准改成照抄 `.cro-board` 后两列的 grid 模板（含窄屏断点），「单卡容量」栏自此恒与上方 MoE 区等宽。
+
 - 2026-08-12 `Profiling_Insight_and_Tool/training-run-twin-standalone/{js/config-relation-capacity.js,js/config-relation-observer.js,css/config-relation-observer.css,config-relation-observer.html}`: 事件 1.3 / 1.5 的显存构成图改用「单卡容量」那幅等距容器（3D 盒），两处共用同一个 builder。① capacity 侧把 `buildScene(m, segColors)` 抽成通用的 `buildBox(spec)`（cap / segments 自底向上 / thresholds / host / format），经 `global.croCapacityBox` 在模块解析时导出（主脚本先加载，但它建图在 rAF 里，那时导出已就绪）；新增 `resolveColor()` 支持把 `var(--token)` 就地解析成 RGB 分量——事件详情传进来的调色板本来就是一串 var()，而三个面要按受光度分明暗必须拿到分量；`cssVar()` 补 host 参数，因为 deck 语义色定义在 `.cro-board` / `.cro-incident-view` 上而不是 `:root`，取错节点会拿到空串。阈值环的颜色也先落地成具体值再写进 SVG 呈现属性（属性不是 CSS 声明，`var()` 在那儿各浏览器行为不一）。本栏自己那幅改由薄封装 `buildScene(m)` 拼 spec，段色从解析好的分量改回 CSS 变量字符串，主题切换时由 buildBox 现解析。② observer 侧新增 `chart.kind = "capacity"`（`chartCapacity`）：判据是「有没有一个固定的容量上限」——这两张图的分母是那张卡的 64 GB，装不下就是 OOM，平面色条表达不了「框满了」。图例从 `chartStack` 抽成共用的 `chartLegend(items, total, unit, {reverse})`，等距容器按**容量**算占比、并按视觉从上往下倒序；新增 `item.void` 语义（碎片/空当）→ 盒里虚线棱 + 半透明、图例键换 45° 斜纹块（`.cro-chart-legend__dot--void`）。`paintDetailChart` 给 builder 多传一个 host（解析 var 用），并在 `cro:theme` 时重画 capacity 图（它的明暗是建图时算死的，不跟 CSS 走）。③ 1.5 的数据修正：原先 60.1 + 3.9 + 0.32 三段并列把「最大连续块」在「碎片空洞」之外又数了一遍，合计 64.32 GB 超过容量本身；现拆成 60.1 + 3.58 零碎 + 0.32 最大连续块 = 64.0，盒顶那道薄片正好就是这条证据要说的「最大的一个洞只有这么薄」，note 同步写明 3.58+0.32=3.9。容量脚本缺席时 `chartCapacity` 退回构成条，不留空白。
 
 - 2026-08-12 `Profiling_Insight_and_Tool/training-run-twin-standalone/{config-relation-observer.html,css/config-relation-observer.css,js/config-relation-observer.js}`: 数字配置 stepper 整体加大一档，加减号从「两个小灰点」变回可瞄准的按钮。上一版把符号从 11px 提到 14px 但圆键仍是 22px，符号再大也被键框压住。这次动键本身：`.cro-stepper__control` 的 `--button-height-md/sm` 22→28px、padding 1→2px（控件高 24→32px），符号 14→18px，读数字号 label-xs→body-sm 且 min-width 28→32px，标签 10→11px。MoE 那一列（四项 nowrap 等分）同步 20→26px，仍 `min-width:0` 所以不会掉行。`.cro-select`（模型 / 卡型号）跟着改 24→32px、字号对齐 body-sm，保持与同行 stepper 同高同字号。JS 里内联 SVG 的 width/height 属性一并改到 18 作兜底，实际尺寸仍由 CSS 给；描边保持 3 格。
@@ -220,11 +254,6 @@
 - 2026-07-23 `op-graph-integration/`: 静态校验中的提醒现可直接定位关联产物；FP16 支持组合跳转至 OpDef，融合规则跳转至独立的 GE Fusion 注册文件。
 
 - 2026-07-23 `op-graph-integration/`: 补全端到端入图证据，覆盖框架自定义节点到 ONNX 导出、ATC/GE 编译、OPP 到 ACL Runtime 加载，以及动态 Shape、精度和 msprof 验收。
-
-> 开发日志，按时间倒序，每轮修改点逐条记录。
-> 格式：`[版本/日期] 模块 — 修改描述`
-
----
 
 ## 2026-07-25 — training-monitoring-v2：问题一「聚光灯定位链」覆盖层（真实页开洞 + 1→6 步进）
 

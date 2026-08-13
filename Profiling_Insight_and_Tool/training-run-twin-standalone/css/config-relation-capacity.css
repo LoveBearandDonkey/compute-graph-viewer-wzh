@@ -11,12 +11,23 @@
    ────────────────────────────────────────────────────────────────────────── */
 
 .cro-capacity {
-  /* 300px 够放「等距容器 + 图例」；窗口窄时允许压到 248px，
-     再窄就该整块 wrap 了（见文件末尾的窄屏规则）。 */
+  /* 宽度不由本栏决定：.cro-cluster 是照抄 .cro-board 后两列的 grid，本栏落在
+     第 2 个轨道上，解出来的宽度恒等于正上方的 MoE 列（见 config-relation-observer.css
+     的 .cro-cluster）。这里只声明纵向排布，别再写 flex-basis / width 去跟它抢。
+     再窄就整块换行到矩阵下方（见文件末尾的窄屏规则）。 */
   position: relative;   /* 口径浮层的定位上下文 */
-  flex: 0 1 300px;
-  min-width: 248px;
-  min-height: 0;
+  min-width: 0;
+
+  /* 本栏的高度**只跟随、不驱动**：Cluster 那一行是 fit-content 的，行高取两半
+     内容高度的较大者，本栏内容一旦比左半的 rank 矩阵高，撑高整行的就成了这根
+     柱子 —— 矩阵才是这一区的主角，柱子是来陪它的。
+     height:0 让本栏在行高计算里的贡献恒为 0（矩阵那半独自决定行高），
+     min-height:100% 再在布局时把它拉回整格 —— 百分比在固有尺寸计算里按 auto
+     处理，不会绕回去参与撑高，两句合起来正好是「只跟随」。
+     下面 __body → __main 都是 flex:1 1 auto，拿到的就是矩阵留下的那点高度，
+     柱子（.cro-capacity__scene）再在 __main 里按可用高度缩放。 */
+  height: 0;
+  min-height: 100%;
   display: flex;
   flex-direction: column;
   gap: var(--space-2);
@@ -147,11 +158,35 @@
 
 /* 等距容器：所有几何与配色都在 JS 里算好写进 SVG（见 buildScene），
    这里只负责它在面板里占多大、怎么居中。SVG 自带 viewBox 自适配，容器
-   高度变化时整幅等比缩放，不需要重算。 */
+   尺寸一变整幅等比缩放，不需要重算。
+
+   高度自适应：本栏给多少高，盒子就长多高（父链 .cro-capacity__body →
+   __main 都是 flex:1 1 auto，天然会把富余高度传下来），宽度按图形自身的
+   长宽比跟着走。
+   两头必须**一起**放开 —— SVG 是 preserveAspectRatio="meet"，缩放取宽高两
+   个约束里更紧的那个。宽度钉死 124px 时，容器一旦高过 ~173px
+   （= 124 ÷ 0.72）宽度就成了瓶颈，再高也不会变大；原先那道
+   max-height:176px 正是照着这个拐点配的，不是独立的一道限制。
+   0.72 = viewBox 的长宽比 ≈ 10.7 × 14.9，由 buildScene → buildBox 的
+   BOX{w:5.2,d:4,h:9.6} 经等距投影、再加阈值标签向左伸出的 2.0 得出。
+   用 aspect-ratio 而不是让盒子横向抢份额：按比例给宽度，图形四周不留死边，
+   剩下的宽度才都归右侧读数。
+   封顶只能挂在里面那张 svg 上，**不能挂在盒子上**：盒子是靠 align-items:stretch
+   拿到本行高度的，一旦 max-height 把它截短，stretch 就退化成 flex-start，整幅图
+   连同盒子一起贴到 __main 的顶上（就是"偏上"）。让盒子始终撑满本行，由盒子自己
+   的 align-items:center 把 svg 竖直居中，封顶交给 svg。
+   两个 px 下限都去掉（原来是 min-width:96px / min-height:122px）：本栏已经改成
+   「高度只跟随矩阵」（见 .cro-capacity 的 height:0 + min-height:100%），柱子就得
+   能跟着缩下去；留一道 px 下限，它就又会在矩阵矮的时候顶住不动、把行撑起来。
+   窄屏那档另说 —— 那里 __main 是 align-items:center、盒子拿不到拉伸高度，
+   下限由文件末尾的 @media 单独给回。 */
 .cro-capacity__scene {
   flex: 0 0 auto;
-  width: 124px;
-  min-height: 122px;
+  aspect-ratio: 10.7 / 14.9;
+  width: auto;
+  min-width: 0;
+  max-width: 46%;
+  min-height: 0;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -160,7 +195,7 @@
 .cro-capacity__scene svg {
   width: 100%;
   height: 100%;
-  max-height: 176px;
+  max-height: 288px;
   overflow: visible;
 }
 
@@ -398,16 +433,25 @@
 
 /* 窄屏：容量栏换到矩阵下方整行，别把矩阵挤到没法看 */
 @media (max-width: 1180px) {
-  .cro-cluster { flex-wrap: wrap; }
+  /* 塌成单列（.cro-cluster 是 grid，不再是 flex-wrap 那一套） */
+  .cro-cluster {
+    grid-template-columns: minmax(0, 1fr);
+    row-gap: var(--space-3);
+  }
 
   .cro-capacity {
-    flex: 1 1 100%;
     padding-left: 0;
     padding-top: var(--space-3);
     border-left: 0;
     border-top: 1px solid var(--border-subtle);
+    /* 「高度只跟随矩阵」那套（height:0 + min-height:100%）只在左右并排时成立：
+       这里本栏自己独占一行，它就是本行高度的唯一来源，再让贡献归零会直接塌成
+       0 高、整栏消失。还原成按内容高。 */
+    height: auto;
+    min-height: 0;
   }
 
   .cro-capacity__main { align-items: center; }
+  /* 这一档 __main 是 align-items:center，盒子拿不到拉伸高度，得自己给回下限 */
   .cro-capacity__scene { min-height: 124px; }
 }

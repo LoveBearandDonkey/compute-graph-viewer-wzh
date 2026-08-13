@@ -1337,12 +1337,76 @@
      循环底色）—— 本页格子是描边态，那批底色会透出来变成一片杂色。 */
   const CLUSTER_CELL_CAP = 16384;
 
+  /* ══ 矩阵折几行：由「这一行能给多少高」算，不写死 ══════════════════════════
+     每个 DP 在每个 stage 块里折成 epRows × epCols（64 EP → 2×32 / 3×22 / 4×16）。
+     行数一多，横向列数就成比例减少、格子变宽，可读性直线上升；代价是占高。
+     以前这个数写死为 2，于是矩阵高度成了常量：.cro-board 第 2 行是 fit-content()，
+     而 fit-content 只会 ≤ 内容高，永远不会为了填满空间变大 —— 屏幕一高，富余
+     高度全被第 1 行的 1fr 吞掉，摊成典型层卡片里的空白，集群图却还是那么矮。
+     所以行数必须反过来由可用高度倒推。
+     格高跟着行数走：列数减半格子就宽一倍，高度不同步放大就成了扁条。 */
+  const CLUSTER_CELL_H = { 1: 4, 2: 4, 3: 6, 4: 8 };
+
+  /* 矩阵可用的高度预算。两个输入都与矩阵自身内容无关，所以不会出现
+     「内容撑高 → 预算变大 → 内容更高」的自激：
+       · .cro-board 的 clientHeight 由视口决定（它自己 overflow:auto）；
+       · chrome（区标题 + 表单行 + 间距）实测自上一帧 —— 行高减去矩阵视口的
+         可见高度，差值恒等于矩阵之外那部分，与折几行无关。 */
+  function clusterHeightBudget(host) {
+    const board = host.closest?.(".cro-board");
+    if (!board || !board.clientHeight) return 0;
+    // 行高封顶见 css 的 grid-template-rows（只看一边的两档放宽到 62%）
+    const capRatio = board.classList.contains("is-view-single") ? 0.62 : 0.46;
+    const region = host.closest(".cro-region--cluster");
+    const viewport = host.closest(".cro-cluster__grid");
+    let chrome = 132;   // 首帧还没布局，先用一个保守估计
+    if (region && viewport && viewport.clientHeight) {
+      const measured = region.offsetHeight - viewport.clientHeight;
+      if (measured > 0 && measured < region.offsetHeight) chrome = measured;
+    }
+    return board.clientHeight * capRatio - chrome;
+  }
+
+  /* 几何按真实 DOM 逐层算，不塞魔数：
+       block  = epRows 行 × 格高，行间 1px（.cro-heat-block 的 gap）
+       DP 组  = innerRows 个 block 竖排 + 上下各 2px padding（.cro-heat-dp）
+       整幅   = dp 个组 + 组间 3px（.cro-heat-body 的 gap）+ 上下两条标签行
+     下限恒为 2：那是改动前的行为，量不到高度或实在放不下时不该比原来更差
+     （放不下就照旧由 .cro-cluster__grid 内部滚动）。
+
+     只收 ep 能**整除**的行数。折不尽的话末行会缺格：64 EP 折 3 行是
+     ceil(64/3)=22 列，3×22=66 > 64，右下角空两格 —— 一个 stage 块的方阵是
+     「这一组的 64 个 EP rank」，缺角会读成"这里少了两张卡"，而它只是排版余数。
+     宁可退回 2 行（满格、只是格子窄一半）也不要缺角，所以预算够 3 行但不够
+     4 行时（ep=64），best 停在 2。 */
+  function pickEpRows(host, counts) {
+    const dp = counts.dp;
+    const ep = counts.ep;
+    const innerRows = counts.ranksPerEp;
+    const floor = Math.min(2, ep);
+    const budget = clusterHeightBudget(host);
+    if (!(budget > 0)) return floor;
+
+    const heightOf = (rows) => {
+      const cell = CLUSTER_CELL_H[rows] || 4;
+      const group = innerRows * (rows * cell + (rows - 1)) + 4;
+      return dp * group + (dp - 1) * 3 + 32;
+    };
+
+    let best = floor;
+    for (let rows = floor + 1; rows <= Math.min(4, ep); rows += 1) {
+      if (ep % rows === 0 && heightOf(rows) <= budget) best = rows;
+    }
+    return best;
+  }
+
   function renderCluster(host, topology, emit) {
     if (!host) return;
     const { counts } = topology;
     const { pp, dp, ep, tp, cp, totalRank } = counts;
     const innerRows = counts.ranksPerEp;   // tp × cp
     host.innerHTML = "";
+    delete host.dataset.epRows;
 
     if (!topology.valid) {
       const note = document.createElement("span");
@@ -1364,11 +1428,19 @@
        总列数 = pp × epCols = 4×16 = 64，总行数 = dp × epRows = 8×4 = 32，
        格子从 2.5px 宽放大到 ~10px，仍然是 2048 格、不横向滚动。
        两级列轨都必须能收缩到 0：任意一级留下限，另一级就会溢出压在隔壁块上。 */
-    /* 每个 DP 在每个 stage 块里折成 2 行（默认 64 EP → 2×32）。
-       两级列轨都用 1fr：宽度随本列自适应，既不溢出也不需要横向滚动；
-       整体占地靠格高（CSS 里 4px）和行数（8 DP × 2 = 16 行）压下来。 */
-    const epRows = Math.min(2, ep);
+    /* 折几行 / 格子多高：全部由可用高度倒推（见 pickEpRows）。视图档只是通过
+       行高封顶影响预算，不再单独判档 —— 「只看整网」与「只看典型 Layer」两档
+       预算相同，集群图自然长得一样。
+       行数是建 DOM 时定的，纯 CSS 改不动：所以切档（cro:view）与窗口高度变化
+       （resize）都要回来重建一次，两处都在文件末尾。dataset 留一份当前值，供
+       resize 判断"行数其实没变，别白重建 2048 个格子"。
+       事件详情的角色卡里也会调本函数各开一份矩阵，那些 host 不在 .cro-board
+       里，clusterHeightBudget 量不到板子，天然回落到 2 行。
+       两级列轨都用 1fr：宽度随本列自适应，既不溢出也不需要横向滚动。 */
+    const epRows = pickEpRows(host, counts);
     const epCols = Math.ceil(ep / epRows);
+    host.dataset.epRows = String(epRows);
+    host.style.setProperty("--cro-cell-h", `${CLUSTER_CELL_H[epRows] || 4}px`);
     const stageTemplate = `repeat(${pp}, minmax(0, 1fr))`;
     const cellTemplate = `repeat(${epCols}, minmax(0, 1fr))`;
 
@@ -5543,6 +5615,33 @@
       renderCluster(document.getElementById("croHeat"), topology, emitSelect);
       if (activeIncident) requestAnimationFrame(() => selectIncident(activeIncident));
       else if (relation) reapplySelection(topology);
+    });
+
+    /* 整网视图切档（见 html 的 croNetView）。四域里只有 Cluster 需要重建：
+       其余三块的差异纯粹是显示/隐藏与排布，CSS 就够；而集群矩阵的 epRows
+       是建 DOM 时定的行数（见 renderCluster），改不了类就改不了。
+       重建会连带清掉格子上的 is-related / is-selected，随后按当前选择重铺一次。 */
+    const rebuildCluster = () => {
+      const topology = controller.topology;
+      renderCluster(document.getElementById("croHeat"), topology, emitSelect);
+      if (activeIncident) requestAnimationFrame(() => selectIncident(activeIncident));
+      else if (relation) reapplySelection(topology);
+    };
+
+    document.addEventListener("cro:view", rebuildCluster);
+
+    /* 窗口一变高，这一行能给矩阵的预算也就变了，折几行跟着变（见 pickEpRows）。
+       行数是建 DOM 时定的，只有重建一途 —— 但重建动辄 2048 个格子，不能每帧都来：
+       防抖之后先算一遍目标行数，跟当前渲染的一样就直接返回。 */
+    let clusterResizeTimer = 0;
+    global.addEventListener("resize", () => {
+      clearTimeout(clusterResizeTimer);
+      clusterResizeTimer = setTimeout(() => {
+        const heat = document.getElementById("croHeat");
+        if (!heat || !heat.dataset.epRows) return;   // 无矩阵（配置非法/超格数上限）时不管
+        if (String(pickEpRows(heat, controller.topology.counts)) === heat.dataset.epRows) return;
+        rebuildCluster();
+      }, 180);
     });
 
     // 列宽随窗口变化，PP 带的实测定位要跟着重排
