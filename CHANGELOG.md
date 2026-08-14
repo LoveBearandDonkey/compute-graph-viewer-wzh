@@ -5,6 +5,10 @@
 
 ---
 
+## 2026-08-14 — MatMul Code Recovery Step 6：尾块验证与交付回归
+- 新增 Divisible、M/N tail、K tail、Combined 四个 fixture 驱动的验证 case；按源码公式动态派生最后输出 tile、L1/L0 K slice、Mmad 次数、Tensor shape 与逻辑 payload。
+- 修正固定 16 Mmad、固定 4 次 L0 循环和非向上取整的 tile 坐标假设；K=1900 时恢复为 `364 → 128/128/108`、15 Mmad、45 个逻辑播放帧。
+- 补齐 derived / inferred / unverified 证据边界、键盘 case 切换、窄屏无全局横向溢出、schema/sourceRef/HTTP/控制台/Conv 页面回归验证。
 ## 2026-08-13 — 碎片图：红色改标「接不下的申请」，修样本块点不动
 
 - 红色标注口径纠正：0.3 GB 的最大连续空闲块本身无对错，出事的是「最大申请 0.5 GB 接不下它」（定位链 §3 观测：无法满足下一个 0.5 GB 的临时 buffer 分配请求）。`facts.fragment` 新增 `maxRequestGB: 0.5`；碎片轴上最大连续块改中性灰框标位置，红色改画那笔装不下的申请条（等比放大后露在灰框外的部分 = 差的量）+ 「最大申请 0.5 GB > 最大连续 0.3 GB」标签。
