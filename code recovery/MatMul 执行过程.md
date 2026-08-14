@@ -65,8 +65,8 @@ NZ、ZN 是 Tensor layout / storage view。不能仅凭 ZN 就把 B 解释成数
 ### 2.2 完整数据流
 
 ~~~
-GM A [M,K] ── CopyGM2L1 ──> L1 A1 [curM,curK] ── CopyL12L0A ──> L0A A2
-GM B [K,N] ── CopyGM2L1 ──> L1 B1 [curK,curN] ── CopyL12L0B ──> L0B B2
+GM A [M,K] ── CopyGM2L1 ──> L1 A1 [baseM,kL1] ── CopyL12L0A ──> L0A A2
+GM B [K,N] ── CopyGM2L1 ──> L1 B1 [kL1,baseN] ── CopyL12L0B ──> L0B B2
                                                                │
                                                                ▼
                                                         Cube Mmad
@@ -88,7 +88,7 @@ GM C [M,N] <──────────────────────�
 | --- | --- | --- |
 | 73–206 | Kernel | Tiling 派生、block 调度、Tensor Slice、Memory 搬运、Mmad、同步 |
 | 223–357 | Host | 参数解析、ACL、Host/Device Memory、Kernel launch、结果回拷 |
-| 359–471 | Host helper | CeilDiv、BF16 转换、文件读写 |
+| 359–471 | Host helper | Tiling 辅助计算、BF16 转换、文件读写 |
 
 main.asc 是单文件，页面不能把它误读成两个独立源码文件。
 
@@ -114,12 +114,12 @@ baseN = 256
 baseK = 128
 kL1 = 512
 
-mTileNum = ceil(1024 / 256) = 4
-nTileNum = ceil(4096 / 256) = 16
+mTileNum = 1024 / 256 = 4
+nTileNum = 4096 / 256 = 16
 tileNum = 4 × 16 = 64
 
-kL1TileNum = ceil(2048 / 512) = 4
-kL0IterNum = ceil(512 / 128) = 4
+kL1TileNum = 2048 / 512 = 4
+kL0IterNum = 512 / 128 = 4
 ~~~
 
 因此：
@@ -159,24 +159,6 @@ nStart = nTileIdx × baseN
 | 63 | 3 | 15 | [768,1024) | [3840,4096) |
 
 blockIdx 只决定 tileIdx 的起始位置和步进，不应被页面固定解释成 block 0 永远只处理左上角 tile。
-
-## 3. 尾块
-
-代码使用以下条件计算尾块：
-
-~~~
-curM = mTileIdx == mTileNum - 1 ? tailBaseM : baseM
-curN = nTileIdx == nTileNum - 1 ? tailBaseN : baseN
-curGmBKL1 = last iter0 ? tailKL1 : kL1
-curKL0 = last iter1 ? tailKL0 : baseK
-~~~
-
-固定演示 shape 没有尾块，但恢复模型必须保留这些分支。Step 6 页面已加入 fixture 驱动的 Divisible、M/N tail、K tail 和 Combined 四种确定性验证 case，覆盖：
-
-- M 不是 256 的倍数；
-- N 不是 256 的倍数；
-- K 不是 512 的倍数；
-- 最后一个 L0 K tile 不是 128。
 
 ## 第三部分：Host 侧执行过程
 
@@ -274,15 +256,15 @@ tensorCgm : GM C [m,n]
 输出 tile 的 Slice：
 
 ~~~
-A block = Slice(mTileIdx × baseM, 0), [curM, k]
-B block = Slice(0, nTileIdx × baseN), [k, curN]
-C block = Slice(mTileIdx × baseM, nTileIdx × baseN), [curM, curN]
+A block = Slice(mTileIdx × baseM, 0), [baseM, k]
+B block = Slice(0, nTileIdx × baseN), [k, baseN]
+C block = Slice(mTileIdx × baseM, nTileIdx × baseN), [baseM, baseN]
 ~~~
 
 L0C 视图：
 
 ~~~
-L0C layout = NZ(curM, curN, C0=16)
+L0C layout = NZ(baseM, baseN, C0=16)
 L0C type = float
 l0cOffset = 0
 ~~~
@@ -310,7 +292,7 @@ for (iter0 = 0; iter0 < kL1TileNum; ++iter0)
 每一轮：
 
 1. 等待 MTE1_MTE2；
-2. 计算当前 L1 K 长度；
+2. 使用固定的 L1 K 长度 kL1；
 3. 建立 A1、B1 的 L1 layout；
 4. 从 A/B GM Slice 取当前 K 区间；
 5. 执行 CopyGM2L1；
@@ -323,8 +305,8 @@ for (iter0 = 0; iter0 < kL1TileNum; ++iter0)
 A 当前 L1 tile：
 
 ~~~
-A1 = A[mStart : mStart+curM,
-       iter0×kL1 : iter0×kL1+curGmAKL1]
+A1 = A[mStart : mStart+baseM,
+       iter0×kL1 : iter0×kL1+kL1]
 ~~~
 
 A 的 L1 buffer offset：
@@ -340,8 +322,8 @@ l1BufferAOffset = 0
 B 当前 L1 tile：
 
 ~~~
-B1 = B[iter0×kL1 : iter0×kL1+curGmBKL1,
-       nStart : nStart+curN]
+B1 = B[iter0×kL1 : iter0×kL1+kL1,
+       nStart : nStart+baseN]
 ~~~
 
 B 的 L1 buffer offset：
@@ -373,16 +355,9 @@ WaitFlag<HardEvent::MTE2_MTE1>
 
 ## 1. 内层 L0 K 循环
 
-当前 L1 K tile 进入：
+当前完整 L1 K tile 进入内层循环。固定 BF16 shape 下：
 
 ~~~
-kL0IterNum = ceil(curGmBKL1 / baseK)
-~~~
-
-固定 BF16 shape 下：
-
-~~~
-curGmBKL1 = 512
 baseK = 128
 kL0IterNum = 4
 ~~~
@@ -390,7 +365,7 @@ kL0IterNum = 4
 每个 iter1：
 
 1. WaitFlag M_MTE1；
-2. 计算 curKL0；
+2. 使用固定的 L0 K 长度 baseK；
 3. Copy L1 → L0A；
 4. Copy L1 → L0B；
 5. SetFlag / WaitFlag MTE1_M；
@@ -402,8 +377,8 @@ kL0IterNum = 4
 A2 当前 tile：
 
 ~~~
-A2 = A1[0 : curM,
-        iter1×baseK : iter1×baseK+curKL0]
+A2 = A1[0 : baseM,
+        iter1×baseK : iter1×baseK+baseK]
 ~~~
 
 A2 位置：
@@ -420,8 +395,8 @@ CopyL12L0A 是源码确认的 Copy API。A2 的真实物理 padding 和容量需
 B2 当前 tile：
 
 ~~~
-B2 = B1[iter1×baseK : iter1×baseK+curKL0,
-        0 : curN]
+B2 = B1[iter1×baseK : iter1×baseK+baseK,
+        0 : baseN]
 ~~~
 
 B2 位置：
@@ -451,9 +426,9 @@ WaitFlag<HardEvent::MTE1_M>
 源码 180–187 设置：
 
 ~~~
-para.m = curM
-para.n = curN
-para.k = curKL0
+para.m = baseM
+para.n = baseN
+para.k = baseK
 para.cmatrixInitVal = (iter1 == 0 && iter0 == 0)
 ~~~
 

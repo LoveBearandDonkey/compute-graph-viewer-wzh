@@ -84,6 +84,7 @@ A[M,K] × B[K,N] → C[M,N]
 - 不声称 Tiling 是自动生成或性能最优；
 - 不生成真实 duration、stall、overlap、带宽或利用率；
 - 不把逻辑 NZ/ZN 视图自动解释成数学转置；
+- 本次还原只覆盖 M、K、N 分别可被 baseM、kL1、baseN 整除的完整 tile 场景；
 - 不生成不存在的 Tensor Data Dump 数值；
 - 不把 CopyL0C2GM 直接等同于源码中显式 Fixpipe API。
 
@@ -99,15 +100,11 @@ A[M,K] × B[K,N] → C[M,N]
 | baseN | L0 计算视图的 N 基础分块，256 |
 | baseK | 256 / sizeof(T)，BF16 时为 128 |
 | kL1 | 1024 / sizeof(T)，BF16 时为 512 |
-| mTileNum | ceil(M / baseM) |
-| nTileNum | ceil(N / baseN) |
+| mTileNum | M / baseM |
+| nTileNum | N / baseN |
 | tileNum | mTileNum × nTileNum |
-| kL1TileNum | ceil(K / kL1) |
-| tailBaseM | 最后一个 M tile 的实际行数 |
-| tailBaseN | 最后一个 N tile 的实际列数 |
-| tailKL1 | 最后一个 L1 K tile 的实际 K 长度 |
-| kL0IterNum | ceil(curGmBKL1 / baseK) |
-| tailKL0 | 最后一个 L0 K tile 的实际 K 长度 |
+| kL1TileNum | K / kL1 |
+| kL0IterNum | kL1 / baseK |
 
 对 M=1024、K=2048、N=4096、BF16：
 
@@ -152,13 +149,11 @@ Block 负责的是输出 tile 调度，不应直接理解为固定的设备物�
 
 - 处理 GM → L1 的 K 分片；
 - BF16 完整场景下每次为 K=512；
-- 最后一轮使用 tail K。
 
 内层 iter1：
 
 - 处理 L1 → L0 的 K 分片；
 - BF16 完整场景下每次为 K=128；
-- 最后一轮使用 tail K；
 - 先进入 L0A/L0B，再执行 Mmad。
 
 ### 4.4 执行单元与动作
@@ -166,7 +161,7 @@ Block 负责的是输出 tile 调度，不应直接理解为固定的设备物�
 | 角色 | 当前案例中的动作 |
 | --- | --- |
 | Host / Runtime | 参数解析、ACL 初始化、分配、拷贝、Kernel launch、结果回拷 |
-| Scalar / Kernel control | Tiling 计算、Slice、尾块和循环控制 |
+| Scalar / Kernel control | Tiling 计算、Slice 和循环控制 |
 | MTE2 | GM → L1 |
 | MTE1 | L1 → L0A/L0B |
 | Cube | Mmad |
@@ -285,7 +280,7 @@ Block 负责的是输出 tile 调度，不应直接理解为固定的设备物�
 验收：
 
 - A/B/C 和 A1/B1/A2/B2/CO1 可定位；
-- 当前 tile、K slice 和 tail 状态正确；
+- 当前 tile 和 K slice 状态正确；
 - CO1 明确为 FP32 accumulator；
 - 无 dump 时不显示猜测数值。
 
@@ -307,7 +302,7 @@ Block 负责的是输出 tile 调度，不应直接理解为固定的设备物�
 
 交付：
 
-- 整除 shape、M/N 尾块、K 尾块验证；
+- 固定整除 shape 的确定性验证；
 - 页面响应式与可访问性；
 - 文档、fixture、UI 一致性回归。
 
@@ -319,16 +314,13 @@ Block 负责的是输出 tile 调度，不应直接理解为固定的设备物�
 - 通过 HTTP 页面验证；
 - 无控制台错误。
 
-当前 Step 6 使用四个 fixture 驱动的确定性案例回归，不代表设备实测：
+当前 Step 6 使用固定 fixture 驱动的确定性案例回归，不代表设备实测：
 
-| 案例 | Shape | 最后输出 tile | 最后 K 分片 | 每输出 tile 的 Mmad |
+| 案例 | Shape | 输出 tile | L1/L0 K 分片 | 每输出 tile 的 Mmad |
 | --- | --- | --- | --- | --- |
-| Default | 1024 × 2048 × 4096 | curM=256，curN=256 | 512 → 128/128/128/128 | 16 |
-| M/N tail | 1000 × 2048 × 4000 | curM=232，curN=160 | 512 → 128/128/128/128 | 16 |
-| K tail | 1024 × 1900 × 4096 | curM=256，curN=256 | 364 → 128/128/108 | 15 |
-| Combined | 1000 × 1900 × 4000 | curM=232，curN=160 | 364 → 128/128/108 | 15 |
+| Default | 1024 × 2048 × 4096 | 256 × 256 | 512 → 128/128/128/128 | 16 |
 
-以上数值均由 `CeilDiv`、`curM/curN`、`curGmBKL1` 和 `curKL0` 的源码公式派生；真实编译、运行、profiling 与 Tensor Data Dump 仍为 unverified。
+以上数值由固定 shape 和基础分块参数派生；真实编译、运行、profiling 与 Tensor Data Dump 仍为 unverified。
 
 ## 7. Step 0 的验收方式
 
