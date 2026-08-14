@@ -51,11 +51,11 @@ kL1=512
 | baseN | 256 | confirmed | N 输出 tile 的基础列数 |
 | baseK | 128 | derived | 256 / sizeof(BF16) |
 | kL1 | 512 | derived | 1024 / sizeof(BF16) |
-| mTileNum | 4 | derived | ceil(M / baseM) |
-| nTileNum | 16 | derived | ceil(N / baseN) |
+| mTileNum | 4 | derived | M / baseM |
+| nTileNum | 16 | derived | N / baseN |
 | output tile 数 | 64 | derived | mTileNum × nTileNum |
-| K L1 tile 数 | 4 | derived | ceil(K / kL1) |
-| K L0 tile 数 | 4 | derived | ceil(kL1 / baseK) |
+| K L1 tile 数 | 4 | derived | K / kL1 |
+| K L0 tile 数 | 4 | derived | kL1 / baseK |
 | 每输出 tile Mmad | 16 | derived | K L1 tile 数 × K L0 tile 数 |
 
 ## 全局 Tensor 契约
@@ -65,11 +65,11 @@ kL1=512
 | A | [1024,2048] | GM | ND | BF16 | 2,097,152 | 4 MiB |
 | B | [2048,4096] | GM | ND | BF16 | 8,388,608 | 16 MiB |
 | C | [1024,4096] | GM | ND | BF16 | 4,194,304 | 8 MiB |
-| A1 | [curM,curK] | L1 | NZ | T | 动态 | 由当前 tile 决定 |
-| B1 | [curK,curN] | L1 | NZ | T | 动态 | 由当前 tile 决定 |
-| A2 | [curM,curKL0] | L0A | NZ | T | 动态 | 由当前 L0 K tile 决定 |
-| B2 | [curKL0,curN] | L0B | ZN | T | 动态 | 由当前 L0 K tile 决定 |
-| CO1 | [curM,curN] | L0C | NZ, C0=16 | FP32 | 动态 | 由当前输出 tile 决定 |
+| A1 | [baseM,kL1] | L1 | NZ | T | 固定 | 当前完整 L1 K tile |
+| B1 | [kL1,baseN] | L1 | NZ | T | 固定 | 当前完整 L1 K tile |
+| A2 | [baseM,baseK] | L0A | NZ | T | 固定 | 当前完整 L0 K tile |
+| B2 | [baseK,baseN] | L0B | ZN | T | 固定 | 当前完整 L0 K tile |
+| CO1 | [baseM,baseN] | L0C | NZ, C0=16 | FP32 | 固定 | 当前完整输出 tile |
 
 A1、B1、A2、B2 的 Tensor 变量由 Tensor API 在 Kernel 内建立。CO1 的元素类型在源码中明确为 float；GM C 的目标类型来自 Kernel 模板 T，当前 launch 为 BF16。
 
@@ -146,9 +146,9 @@ Kernel 使用 NDExtLayoutPtn：
 
 | Tensor | Slice 起点 | Slice Shape |
 | --- | --- | --- |
-| tensorAGmBlock | [mTileIdx×baseM, 0] | [curM, K] |
-| tensorBGmBlock | [0, nTileIdx×baseN] | [K, curN] |
-| tensorCGmBlock | [mTileIdx×baseM, nTileIdx×baseN] | [curM, curN] |
+| tensorAGmBlock | [mTileIdx×baseM, 0] | [baseM, K] |
+| tensorBGmBlock | [0, nTileIdx×baseN] | [K, baseN] |
+| tensorCGmBlock | [mTileIdx×baseM, nTileIdx×baseN] | [baseM, baseN] |
 
 ## 阶段 4：L1 Buffer View
 
@@ -169,16 +169,14 @@ baseM × kL1 × sizeof(T)
 
 A1 和 B1 共享 L1 地址空间的事实来自同一个 L1 location 和明确的 offset 表达；实际 L1 分配边界、padding 和 bank 使用需要目标环境验证。
 
-对于最后一个 M/N/K tile，A1、B1 的 shape 使用 curM、curN、curGmBKL1，不应继续显示完整 256×512 或 512×256。
-
 ## 阶段 5：GM → L1
 
 当前 iter0 的逻辑 Tensor：
 
 | Tensor | 来源 | 目标 | 当前 Shape | layout 变化 |
 | --- | --- | --- | --- | --- |
-| A1 | A GM Slice | L1 A1 | [curM,curGmAKL1] | GM ND → L1 layoutAL1 |
-| B1 | B GM Slice | L1 B1 | [curGmBKL1,curN] | GM ND → L1 layoutBL1 |
+| A1 | A GM Slice | L1 A1 | [baseM,kL1] | GM ND → L1 layoutAL1 |
+| B1 | B GM Slice | L1 B1 | [kL1,baseN] | GM ND → L1 layoutBL1 |
 
 当前 transA=false、transB=false 分支下，源码的 layout alias 都选择 NZ。该结论是源码模板分支事实；具体搬运后的物理布局需要编译或运行验证。
 
@@ -196,7 +194,7 @@ A1 和 B1 共享 L1 地址空间的事实来自同一个 L1 location 和明确�
 固定 BF16 场景下：
 
 ~~~
-curGmBKL1 = 512
+kL1 = 512
 baseK = 128
 kL0IterNum = 4
 ~~~
@@ -205,8 +203,8 @@ kL0IterNum = 4
 
 | Tensor | 来源 | 目标 | Shape | layout |
 | --- | --- | --- | --- | --- |
-| A2 | A1 Slice | L0A | [curM,curKL0] | NZ |
-| B2 | B1 Slice | L0B | [curKL0,curN] | ZN |
+| A2 | A1 Slice | L0A | [baseM,baseK] | NZ |
+| B2 | B1 Slice | L0B | [baseK,baseN] | ZN |
 
 当前完整 tile 的四个 L0 K 范围：
 
@@ -220,13 +218,13 @@ kL0IterNum = 4
 A2 的 Slice：
 
 ~~~
-A1[0:curM, iter1×baseK : iter1×baseK+curKL0]
+A1[0:baseM, iter1×baseK : iter1×baseK+baseK]
 ~~~
 
 B2 的 Slice：
 
 ~~~
-B1[iter1×baseK : iter1×baseK+curKL0, 0:curN]
+B1[iter1×baseK : iter1×baseK+baseK, 0:baseN]
 ~~~
 
 阶段结束后等待 MTE1_M，状态为 A2/B2 对 Cube 可读。
@@ -237,7 +235,7 @@ L0C Tensor：
 
 | Tensor | Shape | 位置 | layout | dtype |
 | --- | --- | --- | --- | --- |
-| tensorL0C | [curM,curN] | L0C | NZ, C0=16 | float |
+| tensorL0C | [baseM,baseN] | L0C | NZ, C0=16 | float |
 
 完整输出 tile 的逻辑累计：
 
@@ -272,7 +270,7 @@ cmatrixInitVal=false
 | --- | --- | --- | --- | --- |
 | tensorL0C | tensorCGmBlock | float | T，当前为 BF16 | CopyL0C2GM |
 
-源码明确的是 CopyL0C2GM API 和源/目标 Tensor。float→BF16 的具体转换行为、NZ→ND 的物理转换细节，以及尾块的物理 padding，需要目标 API / 编译 / 设备验证。
+源码明确的是 CopyL0C2GM API 和源/目标 Tensor。float→BF16 的具体转换行为、NZ→ND 的物理转换细节，以及局部 layout 的物理 padding，需要目标 API / 编译 / 设备验证。
 
 因此页面的证据表达建议：
 
@@ -359,7 +357,6 @@ Host：
 不要把 A1、B1、A2、B2 既当作 Tensor 变量名，又当作 Memory location 名。页面需要同时显示变量和位置，例如：
 
 ~~~
-tensorAL1 · L1 · NZ · [curM,curK]
-tensorBL0 · L0B · ZN · [curKL0,curN]
+tensorAL1 · L1 · NZ · [baseM,kL1]
+tensorBL0 · L0B · ZN · [baseK,baseN]
 ~~~
-
