@@ -413,7 +413,12 @@
     }
     .format-lab-visual__head { min-height: 28px; }
 
-    .format-lab-grid-scroll { min-height: 0; overflow: auto; padding-top: var(--space-3); }
+    .format-lab-grid-scroll {
+      min-height: 0;
+      overflow: auto;
+      padding-top: var(--space-3);
+      background: radial-gradient(circle at 50% 18%, rgba(71, 82, 145, .1), transparent 58%);
+    }
     .format-lab-ribbon-scroll { min-height: 0; overflow-x: auto; overflow-y: hidden; padding-top: var(--space-3); }
     .format-lab-grid-zoom-host { min-width: max-content; }
     .format-lab-grid-zoom { transform-origin: top left; }
@@ -441,19 +446,36 @@
     }
 
     .format-layout-arrows .format-fractal-outline {
-      fill: color-mix(in srgb, var(--primary) 5%, transparent);
-      stroke: color-mix(in srgb, var(--primary) 78%, transparent);
+      fill: color-mix(in srgb, var(--primary) 3%, transparent);
+      stroke: color-mix(in srgb, var(--primary-hover) 92%, transparent);
       stroke-width: 3px;
       vector-effect: non-scaling-stroke;
     }
 
     .format-layout-arrows .format-fractal-path,
     .format-layout-arrows .format-fractal-connector {
-      stroke: color-mix(in srgb, var(--warning) 86%, var(--primary));
+      stroke: #fff;
       stroke-width: 3px;
-      opacity: .9;
+      opacity: 1;
       stroke-linecap: round;
       stroke-linejoin: round;
+      filter: drop-shadow(0 1px 1px rgba(3, 5, 14, .72));
+      transition: opacity 140ms ease;
+    }
+
+    .format-layout-arrows .format-reading-chevron {
+      fill: none;
+      stroke: #fff;
+      stroke-width: 2.4px;
+      vector-effect: non-scaling-stroke;
+      stroke-linecap: round;
+      stroke-linejoin: round;
+      filter: drop-shadow(0 1px 1px rgba(3, 5, 14, .78));
+    }
+
+    .format-layout-arrows .format-fractal-outline.is-reading-block {
+      fill: color-mix(in srgb, var(--primary) 11%, transparent);
+      stroke: color-mix(in srgb, var(--primary-hover) 92%, white);
     }
 
     .format-lab-cell {
@@ -464,22 +486,33 @@
       grid-template-rows: auto 1fr;
       align-items: center;
       border: 1px solid var(--border-subtle);
-      border-radius: var(--radius-sm);
+      border-radius: 9px;
       background: color-mix(in srgb, var(--surface-2) 78%, transparent);
       color: var(--foreground-secondary);
       font: 700 9px / 1 var(--font-mono);
       cursor: pointer;
+      transition: background-color 120ms ease, border-color 120ms ease, filter 120ms ease, box-shadow 120ms ease;
     }
 
     .format-lab-logical-cell {
       position: relative;
       grid-template-rows: repeat(2, minmax(0, 1fr));
       padding-top: 3px;
-      border-color: transparent;
+      border-color: rgba(255, 255, 255, .1);
+      background-color: var(--format-cell-fill);
+      background-image: linear-gradient(180deg, rgba(255, 255, 255, .16), rgba(255, 255, 255, 0) 48%);
+      box-shadow: inset 0 1px 0 rgba(255, 255, 255, .18), 0 3px 8px rgba(4, 6, 18, .24);
+      color: white;
+      --format-cell-fill: #5868ee;
       transform: translate(var(--format-fractal-offset-x, 0), var(--format-fractal-offset-y, 0));
     }
 
-    .format-lab-logical-index,
+    .format-lab-logical-index {
+      color: inherit;
+      font-size: 10px;
+      letter-spacing: -.01em;
+      font-variant-numeric: tabular-nums;
+    }
     .format-lab-physical-offset { color: var(--foreground); }
     .format-lab-coordinate,
     .format-lab-physical-logical,
@@ -494,21 +527,76 @@
     .format-lab-physical-logical { align-self: center; }
     .format-lab-physical-coordinate { align-self: end; }
 
-    .format-lab-logical-cell.is-block-active { box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--warning) 86%, transparent); }
+    .format-lab-logical-cell.is-block-active { filter: brightness(1.08); }
+
+    .format-lab-logical-cell.is-reading-complete { --format-cell-fill: #6349df; }
+    .format-lab-logical-cell.is-reading-trail-4 { --format-cell-fill: #6a54e8; }
+    .format-lab-logical-cell.is-reading-trail-3 { --format-cell-fill: #5c72f4; }
+    .format-lab-logical-cell.is-reading-trail-2 { --format-cell-fill: #4fe0aa; color: #081a13; }
+    .format-lab-logical-cell.is-reading-trail-1 { --format-cell-fill: #c7f25a; color: #172005; }
+    .format-lab-logical-cell.is-reading-current { --format-cell-fill: #ffb62e; color: #251602; filter: brightness(1.04); }
+    .format-lab-logical-cell.is-reading-trail-2 .format-lab-coordinate,
+    .format-lab-logical-cell.is-reading-trail-1 .format-lab-coordinate,
+    .format-lab-logical-cell.is-reading-current .format-lab-coordinate { color: currentColor; opacity: .68; }
+    .format-lab-logical-cell.is-pad.is-reading-current {
+      background:
+        repeating-linear-gradient(45deg, rgba(42, 28, 2, .78) 0 2px, transparent 2px 7px),
+        #ffd55f;
+      filter: brightness(1.08);
+    }
+
+    .format-lab-playback-controls,
+    .format-lab-visual-actions {
+      display: flex;
+      align-items: center;
+      gap: var(--space-1);
+    }
+    .format-lab-visual-actions { margin-left: auto; }
+    .format-lab-playback-controls {
+      padding-right: var(--space-2);
+      margin-right: var(--space-1);
+      border-right: 1px solid var(--border-subtle);
+    }
+    .format-lab-playback-controls .btn {
+      min-width: 28px;
+      height: 28px;
+      padding-inline: 7px;
+      border-radius: 7px;
+      font: 700 10px / 1 var(--font-sans);
+    }
+    .format-lab-playback-controls [data-rt-format-playback-toggle] {
+      min-width: 46px;
+      background: color-mix(in srgb, #ffb62e 16%, transparent);
+      color: #ffbf47;
+    }
+    .format-lab-playback-controls [aria-pressed="true"] {
+      background: color-mix(in srgb, #ffb62e 24%, transparent);
+      color: #ffd47b;
+    }
+    .format-lab-playback-readout {
+      min-width: 76px;
+      padding-left: 3px;
+      color: var(--foreground-muted);
+      font: 700 9px / 1 var(--font-mono);
+      font-variant-numeric: tabular-nums;
+      white-space: nowrap;
+    }
 
     .format-lab-cell small { color: var(--foreground-muted); font: 700 8px / 1 var(--font-mono); }
     .format-lab-cell.is-active,
-    .format-lab-cell:hover { background: var(--primary); border-color: var(--primary-hover); color: var(--primary-foreground); }
+    .format-lab-cell:hover { border-color: rgba(255, 255, 255, .74); filter: brightness(1.1); }
     .format-lab-cell.is-active small,
-    .format-lab-cell:hover small { color: color-mix(in srgb, var(--primary-foreground) 72%, transparent); }
+    .format-lab-cell:hover small { color: currentColor; opacity: .72; }
     .format-lab-cell.is-active .format-lab-logical-index,
     .format-lab-cell.is-active .format-lab-physical-offset,
     .format-lab-cell:hover .format-lab-logical-index,
-    .format-lab-cell:hover .format-lab-physical-offset { color: var(--primary-foreground); }
+    .format-lab-cell:hover .format-lab-physical-offset { color: currentColor; }
     .format-lab-cell.is-pad {
       background:
-        repeating-linear-gradient(45deg, color-mix(in srgb, var(--warning) 38%, transparent) 0 1px, transparent 1px 8px),
-        color-mix(in srgb, var(--warning) 22%, var(--surface-2));
+        repeating-linear-gradient(45deg, rgba(42, 28, 2, .62) 0 1px, transparent 1px 7px),
+        #ffc44d;
+      border-color: rgba(255, 196, 77, .74);
+      color: #201703;
     }
     .format-lab-cell.is-gap { border-style: dashed; color: var(--foreground-muted); }
     .format-lab-layout-legend {
@@ -525,6 +613,9 @@
       border: 2px solid color-mix(in srgb, var(--primary) 78%, transparent);
       border-radius: 3px;
       background: color-mix(in srgb, var(--primary) 5%, transparent);
+      border-radius: 4px;
+      background: linear-gradient(135deg, #6349df 0 18%, #5c72f4 34%, #4fe0aa 54%, #c7f25a 74%, #ffb62e 100%);
+      box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .18);
     }
     .format-lab-legend-mark.is-pad {
       border: 1px solid color-mix(in srgb, var(--warning) 70%, transparent);
@@ -536,11 +627,13 @@
       height: 16px;
     }
     .format-lab-legend-mark.is-path path {
-      fill: none;
-      stroke: color-mix(in srgb, var(--warning) 86%, var(--primary));
-      stroke-width: 2;
-      stroke-linecap: round;
-      stroke-linejoin: round;
+      display: none;
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      .format-lab-cell,
+      .format-layout-arrows .format-fractal-path,
+      .format-layout-arrows .format-fractal-connector { transition: none; }
     }
 
     .format-lab-metrics { display: grid; }
@@ -8197,6 +8290,12 @@
       };
 
       const rtFormatState = { layout: 'ND', dtype: 'float16', rows: 20, cols: 20, matrixZoom: 0.6, selectedAddress: null };
+      const rtFormatPlaybackState = { timer: null, running: false, cursor: -1, speed: 1, autoPlayedKey: null };
+      const rtFormatStopPlaybackTimer = () => {
+        if (rtFormatPlaybackState.timer !== null) window.clearTimeout(rtFormatPlaybackState.timer);
+        rtFormatPlaybackState.timer = null;
+        rtFormatPlaybackState.running = false;
+      };
 
       const FORMAT_LAYOUTS = {
         ND: { fragmented: false, createInfo: (config, base) => base, address: (r, c, info) => ({ idx: r * info.strideRow1 + c * info.strideCol1, ir: 0, or: r, ic: 0, oc: c }) },
@@ -8342,13 +8441,15 @@
         const groups = fragmented
           ? Array.from(new Set(projection.matrixElements.map((item) => item.blockId))).map((blockId) => projection.matrixElements.filter((item) => item.blockId === blockId))
           : [projection.matrixElements];
+        const stageBounds = rtFormatGridSize(config, info);
+        const framePad = fragmented ? 7 : 0;
         const routes = groups.map((items) => {
           const first = items.reduce((current, item) => item.sequence < current.sequence ? item : current, items[0]);
           const last = items.reduce((current, item) => item.sequence > current.sequence ? item : current, items[0]);
           const minR = Math.min(...items.map((item) => item.r)); const maxR = Math.max(...items.map((item) => item.r));
           const minC = Math.min(...items.map((item) => item.c)); const maxC = Math.max(...items.map((item) => item.c));
-          const left = xAt(minC, inset); const right = xAt(maxC + 1, -4 - inset) - fractalGap;
-          const top = yAt(minR, inset); const bottom = yAt(maxR + 1, -4 - inset) - fractalGap;
+          const left = Math.max(1, xAt(minC, -framePad)); const right = Math.min(stageBounds.width - 1, xAt(maxC + 1, -4 + framePad) - fractalGap);
+          const top = Math.max(1, yAt(minR, -framePad)); const bottom = Math.min(stageBounds.height - 1, yAt(maxR + 1, -4 + framePad) - fractalGap);
           const start = [xAt(first.c, cellCenter), yAt(first.r, cellCenter)];
           const end = [xAt(last.c, cellCenter), yAt(last.r, cellCenter)];
           const columnMajor = ['ZN', 'NN', 'DN'].includes(config.layout);
@@ -8358,12 +8459,27 @@
           const pathPoints = points.slice();
           pathPoints[0] = start;
           pathPoints[pathPoints.length - 1] = end;
-          return { first, start, end, left, right, top, bottom, path: buildRoundedPath(pathPoints, 24) };
+          const pointAlong = (a, b, distance) => {
+            const dx = b[0] - a[0]; const dy = b[1] - a[1]; const length = Math.hypot(dx, dy);
+            if (!length) return { x: a[0], y: a[1], angle: 0 };
+            const ratio = Math.min(.34, distance / length);
+            return { x: a[0] + dx * ratio, y: a[1] + dy * ratio, angle: Math.atan2(dy, dx) * 180 / Math.PI };
+          };
+          const startChevron = pointAlong(pathPoints[0], pathPoints[1], 14);
+          const middleStart = pathPoints[1]; const middleEnd = pathPoints[2];
+          const middleChevron = {
+            x: (middleStart[0] + middleEnd[0]) / 2,
+            y: (middleStart[1] + middleEnd[1]) / 2,
+            angle: Math.atan2(middleEnd[1] - middleStart[1], middleEnd[0] - middleStart[0]) * 180 / Math.PI
+          };
+          return { first, start, end, left, right, top, bottom, path: buildRoundedPath(pathPoints, 24), chevrons: [startChevron, middleChevron] };
         }).sort((a, b) => a.first.sequence - b.first.sequence);
-        const outlines = routes.map((route) => `<rect class="format-fractal-outline" x="${route.left - inset / 2}" y="${route.top - inset / 2}" width="${route.right - route.left + inset}" height="${route.bottom - route.top + inset}" rx="4" style="stroke-width:${stableStroke}px"></rect>`).join('');
+        const outlines = routes.map((route) => `<rect class="format-fractal-outline"${route.first.blockId ? ` data-rt-format-block-outline="${route.first.blockId}"` : ''} x="${route.left}" y="${route.top}" width="${route.right - route.left}" height="${route.bottom - route.top}" rx="10" style="stroke-width:${stableStroke}px"></rect>`).join('');
         const paths = routes.map((route) => `<path class="format-fractal-path" d="${route.path}" style="stroke-width:${stableStroke}px"></path>`).join('');
         const connectors = routes.slice(0, -1).map((route, index) => { const next = routes[index + 1]; return `<path class="format-fractal-connector" d="M ${route.end[0]} ${route.end[1]} L ${next.start[0]} ${next.start[1]}" style="stroke-width:${stableStroke}px"></path>`; }).join('');
-        return `${outlines}${paths}${connectors}`;
+        const chevronScale = (1 / config.matrixZoom).toFixed(3);
+        const chevrons = routes.flatMap((route) => route.chevrons).map((chevron) => `<path class="format-reading-chevron" d="M -8 -5 L -3 0 L -8 5 M -1 -5 L 4 0 L -1 5" transform="translate(${chevron.x} ${chevron.y}) rotate(${chevron.angle}) scale(${chevronScale})"></path>`).join('');
+        return `${outlines}${paths}${connectors}${chevrons}`;
       };
 
       const rtFormatPhysicalSlots = (projection) => projection.physicalSlots.map((item, offset) => {
@@ -8385,7 +8501,34 @@
         root.querySelector('[data-rt-format-trace]').textContent = `${rtFormatRule(rtFormatState, rtFormatLayout(rtFormatState))} = ${item.address.idx}`;
       };
 
+      const RT_FORMAT_READING_CLASSES = ['is-reading-complete', 'is-reading-trail-4', 'is-reading-trail-3', 'is-reading-trail-2', 'is-reading-trail-1', 'is-reading-current'];
+      const rtFormatPaintPlayback = (root, projection, sequence) => {
+        const cursor = rtFormatPlaybackState.cursor;
+        const orderByAddress = new Map(sequence.map((address, index) => [address, index]));
+        root.querySelectorAll('.format-lab-logical-cell').forEach((cell) => {
+          cell.classList.remove(...RT_FORMAT_READING_CLASSES);
+          if (cursor < 0) return;
+          const order = orderByAddress.get(Number(cell.dataset.rtFormatAddress));
+          if (order > cursor) return;
+          const age = cursor - order;
+          if (age === 0) cell.classList.add('is-reading-current');
+          else if (age <= 4) cell.classList.add(`is-reading-trail-${age}`);
+          else cell.classList.add('is-reading-complete');
+        });
+        root.querySelectorAll('.format-fractal-outline.is-reading-block').forEach((outline) => outline.classList.remove('is-reading-block'));
+        root.querySelector('.format-lab-grid-stage')?.classList.toggle('is-playing', cursor >= 0);
+        if (cursor < 0 || !sequence.length) return;
+        const address = sequence[Math.min(cursor, sequence.length - 1)];
+        const current = projection.byAddress.get(address);
+        if (current?.blockId) root.querySelector(`[data-rt-format-block-outline="${current.blockId}"]`)?.classList.add('is-reading-block');
+        rtFormatHighlight(root, projection, address);
+        const readout = root.querySelector('[data-rt-format-playback-readout]');
+        if (readout) readout.textContent = `P${address} / P${sequence.length - 1}`;
+      };
+
       const renderRtFormatLab = () => {
+        rtFormatStopPlaybackTimer();
+        rtFormatPlaybackState.cursor = -1;
         const root = $('#formatLabView'); const config = rtFormatState; const info = rtFormatLayout(config); const projection = rtFormatProjection(config, info);
         const gridSize = rtFormatGridSize(config, info);
         const logicalSize = config.rows * config.cols; const overhead = (projection.physicalSize / logicalSize).toFixed(2);
@@ -8393,6 +8536,84 @@
           <aside class="format-lab-controls" aria-label="Format layout controls"><section class="format-lab-section"><div class="format-lab-section__head"><strong>控制项</strong><span>shape / dtype / format</span></div><div class="format-lab-fields"><div class="control-field format-lab-layout"><label>布局格式</label><div class="tab-control format-dtype-tabs" role="group" aria-label="布局格式">${['ND', 'DN', 'NZ', 'ZN', 'ZZ', 'NN'].map((value) => `<button class="tab-control-item${config.layout === value ? ' is-selected' : ''}" type="button" data-rt-format-layout="${value}" aria-pressed="${config.layout === value}">${value}</button>`).join('')}</div><p class="format-lab-layout-hint">${rtFormatReadingHint(config.layout)}</p></div><label class="control-field format-lab-dtype">数据类型 <span class="format-lab-dtype-value">${[['float16', 'float16 / half'], ['float32', 'float32'], ['int8', 'int8'], ['fp8_e8m0_t', 'fp8_e8m0_t']].find(([value]) => value === config.dtype)[1]}</span><input class="format-lab-dtype-slider" data-rt-format-dtype type="range" min="0" max="3" step="1" value="${['float16', 'float32', 'int8', 'fp8_e8m0_t'].indexOf(config.dtype)}" aria-label="数据类型"></label><div class="stepper-pair"><div class="control-field"><label for="formatRows">行数</label><div class="stepper-control"><button type="button" aria-label="减少行数" data-rt-format-stepper="rows" data-delta="-1">−</button><input id="formatRows" type="number" min="1" max="32" step="1" value="${config.rows}" readonly tabindex="-1" aria-label="行数"><button type="button" aria-label="增加行数" data-rt-format-stepper="rows" data-delta="1">+</button></div></div><div class="control-field"><label for="formatCols">列数</label><div class="stepper-control"><button type="button" aria-label="减少列数" data-rt-format-stepper="cols" data-delta="-1">−</button><input id="formatCols" type="number" min="1" max="32" step="1" value="${config.cols}" readonly tabindex="-1" aria-label="列数"><button type="button" aria-label="增加列数" data-rt-format-stepper="cols" data-delta="1">+</button></div></div></div></div></section><section class="format-lab-section"><div class="format-lab-section__head"><strong>布局规则</strong><span>mock teaching model</span></div><div class="format-lab-formula"><span>C0 对齐</span><code>C0_ELEMENT = ${info.c0} (sizeof(T) = ${info.sizeofT}B)</code><span>对齐后的形状</span><code>${rtFormatShape(info)}</code><span>对齐后的 stride</span><code>${rtFormatStride(info)}</code><span>映射公式</span><code>${rtFormatRule(config, info)}</code></div></section></aside>
           <section class="format-lab-visuals" aria-label="Logical tensor, layout overlay, and physical memory"><section class="format-lab-visual"><div class="format-lab-visual__head"><strong>2D 逻辑矩阵</strong><div class="zoom-control-group" aria-label="逻辑矩阵缩放"><button class="btn btn-sm btn-ghost" type="button" data-rt-format-zoom="-0.1" aria-label="缩小逻辑矩阵">−</button><span class="zoom-control-readout" data-rt-format-zoom-readout>${Math.round(config.matrixZoom * 100)}%</span><button class="btn btn-sm btn-ghost" type="button" data-rt-format-zoom="0.1" aria-label="放大逻辑矩阵">+</button></div><span>${config.rows} × ${config.cols} · padded ${info.paddedRows} × ${info.paddedCols}</span></div><div class="format-lab-layout-legend" aria-label="逻辑矩阵图例"><span class="format-lab-legend-item"><i class="format-lab-legend-mark is-fractal" aria-hidden="true"></i>分形</span><span class="format-lab-legend-item"><i class="format-lab-legend-mark is-pad" aria-hidden="true"></i>PAD</span><span class="format-lab-legend-item"><svg class="format-lab-legend-mark is-path" viewBox="0 0 16 16" aria-hidden="true"><path d="M2 3H14L2 13H14"></path></svg>阅读顺序</span></div><div class="format-lab-grid-scroll"><div class="format-lab-grid-zoom-host" style="width: ${gridSize.width * config.matrixZoom}px; height: ${gridSize.height * config.matrixZoom}px"><div class="format-lab-grid-zoom" style="transform: scale(${config.matrixZoom})"><div class="format-lab-grid-stage" style="width: ${gridSize.width}px; height: ${gridSize.height}px"><svg class="format-layout-arrows" viewBox="0 0 ${gridSize.width} ${gridSize.height}" role="img" aria-label="${config.layout} 格式的分形读取路径">${rtFormatTraversalArrows(projection, config, info)}</svg><div class="format-lab-grid" style="grid-template-columns: repeat(${info.paddedCols}, 38px)">${rtFormatLogicalCells(projection, config)}</div></div></div></div></div></section><section class="format-lab-visual"><div class="format-lab-visual__head"><strong>1D 物理内存</strong><span>offset 0 … ${projection.maxAddress}</span></div><div class="format-lab-layout-legend">按当前布局的 P# 顺序展开；PAD 是对齐产生的物理 slot，不属于逻辑 Tensor。</div><div class="format-lab-ribbon-scroll"><div class="format-lab-ribbon">${rtFormatPhysicalSlots(projection)}</div></div></section></section>
           <aside class="format-lab-inspector" aria-label="Format mapping inspector"><section class="format-lab-section"><div class="format-lab-section__head"><strong>映射检查器</strong><span>选择单元格</span></div><p class="format-lab-note">逻辑矩阵固定表达 Tensor 坐标与 L#。格式和 dtype 只改变 P#、分形边界、Padding 与 1D 物理排列；不表示运行时真实地址。</p></section><div class="format-lab-metrics"><div class="format-lab-metric"><span>逻辑元素</span><strong>${logicalSize}</strong></div><div class="format-lab-metric"><span>物理元素</span><strong class="${projection.physicalSize === logicalSize ? '' : 'is-warning'}">${projection.physicalSize}</strong></div><div class="format-lab-metric"><span>Padding 元素</span><strong class="${projection.physicalSize === logicalSize ? '' : 'is-warning'}">${projection.physicalSize - logicalSize}</strong></div><div class="format-lab-metric"><span>内存开销</span><strong class="${Number(overhead) === 1 ? '' : 'is-warning'}">${overhead}×</strong></div><div class="format-lab-metric"><span>映射校验</span><strong class="${projection.errors.length ? 'is-warning' : ''}">${projection.errors.length ? '需检查' : '通过'}</strong></div></div><div class="format-lab-trace" data-rt-format-status>选择逻辑单元或物理 slot，查看 L# → P# → @offset。</div><div class="format-lab-trace" data-rt-format-trace>${projection.errors.length ? projection.errors.join('；') : '布局映射为连续的一维物理排列。'}</div></aside>`;
+        const logicalHead = root.querySelector('.format-lab-visual__head');
+        const zoomControls = logicalHead?.querySelector('.zoom-control-group');
+        if (logicalHead && zoomControls) {
+          const visualActions = document.createElement('div');
+          visualActions.className = 'format-lab-visual-actions';
+          visualActions.innerHTML = `<div class="format-lab-playback-controls" aria-label="阅读顺序播放控制"><button class="btn btn-sm btn-ghost" type="button" data-rt-format-playback-step="-1" aria-label="上一个元素">‹</button><button class="btn btn-sm btn-ghost" type="button" data-rt-format-playback-toggle aria-pressed="false">播放</button><button class="btn btn-sm btn-ghost" type="button" data-rt-format-playback-step="1" aria-label="下一个元素">›</button><button class="btn btn-sm btn-ghost" type="button" data-rt-format-playback-reset aria-label="重新开始">↺</button><button class="btn btn-sm btn-ghost" type="button" data-rt-format-playback-speed aria-label="切换播放速度">1×</button><span class="format-lab-playback-readout" data-rt-format-playback-readout>未播放</span></div>`;
+          visualActions.append(zoomControls);
+          logicalHead.insertBefore(visualActions, logicalHead.lastElementChild);
+        }
+        const playbackSequence = projection.physicalSlots.filter((item) => !item.isGap).map((item) => item.address.idx);
+        const playbackToggle = root.querySelector('[data-rt-format-playback-toggle]');
+        const playbackSpeed = root.querySelector('[data-rt-format-playback-speed]');
+        const updatePlaybackControls = () => {
+          if (playbackToggle) {
+            playbackToggle.textContent = rtFormatPlaybackState.running ? '暂停' : '播放';
+            playbackToggle.setAttribute('aria-pressed', String(rtFormatPlaybackState.running));
+          }
+          if (playbackSpeed) playbackSpeed.textContent = `${rtFormatPlaybackState.speed}×`;
+        };
+        const pausePlayback = () => { rtFormatStopPlaybackTimer(); updatePlaybackControls(); };
+        const paintPlayback = () => rtFormatPaintPlayback(root, projection, playbackSequence);
+        const scrollPhysicalPlaybackIntoView = () => {
+          const address = playbackSequence[rtFormatPlaybackState.cursor];
+          const cell = root.querySelector(`.format-lab-ribbon .format-lab-cell[data-rt-format-address="${address}"]`);
+          const scroller = root.querySelector('.format-lab-ribbon-scroll');
+          if (!cell || !scroller) return;
+          const left = cell.offsetLeft; const right = left + cell.offsetWidth;
+          if (left < scroller.scrollLeft || right > scroller.scrollLeft + scroller.clientWidth) scroller.scrollTo({ left: Math.max(0, left - scroller.clientWidth / 2), behavior: 'smooth' });
+        };
+        const tickPlayback = () => {
+          if (!rtFormatPlaybackState.running) return;
+          if (rtFormatPlaybackState.cursor >= playbackSequence.length - 1) { pausePlayback(); return; }
+          rtFormatPlaybackState.cursor += 1;
+          paintPlayback();
+          const scrollStride = Math.max(1, Math.round(playbackSequence.length / 28));
+          if (rtFormatPlaybackState.cursor % scrollStride === 0) scrollPhysicalPlaybackIntoView();
+          const baseDelay = Math.max(28, Math.min(150, 8500 / Math.max(1, playbackSequence.length)));
+          rtFormatPlaybackState.timer = window.setTimeout(tickPlayback, baseDelay / rtFormatPlaybackState.speed);
+        };
+        const startPlayback = () => {
+          rtFormatStopPlaybackTimer();
+          if (rtFormatPlaybackState.cursor >= playbackSequence.length - 1) rtFormatPlaybackState.cursor = -1;
+          rtFormatState.selectedAddress = null;
+          rtFormatPlaybackState.running = true;
+          updatePlaybackControls();
+          tickPlayback();
+        };
+        playbackToggle?.addEventListener('click', () => { if (rtFormatPlaybackState.running) pausePlayback(); else startPlayback(); });
+        root.querySelectorAll('[data-rt-format-playback-step]').forEach((button) => button.addEventListener('click', () => {
+          pausePlayback();
+          const delta = Number(button.dataset.rtFormatPlaybackStep);
+          rtFormatPlaybackState.cursor = Math.max(0, Math.min(playbackSequence.length - 1, rtFormatPlaybackState.cursor + delta));
+          rtFormatState.selectedAddress = null;
+          paintPlayback();
+          scrollPhysicalPlaybackIntoView();
+        }));
+        root.querySelector('[data-rt-format-playback-reset]')?.addEventListener('click', () => {
+          pausePlayback();
+          rtFormatPlaybackState.cursor = -1;
+          rtFormatState.selectedAddress = null;
+          paintPlayback();
+          rtFormatClear(root);
+          const readout = root.querySelector('[data-rt-format-playback-readout]');
+          if (readout) readout.textContent = '未播放';
+          root.querySelector('[data-rt-format-status]').textContent = '选择逻辑单元或物理 slot，查看 L# → P# → @offset。';
+          root.querySelector('[data-rt-format-trace]').textContent = projection.errors.length ? projection.errors.join('；') : '布局映射为连续的一维物理排列。';
+        });
+        playbackSpeed?.addEventListener('click', () => {
+          const speeds = [.5, 1, 2]; const index = speeds.indexOf(rtFormatPlaybackState.speed);
+          rtFormatPlaybackState.speed = speeds[(index + 1) % speeds.length];
+          updatePlaybackControls();
+        });
+        updatePlaybackControls();
+        const playbackKey = `${config.layout}:${config.dtype}:${config.rows}:${config.cols}`;
+        if (!window.matchMedia('(prefers-reduced-motion: reduce)').matches && rtFormatPlaybackState.autoPlayedKey !== playbackKey) {
+          rtFormatPlaybackState.autoPlayedKey = playbackKey;
+          rtFormatPlaybackState.timer = window.setTimeout(startPlayback, 520);
+        }
         const dtypeField = root.querySelector('.format-lab-dtype');
         dtypeField.outerHTML = `<div class="control-field format-lab-dtype"><label>数据类型</label><div class="tab-control format-dtype-tabs" role="group" aria-label="数据类型">${[['float16', 'float16 / half'], ['float32', 'float32'], ['int8', 'int8'], ['fp8_e8m0_t', 'fp8']].map(([value, label]) => `<button class="tab-control-item${config.dtype === value ? ' is-selected' : ''}" type="button" data-rt-format-dtype="${value}" aria-pressed="${config.dtype === value}">${label}</button>`).join('')}</div></div>`;
         root.querySelectorAll('[data-rt-format-layout]').forEach((button) => button.addEventListener('click', () => { rtFormatState.layout = button.dataset.rtFormatLayout; rtFormatState.selectedAddress = null; renderRtFormatLab(); }));
@@ -8400,7 +8621,8 @@
         root.querySelectorAll('[data-rt-format-stepper]').forEach((button) => button.addEventListener('click', () => { const key = button.dataset.rtFormatStepper; rtFormatState[key] = Math.max(1, Math.min(32, rtFormatState[key] + Number(button.dataset.delta))); rtFormatState.selectedAddress = null; renderRtFormatLab(); }));
         root.querySelectorAll('[data-rt-format-zoom]').forEach((button) => button.addEventListener('click', () => { rtFormatState.matrixZoom = Math.max(.4, Math.min(1.2, Number((rtFormatState.matrixZoom + Number(button.dataset.rtFormatZoom)).toFixed(1)))); renderRtFormatLab(); }));
         const restoreSelection = () => {
-          if (rtFormatState.selectedAddress !== null && projection.byAddress.has(rtFormatState.selectedAddress)) rtFormatHighlight(root, projection, rtFormatState.selectedAddress);
+          if (rtFormatPlaybackState.cursor >= 0) paintPlayback();
+          else if (rtFormatState.selectedAddress !== null && projection.byAddress.has(rtFormatState.selectedAddress)) rtFormatHighlight(root, projection, rtFormatState.selectedAddress);
           else rtFormatClear(root);
         };
         root.querySelectorAll('.format-lab-cell[data-rt-format-address]').forEach((cell) => {
@@ -8409,7 +8631,10 @@
           cell.addEventListener('focus', () => rtFormatHighlight(root, projection, address));
           cell.addEventListener('mouseleave', restoreSelection); cell.addEventListener('blur', restoreSelection);
           cell.addEventListener('click', () => {
-            rtFormatState.selectedAddress = address; rtFormatHighlight(root, projection, address);
+            pausePlayback();
+            rtFormatPlaybackState.cursor = Math.max(0, playbackSequence.indexOf(address));
+            rtFormatState.selectedAddress = address;
+            paintPlayback();
             const physicalCell = root.querySelector(`.format-lab-ribbon .format-lab-cell[data-rt-format-address="${address}"]`);
             if (cell.closest('.format-lab-grid') && physicalCell) physicalCell.scrollIntoView({ behavior: 'auto', block: 'nearest', inline: 'center' });
             const selected = projection.byAddress.get(address);

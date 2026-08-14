@@ -1,0 +1,378 @@
+/* ============================================================
+   报告形态版面 —— A4 竖版 / 弱交互 / 打印即 PDF
+   ------------------------------------------------------------
+   与 index_v3.html（工具形态）共用数据，不共用样式：工具形态是视口自适应的
+   IDE 三栏，报告形态是固定 210×297mm 的文档流，两套版面没有可复用的部分。
+   本文件只依赖设计系统 tokens，不引 styles.css，避免工具态规则串味。
+
+   报告固定浅色：它的最终形态是打印/PDF/转发截图，暗色底既吃墨也不利于转发。
+   ============================================================ */
+
+:root {
+  --rp-page-w: 210mm;
+  --rp-page-h: 297mm;
+  --rp-pad-x: 15mm;
+  --rp-pad-t: 14mm;
+  --rp-pad-b: 12mm;
+
+  /* 判定色：与工具形态指标卡的 ok/warn/bad 同义 */
+  --rp-ok: var(--success, #1a8f52);
+  --rp-warn: var(--warning, #b8860b);
+  --rp-bad: var(--danger, #d23b3b);
+
+  /* 时间构成色板：与 Timeline 页签泳道图例同源（计算绿 / 通信橙 / 空泡品红 / 空闲灰） */
+  --rp-compute: #1a8f52;
+  --rp-comm: #c15a1c;
+  --rp-bubble: #cf4d86;
+  --rp-host: #5d6b99;
+  --rp-idle: #8b93a1;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  font-family: var(--font-sans, -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif);
+  font-size: 12.5px;
+  line-height: 1.62;
+  color: var(--foreground, #1c1f26);
+  background: #eceef1;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* ── 屏幕态外壳：顶栏 + 目录侧栏，打印时整体消失 ───────────────── */
+
+.rp-toolbar {
+  position: fixed; inset: 0 0 auto 0; z-index: 50;
+  display: flex; align-items: center; gap: var(--space-3, 12px);
+  height: 46px; padding: 0 16px;
+  background: var(--surface-1, #fff);
+  border-bottom: 1px solid var(--border-default, #d8dce3);
+  box-shadow: 0 1px 3px rgba(16, 20, 28, .06);
+}
+.rp-toolbar__brand { font-weight: var(--font-weight-semibold, 600); letter-spacing: .01em; }
+.rp-toolbar__brand small { font-weight: 400; color: var(--foreground-muted, #6b7280); margin-left: 8px; }
+.rp-toolbar__spacer { flex: 1; }
+.rp-toolbar select,
+.rp-toolbar button {
+  font: inherit; font-size: 12px;
+  height: 28px; padding: 0 10px;
+  border: 1px solid var(--border-default, #d8dce3);
+  border-radius: var(--radius-sm, 4px);
+  background: var(--surface-1, #fff);
+  color: inherit; cursor: pointer;
+}
+.rp-toolbar select { max-width: 380px; }
+.rp-toolbar button:hover { background: var(--state-hover, #f1f3f6); }
+.rp-toolbar .rp-btn-primary {
+  background: var(--primary, #2f6fce); border-color: transparent;
+  color: var(--primary-foreground, #fff); font-weight: 500;
+}
+
+.rp-toc {
+  position: fixed; top: 46px; bottom: 0; left: 0; width: 226px; z-index: 40;
+  overflow-y: auto; padding: 16px 12px 32px;
+  background: var(--surface-2, #f6f7f9);
+  border-right: 1px solid var(--border-subtle, #e4e7ec);
+  font-size: 12px;
+}
+.rp-toc h4 {
+  margin: 0 0 10px; font-size: var(--font-size-label-xs, 11px);
+  letter-spacing: .08em; text-transform: uppercase;
+  color: var(--foreground-muted, #6b7280); font-weight: 600;
+}
+.rp-toc a {
+  display: flex; justify-content: space-between; gap: 8px;
+  padding: 5px 8px; border-radius: var(--radius-sm, 4px);
+  color: var(--foreground-secondary, #4a5160); text-decoration: none;
+}
+.rp-toc a:hover { background: var(--state-hover, #e9ecf1); color: var(--foreground, #1c1f26); }
+.rp-toc a .n { color: var(--foreground-muted, #9aa1ad); font-variant-numeric: tabular-nums; }
+.rp-toc a.is-sub { padding-left: 20px; font-size: 11.5px; }
+
+.rp-doc { padding: 70px 0 60px 226px; display: flex; flex-direction: column; align-items: center; gap: 22px; }
+
+/* ── A4 页 ─────────────────────────────────────────────────── */
+
+.rp-page {
+  position: relative;
+  width: var(--rp-page-w);
+  min-height: var(--rp-page-h);
+  padding: var(--rp-pad-t) var(--rp-pad-x) var(--rp-pad-b);
+  background: var(--surface-1, #fff);
+  box-shadow: 0 2px 14px rgba(16, 20, 28, .12);
+  display: flex; flex-direction: column;
+}
+.rp-page__head {
+  display: flex; align-items: baseline; justify-content: space-between;
+  padding-bottom: 5px; margin-bottom: 12px;
+  border-bottom: 1px solid var(--border-subtle, #e4e7ec);
+  font-size: 10px; color: var(--foreground-muted, #8b93a1); letter-spacing: .02em;
+}
+.rp-page__body { flex: 1; }
+.rp-page__foot {
+  display: flex; align-items: baseline; justify-content: space-between;
+  margin-top: 12px; padding-top: 5px;
+  border-top: 1px solid var(--border-subtle, #e4e7ec);
+  font-size: 9.5px; color: var(--foreground-muted, #9aa1ad);
+}
+.rp-page__foot .pno { font-variant-numeric: tabular-nums; }
+
+/* 章节标题 = 结论句（action title），不是名词 */
+.rp-h2 {
+  margin: 0 0 3px; font-size: 17px; line-height: 1.34;
+  font-weight: var(--font-weight-semibold, 600); letter-spacing: -.01em;
+}
+.rp-h2 .rp-h2-num {
+  display: inline-block; min-width: 22px;
+  color: var(--primary, #2f6fce); font-variant-numeric: tabular-nums;
+}
+.rp-kicker {
+  margin: 0 0 14px; font-size: 11px; letter-spacing: .06em; text-transform: uppercase;
+  color: var(--foreground-muted, #9aa1ad); font-weight: 600;
+}
+.rp-lead { margin: 0 0 14px; font-size: 12.5px; color: var(--foreground-secondary, #4a5160); }
+.rp-h3 {
+  margin: 16px 0 8px; font-size: 12.5px; font-weight: 600;
+  color: var(--foreground, #1c1f26);
+}
+.rp-note { font-size: 10px; color: var(--foreground-muted, #8b93a1); line-height: 1.5; }
+.rp-figcap {
+  margin-top: 5px; font-size: 9.5px; line-height: 1.5;
+  color: var(--foreground-muted, #8b93a1);
+}
+.rp-block { break-inside: avoid; page-break-inside: avoid; }
+
+/* ── 封面 ─────────────────────────────────────────────────── */
+
+.rp-cover { justify-content: space-between; }
+.rp-cover__top { display: flex; align-items: center; gap: 10px; font-size: 11px; letter-spacing: .1em; text-transform: uppercase; color: var(--foreground-muted, #9aa1ad); }
+.rp-cover__rule { flex: 1; height: 1px; background: var(--border-default, #d8dce3); }
+.rp-cover__mid { padding: 4mm 0; }
+.rp-cover__type {
+  display: inline-block; margin-bottom: 10px; padding: 3px 10px;
+  border-radius: var(--radius-pill, 999px);
+  background: var(--tone-info-bg, #eaf1fb); color: var(--primary, #2f6fce);
+  font-size: 11px; font-weight: 600;
+}
+.rp-cover__title { margin: 0 0 8px; font-size: 30px; line-height: 1.24; font-weight: 700; letter-spacing: -.02em; }
+.rp-cover__sub { margin: 0 0 22px; font-size: 14px; color: var(--foreground-secondary, #4a5160); }
+.rp-cover__score { display: flex; align-items: center; gap: 22px; padding: 14px 0; border-top: 1px solid var(--border-subtle, #e4e7ec); border-bottom: 1px solid var(--border-subtle, #e4e7ec); }
+.rp-cover__scorenum { font-size: 58px; font-weight: 700; line-height: 1; letter-spacing: -.03em; font-variant-numeric: tabular-nums; }
+.rp-cover__scoremeta { font-size: 11.5px; color: var(--foreground-secondary, #4a5160); }
+.rp-cover__scoremeta b { font-size: 15px; }
+.rp-cover__facts { display: grid; grid-template-columns: 1fr 1fr; gap: 3mm 8mm; margin-top: 8mm; }
+.rp-cover__fact { border-top: 1px solid var(--border-subtle, #e4e7ec); padding-top: 6px; }
+.rp-cover__fact dt { font-size: 10px; letter-spacing: .05em; color: var(--foreground-muted, #9aa1ad); text-transform: uppercase; }
+.rp-cover__fact dd { margin: 2px 0 0; font-size: 11.5px; line-height: 1.5; word-break: break-word; }
+.rp-cover__bot { font-size: 10px; color: var(--foreground-muted, #9aa1ad); border-top: 1px solid var(--border-default, #d8dce3); padding-top: 8px; }
+
+/* ── 结论卡（执行摘要三句话）────────────────────────────────── */
+
+.rp-verdicts { display: grid; gap: 8px; }
+.rp-verdict {
+  padding: 9px 12px; border-radius: var(--radius-md, 6px);
+  background: var(--surface-2, #f6f7f9);
+  border-left: 3px solid var(--border-strong, #b9c0cc);
+}
+.rp-verdict--top { border-left-color: var(--rp-bad); }
+.rp-verdict--gain { border-left-color: var(--rp-ok); }
+.rp-verdict dt { font-size: 10px; font-weight: 600; letter-spacing: .06em; color: var(--foreground-muted, #8b93a1); text-transform: uppercase; }
+.rp-verdict dd { margin: 3px 0 0; font-size: 11.5px; line-height: 1.55; }
+
+/* ── 通用小组件 ─────────────────────────────────────────────── */
+
+.rp-badge {
+  display: inline-block; padding: 1px 7px; border-radius: var(--radius-pill, 999px);
+  font-size: 10px; font-weight: 700; letter-spacing: .03em; white-space: nowrap;
+}
+.rp-badge--p0 { background: #fbe9e9; color: #b02525; }
+.rp-badge--p1 { background: #fdf1e0; color: #96601a; }
+.rp-badge--p2 { background: #eef0f4; color: #5b6473; }
+.rp-badge--ok { background: #e6f4ec; color: #14713f; }
+
+.rp-grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 6mm; }
+.rp-grid-72 { display: grid; grid-template-columns: 1.9fr 1fr; gap: 6mm; }
+
+.rp-card {
+  border: 1px solid var(--border-subtle, #e4e7ec);
+  border-radius: var(--radius-md, 6px);
+  padding: 10px 12px;
+}
+.rp-card__t { font-size: 10px; font-weight: 600; letter-spacing: .05em; text-transform: uppercase; color: var(--foreground-muted, #8b93a1); margin-bottom: 6px; }
+
+/* 结果层数字卡 */
+.rp-kpis { display: grid; grid-template-columns: repeat(4, 1fr); gap: 4mm; }
+.rp-kpi { border-top: 2px solid var(--foreground, #1c1f26); padding-top: 6px; }
+.rp-kpi__k { font-size: 10px; color: var(--foreground-muted, #8b93a1); }
+.rp-kpi__v { font-size: 19px; font-weight: 650; line-height: 1.2; letter-spacing: -.02em; font-variant-numeric: tabular-nums; }
+.rp-kpi__n { font-size: 9.5px; color: var(--foreground-muted, #9aa1ad); line-height: 1.45; }
+
+/* 指标体检行（bullet chart）：本次值 + 参考区间 —— 报告态的核心表达，
+   工具态藏在 tooltip 里的 data-warn 阈值在这里必须印出来。 */
+.rp-bullets { display: grid; gap: 7px; }
+.rp-bullet { display: grid; grid-template-columns: 118px 1fr 74px; align-items: center; gap: 10px; }
+.rp-bullet__name { font-size: 11px; line-height: 1.3; }
+.rp-bullet__track {
+  position: relative; height: 15px; border-radius: 3px;
+  background: var(--surface-3, #eceef1); overflow: visible;
+}
+.rp-bullet__fill { position: absolute; inset: 0 auto 0 0; border-radius: 3px; background: var(--foreground-muted, #9aa1ad); }
+.rp-bullet__fill.is-ok { background: var(--rp-ok); }
+.rp-bullet__fill.is-warn { background: var(--rp-warn); }
+.rp-bullet__fill.is-bad { background: var(--rp-bad); }
+.rp-bullet__thr { position: absolute; top: -3px; bottom: -3px; width: 2px; background: var(--foreground, #1c1f26); }
+.rp-bullet__thr::after {
+  content: attr(data-l); position: absolute; left: 4px; top: -1px;
+  font-size: 8.5px; color: var(--foreground-secondary, #4a5160); white-space: nowrap;
+}
+.rp-bullet__val { font-size: 12px; font-weight: 650; text-align: right; font-variant-numeric: tabular-nums; }
+.rp-bullet__val small { font-size: 9px; font-weight: 400; color: var(--foreground-muted, #9aa1ad); }
+.rp-bullet__note { grid-column: 2 / -1; margin-top: -3px; font-size: 9.5px; color: var(--foreground-muted, #8b93a1); }
+
+/* ── 健康度仪表 ───────────────────────────────────────────────
+   图形本身由工具形态 app.js 的 renderPhsGauge() 生成，见 report-render.js 的
+   mountGauges()。那个函数写死了 styles.css 里的 .phs-gauge-* 类名与 --fg 系列变量，
+   而报告不引 styles.css（IDE 三栏版面与 A4 文档流没有可复用的部分），所以在此补一组
+   同名规则：选择器结构与 styles.css 保持一致，只改两处——
+   ① 高度换成 aspect-ratio 3/2，与 renderPhsGauge 的 viewBox(300×200) 严丝合缝，
+      SVG 不会在栏宽里留出上下留白、中心分数因此不会偏离环心；
+   ② --fg 系列就地映射到设计系统 tokens。 */
+.rp-gauge {
+  --fg: var(--foreground, #1c1f26);
+  --fg-secondary: var(--foreground-secondary, #4a5160);
+  --fg-muted: var(--foreground-muted, #6b7280);
+}
+.phs-gauge-box { position: relative; width: 100%; aspect-ratio: 3 / 2; }
+.phs-gauge-box > svg { width: 100%; height: 100%; display: block; }
+.phs-gauge-center {
+  position: absolute; inset: 0;
+  display: flex; flex-direction: column;
+  align-items: center; justify-content: center;
+  transform: translateY(9%);
+  pointer-events: none; text-align: center;
+}
+.phs-gauge-grade {
+  font-size: 12px; font-weight: 700; line-height: 1;
+  padding: 2px 10px; border-radius: 999px; margin-bottom: 3px;
+}
+.phs-gauge-score {
+  font-size: 36px; font-weight: 700; line-height: 1.04;
+  letter-spacing: -1px;
+}
+.phs-gauge-sub {
+  font-size: 11px; color: var(--fg-muted); margin-top: 3px;
+  display: flex; align-items: center; gap: 5px;
+}
+.phs-gauge-sub b { color: var(--fg-secondary); font-weight: 600; }
+.phs-gauge-estbadge {
+  font-size: 10px; font-weight: 700; line-height: 1.4;
+  padding: 1px 7px; border-radius: 999px;
+}
+
+/* 时间构成堆叠条 */
+.rp-stack { display: flex; height: 30px; border-radius: 4px; overflow: hidden; }
+.rp-stack__seg { display: flex; align-items: center; justify-content: center; color: #fff; font-size: 10.5px; font-weight: 600; }
+.rp-stack-legend { display: flex; flex-wrap: wrap; gap: 4px 16px; margin-top: 8px; font-size: 10.5px; }
+.rp-stack-legend span { display: inline-flex; align-items: center; gap: 5px; }
+.rp-swatch { width: 9px; height: 9px; border-radius: 2px; flex: none; }
+
+/* 表格 */
+.rp-table { width: 100%; border-collapse: collapse; font-size: 10.5px; }
+.rp-table th {
+  text-align: left; font-weight: 600; padding: 5px 6px;
+  border-bottom: 1.5px solid var(--foreground, #1c1f26);
+  color: var(--foreground-secondary, #4a5160); white-space: nowrap;
+}
+.rp-table td { padding: 5px 6px; border-bottom: 1px solid var(--border-subtle, #e4e7ec); vertical-align: top; }
+.rp-table td.num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.rp-table tr.is-slow td { background: #fdf0f0; }
+.rp-table code { font-family: var(--font-mono, ui-monospace, Consolas, monospace); font-size: 9.5px; }
+
+/* 横条排行（算子 Top-N / rank 构成） */
+.rp-hbars { display: grid; gap: 5px; }
+.rp-hbar { display: grid; grid-template-columns: 152px 1fr 64px; align-items: center; gap: 9px; font-size: 10.5px; }
+.rp-hbar__n { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: var(--font-mono, monospace); font-size: 9.5px; }
+.rp-hbar__t { height: 13px; background: var(--surface-3, #eceef1); border-radius: 2px; display: flex; }
+.rp-hbar__f { border-radius: 2px; }
+.rp-hbar__v { text-align: right; font-variant-numeric: tabular-nums; }
+
+/* ── 问题页 ─────────────────────────────────────────────────── */
+
+.rp-issue__head { display: flex; align-items: flex-start; gap: 9px; margin-bottom: 3px; }
+.rp-issue__id { font-size: 17px; font-weight: 700; color: var(--primary, #2f6fce); font-variant-numeric: tabular-nums; line-height: 1.34; }
+.rp-issue__title { flex: 1; font-size: 17px; font-weight: 600; line-height: 1.34; letter-spacing: -.01em; }
+.rp-issue__meta { display: flex; gap: 14px; margin: 0 0 12px; font-size: 10.5px; color: var(--foreground-muted, #8b93a1); }
+.rp-issue__meta b { color: var(--foreground, #1c1f26); font-variant-numeric: tabular-nums; }
+
+.rp-evidence {
+  margin-top: 10px; padding: 8px 11px;
+  background: var(--surface-2, #f6f7f9); border-radius: var(--radius-md, 6px);
+  font-size: 10.5px; line-height: 1.55;
+}
+.rp-evidence__t { font-weight: 600; color: var(--foreground-secondary, #4a5160); margin-right: 6px; }
+
+.rp-impact { display: grid; gap: 8px; align-content: start; }
+.rp-impact__q { font-size: 24px; font-weight: 700; line-height: 1.1; letter-spacing: -.02em; font-variant-numeric: tabular-nums; }
+.rp-impact__q small { display: block; font-size: 10px; font-weight: 400; letter-spacing: 0; color: var(--foreground-muted, #8b93a1); margin-top: 2px; }
+.rp-impact__bar { height: 8px; border-radius: 4px; background: var(--surface-3, #eceef1); overflow: hidden; }
+.rp-impact__bar i { display: block; height: 100%; background: var(--rp-bad); }
+.rp-impact__txt { font-size: 10.5px; line-height: 1.55; color: var(--foreground-secondary, #4a5160); }
+
+.rp-steps { margin: 0; padding-left: 0; list-style: none; counter-reset: s; display: grid; gap: 5px; }
+.rp-steps li { position: relative; padding-left: 22px; font-size: 10.5px; line-height: 1.55; counter-increment: s; }
+.rp-steps li::before {
+  content: counter(s); position: absolute; left: 0; top: 1px;
+  width: 15px; height: 15px; border-radius: 50%;
+  background: var(--foreground, #1c1f26); color: #fff;
+  font-size: 9px; font-weight: 700; display: grid; place-items: center;
+}
+.rp-verify {
+  margin-top: 9px; padding: 7px 11px; border-left: 3px solid var(--rp-ok);
+  background: #f2f8f4; font-size: 10.5px; line-height: 1.55; border-radius: 0 4px 4px 0;
+}
+.rp-verify b { color: #14713f; }
+
+/* 已排查未见异常 */
+.rp-checks { display: grid; gap: 7px; }
+.rp-check { display: grid; grid-template-columns: 16px 1fr; gap: 8px; font-size: 10.5px; line-height: 1.55; }
+.rp-check__m { color: var(--rp-ok); font-weight: 700; }
+
+/* 深链：屏幕可见，打印隐藏（打印时降级为脚注文本） */
+.rp-tool-link {
+  float: right; margin-left: 10px; font-size: 10px; text-decoration: none;
+  color: var(--primary, #2f6fce); border: 1px solid var(--border-default, #d8dce3);
+  border-radius: var(--radius-pill, 999px); padding: 1px 9px; background: var(--surface-1, #fff);
+}
+.rp-tool-link:hover { background: var(--tone-info-bg, #eaf1fb); }
+
+.rp-empty { padding: 40px; text-align: center; color: var(--foreground-muted, #9aa1ad); }
+
+/* ── 打印 ───────────────────────────────────────────────────── */
+
+@page { size: A4 portrait; margin: 0; }
+
+@media print {
+  html, body { background: #fff; }
+  .rp-toolbar, .rp-toc, .rp-screen-only { display: none !important; }
+  .rp-doc { padding: 0; gap: 0; display: block; }
+  .rp-page {
+    /* 打印时留 1mm 余量：满额 297mm 的盒子在 297mm 纸上易因舍入溢出，多打一张空白页 */
+    width: var(--rp-page-w); min-height: 296mm;
+    margin: 0; box-shadow: none;
+    break-after: page; page-break-after: always;
+  }
+  .rp-page:last-child { break-after: auto; page-break-after: auto; }
+  .rp-print-only { display: inline !important; }
+  /* 背景色是本报告的信息载体（判定色、堆叠条、泳道段），必须打出来 */
+  * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
+  a { color: inherit; text-decoration: none; }
+}
+
+.rp-print-only { display: none; }
+
+/* 窄屏兜底：A4 不缩放，只是允许横向滚动，保证版面确定性 */
+@media screen and (max-width: 1100px) {
+  .rp-toc { display: none; }
+  .rp-doc { padding-left: 0; }
+}

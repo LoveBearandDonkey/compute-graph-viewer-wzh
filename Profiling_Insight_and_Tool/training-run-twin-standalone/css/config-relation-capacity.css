@@ -1,0 +1,457 @@
+/* ══ 单卡容量（Cluster 区右栏）══════════════════════════════════════════════
+   集群矩阵回答「是哪张卡」，这一栏回答「这张卡里装了什么、还剩多少」。两者并排
+   在同一区里，选中矩阵里任一 rank，容量柱跟着切到那张卡。
+
+   视觉语法沿用「容器」隐喻，三条不能动的规则：
+     · 容量是**线框**（结构），内容是**实心段**（体积）—— 两者不能同色同质感；
+     · 越界段画在容量线**之上**、框外，而不是把柱子涂红 —— OOM 是结构性越界，
+       不是「颜色更深一点」；
+     · 预留段（通信 buffer / workspace / 碎片）必须画出来。只画权重+梯度+优化器
+       +激活四段，得到的是一个更好看的黑洞：照着配上机照样 OOM。
+   ────────────────────────────────────────────────────────────────────────── */
+
+.cro-capacity {
+  /* 宽度不由本栏决定：.cro-cluster 是照抄 .cro-board 后两列的 grid，本栏落在
+     第 2 个轨道上，解出来的宽度恒等于正上方的 MoE 列（见 config-relation-observer.css
+     的 .cro-cluster）。这里只声明纵向排布，别再写 flex-basis / width 去跟它抢。
+     再窄就整块换行到矩阵下方（见文件末尾的窄屏规则）。 */
+  position: relative;   /* 口径浮层的定位上下文 */
+  min-width: 0;
+
+  /* 本栏的高度**只跟随、不驱动**：Cluster 那一行是 fit-content 的，行高取两半
+     内容高度的较大者，本栏内容一旦比左半的 rank 矩阵高，撑高整行的就成了这根
+     柱子 —— 矩阵才是这一区的主角，柱子是来陪它的。
+     height:0 让本栏在行高计算里的贡献恒为 0（矩阵那半独自决定行高），
+     min-height:100% 再在布局时把它拉回整格 —— 百分比在固有尺寸计算里按 auto
+     处理，不会绕回去参与撑高，两句合起来正好是「只跟随」。
+     下面 __body → __main 都是 flex:1 1 auto，拿到的就是矩阵留下的那点高度，
+     柱子（.cro-capacity__scene）再在 __main 里按可用高度缩放。 */
+  height: 0;
+  min-height: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding-left: var(--space-4);
+  border-left: 1px solid var(--border-subtle);
+
+  /* 四段的颜色取自 deck 语义色（.cro-board 上已定义），保证与整网/结构条同一套
+     调色。权重与梯度相邻且色相相近是有意的：它们本来就是同一个参数量 ×2B 的
+     两份，读成一对比读成两件事更准。 */
+  --cro-cap-weight: var(--pto-model-deck-parameter);
+  --cro-cap-grad: var(--pto-model-deck-comm);
+  --cro-cap-optim: var(--pto-model-deck-head);
+  --cro-cap-act: var(--pto-model-deck-embedding);
+  /* 预留段是中性灰而非语义色：它不是「装进去的某类数据」，是留给意外的空当。
+     写死一个两套主题都站得住的中间灰，不用 color-mix —— JS 要把它拆成 RGB
+     分量去分三个面的明暗，而 color-mix 的计算值在各浏览器里格式不统一。 */
+  --cro-cap-reserve: #8A98A2;
+}
+
+/* ── 标题行 ── */
+.cro-capacity__head {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
+  flex: 0 0 auto;
+}
+
+.cro-capacity__title {
+  margin: 0;
+  font-size: var(--font-size-body-md);
+  font-weight: var(--font-weight-semibold);
+  color: var(--foreground);
+  letter-spacing: -0.01em;
+}
+
+/* 口径问号：尺寸对齐正文行高，不用 .btn（那套最小 24px 会把标题行撑高一档） */
+.cro-capacity__help {
+  flex: 0 0 auto;
+  width: 15px;
+  height: 15px;
+  padding: 0;
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-pill);
+  background: transparent;
+  color: var(--foreground-muted);
+  font-size: 10px;
+  line-height: 1;
+  cursor: pointer;
+  transition: color 120ms ease, border-color 120ms ease;
+}
+
+.cro-capacity__help:hover {
+  color: var(--foreground);
+  border-color: var(--border-strong);
+}
+
+.cro-capacity__help[aria-expanded="true"] {
+  color: var(--foreground);
+  border-color: var(--accent);
+}
+
+/* 当前算的是哪张卡：默认「最紧的卡」，选中 rank 后切成 rank 号 */
+.cro-capacity__scope {
+  font-family: var(--font-mono);
+  font-size: var(--font-size-label-xs);
+  color: var(--foreground-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* 正文整块。声明了 display 就必须自己补 [hidden]：作者样式里的 display
+   会盖掉 UA 的 [hidden]{display:none}，否则 JS 的 hidden 开关失效。 */
+.cro-capacity__body {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.cro-capacity__body[hidden] { display: none; }
+
+/* ── 等距容器 + 读数 ── */
+.cro-capacity__main {
+  display: flex;
+  gap: var(--space-3);
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+.cro-capacity__readouts {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: var(--space-2);
+}
+
+/* 占比：这一栏的头条读数。安全档不出判定横幅后，它是唯一一眼能看出险不险的东西 */
+.cro-capacity__ratio {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+}
+
+.cro-capacity__ratio b {
+  font-family: var(--font-mono);
+  font-size: 26px;
+  font-weight: var(--font-weight-semibold);
+  line-height: 1;
+  letter-spacing: -0.02em;
+  color: var(--cro-ratio-color, var(--foreground));
+}
+
+/* 绝对值压小压暗：需要时才看，不与百分比抢 */
+.cro-capacity__ratio span {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--foreground-muted);
+}
+
+.cro-capacity__ratio[data-level="tight"] { --cro-ratio-color: var(--warning); }
+.cro-capacity__ratio[data-level="alert"],
+.cro-capacity__ratio[data-level="over"]  { --cro-ratio-color: var(--danger); }
+
+/* 等距容器：所有几何与配色都在 JS 里算好写进 SVG（见 buildScene），
+   这里只负责它在面板里占多大、怎么居中。SVG 自带 viewBox 自适配，容器
+   尺寸一变整幅等比缩放，不需要重算。
+
+   高度自适应：本栏给多少高，盒子就长多高（父链 .cro-capacity__body →
+   __main 都是 flex:1 1 auto，天然会把富余高度传下来），宽度按图形自身的
+   长宽比跟着走。
+   两头必须**一起**放开 —— SVG 是 preserveAspectRatio="meet"，缩放取宽高两
+   个约束里更紧的那个。宽度钉死 124px 时，容器一旦高过 ~173px
+   （= 124 ÷ 0.72）宽度就成了瓶颈，再高也不会变大；原先那道
+   max-height:176px 正是照着这个拐点配的，不是独立的一道限制。
+   0.72 = viewBox 的长宽比 ≈ 10.7 × 14.9，由 buildScene → buildBox 的
+   BOX{w:5.2,d:4,h:9.6} 经等距投影、再加阈值标签向左伸出的 2.0 得出。
+   用 aspect-ratio 而不是让盒子横向抢份额：按比例给宽度，图形四周不留死边，
+   剩下的宽度才都归右侧读数。
+   封顶只能挂在里面那张 svg 上，**不能挂在盒子上**：盒子是靠 align-items:stretch
+   拿到本行高度的，一旦 max-height 把它截短，stretch 就退化成 flex-start，整幅图
+   连同盒子一起贴到 __main 的顶上（就是"偏上"）。让盒子始终撑满本行，由盒子自己
+   的 align-items:center 把 svg 竖直居中，封顶交给 svg。
+   两个 px 下限都去掉（原来是 min-width:96px / min-height:122px）：本栏已经改成
+   「高度只跟随矩阵」（见 .cro-capacity 的 height:0 + min-height:100%），柱子就得
+   能跟着缩下去；留一道 px 下限，它就又会在矩阵矮的时候顶住不动、把行撑起来。
+   窄屏那档另说 —— 那里 __main 是 align-items:center、盒子拿不到拉伸高度，
+   下限由文件末尾的 @media 单独给回。 */
+.cro-capacity__scene {
+  flex: 0 0 auto;
+  aspect-ratio: 10.7 / 14.9;
+  width: auto;
+  min-width: 0;
+  max-width: 46%;
+  min-height: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.cro-capacity__scene svg {
+  width: 100%;
+  height: 100%;
+  max-height: 288px;
+  overflow: visible;
+}
+
+/* 段体本身可点：hover 抬亮一档，配合原生 <title> 给出「哪一段 · 多少 GB」 */
+.cro-capacity__solid { transition: opacity 120ms ease; }
+.cro-capacity__solid:hover { opacity: 0.78; }
+
+/* ── 读数图例 ── */
+.cro-capacity__legend {
+  flex: 0 0 auto;
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.cro-capacity__row {
+  display: grid;
+  grid-template-columns: 8px 1fr auto;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: var(--font-size-label-xs);
+  color: var(--foreground-secondary);
+}
+
+.cro-capacity__row i {
+  width: 8px;
+  height: 8px;
+  border-radius: 2px;
+  background: var(--cro-seg-color, var(--surface-4));
+}
+
+.cro-capacity__row[data-seg="weight"] { --cro-seg-color: var(--cro-cap-weight); }
+.cro-capacity__row[data-seg="grad"]   { --cro-seg-color: var(--cro-cap-grad); }
+.cro-capacity__row[data-seg="optim"]  { --cro-seg-color: var(--cro-cap-optim); }
+.cro-capacity__row[data-seg="act"]    { --cro-seg-color: var(--cro-cap-act); }
+.cro-capacity__row[data-seg="reserve"] i {
+  background: repeating-linear-gradient(
+    45deg,
+    color-mix(in srgb, var(--foreground) 34%, transparent) 0 2px,
+    transparent 2px 4px
+  );
+  border: 1px solid color-mix(in srgb, var(--foreground) 22%, transparent);
+}
+
+.cro-capacity__row b {
+  font-family: var(--font-mono);
+  font-weight: var(--font-weight-medium);
+  color: var(--foreground);
+}
+
+
+/* ── 判定行：偏满 / 预警 / 越界。安全档由 JS 整块 hidden —— 一条「安全」横幅
+      每次白占 ~36px 行高却什么也没说，而这一栏所在的 Cluster 行高是由内容撑的。
+      声明了 display 就得自己补 [hidden]。 ── */
+.cro-capacity__verdict[hidden] { display: none; }
+
+.cro-capacity__verdict {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-2);
+  padding: 6px var(--space-2);
+  border-radius: var(--radius-sm);
+  font-size: var(--font-size-label-xs);
+  line-height: 1.45;
+  background: var(--surface-1);
+  color: var(--foreground-secondary);
+}
+
+.cro-capacity__badge {
+  flex: 0 0 auto;
+  padding: 1px 6px;
+  border-radius: var(--radius-pill);
+  font-size: 10px;
+  font-weight: var(--font-weight-semibold);
+  white-space: nowrap;
+  background: var(--surface-3);
+  color: var(--foreground);
+}
+
+.cro-capacity__verdict[data-level="tight"] { background: var(--tone-warning-bg); }
+.cro-capacity__verdict[data-level="tight"] .cro-capacity__badge { background: var(--tone-warning-strong); color: var(--warning); }
+.cro-capacity__verdict[data-level="alert"],
+.cro-capacity__verdict[data-level="over"] { background: var(--tone-critical-bg); }
+.cro-capacity__verdict[data-level="alert"] .cro-capacity__badge,
+.cro-capacity__verdict[data-level="over"] .cro-capacity__badge {
+  background: color-mix(in srgb, var(--danger) 22%, transparent);
+  color: var(--danger);
+}
+
+/* ── 各 PP Stage 峰值：容量只随 stage 变（同 stage 内各 DP/EP/TP/CP 副本一样重），
+      所以这排小柱就是容量在集群上的完整分布。点一根 = 选中该 stage 的首卡。 ── */
+.cro-capacity__spread {
+  flex: 0 0 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.cro-capacity__spread-head {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--space-2);
+  font-size: 10px;
+  color: var(--foreground-muted);
+}
+
+.cro-capacity__stages {
+  display: flex;
+  align-items: flex-end;
+  gap: 2px;
+  height: 30px;
+  padding: 0;
+  margin: 0;
+  overflow: hidden;
+}
+
+.cro-capacity__stage {
+  flex: 1 1 0;
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 1px 1px 0 0;
+  background: color-mix(in srgb, var(--foreground) 26%, transparent);
+  cursor: pointer;
+  transition: background 120ms ease, opacity 120ms ease;
+}
+
+.cro-capacity__stage[data-level="tight"] { background: color-mix(in srgb, var(--warning) 70%, transparent); }
+.cro-capacity__stage[data-level="alert"],
+.cro-capacity__stage[data-level="over"]  { background: color-mix(in srgb, var(--danger) 78%, transparent); }
+
+.cro-capacity__stage:hover { opacity: 0.75; }
+
+.cro-capacity__stage.is-selected {
+  background: var(--accent);
+  box-shadow: 0 0 0 1px var(--accent);
+}
+
+/* ── 口径浮层：这套数字怎么算出来的。不写等于让人猜，猜出来的数没人敢用；
+      但也不该常驻——一栏 300px 的面板放不下四行小字还不挤掉容器。折中是
+      收进标题右侧的问号，点开盖在下方内容上。 ── */
+/* 定位是 fixed + JS 实测避让，且节点在 boot 时被移到 <body> 下 —— 两件事缺一不可：
+     · 留在原地做 absolute，浮层会把 .cro-board / .cro-cluster 的可滚动区域撑大，
+       表现为鼠标一悬浮页面就冒出滚动条（这一栏在板面最底行，浮层正好探到外面）；
+     · 光改 fixed 也不行：祖先 .pto-ide-frame__pane 带 backdrop-filter，会成为 fixed
+       的包含块，同时它还是 overflow:hidden，浮层既定位不到视口也会被裁掉。
+   所以挂到 body 下，再由 placeBasis() 按问号的实际位置贴放并夹在视口内。 */
+.cro-capacity__basis {
+  position: fixed;
+  z-index: 90;
+  top: 0;
+  left: 0;
+  width: 320px;
+  max-width: calc(100vw - 24px);
+  max-height: 62vh;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: var(--space-3);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-md);
+  background: var(--surface-3);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.28);
+  font-size: 10px;
+  line-height: 1.6;
+  color: var(--foreground-secondary);
+}
+
+.cro-capacity__basis[hidden] { display: none; }
+
+.cro-capacity__basis dl {
+  margin: 0;
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 3px var(--space-2);
+}
+
+.cro-capacity__basis dt {
+  color: var(--foreground-muted);
+  white-space: nowrap;
+}
+
+.cro-capacity__basis dd {
+  margin: 0;
+  color: var(--foreground);
+}
+
+.cro-capacity__basis code {
+  font-family: var(--font-mono);
+  font-size: 10px;
+}
+
+/* 存疑的口径值（如 950 的单卡 HBM 是占位值）标出来 —— 拿不准的数字必须自己
+   说自己拿不准，否则读者会把它当成已核实的规格用出去。 */
+.cro-capacity__basis-warn {
+  color: var(--warning);
+}
+
+/* 第二组的小标题：「为什么各卡装的不一样多」 */
+.cro-capacity__basis-sub {
+  margin: var(--space-3) 0 var(--space-2);
+  padding-top: var(--space-2);
+  border-top: 1px solid var(--border-subtle);
+  font-size: 10px;
+  font-weight: var(--font-weight-semibold);
+  color: var(--foreground);
+}
+
+.cro-capacity__basis-foot {
+  margin: var(--space-2) 0 0;
+  padding-top: var(--space-2);
+  border-top: 1px solid var(--border-subtle);
+  color: var(--foreground-muted);
+}
+
+/* 悬浮即出的提示不该抢走指针：鼠标停在问号上时浮层就在下方展开，若浮层自己
+   也吃指针事件，从问号往下滑会先命中浮层顶边而不是它下面的内容。这里保留
+   pointer-events 是有意的 —— 口径要能被选中复制，且浮层自身 hover 要保持展开。 */
+.cro-capacity__basis { pointer-events: auto; }
+
+.cro-capacity__empty {
+  flex: 1 1 auto;
+  display: flex;
+  align-items: center;
+  margin: 0;
+  font-size: var(--font-size-body-sm);
+  color: var(--foreground-muted);
+}
+
+.cro-capacity__empty[hidden] { display: none; }
+
+/* 窄屏：容量栏换到矩阵下方整行，别把矩阵挤到没法看 */
+@media (max-width: 1180px) {
+  /* 塌成单列（.cro-cluster 是 grid，不再是 flex-wrap 那一套） */
+  .cro-cluster {
+    grid-template-columns: minmax(0, 1fr);
+    row-gap: var(--space-3);
+  }
+
+  .cro-capacity {
+    padding-left: 0;
+    padding-top: var(--space-3);
+    border-left: 0;
+    border-top: 1px solid var(--border-subtle);
+    /* 「高度只跟随矩阵」那套（height:0 + min-height:100%）只在左右并排时成立：
+       这里本栏自己独占一行，它就是本行高度的唯一来源，再让贡献归零会直接塌成
+       0 高、整栏消失。还原成按内容高。 */
+    height: auto;
+    min-height: 0;
+  }
+
+  .cro-capacity__main { align-items: center; }
+  /* 这一档 __main 是 align-items:center，盒子拿不到拉伸高度，得自己给回下限 */
+  .cro-capacity__scene { min-height: 124px; }
+}

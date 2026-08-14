@@ -24,6 +24,8 @@ html {
   height: auto;
   overflow-x: hidden;
   overflow-y: auto;
+  scrollbar-color: color-mix(in srgb, var(--foreground-muted) 52%, transparent) transparent;
+  scrollbar-width: thin;
 }
 
 body {
@@ -39,6 +41,31 @@ body {
   background-attachment: fixed;
   color: var(--foreground);
   font-family: var(--font-sans);
+}
+* {
+  scrollbar-color: color-mix(in srgb, var(--foreground-muted) 52%, transparent) transparent;
+  scrollbar-width: thin;
+}
+*::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+*::-webkit-scrollbar-track {
+  background: transparent;
+}
+*::-webkit-scrollbar-thumb {
+  min-height: 32px;
+  border: 2px solid transparent;
+  border-radius: var(--radius-pill);
+  background: color-mix(in srgb, var(--foreground-muted) 56%, transparent);
+  background-clip: content-box;
+}
+*::-webkit-scrollbar-thumb:hover {
+  background: color-mix(in srgb, var(--foreground-secondary) 62%, transparent);
+  background-clip: content-box;
+}
+*::-webkit-scrollbar-corner {
+  background: transparent;
 }
 
 body::before {
@@ -724,6 +751,23 @@ body.is-header-collapsed .side-nav {
   font-weight: 700;
 }
 
+.launch-card.has-variant-grid .card-demo-footer {
+  min-height: 67px;
+  align-items: flex-start;
+}
+
+.launch-card.has-variant-grid .variant-list {
+  width: 100%;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  overflow: visible;
+}
+
+.launch-card.has-variant-grid .variant-link {
+  width: 100%;
+  max-width: none;
+}
+
 .empty-state {
   min-height: 260px;
   border-radius: var(--radius-lg);
@@ -930,7 +974,7 @@ body.is-header-collapsed .side-nav {
 
     <nav class="cann-nav-wrap" aria-label="CANN 顶部导航">
       <div class="cann-nav">
-        <a class="cann-nav-link" href="#grid"><svg class="svg-icon nav-icon" aria-hidden="true"><use href="#icon-folder"></use></svg>项目 <span class="count-badge">70</span></a>
+        <a class="cann-nav-link" href="#grid"><svg class="svg-icon nav-icon" aria-hidden="true"><use href="#icon-folder"></use></svg>项目 <span class="count-badge">71</span></a>
         <a class="cann-nav-link" href="#grid"><svg class="svg-icon nav-icon" aria-hidden="true"><use href="#icon-layers"></use></svg>合集</a>
         <a class="cann-nav-link" href="#grid"><svg class="svg-icon nav-icon" aria-hidden="true"><use href="#icon-circle-dot"></use></svg>Issues</a>
         <a class="cann-nav-link" href="#grid"><svg class="svg-icon nav-icon" aria-hidden="true"><use href="#icon-git-pull-request"></use></svg>Pull Requests</a>
@@ -989,7 +1033,7 @@ const launchItems = [
     status: "hi-fi",
     desc: "用 3D 视图看懂一次 tiling:数据切分、内存占用、执行参数一屏对照。",
     href: "tiling/index.html",
-    preview: "assets/ascend-tiling-viz-workbench.png",
+    preview: "assets/preview-tiling-workbench-16x9.png?v=20260803-screenshot",
     fit: "contain",
     tags: ["Tiling", "3D Tensor", "Memory"],
     variants: [
@@ -1003,7 +1047,7 @@ const launchItems = [
     status: "hi-fi",
     desc: "把 AICPU/AICore 的指令流和 Kernel 结构展开成可追踪的执行路径。",
     href: "ai-cpu-aicore/index.html",
-    preview: "assets/instruction-visualizer-demo.png",
+    preview: "assets/preview-instruction-visualizer-16x9.png?v=20260803-screenshot",
     fit: "contain",
     tags: ["Instruction", "AICPU", "Kernel"]
   },
@@ -1013,9 +1057,23 @@ const launchItems = [
     status: "hi-fi",
     desc: "理解 Ascend 950 的硬件路径,跟着算子迁移和 tiling 一步步走通。",
     href: "ascend-950-workbench-demo/index.html",
-    preview: "assets/950b硬件工作台.png",
+    preview: "assets/preview-ascend-950-migration-16x9.png?v=20260803-screenshot",
     fit: "contain",
     tags: ["Hardware", "Migration", "Operator"]
+  },
+  {
+    title: "AscendPort 迁移工作台",
+    sub: "GPU → AscendC · Flash MLA",
+    group: "A5 硬件与迁移",
+    status: "hi-fi",
+    desc: "按 S1-S7 引导把 CUDA Flash MLA sparse decode 迁移到 AscendC,联动源码、计算图、内存架构、流水与终端输出。",
+    href: "ascendport_migration-pangu/ascendport_migration_V3_MLA_pto.html",
+    preview: "assets/ascendport-mla-migration-workbench.png",
+    tags: ["AscendPort", "MLA", "Migration"],
+    variants: [
+      { label: "当前版", href: "ascendport_migration-pangu/ascendport_migration_V3_MLA_pto.html" },
+      { label: "旧版", href: "ascendport_migration/ascendport_migration_V3_MLA_pto.html" }
+    ]
   },
   {
     title: "A3 / A5 差异解读",
@@ -1023,7 +1081,7 @@ const launchItems = [
     status: "hi-fi",
     desc: "对比 A3 到 A5 的算子迁移差异,看清分类与硬件联动关系。",
     href: "ascend-950-workbench-demo/feature_taxonomy.html",
-    preview: "assets/A3-A5差异解读.png",
+    preview: "assets/preview-a3-a5-diff-16x9.png?v=20260803-screenshot",
     fit: "contain",
     tags: ["Migration", "A3", "A5"],
     variants: [
@@ -1032,14 +1090,25 @@ const launchItems = [
     ]
   },
   {
-    title: "A5 数据搬运 Flow Map",
+    title: "Ascend A5 架构映射",
     group: "A5 硬件与迁移",
     status: "hi-fi",
-    desc: "一张地图看清 950 的数据搬运路径与通信指令走向。",
-    href: "ascend-hardware-map/ascend-hardware-map-v3.html",
-    preview: "assets/Ascend950-flow-map.png",
+    desc: "融合迁移分类、执行流与硬件架构图，联动查看 Ascend 910B 到 A5 的硬件变化、数据通路与迁移动作。",
+    href: "ascend-hardware-map/index.html",
+    preview: "assets/preview-a5-data-flow-map.png",
     fit: "contain",
     tags: ["Memory Flow", "A5"]
+  },
+  {
+    title: "内存复用分析",
+    sub: "Code × Memory Architecture × UB Lifecycle",
+    group: "A5 硬件与迁移",
+    status: "hi-fi",
+    desc: "三栏联动查看源码、AIV/UB 架构和 tensor 生命周期,定位地址复用、峰值与潜在踩踏。",
+    href: "ascend-hardware-map/memory-reuse-analysis.html",
+    preview: "assets/preview-memory-reuse-analysis.png",
+    fit: "contain",
+    tags: ["Memory Reuse", "UB", "Lifecycle"]
   },
   {
     title: "A5 PMU 诊断工作台",
@@ -1047,7 +1116,7 @@ const launchItems = [
     status: "hi-fi",
     desc: "从 PMU 数据按循环分组,用泳道定位 A5 上的性能瓶颈。",
     href: "pmu/06-a5-pmu-visualization-group2-loop.html",
-    preview: "assets/A5-pmu-诊断工作台.png",
+    preview: "assets/preview-a5-pmu-16x9.png?v=20260803-screenshot",
     fit: "contain",
     tags: ["PMU", "Swimlane"]
   },
@@ -1070,7 +1139,7 @@ const launchItems = [
     status: "hi-fi",
     desc: "训练对象、架构图、实时曲线和多卡算力占用联动的浅色运行孪生视图。",
     href: "train/training-run-twin.html?theme=light",
-    preview: "assets/training-run-twin-light.png?v=20260609-card",
+    preview: "assets/preview-training-run-twin-light-16x9.png?v=20260803-screenshot",
     fit: "contain",
     tags: ["Training", "Twin", "Light"]
   },
@@ -1086,7 +1155,8 @@ const launchItems = [
     tags: ["Pangu MoE", "Training", "Comm"],
     variants: [
       { label: "v1 排障链", href: "pangu-moe-trainviz/index.html" },
-      { label: "v2 实时透视", href: "pangu-moe-trainviz/trainscope-live.html" }
+      { label: "v2 实时透视", href: "pangu-moe-trainviz/trainscope-live.html" },
+      { label: "Pangu 2.0 Flash", href: "pangu-moe-trainviz/op-rank-time-openpangu-flash.html?theme=light" }
     ]
   },
   {
@@ -1096,22 +1166,49 @@ const launchItems = [
     status: "hi-fi",
     desc: "把 Pangu MoE 算子语义、rank 通信、3D 模型结构和 1F1B swimlane 放到同一条时间轴上联动查看。",
     href: "pangu-moe-trainviz/op-rank-time.html?theme=light",
-    preview: "assets/pangu-op-rank-time-light.png",
-    previewDark: "assets/pangu-op-rank-time-dark.png",
+    preview: "assets/preview-pangu-op-rank-time-light-16x9.png?v=20260803-light",
     tags: ["Pangu MoE", "3D", "Timeline"],
     variants: [
-      { label: "Light", href: "pangu-moe-trainviz/op-rank-time.html?theme=light" },
-      { label: "Dark", href: "pangu-moe-trainviz/op-rank-time.html?theme=dark" }
+      { label: "V1", href: "pangu-moe-trainviz/op-rank-time.html?theme=light" },
+      { label: "V4", href: "pangu-moe-trainviz/op-rank-time-openpangu-flash-events.html" }
     ]
   },
   {
+    title: "分布式通信观测台",
+    sub: "Rank Traffic × MoE Routing",
+    group: "模型训练推理",
+    status: "hi-fi",
+    desc: "联动 128 Rank 拓扑、通信流量、模型层与 MoE 路由，定位通信组内的热点、等待链和专家负载异常。",
+    href: "distributed-communication-observatory-3d-traffic/index.html",
+    preview: "assets/preview-distributed-communication-observatory-3d-traffic.png?v=20260806",
+    fit: "contain",
+    tags: ["Distributed", "Communication", "MoE"]
+  },
+  {
     title: "训练任务管理",
+    hidden: true,
     group: "模型训练推理",
     status: "hi-fi",
     desc: "把训练任务的状态、资源和阶段编排成一条可管理的流水线。",
     href: "Profiling_Insight_and_Tool/Train_Manage/TrainManage.html",
-    previewFrame: "Profiling_Insight_and_Tool/Train_Manage/TrainManage.html?preview=1",
+    preview: "assets/preview-train-manage.png?v=20260803-screenshot",
     tags: ["Training", "Task", "Manage"]
+  },
+  {
+    title: "训练任务监控",
+    group: "模型训练推理",
+    status: "hi-fi",
+    desc: "训练任务拉起、监控、对比、诊断。",
+    href: "Profiling_Insight_and_Tool/training-run-twin-standalone/training-monitoring-v2.html",
+    preview: "assets/training-monitoring.png",
+    fit: "contain",
+    tags: ["Training", "Monitor", "Diagnose"],
+    variants: [
+      { label: "监控主页", href: "Profiling_Insight_and_Tool/training-run-twin-standalone/training-monitoring-v2.html" },
+      { label: "效果对比", href: "Profiling_Insight_and_Tool/training-run-twin-standalone/TaskCompare.html" },
+      { label: "关系追踪", href: "Profiling_Insight_and_Tool/training-run-twin-standalone/config-relation-observer.html" },
+      { label: "并行与MoE示意", href: "Profiling_Insight_and_Tool/ParallelDemo/dist.html", newTab: true }
+    ]
   },
   {
     title: "昇腾融合算子推荐",
@@ -1120,20 +1217,53 @@ const launchItems = [
     status: "hi-fi",
     desc: "用 IDE Frame 三栏工作台查看 vLLM 算子图,悬停与点击节点后定位融合建议和算子源码。",
     href: "op-fusion/index.html?theme=light",
-    preview: "assets/op-fusion-preview-light.png",
-    tags: ["Fusion", "Operator", "Graph"]
+    preview: "assets/preview-op-fusion-light-16x9.png?v=20260803-screenshot",
+    tags: ["Fusion", "Operator", "Graph"],
+    variants: [
+      { label: "V1", href: "op-fusion/index.html?theme=light" },
+      { label: "V2", href: "deepseek-v32-report-V2/index.html" }
+    ]
   },
   {
-    title: "DeepSeek V3.2 报告叠加图",
+    title: "算子矩阵",
+    sub: "模型 × 算子 × 昇腾硬件支持",
     group: "模型图与 IR",
     status: "hi-fi",
-    desc: "在 DeepSeek V3.2 模型图上叠加 profiling 与报告,定位问题节点。",
-    href: "graphviz/deepseek_v32_report_overlay_demo_v2.html",
-    previewFrame: "graphviz/deepseek_v32_report_overlay_demo_v2.html?preview=1",
+    desc: "按模型版本、训练/推理阶段、数据类型和硬件代际查询算子支持矩阵,并联动模型架构图与右侧算子详情。",
+    href: "Ascend%20operator%20matrix/ascend-operator-matrix_V2.html?theme=light",
+    preview: "assets/preview-ascend-operator-matrix-light-16x9.png?v=20260803-screenshot",
+    tags: ["Operator", "Matrix", "Graph"],
+    variants: [
+      { label: "Light", href: "Ascend%20operator%20matrix/ascend-operator-matrix_V2.html?theme=light" },
+      { label: "Dark", href: "Ascend%20operator%20matrix/ascend-operator-matrix_V2.html?theme=dark" }
+    ]
+  },
+  {
+    title: "算子入图工作台",
+    sub: "Op Graph-Integration",
+    group: "模型图与 IR",
+    status: "hi-fi",
+    desc: "从算子源码、结构检查到构建注册，串起算子入图流程并联动代码预览、执行阶段和问题修复建议。",
+    href: "op-graph-integration/index.html",
+    preview: "assets/preview-op-graph-integration.png?v=20260803-screenshot",
+    tags: ["Operator", "Graph", "Integration"]
+  },
+  {
+    title: "模型 Profiling 报告叠加图",
+    sub: "Qwen7B / DeepSeek V3.2 / openPangu-2.0-Flash",
+    group: "模型图与 IR",
+    status: "hi-fi",
+    desc: "在经过架构校验的模型图上叠加 profiling 报告，联动定位问题节点、诊断证据与时间线。",
+    href: "deepseek-v32-report-overlay/index.html",
+    preview: "assets/preview-qwen7b-report-overlay.png?v=20260803-fit",
+    fit: "contain",
+    variantLayout: "grid",
     tags: ["Graph", "Report", "Profiling"],
     variants: [
-      { label: "新版", href: "graphviz/deepseek_v32_report_overlay_demo_v2.html" },
-      { label: "旧版", href: "graphviz/deepseek_v32_report_overlay_demo.html" }
+      { label: "Qwen7B 报告", href: "ui-json-main/html/20260803_qwen7b_latest_structure_same_capture/report/index.html" },
+      { label: "OpenPangu Mock", href: "openpangu-2-0-flash-report-overlay/index.html" },
+      { label: "DeepSeek 新版", href: "deepseek-v32-report-overlay/index.html" },
+      { label: "DeepSeek 旧版", href: "graphviz/deepseek_v32_report_overlay_demo.html" }
     ]
   },
   {
@@ -1142,7 +1272,8 @@ const launchItems = [
     status: "hi-fi",
     desc: "浏览编译 Pass 快照,按节点分组、语义染色,锁定关注的计算流。",
     href: "pass-ir/index.html",
-    previewFrame: "pass-ir/index.html?preview=1",
+    preview: "assets/preview-pass-ir.png",
+    fit: "contain",
     tags: ["Pass IR", "Graph"],
     variants: [
       { label: "图查看器", href: "pass-ir/index.html" },
@@ -1155,18 +1286,43 @@ const launchItems = [
     status: "hi-fi",
     desc: "在 DAG 上叠加执行热度与核分配,一眼看出哪个节点慢、跑在哪个核。",
     href: "indexer-exec/index.html",
-    preview: "assets/card4.png",
+    preview: "assets/preview-indexer-exec-16x9.png?v=20260803-screenshot",
     fit: "contain",
     tags: ["Graph", "Execution"]
   },
   {
-    title: "PyPTOUX 泳道性能分析",
-    sub: "Swimlane Profiler · 外部",
+    title: "整网→算子精度调试",
+    sub: "Precision Debugger · 四类精度任务",
     group: "执行与性能分析",
     status: "hi-fi",
-    desc: "外部泳道性能原型,观察任务同步与 profiler 视图。",
-    href: "https://wangnaiyu.github.io/PyPTOUX/mix-sync-swimlane/",
-    preview: "assets/pyptoux-swimlane-profiler.png",
+    desc: "一个工作台覆盖四类精度任务:整网→算子逐层定位首错、GPU→NPU 迁移验证、CPU golden↔AscendC 逐步对标,以及 RL 训推一致性对齐(训推双端整网计算图 diff)。",
+    href: "precision-debugger/index-v2.html",
+    preview: "assets/preview-precision-debugger-v2-16x9.png?v=20260810",
+    tags: ["Precision", "Debug", "Ascend"],
+    variants: [
+      { label: "V2 · RL 训推对齐", href: "precision-debugger/index-v2.html" },
+      { label: "V1 · 整网→算子", href: "precision-debugger/index.html" }
+    ]
+  },
+  {
+    title: "Precision_diff 训推精度对齐",
+    sub: "PrecisionDiff · RL logprob alignment",
+    group: "执行与性能分析",
+    status: "hi-fi",
+    desc: "定位 rollout 与 trainer 的 logprob 不一致，串联探针、调用链、修复策略和守护规则。",
+    href: "Precision_diff/precisiondiff_v4.html",
+    preview: "assets/preview-precision-diff-16x9.png?v=20260803-screenshot",
+    fit: "contain",
+    tags: ["Precision", "RL", "Alignment"]
+  },
+  {
+    title: "PTO性能分析",
+    sub: "Swimlane Profiler · 本地",
+    group: "执行与性能分析",
+    status: "hi-fi",
+    desc: "通过同步竞争、调度空泡与流水失衡三类场景，展示 PTO 泳道性能分析与下钻工作流。",
+    href: "pto-swimlane-profiler/index.html",
+    preview: "assets/pto-swimlane-profiler.png?v=20260807-r2",
     fit: "contain",
     tags: ["Swimlane", "Profiler"]
   },
@@ -1177,7 +1333,7 @@ const launchItems = [
     status: "hi-fi",
     desc: "逐步执行计算图,实时看数据在 DDR/L1/L0/UB 之间怎么搬。",
     href: "mem_viewer/index-v2.html",
-    preview: "mem_viewer/pic.png",
+    preview: "assets/preview-memory-viewer-16x9.png?v=20260803-screenshot",
     fit: "contain",
     tags: ["Memory", "Execution"],
     variants: [
@@ -1186,12 +1342,27 @@ const launchItems = [
     ]
   },
   {
+    title: "内存工作台",
+    sub: "Memory Workbench · 片上内存可视化",
+    group: "执行与性能分析",
+    status: "hi-fi",
+    desc: "片上:地址布局与占用水位、张量生命周期与复用、流水 × 内存联合时序,定位超限与 double buffer 失效。融合:给出理论最小 workspace 与当前值的差距,以及可复用组合。",
+    href: "Memory-Visual/index.html",
+    preview: "assets/preview-memory-workbench.png",
+    fit: "contain",
+    tags: ["Memory", "Tiling", "Workspace"],
+    variants: [
+      { label: "单算子 · 片上", href: "Memory-Visual/index.html" },
+      { label: "融合 · workspace", href: "Memory-Visual/workspace.html" }
+    ]
+  },
+  {
     title: "Swimlane 执行视图",
     group: "执行与性能分析",
     status: "hi-fi",
     desc: "导入目录看 AIC/AIV 任务泳道,支持前后对比与任务下钻。",
     href: "swimlane/index.html",
-    preview: "assets/card3_swimlane.png",
+    preview: "assets/preview-swimlane-execution-16x9.png?v=20260803-screenshot",
     tags: ["Swimlane", "AIC", "AIV"]
   },
   {
@@ -1200,7 +1371,7 @@ const launchItems = [
     status: "lo-fi",
     desc: "解析泳道性能数据,做统计与多组对比。",
     href: "pypto-swimlane-perf-tool/index.html",
-    preview: "assets/card8.png",
+    preview: "assets/preview-swimlane-perf-tool-16x9.png?v=20260803-screenshot",
     fit: "contain",
     tags: ["Swimlane", "Perf"]
   },
@@ -1209,31 +1380,36 @@ const launchItems = [
     group: "执行与性能分析",
     status: "hi-fi",
     desc: "用 MindStudio Next 和计算图证据工作台做智能性能定位。",
-    href: "Profiling_Insight_and_Tool/AI_Profiling_Tool/MindStudioNext.html",
-    previewFrame: "Profiling_Insight_and_Tool/AI_Profiling_Tool/MindStudioNext.html?preview=1",
+    href: "Profiling_Insight_and_Tool/AI_Profiling_Tool/index_v3.html",
+    preview: "assets/preview-mindstudio-next.png",
+    fit: "contain",
     tags: ["AI", "Profiling"],
     variants: [
-      { label: "MindStudio Next", href: "Profiling_Insight_and_Tool/AI_Profiling_Tool/MindStudioNext.html" },
-      { label: "计算图证据", href: "Profiling_Insight_and_Tool/AI_Profiling_Tool/graph-evidence-workbench.html" }
+      { label: "MindStudio Next", href: "Profiling_Insight_and_Tool/AI_Profiling_Tool/index_v3.html" },
+      { label: "计算图证据", href: "Profiling_Insight_and_Tool/AI_Profiling_Tool/graph-evidence-workbench.html" },
+      { label: "性能对比", href: "Profiling_Insight_and_Tool/AI_Profiling_Tool/profileCompare.html" }
     ]
   },
   {
     title: "性能调优 TOP 问题与指导",
+    hidden: true,
     group: "执行与性能分析",
     status: "hi-fi",
     desc: "汇总性能调优高频问题、Issue 与指导,按问题快速查方案。",
     href: "Profiling_Insight_and_Tool/Issue_PDF_analysis/user_issue_analysis.html",
-    previewFrame: "Profiling_Insight_and_Tool/Issue_PDF_analysis/user_issue_analysis.html?preview=1",
+    preview: "assets/preview-issue-pdf-analysis.png",
+    fit: "contain",
     tags: ["Issue", "Guide", "Profiling"]
   },
   {
     title: "算子 IDE 助手",
+    hidden: true,
     sub: "Operator IDE Assistant",
     group: "算子开发工具",
     status: "lo-fi",
     desc: "面向算子开发的 IDE 辅助原型,新旧两版并列保留。",
     href: "op-ide-assistant-v2/index.html",
-    preview: "assets/card7.png",
+    preview: "assets/preview-op-ide-assistant-16x9.png?v=20260803-screenshot",
     fit: "contain",
     tags: ["IDE", "Operator"],
     variants: [
@@ -1248,7 +1424,8 @@ const launchItems = [
     status: "lo-fi",
     desc: "从算子需求到执行规划的工作台入口,用于梳理开发路径与关键约束。",
     href: "operator-planning/operator%20planning.html",
-    previewFrame: "operator-planning/operator%20planning.html?preview=1",
+    preview: "assets/preview-operator-planning-v2.png",
+    fit: "contain",
     tags: ["Operator", "Planning", "Workflow"]
   },
   {
@@ -1258,8 +1435,7 @@ const launchItems = [
     status: "lo-fi",
     desc: "从 Ascend C 源码恢复 Tiling、Memory Path、Pipeline 与 Buffer Lifecycle 的可视化执行模型。",
     href: "code%20recovery/index.html",
-    previewFrame: "code%20recovery/index.html?preview=1",
-    interactivePreview: true,
+    preview: "assets/preview-code-recovery.png?v=20260803-screenshot",
     tags: ["Code Recovery", "Kernel", "Tiling"]
   },
   {
@@ -1269,7 +1445,7 @@ const launchItems = [
     status: "lo-fi",
     desc: "展示设计空间如何收敛，并审查每个候选的目标 buffer 生命周期、数据路径与逻辑依赖。",
     href: "operator-planning/recommendation-trace-V3.html",
-    previewFrame: "operator-planning/recommendation-trace-V3.html?preview=1",
+    preview: "assets/preview-recommendation-trace.png?v=20260803-screenshot",
     tags: ["Recommendation", "Trace", "Explainability"]
   },
   {
@@ -1278,8 +1454,8 @@ const launchItems = [
     group: "白皮书与系统",
     status: "doc",
     desc: "token、基础组件与图形模式一站预览,新页面从这里取材。",
-    href: "design-system-preview.html",
-    preview: "assets/whitepaper-previews/pto-design-system.svg",
+    href: "pto-design-system/design-system-preview.html",
+    preview: "assets/preview-pto-design-system.png?v=20260803-screenshot",
     fit: "contain",
     tags: ["Design", "Token", "Pattern"]
   },
@@ -1289,7 +1465,7 @@ const launchItems = [
     status: "doc",
     desc: "讲清面向 Ascend NPU 的 AI 编译与运行时栈,完整白皮书。",
     href: "hw-native-sys/index.html",
-    preview: "assets/whitepaper-previews/hw-native-lingqu.svg",
+    preview: "assets/preview-hw-native-system-whitepaper.png?v=20260803-screenshot",
     fit: "contain",
     tags: ["Whitepaper", "Runtime"]
   },
@@ -1299,7 +1475,7 @@ const launchItems = [
     status: "doc",
     desc: "讲清分层导航小世界图与向量检索的工程实现。",
     href: "HNSW/HNSW-whitepaper.html",
-    preview: "assets/whitepaper-previews/hnsw-skip-list.svg",
+    preview: "assets/preview-hnsw-whitepaper.png?v=20260803-screenshot",
     fit: "contain",
     tags: ["HNSW", "Vector"]
   },
@@ -1309,7 +1485,7 @@ const launchItems = [
     status: "doc",
     desc: "VLSI 布局算法详解,涵盖 H-Anchor 与 PycPlacer 实现。",
     href: "vlsi-placement-whitepaper/index.html",
-    preview: "assets/whitepaper-previews/vlsi-placement-pipeline.svg",
+    preview: "assets/preview-vlsi-placement-whitepaper.png?v=20260803-screenshot",
     fit: "contain",
     tags: ["VLSI", "Layout"]
   },
@@ -1319,11 +1495,13 @@ const launchItems = [
     status: "doc",
     desc: "按官方开发顺序讲 Tiling:从 TilingData、Host Func 到 Kernel 与动态 shape。",
     href: "tiling/tiling-whitepaper.html",
-    preview: "assets/whitepaper-previews/tiling-gm-logical.svg",
+    preview: "assets/preview-tiling-whitepaper.png?v=20260803-screenshot",
     fit: "contain",
     tags: ["Tiling", "Ascend C", "Developer"]
   }
 ];
+
+const visibleLaunchItems = launchItems.filter((item) => !item.hidden);
 
 const STATUS_META = {
   "hi-fi": { label: "可体验", cls: "is-live" },
@@ -1356,13 +1534,13 @@ function normalize(value) {
 }
 
 function renderCategories() {
-  const counts = launchItems.reduce((acc, item) => {
+  const counts = visibleLaunchItems.reduce((acc, item) => {
     acc[item.group] = (acc[item.group] || 0) + 1;
     return acc;
   }, {});
 
   categoryList.innerHTML = categories.map((category) => {
-    const count = category.id === "all" ? launchItems.length : (counts[category.id] || 0);
+    const count = category.id === "all" ? visibleLaunchItems.length : (counts[category.id] || 0);
     const active = state.category === category.id ? " is-active" : "";
     return `
       <button class="side-item${active}" type="button" data-category="${category.id}">
@@ -1375,7 +1553,7 @@ function renderCategories() {
 
 function getFilteredItems() {
   const query = normalize(state.query);
-  let items = launchItems.filter((item) => {
+  let items = visibleLaunchItems.filter((item) => {
     const inCategory = state.category === "all" || item.group === state.category;
     const inStatus = state.status === "all" || item.status === state.status;
     const haystack = normalize([
@@ -1429,15 +1607,19 @@ function renderPreview(item) {
 function renderCard(item) {
   const variants = item.variants || [];
   const hasVariants = variants.length > 0;
-  const footerHtml = hasVariants ? variants.map((variant) => `
-    <a class="btn btn-sm variant-link" href="${variant.href}"${itemTargetAttrs(variant.href)}>${variant.label}</a>
-  `).join("") : "";
+  const variantLayoutClass = item.variantLayout === "grid" ? " has-variant-grid" : "";
+  const footerHtml = hasVariants ? variants.map((variant) => {
+    const target = variant.newTab ? ' target="_blank" rel="noreferrer"' : itemTargetAttrs(variant.href);
+    return `
+    <a class="btn btn-sm variant-link" href="${variant.href}"${target}>${variant.label}</a>
+  `;
+  }).join("") : "";
 
   const tagHtml = (item.tags || []).slice(0, 3).map((tag) => `<span class="tag-chip">${tag}</span>`).join("");
   const status = STATUS_META[item.status] || { label: item.status, cls: "" };
 
   return `
-    <article class="card-demo launch-card${hasVariants ? " has-variants" : ""}" data-group="${item.group}" data-status="${item.status}" data-href="${item.href}" role="link" tabindex="0">
+    <article class="card-demo launch-card${hasVariants ? " has-variants" : ""}${variantLayoutClass}" data-group="${item.group}" data-status="${item.status}" data-href="${item.href}" role="link" tabindex="0">
       <a class="card-preview" href="${item.href}"${itemTargetAttrs(item.href)} aria-label="打开 ${item.title}">
         ${renderPreview(item)}
       </a>
@@ -1462,7 +1644,7 @@ function renderGrid() {
   const items = getFilteredItems();
   const activeCategory = categories.find((category) => category.id === state.category);
   activeTitle.textContent = state.category === "all" ? "全部项目" : activeCategory.label;
-  resultCount.textContent = `${items.length}/${launchItems.length}`;
+  resultCount.textContent = `${items.length}/${visibleLaunchItems.length}`;
   grid.innerHTML = items.map(renderCard).join("");
   emptyState.classList.toggle("is-visible", items.length === 0);
 }

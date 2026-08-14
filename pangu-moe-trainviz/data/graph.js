@@ -1,115 +1,195 @@
-/* Pangu Pro MoE 架构图（model-training-graphviz schema）。三栏布局：
-   左列权重 tensor (x290) · 中央算子脊柱 (x600) · 右列权重 tensor (x910)。
-   旁挂 param tensor 与其算子同 y，用虚线 parameter 边连入。
-   故障锚点：Layer47 Gate 路由坍缩，W_gate 旁挂在 Gate 左侧。x/y=节点中心。 */
-window.PANGU_GRAPH = {
-  width: 1100,
-  height: 1210,
-  clusters: [
-    { id: 'transformer', label: 'Transformer', x: 400, y: 114, width: 400, height: 915, colorKey: 'module:transformer' },
-    { id: 'decoder', label: 'Decoder Layer × 48', x: 430, y: 239, width: 340, height: 688, colorKey: 'module:decoder', repeat: 48 },
-    { id: 'moe', label: 'MoE FFN · MoGE 分组专家', x: 455, y: 534, width: 290, height: 393, colorKey: 'module:moe' },
-  ],
-  nodes: [
-    // ── 中央算子脊柱 (x=600) ──
-    { id: 'token_ids', label: 'Token IDs', typeLabel: 'Input', kind: 'tensor', x: 600, y: 44, width: 190, height: 48, colorKey: 'io:input' },
-    { id: 'embedding', label: 'Parallel Embedding', typeLabel: 'Op', kind: 'op', x: 600, y: 176, width: 300, height: 56, colorKey: 'sem:embedding' },
-    { id: 'attn_norm', label: 'Attention RMSNorm', typeLabel: 'Op', kind: 'op', x: 600, y: 300, width: 240, height: 54, colorKey: 'sem:norm' },
-    { id: 'attention', label: 'Grouped Attention', typeLabel: 'Op', kind: 'op', x: 600, y: 392, width: 250, height: 54, colorKey: 'sem:attention' },
-    { id: 'moe_norm', label: 'MoE RMSNorm', typeLabel: 'Op', kind: 'op', x: 600, y: 486, width: 240, height: 54, colorKey: 'sem:norm' },
-    { id: 'gate', label: 'Layer47 Gate (Router)', typeLabel: 'Op', kind: 'op', x: 600, y: 596, width: 250, height: 56, colorKey: 'sem:gate' },
-    { id: 'a2a_dispatch', label: 'All-to-All Dispatch', typeLabel: 'Comm', kind: 'op', x: 600, y: 688, width: 264, height: 54, colorKey: 'sem:comm' },
-    { id: 'experts', label: 'MoGE Experts × N', typeLabel: 'Op', kind: 'op', x: 600, y: 782, width: 270, height: 60, colorKey: 'sem:moe' },
-    { id: 'a2a_combine', label: 'All-to-All Combine', typeLabel: 'Comm', kind: 'op', x: 600, y: 876, width: 264, height: 54, colorKey: 'sem:comm' },
-    { id: 'final_norm', label: 'Final RMSNorm', typeLabel: 'Op', kind: 'op', x: 600, y: 978, width: 220, height: 54, colorKey: 'sem:norm' },
-    { id: 'lm_head', label: 'LM Head Linear', typeLabel: 'Op', kind: 'op', x: 600, y: 1070, width: 244, height: 54, colorKey: 'sem:linear' },
-    { id: 'logits', label: 'Logits', typeLabel: 'Output', kind: 'tensor', x: 600, y: 1162, width: 190, height: 48, colorKey: 'io:output' },
-    // ── 左列权重 tensor (x=290) ──
-    { id: 'embedding_weight', label: 'Embedding Weight', typeLabel: 'Parameter', kind: 'tensor', x: 290, y: 176, width: 188, height: 50, colorKey: 'io:parameter' },
-    { id: 'qkv_weight', label: 'QKV Weight', typeLabel: 'Parameter', kind: 'tensor', x: 290, y: 392, width: 180, height: 50, colorKey: 'io:parameter' },
-    { id: 'w_gate', label: 'W_gate (Router)', typeLabel: 'Parameter', kind: 'tensor', x: 290, y: 596, width: 184, height: 50, colorKey: 'io:parameter' },
-    { id: 'expert_up_weight', label: 'Expert Up Weight', typeLabel: 'Parameter', kind: 'tensor', x: 290, y: 782, width: 188, height: 50, colorKey: 'io:parameter' },
-    { id: 'lm_head_weight', label: 'LM Head Weight', typeLabel: 'Parameter', kind: 'tensor', x: 290, y: 1070, width: 188, height: 50, colorKey: 'io:parameter' },
-    // ── 右列权重 tensor (x=910) ──
-    { id: 'attn_norm_gamma', label: 'Attn Norm γ', typeLabel: 'Parameter', kind: 'tensor', x: 910, y: 300, width: 176, height: 50, colorKey: 'io:parameter' },
-    { id: 'oproj_weight', label: 'O-Proj Weight', typeLabel: 'Parameter', kind: 'tensor', x: 910, y: 392, width: 184, height: 50, colorKey: 'io:parameter' },
-    { id: 'moe_norm_gamma', label: 'MoE Norm γ', typeLabel: 'Parameter', kind: 'tensor', x: 910, y: 486, width: 176, height: 50, colorKey: 'io:parameter' },
-    { id: 'expert_down_weight', label: 'Expert Down Weight', typeLabel: 'Parameter', kind: 'tensor', x: 910, y: 782, width: 192, height: 50, colorKey: 'io:parameter' },
-    { id: 'final_norm_gamma', label: 'Final Norm γ', typeLabel: 'Parameter', kind: 'tensor', x: 910, y: 978, width: 184, height: 50, colorKey: 'io:parameter' },
-  ],
-  edges: [
-    // 主干 activation（实线）
-    { source: 'token_ids', target: 'embedding', tag: 'ACT', edgeType: 'activation' },
-    { source: 'embedding', target: 'attn_norm', tag: 'ACT', edgeType: 'activation' },
-    { source: 'attn_norm', target: 'attention', tag: 'ACT', edgeType: 'activation' },
-    { source: 'attention', target: 'moe_norm', tag: 'ACT', edgeType: 'activation' },
-    { source: 'moe_norm', target: 'gate', tag: 'ACT', edgeType: 'activation' },
-    { source: 'gate', target: 'a2a_dispatch', tag: 'DISPATCH', edgeType: 'communication' },
-    { source: 'a2a_dispatch', target: 'experts', tag: 'TOKENS', edgeType: 'communication' },
-    { source: 'experts', target: 'a2a_combine', tag: 'COMBINE', edgeType: 'communication' },
-    { source: 'a2a_combine', target: 'final_norm', tag: 'ACT', edgeType: 'activation' },
-    { source: 'final_norm', target: 'lm_head', tag: 'ACT', edgeType: 'activation' },
-    { source: 'lm_head', target: 'logits', tag: 'LOSS', edgeType: 'gradient' },
-    // 旁挂权重 parameter（虚线）
-    { source: 'embedding_weight', target: 'embedding', tag: 'W', edgeType: 'parameter', dashed: true },
-    { source: 'qkv_weight', target: 'attention', tag: 'W', edgeType: 'parameter', dashed: true },
-    { source: 'oproj_weight', target: 'attention', tag: 'W', edgeType: 'parameter', dashed: true },
-    { source: 'attn_norm_gamma', target: 'attn_norm', tag: 'γ', edgeType: 'parameter', dashed: true },
-    { source: 'moe_norm_gamma', target: 'moe_norm', tag: 'γ', edgeType: 'parameter', dashed: true },
-    { source: 'w_gate', target: 'gate', tag: 'W', edgeType: 'parameter', dashed: true },
-    { source: 'expert_up_weight', target: 'experts', tag: 'W', edgeType: 'parameter', dashed: true },
-    { source: 'expert_down_weight', target: 'experts', tag: 'W', edgeType: 'parameter', dashed: true },
-    { source: 'final_norm_gamma', target: 'final_norm', tag: 'γ', edgeType: 'parameter', dashed: true },
-    { source: 'lm_head_weight', target: 'lm_head', tag: 'W', edgeType: 'parameter', dashed: true },
-  ],
-  trainingEvidence: {
-    gate: {
-      dimension: '路由 / 混合精度', metric: 'dispatch shape',
-      what: 'Layer47 Gate 路由坍缩——dispatch 形状跨 rank 不一致。',
-      evidence: ['Rank2 dispatch [2048,1] vs 其余 [2048,4]', 'W_gate Rank2 分片出现 -inf（混合精度下溢）', 'Load Balance Loss 骤降≈0'],
-      action: '右键「追溯梯度流」→ 定位 Step1997 混合精度写越界。',
-      relatedNodeIds: ['w_gate', 'a2a_dispatch', 'experts', 'a2a_combine'],
+/* Pangu Pro MoE 72BA16B · communication profile.
+   This graph follows the paper-style single decoder layer view and keeps the
+   visual focus on communication operators. Parallel configuration facts stay
+   in the page metadata instead of being rendered as graph nodes. */
+(() => {
+  const flow = (source, target, extra = {}) => ({ source, target, ...extra });
+  const comm = (source, target, tag, extra = {}) => flow(source, target, { tag, edgeType: 'communication', ...extra });
+  const param = (source, target, tag = 'W', extra = {}) => flow(source, target, { tag, edgeType: 'parameter', dashed: true, ...extra });
+  const node = (id, label, typeLabel, kind, x, y, width, height, colorKey, extra = {}) => ({
+    id, label, typeLabel, kind, x, y, width, height, colorKey, ...extra,
+  });
+  const glyph = (id, x, y, parent) => node(id, '+', 'Add', 'op', x, y, 38, 38, 'sem:add', {
+    glyph: true,
+    hideTypeLabel: true,
+    parent,
+  });
+
+  window.PANGU_GRAPH = {
+    width: 1500,
+    height: 1320,
+    clusters: [
+      { id: 'decoder_profile', label: 'Decoder Layer Communication Profile', x: 36, y: 34, width: 720, height: 1248, colorKey: 'module:decoder', repeat: 48 },
+      { id: 'attention_path', label: 'Attention Path', x: 92, y: 118, width: 568, height: 374, colorKey: 'sem:attention', parent: 'decoder_profile' },
+      { id: 'moe_path', label: 'MoE FFN Path', x: 62, y: 526, width: 650, height: 704, colorKey: 'module:moe', parent: 'decoder_profile' },
+      { id: 'mulattention_detail', label: 'MulAttention Children', x: 826, y: 48, width: 626, height: 426, colorKey: 'sem:attention', parent: 'attention_path' },
+      { id: 'swiftgmm_detail', label: 'SwiftGMM Children', x: 850, y: 536, width: 558, height: 588, colorKey: 'sem:moe', parent: 'moe_path' },
+    ],
+    nodes: [
+      node('hidden_in', 'Hidden States', 'Tensor', 'tensor', 378, 88, 210, 48, 'io:input', { parent: 'attention_path' }),
+
+      node('attn_norm', 'RMSNorm', 'Op', 'op', 378, 168, 232, 54, 'sem:norm', { parent: 'attention_path' }),
+      node('attn_all_gather', 'AllGather', 'Comm', 'op', 378, 248, 232, 52, 'sem:comm', { parent: 'attention_path' }),
+      node('attention_gqa', 'Attention(GQA)', 'Op', 'op', 378, 330, 258, 62, 'sem:attention', { parent: 'attention_path' }),
+      node('attn_reduce_scatter', 'Reduce-Scatter', 'Comm', 'op', 378, 420, 242, 52, 'sem:comm', { parent: 'attention_path' }),
+      glyph('attn_residual_add', 378, 494, 'attention_path'),
+
+      node('moe_norm', 'RMSNorm', 'Op', 'op', 378, 594, 232, 54, 'sem:norm', { parent: 'moe_path' }),
+      node('moe_all_gather', 'AllGather', 'Comm', 'op', 378, 674, 232, 52, 'sem:comm', { parent: 'moe_path' }),
+      node('router_gate', 'Gating', 'Op', 'op', 552, 770, 206, 54, 'sem:gate', { parent: 'moe_path' }),
+      node('shared_expert', 'Shared Expert FFN', 'Op', 'op', 256, 806, 258, 68, 'sem:mlp', { parent: 'moe_path' }),
+      node('a2a_dispatch', 'All-to-All Dispatch', 'Comm', 'op', 552, 850, 260, 52, 'sem:comm', { parent: 'moe_path' }),
+      node('routed_expert', 'Routed Expert FFN', 'Op', 'op', 552, 932, 268, 70, 'sem:moe', { parent: 'moe_path' }),
+      node('a2a_combine', 'All-to-All Combine', 'Comm', 'op', 552, 1014, 260, 52, 'sem:comm', { parent: 'moe_path' }),
+      glyph('moe_branch_add', 378, 1092, 'moe_path'),
+      node('moe_reduce_scatter', 'Reduce-Scatter', 'Comm', 'op', 378, 1164, 242, 52, 'sem:comm', { parent: 'moe_path' }),
+      glyph('block_residual_add', 378, 1238, 'moe_path'),
+      node('hidden_out', 'Layer Output', 'Tensor', 'tensor', 378, 1310, 200, 48, 'io:output', { parent: 'decoder_profile' }),
+
+      node('attn_norm_gamma', 'Norm Gamma', 'Parameter', 'tensor', 116, 168, 168, 46, 'io:parameter', { parent: 'attention_path' }),
+      node('qkv_weight', 'QKV Weight', 'Parameter', 'tensor', 622, 330, 170, 46, 'io:parameter', { parent: 'attention_path' }),
+      node('oproj_weight', 'O-Proj Weight', 'Parameter', 'tensor', 622, 420, 174, 46, 'io:parameter', { parent: 'attention_path' }),
+      node('moe_norm_gamma', 'Norm Gamma', 'Parameter', 'tensor', 116, 594, 168, 46, 'io:parameter', { parent: 'moe_path' }),
+      node('shared_weight', 'Shared FFN Weight', 'Parameter', 'tensor', 18, 806, 188, 46, 'io:parameter', { parent: 'moe_path' }),
+      node('router_weight', 'Router Weight', 'Parameter', 'tensor', 820, 770, 170, 46, 'io:parameter', { parent: 'moe_path' }),
+      node('expert_weight', 'Expert Weight Bank', 'Parameter', 'tensor', 840, 932, 196, 46, 'io:parameter', { parent: 'moe_path' }),
+
+      node('mul_inner_loop', 'Inner Loop', 'Loop', 'op', 1140, 112, 184, 42, 'sem:loop', { parent: 'mulattention_detail' }),
+      node('mul_kv_tiles', 'KV Tiles', 'Tensor', 'tensor', 1140, 172, 224, 46, 'io:state', { parent: 'mulattention_detail' }),
+      node('mul_left_blocks', 'Outer Blocks', 'Tensor', 'tensor', 942, 286, 144, 144, 'io:state', { parent: 'mulattention_detail' }),
+      node('mul_core', 'QK + Softmax + V', 'Op', 'op', 1140, 286, 238, 58, 'sem:attention', { parent: 'mulattention_detail' }),
+      node('mul_right_blocks', 'Output Blocks', 'Tensor', 'tensor', 1340, 286, 150, 144, 'io:state', { parent: 'mulattention_detail' }),
+      node('mul_output_tiles', 'Output Tiles', 'Tensor', 'tensor', 1140, 400, 224, 46, 'io:output', { parent: 'mulattention_detail' }),
+      node('mul_outer_loop_l', 'Outer Loop', 'Loop', 'op', 934, 420, 150, 42, 'sem:loop', { parent: 'mulattention_detail' }),
+      node('mul_outer_loop_r', 'Outer Loop', 'Loop', 'op', 1342, 420, 150, 42, 'sem:loop', { parent: 'mulattention_detail' }),
+
+      node('swift_input_groups', 'Token Groups', 'Tensor', 'tensor', 972, 728, 156, 154, 'io:input', { parent: 'swiftgmm_detail' }),
+      node('swift_grouped_matmul', 'Grouped MatMul', 'Op', 'op', 972, 884, 214, 58, 'sem:moe', { parent: 'swiftgmm_detail' }),
+      node('swift_weight_n', 'Expert N Weight', 'Parameter', 'tensor', 1214, 650, 194, 62, 'io:parameter', { parent: 'swiftgmm_detail' }),
+      node('swift_out_n', 'Expert N Out', 'Tensor', 'tensor', 1214, 754, 194, 48, 'io:output', { parent: 'swiftgmm_detail' }),
+      node('swift_weight_next', 'Expert N+1 Weight', 'Parameter', 'tensor', 1214, 898, 194, 62, 'io:parameter', { parent: 'swiftgmm_detail' }),
+      node('swift_out_next', 'Expert N+1 Out', 'Tensor', 'tensor', 1214, 1004, 194, 48, 'io:output', { parent: 'swiftgmm_detail' }),
+    ],
+    edges: [
+      flow('hidden_in', 'attn_norm', { sourceAnchor: 'bottom', targetAnchor: 'top' }),
+      flow('hidden_in', 'attn_residual_add', {
+        sourceAnchor: 'bottom',
+        targetAnchor: 'center',
+        waypoints: [{ x: 238, y: 158 }, { x: 238, y: 454 }, { x: 336, y: 494 }],
+        route: 'smooth',
+      }),
+      param('attn_norm_gamma', 'attn_norm', 'gamma', { targetAnchor: 'left', curve: 'horizontal' }),
+      comm('attn_norm', 'attn_all_gather', 'AllGather'),
+      flow('attn_all_gather', 'attention_gqa'),
+      param('qkv_weight', 'attention_gqa', 'Wqkv', { sourceAnchor: 'left', targetAnchor: 'right' }),
+      param('oproj_weight', 'attention_gqa', 'Wo', { sourceAnchor: 'left', targetAnchor: 'right', curve: 'horizontal' }),
+      comm('attention_gqa', 'attn_reduce_scatter', 'ReduceScatter'),
+      flow('attn_reduce_scatter', 'attn_residual_add', { targetAnchor: 'center' }),
+      flow('attn_residual_add', 'moe_norm', { sourceAnchor: 'bottom', targetAnchor: 'top' }),
+      flow('attn_residual_add', 'block_residual_add', {
+        sourceAnchor: 'bottom',
+        targetAnchor: 'center',
+        waypoints: [{ x: 128, y: 650 }, { x: 128, y: 1190 }, { x: 332, y: 1238 }],
+        route: 'smooth',
+      }),
+
+      param('moe_norm_gamma', 'moe_norm', 'gamma', { targetAnchor: 'left', curve: 'horizontal' }),
+      comm('moe_norm', 'moe_all_gather', 'AllGather'),
+      flow('moe_all_gather', 'shared_expert', {
+        sourceAnchor: 'bottom',
+        targetAnchor: 'top',
+      }),
+      param('shared_weight', 'shared_expert', 'W', { sourceAnchor: 'right', targetAnchor: 'left', curve: 'horizontal' }),
+      flow('moe_all_gather', 'router_gate', {
+        sourceAnchor: 'bottom',
+        targetAnchor: 'top',
+      }),
+      param('router_weight', 'router_gate', 'W', { sourceAnchor: 'left', targetAnchor: 'right', curve: 'horizontal' }),
+      comm('router_gate', 'a2a_dispatch', 'A2A Dispatch'),
+      comm('a2a_dispatch', 'routed_expert', 'tokens'),
+      param('expert_weight', 'routed_expert', 'W', { sourceAnchor: 'left', targetAnchor: 'right', curve: 'horizontal' }),
+      comm('routed_expert', 'a2a_combine', 'A2A Combine'),
+      flow('shared_expert', 'moe_branch_add', { sourceAnchor: 'bottom', targetAnchor: 'center' }),
+      flow('a2a_combine', 'moe_branch_add', { sourceAnchor: 'bottom', targetAnchor: 'center' }),
+      comm('moe_branch_add', 'moe_reduce_scatter', 'ReduceScatter'),
+      flow('moe_reduce_scatter', 'block_residual_add', { targetAnchor: 'center' }),
+      flow('block_residual_add', 'hidden_out'),
+
+      flow('mul_inner_loop', 'mul_kv_tiles', { tag: 'inner' }),
+      flow('mul_kv_tiles', 'mul_core', { tag: 'tile' }),
+      flow('mul_left_blocks', 'mul_core', { tag: 'outer', sourceAnchor: 'right', targetAnchor: 'left', curve: 'horizontal' }),
+      flow('mul_core', 'mul_right_blocks', { tag: 'outer', sourceAnchor: 'right', targetAnchor: 'left', curve: 'horizontal' }),
+      flow('mul_core', 'mul_output_tiles', { tag: 'inner' }),
+
+      flow('swift_input_groups', 'swift_grouped_matmul', { tag: 'group' }),
+      param('swift_weight_n', 'swift_grouped_matmul', 'Wn', { sourceAnchor: 'left', targetAnchor: 'right', curve: 'horizontal' }),
+      param('swift_weight_next', 'swift_grouped_matmul', 'Wn+1', { sourceAnchor: 'left', targetAnchor: 'right', curve: 'horizontal' }),
+      flow('swift_grouped_matmul', 'swift_out_n', { tag: 'out', sourceAnchor: 'right', targetAnchor: 'left', curve: 'horizontal' }),
+      flow('swift_grouped_matmul', 'swift_out_next', { tag: 'out', sourceAnchor: 'right', targetAnchor: 'left', curve: 'horizontal' }),
+    ],
+    trainingEvidence: {
+      decoder_profile: {
+        dimension: '视图口径',
+        metric: 'single decoder layer',
+        what: '这是 Pangu Pro MoE 72BA16B 的单层通信剖面图，用来说明 Attention、Shared Expert、Routed Expert 三条路径的通信边界。',
+        evidence: ['总模型为 71.99B 参数 / 16.50B 激活参数', '图上只展示通信算子和计算分支', '并行配置保留在页面元信息中，不作为图节点渲染'],
+      },
+      attn_all_gather: {
+        dimension: '通信算子',
+        metric: 'AllGather',
+        what: 'RMSNorm 后把 TP rank 上的 hidden 分片聚合成 Attention 计算需要的输入视图。',
+        evidence: ['论文图把 AllGather 放在 RMSNorm 之后', '这是 AllReduce 拆分为 AllGather + Reduce-Scatter 的一部分'],
+        relatedNodeIds: ['attn_norm', 'attention_gqa', 'attn_reduce_scatter'],
+      },
+      attn_reduce_scatter: {
+        dimension: '通信算子',
+        metric: 'Reduce-Scatter',
+        what: 'Attention 输出先规约再重新切回各 TP rank 的 hidden 分片，用于后续残差和 MoE 输入。',
+        relatedNodeIds: ['attention_gqa', 'attn_residual_add'],
+      },
+      moe_all_gather: {
+        dimension: '通信算子',
+        metric: 'AllGather',
+        what: 'MoE FFN 前聚合 hidden 输入，让 shared expert 和 router/routed expert 分支都能拿到所需 token 表示。',
+        relatedNodeIds: ['shared_expert', 'router_gate'],
+      },
+      a2a_dispatch: {
+        dimension: '通信算子',
+        metric: 'All-to-All Dispatch',
+        what: '根据 Gating 的 expert 选择，把 token 从原始 rank 布局交换到拥有目标专家的 EP rank。',
+        evidence: ['这是 EP 路由的核心通信算子', '没有 Dispatch，远端 expert 拿不到被路由到自己的 token'],
+        relatedNodeIds: ['router_gate', 'routed_expert'],
+      },
+      a2a_combine: {
+        dimension: '通信算子',
+        metric: 'All-to-All Combine',
+        what: '把各 expert rank 上计算完成的 token 输出交换回原 token owner，再与 shared expert 输出合并。',
+        relatedNodeIds: ['routed_expert', 'moe_branch_add'],
+      },
+      moe_reduce_scatter: {
+        dimension: '通信算子',
+        metric: 'Reduce-Scatter',
+        what: 'MoE 双分支输出合并后规约并切回 TP 分片，送入块级残差 Add。',
+        relatedNodeIds: ['moe_branch_add', 'block_residual_add'],
+      },
+      attention_gqa: {
+        dimension: '算子',
+        metric: 'GQA',
+        what: 'Grouped Query Attention 主计算。展开父节点后，MulAttention Children 展示其 tile 内循环和外循环的计算结构。',
+        relatedNodeIds: ['mul_core', 'mul_inner_loop', 'mul_outer_loop_l', 'mul_outer_loop_r'],
+      },
+      routed_expert: {
+        dimension: '算子',
+        metric: 'SwiftGMM',
+        what: 'Routed Expert FFN 使用 grouped matmul，把不同 expert 的 token group 与对应 expert 权重批量计算。',
+        relatedNodeIds: ['swift_grouped_matmul', 'swift_weight_n', 'swift_weight_next'],
+      },
+      swift_grouped_matmul: {
+        dimension: '算子细节',
+        metric: 'Grouped MatMul',
+        what: 'SwiftGMM 把按 expert 分组后的 token 输入与 Expert N、Expert N+1 等不同权重块配对执行矩阵乘。',
+        evidence: ['AGMM 可理解为 AllGather + MatMul', 'GMMRS 可理解为 GroupedMatMul + ReduceScatter'],
+      },
     },
-    w_gate: {
-      dimension: '混合精度 / 权重', metric: 'W_gate 分片',
-      what: 'Router 权重 W_gate 是故障源头：Rank2 分片混合精度写越界。',
-      evidence: ['Rank2 分片 [4096,256]→[4096,64]', '数值出现 -inf 下溢'],
-      action: '看右栏 Weight Diff 与路由热图 Rank2 列空白。',
-      relatedNodeIds: ['gate', 'a2a_dispatch', 'experts'],
-    },
-    a2a_dispatch: {
-      dimension: '分布式通信', metric: 'All-to-All bytes',
-      what: 'All-to-All 分发流量在 TP Rank2 坍缩成黑洞。',
-      evidence: ['Rank2 流入边几乎消失（流量低两个量级）', 'P2P 气泡累积、stream 等待'],
-      action: '看底部通信 dock 的 Rank2 黑洞与气泡。',
-      relatedNodeIds: ['gate', 'experts'],
-    },
-    experts: {
-      dimension: '专家负载均衡', metric: 'token / expert',
-      what: 'MoGE 分组专家收不到 token，负载塌陷、梯度暴涨。',
-      evidence: ['Rank2 专家组 0 token', 'MoE 分支梯度范数暴涨'],
-      action: '结合右栏路由热图看 Rank2 列空白。',
-      relatedNodeIds: ['expert_up_weight', 'expert_down_weight', 'a2a_dispatch', 'a2a_combine', 'gate'],
-    },
-    // ── 旁挂权重 / 参数：功能说明 ──
-    embedding_weight: { dimension: '参数 · 词嵌入', metric: '[vocab, hidden]', what: '词嵌入矩阵：把 token id 查表成 hidden 向量；按 TP 在词表维切分，各 rank 持一片。', evidence: ['形状随词表大小、hidden_size 增长'], action: '本次故障无关，作对照。' },
-    qkv_weight: { dimension: '参数 · 注意力', metric: '[hidden, 3·head·dim]', what: 'Q/K/V 投影权重：把 hidden 投到查询/键/值三组子空间；TP 在 head 维切分，须与输出投影对齐。', evidence: ['切分必须与 O-Proj 对齐，否则注意力错位'], action: '正常。' },
-    oproj_weight: { dimension: '参数 · 注意力', metric: '[head·dim, hidden]', what: '注意力输出投影：把多头拼接结果投回 hidden；与 QKV 的 TP 切分互为转置关系。', evidence: ['TP all-reduce 在此汇合各 head 分片'], action: '正常。' },
-    attn_norm_gamma: { dimension: '参数 · 归一化', metric: '[hidden]', what: 'Attention 前 RMSNorm 的缩放参数 γ：逐通道缩放归一化后的激活，稳定注意力输入分布。', evidence: ['逐元素、不切分，各 rank 复制一份'], action: '正常。' },
-    moe_norm_gamma: { dimension: '参数 · 归一化', metric: '[hidden]', what: 'MoE 前 RMSNorm 的缩放参数 γ：归一化进入 Gate 的 hidden，影响路由打分的数值尺度。', evidence: ['若 γ 异常会间接放大/压低 router logits'], action: '本次正常，畸变在 W_gate。' },
-    expert_up_weight: { dimension: '参数 · 专家 FFN', metric: '[hidden, ffn]', what: 'MoGE 专家的上投影（gate/up）：把分到本组的 token 升维到 FFN 中间维做非线性。', evidence: ['Rank2 专家组 0 token 时，这片权重收不到梯度'], action: '看路由热图 Rank2 列空白。' },
-    expert_down_weight: { dimension: '参数 · 专家 FFN', metric: '[ffn, hidden]', what: 'MoGE 专家的下投影：把 FFN 中间结果投回 hidden，随后 All-to-All 汇聚回原 token 位置。', evidence: ['Rank2 专家未激活 → 该片梯度为 0'], action: '看路由热图 Rank2 列空白。' },
-    final_norm_gamma: { dimension: '参数 · 归一化', metric: '[hidden]', what: '最终 RMSNorm 的缩放参数 γ：输出送入 LM Head 前的逐通道缩放。', evidence: ['逐元素、不切分'], action: '正常。' },
-    lm_head_weight: { dimension: '参数 · 输出头', metric: '[hidden, vocab]', what: 'LM Head 投影权重：把 hidden 投到词表 logits 算交叉熵；词表越大越是显存/通信压力点。', evidence: ['常与 embedding 权重共享（tie weights）'], action: '正常。' },
-    // ── 主干算子：功能说明 ──
-    token_ids: { dimension: '输入', metric: '[batch, seq]', what: '输入 token id 序列，进入并行词嵌入。' },
-    embedding: { dimension: '算子 · 词嵌入', metric: 'lookup', what: '并行词嵌入查表：token id → hidden 向量，按 TP 在词表维切分后 all-reduce 汇总。' },
-    attn_norm: { dimension: '算子 · 归一化', metric: 'RMSNorm', what: 'Attention 前 RMSNorm：用 γ 逐通道缩放，稳定注意力输入。' },
-    attention: { dimension: '算子 · 注意力', metric: 'GQA', what: '分组注意力：QK^T 打分、softmax、加权 V；TP 在 head 维并行。' },
-    moe_norm: { dimension: '算子 · 归一化', metric: 'RMSNorm', what: 'MoE 前 RMSNorm：归一化进入 Gate 的 hidden。' },
-    a2a_combine: { dimension: '算子 · 通信', metric: 'All-to-All', what: 'All-to-All 汇聚：把各 rank 专家算完的 token 交换回原始位置。Rank2 因黑洞汇聚量同样异常。', relatedNodeIds: ['experts', 'gate'] },
-    final_norm: { dimension: '算子 · 归一化', metric: 'RMSNorm', what: '最终 RMSNorm：送入 LM Head 前的归一化缩放。' },
-    lm_head: { dimension: '算子 · 输出头', metric: 'Linear', what: 'LM Head 线性层：hidden → 词表 logits，进入 loss 与反向传播。' },
-    logits: { dimension: '输出', metric: '[batch, seq, vocab]', what: '词表 logits：交叉熵 loss 的输入；本次 loss 在此爆炸。' },
-  },
-};
+  };
+})();

@@ -1,0 +1,447 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>MC2 算子异常 · 运行监控</title>
+  <script>
+    (() => {
+      const theme = new URLSearchParams(window.location.search).get("theme");
+      if (theme === "dark" || theme === "light") document.documentElement.dataset.theme = theme;
+    })();
+  </script>
+
+  <!-- ══════════════════════════════════════════════════════════════════════
+       MC2 运行监控页 · 与 training-monitoring-v2.html 同外壳、不同场景
+       ----------------------------------------------------------------------
+       外壳（ide-frame、时光机部件、监控卡、infra 栏、底部 dock、聚光灯遮罩）与
+       v2 同源，样式整段抄自它的内联 <style>（见 css/mc2-incident-monitoring.css）。
+       内容换成 history.md 的 vLLM 推理故障，四块取证区对应聚光灯前四步：
+         ① 推理指标卡   —— forward_time 三分钟恶化 85 倍
+         ② plog 日志页签 —— 507011 / sqe_type=7 notify wait
+         ③ 4 卡热力     —— cqeStatus 挑出真凶 rank 1（不是首报的 rank 2）
+         ④ NPU 内部单元 —— aicError=0 / aivError=0 / ccuError=1（占中央主区）
+       第 ⑤⑥ 步在 v2 页无处可落（根因不在模型结构里），由聚光灯交接给
+       mc2-incident-observer.html；第 ⑦ 步是聚光灯自己的修复卡。
+
+       中央主区放的不是整网图。v2 那里是整网图，因为它那两个案例的震中都在模型
+       结构里（L38 Router / PP3 激活）；本案的定界结论恰恰是「模型层无异常，故障
+       在 CCU 通信单元」—— 摆一张自始至终没有标注的整网图，是把版面最大的一块留给
+       了一句「这里没东西」。改放 NPU 内部单元视图：AIC / AIV 走设计系统的
+       patterns/aic-core-object 与 patterns/aiv-core-object（各自 render 自己的
+       内部对象，不复制它们的 DOM），CCU 没有对应 pattern，由本页按同族视觉自建。
+
+       ⚠️ 不加载 js/training-run-twin.js —— 那份是 openPangu 训练场景的数据源
+          （46 层 / 2048 卡 / loss 曲线 / 120k step），与本页语境不相容。
+       ══════════════════════════════════════════════════════════════════════ -->
+  <link rel="stylesheet" href="./css/foundation.css">
+  <link rel="stylesheet" href="./css/semantic.css">
+  <link rel="stylesheet" href="./css/components.css">
+  <link rel="stylesheet" href="./css/style.css">
+  <link rel="stylesheet" href="./css/workbench-shell-pattern.css">
+  <link rel="stylesheet" href="./css/ide-frame-pattern.css">
+  <!-- NPU 内部单元（patterns/aic-core-object + patterns/aiv-core-object 的本目录副本） -->
+  <link rel="stylesheet" href="./css/aic-core-object-pattern.css">
+  <link rel="stylesheet" href="./css/aiv-core-object-pattern.css">
+  <link rel="stylesheet" href="./css/training-run-twin.css">
+  <link rel="stylesheet" href="./css/training-spotlight.css">
+  <!-- 本页私有：v2 内联样式的搬出版 + 文末「MC2 增补」 -->
+  <link rel="stylesheet" href="./css/mc2-incident-monitoring.css?v=20260812-mapgrad2">
+</head>
+<body data-theme="dark">
+  <section class="pto-ide-frame" data-ide-frame data-host="standalone" aria-label="MC2 Incident Monitoring">
+    <header class="pto-ide-frame__topbar pto-ide-frame__standalone-chrome">
+      <div class="pto-ide-frame__topbar-left">
+        <div class="pto-ide-frame__host-chip" data-ide-slot="host-chip">
+          <svg class="pto-ide-frame__host-icon" viewBox="0 0 24 24" aria-hidden="true">
+            <rect x="3" y="4" width="18" height="16" rx="2"></rect>
+            <path d="m7 9 3 3-3 3"></path>
+            <path d="M12 15h5"></path>
+          </svg>
+        </div>
+        <div class="pto-ide-frame__workspace" data-ide-slot="workspace-switcher">
+          <span>MC2 异常诊断</span>
+        </div>
+        <!-- 问题定位卡：点时间轴上的问题标记后浮现，与 v2 同款同 id（聚光灯的
+             exit() 靠 #diagnosisLocatorClose 收尾，id 不能改）。 -->
+        <div class="twin-diagnosis-locator" id="diagnosisLocator">
+          <div class="twin-diagnosis-locator-body">
+            <strong class="twin-diagnosis-locator-title" id="diagnosisLocatorTitle">--</strong>
+            <div class="twin-diagnosis-locator-tags">
+              <span class="twin-diagnosis-locator-tag" id="diagnosisLocatorLayerTag">--</span>
+              <span class="twin-diagnosis-locator-tag" id="diagnosisLocatorCategoryTag">--</span>
+              <span class="twin-diagnosis-locator-severity" id="diagnosisLocatorSeverityTag">--</span>
+            </div>
+            <span class="twin-diagnosis-locator-desc" id="diagnosisLocatorDesc">--</span>
+          </div>
+          <div class="twin-diagnosis-locator-actions">
+            <button class="pto-ide-frame__window-action" type="button" id="diagnosisLocatorClose" title="关闭并回到最新时刻" aria-label="关闭并回到最新时刻">
+              <svg class="pto-ide-frame__window-icon" viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M18 6 6 18"></path>
+                <path d="M6 6l12 12"></path>
+              </svg>
+            </button>
+          </div>
+        </div>
+      </div>
+      <div class="pto-ide-frame__topbar-center"></div>
+      <div class="pto-ide-frame__topbar-right">
+        <!-- 时间轴：训练版这里是 step 轴（0~120k），推理没有 step 概念，换成墙钟
+             时间轴（14:07 服务起量 → 20:26:52 崩溃）。轨道/滑块的 class 沿用
+             .wzh-tm-*，视觉与 v2 一致。 -->
+        <div class="wzh-timemachine-card wzh-tm-widget" id="progressTopbar" title="故障时间轴 · 点问题标记进入聚光灯定位链">
+          <div class="wzh-tm-compact">
+            <div class="wzh-tm-track" id="progressTrack">
+              <div class="wzh-tm-live" id="progressLive"></div>
+              <div class="wzh-tm-fill" id="progressFill"></div>
+              <div class="wzh-tm-thumb" id="progressThumb" role="slider" tabindex="0"
+                   aria-label="故障时间轴" aria-valuemin="0" aria-valuenow="0" aria-valuemax="0"></div>
+            </div>
+            <span class="wzh-tm-compact-steps">
+              <span id="progressStepCurrent">--</span>
+            </span>
+            <span class="wzh-tm-compact-elapsed">
+              <span class="wzh-tm-compact-divider"></span>
+              <strong id="progressElapsed">--</strong>
+            </span>
+          </div>
+        </div>
+        <div class="pto-ide-frame__window-actions" data-ide-slot="window-controls" aria-label="Window controls">
+          <button class="pto-ide-frame__window-action" id="trainLogToggle" type="button" aria-controls="dockPanelLog" aria-expanded="false" aria-pressed="false" title="打开 plog" aria-label="打开 plog">
+            <svg class="pto-ide-frame__window-icon" viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M6 3h9l5 5v13a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1z"></path>
+              <path d="M15 3v5h5"></path>
+              <path d="M8 13h8"></path>
+              <path d="M8 17h8"></path>
+              <path d="M8 9h3"></path>
+            </svg>
+          </button>
+          <button class="pto-ide-frame__window-action" id="themeToggle" type="button" aria-pressed="false" title="切换主题" aria-label="切换主题">
+            <svg class="pto-ide-frame__window-icon" id="themeToggleIcon" viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M12 3a6.5 6.5 0 0 0 7.8 8.8A8 8 0 1 1 12 3z"></path>
+            </svg>
+          </button>
+          <button class="pto-ide-frame__window-action is-selected" id="twinTimelineToggle" type="button" data-ide-toggle="visualization" aria-controls="bottomDock" aria-expanded="true" aria-pressed="true" title="隐藏底部面板" aria-label="隐藏底部面板">
+            <svg class="pto-ide-frame__window-icon" viewBox="0 0 24 24" aria-hidden="true">
+              <rect x="3" y="3" width="18" height="18" rx="2"></rect>
+              <path d="M3 15h18"></path>
+            </svg>
+          </button>
+          <button class="pto-ide-frame__window-action is-selected" id="twinLeftColToggle" type="button" aria-controls="twinMonitorCol" aria-expanded="true" aria-pressed="true" title="隐藏 推理监控 栏" aria-label="隐藏 推理监控 栏">
+            <svg class="pto-ide-frame__window-icon" viewBox="0 0 24 24" aria-hidden="true">
+              <rect x="3" y="3" width="18" height="18" rx="2"></rect>
+              <path d="M9 3v18"></path>
+            </svg>
+          </button>
+          <button class="pto-ide-frame__window-action is-selected" id="twinRightColToggle" type="button" aria-controls="twinInfraCol" aria-expanded="true" aria-pressed="true" title="隐藏 infra 栏" aria-label="隐藏 infra 栏">
+            <svg class="pto-ide-frame__window-icon" viewBox="0 0 24 24" aria-hidden="true">
+              <rect x="3" y="3" width="18" height="18" rx="2"></rect>
+              <path d="M15 3v18"></path>
+            </svg>
+          </button>
+        </div>
+      </div>
+    </header>
+
+    <div class="pto-ide-frame__body">
+      <nav class="pto-ide-frame__activity-rail pto-ide-frame__standalone-chrome" data-ide-slot="activity-rail" aria-label="Activity rail">
+        <button class="btn btn-icon btn-ghost pto-ide-frame__rail-button is-selected" type="button" aria-label="Explorer" title="Explorer" aria-pressed="true">
+          <svg class="pto-ide-frame__rail-icon" viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9l-.81-1.2A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"></path>
+          </svg>
+        </button>
+        <button class="btn btn-icon btn-ghost pto-ide-frame__rail-button" type="button" aria-label="Search" title="Search">
+          <svg class="pto-ide-frame__rail-icon" viewBox="0 0 24 24" aria-hidden="true">
+            <circle cx="11" cy="11" r="8"></circle>
+            <path d="m21 21-4.3-4.3"></path>
+          </svg>
+        </button>
+        <button class="btn btn-icon btn-ghost pto-ide-frame__rail-button" type="button" aria-label="Source control" title="Source control">
+          <svg class="pto-ide-frame__rail-icon" viewBox="0 0 24 24" aria-hidden="true">
+            <circle cx="18" cy="18" r="3"></circle>
+            <circle cx="6" cy="6" r="3"></circle>
+            <path d="M13 6h3a2 2 0 0 1 2 2v7"></path>
+            <path d="M6 9v12"></path>
+          </svg>
+        </button>
+        <button class="btn btn-icon btn-ghost pto-ide-frame__rail-button" type="button" aria-label="Terminal" title="Terminal">
+          <svg class="pto-ide-frame__rail-icon" viewBox="0 0 24 24" aria-hidden="true">
+            <rect x="3" y="5" width="18" height="14" rx="2"></rect>
+            <path d="m7 9 3 3-3 3"></path>
+            <path d="M12 15h5"></path>
+          </svg>
+        </button>
+        <!-- 「配置关系」→ MC2 观测页，两页互跳 -->
+        <button class="btn btn-icon btn-ghost pto-ide-frame__rail-button" type="button" id="navConfigRelation" aria-label="配置关系" title="配置关系">
+          <svg class="pto-ide-frame__rail-icon" viewBox="0 0 24 24" aria-hidden="true">
+            <circle cx="18" cy="5" r="3"></circle>
+            <circle cx="6" cy="12" r="3"></circle>
+            <circle cx="18" cy="19" r="3"></circle>
+            <path d="m8.6 13.5 6.8 4"></path>
+            <path d="m15.4 6.5-6.8 4"></path>
+          </svg>
+        </button>
+      </nav>
+
+      <div class="pto-ide-frame__workarea">
+        <div class="pto-ide-frame__split" data-ide-split="standalone-vertical" data-split-direction="vertical" data-sizes="72,28" data-min-size="360,140" data-pixel-sizes="0,320" data-storage-key="pto-mc2-monitoring-vertical-v1">
+          <section class="pto-ide-frame__pane pto-ide-frame__pane--stack" data-ide-pane="main-row">
+            <div class="wzh-main-row">
+              <section class="pto-ide-frame__pane" data-ide-pane="main-content">
+                <section class="pto-ide-frame__pane twin-center-pane" data-ide-pane="editor-preview" aria-label="整网图与取证">
+                  <header class="pto-ide-frame__pane-header twin-pane-header">
+                    <div class="twin-pane-header-title-row">
+                      <div>
+                        <div class="pto-ide-frame__pane-title" id="architectureTitle">MC2 融合算子在一张卡内部的执行图</div>
+                        <div class="pto-ide-frame__pane-meta" id="architectureMeta">AIC / AIV / CCU 是同一个 FUSION_KERNEL 的三个执行部位 —— 断点在它们之间的 notify 边上</div>
+                      </div>
+                    </div>
+                  </header>
+
+                  <!-- 三列同处一个 grid（左=推理监控 / 中=NPU 内部单元 / 右=infra），
+                       列位由 CSS 的 grid-column 指定，顶栏两个收起键改的是本容器上的
+                       is-left-collapsed / is-right-collapsed。两侧默认都展开。 -->
+                  <div class="pto-ide-frame__pane-body twin-center-scroll">
+                    <!-- 左列：推理监控（对应聚光灯步 ①） -->
+                    <div class="twin-monitor-sidebar" id="twinMonitorCol">
+                      <div class="twin-sidebar-body">
+                        <div id="runTwinDefaultView" style="display:flex; flex-direction:column; gap:var(--space-3);">
+                          <section class="twin-monitor-card twin-accuracy-card" aria-label="推理运行指标">
+                            <div class="twin-card-heading">
+                              <div>
+                                <div class="wzh-card-title-row">
+                                  <h2>推理指标</h2>
+                                  <span class="wzh-help" tabindex="0" data-tooltip="数据来源：Run#4 的 vLLM 服务端日志 server_mxfp8_all_withmc2.log，每完成一次 forward 打一次点，共取 14:07:00 → 14:09:48 的四轮。
+这一栏回答的是「异常长什么样、从什么时候开始」，不回答「是谁坏了」——后者在右侧 infra 栏（哪张卡）与中央执行图（哪个单元）。
+两张图是同一份数据的两种读法：左图看绝对耗时，右图看相对稳态的倍数（可直接设告警阈值）。
+纵轴均为 log10；点上悬停可读该时刻的精确值。">?</span>
+                                </div>
+                                <p>server_mxfp8_all_withmc2.log · 单次 forward</p>
+                              </div>
+                            </div>
+                            <!-- 卡片由 js/mc2-incident-monitoring.js 建入，沿用 v2 的
+                                 [data-acc-card] 钩子，聚光灯按它取景。 -->
+                            <div class="twin-accuracy-charts" id="accuracyCharts"></div>
+                          </section>
+                        </div>
+                      </div>
+                    </div>
+
+                    <!-- 中列：NPU 内部单元（聚光灯步 ④ 的取证区）
+                         三个单元并排，视觉重量分配就是结论本身：AIC / AIV 压暗、
+                         角标 error=0，CCU 描红、展开到 mission 粒度。 -->
+                    <section class="twin-graph-card mc2-unit-card" aria-label="NPU 内部单元">
+                      <div class="twin-architecture-stage mc2-unit-stage-host">
+                        <header class="mc2-unit-topbar">
+                          <span class="wzh-graph-inline-title">单卡内部执行图</span>
+                          <div class="mc2-unit-topbar__right">
+                            <span class="mc2-graph-note">Run#1 · device_error_proc_c.cc:847</span>
+                            <!-- 三个对象是定尺寸的设计对象（pattern 自带几何），列宽不够时
+                                 整块等比缩放而不是让它们各自压扁 —— 压扁会改掉 pattern 的
+                                 版式契约。缩放比由 JS 按可用宽度实测。 -->
+                            <div class="zoom-control-group mc2-unit-zoom" aria-label="内部单元缩放">
+                              <button class="btn btn-ghost btn-icon btn-sm" id="mc2UnitZoomOut" type="button" aria-label="缩小" title="缩小">
+                                <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M5 12h14"></path></svg>
+                              </button>
+                              <span class="zoom-control-readout" id="mc2UnitZoomReadout" role="status">100%</span>
+                              <button class="btn btn-ghost btn-icon btn-sm" id="mc2UnitZoomIn" type="button" aria-label="放大" title="放大">
+                                <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14"></path><path d="M5 12h14"></path></svg>
+                              </button>
+                              <button class="btn btn-sm btn-ghost" id="mc2UnitZoomFit" type="button" title="适配宽度">适配</button>
+                            </div>
+                          </div>
+                        </header>
+                        <!-- 区域置顶横幅：这张图的读法（三个 flag 里两个是 0 该怎么理解）。
+                             原先是舞台末尾的一行小字，跟着 stage 一起 scale —— 缩到 60%
+                             就没法读了，而它恰恰是这张图存在的理由。挪到缩放之外、图之前，
+                             样式与观测页事件内容顶部的 .cro-incident-banner 同族。
+                             文本由 js/mc2-incident-monitoring.js 的 renderUnitStage 写入。 -->
+                        <div class="mc2-unit-banner" id="mc2UnitBanner" role="note">
+                          <span class="mc2-unit-banner__tag">怎么读</span>
+                          <p class="mc2-unit-banner__message" id="mc2UnitVerdict"></p>
+                        </div>
+                        <!-- viewport 负责取景与滚动，stage 按内容排到自然尺寸后整体 scale -->
+                        <div class="mc2-unit-viewport" id="mc2UnitViewport">
+                          <div class="mc2-unit-stage" id="mc2UnitStage"></div>
+                        </div>
+                        <!-- 关键读数（missionId / WaitGroup / comm_flag …）留在 infra 栏
+                             那张小卡里（#mc2UnitFacts），中区只放单元对象本体：一份读数
+                             两处渲染既撞 id 也让人不知道该看哪份。 -->
+                      </div>
+                    </section>
+
+                    <!-- 右列 · infra（对应聚光灯步 ③④） -->
+                    <aside class="wzh-col-infra" id="twinInfraCol" aria-label="infra">
+                      <div class="wzh-col-infra-body">
+                        <section class="twin-monitor-card" aria-label="四卡状态">
+                          <div class="twin-card-heading">
+                            <div>
+                              <div class="wzh-card-title-row">
+                                <h2>集群监控</h2>
+                                <span class="wzh-help" tabindex="0" data-tooltip="NPU 总数：4（Ascend 950 · 1 节点用 4 卡）
+并行策略：TP=4，EP=4（EP 组与 TP 组是同一批卡）
+通信引擎：CCU（mc2_comm_mode=auto）
+每格为一张 NPU，格内数字为 global rank。">?</span>
+                              </div>
+                              <p id="hardwareSummary">4 × Ascend 950 · 1 节点，每格为一张 NPU。</p>
+                            </div>
+                          </div>
+                          <div class="twin-heat mc2-heat" id="heat"></div>
+                          <div class="twin-legend">
+                            <span><i class="twin-swatch mc2-swatch-origin"></i>cqeStatus=0x8000（真凶）</span>
+                            <span><i class="twin-swatch mc2-swatch-victim"></i>cqeStatus=0（故障传播）</span>
+                          </div>
+                          <!-- 报错时序表：本案最反直觉的一屏 —— 首报的不是真凶 -->
+                          <div class="mc2-rank-table" id="mc2RankTable"></div>
+                        </section>
+
+                        <div class="twin-card-heading wzh-moe-heading">
+                          <div class="wzh-card-title-row">
+                            <h2>NPU 内部单元</h2>
+                          </div>
+                        </div>
+                        <section class="twin-monitor-card" aria-label="AIC / AIV / CCU 单元状态" id="mc2UnitCard">
+                          <!-- v2 的 infra 栏最细只到 rank/node；本案必须再下一级，
+                               因为「哪个单元报错」就是定界结论本身。
+                               这里是**读数**（三个 error flag + missionId / WaitGroup 等
+                               关键值），中央主区是同一件事的**对象视图**（AIC/AIV/CCU 内部
+                               结构）。两者不是重复：这栏回答「值是多少」，中区回答
+                               「这三个单元长什么样、坏的那个坏在哪一格」。 -->
+                          <p class="mc2-unit-caption">Run#1 · device_error_proc_c.cc:847 的三个错误标志</p>
+                          <div class="mc2-units" id="mc2Units"></div>
+                          <div class="mc2-unit-facts" id="mc2UnitFacts"></div>
+                        </section>
+                      </div>
+                    </aside>
+                  </div>
+                </section>
+            </div>
+          </section>
+
+          <!-- 底部 dock：Timeline / plog（对应聚光灯步 ②） -->
+          <section class="pto-ide-frame__pane pto-ide-frame__bottom-dock" data-ide-pane="bottom-panel" data-ide-bottom-dock id="bottomDock">
+            <div class="pto-ide-frame__bottom-view" data-ide-bottom-panel="visualization" id="twinTimeline">
+              <header class="pto-ide-frame__pane-header">
+                <div class="pto-ide-frame__terminal-tablist twin-dock-tablist" role="tablist" aria-label="底部面板">
+                  <button class="pto-ide-frame__terminal-tab twin-dock-tab is-selected" type="button" role="tab"
+                          id="dockTabLog" data-dock-tab="log"
+                          aria-selected="true" aria-controls="dockPanelLog">plog</button>
+                  <button class="pto-ide-frame__terminal-tab twin-dock-tab" type="button" role="tab"
+                          id="dockTabTimeline" data-dock-tab="timeline"
+                          aria-selected="false" aria-controls="twinTimelineBody" tabindex="-1">Timeline</button>
+                </div>
+                <button class="pto-ide-frame__window-action" id="bottomDockCloseBtn" type="button" title="隐藏底部面板" aria-label="隐藏底部面板">
+                  <svg class="pto-ide-frame__window-icon" viewBox="0 0 24 24" aria-hidden="true">
+                    <path d="M18 6 6 18"></path>
+                    <path d="M6 6l12 12"></path>
+                  </svg>
+                </button>
+              </header>
+              <div class="pto-ide-frame__pane-body twin-timeline-body" id="twinTimelineBody"
+                   role="tabpanel" aria-labelledby="dockTabTimeline" data-dock-panel="timeline" hidden></div>
+              <div class="pto-ide-frame__pane-body wzh-log-panel" id="dockPanelLog"
+                   role="tabpanel" aria-labelledby="dockTabLog" data-dock-panel="log">
+                <div class="wzh-log-toolbar">
+                  <span class="seg" id="trainLogTabSeg" role="tablist" aria-label="日志分类">
+                    <button class="segbtn on" type="button" data-log-tab="all" role="tab" aria-selected="true">全量</button>
+                    <button class="segbtn" type="button" data-log-tab="python" role="tab" aria-selected="false">Python 侧</button>
+                    <button class="segbtn" type="button" data-log-tab="plog" role="tab" aria-selected="false">Device plog</button>
+                  </span>
+                  <span class="wzh-log-context-inline" id="trainLogContext">--</span>
+                </div>
+                <div class="wzh-log-split">
+                  <div class="wzh-log-body" id="trainLogBody"></div>
+                  <aside class="wzh-log-mapping" aria-label="plog 可读诊断">
+                    <div class="wzh-log-mapping-head"><span>plog → 可读诊断</span></div>
+                    <div class="wzh-log-mapping-list" id="trainLogMappingList"></div>
+                  </aside>
+                </div>
+              </div>
+            </div>
+          </section>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 「?」说明气泡的浮层：挂在 body 上，避免被 overflow 祖先（侧栏滚动区）截断 -->
+  <div id="diagnosisTooltip" class="diagnosis-bubble" hidden></div>
+
+  <script>
+    // 「?」/ 热力格说明气泡：与 v2 同一套 show/position/hide（v2 内联脚本的搬出版）。
+    // 暴露 window.wzhBindHelpTooltips 供 mc2-incident-monitoring.js 建完卡片后重扫绑定。
+    (() => {
+      const bubble = document.getElementById("diagnosisTooltip");
+      if (!bubble) return;
+      let activeDesc = null;
+
+      function position() {
+        if (!activeDesc) return;
+        const rect = activeDesc.getBoundingClientRect();
+        bubble.style.left = Math.max(6, Math.min(rect.left - 6, window.innerWidth - 272)) + "px";
+        bubble.style.top = (rect.bottom + 4) + "px";
+      }
+      function show(e) {
+        const desc = e.currentTarget;
+        if (!desc.dataset.tooltip) return;
+        activeDesc = desc;
+        bubble.textContent = desc.dataset.tooltip;
+        bubble.hidden = false;
+        position();
+      }
+      function hide() {
+        activeDesc = null;
+        bubble.hidden = true;
+      }
+
+      function bindHelpTooltips(root) {
+        (root || document).querySelectorAll(".diagnosis-desc, .wzh-help, [data-tooltip]").forEach((desc) => {
+          if (desc.dataset.wzhHelpBound) return;
+          desc.dataset.wzhHelpBound = "1";
+          desc.addEventListener("mouseenter", show);
+          desc.addEventListener("mouseleave", hide);
+          desc.addEventListener("mousemove", position);
+          desc.addEventListener("focus", show);
+          desc.addEventListener("blur", hide);
+        });
+      }
+      window.wzhBindHelpTooltips = bindHelpTooltips;
+      bindHelpTooltips();
+    })();
+  </script>
+
+  <script src="./js/workbench-shell-pattern.js"></script>
+  <script src="./js/ide-frame-pattern.js"></script>
+  <!-- 中央主区的两个单元对象直接由 pattern 自己渲染（render 进容器），
+       本页不复制它们的 DOM，也不在页面私有 CSS 里改它们的壳。 -->
+  <script src="./js/aic-core-object-pattern.js"></script>
+  <script src="./js/aiv-core-object-pattern.js"></script>
+  <script src="./js/mc2-incident-monitoring.js?v=20260812-fit"></script>
+  <script src="./js/mc2-spotlight.js?v=20260812-fit"></script>
+  <script>
+    // 主题切换：与 v2 / 观测页同款单图标按钮
+    (() => {
+      const btn = document.getElementById("themeToggle");
+      const icon = document.getElementById("themeToggleIcon");
+      const MOON = "M12 3a6.5 6.5 0 0 0 7.8 8.8A8 8 0 1 1 12 3z";
+      const SUN = "M12 7a5 5 0 1 0 0 10 5 5 0 0 0 0-10zM12 1v3M12 20v3M4.2 4.2l2.1 2.1M17.7 17.7l2.1 2.1M1 12h3M20 12h3M4.2 19.8l2.1-2.1M17.7 6.3l2.1-2.1";
+      const apply = (theme) => {
+        document.documentElement.dataset.theme = theme;
+        document.body.dataset.theme = theme;
+        btn.setAttribute("aria-pressed", String(theme === "light"));
+        icon.querySelector("path").setAttribute("d", theme === "light" ? SUN : MOON);
+        window.Mc2Monitoring?.setTheme?.(theme);
+      };
+      btn.addEventListener("click", () => {
+        apply(document.documentElement.dataset.theme === "light" ? "dark" : "light");
+      });
+    })();
+
+    // rail：跳 MC2 观测页
+    (() => {
+      const btn = document.getElementById("navConfigRelation");
+      if (btn) btn.addEventListener("click", () => { window.location.href = "./mc2-incident-observer.html"; });
+    })();
+  </script>
+</body>
+</html>

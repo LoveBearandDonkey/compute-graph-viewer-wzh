@@ -1,0 +1,720 @@
+{
+  "schema_version": "operator_mapping.v1",
+  "source": {
+    "name": "example_mla_decode.py",
+    "framework": "TileLang",
+    "sha256": "badfb74e161a19be4b8022b8c13ca059b368598c7d7f8a5b77ea623347341962"
+  },
+  "target": {
+    "platform": "Atlas A3 / Ascend 910C",
+    "route": "Ascend C & PTO"
+  },
+  "mappings": [
+    {
+      "id": "map_kernel_dispatch",
+      "source": {
+        "primitive": "T.Kernel(..., threads=256)",
+        "lines": [
+          128
+        ],
+        "provenance": [
+          {
+            "source": "example_mla_decode",
+            "path": "/Users/yin/pto/ascendport_migration-pangu/mla-model-architecture/outputs/example_mla_decode.py",
+            "line": 128,
+            "fact": "kernel grid and worker assignment",
+            "confidence": "confirmed"
+          }
+        ]
+      },
+      "graph_node_ids": [
+        "kernel_dispatch"
+      ],
+      "semantic_role": "kernel grid and worker assignment",
+      "target": {
+        "api": "GetBlockIdx + AI Core SPMD",
+        "execution_unit": "Scalar / scheduler",
+        "implementation_status": "emitted_s6"
+      },
+      "relation": "structural_rewrite",
+      "note": "GPU thread blocks become AI Core work ownership for each batch/head group.",
+      "target_evidence": [
+        {
+          "source": "ascend_s6",
+          "path": "/Users/yin/pto/ascendport_migration-pangu/mla-model-architecture/outputs/flash_mla_decode_s6.cpp",
+          "line": 16,
+          "fact": "S6 assigns work with GetBlockIdx",
+          "confidence": "prototype_evidence"
+        }
+      ]
+    },
+    {
+      "id": "map_shared_buffers",
+      "source": {
+        "primitive": "T.alloc_shared",
+        "lines": [
+          34
+        ],
+        "provenance": [
+          {
+            "source": "example_mla_decode",
+            "path": "/Users/yin/pto/ascendport_migration-pangu/mla-model-architecture/outputs/example_mla_decode.py",
+            "line": 34,
+            "fact": "shared-memory staging",
+            "confidence": "confirmed"
+          }
+        ]
+      },
+      "graph_node_ids": [
+        "q_stage",
+        "kv_stage"
+      ],
+      "semantic_role": "shared-memory staging",
+      "target": {
+        "api": "TQue / T.alloc_L1 / T.alloc_ub",
+        "execution_unit": "MTE + L1/UB",
+        "implementation_status": "emitted_s6"
+      },
+      "relation": "memory_space_rewrite",
+      "note": "Source shared buffers are split by consumer into L1 queues and Vector UB buffers.",
+      "target_evidence": [
+        {
+          "source": "ascend_s6",
+          "path": "/Users/yin/pto/ascendport_migration-pangu/mla-model-architecture/outputs/flash_mla_decode_s6.cpp",
+          "line": 25,
+          "fact": "S6 creates explicit L1 and UB buffers",
+          "confidence": "prototype_evidence"
+        }
+      ]
+    },
+    {
+      "id": "map_fragment_buffers",
+      "source": {
+        "primitive": "T.alloc_fragment",
+        "lines": [
+          40
+        ],
+        "provenance": [
+          {
+            "source": "example_mla_decode",
+            "path": "/Users/yin/pto/ascendport_migration-pangu/mla-model-architecture/outputs/example_mla_decode.py",
+            "line": 40,
+            "fact": "register-fragment accumulators",
+            "confidence": "confirmed"
+          }
+        ]
+      },
+      "graph_node_ids": [
+        "qk_gemm",
+        "pe_gemm",
+        "score_block_max",
+        "pv_gemm"
+      ],
+      "semantic_role": "register-fragment accumulators",
+      "target": {
+        "api": "L0C LocalTensor + VECCALC buffer",
+        "execution_unit": "Cube L0C + Vector UB",
+        "implementation_status": "emitted_s6"
+      },
+      "relation": "memory_space_rewrite",
+      "note": "Accumulator placement becomes explicit and follows the Cube/Vector split.",
+      "target_evidence": [
+        {
+          "source": "ascend_s6",
+          "path": "/Users/yin/pto/ascendport_migration-pangu/mla-model-architecture/outputs/flash_mla_decode_s6.cpp",
+          "line": 70,
+          "fact": "S6 allocates logits in the Cube output queue",
+          "confidence": "prototype_evidence"
+        }
+      ]
+    },
+    {
+      "id": "map_q_copy",
+      "source": {
+        "primitive": "T.copy(Q / Q_pe -> shared)",
+        "lines": [
+          52,
+          53,
+          145,
+          146
+        ],
+        "provenance": [
+          {
+            "source": "example_mla_decode",
+            "path": "/Users/yin/pto/ascendport_migration-pangu/mla-model-architecture/outputs/example_mla_decode.py",
+            "line": 52,
+            "fact": "query block load",
+            "confidence": "confirmed"
+          }
+        ]
+      },
+      "graph_node_ids": [
+        "q_stage"
+      ],
+      "semantic_role": "query block load",
+      "target": {
+        "api": "DataCopy GM -> L1 -> L0A",
+        "execution_unit": "MTE",
+        "implementation_status": "emitted_s6"
+      },
+      "relation": "staged_direct_mapping",
+      "note": "Q and Q_pe are staged together before score computation.",
+      "target_evidence": [
+        {
+          "source": "ascend_s6",
+          "path": "/Users/yin/pto/ascendport_migration-pangu/mla-model-architecture/outputs/flash_mla_decode_s6.cpp",
+          "line": 34,
+          "fact": "S6 copies Q and Q_pe into qL1",
+          "confidence": "prototype_evidence"
+        }
+      ]
+    },
+    {
+      "id": "map_kv_pipeline_copy",
+      "source": {
+        "primitive": "T.Pipelined + T.copy(KV / K_pe)",
+        "lines": [
+          59,
+          62,
+          63,
+          152,
+          153,
+          154
+        ],
+        "provenance": [
+          {
+            "source": "example_mla_decode",
+            "path": "/Users/yin/pto/ascendport_migration-pangu/mla-model-architecture/outputs/example_mla_decode.py",
+            "line": 59,
+            "fact": "KV tile load and overlap",
+            "confidence": "confirmed"
+          }
+        ]
+      },
+      "graph_node_ids": [
+        "kv_stage"
+      ],
+      "semantic_role": "KV tile load and overlap",
+      "target": {
+        "api": "DataCopy GM -> L1 -> L0B + double buffer",
+        "execution_unit": "MTE",
+        "implementation_status": "emitted_s6"
+      },
+      "relation": "pipeline_rewrite",
+      "note": "The source two-stage pipeline becomes TQue depth-2 prefetch of the next KV tile.",
+      "target_evidence": [
+        {
+          "source": "ascend_s6",
+          "path": "/Users/yin/pto/ascendport_migration-pangu/mla-model-architecture/outputs/flash_mla_decode_s6.cpp",
+          "line": 46,
+          "fact": "S6 overlaps next-tile prefetch with compute",
+          "confidence": "prototype_evidence"
+        }
+      ]
+    },
+    {
+      "id": "map_qk_gemm",
+      "source": {
+        "primitive": "T.gemm(Q_shared, KV_shared, transpose_B=True, clear_accum=True)",
+        "lines": [
+          65,
+          155
+        ],
+        "provenance": [
+          {
+            "source": "example_mla_decode",
+            "path": "/Users/yin/pto/ascendport_migration-pangu/mla-model-architecture/outputs/example_mla_decode.py",
+            "line": 65,
+            "fact": "non-positional score matrix multiply",
+            "confidence": "confirmed"
+          }
+        ]
+      },
+      "graph_node_ids": [
+        "qk_gemm"
+      ],
+      "semantic_role": "non-positional score matrix multiply",
+      "target": {
+        "api": "Mmad / T.gemm_v0(init=True)",
+        "execution_unit": "Cube",
+        "implementation_status": "emitted_s6"
+      },
+      "relation": "many_to_one_fusion",
+      "note": "Q·KV transpose GEMM is fused with the PE GEMM by concatenating DIM and PE_DIM.",
+      "target_evidence": [
+        {
+          "source": "ascend_s6",
+          "path": "/Users/yin/pto/ascendport_migration-pangu/mla-model-architecture/outputs/flash_mla_decode_s6.cpp",
+          "line": 71,
+          "fact": "S6 emits one fused Mmad over DIM + PE_DIM",
+          "confidence": "prototype_evidence"
+        }
+      ]
+    },
+    {
+      "id": "map_pe_gemm",
+      "source": {
+        "primitive": "T.gemm(Q_pe_shared, K_pe_shared, transpose_B=True)",
+        "lines": [
+          66,
+          156
+        ],
+        "provenance": [
+          {
+            "source": "example_mla_decode",
+            "path": "/Users/yin/pto/ascendport_migration-pangu/mla-model-architecture/outputs/example_mla_decode.py",
+            "line": 66,
+            "fact": "positional score accumulation",
+            "confidence": "confirmed"
+          }
+        ]
+      },
+      "graph_node_ids": [
+        "pe_gemm"
+      ],
+      "semantic_role": "positional score accumulation",
+      "target": {
+        "api": "Mmad / T.gemm_v0(init=False)",
+        "execution_unit": "Cube",
+        "implementation_status": "emitted_s6"
+      },
+      "relation": "many_to_one_fusion",
+      "note": "The second source GEMM is absorbed into the same concatenated Mmad as Q·KV.",
+      "target_evidence": [
+        {
+          "source": "ascend_s6",
+          "path": "/Users/yin/pto/ascendport_migration-pangu/mla-model-architecture/outputs/flash_mla_decode_s6.cpp",
+          "line": 71,
+          "fact": "S6 fuses both score terms into one Mmad",
+          "confidence": "prototype_evidence"
+        }
+      ]
+    },
+    {
+      "id": "map_warp_policy",
+      "source": {
+        "primitive": "T.GemmWarpPolicy.FullCol",
+        "lines": [
+          65,
+          66,
+          83,
+          155,
+          156,
+          172
+        ],
+        "provenance": [
+          {
+            "source": "example_mla_decode",
+            "path": "/Users/yin/pto/ascendport_migration-pangu/mla-model-architecture/outputs/example_mla_decode.py",
+            "line": 65,
+            "fact": "GPU warp-level GEMM policy",
+            "confidence": "confirmed"
+          }
+        ]
+      },
+      "graph_node_ids": [
+        "qk_gemm",
+        "pe_gemm",
+        "pv_gemm"
+      ],
+      "semantic_role": "GPU warp-level GEMM policy",
+      "target": {
+        "api": "removed; Cube manages L0 tiling",
+        "execution_unit": "Cube scheduler",
+        "implementation_status": "emitted_s6"
+      },
+      "relation": "removed_with_replacement",
+      "note": "The GPU warp partition has no Ascend equivalent and must not survive code generation.",
+      "target_evidence": [
+        {
+          "source": "ascend_s6",
+          "path": "/Users/yin/pto/ascendport_migration-pangu/mla-model-architecture/outputs/flash_mla_decode_s6.cpp",
+          "line": 78,
+          "fact": "S6 explicitly removes GemmWarpPolicy",
+          "confidence": "prototype_evidence"
+        }
+      ]
+    },
+    {
+      "id": "map_swizzle",
+      "source": {
+        "primitive": "T.use_swizzle(10)",
+        "lines": [
+          50
+        ],
+        "provenance": [
+          {
+            "source": "example_mla_decode",
+            "path": "/Users/yin/pto/ascendport_migration-pangu/mla-model-architecture/outputs/example_mla_decode.py",
+            "line": 50,
+            "fact": "GPU L2 swizzle schedule",
+            "confidence": "confirmed"
+          }
+        ]
+      },
+      "graph_node_ids": [
+        "kernel_dispatch"
+      ],
+      "semantic_role": "GPU L2 swizzle schedule",
+      "target": {
+        "api": "T.Persistent / AI Core work balancing",
+        "execution_unit": "Scheduler",
+        "implementation_status": "planned_not_emitted"
+      },
+      "relation": "removed_with_replacement",
+      "note": "The analysis prescribes T.Persistent, but the current S6 prototype does not emit that directive.",
+      "target_evidence": []
+    },
+    {
+      "id": "map_reduce_max",
+      "source": {
+        "primitive": "T.reduce_max + T.max",
+        "lines": [
+          69,
+          159
+        ],
+        "provenance": [
+          {
+            "source": "example_mla_decode",
+            "path": "/Users/yin/pto/ascendport_migration-pangu/mla-model-architecture/outputs/example_mla_decode.py",
+            "line": 69,
+            "fact": "online softmax maximum",
+            "confidence": "confirmed"
+          }
+        ]
+      },
+      "graph_node_ids": [
+        "score_block_max",
+        "running_max_merge"
+      ],
+      "semantic_role": "online softmax maximum",
+      "target": {
+        "api": "ReduceMax + fmaxf",
+        "execution_unit": "Vector",
+        "implementation_status": "emitted_s6"
+      },
+      "relation": "semantic_direct_mapping",
+      "note": "Block max and historical max remain separate semantic steps.",
+      "target_evidence": [
+        {
+          "source": "ascend_s6",
+          "path": "/Users/yin/pto/ascendport_migration-pangu/mla-model-architecture/outputs/flash_mla_decode_s6.cpp",
+          "line": 79,
+          "fact": "S6 performs Vector ReduceMax and running maximum merge",
+          "confidence": "prototype_evidence"
+        }
+      ]
+    },
+    {
+      "id": "map_exp2",
+      "source": {
+        "primitive": "T.exp2(x * log2(e))",
+        "lines": [
+          73,
+          75,
+          108,
+          114,
+          163,
+          165
+        ],
+        "provenance": [
+          {
+            "source": "example_mla_decode",
+            "path": "/Users/yin/pto/ascendport_migration-pangu/mla-model-architecture/outputs/example_mla_decode.py",
+            "line": 73,
+            "fact": "online softmax exponentials",
+            "confidence": "confirmed"
+          }
+        ]
+      },
+      "graph_node_ids": [
+        "score_exponential",
+        "output_rescale"
+      ],
+      "semantic_role": "online softmax exponentials",
+      "target": {
+        "api": "Exp / expf with natural softmax scale",
+        "execution_unit": "Vector",
+        "implementation_status": "emitted_s6"
+      },
+      "relation": "numeric_rewrite",
+      "note": "Remove the 1.44269504 multiplier and keep LSE math in natural exp/ln space.",
+      "target_evidence": [
+        {
+          "source": "ascend_s6",
+          "path": "/Users/yin/pto/ascendport_migration-pangu/mla-model-architecture/outputs/flash_mla_decode_s6.cpp",
+          "line": 85,
+          "fact": "S6 emits natural Exp rather than exp2",
+          "confidence": "prototype_evidence"
+        }
+      ]
+    },
+    {
+      "id": "map_reduce_sum",
+      "source": {
+        "primitive": "T.reduce_sum",
+        "lines": [
+          76,
+          166
+        ],
+        "provenance": [
+          {
+            "source": "example_mla_decode",
+            "path": "/Users/yin/pto/ascendport_migration-pangu/mla-model-architecture/outputs/example_mla_decode.py",
+            "line": 76,
+            "fact": "online softmax denominator reduction",
+            "confidence": "confirmed"
+          }
+        ]
+      },
+      "graph_node_ids": [
+        "score_sum"
+      ],
+      "semantic_role": "online softmax denominator reduction",
+      "target": {
+        "api": "ReduceSum",
+        "execution_unit": "Vector",
+        "implementation_status": "emitted_s6"
+      },
+      "relation": "semantic_direct_mapping",
+      "note": "The reduction axis changes from source dim=1 to the local tile's final dimension.",
+      "target_evidence": [
+        {
+          "source": "ascend_s6",
+          "path": "/Users/yin/pto/ascendport_migration-pangu/mla-model-architecture/outputs/flash_mla_decode_s6.cpp",
+          "line": 86,
+          "fact": "S6 emits Vector ReduceSum",
+          "confidence": "prototype_evidence"
+        }
+      ]
+    },
+    {
+      "id": "map_online_state",
+      "source": {
+        "primitive": "T.Parallel logsum / acc_o rescale",
+        "lines": [
+          80,
+          82,
+          169,
+          171
+        ],
+        "provenance": [
+          {
+            "source": "example_mla_decode",
+            "path": "/Users/yin/pto/ascendport_migration-pangu/mla-model-architecture/outputs/example_mla_decode.py",
+            "line": 80,
+            "fact": "online softmax recurrence",
+            "confidence": "confirmed"
+          }
+        ]
+      },
+      "graph_node_ids": [
+        "online_state_update",
+        "output_rescale"
+      ],
+      "semantic_role": "online softmax recurrence",
+      "target": {
+        "api": "Muls + scalar FP32 recurrence",
+        "execution_unit": "Vector + Scalar",
+        "implementation_status": "emitted_s6"
+      },
+      "relation": "loop_body_rewrite",
+      "note": "FP32 running max, denominator, and output rescale preserve the online-softmax invariant.",
+      "target_evidence": [
+        {
+          "source": "ascend_s6",
+          "path": "/Users/yin/pto/ascendport_migration-pangu/mla-model-architecture/outputs/flash_mla_decode_s6.cpp",
+          "line": 87,
+          "fact": "S6 updates the online-softmax state",
+          "confidence": "prototype_evidence"
+        }
+      ]
+    },
+    {
+      "id": "map_pv_gemm",
+      "source": {
+        "primitive": "T.gemm(P, KV, acc_o)",
+        "lines": [
+          83,
+          172
+        ],
+        "provenance": [
+          {
+            "source": "example_mla_decode",
+            "path": "/Users/yin/pto/ascendport_migration-pangu/mla-model-architecture/outputs/example_mla_decode.py",
+            "line": 83,
+            "fact": "probability-value accumulation",
+            "confidence": "confirmed"
+          }
+        ]
+      },
+      "graph_node_ids": [
+        "pv_gemm"
+      ],
+      "semantic_role": "probability-value accumulation",
+      "target": {
+        "api": "Mmad / Cube GEMM (S2 plan)",
+        "execution_unit": "Cube planned; Vector emitted",
+        "implementation_status": "prototype_divergence",
+        "emitted_api": "Axpy"
+      },
+      "relation": "semantic_mapping_with_codegen_gap",
+      "note": "S2 maps P·V to Cube Mmad, while the bundled S6 prototype currently emits per-token Vector Axpy.",
+      "target_evidence": [
+        {
+          "source": "ascend_s6",
+          "path": "/Users/yin/pto/ascendport_migration-pangu/mla-model-architecture/outputs/flash_mla_decode_s6.cpp",
+          "line": 91,
+          "fact": "S6 prototype implements P·V with Axpy",
+          "confidence": "prototype_evidence"
+        }
+      ]
+    },
+    {
+      "id": "map_normalize",
+      "source": {
+        "primitive": "acc_o /= logsum",
+        "lines": [
+          85,
+          174
+        ],
+        "provenance": [
+          {
+            "source": "example_mla_decode",
+            "path": "/Users/yin/pto/ascendport_migration-pangu/mla-model-architecture/outputs/example_mla_decode.py",
+            "line": 85,
+            "fact": "final no-split normalization",
+            "confidence": "confirmed"
+          }
+        ]
+      },
+      "graph_node_ids": [
+        "output_normalize"
+      ],
+      "semantic_role": "final no-split normalization",
+      "target": {
+        "api": "Div",
+        "execution_unit": "Vector",
+        "implementation_status": "emitted_s6"
+      },
+      "relation": "semantic_direct_mapping",
+      "note": "The accumulated output is divided by the final online-softmax denominator.",
+      "target_evidence": [
+        {
+          "source": "ascend_s6",
+          "path": "/Users/yin/pto/ascendport_migration-pangu/mla-model-architecture/outputs/flash_mla_decode_s6.cpp",
+          "line": 50,
+          "fact": "S6 normalizes output with Vector Div",
+          "confidence": "prototype_evidence"
+        }
+      ]
+    },
+    {
+      "id": "map_split_workspace",
+      "source": {
+        "primitive": "T.alloc_global(glse / Output_partial)",
+        "lines": [
+          30,
+          31
+        ],
+        "provenance": [
+          {
+            "source": "example_mla_decode",
+            "path": "/Users/yin/pto/ascendport_migration-pangu/mla-model-architecture/outputs/example_mla_decode.py",
+            "line": 30,
+            "fact": "split-KV partial result exchange",
+            "confidence": "confirmed"
+          }
+        ]
+      },
+      "graph_node_ids": [
+        "partial_result_store",
+        "partial_output_workspace",
+        "split_lse_workspace"
+      ],
+      "semantic_role": "split-KV partial result exchange",
+      "target": {
+        "api": "GM workspace between AI Cores",
+        "execution_unit": "MTE / GM",
+        "implementation_status": "planned_not_emitted"
+      },
+      "relation": "cross_kernel_workspace",
+      "note": "The bundled S6 prototype intentionally implements num_split=1 and has not emitted the GM split workspace.",
+      "target_evidence": []
+    },
+    {
+      "id": "map_split_combine",
+      "source": {
+        "primitive": "second T.Kernel + LSE weighted combine",
+        "lines": [
+          93,
+          118
+        ],
+        "provenance": [
+          {
+            "source": "example_mla_decode",
+            "path": "/Users/yin/pto/ascendport_migration-pangu/mla-model-architecture/outputs/example_mla_decode.py",
+            "line": 93,
+            "fact": "flash-decoding split merge",
+            "confidence": "confirmed"
+          }
+        ]
+      },
+      "graph_node_ids": [
+        "split_lse_max",
+        "split_lse_sum",
+        "partial_weight",
+        "split_output_accumulate"
+      ],
+      "semantic_role": "flash-decoding split merge",
+      "target": {
+        "api": "second-stage Vector reduction in natural exp/ln space",
+        "execution_unit": "Vector",
+        "implementation_status": "planned_not_emitted"
+      },
+      "relation": "two_stage_rewrite",
+      "note": "The target needs a second kernel over GM partial output and LSE; this branch is deferred after no-split correctness.",
+      "target_evidence": []
+    },
+    {
+      "id": "map_output_store",
+      "source": {
+        "primitive": "T.copy(O_shared, Output) / Output[...] = ...",
+        "lines": [
+          90,
+          118
+        ],
+        "provenance": [
+          {
+            "source": "example_mla_decode",
+            "path": "/Users/yin/pto/ascendport_migration-pangu/mla-model-architecture/outputs/example_mla_decode.py",
+            "line": 90,
+            "fact": "final output write",
+            "confidence": "confirmed"
+          }
+        ]
+      },
+      "graph_node_ids": [
+        "no_split_store",
+        "split_output_store"
+      ],
+      "semantic_role": "final output write",
+      "target": {
+        "api": "DataCopy UB -> GM",
+        "execution_unit": "MTE",
+        "implementation_status": "emitted_no_split_only"
+      },
+      "relation": "staged_direct_mapping",
+      "note": "The no-split path is emitted; split output store depends on the deferred combine kernel.",
+      "target_evidence": [
+        {
+          "source": "ascend_s6",
+          "path": "/Users/yin/pto/ascendport_migration-pangu/mla-model-architecture/outputs/flash_mla_decode_s6.cpp",
+          "line": 51,
+          "fact": "S6 writes normalized output to GM",
+          "confidence": "prototype_evidence"
+        }
+      ]
+    }
+  ]
+}

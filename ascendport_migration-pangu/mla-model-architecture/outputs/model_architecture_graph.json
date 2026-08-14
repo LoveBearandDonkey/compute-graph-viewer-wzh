@@ -1,0 +1,787 @@
+{
+  "width": 1890,
+  "height": 3173,
+  "model": {
+    "name": "AscendPort example_mla_decode MLA Kernel",
+    "framework": "TileLang",
+    "source_root": "/Users/yin/pto/ascendport_migration-pangu"
+  },
+  "extraction_scope": {
+    "kind": "full_source",
+    "full_main_layers": 1,
+    "trace_main_layers": null,
+    "notes": [
+      "Complete source coverage of flashattn, including main_split, main_no_split, and the split combine kernel.",
+      "The project default is num_split=1; the split-KV branch is retained as a conditional source branch.",
+      "Operator mapping is associated by mapping_ids and delivered in operator_mapping.json."
+    ]
+  },
+  "sourceSchema": "model_architecture.v1",
+  "nodes": [
+    {
+      "id": "query",
+      "label": "Query",
+      "kind": "tensor",
+      "typeLabel": "Input",
+      "colorKey": "io:input",
+      "width": 240.0,
+      "height": 52.0,
+      "x": 202,
+      "y": 134,
+      "parent": "mla_decode_group"
+    },
+    {
+      "id": "position_query",
+      "label": "Position Query",
+      "kind": "tensor",
+      "typeLabel": "Input",
+      "colorKey": "io:input",
+      "width": 250.0,
+      "height": 52.0,
+      "x": 483,
+      "y": 134,
+      "parent": "mla_decode_group"
+    },
+    {
+      "id": "latent_kv",
+      "label": "Latent KV",
+      "kind": "tensor",
+      "typeLabel": "Input",
+      "colorKey": "io:input",
+      "width": 240.0,
+      "height": 52.0,
+      "x": 1022,
+      "y": 134,
+      "parent": "mla_decode_group"
+    },
+    {
+      "id": "position_key",
+      "label": "Position Key",
+      "kind": "tensor",
+      "typeLabel": "Input",
+      "colorKey": "io:input",
+      "width": 250.0,
+      "height": 52.0,
+      "x": 1303,
+      "y": 134,
+      "parent": "mla_decode_group"
+    },
+    {
+      "id": "runtime_config",
+      "label": "Runtime Config",
+      "kind": "tensor",
+      "typeLabel": "Input",
+      "colorKey": "io:input",
+      "width": 240.0,
+      "height": 52.0,
+      "x": 742,
+      "y": 228,
+      "parent": "mla_decode_group"
+    },
+    {
+      "id": "kernel_dispatch",
+      "label": "Kernel Dispatch",
+      "kind": "op",
+      "typeLabel": "KernelLaunch",
+      "colorKey": "sem:comm",
+      "width": 480.0,
+      "height": 64.0,
+      "x": 742,
+      "y": 338,
+      "parent": "mla_decode_group"
+    },
+    {
+      "id": "q_stage",
+      "label": "Query Block Stage",
+      "kind": "op",
+      "typeLabel": "Copy",
+      "colorKey": "sem:comm",
+      "width": 360.0,
+      "height": 62.0,
+      "x": 522,
+      "y": 522,
+      "parent": "input_stage_group"
+    },
+    {
+      "id": "kv_stage",
+      "label": "KV Tile Stage",
+      "kind": "op",
+      "typeLabel": "PipelinedCopy",
+      "colorKey": "sem:comm",
+      "width": 360.0,
+      "height": 62.0,
+      "x": 962,
+      "y": 522,
+      "parent": "input_stage_group"
+    },
+    {
+      "id": "qk_gemm",
+      "label": "Q·KVᵀ GEMM",
+      "kind": "op",
+      "typeLabel": "GEMM",
+      "colorKey": "sem:attention",
+      "width": 480.0,
+      "height": 62.0,
+      "x": 742,
+      "y": 758,
+      "parent": "score_compute_group"
+    },
+    {
+      "id": "pe_gemm",
+      "label": "PE GEMM Accumulate",
+      "kind": "op",
+      "typeLabel": "GEMM",
+      "colorKey": "sem:attention",
+      "width": 480.0,
+      "height": 62.0,
+      "x": 742,
+      "y": 874,
+      "parent": "score_compute_group"
+    },
+    {
+      "id": "score_block_max",
+      "label": "Score Block Max",
+      "kind": "op",
+      "typeLabel": "ReduceMax",
+      "colorKey": "sem:act",
+      "width": 480.0,
+      "height": 62.0,
+      "x": 742,
+      "y": 990,
+      "parent": "score_compute_group"
+    },
+    {
+      "id": "running_max_merge",
+      "label": "Running Max Merge",
+      "kind": "op",
+      "typeLabel": "Maximum",
+      "colorKey": "sem:act",
+      "width": 480.0,
+      "height": 62.0,
+      "x": 742,
+      "y": 1166,
+      "parent": "online_softmax_group"
+    },
+    {
+      "id": "score_exponential",
+      "label": "Score Exponential",
+      "kind": "op",
+      "typeLabel": "Exp2",
+      "colorKey": "sem:act",
+      "width": 480.0,
+      "height": 62.0,
+      "x": 742,
+      "y": 1282,
+      "parent": "online_softmax_group"
+    },
+    {
+      "id": "score_sum",
+      "label": "Score Sum",
+      "kind": "op",
+      "typeLabel": "ReduceSum",
+      "colorKey": "sem:act",
+      "width": 480.0,
+      "height": 62.0,
+      "x": 742,
+      "y": 1398,
+      "parent": "online_softmax_group"
+    },
+    {
+      "id": "online_state_update",
+      "label": "Online Statistics Update",
+      "kind": "op",
+      "typeLabel": "OnlineSoftmaxUpdate",
+      "colorKey": "sem:act",
+      "width": 480.0,
+      "height": 62.0,
+      "x": 742,
+      "y": 1514,
+      "parent": "online_softmax_group"
+    },
+    {
+      "id": "output_rescale",
+      "label": "Output Rescale",
+      "kind": "op",
+      "typeLabel": "Multiply",
+      "colorKey": "sem:act",
+      "width": 480.0,
+      "height": 62.0,
+      "x": 742,
+      "y": 1630,
+      "parent": "online_softmax_group"
+    },
+    {
+      "id": "pv_gemm",
+      "label": "Probability Value GEMM",
+      "kind": "op",
+      "typeLabel": "GEMM",
+      "colorKey": "sem:attention",
+      "width": 480.0,
+      "height": 62.0,
+      "x": 742,
+      "y": 1806,
+      "parent": "value_accumulation_group"
+    },
+    {
+      "id": "output_normalize",
+      "label": "Output Normalize",
+      "kind": "op",
+      "typeLabel": "Divide",
+      "colorKey": "sem:act",
+      "width": 480.0,
+      "height": 62.0,
+      "x": 742,
+      "y": 1998,
+      "parent": "finalize_group"
+    },
+    {
+      "id": "no_split_store",
+      "label": "No-Split Store",
+      "kind": "op",
+      "typeLabel": "Store",
+      "colorKey": "sem:comm",
+      "width": 360.0,
+      "height": 60.0,
+      "x": 742,
+      "y": 2176,
+      "parent": "finalize_group"
+    },
+    {
+      "id": "lse_encode",
+      "label": "LSE Encode",
+      "kind": "op",
+      "typeLabel": "Log2",
+      "colorKey": "sem:act",
+      "width": 360.0,
+      "height": 60.0,
+      "x": 1242,
+      "y": 2176,
+      "parent": "split_combine_group"
+    },
+    {
+      "id": "partial_result_store",
+      "label": "Partial Result Store",
+      "kind": "op",
+      "typeLabel": "Store",
+      "colorKey": "sem:comm",
+      "width": 360.0,
+      "height": 60.0,
+      "x": 1242,
+      "y": 2292,
+      "parent": "split_combine_group"
+    },
+    {
+      "id": "partial_output_workspace",
+      "label": "Partial Output Workspace",
+      "kind": "tensor",
+      "typeLabel": "State",
+      "colorKey": "io:state",
+      "width": 260.0,
+      "height": 54.0,
+      "x": 1622,
+      "y": 2292,
+      "parent": "split_combine_group"
+    },
+    {
+      "id": "split_lse_workspace",
+      "label": "Split LSE Workspace",
+      "kind": "tensor",
+      "typeLabel": "State",
+      "colorKey": "io:state",
+      "width": 250.0,
+      "height": 54.0,
+      "x": 1622,
+      "y": 2408,
+      "parent": "split_combine_group"
+    },
+    {
+      "id": "split_lse_max",
+      "label": "Split LSE Max",
+      "kind": "op",
+      "typeLabel": "ReduceMax",
+      "colorKey": "sem:act",
+      "width": 360.0,
+      "height": 60.0,
+      "x": 1242,
+      "y": 2408,
+      "parent": "split_combine_group"
+    },
+    {
+      "id": "split_lse_sum",
+      "label": "Split LSE Sum",
+      "kind": "op",
+      "typeLabel": "ReduceSum",
+      "colorKey": "sem:act",
+      "width": 360.0,
+      "height": 60.0,
+      "x": 1242,
+      "y": 2524,
+      "parent": "split_combine_group"
+    },
+    {
+      "id": "partial_weight",
+      "label": "Partial Weight",
+      "kind": "op",
+      "typeLabel": "Exp2",
+      "colorKey": "sem:act",
+      "width": 360.0,
+      "height": 60.0,
+      "x": 1242,
+      "y": 2640,
+      "parent": "split_combine_group"
+    },
+    {
+      "id": "split_output_accumulate",
+      "label": "Split Output Accumulate",
+      "kind": "op",
+      "typeLabel": "WeightedSum",
+      "colorKey": "sem:act",
+      "width": 360.0,
+      "height": 60.0,
+      "x": 1242,
+      "y": 2756,
+      "parent": "split_combine_group"
+    },
+    {
+      "id": "split_output_store",
+      "label": "Split Output Store",
+      "kind": "op",
+      "typeLabel": "Store",
+      "colorKey": "sem:comm",
+      "width": 360.0,
+      "height": 60.0,
+      "x": 1242,
+      "y": 2872,
+      "parent": "split_combine_group"
+    },
+    {
+      "id": "mla_output",
+      "label": "MLA Output",
+      "kind": "tensor",
+      "typeLabel": "Output",
+      "colorKey": "io:output",
+      "width": 240.0,
+      "height": 54.0,
+      "x": 742,
+      "y": 3068,
+      "parent": "mla_decode_group"
+    }
+  ],
+  "edges": [
+    {
+      "id": "e_cfg_dispatch",
+      "source": "runtime_config",
+      "target": "kernel_dispatch",
+      "sourceAnchor": "bottom",
+      "targetAnchor": "top",
+      "tensorLabel": "launch_config | {B,H,H_KV,N,D,D_PE,BLOCK_N,BLOCK_H,SPLIT} | control"
+    },
+    {
+      "id": "e_q_stage",
+      "source": "query",
+      "target": "q_stage",
+      "sourceAnchor": "bottom",
+      "targetAnchor": "top",
+      "tensorLabel": "Q | [B,H,D] | float16"
+    },
+    {
+      "id": "e_qpe_stage",
+      "source": "position_query",
+      "target": "q_stage",
+      "sourceAnchor": "bottom",
+      "targetAnchor": "top",
+      "tensorLabel": "Q_pe | [B,H,D_PE] | float16"
+    },
+    {
+      "id": "e_kv_stage",
+      "source": "latent_kv",
+      "target": "kv_stage",
+      "sourceAnchor": "bottom",
+      "targetAnchor": "top",
+      "tensorLabel": "KV_tile | [B,BLOCK_N,H_KV,D] | float16 | H_KV=1"
+    },
+    {
+      "id": "e_kpe_stage",
+      "source": "position_key",
+      "target": "kv_stage",
+      "sourceAnchor": "bottom",
+      "targetAnchor": "top",
+      "tensorLabel": "K_pe_tile | [B,BLOCK_N,H_KV,D_PE] | float16 | H_KV=1"
+    },
+    {
+      "id": "e_dispatch_q",
+      "source": "kernel_dispatch",
+      "target": "q_stage",
+      "sourceAnchor": "bottom",
+      "targetAnchor": "top",
+      "tensorLabel": "program_ids | [head_group,batch] | int32"
+    },
+    {
+      "id": "e_dispatch_kv",
+      "source": "kernel_dispatch",
+      "target": "kv_stage",
+      "sourceAnchor": "bottom",
+      "targetAnchor": "top",
+      "tensorLabel": "tile_schedule | [ceildiv(N,BLOCK_N)] | int32"
+    },
+    {
+      "id": "e_q_qk",
+      "source": "q_stage",
+      "target": "qk_gemm",
+      "tensorLabel": "Q_shared | [BLOCK_H,D] | float16"
+    },
+    {
+      "id": "e_kv_qk",
+      "source": "kv_stage",
+      "target": "qk_gemm",
+      "tensorLabel": "KV_shared | [BLOCK_N,D] | float16"
+    },
+    {
+      "id": "e_qk_pe_acc",
+      "source": "qk_gemm",
+      "target": "pe_gemm",
+      "tensorLabel": "acc_s | [BLOCK_H,BLOCK_N] | float32"
+    },
+    {
+      "id": "e_qpe_pe",
+      "source": "q_stage",
+      "target": "pe_gemm",
+      "tensorLabel": "Q_pe_shared | [BLOCK_H,D_PE] | float16"
+    },
+    {
+      "id": "e_kpe_pe",
+      "source": "kv_stage",
+      "target": "pe_gemm",
+      "tensorLabel": "K_pe_shared | [BLOCK_N,D_PE] | float16"
+    },
+    {
+      "id": "e_pe_max",
+      "source": "pe_gemm",
+      "target": "score_block_max",
+      "tensorLabel": "acc_s | [BLOCK_H,BLOCK_N] | float32"
+    },
+    {
+      "id": "e_max_merge",
+      "source": "score_block_max",
+      "target": "running_max_merge",
+      "tensorLabel": "scores_max_tile | [BLOCK_H] | float32"
+    },
+    {
+      "id": "e_scores_exp",
+      "source": "pe_gemm",
+      "target": "score_exponential",
+      "tensorLabel": "acc_s | [BLOCK_H,BLOCK_N] | float32"
+    },
+    {
+      "id": "e_max_exp",
+      "source": "running_max_merge",
+      "target": "score_exponential",
+      "tensorLabel": "scores_max | [BLOCK_H] | float32"
+    },
+    {
+      "id": "e_exp_sum",
+      "source": "score_exponential",
+      "target": "score_sum",
+      "tensorLabel": "probability_numerator | [BLOCK_H,BLOCK_N] | float32"
+    },
+    {
+      "id": "e_sum_state",
+      "source": "score_sum",
+      "target": "online_state_update",
+      "tensorLabel": "scores_sum | [BLOCK_H] | float32"
+    },
+    {
+      "id": "e_max_state",
+      "source": "running_max_merge",
+      "target": "online_state_update",
+      "tensorLabel": "scores_scale | [BLOCK_H] | float32"
+    },
+    {
+      "id": "e_state_rescale",
+      "source": "online_state_update",
+      "target": "output_rescale",
+      "tensorLabel": "scores_scale | [BLOCK_H] | float32"
+    },
+    {
+      "id": "e_exp_pv",
+      "source": "score_exponential",
+      "target": "pv_gemm",
+      "tensorLabel": "probability_tile | [BLOCK_H,BLOCK_N] | float16/float32"
+    },
+    {
+      "id": "e_kv_pv",
+      "source": "kv_stage",
+      "target": "pv_gemm",
+      "tensorLabel": "value_tile | [BLOCK_N,D] | float16"
+    },
+    {
+      "id": "e_rescale_pv",
+      "source": "output_rescale",
+      "target": "pv_gemm",
+      "tensorLabel": "rescaled_acc_o | [BLOCK_H,D] | float32"
+    },
+    {
+      "id": "e_pv_norm",
+      "source": "pv_gemm",
+      "target": "output_normalize",
+      "tensorLabel": "acc_o | [BLOCK_H,D] | float32"
+    },
+    {
+      "id": "e_state_norm",
+      "source": "online_state_update",
+      "target": "output_normalize",
+      "tensorLabel": "logsum | [BLOCK_H] | float32"
+    },
+    {
+      "id": "e_norm_no_store",
+      "source": "output_normalize",
+      "target": "no_split_store",
+      "tag": "num_split = 1",
+      "tagPosition": 0.62,
+      "tensorLabel": "normalized_output | [B,H,D] | float16/float32 | num_split=1"
+    },
+    {
+      "id": "e_no_output",
+      "source": "no_split_store",
+      "target": "mla_output",
+      "tensorLabel": "Output | [B,H,D] | float16 | num_split=1"
+    },
+    {
+      "id": "e_state_lse",
+      "source": "online_state_update",
+      "target": "lse_encode",
+      "tag": "num_split > 1",
+      "tagPosition": 0.72,
+      "tensorLabel": "logsum | [B,H,SPLIT] | float32 | num_split>1"
+    },
+    {
+      "id": "e_max_lse",
+      "source": "running_max_merge",
+      "target": "lse_encode",
+      "tensorLabel": "scores_max | [B,H,SPLIT] | float32 | num_split>1"
+    },
+    {
+      "id": "e_norm_partial",
+      "source": "output_normalize",
+      "target": "partial_result_store",
+      "tensorLabel": "partial_output | [B,H,SPLIT,D] | float16 | num_split>1"
+    },
+    {
+      "id": "e_lse_partial",
+      "source": "lse_encode",
+      "target": "partial_result_store",
+      "tensorLabel": "split_lse | [B,H,SPLIT] | float16 | num_split>1"
+    },
+    {
+      "id": "e_partial_workspace",
+      "source": "partial_result_store",
+      "target": "partial_output_workspace",
+      "tensorLabel": "Output_partial | [B,H,SPLIT,D] | float16"
+    },
+    {
+      "id": "e_lse_workspace",
+      "source": "partial_result_store",
+      "target": "split_lse_workspace",
+      "tensorLabel": "glse | [B,H,SPLIT] | float16"
+    },
+    {
+      "id": "e_lse_max",
+      "source": "split_lse_workspace",
+      "target": "split_lse_max",
+      "tensorLabel": "glse | [B,H,SPLIT] | float16"
+    },
+    {
+      "id": "e_lse_sum_a",
+      "source": "split_lse_max",
+      "target": "split_lse_sum",
+      "tensorLabel": "lse_max | [B,H] | float32"
+    },
+    {
+      "id": "e_lse_sum_b",
+      "source": "split_lse_workspace",
+      "target": "split_lse_sum",
+      "tensorLabel": "glse | [B,H,SPLIT] | float16"
+    },
+    {
+      "id": "e_lse_weight",
+      "source": "split_lse_sum",
+      "target": "partial_weight",
+      "tensorLabel": "lse_logsum | [B,H] | float32"
+    },
+    {
+      "id": "e_lse_weight_src",
+      "source": "split_lse_workspace",
+      "target": "partial_weight",
+      "tensorLabel": "glse | [B,H,SPLIT] | float16"
+    },
+    {
+      "id": "e_weight_acc",
+      "source": "partial_weight",
+      "target": "split_output_accumulate",
+      "tensorLabel": "split_weights | [B,H,SPLIT] | float32"
+    },
+    {
+      "id": "e_partial_acc",
+      "source": "partial_output_workspace",
+      "target": "split_output_accumulate",
+      "tensorLabel": "Output_partial | [B,H,SPLIT,D] | float16"
+    },
+    {
+      "id": "e_acc_split_store",
+      "source": "split_output_accumulate",
+      "target": "split_output_store",
+      "tensorLabel": "combined_output | [B,H,D] | float32"
+    },
+    {
+      "id": "e_split_output",
+      "source": "split_output_store",
+      "target": "mla_output",
+      "tensorLabel": "Output | [B,H,D] | float16 | num_split>1"
+    }
+  ],
+  "clusters": [
+    {
+      "id": "mla_decode_group",
+      "label": "TileLang MLA Decode",
+      "x": 44,
+      "y": 44,
+      "width": 1802,
+      "height": 3085,
+      "parent": null,
+      "nodes": [
+        "query",
+        "position_query",
+        "latent_kv",
+        "position_key",
+        "runtime_config",
+        "kernel_dispatch",
+        "mla_output"
+      ],
+      "children": [
+        "input_stage_group",
+        "tile_loop_group",
+        "finalize_group"
+      ],
+      "colorKey": "sem:attention"
+    },
+    {
+      "id": "input_stage_group",
+      "label": "Input Staging",
+      "x": 314,
+      "y": 435,
+      "width": 856,
+      "height": 146,
+      "parent": "mla_decode_group",
+      "nodes": [
+        "q_stage",
+        "kv_stage"
+      ],
+      "children": [],
+      "colorKey": "sem:comm"
+    },
+    {
+      "id": "tile_loop_group",
+      "label": "KV Tile Loop",
+      "x": 446,
+      "y": 615,
+      "width": 592,
+      "height": 1278,
+      "parent": "mla_decode_group",
+      "nodes": [],
+      "children": [
+        "score_compute_group",
+        "online_softmax_group",
+        "value_accumulation_group"
+      ],
+      "colorKey": "sem:attention",
+      "repeat": "repeat ceildiv(N, BLOCK_N)"
+    },
+    {
+      "id": "score_compute_group",
+      "label": "QK + PE Score Compute",
+      "x": 474,
+      "y": 671,
+      "width": 536,
+      "height": 378,
+      "parent": "tile_loop_group",
+      "nodes": [
+        "qk_gemm",
+        "pe_gemm",
+        "score_block_max"
+      ],
+      "children": [],
+      "colorKey": "sem:attention"
+    },
+    {
+      "id": "online_softmax_group",
+      "label": "Online Softmax",
+      "x": 474,
+      "y": 1079,
+      "width": 536,
+      "height": 610,
+      "parent": "tile_loop_group",
+      "nodes": [
+        "running_max_merge",
+        "score_exponential",
+        "score_sum",
+        "online_state_update",
+        "output_rescale"
+      ],
+      "children": [],
+      "colorKey": "sem:act"
+    },
+    {
+      "id": "value_accumulation_group",
+      "label": "Probability · Value",
+      "x": 474,
+      "y": 1719,
+      "width": 536,
+      "height": 146,
+      "parent": "tile_loop_group",
+      "nodes": [
+        "pv_gemm"
+      ],
+      "children": [],
+      "colorKey": "sem:attention"
+    },
+    {
+      "id": "finalize_group",
+      "label": "Output Finalize",
+      "x": 474,
+      "y": 1911,
+      "width": 1334,
+      "height": 1047,
+      "parent": "mla_decode_group",
+      "nodes": [
+        "output_normalize",
+        "no_split_store"
+      ],
+      "children": [
+        "split_combine_group"
+      ],
+      "colorKey": "sem:act"
+    },
+    {
+      "id": "split_combine_group",
+      "label": "Split-KV Combine",
+      "x": 1034,
+      "y": 2090,
+      "width": 746,
+      "height": 840,
+      "parent": "finalize_group",
+      "nodes": [
+        "lse_encode",
+        "partial_result_store",
+        "partial_output_workspace",
+        "split_lse_workspace",
+        "split_lse_max",
+        "split_lse_sum",
+        "partial_weight",
+        "split_output_accumulate",
+        "split_output_store"
+      ],
+      "children": [],
+      "colorKey": "sem:attention"
+    }
+  ]
+}

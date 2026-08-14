@@ -84,7 +84,11 @@ function resizeCanvas(canvas, width, height) {
 export function createAnalysisDock({ tabsRoot, titleEl, metaEl, views, initialView = 'timeline', onViewChange }) {
   const viewMap = new Map(views.map(view => [view.id, view]));
   const tabs = new Map();
+  const tabHandlers = new Map();
+  const mountedViews = new Set();
   let activeView = viewMap.has(initialView) ? initialView : views[0]?.id;
+  let renderFrame = 0;
+  let destroyed = false;
 
   tabsRoot.innerHTML = '';
   views.forEach(view => {
@@ -93,14 +97,39 @@ export function createAnalysisDock({ tabsRoot, titleEl, metaEl, views, initialVi
     tab.className = 'opv-analysis-tab';
     tab.dataset.analysisTab = view.id;
     tab.textContent = view.label;
-    tab.addEventListener('click', () => setActiveView(view.id));
+    const onClick = () => setActiveView(view.id);
+    tab.addEventListener('click', onClick);
     tabsRoot.appendChild(tab);
     tabs.set(view.id, tab);
+    tabHandlers.set(view.id, onClick);
     view.panel.hidden = true;
-    view.mount?.();
   });
 
+  function viewIsVisible(view) {
+    if (!view || view.panel.hidden) return false;
+    if (typeof view.panel.getClientRects !== 'function') return true;
+    return view.panel.getClientRects().length > 0;
+  }
+
+  function mountView(view) {
+    if (mountedViews.has(view.id)) return true;
+    if (!viewIsVisible(view)) return false;
+    view.mount?.();
+    mountedViews.add(view.id);
+    return true;
+  }
+
+  function scheduleRender(view) {
+    if (renderFrame) cancelAnimationFrame(renderFrame);
+    renderFrame = requestAnimationFrame(() => {
+      renderFrame = 0;
+      if (destroyed || activeView !== view.id || !viewIsVisible(view) || !mountedViews.has(view.id)) return;
+      view.render?.();
+    });
+  }
+
   function setActiveView(id) {
+    if (destroyed) return;
     const next = viewMap.has(id) ? id : views[0]?.id;
     if (!next) return;
     activeView = next;
@@ -111,23 +140,50 @@ export function createAnalysisDock({ tabsRoot, titleEl, metaEl, views, initialVi
       tabs.get(view.id)?.setAttribute('aria-pressed', String(active));
     });
     const view = viewMap.get(activeView);
+    mountView(view);
     titleEl.textContent = view.title || view.label;
     metaEl.textContent = typeof view.meta === 'function' ? view.meta() : (view.meta || '');
-    localStorage.setItem('op-rank-time-analysis-view', activeView);
-    requestAnimationFrame(() => view.render?.());
+    try {
+      localStorage.setItem('op-rank-time-analysis-view', activeView);
+    } catch {
+      // Storage can be unavailable in sandboxed or privacy-restricted embeds.
+    }
+    scheduleRender(view);
     onViewChange?.(activeView);
   }
 
   function refresh() {
-    viewMap.get(activeView)?.render?.();
+    if (destroyed) return;
+    const view = viewMap.get(activeView);
+    if (!viewIsVisible(view) || !mountView(view)) return;
+    view.render?.();
   }
 
   function resize() {
-    viewMap.get(activeView)?.resize?.();
+    if (destroyed) return;
+    const view = viewMap.get(activeView);
+    if (!viewIsVisible(view) || !mountView(view)) return;
+    view.resize?.();
+  }
+
+  function destroy() {
+    if (destroyed) return;
+    destroyed = true;
+    if (renderFrame) {
+      cancelAnimationFrame(renderFrame);
+      renderFrame = 0;
+    }
+    tabs.forEach((tab, id) => tab.removeEventListener('click', tabHandlers.get(id)));
+    mountedViews.forEach(id => viewMap.get(id)?.destroy?.());
+    views.forEach(view => { view.panel.hidden = true; });
+    tabsRoot.innerHTML = '';
+    tabs.clear();
+    tabHandlers.clear();
+    mountedViews.clear();
   }
 
   setActiveView(activeView);
-  return { setActiveView, refresh, resize, get activeView() { return activeView; } };
+  return { setActiveView, refresh, resize, destroy, get activeView() { return activeView; } };
 }
 
 export function createMoeLoadView({ panel, viewModel, onSelect, distribution, a2aTail }) {
@@ -144,6 +200,16 @@ export function createMoeLoadView({ panel, viewModel, onSelect, distribution, a2
   let a2aCursor = null;   // A2A Tail 图当前游标 step（默认落在 P99 最差的 step）
   let a2aHoverRank = null; // 掉队者条中鼠标悬停的 rank（高亮 + 加粗数值）
   let a2aheatCanvas, a2aheatTip, a2aheatCursor = null;  // A2A 热力：左分位带 + 右 EP×专家 热力图（联动）
+  const updateStats = () => {
+    const root = panel.querySelector('.opv-analysis-stats');
+    if (!root) return;
+    root.innerHTML = viewModel.stats.map(stat => `
+      <div class="opv-analysis-stat">
+        <span>${esc(stat.label)}</span>
+        <b>${esc(stat.value)}</b>
+      </div>
+    `).join('');
+  };
   // 自定义气泡定位：用气泡真实尺寸钳制在容器内，避免溢出屏幕
   function showDistTip(event, html) {
     if (!distTipEl) return;
@@ -843,32 +909,77 @@ export function createMoeLoadView({ panel, viewModel, onSelect, distribution, a2
   }
 
   function renderByMode() { mode === 'distribution' ? drawDistribution() : mode === 'a2aheat' ? drawA2AHeat() : draw(); }
-  function setViewModel(next) { viewModel = next; selectedCell = null; hoverCell = null; mount(); renderByMode(); }
+  function setViewModel(next) {
+    viewModel = next;
+    selectedCell = null;
+    hoverCell = null;
+    if (!canvas?.isConnected) return;
+    if (!viewModel.metricOptions.some(item => item.id === metricId)) metricId = viewModel.metricOptions[0]?.id || 'loadRatio';
+    updateStats();
+    renderByMode();
+  }
 
   return { panel, mount, render: renderByMode, resize: renderByMode, setViewModel };
 }
 
 const CARDLOAD_STATE_LABEL = { ok: '正常', warn: '过载', alert: '饥饿' };
 
-export function createCardLoadView({ panel, viewModel, onSelect }) {
+export function createCardLoadView({
+  panel,
+  viewModel,
+  activityViewModel = null,
+  initialMode = 'load',
+  onSelect,
+  onHover,
+  onModeChange,
+}) {
   let tooltip;
   let grid;
+  let statsRoot;
+  let mode = activityViewModel && initialMode === 'activity' ? 'activity' : 'load';
+  let selected = null;
+  let externalHover = null;
+  let externalSelection = null;
   const pct = v => Math.round((v || 0) * 100);
+  const currentModel = () => mode === 'activity' && activityViewModel ? activityViewModel : viewModel;
+  const mbColor = card => `hsl(${((Number(card.microbatch) || 0) * 47 + (Number(card.dp) || 0) * 19) % 360} 68% 54%)`;
+  const phaseLabel = phase => ({ F: 'F', B: 'B', bubble: 'Bubble', idle: 'Idle' }[phase] || phase || 'Idle');
+  const commLabel = kind => ({ tp: 'TP AG/RS', ep: 'EP A2A', pp: 'PP P2P', dp: 'DP Sync' }[kind] || kind);
 
-  function paintCards() {
-    if (!grid) return;
-    const localGroupSize = Math.max(1, (viewModel.tpCount || 1) * (viewModel.epCount || 1));
-    grid.style.setProperty('--card-cols', String(localGroupSize));
-    grid.innerHTML = viewModel.cards.map(card => {
-      const state = card.state === 'alert' ? ' is-alert' : card.state === 'warn' ? ' is-warn' : '';
-      const heat = Math.round(4 + card.utilRatio * 14);            // 4–18% 低饱和平涂
-      const flow = Math.max(4, pct(card.commRatio));
-      return `<button class="opv-cardload-cell${state}" type="button" data-card-id="${card.cardId}" style="--heat-soft:${heat}%;--flow:${flow}%">`
-        + `<div class="cl-top"><b>R${card.cardId}</b><span>D${card.dp}P${card.stage}T${card.tp}E${card.ep}</span></div>`
-        + `<div class="cl-meter"><i></i></div>`
-        + `<div class="cl-bot"><span>u${pct(card.utilRatio)}</span><span>c${pct(card.commRatio)}</span></div>`
-        + `</button>`;
-    }).join('');
+  function selectionMatchesCard(card, focus) {
+    if (!focus) return false;
+    if (focus.rank != null) return Number(focus.rank) === Number(card.cardId);
+    if (focus.microbatchKey) return focus.microbatchKey === card.microbatchKey;
+    if (focus.dp != null && Number(focus.dp) !== Number(card.dp)) return false;
+    if (focus.stage != null && Number(focus.stage) !== Number(card.stage)) return false;
+    if (focus.type === 'model' && focus.stage != null) return true;
+    if (focus.layer != null && Number(focus.layer) !== Number(card.layer)) return false;
+    return focus.stage != null || focus.dp != null || focus.layer != null;
+  }
+
+  function activitySelection(card, type = 'card-activity') {
+    return {
+      type,
+      rank: card.cardId,
+      dp: card.dp,
+      stage: card.stage,
+      tp: card.tp,
+      ep: card.ep,
+      microbatch: card.microbatch,
+      microbatchKey: card.microbatchKey,
+      phase: card.phase,
+      layer: card.layer,
+      opStep: card.opStep,
+      operator: card.operator,
+      primaryNodeId: card.primaryNodeId,
+      nodeIds: card.nodeIds,
+      progress: card.progress,
+      commKinds: card.commKinds,
+      heldMicrobatches: card.heldMicrobatches,
+    };
+  }
+
+  function bindLoadCards() {
     grid.querySelectorAll('[data-card-id]').forEach(el => {
       const card = viewModel.cards.find(item => String(item.cardId) === el.dataset.cardId);
       el.addEventListener('pointermove', event => tooltip.show(event, `
@@ -876,9 +987,150 @@ export function createCardLoadView({ panel, viewModel, onSelect }) {
         <span>D${card.dp} · P${card.stage} · TP${card.tp} · EP${card.ep}</span>
         <span>util ${pct(card.utilRatio)}% · comm ${pct(card.commRatio)}% · ${CARDLOAD_STATE_LABEL[card.state]}</span>
       `));
-      el.addEventListener('pointerleave', () => tooltip.hide());
-      el.addEventListener('click', () => onSelect?.({ type: 'card', rank: card.cardId, dp: card.dp, stage: card.stage, tp: card.tp, ep: card.ep }));
+      el.addEventListener('pointerenter', () => onHover?.({ type: 'card', rank: card.cardId, dp: card.dp, stage: card.stage, tp: card.tp, ep: card.ep }));
+      el.addEventListener('pointerleave', () => { tooltip.hide(); onHover?.(null); });
+      el.addEventListener('click', () => {
+        selected = { rank: card.cardId };
+        onSelect?.({ type: 'card', rank: card.cardId, dp: card.dp, stage: card.stage, tp: card.tp, ep: card.ep });
+        paintCards();
+      });
     });
+  }
+
+  function paintLoadCards() {
+    const localGroupSize = Math.max(1, (viewModel.tpCount || 1) * (viewModel.epCount || 1));
+    grid.className = 'opv-cardload-grid';
+    grid.style.setProperty('--card-cols', String(localGroupSize));
+    grid.innerHTML = viewModel.cards.map(card => {
+      const state = card.state === 'alert' ? ' is-alert' : card.state === 'warn' ? ' is-warn' : '';
+      const heat = Math.round(4 + card.utilRatio * 14);
+      const flow = Math.max(4, pct(card.commRatio));
+      const active = selectionMatchesCard(card, selected) || selectionMatchesCard(card, externalSelection);
+      const linked = selectionMatchesCard(card, externalHover);
+      return `<button class="opv-cardload-cell${state}${active ? ' is-selected' : ''}${linked ? ' is-linked' : ''}" type="button" data-card-id="${card.cardId}" style="--heat-soft:${heat}%;--flow:${flow}%">`
+        + `<div class="cl-top"><b>R${card.cardId}</b><span>D${card.dp}P${card.stage}T${card.tp}E${card.ep}</span></div>`
+        + `<div class="cl-meter"><i></i></div>`
+        + `<div class="cl-bot"><span>u${pct(card.utilRatio)}</span><span>c${pct(card.commRatio)}</span></div>`
+        + `</button>`;
+    }).join('');
+    bindLoadCards();
+  }
+
+  function bindActivityCards() {
+    const cards = activityViewModel?.cards || [];
+    grid.querySelectorAll('[data-activity-card]').forEach(el => {
+      const card = cards.find(item => String(item.cardId) === el.dataset.activityCard);
+      if (!card) return;
+      const selection = activitySelection(card);
+      el.addEventListener('pointerenter', () => onHover?.(selection));
+      el.addEventListener('pointermove', event => tooltip.show(event, `
+        <b>R${card.cardId} · ${card.microbatchKey || 'No active MB'}</b>
+        <span>D${card.dp} · PP${card.stage} · TP${card.tp} · EP${card.ep}</span>
+        <span>${phaseLabel(card.phase)} · ${card.layer == null ? '—' : `L${card.layer}`} · ${esc(card.operator)}</span>
+        <span>${card.commKinds.length ? card.commKinds.map(commLabel).join(' + ') : 'local compute / no active collective'}</span>
+        ${card.heldMicrobatches.length ? `<span>activation hold: ${card.heldMicrobatches.map(mb => `MB${mb}`).join(', ')}</span>` : ''}
+      `));
+      el.addEventListener('pointerleave', () => { tooltip.hide(); onHover?.(null); });
+      el.addEventListener('click', () => {
+        selected = selection;
+        onSelect?.(selection);
+        paintCards();
+      });
+    });
+    grid.querySelectorAll('[data-activity-group]').forEach(el => {
+      const group = activityViewModel.groups.find(item => item.id === el.dataset.activityGroup);
+      if (!group) return;
+      const selection = {
+        type: 'card-group', dp: group.dp, stage: group.stage,
+        microbatch: group.microbatch, microbatchKey: group.microbatchKey,
+        phase: group.phase, layer: group.layer, opStep: group.opStep,
+        operator: group.operator, primaryNodeId: group.primaryNodeId, nodeIds: group.nodeIds, progress: group.progress,
+        commKinds: group.commKinds, heldMicrobatches: group.heldMicrobatches,
+      };
+      el.addEventListener('pointerenter', event => {
+        if (event.target.closest('[data-activity-card]')) return;
+        onHover?.(selection);
+      });
+      el.addEventListener('pointerleave', event => {
+        if (el.contains(event.relatedTarget)) return;
+        onHover?.(null);
+      });
+      el.querySelector('[data-microbatch-select]')?.addEventListener('click', event => {
+        event.stopPropagation();
+        selected = { microbatchKey: group.microbatchKey };
+        onSelect?.({ ...selection, type: 'microbatch' });
+        paintCards();
+      });
+    });
+  }
+
+  function paintActivityCards() {
+    const model = activityViewModel;
+    grid.className = 'opv-cardactivity-matrix';
+    grid.style.setProperty('--pp-count', String(model.ppCount || 1));
+    const headers = Array.from({ length: model.ppCount || 1 }, (_, stage) => {
+      const range = model.groups.find(group => group.stage === stage)?.range || [0, 0];
+      return `<div class="opv-cardactivity-colhead">PP${stage}<span>L${range[0]}–${range[1]}</span></div>`;
+    }).join('');
+    const rows = Array.from({ length: model.dpCount || 1 }, (_, dp) => {
+      const groups = model.groups.filter(group => group.dp === dp).sort((a, b) => a.stage - b.stage);
+      return `<div class="opv-cardactivity-rowhead">D${dp}</div>${groups.map(group => {
+        const groupLinked = selectionMatchesCard(group.cards[0] || group, externalHover);
+        const groupSelected = selectionMatchesCard(group.cards[0] || group, externalSelection)
+          || selected?.microbatchKey === group.microbatchKey;
+        const phaseClass = group.phase === 'B' ? ' is-backward' : group.phase === 'bubble' || group.phase === 'idle' ? ' is-idle' : ' is-forward';
+        const mbStyle = group.microbatch == null ? '' : ` style="--mb-color:${mbColor(group)};--stage-progress:${Math.round(group.progress * 100)}%"`;
+        return `<section class="opv-cardactivity-stage${phaseClass}${groupLinked ? ' is-linked' : ''}${groupSelected ? ' is-selected' : ''}" data-activity-group="${esc(group.id)}"${mbStyle}>
+          <div class="opv-cardactivity-stagehead">
+            <button type="button" data-microbatch-select ${group.microbatchKey ? '' : 'disabled'}>${esc(group.microbatchKey || 'No MB')}</button>
+            <span>${esc(phaseLabel(group.phase))} · ${group.layer == null ? '—' : `L${group.layer}`}</span>
+          </div>
+          <div class="opv-cardactivity-op" title="${esc(group.operator)}">${esc(group.operator)}</div>
+          <div class="opv-cardactivity-progress"><i></i></div>
+          <div class="opv-cardactivity-ranks">${group.cards.map(card => {
+            const linked = selectionMatchesCard(card, externalHover);
+            const active = selectionMatchesCard(card, selected) || selectionMatchesCard(card, externalSelection);
+            const cardState = card.state === 'idle' ? ' is-idle' : card.state === 'overlap' ? ' is-overlap' : '';
+            const mb = card.microbatch == null ? phaseLabel(card.phase) : `MB${card.microbatch}`;
+            const layer = card.layer == null ? '—' : `L${card.layer}`;
+            return `<button class="opv-cardload-cell opv-cardactivity-rank${cardState}${linked ? ' is-linked' : ''}${active ? ' is-selected' : ''}" type="button" data-activity-card="${card.cardId}" style="--accent:var(--mb-color)">
+              <span class="car-rank-head"><b>R${card.cardId}</b><span>${esc(mb)}</span></span>
+              <span class="car-rank-op">${esc(card.operator || phaseLabel(card.phase))}</span>
+              <span class="car-rank-meta"><span>${esc(`${phaseLabel(card.phase)} · ${layer}`)}</span><span>${esc(`T${card.tp}E${card.ep}`)}</span></span>
+            </button>`;
+          }).join('')}</div>
+          ${group.heldMicrobatches.length ? `<div class="opv-cardactivity-hold">hold ${group.heldMicrobatches.map(mb => `MB${mb}`).join(' · ')}</div>` : ''}
+        </section>`;
+      }).join('')}`;
+    }).join('');
+    grid.innerHTML = `<div class="opv-cardactivity-corner">DP / PP</div>${headers}${rows}`;
+    bindActivityCards();
+  }
+
+  function syncModeButtons() {
+    panel.querySelectorAll('[data-card-mode]').forEach(button => {
+      const active = button.dataset.cardMode === mode;
+      button.classList.toggle('is-active', active);
+      button.setAttribute('aria-pressed', String(active));
+    });
+  }
+
+  function paintCards() {
+    if (!grid) return;
+    const model = currentModel();
+    if (statsRoot) {
+      const showStats = mode === 'load';
+      statsRoot.hidden = !showStats;
+      statsRoot.innerHTML = showStats ? makeStatGrid(model?.stats || []) : '';
+    }
+    mode === 'activity' && activityViewModel ? paintActivityCards() : paintLoadCards();
+    syncModeButtons();
+  }
+
+  function setMode(next) {
+    mode = next === 'activity' && activityViewModel ? 'activity' : 'load';
+    paintCards();
+    onModeChange?.(mode, currentModel());
   }
 
   return {
@@ -887,17 +1139,20 @@ export function createCardLoadView({ panel, viewModel, onSelect }) {
       panel.innerHTML = `
         <div class="opv-analysis-view opv-cardload">
           <div class="opv-cardload-head">
-            ${makeStatGrid(viewModel.stats)}
-            <button class="opv-cardload-info" type="button" aria-label="占用率规则" title="占用率规则">
+            <div class="opv-cardload-stats"></div>
+            ${activityViewModel ? `<div class="opv-cardload-modes" role="group" aria-label="Card view mode">
+              <button type="button" data-card-mode="activity">Activity</button>
+              <button type="button" data-card-mode="load">Load</button>
+            </div>` : ''}
+            <button class="opv-cardload-info" type="button" aria-label="Card 视图规则" title="Card 视图规则">
               <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true"><circle cx="8" cy="8" r="7" fill="none" stroke="currentColor" stroke-width="1.4"/><circle cx="8" cy="4.6" r="1" fill="currentColor"/><rect x="7.2" y="6.8" width="1.6" height="5.2" rx="0.8" fill="currentColor"/></svg>
             </button>
             <div class="opv-cardload-pop" hidden>
-              <h4>卡占用率怎么算</h4>
-              <p><code>util = Σ compute_us / iter_wall_us</code> · 每个训练 step 聚合一次</p>
-              <p>采样粒度 <b>1 值 / 卡 / step</b>，随播放条走；跨过路由坍缩点占用会重分布。</p>
-              <ul><li>底色浓淡 = util 占用</li><li>下方 meter = comm 通信占比</li></ul>
+              <h4>Activity / Load</h4>
+              <p><b>Activity</b> 是当前 1F1B 时间点的 MB、Forward/Backward、layer/operator 与通信快照。</p>
+              <p><b>Load</b> 是整轮聚合：<code>util = Σ compute_us / iter_wall_us</code>，meter 表示通信占比。</p>
               <div class="opv-cardload-legend">
-                <span class="ok">正常</span><span class="warn">过载 util&gt;95% / comm&gt;50%</span><span class="alert">饥饿 util&lt;30%</span>
+                <span class="ok">计算</span><span class="warn">计算/通信重叠</span><span class="alert">Bubble / Idle</span>
               </div>
             </div>
           </div>
@@ -905,6 +1160,8 @@ export function createCardLoadView({ panel, viewModel, onSelect }) {
         </div>`;
       tooltip = makeTooltip(panel);
       grid = panel.querySelector('.opv-cardload-grid');
+      statsRoot = panel.querySelector('.opv-cardload-stats');
+      panel.querySelectorAll('[data-card-mode]').forEach(button => button.addEventListener('click', () => setMode(button.dataset.cardMode)));
       const infoBtn = panel.querySelector('.opv-cardload-info');
       const pop = panel.querySelector('.opv-cardload-pop');
       infoBtn.addEventListener('click', event => {
@@ -920,8 +1177,15 @@ export function createCardLoadView({ panel, viewModel, onSelect }) {
       paintCards();
     },
     render: paintCards,
-    resize() {},
+    resize: paintCards,
     setViewModel(next) { viewModel = next; if (!panel.hidden) paintCards(); },
+    setActivityViewModel(next) { activityViewModel = next; if (!panel.hidden) paintCards(); },
+    setExternalHover(next) { externalHover = next; if (!panel.hidden) paintCards(); },
+    setExternalSelection(next) { externalSelection = next; if (!panel.hidden) paintCards(); },
+    setMode,
+    get mode() { return mode; },
+    get title() { return currentModel()?.title || 'Card Load'; },
+    get meta() { return currentModel()?.meta || ''; },
   };
 }
 

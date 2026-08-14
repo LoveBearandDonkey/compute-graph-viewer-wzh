@@ -1,0 +1,2009 @@
+{
+  "schema_version": "model_architecture.v1",
+  "model": {
+    "name": "AscendPort example_mla_decode MLA Kernel",
+    "framework": "TileLang",
+    "source_root": "/Users/yin/pto/ascendport_migration-pangu"
+  },
+  "extraction_scope": {
+    "kind": "full_source",
+    "full_main_layers": 1,
+    "trace_main_layers": null,
+    "notes": [
+      "Complete source coverage of flashattn, including main_split, main_no_split, and the split combine kernel.",
+      "The project default is num_split=1; the split-KV branch is retained as a conditional source branch.",
+      "Operator mapping is associated by mapping_ids and delivered in operator_mapping.json."
+    ]
+  },
+  "sources": [
+    {
+      "id": "example_mla_decode",
+      "kind": "source",
+      "path": "/Users/yin/pto/ascendport_migration-pangu/mla-model-architecture/outputs/example_mla_decode.py",
+      "role": "source_of_truth",
+      "sha256": "badfb74e161a19be4b8022b8c13ca059b368598c7d7f8a5b77ea623347341962",
+      "archive_path": "/Users/yin/pto/ascendport_migration-pangu/ascendport_migration_MLA_A3_updated.zip",
+      "archive_member": "ascendport_migration/ascendport_migration_V3_MLA_pto_legacy.js",
+      "bundle_symbol": "CUDA"
+    },
+    {
+      "id": "ascend_s4",
+      "kind": "generated_source",
+      "path": "/Users/yin/pto/ascendport_migration-pangu/mla-model-architecture/outputs/flash_mla_decode_s4.cpp",
+      "role": "target_mapping_evidence",
+      "bundle_symbol": "S4"
+    },
+    {
+      "id": "ascend_s6",
+      "kind": "generated_source",
+      "path": "/Users/yin/pto/ascendport_migration-pangu/mla-model-architecture/outputs/flash_mla_decode_s6.cpp",
+      "role": "target_mapping_evidence",
+      "bundle_symbol": "S6"
+    },
+    {
+      "id": "migration_analysis",
+      "kind": "analysis",
+      "path": "/Users/yin/pto/ascendport_migration-pangu/ascendport_migration_V3_MLA_pto.analysis.md",
+      "role": "target_mapping_evidence"
+    },
+    {
+      "id": "model_graphviz_pattern",
+      "kind": "pattern_contract",
+      "path": "/Users/yin/pto-design-system/patterns/model-graphviz/pattern.json",
+      "role": "render_contract"
+    }
+  ],
+  "symbol_table": {
+    "B": 132,
+    "H": 128,
+    "H_KV": 1,
+    "N": 8192,
+    "D": 512,
+    "D_PE": 64,
+    "BLOCK_N": 64,
+    "BLOCK_H": 64,
+    "SPLIT": 1
+  },
+  "nodes": [
+    {
+      "id": "query",
+      "kind": "input",
+      "label": "Query",
+      "colorKey": "io:input",
+      "provenance": [
+        {
+          "source": "example_mla_decode",
+          "path": "/Users/yin/pto/ascendport_migration-pangu/mla-model-architecture/outputs/example_mla_decode.py",
+          "line": 122,
+          "fact": "main_no_split Q input",
+          "confidence": "confirmed"
+        }
+      ],
+      "attrs": {
+        "source_name": "Q"
+      }
+    },
+    {
+      "id": "position_query",
+      "kind": "input",
+      "label": "Position Query",
+      "colorKey": "io:input",
+      "provenance": [
+        {
+          "source": "example_mla_decode",
+          "path": "/Users/yin/pto/ascendport_migration-pangu/mla-model-architecture/outputs/example_mla_decode.py",
+          "line": 123,
+          "fact": "main_no_split Q_pe input",
+          "confidence": "confirmed"
+        }
+      ],
+      "attrs": {
+        "source_name": "Q_pe"
+      }
+    },
+    {
+      "id": "latent_kv",
+      "kind": "input",
+      "label": "Latent KV",
+      "colorKey": "io:input",
+      "provenance": [
+        {
+          "source": "example_mla_decode",
+          "path": "/Users/yin/pto/ascendport_migration-pangu/mla-model-architecture/outputs/example_mla_decode.py",
+          "line": 124,
+          "fact": "main_no_split KV input",
+          "confidence": "confirmed"
+        }
+      ],
+      "attrs": {
+        "source_name": "KV",
+        "dual_role": [
+          "key",
+          "value"
+        ]
+      }
+    },
+    {
+      "id": "position_key",
+      "kind": "input",
+      "label": "Position Key",
+      "colorKey": "io:input",
+      "provenance": [
+        {
+          "source": "example_mla_decode",
+          "path": "/Users/yin/pto/ascendport_migration-pangu/mla-model-architecture/outputs/example_mla_decode.py",
+          "line": 125,
+          "fact": "main_no_split K_pe input",
+          "confidence": "confirmed"
+        }
+      ],
+      "attrs": {
+        "source_name": "K_pe"
+      }
+    },
+    {
+      "id": "runtime_config",
+      "kind": "input",
+      "label": "Runtime Config",
+      "colorKey": "io:input",
+      "provenance": [
+        {
+          "source": "example_mla_decode",
+          "path": "/Users/yin/pto/ascendport_migration-pangu/mla-model-architecture/outputs/example_mla_decode.py",
+          "line": 14,
+          "fact": "flashattn configuration arguments",
+          "confidence": "confirmed"
+        }
+      ],
+      "attrs": {
+        "default_path": "num_split=1"
+      }
+    },
+    {
+      "id": "kernel_dispatch",
+      "kind": "op",
+      "label": "Kernel Dispatch",
+      "colorKey": "sem:comm",
+      "provenance": [
+        {
+          "source": "example_mla_decode",
+          "path": "/Users/yin/pto/ascendport_migration-pangu/mla-model-architecture/outputs/example_mla_decode.py",
+          "line": 128,
+          "fact": "T.Kernel assigns head groups and batches",
+          "confidence": "confirmed"
+        }
+      ],
+      "op_type": "KernelLaunch",
+      "attrs": {
+        "source_primitives": [
+          "T.Kernel",
+          "T.use_swizzle"
+        ],
+        "mapping_ids": [
+          "map_kernel_dispatch",
+          "map_swizzle"
+        ]
+      }
+    },
+    {
+      "id": "q_stage",
+      "kind": "op",
+      "label": "Query Block Stage",
+      "colorKey": "sem:comm",
+      "provenance": [
+        {
+          "source": "example_mla_decode",
+          "path": "/Users/yin/pto/ascendport_migration-pangu/mla-model-architecture/outputs/example_mla_decode.py",
+          "line": 145,
+          "fact": "copy Q and Q_pe to shared memory",
+          "confidence": "confirmed"
+        }
+      ],
+      "op_type": "Copy",
+      "attrs": {
+        "storage": "shared",
+        "execution_paths": [
+          "main_split",
+          "main_no_split"
+        ],
+        "mapping_ids": [
+          "map_shared_buffers",
+          "map_q_copy"
+        ]
+      }
+    },
+    {
+      "id": "kv_stage",
+      "kind": "op",
+      "label": "KV Tile Stage",
+      "colorKey": "sem:comm",
+      "provenance": [
+        {
+          "source": "example_mla_decode",
+          "path": "/Users/yin/pto/ascendport_migration-pangu/mla-model-architecture/outputs/example_mla_decode.py",
+          "line": 151,
+          "fact": "pipelined KV and K_pe tile copies",
+          "confidence": "confirmed"
+        }
+      ],
+      "op_type": "PipelinedCopy",
+      "attrs": {
+        "storage": "shared",
+        "repeat": "ceildiv(seqlen_kv, block_N)",
+        "mapping_ids": [
+          "map_shared_buffers",
+          "map_kv_pipeline_copy"
+        ]
+      }
+    },
+    {
+      "id": "qk_gemm",
+      "kind": "op",
+      "label": "Q·KVᵀ GEMM",
+      "colorKey": "sem:attention",
+      "provenance": [
+        {
+          "source": "example_mla_decode",
+          "path": "/Users/yin/pto/ascendport_migration-pangu/mla-model-architecture/outputs/example_mla_decode.py",
+          "line": 155,
+          "fact": "non-positional attention score GEMM",
+          "confidence": "confirmed"
+        }
+      ],
+      "op_type": "GEMM",
+      "attrs": {
+        "transpose_b": true,
+        "clear_accum": true,
+        "mapping_ids": [
+          "map_fragment_buffers",
+          "map_qk_gemm",
+          "map_warp_policy"
+        ]
+      }
+    },
+    {
+      "id": "pe_gemm",
+      "kind": "op",
+      "label": "PE GEMM Accumulate",
+      "colorKey": "sem:attention",
+      "provenance": [
+        {
+          "source": "example_mla_decode",
+          "path": "/Users/yin/pto/ascendport_migration-pangu/mla-model-architecture/outputs/example_mla_decode.py",
+          "line": 156,
+          "fact": "position score GEMM accumulates into acc_s",
+          "confidence": "confirmed"
+        }
+      ],
+      "op_type": "GEMM",
+      "attrs": {
+        "transpose_b": true,
+        "accumulate": true,
+        "mapping_ids": [
+          "map_fragment_buffers",
+          "map_pe_gemm",
+          "map_warp_policy"
+        ]
+      }
+    },
+    {
+      "id": "score_block_max",
+      "kind": "op",
+      "label": "Score Block Max",
+      "colorKey": "sem:act",
+      "provenance": [
+        {
+          "source": "example_mla_decode",
+          "path": "/Users/yin/pto/ascendport_migration-pangu/mla-model-architecture/outputs/example_mla_decode.py",
+          "line": 159,
+          "fact": "reduce maximum over current score tile",
+          "confidence": "confirmed"
+        }
+      ],
+      "op_type": "ReduceMax",
+      "attrs": {
+        "mapping_ids": [
+          "map_fragment_buffers",
+          "map_reduce_max"
+        ]
+      }
+    },
+    {
+      "id": "running_max_merge",
+      "kind": "op",
+      "label": "Running Max Merge",
+      "colorKey": "sem:act",
+      "provenance": [
+        {
+          "source": "example_mla_decode",
+          "path": "/Users/yin/pto/ascendport_migration-pangu/mla-model-architecture/outputs/example_mla_decode.py",
+          "line": 161,
+          "fact": "merge tile maximum with previous maximum",
+          "confidence": "confirmed"
+        }
+      ],
+      "op_type": "Maximum",
+      "attrs": {
+        "mapping_ids": [
+          "map_reduce_max"
+        ]
+      }
+    },
+    {
+      "id": "score_exponential",
+      "kind": "op",
+      "label": "Score Exponential",
+      "colorKey": "sem:act",
+      "provenance": [
+        {
+          "source": "example_mla_decode",
+          "path": "/Users/yin/pto/ascendport_migration-pangu/mla-model-architecture/outputs/example_mla_decode.py",
+          "line": 165,
+          "fact": "exp2-scaled probability numerator",
+          "confidence": "confirmed"
+        }
+      ],
+      "op_type": "Exp2",
+      "attrs": {
+        "numeric_basis": "base2",
+        "scale_multiplier": 1.44269504,
+        "mapping_ids": [
+          "map_exp2"
+        ]
+      }
+    },
+    {
+      "id": "score_sum",
+      "kind": "op",
+      "label": "Score Sum",
+      "colorKey": "sem:act",
+      "provenance": [
+        {
+          "source": "example_mla_decode",
+          "path": "/Users/yin/pto/ascendport_migration-pangu/mla-model-architecture/outputs/example_mla_decode.py",
+          "line": 166,
+          "fact": "reduce probability numerator over the tile",
+          "confidence": "confirmed"
+        }
+      ],
+      "op_type": "ReduceSum",
+      "attrs": {
+        "mapping_ids": [
+          "map_reduce_sum"
+        ]
+      }
+    },
+    {
+      "id": "online_state_update",
+      "kind": "op",
+      "label": "Online Statistics Update",
+      "colorKey": "sem:act",
+      "provenance": [
+        {
+          "source": "example_mla_decode",
+          "path": "/Users/yin/pto/ascendport_migration-pangu/mla-model-architecture/outputs/example_mla_decode.py",
+          "line": 169,
+          "fact": "update logsum with tile sum and rescale",
+          "confidence": "confirmed"
+        }
+      ],
+      "op_type": "OnlineSoftmaxUpdate",
+      "attrs": {
+        "accum_dtype": "float32",
+        "mapping_ids": [
+          "map_online_state"
+        ]
+      }
+    },
+    {
+      "id": "output_rescale",
+      "kind": "op",
+      "label": "Output Rescale",
+      "colorKey": "sem:act",
+      "provenance": [
+        {
+          "source": "example_mla_decode",
+          "path": "/Users/yin/pto/ascendport_migration-pangu/mla-model-architecture/outputs/example_mla_decode.py",
+          "line": 170,
+          "fact": "rescale prior output accumulator",
+          "confidence": "confirmed"
+        }
+      ],
+      "op_type": "Multiply",
+      "attrs": {
+        "mapping_ids": [
+          "map_exp2",
+          "map_online_state"
+        ]
+      }
+    },
+    {
+      "id": "pv_gemm",
+      "kind": "op",
+      "label": "Probability Value GEMM",
+      "colorKey": "sem:attention",
+      "provenance": [
+        {
+          "source": "example_mla_decode",
+          "path": "/Users/yin/pto/ascendport_migration-pangu/mla-model-architecture/outputs/example_mla_decode.py",
+          "line": 172,
+          "fact": "probability matrix times KV values",
+          "confidence": "confirmed"
+        }
+      ],
+      "op_type": "GEMM",
+      "attrs": {
+        "source_api": "T.gemm",
+        "value_source": "KV_shared",
+        "mapping_ids": [
+          "map_fragment_buffers",
+          "map_pv_gemm",
+          "map_warp_policy"
+        ]
+      }
+    },
+    {
+      "id": "output_normalize",
+      "kind": "op",
+      "label": "Output Normalize",
+      "colorKey": "sem:act",
+      "provenance": [
+        {
+          "source": "example_mla_decode",
+          "path": "/Users/yin/pto/ascendport_migration-pangu/mla-model-architecture/outputs/example_mla_decode.py",
+          "line": 174,
+          "fact": "divide accumulated output by logsum",
+          "confidence": "confirmed"
+        }
+      ],
+      "op_type": "Divide",
+      "attrs": {
+        "mapping_ids": [
+          "map_normalize"
+        ]
+      }
+    },
+    {
+      "id": "no_split_store",
+      "kind": "op",
+      "label": "No-Split Store",
+      "colorKey": "sem:comm",
+      "provenance": [
+        {
+          "source": "example_mla_decode",
+          "path": "/Users/yin/pto/ascendport_migration-pangu/mla-model-architecture/outputs/example_mla_decode.py",
+          "line": 176,
+          "fact": "copy normalized no-split output",
+          "confidence": "confirmed"
+        }
+      ],
+      "op_type": "Store",
+      "attrs": {
+        "condition": "num_split == 1",
+        "mapping_ids": [
+          "map_output_store"
+        ]
+      }
+    },
+    {
+      "id": "lse_encode",
+      "kind": "op",
+      "label": "LSE Encode",
+      "colorKey": "sem:act",
+      "provenance": [
+        {
+          "source": "example_mla_decode",
+          "path": "/Users/yin/pto/ascendport_migration-pangu/mla-model-architecture/outputs/example_mla_decode.py",
+          "line": 87,
+          "fact": "encode split logsum in base-2 space",
+          "confidence": "confirmed"
+        }
+      ],
+      "op_type": "Log2",
+      "attrs": {
+        "condition": "num_split > 1",
+        "mapping_ids": [
+          "map_exp2",
+          "map_split_workspace"
+        ]
+      }
+    },
+    {
+      "id": "partial_result_store",
+      "kind": "op",
+      "label": "Partial Result Store",
+      "colorKey": "sem:comm",
+      "provenance": [
+        {
+          "source": "example_mla_decode",
+          "path": "/Users/yin/pto/ascendport_migration-pangu/mla-model-architecture/outputs/example_mla_decode.py",
+          "line": 88,
+          "fact": "store split LSE and partial output",
+          "confidence": "confirmed"
+        }
+      ],
+      "op_type": "Store",
+      "attrs": {
+        "condition": "num_split > 1",
+        "mapping_ids": [
+          "map_split_workspace"
+        ]
+      }
+    },
+    {
+      "id": "partial_output_workspace",
+      "kind": "state",
+      "label": "Partial Output Workspace",
+      "colorKey": "io:state",
+      "provenance": [
+        {
+          "source": "example_mla_decode",
+          "path": "/Users/yin/pto/ascendport_migration-pangu/mla-model-architecture/outputs/example_mla_decode.py",
+          "line": 31,
+          "fact": "global partial output exchanged across kernels",
+          "confidence": "confirmed"
+        }
+      ],
+      "state_type": "workspace",
+      "attrs": {
+        "persistent_across_kernels": true,
+        "mapping_ids": [
+          "map_split_workspace"
+        ]
+      }
+    },
+    {
+      "id": "split_lse_workspace",
+      "kind": "state",
+      "label": "Split LSE Workspace",
+      "colorKey": "io:state",
+      "provenance": [
+        {
+          "source": "example_mla_decode",
+          "path": "/Users/yin/pto/ascendport_migration-pangu/mla-model-architecture/outputs/example_mla_decode.py",
+          "line": 30,
+          "fact": "global split LSE exchanged across kernels",
+          "confidence": "confirmed"
+        }
+      ],
+      "state_type": "workspace",
+      "attrs": {
+        "persistent_across_kernels": true,
+        "mapping_ids": [
+          "map_split_workspace"
+        ]
+      }
+    },
+    {
+      "id": "split_lse_max",
+      "kind": "op",
+      "label": "Split LSE Max",
+      "colorKey": "sem:act",
+      "provenance": [
+        {
+          "source": "example_mla_decode",
+          "path": "/Users/yin/pto/ascendport_migration-pangu/mla-model-architecture/outputs/example_mla_decode.py",
+          "line": 105,
+          "fact": "maximum across split LSE values",
+          "confidence": "confirmed"
+        }
+      ],
+      "op_type": "ReduceMax",
+      "attrs": {
+        "mapping_ids": [
+          "map_split_combine"
+        ]
+      }
+    },
+    {
+      "id": "split_lse_sum",
+      "kind": "op",
+      "label": "Split LSE Sum",
+      "colorKey": "sem:act",
+      "provenance": [
+        {
+          "source": "example_mla_decode",
+          "path": "/Users/yin/pto/ascendport_migration-pangu/mla-model-architecture/outputs/example_mla_decode.py",
+          "line": 108,
+          "fact": "sum normalized split LSE exponentials",
+          "confidence": "confirmed"
+        }
+      ],
+      "op_type": "ReduceSum",
+      "attrs": {
+        "mapping_ids": [
+          "map_split_combine",
+          "map_exp2"
+        ]
+      }
+    },
+    {
+      "id": "partial_weight",
+      "kind": "op",
+      "label": "Partial Weight",
+      "colorKey": "sem:act",
+      "provenance": [
+        {
+          "source": "example_mla_decode",
+          "path": "/Users/yin/pto/ascendport_migration-pangu/mla-model-architecture/outputs/example_mla_decode.py",
+          "line": 114,
+          "fact": "compute per-split output weight",
+          "confidence": "confirmed"
+        }
+      ],
+      "op_type": "Exp2",
+      "attrs": {
+        "mapping_ids": [
+          "map_split_combine",
+          "map_exp2"
+        ]
+      }
+    },
+    {
+      "id": "split_output_accumulate",
+      "kind": "op",
+      "label": "Split Output Accumulate",
+      "colorKey": "sem:act",
+      "provenance": [
+        {
+          "source": "example_mla_decode",
+          "path": "/Users/yin/pto/ascendport_migration-pangu/mla-model-architecture/outputs/example_mla_decode.py",
+          "line": 116,
+          "fact": "weighted sum of split partial outputs",
+          "confidence": "confirmed"
+        }
+      ],
+      "op_type": "WeightedSum",
+      "attrs": {
+        "mapping_ids": [
+          "map_split_combine"
+        ]
+      }
+    },
+    {
+      "id": "split_output_store",
+      "kind": "op",
+      "label": "Split Output Store",
+      "colorKey": "sem:comm",
+      "provenance": [
+        {
+          "source": "example_mla_decode",
+          "path": "/Users/yin/pto/ascendport_migration-pangu/mla-model-architecture/outputs/example_mla_decode.py",
+          "line": 118,
+          "fact": "store combined split output",
+          "confidence": "confirmed"
+        }
+      ],
+      "op_type": "Store",
+      "attrs": {
+        "condition": "num_split > 1",
+        "mapping_ids": [
+          "map_output_store"
+        ]
+      }
+    },
+    {
+      "id": "mla_output",
+      "kind": "output",
+      "label": "MLA Output",
+      "colorKey": "io:output",
+      "provenance": [
+        {
+          "source": "example_mla_decode",
+          "path": "/Users/yin/pto/ascendport_migration-pangu/mla-model-architecture/outputs/example_mla_decode.py",
+          "line": 176,
+          "fact": "final attention output",
+          "confidence": "confirmed"
+        }
+      ]
+    }
+  ],
+  "edges": [
+    {
+      "id": "e_cfg_dispatch",
+      "source": "runtime_config",
+      "target": "kernel_dispatch",
+      "attrs": {
+        "flow_type": "activation"
+      },
+      "tensor": {
+        "name": "launch_config",
+        "shape": "{B,H,H_KV,N,D,D_PE,BLOCK_N,BLOCK_H,SPLIT}",
+        "dtype": "control"
+      },
+      "provenance": [
+        {
+          "source": "example_mla_decode",
+          "path": "/Users/yin/pto/ascendport_migration-pangu/mla-model-architecture/outputs/example_mla_decode.py",
+          "line": 14,
+          "fact": "flashattn compile-time and runtime arguments",
+          "confidence": "confirmed"
+        }
+      ],
+      "sourceAnchor": "bottom",
+      "targetAnchor": "top"
+    },
+    {
+      "id": "e_q_stage",
+      "source": "query",
+      "target": "q_stage",
+      "attrs": {
+        "flow_type": "activation"
+      },
+      "tensor": {
+        "name": "Q",
+        "shape": "[B,H,D]",
+        "dtype": "float16"
+      },
+      "provenance": [
+        {
+          "source": "example_mla_decode",
+          "path": "/Users/yin/pto/ascendport_migration-pangu/mla-model-architecture/outputs/example_mla_decode.py",
+          "line": 145,
+          "fact": "query block input",
+          "confidence": "confirmed"
+        }
+      ],
+      "sourceAnchor": "bottom",
+      "targetAnchor": "top"
+    },
+    {
+      "id": "e_qpe_stage",
+      "source": "position_query",
+      "target": "q_stage",
+      "attrs": {
+        "flow_type": "activation"
+      },
+      "tensor": {
+        "name": "Q_pe",
+        "shape": "[B,H,D_PE]",
+        "dtype": "float16"
+      },
+      "provenance": [
+        {
+          "source": "example_mla_decode",
+          "path": "/Users/yin/pto/ascendport_migration-pangu/mla-model-architecture/outputs/example_mla_decode.py",
+          "line": 146,
+          "fact": "position-query block input",
+          "confidence": "confirmed"
+        }
+      ],
+      "sourceAnchor": "bottom",
+      "targetAnchor": "top"
+    },
+    {
+      "id": "e_kv_stage",
+      "source": "latent_kv",
+      "target": "kv_stage",
+      "attrs": {
+        "flow_type": "activation"
+      },
+      "tensor": {
+        "name": "KV_tile",
+        "shape": "[B,BLOCK_N,H_KV,D]",
+        "dtype": "float16",
+        "constraints": [
+          "H_KV=1"
+        ]
+      },
+      "provenance": [
+        {
+          "source": "example_mla_decode",
+          "path": "/Users/yin/pto/ascendport_migration-pangu/mla-model-architecture/outputs/example_mla_decode.py",
+          "line": 153,
+          "fact": "latent KV tile input",
+          "confidence": "confirmed"
+        }
+      ],
+      "sourceAnchor": "bottom",
+      "targetAnchor": "top"
+    },
+    {
+      "id": "e_kpe_stage",
+      "source": "position_key",
+      "target": "kv_stage",
+      "attrs": {
+        "flow_type": "activation"
+      },
+      "tensor": {
+        "name": "K_pe_tile",
+        "shape": "[B,BLOCK_N,H_KV,D_PE]",
+        "dtype": "float16",
+        "constraints": [
+          "H_KV=1"
+        ]
+      },
+      "provenance": [
+        {
+          "source": "example_mla_decode",
+          "path": "/Users/yin/pto/ascendport_migration-pangu/mla-model-architecture/outputs/example_mla_decode.py",
+          "line": 154,
+          "fact": "position-key tile input",
+          "confidence": "confirmed"
+        }
+      ],
+      "sourceAnchor": "bottom",
+      "targetAnchor": "top"
+    },
+    {
+      "id": "e_dispatch_q",
+      "source": "kernel_dispatch",
+      "target": "q_stage",
+      "attrs": {
+        "flow_type": "activation"
+      },
+      "tensor": {
+        "name": "program_ids",
+        "shape": "[head_group,batch]",
+        "dtype": "int32"
+      },
+      "provenance": [
+        {
+          "source": "example_mla_decode",
+          "path": "/Users/yin/pto/ascendport_migration-pangu/mla-model-architecture/outputs/example_mla_decode.py",
+          "line": 128,
+          "fact": "kernel ownership for query load",
+          "confidence": "confirmed"
+        }
+      ],
+      "sourceAnchor": "bottom",
+      "targetAnchor": "top"
+    },
+    {
+      "id": "e_dispatch_kv",
+      "source": "kernel_dispatch",
+      "target": "kv_stage",
+      "attrs": {
+        "flow_type": "activation"
+      },
+      "tensor": {
+        "name": "tile_schedule",
+        "shape": "[ceildiv(N,BLOCK_N)]",
+        "dtype": "int32"
+      },
+      "provenance": [
+        {
+          "source": "example_mla_decode",
+          "path": "/Users/yin/pto/ascendport_migration-pangu/mla-model-architecture/outputs/example_mla_decode.py",
+          "line": 151,
+          "fact": "pipelined KV tile schedule",
+          "confidence": "confirmed"
+        }
+      ],
+      "sourceAnchor": "bottom",
+      "targetAnchor": "top"
+    },
+    {
+      "id": "e_q_qk",
+      "source": "q_stage",
+      "target": "qk_gemm",
+      "attrs": {
+        "flow_type": "activation"
+      },
+      "tensor": {
+        "name": "Q_shared",
+        "shape": "[BLOCK_H,D]",
+        "dtype": "float16"
+      },
+      "provenance": [
+        {
+          "source": "example_mla_decode",
+          "path": "/Users/yin/pto/ascendport_migration-pangu/mla-model-architecture/outputs/example_mla_decode.py",
+          "line": 155,
+          "fact": "staged non-position query",
+          "confidence": "confirmed"
+        }
+      ]
+    },
+    {
+      "id": "e_kv_qk",
+      "source": "kv_stage",
+      "target": "qk_gemm",
+      "attrs": {
+        "flow_type": "activation"
+      },
+      "tensor": {
+        "name": "KV_shared",
+        "shape": "[BLOCK_N,D]",
+        "dtype": "float16"
+      },
+      "provenance": [
+        {
+          "source": "example_mla_decode",
+          "path": "/Users/yin/pto/ascendport_migration-pangu/mla-model-architecture/outputs/example_mla_decode.py",
+          "line": 155,
+          "fact": "staged latent key/value tile",
+          "confidence": "confirmed"
+        }
+      ]
+    },
+    {
+      "id": "e_qk_pe_acc",
+      "source": "qk_gemm",
+      "target": "pe_gemm",
+      "attrs": {
+        "flow_type": "activation"
+      },
+      "tensor": {
+        "name": "acc_s",
+        "shape": "[BLOCK_H,BLOCK_N]",
+        "dtype": "float32"
+      },
+      "provenance": [
+        {
+          "source": "example_mla_decode",
+          "path": "/Users/yin/pto/ascendport_migration-pangu/mla-model-architecture/outputs/example_mla_decode.py",
+          "line": 156,
+          "fact": "non-position score accumulator",
+          "confidence": "confirmed"
+        }
+      ]
+    },
+    {
+      "id": "e_qpe_pe",
+      "source": "q_stage",
+      "target": "pe_gemm",
+      "attrs": {
+        "flow_type": "activation"
+      },
+      "tensor": {
+        "name": "Q_pe_shared",
+        "shape": "[BLOCK_H,D_PE]",
+        "dtype": "float16"
+      },
+      "provenance": [
+        {
+          "source": "example_mla_decode",
+          "path": "/Users/yin/pto/ascendport_migration-pangu/mla-model-architecture/outputs/example_mla_decode.py",
+          "line": 156,
+          "fact": "staged position query",
+          "confidence": "confirmed"
+        }
+      ]
+    },
+    {
+      "id": "e_kpe_pe",
+      "source": "kv_stage",
+      "target": "pe_gemm",
+      "attrs": {
+        "flow_type": "activation"
+      },
+      "tensor": {
+        "name": "K_pe_shared",
+        "shape": "[BLOCK_N,D_PE]",
+        "dtype": "float16"
+      },
+      "provenance": [
+        {
+          "source": "example_mla_decode",
+          "path": "/Users/yin/pto/ascendport_migration-pangu/mla-model-architecture/outputs/example_mla_decode.py",
+          "line": 156,
+          "fact": "staged position key tile",
+          "confidence": "confirmed"
+        }
+      ]
+    },
+    {
+      "id": "e_pe_max",
+      "source": "pe_gemm",
+      "target": "score_block_max",
+      "attrs": {
+        "flow_type": "activation"
+      },
+      "tensor": {
+        "name": "acc_s",
+        "shape": "[BLOCK_H,BLOCK_N]",
+        "dtype": "float32"
+      },
+      "provenance": [
+        {
+          "source": "example_mla_decode",
+          "path": "/Users/yin/pto/ascendport_migration-pangu/mla-model-architecture/outputs/example_mla_decode.py",
+          "line": 159,
+          "fact": "complete MLA score tile",
+          "confidence": "confirmed"
+        }
+      ]
+    },
+    {
+      "id": "e_max_merge",
+      "source": "score_block_max",
+      "target": "running_max_merge",
+      "attrs": {
+        "flow_type": "activation"
+      },
+      "tensor": {
+        "name": "scores_max_tile",
+        "shape": "[BLOCK_H]",
+        "dtype": "float32"
+      },
+      "provenance": [
+        {
+          "source": "example_mla_decode",
+          "path": "/Users/yin/pto/ascendport_migration-pangu/mla-model-architecture/outputs/example_mla_decode.py",
+          "line": 161,
+          "fact": "current tile maximum",
+          "confidence": "confirmed"
+        }
+      ]
+    },
+    {
+      "id": "e_scores_exp",
+      "source": "pe_gemm",
+      "target": "score_exponential",
+      "attrs": {
+        "flow_type": "activation"
+      },
+      "tensor": {
+        "name": "acc_s",
+        "shape": "[BLOCK_H,BLOCK_N]",
+        "dtype": "float32"
+      },
+      "provenance": [
+        {
+          "source": "example_mla_decode",
+          "path": "/Users/yin/pto/ascendport_migration-pangu/mla-model-architecture/outputs/example_mla_decode.py",
+          "line": 165,
+          "fact": "score tile before exponentiation",
+          "confidence": "confirmed"
+        }
+      ]
+    },
+    {
+      "id": "e_max_exp",
+      "source": "running_max_merge",
+      "target": "score_exponential",
+      "attrs": {
+        "flow_type": "activation"
+      },
+      "tensor": {
+        "name": "scores_max",
+        "shape": "[BLOCK_H]",
+        "dtype": "float32"
+      },
+      "provenance": [
+        {
+          "source": "example_mla_decode",
+          "path": "/Users/yin/pto/ascendport_migration-pangu/mla-model-architecture/outputs/example_mla_decode.py",
+          "line": 165,
+          "fact": "running score maximum",
+          "confidence": "confirmed"
+        }
+      ]
+    },
+    {
+      "id": "e_exp_sum",
+      "source": "score_exponential",
+      "target": "score_sum",
+      "attrs": {
+        "flow_type": "activation"
+      },
+      "tensor": {
+        "name": "probability_numerator",
+        "shape": "[BLOCK_H,BLOCK_N]",
+        "dtype": "float32"
+      },
+      "provenance": [
+        {
+          "source": "example_mla_decode",
+          "path": "/Users/yin/pto/ascendport_migration-pangu/mla-model-architecture/outputs/example_mla_decode.py",
+          "line": 166,
+          "fact": "unnormalized tile probabilities",
+          "confidence": "confirmed"
+        }
+      ]
+    },
+    {
+      "id": "e_sum_state",
+      "source": "score_sum",
+      "target": "online_state_update",
+      "attrs": {
+        "flow_type": "activation"
+      },
+      "tensor": {
+        "name": "scores_sum",
+        "shape": "[BLOCK_H]",
+        "dtype": "float32"
+      },
+      "provenance": [
+        {
+          "source": "example_mla_decode",
+          "path": "/Users/yin/pto/ascendport_migration-pangu/mla-model-architecture/outputs/example_mla_decode.py",
+          "line": 169,
+          "fact": "tile probability sum",
+          "confidence": "confirmed"
+        }
+      ]
+    },
+    {
+      "id": "e_max_state",
+      "source": "running_max_merge",
+      "target": "online_state_update",
+      "attrs": {
+        "flow_type": "activation"
+      },
+      "tensor": {
+        "name": "scores_scale",
+        "shape": "[BLOCK_H]",
+        "dtype": "float32"
+      },
+      "provenance": [
+        {
+          "source": "example_mla_decode",
+          "path": "/Users/yin/pto/ascendport_migration-pangu/mla-model-architecture/outputs/example_mla_decode.py",
+          "line": 169,
+          "fact": "historical softmax rescale",
+          "confidence": "confirmed"
+        }
+      ]
+    },
+    {
+      "id": "e_state_rescale",
+      "source": "online_state_update",
+      "target": "output_rescale",
+      "attrs": {
+        "flow_type": "activation"
+      },
+      "tensor": {
+        "name": "scores_scale",
+        "shape": "[BLOCK_H]",
+        "dtype": "float32"
+      },
+      "provenance": [
+        {
+          "source": "example_mla_decode",
+          "path": "/Users/yin/pto/ascendport_migration-pangu/mla-model-architecture/outputs/example_mla_decode.py",
+          "line": 170,
+          "fact": "output rescale factor",
+          "confidence": "confirmed"
+        }
+      ]
+    },
+    {
+      "id": "e_exp_pv",
+      "source": "score_exponential",
+      "target": "pv_gemm",
+      "attrs": {
+        "flow_type": "activation"
+      },
+      "tensor": {
+        "name": "probability_tile",
+        "shape": "[BLOCK_H,BLOCK_N]",
+        "dtype": "float16/float32"
+      },
+      "provenance": [
+        {
+          "source": "example_mla_decode",
+          "path": "/Users/yin/pto/ascendport_migration-pangu/mla-model-architecture/outputs/example_mla_decode.py",
+          "line": 172,
+          "fact": "tile probabilities",
+          "confidence": "confirmed"
+        }
+      ]
+    },
+    {
+      "id": "e_kv_pv",
+      "source": "kv_stage",
+      "target": "pv_gemm",
+      "attrs": {
+        "flow_type": "activation"
+      },
+      "tensor": {
+        "name": "value_tile",
+        "shape": "[BLOCK_N,D]",
+        "dtype": "float16"
+      },
+      "provenance": [
+        {
+          "source": "example_mla_decode",
+          "path": "/Users/yin/pto/ascendport_migration-pangu/mla-model-architecture/outputs/example_mla_decode.py",
+          "line": 172,
+          "fact": "KV reused as value matrix",
+          "confidence": "confirmed"
+        }
+      ]
+    },
+    {
+      "id": "e_rescale_pv",
+      "source": "output_rescale",
+      "target": "pv_gemm",
+      "attrs": {
+        "flow_type": "activation"
+      },
+      "tensor": {
+        "name": "rescaled_acc_o",
+        "shape": "[BLOCK_H,D]",
+        "dtype": "float32"
+      },
+      "provenance": [
+        {
+          "source": "example_mla_decode",
+          "path": "/Users/yin/pto/ascendport_migration-pangu/mla-model-architecture/outputs/example_mla_decode.py",
+          "line": 172,
+          "fact": "historical output accumulator",
+          "confidence": "confirmed"
+        }
+      ]
+    },
+    {
+      "id": "e_pv_norm",
+      "source": "pv_gemm",
+      "target": "output_normalize",
+      "attrs": {
+        "flow_type": "activation"
+      },
+      "tensor": {
+        "name": "acc_o",
+        "shape": "[BLOCK_H,D]",
+        "dtype": "float32"
+      },
+      "provenance": [
+        {
+          "source": "example_mla_decode",
+          "path": "/Users/yin/pto/ascendport_migration-pangu/mla-model-architecture/outputs/example_mla_decode.py",
+          "line": 174,
+          "fact": "accumulated value output",
+          "confidence": "confirmed"
+        }
+      ]
+    },
+    {
+      "id": "e_state_norm",
+      "source": "online_state_update",
+      "target": "output_normalize",
+      "attrs": {
+        "flow_type": "activation"
+      },
+      "tensor": {
+        "name": "logsum",
+        "shape": "[BLOCK_H]",
+        "dtype": "float32"
+      },
+      "provenance": [
+        {
+          "source": "example_mla_decode",
+          "path": "/Users/yin/pto/ascendport_migration-pangu/mla-model-architecture/outputs/example_mla_decode.py",
+          "line": 174,
+          "fact": "final online-softmax denominator",
+          "confidence": "confirmed"
+        }
+      ]
+    },
+    {
+      "id": "e_norm_no_store",
+      "source": "output_normalize",
+      "target": "no_split_store",
+      "attrs": {
+        "flow_type": "activation"
+      },
+      "tensor": {
+        "name": "normalized_output",
+        "shape": "[B,H,D]",
+        "dtype": "float16/float32",
+        "constraints": [
+          "num_split=1"
+        ]
+      },
+      "provenance": [
+        {
+          "source": "example_mla_decode",
+          "path": "/Users/yin/pto/ascendport_migration-pangu/mla-model-architecture/outputs/example_mla_decode.py",
+          "line": 176,
+          "fact": "no-split normalized output",
+          "confidence": "confirmed"
+        }
+      ],
+      "tag": "num_split = 1",
+      "tagPosition": 0.62
+    },
+    {
+      "id": "e_no_output",
+      "source": "no_split_store",
+      "target": "mla_output",
+      "attrs": {
+        "flow_type": "activation"
+      },
+      "tensor": {
+        "name": "Output",
+        "shape": "[B,H,D]",
+        "dtype": "float16",
+        "constraints": [
+          "num_split=1"
+        ]
+      },
+      "provenance": [
+        {
+          "source": "example_mla_decode",
+          "path": "/Users/yin/pto/ascendport_migration-pangu/mla-model-architecture/outputs/example_mla_decode.py",
+          "line": 176,
+          "fact": "no-split output",
+          "confidence": "confirmed"
+        }
+      ]
+    },
+    {
+      "id": "e_state_lse",
+      "source": "online_state_update",
+      "target": "lse_encode",
+      "attrs": {
+        "flow_type": "activation"
+      },
+      "tensor": {
+        "name": "logsum",
+        "shape": "[B,H,SPLIT]",
+        "dtype": "float32",
+        "constraints": [
+          "num_split>1"
+        ]
+      },
+      "provenance": [
+        {
+          "source": "example_mla_decode",
+          "path": "/Users/yin/pto/ascendport_migration-pangu/mla-model-architecture/outputs/example_mla_decode.py",
+          "line": 87,
+          "fact": "split denominator state",
+          "confidence": "confirmed"
+        }
+      ],
+      "tag": "num_split > 1",
+      "tagPosition": 0.72
+    },
+    {
+      "id": "e_max_lse",
+      "source": "running_max_merge",
+      "target": "lse_encode",
+      "attrs": {
+        "flow_type": "activation"
+      },
+      "tensor": {
+        "name": "scores_max",
+        "shape": "[B,H,SPLIT]",
+        "dtype": "float32",
+        "constraints": [
+          "num_split>1"
+        ]
+      },
+      "provenance": [
+        {
+          "source": "example_mla_decode",
+          "path": "/Users/yin/pto/ascendport_migration-pangu/mla-model-architecture/outputs/example_mla_decode.py",
+          "line": 87,
+          "fact": "split maximum state",
+          "confidence": "confirmed"
+        }
+      ]
+    },
+    {
+      "id": "e_norm_partial",
+      "source": "output_normalize",
+      "target": "partial_result_store",
+      "attrs": {
+        "flow_type": "activation"
+      },
+      "tensor": {
+        "name": "partial_output",
+        "shape": "[B,H,SPLIT,D]",
+        "dtype": "float16",
+        "constraints": [
+          "num_split>1"
+        ]
+      },
+      "provenance": [
+        {
+          "source": "example_mla_decode",
+          "path": "/Users/yin/pto/ascendport_migration-pangu/mla-model-architecture/outputs/example_mla_decode.py",
+          "line": 90,
+          "fact": "normalized per-split output",
+          "confidence": "confirmed"
+        }
+      ]
+    },
+    {
+      "id": "e_lse_partial",
+      "source": "lse_encode",
+      "target": "partial_result_store",
+      "attrs": {
+        "flow_type": "activation"
+      },
+      "tensor": {
+        "name": "split_lse",
+        "shape": "[B,H,SPLIT]",
+        "dtype": "float16",
+        "constraints": [
+          "num_split>1"
+        ]
+      },
+      "provenance": [
+        {
+          "source": "example_mla_decode",
+          "path": "/Users/yin/pto/ascendport_migration-pangu/mla-model-architecture/outputs/example_mla_decode.py",
+          "line": 88,
+          "fact": "encoded per-split LSE",
+          "confidence": "confirmed"
+        }
+      ]
+    },
+    {
+      "id": "e_partial_workspace",
+      "source": "partial_result_store",
+      "target": "partial_output_workspace",
+      "attrs": {
+        "flow_type": "state"
+      },
+      "tensor": {
+        "name": "Output_partial",
+        "shape": "[B,H,SPLIT,D]",
+        "dtype": "float16"
+      },
+      "provenance": [
+        {
+          "source": "example_mla_decode",
+          "path": "/Users/yin/pto/ascendport_migration-pangu/mla-model-architecture/outputs/example_mla_decode.py",
+          "line": 90,
+          "fact": "partial output workspace",
+          "confidence": "confirmed"
+        }
+      ]
+    },
+    {
+      "id": "e_lse_workspace",
+      "source": "partial_result_store",
+      "target": "split_lse_workspace",
+      "attrs": {
+        "flow_type": "state"
+      },
+      "tensor": {
+        "name": "glse",
+        "shape": "[B,H,SPLIT]",
+        "dtype": "float16"
+      },
+      "provenance": [
+        {
+          "source": "example_mla_decode",
+          "path": "/Users/yin/pto/ascendport_migration-pangu/mla-model-architecture/outputs/example_mla_decode.py",
+          "line": 88,
+          "fact": "split LSE workspace",
+          "confidence": "confirmed"
+        }
+      ]
+    },
+    {
+      "id": "e_lse_max",
+      "source": "split_lse_workspace",
+      "target": "split_lse_max",
+      "attrs": {
+        "flow_type": "state"
+      },
+      "tensor": {
+        "name": "glse",
+        "shape": "[B,H,SPLIT]",
+        "dtype": "float16"
+      },
+      "provenance": [
+        {
+          "source": "example_mla_decode",
+          "path": "/Users/yin/pto/ascendport_migration-pangu/mla-model-architecture/outputs/example_mla_decode.py",
+          "line": 105,
+          "fact": "split LSE values",
+          "confidence": "confirmed"
+        }
+      ]
+    },
+    {
+      "id": "e_lse_sum_a",
+      "source": "split_lse_max",
+      "target": "split_lse_sum",
+      "attrs": {
+        "flow_type": "activation"
+      },
+      "tensor": {
+        "name": "lse_max",
+        "shape": "[B,H]",
+        "dtype": "float32"
+      },
+      "provenance": [
+        {
+          "source": "example_mla_decode",
+          "path": "/Users/yin/pto/ascendport_migration-pangu/mla-model-architecture/outputs/example_mla_decode.py",
+          "line": 108,
+          "fact": "maximum for stable split reduction",
+          "confidence": "confirmed"
+        }
+      ]
+    },
+    {
+      "id": "e_lse_sum_b",
+      "source": "split_lse_workspace",
+      "target": "split_lse_sum",
+      "attrs": {
+        "flow_type": "state"
+      },
+      "tensor": {
+        "name": "glse",
+        "shape": "[B,H,SPLIT]",
+        "dtype": "float16"
+      },
+      "provenance": [
+        {
+          "source": "example_mla_decode",
+          "path": "/Users/yin/pto/ascendport_migration-pangu/mla-model-architecture/outputs/example_mla_decode.py",
+          "line": 108,
+          "fact": "split LSE values",
+          "confidence": "confirmed"
+        }
+      ]
+    },
+    {
+      "id": "e_lse_weight",
+      "source": "split_lse_sum",
+      "target": "partial_weight",
+      "attrs": {
+        "flow_type": "activation"
+      },
+      "tensor": {
+        "name": "lse_logsum",
+        "shape": "[B,H]",
+        "dtype": "float32"
+      },
+      "provenance": [
+        {
+          "source": "example_mla_decode",
+          "path": "/Users/yin/pto/ascendport_migration-pangu/mla-model-architecture/outputs/example_mla_decode.py",
+          "line": 114,
+          "fact": "combined LSE denominator",
+          "confidence": "confirmed"
+        }
+      ]
+    },
+    {
+      "id": "e_lse_weight_src",
+      "source": "split_lse_workspace",
+      "target": "partial_weight",
+      "attrs": {
+        "flow_type": "state"
+      },
+      "tensor": {
+        "name": "glse",
+        "shape": "[B,H,SPLIT]",
+        "dtype": "float16"
+      },
+      "provenance": [
+        {
+          "source": "example_mla_decode",
+          "path": "/Users/yin/pto/ascendport_migration-pangu/mla-model-architecture/outputs/example_mla_decode.py",
+          "line": 114,
+          "fact": "individual split LSE",
+          "confidence": "confirmed"
+        }
+      ]
+    },
+    {
+      "id": "e_weight_acc",
+      "source": "partial_weight",
+      "target": "split_output_accumulate",
+      "attrs": {
+        "flow_type": "activation"
+      },
+      "tensor": {
+        "name": "split_weights",
+        "shape": "[B,H,SPLIT]",
+        "dtype": "float32"
+      },
+      "provenance": [
+        {
+          "source": "example_mla_decode",
+          "path": "/Users/yin/pto/ascendport_migration-pangu/mla-model-architecture/outputs/example_mla_decode.py",
+          "line": 116,
+          "fact": "stable partial-output weights",
+          "confidence": "confirmed"
+        }
+      ]
+    },
+    {
+      "id": "e_partial_acc",
+      "source": "partial_output_workspace",
+      "target": "split_output_accumulate",
+      "attrs": {
+        "flow_type": "state"
+      },
+      "tensor": {
+        "name": "Output_partial",
+        "shape": "[B,H,SPLIT,D]",
+        "dtype": "float16"
+      },
+      "provenance": [
+        {
+          "source": "example_mla_decode",
+          "path": "/Users/yin/pto/ascendport_migration-pangu/mla-model-architecture/outputs/example_mla_decode.py",
+          "line": 116,
+          "fact": "partial outputs",
+          "confidence": "confirmed"
+        }
+      ]
+    },
+    {
+      "id": "e_acc_split_store",
+      "source": "split_output_accumulate",
+      "target": "split_output_store",
+      "attrs": {
+        "flow_type": "activation"
+      },
+      "tensor": {
+        "name": "combined_output",
+        "shape": "[B,H,D]",
+        "dtype": "float32"
+      },
+      "provenance": [
+        {
+          "source": "example_mla_decode",
+          "path": "/Users/yin/pto/ascendport_migration-pangu/mla-model-architecture/outputs/example_mla_decode.py",
+          "line": 118,
+          "fact": "combined split output",
+          "confidence": "confirmed"
+        }
+      ]
+    },
+    {
+      "id": "e_split_output",
+      "source": "split_output_store",
+      "target": "mla_output",
+      "attrs": {
+        "flow_type": "activation"
+      },
+      "tensor": {
+        "name": "Output",
+        "shape": "[B,H,D]",
+        "dtype": "float16",
+        "constraints": [
+          "num_split>1"
+        ]
+      },
+      "provenance": [
+        {
+          "source": "example_mla_decode",
+          "path": "/Users/yin/pto/ascendport_migration-pangu/mla-model-architecture/outputs/example_mla_decode.py",
+          "line": 118,
+          "fact": "split-KV output",
+          "confidence": "confirmed"
+        }
+      ]
+    }
+  ],
+  "repeats": [
+    {
+      "id": "kv_tile_repeat",
+      "template_node": "kv_stage",
+      "range": "0..ceildiv(N,BLOCK_N)-1",
+      "count": "ceildiv(N,BLOCK_N)",
+      "provenance": [
+        {
+          "source": "example_mla_decode",
+          "path": "/Users/yin/pto/ascendport_migration-pangu/mla-model-architecture/outputs/example_mla_decode.py",
+          "line": 152,
+          "fact": "KV tile loop",
+          "confidence": "confirmed"
+        }
+      ]
+    }
+  ],
+  "branches": [
+    {
+      "id": "split_choice",
+      "condition": "num_split > 1",
+      "true_target": "partial_result_store",
+      "false_target": "no_split_store",
+      "resolved_ranges": [
+        {
+          "target": "no_split_store",
+          "range": "project default num_split=1"
+        }
+      ],
+      "provenance": [
+        {
+          "source": "example_mla_decode",
+          "path": "/Users/yin/pto/ascendport_migration-pangu/mla-model-architecture/outputs/example_mla_decode.py",
+          "line": 178,
+          "fact": "flashattn selects split or no-split kernel",
+          "confidence": "confirmed"
+        }
+      ]
+    }
+  ],
+  "visual_layout": {
+    "direction": "vertical",
+    "default_collapse_depth": 2,
+    "nodes": {
+      "query": {
+        "x": 220,
+        "y": 96,
+        "width": 240,
+        "height": 52
+      },
+      "position_query": {
+        "x": 480,
+        "y": 96,
+        "width": 250,
+        "height": 52
+      },
+      "latent_kv": {
+        "x": 1040,
+        "y": 96,
+        "width": 240,
+        "height": 52
+      },
+      "position_key": {
+        "x": 1300,
+        "y": 96,
+        "width": 250,
+        "height": 52
+      },
+      "runtime_config": {
+        "x": 760,
+        "y": 190,
+        "width": 240,
+        "height": 52
+      },
+      "kernel_dispatch": {
+        "x": 760,
+        "y": 300,
+        "width": 480,
+        "height": 64
+      },
+      "q_stage": {
+        "x": 540,
+        "y": 484,
+        "width": 360,
+        "height": 62
+      },
+      "kv_stage": {
+        "x": 980,
+        "y": 484,
+        "width": 360,
+        "height": 62
+      },
+      "qk_gemm": {
+        "x": 760,
+        "y": 720,
+        "width": 480,
+        "height": 62
+      },
+      "pe_gemm": {
+        "x": 760,
+        "y": 836,
+        "width": 480,
+        "height": 62
+      },
+      "score_block_max": {
+        "x": 760,
+        "y": 952,
+        "width": 480,
+        "height": 62
+      },
+      "running_max_merge": {
+        "x": 760,
+        "y": 1128,
+        "width": 480,
+        "height": 62
+      },
+      "score_exponential": {
+        "x": 760,
+        "y": 1244,
+        "width": 480,
+        "height": 62
+      },
+      "score_sum": {
+        "x": 760,
+        "y": 1360,
+        "width": 480,
+        "height": 62
+      },
+      "online_state_update": {
+        "x": 760,
+        "y": 1476,
+        "width": 480,
+        "height": 62
+      },
+      "output_rescale": {
+        "x": 760,
+        "y": 1592,
+        "width": 480,
+        "height": 62
+      },
+      "pv_gemm": {
+        "x": 760,
+        "y": 1768,
+        "width": 480,
+        "height": 62
+      },
+      "output_normalize": {
+        "x": 760,
+        "y": 1960,
+        "width": 480,
+        "height": 62
+      },
+      "no_split_store": {
+        "x": 760,
+        "y": 2138,
+        "width": 360,
+        "height": 60
+      },
+      "lse_encode": {
+        "x": 1260,
+        "y": 2138,
+        "width": 360,
+        "height": 60
+      },
+      "partial_result_store": {
+        "x": 1260,
+        "y": 2254,
+        "width": 360,
+        "height": 60
+      },
+      "partial_output_workspace": {
+        "x": 1640,
+        "y": 2254,
+        "width": 260,
+        "height": 54
+      },
+      "split_lse_workspace": {
+        "x": 1640,
+        "y": 2370,
+        "width": 250,
+        "height": 54
+      },
+      "split_lse_max": {
+        "x": 1260,
+        "y": 2370,
+        "width": 360,
+        "height": 60
+      },
+      "split_lse_sum": {
+        "x": 1260,
+        "y": 2486,
+        "width": 360,
+        "height": 60
+      },
+      "partial_weight": {
+        "x": 1260,
+        "y": 2602,
+        "width": 360,
+        "height": 60
+      },
+      "split_output_accumulate": {
+        "x": 1260,
+        "y": 2718,
+        "width": 360,
+        "height": 60
+      },
+      "split_output_store": {
+        "x": 1260,
+        "y": 2834,
+        "width": 360,
+        "height": 60
+      },
+      "mla_output": {
+        "x": 760,
+        "y": 3030,
+        "width": 240,
+        "height": 54
+      }
+    },
+    "groups": [
+      {
+        "id": "mla_decode_group",
+        "label": "TileLang MLA Decode",
+        "nodes": [
+          "query",
+          "position_query",
+          "latent_kv",
+          "position_key",
+          "runtime_config",
+          "kernel_dispatch",
+          "mla_output"
+        ],
+        "children": [
+          "input_stage_group",
+          "tile_loop_group",
+          "finalize_group"
+        ],
+        "colorKey": "sem:attention"
+      },
+      {
+        "id": "input_stage_group",
+        "label": "Input Staging",
+        "nodes": [
+          "q_stage",
+          "kv_stage"
+        ],
+        "children": [],
+        "colorKey": "sem:comm"
+      },
+      {
+        "id": "tile_loop_group",
+        "label": "KV Tile Loop",
+        "nodes": [],
+        "children": [
+          "score_compute_group",
+          "online_softmax_group",
+          "value_accumulation_group"
+        ],
+        "badge": "repeat ceildiv(N, BLOCK_N)",
+        "colorKey": "sem:attention"
+      },
+      {
+        "id": "score_compute_group",
+        "label": "QK + PE Score Compute",
+        "nodes": [
+          "qk_gemm",
+          "pe_gemm",
+          "score_block_max"
+        ],
+        "children": [],
+        "collapsed_by_default": true,
+        "colorKey": "sem:attention"
+      },
+      {
+        "id": "online_softmax_group",
+        "label": "Online Softmax",
+        "nodes": [
+          "running_max_merge",
+          "score_exponential",
+          "score_sum",
+          "online_state_update",
+          "output_rescale"
+        ],
+        "children": [],
+        "collapsed_by_default": true,
+        "colorKey": "sem:act"
+      },
+      {
+        "id": "value_accumulation_group",
+        "label": "Probability · Value",
+        "nodes": [
+          "pv_gemm"
+        ],
+        "children": [],
+        "collapsed_by_default": true,
+        "colorKey": "sem:attention"
+      },
+      {
+        "id": "finalize_group",
+        "label": "Output Finalize",
+        "nodes": [
+          "output_normalize",
+          "no_split_store"
+        ],
+        "children": [
+          "split_combine_group"
+        ],
+        "colorKey": "sem:act"
+      },
+      {
+        "id": "split_combine_group",
+        "label": "Split-KV Combine",
+        "nodes": [
+          "lse_encode",
+          "partial_result_store",
+          "partial_output_workspace",
+          "split_lse_workspace",
+          "split_lse_max",
+          "split_lse_sum",
+          "partial_weight",
+          "split_output_accumulate",
+          "split_output_store"
+        ],
+        "children": [],
+        "badge": "conditional num_split > 1",
+        "collapsed_by_default": true,
+        "colorKey": "sem:attention"
+      }
+    ]
+  },
+  "operator_mapping_ref": "operator_mapping.json",
+  "warnings": [
+    "The canonical example_mla_decode.py is embedded in the project archive; the top-level working-tree legacy JS currently contains a stale FlashAttention V2 payload and is not used.",
+    "The default execution path hard-codes num_split=1, so split combine is source-complete but not emitted in the bundled S6 target prototype.",
+    "S2 plans P·V for Cube Mmad, while S6 currently emits Vector Axpy; operator_mapping.json flags this prototype divergence.",
+    "Target mappings are workbench design evidence and have not been validated on Ascend hardware in this artifact."
+  ]
+}

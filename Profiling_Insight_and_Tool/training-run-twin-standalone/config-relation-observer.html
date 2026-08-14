@@ -1,0 +1,538 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Config &amp; Relation Observer</title>
+  <script>
+    (() => {
+      const theme = new URLSearchParams(window.location.search).get("theme");
+      if (theme === "dark" || theme === "light") document.documentElement.dataset.theme = theme;
+    })();
+  </script>
+
+  <!-- 设计系统 tokens + 组件（本目录 vendored 副本，与 training-monitoring-v2.html 同源） -->
+  <link rel="stylesheet" href="./css/foundation.css">
+  <link rel="stylesheet" href="./css/semantic.css">
+  <link rel="stylesheet" href="./css/components.css">
+  <link rel="stylesheet" href="./css/style.css">
+  <!-- IDE frame shell（patterns/ide-frame + patterns/workbench-shell） -->
+  <link rel="stylesheet" href="./css/workbench-shell-pattern.css">
+  <link rel="stylesheet" href="./css/ide-frame-pattern.css">
+  <!-- 整网图（patterns/model-graphviz 提供 colormap，model-architecture-3d-deck 提供 deck） -->
+  <link rel="stylesheet" href="./css/model-graphviz-pattern.css">
+  <link rel="stylesheet" href="./css/model-architecture-3d-deck-pattern.css">
+  <!-- 集群热力图样式（复用 training-monitoring-v2 的 .twin-heat* 视觉） -->
+  <link rel="stylesheet" href="./css/training-run-twin.css">
+  <!-- 本页模块私有 layout -->
+  <link rel="stylesheet" href="./css/config-relation-observer.css?v=20260813-cluster-fit-2">
+  <!-- 单卡容量（Cluster 区右栏）：容量是「卡」的属性，与集群矩阵同区并排 -->
+  <link rel="stylesheet" href="./css/config-relation-capacity.css?v=20260813-cluster-fit-2">
+</head>
+<body data-theme="dark">
+  <section class="pto-ide-frame" data-ide-frame data-host="standalone" aria-label="Config and Relation Observer">
+
+    <header class="pto-ide-frame__topbar pto-ide-frame__standalone-chrome">
+      <div class="pto-ide-frame__topbar-left">
+        <div class="pto-ide-frame__host-chip" data-ide-slot="host-chip">
+          <svg class="pto-ide-frame__host-icon" viewBox="0 0 24 24" aria-hidden="true">
+            <rect x="3" y="4" width="18" height="16" rx="2"></rect>
+            <path d="m7 9 3 3-3 3"></path>
+            <path d="M12 15h5"></path>
+          </svg>
+        </div>
+        <div class="pto-ide-frame__workspace" data-ide-slot="workspace-switcher">
+          <span>训练监控</span>
+        </div>
+      </div>
+      <div class="pto-ide-frame__topbar-center"></div>
+      <div class="pto-ide-frame__topbar-right">
+        <div class="pto-ide-frame__window-actions" data-ide-slot="window-controls" aria-label="Window controls">
+          <button class="pto-ide-frame__window-action" id="themeToggle" type="button" aria-pressed="false" title="切换主题" aria-label="切换主题">
+            <svg class="pto-ide-frame__window-icon" id="themeToggleIcon" viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M12 3a6.5 6.5 0 0 0 7.8 8.8A8 8 0 1 1 12 3z"></path>
+            </svg>
+          </button>
+        </div>
+      </div>
+    </header>
+
+    <div class="pto-ide-frame__body">
+      <nav class="pto-ide-frame__activity-rail pto-ide-frame__standalone-chrome" data-ide-slot="activity-rail" aria-label="Activity rail">
+        <!-- 首键与 TaskCompare.html 同款：文件夹图标 = 跳转训练监控大盘。本页选中态归属末位的
+             「配置关系」，故首键不带 is-selected。 -->
+        <button class="btn btn-icon btn-ghost pto-ide-frame__rail-button" type="button" id="navMonitoring" aria-label="训练监控" title="训练监控">
+          <svg class="pto-ide-frame__rail-icon" viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9l-.81-1.2A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"></path>
+          </svg>
+        </button>
+        <button class="btn btn-icon btn-ghost pto-ide-frame__rail-button" type="button" aria-label="Search" title="Search">
+          <svg class="pto-ide-frame__rail-icon" viewBox="0 0 24 24" aria-hidden="true">
+            <circle cx="11" cy="11" r="8"></circle>
+            <path d="m21 21-4.3-4.3"></path>
+          </svg>
+        </button>
+        <button class="btn btn-icon btn-ghost pto-ide-frame__rail-button" type="button" aria-label="Source control" title="Source control">
+          <svg class="pto-ide-frame__rail-icon" viewBox="0 0 24 24" aria-hidden="true">
+            <circle cx="18" cy="18" r="3"></circle>
+            <circle cx="6" cy="6" r="3"></circle>
+            <path d="M13 6h3a2 2 0 0 1 2 2v7"></path>
+            <path d="M6 9v12"></path>
+          </svg>
+        </button>
+        <button class="btn btn-icon btn-ghost pto-ide-frame__rail-button" type="button" aria-label="Terminal" title="Terminal">
+          <svg class="pto-ide-frame__rail-icon" viewBox="0 0 24 24" aria-hidden="true">
+            <rect x="3" y="5" width="18" height="14" rx="2"></rect>
+            <path d="m7 9 3 3-3 3"></path>
+            <path d="M12 15h5"></path>
+          </svg>
+        </button>
+        <!-- 互跳组：对比 / 配置关系，三页同款同序（训练监控即首键），当前页保持 is-selected 不绑定跳转。 -->
+        <button class="btn btn-icon btn-ghost pto-ide-frame__rail-button" type="button" id="navTaskCompare" aria-label="对比" title="对比">
+          <svg class="pto-ide-frame__rail-icon" viewBox="0 0 24 24" aria-hidden="true">
+            <rect x="3" y="3" width="18" height="18" rx="2"></rect>
+            <path d="M12 3v18"></path>
+          </svg>
+        </button>
+        <button class="btn btn-icon btn-ghost pto-ide-frame__rail-button is-selected" type="button" id="navRelationEvents" aria-label="配置关系与运行事件" title="配置关系与运行事件" aria-pressed="true">
+          <svg class="pto-ide-frame__rail-icon" viewBox="0 0 24 24" aria-hidden="true">
+            <circle cx="18" cy="5" r="3"></circle>
+            <circle cx="6" cy="12" r="3"></circle>
+            <circle cx="18" cy="19" r="3"></circle>
+            <path d="m8.6 13.5 6.8 4"></path>
+            <path d="m15.4 6.5-6.8 4"></path>
+          </svg>
+        </button>
+      </nav>
+
+      <div class="pto-ide-frame__workarea">
+        <aside class="cro-event-rail" id="croEventRail" aria-label="运行事件">
+          <button class="btn btn-ghost cro-event-rail__collapsed" id="croEventRailExpand" type="button" aria-label="展开运行事件" title="展开运行事件">
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path d="m9 18 6-6-6-6"></path>
+            </svg>
+            <span>运行事件</span>
+          </button>
+          <div class="cro-event-rail__header">
+            <h2 class="cro-event-rail__title">运行事件</h2>
+            <div class="cro-event-rail__actions">
+              <button class="btn btn-icon btn-ghost btn-sm" id="croEventRailCollapse" type="button" aria-label="收起运行事件" title="收起运行事件">
+                <!-- 比标准 chevron 大一号（16 格高而非 12 格）：这枚是面板级收起键，
+                     旁边就是「运行事件」标题，用默认尺寸会显得没分量。 -->
+                <svg viewBox="0 0 24 24" aria-hidden="true">
+                  <path d="m16 20-8-8 8-8"></path>
+                </svg>
+              </button>
+            </div>
+          </div>
+          <div class="cro-event-rail__legend" aria-hidden="true">
+            <span class="cro-event-rail__legend-item"><span class="cro-event-rail__legend-dot cro-event-rail__legend-dot--origin"></span>传播源</span>
+            <span class="cro-event-rail__legend-item"><span class="cro-event-rail__legend-dot cro-event-rail__legend-dot--victim"></span>受影响最大</span>
+          </div>
+          <div class="cro-event-groups" id="croEventGroups"></div>
+        </aside>
+        <!-- 单一 pane：T 型的四个区域全部是同一面板内的不可见网格区（.cro-board），
+             区域之间没有 pane 边界、没有 gutter、没有卡片描边，只靠 grid 间距与大标题分区。
+             grid-areas:  net | arch | moe
+                          net | cluster cluster                                    -->
+        <section class="pto-ide-frame__pane" data-ide-pane="observer" aria-label="配置与关系观测">
+          <!-- 上区 · 事件关系横幅：一句桥接句带过，不是重点，别喧宾夺主 -->
+          <div class="cro-incident-banner" id="croIncidentBanner" role="status" aria-live="polite" hidden>
+            <span class="cro-incident-banner__tag" id="croIncidentBannerTag"></span>
+            <span class="cro-incident-banner__message" id="croIncidentBannerMessage"></span>
+            <!-- ✕ 必须是 SVG 不能是 &#10005; 文本：文本走基线排版，place-items:center
+                 居中的是含 descender 空白的行盒，而 ✕ 没有下伸笔画，视觉上就偏下半个
+                 descender。SVG 是 block 盒，没有这个偏差。 -->
+            <button class="pto-ide-frame__window-action cro-incident-banner__close" id="croIncidentBannerClose" type="button" aria-label="关闭事件关系" title="关闭事件关系">
+              <svg class="pto-ide-frame__window-icon" viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M18 6 6 18"></path>
+                <path d="m6 6 12 12"></path>
+              </svg>
+            </button>
+          </div>
+          <!-- ═══ 事件详情视图（上=横幅 / 中=传播源→受影响 / 下=事件内涵）═══
+               运行事件是已发生的既成事实：配置表单不可调、四域静态查询口径不成立，
+               所以事件模式下 .cro-board 整块隐藏，由这一块接管。关闭横幅或收起
+               运行事件栏回到配置仿真态。 -->
+          <div class="cro-incident-view" id="croIncidentView" hidden>
+
+            <!-- ── 中区 · 一块编排画布 ──
+                 传播源 / 连接线 / 受影响不是三个各自带滚动条的容器，而是同一张图上
+                 的三个部位。舞台（.cro-incident-stage）按内容排到自然尺寸，视口只负责
+                 「看哪一块、看多大」：进场自动适配屏幕，滚轮缩放、拖拽平移。 -->
+            <div class="cro-incident-flow" id="croIncidentFlow" aria-label="传播关系画布">
+              <div class="cro-incident-stage" id="croIncidentStage">
+                <!-- 连线层在内容底下（pointer-events:none）：贝塞尔从传播源那个具体
+                     对象/整体的右缘出发，落到受影响那个对象/整体的左缘，两端各圈一道
+                     虚线框标出「连的是哪一坨」。坐标是舞台自身坐标系，跟着画布一起缩放。 -->
+                <svg class="cro-stage-links" id="croStageLinks" aria-hidden="true"></svg>
+
+                <section class="cro-stage-role" data-role="origin" aria-label="传播源">
+                  <header class="cro-stage-role__head">
+                    <span class="cro-stage-role__badge">传播源</span>
+                  </header>
+                  <div class="cro-stage-role__domains" id="croOriginDomains"></div>
+                </section>
+
+                <section class="cro-stage-role" data-role="victim" aria-label="受影响">
+                  <header class="cro-stage-role__head">
+                    <span class="cro-stage-role__badge">受影响</span>
+                  </header>
+                  <div class="cro-stage-role__domains" id="croVictimDomains"></div>
+                </section>
+
+                <!-- 路径节点：骑在连线中点上的一枚标签（path 拆出的链路步骤 +
+                     event.propagation 的途经范围），读起来就是这条边的名字。
+                     位置由 JS 按曲线中点算，故绝对定位。 -->
+                <div class="cro-incident-arrow" id="croIncidentArrow" aria-label="传播路径">
+                  <ol class="cro-incident-arrow__chain" id="croIncidentArrowChain"></ol>
+                  <div class="cro-incident-arrow__via" id="croIncidentArrowVia"></div>
+                </div>
+              </div>
+
+              <div class="cro-stage-zoom" aria-label="画布缩放">
+                <button class="btn btn-icon btn-ghost btn-sm" id="croStageZoomOut" type="button" aria-label="缩小" title="缩小">
+                  <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h14"></path></svg>
+                </button>
+                <span class="cro-stage-zoom__readout" id="croStageZoomReadout">100%</span>
+                <button class="btn btn-icon btn-ghost btn-sm" id="croStageZoomIn" type="button" aria-label="放大" title="放大">
+                  <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14"></path><path d="M5 12h14"></path></svg>
+                </button>
+                <button class="btn btn-sm btn-ghost" id="croStageZoomFit" type="button" title="适配屏幕">适配</button>
+              </div>
+            </div>
+
+            <!-- ── 下区 · 问题详情（图表 + 文字）── -->
+            <section class="cro-incident-detail" aria-label="问题详情">
+              <div class="tab-control cro-incident-detail__tabs" role="tablist" aria-label="事件详情视图">
+                <button class="tab-control-item is-selected" id="croIncidentDetailTab" type="button"
+                        role="tab" aria-selected="true" aria-controls="croIncidentDetail">事件详情</button>
+                <button class="tab-control-item" id="croIncidentLineageTab" type="button"
+                        role="tab" aria-selected="false" aria-controls="croIncidentLineage">计算血缘</button>
+              </div>
+              <div class="cro-incident-detail__body" id="croIncidentDetail"
+                   role="tabpanel" aria-labelledby="croIncidentDetailTab"></div>
+              <div class="cro-incident-lineage" id="croIncidentLineage"
+                   role="tabpanel" aria-labelledby="croIncidentLineageTab" hidden></div>
+            </section>
+          </div>
+
+          <div class="pto-ide-frame__pane-body cro-board" id="croBoard">
+
+            <!-- ═══ 区域 A · 整网（3D deck · 正视图） ═══ -->
+            <section class="cro-region cro-region--net" id="croNetRegion" aria-label="整网">
+              <h2 class="cro-region__title">整网</h2>
+              <!-- 视图口径：整网 deck 的层卡展开的就是「典型 Layer」里那串算子，
+                   两块信息重复度高。与其硬删一边，不如把「看哪一边」交给用户 ——
+                   只看整网 / 只看典型 Layer / 两者并看（= 改动前的现状，默认值）。
+                   选「只看典型 Layer」时 deck 收起，典型层那一节整节搬进本列，改
+                   2+2+1 宫格（见 html 末尾的 croNetView 脚本与 .cro-region--net
+                   .cro-structure 的排布）。 -->
+              <div class="tab-control cro-net-view" id="croNetView" role="group" aria-label="整网视图">
+                <button class="tab-control-item" type="button" data-net-view="net"
+                        aria-pressed="false" title="只看整网">整网</button>
+                <button class="tab-control-item" type="button" data-net-view="layer"
+                        aria-pressed="false" title="只看典型 Layer">典型 Layer</button>
+                <button class="tab-control-item is-selected" type="button" data-net-view="both"
+                        aria-pressed="true" title="同时看整网与典型 Layer">两者并看</button>
+              </div>
+              <div class="cro-stepper">
+                <label class="cro-stepper__label" for="croModelSelect">模型</label>
+                <select class="cro-select" id="croModelSelect">
+                  <option value="openpangu-flash">openPangu 2.0 flash 92B</option>
+                </select>
+              </div>
+              <div class="cro-deck-host" id="croDeckHost">
+                <div class="cro-placeholder">整网 3D deck（正视图）· 第 3 项接入</div>
+              </div>
+            </section>
+
+            <!-- ═══ 区域 B · Model Architecture（配置 + Layer 导航 + 结构条） ═══ -->
+            <section class="cro-region cro-region--arch" aria-label="Model Architecture">
+              <h2 class="cro-region__title">Model Architecture</h2>
+
+              <div class="cro-stepper-row" id="croParallelSteppers">
+                <div class="cro-placeholder">Total Layer / DP / PP / TP / CP stepper · 第 2 项接入</div>
+              </div>
+              <p class="cro-config-error" id="croConfigError" role="status" aria-live="polite"></p>
+
+              <div class="cro-section">
+                <div class="cro-section__heading">
+                  <div class="cro-section__title">Layer 导航</div>
+                  <!-- 初始 hidden：本页启动即选中第一个运行事件（见 js 末尾的
+                       selectIncident），事件模式下这个静态查询口径不生效。清空
+                       选择后由 syncDpScope() 放出来。 -->
+                  <div class="segmented-control segmented-control-muted cro-dp-scope" id="croDpScope" role="group" aria-label="Layer Rank 查询范围" hidden>
+                    <button class="btn btn-sm is-selected" type="button" data-dp-scope="single" aria-pressed="true" title="默认查询 DP0；存在异常上下文时查询异常所在 DP">单 DP（默认第一个 DP）</button>
+                    <button class="btn btn-sm" type="button" data-dp-scope="all" aria-pressed="false" title="查询所有 DP 副本关联的物理 Rank">所有 DP</button>
+                  </div>
+                  <!-- 一个 step 的数据流：前向 Emb→…→Head、反向倒回、收尾 Optimizer step，
+                       逐格点亮四域并驱动下方 6 条数据线。默认不播放；播放期间不画关系连线
+                       （见 js 的 quiet 铺色）。
+                       播完不自停而是**循环重播**（训练本来就是成千上万个 step 连着跑，
+                       停在收尾格反倒像"训练结束了"）。
+                       播放中拆成两枚键：主键在 暂停/继续 之间翻转（画面定在当前这一步，
+                       方便看中间状态），退出才是真正结束并还原上一次选择。 -->
+                  <div class="cro-flow-actions">
+                    <button class="btn btn-sm btn-ghost cro-flow-play" id="croFlowPlay" type="button" aria-pressed="false" title="循环播放一个 step 的数据流，播完自动重来，退出才停">
+                      <svg class="cro-flow-play__icon" id="croFlowPlayIcon" viewBox="0 0 24 24" aria-hidden="true">
+                        <path d="M8 5v14l11-7z"></path>
+                      </svg>
+                      <span id="croFlowPlayLabel">播放数据流</span>
+                    </button>
+                    <button class="btn btn-sm btn-ghost cro-flow-exit" id="croFlowExit" type="button" title="退出播放，回到播放前的选择" hidden>
+                      <svg class="cro-flow-exit__icon" viewBox="0 0 24 24" aria-hidden="true">
+                        <path d="M18 6 6 18"></path>
+                        <path d="m6 6 12 12"></path>
+                      </svg>
+                      <span>退出</span>
+                    </button>
+                  </div>
+                </div>
+                <div class="cro-layer-nav" id="croLayerNav">
+                  <div class="cro-placeholder">46 层刻度 · PP 分段 · Dense/MoE 分区 · 第 4 项接入</div>
+                </div>
+                <!-- 数据线：一个 step 里发生变化的 6 类数据，仅播放时展开。
+                     必须紧贴 Layer 导航之下、且与刻度带同宽同锚点 —— 泳道的 x 轴
+                     就是层号，小点从第 i 格垂直落到泳道上，落点即第 i 层。位置一挪
+                     这层投影关系就没了。x 坐标由 JS 实测刻度中心写入（见 lanesMeasure），
+                     不靠 CSS padding 碰巧对齐。 -->
+                <div class="cro-flow-lanes" id="croFlowLanes" hidden>
+                  <div class="cro-flow-lanes__head">
+                    <span class="cro-flow-lanes__phase" id="croFlowPhase"></span>
+                    <span class="cro-flow-lanes__note" id="croFlowNote"></span>
+                  </div>
+                  <!-- 6 条泳道共用一张 canvas：46 层 × （点 + 脉冲 + 刻痕 + 面积 + 填块）
+                       用 DOM 画会在每步建/删几十个节点，canvas 全量重绘反而更便宜。
+                       标签留在 DOM 里（静态文本，可无障碍读取），由 --i 定位。 -->
+                  <div class="cro-flow-lanes__plot" id="croFlowPlot">
+                    <canvas class="cro-flow-lanes__canvas" id="croFlowCanvas" aria-hidden="true"></canvas>
+                  </div>
+                </div>
+              </div>
+
+              <div class="cro-section cro-section--structure">
+                <div class="cro-section__title">典型 Layer</div>
+                <div class="cro-structure" id="croStructure">
+                  <div class="cro-placeholder">Emb / Dense×2 / MoE×44 / Norm / Head 结构条 · 第 4 项接入</div>
+                </div>
+              </div>
+            </section>
+
+            <!-- ═══ 区域 C · MoE ═══ -->
+            <section class="cro-region cro-region--moe" aria-label="MoE">
+              <h2 class="cro-region__title">MoE</h2>
+
+              <div class="cro-stepper-row" id="croMoeSteppers">
+                <div class="cro-placeholder">Routed Expert / Top-K / Share Expert / EP stepper · 第 2 项接入</div>
+              </div>
+
+              <div class="cro-section">
+                <div class="cro-section__title">共享专家</div>
+                <div class="cro-moe-group__experts" id="croSharedExperts">
+                  <div class="cro-placeholder">SE · 第 5 项接入</div>
+                </div>
+              </div>
+
+              <div class="cro-section">
+                <div class="cro-section__title">路由专家</div>
+                <div class="cro-moe-groups" id="croRoutedExperts">
+                  <div class="cro-placeholder">EP 分组 · 第 5 项接入</div>
+                </div>
+              </div>
+            </section>
+
+            <!-- ═══ 区域 D · Cluster（横跨 arch＋moe 两列的下行）═══ -->
+            <section class="cro-region cro-region--cluster" aria-label="Cluster">
+              <!-- 区标题独占通栏一行（横跨矩阵＋单卡容量两半）：单卡容量是 Cluster
+                   区里的一栏而不是与它并列的第五个区，标题只压在左半上会读成两块
+                   各自为政的内容。与整网 / Model Architecture / MoE 三个区的排法
+                   一致（.cro-region__title 后跟内容）。 -->
+              <h2 class="cro-region__title">Cluster</h2>
+              <div class="cro-cluster">
+                <!-- 左半是「表单在上、矩阵在下」的纵向两段，右半是单卡容量栏。
+                     表单横排（Total Rank / Node / 卡型号 / Micro Batch / Seq Length
+                     一行读完）之后，矩阵拿到了
+                     整个左半宽度 —— 默认 4 个 stage 块 × 64 EP 列要在不横向滚动的
+                     前提下画完，宽度比高度值钱。 -->
+                <div class="cro-cluster__main">
+                  <div class="cro-cluster__form">
+                    <div class="cro-stepper-row" id="croClusterSteppers"></div>
+                    <!-- 卡型号：硬件属性，和 Total Rank / Node 同属集群配置，接在 Node 之后。
+                         用 select 而不是 stepper —— 型号是枚举不是量。选项与显存规格由
+                         config-relation-observer.js 的 CARD_SPECS 生成，它同时是「单卡容量」
+                         那个线框盒高度的来源。 -->
+                    <div class="cro-stepper cro-cluster__card">
+                      <label class="cro-stepper__label" for="croCardSelect">卡型号</label>
+                      <select class="cro-select" id="croCardSelect"></select>
+                    </div>
+                    <!-- Micro Batch / Seq Length：不参与切分、不进 world_size，只决定
+                         往这张卡里装多少，所以接在卡型号之后 —— 型号给容量框的高度，
+                         这两项给装进去的体积，一行读完就是「单卡容量」的全部输入。
+                         由 config-relation-observer.js 的 FIELD_ORDER.batch 渲染。 -->
+                    <div class="cro-stepper-row" id="croBatchSteppers"></div>
+                  </div>
+                  <div class="cro-cluster__grid">
+                    <!-- .cro-heat 是集群矩阵的样式钩子（原先挂在 #croHeat 上）。
+                         事件详情的角色卡里会再开若干份同款矩阵，故改成类。 -->
+                    <div class="twin-heat cro-heat" id="croHeat"></div>
+                  </div>
+                </div>
+
+                <!-- ── 单卡容量 ──
+                     矩阵回答「是哪张卡」，这一栏回答「这张卡里装了什么、还剩多少」，
+                     所以两者同区并排而不是各自成区。数值与阈值全部由
+                     js/config-relation-capacity.js 写入（它只吃 cro:change / cro:select
+                     两个事件，不改主控制器）。 -->
+                <aside class="cro-capacity" id="croCapacity" aria-label="单卡容量">
+                  <div class="cro-capacity__head">
+                    <h2 class="cro-region__title cro-capacity__title">单卡容量</h2>
+                    <!-- 口径收在这枚问号里：它是「这些数怎么算出来的」，属于随时可查、
+                         但不该常驻占版面的东西。常驻会把一栏窄面板压掉十几行。
+                         悬浮即出（触屏与键盘各留一条通路，见 js 的 showBasis），
+                         故不写 title —— 原生 tooltip 会和浮层同时冒出来读成两份。 -->
+                    <button class="cro-capacity__help" id="croCapacityHelp" type="button"
+                            aria-expanded="false" aria-describedby="croCapacityBasis"
+                            aria-label="容量口径">?</button>
+                    <span class="cro-capacity__scope" id="croCapacityScope"></span>
+                  </div>
+
+                  <!-- 口径浮层：宽度锁在面板内、绝对定位盖住下方内容。不往面板外弹是
+                       因为 .cro-board 与 .cro-cluster 都是 overflow:auto，弹出去会被裁。 -->
+                  <div class="cro-capacity__basis" id="croCapacityBasis" role="tooltip" hidden></div>
+
+                  <!-- 口径里那三个可调量（Micro Batch / Seq Length / 单卡显存）不在
+                       这一栏里，而在同区左半的表单行（卡型号下拉 + 其后两个 stepper）
+                       —— 它们是开训前要拍板的配置，不是这一栏的局部开关。本栏渲染前
+                       由 syncBasis() 从 topology.config / topology.card 同步过来。 -->
+                  <p class="cro-capacity__empty" id="croCapacityEmpty" hidden></p>
+
+                  <div class="cro-capacity__body" id="croCapacityBody" hidden>
+                    <div class="cro-capacity__main">
+                      <!-- 容器是立体的：卡的容量是一个有体积的盒子，装进去的四段各有各的
+                           体积，装不下的那截摞在盒口之上。等距投影（SVG，见
+                           config-relation-capacity.js 的 buildScene）比平面色条更贴近
+                           「容器」这个隐喻，也把「越界」画成结构性的溢出而不是变色。 -->
+                      <div class="cro-capacity__scene" id="croCapacityScene"></div>
+                      <div class="cro-capacity__readouts">
+                        <!-- 占比是这一栏的头条读数：安全档不出判定横幅之后，它就是唯一
+                             一眼能看出「险不险」的东西，所以放大、并按档位换色。绝对值
+                             压小压暗——需要时才看。 -->
+                        <div class="cro-capacity__ratio" id="croCapacityRatio" data-level="safe">
+                          <b id="croCapacityPct"></b>
+                          <span id="croCapacityAbs"></span>
+                        </div>
+                        <ul class="cro-capacity__legend" id="croCapacityLegend"></ul>
+                      </div>
+                    </div>
+
+                    <div class="cro-capacity__verdict" id="croCapacityVerdict" role="status" aria-live="polite" data-level="safe">
+                      <span class="cro-capacity__badge" id="croCapacityBadge"></span>
+                      <span id="croCapacityVerdictText"></span>
+                    </div>
+
+                    <div class="cro-capacity__spread">
+                      <div class="cro-capacity__spread-head">
+                        <span>各 PP Stage 峰值</span>
+                        <span id="croCapacitySpreadNote"></span>
+                      </div>
+                      <div class="cro-capacity__stages" id="croCapacityStages" role="group" aria-label="各 PP Stage 单卡占用"></div>
+                    </div>
+                  </div>
+                </aside>
+              </div>
+            </section>
+
+          </div>
+        </section>
+      </div>
+    </div>
+  </section>
+
+  <!-- 关系连线 overlay 宿主（配置仿真模式专用），置于 frame 之上、pointer-events:none。
+       事件详情模式下四域收起，没有可连的锚点，这层会被清空。 -->
+  <svg class="cro-link-layer" id="croLinkLayer" aria-hidden="true"></svg>
+
+  <script src="./js/workbench-shell-pattern.js"></script>
+  <script src="./js/ide-frame-pattern.js"></script>
+  <script src="./js/model-graphviz-pattern.js"></script>
+  <script src="./js/model-architecture-3d-deck-pattern.js"></script>
+  <script src="./js/config-relation-observer.js?v=20260813-cluster-fit-2"></script>
+  <!-- 单卡容量：必须排在主脚本之后（要读它导出的 croObserver / croSelect） -->
+  <script src="./js/config-relation-capacity.js?v=20260812-capacity-figure"></script>
+  <script>
+    // 主题切换：与 training-monitoring-v2.html 同款单图标按钮，只改 data-theme。
+    (() => {
+      const btn = document.getElementById("themeToggle");
+      const icon = document.getElementById("themeToggleIcon");
+      const MOON = "M12 3a6.5 6.5 0 0 0 7.8 8.8A8 8 0 1 1 12 3z";
+      const SUN = "M12 7a5 5 0 1 0 0 10 5 5 0 0 0 0-10zM12 1v3M12 20v3M4.2 4.2l2.1 2.1M17.7 17.7l2.1 2.1M1 12h3M20 12h3M4.2 19.8l2.1-2.1M17.7 6.3l2.1-2.1";
+      const apply = (theme) => {
+        document.documentElement.dataset.theme = theme;
+        document.body.dataset.theme = theme;
+        btn.setAttribute("aria-pressed", String(theme === "light"));
+        icon.querySelector("path").setAttribute("d", theme === "light" ? SUN : MOON);
+        window.croDeckController?.setTheme(theme);
+        // deck 重算了 --pto-model-deck-* 调色板，通知结构条重新取色
+        document.dispatchEvent(new CustomEvent("cro:theme", { detail: { theme } }));
+      };
+      btn.addEventListener("click", () => {
+        apply(document.documentElement.dataset.theme === "light" ? "dark" : "light");
+      });
+    })();
+
+    // 整网视图三档：只看整网 / 只看典型 Layer / 两者并看（默认，= 改动前现状）。
+    // 「只看典型 Layer」把 .cro-section--structure **整节搬进**整网列，而不是在
+    // 那边另画一份 —— 搬的是 DOM 节点本身，#croStructure 的 id、每根算子条的
+    // click 监听、is-selected / is-related 类和关系连线的锚点选择器全部原样有效，
+    // 主脚本一行都不用动。退出该档时 appendChild 回 arch 列：它本来就是那一列的
+    // 最后一个子节点，位置自动还原。
+    (() => {
+      const board = document.getElementById("croBoard");
+      const tabs = document.getElementById("croNetView");
+      const net = document.getElementById("croNetRegion");
+      const arch = document.querySelector(".cro-region--arch");
+      const structure = document.querySelector(".cro-section--structure");
+      if (!board || !tabs || !net || !arch || !structure) return;
+
+      const apply = (view) => {
+        board.classList.toggle("is-view-net", view === "net");
+        board.classList.toggle("is-view-layer", view === "layer");
+        /* 第三个类：只看一边（net / layer 都算）。两档的共同事实是「典型 Layer
+           不占 arch 列了」，右半边（Layer 导航拉满、集群矩阵折 4 行放大）该长
+           得一模一样 —— 切档时右侧不动，只有左边那块在换。挂成一个类而不是把
+           每条规则都写两遍，就是为了让这份「两档相同」在样式里只有一处来源。
+           is-view-net / is-view-layer 只留给两档真正不同的显隐。 */
+        board.classList.toggle("is-view-single", view !== "both");
+        (view === "layer" ? net : arch).appendChild(structure);
+        tabs.querySelectorAll("[data-net-view]").forEach((btn) => {
+          const on = btn.dataset.netView === view;
+          btn.classList.toggle("is-selected", on);
+          btn.setAttribute("aria-pressed", String(on));
+        });
+        // 集群矩阵每个 DP 折几行是建 DOM 时定的（renderCluster 的 epRows），
+        // 只加类改不动，得让主脚本重建一次。
+        document.dispatchEvent(new CustomEvent("cro:view", { detail: { view } }));
+        // 版面变了：关系连线画在 viewport 坐标上、刻度带宽度也是实测的，
+        // 借主脚本已有的 resize 通路重排一次，别在这儿另写一份重画逻辑。
+        window.dispatchEvent(new Event("resize"));
+      };
+
+      tabs.addEventListener("click", (event) => {
+        const btn = event.target.closest("[data-net-view]");
+        if (btn) apply(btn.dataset.netView);
+      });
+    })();
+
+    // rail 底部互跳组：跳转另两页（本页「配置关系」键即当前页，不绑定）。
+    (() => {
+      const go = (id, href) => {
+        const btn = document.getElementById(id);
+        if (btn) btn.addEventListener("click", () => { window.location.href = href; });
+      };
+      go("navMonitoring", "./training-monitoring-v2.html");
+      go("navTaskCompare", "./TaskCompare.html");
+    })();
+  </script>
+</body>
+</html>

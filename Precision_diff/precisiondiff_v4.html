@@ -1,0 +1,881 @@
+﻿<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>PrecisionDiff - RL 训推精度对齐插件</title>
+<link rel="stylesheet" href="../vendor/pto-design-system/tokens/foundation.css">
+<link rel="stylesheet" href="../vendor/pto-design-system/tokens/semantic.css">
+<link rel="stylesheet" href="../vendor/pto-design-system/tokens/components.css">
+<link rel="stylesheet" href="../vendor/pto-design-system/css/style.css">
+<link rel="stylesheet" href="../vendor/pto-design-system/patterns/workbench-shell/pattern.css">
+<link rel="stylesheet" href="../vendor/pto-design-system/patterns/ide-frame/pattern.css">
+<style>
+*{box-sizing:border-box}
+html,body{height:100%}
+body{margin:0;background:var(--background);color:var(--foreground);font:var(--font-size-body-md)/var(--line-height-body) var(--font-sans);overflow:hidden;-webkit-font-smoothing:antialiased}
+button,input,textarea{font:inherit;color:inherit}
+code,.m{font-family:var(--font-mono)}
+.pd-frame{width:100vw;height:100vh;--ide-frame-width:min(100vw,1680px);--ide-frame-height:100vh;--ide-frame-radius:0;--red:var(--danger);--green:var(--success);--amber:var(--warning);--cyan:var(--primary);--violet:var(--primary);--slate:var(--accent);--gold:var(--warning);--tx:var(--foreground);--tx2:var(--foreground-secondary);--tx3:var(--foreground-muted);--bg:var(--background);--bg2:var(--surface-2);--bg3:var(--surface-3);--line:var(--border-subtle);--line2:var(--border-default);--mono:var(--font-mono)}
+.pd-workspace{font-size:var(--font-size-body-sm);color:var(--foreground-secondary)}
+.pd-search{min-width:320px;text-align:center;color:var(--foreground-muted);font-family:var(--font-mono);font-size:var(--font-size-body-sm)}
+.pd-explorer,.pd-main{min-height:0}
+.pd-rail{display:flex;flex-direction:column;gap:var(--space-3);padding:var(--space-3);overflow:auto}
+.blk{padding-bottom:var(--space-3);border-bottom:1px solid var(--border-subtle)}
+.blk:last-child{border-bottom:0}
+.blk h4{margin:0 0 var(--space-2);font-size:var(--font-size-label-xs);letter-spacing:var(--letter-spacing-label);text-transform:uppercase;color:var(--foreground-muted);font-weight:var(--font-weight-medium)}
+.kv{display:flex;justify-content:space-between;gap:var(--space-3);padding:3px 0;font-size:var(--font-size-body-sm)}
+.kv span:first-child{color:var(--foreground-muted);font-family:var(--font-mono);font-size:11px}
+.kv span:last-child{font-family:var(--font-mono);text-align:right}
+.alert{padding:var(--space-2);border-radius:var(--radius-md);background:color-mix(in srgb,var(--danger) 10%,transparent);font-size:var(--font-size-body-sm)}
+.alert+.alert{margin-top:var(--space-2)}
+.alert.ok{background:color-mix(in srgb,var(--success) 10%,transparent)}
+.alert .tag{font-family:var(--font-mono);font-size:10px;color:var(--danger);letter-spacing:var(--letter-spacing-label)}
+.alert.ok .tag{color:var(--success)}
+.alert .msg{color:var(--foreground-secondary);margin-top:var(--space-1);line-height:1.45}
+.pd-tabstrip{display:flex;align-items:center;gap:var(--space-2);width:100%}
+.pd-steps{display:flex;gap:var(--space-2);padding:var(--space-3);overflow-x:auto;border-bottom:1px solid var(--border-subtle);background:color-mix(in srgb,var(--surface-2) 54%,transparent)}
+.step{flex:1;min-width:126px;text-align:left;transition:background var(--duration-fast) var(--easing-default)}
+.step .n{font-family:var(--font-mono);font-size:10px;color:var(--foreground-muted)}
+.step .l{font-size:var(--font-size-body-sm);color:var(--foreground-secondary);margin-top:1px;white-space:normal}
+.step.is-selected .l{color:var(--foreground)}
+.step.p1.is-selected{color:var(--danger)}
+.step.p2.is-selected{color:var(--warning)}
+.step.p3.is-selected{color:var(--primary)}
+.pd-scroll{overflow:auto;min-height:0}
+.view{padding:var(--space-5);max-width:1180px;margin:0 auto var(--space-6)}
+.view[hidden]{display:none}
+.h1{font-size:var(--font-size-title-md);font-weight:var(--font-weight-semibold);letter-spacing:0;margin:0}
+.sub{color:var(--foreground-secondary);margin-top:var(--space-2);max-width:900px;font-size:var(--font-size-body-sm)}
+.pd-section{margin-top:var(--space-4)}
+.pd-section>h3{font-size:var(--font-size-title-sm);font-weight:var(--font-weight-semibold);margin:0 0 var(--space-1);display:flex;align-items:center;gap:var(--space-2);flex-wrap:wrap}
+.pd-section>.cd{font-size:var(--font-size-body-sm);color:var(--foreground-muted);margin-bottom:var(--space-3)}
+.eyebrow{font-family:var(--font-mono);font-size:var(--font-size-label-xs);letter-spacing:var(--letter-spacing-label);color:var(--foreground-muted);text-transform:uppercase}
+.grid2{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:var(--space-4)}
+.grid3{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:var(--space-3)}
+.grid4{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:var(--space-3)}
+@media(max-width:1100px){.grid2,.grid3,.grid4{grid-template-columns:1fr}}
+table{width:100%;border-collapse:collapse;font-size:var(--font-size-body-sm)}
+th{text-align:left;font-family:var(--font-mono);font-size:10px;letter-spacing:var(--letter-spacing-label);text-transform:uppercase;color:var(--foreground-muted);font-weight:var(--font-weight-medium);padding:var(--space-2);border-bottom:1px solid var(--border-default)}
+td{padding:var(--space-2);border-bottom:1px solid var(--border-subtle);vertical-align:top}
+tr:last-child td{border-bottom:none}
+td.m{font-family:var(--font-mono);font-size:11px}
+.pill,.badge{display:inline-flex;align-items:center;gap:var(--space-1);padding:2px var(--space-2);border-radius:var(--radius-pill);font-family:var(--font-mono);font-size:10px;letter-spacing:var(--letter-spacing-label);background:var(--surface-3);color:var(--foreground-secondary);border:0}
+.p-trig,.is-danger{color:var(--danger)}
+.p-amp{color:var(--primary)}
+.p-prop{color:var(--accent)}
+.p-prim,.is-warning{color:var(--warning)}
+.p-ok,.is-success{color:var(--success)}
+.p-neu{color:var(--foreground-secondary)}
+.hint{margin-top:var(--space-4);padding:var(--space-3);border-radius:var(--radius-md);background:var(--surface-2);font-size:var(--font-size-body-sm);color:var(--foreground-secondary)}
+.hint.warn{background:color-mix(in srgb,var(--warning) 10%,var(--surface-2));color:var(--foreground)}
+.hint.bad{background:color-mix(in srgb,var(--danger) 10%,var(--surface-2));color:var(--foreground)}
+.hint.good{background:color-mix(in srgb,var(--success) 10%,var(--surface-2))}
+.banner{margin-top:var(--space-3);padding:var(--space-3) var(--space-4);border-radius:var(--radius-lg);background:color-mix(in srgb,var(--primary) 10%,var(--surface-2));display:flex;gap:var(--space-3);align-items:flex-start;font-size:var(--font-size-body-sm)}
+.banner .b-tag{font-family:var(--font-mono);font-size:10px;color:var(--primary);background:var(--surface-3);padding:2px var(--space-2);border-radius:var(--radius-pill);flex-shrink:0;letter-spacing:var(--letter-spacing-label)}
+.spark,.viz-surface,.seis,.ed,.log{background:var(--surface-1);border-radius:var(--radius-md);padding:var(--space-3)}
+.spark .lbl{font-family:var(--font-mono);font-size:10px;color:var(--foreground-muted)}
+.spark .val{font-size:18px;font-family:var(--font-mono);margin-top:var(--space-1)}
+.spark svg{display:block;margin-top:var(--space-2)}
+.seis{margin-top:var(--space-3)}
+.hm{display:grid;grid-template-columns:repeat(16,1fr);gap:3px;margin-top:var(--space-3)}
+.hc{aspect-ratio:1;border-radius:var(--radius-sm);font-family:var(--font-mono);font-size:8px;display:grid;place-items:center;color:rgba(255,255,255,.48);cursor:pointer;transition:transform var(--duration-fast) var(--easing-default)}
+.hc:hover{transform:scale(1.12);z-index:2;box-shadow:0 0 0 2px var(--focus-ring)}
+.hc.sel{box-shadow:0 0 0 2px var(--foreground)}
+.hc.hot{animation:pulse 1.6s infinite}
+@keyframes pulse{0%,100%{box-shadow:0 0 0 0 color-mix(in srgb,var(--danger) 58%,transparent)}50%{box-shadow:0 0 0 4px transparent}}
+.mod{display:flex;align-items:center;gap:var(--space-3);padding:var(--space-1) 0;font-size:var(--font-size-body-sm)}
+.mod .nm{width:190px;font-family:var(--font-mono);font-size:11px;color:var(--foreground-secondary);flex-shrink:0}
+.mod .bar{flex:1;height:7px;background:var(--surface-3);border-radius:var(--radius-pill);overflow:hidden}
+.mod .bar i{display:block;height:100%;border-radius:var(--radius-pill);transition:width var(--duration-slow) var(--easing-default)}
+.mod .pc{width:44px;text-align:right;font-family:var(--font-mono);font-size:11px;color:var(--foreground-secondary)}
+.mod .rl{width:78px;text-align:right}
+.tog{display:flex;align-items:flex-start;gap:var(--space-3);padding:var(--space-3);border-radius:var(--radius-md);background:var(--surface-1);cursor:pointer;transition:background var(--duration-fast) var(--easing-default),box-shadow var(--duration-fast) var(--easing-default)}
+.tog:hover{background:var(--surface-3)}
+.tog.on{background:color-mix(in srgb,var(--primary) 11%,var(--surface-2));box-shadow:0 0 0 1px color-mix(in srgb,var(--primary) 35%,transparent)}
+.tog.conflict{background:color-mix(in srgb,var(--danger) 12%,var(--surface-2));box-shadow:0 0 0 1px color-mix(in srgb,var(--danger) 34%,transparent)}
+.tog .box{width:16px;height:16px;border-radius:var(--radius-sm);margin-top:2px;flex-shrink:0;display:grid;place-items:center;font-size:10px;color:transparent;background:var(--surface-3)}
+.tog.on .box{background:var(--primary);color:var(--primary-foreground)}
+.tog .tt{font-size:var(--font-size-body-sm);font-weight:var(--font-weight-medium)}
+.tog .td{font-size:11px;color:var(--foreground-muted);margin-top:var(--space-1);line-height:1.45}
+.tog .cost{font-family:var(--font-mono);font-size:10px;color:var(--warning);margin-top:var(--space-1)}
+.ed{overflow:hidden;margin-top:var(--space-3);padding:0}
+.ed .hdr{background:var(--surface-2);padding:var(--space-2) var(--space-3);font-family:var(--font-mono);font-size:10px;color:var(--foreground-muted);display:flex;justify-content:space-between}
+.ed .wrap{display:flex}
+.gut{width:34px;background:var(--surface-2);padding:var(--space-2) 0;text-align:right;flex-shrink:0}
+.gut div{font-family:var(--font-mono);font-size:11px;line-height:1.75;color:var(--foreground-muted);padding-right:var(--space-2);position:relative}
+.gut div.err:after{content:'';position:absolute;left:5px;top:8px;width:5px;height:5px;border-radius:var(--radius-pill);background:var(--danger)}
+textarea{flex:1;background:transparent;border:0;color:var(--foreground);font-family:var(--font-mono);font-size:12px;line-height:1.75;padding:var(--space-2) var(--space-3);resize:none;min-height:150px}
+textarea:focus-visible{box-shadow:0 0 0 3px var(--focus-ring)}
+.chips{display:flex;flex-wrap:wrap;gap:var(--space-2);padding:var(--space-2) var(--space-3);background:var(--surface-2)}
+.chip{font-family:var(--font-mono);font-size:10px;padding:2px var(--space-2);border-radius:var(--radius-pill);color:var(--success);background:var(--surface-3)}
+.chip.bad{color:var(--danger)}
+.pres{display:flex;gap:var(--space-2);flex-wrap:wrap;margin-bottom:var(--space-3)}
+.log{font-family:var(--font-mono);font-size:11px;height:170px;overflow:auto;line-height:1.7;margin-top:var(--space-3)}
+.log .t{color:var(--foreground-muted)}.log .g{color:var(--success)}.log .r{color:var(--danger)}.log .c{color:var(--primary)}.log .y{color:var(--warning)}
+.callchain{font-family:var(--font-mono);font-size:11px;line-height:1.85}
+.cc-row{display:flex;gap:var(--space-3);padding:3px var(--space-2);border-radius:var(--radius-sm);cursor:pointer}
+.cc-row:hover{background:var(--surface-2)}
+.cc-row.hot{background:color-mix(in srgb,var(--danger) 10%,transparent)}
+.cc-row .fn{flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.cc-row .d{width:88px;text-align:right;color:var(--foreground-secondary)}
+.cc-row .s{width:64px;text-align:right}
+.legend{display:flex;gap:var(--space-4);flex-wrap:wrap;font-size:var(--font-size-body-sm);color:var(--foreground-secondary);margin-top:var(--space-3)}
+.legend i{display:inline-block;width:9px;height:9px;border-radius:var(--radius-sm);margin-right:var(--space-1)}
+.foot{display:flex;justify-content:space-between;align-items:center;margin-top:var(--space-5);padding-top:var(--space-4);border-top:1px solid var(--border-subtle)}
+.bignum{font-family:var(--font-mono);font-size:26px;letter-spacing:0}
+.dl{font-size:10px;font-family:var(--font-mono);color:var(--foreground-muted);letter-spacing:var(--letter-spacing-label);text-transform:uppercase}
+.pd-status{display:flex;align-items:center;gap:var(--space-4);width:100%;font-family:var(--font-mono);font-size:11px;color:var(--foreground-secondary)}
+.pd-status .sp{margin-left:auto}
+#statusMain{color:var(--danger)}
+</style>
+</head>
+<body>
+<section class="pto-ide-frame pd-frame" data-ide-frame data-host="standalone" aria-label="PrecisionDiff PTO workspace">
+  <header class="pto-ide-frame__topbar pto-ide-frame__standalone-chrome">
+    <div class="pto-ide-frame__topbar-left">
+      <div class="pto-ide-frame__host-chip" aria-hidden="true">
+        <svg class="pto-ide-frame__host-icon" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"></rect><path d="m7 9 3 3-3 3"></path><path d="M12 15h5"></path></svg>
+      </div>
+      <div class="pd-workspace">pangu-rl-align / <b>PrecisionDiff</b> / Ascend A5</div>
+    </div>
+    <div class="pto-ide-frame__topbar-center"><div class="pd-search">RL precision alignment workbench</div></div>
+    <div class="pto-ide-frame__topbar-right">
+      <div class="pto-ide-frame__window-actions" aria-label="Window controls">
+        <button class="pto-ide-frame__window-action" type="button" data-ide-toggle="explorer" aria-label="Toggle explorer" aria-controls="pd-explorer-pane" aria-expanded="true" aria-pressed="true"><svg class="pto-ide-frame__window-icon" viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="2"></rect><path d="M9 3v18"></path></svg></button>
+      </div>
+    </div>
+  </header>
+  <div class="pto-ide-frame__body">
+    <nav class="pto-ide-frame__activity-rail pto-ide-frame__standalone-chrome" aria-label="Activity rail">
+      <button class="btn btn-icon btn-ghost pto-ide-frame__rail-button is-selected" type="button" data-ide-toggle="explorer" aria-label="Explorer" aria-controls="pd-explorer-pane" aria-expanded="true" aria-pressed="true" title="Explorer"><svg class="pto-ide-frame__rail-icon" viewBox="0 0 24 24"><path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9l-.81-1.2A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"></path></svg></button>
+      <button class="btn btn-icon btn-ghost pto-ide-frame__rail-button" type="button" aria-label="Search" title="Search"><svg class="pto-ide-frame__rail-icon" viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"></circle><path d="m21 21-4.3-4.3"></path></svg></button>
+      <button class="btn btn-icon btn-ghost pto-ide-frame__rail-button" type="button" aria-label="Source control" title="Source control"><svg class="pto-ide-frame__rail-icon" viewBox="0 0 24 24"><circle cx="18" cy="18" r="3"></circle><circle cx="6" cy="6" r="3"></circle><path d="M13 6h3a2 2 0 0 1 2 2v7"></path><path d="M6 9v12"></path></svg></button>
+      <button class="btn btn-icon btn-ghost pto-ide-frame__rail-button" type="button" aria-label="Terminal" title="Terminal"><svg class="pto-ide-frame__rail-icon" viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="2"></rect><path d="m7 9 3 3-3 3"></path><path d="M12 15h5"></path></svg></button>
+    </nav>
+    <div class="pto-ide-frame__workarea">
+      <div class="pto-ide-frame__split" data-ide-split="standalone-main" data-split-direction="horizontal" data-sizes="24,76" data-pixel-sizes="300" data-min-size="240,520" data-storage-key="precisiondiff-v4-main">
+        <aside class="pto-ide-frame__pane pto-ide-frame__explorer pd-explorer" data-ide-pane="explorer" id="pd-explorer-pane">
+          <header class="pto-ide-frame__pane-header"><span class="pto-ide-frame__pane-title">PrecisionDiff</span><span class="pto-ide-frame__pane-meta">live job</span></header>
+          <div class="pto-ide-frame__pane-body pd-rail">
+      <div class="blk">
+        <h4>训练任务</h4>
+        <div class="kv"><span>job</span><span>pangu-moe-rl-0714</span></div>
+        <div class="kv"><span>algo</span><span>GRPO</span></div>
+        <div class="kv"><span>train</span><span>MindSpeed-LLM</span></div>
+        <div class="kv"><span>rollout</span><span>vLLM-Ascend</span></div>
+        <div class="kv"><span>device</span><span>Atlas A5 ×512</span></div>
+        <div class="kv"><span>step</span><span style="color:var(--red)">480 / 4000</span></div>
+      </div>
+
+      <div class="blk">
+        <h4>对齐指标（实时）</h4>
+        <div class="kv"><span>logprob_consistency</span><span id="sConsist" style="color:var(--red)">0.9203</span></div>
+        <div class="kv"><span>target</span><span style="color:var(--tx3)">≥ 0.9900</span></div>
+        <div class="kv"><span>cos_sim_p50</span><span id="sCos" style="color:var(--red)">0.9412</span></div>
+        <div class="kv"><span>max|Δlogp|</span><span id="sMax" style="color:var(--red)">4.71</span></div>
+        <div class="kv"><span>ess</span><span id="sEss" style="color:var(--red)">0.41</span></div>
+        <div class="kv"><span>clip_frac</span><span id="sClip" style="color:var(--red)">11.4%</span></div>
+      </div>
+
+      <div class="blk">
+        <h4>告警</h4>
+        <div id="alerts">
+          <div class="alert"><div class="tag">OPEN · step 480</div><div class="msg">logprob 一致率 0.9203 &lt; 0.99，持续 46 step 未回升</div></div>
+          <div class="alert"><div class="tag">OPEN · step 486</div><div class="msg">entropy 塌缩 1.82 -> 0.61，reward 均值回落</div></div>
+        </div>
+      </div>
+
+      <div class="blk">
+        <h4>定界与移交</h4>
+        <div class="kv"><span>owner</span><span id="sOwner" style="color:var(--tx3)">未定界</span></div>
+        <div class="kv"><span>ticket</span><span id="sTicket" style="color:var(--tx3)">-</span></div>
+      </div>
+          </div>
+        </aside>
+
+        <section class="pto-ide-frame__pane pd-main" data-ide-pane="editor-preview">
+          <div class="pto-ide-frame__tabstrip"><div class="tab-control pd-tabstrip"><button class="tab-control-item is-selected" type="button">PrecisionDiff</button><button class="tab-control-item" type="button">grpo_trainer.py</button><button class="tab-control-item" type="button">rollout_worker.py</button></div></div>
+          <header class="pto-ide-frame__pane-header"><span class="pto-ide-frame__pane-title">Precision Alignment Diagnosis</span><span class="pto-ide-frame__pane-meta">six-step workflow</span></header>
+          <div class="pto-ide-frame__pane-body pd-scroll">
+      <div class="pd-steps" id="steps"></div>
+
+      <!-- ================= V0 发现 ================= -->
+      <div class="view" id="v0">
+        <div class="banner">
+          <div class="b-tag">ATTACHED</div>
+          <div>已从 <b>训练监控面板</b> 的告警跳转进入。插件挂载到运行中的 job（PID 41892），复用 rollout 已导出的 <code class="m">rollout_log_probs</code> 与 trainer <code class="m">old_log_probs</code><b>不新建 run、不占训练算力</b></div>
+        </div>
+
+        <div class="h1" style="margin-top:18px">精度对齐异常已确认</div>
+        <div class="sub">RL 每步 70~90% 时间在推理侧。当 rollout 与 trainer <b>同一条已采样轨迹</b>算出logprob 不一致时，重要性采样比失真，策略梯度指向错误方向 —— 训练曲线的塌缩只是最后一步的症状</div>
+
+        <div class="panel-shell panel-shell-quiet pd-section">
+          <h3>术语与字段对齐 <span class="badge p-neu">全工具统一</span></h3>
+          <div class="cd">先把量的定义钉死，避免“相对误差 / 余弦 / Δlogp"混用导致跨团队沟通失真</div>
+          <div style="background:var(--surface-1);border-radius:var(--radius-md);padding:var(--space-3) var(--space-4);font-family:var(--mono);font-size:12px;line-height:2">
+            <div>Δlogp = log_r = <span style="color:var(--gold)">old_log_probs</span> <span style="color:var(--cyan)">rollout_log_probs</span></div>
+            <div>r = exp(log_r)　　|Δlogp| = |log_r|</div>
+            <div style="color:var(--tx3);font-size:10.5px;margin-top:4px">log_r <b>带符号</b>：方向决定该 token IS 上调（r&gt;1）还是下调。示波图使用 log_r</div>
+            <div style="color:var(--tx3);font-size:10.5px">|Δlogp| 只是<b>幅度</b>，用于阈值判定与排序。二者是同一个量。</div>
+          </div>
+          <table style="margin-top:12px">
+            <tr><th>本工具术语</th><th>trainer 侧字段</th><th>rollout 侧字段</th><th>看板 tag</th></tr>
+            <tr><td>训练 logprob</td><td class="m">old_log_probs</td><td class="m">—</td><td class="m">actor/log_prob_mean</td></tr>
+            <tr><td>推理 logprob</td><td class="m">—</td><td class="m">rollout_log_probs</td><td class="m">rollout/log_prob_mean</td></tr>
+            <tr><td>logprob 一致率</td><td class="m" colspan="2">cos(old, rollout) token 加权</td><td class="m">mismatch/consistency</td></tr>
+            <tr><td>ESS</td><td class="m" colspan="2">(Σr)² / (n·Σr²)</td><td class="m">mismatch/ess</td></tr>
+            <tr><td>max|Δlogp|</td><td class="m" colspan="2">max |log_r|</td><td class="m">mismatch/log_probs_diff_max</td></tr>
+          </table>
+          <div class="hint" style="font-size:11.5px">注：<code class="m">rollout_log_probs</code> 需推理侧开启 <code class="m">rollout.calculate_log_probs=True</code>。字段名随框架版本变动，可在 <code class="m">.pdiff/fieldmap.yaml</code> 一处修改。</div>
+        </div>
+
+        <div class="panel-shell panel-shell-quiet pd-section">
+          <h3>训练曲线 · step 400-520</h3>
+          <div class="cd">四条曲线均在 step 480 处（虚线）拐点，与一致率跌破阈值同步。</div>
+          <div class="grid4" id="sparks"></div>
+        </div>
+
+        <div class="panel-shell panel-shell-quiet pd-section">
+          <h3>逐 token log_r 示波图 <span class="badge p-neu">本插件签名视图</span></h3>
+          <div class="cd">取 step 486 的一条轨迹（长 512）。青带 = 合法 off-policy 区间 ±0.02（GRPO 8 minibatch 更新的预期抖动）。红色尖峰 = 越界 token</div>
+          <div class="seis" id="seis"></div>
+          <div class="grid3" style="margin-top:12px">
+            <div class="spark"><div class="lbl">越界 token 占比</div><div class="val" style="color:var(--red)">0.68%</div><div style="font-size:10.5px;color:var(--tx3)">|log_r| &gt; 0.02</div></div>
+            <div class="spark"><div class="lbl">max |Δlogp|</div><div class="val" style="color:var(--red)">4.71</div><div style="font-size:10.5px;color:var(--tx3)">r = 111×，单 token 支配整批梯度</div></div>
+            <div class="spark"><div class="lbl">ESS</div><div class="val" style="color:var(--red)">0.41</div><div style="font-size:10.5px;color:var(--tx3)">健康需 ≥ 0.90</div></div>
+          </div>
+        </div>
+
+        <div class="panel-shell panel-shell-quiet pd-section">
+          <h3>判据：这是 bug，不是设计内偏差 <span class="badge p-neu">最容易漏掉的一步</span></h3>
+          <div class="cd">RL 里 r ≠ 1 有两种来源。混淆它们会导致"修了不该修的”或“放过了真 bug"</div>
+          <div class="grid2">
+            <div style="border:1px solid rgba(63,185,80,.3);border-radius:6px;padding:12px;background:rgba(63,185,80,.04)">
+              <div class="eyebrow" style="color:var(--green)">合法 off-policy</div>
+              <div style="margin-top:6px;font-size:12px">minibatch 多步更新、rollout staleness 带来的偏差 <b>设计内，IS 数学补偿</b>，不应消除</div>
+              <div class="m" style="margin-top:8px;font-size:11px;color:var(--tx2)">GRPO 8 次更新预期 |Δlogp| ≈ 6e-3</div>
+            </div>
+            <div style="border:1px solid rgba(229,72,77,.35);border-radius:6px;padding:12px;background:rgba(229,72,77,.05)">
+              <div class="eyebrow" style="color:var(--red)">实测</div>
+              <div style="margin-top:6px;font-size:12px">重尾在 <b>第 1 个 minibatch 就出现</b>，与更新步数无关；权重同步后立刻存在</div>
+              <div class="m" style="margin-top:8px;font-size:11px;color:var(--danger)">实测 max|Δlogp| = 4.71（785× 预期）</div>
+            </div>
+          </div>
+          <div class="hint bad">结论：偏差与 off-policy 程度 <b>不相关</b> → 判定为训推链路 bug，进入归因分诊</div>
+        </div>
+
+        <div class="foot"><div class="dl">01 / 06 · 发现</div><button class="btn btn-solid" onclick="go(1)">开始归因分诊 →</button></div>
+      </div>
+
+      <!-- ================= V1 分诊 ================= -->
+      <div class="view" id="v1" hidden>
+        <div class="h1">归因分诊</div>
+        <div class="sub">五类假设按先验概率排序，每类配一个秒级探针。目标不是找到答案，而是<b>把范围从 5 类收敛到 2 类</b>，避免直接去逐层 dump</div>
+
+        <div class="panel-shell panel-shell-quiet pd-section">
+          <h3>角色语义（贯穿全流程）</h3>
+          <div class="cd">这四个标签不是形容词，是有判定依据的结论。判定依据来自第 3 步的<b>消融实验</b></div>
+          <div class="grid4">
+            <div style="border:1px solid rgba(229,72,77,.3);border-radius:6px;padding:11px"><span class="badge p-trig">触发源 Trigger</span><div style="margin-top:6px;font-size:11.5px;color:var(--tx2)">最初引入差异的地方。不修则复发</div></div>
+            <div style="border:1px solid rgba(167,139,250,.3);border-radius:6px;padding:11px"><span class="badge p-amp">放大器 Amplifier</span><div style="margin-top:6px;font-size:11.5px;color:var(--tx2)">把 1e-3 放大成 1e0。修它能止血，源头仍在</div></div>
+            <div style="border:1px solid rgba(124,138,163,.35);border-radius:6px;padding:11px"><span class="badge p-prop">传导路径 Propagator</span><div style="margin-top:6px;font-size:11.5px;color:var(--tx2)">只承接传递，自身不产生差异。</div></div>
+            <div style="border:1px solid rgba(224,176,98,.3);border-radius:6px;padding:11px"><span class="badge p-prim">主因 Primary</span><div style="margin-top:6px;font-size:11.5px;color:var(--tx2)">消融中单独修掉后一致率恢复最多的那个</div></div>
+          </div>
+        </div>
+
+        <div class="panel-shell panel-shell-quiet pd-section">
+          <h3>假设清单</h3>
+          <div class="cd">点击下方按钮，探针依次运行。</div>
+          <table id="hypo">
+            <tr><th style="width:34px">#</th><th>假设</th><th style="width:120px">先验</th><th style="width:150px">探针</th><th style="width:130px">结论</th></tr>
+          </table>
+          <div style="margin-top:12px;display:flex;gap:8px">
+            <button class="btn btn-solid" id="runProbes" onclick="runProbes()">依次运行全部探针</button>
+            <button class="btn btn-sm" onclick="resetProbes()">重置</button>
+          </div>
+          <div id="triageOut" hidden class="hint bad" style="margin-top:14px"></div>
+        </div>
+
+        <div class="foot"><div class="dl">02 / 06 · 定位</div><div style="display:flex;gap:8px"><button class="btn" onclick="go(0)">返回</button><button class="btn btn-solid" onclick="go(2)">受控探针 →</button></div></div>
+      </div>
+
+      <!-- ================= V2 受控探针 ================= -->
+      <div class="view" id="v2" hidden>
+        <div class="h1">受控探针</div>
+        <div class="sub">顺序不按数据流，<b>反向溯因</b>：从最刺眼的症状（MoE 路由翻转）一路倒推到最上游的触发源（批次不变性）。每个探针的结论直接抛出下一问</div>
+
+        <div class="panel-shell panel-shell-quiet pd-section">
+          <h3><span class="badge p-neu">探针 1</span> MoE router top-k 翻转</h3>
+          <div class="cd">对同一批 token，比较 与 trainer rollout 各自选中的 top-8 专家集合</div>
+          <table>
+            <tr><th></th><th>top-8 翻转</th><th>翻转 token mean|Δlogp|</th><th>未翻token</th><th>倍率</th></tr>
+            <tr><td class="m">layer 34</td><td class="m" style="color:var(--red)">3.12%</td><td class="m" style="color:var(--red)">1.84</td><td class="m">6.1e-4</td><td class="m" style="color:var(--red)">3016×</td></tr>
+            <tr><td class="m">layer 21</td><td class="m">0.41%</td><td class="m">0.22</td><td class="m">5.8e-4</td><td class="m">379×</td></tr>
+            <tr><td class="m">其余 46 层</td><td class="m">&lt; 0.05%</td><td class="m">—</td><td class="m">—</td><td class="m">—</td></tr>
+          </table>
+          <div class="hint bad">越界 token <b>91%</b> 至少发生过一次路由翻转。router logit 的输入两侧只差 <b>1.1e-3</b>，却足以翻转 argmax → <span class="badge p-amp">放大器</span></div>
+          <div class="hint" >↓ <b>下一问</b>：router 输入只差 1.1e-3，这个扰动从哪来？</div>
+        </div>
+
+        <div class="panel-shell panel-shell-quiet pd-section">
+          <h3><span class="badge p-neu">探针 2</span> prefill / decode 路径不对称</h3>
+          <div class="cd">rollout 走增量 decode，trainer 走 teacher-forced prefill —同一 token 走两套 kernel</div>
+          <table>
+            <tr><th>配置</th><th>trainer 路径</th><th>rollout 路径</th><th>mean|Δlogp|</th><th>一致率</th></tr>
+            <tr><td>当前生产</td><td class="m">prefill</td><td class="m">incremental decode</td><td class="m" style="color:var(--red)">3.4e-2</td><td class="m" style="color:var(--red)">0.9203</td></tr>
+            <tr><td>强制 rollout 走 prefill</td><td class="m">prefill</td><td class="m">prefill</td><td class="m" style="color:var(--green)">4.9e-4</td><td class="m" style="color:var(--green)">0.9987</td></tr>
+          </table>
+          <div class="hint">强制同路径后差异几乎消失。但这只说明"调用方式不同”，<span class="badge p-prop">传导路径</span> —— 它本身不产生差异。</div>
+          <div class="hint" >↓ <b>下一问</b>：两条路径都只是调用方式，kernel 里真正不同的是什么？</div>
+        </div>
+
+        <div class="panel-shell panel-shell-quiet pd-section">
+          <h3><span class="badge p-neu">探针 3</span> 批次不变性（batch invariance）</h3>
+          <div class="cd">同一条序列，只改 batch size 与调度方式，看 logprob 是否漂移。浮点加法不满足结合律：a+b+c ≠ (a+b)+c</div>
+          <table>
+            <tr><th>batch 配置</th><th>logprob 漂移</th><th>router logit 漂移</th><th>是否翻转 top-8</th></tr>
+            <tr><td class="m">bs=1（基准）</td><td class="m">—</td><td class="m">—</td><td>—</td></tr>
+            <tr><td class="m">bs=4</td><td class="m">3.1e-3</td><td class="m">2.0e-4</td><td>—</td></tr>
+            <tr><td class="m">bs=16</td><td class="m">1.4e-2</td><td class="m">6.8e-4</td><td><span class="badge p-neu">偶发</span></td></tr>
+            <tr><td class="m">bs=64</td><td class="m" style="color:var(--red)">3.9e-2</td><td class="m" style="color:var(--red)">1.1e-3</td><td><span class="badge p-trig">是</span></td></tr>
+            <tr><td class="m">chunked prefill</td><td class="m" style="color:var(--red)">3.7e-2</td><td class="m" style="color:var(--red)">1.0e-3</td><td><span class="badge p-trig">是</span></td></tr>
+          </table>
+          <div class="hint bad">融合算子<b>归约顺序随 batch 动态切分</b>，且训练算子与推理算子由不同团队独立开发、各自性能优先 这才是 <span class="badge p-trig">触发源</span></div>
+
+          <div style="margin-top:14px;padding:12px;border:1px solid var(--line2);border-radius:6px;background:var(--bg3)">
+            <div class="eyebrow">消融实验 · 角色标签的判定依据</div>
+            <table style="margin-top:8px">
+              <tr><th>单独修复</th><th>一致率</th><th>ESS</th><th>判定</th></tr>
+              <tr><td>换批次不变归约 kernel</td><td class="m" style="color:var(--green)">0.9954</td><td class="m" style="color:var(--green)">0.89</td><td><span class="badge p-trig">触发源</span> <span class="badge p-prim">主因</span></td></tr>
+              <tr><td>router FP32 + 确定性 top-k</td><td class="m">0.9702</td><td class="m">0.72</td><td><span class="badge p-amp">放大器</span></td></tr>
+              <tr><td>仅强制同路径 prefill</td><td class="m">0.9821</td><td class="m">0.78</td><td><span class="badge p-prop">传导路径</span></td></tr>
+              <tr><td>BF16 → FP32 logprob head</td><td class="m">0.9388</td><td class="m">0.49</td><td><span class="badge p-neu">次要放大器</span></td></tr>
+            </table>
+          </div>
+        </div>
+
+        <div class="foot"><div class="dl">03 / 06 · 定位</div><div style="display:flex;gap:8px"><button class="btn" onclick="go(1)">返回</button><button class="btn btn-solid" onclick="go(3)">调用链下钻 →</button></div></div>
+      </div>
+
+      <!-- ================= V3 调用+ 层内钻取 ================= -->
+      <div class="view" id="v3" hidden>
+        <div class="h1">调用链下钻</div>
+        <div class="sub">不是模型结构图，<b>调用链</b>：训练侧调了哪个函数、推理侧调了哪个接口、接口里又走到哪个融合算子。左侧逐层贡献，右侧层内模块分解</div>
+
+        <div class="panel-shell panel-shell-quiet pd-section">
+          <h3>逐层 Δlogp 贡献 <span class="badge p-neu">48 层</span></h3>
+          <div class="cd" style="display:flex;gap:8px;align-items:center">
+            指标            <button class="btn btn-sm is-selected" data-heatmap-mode onclick="setHM('dlogp',this)">Δlogp 贡献</button>
+            <button class="btn btn-sm" data-heatmap-mode onclick="setHM('flip',this)">router 翻转率</button>
+            <button class="btn btn-sm" data-heatmap-mode onclick="setHM('cos',this)">cos 相似度</button>
+            <span style="margin-left:auto;color:var(--tx3);font-size:11px">点击任意层，展开层内模块</span>
+          </div>
+          <div class="hm" id="hm"></div>
+          <div class="legend"><span><i style="background:#1b3a2a"></i></span><span><i style="background:#3d6b2a"></i></span><span><i style="background:#8a7a1e"></i></span><span><i style="background:#b8541f"></i></span><span><i style="background:#e5484d"></i></span></div>
+        </div>
+
+        <div class="grid2">
+          <div class="panel-shell panel-shell-quiet pd-section" style="margin-top:14px">
+            <h3>层内模块钻取 <span class="m" style="font-size:10.5px;color:var(--tx3)" id="crumb">layer 34 mlp.gate</span></h3>
+            <div class="cd">该层内各模块对本层 Δlogp 的贡献占比</div>
+            <div id="mods"></div>
+          </div>
+
+          <div class="panel-shell panel-shell-quiet pd-section" style="margin-top:14px">
+            <h3>调用链 · <span class="m" style="font-size:11px;color:var(--tx3)">layer34.mlp.gate</span></h3>
+            <div class="cd">同一 token 在两侧走到的实际函数。红色行 = 两侧实现不同</div>
+            <div class="callchain">
+              <div class="cc-row"><span class="fn" style="color:var(--gold)">与 trainer · MindSpeed</span><span class="d">Δ</span><span class="s">impl</span></div>
+              <div class="cc-row"><span class="fn">　megatron/moe/router.forward()</span><span class="d"></span><span class="s">py</span></div>
+              <div class="cc-row"><span class="fn">　　npu_moe_gating_top_k()</span><span class="d"></span><span class="s">fused</span></div>
+              <div class="cc-row hot"><span class="fn">　　　ReduceSum(dim=-1, <b>seq-major</b>)</span><span class="d" style="color:var(--red)">1.1e-3</span><span class="s"><span class="badge p-trig">A</span></span></div>
+              <div class="cc-row"><span class="fn">　　　TopK(k=8, tie=stable)</span><span class="d"></span><span class="s">det</span></div>
+              <div style="height:8px"></div>
+              <div class="cc-row"><span class="fn" style="color:var(--cyan)">rollout · vLLM-Ascend</span><span class="d">Δ</span><span class="s">impl</span></div>
+              <div class="cc-row"><span class="fn">　vllm/model_executor/fused_moe.py</span><span class="d"></span><span class="s">py</span></div>
+              <div class="cc-row"><span class="fn">　　npu_fused_moe_gating()</span><span class="d"></span><span class="s">fused</span></div>
+              <div class="cc-row hot"><span class="fn">　　　ReduceSum(dim=-1, <b>batch-split</b>)</span><span class="d" style="color:var(--red)">1.1e-3</span><span class="s"><span class="badge p-trig">B</span></span></div>
+              <div class="cc-row"><span class="fn">　　　TopK(k=8, tie=<b>unstable</b>)</span><span class="d" style="color:var(--amber)">flip</span><span class="s"><span class="badge p-amp">amp</span></span></div>
+            </div>
+            <div class="hint bad" style="font-size:11.5px">A B：两个融合算子由算子团队<b>分别为训练与推理独立开</b>，归约顺序不同。这不是 bug 写错了，性能优先、训推各自演的组织结构直接映射到了数值上</div>
+          </div>
+        </div>
+
+        <div class="panel-shell panel-shell-quiet pd-section">
+          <h3>好样vs 坏样本对</h3>
+          <div class="cd">选一条正常轨迹和一不说人话"的轨迹，看哪一层开始分道扬—新人也知道该看哪一层</div>
+          <div id="gb"></div>
+          <div class="hint">两条轨迹layer 03 几乎重合<b>layer 34 之后坏样本急剧发散</b>。分叉点router 翻转层完全重合</div>
+        </div>
+
+        <div class="panel-shell panel-shell-quiet pd-section">
+          <h3>根因</h3>
+          <div style="font-family:var(--mono);font-size:11.5px;line-height:2.1;color:var(--tx2)">
+            <div><span class="badge p-trig">触发源</span> 融合算子归约顺序batch 切分（训推独立开发，浮点不满足结合律</div>
+            <div style="color:var(--tx3)">　router logit 扰动 1.1e-3</div>
+            <div><span class="badge p-amp">放大器</span> layer 34 MoE top-8 argmax 翻转.12%</div>
+            <div style="color:var(--tx3)">　专家路由改变 输出分布突变</div>
+            <div>Δlogp 爆炸4.71（r = 111×</div>
+            <div style="color:var(--tx3)">　</div>
+            <div>ESS 0.41 · 一致率 0.9203 · clip_frac 11.4%</div>
+            <div style="color:var(--tx3)">　</div>
+            <div style="color:var(--danger)">entropy 塌缩 · reward 回落</div>
+          </div>
+          <div class="hint warn">明确排除<b>BF16 不是主因</b>。单独提 FP32 logprob head 只把 max|Δlogp| 4.71 降到 3.9、一致率 0.9203.9388 —远不足以达标。把精度类型当成万能解释是这个场景最常见的误判</div>
+        </div>
+
+        <div class="foot"><div class="dl">04 / 06 · 定位</div><div style="display:flex;gap:8px"><button class="btn" onclick="go(2)">返回</button><button class="btn btn-solid" onclick="go(4)">配置修复 </button></div></div>
+      </div>
+
+      <!-- ================= V4 修复配置 ================= -->
+      <div class="view" id="v4" hidden>
+        <div class="h1">修复配置</div>
+        <div class="sub">三类手段的性质完全不同<b>对齐</b>消除差异<b>补偿</b>用数学纠正梯度，<b>兜底</b>丢弃坏数据。只用后两类 = 治标不治本</div>
+
+        <div class="panel-shell panel-shell-quiet pd-section">
+          <h3>A · 精度规避组合策略</h3>
+          <div class="cd">可叠加。每项标注吞吐代—RL 70~90% 时间在推理，吞吐损耗直接等于迭代速度损耗</div>
+
+          <div class="eyebrow" style="margin-top:6px">对齐· 消除差异</div>
+          <div class="grid2" style="margin-top:8px" id="gA"></div>
+
+          <div class="eyebrow" style="margin-top:16px">补偿· 数学纠正梯度</div>
+          <div class="grid2" style="margin-top:8px" id="gB"></div>
+
+          <div class="eyebrow" style="margin-top:16px">兜底</div>
+          <div class="grid2" style="margin-top:8px" id="gC"></div>
+
+          <div style="margin-top:16px;padding:14px;background:var(--bg3);border:1px solid var(--line);border-radius:6px">
+            <div class="eyebrow">组合效果预估</div>
+            <div class="grid3" style="margin-top:10px">
+              <div><div class="lbl m" style="font-size:10px;color:var(--tx3)">logprob 一致率</div><div class="bignum" id="pConsist">0.9203</div></div>
+              <div><div class="lbl m" style="font-size:10px;color:var(--tx3)">ESS</div><div class="bignum" id="pEss">0.41</div></div>
+              <div><div class="lbl m" style="font-size:10px;color:var(--tx3)">吞吐变化</div><div class="bignum" id="pThr">0%</div></div>
+            </div>
+            <div style="margin-top:12px">
+              <div style="display:flex;justify-content:space-between;font-size:10.5px;color:var(--tx3);font-family:var(--mono)"><span>精度收益</span><span id="lGain">0%</span></div>
+              <div style="height:6px;background:var(--bg);border-radius:3px;margin-top:3px;overflow:hidden"><i id="bGain" style="display:block;height:100%;width:0;background:var(--cyan);transition:.4s"></i></div>
+              <div style="display:flex;justify-content:space-between;font-size:10.5px;color:var(--tx3);font-family:var(--mono);margin-top:8px"><span>吞吐损</span><span id="lCost">0%</span></div>
+              <div style="height:6px;background:var(--bg);border-radius:3px;margin-top:3px;overflow:hidden"><i id="bCost" style="display:block;height:100%;width:0;background:var(--amber);transition:.4s"></i></div>
+            </div>
+          </div>
+          <div class="hint" id="hintA">尚未选择任何策略</div>
+        </div>
+
+        <div class="panel-shell panel-shell-quiet pd-section">
+          <h3>B · 轻量化规</h3>
+          <div class="cd">一行一<code class="m">.pdiff</code> DSL。优先级高于 A 段全局策略。边写边 lint</div>
+          <div class="ed">
+            <div class="hdr"><span>.pdiff/rules.pdiff</span><span id="lintN">3 条有</span></div>
+            <div class="wrap"><div class="gut" id="gut"></div><textarea id="dsl" spellcheck="false" oninput="lint()">layer[34].moe.router -> dtype=fp32, topk=deterministic
+token[abs_dlogp>1.0] -> mask
+trajectory[max_dlogp>2.0] -> drop
+# skip layer[0:2]        # 已知无害，排除出校验
+# tolerance layer[46:47] -> 3e-3</textarea></div>
+            <div class="chips" id="chips"></div>
+          </div>
+          <div style="display:flex;gap:6px;margin-top:8px;flex-wrap:wrap">
+            <button class="btn btn-sm" onclick="ins('op(fused_moe_gating).* -> reduce_order=seq_major')">批次不变归约</button>
+            <button class="btn btn-sm" onclick="ins('weight_sync -> verify=checksum')">同步校验</button>
+            <button class="btn btn-sm" onclick="ins('skip layer[0:2]')">排除已知无害</button>
+            <button class="btn btn-sm" onclick="ins('bad_rule ??? ->')">插入一条错误规</button>
+          </div>
+        </div>
+
+        <div class="panel-shell panel-shell-quiet pd-section">
+          <h3>C · 数据精度校验规则</h3>
+          <div class="cd">决定"多大算异。切换预设重排判据表；手改任意阈值会切到自定义</div>
+          <div class="pres">
+            <button class="btn" onclick="setPreset(0,this)">严格逐比</button>
+            <button class="btn is-selected" onclick="setPreset(1,this)">RL 标准（一致率</button>
+            <button class="btn" onclick="setPreset(2,this)">宽松（只ESS</button>
+            <button class="btn" onclick="setPreset(3,this)">MoE 专用</button>
+          </div>
+          <table id="crit"></table>
+          <div class="tog on" style="margin-top:12px" onclick="this.classList.toggle('on')">
+            <div class="box"></div>
+            <div><div class="tt">从健康区间自动标定噪声地</div>
+            <div class="td">step 000（一致率 &gt; 0.995 的区间）P99.9 作为阈值下界。比人凭感觉填靠谱</div></div>
+          </div>
+        </div>
+
+        <div class="foot"><div class="dl">05 / 06 · 解决</div><div style="display:flex;gap:8px"><button class="btn" onclick="go(3)">返回</button><button class="btn btn-solid" onclick="go(5)">验证与守</button></div></div>
+      </div>
+
+      <!-- ================= V5 验证守护 ================= -->
+      <div class="view" id="v5" hidden>
+        <div class="h1">验证与守</div>
+        <div class="sub">修完不算完。要把这次的定位过程沉淀<b>算子发版前的 RL 预检用例</b> + <b>线上守护规则</b>，否则下一代模型结构一换又要重来一遍</div>
+
+        <div class="panel-shell panel-shell-quiet pd-section">
+          <h3>A/B 复跑 · step 48060</h3>
+          <table>
+            <tr><th>指标</th><th>修复</th><th>修复</th><th>目标</th><th></th></tr>
+            <tr><td class="m">mismatch/consistency</td><td class="m" style="color:var(--red)">0.9203</td><td class="m" style="color:var(--green)" id="abC">0.9961</td><td class="m">.99</td><td><span class="badge p-ok">达标</span></td></tr>
+            <tr><td class="m">mismatch/ess</td><td class="m" style="color:var(--red)">0.41</td><td class="m" style="color:var(--green)">0.96</td><td class="m">.90</td><td><span class="badge p-ok">达标</span></td></tr>
+            <tr><td class="m">mismatch/log_probs_diff_max</td><td class="m" style="color:var(--red)">4.71</td><td class="m" style="color:var(--green)">0.031</td><td class="m">&lt;0.10</td><td><span class="badge p-ok">达标</span></td></tr>
+            <tr><td class="m">actor/pg_clipfrac</td><td class="m" style="color:var(--red)">11.4%</td><td class="m" style="color:var(--green)">1.5%</td><td class="m">&lt;3%</td><td><span class="badge p-ok">达标</span></td></tr>
+            <tr><td class="m">actor/entropy</td><td class="m" style="color:var(--red)">0.61</td><td class="m" style="color:var(--green)">1.79</td><td class="m">.8</td><td><span class="badge p-ok">恢复</span></td></tr>
+            <tr><td class="m">吞吐（token/s</td><td class="m">1.00×</td><td class="m" style="color:var(--amber)">0.89×</td><td class="m">—</td><td><span class="badge p-neu">1%</span></td></tr>
+          </table>
+        </div>
+
+        <div class="grid2">
+          <div class="panel-shell panel-shell-quiet pd-section" style="margin-top:14px">
+            <h3>线上守护规则</h3>
+            <div class="cd">写入 <code class="m">.pdiff/guard.yaml</code>，随训练常驻</div>
+            <table>
+              <tr><th>触发条件</th><th>动作</th></tr>
+              <tr><td class="m">consistency &lt; 0.98</td><td>暂停训练，转储该 step 全部轨迹</td></tr>
+              <tr><td class="m">ess &lt; 0.60</td><td>暂停 + 自动拉起本插件分</td></tr>
+              <tr><td class="m">log_probs_diff_max &gt; 1.0</td><td>自动启用 TIS 兜底，告警不中断</td></tr>
+              <tr><td class="m">weight_sync checksum </td><td>立即中止（非数值问题）</td></tr>
+              <tr><td class="m">router_flip_rate &gt; 0.5%</td><td>告警，标记该</td></tr>
+            </table>
+          </div>
+
+          <div class="panel-shell panel-shell-quiet pd-section" style="margin-top:14px">
+            <h3>沉淀：算子发版前 RL 预检</h3>
+            <div class="cd">这是每代模型重来一变成"一次投入长期复的关键</div>
+            <div style="font-family:var(--mono);font-size:11px;line-height:2;color:var(--tx2)">
+              <div><span style="color:var(--green)"></span> 生成 golden 用例<code>tc_moe_gating_batch_inv.py</code></div>
+              <div><span style="color:var(--green)"></span> 断言：bs {1,4,16,64} 归约结果逐比特一</div>
+              <div><span style="color:var(--green)"></span> 断言：prefill decode 路径 |Δlogp| &lt; 1e-5</div>
+              <div><span style="color:var(--green)"></span> 挂到算子 CI<code>算子发版 RL 预检 才允许合</code></div>
+              <div><span style="color:var(--green)"></span> 定界结论已生成工单，Owner = 算子团队（融合算子组</div>
+            </div>
+            <div class="hint good" style="font-size:11.5px">这条正是 3.2 定界后移交难、怕给错方的解法：工单里带着消融证据（换 kernel 一致率 0.9203.9954），而不是一精度对不</div>
+          </div>
+        </div>
+
+        <div class="panel-shell panel-shell-quiet pd-section">
+          <h3>残余风险 <span class="badge p-neu">不粉</span></h3>
+          <div style="font-size:12px;line-height:1.9;color:var(--tx2)">
+            <div><b style="color:var(--tx)">1 · 合法 off-policy 不该也无法消除</b> 修复后仍|Δlogp| 6e-3 的抖动，这是 GRPO 多步更新的设计内偏差，由 IS 正确补偿。不要试图把它也压到 0</div>
+            <div style="margin-top:8px"><b style="color:var(--tx)">2 · 策略会漂移到新的 router 边界</b> 随训练推进，token 分布变化，翻转率可能step 1200+ 重新抬头。守护规则里<code class="m">router_flip_rate</code> 就是为此留的</div>
+            <div style="margin-top:8px"><b style="color:var(--tx)">3 · 吞吐 1% 若不可接</b>，可只保留「router FP32 + 确定性 top-k + TIS」，一致率 0.9702、ESS 0.91、吞吐仅 %。但<b style="color:var(--danger)">触发源仍</b> —这是只修放大器的代价，界面上必须显式呈现，而不是让人误以为修完了</div>
+          </div>
+        </div>
+
+        <div class="foot">
+          <div class="dl">06 / 06 · 解决</div>
+          <div style="display:flex;gap:8px">
+            <button class="btn" onclick="go(4)">返回</button>
+            <button class="btn btn-sm">导出报告</button>
+            <button class="btn btn-solid" onclick="applyFix()">合入修复并恢复训</button>
+          </div>
+        </div>
+      </div>
+
+          <footer class="pto-ide-frame__status-strip"><div class="pd-status">
+        <span id="statusMain">一致率 0.9203 · 目标 0.99 · 触发layer34.mlp.gate</span>
+        <span class="sp"></span>
+        <span>PrecisionDiff v0.4</span>
+        <span>Ascend A5 ×512</span>
+          </div></footer>
+          </div>
+        </section>
+      </div>
+    </div>
+  </div>
+</section>
+
+<script src="../vendor/pto-design-system/patterns/workbench-shell/pattern.js"></script>
+<script src="../vendor/pto-design-system/patterns/ide-frame/pattern.js"></script>
+<script>
+window.addEventListener("DOMContentLoaded",()=>{window.PtoIdeFrame?.initAll?.();});
+/* ---------- steps ---------- */
+const STEPS=[
+ ['01','Discovery - training curve anomaly','p1'],
+ ['02','Attribution triage','p2'],
+ ['03','Controlled probes','p2'],
+ ['04','Call-chain drilldown','p2'],
+ ['05','Fix configuration','p3'],
+ ['06','Verify and guard','p3']];
+const stepsEl=document.getElementById('steps');
+STEPS.forEach((s,i)=>{const b=document.createElement('button');b.className='btn btn-ghost step '+s[2]+(i==0?' is-selected':'');b.innerHTML=`<div class="n">${s[0]}</div><div class="l">${s[1]}</div>`;b.onclick=()=>go(i);stepsEl.appendChild(b);});
+function go(i){for(let k=0;k<6;k++){document.getElementById('v'+k).hidden=(k!=i);stepsEl.children[k].classList.toggle('is-selected',k==i);}document.querySelector('.view:not([hidden])').scrollTop=0;}
+
+/* ---------- sparklines ---------- */
+function mkSpark(pts,color,brk){
+  const w=200,h=40,mn=Math.min(...pts),mx=Math.max(...pts),r=mx-mn||1;
+  const d=pts.map((p,i)=>`${i?'L':'M'}${(i/(pts.length-1)*w).toFixed(1)},${(h-(p-mn)/r*h*.85-2).toFixed(1)}`).join(' ');
+  const bx=(brk/(pts.length-1)*w).toFixed(1);
+  return `<svg viewBox="0 0 ${w} ${h}" width="100%" height="40"><line x1="${bx}" y1="0" x2="${bx}" y2="${h}" stroke="#e5484d" stroke-width="1" stroke-dasharray="2 2" opacity=".6"/><path d="${d}" fill="none" stroke="${color}" stroke-width="1.4"/></svg>`;
+}
+function seq(n,f){return Array.from({length:n},(_,i)=>f(i));}
+const BRK=16; // step 480 index of 25 pts (400..520 step 5)
+const curves=[
+ ['critic/rewards/mean','0.412',seq(25,i=>i<BRK?.30+i*.007+Math.sin(i)*.004:.42-(i-BRK)*.012),'#e0b062'],
+ ['actor/entropy','0.61',seq(25,i=>i<BRK?1.82+Math.sin(i*.9)*.03:1.82-(i-BRK)*.135),'#4fd1d9'],
+ ['actor/ppo_kl','0.087',seq(25,i=>i<BRK?.004+Math.random()*.001:.004+(i-BRK)*.009),'#a78bfa'],
+ ['actor/pg_clipfrac','11.4%',seq(25,i=>i<BRK?.012+Math.random()*.002:.012+(i-BRK)*.0122),'#e5484d']];
+document.getElementById('sparks').innerHTML=curves.map(c=>
+ `<div class="spark"><div class="lbl">${c[0]}</div><div class="val">${c[1]}</div>${mkSpark(c[2],c[3],BRK)}</div>`).join('');
+
+/* ---------- seismograph ---------- */
+(function(){
+  const W=980,H=180,N=512,mid=H/2,band=14;
+  let path='',spikes='';
+  const seed=[[311,4.71],[402,-3.2],[128,2.1],[467,-2.6],[233,1.9],[356,1.4],[489,-1.1]];
+  const map=Object.fromEntries(seed);
+  for(let i=0;i<N;i++){
+    let v = map[i]!==undefined ? map[i] : (Math.random()-.5)*0.012;
+    const x=(i/(N-1)*W).toFixed(1);
+    const y=(mid - Math.sign(v)*Math.pow(Math.abs(v),.55)*36).toFixed(1);
+    path+=(i?'L':'M')+x+','+y+' ';
+    if(Math.abs(v)>0.02) spikes+=`<line x1="${x}" y1="${mid}" x2="${x}" y2="${y}" stroke="#e5484d" stroke-width="1.6"/><circle cx="${x}" cy="${y}" r="2.4" fill="#e5484d"/>`;
+  }
+  document.getElementById('seis').innerHTML=
+   `<svg viewBox="0 0 ${W} ${H}" width="100%" height="180">
+     <rect x="0" y="${mid-band}" width="${W}" height="${band*2}" fill="#4fd1d9" opacity=".07"/>
+     <line x1="0" y1="${mid}" x2="${W}" y2="${mid}" stroke="#2a3243"/>
+     <path d="${path}" fill="none" stroke="#4fd1d9" stroke-width="1" opacity=".75"/>
+     ${spikes}
+     <text x="6" y="${mid-band-5}" fill="#5f6c84" font-size="9" font-family="monospace">+0.02 合法 off-policy 上界</text>
+     <text x="6" y="16" fill="#5f6c84" font-size="9" font-family="monospace">log_r = old_log_probs rollout_log_probs</text>
+     <text x="${W-8}" y="${H-5}" fill="#5f6c84" font-size="9" font-family="monospace" text-anchor="end">token position </text>
+   </svg>`;
+})();
+
+/* ---------- triage ---------- */
+const HYP=[
+ ['H1','Weight sync: resharding / dtype conversion / staleness','High','checksum compare','pending'],
+ ['H2','Sampler post-process: temperature / top-p / repetition penalty mismatch','High','sampler config diff','pending'],
+ ['H3','Batch invariance: reduction order changes with dynamic batch split','Medium','bs scan 1->64','pending'],
+ ['H4','Numeric precision: BF16 vs FP32 and fused op implementation drift','Medium','dtype ablation','pending'],
+ ['H5','Legal off-policy: multi-step minibatch update','Low','correlate with update steps','pending']];
+const RES=[
+ ['<span class="badge p-ok">Pass: excluded</span>','checksum is identical'],
+ ['<span class="badge p-ok">Pass: excluded</span>','sampler configs match field by field'],
+ ['<span class="badge p-trig">Trigger</span>','bs=64 drift is 3.9e-2'],
+ ['<span class="badge p-amp">Amplifier</span>','standalone fix improves only +0.019'],
+ ['<span class="badge p-ok">Legal</span>','not correlated with update count']];
+const tb=document.getElementById('hypo');
+function drawHypo(k){
+  tb.innerHTML='<tr><th style="width:34px">#</th><th>假设</th><th style="width:100px">先验</th><th style="width:160px">探针</th><th style="width:190px">结论</th></tr>'+
+  HYP.map((h,i)=>`<tr><td class="m">${h[0]}</td><td>${h[1]}</td><td class="m">${h[2]}</td><td class="m" style="font-size:10.5px">${h[3]}</td>
+  <td>${i<k?RES[i][0]+'<div style="font-size:10px;color:var(--tx3);margin-top:2px" class="m">'+RES[i][1]+'</div>':'<span class="badge p-neu">待运</span>'}</td></tr>`).join('');
+}
+drawHypo(0);
+function runProbes(){
+  let k=0;
+  const btn=document.getElementById('runProbes');
+  btn.disabled=true;
+  btn.textContent='Running...';
+  const t=setInterval(()=>{
+    k++;
+    drawHypo(k);
+    if(k>=5){
+      clearInterval(t);
+      btn.disabled=false;
+      btn.textContent='Run all probes';
+      const o=document.getElementById('triageOut');
+      o.hidden=false;
+      o.innerHTML='Triage complete: scope narrowed from five classes to <b>two</b>: H3 (<span class="badge p-trig">Trigger</span>) and H4 (<span class="badge p-amp">Amplifier</span>). H5 is legal off-policy and should not be fixed.';
+    }
+  },480);
+}
+function resetProbes(){drawHypo(0);document.getElementById('triageOut').hidden=true;}
+
+/* ---------- heatmap + module drilldown ---------- */
+const L=48;
+const dlogp=Array.from({length:L},(_,i)=> i===34?1.00: i===21?0.22: 0.02+Math.random()*0.06);
+const flip =Array.from({length:L},(_,i)=> i===34?1.00: i===21?0.13: Math.random()*0.02);
+const cosd =Array.from({length:L},(_,i)=> i===34?1.00: i===21?0.30: 0.03+Math.random()*0.05);
+let MODE='dlogp',SEL=34;
+function col(v){const s=[[27,58,42],[61,107,42],[138,122,30],[184,84,31],[229,72,77]];
+  const t=Math.min(.999,Math.max(0,Math.pow(v,.45)))*(s.length-1);const i=Math.floor(t),f=t-i;
+  const a=s[i],b=s[Math.min(i+1,s.length-1)];
+  return `rgb(${a.map((x,j)=>Math.round(x+(b[j]-x)*f)).join(',')})`;}
+function drawHM(){
+  const d=MODE==='dlogp'?dlogp:MODE==='flip'?flip:cosd;
+  document.getElementById('hm').innerHTML=d.map((v,i)=>
+    `<div class="hc${i===SEL?' sel':''}${i===34?' hot':''}" style="background:${col(v)}" onclick="selLayer(${i})" title="layer ${i}">${i}</div>`).join('');
+}
+function setHM(m,el){MODE=m;document.querySelectorAll('[data-heatmap-mode]').forEach(b=>b.classList.remove('on','is-selected'));el.classList.add('on','is-selected');drawHM();}
+const MODS_HOT=[
+ ['input_layernorm',3,'prop'],['qkv_proj',5,'prop'],['core_attn',9,'prop'],['o_proj',4,'prop'],
+ ['post_attn_layernorm',2,'prop'],['mlp.gate (router)',61,'trig'],['mlp.experts',12,'amp'],
+ ['mlp.shared_expert',2,'prop'],['residual + norm',2,'prop']];
+const MODS_NORM=[
+ ['input_layernorm',6,'prop'],['qkv_proj',12,'prop'],['core_attn',34,'prop'],['o_proj',11,'prop'],
+ ['post_attn_layernorm',5,'prop'],['mlp.gate (router)',9,'prop'],['mlp.experts',15,'prop'],
+ ['mlp.shared_expert',4,'prop'],['residual + norm',4,'prop']];
+const RCOL={trig:'var(--red)',amp:'var(--violet)',prop:'var(--slate)'};
+const RTAG={trig:'<span class="badge p-trig">触发源</span>',amp:'<span class="badge p-amp">放大器</span>',prop:''};
+function selLayer(i){SEL=i;drawHM();
+  const hot=i===34,m=hot?MODS_HOT:MODS_NORM;
+  const top=[...m].sort((a,b)=>b[1]-a[1])[0];
+  document.getElementById('crumb').textContent=`layer ${i} ${top[0].split(' ')[0]}`;
+  document.getElementById('mods').innerHTML=m.map(x=>
+   `<div class="mod"><div class="nm"${x[2]==='trig'?' style="color:var(--red)"':''}>${x[0]}</div>
+    <div class="bar"><i style="width:${x[1]}%;background:${RCOL[x[2]]}"></i></div>
+    <div class="pc">${x[1]}%</div><div class="rl">${RTAG[x[2]]}</div></div>`).join('')
+   + (hot?'<div class="hint bad" style="margin-top:10px;font-size:11.5px">mlp.gate 单点占本<b>61%</b>，其余模块均为传导。这单点主导"型，而非误差累积型</div>'
+        :'<div class="hint" style="margin-top:10px;font-size:11.5px">无单点主导，core_attn 为最大项 —典型的正常层分布</div>');
+}
+drawHM();selLayer(34);
+
+/* ---------- good vs bad ---------- */
+(function(){
+  const W=940,H=150,N=48;
+  let g='',b='';
+  for(let i=0;i<N;i++){
+    const x=(i/(N-1)*W).toFixed(1);
+    const gv=0.02+Math.random()*0.02;
+    const bv=i<34?0.02+Math.random()*0.02 : 0.02+Math.pow(i-33,1.5)*0.055;
+    g+=(i?'L':'M')+x+','+(H-gv*H*3.4-8).toFixed(1)+' ';
+    b+=(i?'L':'M')+x+','+(H-Math.min(bv,0.92)*H*1.05-8).toFixed(1)+' ';
+  }
+  document.getElementById('gb').innerHTML=
+  `<svg viewBox="0 0 ${W} ${H}" width="100%" height="150" style="margin-top:8px">
+    <line x1="${(34/47*W).toFixed(1)}" y1="0" x2="${(34/47*W).toFixed(1)}" y2="${H}" stroke="#e5484d" stroke-dasharray="2 3" opacity=".6"/>
+    <path d="${g}" fill="none" stroke="#3fb950" stroke-width="1.5"/>
+    <path d="${b}" fill="none" stroke="#e5484d" stroke-width="1.5"/>
+    <text x="6" y="14" fill="#3fb950" font-size="10" font-family="monospace">好样· |Δlogp| per layer</text>
+    <text x="6" y="28" fill="#e5484d" font-size="10" font-family="monospace">坏样本（"不说人话"轨迹</text>
+    <text x="${(34/47*W+6).toFixed(1)}" y="${H-6}" fill="#5f6c84" font-size="9" font-family="monospace">layer 34</text>
+  </svg>`;
+})();
+
+/* ---------- strategies ---------- */
+const STRAT={
+ A:[['batch_inv','Batch-invariant reduction kernel','Unify train and rollout reduction order to seq-major.','rollout.enforce_batch_invariant=True',0.62,9],
+    ['router_fp32','Router FP32 + deterministic top-k','Lift gate logits to FP32 and stabilize tie-break order.','moe.router_dtype=fp32',0.30,3],
+    ['no_prefix','Disable prefix cache','Remove cross-request cache state drift.','rollout.enable_prefix_caching=False',0.14,4],
+    ['same_attn','Unify attention backend','Use the same fused attention backend on both sides.','attn.backend=unified_fa',0.20,5],
+    ['fp32_head','FP32 logprob head','Compute logprob head in FP32.','actor.use_fp32_logprob=True',0.12,2],
+    ['bsa','BSA deterministic compute','Bitwise reproducible, highest throughput cost.','npu.deterministic=True',0.70,26]],
+ B:[['tis','TIS truncated importance sampling','Cap r and correct gradient bias.','actor.policy_loss.tis_imp_ratio_cap=2.0',0.18,1],
+    ['mis','MIS masked importance sampling','Mask out-of-bound tokens from gradient.','actor.policy_loss.mis_mask=True',0.15,1]],
+ C:[['drop','Drop outlier trajectories','Drop trajectories with max|dlogp| > 2.0.','data.drop_mismatch_traj=True',0.08,3]]};
+const on=new Set();
+function drawStrat(){
+  for(const k of ['A','B','C']){
+    document.getElementById('g'+k).innerHTML=STRAT[k].map(s=>
+     `<div class="tog${on.has(s[0])?' on':''}" data-id="${s[0]}" onclick="tog('${s[0]}')">
+        <div class="box"></div>
+        <div style="flex:1"><div class="tt">${s[1]}</div><div class="td">${s[2]}</div>
+        <div class="m" style="font-size:9.5px;color:var(--tx3);margin-top:4px">${s[3]}</div>
+        <div class="cost">吞吐 {s[5]}%</div></div>
+      </div>`).join('');
+  }
+  calc();
+}
+function tog(id){on.has(id)?on.delete(id):on.add(id);drawStrat();}
+function calc(){
+  document.querySelectorAll('.tog').forEach(t=>t.classList.remove('conflict'));
+  let msg='',bad=false;
+  if(on.has('bsa')&&on.has('batch_inv')){
+    bad=true;
+    msg='<b>Conflict</b>: BSA deterministic compute already includes batch-invariant reduction. Enabling both only adds throughput cost without extra gain.';
+    ['bsa','batch_inv'].forEach(i=>document.querySelector(`[data-id="${i}"]`).classList.add('conflict'));
+  }
+  const all=[...STRAT.A,...STRAT.B,...STRAT.C].filter(s=>on.has(s[0]));
+  let gain=0;
+  all.sort((a,b)=>b[4]-a[4]).forEach((s,i)=>gain+=s[4]*Math.pow(0.72,i));
+  gain=Math.min(gain,0.95);
+  const cost=all.reduce((a,s)=>a+s[5],0);
+  const consist=0.9203+(0.9990-0.9203)*gain;
+  const ess=0.41+(0.97-0.41)*gain;
+  document.getElementById('pConsist').textContent=consist.toFixed(4);
+  document.getElementById('pConsist').style.color=consist>=0.99?'var(--green)':'var(--red)';
+  document.getElementById('pEss').textContent=ess.toFixed(2);
+  document.getElementById('pEss').style.color=ess>=0.9?'var(--green)':'var(--red)';
+  document.getElementById('pThr').textContent=cost?'-'+cost+'%':'0%';
+  document.getElementById('pThr').style.color=cost>20?'var(--red)':cost?'var(--amber)':'var(--tx)';
+  document.getElementById('bGain').style.width=(gain*100)+'%';
+  document.getElementById('lGain').textContent=(gain*100).toFixed(0)+'%';
+  document.getElementById('bCost').style.width=Math.min(cost*2.2,100)+'%';
+  document.getElementById('lCost').textContent=cost+'%';
+
+  const h=document.getElementById('hintA');
+  const hasAlign=STRAT.A.some(s=>on.has(s[0]));
+  const hasComp=[...STRAT.B,...STRAT.C].some(s=>on.has(s[0]));
+  if(bad){h.className='hint bad';h.innerHTML=msg;}
+  else if(!on.size){h.className='hint';h.textContent='No strategy selected yet.';}
+  else if(!hasAlign&&hasComp){h.className='hint warn';h.innerHTML='Only compensation/fallback strategies are selected. The gradient is corrected, but the trigger remains and can recur.';}
+  else if(consist<0.99){h.className='hint warn';h.innerHTML=`Estimated consistency <b>${consist.toFixed(4)}</b> is below the 0.99 target. Batch-invariant reduction is the missing high-impact fix.`;}
+  else{h.className='hint good';h.innerHTML=`<b>${on.size}</b> strategies selected. Estimated consistency <b>${consist.toFixed(4)}</b>, ESS <b>${ess.toFixed(2)}</b>, throughput <b>-${cost}%</b>.`;}
+}
+on.add('batch_inv');on.add('router_fp32');on.add('tis');drawStrat();
+
+/* ---------- DSL lint ---------- */
+const RE=/^\s*(#.*|(skip\s+\S+)|(tolerance\s+\S+\s*->\s*\S+)|(\S+\s*->\s*[\w=,.\s>]+))\s*$/;
+function lint(){
+  const lines=document.getElementById('dsl').value.split('\n');
+  document.getElementById('gut').innerHTML=lines.map((l,i)=>{
+    const bad=l.trim()&&!RE.test(l);
+    return `<div class="${bad?'err':''}">${i+1}</div>`;
+  }).join('');
+  let ok=0;
+  const chips=[];
+  lines.forEach((l,i)=>{
+    if(!l.trim()||l.trim().startsWith('#'))return;
+    if(RE.test(l)){
+      ok++;
+      chips.push(`<span class="chip">${l.trim().split('->')[0].trim()}</span>`);
+    } else {
+      chips.push(`<span class="chip bad">L${i+1} syntax error</span>`);
+    }
+  });
+  document.getElementById('chips').innerHTML=chips.join('')||'<span class="chip" style="opacity:.4">No rules</span>';
+  document.getElementById('lintN').textContent=ok+' valid rules';
+}
+function ins(t){const d=document.getElementById('dsl');d.value=d.value.replace(/\n$/,'')+'\n'+t;lint();}
+lint();
+
+/* ---------- criteria ---------- */
+const PRE=[
+ {n:'Bit-exact strict',r:[['max|dlogp|','token','0','0','fatal'],['consistency','trajectory','1.0000','1.0000','fatal'],['router flip rate','layer','0%','0%','fatal']]},
+ {n:'RL standard',r:[['consistency','trajectory','0.9900','0.9800','fatal'],['ESS','batch','0.90','0.60','fatal'],['max|dlogp|','token','0.10','1.00','error'],['clip_frac','batch','3%','8%','warn'],['outlier token ratio','trajectory','0.1%','0.5%','warn']]},
+ {n:'Relaxed',r:[['ESS','batch','0.80','0.50','error'],['clip_frac','batch','5%','12%','warn']]},
+ {n:'MoE specific',r:[['consistency','trajectory','0.9900','0.9800','fatal'],['ESS','batch','0.90','0.60','fatal'],['router flip rate','layer','0.1%','0.5%','fatal'],['router logit margin','token','1e-3','1e-2','error'],['expert load skew','layer','5%','15%','warn'],['max|dlogp|','token','0.10','1.00','error']]}];
+const SEV={fatal:'p-trig',error:'p-amp',warn:'p-neu'};
+function setPreset(i,el){
+  document.querySelectorAll('.pres .btn').forEach(b=>b.classList.remove('on','is-selected'));if(el)el.classList.add('on','is-selected');
+  document.getElementById('crit').innerHTML='<tr><th style="width:30px"></th><th>指标</th><th style="width:80px">作用层级</th><th style="width:110px">告警阈</th><th style="width:110px">失败阈</th><th style="width:80px">严重</th></tr>'+
+   PRE[i].r.map(r=>`<tr><td><input type="checkbox" checked style="accent-color:var(--cyan)"></td><td>${r[0]}</td><td class="m">${r[1]}</td>
+   <td><input class="m" value="${r[2]}" oninput="custom()" style="width:88px;background:var(--bg);border:1px solid var(--line);border-radius:3px;color:var(--tx);padding:2px 5px"></td>
+   <td><input class="m" value="${r[3]}" oninput="custom()" style="width:88px;background:var(--bg);border:1px solid var(--line);border-radius:3px;color:var(--tx);padding:2px 5px"></td>
+   <td><span class="badge ${SEV[r[4]]}">${r[4]}</span></td></tr>`).join('');
+}
+function custom(){
+  document.querySelectorAll('.pres .btn').forEach(b=>b.classList.remove('on','is-selected'));
+  const p=document.querySelector('.pres');
+  if(!document.getElementById('customBtn')){
+    const b=document.createElement('button');
+    b.id='customBtn';
+    b.className='btn is-selected';
+    b.textContent='Custom';
+    p.appendChild(b);
+  } else {
+    document.getElementById('customBtn').classList.add('on','is-selected');
+  }
+}
+setPreset(1,document.querySelectorAll('.pres .btn')[1]);
+
+/* ---------- apply ---------- */
+function applyFix(){
+  document.getElementById('sConsist').textContent='0.9961';document.getElementById('sConsist').style.color='var(--green)';
+  document.getElementById('sCos').textContent='0.9989';document.getElementById('sCos').style.color='var(--green)';
+  document.getElementById('sMax').textContent='0.031';document.getElementById('sMax').style.color='var(--green)';
+  document.getElementById('sEss').textContent='0.96';document.getElementById('sEss').style.color='var(--green)';
+  document.getElementById('sClip').textContent='1.5%';document.getElementById('sClip').style.color='var(--green)';
+  document.getElementById('sOwner').textContent='Operator team';document.getElementById('sOwner').style.color='var(--tx)';
+  document.getElementById('sTicket').textContent='OP-2317';document.getElementById('sTicket').style.color='var(--cyan)';
+  document.getElementById('alerts').innerHTML=
+   '<div class="alert ok"><div class="tag">RESOLVED  step 480</div><div class="msg">Consistency recovered to 0.9961.</div></div>'+
+   '<div class="alert ok"><div class="tag">RESOLVED  step 486</div><div class="msg">Entropy recovered to 1.79 and reward is rising.</div></div>'+
+   '<div class="alert ok"><div class="tag">GUARD ON</div><div class="msg">Five guard rules are active; RL precheck is attached to operator CI.</div></div>';
+  const s=document.getElementById('statusMain');
+  s.style.color='var(--green)';
+  s.textContent='Ready  consistency 0.9961  target met  trigger fixed and guard active';
+}
+</script>
+</body>
+</html>
+
+

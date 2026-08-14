@@ -1,0 +1,208 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Pangu Training Object Topology</title>
+  <script>
+    (() => {
+      const key = 'pangu-training-object-topology-theme';
+      const stored = window.localStorage && window.localStorage.getItem(key);
+      if (stored === 'light' || stored === 'dark') document.documentElement.dataset.theme = stored;
+      window.addEventListener('error', (event) => {
+        document.body && document.body.setAttribute('data-render-status', `error: ${event.message || 'unknown'}`);
+      });
+      window.addEventListener('unhandledrejection', (event) => {
+        const reason = event.reason && event.reason.message ? event.reason.message : 'promise rejection';
+        document.body && document.body.setAttribute('data-render-status', `error: ${reason}`);
+      });
+    })();
+  </script>
+  <link rel="stylesheet" href="../vendor/pto-design-system/tokens/foundation.css">
+  <link rel="stylesheet" href="../vendor/pto-design-system/tokens/semantic.css">
+  <link rel="stylesheet" href="../vendor/pto-design-system/tokens/components.css">
+  <link rel="stylesheet" href="../vendor/pto-design-system/css/style.css">
+  <link rel="stylesheet" href="../vendor/pto-design-system/patterns/workbench-shell/pattern.css">
+  <link rel="stylesheet" href="../vendor/pto-design-system/patterns/ide-frame/pattern.css">
+  <link rel="stylesheet" href="../vendor/pto-design-system/patterns/model-graphviz/pattern.css">
+  <link rel="stylesheet" href="css/training-object-topology-ide.css">
+</head>
+<body class="training-object-page pto-model-graphviz-pattern-page" data-render-status="loading">
+  <section class="pto-ide-frame training-object-ide" data-ide-frame data-host="standalone" aria-label="Pangu training object topology IDE">
+    <header class="pto-ide-frame__topbar pto-ide-frame__standalone-chrome">
+      <div class="pto-ide-frame__topbar-left">
+        <div class="pto-ide-frame__host-chip" aria-hidden="true">
+          <svg class="pto-ide-frame__host-icon" viewBox="0 0 24 24">
+            <rect x="3" y="4" width="18" height="16" rx="2"></rect>
+            <path d="m7 9 3 3-3 3"></path>
+            <path d="M12 15h5"></path>
+          </svg>
+        </div>
+        <div class="training-topbar-title">
+          <strong>Pangu Training Object Topology</strong>
+          <span>weights · gradients · optimizer state · parallel shards</span>
+        </div>
+      </div>
+      <div class="pto-ide-frame__topbar-center">
+        <label class="training-search" aria-label="Search training object">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="8"></circle><path d="m21 21-4.3-4.3"></path></svg>
+          <input id="objectSearch" type="search" placeholder="weight / grad / tp_col / loss_scale">
+        </label>
+      </div>
+      <div class="pto-ide-frame__topbar-right">
+        <div class="segmented-control segmented-control-muted training-view-switch" role="group" aria-label="View mode">
+          <button class="btn btn-ghost is-selected" type="button" data-view-mode="iso">2.5D</button>
+          <button class="btn btn-ghost" type="button" data-view-mode="front">Front</button>
+          <button class="btn btn-ghost" type="button" data-view-mode="side">Side</button>
+        </div>
+        <button class="btn btn-ghost btn-icon" type="button" id="themeToggle" aria-label="Toggle theme" title="Theme">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3a9 9 0 1 0 9 9 7 7 0 0 1-9-9Z"></path></svg>
+        </button>
+        <button class="pto-ide-frame__window-action" type="button" data-ide-toggle="terminal" aria-label="Toggle terminal" aria-controls="training-terminal-pane" aria-expanded="false" aria-pressed="false" title="Terminal">
+          <svg class="pto-ide-frame__window-icon" viewBox="0 0 24 24" aria-hidden="true">
+            <rect x="3" y="5" width="18" height="14" rx="2"></rect>
+            <path d="m7 9 3 3-3 3"></path>
+            <path d="M12 15h5"></path>
+          </svg>
+        </button>
+      </div>
+    </header>
+
+    <div class="pto-ide-frame__body">
+      <nav class="pto-ide-frame__activity-rail pto-ide-frame__standalone-chrome" data-ide-slot="activity-rail" aria-label="Activity rail">
+        <button class="btn btn-icon btn-ghost pto-ide-frame__rail-button is-selected" type="button" data-ide-toggle="explorer" aria-label="Toggle explorer" aria-controls="training-explorer-pane" aria-expanded="true" aria-pressed="true" title="Explorer">
+          <svg class="pto-ide-frame__rail-icon" viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9l-.81-1.2A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"></path>
+          </svg>
+        </button>
+        <button class="btn btn-icon btn-ghost pto-ide-frame__rail-button" type="button" aria-label="Search" title="Search">
+          <svg class="pto-ide-frame__rail-icon" viewBox="0 0 24 24" aria-hidden="true">
+            <circle cx="11" cy="11" r="8"></circle>
+            <path d="m21 21-4.3-4.3"></path>
+          </svg>
+        </button>
+        <button class="btn btn-icon btn-ghost pto-ide-frame__rail-button" type="button" aria-label="Source control" title="Source control">
+          <svg class="pto-ide-frame__rail-icon" viewBox="0 0 24 24" aria-hidden="true">
+            <circle cx="18" cy="18" r="3"></circle>
+            <circle cx="6" cy="6" r="3"></circle>
+            <path d="M13 6h3a2 2 0 0 1 2 2v7"></path>
+            <path d="M6 9v12"></path>
+          </svg>
+        </button>
+        <button class="btn btn-icon btn-ghost pto-ide-frame__rail-button" type="button" aria-label="Terminal" title="Terminal" data-ide-toggle="terminal" aria-controls="training-terminal-pane" aria-expanded="false" aria-pressed="false">
+          <svg class="pto-ide-frame__rail-icon" viewBox="0 0 24 24" aria-hidden="true">
+            <rect x="3" y="5" width="18" height="14" rx="2"></rect>
+            <path d="m7 9 3 3-3 3"></path>
+            <path d="M12 15h5"></path>
+          </svg>
+        </button>
+      </nav>
+
+      <div class="pto-ide-frame__workarea">
+        <div class="pto-ide-frame__split training-root-split" data-ide-split="training-vertical" data-split-direction="vertical" data-sizes="74,26" data-min-size="360,180" data-storage-key="training-object-topology-vertical-v1">
+          <section class="pto-ide-frame__pane pto-ide-frame__pane--stack" data-ide-pane="main-row">
+            <div class="pto-ide-frame__split training-main-split" data-ide-split="standalone-main" data-split-direction="horizontal" data-sizes="20,57,23" data-pixel-sizes="300" data-min-size="240,520,280" data-storage-key="training-object-topology-main-v1">
+              <aside class="pto-ide-frame__pane pto-ide-frame__explorer training-pane" data-ide-pane="explorer" id="training-explorer-pane">
+                <header class="pto-ide-frame__pane-header">
+                  <div>
+                    <span class="pto-ide-frame__pane-title">Objects</span>
+                    <span class="pto-ide-frame__pane-meta" id="objectCount">0 objects</span>
+                  </div>
+                </header>
+                <div class="pto-ide-frame__pane-body training-explorer-body">
+                  <div class="training-filter-group" id="typeFilters" aria-label="Object filters"></div>
+                  <div class="training-object-tree" id="objectTree"></div>
+                </div>
+              </aside>
+
+              <section class="pto-ide-frame__pane training-pane training-stage-pane" data-ide-pane="editor-preview">
+                <header class="pto-ide-frame__pane-header training-stage-header">
+                  <div>
+                    <span class="pto-ide-frame__pane-title">2.5D Model Architecture</span>
+                    <span class="pto-ide-frame__pane-meta" id="stageMeta">openPangu MoE · layer stack</span>
+                  </div>
+                  <div class="segmented-control segmented-control-muted training-strategy-switch" id="strategySwitch" role="group" aria-label="Parallel strategy"></div>
+                </header>
+                <div class="pto-ide-frame__pane-body training-stage-body">
+                  <div class="training-canvas-host" id="trainingCanvasHost" aria-label="2.5D training object architecture">
+                    <div class="training-hud" id="trainingHud"></div>
+                    <div class="training-axis-readout" id="axisReadout">2.5D · X=module · Y=layer · Z=object depth</div>
+                  </div>
+                </div>
+              </section>
+
+              <aside class="pto-ide-frame__pane training-pane" data-ide-pane="inspector">
+                <header class="pto-ide-frame__pane-header">
+                  <div>
+                    <span class="pto-ide-frame__pane-title">Inspector</span>
+                    <span class="pto-ide-frame__pane-meta" id="inspectorMeta">selection</span>
+                  </div>
+                  <button class="btn btn-ghost btn-icon" type="button" id="clearSelection" aria-label="Clear selection" title="Clear selection">
+                    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M18 6 6 18"></path><path d="m6 6 12 12"></path></svg>
+                  </button>
+                </header>
+                <div class="pto-ide-frame__pane-body training-inspector-body" id="inspectorBody"></div>
+              </aside>
+            </div>
+          </section>
+
+          <section class="pto-ide-frame__pane pto-ide-frame__bottom-dock training-bottom-dock" data-ide-pane="bottom-panel" data-ide-bottom-dock id="training-bottom-dock">
+            <div class="pto-ide-frame__bottom-view" data-ide-bottom-panel="visualization">
+              <header class="pto-ide-frame__pane-header">
+                <div>
+                  <span class="pto-ide-frame__pane-title">Relations</span>
+                  <span class="pto-ide-frame__pane-meta" id="bottomMeta">association and flow</span>
+                </div>
+                <div class="segmented-control segmented-control-muted training-flow-switch" role="group" aria-label="Flow phase">
+                  <button class="btn btn-ghost is-selected" type="button" data-flow-phase="all">All</button>
+                  <button class="btn btn-ghost" type="button" data-flow-phase="activation">Forward</button>
+                  <button class="btn btn-ghost" type="button" data-flow-phase="gradient">Backward</button>
+                  <button class="btn btn-ghost" type="button" data-flow-phase="communication">Comm</button>
+                </div>
+              </header>
+              <div class="pto-ide-frame__pane-body training-bottom-body">
+                <div class="training-relation-grid" id="relationGrid"></div>
+                <div class="training-source-strip" id="sourceStrip"></div>
+              </div>
+            </div>
+
+            <div class="pto-ide-frame__bottom-view pto-ide-frame__terminal" data-ide-bottom-panel="terminal" id="training-terminal-pane" hidden>
+              <div class="pto-ide-frame__terminal-tabs" aria-label="Panel tabs">
+                <div class="pto-ide-frame__terminal-tablist">
+                  <span class="pto-ide-frame__terminal-tab">Problems</span>
+                  <span class="pto-ide-frame__terminal-tab">Output</span>
+                  <span class="pto-ide-frame__terminal-tab is-selected">Terminal</span>
+                </div>
+                <div class="pto-ide-frame__terminal-actions">
+                  <button class="pto-ide-frame__terminal-action" type="button" data-ide-close="terminal" aria-label="Close terminal">
+                    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M18 6 6 18"></path><path d="m6 6 12 12"></path></svg>
+                  </button>
+                </div>
+              </div>
+              <div class="pto-ide-frame__terminal-body">
+                <p class="pto-ide-frame__terminal-line"><span class="pto-ide-frame__terminal-prompt">pto@trainviz %</span> inspect --object <span id="terminalObject">weight_q_proj</span></p>
+              </div>
+            </div>
+          </section>
+        </div>
+        <footer class="pto-ide-frame__status-strip pto-ide-frame__standalone-chrome" id="statusStrip">ready · no selection</footer>
+      </div>
+    </div>
+  </section>
+
+  <div class="training-tooltip" id="trainingTooltip" role="tooltip" hidden>
+    <strong id="tooltipTitle"></strong>
+    <span id="tooltipBody"></span>
+  </div>
+
+  <script src="../vendor/pto-design-system/patterns/workbench-shell/pattern.js"></script>
+  <script src="../vendor/pto-design-system/patterns/ide-frame/pattern.js"></script>
+  <script src="../vendor/pto-design-system/patterns/model-graphviz/pattern.js"></script>
+  <script src="data/graph.js"></script>
+  <script src="data/weight.js"></script>
+  <script src="data/comm.js"></script>
+  <script src="data/timeseries.js"></script>
+  <script src="data/training-object-registry.js"></script>
+  <script type="module" src="js/training-object-topology-ide.js"></script>
+</body>
+</html>

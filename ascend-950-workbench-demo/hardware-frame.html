@@ -9,6 +9,9 @@
       if (theme === 'light' || theme === 'dark' || theme === 'glass') {
         document.documentElement.dataset.theme = theme;
       }
+      if (window.parent !== window) {
+        document.documentElement.classList.add('is-embedded-frame');
+      }
     })();
   </script>
   <link rel="stylesheet" href="../vendor/pto-design-system/tokens/foundation.css?v=2412220">
@@ -16,7 +19,7 @@
   <link rel="stylesheet" href="../vendor/pto-design-system/tokens/components.css?v=2412220">
   <link rel="stylesheet" href="../vendor/pto-design-system/patterns/aic-core-object/pattern.css?v=2412220">
   <link rel="stylesheet" href="../vendor/pto-design-system/patterns/aiv-core-object/pattern.css?v=2412220">
-  <link rel="stylesheet" href="../vendor/pto-design-system/patterns/memory-architecture/pattern.css?v=2412220">
+  <link rel="stylesheet" href="../vendor/pto-design-system/patterns/memory-architecture/pattern.css?v=ub-reuse-split-v6">
   <style>
     html,
     body {
@@ -41,6 +44,10 @@
       background-position: 0 0, 0 0, 0 0;
     }
 
+    html[data-theme='light'] {
+      background: #ffffff;
+    }
+
     body {
       background: transparent;
     }
@@ -58,6 +65,45 @@
 
     #hardwareHost .pto-mem950__notes {
       display: none;
+    }
+
+    .hardware-frame-controls {
+      position: fixed;
+      top: 12px;
+      right: 12px;
+      z-index: 100;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      padding: 4px;
+      border: 1px solid var(--border-subtle);
+      border-radius: var(--radius-md, 8px);
+      background: color-mix(in srgb, var(--background-elevated, #101010) 88%, transparent);
+      box-shadow: var(--shadow-md, 0 8px 24px rgba(0, 0, 0, 0.16));
+      backdrop-filter: var(--surface-backdrop-filter-soft, none);
+      -webkit-backdrop-filter: var(--surface-backdrop-filter-soft, none);
+    }
+
+    .is-embedded-frame .hardware-frame-controls {
+      display: none;
+    }
+
+    .hardware-frame-theme-toggle {
+      height: 28px;
+      min-width: 52px;
+      padding: 0 10px;
+      border: 1px solid var(--border-subtle);
+      border-radius: var(--radius-sm, 6px);
+      background: color-mix(in srgb, var(--surface-2, #181818) 90%, transparent);
+      color: var(--foreground-secondary, rgba(255, 255, 255, 0.72));
+      font: var(--text-body-sm, 13px/1.3 system-ui);
+      cursor: pointer;
+    }
+
+    .hardware-frame-theme-toggle:hover {
+      color: var(--foreground, white);
+      border-color: var(--border-default);
+      background: var(--state-hover, rgba(255, 255, 255, 0.08));
     }
 
     .is-path-focused [data-aic-node],
@@ -149,13 +195,17 @@
   </style>
 </head>
 <body>
+  <div class="hardware-frame-controls" aria-label="硬件图显示控制">
+    <button class="hardware-frame-theme-toggle" id="frameThemeToggle" type="button" aria-pressed="false">浅色</button>
+  </div>
   <div id="hardwareHost"></div>
   <script src="../vendor/pto-design-system/patterns/aiv-core-object/pattern.js?v=2412220"></script>
   <script src="../vendor/pto-design-system/patterns/aic-core-object/pattern.js?v=2412220"></script>
-  <script src="../vendor/pto-design-system/patterns/memory-architecture/pattern.js?v=2412220"></script>
+  <script src="../vendor/pto-design-system/patterns/memory-architecture/pattern.js?v=ub-reuse-split-v6"></script>
   <script>
     let overlay = null;
     let hoverInteractions = null;
+    let activationInteractions = null;
     const INITIAL_PRESET = new URLSearchParams(location.search).get('preset');
     let currentPreset = (INITIAL_PRESET === 'ascend910b' || INITIAL_PRESET === 'ascend950b')
       ? INITIAL_PRESET
@@ -167,6 +217,29 @@
 
     const qs = (selector, root = document) => root.querySelector(selector);
     const qsa = (selector, root = document) => Array.from(root.querySelectorAll(selector));
+
+    function normalizeTheme(value) {
+      return value === 'light' ? 'light' : 'dark';
+    }
+
+    function syncFrameThemeToggle() {
+      const button = qs('#frameThemeToggle');
+      if (!button) return;
+      const isLight = normalizeTheme(document.documentElement.dataset.theme) === 'light';
+      button.textContent = isLight ? '深色' : '浅色';
+      button.title = isLight ? '切换到深色模式' : '切换到浅色模式';
+      button.setAttribute('aria-label', button.title);
+      button.setAttribute('aria-pressed', isLight ? 'true' : 'false');
+    }
+
+    function setFrameTheme(theme) {
+      document.documentElement.dataset.theme = normalizeTheme(theme);
+      syncFrameThemeToggle();
+      requestAnimationFrame(() => {
+        overlay?.update?.();
+        postSize();
+      });
+    }
 
     const BLEED = 52;
     function postSize(type = 'hardware-size') {
@@ -280,9 +353,25 @@
       const host = qs('#hardwareHost');
       overlay?.destroy?.();
       hoverInteractions?.destroy?.();
+      activationInteractions?.destroy?.();
       window.PtoMemoryArchitecturePattern.renderArchitecture(host, currentPreset);
       overlay = window.PtoMemoryArchitecturePattern.createRouteOverlay(host, currentPreset);
       hoverInteractions = window.PtoMemoryArchitecturePattern.attachHoverInteractions(host, currentPreset, { viewportScale });
+      activationInteractions = window.PtoMemoryArchitecturePattern.attachNodeActivation?.(host, currentPreset, {
+        selector: '[data-aiv-node="buffer:UB"]',
+        label: (target, detail) => `Open ${detail.coreTitle || detail.coreId} UB memory reuse analysis`,
+        onActivate: (target, detail) => {
+          parent.postMessage({
+            type: 'hardware-node-activate',
+            node: detail.node,
+            buffer: detail.buffer,
+            coreId: detail.coreId,
+            coreKind: detail.coreKind,
+            coreTitle: detail.coreTitle,
+            preset: currentPreset,
+          }, '*');
+        },
+      });
       window.PtoMemoryArchitecturePattern.setDetailVisibility(host, detailsVisible);
       applyAivFolded(aivFolded);
       requestAnimationFrame(() => {
@@ -341,7 +430,11 @@
     });
 
     window.addEventListener('resize', () => postSize());
+    qs('#frameThemeToggle')?.addEventListener('click', () => {
+      setFrameTheme(normalizeTheme(document.documentElement.dataset.theme) === 'light' ? 'dark' : 'light');
+    });
 
+    syncFrameThemeToggle();
     render();
     if (document.fonts && typeof document.fonts.ready?.then === 'function') {
       document.fonts.ready.then(() => {

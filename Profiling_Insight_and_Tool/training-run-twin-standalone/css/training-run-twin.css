@@ -1,0 +1,1762 @@
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  min-height: 100%;
+}
+
+/* training-metrics-chart 组件用 getComputedStyle(document.documentElement) 读取 colorVar,
+   不会向下取 .train-twin-page 上定义的同名变量,故在 :root/html 上镜像一份供其解析 */
+:root {
+  --twin-chart-loss: var(--success);
+  --twin-chart-mfu: var(--highlight-l0a-violet-300);
+  --twin-chart-acc: var(--highlight-ub-green-source);
+  --twin-chart-precision: var(--highlight-mte-amber-source);
+  --twin-chart-recall: var(--highlight-accum-orange-source);
+  --twin-chart-f1: var(--highlight-copy-blue-300);
+  --twin-chart-gradnorm: var(--highlight-l0b-deep-violet-source);
+  --twin-chart-corr: var(--danger);
+  --twin-chart-mem: var(--highlight-copy-blue-400);
+  --twin-chart-weightdiff: var(--highlight-copy-blue-source);
+}
+
+html[data-theme="light"] {
+  --twin-chart-loss: color-mix(in srgb, var(--success) 72%, black);
+  --twin-chart-mfu: color-mix(in srgb, var(--highlight-l0a-violet-300) 72%, black);
+  --twin-chart-acc: color-mix(in srgb, var(--highlight-ub-green-source) 72%, black);
+  --twin-chart-precision: color-mix(in srgb, var(--highlight-mte-amber-source) 72%, black);
+  --twin-chart-recall: color-mix(in srgb, var(--highlight-accum-orange-source) 72%, black);
+  --twin-chart-f1: color-mix(in srgb, var(--highlight-copy-blue-300) 72%, black);
+  --twin-chart-gradnorm: color-mix(in srgb, var(--highlight-l0b-deep-violet-source) 72%, black);
+  --twin-chart-corr: color-mix(in srgb, var(--danger) 82%, black);
+  --twin-chart-mem: color-mix(in srgb, var(--highlight-copy-blue-400) 72%, black);
+  --twin-chart-weightdiff: color-mix(in srgb, var(--highlight-copy-blue-source) 72%, black);
+}
+
+.train-twin-page {
+  --model-graphviz-bg: var(--background);
+  --model-graphviz-surface: color-mix(in srgb, var(--panel-shell-bg) 94%, transparent);
+  --model-graphviz-surface-soft: color-mix(in srgb, var(--surface-3) 48%, transparent);
+  --model-graphviz-stage-bg: var(--background);
+  --model-graphviz-line: var(--foreground);
+  --model-graphviz-line-soft: var(--border-strong);
+  --model-graphviz-node-label: var(--foreground);
+  --model-graphviz-node-type: var(--foreground-secondary);
+  --model-graphviz-cluster-label: color-mix(in srgb, var(--foreground) 86%, transparent);
+  --model-graphviz-toggle-bg: var(--state-focus);
+  --model-graphviz-toggle-border: var(--border-strong);
+  --model-graphviz-toggle-icon: var(--foreground);
+  --model-graphviz-tensor-fill: color-mix(in srgb, var(--surface-4) 72%, var(--foreground));
+  --model-graphviz-tensor-stroke: var(--border-strong);
+  --model-graphviz-panel-bg: color-mix(in srgb, var(--panel-shell-bg) 94%, transparent);
+  --model-graphviz-panel-header-bg: color-mix(in srgb, var(--panel-shell-bg) 96%, transparent);
+  --model-graphviz-panel-body-bg: linear-gradient(180deg, color-mix(in srgb, var(--surface-2) 66%, transparent), color-mix(in srgb, var(--panel-shell-bg) 94%, transparent));
+  --model-graphviz-code-bg: color-mix(in srgb, var(--background) 88%, black);
+  --model-graphviz-code-text: var(--foreground);
+  --model-graphviz-code-string: var(--highlight-copy-blue-300);
+  --model-graphviz-code-number: var(--highlight-l0a-violet-300);
+  --model-graphviz-code-punctuation: var(--foreground-secondary);
+  --model-graphviz-report-p0: var(--danger);
+  --model-graphviz-report-p1: var(--warning);
+  --model-graphviz-report-p2: var(--highlight-mte-amber-source);
+  --model-graphviz-report-priority-on-dark: var(--foreground);
+  --model-graphviz-report-priority-on-light: var(--background);
+  --model-graphviz-node-shadow: none;
+  --model-graphviz-parent-shadow: none;
+  --model-graphviz-panel-shadow: none;
+
+  --twin-chart-loss: var(--success);
+  --twin-chart-mfu: var(--highlight-l0a-violet-300);
+  --twin-chart-acc: var(--highlight-ub-green-source);
+  --twin-chart-precision: var(--highlight-mte-amber-source);
+  --twin-chart-recall: var(--highlight-accum-orange-source);
+  --twin-chart-f1: var(--highlight-copy-blue-300);
+  --twin-chart-gradnorm: var(--highlight-l0b-deep-violet-source);
+  --twin-chart-corr: var(--danger);
+  --twin-chart-mem: var(--highlight-copy-blue-400);
+  --twin-chart-weightdiff: var(--highlight-copy-blue-source);
+  --twin-util-low: color-mix(in srgb, var(--highlight-copy-blue-300) 42%, var(--background));
+  --twin-util-mid: color-mix(in srgb, var(--success) 54%, var(--background));
+  --twin-util-high: color-mix(in srgb, var(--success) 72%, var(--highlight-copy-blue-300) 14%);
+  --twin-thermal-risk: color-mix(in srgb, var(--danger) 88%, white 8%);
+
+  margin: 0;
+  min-height: 100vh;
+  overflow: hidden;
+  background: var(--background);
+  color: var(--foreground);
+  font-family: var(--font-sans);
+  font-size: 14px;
+  line-height: var(--line-height-body);
+}
+
+html[data-theme="light"] .train-twin-page {
+  --model-graphviz-surface: color-mix(in srgb, var(--panel-shell-bg) 96%, white);
+  --model-graphviz-surface-soft: color-mix(in srgb, var(--surface-1) 88%, white);
+  --model-graphviz-line: color-mix(in srgb, var(--foreground-secondary) 72%, transparent);
+  --model-graphviz-line-soft: color-mix(in srgb, var(--border-strong) 58%, transparent);
+  --model-graphviz-toggle-bg: color-mix(in srgb, var(--highlight-copy-blue-300) 24%, white);
+  --model-graphviz-tensor-fill: color-mix(in srgb, var(--highlight-copy-blue-300) 18%, white);
+  --model-graphviz-code-bg: color-mix(in srgb, var(--surface-1) 94%, white);
+  --twin-chart-loss: color-mix(in srgb, var(--success) 72%, black);
+  --twin-chart-mfu: color-mix(in srgb, var(--highlight-l0a-violet-300) 72%, black);
+  --twin-chart-acc: color-mix(in srgb, var(--highlight-ub-green-source) 72%, black);
+  --twin-chart-precision: color-mix(in srgb, var(--highlight-mte-amber-source) 72%, black);
+  --twin-chart-recall: color-mix(in srgb, var(--highlight-accum-orange-source) 72%, black);
+  --twin-chart-f1: color-mix(in srgb, var(--highlight-copy-blue-300) 72%, black);
+  --twin-chart-gradnorm: color-mix(in srgb, var(--highlight-l0b-deep-violet-source) 72%, black);
+  --twin-chart-corr: color-mix(in srgb, var(--danger) 82%, black);
+  --twin-chart-mem: color-mix(in srgb, var(--highlight-copy-blue-400) 72%, black);
+  --twin-chart-weightdiff: color-mix(in srgb, var(--highlight-copy-blue-source) 72%, black);
+  --twin-util-low: color-mix(in srgb, var(--highlight-copy-blue-300) 18%, white);
+  --twin-util-mid: color-mix(in srgb, var(--success) 34%, white);
+  --twin-util-high: color-mix(in srgb, var(--success) 54%, white);
+  --twin-thermal-risk: color-mix(in srgb, var(--danger) 72%, white);
+}
+
+html[data-theme="light"] .train-twin-page .twin-graph-card,
+html[data-theme="light"] .train-twin-page .twin-monitor-card,
+html[data-theme="light"] .train-twin-page .twin-locate-chain {
+  border-color: transparent;
+  background: #fff;
+  box-shadow: none;
+}
+
+/* pane 本体的底色/边框/模糊由 patterns/ide-frame 的共享 IDE skin(--ide-frame-pane-fill 等)统一提供,
+   浅/深色主题自适应在 ide-frame-pattern.css 里已经做了,这里不再覆盖 */
+
+html[data-theme="light"] .train-twin-page .twin-center-scroll {
+  padding: 0;
+}
+
+html[data-theme="light"] .train-twin-page .twin-graph-card {
+  padding: 0;
+  border-radius: 0;
+  background: transparent;
+}
+
+html[data-theme="light"] .train-twin-page .twin-architecture-stage,
+html[data-theme="light"] .train-twin-page .twin-model-training-graphviz {
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+}
+
+html[data-theme="light"] .train-twin-page .twin-option,
+html[data-theme="light"] .train-twin-page .twin-check,
+html[data-theme="light"] .train-twin-page .twin-vitals article,
+html[data-theme="light"] .train-twin-page .twin-hardware-kpis div,
+html[data-theme="light"] .train-twin-page .twin-outgrid div {
+  border-color: transparent;
+  background: #fff;
+}
+
+html[data-theme="light"] .train-twin-page .twin-vitals article,
+html[data-theme="light"] .train-twin-page .twin-hardware-kpis div,
+html[data-theme="light"] .train-twin-page .twin-outgrid div {
+  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.035);
+}
+
+html[data-theme="light"] .train-twin-page .twin-option:hover {
+  background: color-mix(in srgb, var(--surface-2) 44%, white);
+}
+
+html[data-theme="light"] .train-twin-page .twin-option:focus,
+html[data-theme="light"] .train-twin-page .twin-option:focus-visible,
+html[data-theme="light"] .train-twin-page .twin-segment .btn:focus,
+html[data-theme="light"] .train-twin-page .twin-segment .btn:focus-visible {
+  outline: none;
+}
+
+html[data-theme="light"] .train-twin-page .twin-option.is-selected,
+html[data-theme="light"] .train-twin-page .twin-segment .btn.is-selected,
+.train-twin-page[data-theme="light"] .twin-option.is-selected,
+.train-twin-page[data-theme="light"] .twin-segment .btn.is-selected {
+  border-color: transparent;
+  background: var(--highlight-copy-blue-100, #dde8fd);
+  box-shadow: none;
+  color: var(--foreground);
+}
+
+html[data-theme="light"] .train-twin-page .twin-option.is-selected:hover,
+html[data-theme="light"] .train-twin-page .twin-segment .btn.is-selected:hover,
+.train-twin-page[data-theme="light"] .twin-option.is-selected:hover,
+.train-twin-page[data-theme="light"] .twin-segment .btn.is-selected:hover {
+  background: color-mix(in srgb, var(--highlight-copy-blue-100, #dde8fd) 82%, var(--highlight-copy-blue-200, #b1cafc));
+}
+
+html[data-theme="light"] .train-twin-page .twin-dim,
+html[data-theme="light"] .train-twin-page .stat-chip,
+html[data-theme="light"] .train-twin-page .twin-status,
+/* 默认极简:透明无框,只在悬浮时浮起,浅/深色都走通用 .twin-progress-status:hover 规则 */
+
+/* 顶栏 chrome(标题/透明背景/rail)由 patterns/ide-frame 提供,.twin-topbar/.twin-title-block/.twin-kicker/
+   .twin-topbar-actions 等旧顶栏容器 class 已随 ide-frame 迁移移除;主题切换按钮改用 ide-frame 自带的
+   .pto-ide-frame__window-action + 内联月亮/太阳 SVG(见 training-monitoring.html #themeToggle),不再需要这里的
+   私有 pill/knob 样式(.twin-theme-toggle / .twin-theme-toggle-icon 已删除) */
+
+.train-twin-page .btn {
+  font-size: 14px;
+}
+
+.twin-status,
+.twin-dim,
+.twin-swatch,
+.stat-chip {
+  flex: 0 0 auto;
+}
+
+.twin-status {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-height: 28px;
+  padding: 0 var(--space-3);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-pill);
+  background: var(--surface-1);
+  color: var(--success);
+  font: var(--text-mono);
+  font-size: 14px;
+}
+
+.twin-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: var(--radius-pill);
+  background: currentColor;
+  animation: twinBlink 1.6s infinite;
+}
+
+@keyframes twinBlink {
+  0%,
+  100% { opacity: 1; }
+  50% { opacity: 0.35; }
+}
+
+/* 顶栏「训练进度」:默认极简(当前 step · 进度条含问题点 · 总 step),悬浮动效撑大再显示百分比 + epoch */
+.twin-progress-status {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 10px;
+  min-height: 32px;
+  padding: 4px 8px;
+  border: 1px solid transparent;
+  border-radius: var(--radius-md);
+  background: transparent;
+  color: var(--foreground);
+  transition: background 180ms ease, border-color 180ms ease, box-shadow 180ms ease;
+}
+.twin-progress-status:hover {
+  background: var(--surface-1);
+  border-color: var(--border-subtle);
+  box-shadow: 0 4px 14px -6px rgba(0, 0, 0, 0.35);
+}
+
+/* 左右 step 单号 */
+.twin-progress-step {
+  flex: none;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  font-weight: var(--font-weight-semibold);
+  font-variant-numeric: tabular-nums;
+  color: var(--foreground);
+  white-space: nowrap;
+}
+.twin-progress-step--total {
+  color: var(--foreground-muted);
+  font-weight: var(--font-weight-medium);
+}
+/* 当前/总 step 合并成「48,230/12000」:内联组紧凑排列,不受 .twin-progress-status 的 gap:10px 影响 */
+.twin-progress-steps {
+  display: inline-flex;
+  align-items: baseline;
+  flex: none;
+}
+.twin-progress-step-sep {
+  margin: 0 2px;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--foreground-muted);
+}
+
+/* 进度条:默认细,悬浮加粗 */
+.twin-progress-status-track {
+  position: relative;
+  width: 148px;
+  height: 5px;
+  border-radius: 999px;
+  background: var(--state-muted);
+  transition: height 180ms ease;
+}
+.twin-progress-status:hover .twin-progress-status-track {
+  height: 8px;
+}
+
+.twin-progress-status-fill {
+  position: absolute;
+  left: 0;
+  top: 0;
+  overflow: hidden;
+  width: 0%;
+  height: 100%;
+  border-radius: inherit;
+  background: #3b82f6;
+  transition: width 0.6s ease;
+}
+
+.twin-progress-status-fill::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  width: 40%;
+  background: linear-gradient(90deg, transparent, color-mix(in srgb, white 65%, transparent), transparent);
+  transform: translateX(-120%);
+  animation: twinProgressFlow 1.8s linear infinite;
+}
+
+/* 进度条内问题点标注:带白边的纵向线(略高于轨道),颜色按严重度 P0 红 / P1 橙 */
+.twin-progress-marker {
+  position: absolute;
+  top: -2px;
+  bottom: -2px;
+  width: 3px;
+  transform: translateX(-50%);
+  border-radius: 1.5px;
+  box-shadow: 0 0 0 1px var(--surface-1);
+  cursor: pointer;
+  z-index: 3;
+  transition: transform 140ms ease;
+}
+.twin-progress-marker.is-p0 { background: #dc2626; }
+.twin-progress-marker.is-p1 { background: #ea580c; }
+.twin-progress-marker:hover { transform: translateX(-50%) scaleX(2); }
+
+/* 进度条内 checkpoint 标注:绿色菱形,略低于问题标记 */
+.twin-progress-checkpoint {
+  position: absolute;
+  top: 1px;
+  bottom: 1px;
+  width: 8px;
+  height: 8px;
+  margin-top: -3px;
+  background: #10b981;
+  border: 1.5px solid var(--surface-1);
+  transform: translateX(-50%) rotate(45deg);
+  border-radius: 1.5px;
+  z-index: 2;
+  cursor: default;
+}
+.twin-progress-checkpoint:not(.is-reached) {
+  background: var(--foreground-muted);
+  opacity: 0.45;
+}
+
+/* 悬浮撑大:百分比 + epoch 从右侧滑入(收起时用负 margin 抵消 flex gap,不占位) */
+.twin-progress-detail {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  max-width: 0;
+  margin-left: -10px;
+  opacity: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  transform: translateX(-4px);
+  transition: max-width 220ms ease, opacity 160ms ease, transform 220ms ease, margin-left 220ms ease;
+}
+.twin-progress-status:hover .twin-progress-detail {
+  max-width: 180px;
+  margin-left: 0;
+  opacity: 1;
+  transform: translateX(0);
+}
+.twin-progress-pct {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  font-weight: var(--font-weight-semibold);
+  font-variant-numeric: tabular-nums;
+  color: #3b82f6;
+}
+.twin-progress-sep {
+  flex: none;
+  width: 1px;
+  height: 12px;
+  background: var(--border-subtle);
+}
+.twin-progress-epoch {
+  font-size: 11px;
+  color: var(--foreground-secondary);
+  white-space: nowrap;
+}
+.twin-progress-epoch strong {
+  margin-left: 2px;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  font-weight: var(--font-weight-semibold);
+  color: var(--foreground);
+}
+
+/* 顶层 shell/工作区网格(.twin-shell/.twin-work-area 网格布局)已由 patterns/ide-frame +
+   patterns/workbench-shell 的 split/pane/gutter 接管,底部 Timeline dock 的高度拖拽也改用
+   workbench-shell 自带的可拖拽 gutter(见 #twinWorkArea 所在的 standalone-vertical split);
+   下面只保留仍在业务内容里使用的 class */
+
+.twin-timeline-body {
+  /* 泳道图(.opv-swimlane)自带内部横/纵向滚动,这里交给它管理,避免叠出两层滚动条 */
+  overflow: hidden;
+}
+
+.twin-timeline-subtitle {
+  margin: 2px 0 0;
+  font-size: 11px;
+  color: var(--foreground-secondary);
+  line-height: 1.4;
+}
+
+/* 定位链模式:整网图列与训练监控/定位链列合并为一块大面板(见 training-run-twin.js
+   showLocateChainPanel/hideLocateChainPanel 对 #twinWorkArea 的 .is-merged 切换) */
+#twinWorkArea.is-merged {
+  gap: 0;
+}
+
+#twinWorkArea.is-merged > .pto-workbench-shell__split-gutter {
+  display: none;
+}
+
+/* 合并后,两块子 pane 去掉相邻边的圆角/边框,读起来是同一块面板;底色/模糊仍由 ide-frame pane-fill 提供 */
+#twinWorkArea.is-merged > .twin-center-pane {
+  border-top-right-radius: 0;
+  border-bottom-right-radius: 0;
+  border-right: 0;
+}
+
+#twinWorkArea.is-merged > .twin-monitor-pane {
+  border-top-left-radius: 0;
+  border-bottom-left-radius: 0;
+  border-left: 0;
+}
+
+/* 左侧「整网图 / 问题一」标题头 + 右侧定位链导航,拼成一条贯通整块面板的头部栏:
+   两者等高、共用一条底部分隔线,下方才是图 / 图表正文 */
+#twinWorkArea.is-merged .twin-center-pane > .pto-ide-frame__pane-header,
+#twinWorkArea.is-merged .twin-locate-chain {
+  height: 78px;
+  min-height: 78px;
+  box-sizing: border-box;
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+#twinWorkArea.is-merged .twin-locate-chain {
+  position: sticky;
+  top: 0;
+  z-index: 5;
+  margin: 0;
+  padding: 0 var(--space-4);
+  align-items: center;
+  border-top: 0;
+  border-left: 0;
+  border-right: 0;
+  border-radius: 0;
+  background: var(--ide-frame-pane-header-fill);
+  box-shadow: none;
+}
+
+/* 头部要塞下 kicker+title+meta 三行,比 ide-frame 默认 32px 高;通过官方允许的
+   --ide-frame-header-height token override 加高,而不是重写 .pto-ide-frame__pane-header 本身 */
+.twin-pane-header {
+  --ide-frame-header-height: 58px;
+  padding-left: 24px;
+  padding-right: 24px;
+}
+
+.twin-pane-header-title-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+.twin-pane-scroll,
+.twin-center-scroll,
+.twin-monitor-scroll {
+  flex: 1;
+  min-height: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+  padding: var(--space-4);
+}
+
+.twin-pane-scroll,
+.twin-monitor-scroll {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.twin-center-scroll {
+  display: grid;
+  grid-template-rows: minmax(0, 1fr);
+  overflow: hidden;
+}
+
+.twin-control-section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.twin-control-section h2,
+.twin-card-heading h2 {
+  margin: 0;
+  color: var(--foreground);
+  font-size: var(--font-size-title-sm);
+  line-height: 1.3;
+  font-weight: var(--font-weight-semibold);
+  letter-spacing: 0;
+}
+
+.twin-option-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.twin-option {
+  width: 100%;
+  min-height: 64px;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: center;
+  gap: 3px;
+  padding: var(--space-3);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-lg);
+  background: var(--surface-1);
+  color: var(--foreground);
+  cursor: pointer;
+  text-align: left;
+  font-family: var(--font-sans);
+  transition: background var(--duration-fast) var(--easing-default), border-color var(--duration-fast) var(--easing-default);
+}
+
+.twin-option:hover {
+  border-color: var(--border-default);
+  background: var(--surface-2);
+}
+
+.twin-option.is-selected {
+  border-color: var(--border-strong);
+  background: var(--surface-3);
+}
+
+.twin-option span {
+  font-size: 14px;
+  font-weight: var(--font-weight-semibold);
+  line-height: 1.35;
+}
+
+.twin-option small,
+.twin-check small,
+.twin-vitals small,
+.twin-outgrid small {
+  color: var(--foreground-secondary);
+  font-size: 14px;
+  line-height: 1.35;
+}
+
+.twin-segment {
+  width: 100%;
+  flex-wrap: wrap;
+}
+
+.twin-checklist {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.twin-check {
+  display: grid;
+  grid-template-columns: 18px minmax(0, 1fr);
+  gap: var(--space-2);
+  padding: var(--space-3);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  background: var(--surface-1);
+}
+
+.twin-check::before {
+  content: "";
+  width: 10px;
+  height: 10px;
+  margin-top: 5px;
+  border-radius: var(--radius-pill);
+  background: var(--success);
+}
+
+.twin-check[data-state="warn"]::before {
+  background: var(--warning);
+}
+
+.twin-check[data-state="danger"]::before {
+  background: var(--danger);
+}
+
+.twin-check strong {
+  display: block;
+  color: var(--foreground);
+  font-size: 14px;
+  line-height: 1.35;
+}
+
+.twin-graph-card,
+.twin-monitor-card {
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-lg);
+  background: var(--surface-1);
+}
+
+.twin-graph-card,
+.twin-monitor-card {
+  padding: var(--space-4);
+}
+
+.twin-graph-card {
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  padding: var(--space-2);
+}
+
+.twin-card-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-3);
+  margin-bottom: var(--space-3);
+}
+
+.twin-card-heading p {
+  margin: 4px 0 0;
+  color: var(--foreground-secondary);
+  font-size: 14px;
+  line-height: var(--line-height-body);
+}
+
+.twin-dim {
+  display: inline-flex;
+  align-items: center;
+  min-height: 24px;
+  padding: 0 var(--space-2);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-md);
+  background: var(--surface-2);
+  color: var(--foreground-secondary);
+  font: var(--text-mono);
+  font-size: 14px;
+}
+
+.twin-architecture-stage {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  border-radius: var(--radius-lg);
+  background: transparent;
+  overflow: hidden;
+}
+
+.twin-model-training-graphviz {
+  width: 100%;
+  height: 100%;
+  display: block;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  background: var(--background);
+}
+
+.twin-model-training-graphviz .pto-model-training-hover {
+  font-size: 14px;
+}
+
+@keyframes twinProgressFlow {
+  0% { transform: translateX(-120%); }
+  100% { transform: translateX(350%); }
+}
+
+.twin-vitals span,
+.twin-outgrid span {
+  color: var(--foreground-secondary);
+  font-size: 14px;
+  line-height: 1.35;
+}
+
+.twin-vitals {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: var(--space-2);
+}
+
+.twin-vitals article,
+.twin-outgrid div {
+  min-width: 0;
+  padding: var(--space-3);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  background: var(--surface-1);
+}
+
+.twin-vitals strong {
+  display: block;
+  margin-top: var(--space-1);
+  color: var(--foreground);
+  font-family: var(--font-mono);
+  font-size: 19px;
+  line-height: 1.2;
+}
+
+.twin-accuracy-card {
+  display: flex;
+  flex-direction: column;
+  flex-shrink: 0;
+  padding: var(--space-2);
+}
+
+/* 精度指标:本页直出的合成时序图卡组(loss/acc/precision/recall/F1/corr),
+   复用 pangu-moe-trainviz 的 training-metrics-chart 组件(window.PtoTrainingMetricsChart),
+   数据与卡片布局本页独立生成,不再经 iframe 内嵌整页 */
+.twin-accuracy-charts {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  height: 640px;
+  min-height: 0;
+}
+
+.twin-accuracy-smooth {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 11px;
+  color: var(--foreground-secondary);
+  white-space: nowrap;
+}
+
+.twin-accuracy-smooth input[type="range"] {
+  appearance: none;
+  -webkit-appearance: none;
+  width: 120px;
+  height: 18px;
+  margin: 0;
+  background: transparent;
+  cursor: pointer;
+}
+
+.twin-accuracy-smooth input[type="range"]::-webkit-slider-runnable-track {
+  height: 4px;
+  border-radius: var(--radius-pill);
+  background: var(--floating-playback-scrubber-track);
+}
+
+.twin-accuracy-smooth input[type="range"]::-moz-range-track {
+  height: 4px;
+  border-radius: var(--radius-pill);
+  background: var(--floating-playback-scrubber-track);
+}
+
+.twin-accuracy-smooth input[type="range"]::-webkit-slider-thumb {
+  appearance: none;
+  -webkit-appearance: none;
+  width: 12px;
+  height: 12px;
+  margin-top: -4px;
+  border-radius: 50%;
+  background: var(--highlight-copy-blue-source);
+  cursor: pointer;
+}
+
+.twin-accuracy-smooth input[type="range"]::-moz-range-thumb {
+  width: 12px;
+  height: 12px;
+  border: none;
+  border-radius: 50%;
+  background: var(--highlight-copy-blue-source);
+  cursor: pointer;
+}
+
+.twin-accuracy-smooth output {
+  min-width: 30px;
+  text-align: right;
+  font-family: var(--font-mono);
+  font-size: 11px;
+}
+
+.twin-accuracy-cards {
+  flex: 1;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  /* 7 张卡(loss/acc/precision/recall/gradnorm/weightdiff/corr) → 2 列 4 行,最后一格空着 */
+  grid-template-rows: repeat(4, minmax(0, 1fr));
+  gap: var(--space-2);
+}
+
+/* 高度与左侧精度栏单行图表卡对齐：精度栏 (640px - 3*space-2 gap) / 4 行 = 154px，
+   让 infra 的 MFU / 显存利用率图表和精度栏单张图表看起来同一网格尺寸。 */
+.twin-infra-charts {
+  flex: none;
+  height: 154px;
+  min-height: 0;
+  margin-bottom: var(--space-2);
+}
+
+.twin-infra-charts .twin-accuracy-cards {
+  grid-template-rows: 1fr;
+  height: 100%;
+}
+
+.twin-infra-charts .twin-accuracy-metric-card__chart {
+  min-height: 100px;
+}
+
+.twin-accuracy-metric-card {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+  min-height: 0;
+  padding: var(--space-2);
+  overflow: hidden;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  background: color-mix(in srgb, var(--foreground) 3%, transparent);
+}
+
+.twin-accuracy-metric-card__head {
+  flex: none;
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.twin-accuracy-metric-card__name {
+  font-size: 11px;
+  color: var(--foreground-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.twin-accuracy-metric-card__val {
+  font-family: var(--font-mono);
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--foreground);
+  flex: none;
+}
+
+.twin-accuracy-metric-card__note {
+  font-size: 9px;
+  color: var(--foreground-muted);
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.twin-accuracy-legend {
+  flex: none;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 3px 10px;
+}
+
+.twin-accuracy-legend span {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 11px;
+  color: var(--foreground-secondary);
+  white-space: nowrap;
+}
+
+.twin-accuracy-legend i {
+  width: 12px;
+  height: 3px;
+  border-radius: 2px;
+  flex: none;
+}
+
+.twin-accuracy-metric-card__chart {
+  flex: 1;
+  min-height: 0;
+  width: 100%;
+}
+
+@media (max-width: 920px) {
+  .twin-accuracy-charts {
+    height: auto;
+  }
+  .twin-accuracy-cards {
+    grid-template-columns: 1fr;
+    grid-template-rows: none;
+  }
+  .twin-accuracy-metric-card__chart {
+    min-height: 120px;
+  }
+}
+
+/* training-metrics-chart 组件自绘 SVG 的样式作用域(.pto-tmchart*),随本卡组一起独立演进 */
+.pto-tmchart { position: relative; width: 100%; font-family: var(--font-sans); user-select: none; }
+.pto-tmchart__svg { display: block; width: 100%; height: auto; overflow: visible; }
+.pto-tmchart__grid line { stroke: var(--border-subtle); stroke-width: 1; }
+.pto-tmchart__axis line { stroke: var(--border-default); stroke-width: 1; }
+.pto-tmchart__axis text,
+.pto-tmchart__tick text { font-family: var(--font-mono); font-size: 10px; fill: var(--foreground-muted); }
+.pto-tmchart__line { fill: none; stroke-width: 1; stroke-linejoin: round; stroke-linecap: round; }
+.pto-tmchart__line--emph { stroke-width: 1.3; }
+.pto-tmchart__anomaly-band { fill: var(--danger); opacity: .10; }
+.pto-tmchart__anomaly-dot { fill: var(--danger); stroke: var(--background); stroke-width: 1.5; }
+.pto-tmchart__brush { fill: var(--primary); opacity: .10; }
+.pto-tmchart__brush-edge { stroke: var(--primary); stroke-width: 1; opacity: .55; }
+.pto-tmchart__cursor { stroke: var(--foreground-secondary); stroke-width: 1; stroke-dasharray: 3 3; }
+/* 常驻事故点标注(spec.markerStep)：红色虚线，与上面跟随 hover 出现的中性色游标区分开。
+   默认页精度/infra 栏 8~10 张卡同屏并列时,每张都画一条会显得刺眼,故比强调线细一半、
+   再叠加 50% 透明度压暗——仍然可辨识,但不再是视觉第一焦点。 */
+.pto-tmchart__marker { stroke: var(--danger); stroke-width: 0.9; stroke-dasharray: 4 3; opacity: .5; pointer-events: none; }
+.pto-tmchart__cursor-chip { fill: var(--surface-4); stroke: var(--border-strong); stroke-width: 1; }
+.pto-tmchart__cursor-chip-text { font-family: var(--font-mono); font-size: 10px; fill: var(--foreground); }
+/* SVG 内嵌气泡样式：training-metrics-chart 已改用下面的 body 浮层，这三条现由
+   js/training-monitoring-v2-deck.js 的侧视层堆悬浮气泡复用（同一套视觉语言，不另起一套）。 */
+.pto-tmchart__cursor-tip-bg { fill: var(--surface-4); stroke: var(--border-strong); stroke-width: 1; filter: drop-shadow(0 4px 12px rgba(0,0,0,.28)); }
+.pto-tmchart__cursor-tip-step { font-family: var(--font-mono); font-size: 10px; font-weight: 700; fill: var(--foreground); }
+.pto-tmchart__cursor-tip-val { font-family: var(--font-mono); font-size: 10px; fill: var(--foreground-secondary); }
+
+/* hover 气泡：挂在 <body> 上的 position:fixed 浮层(不是 SVG 里的 <g>),
+   这样卡片 overflow:hidden 裁不到它,窄卡上也能完整显示;位置由 JS 按游标屏幕 x 每次重算,
+   气泡因此跟着鼠标左右走,而不是被夹在绘图区左侧长期挡住曲线。视觉沿用图表既有的 surface-4 面板语言。 */
+.pto-tmchart-tip {
+  position: fixed; left: 0; top: 0; z-index: 9000; pointer-events: none;
+  display: flex; flex-direction: column; gap: 2px;
+  padding: 6px 8px; border-radius: 5px;
+  background: var(--surface-4); border: 1px solid var(--border-strong);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, .28);
+  font-family: var(--font-mono); font-size: 10px; line-height: 14px;
+  color: var(--foreground-secondary); white-space: nowrap;
+}
+.pto-tmchart-tip[hidden] { display: none; }
+.pto-tmchart-tip__head { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.pto-tmchart-tip__step { font-weight: 700; color: var(--foreground); }
+.pto-tmchart-tip__tag { font-family: var(--font-sans); font-size: 9px; font-weight: 700; color: #fff; background: var(--danger); border-radius: 3px; padding: 0 5px; }
+.pto-tmchart-tip__row { display: flex; align-items: center; gap: 5px; }
+.pto-tmchart-tip__row i { width: 8px; height: 8px; border-radius: 2px; flex: none; }
+.pto-tmchart-tip__val { margin-left: auto; padding-left: 8px; color: var(--foreground); }
+.pto-tmchart__plot-hit { fill: transparent; cursor: crosshair; }
+.pto-tmchart__legend { display: flex; flex-wrap: wrap; gap: 14px; margin-top: 8px; }
+.pto-tmchart__legend-item { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: var(--foreground-secondary); }
+.pto-tmchart__legend-swatch { width: 14px; height: 3px; border-radius: 2px; }
+
+.twin-hardware-kpis {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: var(--space-2);
+  margin-bottom: var(--space-3);
+}
+
+.twin-hardware-kpis div {
+  min-width: 0;
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  background: var(--surface-1);
+}
+
+.twin-hardware-kpis span {
+  display: block;
+  color: var(--foreground-secondary);
+  font-size: 12px;
+  line-height: 1.3;
+}
+
+.twin-hardware-kpis strong {
+  display: block;
+  margin-top: 2px;
+  overflow: hidden;
+  color: var(--foreground);
+  font-size: 14px;
+  line-height: 1.3;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.twin-heat {
+  display: grid;
+  grid-template-columns: repeat(32, minmax(0, 1fr));
+  gap: 3px;
+  /* 集群规模默认 2048 格,子树内部状态变化(util 随机游走等)不该逼着浏览器重新排布
+     页面其它区域,反过来也是——整网侧视图拖拽时对自己那批层卡片做 getBoundingClientRect()
+     本会强制刷新整个文档的布局,这里用 layout containment 把这颗上千节点的子树隔离出去,
+     不再被牵连进无关区域触发的强制回流。不用 contain:paint,因为格子悬浮提示(::after)
+     会溢出到格子上方,paint containment 会把首行的提示气泡裁掉。 */
+  contain: layout style;
+}
+
+.twin-heat-cell {
+  position: relative;
+  aspect-ratio: 1;
+  border-radius: 2px;
+  cursor: help;
+}
+/* EP rank 列底色(8 色调循环),从 JS 内联 style.background 挪成类,配合 training-run-twin.js
+   的 EP_TINT_COLORS 数组保持颜色一致 —— 数千个热力图格子共享同一批类,浏览器可复用计算样式,
+   避免每格各自解析一次唯一的内联颜色字符串(大集群规模下这是首屏/每次刷新的明显开销)。 */
+.twin-heat-cell.ep-tint-0 { background: rgba(59, 130, 246, 0.06); }
+.twin-heat-cell.ep-tint-1 { background: rgba(16, 185, 129, 0.06); }
+.twin-heat-cell.ep-tint-2 { background: rgba(245, 158, 11, 0.06); }
+.twin-heat-cell.ep-tint-3 { background: rgba(139, 92, 246, 0.06); }
+.twin-heat-cell.ep-tint-4 { background: rgba(6, 182, 212, 0.06); }
+.twin-heat-cell.ep-tint-5 { background: rgba(239, 68, 68, 0.06); }
+.twin-heat-cell.ep-tint-6 { background: rgba(34, 197, 94, 0.06); }
+.twin-heat-cell.ep-tint-7 { background: rgba(168, 85, 247, 0.06); }
+/* DP 分组容器：带边框和标签 */
+.twin-heat-dp-group {
+  position: relative;
+  border: 1.5px solid var(--border-default);
+  border-radius: 4px;
+  padding: 3px;
+}
+.twin-heat-dp-group::before {
+  content: attr(data-dp-label);
+  position: absolute;
+  left: -6px;
+  top: 50%;
+  transform: translateY(-50%) translateX(-100%);
+  font-size: 9px;
+  font-weight: 600;
+  color: var(--foreground-muted);
+  white-space: nowrap;
+  padding-right: 4px;
+}
+
+.twin-heat-cell::before {
+  content: "";
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  width: 6px;
+  height: 6px;
+  border-radius: var(--radius-pill);
+  background: transparent;
+}
+
+.twin-heat-cell::after {
+  content: attr(data-tip);
+  position: absolute;
+  z-index: 30;
+  left: 50%;
+  bottom: calc(100% + 7px);
+  width: max-content;
+  max-width: 240px;
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  background: color-mix(in srgb, var(--surface-1) 96%, black);
+  color: var(--foreground);
+  font-size: 12px;
+  line-height: 1.45;
+  opacity: 0;
+  pointer-events: none;
+  transform: translateX(-50%) translateY(3px);
+  transition: opacity var(--duration-fast) var(--easing-default), transform var(--duration-fast) var(--easing-default);
+  white-space: pre-line;
+}
+
+.twin-heat-cell:hover::after {
+  opacity: 1;
+  transform: translateX(-50%) translateY(0);
+}
+
+.twin-heat-cell.is-util-low {
+  background: var(--twin-util-low);
+}
+
+.twin-heat-cell.is-util-mid {
+  background: var(--twin-util-mid);
+}
+
+.twin-heat-cell.is-util-high {
+  background: var(--twin-util-high);
+}
+
+.twin-heat-cell.is-thermal-risk::before {
+  background: var(--twin-thermal-risk);
+}
+
+.twin-heat-cell.is-straggler {
+  box-shadow: inset 0 0 0 2px var(--twin-thermal-risk);
+}
+
+/* infra 问题热力图高亮 */
+.twin-heat-cell.is-infra-hot {
+  outline: 2px solid #dc2626;
+  outline-offset: 1px;
+  z-index: 2;
+  position: relative;
+}
+.twin-heat-cell.is-infra-warm {
+  outline: 2px solid #ea580c;
+  outline-offset: 1px;
+  z-index: 1;
+  position: relative;
+}
+
+/* infra层集群图改用 JS 气泡(可给「空等」上红字),关掉纯 CSS 的 ::after tooltip 以免双气泡 */
+.locate-infra-heat .twin-heat-cell::after {
+  content: none;
+}
+
+/* infra层集群图悬浮气泡:视觉沿用监控栏 .twin-heat-cell::after,末行「空等」问题描述用 danger 红字 */
+.locate-infra-bubble {
+  position: fixed;
+  z-index: 1000;
+  max-width: 240px;
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  background: color-mix(in srgb, var(--surface-1) 96%, black);
+  color: var(--foreground);
+  font-size: 12px;
+  line-height: 1.45;
+  box-shadow: var(--shadow-md, 0 4px 16px rgba(0,0,0,.28));
+  pointer-events: none;
+}
+.locate-infra-bubble[hidden] {
+  display: none;
+}
+.locate-infra-bubble__warn {
+  margin-top: 5px;
+  padding-top: 5px;
+  border-top: 1px solid var(--border-subtle);
+  color: var(--danger, #dc2626);
+  font-weight: 700;
+}
+
+.twin-legend {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+  margin-top: var(--space-3);
+  color: var(--foreground-secondary);
+  font-size: 14px;
+}
+
+.twin-legend span {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.twin-legend strong {
+  margin-left: auto;
+  color: var(--foreground-secondary);
+  font-family: var(--font-mono);
+  font-size: 14px;
+  font-weight: var(--font-weight-medium);
+}
+
+.twin-swatch {
+  width: 14px;
+  height: 14px;
+  border-radius: 4px;
+}
+
+.twin-swatch-util-low {
+  background: var(--twin-util-low);
+}
+
+.twin-swatch-util-mid {
+  background: var(--twin-util-mid);
+}
+
+.twin-swatch-util-high {
+  background: var(--twin-util-high);
+}
+
+.twin-swatch-thermal {
+  position: relative;
+  background: var(--surface-2);
+}
+
+.twin-swatch-thermal::after {
+  content: "";
+  position: absolute;
+  top: 3px;
+  right: 3px;
+  width: 5px;
+  height: 5px;
+  border-radius: var(--radius-pill);
+  background: var(--twin-thermal-risk);
+}
+
+.twin-monitor-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: var(--space-3);
+}
+
+/* 「制品」页签:ckpt 列表表格。dock 很宽,不套用 .twin-dock-panel 通用的 760px 限宽
+   (见下方 .twin-dock-panel > *:not(.twin-artifacts) 覆盖规则),铺满可用宽度;
+   窄屏下靠 .twin-artifacts 自身 overflow-x 滚动,不挤压事件流那条 760px 限宽规则。 */
+.twin-artifacts {
+  overflow-x: auto;
+}
+
+.twin-artifacts-table {
+  width: 100%;
+  min-width: 860px;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+.twin-artifacts-table th,
+.twin-artifacts-table td {
+  padding: var(--space-2) var(--space-3);
+  text-align: left;
+  white-space: nowrap;
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.twin-artifacts-table thead th {
+  color: var(--foreground-muted);
+  font-weight: var(--font-weight-medium);
+  font-size: 12px;
+}
+
+.twin-artifacts-table tbody tr:hover {
+  background: var(--surface-2);
+}
+
+.twin-artifacts-table tbody tr:last-child td {
+  border-bottom: 0;
+}
+
+.twin-artifacts-cell-name {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.twin-artifact-name {
+  color: var(--foreground);
+  font-weight: var(--font-weight-semibold);
+}
+
+.twin-artifacts-cell-num {
+  font-family: var(--font-mono);
+  color: var(--foreground-secondary);
+}
+
+.twin-artifacts-cell-mono {
+  font-family: var(--font-mono);
+  color: var(--foreground-muted);
+  font-size: 12px;
+}
+
+.twin-artifacts-cell-path {
+  max-width: 260px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.twin-artifacts-cell-verify {
+  color: var(--success);
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.twin-artifact-badge {
+  flex-shrink: 0;
+  padding: 3px 10px;
+  border-radius: var(--radius-pill);
+  background: color-mix(in srgb, var(--success) 16%, transparent);
+  color: var(--success);
+  font-size: 11px;
+  font-weight: var(--font-weight-semibold);
+  letter-spacing: 0.02em;
+}
+
+.twin-artifact-badge-latest {
+  background: color-mix(in srgb, var(--primary) 16%, transparent);
+  color: var(--primary);
+}
+
+.twin-event {
+  position: relative;
+  display: grid;
+  grid-template-columns: 16px minmax(0, 1fr);
+  gap: var(--space-2);
+  align-items: start;
+  padding: var(--space-2) 0;
+  color: var(--foreground-secondary);
+  font-size: 14px;
+}
+
+.twin-event::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 7px;
+  width: 1px;
+  background: var(--border-subtle);
+}
+
+.twin-event:first-child::before {
+  top: 13px;
+}
+
+.twin-event:last-child::before {
+  bottom: calc(100% - 13px);
+}
+
+.twin-event-body {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.twin-event time {
+  color: var(--foreground-muted);
+  font-family: var(--font-mono);
+  font-size: 12px;
+}
+
+.twin-event i {
+  position: relative;
+  z-index: 1;
+  width: 8px;
+  height: 8px;
+  margin-top: 6px;
+  margin-left: 3px;
+  border-radius: var(--radius-pill);
+  background: var(--foreground-muted);
+}
+
+.twin-event[data-sev="crit"] span {
+  color: var(--danger);
+}
+
+.twin-whatif {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: var(--space-3);
+}
+
+.twin-whatif label {
+  color: var(--foreground-secondary);
+  font-size: 14px;
+}
+
+.twin-whatif b {
+  float: right;
+  color: var(--foreground);
+  font-family: var(--font-mono);
+  font-size: 14px;
+}
+
+.twin-whatif input[type="range"] {
+  width: 100%;
+  margin-top: var(--space-2);
+  accent-color: var(--primary);
+}
+
+.twin-subhead {
+  margin: var(--space-4) 0 var(--space-2);
+  color: var(--foreground);
+  font-size: 13px;
+  font-weight: var(--font-weight-semibold);
+  letter-spacing: 0;
+}
+
+.twin-outgrid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: var(--space-2);
+  margin-top: var(--space-3);
+}
+
+.twin-outgrid strong {
+  display: block;
+  margin-top: var(--space-1);
+  color: var(--foreground);
+  font-family: var(--font-mono);
+  font-size: 17px;
+  line-height: 1.2;
+}
+
+@media (max-width: 1320px) {
+  .twin-monitor-grid,
+  .twin-whatif,
+  .twin-outgrid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 1080px) {
+  .twin-architecture-stage {
+    height: 420px;
+  }
+}
+
+@media (max-width: 720px) {
+  .twin-vitals,
+  .twin-monitor-grid,
+  .twin-whatif,
+  .twin-outgrid,
+  .twin-hardware-kpis {
+    grid-template-columns: 1fr;
+  }
+
+  .twin-architecture-stage {
+    height: 360px;
+  }
+
+  .twin-heat {
+    grid-template-columns: repeat(16, minmax(0, 1fr));
+  }
+}
+
+html[data-theme="light"] .train-twin-page .twin-option.is-selected,
+html[data-theme="light"] .train-twin-page .twin-segment .btn.is-selected,
+.train-twin-page[data-theme="light"] .twin-option.is-selected,
+.train-twin-page[data-theme="light"] .twin-segment .btn.is-selected {
+  border-color: transparent;
+  background: var(--highlight-copy-blue-100, #dde8fd);
+  box-shadow: none;
+  color: var(--foreground);
+}
+
+html[data-theme="light"] .train-twin-page .twin-option.is-selected:hover,
+html[data-theme="light"] .train-twin-page .twin-segment .btn.is-selected:hover,
+.train-twin-page[data-theme="light"] .twin-option.is-selected:hover,
+.train-twin-page[data-theme="light"] .twin-segment .btn.is-selected:hover {
+  background: color-mix(in srgb, var(--highlight-copy-blue-100, #dde8fd) 82%, var(--highlight-copy-blue-200, #b1cafc));
+}
+
+html[data-theme="light"] .train-twin-page .twin-option:focus,
+html[data-theme="light"] .train-twin-page .twin-option:focus-visible,
+html[data-theme="light"] .train-twin-page .twin-segment .btn:focus,
+html[data-theme="light"] .train-twin-page .twin-segment .btn:focus-visible,
+.train-twin-page[data-theme="light"] .twin-option:focus,
+.train-twin-page[data-theme="light"] .twin-option:focus-visible,
+.train-twin-page[data-theme="light"] .twin-segment .btn:focus,
+.train-twin-page[data-theme="light"] .twin-segment .btn:focus-visible {
+  outline: 0;
+  box-shadow: none;
+}
+
+/* 内嵌模式（?embed=hardware）：外部页面只取「算力占用 · 基础设施层」卡片，隐藏顶栏/rail/诊断列/架构列/Timeline dock,
+   只留训练监控 pane(inspector) 里的「硬件多卡热力图」卡片,铺满 viewport,透明背景 */
+html[data-embed="hardware"] .pto-ide-frame__topbar,
+html[data-embed="hardware"] .pto-ide-frame__activity-rail,
+html[data-embed="hardware"] .pto-ide-frame__status-strip,
+html[data-embed="hardware"] #explorerPane,
+html[data-embed="hardware"] .twin-center-pane,
+html[data-embed="hardware"] #bottomDock,
+html[data-embed="hardware"] .pto-workbench-shell__split-gutter {
+  display: none;
+}
+
+html[data-embed="hardware"] .pto-ide-frame {
+  width: 100vw;
+  height: 100vh;
+  background: transparent;
+}
+
+html[data-embed="hardware"] .pto-ide-frame__body,
+html[data-embed="hardware"] .pto-ide-frame__workarea,
+html[data-embed="hardware"] [data-ide-split] {
+  padding: 0;
+}
+
+html[data-embed="hardware"] .twin-monitor-pane {
+  flex: 1 1 100% !important;
+  width: 100% !important;
+  border: none;
+  border-radius: 0;
+  background: transparent;
+  backdrop-filter: none;
+  box-shadow: none;
+}
+
+html[data-embed="hardware"] .twin-monitor-pane > .pto-ide-frame__pane-header {
+  display: none;
+}
+
+html[data-embed="hardware"] .twin-monitor-scroll {
+  padding: var(--space-3);
+}
+
+html[data-embed="hardware"] .twin-monitor-scroll > *:not([aria-label="硬件多卡热力图"]) {
+  display: none;
+}
+
+html[data-embed="hardware"] .twin-monitor-scroll > [aria-label="硬件多卡热力图"] {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+html[data-embed="hardware"] .twin-heat {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  align-content: start;
+}
+
+/* 嵌入侧栏通常窄于 720px，会命中下方 @media (max-width:720px) 把 KPI 行折成单列——
+   内嵌场景就是要一行铺满 4 项，强制保留 4 列不换行 */
+html[data-embed="hardware"] .twin-hardware-kpis {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+/* 内嵌模式（?embed=locate-sidebar）：training-monitoring-v2.html 的「详情与修复建议」抽屉用 iframe
+   内嵌本页，只要「训练监控」侧栏(.twin-monitor-sidebar，配合 ?diagnosis=<key> 深链此时展示的就是
+   定位链面板)，隐藏顶栏/rail/问题诊断列/整网图列/Timeline dock，脱离布局流铺满 viewport */
+html[data-embed="locate-sidebar"] .pto-ide-frame__topbar,
+html[data-embed="locate-sidebar"] .pto-ide-frame__activity-rail,
+html[data-embed="locate-sidebar"] #analysisLogPane,
+html[data-embed="locate-sidebar"] #explorerPane,
+html[data-embed="locate-sidebar"] .twin-graph-card,
+html[data-embed="locate-sidebar"] .twin-pane-header,
+html[data-embed="locate-sidebar"] #bottomDock,
+html[data-embed="locate-sidebar"] .pto-workbench-shell__split-gutter {
+  display: none !important;
+}
+
+html[data-embed="locate-sidebar"] .twin-monitor-sidebar {
+  position: fixed;
+  inset: 0;
+  z-index: 10;
+  width: 100vw;
+  height: 100vh;
+}
+
+/* ── 模型层展开图(复用 ep-expert-parallel-2d.html 上方「层视图」的视觉,按 DeepSeek-V3.2 架构校准) ──
+   非嵌入:不用 iframe,直接在定位链「模型层」内容区里用同款配色/几何画一份 DeepSeek MoE 层展开图。
+   js/training-run-twin.js 的 renderTwinLayerViews() 负责生成 SVG。 */
+.twin-layerview {
+  width: 100%;
+  margin: 0 0 var(--space-2);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  background:
+    radial-gradient(circle at 74% 16%, color-mix(in srgb, #4f6df6 9%, transparent), transparent 36%),
+    color-mix(in srgb, var(--foreground) 2.5%, transparent);
+  overflow: hidden;
+}
+.twin-layerview svg {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+.twin-layerview text {
+  fill: color-mix(in srgb, var(--foreground) 74%, transparent);
+  font-family: var(--font-sans);
+}
+.twin-layerview .mono { font-family: var(--font-mono); }
+.twin-layerview .lv-lane { fill: color-mix(in srgb, var(--foreground) 78%, transparent); font-size: 15px; font-weight: 700; }
+.twin-layerview .lv-tiny { fill: color-mix(in srgb, var(--foreground-muted) 90%, transparent); font-size: 11px; font-weight: 600; }
+.twin-layerview .lv-title { fill: var(--foreground); font-size: 17px; font-weight: 800; }
+.twin-layerview .lv-sub { fill: color-mix(in srgb, var(--foreground-muted) 92%, transparent); font-size: 12px; font-weight: 600; }
+.twin-layerview [data-lv-layer] { cursor: pointer; }
+.twin-layerview [data-lv-layer]:hover rect { opacity: 0.9; }
+.twin-layerview .lv-hot { fill: #dc2626; }
+.twin-layerview .lv-legend { fill: color-mix(in srgb, var(--foreground-muted) 88%, transparent); font-size: 11px; font-weight: 600; }
+
+/* 256 专家负载热力动画(取代原 top-8 all-to-all mesh 连线动画)。
+   原实现在命中的 8 个专家之间画 C(8,2)=28 条 mesh 并逐条描边生长,但 top-k 是逐 token 算的——
+   一个 step 几万 token 就是几十万条路由,连线既画不全也读不动,还会被误读成「只有 8 条链路」。
+   现在每个专家小格的色温/亮度 ∝ 它承接的 token 量:载入时 256 格全是「均衡基准 1/256」的同一档色,
+   js/training-run-twin.js 的 startExpertHeat() 在首帧上屏后把各自的真实负载写进行内样式,
+   由下面这条 2s 过渡演出「路由坍缩」——整片退回冷蓝、只剩一格烫红。色阶蓝→绿→红,
+   与 infra 集群热力图(renderInfraHeatSnapshot)同一套语义色系。
+   不加祖先作用域:三个展开入口共用同一套格子,规则要都覆盖到——
+     · .twin-layerview        定位链「模型层展开图」(lvBuildSvg)
+     · .pto-node-expand-card  整网图里 routed_expert_bank 节点原地撑开的卡片(buildExpertBankExpandMarkup)
+     · .v3-expert-expand      v2 页 3D deck 上的同一张卡片(training-monitoring-v2-deck.js) */
+.lv-heat-cell {
+  transition: fill 2s cubic-bezier(0.35, 0, 0.2, 1), opacity 2s cubic-bezier(0.35, 0, 0.2, 1);
+}
+/* 揭示动画跑完后 startExpertHeat() 给网格挂上 is-heat-live:之后每推进一个 step 都会
+   重新着色一次(syncExpertHeatToStep),2s 跟不上步进节奏、看起来像卡住,缩到 .6s。 */
+.lv-heat-grid.is-heat-live .lv-heat-cell {
+  transition-duration: 0.6s;
+}
+/* 尊重「减少动态效果」偏好:不做过渡,startExpertHeat() 直接落到热力终态 */
+@media (prefers-reduced-motion: reduce) {
+  .lv-heat-cell,
+  .lv-heat-grid.is-heat-live .lv-heat-cell { transition: none; }
+}
+
+/* 模型层展开图右上角「最大化」按钮 + 全屏态。逻辑见 js/training-run-twin.js 的 setLayerMax()。
+   最大化用 position:fixed 铺满(带背板),动画仍跑在同一个 host 上,只是被 CSS 放大。 */
+.twin-layerview { position: relative; }
+.twin-layerview-max {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  z-index: 4;
+  width: 26px;
+  height: 26px;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  background: color-mix(in srgb, var(--surface-1) 86%, transparent);
+  color: var(--foreground-secondary);
+  cursor: pointer;
+  -webkit-backdrop-filter: blur(4px);
+  backdrop-filter: blur(4px);
+}
+.twin-layerview-max:hover { background: var(--state-hover); color: var(--foreground); }
+.twin-layerview-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 999;
+  background: color-mix(in srgb, var(--foreground) 55%, transparent);
+}
+.twin-layerview-backdrop[hidden] { display: none; }
+.twin-layerview.is-maximized {
+  position: fixed;
+  inset: 3vh 3vw;
+  z-index: 1000;
+  margin: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--surface-1);
+  box-shadow: 0 24px 80px rgba(0, 0, 0, 0.5);
+}
+.twin-layerview.is-maximized svg { width: 100%; height: 100%; }
+
+/* ── 模型层展开图搬到整网图区域展示 ──────────────────────────────────────
+   定位链「模型层」的「查看」按钮 / 整网图上问题一红框触发,#modelLayerStage 覆盖在
+   .twin-architecture-stage 上。进入展开图时:背后整网图(#graphStage)淡出消失,但保留顶栏
+   .opv-topbar 继续控制展开图的缩放(+/−/Fit)与算子染色(层级下拉在展开图下隐藏)。逻辑见
+   js/training-run-twin.js 的 openModelLayerView() / closeModelLayerView() / bindLayerViewTopbar()。 */
+#graphStage {
+  transition: opacity 0.34s ease;
+}
+/* 进入展开图:整网图与状态文字淡出消失,不再从展开图透出 */
+.twin-architecture-stage.is-layer-active #graphStage,
+.twin-architecture-stage.is-layer-active .opv-status {
+  opacity: 0;
+  pointer-events: none;
+}
+/* 顶栏保留并置于覆盖层之上,作为展开图的控制条 */
+.twin-architecture-stage.is-layer-active .opv-topbar {
+  position: relative;
+  z-index: 6;
+  background: var(--surface-1);
+}
+/* 展开图下不需要「层级」控制:隐藏其分隔线 + 标签 + 下拉 */
+.twin-architecture-stage.is-layer-active .opv-topbar .lv-topbar-level {
+  display: none;
+}
+.twin-layer-stage {
+  position: absolute;
+  inset: 0;
+  z-index: 5;
+  display: flex;
+}
+/* 覆盖层从顶栏下方开始,避免盖住作为控制条的 .opv-topbar(embed 模式顶栏高 48px) */
+.twin-architecture-stage.is-layer-active .twin-layer-stage {
+  top: 48px;
+}
+.twin-layer-stage[hidden] { display: none; }
+.twin-layer-stage .twin-layerview {
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.twin-layer-stage .twin-layerview svg { width: 100%; height: 100%; }
+.twin-layer-stage.is-entering .twin-layerview {
+  animation: twinLayerStageIn 0.5s cubic-bezier(0.2, 0.7, 0.3, 1) both;
+}
+.twin-layer-stage.is-leaving .twin-layerview {
+  animation: twinLayerStageOut 0.38s ease both;
+}
+@keyframes twinLayerStageIn {
+  from { opacity: 0; transform: scale(1.4); }
+  to   { opacity: 1; transform: scale(1); }
+}
+@keyframes twinLayerStageOut {
+  from { opacity: 1; transform: scale(1); }
+  to   { opacity: 0; transform: scale(1.3); }
+}
+/* 左右层列逐渐出现:to 缺省回落到层列自身的 opacity(.6),配合 JS 设的 animation-delay 做扩散 */
+@keyframes twinLayerTickIn {
+  from { opacity: 0; }
+}
+.twin-layer-stage-back {
+  position: absolute;
+  top: 8px;
+  left: 8px;
+  z-index: 6;
+  height: 28px;
+  padding: 0 12px;
+  display: inline-flex;
+  align-items: center;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-pill);
+  background: color-mix(in srgb, var(--surface-1) 88%, transparent);
+  color: var(--foreground-secondary);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  -webkit-backdrop-filter: blur(4px);
+  backdrop-filter: blur(4px);
+}
+.twin-layer-stage-back:hover { background: var(--state-hover); color: var(--foreground); }
+
+/* 「模型层」内容区里替换原内嵌大图的「查看」CTA */
+.twin-layerview-cta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  margin: 0 0 var(--space-2);
+  padding: 12px 14px;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  background:
+    radial-gradient(circle at 88% 20%, color-mix(in srgb, #4f6df6 12%, transparent), transparent 42%),
+    color-mix(in srgb, var(--foreground) 3%, transparent);
+  cursor: pointer;
+  transition: border-color 0.12s ease;
+}
+.twin-layerview-cta:hover { border-color: color-mix(in srgb, #4f6df6 50%, var(--border-subtle)); }
+.twin-layerview-cta-text { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.twin-layerview-cta-text strong { font-size: 13px; font-weight: 700; color: var(--foreground); }
+.twin-layerview-cta-text span { font-size: 11px; color: var(--foreground-secondary); line-height: 1.4; }
+.twin-layerview-cta-btn { flex: none; }
+
+/* 整网图上的紧凑问题徽标(见 js/training-run-twin.js 的 applyProblemMarkers):
+   序号圆点 + 白色描边环 + 轻投影,悬浮再显示完整标签,取代原来的大红卡片以减少遮挡。 */
+.pto-problem-badge { filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.28)); transition: opacity 160ms ease; }
+.pto-problem-badge text { pointer-events: none; }
+/* 选中某个问题后,只保留该问题徽标,其余淡出(见 highlightProblemBadge) */
+.pto-problem-badge.is-dimmed { opacity: 0.12; }

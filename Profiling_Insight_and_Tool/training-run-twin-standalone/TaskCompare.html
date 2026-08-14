@@ -1,0 +1,2285 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="dark">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>训练管理平台 · 任务对比</title>
+<script>
+  (() => {
+    const params = new URLSearchParams(window.location.search);
+    const theme = params.get("theme");
+    if (theme === "dark" || theme === "light") {
+      document.documentElement.dataset.theme = theme;
+    }
+  })();
+</script>
+<link rel="stylesheet" href="./css/foundation.css">
+<link rel="stylesheet" href="./css/semantic.css">
+<link rel="stylesheet" href="./css/components.css">
+<link rel="stylesheet" href="./css/style.css">
+<!-- IDE frame shell (patterns/ide-frame + patterns/workbench-shell, vendored locally per repo convention so this folder can move on its own) -->
+<link rel="stylesheet" href="./css/workbench-shell-pattern.css">
+<link rel="stylesheet" href="./css/ide-frame-pattern.css">
+<style>
+  /* ==== compare-mode 页面级样式：迁移自旧版私有玻璃拟态样式表，颜色/圆角/间距全部改用设计系统 token；
+     Kanban 泳道看板、TensorBoard 式折线对比图等无对应 PTO pattern 的结构保留为 page-local 类。 ==== */
+
+  /* 页面级字体统一：--font-mono（JetBrains Mono/Fira Code/Consolas）本身不含中文字形，页面里大量
+     指标名/分组名/提示文案是中英混排（如「GPU 利用率」「基线」），中文部分会落到浏览器默认等宽字体
+     （如 Windows 上的 NSimSun），与 --font-sans 里统一使用的 PingFang SC/Noto Sans SC 中文字形不一致。
+     此处补齐与 --font-mono 相同的中文回退字体，使全页中文字形始终一致，西文/数字部分仍保持等宽观感。 */
+  :root { --font-mono: 'JetBrains Mono', 'Fira Code', 'Consolas', 'PingFang SC', 'Noto Sans SC', monospace; }
+
+  /* 任务状态点（侧栏任务列表 / 泳道卡片 / 最佳任务排名共用） */
+  .dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+  /* 任务身份色，非状态色：class 名沿用历史标识符（blue/green/red/orange/purple 只是任务的 id，
+     不代表健康度也不代表实际取色）。按要求把紫色系从 2 族收到 1 族（保留 l0a-violet，弃用
+     l0b-deep-violet），换入 ub-green 代表「翠绿/青」——PTO 里唯一不与 success（--success 用的是
+     另一支更偏青绿的语义色）冲突的绿色阶；mte-amber 代表「黄」。5 个任务正好对应 PTO highlight
+     体系里全部 5 个非红/非 success-green 色阶族：copy-blue / ub-green / accum-orange / l0a-violet /
+     mte-amber，每族取一个代表 step。用 dataviz 技能的 6 项校验（CVD 区分度、对比度，--mode
+     light/dark 双跑）挑出具体 step 和顺序，使相邻两两都清晰可辨（暗色下 accum-orange-700 对比度
+     2.8:1 略低于 3:1，由图例本身的文字标签兜底，符合校验里「补充编码」的豁免条件）。 */
+  .dot.red { background: var(--highlight-copy-blue-400); }
+  .dot.blue { background: var(--highlight-ub-green-700); }
+  .dot.green { background: var(--highlight-accum-orange-700); }
+  .dot.orange { background: var(--highlight-l0a-violet-400); }
+  .dot.purple { background: var(--highlight-mte-amber-700); }
+
+  /* 侧栏 explorer pane-body：pane-header/nav-item 已去掉，改由 pane-body 自身承担 4 周内边距 +
+     顶部「任务对比」静态标题（纯文字，不承担返回首页交互，故无 hover 变色/指针样式）。 */
+  /* 左侧任务栏宽度上限 300px：拖拽分隔条最多只能把它拉到 300px，再宽会挤占图表/媒体卡片的栅格宽度
+     （任务名本身已做中间省略，不靠加宽来读全名） */
+  .pto-ide-frame__explorer { max-width: 300px; }
+  .cmp-explorer-body { padding: var(--space-3); }
+  .cmp-explorer-title { display: flex; align-items: center; width: 100%; margin: 0 0 10px; padding: 0 0 0 12px; border: 0;
+    background: transparent; font: var(--ide-frame-title-font); color: var(--foreground); text-align: left; }
+
+  /* compare 模式左侧任务勾选列表 */
+  .cmp-task-item { display: flex; align-items: center; gap: 8px; padding: 9px 12px; border-radius: var(--radius-lg);
+    cursor: pointer; color: var(--foreground-secondary); border: 1px solid transparent;
+    transition: all var(--duration-fast) var(--easing-default); user-select: none; }
+  .cmp-task-item:hover { background: var(--state-hover); }
+  .cmp-task-item.is-selected { color: var(--foreground); font-weight: 500;
+    background: color-mix(in srgb, var(--primary) 8%, transparent); }
+  /* 任务名中间省略：拆成 head/tail 两段，head 用 flex 收缩 + ellipsis 吃掉溢出，tail 常驻不缩，
+     视觉上呈现「开头...结尾」而非默认的尾部省略，方便区分仅版本号/后缀不同的同名任务 */
+  .cmp-task-name { flex: 1; display: flex; min-width: 0; overflow: hidden; }
+  .cmp-task-name-head { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+  .cmp-task-name-tail { white-space: nowrap; flex-shrink: 0; }
+  /* 原生 checkbox 在暗色底上默认渲染成刺眼的白底方块，appearance:none 后按 token 自绘勾选框，
+     未勾选态贴合面板底色（border-default 描边 + surface-2 底），勾选态用 ::after 画对勾，不依赖系统控件配色 */
+  .cmp-cb { appearance: none; -webkit-appearance: none; width: 14px; height: 14px; margin: 0; border-radius: 3px; flex-shrink: 0;
+    cursor: pointer; border: 1.5px solid var(--border-default); background: var(--surface-2); position: relative;
+    transition: background var(--duration-fast) var(--easing-default), border-color var(--duration-fast) var(--easing-default); }
+  .cmp-cb:hover { border-color: var(--border-strong); }
+  .cmp-cb:checked { background: var(--primary); border-color: var(--primary); }
+  .cmp-cb:checked::after { content: ""; position: absolute; left: 4px; top: 1px; width: 3px; height: 7px;
+    border: solid var(--primary-foreground); border-width: 0 1.6px 1.6px 0; transform: rotate(45deg); }
+  /* 基线标签默认隐藏，仅在所属任务行悬浮时或本身已是基线时显示，减少非基线任务行的视觉噪音 */
+  .cmp-base-tag { font-size: 10px; font-family: var(--font-mono); color: var(--foreground-muted); border: 1px solid var(--border-default);
+    border-radius: 999px; padding: 1px 8px; cursor: pointer; flex-shrink: 0; opacity: 0;
+    transition: all var(--duration-fast) var(--easing-default); }
+  .cmp-task-item:hover .cmp-base-tag, .cmp-base-tag.is-selected { opacity: 1; }
+  .cmp-base-tag:hover { border-color: var(--border-strong); color: var(--foreground-secondary); }
+  .cmp-base-tag.is-selected { background: var(--surface-4); color: var(--foreground); border-color: var(--surface-4); }
+
+  /* 主内容 pane-body：去掉了顶部 pane-title 后自行承担内容内边距；#compareView 内的 .cmp-topbar
+     用负 margin 顶到 pane 边缘再用等值 padding 补回，配合 position:sticky 钉在滚动区顶部。 */
+  .cmp-pane-body { padding: var(--space-4); }
+  #compareView { display: flex; flex-direction: column; min-height: 100%; }
+
+  /* compare 顶部工具条：sub-tabs 复用共享 .tab-control，右侧为动态控制区（平滑滑杆 / 切换按钮）；
+     滚动图表列表时固定在 pane 顶部，背景复用 ide-frame pane-header 的毛玻璃填充色，保持视觉一致 */
+  .cmp-topbar { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap;
+    position: sticky; top: calc(-1 * var(--space-4)); z-index: 15; margin: calc(-1 * var(--space-4)) calc(-1 * var(--space-4)) 16px;
+    padding: var(--space-3) var(--space-4); background: var(--ide-frame-pane-header-fill);
+    backdrop-filter: var(--ide-frame-pane-backdrop-filter); -webkit-backdrop-filter: var(--ide-frame-pane-backdrop-filter); }
+  .cmp-topbar-right { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+
+  /* 曲线平滑拖动条（TensorBoard 式 Smoothing） */
+  .smooth-ctrl { display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--foreground-secondary);
+    user-select: none; white-space: nowrap; }
+  .smooth-ctrl .smooth-label { font-weight: 500; }
+  .smooth-ctrl input[type=range] { -webkit-appearance: none; appearance: none; width: 108px; height: 4px;
+    border-radius: 999px; background: var(--border-default); outline: none; cursor: pointer; accent-color: var(--primary); }
+  .smooth-ctrl input[type=range]::-webkit-slider-thumb { -webkit-appearance: none; appearance: none;
+    width: 14px; height: 14px; border-radius: 50%; background: var(--primary); border: 2px solid var(--surface-1); cursor: pointer; }
+  .smooth-ctrl input[type=range]::-moz-range-thumb { width: 14px; height: 14px; border-radius: 50%;
+    background: var(--primary); border: 2px solid var(--surface-1); cursor: pointer; }
+  .smooth-ctrl .smooth-val { font-family: var(--font-mono); font-size: 11px; color: var(--foreground-muted); min-width: 26px; text-align: right; }
+
+  /* 常驻状态位开关（用户明确要求）：标记最优 / 只看差异 共用同一开关组件，与一次性触发的按钮
+     做视觉区分。PTO 组件库无通用 switch 原语，token 化后保留为 page-local 组件。 */
+  .cmp-switch { display: inline-flex; align-items: center; gap: 7px; cursor: pointer; user-select: none;
+    font-size: 12px; color: var(--foreground-secondary); }
+  .cmp-switch input { position: absolute; opacity: 0; width: 0; height: 0; }
+  .cmp-switch-track { position: relative; width: 30px; height: 17px; border-radius: 999px; flex-shrink: 0;
+    background: var(--surface-4); transition: background var(--duration-fast) var(--easing-default); }
+  .cmp-switch-track::after { content: ""; position: absolute; top: 2px; left: 2px; width: 13px; height: 13px;
+    border-radius: 50%; background: var(--foreground); transition: transform var(--duration-fast) var(--easing-default); }
+  .cmp-switch input:checked + .cmp-switch-track { background: var(--primary); }
+  .cmp-switch input:checked + .cmp-switch-track::after { transform: translateX(13px); background: var(--primary-foreground); }
+  .cmp-switch input:focus-visible + .cmp-switch-track { box-shadow: 0 0 0 3px color-mix(in srgb, var(--primary) 30%, transparent); }
+  .cmp-switch-label.is-on { color: var(--foreground); font-weight: 500; }
+
+  /* 图表对比：卡片壳 + 分区折叠（TensorBoard scalars 式） */
+  .card { background: var(--surface-2); border: 1px solid var(--border-default); border-radius: var(--radius-lg); padding: 18px; }
+  .cmp-empty { padding: 48px 24px; text-align: center; color: var(--foreground-muted); }
+  .cmp-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
+  /* 图表卡片去边框，仅靠 surface 底色区分，避免每张折线图外多一圈框线 */
+  .cmp-grid .card { border: none; }
+  /* 放大态：grid-column 撑满整行——sparse 打包算法（默认，非 dense）下，若该卡片左侧同行已有其他
+     卡片放不下整行宽度，会自动换到下一行再撑大；撑大后原本排在它后面的卡片也自然被挤到下一行，
+     两条需求都由 grid 默认排布规则满足，无需额外 JS 计算行位置 */
+  .cmp-grid .card.is-expanded { grid-column: 1 / -1; }
+  .cmp-chart-title { font-family: var(--font-mono); font-size: 10px; color: var(--foreground-muted);
+    letter-spacing: .04em; text-transform: uppercase; margin-bottom: 6px; }
+  .cmp-chart-area { position: relative; cursor: crosshair; }
+  .cmp-chart-area svg { display: block; }
+  .cmp-chart-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; margin-bottom: 8px; flex-wrap: wrap; }
+  .cmp-chart-head-left { display: flex; flex-direction: column; align-items: flex-start; gap: 4px; }
+  .cmp-chart-head-left .cmp-chart-title { margin-bottom: 0; }
+  /* 放大/还原图标：常驻显示于卡片头右上角，与 bestTag 同行两端对齐（cmp-chart-head 已是
+     justify-content: space-between） */
+  .cmp-chart-expand-btn { display: inline-flex; align-items: center; justify-content: center; width: 20px; height: 20px;
+    flex-shrink: 0; border-radius: var(--radius-md); color: var(--foreground-muted); cursor: pointer;
+    transition: all var(--duration-fast) var(--easing-default); }
+  .cmp-chart-expand-btn:hover { color: var(--foreground); background: var(--state-hover); }
+  .cmp-chart-expand-btn.is-active { color: var(--primary); }
+  .cmp-chart-expand-btn svg { width: 13px; height: 13px; }
+  .cmp-best-tag { display: inline-flex; align-items: center; gap: 5px; font-size: 10px; font-family: var(--font-mono);
+    font-weight: 400; white-space: nowrap; color: var(--foreground-secondary); }
+  .cmp-best-medal { font-size: 11px; }
+  .cmp-best-dot { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; }
+  /* 沿用左侧勾选栏的完整任务名（而非缩短版）；空间足够，不做宽度限制/省略截断 */
+  .cmp-best-name { white-space: nowrap; }
+  .cmp-chart-legend { display: flex; flex-wrap: wrap; gap: 6px 12px; margin-top: 10px; padding-top: 8px;
+    border-top: 1px solid var(--border-subtle); }
+  .cmp-chart-legend-item { display: flex; align-items: center; gap: 5px; font-size: 10px;
+    font-family: var(--font-mono); color: var(--foreground-secondary); white-space: nowrap; }
+  .cmp-legend-line { width: 14px; height: 0; border-top-width: 2px; border-top-style: solid; flex-shrink: 0; }
+  .cmp-legend-base-tag { font-size: 9px; font-family: var(--font-mono); background: var(--surface-4); color: var(--foreground);
+    border-radius: 999px; padding: 1px 7px; flex-shrink: 0; }
+  .cmp-chart-tip { position: absolute; z-index: 30; pointer-events: none; display: none;
+    background: var(--surface-2); border: 1px solid var(--border-strong); border-radius: 10px;
+    padding: 6px 9px; width: 200px; box-sizing: border-box; }
+  /* 固定宽度 + 各行 nowrap：气泡尺寸不再随任务名/数值长度跳变，值列、差异列各占定宽固定列，
+     不够放的任务名走省略号，不整体折行 */
+  .cmp-tip-row { display: flex; align-items: center; gap: 6px; margin: 2px 0; white-space: nowrap; }
+  .cmp-tip-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+  .cmp-tip-name { color: var(--foreground-secondary); flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .cmp-tip-val { flex-shrink: 0; width: 46px; text-align: right; font-family: var(--font-mono); font-weight: 600; color: var(--foreground); }
+  .cmp-tip-head { font-family: var(--font-mono); font-size: 10px; color: var(--foreground-muted); margin-bottom: 5px;
+    padding-bottom: 4px; border-bottom: 1px solid var(--border-subtle); letter-spacing: .04em;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  /* 差异列始终占位（基线行本身/未选基线时留空），使数值列、差异列的右边界在各行间对齐 */
+  .cmp-tip-dev { flex-shrink: 0; width: 38px; text-align: right; font-size: 10px; font-family: var(--font-mono); }
+
+  .cmp-group { margin-bottom: 20px; }
+  .cmp-group:last-child { margin-bottom: 0; }
+  .cmp-group .cmp-grid { margin-bottom: 0; }
+  .cmp-group.collapsed .cmp-grid { display: none; }
+  .cmp-group-head { display: flex; align-items: center; gap: 10px; padding: 4px 2px 11px; margin-bottom: 14px;
+    cursor: pointer; user-select: none; border-bottom: 1px solid transparent; transition: border-color var(--duration-fast) var(--easing-default); }
+  .cmp-group.collapsed .cmp-group-head { border-bottom-color: var(--border-default); }
+  .cmp-group-chevron { color: var(--foreground-muted); font-size: 15px; line-height: 1; flex-shrink: 0;
+    display: inline-flex; transform: rotate(90deg); transition: transform .2s; }
+  .cmp-group.collapsed .cmp-group-chevron { transform: rotate(0deg); }
+  .cmp-group-title { font: var(--button-font); font-size: 14px; font-weight: 600; letter-spacing: -.01em; color: var(--foreground); }
+  /* 展开态下方已有图表能说明分区内容，提示文字冗余，默认隐藏；收起后图表看不见了，
+     提示文字改为唯一的内容线索，再显示出来 */
+  .cmp-group-hint { display: none; font-family: var(--font-mono); font-size: 10px; color: var(--foreground-muted); letter-spacing: .03em; }
+  .cmp-group.collapsed .cmp-group-hint { display: inline; }
+
+  /* 折线图 + y 轴刻度容器（cmpChart()/fillYAxis() 生成的数据可视化结构，保留原样） */
+  .km-chart-row { display: flex; }
+  .km-chart-row > .cmp-chart-area { flex: 1; min-width: 0; }
+  .km-yaxis { display: flex; flex-direction: column; justify-content: space-between; padding: 12px 0; width: 30px; flex-shrink: 0; }
+  .km-yaxis span { font-size: 9px; font-family: var(--font-mono); color: var(--foreground-muted); text-align: right; line-height: 1; white-space: nowrap; padding-right: 4px; display: block; }
+  .km-axis { display: flex; justify-content: space-between; margin-top: 8px; padding: 0 2px 0 30px;
+    font-size: 10px; color: var(--foreground-muted); font-family: var(--font-mono); }
+  .km-axis-title { text-align: center; font-size: 11px; color: var(--foreground-muted); margin-top: 2px; padding-left: 30px; font-family: var(--font-mono); }
+
+  /* ===== 最佳任务排名卡片 ===== */
+  /* 按要求去掉模块外边框，仅靠 surface 底色与圆角跟周围区分 */
+  .best-rank-card { background: var(--surface-2); border-radius: var(--radius-lg);
+    margin-bottom: 14px; overflow: hidden; }
+  .best-rank-head { display: flex; align-items: center; gap: 10px; padding: 11px 16px;
+    font: var(--button-font); font-size: 13px; font-weight: 600; letter-spacing: -.01em;
+    cursor: pointer; user-select: none; transition: background var(--duration-fast) var(--easing-default); border-bottom: 1px solid var(--border-subtle); }
+  .best-rank-head:hover { background: var(--state-hover); }
+  .best-rank-chevron { color: var(--foreground-muted); font-size: 14px; font-weight: 400; transition: transform .2s;
+    flex-shrink: 0; display: inline-flex; line-height: 1; }
+  .best-rank-card.expanded .best-rank-chevron { transform: rotate(90deg); }
+  /* 排名设置入口：暂只做展示，样式沿用 .cmp-chart-expand-btn 的图标按钮规格，未接功能 */
+  .best-rank-settings-btn { display: inline-flex; align-items: center; justify-content: center; width: 22px; height: 22px;
+    margin-left: auto; flex-shrink: 0; border-radius: var(--radius-md); color: var(--foreground-muted); cursor: pointer;
+    transition: all var(--duration-fast) var(--easing-default); }
+  .best-rank-settings-btn:hover { color: var(--foreground); background: var(--state-hover); }
+  .best-rank-settings-btn svg { width: 14px; height: 14px; }
+  .best-rank-single { display: block; }
+  .best-rank-body { display: none; }
+  .best-rank-card.expanded .best-rank-single { display: none; }
+  .best-rank-card.expanded .best-rank-body { display: block; }
+  .best-rank-row { display: flex; align-items: center; gap: 10px; padding: 9px 16px;
+    border-bottom: 1px solid var(--border-subtle); min-width: 0; }
+  .best-rank-row:last-child { border-bottom: none; }
+  /* 左到右渐隐，避免整行一块纯色显得生硬 */
+  .best-rank-row.rank1 { background: linear-gradient(to right, color-mix(in srgb, var(--warning) 22%, transparent), transparent); }
+  /* margin-left 让序号左沿卡在 .best-rank-head 里「最佳任务」文字的起始列（跳过 chevron 那一列），
+     形成序号相对表头的自然缩进，而非居中在整个 chevron+文字 的宽度里 */
+  .best-rank-num { width: 20px; margin-left: 14px; text-align: left; font-family: var(--font-mono); font-size: 12px;
+    font-weight: 700; color: var(--foreground-muted); flex-shrink: 0; }
+  .best-rank-num.gold { color: var(--warning); }
+  .best-rank-name { font-size: 12px; font-weight: 500; flex: 1; min-width: 0;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  /* 固定列宽（而非 max-content）：每行的 .best-rank-metrics 都是独立的 grid 实例，若按内容自适应，
+     列宽会随本行 value 文本长度浮动，导致下一个指标列的起始位置逐行错位——key 和 value 都对不齐。
+     改成固定像素宽后，同一列在所有行里的左右边界完全相同，key 靠列左沿、value 靠列右沿（margin-left:
+     auto）天然对齐。这里的 repeat(3, 200px) 只是没有内联 style 时的兜底；实际列宽由 JS 按
+     BEST_RANK_METRIC_WIDTH 逐列内联覆盖（loss/mfu 短 label 用更窄的列，避免 value 被撑得离 key
+     很远），而不是 3 列统一取最宽的 grad_norm 尺寸。 */
+  .best-rank-metrics { display: grid; grid-template-columns: repeat(3, 200px); gap: 6px 0; flex-shrink: 0; margin-left: auto; }
+  /* best-rank-metric 的 border-left 是同一行内多组指标间的表格式分隔线（真实的数据表格列分隔，
+     非装饰用边框），属于设计系统「表格/网格分隔符」豁免场景，保留 —— 见文末 residue check。
+     3 列一行自动换行，nth-child(3n+1) 是每行行首，去掉左分隔线 */
+  .best-rank-metric { display: flex; align-items: center; gap: 6px; padding: 0 16px;
+    border-left: 1px solid var(--border-subtle); }
+  .best-rank-metric:nth-child(3n+1) { border-left: none; }
+  .best-rank-metric-label { font-size: 11px; color: var(--foreground-muted); font-family: var(--font-mono); white-space: nowrap; }
+  .best-rank-metric-val { font: var(--button-font); font-size: 12px; font-weight: 600;
+    letter-spacing: -.02em; white-space: nowrap; margin-left: auto; }
+  .best-rank-trophy { font-size: 13px; flex-shrink: 0; }
+
+  /* ===== 参数对比：智能帮比条 ===== */
+  .smart-bar { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 10px; }
+  /* AI 语义分组：标签 + 三个预置项包一层蓝紫渐变底，与右侧自由输入框区分「AI 推荐」和「自定义」两种路径 */
+  .smart-ai-group { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding: 5px 12px 5px 12px;
+    border-radius: var(--radius-lg);
+    background: linear-gradient(135deg, color-mix(in srgb, var(--ark-blue-500) 9%, transparent), color-mix(in srgb, var(--highlight-l0a-violet-500) 9%, transparent));
+    border: 1px solid color-mix(in srgb, var(--highlight-l0b-deep-violet-500) 28%, transparent); }
+  .smart-label { font-size: 12px; font-weight: 700; font-family: var(--font-mono); white-space: nowrap;
+    background: linear-gradient(135deg, var(--ark-blue-500), var(--highlight-l0a-violet-500));
+    -webkit-background-clip: text; background-clip: text; color: transparent; }
+  /* 预置项按钮：常态为渐变描边的幽灵按钮，选中态填满蓝紫渐变 + 外发光，呼应「AI 已算出推荐项」 */
+  .smart-preset { border-color: color-mix(in srgb, var(--highlight-l0b-deep-violet-500) 45%, transparent); }
+  .smart-preset:hover { background: color-mix(in srgb, var(--highlight-l0a-violet-500) 16%, transparent);
+    border-color: var(--highlight-l0a-violet-500); color: var(--foreground); }
+  .smart-bar .btn.smart-preset.is-selected,
+  .smart-bar .btn.smart-preset.is-selected:hover {
+    background: linear-gradient(135deg, var(--ark-blue-500), var(--highlight-l0a-violet-500));
+    border-color: transparent; color: #fff;
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--highlight-l0a-violet-500) 24%, transparent),
+      0 2px 10px color-mix(in srgb, var(--highlight-l0b-deep-violet-500) 45%, transparent); }
+  /* 已引入的样式表未定义通用 .input 类，保留 page-local token 化输入框样式（与 quick-reference 对
+     缺失 .badge--* 时"page-local + 打 flag"的处理方式一致） */
+  .smart-input { flex: 1; min-width: 200px; padding: 7px 13px; border-radius: var(--radius-lg); border: 1px solid var(--border-default);
+    font-family: var(--font-sans); font-size: 12px; background: var(--surface-1); color: var(--foreground); }
+  .smart-input:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 22%, transparent); }
+  .smart-clear { font-size: 11px; color: var(--foreground-muted); cursor: pointer; font-family: var(--font-mono); white-space: nowrap; }
+  .smart-clear:hover { color: var(--danger); }
+  /* 状态提示行改为可关闭的标签组：智能帮比结果 / 只看差异统计 / 标记最优统计，各自独立，
+     点标签上的 × 直接取消对应筛选（等价于关掉对应开关或清除智能帮比），比纯文字行更可操作 */
+  .smart-hint-row { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin: -2px 0 12px; }
+  .hint-tag { display: inline-flex; align-items: center; gap: 6px; font-size: 11px; font-family: var(--font-mono);
+    color: var(--foreground-secondary); background: var(--surface-3); border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-md); padding: 3px 6px 3px 10px; white-space: nowrap; }
+  .hint-tag b { color: var(--foreground); font-weight: 600; }
+  .hint-tag--smart b { background: linear-gradient(135deg, var(--ark-blue-500), var(--highlight-l0a-violet-500));
+    -webkit-background-clip: text; background-clip: text; color: transparent; }
+  .hint-tag--best b { color: var(--success); }
+  .hint-tag-x { display: inline-flex; align-items: center; justify-content: center; width: 14px; height: 14px;
+    border-radius: 50%; color: var(--foreground-muted); cursor: pointer; font-size: 12px; line-height: 1; flex-shrink: 0; }
+  .hint-tag-x:hover { background: var(--state-hover); color: var(--danger); }
+
+  /* ===== 参数对比：泳道卡片（Kanban 式看板，无对应 PTO pattern，保留 page-local 结构） ===== */
+  .lane-area { display: flex; gap: 12px; align-items: flex-start; }
+  /* 顶部不留 padding：滚动容器的 padding 不随内容滚动，会在 sticky 卡头上方露出一条固定缝隙，
+     scroll 时能看到卡片内容从缝隙里漏出来；改用 .lane-card 的 margin-top 让内容一起滚走 */
+  .lane-wrap { flex: 1; min-width: 0; display: flex; gap: 12px; overflow: auto; padding: 0 2px 14px;
+    align-items: flex-start; scroll-behavior: smooth; overscroll-behavior: contain; }
+  .lane-card { flex: 0 0 250px; width: 250px; margin-top: 4px; background: var(--surface-2);
+    border: 1px solid var(--border-default); border-radius: var(--radius-xl); }
+  .lane-card.baseline { position: sticky; left: 0; z-index: 5; border: 2px solid var(--border-strong); background: var(--surface-3); }
+  /* 智能帮比命中列：描边用蓝紫渐变呼应「✦ 智能帮比」区域，双层 background 实现圆角渐变描边
+     （padding-box 铺实底色、border-box 露出渐变），baseline 叠加时改铺 surface-3 对齐基线卡片底色 */
+  .lane-card.picked { border: 2px solid transparent;
+    background: linear-gradient(var(--surface-2), var(--surface-2)) padding-box,
+      linear-gradient(135deg, var(--ark-blue-500), var(--highlight-l0a-violet-500)) border-box;
+    box-shadow: 0 4px 18px color-mix(in srgb, var(--highlight-l0b-deep-violet-500) 35%, transparent); }
+  .lane-card.baseline.picked { background: linear-gradient(var(--surface-3), var(--surface-3)) padding-box,
+      linear-gradient(135deg, var(--ark-blue-500), var(--highlight-l0a-violet-500)) border-box; }
+  .lane-card.drag-over { border-style: dashed; border-color: var(--primary); }
+  .lane-head { display: flex; align-items: center; gap: 7px; padding: 13px 14px; border-bottom: 1px solid var(--border-default);
+    position: sticky; top: 0; z-index: 4; background: var(--surface-2); border-radius: var(--radius-xl) var(--radius-xl) 0 0; }
+  .lane-card.baseline .lane-head, .lane-card.baseline .lane-group-title { background: var(--surface-3); }
+  .lane-drag { cursor: grab; color: var(--foreground-muted); font-size: 14px; user-select: none; }
+  .lane-drag:active { cursor: grabbing; }
+  .lane-pin { font-size: 12px; }
+  .lane-name { flex: 1; font-weight: 600; font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .lane-base-tag { font-size: 9px; font-family: var(--font-mono); background: var(--surface-4); color: var(--foreground); border-radius: 999px; padding: 1px 7px; flex-shrink: 0; }
+  /* 命中徽标：填满蓝紫渐变呼应「✦ 智能帮比」，方角化（radius 8）与旁边全圆角的 lane-base-tag 区分角色 */
+  .lane-smart-badge { font-size: 9px; font-weight: 600; font-family: var(--font-mono); color: #fff;
+    background: linear-gradient(135deg, var(--ark-blue-500), var(--highlight-l0a-violet-500));
+    border: none; border-radius: 8px; padding: 1px 7px; flex-shrink: 0; white-space: nowrap; }
+  .lane-body { padding: 4px 14px 14px; }
+  .lane-group { margin-top: 10px; }
+  .lane-group-title { font-size: 11.5px; font-family: var(--font-mono); color: var(--foreground); letter-spacing: .04em; font-weight: 700;
+    padding: 7px 0 5px; border-bottom: 1px solid var(--border-subtle); margin-bottom: 3px;
+    position: sticky; top: 44px; z-index: 3; background: var(--surface-2); }
+  .lane-row { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; padding: 5px 8px; margin: 0 -8px;
+    font-size: 12px; border-radius: 6px; transition: background .12s; }
+  .lane-row.row-hi { background: var(--state-hover); }
+  /* 标记最优：只给数值上色在密集表格里太弱，整行加浅绿底，扫一眼就能定位到胜出行 */
+  .lane-row.row-best { background: color-mix(in srgb, var(--success) 12%, transparent); }
+  .lane-k { color: var(--foreground-muted); white-space: nowrap; }
+  .lane-v { font-family: var(--font-mono); color: var(--foreground); font-weight: 500; text-align: right; word-break: break-all;
+    display: flex; align-items: center; gap: 4px; justify-content: flex-end; }
+  .lane-v.best { color: var(--success); font-weight: 700; }
+  .lane-medal { font-size: 12px; filter: drop-shadow(0 0 3px color-mix(in srgb, var(--success) 60%, transparent)); }
+  .lane-empty { font-size: 11px; color: var(--foreground-muted); padding: 16px 0; text-align: center; }
+  .lane-rail { flex: 0 0 60px; align-self: flex-start; display: flex; flex-direction: column; align-items: stretch; }
+  .lane-add { width: 56px; height: 56px; align-self: center; border: 1.5px dashed var(--border-strong);
+    border-radius: var(--radius-lg); background: var(--surface-1); display: flex; align-items: center; justify-content: center;
+    cursor: pointer; color: var(--foreground-muted); font-size: 26px; transition: all var(--duration-fast) var(--easing-default); position: relative; }
+  .lane-add:hover { border-color: var(--primary); color: var(--primary); background: color-mix(in srgb, var(--primary) 10%, transparent); }
+  .lane-add.disabled { opacity: .4; cursor: not-allowed; }
+  .lane-add-menu { position: absolute; top: 60px; right: 0; background: var(--surface-2); border: 1px solid var(--border-default); border-radius: var(--radius-lg);
+    padding: 8px; z-index: 30; min-width: 210px; display: none; }
+  .lane-add-menu.open { display: block; }
+  .lane-add-item { display: flex; align-items: center; gap: 8px; padding: 8px 10px; border-radius: var(--radius-lg); cursor: pointer; font-size: 12px; color: var(--foreground-secondary); }
+  .lane-add-item:hover { background: var(--state-hover); color: var(--foreground); }
+  /* 分组锚点：原先用 border-left 做左侧竖线分隔、active 态用 inset box-shadow 做左侧高亮条，
+     两者均按计划移除，改为 .is-selected 的纯色块 + 文字色变化（无侧边栏效果）—— 见 residue check */
+  .lane-anchors { display: flex; flex-direction: column; gap: 2px; margin-top: 10px; padding-left: 10px; }
+  .lane-anchor { font-size: 11px; font-family: var(--font-mono); color: var(--foreground-muted); cursor: pointer;
+    padding: 4px 6px; text-align: right; white-space: nowrap; border-radius: 4px; transition: all var(--duration-fast) var(--easing-default); }
+  .lane-anchor:hover { color: var(--primary); }
+  .lane-anchor.is-selected { color: var(--primary); font-weight: 700; background: color-mix(in srgb, var(--primary) 12%, transparent); }
+
+  /* ===== Media 对比栏：多模态（视频）产出效果对比 =====
+     结构复用 .cmp-group / .cmp-grid（同一套折叠交互与栅格），只在 .cmp-media-grid 上改列宽策略：
+     图表是 3 等分定列，媒体卡要跟着封面缩略图的可读下限走，故用 auto-fill + minmax 自适应列数。
+     卡片数量 = 左侧勾选的任务数，一一对应。 */
+  /* 300px 下限：宽屏下自然落成 3 列，与上方图表分区的 3 等分栅格对齐；窄屏再依次降到 2 / 1 列 */
+  .cmp-media-grid { grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 14px; }
+  .cmp-media-card { display: flex; flex-direction: column; gap: 10px; padding: 14px; min-width: 0; }
+  .cmp-media-head { display: flex; align-items: center; gap: 7px; min-width: 0; }
+  .cmp-media-name { flex: 1; min-width: 0; font-size: 12.5px; font-weight: 600; letter-spacing: -.01em;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  /* 封面：16:10 定比容器 + overflow 裁切，保证各卡片封面高度一致、不因原图尺寸差异而参差；
+     圆角按要求施加在容器上（img 自身圆角在 object-fit:cover 缩放下会被裁切边缘吃掉） */
+  .cmp-media-cover { position: relative; aspect-ratio: 16 / 10; border-radius: var(--radius-lg);
+    overflow: hidden; background: var(--surface-3); }
+  .cmp-media-cover img { width: 100%; height: 100%; object-fit: cover; display: block; }
+  /* 封面角标：时长（右下）/ 分辨率帧率（左下），叠在图上用半透明深底保证任何画面下都可读 */
+  .cmp-media-chip { position: absolute; bottom: 7px; font-size: 10px; font-family: var(--font-mono);
+    color: #fff; background: rgba(0,0,0,.58); border-radius: 999px; padding: 2px 7px; white-space: nowrap; }
+  .cmp-media-chip.spec { left: 7px; }
+  .cmp-media-chip.dur { right: 7px; }
+  /* 综合评分角标：与「最佳任务」榜单里参与排名的 media 分同源，放在封面上让两处口径对得上 */
+  .cmp-media-chip.score { top: 7px; right: 7px; bottom: auto; }
+  .cmp-media-prompt { font-size: 11px; font-family: var(--font-mono); color: var(--foreground-muted);
+    line-height: 1.5; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .cmp-media-prompt b { color: var(--foreground-secondary); font-weight: 500; }
+  /* 产出质量指标：2 列固定栅格，key 靠左 value 靠右，保证同列在各卡片间纵向对齐 */
+  .cmp-media-metrics { display: grid; grid-template-columns: 1fr 1fr; gap: 5px 14px; }
+  .cmp-media-metric { display: flex; align-items: baseline; gap: 6px; min-width: 0; }
+  .cmp-media-metric-k { font-size: 10.5px; font-family: var(--font-mono); color: var(--foreground-muted); white-space: nowrap; }
+  .cmp-media-metric-v { font: var(--button-font); font-size: 11.5px; font-weight: 600; letter-spacing: -.02em;
+    color: var(--foreground); margin-left: auto; white-space: nowrap; }
+  .cmp-media-metric-v.best { color: var(--success); }
+  .cmp-media-foot { display: flex; align-items: center; justify-content: space-between; gap: 8px;
+    padding-top: 8px; border-top: 1px solid var(--border-subtle); font-size: 10px;
+    font-family: var(--font-mono); color: var(--foreground-muted); white-space: nowrap; }
+  .cmp-media-foot span { overflow: hidden; text-overflow: ellipsis; }
+
+  /* 细滚动条（沿用旧版观感，token 化） */
+  ::-webkit-scrollbar { width: 10px; height: 10px; }
+  ::-webkit-scrollbar-thumb { background: var(--border-strong); border-radius: 999px; border: 2px solid transparent; background-clip: padding-box; }
+  ::-webkit-scrollbar-thumb:hover { background: var(--foreground-muted); border: 2px solid transparent; background-clip: padding-box; }
+
+  @media (max-width: 980px) {
+    /* :not(.cmp-media-grid) —— 媒体栏自己用 auto-fill minmax 自适应列数，窄屏下应能降到 1 列，
+       不该被这条固定 2 列的规则（在后、同特异度）覆盖 */
+    .cmp-grid:not(.cmp-media-grid) { grid-template-columns: 1fr 1fr; }
+  }
+</style>
+</head>
+<body data-theme="dark">
+  <section class="pto-ide-frame" data-ide-frame data-host="standalone" aria-label="训练监控">
+    <header class="pto-ide-frame__topbar pto-ide-frame__standalone-chrome">
+      <div class="pto-ide-frame__topbar-left">
+        <div class="pto-ide-frame__host-chip" data-ide-slot="host-chip">
+          <svg class="pto-ide-frame__host-icon" viewBox="0 0 24 24" aria-hidden="true">
+            <rect x="3" y="4" width="18" height="16" rx="2"></rect>
+            <path d="m7 9 3 3-3 3"></path>
+            <path d="M12 15h5"></path>
+          </svg>
+        </div>
+        <div class="pto-ide-frame__workspace" data-ide-slot="workspace-switcher">
+          <span>训练监控</span>
+        </div>
+      </div>
+      <div class="pto-ide-frame__topbar-center"></div>
+      <div class="pto-ide-frame__topbar-right">
+        <div class="pto-ide-frame__window-actions" data-ide-slot="window-controls" aria-label="Window controls">
+          <button class="pto-ide-frame__window-action" id="themeToggle" type="button" aria-pressed="false" title="切换主题" aria-label="切换主题">
+            <svg class="pto-ide-frame__window-icon" id="themeToggleIcon" viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M12 3a6.5 6.5 0 0 0 7.8 8.8A8 8 0 1 1 12 3z"></path>
+            </svg>
+          </button>
+        </div>
+      </div>
+    </header>
+
+    <div class="pto-ide-frame__body">
+      <nav class="pto-ide-frame__activity-rail pto-ide-frame__standalone-chrome" data-ide-slot="activity-rail" aria-label="Activity rail">
+        <button class="btn btn-icon btn-ghost pto-ide-frame__rail-button" type="button" id="navMonitoring" aria-label="训练监控" title="训练监控">
+          <svg class="pto-ide-frame__rail-icon" viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9l-.81-1.2A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"></path>
+          </svg>
+        </button>
+        <button class="btn btn-icon btn-ghost pto-ide-frame__rail-button" type="button" aria-label="Search" title="Search">
+          <svg class="pto-ide-frame__rail-icon" viewBox="0 0 24 24" aria-hidden="true">
+            <circle cx="11" cy="11" r="8"></circle>
+            <path d="m21 21-4.3-4.3"></path>
+          </svg>
+        </button>
+        <button class="btn btn-icon btn-ghost pto-ide-frame__rail-button" type="button" aria-label="Source control" title="Source control">
+          <svg class="pto-ide-frame__rail-icon" viewBox="0 0 24 24" aria-hidden="true">
+            <circle cx="18" cy="18" r="3"></circle>
+            <circle cx="6" cy="6" r="3"></circle>
+            <path d="M13 6h3a2 2 0 0 1 2 2v7"></path>
+            <path d="M6 9v12"></path>
+          </svg>
+        </button>
+        <button class="btn btn-icon btn-ghost pto-ide-frame__rail-button" type="button" aria-label="Terminal" title="Terminal">
+          <svg class="pto-ide-frame__rail-icon" viewBox="0 0 24 24" aria-hidden="true">
+            <rect x="3" y="5" width="18" height="14" rx="2"></rect>
+            <path d="m7 9 3 3-3 3"></path>
+            <path d="M12 15h5"></path>
+          </svg>
+        </button>
+        <button class="btn btn-icon btn-ghost pto-ide-frame__rail-button is-selected" type="button" aria-label="对比" title="对比" aria-pressed="true">
+          <svg class="pto-ide-frame__rail-icon" viewBox="0 0 24 24" aria-hidden="true">
+            <rect x="3" y="3" width="18" height="18" rx="2"></rect>
+            <path d="M12 3v18"></path>
+          </svg>
+        </button>
+        <!-- 「配置关系」（节点连线样式），跳转 Config & Relation Observer，三页互跳 -->
+        <button class="btn btn-icon btn-ghost pto-ide-frame__rail-button" type="button" id="navConfigRelation" aria-label="配置关系" title="配置关系">
+          <svg class="pto-ide-frame__rail-icon" viewBox="0 0 24 24" aria-hidden="true">
+            <circle cx="18" cy="5" r="3"></circle>
+            <circle cx="6" cy="12" r="3"></circle>
+            <circle cx="18" cy="19" r="3"></circle>
+            <path d="m8.6 13.5 6.8 4"></path>
+            <path d="m15.4 6.5-6.8 4"></path>
+          </svg>
+        </button>
+      </nav>
+
+      <div class="pto-ide-frame__workarea">
+        <div class="pto-ide-frame__split" data-ide-split="standalone-main" data-split-direction="horizontal" data-pixel-sizes="280" data-min-size="240,560">
+          <aside class="pto-ide-frame__pane pto-ide-frame__explorer" data-ide-pane="explorer" id="taskListPane" aria-label="任务">
+            <div class="pto-ide-frame__pane-body cmp-explorer-body">
+              <div class="cmp-explorer-title">
+                <span>任务对比</span>
+              </div>
+              <div id="taskList"></div>
+            </div>
+          </aside>
+
+          <section class="pto-ide-frame__pane" data-ide-pane="main-content">
+            <!-- 顶部「任务对比」pane-title 与左侧 nav-item / topbar workspace 名称重复，按要求去掉；
+                 让出的空间用于把 #compareView 内的图表对比/参数对比页签行(.cmp-topbar)钉在滚动区顶部。 -->
+            <div class="pto-ide-frame__pane-body cmp-pane-body">
+              <div id="compareView"></div>
+            </div>
+          </section>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <script src="./js/workbench-shell-pattern.js"></script>
+  <script src="./js/ide-frame-pattern.js"></script>
+  <script>
+
+// ============================================================
+// 主题切换：月亮(切到深色)/太阳(切到浅色)图标，逻辑与 js/training-run-twin.js 的
+// applyTheme()/toggleTheme()/THEME_TOGGLE_ICONS 一致；本页无整网图，故不调用 renderArchitecture。
+// ============================================================
+let currentTheme = document.documentElement.dataset.theme === "light" ? "light" : "dark";
+const THEME_TOGGLE_ICONS = {
+  toDark: '<path d="M12 3a6.5 6.5 0 0 0 7.8 8.8A8 8 0 1 1 12 3z"></path>',
+  toLight: '<circle cx="12" cy="12" r="4"></circle><path d="M12 2v2"></path><path d="M12 20v2"></path><path d="m4.93 4.93 1.41 1.41"></path><path d="m17.66 17.66 1.41 1.41"></path><path d="M2 12h2"></path><path d="M20 12h2"></path><path d="m6.34 17.66-1.41 1.41"></path><path d="m19.07 4.93-1.41 1.41"></path>',
+};
+function applyTheme(theme){
+  currentTheme = theme === "light" ? "light" : "dark";
+  document.documentElement.dataset.theme = currentTheme;
+  document.body.dataset.theme = currentTheme;
+  const themeToggle = document.getElementById("themeToggle");
+  const themeToggleIcon = document.getElementById("themeToggleIcon");
+  const toDark = currentTheme === "light";
+  const nextMode = toDark ? "深色模式" : "浅色模式";
+  if(themeToggle){
+    themeToggle.setAttribute("aria-pressed", String(currentTheme === "light"));
+    themeToggle.setAttribute("title", `切换${nextMode}`);
+    themeToggle.setAttribute("aria-label", `切换${nextMode}`);
+  }
+  if(themeToggleIcon){
+    themeToggleIcon.innerHTML = toDark ? THEME_TOGGLE_ICONS.toDark : THEME_TOGGLE_ICONS.toLight;
+  }
+}
+function toggleTheme(){
+  applyTheme(currentTheme === "light" ? "dark" : "light");
+}
+document.getElementById("themeToggle").addEventListener("click", toggleTheme);
+
+const TASKS = {
+  deepseek32: {
+    name: "Pangu2.0flash_infra框架先导实验-v1", dot: "red", status: "var(--red)",
+    title: "Pangu2.0flash_infra框架先导实验-v1", creator: "wzh",
+    description: "infra 框架先导实验，AI 完成 loss spike 根因三级下钻定位：spike 现象 → Rank 5 硬件异常 → lightning_index_prolog_quant 算子 int32 越界",
+    metrics: [
+      { label: "loss",          value: "3.20",  key: "loss",      shown: true  },
+      { label: "MFU",           value: "31%",   key: "mfu",       shown: true  },
+      { label: "NPU 利用率",    value: "41%",   key: "npu",       shown: true  },
+      { label: "通信延迟",      value: "380ms", key: "comm",      shown: true  },
+      { label: "grad_norm",     value: "48.3",  key: "grad_norm", shown: false },
+      { label: "学习率 (lr)",   value: "6e-5",  key: "lr",        shown: false },
+      { label: "吞吐量 tokens/s", value: "0.9万", key: "tput",   shown: false },
+      { label: "NPU显存占用",   value: "91%",   key: "vram",      shown: false },
+      { label: "NPU温度",       value: "89℃",  key: "temp",      shown: false },
+      { label: "s/step (步耗时)", value: "4.12s", key: "sstep",  shown: false },
+    ],
+    runtime: { big: "0小时47分", stepCur: "580", stepTotal: "3000", epochCur: "1", epochTotal: "3",
+      pct: 19, barColor: "var(--red)", live: false,
+      info: [["机器信息","16 × Ascend 910B 64GB"],["资源信息","128 vCPU / 1024GB"],
+        ["计算节点","node-npu-03"],["代码目录","/workspace/deepseek-r1-3.2"],
+        ["镜像","mindspore:2.3.0-cann8.0"],["执行命令","msrun --nproc_per_node=16 train.py --model deepseek-r1-3.2b --seq_len 4096"]] },
+    artifacts: [
+      { name:"ckpt-500", meta:"loss 0.44" }, { name:"ckpt-400", meta:"loss 0.46" },
+      { name:"ckpt-300", meta:"loss 0.50", best:true }, { name:"ckpt-200", meta:"loss 0.55" } ],
+    events: [
+      { c:"var(--red)", t:"loss spike 至 1.85，触发自动暂停；Rank 5 lightning_index_prolog_quant 算子 int32 越界", time:"00:47", step:580 },
+      { c:"var(--red)", t:"Rank 5 温度 89℃（阈值 85℃）触发 DVFS 降频至额定 62%，正执行量化索引预计算核函数", time:"00:44", step:562 },
+      { c:"#ffab00", t:"AllReduce P99 延迟 spike 至 380ms（正常 ~120ms），触发全 rank 同步等待风暴", time:"00:43", step:548 } ],
+    diag: {
+      drilldown: {
+        title: "step 580 · loss 出现 spike，grad_norm 大幅激增至 48.3",
+        nodes: [
+          {
+            layer: "L1 · 现象层",
+            tag: "warn",
+            title: "Loss Spike 触发",
+            metrics: [
+              { k: "loss",       v: "0.41 → 3.20",   bad: true },
+              { k: "MFU",        v: "54% → 31%",     bad: true },
+              { k: "NPU 利用率", v: "73% → 41%",     bad: true },
+              { k: "AllReduce",  v: "120ms → 380ms", bad: true },
+              { k: "grad_norm",  v: "1.3 → 48.3",    bad: true },
+            ]
+          },
+          {
+            layer: "L2 · Rank 定位",
+            tag: "crit",
+            title: "Rank 5 硬件异常",
+            link: "https://yinyucheng0601.github.io/compute-graph-viewer/Profiling_Insight_and_Tool/AI_Profiling_Tool/MindStudioNext.html",
+            metrics: [
+              { k: "芯片温度",    v: "89℃ (阈值85℃)", bad: true },
+              { k: "核心频率",    v: "62% 额定",       bad: true },
+              { k: "当前算子",    v: "lightning_index_prolog_quant", bad: true },
+              { k: "算子耗时占比", v: "37% / step",    bad: true },
+            ]
+          },
+          {
+            layer: "L3 · 算子根因",
+            tag: "crit",
+            title: "int32 索引越界",
+            link: "https://yinyucheng0601.github.io/compute-graph-viewer/graphviz/deepseek_v32_report_overlay_demo.html",
+            metrics: [
+              { k: "溢出路径",    v: "32×4096×17",          bad: true },
+              { k: "超出 INT32_MAX", v: "+80.7M",           bad: true },
+              { k: "quant_scale", v: "越界读取随机值",        bad: true },
+              { k: "loss 贡献",   v: "0.03 → 82.4 (单层)", bad: true },
+            ]
+          }
+        ],
+        code: {
+          file: "lightning_index_prolog_quant.py",
+          lang: "TileLang · 量化索引预计算核",
+          errLabel: "Rank 5 · L39–L42 int32 索引越界",
+          fix: "将 base / flat_idx 声明为 T.int64，并在入口加 CHECK_LE(L*B*S*H, INT64_MAX) 守卫",
+          lines: [
+            { n:30, h:'<span class="tk-com"># lightning_index_prolog_quant — 量化前 scale 索引预计算核</span>' },
+            { n:31, h:'<span class="tk-kw">import</span> tilelang.language <span class="tk-kw">as</span> T' },
+            { n:32, h:'' },
+            { n:33, h:'B, S, H, L = <span class="tk-num">32</span>, <span class="tk-num">4096</span>, <span class="tk-num">8192</span>, <span class="tk-num">17</span>   <span class="tk-com"># batch·seq·hidden·layer</span>' },
+            { n:34, h:'' },
+            { n:35, h:'<span class="tk-dec">@T.prim_func</span>' },
+            { n:36, h:'<span class="tk-kw">def</span> <span class="tk-fn">lightning_index_prolog_quant</span>(X, scale_table, out, layer_idx: T.<span class="tk-ty">int32</span>):' },
+            { n:37, h:'    <span class="tk-kw">for</span> b, s, h <span class="tk-kw">in</span> T.<span class="tk-fn">grid</span>(B, S, H):' },
+            { n:38, h:'        <span class="tk-com"># ✗ int32 累乘溢出：L*B*S*H ≈ 1.8e13 ≫ INT32_MAX(2.15e9)</span>', err:true },
+            { n:39, h:'        base: T.<span class="tk-ty">int32</span> = layer_idx * B * S * H', err:true },
+            { n:40, h:'        <span class="tk-com"># ✗ 溢出后回绕为负数，flat_idx 落到表外</span>', err:true },
+            { n:41, h:'        flat_idx: T.<span class="tk-ty">int32</span> = base + (b * S + s) * H + h', err:true },
+            { n:42, h:'        scale = scale_table[flat_idx]   <span class="tk-com"># ← 越界读取随机显存 → NaN 传播</span>', err:true },
+            { n:43, h:'        out[b, s, h] = T.<span class="tk-fn">cast</span>(X[b, s, h] / scale, <span class="tk-str">"int8"</span>)' },
+          ]
+        }
+      },
+      recommend: `将 <span class="hl">lightning_index_prolog_quant</span> 核函数内 3 处索引计算从 <span class="hl">int32 → int64</span>，并在算子入口添加 <code>CHECK_LE(batch * seq * layers, INT64_MAX)</code> 守卫；预计修复后约 <span class="hl">50 step</span> 内 loss 恢复至正常水位 ≈ 0.42，NPU 利用率回升至 ≥70%，AllReduce 延迟恢复 ~120ms。`,
+      before: { cap:"修复前（spike 中）", val:"loss 3.2 ↑", color:"var(--red)", key:"diagBefore" },
+      after:  { cap:"修复后预估", val:"loss 0.42 ✓", color:"var(--green)", key:"diagAfter" } },
+    key: [
+      { type:"mfu", label:"MFU", value:"31%", key:"mfu", peak:0.65,
+        breakdown:{compute:0.48, comm:0.40, other:0.12} },
+      { type:"gpuutil", label:"NPU 利用率", value:"41%", key:"npu",
+        stepBreakdown:{fwd:380, bwd:620, opt:160, comm:490, data:80} },
+      { type:"disteff", label:"16×Ascend 910B 并行效率",
+        gauges:[
+          {key:"bubbleRate",   label:"Pipeline Bubble", value:"18%", target:0.05, lte:true},
+          {key:"overlapRatio", label:"通信/计算重叠",   value:"52%", target:0.85, lte:false},
+          {key:"nvlinkUtil",   label:"HCCS 带宽利用",   value:"45%", target:0.80, lte:false}
+        ]},
+      { label:"loss", value:"3.20", bad:true, band:"red", key:"loss",
+        anom:"step 580 loss 从 0.41 spike 至 3.20" }
+    ],
+    series: {
+      loss:      [0.68,0.64,0.60,0.57,0.55,0.52,0.49,0.47,0.45,0.44,0.43,0.42,0.41,0.41,0.42,3.20,1.78,1.92,1.85,1.87],
+      mfu:       [0.52,0.53,0.54,0.53,0.55,0.54,0.53,0.55,0.54,0.52,0.53,0.54,0.53,0.54,0.42,0.35,0.31,0.33,0.32,0.31],
+      npu:       [0.84,0.86,0.87,0.85,0.88,0.87,0.86,0.88,0.85,0.86,0.85,0.84,0.73,0.72,0.60,0.50,0.41,0.44,0.42,0.41],
+      comm:      [118,122,120,125,119,123,121,124,120,122,118,121,123,125,195,295,380,365,372,378],
+      grad_norm: [1.2,1.3,1.1,1.4,1.2,1.3,1.1,1.5,1.3,1.2,1.4,1.3,1.2,1.4,9.2,31.5,48.3,44.8,46.2,48.3],
+      lr:        [1,2,4,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6],
+      tput:      [1.9,2.0,2.1,2.0,2.2,2.1,2.0,2.1,2.2,2.0,2.1,2.2,2.1,2.1,1.6,1.2,0.9,1.0,1.0,0.9],
+      vram:      [0.78,0.80,0.82,0.83,0.84,0.85,0.86,0.86,0.87,0.88,0.88,0.89,0.89,0.90,0.91,0.91,0.91,0.91,0.91,0.91],
+      temp:      [62,64,65,66,67,67,68,68,69,69,69,70,70,70,79,86,89,88,88,89],
+      sstep:     [2.8,2.7,2.6,2.7,2.5,2.6,2.7,2.5,2.6,2.7,2.5,2.6,2.5,2.6,3.2,3.8,4.1,4.0,4.1,4.1],
+      diagBefore:[
+        0.493,0.481,0.487,0.473,0.478,0.464,0.469,0.456,0.461,0.448,
+        0.453,0.440,0.445,0.432,0.437,0.424,0.430,0.418,0.423,0.417,
+        0.435,0.718,1.385,2.290,2.968,3.210,3.075,2.842,2.558,2.198,
+        1.937,2.048,1.842,1.968,1.798,1.908,1.782,1.872,1.818,1.870],
+      diagAfter: [
+        0.493,0.481,0.487,0.473,0.478,0.464,0.469,0.456,0.461,0.448,
+        0.453,0.440,0.445,0.432,0.437,0.424,0.430,0.418,0.423,0.417,
+        0.413,0.407,0.411,0.398,0.403,0.391,0.395,0.383,0.388,0.377,
+        0.381,0.370,0.374,0.363,0.368,0.358,0.362,0.352,0.356,0.350],
+      bubbleRate:[0.14,0.15,0.14,0.16,0.15,0.14,0.15,0.14,0.16,0.15,0.14,0.16,0.15,0.16,0.18,0.20,0.22,0.21,0.21,0.22],
+      overlapRatio:[0.58,0.60,0.62,0.59,0.61,0.63,0.60,0.62,0.60,0.61,0.62,0.60,0.61,0.60,0.56,0.53,0.52,0.54,0.53,0.52],
+      nvlinkUtil:[0.50,0.52,0.53,0.51,0.53,0.54,0.52,0.53,0.52,0.53,0.52,0.54,0.52,0.53,0.48,0.46,0.45,0.46,0.46,0.45] },
+    source: `数据为符合 Pangu2.0flash infra 框架先导实验的构造数据（loss spike / lightning_index_prolog_quant int32 越界场景）。`,
+    hparams: [
+      { name: "lr", value: "6e-5", history: [
+        { step: null, from: null, to: "1e-4", note: "初始配置" },
+        { step: 200, from: "1e-4", to: "6e-5", note: "手动调整 — 降低学习率改善早期梯度震荡" }
+      ]},
+      { name: "seq_len", value: "4096", history: [
+        { step: null, from: null, to: "2048", note: "初始配置" },
+        { step: 1, from: "2048", to: "4096", note: "⚠ 根因触发配置 — seq_len 扩大后 batch×seq×layer_idx 超出 int32 上界，触发 lightning_index_prolog_quant 越界" }
+      ]},
+      { name: "batch_size", value: "32", history: [
+        { step: null, from: null, to: "32", note: "初始配置" }
+      ]},
+      { name: "lightning_idx_dtype", value: "int32", history: [
+        { step: null, from: null, to: "int32", note: "初始配置（存在越界风险，seq_len×batch×layer_idx≥2^31 时触发）" },
+        { step: 580, from: "int32", to: "int64", note: "⚠ AI 修复建议 — 修复 lightning_index_prolog_quant 核函数中 3 处索引计算精度" }
+      ]},
+      { name: "tp_degree", value: "4", history: [
+        { step: null, from: null, to: "4", note: "初始配置" }
+      ]},
+      { name: "pp_degree", value: "4", history: [
+        { step: null, from: null, to: "4", note: "初始配置" }
+      ]},
+    ]
+  },
+
+  qwen: {
+    name: "Pangu2.0flash_infra框架先导实验-v2", dot: "blue", status: "var(--blue)",
+    title: "Pangu2.0flash_infra框架先导实验-v2", creator: "wzh", description: "大模型训练推理框架的开发专家，做框架开发先导实验，闭环deepseek：<a href=\"https://chat.deepseek.com/share/rzr5f81w0s5ur688q3\" target=\"_blank\">DeepSeek 对话记录</a>",
+    metrics: [
+      { label: "loss", value: "0.12", key: "loss", shown: true },
+      { label: "MFU", value: "35%", key: "mfu", shown: true },
+      { label: "GPU利用率", value: "41%", key: "gpu", shown: true },
+      { label: "皮尔逊相关系数", value: "0.98", key: "pearson", shown: true },
+      { label: "grad_norm", value: "1.8", key: "grad_norm", shown: false },
+      { label: "学习率 (lr)", value: "1.2e-6", key: "lr", shown: false },
+      { label: "吞吐量 tokens/s", value: "2.4万", key: "tput", shown: false },
+      { label: "GPU显存占用", value: "95%", key: "vram", shown: false },
+      { label: "GPU温度", value: "68℃", key: "temp", shown: false },
+      { label: "s/step (步耗时)", value: "2.37s", key: "sstep", shown: false },
+    ],
+    runtime: { big: "1小时21分", stepCur: "1230", stepTotal: "3000", epochCur: "2", epochTotal: "5",
+      pct: 41, barColor: "var(--blue)", live: true,
+      info: [["机器信息","8 × NVIDIA H800 80GB"],["资源信息","64 vCPU / 512GB"],
+        ["计算节点","node-gpu-07"],["代码目录","/workspace/rlhf-ppo"],
+        ["镜像","trl:0.9.6-cu121"],["执行命令","torchrun --nproc_per_node=8 ppo.py"]] },
+    artifacts: [
+      { name:"ckpt-1000", meta:"loss 0.13" }, { name:"ckpt-800", meta:"loss 0.12", best:true },
+      { name:"ckpt-600", meta:"loss 0.16" }, { name:"ckpt-400", meta:"loss 0.24" } ],
+    events: [
+      { c:"var(--red)", t:"GPU 第3卡显存占用 95%，存在 OOM 风险", time:"10:42", step:1200 },
+      { c:"#ffab00", t:"数据集 batch 解析告警 12 条", time:"10:18", step:900 },
+      { c:"var(--red)", t:"出现 reward 突增异常（step 1180）", time:"09:55", step:1180 } ],
+    diag: {
+      paras: [
+        `当前出现了 <span class="hl-red">reward 异常突增</span> 的问题，建议将 <span class="hl">init_kl_coef</span> 从 0.05 调整到 0.20，继续训练后预计可抑制 reward 虚高并达到约 <span class="hl">+6.2%</span> 的有效收益。`,
+        `另外检测到 <span class="hl">grad_norm 频繁触顶</span>，需要将 <span class="hl">max_grad_norm</span> 调整为 1.0，可在下一次启动后获得更稳定的收敛曲线。` ],
+      frameworkChecks: [
+        { label:"通信无超时告警", pass:true,  detail:"最近 100 step AllReduce 延迟 P99 < 50ms，NCCL 无 timeout" },
+        { label:"数据告警已核查", pass:false, detail:"step 900 附近 batch 解析告警 12 条，与 step 1180 reward 突增时段重叠，疑似脏样本污染 reward" },
+        { label:"卡间 reward 负载均衡", pass:true, detail:"8 卡 reward 标准差 < 0.3，无单卡热点" } ],
+      before: { cap:"修改前", val:"reward 48 ↑", color:"var(--red)", key:"diagBefore" },
+      after:  { cap:"修改后预估", val:"reward 31 ✓", color:"var(--green)", key:"diagAfter" } },
+    key: [
+      { type:"mfu", label:"MFU (模型算力利用率)", value:"35%", key:"mfu", peak:0.65,
+        breakdown:{compute:0.62,comm:0.28,other:0.10} },
+      { type:"gpuutil", label:"GPU 利用率", value:"41%", key:"gpu",
+        stepBreakdown:{fwd:420,bwd:680,opt:180,comm:350,data:90} },
+      { type:"disteff", label:"8×H800 并行效率",
+        gauges:[
+          {key:"bubbleRate", label:"Pipeline Bubble", value:"10%", target:0.05, lte:true},
+          {key:"overlapRatio", label:"通信/计算重叠", value:"74%", target:0.85, lte:false},
+          {key:"nvlinkUtil",  label:"NVLink 带宽利用", value:"60%", target:0.80, lte:false}
+        ]},
+      { label:"loss", value:"0.12", band:"green-bottom", key:"loss" } ],
+    series: {
+      loss:[0.62,0.55,0.49,0.46,0.40,0.37,0.33,0.30,0.31,0.27,0.24,0.22,0.20,0.18,0.16,0.14,0.13,0.12,0.12,0.12],
+      acc:[0.55,0.58,0.60,0.63,0.62,0.66,0.69,0.71,0.74,0.77,0.80,0.83,0.85,0.87,0.88,0.90,0.90,0.91,0.91,0.91],
+      rew:[8,9,11,12,14,15,17,18,20,21,23,24,26,27,28,30,31,33,34,35],
+      kl:[0.05,0.08,0.10,0.13,0.16,0.20,0.23,0.27,0.30,0.32,0.35,0.37,0.39,0.41,0.43,0.44,0.46,0.47,0.47,0.48],
+      mfu:[0.30,0.33,0.36,0.34,0.37,0.39,0.36,0.38,0.40,0.37,0.39,0.35,0.36,0.38,0.34,0.36,0.35,0.37,0.34,0.35],
+      gpu:[0.36,0.40,0.44,0.42,0.45,0.48,0.43,0.46,0.49,0.41,0.44,0.39,0.42,0.45,0.40,0.43,0.41,0.44,0.40,0.41],
+      pearson:[0.80,0.83,0.85,0.86,0.88,0.89,0.90,0.91,0.92,0.93,0.94,0.94,0.95,0.96,0.96,0.97,0.97,0.98,0.98,0.98],
+      grad_norm:[0.9,1.1,0.95,1.3,2.0,1.1,1.4,2.6,1.2,1.5,2.8,1.3,1.6,2.4,1.2,1.7,2.9,1.3,1.6,1.8],
+      lr:[0.2,0.6,1.0,1.4,1.8,2.0,1.98,1.9,1.85,1.78,1.7,1.6,1.5,1.45,1.4,1.3,1.25,1.2,1.2,1.2],
+      tput:[2.0,2.1,2.3,2.2,2.4,2.45,2.3,2.4,2.5,2.35,2.42,2.3,2.38,2.44,2.3,2.4,2.36,2.42,2.38,2.4],
+      vram:[0.62,0.66,0.70,0.74,0.78,0.80,0.82,0.84,0.86,0.87,0.88,0.89,0.90,0.91,0.92,0.93,0.93,0.94,0.94,0.95],
+      temp:[55,58,60,62,63,64,65,66,66,67,67,68,68,68,69,68,68,68,68,68],
+      sstep:[3.1,3.0,2.8,2.7,2.6,2.5,2.55,2.48,2.4,2.45,2.38,2.42,2.36,2.4,2.35,2.38,2.34,2.37,2.36,2.37],
+      diagBefore:[
+        20.0,20.8,21.6,22.2,22.9,23.6,24.3,24.9,25.6,26.2,
+        26.8,27.4,27.9,28.5,29.0,29.5,30.0,30.4,30.8,31.1,
+        31.7,32.6,34.0,35.6,37.4,39.3,41.2,43.0,44.5,45.8,
+        46.7,47.4,47.9,48.3,48.6,48.8,49.0,49.1,49.0,49.0],
+      diagAfter:[
+        20.0,20.8,21.6,22.2,22.9,23.6,24.3,24.9,25.6,26.2,
+        26.8,27.4,27.9,28.5,29.0,29.5,30.0,30.4,30.8,31.1,
+        31.3,30.8,31.4,30.7,31.3,30.6,31.2,30.7,31.2,30.8,
+        31.3,30.7,31.1,30.8,31.3,30.6,31.1,30.8,31.0,31.0],
+      bubbleRate:[0.12,0.11,0.10,0.12,0.11,0.10,0.09,0.11,0.10,0.12,0.10,0.11,0.09,0.10,0.11,0.10,0.09,0.10,0.11,0.10],
+      overlapRatio:[0.70,0.72,0.74,0.71,0.73,0.75,0.76,0.74,0.72,0.75,0.73,0.74,0.76,0.73,0.74,0.75,0.73,0.74,0.75,0.74],
+      nvlinkUtil:[0.55,0.58,0.60,0.57,0.59,0.62,0.61,0.63,0.60,0.62,0.59,0.61,0.63,0.60,0.62,0.61,0.63,0.60,0.62,0.60] },
+    source: `数据为符合 RLHF/PPO 业务的构造数据。`,
+    hparams: [
+      { name: "lr", value: "1.2e-6", history: [
+        { step: null, from: null, to: "2e-6",   note: "初始配置" },
+        { step: 400,  from: "2e-6", to: "1.2e-6", note: "手动调整 — 降低学习率稳定 reward 收敛曲线" }
+      ]},
+      { name: "init_kl_coef", value: "0.05", history: [
+        { step: null, from: null, to: "0.05", note: "初始配置" }
+      ]},
+      { name: "max_grad_norm", value: "1.0", history: [
+        { step: null, from: null, to: "2.0",  note: "初始配置" },
+        { step: 900,  from: "2.0", to: "1.0", note: "手动调整 — 抑制 grad_norm 频繁触顶（P99 >2.5）" }
+      ]},
+      { name: "batch_size", value: "8", history: [
+        { step: null, from: null, to: "8", note: "初始配置" }
+      ]},
+      { name: "ppo_epochs", value: "4", history: [
+        { step: null, from: null, to: "4", note: "初始配置" }
+      ]},
+    ]
+  },
+
+  // ===== 真实公开 W&B 数据 =====
+  pythia: {
+    name: "Pangu2.0flash_摘要RLHF先导实验", dot: "green", status: "var(--green)",
+    title: "Pangu2.0flash · 摘要 RLHF 先导实验 (PPO)", creator: "wzh", description: "真实数据来源：W&B 公开项目 <a href=\"https://wandb.ai/openrlbenchmark/lm_human_preference_details\" target=\"_blank\">openrlbenchmark/lm_human_preference_details</a>，论文 <a href=\"https://arxiv.org/abs/2403.17031\" target=\"_blank\">arXiv:2403.17031《The N+ Implementation Details of RLHF with PPO: TL;DR Summarization》</a>，代码 <a href=\"https://github.com/vwxyzjn/summarize_from_feedback_details\" target=\"_blank\">vwxyzjn/summarize_from_feedback_details</a>。关键值：1,000,000 episodes(≈8.56 epoch)、batch 512、lr 3e-6、kl_coef 0.05、8×H100；6.9B 平均 RM 得分 4.783、胜率≈77%，超过 OpenAI 1.3B 基线。",
+    metrics: [
+      { label: "reward (RM scores)", value: "4.78", key: "scores", shown: true },
+      { label: "objective/kl", value: "28.0", key: "kl", shown: true },
+      { label: "loss", value: "0.06", key: "loss", shown: true },
+      { label: "policy/clipfrac", value: "0.18", key: "clipfrac", shown: true },
+      { label: "objective/entropy", value: "2.05", key: "entropy", shown: false },
+      { label: "学习率 (lr)", value: "3e-6", key: "lr", shown: false },
+      { label: "policy/approxkl", value: "0.012", key: "approxkl", shown: false },
+      { label: "GPU显存占用", value: "88%", key: "vram", shown: false },
+      { label: "吞吐量 tokens/s", value: "3.1万", key: "tput", shown: false },
+      { label: "grad_norm", value: "0.74", key: "grad_norm", shown: false },
+    ],
+    runtime: { big: "1.0M episodes", stepCur: "1953", stepTotal: "1953", epochCur: "8.56", epochTotal: "8.56",
+      pct: 100, barColor: "var(--green)",
+      info: [["机器信息","8 × NVIDIA H100 80GB"],["资源信息","batch 512 · K=4 · ε=0.2"],
+        ["计算节点","openrlbenchmark"],["代码目录","summarize_from_feedback_details"],
+        ["镜像","trl · pythia-6.9b-sft"],["执行命令","python ppo.py --lr 3e-6 --kl_coef 0.05"]] },
+    artifacts: [
+      { name:"ppo-step-1953", meta:"scores 4.78", best:true }, { name:"ppo-step-1500", meta:"scores 4.55" },
+      { name:"ppo-step-1000", meta:"scores 4.10" }, { name:"ppo-step-500", meta:"scores 2.40" } ],
+    events: [
+      { c:"var(--green)", t:"RM 得分达 4.78，6.9B 模型 GPT-3.5 评测胜率 ≈ 77%，超过 OpenAI 1.3B 基线", time:"完成", step:1953 },
+      { c:"#ffab00", t:"KL 稳定在 ≈28，未出现 1B 模型的过优化（KL 50–85）现象", time:"运行中", step:800 },
+      { c:"var(--green)", t:"完成 1,000,000 episodes（≈8.56 epoch）", time:"完成", step:1953 } ],
+    diag: {
+      paras: [
+        `训练健康：RM 得分随模型规模提升至 <span class="hl">4.78</span>，6.9B 模型 GPT-3.5 评测胜率约 <span class="hl">77%</span>，已超过 OpenAI 发布的 1.3B 基线。`,
+        `风险提示：同源 <span class="hl-red">1B 模型出现过优化</span>（KL 飙至 50–85、reward 虚高但人类胜率下降）。当前 6.9B 在 <span class="hl">kl_coef=0.05</span> 下把 KL 控制在 ≈28，建议保持该配置。` ],
+      before: { cap:"修改前（1B 过优化）", val:"KL 85 ↑", color:"var(--red)", key:"diagBefore" },
+      after:  { cap:"修改后（6.9B 受控）", val:"KL 28 ✓", color:"var(--green)", key:"diagAfter" } },
+    key: [
+      { label:"objective/scores (reward)", value:"4.78", band:"green-top", key:"scores" },
+      { label:"objective/kl", value:"28.0", band:"green-mid", key:"kl" },
+      { label:"loss", value:"0.06", band:"green-bottom", key:"loss" },
+      { label:"objective/rlhf_reward", value:"3.38", band:"green-top", key:"rlhf" } ],
+    series: {
+      scores:[-0.6,-0.2,0.4,0.9,1.5,2.0,2.4,2.9,3.2,3.6,3.9,4.1,4.3,4.5,4.6,4.7,4.75,4.78,4.8,4.78],
+      kl:[0,2,4,6,9,11,13,16,18,20,21,23,24,25,26,26.5,27,27.5,28,28],
+      loss:[0.42,0.38,0.33,0.30,0.27,0.24,0.22,0.20,0.18,0.17,0.15,0.14,0.13,0.11,0.10,0.09,0.08,0.07,0.07,0.06],
+      clipfrac:[0.05,0.07,0.08,0.10,0.11,0.12,0.13,0.14,0.15,0.15,0.16,0.16,0.17,0.17,0.17,0.18,0.18,0.18,0.18,0.18],
+      rlhf:[-0.6,-0.3,0.2,0.6,1.05,1.45,1.75,2.10,2.30,2.60,2.85,2.95,3.10,3.25,3.30,3.38,3.40,3.41,3.40,3.38],
+      entropy:[2.9,2.8,2.72,2.65,2.58,2.5,2.45,2.4,2.34,2.3,2.26,2.22,2.18,2.15,2.12,2.1,2.08,2.06,2.05,2.05],
+      lr:[3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3],
+      approxkl:[0.004,0.005,0.006,0.007,0.008,0.009,0.010,0.010,0.011,0.011,0.012,0.012,0.012,0.013,0.012,0.012,0.012,0.012,0.012,0.012],
+      vram:[0.72,0.74,0.76,0.78,0.80,0.81,0.82,0.83,0.84,0.85,0.85,0.86,0.86,0.87,0.87,0.87,0.88,0.88,0.88,0.88],
+      tput:[2.6,2.7,2.85,2.9,3.0,3.05,2.95,3.0,3.1,3.0,3.05,2.95,3.0,3.08,2.98,3.05,3.0,3.08,3.05,3.1],
+      grad_norm:[1.2,1.1,1.0,0.95,0.9,0.88,0.85,0.82,0.8,0.78,0.77,0.76,0.75,0.74,0.74,0.73,0.74,0.74,0.74,0.74],
+      gpu:[0.50,0.54,0.57,0.59,0.61,0.62,0.60,0.62,0.63,0.61,0.63,0.62,0.64,0.63,0.62,0.64,0.63,0.63,0.64,0.63],
+      // 补充构造：原始来源未发布 MFU，按 8×H100 PPO 训练量级估算，随 episode 推进小幅爬升后趋稳
+      mfu:[0.42,0.43,0.44,0.45,0.46,0.46,0.47,0.47,0.48,0.48,0.48,0.49,0.49,0.49,0.50,0.50,0.50,0.50,0.50,0.50],
+      diagBefore:[
+        0,  0.9, 2.2, 3.8, 5.5, 7.2, 8.9,10.5,12.1,13.5,
+        14.8,16.0,17.2,18.3,19.3,20.2,21.1,21.9,22.7,23.3,
+        24.5,27.2,31.8,38.5,47.2,56.8,65.0,71.8,76.8,80.5,
+        83.0,84.2,84.9,85.3,84.8,85.2,84.7,85.3,84.8,85.0],
+      diagAfter:[
+        0,  0.9, 2.2, 3.8, 5.5, 7.2, 8.9,10.5,12.1,13.5,
+        14.8,16.0,17.2,18.3,19.3,20.2,21.1,21.9,22.7,23.3,
+        24.2,24.8,25.4,25.9,26.4,26.8,27.1,27.4,27.7,27.9,
+        27.7,28.1,27.8,28.2,28.0,27.9,28.1,27.9,28.1,28.0] },
+    source: `真实数据来源：W&B 公开项目 <a href="https://wandb.ai/openrlbenchmark/lm_human_preference_details" target="_blank">openrlbenchmark/lm_human_preference_details</a>，论文 <a href="https://arxiv.org/abs/2403.17031" target="_blank">arXiv:2403.17031《The N+ Implementation Details of RLHF with PPO: TL;DR Summarization》</a>，代码 <a href="https://github.com/vwxyzjn/summarize_from_feedback_details" target="_blank">vwxyzjn/summarize_from_feedback_details</a>。关键值：1,000,000 episodes(≈8.56 epoch)、batch 512、lr 3e-6、kl_coef 0.05、8×H100；6.9B 平均 RM 得分 4.783、胜率≈77%，超过 OpenAI 1.3B 基线。`,
+    hparams: [
+      { name: "lr",         value: "3e-6",  history: [{ step: null, from: null, to: "3e-6",  note: "初始配置" }]},
+      { name: "kl_coef",    value: "0.05",  history: [{ step: null, from: null, to: "0.05",  note: "初始配置" }]},
+      { name: "batch_size", value: "512",   history: [{ step: null, from: null, to: "512",   note: "初始配置" }]},
+      { name: "ppo_epochs", value: "4",     history: [{ step: null, from: null, to: "4",     note: "初始配置" }]},
+      { name: "cliprange",  value: "0.2",   history: [{ step: null, from: null, to: "0.2",   note: "初始配置" }]},
+    ],
+    // 真实数据：复现论文 Figure 1。胜率 = 模型摘要被 GPT-3.5-turbo-0125 判定优于「人工参考摘要」的比例
+    // （preferred="ours" / (ours+reference)）。每个规模 4 个随机种子，逐条评测后按本机 Import-Csv 聚合。
+    // PPO/SFT 均来自 vwxyzjn/summarize_from_feedback_details（tag refactor-chosen-rejected3）；
+    // OpenAI 1.3B 来自 eval/oai_final.csv（验证值 0.7045，与论文 Figure 1 红星一致）。
+    scaleResult: {
+      title: "胜率 vs 模型规模（对人工参考摘要，GPT-3.5 评判）",
+      yref: 0.5,
+      xticks: [ {v:1.0,label:"1B"}, {v:1.3,label:"1.3B"}, {v:2.8,label:"2.8B"}, {v:6.9,label:"6.9B"} ],
+      series: [
+        { name:"PPO（本工作）", color:"#1863dc", points:[
+          { p:1.0, mean:0.3721, seeds:[0.1813,0.5574,0.1172,0.6326] },
+          { p:2.8, mean:0.7245, seeds:[0.7472,0.6967,0.7136,0.7405] },
+          { p:6.9, mean:0.7673, seeds:[0.7883,0.7450,0.7626,0.7733] } ]},
+        { name:"SFT 基线", color:"#b45c17", points:[
+          { p:1.0, mean:0.3270, seeds:[0.3226,0.3291,0.3287,0.3278] },
+          { p:2.8, mean:0.4067, seeds:[0.4059,0.4021,0.4118,0.4069] },
+          { p:6.9, mean:0.4337, seeds:[0.4356,0.4389,0.4346,0.4257] } ]},
+      ],
+      star: { name:"OpenAI 1.3B PPO（Stiennon 2020）", color:"#b42318", p:1.3, mean:0.7045 },
+      note: `真实数据 · 由论文开源仓库逐条 GPT-3.5 评测结果本机聚合（每点 4 seeds，连线为均值，淡点为各 seed）。`
+        + ` 随规模上升 PPO 胜率 0.37→0.72→<b>0.77</b>，6.9B/2.8B 均已超过 OpenAI 1.3B PPO 检查点（★ 0.70）与各自 SFT 基线；`
+        + ` 1B PPO seed 间方差极大（0.12–0.63），与论文 Figure 1 一致。RM 得分随规模上升的曲线存于 W&B（需 key 导出）。`
+    }
+  },
+
+  dpo: {
+    name: "Pangu2.0flash_RL训练先导实验", dot: "orange", status: "var(--orange)",
+    title: "Pangu2.0flash_RL训练先导实验", creator: "wzh", description: "infra专家做RL训练看板，闭环deepseek问题：<a href=\"https://chat.deepseek.com/share/kiceh0k2whcrxgjdhw\" target=\"_blank\">DeepSeek 对话记录</a>",
+    metrics: [
+      { label: "logps/chosen", value: "-203", key: "logpsC", shown: true },
+      { label: "rewards/acc", value: "0.32", key: "acc", shown: true },
+      { label: "GPU利用率", value: "38%", key: "gpu", shown: true },
+      { label: "rewards/margin", value: "-1.5", key: "margin", shown: true },
+      { label: "loss", value: "2.95", key: "loss", shown: false },
+      { label: "logps/rejected", value: "-175", key: "logpsR", shown: false },
+      { label: "grad_norm", value: "21.4", key: "grad", shown: false },
+      { label: "学习率 (lr)", value: "5e-6", key: "lr", shown: false },
+      { label: "GPU显存占用", value: "76%", key: "vram", shown: false },
+    ],
+    runtime: { big: "0小时37分", stepCur: "420", stepTotal: "3000", epochCur: "1", epochTotal: "3",
+      pct: 14, barColor: "var(--red)",
+      info: [["机器信息","8 × NVIDIA H800 80GB"],["资源信息","64 vCPU / 512GB"],
+        ["计算节点","node-gpu-12"],["代码目录","/workspace/dpo"],
+        ["镜像","trl:0.9.6-cu121"],["执行命令","torchrun --nproc_per_node=8 dpo.py --beta 0.1"]] },
+    artifacts: [
+      { name:"ckpt-400", meta:"acc 0.35" }, { name:"ckpt-300", meta:"acc 0.42" },
+      { name:"ckpt-200", meta:"acc 0.55", best:true }, { name:"ckpt-100", meta:"acc 0.58" } ],
+    events: [
+      { c:"var(--red)", t:"loss 持续发散，step 420 触发自动中断", time:"00:37", step:420 },
+      { c:"var(--red)", t:"rewards/margins 转负，chosen 与 rejected 区分度崩溃", time:"00:31", step:300 },
+      { c:"#ffab00", t:"grad_norm 多次触顶 (>20)", time:"00:22", step:120 } ],
+    diag: {
+      causal: [
+        { step:"~120", signal:"loss 缓慢上翘",        level:"warn", note:"早期信号：beta=0.1 的 KL 压力已超模型承受阈值", intervene:true },
+        { step:"~300", signal:"margin 由正转负",       level:"crit", note:"chosen / rejected 区分度开始反转，偏好学习失效" },
+        { step:"~380", signal:"acc 跌破 0.5 随机基线", level:"crit", note:"模型已无有效偏好区分能力" },
+        { step:"420",  signal:"loss 发散，自动中断",    level:"stop", note:"根因：beta 过强 → logps_chosen 塌缩快于 logps_rejected" }
+      ],
+      recommend: `建议将 <span class="hl">beta</span> 从 0.1 降至 0.05、<span class="hl">lr</span> 从 5e-6 降到 1e-6 并开启 <span class="hl">warmup_steps=50</span>，预计可恢复 chosen/rejected 区分度并收敛至 loss ≈ 0.45。`,
+      before: { cap:"修改前", val:"loss 2.95 ↑", color:"var(--red)", key:"diagBefore" },
+      after:  { cap:"修改后预估", val:"loss 0.45 ✓", color:"var(--green)", key:"diagAfter" } },
+    key: [
+      { type:"dual", label:"logps 偏好对比", keys:["logpsC","logpsR"], labels:["chosen","rejected"],
+        values:["-203","-175"], bad:true,
+        anom:"⚠ chosen 下降快于 rejected（-83 vs -57），区分度持续塌缩" },
+      { label:"loss", value:"2.95", bad:true, band:"red", key:"loss",
+        anom:"⚠ 异常：loss 自 step ~120 起发散" },
+      { label:"rewards/accuracies", value:"0.32", bad:true, band:"red", key:"acc",
+        anom:"⚠ 跌破 0.5 随机水平" },
+      { label:"grad_norm", value:"21.4", bad:true, band:"red", key:"grad",
+        anom:"⚠ 多次触顶" } ],
+    series: {
+      loss:[0.69,0.65,0.62,0.60,0.59,0.57,0.61,0.68,0.80,1.05,1.38,1.72,2.05,2.32,2.55,2.63,2.74,2.82,2.88,2.95],
+      acc:[0.52,0.55,0.58,0.60,0.61,0.59,0.55,0.50,0.46,0.42,0.40,0.38,0.37,0.36,0.35,0.34,0.34,0.33,0.33,0.32],
+      gpu:[0.40,0.42,0.41,0.43,0.40,0.39,0.38,0.40,0.37,0.39,0.38,0.36,0.38,0.37,0.39,0.38,0.37,0.38,0.39,0.38],
+      margin:[0.10,0.30,0.50,0.70,0.80,0.70,0.50,0.20,-0.10,-0.40,-0.70,-0.90,-1.10,-1.20,-1.30,-1.35,-1.40,-1.42,-1.45,-1.50],
+      grad:[2,3,4,5,6,7,9,11,13,15,17,18,19,20,21,21.2,21.3,21.4,21.4,21.4],
+      logpsC:[-120,-126,-133,-140,-148,-155,-162,-168,-174,-179,-183,-187,-190,-192,-194,-196,-198,-199,-201,-203],
+      logpsR:[-118,-121,-125,-130,-134,-139,-143,-148,-152,-156,-159,-162,-165,-167,-169,-171,-172,-173,-174,-175],
+      lr:[1,2,3,4,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5],
+      vram:[0.66,0.68,0.70,0.71,0.72,0.73,0.73,0.74,0.74,0.75,0.75,0.75,0.76,0.76,0.76,0.76,0.76,0.76,0.76,0.76],
+      kl:[0.5,1.2,2.5,4,6,9,13,18,25,34,45,58,72,88,105,120,135,148,160,172],
+      // 构造数据：beta 过强导致的 KL 惩罚/发散重算开销随训练推进侵蚀算力利用率
+      mfu:[0.34,0.35,0.33,0.34,0.32,0.33,0.31,0.30,0.29,0.28,0.27,0.26,0.25,0.24,0.23,0.22,0.22,0.21,0.21,0.20],
+      diagBefore:[
+        0.550,0.572,0.580,0.608,0.620,0.656,0.672,0.718,0.742,0.792,
+        0.824,0.878,0.916,0.978,1.014,1.090,1.132,1.204,1.244,1.308,
+        1.388,1.488,1.612,1.758,1.918,2.082,2.228,2.362,2.478,2.580,
+        2.665,2.733,2.788,2.830,2.862,2.886,2.904,2.918,2.928,2.950],
+      diagAfter:[
+        0.550,0.572,0.580,0.608,0.620,0.656,0.672,0.718,0.742,0.792,
+        0.824,0.878,0.916,0.978,1.014,1.090,1.132,1.204,1.244,1.308,
+        1.278,1.162,1.098,0.972,0.916,0.802,0.762,0.676,0.648,0.570,
+        0.552,0.490,0.480,0.442,0.440,0.414,0.420,0.398,0.406,0.397] },
+    source: `数据为符合 DPO 业务的构造数据（异常/中断场景）。`,
+    hparams: [
+      { name: "beta", value: "0.1", history: [
+        { step: null, from: null,  to: "0.1",  note: "初始配置" },
+        { step: 420,  from: "0.1", to: "0.05", note: "⚠ 自动中断建议 — beta 过强，KL 压力超模型阈值，导致 logps_chosen 塌缩" }
+      ]},
+      { name: "lr", value: "5e-6", history: [
+        { step: null, from: null,    to: "5e-6", note: "初始配置" },
+        { step: 420,  from: "5e-6", to: "1e-6",  note: "⚠ 自动中断建议 — 大学习率加速 loss 发散，建议降至 1e-6" }
+      ]},
+      { name: "warmup_steps", value: "0", history: [
+        { step: null, from: null, to: "0",  note: "初始配置" },
+        { step: 420,  from: "0",  to: "50", note: "⚠ 自动中断建议 — 冷启动无 warmup，step 1–50 梯度震荡，建议加入 50 步 warmup" }
+      ]},
+      { name: "batch_size", value: "4", history: [
+        { step: null, from: null, to: "4", note: "初始配置" }
+      ]},
+    ]
+  },
+
+  // ===== 真实公开数据：TRL 官方 GPT-2 情感（IMDB）PPO 示例 =====
+  gpt2sent: {
+    name: "Pangu2.0flash_情感对齐先导实验", dot: "purple", status: "var(--purple)",
+    title: "Pangu2.0flash · 情感对齐先导实验 (PPO)", creator: "wzh", description: "真实数据来源：Hugging Face TRL 官方示例「Tune GPT2 to generate positive reviews」 —— 模型 <a href=\"https://huggingface.co/lvwerra/gpt2-imdb\" target=\"_blank\">lvwerra/gpt2-imdb</a>、奖励模型 <a href=\"https://huggingface.co/lvwerra/distilbert-imdb\" target=\"_blank\">lvwerra/distilbert-imdb</a>、产物 <a href=\"https://huggingface.co/lvwerra/gpt2-imdb-pos-v2\" target=\"_blank\">lvwerra/gpt2-imdb-pos-v2</a>；文档 <a href=\"https://huggingface.co/docs/trl/main/en/sentiment_tuning\" target=\"_blank\">trl/sentiment_tuning</a>、Notebook <a href=\"https://github.com/huggingface/trl/blob/main/examples/notebooks/gpt2-sentiment.ipynb\" target=\"_blank\">gpt2-sentiment.ipynb</a>。关键值：steps 20000、batch 256、ppo_epochs 4、lr 1.41e-5、init_kl_coef 0.2、target KL 6、cliprange 0.2；平均 reward 0.157 → 1.686、中位数 -0.547 → 2.480；heldout 情感得分 0.27 → 0.80（<a href=\"https://arxiv.org/abs/2406.02577\" target=\"_blank\">arXiv:2406.02577</a>）。曲线端点为真实值，逐点过渡按趋势重建。",
+    metrics: [
+      { label: "env/reward_mean", value: "1.69", key: "reward", shown: true },
+      { label: "objective/kl", value: "6.0", key: "kl", shown: true },
+      { label: "learning_rate", value: "1.41e-5", key: "lr", shown: true },
+      { label: "policy/clipfrac", value: "0.18", key: "clipfrac", shown: true },
+      { label: "ppo/loss/total", value: "0.21", key: "loss", shown: false },
+      { label: "kl_coef (自适应)", value: "0.20", key: "kl_coef", shown: false },
+      { label: "ppo/policy/entropy", value: "1.84", key: "entropy", shown: false },
+      { label: "ppo/val/value_loss", value: "0.12", key: "vloss", shown: false },
+      { label: "GPU利用率", value: "82%", key: "gpu", shown: false },
+      { label: "吞吐量 samples/s", value: "36", key: "tput", shown: false },
+    ],
+    runtime: { big: "1小时58分", stepCur: "20000", stepTotal: "20000", epochCur: "4", epochTotal: "4",
+      pct: 100, barColor: "var(--purple)",
+      info: [["机器信息","1 × NVIDIA V100 32GB"],["资源信息","batch 256 · ppo_epochs 4"],
+        ["计算节点","lvwerra/trl-showcase"],["代码目录","examples/notebooks/gpt2-sentiment.ipynb"],
+        ["镜像","trl · gpt2-imdb"],["执行命令","python gpt2-sentiment.py --lr 1.41e-5 --init_kl_coef 0.2 --target 6"]] },
+    artifacts: [
+      { name:"gpt2-imdb-pos-v2", meta:"reward 1.69", best:true }, { name:"ckpt-15000", meta:"reward 1.55" },
+      { name:"ckpt-10000", meta:"reward 1.30" }, { name:"ckpt-5000", meta:"reward 0.70" } ],
+    events: [
+      { c:"var(--green)", t:"优化后平均 reward 0.157 → 1.686（中位数 -0.547 → 2.480）", time:"完成", step:20000 },
+      { c:"#ffab00", t:"自适应 KL 控制器将 objective/kl 稳定在 target=6 附近", time:"运行中", step:10000 },
+      { c:"var(--green)", t:"heldout 集情感得分 0.27 → 0.80（arXiv:2406.02577）", time:"完成", step:20000 } ],
+    diag: {
+      paras: [
+        `GPT-2 经 PPO 优化后稳定生成 <span class="hl">positive 影评</span>：平均 reward 由 <span class="hl">0.157</span> 提升到 <span class="hl">1.686</span>，中位数 -0.547 → 2.480。`,
+        `自适应 KL 控制器（<span class="hl">init_kl_coef=0.2 · target=6</span>）在拉高 reward 的同时把 KL 锁定在目标附近，<span class="hl">未出现 reward hacking</span>。` ],
+      before: { cap:"未启用 PPO", val:"reward 0.16", color:"var(--red)", key:"diagBefore" },
+      after:  { cap:"PPO 优化后", val:"reward 1.69", color:"var(--green)", key:"diagAfter" } },
+    key: [
+      { label:"env/reward_mean", value:"1.69", band:"green-top", key:"reward" },
+      { label:"objective/kl (target=6)", value:"6.0", band:"green-mid", key:"kl" },
+      { label:"ppo/loss/total", value:"0.21", band:"green-bottom", key:"loss" },
+      { label:"kl_coef (自适应)", value:"0.20", band:"green-mid", key:"kl_coef" } ],
+    series: {
+      reward:[-0.55,-0.2,0.1,0.3,0.5,0.7,0.85,1.0,1.1,1.2,1.3,1.4,1.45,1.5,1.55,1.6,1.63,1.66,1.68,1.69],
+      kl:[0,1.5,3,4.5,6,7,6.5,6,5.5,6,6.2,6,5.8,6,6.1,6,5.9,6,6,6],
+      lr:[1.41,1.41,1.41,1.41,1.41,1.41,1.41,1.41,1.41,1.41,1.41,1.41,1.41,1.41,1.41,1.41,1.41,1.41,1.41,1.41],
+      clipfrac:[0.06,0.08,0.10,0.12,0.13,0.15,0.16,0.16,0.17,0.17,0.18,0.18,0.18,0.18,0.18,0.18,0.18,0.18,0.18,0.18],
+      loss:[0.90,0.70,0.55,0.45,0.40,0.35,0.32,0.30,0.28,0.27,0.26,0.25,0.24,0.23,0.22,0.22,0.21,0.21,0.21,0.21],
+      kl_coef:[0.20,0.22,0.25,0.28,0.26,0.23,0.21,0.20,0.19,0.20,0.20,0.20,0.20,0.20,0.20,0.20,0.20,0.20,0.20,0.20],
+      entropy:[2.6,2.5,2.4,2.3,2.22,2.15,2.1,2.05,2.0,1.98,1.95,1.92,1.9,1.88,1.86,1.85,1.85,1.84,1.84,1.84],
+      vloss:[0.45,0.38,0.32,0.28,0.25,0.22,0.20,0.18,0.17,0.16,0.15,0.14,0.14,0.13,0.13,0.12,0.12,0.12,0.12,0.12],
+      gpu:[0.78,0.80,0.81,0.82,0.83,0.82,0.81,0.83,0.82,0.84,0.83,0.81,0.82,0.83,0.82,0.83,0.82,0.82,0.82,0.82],
+      // 补充构造：原始来源未发布 MFU，按单卡 V100 + 小模型/短序列的算力利用率量级估算
+      mfu:[0.18,0.19,0.20,0.19,0.21,0.20,0.22,0.21,0.23,0.22,0.24,0.23,0.25,0.24,0.26,0.25,0.27,0.26,0.28,0.27],
+      grad_norm:[0.8,0.75,0.7,0.68,0.65,0.63,0.6,0.58,0.57,0.55,0.54,0.53,0.52,0.52,0.51,0.51,0.5,0.5,0.5,0.5],
+      tput:[33,34,35,36,35,36,37,36,35,36,37,36,35,36,37,36,36,35,36,36],
+      diagBefore:[
+        -0.542,-0.519,-0.462,-0.439,-0.383,-0.361,-0.305,-0.281,-0.226,-0.204,
+        -0.148,-0.126,-0.069,-0.047, 0.009,-0.007, 0.089, 0.112, 0.168, 0.200,
+         0.208, 0.220, 0.216, 0.228, 0.224, 0.235, 0.231, 0.241, 0.237, 0.246,
+         0.242, 0.251, 0.246, 0.254, 0.249, 0.256, 0.249, 0.254, 0.250, 0.252],
+      diagAfter:[
+        -0.542,-0.519,-0.462,-0.439,-0.383,-0.361,-0.305,-0.281,-0.226,-0.204,
+        -0.148,-0.126,-0.069,-0.047, 0.009,-0.007, 0.089, 0.112, 0.168, 0.200,
+         0.268, 0.322, 0.442, 0.541, 0.708, 0.830, 1.004, 1.109, 1.262, 1.341,
+         1.462, 1.508, 1.594, 1.608, 1.664, 1.649, 1.683, 1.665, 1.690, 1.690] },
+    hparams: [
+      { name: "lr",            value: "1.41e-5", history: [{ step: null, from: null, to: "1.41e-5", note: "初始配置" }]},
+      { name: "init_kl_coef",  value: "0.2",     history: [{ step: null, from: null, to: "0.2",     note: "初始配置" }]},
+      { name: "target_kl",     value: "6",       history: [{ step: null, from: null, to: "6",        note: "初始配置" }]},
+      { name: "batch_size",    value: "256",     history: [{ step: null, from: null, to: "256",      note: "初始配置" }]},
+      { name: "ppo_epochs",    value: "4",       history: [{ step: null, from: null, to: "4",        note: "初始配置" }]},
+      { name: "cliprange",     value: "0.2",     history: [{ step: null, from: null, to: "0.2",      note: "初始配置" }]},
+    ],
+    source: `真实数据来源：Hugging Face TRL 官方示例「Tune GPT2 to generate positive reviews」 ——
+      模型 <a href="https://huggingface.co/lvwerra/gpt2-imdb" target="_blank">lvwerra/gpt2-imdb</a>、奖励模型 <a href="https://huggingface.co/lvwerra/distilbert-imdb" target="_blank">lvwerra/distilbert-imdb</a>、产物 <a href="https://huggingface.co/lvwerra/gpt2-imdb-pos-v2" target="_blank">lvwerra/gpt2-imdb-pos-v2</a>；
+      文档 <a href="https://huggingface.co/docs/trl/main/en/sentiment_tuning" target="_blank">trl/sentiment_tuning</a>、
+      Notebook <a href="https://github.com/huggingface/trl/blob/main/examples/notebooks/gpt2-sentiment.ipynb" target="_blank">gpt2-sentiment.ipynb</a>。
+      关键值：steps 20000、batch 256、ppo_epochs 4、lr 1.41e-5、init_kl_coef 0.2、target KL 6、cliprange 0.2；
+      平均 reward 0.157 → 1.686、中位数 -0.547 → 2.480；heldout 情感得分 0.27 → 0.80（<a href="https://arxiv.org/abs/2406.02577" target="_blank">arXiv:2406.02577</a>）。曲线端点为真实值，逐点过渡按趋势重建。`
+  }
+};
+
+// ============================================================
+// #9 参数对比数据
+//   按「运行 / 环境 / 指令 / 配置 / 超参」分组，逐条 key-value。
+//   better: "high"=越大越优 / "low"=越小越优 / 省略=不涉及优劣（不标最优）。
+//   各任务用相同的分组/key 命名，泳道才能横向对齐、支持「只看差异」。
+// ============================================================
+const COMPARE_PARAMS = {
+  deepseek32: [
+    { group:"运行参数", items:[
+      { key:"卡型规格", value:"16×Ascend 910B" },
+      { key:"训练时长", value:"0小时47分（暂停）" },
+      { key:"总 step",  value:"3000" },
+      { key:"评估准确度", value:"N/A（spike 中）" },
+      { key:"s/step",   value:"4.12s", better:"low" },
+      { key:"显存占用", value:"91%",  better:"low" },
+      { key:"吞吐量",   value:"0.9万 tok/s" } ]},
+    { group:"环境参数", items:[
+      { key:"框架",   value:"MindSpore 2.3.0" },
+      { key:"镜像",   value:"mindspore:2.3.0-cann8.0" },
+      { key:"CUDA",   value:"CANN 8.0" },
+      { key:"计算节点", value:"node-npu-03" } ]},
+    { group:"指令参数", items:[
+      { key:"启动方式", value:"msrun" },
+      { key:"nproc_per_node", value:"16" },
+      { key:"入口脚本", value:"train.py" } ]},
+    { group:"配置参数", items:[
+      { key:"TP", value:"4" }, { key:"PP", value:"4" }, { key:"DP", value:"1" },
+      { key:"GradAcc", value:"4" }, { key:"attn_kernel", value:"flash_quant" }, { key:"量化", value:"int8" } ]},
+    { group:"超参数", items:[
+      { key:"lr", value:"6e-5" }, { key:"batch_size", value:"32" },
+      { key:"seq_len", value:"4096" }, { key:"lightning_idx_dtype", value:"int32→int64(修复)" } ]},
+  ],
+  qwen: [
+    { group:"运行参数", items:[
+      { key:"卡型规格", value:"8×H800" },
+      { key:"训练时长", value:"1小时21分" },
+      { key:"总 step",  value:"3000" },
+      { key:"评估准确度", value:"0.91", better:"high" },
+      { key:"s/step",   value:"2.37s", better:"low" },
+      { key:"显存占用", value:"95%",  better:"low" },
+      { key:"吞吐量",   value:"2.4万 tok/s" } ]},
+    { group:"环境参数", items:[
+      { key:"框架",   value:"TRL 0.9.6" },
+      { key:"镜像",   value:"trl:0.9.6-cu121" },
+      { key:"CUDA",   value:"12.1" },
+      { key:"计算节点", value:"node-gpu-07" } ]},
+    { group:"指令参数", items:[
+      { key:"启动方式", value:"torchrun" },
+      { key:"nproc_per_node", value:"8" },
+      { key:"入口脚本", value:"ppo.py" } ]},
+    { group:"配置参数", items:[
+      { key:"TP", value:"1" }, { key:"PP", value:"1" }, { key:"DP", value:"8" },
+      { key:"GradAcc", value:"2" }, { key:"attn_kernel", value:"flash2" }, { key:"量化", value:"none" } ]},
+    { group:"超参数", items:[
+      { key:"lr", value:"1.2e-6" }, { key:"init_kl_coef", value:"0.05" },
+      { key:"max_grad_norm", value:"1.0" }, { key:"batch_size", value:"8" }, { key:"ppo_epochs", value:"4" } ]},
+  ],
+  pythia: [
+    { group:"运行参数", items:[
+      { key:"卡型规格", value:"8×H100" },
+      { key:"训练时长", value:"1.0M episodes" },
+      { key:"总 step",  value:"1953" },
+      { key:"评估准确度", value:"0.96", better:"high" },
+      { key:"s/step",   value:"1.80s", better:"low" },
+      { key:"显存占用", value:"88%",  better:"low" },
+      { key:"吞吐量",   value:"3.1万 tok/s" } ]},
+    { group:"环境参数", items:[
+      { key:"框架",   value:"TRL" },
+      { key:"镜像",   value:"trl · pythia-6.9b-sft" },
+      { key:"CUDA",   value:"12.1" },
+      { key:"计算节点", value:"openrlbenchmark" } ]},
+    { group:"指令参数", items:[
+      { key:"启动方式", value:"python" },
+      { key:"nproc_per_node", value:"8" },
+      { key:"入口脚本", value:"ppo.py" } ]},
+    { group:"配置参数", items:[
+      { key:"TP", value:"1" }, { key:"PP", value:"1" }, { key:"DP", value:"8" },
+      { key:"GradAcc", value:"1" }, { key:"attn_kernel", value:"flash2" }, { key:"量化", value:"none" } ]},
+    { group:"超参数", items:[
+      { key:"lr", value:"3e-6" }, { key:"kl_coef", value:"0.05" },
+      { key:"batch_size", value:"512" }, { key:"ppo_epochs", value:"4" }, { key:"cliprange", value:"0.2" } ]},
+  ],
+  dpo: [
+    { group:"运行参数", items:[
+      { key:"卡型规格", value:"8×H800" },
+      { key:"训练时长", value:"0小时37分（已中断）" },
+      { key:"总 step",  value:"3000" },
+      { key:"评估准确度", value:"0.32", better:"high" },
+      { key:"s/step",   value:"3.10s", better:"low" },
+      { key:"显存占用", value:"76%",  better:"low" },
+      { key:"吞吐量",   value:"1.6万 tok/s" } ]},
+    { group:"环境参数", items:[
+      { key:"框架",   value:"TRL 0.9.6" },
+      { key:"镜像",   value:"trl:0.9.6-cu121" },
+      { key:"CUDA",   value:"12.1" },
+      { key:"计算节点", value:"node-gpu-12" } ]},
+    { group:"指令参数", items:[
+      { key:"启动方式", value:"torchrun" },
+      { key:"nproc_per_node", value:"8" },
+      { key:"入口脚本", value:"dpo.py" } ]},
+    { group:"配置参数", items:[
+      { key:"TP", value:"2" }, { key:"PP", value:"1" }, { key:"DP", value:"4" },
+      { key:"GradAcc", value:"4" }, { key:"attn_kernel", value:"flash2" }, { key:"量化", value:"none" } ]},
+    { group:"超参数", items:[
+      { key:"lr", value:"5e-6" }, { key:"beta", value:"0.1" },
+      { key:"warmup_steps", value:"0" }, { key:"batch_size", value:"4" } ]},
+  ],
+  gpt2sent: [
+    { group:"运行参数", items:[
+      { key:"卡型规格", value:"1×V100" },
+      { key:"训练时长", value:"1小时58分" },
+      { key:"总 step",  value:"20000" },
+      { key:"评估准确度", value:"0.80", better:"high" },
+      { key:"s/step",   value:"0.36s", better:"low" },
+      { key:"显存占用", value:"62%",  better:"low" },
+      { key:"吞吐量",   value:"36 samp/s" } ]},
+    { group:"环境参数", items:[
+      { key:"框架",   value:"TRL" },
+      { key:"镜像",   value:"trl · gpt2-imdb" },
+      { key:"CUDA",   value:"11.7" },
+      { key:"计算节点", value:"trl-showcase" } ]},
+    { group:"指令参数", items:[
+      { key:"启动方式", value:"python" },
+      { key:"nproc_per_node", value:"1" },
+      { key:"入口脚本", value:"gpt2-sentiment.py" } ]},
+    { group:"配置参数", items:[
+      { key:"TP", value:"1" }, { key:"PP", value:"1" }, { key:"DP", value:"1" },
+      { key:"GradAcc", value:"1" }, { key:"attn_kernel", value:"eager" }, { key:"量化", value:"none" } ]},
+    { group:"超参数", items:[
+      { key:"lr", value:"1.41e-5" }, { key:"init_kl_coef", value:"0.2" },
+      { key:"target_kl", value:"6" }, { key:"batch_size", value:"256" }, { key:"ppo_epochs", value:"4" } ]},
+  ],
+};
+Object.entries(COMPARE_PARAMS).forEach(([id,p])=>{ if(TASKS[id]) TASKS[id].compareParams = p; });
+
+// #12 基于 Pangu2.0flash_infra框架先导实验-v1 复制一条任务记录（重构版总览：三卡置顶 / 执行时间·制品·事件置底 / 智能诊断双层 + 代码层）
+;(function cloneDeepseek32(){
+  const src = TASKS.deepseek32;
+  const copy = JSON.parse(JSON.stringify(src));
+  copy.name   = "Pangu2.0flash_infra框架先导实验-v1 · 副本";
+  copy.title  = "Pangu2.0flash_infra框架先导实验-v1 · 副本";
+  copy.dot    = "purple";
+  copy.status = "var(--purple)";
+  // 重构版总览：移除顶部指标小卡片，将「关键指标」中的 loss / MFU / NPU 三卡置顶；
+  // 同时移除「16×Ascend 910B 并行效率」卡片
+  copy.keyMetricsTop = true;
+  copy.key = copy.key.filter(k => k.type !== 'disteff');
+  // loss 卡片置于最前并改名 val_loss
+  const _li = copy.key.findIndex(k => k.key === 'loss' && !k.type);
+  if(_li > -1){ const [_loss] = copy.key.splice(_li, 1); _loss.label = 'val_loss'; copy.key.unshift(_loss); }
+  // 重建对象，使副本排在侧栏最顶部（并作为默认打开的记录）
+  const rebuilt = { deepseek32r: copy };
+  Object.entries(TASKS).forEach(([id,t]) => {
+    rebuilt[id] = t;
+  });
+  Object.keys(TASKS).forEach(k => delete TASKS[k]);
+  Object.assign(TASKS, rebuilt);
+})();
+
+// 智能帮比预置项：映射到某个参数 + 优劣方向，命中即取该参数最优的任务
+const SMART_PRESETS = [
+  { label:"预测最准", group:"运行参数", key:"评估准确度", dir:"high" },
+  { label:"训练最快", group:"运行参数", key:"s/step",   dir:"low"  },
+  { label:"最省显存", group:"运行参数", key:"显存占用",  dir:"low"  },
+];
+// 自由输入的关键词路由（命中则复用对应预置规则）
+const SMART_KW = [
+  { re:/准|效果|accuracy|reward|质量/i, p:SMART_PRESETS[0] },
+  { re:/快|速度|时间|吞吐|fast|throughput/i, p:SMART_PRESETS[1] },
+  { re:/显存|内存|省|memory|vram/i, p:SMART_PRESETS[2] },
+];
+// TensorBoard 式指数滑动平均（带去偏修正）。weight∈[0,1)，0=不平滑，越大越平滑。
+function smoothEMA(data, weight){
+  if(!(weight>0) || !data || data.length===0) return (data||[]).slice();
+  const res = new Array(data.length);
+  let acc = 0, deb = 0;
+  for(let i=0;i<data.length;i++){
+    const v = data[i];
+    if(!isFinite(v)){ res[i] = v; continue; }
+    acc = acc*weight + (1-weight)*v;
+    deb = deb*weight + (1-weight);
+    res[i] = acc/deb;
+  }
+  return res;
+}
+// 平滑拖动条控件 HTML（label + range + 数值）。val∈[0,1)
+function smoothCtrlHtml(id, val){
+  return `<span class="smooth-ctrl" title="曲线平滑（指数滑动平均）">
+    <span class="smooth-label">Smoothing</span>
+    <input type="range" id="${id}" min="0" max="0.95" step="0.05" value="${val}">
+    <span class="smooth-val" id="${id}Val">${(+val).toFixed(2)}</span>
+  </span>`;
+}
+// 「标记最优」开关控件 HTML + 事件绑定（图表对比 / 参数对比两处复用，状态共用全局 markBest）
+function markBestSwitchHtml(){
+  return `<label class="cmp-switch">
+    <input type="checkbox" data-switch="best" ${markBest?'checked':''}>
+    <span class="cmp-switch-track"></span>
+    <span class="cmp-switch-label${markBest?' is-on':''}">标记最优</span>
+  </label>`;
+}
+function bindMarkBestSwitch(container, rerender){
+  const input = container.querySelector('[data-switch="best"]');
+  if(!input) return;
+  input.addEventListener('change', ()=>{ markBest = input.checked; rerender(); });
+}
+// 「只看差异」开关控件 HTML + 事件绑定（与「标记最优」同款开关，状态用全局 compareDiffOnly）
+function diffSwitchHtml(){
+  return `<label class="cmp-switch">
+    <input type="checkbox" data-switch="diff" ${compareDiffOnly?'checked':''}>
+    <span class="cmp-switch-track"></span>
+    <span class="cmp-switch-label${compareDiffOnly?' is-on':''}">只看差异</span>
+  </label>`;
+}
+function bindDiffSwitch(container, rerender){
+  const input = container.querySelector('[data-switch="diff"]');
+  if(!input) return;
+  input.addEventListener('change', ()=>{ compareDiffOnly = input.checked; rerender(); });
+}
+// SVG stroke/内联样式字符串拼接场景无法用 var()，这里取与上面 .dot.* 完全对应的字面量值
+// （copy-blue-400 / ub-green-700 / accum-orange-700 / l0a-violet-400 / mte-amber-700，
+// 经 dataviz 技能校验脚本在 light/dark 两种 surface 下都通过 CVD 区分度与对比度检查）。
+const DOT_HEX = { red:'#3C7CF6', blue:'#6A9D0C', green:'#A44604', orange:'#9B3CF6', purple:'#A16207' };
+function dotColor(id){ return DOT_HEX[TASKS[id].dot] || '#888'; }
+// 所有任务名现在共用 "Pangu2.0flash_" 品牌前缀，取首个空格前的片段已无法区分任务，
+// 改为剥离该前缀后取剩余的先导实验后缀作为图例/提示的短标签
+function shortName(id){ return TASKS[id].name.replace(/^Pangu2\.0flash[_\s]*/, '') || TASKS[id].name; }
+function last(a){ return a[a.length-1]; }
+function fmtNum(v){
+  const a = Math.abs(v);
+  return a>=100 ? v.toFixed(0) : a>=1 ? v.toFixed(2) : v.toFixed(3);
+}
+function fillYAxis(el, min, max, pctFmt){
+  if(!el) return;
+  const fmt = pctFmt ? (v => (v*100).toFixed(0)+'%') : fmtNum;
+  const mid = (min + max) / 2;
+  el.innerHTML = '<span>'+fmt(max)+'</span><span>'+fmt(mid)+'</span><span>'+fmt(min)+'</span>';
+}
+
+// 参与对比的指标；dir 决定偏差的"好坏"方向（down=越低越好，up=越高越好，flat=仅参考）
+// alias：任务字段名与默认 id 不一致时的映射（如 dpo 的 grad_norm 存为 grad）
+// 图表分组（TensorBoard scalars 风格）：按业务类别把对比图归入可折叠分区。
+const CMP_GROUPS = [
+  { id:'converge', label:'训练收敛',        hint:'loss / grad_norm' },
+  { id:'infra',    label:'算力 · 基础设施', hint:'GPU / MFU / 显存 / 吞吐' },
+  { id:'optim',    label:'优化 · 策略',      hint:'学习率 / KL' },
+];
+const CMP_METRICS = [
+  { id:'loss',      label:'loss',       dir:'down', group:'converge' },
+  { id:'grad_norm', label:'grad_norm',  dir:'down', alias:{ dpo:'grad' }, group:'converge' },
+  { id:'gpu',       label:'GPU 利用率',  dir:'up',   group:'infra' },
+  { id:'mfu',       label:'MFU',         dir:'up',   group:'infra' },
+  { id:'vram',      label:'显存占用',     dir:'flat', group:'infra' },
+  { id:'tput',      label:'吞吐量',       dir:'up',   group:'infra' },
+  { id:'lr',        label:'学习率',       dir:'flat', group:'optim' },
+  { id:'kl',        label:'KL 散度',     dir:'flat', group:'optim' },
+];
+// ── Media 对比：各任务 checkpoint 的多模态（文生视频）产出效果 ──
+// 训练指标只说明「训得稳不稳」，多模态实验还要看「出片好不好」，故按任务给出同一 prompt 下的
+// 抽样产出：封面取自 ./pic，指标为视频生成常用的客观口径。dir 决定该指标越高/越低越好（用于
+// 「标记最优」开关下的绿色高亮），与 CMP_METRICS 同口径。
+const MEDIA_METRICS = [
+  { id:'clipT',     label:'CLIP-T',   dir:'up',   fmt:v=> v.toFixed(3) },
+  { id:'temporal',  label:'时序一致', dir:'up',   fmt:v=> (v*100).toFixed(0)+'%' },
+  { id:'aesthetic', label:'美学评分', dir:'up',   fmt:v=> v.toFixed(2) },
+  { id:'fvd',       label:'FVD ↓',    dir:'down', fmt:v=> v.toFixed(0) },
+];
+const MEDIA = {
+  // deepseek32r 是 cloneDeepseek32() 生成的 v1 副本任务，同样参与 Media 对比
+  deepseek32r: { pic:'6.png', res:'1280×720', fps:24, dur:'00:05', cost:'8.1s',
+    ckpt:'ckpt-300', step:520, prompt:'未来都市夜景，环形光轨自下而上盘旋，镜头缓慢上摇',
+    clipT:0.253, temporal:0.66, aesthetic:5.11, fvd:574,
+    note:'spike 前抽样，主体尚可但运动漂移' },
+  deepseek32: { pic:'1.png', res:'1280×720', fps:24, dur:'00:05', cost:'8.4s',
+    ckpt:'ckpt-500', step:580, prompt:'未来都市夜景，环形光轨自下而上盘旋，镜头缓慢上摇',
+    clipT:0.241, temporal:0.62, aesthetic:4.98, fvd:612,
+    note:'spike 后抽样，画面闪烁明显' },
+  qwen: { pic:'2.png', res:'1280×720', fps:24, dur:'00:08', cost:'6.2s',
+    ckpt:'ckpt-800', step:1230, prompt:'未来都市夜景，环形光轨自下而上盘旋，镜头缓慢上摇',
+    clipT:0.312, temporal:0.87, aesthetic:6.12, fvd:288,
+    note:'主体结构稳定，光轨连贯' },
+  pythia: { pic:'3.png', res:'960×544', fps:16, dur:'00:06', cost:'4.8s',
+    ckpt:'ckpt-1200', step:1600, prompt:'未来都市夜景，环形光轨自下而上盘旋，镜头缓慢上摇',
+    clipT:0.298, temporal:0.83, aesthetic:5.87, fvd:331,
+    note:'低分辨率抽样，细节偏软' },
+  dpo: { pic:'4.png', res:'1280×720', fps:24, dur:'00:08', cost:'6.9s',
+    ckpt:'ckpt-900', step:1450, prompt:'未来都市夜景，环形光轨自下而上盘旋，镜头缓慢上摇',
+    clipT:0.305, temporal:0.85, aesthetic:6.02, fvd:302,
+    note:'偏好对齐后构图更集中' },
+  gpt2sent: { pic:'5.png', res:'1024×576', fps:20, dur:'00:06', cost:'5.5s',
+    ckpt:'ckpt-700', step:980, prompt:'未来都市夜景，环形光轨自下而上盘旋，镜头缓慢上摇',
+    clipT:0.287, temporal:0.79, aesthetic:5.64, fvd:358,
+    note:'色调偏暖，运动幅度偏小' },
+};
+
+// media 综合评分（0–100，越高越好）：对 MEDIA 四项客观指标的加权归一，作为一个可直接跨任务比较
+// 的标量存在卡片数据里——不在选中集合内做即时归一化，否则同一任务的分数会随勾选谁而变。
+const MEDIA_SCORE = {
+  deepseek32r: 63.5, deepseek32: 58.2, qwen: 86.9, pythia: 84.1, dpo: 82.4, gpt2sent: 76.8,
+};
+// 最佳任务栏（renderBestRankCard）只比这 3 个最关键指标，按此顺序展示：
+// 收敛信号 loss + 多模态产出 media + 算力效率 mfu
+const BEST_RANK_METRIC_IDS = ['loss', 'media', 'mfu'];
+// media 不是时序指标，CMP_METRICS 里没有它，故单独给一个同形描述符：media:true 表示取值走
+// MEDIA_SCORE 而非 cmpSeries 的稳态均值
+const BEST_RANK_MEDIA_METRIC = { id:'media', label:'media', dir:'up', media:true };
+function bestRankMetric(id){
+  if(id === 'media') return BEST_RANK_MEDIA_METRIC;
+  return CMP_METRICS.find(function(m){ return m.id===id; });
+}
+// 该任务在该指标上是否有数据（决定是否参与该指标排名 / 是否显示奖牌）
+function bestRankHas(taskId, m){
+  return m.media ? MEDIA_SCORE[taskId] != null : !!cmpSeries(taskId, m);
+}
+// 该任务在该指标上的可比数值（时序指标取稳态均值，media 取综合评分）
+function bestRankValue(taskId, m){
+  if(m.media) return MEDIA_SCORE[taskId] != null ? MEDIA_SCORE[taskId] : null;
+  const s = cmpSeries(taskId, m);
+  return s ? stableMean(s) : null;
+}
+// 列标题：时序指标是「稳态 X 均值」，media 是一次性综合评分，措辞需区分
+function bestRankMetricLabel(m){
+  return m.media ? 'media 综合评分' : ('稳态 ' + m.label + ' 均值');
+}
+// 每个指标列各自的固定宽度（而非 3 列统一取最宽的那个），让 key/value 间距贴合各自 label 长度，
+// 不会因为跟「grad_norm」这种长 label 共用一个列宽而空出一大截；同一指标在所有行里仍是同一列宽，
+// 保证跨行对齐——只是「每列多宽」不再强行取齐
+const BEST_RANK_METRIC_WIDTH = { loss: 194, media: 224, mfu: 188 };
+function cmpSeries(id, m){
+  const key = (m.alias && m.alias[id]) || m.id;
+  return TASKS[id].series[key] || null;
+}
+
+// ── 曲线业务化：把手工 20 点序列上采样并叠加「确定性抖动」，让对比曲线呈现真实训练的
+//    微波动与收敛走势（参考 training-monitoring-v2 精度/infra 10 图的 stepNoise 抖动手法：
+//    sin 哈希伪随机，按绝对 index 定域，同一序列每次取值一致）。首尾端点精确保留，故
+//    last()/稳态均值/排名/末值最优等口径完全不变——仅用于绘图，绝不改写 TASKS.series。
+function cmpHashSeed(str){
+  let h = 0; for(let i=0;i<str.length;i++) h = (h*31 + str.charCodeAt(i)) | 0;
+  return Math.abs(h) % 9973;
+}
+function cmpFrac(x){ return x - Math.floor(x); }
+// 双频叠加哈希噪声：单一 sin 哈希在相邻子点间近似线性摆动，视觉上会呈现规律的「等幅小波浪」；
+// 叠加一路频率/相位都不同的第二路哈希后，波形不再是单一周期，抖动看起来才够「随机」。
+function cmpNoise(seed, i){
+  const n1 = cmpFrac(Math.sin(i*12.9898 + seed*78.233) * 43758.5453) * 2 - 1;
+  const n2 = cmpFrac(Math.sin(i*39.3468 + seed*11.135 + 4.7) * 24634.6345) * 2 - 1;
+  return n1*0.65 + n2*0.35;
+}
+// 抖动幅度包络：低频哈希慢速起伏，让抖动幅度本身忽大忽小（真实训练曲线常见的阵发性波动），
+// 而不是每个子点都套用同一个 amp——否则再随机的噪声值乘上恒定幅度，视觉上仍会显得「太均匀」。
+function cmpAmpEnvelope(seed, i){
+  const x = Math.sin(i*0.37 + seed*3.1) * 12543.112;
+  return 0.4 + cmpFrac(x) * 1.5;   // ~0.4x – 1.9x
+}
+const CMP_ENRICH_UP = 24;  // 每段插值子点数：20 控制点 → 456 点，贴近上千 step 训练曲线该有的密度与抖动感
+function enrichSeries(vals, seed){
+  const N = (vals && vals.length) || 0;
+  if(N < 2) return (vals || []).slice();
+  const finite = vals.filter(v => isFinite(v));
+  if(!finite.length) return vals.slice();
+  const rng = (Math.max(...finite) - Math.min(...finite)) || Math.abs(finite[finite.length-1]) || 1;
+  // 抖动幅度按「相邻步长的中位数」定标，而非全局值域：loss spike 这类单点跳变会把值域撑大，
+  // 若按值域定标，收敛后的平坦段会被过量噪声淹没、反而看不出趋势。中位数对尖峰不敏感，
+  // 于是噪声大小自然贴合该指标本身的波动性（grad_norm 抖、lr/vram 稳）。
+  const deltas = [];
+  for(let i=1;i<N;i++){ const d = Math.abs(vals[i]-vals[i-1]); if(isFinite(d)) deltas.push(d); }
+  deltas.sort((a,b)=> a-b);
+  const medDelta = deltas.length ? deltas[Math.floor(deltas.length/2)] : 0;
+  // 幅度整体 ×10（原上界 rng*0.09 → rng*0.9）：只放大抖动的随机范围，插值骨架（a/b 端点、
+  // 阶跃逻辑）不变，故曲线走势/首尾精确值/last()/稳态均值等口径依旧不受影响。
+  const ampFlat = Math.min(Math.max(medDelta*1.1, rng*0.015), rng*0.09) * 10;
+  const out = [];
+  for(let s=0; s<N-1; s++){
+    const a = vals[s], b = vals[s+1];
+    // 尖峰 / 恢复段（跳变远大于常态步长）：走阶跃而非线性插值——多数子点贴住起点、末子点跳到终点，
+    // 抖动同时压到 1/4，避免把 spike 抹成一条缓坡（deepseek loss 0.42→3.20 必须保持陡直）。
+    const bigJump = isFinite(a) && isFinite(b) && Math.abs(b-a) > Math.max(rng*0.22, medDelta*6);
+    const amp = bigJump ? ampFlat*0.25 : ampFlat;
+    for(let k=0; k<CMP_ENRICH_UP; k++){
+      if(s===0 && k===0){ out.push(a); continue; }        // 首点精确
+      const t = k / CMP_ENRICH_UP;
+      let base;
+      if(!(isFinite(a) && isFinite(b))) base = t<0.5 ? a : b;
+      else if(bigJump)                  base = t<0.75 ? a : b;   // 阶跃，保持尖峰锐利
+      else                              base = a + (b-a)*t;      // 常态线性插值
+      const env = cmpAmpEnvelope(seed, out.length);
+      out.push(isFinite(base) ? base + cmpNoise(seed, out.length)*amp*env : base);
+    }
+  }
+  out.push(vals[N-1]);                                     // 末点精确（保排名/末值一致）
+  return out;
+}
+// 取某任务某指标「业务化」后的绘图序列（缺失返回 null）
+function cmpSeriesEnriched(id, m){
+  const raw = cmpSeries(id, m);
+  return raw ? enrichSeries(raw, cmpHashSeed(id + '|' + m.id)) : null;
+}
+// 图表对比：按指标方向（down 越低越好 / up 越高越好）算出末值最优的任务；
+// flat 无优劣方向、不足 2 个可比任务、或所有末值相等时不标（与参数对比 optimalIds 口径一致）；
+// 只有一个任务时无所谓方向，直接把它标成最佳（唯一选项即最优）
+function bestChartTask(m, tasksWith){
+  if(tasksWith.length === 1) return tasksWith[0];
+  if(m.dir !== 'down' && m.dir !== 'up') return null;
+  const entries = tasksWith.map(id=>{ const s = cmpSeries(id, m); return s ? { id, n: last(s) } : null; })
+    .filter(x=> x && x.n != null);
+  if(entries.length < 2) return null;
+  if(new Set(entries.map(e=> e.n)).size === 1) return null;
+  const best = m.dir==='up' ? Math.max(...entries.map(e=>e.n)) : Math.min(...entries.map(e=>e.n));
+  return entries.find(e=> e.n===best).id;
+}
+// 稳态均值：取序列末尾 n 个点的平均（n 默认 5）
+function stableMean(series, n){
+  n = n || 5;
+  if(!series || !series.length) return null;
+  const t = series.slice(-Math.min(n, series.length));
+  return t.reduce(function(a,b){ return a+b; }, 0) / t.length;
+}
+// Borda 计数综合排名——只按最佳任务栏展示的 3 个关键指标（BEST_RANK_METRIC_IDS）算总分，
+// 保证「第几名」与卡片里实际展示的指标口径一致，不会出现排名靠未展示指标撑起来的情况
+// 返回排好序数组 [{ id, rankSum, metricRanks:{metricId→rank}, metricVals:{metricId→val} }, ...]
+// rankSum 越小越好（即排名越靠前）
+function computeRankings(sel){
+  const dm = BEST_RANK_METRIC_IDS.map(bestRankMetric)
+                        .filter(function(m){ return m && (m.dir==='up'||m.dir==='down'); });
+  const vals = {};
+  sel.forEach(function(id){
+    vals[id] = {};
+    dm.forEach(function(m){ vals[id][m.id] = bestRankValue(id, m); });
+  });
+  const metricRanks = {};
+  sel.forEach(function(id){ metricRanks[id]={}; });
+  dm.forEach(function(m){
+    const entries = sel.map(function(id){ return {id:id,v:vals[id][m.id]}; }).filter(function(e){ return e.v!=null; });
+    entries.sort(function(a,b){ return m.dir==='down' ? a.v-b.v : b.v-a.v; });
+    entries.forEach(function(e,i){ metricRanks[e.id][m.id]=i+1; });
+    sel.forEach(function(id){ if(metricRanks[id][m.id]==null) metricRanks[id][m.id]=entries.length+1; });
+  });
+  const result = sel.map(function(id){
+    const rankSum = dm.reduce(function(s,m){ return s+(metricRanks[id][m.id]||sel.length+1); }, 0);
+    return { id:id, rankSum:rankSum, metricRanks:metricRanks[id], metricVals:vals[id] };
+  });
+  result.sort(function(a,b){ return a.rankSum-b.rankSum; });
+  return result;
+}
+let bestRankExpanded = false;
+// 生成最佳任务排名卡片 HTML
+function renderBestRankCard(rankings, sel){
+  if(!rankings||!rankings.length) return '';
+  // 最佳任务栏只固定展示 3 个最关键指标（收敛信号 loss + 多模态产出 media + 算力效率 MFU），
+  // 而非把全部可比指标都塞进来——那样每行只能挤 3 个还会被迫换行，反而稀释了重点
+  const dm = BEST_RANK_METRIC_IDS.map(bestRankMetric)
+                        .filter(function(m){ return m && (m.dir==='up'||m.dir==='down'); })
+                        .filter(function(m){ return sel.some(function(id){ return bestRankHas(id,m); }); });
+  // 按实际展示的指标顺序拼出对应列宽，而非统一 repeat(3, 固定值)
+  const metricsColStyle = 'grid-template-columns:'+dm.map(function(m){ return (BEST_RANK_METRIC_WIDTH[m.id]||200)+'px'; }).join(' ')+';';
+  function rowHtml(entry, rank){
+    const t = TASKS[entry.id];
+    const isGold = rank===1;
+    const metricsHtml = dm.map(function(m){
+      const v = entry.metricVals[m.id];
+      const r = entry.metricRanks[m.id];
+      const dataCount = sel.filter(function(id){ return bestRankHas(id,m); }).length;
+      const isFirst = dataCount>1 && r===1;
+      const valStr = v!=null ? (m.media ? v.toFixed(1) : fmtNum(v)) : '—';
+      return '<div class="best-rank-metric">'
+        +'<span class="best-rank-metric-label">'+bestRankMetricLabel(m)+'</span>'
+        +(isFirst?'<span class="best-rank-trophy">🥇</span>':'<span style="display:inline-block;width:19px"></span>')
+        +'<span class="best-rank-metric-val">'+valStr+'</span>'
+        +'</div>';
+    }).join('');
+    return '<div class="best-rank-row'+(isGold?' rank1':'')+'">'
+      +'<span class="best-rank-num'+(isGold?' gold':'')+'">'+rank+'</span>'
+      +'<span class="dot '+t.dot+'"></span>'
+      +'<span class="best-rank-name">'+t.name+'</span>'
+      +'<div class="best-rank-metrics" style="'+metricsColStyle+'">'+metricsHtml+'</div>'
+      +'</div>';
+  }
+  const top1Html = rowHtml(rankings[0], 1);
+  const allHtml  = rankings.map(function(e,i){ return rowHtml(e,i+1); }).join('');
+  return '<div class="best-rank-card'+(bestRankExpanded?' expanded':'')+'" id="bestRankCard">'
+    +'<div class="best-rank-head" id="bestRankToggle">'
+    +'<span class="best-rank-chevron">›</span>'
+    +'<span>最佳任务</span>'
+    +'<span class="best-rank-settings-btn" id="bestRankSettingsBtn" title="排名设置" role="button" aria-label="排名设置">'
+    +'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">'
+    +CMP_SETTINGS_ICON+'</svg></span>'
+    +'</div>'
+    +'<div class="best-rank-single">'+top1Html+'</div>'
+    +'<div class="best-rank-body">'+allHtml+'</div>'
+    +'</div>';
+}
+// 相对基线偏差：abs 绝对差、pct 相对差；bad 表示朝"坏"方向偏离超阈值
+function deviation(cur, base, dir){
+  const abs = cur - base;
+  const pct = base !== 0 ? abs/Math.abs(base) : 0;
+  let bad = false;
+  if(dir === 'down')      bad = pct > 0.5;          // 越低越好：高于基线 >50% 标红
+  else if(dir === 'up')   bad = pct < -0.2;         // 越高越好：低于基线 >20% 标红
+  else                    bad = Math.abs(pct) > 0.5;// 仅参考：偏离 >50% 标红
+  return { abs, pct, bad };
+}
+
+let compareMode = false;
+const compareSel = new Set(Object.keys(TASKS).slice(0, 5));   // 默认勾选前 5 个任务
+let baselineKey = 'qwen';                              // 默认以健康的 qwen RLHF 为基线
+let cmpCharts = [];
+const collapsedGroups = new Set();        // 图表对比：已折叠的分区 id（默认全部展开）
+const expandedCharts = new Set();         // 图表对比：已放大的图表 mi（字符串），默认无
+const CMP_EXPAND_ICON = '<path d="M15 3h6v6"/><path d="M9 21H3v-6"/><path d="M21 3l-7 7"/><path d="M3 21l7-7"/>';
+const CMP_COLLAPSE_ICON = '<path d="M4 14h6v6"/><path d="M20 10h-6V4"/><path d="M14 10l7-7"/><path d="M3 21l7-7"/>';
+// 排名设置入口图标（暂不接功能），标准齿轮图形
+const CMP_SETTINGS_ICON = '<path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/>';
+let cmpSmooth = 0.8;   // 任务对比·图表对比平滑系数（默认 0.8）
+// #9 参数对比状态
+let compareTab = 'chart';      // 'chart' 图表对比 | 'param' 参数对比
+let markBest = true;           // 标记最优（默认开）
+let compareDiffOnly = false;   // 只看差异
+let smartLabel = '';           // 当前激活的智能帮比比较项
+let smartPickIds = [];         // 命中（胜出）的任务 id
+let laneOrder = null;          // 泳道拖拽后的自定义顺序（baseline 始终置首）
+let dragId = null;
+
+// 顶部「任务对比」标题已改为静态文字（无返回首页交互），故无需绑定 home-btn 点击跳转；
+// 原折叠侧栏的 navCollapse/navExpand/navHomeCollapsed/cmpNavExpand/cmpNavHomeCollapsed 一套按钮
+// 均不再需要——保留这些已被移除元素的 id 的 addEventListener/getElementById 调用会因元素不存在于
+// DOM 而抛错，中断本段内联脚本的后续同步执行，导致文末的 enterCompare() 也无法运行，故已一并清理。
+
+// activity rail 第一个图标（文件夹样式，与 training-monitoring-v2.html 同款）不再承担任务列表
+// 折叠/展开（本页任务列表始终常驻显示），改为跳转到训练监控大盘，与该页新增的「对比」图标
+// 一起实现两页互跳；本页「对比」图标即代表当前页，故保持 is-selected、不绑定跳转。
+const navMonitoringBtn = document.getElementById('navMonitoring');
+if(navMonitoringBtn) navMonitoringBtn.addEventListener('click', ()=>{
+  window.location.href = './training-monitoring-v2.html';
+});
+const navConfigRelationBtn = document.getElementById('navConfigRelation');
+if(navConfigRelationBtn) navConfigRelationBtn.addEventListener('click', ()=>{
+  window.location.href = './config-relation-observer.html';
+});
+function enterCompare(){
+  compareMode = true;
+  var _fb = document.getElementById('floatBar');
+  if(_fb){ _fb.classList.remove('visible'); _fb.setAttribute('aria-hidden','true'); }
+  var tabsEl = document.querySelector('.tabs');
+  if(tabsEl) tabsEl.style.display = 'none';
+  document.querySelectorAll('[id^="tab-"]').forEach(function(p){ p.style.display = 'none'; });
+  document.getElementById('compareView').style.display = '';
+  var pageTitle = document.querySelector('.page-title');
+  if(pageTitle) pageTitle.style.display = 'none';
+  var tt = document.getElementById('taskTitle'); if(tt) tt.textContent = '';
+  var sd = document.getElementById('statusDot'); if(sd) sd.style.cssText = 'display:none';
+  var ts = document.getElementById('taskSubtitle'); if(ts) ts.innerHTML = '';
+  if(typeof liveTimer !== 'undefined') clearInterval(liveTimer);
+  if(typeof cardsTimer !== 'undefined') clearInterval(cardsTimer);
+  renderCompareSidebar();
+  renderCompare();
+}
+function taskNameMiddleEllipsisHtml(name, tailLen){
+  tailLen = Math.min(tailLen || 8, name.length);
+  const head = name.slice(0, name.length - tailLen), tail = name.slice(name.length - tailLen);
+  return `<span class="cmp-task-name" title="${name}">
+    <span class="cmp-task-name-head">${head}</span><span class="cmp-task-name-tail">${tail}</span>
+  </span>`;
+}
+function renderCompareSidebar(){
+  document.getElementById('taskList').innerHTML = Object.entries(TASKS).map(([id,t])=>{
+    const checked = compareSel.has(id), isBase = id===baselineKey;
+    return `<div class="cmp-task-item ${checked?'is-selected':''}" data-id="${id}">
+      <input type="checkbox" class="cmp-cb" data-id="${id}" ${checked?'checked':''}>
+      <span class="dot ${t.dot}"></span>
+      ${taskNameMiddleEllipsisHtml(t.name)}
+      <span class="cmp-base-tag ${isBase?'is-selected':''}" data-base="${id}" title="设为对比基线">基线</span>
+    </div>`;
+  }).join('');
+
+  document.querySelectorAll('.cmp-cb').forEach(cb=> cb.addEventListener('change', e=>{
+    e.stopPropagation();
+    const id = cb.dataset.id;
+    if(cb.checked) compareSel.add(id);
+    else { compareSel.delete(id); if(baselineKey===id) baselineKey = [...compareSel][0] || null; }
+    renderCompareSidebar(); renderCompare();
+  }));
+  document.querySelectorAll('.cmp-base-tag').forEach(tag=> tag.addEventListener('click', e=>{
+    e.stopPropagation();
+    baselineKey = tag.dataset.base;
+    compareSel.add(baselineKey);              // 基线必然在对比集合内
+    renderCompareSidebar(); renderCompare();
+  }));
+  document.querySelectorAll('.cmp-task-item').forEach(row=> row.addEventListener('click', e=>{
+    if(e.target.classList.contains('cmp-cb') || e.target.classList.contains('cmp-base-tag')) return;
+    const cb = row.querySelector('.cmp-cb');
+    cb.checked = !cb.checked;
+    cb.dispatchEvent(new Event('change'));
+  }));
+}
+
+// 对比视图调度：固定顶部「图表对比 / 参数对比」子页签，按当前 tab 分流渲染
+function renderCompare(){
+  if(!compareMode) return;
+  const view = document.getElementById('compareView');
+  view.innerHTML = `
+    <div class="cmp-topbar">
+      <div class="tab-control" role="tablist">
+        <button type="button" class="tab-control-item${compareTab==='chart'?' is-selected':''}" data-ctab="chart">图表对比</button>
+        <button type="button" class="tab-control-item${compareTab==='param'?' is-selected':''}" data-ctab="param">参数对比</button>
+      </div>
+      <div class="cmp-topbar-right" id="cmpTopRight"></div>
+    </div>
+    <div id="cmpBody"></div>`;
+  view.querySelectorAll('.tab-control-item').forEach(el=> el.addEventListener('click', ()=>{
+    compareTab = el.dataset.ctab; renderCompare();
+  }));
+  if(compareTab==='param') renderParamCompare();
+  else renderCompareChart();
+}
+
+// Media 对比栏：勾几个任务就出几张卡（与左侧勾选一一对应），卡片自上而下＝任务名 / 视频封面 /
+// 生成 prompt / 产出质量指标 / 来源 checkpoint。整体沿用 .cmp-group 外壳，可与其它分区一样折叠。
+function renderMediaCompare(sel, hasBase){
+  const ids = sel.filter(id=> MEDIA[id]);
+  if(!ids.length) return '';
+  // 「标记最优」开启且有 2 个以上可比任务时，逐指标算出最优任务用于绿色高亮（与图表口径一致：
+  // 全部相等则不标）
+  const bestOf = {};
+  if(markBest && ids.length > 1){
+    MEDIA_METRICS.forEach(m=>{
+      const vals = ids.map(id=> MEDIA[id][m.id]);
+      if(new Set(vals).size === 1) return;
+      const t = m.dir==='up' ? Math.max(...vals) : Math.min(...vals);
+      bestOf[m.id] = ids.find(id=> MEDIA[id][m.id] === t);
+    });
+  }
+  const cards = ids.map(id=>{
+    const t = TASKS[id], d = MEDIA[id], isBase = id===baselineKey && hasBase;
+    const metrics = MEDIA_METRICS.map(m=>`
+      <span class="cmp-media-metric">
+        <span class="cmp-media-metric-k">${m.label}</span>
+        <span class="cmp-media-metric-v${bestOf[m.id]===id?' best':''}">${m.fmt(d[m.id])}</span>
+      </span>`).join('');
+    return `<div class="card cmp-media-card">
+      <div class="cmp-media-head">
+        <span class="dot ${t.dot}"></span>
+        <span class="cmp-media-name" title="${t.name}">${t.name}</span>
+        ${isBase?'<span class="cmp-legend-base-tag">基线</span>':''}
+      </div>
+      <div class="cmp-media-cover">
+        <img src="./pic/${d.pic}" alt="${t.name} 产出视频封面" loading="lazy">
+        <span class="cmp-media-chip score" title="media 综合评分，参与「最佳任务」排名">综合 ${MEDIA_SCORE[id].toFixed(1)}</span>
+        <span class="cmp-media-chip spec">${d.res} · ${d.fps}fps</span>
+        <span class="cmp-media-chip dur">${d.dur}</span>
+      </div>
+      <div class="cmp-media-prompt" title="${d.prompt}"><b>Prompt</b> ${d.prompt}</div>
+      <div class="cmp-media-metrics">${metrics}</div>
+      <div class="cmp-media-foot">
+        <span title="${d.note}">${d.ckpt} · step ${d.step}</span>
+        <span>单条生成 ${d.cost}</span>
+      </div>
+    </div>`;
+  }).join('');
+  const collapsed = collapsedGroups.has('media');
+  return `<div class="cmp-group${collapsed?' collapsed':''}" data-group="media">
+    <div class="cmp-group-head" data-group="media">
+      <span class="cmp-group-chevron">›</span>
+      <span class="cmp-group-title">Media 对比</span>
+      <span class="cmp-group-hint">视频产出 / CLIP-T / 时序一致性 / FVD</span>
+    </div>
+    <div class="cmp-grid cmp-media-grid">${cards}</div>
+  </div>`;
+}
+
+function renderCompareChart(){
+  const right = document.getElementById('cmpTopRight');
+  right.innerHTML = smoothCtrlHtml('cmpSmoothRange', cmpSmooth) + markBestSwitchHtml();
+  bindMarkBestSwitch(right, renderCompareChart);
+  const cmpRange = document.getElementById('cmpSmoothRange');
+  if(cmpRange) cmpRange.addEventListener('input', ()=>{
+    cmpSmooth = +cmpRange.value;
+    const lab = document.getElementById('cmpSmoothRangeVal');
+    if(lab) lab.textContent = cmpSmooth.toFixed(2);
+    cmpDrawAll();   // 仅重绘图区，保留拖动条不打断拖动
+  });
+  const body = document.getElementById('cmpBody');
+  const sel = [...compareSel];
+  if(sel.length === 0){
+    body.innerHTML = `<div class="card cmp-empty">请在左侧勾选至少一个任务</div>`;
+    cmpCharts = [];
+    return;
+  }
+  const hasBase = baselineKey && compareSel.has(baselineKey);
+
+  // 单张对比图卡片 HTML（无可对比任务时返回 ''）
+  function buildCmpCard(m, mi){
+    const tasksWith = sel.filter(id=> cmpSeries(id, m));
+    if(tasksWith.length === 0) return '';
+    let bestTag = '';
+    if(markBest){
+      const bestId = bestChartTask(m, tasksWith);
+      if(bestId){
+        const c = dotColor(bestId);
+        bestTag = `<span class="cmp-best-tag"
+          title="${TASKS[bestId].name} 在 ${m.label} 上末值最优">
+          <span class="cmp-best-medal">🏅</span>最佳 <span class="cmp-best-dot" style="background:${c}"></span><span class="cmp-best-name">${TASKS[bestId].name}</span></span>`;
+      }
+    }
+    const legendIds = [...tasksWith.filter(id=> id===baselineKey && hasBase),
+                       ...tasksWith.filter(id=> !(id===baselineKey && hasBase))];
+    const legend = legendIds.map(id=>{
+      const isBase = id===baselineKey && hasBase;
+      const c = dotColor(id);
+      return `<span class="cmp-chart-legend-item">
+        <span class="cmp-legend-line" style="border-top-color:${c};border-top-width:${isBase?2.6:1.8}px"></span>
+        ${shortName(id)}${isBase?'<span class="cmp-legend-base-tag">基线</span>':''}</span>`;
+    }).join('');
+    const expanded = expandedCharts.has(String(mi));
+    return `<div class="card${expanded?' is-expanded':''}" style="padding:14px;min-width:0;">
+      <div class="cmp-chart-head">
+        <span class="cmp-chart-head-left"><span class="cmp-chart-title">${m.label}</span>${bestTag}</span>
+        <span class="cmp-chart-expand-btn${expanded?' is-active':''}" data-mi="${mi}"
+          title="${expanded?'还原':'放大'}" role="button" aria-label="${expanded?'还原图表':'放大图表'}">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+            stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${expanded?CMP_COLLAPSE_ICON:CMP_EXPAND_ICON}</svg>
+        </span>
+      </div>
+      <div class="km-chart-row">
+        <div class="km-yaxis"></div>
+        <div class="cmp-chart-area" data-mi="${mi}"></div>
+      </div>
+      <div class="km-axis"></div>
+      <div class="km-axis-title">step</div>
+      <div class="cmp-chart-legend">${legend}</div>
+    </div>`;
+  }
+
+  // 按 CMP_GROUPS 分区渲染：每个分区一个可折叠标题栏 + 一张 cmp-grid（TensorBoard scalars 式）
+  const groupsHtml = CMP_GROUPS.map(g=>{
+    const cards = CMP_METRICS
+      .map((m, mi)=> m.group===g.id ? buildCmpCard(m, mi) : '')
+      .filter(Boolean);
+    if(!cards.length) return '';
+    const collapsed = collapsedGroups.has(g.id);
+    return `<div class="cmp-group${collapsed?' collapsed':''}" data-group="${g.id}">
+      <div class="cmp-group-head" data-group="${g.id}">
+        <span class="cmp-group-chevron">›</span>
+        <span class="cmp-group-title">${g.label}</span>
+        <span class="cmp-group-hint">${g.hint}</span>
+      </div>
+      <div class="cmp-grid">${cards.join('')}</div>
+    </div>`;
+  }).filter(Boolean).join('');
+
+  const rankings = computeRankings(sel);
+  body.innerHTML = renderBestRankCard(rankings, sel) + groupsHtml + renderMediaCompare(sel, hasBase);
+  const _brt = document.getElementById('bestRankToggle');
+  if(_brt) _brt.addEventListener('click', function(){
+    bestRankExpanded = !bestRankExpanded;
+    const card = document.getElementById('bestRankCard');
+    if(card) card.classList.toggle('expanded', bestRankExpanded);
+  });
+  // 设置入口暂不接功能，仅阻止点击冒泡到 bestRankToggle 引发误展开/收起
+  const _brs = document.getElementById('bestRankSettingsBtn');
+  if(_brs) _brs.addEventListener('click', function(e){ e.stopPropagation(); });
+  // 分区折叠：切换 collapsed 后重绘可见图（隐藏图 offsetParent 为 null，cmpDrawAll 会跳过）
+  body.querySelectorAll('.cmp-group-head').forEach(head=> head.addEventListener('click', ()=>{
+    const gid = head.dataset.group;
+    if(collapsedGroups.has(gid)) collapsedGroups.delete(gid); else collapsedGroups.add(gid);
+    const grp = head.closest('.cmp-group');
+    if(grp) grp.classList.toggle('collapsed');
+    cmpDrawAll();
+  }));
+  // 放大/还原：切换后卡片会因 grid-column 撑满整行 + 图表变高而重新排布，导致自身及后续内容在
+  // 页面里上下移动；用切换前后同一张卡片的 getBoundingClientRect().top 之差补偿滚动容器的
+  // scrollTop，使该图表顶部相对屏幕的位置保持不变
+  body.querySelectorAll('.cmp-chart-expand-btn').forEach(btn=> btn.addEventListener('click', function(e){
+    e.stopPropagation();
+    const mi = btn.dataset.mi;
+    const card = btn.closest('.card');
+    const scroller = document.querySelector('.cmp-pane-body');
+    const beforeTop = card.getBoundingClientRect().top;
+    const nowExpanded = !expandedCharts.has(mi);
+    if(nowExpanded) expandedCharts.add(mi); else expandedCharts.delete(mi);
+    card.classList.toggle('is-expanded', nowExpanded);
+    btn.classList.toggle('is-active', nowExpanded);
+    btn.title = nowExpanded ? '还原' : '放大';
+    btn.setAttribute('aria-label', nowExpanded ? '还原图表' : '放大图表');
+    btn.querySelector('svg').innerHTML = nowExpanded ? CMP_COLLAPSE_ICON : CMP_EXPAND_ICON;
+    cmpDrawAll();
+    if(scroller) scroller.scrollTop += (card.getBoundingClientRect().top - beforeTop);
+  }));
+
+  cmpDrawAll();
+}
+
+// ============================================================
+// #9 参数对比：泳道卡片
+//   各任务一列卡片横向铺开，纵向按分组展示 key-value；
+//   基线固定最左、智能帮比高亮命中任务、可标记最优、可只看差异。
+// ============================================================
+function findParam(id, group, key){
+  const cp = TASKS[id].compareParams || [];
+  const g = cp.find(x=> x.group===group); if(!g) return null;
+  return g.items.find(x=> x.key===key) || null;
+}
+// 从含单位的字符串里抽取可比较数值（"2.37s"→2.37、"2.4万"→24000、"5e-6"→5e-6、"8×H800"→8）
+function paramNum(v){
+  if(v==null) return null;
+  const m = String(v).replace(/,/g,'').match(/-?\d+(?:\.\d+)?(?:e-?\d+)?/i);
+  if(!m) return null;
+  let n = parseFloat(m[0]);
+  if(/万/.test(v)) n *= 10000;
+  return n;
+}
+// 某行在所选任务间是否存在差异（缺失计为一种取值）
+function rowDiffers(group, key, sel){
+  const vals = sel.map(id=>{ const it = findParam(id, group, key); return it ? it.value : ' '; });
+  return new Set(vals).size > 1;
+}
+// 该行最优任务集合：需 ≥2 个可比数值且并非全部相等，否则视为无优劣不标记
+function optimalIds(group, key, better, sel){
+  if(!better) return new Set();
+  const entries = sel.map(id=>{ const it = findParam(id, group, key); return it ? { id, n: paramNum(it.value) } : null; })
+    .filter(x=> x && x.n != null);
+  if(entries.length < 2) return new Set();
+  if(new Set(entries.map(e=> e.n)).size === 1) return new Set();
+  const best = better==='high' ? Math.max(...entries.map(e=>e.n)) : Math.min(...entries.map(e=>e.n));
+  return new Set(entries.filter(e=> e.n===best).map(e=> e.id));
+}
+// 并集出所有分组与各分组下的 key（保持出现顺序），并记录 better 方向
+function buildParamModel(sel){
+  const groups = [], gmap = new Map();
+  sel.forEach(id=> (TASKS[id].compareParams||[]).forEach(g=>{
+    let G = gmap.get(g.group);
+    if(!G){ G = { group:g.group, keys:[], kset:new Set(), better:new Map() }; gmap.set(g.group, G); groups.push(G); }
+    g.items.forEach(it=>{
+      if(!G.kset.has(it.key)){ G.kset.add(it.key); G.keys.push(it.key); }
+      if(it.better && !G.better.has(it.key)) G.better.set(it.key, it.better);
+    });
+  }));
+  return groups;
+}
+// 排序：基线置首，其余按拖拽顺序（laneOrder），新加入的接在末尾
+function orderedSel(){
+  let ids = laneOrder ? laneOrder.filter(id=> compareSel.has(id)) : [...compareSel];
+  [...compareSel].forEach(id=>{ if(!ids.includes(id)) ids.push(id); });
+  ids = ids.filter(id=> id!==baselineKey);
+  if(baselineKey && compareSel.has(baselineKey)) ids.unshift(baselineKey);
+  return ids;
+}
+
+// 智能帮比：算出命中（胜出）任务
+function isPreset(label){ return SMART_PRESETS.some(p=> p.label===label); }
+function pickMostOptimal(sel){
+  const model = buildParamModel(sel), cnt = {};
+  sel.forEach(id=> cnt[id]=0);
+  model.forEach(g=> g.keys.forEach(key=>{
+    const better = g.better.get(key); if(!better) return;
+    optimalIds(g.group, key, better, sel).forEach(id=> cnt[id]++);
+  }));
+  const mx = Math.max(0, ...sel.map(id=> cnt[id]));
+  return mx===0 ? [] : sel.filter(id=> cnt[id]===mx);
+}
+function applySmart(label){
+  smartLabel = label;
+  if(!label){ smartPickIds = []; return; }
+  const sel = [...compareSel];
+  let target = SMART_PRESETS.find(p=> p.label===label);
+  if(!target){ const hit = SMART_KW.find(k=> k.re.test(label)); target = hit ? hit.p : null; }
+  smartPickIds = target ? [...optimalIds(target.group, target.key, target.dir, sel)] : pickMostOptimal(sel);
+}
+
+function laneCardHtml(id, model, sel){
+  const t = TASKS[id], isBase = id===baselineKey, picked = smartPickIds.includes(id);
+  let rows = model.map(g=>{
+    const items = g.keys.map(key=>{
+      if(compareDiffOnly && !rowDiffers(g.group, key, sel)) return '';
+      const it = findParam(id, g.group, key);
+      const val = it ? it.value : '—';
+      const better = g.better.get(key);
+      const best = markBest && better && optimalIds(g.group, key, better, sel).has(id);
+      return `<div class="lane-row ${best?'row-best':''}" data-rk="${g.group}::${key}">
+        <span class="lane-k">${key}</span>
+        <span class="lane-v ${best?'best':''}">${best?'<span class="lane-medal">🏅</span>':''}${val}</span>
+      </div>`;
+    }).filter(Boolean).join('');
+    return items ? `<div class="lane-group" data-group="${g.group}"><div class="lane-group-title">${g.group}</div>${items}</div>` : '';
+  }).join('');
+  if(!rows) rows = `<div class="lane-empty">无差异参数</div>`;
+  return `<div class="lane-card ${isBase?'baseline':''} ${picked?'picked':''}" data-id="${id}" ${isBase?'':'draggable="true"'}>
+    <div class="lane-head">
+      ${isBase?'<span class="lane-pin" title="基线固定最左">📌</span>':'<span class="lane-drag" title="拖拽调整顺序">⠿</span>'}
+      <span class="dot ${t.dot}"></span>
+      <span class="lane-name" title="${t.name}">${t.name}</span>
+      ${isBase?'<span class="lane-base-tag">基线</span>':''}
+      ${picked?`<span class="lane-smart-badge">${smartLabel}</span>`:''}
+    </div>
+    <div class="lane-body">${rows}</div>
+  </div>`;
+}
+// 加号方形按钮 + 下方分组锚点（点击滚动到对应分组，锚点只列当前可见分组）
+function laneRailHtml(model, sel){
+  const remaining = Object.keys(TASKS).filter(id=> !compareSel.has(id));
+  const visGroups = model.filter(g=> g.keys.some(key=> !(compareDiffOnly && !rowDiffers(g.group, key, sel))));
+  const anchors = visGroups.map(g=>`<div class="lane-anchor" data-anchor="${g.group}">${g.group}</div>`).join('');
+  return `<div class="lane-rail">
+    <div class="lane-add ${remaining.length?'':'disabled'}" id="laneAdd" title="${remaining.length?'添加任务列':'已全部加入'}">+
+      <div class="lane-add-menu" id="laneAddMenu">
+        ${remaining.length
+          ? remaining.map(id=>`<div class="lane-add-item" data-add="${id}"><span class="dot ${TASKS[id].dot}"></span>${TASKS[id].name}</div>`).join('')
+          : '<div style="padding:8px;color:var(--foreground-muted);font-size:12px">已全部加入</div>'}
+      </div>
+    </div>
+    ${anchors?`<div class="lane-anchors">${anchors}</div>`:''}
+  </div>`;
+}
+
+function renderParamCompare(){
+  if(smartLabel) applySmart(smartLabel);          // 选择集变化后保持命中结果同步
+  const right = document.getElementById('cmpTopRight');
+  right.innerHTML = `${diffSwitchHtml()}${markBestSwitchHtml()}`;
+  bindDiffSwitch(right, renderParamCompare);
+  bindMarkBestSwitch(right, renderParamCompare);
+
+  const body = document.getElementById('cmpBody');
+  const sel = orderedSel();
+  if(sel.length===0){ body.innerHTML = `<div class="card cmp-empty">请在左侧勾选至少一个任务</div>`; return; }
+  const model = buildParamModel(sel);
+  const freeVal = smartLabel && !isPreset(smartLabel) ? smartLabel : '';
+
+  // 状态提示行：把「智能帮比结果」「只看差异覆盖了多少参数项」「标记最优命中了多少可比参数」拆成三个可关闭的
+  // 标签，随各自开关状态出现/消失，点 × 直接取消对应筛选，而不只是只读文字
+  const totalKeys = model.reduce((s,g)=> s+g.keys.length, 0);
+  const diffKeys = model.reduce((s,g)=> s+g.keys.filter(key=> rowDiffers(g.group, key, sel)).length, 0);
+  const bestKeys = model.reduce((s,g)=> s+g.keys.filter(key=>{
+    const better = g.better.get(key);
+    return better && optimalIds(g.group, key, better, sel).size>0;
+  }).length, 0);
+  const hintTags = [];
+  if(smartLabel) hintTags.push(`<span class="hint-tag hint-tag--smart">✦ 已按「<b>${smartLabel}</b>」评估：${smartPickIds.length?smartPickIds.map(id=>shortName(id)).join('、')+' 胜出':'当前所选任务中无可比项'}（Demo）<span class="hint-tag-x" data-hint-close="smart" title="取消智能帮比">×</span></span>`);
+  if(compareDiffOnly) hintTags.push(`<span class="hint-tag hint-tag--diff">${totalKeys} 个参数项中展示了差异的 <b>${diffKeys}</b> 项<span class="hint-tag-x" data-hint-close="diff" title="关闭只看差异">×</span></span>`);
+  if(markBest) hintTags.push(`<span class="hint-tag hint-tag--best">${totalKeys} 个参数项中为 <b>${bestKeys}</b> 项可比参数标记了最优<span class="hint-tag-x" data-hint-close="best" title="关闭标记最优">×</span></span>`);
+  const hintHtml = hintTags.length ? `<div class="smart-hint-row">${hintTags.join('')}</div>` : '';
+
+  body.innerHTML = `
+    <div class="smart-bar">
+      <div class="smart-ai-group">
+        <span class="smart-label">✦ 智能帮比</span>
+        ${SMART_PRESETS.map(p=>`<button type="button" class="btn btn-ghost btn-sm smart-preset${smartLabel===p.label?' is-selected':''}" data-preset="${p.label}">${p.label}</button>`).join('')}
+      </div>
+      <input class="smart-input" id="smartInput" placeholder="输入你的比较条件，回车评估（如：显存最省 / 速度最快）" value="${freeVal}">
+      ${smartLabel?'<span class="smart-clear" id="smartClear">清除</span>':''}
+    </div>
+    ${hintHtml}
+    <div class="lane-area">
+      <div class="lane-wrap" id="laneWrap">
+        ${sel.map(id=> laneCardHtml(id, model, sel)).join('')}
+      </div>
+      ${laneRailHtml(model, sel)}
+    </div>`;
+
+  bindSmart();
+  bindHintTags();
+  bindLaneDnd();
+  bindLaneAdd();
+  bindLaneAnchors();
+  bindLaneRowHover();
+  sizeLaneWrap();
+}
+// 状态提示标签的 × ：点击直接取消对应筛选（智能帮比清除 / 只看差异关闭 / 标记最优关闭）并重渲染
+function bindHintTags(){
+  document.querySelectorAll('[data-hint-close]').forEach(x=> x.addEventListener('click', ()=>{
+    const kind = x.dataset.hintClose;
+    if(kind==='smart') applySmart('');
+    else if(kind==='diff') compareDiffOnly = false;
+    else if(kind==='best') markBest = false;
+    renderParamCompare();
+  }));
+}
+
+// 对比框为独立滚动容器：按可用视口高度限定其高度，框内出现纵向/横向滚动条
+function sizeLaneWrap(){
+  const wrap = document.getElementById('laneWrap');
+  if(!wrap || !document.body.contains(wrap)) return;
+  const top = wrap.getBoundingClientRect().top;   // 框顶距视口顶的距离
+  wrap.style.maxHeight = Math.max(240, window.innerHeight - top - 16) + 'px';
+}
+if(typeof _laneResize === 'undefined') var _laneResize = null;
+if(!_laneResize){ _laneResize = ()=> sizeLaneWrap(); window.addEventListener('resize', _laneResize, { passive: true }); }
+
+// 点击分组锚点：在对比框内滚动，把对应分组标题滚到悬浮任务标题正下方（锚点在框外的控制列里）
+function headHeight(wrap){ const h = wrap.querySelector('.lane-head'); return h ? h.getBoundingClientRect().height : 46; }
+function laneAnchors(wrap){ const area = wrap.closest('.lane-area'); return area ? [...area.querySelectorAll('.lane-anchor')] : []; }
+function bindLaneAnchors(){
+  const wrap = document.getElementById('laneWrap');
+  if(!wrap) return;
+  laneAnchors(wrap).forEach(a=> a.addEventListener('click', ()=>{
+    const g = wrap.querySelector(`.lane-group[data-group="${CSS.escape(a.dataset.anchor)}"]`);
+    if(!g) return;
+    const top = wrap.scrollTop + g.getBoundingClientRect().top - wrap.getBoundingClientRect().top - headHeight(wrap) - 6;
+    wrap.scrollTo({ top, behavior: 'smooth' });
+  }));
+  _anchorSpy = ()=> updateAnchorSpy();
+  wrap.addEventListener('scroll', _anchorSpy, { passive: true });
+  updateAnchorSpy();
+}
+// 滚动联动：高亮当前悬浮在任务标题下方的那个分组对应的锚点
+let _anchorSpy = null;
+function updateAnchorSpy(){
+  const wrap = document.getElementById('laneWrap');
+  if(!wrap || !document.body.contains(wrap)) return;
+  const anchors = laneAnchors(wrap);
+  if(!anchors.length) return;
+  const band = wrap.getBoundingClientRect().top + headHeight(wrap) + 8;   // 悬浮标题正下方一线
+  let active = anchors[0].dataset.anchor;
+  anchors.forEach(a=>{
+    const g = wrap.querySelector(`.lane-group[data-group="${CSS.escape(a.dataset.anchor)}"]`);
+    if(g && g.getBoundingClientRect().top <= band) active = a.dataset.anchor;
+  });
+  // 触底时无法把末尾分组顶到悬浮线，直接高亮最后一个分组
+  if(wrap.scrollTop + wrap.clientHeight >= wrap.scrollHeight - 2)
+    active = anchors[anchors.length-1].dataset.anchor;
+  anchors.forEach(a=> a.classList.toggle('is-selected', a.dataset.anchor===active));
+}
+
+// 悬浮某参数行时，联动高亮所有泳道中同一参数（group::key）的对应行
+function bindLaneRowHover(){
+  const wrap = document.getElementById('laneWrap');
+  if(!wrap) return;
+  wrap.querySelectorAll('.lane-row[data-rk]').forEach(row=>{
+    const rk = row.dataset.rk;
+    const peers = wrap.querySelectorAll(`.lane-row[data-rk="${CSS.escape(rk)}"]`);
+    row.addEventListener('mouseenter', ()=> peers.forEach(p=> p.classList.add('row-hi')));
+    row.addEventListener('mouseleave', ()=> peers.forEach(p=> p.classList.remove('row-hi')));
+  });
+}
+
+// 命中列可能在泳道横向滚动区外，评估后自动把第一张命中卡片滚入可视范围
+function scrollPickedIntoView(){
+  const wrap = document.getElementById('laneWrap');
+  const card = wrap && wrap.querySelector('.lane-card.picked');
+  if(card) card.scrollIntoView({ behavior:'smooth', inline:'center', block:'nearest' });
+}
+function bindSmart(){
+  document.querySelectorAll('[data-preset]').forEach(c=> c.addEventListener('click', ()=>{
+    const label = c.dataset.preset;
+    applySmart(smartLabel===label ? '' : label);   // 再次点击取消
+    renderParamCompare();
+    scrollPickedIntoView();
+  }));
+  const input = document.getElementById('smartInput');
+  if(input) input.addEventListener('keydown', e=>{
+    if(e.key==='Enter'){ const v = input.value.trim(); applySmart(v); renderParamCompare(); scrollPickedIntoView(); }
+  });
+  const clr = document.getElementById('smartClear');
+  if(clr) clr.addEventListener('click', ()=>{ applySmart(''); renderParamCompare(); });
+}
+function bindLaneDnd(){
+  const wrap = document.getElementById('laneWrap');
+  wrap.querySelectorAll('.lane-card[draggable="true"]').forEach(card=>{
+    card.addEventListener('dragstart', ()=>{ dragId = card.dataset.id; card.style.opacity = '.4'; });
+    card.addEventListener('dragend',   ()=>{ card.style.opacity = ''; });
+    card.addEventListener('dragover',  e=>{ e.preventDefault(); card.classList.add('drag-over'); });
+    card.addEventListener('dragleave', ()=> card.classList.remove('drag-over'));
+    card.addEventListener('drop', e=>{
+      e.preventDefault(); card.classList.remove('drag-over');
+      const targetId = card.dataset.id;
+      if(!dragId || dragId===targetId || targetId===baselineKey){ dragId = null; return; }
+      let order = orderedSel().filter(id=> id!==baselineKey && id!==dragId);
+      order.splice(order.indexOf(targetId), 0, dragId);
+      laneOrder = baselineKey ? [baselineKey, ...order] : order;
+      dragId = null;
+      renderParamCompare();
+    });
+  });
+}
+function bindLaneAdd(){
+  const add = document.getElementById('laneAdd'); if(!add || add.classList.contains('disabled')) return;
+  const menu = document.getElementById('laneAddMenu');
+  add.addEventListener('click', e=>{ e.stopPropagation(); menu.classList.toggle('open'); });
+  menu.addEventListener('click', e=> e.stopPropagation());
+  menu.querySelectorAll('.lane-add-item').forEach(it=> it.addEventListener('click', ()=>{
+    compareSel.add(it.dataset.add); laneOrder = null;
+    renderCompareSidebar(); renderParamCompare();
+  }));
+  document.addEventListener('click', ()=> menu.classList.remove('open'), { once:true });
+}
+
+function cmpDrawAll(){
+  cmpCharts = [];
+  document.querySelectorAll('.cmp-chart-area').forEach(area=>{
+    if(area.offsetParent === null) return;   // 折叠分区内的图已隐藏，跳过（展开时会再重绘）
+    cmpChart(area, CMP_METRICS[+area.dataset.mi]);
+  });
+}
+
+function cmpChart(area, m){
+  const sel = [...compareSel].filter(id=> cmpSeries(id, m));
+  const cmpCard = area.closest('.card');
+  const isExpanded = !!(cmpCard && cmpCard.classList.contains('is-expanded'));
+  const w = area.clientWidth || 300, h = isExpanded ? 180 : 120, pad = 12;
+  const datas = sel.map(id=>({ id, color:dotColor(id), vals:cmpSeriesEnriched(id, m),
+    name:TASKS[id].name, base:id===baselineKey }));
+  const allV = datas.flatMap(d=> d.vals);
+  const min = Math.min(...allV), max = Math.max(...allV), rng = (max-min)||1;
+  const n = Math.max(...datas.map(d=> d.vals.length));
+  const X = i => pad + i*(w-pad*2)/(n-1);
+  const Y = v => pad + (h-pad*2)*(1-(v-min)/rng);
+  const pathOf = vals => vals.map((v,i)=>(i?'L':'M')+X(i).toFixed(1)+' '+Y(v).toFixed(1)).join(' ');
+  const sm = cmpSmooth>0;
+  datas.forEach(d=> d.svals = sm ? smoothEMA(d.vals, cmpSmooth) : null);
+  // 非基线先画、基线后画（置于顶层，加粗）；颜色统一用任务本色，与侧栏图例保持一致——
+  // 之前基线曾强制显示为灰色 #888，和侧栏 .dot 的本色不一致，需要取消/重设基线才会「变回」本色，
+  // 现改为始终用本色，仅靠线宽/z-order/「基线」标签区分基线。
+  const ordered = [...datas.filter(d=>!d.base), ...datas.filter(d=>d.base)];
+  // 平滑开启时：原始曲线弱化（细、低透明），叠加显示平滑后曲线
+  const lines = ordered.map(d=>{
+    const col = d.color;
+    const raw = `<path d="${pathOf(d.vals)}" fill="none" stroke="${col}"
+       stroke-width="1" stroke-linejoin="round" stroke-linecap="round"
+       opacity="${sm?0.28:(d.base?0.95:0.85)}"/>`;
+    const smooth = sm ? `<path d="${pathOf(d.svals)}" fill="none" stroke="${col}"
+       stroke-width="1" stroke-linejoin="round" stroke-linecap="round" opacity="0.95"/>` : '';
+    return raw + smooth;
+  }).join('');
+  // 横向参考网格线：与 fillYAxis 的 max/mid/min 三档刻度对齐，参考 training-monitoring-v2
+  // 精度栏 PtoTrainingMetricsChart 的 .pto-tmchart__grid（同色同宽），置于折线下层
+  const gridY = [pad, pad+(h-pad*2)/2, h-pad];
+  const grid = gridY.map(y=> `<line x1="0" y1="${y.toFixed(1)}" x2="${w}" y2="${y.toFixed(1)}"
+    stroke="var(--border-subtle)" stroke-width="1"/>`).join('');
+  area.innerHTML = `<svg width="100%" height="${h}" viewBox="0 0 ${w} ${h}" preserveAspectRatio="none">
+    ${grid}
+    ${lines}
+    <line class="cmp-vline" x1="0" y1="${pad}" x2="0" y2="${h-pad}"
+      stroke="rgba(33,33,33,.32)" stroke-width="1" stroke-dasharray="3 3" style="display:none"/>
+    <g class="cmp-dots"></g>
+  </svg><div class="cmp-chart-tip"></div>`;
+  const svg = area.querySelector('svg');
+  const chartStepMax = Math.max(...datas.map(d => parseInt(TASKS[d.id].runtime && TASKS[d.id].runtime.stepCur) || d.vals.length));
+  const obj = { area, m, datas, n, w, X, Y, stepMax: chartStepMax,
+    vline: svg.querySelector('.cmp-vline'), dots: svg.querySelector('.cmp-dots'),
+    tip: area.querySelector('.cmp-chart-tip') };
+  cmpCharts.push(obj);
+  // 填充纵坐标
+  const _row = area.closest('.km-chart-row');
+  const _yaxEl = _row && _row.querySelector('.km-yaxis');
+  fillYAxis(_yaxEl, min, max, false);
+  // 填充 step 横坐标刻度（km-axis 是 km-chart-row 的下一个兄弟）
+  const axEl = _row ? _row.nextElementSibling : area.nextElementSibling;
+  if(axEl && axEl.classList.contains('km-axis')){
+    const ticks = 4;
+    axEl.innerHTML = Array.from({length:ticks+1},(_,j)=>
+      `<span>${Math.round(chartStepMax*j/ticks)}</span>`).join('');
+  }
+  // 在任意一张图上移动，都联动刷新所有图（竖线 + 数据点 + 各自气泡）
+  area.addEventListener('mousemove', e=>{
+    const rect = area.getBoundingClientRect();
+    const px = (e.clientX-rect.left)/rect.width*w;
+    let idx = Math.round((px-pad)/((w-pad*2)/(n-1)));
+    idx = Math.max(0, Math.min(n-1, idx));
+    cmpSyncAll(idx, area, e.clientX);
+  });
+  area.addEventListener('mouseleave', cmpHideAll);
+}
+
+// 联动：所有对比图在同一 idx 处画竖线、标记数据点，并各自弹出信息气泡
+// hoverArea/clientX：实际触发 mousemove 的那张图与鼠标视口坐标，用于让该图的气泡贴着鼠标走
+function cmpSyncAll(idx, hoverArea, clientX){
+  cmpCharts.forEach(c=>{
+    const x = c.X(idx).toFixed(1);
+    c.vline.setAttribute('x1', x); c.vline.setAttribute('x2', x);
+    c.vline.style.display = '';
+    c.dots.innerHTML = c.datas.map(d=> idx>=d.vals.length ? '' :
+      `<circle cx="${c.X(idx).toFixed(1)}" cy="${c.Y((d.svals||d.vals)[idx]).toFixed(1)}"
+        r="${d.base?3.2:2.6}" fill="${d.color}" stroke="#fff" stroke-width="1"/>`).join('');
+    cmpFillTip(c, idx, hoverArea, clientX);
+  });
+}
+function cmpHideAll(){
+  cmpCharts.forEach(c=>{ c.vline.style.display='none'; c.dots.innerHTML=''; c.tip.style.display='none'; });
+}
+// 单张图的信息气泡：列出各任务在 idx 处取值及相对基线偏差，定位在竖线一侧
+function cmpFillTip(c, idx, hoverArea, clientX){
+  const base = c.datas.find(d=> d.base);
+  c.tip.innerHTML = `<div class="cmp-tip-head">step ${Math.round(idx/(c.n-1)*c.stepMax)}</div>` +
+    c.datas.map(d=>{
+      const v = (d.svals||d.vals)[idx];
+      // 差异列固定渲染（基线行本身留空），保证数值列/差异列在各行右对齐、不随有无差异跳动宽度
+      let dev = '<span class="cmp-tip-dev"></span>';
+      if(base && d!==base){
+        const dv = deviation(v, (base.svals||base.vals)[idx], c.m.dir);
+        const sign = dv.pct>=0 ? '+' : '';
+        dev = `<span class="cmp-tip-dev" style="color:${dv.bad?'var(--danger)':'var(--foreground-muted)'}">${sign}${(dv.pct*100).toFixed(0)}%</span>`;
+      }
+      return `<div class="cmp-tip-row">
+        <span class="cmp-tip-dot" style="background:${d.color}"></span>
+        <span class="cmp-tip-name">${shortName(d.id)}${d.base?'·基线':''}</span>
+        <span class="cmp-tip-val">${fmtNum(v)}</span>${dev}</div>`;
+    }).join('');
+  c.tip.style.display = 'block';
+  // 气泡不再钳制在自身图表容器宽度内（图很窄时会被自己整片盖住）：
+  // 正在悬浮的这张图直接贴着鼠标真实横坐标走；联动的其它图仍按数据点位置跟随，
+  // 两者都只以浏览器视口边缘做兜底限位，允许气泡越出所在卡片/网格单元
+  const rect = c.area.getBoundingClientRect();
+  const tw = c.tip.offsetWidth;
+  const cursorLocalX = (c.area === hoverArea && typeof clientX === 'number')
+    ? clientX - rect.left
+    : (c.X(idx)/c.w) * rect.width;
+  const gap = 10;
+  let left = cursorLocalX + gap;
+  if(rect.left + left + tw > window.innerWidth - 4){
+    left = cursorLocalX - tw - gap;
+  }
+  left = Math.max(4 - rect.left, Math.min(left, window.innerWidth - 4 - rect.left - tw));
+  c.tip.style.left = left + 'px';
+  c.tip.style.top = '4px';
+}
+enterCompare();
+applyTheme(currentTheme);   // 初始主题图标/属性状态（本页无整网图渲染，等价于原 {skipRender:true}）
+window.addEventListener('resize', function(){ renderCompare(); });
+
+</script>
+</body>
+</html>

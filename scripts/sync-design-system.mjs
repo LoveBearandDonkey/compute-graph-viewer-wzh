@@ -40,7 +40,6 @@ const runtimeTargets = [
 
 const runtimeScriptTargets = [
   'scripts/audit-theme.mjs',
-  'scripts/liquid-glass.js',
 ];
 
 const excludedNames = new Set([

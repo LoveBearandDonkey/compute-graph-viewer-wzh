@@ -251,6 +251,143 @@ export function buildCardLoadViewModel(rankViewModel, collapse = 0) {
   };
 }
 
+// Point-in-time hardware activity for the 1F1B schedule. Card Load remains an
+// iteration aggregate; this model keeps the active microbatch and overlapping
+// communication on every rank at one shared schedule time.
+export function buildCardActivityViewModel(timelineRuntime, {
+  timeUs = 0,
+  region = 'steady',
+  stageEvents = [],
+  stageRanges = [],
+  loadViewModel = null,
+  operatorResolver = null,
+} = {}) {
+  const ranks = timelineRuntime?.ranks || [];
+  const endUs = Math.max(1, timelineRuntime?.timeRangeUs?.[1] || 1);
+  const now = Math.max(0, Math.min(endUs, Number(timeUs) || 0));
+  const loadByRank = new Map((loadViewModel?.cards || []).map(card => [Number(card.cardId), card]));
+  const taskEnd = task => (task?.startUs || 0) + (task?.durUs || 0);
+  const activeAt = task => (task?.startUs || 0) <= now && taskEnd(task) >= now;
+  const communicationKinds = new Set(['tp', 'ep', 'pp', 'dp']);
+
+  const cards = ranks.map(rank => {
+    const event = stageEvents[rank.stage] || null;
+    const activeTasks = (rank.tasks || []).filter(activeAt);
+    const runtimeCompute = activeTasks.find(task => task.kind === 'F' || task.kind === 'B') || null;
+    const commTasks = activeTasks.filter(task => communicationKinds.has(task.kind));
+    const commKinds = [...new Set([...commTasks.map(task => task.kind), ...(event?.comm ? [event.comm] : [])])];
+    const phase = event?.phase || runtimeCompute?.kind || (activeTasks.some(task => task.kind === 'bubble') ? 'bubble' : 'idle');
+    const microbatch = event?.micro ?? runtimeCompute?.microbatch ?? null;
+    const range = stageRanges[rank.stage] || [0, 0];
+    let progress = Number(event?.progress);
+    if (!Number.isFinite(progress) && runtimeCompute) {
+      const slotStart = runtimeCompute.slotStartUs ?? runtimeCompute.startUs ?? 0;
+      const slotDur = Math.max(1, runtimeCompute.slotDurUs ?? runtimeCompute.durUs ?? 1);
+      progress = clamp01((now - slotStart) / slotDur);
+    }
+    if (!Number.isFinite(progress)) progress = phase === 'bubble' || phase === 'idle' ? 0 : 0.5;
+    let layer = event?.layer;
+    if (layer == null && (phase === 'F' || phase === 'B')) {
+      const layerCount = Math.max(1, range[1] - range[0] + 1);
+      const offset = Math.min(layerCount - 1, Math.floor(progress * layerCount));
+      layer = phase === 'B' ? range[1] - offset : range[0] + offset;
+    }
+    const resolved = typeof operatorResolver === 'function'
+      ? operatorResolver({ rank, event, phase, microbatch, range, layer, progress, runtimeCompute, commTasks })
+      : null;
+    const heldMicrobatches = [];
+    const microbatchCount = timelineRuntime?.config?.microbatches || 0;
+    for (let mb = 0; mb < microbatchCount; mb++) {
+      const forward = (rank.tasks || []).find(task => task.kind === 'F' && task.microbatch === mb);
+      const backward = (rank.tasks || []).find(task => task.kind === 'B' && task.microbatch === mb);
+      if (forward && backward && taskEnd(forward) <= now && now < (backward.startUs || 0)) heldMicrobatches.push(mb);
+    }
+    const load = loadByRank.get(rank.rank) || {};
+    return {
+      cardId: rank.rank,
+      label: `Card ${rank.rank}`,
+      dp: rank.dp,
+      stage: rank.stage,
+      tp: rank.tp,
+      ep: rank.ep ?? 0,
+      range,
+      microbatch,
+      microbatchKey: microbatch == null ? null : `D${rank.dp}:MB${microbatch}`,
+      phase,
+      layer,
+      progress: clamp01(progress),
+      opStep: resolved?.step || event?.step || null,
+      operator: resolved?.label || event?.operator || runtimeCompute?.opName || (phase === 'bubble' ? 'Pipeline bubble' : 'Idle'),
+      primaryNodeId: resolved?.primaryNodeId || event?.primaryNodeId || null,
+      nodeIds: resolved?.nodeIds || event?.nodeIds || [],
+      computeTask: runtimeCompute,
+      commTasks,
+      commKinds,
+      heldMicrobatches,
+      utilRatio: load.utilRatio || 0,
+      commRatio: load.commRatio || 0,
+      pressure: load.pressure || 0,
+      loadState: load.state || 'ok',
+      state: phase === 'bubble' || phase === 'idle' ? 'idle' : (commKinds.length ? 'overlap' : 'compute'),
+    };
+  });
+
+  cards.sort((a, b) => (a.dp - b.dp) || (a.stage - b.stage) || (a.tp - b.tp) || (a.ep - b.ep));
+  const dpCount = Math.max(1, ...cards.map(card => card.dp + 1));
+  const ppCount = Math.max(1, ...cards.map(card => card.stage + 1));
+  const tpCount = Math.max(1, ...cards.map(card => card.tp + 1));
+  const epCount = Math.max(1, ...cards.map(card => card.ep + 1));
+  const groups = [];
+  for (let dp = 0; dp < dpCount; dp++) {
+    for (let stage = 0; stage < ppCount; stage++) {
+      const groupCards = cards.filter(card => card.dp === dp && card.stage === stage);
+      const representative = groupCards[0] || null;
+      groups.push({
+        id: `d${dp}p${stage}`,
+        dp,
+        stage,
+        range: stageRanges[stage] || [0, 0],
+        cards: groupCards,
+        microbatch: representative?.microbatch ?? null,
+        microbatchKey: representative?.microbatchKey || null,
+        phase: representative?.phase || 'idle',
+        layer: representative?.layer ?? null,
+        progress: representative?.progress || 0,
+        opStep: representative?.opStep || null,
+        operator: representative?.operator || 'Idle',
+        primaryNodeId: representative?.primaryNodeId || null,
+        nodeIds: representative?.nodeIds || [],
+        commKinds: [...new Set(groupCards.flatMap(card => card.commKinds))],
+        heldMicrobatches: [...new Set(groupCards.flatMap(card => card.heldMicrobatches))],
+      });
+    }
+  }
+
+  const activeMicrobatches = new Set(cards.map(card => card.microbatchKey).filter(Boolean));
+  const activeCards = cards.filter(card => card.state !== 'idle').length;
+  const communicatingCards = cards.filter(card => card.commKinds.length).length;
+  const bubbleCards = cards.length - activeCards;
+  return {
+    id: 'card-activity',
+    title: 'Card Activity',
+    meta: `${region} · ${Math.round(now)}us · ${activeMicrobatches.size} active DP/MB flows`,
+    timeUs: now,
+    region,
+    cards,
+    groups,
+    dpCount,
+    ppCount,
+    tpCount,
+    epCount,
+    stats: [
+      { label: 'active MB', value: `${activeMicrobatches.size}` },
+      { label: 'active cards', value: `${activeCards}/${cards.length}` },
+      { label: 'communicating', value: `${communicatingCards}` },
+      { label: 'bubble / idle', value: `${bubbleCards}` },
+    ],
+  };
+}
+
 // ===== Layer Scan：逐层 × 逐 step 指标（可切换）——单跑自身信号，非双跑 diff =====
 // 同一「层深 × 时间」轴可承载多种量。这里做成 4 个可切换通道：
 //   梯度/负载 = 异常型（色=偏离健康基线；首超标/峰值有意义；算子占比=对异常的贡献）

@@ -1,0 +1,1803 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>MB07 微批次生命周期泳道</title>
+  <link rel="icon" href="data:,">
+  <link rel="stylesheet" href="../vendor/pto-design-system/tokens/foundation.css">
+  <link rel="stylesheet" href="../vendor/pto-design-system/tokens/semantic.css">
+  <link rel="stylesheet" href="../vendor/pto-design-system/tokens/components.css">
+  <link rel="stylesheet" href="../vendor/pto-design-system/css/style.css">
+  <link rel="stylesheet" href="./vendor/swimlane-task/pattern.css">
+  <style>
+    :root {
+      --viz-forward: var(--primary);
+      --viz-backward: var(--danger);
+      --viz-wait: var(--foreground-muted);
+      --viz-comm: var(--success);
+      --viz-hold: var(--highlight-l0a-violet-source);
+      --viz-memory: var(--warning);
+      --viz-release: var(--ark-green-500);
+      --viz-grid: var(--border-subtle);
+      --hierarchy-popover-width: 360px;
+    }
+
+    * { box-sizing: border-box; }
+    html, body { width: 100%; height: 100%; }
+    body {
+      margin: 0;
+      display: grid;
+      grid-template-rows: var(--comp-toolbar-height) minmax(0, 1fr) 24px;
+      min-width: 1120px;
+      min-height: 720px;
+      overflow: hidden;
+      place-items: stretch;
+      background: var(--background);
+      color: var(--foreground);
+      font: var(--text-body-sm);
+    }
+
+    button, input { font: inherit; }
+    .toolbar {
+      min-width: 0;
+      background: transparent;
+    }
+    .toolbar-logo strong { color: var(--foreground); }
+    .toolbar-logo span { color: var(--foreground-muted); font: var(--text-mono); }
+    .toolbar-r { min-width: 0; }
+    .source-note {
+      max-width: 340px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      color: var(--foreground-muted);
+      font: var(--text-label);
+    }
+
+    .segmented {
+      display: inline-flex;
+      gap: var(--segmented-control-gap);
+      padding: var(--segmented-control-padding);
+      border: 1px solid var(--segmented-control-border);
+      border-radius: var(--segmented-control-radius);
+      background: var(--segmented-control-bg);
+    }
+    .segmented button,
+    .chip {
+      min-height: var(--button-height-sm);
+      padding: 0 var(--button-padding-x-sm);
+      border: 0;
+      border-radius: var(--radius-sm);
+      background: transparent;
+      color: var(--foreground-secondary);
+      cursor: pointer;
+      font: var(--button-font);
+    }
+    .segmented button:hover, .chip:hover { background: var(--state-hover); color: var(--foreground); }
+    .segmented button[aria-pressed="true"], .chip[aria-pressed="true"] {
+      background: var(--state-selected);
+      color: var(--foreground);
+    }
+
+    .workspace {
+      min-height: 0;
+      display: grid;
+      grid-template-columns: minmax(0, 1fr);
+    }
+    .pane { min-width: 0; min-height: 0; background: var(--ide-frame-pane-bg); }
+    .pane + .pane { border-left: 1px solid var(--ide-frame-pane-border); }
+    .pane__header {
+      height: 42px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: var(--space-2);
+      padding: 0 var(--space-3);
+      border-bottom: 1px solid var(--ide-frame-pane-border);
+      background: transparent;
+    }
+    .pane__title { min-width: 0; font: var(--ide-frame-title-font); color: var(--foreground); }
+    .pane__meta { color: var(--foreground-muted); font: var(--ide-frame-meta-font); white-space: nowrap; }
+    .pane__body { min-height: 0; height: calc(100% - 42px); overflow: auto; }
+
+    .tree-tools { padding: var(--space-2); border-bottom: 1px solid var(--border-subtle); }
+    .tree-search {
+      width: 100%; height: var(--input-height-md); padding: 0 var(--space-3);
+      border: 1px solid var(--input-border); border-radius: var(--input-radius);
+      outline: 0; background: var(--input-bg); color: var(--foreground); font: var(--text-body-sm);
+    }
+    .tree-search:focus { box-shadow: 0 0 0 3px var(--focus-ring); }
+    .tree { padding: var(--space-2); }
+    .tree details { margin: 0; }
+    .tree summary, .tree button {
+      width: 100%; min-height: 28px; border: 0; border-radius: var(--radius-sm);
+      background: transparent; color: var(--foreground-secondary); text-align: left; cursor: pointer;
+      overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    }
+    .tree summary { display: flex; align-items: center; padding: 0 var(--space-2); font-weight: var(--font-weight-semibold); }
+    .tree summary:hover, .tree button:hover { background: var(--state-hover); color: var(--foreground); }
+    .tree button { padding: 0 var(--space-2) 0 calc(var(--space-2) + var(--depth, 0) * 14px); font: var(--text-label); }
+    .tree button.is-selected { background: var(--state-selected); color: var(--foreground); }
+    .tree button small { color: var(--foreground-muted); font: var(--text-label); }
+
+    .timeline-pane { display: grid; grid-template-rows: 42px minmax(0, 1fr) 38px; }
+    .timeline-pane .pane__header { height: 42px; }
+    .timeline-toolbar { display: flex; align-items: center; gap: var(--space-2); min-width: 0; }
+    .timeline-toolbar .segmented button { min-height: 26px; }
+    .timeline-actions { display: flex; align-items: center; gap: var(--space-2); }
+    .timeline-actions.zoom-control-group .btn.btn-sm.btn-icon {
+      width: 28px;
+      min-width: 28px;
+      max-width: 28px;
+      height: 28px;
+      min-height: 28px;
+      padding: 0;
+      flex: 0 0 28px;
+      aspect-ratio: 1;
+      border-radius: 8px;
+    }
+    .zoom-control-readout { min-width: 48px; text-align: center; }
+    .zoom-slider {
+      width: 132px;
+      height: 28px;
+      margin: 0 2px;
+      accent-color: var(--primary);
+      cursor: pointer;
+    }
+    .zoom-slider:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 2px; }
+    .info-icon { font-weight: var(--font-weight-bold); }
+    .timeline-scroll {
+      position: relative;
+      min-height: 0;
+      overflow: auto;
+      background: var(--background);
+    }
+    .timeline-surface { position: relative; min-height: 100%; }
+    #timelineCanvas {
+      position: sticky;
+      left: 0;
+      display: block;
+      cursor: crosshair;
+    }
+    .timeline-footer {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: var(--space-3);
+      padding: 0 var(--space-3);
+      border-top: 1px solid var(--border-subtle);
+      background: var(--surface-2);
+      color: var(--foreground-muted);
+      font: var(--text-label);
+    }
+    .legend { display: flex; align-items: center; gap: var(--space-3); flex-wrap: wrap; }
+    .legend span { display: inline-flex; align-items: center; gap: 5px; white-space: nowrap; }
+    .legend i { width: 9px; height: 9px; border-radius: 2px; background: var(--legend-color); }
+    .legend i.is-flow {
+      background-color: var(--legend-color);
+      background-repeat: repeat-x;
+      background-size: 5px 100%;
+    }
+    .legend i.is-flow.is-forward {
+      background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 5 9'%3E%3Cpath d='M.5 0 L4.5 4.5 L.5 9' fill='none' stroke='white' stroke-width='.55' stroke-linejoin='miter' opacity='.34'/%3E%3C/svg%3E");
+    }
+    .legend i.is-flow.is-backward {
+      background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 5 9'%3E%3Cpath d='M4.5 0 L.5 4.5 L4.5 9' fill='none' stroke='white' stroke-width='.55' stroke-linejoin='miter' opacity='.34'/%3E%3C/svg%3E");
+    }
+    .legend i.is-hold {
+      position: relative;
+      width: 20px;
+      height: 9px;
+      border: 1px solid var(--viz-hold);
+      border-radius: 3px;
+      background: color-mix(in srgb, var(--viz-hold) 22%, transparent);
+    }
+    .legend i.is-hold::before,
+    .legend i.is-hold::after {
+      content: '';
+      position: absolute;
+      top: 50%;
+      width: 5px;
+      height: 5px;
+      transform: translateY(-50%) rotate(45deg);
+    }
+    .legend i.is-hold::before { left: -3px; background: var(--viz-hold); }
+    .legend i.is-hold::after { right: -3px; background: var(--viz-release); }
+
+    .hierarchy-popover {
+      position: fixed;
+      z-index: var(--z-popover, 1100);
+      width: var(--hierarchy-popover-width);
+      max-height: min(680px, calc(100vh - 96px));
+      display: grid;
+      grid-template-rows: 42px auto minmax(0, 1fr);
+      overflow: hidden;
+      border: 1px solid var(--card-border);
+      border-radius: var(--card-radius);
+      background: var(--card-bg);
+      box-shadow: var(--shadow-popover, 0 18px 48px rgba(0,0,0,.32));
+    }
+    .hierarchy-popover[hidden] { display: none; }
+    .hierarchy-popover__header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: var(--space-2);
+      padding: 0 var(--space-3);
+      border-bottom: 1px solid var(--border-subtle);
+      background: var(--surface-2);
+    }
+    .hierarchy-popover__title { color: var(--foreground); font: var(--ide-frame-title-font); }
+    .hierarchy-popover__close { min-width: 28px; }
+    .hierarchy-popover .tree { min-height: 0; overflow: auto; }
+    .statusbar {
+      display: flex; align-items: center; justify-content: space-between; gap: var(--space-3);
+      padding: 0 var(--space-3); border-top: 1px solid var(--border-subtle);
+      background: var(--surface-2); color: var(--foreground-muted); font: var(--text-label);
+    }
+    .statusbar span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+    .pto-swimlane-task-tooltip {
+      position: fixed;
+      z-index: var(--z-overlay);
+      width: min(460px, calc(100vw - 16px));
+      min-width: 320px;
+      max-width: calc(100vw - 16px);
+    }
+    .pto-swimlane-task-tooltip__row {
+      display: grid;
+      grid-template-columns: 72px minmax(0, 1fr);
+      align-items: start;
+      gap: 12px;
+    }
+    .pto-swimlane-task-tooltip__key {
+      min-width: 0;
+      white-space: nowrap;
+    }
+    .pto-swimlane-task-tooltip__value {
+      min-width: 0;
+      overflow-wrap: anywhere;
+    }
+
+  </style>
+</head>
+<body>
+  <header class="toolbar" aria-label="微批次生命周期分析工具栏">
+    <div class="toolbar-l">
+      <div class="toolbar-logo"><strong>MB07 生命周期</strong><span>Step 18420</span></div>
+      <div class="segmented" id="rangeToggle" role="group" aria-label="选择时间范围">
+        <button type="button" data-range="global" aria-pressed="true" title="查看 MB07 从 PP0 前向到 PP0 反向完成的完整链路">训练步全貌</button>
+        <button type="button" data-range="pp2" aria-pressed="false" title="聚焦 PP2 的等待、计算、通信和激活驻留">PP2 生命周期</button>
+        <button type="button" data-range="l34" aria-pressed="false" title="聚焦 L34 模块和保存激活对象的生产/消费关系">L34 对象链</button>
+        <button type="button" data-range="rankForward" aria-pressed="false" title="聚焦当前展开 Rank 的代表层前向算子链" disabled>Rank 前向</button>
+        <button type="button" data-range="rankBackward" aria-pressed="false" title="聚焦当前展开 Rank 的代表层反向算子链" disabled>Rank 反向</button>
+      </div>
+    </div>
+    <div class="toolbar-r">
+      <span class="source-note" title="模型结构与 Rank 映射对齐 openPangu-2.0-Flash；时间、性能和激活驻留指标为确定性模拟数据">openPangu-2.0-Flash · 结构映射 + 模拟时序</span>
+      <button class="btn btn-sm" id="themeToggle" type="button">浅色</button>
+    </div>
+  </header>
+
+  <main class="workspace">
+    <section class="pane timeline-pane">
+      <header class="pane__header">
+        <div class="timeline-toolbar">
+          <span class="pane__title">生命周期泳道</span>
+          <span class="pane__meta" title="32 个物理 Rank；MB07 mock 归属 DP1，因此默认只展示它经过的 16 个 Rank">32 Rank · MB07 → DP1</span>
+        </div>
+        <div class="timeline-actions zoom-control-group">
+          <button class="btn btn-sm btn-icon" id="zoomOut" type="button" aria-label="缩小">−</button>
+          <input class="zoom-slider" id="zoomSlider" type="range" min="0" max="6" step="1" value="0"
+            aria-label="时间轴缩放倍率" aria-valuemin="1" aria-valuemax="64" aria-valuenow="1"
+            title="离散缩放：1× / 2× / 4× / 8× / 16× / 32× / 64×">
+          <button class="btn btn-sm btn-icon" id="zoomIn" type="button" aria-label="放大">+</button>
+          <output class="zoom-control-readout" id="zoomValue">1×</output>
+          <button class="btn btn-sm btn-icon info-icon" id="objectInfoBtn" type="button" aria-label="查看对象层级" aria-expanded="false">i</button>
+        </div>
+      </header>
+      <div class="timeline-scroll" id="timelineScroll">
+        <div class="timeline-surface" id="timelineSurface">
+          <canvas id="timelineCanvas" aria-label="MB07 微批次生命周期泳道"></canvas>
+        </div>
+      </div>
+      <footer class="timeline-footer">
+        <div class="legend">
+          <span title="F 事件开始前使用向右底纹；事件条内箭头表示实际前向执行"><i class="is-flow is-forward" style="--legend-color:var(--viz-forward)"></i>前向计算</span>
+          <span title="B 事件结束后使用向左底纹；事件条内箭头表示实际反向执行"><i class="is-flow is-backward" style="--legend-color:var(--viz-backward)"></i>反向计算</span>
+          <span title="等待上游激活或下游梯度，属于 pipeline 依赖，不等同于数值异常"><i style="--legend-color:var(--viz-wait)"></i>依赖等待</span>
+          <span title="PP stage 之间的 activation / gradient send-recv 事务"><i style="--legend-color:var(--viz-comm)"></i>通信事务</span>
+          <span title="半透明紫色带表示保存激活的生命周期；紫色左端是前向保存，绿色右端是反向消费并释放"><i class="is-hold"></i>激活驻留</span>
+        </div>
+        <span id="rangeMeta">0.00–315.61 ms · MB07 完整链路</span>
+      </footer>
+    </section>
+  </main>
+
+  <section class="hierarchy-popover" id="hierarchyPopover" hidden aria-label="对象层级面板">
+    <header class="hierarchy-popover__header">
+      <span class="hierarchy-popover__title">对象层级</span>
+      <button class="btn btn-sm btn-icon hierarchy-popover__close" id="hierarchyClose" type="button" aria-label="关闭对象层级">×</button>
+    </header>
+    <div class="tree-tools"><input class="tree-search" id="treeSearch" type="search" placeholder="搜索 PP、Rank、算子、对象"></div>
+    <nav class="tree" id="objectTree" aria-label="微批次对象层级"></nav>
+  </section>
+
+  <footer class="statusbar">
+    <span id="statusText">点击任意泳道事件，查看它的依赖、数据对象和通信事务</span>
+    <span>openPangu-2.0-Flash 结构映射 · 时间与性能指标为模拟数据</span>
+  </footer>
+
+  <script src="./vendor/swimlane-task/pattern.js"></script>
+  <script>
+    (() => {
+      'use strict';
+
+      const COLORS = {
+        summary: '#38bdf8', forward: '#4369ef', backward: '#ff4b7b', wait: '#737373', comm: '#04d793',
+        hold: '#a855f7', memory: '#ffaa3b', release: '#87c80f', loss: '#f97316'
+      };
+      const ARCH_NODE_COLORS = Object.freeze({
+        token_embedding: '#14B8A6',
+        input_layernorm: '#0EA5E9',
+        attention_all_gather: '#06B6D4',
+        attention_core: '#3B82F6',
+        attention_reduce_scatter: '#06B6D4',
+        attention_residual_add: '#8B5CF6',
+        pre_mlp_norm: '#0EA5E9',
+        ffn_all_gather: '#06B6D4',
+        route_topk: '#F59E0B',
+        dense_gate_up: '#4F46E5',
+        dense_silu: '#8B5CF6',
+        dense_down: '#4F46E5',
+        moe_all_to_all_dispatch: '#06B6D4',
+        shared_expert_mlp: '#A855F7',
+        routed_expert_bank: '#EA580C',
+        moe_all_to_all_combine: '#06B6D4',
+        ffn_reduce_scatter: '#06B6D4',
+        ffn_residual_add: '#8B5CF6',
+        gradient_all_reduce: '#06B6D4'
+      });
+      const TIMELINE_LAYOUT = Object.freeze({
+        rowHeight: 22,
+        eventHeight: 16,
+        expandedRankHeight: 58,
+        rankTrackPitch: 18,
+        rankTrackTop: 2
+      });
+      const ZOOM_STEPS = Object.freeze([1, 2, 4, 8, 16, 32, 64]);
+
+      const stageEvents = [
+        event('pp0-fwd', 'PP0 · L0–L11', '前向计算 · 低层块', 'forward', 0, 31.80, { stage: 'PP0', layers: 'L0–L11', flops: '—' }),
+        event('tx-pp0-pp1-fwd', 'PP0 → PP1', '激活传输 · L11 输出', 'comm', 31.80, 34.25, { transactionId: 'P2P-MB07-PP0-PP1-FWD', tensor: 'hidden_states_L11_out', payload: '40 MiB', bandwidth: '52.2 GB/s' }),
+        event('pp1-fwd', 'PP1 · L12–L22', '前向计算 · 中低层块', 'forward', 34.25, 63.65, { stage: 'PP1', layers: 'L12–L22' }),
+        event('tx-pp1-pp2-fwd', 'PP1 → PP2', '激活传输 · L22 输出', 'comm', 63.65, 66.18, { transactionId: 'P2P-MB07-PP1-PP2-FWD', tensor: 'hidden_states_L22_out', payload: '40 MiB', bandwidth: '50.6 GB/s', wait: '0.31 ms' }),
+        event('pp2-fwd', 'PP2 · L23–L34', '前向计算 · PP2 层段', 'forward', 66.18, 99.78, { stage: 'PP2', layers: 'L23–L34', flops: '71.4 TFLOPs', throughput: '2.13 PFLOP/s', activation: '1.56 GiB' }),
+        event('tx-pp2-pp3-fwd', 'PP2 → PP3', '激活传输 · L34 输出', 'comm', 99.78, 102.36, { transactionId: 'P2P-MB07-PP2-PP3-FWD', tensor: 'hidden_states_L34_out', payload: '40 MiB', bandwidth: '49.6 GB/s', wait: '0.46 ms', status: '轻微等待' }),
+        event('pp3-fwd', 'PP3 · L35–L45', '前向计算 · 高层块', 'forward', 102.36, 133.56, { stage: 'PP3', layers: 'L35–L45' }),
+        event('loss', 'PP3 · Loss', 'Loss 计算', 'loss', 133.56, 135.06, { loss: '8.742' }),
+        event('pp3-bwd', 'PP3 · L45–L35', '反向计算 · 高层块', 'backward', 135.06, 177.86, { stage: 'PP3', layers: 'L45–L35' }),
+        event('tx-pp3-pp2-bwd', 'PP3 → PP2', '梯度传输 · dH34', 'comm', 177.86, 180.57, { transactionId: 'P2P-MB07-PP3-PP2-BWD', tensor: 'grad_hidden_L34_out', payload: '40 MiB', bandwidth: '47.2 GB/s', wait: '0.55 ms' }),
+        event('pp2-bwd', 'PP2 · L34–L23', '反向计算 · PP2 层段', 'backward', 180.57, 226.47, { stage: 'PP2', layers: 'L34–L23', inputGradAmax: '0.091', outputGradAmax: '0.124', released: '1.56 GiB' }),
+        event('tx-pp2-pp1-bwd', 'PP2 → PP1', '梯度传输 · dH22', 'comm', 226.47, 229.14, { transactionId: 'P2P-MB07-PP2-PP1-BWD', tensor: 'grad_hidden_L22_out', payload: '40 MiB', bandwidth: '47.9 GB/s', wait: '0.37 ms' }),
+        event('pp1-bwd', 'PP1 · L22–L12', '反向计算 · 中低层块', 'backward', 229.14, 269.44, { stage: 'PP1', layers: 'L22–L12' }),
+        event('tx-pp1-pp0-bwd', 'PP1 → PP0', '梯度传输 · dH11', 'comm', 269.44, 272.01, { transactionId: 'P2P-MB07-PP1-PP0-BWD', tensor: 'grad_hidden_L11_out', payload: '40 MiB', bandwidth: '49.8 GB/s', wait: '0.22 ms' }),
+        event('pp0-bwd', 'PP0 · L11–L0', '反向计算 · 低层块', 'backward', 272.01, 315.61, { stage: 'PP0', layers: 'L11–L0' })
+      ];
+
+      const pp2Lifecycle = [
+        event('pp2-wait-act', 'PP2 生命周期', '等待上游激活', 'wait', 47.81, 66.18, { upstream: 'PP1', recvPosted: '47.81 ms', firstByte: '63.82 ms', reason: 'PP1 前向尚未完成', actualIdle: '—' }),
+        event('pp2-life-fwd', 'PP2 生命周期', '前向执行 · L23–L34', 'forward', 66.18, 99.78, { kernels: '486', utilization: '68.4%', peakMemory: '42.8 GiB' }),
+        event('pp2-life-send-act', 'PP2 生命周期', '发送 L34 激活到 PP3', 'comm', 99.78, 102.36, { transactionId: 'P2P-MB07-PP2-PP3-FWD', queue: '0.46 ms', transfer: '1.94 ms', runtime: '0.18 ms' }),
+        event('pp2-wait-grad', 'PP2 生命周期', '等待下游激活梯度', 'wait', 102.36, 180.57, { tensor: 'grad_hidden_L34_out', logicalWait: '78.21 ms', actualIdle: '1.86 ms', overlap: '97.6%', reason: '预期内的 pipeline 依赖' }),
+        event('pp2-life-bwd', 'PP2 生命周期', '反向执行 · L34–L23', 'backward', 180.57, 226.47, { weightGradient: '19.8 ms', inputGradient: '16.7 ms', tpComm: '6.4 ms', recomputation: '3.0 ms' }),
+        event('pp2-life-send-grad', 'PP2 生命周期', '发送 dH22 到 PP1', 'comm', 226.47, 229.14, { transactionId: 'P2P-MB07-PP2-PP1-BWD', queue: '0.37 ms', transfer: '2.08 ms', runtime: '0.22 ms' }),
+        event('pp2-hold-total', 'PP2 保存激活', '保存激活驻留 · 1.56 GiB', 'hold', 99.78, 180.57, { sampledTensors: '62', original: '2.74 GiB', checkpointed: '1.56 GiB', recomputed: '1.18 GiB', memoryShare: '3.64%' })
+      ];
+
+      const commEvents = [
+        event('comm-in-act-wait', '接收激活 · PP1→PP2', '接收端等待发送端就绪', 'wait', 47.81, 63.65, { transactionId: 'P2P-MB07-PP1-PP2-FWD', endpoint: '接收端', tensor: 'hidden_states_L22_out' }),
+        event('comm-in-act-transfer', '接收激活 · PP1→PP2', 'L22 激活到达 PP2', 'comm', 63.65, 66.18, { transactionId: 'P2P-MB07-PP1-PP2-FWD', recvPosted: '47.81 ms', sendPosted: '63.65 ms', firstByte: '63.82 ms', recvComplete: '66.18 ms', payload: '40 MiB' }),
+        event('comm-out-act', '发送激活 · PP2→PP3', 'L34 激活发送到 PP3', 'comm', 99.78, 102.36, { transactionId: 'P2P-MB07-PP2-PP3-FWD', tensor: 'hidden_states_L34_out', shape: '[2,4096,2560]', dtype: 'BF16', queue: '0.46 ms', transfer: '1.94 ms', runtime: '0.18 ms', bandwidth: '66.0 GiB/s' }),
+        event('comm-in-grad', '接收梯度 · PP3→PP2', 'dH34 从 PP3 返回', 'comm', 177.86, 180.57, { transactionId: 'P2P-MB07-PP3-PP2-BWD', tensor: 'grad_hidden_L34_out', meaning: '∂Loss/∂h34', payload: '40 MiB', bandwidth: '47.2 GB/s' }),
+        event('comm-out-grad', '发送梯度 · PP2→PP1', 'dH22 发送到 PP1', 'comm', 226.47, 229.14, { transactionId: 'P2P-MB07-PP2-PP1-BWD', tensor: 'grad_hidden_L22_out', meaning: '∂Loss/∂h22', payload: '40 MiB', queue: '0.37 ms', transfer: '2.08 ms', runtime: '0.22 ms', bandwidth: '61.5 GiB/s' })
+      ];
+
+      const l34Forward = sequence('l34-fwd', 'L34 前向模块', 96.72, 'forward', [
+        ['输入 RMSNorm', .11, { outputAmax: '4.82', saved: '64 MiB' }],
+        ['Attention 主体', 1.21, { outputAmax: '8.74', saved: '148 MiB' }],
+        ['残差合并 1', .08, { outputAmax: '10.61', saved: '128 MiB' }],
+        ['FFN 前 RMSNorm', .10, { outputAmax: '4.95', saved: '64 MiB' }],
+        ['FFN 主体', 1.39, { outputAmax: '9.76', saved: '196 MiB' }],
+        ['残差合并 2', .09, { outputAmax: '12.41', saved: '128 MiB' }],
+        ['层输出交接', .08, { outputAmax: '12.41', saved: '—' }]
+      ]);
+
+      const l34Backward = sequence('l34-bwd', 'L34 反向模块', 180.57, 'backward', [
+        ['残差合并 2 反向', .10, { inputGradAmax: '0.091', outputGradAmax: '0.091', released: '128 MiB' }],
+        ['FFN 反向', 1.87, { inputGradAmax: '0.091', outputGradAmax: '0.097', released: '196 MiB' }],
+        ['FFN 前 RMSNorm 反向', .16, { inputGradAmax: '0.097', outputGradAmax: '0.095', released: '64 MiB' }],
+        ['残差合并 1 反向', .11, { inputGradAmax: '0.095', outputGradAmax: '0.101', released: '128 MiB' }],
+        ['Attention 反向', 1.74, { inputGradAmax: '0.101', outputGradAmax: '0.106', released: '148 MiB' }],
+        ['输入 RMSNorm 反向', .17, { inputGradAmax: '0.106', outputGradAmax: '0.104', released: '64 MiB' }]
+      ]);
+
+      const tensorEvents = [
+        tensor('tensor-stage-output', '阶段输出 · hidden_states_L34_out', 99.70, 180.67, '40 MiB', '残差合并 2', '残差合并 2 反向', { amax: '12.41', mean: '0.011', std: '1.19', p99: '3.84' }),
+        tensor('tensor-ffn-input', 'L34 · FFN 输入激活', 98.22, 182.54, '196 MiB', 'FFN 前 RMSNorm', 'FFN 反向', { amax: '4.95', nonFinite: '0' }),
+        tensor('tensor-residual-2', 'L34 · 残差合并 2 输入', 99.61, 180.67, '128 MiB', 'FFN 主体', '残差合并 2 反向', { amax: '9.76', nonFinite: '0' }),
+        tensor('tensor-attn-context', 'L34 · Attention 上下文', 96.83, 184.55, '148 MiB', 'Attention 主体', 'Attention 反向', { amax: '8.74', nonFinite: '0' }),
+        tensor('tensor-layer-input', 'L34 · 层输入残差', 96.72, 184.72, '64 MiB', 'L33 输出', '输入 RMSNorm 反向', { amax: '11.57', nonFinite: '0' })
+      ];
+
+      const pp0TensorEvents = [
+        tensor('pp0-tensor-stage-output', '阶段输出 · hidden_states_L11_out', 31.70, 272.05, '40 MiB', 'L11 残差合并', 'L11 反向', { evidence: '结构化样例' }),
+        tensor('pp0-tensor-embedding-output', 'Embedding · token_embedding_out', 4.80, 310.40, '96 MiB', 'Token Embedding', 'Embedding 反向', { evidence: '结构化样例' }),
+        tensor('pp0-tensor-l8-ffn-input', 'L8 · FFN 输入激活', 21.15, 287.10, '192 MiB', 'L8 FFN 前 RMSNorm', 'L8 FFN 反向', { evidence: '结构化样例' })
+      ];
+
+      const pp1TensorEvents = [
+        tensor('pp1-tensor-stage-output', '阶段输出 · hidden_states_L22_out', 63.55, 229.19, '40 MiB', 'L22 残差合并', 'L22 反向', { evidence: '结构化样例' }),
+        tensor('pp1-tensor-l22-ffn-input', 'L22 · FFN 输入激活', 61.90, 231.50, '192 MiB', 'L22 FFN 前 RMSNorm', 'L22 FFN 反向', { evidence: '结构化样例' }),
+        tensor('pp1-tensor-l16-attn-context', 'L16 · Attention 上下文', 45.42, 253.60, '148 MiB', 'L16 Attention', 'L16 Attention 反向', { evidence: '结构化样例' })
+      ];
+
+      const pp3TensorEvents = [
+        tensor('pp3-tensor-loss-input', 'Loss · logits 输入', 133.32, 135.10, '64 MiB', 'LM Head', 'Loss 反向', { evidence: '结构化样例' }),
+        tensor('pp3-tensor-stage-output', '阶段输出 · hidden_states_L45_out', 133.45, 149.32, '40 MiB', 'L45 残差合并', 'L45 反向', { evidence: '结构化样例' }),
+        tensor('pp3-tensor-l39-ffn-input', 'L39 · FFN 输入激活', 113.80, 164.10, '196 MiB', 'L39 FFN 前 RMSNorm', 'L39 FFN 反向', { evidence: '结构化样例' })
+      ];
+
+      const pp0ForwardDetail = sequence('pp0-detail-fwd', 'PP0 前向细分', 0.00, 'forward', [
+        ['Embedding + L0–L3', 10.40, { layers: 'L0–L3', activation: '384 MiB' }],
+        ['L4–L7 Decoder', 10.80, { layers: 'L4–L7', activation: '512 MiB' }],
+        ['L8–L11 Decoder', 10.60, { layers: 'L8–L11', activation: '524 MiB' }]
+      ]);
+      const pp0BackwardDetail = sequence('pp0-detail-bwd', 'PP0 反向细分', 272.01, 'backward', [
+        ['L11–L8 反向', 14.50, { layers: 'L11–L8', released: '524 MiB' }],
+        ['L7–L4 反向', 14.10, { layers: 'L7–L4', released: '512 MiB' }],
+        ['L3–L0 + Emb 反向', 15.00, { layers: 'L3–L0', released: '384 MiB' }]
+      ]);
+      const pp1ForwardDetail = sequence('pp1-detail-fwd', 'PP1 前向细分', 34.25, 'forward', [
+        ['L12–L15 Decoder', 9.80, { layers: 'L12–L15', activation: '520 MiB' }],
+        ['L16–L19 Decoder', 9.60, { layers: 'L16–L19', activation: '516 MiB' }],
+        ['L20–L22 Decoder', 10.00, { layers: 'L20–L22', activation: '444 MiB' }]
+      ]);
+      const pp1BackwardDetail = sequence('pp1-detail-bwd', 'PP1 反向细分', 229.14, 'backward', [
+        ['L22–L20 反向', 13.20, { layers: 'L22–L20', released: '444 MiB' }],
+        ['L19–L16 反向', 13.50, { layers: 'L19–L16', released: '516 MiB' }],
+        ['L15–L12 反向', 13.60, { layers: 'L15–L12', released: '520 MiB' }]
+      ]);
+      const pp3ForwardDetail = sequence('pp3-detail-fwd', 'PP3 前向细分', 102.36, 'forward', [
+        ['L35–L38 Decoder', 10.60, { layers: 'L35–L38', activation: '492 MiB' }],
+        ['L39–L42 Decoder', 10.40, { layers: 'L39–L42', activation: '504 MiB' }],
+        ['L43–L45 + Loss 输入', 10.20, { layers: 'L43–L45', activation: '416 MiB' }]
+      ]);
+      const pp3BackwardDetail = sequence('pp3-detail-bwd', 'PP3 反向细分', 135.06, 'backward', [
+        ['Loss + L45–L43 反向', 14.20, { layers: 'L45–L43', released: '416 MiB' }],
+        ['L42–L39 反向', 14.40, { layers: 'L42–L39', released: '504 MiB' }],
+        ['L38–L35 反向', 14.20, { layers: 'L38–L35', released: '492 MiB' }]
+      ]);
+      const ppHoldEvents = [
+        event('pp0-hold-total', 'PP0 保存激活', '保存激活驻留 · 1.42 GiB', 'hold', 31.80, 272.01, { sampledTensors: '48', checkpointed: '1.42 GiB', memoryShare: '3.31%', producer: 'PP0 前向', consumer: 'PP0 反向', evidence: '结构化样例' }),
+        event('pp1-hold-total', 'PP1 保存激活', '保存激活驻留 · 1.48 GiB', 'hold', 63.65, 229.14, { sampledTensors: '53', checkpointed: '1.48 GiB', memoryShare: '3.45%', producer: 'PP1 前向', consumer: 'PP1 反向', evidence: '结构化样例' }),
+        event('pp3-hold-total', 'PP3 保存激活', '保存激活驻留 · 1.33 GiB', 'hold', 133.56, 135.06, { sampledTensors: '45', checkpointed: '1.33 GiB', memoryShare: '3.10%', producer: 'PP3 前向', consumer: 'PP3 反向', evidence: '结构化样例' })
+      ];
+
+      const mbTotalEvent = event('mb07-total', 'MB07 · Step 18420', '完整训练链路 · 315.61 ms', 'summary', 0, 315.61, {
+        microbatch: 'MB07', schedule: '1F1B', stages: 'PP0–PP3', layers: 'L0–L45'
+      });
+
+      const PARALLEL_WORLD = Object.freeze({ worldSize: 32, dp: 2, pp: 4, tp: 2, ep: 2, activeDp: 1 });
+      const DSA_LAYERS = new Set([0, 3, 6, 9, 12, 15, 18, 21, 24, 27, 30, 33, 36, 39, 42, 45]);
+      const rankStageScopes = [
+        { stage: 0, parentRow: 'pp0-stage', layerStart: 0, layerEnd: 11, fwdStart: 0.00, fwdEnd: 31.80, detailFwdStart: 0.00, detailFwdEnd: 31.80, bwdStart: 272.01, bwdEnd: 315.61, detailBwdStart: 272.01, detailBwdEnd: 315.61 },
+        { stage: 1, parentRow: 'pp1-stage', layerStart: 12, layerEnd: 22, fwdStart: 34.25, fwdEnd: 63.65, detailFwdStart: 60.59, detailFwdEnd: 63.65, bwdStart: 229.14, bwdEnd: 269.44, detailBwdStart: 229.14, detailBwdEnd: 233.30 },
+        { stage: 2, parentRow: 'life', layerStart: 23, layerEnd: 34, fwdStart: 66.18, fwdEnd: 99.78, detailFwdStart: 96.72, detailFwdEnd: 99.78, bwdStart: 180.57, bwdEnd: 226.47, detailBwdStart: 180.57, detailBwdEnd: 184.72 },
+        { stage: 3, parentRow: 'pp3-stage', layerStart: 35, layerEnd: 45, fwdStart: 102.36, fwdEnd: 133.56, detailFwdStart: 130.50, detailFwdEnd: 133.56, bwdStart: 135.06, bwdEnd: 177.86, detailBwdStart: 135.06, detailBwdEnd: 139.22 }
+      ];
+      const rankOperatorSpecs = [
+        { key: 'input-norm', label: 'Input RMSNorm', graphNodeId: 'input_layernorm', start: .00, end: .055, track: 0, stream: 'Compute' },
+        { key: 'attn-allgather', label: 'Attention AllGather', graphNodeId: 'attention_all_gather', collective: 'TP AllGather', start: .035, end: .10, track: 1, stream: 'Collective' },
+        { key: 'attention', label: 'Attention Core', graphNodeId: 'attention_core', start: .09, end: .32, track: 0, stream: 'Compute' },
+        { key: 'attn-reduce-scatter', label: 'Attention ReduceScatter', graphNodeId: 'attention_reduce_scatter', collective: 'TP ReduceScatter', start: .30, end: .36, track: 1, stream: 'Collective' },
+        { key: 'attention-residual', label: 'Attention Residual Add', graphNodeId: 'attention_residual_add', start: .35, end: .40, track: 0, stream: 'Compute' },
+        { key: 'pre-mlp-norm', label: 'Pre MLP RMSNorm', graphNodeId: 'pre_mlp_norm', start: .40, end: .45, track: 0, stream: 'Compute' },
+        { key: 'ffn-allgather', label: 'FFN AllGather', graphNodeId: 'ffn_all_gather', collective: 'TP AllGather', start: .43, end: .50, track: 1, stream: 'Collective' },
+        { key: 'router', label: 'Router + TopK', graphNodeId: 'route_topk', start: .49, end: .56, track: 0, stream: 'Compute' },
+        { key: 'moe-dispatch', label: 'MoE All-to-All Dispatch', graphNodeId: 'moe_all_to_all_dispatch', collective: 'EP All-to-All', start: .54, end: .64, track: 1, stream: 'Collective' },
+        { key: 'shared-expert', label: 'Shared Expert MLP', graphNodeId: 'shared_expert_mlp', start: .55, end: .82, track: 2, stream: 'Parallel Compute' },
+        { key: 'experts', label: 'Routed Expert Bank', graphNodeId: 'routed_expert_bank', start: .62, end: .84, track: 0, stream: 'Compute' },
+        { key: 'moe-combine', label: 'MoE All-to-All Combine', graphNodeId: 'moe_all_to_all_combine', collective: 'EP All-to-All', start: .82, end: .91, track: 1, stream: 'Collective' },
+        { key: 'ffn-reduce-scatter', label: 'FFN ReduceScatter', graphNodeId: 'ffn_reduce_scatter', collective: 'TP ReduceScatter', start: .88, end: .95, track: 1, stream: 'Collective' },
+        { key: 'ffn-residual', label: 'FFN Residual + Post Norm', graphNodeId: 'ffn_residual_add', start: .91, end: 1.00, track: 0, stream: 'Compute' }
+      ];
+      const denseRankOperatorSpecs = [
+        { key: 'input-norm', label: 'Input RMSNorm', graphNodeId: 'input_layernorm', start: .00, end: .055, track: 0, stream: 'Compute' },
+        { key: 'attn-allgather', label: 'Attention AllGather', graphNodeId: 'attention_all_gather', collective: 'TP AllGather', start: .035, end: .10, track: 1, stream: 'Collective' },
+        { key: 'attention', label: 'Attention Core', graphNodeId: 'attention_core', start: .09, end: .32, track: 0, stream: 'Compute' },
+        { key: 'attn-reduce-scatter', label: 'Attention ReduceScatter', graphNodeId: 'attention_reduce_scatter', collective: 'TP ReduceScatter', start: .30, end: .36, track: 1, stream: 'Collective' },
+        { key: 'attention-residual', label: 'Attention Residual Add', graphNodeId: 'attention_residual_add', start: .35, end: .40, track: 0, stream: 'Compute' },
+        { key: 'pre-mlp-norm', label: 'Pre MLP RMSNorm', graphNodeId: 'pre_mlp_norm', start: .40, end: .46, track: 0, stream: 'Compute' },
+        { key: 'ffn-allgather', label: 'FFN AllGather', graphNodeId: 'ffn_all_gather', collective: 'TP AllGather', start: .44, end: .51, track: 1, stream: 'Collective' },
+        { key: 'dense-gate-up', label: 'Dense Gate + Up Projection', graphNodeId: 'dense_gate_up', start: .50, end: .68, track: 0, stream: 'Compute' },
+        { key: 'dense-silu', label: 'Dense SiLU Multiply', graphNodeId: 'dense_silu', start: .67, end: .75, track: 0, stream: 'Compute' },
+        { key: 'dense-down', label: 'Dense Down Projection', graphNodeId: 'dense_down', start: .74, end: .91, track: 0, stream: 'Compute' },
+        { key: 'ffn-reduce-scatter', label: 'FFN ReduceScatter', graphNodeId: 'ffn_reduce_scatter', collective: 'TP ReduceScatter', start: .88, end: .96, track: 1, stream: 'Collective' },
+        { key: 'ffn-residual', label: 'FFN Residual + Post Norm', graphNodeId: 'ffn_residual_add', start: .92, end: 1.00, track: 0, stream: 'Compute' }
+      ];
+      const PP0_RANK_PROFILES = Object.freeze({
+        '0-0': Object.freeze({
+          role: 'TP0 / EP0', hiddenShard: 'H[0:1280]', attentionHeads: 'head 0–23',
+          localExperts: 'E0–E127', routedTokenSlots: '31.2k', expertLoad: '0.95×', hotExperts: 'E12 / E47 / E93',
+          forwardStartOffset: 0, backwardStartOffset: .03,
+          forwardSyncWait: .86, backwardSyncWait: .54, computeScale: .97, computeSkew: -.004
+        }),
+        '0-1': Object.freeze({
+          role: 'TP0 / EP1', hiddenShard: 'H[0:1280]', attentionHeads: 'head 0–23',
+          localExperts: 'E128–E255', routedTokenSlots: '34.7k', expertLoad: '1.06×', hotExperts: 'E141 / E188 / E233',
+          forwardStartOffset: .04, backwardStartOffset: 0,
+          forwardSyncWait: 0, backwardSyncWait: 0, computeScale: 1.04, computeSkew: .006
+        }),
+        '1-0': Object.freeze({
+          role: 'TP1 / EP0', hiddenShard: 'H[1280:2560]', attentionHeads: 'head 24–47',
+          localExperts: 'E0–E127', routedTokenSlots: '32.0k', expertLoad: '0.98×', hotExperts: 'E12 / E64 / E101',
+          forwardStartOffset: .02, backwardStartOffset: .02,
+          forwardSyncWait: .52, backwardSyncWait: .33, computeScale: .99, computeSkew: .001
+        }),
+        '1-1': Object.freeze({
+          role: 'TP1 / EP1', hiddenShard: 'H[1280:2560]', attentionHeads: 'head 24–47',
+          localExperts: 'E128–E255', routedTokenSlots: '33.6k', expertLoad: '1.03×', hotExperts: 'E141 / E196 / E244',
+          forwardStartOffset: .06, backwardStartOffset: .05,
+          forwardSyncWait: .18, backwardSyncWait: .12, computeScale: 1.02, computeSkew: .004
+        })
+      });
+
+      function rankAt(dpReplica, stage, tpShard, epShard) {
+        return (((dpReplica * PARALLEL_WORLD.pp + stage) * PARALLEL_WORLD.tp + tpShard) * PARALLEL_WORLD.ep + epShard);
+      }
+      function physicalRank(stage, tpShard, epShard) {
+        return rankAt(PARALLEL_WORLD.activeDp, stage, tpShard, epShard);
+      }
+      function collectiveParticipants(scope, rankMeta, collective) {
+        if (!collective || collective === '—') return `Rank ${rankMeta.rank}`;
+        if (collective.startsWith('TP')) {
+          return Array.from({ length: PARALLEL_WORLD.tp }, (_, tp) => `Rank ${physicalRank(scope.stage, tp, rankMeta.ep)}`).join(', ');
+        }
+        if (collective.startsWith('EP')) {
+          return Array.from({ length: PARALLEL_WORLD.ep }, (_, ep) => `Rank ${physicalRank(scope.stage, rankMeta.tp, ep)}`).join(', ');
+        }
+        if (collective.startsWith('DP')) {
+          return Array.from({ length: PARALLEL_WORLD.dp }, (_, dp) => `Rank ${rankAt(dp, scope.stage, rankMeta.tp, rankMeta.ep)}`).join(', ');
+        }
+        return `Rank ${rankMeta.rank}`;
+      }
+      function rankExecutionProfile(scope, rankMeta) {
+        if (scope.stage !== 0) return null;
+        return PP0_RANK_PROFILES[`${rankMeta.tp}-${rankMeta.ep}`] || null;
+      }
+      function pp0OperatorLabel(spec, profile, participants, attentionKind) {
+        if (!profile) return spec.key === 'attention' ? attentionKind : spec.label;
+        if (spec.key === 'input-norm') return `Input RMSNorm · ${profile.hiddenShard}`;
+        if (spec.key === 'attention') return `${attentionKind} · ${profile.attentionHeads}`;
+        if (spec.key === 'attn-allgather' || spec.key === 'ffn-allgather') return `TP AllGather · ${participants.replace(', ', '↔')}`;
+        if (spec.key === 'attn-reduce-scatter' || spec.key === 'ffn-reduce-scatter') return `TP ReduceScatter · ${participants.replace(', ', '↔')}`;
+        if (spec.key === 'router') return `Router Top-8 · ${profile.routedTokenSlots} slots`;
+        if (spec.key === 'moe-dispatch') return `EP Dispatch · ${participants.replace(', ', '↔')}`;
+        if (spec.key === 'experts') return `Experts ${profile.localExperts} · load ${profile.expertLoad}`;
+        if (spec.key === 'shared-expert') return `Shared Expert · ${profile.hiddenShard}`;
+        if (spec.key === 'moe-combine') return `EP Combine · ${participants.replace(', ', '↔')}`;
+        return `${spec.label} · ${profile.role}`;
+      }
+      function pp0OperatorTiming(spec, rankMeta, profile, relativeStart, relativeEnd) {
+        if (!profile) return { relativeStart, relativeEnd };
+        const baseWidth = relativeEnd - relativeStart;
+        let scale = profile.computeScale;
+        let skew = profile.computeSkew;
+        if (spec.collective?.startsWith('TP')) {
+          scale = rankMeta.ep === 0 ? .98 : 1.05;
+          skew = rankMeta.ep === 0 ? -.002 : .004;
+        } else if (spec.collective?.startsWith('EP')) {
+          scale = rankMeta.tp === 0 ? .97 : 1.06;
+          skew = rankMeta.tp === 0 ? -.003 : .005;
+        } else if (spec.key === 'experts') {
+          scale *= Number.parseFloat(profile.expertLoad);
+        }
+        const center = (relativeStart + relativeEnd) / 2 + skew;
+        const width = baseWidth * scale;
+        return {
+          relativeStart: relativeStart <= 0 ? 0 : Math.max(0, center - width / 2),
+          relativeEnd: relativeEnd >= 1 ? 1 : Math.min(1, center + width / 2)
+        };
+      }
+      function eventsForOperatorWindow(scope, rankMeta, phase, specs, layer, start, end) {
+        const forward = phase === 'forward';
+        const duration = end - start;
+        const profile = rankExecutionProfile(scope, rankMeta);
+        return specs.map(spec => {
+          const rawStart = forward ? spec.start : 1 - spec.end;
+          const rawEnd = forward ? spec.end : 1 - spec.start;
+          const { relativeStart, relativeEnd } = pp0OperatorTiming(spec, rankMeta, profile, rawStart, rawEnd);
+          const eventStart = +(start + duration * relativeStart).toFixed(3);
+          const eventEnd = +(start + duration * relativeEnd).toFixed(3);
+          const attentionKind = DSA_LAYERS.has(layer) ? 'DSA Sparse FlashAttention' : 'SWA FlashAttention';
+          const participants = collectiveParticipants(scope, rankMeta, spec.collective);
+          const opLabel = pp0OperatorLabel(spec, profile, participants, attentionKind);
+          return event(
+            `rank-${rankMeta.rank}-${phase}-l${layer}-${spec.key}`,
+            `Rank ${rankMeta.rank} · L${layer}`,
+            `${forward ? 'F' : 'B'} · L${layer} ${opLabel}`,
+            spec.collective ? 'comm' : phase,
+            eventStart,
+            eventEnd,
+            {
+              stage: `PP${scope.stage}`, layer: `L${layer}`, rankId: `Rank ${rankMeta.rank}`,
+              dpReplica: `DP${PARALLEL_WORLD.activeDp}`, tpShard: `TP${rankMeta.tp}`, epShard: `EP${rankMeta.ep}`,
+              operatorId: spec.key, graphNodeId: spec.graphNodeId, collective: spec.collective || '—',
+              participants,
+              phase: forward ? 'Forward' : 'Backward', stream: spec.stream, track: spec.track,
+              ...(profile ? {
+                rankRole: profile.role, localTensorShard: profile.hiddenShard, localAttentionHeads: profile.attentionHeads,
+                localExperts: profile.localExperts, routedTokenSlots: profile.routedTokenSlots,
+                expertLoad: profile.expertLoad, hotExperts: profile.hotExperts,
+                collectivePayload: spec.collective?.startsWith('TP') ? '20 MiB shard / 40 MiB assembled' : spec.collective?.startsWith('EP') ? `${profile.routedTokenSlots} routed slots` : '—'
+              } : {}),
+              fidelity: 'ModelViz 结构映射 + 模拟时序'
+            }
+          );
+        });
+      }
+      function gradientAllReduceEvent(scope, rankMeta, start, end, layerLabel) {
+        const allReduceStart = +(start + (end - start) * .64).toFixed(3);
+        const dpParticipants = collectiveParticipants(scope, rankMeta, 'DP AllReduce');
+        return event(
+          `rank-${rankMeta.rank}-backward-dp-allreduce`,
+          `Rank ${rankMeta.rank} · ${layerLabel}`,
+          `B · Gradient AllReduce · ${dpParticipants.replace(', ', '↔')}`,
+          'comm',
+          allReduceStart,
+          end,
+          {
+            stage: `PP${scope.stage}`, layer: layerLabel, rankId: `Rank ${rankMeta.rank}`,
+            dpReplica: `DP${PARALLEL_WORLD.activeDp}`, tpShard: `TP${rankMeta.tp}`, epShard: `EP${rankMeta.ep}`,
+            operatorId: 'gradient-allreduce', graphNodeId: 'gradient_all_reduce', collective: 'DP AllReduce',
+            participants: dpParticipants, phase: 'Backward', stream: 'Collective', track: 1,
+            overlap: '与参数梯度计算重叠', fidelity: '训练态补充算子 + 模拟时序'
+          }
+        );
+      }
+      function eventsForOperatorPhase(scope, rankMeta, phase) {
+        const forward = phase === 'forward';
+        const start = forward ? scope.detailFwdStart : scope.detailBwdStart;
+        const end = forward ? scope.detailFwdEnd : scope.detailBwdEnd;
+        const events = eventsForOperatorWindow(scope, rankMeta, phase, rankOperatorSpecs, scope.layerEnd, start, end);
+        if (!forward) events.push(gradientAllReduceEvent(scope, rankMeta, start, end, `L${scope.layerEnd}`));
+        return events;
+      }
+      function pp0EmbeddingEvent(scope, rankMeta, phase, start, end) {
+        const forward = phase === 'forward';
+        const vocabSize = 151552;
+        const shardSize = vocabSize / PARALLEL_WORLD.tp;
+        const shardStart = rankMeta.tp * shardSize;
+        const shardEnd = shardStart + shardSize - 1;
+        return event(
+          `rank-${rankMeta.rank}-${phase}-embedding`,
+          `Rank ${rankMeta.rank} · Embedding`,
+          `${forward ? 'F' : 'B'} · Vocab Embedding · V[${shardStart}:${shardEnd + 1}]`,
+          forward ? 'forward' : 'backward',
+          start,
+          end,
+          {
+            stage: 'PP0', layer: 'Embedding', rankId: `Rank ${rankMeta.rank}`,
+            dpReplica: `DP${PARALLEL_WORLD.activeDp}`, tpShard: `TP${rankMeta.tp}`, epShard: `EP${rankMeta.ep}`,
+            operatorId: 'token-embedding', graphNodeId: 'token_embedding', collective: '—', participants: `Rank ${rankMeta.rank}`,
+            phase: forward ? 'Forward' : 'Backward', stream: 'Compute', track: 0,
+            vocabShard: `V[${shardStart}:${shardEnd + 1}]`, localTensorShard: `H[${rankMeta.tp * 1280}:${(rankMeta.tp + 1) * 1280}]`,
+            replication: `EP${rankMeta.ep} 副本`, fidelity: 'ModelViz 结构映射 + 模拟时序'
+          }
+        );
+      }
+      function eventsForPp0StagePhase(scope, rankMeta, phase, phaseStart, computeEnd) {
+        const forward = phase === 'forward';
+        const embeddingDuration = forward ? 1.18 : 1.46;
+        const layers = forward
+          ? Array.from({ length: 12 }, (_, index) => index)
+          : Array.from({ length: 12 }, (_, index) => 11 - index);
+        const weights = layers.map(layer => layer < 2 ? .92 : 1 + (layer % 3 === 0 ? .05 : 0));
+        const weightTotal = weights.reduce((sum, value) => sum + value, 0);
+        const layerBudget = Math.max(.1, computeEnd - phaseStart - embeddingDuration);
+        const events = [];
+        let cursor = phaseStart;
+        if (forward) {
+          const embeddingEnd = +(phaseStart + embeddingDuration).toFixed(3);
+          events.push(pp0EmbeddingEvent(scope, rankMeta, phase, phaseStart, embeddingEnd));
+          cursor = embeddingEnd;
+        }
+        layers.forEach((layer, index) => {
+          const remainingEnd = forward ? computeEnd : computeEnd - embeddingDuration;
+          const duration = layerBudget * weights[index] / weightTotal;
+          const windowEnd = index === layers.length - 1 ? remainingEnd : +(cursor + duration).toFixed(3);
+          const specs = layer < 2 ? denseRankOperatorSpecs : rankOperatorSpecs;
+          events.push(...eventsForOperatorWindow(scope, rankMeta, phase, specs, layer, cursor, windowEnd));
+          cursor = windowEnd;
+        });
+        if (!forward) {
+          const embeddingStart = cursor;
+          events.push(pp0EmbeddingEvent(scope, rankMeta, phase, embeddingStart, computeEnd));
+          events.push(gradientAllReduceEvent(scope, rankMeta, phaseStart, computeEnd, 'L11–L0'));
+        }
+        return events;
+      }
+      function eventsForDecoderStagePhase(scope, rankMeta, phase, phaseStart, computeEnd) {
+        const forward = phase === 'forward';
+        const layerCount = scope.layerEnd - scope.layerStart + 1;
+        const layers = forward
+          ? Array.from({ length: layerCount }, (_, index) => scope.layerStart + index)
+          : Array.from({ length: layerCount }, (_, index) => scope.layerEnd - index);
+        const weights = layers.map(layer => 1 + (layer % 3 === 0 ? .05 : 0));
+        const weightTotal = weights.reduce((sum, value) => sum + value, 0);
+        const stageBudget = Math.max(.1, computeEnd - phaseStart);
+        const events = [];
+        let cursor = phaseStart;
+        layers.forEach((layer, index) => {
+          const duration = stageBudget * weights[index] / weightTotal;
+          const windowEnd = index === layers.length - 1 ? computeEnd : +(cursor + duration).toFixed(3);
+          events.push(...eventsForOperatorWindow(scope, rankMeta, phase, rankOperatorSpecs, layer, cursor, windowEnd));
+          cursor = windowEnd;
+        });
+        if (!forward) {
+          events.push(gradientAllReduceEvent(scope, rankMeta, phaseStart, computeEnd, `L${scope.layerEnd}–L${scope.layerStart}`));
+        }
+        return events;
+      }
+      function eventsForRankPhase(scope, rankMeta, phase, phaseStart, computeEnd) {
+        if (scope.stage === 0) return eventsForPp0StagePhase(scope, rankMeta, phase, phaseStart, computeEnd);
+        return eventsForDecoderStagePhase(scope, rankMeta, phase, phaseStart, computeEnd);
+      }
+      function buildRankHierarchyRows() {
+        const result = [];
+        rankStageScopes.forEach(scope => {
+          const rankMeta = [];
+          for (let tp = 0; tp < PARALLEL_WORLD.tp; tp += 1) {
+            for (let ep = 0; ep < PARALLEL_WORLD.ep; ep += 1) rankMeta.push({ rank: physicalRank(scope.stage, tp, ep), tp, ep });
+          }
+          const rankIds = rankMeta.map(item => item.rank);
+          const groupId = `rank-group-pp${scope.stage}`;
+          const groupEvents = [
+            event(`${groupId}-forward`, `PP${scope.stage} Rank 组`, '4 Rank 并行 · Forward', 'forward', scope.fwdStart, scope.fwdEnd, {
+              rankGroup: `Rank ${rankIds[0]}–${rankIds.at(-1)}`, dpReplica: `DP${PARALLEL_WORLD.activeDp}`,
+              topology: 'TP2 × EP2', stage: `PP${scope.stage}`, layers: `L${scope.layerStart}–L${scope.layerEnd}`,
+              envelope: '最早 Rank 启动 → 最晚 Rank 完成', fidelity: '32-Rank 模拟拓扑'
+            }),
+            event(`${groupId}-backward`, `PP${scope.stage} Rank 组`, '4 Rank 并行 · Backward', 'backward', scope.bwdStart, scope.bwdEnd, {
+              rankGroup: `Rank ${rankIds[0]}–${rankIds.at(-1)}`, dpReplica: `DP${PARALLEL_WORLD.activeDp}`,
+              topology: 'TP2 × EP2', stage: `PP${scope.stage}`, layers: `L${scope.layerEnd}–L${scope.layerStart}`, fidelity: '32-Rank 模拟拓扑'
+            })
+          ];
+          result.push(row(groupId, `PP${scope.stage} · MB07 Rank ${rankIds[0]}–${rankIds.at(-1)}`, groupEvents, 'rank', {
+            depth: 2, parentRow: scope.parentRow, rowType: 'rank-group', meta: { ...scope, rankIds }
+          }));
+          rankMeta.forEach(meta => {
+            const rankId = `rank-pp${scope.stage}-r${meta.rank}`;
+            const profile = rankExecutionProfile(scope, meta);
+            const forwardStart = profile ? +(scope.fwdStart + profile.forwardStartOffset).toFixed(2) : scope.fwdStart;
+            const backwardStart = profile ? +(scope.bwdStart + profile.backwardStartOffset).toFixed(2) : scope.bwdStart;
+            const forwardEnd = profile ? +(scope.fwdEnd - profile.forwardSyncWait).toFixed(2) : scope.fwdEnd;
+            const backwardEnd = profile ? +(scope.bwdEnd - profile.backwardSyncWait).toFixed(2) : scope.bwdEnd;
+            const forwardOps = eventsForRankPhase(scope, meta, 'forward', forwardStart, forwardEnd);
+            const backwardOps = eventsForRankPhase(scope, meta, 'backward', backwardStart, backwardEnd);
+            const rankEvents = [
+              event(`${rankId}-forward`, `Rank ${meta.rank}`, `F · L${scope.layerStart}–L${scope.layerEnd}${profile ? ` · ${profile.role}` : ''}`, 'forward', forwardStart, forwardEnd, {
+                rankId: `Rank ${meta.rank}`, dpReplica: `DP${PARALLEL_WORLD.activeDp}`, tpShard: `TP${meta.tp}`, epShard: `EP${meta.ep}`,
+                stage: `PP${scope.stage}`, layers: `L${scope.layerStart}–L${scope.layerEnd}`, representativeLayer: `L${scope.layerEnd}`,
+                ...(profile ? {
+                  rankRole: profile.role, localTensorShard: profile.hiddenShard, localAttentionHeads: profile.attentionHeads,
+                  localExperts: profile.localExperts, routedTokenSlots: profile.routedTokenSlots, expertLoad: profile.expertLoad,
+                  startOffset: `${profile.forwardStartOffset.toFixed(2)} ms`, syncWait: `${profile.forwardSyncWait.toFixed(2)} ms`
+                } : {}), fidelity: profile ? '模型配置约束 + 确定性模拟时序' : '阶段级模拟时序'
+              }),
+              event(`${rankId}-backward`, `Rank ${meta.rank}`, `B · L${scope.layerEnd}–L${scope.layerStart}${profile ? ` · ${profile.role}` : ''}`, 'backward', backwardStart, backwardEnd, {
+                rankId: `Rank ${meta.rank}`, dpReplica: `DP${PARALLEL_WORLD.activeDp}`, tpShard: `TP${meta.tp}`, epShard: `EP${meta.ep}`,
+                stage: `PP${scope.stage}`, layers: `L${scope.layerEnd}–L${scope.layerStart}`, representativeLayer: `L${scope.layerEnd}`,
+                ...(profile ? {
+                  rankRole: profile.role, localTensorShard: profile.hiddenShard, localAttentionHeads: profile.attentionHeads,
+                  localExperts: profile.localExperts, routedTokenSlots: profile.routedTokenSlots, expertLoad: profile.expertLoad,
+                  startOffset: `${profile.backwardStartOffset.toFixed(2)} ms`, syncWait: `${profile.backwardSyncWait.toFixed(2)} ms`
+                } : {}), fidelity: profile ? '模型配置约束 + 确定性模拟时序' : '阶段级模拟时序'
+              })
+            ];
+            const detailEvents = [...forwardOps, ...backwardOps];
+            const forwardSyncEvent = profile?.forwardSyncWait ? event(
+              `${rankId}-forward-sync`, `Rank ${meta.rank}`, `等待 PP0 Rank 组 · ${profile.forwardSyncWait.toFixed(2)} ms`, 'wait', forwardEnd, scope.fwdEnd,
+              { rankId: `Rank ${meta.rank}`, rankRole: profile.role, syncPoint: 'PP0 Forward 完成栅栏', participants: rankIds.map(rank => `Rank ${rank}`).join(', '), reason: 'TP/EP 分片完成时间差', stream: 'Collective', track: 1, fidelity: '确定性模拟时序' }
+            ) : null;
+            const backwardSyncEvent = profile?.backwardSyncWait ? event(
+              `${rankId}-backward-sync`, `Rank ${meta.rank}`, `等待 PP0 Rank 组 · ${profile.backwardSyncWait.toFixed(2)} ms`, 'wait', backwardEnd, scope.bwdEnd,
+              { rankId: `Rank ${meta.rank}`, rankRole: profile.role, syncPoint: 'PP0 Backward 完成栅栏', participants: rankIds.map(rank => `Rank ${rank}`).join(', '), reason: '梯度计算与 collective 尾部差异', stream: 'Collective', track: 1, fidelity: '确定性模拟时序' }
+            ) : null;
+            if (forwardSyncEvent) { rankEvents.push(forwardSyncEvent); detailEvents.push(forwardSyncEvent); }
+            if (backwardSyncEvent) { rankEvents.push(backwardSyncEvent); detailEvents.push(backwardSyncEvent); }
+            result.push(row(rankId, `Rank ${meta.rank}`, rankEvents, 'rank', {
+              depth: 3, parentRow: groupId, rowType: 'rank',
+              meta: {
+                ...scope, ...meta,
+                detailFwdStart: forwardStart, detailFwdEnd: forwardEnd,
+                detailBwdStart: backwardStart, detailBwdEnd: backwardEnd,
+                detailMode: 'full-stage'
+              },
+              detailEvents
+            }));
+          });
+        });
+        return result;
+      }
+      const rankHierarchyRows = buildRankHierarchyRows();
+      const rankRowsByStage = Object.fromEntries(rankStageScopes.map(scope => [
+        scope.stage,
+        rankHierarchyRows.filter(item => item.meta?.stage === scope.stage)
+      ]));
+
+      function stageEventsById(ids) {
+        return ids.map(id => stageEvents.find(item => item.id === id)).filter(Boolean);
+      }
+
+      const rows = [
+        row('overview', 'MB07 · 完整链路', [mbTotalEvent], 'overview', { depth: 0 }),
+        row('pp0-stage', 'PP0 · L0–L11 生命周期', stageEventsById(['pp0-fwd', 'tx-pp0-pp1-fwd', 'tx-pp1-pp0-bwd', 'pp0-bwd']), 'overview', { depth: 1, parentRow: 'overview' }),
+        ...rankRowsByStage[0],
+        row('pp0-forward', 'PP0 · 前向模块链', pp0ForwardDetail, 'layer', { depth: 2, parentRow: 'pp0-stage' }),
+        row('pp0-comm', 'PP0 · 激活发送 / 梯度接收', stageEventsById(['tx-pp0-pp1-fwd', 'tx-pp1-pp0-bwd']), 'overview', { depth: 2, parentRow: 'pp0-stage' }),
+        row('pp0-hold', 'PP0 · 保存激活驻留', ppHoldEvents.filter(item => item.id === 'pp0-hold-total'), 'overview', { depth: 2, parentRow: 'pp0-stage' }),
+        ...pp0TensorEvents.map(item => row(item.id, objectLaneLabel(item), [item], 'object', { depth: 3, parentRow: 'pp0-hold' })),
+        row('pp0-backward', 'PP0 · 反向模块链', pp0BackwardDetail, 'layer', { depth: 2, parentRow: 'pp0-stage' }),
+        row('pp1-stage', 'PP1 · L12–L22 生命周期', stageEventsById(['pp1-fwd', 'tx-pp1-pp2-fwd', 'tx-pp2-pp1-bwd', 'pp1-bwd']), 'overview', { depth: 1, parentRow: 'overview' }),
+        ...rankRowsByStage[1],
+        row('pp1-forward', 'PP1 · 前向模块链', pp1ForwardDetail, 'layer', { depth: 2, parentRow: 'pp1-stage' }),
+        row('pp1-comm', 'PP1 · 激活/梯度双向通信', stageEventsById(['tx-pp0-pp1-fwd', 'tx-pp1-pp2-fwd', 'tx-pp2-pp1-bwd', 'tx-pp1-pp0-bwd']), 'overview', { depth: 2, parentRow: 'pp1-stage' }),
+        row('pp1-hold', 'PP1 · 保存激活驻留', ppHoldEvents.filter(item => item.id === 'pp1-hold-total'), 'overview', { depth: 2, parentRow: 'pp1-stage' }),
+        ...pp1TensorEvents.map(item => row(item.id, objectLaneLabel(item), [item], 'object', { depth: 3, parentRow: 'pp1-hold' })),
+        row('pp1-backward', 'PP1 · 反向模块链', pp1BackwardDetail, 'layer', { depth: 2, parentRow: 'pp1-stage' }),
+        row('life', 'PP2 · L23–L34 生命周期', pp2Lifecycle.filter(item => item.kind !== 'hold'), 'overview', { depth: 1, parentRow: 'overview' }),
+        ...rankRowsByStage[2],
+        row('comm-in-act', 'PP2 · 接收上游激活', commEvents.filter(item => item.id.includes('in-act')), 'overview', { depth: 2, parentRow: 'life' }),
+        row('l34-forward', 'PP2 · L34 前向模块链', l34Forward, 'layer', { depth: 2, parentRow: 'life' }),
+        row('comm-out-act', 'PP2 · 发送激活到 PP3', commEvents.filter(item => item.id === 'comm-out-act'), 'overview', { depth: 2, parentRow: 'life' }),
+        row('hold', 'PP2 · 保存激活驻留', pp2Lifecycle.filter(item => item.kind === 'hold'), 'overview', { depth: 2, parentRow: 'life' }),
+        ...tensorEvents.map(item => row(item.id, objectLaneLabel(item), [item], 'object', { depth: 3, parentRow: 'hold' })),
+        row('comm-in-grad', 'PP2 · 接收下游梯度', commEvents.filter(item => item.id === 'comm-in-grad'), 'overview', { depth: 2, parentRow: 'life' }),
+        row('l34-backward', 'PP2 · L34 反向模块链', l34Backward, 'layer', { depth: 2, parentRow: 'life' }),
+        row('comm-out-grad', 'PP2 · 发送梯度到 PP1', commEvents.filter(item => item.id === 'comm-out-grad'), 'overview', { depth: 2, parentRow: 'life' }),
+        row('pp3-stage', 'PP3 · L35–L45 生命周期', stageEventsById(['pp3-fwd', 'loss', 'pp3-bwd', 'tx-pp3-pp2-bwd']), 'overview', { depth: 1, parentRow: 'overview' }),
+        ...rankRowsByStage[3],
+        row('pp3-forward-loss', 'PP3 · 前向模块链', pp3ForwardDetail, 'layer', { depth: 2, parentRow: 'pp3-stage' }),
+        row('pp3-loss', 'PP3 · Loss 计算', stageEventsById(['loss']), 'overview', { depth: 2, parentRow: 'pp3-stage' }),
+        row('pp3-hold', 'PP3 · 保存激活驻留', ppHoldEvents.filter(item => item.id === 'pp3-hold-total'), 'overview', { depth: 2, parentRow: 'pp3-stage' }),
+        ...pp3TensorEvents.map(item => row(item.id, objectLaneLabel(item), [item], 'object', { depth: 3, parentRow: 'pp3-hold' })),
+        row('pp3-backward', 'PP3 · 反向模块链', pp3BackwardDetail, 'layer', { depth: 2, parentRow: 'pp3-stage' }),
+        row('pp3-comm', 'PP3 · 激活接收 / 梯度发送', stageEventsById(['tx-pp2-pp3-fwd', 'tx-pp3-pp2-bwd']), 'overview', { depth: 2, parentRow: 'pp3-stage' })
+      ];
+
+      const ranges = {
+        global: { start: 0, end: 315.61, label: '0.00–315.61 ms · MB07 完整链路' },
+        pp2: { start: 44, end: 232, label: '44.00–232.00 ms · 聚焦 PP2 生命周期' },
+        l34: { start: 94, end: 187, label: '94.00–187.00 ms · 聚焦 L34 生产/消费链' },
+        rankForward: { start: 96.52, end: 99.98, label: 'Rank 24 · L34 · Forward 算子链' },
+        rankBackward: { start: 180.37, end: 184.92, label: 'Rank 24 · L34 · Backward 算子链' }
+      };
+
+      let selectedId = 'mb07-total';
+      let activeRange = 'global';
+      let activeLevel = 'object';
+      let zoom = 1;
+      let hitRects = [];
+      let hoverHit = null;
+      let expandedRowIds = new Set(['overview']);
+      let focusedRankRowId = 'rank-pp2-r24';
+      let rangeBeforeRankFocus = 'global';
+
+      const canvas = document.getElementById('timelineCanvas');
+      const scroll = document.getElementById('timelineScroll');
+      const timelineSurface = document.getElementById('timelineSurface');
+      const tree = document.getElementById('objectTree');
+      const treeSearch = document.getElementById('treeSearch');
+      const objectInfoBtn = document.getElementById('objectInfoBtn');
+      const hierarchyPopover = document.getElementById('hierarchyPopover');
+      const hierarchyClose = document.getElementById('hierarchyClose');
+      const tooltip = window.PtoSwimlaneTaskPattern.createTooltip();
+      document.body.appendChild(tooltip);
+
+      function event(id, lane, label, kind, startMs, endMs, metrics = {}) {
+        return { id, lane, label, kind, startMs, endMs, durationMs: +(endMs - startMs).toFixed(2), metrics };
+      }
+      function sequence(prefix, lane, startMs, kind, specs) {
+        let cursor = startMs;
+        return specs.map(([label, duration, metrics], index) => {
+          const item = event(`${prefix}-${index}`, lane, label, kind, cursor, +(cursor + duration).toFixed(2), metrics);
+          cursor = item.endMs;
+          return item;
+        });
+      }
+      function tensor(id, label, startMs, endMs, memory, producer, consumer, metrics) {
+        const objectName = objectNameFromLabel(label);
+        return event(id, label, `${objectName} · 驻留到反向释放`, 'hold', startMs, endMs, {
+          objectId: id, objectType: '保存激活', memory, producer, consumer,
+          objectName,
+          shape: '[2,4096,2560]', dtype: 'BF16', ...metrics
+        });
+      }
+      function row(id, label, events, level, options = {}) {
+        return {
+          id, label, events, level,
+          depth: options.depth || 0,
+          parentRow: options.parentRow || null,
+          rowType: options.rowType || level,
+          meta: options.meta || null,
+          detailEvents: options.detailEvents || null
+        };
+      }
+
+      function visibleRows() {
+        return rows.filter(item => {
+          if (activeLevel === 'overview' && item.level !== 'overview') return false;
+          if (activeLevel === 'layer' && item.level === 'object') return false;
+          if (!isRowParentChainExpanded(item)) return false;
+          return true;
+        });
+      }
+
+      function css(name) { return getComputedStyle(document.documentElement).getPropertyValue(name).trim(); }
+      function colorFor(item) {
+        return ARCH_NODE_COLORS[item.metrics?.graphNodeId] || COLORS[item.kind] || COLORS.forward;
+      }
+      function rgbaFromHex(hex, alpha) {
+        const clean = String(hex || '').replace('#', '');
+        const full = clean.length === 3 ? clean.split('').map(char => char + char).join('') : clean;
+        const value = Number.parseInt(full, 16);
+        if (!Number.isFinite(value)) return `rgba(168,85,247,${alpha})`;
+        const r = (value >> 16) & 255;
+        const g = (value >> 8) & 255;
+        const b = value & 255;
+        return `rgba(${r},${g},${b},${alpha})`;
+      }
+      function fmt(value) { return `${Number(value).toFixed(2)} ms`; }
+      function escapeHtml(value) {
+        return String(value ?? '').replace(/[&<>"]/g, char => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[char]));
+      }
+      function objectNameFromLabel(label) {
+        const text = String(label || '');
+        const hiddenState = text.match(/hidden_states_L\d+_out/);
+        if (hiddenState) return hiddenState[0];
+        return text.replace(/^L\d+ · /, '').replace(/^阶段输出 · /, '').replace(/^Embedding · /, '').replace(/^Loss · /, '').trim();
+      }
+      function objectLaneLabel(item) {
+        return `${item.metrics.objectName || objectNameFromLabel(item.lane)} · 保存激活`;
+      }
+      function childRowsForRow(rowId) {
+        return rows.filter(item => item.parentRow === rowId);
+      }
+      function isExpandableRow(item) {
+        return childRowsForRow(item.id).length > 0 || Boolean(item.detailEvents?.length);
+      }
+      function eventsForLane(item) {
+        return item.rowType === 'rank' && isExpandedRow(item) && item.detailEvents?.length ? item.detailEvents : item.events;
+      }
+      function isExpandedRow(item) {
+        return expandedRowIds.has(item.id);
+      }
+      function isRowParentChainExpanded(item) {
+        let parentId = item.parentRow;
+        while (parentId) {
+          if (!expandedRowIds.has(parentId)) return false;
+          const parent = rows.find(row => row.id === parentId);
+          parentId = parent?.parentRow || null;
+        }
+        return true;
+      }
+      function setActiveLevel(nextLevel) {
+        activeLevel = nextLevel;
+        document.querySelectorAll('[data-level]').forEach(item => item.setAttribute('aria-pressed', String(item.dataset.level === activeLevel)));
+      }
+      function statusFor(item) {
+        if (item.metrics.status === '轻微等待') return { label: '轻微等待', tone: 'warning' };
+        if (item.kind === 'wait') return { label: '可解释等待', tone: 'warning' };
+        return { label: '正常', tone: 'success' };
+      }
+      function itemExplanation(item) {
+        if (item.id === 'mb07-total') return '这是 MB07 的父级生命周期事件，覆盖完整 1F1B 链路。展开后按 PP stage 展示同一时间轴上的前后依赖。';
+        if (item.metrics.syncPoint) return `这是 ${item.metrics.rankId} 在 ${item.metrics.syncPoint} 前的同步等待；它反映 TP/EP 分片负载差，而不是另一段计算。`;
+        if (item.metrics.operatorId) return item.metrics.collective && item.metrics.collective !== '—'
+          ? `这是 ${item.metrics.rankId} 上的 ${item.metrics.collective} 通信算子，参与组为 ${item.metrics.participants}；已映射到模型架构图中的 ${item.metrics.graphNodeId}。`
+          : `这是 ${item.metrics.rankId} 在 ${item.metrics.localTensorShard || '本地分片'} 上执行的代表层计算，已映射到模型架构图中的 ${item.metrics.graphNodeId}。`;
+        if (item.metrics.rankGroup) return `这是 MB07 在 PP stage 内实际经过的 TP2 × EP2 Rank 执行组；同一 DP 副本中的 4 个 Rank 并行执行。`;
+        if (item.metrics.rankId) return `这是 MB07 在单个物理 Rank 上的阶段级执行包络。展开该 Rank 后查看代表层的计算与 collective 算子。`;
+        if (item.metrics.objectId) return '这是 forward 保存下来的激活对象。它会持续占用显存，直到对应 backward 模块消费后释放。';
+        if (item.id === 'pp2-wait-act' || item.id === 'comm-in-act-wait') return 'PP2 已经发起接收，但上游 PP1 尚未完成前向输出；这段时间表示 pipeline 依赖等待。';
+        if (item.id === 'pp2-wait-grad') return 'PP2 前向完成后等待 PP3 返回 dH34。绝大部分等待被其他 microbatch 工作覆盖，不代表 NPU 长时间空转。';
+        if (item.metrics.transactionId) return '这是跨 PP stage 的点对点通信事务。相同 transactionId 把发送端和接收端绑定为同一次 activation / gradient 传输。';
+        if (item.kind === 'forward') return '前向模块产生 activation；这些 activation 后续会被发送给下一 stage，或保存到反向阶段使用。';
+        if (item.kind === 'backward') return '反向模块消费保存激活和上游梯度，计算输入梯度/参数梯度，并触发对应激活释放。';
+        if (item.kind === 'loss') return 'Loss 位于最后一个 PP stage，是 backward 链路的起点。';
+        if (item.kind === 'hold') return '紫色驻留条表示保存激活的生命周期，重点看持续时间和显存体量。';
+        if (item.kind === 'summary') return '汇总条表示父级时间包络，本身不是一次 kernel；展开后查看 stage、模块或对象级事件。';
+        return '该事件属于 MB07 在当前时间窗内的可定位执行片段。';
+      }
+      function primaryEvidence(item) {
+        if (item.metrics.operatorId) {
+          const shard = item.metrics.localTensorShard ? ` · shard=${item.metrics.localTensorShard}` : '';
+          const experts = item.metrics.localExperts ? ` · experts=${item.metrics.localExperts}` : '';
+          return `${item.metrics.rankId} · ${item.metrics.dpReplica}/${item.metrics.tpShard}/${item.metrics.epShard}${shard}${experts} · graph=${item.metrics.graphNodeId} · ${item.metrics.collective || 'Compute'} · participants=${item.metrics.participants || item.metrics.rankId} · ${item.metrics.fidelity}`;
+        }
+        if (item.metrics.rankGroup) return `${item.metrics.dpReplica} · ${item.metrics.rankGroup} · ${item.metrics.topology} · ${item.metrics.layers} · ${item.metrics.fidelity}`;
+        if (item.metrics.syncPoint) return `${item.metrics.rankId} · ${item.metrics.rankRole} · ${item.metrics.syncPoint} · participants=${item.metrics.participants} · ${item.metrics.fidelity}`;
+        if (item.metrics.rankId) return `${item.metrics.dpReplica}/${item.metrics.tpShard}/${item.metrics.epShard} · ${item.metrics.rankRole || 'SPMD 分片'} · ${item.metrics.stage} · ${item.metrics.layers} · 代表层 ${item.metrics.representativeLayer}`;
+        if (item.metrics.transactionId) {
+          const payload = item.metrics.payload || item.metrics.tensor || 'Activation / Gradient';
+          const bandwidth = item.metrics.bandwidth ? ` · 带宽 ${item.metrics.bandwidth}` : '';
+          const wait = item.metrics.wait ? ` · 等待 ${item.metrics.wait}` : '';
+          return `${item.metrics.transactionId} · ${payload}${bandwidth}${wait}`;
+        }
+        if (item.metrics.objectId) return `${item.metrics.memory} · producer=${item.metrics.producer} · consumer=${item.metrics.consumer} · ${item.metrics.evidence || '文档采样'}`;
+        if (item.kind === 'summary') return `${item.metrics.schedule} · ${item.metrics.stages} · ${item.metrics.layers}`;
+        if (item.kind === 'hold' && item.metrics.checkpointed) return `${item.metrics.checkpointed} · producer=${item.metrics.producer || 'forward'} · consumer=${item.metrics.consumer || 'backward'} · ${item.metrics.evidence || '文档采样'}`;
+        if (item.id === 'pp2-wait-grad') return `logical wait ${item.metrics.logicalWait} · actual idle ${item.metrics.actualIdle} · overlap ${item.metrics.overlap}`;
+        if (item.id === 'pp2-hold-total') return `checkpointed ${item.metrics.checkpointed} · recomputed ${item.metrics.recomputed} · sampled tensors ${item.metrics.sampledTensors}`;
+        if (item.metrics.throughput) return `${item.metrics.throughput} · kernels ${item.metrics.kernels} · peak memory ${item.metrics.peakMemory}`;
+        if (item.metrics.released) return `released ${item.metrics.released} · input grad amax ${item.metrics.inputGradAmax || '—'}`;
+        if (item.metrics.outputAmax) return `output amax ${item.metrics.outputAmax} · saved ${item.metrics.saved}`;
+        if (item.metrics.inputGradAmax) return `input grad amax ${item.metrics.inputGradAmax} · released ${item.metrics.released}`;
+        if (item.metrics.loss) return `loss ${item.metrics.loss}`;
+        return `${fmt(item.startMs)} → ${fmt(item.endMs)}`;
+      }
+      function visualEncoding(item) {
+        if (item.metrics.operatorId) {
+          const direction = item.metrics.phase === 'Backward' ? 'B 标签表示反向' : 'F 标签表示前向';
+          return `填充色继承架构图节点 ${item.metrics.graphNodeId} 的语义色；${direction}，通信参与组与执行流在事件详情中给出。`;
+        }
+        if (item.kind === 'backward') return '红色条内箭头指向左侧；B 事件结束后的泳道边缘使用向左底纹，作为反向方向提示。';
+        if (item.kind === 'hold') return '半透明紫色带表示激活驻留；紫色左端是前向保存，绿色右端是反向消费并释放。';
+        if (item.kind === 'summary') return '青色父级条表示完整时间包络；左侧行头的 + / − 控制子泳道展开。';
+        if (item.kind === 'comm') return '绿色条表示 send/recv 事务；同 transactionId 的事件会在 hover 时联动高亮。';
+        if (item.kind === 'wait') return '灰色条表示依赖等待；需要结合 actual idle 判断是否真空转。';
+        if (item.kind === 'forward') return '蓝色条内箭头指向右侧；F 事件开始前的泳道边缘使用向右底纹，作为前向方向提示。';
+        return '橙色条表示 loss 计算，是反向链路的触发点。';
+      }
+
+      function renderTree(filter = '') {
+        const needle = filter.trim().toLowerCase();
+        const leaf = (item, depth = 2) => {
+          const text = `${item.label} ${item.id} ${Object.values(item.metrics || {}).join(' ')}`.toLowerCase();
+          if (needle && !text.includes(needle)) return '';
+          return `<button type="button" style="--depth:${depth}" data-select="${item.id}" class="${selectedId === item.id ? 'is-selected' : ''}" title="${escapeHtml(item.label)}">${escapeHtml(item.label)} <small>· ${item.durationMs.toFixed(2)} ms</small></button>`;
+        };
+        const rankTree = stage => {
+          const group = rankHierarchyRows.find(item => item.rowType === 'rank-group' && item.meta?.stage === stage);
+          if (!group) return '';
+          const rankRows = childRowsForRow(group.id);
+          return `<details><summary>MB07 Rank 路径 · Rank ${group.meta.rankIds[0]}–${group.meta.rankIds.at(-1)}</summary>${rankRows.map(rankRow => {
+            return `<details><summary>${escapeHtml(rankRow.label)} · TP${rankRow.meta.tp} / EP${rankRow.meta.ep}</summary>${rankRow.events.map(item => leaf(item, 4)).join('')}${(rankRow.detailEvents || []).map(item => leaf(item, 5)).join('')}</details>`;
+          }).join('')}</details>`;
+        };
+        tree.innerHTML = `
+          <details open><summary>MB07 · Step 18420</summary>
+            <details open><summary>Pipeline 链路 · PP0–PP3</summary>${stageEvents.map(item => leaf(item, 2)).join('')}</details>
+            <details open><summary>PP0 · L0–L11</summary>
+              ${rankTree(0)}
+              <details open><summary>前向模块 · 3</summary>${pp0ForwardDetail.map(item => leaf(item, 3)).join('')}</details>
+              <details open><summary>保存激活对象 · 3</summary>${pp0TensorEvents.map(item => leaf(item, 3)).join('')}</details>
+              <details open><summary>反向模块 · 3</summary>${pp0BackwardDetail.map(item => leaf(item, 3)).join('')}</details>
+            </details>
+            <details open><summary>PP1 · L12–L22</summary>
+              ${rankTree(1)}
+              <details open><summary>前向模块 · 3</summary>${pp1ForwardDetail.map(item => leaf(item, 3)).join('')}</details>
+              <details open><summary>保存激活对象 · 3</summary>${pp1TensorEvents.map(item => leaf(item, 3)).join('')}</details>
+              <details open><summary>反向模块 · 3</summary>${pp1BackwardDetail.map(item => leaf(item, 3)).join('')}</details>
+            </details>
+            <details open><summary>PP2 · L23–L34</summary>
+              ${rankTree(2)}
+              <details open><summary>生命周期事件</summary>${pp2Lifecycle.map(item => leaf(item, 3)).join('')}</details>
+              <details open><summary>通信事务</summary>${commEvents.map(item => leaf(item, 3)).join('')}</details>
+              <details open><summary>L34 前向模块 · 7</summary>${l34Forward.map(item => leaf(item, 3)).join('')}</details>
+              <details open><summary>L34 反向模块 · 6</summary>${l34Backward.map(item => leaf(item, 3)).join('')}</details>
+              <details open><summary>保存激活对象 · 5</summary>${tensorEvents.map(item => leaf(item, 3)).join('')}</details>
+            </details>
+            <details open><summary>PP3 · L35–L45</summary>
+              ${rankTree(3)}
+              <details open><summary>前向模块 · 3</summary>${pp3ForwardDetail.map(item => leaf(item, 3)).join('')}</details>
+              <details open><summary>保存激活对象 · 3</summary>${pp3TensorEvents.map(item => leaf(item, 3)).join('')}</details>
+              <details open><summary>反向模块 · 3</summary>${pp3BackwardDetail.map(item => leaf(item, 3)).join('')}</details>
+            </details>
+          </details>`;
+      }
+
+      function allEvents() {
+        return [
+          mbTotalEvent,
+          ...stageEvents,
+          ...pp0ForwardDetail, ...pp0TensorEvents, ...pp0BackwardDetail,
+          ...pp1ForwardDetail, ...pp1TensorEvents, ...pp1BackwardDetail,
+          ...pp2Lifecycle, ...commEvents, ...l34Forward, ...l34Backward,
+          ...tensorEvents,
+          ...pp3ForwardDetail, ...pp3TensorEvents, ...pp3BackwardDetail,
+          ...ppHoldEvents,
+          ...rankHierarchyRows.flatMap(item => [...item.events, ...(item.detailEvents || [])])
+        ];
+      }
+      function selectedEvent() { return allEvents().find(item => item.id === selectedId) || pp2Lifecycle[6]; }
+
+      function relationFor(item) {
+        if (item.metrics.objectId) return [['生产者', item.metrics.producer], ['驻留成本', `${item.durationMs.toFixed(2)} ms / ${item.metrics.memory}`], ['消费者', item.metrics.consumer], ['释放时间', `${item.endMs.toFixed(2)} ms`]];
+        if (item.kind === 'summary') return [['父级范围', `${fmt(item.startMs)} → ${fmt(item.endMs)}`], ['调度', item.metrics.schedule], ['展开后查看', 'PP0 / PP1 / PP2 / PP3 生命周期']];
+        if (item.kind === 'hold') return [['生产者', item.metrics.producer || 'Forward'], ['驻留成本', `${item.durationMs.toFixed(2)} ms / ${item.metrics.checkpointed || item.metrics.memory || '—'}`], ['消费者', item.metrics.consumer || 'Backward']];
+        if (item.metrics.operatorId) return [['物理 Rank', item.metrics.rankId], ['本地分片', item.metrics.localTensorShard || `${item.metrics.tpShard}/${item.metrics.epShard}`], ['通信参与组', item.metrics.participants || item.metrics.rankId], ['模型节点', item.metrics.graphNodeId]];
+        if (item.metrics.syncPoint) return [['等待 Rank', item.metrics.rankId], ['同步点', item.metrics.syncPoint], ['参与 Rank', item.metrics.participants], ['原因', item.metrics.reason]];
+        if (item.metrics.rankId) return [['物理 Rank', item.metrics.rankId], ['并行角色', item.metrics.rankRole || `${item.metrics.tpShard}/${item.metrics.epShard}`], ['阶段层段', `${item.metrics.stage} · ${item.metrics.layers}`], ['同步等待', item.metrics.syncWait || '—']];
+        if (item.metrics.transactionId) return [['通信事务', item.metrics.transactionId], ['端点', item.metrics.endpoint || item.lane], ['传输对象', item.metrics.tensor || item.metrics.payload || 'Activation / Gradient'], ['配对规则', 'Send ↔ Recv 通过 transactionId 关联']];
+        if (item.id.includes('fwd')) return [['输入依赖', '上一 stage / 上一模块输出'], ['产生对象', 'Activation'], ['后续动作', '发送给下游或保存到反向阶段']];
+        if (item.id.includes('bwd')) return [['输入依赖', '激活梯度 + 保存激活'], ['产生对象', '输入梯度 / 参数梯度'], ['后续动作', '释放激活并向上游发送梯度']];
+        return [['作用域', 'MB07 · PP2'], ['数据来源', 'microbatch_data.md'], ['证据性质', '保留原始结论与指标的收敛样例']];
+      }
+
+      function kindLabel(kind) {
+        return ({ summary: '父级时间包络', forward: '前向计算', backward: '反向计算', wait: '依赖等待', comm: '通信事务', hold: '激活驻留', loss: 'Loss 计算' })[kind] || kind;
+      }
+      function humanKey(key) {
+        const labels = {
+          stage: 'Stage', layers: '层范围', flops: '计算量', transactionId: '通信事务 ID',
+          microbatch: 'Microbatch', schedule: '调度', stages: 'PP 范围',
+          tensor: '张量', payload: '载荷', bandwidth: '带宽', wait: '等待', status: '状态',
+          loss: 'Loss', inputGradAmax: '输入梯度 Amax', outputGradAmax: '输出梯度 Amax',
+          released: '释放显存', upstream: '上游依赖', recvPosted: 'Recv 提交', firstByte: '首字节',
+          reason: '原因', actualIdle: '实际空转', kernels: 'Kernel 数', utilization: '利用率',
+          peakMemory: '峰值显存', queue: '排队', transfer: '传输', runtime: 'Runtime',
+          logicalWait: '逻辑等待', overlap: '重叠比例', weightGradient: '权重梯度',
+          inputGradient: '输入梯度', tpComm: 'TP 通信', recomputation: '重计算',
+          sampledTensors: '采样张量数', original: '原始保存量', checkpointed: 'Checkpoint 后保存量',
+          recomputed: '重计算量', memoryShare: '显存占比', endpoint: '通信端点',
+          sendPosted: 'Send 提交', recvComplete: 'Recv 完成', shape: '形状', dtype: 'dtype',
+          meaning: '梯度语义', objectId: '对象 ID', objectType: '对象类型', memory: '显存',
+          producer: '生产者', consumer: '消费者', amax: 'Amax', mean: 'Mean', std: 'Std',
+          p99: 'P99', nonFinite: '非有限值', outputAmax: '输出 Amax', saved: '保存显存',
+          rankGroup: 'Rank 执行组', rankId: '物理 Rank', dpReplica: 'DP 副本', tpShard: 'TP 分片',
+          epShard: 'EP 分片', topology: '并行拓扑', representativeLayer: '代表层', operatorId: '算子 ID',
+          graphNodeId: 'ModelViz 节点', collective: 'Collective', participants: '参与 Rank', stream: '执行流', phase: '阶段', fidelity: '数据口径',
+          rankRole: 'Rank 角色', localTensorShard: '本地张量分片', localAttentionHeads: '本地 Attention Heads',
+          localExperts: '本地专家', routedTokenSlots: '路由 Token Slots', expertLoad: '专家负载', hotExperts: '热点专家',
+          collectivePayload: 'Collective 载荷', startOffset: '启动偏移', syncWait: '同步等待', syncPoint: '同步点',
+          envelope: '父级包络'
+        };
+        return labels[key] || key.replace(/([A-Z])/g, ' $1').replace(/^./, char => char.toUpperCase());
+      }
+      function drawLaneConnector(ctx, lane, y, rowH, color) {
+        const depth = lane.depth || 0;
+        if (!depth) return;
+        ctx.save();
+        ctx.strokeStyle = color;
+        ctx.globalAlpha = 0.72;
+        ctx.setLineDash([2, 3]);
+        for (let level = 1; level <= depth; level += 1) {
+          const guideX = 12 + level * 15;
+          ctx.beginPath();
+          ctx.moveTo(guideX + .5, y + 1);
+          ctx.lineTo(guideX + .5, y + rowH - 1);
+          ctx.stroke();
+        }
+        const branchX = 12 + depth * 15;
+        ctx.setLineDash([]);
+        ctx.beginPath();
+        ctx.moveTo(branchX + .5, y + rowH / 2 + .5);
+        ctx.lineTo(branchX + 11.5, y + rowH / 2 + .5);
+        ctx.stroke();
+        ctx.restore();
+      }
+      function roundedRect(ctx, x, y, width, height, radius) {
+        if (ctx.roundRect) {
+          ctx.beginPath();
+          ctx.roundRect(x, y, width, height, radius);
+          return;
+        }
+        ctx.beginPath();
+        ctx.rect(x, y, width, height);
+      }
+      function drawChevronTrack(ctx, x, y, width, height, direction, options = {}) {
+        if (width <= 0 || height <= 0 || (direction !== 'forward' && direction !== 'backward')) return;
+        const step = options.step || 6;
+        const inset = options.inset ?? .5;
+        const color = options.color || 'rgba(255,255,255,.3)';
+        const lineWidth = options.lineWidth || .6;
+        ctx.save();
+        roundedRect(ctx, x, y, width, height, options.radius ?? 3);
+        ctx.clip();
+        ctx.strokeStyle = color;
+        ctx.lineWidth = lineWidth;
+        ctx.lineJoin = 'miter';
+        ctx.lineCap = 'butt';
+        for (let px = x - step; px < x + width + step; px += step) {
+          ctx.beginPath();
+          if (direction === 'forward') {
+            ctx.moveTo(px + inset, y + inset);
+            ctx.lineTo(px + step - inset, y + height / 2);
+            ctx.lineTo(px + inset, y + height - inset);
+          } else {
+            ctx.moveTo(px + step - inset, y + inset);
+            ctx.lineTo(px + inset, y + height / 2);
+            ctx.lineTo(px + step - inset, y + height - inset);
+          }
+          ctx.stroke();
+        }
+        ctx.restore();
+      }
+      function drawLaneGlyphTrack(ctx, x, y, width, height, direction, color) {
+        if (width <= 0 || height <= 0 || (direction !== 'forward' && direction !== 'backward')) return;
+        const glyph = direction === 'forward' ? '›' : '‹';
+        ctx.save();
+        ctx.beginPath();
+        ctx.rect(x, y, width, height);
+        ctx.clip();
+        ctx.fillStyle = color;
+        ctx.globalAlpha = .38;
+        ctx.font = `800 23px ${css('--font-mono') || 'monospace'}`;
+        ctx.textAlign = 'left';
+        ctx.textBaseline = 'middle';
+        ctx.shadowColor = rgbaFromHex(color, .38);
+        ctx.shadowBlur = 8;
+        const step = ctx.measureText(glyph).width + 2;
+        for (let px = x + 3; px < x + width + step; px += step) {
+          ctx.fillText(glyph, px, y + height / 2 + .5);
+        }
+        ctx.restore();
+      }
+      function drawDirectionalLaneEdgeTexture(ctx, lane, x, range, y, rowH) {
+        if (lane.rowType === 'rank' && isExpandedRow(lane)) return;
+        const laneEvents = eventsForLane(lane);
+        const forwardEvents = laneEvents.filter(item => item.kind === 'forward');
+        const backwardEvents = laneEvents.filter(item => item.kind === 'backward');
+        const textureY = y + 2;
+        const textureH = rowH - 4;
+
+        if (forwardEvents.length) {
+          const forwardStart = Math.min(...forwardEvents.map(item => item.startMs));
+          const edgeEnd = Math.min(forwardStart, range.end);
+          if (edgeEnd > range.start) {
+            const trackX = x(range.start);
+            const trackW = x(edgeEnd) - trackX;
+            drawLaneGlyphTrack(ctx, trackX, textureY, trackW, textureH, 'forward', COLORS.forward);
+          }
+        }
+
+        if (backwardEvents.length) {
+          const backwardEnd = Math.max(...backwardEvents.map(item => item.endMs));
+          const edgeStart = Math.max(backwardEnd, range.start);
+          if (edgeStart < range.end) {
+            const trackX = x(edgeStart);
+            const trackW = x(range.end) - trackX;
+            drawLaneGlyphTrack(ctx, trackX, textureY, trackW, textureH, 'backward', COLORS.backward);
+          }
+        }
+      }
+      function redrawTaskLabel(ctx, item, barX, barY, barW, barH) {
+        if (barW < 28) return;
+        const fontFamily = css('--font-mono') || 'monospace';
+        const maxChars = Math.max(4, Math.floor((barW - 8) / 6));
+        const label = item.label.length > maxChars ? `${item.label.slice(0, Math.max(0, maxChars - 1))}…` : item.label;
+        ctx.save();
+        roundedRect(ctx, barX + 1, barY + 1, Math.max(0, barW - 2), Math.max(0, barH - 2), 2);
+        ctx.clip();
+        ctx.fillStyle = 'rgba(255,255,255,.94)';
+        ctx.font = `${barW >= 72 ? '600 9px' : '600 8px'} ${fontFamily}`;
+        ctx.textAlign = 'left';
+        ctx.textBaseline = 'middle';
+        ctx.shadowColor = 'rgba(0,0,0,.7)';
+        ctx.shadowBlur = 2;
+        ctx.fillText(label, barX + 5, barY + barH / 2 + .5);
+        ctx.restore();
+      }
+      function drawRowExpand(ctx, lane, x, y, rowH) {
+        if (!isExpandableRow(lane)) return null;
+        const size = 14;
+        const iconY = y + Math.max(2, (rowH - size) / 2);
+        const expanded = isExpandedRow(lane);
+        ctx.save();
+        roundedRect(ctx, x, iconY, size, size, 4);
+        ctx.fillStyle = css('--surface-1') || 'rgba(255,255,255,.9)';
+        ctx.strokeStyle = css('--border-strong') || 'rgba(255,255,255,.68)';
+        ctx.lineWidth = 1;
+        ctx.fill();
+        ctx.stroke();
+        ctx.fillStyle = css('--foreground') || '#111827';
+        ctx.font = `800 12px ${css('--font-mono') || 'monospace'}`;
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(expanded ? '−' : '+', x + size / 2, iconY + size / 2 + .25);
+        ctx.restore();
+        return { x, y: iconY, w: size, h: size };
+      }
+
+      function laneHeaderParts(lane) {
+        const parts = String(lane.label || '').split(' · ');
+        if (parts.length < 2) return { object: lane.label, semantic: '' };
+        const owner = parts[0];
+        const scopeMatch = parts[1].match(/^(L\d+(?:–L\d+)?)(?:\s+(.+))?$/);
+        if (/^PP\d+$/.test(owner) && scopeMatch) {
+          return {
+            object: `${owner} · ${scopeMatch[1]}`,
+            semantic: [scopeMatch[2], ...parts.slice(2)].filter(Boolean).join(' · ')
+          };
+        }
+        return { object: owner, semantic: parts.slice(1).join(' · ') };
+      }
+
+      function fitCanvasText(ctx, value, maxWidth) {
+        const text = String(value || '');
+        if (ctx.measureText(text).width <= maxWidth) return text;
+        let fitted = text;
+        while (fitted.length > 1 && ctx.measureText(`${fitted}…`).width > maxWidth) fitted = fitted.slice(0, -1);
+        return `${fitted}…`;
+      }
+
+      function drawLaneHeader(ctx, lane, x, y, rowH, maxWidth, textColor) {
+        const parts = laneHeaderParts(lane);
+        const tagH = 18;
+        const tagY = y + (rowH - tagH) / 2;
+        ctx.save();
+        ctx.font = `650 10px ${css('--font-mono') || 'monospace'}`;
+        const tagLimit = parts.semantic ? Math.max(42, maxWidth * .58) : maxWidth;
+        const tagText = fitCanvasText(ctx, parts.object, Math.max(24, tagLimit - 14));
+        const tagW = Math.min(tagLimit, Math.max(30, ctx.measureText(tagText).width + 14));
+        roundedRect(ctx, x, tagY, tagW, tagH, 6);
+        ctx.fillStyle = css('--surface-2') || 'rgba(255,255,255,.06)';
+        ctx.strokeStyle = css('--border-strong') || 'rgba(255,255,255,.28)';
+        ctx.lineWidth = 1;
+        ctx.fill();
+        ctx.stroke();
+        ctx.fillStyle = textColor;
+        ctx.textAlign = 'left';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(tagText, x + 7, tagY + tagH / 2 + .25);
+        if (parts.semantic) {
+          const semanticX = x + tagW + 8;
+          ctx.font = `600 10px ${css('--font-mono') || 'monospace'}`;
+          ctx.fillText(fitCanvasText(ctx, parts.semantic, Math.max(18, maxWidth - tagW - 8)), semanticX, y + rowH / 2 + .25);
+        }
+        ctx.restore();
+        return { x, y, w: maxWidth, h: rowH };
+      }
+
+      function drawExpandedRankHeader(ctx, lane, x, y, rowH, maxWidth, textColor) {
+        const tagH = TIMELINE_LAYOUT.eventHeight;
+        const tagY = y + TIMELINE_LAYOUT.rankTrackTop;
+        ctx.save();
+        ctx.font = `650 10px ${css('--font-mono') || 'monospace'}`;
+        const tagText = fitCanvasText(ctx, lane.label, Math.max(24, maxWidth - 92));
+        const tagW = Math.min(maxWidth - 78, Math.max(54, ctx.measureText(tagText).width + 14));
+        roundedRect(ctx, x, tagY, tagW, tagH, 6);
+        ctx.fillStyle = css('--surface-2') || 'rgba(255,255,255,.06)';
+        ctx.strokeStyle = css('--border-strong') || 'rgba(255,255,255,.28)';
+        ctx.lineWidth = 1;
+        ctx.fill();
+        ctx.stroke();
+        ctx.fillStyle = textColor;
+        ctx.textAlign = 'left';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(tagText, x + 7, tagY + tagH / 2 + .25);
+        const trackLabels = ['计算流', '通信流', '并行计算流'];
+        ctx.fillStyle = css('--foreground-muted') || '#888';
+        ctx.font = `600 9px ${css('--font-mono') || 'monospace'}`;
+        ctx.textAlign = 'right';
+        trackLabels.forEach((label, track) => ctx.fillText(
+          label,
+          x + maxWidth,
+          y + TIMELINE_LAYOUT.rankTrackTop + TIMELINE_LAYOUT.eventHeight / 2 + track * TIMELINE_LAYOUT.rankTrackPitch
+        ));
+        ctx.restore();
+        return { x, y, w: maxWidth, h: rowH };
+      }
+
+      function rowHeaderTooltipHtml(lane) {
+        const parts = laneHeaderParts(lane);
+        const semanticRow = parts.semantic
+          ? `<div class="pto-swimlane-task-tooltip__row"><span class="pto-swimlane-task-tooltip__key">语义</span><span class="pto-swimlane-task-tooltip__value">${escapeHtml(parts.semantic)}</span></div>`
+          : '';
+        const hierarchyDetail = lane.rowType === 'rank-group'
+          ? `MB07 → PP${lane.meta.stage} → DP${PARALLEL_WORLD.activeDp} → Rank ${lane.meta.rankIds[0]}–${lane.meta.rankIds.at(-1)}；展开后显示 TP2 × EP2 的 4 个物理 Rank。`
+          : lane.rowType === 'rank'
+            ? `MB07 → PP${lane.meta.stage} → Rank ${lane.meta.rank}（TP${lane.meta.tp} / EP${lane.meta.ep}）；展开后在同一 Rank 泳道内显示计算流、通信流与并行计算流。`
+            : lane.rowType === 'operator'
+              ? `Rank ${lane.meta.rank} → L${lane.meta.layerEnd} → ${lane.meta.graphNodeId}${lane.meta.collective ? ` · ${lane.meta.collective}` : ''}`
+              : '';
+        const hierarchyRow = hierarchyDetail
+          ? `<div class="pto-swimlane-task-tooltip__row"><span class="pto-swimlane-task-tooltip__key">层级</span><span class="pto-swimlane-task-tooltip__value">${escapeHtml(hierarchyDetail)}</span></div>`
+          : '';
+        return `<div class="pto-swimlane-task-tooltip__title">${escapeHtml(lane.label)}</div>` +
+          `<div class="pto-swimlane-task-tooltip__row"><span class="pto-swimlane-task-tooltip__key">对象</span><span class="pto-swimlane-task-tooltip__value">${escapeHtml(parts.object)}</span></div>` + semanticRow + hierarchyRow;
+      }
+
+      function draw() {
+        const list = visibleRows();
+        const range = ranges[activeRange];
+        const dpr = Math.min(window.devicePixelRatio || 1, 2);
+        const gutter = 236;
+        const headerH = 48;
+        const baseRowH = TIMELINE_LAYOUT.rowHeight;
+        const expandedRankH = TIMELINE_LAYOUT.expandedRankHeight;
+        let layoutY = headerH;
+        const laneLayouts = list.map(lane => {
+          const rowH = lane.rowType === 'rank' && isExpandedRow(lane) ? expandedRankH : baseRowH;
+          const layout = { lane, y: layoutY, rowH };
+          layoutY += rowH;
+          return layout;
+        });
+        const viewportW = Math.max(640, scroll.clientWidth);
+        const width = Math.round(gutter + Math.max(520, viewportW - gutter) * zoom);
+        const height = layoutY + 12;
+        timelineSurface.style.width = `${width}px`;
+        timelineSurface.style.height = `${height}px`;
+        canvas.style.width = `${viewportW}px`;
+        canvas.style.height = `${height}px`;
+        canvas.width = Math.round(viewportW * dpr);
+        canvas.height = Math.round(height * dpr);
+        const ctx = canvas.getContext('2d');
+        ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+        ctx.clearRect(0, 0, viewportW, height);
+        ctx.translate(-scroll.scrollLeft, 0);
+        hitRects = [];
+
+        const plotLeft = gutter;
+        const plotRight = width - 16;
+        const x = ms => plotLeft + ((ms - range.start) / (range.end - range.start)) * (plotRight - plotLeft);
+        const text = css('--foreground') || '#fff';
+        const muted = css('--foreground-muted') || '#888';
+        const subtle = css('--border-subtle') || 'rgba(255,255,255,.08)';
+        const surface = css('--surface-2') || '#1c1c1c';
+        ctx.fillStyle = surface;
+        ctx.fillRect(0, 0, width, headerH);
+
+        const tickStep = activeRange === 'global' ? 40 : activeRange === 'pp2' ? 20 : 10;
+        ctx.font = `500 10px ${css('--font-mono') || 'monospace'}`;
+        ctx.textBaseline = 'middle';
+        ctx.textAlign = 'center';
+        for (let tick = Math.ceil(range.start / tickStep) * tickStep; tick <= range.end; tick += tickStep) {
+          const px = x(tick);
+          ctx.strokeStyle = subtle;
+          ctx.beginPath(); ctx.moveTo(px + .5, headerH); ctx.lineTo(px + .5, height); ctx.stroke();
+          ctx.fillStyle = muted;
+          ctx.fillText(`${tick} ms`, px, 20);
+        }
+        ctx.textAlign = 'left';
+        ctx.fillStyle = text;
+        ctx.font = `600 11px ${css('--font-sans') || 'sans-serif'}`;
+        ctx.fillText('泳道 / 对象', 12, 20);
+        ctx.fillStyle = muted;
+        ctx.font = `500 10px ${css('--font-mono') || 'monospace'}`;
+        ctx.fillText(`${range.start.toFixed(2)} ms`, gutter, 38);
+        ctx.textAlign = 'right';
+        ctx.fillText(`${range.end.toFixed(2)} ms`, plotRight, 38);
+
+        laneLayouts.forEach(({ lane, y, rowH }, index) => {
+          if (index % 2) { ctx.fillStyle = css('--surface-disabled'); ctx.fillRect(0, y, width, rowH); }
+          ctx.strokeStyle = subtle;
+          ctx.beginPath(); ctx.moveTo(0, y + rowH + .5); ctx.lineTo(width, y + rowH + .5); ctx.stroke();
+          const expandedRank = lane.rowType === 'rank' && isExpandedRow(lane);
+          if (expandedRank) {
+            ctx.save();
+            ctx.strokeStyle = rgbaFromHex('#ffffff', .055);
+            for (let track = 1; track < 3; track += 1) {
+              const dividerY = y + TIMELINE_LAYOUT.rankTrackTop + track * TIMELINE_LAYOUT.rankTrackPitch - 1;
+              ctx.beginPath(); ctx.moveTo(gutter, dividerY + .5); ctx.lineTo(width, dividerY + .5); ctx.stroke();
+            }
+            ctx.restore();
+          }
+          drawDirectionalLaneEdgeTexture(ctx, lane, x, range, y, rowH);
+
+          eventsForLane(lane).forEach(item => {
+            if (item.endMs < range.start || item.startMs > range.end) return;
+            const start = Math.max(item.startMs, range.start);
+            const end = Math.min(item.endMs, range.end);
+            const barX = x(start);
+            const barW = Math.max(3, x(end) - barX);
+            const track = expandedRank ? Math.max(0, Math.min(2, Number(item.metrics.track) || 0)) : 0;
+            const barY = expandedRank
+              ? y + TIMELINE_LAYOUT.rankTrackTop + track * TIMELINE_LAYOUT.rankTrackPitch
+              : y + Math.round((rowH - TIMELINE_LAYOUT.eventHeight) / 2);
+            const selected = item.id === selectedId;
+            if (item.kind === 'hold') {
+              const bandH = 16;
+              const holdColor = colorFor(item);
+              ctx.save();
+              roundedRect(ctx, barX, barY, barW, bandH, 4);
+              ctx.fillStyle = rgbaFromHex(holdColor, selected ? .32 : .20);
+              ctx.strokeStyle = selected ? '#ffffff' : rgbaFromHex(holdColor, .78);
+              ctx.lineWidth = selected ? 1.6 : 1.1;
+              ctx.fill();
+              ctx.stroke();
+              ctx.fillStyle = holdColor;
+              ctx.beginPath();
+              ctx.moveTo(barX, barY + bandH / 2);
+              ctx.lineTo(barX + 4, barY + bandH / 2 - 4);
+              ctx.lineTo(barX + 8, barY + bandH / 2);
+              ctx.lineTo(barX + 4, barY + bandH / 2 + 4);
+              ctx.closePath();
+              ctx.fill();
+              ctx.beginPath();
+              const endX = barX + barW;
+              ctx.fillStyle = COLORS.release;
+              ctx.moveTo(endX, barY + bandH / 2);
+              ctx.lineTo(endX - 4, barY + bandH / 2 - 4);
+              ctx.lineTo(endX - 8, barY + bandH / 2);
+              ctx.lineTo(endX - 4, barY + bandH / 2 + 4);
+              ctx.closePath();
+              ctx.fill();
+              ctx.save();
+              roundedRect(ctx, barX, barY, barW, bandH, 4);
+              ctx.clip();
+              ctx.fillStyle = text;
+              ctx.font = `700 10px ${css('--font-mono') || 'monospace'}`;
+              ctx.textAlign = 'left';
+              ctx.textBaseline = 'middle';
+              ctx.fillText(item.label, barX + 10, barY + bandH / 2);
+              ctx.restore();
+              ctx.restore();
+              hitRects.push({ x: barX, y: barY - 2, w: barW, h: bandH + 12, item, action: 'select' });
+              return;
+            }
+            window.PtoSwimlaneTaskPattern.drawTaskBar(ctx, {
+              x: barX, y: barY, width: barW, height: TIMELINE_LAYOUT.eventHeight, baseColor: colorFor(item),
+              task: { label: item.label, opName: item.label }, isSelected: selected,
+              isRelated: hoverHit?.item?.metrics?.transactionId && hoverHit.item.metrics.transactionId === item.metrics.transactionId,
+              fontFamily: css('--font-mono') || 'monospace'
+            });
+            if (item.kind === 'forward' || item.kind === 'backward') {
+              drawChevronTrack(ctx, barX, barY, barW, TIMELINE_LAYOUT.eventHeight, item.kind, {
+                step: 6, inset: .65, lineWidth: .55, radius: 3, color: 'rgba(255,255,255,.30)'
+              });
+              redrawTaskLabel(ctx, item, barX, barY, barW, TIMELINE_LAYOUT.eventHeight);
+            }
+            hitRects.push({ x: barX, y: barY - 1, w: barW, h: TIMELINE_LAYOUT.eventHeight + 4, item, action: 'select' });
+          });
+        });
+
+        ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+        ctx.fillStyle = surface;
+        ctx.fillRect(0, 0, gutter, headerH);
+        ctx.textAlign = 'left';
+        ctx.textBaseline = 'middle';
+        ctx.fillStyle = text;
+        ctx.font = `600 11px ${css('--font-sans') || 'sans-serif'}`;
+        ctx.fillText('泳道 / 对象', 12, 20);
+        laneLayouts.forEach(({ lane, y, rowH }, index) => {
+          ctx.fillStyle = index % 2
+            ? (css('--surface-1') || surface)
+            : (css('--background') || '#111111');
+          ctx.fillRect(0, y, gutter, rowH);
+          ctx.strokeStyle = subtle;
+          ctx.beginPath(); ctx.moveTo(0, y + rowH + .5); ctx.lineTo(gutter, y + rowH + .5); ctx.stroke();
+          drawLaneConnector(ctx, lane, y, rowH, subtle);
+          const expandedRank = lane.rowType === 'rank' && isExpandedRow(lane);
+          const contentX = 12 + (lane.depth || 0) * 15 + (lane.depth ? 13 : 0);
+          const rowExpandRect = drawRowExpand(ctx, lane, contentX, y, rowH);
+          const labelX = contentX + (rowExpandRect ? 20 : 0);
+          const rowLabelRect = expandedRank
+            ? drawExpandedRankHeader(ctx, lane, labelX, y, rowH, gutter - labelX - 10, text)
+            : drawLaneHeader(ctx, lane, labelX, y, rowH, gutter - labelX - 10, text);
+          hitRects.push({ ...rowLabelRect, row: lane, action: 'row-label', fixed: true });
+          if (rowExpandRect) hitRects.push({ ...rowExpandRect, row: lane, action: 'toggle-row', fixed: true });
+        });
+        ctx.strokeStyle = css('--border-default') || subtle;
+        ctx.beginPath(); ctx.moveTo(gutter - .5, 0); ctx.lineTo(gutter - .5, height); ctx.stroke();
+      }
+
+      function tooltipHtml(item) {
+        const rows = [
+          ['含义', itemExplanation(item)],
+          ['时间窗', `${fmt(item.startMs)} → ${fmt(item.endMs)}`],
+          ['持续', fmt(item.durationMs)],
+          ['关键证据', primaryEvidence(item)],
+          ['视觉编码', visualEncoding(item)]
+        ];
+        return `<div class="pto-swimlane-task-tooltip__title">${escapeHtml(item.label)}</div>` +
+          rows.map(([key, value]) => `<div class="pto-swimlane-task-tooltip__row"><span class="pto-swimlane-task-tooltip__key">${escapeHtml(key)}</span><span class="pto-swimlane-task-tooltip__value">${escapeHtml(value)}</span></div>`).join('');
+      }
+
+      function hitAt(event) {
+        const rect = canvas.getBoundingClientRect();
+        const localX = event.clientX - rect.left;
+        const py = event.clientY - rect.top;
+        return [...hitRects].reverse().find(hit => {
+          const px = hit.fixed ? localX : localX + scroll.scrollLeft;
+          return px >= hit.x && px <= hit.x + hit.w && py >= hit.y && py <= hit.y + hit.h;
+        }) || null;
+      }
+
+      canvas.addEventListener('mousemove', event => {
+        const hit = hitAt(event);
+        const eventHit = hit?.item ? hit : null;
+        if (eventHit?.item.id !== hoverHit?.item.id) { hoverHit = eventHit; draw(); }
+        if (hit?.action === 'row-label') {
+          canvas.style.cursor = 'help';
+          window.PtoSwimlaneTaskPattern.showTooltip(tooltip, { label: hit.row.label }, event, {
+            bounds: document.body,
+            getTooltipHtml: () => rowHeaderTooltipHtml(hit.row)
+          });
+          return;
+        }
+        if (!eventHit) {
+          window.PtoSwimlaneTaskPattern.hideTooltip(tooltip);
+          canvas.style.cursor = hit ? 'pointer' : 'crosshair';
+          return;
+        }
+        canvas.style.cursor = 'pointer';
+        window.PtoSwimlaneTaskPattern.showTooltip(tooltip, eventHit.item, event, { bounds: document.body, getTooltipHtml: () => tooltipHtml(eventHit.item) });
+      });
+      canvas.addEventListener('mouseleave', () => { hoverHit = null; window.PtoSwimlaneTaskPattern.hideTooltip(tooltip); draw(); });
+      canvas.addEventListener('click', event => {
+        const hit = hitAt(event);
+        if (!hit) return;
+        if (hit.action === 'toggle-row') {
+          toggleRowExpand(hit.row.id);
+          return;
+        }
+        if (hit.item) select(hit.item.id);
+      });
+
+      function select(id) {
+        selectedId = id;
+        renderTree(treeSearch?.value || '');
+        draw();
+        const item = selectedEvent();
+        document.getElementById('statusText').textContent = `${item.label} · ${kindLabel(item.kind)} · ${fmt(item.startMs)} → ${fmt(item.endMs)}`;
+      }
+      function setActiveRange(nextRange, options = {}) {
+        if (!ranges[nextRange]) return;
+        activeRange = nextRange;
+        document.querySelectorAll('[data-range]').forEach(item => item.setAttribute('aria-pressed', String(item.dataset.range === activeRange)));
+        document.getElementById('rangeMeta').textContent = ranges[activeRange].label;
+        scroll.scrollLeft = 0;
+        if (options.redraw !== false) draw();
+      }
+      function focusedRankIsVisible() {
+        const lane = rows.find(row => row.id === focusedRankRowId);
+        return Boolean(lane && isExpandedRow(lane) && isRowParentChainExpanded(lane));
+      }
+      function syncRankRangeControls() {
+        const enabled = focusedRankIsVisible();
+        document.querySelectorAll('[data-range="rankForward"], [data-range="rankBackward"]').forEach(button => {
+          button.disabled = !enabled;
+          button.setAttribute('aria-disabled', String(!enabled));
+        });
+      }
+      function restoreRangeAfterRankFocus(options = {}) {
+        if (activeRange !== 'rankForward' && activeRange !== 'rankBackward') return;
+        const fallback = ranges[rangeBeforeRankFocus] && !String(rangeBeforeRankFocus).startsWith('rank')
+          ? rangeBeforeRankFocus
+          : 'global';
+        setActiveRange(fallback, { redraw: options.redraw });
+      }
+      function updateFocusedRankRanges(lane) {
+        if (!lane?.meta || lane.rowType !== 'rank') return;
+        focusedRankRowId = lane.id;
+        const { rank, stage, layerStart, layerEnd, detailFwdStart, detailFwdEnd, detailBwdStart, detailBwdEnd, detailMode } = lane.meta;
+        const fwdPad = Math.max(.12, (detailFwdEnd - detailFwdStart) * .08);
+        const bwdPad = Math.max(.12, (detailBwdEnd - detailBwdStart) * .08);
+        const forwardScope = detailMode === 'full-stage' ? `PP${stage} · L${layerStart}–L${layerEnd}` : `L${layerEnd}`;
+        const backwardScope = detailMode === 'full-stage' ? `PP${stage} · L${layerEnd}–L${layerStart}` : `L${layerEnd}`;
+        ranges.rankForward = {
+          start: Math.max(0, detailFwdStart - fwdPad), end: detailFwdEnd + fwdPad,
+          label: `Rank ${rank} · ${forwardScope} · Forward 算子链`
+        };
+        ranges.rankBackward = {
+          start: Math.max(0, detailBwdStart - bwdPad), end: detailBwdEnd + bwdPad,
+          label: `Rank ${rank} · ${backwardScope} · Backward 算子链`
+        };
+      }
+      function toggleRowExpand(id) {
+        const lane = rows.find(row => row.id === id);
+        if (!lane || !isExpandableRow(lane)) return;
+        const opening = !expandedRowIds.has(id);
+        if (opening && lane.rowType === 'rank-group') {
+          rows.filter(item => item.rowType === 'rank-group' && item.id !== lane.id).forEach(item => expandedRowIds.delete(item.id));
+          rows.filter(item => item.rowType === 'rank').forEach(item => expandedRowIds.delete(item.id));
+        }
+        if (opening && lane.rowType === 'rank') {
+          rows.filter(item => item.rowType === 'rank' && item.id !== lane.id).forEach(item => expandedRowIds.delete(item.id));
+          updateFocusedRankRanges(lane);
+        }
+        if (opening) expandedRowIds.add(id);
+        else expandedRowIds.delete(id);
+        if (!focusedRankIsVisible()) restoreRangeAfterRankFocus({ redraw: false });
+        syncRankRangeControls();
+        const children = childRowsForRow(id);
+        if (opening && children.some(row => row.level === 'object')) setActiveLevel('object');
+        else if (opening && activeLevel === 'overview' && children.some(row => row.level === 'layer')) setActiveLevel('layer');
+        renderTree(treeSearch?.value || '');
+        draw();
+        const action = opening ? '展开' : '收起';
+        const detailSummary = lane.detailEvents?.length
+          ? `${lane.detailEvents.length} 个算子事件 · 3 条执行轨`
+          : `${children.length} 条子泳道`;
+        document.getElementById('statusText').textContent = `${action} ${lane.label} · ${detailSummary}`;
+      }
+
+      tree.addEventListener('click', event => { const button = event.target.closest('[data-select]'); if (button) select(button.dataset.select); });
+      treeSearch?.addEventListener('input', event => renderTree(event.target.value));
+
+      function positionHierarchyPopover() {
+        if (!objectInfoBtn || !hierarchyPopover || hierarchyPopover.hidden) return;
+        const rect = objectInfoBtn.getBoundingClientRect();
+        const width = hierarchyPopover.offsetWidth || 360;
+        const height = hierarchyPopover.offsetHeight || 520;
+        const right = Math.max(8, window.innerWidth - rect.right);
+        const top = Math.min(rect.bottom + 8, Math.max(8, window.innerHeight - height - 8));
+        hierarchyPopover.style.right = `${Math.min(right, Math.max(8, window.innerWidth - width - 8))}px`;
+        hierarchyPopover.style.top = `${top}px`;
+      }
+      function setHierarchyOpen(open) {
+        if (!objectInfoBtn || !hierarchyPopover) return;
+        hierarchyPopover.hidden = !open;
+        objectInfoBtn.setAttribute('aria-expanded', String(open));
+        if (open) {
+          renderTree(treeSearch?.value || '');
+          requestAnimationFrame(() => {
+            positionHierarchyPopover();
+            treeSearch?.focus({ preventScroll: true });
+          });
+        }
+      }
+      objectInfoBtn?.addEventListener('click', event => {
+        event.stopPropagation();
+        setHierarchyOpen(hierarchyPopover?.hidden !== false);
+      });
+      hierarchyClose?.addEventListener('click', () => setHierarchyOpen(false));
+      hierarchyPopover?.addEventListener('click', event => event.stopPropagation());
+      document.addEventListener('click', () => setHierarchyOpen(false));
+
+      document.getElementById('rangeToggle').addEventListener('click', event => {
+        const button = event.target.closest('[data-range]'); if (!button) return;
+        if (button.disabled) return;
+        if ((button.dataset.range === 'rankForward' || button.dataset.range === 'rankBackward') && activeRange !== 'rankForward' && activeRange !== 'rankBackward') {
+          rangeBeforeRankFocus = activeRange;
+        }
+        setActiveRange(button.dataset.range);
+      });
+      const zoomSlider = document.getElementById('zoomSlider');
+      const zoomOut = document.getElementById('zoomOut');
+      const zoomIn = document.getElementById('zoomIn');
+      const zoomValue = document.getElementById('zoomValue');
+      function nearestZoomIndex(value) {
+        return ZOOM_STEPS.reduce((best, step, index) => (
+          Math.abs(step - value) < Math.abs(ZOOM_STEPS[best] - value) ? index : best
+        ), 0);
+      }
+      function setZoom(next) {
+        const index = nearestZoomIndex(next);
+        zoom = ZOOM_STEPS[index];
+        zoomSlider.value = String(index);
+        zoomSlider.setAttribute('aria-valuenow', String(zoom));
+        zoomValue.textContent = `${zoom}×`;
+        zoomOut.disabled = index === 0;
+        zoomIn.disabled = index === ZOOM_STEPS.length - 1;
+        draw();
+      }
+      zoomSlider.addEventListener('input', event => setZoom(ZOOM_STEPS[Number(event.target.value)]));
+      zoomOut.addEventListener('click', () => setZoom(ZOOM_STEPS[Math.max(0, nearestZoomIndex(zoom) - 1)]));
+      zoomIn.addEventListener('click', () => setZoom(ZOOM_STEPS[Math.min(ZOOM_STEPS.length - 1, nearestZoomIndex(zoom) + 1)]));
+      let scrollRedrawFrame = 0;
+      scroll.addEventListener('scroll', () => {
+        cancelAnimationFrame(scrollRedrawFrame);
+        scrollRedrawFrame = requestAnimationFrame(draw);
+      }, { passive: true });
+      document.getElementById('themeToggle').addEventListener('click', event => {
+        const root = document.documentElement;
+        const light = root.dataset.theme !== 'light';
+        root.dataset.theme = light ? 'light' : 'dark';
+        event.currentTarget.textContent = light ? '深色' : '浅色';
+        draw();
+      });
+      window.addEventListener('resize', () => { draw(); positionHierarchyPopover(); });
+
+      syncRankRangeControls();
+      setZoom(1);
+      renderTree();
+    })();
+  </script>
+</body>
+</html>

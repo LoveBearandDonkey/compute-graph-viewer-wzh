@@ -1,0 +1,72 @@
+{
+  "schemaVersion": "1.0",
+  "caseId": "mem-oom",
+  "model": "openPangu-2.0-Flash",
+  "step": 12000,
+  "incidentStep": 12003,
+  "rank": 17,
+  "summary": {
+    "capacityGB": 64,
+    "peakGB": 64,
+    "freeGB": 1.8,
+    "largestFreeBlockGB": 0.3,
+    "requestedGB": 0.5,
+    "fragmentationRatio": 83,
+    "allocApiRatio": 7.4,
+    "allocApiMs": 890,
+    "throughputBefore": 3200,
+    "throughputAtPeak": 2800
+  },
+  "fragmentationWindow": {
+    "startGB": 57.5,
+    "label": "OOM 前分配器碎片密集区"
+  },
+  "fragmentationMap": [
+    {"kind":"free","sizeGB":0.30},
+    {"kind":"blocker","sizeGB":0.12,"allocationId":"frag-router-indices"},
+    {"kind":"free","sizeGB":0.28},
+    {"kind":"blocker","sizeGB":0.10,"allocationId":"frag-expert-offsets"},
+    {"kind":"free","sizeGB":0.26},
+    {"kind":"blocker","sizeGB":0.14,"allocationId":"frag-dispatch-meta"},
+    {"kind":"free","sizeGB":0.24},
+    {"kind":"blocker","sizeGB":0.09,"allocationId":"frag-attn-mask"},
+    {"kind":"free","sizeGB":0.22},
+    {"kind":"blocker","sizeGB":0.11,"allocationId":"frag-expert-counts"},
+    {"kind":"free","sizeGB":0.20},
+    {"kind":"blocker","sizeGB":0.08,"allocationId":"frag-token-permute"},
+    {"kind":"free","sizeGB":0.18},
+    {"kind":"blocker","sizeGB":0.13,"allocationId":"frag-combine-workspace"},
+    {"kind":"free","sizeGB":0.12}
+  ],
+  "fragmentAllocations": [
+    {"id":"frag-router-indices","name":"layer38.router.topk_indices","kind":"activation","allocMs":1180,"freeMs":8010,"source":"modeling_openpangu.py","line":486,"stack":"topk_expert_select → router.forward → TransformerLayer.forward"},
+    {"id":"frag-expert-offsets","name":"layer38.expert_offsets","kind":"activation","allocMs":1210,"freeMs":7960,"source":"moe_router.py","line":233,"stack":"build_expert_offsets → expert_dispatch → MoELayer.forward"},
+    {"id":"frag-dispatch-meta","name":"layer38.dispatch_metadata","kind":"workspace","allocMs":1250,"freeMs":7920,"source":"moe_dispatch.py","line":174,"stack":"alloc_dispatch_metadata → all_to_all_dispatch → MoELayer.forward"},
+    {"id":"frag-attn-mask","name":"layer39.attention_mask.tmp","kind":"activation","allocMs":1540,"freeMs":7480,"source":"attention.py","line":319,"stack":"build_attention_mask → SelfAttn.forward → TransformerLayer.forward"},
+    {"id":"frag-expert-counts","name":"layer39.tokens_per_expert","kind":"activation","allocMs":1680,"freeMs":7750,"source":"moe_router.py","line":257,"stack":"bincount_experts → router.forward → MoELayer.forward"},
+    {"id":"frag-token-permute","name":"layer40.token_permute.workspace","kind":"workspace","allocMs":2030,"freeMs":7310,"source":"moe_dispatch.py","line":208,"stack":"token_permute → expert_dispatch → MoELayer.forward"},
+    {"id":"frag-combine-workspace","name":"layer40.combine.workspace","kind":"workspace","allocMs":2360,"freeMs":8240,"source":"moe_combine.py","line":141,"stack":"alloc_combine_buffer → all_to_all_combine → MoELayer.forward"}
+  ],
+  "trend": [
+    {"step": 4000, "reservedGB": 53, "throughput": 3200},
+    {"step": 8000, "reservedGB": 54, "throughput": 3200},
+    {"step": 10000, "reservedGB": 59, "throughput": 3050},
+    {"step": 11500, "reservedGB": 62, "throughput": 2900},
+    {"step": 12000, "reservedGB": 64, "throughput": 2800},
+    {"step": 12003, "reservedGB": 64, "throughput": 0}
+  ],
+  "composition": [
+    {"id":"activation","label":"激活与中间张量","gb":36.2,"kind":"temp"},
+    {"id":"parameters","label":"模型参数","gb":8.1,"kind":"resident"},
+    {"id":"gradients","label":"梯度","gb":8.1,"kind":"resident"},
+    {"id":"optimizer","label":"优化器状态","gb":10.8,"kind":"resident"},
+    {"id":"workspace","label":"临时 workspace","gb":0.8,"kind":"temp"}
+  ],
+  "lifetimes": [
+    {"id":"layer38-qb","name":"layer38.q_b_proj.output","offsetGB":27.1,"sizeGB":0.036,"allocMs":842,"freeMs":7832,"kind":"activation","source":"modeling_openpangu.py","line":438,"stack":"torch.npu.empty ← q_b_proj.forward ← SelfAttn.forward ← TransformerLayer.forward"},
+    {"id":"expert-dispatch","name":"layer38.expert_dispatch.buffer","offsetGB":31.0,"sizeGB":1.2,"allocMs":1040,"freeMs":7920,"kind":"activation","source":"modeling_openpangu.py","line":512,"stack":"expert_dispatch ← router.forward ← mlp.forward ← TransformerLayer.forward"},
+    {"id":"lm-head-logits","name":"lm_head.logits","offsetGB":55.0,"sizeGB":1.8,"allocMs":3660,"freeMs":8120,"kind":"activation","source":"modeling_openpangu.py","line":701,"stack":"linear ← lm_head.forward ← GPTModel.forward"},
+    {"id":"params","name":"stage3.parameters","offsetGB":0,"sizeGB":8.1,"allocMs":0,"freeMs":9000,"kind":"parameters","source":"modeling_openpangu.py","line":91,"stack":"load_state_dict ← model_provider"},
+    {"id":"optimizer","name":"AdamW.m_v","offsetGB":42,"sizeGB":10.8,"allocMs":0,"freeMs":9000,"kind":"optimizer","source":"optimizer.py","line":126,"stack":"NpuFusedAdamW.__init__ ← setup_model_and_optimizer"}
+  ]
+}
