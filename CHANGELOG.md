@@ -5,6 +5,11 @@
 
 ---
 
+## 2026-08-14 — MatMul Code Recovery Step 6：尾块验证与交付回归
+- 新增 Divisible、M/N tail、K tail、Combined 四个 fixture 驱动的验证 case；按源码公式动态派生最后输出 tile、L1/L0 K slice、Mmad 次数、Tensor shape 与逻辑 payload。
+- 修正固定 16 Mmad、固定 4 次 L0 循环和非向上取整的 tile 坐标假设；K=1900 时恢复为 `364 → 128/128/108`、15 Mmad、45 个逻辑播放帧。
+- 补齐 derived / inferred / unverified 证据边界、键盘 case 切换、窄屏无全局横向溢出、schema/sourceRef/HTTP/控制台/Conv 页面回归验证。
+
 ## 2026-06-24 — op-rank-time 四轮：Dense 体量 + light 取色 + 泳道 microbatch 上色 (pangu-moe-trainviz)
 - **Dense 放大成 MoE 同级实心块**：根因是 `dense_block` 仅 320×60（单节点），而 MoE 层是 840×970 的 cluster + 多算子，Dense 看着低一级。`addNode` 新增 `box` 覆盖（自定义 graph 尺寸/位置）；Dense 改为 880×820 外壳 + 居中实心大块，落在与 MoE 同一纵向带（y≈430-1250），第一层一眼可读。
 - **light 取色 = 低饱和 + 高明度**：`lightCurveForProfile` 锁定 light 饱和度 < dark（clamp .22~.62）、明度 > dark（clamp .70~.88），4 个 LIGHT_VARIANTS 为柔和 pastel；`colorFromStyle` 的 lightBoost 在 light 取正→更亮。（先误改成低明度，已按要求回到高明度 pastel。）

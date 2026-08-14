@@ -413,7 +413,12 @@
     }
     .format-lab-visual__head { min-height: 28px; }
 
-    .format-lab-grid-scroll { min-height: 0; overflow: auto; padding-top: var(--space-3); }
+    .format-lab-grid-scroll {
+      min-height: 0;
+      overflow: auto;
+      padding-top: var(--space-3);
+      background: radial-gradient(circle at 50% 18%, rgba(71, 82, 145, .1), transparent 58%);
+    }
     .format-lab-ribbon-scroll { min-height: 0; overflow-x: auto; overflow-y: hidden; padding-top: var(--space-3); }
     .format-lab-grid-zoom-host { min-width: max-content; }
     .format-lab-grid-zoom { transform-origin: top left; }
@@ -441,19 +446,36 @@
     }
 
     .format-layout-arrows .format-fractal-outline {
-      fill: color-mix(in srgb, var(--primary) 5%, transparent);
-      stroke: color-mix(in srgb, var(--primary) 78%, transparent);
+      fill: color-mix(in srgb, var(--primary) 3%, transparent);
+      stroke: color-mix(in srgb, var(--primary-hover) 92%, transparent);
       stroke-width: 3px;
       vector-effect: non-scaling-stroke;
     }
 
     .format-layout-arrows .format-fractal-path,
     .format-layout-arrows .format-fractal-connector {
-      stroke: color-mix(in srgb, var(--warning) 86%, var(--primary));
+      stroke: #fff;
       stroke-width: 3px;
-      opacity: .9;
+      opacity: 1;
       stroke-linecap: round;
       stroke-linejoin: round;
+      filter: drop-shadow(0 1px 1px rgba(3, 5, 14, .72));
+      transition: opacity 140ms ease;
+    }
+
+    .format-layout-arrows .format-reading-chevron {
+      fill: none;
+      stroke: #fff;
+      stroke-width: 2.4px;
+      vector-effect: non-scaling-stroke;
+      stroke-linecap: round;
+      stroke-linejoin: round;
+      filter: drop-shadow(0 1px 1px rgba(3, 5, 14, .78));
+    }
+
+    .format-layout-arrows .format-fractal-outline.is-reading-block {
+      fill: color-mix(in srgb, var(--primary) 11%, transparent);
+      stroke: color-mix(in srgb, var(--primary-hover) 92%, white);
     }
 
     .format-lab-cell {
@@ -464,22 +486,33 @@
       grid-template-rows: auto 1fr;
       align-items: center;
       border: 1px solid var(--border-subtle);
-      border-radius: var(--radius-sm);
+      border-radius: 9px;
       background: color-mix(in srgb, var(--surface-2) 78%, transparent);
       color: var(--foreground-secondary);
       font: 700 9px / 1 var(--font-mono);
       cursor: pointer;
+      transition: background-color 120ms ease, border-color 120ms ease, filter 120ms ease, box-shadow 120ms ease;
     }
 
     .format-lab-logical-cell {
       position: relative;
       grid-template-rows: repeat(2, minmax(0, 1fr));
       padding-top: 3px;
-      border-color: transparent;
+      border-color: rgba(255, 255, 255, .1);
+      background-color: var(--format-cell-fill);
+      background-image: linear-gradient(180deg, rgba(255, 255, 255, .16), rgba(255, 255, 255, 0) 48%);
+      box-shadow: inset 0 1px 0 rgba(255, 255, 255, .18), 0 3px 8px rgba(4, 6, 18, .24);
+      color: white;
+      --format-cell-fill: #5868ee;
       transform: translate(var(--format-fractal-offset-x, 0), var(--format-fractal-offset-y, 0));
     }
 
-    .format-lab-logical-index,
+    .format-lab-logical-index {
+      color: inherit;
+      font-size: 10px;
+      letter-spacing: -.01em;
+      font-variant-numeric: tabular-nums;
+    }
     .format-lab-physical-offset { color: var(--foreground); }
     .format-lab-coordinate,
     .format-lab-physical-logical,
@@ -494,21 +527,76 @@
     .format-lab-physical-logical { align-self: center; }
     .format-lab-physical-coordinate { align-self: end; }
 
-    .format-lab-logical-cell.is-block-active { box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--warning) 86%, transparent); }
+    .format-lab-logical-cell.is-block-active { filter: brightness(1.08); }
+
+    .format-lab-logical-cell.is-reading-complete { --format-cell-fill: #6349df; }
+    .format-lab-logical-cell.is-reading-trail-4 { --format-cell-fill: #6a54e8; }
+    .format-lab-logical-cell.is-reading-trail-3 { --format-cell-fill: #5c72f4; }
+    .format-lab-logical-cell.is-reading-trail-2 { --format-cell-fill: #4fe0aa; color: #081a13; }
+    .format-lab-logical-cell.is-reading-trail-1 { --format-cell-fill: #c7f25a; color: #172005; }
+    .format-lab-logical-cell.is-reading-current { --format-cell-fill: #ffb62e; color: #251602; filter: brightness(1.04); }
+    .format-lab-logical-cell.is-reading-trail-2 .format-lab-coordinate,
+    .format-lab-logical-cell.is-reading-trail-1 .format-lab-coordinate,
+    .format-lab-logical-cell.is-reading-current .format-lab-coordinate { color: currentColor; opacity: .68; }
+    .format-lab-logical-cell.is-pad.is-reading-current {
+      background:
+        repeating-linear-gradient(45deg, rgba(42, 28, 2, .78) 0 2px, transparent 2px 7px),
+        #ffd55f;
+      filter: brightness(1.08);
+    }
+
+    .format-lab-playback-controls,
+    .format-lab-visual-actions {
+      display: flex;
+      align-items: center;
+      gap: var(--space-1);
+    }
+    .format-lab-visual-actions { margin-left: auto; }
+    .format-lab-playback-controls {
+      padding-right: var(--space-2);
+      margin-right: var(--space-1);
+      border-right: 1px solid var(--border-subtle);
+    }
+    .format-lab-playback-controls .btn {
+      min-width: 28px;
+      height: 28px;
+      padding-inline: 7px;
+      border-radius: 7px;
+      font: 700 10px / 1 var(--font-sans);
+    }
+    .format-lab-playback-controls [data-rt-format-playback-toggle] {
+      min-width: 46px;
+      background: color-mix(in srgb, #ffb62e 16%, transparent);
+      color: #ffbf47;
+    }
+    .format-lab-playback-controls [aria-pressed="true"] {
+      background: color-mix(in srgb, #ffb62e 24%, transparent);
+      color: #ffd47b;
+    }
+    .format-lab-playback-readout {
+      min-width: 76px;
+      padding-left: 3px;
+      color: var(--foreground-muted);
+      font: 700 9px / 1 var(--font-mono);
+      font-variant-numeric: tabular-nums;
+      white-space: nowrap;
+    }
 
     .format-lab-cell small { color: var(--foreground-muted); font: 700 8px / 1 var(--font-mono); }
     .format-lab-cell.is-active,
-    .format-lab-cell:hover { background: var(--primary); border-color: var(--primary-hover); color: var(--primary-foreground); }
+    .format-lab-cell:hover { border-color: rgba(255, 255, 255, .74); filter: brightness(1.1); }
     .format-lab-cell.is-active small,
-    .format-lab-cell:hover small { color: color-mix(in srgb, var(--primary-foreground) 72%, transparent); }
+    .format-lab-cell:hover small { color: currentColor; opacity: .72; }
     .format-lab-cell.is-active .format-lab-logical-index,
     .format-lab-cell.is-active .format-lab-physical-offset,
     .format-lab-cell:hover .format-lab-logical-index,
-    .format-lab-cell:hover .format-lab-physical-offset { color: var(--primary-foreground); }
+    .format-lab-cell:hover .format-lab-physical-offset { color: currentColor; }
     .format-lab-cell.is-pad {
       background:
-        repeating-linear-gradient(45deg, color-mix(in srgb, var(--warning) 38%, transparent) 0 1px, transparent 1px 8px),
-        color-mix(in srgb, var(--warning) 22%, var(--surface-2));
+        repeating-linear-gradient(45deg, rgba(42, 28, 2, .62) 0 1px, transparent 1px 7px),
+        #ffc44d;
+      border-color: rgba(255, 196, 77, .74);
+      color: #201703;
     }
     .format-lab-cell.is-gap { border-style: dashed; color: var(--foreground-muted); }
     .format-lab-layout-legend {
@@ -525,6 +613,9 @@
       border: 2px solid color-mix(in srgb, var(--primary) 78%, transparent);
       border-radius: 3px;
       background: color-mix(in srgb, var(--primary) 5%, transparent);
+      border-radius: 4px;
+      background: linear-gradient(135deg, #6349df 0 18%, #5c72f4 34%, #4fe0aa 54%, #c7f25a 74%, #ffb62e 100%);
+      box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .18);
     }
     .format-lab-legend-mark.is-pad {
       border: 1px solid color-mix(in srgb, var(--warning) 70%, transparent);
@@ -536,11 +627,13 @@
       height: 16px;
     }
     .format-lab-legend-mark.is-path path {
-      fill: none;
-      stroke: color-mix(in srgb, var(--warning) 86%, var(--primary));
-      stroke-width: 2;
-      stroke-linecap: round;
-      stroke-linejoin: round;
+      display: none;
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      .format-lab-cell,
+      .format-layout-arrows .format-fractal-path,
+      .format-layout-arrows .format-fractal-connector { transition: none; }
     }
 
     .format-lab-metrics { display: grid; }
@@ -611,19 +704,6 @@
     .add-api-note{
       color: var(--foreground-secondary);
       font: var(--text-body-sm);
-    }
-
-    .add-api-note__link {
-      color: var(--primary-hover);
-      text-decoration: none;
-      white-space: nowrap;
-    }
-
-    .add-api-note__link:hover,
-    .add-api-note__link:focus-visible {
-      color: var(--primary);
-      text-decoration: underline;
-      text-underline-offset: 3px;
     }
 
     .add-api-select {
@@ -730,41 +810,6 @@
     .api-learn-controls .seg button.active {
       background: var(--state-selected);
       color: var(--foreground);
-    }
-
-    .api-learn-controls .prototype-code {
-      margin: 0;
-      max-width: 100%;
-      overflow-x: auto;
-      border: 1px solid var(--border-subtle);
-      border-radius: var(--radius-md);
-      background: var(--surface-1);
-      color: var(--foreground);
-      padding: var(--space-2);
-      font: var(--text-code);
-      line-height: 1.5;
-      white-space: pre;
-    }
-
-    .api-learn-controls .cpp-token-comment { color: var(--foreground-muted); }
-    .api-learn-controls .cpp-token-keyword { color: var(--primary-hover); }
-    .api-learn-controls .cpp-token-type { color: var(--accent); }
-    .api-learn-controls .cpp-token-function { color: var(--warning); }
-    .api-learn-controls .cpp-token-number { color: var(--success); }
-
-    .api-learn-controls .prototype-head {
-      display: flex;
-      align-items: flex-start;
-      justify-content: space-between;
-      gap: var(--space-2);
-    }
-
-    .api-learn-controls .prototype-head .hint-text {
-      margin-top: var(--space-1);
-    }
-
-    .api-learn-controls .prototype-head .btn {
-      flex: 0 0 auto;
     }
 
     .control-field {
@@ -894,12 +939,29 @@
     }
 
     .add-api-memory-row {
+      --add-api-cell-accent: var(--primary-hover);
+      --add-api-cell-fill: color-mix(in srgb, var(--primary) 18%, transparent);
       display: grid;
       grid-template-columns: 128px minmax(820px, 1fr);
       gap: var(--space-4);
       padding: var(--space-4) var(--space-3);
       border-bottom: 1px solid var(--border-subtle);
       background: transparent;
+    }
+
+    .add-api-memory-row:has([data-add-api-grid="src0"]) {
+      --add-api-cell-accent: #8b5cf6;
+      --add-api-cell-fill: rgba(139, 92, 246, .18);
+    }
+
+    .add-api-memory-row:has([data-add-api-grid="src1"]) {
+      --add-api-cell-accent: #ec4899;
+      --add-api-cell-fill: rgba(236, 72, 153, .18);
+    }
+
+    .add-api-memory-row:has([data-add-api-grid="dst"]) {
+      --add-api-cell-accent: #38bdf8;
+      --add-api-cell-fill: rgba(56, 189, 248, .18);
     }
 
     .add-api-memory-row:last-child {
@@ -923,9 +985,63 @@
       font: 600 12px / 1.3 var(--font-sans);
     }
 
-    .add-api-matrix-host {
+    .add-api-grid {
+      display: grid;
+      grid-template-columns: repeat(32, minmax(18px, 1fr));
+      gap: 4px;
+      align-content: start;
+    }
+
+    .add-api-cell {
+      aspect-ratio: 1;
       min-width: 0;
-      height: 222px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      overflow: hidden;
+      border: 1px solid var(--border-subtle);
+      border-radius: 5px;
+      background: color-mix(in srgb, var(--surface-2) 78%, transparent);
+      color: var(--foreground-muted);
+      font: 500 7px / 1 var(--font-mono);
+      box-shadow: inset 0 1px 0 rgba(255, 255, 255, .04);
+      transition:
+        background var(--duration-fast) var(--easing-default),
+        border-color var(--duration-fast) var(--easing-default),
+        color var(--duration-fast) var(--easing-default),
+        box-shadow var(--duration-fast) var(--easing-default);
+    }
+
+    .add-api-cell.is-window {
+      background: var(--add-api-cell-fill);
+      border-color: color-mix(in srgb, var(--add-api-cell-accent) 54%, transparent);
+      color: var(--foreground);
+    }
+
+    .add-api-cell.is-read {
+      background: color-mix(in srgb, var(--add-api-cell-accent) 34%, transparent);
+      border-color: var(--add-api-cell-accent);
+      box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--add-api-cell-accent) 42%, transparent);
+    }
+
+    .add-api-cell.is-written {
+      background: color-mix(in srgb, var(--add-api-cell-accent) 46%, transparent);
+      border-color: color-mix(in srgb, var(--add-api-cell-accent) 72%, transparent);
+      color: var(--foreground);
+    }
+
+    .add-api-cell.is-current {
+      background: var(--add-api-cell-accent);
+      border-color: color-mix(in srgb, var(--foreground) 72%, var(--add-api-cell-accent));
+      box-shadow: inset 0 0 0 1px rgba(255,255,255,.42), 0 0 14px color-mix(in srgb, var(--add-api-cell-accent) 34%, transparent);
+      color: var(--background);
+      font-weight: 700;
+    }
+
+    .add-api-cell.is-write-target {
+      background: color-mix(in srgb, var(--warning) 18%, transparent);
+      border-color: color-mix(in srgb, var(--warning) 74%, transparent);
+      color: var(--foreground);
     }
 
     .add-api-stage-footer {
@@ -962,8 +1078,8 @@
     }
 
     .add-api-swatch--window { background: color-mix(in srgb, var(--primary) 18%, transparent); border-color: var(--primary); }
-    .add-api-swatch--read { background: color-mix(in srgb, var(--accent) 34%, transparent); border-color: var(--accent); }
-    .add-api-swatch--written { background: color-mix(in srgb, var(--success) 46%, transparent); border-color: var(--success); }
+    .add-api-swatch--read { background: rgba(139, 92, 246, .34); border-color: #8b5cf6; }
+    .add-api-swatch--written { background: rgba(56, 189, 248, .46); border-color: #38bdf8; }
     .add-api-swatch--current { background: color-mix(in srgb, var(--warning) 18%, transparent); border-color: var(--warning); }
 
     .op-load3d-stage {
@@ -3775,7 +3891,6 @@
                   </label>
                   <p class="add-api-note" data-api-mode-note>
                     Add 按 load → src → dst → process 阶段逐 block 推进；输入值与 dstLocal 结果均在网格中可见。
-                    <a class="add-api-note__link" href="https://www.hiascend.com/document/detail/zh/CANNCommunityEdition/910beta3/API/ascendcopapi/atlasascendc_api_07_0035.html" target="_blank" rel="noopener noreferrer">查看文档</a>
                   </p>
                   <div class="api-mode-controls" data-api-controls-pane="Load3D" hidden>
                     <div id="load3dApiControls"></div>
@@ -3841,27 +3956,21 @@
                         <strong id="addSrc0Label">src0Local</strong>
                         <span>/第一个源数据集</span>
                       </div>
-                      <div class="add-api-matrix-host" data-add-api-matrix="src0">
-                        <canvas aria-label="src0Local 二维矩阵"></canvas>
-                      </div>
+                      <div class="add-api-grid" data-add-api-grid="src0"></div>
                     </section>
                     <section class="add-api-memory-row" aria-labelledby="addSrc1Label">
                       <div class="add-api-memory-label">
                         <strong id="addSrc1Label">src1Local</strong>
                         <span>/第二个源数据集</span>
                       </div>
-                      <div class="add-api-matrix-host" data-add-api-matrix="src1">
-                        <canvas aria-label="src1Local 二维矩阵"></canvas>
-                      </div>
+                      <div class="add-api-grid" data-add-api-grid="src1"></div>
                     </section>
                     <section class="add-api-memory-row" aria-labelledby="addDstLabel">
                       <div class="add-api-memory-label">
                         <strong id="addDstLabel">dstLocal</strong>
                         <span>/目标数据集</span>
                       </div>
-                      <div class="add-api-matrix-host" data-add-api-matrix="dst">
-                        <canvas aria-label="dstLocal 二维矩阵"></canvas>
-                      </div>
+                      <div class="add-api-grid" data-add-api-grid="dst"></div>
                     </section>
                   </div>
                   <footer class="add-api-stage-footer">
@@ -6944,7 +7053,6 @@
       let addApiSeed = 0;
       let addApiSrc0 = [];
       let addApiSrc1 = [];
-      const addApiMatrixControllers = new Map();
 
       const addApiGridConfig = {
         columns: 32,
@@ -7055,70 +7163,37 @@
         if (control) control.hidden = !visible;
       };
 
-      const addApiMatrixScene = (gridKind, context) => {
-        const isSource = gridKind === 'src0' || gridKind === 'src1';
-        const sourceValues = gridKind === 'src0' ? addApiSrc0 : addApiSrc1;
-        const windowStart = isSource ? context.srcStart : context.dstStart;
-        const windowEnd = isSource ? context.srcEnd : context.dstEnd;
-        const tone = gridKind === 'src0' ? 'input' : gridKind === 'src1' ? 'fusion' : 'output';
-        const cells = [];
-        for (let row = 0; row < addApiGridConfig.rows; row += 1) {
-          for (let column = 0; column < addApiGridConfig.columns; column += 1) {
-            const index = row * addApiGridConfig.columns + column;
-            const inWindow = context.block !== null
-              && index >= windowStart
-              && index < windowEnd
-              && ['src', 'dst', 'process'].includes(context.phase);
-            const isWriteTarget = !isSource && inWindow && context.phase === 'dst';
-            const isCurrent = !isSource && inWindow && context.phase === 'process';
-            const value = isSource ? sourceValues[index] : context.dstValues.get(index);
-            const states = [];
-            if (inWindow) states.push('selected');
-            if (!isSource && context.dstValues.has(index)) states.push('written');
-            if (isCurrent) states.push('current');
-            cells.push({
-              id: `${gridKind}-${index}`,
-              row,
-              column,
-              label: value === undefined ? '' : String(value),
-              value,
-              tone,
-              style: value === undefined ? 'empty' : 'value',
-              states: isWriteTarget ? [...states, 'column-focus'] : states,
-            });
-          }
-        }
-        return {
-          extent: { rows: addApiGridConfig.rows, columns: addApiGridConfig.columns },
-          axes: { rows: 'row', columns: 'element offset' },
-          cells,
-        };
-      };
-
       const renderAddApiCells = () => {
         const context = getAddApiContext();
         addApiStep = context.step;
+        const hasActiveBlock = context.block !== null && ['src', 'dst', 'process'].includes(context.phase);
 
-        $$('[data-add-api-matrix]').forEach((host) => {
-          const gridKind = host.dataset.addApiMatrix;
-          const canvas = host.querySelector('canvas');
-          if (!canvas || !window.PtoMatrixCanvas) return;
-          const scene = addApiMatrixScene(gridKind, context);
-          const options = {
-            ariaLabel: `${gridKind}Local 二维矩阵`,
-            showAxes: true,
-            showGrid: true,
-            interactive: true,
-            showTooltip: true,
-            minZoom: 0.18,
-            maxZoom: 4,
-          };
-          const existing = addApiMatrixControllers.get(gridKind);
-          if (existing) {
-            existing.update(scene, { ...options, preserveView: true });
-          } else {
-            addApiMatrixControllers.set(gridKind, window.PtoMatrixCanvas.render(canvas, scene, options));
+        $$('[data-add-api-grid]').forEach((grid) => {
+          const gridKind = grid.dataset.addApiGrid;
+          const isSource = gridKind === 'src0' || gridKind === 'src1';
+          const sourceValues = gridKind === 'src0' ? addApiSrc0 : addApiSrc1;
+          const windowStart = isSource ? context.srcStart : context.dstStart;
+          const windowEnd = isSource ? context.srcEnd : context.dstEnd;
+          const cells = [];
+          for (let index = 0; index < context.totalCells; index += 1) {
+            const cell = document.createElement('span');
+            const inWindow = hasActiveBlock && index >= windowStart && index < windowEnd;
+            const isRead = isSource && inWindow && ['src', 'dst', 'process'].includes(context.phase);
+            const isWriteTarget = !isSource && inWindow && context.phase === 'dst';
+            const isCurrent = !isSource && inWindow && context.phase === 'process';
+            const value = isSource ? sourceValues[index] : context.dstValues.get(index);
+            cell.className = 'add-api-cell';
+            if (inWindow) cell.classList.add('is-window');
+            if (isRead) cell.classList.add('is-read');
+            if (isWriteTarget) cell.classList.add('is-write-target');
+            if (!isSource && context.dstValues.has(index)) cell.classList.add('is-written');
+            if (isCurrent) cell.classList.add('is-current');
+            cell.textContent = value === undefined ? '' : String(value);
+            cell.title = `${gridKind}[${index}] = ${value === undefined ? '未写入' : value}`;
+            cell.setAttribute('aria-label', `${gridKind} element ${index}, ${value === undefined ? 'not written' : value}`);
+            cells.push(cell);
           }
+          grid.replaceChildren(...cells);
         });
 
         const root = $('#addApiView');
@@ -7297,13 +7372,15 @@
       let load3dApiPlaying = false;
       let load3dApiTimer = null;
       let load3dApiPlayback = null;
+      let load3dNchwPatternController = null;
+      let load3dA1PatternController = null;
+      let load3dA2MatrixController = null;
 
       const load3dApiState = {
         H: 4,
         W: 4,
         Ci: 1,
         C0: 16,
-        cSize: 0,
         filterH: 2,
         filterW: 2,
         strideH: 1,
@@ -7326,7 +7403,6 @@
         Wi: load3dApiState.W,
         Ci: load3dApiState.Ci,
         C0: load3dApiState.C0,
-        cSize: load3dApiState.cSize,
         Hk: load3dApiState.filterH,
         Wk: load3dApiState.filterW,
         strideH: load3dApiState.strideH,
@@ -7345,18 +7421,12 @@
       });
 
       const load3dShape = (p) => {
-        const alignUp = (value, alignment) => Math.ceil(value / alignment) * alignment;
         const effectiveKernelH = (p.Hk - 1) * p.dilationH + 1;
         const effectiveKernelW = (p.Wk - 1) * p.dilationW + 1;
         const Ho = Math.floor((p.Hi + p.padTop + p.padBottom - effectiveKernelH) / p.strideH) + 1;
         const Wo = Math.floor((p.Wi + p.padLeft + p.padRight - effectiveKernelW) / p.strideW) + 1;
         const C1 = Math.ceil(p.Ci / p.C0);
         const physicalSlots = C1 * p.C0;
-        const fetchChannels = p.cSize === 1 ? 4 : p.C0;
-        const validRows = Math.max(0, Ho * Wo);
-        const validCols = Math.max(0, p.Hk * p.Wk * fetchChannels);
-        const fragmentRows = 16;
-        const fragmentCols = 16;
         return {
           effectiveKernelH,
           effectiveKernelW,
@@ -7365,222 +7435,137 @@
           C1,
           physicalSlots,
           paddingChannels: physicalSlots - p.Ci,
-          fetchChannels,
-          fetchedPaddingChannels: Math.max(0, fetchChannels - p.Ci),
-          fragmentRows,
-          fragmentCols,
           valid: Ho > 0 && Wo > 0,
-          validRows,
-          validCols,
-          storageRows: validRows > 0 ? alignUp(validRows, fragmentRows) : 0,
-          storageCols: validCols > 0 ? alignUp(validCols, fragmentCols) : 0,
-          fragmentRowCount: validRows > 0 ? Math.ceil(validRows / fragmentRows) : 0,
-          fragmentColCount: validCols > 0 ? Math.ceil(validCols / fragmentCols) : 0
+          rows: Math.max(0, Ho * Wo),
+          cols: Math.max(0, p.Hk * p.Wk * p.Ci)
         };
       };
 
-      const load3dPrototypeText = [
-        'template <typename T, const IsResetLoad3dConfig &defaultConfig = IS_RESER_LOAD3D_DEFAULT_CONFIG, typename U = PrimT<T>, typename Std::enable_if<Std::is_same<PrimT<T>, U>::value, bool>::type = true>',
-        '__aicore__ inline void LoadData(const LocalTensor<T>& dst, const LocalTensor<T>& src, const LoadData3DParamsV1<U>& loadDataParams)'
-      ].join('\n');
-
-      const escapeCodeHtml = (value) => String(value)
-        .replace(/&/g, '&amp;')
-        .replace(/</g, '&lt;')
-        .replace(/>/g, '&gt;')
-        .replace(/\"/g, '&quot;')
-        .replace(/'/g, '&#39;');
-
-      const highlightLoad3dCpp = (source) => {
-        const tokenPattern = /(\/\/.*$)|\b(LoadData3DParamsV1|LocalTensor|PrimT|IsResetLoad3dConfig|Std)\b|\b(template|typename|const|inline|void|bool|true)\b|\b(LoadData)(?=\()|\b(\d+)\b/g;
-        return escapeCodeHtml(source).split('\n').map((line) => line.replace(tokenPattern, (match, comment, type, keyword, fn, number) => {
-          if (comment) return `<span class="cpp-token-comment">${comment}</span>`;
-          if (type) return `<span class="cpp-token-type">${type}</span>`;
-          if (keyword) return `<span class="cpp-token-keyword">${keyword}</span>`;
-          if (fn) return `<span class="cpp-token-function">${fn}</span>`;
-          if (number) return `<span class="cpp-token-number">${number}</span>`;
-          return match;
-        })).join('\n');
-      };
-
-      const load3dCodeSkeleton = () => {
-        const p = load3dParams();
-        const shape = load3dShape(p);
-        return [
-          '// LoadData3DParamsV1 teaching skeleton generated from the current visualization.',
-          '// Aggregate field order follows the linked CANN 9.1 beta3 LoadData document.',
-          '// Current visual input: NCHW = 1 x ' + p.Ci + ' x ' + p.Hi + ' x ' + p.Wi + ', C0 = ' + p.C0 + ', C1 = ' + shape.C1 + '.',
-          '// A2 valid shape: M x K = ' + shape.validRows + ' x ' + shape.validCols + '; fragment envelope = ' + shape.storageRows + ' x ' + shape.storageCols + '.',
-          '',
-          'uint8_t padList[4] = {' + p.padLeft + ', ' + p.padRight + ', ' + p.padTop + ', ' + p.padBottom + '};',
-          'LoadData3DParamsV1<U> loadDataParams = {',
-          '    padList, ' + p.Hi + ', ' + p.Wi + ', 0, 0, 0,',
-          '    ' + (-p.padLeft) + ', ' + (-p.padTop) + ', ' + p.strideW + ', ' + p.strideH + ',',
-          '    ' + p.Wk + ', ' + p.Hk + ', ' + p.dilationW + ', ' + p.dilationH + ',',
-          '    ' + p.jumpStride + ', ' + p.repeatMode + ', ' + p.repeatTime + ', ' + p.cSize + ', (U)' + p.padValue,
-          '};',
-          '',
-          'LoadData(dstLocal, srcLocal, loadDataParams);'
-        ].join('\n');
-      };
-
-      const renderLoad3dCodeSkeleton = () => {
-        const code = $('[data-load3d-code-skeleton]');
-        if (code) code.innerHTML = highlightLoad3dCpp(load3dCodeSkeleton());
-      };
-
-      const renderLoad3dPrototype = () => {
-        const code = $('[data-load3d-prototype-code]');
-        if (code) code.innerHTML = highlightLoad3dCpp(load3dPrototypeText);
-      };
-
-      const renderLoad3dCodeBlocks = () => {
-        renderLoad3dPrototype();
-        renderLoad3dCodeSkeleton();
-      };
-
-      const copyLoad3dCodeSkeleton = async (button) => {
-        const code = load3dCodeSkeleton();
-        const originalLabel = button.textContent;
-        try {
-          if (navigator.clipboard?.writeText) {
-            await navigator.clipboard.writeText(code);
-          } else {
-            const textarea = document.createElement('textarea');
-            textarea.value = code;
-            textarea.setAttribute('readonly', '');
-            textarea.style.position = 'fixed';
-            textarea.style.opacity = '0';
-            document.body.appendChild(textarea);
-            textarea.select();
-            document.execCommand('copy');
-            textarea.remove();
-          }
-          button.textContent = '已复制';
-        } catch (error) {
-          button.textContent = '复制失败';
-        } finally {
-          window.setTimeout(() => { button.textContent = originalLabel; }, 1200);
-        }
-      };
-
-      const load3dElementAt = (p, shape, row, column) => {
-        const isFragmentTail = row >= shape.validRows || column >= shape.validCols;
-        if (isFragmentTail) {
-          return { row, column, isFragmentTail, isPadding: true };
-        }
-        const oh = Math.floor(row / shape.Wo);
-        const ow = row % shape.Wo;
-        const filterIndex = Math.floor(column / shape.fetchChannels);
-        const kh = Math.floor(filterIndex / p.Wk);
-        const kw = filterIndex % p.Wk;
-        const c = column % shape.fetchChannels;
-        const baseH = oh * p.strideH - p.padTop;
-        const baseW = ow * p.strideW - p.padLeft;
-        const srcH = baseH + kh * p.dilationH;
-        const srcW = baseW + kw * p.dilationW;
-        const isSpatialPadding = srcH < 0 || srcH >= p.Hi || srcW < 0 || srcW >= p.Wi;
-        const isChannelPadding = c >= p.Ci;
-        return {
-          row,
-          column,
-          oh,
-          ow,
-          kh,
-          kw,
-          c,
-          baseH,
-          baseW,
-          srcH,
-          srcW,
-          srcC: c,
-          isFragmentTail: false,
-          isSpatialPadding,
-          isChannelPadding,
-          isPadding: isSpatialPadding || isChannelPadding
-        };
-      };
-
-      const load3dTransfers = (p, shape) => {
+      const load3dPatches = (p, shape) => {
         if (!shape.valid) return [];
-        const transfers = [];
-        const samplesPerRow = p.Hk * p.Wk;
-        for (let row = 0; row < shape.validRows; row += 1) {
-          for (let sampleIndex = 0; sampleIndex < samplesPerRow; sampleIndex += 1) {
-            const kh = Math.floor(sampleIndex / p.Wk);
-            const kw = sampleIndex % p.Wk;
-            const columnStart = sampleIndex * shape.fetchChannels;
-            const anchor = load3dElementAt(p, shape, row, columnStart);
-            const index = transfers.length;
-            transfers.push({
-              index,
-              row,
-              oh: anchor.oh,
-              ow: anchor.ow,
-              kh,
-              kw,
-              baseH: anchor.baseH,
-              baseW: anchor.baseW,
-              srcH: anchor.srcH,
-              srcW: anchor.srcW,
-              columnStart,
-              columnEnd: columnStart + shape.fetchChannels - 1,
-              instructionIndex: Math.floor(index / p.repeatTime),
-              repeatIndex: index % p.repeatTime
-            });
+        const patches = [];
+        for (let oh = 0; oh < shape.Ho; oh += 1) {
+          for (let ow = 0; ow < shape.Wo; ow += 1) {
+            const baseH = oh * p.strideH - p.padTop;
+            const baseW = ow * p.strideW - p.padLeft;
+            const row = oh * shape.Wo + ow;
+            const elements = [];
+            for (let kh = 0; kh < p.Hk; kh += 1) {
+              for (let kw = 0; kw < p.Wk; kw += 1) {
+                for (let c = 0; c < p.Ci; c += 1) {
+                  const srcH = baseH + kh * p.dilationH;
+                  const srcW = baseW + kw * p.dilationW;
+                  const col = ((kh * p.Wk) + kw) * p.Ci + c;
+                  const isPadding = srcH < 0 || srcH >= p.Hi || srcW < 0 || srcW >= p.Wi;
+                  elements.push({ oh, ow, row, kh, kw, c, col, srcH, srcW, srcC: c, isPadding });
+                }
+              }
+            }
+            patches.push({ oh, ow, row, baseH, baseW, elements });
           }
         }
-        return transfers;
+        return patches;
       };
 
-      const load3dTotalSteps = (transfers) => transfers.length;
+      const load3dSampleGroups = (patch) => {
+        if (!patch) return [];
+        const groups = new Map();
+        patch.elements.forEach((element) => {
+          const key = `${element.kh},${element.kw}`;
+          if (!groups.has(key)) {
+            groups.set(key, { kh: element.kh, kw: element.kw, elements: [] });
+          }
+          groups.get(key).elements.push(element);
+        });
+        return Array.from(groups.values());
+      };
 
-      const load3dContextAtStep = (p, shape, transfers, step) => {
-        if (!transfers.length) {
-          return { transfer: null, elements: [], step: 0, maxStep: 0 };
+      const load3dTotalSteps = (patches) =>
+        patches.reduce((sum, patch) => sum + load3dSampleGroups(patch).length, 0);
+
+      const load3dContextAtStep = (patches, step) => {
+        if (!patches.length) {
+          return {
+            patch: null,
+            element: null,
+            sampleElements: [],
+            step: 0,
+            maxStep: 0
+          };
         }
-        const maxStep = Math.max(0, transfers.length - 1);
+        const maxStep = Math.max(0, load3dTotalSteps(patches) - 1);
         const boundedStep = Math.max(0, Math.min(maxStep, Number(step) || 0));
-        const transfer = transfers[boundedStep];
-        const elements = [];
-        for (let column = transfer.columnStart; column <= transfer.columnEnd; column += 1) {
-          elements.push(load3dElementAt(p, shape, transfer.row, column));
+        let cursor = boundedStep;
+        let patch = patches[0];
+        let sampleGroups = load3dSampleGroups(patch);
+        let sampleGroup = sampleGroups[0];
+        let patchIndex = 0;
+        let sampleIndex = 0;
+        for (let index = 0; index < patches.length; index += 1) {
+          const candidate = patches[index];
+          const candidateGroups = load3dSampleGroups(candidate);
+          if (cursor < candidateGroups.length) {
+            patch = candidate;
+            sampleGroups = candidateGroups;
+            sampleGroup = candidateGroups[cursor];
+            patchIndex = index;
+            sampleIndex = cursor;
+            break;
+          }
+          cursor -= candidateGroups.length;
         }
         return {
-          transfer,
-          elements,
-          writtenTransfers: transfers.slice(0, boundedStep),
+          patch,
+          element: sampleGroup?.elements[0] || patch.elements[0],
+          sampleElements: sampleGroup?.elements || [],
+          sampleGroups,
+          patchIndex,
+          sampleIndex,
           step: boundedStep,
-          maxStep,
-          spatialPaddingCount: elements.filter((item) => item.isSpatialPadding).length,
-          channelPaddingCount: elements.filter((item) => item.isChannelPadding && !item.isSpatialPadding).length
+          maxStep
         };
       };
 
-      const load3dContext = (p, shape, transfers) => load3dContextAtStep(p, shape, transfers, load3dApiStep);
-
-      const load3dPatternControllers = [];
-      let load3dA2MatrixController = null;
+      const load3dContext = (patches) => load3dContextAtStep(patches, load3dApiStep);
 
       const destroyLoad3dPatternControllers = () => {
-        load3dPatternControllers.splice(0).forEach((controller) => controller?.destroy?.());
+        load3dNchwPatternController?.destroy?.();
+        load3dA1PatternController?.destroy?.();
         load3dA2MatrixController?.destroy?.();
+        load3dNchwPatternController = null;
+        load3dA1PatternController = null;
         load3dA2MatrixController = null;
       };
 
-      const load3dNchwScene = (p) => {
+      // Convert the Load3D business state into the shared Tensor Volume Canvas scene contract.
+      const load3dNchwScene = (p, context) => {
         const depth = Math.min(p.Ci, 4);
+        const windowCoords = new Set();
+        const currentCoords = new Set();
+        const inBounds = (item) => item && item.srcH >= 0 && item.srcH < p.Hi && item.srcW >= 0 && item.srcW < p.Wi;
+        const coordKey = (item) => `${item.srcH},${item.srcW}`;
+        (context?.patch?.elements || []).forEach((item) => {
+          if (inBounds(item)) windowCoords.add(coordKey(item));
+        });
+        (context?.sampleElements || []).forEach((item) => {
+          if (inBounds(item)) currentCoords.add(coordKey(item));
+        });
         const voxels = [];
         for (let channel = 0; channel < depth; channel += 1) {
           for (let row = 0; row < p.Hi; row += 1) {
             for (let column = 0; column < p.Wi; column += 1) {
+              const key = `${row},${column}`;
+              const isCurrent = currentCoords.has(key);
+              const isWindow = windowCoords.has(key);
+              const state = isCurrent ? 'current' : (isWindow ? 'window' : 'base');
               voxels.push({
+                id: `nchw-${channel}-${row}-${column}`,
                 column,
                 row,
                 depth: channel,
-                label: p.Hi * p.Wi <= 36 ? String(row) + String(column) : '',
-                tone: 'neutral',
-                state: 'base'
+                label: (isCurrent || isWindow) && p.Hi * p.Wi <= 36 ? `x${row}${column}${channel}` : '',
+                tone: isCurrent ? 'compute' : (isWindow ? 'input' : 'neutral'),
+                state
               });
             }
           }
@@ -7596,139 +7581,109 @@
         const totalH = p.Hi + p.padTop + p.padBottom;
         const totalW = p.Wi + p.padLeft + p.padRight;
         const depth = p.showChannelPadding ? p.C0 : p.Ci;
-        const transfer = context.transfer;
-        const windowSpatial = new Set();
-        if (transfer) {
-          for (let kh = 0; kh < p.Hk; kh += 1) {
-            for (let kw = 0; kw < p.Wk; kw += 1) {
-              const srcH = transfer.baseH + kh * p.dilationH;
-              const srcW = transfer.baseW + kw * p.dilationW;
-              const isSpatialPadding = srcH < 0 || srcH >= p.Hi || srcW < 0 || srcW >= p.Wi;
-              if (!isSpatialPadding) windowSpatial.add([srcH, srcW].join(','));
+        const windowCoords = new Set();
+        const skippedCoords = new Set();
+        const sampledKeys = new Set((context?.patch?.elements || []).map((item) => `${item.srcH},${item.srcW},${item.c}`));
+        (context?.patch?.elements || []).forEach((item) => windowCoords.add(`${item.srcH},${item.srcW},${item.c}`));
+        if (p.dilationH > 1 || p.dilationW > 1) {
+          const patch = context?.patch;
+          const maxH = patch.baseH + (p.Hk - 1) * p.dilationH;
+          const maxW = patch.baseW + (p.Wk - 1) * p.dilationW;
+          for (let h = patch.baseH; h <= maxH; h += 1) {
+            for (let w = patch.baseW; w <= maxW; w += 1) {
+              for (let c = 0; c < p.Ci; c += 1) {
+                const key = `${h},${w},${c}`;
+                if (!windowCoords.has(key)) skippedCoords.add(key);
+              }
             }
           }
         }
-        const currentSpatialKey = transfer ? [transfer.srcH, transfer.srcW].join(',') : '';
+        const sample = context?.element;
         const voxels = [];
         for (let channel = 0; channel < depth; channel += 1) {
-          for (let row = 0; row < totalH; row += 1) {
-            for (let column = 0; column < totalW; column += 1) {
-              const sourceRow = row - p.padTop;
-              const sourceColumn = column - p.padLeft;
-              const spatialKey = [sourceRow, sourceColumn].join(',');
-              const isSpatialPadding = sourceRow < 0 || sourceRow >= p.Hi || sourceColumn < 0 || sourceColumn >= p.Wi;
-              const isChannelPadding = p.showChannelPadding && channel >= p.Ci;
-              const isWindow = windowSpatial.has(spatialKey) && channel < p.Ci;
-              const isCurrentTransfer = spatialKey === currentSpatialKey && channel < shape.fetchChannels;
-              let state = 'base';
-              let tone = 'neutral';
-              let label = '';
-              if (isChannelPadding || isSpatialPadding) {
-                state = 'padding';
-                label = '';
-              }
-              if (isWindow) {
-                state = 'window';
-                tone = 'input';
-                label = 'x' + sourceRow + sourceColumn + channel;
-              }
-              if (isCurrentTransfer) {
-                state = 'current';
-                tone = 'compute';
-                label = isSpatialPadding ? 'PAD' : (channel >= p.Ci ? 'C-PAD' : 'x' + sourceRow + sourceColumn + channel);
-              }
-              voxels.push({ column, row, depth: channel, label, tone, state });
+          for (let ph = 0; ph < totalH; ph += 1) {
+            for (let pw = 0; pw < totalW; pw += 1) {
+              const h = ph - p.padTop;
+              const w = pw - p.padLeft;
+              const key = `${h},${w},${channel}`;
+              const isPadding = h < 0 || h >= p.Hi || w < 0 || w >= p.Wi;
+              const isChannelPad = p.showChannelPadding && channel >= p.Ci;
+              const isWindow = windowCoords.has(key) && !isChannelPad;
+              // A Load3D sample transfers the full C0 lane, including physical padding lanes.
+              const isCurrent = Boolean(sample && h === sample.srcH && w === sample.srcW);
+              const isSkipped = skippedCoords.has(key);
+              const state = isCurrent ? 'current' : (isSkipped ? 'skipped' : (isWindow ? 'window' : (isPadding || isChannelPad ? 'padding' : 'base')));
+              const isLabelled = sampledKeys.has(key) || isWindow || isCurrent;
+              const label = isCurrent
+                ? (isPadding ? 'PAD' : (isChannelPad ? 'C-PAD' : `x${h}${w}${channel}`))
+                : (isLabelled && !isChannelPad && (isPadding || totalH * totalW <= 36) ? (isPadding ? 'PAD' : `x${h}${w}${channel}`) : '');
+              voxels.push({
+                id: `a1-${channel}-${ph}-${pw}`,
+                column: pw,
+                row: ph,
+                depth: channel,
+                label,
+                tone: isCurrent ? 'compute' : (isWindow ? 'input' : 'neutral'),
+                state
+              });
             }
           }
         }
         return {
           extent: { columns: totalW, rows: totalH, depth },
-          axes: { columns: 'Wi', rows: 'Hi', depth: 'C1 / C0' },
+          axes: { columns: 'Wi + PAD', rows: 'Hi + PAD', depth: `C1=${shape.C1} / C0` },
           voxels
         };
       };
 
-      const load3dA2Scene = (p, shape, context) => {
-        const transfer = context.transfer;
+      const load3dA2Scene = (p, shape, patches, context) => {
         const writtenCells = new Set();
-        (context.writtenTransfers || []).forEach((item) => {
-          for (let column = item.columnStart; column <= item.columnEnd; column += 1) {
-            writtenCells.add([item.row, column].join(','));
-          }
+        const showLabels = shape.rows * shape.cols <= 180;
+        let priorSteps = 0;
+        patches.forEach((patch) => {
+          const groups = load3dSampleGroups(patch);
+          groups.forEach((group, sampleIndex) => {
+            if (priorSteps + sampleIndex <= context.step) {
+              group.elements.forEach((item) => writtenCells.add(`${item.row},${item.col}`));
+            }
+          });
+          priorSteps += groups.length;
         });
-        const currentCells = new Set((context.elements || []).map((item) => [item.row, item.column].join(',')));
         const cells = [];
-        for (let row = 0; row < shape.storageRows; row += 1) {
-          for (let column = 0; column < shape.storageCols; column += 1) {
-            const mapped = load3dElementAt(p, shape, row, column);
-            const cellKey = [row, column].join(',');
-            const isActive = currentCells.has(cellKey);
-            const isPaddingCell = mapped.isPadding;
+        for (let row = 0; row < shape.rows; row += 1) {
+          for (let column = 0; column < shape.cols; column += 1) {
+            const mapped = patches[row]?.elements[column];
+            if (!mapped) continue;
+            const cellKey = `${row},${column}`;
+            const isCurrentRow = row === context.element.row;
+            const isCurrentSample = mapped.kh === context.element.kh && mapped.kw === context.element.kw;
+            const isCurrent = isCurrentRow && isCurrentSample;
+            const isPadding = mapped.isPadding;
             const states = [];
-            if (writtenCells.has(cellKey) && !isPaddingCell) states.push('written');
-            if (isActive && !isPaddingCell) states.push('current');
-            let label = 'x' + mapped.srcH + mapped.srcW + mapped.srcC;
-            if (mapped.isFragmentTail) label = 'TAIL';
-            else if (mapped.isSpatialPadding && mapped.isChannelPadding) label = 'PAD';
-            else if (mapped.isSpatialPadding) label = 'PAD';
-            else if (mapped.isChannelPadding) label = 'C-PAD';
+            if (isCurrentRow) states.push('row-focus');
+            if (isCurrentSample) states.push('column-focus');
+            if (writtenCells.has(cellKey) && !isPadding) states.push('written');
+            if (isCurrent) states.push('current');
             cells.push({
-              id: 'a2-' + row + '-' + column,
+              id: `A2 row=${row}, col=${column}, kh=${mapped.kh}, kw=${mapped.kw}, c=${mapped.c}, src=(${mapped.srcH},${mapped.srcW},${mapped.srcC})`,
               row,
               column,
-              label,
-              value: isPaddingCell ? NaN : mapped.column,
-              tone: isPaddingCell ? 'neutral' : 'input',
-              style: isPaddingCell ? 'padding' : 'value',
-              states,
+              label: showLabels ? (isPadding ? 'PAD' : `x${mapped.srcH}${mapped.srcW}${mapped.srcC}`) : '',
+              value: isPadding ? NaN : mapped.col,
+              tone: isCurrent || isCurrentSample ? 'compute' : 'neutral',
+              style: isPadding ? 'padding' : 'value',
+              states
             });
           }
         }
         return {
-          extent: { rows: shape.storageRows, columns: shape.storageCols },
-          axes: { rows: 'A2 M · oh × Wo + ow', columns: 'A2 K · kh × Wk × Cfetch + kw × Cfetch + c' },
-          cells,
+          extent: { rows: shape.rows, columns: shape.cols },
+          axes: {
+            rows: 'A2 M · oh × Wo + ow',
+            columns: 'A2 K · kh × Wk × Ci + kw × Ci + c'
+          },
+          cells
         };
-      };
-
-      const renderLoad3dNativeCanvases = () => {
-        const p = load3dParams();
-        const shape = load3dShape(p);
-        const transfers = load3dTransfers(p, shape);
-        const context = load3dContext(p, shape, transfers);
-        if (!shape.valid || !context.transfer) return;
-        const nchwCanvas = $('#opLoad3dNchwCanvas');
-        const a1Canvas = $('#opLoad3dA1Canvas');
-        const a2Canvas = $('#opLoad3dA2Canvas');
-        const canvasOptions = { showAxes: true, autoLabelDensity: true };
-        if (nchwCanvas && window.PtoTensorVolumeCanvas) {
-          load3dPatternControllers.push(window.PtoTensorVolumeCanvas.render(nchwCanvas, load3dNchwScene(p), {
-            ...canvasOptions,
-            ariaLabel: 'NCHW input tensor volume'
-          }));
-        }
-        if (a1Canvas && window.PtoTensorVolumeCanvas) {
-          load3dPatternControllers.push(window.PtoTensorVolumeCanvas.render(a1Canvas, load3dA1Scene(p, shape, context), {
-            ...canvasOptions,
-            ariaLabel: 'NC1HWC0 A1 tensor volume'
-          }));
-        }
-        if (a2Canvas && window.PtoMatrixCanvas) {
-          load3dA2MatrixController = window.PtoMatrixCanvas.render(
-            a2Canvas,
-            load3dA2Scene(p, shape, context),
-            {
-              ariaLabel: 'A2 logical matrix',
-              showAxes: true,
-              showGrid: true,
-              interactive: true,
-              showTooltip: true,
-              minZoom: 0.08,
-              maxZoom: 4,
-              padding: { top: 42, right: 24, bottom: 44, left: 82 }
-            }
-          );
-        }
       };
 
       const stopLoad3dApiPlayback = () => {
@@ -7742,12 +7697,63 @@
         if (control) control.hidden = !visible;
       };
 
+      const renderLoad3dNativeCanvases = () => {
+        const p = load3dParams();
+        const shape = load3dShape(p);
+        if (!shape.valid) return;
+        const patches = load3dPatches(p, shape);
+        const context = load3dContext(patches);
+        destroyLoad3dPatternControllers();
+        const nchwCanvas = $('#opLoad3dNchwCanvas');
+        if (nchwCanvas && window.PtoTensorVolumeCanvas) {
+          load3dNchwPatternController = window.PtoTensorVolumeCanvas.render(
+            nchwCanvas,
+            load3dNchwScene(p, context),
+            {
+              ariaLabel: 'NCHW input tensor volume',
+              showAxes: true,
+              autoLabelDensity: true
+            }
+          );
+        }
+        const a1Canvas = $('#opLoad3dA1Canvas');
+        if (a1Canvas && window.PtoTensorVolumeCanvas) {
+          load3dA1PatternController = window.PtoTensorVolumeCanvas.render(
+            a1Canvas,
+            load3dA1Scene(p, shape, context),
+            {
+              ariaLabel: 'NC1HWC0 A1 tensor volume',
+              showAxes: true,
+              autoLabelDensity: true
+            }
+          );
+        }
+        const a2Canvas = $('#opLoad3dA2Canvas');
+        if (a2Canvas && window.PtoMatrixCanvas) {
+          load3dA2MatrixController = window.PtoMatrixCanvas.render(
+            a2Canvas,
+            load3dA2Scene(p, shape, patches, context),
+            {
+              ariaLabel: 'A2 logical matrix',
+              showAxes: true,
+              showGrid: true,
+              interactive: true,
+              showTooltip: true,
+              autoFit: true,
+              minZoom: 0.08,
+              maxZoom: 4,
+              padding: { top: 42, right: 24, bottom: 44, left: 82 }
+            }
+          );
+        }
+      };
+
       const renderLoad3dSceneMarkup = () => {
         const p = load3dParams();
         const shape = load3dShape(p);
-        const transfers = load3dTransfers(p, shape);
-        const context = load3dContext(p, shape, transfers);
-        if (!shape.valid || !context.transfer) {
+        const patches = load3dPatches(p, shape);
+        const context = load3dContext(patches);
+        if (!shape.valid || !context.patch || !context.element) {
           return `
             <section class="op-load3d-stage">
               <div class="op-load3d-empty">
@@ -7759,10 +7765,13 @@
             </section>
           `;
         }
-        const { transfer } = context;
-        const representative = context.elements.find((item) => !item.isPadding) || context.elements[0];
-        const repeatDirection = p.repeatMode === 0 ? 'K / width：改变 filter 窗口取点' : 'M / height：增加滑窗 leftTop 坐标';
-        const channelMode = p.cSize === 1 ? 'cSize=1，FP16 取 4 channel' : 'cSize=0，FP16 取完整 C0=16';
+        const { patch, element, sampleElements } = context;
+        const sampleIsPadding = sampleElements.some((item) => item.isPadding);
+        const currentSourceText = sampleIsPadding
+          ? `${sampleElements.length} 个逻辑通道值，全部为 PAD(${p.padValue})`
+          : `${sampleElements.length} 个逻辑通道值`;
+        const firstSampleCol = sampleElements[0]?.col ?? element.col;
+        const lastSampleCol = sampleElements[sampleElements.length - 1]?.col ?? element.col;
         return `
           <section class="op-load3d-stage">
             <div class="op-load3d-body">
@@ -7783,9 +7792,9 @@
                       <div class="op-load3d-viz-meta">
                         <h4>A1 布局</h4>
                         <div><b>N=1, C1=${shape.C1}, H=${p.Hi}, W=${p.Wi}, C0=${p.C0}</b></div>
-                        <div class="op-load3d-viz-note">padList [L, R, T, B] = ${p.padLeft} ${p.padRight} ${p.padTop} ${p.padBottom}${!p.showChannelPadding && shape.paddingChannels > 0 ? ` · 隐藏 ${shape.paddingChannels} 个 C0 padding lane` : ''}</div>
+                        <div class="op-load3d-viz-note">填充：${p.padTop} ${p.padRight} ${p.padBottom} ${p.padLeft}${!p.showChannelPadding && shape.paddingChannels > 0 ? ` · 隐藏的 C0 padding lanes：${shape.paddingChannels}` : ''}</div>
                       </div>
-                      <div class="op-load3d-viz-status">蓝色：当前有效窗口（不含 padding） · 橙色：采样 (${transfer.kh}, ${transfer.kw}) 的完整 ${shape.fetchChannels}-lane 搬运行</div>
+                      <div class="op-load3d-viz-status">当前：窗口行 ${element.row}, 采样 (${element.kh}, ${element.kw})，沿 C 轴</div>
                     </div>
                     <canvas class="op-load3d-canvas" id="opLoad3dA1Canvas" aria-label="NC1HWC0 A1 layout"></canvas>
                   </div>
@@ -7793,22 +7802,19 @@
                 <aside class="op-load3d-inspector">
                   <h4>参数总览</h4>
                   <div class="op-load3d-kv">
-                    <div class="op-load3d-kv-row"><span>当前输出位置</span><code>M=${transfer.row} · oh=${transfer.oh}, ow=${transfer.ow}</code></div>
-                    <div class="op-load3d-kv-row"><span>窗口左上角</span><code>H=${transfer.baseH}, W=${transfer.baseW}</code></div>
-                    <div class="op-load3d-kv-row"><span>当前采样</span><code>kh=${transfer.kh}, kw=${transfer.kw}</code></div>
-                    <div class="op-load3d-kv-row"><span>A2 写入范围</span><code>K=${transfer.columnStart}…${transfer.columnEnd}</code></div>
-                    <div class="op-load3d-kv-row"><span>逻辑写入顺序</span><code>K 从左到右，M 从上到下</code></div>
-                    <div class="op-load3d-kv-row"><span>API repeatMode</span><code>${p.repeatMode} · ${repeatDirection}</code></div>
-                    <div class="op-load3d-kv-row"><span>当前 repeat</span><code>instruction ${transfer.instructionIndex}, repeat ${transfer.repeatIndex + 1}/${p.repeatTime}</code></div>
-                    <div class="op-load3d-kv-row"><span>通道取数</span><code>${channelMode}</code></div>
-                    <div class="op-load3d-kv-row"><span>本次 padding</span><code>空间 ${context.spatialPaddingCount} · C-PAD ${context.channelPaddingCount}</code></div>
-                    <div class="op-load3d-kv-row"><span>jumpStride</span><code>${p.jumpStride}（目的首地址步长，不等同矩阵 cell）</code></div>
+                    <div class="op-load3d-kv-row"><span>当前输出位置</span><code>oh=${patch.oh}, ow=${patch.ow}</code></div>
+                    <div class="op-load3d-kv-row"><span>左上角 H / W</span><code>${patch.baseH}, ${patch.baseW}</code></div>
+                    <div class="op-load3d-kv-row"><span>取滤窗 H / W</span><code>kh=${element.kh}, kw=${element.kw}</code></div>
+                    <div class="op-load3d-kv-row"><span>C1 索引 / C 轴</span><code>c1=0, c=0…${p.Ci - 1}</code></div>
+                    <div class="op-load3d-kv-row"><span>本步搬运</span><code>${currentSourceText}</code></div>
+                    <div class="op-load3d-kv-row"><span>C1</span><code>ceil(${p.Ci} / ${p.C0}) = ${shape.C1}</code></div>
+                    <div class="op-load3d-kv-row"><span>物理通道</span><code>${shape.physicalSlots}</code></div>
+                    <div class="op-load3d-kv-row"><span>padding 通道</span><code>${shape.paddingChannels}</code></div>
                   </div>
                   <div class="op-load3d-formula">
-                    <div><code>M = oh × Wo + ow</code></div>
-                    <div><code>K = (kh × Wk + kw) × Cfetch + c</code></div>
-                    <div><code>srcH/W = leftTopH/W + kh/kw × dilationH/W</code></div>
-                    ${representative ? `<div>示例 cell：M=${representative.row}, K=${representative.column} → oh=${representative.oh}, ow=${representative.ow}, kh=${representative.kh}, kw=${representative.kw}, c=${representative.c}。</div>` : ''}
+                    <div><code>srcH = leftTopH + kh * dilationH</code></div>
+                    <div><code>srcW = leftTopW + kw * dilationW</code></div>
+                    <div>当前位置会沿 C 轴搬运，在 A2 第 <code>${element.row}</code> 行一次写入第 <code>${firstSampleCol}…${lastSampleCol}</code> 列，共 ${sampleElements.length} 个 cell。</div>
                   </div>
                 </aside>
               </section>
@@ -7816,22 +7822,22 @@
                 <div class="op-load3d-viz-head op-load3d-matrix-head">
                   <div class="op-load3d-viz-meta">
                     <h4>A2 逻辑矩阵</h4>
-                    <div>有效数据 M × K = (${shape.Ho} × ${shape.Wo}, ${p.Hk} × ${p.Wk} × ${shape.fetchChannels}) = ${shape.validRows} × ${shape.validCols}</div>
-                    <div>FP16 分形包络 = ceil(M/16) × 16, ceil(K/16) × 16 = ${shape.storageRows} × ${shape.storageCols}</div>
-                    <div>逻辑写入按行优先：当前 M 行先从左到右写完 K，再进入下一行；16×16 只表示底层分形包络。</div>
+                    <div>形状 = (${shape.Ho} * ${shape.Wo}, ${p.Hk} * ${p.Wk} * ${p.Ci}) = ${shape.rows} × ${shape.cols}</div>
+                    <div>C0 padding lane 只表示物理对齐槽位，不进入逻辑 A2 展开矩阵。</div>
                     <div class="op-load3d-legend" aria-label="A2 矩阵颜色图例">
-                      <span><i class="op-load3d-swatch row"></i>16 × 16 存储分形</span>
+                      <span><i class="op-load3d-swatch row"></i>当前窗口行</span>
+                      <span><i class="op-load3d-swatch col"></i>当前 C 轴向量</span>
                       <span><i class="op-load3d-swatch written"></i>已写入</span>
-                      <span><i class="op-load3d-swatch pad"></i>PAD / C-PAD / TAIL</span>
-                      <span><i class="op-load3d-swatch active"></i>当前 Cfetch 搬运</span>
+                      <span><i class="op-load3d-swatch pad"></i>PAD 来源</span>
+                      <span><i class="op-load3d-swatch active"></i>当前 C 轴写入</span>
                     </div>
                   </div>
                   <div class="op-load3d-pills">
-                    <span class="op-load3d-pill is-hot">M ${transfer.row} · K ${transfer.columnStart}…${transfer.columnEnd}</span>
-                    <span class="op-load3d-pill">row-major：左 → 右，完成后上 → 下</span>
+                    <span class="op-load3d-pill is-hot">row = oh × Wo + ow = ${element.row}</span>
+                    <span class="op-load3d-pill">cols ${firstSampleCol}…${lastSampleCol}：固定 kh=${element.kh}, kw=${element.kw}，遍历 c</span>
                   </div>
                 </div>
-                <div class="op-load3d-matrix-scroll" aria-label="A2 逻辑矩阵">
+                <div class="op-load3d-matrix-scroll" aria-label="A2 逻辑矩阵滚动区域">
                   <div class="op-load3d-matrix-canvas-host">
                     <canvas id="opLoad3dA2Canvas" aria-label="A2 logical matrix"></canvas>
                   </div>
@@ -7842,9 +7848,9 @@
         `;
       };
 
-      const mountLoad3dPlayback = (p, shape, transfers) => {
+      const mountLoad3dPlayback = (patches) => {
         const helper = window.PtoFloatingPlaybackControl;
-        if (!helper || !transfers.length) return;
+        if (!helper || !patches.length) return;
         const ids = {
           shell: 'load3d-api-shell',
           toggle: 'load3d-api-toggle',
@@ -7867,34 +7873,34 @@
         helper.initScrubberHover({
           root: control,
           ids,
-          totalSteps: () => load3dTotalSteps(transfers),
+          totalSteps: () => load3dTotalSteps(patches),
           getLabelForStep: (step) => {
-            const context = load3dContextAtStep(p, shape, transfers, step);
-            return context.transfer
-              ? `M ${context.transfer.row} · oh ${context.transfer.oh}, ow ${context.transfer.ow} · kh ${context.transfer.kh}, kw ${context.transfer.kw} · K ${context.transfer.columnStart}…${context.transfer.columnEnd}`
+            const context = load3dContextAtStep(patches, step);
+            return context.element
+              ? `oh ${context.element.oh}, ow ${context.element.ow}, kh ${context.element.kh}, kw ${context.element.kw}`
               : `Step ${step + 1}`;
           }
         });
         const sync = () => {
-          const context = load3dContextAtStep(p, shape, transfers, load3dApiStep);
+          const context = load3dContextAtStep(patches, load3dApiStep);
           load3dApiPlayback?.sync({ isPlaying: () => load3dApiPlaying });
           const label = control.querySelector(`#${ids.scrubberLabel}`);
           const opname = control.querySelector(`#${ids.scrubberOpname}`);
           const scrubber = control.querySelector(`#${ids.scrubber}`);
           const play = control.querySelector(`#${ids.play}`);
-          if (label) label.textContent = `${load3dApiStep + 1} / ${Math.max(1, load3dTotalSteps(transfers))}`;
-          if (opname) opname.textContent = context.transfer
-            ? `Load3D M ${context.transfer.row} · K ${context.transfer.columnStart}…${context.transfer.columnEnd}`
+          if (label) label.textContent = `${load3dApiStep + 1} / ${Math.max(1, load3dTotalSteps(patches))}`;
+          if (opname) opname.textContent = context.element
+            ? `patch ${context.patch.row}, sample ${context.element.kh},${context.element.kw} · C axis`
             : '-';
           if (scrubber) {
             scrubber.min = '0';
-            scrubber.max = String(Math.max(0, load3dTotalSteps(transfers) - 1));
+            scrubber.max = String(Math.max(0, load3dTotalSteps(patches) - 1));
             scrubber.value = String(load3dApiStep);
           }
           if (play) play.innerHTML = helper.iconLabel(load3dApiPlaying ? 'pause' : 'play', load3dApiPlaying ? 'Pause' : 'Play');
         };
         const goStep = (next) => {
-          load3dApiStep = Math.max(0, Math.min(load3dTotalSteps(transfers) - 1, next));
+          load3dApiStep = Math.max(0, Math.min(load3dTotalSteps(patches) - 1, next));
           renderLoad3dStage();
         };
         control.querySelector(`#${ids.stepBack}`)?.addEventListener('click', () => {
@@ -7919,12 +7925,10 @@
             sync();
             return;
           }
-          if (load3dApiStep >= load3dTotalSteps(transfers) - 1) load3dApiStep = 0;
+          if (load3dApiStep >= load3dTotalSteps(patches) - 1) load3dApiStep = 0;
           load3dApiPlaying = true;
           load3dApiTimer = setInterval(() => {
-            const liveParams = load3dParams();
-            const liveShape = load3dShape(liveParams);
-            const maxStep = load3dTotalSteps(load3dTransfers(liveParams, liveShape)) - 1;
+            const maxStep = load3dTotalSteps(load3dPatches(load3dParams(), load3dShape(load3dParams()))) - 1;
             if (load3dApiStep >= maxStep) {
               stopLoad3dApiPlayback();
             } else {
@@ -7943,14 +7947,14 @@
         if (!stage) return;
         const p = load3dParams();
         const shape = load3dShape(p);
-        const transfers = load3dTransfers(p, shape);
-        load3dApiStep = Math.max(0, Math.min(load3dApiStep, Math.max(0, load3dTotalSteps(transfers) - 1)));
+        const patches = load3dPatches(p, shape);
+        load3dApiStep = Math.max(0, Math.min(load3dApiStep, Math.max(0, load3dTotalSteps(patches) - 1)));
         setLoad3dApiPlaybackVisible(false);
         destroyLoad3dPatternControllers();
         stage.innerHTML = renderLoad3dSceneMarkup();
         requestAnimationFrame(() => {
           renderLoad3dNativeCanvases();
-          mountLoad3dPlayback(p, shape, transfers);
+          mountLoad3dPlayback(patches);
         });
       }
 
@@ -7958,7 +7962,7 @@
         const fields = [
           { key: 'H', label: 'Hi', min: 1, max: 8, group: '输入源参数' },
           { key: 'W', label: 'Wi', min: 1, max: 8, group: '输入源参数' },
-          { key: 'Ci', label: '有效通道 C', min: 1, max: 16, group: '输入源参数' },
+          { key: 'Ci', label: 'Ci', min: 1, max: 16, group: '输入源参数' },
           { key: 'filterH', label: 'Hk', min: 1, max: 5, group: '窗口参数' },
           { key: 'filterW', label: 'Wk', min: 1, max: 5, group: '窗口参数' },
           { key: 'strideH', label: 'strideH', min: 1, max: 4, group: '滑动参数' },
@@ -7974,11 +7978,11 @@
           { key: 'jumpStride', label: 'jumpStride', min: 1, max: 16, group: '重复参数' }
         ];
         const presets = [
-          { name: '完整 C0', values: { H: 4, W: 4, Ci: 1, C0: 16, cSize: 0, filterH: 2, filterW: 2, strideH: 1, strideW: 1, padTop: 0, padRight: 0, padBottom: 0, padLeft: 0, dilationH: 1, dilationW: 1 } },
-          { name: 'RGB / C0', values: { H: 5, W: 5, Ci: 3, C0: 16, cSize: 0, filterH: 3, filterW: 3, strideH: 1, strideW: 1, padTop: 0, padRight: 0, padBottom: 0, padLeft: 0, dilationH: 1, dilationW: 1 } },
-          { name: 'Padding', values: { H: 4, W: 4, Ci: 1, C0: 16, cSize: 0, filterH: 3, filterW: 3, strideH: 1, strideW: 1, padTop: 1, padRight: 1, padBottom: 1, padLeft: 1, dilationH: 1, dilationW: 1 } },
-          { name: 'cSize = 4', values: { H: 5, W: 5, Ci: 4, C0: 16, cSize: 1, filterH: 3, filterW: 3, strideH: 1, strideW: 1, padTop: 0, padRight: 0, padBottom: 0, padLeft: 0, dilationH: 1, dilationW: 1 } },
-          { name: 'Dilation', values: { H: 7, W: 7, Ci: 3, C0: 16, cSize: 0, filterH: 3, filterW: 3, strideH: 1, strideW: 1, padTop: 0, padRight: 0, padBottom: 0, padLeft: 0, dilationH: 2, dilationW: 2 } }
+          { name: '基础展开', values: { H: 4, W: 4, Ci: 1, C0: 16, filterH: 2, filterW: 2, strideH: 1, strideW: 1, padTop: 0, padRight: 0, padBottom: 0, padLeft: 0, dilationH: 1, dilationW: 1 } },
+          { name: 'RGB 输入', values: { H: 5, W: 5, Ci: 3, C0: 16, filterH: 3, filterW: 3, strideH: 1, strideW: 1, padTop: 0, padRight: 0, padBottom: 0, padLeft: 0, dilationH: 1, dilationW: 1 } },
+          { name: 'Padding', values: { H: 4, W: 4, Ci: 1, C0: 16, filterH: 3, filterW: 3, strideH: 1, strideW: 1, padTop: 1, padRight: 1, padBottom: 1, padLeft: 1, dilationH: 1, dilationW: 1 } },
+          { name: 'Dilation', values: { H: 7, W: 7, Ci: 3, C0: 16, filterH: 3, filterW: 3, strideH: 1, strideW: 1, padTop: 0, padRight: 0, padBottom: 0, padLeft: 0, dilationH: 2, dilationW: 2 } },
+          { name: 'NC1HWC0', values: { H: 5, W: 5, Ci: 3, C0: 16, filterH: 3, filterW: 3, strideH: 1, strideW: 1, padTop: 0, padRight: 0, padBottom: 0, padLeft: 0, dilationH: 1, dilationW: 1 } }
         ];
         const groups = new Map();
         fields.forEach((field) => {
@@ -7988,16 +7992,11 @@
         const groupHtml = Array.from(groups.entries()).map(([title, groupFields]) => {
           const extra = title === '输入源参数' ? `
             <div class="field">
-              <label for="load3d-api-C0">C0（FP16 固定）</label>
-              <input class="input" id="load3d-api-C0" type="number" value="16" disabled>
-            </div>
-            <div class="field" style="grid-column:1/-1">
-              <label>V1 通道取数宽度</label>
-              <div class="seg">
-                <button class="btn btn-sm ${load3dApiState.cSize === 0 ? 'active' : ''}" type="button" data-load3d-csize="0">完整 C0 · 16</button>
-                <button class="btn btn-sm ${load3dApiState.cSize === 1 ? 'active' : ''}" type="button" data-load3d-csize="1" ${load3dApiState.Ci > 4 ? 'disabled' : ''}>cSize 优化 · 4</button>
-              </div>
-              <div class="hint-text">A2 的 K 使用实际取数宽度 Cfetch；未被有效 C 占用的 lane 作为 C-PAD cell 显示。</div>
+              <label for="load3d-api-C0">C0</label>
+              <select id="load3d-api-C0">
+                <option value="16" ${load3dApiState.C0 === 16 ? 'selected' : ''}>16</option>
+                <option value="32" ${load3dApiState.C0 === 32 ? 'selected' : ''}>32</option>
+              </select>
             </div>
             <div class="field" style="grid-column:1/-1">
               <label>padding 通道</label>
@@ -8015,7 +8014,7 @@
                 <button class="btn btn-sm ${load3dApiState.repeatMode === 1 ? 'active' : ''}" type="button" data-load3d-repeat="1">模式 1</button>
               </div>
             </div>
-            <div class="hint-text">${load3dApiState.repeatMode === 0 ? '模式 0：每次 repeat 改变 filter 取点，目的矩阵沿 width 方向增长。' : '模式 1：filter 取点不变，每次 repeat 增加滑窗 leftTop，目的矩阵沿 height 方向增长。'}A2 逻辑视图统一按行优先展示：K 从左到右，完成后 M 从上到下。</div>
+            <div class="hint-text">${load3dApiState.repeatMode === 0 ? '模式 0：强调 filter 内部 W 方向推进。' : '模式 1：强调滑窗 leftTop H 方向推进。'}学习视角，不是完整微指令仿真。</div>
           ` : '';
           return `
             <section class="group">
@@ -8042,47 +8041,20 @@
               </div>
             </section>
             ${groupHtml}
-            <section class="group" aria-label="Load3D 函数原型">
-              <div class="group-title">函数原型</div>
-              <pre class="prototype-code"><code data-load3d-prototype-code></code></pre>
-            </section>
-            <section class="group" aria-label="Load3D 当前调用片段">
-              <div class="prototype-head">
-                <div>
-                  <div class="group-title">当前调用片段</div>
-                  <div class="hint-text">随当前参数实时更新，可复制到 kernel 草稿中继续补全。</div>
-                </div>
-                <button class="btn btn-sm btn-ghost" type="button" data-load3d-copy-code>复制代码</button>
-              </div>
-              <pre class="prototype-code"><code data-load3d-code-skeleton></code></pre>
-              <div class="hint-text">字段顺序参考 CANN 9.1 beta3 的 LoadData3DParamsV1 文档；实际工程仍需按目标芯片与已安装 CANN header 校验。</div>
-            </section>
           </div>
         `;
-        renderLoad3dCodeBlocks();
-        $('[data-load3d-copy-code]')?.addEventListener('click', (event) => copyLoad3dCodeSkeleton(event.currentTarget));
         fields.forEach((field) => {
           $(`#load3d-api-${field.key}`)?.addEventListener('input', (event) => {
             const value = Number.parseInt(event.target.value, 10);
             load3dApiState[field.key] = Math.max(field.min, Math.min(field.max, Number.isFinite(value) ? value : load3dApiState[field.key]));
-            if (field.key === 'Ci' && load3dApiState.Ci > 4 && load3dApiState.cSize === 1) {
-              load3dApiState.cSize = 0;
-              renderLoad3dControls();
-            }
             stopLoad3dApiPlayback();
             load3dApiStep = 0;
             renderLoad3dStage();
-            renderLoad3dCodeSkeleton();
           });
         });
-        $$('[data-load3d-csize]').forEach((button) => {
-          button.addEventListener('click', () => {
-            load3dApiState.cSize = Number(button.dataset.load3dCsize);
-            stopLoad3dApiPlayback();
-            load3dApiStep = 0;
-            renderLoad3dControls();
-            renderLoad3dStage();
-          });
+        $('#load3d-api-C0')?.addEventListener('change', (event) => {
+          load3dApiState.C0 = Number(event.target.value);
+          renderLoad3dStage();
         });
         $$('[data-load3d-channel-padding]').forEach((button) => {
           button.addEventListener('click', () => {
@@ -8116,7 +8088,6 @@
       };
 
       const showRecommendationTrace = () => {
-        destroyLoad3dPatternControllers();
         $('#formatLabView').hidden = true;
         $('#addApiView').hidden = true;
         stopAddApiPlayback();
@@ -8132,26 +8103,7 @@
         if (centerScroll) centerScroll.scrollTop = 0;
       };
 
-      const apiVisualizationDocLinks = {
-        Load3D: 'https://www.hiascend.com/document/detail/zh/CANNCommunityEdition/910beta3/API/ascendcopapi/atlasascendc_api_07_00170.html',
-        Add: 'https://www.hiascend.com/document/detail/zh/CANNCommunityEdition/910beta3/API/ascendcopapi/atlasascendc_api_07_0035.html'
-      };
-
-      const apiVisualizationNotes = {
-        Load3D: 'Load3D 展示 NC1HWC0 A1 的有效窗口与当前 Cfetch 搬运行，再按 A2 逻辑矩阵从左到右、从上到下展示写入；16×16 仅表示 FP16 存储分形。',
-        Add: 'Add 按 load → src → dst → process 阶段逐 block 推进；输入值与 dstLocal 结果均在网格中可见。'
-      };
-
-      const renderApiVisualizationNote = () => {
-        const note = $('[data-api-mode-note]');
-        if (!note) return;
-        const copy = apiVisualizationNotes[apiVisualizationMode] || apiVisualizationNotes.Add;
-        const href = apiVisualizationDocLinks[apiVisualizationMode] || apiVisualizationDocLinks.Add;
-        note.innerHTML = `${copy} <a class="add-api-note__link" href="${href}" target="_blank" rel="noopener noreferrer">查看文档</a>`;
-      };
-
       const showApiVisualization = (apiKey = 'Add') => {
-        if (apiVisualizationMode === 'Load3D' && apiKey !== 'Load3D') destroyLoad3dPatternControllers();
         apiVisualizationMode = apiKey === 'Load3D' ? 'Load3D' : 'Add';
         $('#decisionTracePanel').hidden = true;
         $('#formatLabView').hidden = true;
@@ -8162,7 +8114,12 @@
         setText('[data-center-meta]', `${apiVisualizationMode} · native interactive parameter sandbox`);
         setText('[data-status-stage]', `${apiVisualizationMode} API · native visualization`);
         setText('[data-api-mode-label]', apiVisualizationMode);
-        renderApiVisualizationNote();
+        setText(
+          '[data-api-mode-note]',
+          apiVisualizationMode === 'Load3D'
+            ? 'Load3D 展示滑窗如何从 NCHW 输入映射到 NC1HWC0 A1 布局，再按采样位置沿 C 轴批量写入 A2 逻辑矩阵。'
+            : 'Add 按 load → src → dst → process 阶段逐 block 推进；输入值与 dstLocal 结果均在网格中可见。'
+        );
         const centerScroll = $('[data-ide-pane="editor-preview"] .pane-scroll');
         if (centerScroll) centerScroll.scrollTop = 0;
 
@@ -8197,6 +8154,12 @@
       };
 
       const rtFormatState = { layout: 'ND', dtype: 'float16', rows: 20, cols: 20, matrixZoom: 0.6, selectedAddress: null };
+      const rtFormatPlaybackState = { timer: null, running: false, cursor: -1, speed: 1, autoPlayedKey: null };
+      const rtFormatStopPlaybackTimer = () => {
+        if (rtFormatPlaybackState.timer !== null) window.clearTimeout(rtFormatPlaybackState.timer);
+        rtFormatPlaybackState.timer = null;
+        rtFormatPlaybackState.running = false;
+      };
 
       const FORMAT_LAYOUTS = {
         ND: { fragmented: false, createInfo: (config, base) => base, address: (r, c, info) => ({ idx: r * info.strideRow1 + c * info.strideCol1, ir: 0, or: r, ic: 0, oc: c }) },
@@ -8342,13 +8305,15 @@
         const groups = fragmented
           ? Array.from(new Set(projection.matrixElements.map((item) => item.blockId))).map((blockId) => projection.matrixElements.filter((item) => item.blockId === blockId))
           : [projection.matrixElements];
+        const stageBounds = rtFormatGridSize(config, info);
+        const framePad = fragmented ? 7 : 0;
         const routes = groups.map((items) => {
           const first = items.reduce((current, item) => item.sequence < current.sequence ? item : current, items[0]);
           const last = items.reduce((current, item) => item.sequence > current.sequence ? item : current, items[0]);
           const minR = Math.min(...items.map((item) => item.r)); const maxR = Math.max(...items.map((item) => item.r));
           const minC = Math.min(...items.map((item) => item.c)); const maxC = Math.max(...items.map((item) => item.c));
-          const left = xAt(minC, inset); const right = xAt(maxC + 1, -4 - inset) - fractalGap;
-          const top = yAt(minR, inset); const bottom = yAt(maxR + 1, -4 - inset) - fractalGap;
+          const left = Math.max(1, xAt(minC, -framePad)); const right = Math.min(stageBounds.width - 1, xAt(maxC + 1, -4 + framePad) - fractalGap);
+          const top = Math.max(1, yAt(minR, -framePad)); const bottom = Math.min(stageBounds.height - 1, yAt(maxR + 1, -4 + framePad) - fractalGap);
           const start = [xAt(first.c, cellCenter), yAt(first.r, cellCenter)];
           const end = [xAt(last.c, cellCenter), yAt(last.r, cellCenter)];
           const columnMajor = ['ZN', 'NN', 'DN'].includes(config.layout);
@@ -8358,12 +8323,27 @@
           const pathPoints = points.slice();
           pathPoints[0] = start;
           pathPoints[pathPoints.length - 1] = end;
-          return { first, start, end, left, right, top, bottom, path: buildRoundedPath(pathPoints, 24) };
+          const pointAlong = (a, b, distance) => {
+            const dx = b[0] - a[0]; const dy = b[1] - a[1]; const length = Math.hypot(dx, dy);
+            if (!length) return { x: a[0], y: a[1], angle: 0 };
+            const ratio = Math.min(.34, distance / length);
+            return { x: a[0] + dx * ratio, y: a[1] + dy * ratio, angle: Math.atan2(dy, dx) * 180 / Math.PI };
+          };
+          const startChevron = pointAlong(pathPoints[0], pathPoints[1], 14);
+          const middleStart = pathPoints[1]; const middleEnd = pathPoints[2];
+          const middleChevron = {
+            x: (middleStart[0] + middleEnd[0]) / 2,
+            y: (middleStart[1] + middleEnd[1]) / 2,
+            angle: Math.atan2(middleEnd[1] - middleStart[1], middleEnd[0] - middleStart[0]) * 180 / Math.PI
+          };
+          return { first, start, end, left, right, top, bottom, path: buildRoundedPath(pathPoints, 24), chevrons: [startChevron, middleChevron] };
         }).sort((a, b) => a.first.sequence - b.first.sequence);
-        const outlines = routes.map((route) => `<rect class="format-fractal-outline" x="${route.left - inset / 2}" y="${route.top - inset / 2}" width="${route.right - route.left + inset}" height="${route.bottom - route.top + inset}" rx="4" style="stroke-width:${stableStroke}px"></rect>`).join('');
+        const outlines = routes.map((route) => `<rect class="format-fractal-outline"${route.first.blockId ? ` data-rt-format-block-outline="${route.first.blockId}"` : ''} x="${route.left}" y="${route.top}" width="${route.right - route.left}" height="${route.bottom - route.top}" rx="10" style="stroke-width:${stableStroke}px"></rect>`).join('');
         const paths = routes.map((route) => `<path class="format-fractal-path" d="${route.path}" style="stroke-width:${stableStroke}px"></path>`).join('');
         const connectors = routes.slice(0, -1).map((route, index) => { const next = routes[index + 1]; return `<path class="format-fractal-connector" d="M ${route.end[0]} ${route.end[1]} L ${next.start[0]} ${next.start[1]}" style="stroke-width:${stableStroke}px"></path>`; }).join('');
-        return `${outlines}${paths}${connectors}`;
+        const chevronScale = (1 / config.matrixZoom).toFixed(3);
+        const chevrons = routes.flatMap((route) => route.chevrons).map((chevron) => `<path class="format-reading-chevron" d="M -8 -5 L -3 0 L -8 5 M -1 -5 L 4 0 L -1 5" transform="translate(${chevron.x} ${chevron.y}) rotate(${chevron.angle}) scale(${chevronScale})"></path>`).join('');
+        return `${outlines}${paths}${connectors}${chevrons}`;
       };
 
       const rtFormatPhysicalSlots = (projection) => projection.physicalSlots.map((item, offset) => {
@@ -8385,7 +8365,34 @@
         root.querySelector('[data-rt-format-trace]').textContent = `${rtFormatRule(rtFormatState, rtFormatLayout(rtFormatState))} = ${item.address.idx}`;
       };
 
+      const RT_FORMAT_READING_CLASSES = ['is-reading-complete', 'is-reading-trail-4', 'is-reading-trail-3', 'is-reading-trail-2', 'is-reading-trail-1', 'is-reading-current'];
+      const rtFormatPaintPlayback = (root, projection, sequence) => {
+        const cursor = rtFormatPlaybackState.cursor;
+        const orderByAddress = new Map(sequence.map((address, index) => [address, index]));
+        root.querySelectorAll('.format-lab-logical-cell').forEach((cell) => {
+          cell.classList.remove(...RT_FORMAT_READING_CLASSES);
+          if (cursor < 0) return;
+          const order = orderByAddress.get(Number(cell.dataset.rtFormatAddress));
+          if (order > cursor) return;
+          const age = cursor - order;
+          if (age === 0) cell.classList.add('is-reading-current');
+          else if (age <= 4) cell.classList.add(`is-reading-trail-${age}`);
+          else cell.classList.add('is-reading-complete');
+        });
+        root.querySelectorAll('.format-fractal-outline.is-reading-block').forEach((outline) => outline.classList.remove('is-reading-block'));
+        root.querySelector('.format-lab-grid-stage')?.classList.toggle('is-playing', cursor >= 0);
+        if (cursor < 0 || !sequence.length) return;
+        const address = sequence[Math.min(cursor, sequence.length - 1)];
+        const current = projection.byAddress.get(address);
+        if (current?.blockId) root.querySelector(`[data-rt-format-block-outline="${current.blockId}"]`)?.classList.add('is-reading-block');
+        rtFormatHighlight(root, projection, address);
+        const readout = root.querySelector('[data-rt-format-playback-readout]');
+        if (readout) readout.textContent = `P${address} / P${sequence.length - 1}`;
+      };
+
       const renderRtFormatLab = () => {
+        rtFormatStopPlaybackTimer();
+        rtFormatPlaybackState.cursor = -1;
         const root = $('#formatLabView'); const config = rtFormatState; const info = rtFormatLayout(config); const projection = rtFormatProjection(config, info);
         const gridSize = rtFormatGridSize(config, info);
         const logicalSize = config.rows * config.cols; const overhead = (projection.physicalSize / logicalSize).toFixed(2);
@@ -8393,6 +8400,84 @@
           <aside class="format-lab-controls" aria-label="Format layout controls"><section class="format-lab-section"><div class="format-lab-section__head"><strong>控制项</strong><span>shape / dtype / format</span></div><div class="format-lab-fields"><div class="control-field format-lab-layout"><label>布局格式</label><div class="tab-control format-dtype-tabs" role="group" aria-label="布局格式">${['ND', 'DN', 'NZ', 'ZN', 'ZZ', 'NN'].map((value) => `<button class="tab-control-item${config.layout === value ? ' is-selected' : ''}" type="button" data-rt-format-layout="${value}" aria-pressed="${config.layout === value}">${value}</button>`).join('')}</div><p class="format-lab-layout-hint">${rtFormatReadingHint(config.layout)}</p></div><label class="control-field format-lab-dtype">数据类型 <span class="format-lab-dtype-value">${[['float16', 'float16 / half'], ['float32', 'float32'], ['int8', 'int8'], ['fp8_e8m0_t', 'fp8_e8m0_t']].find(([value]) => value === config.dtype)[1]}</span><input class="format-lab-dtype-slider" data-rt-format-dtype type="range" min="0" max="3" step="1" value="${['float16', 'float32', 'int8', 'fp8_e8m0_t'].indexOf(config.dtype)}" aria-label="数据类型"></label><div class="stepper-pair"><div class="control-field"><label for="formatRows">行数</label><div class="stepper-control"><button type="button" aria-label="减少行数" data-rt-format-stepper="rows" data-delta="-1">−</button><input id="formatRows" type="number" min="1" max="32" step="1" value="${config.rows}" readonly tabindex="-1" aria-label="行数"><button type="button" aria-label="增加行数" data-rt-format-stepper="rows" data-delta="1">+</button></div></div><div class="control-field"><label for="formatCols">列数</label><div class="stepper-control"><button type="button" aria-label="减少列数" data-rt-format-stepper="cols" data-delta="-1">−</button><input id="formatCols" type="number" min="1" max="32" step="1" value="${config.cols}" readonly tabindex="-1" aria-label="列数"><button type="button" aria-label="增加列数" data-rt-format-stepper="cols" data-delta="1">+</button></div></div></div></div></section><section class="format-lab-section"><div class="format-lab-section__head"><strong>布局规则</strong><span>mock teaching model</span></div><div class="format-lab-formula"><span>C0 对齐</span><code>C0_ELEMENT = ${info.c0} (sizeof(T) = ${info.sizeofT}B)</code><span>对齐后的形状</span><code>${rtFormatShape(info)}</code><span>对齐后的 stride</span><code>${rtFormatStride(info)}</code><span>映射公式</span><code>${rtFormatRule(config, info)}</code></div></section></aside>
           <section class="format-lab-visuals" aria-label="Logical tensor, layout overlay, and physical memory"><section class="format-lab-visual"><div class="format-lab-visual__head"><strong>2D 逻辑矩阵</strong><div class="zoom-control-group" aria-label="逻辑矩阵缩放"><button class="btn btn-sm btn-ghost" type="button" data-rt-format-zoom="-0.1" aria-label="缩小逻辑矩阵">−</button><span class="zoom-control-readout" data-rt-format-zoom-readout>${Math.round(config.matrixZoom * 100)}%</span><button class="btn btn-sm btn-ghost" type="button" data-rt-format-zoom="0.1" aria-label="放大逻辑矩阵">+</button></div><span>${config.rows} × ${config.cols} · padded ${info.paddedRows} × ${info.paddedCols}</span></div><div class="format-lab-layout-legend" aria-label="逻辑矩阵图例"><span class="format-lab-legend-item"><i class="format-lab-legend-mark is-fractal" aria-hidden="true"></i>分形</span><span class="format-lab-legend-item"><i class="format-lab-legend-mark is-pad" aria-hidden="true"></i>PAD</span><span class="format-lab-legend-item"><svg class="format-lab-legend-mark is-path" viewBox="0 0 16 16" aria-hidden="true"><path d="M2 3H14L2 13H14"></path></svg>阅读顺序</span></div><div class="format-lab-grid-scroll"><div class="format-lab-grid-zoom-host" style="width: ${gridSize.width * config.matrixZoom}px; height: ${gridSize.height * config.matrixZoom}px"><div class="format-lab-grid-zoom" style="transform: scale(${config.matrixZoom})"><div class="format-lab-grid-stage" style="width: ${gridSize.width}px; height: ${gridSize.height}px"><svg class="format-layout-arrows" viewBox="0 0 ${gridSize.width} ${gridSize.height}" role="img" aria-label="${config.layout} 格式的分形读取路径">${rtFormatTraversalArrows(projection, config, info)}</svg><div class="format-lab-grid" style="grid-template-columns: repeat(${info.paddedCols}, 38px)">${rtFormatLogicalCells(projection, config)}</div></div></div></div></div></section><section class="format-lab-visual"><div class="format-lab-visual__head"><strong>1D 物理内存</strong><span>offset 0 … ${projection.maxAddress}</span></div><div class="format-lab-layout-legend">按当前布局的 P# 顺序展开；PAD 是对齐产生的物理 slot，不属于逻辑 Tensor。</div><div class="format-lab-ribbon-scroll"><div class="format-lab-ribbon">${rtFormatPhysicalSlots(projection)}</div></div></section></section>
           <aside class="format-lab-inspector" aria-label="Format mapping inspector"><section class="format-lab-section"><div class="format-lab-section__head"><strong>映射检查器</strong><span>选择单元格</span></div><p class="format-lab-note">逻辑矩阵固定表达 Tensor 坐标与 L#。格式和 dtype 只改变 P#、分形边界、Padding 与 1D 物理排列；不表示运行时真实地址。</p></section><div class="format-lab-metrics"><div class="format-lab-metric"><span>逻辑元素</span><strong>${logicalSize}</strong></div><div class="format-lab-metric"><span>物理元素</span><strong class="${projection.physicalSize === logicalSize ? '' : 'is-warning'}">${projection.physicalSize}</strong></div><div class="format-lab-metric"><span>Padding 元素</span><strong class="${projection.physicalSize === logicalSize ? '' : 'is-warning'}">${projection.physicalSize - logicalSize}</strong></div><div class="format-lab-metric"><span>内存开销</span><strong class="${Number(overhead) === 1 ? '' : 'is-warning'}">${overhead}×</strong></div><div class="format-lab-metric"><span>映射校验</span><strong class="${projection.errors.length ? 'is-warning' : ''}">${projection.errors.length ? '需检查' : '通过'}</strong></div></div><div class="format-lab-trace" data-rt-format-status>选择逻辑单元或物理 slot，查看 L# → P# → @offset。</div><div class="format-lab-trace" data-rt-format-trace>${projection.errors.length ? projection.errors.join('；') : '布局映射为连续的一维物理排列。'}</div></aside>`;
+        const logicalHead = root.querySelector('.format-lab-visual__head');
+        const zoomControls = logicalHead?.querySelector('.zoom-control-group');
+        if (logicalHead && zoomControls) {
+          const visualActions = document.createElement('div');
+          visualActions.className = 'format-lab-visual-actions';
+          visualActions.innerHTML = `<div class="format-lab-playback-controls" aria-label="阅读顺序播放控制"><button class="btn btn-sm btn-ghost" type="button" data-rt-format-playback-step="-1" aria-label="上一个元素">‹</button><button class="btn btn-sm btn-ghost" type="button" data-rt-format-playback-toggle aria-pressed="false">播放</button><button class="btn btn-sm btn-ghost" type="button" data-rt-format-playback-step="1" aria-label="下一个元素">›</button><button class="btn btn-sm btn-ghost" type="button" data-rt-format-playback-reset aria-label="重新开始">↺</button><button class="btn btn-sm btn-ghost" type="button" data-rt-format-playback-speed aria-label="切换播放速度">1×</button><span class="format-lab-playback-readout" data-rt-format-playback-readout>未播放</span></div>`;
+          visualActions.append(zoomControls);
+          logicalHead.insertBefore(visualActions, logicalHead.lastElementChild);
+        }
+        const playbackSequence = projection.physicalSlots.filter((item) => !item.isGap).map((item) => item.address.idx);
+        const playbackToggle = root.querySelector('[data-rt-format-playback-toggle]');
+        const playbackSpeed = root.querySelector('[data-rt-format-playback-speed]');
+        const updatePlaybackControls = () => {
+          if (playbackToggle) {
+            playbackToggle.textContent = rtFormatPlaybackState.running ? '暂停' : '播放';
+            playbackToggle.setAttribute('aria-pressed', String(rtFormatPlaybackState.running));
+          }
+          if (playbackSpeed) playbackSpeed.textContent = `${rtFormatPlaybackState.speed}×`;
+        };
+        const pausePlayback = () => { rtFormatStopPlaybackTimer(); updatePlaybackControls(); };
+        const paintPlayback = () => rtFormatPaintPlayback(root, projection, playbackSequence);
+        const scrollPhysicalPlaybackIntoView = () => {
+          const address = playbackSequence[rtFormatPlaybackState.cursor];
+          const cell = root.querySelector(`.format-lab-ribbon .format-lab-cell[data-rt-format-address="${address}"]`);
+          const scroller = root.querySelector('.format-lab-ribbon-scroll');
+          if (!cell || !scroller) return;
+          const left = cell.offsetLeft; const right = left + cell.offsetWidth;
+          if (left < scroller.scrollLeft || right > scroller.scrollLeft + scroller.clientWidth) scroller.scrollTo({ left: Math.max(0, left - scroller.clientWidth / 2), behavior: 'smooth' });
+        };
+        const tickPlayback = () => {
+          if (!rtFormatPlaybackState.running) return;
+          if (rtFormatPlaybackState.cursor >= playbackSequence.length - 1) { pausePlayback(); return; }
+          rtFormatPlaybackState.cursor += 1;
+          paintPlayback();
+          const scrollStride = Math.max(1, Math.round(playbackSequence.length / 28));
+          if (rtFormatPlaybackState.cursor % scrollStride === 0) scrollPhysicalPlaybackIntoView();
+          const baseDelay = Math.max(28, Math.min(150, 8500 / Math.max(1, playbackSequence.length)));
+          rtFormatPlaybackState.timer = window.setTimeout(tickPlayback, baseDelay / rtFormatPlaybackState.speed);
+        };
+        const startPlayback = () => {
+          rtFormatStopPlaybackTimer();
+          if (rtFormatPlaybackState.cursor >= playbackSequence.length - 1) rtFormatPlaybackState.cursor = -1;
+          rtFormatState.selectedAddress = null;
+          rtFormatPlaybackState.running = true;
+          updatePlaybackControls();
+          tickPlayback();
+        };
+        playbackToggle?.addEventListener('click', () => { if (rtFormatPlaybackState.running) pausePlayback(); else startPlayback(); });
+        root.querySelectorAll('[data-rt-format-playback-step]').forEach((button) => button.addEventListener('click', () => {
+          pausePlayback();
+          const delta = Number(button.dataset.rtFormatPlaybackStep);
+          rtFormatPlaybackState.cursor = Math.max(0, Math.min(playbackSequence.length - 1, rtFormatPlaybackState.cursor + delta));
+          rtFormatState.selectedAddress = null;
+          paintPlayback();
+          scrollPhysicalPlaybackIntoView();
+        }));
+        root.querySelector('[data-rt-format-playback-reset]')?.addEventListener('click', () => {
+          pausePlayback();
+          rtFormatPlaybackState.cursor = -1;
+          rtFormatState.selectedAddress = null;
+          paintPlayback();
+          rtFormatClear(root);
+          const readout = root.querySelector('[data-rt-format-playback-readout]');
+          if (readout) readout.textContent = '未播放';
+          root.querySelector('[data-rt-format-status]').textContent = '选择逻辑单元或物理 slot，查看 L# → P# → @offset。';
+          root.querySelector('[data-rt-format-trace]').textContent = projection.errors.length ? projection.errors.join('；') : '布局映射为连续的一维物理排列。';
+        });
+        playbackSpeed?.addEventListener('click', () => {
+          const speeds = [.5, 1, 2]; const index = speeds.indexOf(rtFormatPlaybackState.speed);
+          rtFormatPlaybackState.speed = speeds[(index + 1) % speeds.length];
+          updatePlaybackControls();
+        });
+        updatePlaybackControls();
+        const playbackKey = `${config.layout}:${config.dtype}:${config.rows}:${config.cols}`;
+        if (!window.matchMedia('(prefers-reduced-motion: reduce)').matches && rtFormatPlaybackState.autoPlayedKey !== playbackKey) {
+          rtFormatPlaybackState.autoPlayedKey = playbackKey;
+          rtFormatPlaybackState.timer = window.setTimeout(startPlayback, 520);
+        }
         const dtypeField = root.querySelector('.format-lab-dtype');
         dtypeField.outerHTML = `<div class="control-field format-lab-dtype"><label>数据类型</label><div class="tab-control format-dtype-tabs" role="group" aria-label="数据类型">${[['float16', 'float16 / half'], ['float32', 'float32'], ['int8', 'int8'], ['fp8_e8m0_t', 'fp8']].map(([value, label]) => `<button class="tab-control-item${config.dtype === value ? ' is-selected' : ''}" type="button" data-rt-format-dtype="${value}" aria-pressed="${config.dtype === value}">${label}</button>`).join('')}</div></div>`;
         root.querySelectorAll('[data-rt-format-layout]').forEach((button) => button.addEventListener('click', () => { rtFormatState.layout = button.dataset.rtFormatLayout; rtFormatState.selectedAddress = null; renderRtFormatLab(); }));
@@ -8400,7 +8485,8 @@
         root.querySelectorAll('[data-rt-format-stepper]').forEach((button) => button.addEventListener('click', () => { const key = button.dataset.rtFormatStepper; rtFormatState[key] = Math.max(1, Math.min(32, rtFormatState[key] + Number(button.dataset.delta))); rtFormatState.selectedAddress = null; renderRtFormatLab(); }));
         root.querySelectorAll('[data-rt-format-zoom]').forEach((button) => button.addEventListener('click', () => { rtFormatState.matrixZoom = Math.max(.4, Math.min(1.2, Number((rtFormatState.matrixZoom + Number(button.dataset.rtFormatZoom)).toFixed(1)))); renderRtFormatLab(); }));
         const restoreSelection = () => {
-          if (rtFormatState.selectedAddress !== null && projection.byAddress.has(rtFormatState.selectedAddress)) rtFormatHighlight(root, projection, rtFormatState.selectedAddress);
+          if (rtFormatPlaybackState.cursor >= 0) paintPlayback();
+          else if (rtFormatState.selectedAddress !== null && projection.byAddress.has(rtFormatState.selectedAddress)) rtFormatHighlight(root, projection, rtFormatState.selectedAddress);
           else rtFormatClear(root);
         };
         root.querySelectorAll('.format-lab-cell[data-rt-format-address]').forEach((cell) => {
@@ -8409,7 +8495,10 @@
           cell.addEventListener('focus', () => rtFormatHighlight(root, projection, address));
           cell.addEventListener('mouseleave', restoreSelection); cell.addEventListener('blur', restoreSelection);
           cell.addEventListener('click', () => {
-            rtFormatState.selectedAddress = address; rtFormatHighlight(root, projection, address);
+            pausePlayback();
+            rtFormatPlaybackState.cursor = Math.max(0, playbackSequence.indexOf(address));
+            rtFormatState.selectedAddress = address;
+            paintPlayback();
             const physicalCell = root.querySelector(`.format-lab-ribbon .format-lab-cell[data-rt-format-address="${address}"]`);
             if (cell.closest('.format-lab-grid') && physicalCell) physicalCell.scrollIntoView({ behavior: 'auto', block: 'nearest', inline: 'center' });
             const selected = projection.byAddress.get(address);
@@ -8420,7 +8509,6 @@
       };
 
       const showFormatLab = () => {
-        destroyLoad3dPatternControllers();
         $('#decisionTracePanel').hidden = true;
         $('#addApiView').hidden = true;
         stopAddApiPlayback();
