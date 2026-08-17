@@ -19,6 +19,7 @@
     scrubberHover: 'matmul-scrubber-hover'
   };
   const MATMUL_CORE_COUNT = 8;
+  const MATMUL_SHARED_AGGREGATE_GRID = Object.freeze({ rows: 4, columns: 4 });
   const state = {
     trace: null,
     context: null,
@@ -622,31 +623,53 @@
     };
   }
 
-  function matrixSceneForTensor(view) {
+  function aggregateRanges(extent, sourceSpan, targetCount) {
+    const normalizedExtent = Math.max(1, Math.floor(extent));
+    if (Number.isFinite(targetCount) && targetCount > 0) {
+      const count = Math.min(normalizedExtent, Math.floor(targetCount));
+      return Array.from({ length: count }, (_, index) => {
+        const start = Math.floor(index * normalizedExtent / count);
+        const end = Math.floor((index + 1) * normalizedExtent / count);
+        return { start, span: Math.max(1, end - start) };
+      });
+    }
+    const span = Math.max(1, Math.floor(sourceSpan));
+    const ranges = [];
+    for (let start = 0; start < normalizedExtent; start += span) {
+      ranges.push({ start, span: Math.min(span, normalizedExtent - start) });
+    }
+    return ranges;
+  }
+
+  function matrixSceneForTensor(view, aggregateGrid = null) {
     const rows = view.logicalShape[0];
     const columns = view.logicalShape[1];
-    const rowSpan = view.grid.rowSpan;
-    const columnSpan = view.grid.columnSpan;
+    const tileRowSpan = view.grid.rowSpan;
+    const tileColumnSpan = view.grid.columnSpan;
+    const rowRanges = aggregateRanges(rows, tileRowSpan, aggregateGrid?.rows);
+    const columnRanges = aggregateRanges(columns, tileColumnSpan, aggregateGrid?.columns);
     const coords = tileCoordinates();
     let activeRow = 0;
     let activeColumn = 0;
-    if (view.id === 'tensor:a') [activeRow, activeColumn] = [coords.mTile * rowSpan, coords.iter0 * columnSpan];
-    if (view.id === 'tensor:b') [activeRow, activeColumn] = [coords.iter0 * rowSpan, coords.nTile * columnSpan];
-    if (view.id === 'tensor:c') [activeRow, activeColumn] = [coords.mTile * rowSpan, coords.nTile * columnSpan];
-    if (view.id === 'tensor:a1') [activeRow, activeColumn] = [0, coords.iter1 * columnSpan];
-    if (view.id === 'tensor:b1') [activeRow, activeColumn] = [coords.iter1 * rowSpan, 0];
+    if (view.id === 'tensor:a') [activeRow, activeColumn] = [coords.mTile * tileRowSpan, coords.iter0 * tileColumnSpan];
+    if (view.id === 'tensor:b') [activeRow, activeColumn] = [coords.iter0 * tileRowSpan, coords.nTile * tileColumnSpan];
+    if (view.id === 'tensor:c') [activeRow, activeColumn] = [coords.mTile * tileRowSpan, coords.nTile * tileColumnSpan];
+    if (view.id === 'tensor:a1') [activeRow, activeColumn] = [0, coords.iter1 * tileColumnSpan];
+    if (view.id === 'tensor:b1') [activeRow, activeColumn] = [coords.iter1 * tileRowSpan, 0];
 
     const showCurrentTile = currentStep().id !== 'host-args';
     const outputStageActive = ['mmad', 'sync-m-fix', 'l0c-to-gm'].includes(currentStep().id);
     const tone = view.role === 'output' ? 'output' : view.role === 'reduction' ? 'reduction' : 'input';
     const cells = [];
 
-    // Keep the source extent and represent each logical tile as a Pattern aggregate
-    // cell. The page supplies only shape/metadata; it must not invent dump values.
-    for (let row = 0; row < rows; row += rowSpan) {
-      for (let column = 0; column < columns; column += columnSpan) {
-        const cellRowSpan = Math.min(rowSpan, rows - row);
-        const cellColumnSpan = Math.min(columnSpan, columns - column);
+    // Keep the source extent. Multi-tensor views inject one shared aggregate grid
+    // so every matrix has the same number of Pattern aggregate cells.
+    for (const rowRange of rowRanges) {
+      for (const columnRange of columnRanges) {
+        const row = rowRange.start;
+        const column = columnRange.start;
+        const cellRowSpan = rowRange.span;
+        const cellColumnSpan = columnRange.span;
         const isActiveAggregate = view.id === 'tensor:co1'
           ? showCurrentTile && outputStageActive
           : showCurrentTile
@@ -736,16 +759,17 @@
     removeMatmulOverviewTitleFooter(mount);
   }
 
-  function updateMatmulOverviewMatrix(tensorId, view) {
+  function updateMatmulOverviewMatrix(tensorId, view, aggregateGrid) {
     const key = overviewDomKey(tensorId);
     const canvas = document.getElementById('matmulOverviewCanvas-' + key);
     if (!canvas || !window.PtoMatrixCanvas) return;
-    const scene = matrixSceneForTensor(view);
+    const scene = matrixSceneForTensor(view, aggregateGrid);
     const options = {
       ariaLabel: view.label + ' overview matrix',
       showGrid: false,
       interactive: false,
       autoFit: true,
+      minZoom: 0.001,
       padding: { top: 18, right: 24, bottom: 46, left: 56 }
     };
     const controller = state.overviewMatrixControllers[tensorId];
@@ -854,10 +878,10 @@
     removeMatmulOverviewTitleFooter(mount);
   }
 
-  function renderMatmulCopyMatrix(slot, view) {
+  function renderMatmulCopyMatrix(slot, view, aggregateGrid) {
     const canvas = $('#matmulCopy' + (slot === 'source' ? 'Source' : 'Destination') + 'Canvas');
     if (!canvas || !window.PtoMatrixCanvas) return;
-    const scene = matrixSceneForTensor(view);
+    const scene = matrixSceneForTensor(view, aggregateGrid);
     const options = {
       ariaLabel: view.label + ' copy matrix',
       showAxes: true,
@@ -865,6 +889,7 @@
       interactive: false,
       showTooltip: false,
       autoFit: true,
+      minZoom: 0.001,
       padding: { top: 30, right: 24, bottom: 38, left: 48 }
     };
     const controller = state.copyMatrixControllers[slot];
@@ -907,8 +932,8 @@
     $('#matmulCopyReadiness').innerHTML = metadata.readiness.map((item, index) => (index ? '<span aria-hidden="true">→</span>' : '') + '<span class="tag' + (index === 0 ? ' status-success' : '') + '">' + escapeHtml(item) + '</span>').join('');
     renderMatmulCopyTitle('source', source, sourceRole, metadata.sourceTier, sourceState, sourceOffset);
     renderMatmulCopyTitle('destination', destination, destinationRole, metadata.destinationTier || destination.memoryTier, destinationState, destinationOffset);
-    renderMatmulCopyMatrix('source', source);
-    renderMatmulCopyMatrix('destination', destination);
+    renderMatmulCopyMatrix('source', source, MATMUL_SHARED_AGGREGATE_GRID);
+    renderMatmulCopyMatrix('destination', destination, MATMUL_SHARED_AGGREGATE_GRID);
     const fitMatrices = () => Object.values(state.copyMatrixControllers).forEach((controller) => {
       controller?.resize?.();
       controller?.fit?.();
@@ -966,7 +991,7 @@
     $('#matmulOverviewTile').textContent = 'Output Tile [' + curM + ',' + curN + '] · K Slice ' + curKL0 + ' · BF16';
     views.forEach((view) => {
       updateMatmulOverviewTitle(view.id, view);
-      updateMatmulOverviewMatrix(view.id, view);
+      updateMatmulOverviewMatrix(view.id, view, MATMUL_SHARED_AGGREGATE_GRID);
     });
     const fitMatrices = () => Object.values(state.overviewMatrixControllers).forEach((controller) => {
       controller?.resize?.();
