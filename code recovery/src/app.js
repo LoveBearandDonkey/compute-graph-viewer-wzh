@@ -5572,12 +5572,16 @@
       canvasHtml += '</div>';
       canvasHtml += '</div>';
       // Tracks
-      // 跨区域对齐的行：feature / weight / bias（3 行，适用于 GM / L1 / A2B2）
+      // 多输入区域只保留 feature / weight / bias 三条对齐轨道；
+      // CO1 与输出 GM 各自只保留一条结果轨道，避免无意义的空轨道压缩卡片。
       var alignBranches = ['feature', 'weight', 'bias'];
       var isMultiCard = loc.id === 'gmInput' || loc.id === 'l1' || loc.id === 'a2b2';
       var isSingleCard = loc.id === 'co1' || loc.id === 'gmOutput';
       canvasHtml += '<div class="avz-journey-tracks">';
-      cfg.branchOrder.forEach(function(branch) {
+      var renderBranches = isMultiCard
+        ? alignBranches
+        : [loc.id === 'co1' ? 'accumulation' : 'output'];
+      renderBranches.forEach(function(branch) {
         var branchTensors = tensors.filter(function(t) { return t.branch === branch; });
         // 单卡片区域：只渲染有 tensor 的分支
         if (isSingleCard && branchTensors.length === 0) return;
@@ -5596,8 +5600,10 @@
           var isSelected = t.id === tjs.selectedTensorId;
           var selectedClass = isSelected ? ' is-selected' : '';
           canvasHtml += '<div class="avz-journey-card' + selectedClass + '" data-tensor-id="' + escapeHtml(t.id) + '" data-branch="' + escapeHtml(branch) + '">';
+          canvasHtml += '<div class="avz-journey-card-head">';
           canvasHtml += '<span class="avz-journey-card-name ' + escapeHtml(branch) + '">' + escapeHtml(t.name) + '</span>';
-          canvasHtml += '<span class="avz-journey-card-shape">' + escapeHtml(t.shape) + '</span>';
+          canvasHtml += '<span class="avz-journey-card-shape" title="' + escapeHtml(t.shape) + '">' + escapeHtml(t.shape) + '</span>';
+          canvasHtml += '</div>';
           canvasHtml += '<span class="avz-journey-card-field"><span class="avz-journey-card-key">DType</span><span class="avz-journey-card-value">' + escapeHtml(t.dtype) + '</span></span>';
           canvasHtml += '<span class="avz-journey-card-field"><span class="avz-journey-card-key">Size</span><span class="avz-journey-card-value">' + escapeHtml(t.size) + '</span></span>';
           canvasHtml += '</div>';
@@ -5719,6 +5725,15 @@
         left: r.left - canvasRect.left
       };
     }
+    function regionBounds(locationId) {
+      var region = canvas.querySelector('.avz-journey-region[data-location="' + locationId + '"]');
+      if (!region) return null;
+      var r = region.getBoundingClientRect();
+      return {
+        left: r.left - canvasRect.left,
+        right: r.right - canvasRect.left
+      };
+    }
     function edgeClass(branch, highlighted) {
       return 'edge-' + branch + (highlighted ? '' : ' edge-dimmed');
     }
@@ -5764,9 +5779,11 @@
       var eCls = edgeClass(conn.branch, isHl);
       var lCls = isHl ? 'op-label' : 'op-label op-label-dimmed';
 
-      var midX = (A.x + B.x) / 2;
-      addPath(eCls, 'M' + A.x + ',' + A.y + ' L' + midX + ',' + A.y + ' L' + midX + ',' + B.y + ' L' + B.x + ',' + B.y);
-      addArrow(eCls, B.x, B.y, -1);
+      // 普通连接必须落到目标卡片左边；B.x 是目标卡片右边，不能作为入点。
+      var targetX = B.left;
+      var midX = (A.x + targetX) / 2;
+      addPath(eCls, 'M' + A.x + ',' + A.y + ' L' + midX + ',' + A.y + ' L' + midX + ',' + B.y + ' L' + targetX + ',' + B.y);
+      addArrow(eCls, targetX, B.y, 1);
 
       // 操作标签
       if (conn.op) {
@@ -5780,7 +5797,7 @@
           addLabel(line1, labelX, labelY - 8, lCls);
           addLabel(line2, labelX, labelY + 8, lCls);
         } else {
-          addLabel(conn.op, midX, A.y, lCls);
+          addLabel(conn.op, midX, A.y - 10, lCls);
         }
       }
     });
@@ -5795,7 +5812,7 @@
       ];
       var mergeEndX = accum.left;
       var mergeEndY = accum.y;
-      var prevEndY = null;
+      var sourceRegion = regionBounds('a2b2');
 
       mergeSources.forEach(function(ms) {
 
@@ -5813,28 +5830,33 @@
         if (ms.branch === 'weight') {
           // 水平直连
           addPath(eCls, 'M' + cx1 + ',' + cy1 + ' L' + cx2 + ',' + cy2);
-          addArrow(eCls, cx2, cy2, -1);
+          addArrow(eCls, cx2, cy2, 1);
           // LoadData2D 标签
           addLabel('LoadData2D', (cx1 + cx2) / 2, cy1 - 10, lCls);
         } else {
-          // 圆滑曲线：先水平出 A2/B2，再弯曲到汇合点
-          var hx = cx1 + (cx2 - cx1) * 0.42; // 弯曲起始 x
+          // 参考图的连接方式：先沿 A2/B2 的空白连接带水平走到 Stage 边界，
+          // 再进入 CO1 区域弯向 accumCo1，避免曲线过早侵入卡片区。
+          var hx = sourceRegion && sourceRegion.right > cx1
+            ? sourceRegion.right
+            : cx1 + (cx2 - cx1) * 0.42;
+          var curveSpan = Math.max(24, cx2 - hx);
           var d = 'M' + cx1 + ',' + cy1 +
                   ' L' + hx + ',' + cy1 +
-                  ' C' + (cx2 - (cx2 - cx1) * 0.20) + ',' + cy1 +
-                  ' ' + (cx2 - 6) + ',' + cy2 +
+                  ' C' + (hx + curveSpan * 0.28) + ',' + cy1 +
+                  ' ' + (cx2 - curveSpan * 0.32) + ',' + cy2 +
                   ' ' + cx2 + ',' + cy2;
           addPath(eCls, d);
-          addArrow(eCls, cx2, cy2, -1);
-          if (ms.branch === 'bias') addLabel('Bias Init', cx1 + (cx2 - cx1) * 0.26, cy1 - 10, lCls);
+          addArrow(eCls, cx2, cy2, 1);
+          if (ms.branch === 'bias') addLabel('Bias Init', (cx1 + hx) / 2, cy1 - 10, lCls);
         }
       });
 
-      // Mmad 标签放在三路汇合点上
-      if (true) {
+      // Mmad 标签放在 A2 → CO1 路径的中段，避免固定偏移在面板缩放后漂移
+      if (accum) {
         var mSrc = anchor('fmapA2');
         if (mSrc) {
-          addLabel('Mmad', (mSrc.x + accum.left) / 2 + 4, mSrc.y + 14, 'op-label');
+          var labelStartX = sourceRegion && sourceRegion.right > mSrc.x ? sourceRegion.right : mSrc.x;
+          addLabel('Mmad', labelStartX + (accum.left - labelStartX) * 0.38, (mSrc.y + accum.y) / 2, 'op-label');
         }
       }
     }
@@ -5844,7 +5866,8 @@
   function setupJourneyResizeObserver(cfg, tjs) {
     if (window._tjResizeObserver) window._tjResizeObserver.disconnect();
     var canvasWrap = document.getElementById('tjCanvasWrap');
-    if (!canvasWrap || typeof ResizeObserver !== 'function') return;
+    var canvas = document.getElementById('tjCanvas');
+    if (!canvasWrap || !canvas || typeof ResizeObserver !== 'function') return;
 
     window._tjResizeObserver = new ResizeObserver(function() {
       if (window._tjDrawRaf) return;
@@ -5854,6 +5877,10 @@
       });
     });
     window._tjResizeObserver.observe(canvasWrap);
+    window._tjResizeObserver.observe(canvas);
+    canvas.querySelectorAll('.avz-journey-region, .avz-journey-card').forEach(function(node) {
+      window._tjResizeObserver.observe(node);
+    });
   }
 
   // ---- Card click handler ----

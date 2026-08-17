@@ -18,7 +18,7 @@
   <link rel="stylesheet" href="../../pto-design-system/patterns/memory-architecture/pattern.css?v=20260811-matmul-v1">
   <link rel="stylesheet" href="../../pto-design-system/patterns/hardware-architecture-viewport/pattern.css?v=20260811-matmul-v1">
   <link rel="stylesheet" href="src/styles.css?v=20260814-matmul-v2">
-  <link rel="stylesheet" href="src/matmul.css?v=20260817-matmul-v13">
+  <link rel="stylesheet" href="src/matmul.css?v=20260817-matmul-v20">
 </head>
 <body class="avz-page matmul-page">
   <section class="pto-ide-frame avz-frame matmul-frame" data-ide-frame data-host="standalone" aria-label="MatMul Code Recovery workbench">
@@ -76,65 +76,61 @@
               </div>
             </header>
             <div class="pto-ide-frame__pane-body matmul-pane-body matmul-flow-body">
-              <section class="matmul-contract" aria-label="MatMul contract">
-                <div class="matmul-contract__equation"><span>A[M,K]</span><b>×</b><span>B[K,N]</span><b>→</b><span>C[M,N]</span></div>
-                <div class="matmul-contract__meta"><span id="shapeReadout">M=1024 · K=2048 · N=4096</span><span id="tileReadout">baseM/N/K=256/256/128 · BF16</span></div>
-                <div class="matmul-validation-control">
-                  <span class="matmul-section-kicker">Validation case</span>
-                  <div class="tab-control matmul-validation-cases" id="validationCases" role="group" aria-label="Validation case"></div>
+              <div class="tab-control matmul-copy-tabs" id="matmulCopyTabs" role="tablist" aria-label="Copy tensors" hidden></div>
+              <div class="avz-copy-input-view matmul-copy-input-view" id="matmulCopyView" hidden>
+                <header class="avz-copy-input-view__summary">
+                  <div>
+                    <strong id="matmulCopySummary"></strong>
+                    <span id="matmulCopyContext"></span>
+                  </div>
+                  <span class="tag status-success" id="matmulCopyEvidence">confirmed</span>
+                </header>
+                <div class="avz-copy-input-view__comparison">
+                  <figure class="avz-copy-input-view__tensor">
+                    <figcaption><div class="avz-tensor-title-host" id="matmulCopySourceTitleMount"></div></figcaption>
+                    <div class="pto-matrix-canvas-host avz-copy-input-view__canvas"><canvas class="pto-matrix-canvas" id="matmulCopySourceCanvas"></canvas></div>
+                  </figure>
+                  <div class="avz-copy-input-view__transform">
+                    <span class="tag" id="matmulCopyEngine">MTE2 / DataCopy</span>
+                    <strong id="matmulCopyTransformation">ND → NZ</strong>
+                    <svg viewBox="0 0 56 20" aria-hidden="true"><path d="M2 10h48M42 4l8 6-8 6"></path></svg>
+                  </div>
+                  <figure class="avz-copy-input-view__tensor">
+                    <figcaption><div class="avz-tensor-title-host" id="matmulCopyDestinationTitleMount"></div></figcaption>
+                    <div class="pto-matrix-canvas-host avz-copy-input-view__canvas"><canvas class="pto-matrix-canvas" id="matmulCopyDestinationCanvas"></canvas></div>
+                  </figure>
                 </div>
-                <div class="matmul-validation-summary" id="validationSummary" aria-live="polite"></div>
-                <p class="matmul-validation-description" id="validationDescription"></p>
+                <footer class="avz-copy-input-view__readiness" id="matmulCopyReadiness" aria-label="Copy readiness"></footer>
+              </div>
+              <section class="avz-tensor-overview matmul-tensor-overview" id="matmulTensorOverview" aria-label="MatMul tensor overview">
+                <header class="avz-tensor-overview__summary">
+                  <div>
+                    <strong id="matmulOverviewTitle">Logical MatMul contract</strong>
+                    <span id="matmulOverviewEquation">A[M,K] × B[K,N] → C[M,N]</span>
+                  </div>
+                  <span class="tag status-success" id="matmulOverviewEvidence">host-confirmed</span>
+                </header>
+                <div class="avz-tensor-overview__grid" id="matmulOverviewGrid"></div>
+                <footer class="avz-tensor-overview__derivation">
+                  <span><code id="matmulOverviewM">M=1024</code></span>
+                  <span><code id="matmulOverviewK">K=2048</code></span>
+                  <span><code id="matmulOverviewN">N=4096</code></span>
+                  <span id="matmulOverviewTile">baseM/N/K=256/256/128 · BF16</span>
+                </footer>
               </section>
-              <section class="matmul-loop-context" aria-label="Logical loop context">
-                <div class="matmul-flow__heading"><span>Logical loop context</span><span id="frameCounter">Frame 1 / 47</span></div>
-                <div class="matmul-loop-tree" id="loopTree"></div>
-                <div class="matmul-branch-state" id="branchState"></div>
-              </section>
-              <section class="matmul-current panel-shell panel-shell-quiet" aria-live="polite">
-                <div class="matmul-current__header"><div><span class="matmul-section-kicker" id="currentRole">Kernel · Cube</span><h3 id="currentLabel">Loading…</h3></div><span class="badge badge--success" id="currentEvidence">confirmed</span></div>
-                <p id="currentSummary"></p>
-                <div class="matmul-current__facts" id="currentFacts"></div>
-              </section>
+              <div class="avz-memory-allocation matmul-memory-allocation" id="matmulMemoryAllocation" hidden aria-label="Allocate Memory local memory map"></div>
             </div>
           </main>
 
           <aside class="pto-ide-frame__pane" data-ide-pane="details">
             <header class="pto-ide-frame__pane-header matmul-pane-header">
-              <div><h2 class="pto-ide-frame__pane-title">Hardware Participation</h2><span class="pto-ide-frame__pane-meta">Tensor, memory and hardware state</span></div>
+              <div><h2 class="pto-ide-frame__pane-title">Hardware Participation</h2><span class="pto-ide-frame__pane-meta" id="hardwarePanelMeta">NPU ARCH 3510 · 8 AIC logical schedule</span></div>
             </header>
-            <div class="pto-ide-frame__pane-body matmul-pane-body matmul-details-body">
-              <div class="tab-control matmul-detail-tabs" role="tablist" aria-label="Tensor, memory and hardware detail views">
-                <button class="tab-control-item is-selected" type="button" role="tab" data-detail-tab="tensor" aria-selected="true">Tensor</button>
-                <button class="tab-control-item" type="button" role="tab" data-detail-tab="memory" aria-selected="false">Memory</button>
-                <button class="tab-control-item" type="button" role="tab" data-detail-tab="hardware" aria-selected="false">Hardware</button>
-                <button class="tab-control-item" type="button" role="tab" data-detail-tab="events" aria-selected="false">Events</button>
-              </div>
-
-              <section class="matmul-detail-view" id="tensorDetailView" data-detail-view="tensor">
-                <div class="tab-control matmul-tensor-tabs" id="tensorTabs" role="tablist" aria-label="Tensor selection"></div>
-                <div id="tensorTitleMount"></div>
-                <div class="pto-matrix-canvas-host matmul-matrix-host">
-                  <canvas class="pto-matrix-canvas" id="tensorMatrixCanvas" aria-label="Selected MatMul tensor matrix"></canvas>
-                </div>
-                <div class="matmul-section-kicker">Tensor lifecycle</div>
-                <div class="matmul-tensor-lifecycle" id="tensorLifecycle"></div>
-                <div class="inspector-soft-card is-info matmul-dump-boundary">No Tensor Data Dump · metadata, shape and state only</div>
-              </section>
-
-              <section class="matmul-detail-view" id="memoryDetailView" data-detail-view="memory" hidden>
-                <div class="matmul-section-kicker">Memory journey</div>
-                <div class="matmul-memory-flow-map" id="memoryFlowMap"></div>
-                <div class="matmul-section-kicker">Active memory tiers</div>
-                <div class="matmul-memory-list" id="memoryList"></div>
-                <div class="matmul-section-kicker">Launch contract</div>
-                <dl class="matmul-definition-list" id="launchFacts"></dl>
-              </section>
-
-              <section class="matmul-detail-view" id="hardwareDetailView" data-detail-view="hardware" hidden>
+            <div class="pto-ide-frame__pane-body matmul-pane-body matmul-details-body matmul-hardware-only-body">
+              <section class="matmul-detail-view" id="hardwareDetailView" data-detail-view="hardware">
                 <div class="pto-hw-viewport matmul-hardware-viewport" id="hardwareViewport">
                   <header class="pto-hw-viewport__toolbar">
-                    <div class="pto-hw-viewport__title">Participation <small>NPU ARCH 3510 · logical lens</small></div>
+                    <div class="pto-hw-viewport__title">Participation <small>NPU ARCH 3510 · 8 AIC logical schedule</small></div>
                     <div class="pto-hw-viewport__controls">
                       <div class="pto-hw-viewport__tools" aria-label="Hardware viewport controls">
                         <button class="pto-hw-viewport__tool" type="button" data-hardware-detail aria-pressed="true">细节开</button>
@@ -151,25 +147,6 @@
                     </div>
                   </div>
                 </div>
-                <div class="matmul-hardware-summary" id="hardwareSummary"></div>
-                <div class="matmul-section-kicker">Participating units</div>
-                <div class="matmul-hardware-units" id="hardwareUnits"></div>
-                <div class="matmul-section-kicker">Event dependency path</div>
-                <div class="matmul-hardware-events" id="hardwareEventPath"></div>
-                <div class="inspector-soft-card is-info matmul-dump-boundary">Logical participation only · occupancy, stall and duration unavailable</div>
-              </section>
-
-              <section class="matmul-detail-view" id="eventDetailView" data-detail-view="events" hidden>
-                <div class="matmul-section-kicker">Event dependencies</div>
-                <div class="matmul-event-list" id="eventList"></div>
-              </section>
-
-              <section class="matmul-detail-section matmul-evidence-section matmul-evidence-boundary">
-                <div class="matmul-section-kicker">Evidence boundary</div>
-                <p><span class="badge badge--success">confirmed</span> source/API semantics</p>
-                <p><span class="badge badge--warning">derived</span> deterministic tile formulas</p>
-                <p><span class="badge">inferred</span> output conversion semantics without dump evidence</p>
-                <p><span class="badge">unverified</span> compile, device run, profiling</p>
               </section>
             </div>
           </aside>
@@ -191,6 +168,11 @@
               </header>
               <div class="pto-ide-frame__pane-body avz-execution-body matmul-pane-body matmul-execution-body">
                 <section id="instructionsView" class="avz-execution-panel matmul-execution-panel" data-execution-view-panel="instructions" role="tabpanel" aria-labelledby="instructionsTab">
+                  <div class="avz-core-switcher" id="matmulCoreContext" hidden>
+                    <span class="avz-core-switcher__label">8 核调度</span>
+                    <div class="segmented-control segmented-control-muted avz-core-switcher__options" id="matmulCoreOptions" role="radiogroup" aria-label="Select AIC execution block"></div>
+                    <span class="avz-core-switcher__meta" id="matmulCoreScheduleMeta" aria-live="polite">8 AIC · round-robin · 64 output tiles</span>
+                  </div>
                   <div class="avz-instruction-sequence" id="instructionSequence" role="list" aria-label="Logical instruction sequence with repeated iterations grouped"></div>
                 </section>
                 <section id="tensorJourneyView" class="avz-execution-panel matmul-execution-panel" data-execution-view-panel="tensor-journey" role="tabpanel" aria-labelledby="tensorJourneyTab" hidden>
@@ -212,7 +194,7 @@
     </div>
 
     <footer class="pto-ide-frame__status-strip pto-ide-frame__standalone-chrome matmul-status-strip">
-      <span id="statusText">Loading MatMul trace…</span><span class="matmul-status-cluster"><span id="statusScenario">Default</span><span>·</span><span id="statusStep">0 / 11</span><span>·</span><span id="statusArch">NPU ARCH 3510 · logical lens</span></span><span>static model · duration unavailable</span>
+      <span id="statusText">Loading MatMul trace…</span><span class="matmul-status-cluster"><span id="statusScenario">Default</span><span>·</span><span id="statusStep">0 / 11</span><span>·</span><span id="statusArch">NPU ARCH 3510 · 8 AIC logical schedule</span></span><span>static model · duration unavailable</span>
     </footer>
   </section>
 
@@ -225,6 +207,6 @@
   <script src="../../pto-design-system/patterns/aic-core-object/pattern.js?v=20260811-matmul-v1"></script>
   <script src="../../pto-design-system/patterns/memory-architecture/pattern.js?v=20260811-matmul-v1"></script>
   <script src="../../pto-design-system/patterns/hardware-architecture-viewport/pattern.js?v=20260811-matmul-v1"></script>
-    <script src="src/matmul-app.js?v=20260817-matmul-v14"></script>
+  <script src="src/matmul-app.js?v=20260817-matmul-v23"></script>
 </body>
 </html>
