@@ -25,7 +25,7 @@ A 是 M×K，B 是 K×N，C 是 M×N。这里没有 Bias、ReLU 或 Vector 后�
 
 ### 1.2 Tensor API 对象
 
-src/matmul/main.asc 使用 Tensor API 建立 GM 和 Local Memory 的 Tensor 视图：
+页面源码快照 `src/matmul/main.asc`（对应仓库实际源文件 `Samples/0_Introduction/matmul/main.asc`）使用 Tensor API 建立 GM 和 Local Memory 的 Tensor 视图：
 
 - GM A：NDExtLayoutPtn；
 - GM B：NDExtLayoutPtn；
@@ -160,6 +160,25 @@ nStart = nTileIdx × baseN
 
 blockIdx 只决定 tileIdx 的起始位置和步进，不应被页面固定解释成 block 0 永远只处理左上角 tile。
 
+## 3. 在 8 个核假设下的完整 tile 调度
+
+为了在页面中展开多核执行过程，本案例额外采用 `numBlocks = blockNum = 8` 的逻辑演示假设。源码事实仍是：Host 通过 `GetCoreNumAic()` 查询 block 数，Kernel 通过 `GetBlockNum()` 获取参与调度的 block 数；8 不是当前文档对真实设备的测量结论。
+
+64 个输出 tile 按 `tileIdx += 8` 轮询分配：
+
+| AIC | 输出 tile 序列 | 每个 tile 的 C 区域 | tile 数 | 逻辑 Mmad 数 |
+| --- | --- | --- | ---: | ---: |
+| AIC0 | 0, 8, 16, 24, 32, 40, 48, 56 | M0/N0 → M3/N8 | 8 | 128 |
+| AIC1 | 1, 9, 17, 25, 33, 41, 49, 57 | M0/N1 → M3/N9 | 8 | 128 |
+| AIC2 | 2, 10, 18, 26, 34, 42, 50, 58 | M0/N2 → M3/N10 | 8 | 128 |
+| AIC3 | 3, 11, 19, 27, 35, 43, 51, 59 | M0/N3 → M3/N11 | 8 | 128 |
+| AIC4 | 4, 12, 20, 28, 36, 44, 52, 60 | M0/N4 → M3/N12 | 8 | 128 |
+| AIC5 | 5, 13, 21, 29, 37, 45, 53, 61 | M0/N5 → M3/N13 | 8 | 128 |
+| AIC6 | 6, 14, 22, 30, 38, 46, 54, 62 | M0/N6 → M3/N14 | 8 | 128 |
+| AIC7 | 7, 15, 23, 31, 39, 47, 55, 63 | M0/N7 → M3/N15 | 8 | 128 |
+
+这里的 `M0/N0` 是该 AIC 的第一个 tile，`M3/N8` 等是序列中的最后一个 tile，不表示单个 tile 同时覆盖多个区域。每个 AIC 的 8 个 tile 依次执行同一条 Host → Kernel → K Loop → L0C → GM 路径；每个 tile 内 16 次 Mmad，8 个 AIC 合计 1024 次逻辑 Mmad。页面的 AIC 选择器默认查看所选 AIC 的第一个 tile，执行步骤仍是单 tile 的逻辑播放。
+
 ## 第三部分：Host 侧执行过程
 
 ## 1. 参数解析
@@ -227,6 +246,7 @@ MatmulKernel<bfloat16_t><<<numBlocks, nullptr, stream>>>(A, B, C, m, k, n)
 
 - 当前 launch 使用 bfloat16_t；
 - numBlocks 来源于平台 AIC core 查询；
+- 本页为了展示完整归属，固定展示 8 个 block/AIC 的 round-robin 映射；
 - 运行时 M、K、N 传入 Kernel。
 
 不能把 numBlocks 固化为某一个常数，也不能把它直接等同于固定设备物理核数。

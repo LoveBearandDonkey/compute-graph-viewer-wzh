@@ -1,7 +1,7 @@
 # MatMul Code Recovery 实施计划
 
-> 当前版本：0.1  
-> 当前状态：Step 0 · 文档建模中  
+> 当前版本：0.2  
+> 当前状态：8 核逻辑执行上下文校正中  
 > 案例：cann-samples / Samples/0_Introduction/matmul  
 > 产品性质：静态 Code Recovery 体验模型，不代表已编译、已上板或已 profiling
 
@@ -28,7 +28,8 @@
 
 - 仓库：cann-samples
 - 路径：Samples/0_Introduction/matmul
-- 目标源码：src/matmul/main.asc
+- 目标源码：main.asc（仓库实际路径：`Samples/0_Introduction/matmul/main.asc`）
+- 页面源码快照：code recovery/src/matmul/main.asc
 - 构建文件：src/matmul/CMakeLists.txt
 - 使用说明：src/matmul/README.md
 - 数据生成：src/matmul/scripts/gen_data.py
@@ -46,7 +47,7 @@
 
 ### 2.3 证据优先级
 
-1. 当前目标样例 src/matmul/main.asc 的源码事实；
+1. 当前目标样例 `main.asc` 的源码事实；
 2. 目标样例 README、CMake 和验证脚本；
 3. 当前三份 Conv Code Recovery 文档提供的组织结构和表达方式；
 4. Ascend C API 语义与 API 文档；
@@ -80,7 +81,7 @@ A[M,K] × B[K,N] → C[M,N]
 
 - 不证明当前源码已通过目标 CANN 版本编译；
 - 不证明当前机器具有 dav-3510 设备；
-- 不声称 block 数等于固定硬件核数；
+- 不把本页的 8 核 block 调度假设解释为目标设备的固定物理核数；
 - 不声称 Tiling 是自动生成或性能最优；
 - 不生成真实 duration、stall、overlap、带宽或利用率；
 - 不把逻辑 NZ/ZN 视图自动解释成数学转置；
@@ -143,7 +144,30 @@ nStart = nTileIdx × baseN
 
 Block 负责的是输出 tile 调度，不应直接理解为固定的设备物理核编号。blockNum 来自 GetBlockNum，Host 启动时的 numBlocks 来自 GetCoreNumAic。
 
-### 4.3 两层 K 循环
+### 4.3 本页的 8 核执行假设
+
+为了让 Code Recovery 页面能够展示完整的多核归属，本页固定采用一个**逻辑演示假设**：`numBlocks = blockNum = 8`。这不是源码已经查询到的设备实测值；源码仍然通过 `GetCoreNumAic()` 在运行时取得启动 block 数。
+
+在 64 个输出 tile 的完整 shape 下，Kernel 的轮询循环得到以下归属：
+
+~~~
+tileIdx = curBlockIdx, curBlockIdx + 8, curBlockIdx + 16, ...
+~~~
+
+| AIC / block | 输出 tile 归属 | M/N tile 归属 | 每核输出 tile 数 | 每核逻辑 Mmad 数 |
+| --- | --- | --- | ---: | ---: |
+| AIC0 | 0, 8, 16, 24, 32, 40, 48, 56 | M0/N0, M0/N8, M1/N0, M1/N8, M2/N0, M2/N8, M3/N0, M3/N8 | 8 | 128 |
+| AIC1 | 1, 9, 17, 25, 33, 41, 49, 57 | M0/N1, M0/N9, M1/N1, M1/N9, M2/N1, M2/N9, M3/N1, M3/N9 | 8 | 128 |
+| AIC2 | 2, 10, 18, 26, 34, 42, 50, 58 | M0/N2, M0/N10, M1/N2, M1/N10, M2/N2, M2/N10, M3/N2, M3/N10 | 8 | 128 |
+| AIC3 | 3, 11, 19, 27, 35, 43, 51, 59 | M0/N3, M0/N11, M1/N3, M1/N11, M2/N3, M2/N11, M3/N3, M3/N11 | 8 | 128 |
+| AIC4 | 4, 12, 20, 28, 36, 44, 52, 60 | M0/N4, M0/N12, M1/N4, M1/N12, M2/N4, M2/N12, M3/N4, M3/N12 | 8 | 128 |
+| AIC5 | 5, 13, 21, 29, 37, 45, 53, 61 | M0/N5, M0/N13, M1/N5, M1/N13, M2/N5, M2/N13, M3/N5, M3/N13 | 8 | 128 |
+| AIC6 | 6, 14, 22, 30, 38, 46, 54, 62 | M0/N6, M0/N14, M1/N6, M1/N14, M2/N6, M2/N14, M3/N6, M3/N14 | 8 | 128 |
+| AIC7 | 7, 15, 23, 31, 39, 47, 55, 63 | M0/N7, M0/N15, M1/N7, M1/N15, M2/N7, M2/N15, M3/N7, M3/N15 | 8 | 128 |
+
+因此，8 个 block 各处理 8 个输出 tile；每个输出 tile 仍执行 16 次 Mmad，整个案例仍是 1024 次逻辑 Mmad。页面选择某个 AIC 时，默认下钻该 AIC 的第一个 tile；完整归属由 8 核调度提示提供，不代表时间并行、occupancy 或实际核频率。
+
+### 4.4 两层 K 循环
 
 外层 iter0：
 
@@ -156,7 +180,7 @@ Block 负责的是输出 tile 调度，不应直接理解为固定的设备物�
 - BF16 完整场景下每次为 K=128；
 - 先进入 L0A/L0B，再执行 Mmad。
 
-### 4.4 执行单元与动作
+### 4.5 执行单元与动作
 
 | 角色 | 当前案例中的动作 |
 | --- | --- |
@@ -219,7 +243,7 @@ Block 负责的是输出 tile 调度，不应直接理解为固定的设备物�
 - 所有阶段都能回链到 src/matmul/main.asc；
 - 公式、shape、layout、Event 名称一致；
 - confirmed / derived / unverified 边界清楚；
-- 不引用 Conv 独有的 Bias、LoadData3D、ReLU 或固定 8 核结论。
+- 不引用 Conv 独有的 Bias、LoadData3D 或 ReLU；8 核只作为本页明确标注的逻辑调度假设。
 
 ### 阶段 1：正式 Trace Contract
 
@@ -303,6 +327,7 @@ Block 负责的是输出 tile 调度，不应直接理解为固定的设备物�
 交付：
 
 - 固定整除 shape 的确定性验证；
+- 8 核 round-robin tile ownership 的确定性验证；
 - 页面响应式与可访问性；
 - 文档、fixture、UI 一致性回归。
 
@@ -318,7 +343,7 @@ Block 负责的是输出 tile 调度，不应直接理解为固定的设备物�
 
 | 案例 | Shape | 输出 tile | L1/L0 K 分片 | 每输出 tile 的 Mmad |
 | --- | --- | --- | --- | --- |
-| Default | 1024 × 2048 × 4096 | 256 × 256 | 512 → 128/128/128/128 | 16 |
+| Default · 8 AIC | 1024 × 2048 × 4096 | 64（8/AIC）· 256 × 256 | 512 → 128/128/128/128 | 16/tile · 128/AIC |
 
 以上数值由固定 shape 和基础分块参数派生；真实编译、运行、profiling 与 Tensor Data Dump 仍为 unverified。
 
@@ -339,9 +364,10 @@ Step 0 通过后，才开始 Step 1 的 Trace Contract。
 
 1. `data/fixtures/matmul_cann_samples.trace.json` 为单一合法 JSON 根对象，并通过 `data/schemas/trace.schema.json` 的 schema 0.3 校验；
 2. Fixture 同时包含 `Source`、`Stages`、`Steps`、`Tensors`、`Buffers`、`Events`、`Evidence`；
-3. 所有 `sourceRefs` 的 `fileId` 与行号都能回链到 `src/matmul/main.asc`；
-4. 页面从 `src/matmul/main.asc` 读取源码，从正式 Fixture 读取内存层级、步骤和固定上下文；
+3. 所有 `sourceRefs` 的 `fileId` 与行号都能回链到页面源码快照 `src/matmul/main.asc`，并能对应仓库实际源文件 `main.asc`；
+4. 页面从页面源码快照 `src/matmul/main.asc` 读取源码，从正式 Fixture 读取内存层级、步骤和固定上下文；
 5. 固定上下文的派生事实可复核：M=1024、K=2048、N=4096，baseM/N/K=256/256/128，输出 tile=64，单输出 tile 的 Mmad=16；
-6. profiling、运行结果和 Tensor Data Dump 继续标记为 unavailable / unverified，不把静态恢复结果冒充真实执行事实。
+6. 8 核派生事实可复核：64 个输出 tile、8 个 AIC、每 AIC 8 个 tile、每 tile 16 次 Mmad、每 AIC 128 次逻辑 Mmad；
+7. profiling、运行结果和 Tensor Data Dump 继续标记为 unavailable / unverified，不把静态恢复结果冒充真实执行事实。
 
 Step 1 通过后，才开始 Step 2 的 Source 双向定位。

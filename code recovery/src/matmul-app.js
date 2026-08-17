@@ -18,13 +18,14 @@
     scrubberOpname: 'matmul-scrubber-opname',
     scrubberHover: 'matmul-scrubber-hover'
   };
+  const MATMUL_CORE_COUNT = 8;
   const state = {
     trace: null,
-    scenarioId: 'divisible',
     context: null,
     source: [],
     sourceRole: 'all',
     executionView: 'instructions',
+    matmulCoreIndex: 0,
     stepIndex: 0,
     frames: [],
     frameIndex: 0,
@@ -40,6 +41,12 @@
     selectedTensorId: 'tensor:a',
     matrixController: null,
     tensorTitleController: null,
+    overviewMatrixControllers: {},
+    overviewTitleControllers: {},
+    copyTensorStepId: null,
+    copyTensorId: null,
+    copyMatrixControllers: { source: null, destination: null },
+    copyTitleControllers: { source: null, destination: null },
     hardwareViewport: null,
     hardwareRouteOverlay: null,
     hardwareInitialized: false
@@ -116,8 +123,31 @@
     return state.trace.steps[state.stepIndex];
   }
 
+  function coreTileSchedule(context, coreIndex) {
+    if (!context) return [];
+    const tiles = [];
+    for (let tileIdx = coreIndex; tileIdx < context.outputTileNum; tileIdx += MATMUL_CORE_COUNT) {
+      tiles.push(tileIdx);
+    }
+    return tiles;
+  }
+
   function currentFrame() {
-    return state.frames[state.frameIndex] || { stepId: currentStep()?.id };
+    const frame = state.frames[state.frameIndex] || { stepId: currentStep()?.id };
+    if (!state.context || frame.tileIdx == null) return frame;
+    const assignedTiles = coreTileSchedule(state.context, state.matmulCoreIndex);
+    const tileIdx = assignedTiles[0] ?? Math.min(state.context.outputTileNum - 1, state.matmulCoreIndex);
+    const mTileIdx = Math.floor(tileIdx / state.context.nTileNum);
+    const nTileIdx = tileIdx % state.context.nTileNum;
+    return {
+      ...frame,
+      tileIdx,
+      mTileIdx,
+      nTileIdx,
+      curM: Math.min(state.context.baseM, state.context.M - mTileIdx * state.context.baseM),
+      curN: Math.min(state.context.baseN, state.context.N - nTileIdx * state.context.baseN),
+      aicIndex: state.matmulCoreIndex
+    };
   }
 
   function ceilDiv(value, divisor) {
@@ -161,7 +191,7 @@
   }
 
   function validationScenarios() {
-    return state.trace.validationScenarios || [];
+    return state.trace?.validationScenarios || [];
   }
 
   function currentScenario() {
@@ -218,6 +248,7 @@
       return 'Mmad ' + frame.mmadOrdinal + '/' + state.context.mmadPerOutputTile + ' · ' + frame.mmadMode;
     }
     const context = [];
+    if (frame.aicIndex != null && frame.tileIdx != null) context.push('AIC' + frame.aicIndex + ' · OT' + frame.tileIdx);
     if (frame.iter0 != null) context.push('iter0=' + frame.iter0);
     if (frame.iter1 != null) context.push('iter1=' + frame.iter1);
     return step.label + (context.length ? ' · ' + context.join(' · ') : '');
@@ -230,6 +261,43 @@
     if (value.includes('Sync')) return 'Sync';
     if (value.includes('Move')) return 'Move';
     return 'Configure';
+  }
+
+  function renderValidationControls() {
+    const scenario = currentScenario();
+    const context = state.context;
+    if (!scenario || !context) return;
+    $('#validationCases').innerHTML = validationScenarios()
+      .filter((item) => item.id !== 'combined-tail')
+      .map((item) => {
+        const active = item.id === state.scenarioId;
+        return '<button class="tab-control-item' + (active ? ' is-selected' : '') + '" type="button" data-validation-scenario="' +
+          escapeHtml(item.id) + '" aria-pressed="' + active + '">' + escapeHtml(item.label) + '</button>';
+      }).join('');
+    $('#validationCases').querySelectorAll('[data-validation-scenario]').forEach((button) => {
+      button.addEventListener('click', () => selectValidationScenario(button.dataset.validationScenario));
+    });
+    $('#shapeReadout').textContent = 'M=' + context.M + ' · K=' + context.K + ' · N=' + context.N;
+    $('#tileReadout').textContent = 'baseM/N/K=' + context.baseM + '/' + context.baseN + '/' + context.baseK + ' · BF16';
+    $('#validationSummary').innerHTML =
+      '<span><strong>Last output tile</strong>#' + context.tileIdx + ' · curM=' + context.curM + ' · curN=' + context.curN + '</span>' +
+      '<span><strong>Final K slices</strong>' + context.tailKL1 + ' → ' + context.kSlices.at(-1).l0Slices.join(' / ') + '</span>' +
+      '<span class=\"badge badge--warning\">' + escapeHtml(scenario.evidence || 'derived') + '</span>';
+    $('#validationDescription').textContent = scenario.description || '';
+  }
+
+  function selectValidationScenario(id) {
+    const scenario = validationScenarios().find((item) => item.id === id);
+    if (!scenario || scenario.id === state.scenarioId) return;
+    setPlaying(false);
+    state.scenarioId = scenario.id;
+    state.context = deriveValidationContext(state.trace, scenario);
+    state.frames = buildExecutionFrames(state.trace, state.context);
+    const focusIndex = scenario.focus === 'last-mmad'
+      ? state.frames.map((frame) => frame.stepId).lastIndexOf('mmad')
+      : 0;
+    renderValidationControls();
+    selectFrame(Math.max(0, focusIndex));
   }
 
   function sourceLineIsVisible(line) {
@@ -291,107 +359,6 @@
       button.addEventListener('click', () => selectSourceLine(Number(button.dataset.sourceLine)));
     });
     $('#sourceLines .is-current')?.scrollIntoView({ block: 'center' });
-  }
-
-  function loopToggleIcon(expanded) {
-    return '<svg class="matmul-loop-toggle__icon" viewBox="0 0 24 24" aria-hidden="true"><path d="m' +
-      (expanded ? '6 9 6 6 6-6' : '9 6 6 6-6 6') + '"></path></svg>';
-  }
-
-  function renderValidationControls() {
-    const scenario = currentScenario();
-    const context = state.context;
-    const scenarios = validationScenarios().filter((item) => item.id !== 'combined-tail');
-    $('#validationCases').innerHTML = scenarios.map((item) => {
-      const active = item.id === state.scenarioId;
-      return '<button class="tab-control-item' + (active ? ' is-selected' : '') + '" type="button" data-validation-scenario="' + escapeHtml(item.id) + '" aria-pressed="' + active + '">' + escapeHtml(item.label) + '</button>';
-    }).join('');
-    $('#validationCases').querySelectorAll('[data-validation-scenario]').forEach((button) => {
-      button.addEventListener('click', () => selectValidationScenario(button.dataset.validationScenario));
-      button.addEventListener('keydown', (event) => {
-        if (!['ArrowLeft', 'ArrowRight'].includes(event.key)) return;
-        event.preventDefault();
-        const currentIndex = scenarios.findIndex((item) => item.id === button.dataset.validationScenario);
-        const offset = event.key === 'ArrowRight' ? 1 : -1;
-        const next = scenarios[(currentIndex + offset + scenarios.length) % scenarios.length];
-        selectValidationScenario(next.id);
-        window.requestAnimationFrame(() => $('#validationCases [data-validation-scenario="' + next.id + '"]')?.focus());
-      });
-    });
-    $('#shapeReadout').textContent = 'M=' + context.M + ' · K=' + context.K + ' · N=' + context.N;
-    $('#tileReadout').textContent = 'baseM/N/K=' + context.baseM + '/' + context.baseN + '/' + context.baseK + ' · ' + state.trace.tiling.dtype;
-    $('#validationSummary').innerHTML =
-      '<span><strong>Last output tile</strong> #' + context.tileIdx + ' · curM=' + context.curM + ' · curN=' + context.curN + '</span>' +
-      '<span><strong>Final K slices</strong> ' + context.tailKL1 + ' → ' + context.kSlices.at(-1).l0Slices.join(' / ') + ' · ' + context.mmadPerOutputTile + ' Mmad</span>' +
-      '<span class="badge ' + evidenceClass(scenario.evidence) + '" title="source lines ' + escapeHtml(scenario.sourceLines.join(', ')) + '">' + escapeHtml(scenario.evidence) + '</span>';
-    $('#validationDescription').textContent = scenario.description + ' Deterministic source-formula validation; not a device run.';
-  }
-
-  function selectValidationScenario(id) {
-    const scenario = validationScenarios().find((item) => item.id === id);
-    if (!scenario || scenario.id === state.scenarioId) return;
-    setPlaying(false);
-    state.scenarioId = scenario.id;
-    state.context = deriveValidationContext(state.trace, scenario);
-    state.frames = buildExecutionFrames(state.trace, state.context);
-    const focusIndex = scenario.focus === 'last-mmad'
-      ? state.frames.map((frame) => frame.stepId).lastIndexOf('mmad')
-      : 0;
-    renderValidationControls();
-    selectFrame(Math.max(0, focusIndex));
-  }
-
-  function renderLoopContext() {
-    const frame = currentFrame();
-    const execution = state.trace.execution;
-    const loops = new Map((execution?.loops || []).map((loop) => [loop.id, loop]));
-    const outputLoop = loops.get('output-tile-loop');
-    const l1Loop = loops.get('l1-k-loop');
-    const l0Loop = loops.get('l0-k-loop');
-    const value = (current, count) => current == null ? 'not entered' : current + ' / ' + Math.max(0, count - 1);
-    const tileValue = value(frame.tileIdx, state.context.outputTileNum);
-    const l1Value = value(frame.iter0, state.context.kL1TileNum);
-    const l0Value = value(frame.iter1, frame.l0Count || state.context.kL0TileNum);
-
-    $('#frameCounter').textContent = 'Frame ' + (state.frameIndex + 1) + ' / ' + state.frames.length;
-    $('#loopTree').innerHTML =
-      '<div class="matmul-loop-row is-root">' +
-        '<span class="matmul-loop-row__spacer" aria-hidden="true"></span>' +
-        '<div><strong>' + escapeHtml(outputLoop?.label || 'Output tile loop') + '</strong><span>tileIdx · ' + tileValue + '</span></div>' +
-        '<span class="tag">×' + escapeHtml(state.context.outputTileNum) + '</span>' +
-      '</div>' +
-      '<div class="matmul-loop-row is-l1">' +
-        '<button class="btn btn-icon btn-ghost matmul-loop-toggle" type="button" data-loop-toggle="l1" aria-expanded="' + state.loopExpanded.l1 + '" aria-label="Toggle L1 K loop">' + loopToggleIcon(state.loopExpanded.l1) + '</button>' +
-        '<div><strong>' + escapeHtml(l1Loop?.label || 'L1 K loop') + '</strong><span>iter0 · ' + l1Value + ' · K=' + escapeHtml(frame.curKL1 ?? state.context.kL1) + '</span></div>' +
-        '<span class="tag">×' + escapeHtml(state.context.kL1TileNum) + '</span>' +
-      '</div>' +
-      (state.loopExpanded.l1 ?
-        '<div class="matmul-loop-row is-l0">' +
-          '<button class="btn btn-icon btn-ghost matmul-loop-toggle" type="button" data-loop-toggle="l0" aria-expanded="' + state.loopExpanded.l0 + '" aria-label="Toggle L0 K loop">' + loopToggleIcon(state.loopExpanded.l0) + '</button>' +
-          '<div><strong>' + escapeHtml(l0Loop?.label || 'L0 K loop') + '</strong><span>iter1 · ' + l0Value + ' · K=' + escapeHtml(frame.curKL0 ?? state.context.baseK) + '</span></div>' +
-          '<span class="tag">×' + escapeHtml(frame.l0Count || state.context.kL0TileNum) + '</span>' +
-        '</div>' +
-        (state.loopExpanded.l0 ? '<div class="matmul-loop-leaf"><span class="badge ' + (frame.mmadMode === 'initialize CO1' ? 'badge--warning' : 'badge--success') + '">' + escapeHtml(frame.mmadMode || 'waiting for Mmad') + '</span><span>' + escapeHtml(frame.mmadOrdinal ? 'Mmad ' + frame.mmadOrdinal + '/' + state.context.mmadPerOutputTile : state.context.mmadPerOutputTile + ' Mmad per output tile') + '</span></div>' : '')
-        : '');
-
-    $('#loopTree').querySelectorAll('[data-loop-toggle]').forEach((button) => {
-      button.addEventListener('click', () => {
-        const key = button.dataset.loopToggle;
-        state.loopExpanded[key] = !state.loopExpanded[key];
-        renderLoopContext();
-      });
-    });
-
-    const validationBranches = [
-      { id: 'm-tail', selected: state.context.curM < state.context.baseM ? 'tail' : 'full-tile', value: state.context.curM, explanation: 'curM on the selected last output tile · source line 112' },
-      { id: 'n-tail', selected: state.context.curN < state.context.baseN ? 'tail' : 'full-tile', value: state.context.curN, explanation: 'curN on the selected last output tile · source line 113' },
-      { id: 'k-l1-tail', selected: state.context.tailKL1 < state.context.kL1 ? 'tail' : 'full-tile', value: state.context.tailKL1, explanation: 'curGmBKL1 on the final L1 K slice · source line 129' },
-      { id: 'k-l0-tail', selected: state.context.tailKL0 < state.context.baseK ? 'tail' : 'full-tile', value: state.context.tailKL0, explanation: 'curKL0 on the final L0 K slice · source line 159' }
-    ];
-    $('#branchState').innerHTML = '<span class="matmul-branch-state__label">Branches</span>' + validationBranches.map((branch) =>
-      '<span class="tag" title="' + escapeHtml(branch.explanation) + '">' +
-      escapeHtml(branch.id) + ' · ' + escapeHtml(branch.selected) + ' · ' + escapeHtml(branch.value) + '</span>'
-    ).join('');
   }
 
   function renderEvents() {
@@ -492,6 +459,157 @@
     return tensorLabel(flow.from) + ' → ' + tensorLabel(flow.to) + ' · ' + flow.transformation;
   }
 
+  const MATMUL_ALLOCATION_LANES = [
+    { id: 'l1', title: 'L1', capacityBytes: 512 * 1024, tensorIds: ['tensor:a1', 'tensor:b1'] },
+    { id: 'l0a', title: 'L0A', capacityBytes: 64 * 1024, tensorIds: ['tensor:a2'] },
+    { id: 'l0b', title: 'L0B', capacityBytes: 64 * 1024, tensorIds: ['tensor:b2'] },
+    { id: 'l0c', title: 'L0C', capacityBytes: 512 * 1024, tensorIds: ['tensor:co1'] }
+  ];
+
+  const MATMUL_ALLOCATION_DETAILS = {
+    'tensor:a1': { position: 'A1 / L1', filledBy: 'Copy GM → L1', consumedBy: 'Copy L1 → L0A', lifetime: 'one K-L1 slice' },
+    'tensor:b1': { position: 'B1 / L1', filledBy: 'Copy GM → L1', consumedBy: 'Copy L1 → L0B', lifetime: 'one K-L1 slice' },
+    'tensor:a2': { position: 'A2 / L0A', filledBy: 'Copy L1 → L0A', consumedBy: 'Mmad', lifetime: 'one K-L0 slice' },
+    'tensor:b2': { position: 'B2 / L0B', filledBy: 'Copy L1 → L0B', consumedBy: 'Mmad', lifetime: 'one K-L0 slice' },
+    'tensor:co1': { position: 'CO1 / L0C', filledBy: 'Mmad', consumedBy: 'Copy L0C → GM', lifetime: 'Acc0 → Acc8', writeLabel: 'Written by' }
+  };
+
+  function matmulAllocationTensor(id) {
+    const view = tensorView(id);
+    const detail = MATMUL_ALLOCATION_DETAILS[id];
+    if (!view || !detail) return null;
+    const localL1A = tensorView('tensor:a1');
+    const start = id === 'tensor:b1' ? localL1A?.sizeBytes || 0 : 0;
+    return {
+      id,
+      name: view.label,
+      position: detail.position,
+      start,
+      end: start + view.sizeBytes,
+      size: view.sizeBytes,
+      dtypeLabel: String(view.dtype || '').toUpperCase(),
+      shapeLabel: '[' + view.logicalShape.join(',') + ']',
+      alignmentLabel: 'Not specified',
+      format: view.format,
+      logicalIdentity: view.label + ' ' + view.axes.join(' / '),
+      filledBy: detail.filledBy,
+      consumedBy: detail.consumedBy,
+      lifetime: detail.lifetime,
+      writeLabel: detail.writeLabel,
+      confidence: id === 'tensor:a1' || id === 'tensor:b1' ? 'derived' : 'confirmed'
+    };
+  }
+
+  function matmulAllocationBlock(tensor, referenceBytes) {
+    if (!tensor) return '';
+    const startRatio = referenceBytes > 0 ? (tensor.start / referenceBytes) * 100 : 0;
+    const sizeRatio = referenceBytes > 0 ? (tensor.size / referenceBytes) * 100 : 0;
+    return '<div class="avz-memory-block" tabindex="0" data-allocation-tensor="' + escapeHtml(tensor.id) + '" style="--avz-block-start:' + startRatio + '%;--avz-block-size:' + sizeRatio + '%" aria-label="' + escapeHtml(tensor.name + ', ' + tensor.position + ', [' + tensor.start + ',' + tensor.end + '), ' + tensor.size + ' bytes') + '"></div>';
+  }
+
+  function matmulAllocationCapacityLabel(bytes) {
+    if (bytes % (1024 * 1024) === 0) return bytes / (1024 * 1024) + ' MiB';
+    if (bytes % 1024 === 0) return bytes / 1024 + ' KiB';
+    return bytes + ' B';
+  }
+
+  function matmulAllocationUsageLabel(usedBytes, capacityBytes) {
+    return (capacityBytes > 0 ? (usedBytes / capacityBytes) * 100 : 0).toFixed(1) + '%';
+  }
+
+  function matmulAllocationTicks(tensors, referenceBytes, capacityBytes) {
+    const ticks = [{ address: tensors[0]?.start || 0, position: 0 }];
+    tensors.forEach((tensor) => ticks.push({
+      address: tensor.end,
+      position: referenceBytes > 0 ? Math.min(100, (tensor.end / referenceBytes) * 100) : 0
+    }));
+    return '<div class="avz-memory-scale__used">' + ticks.map((tick, index) => {
+      const previousPosition = ticks[index - 1]?.position;
+      const nextPosition = ticks[index + 1]?.position;
+      const crowded = index > 0 && ((previousPosition !== undefined && tick.position - previousPosition < 18)
+        || (nextPosition !== undefined && nextPosition - tick.position < 18));
+      const classes = [
+        index === 0 ? 'is-start' : '',
+        index === ticks.length - 1 ? 'is-reference-end' : '',
+        crowded && index % 2 === 1 ? 'is-staggered' : ''
+      ].filter(Boolean).join(' ');
+      return '<span class="avz-memory-tick' + (classes ? ' ' + classes : '') + '" style="--avz-tick-position:' + tick.position + '%"><code>' + tick.address + '</code></span>';
+    }).join('') + '</div><div class="avz-memory-scale__capacity"><span class="avz-memory-tick is-capacity-end"><code>' + capacityBytes + '</code></span></div>';
+  }
+
+  function matmulAllocationLane(lane, tensorsById, referenceBytes) {
+    const tensors = lane.tensorIds.map((id) => tensorsById[id]).filter(Boolean);
+    if (!tensors.length) return '';
+    const usedBytes = Math.max(...tensors.map((tensor) => tensor.end));
+    return '<section class="avz-memory-lane avz-memory-lane--' + lane.id + '" aria-label="' + escapeHtml(lane.title + ' address space') + '">' +
+      '<div class="avz-memory-lane__map"><strong class="avz-memory-lane__title">' + escapeHtml(lane.title) + '</strong>' +
+      '<div class="avz-memory-lane__plot"><div class="avz-memory-scale">' + matmulAllocationTicks(tensors, referenceBytes, lane.capacityBytes) + '</div>' +
+      '<div class="avz-memory-capacity-bar"><div class="avz-memory-used">' + tensors.map((tensor) => matmulAllocationBlock(tensor, referenceBytes)).join('') + '</div>' +
+      '<div class="avz-memory-collapsed" aria-label="Collapsed unused address space"><span>⋯</span></div></div></div></div>' +
+      '<div class="avz-memory-lane__summary"><div class="avz-memory-lane__names">' + tensors.map((tensor) => '<code>' + escapeHtml(tensor.name) + '</code>').join('<span aria-hidden="true">·</span>') + '</div>' +
+      '<div class="avz-memory-lane__capacity"><strong>' + matmulAllocationUsageLabel(usedBytes, lane.capacityBytes) + '</strong><span aria-hidden="true"></span><strong>' + matmulAllocationCapacityLabel(lane.capacityBytes) + '</strong></div></div></section>';
+  }
+
+  function matmulAllocationTooltipMarkup(tensor) {
+    const rows = [
+      ['Position', tensor.position], ['Address', '[' + tensor.start + ',' + tensor.end + ')'], ['Size', tensor.size + ' B'],
+      ['Shape', tensor.shapeLabel], ['dtype', tensor.dtypeLabel], ['format', tensor.format],
+      ['Logical view', tensor.logicalIdentity], ['Alignment', tensor.alignmentLabel],
+      [tensor.writeLabel || 'Filled by', tensor.filledBy], ['Consumed by', tensor.consumedBy], ['Lifetime', tensor.lifetime],
+      ['Evidence', tensor.confidence]
+    ];
+    return '<strong>' + escapeHtml(tensor.name) + '</strong>' + rows.map((row) => '<div><span>' + escapeHtml(row[0]) + '</span><code>' + escapeHtml(row[1]) + '</code></div>').join('');
+  }
+
+  function showMatmulAllocationTooltip(event) {
+    const tooltip = $('#matmulAllocationTooltip');
+    const tensor = matmulAllocationTensor(event.currentTarget.dataset.allocationTensor);
+    if (!tooltip || !tensor) return;
+    tooltip.innerHTML = matmulAllocationTooltipMarkup(tensor);
+    tooltip.hidden = false;
+    positionMatmulAllocationTooltip(event);
+  }
+
+  function positionMatmulAllocationTooltip(event) {
+    const tooltip = $('#matmulAllocationTooltip');
+    const root = $('#matmulMemoryAllocation');
+    if (!tooltip || !root || tooltip.hidden) return;
+    const rootRect = root.getBoundingClientRect();
+    const targetRect = event.currentTarget.getBoundingClientRect();
+    const x = 'clientX' in event ? event.clientX - rootRect.left + 12 : targetRect.left - rootRect.left + 12;
+    const y = 'clientY' in event ? event.clientY - rootRect.top + 12 : targetRect.bottom - rootRect.top + 8;
+    tooltip.style.left = Math.min(x, Math.max(8, rootRect.width - tooltip.offsetWidth - 12)) + 'px';
+    tooltip.style.top = Math.min(y, Math.max(8, rootRect.height - tooltip.offsetHeight - 12)) + 'px';
+  }
+
+  function hideMatmulAllocationTooltip() {
+    const tooltip = $('#matmulAllocationTooltip');
+    if (tooltip) tooltip.hidden = true;
+  }
+
+  function renderMatmulMemoryAllocation() {
+    const mount = $('#matmulMemoryAllocation');
+    if (!mount) return;
+    const tensors = Object.fromEntries(Object.keys(MATMUL_ALLOCATION_DETAILS).map((id) => [id, matmulAllocationTensor(id)]));
+    const referenceBytes = Math.max(...MATMUL_ALLOCATION_LANES.map((lane) => {
+      const laneTensors = lane.tensorIds.map((id) => tensors[id]).filter(Boolean);
+      return laneTensors.length ? Math.max(...laneTensors.map((tensor) => tensor.end)) : 0;
+    }));
+    mount.innerHTML = '<div class="avz-memory-lanes">' + MATMUL_ALLOCATION_LANES.map((lane) => matmulAllocationLane(lane, tensors, referenceBytes)).join('') + '</div>' +
+      '<footer class="avz-memory-legend"><span><i class="avz-memory-legend__tensor"></i> Tensor 色块表示 LocalTensor 视图，数据尚未装载</span>' +
+      '<span><i class="avz-memory-legend__collapsed"></i> 斜线区域表示折叠的未使用容量，不按真实剩余容量比例绘制</span>' +
+      '<span>所有 Tensor 共用同一比例尺；当前最大占用 ' + referenceBytes + ' B 映射为泳道宽度的 80%。</span>' +
+      '<span>所有地址区间均为左闭右开 <code>[start, end)</code>。</span></footer>' +
+      '<div class="avz-memory-tooltip" id="matmulAllocationTooltip" role="tooltip" hidden></div>';
+    mount.querySelectorAll('[data-allocation-tensor]').forEach((block) => {
+      block.addEventListener('pointerenter', showMatmulAllocationTooltip);
+      block.addEventListener('pointermove', positionMatmulAllocationTooltip);
+      block.addEventListener('pointerleave', hideMatmulAllocationTooltip);
+      block.addEventListener('focus', showMatmulAllocationTooltip);
+      block.addEventListener('blur', hideMatmulAllocationTooltip);
+    });
+  }
+
   function tileCoordinates() {
     const frame = currentFrame();
     const tileIdx = frame.tileIdx ?? 0;
@@ -510,34 +628,47 @@
     const rowSpan = view.grid.rowSpan;
     const columnSpan = view.grid.columnSpan;
     const coords = tileCoordinates();
-    const cells = [];
-    const rowCount = Math.ceil(rows / rowSpan);
-    const columnCount = Math.ceil(columns / columnSpan);
     let activeRow = 0;
     let activeColumn = 0;
-    if (view.id === 'tensor:a') [activeRow, activeColumn] = [coords.mTile, coords.iter0];
-    if (view.id === 'tensor:b') [activeRow, activeColumn] = [coords.iter0, coords.nTile];
-    if (view.id === 'tensor:c') [activeRow, activeColumn] = [coords.mTile, coords.nTile];
-    if (view.id === 'tensor:a1') [activeRow, activeColumn] = [0, coords.iter1];
-    if (view.id === 'tensor:b1') [activeRow, activeColumn] = [coords.iter1, 0];
+    if (view.id === 'tensor:a') [activeRow, activeColumn] = [coords.mTile * rowSpan, coords.iter0 * columnSpan];
+    if (view.id === 'tensor:b') [activeRow, activeColumn] = [coords.iter0 * rowSpan, coords.nTile * columnSpan];
+    if (view.id === 'tensor:c') [activeRow, activeColumn] = [coords.mTile * rowSpan, coords.nTile * columnSpan];
+    if (view.id === 'tensor:a1') [activeRow, activeColumn] = [0, coords.iter1 * columnSpan];
+    if (view.id === 'tensor:b1') [activeRow, activeColumn] = [coords.iter1 * rowSpan, 0];
 
-    for (let rowIndex = 0; rowIndex < rowCount; rowIndex += 1) {
-      for (let columnIndex = 0; columnIndex < columnCount; columnIndex += 1) {
-        const active = view.id === 'tensor:co1'
-          ? ['mmad', 'sync-m-fix', 'l0c-to-gm'].includes(currentStep().id)
-          : rowIndex === activeRow && columnIndex === activeColumn;
+    const showCurrentTile = currentStep().id !== 'host-args';
+    const outputStageActive = ['mmad', 'sync-m-fix', 'l0c-to-gm'].includes(currentStep().id);
+    const tone = view.role === 'output' ? 'output' : view.role === 'reduction' ? 'reduction' : 'input';
+    const cells = [];
+
+    // Keep the source extent and represent each logical tile as a Pattern aggregate
+    // cell. The page supplies only shape/metadata; it must not invent dump values.
+    for (let row = 0; row < rows; row += rowSpan) {
+      for (let column = 0; column < columns; column += columnSpan) {
+        const cellRowSpan = Math.min(rowSpan, rows - row);
+        const cellColumnSpan = Math.min(columnSpan, columns - column);
+        const isActiveAggregate = view.id === 'tensor:co1'
+          ? showCurrentTile && outputStageActive
+          : showCurrentTile
+            && activeRow >= row && activeRow < row + cellRowSpan
+            && activeColumn >= column && activeColumn < column + cellColumnSpan;
         const states = [];
-        if (active) states.push('current');
+        if (isActiveAggregate) states.push('current');
         else if (view.id === 'tensor:co1' && tensorState(view).startsWith('accumulated')) states.push('written');
         cells.push({
-          id: view.id + ':' + rowIndex + ':' + columnIndex,
-          row: rowIndex * rowSpan,
-          column: columnIndex * columnSpan,
-          rowSpan: Math.min(rowSpan, rows - rowIndex * rowSpan),
-          columnSpan: Math.min(columnSpan, columns - columnIndex * columnSpan),
-          label: view.id === 'tensor:co1' ? 'C0 (' + rowIndex + ',' + columnIndex + ')' : view.label + '[' + rowIndex + ',' + columnIndex + ']',
-          tone: view.role === 'output' ? 'output' : view.role === 'reduction' ? 'reduction' : 'input',
-          style: 'value',
+          id: view.id + ':aggregate:' + row + ':' + column,
+          row,
+          column,
+          rowSpan: cellRowSpan,
+          columnSpan: cellColumnSpan,
+          tone,
+          style: 'aggregate',
+          summary: {
+            rows: cellRowSpan,
+            columns: cellColumnSpan,
+            count: cellRowSpan * cellColumnSpan,
+            intensity: 0.5
+          },
           states
         });
       }
@@ -564,14 +695,288 @@
       direction: tensorDirection(view),
       provenance: view.provenance,
       step: {
-        phase: currentStep().label,
+        phase: frameLabel(),
         operationChips: [primaryAction(currentStep())],
         stepIndex: state.frameIndex + 1,
         totalSteps: state.frames.length
       },
       constraints: view.constraints,
-      status: context.length ? context.join(' · ') : currentStep().label
+      status: context.length ? context.join(' · ') : frameLabel()
     };
+  }
+
+  function overviewDomKey(tensorId) {
+    return tensorId.replace(/^tensor:/, '').replace(/[^a-zA-Z0-9]+/g, '-').toLowerCase();
+  }
+
+  function matmulOverviewTitleScene(view) {
+    const scene = tensorTitleScene(view);
+    return {
+      ...scene,
+      step: null,
+      constraints: [],
+      provenance: null,
+      status: ''
+    };
+  }
+
+  function removeMatmulOverviewTitleFooter(mount) {
+    mount.querySelector('.pto-tensor-title__footer')?.remove();
+  }
+
+  function updateMatmulOverviewTitle(tensorId, view) {
+    const key = overviewDomKey(tensorId);
+    const mount = document.getElementById('matmulOverviewTitle-' + key);
+    if (!mount || !window.PtoTensorTitle) return;
+    const scene = matmulOverviewTitleScene(view);
+    const options = { density: 'full', showShapes: true, showChips: true, showStatus: false };
+    const controller = state.overviewTitleControllers[tensorId];
+    if (controller) controller.update(scene, options);
+    else state.overviewTitleControllers[tensorId] = window.PtoTensorTitle.render(mount, scene, options);
+    removeMatmulOverviewTitleFooter(mount);
+  }
+
+  function updateMatmulOverviewMatrix(tensorId, view) {
+    const key = overviewDomKey(tensorId);
+    const canvas = document.getElementById('matmulOverviewCanvas-' + key);
+    if (!canvas || !window.PtoMatrixCanvas) return;
+    const scene = matrixSceneForTensor(view);
+    const options = {
+      ariaLabel: view.label + ' overview matrix',
+      showGrid: false,
+      interactive: false,
+      autoFit: true,
+      padding: { top: 18, right: 24, bottom: 46, left: 56 }
+    };
+    const controller = state.overviewMatrixControllers[tensorId];
+    if (controller) {
+      controller.update(scene, options);
+      controller.resize?.();
+      controller.fit?.();
+    } else {
+      state.overviewMatrixControllers[tensorId] = window.PtoMatrixCanvas.render(canvas, scene, options);
+      state.overviewMatrixControllers[tensorId].resize?.();
+      state.overviewMatrixControllers[tensorId].fit?.();
+    }
+  }
+
+  function matmulCopyTabsForStep(stepId) {
+    const tabsByStep = {
+      'gm-to-l1': [
+        { id: 'tensor:a', label: 'A', location: 'A / GM → A1 / L1' },
+        { id: 'tensor:b', label: 'B', location: 'B / GM → B1 / L1' }
+      ],
+      'l1-to-l0': [
+        { id: 'tensor:a1', label: 'A1', location: 'A1 / L1 → A2 / L0A' },
+        { id: 'tensor:b1', label: 'B1', location: 'B1 / L1 → B2 / L0B' }
+      ]
+    };
+    return tabsByStep[stepId] || [];
+  }
+
+  function matmulCopyPeerTensorId(tensorId) {
+    return {
+      'tensor:a': 'tensor:a1',
+      'tensor:b': 'tensor:b1',
+      'tensor:a1': 'tensor:a2',
+      'tensor:b1': 'tensor:b2'
+    }[tensorId] || tensorId;
+  }
+
+  function matmulCopyMetadata(stepId) {
+    if (stepId === 'gm-to-l1') {
+      return {
+        engine: 'MTE2 / DataCopy',
+        transformation: 'ND → NZ',
+        sourceTier: 'GM',
+        destinationTier: 'L1',
+        readiness: ['Copied by MTE2', 'Awaiting MTE2_MTE1', 'MTE1 blocked']
+      };
+    }
+    return {
+      engine: 'MTE1 / CopyL12L0',
+      transformation: 'NZ → NZ',
+      sourceTier: 'L1',
+      destinationTier: null,
+      readiness: ['L1 ready', 'Copied by MTE1', 'Awaiting MTE1_M']
+    };
+  }
+
+  function renderMatmulCopyTabs() {
+    const mount = $('#matmulCopyTabs');
+    if (!mount) return [];
+    const stepId = currentStep().id;
+    const tabs = matmulCopyTabsForStep(stepId);
+    const selectedTab = tabs.find((tab) => tab.id === state.copyTensorId);
+    if (state.copyTensorStepId !== stepId || !selectedTab) {
+      state.copyTensorStepId = stepId;
+      state.copyTensorId = tabs[0]?.id || null;
+    }
+    mount.hidden = tabs.length < 2;
+    mount.innerHTML = tabs.map((tab) => {
+      const selected = tab.id === state.copyTensorId;
+      return '<button class="tab-control-item' + (selected ? ' is-selected' : '') + '" type="button" role="tab" data-matmul-copy-tensor="' + escapeHtml(tab.id) + '" aria-selected="' + selected + '" title="' + escapeHtml(tab.location) + '">' + escapeHtml(tab.label) + '</button>';
+    }).join('');
+    mount.querySelectorAll('[data-matmul-copy-tensor]').forEach((button) => {
+      button.addEventListener('click', () => {
+        if (state.copyTensorId === button.dataset.matmulCopyTensor) return;
+        state.copyTensorId = button.dataset.matmulCopyTensor;
+        renderMatmulCopyTabs();
+        renderMatmulCopyView();
+      });
+    });
+    return tabs;
+  }
+
+  function matmulCopyTitleScene(view, role, tier, stateLabel, offset) {
+    const scene = tensorTitleScene(view);
+    return {
+      ...scene,
+      role,
+      memory: { tier, sizeBytes: view.sizeBytes, offset },
+      state: stateLabel,
+      direction: '',
+      provenance: null,
+      step: null,
+      constraints: [],
+      status: ''
+    };
+  }
+
+  function renderMatmulCopyTitle(slot, view, role, tier, stateLabel, offset) {
+    const mount = $('#matmulCopy' + (slot === 'source' ? 'Source' : 'Destination') + 'TitleMount');
+    if (!mount || !window.PtoTensorTitle) return;
+    const scene = matmulCopyTitleScene(view, role, tier, stateLabel, offset);
+    const options = { density: 'full', showShapes: true, showChips: true, showStatus: false };
+    const controller = state.copyTitleControllers[slot];
+    if (controller) controller.update(scene, options);
+    else state.copyTitleControllers[slot] = window.PtoTensorTitle.render(mount, scene, options);
+    removeMatmulOverviewTitleFooter(mount);
+  }
+
+  function renderMatmulCopyMatrix(slot, view) {
+    const canvas = $('#matmulCopy' + (slot === 'source' ? 'Source' : 'Destination') + 'Canvas');
+    if (!canvas || !window.PtoMatrixCanvas) return;
+    const scene = matrixSceneForTensor(view);
+    const options = {
+      ariaLabel: view.label + ' copy matrix',
+      showAxes: true,
+      showGrid: true,
+      interactive: false,
+      showTooltip: false,
+      autoFit: true,
+      padding: { top: 30, right: 24, bottom: 38, left: 48 }
+    };
+    const controller = state.copyMatrixControllers[slot];
+    if (controller) {
+      controller.update(scene, { ...options, preserveView: false });
+      controller.resize?.();
+      controller.fit?.();
+    } else {
+      state.copyMatrixControllers[slot] = window.PtoMatrixCanvas.render(canvas, scene, options);
+    }
+  }
+
+  function renderMatmulCopyView() {
+    const stepId = currentStep().id;
+    const tabs = matmulCopyTabsForStep(stepId);
+    const sourceId = tabs.some((tab) => tab.id === state.copyTensorId) ? state.copyTensorId : tabs[0]?.id;
+    const destinationId = matmulCopyPeerTensorId(sourceId);
+    const source = tensorView(sourceId);
+    const destination = tensorView(destinationId);
+    const metadata = matmulCopyMetadata(stepId);
+    if (!source || !destination) return;
+    const frame = currentFrame();
+    const coords = tileCoordinates();
+    const kLabel = stepId === 'gm-to-l1'
+      ? 'K-L1=' + (frame.iter0 ?? 0) + '/' + (state.context.kL1TileNum - 1)
+      : 'K-L0=' + (frame.iter1 ?? 0) + '/' + ((frame.l0Count || state.context.kL0TileNum) - 1);
+    const sourceOffset = source.id === 'tensor:b' || source.id === 'tensor:b1' ? source.sizeBytes * coords.mTile : 0;
+    const destinationOffset = destination.id === 'tensor:b1' ? tensorView('tensor:a1').sizeBytes : 0;
+    const sourceRole = source.id === 'tensor:b' ? 'weight' : source.id === 'tensor:b1' ? 'scratch' : 'input';
+    const destinationRole = destination.id === 'tensor:b2' ? 'weight' : 'scratch';
+    const sourceState = stepId === 'gm-to-l1' ? 'current' : 'ready';
+    const destinationState = stepId === 'gm-to-l1' ? 'written' : 'loading';
+    $('#matmulCopySummary').textContent = metadata.engine.split(' / ')[0] + ' · ' + source.label + ' transfer · ' + formatBytes(source.sizeBytes) + ' · ' + metadata.sourceTier + ' → ' + (metadata.destinationTier || destination.memoryTier);
+    $('#matmulCopyContext').textContent = 'AIC' + (frame.aicIndex ?? 0) + ' · OT' + (frame.tileIdx ?? 0) + ' · M' + coords.mTile + '/N' + coords.nTile + ' · ' + kLabel;
+    $('#matmulCopyEngine').textContent = metadata.engine;
+    $('#matmulCopyTransformation').textContent = metadata.transformation;
+    const evidence = currentStep().evidence || 'derived';
+    $('#matmulCopyEvidence').textContent = evidence;
+    $('#matmulCopyEvidence').className = 'tag ' + (evidence === 'confirmed' ? 'status-success' : evidence === 'derived' ? 'status-warning' : 'tag-accent');
+    $('#matmulCopyReadiness').innerHTML = metadata.readiness.map((item, index) => (index ? '<span aria-hidden="true">→</span>' : '') + '<span class="tag' + (index === 0 ? ' status-success' : '') + '">' + escapeHtml(item) + '</span>').join('');
+    renderMatmulCopyTitle('source', source, sourceRole, metadata.sourceTier, sourceState, sourceOffset);
+    renderMatmulCopyTitle('destination', destination, destinationRole, metadata.destinationTier || destination.memoryTier, destinationState, destinationOffset);
+    renderMatmulCopyMatrix('source', source);
+    renderMatmulCopyMatrix('destination', destination);
+    const fitMatrices = () => Object.values(state.copyMatrixControllers).forEach((controller) => {
+      controller?.resize?.();
+      controller?.fit?.();
+    });
+    if (window.requestAnimationFrame) window.requestAnimationFrame(() => window.requestAnimationFrame(fitMatrices));
+    else fitMatrices();
+  }
+
+  function activeTensorIdsForStep(stepId) {
+    const activeByStep = {
+      'host-args': ['tensor:a', 'tensor:b', 'tensor:c'],
+      'host-launch': ['tensor:a', 'tensor:b', 'tensor:c'],
+      'kernel-tiling': ['tensor:a', 'tensor:b', 'tensor:c'],
+      'kernel-block-map': ['tensor:c', 'tensor:co1'],
+      'gm-to-l1': ['tensor:a', 'tensor:b', 'tensor:a1', 'tensor:b1'],
+      'sync-mte2-mte1': ['tensor:a1', 'tensor:b1'],
+      'l1-to-l0': ['tensor:a1', 'tensor:b1', 'tensor:a2', 'tensor:b2'],
+      'mmad': ['tensor:a2', 'tensor:b2', 'tensor:co1'],
+      'sync-m-fix': ['tensor:co1'],
+      'l0c-to-gm': ['tensor:co1', 'tensor:c'],
+      'host-verify': ['tensor:c']
+    };
+    return activeByStep[stepId] || [];
+  }
+
+  function renderMatmulOverview() {
+    const context = state.context;
+    const grid = $('#matmulOverviewGrid');
+    if (!context || !grid) return;
+    const current = currentInstructionState();
+    const activeIds = activeTensorIdsForStep(current.step.id);
+    const views = activeIds.map((tensorId) => tensorView(tensorId)).filter(Boolean);
+    Object.values(state.overviewTitleControllers).forEach((controller) => controller?.destroy?.());
+    Object.values(state.overviewMatrixControllers).forEach((controller) => controller?.destroy?.());
+    state.overviewTitleControllers = {};
+    state.overviewMatrixControllers = {};
+    grid.dataset.tensorCount = String(views.length);
+    grid.innerHTML = views.map((view) => {
+      const key = overviewDomKey(view.id);
+      return '<figure class="avz-tensor-overview__item avz-tensor-overview__item--matrix' + (view.role === 'weight' ? ' avz-tensor-overview__item--weight' : '') + (view.role === 'output' ? ' avz-tensor-overview__item--output' : '') + '" data-overview-tensor="' + escapeHtml(view.id) + '">' +
+        '<figcaption><div class="avz-tensor-title-host" id="matmulOverviewTitle-' + key + '"></div></figcaption>' +
+        '<div class="pto-matrix-canvas-host avz-tensor-overview__canvas matmul-overview-canvas"><canvas class="pto-matrix-canvas" id="matmulOverviewCanvas-' + key + '" aria-label="' + escapeHtml(view.label) + ' overview matrix"></canvas></div>' +
+      '</figure>';
+    }).join('');
+    const evidence = current.step.evidence;
+    $('#matmulOverviewEvidence').textContent = evidence;
+    $('#matmulOverviewEvidence').className = 'tag ' + (evidence === 'confirmed' ? 'status-success' : evidence === 'derived' ? 'status-warning' : 'tag-accent');
+    $('#matmulOverviewEquation').textContent = 'A[' + context.M + ',' + context.K + '] × B[' + context.K + ',' + context.N + '] → C[' + context.M + ',' + context.N + ']';
+    $('#matmulOverviewM').textContent = 'M=' + context.M;
+    $('#matmulOverviewK').textContent = 'K=' + context.K;
+    $('#matmulOverviewN').textContent = 'N=' + context.N;
+    const curM = current.frame.curM ?? context.curM;
+    const curN = current.frame.curN ?? context.curN;
+    const curKL0 = current.frame.curKL0 ?? context.baseK;
+    $('#matmulOverviewTile').textContent = 'Output Tile [' + curM + ',' + curN + '] · K Slice ' + curKL0 + ' · BF16';
+    views.forEach((view) => {
+      updateMatmulOverviewTitle(view.id, view);
+      updateMatmulOverviewMatrix(view.id, view);
+    });
+    const fitMatrices = () => Object.values(state.overviewMatrixControllers).forEach((controller) => {
+      controller?.resize?.();
+      controller?.fit?.();
+    });
+    if (window.requestAnimationFrame) {
+      window.requestAnimationFrame(() => window.requestAnimationFrame(fitMatrices));
+    } else {
+      fitMatrices();
+    }
   }
 
   function renderTensorTabs() {
@@ -648,6 +1053,25 @@
     return contract.focusByStep[currentStep().id] || { units: [], routes: [], summary: 'No on-chip participation asserted.' };
   }
 
+  function currentInstructionState() {
+    const step = currentStep();
+    const frame = currentFrame();
+    const focus = hardwareFocus();
+    const tensorId = state.trace.tensorFocusByStep[step.id] || state.selectedTensorId;
+    const view = tensorView(tensorId);
+    const flow = resolvedDataFlows().find((item) => item.stepId === step.id);
+    return {
+      step,
+      frame,
+      frameLabel: frameLabel(frame),
+      tensorId,
+      tensor: view,
+      tensorState: tensorState(view),
+      flow,
+      hardware: focus
+    };
+  }
+
   function focusedHardwareUnits() {
     const contract = hardwareContract();
     const active = new Set(hardwareFocus().units);
@@ -716,22 +1140,7 @@
   }
 
   function renderHardwareParticipation() {
-    const contract = hardwareContract();
-    const focus = hardwareFocus();
-    const active = new Set(focus.units);
-    $('#hardwareSummary').innerHTML = '<strong>' + escapeHtml(currentStep().label) + '</strong><span>' + escapeHtml(focus.summary) + '</span>';
-    $('#hardwareUnits').innerHTML = contract.units.map((unit) =>
-      '<span class="tag matmul-hardware-unit is-' + escapeHtml(unit.kind) + (active.has(unit.id) ? ' is-current' : '') + '">' + escapeHtml(unit.label) + '</span>'
-    ).join('');
-    $('#hardwareEventPath').innerHTML = state.trace.events.map((event) => {
-      const isSet = event.setStepId === currentStep().id;
-      const isWait = event.waitStepId === currentStep().id;
-      const current = isSet || isWait;
-      const phase = isSet && isWait ? 'SET + WAIT' : isSet ? 'SET' : isWait ? 'WAIT' : event.scope;
-      return '<div class="matmul-hardware-event' + (current ? ' is-current' : '') + '">' +
-        '<span>' + escapeHtml(event.producerEngine) + '</span><b>→ ' + escapeHtml(event.eventType) + ' →</b><span>' + escapeHtml(event.consumerEngine) + '</span>' +
-        '<span class="badge ' + (current ? 'badge--warning' : '') + '">' + escapeHtml(phase) + '</span></div>';
-    }).join('');
+    ensureHardwareViewport();
     applyHardwareFocus();
   }
 
@@ -747,23 +1156,16 @@
   }
 
   function selectDetailTab(tab) {
+    if (tab !== 'hardware') return;
     state.detailTab = tab;
-    renderDetailTabs();
-    if (tab === 'tensor') {
-      renderTensorTabs();
-      renderTensorDetail();
-      window.requestAnimationFrame(() => state.matrixController?.resize());
-    }
-    if (tab === 'hardware') {
-      ensureHardwareViewport();
-      renderHardwareParticipation();
-      window.requestAnimationFrame(() => {
-        const size = hardwareFrameSize();
-        state.hardwareViewport?.setFrameSize(size.width, size.height);
-        state.hardwareViewport?.fit();
-        applyHardwareFocus();
-      });
-    }
+    ensureHardwareViewport();
+    renderHardwareParticipation();
+    window.requestAnimationFrame(() => {
+      const size = hardwareFrameSize();
+      state.hardwareViewport?.setFrameSize(size.width, size.height);
+      state.hardwareViewport?.fit();
+      applyHardwareFocus();
+    });
   }
 
   function syncTensorFocusForStep() {
@@ -773,15 +1175,24 @@
   function publishExecutionState() {
     const frameRoot = document.querySelector('.matmul-frame');
     const step = currentStep();
+    const instruction = currentInstructionState();
     const detail = {
       stepIndex: state.stepIndex,
       stepId: step.id,
       frameIndex: state.frameIndex,
       frame: { ...currentFrame() },
-      scenarioId: state.scenarioId,
-      validationContext: { ...state.context, kSlices: state.context.kSlices.map((slice) => ({ ...slice, l0Slices: [...slice.l0Slices] })) },
       action: primaryAction(step),
-      unit: step.unit
+      unit: step.unit,
+      panelState: {
+        tensorId: instruction.tensorId,
+        tensorState: instruction.tensorState,
+        tensorFlow: instruction.flow ? {
+          from: instruction.flow.from,
+          to: instruction.flow.to,
+          transformation: instruction.flow.transformation
+        } : null,
+        hardwareUnits: [...instruction.hardware.units]
+      }
     };
     if (frameRoot) {
       frameRoot.dataset.currentStep = detail.stepId;
@@ -873,6 +1284,38 @@
       '<div class="avz-instruction-loop__title">K Loop</div><div class="avz-instruction-loop__rows">' + loopRows.join('') + repeat + '</div></section>';
   }
 
+  function renderMatmulCoreContext() {
+    const context = state.context;
+    const mount = $('#matmulCoreContext');
+    const options = $('#matmulCoreOptions');
+    if (!mount || !options || !context) return;
+    mount.hidden = false;
+    const signature = MATMUL_CORE_COUNT + ':' + context.nTileNum + ':' + context.mTileNum;
+    if (options.dataset.signature !== signature) {
+      options.dataset.signature = signature;
+      options.innerHTML = Array.from({ length: MATMUL_CORE_COUNT }, (_, index) => {
+        const assignedTiles = coreTileSchedule(context, index);
+        const firstTile = assignedTiles[0] ?? 0;
+        const lastTile = assignedTiles.at(-1) ?? firstTile;
+        const tileSummary = assignedTiles.join(', ');
+        return '<button class="btn btn-compact btn-ghost" type="button" role="radio" data-matmul-core-index="' + index + '" aria-label="AIC ' + index + ', output tiles ' + escapeHtml(tileSummary) + '" title="AIC' + index + ' · output tiles ' + escapeHtml(tileSummary) + '">AIC' + index + ' · OT' + firstTile + '→' + lastTile + '</button>';
+      }).join('');
+    }
+    const selectedTiles = coreTileSchedule(context, state.matmulCoreIndex);
+    const selectedFirst = selectedTiles[0] ?? 0;
+    const selectedLast = selectedTiles.at(-1) ?? selectedFirst;
+    const scheduleMeta = $('#matmulCoreScheduleMeta');
+    if (scheduleMeta) {
+      scheduleMeta.textContent = MATMUL_CORE_COUNT + ' AIC · round-robin · ' + context.outputTileNum + ' output tiles · ' + selectedTiles.length + ' tiles/AIC · selected AIC' + state.matmulCoreIndex + ': OT' + selectedFirst + '→OT' + selectedLast;
+    }
+    options.querySelectorAll('[data-matmul-core-index]').forEach((button) => {
+      const selected = Number(button.dataset.matmulCoreIndex) === state.matmulCoreIndex;
+      button.classList.toggle('is-selected', selected);
+      button.setAttribute('aria-checked', String(selected));
+      button.tabIndex = selected ? 0 : -1;
+    });
+  }
+
   function renderFlow() {
     const steps = state.trace.steps;
     const before = [
@@ -941,54 +1384,33 @@
 
   function renderCurrent() {
     const step = currentStep();
-    const frame = currentFrame();
-    const contextualFacts = [];
-    if (frame.tileIdx != null) contextualFacts.push('tileIdx=' + frame.tileIdx);
-    if (frame.curM != null) contextualFacts.push('curM=' + frame.curM);
-    if (frame.curN != null) contextualFacts.push('curN=' + frame.curN);
-    if (frame.iter0 != null) contextualFacts.push('iter0=' + frame.iter0 + '/' + (state.context.kL1TileNum - 1));
-    if (frame.curKL1 != null) contextualFacts.push('curKL1=' + frame.curKL1);
-    if (frame.iter1 != null) contextualFacts.push('iter1=' + frame.iter1 + '/' + ((frame.l0Count || state.context.kL0TileNum) - 1));
-    if (frame.curKL0 != null) contextualFacts.push('curKL0=' + frame.curKL0);
-    if (frame.mmadMode) contextualFacts.push(frame.mmadMode);
-    $('#currentRole').textContent = step.role + ' · ' + step.unit;
-    $('#currentLabel').textContent = frame.stepId === 'mmad' ? frameLabel(frame) : step.label;
-    $('#currentEvidence').textContent = step.evidence;
-    $('#currentEvidence').className = 'badge ' + evidenceClass(step.evidence);
-    $('#currentSummary').textContent = step.summary;
-    $('#currentFacts').innerHTML = step.facts.concat(contextualFacts).map((fact) =>
-      '<span class="matmul-fact">' + escapeHtml(fact) + '</span>'
-    ).join('');
-    $('#flowMeta').textContent = primaryAction(step) + ' · ' + step.unit + ' · logical order · duration unavailable';
+    const copyMeta = {
+      'gm-to-l1': 'MTE2 · GM → L1 · logical order · duration unavailable',
+      'l1-to-l0': 'MTE1 · L1 → L0 · logical order · duration unavailable'
+    }[step.id];
+    $('#flowMeta').textContent = copyMeta || (step.id === 'kernel-block-map'
+      ? 'LocalTensor views · no data movement'
+      : primaryAction(step) + ' · ' + step.unit + ' · logical order · duration unavailable');
   }
 
   function renderDetails() {
-    const step = currentStep();
-    const trace = state.trace;
-    $('#launchFacts').innerHTML = trace.launchFacts.map((fact) =>
-      '<dt>' + escapeHtml(fact[0]) + '</dt><dd>' + escapeHtml(fact[1]) + '</dd>'
-    ).join('');
-    const tierMembers = {
-      gm: ['gm-a', 'gm-b', 'gm-c'],
-      l1: ['a1', 'b1'],
-      l0a: ['a2'],
-      l0b: ['b2'],
-      l0c: ['l0c']
-    };
-    $('#memoryList').innerHTML = trace.memory.tiers.map((item) =>
-      '<div class="matmul-memory-item' + (tierMembers[item.id]?.some((id) => step.memory.includes(id)) ? ' is-current' : '') + '">' +
-      '<span class="matmul-memory-item__dot" aria-hidden="true"></span><div>' +
-      '<strong class="matmul-memory-item__name">' + escapeHtml(item.label) + '</strong>' +
-      '<span class="matmul-memory-item__meta">' + escapeHtml(item.role) + ' · ' +
-      escapeHtml(item.capacity) + '</span></div></div>'
-    ).join('');
-    renderDetailTabs();
-    renderTensorTabs();
-    renderTensorDetail();
-    renderMemoryFlowMap();
-    renderTensorJourney();
+    const stepId = currentStep().id;
+    const copyActive = ['gm-to-l1', 'l1-to-l0'].includes(stepId);
+    const allocationActive = stepId === 'kernel-block-map';
+    $('#matmulCopyTabs').hidden = !copyActive;
+    $('#matmulCopyView').hidden = !copyActive;
+    $('#matmulTensorOverview').hidden = allocationActive || copyActive;
+    $('#matmulMemoryAllocation').hidden = !allocationActive;
+    if (copyActive) {
+      renderMatmulCopyTabs();
+      renderMatmulCopyView();
+    } else if (allocationActive) {
+      renderMatmulMemoryAllocation();
+    } else {
+      renderMatmulCopyTabs();
+      renderMatmulOverview();
+    }
     renderHardwareParticipation();
-    renderEvents();
   }
 
   function renderRoleTabs() {
@@ -1096,6 +1518,13 @@
     selectStep(targetIndex);
   }
 
+  function frameMatchesInstruction(frame, iteration, operation) {
+    if (Number.isInteger(iteration) && frame.iter0 !== iteration) return false;
+    if (operation === 'mmad-initialize') return frame.mmadMode === 'initialize CO1';
+    if (operation === 'mmad-accumulate') return frame.mmadMode === 'accumulate CO1';
+    return true;
+  }
+
   function selectStep(index, options = {}) {
     if (!options.fromPlayback) {
       state.playing = false;
@@ -1105,27 +1534,48 @@
     state.instructionIterationFocus = options.instructionIteration ?? null;
     state.instructionOperationFocus = options.instructionOperation ?? null;
     if (!options.keepFrame) {
-      const nextFrameIndex = state.frames.findIndex((frame) => frame.stepId === currentStep().id);
+      const nextFrameIndex = state.frames.findIndex((frame) => frame.stepId === currentStep().id
+        && frameMatchesInstruction(frame, options.instructionIteration, options.instructionOperation));
       if (nextFrameIndex >= 0) state.frameIndex = nextFrameIndex;
     }
     syncTensorFocusForStep();
     const role = currentStep().role.toLowerCase();
     if (role === 'kernel' || role === 'host') state.sourceRole = role;
+    renderMatmulCoreContext();
     renderRoleTabs();
     renderSource();
     renderFlow();
     renderCurrent();
-    renderLoopContext();
     renderDetails();
     renderExecutionDock();
     syncPlayback();
     publishExecutionState();
-    $('#statusText').textContent = currentScenario().label + ' · ' + frameLabel() + ' · source-linked · logical playback';
-    $('#statusScenario').textContent = currentScenario().label;
+    $('#statusText').textContent = frameLabel() + ' · source-linked · logical playback';
     $('#statusStep').textContent = (state.stepIndex + 1) + ' / ' + state.trace.steps.length;
   }
 
   function bindControls() {
+    $('#matmulCoreOptions').addEventListener('click', (event) => {
+      const button = event.target.closest('[data-matmul-core-index]');
+      if (!button) return;
+      state.matmulCoreIndex = Math.max(0, Math.min(MATMUL_CORE_COUNT - 1, Number(button.dataset.matmulCoreIndex) || 0));
+      selectStep(state.stepIndex, { keepFrame: true });
+    });
+    $('#matmulCoreOptions').addEventListener('keydown', (event) => {
+      if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return;
+      const buttons = Array.from($('#matmulCoreOptions').querySelectorAll('[data-matmul-core-index]'));
+      if (!buttons.length) return;
+      event.preventDefault();
+      const currentIndex = Math.max(0, buttons.findIndex((button) => Number(button.dataset.matmulCoreIndex) === state.matmulCoreIndex));
+      const nextIndex = event.key === 'Home'
+        ? 0
+        : event.key === 'End'
+          ? buttons.length - 1
+          : (currentIndex + (event.key === 'ArrowRight' ? 1 : -1) + buttons.length) % buttons.length;
+      state.matmulCoreIndex = nextIndex;
+      selectStep(state.stepIndex, { keepFrame: true });
+      buttons[nextIndex]?.focus();
+    });
     $('#instructionSequence').addEventListener('click', (event) => {
       const toggle = event.target.closest('[data-loop-toggle]');
       if (toggle) {
@@ -1212,7 +1662,6 @@
     state.frames = buildExecutionFrames(state.trace, state.context);
     bindControls();
     initPlayback();
-    renderValidationControls();
     renderExecutionDock();
     selectStep(0);
     window.PtoIdeFrame?.initAll?.();

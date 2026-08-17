@@ -7,7 +7,7 @@
 权威源码：
 
 ~~~
-src/matmul/main.asc
+页面源码快照 `src/matmul/main.asc`（对应仓库实际源文件 `Samples/0_Introduction/matmul/main.asc`）
 ~~~
 
 辅助证据：
@@ -57,6 +57,9 @@ kL1=512
 | K L1 tile 数 | 4 | derived | K / kL1 |
 | K L0 tile 数 | 4 | derived | kL1 / baseK |
 | 每输出 tile Mmad | 16 | derived | K L1 tile 数 × K L0 tile 数 |
+| 逻辑 AIC / block 数 | 8 | assumed | 本页的 8 核 round-robin 演示上下文 |
+| 每 AIC 输出 tile 数 | 8 | derived | 64 个输出 tile / 8 个 AIC |
+| 每 AIC 逻辑 Mmad 数 | 128 | derived | 8 个输出 tile × 16 次 Mmad |
 
 ## 全局 Tensor 契约
 
@@ -131,6 +134,27 @@ C block = C[256:512, 256:512]
 ~~~
 
 block 调度可能以 blockNum 步进处理多个 tile，因此 tileIdx 不等于 blockIdx 的固定一对一映射。
+
+### 8 核 ownership
+
+本页固定使用 `blockNum = 8` 作为逻辑演示假设。对任意 AIC `b`，其输出 tile 序列为：
+
+~~~
+{ b, b + 8, b + 16, ... }  < 64
+~~~
+
+| AIC | tileIdx | 第一个 tile 的 C tile 坐标 | 最后一个 tile 的 C tile 坐标 |
+| --- | --- | --- | --- |
+| AIC0 | 0, 8, 16, 24, 32, 40, 48, 56 | M0/N0 | M3/N8 |
+| AIC1 | 1, 9, 17, 25, 33, 41, 49, 57 | M0/N1 | M3/N9 |
+| AIC2 | 2, 10, 18, 26, 34, 42, 50, 58 | M0/N2 | M3/N10 |
+| AIC3 | 3, 11, 19, 27, 35, 43, 51, 59 | M0/N3 | M3/N11 |
+| AIC4 | 4, 12, 20, 28, 36, 44, 52, 60 | M0/N4 | M3/N12 |
+| AIC5 | 5, 13, 21, 29, 37, 45, 53, 61 | M0/N5 | M3/N13 |
+| AIC6 | 6, 14, 22, 30, 38, 46, 54, 62 | M0/N6 | M3/N14 |
+| AIC7 | 7, 15, 23, 31, 39, 47, 55, 63 | M0/N7 | M3/N15 |
+
+Tensor 元数据始终描述当前选中的 `AIC / tileIdx / iter0 / iter1` 上下文；它不意味着页面拥有 8 个 AIC 的真实 dump。没有 dump 时，A、B、A1、B1、A2、B2、CO1 仍只显示 shape、layout、dtype、生命周期和逻辑坐标，不显示具体数值。
 
 ## 阶段 3：GM Tensor View
 
