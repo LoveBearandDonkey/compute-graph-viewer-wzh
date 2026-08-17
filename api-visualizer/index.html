@@ -3,21 +3,21 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>MatMul + Bias + GELU · Recommendation Trace</title>
+  <title>Ascend C API Visualizer</title>
   <link rel="icon" href="data:,">
-  <link rel="stylesheet" href="../../pto-design-system/tokens/foundation.css">
-  <link rel="stylesheet" href="../../pto-design-system/tokens/semantic.css">
-  <link rel="stylesheet" href="../../pto-design-system/tokens/components.css">
-  <link rel="stylesheet" href="../../pto-design-system/css/style.css">
-  <link rel="stylesheet" href="../../pto-design-system/patterns/workbench-shell/pattern.css">
-  <link rel="stylesheet" href="../../pto-design-system/patterns/ide-frame/pattern.css">
-  <link rel="stylesheet" href="../../pto-design-system/patterns/aic-core-object/pattern.css">
-  <link rel="stylesheet" href="../../pto-design-system/patterns/aiv-core-object/pattern.css">
-  <link rel="stylesheet" href="../../pto-design-system/patterns/memory-architecture/pattern.css">
-  <link rel="stylesheet" href="../../pto-design-system/patterns/hardware-architecture-viewport/pattern.css">
-  <link rel="stylesheet" href="../../pto-design-system/patterns/floating-playback-control/pattern.css">
-  <link rel="stylesheet" href="../../pto-design-system/patterns/matrix-canvas/pattern.css">
-  <link rel="stylesheet" href="../../pto-design-system/patterns/tensor-volume-canvas/pattern.css">
+  <link rel="stylesheet" href="../vendor/pto-design-system/tokens/foundation.css">
+  <link rel="stylesheet" href="../vendor/pto-design-system/tokens/semantic.css">
+  <link rel="stylesheet" href="../vendor/pto-design-system/tokens/components.css">
+  <link rel="stylesheet" href="../vendor/pto-design-system/css/style.css">
+  <link rel="stylesheet" href="../vendor/pto-design-system/patterns/workbench-shell/pattern.css">
+  <link rel="stylesheet" href="../vendor/pto-design-system/patterns/ide-frame/pattern.css">
+  <link rel="stylesheet" href="../vendor/pto-design-system/patterns/aic-core-object/pattern.css">
+  <link rel="stylesheet" href="../vendor/pto-design-system/patterns/aiv-core-object/pattern.css">
+  <link rel="stylesheet" href="../vendor/pto-design-system/patterns/memory-architecture/pattern.css">
+  <link rel="stylesheet" href="../vendor/pto-design-system/patterns/hardware-architecture-viewport/pattern.css">
+  <link rel="stylesheet" href="../vendor/pto-design-system/patterns/floating-playback-control/pattern.css">
+  <link rel="stylesheet" href="patterns/matrix-canvas/pattern.css">
+  <link rel="stylesheet" href="patterns/tensor-volume-canvas/pattern.css">
   <style>
     * { box-sizing: border-box; }
 
@@ -3891,10 +3891,155 @@
       .lineage-ribbon,
       .lineage-transition-orb { transition: none; }
     }
+
+    /* Standalone API Visualizer shell. The API stages and their stateful
+       renderers remain shared with the source recommendation demo below. */
+    .api-visualizer-frame .pto-ide-frame__split {
+      --ide-split-gutter-size: 1px;
+    }
+
+    .api-visualizer-frame .api-catalog {
+      display: grid;
+      gap: var(--space-5);
+      align-content: start;
+      padding: var(--space-4);
+    }
+
+    .api-catalog__intro {
+      display: grid;
+      gap: var(--space-2);
+    }
+
+    .api-catalog__intro h3 {
+      margin: 0;
+      color: var(--foreground);
+      font: var(--text-title-md);
+    }
+
+    .api-catalog__intro p,
+    .api-catalog__section-copy {
+      margin: 0;
+      color: var(--foreground-secondary);
+      font: var(--text-body-sm);
+      line-height: 1.5;
+    }
+
+    .api-catalog__section {
+      display: grid;
+      gap: var(--space-2);
+      padding-top: var(--space-4);
+      border-top: 1px solid var(--border-subtle);
+    }
+
+    .api-catalog__section-title {
+      color: var(--foreground-muted);
+      font: var(--text-label);
+      letter-spacing: var(--letter-spacing-label);
+      text-transform: uppercase;
+    }
+
+    .api-catalog__list {
+      display: grid;
+      gap: var(--space-1);
+    }
+
+    .api-catalog__item {
+      width: 100%;
+      display: grid;
+      gap: 2px;
+      justify-items: start;
+      padding: var(--space-2) var(--space-3);
+      border: 0;
+      border-radius: var(--radius-md);
+      background: transparent;
+      color: var(--foreground-secondary);
+      text-align: left;
+      cursor: pointer;
+    }
+
+    .api-catalog__item:hover,
+    .api-catalog__item:focus-visible {
+      background: var(--surface-3);
+      color: var(--foreground);
+      outline: none;
+    }
+
+    .api-catalog__item.is-selected {
+      background: var(--surface-4);
+      color: var(--foreground);
+    }
+
+    .api-catalog__item strong {
+      font: var(--text-body-sm);
+      font-family: var(--font-mono);
+    }
+
+    .api-catalog__item span {
+      color: var(--foreground-muted);
+      font: var(--text-label);
+    }
+
+    .api-catalog__item.is-selected span {
+      color: var(--foreground-secondary);
+    }
+
+    .api-catalog__note {
+      display: grid;
+      gap: var(--space-1);
+      color: var(--foreground-muted);
+      font: var(--text-label);
+      line-height: 1.5;
+    }
+
+    .api-visualizer-frame #decisionTracePanel,
+    .api-visualizer-frame #formatLabView {
+      display: none !important;
+    }
+
+    .api-visualizer-frame #addApiView {
+      min-height: 0;
+      height: 100%;
+      display: block;
+      overflow: hidden;
+      background: transparent;
+    }
+
+    .api-visualizer-frame .pto-ide-frame__pane-body {
+      min-height: 0;
+    }
+
+    .api-visualizer-frame .pto-ide-frame__explorer .pto-ide-frame__pane-body {
+      padding: 0;
+    }
+
+    .api-visualizer-frame .pto-ide-frame__explorer .add-api-sidebar {
+      width: 100%;
+      height: 100%;
+      max-height: none;
+      border-right: 0;
+    }
+
+    .api-visualizer-frame #addApiView > [data-api-stage-pane] {
+      width: 100%;
+      height: 100%;
+    }
+
+    .api-visualizer-frame .add-api-stage-shell,
+    .api-visualizer-frame .load3d-native-stage,
+    .api-visualizer-frame .gm2ub-align-stage {
+      min-height: 0;
+    }
+
+    @media (max-width: 920px) {
+      .api-visualizer-frame .add-api-view {
+        grid-template-columns: minmax(260px, 310px) minmax(520px, 1fr);
+        overflow: auto;
+      }
+    }
   </style>
 </head>
 <body>
-  <section class="pto-ide-frame trace-demo-frame" data-ide-frame data-host="standalone" aria-label="Explainable Design Advisor recommendation trace concept">
+  <section class="pto-ide-frame trace-demo-frame api-visualizer-frame" data-ide-frame data-host="standalone" aria-label="Ascend C API Visualizer">
     <header class="pto-ide-frame__topbar pto-ide-frame__standalone-chrome">
       <div class="pto-ide-frame__topbar-left">
         <div class="pto-ide-frame__host-chip">
@@ -3904,8 +4049,8 @@
           <span>IDE</span>
         </div>
         <div class="pto-ide-frame__workspace">
-          <span class="workspace-title">Ascend C Operator Planning</span>
-          <span class="workspace-meta">recommendation-trace-V3.html</span>
+          <span class="workspace-title">Ascend C API Visualizer</span>
+          <span class="workspace-meta">api-visualizer/index.html</span>
         </div>
       </div>
       <div class="pto-ide-frame__topbar-center"></div>
@@ -3925,7 +4070,7 @@
     </header>
       <div class="pto-ide-frame__body">
       <nav class="pto-ide-frame__activity-rail pto-ide-frame__standalone-chrome" aria-label="Activity rail">
-        <button class="btn btn-icon btn-ghost pto-ide-frame__rail-button" type="button" data-ide-toggle="explorer" aria-label="Toggle file explorer" aria-controls="recommendation-trace-explorer-pane" aria-expanded="true" aria-pressed="false" title="Explorer">
+        <button class="btn btn-icon btn-ghost pto-ide-frame__rail-button" type="button" data-ide-toggle="explorer" aria-label="Toggle file explorer" aria-controls="api-visualizer-explorer-pane" aria-expanded="true" aria-pressed="false" title="Explorer">
           <svg class="pto-ide-frame__rail-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9l-.81-1.2A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"></path></svg>
         </button>
         <button class="btn btn-icon btn-ghost pto-ide-frame__rail-button" type="button" aria-label="Search" title="Search">
@@ -3937,20 +4082,48 @@
         <button class="btn btn-icon btn-ghost pto-ide-frame__rail-button" type="button" aria-label="Terminal" title="Terminal">
           <svg class="pto-ide-frame__rail-icon" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="5" width="18" height="14" rx="2"></rect><path d="m7 9 3 3-3 3"></path><path d="M12 15h5"></path></svg>
         </button>
-        <button class="btn btn-icon btn-ghost pto-ide-frame__rail-button is-selected" type="button" data-ide-toggle="operator" aria-label="Open operator input and recommendation trace" aria-controls="recommendation-trace-explorer-pane recommendation-trace-panel-pane" aria-expanded="true" aria-pressed="true" title="Operator input + recommendation trace">
-          <img class="pto-ide-frame__rail-icon" src="assets/planner-logo.png" alt="Recommendation">
-        </button>
       </nav>
 
       <div class="pto-ide-frame__workarea">
-        <div class="pto-ide-frame__split" data-ide-split="standalone-main" data-storage-key="recommendation-trace-v3-ide-frame" data-split-direction="horizontal" data-sizes="1,1" data-pixel-sizes="300,0" data-min-size="236,600">
-          <aside class="pto-ide-frame__pane pto-ide-frame__explorer" data-ide-pane="explorer" id="recommendation-trace-explorer-pane">
+        <div class="pto-ide-frame__split" data-ide-split="standalone-main" data-storage-key="api-visualizer-ide-frame" data-split-direction="horizontal" data-sizes="1,1" data-pixel-sizes="304,0" data-min-size="236,600">
+          <aside class="pto-ide-frame__pane pto-ide-frame__explorer" data-ide-pane="explorer" id="api-visualizer-explorer-pane">
             <header class="pto-ide-frame__pane-header">
-              <h2 class="pto-ide-frame__pane-title" data-explorer-title>Operator Input</h2>
-              <span class="pto-ide-frame__pane-meta" data-explorer-meta>Cube + Vector · FP16</span>
+              <h2 class="pto-ide-frame__pane-title" data-explorer-title>API Catalog</h2>
+              <span class="pto-ide-frame__pane-meta" data-explorer-meta>3 interactive sandboxes</span>
             </header>
             <div class="pto-ide-frame__pane-body pane-scroll">
-              <div class="operator-input-panel pane-view" data-explorer-view="operator">
+              <div class="api-catalog pane-view" data-explorer-view="operator">
+                <section class="api-catalog__intro" aria-labelledby="apiCatalogTitle">
+                  <div class="eyebrow">Ascend C</div>
+                  <h3 id="apiCatalogTitle">API Visualizer</h3>
+                  <p>用可交互的内存、布局与搬运视图理解 API 的参数如何改变执行结果。</p>
+                </section>
+
+                <section class="api-catalog__section" aria-labelledby="apiCatalogSandboxTitle">
+                  <div class="api-catalog__section-title" id="apiCatalogSandboxTitle">Interactive sandboxes</div>
+                  <p class="api-catalog__section-copy">选择一个 API，在右侧查看参数、阶段状态和生成代码。</p>
+                  <div class="api-catalog__list" role="group" aria-label="API sandboxes">
+                    <button class="api-catalog__item operator-api-pill is-selected" type="button" data-operator-api="Add" aria-pressed="true">
+                      <strong>Add</strong>
+                      <span>LocalTensor block-level processing</span>
+                    </button>
+                    <button class="api-catalog__item operator-api-pill" type="button" data-operator-api="Load3D" aria-pressed="false">
+                      <strong>Load3D</strong>
+                      <span>NCHW → NC1HWC0 sliding-window load</span>
+                    </button>
+                    <button class="api-catalog__item operator-api-pill" type="button" data-operator-api="Gm2UbAlign" aria-pressed="false">
+                      <strong>asc_copy_gm2ub_align</strong>
+                      <span>GM → UB aligned data movement</span>
+                    </button>
+                  </div>
+                </section>
+
+                <section class="api-catalog__section api-catalog__note" aria-label="Visualizer guidance">
+                  <strong>How to read this</strong>
+                  <span>先看输入布局，再调参数，最后对照生成代码确认 API 语义。</span>
+                </section>
+              </div>
+              <div class="operator-input-panel pane-view" data-explorer-view="legacy-operator" hidden>
                 <section class="operator-context-hero" aria-labelledby="problemTitle">
                   <div>
                     <div class="eyebrow">Operator</div>
@@ -4035,13 +4208,13 @@
             </div>
           </aside>
 
-          <main class="pto-ide-frame__pane" data-ide-pane="editor-preview" id="recommendation-trace-panel-pane">
+          <main class="pto-ide-frame__pane" data-ide-pane="editor-preview" id="api-visualizer-panel-pane">
             <div class="pto-ide-frame__tabstrip generated-project-tabs" data-generated-project-tabstrip hidden>
               <div class="tab-control" role="tablist" aria-label="Generated project tabs" data-generated-project-tabs></div>
             </div>
             <header class="pto-ide-frame__pane-header">
-              <h2 class="pto-ide-frame__pane-title" data-center-title>Recommendation Trace</h2>
-              <span class="pto-ide-frame__pane-meta" data-center-meta>Candidates · final design-time stage</span>
+              <h2 class="pto-ide-frame__pane-title" data-center-title>API Visualizer</h2>
+              <span class="pto-ide-frame__pane-meta" data-center-meta>Add · native interactive parameter sandbox</span>
             </header>
             <div class="pto-ide-frame__pane-body pane-scroll">
               <div class="center-workbench" id="decisionTracePanel">
@@ -4354,8 +4527,8 @@
                     <strong>API</strong>
                     <select class="add-api-select" id="addApiSelect" aria-label="API">
                       <option value="Load3D">load3d</option>
-                      <option value="Gm2UbAlign">asc_copy_gm2ub_align</option>
-                      <option value="Add" selected>add</option>
+                      <option value="Gm2UbAlign" selected>asc_copy_gm2ub_align</option>
+                      <option value="Add">add</option>
                     </select>
                   </label>
                   <p class="add-api-note" data-api-mode-note>
@@ -4602,15 +4775,15 @@
     </section>
   </div>
 
-  <script src="../../pto-design-system/patterns/workbench-shell/pattern.js"></script>
-  <script src="../../pto-design-system/patterns/ide-frame/pattern.js"></script>
-  <script src="../../pto-design-system/patterns/aiv-core-object/pattern.js"></script>
-  <script src="../../pto-design-system/patterns/aic-core-object/pattern.js"></script>
-  <script src="../../pto-design-system/patterns/memory-architecture/pattern.js"></script>
-  <script src="../../pto-design-system/patterns/floating-playback-control/pattern.js"></script>
-  <script src="../../pto-design-system/patterns/hardware-architecture-viewport/pattern.js"></script>
-  <script src="../../pto-design-system/patterns/matrix-canvas/pattern.js"></script>
-  <script src="../../pto-design-system/patterns/tensor-volume-canvas/pattern.js"></script>
+  <script src="../vendor/pto-design-system/patterns/workbench-shell/pattern.js"></script>
+  <script src="../vendor/pto-design-system/patterns/ide-frame/pattern.js"></script>
+  <script src="../vendor/pto-design-system/patterns/aiv-core-object/pattern.js"></script>
+  <script src="../vendor/pto-design-system/patterns/aic-core-object/pattern.js"></script>
+  <script src="../vendor/pto-design-system/patterns/memory-architecture/pattern.js"></script>
+  <script src="../vendor/pto-design-system/patterns/floating-playback-control/pattern.js"></script>
+  <script src="../vendor/pto-design-system/patterns/hardware-architecture-viewport/pattern.js"></script>
+  <script src="patterns/matrix-canvas/pattern.js"></script>
+  <script src="patterns/tensor-volume-canvas/pattern.js"></script>
   <script>
     window.addEventListener('DOMContentLoaded', () => {
       window.PtoIdeFrame?.initAll?.();
@@ -8043,7 +8216,7 @@
         renderAddApiCells();
       };
 
-      let apiVisualizationMode = 'Add';
+      let apiVisualizationMode = 'Gm2UbAlign';
       let load3dApiStep = 0;
       let load3dApiPlaying = false;
       let load3dApiTimer = null;
@@ -9700,6 +9873,13 @@ __aicore__ inline void LoadData(const LocalTensor&lt;T&gt;&amp; dst, const Local
         if (centerScroll) centerScroll.scrollTop = 0;
       };
 
+      const mountApiSidebarInExplorer = () => {
+        const explorerBody = $('[data-ide-pane="explorer"] .pane-scroll');
+        const sidebar = $('#addApiView .add-api-sidebar');
+        if (!explorerBody || !sidebar) return;
+        explorerBody.replaceChildren(sidebar);
+      };
+
       const showApiVisualization = (apiKey = 'Add') => {
         setApiPaneScrollLock(true);
         const apiDocs = {
@@ -9715,6 +9895,8 @@ __aicore__ inline void LoadData(const LocalTensor&lt;T&gt;&amp; dst, const Local
         $('#addApiView').hidden = false;
         setText('[data-center-title]', 'API 可视化');
         setText('[data-center-meta]', `${apiVisualizationMode} · native interactive parameter sandbox`);
+        setText('[data-explorer-title]', `${apiVisualizationMode} parameters`);
+        setText('[data-explorer-meta]', 'interactive control surface');
         setText('[data-status-stage]', `${apiVisualizationMode} API · native visualization`);
         setText('[data-api-mode-label]', apiVisualizationMode);
         setText(
@@ -10178,6 +10360,11 @@ __aicore__ inline void LoadData(const LocalTensor&lt;T&gt;&amp; dst, const Local
           control.setAttribute('aria-pressed', 'false');
         });
 
+        $$(`[data-operator-api="${key}"]`).forEach((control) => {
+          control.classList.add('is-selected');
+          control.setAttribute('aria-pressed', 'true');
+        });
+
         const api = operatorApis[key];
         setText('[data-operator-api-title]', api ? api.title : 'API chain');
         setText(
@@ -10325,6 +10512,8 @@ __aicore__ inline void LoadData(const LocalTensor&lt;T&gt;&amp; dst, const Local
       renderLineageMap();
       selectLineageItem(finalLineageStageId);
       selectTraceView('candidates');
+      mountApiSidebarInExplorer();
+      showApiVisualization('Gm2UbAlign');
 
       const traceResizeObserver = new ResizeObserver(queueLineageLayout);
       traceResizeObserver.observe($('.trace-section'));

@@ -791,30 +791,34 @@
     window.dispatchEvent(new CustomEvent('matmul:execution-state', { detail }));
   }
 
-  function instructionCardModel(stepIndex, title, flow, key, iteration = null, iterationRange = null) {
-    return { stepIndex, title, flow, key, iteration, iterationRange };
-  }
-
-  function kSliceSummary(iteration) {
-    const slice = state.context?.kSlices?.[iteration];
-    if (!slice) return 'K slice unavailable';
-    const start = slice.iter0 * state.context.baseK;
-    return 'K[' + start + ':' + (start + slice.curKL1) + '] · L0 ' + slice.l0Slices.join(' / ');
+  function instructionCardModel(stepIndex, title, flow, key, iteration = null, iterationRange = null, sourceStepIndexes = null) {
+    return {
+      stepIndex,
+      title,
+      flow,
+      key,
+      iteration,
+      iterationRange,
+      sourceStepIndexes: sourceStepIndexes || [stepIndex],
+    };
   }
 
   function instructionLoopCards(iteration) {
-    const slice = state.context?.kSlices?.[iteration];
-    const l0 = slice?.l0Slices?.join(' / ') || state.context?.baseK || 128;
-    const stepLabel = iteration === 0 ? 'Initialize' : 'Accumulate';
     return [
-      instructionCardModel(6, 'Load Data A2 / B2', 'A1 / B1 → A2 / B2 · curKL1=' + (slice?.curKL1 || state.context?.baseK) + ' · ' + kSliceSummary(iteration), 'load-a2-b2', iteration),
-      instructionCardModel(7, 'Mmad ' + stepLabel, 'A2 × B2 → CO1 · curKL0=' + l0, 'mmad-' + (iteration === 0 ? 'initialize' : 'accumulate'), iteration),
+      instructionCardModel(4, 'Copy Inputs', 'GM -> L1', 'gm-to-l1', iteration),
+      instructionCardModel(5, 'MTE2_MTE1 Sync', 'MTE2 -> MTE1', 'sync-mte2-mte1', iteration),
+      instructionCardModel(6, 'M_MTE1 Sync', 'Cube -> MTE1', 'm-mte1', iteration),
+      instructionCardModel(6, 'Load Data A2 B2', 'L1 -> L0', 'load-a2-b2', iteration),
+      instructionCardModel(6, 'MTE1_M Sync', 'MTE1 -> Cube', 'mte1-m', iteration),
+      instructionCardModel(7, iteration === 0 ? 'Mmad Initialize' : 'Mmad Accumulate', iteration === 0 ? 'A2 x B2 -> CO1' : 'A2 x B2 + CO1', 'mmad-' + (iteration === 0 ? 'initialize' : 'accumulate'), iteration),
     ];
   }
 
   function createMatmulInstructionCard(card) {
-    const selectedStep = card.stepIndex === state.stepIndex;
-    const selectedIteration = !Number.isInteger(state.instructionIterationFocus) || card.iteration === state.instructionIterationFocus;
+    const selectedStep = card.sourceStepIndexes.includes(state.stepIndex);
+    const selectedIteration = Number.isInteger(card.iteration)
+      ? (!Number.isInteger(state.instructionIterationFocus) || card.iteration === state.instructionIterationFocus)
+      : !Number.isInteger(state.instructionIterationFocus);
     const selectedOperation = !state.instructionOperationFocus || state.instructionOperationFocus === card.key;
     const selected = selectedStep && selectedIteration && selectedOperation;
     return '<button class="avz-instruction-card' + (selected ? ' is-selected' : '') + '" type="button" data-step-index="' + card.stepIndex + '" data-instruction-operation="' + escapeHtml(card.key) + '"' +
@@ -827,37 +831,67 @@
 
   function createMatmulInstructionRow(label, meta, cards, options = {}) {
     const hideLabel = options.hideLabel;
-    const active = cards.some((card) => card.stepIndex === state.stepIndex) || (options.sourceStepIndexes || []).includes(state.stepIndex);
+    const sourceStepIndexes = options.sourceStepIndexes || cards.flatMap((card) => card.sourceStepIndexes);
+    const active = sourceStepIndexes.includes(state.stepIndex)
+      && (!Number.isInteger(options.iteration) || options.iteration === state.instructionIterationFocus);
     return '<div class="avz-instruction-row' + (hideLabel ? ' is-label-hidden' : '') + (active ? ' is-active' : '') + '" role="group" aria-label="' + escapeHtml(label || 'K iterations') + '">' +
       (hideLabel ? '' : '<div class="avz-instruction-row__label"><span class="tag avz-iteration-tag">' + escapeHtml(label) + '</span>' + (meta ? '<span class="avz-instruction-row__meta">' + escapeHtml(meta) + '</span>' : '') + '</div>') +
       '<div class="avz-instruction-row__flow">' + cards.map(createMatmulInstructionCard).join('') + '</div></div>';
   }
 
-  function renderFlow() {
-    const steps = state.trace.steps;
-    $('#stepCounter').textContent = (state.stepIndex + 1) + ' / ' + steps.length;
-    const before = [0, 1, 2, 3, 4, 5].map((index) => instructionCardModel(index, steps[index].label, steps[index].summary, steps[index].id));
-    const after = [8, 9, 10].map((index) => instructionCardModel(index, steps[index].label, steps[index].summary, steps[index].id));
+  function createMatmulLoop() {
     const iterationCount = state.context?.kL1TileNum || 1;
     const lastIteration = Math.max(0, iterationCount - 1);
-    const representative = Number.isInteger(state.instructionIterationFocus) ? state.instructionIterationFocus : 0;
     const repeatedStart = Math.min(1, lastIteration);
     const repeatedEnd = lastIteration;
-    const repeatCards = instructionLoopCards(representative).map((card) => ({ ...card, iteration: representative, iterationRange: [repeatedStart, repeatedEnd] }));
-    const loopRows = [createMatmulInstructionRow('Iter 0', kSliceSummary(0), instructionLoopCards(0))];
+    const loopIndexes = [4, 5, 6, 7];
+    const loopRows = [createMatmulInstructionRow('Iter 0', 'Initialize', instructionLoopCards(0), { sourceStepIndexes: loopIndexes })];
+    const repeatGroup = [];
     if (repeatedEnd >= repeatedStart) {
       if (state.instructionLoopExpanded) {
         for (let iteration = repeatedStart; iteration <= repeatedEnd; iteration += 1) {
-          loopRows.push(createMatmulInstructionRow('Iter ' + iteration, kSliceSummary(iteration), instructionLoopCards(iteration)));
+          repeatGroup.push(createMatmulInstructionRow('Iter ' + iteration, 'Accumulate', instructionLoopCards(iteration), { sourceStepIndexes: loopIndexes, iteration }));
         }
       } else {
-        loopRows.push(createMatmulInstructionRow('Iter ' + repeatedStart + '–' + repeatedEnd, '×' + (repeatedEnd - repeatedStart + 1), repeatCards, { hideLabel: true, sourceStepIndexes: Array.from({ length: repeatedEnd - repeatedStart + 1 }, (_, offset) => 6 + offset) }));
+        const representative = Number.isInteger(state.instructionIterationFocus)
+          && state.instructionIterationFocus >= repeatedStart
+          && state.instructionIterationFocus <= repeatedEnd
+          ? state.instructionIterationFocus
+          : repeatedStart;
+        const cards = instructionLoopCards(representative).map((card) => ({
+          ...card,
+          sourceStepIndexes: loopIndexes,
+          iterationRange: [repeatedStart, repeatedEnd],
+        }));
+        repeatGroup.push(createMatmulInstructionRow('', '', cards, { hideLabel: true, sourceStepIndexes: loopIndexes }));
       }
     }
-    const loopActive = [6, 7].includes(state.stepIndex);
-    const loop = '<section class="avz-instruction-loop' + (loopActive ? ' is-active' : '') + '" role="listitem" aria-label="K Loop, iterations 0 through ' + lastIteration + '">' +
-      '<div class="avz-instruction-loop__title">K Loop</div><div class="avz-instruction-loop__rows"><div class="avz-instruction-repeat"><div class="avz-instruction-repeat__header"><span class="tag avz-iteration-tag">K iterations</span><button class="btn btn-sm btn-ghost avz-instruction-loop-toggle" type="button" data-loop-toggle="iterations" aria-expanded="' + state.instructionLoopExpanded + '">' + (state.instructionLoopExpanded ? 'Group similar' : 'Show all') + '</button></div><div class="avz-instruction-repeat__rows">' + loopRows.join('') + '</div></div></div></section>';
-    $('#flowSteps').innerHTML = '<div class="avz-instruction-track">' + before.map(createMatmulInstructionCard).join('') + loop + after.map(createMatmulInstructionCard).join('') + '</div>';
+    const repeatHeader = '<div class="avz-instruction-repeat__header"><div class="avz-instruction-row__label"><span class="tag avz-iteration-tag">Iter ' + repeatedStart + '–' + repeatedEnd + '</span><span class="avz-instruction-row__meta">×' + (repeatedEnd - repeatedStart + 1) + '</span></div><button class="btn btn-sm btn-ghost avz-instruction-loop-toggle" type="button" data-loop-toggle="iterations" aria-expanded="' + state.instructionLoopExpanded + '">' + (state.instructionLoopExpanded ? 'Group similar' : 'Show all') + '</button></div>';
+    const repeat = '<div class="avz-instruction-repeat">' + repeatHeader + (repeatGroup.length ? '<div class="avz-instruction-repeat__rows">' + repeatGroup.join('') + '</div>' : '') + '</div>';
+    const active = loopIndexes.includes(state.stepIndex);
+    return '<section class="avz-instruction-loop' + (active ? ' is-active' : '') + '" role="listitem" aria-label="K Loop, iterations 0 through ' + lastIteration + '">' +
+      '<div class="avz-instruction-loop__title">K Loop</div><div class="avz-instruction-loop__rows">' + loopRows.join('') + repeat + '</div></section>';
+  }
+
+  function renderFlow() {
+    const steps = state.trace.steps;
+    const before = [
+      instructionCardModel(0, 'Input Shape', 'Host config', steps[0].id),
+      instructionCardModel(1, 'Kernel Tiling', 'Kernel config', steps[1].id),
+      instructionCardModel(2, 'Host执行配置', 'Host/Runtime config', steps[2].id),
+      instructionCardModel(3, 'Allocate Memory', 'Kernel prepare', steps[3].id),
+    ];
+    const after = [
+      instructionCardModel(8, 'M_FIX Sync', 'Cube -> Fix', steps[8].id),
+      instructionCardModel(9, 'Copy L0C2GM', 'L0C -> GM', steps[9].id),
+      instructionCardModel(10, 'Host Verify', 'Device -> Host', steps[10].id),
+    ];
+    const track = '<div class="avz-instruction-track">' +
+      before.map(createMatmulInstructionCard).join('') +
+      createMatmulLoop() +
+      after.map(createMatmulInstructionCard).join('') +
+      '</div>';
+    $('#instructionSequence').innerHTML = track;
   }
 
   function renderTensorJourney() {
@@ -1092,7 +1126,7 @@
   }
 
   function bindControls() {
-    $('#flowSteps').addEventListener('click', (event) => {
+    $('#instructionSequence').addEventListener('click', (event) => {
       const toggle = event.target.closest('[data-loop-toggle]');
       if (toggle) {
         state.instructionLoopExpanded = !state.instructionLoopExpanded;
