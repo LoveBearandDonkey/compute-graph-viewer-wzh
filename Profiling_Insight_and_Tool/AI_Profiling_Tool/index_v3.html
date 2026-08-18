@@ -1660,29 +1660,48 @@
     .ovm-card.ovm-result .ovm-value { font-size: 30px; }
     .ovm-card.ovm-result .ovm-status { min-height: 16px; -webkit-line-clamp: 1; line-clamp: 1; }
 
-    /* 可信层口径条：贴在结果卡片下方，作为"以上数字什么口径"的脚注 */
+    /* 可信层口径条：不再单独起一张卡片背景——结果层已经是一排带背景的卡片，
+       下面再叠一条同色背景窄条，很容易被读成第 4 张碎卡片。改成贴着结果卡片的纯文字脚注，
+       用小字号 + 顶部留白跟卡片区分层次，异常态（is-shaky）靠左侧色条提示而不是整条描边 */
     .ovm-trust {
       display: flex; flex-wrap: wrap; align-items: center; gap: 6px 16px;
-      padding: 9px 12px; border-radius: var(--radius-lg); background: var(--surface-2, var(--bg-elevated));
-      font-size: 11.5px; color: var(--fg-muted); font-family: var(--font-sans);
+      padding: 2px 0 0; font-size: 11.5px; color: var(--fg-muted); font-family: var(--font-sans);
     }
     .ovm-trust b { color: var(--fg-secondary); font-weight: 600; }
     .ovm-trust__warn { color: var(--warning); font-weight: 500; }
-    .ovm-trust.is-shaky { box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--warning) 40%, transparent); }
+    .ovm-trust.is-shaky { border-left: 2px solid var(--warning); padding-left: 8px; }
 
-    /* 构成层堆叠条 */
+    /* 构成层：外面套一层跟结果层/结构层卡片同色的背景，三层指标视觉上统一成"都是卡片"，
+       不然构成层这条堆叠条光秃秃地夹在两排卡片中间，风格不统一 */
+    .ovm-stack {
+      background: var(--surface-2, var(--bg-elevated));
+      border-radius: var(--radius-lg);
+      padding: 15px 16px 14px;
+    }
+    /* 图例在上：每项是「色点+标签」在上、大号数值在下的小型指标块，
+       视觉分量向结果层/结构层的 .ovm-card 靠拢，构成层卡片不再显得比上下两层矮一截 */
+    .ovm-stack__legend {
+      display: flex; flex-wrap: wrap; gap: 16px 28px; margin-bottom: 14px;
+    }
+    .ovm-stack__item { display: flex; flex-direction: column; gap: 5px; min-width: 0; }
+    .ovm-stack__item-label {
+      display: flex; align-items: center; gap: 6px;
+      font-size: 11.5px; color: var(--fg-muted); font-family: var(--font-sans);
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    }
+    .ovm-stack__item-label i { display: inline-block; width: 8px; height: 8px; border-radius: 2px; flex-shrink: 0; }
+    .ovm-stack__item-val {
+      display: flex; align-items: baseline; gap: 4px;
+      font-size: 30px; font-weight: 700; color: var(--fg); font-family: var(--font-sans);
+    }
+    .ovm-stack__item-val small { font-size: 12px; font-weight: 500; color: var(--fg-muted); }
+    .ovm-stack__item-pct { font-size: 11.5px; font-weight: 600; color: var(--fg-secondary); margin-left: 2px; }
+    /* 柱状条退到图例下面做「总览确认」，不再是卡片里最抢眼的元素 */
     .ovm-stack__bar {
-      display: flex; height: 22px; overflow: hidden;
+      display: flex; height: 16px; overflow: hidden;
       border-radius: var(--radius-pill); background: var(--surface-3);
     }
     .ovm-stack__seg { display: block; height: 100%; min-width: 2px; }
-    .ovm-stack__legend {
-      display: flex; flex-wrap: wrap; gap: 6px 18px; margin-top: 9px;
-      font-size: 11.5px; color: var(--fg-muted); font-family: var(--font-sans);
-    }
-    .ovm-stack__legend i { display: inline-block; width: 8px; height: 8px; border-radius: 2px; margin-right: 6px; }
-    .ovm-stack__legend b { color: var(--fg); font-weight: 600; }
-    .ovm-stack__legend small { opacity: .8; margin-left: 4px; }
 
     /* ═══════════ 算子页签（规则 11）═══════════ */
     .ops-scroll { flex: 1; overflow-y: auto; padding: 16px 20px 24px; }
@@ -1930,6 +1949,12 @@
     .mfd-eq-line .mfd-op { color: var(--fg-muted); margin: 0 2px; font-size: 0.9em; }
     .mfd-eq-line .mfd-term { font-weight: 600; letter-spacing: 0.2px; }
     .mfd-eq-line sub { font-size: 0.6em; font-family: var(--font-sans); vertical-align: -0.35em; }
+    /* 恒定的符号推导 + 结果页签这半张，单独开一个定位上下文——指示三角要贴在它的底边，
+       不能让它跟着下面 .mfd-formula-sub 一起把 .mfd-formula 整张卡片撑高后跑到卡片最底部去 */
+    .mfd-formula-hero { position: relative; padding-bottom: 10px; }
+    /* 求和条半张：按当前页签把符号公式换成「代入数据」那一步，字号比上半矮一档，
+       用一条虚线跟上半分开，读作同一张卡片里的两个层次，不是两张平级卡片 */
+    .mfd-formula-sub { font-size: 13px; border-top: 1px dashed var(--border); padding-top: 12px; }
     /* 结果行三个数字即页签：字号/字色都在这里独立定死，不依赖 .mfd-hi 等通用规则的层叠顺序，
        三个页签视觉大小保证一致。点击筛选下方拆解表对应类目，默认 42.6%（全部）高亮 */
     .mfd-eq-tab {
@@ -1941,9 +1966,11 @@
     .mfd-eq-tab.mfd-result { color: var(--fg); }
     .mfd-eq-tab:hover { opacity: 0.85; }
     .mfd-eq-tab.active { opacity: 1; background: color-mix(in srgb, currentColor 12%, transparent); }
-    /* 选中态指示三角：贴在 .mfd-formula 容器底边上，左右位置由 JS 按当前选中页签居中对齐计算 */
+    /* 选中态指示三角：贴在 .mfd-formula 容器底边上，左右位置由 JS 按当前选中页签居中对齐计算。
+       落在 bottom:2px（卡片自带 24px 底部内边距内），不能用负值探出边框外——.mfd-formula 设了
+       overflow-x:auto，UA 会把未声明的 overflow-y 一并计算成 auto，探出去的部分会被裁掉看不见 */
     .mfd-eq-tab-indicator {
-      position: absolute; left: 0; bottom: -7px; transform: translateX(-50%);
+      position: absolute; left: 0; bottom: 2px; transform: translateX(-50%);
       width: 0; height: 0; pointer-events: none;
       border-left: 6px solid transparent; border-right: 6px solid transparent;
       border-bottom: 7px solid var(--fg);
@@ -1952,18 +1979,39 @@
     .mfd-eq-tab-indicator.mfd-hi { border-bottom-color: var(--primary); }
     .mfd-eq-tab-indicator.mfd-hi2 { border-bottom-color: var(--success); }
     /* ── 拆解结果表（下 2/3）── */
-    .mfd-stats { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 10px; }
-    /* 选中 64.0%/66.6% 单类目页签时，顶部整体指标卡片对该类目无意义，隐藏 */
-    .mfd-stats[data-filter="rate"], .mfd-stats[data-filter="occ"] { display: none; }
+    /* 3 列自动换行成 2 行：上行 3 个原始输入（模型FLOPs/峰值FLOPS/T_iter），
+       下行 T_compute（由下表 CUBE+FA 算出的中间量）+ 它派生出的两个结果卡片，
+       阅读顺序正好是「输入 → 中间量 → 结果」 */
+    .mfd-stats { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
+    /* 选中 64.0%/66.6% 单类目页签时，把该页签公式没用到的卡片压暗，而不是整行隐藏——
+       求和条公式里写的「模型 FLOPs」「峰值 FLOPS」「T_iter」都得能在上面找到对应卡片，
+       压暗的卡片仍占位、仍可读，只是弱化视觉优先级，不抢当前页签相关的几张 */
+    .mfd-stat { transition: opacity 0.15s; }
+    .mfd-stats[data-filter="rate"] .mfd-stat:not([data-stat="flops"]):not([data-stat="peak"]):not([data-stat="tcompute"]):not([data-stat="rate"]) { opacity: 0.35; }
+    .mfd-stats[data-filter="occ"] .mfd-stat:not([data-stat="tcompute"]):not([data-stat="titer"]):not([data-stat="occ"]) { opacity: 0.35; }
     .mfd-stat {
       min-width: 0; border-radius: var(--radius-lg); padding: 12px 8px; text-align: center;
       background: var(--surface-2);
     }
+    /* T_compute：不是直接输入、是下表算出来的中间量，虚线边框与实心卡片区分，
+       可点击定位到下表 CUBE+FA 两行（见 JS mfuComputeStat 点击处理） */
+    .mfd-stat-bridge {
+      border: 1.4px dashed var(--border); cursor: pointer;
+      transition: border-color 0.15s, background 0.15s;
+    }
+    .mfd-stat-bridge:hover { border-color: var(--fg-muted); background: var(--state-hover); }
     .mfd-stat-v { font-family: var(--font-mono); font-size: 20px; line-height: 1.15; font-weight: 700; color: var(--fg); white-space: nowrap; }
     .mfd-stat-v.mfd-hi { color: var(--primary); }
     .mfd-stat-v.mfd-hi2 { color: var(--success); }
     .mfd-stat-k { font-size: 11px; color: var(--fg-secondary); margin-top: 6px; font-family: var(--font-sans); }
+    .mfd-stat-k sub { font-size: 0.72em; vertical-align: -0.25em; }
     .mfd-stat-sub { font-size: 9.5px; color: var(--fg-muted); margin-top: 3px; font-family: var(--font-sans); }
+    /* T_compute 卡片被点击时，下表对应两行短暂脉冲高亮两次 */
+    @keyframes mfd-row-pulse {
+      0%, 100% { box-shadow: inset 0 0 0 9999px transparent; }
+      50% { box-shadow: inset 0 0 0 9999px color-mix(in srgb, var(--primary) 20%, transparent); }
+    }
+    .mfd-tbl tr.mfd-pulse td { animation: mfd-row-pulse 0.6s ease-in-out 2; }
     /* 表格视图 / 泳道视图 切换页签 */
     .mfd-view-toggle { display: flex; gap: 4px; }
     .mfd-view-btn {
@@ -2039,52 +2087,6 @@
     }
     .mfd-chip-sub { color: var(--fg-muted); background: color-mix(in srgb, var(--fg-muted) 14%, transparent); }
     .mfd-chip-ov  { color: var(--warning); background: color-mix(in srgb, var(--warning) 16%, transparent); }
-    /* 求和条：点页签不只是筛行，还把筛出来的行实时聚合成算式，把百分比的来源摊开 */
-    .mfd-sumbar {
-      padding: 12px 14px; border-radius: var(--radius-lg); background: var(--surface-2);
-      display: flex; flex-direction: column; gap: 9px;
-    }
-    /* 保持行内流（不能用 flex：会把 T<sub>compute</sub> 的下标拆成独立 flex item） */
-    .mfd-sumbar-eq {
-      font-family: var(--font-mono); font-size: 11.5px; line-height: 1.9; color: var(--fg-secondary);
-    }
-    .mfd-sumbar-eq sub, .mfd-sumbar-note sub { font-size: 0.68em; vertical-align: -0.28em; font-family: var(--font-sans); }
-    /* 步骤标签独占一行左端，算式跟在同一行——两步算式各占一行，不挤成一长串 */
-    .mfd-sb-line { display: block; }
-    .mfd-sb-line + .mfd-sb-line { margin-top: 2px; }
-    .mfd-sumbar-eq .mfd-sb-lbl {
-      display: inline-block; min-width: 132px; font-family: var(--font-sans); font-size: 10.5px;
-      color: var(--fg-muted); margin-right: 8px;
-    }
-    .mfd-sumbar-eq .mfd-sb-n { color: var(--fg); font-weight: 600; }
-    .mfd-sumbar-eq .mfd-sb-r { font-weight: 700; font-size: 13px; }
-    /* T_iter = 100% 时间预算条：三段含义固定，切页签只改高亮/压暗，不改坐标轴 */
-    .mfd-sumbar-track {
-      display: flex; height: 20px; border-radius: 999px; overflow: hidden;
-      background: color-mix(in srgb, var(--fg-muted) 18%, transparent);
-    }
-    .mfd-sb-seg {
-      display: flex; align-items: center; justify-content: center; min-width: 0; overflow: hidden;
-      font-family: var(--font-sans); font-size: 9.5px; font-weight: 700; color: #fff;
-      white-space: nowrap; transition: width 240ms ease;
-    }
-    .mfd-sb-seg.is-dim { background: color-mix(in srgb, var(--fg-muted) 26%, transparent); color: var(--fg-muted); }
-    :root[data-theme='light'] .mfd-sb-seg { color: #fff; }
-    :root[data-theme='light'] .mfd-sb-seg.is-dim { color: var(--fg-secondary); }
-    /* 引导线：负 margin 抵掉 .mfd-body 的两道 20px gap，让这条 34px 的带子正好落在求和条与表格之间 */
-    .mfd-sb-link {
-      position: relative; height: 34px; margin: -20px 0; pointer-events: none;
-      color: var(--fg-secondary);
-    }
-    .mfd-sb-link[hidden] { display: none; }
-    .mfd-sb-link svg { position: absolute; left: 0; top: 0; overflow: visible; }
-    /* 被引导线指到的表头列：加重字色 + 淡底，让「线指到哪」一眼可辨 */
-    .mfd-tbl th.is-linked {
-      color: var(--fg); background: color-mix(in srgb, var(--fg-muted) 12%, var(--surface-3));
-    }
-    :root[data-theme='light'] .mfd-tbl th.is-linked { background: #DCE4EF; }
-    .mfd-sumbar-note { font-size: 10.5px; line-height: 1.75; color: var(--fg-muted); }
-    .mfd-sumbar-note b { color: var(--fg-secondary); font-weight: 600; }
     /* 表下口径说明 */
     .mfd-tbl-note {
       margin: 0; padding: 12px 14px; border-radius: var(--radius-lg);
@@ -2112,6 +2114,13 @@
     .mfd-tbl[data-filter="all"] tbody tr { display: table-row; }
     .mfd-tbl[data-filter="rate"] tbody tr[data-cat="rate"] { display: table-row; }
     .mfd-tbl[data-filter="occ"] tbody tr[data-cat="occ"] { display: table-row; }
+    /* 合计行：只在对应单类目页签下露出（复用上面按 data-cat 的显隐规则），总表(all)下强制隐藏——
+       选择器多一层 .mfd-tbl-total，优先级比 [data-filter="all"] tbody tr 高，源码顺序无关 */
+    .mfd-tbl[data-filter="all"] tr.mfd-tbl-total { display: none; }
+    .mfd-tbl tr.mfd-tbl-total td { font-weight: 700; border-bottom: 1.5px solid var(--border); }
+    /* 合计行不是「某类目下的一条明细」，左对齐到类目标题（CUBE/PP 等）本身的起始位置，
+       盖掉 .mfd-item 默认给数据行留的 30px 缩进 */
+    .mfd-tbl tr.mfd-tbl-total .mfd-item { font-weight: 700; padding-left: 14px; }
     @media (max-width: 760px) {
       .mfu-detail-drawer { width: 100vw; }
       .mfd-body { padding: 16px; }
@@ -2254,19 +2263,22 @@
     .skm-empty-custom { font-size: 10px; color: var(--fg-muted); padding: 4px 2px; opacity: 0.75; }
   </style>
   <style>
-    .memory-analysis { height:100%; overflow:auto; padding:var(--space-4); display:flex; flex-direction:column; gap:var(--space-4); }
+    .memory-analysis { height:100%; overflow:auto; padding:var(--space-4); display:flex; flex-direction:column; gap:var(--space-4); max-width:1680px; margin-inline:auto; width:100%; box-sizing:border-box; }
     .memory-analysis__summary { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:var(--space-2); }
-    .memory-analysis__summary > div { padding:var(--space-3); background:var(--surface-2); border-radius:var(--radius-lg); }
+    .memory-analysis__summary > div { padding:15px 16px 14px; background:var(--surface-2); border-radius:var(--radius-lg); display:flex; flex-direction:column; gap:8px; box-sizing:border-box; }
     .memory-analysis__summary span { display:block; color:var(--foreground-secondary); font-size:var(--font-size-label-xs); }
-    .memory-analysis__summary strong { display:block; margin-top:var(--space-1); font:600 18px var(--font-mono); color:var(--foreground); }
+    .memory-analysis__summary strong { display:block; font:600 30px var(--font-mono); color:var(--foreground); }
+    .memory-analysis__summary strong .memory-analysis__aux { font:400 12px var(--font-mono); color:var(--foreground-secondary); }
     .memory-analysis__grid { display:grid; grid-template-columns:2fr 1fr; gap:var(--space-3); min-height:260px; }
     .memory-analysis__panel { min-width:0; padding:var(--space-3); background:var(--surface-1); border-radius:var(--radius-lg); }
     .memory-analysis__panel h2 { margin:0 0 var(--space-2); font-size:var(--font-size-body-sm); color:var(--foreground); }
     .memory-analysis__panel p { margin:0 0 var(--space-2); font-size:var(--font-size-label-xs); color:var(--foreground-secondary); }
     .memory-analysis__panel canvas { width:100%; height:220px; }
-    .memory-analysis__lifecycle { min-height:600px; }
-    #memoryReuseViewer { height:540px; }
-    .memory-analysis__actions { display:flex; gap:var(--space-2); }
+    .memory-analysis__lifecycle { min-height:560px; }
+    #memoryReuseViewer { min-height:480px; }
+    @media (max-width:860px) {
+      .memory-analysis__grid { grid-template-columns:1fr; }
+    }
   </style>
 </head>
 <body>
@@ -2714,13 +2726,8 @@
               </section>
               <section class="memory-analysis__panel memory-analysis__lifecycle">
                 <h2>碎片分布与生命周期</h2>
-                <p>问题2 · rank 17 显存 OOM：查看 step 12000 的单卡快照，先确认地址空洞为何放不下本次请求，再查看关键分配的生命周期与来源。</p>
                 <div id="memoryReuseViewer"></div>
               </section>
-              <div class="memory-analysis__actions">
-                <button class="btn btn-ghost btn-sm" id="memoryTimelineBtn" type="button">在 Timeline 查看分配/释放</button>
-                <button class="btn btn-ghost btn-sm" id="memoryCodeBtn" type="button">定位 TransformerLayer.forward</button>
-              </div>
             </div>
           </div>
 
@@ -2877,44 +2884,53 @@
       </button>
     </div>
     <div class="mfd-body" id="mfuDetailBody">
-      <!-- 公式：单容器（点阵笔记纸背景），结果行三个数字即页签，点击联动下方拆解表筛选 -->
+      <!-- 公式：合成一张大卡片（单容器、点阵笔记纸背景）。上半是恒定的符号推导 + 结果页签，
+           下半（mfd-formula-sub）是按当前页签把符号换成「代入数据」那一步的求和条，两者以前是
+           各自独立的卡片，现在用一条分隔线接成一体，视觉上读作同一件事的两个层次 -->
       <div class="mfd-formula">
-        <div class="mfd-eq-line">
-          <span class="mfd-term">MFU</span><span class="mfd-op">=</span><span class="mfd-frac"><span class="mfd-num-line">实际算力</span><span>峰值算力</span></span><span class="mfd-op">=</span><span class="mfd-frac"><span class="mfd-num-line">模型 FLOPs</span><span>T<sub>iter</sub> × 峰值 FLOPS</span></span><span class="mfd-op">=</span><span class="mfd-brace"><span class="mfd-frac"><span class="mfd-num-line">模型 FLOPs</span><span>T<sub>compute</sub> × 峰值 FLOPS</span></span><span class="mfd-brace-lbl mfd-hi">算子达成率</span></span><span class="mfd-op">×</span><span class="mfd-brace"><span class="mfd-frac"><span class="mfd-num-line">T<sub>compute</sub></span><span>T<sub>iter</sub></span></span><span class="mfd-brace-lbl mfd-hi2">计算占用率</span></span>
+        <div class="mfd-formula-hero">
+          <div class="mfd-eq-line">
+            <span class="mfd-term">MFU</span><span class="mfd-op">=</span><span class="mfd-frac"><span class="mfd-num-line">实际算力</span><span>峰值算力</span></span><span class="mfd-op">=</span><span class="mfd-frac"><span class="mfd-num-line">模型 FLOPs</span><span>T<sub>iter</sub> × 峰值 FLOPS</span></span><span class="mfd-op">=</span><span class="mfd-brace"><span class="mfd-frac"><span class="mfd-num-line">模型 FLOPs</span><span>T<sub>compute</sub> × 峰值 FLOPS</span></span><span class="mfd-brace-lbl mfd-hi">算子达成率</span></span><span class="mfd-op">×</span><span class="mfd-brace"><span class="mfd-frac"><span class="mfd-num-line">T<sub>compute</sub></span><span>T<sub>iter</sub></span></span><span class="mfd-brace-lbl mfd-hi2">计算占用率</span></span>
+          </div>
+          <div class="mfd-eq-line mfd-eq-line--result">
+            <span class="mfd-op">=</span><button type="button" class="mfd-eq-tab mfd-hi" data-filter="rate" title="只看算子达成率相关指标（CUBE / FA）">64.0%</button><span class="mfd-op">×</span><button type="button" class="mfd-eq-tab mfd-hi2" data-filter="occ" title="只看计算占用率相关指标（PP/通信/优化器/Vector/free）">66.6%</button><span class="mfd-op">=</span><button type="button" class="mfd-eq-tab mfd-result active" data-filter="all" title="查看全部拆解指标">42.6%</button>
+          </div>
+          <span class="mfd-eq-tab-indicator" id="mfuTabIndicator" aria-hidden="true"></span>
         </div>
-        <div class="mfd-eq-line mfd-eq-line--result">
-          <span class="mfd-op">=</span><button type="button" class="mfd-eq-tab mfd-hi" data-filter="rate" title="只看算子达成率相关指标（CUBE / FA）">64.0%</button><span class="mfd-op">×</span><button type="button" class="mfd-eq-tab mfd-hi2" data-filter="occ" title="只看计算占用率相关指标（PP/通信/优化器/Vector/free）">66.6%</button><span class="mfd-op">=</span><button type="button" class="mfd-eq-tab mfd-result active" data-filter="all" title="查看全部拆解指标">42.6%</button>
+        <!-- 求和条：按当前页签把符号公式换成「代入数据」那一步；占用率/达成率页签额外插一步
+             T_compute = CUBE + FA 的分解，不然单看这一层会不知道 T_compute 那个数从哪来的 -->
+        <div class="mfd-formula-sub" id="mfuSumBar">
+          <div id="mfuSumEq"></div>
         </div>
-        <span class="mfd-eq-tab-indicator" id="mfuTabIndicator" aria-hidden="true"></span>
       </div>
 
-      <!-- ② 拆解结果表（下 2/3） -->
+      <!-- ② 拆解结果表（下 2/3）：公式区下方、表格上方，两块公式的数据来源一览 -->
       <div class="mfd-stats">
-        <div class="mfd-stat" title="由模型结构决定，训练过程中为常量。6ND 口径：6 × 参数量 7.6B × 单次迭代全局 token 数（≈262k），为全局 batch 的总计算量"><div class="mfd-stat-v">≈11.95 P</div><div class="mfd-stat-k">模型 FLOPs</div><div class="mfd-stat-sub">6ND·N≈7.6B·全局 batch</div></div>
-        <div class="mfd-stat" title="由芯片规格决定，训练过程中为常量。分子「模型 FLOPs」是全局 batch 口径，因此分母的峰值算力必须按参与本次迭代的卡数聚合：320 T/卡 × 8 卡 = 2560 T"><div class="mfd-stat-v">2560 T</div><div class="mfd-stat-k">峰值 FLOPS</div><div class="mfd-stat-sub">320 T/卡 × 8 卡·910B BF16</div></div>
-        <div class="mfd-stat" title="唯一自由变量：模型 FLOPs 与峰值 FLOPS 均为常量，只有 T_iter 随调度/通信/负载波动，是 MFU 优化的核心抓手。取 device6 的单卡迭代墙钟时间"><div class="mfd-stat-v">10763</div><div class="mfd-stat-k">T_iter</div><div class="mfd-stat-sub">ms·单卡迭代墙钟(device6)</div></div>
-        <div class="mfd-stat" title="算子达成率 = 模型 FLOPs ÷ (T_compute × 峰值 FLOPS)，T_compute = CUBE 6448.4 + FA 722.9 = 7171.3 ms。各 stage 分布：stage0≈80% / stage3≈64%"><div class="mfd-stat-v mfd-hi">64.0%</div><div class="mfd-stat-k">算子达成率</div><div class="mfd-stat-sub">11.95P ÷ (7171ms × 2560T)</div></div>
-        <div class="mfd-stat" title="计算占用率 = T_compute ÷ T_iter，即下表 CUBE 与 FA 两个类目的耗时之和占单卡迭代墙钟的比例"><div class="mfd-stat-v mfd-hi2">66.6%</div><div class="mfd-stat-k">计算占用率</div><div class="mfd-stat-sub">7171.3 ÷ 10763 ms</div></div>
+        <div class="mfd-stat" data-stat="flops" title="由模型结构决定，训练过程中为常量。6ND 口径：6 × 参数量 7.6B × 单次迭代全局 token 数（≈262k），为全局 batch 的总计算量"><div class="mfd-stat-v">≈11.95 P</div><div class="mfd-stat-k">模型 FLOPs</div><div class="mfd-stat-sub">6ND·N≈7.6B·全局 batch</div></div>
+        <div class="mfd-stat" data-stat="peak" title="由芯片规格决定，训练过程中为常量。分子「模型 FLOPs」是全局 batch 口径，因此分母的峰值算力必须按参与本次迭代的卡数聚合：320 T/卡 × 8 卡 = 2560 T"><div class="mfd-stat-v">2560 T</div><div class="mfd-stat-k">峰值 FLOPS</div><div class="mfd-stat-sub">320 T/卡 × 8 卡·910B BF16</div></div>
+        <div class="mfd-stat" data-stat="titer" title="唯一自由变量：模型 FLOPs 与峰值 FLOPS 均为常量，只有 T_iter 随调度/通信/负载波动，是 MFU 优化的核心抓手。取 device6 的单卡迭代墙钟时间"><div class="mfd-stat-v">10763</div><div class="mfd-stat-k">T_iter</div><div class="mfd-stat-sub">ms·单卡迭代墙钟(device6)</div></div>
+        <div class="mfd-stat mfd-stat-bridge" id="mfuComputeStat" data-stat="tcompute" title="唯一不是直接输入、而是由下表算出来的中间量：CUBE + FA 两个算子达成率类目的耗时相加。它同时是右侧「算子达成率」的分母时间、「计算占用率」的分子时间。点击可定位下表对应两行">
+          <div class="mfd-stat-v">7171.3</div><div class="mfd-stat-k">T<sub>compute</sub></div><div class="mfd-stat-sub">ms·CUBE 6448.4 + FA 722.9</div>
+        </div>
+        <div class="mfd-stat" data-stat="rate" title="算子达成率 = 模型 FLOPs ÷ (T_compute × 峰值 FLOPS)。T_compute 见左侧卡片，即下表 CUBE + FA 两类目之和。各 stage 分布：stage0≈80% / stage3≈64%"><div class="mfd-stat-v mfd-hi">64.0%</div><div class="mfd-stat-k">算子达成率</div><div class="mfd-stat-sub">11.95P ÷ (7171ms × 2560T)</div></div>
+        <div class="mfd-stat" data-stat="occ" title="计算占用率 = T_compute ÷ T_iter。T_compute 见左侧卡片，即下表 CUBE 与 FA 两个类目的耗时之和占单卡迭代墙钟的比例"><div class="mfd-stat-v mfd-hi2">66.6%</div><div class="mfd-stat-k">计算占用率</div><div class="mfd-stat-sub">7171.3 ÷ 10763 ms</div></div>
       </div>
       <div class="mfd-view-toggle" role="tablist">
         <button type="button" class="mfd-view-btn active" data-view="table">表格视图</button>
         <button type="button" class="mfd-view-btn" data-view="lane">泳道视图</button>
       </div>
-      <!-- 求和条：点上方页签时，把被筛出来的行实时加成算式，说明 64.0%/66.6% 从哪几行来 -->
-      <div class="mfd-sumbar" id="mfuSumBar">
-        <div class="mfd-sumbar-eq" id="mfuSumEq"></div>
-        <div class="mfd-sumbar-note" id="mfuSumNote"></div>
-        <!-- 柱状图放在卡片最末：下面紧跟引导线，中间不能再隔一段文字，否则线看着是从卡片底边冒出来的 -->
-        <div class="mfd-sumbar-track" id="mfuSumTrack" title="T_iter = 100% 的时间预算：有效算力 / 在算但没跑到峰值 / 压根没在算"></div>
-      </div>
-      <!-- 柱状图「选中行合计 33.4%」那一段 → 表头「占 T_iter」列的引导线，路径由 JS 实测两端坐标绘制 -->
-      <div class="mfd-sb-link" id="mfuSumLink" hidden aria-hidden="true"></div>
       <div class="mfd-tbl-wrap" id="mfuTblWrap">
       <table class="mfd-tbl">
         <thead>
           <tr><th style="width:20%;">拆解细项</th><th style="width:16%;">解析数据</th><th style="width:9%;" id="mfuPctTh" title="该项耗时 ÷ T_iter 10763 ms">占 T_iter</th><th style="width:13%;">预估结果</th><th style="width:42%;"><span class="mfd-ai-label">调优建议</span></th></tr>
         </thead>
         <tbody>
+          <!-- 合计行：只在筛到单类目页签（64.0%/66.6%）时露出，落在筛选结果最上方；总表(all)下隐藏。
+               data-cat 直接写死在 HTML 里（不挂 mfd-cat-rate/occ 蓝绿归属色，纯中性合计行），
+               JS 的类目继承循环对 mfd-tbl-total 行直接跳过，不会覆盖这里的 data-cat，
+               也不参与 collectTerms 求和（否则会把自己算进去重复计入，见 JS mfd-tbl-total 判断） -->
+          <tr class="mfd-tbl-total" data-cat="rate"><td class="mfd-item">合计 · T<sub>compute</sub></td><td class="mfd-v1"><span class="mfd-num">7171.3</span> ms</td><td class="mfd-pct">66.6%</td><td class="mfd-est">—</td><td class="mfd-advice">CUBE 6448.4 + FA 722.9（下方两类目相加），即上方 T<sub>compute</sub> 卡片的数值，也是算子达成率公式里的分母时间</td></tr>
+          <tr class="mfd-tbl-total" data-cat="occ"><td class="mfd-item">合计 · 非计算时间</td><td class="mfd-v1"><span class="mfd-num">3591.7</span> ms</td><td class="mfd-pct">33.4%</td><td class="mfd-est">—</td><td class="mfd-advice">= T<sub>iter</sub> − T<sub>compute</sub> = 10763 − 7171.3 ms；下方各行耗时存在重叠，直接相加对不上这个数（见下方口径说明）</td></tr>
           <tr class="mfd-cat mfd-cat-occ"><td colspan="5">PP / VPP <span class="mfd-cat-tag">计算占用率</span><span class="mfd-cat-sum">小计 39.3%</span></td></tr>
           <tr><td class="mfd-item">未掩盖 send/receive</td><td class="mfd-v1"><span class="mfd-num">460.3</span> ms<span class="mfd-worse">+360</span></td><td class="mfd-pct">4.3%</td><td class="mfd-est">&lt;100 ms</td><td class="mfd-advice">增大 send/recv 与前后向计算的重叠调度窗口，或提高 micro-batch 数降低单次通信占比</td></tr>
           <tr><td class="mfd-item">PP 空泡 <span class="mfd-chip mfd-chip-ov" title="空泡窗口内同时发生 send/recv、DP 通信与 free，与下方各行存在时间重叠，不可直接相加">含重叠</span></td><td class="mfd-v1"><span class="mfd-num">≈3767</span> ms<span class="mfd-worse">+2153</span></td><td class="mfd-pct">35.0%</td><td class="mfd-est">≈1614 ms（理论1F1B）</td><td class="mfd-advice">增大 micro-batch 数（M）或均衡各 stage 负载（末级 lm_head/loss 过重），降低 1F1B 空泡</td></tr>
@@ -2957,7 +2973,7 @@
       <!-- 口径说明：解释「占 T_iter」列怎么用、哪些行能相加哪些不能，避免用户验算对不上后放弃 -->
       <p class="mfd-tbl-note" id="mfuTblNote">
         <b>怎么读这张表：</b>「占 T_iter」= 该行耗时 ÷ T<sub>iter</sub> 10763 ms。
-        <b class="mfd-hi2">计算占用率 66.6%</b> 就是 CUBE 小计 <b>59.9%</b> + FA 小计 <b>6.7%</b>（6448.4 + 722.9 = 7171.3 ms）。
+        <b class="mfd-hi2">计算占用率 66.6%</b> 就是 CUBE 小计 <b>59.9%</b> + FA 小计 <b>6.7%</b>（6448.4 + 722.9 = 7171.3 ms，即上方 <b>T<sub>compute</sub></b> 卡片，点它可定位到下面这两行）。
         <b class="mfd-hi">算子达成率 64.0%</b> 则用这 7171.3 ms 作分母时间：11.95 P ÷ (7171.3 ms × 2560 T)。
         标 <span class="mfd-chip mfd-chip-sub">明细</span> 的行是上一行的进一步拆解，已被包含在内，<b>不计入</b>类目小计；标
         <span class="mfd-chip mfd-chip-ov">含重叠</span> 的行与其他行在时间上交叠。
@@ -4028,7 +4044,6 @@
     window.mfuDetailOpen = function () {
       document.getElementById('mfuDetailOverlay').classList.add('open');
       document.getElementById('mfuDetailDrawer').classList.add('open');
-      if (window.mfuSumBarRedraw) window.mfuSumBarRedraw();  // 引导线坐标需在可见布局下重测
     };
     window.mfuDetailClose = function () {
       document.getElementById('mfuDetailOverlay').classList.remove('open');
@@ -4047,13 +4062,16 @@
       var stats = document.querySelector('#mfuDetailBody .mfd-stats');
       var curCat = null;
       Array.prototype.forEach.call(tbl.querySelectorAll('tbody tr'), function (tr) {
+        if (tr.classList.contains('mfd-tbl-total')) return; // 合计行 data-cat 写死在 HTML 里，不参与继承
         if (tr.classList.contains('mfd-cat-rate')) curCat = 'rate';
         else if (tr.classList.contains('mfd-cat-occ')) curCat = 'occ';
         else if (tr.classList.contains('mfd-highlight-row')) { tr.dataset.cat = 'summary'; return; }
         tr.dataset.cat = curCat;
       });
       var tabs = document.querySelectorAll('#mfuDetailBody .mfd-eq-tab');
-      var formula = document.querySelector('#mfuDetailBody .mfd-formula');
+      // 三角的定位上下文是 .mfd-formula-hero（indicator 的 CSS containing block），不是外层合并后
+      // 更大的 .mfd-formula——用外层卡片的左边界算 left 会多算进它自己的左内边距，三角整体偏右
+      var formula = document.querySelector('#mfuDetailBody .mfd-formula-hero');
       var indicator = document.getElementById('mfuTabIndicator');
       function moveIndicator(btn) {
         if (!indicator || !formula) return;
@@ -4071,18 +4089,14 @@
       var MFU_PCT = 42.6;          // 与公式行结果页签一致
       var RATE_PCT = '64.0';       // 算子达成率标称值
       var sumEq = document.getElementById('mfuSumEq');
-      var sumTrack = document.getElementById('mfuSumTrack');
-      var sumNote = document.getElementById('mfuSumNote');
-      var sumLink = document.getElementById('mfuSumLink');
-      var pctTh = document.getElementById('mfuPctTh');
       var tblWrap = document.getElementById('mfuTblWrap');
       var curFilter = 'all';
-      // 汇总参与求和的行：类目标题行、汇总行、明细行（上一行的子集）均不计入
+      // 汇总参与求和的行：类目标题行、汇总行、明细行（上一行的子集）、合计行本身均不计入
       function collectTerms(filter) {
         var terms = [];
         Array.prototype.forEach.call(tbl.querySelectorAll('tbody tr'), function (tr) {
           if (tr.classList.contains('mfd-cat') || tr.classList.contains('mfd-highlight-row')) return;
-          if (tr.classList.contains('mfd-row-sub')) return;
+          if (tr.classList.contains('mfd-row-sub') || tr.classList.contains('mfd-tbl-total')) return;
           if (tr.dataset.cat !== filter) return;
           var numEl = tr.querySelector('.mfd-v1 .mfd-num');
           if (!numEl) return;
@@ -4093,112 +4107,60 @@
         return terms;
       }
       function fmt(n) { return (Math.round(n * 10) / 10).toString(); }
-      function n(v) { return '<span class="mfd-sb-n">' + v + '</span>'; }
-      function line(lbl, body) { return '<div class="mfd-sb-line"><span class="mfd-sb-lbl">' + lbl + '</span>' + body + '</div>'; }
-      // 进度条恒为一条 T_iter = 100% 的时间预算条，三段固定含义（有效算力 / 算子未达峰 / 非计算），
-      // 只按当前页签决定哪几段高亮、哪几段压暗——避免切页签时坐标轴跟着变，读者对不上。
-      function setBar(segs) {
-        sumTrack.innerHTML = segs.map(function (s) {
-          return '<span class="mfd-sb-seg' + (s.dim ? ' is-dim' : '') + '"' + (s.link ? ' data-link="1"' : '') +
-            ' style="width:' + s.pct.toFixed(1) + '%;' + (s.color ? 'background:' + s.color + ';' : '') + '">' +
-            (s.label || '') + '</span>';
-        }).join('');
-      }
-      // 引导线：把打了 data-link 的柱段接到表头「占 T_iter」列，说明这一段的逐行明细就在那一列。
-      // 起终点每次实测（列宽是百分比、抽屉宽度随视口变），抽屉关闭时靠 transform 移出屏幕而非
-      // display:none，量出来的坐标仍然有效。
-      function drawLink(show) {
-        if (!sumLink) return;
-        if (pctTh) pctTh.classList.toggle('is-linked', !!show);
-        var seg = show && sumTrack.querySelector('.mfd-sb-seg[data-link="1"]');
-        var laneOn = tblWrap && tblWrap.style.display === 'none';
-        if (!seg || !pctTh || laneOn) { sumLink.hidden = true; sumLink.innerHTML = ''; return; }
-        sumLink.hidden = false;
-        var base = sumLink.getBoundingClientRect();
-        if (!base.width) { sumLink.hidden = true; return; }
-        var sr = seg.getBoundingClientRect(), tr = pctTh.getBoundingClientRect();
-        var x1 = sr.left + sr.width / 2 - base.left;
-        var x2 = tr.left + tr.width / 2 - base.left;
-        var h = base.height;
-        // 起点吸附到柱段底边本身。柱段在求和条卡片内、引导线容器之上，换算出来 y1 是负值；
-        // svg 设了 overflow:visible，负坐标照常绘制，线就从那一段上长出来而不是从卡片底边冒出来。
-        var y1 = sr.bottom - base.top;
-        var y2 = h - 6, dy = y2 - y1;
-        sumLink.innerHTML =
-          '<svg width="' + base.width + '" height="' + h + '" aria-hidden="true">' +
-          '<circle cx="' + x1 + '" cy="' + y1 + '" r="2.2" fill="currentColor"/>' +
-          '<path d="M' + x1 + ' ' + y1 + ' C' + x1 + ' ' + (y1 + dy * 0.55) + ', ' + x2 + ' ' + (y1 + dy * 0.45) + ', ' + x2 + ' ' + y2 + '" ' +
-          'fill="none" stroke="currentColor" stroke-width="1.2" stroke-dasharray="3 2.5"/>' +
-          '<path d="M' + (x2 - 3.6) + ' ' + (h - 7) + ' L' + x2 + ' ' + (h - 0.5) + ' L' + (x2 + 3.6) + ' ' + (h - 7) + ' Z" fill="currentColor"/>' +
-          '</svg>';
-      }
+      function frac(num, den) { return '<span class="mfd-frac"><span class="mfd-num-line">' + num + '</span><span>' + den + '</span></span>'; }
+      function term(cls, text) { return '<span class="mfd-term' + (cls ? ' ' + cls : '') + '">' + text + '</span>'; }
+      function eqLine(cls, body) { return '<div class="mfd-eq-line' + (cls ? ' ' + cls : '') + '">' + body + '</div>'; }
+      var OP = '<span class="mfd-op">=</span>';
+      var CAT_LABELS = ['CUBE', 'FA'];
+      // 求和条精简成一条链式公式，格式与顶部公式卡片一致（真分数结构）：符号公式 = 分解 T_compute
+      // 那一步 = 代入下表实测数据 = 结果。T_compute=CUBE+FA 不再单独起一行，而是作为链条中间的
+      // 一步分数插进去——上一版拆成独立一行，看着像另一件事，其实它就是主公式推导的一环。
+      // 分母全部从表格实时求和，改了表格数据这里跟着变，不再另造一份标称值。
       function renderSumBar(filter) {
         if (!sumEq) return;
         var rateTerms = collectTerms('rate');
         var rateSum = rateTerms.reduce(function (a, b) { return a + b; }, 0);
-        var occSum = collectTerms('occ').reduce(function (a, b) { return a + b; }, 0);
-        var occPct = rateSum / T_ITER * 100;              // 计算占用率
-        var idlePct = 100 - occPct;                        // 非计算时间占比
-        var gapPct = occPct - MFU_PCT;                     // 计算时间里没跑到峰值的部分
-        var html, note;
+        var occPct = rateSum / T_ITER * 100;
+        var decompNumer = rateTerms.map(function (v, i) { return (CAT_LABELS[i] || '') + ' ' + fmt(v) + ' ms'; }).join(' + ');
+        var html;
         if (filter === 'rate') {
-          // 选中 CUBE/FA：先把两行加出 T_compute，再代进达成率公式，两步各占一行不挤在一起
-          html = line('第一步 · 把选中行加起来',
-              rateTerms.map(function (v) { return n(fmt(v)); }).join(' + ') +
-              ' = ' + n(fmt(rateSum)) + ' ms，这就是 T<sub>compute</sub>') +
-            line('第二步 · 代进达成率公式',
-              '模型 FLOPs ' + n('11.95 P') + ' ÷ ( T<sub>compute</sub> ' + n(fmt(rateSum)) + ' ms × 峰值 ' + n('2560 T') + ' ) = ' +
-              '<span class="mfd-sb-r mfd-hi">' + RATE_PCT + '%</span>');
-          note = 'CUBE 与 FA 是<b>真正在算数的时间</b>。达成率问的是「这段时间里芯片跑到峰值算力的几成」——所以分母是 T<sub>compute</sub> 而不是 T<sub>iter</sub>。' +
-            '峰值取 <b>2560 T</b>（320 T/卡 × 8 卡），与全局 batch 口径的模型 FLOPs 对齐。';
-          setBar([
-            { pct: MFU_PCT, color: 'var(--primary)', label: '有效算力 ' + MFU_PCT + '%' },
-            { pct: gapPct, color: 'color-mix(in srgb, var(--primary) 38%, transparent)', label: '未达峰 ' + gapPct.toFixed(1) + '%' },
-            { pct: idlePct, dim: true, label: '' }
-          ]);
+          html = eqLine('', term('mfd-hi', '算子达成率') + OP +
+            frac('模型 FLOPs', 'T<sub>compute</sub> × 峰值 FLOPS') + OP +
+            frac('模型 FLOPs', '(' + decompNumer + ') × 峰值 FLOPS') + OP +
+            frac('11.95 P', fmt(rateSum) + ' ms × 2560 T') + OP +
+            term('mfd-hi', RATE_PCT + '%'));
         } else if (filter === 'occ') {
-          // 选中非计算类目：主算式仍正向给出 66.6%（÷ 一步不省），选中行只作为「剩下那部分」的构成
-          html = line('计算占用率怎么来的',
-              'T<sub>compute</sub> ' + n(fmt(rateSum)) + ' ms ÷ T<sub>iter</sub> ' + n(T_ITER) + ' ms = ' +
-              '<span class="mfd-sb-r mfd-hi2">' + occPct.toFixed(1) + '%</span>') +
-            line('下方选中行 = 剩下那部分',
-              'T<sub>iter</sub> ' + n(T_ITER) + ' − T<sub>compute</sub> ' + n(fmt(rateSum)) + ' = ' + n(fmt(T_ITER - rateSum)) + ' ms，' +
-              '再 ÷ T<sub>iter</sub> ' + n(T_ITER) + ' ms = <span class="mfd-sb-r">' + idlePct.toFixed(1) + '%</span>');
-          note = '占用率的分子分母都是时间，跟这些行没有直接关系——它们解释的是<b>剩下的 ' + idlePct.toFixed(1) + '% 被谁占走了</b>，' +
-            '压掉它们才能把 ' + occPct.toFixed(1) + '% 推高；柱状图左段的逐行明细，就是下表<b>「占 T_iter」</b>那一列（见引导线）。' +
-            '注意选中各行直接相加是 <b>' + fmt(occSum) + ' ms</b>，大于 ' + fmt(T_ITER - rateSum) + ' ms——' +
-            'PP 空泡窗口内同时发生着 send/recv、DP 通信与 free，<b>时间上互相重叠</b>，所以这是耗时分布而非严格划分，<b>不能直接相加</b>。';
-          // 选中行（=非计算）放左段并接引导线到表头「占 T_iter」列，绿色留给右段的计算 66.6%
-          setBar([
-            { pct: idlePct, dim: true, link: true, label: '选中行合计 ' + idlePct.toFixed(1) + '%' },
-            { pct: occPct, color: 'var(--success)', label: '计算 ' + occPct.toFixed(1) + '%' }
-          ]);
+          html = eqLine('', term('mfd-hi2', '计算占用率') + OP +
+            frac('T<sub>compute</sub>', 'T<sub>iter</sub>') + OP +
+            frac(decompNumer, 'T<sub>iter</sub>') + OP +
+            frac(fmt(rateSum) + ' ms', T_ITER + ' ms') + OP +
+            term('mfd-hi2', occPct.toFixed(1) + '%'));
         } else {
-          html = line('两个环节各自的算式',
-              '占用率 = ' + n(fmt(rateSum)) + ' ÷ ' + n(T_ITER) + ' ms = <span class="mfd-sb-r mfd-hi2">' + occPct.toFixed(1) + '%</span>' +
-              ' &nbsp;&nbsp;|&nbsp;&nbsp; 达成率 = 11.95 P ÷ (' + n(fmt(rateSum)) + ' ms × ' + n('2560 T') + ') = ' +
-              '<span class="mfd-sb-r mfd-hi">' + RATE_PCT + '%</span>') +
-            line('相乘得 MFU',
-              '<span class="mfd-sb-r mfd-hi">' + RATE_PCT + '%</span> × <span class="mfd-sb-r mfd-hi2">' + occPct.toFixed(1) + '%</span> = ' +
-              '<span class="mfd-sb-r">' + MFU_PCT + '%</span>');
-          note = '把 T<sub>iter</sub> 看成 100% 的时间预算：只有 <b>' + MFU_PCT + '%</b> 变成了有效算力，<b>' + gapPct.toFixed(1) + '%</b> 是在算但没跑到峰值，' +
-            '<b>' + idlePct.toFixed(1) + '%</b> 压根没在算。分子 ' + fmt(rateSum) + ' ms = CUBE ' + fmt(rateTerms[0] || 0) + ' + FA ' + fmt(rateTerms[1] || 0) + '。' +
-            '点上方 <b>' + RATE_PCT + '%</b> / <b>' + occPct.toFixed(1) + '%</b> 页签可分别看这两个环节各由哪些行构成。';
-          setBar([
-            { pct: MFU_PCT, color: 'var(--fg-secondary)', label: '有效算力 ' + MFU_PCT + '%' },
-            { pct: gapPct, color: 'color-mix(in srgb, var(--fg-secondary) 40%, transparent)', label: '算子未达峰 ' + gapPct.toFixed(1) + '%' },
-            { pct: idlePct, dim: true, label: '非计算 ' + idlePct.toFixed(1) + '%' }
-          ]);
+          html = eqLine('', term('', 'MFU') + OP +
+            term('mfd-hi', RATE_PCT + '%') + '<span class="mfd-op">×</span>' + term('mfd-hi2', occPct.toFixed(1) + '%') + OP +
+            term('', MFU_PCT + '%'));
         }
         sumEq.innerHTML = html;
-        if (sumNote) sumNote.innerHTML = note;
         curFilter = filter;
-        drawLink(filter === 'occ');
       }
-      // 列宽是百分比、抽屉宽度跟着视口走，视口变化后引导线的起终点要重新实测
-      window.addEventListener('resize', function () { drawLink(curFilter === 'occ'); });
-      // 抽屉刚打开时布局可能还没稳定，开屏后补画一次
-      window.mfuSumBarRedraw = function () { requestAnimationFrame(function () { drawLink(curFilter === 'occ'); }); };
+      // 点击 T_compute 卡片：定位并脉冲高亮下表 CUBE+FA 两行，不改表格筛选（点卡片只是想看一眼
+      // 来源，不代表要切页签把其余类目筛没）
+      var computeStat = document.getElementById('mfuComputeStat');
+      if (computeStat) {
+        computeStat.addEventListener('click', function () {
+          // 排除合计行：滚到/高亮它意义不大，目标应该是真正的 CUBE/FA 明细行
+          var rows = tbl.querySelectorAll('tr[data-cat="rate"]:not(.mfd-tbl-total)');
+          if (!rows.length) return;
+          if (tblWrap && tblWrap.style.display !== 'none') {
+            rows[0].scrollIntoView({ behavior: 'smooth', block: 'center' });
+          }
+          Array.prototype.forEach.call(rows, function (tr) {
+            tr.classList.remove('mfd-pulse');
+            void tr.offsetWidth; // 强制重排，让重复点击也能重新触发动画
+            tr.classList.add('mfd-pulse');
+          });
+        });
+      }
 
       Array.prototype.forEach.call(tabs, function (btn) {
         btn.addEventListener('click', function () {
@@ -4229,7 +4191,6 @@
           // 求和条与口径说明都是解释表格的，切到泳道视图时一并收起
           if (sumBar) sumBar.style.display = isLane ? 'none' : '';
           if (tblNote) tblNote.style.display = isLane ? 'none' : '';
-          drawLink(!isLane && curFilter === 'occ');
         });
       });
     }());

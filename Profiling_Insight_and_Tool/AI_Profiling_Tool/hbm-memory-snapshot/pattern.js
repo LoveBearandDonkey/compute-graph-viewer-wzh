@@ -25,16 +25,18 @@
     })[k] || k;
   }
 
-  function fact(name, value, danger) {
+  function fact(name, value, danger, aux) {
     return '<div class="pto-hbm-snapshot__fact' + (danger ? " is-danger" : "") + '"><span>' +
-      name + "</span><strong>" + esc(value) + "</strong></div>";
+      name + "</span><strong>" + esc(value) +
+      (aux ? ' <em class="pto-hbm-snapshot__fact-aux">' + esc(aux) + "</em>" : "") +
+      "</strong></div>";
   }
 
   function render(container, snapshot, options) {
     options = options || {};
     var s = snapshot.summary || {};
     var rows = snapshot.lifetimes || [];
-    var selected = options.initialSelectedId || (rows[0] && rows[0].id);
+    var selected = options.initialSelectedId || null;
     var maxT = Math.max.apply(Math, [1].concat(rows.map(function (x) { return Number(x.freeMs) || 0; })));
     var fragments = snapshot.fragmentationMap || [];
     var fragmentTotal = fragments.reduce(function (sum, x) { return sum + Number(x.sizeGB || 0); }, 0) || 1;
@@ -65,34 +67,23 @@
       fragmentCursor += Number(segment.sizeGB || 0);
     });
     var detailRows = rows.concat(fragmentRows);
+    var freeFragmentCount = fragments.filter(function (x) { return x.kind === "free"; }).length;
     container.innerHTML =
       '<section class="pto-hbm-snapshot">' +
-        '<div class="pto-hbm-snapshot__context"><div><b>问题2 · 显存 OOM</b><span>' +
-          esc(snapshot.model || "训练任务") + '</span></div><div><strong>rank ' + esc(snapshot.rank) +
-          '</strong><span>OOM 问题卡</span></div><div><strong>step ' + esc(snapshot.step) +
-          '</strong><span>失败前快照 · step ' + esc(snapshot.incidentStep) +
-          ' 中断</span></div><p>本视图内的整卡地址、局部放大和生命周期均来自 rank ' +
-          esc(snapshot.rank) + ' 的同一份快照，不是集群汇总或其他 Rank 的示意图。</p></div>' +
         '<div class="pto-hbm-snapshot__evidence">' +
-          fact("HBM 峰值", (s.peakGB || 0) + "/" + (s.capacityGB || 0) + " GB", true) +
+          fact("故障Rank/step", "rank " + snapshot.rank, true, "/ step " + snapshot.step) +
           fact("空闲总量", (s.freeGB || 0) + " GB") +
           fact("最大连续空闲块", (s.largestFreeBlockGB || 0) + " GB") +
           fact("本次请求", (s.requestedGB || 0) + " GB") +
         "</div>" +
-        '<div class="pto-hbm-snapshot__verdict"><b>为什么 OOM？</b>空闲总量足够，但最大连续块 ' +
-          esc(s.largestFreeBlockGB) + " GB 小于请求 " + esc(s.requestedGB) +
-          " GB；碎片率 " + esc(s.fragmentationRatio) + "%。</div>" +
         '<div class="pto-hbm-snapshot__body"><div class="pto-hbm-snapshot__plots">' +
           '<section class="pto-hbm-snapshot__section"><div class="pto-hbm-snapshot__title">rank ' +
-            esc(snapshot.rank) + ' · 整卡 64 GB 地址空间与关键分配 ' +
-            '<span class="pto-hbm-snapshot__hint">step ' + esc(snapshot.step) +
-            ' 快照 · 斜纹底色=其他已占用 · 彩色色块=关键分配 · 纯灰=真实空闲段</span></div>' +
-            '<div class="pto-hbm-snapshot__legend">' +
-              ["activation", "parameters", "gradients", "optimizer", "workspace"].map(function (k) {
-                return '<span><i style="background:var(--hbm-' + k + ')"></i>' + label(k) + "</span>";
-              }).join("") +
-              '<span><i class="is-other"></i>其他已占用（未展开）</span><span><i class="is-gap"></i>空闲碎片（合计 ' +
-              esc(s.freeGB) + " GB）</span></div>" +
+            esc(snapshot.rank) + ' 内存分配分析</div>' +
+            '<div class="pto-hbm-snapshot__verdict"><b>故障分析</b>空闲总量足够，但最大连续块 ' +
+              esc(s.largestFreeBlockGB) + " GB 小于请求 " + esc(s.requestedGB) +
+              " GB；碎片率 " + esc(s.fragmentationRatio) + "%；总空闲 " + esc(s.freeGB) +
+              " GB 分散在 " + freeFragmentCount + " 个不连续地址段，不能拼接成 " +
+              esc(s.requestedGB) + " GB。</div>" +
             '<div class="pto-hbm-snapshot__axis pto-hbm-snapshot__address-axis"><span>0 GB</span><span>' +
               esc(s.capacityGB / 2) + " GB</span><span>" + esc(s.capacityGB) + " GB</span></div>" +
             '<div class="pto-hbm-snapshot__address-wrap"><div class="pto-hbm-snapshot__address">' +
@@ -114,23 +105,24 @@
             "</div></div>" +
             '<div class="pto-hbm-snapshot__zoom-bridge" aria-label="总览框选区域展开为下方局部地址图"><span>rank ' +
               esc(snapshot.rank) + ' · ' + fragmentStart.toFixed(2) + "–" + fragmentEnd.toFixed(2) +
-              ' GB 空闲区域放大</span><svg viewBox="0 0 100 90" preserveAspectRatio="none">' +
+              ' GB 空闲区域放大</span><svg viewBox="0 0 100 120" preserveAspectRatio="none">' +
               '<defs><linearGradient id="hbmZoomFlow" x1="0" y1="0" x2="0" y2="1">' +
               '<stop offset="0" stop-color="currentColor" stop-opacity=".18"></stop>' +
               '<stop offset=".52" stop-color="currentColor" stop-opacity=".10"></stop>' +
               '<stop offset="1" stop-color="currentColor" stop-opacity=".25"></stop></linearGradient></defs>' +
-              '<path d="M ' + fragmentLeft + ' 0 C ' + fragmentLeft + ' 32, ' +
-              fragmentTargetLeft + ' 58, ' + fragmentTargetLeft + ' 90 H ' +
-              fragmentTargetRight + ' C ' + fragmentTargetRight + ' 58, ' +
-              fragmentRight + ' 32, ' + fragmentRight +
+              '<path d="M ' + fragmentLeft + ' 0 C ' + fragmentLeft + ' 42.6667, ' +
+              fragmentTargetLeft + ' 77.3333, ' + fragmentTargetLeft + ' 120 H ' +
+              fragmentTargetRight + ' C ' + fragmentTargetRight + ' 77.3333, ' +
+              fragmentRight + ' 42.6667, ' + fragmentRight +
               ' 0 Z" fill="url(#hbmZoomFlow)"></path></svg></div>' +
             '<div class="pto-hbm-snapshot__fragment-map" aria-label="空闲碎片地址分布">' +
               fragments.map(function (x, index) {
                 var width = Number(x.sizeGB || 0) / fragmentTotal * 100;
                 if (x.kind === "free") {
                   var largest = Number(x.sizeGB) === Number(s.largestFreeBlockGB);
+                  var freeLabel = esc(x.sizeGB) + "G" + (largest ? "（最大连续空闲）" : "");
                   return '<span class="is-free' + (largest ? " is-largest" : "") + '" style="width:' + width +
-                    '%" title="空闲 ' + esc(x.sizeGB) + ' GB"><b>' + esc(x.sizeGB) + "G</b></span>";
+                    '%" title="空闲 ' + esc(x.sizeGB) + ' GB"><b>' + freeLabel + "</b></span>";
                 }
                 var allocation = fragmentRows.find(function (row) { return row.id === x.allocationId; });
                 return '<button class="is-blocker pto-hbm-snapshot__fragment-allocation" data-id="' +
@@ -139,31 +131,41 @@
                   esc(allocation ? allocation.name : "活跃分配") + " · " + esc(x.sizeGB) +
                   ' GB · 点击查看详情"></button>';
               }).join("") +
-            '</div><div class="pto-hbm-snapshot__request-attempt"><div class="pto-hbm-snapshot__request-scale"><i style="width:' +
+            '</div><div class="pto-hbm-snapshot__request-attempt"><div class="pto-hbm-snapshot__request-copy"><span>待分配 ' +
+              esc(s.requestedGB) + ' GB</span></div><div class="pto-hbm-snapshot__request-scale"><i style="width:' +
               requestFragmentWidth.toFixed(3) + '%"><em style="width:' + requestFitWidth.toFixed(3) +
               '%"></em><strong style="width:' + (100 - requestFitWidth).toFixed(3) +
-              '%"></strong></i></div><div class="pto-hbm-snapshot__request-copy"><span>待分配 ' +
-              esc(s.requestedGB) + ' GB（与最大空洞左对齐）</span><b>超出 ' +
-              shortageGB.toFixed(1) + ' GB</b></div></div>' +
-            '<div class="pto-hbm-snapshot__fragment-caption"><b>最大空洞只有 ' +
-              esc(s.largestFreeBlockGB) + " GB</b><span>总空闲 " + esc(s.freeGB) +
-              " GB 分散在 " + fragments.filter(function (x) { return x.kind === "free"; }).length +
-              " 个不连续地址段，不能拼接成 0.5 GB。</span></div>" +
+              '%">' + (shortageGB > 0 ? "超出 " + shortageGB.toFixed(1) + " GB" : "") +
+              '</strong></i></div></div>' +
+            '<div class="pto-hbm-snapshot__legend">' +
+              ["activation", "parameters", "gradients", "optimizer", "workspace"].map(function (k) {
+                return '<span><i style="background:var(--hbm-' + k + ')"></i>' + label(k) + "</span>";
+              }).join("") +
+              '<span><i class="is-other"></i>其他已占用（未展开）</span><span><i class="is-gap"></i>空闲碎片（合计 ' +
+              esc(s.freeGB) + " GB）</span></div>" +
           '</section></div><aside class="pto-hbm-snapshot__detail"></aside></div>' +
       "</section>";
 
     var root = container.firstElementChild;
+    var body = root.querySelector(".pto-hbm-snapshot__body");
     var detail = root.querySelector(".pto-hbm-snapshot__detail");
 
     function select(id) {
-      selected = id;
+      var x = id ? detailRows.find(function (v) { return String(v.id) === String(id); }) : null;
+      selected = x ? id : null;
       root.querySelectorAll("[data-id]").forEach(function (el) {
-        el.classList.toggle("is-selected", el.dataset.id === id);
+        el.classList.toggle("is-selected", el.dataset.id === selected);
       });
-      var x = detailRows.find(function (v) { return String(v.id) === String(id); }) || detailRows[0];
-      if (!x) return;
+      if (!x) {
+        body.classList.remove("has-detail");
+        detail.innerHTML = "";
+        return;
+      }
+      body.classList.add("has-detail");
       var duration = x.freeMs - x.allocMs;
-      detail.innerHTML = "<h3>" + esc(x.name) + '</h3><div class="pto-hbm-snapshot__detail-kind">' +
+      detail.innerHTML = '<div class="pto-hbm-snapshot__detail-head"><h3>' + esc(x.name) +
+        '</h3><button class="pto-hbm-snapshot__detail-close" type="button" aria-label="关闭详情">&times;</button></div>' +
+        '<div class="pto-hbm-snapshot__detail-kind">' +
         label(kind(x.kind)) + " · " + esc(x.source || "未知来源") + (x.line ? ":" + x.line : "") +
         '</div><div class="pto-hbm-snapshot__detail-life"><div><span>生命周期</span><b>' +
         esc(duration) + ' ms</b></div><div class="pto-hbm-snapshot__detail-life-track"><i data-kind="' +
@@ -182,6 +184,7 @@
     }
 
     root.addEventListener("click", function (e) {
+      if (e.target.closest(".pto-hbm-snapshot__detail-close")) { select(null); return; }
       var block = e.target.closest("[data-id]");
       if (block) select(block.dataset.id);
       var action = e.target.closest("[data-action]");
