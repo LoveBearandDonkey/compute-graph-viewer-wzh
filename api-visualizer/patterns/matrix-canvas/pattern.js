@@ -206,6 +206,11 @@
       fill = rgba(mix(tone, background, 0.22), 0.96);
     }
     if (cell.states.has('row-focus')) fill = rgba(mix(tokenRgb('--primary'), background, 0.2), 0.98);
+    if (cell.states.has('selected')) {
+      fill = rgba(tokenRgb('--primary'), 0.92);
+      stroke = rgba(tokenRgb('--primary-hover'), 1);
+      text = rgba(tokenRgb('--primary-foreground'), 0.96);
+    }
     if (cell.states.has('column-focus')) fill = rgba(mix(tokenRgb('--warning'), parseCssColor(fill) || background, 0.12), 0.98);
     if (cell.states.has('written')) {
       fill = rgba(mix(tokenRgb('--primary'), background, 0.34), 0.98);
@@ -216,12 +221,9 @@
       text = rgba(foreground, 0.35);
     }
     if (cell.states.has('selected')) {
-      stroke = rgba(foreground, 0.92);
-      text = rgba(foreground, 0.92);
       if (cell.style === 'aggregate') {
         fill = rgba(tokenRgb('--primary'), 1);
         stroke = rgba(tokenRgb('--primary-hover'), 1);
-        text = rgba(foreground, 0.92);
       }
     }
     if (cell.states.has('current')) {
@@ -237,21 +239,24 @@
     const background = tokenRgb('--background');
     const surface3 = tokenRgb('--surface-3');
     const minDimension = Math.min(rect.width, rect.height);
-    const compactness = clamp((18 - minDimension) / 10, 0, 1);
+    // A 20px cell is already a compact overview cell in the GM → UB lane.
+    // Start adapting before the old 18px threshold so padding does not fade
+    // into the grid before the user can zoom or hover it.
+    const compactness = clamp((30 - minDimension) / 12, 0, 1);
     const wash = mix(foreground, surface3, 0.16 + compactness * 0.12);
     ctx.save();
     ctx.beginPath();
     ctx.rect(rect.x, rect.y, rect.width, rect.height);
     ctx.clip();
 
-    ctx.fillStyle = rgba(wash, 0.16 + compactness * 0.16);
+    ctx.fillStyle = rgba(wash, 0.28 + compactness * 0.28);
     ctx.fillRect(rect.x, rect.y, rect.width, rect.height);
 
-    const step = minDimension < 11
-      ? clamp(minDimension * 0.72, 4, 7)
+    const step = minDimension < 26
+      ? clamp(minDimension * 0.48, 5, 9)
       : clamp(minDimension * 0.42, 6, 12);
-    ctx.strokeStyle = rgba(foreground, 0.18 + compactness * 0.2);
-    ctx.lineWidth = minDimension < 14 ? 1.35 : 1;
+    ctx.strokeStyle = rgba(foreground, 0.3 + compactness * 0.38);
+    ctx.lineWidth = minDimension < 24 ? 1.5 : 1;
     ctx.lineCap = 'square';
     for (let start = rect.x - rect.height; start < rect.x + rect.width; start += step) {
       ctx.beginPath();
@@ -260,9 +265,9 @@
       ctx.stroke();
     }
 
-    if (minDimension < 14) {
-      ctx.strokeStyle = rgba(mix(foreground, background, 0.78), 0.46);
-      ctx.lineWidth = clamp(minDimension * 0.18, 1.2, 1.8);
+    if (minDimension < 26) {
+      ctx.strokeStyle = rgba(mix(foreground, background, 0.72), 0.68);
+      ctx.lineWidth = clamp(minDimension * 0.14, 1.4, 2);
       ctx.beginPath();
       ctx.moveTo(rect.x + rect.width * 0.18, rect.y + rect.height * 0.82);
       ctx.lineTo(rect.x + rect.width * 0.82, rect.y + rect.height * 0.18);
@@ -308,17 +313,17 @@
 
     ctx.fillStyle = colors.fill;
     ctx.fillRect(box.x, box.y, box.width, box.height);
-    if (cell.style === 'broadcast' && !cell.states.has('current')) {
+    if (cell.style === 'broadcast' && !cell.states.has('current') && !cell.states.has('selected')) {
       const grayMask = mix(tokenRgb('--foreground-secondary'), colors.background, 0.4);
       ctx.fillStyle = rgba(grayMask, 0.4);
       ctx.fillRect(box.x, box.y, box.width, box.height);
     }
-    if (cell.style === 'padding' && !cell.states.has('current')) drawPaddingPattern(ctx, box);
+    if (cell.style === 'padding' && !cell.states.has('current') && !cell.states.has('selected')) drawPaddingPattern(ctx, box);
     if (cell.style === 'aggregate') drawAggregate(ctx, cell, box, colors);
 
     ctx.save();
     ctx.strokeStyle = colors.stroke;
-    ctx.lineWidth = cell.states.has('current') ? 2 : cell.states.has('selected') ? 1.5 : 1;
+    ctx.lineWidth = cell.states.has('current') || cell.states.has('selected') ? 2 : 1;
     ctx.strokeRect(box.x, box.y, box.width, box.height);
     ctx.restore();
 

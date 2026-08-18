@@ -20,6 +20,11 @@
   };
   const MATMUL_CORE_COUNT = 8;
   const MATMUL_SHARED_AGGREGATE_GRID = Object.freeze({ rows: 4, columns: 4 });
+  const MATMUL_INPUT_SHAPE_SCALE_SPEC = Object.freeze({
+    axisScales: Object.freeze({ M: 256, K: 256, N: 256 }),
+    hardBoundaries: Object.freeze({ M: Object.freeze([256]), N: Object.freeze([256]) }),
+    reason: 'Aligned with the 256×256 output-tile/core partition; K uses the same comparison scale.'
+  });
   const state = {
     trace: null,
     context: null,
@@ -623,31 +628,30 @@
     };
   }
 
-  function aggregateRanges(extent, sourceSpan, targetCount) {
-    const normalizedExtent = Math.max(1, Math.floor(extent));
-    if (Number.isFinite(targetCount) && targetCount > 0) {
-      const count = Math.min(normalizedExtent, Math.floor(targetCount));
-      return Array.from({ length: count }, (_, index) => {
-        const start = Math.floor(index * normalizedExtent / count);
-        const end = Math.floor((index + 1) * normalizedExtent / count);
-        return { start, span: Math.max(1, end - start) };
-      });
-    }
-    const span = Math.max(1, Math.floor(sourceSpan));
-    const ranges = [];
-    for (let start = 0; start < normalizedExtent; start += span) {
-      ranges.push({ start, span: Math.min(span, normalizedExtent - start) });
-    }
-    return ranges;
+  function sharedAggregateGridForViews(views) {
+    const validViews = views.filter((view) => Array.isArray(view?.logicalShape) && view.logicalShape.length >= 2);
+    if (!validViews.length) return MATMUL_SHARED_AGGREGATE_GRID;
+    return {
+      rows: Math.max(1, Math.min(MATMUL_SHARED_AGGREGATE_GRID.rows, ...validViews.map((view) => Math.floor(view.logicalShape[0])))),
+      columns: Math.max(1, Math.min(MATMUL_SHARED_AGGREGATE_GRID.columns, ...validViews.map((view) => Math.floor(view.logicalShape[1]))))
+    };
   }
 
-  function matrixSceneForTensor(view, aggregateGrid = null) {
+  function matrixSceneForTensor(view, aggregation = null) {
     const rows = view.logicalShape[0];
     const columns = view.logicalShape[1];
     const tileRowSpan = view.grid.rowSpan;
     const tileColumnSpan = view.grid.columnSpan;
-    const rowRanges = aggregateRanges(rows, tileRowSpan, aggregateGrid?.rows);
-    const columnRanges = aggregateRanges(columns, tileColumnSpan, aggregateGrid?.columns);
+    const aggregateCells = window.PtoMatrixCanvas.createAggregateLayoutCells(
+      { rows, columns },
+      {
+        blockRows: aggregation?.rowSpan ?? tileRowSpan,
+        blockColumns: aggregation?.columnSpan ?? tileColumnSpan,
+        thumbnailRows: aggregation?.rows,
+        thumbnailColumns: aggregation?.columns,
+        intensity: 0.5
+      }
+    );
     const coords = tileCoordinates();
     let activeRow = 0;
     let activeColumn = 0;
@@ -660,43 +664,43 @@
     const showCurrentTile = currentStep().id !== 'host-args';
     const outputStageActive = ['mmad', 'sync-m-fix', 'l0c-to-gm'].includes(currentStep().id);
     const tone = view.role === 'output' ? 'output' : view.role === 'reduction' ? 'reduction' : 'input';
-    const cells = [];
-
-    // Keep the source extent. Multi-tensor views inject one shared aggregate grid
-    // so every matrix has the same number of Pattern aggregate cells.
-    for (const rowRange of rowRanges) {
-      for (const columnRange of columnRanges) {
-        const row = rowRange.start;
-        const column = columnRange.start;
-        const cellRowSpan = rowRange.span;
-        const cellColumnSpan = columnRange.span;
-        const isActiveAggregate = view.id === 'tensor:co1'
-          ? showCurrentTile && outputStageActive
-          : showCurrentTile
-            && activeRow >= row && activeRow < row + cellRowSpan
-            && activeColumn >= column && activeColumn < column + cellColumnSpan;
-        const states = [];
-        if (isActiveAggregate) states.push('current');
-        else if (view.id === 'tensor:co1' && tensorState(view).startsWith('accumulated')) states.push('written');
-        cells.push({
-          id: view.id + ':aggregate:' + row + ':' + column,
-          row,
-          column,
-          rowSpan: cellRowSpan,
-          columnSpan: cellColumnSpan,
-          tone,
-          style: 'aggregate',
-          summary: {
-            rows: cellRowSpan,
-            columns: cellColumnSpan,
-            count: cellRowSpan * cellColumnSpan,
-            intensity: 0.5
-          },
-          states
-        });
-      }
-    }
+    const cells = aggregateCells.map((aggregateCell) => {
+      const row = aggregateCell.row;
+      const column = aggregateCell.column;
+      const cellRowSpan = aggregateCell.rowSpan;
+      const cellColumnSpan = aggregateCell.columnSpan;
+      const isActiveAggregate = view.id === 'tensor:co1'
+        ? showCurrentTile && outputStageActive
+        : showCurrentTile
+          && activeRow >= row && activeRow < row + cellRowSpan
+          && activeColumn >= column && activeColumn < column + cellColumnSpan;
+      const states = [];
+      if (isActiveAggregate) states.push('current');
+      else if (view.id === 'tensor:co1' && tensorState(view).startsWith('accumulated')) states.push('written');
+      return {
+        ...aggregateCell,
+        id: view.id + ':' + aggregateCell.id,
+        tone,
+        summary: {
+          ...aggregateCell.summary,
+          intensity: 0.5
+        },
+        states
+      };
+    });
     return { extent: { rows, columns }, axes: { rows: view.axes[0], columns: view.axes[1] }, cells };
+  }
+
+  function resolveMatmulInputShapeScale(views) {
+    return window.PtoMatrixCanvas.resolveSharedAggregateScale({
+      tensors: views.map((view) => ({
+        id: view.id,
+        extent: { rows: view.logicalShape[0], columns: view.logicalShape[1] },
+        axes: { rows: view.axes[0], columns: view.axes[1] }
+      })),
+      axisScales: MATMUL_INPUT_SHAPE_SCALE_SPEC.axisScales,
+      hardBoundaries: MATMUL_INPUT_SHAPE_SCALE_SPEC.hardBoundaries
+    });
   }
 
   function tensorTitleScene(view) {
@@ -732,10 +736,14 @@
     return tensorId.replace(/^tensor:/, '').replace(/[^a-zA-Z0-9]+/g, '-').toLowerCase();
   }
 
-  function matmulOverviewTitleScene(view) {
+  function matmulOverviewTitleScene(view, aggregation = null) {
     const scene = tensorTitleScene(view);
+    const aggregateShape = Number.isFinite(aggregation?.rowSpan) && Number.isFinite(aggregation?.columnSpan)
+      ? { label: 'aggregate', dims: [aggregation.rowSpan, aggregation.columnSpan] }
+      : scene.physicalShape;
     return {
       ...scene,
+      physicalShape: aggregateShape,
       step: null,
       constraints: [],
       provenance: null,
@@ -747,11 +755,11 @@
     mount.querySelector('.pto-tensor-title__footer')?.remove();
   }
 
-  function updateMatmulOverviewTitle(tensorId, view) {
+  function updateMatmulOverviewTitle(tensorId, view, aggregation = null) {
     const key = overviewDomKey(tensorId);
     const mount = document.getElementById('matmulOverviewTitle-' + key);
     if (!mount || !window.PtoTensorTitle) return;
-    const scene = matmulOverviewTitleScene(view);
+    const scene = matmulOverviewTitleScene(view, aggregation);
     const options = { density: 'full', showShapes: true, showChips: true, showStatus: false };
     const controller = state.overviewTitleControllers[tensorId];
     if (controller) controller.update(scene, options);
@@ -759,11 +767,11 @@
     removeMatmulOverviewTitleFooter(mount);
   }
 
-  function updateMatmulOverviewMatrix(tensorId, view, aggregateGrid) {
+  function updateMatmulOverviewMatrix(tensorId, view, aggregation) {
     const key = overviewDomKey(tensorId);
     const canvas = document.getElementById('matmulOverviewCanvas-' + key);
     if (!canvas || !window.PtoMatrixCanvas) return;
-    const scene = matrixSceneForTensor(view, aggregateGrid);
+    const scene = matrixSceneForTensor(view, aggregation);
     const options = {
       ariaLabel: view.label + ' overview matrix',
       showGrid: false,
@@ -932,8 +940,9 @@
     $('#matmulCopyReadiness').innerHTML = metadata.readiness.map((item, index) => (index ? '<span aria-hidden="true">→</span>' : '') + '<span class="tag' + (index === 0 ? ' status-success' : '') + '">' + escapeHtml(item) + '</span>').join('');
     renderMatmulCopyTitle('source', source, sourceRole, metadata.sourceTier, sourceState, sourceOffset);
     renderMatmulCopyTitle('destination', destination, destinationRole, metadata.destinationTier || destination.memoryTier, destinationState, destinationOffset);
-    renderMatmulCopyMatrix('source', source, MATMUL_SHARED_AGGREGATE_GRID);
-    renderMatmulCopyMatrix('destination', destination, MATMUL_SHARED_AGGREGATE_GRID);
+    const aggregateGrid = sharedAggregateGridForViews([source, destination]);
+    renderMatmulCopyMatrix('source', source, aggregateGrid);
+    renderMatmulCopyMatrix('destination', destination, aggregateGrid);
     const fitMatrices = () => Object.values(state.copyMatrixControllers).forEach((controller) => {
       controller?.resize?.();
       controller?.fit?.();
@@ -966,6 +975,10 @@
     const current = currentInstructionState();
     const activeIds = activeTensorIdsForStep(current.step.id);
     const views = activeIds.map((tensorId) => tensorView(tensorId)).filter(Boolean);
+    const inputShapeScale = current.step.id === 'host-args'
+      ? resolveMatmulInputShapeScale(views)
+      : null;
+    const aggregateGrid = inputShapeScale ? null : sharedAggregateGridForViews(views);
     Object.values(state.overviewTitleControllers).forEach((controller) => controller?.destroy?.());
     Object.values(state.overviewMatrixControllers).forEach((controller) => controller?.destroy?.());
     state.overviewTitleControllers = {};
@@ -988,19 +1001,31 @@
     const curM = current.frame.curM ?? context.curM;
     const curN = current.frame.curN ?? context.curN;
     const curKL0 = current.frame.curKL0 ?? context.baseK;
-    $('#matmulOverviewTile').textContent = 'Output Tile [' + curM + ',' + curN + '] · K Slice ' + curKL0 + ' · BF16';
+    const inputShapeGridText = inputShapeScale?.tensors
+      .map((plan) => tensorView(plan.id).label + ' ' + plan.grid.rows + '×' + plan.grid.columns)
+      .join(' · ');
+    $('#matmulOverviewTile').textContent = inputShapeScale
+      ? 'Aggregate Cell [' + inputShapeScale.axisScales.M + ',' + inputShapeScale.axisScales.N + '] · ' + inputShapeGridText + ' · BF16'
+      : 'Output Tile [' + curM + ',' + curN + '] · K Slice ' + curKL0 + ' · BF16';
     views.forEach((view) => {
-      updateMatmulOverviewTitle(view.id, view);
-      updateMatmulOverviewMatrix(view.id, view, MATMUL_SHARED_AGGREGATE_GRID);
+      const aggregation = inputShapeScale?.tensors.find((plan) => plan.id === view.id) || aggregateGrid;
+      updateMatmulOverviewTitle(view.id, view, aggregation);
+      updateMatmulOverviewMatrix(view.id, view, aggregation);
     });
     const fitMatrices = () => Object.values(state.overviewMatrixControllers).forEach((controller) => {
       controller?.resize?.();
       controller?.fit?.();
     });
-    if (window.requestAnimationFrame) {
-      window.requestAnimationFrame(() => window.requestAnimationFrame(fitMatrices));
-    } else {
+    const fitAndLinkMatrices = () => {
       fitMatrices();
+      if (inputShapeScale) {
+        window.PtoMatrixCanvas.synchronizeScale(Object.values(state.overviewMatrixControllers));
+      }
+    };
+    if (window.requestAnimationFrame) {
+      window.requestAnimationFrame(() => window.requestAnimationFrame(fitAndLinkMatrices));
+    } else {
+      fitAndLinkMatrices();
     }
   }
 
