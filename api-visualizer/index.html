@@ -1746,6 +1746,10 @@
       background: var(--surface-3);
     }
 
+    .gm2ub-align-swatch--active {
+      background: var(--primary);
+      border-color: var(--primary-hover);
+    }
     .gm2ub-align-swatch--valid { background: color-mix(in srgb, var(--primary) 24%, transparent); border-color: var(--primary); }
     .gm2ub-align-swatch--written { background: color-mix(in srgb, var(--success) 26%, transparent); border-color: var(--success); }
     .gm2ub-align-swatch--pad {
@@ -4670,6 +4674,7 @@
                   </div>
                   <footer class="gm2ub-align-status">
                     <div class="gm2ub-align-legend" aria-label="asc_copy_gm2ub_align legend">
+                      <span class="gm2ub-align-legend-item"><span class="gm2ub-align-swatch gm2ub-align-swatch--active"></span>current transfer (GM ↔ UB)</span>
                       <span class="gm2ub-align-legend-item"><span class="gm2ub-align-swatch gm2ub-align-swatch--valid"></span>GM valid read</span>
                       <span class="gm2ub-align-legend-item"><span class="gm2ub-align-swatch gm2ub-align-swatch--written"></span>UB valid write</span>
                       <span class="gm2ub-align-legend-item"><span class="gm2ub-align-swatch gm2ub-align-swatch--pad"></span>padding / alignment</span>
@@ -9256,6 +9261,10 @@ __aicore__ inline void LoadData(const LocalTensor&lt;T&gt;&amp; dst, const Local
         const columns = gm2ubLineColumns();
         const srcRows = Math.max(1, Math.ceil(gm2ubElementsForBytes(srcTotalBytes) / columns));
         const dstRows = Math.max(1, Math.ceil(gm2ubElementsForBytes(dstTotalBytes) / columns));
+        // Use one address-space viewport for GM and UB so the two matrices
+        // remain directly comparable even when stride or alignment changes.
+        const matrixRows = Math.max(srcRows, dstRows);
+        const matrixExtentBytes = matrixRows * columns * elementSize;
         const srcSegments = [];
         const dstSegments = [];
 
@@ -9320,6 +9329,8 @@ __aicore__ inline void LoadData(const LocalTensor&lt;T&gt;&amp; dst, const Local
           dstTotalBytes,
           srcRows,
           dstRows,
+          matrixRows,
+          matrixExtentBytes,
           srcSegments,
           dstSegments,
           warnings
@@ -9360,7 +9371,13 @@ __aicore__ inline void LoadData(const LocalTensor&lt;T&gt;&amp; dst, const Local
         lines.push(
           '',
           `// dst footprint: ${context.dstTotalBytes} B; valid data: ${context.validBytes} B`,
-          `// pad value: ${gm2ubApiState.padValue} · constant pad: ${gm2ubApiState.enableConstantPad ? 'true' : 'false'}`,
+          `// pad value: ${gm2ubApiState.enableConstantPad ? gm2ubApiState.padValue : 'first input value'} · constant pad: ${gm2ubApiState.enableConstantPad ? 'true' : 'false'}`,
+          ...(gm2ubApiState.enableConstantPad
+            ? [
+                '// configure the constant padding register before the transfer',
+                `asc_set_copy_pad_val(static_cast<T>(${gm2ubApiState.padValue}));`
+              ]
+            : []),
           `asc_copy_gm2ub_align(dst, src, ${context.nBurst}, ${context.lenBurst}, ${gm2ubApiState.leftPadding}, ${gm2ubApiState.rightPadding}, ${gm2ubApiState.enableConstantPad ? 'true' : 'false'}, asc_load_l2_cache_mode::${gm2ubL2CacheEnum()}, ${context.srcStride}, ${context.dstStride});`
         );
         return lines.join('\n');
@@ -9384,8 +9401,7 @@ __aicore__ inline void LoadData(const LocalTensor&lt;T&gt;&amp; dst, const Local
         const timeline = [{ phase: 'ready', block: null, label: 'ready · 参数与矩阵布局就绪' }];
         if (!context.isBurst) {
           timeline.push(
-            { phase: 'read', block: 0, label: `read · GM 连续读取 ${context.lenBurst} B` },
-            { phase: 'write', block: 0, label: `write · UB 写入 ${context.validBytes} B valid data` }
+            { phase: 'transfer', block: 0, label: `transfer · GM read ${context.lenBurst} B → UB write ${context.validBytes} B valid data` }
           );
           if (context.dstTotalBytes > context.validBytes) {
             timeline.push({ phase: 'align', block: 0, label: `align · UB 侧补齐 ${context.dstTotalBytes - context.validBytes} B` });
@@ -9396,8 +9412,7 @@ __aicore__ inline void LoadData(const LocalTensor&lt;T&gt;&amp; dst, const Local
 
         for (let block = 0; block < context.nBurst; block += 1) {
           timeline.push(
-            { phase: 'read', block, label: `block ${block} · GM read ${context.lenBurst} B` },
-            { phase: 'write', block, label: `block ${block} · UB write valid data` }
+            { phase: 'transfer', block, label: `block ${block} · GM read ${context.lenBurst} B → UB write valid data` }
           );
           const hasBlockPad = !context.compact && context.dstSegments.some((segment) => segment.block === block && segment.kind === 'pad');
           if (hasBlockPad) timeline.push({ phase: 'pad', block, label: `block ${block} · UB pad / align slot` });
@@ -9415,7 +9430,7 @@ __aicore__ inline void LoadData(const LocalTensor&lt;T&gt;&amp; dst, const Local
         const step = Math.max(0, Math.min(gm2ubStep, timeline.length - 1));
         const event = timeline[step] || timeline[0];
         const before = timeline.slice(0, step);
-        const writtenBlocks = new Set(before.filter((item) => item.phase === 'write').map((item) => item.block));
+        const writtenBlocks = new Set(before.filter((item) => item.phase === 'transfer').map((item) => item.block));
         const paddedBlocks = new Set(before.filter((item) => item.phase === 'pad' || item.phase === 'align').map((item) => item.block));
         return { context, timeline, step, event, writtenBlocks, paddedBlocks };
       };
@@ -9426,9 +9441,16 @@ __aicore__ inline void LoadData(const LocalTensor&lt;T&gt;&amp; dst, const Local
         return segments.find((segment) => segment.start < endByte && segment.end > startByte) || null;
       };
 
+      const gm2ubPaddingValue = (segment, context) => {
+        if (gm2ubApiState.enableConstantPad) return gm2ubApiState.padValue;
+        // enable_constant_pad=false means every padding element copies the
+        // first value of its source burst, not the destination byte offset.
+        return segment.block * context.srcStride;
+      };
+
       const createGm2ubMatrixScene = (kind, context, playback = gm2ubPlaybackContext()) => {
         const isSource = kind === 'src';
-        const rows = isSource ? context.srcRows : context.dstRows;
+        const rows = context.matrixRows;
         const totalCells = rows * context.columns;
         const segments = isSource ? context.srcSegments : context.dstSegments;
         const event = playback.event || {};
@@ -9441,11 +9463,19 @@ __aicore__ inline void LoadData(const LocalTensor&lt;T&gt;&amp; dst, const Local
           const isValid = segment?.kind === 'valid';
           const isPad = segment?.kind === 'pad';
           const offset = index * context.elementSize;
-          const isCurrentRead = isSource && isValid && event.phase === 'read' && segment.block === event.block;
-          const isCurrentWrite = !isSource && isValid && event.phase === 'write' && segment.block === event.block;
-          const isCurrentPad = !isSource && isPad && (event.phase === 'pad' || event.phase === 'align') && segment.block === event.block;
+          const isCurrentBlock = Number.isInteger(event.block) && segment?.block === event.block;
+          const isTransferPhase = event.phase === 'transfer';
+          const isPaddingPhase = event.phase === 'pad' || event.phase === 'align';
+          const isCurrentRead = isSource && isValid && isCurrentBlock && isTransferPhase;
+          const isCurrentWrite = !isSource && isValid && isCurrentBlock && isTransferPhase;
+          const isCurrentPad = !isSource && isPad && isCurrentBlock && isPaddingPhase;
           const states = [];
-          if (isCurrentRead || isCurrentWrite || isCurrentPad) states.push('current');
+          if (isCurrentRead || isCurrentWrite) {
+            // Use selected as the shared blue transfer state so the matching
+            // GM and UB regions read as one clearly blue operation.
+            states.push('selected');
+          }
+          if (isCurrentPad) states.push('current');
           if (!isSource && isValid && playback.writtenBlocks?.has(segment?.block)) states.push('written');
           if (!isSource && isPad && playback.paddedBlocks?.has(segment?.block)) states.push('written');
           if (!segment) states.push('muted');
@@ -9459,8 +9489,8 @@ __aicore__ inline void LoadData(const LocalTensor&lt;T&gt;&amp; dst, const Local
                   ? `B${segment.block}`
                   : segment.label || 'P'
                 : ''
-              : '',
-            value: offset,
+            : '',
+            value: isPad ? gm2ubPaddingValue(segment, context) : offset,
             tone: isValid ? (isSource ? 'input' : 'output') : 'neutral',
             style: isPad ? 'padding' : (isValid ? 'value' : 'empty'),
             states
