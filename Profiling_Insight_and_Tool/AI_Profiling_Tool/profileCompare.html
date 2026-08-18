@@ -644,6 +644,9 @@ body {
 .sl-diff-stat-card { min-width: 0; padding: 10px var(--space-3); border-radius: var(--radius-lg); background: var(--surface-2); margin-bottom: var(--space-3); }
 .sl-diff-stat-card__row { display: flex; justify-content: space-between; align-items: baseline; padding: 3px 0; }
 .sl-diff-stat-card__row + .sl-diff-stat-card__row { border-top: 1px solid var(--border-subtle); }
+/* 账目卡的行标签里可以带一个判定标签（噪声带内 / 真差异 / 集中…），复用差异卡片列表
+   的 .sl-diff-card__flag 形制。字段口径统一收在标题旁的问号里，但判定结果随数据变，
+   必须直接看到——「极差 4.79 ms」和「±9.9%」单位不同，不给判定用户根本没法比。 */
 .sl-diff-stat-card__label { color: var(--foreground-muted); font: 500 11px / 1.2 var(--font-sans); }
 .sl-diff-stat-card__num { color: var(--foreground); font: 600 14px / 1.3 var(--font-mono); }
 .sl-diff-stat-card__num small { color: var(--foreground-muted); font-size: 10px; font-weight: 500; }
@@ -651,6 +654,13 @@ body {
 .sl-diff-stat-card__num.is-faster { color: #1a8f52; }
 /* 总账条：差异看板第一层，视觉上比下面的计数卡重一档 */
 .sl-diff-ledger { border: 1px solid var(--border-subtle); }
+/* 账目卡标题：这张卡混装了总 busy、总差值、Top 3 集中度、显著项计数与噪声带，
+   没有标题就只是一摞读数，读不出它在回答"两条记录之间总共差了多少、差得集不集中"。
+   形制与构成对比条的 .sl-comp-compare__title 一致，同一层级的卡用同一种标题。 */
+.sl-diff-stat-card__title {
+  display: flex; align-items: center; gap: 5px;   /* 容纳标题后的字段口径问号 */
+  margin-bottom: 7px; font: 600 11px / 1.2 var(--font-sans); color: var(--foreground-muted);
+}
 .sl-diff-ledger .sl-diff-stat-card__label { display: flex; align-items: center; gap: 5px; }
 .sl-diff-card-list { display: flex; flex-direction: column; gap: 8px; }
 .sl-diff-card {
@@ -693,8 +703,15 @@ body {
 /* 噪声带内：整卡压暗，避免用户把训练自身抖动读成改动带来的差异 */
 .sl-diff-card.is-noise { opacity: .55; }
 
-/* ── 差异健康度卡（差异总览最顶部的定调卡片）──
-   评级色阶与 index_v3 总览页 PHS 仪表盘同源，只是档位换成 A+/A/B+/B/C+/C。 */
+/* ── 差异总览最顶部的定调卡片 ──
+   同一张卡壳（.sl-health）装两套内容，由「勾了几条记录」决定：
+   · 只勾基线一条 → 差异健康度：任务内多卡的一个 0–100 健康分（评级徽标 + 结论 + 刻度条），
+     这条流程问的是"同一次训练里谁在拖后腿"，方向唯一（空等越少越好），折成一个分数是成立的；
+   · 勾两条以上 → 性能评估（.sl-perf__*）：**不给差异健康度**。跨任务对比的业务意图不唯一,
+     有的改动就是要把差异拉大（提速），有的只求别把性能带坏，把「差异」折成健康分等于替用户
+     下了一个工具并不知道方向的判断。改成雷达图给形状、渐变轴给各自的绝对水平与落点。
+   两套的评级色阶都与 index_v3 总览页的 PHS 仪表盘同源（app.js 的 gradeToColor /
+   gradeColorAt），只是健康度那套档位换成 A+/A/B+/B/C+/C。 */
 .sl-health {
   padding: 12px var(--space-3) 11px; margin-bottom: var(--space-3);
   border-radius: var(--radius-lg); background: var(--surface-2);
@@ -742,8 +759,90 @@ body {
   font: 500 8.5px / 1.2 var(--font-mono); color: var(--foreground-muted);
 }
 .sl-health__ticks .is-current { font-weight: 700; }
+
+/* ── 维度雷达图：形制沿用 index_v3 总览页的子项雷达（等分多边形环 + 轴名在外）──
+   这里手写 SVG 而不是 echarts：本页没有引入 echarts，而且要一次画最多三条记录的轮廓，
+   轴标签下面还要按记录配色分别标出各自的读数。 */
+.sl-perf__radar { margin: 6px 0 2px; }
+.sl-perf__radar svg { display: block; width: 100%; height: auto; overflow: visible; }
+/* 记录图例：颜色即身份，与左侧勾选栏、构成对比条的 run 点同色 */
+.sl-perf__legend {
+  display: flex; flex-wrap: wrap; gap: 3px 12px; justify-content: center;
+  font: 500 10px / 1.3 var(--font-sans); color: var(--foreground-muted);
+}
+.sl-perf__legend i { display: inline-block; width: 7px; height: 7px; border-radius: 50%; margin-right: 5px; }
+
+/* ── 综合评分轴 ──
+   落点 / 引出线 / 标签让位这三件事照搬 training-monitoring-v2 的「时光全景」浮窗
+   （css/training-timeline-panorama.css 的 .tw-pano__dot / __lead / __label）：
+   轴上是带描边环的实心圆点，标签落在自己落点的正上方、顶到边缘就整体让位，
+   再用「一段直线 + 一段缓和 S 弯」把标签接回它的圆点。 */
+.sl-perf__cap {
+  margin: 16px 0 0; font: 500 10px / 1.2 var(--font-sans); color: var(--foreground-muted);
+}
+/* 结论大字：整张卡里唯一的实心大字，答的是「这次比出来谁更好」。
+   它的依据是综合评分，与紧跟其下的那条轴同源——大字和轴必须指同一件事，
+   否则用户会在两处读到互相打架的结论。 */
+.sl-perf__headline {
+  margin-top: 16px;
+  font: 700 18px / 1.3 var(--font-sans); letter-spacing: -0.4px; color: var(--foreground);
+  overflow-wrap: anywhere;
+}
+/* 三方对比时大字里点名的是某一条记录，前面挂上它的身份点，
+   才能立刻和下面轴上的落点、雷达轮廓、左侧勾选栏对上号 */
+.sl-perf__headline i {
+  display: inline-block; width: 9px; height: 9px; border-radius: 50%;
+  margin-right: 7px; vertical-align: 1px;
+}
+/* 轴区是个定高的定位容器：底边是渐变条，每条记录各占一行往上码（基线最靠近轴）。
+   容器高度由 JS 按记录条数给——写死高度会在三方对比时把最上面那颗胶囊裁掉。 */
+.sl-perf__scale { position: relative; margin: 14px 0 5px; }
+/* 渐变与 PHS 分档线严格对齐：0 / 30 / 45 / 60 / 75 / 90 = D / C / B / B+ / A / S 的起点 */
+.sl-perf__bar {
+  position: absolute; left: 0; right: 0; bottom: 0; height: 5px; border-radius: var(--radius-pill);
+  background: linear-gradient(90deg, #ff4b7b 0%, #ff7051 30%, #ff9737 45%, #e9b51b 60%, #a3cb45 75%, #04d793 90%);
+}
+/* 引出线层：铺满轴区、不吃事件，路径由 layoutPerfScale() 在插入 DOM 后按实测宽度生成。
+   压在圆点与标签之下（同「时光全景」的处理），线穿到标签底下即止，不会划过文字。 */
+.sl-perf__leads {
+  position: absolute; inset: 0; width: 100%; height: 100%;
+  pointer-events: none; overflow: visible;
+}
+.sl-perf__lead { fill: none; stroke-width: 1.2; opacity: .8; }
+/* 落点圆点：填色取该分数在渐变轴上的色值（位置与颜色是同一个编码，不能各说各的），
+   描边环用该任务的身份色（--ring，与标签胶囊、雷达轮廓、左侧勾选栏同色）——
+   一个点同时说清"落在哪一档"和"是谁的落点"，也顺带把它从同色相的渐变条上抠了出来 */
+.sl-perf__dot {
+  position: absolute; bottom: 2.5px; left: 0;
+  width: 8px; height: 8px; border-radius: 50%;
+  transform: translate(-50%, 50%);
+  box-shadow: 0 0 0 2.5px var(--ring, var(--surface-2)), var(--shadow-sm, 0 1px 3px rgba(0, 0, 0, 0.28));
+}
+/* 标签胶囊：基线标签 + 任务名（中间省略）+ 分数。
+   横向位置由 layoutPerfScale() 实测后覆写（优先落在落点正上方，顶到容器边缘就整体让位），
+   这里的 left:0 只是排布跑起来之前的落脚点 —— 右侧栏很窄，靠估算宽度去摆必然有一版被切掉。 */
+.sl-perf__pill {
+  position: absolute; left: 0; max-width: 100%; display: inline-flex; align-items: center; gap: 5px;
+  padding: 2px 7px; border-radius: var(--radius-pill); white-space: nowrap;
+  box-shadow: 0 0 0 2.5px var(--surface-2), var(--shadow-sm, 0 1px 3px rgba(0, 0, 0, 0.28));
+  font: 500 10px / 1.35 var(--font-mono); letter-spacing: -0.3px; color: #fff;
+}
+.sl-perf__pill-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.sl-perf__pill-tag {
+  flex: 0 0 auto; padding: 0 4px; border-radius: var(--radius-pill);
+  background: rgba(255, 255, 255, 0.26);
+  font: 600 8.5px / 1.7 var(--font-sans); letter-spacing: 0;
+}
+.sl-perf__pill-score { flex: 0 0 auto; font: 700 11px / 1.2 var(--font-mono); }
+/* 刻度按各档的中点绝对定位，字母才落在它所代表的那段色上（原先的 space-between
+   会把 D 和 S 顶到两端，读起来像分档线而不是分档名） */
+.sl-perf__ticks { position: relative; height: 11px; }
+.sl-perf__ticks span {
+  position: absolute; transform: translateX(-50%);
+  font: 500 8.5px / 1.2 var(--font-mono); color: var(--foreground-muted);
+}
 .sl-health__verdict {
-  margin-top: 16px; font: 400 11px / 1.65 var(--font-sans); color: var(--foreground-secondary);
+  margin-top: 14px; font: 400 11px / 1.65 var(--font-sans); color: var(--foreground-secondary);
 }
 
 /* ── 每 step 时间构成对比条（取代原先的假仪表盘）── */
@@ -756,8 +855,8 @@ body {
 /* 条形按各 run 总时长等比缩放，谁长谁短一眼可见（不是各自拉满 100%）。
    track 是与最长柱同宽的弱色垫底，bar 才是实际数据 —— 没有垫底时几条长短不一的
    悬空柱子会被读成"界面出问题了"，而不是"这次确实更快"。 */
-/* 高度与健康度刻度条 .sl-health__scale 一致（5px）：差异总览里三条横向柱
-   （健康度 / 构成 / 差异卡片）应当是同一套度量语言，粗细不一会读成层级不同 */
+/* 高度与性能评估轴 .sl-perf__bar 一致（5px）：差异总览里三条横向柱
+   （评分轴 / 构成 / 差异卡片）应当是同一套度量语言，粗细不一会读成层级不同 */
 .sl-comp-row__track {
   width: 100%; height: 5px; overflow: hidden;
   border-radius: var(--radius-pill); background: var(--surface-3);
@@ -2210,8 +2309,9 @@ body {
   display: flex; overflow: hidden;
   container-type: inline-size;
   background: var(--bar-color, #5A92E6);
-  box-shadow: 0 0 0 2px color-mix(in srgb, var(--bar-color, #5A92E6) 40%, transparent),
-              0 10px 26px color-mix(in srgb, var(--bar-color, #5A92E6) 30%, transparent);
+  /* 边框刻意不跟条子同色（同色阴影糊在一起会看不清条子跟背景/相邻灰块的分界），
+     统一用中性色描边，任何底色上都能读出清晰的边界。 */
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--foreground) 45%, transparent);
 }
 /* 语义标签直接写进色块里：条子放大到 48px 后装得下，标签不必再单独占位。
    浮在两段之上（不参与 flex 分配，免得挤动执行/等待的切分点），条子太窄时整块收掉，
@@ -2259,7 +2359,11 @@ body {
 }
 .sl-imm-span.is-below .sl-imm-chip { transform: translate(-50%, 6px); }
 .sl-imm-chip b { font: 600 12px / 1.2 var(--font-mono); color: var(--foreground); }
+/* 基线行是参照系，数字一律白色不着色；对比行分得出优劣才着色，分不出（打平/中间值）
+   就留默认色，别硬凑颜色。 */
+.sl-imm-chip.is-base b { color: #fff; }
 .sl-imm-chip.is-better b { color: var(--success); }
+.sl-imm-chip.is-worse b { color: var(--danger); }
 .sl-imm-span.is-dur { top: 34px; }
 .sl-imm-span.is-gap { top: 102px; }
 .sl-imm-span.is-exec {
@@ -5021,6 +5125,7 @@ function renderInspector() {
     ? '差异总览 · 多任务间对比'
     : '差异总览 · 单任务内快慢卡';
   body.innerHTML = diffDashboardHtml();
+  layoutPerfScale(body);   // 落点标签的让位与引出线依赖实测宽度，只能在插入后算
   bindInspector();
   syncImmersive();   // 退回差异总览 = 没有下钻目标，遮罩必须跟着收起
 }
@@ -5079,7 +5184,7 @@ if (typeof colorForTask === 'function') {
 const TRAIN_SHAPE_DEFAULT = {
   // 12 步（原 4 步）：差异显著性判据比的是多个 step 的**均值**，判据分母是均值的标准误
   // σ/√n —— n=4 时标准误几乎和单步抖动一样大，10% 以内的真实差异根本分辨不出来，
-  // 差异健康度会一律给出"无显著变化"。真实 profiling 也不会只采 4 步。
+  // 差异会一律落进噪声带、读成"无显著变化"。真实 profiling 也不会只采 4 步。
   steps: 12,
   kernelBase: 6, kernelSpread: 4,
   aivRate: 0.5,
@@ -5832,10 +5937,16 @@ function diffDetailModel(taskKey) {
       ? (better === 'low' ? Math.min.apply(null, valid) : Math.max.apply(null, valid))
       : null;
     var uniqueBest = best !== null && valid.filter(function (v) { return v === best; }).length === 1;
+    // 「最劣」同理取反方向的极值；沉浸式视图拿它给对比行标红——跟 bestVal 一样，
+    // 只在唯一时成立，打平或只有一个有效值时都不标。
+    var worst = valid.length > 1
+      ? (better === 'low' ? Math.max.apply(null, valid) : Math.min.apply(null, valid))
+      : null;
+    var uniqueWorst = worst !== null && worst !== best && valid.filter(function (v) { return v === worst; }).length === 1;
     // 时刻类比较仍用绝对值：0 点对各 run 是同一个，减不减都不影响谁最早
     return {
       label: labelText, field: field, unit: 'μs', better: better,
-      vals: vals, bestVal: uniqueBest ? best : null,
+      vals: vals, bestVal: uniqueBest ? best : null, worstVal: uniqueWorst ? worst : null,
       kind: kind || 'length', hint: hint || '',
     };
   }
@@ -6005,29 +6116,35 @@ function renderImmersive() {
   var span = Math.max(1, hi - lo);
   function pctOf(t) { return ((t - lo) / span) * 100; }
 
-  // 「谁更优」沿用右侧表的判定：bestVal 非空且本 run 命中才标绿
-  function betterCls(field, val) {
+  /* 「谁更优/更劣」沿用右侧表的判定：bestVal/worstVal 非空且本 run 命中才标色。
+     基线行是参照系，不参与这个判定——它的数字一律留给调用方标成白色。 */
+  function judgeCls(field, val) {
     var row = model.rowByField[field];
-    return (row && row.bestVal !== null && val === row.bestVal) ? ' is-better' : '';
+    if (!row) return '';
+    if (row.bestVal !== null && val === row.bestVal) return ' is-better';
+    if (row.worstVal !== null && val === row.worstVal) return ' is-worse';
+    return '';
   }
   /* 标注胶囊：文案与取值口径走 rowByField，跟右侧表是同一份定义；指标含义挂在 title 上
      （同步等待 / 空闲间隙的区别就靠它交代）。
      只有「时刻」这一类在这里与右侧表分道：本视图一律标绝对时刻，跟时间轴同口径；右侧表继续
-     标相对 0 点的偏移（那张表是拿来横向比几个 run 的，偏移更好读）。 */
-  function chipHtml(name, field, val) {
+     标相对 0 点的偏移（那张表是拿来横向比几个 run 的，偏移更好读）。
+     isBase：这一行是不是基线——基线数字白色不着色，对比行才按 judgeCls 标绿/标红。 */
+  function chipHtml(name, field, val, isBase) {
     var row = model.rowByField[field];
     var tip = row && row.hint ? row.hint : '';
     var text = (row && row.kind === 'offset')
       ? formatCompareVal(val, row.unit)
       : compareCellText(row, val, model.timeOrigin);
-    return '<span class="sl-imm-chip' + betterCls(field, val) + '"' +
+    var cls = isBase ? ' is-base' : judgeCls(field, val);
+    return '<span class="sl-imm-chip' + cls + '"' +
       (tip ? ' title="' + escapeHtml(tip) + '"' : '') + '>' + escapeHtml(name) +
       ' <b>' + escapeHtml(text) + '</b></span>';
   }
-  function arrowHtml(cls, leftPct, rightPct, name, field, val, barTint) {
+  function arrowHtml(cls, leftPct, rightPct, name, field, val, barTint, isBase) {
     var w = Math.max(0.08, rightPct - leftPct);
     return '<div class="sl-imm-span ' + cls + '" style="left:' + leftPct.toFixed(3) + '%;width:' + w.toFixed(3) +
-      '%' + (barTint ? ';--bar-color:' + barTint : '') + '">' + chipHtml(name, field, val) + '</div>';
+      '%' + (barTint ? ';--bar-color:' + barTint : '') + '">' + chipHtml(name, field, val, isBase) + '</div>';
   }
 
   // 时间轴：刻度取密一些，任务条的起止落在哪两格之间要能直接读出来
@@ -6055,6 +6172,7 @@ function renderImmersive() {
   var barLabel = model.label || '';
   var rowsHtml = slots.map(function (slot, i) {
     var m = metrics[i];
+    var isBase = slot.slot === 'base';
     var head = '<div class="sl-imm-run__head">' +
       '<span class="dot ' + runDotClass(slot.run.id) + '"></span>' +
       '<span class="sl-imm-run__name" title="' + escapeHtml(slot.run.id) + '">' + escapeHtml(truncateRunId(slot.run.id, 32)) + '</span>' +
@@ -6090,25 +6208,25 @@ function renderImmersive() {
     // 计算-通信重叠：从任务条起点起画一段占比等于 overlap/dur 的粗线（条子上方）
     var ovW = m.dur > 0 ? fw * (m.overlap / m.dur) : 0;
     track += '<div class="sl-imm-span is-overlap" style="left:' + fl.toFixed(3) + '%;width:' + Math.max(0.2, ovW).toFixed(3) +
-      '%;--bar-color:' + barColor + '">' + chipHtml('计算-通信重叠', 'overlap', m.overlap) + '</div>';
+      '%;--bar-color:' + barColor + '">' + chipHtml('计算-通信重叠', 'overlap', m.overlap, isBase) + '</div>';
 
     // 标注箭头：持续时长（跨整条）、前后空闲间隙（跨相邻任务之间的空白）
-    track += arrowHtml('is-dur', fl, fr, '持续时长', 'dur', m.dur);
+    track += arrowHtml('is-dur', fl, fr, '持续时长', 'dur', m.dur, null, isBase);
     if (m.prev && m.idleBefore !== null) {
-      track += arrowHtml('is-gap', pctOf(m.prev.ts + m.prev.dur), fl, '空闲间隙（前）', 'idleBefore', m.idleBefore);
+      track += arrowHtml('is-gap', pctOf(m.prev.ts + m.prev.dur), fl, '空闲间隙（前）', 'idleBefore', m.idleBefore, null, isBase);
     }
     if (m.next && m.idleAfter !== null) {
-      track += arrowHtml('is-gap', fr, pctOf(m.next.ts), '空闲间隙（后）', 'idleAfter', m.idleAfter);
+      track += arrowHtml('is-gap', fr, pctOf(m.next.ts), '空闲间隙（后）', 'idleAfter', m.idleAfter, null, isBase);
     }
 
     // 起止时刻贴在任务条左右边界下方
-    track += '<div class="sl-imm-edge is-start" style="left:' + fl.toFixed(3) + '%">' + chipHtml('启动时刻', 'start', m.start) + '</div>';
-    track += '<div class="sl-imm-edge is-end" style="left:' + fr.toFixed(3) + '%">' + chipHtml('结束时刻', 'end', m.end) + '</div>';
+    track += '<div class="sl-imm-edge is-start" style="left:' + fl.toFixed(3) + '%">' + chipHtml('启动时刻', 'start', m.start, isBase) + '</div>';
+    track += '<div class="sl-imm-edge is-end" style="left:' + fr.toFixed(3) + '%">' + chipHtml('结束时刻', 'end', m.end, isBase) + '</div>';
 
     // 执行耗时 / 同步等待：跨在条子内部各自那一段的正下方，胶囊挂在线下
     var execSplit = fl + fw * execRatio;
-    track += arrowHtml('is-exec is-below', fl, execSplit, '执行耗时', 'exec', m.exec, barColor);
-    track += arrowHtml('is-wait-span is-below', execSplit, fr, '同步等待', 'wait', m.wait);
+    track += arrowHtml('is-exec is-below', fl, execSplit, '执行耗时', 'exec', m.exec, barColor, isBase);
+    track += arrowHtml('is-wait-span is-below', execSplit, fr, '同步等待', 'wait', m.wait, null, isBase);
 
     return '<div class="sl-imm-run">' + head + '<div class="sl-imm-track">' + track + '</div></div>';
   }).join('');
@@ -6123,7 +6241,9 @@ function renderImmersive() {
       '</div>' +
     '</header>' +
     '<div class="sl-immersive__cols">' +
-      '<aside class="sl-immersive__side">' + detailMetaCardHtml(model) + '</aside>' +
+      // 「选中任务」卡片下方接非沉浸式对比同一份关联代码卡片：下钻到这一步常常就是要对着代码
+      // 核对指标差异从哪来，沉浸式视图里也不必再退出去右栏才能看。
+      '<aside class="sl-immersive__side">' + detailMetaCardHtml(model) + renderInlineCodeBlock() + '</aside>' +
       '<div class="sl-immersive__stage">' +
         '<div class="sl-immersive__ruler">' + ruler + '</div>' +
         '<div class="sl-immersive__runs"><div class="sl-immersive__guides">' + guides + '</div>' + rowsHtml + '</div>' +
@@ -6247,7 +6367,7 @@ function syncImmersive() {
   // 亮度足以透过遮罩；沉浸式视图自己已经有各 run 起止的竖虚线，这两条留着只会串味。
   // 走 class 而不是直接改 crossLaneSvg.style：首次选中时那个 SVG 还没被 ensureCrossLaneOverlay 建出来。
   if (frameEl) frameEl.classList.toggle('is-immersive', open);
-  if (open) { renderImmersive(); syncImmersiveSteps(); }
+  if (open) { renderImmersive(); bindCodePickers(immersiveInner); syncImmersiveSteps(); }
   else immersiveInner.innerHTML = '';
 }
 
@@ -6324,6 +6444,30 @@ function bindCodeFileMenuDismiss() {
   document.addEventListener('keydown', function (event) {
     if (event.key === 'Escape') closeCodeFileMenus();
   });
+}
+
+/* 关联代码卡片现在有两处副本（右侧详情面板 #inspBody、沉浸式遮罩 #immersiveInner），
+   两边各自重建 DOM 后都要重新挂文件下拉的点击监听，抽出来给两个调用点共用。 */
+function bindCodePickers(root) {
+  if (!root) return;
+  root.querySelectorAll('[data-code-picker]').forEach(function (btn) {
+    btn.addEventListener('click', function (event) {
+      event.stopPropagation();
+      var menu = btn.parentElement?.querySelector('.sl-diff-code__file-menu');
+      if (!menu) return;
+      var willOpen = menu.hidden;
+      closeCodeFileMenus();
+      menu.hidden = !willOpen;
+      btn.setAttribute('aria-expanded', String(willOpen));
+    });
+  });
+  root.querySelectorAll('[data-code-slot]').forEach(function (opt) {
+    opt.addEventListener('click', function (event) {
+      event.stopPropagation();
+      setCodeDiffSide(Number(opt.dataset.codeSide), opt.dataset.codeSlot);
+    });
+  });
+  bindCodeFileMenuDismiss();
 }
 
 /* 下拉选中：把某一侧换成 slot；若另一侧正占着它，两侧互换（不允许左右选到同一个 run） */
@@ -6561,49 +6705,86 @@ function diffCardHtml(card, index, bandPct) {
   '</div>';
 }
 
-/* ── 总账条：对比看板的第一层，回答「总共差多少、差异集中在几条上」──
-   过去看板顶部只有「差异任务 N / 差异泳道 M」两个计数，用户一进来就掉进泳道明细里，
-   缺了「总耗时 A→B、差 X ms、其中 Y ms 来自 Top 3」这句最该先说的话。
-   总量按任务级卡片求和（泳道级是它的聚合，两者总量一致，取其一避免重复计数）。 */
-function diffLedgerHtml(taskCards, runs, extraRows) {
+/* ── 差异账目：对比看板的第一层 ──
+   回答"两条记录之间总共差了多少、差得集不集中、有几项是真差异"。
+   总量按任务级卡片求和（泳道级是它的聚合，两者总量一致，取其一避免重复计数）。
+
+   字段口径统一收进标题旁的问号里（LEDGER_TIP），行内不再逐条铺解释文案——
+   五行读数配五行小字会把这张卡撑成一整屏，而口径是查一次就够的东西。
+   但结论不能一起收进去：判定结果随数据变（这次到底过没过噪声带、集中还是弥散），
+   属于"必须直接看到"的那一层，所以留成行内的判定标签。 */
+const LEDGER_TIP = '差异账目：两条记录之间总共差了多少、差得集不集中、有几项是真差异。\n\n'
+  + '· 总 busy 时长 —— 每 step 各 rank 平均的设备忙时长。已按采集步数归一，'
+  + '各条记录口径一致，可以直接比。\n\n'
+  + '· 总差值 / 极差 —— 两两对比给「对比 − 基线」的有符号差；三方对比没有单一方向，'
+  + '改给最慢与最快之间的落差。绝对量和百分比同时给，为的是能和下面的抖动滤波范围直接比。\n\n'
+  + '· 差异最大的 3 项 —— 把每一项的差值取绝对值加起来当分母（正负会相互抵消，'
+  + '不取绝对值算不出集中度），最大的 3 项占了多少。占比 ≥60% 记「集中」，'
+  + '差异就在这几项上，直接从下面「按任务」列表的前 3 条入手；偏低记「弥散」，'
+  + '差异摊在大量项上，逐项去修划不来，切到「按泳道」看是哪一类整体变了。\n\n'
+  + '· 显著差异项 —— 只统计差值超出抖动滤波范围的项，其余的差异是基线自己的抖动，不必去看。\n\n'
+  + '· 抖动滤波范围（噪声带）—— 基线自己重跑一遍也会有这么大的波动，'
+  + '由基线各 rank 的 step 耗时 CV 换算（2×CV×√2/√n，夹在 ±1.5% ~ ±25%）。'
+  + '上面几项"算不算数"全以它为准：小于它的差异不能当结论。';
+
+function diffLedgerHtml(taskCards, laneCards, runs) {
   if (!taskCards.length) return '';
+  var ms = function (us) { return (us / 1000).toFixed(2) + ' ms'; };
+  var pct = function (v) { return v.toFixed(1) + '%'; };
   var totals = runs.map(function (_, i) {
     return taskCards.reduce(function (sum, c) {
       return sum + ((c.values && c.values[i]) ? c.values[i].busyUs : 0);
     }, 0);
   });
-  var ms = function (us) { return (us / 1000).toFixed(2) + ' ms'; };
-  // 各泳道差值的绝对值之和：正负会相互抵消，用它做分母才能如实说明「差异集中度」
+  var band = diffNoiseBandPct();
+  // 各项差值的绝对值之和：正负会相互抵消，用它做分母才能如实说明「差异集中度」
   var absSum = taskCards.reduce(function (sum, c) { return sum + c.absDiffUs; }, 0);
   var top3 = taskCards.slice(0, 3).reduce(function (sum, c) { return sum + c.absDiffUs; }, 0);
   var top3Pct = absSum > 0 ? (top3 / absSum) * 100 : 0;
+  var sig = taskCards.filter(function (c) { return c.diffPct >= band; }).length;
+  var laneSig = laneCards.filter(function (c) { return c.diffPct >= band; }).length;
+
+  // 判定标签：这一行的结论，随数据变，所以留在行内而不是收进问号
+  var flag = function (text, noise) {
+    return '<span class="sl-diff-card__flag' + (noise ? ' is-noise' : '') + '">' + text + '</span>';
+  };
+  var row = function (label, value, cls) {
+    return '<div class="sl-diff-stat-card__row"><span class="sl-diff-stat-card__label">' + label + '</span>' +
+      '<span class="sl-diff-stat-card__num' + (cls || '') + '">' + value + '</span></div>';
+  };
 
   var rows = '';
   if (runs.length === 2) {
     var signed = totals[1] - totals[0];
+    var deltaPct = totals[0] > 0 ? (signed / totals[0]) * 100 : 0;
+    var noisy = Math.abs(deltaPct) < band;
     var cls = Math.abs(signed) < DIFF_NEGLIGIBLE_US ? '' : (signed > 0 ? ' is-slower' : ' is-faster');
-    var pct = totals[0] > 0 ? (signed / totals[0]) * 100 : 0;
     var sign = signed > 0 ? '+' : (signed < 0 ? '−' : '±');
-    rows += '<div class="sl-diff-stat-card__row"><span class="sl-diff-stat-card__label">总 busy 时长</span>' +
-      '<span class="sl-diff-stat-card__num">' + ms(totals[0]) + ' → ' + ms(totals[1]) + '</span></div>';
-    rows += '<div class="sl-diff-stat-card__row"><span class="sl-diff-stat-card__label">总差值</span>' +
-      '<span class="sl-diff-stat-card__num' + cls + '">' + sign + ms(Math.abs(signed)) +
-      ' <small>(' + sign + Math.abs(pct).toFixed(1) + '%)</small></span></div>';
+    rows += row('总 busy 时长', ms(totals[0]) + ' → ' + ms(totals[1]));
+    rows += row('总差值' + flag(noisy ? '噪声带内' : (signed > 0 ? '真差异 · 更慢' : '真差异 · 更快'), noisy),
+      sign + ms(Math.abs(signed)) + ' <small>(' + sign + pct(Math.abs(deltaPct)) + ')</small>',
+      noisy ? '' : cls);
   } else {
     var maxT = Math.max.apply(null, totals), minT = Math.min.apply(null, totals);
+    var spread = minT > 0 ? ((maxT - minT) / minT) * 100 : 0;
     rows += runs.map(function (run, i) {
-      return '<div class="sl-diff-stat-card__row">' +
-        '<span class="sl-diff-stat-card__label"><span class="sl-diff-card__val-dot dot ' + runDotClass(run.id) + '"></span> ' +
-        escapeHtml(COMPARE_SLOT_LABELS[COMPARE_SLOTS[i]] || '') + '</span>' +
-        '<span class="sl-diff-stat-card__num">' + ms(totals[i]) + '</span></div>';
+      return row('<span class="sl-diff-card__val-dot dot ' + runDotClass(run.id) + '"></span> ' +
+        escapeHtml(COMPARE_SLOT_LABELS[COMPARE_SLOTS[i]] || ''), ms(totals[i]));
     }).join('');
-    rows += '<div class="sl-diff-stat-card__row"><span class="sl-diff-stat-card__label">极差</span>' +
-      '<span class="sl-diff-stat-card__num">Δ ' + ms(maxT - minT) + '</span></div>';
+    rows += row('极差' + flag(spread < band ? '三者等效' : '三者不等效', spread < band),
+      ms(maxT - minT) + ' <small>(' + pct(spread) + ')</small>');
   }
-  rows += '<div class="sl-diff-stat-card__row"><span class="sl-diff-stat-card__label">Top 3 贡献</span>' +
-    '<span class="sl-diff-stat-card__num">' + ms(top3) + ' <small>(占差异 ' + top3Pct.toFixed(0) + '%)</small></span></div>';
-  rows += extraRows || '';        // 显著差异计数与噪声带并进同一张卡，不另起一张
-  return '<div class="sl-diff-stat-card sl-diff-ledger">' + rows + '</div>';
+
+  rows += row('差异最大的 3 项' + flag(top3Pct >= 60 ? '集中' : '弥散', top3Pct < 60),
+    ms(top3) + ' <small>(占全部差异 ' + top3Pct.toFixed(0) + '%)</small>');
+  rows += row('显著差异项', '任务 ' + sig + '<small>/' + taskCards.length + '</small> · 泳道 ' +
+    laneSig + '<small>/' + laneCards.length + '</small>');
+  rows += row('抖动滤波范围（噪声带）', '<small>±</small>' + band.toFixed(1) + '%');
+
+  return '<div class="sl-diff-stat-card sl-diff-ledger">' +
+    '<div class="sl-diff-stat-card__title">差异账目' +
+      '<button type="button" class="sl-rank-info" data-rank-tip="' + escapeHtml(LEDGER_TIP) + '" aria-label="查看各字段口径">?</button>' +
+    '</div>' + rows + '</div>';
 }
 
 /* ── 各 run 的时间构成对比条（替代原先的两个大仪表盘）──
@@ -6740,13 +6921,297 @@ function rankScopeHtml() {
 }
 
 /* ============================================================
-   差异健康度（差异总览最顶部的定调卡片）
+   性能评估（差异总览最顶部的定调卡片）
    ------------------------------------------------------------
-   下面那些读数（总差值、Top3 集中度、空等占比、慢卡一致性…）单看每一个都需要用户
-   自己换算、再横向权衡，才能回答最朴素的那个问题："差异大不大？健康吗？"。
-   这张卡把该权衡替用户做掉：先给结论（等级 + 一句话），再把支撑读数列在下面备查。
+   这里刻意**不给「差异健康度」**。勾两条记录去比，业务意图本来就不唯一：
+   有的改动就是奔着提速去的，差异越大越好；有的改动（换编译选项、加一层封装）
+   只求别把性能带坏，差异越小越好。把「差异」折成一个健康分，等于替用户下了一个
+   工具并不知道方向的判断——同一个 -8% 在两种意图下，一个是成功、一个是事故。
 
-   评级体系与配色完全沿用 index_v3 总览页的 PHS 仪表盘（app.js 的 gradeToColor /
+   改成两件工具都能诚实做到的事：
+   · 雷达图 —— 每条记录在五个典型维度上的形状，差异即"形状差"，方向由用户自己读；
+   · 渐变轴 —— 每条记录各自的绝对水平，把基线与被对比任务的落点摆在同一把尺上。
+
+   评分体系（S/A/B+/B/C/D 六档 + 渐变色阶）沿用 index_v3 总览页的 PHS
+   （app.js 的 gradeToColor / gradeColorAt 与其分档说明），
+   同一个产品里"绿=好、红=差"只能有一套。
+   ============================================================ */
+const PHS_GRADE_CUTS = [[90, 'S'], [75, 'A'], [60, 'B+'], [45, 'B'], [30, 'C'], [0, 'D']];
+function phsGradeOf(v) {
+  for (const [cut, g] of PHS_GRADE_CUTS) if (v >= cut) return g;
+  return 'D';
+}
+/* 刻度字母摆在各档的**中点**而不是分档线上：字母代表的是一段色，不是一个阈值 */
+const PHS_TICKS = [[15, 'D'], [37, 'C'], [52, 'B'], [67, 'B+'], [82, 'A'], [95, 'S']];
+
+/* 五个维度沿用 PHS 的维度语言（计算 / 通信 / 调度 / 均衡），只把本页没有数据源的
+   「内存」换成「稳定」——本页的可信度判断全靠 step 抖动（噪声带就是它算出来的），
+   把它摆上轴，用户才知道下面那些差异读数值不值得信。
+   前四维直接取「每 step 时间构成」的四段占比（计算 / 空等 / 未掩盖通信 / 调度空泡，
+   四段闭合到 step），所以雷达图的形状就是构成对比条的极坐标版，两处读数天然对得上。
+   一律统一成"越高越好"：耗损类维度取 100 − 占比。 */
+const CV_ZERO_SCORE_PCT = 10;      // step CV 到 10% 记 0 分：抖到这个量级已经做不了可信对比
+const PERF_DIMS = [
+  { name: '计算', seg: 'Computing',                      invert: false, weight: 0.30 },
+  { name: '通信', seg: 'Communication(Not Overlapped)',   invert: true,  weight: 0.20 },
+  { name: '调度', seg: 'Free',                            invert: true,  weight: 0.20 },
+  { name: '均衡', seg: 'Communication(Wait)',             invert: true,  weight: 0.20 },
+  { name: '稳定', seg: null,                              invert: true,  weight: 0.10 },
+];
+
+const PERF_TIP = '性能评估：给每条勾选的记录各算一个 0–100 的综合性能分，'
+  + '分档与配色沿用总览页的 PHS（S ≥90 / A ≥75 / B+ ≥60 / B ≥45 / C ≥30 / D 其余）。\n\n'
+  + '五个维度都归一到「占每 step 时间的百分比」，一律越高越好：\n'
+  + '· 计算 = 计算占 step 的比例\n'
+  + '· 通信 = 100 − 未掩盖通信占比\n'
+  + '· 调度 = 100 − 调度空泡占比\n'
+  + '· 均衡 = 100 − 空等同步占比\n'
+  + '· 稳定 = 100 − step 抖动(CV) × 10，CV 达 10% 记 0 分\n\n'
+  + '综合分 = 计算 ×0.30 + 通信 ×0.20 + 调度 ×0.20 + 均衡 ×0.20 + 稳定 ×0.10。\n\n'
+  + '轴上给的是每条记录各自的绝对水平，不是「差异健不健康」：'
+  + '有的改动就是要把差异拉大，有的只求别把性能带坏，方向由你定，'
+  + '这里只负责把基线与被对比任务的落点摆在同一把尺上。';
+
+const perfProfileCache = new Map();
+function runPerfProfile(run) {
+  if (!run) return null;
+  if (perfProfileCache.has(run.id)) return perfProfileCache.get(run.id);
+  const comp = compositionOf(run);
+  if (!comp || !(comp.totalUs > 0)) return null;
+  const share = (key) => ((comp.segs.find((s) => s.key === key) || { us: 0 }).us / comp.totalUs) * 100;
+  const cv = (runStepStats(run) || {}).cv || 0;
+  const clamp = (v) => Math.max(0, Math.min(100, v));
+  const values = PERF_DIMS.map((d) => clamp(
+    d.seg === null ? 100 - cv * (100 / CV_ZERO_SCORE_PCT) : (d.invert ? 100 - share(d.seg) : share(d.seg))
+  ));
+  const score = PERF_DIMS.reduce((s, d, i) => s + values[i] * d.weight, 0);
+  const out = { values, score, grade: phsGradeOf(score), cv };
+  perfProfileCache.set(run.id, out);
+  return out;
+}
+
+/* 维度雷达图：形制照搬 index_v3 总览页的子项雷达（4 层等分多边形环、偶数环着色、轴名在外），
+   但这里手写 SVG —— 本页没有引入 echarts，而且要一次画最多三条记录的轮廓，
+   轴标签下面还要按记录配色分别标出各自的读数。 */
+function perfRadarSvg(entries) {
+  const W = 252, H = 180, cx = W / 2, cy = H / 2 - 2, R = 54;
+  const n = PERF_DIMS.length;
+  const ang = (i) => -Math.PI / 2 + (i * 2 * Math.PI) / n;
+  const ptAt = (i, radius) => [cx + Math.cos(ang(i)) * radius, cy + Math.sin(ang(i)) * radius];
+  const clamp = (v) => Math.max(0, Math.min(100, v));
+  const poly = (vals) => vals.map((v, i) => ptAt(i, (R * clamp(v)) / 100).map((x) => x.toFixed(1)).join(',')).join(' ');
+
+  let svg = '';
+  /* 环从外往内画，填色在 surface-3 / surface-2 之间交替 —— 用不透明底色而不是半透明叠加，
+     否则内层环会把外层的底色越叠越深，读成"越靠中心越暗"的假梯度。 */
+  for (let k = 4; k >= 1; k--) {
+    svg += '<polygon points="' + poly(PERF_DIMS.map(() => (k / 4) * 100)) +
+      '" fill="' + (k % 2 === 0 ? 'var(--surface-3)' : 'var(--surface-2)') +
+      '" stroke="var(--border-subtle)" stroke-width="1"/>';
+  }
+  PERF_DIMS.forEach((_, i) => {
+    const [x, y] = ptAt(i, R);
+    svg += '<line x1="' + cx + '" y1="' + cy + '" x2="' + x.toFixed(1) + '" y2="' + y.toFixed(1) +
+      '" stroke="var(--border-subtle)" stroke-width="1"/>';
+  });
+  entries.forEach((e) => {
+    svg += '<polygon points="' + poly(e.profile.values) + '" fill="' + e.color +
+      '" fill-opacity="0.14" stroke="' + e.color + '" stroke-width="1.4" stroke-linejoin="round"/>';
+    e.profile.values.forEach((v, i) => {
+      const [x, y] = ptAt(i, (R * clamp(v)) / 100);
+      svg += '<circle cx="' + x.toFixed(1) + '" cy="' + y.toFixed(1) + '" r="2.1" fill="' + e.color + '"/>';
+    });
+  });
+  PERF_DIMS.forEach((d, i) => {
+    const [lx, ly0] = ptAt(i, R + 13);
+    const c = Math.cos(ang(i)), s = Math.sin(ang(i));
+    // 轴名是两行（名 + 读数）：顶点在上时整块上移、在下时整块下移，才不压到多边形上
+    const ly = ly0 + (s < -0.5 ? -8 : (s > 0.5 ? 6 : 0));
+    const anchor = Math.abs(c) < 0.25 ? 'middle' : (c > 0 ? 'start' : 'end');
+    const nums = entries.map((e) => '<tspan fill="' + e.color + '">' + Math.round(e.profile.values[i]) + '</tspan>')
+      .join('<tspan fill="var(--foreground-muted)"> / </tspan>');
+    svg += '<text x="' + lx.toFixed(1) + '" y="' + ly.toFixed(1) + '" text-anchor="' + anchor +
+      '" font-size="9" fill="var(--foreground-muted)" style="font-family:var(--font-sans)">' + d.name +
+      '<tspan x="' + lx.toFixed(1) + '" dy="11" font-size="9" font-weight="700" style="font-family:var(--font-mono)">' +
+      nums + '</tspan></text>';
+  });
+  return '<svg viewBox="0 0 ' + W + ' ' + H + '" preserveAspectRatio="xMidYMid meet" role="img" ' +
+    'aria-label="各记录在计算、通信、调度、均衡、稳定五个维度上的对比">' + svg + '</svg>';
+}
+
+/* 分数 → 渐变轴上的色值。停靠点与 .sl-perf__bar 的 linear-gradient 严格同源
+   （也就是 app.js gradeColorAt 的那套 PTO accent 色阶）：落点圆点必须和它压着的
+   那一段条同色，位置和颜色本就是同一个编码，不能各说各的。 */
+const PHS_GRADIENT_STOPS = [
+  [0, [255, 75, 123]], [30, [255, 112, 81]], [45, [255, 151, 55]],
+  [60, [233, 181, 27]], [75, [163, 203, 69]], [90, [4, 215, 147]], [100, [4, 215, 147]],
+];
+function phsGradientColorAt(v) {
+  v = Math.max(0, Math.min(100, v));
+  for (let i = 0; i < PHS_GRADIENT_STOPS.length - 1; i++) {
+    const [v0, c0] = PHS_GRADIENT_STOPS[i], [v1, c1] = PHS_GRADIENT_STOPS[i + 1];
+    if (v <= v1) {
+      const t = (v - v0) / (v1 - v0 || 1);
+      return 'rgb(' + c0.map((c, k) => Math.round(c + (c1[k] - c) * t)).join(',') + ')';
+    }
+  }
+  return 'rgb(4,215,147)';
+}
+
+/* 结论大字：两条对比给方向（优于 / 劣于基线），三条给「谁最好」。
+   判据是综合评分，与紧跟其下的那条轴同源——大字和轴指的必须是同一件事。
+   注意这不是在评判「差异健不健康」：它只陈述分数轴上谁在前，改动想要什么方向仍由用户自己定。 */
+function perfHeadlineHtml(entries) {
+  if (entries.length === 1) {
+    const p = entries[0].profile;
+    return '综合 ' + Math.round(p.score) + ' 分 · ' + p.grade + ' 档';
+  }
+  if (entries.length > 2) {
+    const best = entries.reduce((a, b) => (b.profile.score > a.profile.score ? b : a));
+    return '<span title="' + escapeHtml(best.run.id + '（' + best.label + '）· 综合 ' + Math.round(best.profile.score) + ' 分') + '">' +
+      '<i style="background:' + best.color + '"></i>' + escapeHtml(truncateRunId(best.run.id, 20)) + '</span> 性能最佳';
+  }
+  const base = Math.round(entries[0].profile.score), cmp = Math.round(entries[1].profile.score);
+  const text = cmp > base ? '优于基线' : (cmp < base ? '劣于基线' : '与基线持平');
+  return '<span title="' + escapeHtml('对比任务 ' + cmp + ' 分，基线 ' + base + ' 分') + '">' + text + '</span>';
+}
+
+/* 综合评分轴：渐变条 + 每条记录一个落点，落点上方挂标签。
+   行序按落点从左到右排（分最低的贴着轴，越往上越靠右）——不按槽位排，是因为标签一旦被
+   容器边缘挤得对齐，两条记录会被读成"落在同一个分数上"；行序跟着落点走，加上下面
+   layoutPerfScale() 强制的左边缘错开量，横向次序就永远和轴上的次序一致。
+   落点圆点、引出线、标签让位三件事照搬 training-monitoring-v2「时光全景」浮窗的做法
+   （js/training-timeline-panorama.js 的 renderEvents）。
+   标签的横向位置不在这里算：它取决于渲染后的实际文字宽度，交给 layoutPerfScale()。 */
+const PERF_SCALE_LAYOUT = { STEM0: 18, ROW_H: 22, PILL_H: 22, ANCHOR_BIAS: 8, LEAD_BEND: 12, MIN_STAGGER: 14 };
+function perfScaleHtml(entries) {
+  const { STEM0, ROW_H, PILL_H } = PERF_SCALE_LAYOUT;
+  const marks = entries.map((e) => ({ e, score: Math.round(e.profile.score) }))
+    .sort((a, b) => a.score - b.score);
+  marks.forEach((m, i) => { m.bottom = STEM0 + i * ROW_H; });
+  const height = STEM0 + (marks.length - 1) * ROW_H + PILL_H;
+  const dimsOf = (m) => PERF_DIMS.map((d, k) => d.name + ' ' + Math.round(m.e.profile.values[k])).join(' · ');
+  // 层序：渐变条 → 引出线 → 圆点 → 标签。线压在点和标签之下，穿到标签底下即止。
+  const dots = marks.map((m) =>
+    '<span class="sl-perf__dot" style="left:' + m.score + '%;background:' + phsGradientColorAt(m.score) +
+      ';--ring:' + m.e.color + '"></span>'
+  ).join('');
+  // 标签按落点升序发进 DOM，layoutPerfScale() 直接照 DOM 序做从左到右的错开
+  const pills = marks.map((m) => {
+    const title = m.e.run.id + ' · ' + m.e.label + ' · 综合 ' + m.score + '（' + m.e.profile.grade + '）· ' + dimsOf(m);
+    return '<span class="sl-perf__pill" style="bottom:' + m.bottom + 'px;background:' + m.e.color +
+        '" data-score="' + m.score + '" data-bottom="' + m.bottom + '" data-lead="' + m.e.color +
+        '" title="' + escapeHtml(title) + '">' +
+      (m.e.isBase ? '<span class="sl-perf__pill-tag">基线</span>' : '') +
+      '<span class="sl-perf__pill-name">' + escapeHtml(truncateRunId(m.e.run.id, 20)) + '</span>' +
+      '<span class="sl-perf__pill-score">' + m.score + '</span>' +
+    '</span>';
+  }).join('');
+  return '<div class="sl-perf__scale" style="height:' + height + 'px">' +
+    '<div class="sl-perf__bar"></div>' +
+    '<svg class="sl-perf__leads" aria-hidden="true"></svg>' +
+    dots + pills +
+  '</div>';
+}
+
+/* 标签让位 + 引出线：标签宽度只有渲染之后才知道，所以这一步必须在插入 DOM 之后做。
+   基本规则同「时光全景」：标签优先落在自己落点的正上方（左边缘比落点略靠左 ANCHOR_BIAS，
+   引出线接上去更自然），顶到容器边缘就整体让位，再用「一段直线 + 一段缓和 S 弯」
+   把标签左上角接回落点。
+
+   这里多一条约束：相邻两个标签的左边缘至少错开 MIN_STAGGER。右侧栏很窄，标签又长，
+   不加这条时靠右的几个落点会被右边缘一起顶成左对齐，看上去像是几条记录落在同一个分数上——
+   而这正是这张轴最不能让人误读的地方。所以先从左往右推开、再从右往左收进容器，
+   两趟下来横向次序恒等于落点次序。 */
+let perfScaleRO = null;
+function layoutPerfScaleBox(box) {
+  const W = box.clientWidth, H = box.clientHeight;
+  if (!W) return;
+  const { ANCHOR_BIAS, LEAD_BEND, MIN_STAGGER } = PERF_SCALE_LAYOUT;
+  const leads = box.querySelector('.sl-perf__leads');
+  // DOM 序 = 落点从左到右（perfScaleHtml 按分数升序发的）
+  const items = Array.prototype.map.call(box.querySelectorAll('.sl-perf__pill'), (pill) => {
+    const score = Number(pill.dataset.score) || 0;
+    return { pill, dotX: (score / 100) * W, w: pill.offsetWidth, x: (score / 100) * W - ANCHOR_BIAS };
+  });
+  const n = items.length;
+  for (let i = 1; i < n; i++) items[i].x = Math.max(items[i].x, items[i - 1].x + MIN_STAGGER);
+  for (let i = n - 1; i >= 0; i--) {
+    items[i].x = Math.min(items[i].x, W - items[i].w);
+    if (i < n - 1) items[i].x = Math.min(items[i].x, items[i + 1].x - MIN_STAGGER);
+  }
+  // 收完再夹一次左边界：容器窄到装不下时宁可右边溢出（有 max-width 兜底截断），
+  // 也不能让两个标签重新叠回同一个左边缘
+  let prev = -Infinity;
+  items.forEach((it) => { it.x = Math.max(0, it.x, prev + MIN_STAGGER); prev = it.x; });
+
+  let paths = '';
+  items.forEach((it) => {
+    it.pill.style.left = it.x.toFixed(1) + 'px';
+    const y0 = H - 3;                                          // 渐变条上沿
+    const y1 = H - (Number(it.pill.dataset.bottom) || 0);      // 标签下沿
+    const tx = it.x + 10;
+    paths += '<path class="sl-perf__lead" stroke="' + it.pill.dataset.lead + '" d="' +
+      'M ' + it.dotX.toFixed(1) + ' ' + y0.toFixed(1) +
+      ' L ' + it.dotX.toFixed(1) + ' ' + Math.min(y0, y1 + LEAD_BEND).toFixed(1) +
+      ' C ' + it.dotX.toFixed(1) + ' ' + y1.toFixed(1) +
+      ', ' + tx.toFixed(1) + ' ' + (y1 + LEAD_BEND).toFixed(1) +
+      ', ' + tx.toFixed(1) + ' ' + y1.toFixed(1) + '"/>';
+  });
+  if (leads) leads.innerHTML = paths;
+}
+function layoutPerfScale(scope) {
+  const boxes = (scope || document).querySelectorAll('.sl-perf__scale');
+  if (!boxes.length) return;
+  // 分栏可拖拽改宽，宽度一变标签的让位量就得重算；观察器每次重挂，旧节点随之释放
+  if (typeof ResizeObserver !== 'undefined') {
+    if (!perfScaleRO) perfScaleRO = new ResizeObserver((list) => list.forEach((en) => layoutPerfScaleBox(en.target)));
+    perfScaleRO.disconnect();
+  }
+  boxes.forEach((box) => {
+    layoutPerfScaleBox(box);
+    if (perfScaleRO) perfScaleRO.observe(box);
+  });
+}
+
+function perfEvalCardHtml(runs, verdict) {
+  const entries = runs.map((run, i) => ({
+    run,
+    isBase: i === 0,
+    label: COMPARE_SLOT_LABELS[COMPARE_SLOTS[i]] || run.id,
+    color: runDotColor(run.id),
+    profile: runPerfProfile(run),
+  })).filter((e) => e.profile);
+  if (!entries.length) return '';
+  /* 先结论后拆解：综合评分（大字 + 落点轴）在上，五维雷达在下。
+     用户勾两条记录进来问的是"这次比出来谁更好"，轴一句话就答完了；
+     雷达是"好/差在哪个维度"的展开，属于追问的第二层，摆在结论下面。 */
+  return '<div class="sl-health">' +
+    '<div class="sl-health__label">综合性能评分' +
+      '<button type="button" class="sl-rank-info" data-rank-tip="' + escapeHtml(PERF_TIP) + '" aria-label="查看评分口径">?</button>' +
+    '</div>' +
+    '<div class="sl-perf__headline">' + perfHeadlineHtml(entries) + '</div>' +
+    perfScaleHtml(entries) +
+    '<div class="sl-perf__ticks">' + PHS_TICKS.map(function (t) {
+      return '<span style="left:' + t[0] + '%">' + t[1] + '</span>';
+    }).join('') + '</div>' +
+    '<div class="sl-perf__cap">性能评估</div>' +
+    '<div class="sl-perf__radar">' + perfRadarSvg(entries) + '</div>' +
+    '<div class="sl-perf__legend">' + entries.map(function (e) {
+      return '<span><i style="background:' + e.color + '"></i>' + escapeHtml(e.label) + '</span>';
+    }).join('') + '</div>' +
+    (verdict ? '<div class="sl-health__verdict">' + escapeHtml(verdict) + '</div>' : '') +
+  '</div>';
+}
+
+/* ============================================================
+   差异健康度（只勾基线一条时的定调卡片）
+   ------------------------------------------------------------
+   单任务内多卡这条流程的方向是唯一的：空等越少越好、慢卡越不该有。方向唯一，
+   把那些读数压成一个 0–100 的分数就是成立的，所以这里保留评级卡。
+   跨任务对比没有这个前提（见上方 perfEvalCardHtml 的说明），那边不给健康度。
+
+   评级体系与配色沿用 index_v3 总览页的 PHS 仪表盘（app.js 的 gradeToColor /
    gradeColorAt），只把档位换成本页要求的 6 级 A+/A/B+/B/C+/C —— 同一个产品里
    "绿=好、红=差"的色阶不能有两套。
    ============================================================ */
@@ -6758,81 +7223,16 @@ function diffScoreToGrade(v) {
   for (const [cut, g] of DIFF_GRADE_CUTS) if (v >= cut) return g;
   return 'C';
 }
-/* 评级块与刻度条指针都改用 DIFF_GRADE_COLOR 的深色阶实心填充（白字），
-   原先按分数在渐变上取色的 diffGradeColorAt / 淡底用的 diffHexA 已无调用方，随之删除。 */
 
 // 评分口径说明（标题旁的问号）。分档线与加减分规则都写明，避免这个分数变成不可追问的黑箱。
-const HEALTH_TIP_HEAD = '差异健康度：把下方那些读数压成一个 0–100 的分数，六档 '
-  + 'A+ ≥90 / A ≥75 / B+ ≥60 / B ≥45 / C+ ≥30 / C 其余。\n\n';
-const HEALTH_TIP_FOOT = '\n\n分数只用来定调"要不要往下看"，具体结论仍以下方账目卡与差异列表为准。';
-const HEALTH_TIP_AB = HEALTH_TIP_HEAD
-  + '跨任务对比的算法：\n'
-  + '· 基准 60 分 = 无显著变化，即总差值落在基线自身的抖动带内\n'
-  + '· 整体变快加分、变慢扣分，幅度按总差值百分比换算\n'
-  + '· 再看差异是否好定位：Top 3 占比 ≥60% 加 5 分，<30% 扣 5 分 —— 同样是变慢，'
-  + '集中在两三条上的可以直接去修，摊在几十条上的连从哪下手都不知道\n'
-  + '· 三方对比没有单一方向，改评三者一致性：总耗时极差越小越健康'
-  + HEALTH_TIP_FOOT;
-const HEALTH_TIP_RANK = HEALTH_TIP_HEAD
+const HEALTH_TIP_RANK = '差异健康度：把下方那些读数压成一个 0–100 的分数，六档 '
+  + 'A+ ≥90 / A ≥75 / B+ ≥60 / B ≥45 / C+ ≥30 / C 其余。\n\n'
   + '单任务多卡的算法：\n'
   + '· 主项是平均空等占比 —— 设备什么都没干、纯粹被集合通信同步点拖住的时间，'
   + '是多卡侧最直接可回收的部分\n'
   + '· 100 分起扣，空等每占 step 1% 扣 3.2 分\n'
   + '· 存在跨 step 一致的慢卡再扣 8 分：同样的空等总量，集中在一张卡上造成的比均匀分布的更该管，也更好修'
-  + HEALTH_TIP_FOOT;
-
-/* 跨任务 A/B 的健康度：主信号是"这次改动赚还是亏"，修正项是"差异好不好定位"。
-   基准 60 分 = 无显著变化（B+）；变快加分、变慢扣分；差异弥散再扣一点，
-   因为同样是变慢，集中在 2~3 条上的可以直接去修，摊在几十条上的连从哪下手都不知道。 */
-function abHealth(runs) {
-  const cards = computeLaneDiffCards();
-  if (!cards.length) return null;
-  const totals = runs.map((_, i) => cards.reduce((s, c) => s + ((c.values && c.values[i]) ? c.values[i].busyUs : 0), 0));
-  const band = diffNoiseBandPct();
-  const absSum = cards.reduce((s, c) => s + c.absDiffUs, 0);
-  const top3 = cards.slice(0, 3).reduce((s, c) => s + c.absDiffUs, 0);
-  const focus = absSum > 0 ? (top3 / absSum) * 100 : 0;
-  const ms = (us) => (us / 1000).toFixed(2) + ' ms';
-
-  if (runs.length > 2) {
-    // 三方对比无单一方向，改评"三者一致性"：极差越小越健康
-    const maxT = Math.max.apply(null, totals), minT = Math.min.apply(null, totals);
-    const spread = minT > 0 ? ((maxT - minT) / minT) * 100 : 0;
-    const score = Math.max(10, Math.min(95, 100 - spread * 3));
-    return {
-      score, tip: HEALTH_TIP_AB, headline: spread < band ? '三者表现一致' : '三者存在显著差异',
-      verdict: spread < band
-        ? `三条记录的总耗时极差 ${spread.toFixed(1)}%，落在基线自身抖动（±${band.toFixed(1)}%）内，可视为等效。`
-        : `总耗时极差 ${spread.toFixed(1)}%（${ms(maxT - minT)}），超出抖动带宽，三者不等效；差异最大的 3 条泳道贡献了 ${focus.toFixed(0)}%。`,
-    };
-  }
-
-  const deltaUs = totals[1] - totals[0];
-  const deltaPct = totals[0] > 0 ? (deltaUs / totals[0]) * 100 : 0;
-  const withinBand = Math.abs(deltaPct) < band;
-  let score;
-  if (withinBand) score = 62;
-  else if (deltaPct < 0) score = 60 + Math.min(35, Math.abs(deltaPct) * 3.5);
-  else {
-    score = 60 - Math.min(45, deltaPct * 3);
-    // 同样是变慢，集中在 2~3 条上的可以直接去修，摊在几十条上的连从哪下手都不知道
-    score += focus >= 60 ? 5 : (focus < 30 ? -5 : 0);
-  }
-  score = Math.max(5, Math.min(98, score));
-  const dir = deltaPct < 0 ? '变快' : '变慢';
-  return {
-    score, tip: HEALTH_TIP_AB,
-    headline: withinBand ? '无显著变化' : (deltaPct < 0 ? `整体变快 ${Math.abs(deltaPct).toFixed(1)}%` : `整体变慢 ${deltaPct.toFixed(1)}%`),
-    verdict: withinBand
-      ? `总耗时差 ${ms(Math.abs(deltaUs))}（${Math.abs(deltaPct).toFixed(1)}%），落在基线自身抖动（±${band.toFixed(1)}%）内——这次改动没有可测量的影响，不必据此下结论。`
-      : `总耗时${dir} ${ms(Math.abs(deltaUs))}（超出抖动带宽 ±${band.toFixed(1)}%，可以据此下结论）。` +
-        (deltaPct > 0
-          ? (focus >= 60
-            ? `退化集中：差异最大的 3 条泳道就占了 ${focus.toFixed(0)}%，直接从下面的 Top 3 入手。`
-            : `退化较弥散：Top 3 只占 ${focus.toFixed(0)}%，剩下的摊在大量泳道上，先切到「按泳道」看是哪一类整体退化。`)
-          : `收益集中度 ${focus.toFixed(0)}%，主要来自下面的 Top 3。`),
-  };
-}
+  + '\n\n分数只用来定调"要不要往下看"，具体结论仍以下方账目卡与差异列表为准。';
 
 /* 任务内多卡的健康度：主信号是"空等占 step 的比例"——那是设备什么都没干、
    纯粹被同步点拖住的时间，是多卡协同里最直接的浪费。存在系统性慢卡再额外扣分：
@@ -6880,6 +7280,40 @@ function diffHealthCardHtml(health) {
   '</div>';
 }
 
+/* 跨任务 A/B 的一句话：只陈述"差了多少、差得集不集中"，不对这个差异做好坏评判 ——
+   方向是用户的意图，工具没资格替他判。 */
+function abVerdict(runs) {
+  const cards = computeLaneDiffCards();
+  if (!cards.length) return '';
+  const totals = runs.map((_, i) => cards.reduce((s, c) => s + ((c.values && c.values[i]) ? c.values[i].busyUs : 0), 0));
+  const band = diffNoiseBandPct();
+  const absSum = cards.reduce((s, c) => s + c.absDiffUs, 0);
+  const top3 = cards.slice(0, 3).reduce((s, c) => s + c.absDiffUs, 0);
+  const focus = absSum > 0 ? (top3 / absSum) * 100 : 0;
+  const ms = (us) => (us / 1000).toFixed(2) + ' ms';
+
+  if (runs.length > 2) {
+    const maxT = Math.max.apply(null, totals), minT = Math.min.apply(null, totals);
+    const spread = minT > 0 ? ((maxT - minT) / minT) * 100 : 0;
+    return spread < band
+      ? `三条记录的总耗时极差 ${spread.toFixed(1)}%，落在基线自身抖动（±${band.toFixed(1)}%）内，可视为等效。`
+      : `总耗时极差 ${spread.toFixed(1)}%（${ms(maxT - minT)}），超出抖动带宽，三者不等效；差异最大的 3 条泳道贡献了 ${focus.toFixed(0)}%。`;
+  }
+
+  const deltaUs = totals[1] - totals[0];
+  const deltaPct = totals[0] > 0 ? (deltaUs / totals[0]) * 100 : 0;
+  const dir = deltaPct < 0 ? '快' : '慢';
+  if (Math.abs(deltaPct) < band) {
+    return `对比任务与基线的总耗时差 ${ms(Math.abs(deltaUs))}（${Math.abs(deltaPct).toFixed(1)}%），`
+      + `落在基线自身抖动（±${band.toFixed(1)}%）内 —— 这次改动没有可测量的影响。`;
+  }
+  return `对比任务比基线${dir} ${ms(Math.abs(deltaUs))}（${Math.abs(deltaPct).toFixed(1)}%，`
+    + `超出抖动带宽 ±${band.toFixed(1)}%，可以据此下结论）。`
+    + (focus >= 60
+      ? `差异集中：最大的 3 条泳道就占了 ${focus.toFixed(0)}%，直接从下面的 Top 3 入手。`
+      : `差异较弥散：Top 3 只占 ${focus.toFixed(0)}%，其余摊在大量泳道上，先切到「按泳道」看是哪一类整体变了。`);
+}
+
 /* ── 差异总览的两套内容，由「勾了几条记录」直接决定，不给用户额外的视角开关 ──
    只有基线一条 → 问题必然是"这次训练内部谁在拖后腿"，给多卡慢卡定位；
    勾了两条以上 → 问题变成"两次之间赚了还是亏了、亏在哪"，给跨任务 A/B。
@@ -6891,7 +7325,7 @@ function diffDashboardHtml() {
   // 未勾选对比对象 → 任务内多卡（它比的是同一次训练内部的各 rank，本就不需要第二个 run）
   if (!bottomRun) return diffHealthCardHtml(rankHealth(topRun)) + rankScopeHtml();
   var runs = activeCompareRuns();
-  return diffHealthCardHtml(abHealth(runs)) + compositionCompareHtml(runs) +
+  return perfEvalCardHtml(runs, abVerdict(runs)) + compositionCompareHtml(runs) +
   (function () {
     var tab = state.diffTab;
     var taskCards = computeLaneDiffCards();
@@ -6901,19 +7335,14 @@ function diffDashboardHtml() {
     if (!taskCards.length && !laneCards.length) return '';
     // 噪声带：低于基线 run 自身抖动的差异不计入统计，也不该被当成结论
     var band = diffNoiseBandPct();
-    var significant = taskCards.filter(function (c) { return c.diffPct >= band; });
-    var laneSignificant = laneCards.filter(function (c) { return c.diffPct >= band; });
+    // 显著项计数已挪进 diffLedgerHtml（要和结论句配套算），这里只留页签与卡片列表要用的 band
     var TABS = [
       { id: 'task', label: '按任务', n: taskCards.length },
       { id: 'lane', label: '按泳道', n: laneCards.length },
       { id: 'rank', label: '按 Rank', n: rankCards.length },
     ];
-    var extraRows =
-      '<div class="sl-diff-stat-card__row"><span class="sl-diff-stat-card__label">显著差异任务</span><span class="sl-diff-stat-card__num">' + significant.length + ' <small>/ ' + taskCards.length + '</small></span></div>' +
-      '<div class="sl-diff-stat-card__row"><span class="sl-diff-stat-card__label">显著差异泳道</span><span class="sl-diff-stat-card__num">' + laneSignificant.length + ' <small>/ ' + laneCards.length + '</small></span></div>' +
-      '<div class="sl-diff-stat-card__row"><span class="sl-diff-stat-card__label">噪声带（基线抖动）</span><span class="sl-diff-stat-card__num"><small>±</small>' + band.toFixed(1) + '%</span></div>';
     return '' +
-      diffLedgerHtml(taskCards, runs, extraRows) +
+      diffLedgerHtml(taskCards, laneCards, runs) +
       '<div class="sl-diff-tabs" role="tablist" aria-label="差异粒度">' +
         TABS.map(function (t) {
           var on = tab === t.id;
@@ -8277,24 +8706,7 @@ function bindInspector() {
     backBtn.addEventListener('click', goBackToDashboard);
   }
   // 关联代码：文件名下拉，把某一侧换成当前没在显示的那个 run 的代码文件
-  body.querySelectorAll('[data-code-picker]').forEach(function (btn) {
-    btn.addEventListener('click', function (event) {
-      event.stopPropagation();
-      var menu = btn.parentElement?.querySelector('.sl-diff-code__file-menu');
-      if (!menu) return;
-      var willOpen = menu.hidden;
-      closeCodeFileMenus();
-      menu.hidden = !willOpen;
-      btn.setAttribute('aria-expanded', String(willOpen));
-    });
-  });
-  body.querySelectorAll('[data-code-slot]').forEach(function (opt) {
-    opt.addEventListener('click', function (event) {
-      event.stopPropagation();
-      setCodeDiffSide(Number(opt.dataset.codeSide), opt.dataset.codeSlot);
-    });
-  });
-  bindCodeFileMenuDismiss();
+  bindCodePickers(body);
   // 差异粒度页签（按任务 | 按泳道 | 按 Rank）
   body.querySelectorAll('[data-diff-tab]').forEach(function (btn) {
     btn.addEventListener('click', function () {
