@@ -160,6 +160,13 @@
     dataViewMode: 'data-dump',
     selectedChannel: 0,
     selectedDataElement: null,
+    animationStep: 0,
+    animationPlaying: false,
+    animationTimer: null,
+    animationState: {
+      H: 8, W: 8, Ci: 16, C0: 16, filterH: 3, filterW: 3,
+      strideH: 1, strideW: 1, padTop: 1, padRight: 1, padBottom: 1, padLeft: 1,
+      padValue: 0, dilationH: 1, dilationW: 1, repeatMode: 0, repeatTime: 1, showChannelPadding: true },
     sourceExplorerWidth: 350,
     tensorTabStepId: null,
     tensorTabKey: null,
@@ -384,7 +391,17 @@
     channelTotal: byId('channelTotal'),
     heatmapGrid: byId('heatmapGrid'),
     heatmapHeader: byId('heatmapHeader'),
+    dataDumpBody: byId('dataDumpBody'),
     dataDumpHeatmap: byId('dataDumpHeatmap'),
+    channelControls: byId('channelControls'),
+    animateTagBtn: byId('animateTagBtn'),
+    animationBody: byId('animationBody'),
+    animationA1Canvas: byId('animationA1Canvas'),
+    animationA1Status: byId('animationA1Status'),
+    animationA2Grid: byId('animationA2Grid'),
+    animationA2Meta: byId('animationA2Meta'),
+    animationA2Pills: byId('animationA2Pills'),
+    animationPlaybackStatus: byId('animationPlaybackStatus'),
     cellInspector: byId('cellInspector'),
     cellInspectorBody: byId('cellInspectorBody'),
     closeInspectorBtn: byId('closeInspectorBtn'),
@@ -552,9 +569,28 @@
           b.classList.toggle('is-selected', b.dataset.dumpTab === btn.dataset.dumpTab);
           b.setAttribute('aria-selected', String(b.dataset.dumpTab === btn.dataset.dumpTab));
         });
+        // Stop animation when switching away from animation tab
+        if (mode !== 'animation') stopAnimationPlayback();
+        // Start animation when switching to animation tab
+        if (mode === 'animation') startAnimationPlayback();
         renderTensorDataDump(currentTrace());
       });
     });
+
+    // Animate tag button: switch to Animation tab
+    if (els.animateTagBtn) {
+      els.animateTagBtn.addEventListener('click', function() {
+        state.dataViewMode = 'animation';
+        var dumpTabs = document.querySelectorAll('[data-dump-tab]');
+        dumpTabs.forEach(function(b) {
+          b.classList.toggle('is-selected', b.dataset.dumpTab === 'animation');
+          b.setAttribute('aria-selected', String(b.dataset.dumpTab === 'animation'));
+        });
+        startAnimationPlayback();
+        renderTensorDataDump(currentTrace());
+      });
+    }
+
     els.convCoreOptions?.addEventListener('click', (event) => {
       const button = event.target.closest('[data-conv-core-index]');
       if (!button) return;
@@ -609,9 +645,12 @@
 
     // Switching away from tensor-journey clears Data Dump mode
     if (view === 'instructions' || view === 'timeline') {
+      if (window._tjResizeObserver) { window._tjResizeObserver.disconnect(); window._tjResizeObserver = null; }
       if (state.selectedTensorId) {
         state.selectedTensorId = null;
         state.selectedDataElement = null;
+        state.dataViewMode = 'data-dump';
+        stopAnimationPlayback();
         // Restore standard views immediately
         renderDataDumpPanelVisibility(false);
         var trace = currentTrace();
@@ -1137,7 +1176,7 @@
     updateSourceHighlight(trace);
 
     // Data Dump mode: show tensor panel, hide standard views
-    var isDataDump = state.selectedTensorId === 'buffer:feature:a1';
+    var isDataDump = state.selectedTensorId === 'buffer:feature:a1' || state.selectedTensorId === 'fmapA1';
     renderDataDumpPanelVisibility(isDataDump);
 
     if (isDataDump) {
@@ -5449,268 +5488,494 @@
     els.instructionSequence.replaceChildren(track);
   }
 
+  // ================================================================
+  // Tensor Journey — unified config-driven data flow panel
+  // ================================================================
+
+  var TJ_CONFIG = {
+    locations: [
+      { id: 'gmInput',  title: 'GM', subtitle: 'Global Memory' },
+      { id: 'l1',       title: 'L1', subtitle: 'Local Memory' },
+      { id: 'a2b2',     title: 'A2 / B2', subtitle: 'Buffer Memory' },
+      { id: 'co1',      title: 'CO1', subtitle: 'Compute Memory' },
+      { id: 'gmOutput', title: 'GM', subtitle: 'Global Memory (Out)' },
+    ],
+    tensors: [
+      { id: 'featureX0',  location: 'gmInput',  name: 'feature X0', shape: '[1, 1, 8, 8, 16]', dtype: 'FP16', size: '2,048 B', branch: 'feature' },
+      { id: 'weightW',    location: 'gmInput',  name: 'weight W',   shape: '[144, 32]',       dtype: 'FP16', size: '9,216 B', branch: 'weight' },
+      { id: 'fmapA1',     location: 'l1',       name: 'fmapA1',     shape: '[1, 1, 8, 8, 16]', dtype: 'FP16', size: '2,048 B', branch: 'feature' },
+      { id: 'weightB1',   location: 'l1',       name: 'weightB1',   shape: '[144, 16]',       dtype: 'FP16', size: '4,608 B', branch: 'weight' },
+      { id: 'biasC1',     location: 'l1',       name: 'biasC1',     shape: '[16]',            dtype: 'FP16', size: '32 B',   branch: 'bias' },
+      { id: 'fmapA2',     location: 'a2b2',     name: 'fmapA2',     shape: '[16, 16]',        dtype: 'FP16', size: '512 B',  branch: 'feature' },
+      { id: 'weightB2',   location: 'a2b2',     name: 'weightB2',   shape: '[16, 16]',        dtype: 'FP16', size: '512 B',  branch: 'weight' },
+      { id: 'biasC2',     location: 'a2b2',     name: 'biasC2',     shape: '[16]',            dtype: 'FP16', size: '32 B',   branch: 'bias' },
+      { id: 'accumCo1',   location: 'co1',      name: 'accumCo1',   shape: '[16, 16]',        dtype: 'FP16', size: '512 B',  branch: 'accumulation' },
+      { id: 'outputGM',   location: 'gmOutput', name: 'outputGM',   shape: '[64, 32]',        dtype: 'FP16', size: '4,096 B', branch: 'output' },
+    ],
+    connections: [
+      { from: 'featureX0', to: 'fmapA1',   op: 'DataCopy',                                          branch: 'feature' },
+      { from: 'fmapA1',    to: 'fmapA2',   op: 'ND2NZ',                                             branch: 'feature' },
+      { from: 'weightW',   to: 'weightB1', op: 'DataCopy',                                          branch: 'weight' },
+      { from: 'weightB1',  to: 'weightB2', op: 'LoadData3D',                                        branch: 'weight' },
+      { from: 'weightB2',  to: 'accumCo1', op: 'LoadData2D',                                        branch: 'weight' },
+      { from: 'biasC1',    to: 'biasC2',   op: 'LoadData2D',                                        branch: 'bias' },
+      { from: 'biasC2',    to: 'accumCo1', op: 'Bias Init',                                         branch: 'bias' },
+      { from: 'fmapA2',    to: 'accumCo1', op: 'Mmad',           isMerge: true, mergeOf: ['fmapA2','weightB2','biasC2'], branch: 'feature' },
+      { from: 'accumCo1',  to: 'outputGM', op: 'K0\u2013K8 Accumulate \u00b7 Fixpipe \u00b7 ReLU \u00b7 FP32\u2192FP16 \u00b7 Write GM', branch: 'output' },
+    ],
+    branchColors: {
+      feature: '#35DDF5',
+      weight: '#22c55e',
+      bias: '#a855f7',
+      accumulation: '#FA8838',
+      output: '#35DDF5',
+      mmad: '#4d97ff',
+    },
+    branchOrder: ['feature', 'weight', 'bias', 'accumulation', 'output'],
+  };
+
+  var TJ_STATE = {
+    selectedTensorId: 'fmapA1',
+    highlightTensorId: null,
+    showFeaturePath: true,
+    showWeightPath: true,
+  };
+
   function renderTensorJourney(trace) {
     if (!trace || !els.tensorJourneyContent || state.executionView !== 'tensor-journey') return;
 
-    const params = trace?.tiling?.params || {};
-    const derived = trace?.tiling?.derived || {};
+    var cfg = TJ_CONFIG;
+    var tjs = TJ_STATE;
 
-    // Find relevant steps for journey mapping
-    const allSteps = trace.steps || [];
-    const loadData3DStep = allSteps.find(s => s.label && s.label.toLowerCase().includes('loaddata3d'));
-    const loadData2DStep = allSteps.find(s => s.label && s.label.toLowerCase().includes('loaddata2d'));
-    const mmadStep = allSteps.find(s => s.label && s.label.toLowerCase().includes('mmad'));
-    const fixpipeStep = allSteps.find(s => s.stageId === 'fixpipe-output');
+    // Ensure default selection; all paths visible (no auto-highlight)
+    if (!tjs.selectedTensorId) tjs.selectedTensorId = 'fmapA1';
 
-    const ci = num(params.ci, 16);
-    const co = num(params.Co ?? params.co, 32);
-    const hi = num(params.hi, 8);
-    const wi = num(params.wi, 8);
-    const ho = num(derived.Ho ?? derived.ho, 8);
-    const wo = num(derived.Wo ?? derived.wo, 8);
+    var tensorById = {};
+    cfg.tensors.forEach(function(t) { tensorById[t.id] = t; });
 
-    // Column definitions
-    const columns = [
-      { id: 'gm-in', label: 'GM', location: 'GM' },
-      { id: 'l1', label: 'L1', location: 'L1' },
-      { id: 'a2b2', label: 'A2 B2', location: 'A2 / B2' },
-      { id: 'co1', label: 'CO1', location: 'CO1' },
-      { id: 'gm-out', label: 'GM', location: 'GM' },
-    ];
+    // ---- Build Canvas ----
+    var canvasHtml = '<div class="avz-journey-canvas-wrap" id="tjCanvasWrap">';
+    canvasHtml += '<div class="avz-journey-canvas" id="tjCanvas">';
 
-    // Tensor definitions per column
-    const columnTensors = {
-      'gm-in': [
-        { id: 'tensor:feature', tensorId: 'tensor:feature', name: 'feature X0', shape: '[1,1,8,8,16]', bytes: '2048 B', dtype: 'FP16', physicalLayout: 'NC1HWC0', role: 'Input Feature' },
-        { id: 'tensor:weight', tensorId: 'tensor:weight', name: 'weight W', shape: '[144,32]', bytes: '9216 B', dtype: 'FP16', physicalLayout: 'ND [K,Co]', role: 'Weight' },
-      ],
-      'l1': [
-        { id: 'buffer:feature:a1', tensorId: 'buffer:feature:a1', name: 'fmapA1', shape: '[1,1,8,8,16]', bytes: '2048 B', dtype: 'FP16', physicalLayout: 'NC1HWC0', role: 'Feature staging buffer' },
-        { id: 'buffer:weight:b1', tensorId: 'buffer:weight:b1', name: 'weightB1', shape: '[144,16]', bytes: '4608 B', dtype: 'FP16', physicalLayout: 'NZ', role: 'Weight staging buffer' },
-      ],
-      'a2b2': [
-        { id: 'buffer:feature:a2', tensorId: 'buffer:feature:a2', name: 'fmapA2', shape: '[16,16]', bytes: '512 B', dtype: 'FP16', physicalLayout: 'ZZ', role: 'Cube input A' },
-        { id: 'buffer:weight:b2', tensorId: 'buffer:weight:b2', name: 'weightB2', shape: '[16,16]', bytes: '512 B', dtype: 'FP16', physicalLayout: 'ZN', role: 'Cube input B' },
-      ],
-      'co1': [
-        { id: 'buffer:accum:co1', tensorId: 'buffer:accum:co1', name: 'accumCo1', shape: '[16,16]', bytes: '1024 B', dtype: 'FP32', physicalLayout: 'NZ', role: 'Accumulator' },
-      ],
-      'gm-out': [
-        { id: 'tensor:output', tensorId: 'tensor:output', name: 'outputGM', shape: '[64,32]', bytes: '4096 B', dtype: 'FP16', physicalLayout: 'ND', role: 'Output' },
-      ],
-    };
+    cfg.locations.forEach(function(loc, locIdx) {
+      var tensors = cfg.tensors.filter(function(t) { return t.location === loc.id; });
 
-    // Transform definitions (between columns)
-    const transforms = [
-      {
-        fromCol: 'gm-in', toCol: 'l1', fromTensor: 'tensor:feature', toTensor: 'buffer:feature:a1',
-        label: 'DataCopy', stepId: 'copy-inputs', engine: 'MTE2', detail: 'GM → L1 · NC1HWC0 unchanged',
-      },
-      {
-        fromCol: 'gm-in', toCol: 'l1', fromTensor: 'tensor:weight', toTensor: 'buffer:weight:b1',
-        label: 'DataCopy / ND2NZ', stepId: 'copy-inputs', engine: 'MTE2', detail: 'GM → L1 · ND → NZ',
-      },
-      {
-        fromCol: 'l1', toCol: 'a2b2', fromTensor: 'buffer:feature:a1', toTensor: 'buffer:feature:a2',
-        label: 'LoadData3D', stepId: 'load-k', engine: 'MTE1', detail: 'NC1HWC0 → ZZ · im2col + padding',
-      },
-      {
-        fromCol: 'l1', toCol: 'a2b2', fromTensor: 'buffer:weight:b1', toTensor: 'buffer:weight:b2',
-        label: 'LoadData2D', stepId: 'load-k', engine: 'MTE1', detail: 'NZ → ZN · transpose',
-      },
-      {
-        fromCol: 'a2b2', toCol: 'co1', fromTensor: null, toTensor: 'buffer:accum:co1',
-        label: 'Mmad', stepId: 'mmad-init', engine: 'Cube', detail: 'A2 × B2 + Bias → CO1 · K0–K8 accumulate',
-        isMerge: true, mergeSources: ['buffer:feature:a2', 'buffer:weight:b2'],
-      },
-      {
-        fromCol: 'co1', toCol: 'gm-out', fromTensor: 'buffer:accum:co1', toTensor: 'tensor:output',
-        label: 'Fixpipe', stepId: 'fixpipe-output', engine: 'Fixpipe', detail: 'ReLU · FP32→FP16 · NZ→ND · Write GM',
-      },
-    ];
-
-    // Build HTML
-    let html = '<div class="avz-journey-grid">';
-
-    // Column headers
-    html += '<div class="avz-journey-header">';
-    columns.forEach(col => {
-      html += `<div class="avz-journey-col-header">${escapeHtml(col.label)}<span class="avz-journey-col-loc">${escapeHtml(col.location)}</span></div>`;
-    });
-    html += '</div>';
-
-    // Column bodies
-    html += '<div class="avz-journey-body">';
-    columns.forEach(col => {
-      html += '<div class="avz-journey-col">';
-      const tensors = columnTensors[col.id] || [];
-      tensors.forEach(t => {
-        html += `<button class="avz-journey-tensor${t.tensorId === state.selectedTensorId ? ' is-selected' : ''}" type="button" data-tensor-id="${escapeHtml(t.tensorId)}" data-journey-action="tensor">
-          <span class="avz-journey-tensor-name">${escapeHtml(t.name)}</span>
-          <span class="avz-journey-tensor-shape">${escapeHtml(t.shape)}</span>
-        </button>`;
-      });
-      html += '</div>';
-    });
-    html += '</div>';
-
-    // Transforms row
-    html += '<div class="avz-journey-transforms">';
-    columns.forEach((col, idx) => {
-      if (idx < columns.length - 1) {
-        const colTransforms = transforms.filter(t => t.fromCol === col.id && t.toCol === columns[idx + 1].id);
-        html += '<div class="avz-journey-transform-col">';
-        colTransforms.forEach(t => {
-          let stepId = t.stepId;
-          if (t.label === 'LoadData3D' && loadData3DStep) stepId = loadData3DStep.id;
-          if (t.label === 'LoadData2D' && loadData2DStep) stepId = loadData2DStep.id;
-          if (t.label === 'Mmad' && mmadStep) stepId = mmadStep.id;
-          if (t.label === 'Fixpipe' && fixpipeStep) stepId = fixpipeStep.id;
-          html += `<button class="avz-journey-transform" type="button" data-step-id="${escapeHtml(stepId)}" data-journey-action="transform" data-transform-label="${escapeHtml(t.label)}">
-            <span class="avz-journey-transform-label">${escapeHtml(t.label)}</span>
-            <span class="avz-journey-transform-detail">${escapeHtml(t.detail)}</span>
-          </button>`;
+      canvasHtml += '<div class="avz-journey-region" data-location="' + escapeHtml(loc.id) + '">';
+      // Region header
+      canvasHtml += '<div class="avz-journey-region-header">';
+      canvasHtml += '<div class="avz-journey-region-icon-base"><svg class="avz-journey-region-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">' + hardwareIconPath(loc.id) + '</svg></div>';
+      canvasHtml += '<div class="avz-journey-region-text-group">';
+      canvasHtml += '<div class="avz-journey-region-title-row">';
+      canvasHtml += '<span class="avz-journey-region-title">' + escapeHtml(loc.title) + '</span>';
+      canvasHtml += '</div>';
+      canvasHtml += '<span class="avz-journey-region-subtitle">' + escapeHtml(loc.subtitle) + '</span>';
+      canvasHtml += '</div>';
+      canvasHtml += '</div>';
+      // Tracks
+      // 多输入区域只保留 feature / weight / bias 三条对齐轨道；
+      // CO1 与输出 GM 各自只保留一条结果轨道，避免无意义的空轨道压缩卡片。
+      var alignBranches = ['feature', 'weight', 'bias'];
+      var isMultiCard = loc.id === 'gmInput' || loc.id === 'l1' || loc.id === 'a2b2';
+      var isSingleCard = loc.id === 'co1' || loc.id === 'gmOutput';
+      canvasHtml += '<div class="avz-journey-tracks">';
+      var renderBranches = isMultiCard
+        ? alignBranches
+        : [loc.id === 'co1' ? 'accumulation' : 'output'];
+      renderBranches.forEach(function(branch) {
+        var branchTensors = tensors.filter(function(t) { return t.branch === branch; });
+        // 单卡片区域：只渲染有 tensor 的分支
+        if (isSingleCard && branchTensors.length === 0) return;
+        // 多卡片区域：空占位保持等高度以便跨区对齐
+        var isEmpty = branchTensors.length === 0;
+        var isCo1Center = loc.id === 'co1' && branch === 'accumulation';
+        var isGmOutCenter = loc.id === 'gmOutput' && branch === 'output';
+        var trackClass = 'avz-journey-track' + (isCo1Center || isGmOutCenter ? ' center' : '');
+        if (isEmpty) trackClass += ' empty';
+        canvasHtml += '<div class="' + trackClass + '" data-branch="' + branch + '">';
+        if (isEmpty) {
+          canvasHtml += '</div>';
+          return;
+        }
+        branchTensors.forEach(function(t) {
+          var isSelected = t.id === tjs.selectedTensorId;
+          var selectedClass = isSelected ? ' is-selected' : '';
+          canvasHtml += '<div class="avz-journey-card' + selectedClass + '" data-tensor-id="' + escapeHtml(t.id) + '" data-branch="' + escapeHtml(branch) + '">';
+          canvasHtml += '<div class="avz-journey-card-head">';
+          canvasHtml += '<span class="avz-journey-card-name ' + escapeHtml(branch) + '">' + escapeHtml(t.name) + '</span>';
+          canvasHtml += '<span class="avz-journey-card-shape" title="' + escapeHtml(t.shape) + '">' + escapeHtml(t.shape) + '</span>';
+          canvasHtml += '</div>';
+          canvasHtml += '<span class="avz-journey-card-field"><span class="avz-journey-card-key">DType</span><span class="avz-journey-card-value">' + escapeHtml(t.dtype) + '</span></span>';
+          canvasHtml += '<span class="avz-journey-card-field"><span class="avz-journey-card-key">Size</span><span class="avz-journey-card-value">' + escapeHtml(t.size) + '</span></span>';
+          canvasHtml += '</div>';
         });
-        html += '</div>';
-      } else {
-        html += '<div class="avz-journey-transform-col"></div>';
+        canvasHtml += '</div>';
+      });
+      canvasHtml += '</div>';
+      canvasHtml += '</div>';
+
+    });
+
+    // SVG overlay inside canvas for correct coordinate space
+    canvasHtml += '<svg class="avz-journey-svg" id="tjSvg"></svg>';
+    canvasHtml += '</div>'; // .avz-journey-canvas
+    canvasHtml += '</div>'; // .avz-journey-canvas-wrap
+
+    els.tensorJourneyContent.innerHTML = canvasHtml;
+
+    // ---- Bind Events ----
+    bindJourneyCardEvents();
+
+    // ---- Draw SVG lines after DOM is ready ----
+    requestAnimationFrame(function() {
+      drawJourneyLines(cfg, tjs);
+    });
+
+    // ---- ResizeObserver for line updates ----
+    setupJourneyResizeObserver(cfg, tjs);
+
+    // Sync state.selectedTensorId with TJ_STATE
+    state.selectedTensorId = tjs.selectedTensorId;
+  }
+
+  // ---- Hardware icons ----
+  function hardwareIconPath(locId) {
+    switch (locId) {
+      case 'gmInput':
+      case 'gmOutput':
+        return '<rect x="3" y="4" width="18" height="14" rx="2"/><path d="M7 10h10"/><path d="M7 13h8"/>';
+      case 'l1':
+        return '<rect x="4" y="6" width="16" height="12" rx="2"/><path d="M6 9h12"/><path d="M6 12h9"/><path d="M6 15h6"/>';
+      case 'a2b2':
+        return '<rect x="3" y="4" width="8" height="7" rx="1"/><rect x="13" y="4" width="8" height="7" rx="1"/><rect x="3" y="13" width="8" height="7" rx="1"/><rect x="13" y="13" width="8" height="7" rx="1"/>';
+      case 'co1':
+        return '<rect x="3" y="4" width="18" height="16" rx="2"/><path d="M7 10l3-4 3 8 3-6 2 5"/>';
+      default:
+        return '<rect x="4" y="4" width="16" height="16" rx="2"/>';
+    }
+  }
+
+  // ---- Build highlight set: selected tensor + upstream/downstream ----
+  function buildHighlightSet(highlightId, cfg) {
+    var set = new Set();
+    if (!highlightId) return set;
+    set.add(highlightId);
+
+    // Walk downstream
+    var queue = [highlightId];
+    while (queue.length) {
+      var cur = queue.shift();
+      cfg.connections.forEach(function(c) {
+        if (c.from === cur && !set.has(c.to)) {
+          set.add(c.to);
+          queue.push(c.to);
+        }
+        if (c.mergeOf && c.mergeOf.indexOf(cur) >= 0 && !set.has(c.to)) {
+          set.add(c.to);
+          queue.push(c.to);
+        }
+      });
+    }
+
+    // Walk upstream
+    queue = [highlightId];
+    while (queue.length) {
+      var cur2 = queue.shift();
+      cfg.connections.forEach(function(c) {
+        if (c.to === cur2 && c.from && !set.has(c.from)) {
+          set.add(c.from);
+          queue.push(c.from);
+        }
+        if (c.to === cur2 && c.mergeOf) {
+          c.mergeOf.forEach(function(m) {
+            if (!set.has(m)) { set.add(m); queue.push(m); }
+          });
+        }
+      });
+    }
+
+    return set;
+  }
+
+  // ---- Draw SVG connection lines ----
+  function drawJourneyLines(cfg, tjs) {
+    var svg = document.getElementById('tjSvg');
+    var canvasWrap = document.getElementById('tjCanvasWrap');
+    var canvas = document.getElementById('tjCanvas');
+    if (!svg || !canvasWrap || !canvas) return;
+
+    var canvasRect = canvas.getBoundingClientRect();
+
+    svg.setAttribute('viewBox', '0 0 ' + canvas.scrollWidth + ' ' + canvas.scrollHeight);
+    svg.style.width = canvas.scrollWidth + 'px';
+    svg.style.height = canvas.scrollHeight + 'px';
+
+    var svgNS = 'http://www.w3.org/2000/svg';
+    svg.innerHTML = '';
+
+    var highlightSet = tjs.highlightTensorId ? buildHighlightSet(tjs.highlightTensorId, cfg) : null;
+
+    // 卡片 anchor 工具
+    function anchor(cardId) {
+      var card = canvas.querySelector('.avz-journey-card[data-tensor-id="' + cardId + '"]');
+      if (!card) return null;
+      var r = card.getBoundingClientRect();
+      return {
+        x: r.right - canvasRect.left,
+        y: r.top + r.height / 2 - canvasRect.top,
+        left: r.left - canvasRect.left
+      };
+    }
+    function regionBounds(locationId) {
+      var region = canvas.querySelector('.avz-journey-region[data-location="' + locationId + '"]');
+      if (!region) return null;
+      var r = region.getBoundingClientRect();
+      return {
+        left: r.left - canvasRect.left,
+        right: r.right - canvasRect.left
+      };
+    }
+    function edgeClass(branch, highlighted) {
+      return 'edge-' + branch + (highlighted ? '' : ' edge-dimmed');
+    }
+    function addPath(cls, d) {
+      var p = document.createElementNS(svgNS, 'path');
+      p.setAttribute('d', d);
+      p.setAttribute('class', cls);
+      svg.appendChild(p);
+    }
+    function addArrow(cls, x, y, dir) {
+      var s = 5;
+      var a = document.createElementNS(svgNS, 'polygon');
+      var pts;
+      if (dir < 0) pts = (x + s) + ',' + (y - s / 2) + ' ' + x + ',' + y + ' ' + (x + s) + ',' + (y + s / 2);
+      else pts = (x - s) + ',' + (y - s / 2) + ' ' + x + ',' + y + ' ' + (x - s) + ',' + (y + s / 2);
+      a.setAttribute('points', pts);
+      a.setAttribute('class', cls);
+      svg.appendChild(a);
+    }
+    function addLabel(text, x, y, cls, anchorMode) {
+      var t = document.createElementNS(svgNS, 'text');
+      t.setAttribute('x', x);
+      t.setAttribute('y', y);
+      t.setAttribute('class', cls || 'op-label');
+      t.setAttribute('dominant-baseline', 'middle');
+      if (anchorMode === 'end') t.setAttribute('text-anchor', 'end');
+      else if (anchorMode === 'start') t.setAttribute('text-anchor', 'start');
+      else t.setAttribute('text-anchor', 'middle');
+      t.textContent = text;
+      svg.appendChild(t);
+      return t;
+    }
+
+    // ---- 普通连接：GM→L1 / L1→A2B2 / CO1→GM(Out) ----
+    cfg.connections.forEach(function(conn) {
+      if (conn.from === 'fmapA2' || conn.from === 'weightB2' || conn.from === 'biasC2') return; // merge 单独处理
+
+      var A = anchor(conn.from);
+      var B = anchor(conn.to);
+      if (!A || !B) return;
+
+      var isHl = highlightSet ? (highlightSet.has(conn.from) && highlightSet.has(conn.to)) : true;
+      var eCls = edgeClass(conn.branch, isHl);
+      var lCls = isHl ? 'op-label' : 'op-label op-label-dimmed';
+
+      // 普通连接必须落到目标卡片左边；B.x 是目标卡片右边，不能作为入点。
+      var targetX = B.left;
+      var midX = (A.x + targetX) / 2;
+      addPath(eCls, 'M' + A.x + ',' + A.y + ' L' + midX + ',' + A.y + ' L' + midX + ',' + B.y + ' L' + targetX + ',' + B.y);
+      addArrow(eCls, targetX, B.y, 1);
+
+      // 操作标签
+      if (conn.op) {
+        if (conn.from === 'accumCo1' && conn.to === 'outputGM') {
+          // 两行：K0–K8 Accumulate / Fixpipe · ReLU · FP32→FP16 · Write GM
+          var parts = conn.op.split(' \u00b7 ');
+          var line1 = parts[0];
+          var line2 = parts.slice(1).join(' \u00b7 ');
+          var labelX = midX;
+          var labelY = (A.y + B.y) / 2;
+          addLabel(line1, labelX, labelY - 8, lCls);
+          addLabel(line2, labelX, labelY + 8, lCls);
+        } else {
+          addLabel(conn.op, midX, A.y - 10, lCls);
+        }
       }
     });
-    html += '</div>';
 
-    html += '</div>';
+    // ---- A2/B2 → CO1 三路汇合（圆滑曲线）----
+    var accum = anchor('accumCo1');
+    if (accum) {
+      var mergeSources = [
+        { card: 'fmapA2',  branch: 'mmad',    bend: -1 },  // 蓝色向下弯曲
+        { card: 'weightB2', branch: 'weight', bend: 0 },   // 绿色水平
+        { card: 'biasC2',  branch: 'bias',    bend: 1 },   // 紫色向上弯曲
+      ];
+      var mergeEndX = accum.left;
+      var mergeEndY = accum.y;
+      var sourceRegion = regionBounds('a2b2');
 
-    // Journey path summary
-    html += '<div class="avz-journey-paths">';
-    html += '<div class="avz-journey-path"><span class="avz-journey-path-label">Feature:</span> feature X0 → fmapA1 → fmapA2</div>';
-    html += '<div class="avz-journey-path"><span class="avz-journey-path-label">Weight:</span> weight W → weightB1 → weightB2</div>';
-    html += '<div class="avz-journey-path"><span class="avz-journey-path-label">Compute:</span> fmapA2 + weightB2 → Mmad → accumCo1 → Fixpipe → outputGM</div>';
-    html += '</div>';
+      mergeSources.forEach(function(ms) {
 
-    els.tensorJourneyContent.innerHTML = html;
+        var S = anchor(ms.card);
+        if (!S) return;
+        var isHl = highlightSet ? (highlightSet.has(ms.card) && highlightSet.has('accumCo1')) : true;
+        var eCls = edgeClass(ms.branch, isHl);
+        var lCls = isHl ? 'op-label' : 'op-label op-label-dimmed';
 
-    // Bind click handlers
-    els.tensorJourneyContent.querySelectorAll('[data-journey-action="tensor"]').forEach(btn => {
-      btn.addEventListener('click', () => {
-        const tensorId = btn.dataset.tensorId;
-        handleJourneyTensorClick(tensorId);
+        // 汇合点：三路在 CO1 左侧同一点汇合，箭头指向 accumCo1 左缘中点
+        var cx1 = S.x;
+        var cy1 = S.y;
+        var cx2 = mergeEndX;
+        var cy2 = mergeEndY;
+        if (ms.branch === 'weight') {
+          // 水平直连
+          addPath(eCls, 'M' + cx1 + ',' + cy1 + ' L' + cx2 + ',' + cy2);
+          addArrow(eCls, cx2, cy2, 1);
+          // LoadData2D 标签
+          addLabel('LoadData2D', (cx1 + cx2) / 2, cy1 - 10, lCls);
+        } else {
+          // 参考图的连接方式：先沿 A2/B2 的空白连接带水平走到 Stage 边界，
+          // 再进入 CO1 区域弯向 accumCo1，避免曲线过早侵入卡片区。
+          var hx = sourceRegion && sourceRegion.right > cx1
+            ? sourceRegion.right
+            : cx1 + (cx2 - cx1) * 0.42;
+          var curveSpan = Math.max(24, cx2 - hx);
+          var d = 'M' + cx1 + ',' + cy1 +
+                  ' L' + hx + ',' + cy1 +
+                  ' C' + (hx + curveSpan * 0.28) + ',' + cy1 +
+                  ' ' + (cx2 - curveSpan * 0.32) + ',' + cy2 +
+                  ' ' + cx2 + ',' + cy2;
+          addPath(eCls, d);
+          addArrow(eCls, cx2, cy2, 1);
+          if (ms.branch === 'bias') addLabel('Bias Init', (cx1 + hx) / 2, cy1 - 10, lCls);
+        }
+      });
+
+      // Mmad 标签放在 A2 → CO1 路径的中段，避免固定偏移在面板缩放后漂移
+      if (accum) {
+        var mSrc = anchor('fmapA2');
+        if (mSrc) {
+          var labelStartX = sourceRegion && sourceRegion.right > mSrc.x ? sourceRegion.right : mSrc.x;
+          addLabel('Mmad', labelStartX + (accum.left - labelStartX) * 0.38, (mSrc.y + accum.y) / 2, 'op-label');
+        }
+      }
+    }
+  }
+
+
+  function setupJourneyResizeObserver(cfg, tjs) {
+    if (window._tjResizeObserver) window._tjResizeObserver.disconnect();
+    var canvasWrap = document.getElementById('tjCanvasWrap');
+    var canvas = document.getElementById('tjCanvas');
+    if (!canvasWrap || !canvas || typeof ResizeObserver !== 'function') return;
+
+    window._tjResizeObserver = new ResizeObserver(function() {
+      if (window._tjDrawRaf) return;
+      window._tjDrawRaf = requestAnimationFrame(function() {
+        window._tjDrawRaf = 0;
+        drawJourneyLines(cfg, tjs);
       });
     });
+    window._tjResizeObserver.observe(canvasWrap);
+    window._tjResizeObserver.observe(canvas);
+    canvas.querySelectorAll('.avz-journey-region, .avz-journey-card').forEach(function(node) {
+      window._tjResizeObserver.observe(node);
+    });
+  }
 
-    els.tensorJourneyContent.querySelectorAll('[data-journey-action="transform"]').forEach(btn => {
-      btn.addEventListener('click', () => {
-        const stepId = btn.dataset.stepId;
-        const label = btn.dataset.transformLabel;
-        handleJourneyTransformClick(stepId, label);
+  // ---- Card click handler ----
+  function bindJourneyCardEvents() {
+    var cards = els.tensorJourneyContent.querySelectorAll('.avz-journey-card');
+    cards.forEach(function(card) {
+      card.addEventListener('click', function() {
+        var tensorId = card.dataset.tensorId;
+        // Toggle selection
+        if (TJ_STATE.selectedTensorId === tensorId) {
+          TJ_STATE.selectedTensorId = null;
+        } else {
+          TJ_STATE.selectedTensorId = tensorId;
+        }
+
+        // Just update card selection classes, no dimming or line redraw
+        refreshJourneyCards();
+
+        // Status feedback
+        var tensor = TJ_CONFIG.tensors.find(function(t) { return t.id === tensorId; });
+        if (els.statusText) els.statusText.textContent = TJ_STATE.selectedTensorId
+          ? 'Selected: ' + (tensor ? tensor.name : tensorId)
+          : 'Ready';
+        state.selectedTensorId = TJ_STATE.selectedTensorId;
+
+        // Update visualizer pane above: show data dump panel for fmapA1
+        var trace = currentTrace();
+        var isDataDump = state.selectedTensorId === 'buffer:feature:a1' || state.selectedTensorId === 'fmapA1';
+        renderDataDumpPanelVisibility(isDataDump);
+        if (isDataDump) {
+          renderTensorDataDump(trace);
+        } else {
+          renderTensorTabs(trace);
+          renderTensorViewport(trace);
+          renderTileLens(trace);
+          renderArchitectureFocus(trace);
+        }
       });
+    });
+  }
+
+  // ---- Refresh card selection after state change ----
+  function refreshJourneyCards() {
+    var cards = els.tensorJourneyContent.querySelectorAll('.avz-journey-card');
+    cards.forEach(function(card) {
+      var tid = card.dataset.tensorId;
+      var isSelected = tid === TJ_STATE.selectedTensorId;
+      card.classList.toggle('is-selected', isSelected);
     });
   }
 
   function handleJourneyTensorClick(tensorId) {
-    var trace = currentTrace();
-    if (!trace) return;
-
-    // Only fmapA1 is clickable in this iteration
-    var clickableTensors = ['buffer:feature:a1'];
-
-    if (clickableTensors.indexOf(tensorId) === -1) {
-      // Not yet implemented — show status feedback
-      if (els.statusText) {
-        els.statusText.textContent = 'Data view not implemented in current MVP: ' + tensorId;
-      }
-      return;
-    }
-
-    // Toggle selection
-    var wasSelected = state.selectedTensorId === tensorId;
-    state.selectedTensorId = wasSelected ? null : tensorId;
-
-    // Map tensorId to relevant step
-    var stepMap = {
-      'tensor:feature': 'copy-inputs',
-      'tensor:weight': 'copy-inputs',
-      'buffer:feature:a1': 'copy-inputs',
-      'buffer:weight:b1': 'copy-inputs',
-      'buffer:feature:a2': 'load-k',
-      'buffer:weight:b2': 'load-k',
-      'buffer:accum:co1': 'mmad-init',
-      'tensor:output': 'fixpipe-output',
-    };
-
-    // Find the tensor name for status feedback
-    var tensorNames = {
-      'tensor:feature': 'Feature X0',
-      'tensor:weight': 'Weight W',
-      'buffer:feature:a1': 'fmapA1',
-      'buffer:weight:b1': 'weightB1',
-      'buffer:feature:a2': 'fmapA2',
-      'buffer:weight:b2': 'weightB2',
-      'buffer:accum:co1': 'accumCo1',
-      'tensor:output': 'Output Y0',
-    };
-
-    var targetStageId = stepMap[tensorId];
-    if (targetStageId && state.selectedTensorId) {
-      var steps = trace.steps || [];
-      var stepIndex = steps.findIndex(function(s) { return s.stageId === targetStageId; });
-      if (stepIndex >= 0) {
-        // Navigate to the step so the main tensor view shows this tensor's context
-        selectStep(stepIndex, { journeyTensorId: tensorId });
-      }
-    } else {
-      // Deselect: restore standard views
-      renderStep();
-      renderTensorJourney(trace);
-    }
-
-    // Status feedback
-    var name = tensorNames[tensorId] || tensorId;
-    if (els.statusText) {
-      els.statusText.textContent = state.selectedTensorId
-        ? 'Selected: ' + name + ' — click again to deselect'
-        : 'Ready';
-    }
+    // Legacy stub - handled by new card click handler
+    TJ_STATE.selectedTensorId = tensorId;
+    if (els.statusText) els.statusText.textContent = 'Selected: ' + tensorId;
   }
 
   function handleJourneyTransformClick(stepId, label) {
+    // Legacy stub - no longer used with new implementation
     var trace = currentTrace();
     if (!trace) return;
-
     var steps = trace.steps || [];
-    var stepIndex = steps.findIndex(function(s) { return s.id === stepId; });
-    if (stepIndex < 0) {
-      // Find by stageId
-      var labelLower = (label || '').toLowerCase();
-      stepIndex = steps.findIndex(function(s) {
-        var stageId = (s.stageId || '').toLowerCase();
-        if (labelLower.includes('loaddata3d') && stageId === 'load-k') return true;
-        if (labelLower.includes('loaddata2d') && stageId === 'load-k') return true;
-        if (labelLower.includes('mmad') && (stageId === 'mmad-init' || stageId === 'k-loop')) return true;
-        if (labelLower.includes('fixpipe') && stageId === 'fixpipe-output') return true;
-        if (labelLower.includes('datacopy') && stageId === 'copy-inputs') return true;
-        return false;
-      });
-    }
-
+    var stepIndex = steps.findIndex(function(s) { return s.id === stepId || s.stageId === stepId; });
     if (stepIndex >= 0) {
       selectStep(stepIndex, { instructionOperation: label });
-      // Switch to instructions view to show the step
       setExecutionView('instructions');
     }
   }
 
 
-
   function renderTensorDataDump(trace) {
     if (!trace || !els.tensorDataDumpPanel) return;
     var isDumpMode = state.dataViewMode === 'data-dump' || state.dataViewMode === 'dump';
+    var isAnimMode = state.dataViewMode === 'animation';
+
+    // Hide standard data dump body in animation mode
     if (els.dataDumpBody) {
-      els.dataDumpBody.hidden = !isDumpMode;
-      els.dataDumpBody.style.display = isDumpMode ? '' : 'none';
+      els.dataDumpBody.hidden = isAnimMode || !isDumpMode;
+      els.dataDumpBody.style.display = (isDumpMode && !isAnimMode) ? '' : 'none';
     }
+
+    // Show/hide animation body
+    if (els.animationBody) {
+      els.animationBody.hidden = !isAnimMode;
+    }
+
+    // Handle animation mode
+    if (isAnimMode) {
+      renderAnimationView(trace);
+      return;
+    }
+
     if (!isDumpMode) return;
     var tensorId = state.selectedTensorId;
-    if (!tensorId || tensorId !== 'buffer:feature:a1') return;
+    if (!tensorId || (tensorId !== 'buffer:feature:a1' && tensorId !== 'fmapA1')) return;
     renderDataDumpHeader(trace, tensorId);
     renderDataDumpVolume(trace);
     renderChannelSelector();
@@ -5721,6 +5986,377 @@
     } else if (els.cellInspector) {
       els.cellInspector.hidden = true;
     }
+  }
+
+  /* ================================================================
+     LoadData3D Animation: fmapA1 -> fmapA2
+     Ported from recommendation-trace-V3.html
+     ================================================================ */
+
+  function animationParams() {
+    var s = state.animationState;
+    return {
+      Hi: s.H, Wi: s.W, Ci: s.Ci, C0: s.C0,
+      Hk: s.filterH, Wk: s.filterW,
+      strideH: s.strideH, strideW: s.strideW,
+      padTop: s.padTop, padRight: s.padRight, padBottom: s.padBottom, padLeft: s.padLeft,
+      padValue: s.padValue, dilationH: s.dilationH, dilationW: s.dilationW,
+      repeatMode: s.repeatMode, repeatTime: s.repeatTime,
+      showChannelPadding: s.showChannelPadding
+    };
+  }
+
+  function animationShape(p) {
+    var eKH = (p.Hk - 1) * p.dilationH + 1;
+    var eKW = (p.Wk - 1) * p.dilationW + 1;
+    var Ho = Math.floor((p.Hi + p.padTop + p.padBottom - eKH) / p.strideH) + 1;
+    var Wo = Math.floor((p.Wi + p.padLeft + p.padRight - eKW) / p.strideW) + 1;
+    var C1 = Math.ceil(p.Ci / p.C0);
+    return {
+      Ho: Ho, Wo: Wo, C1: C1,
+      rows: Math.max(0, Ho * Wo),
+      cols: Math.max(0, p.Hk * p.Wk * p.Ci),
+      valid: Ho > 0 && Wo > 0
+    };
+  }
+
+  function animationPatches(p, shape) {
+    if (!shape.valid) return [];
+    var patches = [];
+    for (var oh = 0; oh < shape.Ho; oh++) {
+      for (var ow = 0; ow < shape.Wo; ow++) {
+        var baseH = oh * p.strideH - p.padTop;
+        var baseW = ow * p.strideW - p.padLeft;
+        var row = oh * shape.Wo + ow;
+        var elements = [];
+        for (var kh = 0; kh < p.Hk; kh++) {
+          for (var kw = 0; kw < p.Wk; kw++) {
+            for (var c = 0; c < p.Ci; c++) {
+              var srcH = baseH + kh * p.dilationH;
+              var srcW = baseW + kw * p.dilationW;
+              var col = ((kh * p.Wk) + kw) * p.Ci + c;
+              var isPad = srcH < 0 || srcH >= p.Hi || srcW < 0 || srcW >= p.Wi;
+              elements.push({ oh: oh, ow: ow, row: row, kh: kh, kw: kw, c: c, col: col, srcH: srcH, srcW: srcW, isPadding: isPad });
+            }
+          }
+        }
+        patches.push({ oh: oh, ow: ow, row: row, baseH: baseH, baseW: baseW, elements: elements });
+      }
+    }
+    return patches;
+  }
+
+  function animationSampleGroups(patch) {
+    if (!patch) return [];
+    var groups = [];
+    var seen = {};
+    patch.elements.forEach(function(el) {
+      var key = el.kh + ',' + el.kw;
+      if (!seen[key]) { seen[key] = true; groups.push({ kh: el.kh, kw: el.kw, elements: [] }); }
+    });
+    patch.elements.forEach(function(el) {
+      var key = el.kh + ',' + el.kw;
+      groups.forEach(function(g) { if (g.kh === el.kh && g.kw === el.kw) g.elements.push(el); });
+    });
+    return groups;
+  }
+
+  function animationTotalSteps(patches) {
+    var total = 0;
+    patches.forEach(function(p) { total += animationSampleGroups(p).length; });
+    return total;
+  }
+
+  function animationContextAtStep(patches, step) {
+    if (!patches.length) return { patch: null, element: null, sampleElements: [], step: 0, maxStep: 0 };
+    var maxStep = Math.max(0, animationTotalSteps(patches) - 1);
+    var boundedStep = Math.max(0, Math.min(maxStep, Number(step) || 0));
+    var cursor = boundedStep;
+    var patch = patches[0], sampleGroups = animationSampleGroups(patch), sampleGroup = sampleGroups[0];
+    for (var i = 0; i < patches.length; i++) {
+      var groups = animationSampleGroups(patches[i]);
+      if (cursor < groups.length) {
+        patch = patches[i]; sampleGroups = groups; sampleGroup = groups[cursor]; break;
+      }
+      cursor -= groups.length;
+    }
+    return {
+      patch: patch, element: sampleGroup.elements[0] || patch.elements[0],
+      sampleElements: sampleGroup.elements, step: boundedStep, maxStep: maxStep
+    };
+  }
+
+  /* ---- Canvas drawing for A1 layout ---- */
+  function animTensorPoint(ox, oy, unit, dx, dy, col, row, depth) {
+    return { x: ox + col * unit + depth * dx, y: oy + row * unit - depth * dy };
+  }
+
+  function animDrawQuad(ctx, p0, p1, p2, p3, fill, stroke, lw) {
+    lw = lw || 1;
+    ctx.beginPath();
+    ctx.moveTo(p0.x, p0.y); ctx.lineTo(p1.x, p1.y); ctx.lineTo(p2.x, p2.y); ctx.lineTo(p3.x, p3.y);
+    ctx.closePath();
+    ctx.fillStyle = fill; ctx.fill();
+    ctx.strokeStyle = stroke; ctx.lineWidth = lw; ctx.stroke();
+  }
+
+  function animDrawVoxel(ctx, ox, oy, unit, dx, dy, col, row, depth, faces) {
+    var gap = 0.065;
+    var pt = function(c, r, d) { return animTensorPoint(ox, oy, unit, dx, dy, c, r, d); };
+    var c0 = col + gap, c1 = col + 1 - gap, r0 = row + gap, r1 = row + 1 - gap, d0 = depth + gap, d1 = depth + 1 - gap;
+    var f0 = pt(c0, r0, d0), f1 = pt(c1, r0, d0), f2 = pt(c1, r1, d0), f3 = pt(c0, r1, d0);
+    var b0 = pt(c0, r0, d1), b1 = pt(c1, r0, d1), b2 = pt(c1, r1, d1);
+    animDrawQuad(ctx, f0, f1, b1, b0, faces.top, faces.topEdge || faces.edge, faces.topLineWidth || faces.lineWidth || 1);
+    animDrawQuad(ctx, f1, f2, b2, b1, faces.east, faces.edge, faces.lineWidth || 1);
+    animDrawQuad(ctx, f0, f1, f2, f3, faces.south, faces.edge, faces.lineWidth || 1);
+    return { center: { x: (f0.x + f3.x) / 2, y: (f0.y + f2.y) / 2 } };
+  }
+
+  function animFrameLabels(ctx, ox, oy, unit, dx, dy, cols, rows, depth) {
+    var pt = function(c, r, d) { return animTensorPoint(ox, oy, unit, dx, dy, c, r, d); };
+    var f0 = pt(0, 0, 0), f2 = pt(cols, rows, 0), f3 = pt(0, rows, 0), b0 = pt(0, 0, depth);
+    ctx.save();
+    ctx.fillStyle = 'rgba(236,242,248,0.82)';
+    ctx.font = '700 13px ui-monospace, SFMono-Regular, Menlo, monospace';
+    ctx.textAlign = 'center';
+    ctx.fillText('W', (f2.x + f3.x) / 2, f2.y + 24);
+    ctx.textAlign = 'right';
+    ctx.fillText('H', f3.x - 10, (f0.y + f3.y) / 2);
+    ctx.textAlign = 'center';
+    ctx.fillText('C0', (f0.x + b0.x) / 2, (f0.y + b0.y) / 2 - 14);
+    ctx.restore();
+  }
+
+  function animColorToken(token, fallback) {
+    var v = getComputedStyle(document.documentElement).getPropertyValue(token).trim();
+    return v || fallback;
+  }
+
+  function animFaces(kind) {
+    var blue = animColorToken('--primary', '#4369ef');
+    var blueH = animColorToken('--primary-hover', '#5a92e6');
+    var orange = animColorToken('--warning', '#ffaa3b');
+    var palettes = {
+      base: { top: 'rgba(74,80,88,0.80)', east: 'rgba(59,65,74,0.80)', south: 'rgba(48,54,64,0.80)', edge: 'rgba(10,12,16,0.62)' },
+      pad: { top: 'rgba(90,96,104,0.25)', east: 'rgba(54,60,68,0.25)', south: 'rgba(42,48,56,0.25)', edge: 'rgba(190,200,212,0.18)' },
+      channelPad: { top: 'rgba(74,80,88,0.22)', east: 'rgba(59,65,74,0.20)', south: 'rgba(48,54,64,0.20)', edge: 'rgba(190,200,212,0.14)' },
+      window: { top: blue, east: blueH, south: blue, edge: blueH, lineWidth: 1.15, topLineWidth: 1.4 },
+      sampled: { top: blue, east: blueH, south: blue, edge: blueH, lineWidth: 1.25, topLineWidth: 1.6 },
+      current: { top: orange, east: orange, south: orange, edge: orange, lineWidth: 1.5, topLineWidth: 2 },
+      skipped: { top: 'rgba(255,255,255,0.08)', east: 'rgba(255,255,255,0.055)', south: 'rgba(255,255,255,0.045)', edge: 'rgba(255,255,255,0.18)' }
+    };
+    return palettes[kind] || palettes.base;
+  }
+
+  function drawAnimationA1Canvas(canvas, p, shape, patch, sample) {
+    if (!canvas || !patch || !sample) return;
+    var rect = canvas.getBoundingClientRect();
+    var dpr = window.devicePixelRatio || 1;
+    canvas.width = Math.max(1, Math.floor(rect.width * dpr));
+    canvas.height = Math.max(1, Math.floor(rect.height * dpr));
+    var ctx = canvas.getContext('2d');
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.clearRect(0, 0, rect.width, rect.height);
+
+    var totalH = p.Hi + p.padTop + p.padBottom;
+    var totalW = p.Wi + p.padLeft + p.padRight;
+    var layers = p.showChannelPadding ? p.C0 : p.Ci;
+    var fitW = (rect.width - 96) / Math.max(1, totalW + layers * 0.56);
+    var fitH = (rect.height - 94) / Math.max(1, totalH + layers * 0.42);
+    var unit = Math.max(8, Math.min(30, fitW, fitH));
+    var dx = unit * 0.56, dy = unit * 0.42;
+    var objectW = totalW * unit + layers * dx;
+    var objectH = totalH * unit + layers * dy;
+    var ox = Math.max(54, (rect.width - objectW) / 2 + 14);
+    var oy = Math.max(58 + layers * dy, (rect.height - objectH) / 2 + layers * dy + 18);
+
+    var windowCoords = {};
+    var skippedCoords = {};
+    var sampledKeys = {};
+    patch.elements.forEach(function(item) { sampledKeys[item.srcH + ',' + item.srcW + ',' + item.c] = true; });
+
+    for (var kh = 0; kh < p.Hk; kh++) {
+      for (var kw = 0; kw < p.Wk; kw++) {
+        var h = patch.baseH + kh * p.dilationH;
+        var w = patch.baseW + kw * p.dilationW;
+        for (var c = 0; c < p.Ci; c++) windowCoords[h + ',' + w + ',' + c] = true;
+      }
+    }
+
+    animFrameLabels(ctx, ox, oy, unit, dx, dy, totalW, totalH, layers);
+
+    var items = [];
+    for (var c = 0; c < layers; c++) {
+      for (var ph = 0; ph < totalH; ph++) {
+        for (var pw = 0; pw < totalW; pw++) {
+          var h = ph - p.padTop, w = pw - p.padLeft;
+          var key = h + ',' + w + ',' + c;
+          var isPad = h < 0 || h >= p.Hi || w < 0 || w >= p.Wi;
+          var isChPad = p.showChannelPadding && c >= p.Ci;
+          var kind = isChPad ? 'channelPad' : (isPad ? 'pad' : 'base');
+          if (windowCoords[key]) kind = 'window';
+          if (sampledKeys[key]) kind = 'sampled';
+          if (h === sample.srcH && w === sample.srcW) kind = 'current';
+          items.push({ ph: ph, pw: pw, h: h, w: w, c: c, kind: kind, isPad: isPad, isChPad: isChPad });
+        }
+      }
+    }
+    items.sort(function(a, b) { return (b.c - a.c) || (b.ph - a.ph) || (a.pw - b.pw); });
+
+    ctx.font = '700 10px ui-monospace, SFMono-Regular, Menlo, monospace';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    var showPadLabels = totalH * totalW <= 36;
+
+    for (var i = 0; i < items.length; i++) {
+      var item = items[i];
+      var result = animDrawVoxel(ctx, ox, oy, unit, dx, dy, item.pw, item.ph, item.c, animFaces(item.kind));
+      var itemKey = item.h + ',' + item.w + ',' + item.c;
+      var isMapped = sampledKeys[itemKey] || windowCoords[itemKey];
+      if (item.kind !== 'skipped' && !item.isChPad && (isMapped || (item.isPad && showPadLabels))) {
+        ctx.fillStyle = item.kind === 'current' ? '#211603' : 'rgba(240,247,252,0.86)';
+        ctx.fillText(item.isPad ? 'PAD' : 'x' + item.h + item.w + item.c, result.center.x, result.center.y + 1);
+      }
+    }
+  }
+
+  /* ---- Render full animation view ---- */
+  function renderAnimationView(trace) {
+    if (!els.animationBody) return;
+    // Ensure data dump body is hidden during animation
+    if (els.dataDumpBody) {
+      els.dataDumpBody.hidden = true;
+      els.dataDumpBody.style.display = 'none';
+    }
+    if (els.channelControls) els.channelControls.style.display = 'none';
+    if (els.dataDumpHeatmap) els.dataDumpHeatmap.style.display = 'none';
+    if (els.cellInspector) els.cellInspector.hidden = true;
+    var p = animationParams();
+    var shape = animationShape(p);
+    if (!shape.valid) {
+      if (els.animationA1Status) els.animationA1Status.textContent = '当前参数无法产生输出位置';
+      return;
+    }
+    var patches = animationPatches(p, shape);
+    var maxSteps = animationTotalSteps(patches);
+    state.animationStep = Math.max(0, Math.min(state.animationStep, Math.max(0, maxSteps - 1)));
+    var context = animationContextAtStep(patches, state.animationStep);
+
+    // Update A2 meta
+    if (els.animationA2Meta) {
+      els.animationA2Meta.textContent = '形状 = ' + shape.Ho + '×' + shape.Wo + ' × ' + p.Hk + '×' + p.Wk + '×' + p.Ci + ' = ' + shape.rows + ' × ' + shape.cols;
+    }
+
+    // Draw A1 canvas
+    drawAnimationA1Canvas(els.animationA1Canvas, p, shape, context.patch, context.element);
+
+    // Update A1 status
+    if (els.animationA1Status && context.element) {
+      els.animationA1Status.textContent = '当前：窗口行 ' + context.element.row + ', 采样 (kh=' + context.element.kh + ', kw=' + context.element.kw + ')，沿 C 轴 ' + context.sampleElements.length + ' 个值';
+    }
+
+    // Render A2 grid
+    renderAnimationA2Grid(patches, shape, context, p);
+
+    // Update pills
+    if (els.animationA2Pills && context.element) {
+      var sampEls = context.sampleElements;
+      var firstCol = sampEls[0] ? sampEls[0].col : context.element.col;
+      var lastCol = sampEls[sampEls.length - 1] ? sampEls[sampEls.length - 1].col : context.element.col;
+      var isPad = sampEls.some(function(e) { return e.isPadding; });
+      els.animationA2Pills.innerHTML =
+        '<span class="avz-animation-pill is-hot">row = oh×Wo + ow = ' + context.element.row + '</span>' +
+        '<span class="avz-animation-pill">cols ' + firstCol + '…' + lastCol + '：固定 kh=' + context.element.kh + ', kw=' + context.element.kw + '，遍历 c' + (isPad ? ' (PAD)' : '') + '</span>';
+    }
+
+    // Update playback status
+    if (els.animationPlaybackStatus) {
+      els.animationPlaybackStatus.textContent = state.animationPlaying
+        ? 'Playing · Step ' + (state.animationStep + 1) + ' / ' + maxSteps
+        : 'Paused · Step ' + (state.animationStep + 1) + ' / ' + maxSteps;
+    }
+  }
+
+  function renderAnimationA2Grid(patches, shape, context, p) {
+    var grid = els.animationA2Grid;
+    if (!grid) return;
+    var cols = Math.max(1, shape.cols);
+    var rows = Math.max(1, shape.rows);
+    var cellMin = cols > 28 ? '14px' : cols > 16 ? '22px' : '34px';
+    var cellIdeal = cols > 28 ? '26px' : cols > 16 ? '34px' : '46px';
+    var showText = rows * cols <= 180;
+
+    // Track written cells
+    var written = {};
+    var priorSteps = 0;
+    patches.forEach(function(candidate) {
+      var groups = animationSampleGroups(candidate);
+      groups.forEach(function(group, si) {
+        if (priorSteps + si <= context.step) {
+          group.elements.forEach(function(item) { written[item.row + ',' + item.col] = true; });
+        }
+      });
+      priorSteps += groups.length;
+    });
+
+    var element = context.element;
+    var cells = [];
+    for (var row = 0; row < rows; row++) {
+      for (var col = 0; col < cols; col++) {
+        var mapped = patches[row] ? patches[row].elements[col] : null;
+        var isCurSample = mapped && mapped.kh === element.kh && mapped.kw === element.kw;
+        var active = row === element.row && isCurSample;
+        var classes = ['avz-animation-cell'];
+        if (row === element.row) classes.push('is-current-row');
+        if (isCurSample) classes.push('is-current-col');
+        if (written[row + ',' + col]) classes.push('is-written');
+        if (mapped && mapped.isPadding) classes.push('is-pad');
+        if (active) classes.push('is-active');
+        // Always highlight top-left 16x16
+        if (row < 16 && col < 16) classes.push('is-top-left-16x16');
+        var content = '';
+        if (showText && mapped) content = mapped.isPadding ? 'PAD' : 'x' + mapped.srcH + mapped.srcW + mapped.srcC;
+        var title = mapped ? 'row=' + row + ', col=' + col + ', kh=' + mapped.kh + ', kw=' + mapped.kw + ', c=' + mapped.c + ', src=(' + mapped.srcH + ',' + mapped.srcW + ')' : '';
+        cells.push('<div class="' + classes.join(' ') + '" title="' + title + '">' + content + '</div>');
+      }
+    }
+
+    grid.style.setProperty('--cols', String(cols));
+    grid.style.setProperty('--cell-min', cellMin);
+    grid.style.setProperty('--cell-ideal', cellIdeal);
+    grid.innerHTML = cells.join('');
+  }
+
+  function startAnimationPlayback() {
+    stopAnimationPlayback();
+    state.animationPlaying = true;
+    state.animationStep = 0;
+    var p = animationParams();
+    var shape = animationShape(p);
+    var patches = animationPatches(p, shape);
+    var maxSteps = animationTotalSteps(patches);
+
+    state.animationTimer = setInterval(function() {
+      if (!state.animationPlaying) return;
+      if (state.animationStep >= maxSteps - 1) {
+        state.animationStep = 0;
+      } else {
+        state.animationStep += 1;
+      }
+      renderAnimationView(currentTrace());
+    }, 200);
+  }
+
+  function stopAnimationPlayback() {
+    state.animationPlaying = false;
+    if (state.animationTimer) { clearInterval(state.animationTimer); state.animationTimer = null; }
+    // Restore data dump body and controls when leaving animation
+    if (els.dataDumpBody) {
+      els.dataDumpBody.hidden = false;
+      els.dataDumpBody.style.display = '';
+    }
+    if (els.channelControls) els.channelControls.style.display = '';
+    if (els.dataDumpHeatmap) els.dataDumpHeatmap.style.display = '';
   }
 
   function renderDataDumpHeader(trace, tensorId) {

@@ -478,6 +478,51 @@ body {
 
 .avz-execution-header .tab-control {
   min-width: 0;
+  min-height: 44px;
+  align-self: stretch;
+  gap: var(--space-4);
+  padding: 0;
+  border: 0;
+  border-bottom: 1px solid var(--border-subtle);
+  border-radius: 0;
+  background: transparent;
+}
+
+.avz-execution-header .tab-control-item {
+  position: relative;
+  min-height: 44px;
+  padding: 0 var(--space-2);
+  border-radius: 0;
+  color: var(--foreground-secondary);
+  font: var(--text-body);
+  transition: color var(--duration-fast) var(--easing-default), background var(--duration-fast) var(--easing-default);
+}
+
+.avz-execution-header .tab-control-item:hover {
+  background: var(--state-hover);
+  color: var(--foreground);
+}
+
+.avz-execution-header .tab-control-item.is-selected,
+.avz-execution-header .tab-control-item.is-selected:hover {
+  background: transparent;
+  color: var(--primary);
+}
+
+.avz-execution-header .tab-control-item.is-selected::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: -1px;
+  height: 3px;
+  border-radius: var(--radius-pill);
+  background: var(--primary);
+}
+
+.avz-execution-header .tab-control-item:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px var(--button-focus-ring);
 }
 
 .avz-execution-controls {
@@ -489,7 +534,6 @@ body {
 
 .avz-execution-body {
   min-height: 0;
-  padding: var(--space-3);
   overflow: hidden;
 }
 
@@ -508,7 +552,7 @@ body {
 .avz-core-switcher {
   min-width: 0;
   display: grid;
-  grid-template-columns: max-content minmax(0, 1fr);
+  grid-template-columns: max-content minmax(0, 1fr) max-content;
   align-items: center;
   gap: var(--space-3);
   padding-bottom: var(--space-3);
@@ -535,6 +579,12 @@ body {
 .avz-core-switcher__options > .btn {
   flex: 0 0 auto;
   font-family: var(--font-mono);
+  white-space: nowrap;
+}
+
+.avz-core-switcher__meta {
+  color: var(--foreground-muted);
+  font: var(--text-label);
   white-space: nowrap;
 }
 
@@ -568,7 +618,7 @@ body {
   gap: var(--space-1);
   width: max-content;
   min-height: 56px;
-  padding: var(--space-2) var(--space-3);
+  padding: var(--space-2) var(--space-2);
   border: 1px solid transparent;
   border-radius: var(--radius-md);
   background: var(--surface-1);
@@ -2184,7 +2234,7 @@ body {
   border-radius: var(--radius-sm);
   background: color-mix(in srgb, var(--warning) 14%, var(--surface-2));
   color: var(--foreground);
-  padding: var(--space-2) var(--space-3);
+  padding: var(--space-2) var(--space-2);
   font: var(--text-label);
 }
 
@@ -2524,184 +2574,324 @@ body {
 }
 
 /* ===== Tensor Journey ===== */
+/* 面板整体：暗色 token，无独立主题 */
 .avz-tensor-journey {
   display: flex;
   flex-direction: column;
-  gap: var(--space-4);
-  padding: var(--space-4);
-  height: 100%;
-  overflow: auto;
-}
-
-.avz-journey-grid {
-  display: grid;
-  grid-template-rows: auto 1fr auto;
   gap: 0;
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
+  background: var(--background);
+}
+
+/* ---- Journey Canvas ---- */
+.avz-journey-canvas-wrap {
   flex: 1;
+  position: relative;
+  overflow: auto;
+  min-height: 0;
 }
-
-/* Column headers */
-.avz-journey-header {
+.avz-journey-canvas {
   display: grid;
-  grid-template-columns: repeat(5, 1fr);
-  gap: var(--space-2);
-  margin-bottom: var(--space-3);
-}
-
-.avz-journey-col-header {
-  text-align: center;
-  font: var(--text-label);
-  color: var(--foreground-muted);
-  text-transform: uppercase;
-  letter-spacing: var(--letter-spacing-label);
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 2px;
-  padding: var(--space-2) 0;
-  background: var(--surface-2);
-  border-radius: var(--radius-md);
-}
-
-.avz-journey-col-loc {
-  font: var(--text-caption);
-  color: var(--foreground-muted);
-  opacity: 0.7;
-}
-
-/* Column bodies */
-.avz-journey-body {
-  display: grid;
-  grid-template-columns: repeat(5, 1fr);
-  gap: var(--space-2);
-  align-items: start;
-}
-
-.avz-journey-col {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-2);
-}
-
-/* Tensor cards */
-.avz-journey-tensor {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: var(--space-1);
-  padding: var(--space-3) var(--space-2);
-  background: var(--surface-2);
-  border: 1px solid var(--border-default);
-  border-radius: var(--radius-md);
-  cursor: pointer;
-  transition: border-color 0.15s, background 0.15s;
-  text-align: center;
+  grid-template-columns: minmax(260px, 1.05fr) minmax(300px, 1.22fr) minmax(260px, 1.22fr) minmax(250px, 1.08fr) minmax(300px, 1.55fr);
   width: 100%;
-}
-
-.avz-journey-tensor:hover {
-  border-color: var(--border-hover);
-  background: var(--surface-3);
-}
-
-.avz-journey-tensor.is-selected {
-  border-color: var(--accent-primary);
-  background: var(--accent-primary-muted, rgba(77, 151, 255, 0.12));
-}
-
-.avz-journey-tensor-name {
-  font: var(--text-body-sm);
-  font-weight: 600;
-  color: var(--foreground);
-  font-family: var(--font-mono);
-}
-
-.avz-journey-tensor-shape {
-  font: var(--text-caption);
-  color: var(--foreground-muted);
-  font-family: var(--font-mono);
-}
-
-/* Transforms row */
-.avz-journey-transforms {
-  display: grid;
-  grid-template-columns: repeat(5, 1fr);
-  gap: var(--space-2);
-  margin-top: var(--space-2);
-}
-
-.avz-journey-transform-col {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-1);
-  padding: 0 var(--space-1);
+  min-width: 1500px;
   align-items: stretch;
+  min-height: 480px;
+  height: max(100%, 480px);
+  position: relative;
 }
 
-.avz-journey-transform-col:first-child {
-  padding-left: 0;
-}
-
-.avz-journey-transform-col:last-child {
-  padding-right: 0;
-}
-
-.avz-journey-transform {
+/* ---- 区域容器 (MemoryStage) ---- */
+.avz-journey-region {
   display: flex;
   flex-direction: column;
+  gap: var(--space-3);
+  background: #1c1c1c;
+  border-right: 1px dashed var(--border-default);
+  padding: var(--space-4) var(--space-3);
+  position: relative;
+  min-width: 0;
+  min-height: 0;
+  z-index: 1;
+}
+
+/* 区域标题：图标底座 + 两行文字，左对齐 */
+.avz-journey-region-header {
+  display: flex;
   align-items: center;
-  gap: 2px;
-  padding: var(--space-1) var(--space-2);
-  background: var(--surface-2);
-  border: 1px dashed var(--border-default);
-  border-radius: var(--radius-sm);
-  cursor: pointer;
-  transition: border-color 0.15s, background 0.15s;
-  text-align: center;
-  width: 100%;
+  gap: var(--space-2);
 }
-
-.avz-journey-transform:hover {
-  border-color: var(--accent-primary);
+.avz-journey-region-icon-base {
+  width: calc(var(--space-6) + var(--space-3));
+  height: calc(var(--space-6) + var(--space-3));
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   background: var(--surface-3);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-md);
+  color: var(--foreground-secondary);
 }
-
-.avz-journey-transform-label {
-  font: var(--text-label);
-  font-weight: 600;
-  color: var(--accent-primary);
-  font-family: var(--font-mono);
+.avz-journey-region-icon {
+  width: var(--space-5);
+  height: var(--space-5);
+  display: block;
 }
-
-.avz-journey-transform-detail {
-  font: var(--text-caption);
-  color: var(--foreground-muted);
-  line-height: 1.3;
-}
-
-/* Journey paths summary */
-.avz-journey-paths {
+.avz-journey-region-text-group {
   display: flex;
   flex-direction: column;
-  gap: var(--space-1);
-  padding: var(--space-3);
-  background: var(--surface-2);
-  border-radius: var(--radius-md);
-  border: 1px solid var(--border-default);
-  margin-top: var(--space-4);
+  gap: 0;
+  min-width: 0;
+}
+.avz-journey-region-title {
+  font: 600 var(--font-size-title-sm)/1.2 var(--font-sans);
+  font-weight: var(--font-weight-semibold);
+  color: var(--foreground);
+  letter-spacing: 0.2px;
+}
+.avz-journey-region-subtitle {
+  font: 400 var(--font-size-body-sm)/1.3 var(--font-sans);
+  color: var(--foreground-secondary);
+  white-space: nowrap;
+}
+.avz-journey-region-divider {
+  height: 1px;
+  background: var(--border-subtle);
+  margin: var(--space-1) 0;
 }
 
-.avz-journey-path {
-  font: var(--text-body-sm);
+/* ---- 轨道 (Feature / Weight / Bias) ---- */
+.avz-journey-tracks {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  justify-content: center;
+  min-height: 0;
+  gap: var(--space-4);
+}
+.avz-journey-track {
+  flex: 0 0 auto;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  align-items: stretch;
+  min-height: calc(var(--space-4) * 6);
+  justify-content: center;
+}
+.avz-journey-track.empty {
+  flex: 0 0 auto;
+  min-height: calc(var(--space-4) * 6);
+}
+
+/* CO1 / 输出 GM 的单一结果卡片垂直居中 */
+.avz-journey-track.center {
+  flex: 0 0 auto;
+  justify-content: center;
+}
+
+/* ---- Tensor 卡片 ---- */
+.avz-journey-card {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: var(--space-4);
+  box-sizing: border-box;
+  background: var(--surface-1);
+  border: 1px solid transparent;
+  border-radius: var(--radius-lg);
+  cursor: pointer;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease, background 0.15s ease;
+  position: relative;
+  width: 90%;
+}
+.avz-journey-card:hover {
+  background: rgba(255,255,255,0.07);
+  border-color: var(--border-default);
+}
+.avz-journey-card {
+  z-index: 2;
+}
+
+/* Memory Stage 内保留可读的连接带：卡片不是整列的填充物，
+   右侧/左侧留白用于承载跨 Stage 的数据流和操作标签。 */
+.avz-journey-region[data-location="gmInput"] .avz-journey-card {
+  width: 90%;
+  align-self: flex-start;
+}
+.avz-journey-region[data-location="l1"] .avz-journey-card {
+  width: 68%;
+  align-self: flex-start;
+}
+.avz-journey-region[data-location="a2b2"] .avz-journey-card {
+  width: 64%;
+  min-width: 140px;
+  align-self: flex-start;
+}
+.avz-journey-region[data-location="co1"] .avz-journey-card {
+  width: 64%;
+  min-width: 132px;
+  align-self: center;
+}
+.avz-journey-region[data-location="gmOutput"] .avz-journey-card {
+  width: 66%;
+  align-self: flex-end;
+}
+.avz-journey-card.is-selected {
+  border-color: var(--primary);
+  box-shadow: 0 0 0 2px var(--primary), 0 0 16px color-mix(in srgb, var(--primary) 40%, transparent);
+  background: color-mix(in srgb, var(--primary) 12%, var(--surface-2));
+}
+/* 选中标记：右上角圆形对勾 */
+.avz-journey-card.is-selected::after {
+  content: '\2713';
+  position: absolute;
+  top: -7px;
+  right: -7px;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: var(--primary);
+  box-shadow: 0 0 0 2px var(--background), 0 0 8px color-mix(in srgb, var(--primary) 55%, transparent);
+  color: #fff;
+  font-size: 12px;
+  line-height: 20px;
+  text-align: center;
+  font-family: var(--font-sans);
+  z-index: 2;
+  pointer-events: none;
+}
+.avz-journey-card-name {
+  font-family: var(--font-mono);
+  font-size: var(--font-size-body-md);
+  font-weight: var(--font-weight-semibold);
+  letter-spacing: -0.1px;
+}
+.avz-journey-card-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-1);
+  min-width: 0;
+}
+.avz-journey-card-head .avz-journey-card-name {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.avz-journey-card-name.feature { color: var(--tj-cyan); }
+.avz-journey-card-name.weight { color: var(--ark-green-500); }
+.avz-journey-card-name.bias { color: var(--highlight-l0a-violet-300); }
+.avz-journey-card-name.accumulation { color: var(--highlight-accum-orange-400); }
+.avz-journey-card-name.output { color: var(--tj-cyan); }
+.avz-journey-card-shape {
+  flex: 0 0 auto;
+  font-family: var(--font-mono);
+  font-size: var(--font-size-body-sm);
+  color: var(--foreground-secondary);
+  letter-spacing: 0.1px;
+  text-align: right;
+  white-space: nowrap;
+}
+.avz-journey-card-field {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-2);
+  font-size: var(--font-size-body-sm);
+  line-height: 1.35;
+}
+.avz-journey-card-key {
+  flex: 0 0 auto;
+  color: var(--foreground-muted);
+  font-size: var(--font-size-label-xs);
+  text-transform: uppercase;
+  letter-spacing: 0.6px;
+  white-space: nowrap;
+}
+.avz-journey-card-value {
   color: var(--foreground-secondary);
   font-family: var(--font-mono);
-  line-height: 1.5;
+  flex-shrink: 0;
+  white-space: nowrap;
+  text-align: right;
 }
 
-.avz-journey-path-label {
-  color: var(--foreground-muted);
-  margin-right: var(--space-2);
-  font-family: var(--font-body);
+/* ---- 连接分隔区 (ConnectorLane) ---- */
+.avz-journey-region-separator {
+  flex: 0 0 300px;
+  position: relative;
+  flex-shrink: 0;
+}
+.avz-journey-region-separator::before {
+  content: '';
+  position: absolute;
+  left: 50%;
+  top: var(--space-4);
+  bottom: var(--space-4);
+  width: 1px;
+  background: repeating-linear-gradient(
+    to bottom,
+    var(--border-strong) 0,
+    var(--border-strong) 6px,
+    transparent 6px,
+    transparent 12px
+  );
+}
+
+/* ---- SVG 连线层 ---- */
+.avz-journey-svg {
+  position: absolute;
+  top: 0;
+  left: 0;
+  pointer-events: none;
+  z-index: 1;
+}
+.avz-journey-svg path,
+.avz-journey-svg line {
+  stroke-width: 2;
+  fill: none;
+  stroke-linecap: round;
+}
+.avz-journey-svg polygon {
+  stroke-width: 0;
+}
+.avz-journey-svg .edge-feature { stroke: var(--tj-cyan); fill: var(--tj-cyan); }
+.avz-journey-svg .edge-weight { stroke: var(--ark-green-500); fill: var(--ark-green-500); }
+.avz-journey-svg .edge-bias { stroke: var(--highlight-l0a-violet-300); fill: var(--highlight-l0a-violet-300); }
+.avz-journey-svg .edge-output { stroke: var(--tj-cyan); fill: var(--tj-cyan); }
+.avz-journey-svg .edge-mmad { stroke: #4d97ff; fill: #4d97ff; }
+.avz-journey-svg .edge-dimmed { opacity: 0.15; }
+.avz-journey-svg path.edge-feature,
+.avz-journey-svg path.edge-weight,
+.avz-journey-svg path.edge-bias,
+.avz-journey-svg path.edge-output,
+.avz-journey-svg path.edge-mmad {
+  fill: none;
+}
+.avz-journey-svg text.op-label {
+  font-size: var(--font-size-body-sm);
+  fill: var(--foreground-secondary);
+  text-anchor: middle;
+  dominant-baseline: middle;
+  font-family: var(--font-sans);
+  paint-order: stroke;
+  stroke: var(--background);
+  stroke-width: 4px;
+  stroke-linejoin: round;
+}
+.avz-journey-svg text.op-label-dimmed {
+  fill: var(--foreground-muted);
+  opacity: 0.35;
+}
+
+/* 输出路径 Cyan token：PTO 无对应 cyan，本地定义以匹配输出数据路径 */
+:root {
+  --tj-cyan: #35DDF5;
 }
 
 /* ===== Tensor Data Dump Panel ===== */
@@ -2730,7 +2920,6 @@ body {
   background-color: #252525;
   padding: 10px 10px;
   border-radius: 10px;
-}
 }
 
 .avz-data-dump-field-label {
@@ -2773,6 +2962,10 @@ body {
   overflow: hidden;
   border-top: 1px solid var(--border-default);
   margin-top: 10px;
+}
+
+.avz-data-dump-body[hidden] {
+  display: none !important;
 }
 
 /* Left: 3D Tensor Volume */
@@ -2932,7 +3125,8 @@ body {
   display: flex;
   align-items: center;
   justify-content: center;
-  aspect-ratio: 1;
+  width: 44px;
+  height: 24px;
   font: var(--text-caption);
   font-family: var(--font-mono);
   color: var(--foreground);
@@ -2984,7 +3178,7 @@ body {
 }
 
 .avz-cell-inspector-body {
-  padding: var(--space-2) var(--space-3);
+  padding: var(--space-2) var(--space-2);
   display: flex;
   flex-direction: column;
   gap: var(--space-1);
@@ -3088,4 +3282,265 @@ body {
   font-weight: 600;
   color: var(--foreground);
   font-family: var(--font-mono);
+}
+
+/* ============================================================
+   Animation Label — above the heatmap
+   ============================================================ */
+.avz-animate-label {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-2) var(--space-2) 0;
+  margin-bottom: var(--space-1);
+}
+
+.avz-animate-label__text {
+  font: var(--text-label);
+  color: var(--foreground-muted);
+  text-transform: uppercase;
+  letter-spacing: var(--letter-spacing-label);
+}
+
+.avz-animate-label__tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 2px 10px;
+  background: var(--surface-2);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-lg);
+  cursor: pointer;
+  font: var(--text-body-sm);
+  font-family: var(--font-mono);
+  color: var(--foreground);
+  transition: background 0.15s, border-color 0.15s, box-shadow 0.15s;
+}
+
+.avz-animate-label__tag:hover {
+  background: var(--surface-3);
+  border-color: var(--primary);
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--primary) 30%, transparent);
+}
+
+.avz-animate-label__from,
+.avz-animate-label__to {
+  color: var(--foreground);
+}
+
+.avz-animate-label__arrow {
+  width: 16px;
+  height: 16px;
+  stroke: var(--foreground-secondary);
+  flex-shrink: 0;
+}
+
+/* ============================================================
+   Animation Body — two-panel LoadData3D visualization
+   ============================================================ */
+.avz-animation-body {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  background: var(--surface-1);
+  min-height: 0;
+  overflow: hidden;
+}
+
+.avz-animation-body[hidden] {
+  display: none !important;
+}
+
+.avz-animation-panels {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  gap: var(--space-3);
+  padding: var(--space-3);
+}
+
+.avz-animation-panel {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-lg);
+  background: var(--surface-2);
+  overflow: hidden;
+}
+
+.avz-animation-panel--a1 {
+  flex: 1 1 45%;
+}
+
+.avz-animation-panel--a2 {
+  flex: 1 1 55%;
+}
+
+.avz-animation-panel__head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-2);
+  border-bottom: 1px solid var(--border-subtle);
+  flex-shrink: 0;
+}
+
+.avz-animation-panel__head h4 {
+  margin: 0;
+  color: var(--foreground);
+  font: var(--text-body-sm);
+  font-weight: var(--font-weight-semibold);
+}
+
+.avz-animation-panel__meta {
+  color: var(--foreground-muted);
+  font: var(--text-caption);
+}
+
+.avz-animation-panel__canvas-wrap {
+  flex: 1;
+  min-height: 0;
+  position: relative;
+}
+
+.avz-animation-canvas {
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+
+.avz-animation-panel__status {
+  padding: var(--space-1) var(--space-3);
+  font: var(--text-caption);
+  color: var(--foreground-muted);
+  border-top: 1px solid var(--border-subtle);
+  flex-shrink: 0;
+}
+
+/* A2 matrix grid */
+.avz-animation-matrix-scroll {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding: var(--space-3);
+}
+
+.avz-animation-grid {
+  display: grid;
+  grid-template-columns: repeat(var(--cols, 1), minmax(var(--cell-min, 14px), var(--cell-ideal, 34px)));
+  gap: 1px;
+  justify-content: center;
+}
+
+.avz-animation-cell {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  aspect-ratio: 1;
+  font: var(--text-caption);
+  font-family: var(--font-mono);
+  font-size: 8px;
+  color: var(--foreground);
+  background: var(--surface-3);
+  border-radius: 2px;
+  transition: background 0.12s;
+}
+
+.avz-animation-cell.is-current-row {
+  background: color-mix(in srgb, var(--primary) 18%, transparent);
+}
+
+.avz-animation-cell.is-current-col {
+  box-shadow: inset 0 0 0 999px color-mix(in srgb, var(--warning) 8%, transparent);
+}
+
+.avz-animation-cell.is-written {
+  background: color-mix(in srgb, var(--primary) 30%, transparent);
+  color: color-mix(in srgb, var(--foreground) 72%, transparent);
+}
+
+.avz-animation-cell.is-pad {
+  color: var(--foreground-muted);
+  font-style: italic;
+}
+
+.avz-animation-cell.is-active {
+  outline: 2px solid var(--warning);
+  outline-offset: 1px;
+  z-index: 1;
+}
+
+/* Always highlight top-left 16x16 region */
+.avz-animation-cell.is-top-left-16x16 {
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--warning) 40%, transparent);
+}
+
+/* Animation legend */
+.avz-animation-panel__legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-2);
+  border-top: 1px solid var(--border-subtle);
+  flex-shrink: 0;
+  font: var(--text-caption);
+  color: var(--foreground-muted);
+  align-items: center;
+}
+
+.avz-animation-swatch {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  border-radius: 2px;
+  margin-right: 3px;
+  vertical-align: middle;
+}
+
+.avz-animation-swatch--row { background: color-mix(in srgb, var(--primary) 20%, transparent); }
+.avz-animation-swatch--col { background: color-mix(in srgb, var(--warning) 16%, transparent); }
+.avz-animation-swatch--written { background: color-mix(in srgb, var(--primary) 34%, transparent); }
+.avz-animation-swatch--pad { background: color-mix(in srgb, var(--foreground-muted) 16%, transparent); }
+.avz-animation-swatch--active { background: var(--warning); }
+
+/* Animation pills */
+.avz-animation-pills {
+  display: flex;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-2);
+  flex-shrink: 0;
+  font: var(--text-caption);
+  font-family: var(--font-mono);
+}
+
+.avz-animation-pill {
+  padding: 2px 8px;
+  border-radius: var(--radius-sm);
+  background: var(--surface-3);
+  color: var(--foreground-secondary);
+}
+
+.avz-animation-pill.is-hot {
+  background: color-mix(in srgb, var(--primary) 18%, transparent);
+  color: var(--primary);
+}
+
+/* Animation footer */
+.avz-animation-body__footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--space-2) var(--space-2);
+  border-top: 1px solid var(--border-subtle);
+  flex-shrink: 0;
+  font: var(--text-caption);
+  color: var(--foreground-muted);
+}
+
+#animationPlaybackStatus {
+  font-weight: var(--font-weight-semibold);
+  color: var(--foreground);
 }

@@ -14,8 +14,8 @@
   <link rel="stylesheet" href="../vendor/pto-design-system/patterns/hardware-architecture-viewport/pattern.css?v=20260703-950-standard-v1">
   <link rel="stylesheet" href="../../pto-design-system/patterns/tensor-volume-canvas/pattern.css?v=20260730-load-data-v1">
   <link rel="stylesheet" href="../../pto-design-system/patterns/matrix-canvas/pattern.css?v=20260731-bounded-neutral-v1">
-  <link rel="stylesheet" href="../../pto-design-system/patterns/tensor-title/pattern.css?v=20260806-tensor-data-dump-v10">
-  <link rel="stylesheet" href="src/styles.css?v=20260806-tensor-data-dump-v10">
+  <link rel="stylesheet" href="../../pto-design-system/patterns/tensor-title/pattern.css?v=20260807-tj-v8">
+  <link rel="stylesheet" href="src/styles.css?v=20260807-tj-v8">
 </head>
 <body class="avz-page">
   <section class="pto-ide-frame avz-frame" data-ide-frame data-host="standalone" aria-label="Ascend tiling visualization workbench">
@@ -100,7 +100,7 @@
         </button>
       </nav>
       <div class="pto-ide-frame__workarea">
-        <div class="pto-ide-frame__split avz-workspace-stack" data-ide-split="code-recovery-stack" data-storage-key="pto-code-recovery-stack-stage1-v1" data-split-direction="vertical" data-sizes="68,32" data-min-size="360,190" data-gutter-size="10">
+        <div class="pto-ide-frame__split avz-workspace-stack" data-ide-split="code-recovery-stack" data-storage-key="pto-code-recovery-stack-stage1-v2" data-split-direction="vertical" data-sizes="48,52" data-min-size="320,300" data-gutter-size="10">
           <div class="pto-ide-frame__pane pto-ide-frame__pane--stack avz-top-workspace" data-ide-pane="top-workspace">
             <div class="pto-ide-frame__split avz-main-split" data-ide-split="standalone-main" data-storage-key="pto-code-recovery-conv-main-stage1-v1" data-split-direction="horizontal" data-sizes="28,34,38" data-pixel-sizes="300" data-min-size="260,420,360" data-gutter-size="10">
           <section class="pto-ide-frame__pane pto-ide-frame__explorer" data-ide-pane="explorer" id="standalone-explorer-pane">
@@ -561,6 +561,14 @@
                   </div>
 
                   <div class="avz-data-dump-right">
+                    <div class="avz-animate-label" id="animateLabel">
+                      <span class="avz-animate-label__text">Animate:</span>
+                      <button class="avz-animate-label__tag" type="button" id="animateTagBtn" title="View fmapA1 → fmapA2 LoadData3D animation">
+                        <span class="avz-animate-label__from">fmapA1</span>
+                        <svg class="avz-animate-label__arrow" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h14"></path><path d="m12 5 7 7-7 7"></path></svg>
+                        <span class="avz-animate-label__to">fmapA2</span>
+                      </button>
+                    </div>
                     <div class="avz-channel-controls" id="channelControls">
                       <span class="avz-channel-label">Channel</span>
                       <button class="avz-channel-btn" id="prevChannelBtn" type="button" title="Previous channel" aria-label="Previous channel">◂</button>
@@ -583,6 +591,43 @@
                     <div class="avz-cell-inspector-body" id="cellInspectorBody"></div>
                   </div>
                 </div>
+
+                  <!-- Animation body: LoadData3D fmapA1 → fmapA2 -->
+                  <div class="avz-animation-body" id="animationBody" hidden>
+                    <div class="avz-animation-panels">
+                      <section class="avz-animation-panel avz-animation-panel--a1" aria-labelledby="a1LayoutTitle">
+                        <header class="avz-animation-panel__head">
+                          <h4 id="a1LayoutTitle">A1 布局</h4>
+                          <span class="avz-animation-panel__meta">NC1HWC0 · 带 padding 和 LoadData3D 采样</span>
+                        </header>
+                        <div class="avz-animation-panel__canvas-wrap">
+                          <canvas class="avz-animation-canvas" id="animationA1Canvas" aria-label="A1 layout 3D view with LoadData3D sampling"></canvas>
+                        </div>
+                        <div class="avz-animation-panel__status" id="animationA1Status"></div>
+                      </section>
+                      <section class="avz-animation-panel avz-animation-panel--a2" aria-labelledby="a2MatrixTitle">
+                        <header class="avz-animation-panel__head">
+                          <h4 id="a2MatrixTitle">A2 逻辑矩阵</h4>
+                          <span class="avz-animation-panel__meta" id="animationA2Meta">形状 = Ho×Wo × Hk×Wk×Ci</span>
+                        </header>
+                        <div class="avz-animation-matrix-scroll" id="animationA2MatrixScroll" aria-label="A2 逻辑矩阵滚动区域">
+                          <div class="avz-animation-grid" id="animationA2Grid" style="--cols:1;"></div>
+                        </div>
+                        <div class="avz-animation-panel__legend" aria-label="A2 矩阵颜色图例">
+                          <span><i class="avz-animation-swatch avz-animation-swatch--row"></i>当前窗口行</span>
+                          <span><i class="avz-animation-swatch avz-animation-swatch--col"></i>当前 C 轴向量</span>
+                          <span><i class="avz-animation-swatch avz-animation-swatch--written"></i>已写入</span>
+                          <span><i class="avz-animation-swatch avz-animation-swatch--pad"></i>PAD 来源</span>
+                          <span><i class="avz-animation-swatch avz-animation-swatch--active"></i>当前 C 轴写入</span>
+                        </div>
+                        <div class="avz-animation-pills" id="animationA2Pills"></div>
+                      </section>
+                    </div>
+                    <footer class="avz-animation-body__footer">
+                      <span id="animationPlaybackStatus">Ready · 点击标签开始播放</span>
+                      <span>LoadData3D 学习视角，完整动画展示 fmapA1 → fmapA2 形变过程</span>
+                    </footer>
+                  </div>
               </div>
 
               <aside class="panel-shell avz-info-panel" id="traceInfoPanel" hidden aria-label="Trace visual reading guide">
@@ -692,7 +737,7 @@
   <script src="../vendor/pto-design-system/patterns/hardware-architecture-viewport/pattern.js?v=20260703-950-standard-v1"></script>
   <script src="../../pto-design-system/patterns/tensor-volume-canvas/pattern.js?v=20260730-load-data-v1"></script>
   <script src="../../pto-design-system/patterns/matrix-canvas/pattern.js?v=20260731-bounded-neutral-v1"></script>
-  <script src="../../pto-design-system/patterns/tensor-title/pattern.js?v=20260806-tensor-data-dump-v10"></script>
-  <script src="src/app.js?v=20260806-tensor-data-dump-v10"></script>
+  <script src="../../pto-design-system/patterns/tensor-title/pattern.js?v=20260807-tj-v8"></script>
+  <script src="src/app.js?v=20260807-tj-v8"></script>
 </body>
 </html>
