@@ -298,6 +298,10 @@
     const plotW = W - L - RGT;
     const x = (t) => L + ((t - t0) / span) * plotW;
     const ann = (snap.annotations || []).filter((a) => a.type === 'range' && a.startTime != null);
+    /* 主线：红色括号标出的区间是这张图要读者先看懂的关系，区间外的任务只作背景
+       参考——降低不透明度让主线从一整排同权重的色块里跳出来，而不是靠读者自己
+       去逐条对时间戳（白皮书"复杂架构插图"方法论里"必须有主线"的画法）。 */
+    const hi = ann[0] || null;
     const axisY = TOP + lanes.length * (LH + GAP) - GAP + 16;
     const annY = axisY + 18;
     const H = annY + (ann.length ? 30 + Math.ceil((ann[0].label || '').length / 78) * 11 : 6);
@@ -312,7 +316,9 @@
         const dur = fmtUs(t.execEnd - t.execStart);
         const zh = SEM_ZH[t.semanticLabel] || t.semanticLabel || '';
         const txt = w >= 122 ? `${zh} ${dur}` : w >= 50 ? dur : '';
-        return `<g><rect x="${x0.toFixed(1)}" y="${y}" width="${w.toFixed(1)}" height="${LH}" rx="2" fill="${c}"/>` +
+        const inMain = !hi || (t.execEnd > hi.startTime && t.execStart < hi.endTime);
+        const stroke = inMain && hi ? ' stroke="#1c1f26" stroke-width="0.6"' : '';
+        return `<g opacity="${inMain ? 1 : 0.32}"><rect x="${x0.toFixed(1)}" y="${y}" width="${w.toFixed(1)}" height="${LH}" rx="2" fill="${c}"${stroke}/>` +
           (txt ? `<text x="${(x0 + w / 2).toFixed(1)}" y="${y + LH / 2 + 3.6}" text-anchor="middle" font-size="9.5" fill="#fff" font-weight="600">${esc(txt)}</text>` : '') + '</g>';
       }).join('');
       return `<g><text x="0" y="${y + (parts.length > 1 ? 11 : LH / 2 + 3)}" font-size="8.6" fill="#4a5160">${label}</text>${bars}</g>`;
@@ -340,7 +346,7 @@
     return `<svg viewBox="0 0 ${W} ${H}" width="100%" role="img" aria-label="泳道快照">
       <line x1="${L}" y1="${axisY - 6}" x2="${W - RGT}" y2="${axisY - 6}" stroke="#d8dce3"/>
       ${laneSvg}${ticks}${annSvg}
-    </svg><div class="rp-stack-legend">${legend}</div>`;
+    </svg><div class="rp-stack-legend">${legend}</div>${hi ? '<p class="rp-figcap">区间外任务已降低对比度，仅作时间上下文参考。</p>' : ''}`;
   }
 
   /** 各 rank 的 step 构成横条 + 首次进入通信时刻标记 */
@@ -432,10 +438,14 @@
     const bd = r.breakdown;
     // 分项不足 3 维出不了雷达，此时整块（含图注）不出，不留空图占位
     const radar = svgRadar(r.phs || {});
+    // 头号杠杆：全部行动里预计收益最大的单一动作。借白皮书 callout 的做法——只放
+    // 一件事、一句话，和下方 rp-verdicts 那三张说明卡分工："记住哪一件事" vs "为什么"。
+    const topAction = (r.actions || []).filter((a) => a.benefitNum != null).sort((a, b) => b.benefitNum - a.benefitNum)[0];
     page('summary', '执行摘要', `
       <p class="rp-kicker">执行摘要</p>
       <h2 class="rp-h2">${esc(clamp(r.summary?.conclusion, 96))}</h2>
       <p class="rp-lead">健康度 ${r.phs?.current} → 预估 ${r.phs?.estimated}；本报告共列出 ${(r.issues || []).length} 个问题、${(r.actions || []).length} 项行动，按预计收益排序。</p>
+      ${topAction ? `<div class="rp-callout rp-block"><b>头号杠杆：</b>优先修复 ${esc(topAction.id)} ${esc(clamp(topAction.problem, 60))}，预计单步耗时最多降低 ${esc(topAction.benefit)}——本报告收益最大的单一动作。</div>` : ''}
       <div class="rp-grid2 rp-block" style="align-items:start;margin-bottom:6mm">
         <div>${gaugeBox()}<p class="rp-figcap">环上小段按等级色渐变：实心段为当前健康度（指针所指），半透明段为落实行动清单后的可增益区间，外侧箭头指向预估位置。与工具形态同一份仪表盘。</p></div>
         <div>${radar ? `${radar}<p class="rp-figcap">各分项 0–100，实线为当前、虚线为优化后预估；某维度未给预估时虚线与实线在该轴重合。</p>` : ''}</div>
