@@ -2156,19 +2156,26 @@ function renderBreakdown(r) {
   zone.hidden = false;
 
   const total = bd.totalMs || bd.items.reduce((sum, it) => sum + it.ms, 0);
+  // 图例放柱状条上面、数字放大成小型指标块（标签+色点在上，大号数值在下），
+  // 视觉分量接近结果层/结构层的指标卡片，构成层卡片不再显得比上下两层矮一截；
+  // 柱状条退到图例下面做「总览确认」用，不再是这块卡片里最抢眼的元素。
   stack.innerHTML =
+    '<div class="ovm-stack__legend">' +
+      bd.items.map((it) => {
+        const pct = it.pct != null ? it.pct : (total > 0 ? (it.ms / total) * 100 : 0);
+        const d = fmtDuration(it.ms);
+        const color = BREAKDOWN_COLOR[it.key] || BREAKDOWN_COLOR.other;
+        return '<span class="ovm-stack__item">' +
+          `<span class="ovm-stack__item-label"><i style="background:${color}"></i>${escapeHtml(it.label)}</span>` +
+          `<span class="ovm-stack__item-val">${d ? d.value : '—'}<small>${d ? d.unit : ''}</small><span class="ovm-stack__item-pct">${pct.toFixed(1)}%</span></span>` +
+        '</span>';
+      }).join('') +
+    '</div>' +
     '<div class="ovm-stack__bar">' +
       bd.items.map((it) => {
         const pct = it.pct != null ? it.pct : (total > 0 ? (it.ms / total) * 100 : 0);
         const d = fmtDuration(it.ms);
         return `<span class="ovm-stack__seg" style="width:${pct.toFixed(2)}%;background:${BREAKDOWN_COLOR[it.key] || BREAKDOWN_COLOR.other}" title="${escapeHtml(it.label)} ${d ? d.value + ' ' + d.unit : ''} · ${pct.toFixed(1)}%"></span>`;
-      }).join('') +
-    '</div>' +
-    '<div class="ovm-stack__legend">' +
-      bd.items.map((it) => {
-        const pct = it.pct != null ? it.pct : (total > 0 ? (it.ms / total) * 100 : 0);
-        const d = fmtDuration(it.ms);
-        return `<span><i style="background:${BREAKDOWN_COLOR[it.key] || BREAKDOWN_COLOR.other}"></i>${escapeHtml(it.label)} <b>${d ? d.value + ' ' + d.unit : '—'}</b><small>${pct.toFixed(1)}%</small></span>`;
       }).join('') +
     '</div>';
 
@@ -2182,7 +2189,8 @@ function renderBreakdown(r) {
         note.textContent = `合计 ${fmtDuration(total).value} ${fmtDuration(total).unit}，与单步耗时偏差 ${devPct.toFixed(1)}%，未闭合`;
         note.classList.add('is-warn');
       } else {
-        note.textContent = `合计 ${fmtDuration(total).value} ${fmtDuration(total).unit}，与单步耗时一致`;
+        // 闭合是预期状态，不用专门报一句"一致"——只在真出问题（未闭合）时才提示
+        note.textContent = '';
         note.classList.remove('is-warn');
       }
     } else {

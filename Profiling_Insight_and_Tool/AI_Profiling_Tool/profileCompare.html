@@ -2779,6 +2779,39 @@ const OPERATOR_TASK_COLORMAP = window.PtoSwimlaneTaskPattern.createTaskColormap(
   },
 });
 
+/* ── 任务条标签一律白字：本页不跟随 pattern 的自动对比度 ──
+   设计系统的 swimlane-task pattern 自 submodule 21b982f 起，按底色相对亮度自动在
+   白字与深字之间选一个（patterns/swimlane-task/pattern.js 的 readableTextColor），
+   于是上面 labelColors 里偏亮的那几档（FFN-Dn #86C541、KV-Upd #C9A24B、MTE #EAB308…）
+   标签会翻成深字。本页一排泳道里深浅色任务条是混排的，字色跟着底色翻会让整片读起来发花；
+   「任务条一律白字」是这个 demo 已经成立的视觉约定，故在页面侧覆盖回来。
+
+   覆盖方式：drawTaskBar 没有暴露字色选项，而 readableTextColor 是模块内部绑定，
+   改它导出的那一份影响不到内部调用。所以退一步，在 2D 上下文上装一个 fillStyle 过滤器
+   —— pattern 只有画标签时才会用到那个深字色字面量，命中就换成白字，其余取值原样透传，
+   这样既不动 submodule，也不必逐个改调用点。 */
+const PATTERN_DARK_TEXT = 'rgba(15,23,42,0.94)';   // = pattern DEFAULTS.darkTextColor
+const TASK_LABEL_WHITE = 'rgba(255,255,255,0.92)'; // = pattern DEFAULTS.textColor
+function forceWhiteTaskLabels(ctx) {
+  if (!ctx || ctx.__ptoWhiteTaskLabels) return ctx;
+  const desc = Object.getOwnPropertyDescriptor(Object.getPrototypeOf(ctx), 'fillStyle');
+  if (!desc || !desc.set) return ctx;               // 环境不认这个访问器就原样放行，不硬失败
+  Object.defineProperty(ctx, 'fillStyle', {
+    configurable: true,
+    get() { return desc.get.call(this); },
+    set(value) { desc.set.call(this, value === PATTERN_DARK_TEXT ? TASK_LABEL_WHITE : value); },
+  });
+  ctx.__ptoWhiteTaskLabels = true;
+  return ctx;
+}
+(function patchTaskBarLabels() {
+  const P = window.PtoSwimlaneTaskPattern;
+  if (!P || P.__ptoWhiteLabelPatched) return;
+  const draw = P.drawTaskBar;
+  P.drawTaskBar = function (ctx, options) { return draw.call(this, forceWhiteTaskLabels(ctx), options); };
+  P.__ptoWhiteLabelPatched = true;
+}());
+
 /* ============================================================
    6. 渲染基础
    ============================================================ */

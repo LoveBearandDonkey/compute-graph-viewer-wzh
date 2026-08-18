@@ -5,6 +5,74 @@
 
 ---
 
+## 2026-08-18 — index_v3 显存页签：微调点阵画布 padding/横幅 margin、超出量文字改纯黑字、点阵减弱
+
+- `pto-hbm-snapshot__plots` 顶部 padding 48→38px；「故障分析」横幅上下各加 4px margin（`margin-bottom:10px` → `margin:4px 0 14px`，原来没有 margin-top）。
+- 上一版把「超出 0.2 GB」做成了黑底白字的小标签——理解反了，改回文字本身用黑色（`color:#000`），不加底色块，直接叠在红色进度条上。
+- 点阵背景强度从 16% 调回 12%。
+
+## 2026-08-18 — index_v3 显存页签：故障指标 step 降字号、补齐梯度色块、超出量加黑底签、消除滚动条根因、点阵加密
+
+- `hbm-memory-snapshot/pattern.js`：`fact()` 加了第 4 个可选参数 `aux`，「故障Rank/step」卡片的 `/ step 12000` 部分现在用 `pto-hbm-snapshot__fact-aux`（12px、次要色）渲染，和「最大连续空闲块」卡片里 `/ 空闲 1.8 GB` 的降字号处理手法一致。
+- 数据缺口：图例列了「梯度」但 `lifetimes` 里一直没有真正 `kind:"gradients"` 的分配块，导致整卡地址图永远不出现绿色——`data/openpangu-2.0-flash.memory-snapshot.json` 补了一条 `stage3.gradients`（8.1GB，与 `composition` 里梯度占比一致），塞进 32.2–40.3GB 的空闲区间。
+- 「超出 X GB」文字从纯白字改成套一层黑色半透明底签（`pto-hbm-snapshot__request-overflow-label`，`rgba(0,0,0,.6)` + 圆角），不再依赖 text-shadow 硬保对比度。
+- 滚动条问题这几轮一直靠给 `#memoryReuseViewer`/`.memory-analysis__lifecycle` 手动加大固定像素高度来压，属于头痛医头——这次从根上改：`.pto-hbm-snapshot` 从 `height:100%` 改成 `height:auto`（保留 `min-height:480px` 兜底），grid 行也从 `auto minmax(0,1fr)` 改成 `auto auto`，让组件按内容自然撑高；`#memoryReuseViewer`/`.memory-analysis__lifecycle` 相应从写死的 720/800px 改回 `min-height:480/560px` 的下限值，`pto-hbm-snapshot__plots` 的 `overflow:auto` 因为不再有比内容矮的固定框而失去触发条件。
+- 点阵背景加密加强：`22px→16px` 网格、`8%→16%` 前景色混合浓度。
+
+## 2026-08-18 — index_v3 显存页签：图例挪到点阵画布底部、超出量红色对齐故障指标、显存曲线卡片小屏加责任间距
+
+- `hbm-memory-snapshot/pattern.js`：`pto-hbm-snapshot__legend`（激活/参数/梯度/优化器/临时空间等色标）从「故障分析」横幅下方移到整个 plots 区块（带点阵背景的画布）末尾，紧跟在待分配进度条之后；`pattern.css` 给它补了 `margin-top:16px` 分隔上方内容。
+- 待分配条的「超出 X GB」红色底色原来是 `color-mix(danger 68%, surface-2)` 的淡化混合色，和「故障Rank/step」卡片里 `rank 17 / step 12000` 的纯 `var(--danger)` 文字对不上；改成直接用 `var(--danger)` 纯色（去掉了因此变得多余的同色 `border-left`）。核对过显存曲线画布（`memory-analysis.js` `drawTrend`）的红色本来就是从同一个 `--danger` 变量读的，不需要改。
+- `.memory-analysis__grid`（显存曲线 + 峰值构成）原来固定 `2fr 1fr` 两栏、没有小屏回退，窄屏下两块被挤得很扁，紧贴着下面的「碎片分布与生命周期」面板，看起来像没留间距；加了 `@media (max-width:860px)` 让它退化成单列，把两块显存曲线卡片和下面的碎片分布卡片正常隔开。
+
+## 2026-08-18 — index_v3 显存页签：故障分析横幅挪到标题下方、指标卡片间留白、局部图加点阵背景
+
+- `hbm-memory-snapshot/pattern.js`：把「故障分析」横幅（原 `pto-hbm-snapshot__verdict`）从顶部独立整行移到「rank 17 内存分配分析」标题正下方，视觉上先看标题再看结论；对应 `pattern.css` 把它从全宽通栏样式（`border-bottom`）改成自带圆角、边框的独立卡片（`border-radius:var(--radius-md)` + `margin-bottom:10px`），网格行数跟着从 3 行收成 2 行（`grid-template-rows: auto minmax(0,1fr)`）。
+- `pto-hbm-snapshot__evidence` 指标卡片区去掉「1px 缝隙露出背景色当分隔线」的老写法，改成真实 `gap:8px`，每张卡片补回 `border-radius:var(--radius-lg)`，视觉上和总览页 `.ovm-card` 网格一致。
+- `pto-hbm-snapshot__plots` 顶部内边距从 14px 提到 48px（给横幅+标题留呼吸空间），并加了一层弱点阵背景（`radial-gradient(circle, color-mix(...) 8%) `+ 22px 网格，沿用设计系统 `hardware-architecture-viewport` 的点阵写法，透明度压到很淡）。
+
+## 2026-08-18 — index_v3 显存页签：碎片分布面板加高消除滚动条、指标卡片间距修正、显存曲线补 step 横轴、峰值构成配色对齐 HBM 快照
+
+- `.memory-analysis__lifecycle`/`#memoryReuseViewer` 高度从 600/540px 提到 800/720px，容纳加高后的局部放大区、碎片条、待分配条内容，避免 `pto-hbm-snapshot__plots` 内部再出现纵向滚动条。
+- `memory-analysis__summary`/`pto-hbm-snapshot__fact` 指标卡片不再靠 `min-height:132px` + 垂直居中撑起来（那样label与数字间距还是只有 3px/`--space-1`，显矮）；改成按内容自然高度 + `padding:15px 16px 14px`（沿用总览页 `.ovm-card` 的内边距量级）+ `gap:8px` 撑开 key/value 间距，卡片不再显得比实际内容空太多。
+- 颜色审计：红色/危险态统一走 `var(--danger)`（映射 `--ark-red-500`），验证合规；HBM 显存种类色（activation/parameters/gradients/optimizer/workspace）属于设计系统允许的“数据编码”例外（categorical data-viz exemption），但发现峰值构成图（`memory-analysis.js` canvas 手绘）用的是另一套相近但不同的 hex，同一页同一批类目两处颜色对不上——已改成与 `hbm-memory-snapshot/pattern.css` 的 `--hbm-*` 完全一致的 5 个色值；顺手删掉未被引用的 `--hbm-danger` 变量。
+- `memory-analysis.js` `drawTrend()` 补上 step 横轴刻度标签（原来只画了 GB 纵轴网格线，横轴留白），过近的刻度（12000 与 12003）按像素间距去重避免重叠。
+
+## 2026-08-18 — index_v3 显存页签：卡片对标总览页高度、局部放大区加高、清理跳转按钮
+
+- `.memory-analysis__summary > div` 与 `pto-hbm-snapshot__fact` 对标总览页 `.ovm-card` 的尺寸（`min-height:132px; padding:15px 16px 14px`），内容垂直居中，不再显矮。
+- 「待分配 0.5 GB」文案挪到进度条上方（原来在下方）。
+- `zoom-bridge` 连接曲线（SVG path）、`fragment-map`、`request-scale` 进度条高度整体翻倍（90→180、42→84），配合放大后的局部视图看得更清楚；SVG viewBox 与 path 控制点坐标同步换算。
+- 删除显存页签底部「在 Timeline 查看分配/释放」「定位 TransformerLayer.forward」两个按钮及 `memory-analysis.js` 里对应的点击绑定（`openTimeline`/`openSource` 函数本身仍被详情面板内的 Timeline/源码按钮复用，未删）。
+
+## 2026-08-18 — index_v3 显存页签：碎片标注合并进色块、版心加宽、辅助数字降字号
+
+- `hbm-memory-snapshot/pattern.js`：删掉「最大空洞只有 0.3 GB」这行独立说明（`pto-hbm-snapshot__fragment-caption`），改成直接在最大空闲碎片色块内标「0.3G（最大连续空闲）」；整卡地址图标题从「rank 17 · 整卡 64 GB 地址空间与关键分配」精简为「rank 17 内存分配分析」。
+- `.memory-analysis` 版心 `max-width` 从 1280px 改成 1680px。
+- 「最大连续空闲块」指标卡片里「/ 空闲 1.8 GB」是辅助说明，拆成 `memory-analysis__aux` 小字号 span（12px/400），不再跟主数字一样 30px；`memory-analysis.js` 对应改用 `innerHTML`。
+
+## 2026-08-18 — index_v3 显存页签：详情面板可关闭、版心限宽、指标数字放大
+
+- `hbm-memory-snapshot/pattern.js`：默认不选中任何内存块（`selected` 默认 `null`），详情面板 `pto-hbm-snapshot__detail` 关闭时不占布局空间（`.pto-hbm-snapshot__body` 无 `has-detail` 时只有一列，plots 占满宽度）；点击色块才展开详情列并选中，详情面板新增关闭按钮可收起、回到未选中态。`memory-analysis.js` 里原先给的默认 `initialSelectedId:"frag-router-indices"` 一并去掉。
+- 删除整卡地址图标题旁「step 12000 快照 · 斜纹底色=其他已占用 · 彩色色块=关键分配 · 纯灰=真实空闲段」这行提示。
+- `.memory-analysis` 版心加 `max-width:1280px` 居中，避免宽屏下被拉得过散。
+- `pto-hbm-snapshot__fact strong`（故障Rank/step 等指标卡片大数字）与 `.memory-analysis__summary strong`（峰值/最大连续空闲块等）字号统一改成 30px。
+
+## 2026-08-18 — index_v3 显存页签：OOM 快照卡片改版（rank/step 指标化、超出量内嵌、故障分析合并文案）
+
+- `hbm-memory-snapshot/pattern.js`：去掉顶部 `pto-hbm-snapshot__context`（模型名/rank/step/说明段整块），改用 evidence 卡片里的「故障Rank/step」指标承载 rank+step 信息；原「HBM 峰值」卡片一并替换。
+- 「为什么 OOM？」横幅改标题为「故障分析」，并把碎片说明里「总空闲 X GB 分散在 N 个不连续地址段，不能拼接成 Y GB」这句从下方的空洞标注区合并进这条横幅。
+- 「待分配」进度条：高度从 14px 提到 42px，与下方 rank 局部放大条（`fragment-map`）对齐；「超出 X GB」文案从条外的独立文字挪进条内的红色超出段，删掉「（与最大空洞左对齐）」。
+- 内存详情默认高亮项从 `expert-dispatch` 改为 `frag-router-indices`（对应 `layer38.router.topk_indices`），`pattern.js` 默认值与 `memory-analysis.js` 的 `initialSelectedId` 一并改。
+- `index_v3.html` 显存 tab 删除「问题2 · rank 17 显存 OOM：查看 step 12000 的单卡快照…」这句说明段。
+- 相应清理 `pattern.css` 里 `.pto-hbm-snapshot__context` 相关规则与网格行定义。
+
+## 2026-08-18 — profileCompare：任务条标签改回一律白字（不跟随 pattern 的自动对比度）
+
+- 现象：泳道图里偏亮底色的任务条（FFN-Dn #86C541、KV-Upd #C9A24B、MTE #EAB308…）标签从白字变成了深字。根因不在本页——设计系统 submodule 提交 `21b982f` 把 `patterns/swimlane-task/pattern.js` 的标签字色从固定 `DEFAULTS.textColor` 改成了 `readableTextColor(segment.fill)`（按 WCAG 相对亮度在白/深字之间自动选），随主仓库 `c4888cf` 的 submodule bump 进来。
+- 处理：本 demo 一排泳道里深浅色任务条混排，字色跟着底色翻会让整片读起来发花，「任务条一律白字」是这个页面已成立的视觉约定，故在页面侧覆盖回来，不动 submodule。
+- 覆盖方式：`drawTaskBar` 没有暴露字色选项，`readableTextColor` 又是模块内部绑定（改导出的那份影响不到内部调用），所以给 2D 上下文装一个 `fillStyle` 过滤器（`forceWhiteTaskLabels`），命中 pattern 的深字色字面量 `rgba(15,23,42,0.94)` 就换成 `rgba(255,255,255,0.92)`，其余原样透传；再把 `PtoSwimlaneTaskPattern.drawTaskBar` 包一层，三个调用点都不必改。
+
 ## 2026-08-18 — profileCompare：右上角「差异健康度」改为「性能评估」（雷达图 + PHS 评分轴）
 
 - 去掉差异健康度评级：对比两个任务的业务意图不唯一——有的改动就是要把差异拉大（提速），有的只求别影响性能（差异越小越好），把「差异」折成一个健康分等于替用户下了一个工具不知道方向的判断。评级徽标（B+）与结论标题（无显著变化 / 整体变快 x%）随之删除，`abHealth` / `rankHealth` / `diffHealthCardHtml` / `DIFF_GRADE_*` / `HEALTH_TIP_*` 一并移除。

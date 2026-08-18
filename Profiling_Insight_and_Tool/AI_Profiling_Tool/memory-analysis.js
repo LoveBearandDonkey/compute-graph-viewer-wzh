@@ -33,6 +33,10 @@
     }
     c.strokeStyle=css("--border-subtle","#ddd");c.fillStyle=css("--foreground-secondary","#666");c.font="11px sans-serif";c.lineWidth=1;
     [52,56,60,64].forEach(function(v){c.beginPath();c.moveTo(p.l,y(v));c.lineTo(w-p.r,y(v));c.stroke();c.fillText(v+"GB",3,y(v)+4);});
+    c.textAlign="center";
+    var lastLabelX=-Infinity;
+    rows.forEach(function(r){var px=x(r.step);if(px-lastLabelX<32)return;lastLabelX=px;c.fillText("step "+r.step,px,h-p.b+16);});
+    c.textAlign="start";
     c.save();c.setLineDash([4,4]);c.strokeStyle=warning;c.beginPath();c.moveTo(p.l,y(threshold));c.lineTo(w-p.r,y(threshold));c.stroke();c.restore();
     c.fillStyle=warning;c.font="10px sans-serif";c.fillText("95% 阈值 · "+threshold.toFixed(1)+" GB",p.l+5,y(threshold)-5);
     c.save();c.globalAlpha=.13;c.fillStyle=primary;areaPath();c.fill();c.restore();
@@ -45,7 +49,7 @@
   }
   function drawComposition() {
     var g=canvas("memoryCompositionChart"); if(!g||!data)return;
-    var c=g.c,w=g.w,h=g.h, y=15, colors=["#d97706","#2563eb","#16a34a","#7c3aed","#64748b"];
+    var c=g.c,w=g.w,h=g.h, y=15, colors=["#d97706","#3478d4","#159c58","#8b5cc7","#738095"];
     data.composition.forEach(function(r,i){var bw=(w-120)*r.gb/36.2;c.fillStyle=colors[i];c.fillRect(105,y,bw,22);c.fillStyle=css("--foreground","#111");c.font="11px sans-serif";c.fillText(r.label,4,y+15);c.fillText(r.gb+" GB",Math.min(w-42,110+bw),y+15);y+=39;});
   }
   function openTimeline(x) {
@@ -63,12 +67,12 @@
     if(!data)return;
     var s=data.summary;
     document.getElementById("memoryPeak").textContent=s.peakGB+"/"+s.capacityGB+" GB";
-    document.getElementById("memoryLargestFree").textContent=s.largestFreeBlockGB+" GB / 空闲 "+s.freeGB+" GB";
+    document.getElementById("memoryLargestFree").innerHTML=s.largestFreeBlockGB+' GB <span class="memory-analysis__aux">/ 空闲 '+s.freeGB+" GB</span>";
     document.getElementById("memoryFragRatio").textContent=s.fragmentationRatio+"%";
     document.getElementById("memoryAllocRatio").textContent=s.allocApiRatio+"% · "+s.allocApiMs+" ms";
     drawTrend(); drawComposition();
     if(!viewer&&window.PtoHbmMemorySnapshot)viewer=window.PtoHbmMemorySnapshot.render(document.getElementById("memoryReuseViewer"),data,{
-      initialSelectedId:"expert-dispatch",onOpenTimeline:openTimeline,onOpenSource:openSource
+      onOpenTimeline:openTimeline,onOpenSource:openSource
     });
   }
   fetch("data/openpangu-2.0-flash.memory-snapshot.json").then(function(r){return r.json();}).then(function(d){data=d;window.OPENPANGU_MEMORY_SNAPSHOT=d;render();});
@@ -78,9 +82,5 @@
     if(tab)openTab(tab);
     if(issue==="mem-oom") setTimeout(function(){openTab("memory");render();},0);
     document.getElementById("memoryTabBtn")?.addEventListener("click",function(){setTimeout(render,0);});
-    document.getElementById("memoryTimelineBtn")?.addEventListener("click",function(){
-      openTimeline(data&&data.lifetimes.find(function(x){return x.id==="expert-dispatch";}));
-    });
-    document.getElementById("memoryCodeBtn")?.addEventListener("click",function(){openSource(data&&data.lifetimes.find(function(x){return x.id==="expert-dispatch";}));});
   });
 }());
