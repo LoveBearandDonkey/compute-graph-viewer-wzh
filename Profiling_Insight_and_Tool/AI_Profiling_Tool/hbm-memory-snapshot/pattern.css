@@ -4,6 +4,12 @@
   --hbm-gradients: #159c58;
   --hbm-optimizer: #8b5cc7;
   --hbm-workspace: #738095;
+  /* 「其他已占用」：原先是 135° 斜纹，看上去像"这里没东西"——正好读反了，它其实
+     是整条总览里占比最大的一块已占用。改成半透明黄：和「空闲碎片」那个中性灰
+     （--surface-3）拉开的是**色相**而不只是明度，眯着眼也分得出哪块是占着的。
+     色相取 49° 而不是激活那档的 33°，免得和 --hbm-activation 的橙撞车；32% 透明度
+     让它退到底色的位置，不跟上面五个类别的实心块抢眼。 */
+  --hbm-other: color-mix(in srgb, #e6c229 32%, transparent);
   height: auto;
   min-height: 480px;
   display: grid;
@@ -32,18 +38,16 @@
 .pto-hbm-snapshot__verdict b { color:var(--danger); }
 .pto-hbm-snapshot__body { min-height:0; display:grid; grid-template-columns:minmax(0,1fr); }
 .pto-hbm-snapshot__body.has-detail { grid-template-columns:minmax(0,1fr) 280px; }
-.pto-hbm-snapshot__plots {
-  min-width:0; overflow:auto; padding:24px 14px 14px;
-  background-image: radial-gradient(circle, color-mix(in srgb, var(--foreground) 12%, transparent) 1.2px, transparent 1.8px);
-  background-size: 16px 16px;
-}
+.pto-hbm-snapshot__plots { min-width:0; overflow:auto; padding:24px 14px 14px; }
 .pto-hbm-snapshot__section + .pto-hbm-snapshot__section { margin-top:18px; }
 .pto-hbm-snapshot__title { margin-bottom:8px; display:flex; align-items:center; justify-content:space-between; font-size:11px; font-weight:600; }
 .pto-hbm-snapshot__hint { color:var(--foreground-muted); font-weight:400; font-size:10px; }
 .pto-hbm-snapshot__address-wrap { position:relative; }
+/* 高度压到 31px（原 62）：这条总览只负责交代「放大的是整卡地址里的哪一段」，
+   重点在下面那幅立体图，它不该占掉同等的视觉分量。 */
 .pto-hbm-snapshot__address {
-  position:relative; height:62px; border-radius:var(--radius-md); overflow:hidden;
-  background:repeating-linear-gradient(135deg,var(--surface-2) 0,var(--surface-2) 5px,var(--surface-3) 5px,var(--surface-3) 7px);
+  position:relative; height:31px; border-radius:var(--radius-md); overflow:hidden;
+  background:var(--hbm-other);
   border:1px solid var(--border-default);
 }
 .pto-hbm-snapshot__zoom-source {
@@ -64,70 +68,66 @@
 .pto-hbm-snapshot__address-block[data-kind="workspace"],.pto-hbm-snapshot__address-block[data-kind="temp"] { background:var(--hbm-workspace); }
 .pto-hbm-snapshot__axis { display:flex; justify-content:space-between; margin-top:4px; color:var(--foreground-muted); font:10px var(--font-mono); }
 .pto-hbm-snapshot__address-axis { margin:7px 0 4px; }
-.pto-hbm-snapshot__legend { display:flex; flex-wrap:wrap; gap:10px; margin:16px 0 0; color:var(--foreground-secondary); font-size:10px; }
+/* 图例 + 放大引线共用的一块区域：引线绝对定位铺满它（从总览条下沿画到立体图上沿），
+   图例走正常流排在顶部并压在引线之上。min-height 给引线留出扇形的纵深。
+
+   图例与顶部的间距**必须写成这里的 padding-top，不能写成图例自己的 margin-top**：
+   本元素只有 position:relative，不构成 BFC，子元素的上外边距会直接穿透出去
+   （margin collapsing）把整个 region 连同贴在它身上的引线一起往下推，起笔点就
+   离开总览条下沿、放大关系断掉。padding 既挡住了塌陷，又不影响引线 —— 绝对定位
+   的包含块是 padding box，inset:0 量的是含 padding 在内的整块。 */
+.pto-hbm-snapshot__zoom-region {
+  position:relative; box-sizing:border-box; min-height:104px; padding-top:9px;
+}
+/* 紧跟总览条（见 pattern.js 的插入位置）：色卡要挨着第一次用到这些颜色的那幅图。
+   max-width 让它避开右侧 —— 引线的起笔点在 90% 附近，图例铺满整行就会压在上面。 */
+.pto-hbm-snapshot__legend {
+  position:relative; z-index:2; max-width:72%;
+  display:flex; flex-wrap:wrap; gap:10px; margin:0;
+  color:var(--foreground-secondary); font-size:10px;
+}
+.pto-hbm-snapshot__legend span { cursor:help; }
 .pto-hbm-snapshot__legend i { display:inline-block; width:7px; height:7px; margin-right:4px; border-radius:2px; vertical-align:1px; }
 .pto-hbm-snapshot__legend .is-gap { background:var(--surface-3); box-shadow:inset 0 0 0 1px var(--border-default); }
-.pto-hbm-snapshot__legend .is-other { background:repeating-linear-gradient(135deg,var(--surface-2) 0,var(--surface-2) 3px,var(--foreground-muted) 3px,var(--foreground-muted) 4px); }
+.pto-hbm-snapshot__legend .is-other { background:var(--hbm-other); }
+/* 铺满 __zoom-region：上沿贴着总览条、下沿贴着立体图外框，两条引线才连得起来。 */
 .pto-hbm-snapshot__zoom-bridge {
-  position:relative; height:120px; color:var(--foreground-secondary); overflow:hidden;
+  position:absolute; inset:0; z-index:0; color:var(--foreground-secondary); pointer-events:none;
 }
 .pto-hbm-snapshot__zoom-bridge svg { position:absolute; inset:0; width:100%; height:100%; overflow:visible; }
-.pto-hbm-snapshot__zoom-bridge path {
-  stroke:color-mix(in srgb,currentColor 16%,transparent); stroke-width:.3; vector-effect:non-scaling-stroke;
+/* 两条放大引线：连总览白框的左右边与下方立体图白框的左右边。preserveAspectRatio
+   是 none（x 走百分比、y 走 120 格），线宽必须靠 non-scaling-stroke 才不会被拉扁。 */
+.pto-hbm-snapshot__zoom-bridge line {
+  stroke:var(--foreground-secondary); stroke-width:1.5; vector-effect:non-scaling-stroke; opacity:.55;
 }
 .pto-hbm-snapshot__zoom-bridge > span {
   position:absolute; top:67%; left:66%; z-index:2; transform:translate(-50%,-50%);
   color:var(--foreground); font:600 14px var(--font-mono); white-space:nowrap;
   text-shadow:0 1px 3px var(--surface-1);
 }
-.pto-hbm-snapshot__request-attempt {
-  display:grid; gap:5px; margin:4px 0 32px; font-size:10px;
+/* ── 碎片区立体容器（斜投影侧视图）──
+   外框与 __zoom-bridge 两条直线的落点（66.667% 居中）严格对齐：上面总览里那个
+   同款白框被放大成的，就是这一框。两个框同色同粗，放大关系才连得起来。 */
+.pto-hbm-snapshot__iso {
+  width:66.6667%; box-sizing:border-box; margin:0 auto 26px; padding:12px 10px 8px;
+  /* 不加圆角：两条放大引线要落在这个框的左上角与右上角，圆角会把角切掉，
+     线就悬在框外接不上了。 */
+  border:2px solid var(--foreground-secondary);
+  background:var(--surface-2);
 }
-.pto-hbm-snapshot__request-copy {
-  width:66.6667%; margin-inline:auto;
-  display:flex; align-items:center; gap:8px; color:var(--foreground-secondary);
+/* viewBox 由内容包围盒反推、height:auto 跟着走，面板多宽都不用重算 ——
+   与 config-relation-capacity.js 的 .cro-capacity__scene 同一套缩放语法。 */
+.pto-hbm-snapshot__iso-scene { width:100%; }
+.pto-hbm-snapshot__iso-scene svg { display:block; width:100%; height:auto; overflow:visible; }
+.pto-hbm-snapshot__iso-block { cursor:pointer; }
+.pto-hbm-snapshot__iso-block:hover polygon,
+.pto-hbm-snapshot__iso-block.is-selected polygon {
+  stroke:var(--foreground); stroke-width:.14; stroke-dasharray:none;
 }
-.pto-hbm-snapshot__request-scale { width:66.6667%; min-width:0; margin-inline:auto; }
-.pto-hbm-snapshot__request-scale > i {
-  display:flex; min-width:44px; height:84px; border:1px solid var(--border-strong); box-sizing:border-box;
-  border-radius:3px; overflow:hidden; background:var(--surface-2);
-}
-.pto-hbm-snapshot__request-scale em,
-.pto-hbm-snapshot__request-scale strong { display:block; height:100%; box-sizing:border-box; }
-.pto-hbm-snapshot__request-scale em {
-  background:var(--surface-3); border-radius:3px 0 0 3px;
-}
-.pto-hbm-snapshot__request-scale strong {
-  display:flex; align-items:center; justify-content:center; overflow:hidden;
-  background:var(--danger);
-  border-radius:0 3px 3px 0;
-  color:#000; font:600 9px var(--font-mono); white-space:nowrap;
-}
-.pto-hbm-snapshot__fragment-map {
-  display:flex; align-items:stretch; width:66.6667%; height:84px; margin-inline:auto; overflow:hidden; border-radius:var(--radius-md);
-  background:var(--surface-2); border:1px solid var(--border-default);
-}
-.pto-hbm-snapshot__fragment-map > span { position:relative; min-width:2px; box-sizing:border-box; }
-.pto-hbm-snapshot__fragment-map .is-free {
-  display:grid; place-items:center; color:var(--foreground-secondary);
-  background:var(--surface-3);
-  border-inline:1px solid var(--border-default);
-}
-.pto-hbm-snapshot__fragment-map .is-free b { font:600 9px var(--font-mono); text-align:center; line-height:1.3; }
-.pto-hbm-snapshot__fragment-map .is-free.is-largest {
-  color:var(--foreground); outline:1px solid var(--foreground-secondary); outline-offset:-1px; z-index:1;
-}
-.pto-hbm-snapshot__fragment-map .is-largest b { font-size:8px; padding:0 2px; }
-.pto-hbm-snapshot__fragment-map .is-blocker {
-  border:0; padding:0; cursor:pointer;
-  box-shadow:inset 1px 0 var(--surface-1),inset -1px 0 var(--surface-1);
-}
-.pto-hbm-snapshot__fragment-map .is-blocker[data-kind="activation"] { background:var(--hbm-activation); }
-.pto-hbm-snapshot__fragment-map .is-blocker[data-kind="workspace"] { background:var(--hbm-workspace); }
-.pto-hbm-snapshot__fragment-map .is-blocker:hover,
-.pto-hbm-snapshot__fragment-map .is-blocker.is-selected {
-  outline:2px solid var(--foreground); outline-offset:-2px; z-index:2;
-}
+/* 待分配块与越界投影都不是"一次分配"，不可选中；但保留指针事件 —— 原生 <title>
+   靠它出提示。 */
+.pto-hbm-snapshot__iso-request,
+.pto-hbm-snapshot__iso-overflow { cursor:default; }
 .pto-hbm-snapshot__detail { display:none; min-width:0; padding:14px; border-left:1px solid var(--border-subtle); background:var(--surface-2); overflow:auto; }
 .pto-hbm-snapshot__body.has-detail .pto-hbm-snapshot__detail { display:block; }
 .pto-hbm-snapshot__detail-head { display:flex; align-items:flex-start; justify-content:space-between; gap:8px; }
