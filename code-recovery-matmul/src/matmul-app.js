@@ -37,6 +37,7 @@
     sourceRole: 'all',
     executionView: 'instructions',
     matmulCoreIndex: 0,
+    selectedTileIdx: 0,
     stepIndex: 0,
     frames: [],
     frameIndex: 0,
@@ -47,6 +48,7 @@
     loopExpanded: { l1: true, l0: true },
     instructionLoopExpanded: false,
     instructionIterationFocus: null,
+    instructionL0IterationFocus: null,
     instructionOperationFocus: null,
     detailTab: 'tensor',
     selectedTensorId: 'tensor:a',
@@ -58,9 +60,6 @@
     copyTensorId: null,
     copyMatrixControllers: { source: null, destination: null },
     copyTitleControllers: { source: null, destination: null },
-    hardwareViewport: null,
-    hardwareRouteOverlay: null,
-    hardwareInitialized: false
   };
 
   const CPP_KEYWORDS = new Set([
@@ -147,10 +146,8 @@
     const frame = state.frames[state.frameIndex] || { stepId: currentStep()?.id };
     if (!state.context || frame.tileIdx == null) return frame;
     const assignedTiles = coreTileSchedule(state.context, state.matmulCoreIndex);
-    // Playback frames are built from the default OT0 context. Once an AIC is
-    // selected, every tile-aware view must follow that core's first assigned
-    // output tile so Copy Inputs does not keep highlighting OT0.
-    const tileIdx = assignedTiles[0] ?? Math.min(state.context.outputTileNum - 1, state.matmulCoreIndex);
+    const selectedTile = assignedTiles.includes(state.selectedTileIdx) ? state.selectedTileIdx : assignedTiles[0];
+    const tileIdx = selectedTile ?? Math.min(state.context.outputTileNum - 1, state.matmulCoreIndex);
     const mTileIdx = Math.floor(tileIdx / state.context.nTileNum);
     const nTileIdx = tileIdx % state.context.nTileNum;
     return {
@@ -161,6 +158,18 @@
       curM: Math.min(state.context.baseM, state.context.M - mTileIdx * state.context.baseM),
       curN: Math.min(state.context.baseN, state.context.N - nTileIdx * state.context.baseN),
       aicIndex: state.matmulCoreIndex
+    };
+  }
+
+  function outputTileLabel(context, tileIdx) {
+    const mTileIdx = Math.floor(tileIdx / context.nTileNum);
+    const nTileIdx = tileIdx % context.nTileNum;
+    return {
+      tileIdx,
+      mTileIdx,
+      nTileIdx,
+      label: 'Tile ' + String(tileIdx).padStart(2, '0'),
+      coordinate: 'M' + mTileIdx + '/N' + nTileIdx
     };
   }
 
@@ -228,9 +237,6 @@
       if (stepIds.has(stepId)) frames.push({ stepId, ...frameContext });
     };
 
-    push('host-args');
-    push('host-launch');
-    push('kernel-tiling');
     const outputContext = { tileIdx, curM: context.curM, curN: context.curN };
     push('kernel-block-map', outputContext);
     for (let iter0 = 0; iter0 < l1Count; iter0 += 1) {
@@ -251,7 +257,6 @@
     }
     push('sync-m-fix', outputContext);
     push('l0c-to-gm', outputContext);
-    push('host-verify');
     return frames;
   }
 
@@ -1251,19 +1256,9 @@
     });
   }
 
-  function hardwareContract() {
-    return state.trace.hardwareParticipation;
-  }
-
-  function hardwareFocus() {
-    const contract = hardwareContract();
-    return contract.focusByStep[currentStep().id] || { units: [], routes: [], summary: 'No on-chip participation asserted.' };
-  }
-
   function currentInstructionState() {
     const step = currentStep();
     const frame = currentFrame();
-    const focus = hardwareFocus();
     const tensorId = state.trace.tensorFocusByStep[step.id] || state.selectedTensorId;
     const view = tensorView(tensorId);
     const flow = resolvedDataFlows().find((item) => item.stepId === step.id);
@@ -1274,105 +1269,12 @@
       tensorId,
       tensor: view,
       tensorState: tensorState(view),
-      flow,
-      hardware: focus
+      flow
     };
-  }
-
-  function focusedHardwareUnits() {
-    const contract = hardwareContract();
-    const active = new Set(hardwareFocus().units);
-    return contract.units.filter((unit) => active.has(unit.id));
-  }
-
-  function hardwareFrameSize() {
-    const graph = $('#hardwareArchitectureGraph');
-    const root = graph?.querySelector('.pto-mem950') || graph?.firstElementChild || graph;
-    if (!root) return { width: 1200, height: 820 };
-    const rect = root.getBoundingClientRect();
-    return {
-      width: Math.max(1, root.offsetWidth || root.scrollWidth || rect.width || 1200),
-      height: Math.max(1, root.offsetHeight || root.scrollHeight || rect.height || 820)
-    };
-  }
-
-  function applyHardwareFocus() {
-    if (!state.hardwareInitialized) return;
-    const helper = window.PtoMemoryArchitecturePattern;
-    const graph = $('#hardwareArchitectureGraph');
-    const contract = hardwareContract();
-    const focus = hardwareFocus();
-    const selectors = contract.units.filter((unit) => focus.units.includes(unit.id)).map((unit) => unit.selector);
-    helper?.setPathFocus?.(graph, contract.visualPreset, { selectors, routes: focus.routes });
-    state.hardwareRouteOverlay?.render?.();
-  }
-
-  function ensureHardwareViewport() {
-    if (state.hardwareInitialized) return;
-    const contract = hardwareContract();
-    const memoryHelper = window.PtoMemoryArchitecturePattern;
-    const viewportHelper = window.PtoHardwareArchitectureViewport;
-    const graph = $('#hardwareArchitectureGraph');
-    if (!memoryHelper?.renderArchitecture || !viewportHelper?.mount || !graph) return;
-    memoryHelper.renderArchitecture(graph, contract.visualPreset);
-    state.hardwareRouteOverlay = memoryHelper.createRouteOverlay(graph, contract.visualPreset);
-    state.hardwareRouteOverlay?.render?.();
-    state.hardwareViewport = viewportHelper.mount('#hardwareViewport', {
-      mode: 'inline',
-      viewport: '[data-hardware-stage]',
-      scaleEl: '[data-hardware-scale]',
-      inlineHost: '#hardwareArchitectureGraph',
-      detailToggle: '[data-hardware-detail]',
-      zoomOut: '[data-hardware-zoom-out]',
-      zoomIn: '[data-hardware-zoom-in]',
-      fit: '[data-hardware-fit]',
-      readout: '[data-hardware-readout]',
-      frameSize: hardwareFrameSize(),
-      scale: 0.25,
-      defaultScale: 0.25,
-      fitOnMount: true,
-      fitPaddingX: 20,
-      fitPaddingY: 20,
-      onScaleChange: () => state.hardwareRouteOverlay?.schedule?.(),
-      onPanChange: () => state.hardwareRouteOverlay?.schedule?.(),
-      onDetailChange: () => state.hardwareRouteOverlay?.schedule?.()
-    });
-    state.hardwareInitialized = true;
-    window.requestAnimationFrame(() => {
-      const size = hardwareFrameSize();
-      state.hardwareViewport?.setFrameSize(size.width, size.height);
-      state.hardwareViewport?.fit();
-      applyHardwareFocus();
-    });
-  }
-
-  function renderHardwareParticipation() {
-    ensureHardwareViewport();
-    applyHardwareFocus();
-  }
-
-  function renderDetailTabs() {
-    document.querySelectorAll('[data-detail-tab]').forEach((button) => {
-      const active = button.dataset.detailTab === state.detailTab;
-      button.classList.toggle('is-selected', active);
-      button.setAttribute('aria-selected', String(active));
-    });
-    document.querySelectorAll('[data-detail-view]').forEach((view) => {
-      view.hidden = view.dataset.detailView !== state.detailTab;
-    });
   }
 
   function selectDetailTab(tab) {
-    if (tab !== 'hardware') return;
-    state.detailTab = tab;
-    ensureHardwareViewport();
-    renderHardwareParticipation();
-    window.requestAnimationFrame(() => {
-      const size = hardwareFrameSize();
-      state.hardwareViewport?.setFrameSize(size.width, size.height);
-      state.hardwareViewport?.fit();
-      applyHardwareFocus();
-    });
+    if (tab === 'tensor') state.detailTab = tab;
   }
 
   function syncTensorFocusForStep() {
@@ -1398,7 +1300,7 @@
           to: instruction.flow.to,
           transformation: instruction.flow.transformation
         } : null,
-        hardwareUnits: [...instruction.hardware.units]
+        hardwareUnits: []
       }
     };
     if (frameRoot) {
@@ -1409,19 +1311,20 @@
     window.dispatchEvent(new CustomEvent('matmul:execution-state', { detail }));
   }
 
-  function instructionCardModel(stepIndex, title, flow, key, iteration = null, iterationRange = null, sourceStepIndexes = null) {
+  function instructionCardModel(stepIndex, title, flow, key, iteration = null, iterationRange = null, sourceStepIndexes = null, l0Iteration = null) {
     return {
       stepIndex,
       title,
       flow,
       key,
       iteration,
+      l0Iteration,
       iterationRange,
       sourceStepIndexes: sourceStepIndexes || [stepIndex],
     };
   }
 
-  function syncInstructionCard(eventType, stepIndex, iteration = null) {
+  function syncInstructionCard(eventType, stepIndex, iteration = null, l0Iteration = null) {
     const event = state.trace?.events?.find((item) => item.eventType === eventType);
     const operationKeys = {
       MTE1_MTE2: 'sync-mte1-mte2',
@@ -1439,18 +1342,27 @@
       producer + ' -> ' + consumer,
       operationKeys[eventType] || 'sync-' + eventType.toLowerCase(),
       iteration,
+      null,
+      null,
+      l0Iteration,
     );
   }
 
-  function instructionLoopCards(iteration) {
+  function instructionL1SetupCards(iteration) {
     return [
       syncInstructionCard('MTE1_MTE2', 4, iteration),
       instructionCardModel(4, 'Copy Inputs', 'GM -> L1', 'gm-to-l1', iteration),
       syncInstructionCard('MTE2_MTE1', 5, iteration),
-      syncInstructionCard('M_MTE1', 6, iteration),
-      instructionCardModel(6, 'Load Data A2 B2', 'L1 -> L0', 'load-a2-b2', iteration),
-      syncInstructionCard('MTE1_M', 6, iteration),
-      instructionCardModel(7, iteration === 0 ? 'Mmad Initialize' : 'Mmad Accumulate', iteration === 0 ? 'A2 x B2 -> CO1' : 'A2 x B2 + CO1', 'mmad-' + (iteration === 0 ? 'initialize' : 'accumulate'), iteration),
+    ];
+  }
+
+  function instructionL0Cards(iteration, l0Iteration) {
+    const initialize = iteration === 0 && l0Iteration === 0;
+    return [
+      syncInstructionCard('M_MTE1', 6, iteration, l0Iteration),
+      instructionCardModel(6, 'Load A2 / B2', 'L1 -> L0A / L0B', 'load-a2-b2', iteration, null, null, l0Iteration),
+      syncInstructionCard('MTE1_M', 6, iteration, l0Iteration),
+      instructionCardModel(7, initialize ? 'Mmad Initialize' : 'Mmad Accumulate', initialize ? 'A2 × B2 -> CO1' : 'A2 × B2 + CO1', initialize ? 'mmad-initialize' : 'mmad-accumulate', iteration, null, null, l0Iteration),
     ];
   }
 
@@ -1459,10 +1371,14 @@
     const selectedIteration = Number.isInteger(card.iteration)
       ? (!Number.isInteger(state.instructionIterationFocus) || card.iteration === state.instructionIterationFocus)
       : !Number.isInteger(state.instructionIterationFocus);
+    const selectedL0Iteration = Number.isInteger(card.l0Iteration)
+      ? (!Number.isInteger(state.instructionL0IterationFocus) || card.l0Iteration === state.instructionL0IterationFocus)
+      : !Number.isInteger(state.instructionL0IterationFocus);
     const selectedOperation = !state.instructionOperationFocus || state.instructionOperationFocus === card.key;
-    const selected = selectedStep && selectedIteration && selectedOperation;
+    const selected = selectedStep && selectedIteration && selectedL0Iteration && selectedOperation;
     return '<button class="avz-instruction-card' + (selected ? ' is-selected' : '') + '" type="button" data-step-index="' + card.stepIndex + '" data-instruction-operation="' + escapeHtml(card.key) + '"' +
       (Number.isInteger(card.iteration) ? ' data-instruction-iteration="' + card.iteration + '"' : '') +
+      (Number.isInteger(card.l0Iteration) ? ' data-instruction-l0-iteration="' + card.l0Iteration + '"' : '') +
       (card.iterationRange ? ' data-instruction-iteration-start="' + card.iterationRange[0] + '" data-instruction-iteration-end="' + card.iterationRange[1] + '"' : '') +
       (selected ? ' aria-current="step"' : '') + '>' +
       '<span class="avz-instruction-card__title">' + escapeHtml(card.title) + '</span>' +
@@ -1473,10 +1389,45 @@
     const hideLabel = options.hideLabel;
     const sourceStepIndexes = options.sourceStepIndexes || cards.flatMap((card) => card.sourceStepIndexes);
     const active = sourceStepIndexes.includes(state.stepIndex)
-      && (!Number.isInteger(options.iteration) || options.iteration === state.instructionIterationFocus);
+      && (!Number.isInteger(options.iteration) || options.iteration === state.instructionIterationFocus)
+      && (!Number.isInteger(options.l0Iteration) || options.l0Iteration === state.instructionL0IterationFocus);
+    const labelMarkup = Number.isInteger(options.iteration)
+      ? instructionIterationButton(options.l0Iteration == null ? 4 : 6, label, options.iteration, options.l0Iteration)
+      : '<span class="tag avz-iteration-tag">' + escapeHtml(label) + '</span>';
     return '<div class="avz-instruction-row' + (hideLabel ? ' is-label-hidden' : '') + (active ? ' is-active' : '') + '" role="group" aria-label="' + escapeHtml(label || 'K iterations') + '">' +
-      (hideLabel ? '' : '<div class="avz-instruction-row__label"><span class="tag avz-iteration-tag">' + escapeHtml(label) + '</span>' + (meta ? '<span class="avz-instruction-row__meta">' + escapeHtml(meta) + '</span>' : '') + '</div>') +
+      (hideLabel ? '' : '<div class="avz-instruction-row__label">' + labelMarkup + (meta ? '<span class="avz-instruction-row__meta">' + escapeHtml(meta) + '</span>' : '') + '</div>') +
       '<div class="avz-instruction-row__flow">' + cards.map(createMatmulInstructionCard).join('') + '</div></div>';
+  }
+
+  function instructionIterationButton(stepIndex, label, iteration, l0Iteration = null) {
+    const active = state.instructionIterationFocus === iteration
+      && (l0Iteration == null || state.instructionL0IterationFocus === l0Iteration)
+      && state.stepIndex === stepIndex;
+    return '<button class="avz-instruction-iteration-button' + (active ? ' is-active' : '') + '" type="button" data-step-index="' + stepIndex + '" data-instruction-iteration="' + iteration + '"' +
+      (l0Iteration == null ? '' : ' data-instruction-l0-iteration="' + l0Iteration + '"') + '>' + escapeHtml(label) + '</button>';
+  }
+
+  function createMatmulL0Loop(iteration) {
+    const slices = state.context?.kSlices?.[iteration]?.l0Slices || [];
+    const rows = slices.map((slice, l0Iteration) => createMatmulInstructionRow(
+      'K-L0 Iter ' + l0Iteration,
+      'K[' + (l0Iteration * (state.context?.baseK || 0)) + ':' + (l0Iteration * (state.context?.baseK || 0) + slice) + ')',
+      instructionL0Cards(iteration, l0Iteration),
+      { iteration, l0Iteration, sourceStepIndexes: [6, 7] }
+    )).join('');
+    return '<section class="avz-instruction-loop avz-instruction-loop--nested" role="list" aria-label="K-L0 Loop for K-L1 Iter ' + iteration + '">' +
+      '<header class="avz-instruction-loop__header"><div class="avz-instruction-loop__title">K-L0 Loop ×' + slices.length + '</div><span class="avz-instruction-loop__meta">' + (state.context?.kSlices?.[iteration]?.curKL1 || 0) + ' → ' + slices.join(' / ') + '</span></header>' +
+      '<div class="avz-instruction-loop__rows">' + rows + '</div></section>';
+  }
+
+  function createMatmulL1Iteration(iteration) {
+    const slice = state.context?.kSlices?.[iteration];
+    const setupCards = instructionL1SetupCards(iteration);
+    return '<section class="matmul-l1-iteration" role="listitem" aria-label="K-L1 Iter ' + iteration + '">' +
+      '<header class="matmul-l1-iteration__header">' + instructionIterationButton(4, 'K-L1 Iter ' + iteration, iteration) + '<span class="matmul-l1-iteration__meta">K[' + (iteration * (state.context?.kL1 || 0)) + ':' + (iteration * (state.context?.kL1 || 0) + (slice?.curKL1 || 0)) + ') · ' + (iteration === 0 ? 'Initialize' : 'Accumulate') + '</span></header>' +
+      '<div class="matmul-l1-iteration__setup">' + setupCards.map(createMatmulInstructionCard).join('') + '</div>' +
+      createMatmulL0Loop(iteration) +
+      '</section>';
   }
 
   function createMatmulLoop() {
@@ -1485,32 +1436,20 @@
     const repeatedStart = Math.min(1, lastIteration);
     const repeatedEnd = lastIteration;
     const loopIndexes = [4, 5, 6, 7];
-    const loopRows = [createMatmulInstructionRow('Iter 0', 'Initialize', instructionLoopCards(0), { sourceStepIndexes: loopIndexes })];
-    const repeatGroup = [];
-    if (repeatedEnd >= repeatedStart) {
-      if (state.instructionLoopExpanded) {
-        for (let iteration = repeatedStart; iteration <= repeatedEnd; iteration += 1) {
-          repeatGroup.push(createMatmulInstructionRow('Iter ' + iteration, 'Accumulate', instructionLoopCards(iteration), { sourceStepIndexes: loopIndexes, iteration }));
-        }
-      } else {
-        const representative = Number.isInteger(state.instructionIterationFocus)
-          && state.instructionIterationFocus >= repeatedStart
-          && state.instructionIterationFocus <= repeatedEnd
-          ? state.instructionIterationFocus
-          : repeatedStart;
-        const cards = instructionLoopCards(representative).map((card) => ({
-          ...card,
-          sourceStepIndexes: loopIndexes,
-          iterationRange: [repeatedStart, repeatedEnd],
-        }));
-        repeatGroup.push(createMatmulInstructionRow('', '', cards, { hideLabel: true, sourceStepIndexes: loopIndexes }));
-      }
+    const visibleIterations = [createMatmulL1Iteration(0)];
+    if (repeatedEnd >= repeatedStart && state.instructionLoopExpanded) {
+      for (let iteration = repeatedStart; iteration <= repeatedEnd; iteration += 1) visibleIterations.push(createMatmulL1Iteration(iteration));
     }
-    const repeatHeader = '<div class="avz-instruction-repeat__header"><div class="avz-instruction-row__label"><span class="tag avz-iteration-tag">Iter ' + repeatedStart + '–' + repeatedEnd + '</span><span class="avz-instruction-row__meta">×' + (repeatedEnd - repeatedStart + 1) + '</span></div><button class="btn btn-sm btn-ghost avz-instruction-loop-toggle" type="button" data-loop-toggle="iterations" aria-expanded="' + state.instructionLoopExpanded + '">' + (state.instructionLoopExpanded ? 'Group similar' : 'Show all') + '</button></div>';
-    const repeat = '<div class="avz-instruction-repeat">' + repeatHeader + (repeatGroup.length ? '<div class="avz-instruction-repeat__rows">' + repeatGroup.join('') + '</div>' : '') + '</div>';
+    const repeatHeader = repeatedEnd >= repeatedStart
+      ? '<div class="avz-instruction-repeat__header"><div class="avz-instruction-row__label"><span class="tag avz-iteration-tag">K-L1 Iter ' + repeatedStart + '–' + repeatedEnd + '</span><span class="avz-instruction-row__meta">×' + (repeatedEnd - repeatedStart + 1) + '</span></div><button class="btn btn-sm btn-ghost avz-instruction-loop-toggle" type="button" data-loop-toggle="iterations" aria-expanded="' + state.instructionLoopExpanded + '">' + (state.instructionLoopExpanded ? 'Group similar' : 'Show all') + '</button></div>'
+      : '';
+    const collapsed = repeatedEnd >= repeatedStart && !state.instructionLoopExpanded
+      ? '<div class="matmul-l1-repeat-summary">K-L1 Iter ' + repeatedStart + '–' + repeatedEnd + ' · repeated ' + (repeatedEnd - repeatedStart + 1) + '×</div>'
+      : '';
     const active = loopIndexes.includes(state.stepIndex);
-    return '<section class="avz-instruction-loop' + (active ? ' is-active' : '') + '" role="listitem" aria-label="K Loop, iterations 0 through ' + lastIteration + '">' +
-      '<div class="avz-instruction-loop__title">K Loop</div><div class="avz-instruction-loop__rows">' + loopRows.join('') + repeat + '</div></section>';
+    return '<section class="avz-instruction-loop avz-instruction-loop--l1' + (active ? ' is-active' : '') + '" role="list" aria-label="K-L1 Loop, iterations 0 through ' + lastIteration + '">' +
+      '<header class="avz-instruction-loop__header"><div class="avz-instruction-loop__title">K-L1 Loop ×' + iterationCount + '</div><span class="avz-instruction-loop__meta">K=' + (state.context?.K || 0) + ' → ' + (state.context?.kSlices?.map((item) => item.curKL1).join(' / ') || '') + '</span></header>' +
+      '<div class="avz-instruction-loop__rows">' + visibleIterations.join('') + collapsed + repeatHeader + '</div></section>';
   }
 
   function renderMatmulCoreContext() {
@@ -1531,6 +1470,7 @@
       }).join('');
     }
     const selectedTiles = coreTileSchedule(context, state.matmulCoreIndex);
+    if (!selectedTiles.includes(state.selectedTileIdx)) state.selectedTileIdx = selectedTiles[0] ?? 0;
     const selectedFirst = selectedTiles[0] ?? 0;
     const selectedLast = selectedTiles.at(-1) ?? selectedFirst;
     const scheduleMeta = $('#matmulCoreScheduleMeta');
@@ -1543,21 +1483,33 @@
       button.setAttribute('aria-checked', String(selected));
       button.tabIndex = selected ? 0 : -1;
     });
+    renderMatmulTileSequence(selectedTiles);
+  }
+
+  function renderMatmulTileSequence(selectedTiles = []) {
+    const mount = $('#matmulTileSequence');
+    const context = state.context;
+    if (!mount || !context) return;
+    mount.innerHTML = '<header class="matmul-tile-sequence__header"><strong>AIC' + state.matmulCoreIndex + ' Output Tiles</strong><span>' + selectedTiles.length + ' tiles · execution order</span></header>' +
+      '<div class="matmul-tile-sequence__list" role="list">' + selectedTiles.map((tileIdx) => {
+        const tile = outputTileLabel(context, tileIdx);
+        const selected = tileIdx === state.selectedTileIdx;
+        return '<button class="matmul-tile-item' + (selected ? ' is-selected' : '') + '" type="button" role="listitem" data-matmul-tile-index="' + tileIdx + '" aria-pressed="' + selected + '">' +
+          '<span class="matmul-tile-item__index">' + escapeHtml(tile.label) + '</span><span class="matmul-tile-item__coord">' + escapeHtml(tile.coordinate) + '</span>' +
+          '<span class="matmul-tile-item__arrow" aria-hidden="true">→</span></button>';
+      }).join('') + '</div>' +
+      '<footer class="matmul-tile-sequence__footer">Selected: <code>Tile ' + String(state.selectedTileIdx).padStart(2, '0') + '</code> · C[M' + Math.floor(state.selectedTileIdx / context.nTileNum) + ',N' + (state.selectedTileIdx % context.nTileNum) + ']</footer>';
   }
 
   function renderFlow() {
     const steps = state.trace.steps;
     const before = [
-      instructionCardModel(0, 'Input Shape', 'Host config', steps[0].id),
-      instructionCardModel(2, 'Kernel Tiling', 'Kernel config', steps[2].id),
-      instructionCardModel(1, 'Host执行配置', 'Host/Runtime config', steps[1].id),
-      instructionCardModel(3, 'Allocate Memory', 'Kernel prepare', steps[3].id),
+      instructionCardModel(3, 'Resolve Output Tile', 'C[M' + (currentFrame().mTileIdx ?? 0) + ',N' + (currentFrame().nTileIdx ?? 0) + '] · ' + currentFrame().curM + '×' + currentFrame().curN, 'kernel-block-map', null, null, [3]),
     ];
     const after = [
       syncInstructionCard('M_FIX', 8),
-      instructionCardModel(9, 'Copy L0C2GM', 'L0C -> GM', steps[9].id),
+      instructionCardModel(9, 'Copy L0C → GM', 'L0C → GM', steps[9].id),
       syncInstructionCard('FIX_M', 9),
-      instructionCardModel(10, 'Host Verify', 'Device -> Host', steps[10].id),
     ];
     const track = '<div class="avz-instruction-track">' +
       before.map(createMatmulInstructionCard).join('') +
@@ -1875,7 +1827,6 @@
       renderMatmulCopyTabs();
       renderMatmulOverview();
     }
-    renderHardwareParticipation();
   }
 
   function renderRoleTabs() {
@@ -1983,8 +1934,9 @@
     selectStep(targetIndex);
   }
 
-  function frameMatchesInstruction(frame, iteration, operation) {
+  function frameMatchesInstruction(frame, iteration, l0Iteration, operation) {
     if (Number.isInteger(iteration) && frame.iter0 !== iteration) return false;
+    if (Number.isInteger(l0Iteration) && frame.iter1 !== l0Iteration) return false;
     if (operation === 'mmad-initialize') return frame.mmadMode === 'initialize CO1';
     if (operation === 'mmad-accumulate') return frame.mmadMode === 'accumulate CO1';
     return true;
@@ -1997,10 +1949,11 @@
     }
     state.stepIndex = Math.max(0, Math.min(state.trace.steps.length - 1, index));
     state.instructionIterationFocus = options.instructionIteration ?? null;
+    state.instructionL0IterationFocus = options.instructionL0Iteration ?? null;
     state.instructionOperationFocus = options.instructionOperation ?? null;
     if (!options.keepFrame) {
       const nextFrameIndex = state.frames.findIndex((frame) => frame.stepId === currentStep().id
-        && frameMatchesInstruction(frame, options.instructionIteration, options.instructionOperation));
+        && frameMatchesInstruction(frame, options.instructionIteration, options.instructionL0Iteration, options.instructionOperation));
       if (nextFrameIndex >= 0) state.frameIndex = nextFrameIndex;
     }
     syncTensorFocusForStep();
@@ -2019,12 +1972,18 @@
     $('#statusStep').textContent = (state.stepIndex + 1) + ' / ' + state.trace.steps.length;
   }
 
+  function selectMatmulTile(tileIdx) {
+    state.selectedTileIdx = Number(tileIdx);
+    const tileStepIndex = state.trace.steps.findIndex((step) => step.id === 'kernel-block-map');
+    selectStep(tileStepIndex >= 0 ? tileStepIndex : state.stepIndex);
+  }
+
   function bindControls() {
     $('#matmulCoreOptions').addEventListener('click', (event) => {
       const button = event.target.closest('[data-matmul-core-index]');
       if (!button) return;
       state.matmulCoreIndex = Math.max(0, Math.min(MATMUL_CORE_COUNT - 1, Number(button.dataset.matmulCoreIndex) || 0));
-      selectStep(state.stepIndex, { keepFrame: true });
+      selectMatmulTile(coreTileSchedule(state.context, state.matmulCoreIndex)[0] ?? 0);
     });
     $('#matmulCoreOptions').addEventListener('keydown', (event) => {
       if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return;
@@ -2038,10 +1997,32 @@
           ? buttons.length - 1
           : (currentIndex + (event.key === 'ArrowRight' ? 1 : -1) + buttons.length) % buttons.length;
       state.matmulCoreIndex = nextIndex;
-      selectStep(state.stepIndex, { keepFrame: true });
+      selectMatmulTile(coreTileSchedule(state.context, state.matmulCoreIndex)[0] ?? 0);
       buttons[nextIndex]?.focus();
     });
+    $('#matmulTileSequence').addEventListener('click', (event) => {
+      const button = event.target.closest('[data-matmul-tile-index]');
+      if (!button) return;
+      selectMatmulTile(button.dataset.matmulTileIndex);
+    });
     $('#instructionSequence').addEventListener('click', (event) => {
+      const iterationButton = event.target.closest('.avz-instruction-iteration-button');
+      if (iterationButton) {
+        const stepIndex = Number(iterationButton.dataset.stepIndex);
+        const iteration = Number(iterationButton.dataset.instructionIteration);
+        const l0Iteration = iterationButton.dataset.instructionL0Iteration === undefined
+          ? null
+          : Number(iterationButton.dataset.instructionL0Iteration);
+        if (Number.isInteger(stepIndex) && Number.isInteger(iteration)) {
+          selectStep(stepIndex, {
+            instructionIteration: iteration,
+            instructionL0Iteration: Number.isInteger(l0Iteration) ? l0Iteration : null,
+            instructionOperation: null,
+          });
+        }
+        return;
+      }
+
       const toggle = event.target.closest('[data-loop-toggle]');
       if (toggle) {
         state.instructionLoopExpanded = !state.instructionLoopExpanded;
@@ -2055,6 +2036,7 @@
       const hasRange = Number.isInteger(iterationStart) && Number.isInteger(iterationEnd);
       selectStep(Number(card.dataset.stepIndex), {
         instructionIteration: hasRange ? null : Number.isInteger(Number(card.dataset.instructionIteration)) ? Number(card.dataset.instructionIteration) : null,
+        instructionL0Iteration: hasRange ? null : Number.isInteger(Number(card.dataset.instructionL0Iteration)) ? Number(card.dataset.instructionL0Iteration) : null,
         instructionOperation: card.dataset.instructionOperation || null,
       });
     });
@@ -2124,11 +2106,13 @@
     }));
     state.scenarioId = validationScenarios()[0]?.id || 'divisible';
     state.context = deriveValidationContext(state.trace, currentScenario());
+    state.selectedTileIdx = coreTileSchedule(state.context, state.matmulCoreIndex)[0] ?? 0;
     state.frames = buildExecutionFrames(state.trace, state.context);
     bindControls();
     initPlayback();
     renderExecutionDock();
-    selectStep(0);
+    const initialStepIndex = state.trace.steps.findIndex((step) => step.id === 'kernel-block-map');
+    selectStep(initialStepIndex >= 0 ? initialStepIndex : 0);
     window.PtoIdeFrame?.initAll?.();
   }
 

@@ -1,0 +1,205 @@
+{
+  "schemaVersion": "0.3",
+  "execution": {"mode": "logical-order", "durationStatus": "unknown"},
+  "operator": {
+    "id": "sample.conv_bias_relu",
+    "name": "conv_bias_relu_reference_complete",
+    "displayName": "Conv2D + Bias + ReLU",
+    "kind": "conv2d-cube",
+    "sourceLanguage": "ascendc",
+    "apiLevel": "fixed-reference",
+    "sourcePath": "src/conv_bias_relu_complete_demo/op_kernel/conv_bias_relu_reference_complete.asc",
+    "description": "Static code-recovery model derived from the complete Host tiling and Kernel reference; not compiled or profiled."
+  },
+  "arch": {"npuArch": "dav-2201", "soc": "Ascend 910B", "kernelTag": "__cube__"},
+  "launch": {
+    "entry": "conv_bias_relu_reference_complete",
+    "numBlocks": 8,
+    "hostSteps": ["Fill fixed tiling data.", "Set blockDim=8.", "Launch one output tile per AI Core."]
+  },
+  "context": {
+    "source": "complete-demo-source",
+    "targetSoC": "Ascend 910B",
+    "cannVersion": "API shape unverified against an installed target CANN",
+    "note": "Internally consistent static reference. No BiSheng compile, device run, correctness result, or profiling timing is available."
+  },
+  "tiling": {
+    "type": "host-confirmed-fixed-demo",
+    "params": {
+      "batch": 1, "ci": 16, "hi": 8, "wi": 8, "co": 32, "ho": 8, "wo": 8,
+      "kh": 3, "kw": 3, "strideH": 1, "strideW": 1,
+      "padTop": 1, "padBottom": 1, "padLeft": 1, "padRight": 1,
+      "dilationH": 1, "dilationW": 1,
+      "M": 64, "K": 144, "N": 32, "tileM": 16, "tileK": 16, "tileN": 16
+    },
+    "derived": {"mTileCount": 4, "nTileCount": 2, "kLoopCount": 9, "outputTileCount": 8},
+    "controls": [
+      {"id": "outputTileIndex", "label": "Output tile", "value": 0, "description": "OT=Mi×2+Nj; blockIdx maps directly to OT0..OT7."},
+      {"id": "kIndex", "label": "K slice", "value": 0, "description": "K0..K8, each containing 16 reduction elements."}
+    ]
+  },
+  "tensors": [
+    {"id": "tensor:feature", "name": "Feature X0", "role": "input", "logicalShape": [1,16,8,8], "physicalShape": [1,1,8,8,16], "logicalLayout": "NCHW", "physicalLayout": "NC1HWC0", "dtype": "fp16", "validElements": 1024, "validBytes": 2048, "confidence": "confirmed", "source": "Host tiling + Kernel GM contract"},
+    {"id": "tensor:weight", "name": "Weight W0", "role": "weight", "logicalShape": [32,16,3,3], "physicalShape": [144,32], "logicalLayout": "OIHW", "physicalLayout": "ND [K,Co]", "dtype": "fp16", "validElements": 4608, "validBytes": 9216, "confidence": "confirmed", "source": "Kernel GM contract"},
+    {"id": "tensor:bias", "name": "Bias D0", "role": "bias", "logicalShape": [32], "physicalShape": [32], "logicalLayout": "Co", "physicalLayout": "ND", "dtype": "fp32", "validElements": 32, "validBytes": 128, "confidence": "confirmed", "source": "Host tiling + Kernel GM contract"},
+    {"id": "tensor:output", "name": "Output Y0", "role": "output", "logicalShape": [1,32,8,8], "physicalShape": [64,32], "logicalLayout": "NCHW semantic shape", "physicalLayout": "ND [M,Co], equivalent to NHWC", "dtype": "fp16", "validElements": 2048, "validBytes": 4096, "confidence": "confirmed", "source": "Kernel Fixpipe destination contract"}
+  ],
+  "buffers": [
+    {"id": "buffer:feature:a1", "name": "fmapA1", "location": "A1 / L1", "dtype": "fp16", "logicalShape": [1,1,8,8,16], "allocatedElements": 1024, "allocatedBytes": 2048, "addressBytes": 0, "alignmentBytes": 512, "confidence": "confirmed", "source": "Host element count + Kernel address map"},
+    {"id": "buffer:weight:b1", "name": "weightB1", "location": "B1 / L1", "dtype": "fp16", "logicalShape": [144,16], "allocatedElements": 2304, "allocatedBytes": 4608, "addressBytes": 2048, "alignmentBytes": 512, "confidence": "confirmed", "source": "Host element count + Kernel address map"},
+    {"id": "buffer:bias:c1", "name": "biasC1", "location": "C1 / L1", "dtype": "fp32", "logicalShape": [16], "allocatedElements": 16, "allocatedBytes": 64, "addressBytes": 6656, "alignmentBytes": 128, "confidence": "confirmed", "source": "Host element count + Kernel address map"},
+    {"id": "buffer:bias:c2", "name": "biasC2", "location": "C2 / Bias Table", "dtype": "fp32", "logicalShape": [16], "physicalLayout": "linear", "allocatedElements": 16, "allocatedBytes": 64, "addressBytes": 0, "alignmentBytes": 64, "confidence": "confirmed", "source": "Kernel LocalTensor + DataCopy"},
+    {"id": "buffer:feature:a2", "name": "fmapA2", "location": "A2 / L0A", "dtype": "fp16", "logicalShape": [16,16], "physicalLayout": "ZZ", "allocatedElements": 256, "allocatedBytes": 512, "addressBytes": 0, "confidence": "confirmed", "source": "Host element count + LoadData3D"},
+    {"id": "buffer:weight:b2", "name": "weightB2", "location": "B2 / L0B", "dtype": "fp16", "logicalShape": [16,16], "physicalLayout": "ZN", "allocatedElements": 256, "allocatedBytes": 512, "addressBytes": 0, "confidence": "confirmed", "source": "Host element count + LoadData2D"},
+    {"id": "buffer:accum:co1", "name": "accumCo1", "location": "CO1 / L0C", "dtype": "fp32", "logicalShape": [16,16], "physicalLayout": "NZ", "allocatedElements": 256, "allocatedBytes": 1024, "addressBytes": 0, "confidence": "confirmed", "source": "Host element count + Mmad/Fixpipe"}
+  ],
+  "events": [
+    {"id": "event:mte2-mte1:0", "eventType": "MTE2_MTE1", "producerEngine": "MTE2", "consumerEngine": "MTE1", "setStepId": "s7", "waitStepId": "s7", "confidence": "confirmed", "explanation": "MTE1 waits until Feature, Weight, and Bias are resident in L1."},
+    {"id": "event:m-mte1:0", "eventType": "M_MTE1", "producerEngine": "Cube", "consumerEngine": "MTE1", "setStepId": "s13", "waitStepId": "s13", "confidence": "confirmed", "explanation": "Repeated in Iter 1..8: MTE1 waits until Cube has finished reading the previous single-buffered A2/B2 tiles before overwriting them."},
+    {"id": "event:mte1-m:0", "eventType": "MTE1_M", "producerEngine": "MTE1", "consumerEngine": "Cube", "setStepId": "s10", "waitStepId": "s10", "confidence": "confirmed", "explanation": "Cube waits until the current A2/B2 K tile is ready."},
+    {"id": "event:m-fix:0", "eventType": "M_FIX", "producerEngine": "Cube", "consumerEngine": "Fixpipe", "setStepId": "s15", "waitStepId": "s15", "confidence": "confirmed", "explanation": "Fixpipe waits until K8 completes the FP32 CO1 accumulation."}
+  ],
+  "source": {"path": "conv_bias_relu_reference_complete.asc", "lines": []},
+  "sources": [
+    {
+      "id": "host",
+      "label": "op_host/conv_bias_relu_tiling.cpp",
+      "path": "op_host/conv_bias_relu_tiling.cpp",
+      "projectPath": "src/conv_bias_relu_complete_demo/op_host/conv_bias_relu_tiling.cpp",
+      "language": "cpp",
+      "lines": []
+    },
+    {
+      "id": "kernel",
+      "label": "op_kernel/conv_bias_relu_reference_complete.asc",
+      "path": "op_kernel/conv_bias_relu_reference_complete.asc",
+      "projectPath": "src/conv_bias_relu_complete_demo/op_kernel/conv_bias_relu_reference_complete.asc",
+      "language": "ascendc",
+      "lines": []
+    }
+  ],
+  "memory": {
+    "tiers": [
+      {"id": "feature", "label": "Feature GM", "role": "input", "capacity": "2048 B per core read"},
+      {"id": "weight", "label": "Weight GM", "role": "input", "capacity": "4608 B per N tile"},
+      {"id": "bias", "label": "Bias GM", "role": "input", "capacity": "64 B per N tile"},
+      {"id": "a1", "label": "A1 / L1", "role": "local-input", "capacity": "2048 B"},
+      {"id": "b1", "label": "B1 / L1", "role": "local-input", "capacity": "4608 B"},
+      {"id": "c1", "label": "C1 / L1", "role": "bias-staging", "capacity": "64 B"},
+      {"id": "c2", "label": "C2 / BT", "role": "bias-table", "capacity": "64 B"},
+      {"id": "a2", "label": "L0A / A2", "role": "cube-input", "capacity": "512 B"},
+      {"id": "b2", "label": "L0B / B2", "role": "cube-input", "capacity": "512 B"},
+      {"id": "co1", "label": "L0C / CO1", "role": "cube-output", "capacity": "1024 B"}
+    ],
+    "blocks": []
+  },
+  "stages": [
+    {"id": "host-shape", "label": "Input Shape", "semanticLabel": "Input Shape", "unit": "host", "operations": ["FillFixedDemoTiling"]},
+    {"id": "host-tiling", "label": "Host Tiling", "semanticLabel": "Host Tiling", "unit": "host", "operations": ["CeilDiv", "tileM/K/N"]},
+    {"id": "host-launch", "label": "Host执行配置", "semanticLabel": "Host执行配置", "unit": "host", "operations": ["element counts", "SetBlockDim", "GetBlockIdx"]},
+    {"id": "allocate", "label": "Allocate Memory", "semanticLabel": "Allocate Memory", "unit": "control", "operations": ["LocalTensor", "AlignUp"]},
+    {"id": "copy-inputs", "label": "Copy Inputs", "semanticLabel": "Copy Inputs", "unit": "mte2", "operations": ["DataCopy", "Nd2Nz"]},
+    {"id": "sync-mte2-mte1", "label": "Sync", "semanticLabel": "Sync", "unit": "control", "operations": ["MTE2_MTE1", "SetFlag", "WaitFlag"]},
+    {"id": "bias-c1-c2", "label": "Copy Data C2", "semanticLabel": "Copy Data C2", "unit": "mte1", "operations": ["DataCopy"]},
+    {"id": "load-k", "label": "Load Data A2 B2", "semanticLabel": "Load Data A2 B2", "unit": "mte1", "operations": ["LoadData3D", "LoadData2D"]},
+    {"id": "sync-mte1-m", "label": "Sync", "semanticLabel": "Sync", "unit": "control", "operations": ["MTE1_M", "SetFlag", "WaitFlag"]},
+    {"id": "mmad-init", "label": "Iter 0 Mmad", "semanticLabel": "Iter 0 Mmad", "unit": "cube", "operations": ["Mmad", "Bias"]},
+    {"id": "k-loop", "label": "K Loop · Iter 1～8 ×8", "semanticLabel": "K Loop · Iter 1～8 ×8", "unit": "control", "operations": ["Loop Group"]},
+    {"id": "loop-body-middle", "label": "Iter 1～7 Loop Body ×7", "semanticLabel": "Iter 1～7 Loop Body ×7", "unit": "cube", "operations": ["M_MTE1", "LoadData3D", "LoadData2D", "MTE1_M", "Mmad"]},
+    {"id": "loop-body-final", "label": "Iter 8 Final Loop Body ×1", "semanticLabel": "Iter 8 Final Loop Body ×1", "unit": "cube", "operations": ["M_MTE1", "LoadData3D", "LoadData2D", "MTE1_M", "Mmad"]},
+    {"id": "sync-m-fix", "label": "M_FIX Sync", "semanticLabel": "M_FIX Sync", "unit": "control", "operations": ["M_FIX", "SetFlag", "WaitFlag"]},
+    {"id": "fixpipe-output", "label": "Fixpipe Output", "semanticLabel": "Fixpipe Output", "unit": "fixpipe", "operations": ["Fixpipe", "ReLU", "F322F16"]}
+  ],
+  "steps": [
+    {"id": "s1", "stageId": "host-shape", "label": "Input Shape", "summary": "固定 N/C/H/W、卷积参数并推导 Ho/Wo。", "sourceLines": [], "sourceRefs": [{"fileId": "host", "lines": [20,22,23,24,25,26,27,28,29,31,32,33,34,35,36,37,38,40,41,42,43]}], "evidenceKind": "confirmed"},
+    {"id": "s2", "stageId": "host-tiling", "label": "Host Tiling", "summary": "定义 Cube M/K/N、16×16×16 Tile 和 4×9×2 Tile 数。", "sourceLines": [], "sourceRefs": [{"fileId": "host", "lines": [45,46,47,48,49,50,51,53,54,55,56]}], "evidenceKind": "confirmed"},
+    {"id": "s4", "stageId": "host-launch", "label": "Host执行配置", "summary": "计算 GM/Local Buffer 元素数；设置 blockDim=8；建立 OT→Mi/Nj 映射；workspace=0。本阶段不访问 GM。", "sourceLines": [54,55,56,61,62,63,64], "sourceRefs": [{"fileId": "host", "lines": [58,59,60,61,62,64,65,66,67,68,69,70,73,79,84,85,87,88,89,91]}, {"fileId": "kernel", "lines": [54,55,56,61,62,63,64]}], "evidenceKind": "confirmed", "blockIdx": 0},
+    {
+      "id": "s5", "stageId": "allocate", "label": "Allocate Memory", "summary": "建立 A1/B1/C1 地址范围以及 A2/B2/C2/CO1 LocalTensor 视图。", "sourceLines": [82,83,84,86,87,88,89,90,92,93,94,95,96,97,99,101,102,103,104,105,106,107,108], "sourceRefs": [{"fileId": "kernel", "lines": [82,83,84,86,87,88,89,90,92,93,94,95,96,97,99,101,102,103,104,105,106,107,108]}], "evidenceKind": "confirmed",
+      "tensorSnapshots": [
+        {"tensorId": "buffer:feature:a1", "role": "input-buffer", "logicalShape": [1,1,8,8,16], "physicalShape": [1,1,8,8,16], "logicalLayout": "NC1HWC0", "physicalLayout": "NC1HWC0", "dtype": "fp16", "validElements": 1024, "allocatedElements": 1024, "validBytes": 2048, "allocatedBytes": 2048, "paddingElements": 0, "location": "A1 / L1 @0", "transformation": "LocalTensor view only; contents are not loaded yet.", "confidence": "confirmed", "source": "Host element count + Kernel address map"},
+        {"tensorId": "buffer:weight:b1", "role": "weight-buffer", "logicalShape": [144,16], "physicalShape": [144,16], "logicalLayout": "K×N tile", "physicalLayout": "NZ", "dtype": "fp16", "validElements": 2304, "allocatedElements": 2304, "validBytes": 4608, "allocatedBytes": 4608, "paddingElements": 0, "location": "B1 / L1 @2048", "transformation": "LocalTensor view only; contents are not loaded yet.", "confidence": "confirmed", "source": "Host element count + Kernel address map"},
+        {"tensorId": "buffer:bias:c1", "role": "bias", "logicalShape": [16], "physicalShape": [16], "logicalLayout": "N tile", "physicalLayout": "linear", "dtype": "fp32", "validElements": 16, "allocatedElements": 16, "validBytes": 64, "allocatedBytes": 64, "paddingElements": 0, "location": "C1 / L1 @6656", "transformation": "LocalTensor view only; contents are not loaded yet.", "confidence": "confirmed", "source": "Host element count + Kernel address map"},
+        {"tensorId": "buffer:feature:a2", "role": "cube-a", "logicalShape": [16,16], "physicalShape": [16,16], "logicalLayout": "M×K tile", "physicalLayout": "ZZ", "dtype": "fp16", "validElements": 256, "allocatedElements": 256, "validBytes": 512, "allocatedBytes": 512, "paddingElements": 0, "location": "A2 / L0A @0", "transformation": "LocalTensor view only; LoadData3D has not run.", "confidence": "confirmed", "source": "Kernel LocalTensor"},
+        {"tensorId": "buffer:weight:b2", "role": "cube-b", "logicalShape": [16,16], "physicalShape": [16,16], "logicalLayout": "K×N tile", "physicalLayout": "ZN", "dtype": "fp16", "validElements": 256, "allocatedElements": 256, "validBytes": 512, "allocatedBytes": 512, "paddingElements": 0, "location": "B2 / L0B @0", "transformation": "LocalTensor view only; LoadData2D has not run.", "confidence": "confirmed", "source": "Kernel LocalTensor"},
+        {"tensorId": "buffer:bias:c2", "role": "bias", "logicalShape": [16], "physicalShape": [16], "logicalLayout": "N tile", "physicalLayout": "linear", "dtype": "fp32", "validElements": 16, "allocatedElements": 16, "validBytes": 64, "allocatedBytes": 64, "paddingElements": 0, "location": "C2 / Bias Table @0", "transformation": "LocalTensor view only; DataCopy from C1 has not run.", "confidence": "confirmed", "source": "Kernel LocalTensor"},
+        {"tensorId": "buffer:accum:co1", "role": "accumulator", "logicalShape": [16,16], "physicalShape": [16,16], "logicalLayout": "M×N", "physicalLayout": "NZ", "dtype": "fp32", "validElements": 256, "allocatedElements": 256, "validBytes": 1024, "allocatedBytes": 1024, "paddingElements": 0, "location": "CO1 / L0C @0", "transformation": "LocalTensor view only; Mmad has not run.", "confidence": "confirmed", "source": "Host element count + Kernel LocalTensor"}
+      ]
+    },
+    {
+      "id": "s6", "stageId": "copy-inputs", "label": "Copy Inputs", "summary": "MTE2：GM X0 NC1HWC0→A1；GM W[Nj] ND→B1(NZ)；GM Bias[Nj]→C1。", "sourceLines": [110,111,112,113,114,115,116,191,193,194,195,198,200,201,202,203,204,205,206,207,208,209,210,211,214,216,217,218], "sourceRefs": [{"fileId": "kernel", "lines": [110,111,112,113,114,115,116,191,193,194,195,198,200,201,202,203,204,205,206,207,208,209,210,211,214,216,217,218]}], "evidenceKind": "confirmed",
+      "dataFlows": [
+        {"from": "GM / Feature X0", "to": "A1 / L1", "tensorId": "tensor:feature", "bufferId": "buffer:feature:a1", "bytes": 2048, "transferEngine": "MTE2 / DataCopy", "status": "copied", "confidence": "confirmed"},
+        {"from": "GM / Weight W[Nj]", "to": "B1 / L1", "tensorId": "tensor:weight", "bufferId": "buffer:weight:b1", "bytes": 4608, "transferEngine": "MTE2 / DataCopy Nd2Nz", "status": "ND-to-NZ", "confidence": "confirmed"},
+        {"from": "GM / Bias D[Nj]", "to": "C1 / L1", "tensorId": "tensor:bias", "bufferId": "buffer:bias:c1", "bytes": 64, "transferEngine": "MTE2 / DataCopy", "status": "copied", "confidence": "confirmed"}
+      ],
+      "tensorSnapshots": [
+        {"tensorId": "buffer:feature:a1", "role": "input-buffer", "logicalShape": [1,1,8,8,16], "physicalShape": [1,1,8,8,16], "logicalLayout": "NC1HWC0", "physicalLayout": "NC1HWC0", "dtype": "fp16", "validElements": 1024, "allocatedElements": 1024, "validBytes": 2048, "allocatedBytes": 2048, "paddingElements": 0, "location": "A1 / L1 @0", "transformation": "GM Feature X0 → A1; layout unchanged.", "confidence": "confirmed", "source": "Kernel DataCopy + Host element count + Kernel address map"},
+        {"tensorId": "buffer:weight:b1", "role": "weight-buffer", "logicalShape": [144,16], "physicalShape": [144,16], "logicalLayout": "ND [K,N tile]", "physicalLayout": "NZ", "dtype": "fp16", "validElements": 2304, "allocatedElements": 2304, "validBytes": 4608, "allocatedBytes": 4608, "paddingElements": 0, "location": "B1 / L1 @2048", "transformation": "GM Weight W[Nj] ND → B1 NZ.", "confidence": "confirmed", "source": "Kernel DataCopy Nd2Nz + Host element count + Kernel address map"},
+        {"tensorId": "buffer:bias:c1", "role": "bias", "logicalShape": [16], "physicalShape": [16], "logicalLayout": "ND [N tile]", "physicalLayout": "linear", "dtype": "fp32", "validElements": 16, "allocatedElements": 16, "validBytes": 64, "allocatedBytes": 64, "paddingElements": 0, "location": "C1 / L1 @6656", "transformation": "GM Bias D[Nj] → C1 staging buffer.", "confidence": "confirmed", "source": "Kernel DataCopy + Host element count + Kernel address map"}
+      ]
+    },
+    {"id": "s7", "stageId": "sync-mte2-mte1", "label": "Sync", "summary": "MTE2_MTE1：MTE2 发布 L1 ready；MTE1 等待后才能读取 A1/B1/C1。", "sourceLines": [118,119], "sourceRefs": [{"fileId": "kernel", "lines": [118,119]}], "syncEvents": ["MTE2_MTE1"], "eventDependencies": ["event:mte2-mte1:0"], "evidenceKind": "confirmed"},
+    {
+      "id": "s8", "stageId": "bias-c1-c2", "label": "Copy Data C2", "summary": "MTE1：Bias C1→C2 / Bias Table，FP32 [16]，64 B。", "sourceLines": [121,122,123,124,125,126,127], "sourceRefs": [{"fileId": "kernel", "lines": [121,122,123,124,125,126,127]}], "evidenceKind": "confirmed",
+      "dataFlows": [{"from": "C1 / L1", "to": "C2 / Bias Table", "bufferId": "buffer:bias:c2", "bytes": 64, "transferEngine": "MTE1 / DataCopy", "status": "copied", "confidence": "confirmed"}],
+      "tensorSnapshots": [{"tensorId": "buffer:bias:c2", "role": "bias", "logicalShape": [16], "physicalShape": [16], "logicalLayout": "N tile", "physicalLayout": "linear Bias Table", "dtype": "fp32", "validElements": 16, "allocatedElements": 16, "validBytes": 64, "allocatedBytes": 64, "paddingElements": 0, "location": "C2 / BT", "transformation": "C1 Bias tile → C2 before first Mmad.", "confidence": "confirmed", "source": "Kernel DataCopy"}
+      ]
+    },
+    {
+      "id": "s9", "stageId": "load-k", "label": "Load Data A2 B2", "summary": "Iter 0：LoadData3D 生成 A[Mi,K0]；LoadData2D 生成 B[K0,Nj]。", "sourceLines": [141,142,221,226,227,228,229,230,231,232,233,234,235,236,237,238,239,240,241,242,243,244,250,253,258,259,260,261,262,263,264,265,266,267,268], "sourceRefs": [{"fileId": "kernel", "lines": [141,142,221,226,227,228,229,230,231,232,233,234,235,236,237,238,239,240,241,242,243,244,250,253,258,259,260,261,262,263,264,265,266,267,268]}], "loop": {"kIndex": 0, "kRange": [0,16], "representativeOutputPosition": [0,0]}, "evidenceKind": "confirmed",
+      "dataFlows": [
+        {"from": "A1 / L1", "to": "A2 / L0A", "bufferId": "buffer:feature:a2", "bytes": 512, "transferEngine": "MTE1 / LoadData3D", "status": "NC1HWC0-to-ZZ", "confidence": "confirmed"},
+        {"from": "B1 / L1", "to": "B2 / L0B", "bufferId": "buffer:weight:b2", "bytes": 512, "transferEngine": "MTE1 / LoadData2D", "status": "NZ-to-ZN", "confidence": "confirmed"}
+      ],
+      "tensorSnapshots": [
+        {"tensorId": "buffer:feature:a2", "role": "cube-a", "logicalShape": [16,16], "physicalShape": [16,16], "logicalLayout": "M×K0", "physicalLayout": "ZZ", "dtype": "fp16", "validElements": 256, "allocatedElements": 256, "validBytes": 512, "allocatedBytes": 512, "paddingElements": 0, "location": "A2 / L0A", "transformation": "Padding + sliding window + image-to-column.", "confidence": "confirmed", "source": "LoadData3D parameters"},
+        {"tensorId": "buffer:weight:b2", "role": "cube-b", "logicalShape": [16,16], "physicalShape": [16,16], "logicalLayout": "K0×N", "physicalLayout": "ZN", "dtype": "fp16", "validElements": 256, "allocatedElements": 256, "validBytes": 512, "allocatedBytes": 512, "paddingElements": 0, "location": "B2 / L0B", "transformation": "Select K0 fractal and transpose NZ→ZN.", "confidence": "confirmed", "source": "LoadData2D startIndex + ifTranspose"}
+      ]
+    },
+    {"id": "s10", "stageId": "sync-mte1-m", "label": "Sync", "summary": "MTE1_M：MTE1 发布 A2/B2 ready；Cube 等待后才能执行 Iter 0。", "sourceLines": [144,145], "sourceRefs": [{"fileId": "kernel", "lines": [144,145]}], "loop": {"kIndex": 0, "kRange": [0,16]}, "syncEvents": ["MTE1_M"], "eventDependencies": ["event:mte1-m:0"], "evidenceKind": "confirmed"},
+    {
+      "id": "s11", "stageId": "mmad-init", "label": "Iter 0 Mmad", "summary": "A[Mi,K0] × B[K0,Nj] + Bias[Nj] → Acc0/CO1；Bias 只在本轮加入。", "sourceLines": [147,148,149,150,151,152,153,155,156,157,158], "sourceRefs": [{"fileId": "kernel", "lines": [147,148,149,150,151,152,153,155,156,157,158]}], "loop": {"kIndex": 0, "kRange": [0,16]}, "evidenceKind": "confirmed",
+      "dataFlows": [
+        {"from": "A2 / L0A", "to": "Cube", "bufferId": "buffer:feature:a2", "bytes": 512, "transferEngine": "Cube / Mmad", "status": "read", "confidence": "confirmed"},
+        {"from": "B2 / L0B", "to": "Cube", "bufferId": "buffer:weight:b2", "bytes": 512, "transferEngine": "Cube / Mmad", "status": "read", "confidence": "confirmed"},
+        {"from": "C2 / Bias Table", "to": "Cube", "bufferId": "buffer:bias:c2", "bytes": 64, "transferEngine": "Cube / Mmad", "status": "bias-init", "confidence": "confirmed"},
+        {"from": "Cube", "to": "CO1 / L0C", "bufferId": "buffer:accum:co1", "bytes": 1024, "transferEngine": "Cube / Mmad", "status": "initialize", "confidence": "confirmed"}
+      ]
+    },
+    {"id": "s12", "stageId": "k-loop", "label": "K Loop · Iter 1～8 ×8", "summary": "后续 8 轮的可展开 Loop Group；它是循环容器，不是一条独立硬件指令。进入循环时 A2/B2 仍保存 K0。", "sourceLines": [129,130,131,132], "sourceRefs": [{"fileId": "kernel", "lines": [129,130,131,132]}], "loop": {"kIndex": 0, "kRange": [0,16], "iterationRange": [1,8], "childStepIds": ["s13","s14"]}, "evidenceKind": "confirmed"},
+    {
+      "id": "s13", "stageId": "loop-body-middle", "label": "Iter 1～7 Loop Body ×7", "summary": "每轮依次执行 M_MTE1 → Load Kk → MTE1_M → Mmad accumulate，得到 Acc1～Acc7。", "sourceLines": [134,135,136,137,138,139,141,142,144,145,147,148,149,150,159,160,161,162,163], "sourceRefs": [{"fileId": "kernel", "lines": [134,135,136,137,138,139,141,142,144,145,147,148,149,150,159,160,161,162,163]}], "loop": {"kIndex": 7, "kRange": [16,128], "iterationRange": [1,7], "parentStepId": "s12"}, "syncEvents": ["M_MTE1","MTE1_M"], "eventDependencies": ["event:m-mte1:0"], "evidenceKind": "confirmed",
+      "dataFlows": [
+        {"from": "A1 / L1", "to": "A2 / L0A", "bufferId": "buffer:feature:a2", "bytes": 512, "transferEngine": "MTE1 / LoadData3D", "status": "repeat-K1-K7", "confidence": "confirmed"},
+        {"from": "B1 / L1", "to": "B2 / L0B", "bufferId": "buffer:weight:b2", "bytes": 512, "transferEngine": "MTE1 / LoadData2D", "status": "repeat-K1-K7", "confidence": "confirmed"},
+        {"from": "Cube", "to": "CO1 / L0C", "bufferId": "buffer:accum:co1", "bytes": 1024, "transferEngine": "Cube / Mmad", "status": "accumulate-Iter1-Iter7", "confidence": "confirmed"}
+      ],
+      "tensorSnapshots": [{"tensorId": "buffer:accum:co1", "role": "accumulator", "logicalShape": [16,16], "physicalShape": [16,16], "logicalLayout": "M×N", "physicalLayout": "NZ / CO1", "dtype": "fp32", "validElements": 256, "allocatedElements": 256, "validBytes": 1024, "allocatedBytes": 1024, "paddingElements": 0, "location": "CO1 / L0C", "transformation": "Accumulate K1..K7 partial products; Bias is not added again.", "confidence": "confirmed", "source": "Mmad overload without bias"}]
+    },
+    {
+      "id": "s14", "stageId": "loop-body-final", "label": "Iter 8 Final Loop Body ×1", "summary": "执行同一完整 Loop Body，读取 K8 [128:144]，最终得到 Acc8。", "sourceLines": [134,135,136,137,138,139,141,142,144,145,147,148,149,150,159,160,161,162,163,165], "sourceRefs": [{"fileId": "kernel", "lines": [134,135,136,137,138,139,141,142,144,145,147,148,149,150,159,160,161,162,163,165]}], "loop": {"kIndex": 8, "kRange": [128,144], "iterationRange": [8,8], "parentStepId": "s12"}, "syncEvents": ["M_MTE1","MTE1_M"], "eventDependencies": ["event:m-mte1:0"], "evidenceKind": "confirmed",
+      "dataFlows": [
+        {"from": "A1 / L1", "to": "A2 / L0A", "bufferId": "buffer:feature:a2", "bytes": 512, "transferEngine": "MTE1 / LoadData3D", "status": "load-K8", "confidence": "confirmed"},
+        {"from": "B1 / L1", "to": "B2 / L0B", "bufferId": "buffer:weight:b2", "bytes": 512, "transferEngine": "MTE1 / LoadData2D", "status": "load-K8", "confidence": "confirmed"},
+        {"from": "Cube", "to": "CO1 / L0C", "bufferId": "buffer:accum:co1", "bytes": 1024, "transferEngine": "Cube / Mmad", "status": "final-accumulate", "confidence": "confirmed"}
+      ]
+    },
+    {"id": "s15", "stageId": "sync-m-fix", "label": "M_FIX Sync", "summary": "Cube 发布 Acc8 ready；Fixpipe 等待最终 CO1。", "sourceLines": [167,168], "sourceRefs": [{"fileId": "kernel", "lines": [167,168]}], "loop": {"kIndex": 8, "kRange": [128,144]}, "syncEvents": ["M_FIX"], "eventDependencies": ["event:m-fix:0"], "evidenceKind": "confirmed"},
+    {
+      "id": "s16", "stageId": "fixpipe-output", "label": "Fixpipe Output", "summary": "CO1 FP32 NZ→GM FP16 ND，融合 ReLU，并按 outputOffset 直接写回。", "sourceLines": [170,171,172,173,174,175,176,177,178,179,180,181,182,183,184,186,187], "sourceRefs": [{"fileId": "kernel", "lines": [170,171,172,173,174,175,176,177,178,179,180,181,182,183,184,186,187]}], "loop": {"kIndex": 8, "kRange": [128,144]}, "evidenceKind": "confirmed",
+      "dataFlows": [{"from": "CO1 / L0C", "to": "GM / Output Y0", "tensorId": "tensor:output", "bytes": 512, "transferEngine": "Fixpipe", "status": "NZ-to-ND + F322F16 + ReLU", "confidence": "confirmed"}],
+      "tensorSnapshots": [
+        {"tensorId": "buffer:accum:co1", "role": "accumulator", "logicalShape": [16,16], "physicalShape": [16,16], "logicalLayout": "M×N", "physicalLayout": "NZ", "dtype": "fp32", "validElements": 256, "allocatedElements": 256, "validBytes": 1024, "allocatedBytes": 1024, "paddingElements": 0, "location": "CO1 / L0C", "transformation": "Read final Acc8.", "confidence": "confirmed", "source": "Fixpipe source"},
+        {"tensorId": "tensor:output", "role": "output", "logicalShape": [16,16], "physicalShape": [16,16], "logicalLayout": "M tile×Co tile", "physicalLayout": "ND [M,Co]", "dtype": "fp16", "validElements": 256, "allocatedElements": 256, "validBytes": 512, "allocatedBytes": 512, "paddingElements": 0, "location": "GM output", "transformation": "NZ→ND, FP32→FP16, ReLU, direct strided write at mStart×32+nStart.", "confidence": "confirmed", "source": "FixpipeParamsV220 + outputOffset"}
+      ]
+    }
+  ],
+  "puzzles": [],
+  "evidence": {
+    "sourceConsistency": {"status": "checked", "note": "Host and Kernel fixed parameters agree."},
+    "compile": {"status": "absent", "note": "BiSheng/CANN compile not run."},
+    "device": {"status": "absent", "note": "No 910B device execution or correctness result."},
+    "profiling": {"status": "absent", "note": "Logical order only; no runtime timing."}
+  }
+}

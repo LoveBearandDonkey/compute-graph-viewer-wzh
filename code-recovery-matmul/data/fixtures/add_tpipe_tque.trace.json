@@ -1,0 +1,328 @@
+{
+  "schemaVersion": "0.1",
+  "operator": {
+    "id": "sample.add_tpipe_tque",
+    "name": "add_custom",
+    "displayName": "Vector Add · TPipe/TQue",
+    "kind": "vector",
+    "sourceLanguage": "ascendc",
+    "apiLevel": "tpipe_tque",
+    "sourcePath": "/Users/yin/gitcode/asc-devkit-master/examples/01_simd_cpp_api/00_introduction/01_vector/add_tpipe_tque/add.asc",
+    "description": "Minimal vector sample showing block partitioning, queue-managed UB buffers, DataCopy, Add, and CopyOut."
+  },
+  "arch": {
+    "npuArch": "dav-2201",
+    "soc": "Atlas A2/A3 compatible",
+    "kernelTag": "__vector__"
+  },
+  "launch": {
+    "entry": "add_custom<<<numBlocks, nullptr, stream>>>(xDevice, yDevice, zDevice, tiling)",
+    "numBlocks": 8,
+    "hostSteps": [
+      "Read input_x.bin and input_y.bin on host",
+      "Copy x/y HostToDevice",
+      "Launch add_custom with 8 vector blocks",
+      "Synchronize stream",
+      "Copy z DeviceToHost and write output.bin"
+    ]
+  },
+  "tiling": {
+    "type": "host_tiling_struct",
+    "params": {
+      "totalLength": 16384,
+      "tileNum": 8,
+      "bufferNum": 2,
+      "numBlocks": 8
+    },
+    "derived": {
+      "blockLength": 2048,
+      "tileLength": 128,
+      "loopCount": 16,
+      "blockLengthExpr": "totalLength / GetBlockNum()",
+      "tileLengthExpr": "blockLength / tileNum / BUFFER_NUM"
+    },
+    "controls": [
+      {
+        "id": "blockIdx",
+        "label": "Block",
+        "value": 0,
+        "unit": "AIV block",
+        "description": "Selects the contiguous GM partition owned by one vector block."
+      },
+      {
+        "id": "progress",
+        "label": "Progress",
+        "value": 0,
+        "unit": "tile step",
+        "description": "Selects the current CopyIn/Compute/CopyOut triplet inside one block."
+      }
+    ]
+  },
+  "source": {
+    "path": "add.asc",
+    "lines": [
+      {"line": 23, "text": "constexpr uint32_t BUFFER_NUM = 2;"},
+      {"line": 26, "text": "struct AddCustomTilingData {"},
+      {"line": 27, "text": "    uint32_t totalLength;"},
+      {"line": 28, "text": "    uint32_t tileNum;"},
+      {"line": 33, "text": "__aicore__ inline void Init(GM_ADDR x, GM_ADDR y, GM_ADDR z, uint32_t totalLength, uint32_t tileNum)"},
+      {"line": 35, "text": "    this->blockLength = totalLength / AscendC::GetBlockNum();"},
+      {"line": 37, "text": "    this->tileLength = this->blockLength / tileNum / BUFFER_NUM;"},
+      {"line": 38, "text": "    xGm.SetGlobalBuffer((__gm__ float*)x + this->blockLength * AscendC::GetBlockIdx(), this->blockLength);"},
+      {"line": 41, "text": "    pipe.InitBuffer(inQueueX, BUFFER_NUM, this->tileLength * sizeof(float));"},
+      {"line": 45, "text": "__aicore__ inline void Process()"},
+      {"line": 47, "text": "    int32_t loopCount = this->tileNum * BUFFER_NUM;"},
+      {"line": 49, "text": "        CopyIn(i);"},
+      {"line": 50, "text": "        Compute(i);"},
+      {"line": 51, "text": "        CopyOut(i);"},
+      {"line": 56, "text": "__aicore__ inline void CopyIn(int32_t progress)"},
+      {"line": 58, "text": "    AscendC::LocalTensor<float> xLocal = inQueueX.AllocTensor<float>();"},
+      {"line": 60, "text": "    AscendC::DataCopy(xLocal, xGm[progress * this->tileLength], this->tileLength);"},
+      {"line": 62, "text": "    inQueueX.EnQue(xLocal);"},
+      {"line": 65, "text": "__aicore__ inline void Compute(int32_t progress)"},
+      {"line": 67, "text": "    AscendC::LocalTensor<float> xLocal = inQueueX.DeQue<float>();"},
+      {"line": 70, "text": "    AscendC::Add(zLocal, xLocal, yLocal, this->tileLength);"},
+      {"line": 75, "text": "__aicore__ inline void CopyOut(int32_t progress)"},
+      {"line": 78, "text": "    AscendC::DataCopy(zGm[progress * this->tileLength], zLocal, this->tileLength);"},
+      {"line": 94, "text": "__global__ __vector__ void add_custom(GM_ADDR x, GM_ADDR y, GM_ADDR z, AddCustomTilingData tiling)"}
+    ]
+  },
+  "memory": {
+    "tiers": [
+      {"id": "gm_x", "label": "GM x", "role": "input", "capacity": "16384 fp32", "description": "Global input tensor x."},
+      {"id": "gm_y", "label": "GM y", "role": "input", "capacity": "16384 fp32", "description": "Global input tensor y."},
+      {"id": "gm_z", "label": "GM z", "role": "output", "capacity": "16384 fp32", "description": "Global output tensor z."},
+      {"id": "vecin", "label": "UB VECIN", "role": "local-input", "capacity": "2 * 128 fp32 per queue", "description": "Queue-backed local x/y buffers."},
+      {"id": "vecout", "label": "UB VECOUT", "role": "local-output", "capacity": "2 * 128 fp32", "description": "Queue-backed local z buffer."}
+    ],
+    "blocks": [
+      {"id": "block0", "label": "blockIdx 0", "range": "GM[0:2048]"},
+      {"id": "block1", "label": "blockIdx 1", "range": "GM[2048:4096]"},
+      {"id": "block2", "label": "blockIdx 2", "range": "GM[4096:6144]"},
+      {"id": "block3", "label": "blockIdx 3", "range": "GM[6144:8192]"},
+      {"id": "block4", "label": "blockIdx 4", "range": "GM[8192:10240]"},
+      {"id": "block5", "label": "blockIdx 5", "range": "GM[10240:12288]"},
+      {"id": "block6", "label": "blockIdx 6", "range": "GM[12288:14336]"},
+      {"id": "block7", "label": "blockIdx 7", "range": "GM[14336:16384]"}
+    ]
+  },
+  "stages": [
+    {
+      "id": "host-launch",
+      "label": "Host Launch",
+      "semanticLabel": "Host",
+      "unit": "host",
+      "operations": ["ReadFile", "aclrtMemcpy", "kernel launch", "aclrtSynchronizeStream"],
+      "sourceRef": {"line": 94, "symbol": "add_custom launch"},
+      "description": "Host prepares input, launches the vector kernel, and collects output."
+    },
+    {
+      "id": "init",
+      "label": "Init Tiling",
+      "semanticLabel": "Block Partition",
+      "unit": "vector",
+      "operations": ["GetBlockNum", "GetBlockIdx", "SetGlobalBuffer", "InitBuffer"],
+      "sourceRef": {"line": 33, "symbol": "KernelAdd::Init"},
+      "description": "Derive per-block and per-tile lengths, then initialize GM views and queue buffers."
+    },
+    {
+      "id": "copy-in",
+      "label": "CopyIn",
+      "semanticLabel": "GM -> UB",
+      "unit": "vector",
+      "operations": ["AllocTensor", "DataCopy", "EnQue"],
+      "sourceRef": {"line": 56, "symbol": "KernelAdd::CopyIn"},
+      "description": "Allocate local x/y tensors and copy one tile from GM to VECIN queues."
+    },
+    {
+      "id": "compute",
+      "label": "Compute",
+      "semanticLabel": "Vector Add",
+      "unit": "vector",
+      "operations": ["DeQue", "AllocTensor", "Add", "EnQue", "FreeTensor"],
+      "sourceRef": {"line": 65, "symbol": "KernelAdd::Compute"},
+      "description": "Deque x/y local tensors, add them, enqueue z, and free input buffers."
+    },
+    {
+      "id": "copy-out",
+      "label": "CopyOut",
+      "semanticLabel": "UB -> GM",
+      "unit": "vector",
+      "operations": ["DeQue", "DataCopy", "FreeTensor"],
+      "sourceRef": {"line": 75, "symbol": "KernelAdd::CopyOut"},
+      "description": "Deque z local tensor and copy the tile back to GM."
+    }
+  ],
+  "steps": [
+    {
+      "id": "host.launch",
+      "stageId": "host-launch",
+      "label": "Host prepares and launches",
+      "summary": "Host copies x/y to device, launches 8 vector blocks, waits, and copies z back.",
+      "unit": "host",
+      "sourceLines": [94],
+      "memoryRegions": ["Host:x", "Host:y", "GM:x", "GM:y", "GM:z"],
+      "metrics": [{"label": "numBlocks", "value": 8}]
+    },
+    {
+      "id": "block0.init",
+      "stageId": "init",
+      "label": "blockIdx 0 maps GM partition",
+      "summary": "blockLength=2048; blockIdx 0 owns GM[0:2048]. tileLength=128.",
+      "unit": "vector",
+      "blockIdx": 0,
+      "sourceLines": [35, 37, 38, 41],
+      "memoryRegions": ["GM:x[0:2048]", "GM:y[0:2048]", "GM:z[0:2048]", "UB queues"],
+      "metrics": [
+        {"label": "blockLength", "value": 2048, "unit": "elements"},
+        {"label": "tileLength", "value": 128, "unit": "elements"}
+      ]
+    },
+    {
+      "id": "block0.progress0.copyin",
+      "stageId": "copy-in",
+      "label": "progress 0 CopyIn",
+      "summary": "Copy x/y GM[0:128] into VECIN queue slots.",
+      "unit": "vector",
+      "blockIdx": 0,
+      "loop": {"progress": 0},
+      "sourceLines": [58, 60, 62],
+      "memoryRegions": ["GM:x[0:128]", "GM:y[0:128]", "UB:xLocal", "UB:yLocal"],
+      "queueEvents": ["inQueueX AllocTensor", "inQueueY AllocTensor", "inQueueX EnQue", "inQueueY EnQue"],
+      "metrics": [{"label": "bytes copied", "value": 1024, "unit": "B"}],
+      "visualState": {
+        "architectureFocus": {
+          "selectors": ["[data-mem950-node=\"rail:GM\"]", "#mem950-aiv1 [data-aiv-node=\"buffer:UB\"]"],
+          "routes": ["gm-to-aiv1-ub"],
+          "bufferBlocks": [
+            {"core": "mem950-aiv1", "buffer": "UB", "label": "xLocal", "sourceTile": "x[block0,progress0,:]", "state": "enqueued", "cellRange": [0, 15], "tone": "input", "operation": "CopyIn"},
+            {"core": "mem950-aiv1", "buffer": "UB", "label": "yLocal", "sourceTile": "y[block0,progress0,:]", "state": "enqueued", "cellRange": [19, 34], "tone": "input", "operation": "CopyIn"}
+          ]
+        }
+      }
+    },
+    {
+      "id": "block0.progress0.compute",
+      "stageId": "compute",
+      "label": "progress 0 Compute",
+      "summary": "Deque x/y, allocate zLocal, run Add over 128 fp32 values.",
+      "unit": "vector",
+      "blockIdx": 0,
+      "loop": {"progress": 0},
+      "sourceLines": [67, 70],
+      "memoryRegions": ["UB:xLocal", "UB:yLocal", "UB:zLocal"],
+      "queueEvents": ["inQueueX DeQue", "inQueueY DeQue", "outQueueZ AllocTensor", "outQueueZ EnQue", "inQueueX FreeTensor", "inQueueY FreeTensor"],
+      "metrics": [{"label": "vector elements", "value": 128}],
+      "visualState": {
+        "architectureFocus": {
+          "selectors": ["#mem950-aiv1 [data-aiv-node=\"buffer:UB\"]", "#mem950-aiv1 [data-aiv-node=\"exec:SIMD\"]", "#mem950-aiv1 [data-aiv-node=\"vector:Vector\"]"],
+          "routes": [],
+          "bufferBlocks": [
+            {"core": "mem950-aiv1", "buffer": "UB", "label": "xLocal", "sourceTile": "x[block0,progress0,:]", "state": "dequeued", "cellRange": [0, 15], "tone": "input", "operation": "DeQue"},
+            {"core": "mem950-aiv1", "buffer": "UB", "label": "yLocal", "sourceTile": "y[block0,progress0,:]", "state": "dequeued", "cellRange": [19, 34], "tone": "input", "operation": "DeQue"},
+            {"core": "mem950-aiv1", "buffer": "UB", "label": "zLocal", "sourceTile": "z[block0,progress0,:]", "state": "enqueued", "cellRange": [38, 53], "tone": "output", "operation": "Add"}
+          ]
+        }
+      }
+    },
+    {
+      "id": "block0.progress0.copyout",
+      "stageId": "copy-out",
+      "label": "progress 0 CopyOut",
+      "summary": "Copy zLocal back to zGm[0:128].",
+      "unit": "vector",
+      "blockIdx": 0,
+      "loop": {"progress": 0},
+      "sourceLines": [78],
+      "memoryRegions": ["UB:zLocal", "GM:z[0:128]"],
+      "queueEvents": ["outQueueZ DeQue", "outQueueZ FreeTensor"],
+      "metrics": [{"label": "bytes copied", "value": 512, "unit": "B"}],
+      "visualState": {
+        "architectureFocus": {
+          "selectors": ["#mem950-aiv1 [data-aiv-node=\"buffer:UB\"]", "[data-mem950-node=\"rail:GM\"]"],
+          "routes": ["aiv1-ub-to-gm"],
+          "bufferBlocks": [
+            {"core": "mem950-aiv1", "buffer": "UB", "label": "zLocal", "sourceTile": "z[block0,progress0,:]", "state": "committed", "cellRange": [38, 53], "tone": "output", "operation": "CopyOut"}
+          ]
+        }
+      }
+    },
+    {
+      "id": "block3.progress2.copyin",
+      "stageId": "copy-in",
+      "label": "block 3 progress 2 CopyIn",
+      "summary": "For blockIdx=3, progress=2 starts at 3*2048 + 2*128 = 6400.",
+      "unit": "vector",
+      "blockIdx": 3,
+      "loop": {"progress": 2},
+      "sourceLines": [60],
+      "memoryRegions": ["GM:x[6400:6528]", "GM:y[6400:6528]", "UB:VECIN"],
+      "queueEvents": ["inQueueX EnQue", "inQueueY EnQue"],
+      "metrics": [{"label": "tile offset", "value": 6400, "unit": "elements"}]
+    },
+    {
+      "id": "block7.progress15.copyout",
+      "stageId": "copy-out",
+      "label": "last block last CopyOut",
+      "summary": "blockIdx=7, progress=15 writes the final tile GM:z[16256:16384].",
+      "unit": "vector",
+      "blockIdx": 7,
+      "loop": {"progress": 15},
+      "sourceLines": [78],
+      "memoryRegions": ["UB:zLocal", "GM:z[16256:16384]"],
+      "queueEvents": ["outQueueZ DeQue", "outQueueZ FreeTensor"],
+      "metrics": [{"label": "final end", "value": 16384, "unit": "elements"}]
+    }
+  ],
+  "puzzles": [
+    {
+      "id": "add.blocklength",
+      "kind": "formula",
+      "prompt": "Given totalLength=16384 and numBlocks=8, what is blockLength?",
+      "context": {"totalLength": 16384, "numBlocks": 8},
+      "answer": 2048,
+      "sourceHint": {"line": 35},
+      "explanation": "blockLength = totalLength / GetBlockNum() = 16384 / 8 = 2048."
+    },
+    {
+      "id": "add.tilelength",
+      "kind": "formula",
+      "prompt": "Given blockLength=2048, tileNum=8, BUFFER_NUM=2, what is tileLength?",
+      "context": {"blockLength": 2048, "tileNum": 8, "bufferNum": 2},
+      "answer": 128,
+      "sourceHint": {"line": 37},
+      "explanation": "tileLength = blockLength / tileNum / BUFFER_NUM = 2048 / 8 / 2 = 128."
+    },
+    {
+      "id": "add.range",
+      "kind": "range_prediction",
+      "prompt": "For blockIdx=3 and progress=2, which xGm range is copied?",
+      "context": {"blockIdx": 3, "progress": 2, "blockLength": 2048, "tileLength": 128},
+      "answer": "GM:x[6400:6528]",
+      "sourceHint": {"line": 60},
+      "explanation": "Start = blockIdx*blockLength + progress*tileLength = 3*2048 + 2*128 = 6400."
+    },
+    {
+      "id": "add.queue.after-copyin",
+      "kind": "queue_state",
+      "prompt": "After CopyIn, which queues hold enqueued tensors?",
+      "context": {"stage": "CopyIn"},
+      "answer": "inQueueX and inQueueY",
+      "sourceHint": {"line": 62},
+      "explanation": "CopyIn enqueues xLocal and yLocal after DataCopy."
+    },
+    {
+      "id": "add.last-tile",
+      "kind": "range_prediction",
+      "prompt": "What zGm range is written by blockIdx=7, progress=15?",
+      "context": {"blockIdx": 7, "progress": 15, "blockLength": 2048, "tileLength": 128},
+      "answer": "GM:z[16256:16384]",
+      "sourceHint": {"line": 78},
+      "explanation": "Start = 7*2048 + 15*128 = 16256; end = 16256 + 128 = 16384."
+    }
+  ],
+  "evidence": {
+    "profiling": {"status": "placeholder", "note": "Attach msProf or clock data later."},
+    "sanitizer": {"status": "placeholder", "note": "Attach msSanitizer findings later."}
+  }
+}
