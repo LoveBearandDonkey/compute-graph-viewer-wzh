@@ -1,0 +1,5599 @@
+{
+  "schemaVersion": "0.3",
+  "operator": {
+    "id": "sample.cann_samples_matmul",
+    "name": "MatmulKernel",
+    "displayName": "MatMul · cann-samples",
+    "kind": "cube",
+    "sourceLanguage": "ascendc",
+    "apiLevel": "tensor_api_runtime_shape",
+    "sourcePath": "src/matmul/main.asc",
+    "description": "Static source recovery model for Samples/0_Introduction/matmul."
+  },
+  "arch": {
+    "npuArch": "dav-3510",
+    "kernelTag": "__aicore__",
+    "soc": "NPU ARCH 3510",
+    "description": "README declares NPU ARCH 3510; exact device runtime is unverified."
+  },
+  "launch": {
+    "entry": "matmul::MatmulKernel<bfloat16_t><<<numBlocks, nullptr, stream>>>(deviceInput, deviceWeight, deviceOutput, m, k, n)",
+    "hostSteps": [
+      "Parse M/K/N",
+      "Initialize ACL",
+      "Allocate Device Memory",
+      "Copy Host→Device",
+      "GetCoreNumAic",
+      "Launch Kernel",
+      "Synchronize",
+      "Copy Device→Host",
+      "Run verify_result.py"
+    ],
+    "blockCountSource": "PlatformAscendCManager::GetInstance()->GetCoreNumAic()",
+    "dtype": "bfloat16_t",
+    "runtimeShape": true
+  },
+  "tiling": {
+    "type": "runtime_kernel_tiling",
+    "params": {
+      "M": 1024,
+      "K": 2048,
+      "N": 4096,
+      "dtype": "BF16",
+      "baseM": 256,
+      "baseN": 256,
+      "baseK": 128,
+      "kL1": 512,
+      "cubeC0": 16
+    },
+    "derived": {
+      "mTileNum": 4,
+      "nTileNum": 16,
+      "outputTileNum": 64,
+      "kL1TileNum": 4,
+      "kL0TileNum": 4,
+      "mmadPerOutputTile": 16,
+      "totalLogicalMmad": 1024
+    },
+    "controls": [
+      {
+        "id": "tileIdx",
+        "label": "Output tile",
+        "value": 0,
+        "unit": "tile",
+        "description": "Selects one logical output tile."
+      },
+      {
+        "id": "iter0",
+        "label": "L1 K tile",
+        "value": 0,
+        "unit": "K tile",
+        "description": "Selects one GM→L1 K slice."
+      },
+      {
+        "id": "iter1",
+        "label": "L0 K tile",
+        "value": 0,
+        "unit": "K tile",
+        "description": "Selects one L1→L0 K slice."
+      }
+    ],
+    "M": 1024,
+    "K": 2048,
+    "N": 4096,
+    "dtype": "BF16",
+    "baseM": 256,
+    "baseN": 256,
+    "baseK": 128,
+    "kL1": 512,
+    "mTileNum": 4,
+    "nTileNum": 16,
+    "outputTileNum": 64,
+    "kL1TileNum": 4,
+    "kL0TileNum": 4,
+    "mmadPerOutputTile": 16
+  },
+  "validationScenarios": [
+    {
+      "id": "divisible",
+      "label": "Default",
+      "description": "Baseline demo shape; every M/N/K tile is full-sized.",
+      "shape": {"M": 1024, "K": 2048, "N": 4096},
+      "focus": "last-mmad",
+      "evidence": "derived",
+      "sourceLines": [82, 83, 84, 86, 87, 88, 112, 113, 129, 154, 156, 159]
+    },
+    {
+      "id": "mn-tail",
+      "label": "M/N tail",
+      "description": "The last output tile exercises both curM and curN tail branches.",
+      "shape": {"M": 1000, "K": 2048, "N": 4000},
+      "focus": "last-mmad",
+      "evidence": "derived",
+      "sourceLines": [82, 83, 86, 87, 112, 113]
+    },
+    {
+      "id": "k-tail",
+      "label": "K tail",
+      "description": "The final L1 K slice is 364 and its final L0 K slice is 108.",
+      "shape": {"M": 1024, "K": 1900, "N": 4096},
+      "focus": "last-mmad",
+      "evidence": "derived",
+      "sourceLines": [84, 88, 129, 154, 156, 159]
+    },
+    {
+      "id": "combined-tail",
+      "label": "Combined",
+      "description": "The last output tile and the final K slices exercise all four tail branches together.",
+      "shape": {"M": 1000, "K": 1900, "N": 4000},
+      "focus": "last-mmad",
+      "evidence": "derived",
+      "sourceLines": [82, 83, 84, 86, 87, 88, 112, 113, 129, 154, 156, 159]
+    }
+  ],
+  "execution": {
+    "mode": "logical-order",
+    "timeline": {
+      "status": "unavailable",
+      "reason": "No run-specific profiling trace is attached; playback shows dependency order, not duration."
+    },
+    "sampleContext": {
+      "tileIdx": 0,
+      "mTileIdx": 0,
+      "nTileIdx": 0,
+      "curM": 256,
+      "curN": 256
+    },
+    "loops": [
+      {
+        "id": "output-tile-loop",
+        "index": "tileIdx",
+        "count": 64,
+        "sourceLines": [109, 110, 111],
+        "label": "Output tile loop",
+        "description": "Logical C tile loop distributed across blockNum AI Cores."
+      },
+      {
+        "id": "l1-k-loop",
+        "index": "iter0",
+        "count": 4,
+        "sourceLines": [126, 129, 150, 151, 191],
+        "label": "L1 K loop",
+        "description": "Four GM→L1 K slices of 512 BF16 elements."
+      },
+      {
+        "id": "l0-k-loop",
+        "index": "iter1",
+        "count": 4,
+        "sourceLines": [154, 156, 159, 176, 177, 187, 189],
+        "label": "L0 K loop",
+        "description": "Four L1→L0 K slices of 128 BF16 elements inside each L1 K slice."
+      }
+    ],
+    "branches": [
+      {
+        "id": "m-tail",
+        "condition": "mTileIdx == mTileNum - 1",
+        "selected": "full-tile",
+        "value": 256,
+        "sourceLines": [112],
+        "explanation": "M=1024 is divisible by baseM=256, so the fixed context has no short M tail."
+      },
+      {
+        "id": "n-tail",
+        "condition": "nTileIdx == nTileNum - 1",
+        "selected": "full-tile",
+        "value": 256,
+        "sourceLines": [113],
+        "explanation": "N=4096 is divisible by baseN=256, so the fixed context has no short N tail."
+      },
+      {
+        "id": "k-l1-tail",
+        "condition": "iter0 + 1 == kL1TileNum",
+        "selected": "full-tile",
+        "value": 512,
+        "sourceLines": [129],
+        "explanation": "K=2048 is divisible by kL1=512."
+      },
+      {
+        "id": "k-l0-tail",
+        "condition": "iter1 + 1 == kL0IterNum",
+        "selected": "full-tile",
+        "value": 128,
+        "sourceLines": [159],
+        "explanation": "Each L1 K slice is divisible by baseK=128."
+      }
+    ],
+    "mmad": {
+      "initCondition": "iter0 == 0 && iter1 == 0",
+      "initialState": "initialize CO1",
+      "repeatedState": "accumulate CO1",
+      "countPerOutputTile": 16,
+      "sourceLines": [181, 187]
+    },
+    "playback": {
+      "scope": "single-output-tile",
+      "tileIdx": 0,
+      "sequenceTemplate": [
+        "host-args",
+        "host-launch",
+        "kernel-tiling",
+        "kernel-block-map",
+        "repeat iter0: gm-to-l1 → sync-mte2-mte1 → repeat iter1: l1-to-l0 → mmad",
+        "sync-m-fix",
+        "l0c-to-gm",
+        "host-verify"
+      ]
+    }
+  },
+  "tensorViews": [
+    {
+      "id": "tensor:a",
+      "bufferId": "gm-a",
+      "label": "A",
+      "role": "input",
+      "logicalShape": [1024, 2048],
+      "tileShape": [256, 512],
+      "dtype": "BF16",
+      "format": "ND",
+      "memoryTier": "GM",
+      "sizeBytes": 4194304,
+      "axes": ["M", "K"],
+      "grid": {"rowSpan": 256, "columnSpan": 512},
+      "provenance": {"symbol": "tensorAgm", "file": "src/matmul/main.asc", "line": 99, "evidence": "demo-input"},
+      "constraints": ["metadata only", "physical GM alignment unavailable", "no Tensor Data Dump"],
+      "lifecycle": [
+        {"stepId": "host-launch", "state": "alloc", "label": "Device allocation"},
+        {"stepId": "gm-to-l1", "state": "loading", "label": "Read current M×K slice"}
+      ]
+    },
+    {
+      "id": "tensor:b",
+      "bufferId": "gm-b",
+      "label": "B",
+      "role": "weight",
+      "logicalShape": [2048, 4096],
+      "tileShape": [512, 256],
+      "dtype": "BF16",
+      "format": "ND",
+      "memoryTier": "GM",
+      "sizeBytes": 16777216,
+      "axes": ["K", "N"],
+      "grid": {"rowSpan": 512, "columnSpan": 256},
+      "provenance": {"symbol": "tensorBgm", "file": "src/matmul/main.asc", "line": 100, "evidence": "demo-input"},
+      "constraints": ["metadata only", "physical GM alignment unavailable", "no Tensor Data Dump"],
+      "lifecycle": [
+        {"stepId": "host-launch", "state": "alloc", "label": "Device allocation"},
+        {"stepId": "gm-to-l1", "state": "loading", "label": "Read current K×N slice"}
+      ]
+    },
+    {
+      "id": "tensor:c",
+      "bufferId": "gm-c",
+      "label": "C",
+      "role": "output",
+      "logicalShape": [1024, 4096],
+      "tileShape": [256, 256],
+      "dtype": "BF16",
+      "format": "ND",
+      "memoryTier": "GM",
+      "sizeBytes": 8388608,
+      "axes": ["M", "N"],
+      "grid": {"rowSpan": 256, "columnSpan": 256},
+      "provenance": {"symbol": "tensorCgm", "file": "src/matmul/main.asc", "line": 101, "evidence": "demo-input"},
+      "constraints": ["metadata only", "physical GM alignment unavailable", "no Tensor Data Dump"],
+      "lifecycle": [
+        {"stepId": "host-launch", "state": "alloc", "label": "Device allocation"},
+        {"stepId": "kernel-block-map", "state": "current", "label": "Select output tile"},
+        {"stepId": "l0c-to-gm", "state": "written", "label": "Write BF16 tile"},
+        {"stepId": "host-verify", "state": "ready", "label": "Copy to Host and verify"}
+      ]
+    },
+    {
+      "id": "tensor:a1",
+      "bufferId": "a1",
+      "label": "A1",
+      "role": "temp",
+      "logicalShape": [256, 512],
+      "tileShape": [256, 128],
+      "dtype": "BF16",
+      "format": "NZ",
+      "memoryTier": "L1",
+      "sizeBytes": 262144,
+      "axes": ["M", "K"],
+      "grid": {"rowSpan": 256, "columnSpan": 128},
+      "provenance": {"symbol": "tensorAL1", "file": "src/matmul/main.asc", "line": 139, "evidence": "derived"},
+      "constraints": ["logical view bytes", "physical padding and bank usage unavailable", "no Tensor Data Dump"],
+      "lifecycle": [
+        {"stepId": "gm-to-l1", "state": "loading", "label": "CopyGM2L1"},
+        {"stepId": "sync-mte2-mte1", "state": "loaded", "label": "L1 ready"},
+        {"stepId": "l1-to-l0", "state": "current", "label": "Read L0 K slice"}
+      ]
+    },
+    {
+      "id": "tensor:b1",
+      "bufferId": "b1",
+      "label": "B1",
+      "role": "temp",
+      "logicalShape": [512, 256],
+      "tileShape": [128, 256],
+      "dtype": "BF16",
+      "format": "NZ",
+      "memoryTier": "L1",
+      "sizeBytes": 262144,
+      "axes": ["K", "N"],
+      "grid": {"rowSpan": 128, "columnSpan": 256},
+      "provenance": {"symbol": "tensorBL1", "file": "src/matmul/main.asc", "line": 145, "evidence": "derived"},
+      "constraints": ["logical view bytes", "physical padding and bank usage unavailable", "no Tensor Data Dump"],
+      "lifecycle": [
+        {"stepId": "gm-to-l1", "state": "loading", "label": "CopyGM2L1"},
+        {"stepId": "sync-mte2-mte1", "state": "loaded", "label": "L1 ready"},
+        {"stepId": "l1-to-l0", "state": "current", "label": "Read L0 K slice"}
+      ]
+    },
+    {
+      "id": "tensor:a2",
+      "bufferId": "a2",
+      "label": "A2",
+      "role": "input",
+      "logicalShape": [256, 128],
+      "tileShape": [256, 128],
+      "dtype": "BF16",
+      "format": "NZ",
+      "memoryTier": "L0A",
+      "sizeBytes": 65536,
+      "axes": ["M", "K"],
+      "grid": {"rowSpan": 256, "columnSpan": 128},
+      "provenance": {"symbol": "tensorAL0", "file": "src/matmul/main.asc", "line": 165, "evidence": "confirmed"},
+      "constraints": ["logical view bytes", "physical L0A padding unavailable", "no Tensor Data Dump"],
+      "lifecycle": [
+        {"stepId": "l1-to-l0", "state": "loading", "label": "CopyL12L0A"},
+        {"stepId": "mmad", "state": "computing", "label": "Mmad input"}
+      ]
+    },
+    {
+      "id": "tensor:b2",
+      "bufferId": "b2",
+      "label": "B2",
+      "role": "weight",
+      "logicalShape": [128, 256],
+      "tileShape": [128, 256],
+      "dtype": "BF16",
+      "format": "ZN",
+      "memoryTier": "L0B",
+      "sizeBytes": 65536,
+      "axes": ["K", "N"],
+      "grid": {"rowSpan": 128, "columnSpan": 256},
+      "provenance": {"symbol": "tensorBL0", "file": "src/matmul/main.asc", "line": 171, "evidence": "confirmed"},
+      "constraints": ["logical view bytes", "physical L0B padding unavailable", "no Tensor Data Dump"],
+      "lifecycle": [
+        {"stepId": "l1-to-l0", "state": "loading", "label": "CopyL12L0B"},
+        {"stepId": "mmad", "state": "computing", "label": "Mmad input"}
+      ]
+    },
+    {
+      "id": "tensor:co1",
+      "bufferId": "l0c",
+      "label": "CO1",
+      "role": "reduction",
+      "logicalShape": [256, 256],
+      "tileShape": [16, 16],
+      "dtype": "FP32",
+      "format": "NZ / C0=16",
+      "memoryTier": "L0C",
+      "sizeBytes": 262144,
+      "axes": ["M", "N"],
+      "grid": {"rowSpan": 16, "columnSpan": 16},
+      "provenance": {"symbol": "tensorL0C", "file": "src/matmul/main.asc", "line": 122, "evidence": "confirmed"},
+      "constraints": ["FP32 accumulator", "logical view bytes", "physical L0C padding unavailable", "no Tensor Data Dump"],
+      "lifecycle": [
+        {"stepId": "kernel-block-map", "state": "alloc", "label": "Create L0C view"},
+        {"stepId": "mmad", "state": "accumulated", "label": "Initialize / accumulate"},
+        {"stepId": "sync-m-fix", "state": "ready", "label": "CO1 ready"},
+        {"stepId": "l0c-to-gm", "state": "written", "label": "CopyL0C2GM"}
+      ]
+    }
+  ],
+  "dataFlows": [
+    {"id": "flow:a-a1", "stepId": "gm-to-l1", "from": "tensor:a", "to": "tensor:a1", "tensorId": "tensor:a1", "bufferId": "a1", "bytes": 262144, "transferEngine": "MTE2", "transformation": "ND → NZ", "status": "logical tile copy", "confidence": "derived"},
+    {"id": "flow:b-b1", "stepId": "gm-to-l1", "from": "tensor:b", "to": "tensor:b1", "tensorId": "tensor:b1", "bufferId": "b1", "bytes": 262144, "transferEngine": "MTE2", "transformation": "ND → NZ", "status": "logical tile copy", "confidence": "derived"},
+    {"id": "flow:a1-a2", "stepId": "l1-to-l0", "from": "tensor:a1", "to": "tensor:a2", "tensorId": "tensor:a2", "bufferId": "a2", "bytes": 65536, "transferEngine": "MTE1", "transformation": "NZ → NZ", "status": "logical K slice", "confidence": "derived"},
+    {"id": "flow:b1-b2", "stepId": "l1-to-l0", "from": "tensor:b1", "to": "tensor:b2", "tensorId": "tensor:b2", "bufferId": "b2", "bytes": 65536, "transferEngine": "MTE1", "transformation": "NZ → ZN", "status": "logical K slice", "confidence": "derived"},
+    {"id": "flow:a2-co1", "stepId": "mmad", "from": "tensor:a2", "to": "tensor:co1", "tensorId": "tensor:co1", "bufferId": "l0c", "bytes": null, "transferEngine": "Cube", "transformation": "Mmad input A", "status": "compute dependency", "confidence": "confirmed"},
+    {"id": "flow:b2-co1", "stepId": "mmad", "from": "tensor:b2", "to": "tensor:co1", "tensorId": "tensor:co1", "bufferId": "l0c", "bytes": null, "transferEngine": "Cube", "transformation": "Mmad input B", "status": "compute dependency", "confidence": "confirmed"},
+    {"id": "flow:co1-c", "stepId": "l0c-to-gm", "from": "tensor:co1", "to": "tensor:c", "tensorId": "tensor:c", "bufferId": "gm-c", "bytes": 131072, "transferEngine": "Output path", "transformation": "NZ FP32 → ND BF16 view", "status": "conversion semantics inferred; logical payload derived", "confidence": "inferred"}
+  ],
+  "tensorFocusByStep": {
+    "host-args": "tensor:a",
+    "host-launch": "tensor:a",
+    "kernel-tiling": "tensor:c",
+    "kernel-block-map": "tensor:c",
+    "gm-to-l1": "tensor:a1",
+    "sync-mte2-mte1": "tensor:a1",
+    "l1-to-l0": "tensor:a2",
+    "mmad": "tensor:co1",
+    "sync-m-fix": "tensor:co1",
+    "l0c-to-gm": "tensor:c",
+    "host-verify": "tensor:c"
+  },
+  "hardwareParticipation": {
+    "scope": "logical-participation-lens",
+    "targetArch": "dav-3510",
+    "topologyStatus": "unverified",
+    "visualPreset": "ascend910b",
+    "visualPresetConstraint": "Shared AIC memory hierarchy used only as a logical participation lens; it is not asserted as the physical dav-3510 topology.",
+    "units": [
+      {"id": "gm", "label": "GM", "kind": "memory", "selector": "[data-mem950-node=\"rail:GM\"]"},
+      {"id": "l1", "label": "L1", "kind": "memory", "selector": "#mem950-aic [data-aic-node=\"buffer:L1\"]"},
+      {"id": "l0a", "label": "L0A", "kind": "memory", "selector": "#mem950-aic [data-aic-node=\"buffer:L0A\"]"},
+      {"id": "l0b", "label": "L0B", "kind": "memory", "selector": "#mem950-aic [data-aic-node=\"buffer:L0B\"]"},
+      {"id": "l0c", "label": "L0C", "kind": "memory", "selector": "#mem950-aic [data-aic-node=\"buffer:L0C\"]"},
+      {"id": "mte2", "label": "MTE2", "kind": "engine", "selector": "#mem950-aic [data-aic-node=\"queue:MTE2 Queue\"]"},
+      {"id": "mte1", "label": "MTE1", "kind": "engine", "selector": "#mem950-aic [data-aic-node=\"queue:MTE1 Queue\"]"},
+      {"id": "cube", "label": "Cube", "kind": "engine", "selector": "#mem950-aic [data-aic-node=\"cube:CUBE\"]"},
+      {"id": "output", "label": "Output path", "kind": "engine", "selector": "#mem950-aic [data-aic-node=\"queue:FixPipe Queue\"]"},
+      {"id": "scalar", "label": "Scalar", "kind": "control", "selector": "#mem950-aic [data-aic-node=\"scalar:Scalar\"]"}
+    ],
+    "focusByStep": {
+      "host-args": {"units": [], "routes": [], "summary": "Host parses M/K/N; no on-chip execution unit is asserted."},
+      "host-launch": {"units": ["gm"], "routes": [], "summary": "Host allocates and populates the three GM tensors before launch."},
+      "kernel-tiling": {"units": ["scalar"], "routes": [], "summary": "Kernel-side scalar control derives the fixed tile grid and tails."},
+      "kernel-block-map": {"units": ["gm", "l0c", "scalar"], "routes": [], "summary": "Scalar control maps tileIdx to one GM output slice and creates the L0C view."},
+      "gm-to-l1": {"units": ["gm", "l1", "mte2"], "routes": ["l2-to-aic"], "summary": "MTE2 moves the current A/B K-L1 slices from GM into L1 views."},
+      "sync-mte2-mte1": {"units": ["l1", "mte2", "mte1"], "routes": [], "summary": "MTE2_MTE1 publishes L1 readiness before MTE1 reads A1/B1."},
+      "l1-to-l0": {"units": ["l1", "l0a", "l0b", "mte1"], "routes": [], "summary": "MTE1 loads one K-L0 slice into A2/L0A and B2/L0B."},
+      "mmad": {"units": ["l0a", "l0b", "cube", "l0c"], "routes": [], "summary": "Cube consumes A2/B2 and initializes or accumulates the FP32 CO1 tile in L0C."},
+      "sync-m-fix": {"units": ["cube", "l0c", "output"], "routes": [], "summary": "M_FIX publishes the final CO1 result to the output path."},
+      "l0c-to-gm": {"units": ["l0c", "output", "gm"], "routes": [], "summary": "The output path copies the completed L0C tile back to the GM C slice."},
+      "host-verify": {"units": ["gm"], "routes": [], "summary": "Host waits, copies C from device memory, and invokes result verification."}
+    }
+  },
+  "tensors": [
+    {
+      "id": "tensor:a",
+      "name": "A",
+      "role": "input",
+      "logicalShape": [
+        1024,
+        2048
+      ],
+      "logicalLayout": "ND",
+      "dtype": "BF16",
+      "validElements": 2097152,
+      "validBytes": 4194304,
+      "confidence": "demo-input",
+      "source": "src/matmul/main.asc:65,95,99"
+    },
+    {
+      "id": "tensor:b",
+      "name": "B",
+      "role": "input",
+      "logicalShape": [
+        2048,
+        4096
+      ],
+      "logicalLayout": "ND",
+      "dtype": "BF16",
+      "validElements": 8388608,
+      "validBytes": 16777216,
+      "confidence": "demo-input",
+      "source": "src/matmul/main.asc:66,96,100"
+    },
+    {
+      "id": "tensor:c",
+      "name": "C",
+      "role": "output",
+      "logicalShape": [
+        1024,
+        4096
+      ],
+      "logicalLayout": "ND",
+      "dtype": "BF16",
+      "validElements": 4194304,
+      "validBytes": 8388608,
+      "confidence": "demo-input",
+      "source": "src/matmul/main.asc:67,97,101"
+    },
+    {
+      "id": "tensor:a1",
+      "name": "A1",
+      "role": "local-input",
+      "logicalShape": null,
+      "logicalLayout": "NZ",
+      "dtype": "T",
+      "validElements": null,
+      "validBytes": null,
+      "confidence": "derived",
+      "source": "src/matmul/main.asc:138,139"
+    },
+    {
+      "id": "tensor:b1",
+      "name": "B1",
+      "role": "local-input",
+      "logicalShape": null,
+      "logicalLayout": "NZ",
+      "dtype": "T",
+      "validElements": null,
+      "validBytes": null,
+      "confidence": "derived",
+      "source": "src/matmul/main.asc:144,145"
+    },
+    {
+      "id": "tensor:a2",
+      "name": "A2",
+      "role": "cube-input",
+      "logicalShape": null,
+      "logicalLayout": "NZ",
+      "dtype": "T",
+      "validElements": null,
+      "validBytes": null,
+      "confidence": "confirmed",
+      "source": "src/matmul/main.asc:164,165"
+    },
+    {
+      "id": "tensor:b2",
+      "name": "B2",
+      "role": "cube-input",
+      "logicalShape": null,
+      "logicalLayout": "ZN",
+      "dtype": "T",
+      "validElements": null,
+      "validBytes": null,
+      "confidence": "confirmed",
+      "source": "src/matmul/main.asc:170,171"
+    },
+    {
+      "id": "tensor:co1",
+      "name": "CO1",
+      "role": "accumulator",
+      "logicalShape": null,
+      "logicalLayout": "NZ / C0=16",
+      "dtype": "FP32",
+      "validElements": null,
+      "validBytes": null,
+      "confidence": "confirmed",
+      "source": "src/matmul/main.asc:121,122"
+    }
+  ],
+  "buffers": [
+    {
+      "id": "gm-a",
+      "name": "tensorAgm / A GM",
+      "location": "GM",
+      "dtype": "BF16",
+      "logicalShape": [
+        1024,
+        2048
+      ],
+      "allocatedElements": 2097152,
+      "allocatedBytes": 4194304,
+      "confidence": "demo-input",
+      "source": "src/matmul/main.asc:95,99",
+      "missingEvidence": "physical GM alignment and runtime allocation"
+    },
+    {
+      "id": "gm-b",
+      "name": "tensorBgm / B GM",
+      "location": "GM",
+      "dtype": "BF16",
+      "logicalShape": [
+        2048,
+        4096
+      ],
+      "allocatedElements": 8388608,
+      "allocatedBytes": 16777216,
+      "confidence": "demo-input",
+      "source": "src/matmul/main.asc:96,100",
+      "missingEvidence": "physical GM alignment and runtime allocation"
+    },
+    {
+      "id": "gm-c",
+      "name": "tensorCgm / C GM",
+      "location": "GM",
+      "dtype": "BF16",
+      "logicalShape": [
+        1024,
+        4096
+      ],
+      "allocatedElements": 4194304,
+      "allocatedBytes": 8388608,
+      "confidence": "demo-input",
+      "source": "src/matmul/main.asc:97,101",
+      "missingEvidence": "physical GM alignment and runtime allocation"
+    },
+    {
+      "id": "a1",
+      "name": "tensorAL1 / A1",
+      "location": "L1",
+      "dtype": "T",
+      "logicalShape": null,
+      "allocatedElements": null,
+      "allocatedBytes": null,
+      "confidence": "derived",
+      "source": "src/matmul/main.asc:133,138,139",
+      "missingEvidence": "runtime L1 allocation, padding and bank usage"
+    },
+    {
+      "id": "b1",
+      "name": "tensorBL1 / B1",
+      "location": "L1",
+      "dtype": "T",
+      "logicalShape": null,
+      "allocatedElements": null,
+      "allocatedBytes": null,
+      "confidence": "derived",
+      "source": "src/matmul/main.asc:134,144,145",
+      "missingEvidence": "runtime L1 allocation, padding and bank usage"
+    },
+    {
+      "id": "a2",
+      "name": "tensorAL0 / A2",
+      "location": "L0A",
+      "dtype": "T",
+      "logicalShape": null,
+      "allocatedElements": null,
+      "allocatedBytes": null,
+      "confidence": "confirmed",
+      "source": "src/matmul/main.asc:164,165",
+      "missingEvidence": "physical L0A padding and allocation"
+    },
+    {
+      "id": "b2",
+      "name": "tensorBL0 / B2",
+      "location": "L0B",
+      "dtype": "T",
+      "logicalShape": null,
+      "allocatedElements": null,
+      "allocatedBytes": null,
+      "confidence": "confirmed",
+      "source": "src/matmul/main.asc:170,171",
+      "missingEvidence": "physical L0B padding and allocation"
+    },
+    {
+      "id": "l0c",
+      "name": "tensorL0C / CO1",
+      "location": "L0C",
+      "dtype": "FP32",
+      "logicalShape": null,
+      "allocatedElements": null,
+      "allocatedBytes": null,
+      "confidence": "confirmed",
+      "source": "src/matmul/main.asc:121,122",
+      "missingEvidence": "physical L0C capacity and padding"
+    }
+  ],
+  "events": [
+    {
+      "id": "event:mte2-mte1",
+      "eventType": "MTE2_MTE1",
+      "producerEngine": "MTE2",
+      "consumerEngine": "MTE1",
+      "setStepId": "gm-to-l1",
+      "waitStepId": "sync-mte2-mte1",
+      "setSourceLines": [
+        150
+      ],
+      "waitSourceLines": [
+        151
+      ],
+      "scope": "same-iteration",
+      "confidence": "confirmed",
+      "explanation": "CopyGM2L1 completes before the following L1→L0 reads."
+    },
+    {
+      "id": "event:mte1-m",
+      "eventType": "MTE1_M",
+      "producerEngine": "MTE1",
+      "consumerEngine": "Cube",
+      "setStepId": "l1-to-l0",
+      "waitStepId": "l1-to-l0",
+      "setSourceLines": [
+        176
+      ],
+      "waitSourceLines": [
+        177
+      ],
+      "scope": "same-iteration",
+      "confidence": "confirmed",
+      "explanation": "The L0 input views are published before Mmad reads them."
+    },
+    {
+      "id": "event:m-mte1",
+      "eventType": "M_MTE1",
+      "producerEngine": "Cube",
+      "consumerEngine": "MTE1",
+      "setStepId": "mmad",
+      "waitStepId": "l1-to-l0",
+      "setSourceLines": [
+        189
+      ],
+      "waitSourceLines": [
+        157
+      ],
+      "scope": "loop-carried",
+      "confidence": "confirmed",
+      "explanation": "Loop-carried dependency: the next L0 load waits for the previous Mmad to consume the buffers."
+    },
+    {
+      "id": "event:m-fix",
+      "eventType": "M_FIX",
+      "producerEngine": "Cube",
+      "consumerEngine": "Output path",
+      "setStepId": "sync-m-fix",
+      "waitStepId": "sync-m-fix",
+      "setSourceLines": [
+        193
+      ],
+      "waitSourceLines": [
+        194
+      ],
+      "scope": "same-iteration",
+      "confidence": "confirmed",
+      "explanation": "The output path waits for the final CO1 result."
+    },
+    {
+      "id": "event:fix-m",
+      "eventType": "FIX_M",
+      "producerEngine": "Output path",
+      "consumerEngine": "Kernel tile loop",
+      "setStepId": "l0c-to-gm",
+      "waitStepId": "kernel-block-map",
+      "setSourceLines": [
+        200
+      ],
+      "waitSourceLines": [
+        124
+      ],
+      "scope": "loop-carried",
+      "confidence": "confirmed",
+      "explanation": "Loop-carried output resource reuse dependency before the next output tile."
+    },
+    {
+      "id": "event:mte1-mte2",
+      "eventType": "MTE1_MTE2",
+      "producerEngine": "MTE1",
+      "consumerEngine": "MTE2",
+      "setStepId": "l1-to-l0",
+      "waitStepId": "gm-to-l1",
+      "setSourceLines": [
+        191
+      ],
+      "waitSourceLines": [
+        127
+      ],
+      "scope": "loop-carried",
+      "confidence": "confirmed",
+      "explanation": "Loop-carried dependency controlling reuse between successive L1 K tiles."
+    }
+  ],
+  "source": {
+    "id": "main.asc",
+    "label": "main.asc · Host + Kernel",
+    "path": "main.asc",
+    "projectPath": "src/matmul/main.asc",
+    "language": "ascendc",
+    "lines": [
+      {
+        "line": 1,
+        "text": "/**"
+      },
+      {
+        "line": 2,
+        "text": " * Copyright (c) 2026 Huawei Technologies Co., Ltd."
+      },
+      {
+        "line": 3,
+        "text": " * This program is free software, you can redistribute it and/or modify it under the terms and conditions of"
+      },
+      {
+        "line": 4,
+        "text": " * CANN Open Software License Agreement Version 2.0 (the \"License\")."
+      },
+      {
+        "line": 5,
+        "text": " * Please refer to the License for details. You may not use this file except in compliance with the License."
+      },
+      {
+        "line": 6,
+        "text": " * THIS SOFTWARE IS PROVIDED ON AN \"AS IS\" BASIS, WITHOUT WARRANTIES OF ANY KIND, EITHER EXPRESS OR IMPLIED,"
+      },
+      {
+        "line": 7,
+        "text": " * INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT, MERCHANTABILITY, OR FITNESS FOR A PARTICULAR PURPOSE."
+      },
+      {
+        "line": 8,
+        "text": " * See LICENSE in the root of the software repository for the full text of the License."
+      },
+      {
+        "line": 9,
+        "text": " */"
+      },
+      {
+        "line": 10,
+        "text": ""
+      },
+      {
+        "line": 11,
+        "text": "/*!"
+      },
+      {
+        "line": 12,
+        "text": " * \\file matmul.cpp"
+      },
+      {
+        "line": 13,
+        "text": " * \\brief Implementation of matrix multiplication kernel for Ascend processors"
+      },
+      {
+        "line": 14,
+        "text": " */"
+      },
+      {
+        "line": 15,
+        "text": ""
+      },
+      {
+        "line": 16,
+        "text": "#include <iostream>"
+      },
+      {
+        "line": 17,
+        "text": "#include <vector>"
+      },
+      {
+        "line": 18,
+        "text": "#include <cmath>"
+      },
+      {
+        "line": 19,
+        "text": "#include <memory>"
+      },
+      {
+        "line": 20,
+        "text": "#include <random>"
+      },
+      {
+        "line": 21,
+        "text": "#include <iomanip>"
+      },
+      {
+        "line": 22,
+        "text": "#include <algorithm>"
+      },
+      {
+        "line": 23,
+        "text": "#include <cstring>"
+      },
+      {
+        "line": 24,
+        "text": "#include <cstdint>"
+      },
+      {
+        "line": 25,
+        "text": "#include <filesystem>"
+      },
+      {
+        "line": 26,
+        "text": "#include <sys/stat.h>"
+      },
+      {
+        "line": 27,
+        "text": "#include <fstream>"
+      },
+      {
+        "line": 28,
+        "text": "#include <fcntl.h>"
+      },
+      {
+        "line": 29,
+        "text": "#include <unistd.h>"
+      },
+      {
+        "line": 30,
+        "text": ""
+      },
+      {
+        "line": 31,
+        "text": "#include \"acl/acl.h\""
+      },
+      {
+        "line": 32,
+        "text": "#include \"kernel_basic_intf.h\""
+      },
+      {
+        "line": 33,
+        "text": "#include \"tiling/platform/platform_ascendc.h\""
+      },
+      {
+        "line": 34,
+        "text": "#include \"include/tensor_api/tensor.h\""
+      },
+      {
+        "line": 35,
+        "text": ""
+      },
+      {
+        "line": 36,
+        "text": "#define ERROR_LOG(fmt, args...) fprintf(stdout, \"[ERROR]  \" fmt \"\\n\", ##args)"
+      },
+      {
+        "line": 37,
+        "text": ""
+      },
+      {
+        "line": 38,
+        "text": "namespace tool {"
+      },
+      {
+        "line": 39,
+        "text": "constexpr static int32_t L0C_C0 = 16;"
+      },
+      {
+        "line": 40,
+        "text": "constexpr static uint16_t ZERO_FLAG = 0;                    // Zero flag value for synchronization"
+      },
+      {
+        "line": 41,
+        "text": "__aicore__ inline uint64_t CeilDiv(uint64_t a, uint64_t b); // Helper function for ceiling division"
+      },
+      {
+        "line": 42,
+        "text": "float Bf16ToFloat(uint16_t h);"
+      },
+      {
+        "line": 43,
+        "text": "uint16_t FloatToBf16(float f);"
+      },
+      {
+        "line": 44,
+        "text": "inline bool ReadFile(const std::string& filePath, size_t& fileSize, void* buffer, size_t bufferSize);"
+      },
+      {
+        "line": 45,
+        "text": "inline bool WriteFile(const std::string& filePath, const void* buffer, size_t size);"
+      },
+      {
+        "line": 46,
+        "text": "} // namespace tool"
+      },
+      {
+        "line": 47,
+        "text": ""
+      },
+      {
+        "line": 48,
+        "text": "namespace AscendC::Te {"
+      },
+      {
+        "line": 49,
+        "text": "static constexpr bool transA = false; // Whether to transpose matrix A"
+      },
+      {
+        "line": 50,
+        "text": "static constexpr bool transB = false; // Whether to transpose matrix B"
+      },
+      {
+        "line": 51,
+        "text": "template <typename T>"
+      },
+      {
+        "line": 52,
+        "text": "using MakeLayoutAL1 ="
+      },
+      {
+        "line": 53,
+        "text": "    AscendC::Std::conditional_t<transA, AscendC::Te::FrameLayoutFormat<AscendC::Te::ZNLayoutPtn, AscendC::Te::LayoutTraitDefault<T>>, AscendC::Te::FrameLayoutFormat<AscendC::Te::NZLayoutPtn, AscendC::Te::LayoutTraitDefault<T>>>; // Layout for A"
+      },
+      {
+        "line": 54,
+        "text": "                                                                                                         // matrix in L1"
+      },
+      {
+        "line": 55,
+        "text": "template <typename T>"
+      },
+      {
+        "line": 56,
+        "text": "using MakeLayoutBL1 ="
+      },
+      {
+        "line": 57,
+        "text": "    AscendC::Std::conditional_t<transB, AscendC::Te::FrameLayoutFormat<AscendC::Te::ZNLayoutPtn, AscendC::Te::LayoutTraitDefault<T>>, AscendC::Te::FrameLayoutFormat<AscendC::Te::NZLayoutPtn, AscendC::Te::LayoutTraitDefault<T>>>; // Layout for B"
+      },
+      {
+        "line": 58,
+        "text": "                                                                                                         // matrix in L1"
+      },
+      {
+        "line": 59,
+        "text": "} // namespace AscendC::Te"
+      },
+      {
+        "line": 60,
+        "text": ""
+      },
+      {
+        "line": 61,
+        "text": "namespace matmul {"
+      },
+      {
+        "line": 62,
+        "text": "/**"
+      },
+      {
+        "line": 63,
+        "text": " * @brief Simple kernel example for matrix multiplication on Ascend processors"
+      },
+      {
+        "line": 64,
+        "text": " * @tparam T Data type of matrices (typically float)"
+      },
+      {
+        "line": 65,
+        "text": " * @param aGm Global memory address of input matrix A (size m×k)"
+      },
+      {
+        "line": 66,
+        "text": " * @param bGm Global memory address of input matrix B (size k×n)"
+      },
+      {
+        "line": 67,
+        "text": " * @param cGm Global memory address of output matrix C (size m×n)"
+      },
+      {
+        "line": 68,
+        "text": " * @param m Number of rows in matrix A"
+      },
+      {
+        "line": 69,
+        "text": " * @param k Number of columns in matrix A / rows in matrix B"
+      },
+      {
+        "line": 70,
+        "text": " * @param n Number of columns in matrix B"
+      },
+      {
+        "line": 71,
+        "text": " */"
+      },
+      {
+        "line": 72,
+        "text": "template <typename T>"
+      },
+      {
+        "line": 73,
+        "text": "__global__ __aicore__ void MatmulKernel(GM_ADDR aGm, GM_ADDR bGm, GM_ADDR cGm, uint32_t m, uint32_t k, uint32_t n)"
+      },
+      {
+        "line": 74,
+        "text": "{"
+      },
+      {
+        "line": 75,
+        "text": "    KERNEL_TASK_TYPE_DEFAULT(KERNEL_TYPE_AIC_ONLY); // Specify kernel type as AI Core only"
+      },
+      {
+        "line": 76,
+        "text": ""
+      },
+      {
+        "line": 77,
+        "text": "    // Initialize tiling parameters for efficient memory hierarchy utilization"
+      },
+      {
+        "line": 78,
+        "text": "    uint64_t baseM = 256;             // Base tile size for M dimension in L0"
+      },
+      {
+        "line": 79,
+        "text": "    uint64_t baseN = 256;             // Base tile size for N dimension in L0"
+      },
+      {
+        "line": 80,
+        "text": "    uint64_t baseK = 256 / sizeof(T); // Base tile size for K dimension in L0"
+      },
+      {
+        "line": 81,
+        "text": "    uint64_t kL1 = 1024 / sizeof(T);  // Tile size for K dimension in L1"
+      },
+      {
+        "line": 82,
+        "text": "    uint64_t mTileNum = tool::CeilDiv(m, baseM);"
+      },
+      {
+        "line": 83,
+        "text": "    uint64_t nTileNum = tool::CeilDiv(n, baseN);"
+      },
+      {
+        "line": 84,
+        "text": "    uint64_t tileNum = mTileNum * nTileNum;"
+      },
+      {
+        "line": 85,
+        "text": "    uint64_t kL1TileNum = tool::CeilDiv(k, kL1);"
+      },
+      {
+        "line": 86,
+        "text": "    uint64_t tailKL1 = k - (kL1TileNum - 1) * kL1;"
+      },
+      {
+        "line": 87,
+        "text": "    uint64_t tailBaseM = m - (mTileNum - 1) * baseM;"
+      },
+      {
+        "line": 88,
+        "text": "    uint64_t tailBaseN = n - (nTileNum - 1) * baseN;"
+      },
+      {
+        "line": 89,
+        "text": "    uint64_t l0cOffset = 0; // L0C buffer offset"
+      },
+      {
+        "line": 90,
+        "text": ""
+      },
+      {
+        "line": 91,
+        "text": "    uint64_t curBlockIdx = AscendC::GetBlockIdx();"
+      },
+      {
+        "line": 92,
+        "text": "    uint64_t blockNum = AscendC::GetBlockNum();"
+      },
+      {
+        "line": 93,
+        "text": ""
+      },
+      {
+        "line": 94,
+        "text": "    // Construct GM tensors with ND layout"
+      },
+      {
+        "line": 95,
+        "text": "    auto layoutA = AscendC::Te::MakeFrameLayout<AscendC::Te::NDExtLayoutPtn>(m, k);"
+      },
+      {
+        "line": 96,
+        "text": "    auto layoutB = AscendC::Te::MakeFrameLayout<AscendC::Te::NDExtLayoutPtn>(k, n);"
+      },
+      {
+        "line": 97,
+        "text": "    auto layoutC = AscendC::Te::MakeFrameLayout<AscendC::Te::NDExtLayoutPtn>(m, n);"
+      },
+      {
+        "line": 98,
+        "text": ""
+      },
+      {
+        "line": 99,
+        "text": "    auto tensorAgm = AscendC::Te::MakeTensor(AscendC::Te::MakeMemPtr<AscendC::Te::Location::GM>(reinterpret_cast<__gm__ T*>(aGm)), layoutA);"
+      },
+      {
+        "line": 100,
+        "text": "    auto tensorBgm = AscendC::Te::MakeTensor(AscendC::Te::MakeMemPtr<AscendC::Te::Location::GM>(reinterpret_cast<__gm__ T*>(bGm)), layoutB);"
+      },
+      {
+        "line": 101,
+        "text": "    auto tensorCgm = AscendC::Te::MakeTensor(AscendC::Te::MakeMemPtr<AscendC::Te::Location::GM>(reinterpret_cast<__gm__ T*>(cGm)), layoutC);"
+      },
+      {
+        "line": 102,
+        "text": ""
+      },
+      {
+        "line": 103,
+        "text": "    // Initialize synchronization flags for pipeline control"
+      },
+      {
+        "line": 104,
+        "text": "    AscendC::SetFlag<AscendC::HardEvent::MTE1_MTE2>(tool::ZERO_FLAG);"
+      },
+      {
+        "line": 105,
+        "text": "    AscendC::SetFlag<AscendC::HardEvent::M_MTE1>(tool::ZERO_FLAG);"
+      },
+      {
+        "line": 106,
+        "text": "    AscendC::SetFlag<AscendC::HardEvent::FIX_M>(tool::ZERO_FLAG);"
+      },
+      {
+        "line": 107,
+        "text": ""
+      },
+      {
+        "line": 108,
+        "text": "    // Multi-core tile processing loop - distribute tiles across available cores"
+      },
+      {
+        "line": 109,
+        "text": "    for (uint64_t tileIdx = curBlockIdx; tileIdx < tileNum; tileIdx += blockNum) {"
+      },
+      {
+        "line": 110,
+        "text": "        uint64_t mTileIdx = tileIdx / nTileNum;"
+      },
+      {
+        "line": 111,
+        "text": "        uint64_t nTileIdx = tileIdx % nTileNum;"
+      },
+      {
+        "line": 112,
+        "text": "        int64_t curM = mTileIdx == (mTileNum - 1) ? tailBaseM : baseM;"
+      },
+      {
+        "line": 113,
+        "text": "        int64_t curN = nTileIdx == (nTileNum - 1) ? tailBaseN : baseN;"
+      },
+      {
+        "line": 114,
+        "text": ""
+      },
+      {
+        "line": 115,
+        "text": "        // Slice GM to L1 - prepare memory pointers for this tile"
+      },
+      {
+        "line": 116,
+        "text": "        auto tensorAGmBlock = tensorAgm.Slice(AscendC::Te::MakeCoord(mTileIdx * baseM, 0L), AscendC::Te::MakeShape(curM, k));"
+      },
+      {
+        "line": 117,
+        "text": "        auto tensorBGmBlock = tensorBgm.Slice(AscendC::Te::MakeCoord(0L, nTileIdx * baseN), AscendC::Te::MakeShape(k, curN));"
+      },
+      {
+        "line": 118,
+        "text": ""
+      },
+      {
+        "line": 119,
+        "text": "        auto tensorCGmBlock ="
+      },
+      {
+        "line": 120,
+        "text": "            tensorCgm.Slice(AscendC::Te::MakeCoord(mTileIdx * baseM, nTileIdx * baseN), AscendC::Te::MakeShape(curM, curN));"
+      },
+      {
+        "line": 121,
+        "text": "        auto layoutL0C = AscendC::Te::MakeFrameLayout<AscendC::Te::NZLayoutPtn, AscendC::Std::Int<tool::L0C_C0>>(curM, curN); // L0C layout for output"
+      },
+      {
+        "line": 122,
+        "text": "        auto tensorL0C = AscendC::Te::MakeTensor(AscendC::Te::MakeMemPtr<AscendC::Te::Location::L0C, float>(l0cOffset), layoutL0C);"
+      },
+      {
+        "line": 123,
+        "text": ""
+      },
+      {
+        "line": 124,
+        "text": "        AscendC::WaitFlag<AscendC::HardEvent::FIX_M>(tool::ZERO_FLAG);"
+      },
+      {
+        "line": 125,
+        "text": "        // Process K dimension in multiple L1 tiles"
+      },
+      {
+        "line": 126,
+        "text": "        for (uint64_t iter0 = 0; iter0 < kL1TileNum; ++iter0) {"
+      },
+      {
+        "line": 127,
+        "text": "            AscendC::WaitFlag<AscendC::HardEvent::MTE1_MTE2>(tool::ZERO_FLAG); // Wait for previous MTE1-MTE2 operations"
+      },
+      {
+        "line": 128,
+        "text": ""
+      },
+      {
+        "line": 129,
+        "text": "            auto curGmBKL1 = (iter0 + 1 == kL1TileNum) ? (k - iter0 * kL1) : kL1;"
+      },
+      {
+        "line": 130,
+        "text": "            auto curGmAKL1 = curGmBKL1;"
+      },
+      {
+        "line": 131,
+        "text": ""
+      },
+      {
+        "line": 132,
+        "text": "            // Copy GM to L1 buffers"
+      },
+      {
+        "line": 133,
+        "text": "            uint64_t l1BufferAOffset = 0;"
+      },
+      {
+        "line": 134,
+        "text": "            uint64_t l1BufferBOffset = baseM * kL1 * sizeof(T);"
+      },
+      {
+        "line": 135,
+        "text": ""
+      },
+      {
+        "line": 136,
+        "text": "            // GM to L1 copy operation"
+      },
+      {
+        "line": 137,
+        "text": "            auto copyGM2L1 = AscendC::Te::MakeCopy(AscendC::Te::CopyGM2L1{});"
+      },
+      {
+        "line": 138,
+        "text": "            auto layoutAL1 = AscendC::Te::MakeLayoutAL1<T>{}(curM, curGmAKL1); // Layout for A in L1"
+      },
+      {
+        "line": 139,
+        "text": "            auto tensorAL1 = AscendC::Te::MakeTensor(AscendC::Te::MakeMemPtr<AscendC::Te::Location::L1, T>(l1BufferAOffset), layoutAL1);"
+      },
+      {
+        "line": 140,
+        "text": "            auto tensorAGmTile ="
+      },
+      {
+        "line": 141,
+        "text": "                tensorAGmBlock.Slice(AscendC::Te::MakeCoord(0, iter0 * kL1), AscendC::Te::MakeShape(curM, curGmAKL1));"
+      },
+      {
+        "line": 142,
+        "text": "            AscendC::Te::Copy(copyGM2L1, tensorAL1, tensorAGmTile); // Copy A tile from GM to L1"
+      },
+      {
+        "line": 143,
+        "text": ""
+      },
+      {
+        "line": 144,
+        "text": "            auto layoutBL1 = AscendC::Te::MakeLayoutBL1<T>{}(curGmBKL1, curN); // Layout for B in L1"
+      },
+      {
+        "line": 145,
+        "text": "            auto tensorBL1 = AscendC::Te::MakeTensor(AscendC::Te::MakeMemPtr<AscendC::Te::Location::L1, T>(l1BufferBOffset), layoutBL1);"
+      },
+      {
+        "line": 146,
+        "text": "            auto tensorBGmTile ="
+      },
+      {
+        "line": 147,
+        "text": "                tensorBGmBlock.Slice(AscendC::Te::MakeCoord(iter0 * kL1, 0), AscendC::Te::MakeShape(curGmBKL1, curN));"
+      },
+      {
+        "line": 148,
+        "text": "            AscendC::Te::Copy(copyGM2L1, tensorBL1, tensorBGmTile); // Copy B tile from GM to L1"
+      },
+      {
+        "line": 149,
+        "text": ""
+      },
+      {
+        "line": 150,
+        "text": "            AscendC::SetFlag<AscendC::HardEvent::MTE2_MTE1>(tool::ZERO_FLAG);  // Signal MTE2-MTE1 completion"
+      },
+      {
+        "line": 151,
+        "text": "            AscendC::WaitFlag<AscendC::HardEvent::MTE2_MTE1>(tool::ZERO_FLAG); // Wait for MTE2-MTE1 operations"
+      },
+      {
+        "line": 152,
+        "text": ""
+      },
+      {
+        "line": 153,
+        "text": "            // Process K dimension in multiple L0 tiles"
+      },
+      {
+        "line": 154,
+        "text": "            uint64_t kL0IterNum = tool::CeilDiv(curGmBKL1, baseK);"
+      },
+      {
+        "line": 155,
+        "text": "            uint64_t tailKL0 = curGmBKL1 - (kL0IterNum - 1) * baseK;"
+      },
+      {
+        "line": 156,
+        "text": "            for (uint16_t iter1 = 0; iter1 < kL0IterNum; ++iter1) {"
+      },
+      {
+        "line": 157,
+        "text": "                AscendC::WaitFlag<AscendC::HardEvent::M_MTE1>(tool::ZERO_FLAG); // Wait for M-MTE1 operations"
+      },
+      {
+        "line": 158,
+        "text": ""
+      },
+      {
+        "line": 159,
+        "text": "                uint64_t curKL0 = (iter1 + 1 == kL0IterNum) ? tailKL0 : baseK;"
+      },
+      {
+        "line": 160,
+        "text": ""
+      },
+      {
+        "line": 161,
+        "text": "                // Copy L1 to L0 buffers"
+      },
+      {
+        "line": 162,
+        "text": "                auto copyL12L0A = AscendC::Te::MakeCopy(AscendC::Te::CopyL12L0A{});"
+      },
+      {
+        "line": 163,
+        "text": "                auto copyL12L0B = AscendC::Te::MakeCopy(AscendC::Te::CopyL12L0B{}); // L1 to L0 copy operation"
+      },
+      {
+        "line": 164,
+        "text": "                auto layoutAL0 = AscendC::Te::MakeFrameLayout<AscendC::Te::NZLayoutPtn, AscendC::Te::LayoutTraitDefault<T>>(curM, curKL0);      // NZ layout for A in L0"
+      },
+      {
+        "line": 165,
+        "text": "                auto tensorAL0 = AscendC::Te::MakeTensor(AscendC::Te::MakeMemPtr<AscendC::Te::Location::L0A, T>(0), layoutAL0);"
+      },
+      {
+        "line": 166,
+        "text": "                auto tensorAL1Tile ="
+      },
+      {
+        "line": 167,
+        "text": "                    tensorAL1.Slice(AscendC::Te::MakeCoord(0, iter1 * baseK), AscendC::Te::MakeShape(curM, curKL0));"
+      },
+      {
+        "line": 168,
+        "text": "                AscendC::Te::Copy(copyL12L0A, tensorAL0, tensorAL1Tile); // Copy A tile from L1 to L0"
+      },
+      {
+        "line": 169,
+        "text": ""
+      },
+      {
+        "line": 170,
+        "text": "                auto layoutBL0 = AscendC::Te::MakeFrameLayout<AscendC::Te::ZNLayoutPtn, AscendC::Te::LayoutTraitDefault<T>>(curKL0, curN); // ZN layout for B in L0"
+      },
+      {
+        "line": 171,
+        "text": "                auto tensorBL0 = AscendC::Te::MakeTensor(AscendC::Te::MakeMemPtr<AscendC::Te::Location::L0B, T>(0), layoutBL0);"
+      },
+      {
+        "line": 172,
+        "text": "                auto tensorBL1Tile ="
+      },
+      {
+        "line": 173,
+        "text": "                    tensorBL1.Slice(AscendC::Te::MakeCoord(iter1 * baseK, 0), AscendC::Te::MakeShape(curKL0, curN));"
+      },
+      {
+        "line": 174,
+        "text": "                AscendC::Te::Copy(copyL12L0B, tensorBL0, tensorBL1Tile); // Copy B tile from L1 to L0"
+      },
+      {
+        "line": 175,
+        "text": ""
+      },
+      {
+        "line": 176,
+        "text": "                AscendC::SetFlag<AscendC::HardEvent::MTE1_M>(tool::ZERO_FLAG);  // Signal MTE1-M completion"
+      },
+      {
+        "line": 177,
+        "text": "                AscendC::WaitFlag<AscendC::HardEvent::MTE1_M>(tool::ZERO_FLAG); // Wait for MTE1-M operations"
+      },
+      {
+        "line": 178,
+        "text": ""
+      },
+      {
+        "line": 179,
+        "text": "                // Execute M-MAD operation (matrix multiplication)"
+      },
+      {
+        "line": 180,
+        "text": "                AscendC::Te::MmadParams para;"
+      },
+      {
+        "line": 181,
+        "text": "                para.cmatrixInitVal = (iter1 == 0 && iter0 == 0); // Initialize C matrix on first iteration"
+      },
+      {
+        "line": 182,
+        "text": "                para.m = curM;"
+      },
+      {
+        "line": 183,
+        "text": "                para.n = curN;"
+      },
+      {
+        "line": 184,
+        "text": "                para.k = curKL0;"
+      },
+      {
+        "line": 185,
+        "text": ""
+      },
+      {
+        "line": 186,
+        "text": "                auto MadOp = AscendC::Te::MakeMmad(AscendC::Te::MmadOperation{}, AscendC::Te::MmadTraitDefault{});"
+      },
+      {
+        "line": 187,
+        "text": "                AscendC::Te::Mmad(MadOp.with(para), tensorL0C, tensorAL0, tensorBL0);"
+      },
+      {
+        "line": 188,
+        "text": ""
+      },
+      {
+        "line": 189,
+        "text": "                AscendC::SetFlag<AscendC::HardEvent::M_MTE1>(tool::ZERO_FLAG);"
+      },
+      {
+        "line": 190,
+        "text": "            }"
+      },
+      {
+        "line": 191,
+        "text": "            AscendC::SetFlag<AscendC::HardEvent::MTE1_MTE2>(tool::ZERO_FLAG);"
+      },
+      {
+        "line": 192,
+        "text": "        }"
+      },
+      {
+        "line": 193,
+        "text": "        AscendC::SetFlag<AscendC::HardEvent::M_FIX>(tool::ZERO_FLAG);"
+      },
+      {
+        "line": 194,
+        "text": "        AscendC::WaitFlag<AscendC::HardEvent::M_FIX>(tool::ZERO_FLAG);"
+      },
+      {
+        "line": 195,
+        "text": ""
+      },
+      {
+        "line": 196,
+        "text": "        // Copy result from L0C to GM"
+      },
+      {
+        "line": 197,
+        "text": "        auto copyL0C2GM = AscendC::Te::MakeCopy(AscendC::Te::CopyL0C2GM{}); // L0C to GM copy operation"
+      },
+      {
+        "line": 198,
+        "text": "        AscendC::Te::Copy(copyL0C2GM, tensorCGmBlock, tensorL0C);           // Copy computed tile to global memory"
+      },
+      {
+        "line": 199,
+        "text": ""
+      },
+      {
+        "line": 200,
+        "text": "        AscendC::SetFlag<AscendC::HardEvent::FIX_M>(tool::ZERO_FLAG);"
+      },
+      {
+        "line": 201,
+        "text": "    }"
+      },
+      {
+        "line": 202,
+        "text": "    // Final synchronization for all pipeline stages"
+      },
+      {
+        "line": 203,
+        "text": "    AscendC::WaitFlag<AscendC::HardEvent::MTE1_MTE2>(tool::ZERO_FLAG);"
+      },
+      {
+        "line": 204,
+        "text": "    AscendC::WaitFlag<AscendC::HardEvent::M_MTE1>(tool::ZERO_FLAG);"
+      },
+      {
+        "line": 205,
+        "text": "    AscendC::WaitFlag<AscendC::HardEvent::FIX_M>(tool::ZERO_FLAG);"
+      },
+      {
+        "line": 206,
+        "text": "}"
+      },
+      {
+        "line": 207,
+        "text": ""
+      },
+      {
+        "line": 208,
+        "text": "} // namespace matmul"
+      },
+      {
+        "line": 209,
+        "text": ""
+      },
+      {
+        "line": 210,
+        "text": "// Macro for condition checking with error message"
+      },
+      {
+        "line": 211,
+        "text": "#define CHECK_COND(cond, message, return_expr)              \\"
+      },
+      {
+        "line": 212,
+        "text": "    do {                                                    \\"
+      },
+      {
+        "line": 213,
+        "text": "        if (!(cond)) {                                      \\"
+      },
+      {
+        "line": 214,
+        "text": "            std::cerr << \"ERROR: \" << message << std::endl; \\"
+      },
+      {
+        "line": 215,
+        "text": "            return_expr;                                    \\"
+      },
+      {
+        "line": 216,
+        "text": "        }                                                   \\"
+      },
+      {
+        "line": 217,
+        "text": "    } while (0)"
+      },
+      {
+        "line": 218,
+        "text": ""
+      },
+      {
+        "line": 219,
+        "text": "/**"
+      },
+      {
+        "line": 220,
+        "text": " * @brief Print command-line usage help"
+      },
+      {
+        "line": 221,
+        "text": " * @param programName Name of the executable"
+      },
+      {
+        "line": 222,
+        "text": " */"
+      },
+      {
+        "line": 223,
+        "text": "void printUsage(const std::string& programName)"
+      },
+      {
+        "line": 224,
+        "text": "{"
+      },
+      {
+        "line": 225,
+        "text": "    std::cerr << \"Usage: \" << programName << \" m k n\" << std::endl;"
+      },
+      {
+        "line": 226,
+        "text": "    std::cerr << \"Args: \" << std::endl;"
+      },
+      {
+        "line": 227,
+        "text": "    std::cerr << \"  m: row of matrix A\" << std::endl;"
+      },
+      {
+        "line": 228,
+        "text": "    std::cerr << \"  k: col of matrix A\" << std::endl;"
+      },
+      {
+        "line": 229,
+        "text": "    std::cerr << \"  n: col of matrix B\" << std::endl;"
+      },
+      {
+        "line": 230,
+        "text": "    std::cerr << \"Example: \" << programName << \" 100 50 200\" << std::endl;"
+      },
+      {
+        "line": 231,
+        "text": "}"
+      },
+      {
+        "line": 232,
+        "text": ""
+      },
+      {
+        "line": 233,
+        "text": "/**"
+      },
+      {
+        "line": 234,
+        "text": " * @brief Parse and validate command-line arguments"
+      },
+      {
+        "line": 235,
+        "text": " * @param argc Argument count"
+      },
+      {
+        "line": 236,
+        "text": " * @param argv Argument vector"
+      },
+      {
+        "line": 237,
+        "text": " * @param m Output parameter for M dimension"
+      },
+      {
+        "line": 238,
+        "text": " * @param k Output parameter for K dimension"
+      },
+      {
+        "line": 239,
+        "text": " * @param n Output parameter for N dimension"
+      },
+      {
+        "line": 240,
+        "text": " * @throws std::invalid_argument on invalid input"
+      },
+      {
+        "line": 241,
+        "text": " */"
+      },
+      {
+        "line": 242,
+        "text": "void parseArguments(int argc, char* argv[], int& m, int& k, int& n)"
+      },
+      {
+        "line": 243,
+        "text": "{"
+      },
+      {
+        "line": 244,
+        "text": "    if (argc >= 2 && (std::string(argv[1]) == \"--help\" || std::string(argv[1]) == \"-h\")) {"
+      },
+      {
+        "line": 245,
+        "text": "        printUsage(argv[0]);"
+      },
+      {
+        "line": 246,
+        "text": "        exit(1);"
+      },
+      {
+        "line": 247,
+        "text": "    }"
+      },
+      {
+        "line": 248,
+        "text": "    if (argc < 4) {"
+      },
+      {
+        "line": 249,
+        "text": "        throw std::invalid_argument(\"ERROR: Lacks Arguments\");"
+      },
+      {
+        "line": 250,
+        "text": "    }"
+      },
+      {
+        "line": 251,
+        "text": "    try {"
+      },
+      {
+        "line": 252,
+        "text": "        m = std::stoi(argv[1]);"
+      },
+      {
+        "line": 253,
+        "text": "        k = std::stoi(argv[2]);"
+      },
+      {
+        "line": 254,
+        "text": "        n = std::stoi(argv[3]);"
+      },
+      {
+        "line": 255,
+        "text": "    } catch (const std::invalid_argument& e) {"
+      },
+      {
+        "line": 256,
+        "text": "        throw std::invalid_argument(\"ERROR: m k n must be Integer\");"
+      },
+      {
+        "line": 257,
+        "text": "    }"
+      },
+      {
+        "line": 258,
+        "text": ""
+      },
+      {
+        "line": 259,
+        "text": "    if (m <= 0 || k <= 0 || n <= 0) {"
+      },
+      {
+        "line": 260,
+        "text": "        throw std::invalid_argument(\"ERROR: m k n must be positive\");"
+      },
+      {
+        "line": 261,
+        "text": "    }"
+      },
+      {
+        "line": 262,
+        "text": "}"
+      },
+      {
+        "line": 263,
+        "text": ""
+      },
+      {
+        "line": 264,
+        "text": "/**"
+      },
+      {
+        "line": 265,
+        "text": " * @brief Main function - host code for matrix multiplication"
+      },
+      {
+        "line": 266,
+        "text": " * @param argc Argument count"
+      },
+      {
+        "line": 267,
+        "text": " * @param argv Argument vector"
+      },
+      {
+        "line": 268,
+        "text": " * @return 0 on success, non-zero on failure"
+      },
+      {
+        "line": 269,
+        "text": " */"
+      },
+      {
+        "line": 270,
+        "text": "int main(int argc, char* argv[])"
+      },
+      {
+        "line": 271,
+        "text": "{"
+      },
+      {
+        "line": 272,
+        "text": "    using namespace tool;"
+      },
+      {
+        "line": 273,
+        "text": "    int m, k, n;"
+      },
+      {
+        "line": 274,
+        "text": "    try {"
+      },
+      {
+        "line": 275,
+        "text": "        parseArguments(argc, argv, m, k, n);"
+      },
+      {
+        "line": 276,
+        "text": "    } catch (const std::exception& e) {"
+      },
+      {
+        "line": 277,
+        "text": "        std::cerr << e.what() << std::endl;"
+      },
+      {
+        "line": 278,
+        "text": "        printUsage(argv[0]);"
+      },
+      {
+        "line": 279,
+        "text": "        return 1;"
+      },
+      {
+        "line": 280,
+        "text": "    }"
+      },
+      {
+        "line": 281,
+        "text": ""
+      },
+      {
+        "line": 282,
+        "text": "    // Initialize ACL (Ascend Computing Language) resources"
+      },
+      {
+        "line": 283,
+        "text": "    int32_t deviceId = 0;"
+      },
+      {
+        "line": 284,
+        "text": "    aclrtStream stream;"
+      },
+      {
+        "line": 285,
+        "text": "    auto ret = aclInit(nullptr);"
+      },
+      {
+        "line": 286,
+        "text": "    CHECK_COND(ret == ACL_SUCCESS, \"aclInit failed.\", return 1);"
+      },
+      {
+        "line": 287,
+        "text": "    ret = aclrtSetDevice(deviceId);"
+      },
+      {
+        "line": 288,
+        "text": "    CHECK_COND(ret == ACL_SUCCESS, \"aclrtSetDevice failed.\", return 1);"
+      },
+      {
+        "line": 289,
+        "text": "    ret = aclrtCreateStream(&stream);"
+      },
+      {
+        "line": 290,
+        "text": "    CHECK_COND(ret == ACL_SUCCESS, \"aclrtCreateStream failed.\", return 1);"
+      },
+      {
+        "line": 291,
+        "text": ""
+      },
+      {
+        "line": 292,
+        "text": "    std::vector<uint16_t> hostInput(m * k, 0);"
+      },
+      {
+        "line": 293,
+        "text": "    std::vector<uint16_t> hostWeight(k * n, 0);"
+      },
+      {
+        "line": 294,
+        "text": "    std::vector<uint16_t> hostOutput(m * n, 0);"
+      },
+      {
+        "line": 295,
+        "text": "    std::vector<uint16_t> goldenOutput(m * n, 0);"
+      },
+      {
+        "line": 296,
+        "text": ""
+      },
+      {
+        "line": 297,
+        "text": "    auto sizeInput = hostInput.size() * sizeof(uint16_t);"
+      },
+      {
+        "line": 298,
+        "text": "    auto sizeWeight = hostWeight.size() * sizeof(uint16_t);"
+      },
+      {
+        "line": 299,
+        "text": "    auto sizeOutput = hostOutput.size() * sizeof(uint16_t);"
+      },
+      {
+        "line": 300,
+        "text": "    "
+      },
+      {
+        "line": 301,
+        "text": "    std::string cmd = \"python3 gen_data.py \" + std::to_string(m) + \" \" + std::to_string(k) + \" \" + std::to_string(n);"
+      },
+      {
+        "line": 302,
+        "text": "    system(cmd.c_str());"
+      },
+      {
+        "line": 303,
+        "text": ""
+      },
+      {
+        "line": 304,
+        "text": "    std::string baseDir = std::filesystem::current_path();"
+      },
+      {
+        "line": 305,
+        "text": "    std::string inputDir = baseDir + \"/input\";"
+      },
+      {
+        "line": 306,
+        "text": "    std::string outputDir = baseDir + \"/output\";"
+      },
+      {
+        "line": 307,
+        "text": "    ReadFile(inputDir + \"/input_a.bin\", sizeInput, hostInput.data(), sizeInput);"
+      },
+      {
+        "line": 308,
+        "text": "    ReadFile(inputDir + \"/input_b.bin\", sizeWeight, hostWeight.data(), sizeWeight);"
+      },
+      {
+        "line": 309,
+        "text": ""
+      },
+      {
+        "line": 310,
+        "text": "    uint8_t *deviceInput = nullptr;"
+      },
+      {
+        "line": 311,
+        "text": "    uint8_t *deviceWeight = nullptr;"
+      },
+      {
+        "line": 312,
+        "text": "    uint8_t *deviceOutput = nullptr;"
+      },
+      {
+        "line": 313,
+        "text": "    std::unique_ptr<void, aclError (*)(void*)> deviceInputPtr(deviceInput, aclrtFree);"
+      },
+      {
+        "line": 314,
+        "text": "    ret = aclrtMalloc((void**)&deviceInput, sizeInput, ACL_MEM_MALLOC_HUGE_FIRST);"
+      },
+      {
+        "line": 315,
+        "text": "    CHECK_COND(ret == ACL_SUCCESS, \"aclrtMalloc deviceInput failed.\", return 1);"
+      },
+      {
+        "line": 316,
+        "text": ""
+      },
+      {
+        "line": 317,
+        "text": "    std::unique_ptr<void, aclError (*)(void*)> deviceWeightPtr(deviceWeight, aclrtFree);"
+      },
+      {
+        "line": 318,
+        "text": "    ret = aclrtMalloc((void**)&deviceWeight, sizeWeight, ACL_MEM_MALLOC_HUGE_FIRST);"
+      },
+      {
+        "line": 319,
+        "text": "    CHECK_COND(ret == ACL_SUCCESS, \"aclrtMalloc deviceWeight failed.\", return 1);"
+      },
+      {
+        "line": 320,
+        "text": ""
+      },
+      {
+        "line": 321,
+        "text": "    std::unique_ptr<void, aclError (*)(void*)> deviceOutputPtr(deviceOutput, aclrtFree);"
+      },
+      {
+        "line": 322,
+        "text": "    ret = aclrtMalloc((void**)&deviceOutput, sizeOutput, ACL_MEM_MALLOC_HUGE_FIRST);"
+      },
+      {
+        "line": 323,
+        "text": "    CHECK_COND(ret == ACL_SUCCESS, \"aclrtMalloc deviceOutput failed.\", return 1);"
+      },
+      {
+        "line": 324,
+        "text": ""
+      },
+      {
+        "line": 325,
+        "text": "    ret = aclrtMemcpy(deviceInput, sizeInput, hostInput.data(), sizeInput, ACL_MEMCPY_HOST_TO_DEVICE);"
+      },
+      {
+        "line": 326,
+        "text": "    CHECK_COND(ret == ACL_SUCCESS, \"aclrtMemcpy deviceInput failed.\", return 1);"
+      },
+      {
+        "line": 327,
+        "text": "    ret = aclrtMemcpy(deviceWeight, sizeWeight, hostWeight.data(), sizeWeight, ACL_MEMCPY_HOST_TO_DEVICE);"
+      },
+      {
+        "line": 328,
+        "text": "    CHECK_COND(ret == ACL_SUCCESS, \"aclrtMemcpy deviceWeight failed.\", return 1);"
+      },
+      {
+        "line": 329,
+        "text": ""
+      },
+      {
+        "line": 330,
+        "text": "    auto ascendcPlatform = platform_ascendc::PlatformAscendCManager::GetInstance();"
+      },
+      {
+        "line": 331,
+        "text": "    CHECK_COND(ascendcPlatform != nullptr, \"get ascendcPlatform failed.\", return 1);"
+      },
+      {
+        "line": 332,
+        "text": "    uint32_t numBlocks = ascendcPlatform->GetCoreNumAic(); // Number of AI cores"
+      },
+      {
+        "line": 333,
+        "text": ""
+      },
+      {
+        "line": 334,
+        "text": "    matmul::MatmulKernel<bfloat16_t><<<numBlocks, nullptr, stream>>>(deviceInput, deviceWeight, deviceOutput, m, k, n);"
+      },
+      {
+        "line": 335,
+        "text": ""
+      },
+      {
+        "line": 336,
+        "text": "    ret = aclrtSynchronizeStream(stream);"
+      },
+      {
+        "line": 337,
+        "text": "    CHECK_COND(ret == ACL_SUCCESS, \"aclrtSynchronizeStream failed.\", return 1);"
+      },
+      {
+        "line": 338,
+        "text": ""
+      },
+      {
+        "line": 339,
+        "text": "    ret = aclrtMemcpy(hostOutput.data(), sizeOutput, deviceOutput, sizeOutput, ACL_MEMCPY_DEVICE_TO_HOST);"
+      },
+      {
+        "line": 340,
+        "text": "    CHECK_COND(ret == ACL_SUCCESS, \"aclrtMemcpy deviceOutput failed.\", return 1);"
+      },
+      {
+        "line": 341,
+        "text": ""
+      },
+      {
+        "line": 342,
+        "text": "    auto toFloat = [](const std::vector<uint16_t>& src, std::vector<float>& dst) {"
+      },
+      {
+        "line": 343,
+        "text": "        std::transform(src.begin(), src.end(), dst.begin(), Bf16ToFloat);"
+      },
+      {
+        "line": 344,
+        "text": "    };"
+      },
+      {
+        "line": 345,
+        "text": ""
+      },
+      {
+        "line": 346,
+        "text": "    WriteFile(outputDir + \"/npu_out.bin\", hostOutput.data(), sizeOutput);"
+      },
+      {
+        "line": 347,
+        "text": ""
+      },
+      {
+        "line": 348,
+        "text": "    cmd = \"python3 verify_result.py \" + std::to_string(m) + \" \" + std::to_string(n);"
+      },
+      {
+        "line": 349,
+        "text": "    if (std::system(cmd.c_str()) != 0) {"
+      },
+      {
+        "line": 350,
+        "text": "        return 1;"
+      },
+      {
+        "line": 351,
+        "text": "    }"
+      },
+      {
+        "line": 352,
+        "text": ""
+      },
+      {
+        "line": 353,
+        "text": "    aclrtDestroyStream(stream);"
+      },
+      {
+        "line": 354,
+        "text": "    aclrtResetDevice(deviceId);"
+      },
+      {
+        "line": 355,
+        "text": "    aclFinalize();"
+      },
+      {
+        "line": 356,
+        "text": "    return 0;"
+      },
+      {
+        "line": 357,
+        "text": "}"
+      },
+      {
+        "line": 358,
+        "text": ""
+      },
+      {
+        "line": 359,
+        "text": "namespace tool {"
+      },
+      {
+        "line": 360,
+        "text": "/**"
+      },
+      {
+        "line": 361,
+        "text": " * @brief Compute ceiling division of two integers"
+      },
+      {
+        "line": 362,
+        "text": " * @param a Numerator"
+      },
+      {
+        "line": 363,
+        "text": " * @param b Denominator"
+      },
+      {
+        "line": 364,
+        "text": " * @return Ceiling of a/b"
+      },
+      {
+        "line": 365,
+        "text": " */"
+      },
+      {
+        "line": 366,
+        "text": "__aicore__ inline uint64_t CeilDiv(uint64_t a, uint64_t b)"
+      },
+      {
+        "line": 367,
+        "text": "{"
+      },
+      {
+        "line": 368,
+        "text": "    if (b == 0) {"
+      },
+      {
+        "line": 369,
+        "text": "        return a;"
+      },
+      {
+        "line": 370,
+        "text": "    }"
+      },
+      {
+        "line": 371,
+        "text": "    return (a + b - 1) / b;"
+      },
+      {
+        "line": 372,
+        "text": "}"
+      },
+      {
+        "line": 373,
+        "text": ""
+      },
+      {
+        "line": 374,
+        "text": "/**"
+      },
+      {
+        "line": 375,
+        "text": " * @brief Convert a 16-bit brain floating-point (bfloat16) value to a 32-bit float"
+      },
+      {
+        "line": 376,
+        "text": " * @param h 16-bit bfloat16 value stored in uint16_t format"
+      },
+      {
+        "line": 377,
+        "text": " * @return The converted 32-bit floating-point value"
+      },
+      {
+        "line": 378,
+        "text": " */"
+      },
+      {
+        "line": 379,
+        "text": "float Bf16ToFloat(uint16_t h)"
+      },
+      {
+        "line": 380,
+        "text": "{"
+      },
+      {
+        "line": 381,
+        "text": "    uint32_t sign = (h & 0x8000U) ? 0x80000000U : 0x00000000U;"
+      },
+      {
+        "line": 382,
+        "text": "    uint32_t exponent = (h >> 7) & 0x00FFU;"
+      },
+      {
+        "line": 383,
+        "text": "    uint32_t mantissa = h & 0x007FU;"
+      },
+      {
+        "line": 384,
+        "text": "    uint32_t f_bits = sign | (exponent << 23) | (mantissa << (23 - 7));"
+      },
+      {
+        "line": 385,
+        "text": "    return *reinterpret_cast<float*>(&f_bits);"
+      },
+      {
+        "line": 386,
+        "text": "}"
+      },
+      {
+        "line": 387,
+        "text": ""
+      },
+      {
+        "line": 388,
+        "text": "/**"
+      },
+      {
+        "line": 389,
+        "text": " * @brief Convert a 32-bit float to a 16-bit brain floating-point (bfloat16) value"
+      },
+      {
+        "line": 390,
+        "text": " * @param f 32-bit floating-point value to convert"
+      },
+      {
+        "line": 391,
+        "text": " * @return The converted 16-bit bfloat16 value stored in uint16_t format (truncated rounding)"
+      },
+      {
+        "line": 392,
+        "text": " */"
+      },
+      {
+        "line": 393,
+        "text": "uint16_t FloatToBf16(float f)"
+      },
+      {
+        "line": 394,
+        "text": "{"
+      },
+      {
+        "line": 395,
+        "text": "    uint32_t f_bits;"
+      },
+      {
+        "line": 396,
+        "text": "    std::memcpy(&f_bits, &f, sizeof(f_bits));"
+      },
+      {
+        "line": 397,
+        "text": ""
+      },
+      {
+        "line": 398,
+        "text": "    // Extract the high 16 bits (simple truncation)"
+      },
+      {
+        "line": 399,
+        "text": "    return static_cast<uint16_t>(f_bits >> 16);"
+      },
+      {
+        "line": 400,
+        "text": "}"
+      },
+      {
+        "line": 401,
+        "text": ""
+      },
+      {
+        "line": 402,
+        "text": "inline bool ReadFile(const std::string& filePath, size_t& fileSize, void* buffer, size_t bufferSize)"
+      },
+      {
+        "line": 403,
+        "text": "{"
+      },
+      {
+        "line": 404,
+        "text": "    struct stat sBuf;"
+      },
+      {
+        "line": 405,
+        "text": "    int fileStatus = stat(filePath.data(), &sBuf);"
+      },
+      {
+        "line": 406,
+        "text": "    if (fileStatus == -1) {"
+      },
+      {
+        "line": 407,
+        "text": "        ERROR_LOG(\"failed to get file\");"
+      },
+      {
+        "line": 408,
+        "text": "        return false;"
+      },
+      {
+        "line": 409,
+        "text": "    }"
+      },
+      {
+        "line": 410,
+        "text": "    if (S_ISREG(sBuf.st_mode) == 0) {"
+      },
+      {
+        "line": 411,
+        "text": "        ERROR_LOG(\"%s is not a file, please enter a file\", filePath.c_str());"
+      },
+      {
+        "line": 412,
+        "text": "        return false;"
+      },
+      {
+        "line": 413,
+        "text": "    }"
+      },
+      {
+        "line": 414,
+        "text": ""
+      },
+      {
+        "line": 415,
+        "text": "    std::ifstream file;"
+      },
+      {
+        "line": 416,
+        "text": "    file.open(filePath, std::ios::binary);"
+      },
+      {
+        "line": 417,
+        "text": "    if (!file.is_open()) {"
+      },
+      {
+        "line": 418,
+        "text": "        ERROR_LOG(\"Open file failed. path = %s\", filePath.c_str());"
+      },
+      {
+        "line": 419,
+        "text": "        return false;"
+      },
+      {
+        "line": 420,
+        "text": "    }"
+      },
+      {
+        "line": 421,
+        "text": ""
+      },
+      {
+        "line": 422,
+        "text": "    std::filebuf* buf = file.rdbuf();"
+      },
+      {
+        "line": 423,
+        "text": "    size_t size = buf->pubseekoff(0, std::ios::end, std::ios::in);"
+      },
+      {
+        "line": 424,
+        "text": "    if (size == 0) {"
+      },
+      {
+        "line": 425,
+        "text": "        ERROR_LOG(\"file size is 0\");"
+      },
+      {
+        "line": 426,
+        "text": "        file.close();"
+      },
+      {
+        "line": 427,
+        "text": "        return false;"
+      },
+      {
+        "line": 428,
+        "text": "    }"
+      },
+      {
+        "line": 429,
+        "text": "    if (size > bufferSize) {"
+      },
+      {
+        "line": 430,
+        "text": "        ERROR_LOG(\"file size is larger than buffer size\");"
+      },
+      {
+        "line": 431,
+        "text": "        file.close();"
+      },
+      {
+        "line": 432,
+        "text": "        return false;"
+      },
+      {
+        "line": 433,
+        "text": "    }"
+      },
+      {
+        "line": 434,
+        "text": "    buf->pubseekpos(0, std::ios::in);"
+      },
+      {
+        "line": 435,
+        "text": "    buf->sgetn(static_cast<char*>(buffer), size);"
+      },
+      {
+        "line": 436,
+        "text": "    fileSize = size;"
+      },
+      {
+        "line": 437,
+        "text": "    file.close();"
+      },
+      {
+        "line": 438,
+        "text": "    return true;"
+      },
+      {
+        "line": 439,
+        "text": "}"
+      },
+      {
+        "line": 440,
+        "text": ""
+      },
+      {
+        "line": 441,
+        "text": "/**"
+      },
+      {
+        "line": 442,
+        "text": " * @brief Write data to file"
+      },
+      {
+        "line": 443,
+        "text": " * @param [in] filePath: file path"
+      },
+      {
+        "line": 444,
+        "text": " * @param [in] buffer: data to write to file"
+      },
+      {
+        "line": 445,
+        "text": " * @param [in] size: size to write"
+      },
+      {
+        "line": 446,
+        "text": " * @return write result"
+      },
+      {
+        "line": 447,
+        "text": " */"
+      },
+      {
+        "line": 448,
+        "text": "inline bool WriteFile(const std::string& filePath, const void* buffer, size_t size)"
+      },
+      {
+        "line": 449,
+        "text": "{"
+      },
+      {
+        "line": 450,
+        "text": "    if (buffer == nullptr) {"
+      },
+      {
+        "line": 451,
+        "text": "        ERROR_LOG(\"Write file failed. buffer is nullptr\");"
+      },
+      {
+        "line": 452,
+        "text": "        return false;"
+      },
+      {
+        "line": 453,
+        "text": "    }"
+      },
+      {
+        "line": 454,
+        "text": ""
+      },
+      {
+        "line": 455,
+        "text": "    int fd = open(filePath.c_str(), O_RDWR | O_CREAT | O_TRUNC, S_IRUSR | S_IWRITE);"
+      },
+      {
+        "line": 456,
+        "text": "    if (fd < 0) {"
+      },
+      {
+        "line": 457,
+        "text": "        ERROR_LOG(\"Open file failed. path = %s\", filePath.c_str());"
+      },
+      {
+        "line": 458,
+        "text": "        return false;"
+      },
+      {
+        "line": 459,
+        "text": "    }"
+      },
+      {
+        "line": 460,
+        "text": ""
+      },
+      {
+        "line": 461,
+        "text": "    size_t writeSize = write(fd, buffer, size);"
+      },
+      {
+        "line": 462,
+        "text": "    (void)close(fd);"
+      },
+      {
+        "line": 463,
+        "text": "    if (writeSize != size) {"
+      },
+      {
+        "line": 464,
+        "text": "        ERROR_LOG(\"Write file Failed.\");"
+      },
+      {
+        "line": 465,
+        "text": "        return false;"
+      },
+      {
+        "line": 466,
+        "text": "    }"
+      },
+      {
+        "line": 467,
+        "text": ""
+      },
+      {
+        "line": 468,
+        "text": "    return true;"
+      },
+      {
+        "line": 469,
+        "text": "}"
+      },
+      {
+        "line": 470,
+        "text": ""
+      },
+      {
+        "line": 471,
+        "text": "} // namespace tool"
+      },
+      {
+        "line": 472,
+        "text": ""
+      }
+    ],
+    "roleRanges": {
+      "kernel": [
+        73,
+        206
+      ],
+      "host": [
+        223,
+        471
+      ],
+      "shared": [
+        1,
+        72
+      ]
+    }
+  },
+  "sources": [
+    {
+      "id": "main.asc",
+      "label": "main.asc · Host + Kernel",
+      "path": "main.asc",
+      "projectPath": "src/matmul/main.asc",
+      "language": "ascendc",
+      "lines": [
+        {
+          "line": 1,
+          "text": "/**"
+        },
+        {
+          "line": 2,
+          "text": " * Copyright (c) 2026 Huawei Technologies Co., Ltd."
+        },
+        {
+          "line": 3,
+          "text": " * This program is free software, you can redistribute it and/or modify it under the terms and conditions of"
+        },
+        {
+          "line": 4,
+          "text": " * CANN Open Software License Agreement Version 2.0 (the \"License\")."
+        },
+        {
+          "line": 5,
+          "text": " * Please refer to the License for details. You may not use this file except in compliance with the License."
+        },
+        {
+          "line": 6,
+          "text": " * THIS SOFTWARE IS PROVIDED ON AN \"AS IS\" BASIS, WITHOUT WARRANTIES OF ANY KIND, EITHER EXPRESS OR IMPLIED,"
+        },
+        {
+          "line": 7,
+          "text": " * INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT, MERCHANTABILITY, OR FITNESS FOR A PARTICULAR PURPOSE."
+        },
+        {
+          "line": 8,
+          "text": " * See LICENSE in the root of the software repository for the full text of the License."
+        },
+        {
+          "line": 9,
+          "text": " */"
+        },
+        {
+          "line": 10,
+          "text": ""
+        },
+        {
+          "line": 11,
+          "text": "/*!"
+        },
+        {
+          "line": 12,
+          "text": " * \\file matmul.cpp"
+        },
+        {
+          "line": 13,
+          "text": " * \\brief Implementation of matrix multiplication kernel for Ascend processors"
+        },
+        {
+          "line": 14,
+          "text": " */"
+        },
+        {
+          "line": 15,
+          "text": ""
+        },
+        {
+          "line": 16,
+          "text": "#include <iostream>"
+        },
+        {
+          "line": 17,
+          "text": "#include <vector>"
+        },
+        {
+          "line": 18,
+          "text": "#include <cmath>"
+        },
+        {
+          "line": 19,
+          "text": "#include <memory>"
+        },
+        {
+          "line": 20,
+          "text": "#include <random>"
+        },
+        {
+          "line": 21,
+          "text": "#include <iomanip>"
+        },
+        {
+          "line": 22,
+          "text": "#include <algorithm>"
+        },
+        {
+          "line": 23,
+          "text": "#include <cstring>"
+        },
+        {
+          "line": 24,
+          "text": "#include <cstdint>"
+        },
+        {
+          "line": 25,
+          "text": "#include <filesystem>"
+        },
+        {
+          "line": 26,
+          "text": "#include <sys/stat.h>"
+        },
+        {
+          "line": 27,
+          "text": "#include <fstream>"
+        },
+        {
+          "line": 28,
+          "text": "#include <fcntl.h>"
+        },
+        {
+          "line": 29,
+          "text": "#include <unistd.h>"
+        },
+        {
+          "line": 30,
+          "text": ""
+        },
+        {
+          "line": 31,
+          "text": "#include \"acl/acl.h\""
+        },
+        {
+          "line": 32,
+          "text": "#include \"kernel_basic_intf.h\""
+        },
+        {
+          "line": 33,
+          "text": "#include \"tiling/platform/platform_ascendc.h\""
+        },
+        {
+          "line": 34,
+          "text": "#include \"include/tensor_api/tensor.h\""
+        },
+        {
+          "line": 35,
+          "text": ""
+        },
+        {
+          "line": 36,
+          "text": "#define ERROR_LOG(fmt, args...) fprintf(stdout, \"[ERROR]  \" fmt \"\\n\", ##args)"
+        },
+        {
+          "line": 37,
+          "text": ""
+        },
+        {
+          "line": 38,
+          "text": "namespace tool {"
+        },
+        {
+          "line": 39,
+          "text": "constexpr static int32_t L0C_C0 = 16;"
+        },
+        {
+          "line": 40,
+          "text": "constexpr static uint16_t ZERO_FLAG = 0;                    // Zero flag value for synchronization"
+        },
+        {
+          "line": 41,
+          "text": "__aicore__ inline uint64_t CeilDiv(uint64_t a, uint64_t b); // Helper function for ceiling division"
+        },
+        {
+          "line": 42,
+          "text": "float Bf16ToFloat(uint16_t h);"
+        },
+        {
+          "line": 43,
+          "text": "uint16_t FloatToBf16(float f);"
+        },
+        {
+          "line": 44,
+          "text": "inline bool ReadFile(const std::string& filePath, size_t& fileSize, void* buffer, size_t bufferSize);"
+        },
+        {
+          "line": 45,
+          "text": "inline bool WriteFile(const std::string& filePath, const void* buffer, size_t size);"
+        },
+        {
+          "line": 46,
+          "text": "} // namespace tool"
+        },
+        {
+          "line": 47,
+          "text": ""
+        },
+        {
+          "line": 48,
+          "text": "namespace AscendC::Te {"
+        },
+        {
+          "line": 49,
+          "text": "static constexpr bool transA = false; // Whether to transpose matrix A"
+        },
+        {
+          "line": 50,
+          "text": "static constexpr bool transB = false; // Whether to transpose matrix B"
+        },
+        {
+          "line": 51,
+          "text": "template <typename T>"
+        },
+        {
+          "line": 52,
+          "text": "using MakeLayoutAL1 ="
+        },
+        {
+          "line": 53,
+          "text": "    AscendC::Std::conditional_t<transA, AscendC::Te::FrameLayoutFormat<AscendC::Te::ZNLayoutPtn, AscendC::Te::LayoutTraitDefault<T>>, AscendC::Te::FrameLayoutFormat<AscendC::Te::NZLayoutPtn, AscendC::Te::LayoutTraitDefault<T>>>; // Layout for A"
+        },
+        {
+          "line": 54,
+          "text": "                                                                                                         // matrix in L1"
+        },
+        {
+          "line": 55,
+          "text": "template <typename T>"
+        },
+        {
+          "line": 56,
+          "text": "using MakeLayoutBL1 ="
+        },
+        {
+          "line": 57,
+          "text": "    AscendC::Std::conditional_t<transB, AscendC::Te::FrameLayoutFormat<AscendC::Te::ZNLayoutPtn, AscendC::Te::LayoutTraitDefault<T>>, AscendC::Te::FrameLayoutFormat<AscendC::Te::NZLayoutPtn, AscendC::Te::LayoutTraitDefault<T>>>; // Layout for B"
+        },
+        {
+          "line": 58,
+          "text": "                                                                                                         // matrix in L1"
+        },
+        {
+          "line": 59,
+          "text": "} // namespace AscendC::Te"
+        },
+        {
+          "line": 60,
+          "text": ""
+        },
+        {
+          "line": 61,
+          "text": "namespace matmul {"
+        },
+        {
+          "line": 62,
+          "text": "/**"
+        },
+        {
+          "line": 63,
+          "text": " * @brief Simple kernel example for matrix multiplication on Ascend processors"
+        },
+        {
+          "line": 64,
+          "text": " * @tparam T Data type of matrices (typically float)"
+        },
+        {
+          "line": 65,
+          "text": " * @param aGm Global memory address of input matrix A (size m×k)"
+        },
+        {
+          "line": 66,
+          "text": " * @param bGm Global memory address of input matrix B (size k×n)"
+        },
+        {
+          "line": 67,
+          "text": " * @param cGm Global memory address of output matrix C (size m×n)"
+        },
+        {
+          "line": 68,
+          "text": " * @param m Number of rows in matrix A"
+        },
+        {
+          "line": 69,
+          "text": " * @param k Number of columns in matrix A / rows in matrix B"
+        },
+        {
+          "line": 70,
+          "text": " * @param n Number of columns in matrix B"
+        },
+        {
+          "line": 71,
+          "text": " */"
+        },
+        {
+          "line": 72,
+          "text": "template <typename T>"
+        },
+        {
+          "line": 73,
+          "text": "__global__ __aicore__ void MatmulKernel(GM_ADDR aGm, GM_ADDR bGm, GM_ADDR cGm, uint32_t m, uint32_t k, uint32_t n)"
+        },
+        {
+          "line": 74,
+          "text": "{"
+        },
+        {
+          "line": 75,
+          "text": "    KERNEL_TASK_TYPE_DEFAULT(KERNEL_TYPE_AIC_ONLY); // Specify kernel type as AI Core only"
+        },
+        {
+          "line": 76,
+          "text": ""
+        },
+        {
+          "line": 77,
+          "text": "    // Initialize tiling parameters for efficient memory hierarchy utilization"
+        },
+        {
+          "line": 78,
+          "text": "    uint64_t baseM = 256;             // Base tile size for M dimension in L0"
+        },
+        {
+          "line": 79,
+          "text": "    uint64_t baseN = 256;             // Base tile size for N dimension in L0"
+        },
+        {
+          "line": 80,
+          "text": "    uint64_t baseK = 256 / sizeof(T); // Base tile size for K dimension in L0"
+        },
+        {
+          "line": 81,
+          "text": "    uint64_t kL1 = 1024 / sizeof(T);  // Tile size for K dimension in L1"
+        },
+        {
+          "line": 82,
+          "text": "    uint64_t mTileNum = tool::CeilDiv(m, baseM);"
+        },
+        {
+          "line": 83,
+          "text": "    uint64_t nTileNum = tool::CeilDiv(n, baseN);"
+        },
+        {
+          "line": 84,
+          "text": "    uint64_t tileNum = mTileNum * nTileNum;"
+        },
+        {
+          "line": 85,
+          "text": "    uint64_t kL1TileNum = tool::CeilDiv(k, kL1);"
+        },
+        {
+          "line": 86,
+          "text": "    uint64_t tailKL1 = k - (kL1TileNum - 1) * kL1;"
+        },
+        {
+          "line": 87,
+          "text": "    uint64_t tailBaseM = m - (mTileNum - 1) * baseM;"
+        },
+        {
+          "line": 88,
+          "text": "    uint64_t tailBaseN = n - (nTileNum - 1) * baseN;"
+        },
+        {
+          "line": 89,
+          "text": "    uint64_t l0cOffset = 0; // L0C buffer offset"
+        },
+        {
+          "line": 90,
+          "text": ""
+        },
+        {
+          "line": 91,
+          "text": "    uint64_t curBlockIdx = AscendC::GetBlockIdx();"
+        },
+        {
+          "line": 92,
+          "text": "    uint64_t blockNum = AscendC::GetBlockNum();"
+        },
+        {
+          "line": 93,
+          "text": ""
+        },
+        {
+          "line": 94,
+          "text": "    // Construct GM tensors with ND layout"
+        },
+        {
+          "line": 95,
+          "text": "    auto layoutA = AscendC::Te::MakeFrameLayout<AscendC::Te::NDExtLayoutPtn>(m, k);"
+        },
+        {
+          "line": 96,
+          "text": "    auto layoutB = AscendC::Te::MakeFrameLayout<AscendC::Te::NDExtLayoutPtn>(k, n);"
+        },
+        {
+          "line": 97,
+          "text": "    auto layoutC = AscendC::Te::MakeFrameLayout<AscendC::Te::NDExtLayoutPtn>(m, n);"
+        },
+        {
+          "line": 98,
+          "text": ""
+        },
+        {
+          "line": 99,
+          "text": "    auto tensorAgm = AscendC::Te::MakeTensor(AscendC::Te::MakeMemPtr<AscendC::Te::Location::GM>(reinterpret_cast<__gm__ T*>(aGm)), layoutA);"
+        },
+        {
+          "line": 100,
+          "text": "    auto tensorBgm = AscendC::Te::MakeTensor(AscendC::Te::MakeMemPtr<AscendC::Te::Location::GM>(reinterpret_cast<__gm__ T*>(bGm)), layoutB);"
+        },
+        {
+          "line": 101,
+          "text": "    auto tensorCgm = AscendC::Te::MakeTensor(AscendC::Te::MakeMemPtr<AscendC::Te::Location::GM>(reinterpret_cast<__gm__ T*>(cGm)), layoutC);"
+        },
+        {
+          "line": 102,
+          "text": ""
+        },
+        {
+          "line": 103,
+          "text": "    // Initialize synchronization flags for pipeline control"
+        },
+        {
+          "line": 104,
+          "text": "    AscendC::SetFlag<AscendC::HardEvent::MTE1_MTE2>(tool::ZERO_FLAG);"
+        },
+        {
+          "line": 105,
+          "text": "    AscendC::SetFlag<AscendC::HardEvent::M_MTE1>(tool::ZERO_FLAG);"
+        },
+        {
+          "line": 106,
+          "text": "    AscendC::SetFlag<AscendC::HardEvent::FIX_M>(tool::ZERO_FLAG);"
+        },
+        {
+          "line": 107,
+          "text": ""
+        },
+        {
+          "line": 108,
+          "text": "    // Multi-core tile processing loop - distribute tiles across available cores"
+        },
+        {
+          "line": 109,
+          "text": "    for (uint64_t tileIdx = curBlockIdx; tileIdx < tileNum; tileIdx += blockNum) {"
+        },
+        {
+          "line": 110,
+          "text": "        uint64_t mTileIdx = tileIdx / nTileNum;"
+        },
+        {
+          "line": 111,
+          "text": "        uint64_t nTileIdx = tileIdx % nTileNum;"
+        },
+        {
+          "line": 112,
+          "text": "        int64_t curM = mTileIdx == (mTileNum - 1) ? tailBaseM : baseM;"
+        },
+        {
+          "line": 113,
+          "text": "        int64_t curN = nTileIdx == (nTileNum - 1) ? tailBaseN : baseN;"
+        },
+        {
+          "line": 114,
+          "text": ""
+        },
+        {
+          "line": 115,
+          "text": "        // Slice GM to L1 - prepare memory pointers for this tile"
+        },
+        {
+          "line": 116,
+          "text": "        auto tensorAGmBlock = tensorAgm.Slice(AscendC::Te::MakeCoord(mTileIdx * baseM, 0L), AscendC::Te::MakeShape(curM, k));"
+        },
+        {
+          "line": 117,
+          "text": "        auto tensorBGmBlock = tensorBgm.Slice(AscendC::Te::MakeCoord(0L, nTileIdx * baseN), AscendC::Te::MakeShape(k, curN));"
+        },
+        {
+          "line": 118,
+          "text": ""
+        },
+        {
+          "line": 119,
+          "text": "        auto tensorCGmBlock ="
+        },
+        {
+          "line": 120,
+          "text": "            tensorCgm.Slice(AscendC::Te::MakeCoord(mTileIdx * baseM, nTileIdx * baseN), AscendC::Te::MakeShape(curM, curN));"
+        },
+        {
+          "line": 121,
+          "text": "        auto layoutL0C = AscendC::Te::MakeFrameLayout<AscendC::Te::NZLayoutPtn, AscendC::Std::Int<tool::L0C_C0>>(curM, curN); // L0C layout for output"
+        },
+        {
+          "line": 122,
+          "text": "        auto tensorL0C = AscendC::Te::MakeTensor(AscendC::Te::MakeMemPtr<AscendC::Te::Location::L0C, float>(l0cOffset), layoutL0C);"
+        },
+        {
+          "line": 123,
+          "text": ""
+        },
+        {
+          "line": 124,
+          "text": "        AscendC::WaitFlag<AscendC::HardEvent::FIX_M>(tool::ZERO_FLAG);"
+        },
+        {
+          "line": 125,
+          "text": "        // Process K dimension in multiple L1 tiles"
+        },
+        {
+          "line": 126,
+          "text": "        for (uint64_t iter0 = 0; iter0 < kL1TileNum; ++iter0) {"
+        },
+        {
+          "line": 127,
+          "text": "            AscendC::WaitFlag<AscendC::HardEvent::MTE1_MTE2>(tool::ZERO_FLAG); // Wait for previous MTE1-MTE2 operations"
+        },
+        {
+          "line": 128,
+          "text": ""
+        },
+        {
+          "line": 129,
+          "text": "            auto curGmBKL1 = (iter0 + 1 == kL1TileNum) ? (k - iter0 * kL1) : kL1;"
+        },
+        {
+          "line": 130,
+          "text": "            auto curGmAKL1 = curGmBKL1;"
+        },
+        {
+          "line": 131,
+          "text": ""
+        },
+        {
+          "line": 132,
+          "text": "            // Copy GM to L1 buffers"
+        },
+        {
+          "line": 133,
+          "text": "            uint64_t l1BufferAOffset = 0;"
+        },
+        {
+          "line": 134,
+          "text": "            uint64_t l1BufferBOffset = baseM * kL1 * sizeof(T);"
+        },
+        {
+          "line": 135,
+          "text": ""
+        },
+        {
+          "line": 136,
+          "text": "            // GM to L1 copy operation"
+        },
+        {
+          "line": 137,
+          "text": "            auto copyGM2L1 = AscendC::Te::MakeCopy(AscendC::Te::CopyGM2L1{});"
+        },
+        {
+          "line": 138,
+          "text": "            auto layoutAL1 = AscendC::Te::MakeLayoutAL1<T>{}(curM, curGmAKL1); // Layout for A in L1"
+        },
+        {
+          "line": 139,
+          "text": "            auto tensorAL1 = AscendC::Te::MakeTensor(AscendC::Te::MakeMemPtr<AscendC::Te::Location::L1, T>(l1BufferAOffset), layoutAL1);"
+        },
+        {
+          "line": 140,
+          "text": "            auto tensorAGmTile ="
+        },
+        {
+          "line": 141,
+          "text": "                tensorAGmBlock.Slice(AscendC::Te::MakeCoord(0, iter0 * kL1), AscendC::Te::MakeShape(curM, curGmAKL1));"
+        },
+        {
+          "line": 142,
+          "text": "            AscendC::Te::Copy(copyGM2L1, tensorAL1, tensorAGmTile); // Copy A tile from GM to L1"
+        },
+        {
+          "line": 143,
+          "text": ""
+        },
+        {
+          "line": 144,
+          "text": "            auto layoutBL1 = AscendC::Te::MakeLayoutBL1<T>{}(curGmBKL1, curN); // Layout for B in L1"
+        },
+        {
+          "line": 145,
+          "text": "            auto tensorBL1 = AscendC::Te::MakeTensor(AscendC::Te::MakeMemPtr<AscendC::Te::Location::L1, T>(l1BufferBOffset), layoutBL1);"
+        },
+        {
+          "line": 146,
+          "text": "            auto tensorBGmTile ="
+        },
+        {
+          "line": 147,
+          "text": "                tensorBGmBlock.Slice(AscendC::Te::MakeCoord(iter0 * kL1, 0), AscendC::Te::MakeShape(curGmBKL1, curN));"
+        },
+        {
+          "line": 148,
+          "text": "            AscendC::Te::Copy(copyGM2L1, tensorBL1, tensorBGmTile); // Copy B tile from GM to L1"
+        },
+        {
+          "line": 149,
+          "text": ""
+        },
+        {
+          "line": 150,
+          "text": "            AscendC::SetFlag<AscendC::HardEvent::MTE2_MTE1>(tool::ZERO_FLAG);  // Signal MTE2-MTE1 completion"
+        },
+        {
+          "line": 151,
+          "text": "            AscendC::WaitFlag<AscendC::HardEvent::MTE2_MTE1>(tool::ZERO_FLAG); // Wait for MTE2-MTE1 operations"
+        },
+        {
+          "line": 152,
+          "text": ""
+        },
+        {
+          "line": 153,
+          "text": "            // Process K dimension in multiple L0 tiles"
+        },
+        {
+          "line": 154,
+          "text": "            uint64_t kL0IterNum = tool::CeilDiv(curGmBKL1, baseK);"
+        },
+        {
+          "line": 155,
+          "text": "            uint64_t tailKL0 = curGmBKL1 - (kL0IterNum - 1) * baseK;"
+        },
+        {
+          "line": 156,
+          "text": "            for (uint16_t iter1 = 0; iter1 < kL0IterNum; ++iter1) {"
+        },
+        {
+          "line": 157,
+          "text": "                AscendC::WaitFlag<AscendC::HardEvent::M_MTE1>(tool::ZERO_FLAG); // Wait for M-MTE1 operations"
+        },
+        {
+          "line": 158,
+          "text": ""
+        },
+        {
+          "line": 159,
+          "text": "                uint64_t curKL0 = (iter1 + 1 == kL0IterNum) ? tailKL0 : baseK;"
+        },
+        {
+          "line": 160,
+          "text": ""
+        },
+        {
+          "line": 161,
+          "text": "                // Copy L1 to L0 buffers"
+        },
+        {
+          "line": 162,
+          "text": "                auto copyL12L0A = AscendC::Te::MakeCopy(AscendC::Te::CopyL12L0A{});"
+        },
+        {
+          "line": 163,
+          "text": "                auto copyL12L0B = AscendC::Te::MakeCopy(AscendC::Te::CopyL12L0B{}); // L1 to L0 copy operation"
+        },
+        {
+          "line": 164,
+          "text": "                auto layoutAL0 = AscendC::Te::MakeFrameLayout<AscendC::Te::NZLayoutPtn, AscendC::Te::LayoutTraitDefault<T>>(curM, curKL0);      // NZ layout for A in L0"
+        },
+        {
+          "line": 165,
+          "text": "                auto tensorAL0 = AscendC::Te::MakeTensor(AscendC::Te::MakeMemPtr<AscendC::Te::Location::L0A, T>(0), layoutAL0);"
+        },
+        {
+          "line": 166,
+          "text": "                auto tensorAL1Tile ="
+        },
+        {
+          "line": 167,
+          "text": "                    tensorAL1.Slice(AscendC::Te::MakeCoord(0, iter1 * baseK), AscendC::Te::MakeShape(curM, curKL0));"
+        },
+        {
+          "line": 168,
+          "text": "                AscendC::Te::Copy(copyL12L0A, tensorAL0, tensorAL1Tile); // Copy A tile from L1 to L0"
+        },
+        {
+          "line": 169,
+          "text": ""
+        },
+        {
+          "line": 170,
+          "text": "                auto layoutBL0 = AscendC::Te::MakeFrameLayout<AscendC::Te::ZNLayoutPtn, AscendC::Te::LayoutTraitDefault<T>>(curKL0, curN); // ZN layout for B in L0"
+        },
+        {
+          "line": 171,
+          "text": "                auto tensorBL0 = AscendC::Te::MakeTensor(AscendC::Te::MakeMemPtr<AscendC::Te::Location::L0B, T>(0), layoutBL0);"
+        },
+        {
+          "line": 172,
+          "text": "                auto tensorBL1Tile ="
+        },
+        {
+          "line": 173,
+          "text": "                    tensorBL1.Slice(AscendC::Te::MakeCoord(iter1 * baseK, 0), AscendC::Te::MakeShape(curKL0, curN));"
+        },
+        {
+          "line": 174,
+          "text": "                AscendC::Te::Copy(copyL12L0B, tensorBL0, tensorBL1Tile); // Copy B tile from L1 to L0"
+        },
+        {
+          "line": 175,
+          "text": ""
+        },
+        {
+          "line": 176,
+          "text": "                AscendC::SetFlag<AscendC::HardEvent::MTE1_M>(tool::ZERO_FLAG);  // Signal MTE1-M completion"
+        },
+        {
+          "line": 177,
+          "text": "                AscendC::WaitFlag<AscendC::HardEvent::MTE1_M>(tool::ZERO_FLAG); // Wait for MTE1-M operations"
+        },
+        {
+          "line": 178,
+          "text": ""
+        },
+        {
+          "line": 179,
+          "text": "                // Execute M-MAD operation (matrix multiplication)"
+        },
+        {
+          "line": 180,
+          "text": "                AscendC::Te::MmadParams para;"
+        },
+        {
+          "line": 181,
+          "text": "                para.cmatrixInitVal = (iter1 == 0 && iter0 == 0); // Initialize C matrix on first iteration"
+        },
+        {
+          "line": 182,
+          "text": "                para.m = curM;"
+        },
+        {
+          "line": 183,
+          "text": "                para.n = curN;"
+        },
+        {
+          "line": 184,
+          "text": "                para.k = curKL0;"
+        },
+        {
+          "line": 185,
+          "text": ""
+        },
+        {
+          "line": 186,
+          "text": "                auto MadOp = AscendC::Te::MakeMmad(AscendC::Te::MmadOperation{}, AscendC::Te::MmadTraitDefault{});"
+        },
+        {
+          "line": 187,
+          "text": "                AscendC::Te::Mmad(MadOp.with(para), tensorL0C, tensorAL0, tensorBL0);"
+        },
+        {
+          "line": 188,
+          "text": ""
+        },
+        {
+          "line": 189,
+          "text": "                AscendC::SetFlag<AscendC::HardEvent::M_MTE1>(tool::ZERO_FLAG);"
+        },
+        {
+          "line": 190,
+          "text": "            }"
+        },
+        {
+          "line": 191,
+          "text": "            AscendC::SetFlag<AscendC::HardEvent::MTE1_MTE2>(tool::ZERO_FLAG);"
+        },
+        {
+          "line": 192,
+          "text": "        }"
+        },
+        {
+          "line": 193,
+          "text": "        AscendC::SetFlag<AscendC::HardEvent::M_FIX>(tool::ZERO_FLAG);"
+        },
+        {
+          "line": 194,
+          "text": "        AscendC::WaitFlag<AscendC::HardEvent::M_FIX>(tool::ZERO_FLAG);"
+        },
+        {
+          "line": 195,
+          "text": ""
+        },
+        {
+          "line": 196,
+          "text": "        // Copy result from L0C to GM"
+        },
+        {
+          "line": 197,
+          "text": "        auto copyL0C2GM = AscendC::Te::MakeCopy(AscendC::Te::CopyL0C2GM{}); // L0C to GM copy operation"
+        },
+        {
+          "line": 198,
+          "text": "        AscendC::Te::Copy(copyL0C2GM, tensorCGmBlock, tensorL0C);           // Copy computed tile to global memory"
+        },
+        {
+          "line": 199,
+          "text": ""
+        },
+        {
+          "line": 200,
+          "text": "        AscendC::SetFlag<AscendC::HardEvent::FIX_M>(tool::ZERO_FLAG);"
+        },
+        {
+          "line": 201,
+          "text": "    }"
+        },
+        {
+          "line": 202,
+          "text": "    // Final synchronization for all pipeline stages"
+        },
+        {
+          "line": 203,
+          "text": "    AscendC::WaitFlag<AscendC::HardEvent::MTE1_MTE2>(tool::ZERO_FLAG);"
+        },
+        {
+          "line": 204,
+          "text": "    AscendC::WaitFlag<AscendC::HardEvent::M_MTE1>(tool::ZERO_FLAG);"
+        },
+        {
+          "line": 205,
+          "text": "    AscendC::WaitFlag<AscendC::HardEvent::FIX_M>(tool::ZERO_FLAG);"
+        },
+        {
+          "line": 206,
+          "text": "}"
+        },
+        {
+          "line": 207,
+          "text": ""
+        },
+        {
+          "line": 208,
+          "text": "} // namespace matmul"
+        },
+        {
+          "line": 209,
+          "text": ""
+        },
+        {
+          "line": 210,
+          "text": "// Macro for condition checking with error message"
+        },
+        {
+          "line": 211,
+          "text": "#define CHECK_COND(cond, message, return_expr)              \\"
+        },
+        {
+          "line": 212,
+          "text": "    do {                                                    \\"
+        },
+        {
+          "line": 213,
+          "text": "        if (!(cond)) {                                      \\"
+        },
+        {
+          "line": 214,
+          "text": "            std::cerr << \"ERROR: \" << message << std::endl; \\"
+        },
+        {
+          "line": 215,
+          "text": "            return_expr;                                    \\"
+        },
+        {
+          "line": 216,
+          "text": "        }                                                   \\"
+        },
+        {
+          "line": 217,
+          "text": "    } while (0)"
+        },
+        {
+          "line": 218,
+          "text": ""
+        },
+        {
+          "line": 219,
+          "text": "/**"
+        },
+        {
+          "line": 220,
+          "text": " * @brief Print command-line usage help"
+        },
+        {
+          "line": 221,
+          "text": " * @param programName Name of the executable"
+        },
+        {
+          "line": 222,
+          "text": " */"
+        },
+        {
+          "line": 223,
+          "text": "void printUsage(const std::string& programName)"
+        },
+        {
+          "line": 224,
+          "text": "{"
+        },
+        {
+          "line": 225,
+          "text": "    std::cerr << \"Usage: \" << programName << \" m k n\" << std::endl;"
+        },
+        {
+          "line": 226,
+          "text": "    std::cerr << \"Args: \" << std::endl;"
+        },
+        {
+          "line": 227,
+          "text": "    std::cerr << \"  m: row of matrix A\" << std::endl;"
+        },
+        {
+          "line": 228,
+          "text": "    std::cerr << \"  k: col of matrix A\" << std::endl;"
+        },
+        {
+          "line": 229,
+          "text": "    std::cerr << \"  n: col of matrix B\" << std::endl;"
+        },
+        {
+          "line": 230,
+          "text": "    std::cerr << \"Example: \" << programName << \" 100 50 200\" << std::endl;"
+        },
+        {
+          "line": 231,
+          "text": "}"
+        },
+        {
+          "line": 232,
+          "text": ""
+        },
+        {
+          "line": 233,
+          "text": "/**"
+        },
+        {
+          "line": 234,
+          "text": " * @brief Parse and validate command-line arguments"
+        },
+        {
+          "line": 235,
+          "text": " * @param argc Argument count"
+        },
+        {
+          "line": 236,
+          "text": " * @param argv Argument vector"
+        },
+        {
+          "line": 237,
+          "text": " * @param m Output parameter for M dimension"
+        },
+        {
+          "line": 238,
+          "text": " * @param k Output parameter for K dimension"
+        },
+        {
+          "line": 239,
+          "text": " * @param n Output parameter for N dimension"
+        },
+        {
+          "line": 240,
+          "text": " * @throws std::invalid_argument on invalid input"
+        },
+        {
+          "line": 241,
+          "text": " */"
+        },
+        {
+          "line": 242,
+          "text": "void parseArguments(int argc, char* argv[], int& m, int& k, int& n)"
+        },
+        {
+          "line": 243,
+          "text": "{"
+        },
+        {
+          "line": 244,
+          "text": "    if (argc >= 2 && (std::string(argv[1]) == \"--help\" || std::string(argv[1]) == \"-h\")) {"
+        },
+        {
+          "line": 245,
+          "text": "        printUsage(argv[0]);"
+        },
+        {
+          "line": 246,
+          "text": "        exit(1);"
+        },
+        {
+          "line": 247,
+          "text": "    }"
+        },
+        {
+          "line": 248,
+          "text": "    if (argc < 4) {"
+        },
+        {
+          "line": 249,
+          "text": "        throw std::invalid_argument(\"ERROR: Lacks Arguments\");"
+        },
+        {
+          "line": 250,
+          "text": "    }"
+        },
+        {
+          "line": 251,
+          "text": "    try {"
+        },
+        {
+          "line": 252,
+          "text": "        m = std::stoi(argv[1]);"
+        },
+        {
+          "line": 253,
+          "text": "        k = std::stoi(argv[2]);"
+        },
+        {
+          "line": 254,
+          "text": "        n = std::stoi(argv[3]);"
+        },
+        {
+          "line": 255,
+          "text": "    } catch (const std::invalid_argument& e) {"
+        },
+        {
+          "line": 256,
+          "text": "        throw std::invalid_argument(\"ERROR: m k n must be Integer\");"
+        },
+        {
+          "line": 257,
+          "text": "    }"
+        },
+        {
+          "line": 258,
+          "text": ""
+        },
+        {
+          "line": 259,
+          "text": "    if (m <= 0 || k <= 0 || n <= 0) {"
+        },
+        {
+          "line": 260,
+          "text": "        throw std::invalid_argument(\"ERROR: m k n must be positive\");"
+        },
+        {
+          "line": 261,
+          "text": "    }"
+        },
+        {
+          "line": 262,
+          "text": "}"
+        },
+        {
+          "line": 263,
+          "text": ""
+        },
+        {
+          "line": 264,
+          "text": "/**"
+        },
+        {
+          "line": 265,
+          "text": " * @brief Main function - host code for matrix multiplication"
+        },
+        {
+          "line": 266,
+          "text": " * @param argc Argument count"
+        },
+        {
+          "line": 267,
+          "text": " * @param argv Argument vector"
+        },
+        {
+          "line": 268,
+          "text": " * @return 0 on success, non-zero on failure"
+        },
+        {
+          "line": 269,
+          "text": " */"
+        },
+        {
+          "line": 270,
+          "text": "int main(int argc, char* argv[])"
+        },
+        {
+          "line": 271,
+          "text": "{"
+        },
+        {
+          "line": 272,
+          "text": "    using namespace tool;"
+        },
+        {
+          "line": 273,
+          "text": "    int m, k, n;"
+        },
+        {
+          "line": 274,
+          "text": "    try {"
+        },
+        {
+          "line": 275,
+          "text": "        parseArguments(argc, argv, m, k, n);"
+        },
+        {
+          "line": 276,
+          "text": "    } catch (const std::exception& e) {"
+        },
+        {
+          "line": 277,
+          "text": "        std::cerr << e.what() << std::endl;"
+        },
+        {
+          "line": 278,
+          "text": "        printUsage(argv[0]);"
+        },
+        {
+          "line": 279,
+          "text": "        return 1;"
+        },
+        {
+          "line": 280,
+          "text": "    }"
+        },
+        {
+          "line": 281,
+          "text": ""
+        },
+        {
+          "line": 282,
+          "text": "    // Initialize ACL (Ascend Computing Language) resources"
+        },
+        {
+          "line": 283,
+          "text": "    int32_t deviceId = 0;"
+        },
+        {
+          "line": 284,
+          "text": "    aclrtStream stream;"
+        },
+        {
+          "line": 285,
+          "text": "    auto ret = aclInit(nullptr);"
+        },
+        {
+          "line": 286,
+          "text": "    CHECK_COND(ret == ACL_SUCCESS, \"aclInit failed.\", return 1);"
+        },
+        {
+          "line": 287,
+          "text": "    ret = aclrtSetDevice(deviceId);"
+        },
+        {
+          "line": 288,
+          "text": "    CHECK_COND(ret == ACL_SUCCESS, \"aclrtSetDevice failed.\", return 1);"
+        },
+        {
+          "line": 289,
+          "text": "    ret = aclrtCreateStream(&stream);"
+        },
+        {
+          "line": 290,
+          "text": "    CHECK_COND(ret == ACL_SUCCESS, \"aclrtCreateStream failed.\", return 1);"
+        },
+        {
+          "line": 291,
+          "text": ""
+        },
+        {
+          "line": 292,
+          "text": "    std::vector<uint16_t> hostInput(m * k, 0);"
+        },
+        {
+          "line": 293,
+          "text": "    std::vector<uint16_t> hostWeight(k * n, 0);"
+        },
+        {
+          "line": 294,
+          "text": "    std::vector<uint16_t> hostOutput(m * n, 0);"
+        },
+        {
+          "line": 295,
+          "text": "    std::vector<uint16_t> goldenOutput(m * n, 0);"
+        },
+        {
+          "line": 296,
+          "text": ""
+        },
+        {
+          "line": 297,
+          "text": "    auto sizeInput = hostInput.size() * sizeof(uint16_t);"
+        },
+        {
+          "line": 298,
+          "text": "    auto sizeWeight = hostWeight.size() * sizeof(uint16_t);"
+        },
+        {
+          "line": 299,
+          "text": "    auto sizeOutput = hostOutput.size() * sizeof(uint16_t);"
+        },
+        {
+          "line": 300,
+          "text": "    "
+        },
+        {
+          "line": 301,
+          "text": "    std::string cmd = \"python3 gen_data.py \" + std::to_string(m) + \" \" + std::to_string(k) + \" \" + std::to_string(n);"
+        },
+        {
+          "line": 302,
+          "text": "    system(cmd.c_str());"
+        },
+        {
+          "line": 303,
+          "text": ""
+        },
+        {
+          "line": 304,
+          "text": "    std::string baseDir = std::filesystem::current_path();"
+        },
+        {
+          "line": 305,
+          "text": "    std::string inputDir = baseDir + \"/input\";"
+        },
+        {
+          "line": 306,
+          "text": "    std::string outputDir = baseDir + \"/output\";"
+        },
+        {
+          "line": 307,
+          "text": "    ReadFile(inputDir + \"/input_a.bin\", sizeInput, hostInput.data(), sizeInput);"
+        },
+        {
+          "line": 308,
+          "text": "    ReadFile(inputDir + \"/input_b.bin\", sizeWeight, hostWeight.data(), sizeWeight);"
+        },
+        {
+          "line": 309,
+          "text": ""
+        },
+        {
+          "line": 310,
+          "text": "    uint8_t *deviceInput = nullptr;"
+        },
+        {
+          "line": 311,
+          "text": "    uint8_t *deviceWeight = nullptr;"
+        },
+        {
+          "line": 312,
+          "text": "    uint8_t *deviceOutput = nullptr;"
+        },
+        {
+          "line": 313,
+          "text": "    std::unique_ptr<void, aclError (*)(void*)> deviceInputPtr(deviceInput, aclrtFree);"
+        },
+        {
+          "line": 314,
+          "text": "    ret = aclrtMalloc((void**)&deviceInput, sizeInput, ACL_MEM_MALLOC_HUGE_FIRST);"
+        },
+        {
+          "line": 315,
+          "text": "    CHECK_COND(ret == ACL_SUCCESS, \"aclrtMalloc deviceInput failed.\", return 1);"
+        },
+        {
+          "line": 316,
+          "text": ""
+        },
+        {
+          "line": 317,
+          "text": "    std::unique_ptr<void, aclError (*)(void*)> deviceWeightPtr(deviceWeight, aclrtFree);"
+        },
+        {
+          "line": 318,
+          "text": "    ret = aclrtMalloc((void**)&deviceWeight, sizeWeight, ACL_MEM_MALLOC_HUGE_FIRST);"
+        },
+        {
+          "line": 319,
+          "text": "    CHECK_COND(ret == ACL_SUCCESS, \"aclrtMalloc deviceWeight failed.\", return 1);"
+        },
+        {
+          "line": 320,
+          "text": ""
+        },
+        {
+          "line": 321,
+          "text": "    std::unique_ptr<void, aclError (*)(void*)> deviceOutputPtr(deviceOutput, aclrtFree);"
+        },
+        {
+          "line": 322,
+          "text": "    ret = aclrtMalloc((void**)&deviceOutput, sizeOutput, ACL_MEM_MALLOC_HUGE_FIRST);"
+        },
+        {
+          "line": 323,
+          "text": "    CHECK_COND(ret == ACL_SUCCESS, \"aclrtMalloc deviceOutput failed.\", return 1);"
+        },
+        {
+          "line": 324,
+          "text": ""
+        },
+        {
+          "line": 325,
+          "text": "    ret = aclrtMemcpy(deviceInput, sizeInput, hostInput.data(), sizeInput, ACL_MEMCPY_HOST_TO_DEVICE);"
+        },
+        {
+          "line": 326,
+          "text": "    CHECK_COND(ret == ACL_SUCCESS, \"aclrtMemcpy deviceInput failed.\", return 1);"
+        },
+        {
+          "line": 327,
+          "text": "    ret = aclrtMemcpy(deviceWeight, sizeWeight, hostWeight.data(), sizeWeight, ACL_MEMCPY_HOST_TO_DEVICE);"
+        },
+        {
+          "line": 328,
+          "text": "    CHECK_COND(ret == ACL_SUCCESS, \"aclrtMemcpy deviceWeight failed.\", return 1);"
+        },
+        {
+          "line": 329,
+          "text": ""
+        },
+        {
+          "line": 330,
+          "text": "    auto ascendcPlatform = platform_ascendc::PlatformAscendCManager::GetInstance();"
+        },
+        {
+          "line": 331,
+          "text": "    CHECK_COND(ascendcPlatform != nullptr, \"get ascendcPlatform failed.\", return 1);"
+        },
+        {
+          "line": 332,
+          "text": "    uint32_t numBlocks = ascendcPlatform->GetCoreNumAic(); // Number of AI cores"
+        },
+        {
+          "line": 333,
+          "text": ""
+        },
+        {
+          "line": 334,
+          "text": "    matmul::MatmulKernel<bfloat16_t><<<numBlocks, nullptr, stream>>>(deviceInput, deviceWeight, deviceOutput, m, k, n);"
+        },
+        {
+          "line": 335,
+          "text": ""
+        },
+        {
+          "line": 336,
+          "text": "    ret = aclrtSynchronizeStream(stream);"
+        },
+        {
+          "line": 337,
+          "text": "    CHECK_COND(ret == ACL_SUCCESS, \"aclrtSynchronizeStream failed.\", return 1);"
+        },
+        {
+          "line": 338,
+          "text": ""
+        },
+        {
+          "line": 339,
+          "text": "    ret = aclrtMemcpy(hostOutput.data(), sizeOutput, deviceOutput, sizeOutput, ACL_MEMCPY_DEVICE_TO_HOST);"
+        },
+        {
+          "line": 340,
+          "text": "    CHECK_COND(ret == ACL_SUCCESS, \"aclrtMemcpy deviceOutput failed.\", return 1);"
+        },
+        {
+          "line": 341,
+          "text": ""
+        },
+        {
+          "line": 342,
+          "text": "    auto toFloat = [](const std::vector<uint16_t>& src, std::vector<float>& dst) {"
+        },
+        {
+          "line": 343,
+          "text": "        std::transform(src.begin(), src.end(), dst.begin(), Bf16ToFloat);"
+        },
+        {
+          "line": 344,
+          "text": "    };"
+        },
+        {
+          "line": 345,
+          "text": ""
+        },
+        {
+          "line": 346,
+          "text": "    WriteFile(outputDir + \"/npu_out.bin\", hostOutput.data(), sizeOutput);"
+        },
+        {
+          "line": 347,
+          "text": ""
+        },
+        {
+          "line": 348,
+          "text": "    cmd = \"python3 verify_result.py \" + std::to_string(m) + \" \" + std::to_string(n);"
+        },
+        {
+          "line": 349,
+          "text": "    if (std::system(cmd.c_str()) != 0) {"
+        },
+        {
+          "line": 350,
+          "text": "        return 1;"
+        },
+        {
+          "line": 351,
+          "text": "    }"
+        },
+        {
+          "line": 352,
+          "text": ""
+        },
+        {
+          "line": 353,
+          "text": "    aclrtDestroyStream(stream);"
+        },
+        {
+          "line": 354,
+          "text": "    aclrtResetDevice(deviceId);"
+        },
+        {
+          "line": 355,
+          "text": "    aclFinalize();"
+        },
+        {
+          "line": 356,
+          "text": "    return 0;"
+        },
+        {
+          "line": 357,
+          "text": "}"
+        },
+        {
+          "line": 358,
+          "text": ""
+        },
+        {
+          "line": 359,
+          "text": "namespace tool {"
+        },
+        {
+          "line": 360,
+          "text": "/**"
+        },
+        {
+          "line": 361,
+          "text": " * @brief Compute ceiling division of two integers"
+        },
+        {
+          "line": 362,
+          "text": " * @param a Numerator"
+        },
+        {
+          "line": 363,
+          "text": " * @param b Denominator"
+        },
+        {
+          "line": 364,
+          "text": " * @return Ceiling of a/b"
+        },
+        {
+          "line": 365,
+          "text": " */"
+        },
+        {
+          "line": 366,
+          "text": "__aicore__ inline uint64_t CeilDiv(uint64_t a, uint64_t b)"
+        },
+        {
+          "line": 367,
+          "text": "{"
+        },
+        {
+          "line": 368,
+          "text": "    if (b == 0) {"
+        },
+        {
+          "line": 369,
+          "text": "        return a;"
+        },
+        {
+          "line": 370,
+          "text": "    }"
+        },
+        {
+          "line": 371,
+          "text": "    return (a + b - 1) / b;"
+        },
+        {
+          "line": 372,
+          "text": "}"
+        },
+        {
+          "line": 373,
+          "text": ""
+        },
+        {
+          "line": 374,
+          "text": "/**"
+        },
+        {
+          "line": 375,
+          "text": " * @brief Convert a 16-bit brain floating-point (bfloat16) value to a 32-bit float"
+        },
+        {
+          "line": 376,
+          "text": " * @param h 16-bit bfloat16 value stored in uint16_t format"
+        },
+        {
+          "line": 377,
+          "text": " * @return The converted 32-bit floating-point value"
+        },
+        {
+          "line": 378,
+          "text": " */"
+        },
+        {
+          "line": 379,
+          "text": "float Bf16ToFloat(uint16_t h)"
+        },
+        {
+          "line": 380,
+          "text": "{"
+        },
+        {
+          "line": 381,
+          "text": "    uint32_t sign = (h & 0x8000U) ? 0x80000000U : 0x00000000U;"
+        },
+        {
+          "line": 382,
+          "text": "    uint32_t exponent = (h >> 7) & 0x00FFU;"
+        },
+        {
+          "line": 383,
+          "text": "    uint32_t mantissa = h & 0x007FU;"
+        },
+        {
+          "line": 384,
+          "text": "    uint32_t f_bits = sign | (exponent << 23) | (mantissa << (23 - 7));"
+        },
+        {
+          "line": 385,
+          "text": "    return *reinterpret_cast<float*>(&f_bits);"
+        },
+        {
+          "line": 386,
+          "text": "}"
+        },
+        {
+          "line": 387,
+          "text": ""
+        },
+        {
+          "line": 388,
+          "text": "/**"
+        },
+        {
+          "line": 389,
+          "text": " * @brief Convert a 32-bit float to a 16-bit brain floating-point (bfloat16) value"
+        },
+        {
+          "line": 390,
+          "text": " * @param f 32-bit floating-point value to convert"
+        },
+        {
+          "line": 391,
+          "text": " * @return The converted 16-bit bfloat16 value stored in uint16_t format (truncated rounding)"
+        },
+        {
+          "line": 392,
+          "text": " */"
+        },
+        {
+          "line": 393,
+          "text": "uint16_t FloatToBf16(float f)"
+        },
+        {
+          "line": 394,
+          "text": "{"
+        },
+        {
+          "line": 395,
+          "text": "    uint32_t f_bits;"
+        },
+        {
+          "line": 396,
+          "text": "    std::memcpy(&f_bits, &f, sizeof(f_bits));"
+        },
+        {
+          "line": 397,
+          "text": ""
+        },
+        {
+          "line": 398,
+          "text": "    // Extract the high 16 bits (simple truncation)"
+        },
+        {
+          "line": 399,
+          "text": "    return static_cast<uint16_t>(f_bits >> 16);"
+        },
+        {
+          "line": 400,
+          "text": "}"
+        },
+        {
+          "line": 401,
+          "text": ""
+        },
+        {
+          "line": 402,
+          "text": "inline bool ReadFile(const std::string& filePath, size_t& fileSize, void* buffer, size_t bufferSize)"
+        },
+        {
+          "line": 403,
+          "text": "{"
+        },
+        {
+          "line": 404,
+          "text": "    struct stat sBuf;"
+        },
+        {
+          "line": 405,
+          "text": "    int fileStatus = stat(filePath.data(), &sBuf);"
+        },
+        {
+          "line": 406,
+          "text": "    if (fileStatus == -1) {"
+        },
+        {
+          "line": 407,
+          "text": "        ERROR_LOG(\"failed to get file\");"
+        },
+        {
+          "line": 408,
+          "text": "        return false;"
+        },
+        {
+          "line": 409,
+          "text": "    }"
+        },
+        {
+          "line": 410,
+          "text": "    if (S_ISREG(sBuf.st_mode) == 0) {"
+        },
+        {
+          "line": 411,
+          "text": "        ERROR_LOG(\"%s is not a file, please enter a file\", filePath.c_str());"
+        },
+        {
+          "line": 412,
+          "text": "        return false;"
+        },
+        {
+          "line": 413,
+          "text": "    }"
+        },
+        {
+          "line": 414,
+          "text": ""
+        },
+        {
+          "line": 415,
+          "text": "    std::ifstream file;"
+        },
+        {
+          "line": 416,
+          "text": "    file.open(filePath, std::ios::binary);"
+        },
+        {
+          "line": 417,
+          "text": "    if (!file.is_open()) {"
+        },
+        {
+          "line": 418,
+          "text": "        ERROR_LOG(\"Open file failed. path = %s\", filePath.c_str());"
+        },
+        {
+          "line": 419,
+          "text": "        return false;"
+        },
+        {
+          "line": 420,
+          "text": "    }"
+        },
+        {
+          "line": 421,
+          "text": ""
+        },
+        {
+          "line": 422,
+          "text": "    std::filebuf* buf = file.rdbuf();"
+        },
+        {
+          "line": 423,
+          "text": "    size_t size = buf->pubseekoff(0, std::ios::end, std::ios::in);"
+        },
+        {
+          "line": 424,
+          "text": "    if (size == 0) {"
+        },
+        {
+          "line": 425,
+          "text": "        ERROR_LOG(\"file size is 0\");"
+        },
+        {
+          "line": 426,
+          "text": "        file.close();"
+        },
+        {
+          "line": 427,
+          "text": "        return false;"
+        },
+        {
+          "line": 428,
+          "text": "    }"
+        },
+        {
+          "line": 429,
+          "text": "    if (size > bufferSize) {"
+        },
+        {
+          "line": 430,
+          "text": "        ERROR_LOG(\"file size is larger than buffer size\");"
+        },
+        {
+          "line": 431,
+          "text": "        file.close();"
+        },
+        {
+          "line": 432,
+          "text": "        return false;"
+        },
+        {
+          "line": 433,
+          "text": "    }"
+        },
+        {
+          "line": 434,
+          "text": "    buf->pubseekpos(0, std::ios::in);"
+        },
+        {
+          "line": 435,
+          "text": "    buf->sgetn(static_cast<char*>(buffer), size);"
+        },
+        {
+          "line": 436,
+          "text": "    fileSize = size;"
+        },
+        {
+          "line": 437,
+          "text": "    file.close();"
+        },
+        {
+          "line": 438,
+          "text": "    return true;"
+        },
+        {
+          "line": 439,
+          "text": "}"
+        },
+        {
+          "line": 440,
+          "text": ""
+        },
+        {
+          "line": 441,
+          "text": "/**"
+        },
+        {
+          "line": 442,
+          "text": " * @brief Write data to file"
+        },
+        {
+          "line": 443,
+          "text": " * @param [in] filePath: file path"
+        },
+        {
+          "line": 444,
+          "text": " * @param [in] buffer: data to write to file"
+        },
+        {
+          "line": 445,
+          "text": " * @param [in] size: size to write"
+        },
+        {
+          "line": 446,
+          "text": " * @return write result"
+        },
+        {
+          "line": 447,
+          "text": " */"
+        },
+        {
+          "line": 448,
+          "text": "inline bool WriteFile(const std::string& filePath, const void* buffer, size_t size)"
+        },
+        {
+          "line": 449,
+          "text": "{"
+        },
+        {
+          "line": 450,
+          "text": "    if (buffer == nullptr) {"
+        },
+        {
+          "line": 451,
+          "text": "        ERROR_LOG(\"Write file failed. buffer is nullptr\");"
+        },
+        {
+          "line": 452,
+          "text": "        return false;"
+        },
+        {
+          "line": 453,
+          "text": "    }"
+        },
+        {
+          "line": 454,
+          "text": ""
+        },
+        {
+          "line": 455,
+          "text": "    int fd = open(filePath.c_str(), O_RDWR | O_CREAT | O_TRUNC, S_IRUSR | S_IWRITE);"
+        },
+        {
+          "line": 456,
+          "text": "    if (fd < 0) {"
+        },
+        {
+          "line": 457,
+          "text": "        ERROR_LOG(\"Open file failed. path = %s\", filePath.c_str());"
+        },
+        {
+          "line": 458,
+          "text": "        return false;"
+        },
+        {
+          "line": 459,
+          "text": "    }"
+        },
+        {
+          "line": 460,
+          "text": ""
+        },
+        {
+          "line": 461,
+          "text": "    size_t writeSize = write(fd, buffer, size);"
+        },
+        {
+          "line": 462,
+          "text": "    (void)close(fd);"
+        },
+        {
+          "line": 463,
+          "text": "    if (writeSize != size) {"
+        },
+        {
+          "line": 464,
+          "text": "        ERROR_LOG(\"Write file Failed.\");"
+        },
+        {
+          "line": 465,
+          "text": "        return false;"
+        },
+        {
+          "line": 466,
+          "text": "    }"
+        },
+        {
+          "line": 467,
+          "text": ""
+        },
+        {
+          "line": 468,
+          "text": "    return true;"
+        },
+        {
+          "line": 469,
+          "text": "}"
+        },
+        {
+          "line": 470,
+          "text": ""
+        },
+        {
+          "line": 471,
+          "text": "} // namespace tool"
+        },
+        {
+          "line": 472,
+          "text": ""
+        }
+      ],
+      "roleRanges": {
+        "kernel": [
+          73,
+          206
+        ],
+        "host": [
+          223,
+          471
+        ],
+        "shared": [
+          1,
+          72
+        ]
+      }
+    }
+  ],
+  "memory": {
+    "tiers": [
+      {
+        "id": "gm",
+        "label": "GM",
+        "role": "global-memory",
+        "capacity": "demo input/output allocation",
+        "description": "A、B 输入和 C 输出的 Global Memory 视图。"
+      },
+      {
+        "id": "l1",
+        "label": "L1",
+        "role": "local-memory",
+        "capacity": "dynamic per output tile",
+        "description": "A1、B1 的 L1 Tensor view。"
+      },
+      {
+        "id": "l0a",
+        "label": "L0A",
+        "role": "cube-input",
+        "capacity": "dynamic per L0 K tile",
+        "description": "A2 的 Cube 输入 view。"
+      },
+      {
+        "id": "l0b",
+        "label": "L0B",
+        "role": "cube-input",
+        "capacity": "dynamic per L0 K tile",
+        "description": "B2 的 Cube 输入 view。"
+      },
+      {
+        "id": "l0c",
+        "label": "L0C",
+        "role": "cube-output",
+        "capacity": "dynamic per output tile",
+        "description": "CO1 的 FP32 累加 view。"
+      }
+    ],
+    "blocks": [
+      {
+        "id": "output-grid",
+        "label": "Output tile grid",
+        "range": "M tiles 0:4 × N tiles 0:16",
+        "source": "src/matmul/main.asc:82-84",
+        "confidence": "derived"
+      },
+      {
+        "id": "sample-tile-0",
+        "label": "tileIdx 0",
+        "range": "C[0:256,0:256]",
+        "source": "src/matmul/main.asc:109-120",
+        "confidence": "derived"
+      },
+      {
+        "id": "sample-tile-63",
+        "label": "tileIdx 63",
+        "range": "C[768:1024,3840:4096]",
+        "source": "src/matmul/main.asc:109-120",
+        "confidence": "derived"
+      }
+    ]
+  },
+  "stages": [
+    {
+      "id": "host-shape",
+      "label": "Host Shape",
+      "semanticLabel": "M / K / N",
+      "unit": "host",
+      "operations": [
+        "ParseArguments",
+        "Validate"
+      ],
+      "sourceRef": {
+        "line": 242,
+        "symbol": "parseArguments"
+      },
+      "description": "Parse and validate runtime M/K/N."
+    },
+    {
+      "id": "host-launch",
+      "label": "Host Launch",
+      "semanticLabel": "ACL / Device / Kernel",
+      "unit": "host",
+      "operations": [
+        "aclInit",
+        "aclrtMalloc",
+        "aclrtMemcpy",
+        "GetCoreNumAic",
+        "KernelLaunch"
+      ],
+      "sourceRef": {
+        "line": 334,
+        "symbol": "MatmulKernel"
+      },
+      "description": "Allocate and launch the BF16 kernel."
+    },
+    {
+      "id": "kernel-tiling",
+      "label": "Kernel Tiling",
+      "semanticLabel": "M/N/K tile grid",
+      "unit": "scalar",
+      "operations": [
+        "CeilDiv",
+        "TailDerivation"
+      ],
+      "sourceRef": {
+        "line": 78,
+        "symbol": "baseM/baseN/baseK/kL1"
+      },
+      "description": "Derive output and reduction tile counts."
+    },
+    {
+      "id": "kernel-block-map",
+      "label": "Block → C tile",
+      "semanticLabel": "GM Slice",
+      "unit": "aic-block",
+      "operations": [
+        "GetBlockIdx",
+        "GetBlockNum",
+        "Slice"
+      ],
+      "sourceRef": {
+        "line": 109,
+        "symbol": "tileLoop"
+      },
+      "description": "Map a block to output C tile and L0C view."
+    },
+    {
+      "id": "gm-to-l1",
+      "label": "GM → L1",
+      "semanticLabel": "CopyGM2L1",
+      "unit": "mte2",
+      "operations": [
+        "CopyGM2L1"
+      ],
+      "sourceRef": {
+        "line": 137,
+        "symbol": "copyGM2L1"
+      },
+      "description": "Copy A/B K slices into A1/B1."
+    },
+    {
+      "id": "sync-mte2-mte1",
+      "label": "MTE2 → MTE1",
+      "semanticLabel": "L1 ready",
+      "unit": "event",
+      "operations": [
+        "SetFlag",
+        "WaitFlag"
+      ],
+      "sourceRef": {
+        "line": 150,
+        "symbol": "MTE2_MTE1"
+      },
+      "description": "Publish GM→L1 completion."
+    },
+    {
+      "id": "l1-to-l0",
+      "label": "L1 → L0",
+      "semanticLabel": "CopyL12L0A/B",
+      "unit": "mte1",
+      "operations": [
+        "CopyL12L0A",
+        "CopyL12L0B"
+      ],
+      "sourceRef": {
+        "line": 162,
+        "symbol": "CopyL12L0A"
+      },
+      "description": "Move A1/B1 into A2/B2."
+    },
+    {
+      "id": "mmad",
+      "label": "Cube Mmad",
+      "semanticLabel": "Initialize / Accumulate",
+      "unit": "cube",
+      "operations": [
+        "Mmad"
+      ],
+      "sourceRef": {
+        "line": 187,
+        "symbol": "Mmad"
+      },
+      "description": "Compute A2×B2 into FP32 CO1."
+    },
+    {
+      "id": "sync-m-fix",
+      "label": "M → Output",
+      "semanticLabel": "CO1 ready",
+      "unit": "event",
+      "operations": [
+        "SetFlag",
+        "WaitFlag"
+      ],
+      "sourceRef": {
+        "line": 193,
+        "symbol": "M_FIX"
+      },
+      "description": "Publish final L0C result."
+    },
+    {
+      "id": "l0c-to-gm",
+      "label": "L0C → GM",
+      "semanticLabel": "CopyL0C2GM",
+      "unit": "output",
+      "operations": [
+        "CopyL0C2GM"
+      ],
+      "sourceRef": {
+        "line": 197,
+        "symbol": "CopyL0C2GM"
+      },
+      "description": "Write current output tile to GM C."
+    },
+    {
+      "id": "host-verify",
+      "label": "Host Verify",
+      "semanticLabel": "Device → Host",
+      "unit": "host",
+      "operations": [
+        "aclrtSynchronizeStream",
+        "aclrtMemcpy",
+        "verify_result.py"
+      ],
+      "sourceRef": {
+        "line": 348,
+        "symbol": "verify_result"
+      },
+      "description": "Copy output back and run correctness verification."
+    }
+  ],
+  "steps": [
+    {
+      "id": "host-args",
+      "stageId": "host-shape",
+      "label": "Parse M / K / N",
+      "role": "Host",
+      "unit": "Scalar",
+      "action": "Configure",
+      "evidence": "confirmed",
+      "sourceLines": [
+        223,
+        242,
+        248,
+        252,
+        253,
+        254,
+        259
+      ],
+      "sourceRefs": [
+        {
+          "fileId": "main.asc",
+          "lines": [
+            223,
+            242,
+            248,
+            252,
+            253,
+            254,
+            259
+          ],
+          "symbol": "host-args"
+        }
+      ],
+      "memory": [],
+      "facts": [
+        "m,k,n > 0",
+        "runtime shape"
+      ],
+      "summary": "Host 接收运行时 M、K、N，并检查三个维度为正数。"
+    },
+    {
+      "id": "host-launch",
+      "stageId": "host-launch",
+      "label": "Allocate, copy and launch",
+      "role": "Host",
+      "unit": "Runtime",
+      "action": "Configure / Move",
+      "evidence": "confirmed",
+      "sourceLines": [
+        282,
+        285,
+        287,
+        289,
+        292,
+        293,
+        294,
+        297,
+        298,
+        299,
+        314,
+        318,
+        322,
+        325,
+        327,
+        330,
+        332,
+        334,
+        336,
+        339
+      ],
+      "sourceRefs": [
+        {
+          "fileId": "main.asc",
+          "lines": [
+            282,
+            285,
+            287,
+            289,
+            292,
+            293,
+            294,
+            297,
+            298,
+            299,
+            314,
+            318,
+            322,
+            325,
+            327,
+            330,
+            332,
+            334,
+            336,
+            339
+          ],
+          "symbol": "host-launch"
+        }
+      ],
+      "memory": [
+        "gm-a",
+        "gm-b",
+        "gm-c"
+      ],
+      "facts": [
+        "numBlocks = GetCoreNumAic()",
+        "Kernel T = bfloat16_t",
+        "Host↔Device copy"
+      ],
+      "summary": "Host 初始化 ACL、分配 A/B/C Device Memory、完成输入拷贝并启动 MatmulKernel。"
+    },
+    {
+      "id": "kernel-tiling",
+      "stageId": "kernel-tiling",
+      "label": "Derive tile grid",
+      "role": "Kernel",
+      "unit": "Scalar",
+      "action": "Configure",
+      "evidence": "derived",
+      "sourceLines": [
+        73,
+        75,
+        78,
+        79,
+        80,
+        81,
+        82,
+        83,
+        84,
+        85,
+        86,
+        87,
+        88,
+        89
+      ],
+      "sourceRefs": [
+        {
+          "fileId": "main.asc",
+          "lines": [
+            73,
+            75,
+            78,
+            79,
+            80,
+            81,
+            82,
+            83,
+            84,
+            85,
+            86,
+            87,
+            88,
+            89
+          ],
+          "symbol": "kernel-tiling"
+        }
+      ],
+      "memory": [
+        "gm-a",
+        "gm-b",
+        "gm-c"
+      ],
+      "facts": [
+        "baseM/N/K = 256/256/128",
+        "kL1 = 512",
+        "output tiles = 4×16"
+      ],
+      "summary": "根据运行时 M/K/N 和 sizeof(T) 派生 M/N 输出网格、L1 K 分片、L0 K 分片和尾块参数。"
+    },
+    {
+      "id": "kernel-block-map",
+      "stageId": "kernel-block-map",
+      "label": "Create GM views and map block",
+      "role": "Kernel",
+      "unit": "AIC block",
+      "action": "Control / Slice",
+      "evidence": "confirmed",
+      "sourceLines": [
+        91,
+        92,
+        94,
+        95,
+        96,
+        97,
+        99,
+        100,
+        101,
+        108,
+        109,
+        110,
+        111,
+        112,
+        113,
+        115,
+        116,
+        117,
+        119,
+        120,
+        121,
+        122,
+        124
+      ],
+      "sourceRefs": [
+        {
+          "fileId": "main.asc",
+          "lines": [
+            91,
+            92,
+            94,
+            95,
+            96,
+            97,
+            99,
+            100,
+            101,
+            108,
+            109,
+            110,
+            111,
+            112,
+            113,
+            115,
+            116,
+            117,
+            119,
+            120,
+            121,
+            122,
+            124
+          ],
+          "symbol": "kernel-block-map"
+        }
+      ],
+      "memory": [
+        "gm-a",
+        "gm-b",
+        "gm-c",
+        "l0c"
+      ],
+      "facts": [
+        "tileIdx += blockNum",
+        "A/B/C = ND GM views",
+        "curM / curN tail"
+      ],
+      "summary": "block 从 curBlockIdx 开始步进处理输出 tile，并通过 Slice 建立当前 A、B、C 区域和 L0C 输出视图。"
+    },
+    {
+      "id": "gm-to-l1",
+      "stageId": "gm-to-l1",
+      "label": "Copy GM → L1",
+      "role": "Kernel",
+      "unit": "MTE2",
+      "action": "Move",
+      "evidence": "confirmed",
+      "sourceLines": [
+        125,
+        126,
+        127,
+        129,
+        130,
+        132,
+        133,
+        134,
+        137,
+        138,
+        139,
+        140,
+        141,
+        142,
+        144,
+        145,
+        146,
+        147,
+        148
+      ],
+      "sourceRefs": [
+        {
+          "fileId": "main.asc",
+          "lines": [
+            125,
+            126,
+            127,
+            129,
+            130,
+            132,
+            133,
+            134,
+            137,
+            138,
+            139,
+            140,
+            141,
+            142,
+            144,
+            145,
+            146,
+            147,
+            148
+          ],
+          "symbol": "gm-to-l1"
+        }
+      ],
+      "memory": [
+        "gm-a",
+        "gm-b",
+        "a1",
+        "b1"
+      ],
+      "facts": [
+        "CopyGM2L1",
+        "A1 offset = 0",
+        "B1 offset = baseM×kL1×sizeof(T)"
+      ],
+      "summary": "当前输出 tile 的 A、B K slice 通过 CopyGM2L1 写入 L1 的 A1、B1 view。"
+    },
+    {
+      "id": "sync-mte2-mte1",
+      "stageId": "sync-mte2-mte1",
+      "label": "MTE2 → MTE1",
+      "role": "Kernel",
+      "unit": "Event",
+      "action": "Sync",
+      "evidence": "confirmed",
+      "sourceLines": [
+        150,
+        151
+      ],
+      "sourceRefs": [
+        {
+          "fileId": "main.asc",
+          "lines": [
+            150,
+            151
+          ],
+          "symbol": "sync-mte2-mte1"
+        }
+      ],
+      "memory": [
+        "a1",
+        "b1"
+      ],
+      "facts": [
+        "HardEvent::MTE2_MTE1",
+        "L1 ready"
+      ],
+      "summary": "GM→L1 完成后 SetFlag/WaitFlag MTE2_MTE1，后续 L1→L0 建立在该依赖上。",
+      "syncEvents": [
+        "MTE2_MTE1"
+      ],
+      "eventDependencies": [
+        "event:mte2-mte1"
+      ]
+    },
+    {
+      "id": "l1-to-l0",
+      "stageId": "l1-to-l0",
+      "label": "Copy L1 → L0",
+      "role": "Kernel",
+      "unit": "MTE1",
+      "action": "Move / Transform",
+      "evidence": "confirmed",
+      "sourceLines": [
+        153,
+        154,
+        155,
+        156,
+        157,
+        159,
+        161,
+        162,
+        163,
+        164,
+        165,
+        166,
+        167,
+        168,
+        170,
+        171,
+        172,
+        173,
+        174,
+        176,
+        177
+      ],
+      "sourceRefs": [
+        {
+          "fileId": "main.asc",
+          "lines": [
+            153,
+            154,
+            155,
+            156,
+            157,
+            159,
+            161,
+            162,
+            163,
+            164,
+            165,
+            166,
+            167,
+            168,
+            170,
+            171,
+            172,
+            173,
+            174,
+            176,
+            177
+          ],
+          "symbol": "l1-to-l0"
+        }
+      ],
+      "memory": [
+        "a1",
+        "b1",
+        "a2",
+        "b2"
+      ],
+      "facts": [
+        "A1 NZ → A2 NZ",
+        "B1 NZ → B2 ZN",
+        "inner K loop"
+      ],
+      "summary": "每个 L1 K tile 再拆成 L0 K tile，CopyL12L0A/B 将 A1、B1 送入 L0A、L0B。",
+      "syncEvents": [
+        "MTE1_M"
+      ],
+      "eventDependencies": [
+        "event:mte1-m"
+      ]
+    },
+    {
+      "id": "mmad",
+      "stageId": "mmad",
+      "label": "Mmad initialize / accumulate",
+      "role": "Kernel",
+      "unit": "Cube",
+      "action": "Compute",
+      "evidence": "confirmed",
+      "sourceLines": [
+        179,
+        180,
+        181,
+        182,
+        183,
+        184,
+        186,
+        187,
+        189
+      ],
+      "sourceRefs": [
+        {
+          "fileId": "main.asc",
+          "lines": [
+            179,
+            180,
+            181,
+            182,
+            183,
+            184,
+            186,
+            187,
+            189
+          ],
+          "symbol": "mmad"
+        }
+      ],
+      "memory": [
+        "a2",
+        "b2",
+        "l0c"
+      ],
+      "facts": [
+        "cmatrixInitVal = iter1==0 && iter0==0",
+        "Mmad m/n/k",
+        "CO1 float"
+      ],
+      "summary": "第一次 Mmad 初始化 CO1，后续 Mmad 沿 K 维累加到同一个 L0C view；本案例没有 Bias。",
+      "syncEvents": [
+        "M_MTE1"
+      ],
+      "eventDependencies": [
+        "event:m-mte1"
+      ],
+      "loop": {
+        "scope": "perL1KTile",
+        "iterationRange": [
+          0,
+          3
+        ],
+        "innerScope": "perL0KTile",
+        "innerIterationRange": [
+          0,
+          3
+        ]
+      }
+    },
+    {
+      "id": "sync-m-fix",
+      "stageId": "sync-m-fix",
+      "label": "M → output path",
+      "role": "Kernel",
+      "unit": "Event",
+      "action": "Sync",
+      "evidence": "confirmed",
+      "sourceLines": [
+        193,
+        194
+      ],
+      "sourceRefs": [
+        {
+          "fileId": "main.asc",
+          "lines": [
+            193,
+            194
+          ],
+          "symbol": "sync-m-fix"
+        }
+      ],
+      "memory": [
+        "l0c"
+      ],
+      "facts": [
+        "HardEvent::M_FIX",
+        "CO1 ready"
+      ],
+      "summary": "当前输出 tile 的 K 归约完成后，SetFlag/WaitFlag M_FIX，允许输出路径读取最终 CO1。",
+      "loop": {
+        "scope": "perOutputTile",
+        "iterationRange": [
+          0,
+          15
+        ],
+        "initialIteration": {
+          "iter0": 0,
+          "iter1": 0
+        },
+        "accumulateIterations": "all remaining K tiles"
+      }
+    },
+    {
+      "id": "l0c-to-gm",
+      "stageId": "l0c-to-gm",
+      "label": "Copy L0C → GM",
+      "role": "Kernel",
+      "unit": "Output path",
+      "action": "Store",
+      "evidence": "confirmed",
+      "sourceLines": [
+        196,
+        197,
+        198,
+        200,
+        202,
+        203,
+        204,
+        205
+      ],
+      "sourceRefs": [
+        {
+          "fileId": "main.asc",
+          "lines": [
+            196,
+            197,
+            198,
+            200,
+            202,
+            203,
+            204,
+            205
+          ],
+          "symbol": "l0c-to-gm"
+        }
+      ],
+      "memory": [
+        "l0c",
+        "gm-c"
+      ],
+      "facts": [
+        "CopyL0C2GM",
+        "C GM Slice",
+        "FIX_M before reuse"
+      ],
+      "summary": "CopyL0C2GM 将当前 CO1 tile 写回 C GM Slice；源码未显式调用名为 Fixpipe 的 API。",
+      "syncEvents": [
+        "M_FIX"
+      ],
+      "eventDependencies": [
+        "event:m-fix"
+      ]
+    },
+    {
+      "id": "host-verify",
+      "stageId": "host-verify",
+      "label": "Synchronize and verify",
+      "role": "Host",
+      "unit": "Runtime",
+      "action": "Observe / Cleanup",
+      "evidence": "confirmed",
+      "sourceLines": [
+        336,
+        337,
+        339,
+        340,
+        346,
+        348,
+        349,
+        353,
+        354,
+        355,
+        356
+      ],
+      "sourceRefs": [
+        {
+          "fileId": "main.asc",
+          "lines": [
+            336,
+            337,
+            339,
+            340,
+            346,
+            348,
+            349,
+            353,
+            354,
+            355,
+            356
+          ],
+          "symbol": "host-verify"
+        }
+      ],
+      "memory": [
+        "gm-c"
+      ],
+      "facts": [
+        "Device→Host copy",
+        "verify_result.py",
+        "timeline unavailable"
+      ],
+      "summary": "Host 等待 stream、回拷 C、运行 BF16 correctness 校验并释放 ACL 资源。",
+      "syncEvents": [
+        "FIX_M"
+      ],
+      "eventDependencies": [
+        "event:fix-m"
+      ],
+      "loop": {
+        "scope": "perOutputTile",
+        "iterationRange": [
+          0,
+          63
+        ]
+      }
+    }
+  ],
+  "puzzles": [
+    {
+      "id": "matmul.tile-grid",
+      "kind": "formula",
+      "prompt": "For M=1024 and baseM=256, how many M output tiles exist?",
+      "context": {
+        "M": 1024,
+        "baseM": 256
+      },
+      "answer": 4,
+      "sourceHint": {
+        "lines": [
+          78,
+          82
+        ]
+      },
+      "explanation": "mTileNum = ceil(M / baseM) = 4."
+    },
+    {
+      "id": "matmul.k-hierarchy",
+      "kind": "formula",
+      "prompt": "For BF16 K=2048, how many L1 and L0 K tiles exist?",
+      "context": {
+        "K": 2048,
+        "kL1": 512,
+        "baseK": 128
+      },
+      "answer": "4 L1 tiles × 4 L0 tiles",
+      "sourceHint": {
+        "lines": [
+          80,
+          81,
+          85,
+          154
+        ]
+      },
+      "explanation": "kL1TileNum=ceil(2048/512)=4 and kL0IterNum=ceil(512/128)=4."
+    },
+    {
+      "id": "matmul.layout-boundary",
+      "kind": "concept",
+      "prompt": "Is B1 NZ → B2 ZN a mathematical transpose?",
+      "context": {
+        "source": "main.asc:144-174"
+      },
+      "answer": "No; it is a layout/storage preparation.",
+      "sourceHint": {
+        "lines": [
+          144,
+          170,
+          174
+        ]
+      },
+      "explanation": "The source changes the local layout view; the Code Recovery model must not claim a mathematical transpose without additional evidence."
+    },
+    {
+      "id": "matmul.output-api",
+      "kind": "evidence",
+      "prompt": "Which source API writes L0C to GM C?",
+      "context": {
+        "source": "main.asc:197-198"
+      },
+      "answer": "CopyL0C2GM",
+      "sourceHint": {
+        "lines": [
+          197,
+          198
+        ]
+      },
+      "explanation": "The sample calls CopyL0C2GM; a separate explicit Fixpipe call is not present in main.asc."
+    }
+  ],
+  "evidence": {
+    "model": "static-source-recovery",
+    "sourceOfTruth": [
+      "src/matmul/main.asc",
+      "src/matmul/README.md",
+      "src/matmul/CMakeLists.txt",
+      "src/matmul/scripts/gen_data.py",
+      "src/matmul/scripts/verify_result.py"
+    ],
+    "profiling": {
+      "status": "unavailable",
+      "note": "README contains a sample profile table, but no run-specific profiling trace is attached to this fixture."
+    },
+    "runtime": {
+      "status": "unverified",
+      "note": "No target-device compile/run result is attached to this fixture."
+    },
+    "dump": {
+      "status": "unavailable",
+      "note": "No Tensor Data Dump is attached; show metadata only."
+    }
+  },
+  "launchFacts": [
+    [
+      "entry",
+      "MatmulKernel<bfloat16_t><<<numBlocks, stream>>>(A, B, C, m, k, n)"
+    ],
+    [
+      "arch",
+      "dav-3510"
+    ],
+    [
+      "input",
+      "A[M,K], B[K,N] · bfloat16"
+    ],
+    [
+      "output",
+      "C[M,N] · bfloat16"
+    ],
+    [
+      "blocks",
+      "GetCoreNumAic()"
+    ],
+    [
+      "timeline",
+      "unavailable · no profiling data"
+    ]
+  ]
+}

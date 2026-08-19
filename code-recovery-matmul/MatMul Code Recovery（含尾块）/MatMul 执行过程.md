@@ -25,7 +25,7 @@ A 是 M×K，B 是 K×N，C 是 M×N。这里没有 Bias、ReLU 或 Vector 后�
 
 ### 1.2 Tensor API 对象
 
-页面源码快照 `src/matmul/main.asc`（对应仓库实际源文件 `Samples/0_Introduction/matmul/main.asc`）使用 Tensor API 建立 GM 和 Local Memory 的 Tensor 视图：
+src/matmul/main.asc 使用 Tensor API 建立 GM 和 Local Memory 的 Tensor 视图：
 
 - GM A：NDExtLayoutPtn；
 - GM B：NDExtLayoutPtn；
@@ -65,8 +65,8 @@ NZ、ZN 是 Tensor layout / storage view。不能仅凭 ZN 就把 B 解释成数
 ### 2.2 完整数据流
 
 ~~~
-GM A [M,K] ── CopyGM2L1 ──> L1 A1 [baseM,kL1] ── CopyL12L0A ──> L0A A2
-GM B [K,N] ── CopyGM2L1 ──> L1 B1 [kL1,baseN] ── CopyL12L0B ──> L0B B2
+GM A [M,K] ── CopyGM2L1 ──> L1 A1 [curM,curGmAKL1] ── CopyL12L0A ──> L0A A2
+GM B [K,N] ── CopyGM2L1 ──> L1 B1 [curGmBKL1,curN] ── CopyL12L0B ──> L0B B2
                                                                │
                                                                ▼
                                                         Cube Mmad
@@ -88,7 +88,7 @@ GM C [M,N] <──────────────────────�
 | --- | --- | --- |
 | 73–206 | Kernel | Tiling 派生、block 调度、Tensor Slice、Memory 搬运、Mmad、同步 |
 | 223–357 | Host | 参数解析、ACL、Host/Device Memory、Kernel launch、结果回拷 |
-| 359–471 | Host helper | Tiling 辅助计算、BF16 转换、文件读写 |
+| 359–471 | Host helper | CeilDiv、BF16 转换、文件读写 |
 
 main.asc 是单文件，页面不能把它误读成两个独立源码文件。
 
@@ -114,12 +114,12 @@ baseN = 256
 baseK = 128
 kL1 = 512
 
-mTileNum = 1024 / 256 = 4
-nTileNum = 4096 / 256 = 16
+mTileNum = ceil(1024 / 256) = 4
+nTileNum = ceil(4096 / 256) = 16
 tileNum = 4 × 16 = 64
 
-kL1TileNum = 2048 / 512 = 4
-kL0IterNum = 512 / 128 = 4
+kL1TileNum = ceil(2048 / 512) = 4
+kL0IterNum = ceil(512 / 128) = 4
 ~~~
 
 因此：
@@ -160,24 +160,28 @@ nStart = nTileIdx × baseN
 
 blockIdx 只决定 tileIdx 的起始位置和步进，不应被页面固定解释成 block 0 永远只处理左上角 tile。
 
-## 3. 在 8 个核假设下的完整 tile 调度
+## 3. 尾块
 
-​	为了在页面中展开多核执行过程，本案例额外采用 `numBlocks = blockNum = 8` 的逻辑演示假设。源码事实仍是：Host 通过 `GetCoreNumAic()` 查询 block 数，Kernel 通过 `GetBlockNum()` 获取参与调度的 block 数；8 不是当前文档对真实设备的测量结论。
+代码通过最后一个 tile / K 分片的条件选择实际尺寸：
 
-64 个输出 tile 按 `tileIdx += 8` 轮询分配：
+~~~
+curM = mTileIdx == mTileNum - 1 ? tailBaseM : baseM
+curN = nTileIdx == nTileNum - 1 ? tailBaseN : baseN
+tailKL1 = k - (kL1TileNum - 1) × kL1
+curGmBKL1 = iter0 + 1 == kL1TileNum ? k - iter0 × kL1 : kL1
+kL0IterNum = ceil(curGmBKL1 / baseK)
+tailKL0 = curGmBKL1 - (kL0IterNum - 1) × baseK
+curKL0 = iter1 + 1 == kL0IterNum ? tailKL0 : baseK
+~~~
 
-| AIC | 输出 tile 序列 | 每个 tile 的 C 区域 | tile 数 | 逻辑 Mmad 数 |
-| --- | --- | --- | ---: | ---: |
-| AIC0 | 0, 8, 16, 24, 32, 40, 48, 56 | M0/N0 → M3/N8 | 8 | 128 |
-| AIC1 | 1, 9, 17, 25, 33, 41, 49, 57 | M0/N1 → M3/N9 | 8 | 128 |
-| AIC2 | 2, 10, 18, 26, 34, 42, 50, 58 | M0/N2 → M3/N10 | 8 | 128 |
-| AIC3 | 3, 11, 19, 27, 35, 43, 51, 59 | M0/N3 → M3/N11 | 8 | 128 |
-| AIC4 | 4, 12, 20, 28, 36, 44, 52, 60 | M0/N4 → M3/N12 | 8 | 128 |
-| AIC5 | 5, 13, 21, 29, 37, 45, 53, 61 | M0/N5 → M3/N13 | 8 | 128 |
-| AIC6 | 6, 14, 22, 30, 38, 46, 54, 62 | M0/N6 → M3/N14 | 8 | 128 |
-| AIC7 | 7, 15, 23, 31, 39, 47, 55, 63 | M0/N7 → M3/N15 | 8 | 128 |
+尾块只出现在对应维度不能被基础 tile 整除时：
 
-这里的 `M0/N0` 是该 AIC 的第一个 tile，`M3/N8` 等是序列中的最后一个 tile，不表示单个 tile 同时覆盖多个区域。每个 AIC 的 8 个 tile 依次执行同一条 Host → Kernel → K Loop → L0C → GM 路径；每个 tile 内 16 次 Mmad，8 个 AIC 合计 1024 次逻辑 Mmad。页面的 AIC 选择器默认查看所选 AIC 的第一个 tile，执行步骤仍是单 tile 的逻辑播放。
+- M 尾块：最后一个输出 tile 使用 `tailBaseM`；
+- N 尾块：最后一个输出 tile 使用 `tailBaseN`；
+- L1 K 尾块：最后一个 `iter0` 使用 `tailKL1`；
+- L0 K 尾块：最后一个 `iter1` 使用 `tailKL0`。
+
+固定演示 shape `1024 × 2048 × 4096` 不触发这些分支，但含尾块版本保留其完整执行模型。
 
 ## 第三部分：Host 侧执行过程
 
@@ -246,7 +250,6 @@ MatmulKernel<bfloat16_t><<<numBlocks, nullptr, stream>>>(A, B, C, m, k, n)
 
 - 当前 launch 使用 bfloat16_t；
 - numBlocks 来源于平台 AIC core 查询；
-- 本页为了展示完整归属，固定展示 8 个 block/AIC 的 round-robin 映射；
 - 运行时 M、K、N 传入 Kernel。
 
 不能把 numBlocks 固化为某一个常数，也不能把它直接等同于固定设备物理核数。
@@ -276,15 +279,15 @@ tensorCgm : GM C [m,n]
 输出 tile 的 Slice：
 
 ~~~
-A block = Slice(mTileIdx × baseM, 0), [baseM, k]
-B block = Slice(0, nTileIdx × baseN), [k, baseN]
-C block = Slice(mTileIdx × baseM, nTileIdx × baseN), [baseM, baseN]
+A block = Slice(mTileIdx × baseM, 0), [curM, k]
+B block = Slice(0, nTileIdx × baseN), [k, curN]
+C block = Slice(mTileIdx × baseM, nTileIdx × baseN), [curM, curN]
 ~~~
 
 L0C 视图：
 
 ~~~
-L0C layout = NZ(baseM, baseN, C0=16)
+L0C layout = NZ(curM, curN, C0=16)
 L0C type = float
 l0cOffset = 0
 ~~~
@@ -312,7 +315,7 @@ for (iter0 = 0; iter0 < kL1TileNum; ++iter0)
 每一轮：
 
 1. 等待 MTE1_MTE2；
-2. 使用固定的 L1 K 长度 kL1；
+2. 计算当前 L1 K 长度 `curGmBKL1`；
 3. 建立 A1、B1 的 L1 layout；
 4. 从 A/B GM Slice 取当前 K 区间；
 5. 执行 CopyGM2L1；
@@ -325,8 +328,8 @@ for (iter0 = 0; iter0 < kL1TileNum; ++iter0)
 A 当前 L1 tile：
 
 ~~~
-A1 = A[mStart : mStart+baseM,
-       iter0×kL1 : iter0×kL1+kL1]
+A1 = A[mStart : mStart+curM,
+       iter0×kL1 : iter0×kL1+curGmAKL1]
 ~~~
 
 A 的 L1 buffer offset：
@@ -342,8 +345,8 @@ l1BufferAOffset = 0
 B 当前 L1 tile：
 
 ~~~
-B1 = B[iter0×kL1 : iter0×kL1+kL1,
-       nStart : nStart+baseN]
+B1 = B[iter0×kL1 : iter0×kL1+curGmBKL1,
+       nStart : nStart+curN]
 ~~~
 
 B 的 L1 buffer offset：
@@ -375,17 +378,18 @@ WaitFlag<HardEvent::MTE2_MTE1>
 
 ## 1. 内层 L0 K 循环
 
-当前完整 L1 K tile 进入内层循环。固定 BF16 shape 下：
+当前 L1 K tile 进入内层循环：
 
 ~~~
+kL0IterNum = ceil(curGmBKL1 / baseK)
+tailKL0 = curGmBKL1 - (kL0IterNum - 1) × baseK
 baseK = 128
-kL0IterNum = 4
 ~~~
 
 每个 iter1：
 
 1. WaitFlag M_MTE1；
-2. 使用固定的 L0 K 长度 baseK；
+2. 计算当前 L0 K 长度 `curKL0`；
 3. Copy L1 → L0A；
 4. Copy L1 → L0B；
 5. SetFlag / WaitFlag MTE1_M；
@@ -397,8 +401,8 @@ kL0IterNum = 4
 A2 当前 tile：
 
 ~~~
-A2 = A1[0 : baseM,
-        iter1×baseK : iter1×baseK+baseK]
+A2 = A1[0 : curM,
+        iter1×baseK : iter1×baseK+curKL0]
 ~~~
 
 A2 位置：
@@ -415,8 +419,8 @@ CopyL12L0A 是源码确认的 Copy API。A2 的真实物理 padding 和容量需
 B2 当前 tile：
 
 ~~~
-B2 = B1[iter1×baseK : iter1×baseK+baseK,
-        0 : baseN]
+B2 = B1[iter1×baseK : iter1×baseK+curKL0,
+        0 : curN]
 ~~~
 
 B2 位置：
@@ -446,9 +450,9 @@ WaitFlag<HardEvent::MTE1_M>
 源码 180–187 设置：
 
 ~~~
-para.m = baseM
-para.n = baseN
-para.k = baseK
+para.m = curM
+para.n = curN
+para.k = curKL0
 para.cmatrixInitVal = (iter1 == 0 && iter0 == 0)
 ~~~
 
@@ -559,7 +563,7 @@ Host 再：
 
 ## 第九部分：Instruction 级 Trace 附录
 
-本附录按 Source-to-Instruction Flow 方法组织源码事实：先区分 Host / Kernel，再识别 Sequence、Loop、Action、Execution role 和 Event dependency。它表达静态源码恢复出的逻辑顺序，不是 profiling 时间线，也不表达硬件流水单元的实测持续时间。
+本附录按 Source-to-Instruction Flow 方法组织源码事实：先区分 Host / Kernel，再识别 Sequence、Loop、Branch、Action、Execution role 和 Event dependency。它同时覆盖完整 tile 与尾块分支，但不表达 profiling 时间线或硬件流水单元的实测持续时间。
 
 ### 1. Stage 总览
 
@@ -567,32 +571,35 @@ Host 再：
 | --- | --- | --- | --- | --- | --- |
 | 1. Input Shape | `parseArguments`、Kernel 参数 `m/k/n` | Configure | Once | Host / Scalar | 建立 `A[M,K] × B[K,N] → C[M,N]` |
 | 2. Host 执行配置 | ACL、Host/Device Buffer、Host→Device、`GetCoreNumAic`、Kernel launch | Configure / Allocate / Move | Once | Host / Runtime | Device A/B/C 可用，Kernel 接收 M/K/N |
-| 3. Kernel Tiling 与 Block Dispatch | `baseM/N/K`、`kL1`、tile 数、`GetBlockIdx`、tile loop | Configure / Control | Per kernel / Per block | Scalar / AIC | 64 个输出 tile；每个 block 按步长领取 tile |
-| 4. Tensor View 与 Output Tile | `MakeFrameLayout`、`MakeTensor`、`Slice`、L0C view | Allocate / Slice | Per tile | Scalar | 建立当前 A/B/C Slice 和 `[256,256]` L0C |
+| 3. Kernel Tiling 与 Block Dispatch | `baseM/N/K`、`kL1`、`CeilDiv`、`tail*`、`GetBlockIdx`、tile loop | Configure / Control / Branch | Per kernel / Per block | Scalar / AIC | 依据完整 tile 或尾块生成当前 tile 尺寸 |
+| 4. Tensor View 与 Output Tile | `MakeFrameLayout`、`MakeTensor`、`Slice`、L0C view | Allocate / Slice | Per tile | Scalar | 建立当前 `[curM,curN]` L0C 和 GM Slice |
 | 5. GM → L1 | `CopyGM2L1`、A1/B1 layout | Move | Per tile × `iter0` | MTE2 | A/B 当前 K 分片进入 L1 A1/B1 |
 | 6. L1 Ready Sync | `MTE2_MTE1` Set/Wait | Sync | Per `iter0` | Event | L1 数据对 MTE1 可读 |
-| 7. L1 → L0 | `CopyL12L0A/B`、A2/B2 Slice | Move / Transform | Per `iter0` × `iter1` | MTE1 | 当前 `[256,128]` / `[128,256]` 数据进入 L0A/L0B |
-| 8. Cube Mmad 与 K 累加 | `MTE1_M`、`Mmad`、`M_MTE1` | Sync / Compute | Per tile × 4 × 4 | Cube / Event | 首次 Mmad 初始化 CO1，之后 15 次沿 K 累加 |
+| 7. L1 → L0 | `CopyL12L0A/B`、A2/B2 Slice | Move / Transform | Per `iter0` × `iter1` | MTE1 | 完整或尾部 K 分片进入 L0A/L0B |
+| 8. Cube Mmad 与 K 累加 | `MTE1_M`、`Mmad`、`M_MTE1` | Sync / Compute / Branch | Per tile × `kL1TileNum` × `kL0IterNum` | Cube / Event | 首次 Mmad 初始化 CO1，后续沿 K 累加，最后一轮使用 `curKL0` |
 | 9. Output Ready Sync | `M_FIX` Set/Wait | Sync | Per tile | Event | 最终 L0C 结果对输出路径可读 |
-| 10. L0C → GM 与 Host Observe | `CopyL0C2GM`、`FIX_M`、最终 Wait、D2H、verify | Store / Finalize / Observe | Per tile / Once | Output path / Event / Host | C Slice 写回 GM，Host 完成结果校验 |
+| 10. L0C → GM 与 Host Observe | `CopyL0C2GM`、`FIX_M`、最终 Wait、D2H、verify | Store / Finalize / Observe | Per tile / Once | Output path / Event / Host | 完整或尾部 C Slice 写回 GM，Host 完成结果校验 |
 
 ### 2. Trace 结构与依赖
 
-固定 BF16 上下文的主路径可以压缩为：
+含尾块版本的主路径可以压缩为：
 
 ~~~
 Host Configure
   → Kernel Tiling / Block Dispatch
   → Per Output Tile
+    → Branch: full tile or M/N tile tail
     → Per iter0: Wait MTE1_MTE2 → CopyGM2L1 → MTE2_MTE1
+      → Branch: full K tile or L1 K tail
       → Per iter1: CopyL12L0A/B → MTE1_M → Mmad → M_MTE1
+        → Branch: full L0 K tile or L0 K tail
     → M_FIX
     → CopyL0C2GM → FIX_M
   → Final WaitFlags
   → Host D2H / Verify / Cleanup
 ~~~
 
-这里的两个 K 循环不能压扁成一个普通的 `K Loop`：`iter0` 控制 GM→L1，`iter1` 控制 L1→L0 和单次 Mmad。`MTE1_MTE2` 是下一轮 GM→L1 的资源复用控制，`M_MTE1` 是 Cube 消费 L0 后允许下一轮 L1→L0 的控制。
+尾块只改变当前 Tensor 的实际 Shape 和循环最后一轮的 `cur*` 参数，不改变 Instruction 类型或 GM→L1→L0→Cube→L0C→GM 的主路径。`iter0` 仍控制 GM→L1，`iter1` 仍控制 L1→L0 和单次 Mmad。
 
 ### 3. Event 总览
 
@@ -611,8 +618,8 @@ Host Configure
 
 - `CopyGM2L1`、`CopyL12L0A/B`、`Mmad`、`CopyL0C2GM` 是源码直接确认的 Instruction；
 - `MTE2`、`MTE1`、`Cube`、`Event` 是依据 API 和 HardEvent 语义映射出的执行角色；
+- `tailBaseM/tailBaseN/tailKL1/tailKL0` 是源码直接定义的尾块参数；
 - 当前源码没有显式名为 `Fixpipe` 的 API，输出阶段应显示为 `CopyL0C2GM / Output path`；
-- README 中的 fixpipe profiling 指标不能反向覆盖源码 API 事实；
 - 没有 profiling 时不显示 duration、stall、overlap 或硬件利用率。
 
 ## 最短记忆版

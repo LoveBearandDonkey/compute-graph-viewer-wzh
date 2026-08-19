@@ -328,7 +328,6 @@
     ctx.restore();
 
     const mono = cssValue('--font-mono', 'ui-monospace, monospace');
-    ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
     ctx.fillStyle = colors.text;
 
@@ -336,11 +335,32 @@
       return;
     }
 
-    if (!cell.label || (minDimension < 40 && !cell.states.has('current'))) return;
-    const fontSize = clamp(minDimension * 0.3, 11, 14);
+    const hasLabel = Boolean(cell.label);
+    const hasValue = Number.isFinite(cell.value);
+    if ((!hasLabel && !hasValue) || (minDimension < 16 && !cell.states.has('current'))) return;
+    const fontSize = clamp(minDimension * 0.28, 9, 14);
     ctx.font = `700 ${fontSize}px ${mono}`;
-    const label = fittedText(ctx, cell.label, Math.max(0, box.width - 8));
-    if (label) ctx.fillText(label, box.x + box.width / 2, box.y + box.height / 2);
+    const value = hasValue ? String(cell.value) : '';
+    const compact = minDimension < 28;
+    if (!hasLabel || !hasValue) {
+      ctx.textAlign = 'center';
+      const label = fittedText(ctx, hasLabel ? cell.label : value, Math.max(0, box.width - 2));
+      if (label) ctx.fillText(label, box.x + box.width / 2, box.y + box.height / 2);
+      return;
+    }
+    if (compact) {
+      ctx.textAlign = 'center';
+      const label = fittedText(ctx, `${cell.label}|${value}`, Math.max(0, box.width - 2));
+      if (label) ctx.fillText(label, box.x + box.width / 2, box.y + box.height / 2);
+      return;
+    }
+
+    ctx.textAlign = 'center';
+    const columnWidth = Math.max(0, box.width * 0.46 - 2);
+    const sequence = fittedText(ctx, cell.label, columnWidth);
+    const fetchedValue = fittedText(ctx, value, columnWidth);
+    if (sequence) ctx.fillText(sequence, box.x + box.width * 0.25, box.y + box.height / 2);
+    if (fetchedValue) ctx.fillText(fetchedValue, box.x + box.width * 0.75, box.y + box.height / 2);
   }
 
   function createAggregatedCells(source, inputOptions = {}) {

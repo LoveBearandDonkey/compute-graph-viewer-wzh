@@ -1,0 +1,131 @@
+{
+  "schemaVersion": "0.1",
+  "operator": {
+    "id": "sample.matmul_cube",
+    "name": "mmad_custom",
+    "displayName": "Cube Matmul · Static Tensor",
+    "kind": "cube",
+    "sourceLanguage": "ascendc",
+    "apiLevel": "basic_api_static_tensor",
+    "sourcePath": "/Users/yin/gitcode/asc-devkit-master/examples/01_simd_cpp_api/00_introduction/02_matrix/matmul/matmul.asc",
+    "description": "Cube sample showing GM to L1/L0 movement, Mmad accumulation, architecture-specific LoadData, and Fixpipe output."
+  },
+  "arch": {
+    "npuArch": "dav-2201",
+    "soc": "Atlas A2/A3 compatible",
+    "kernelTag": "__cube__"
+  },
+  "launch": {
+    "entry": "mmad_custom<M, K, N, singleCoreM, singleCoreK, singleCoreN, baseM, baseK, baseN><<<numBlocks, nullptr, stream>>>(aDevice, bDevice, cDevice)",
+    "numBlocks": 4,
+    "hostSteps": [
+      "Read A and B matrices",
+      "Copy A/B HostToDevice",
+      "Launch 4 Cube blocks",
+      "Synchronize stream",
+      "Copy C DeviceToHost and verify"
+    ]
+  },
+  "tiling": {
+    "type": "static_template_tiling",
+    "params": {
+      "M": 512,
+      "K": 512,
+      "N": 1024,
+      "singleCoreM": 256,
+      "singleCoreK": 512,
+      "singleCoreN": 512,
+      "baseM": 128,
+      "baseK": 64,
+      "baseN": 256,
+      "cubeBlock": 16
+    },
+    "derived": {
+      "mIter": 2,
+      "nIter": 2,
+      "kLoopCount": 8,
+      "mLoopCount": 2,
+      "nLoopCount": 2,
+      "numBlocks": 4
+    },
+    "controls": [
+      {"id": "blockIdx", "label": "Cube block", "value": 0, "unit": "AIC block", "description": "Selects one singleCoreM x singleCoreN C partition."},
+      {"id": "kIndex", "label": "K tile", "value": 0, "unit": "baseK slice", "description": "Selects one baseK accumulation step."}
+    ]
+  },
+  "source": {
+    "path": "matmul.asc",
+    "lines": [
+      {"line": 28, "text": "template <uint32_t M, uint32_t K, uint32_t N, uint32_t singleCoreM, uint32_t singleCoreK, uint32_t singleCoreN, uint32_t baseM, uint32_t baseK, uint32_t baseN>"},
+      {"line": 30, "text": "class KernelMatmul {"},
+      {"line": 41, "text": "__aicore__ inline void Process()"},
+      {"line": 43, "text": "    AscendC::LocalTensor<half> a1Local(AscendC::TPosition::A1, a1Addr, baseM * baseK);"},
+      {"line": 44, "text": "    AscendC::LocalTensor<half> a2Local(AscendC::TPosition::A2, a2Addr, baseM * baseK);"},
+      {"line": 45, "text": "    AscendC::LocalTensor<half> b1Local(AscendC::TPosition::B1, b1Addr, baseK * baseN);"},
+      {"line": 46, "text": "    AscendC::LocalTensor<half> b2Local(AscendC::TPosition::B2, b2Addr, baseK * baseN);"},
+      {"line": 47, "text": "    AscendC::LocalTensor<float> cLocal(AscendC::TPosition::CO1, cAddr, baseM * baseN);"},
+      {"line": 55, "text": "                    CopyInA(a1Local, kIndex, mIndex);"},
+      {"line": 56, "text": "                    CopyInB(b1Local, kIndex, nIndex);"},
+      {"line": 61, "text": "                    DataLoadA(a1Local, a2Local, mIndex);"},
+      {"line": 62, "text": "                    DataLoadB(b1Local, b2Local, nIndex);"},
+      {"line": 67, "text": "                    Compute(cLocal, a2Local, b2Local, kIndex, mIndex, nIndex);"},
+      {"line": 74, "text": "                CopyOut(cLocal, mIndex, nIndex);"},
+      {"line": 83, "text": "        uint32_t mIterIdx = AscendC::GetBlockIdx() % mIter;"},
+      {"line": 84, "text": "        uint32_t nIterIdx = AscendC::GetBlockIdx() / mIter;"},
+      {"line": 105, "text": "        AscendC::DataCopy(a1Local, aGM[kIndex * baseK + mIndex * K * baseM], nd2nzA1Params);"},
+      {"line": 119, "text": "        AscendC::DataCopy(b1Local, bGM[kIndex * baseK * N + nIndex * baseN], nd2nzB1Params);"},
+      {"line": 135, "text": "            AscendC::LoadData(a2Local[i * dstOffset], a1Local[i * srcOffset], loadDataParamsA);"},
+      {"line": 146, "text": "        AscendC::LoadData(a2Local, a1Local, loadDataParamsA);"},
+      {"line": 187, "text": "        AscendC::Mmad(cLocal, a2Local, b2Local, mmadParams);"},
+      {"line": 201, "text": "        AscendC::Fixpipe(cGM[mIndex * baseM * N + nIndex * baseN], cLocal, fixpipeParams);"},
+      {"line": 219, "text": "__global__ __cube__ void mmad_custom(GM_ADDR a, GM_ADDR b, GM_ADDR c)"}
+    ]
+  },
+  "memory": {
+    "tiers": [
+      {"id": "gm_a", "label": "GM A", "role": "input", "capacity": "512 x 512 half", "description": "Left matrix in ND format."},
+      {"id": "gm_b", "label": "GM B", "role": "input", "capacity": "512 x 1024 half", "description": "Right matrix in ND format."},
+      {"id": "gm_c", "label": "GM C", "role": "output", "capacity": "512 x 1024 half", "description": "Output matrix in ND format."},
+      {"id": "a1", "label": "L1 A1", "role": "local-input", "capacity": "baseM x baseK half", "description": "A tile after DataCopy ND->Nz."},
+      {"id": "b1", "label": "L1 B1", "role": "local-input", "capacity": "baseK x baseN half", "description": "B tile after DataCopy ND->Nz."},
+      {"id": "a2", "label": "L0A A2", "role": "cube-input", "capacity": "baseM x baseK half", "description": "A tile for Mmad."},
+      {"id": "b2", "label": "L0B B2", "role": "cube-input", "capacity": "baseK x baseN half", "description": "B tile for Mmad, transposed as needed."},
+      {"id": "co1", "label": "L0C CO1", "role": "cube-output", "capacity": "baseM x baseN float", "description": "Accumulation tile before Fixpipe."}
+    ],
+    "blocks": [
+      {"id": "c00", "label": "blockIdx 0", "range": "C[M 0:256, N 0:512]"},
+      {"id": "c10", "label": "blockIdx 1", "range": "C[M 256:512, N 0:512]"},
+      {"id": "c01", "label": "blockIdx 2", "range": "C[M 0:256, N 512:1024]"},
+      {"id": "c11", "label": "blockIdx 3", "range": "C[M 256:512, N 512:1024]"}
+    ]
+  },
+  "stages": [
+    {"id": "gm-offset", "label": "Block -> C tile", "semanticLabel": "GM Offset", "unit": "cube", "operations": ["GetBlockIdx", "SetGlobalBuffer"], "sourceRef": {"line": 83, "symbol": "InitGMOffsets"}, "description": "Map one Cube block to one singleCoreM x singleCoreN output partition."},
+    {"id": "copy-in-a", "label": "CopyIn A", "semanticLabel": "GM A -> A1", "unit": "cube", "operations": ["DataCopy", "Nd2NzParams"], "sourceRef": {"line": 94, "symbol": "CopyInA"}, "description": "Copy a baseM x baseK tile from A GM to A1."},
+    {"id": "copy-in-b", "label": "CopyIn B", "semanticLabel": "GM B -> B1", "unit": "cube", "operations": ["DataCopy", "Nd2NzParams"], "sourceRef": {"line": 108, "symbol": "CopyInB"}, "description": "Copy a baseK x baseN tile from B GM to B1."},
+    {"id": "load-data", "label": "LoadData A/B", "semanticLabel": "L1 -> L0", "unit": "cube", "operations": ["LoadData", "LoadData2DParams", "LoadData2DParamsV2"], "sourceRef": {"line": 122, "symbol": "DataLoadA/DataLoadB"}, "description": "Move A1/B1 tiles into L0A/L0B. 2201 and 3510 use different params."},
+    {"id": "mmad", "label": "Mmad", "semanticLabel": "Cube Compute", "unit": "cube", "operations": ["Mmad"], "sourceRef": {"line": 178, "symbol": "Compute"}, "description": "Accumulate A2 x B2 into CO1."},
+    {"id": "fixpipe", "label": "Fixpipe", "semanticLabel": "CO1 -> GM C", "unit": "cube", "operations": ["Fixpipe"], "sourceRef": {"line": 190, "symbol": "CopyOut"}, "description": "Write CO1 to GM C with Nz->ND and fp32->half conversion."}
+  ],
+  "steps": [
+    {"id": "block0.offset", "stageId": "gm-offset", "label": "blockIdx 0 selects top-left C partition", "summary": "mIterIdx=0, nIterIdx=0. GM offsets A=0, B=0, C=0.", "unit": "cube", "blockIdx": 0, "sourceLines": [83, 84], "memoryRegions": ["C[M 0:256, N 0:512]"], "metrics": [{"label": "mIterIdx", "value": 0}, {"label": "nIterIdx", "value": 0}]},
+    {"id": "block2.offset", "stageId": "gm-offset", "label": "blockIdx 2 selects top-right C partition", "summary": "mIterIdx=0, nIterIdx=1. GM C offset=512.", "unit": "cube", "blockIdx": 2, "sourceLines": [83, 84], "memoryRegions": ["C[M 0:256, N 512:1024]"], "metrics": [{"label": "mIterIdx", "value": 0}, {"label": "nIterIdx", "value": 1}]},
+    {"id": "block0.k0.copy-a", "stageId": "copy-in-a", "label": "kIndex 0 CopyIn A", "summary": "Copy A[M 0:128, K 0:64] from GM into A1.", "unit": "cube", "blockIdx": 0, "loop": {"mIndex": 0, "nIndex": 0, "kIndex": 0}, "sourceLines": [55, 105], "memoryRegions": ["GM:A[M 0:128, K 0:64]", "A1"], "metrics": [{"label": "tile", "value": "128x64 half"}], "visualState": {"architectureFocus": {"selectors": ["[data-mem950-node=\"rail:GM\"]", "#mem950-aic [data-aic-node=\"buffer:L1\"]", "#mem950-aic [data-aic-node=\"buffer:L0A\"]"], "routes": ["gm-to-aic-l0a"], "bufferBlocks": [{"core": "mem950-aic", "buffer": "L1", "label": "A1 tile", "sourceTile": "A[M0:128,K0:64]", "state": "loaded", "cellRange": [0, 19], "tone": "input", "operation": "DataCopy"}, {"core": "mem950-aic", "buffer": "L0A", "label": "A2 reserve", "sourceTile": "A[M0:128,K0:64]", "state": "allocated", "cellRange": [0, 9], "tone": "input"}]}}},
+    {"id": "block0.k0.copy-b", "stageId": "copy-in-b", "label": "kIndex 0 CopyIn B", "summary": "Copy B[K 0:64, N 0:256] from GM into B1.", "unit": "cube", "blockIdx": 0, "loop": {"mIndex": 0, "nIndex": 0, "kIndex": 0}, "sourceLines": [56, 119], "memoryRegions": ["GM:B[K 0:64, N 0:256]", "B1"], "metrics": [{"label": "tile", "value": "64x256 half"}]},
+    {"id": "block0.k0.loaddata", "stageId": "load-data", "label": "LoadData to L0", "summary": "A1/B1 are moved to A2/B2; B is prepared with transpose semantics for Mmad.", "unit": "cube", "blockIdx": 0, "loop": {"mIndex": 0, "nIndex": 0, "kIndex": 0}, "sourceLines": [61, 62, 135], "memoryRegions": ["A1 -> A2", "B1 -> B2"], "syncEvents": ["MTE2_MTE1", "MTE1_M"]},
+    {"id": "block0.k0.mmad", "stageId": "mmad", "label": "Mmad initializes CO1", "summary": "kIndex=0 sets cmatrixInitVal=true, initializing CO1 with first partial result.", "unit": "cube", "blockIdx": 0, "loop": {"kIndex": 0}, "sourceLines": [67, 187], "memoryRegions": ["A2", "B2", "CO1"], "syncEvents": ["MTE1_M", "M_MTE2"], "metrics": [{"label": "mmad m/n/k", "value": "128/256/64"}], "visualState": {"architectureFocus": {"selectors": ["#mem950-aic [data-aic-node=\"buffer:L0A\"]", "#mem950-aic [data-aic-node=\"buffer:L0B\"]", "#mem950-aic [data-aic-node=\"cube:CUBE\"]", "#mem950-aic [data-aic-node=\"buffer:L0C\"]"], "routes": [], "bufferBlocks": [{"core": "mem950-aic", "buffer": "L0A", "label": "A2 tile", "sourceTile": "A2[k0]", "state": "loaded", "cellRange": [0, 15], "tone": "input", "operation": "Mmad"}, {"core": "mem950-aic", "buffer": "L0B", "label": "B2 tile", "sourceTile": "B2[k0]", "state": "loaded", "cellRange": [0, 15], "tone": "input", "operation": "Mmad"}, {"core": "mem950-aic", "buffer": "L0C", "label": "C partial", "sourceTile": "C[m0,n0,k0]", "state": "accumulating", "cellRange": [0, 23], "tone": "accumulator", "operation": "Mmad"}]}}},
+    {"id": "block0.k7.mmad", "stageId": "mmad", "label": "Mmad final K accumulation", "summary": "kIndex=7 adds the last baseK slice into CO1.", "unit": "cube", "blockIdx": 0, "loop": {"kIndex": 7}, "sourceLines": [187], "memoryRegions": ["A2", "B2", "CO1"], "syncEvents": ["MTE1_M", "M_MTE2"], "metrics": [{"label": "cmatrixInitVal", "value": false}]},
+    {"id": "block0.copyout", "stageId": "fixpipe", "label": "Fixpipe writes C tile", "summary": "CO1 is written to GM C[M 0:128, N 0:256] with conversion to half ND layout.", "unit": "cube", "blockIdx": 0, "loop": {"mIndex": 0, "nIndex": 0}, "sourceLines": [74, 201], "memoryRegions": ["CO1", "GM:C[M 0:128, N 0:256]"], "syncEvents": ["M_FIX"], "metrics": [{"label": "output tile", "value": "128x256 half"}], "visualState": {"architectureFocus": {"selectors": ["#mem950-aic [data-aic-node=\"buffer:L0C\"]", "[data-mem950-node=\"rail:GM\"]"], "routes": [], "bufferBlocks": [{"core": "mem950-aic", "buffer": "L0C", "label": "C output", "sourceTile": "C[M0:128,N0:256]", "state": "committed", "cellRange": [0, 23], "tone": "output", "operation": "Fixpipe"}]}}}
+  ],
+  "puzzles": [
+    {"id": "matmul.block2", "kind": "block_mapping", "prompt": "For blockIdx=2, what are mIterIdx and nIterIdx?", "context": {"blockIdx": 2, "mIter": 2}, "answer": "mIterIdx=0, nIterIdx=1", "sourceHint": {"line": 83}, "explanation": "mIterIdx=2%2=0, nIterIdx=2/2=1."},
+    {"id": "matmul.kloops", "kind": "formula", "prompt": "How many K-loop Mmad accumulations are needed?", "context": {"singleCoreK": 512, "baseK": 64}, "answer": 8, "sourceHint": {"line": 50}, "explanation": "kLoopCount = singleCoreK/baseK = 512/64 = 8."},
+    {"id": "matmul.a-tile", "kind": "tile_prediction", "prompt": "For mIndex=0 and kIndex=0, which A tile is copied?", "context": {"mIndex": 0, "kIndex": 0, "baseM": 128, "baseK": 64}, "answer": "A[M 0:128, K 0:64]", "sourceHint": {"line": 105}, "explanation": "CopyInA reads from kIndex*baseK and mIndex*K*baseM."},
+    {"id": "matmul.b-transpose", "kind": "concept", "prompt": "Which stage prepares B for transposed Cube layout?", "context": {"stage": "DataLoadB"}, "answer": "LoadData B1 -> B2", "sourceHint": {"line": 163}, "explanation": "DataLoadB sets ifTranspose=true, preparing B for Mmad layout."},
+    {"id": "matmul.fixpipe", "kind": "memory_tier", "prompt": "Which operation writes L0C/CO1 back to GM C?", "context": {"tier": "CO1"}, "answer": "Fixpipe", "sourceHint": {"line": 201}, "explanation": "Fixpipe converts and writes the accumulated CO1 tile into GM C."}
+  ],
+  "evidence": {
+    "profiling": {"status": "placeholder", "note": "Attach Cube Mmad/Fixpipe timing later."},
+    "sanitizer": {"status": "placeholder", "note": "Attach memory legality findings later."}
+  }
+}

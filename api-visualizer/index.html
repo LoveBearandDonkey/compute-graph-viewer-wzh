@@ -1721,6 +1721,57 @@
       font: var(--text-body-sm);
     }
 
+    .gm2ub-align-timeline {
+      display: grid;
+      gap: var(--space-1);
+      margin: 0;
+      padding: 0;
+      list-style: none;
+    }
+
+    .gm2ub-align-step {
+      display: grid;
+      grid-template-columns: 46px minmax(0, 1fr);
+      gap: var(--space-2);
+      align-items: start;
+      min-width: 0;
+      padding: var(--space-1) var(--space-2);
+      border-left: 2px solid transparent;
+      color: var(--foreground-muted);
+      font: var(--text-body-sm);
+    }
+
+    .gm2ub-align-step__index {
+      color: var(--foreground-muted);
+      font: var(--text-code);
+      letter-spacing: .02em;
+    }
+
+    .gm2ub-align-step__label {
+      min-width: 0;
+      overflow-wrap: anywhere;
+    }
+
+    .gm2ub-align-step.is-complete {
+      color: var(--foreground-secondary);
+    }
+
+    .gm2ub-align-step.is-current {
+      border-left-color: var(--primary);
+      background: color-mix(in srgb, var(--primary) 12%, transparent);
+      color: var(--foreground);
+    }
+
+    .gm2ub-align-step.is-current .gm2ub-align-step__index {
+      color: var(--primary-hover);
+    }
+
+    .gm2ub-align-notes {
+      color: var(--foreground-muted);
+      font: var(--text-label);
+      overflow-wrap: anywhere;
+    }
+
 
 
     .gm2ub-align-legend {
@@ -4680,7 +4731,8 @@
                       <span class="gm2ub-align-legend-item"><span class="gm2ub-align-swatch gm2ub-align-swatch--pad"></span>padding / alignment</span>
                       <span class="gm2ub-align-legend-item"><span class="gm2ub-align-swatch gm2ub-align-swatch--gap"></span>stride gap</span>
                     </div>
-                    <span data-gm2ub-warning>Compact mode: dst_stride equals len_burst, so only the whole packed result is 32B-aligned.</span>
+                    <ol class="gm2ub-align-timeline" data-gm2ub-warning aria-label="asc_copy_gm2ub_align 执行步骤"></ol>
+                    <div class="gm2ub-align-notes" data-gm2ub-notes aria-live="polite"></div>
                   </footer>
                 </div>
                 <div class="add-api-stage-shell" data-api-stage-pane="Add">
@@ -9435,6 +9487,31 @@ __aicore__ inline void LoadData(const LocalTensor&lt;T&gt;&amp; dst, const Local
         return { context, timeline, step, event, writtenBlocks, paddedBlocks };
       };
 
+      const renderGm2ubTimeline = (container, timeline, currentStep) => {
+        if (!container) return;
+        container.replaceChildren(...timeline.map((item, index) => {
+          const step = document.createElement('li');
+          const state = index === currentStep
+            ? 'is-current'
+            : index < currentStep
+              ? 'is-complete'
+              : 'is-upcoming';
+          step.className = `gm2ub-align-step ${state}`;
+          if (index === currentStep) step.setAttribute('aria-current', 'step');
+
+          const indexLabel = document.createElement('span');
+          indexLabel.className = 'gm2ub-align-step__index';
+          indexLabel.textContent = `Step ${String(index + 1).padStart(2, '0')}`;
+
+          const description = document.createElement('span');
+          description.className = 'gm2ub-align-step__label';
+          description.textContent = item.label;
+
+          step.append(indexLabel, description);
+          return step;
+        }));
+      };
+
       const segmentAtElement = (segments, index, elementSize) => {
         const startByte = index * elementSize;
         const endByte = startByte + elementSize;
@@ -9459,7 +9536,6 @@ __aicore__ inline void LoadData(const LocalTensor&lt;T&gt;&amp; dst, const Local
           const segment = segmentAtElement(segments, index, context.elementSize);
           const row = Math.floor(index / context.columns);
           const column = index % context.columns;
-          const firstElement = segment ? Math.floor(segment.start / context.elementSize) === index : false;
           const isValid = segment?.kind === 'valid';
           const isPad = segment?.kind === 'pad';
           const offset = index * context.elementSize;
@@ -9469,6 +9545,9 @@ __aicore__ inline void LoadData(const LocalTensor&lt;T&gt;&amp; dst, const Local
           const isCurrentRead = isSource && isValid && isCurrentBlock && isTransferPhase;
           const isCurrentWrite = !isSource && isValid && isCurrentBlock && isTransferPhase;
           const isCurrentPad = !isSource && isPad && isCurrentBlock && isPaddingPhase;
+          const sourcePhysicalSequence = segment && isValid
+            ? Math.floor((segment.block * context.srcStride + (offset - segment.start)) / context.elementSize) + 1
+            : null;
           const states = [];
           if (isCurrentRead || isCurrentWrite) {
             // Use selected as the shared blue transfer state so the matching
@@ -9483,14 +9562,8 @@ __aicore__ inline void LoadData(const LocalTensor&lt;T&gt;&amp; dst, const Local
             id: `${kind}-${index}`,
             row,
             column,
-            label: segment
-              ? firstElement
-                ? isValid
-                  ? `B${segment.block}`
-                  : segment.label || 'P'
-                : ''
-            : '',
-            value: isPad ? gm2ubPaddingValue(segment, context) : offset,
+            label: isSource ? String(index + 1) : (sourcePhysicalSequence === null ? '' : String(sourcePhysicalSequence)),
+            value: segment && isPad ? gm2ubPaddingValue(segment, context) : NaN,
             tone: isValid ? (isSource ? 'input' : 'output') : 'neutral',
             style: isPad ? 'padding' : (isValid ? 'value' : 'empty'),
             states
@@ -9560,7 +9633,8 @@ __aicore__ inline void LoadData(const LocalTensor&lt;T&gt;&amp; dst, const Local
         setText('[data-gm2ub-formula]', context.compact
           ? `GM上${context.validBytes}B搬运至UB，按32B对齐后共占用${context.dstTotalBytes}B`
           : `每个block写入UB前占用${context.blockFootprintBytes}B，按32B对齐后每块占用${context.perBlockAlignedBytes}B`, stage);
-        setText('[data-gm2ub-warning]', `${playback.event.label} · ${context.warnings.join(' · ')}`, stage);
+        renderGm2ubTimeline($('[data-gm2ub-warning]', stage), playback.timeline, playback.step);
+        setText('[data-gm2ub-notes]', context.warnings.join(' · '), stage);
 
         renderGm2ubMatrix(
           'src',
