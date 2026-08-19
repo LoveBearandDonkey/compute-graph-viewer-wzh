@@ -5,6 +5,10 @@
 
 ---
 
+## 2026-08-19 — `api-visualizer/index-light.html` 顶栏标题文字移除
+
+- 删除顶栏左侧 `workspace-title`（「CANN Vision · API Visualizer」）与 `workspace-meta`（「api-visualizer/index.html」）两行文字，仅保留 CANN Vision logo；清理已无引用的 `.workspace-title` CSS 规则（`.workspace-meta` 在 rejection-case / tiling 图例处仍在使用，保留）。V1 `index.html` 为保留的远端原版，未动。
+
 ## 2026-08-19 — index_v3 显存页签：碎片放大区改立体容器侧视图，「放不下」从文字变成几何事实
 
 - `hbm-memory-snapshot` 把碎片放大区的两条平面色条（`__fragment-map` 空闲/占用条 + `__request-attempt` 待分配条）合并成**一幅立体容器侧视图**（`__iso`）：容器 = 放大后的地址窗口，占用是坐在里面的实心块，空闲就是空着的那几段，待分配的 0.5 GB 是吊在容器口上方、按同一把尺子量出来的一整块。
