@@ -1,0 +1,2370 @@
+{
+  "schema_version": 1,
+  "advisory_only": true,
+  "advisory_note": "诊断与建议为咨询信息，不参与 validation / breakdown_score / hard_gates / 停止条件；聚合作用域的比例不得外推到单实例。",
+  "model_name": "DeepSeek-V3.2-Exp (W8A8C8, decode, next_n=3)",
+  "representative_step": "15",
+  "advice_source": "diagnosis_advice.md",
+  "advice_table_loaded": true,
+  "nodes": [
+    {
+      "path": "collective_bookkeeping",
+      "name": "collective_bookkeeping",
+      "depth": 1,
+      "metric_scope": "aggregate",
+      "invocation_count": 4,
+      "metrics": {
+        "wall_ms": 81.908,
+        "busy_union_ms": 3.531,
+        "kernel_sum_ms": 5.465,
+        "total_cost_ms": 6.33,
+        "bubble_ms": 78.377,
+        "kernel_count": 80
+      },
+      "findings": [
+        {
+          "code": "GAP_BUBBLE",
+          "severity": "high",
+          "metrics": {
+            "gap_pct": 95.7
+          },
+          "text": "存在间隙气泡（gap=96%）",
+          "advice_l1": "[聚合口径] 该节点 wall 显著大于设备忙碌时间，空档不在本节点的 kernel 内部。先确认空档落在哪里：按 `start_time_us` 排序本节点 op，算相邻 op 的 `start[i+1] - (start[i]+duration[i])`，取最大的几段。",
+          "next_data": "`raw_ops_details.json` 本节点 `op_indices` 的 `start_time_us` / `duration_us`；`ASCEND_PROFILER_OUTPUT/trace_view.json` 对应时间窗；host 侧下发间隔看 `api_statistic.csv`。",
+          "not_applicable": "节点 kernel 数 ≤ 2 时 gap 比例无统计意义；`metric_scope == \"aggregate\"` 时该值是跨实例累加的假空档。"
+        },
+        {
+          "code": "UTIL_LOW",
+          "severity": "high",
+          "metrics": {
+            "utilization_pct": 4.3
+          },
+          "text": "利用率偏低（4%）",
+          "advice_l1": "[聚合口径] 忙碌时间占 wall 不足 80%。先区分是「本节点自身有空档」还是「本节点被上游拖慢」：若同时命中 GAP_BUBBLE，按 GAP_BUBBLE 处理；若未命中 GAP_BUBBLE 而利用率仍低，说明 wall 被少数长 kernel 拉长，看 `op_ratio` 里占比最高的算子类型。",
+          "next_data": "本节点 `op_ratio`（Skill 2 的 `ui_facts/*_perf_data.json` 已含该字段）；对应算子的 `aic_mac_ratio` / `aiv_vec_ratio` / `aic_mte2_ratio` 判断是计算受限还是访存受限。",
+          "not_applicable": "聚合作用域；以及节点只含通信算子时（通信节点的「利用率」语义不同，等待是其正常状态）。"
+        }
+      ]
+    },
+    {
+      "path": "embedding",
+      "name": "embedding",
+      "depth": 1,
+      "metric_scope": "instance",
+      "invocation_count": 1,
+      "metrics": {
+        "wall_ms": 0.046,
+        "busy_union_ms": 0.046,
+        "kernel_sum_ms": 0.048,
+        "total_cost_ms": 0.05,
+        "bubble_ms": 0.0,
+        "kernel_count": 10
+      },
+      "findings": [
+        {
+          "code": "CLEAN_SEQUENTIAL",
+          "severity": "info",
+          "metrics": {},
+          "text": "干净顺序执行",
+          "advice_l1": "四项指标彼此接近，属干净顺序执行，无空档无显著等待，无需动作。",
+          "next_data": "无。",
+          "not_applicable": "无。"
+        }
+      ]
+    },
+    {
+      "path": "main_final_norm",
+      "name": "main_final_norm",
+      "depth": 1,
+      "metric_scope": "instance",
+      "invocation_count": 1,
+      "metrics": {
+        "wall_ms": 0.0,
+        "busy_union_ms": 0.0,
+        "kernel_sum_ms": 0.0,
+        "total_cost_ms": 0.0,
+        "bubble_ms": 0.0,
+        "kernel_count": 0
+      },
+      "findings": []
+    },
+    {
+      "path": "main_lm_head",
+      "name": "main_lm_head",
+      "depth": 1,
+      "metric_scope": "instance",
+      "invocation_count": 1,
+      "metrics": {
+        "wall_ms": 0.192,
+        "busy_union_ms": 0.189,
+        "kernel_sum_ms": 0.189,
+        "total_cost_ms": 0.209,
+        "bubble_ms": 0.003,
+        "kernel_count": 7
+      },
+      "findings": [
+        {
+          "code": "CLEAN_SEQUENTIAL",
+          "severity": "info",
+          "metrics": {},
+          "text": "干净顺序执行",
+          "advice_l1": "四项指标彼此接近，属干净顺序执行，无空档无显著等待，无需动作。",
+          "next_data": "无。",
+          "not_applicable": "无。"
+        }
+      ]
+    },
+    {
+      "path": "mtp_lm_head",
+      "name": "mtp_lm_head",
+      "depth": 1,
+      "metric_scope": "aggregate",
+      "invocation_count": 3,
+      "metrics": {
+        "wall_ms": 23.346,
+        "busy_union_ms": 1.58,
+        "kernel_sum_ms": 1.58,
+        "total_cost_ms": 1.645,
+        "bubble_ms": 21.766,
+        "kernel_count": 63
+      },
+      "findings": [
+        {
+          "code": "GAP_BUBBLE",
+          "severity": "high",
+          "metrics": {
+            "gap_pct": 93.2
+          },
+          "text": "存在间隙气泡（gap=93%）",
+          "advice_l1": "[聚合口径] 该节点 wall 显著大于设备忙碌时间，空档不在本节点的 kernel 内部。先确认空档落在哪里：按 `start_time_us` 排序本节点 op，算相邻 op 的 `start[i+1] - (start[i]+duration[i])`，取最大的几段。",
+          "next_data": "`raw_ops_details.json` 本节点 `op_indices` 的 `start_time_us` / `duration_us`；`ASCEND_PROFILER_OUTPUT/trace_view.json` 对应时间窗；host 侧下发间隔看 `api_statistic.csv`。",
+          "not_applicable": "节点 kernel 数 ≤ 2 时 gap 比例无统计意义；`metric_scope == \"aggregate\"` 时该值是跨实例累加的假空档。"
+        },
+        {
+          "code": "UTIL_LOW",
+          "severity": "high",
+          "metrics": {
+            "utilization_pct": 6.8
+          },
+          "text": "利用率偏低（7%）",
+          "advice_l1": "[聚合口径] 忙碌时间占 wall 不足 80%。先区分是「本节点自身有空档」还是「本节点被上游拖慢」：若同时命中 GAP_BUBBLE，按 GAP_BUBBLE 处理；若未命中 GAP_BUBBLE 而利用率仍低，说明 wall 被少数长 kernel 拉长，看 `op_ratio` 里占比最高的算子类型。",
+          "next_data": "本节点 `op_ratio`（Skill 2 的 `ui_facts/*_perf_data.json` 已含该字段）；对应算子的 `aic_mac_ratio` / `aiv_vec_ratio` / `aic_mte2_ratio` 判断是计算受限还是访存受限。",
+          "not_applicable": "聚合作用域；以及节点只含通信算子时（通信节点的「利用率」语义不同，等待是其正常状态）。"
+        }
+      ]
+    },
+    {
+      "path": "mtp_scaffold",
+      "name": "mtp_scaffold",
+      "depth": 1,
+      "metric_scope": "aggregate",
+      "invocation_count": 3,
+      "metrics": {
+        "wall_ms": 23.747,
+        "busy_union_ms": 2.833,
+        "kernel_sum_ms": 2.861,
+        "total_cost_ms": 3.089,
+        "bubble_ms": 20.914,
+        "kernel_count": 135
+      },
+      "findings": [
+        {
+          "code": "GAP_BUBBLE",
+          "severity": "high",
+          "metrics": {
+            "gap_pct": 88.1
+          },
+          "text": "存在间隙气泡（gap=88%）",
+          "advice_l1": "[聚合口径] 该节点 wall 显著大于设备忙碌时间，空档不在本节点的 kernel 内部。先确认空档落在哪里：按 `start_time_us` 排序本节点 op，算相邻 op 的 `start[i+1] - (start[i]+duration[i])`，取最大的几段。",
+          "next_data": "`raw_ops_details.json` 本节点 `op_indices` 的 `start_time_us` / `duration_us`；`ASCEND_PROFILER_OUTPUT/trace_view.json` 对应时间窗；host 侧下发间隔看 `api_statistic.csv`。",
+          "not_applicable": "节点 kernel 数 ≤ 2 时 gap 比例无统计意义；`metric_scope == \"aggregate\"` 时该值是跨实例累加的假空档。"
+        },
+        {
+          "code": "UTIL_LOW",
+          "severity": "high",
+          "metrics": {
+            "utilization_pct": 11.9
+          },
+          "text": "利用率偏低（12%）",
+          "advice_l1": "[聚合口径] 忙碌时间占 wall 不足 80%。先区分是「本节点自身有空档」还是「本节点被上游拖慢」：若同时命中 GAP_BUBBLE，按 GAP_BUBBLE 处理；若未命中 GAP_BUBBLE 而利用率仍低，说明 wall 被少数长 kernel 拉长，看 `op_ratio` 里占比最高的算子类型。",
+          "next_data": "本节点 `op_ratio`（Skill 2 的 `ui_facts/*_perf_data.json` 已含该字段）；对应算子的 `aic_mac_ratio` / `aiv_vec_ratio` / `aic_mte2_ratio` 判断是计算受限还是访存受限。",
+          "not_applicable": "聚合作用域；以及节点只含通信算子时（通信节点的「利用率」语义不同，等待是其正常状态）。"
+        }
+      ]
+    },
+    {
+      "path": "sampling_and_verify",
+      "name": "sampling_and_verify",
+      "depth": 1,
+      "metric_scope": "aggregate",
+      "invocation_count": 4,
+      "metrics": {
+        "wall_ms": 93.149,
+        "busy_union_ms": 13.765,
+        "kernel_sum_ms": 13.765,
+        "total_cost_ms": 35.498,
+        "bubble_ms": 79.384,
+        "kernel_count": 320
+      },
+      "findings": [
+        {
+          "code": "GAP_BUBBLE",
+          "severity": "high",
+          "metrics": {
+            "gap_pct": 85.2
+          },
+          "text": "存在间隙气泡（gap=85%）",
+          "advice_l1": "[聚合口径] 该节点 wall 显著大于设备忙碌时间，空档不在本节点的 kernel 内部。先确认空档落在哪里：按 `start_time_us` 排序本节点 op，算相邻 op 的 `start[i+1] - (start[i]+duration[i])`，取最大的几段。",
+          "next_data": "`raw_ops_details.json` 本节点 `op_indices` 的 `start_time_us` / `duration_us`；`ASCEND_PROFILER_OUTPUT/trace_view.json` 对应时间窗；host 侧下发间隔看 `api_statistic.csv`。",
+          "not_applicable": "节点 kernel 数 ≤ 2 时 gap 比例无统计意义；`metric_scope == \"aggregate\"` 时该值是跨实例累加的假空档。"
+        },
+        {
+          "code": "WAIT_DOMINANT",
+          "severity": "high",
+          "metrics": {
+            "wait_pct": 157.9
+          },
+          "text": "等待时间显著（wait占比158%）",
+          "advice_l1": "[聚合口径] `total_cost - kernel_sum` 占比高，说明成本主要在等待而非计算。先分类等待来源：按 `wait_time` 降序取本节点 top-5 kernel，看它们的前驱算子类型。前驱是 Hcom* 通信算子则属通信等待；前驱是计算算子而 wait 仍高则看是否跨流依赖；kernel_sum 极小而 wait 极大通常是 host 下发或图执行边界，不是设备侧问题。",
+          "next_data": "`raw_ops_details.json` 的 `Wait Time(us)` 字段；通信带宽看 `ASCEND_PROFILER_OUTPUT/communication.json` 与 `communication_matrix.json`；host 下发看 `api_statistic.csv`。",
+          "not_applicable": "`kernel_sum_ms < 0.1` 时 wait 占比会放大到几百甚至上千倍，比例数值不可用于横向比较，只能作为「该节点几乎不计算」的信号。"
+        },
+        {
+          "code": "UTIL_LOW",
+          "severity": "high",
+          "metrics": {
+            "utilization_pct": 14.8
+          },
+          "text": "利用率偏低（15%）",
+          "advice_l1": "[聚合口径] 忙碌时间占 wall 不足 80%。先区分是「本节点自身有空档」还是「本节点被上游拖慢」：若同时命中 GAP_BUBBLE，按 GAP_BUBBLE 处理；若未命中 GAP_BUBBLE 而利用率仍低，说明 wall 被少数长 kernel 拉长，看 `op_ratio` 里占比最高的算子类型。",
+          "next_data": "本节点 `op_ratio`（Skill 2 的 `ui_facts/*_perf_data.json` 已含该字段）；对应算子的 `aic_mac_ratio` / `aiv_vec_ratio` / `aic_mte2_ratio` 判断是计算受限还是访存受限。",
+          "not_applicable": "聚合作用域；以及节点只含通信算子时（通信节点的「利用率」语义不同，等待是其正常状态）。"
+        }
+      ]
+    },
+    {
+      "path": "weight_param_update",
+      "name": "weight_param_update",
+      "depth": 1,
+      "metric_scope": "aggregate",
+      "invocation_count": 4,
+      "metrics": {
+        "wall_ms": 78.607,
+        "busy_union_ms": 0.829,
+        "kernel_sum_ms": 0.83,
+        "total_cost_ms": 9.139,
+        "bubble_ms": 77.778,
+        "kernel_count": 40
+      },
+      "findings": [
+        {
+          "code": "GAP_BUBBLE",
+          "severity": "high",
+          "metrics": {
+            "gap_pct": 98.9
+          },
+          "text": "存在间隙气泡（gap=99%）",
+          "advice_l1": "[聚合口径] 该节点 wall 显著大于设备忙碌时间，空档不在本节点的 kernel 内部。先确认空档落在哪里：按 `start_time_us` 排序本节点 op，算相邻 op 的 `start[i+1] - (start[i]+duration[i])`，取最大的几段。",
+          "next_data": "`raw_ops_details.json` 本节点 `op_indices` 的 `start_time_us` / `duration_us`；`ASCEND_PROFILER_OUTPUT/trace_view.json` 对应时间窗；host 侧下发间隔看 `api_statistic.csv`。",
+          "not_applicable": "节点 kernel 数 ≤ 2 时 gap 比例无统计意义；`metric_scope == \"aggregate\"` 时该值是跨实例累加的假空档。"
+        },
+        {
+          "code": "WAIT_DOMINANT",
+          "severity": "high",
+          "metrics": {
+            "wait_pct": 1001.5,
+            "kernel_sum_ms": 0.8297599999999999
+          },
+          "text": "等待时间显著（kernel极短但wait长）",
+          "advice_l1": "[聚合口径] `total_cost - kernel_sum` 占比高，说明成本主要在等待而非计算。先分类等待来源：按 `wait_time` 降序取本节点 top-5 kernel，看它们的前驱算子类型。前驱是 Hcom* 通信算子则属通信等待；前驱是计算算子而 wait 仍高则看是否跨流依赖；kernel_sum 极小而 wait 极大通常是 host 下发或图执行边界，不是设备侧问题。",
+          "next_data": "`raw_ops_details.json` 的 `Wait Time(us)` 字段；通信带宽看 `ASCEND_PROFILER_OUTPUT/communication.json` 与 `communication_matrix.json`；host 下发看 `api_statistic.csv`。",
+          "not_applicable": "`kernel_sum_ms < 0.1` 时 wait 占比会放大到几百甚至上千倍，比例数值不可用于横向比较，只能作为「该节点几乎不计算」的信号。"
+        },
+        {
+          "code": "UTIL_LOW",
+          "severity": "high",
+          "metrics": {
+            "utilization_pct": 1.1
+          },
+          "text": "利用率偏低（1%）",
+          "advice_l1": "[聚合口径] 忙碌时间占 wall 不足 80%。先区分是「本节点自身有空档」还是「本节点被上游拖慢」：若同时命中 GAP_BUBBLE，按 GAP_BUBBLE 处理；若未命中 GAP_BUBBLE 而利用率仍低，说明 wall 被少数长 kernel 拉长，看 `op_ratio` 里占比最高的算子类型。",
+          "next_data": "本节点 `op_ratio`（Skill 2 的 `ui_facts/*_perf_data.json` 已含该字段）；对应算子的 `aic_mac_ratio` / `aiv_vec_ratio` / `aic_mte2_ratio` 判断是计算受限还是访存受限。",
+          "not_applicable": "聚合作用域；以及节点只含通信算子时（通信节点的「利用率」语义不同，等待是其正常状态）。"
+        }
+      ]
+    },
+    {
+      "path": "mtp_scaffold/eh_proj",
+      "name": "eh_proj",
+      "depth": 2,
+      "metric_scope": "instance",
+      "invocation_count": 1,
+      "metrics": {
+        "wall_ms": 7.855,
+        "busy_union_ms": 0.766,
+        "kernel_sum_ms": 0.766,
+        "total_cost_ms": 0.766,
+        "bubble_ms": 7.089,
+        "kernel_count": 6
+      },
+      "findings": [
+        {
+          "code": "GAP_BUBBLE",
+          "severity": "high",
+          "metrics": {
+            "gap_pct": 90.3
+          },
+          "text": "存在间隙气泡（gap=90%）",
+          "advice_l1": "该节点 wall 显著大于设备忙碌时间，空档不在本节点的 kernel 内部。先确认空档落在哪里：按 `start_time_us` 排序本节点 op，算相邻 op 的 `start[i+1] - (start[i]+duration[i])`，取最大的几段。",
+          "next_data": "`raw_ops_details.json` 本节点 `op_indices` 的 `start_time_us` / `duration_us`；`ASCEND_PROFILER_OUTPUT/trace_view.json` 对应时间窗；host 侧下发间隔看 `api_statistic.csv`。",
+          "not_applicable": "节点 kernel 数 ≤ 2 时 gap 比例无统计意义；`metric_scope == \"aggregate\"` 时该值是跨实例累加的假空档。"
+        },
+        {
+          "code": "UTIL_LOW",
+          "severity": "high",
+          "metrics": {
+            "utilization_pct": 9.7
+          },
+          "text": "利用率偏低（10%）",
+          "advice_l1": "忙碌时间占 wall 不足 80%。先区分是「本节点自身有空档」还是「本节点被上游拖慢」：若同时命中 GAP_BUBBLE，按 GAP_BUBBLE 处理；若未命中 GAP_BUBBLE 而利用率仍低，说明 wall 被少数长 kernel 拉长，看 `op_ratio` 里占比最高的算子类型。",
+          "next_data": "本节点 `op_ratio`（Skill 2 的 `ui_facts/*_perf_data.json` 已含该字段）；对应算子的 `aic_mac_ratio` / `aiv_vec_ratio` / `aic_mte2_ratio` 判断是计算受限还是访存受限。",
+          "not_applicable": "聚合作用域；以及节点只含通信算子时（通信节点的「利用率」语义不同，等待是其正常状态）。"
+        }
+      ]
+    },
+    {
+      "path": "mtp_scaffold/enorm",
+      "name": "enorm",
+      "depth": 2,
+      "metric_scope": "instance",
+      "invocation_count": 1,
+      "metrics": {
+        "wall_ms": 7.607,
+        "busy_union_ms": 0.013,
+        "kernel_sum_ms": 0.013,
+        "total_cost_ms": 0.083,
+        "bubble_ms": 7.595,
+        "kernel_count": 3
+      },
+      "findings": [
+        {
+          "code": "GAP_BUBBLE",
+          "severity": "high",
+          "metrics": {
+            "gap_pct": 99.8
+          },
+          "text": "存在间隙气泡（gap=100%）",
+          "advice_l1": "该节点 wall 显著大于设备忙碌时间，空档不在本节点的 kernel 内部。先确认空档落在哪里：按 `start_time_us` 排序本节点 op，算相邻 op 的 `start[i+1] - (start[i]+duration[i])`，取最大的几段。",
+          "next_data": "`raw_ops_details.json` 本节点 `op_indices` 的 `start_time_us` / `duration_us`；`ASCEND_PROFILER_OUTPUT/trace_view.json` 对应时间窗；host 侧下发间隔看 `api_statistic.csv`。",
+          "not_applicable": "节点 kernel 数 ≤ 2 时 gap 比例无统计意义；`metric_scope == \"aggregate\"` 时该值是跨实例累加的假空档。"
+        },
+        {
+          "code": "WAIT_DOMINANT",
+          "severity": "high",
+          "metrics": {
+            "kernel_sum_ms": 0.0128,
+            "wait_ms": 0.071
+          },
+          "text": "等待时间显著（kernel极短但wait长）",
+          "advice_l1": "`total_cost - kernel_sum` 占比高，说明成本主要在等待而非计算。先分类等待来源：按 `wait_time` 降序取本节点 top-5 kernel，看它们的前驱算子类型。前驱是 Hcom* 通信算子则属通信等待；前驱是计算算子而 wait 仍高则看是否跨流依赖；kernel_sum 极小而 wait 极大通常是 host 下发或图执行边界，不是设备侧问题。",
+          "next_data": "`raw_ops_details.json` 的 `Wait Time(us)` 字段；通信带宽看 `ASCEND_PROFILER_OUTPUT/communication.json` 与 `communication_matrix.json`；host 下发看 `api_statistic.csv`。",
+          "not_applicable": "`kernel_sum_ms < 0.1` 时 wait 占比会放大到几百甚至上千倍，比例数值不可用于横向比较，只能作为「该节点几乎不计算」的信号。"
+        },
+        {
+          "code": "UTIL_LOW",
+          "severity": "high",
+          "metrics": {
+            "utilization_pct": 0.2
+          },
+          "text": "利用率偏低（0%）",
+          "advice_l1": "忙碌时间占 wall 不足 80%。先区分是「本节点自身有空档」还是「本节点被上游拖慢」：若同时命中 GAP_BUBBLE，按 GAP_BUBBLE 处理；若未命中 GAP_BUBBLE 而利用率仍低，说明 wall 被少数长 kernel 拉长，看 `op_ratio` 里占比最高的算子类型。",
+          "next_data": "本节点 `op_ratio`（Skill 2 的 `ui_facts/*_perf_data.json` 已含该字段）；对应算子的 `aic_mac_ratio` / `aiv_vec_ratio` / `aic_mte2_ratio` 判断是计算受限还是访存受限。",
+          "not_applicable": "聚合作用域；以及节点只含通信算子时（通信节点的「利用率」语义不同，等待是其正常状态）。"
+        }
+      ]
+    },
+    {
+      "path": "mtp_scaffold/hnorm",
+      "name": "hnorm",
+      "depth": 2,
+      "metric_scope": "instance",
+      "invocation_count": 1,
+      "metrics": {
+        "wall_ms": 7.606,
+        "busy_union_ms": 0.011,
+        "kernel_sum_ms": 0.011,
+        "total_cost_ms": 0.011,
+        "bubble_ms": 7.596,
+        "kernel_count": 3
+      },
+      "findings": [
+        {
+          "code": "GAP_BUBBLE",
+          "severity": "high",
+          "metrics": {
+            "gap_pct": 99.9
+          },
+          "text": "存在间隙气泡（gap=100%）",
+          "advice_l1": "该节点 wall 显著大于设备忙碌时间，空档不在本节点的 kernel 内部。先确认空档落在哪里：按 `start_time_us` 排序本节点 op，算相邻 op 的 `start[i+1] - (start[i]+duration[i])`，取最大的几段。",
+          "next_data": "`raw_ops_details.json` 本节点 `op_indices` 的 `start_time_us` / `duration_us`；`ASCEND_PROFILER_OUTPUT/trace_view.json` 对应时间窗；host 侧下发间隔看 `api_statistic.csv`。",
+          "not_applicable": "节点 kernel 数 ≤ 2 时 gap 比例无统计意义；`metric_scope == \"aggregate\"` 时该值是跨实例累加的假空档。"
+        },
+        {
+          "code": "UTIL_LOW",
+          "severity": "high",
+          "metrics": {
+            "utilization_pct": 0.1
+          },
+          "text": "利用率偏低（0%）",
+          "advice_l1": "忙碌时间占 wall 不足 80%。先区分是「本节点自身有空档」还是「本节点被上游拖慢」：若同时命中 GAP_BUBBLE，按 GAP_BUBBLE 处理；若未命中 GAP_BUBBLE 而利用率仍低，说明 wall 被少数长 kernel 拉长，看 `op_ratio` 里占比最高的算子类型。",
+          "next_data": "本节点 `op_ratio`（Skill 2 的 `ui_facts/*_perf_data.json` 已含该字段）；对应算子的 `aic_mac_ratio` / `aiv_vec_ratio` / `aic_mte2_ratio` 判断是计算受限还是访存受限。",
+          "not_applicable": "聚合作用域；以及节点只含通信算子时（通信节点的「利用率」语义不同，等待是其正常状态）。"
+        }
+      ]
+    },
+    {
+      "path": "mtp_scaffold/mtp_embedding",
+      "name": "mtp_embedding",
+      "depth": 2,
+      "metric_scope": "instance",
+      "invocation_count": 1,
+      "metrics": {
+        "wall_ms": 7.65,
+        "busy_union_ms": 0.142,
+        "kernel_sum_ms": 0.151,
+        "total_cost_ms": 0.156,
+        "bubble_ms": 7.508,
+        "kernel_count": 30
+      },
+      "findings": [
+        {
+          "code": "GAP_BUBBLE",
+          "severity": "high",
+          "metrics": {
+            "gap_pct": 98.1
+          },
+          "text": "存在间隙气泡（gap=98%）",
+          "advice_l1": "该节点 wall 显著大于设备忙碌时间，空档不在本节点的 kernel 内部。先确认空档落在哪里：按 `start_time_us` 排序本节点 op，算相邻 op 的 `start[i+1] - (start[i]+duration[i])`，取最大的几段。",
+          "next_data": "`raw_ops_details.json` 本节点 `op_indices` 的 `start_time_us` / `duration_us`；`ASCEND_PROFILER_OUTPUT/trace_view.json` 对应时间窗；host 侧下发间隔看 `api_statistic.csv`。",
+          "not_applicable": "节点 kernel 数 ≤ 2 时 gap 比例无统计意义；`metric_scope == \"aggregate\"` 时该值是跨实例累加的假空档。"
+        },
+        {
+          "code": "UTIL_LOW",
+          "severity": "high",
+          "metrics": {
+            "utilization_pct": 1.9
+          },
+          "text": "利用率偏低（2%）",
+          "advice_l1": "忙碌时间占 wall 不足 80%。先区分是「本节点自身有空档」还是「本节点被上游拖慢」：若同时命中 GAP_BUBBLE，按 GAP_BUBBLE 处理；若未命中 GAP_BUBBLE 而利用率仍低，说明 wall 被少数长 kernel 拉长，看 `op_ratio` 里占比最高的算子类型。",
+          "next_data": "本节点 `op_ratio`（Skill 2 的 `ui_facts/*_perf_data.json` 已含该字段）；对应算子的 `aic_mac_ratio` / `aiv_vec_ratio` / `aic_mte2_ratio` 判断是计算受限还是访存受限。",
+          "not_applicable": "聚合作用域；以及节点只含通信算子时（通信节点的「利用率」语义不同，等待是其正常状态）。"
+        }
+      ]
+    },
+    {
+      "path": "mtp_scaffold/mtp_input_layernorm",
+      "name": "mtp_input_layernorm",
+      "depth": 2,
+      "metric_scope": "instance",
+      "invocation_count": 1,
+      "metrics": {
+        "wall_ms": 7.598,
+        "busy_union_ms": 0.013,
+        "kernel_sum_ms": 0.013,
+        "total_cost_ms": 0.014,
+        "bubble_ms": 7.585,
+        "kernel_count": 3
+      },
+      "findings": [
+        {
+          "code": "GAP_BUBBLE",
+          "severity": "high",
+          "metrics": {
+            "gap_pct": 99.8
+          },
+          "text": "存在间隙气泡（gap=100%）",
+          "advice_l1": "该节点 wall 显著大于设备忙碌时间，空档不在本节点的 kernel 内部。先确认空档落在哪里：按 `start_time_us` 排序本节点 op，算相邻 op 的 `start[i+1] - (start[i]+duration[i])`，取最大的几段。",
+          "next_data": "`raw_ops_details.json` 本节点 `op_indices` 的 `start_time_us` / `duration_us`；`ASCEND_PROFILER_OUTPUT/trace_view.json` 对应时间窗；host 侧下发间隔看 `api_statistic.csv`。",
+          "not_applicable": "节点 kernel 数 ≤ 2 时 gap 比例无统计意义；`metric_scope == \"aggregate\"` 时该值是跨实例累加的假空档。"
+        },
+        {
+          "code": "UTIL_LOW",
+          "severity": "high",
+          "metrics": {
+            "utilization_pct": 0.2
+          },
+          "text": "利用率偏低（0%）",
+          "advice_l1": "忙碌时间占 wall 不足 80%。先区分是「本节点自身有空档」还是「本节点被上游拖慢」：若同时命中 GAP_BUBBLE，按 GAP_BUBBLE 处理；若未命中 GAP_BUBBLE 而利用率仍低，说明 wall 被少数长 kernel 拉长，看 `op_ratio` 里占比最高的算子类型。",
+          "next_data": "本节点 `op_ratio`（Skill 2 的 `ui_facts/*_perf_data.json` 已含该字段）；对应算子的 `aic_mac_ratio` / `aiv_vec_ratio` / `aic_mte2_ratio` 判断是计算受限还是访存受限。",
+          "not_applicable": "聚合作用域；以及节点只含通信算子时（通信节点的「利用率」语义不同，等待是其正常状态）。"
+        }
+      ]
+    },
+    {
+      "path": "DeepseekV3DecoderLayer_dense",
+      "name": "DeepseekV3DecoderLayer_dense",
+      "depth": 1,
+      "metric_scope": "aggregate",
+      "invocation_count": 2,
+      "metrics": {
+        "wall_ms": 1.604,
+        "busy_union_ms": 1.575,
+        "kernel_sum_ms": 1.687,
+        "total_cost_ms": 1.718,
+        "bubble_ms": 0.029,
+        "kernel_count": 68
+      },
+      "findings": [
+        {
+          "code": "CLEAN_SEQUENTIAL",
+          "severity": "info",
+          "metrics": {},
+          "text": "干净顺序执行",
+          "advice_l1": "[聚合口径] 四项指标彼此接近，属干净顺序执行，无空档无显著等待，无需动作。",
+          "next_data": "无。",
+          "not_applicable": "无。"
+        }
+      ]
+    },
+    {
+      "path": "DeepseekV3DecoderLayer_dense_first",
+      "name": "DeepseekV3DecoderLayer_dense_first",
+      "depth": 1,
+      "metric_scope": "instance",
+      "invocation_count": 1,
+      "metrics": {
+        "wall_ms": 0.809,
+        "busy_union_ms": 0.795,
+        "kernel_sum_ms": 0.851,
+        "total_cost_ms": 0.889,
+        "bubble_ms": 0.014,
+        "kernel_count": 35
+      },
+      "findings": [
+        {
+          "code": "CLEAN_SEQUENTIAL",
+          "severity": "info",
+          "metrics": {},
+          "text": "干净顺序执行",
+          "advice_l1": "四项指标彼此接近，属干净顺序执行，无空档无显著等待，无需动作。",
+          "next_data": "无。",
+          "not_applicable": "无。"
+        }
+      ]
+    },
+    {
+      "path": "DeepseekV3DecoderLayer_moe",
+      "name": "DeepseekV3DecoderLayer_moe",
+      "depth": 1,
+      "metric_scope": "aggregate",
+      "invocation_count": 3,
+      "metrics": {
+        "wall_ms": 3.398,
+        "busy_union_ms": 3.34,
+        "kernel_sum_ms": 3.807,
+        "total_cost_ms": 3.877,
+        "bubble_ms": 0.058,
+        "kernel_count": 126
+      },
+      "findings": [
+        {
+          "code": "NORMAL",
+          "severity": "info",
+          "metrics": {},
+          "text": "正常执行",
+          "advice_l1": "[聚合口径] 未命中任何异常阈值，无需动作。",
+          "next_data": "无。",
+          "not_applicable": "无。"
+        }
+      ]
+    },
+    {
+      "path": "DeepseekV3DecoderLayer_mtp",
+      "name": "DeepseekV3DecoderLayer_mtp",
+      "depth": 1,
+      "metric_scope": "aggregate",
+      "invocation_count": 3,
+      "metrics": {
+        "wall_ms": 8.711,
+        "busy_union_ms": 3.297,
+        "kernel_sum_ms": 4.037,
+        "total_cost_ms": 4.125,
+        "bubble_ms": 5.414,
+        "kernel_count": 126
+      },
+      "findings": [
+        {
+          "code": "GAP_BUBBLE",
+          "severity": "medium",
+          "metrics": {
+            "gap_pct": 62.2
+          },
+          "text": "存在间隙气泡（gap=62%）",
+          "advice_l1": "[聚合口径] 该节点 wall 显著大于设备忙碌时间，空档不在本节点的 kernel 内部。先确认空档落在哪里：按 `start_time_us` 排序本节点 op，算相邻 op 的 `start[i+1] - (start[i]+duration[i])`，取最大的几段。",
+          "next_data": "`raw_ops_details.json` 本节点 `op_indices` 的 `start_time_us` / `duration_us`；`ASCEND_PROFILER_OUTPUT/trace_view.json` 对应时间窗；host 侧下发间隔看 `api_statistic.csv`。",
+          "not_applicable": "节点 kernel 数 ≤ 2 时 gap 比例无统计意义；`metric_scope == \"aggregate\"` 时该值是跨实例累加的假空档。"
+        },
+        {
+          "code": "UTIL_LOW",
+          "severity": "high",
+          "metrics": {
+            "utilization_pct": 37.8
+          },
+          "text": "利用率偏低（38%）",
+          "advice_l1": "[聚合口径] 忙碌时间占 wall 不足 80%。先区分是「本节点自身有空档」还是「本节点被上游拖慢」：若同时命中 GAP_BUBBLE，按 GAP_BUBBLE 处理；若未命中 GAP_BUBBLE 而利用率仍低，说明 wall 被少数长 kernel 拉长，看 `op_ratio` 里占比最高的算子类型。",
+          "next_data": "本节点 `op_ratio`（Skill 2 的 `ui_facts/*_perf_data.json` 已含该字段）；对应算子的 `aic_mac_ratio` / `aiv_vec_ratio` / `aic_mte2_ratio` 判断是计算受限还是访存受限。",
+          "not_applicable": "聚合作用域；以及节点只含通信算子时（通信节点的「利用率」语义不同，等待是其正常状态）。"
+        }
+      ]
+    },
+    {
+      "path": "DeepseekV3DecoderLayer_dense/input_layernorm_next",
+      "name": "input_layernorm_next",
+      "depth": 2,
+      "metric_scope": "instance",
+      "invocation_count": 1,
+      "metrics": {
+        "wall_ms": 0.796,
+        "busy_union_ms": 0.007,
+        "kernel_sum_ms": 0.007,
+        "total_cost_ms": 0.009,
+        "bubble_ms": 0.789,
+        "kernel_count": 2
+      },
+      "findings": [
+        {
+          "code": "GAP_BUBBLE",
+          "severity": "high",
+          "metrics": {
+            "gap_pct": 99.1
+          },
+          "text": "存在间隙气泡（gap=99%）",
+          "advice_l1": "该节点 wall 显著大于设备忙碌时间，空档不在本节点的 kernel 内部。先确认空档落在哪里：按 `start_time_us` 排序本节点 op，算相邻 op 的 `start[i+1] - (start[i]+duration[i])`，取最大的几段。",
+          "next_data": "`raw_ops_details.json` 本节点 `op_indices` 的 `start_time_us` / `duration_us`；`ASCEND_PROFILER_OUTPUT/trace_view.json` 对应时间窗；host 侧下发间隔看 `api_statistic.csv`。",
+          "not_applicable": "节点 kernel 数 ≤ 2 时 gap 比例无统计意义；`metric_scope == \"aggregate\"` 时该值是跨实例累加的假空档。"
+        },
+        {
+          "code": "UTIL_LOW",
+          "severity": "high",
+          "metrics": {
+            "utilization_pct": 0.9
+          },
+          "text": "利用率偏低（1%）",
+          "advice_l1": "忙碌时间占 wall 不足 80%。先区分是「本节点自身有空档」还是「本节点被上游拖慢」：若同时命中 GAP_BUBBLE，按 GAP_BUBBLE 处理；若未命中 GAP_BUBBLE 而利用率仍低，说明 wall 被少数长 kernel 拉长，看 `op_ratio` 里占比最高的算子类型。",
+          "next_data": "本节点 `op_ratio`（Skill 2 的 `ui_facts/*_perf_data.json` 已含该字段）；对应算子的 `aic_mac_ratio` / `aiv_vec_ratio` / `aic_mte2_ratio` 判断是计算受限还是访存受限。",
+          "not_applicable": "聚合作用域；以及节点只含通信算子时（通信节点的「利用率」语义不同，等待是其正常状态）。"
+        }
+      ]
+    },
+    {
+      "path": "DeepseekV3DecoderLayer_dense/mlp",
+      "name": "mlp",
+      "depth": 2,
+      "metric_scope": "instance",
+      "invocation_count": 1,
+      "metrics": {
+        "wall_ms": 1.089,
+        "busy_union_ms": 0.59,
+        "kernel_sum_ms": 0.589,
+        "total_cost_ms": 0.592,
+        "bubble_ms": 0.499,
+        "kernel_count": 6
+      },
+      "findings": [
+        {
+          "code": "GAP_BUBBLE",
+          "severity": "medium",
+          "metrics": {
+            "gap_pct": 45.8
+          },
+          "text": "存在间隙气泡（gap=46%）",
+          "advice_l1": "该节点 wall 显著大于设备忙碌时间，空档不在本节点的 kernel 内部。先确认空档落在哪里：按 `start_time_us` 排序本节点 op，算相邻 op 的 `start[i+1] - (start[i]+duration[i])`，取最大的几段。",
+          "next_data": "`raw_ops_details.json` 本节点 `op_indices` 的 `start_time_us` / `duration_us`；`ASCEND_PROFILER_OUTPUT/trace_view.json` 对应时间窗；host 侧下发间隔看 `api_statistic.csv`。",
+          "not_applicable": "节点 kernel 数 ≤ 2 时 gap 比例无统计意义；`metric_scope == \"aggregate\"` 时该值是跨实例累加的假空档。"
+        },
+        {
+          "code": "UTIL_LOW",
+          "severity": "medium",
+          "metrics": {
+            "utilization_pct": 54.2
+          },
+          "text": "利用率偏低（54%）",
+          "advice_l1": "忙碌时间占 wall 不足 80%。先区分是「本节点自身有空档」还是「本节点被上游拖慢」：若同时命中 GAP_BUBBLE，按 GAP_BUBBLE 处理；若未命中 GAP_BUBBLE 而利用率仍低，说明 wall 被少数长 kernel 拉长，看 `op_ratio` 里占比最高的算子类型。",
+          "next_data": "本节点 `op_ratio`（Skill 2 的 `ui_facts/*_perf_data.json` 已含该字段）；对应算子的 `aic_mac_ratio` / `aiv_vec_ratio` / `aic_mte2_ratio` 判断是计算受限还是访存受限。",
+          "not_applicable": "聚合作用域；以及节点只含通信算子时（通信节点的「利用率」语义不同，等待是其正常状态）。"
+        }
+      ]
+    },
+    {
+      "path": "DeepseekV3DecoderLayer_dense/post_attention_layernorm",
+      "name": "post_attention_layernorm",
+      "depth": 2,
+      "metric_scope": "instance",
+      "invocation_count": 1,
+      "metrics": {
+        "wall_ms": 0.797,
+        "busy_union_ms": 0.009,
+        "kernel_sum_ms": 0.009,
+        "total_cost_ms": 0.011,
+        "bubble_ms": 0.789,
+        "kernel_count": 2
+      },
+      "findings": [
+        {
+          "code": "GAP_BUBBLE",
+          "severity": "high",
+          "metrics": {
+            "gap_pct": 98.9
+          },
+          "text": "存在间隙气泡（gap=99%）",
+          "advice_l1": "该节点 wall 显著大于设备忙碌时间，空档不在本节点的 kernel 内部。先确认空档落在哪里：按 `start_time_us` 排序本节点 op，算相邻 op 的 `start[i+1] - (start[i]+duration[i])`，取最大的几段。",
+          "next_data": "`raw_ops_details.json` 本节点 `op_indices` 的 `start_time_us` / `duration_us`；`ASCEND_PROFILER_OUTPUT/trace_view.json` 对应时间窗；host 侧下发间隔看 `api_statistic.csv`。",
+          "not_applicable": "节点 kernel 数 ≤ 2 时 gap 比例无统计意义；`metric_scope == \"aggregate\"` 时该值是跨实例累加的假空档。"
+        },
+        {
+          "code": "UTIL_LOW",
+          "severity": "high",
+          "metrics": {
+            "utilization_pct": 1.1
+          },
+          "text": "利用率偏低（1%）",
+          "advice_l1": "忙碌时间占 wall 不足 80%。先区分是「本节点自身有空档」还是「本节点被上游拖慢」：若同时命中 GAP_BUBBLE，按 GAP_BUBBLE 处理；若未命中 GAP_BUBBLE 而利用率仍低，说明 wall 被少数长 kernel 拉长，看 `op_ratio` 里占比最高的算子类型。",
+          "next_data": "本节点 `op_ratio`（Skill 2 的 `ui_facts/*_perf_data.json` 已含该字段）；对应算子的 `aic_mac_ratio` / `aiv_vec_ratio` / `aic_mte2_ratio` 判断是计算受限还是访存受限。",
+          "not_applicable": "聚合作用域；以及节点只含通信算子时（通信节点的「利用率」语义不同，等待是其正常状态）。"
+        }
+      ]
+    },
+    {
+      "path": "DeepseekV3DecoderLayer_dense/self_attn",
+      "name": "self_attn",
+      "depth": 2,
+      "metric_scope": "instance",
+      "invocation_count": 1,
+      "metrics": {
+        "wall_ms": 1.298,
+        "busy_union_ms": 0.97,
+        "kernel_sum_ms": 1.082,
+        "total_cost_ms": 1.107,
+        "bubble_ms": 0.329,
+        "kernel_count": 58
+      },
+      "findings": [
+        {
+          "code": "UTIL_LOW",
+          "severity": "medium",
+          "metrics": {
+            "utilization_pct": 74.7
+          },
+          "text": "利用率偏低（75%）",
+          "advice_l1": "忙碌时间占 wall 不足 80%。先区分是「本节点自身有空档」还是「本节点被上游拖慢」：若同时命中 GAP_BUBBLE，按 GAP_BUBBLE 处理；若未命中 GAP_BUBBLE 而利用率仍低，说明 wall 被少数长 kernel 拉长，看 `op_ratio` 里占比最高的算子类型。",
+          "next_data": "本节点 `op_ratio`（Skill 2 的 `ui_facts/*_perf_data.json` 已含该字段）；对应算子的 `aic_mac_ratio` / `aiv_vec_ratio` / `aic_mte2_ratio` 判断是计算受限还是访存受限。",
+          "not_applicable": "聚合作用域；以及节点只含通信算子时（通信节点的「利用率」语义不同，等待是其正常状态）。"
+        }
+      ]
+    },
+    {
+      "path": "DeepseekV3DecoderLayer_dense_first/input_layernorm",
+      "name": "input_layernorm",
+      "depth": 2,
+      "metric_scope": "instance",
+      "invocation_count": 1,
+      "metrics": {
+        "wall_ms": 0.004,
+        "busy_union_ms": 0.004,
+        "kernel_sum_ms": 0.004,
+        "total_cost_ms": 0.027,
+        "bubble_ms": 0.0,
+        "kernel_count": 1
+      },
+      "findings": [
+        {
+          "code": "WAIT_DOMINANT",
+          "severity": "high",
+          "metrics": {
+            "kernel_sum_ms": 0.0044800000000000005,
+            "wait_ms": 0.022
+          },
+          "text": "等待时间显著（kernel极短但wait长）",
+          "advice_l1": "`total_cost - kernel_sum` 占比高，说明成本主要在等待而非计算。先分类等待来源：按 `wait_time` 降序取本节点 top-5 kernel，看它们的前驱算子类型。前驱是 Hcom* 通信算子则属通信等待；前驱是计算算子而 wait 仍高则看是否跨流依赖；kernel_sum 极小而 wait 极大通常是 host 下发或图执行边界，不是设备侧问题。",
+          "next_data": "`raw_ops_details.json` 的 `Wait Time(us)` 字段；通信带宽看 `ASCEND_PROFILER_OUTPUT/communication.json` 与 `communication_matrix.json`；host 下发看 `api_statistic.csv`。",
+          "not_applicable": "`kernel_sum_ms < 0.1` 时 wait 占比会放大到几百甚至上千倍，比例数值不可用于横向比较，只能作为「该节点几乎不计算」的信号。"
+        }
+      ]
+    },
+    {
+      "path": "DeepseekV3DecoderLayer_dense_first/input_layernorm_next",
+      "name": "input_layernorm_next",
+      "depth": 2,
+      "metric_scope": "instance",
+      "invocation_count": 1,
+      "metrics": {
+        "wall_ms": 0.004,
+        "busy_union_ms": 0.004,
+        "kernel_sum_ms": 0.004,
+        "total_cost_ms": 0.004,
+        "bubble_ms": 0.0,
+        "kernel_count": 1
+      },
+      "findings": [
+        {
+          "code": "CLEAN_SEQUENTIAL",
+          "severity": "info",
+          "metrics": {},
+          "text": "干净顺序执行",
+          "advice_l1": "四项指标彼此接近，属干净顺序执行，无空档无显著等待，无需动作。",
+          "next_data": "无。",
+          "not_applicable": "无。"
+        }
+      ]
+    },
+    {
+      "path": "DeepseekV3DecoderLayer_dense_first/mlp",
+      "name": "mlp",
+      "depth": 2,
+      "metric_scope": "instance",
+      "invocation_count": 1,
+      "metrics": {
+        "wall_ms": 0.297,
+        "busy_union_ms": 0.296,
+        "kernel_sum_ms": 0.296,
+        "total_cost_ms": 0.298,
+        "bubble_ms": 0.001,
+        "kernel_count": 3
+      },
+      "findings": [
+        {
+          "code": "CLEAN_SEQUENTIAL",
+          "severity": "info",
+          "metrics": {},
+          "text": "干净顺序执行",
+          "advice_l1": "四项指标彼此接近，属干净顺序执行，无空档无显著等待，无需动作。",
+          "next_data": "无。",
+          "not_applicable": "无。"
+        }
+      ]
+    },
+    {
+      "path": "DeepseekV3DecoderLayer_dense_first/post_attention_layernorm",
+      "name": "post_attention_layernorm",
+      "depth": 2,
+      "metric_scope": "instance",
+      "invocation_count": 1,
+      "metrics": {
+        "wall_ms": 0.005,
+        "busy_union_ms": 0.005,
+        "kernel_sum_ms": 0.005,
+        "total_cost_ms": 0.005,
+        "bubble_ms": 0.0,
+        "kernel_count": 1
+      },
+      "findings": [
+        {
+          "code": "CLEAN_SEQUENTIAL",
+          "severity": "info",
+          "metrics": {},
+          "text": "干净顺序执行",
+          "advice_l1": "四项指标彼此接近，属干净顺序执行，无空档无显著等待，无需动作。",
+          "next_data": "无。",
+          "not_applicable": "无。"
+        }
+      ]
+    },
+    {
+      "path": "DeepseekV3DecoderLayer_dense_first/self_attn",
+      "name": "self_attn",
+      "depth": 2,
+      "metric_scope": "instance",
+      "invocation_count": 1,
+      "metrics": {
+        "wall_ms": 0.496,
+        "busy_union_ms": 0.486,
+        "kernel_sum_ms": 0.542,
+        "total_cost_ms": 0.554,
+        "bubble_ms": 0.01,
+        "kernel_count": 29
+      },
+      "findings": [
+        {
+          "code": "CLEAN_SEQUENTIAL",
+          "severity": "info",
+          "metrics": {},
+          "text": "干净顺序执行",
+          "advice_l1": "四项指标彼此接近，属干净顺序执行，无空档无显著等待，无需动作。",
+          "next_data": "无。",
+          "not_applicable": "无。"
+        }
+      ]
+    },
+    {
+      "path": "DeepseekV3DecoderLayer_moe/input_layernorm_next",
+      "name": "input_layernorm_next",
+      "depth": 2,
+      "metric_scope": "instance",
+      "invocation_count": 1,
+      "metrics": {
+        "wall_ms": 2.257,
+        "busy_union_ms": 0.01,
+        "kernel_sum_ms": 0.01,
+        "total_cost_ms": 0.013,
+        "bubble_ms": 2.247,
+        "kernel_count": 3
+      },
+      "findings": [
+        {
+          "code": "GAP_BUBBLE",
+          "severity": "high",
+          "metrics": {
+            "gap_pct": 99.5
+          },
+          "text": "存在间隙气泡（gap=100%）",
+          "advice_l1": "该节点 wall 显著大于设备忙碌时间，空档不在本节点的 kernel 内部。先确认空档落在哪里：按 `start_time_us` 排序本节点 op，算相邻 op 的 `start[i+1] - (start[i]+duration[i])`，取最大的几段。",
+          "next_data": "`raw_ops_details.json` 本节点 `op_indices` 的 `start_time_us` / `duration_us`；`ASCEND_PROFILER_OUTPUT/trace_view.json` 对应时间窗；host 侧下发间隔看 `api_statistic.csv`。",
+          "not_applicable": "节点 kernel 数 ≤ 2 时 gap 比例无统计意义；`metric_scope == \"aggregate\"` 时该值是跨实例累加的假空档。"
+        },
+        {
+          "code": "UTIL_LOW",
+          "severity": "high",
+          "metrics": {
+            "utilization_pct": 0.5
+          },
+          "text": "利用率偏低（0%）",
+          "advice_l1": "忙碌时间占 wall 不足 80%。先区分是「本节点自身有空档」还是「本节点被上游拖慢」：若同时命中 GAP_BUBBLE，按 GAP_BUBBLE 处理；若未命中 GAP_BUBBLE 而利用率仍低，说明 wall 被少数长 kernel 拉长，看 `op_ratio` 里占比最高的算子类型。",
+          "next_data": "本节点 `op_ratio`（Skill 2 的 `ui_facts/*_perf_data.json` 已含该字段）；对应算子的 `aic_mac_ratio` / `aiv_vec_ratio` / `aic_mte2_ratio` 判断是计算受限还是访存受限。",
+          "not_applicable": "聚合作用域；以及节点只含通信算子时（通信节点的「利用率」语义不同，等待是其正常状态）。"
+        }
+      ]
+    },
+    {
+      "path": "DeepseekV3DecoderLayer_moe/mlp",
+      "name": "mlp",
+      "depth": 2,
+      "metric_scope": "instance",
+      "invocation_count": 1,
+      "metrics": {
+        "wall_ms": 2.915,
+        "busy_union_ms": 1.924,
+        "kernel_sum_ms": 2.222,
+        "total_cost_ms": 2.244,
+        "bubble_ms": 0.991,
+        "kernel_count": 33
+      },
+      "findings": [
+        {
+          "code": "GAP_BUBBLE",
+          "severity": "medium",
+          "metrics": {
+            "gap_pct": 34.0
+          },
+          "text": "存在间隙气泡（gap=34%）",
+          "advice_l1": "该节点 wall 显著大于设备忙碌时间，空档不在本节点的 kernel 内部。先确认空档落在哪里：按 `start_time_us` 排序本节点 op，算相邻 op 的 `start[i+1] - (start[i]+duration[i])`，取最大的几段。",
+          "next_data": "`raw_ops_details.json` 本节点 `op_indices` 的 `start_time_us` / `duration_us`；`ASCEND_PROFILER_OUTPUT/trace_view.json` 对应时间窗；host 侧下发间隔看 `api_statistic.csv`。",
+          "not_applicable": "节点 kernel 数 ≤ 2 时 gap 比例无统计意义；`metric_scope == \"aggregate\"` 时该值是跨实例累加的假空档。"
+        },
+        {
+          "code": "UTIL_LOW",
+          "severity": "medium",
+          "metrics": {
+            "utilization_pct": 66.0
+          },
+          "text": "利用率偏低（66%）",
+          "advice_l1": "忙碌时间占 wall 不足 80%。先区分是「本节点自身有空档」还是「本节点被上游拖慢」：若同时命中 GAP_BUBBLE，按 GAP_BUBBLE 处理；若未命中 GAP_BUBBLE 而利用率仍低，说明 wall 被少数长 kernel 拉长，看 `op_ratio` 里占比最高的算子类型。",
+          "next_data": "本节点 `op_ratio`（Skill 2 的 `ui_facts/*_perf_data.json` 已含该字段）；对应算子的 `aic_mac_ratio` / `aiv_vec_ratio` / `aic_mte2_ratio` 判断是计算受限还是访存受限。",
+          "not_applicable": "聚合作用域；以及节点只含通信算子时（通信节点的「利用率」语义不同，等待是其正常状态）。"
+        }
+      ]
+    },
+    {
+      "path": "DeepseekV3DecoderLayer_moe/post_attention_layernorm",
+      "name": "post_attention_layernorm",
+      "depth": 2,
+      "metric_scope": "instance",
+      "invocation_count": 1,
+      "metrics": {
+        "wall_ms": 2.28,
+        "busy_union_ms": 0.011,
+        "kernel_sum_ms": 0.01,
+        "total_cost_ms": 0.013,
+        "bubble_ms": 2.269,
+        "kernel_count": 3
+      },
+      "findings": [
+        {
+          "code": "GAP_BUBBLE",
+          "severity": "high",
+          "metrics": {
+            "gap_pct": 99.5
+          },
+          "text": "存在间隙气泡（gap=100%）",
+          "advice_l1": "该节点 wall 显著大于设备忙碌时间，空档不在本节点的 kernel 内部。先确认空档落在哪里：按 `start_time_us` 排序本节点 op，算相邻 op 的 `start[i+1] - (start[i]+duration[i])`，取最大的几段。",
+          "next_data": "`raw_ops_details.json` 本节点 `op_indices` 的 `start_time_us` / `duration_us`；`ASCEND_PROFILER_OUTPUT/trace_view.json` 对应时间窗；host 侧下发间隔看 `api_statistic.csv`。",
+          "not_applicable": "节点 kernel 数 ≤ 2 时 gap 比例无统计意义；`metric_scope == \"aggregate\"` 时该值是跨实例累加的假空档。"
+        },
+        {
+          "code": "UTIL_LOW",
+          "severity": "high",
+          "metrics": {
+            "utilization_pct": 0.5
+          },
+          "text": "利用率偏低（0%）",
+          "advice_l1": "忙碌时间占 wall 不足 80%。先区分是「本节点自身有空档」还是「本节点被上游拖慢」：若同时命中 GAP_BUBBLE，按 GAP_BUBBLE 处理；若未命中 GAP_BUBBLE 而利用率仍低，说明 wall 被少数长 kernel 拉长，看 `op_ratio` 里占比最高的算子类型。",
+          "next_data": "本节点 `op_ratio`（Skill 2 的 `ui_facts/*_perf_data.json` 已含该字段）；对应算子的 `aic_mac_ratio` / `aiv_vec_ratio` / `aic_mte2_ratio` 判断是计算受限还是访存受限。",
+          "not_applicable": "聚合作用域；以及节点只含通信算子时（通信节点的「利用率」语义不同，等待是其正常状态）。"
+        }
+      ]
+    },
+    {
+      "path": "DeepseekV3DecoderLayer_moe/self_attn",
+      "name": "self_attn",
+      "depth": 2,
+      "metric_scope": "instance",
+      "invocation_count": 1,
+      "metrics": {
+        "wall_ms": 2.751,
+        "busy_union_ms": 1.395,
+        "kernel_sum_ms": 1.565,
+        "total_cost_ms": 1.605,
+        "bubble_ms": 1.355,
+        "kernel_count": 87
+      },
+      "findings": [
+        {
+          "code": "GAP_BUBBLE",
+          "severity": "medium",
+          "metrics": {
+            "gap_pct": 49.3
+          },
+          "text": "存在间隙气泡（gap=49%）",
+          "advice_l1": "该节点 wall 显著大于设备忙碌时间，空档不在本节点的 kernel 内部。先确认空档落在哪里：按 `start_time_us` 排序本节点 op，算相邻 op 的 `start[i+1] - (start[i]+duration[i])`，取最大的几段。",
+          "next_data": "`raw_ops_details.json` 本节点 `op_indices` 的 `start_time_us` / `duration_us`；`ASCEND_PROFILER_OUTPUT/trace_view.json` 对应时间窗；host 侧下发间隔看 `api_statistic.csv`。",
+          "not_applicable": "节点 kernel 数 ≤ 2 时 gap 比例无统计意义；`metric_scope == \"aggregate\"` 时该值是跨实例累加的假空档。"
+        },
+        {
+          "code": "UTIL_LOW",
+          "severity": "medium",
+          "metrics": {
+            "utilization_pct": 50.7
+          },
+          "text": "利用率偏低（51%）",
+          "advice_l1": "忙碌时间占 wall 不足 80%。先区分是「本节点自身有空档」还是「本节点被上游拖慢」：若同时命中 GAP_BUBBLE，按 GAP_BUBBLE 处理；若未命中 GAP_BUBBLE 而利用率仍低，说明 wall 被少数长 kernel 拉长，看 `op_ratio` 里占比最高的算子类型。",
+          "next_data": "本节点 `op_ratio`（Skill 2 的 `ui_facts/*_perf_data.json` 已含该字段）；对应算子的 `aic_mac_ratio` / `aiv_vec_ratio` / `aic_mte2_ratio` 判断是计算受限还是访存受限。",
+          "not_applicable": "聚合作用域；以及节点只含通信算子时（通信节点的「利用率」语义不同，等待是其正常状态）。"
+        }
+      ]
+    },
+    {
+      "path": "DeepseekV3DecoderLayer_mtp/mlp",
+      "name": "mlp",
+      "depth": 2,
+      "metric_scope": "instance",
+      "invocation_count": 1,
+      "metrics": {
+        "wall_ms": 8.221,
+        "busy_union_ms": 1.881,
+        "kernel_sum_ms": 2.445,
+        "total_cost_ms": 2.489,
+        "bubble_ms": 6.34,
+        "kernel_count": 33
+      },
+      "findings": [
+        {
+          "code": "GAP_BUBBLE",
+          "severity": "medium",
+          "metrics": {
+            "gap_pct": 77.1
+          },
+          "text": "存在间隙气泡（gap=77%）",
+          "advice_l1": "该节点 wall 显著大于设备忙碌时间，空档不在本节点的 kernel 内部。先确认空档落在哪里：按 `start_time_us` 排序本节点 op，算相邻 op 的 `start[i+1] - (start[i]+duration[i])`，取最大的几段。",
+          "next_data": "`raw_ops_details.json` 本节点 `op_indices` 的 `start_time_us` / `duration_us`；`ASCEND_PROFILER_OUTPUT/trace_view.json` 对应时间窗；host 侧下发间隔看 `api_statistic.csv`。",
+          "not_applicable": "节点 kernel 数 ≤ 2 时 gap 比例无统计意义；`metric_scope == \"aggregate\"` 时该值是跨实例累加的假空档。"
+        },
+        {
+          "code": "UTIL_LOW",
+          "severity": "high",
+          "metrics": {
+            "utilization_pct": 22.9
+          },
+          "text": "利用率偏低（23%）",
+          "advice_l1": "忙碌时间占 wall 不足 80%。先区分是「本节点自身有空档」还是「本节点被上游拖慢」：若同时命中 GAP_BUBBLE，按 GAP_BUBBLE 处理；若未命中 GAP_BUBBLE 而利用率仍低，说明 wall 被少数长 kernel 拉长，看 `op_ratio` 里占比最高的算子类型。",
+          "next_data": "本节点 `op_ratio`（Skill 2 的 `ui_facts/*_perf_data.json` 已含该字段）；对应算子的 `aic_mac_ratio` / `aiv_vec_ratio` / `aic_mte2_ratio` 判断是计算受限还是访存受限。",
+          "not_applicable": "聚合作用域；以及节点只含通信算子时（通信节点的「利用率」语义不同，等待是其正常状态）。"
+        }
+      ]
+    },
+    {
+      "path": "DeepseekV3DecoderLayer_mtp/post_attention_layernorm",
+      "name": "post_attention_layernorm",
+      "depth": 2,
+      "metric_scope": "instance",
+      "invocation_count": 1,
+      "metrics": {
+        "wall_ms": 7.587,
+        "busy_union_ms": 0.011,
+        "kernel_sum_ms": 0.011,
+        "total_cost_ms": 0.014,
+        "bubble_ms": 7.576,
+        "kernel_count": 3
+      },
+      "findings": [
+        {
+          "code": "GAP_BUBBLE",
+          "severity": "high",
+          "metrics": {
+            "gap_pct": 99.9
+          },
+          "text": "存在间隙气泡（gap=100%）",
+          "advice_l1": "该节点 wall 显著大于设备忙碌时间，空档不在本节点的 kernel 内部。先确认空档落在哪里：按 `start_time_us` 排序本节点 op，算相邻 op 的 `start[i+1] - (start[i]+duration[i])`，取最大的几段。",
+          "next_data": "`raw_ops_details.json` 本节点 `op_indices` 的 `start_time_us` / `duration_us`；`ASCEND_PROFILER_OUTPUT/trace_view.json` 对应时间窗；host 侧下发间隔看 `api_statistic.csv`。",
+          "not_applicable": "节点 kernel 数 ≤ 2 时 gap 比例无统计意义；`metric_scope == \"aggregate\"` 时该值是跨实例累加的假空档。"
+        },
+        {
+          "code": "UTIL_LOW",
+          "severity": "high",
+          "metrics": {
+            "utilization_pct": 0.1
+          },
+          "text": "利用率偏低（0%）",
+          "advice_l1": "忙碌时间占 wall 不足 80%。先区分是「本节点自身有空档」还是「本节点被上游拖慢」：若同时命中 GAP_BUBBLE，按 GAP_BUBBLE 处理；若未命中 GAP_BUBBLE 而利用率仍低，说明 wall 被少数长 kernel 拉长，看 `op_ratio` 里占比最高的算子类型。",
+          "next_data": "本节点 `op_ratio`（Skill 2 的 `ui_facts/*_perf_data.json` 已含该字段）；对应算子的 `aic_mac_ratio` / `aiv_vec_ratio` / `aic_mte2_ratio` 判断是计算受限还是访存受限。",
+          "not_applicable": "聚合作用域；以及节点只含通信算子时（通信节点的「利用率」语义不同，等待是其正常状态）。"
+        }
+      ]
+    },
+    {
+      "path": "DeepseekV3DecoderLayer_mtp/self_attn",
+      "name": "self_attn",
+      "depth": 2,
+      "metric_scope": "instance",
+      "invocation_count": 1,
+      "metrics": {
+        "wall_ms": 8.063,
+        "busy_union_ms": 1.394,
+        "kernel_sum_ms": 1.571,
+        "total_cost_ms": 1.607,
+        "bubble_ms": 6.669,
+        "kernel_count": 87
+      },
+      "findings": [
+        {
+          "code": "GAP_BUBBLE",
+          "severity": "high",
+          "metrics": {
+            "gap_pct": 82.7
+          },
+          "text": "存在间隙气泡（gap=83%）",
+          "advice_l1": "该节点 wall 显著大于设备忙碌时间，空档不在本节点的 kernel 内部。先确认空档落在哪里：按 `start_time_us` 排序本节点 op，算相邻 op 的 `start[i+1] - (start[i]+duration[i])`，取最大的几段。",
+          "next_data": "`raw_ops_details.json` 本节点 `op_indices` 的 `start_time_us` / `duration_us`；`ASCEND_PROFILER_OUTPUT/trace_view.json` 对应时间窗；host 侧下发间隔看 `api_statistic.csv`。",
+          "not_applicable": "节点 kernel 数 ≤ 2 时 gap 比例无统计意义；`metric_scope == \"aggregate\"` 时该值是跨实例累加的假空档。"
+        },
+        {
+          "code": "UTIL_LOW",
+          "severity": "high",
+          "metrics": {
+            "utilization_pct": 17.3
+          },
+          "text": "利用率偏低（17%）",
+          "advice_l1": "忙碌时间占 wall 不足 80%。先区分是「本节点自身有空档」还是「本节点被上游拖慢」：若同时命中 GAP_BUBBLE，按 GAP_BUBBLE 处理；若未命中 GAP_BUBBLE 而利用率仍低，说明 wall 被少数长 kernel 拉长，看 `op_ratio` 里占比最高的算子类型。",
+          "next_data": "本节点 `op_ratio`（Skill 2 的 `ui_facts/*_perf_data.json` 已含该字段）；对应算子的 `aic_mac_ratio` / `aiv_vec_ratio` / `aic_mte2_ratio` 判断是计算受限还是访存受限。",
+          "not_applicable": "聚合作用域；以及节点只含通信算子时（通信节点的「利用率」语义不同，等待是其正常状态）。"
+        }
+      ]
+    },
+    {
+      "path": "DeepseekV3DecoderLayer_mtp/shared_head_norm",
+      "name": "shared_head_norm",
+      "depth": 2,
+      "metric_scope": "instance",
+      "invocation_count": 1,
+      "metrics": {
+        "wall_ms": 7.6,
+        "busy_union_ms": 0.011,
+        "kernel_sum_ms": 0.011,
+        "total_cost_ms": 0.014,
+        "bubble_ms": 7.59,
+        "kernel_count": 3
+      },
+      "findings": [
+        {
+          "code": "GAP_BUBBLE",
+          "severity": "high",
+          "metrics": {
+            "gap_pct": 99.9
+          },
+          "text": "存在间隙气泡（gap=100%）",
+          "advice_l1": "该节点 wall 显著大于设备忙碌时间，空档不在本节点的 kernel 内部。先确认空档落在哪里：按 `start_time_us` 排序本节点 op，算相邻 op 的 `start[i+1] - (start[i]+duration[i])`，取最大的几段。",
+          "next_data": "`raw_ops_details.json` 本节点 `op_indices` 的 `start_time_us` / `duration_us`；`ASCEND_PROFILER_OUTPUT/trace_view.json` 对应时间窗；host 侧下发间隔看 `api_statistic.csv`。",
+          "not_applicable": "节点 kernel 数 ≤ 2 时 gap 比例无统计意义；`metric_scope == \"aggregate\"` 时该值是跨实例累加的假空档。"
+        },
+        {
+          "code": "UTIL_LOW",
+          "severity": "high",
+          "metrics": {
+            "utilization_pct": 0.1
+          },
+          "text": "利用率偏低（0%）",
+          "advice_l1": "忙碌时间占 wall 不足 80%。先区分是「本节点自身有空档」还是「本节点被上游拖慢」：若同时命中 GAP_BUBBLE，按 GAP_BUBBLE 处理；若未命中 GAP_BUBBLE 而利用率仍低，说明 wall 被少数长 kernel 拉长，看 `op_ratio` 里占比最高的算子类型。",
+          "next_data": "本节点 `op_ratio`（Skill 2 的 `ui_facts/*_perf_data.json` 已含该字段）；对应算子的 `aic_mac_ratio` / `aiv_vec_ratio` / `aic_mte2_ratio` 判断是计算受限还是访存受限。",
+          "not_applicable": "聚合作用域；以及节点只含通信算子时（通信节点的「利用率」语义不同，等待是其正常状态）。"
+        }
+      ]
+    },
+    {
+      "path": "DeepseekV3DecoderLayer_dense/mlp/act_fn",
+      "name": "act_fn",
+      "depth": 3,
+      "metric_scope": "instance",
+      "invocation_count": 1,
+      "metrics": {
+        "wall_ms": 0.805,
+        "busy_union_ms": 0.029,
+        "kernel_sum_ms": 0.029,
+        "total_cost_ms": 0.029,
+        "bubble_ms": 0.776,
+        "kernel_count": 2
+      },
+      "findings": [
+        {
+          "code": "GAP_BUBBLE",
+          "severity": "high",
+          "metrics": {
+            "gap_pct": 96.4
+          },
+          "text": "存在间隙气泡（gap=96%）",
+          "advice_l1": "该节点 wall 显著大于设备忙碌时间，空档不在本节点的 kernel 内部。先确认空档落在哪里：按 `start_time_us` 排序本节点 op，算相邻 op 的 `start[i+1] - (start[i]+duration[i])`，取最大的几段。",
+          "next_data": "`raw_ops_details.json` 本节点 `op_indices` 的 `start_time_us` / `duration_us`；`ASCEND_PROFILER_OUTPUT/trace_view.json` 对应时间窗；host 侧下发间隔看 `api_statistic.csv`。",
+          "not_applicable": "节点 kernel 数 ≤ 2 时 gap 比例无统计意义；`metric_scope == \"aggregate\"` 时该值是跨实例累加的假空档。"
+        },
+        {
+          "code": "UTIL_LOW",
+          "severity": "high",
+          "metrics": {
+            "utilization_pct": 3.6
+          },
+          "text": "利用率偏低（4%）",
+          "advice_l1": "忙碌时间占 wall 不足 80%。先区分是「本节点自身有空档」还是「本节点被上游拖慢」：若同时命中 GAP_BUBBLE，按 GAP_BUBBLE 处理；若未命中 GAP_BUBBLE 而利用率仍低，说明 wall 被少数长 kernel 拉长，看 `op_ratio` 里占比最高的算子类型。",
+          "next_data": "本节点 `op_ratio`（Skill 2 的 `ui_facts/*_perf_data.json` 已含该字段）；对应算子的 `aic_mac_ratio` / `aiv_vec_ratio` / `aic_mte2_ratio` 判断是计算受限还是访存受限。",
+          "not_applicable": "聚合作用域；以及节点只含通信算子时（通信节点的「利用率」语义不同，等待是其正常状态）。"
+        }
+      ]
+    },
+    {
+      "path": "DeepseekV3DecoderLayer_dense/mlp/down_proj",
+      "name": "down_proj",
+      "depth": 3,
+      "metric_scope": "instance",
+      "invocation_count": 1,
+      "metrics": {
+        "wall_ms": 0.891,
+        "busy_union_ms": 0.198,
+        "kernel_sum_ms": 0.198,
+        "total_cost_ms": 0.201,
+        "bubble_ms": 0.693,
+        "kernel_count": 2
+      },
+      "findings": [
+        {
+          "code": "GAP_BUBBLE",
+          "severity": "medium",
+          "metrics": {
+            "gap_pct": 77.8
+          },
+          "text": "存在间隙气泡（gap=78%）",
+          "advice_l1": "该节点 wall 显著大于设备忙碌时间，空档不在本节点的 kernel 内部。先确认空档落在哪里：按 `start_time_us` 排序本节点 op，算相邻 op 的 `start[i+1] - (start[i]+duration[i])`，取最大的几段。",
+          "next_data": "`raw_ops_details.json` 本节点 `op_indices` 的 `start_time_us` / `duration_us`；`ASCEND_PROFILER_OUTPUT/trace_view.json` 对应时间窗；host 侧下发间隔看 `api_statistic.csv`。",
+          "not_applicable": "节点 kernel 数 ≤ 2 时 gap 比例无统计意义；`metric_scope == \"aggregate\"` 时该值是跨实例累加的假空档。"
+        },
+        {
+          "code": "UTIL_LOW",
+          "severity": "high",
+          "metrics": {
+            "utilization_pct": 22.2
+          },
+          "text": "利用率偏低（22%）",
+          "advice_l1": "忙碌时间占 wall 不足 80%。先区分是「本节点自身有空档」还是「本节点被上游拖慢」：若同时命中 GAP_BUBBLE，按 GAP_BUBBLE 处理；若未命中 GAP_BUBBLE 而利用率仍低，说明 wall 被少数长 kernel 拉长，看 `op_ratio` 里占比最高的算子类型。",
+          "next_data": "本节点 `op_ratio`（Skill 2 的 `ui_facts/*_perf_data.json` 已含该字段）；对应算子的 `aic_mac_ratio` / `aiv_vec_ratio` / `aic_mte2_ratio` 判断是计算受限还是访存受限。",
+          "not_applicable": "聚合作用域；以及节点只含通信算子时（通信节点的「利用率」语义不同，等待是其正常状态）。"
+        }
+      ]
+    },
+    {
+      "path": "DeepseekV3DecoderLayer_dense/mlp/gate_up_proj",
+      "name": "gate_up_proj",
+      "depth": 3,
+      "metric_scope": "instance",
+      "invocation_count": 1,
+      "metrics": {
+        "wall_ms": 0.973,
+        "busy_union_ms": 0.363,
+        "kernel_sum_ms": 0.363,
+        "total_cost_ms": 0.363,
+        "bubble_ms": 0.61,
+        "kernel_count": 2
+      },
+      "findings": [
+        {
+          "code": "GAP_BUBBLE",
+          "severity": "medium",
+          "metrics": {
+            "gap_pct": 62.7
+          },
+          "text": "存在间隙气泡（gap=63%）",
+          "advice_l1": "该节点 wall 显著大于设备忙碌时间，空档不在本节点的 kernel 内部。先确认空档落在哪里：按 `start_time_us` 排序本节点 op，算相邻 op 的 `start[i+1] - (start[i]+duration[i])`，取最大的几段。",
+          "next_data": "`raw_ops_details.json` 本节点 `op_indices` 的 `start_time_us` / `duration_us`；`ASCEND_PROFILER_OUTPUT/trace_view.json` 对应时间窗；host 侧下发间隔看 `api_statistic.csv`。",
+          "not_applicable": "节点 kernel 数 ≤ 2 时 gap 比例无统计意义；`metric_scope == \"aggregate\"` 时该值是跨实例累加的假空档。"
+        },
+        {
+          "code": "UTIL_LOW",
+          "severity": "high",
+          "metrics": {
+            "utilization_pct": 37.3
+          },
+          "text": "利用率偏低（37%）",
+          "advice_l1": "忙碌时间占 wall 不足 80%。先区分是「本节点自身有空档」还是「本节点被上游拖慢」：若同时命中 GAP_BUBBLE，按 GAP_BUBBLE 处理；若未命中 GAP_BUBBLE 而利用率仍低，说明 wall 被少数长 kernel 拉长，看 `op_ratio` 里占比最高的算子类型。",
+          "next_data": "本节点 `op_ratio`（Skill 2 的 `ui_facts/*_perf_data.json` 已含该字段）；对应算子的 `aic_mac_ratio` / `aiv_vec_ratio` / `aic_mte2_ratio` 判断是计算受限还是访存受限。",
+          "not_applicable": "聚合作用域；以及节点只含通信算子时（通信节点的「利用率」语义不同，等待是其正常状态）。"
+        }
+      ]
+    },
+    {
+      "path": "DeepseekV3DecoderLayer_dense/self_attn/indexer",
+      "name": "indexer",
+      "depth": 3,
+      "metric_scope": "instance",
+      "invocation_count": 1,
+      "metrics": {
+        "wall_ms": 0.952,
+        "busy_union_ms": 0.318,
+        "kernel_sum_ms": 0.431,
+        "total_cost_ms": 0.444,
+        "bubble_ms": 0.633,
+        "kernel_count": 44
+      },
+      "findings": [
+        {
+          "code": "GAP_BUBBLE",
+          "severity": "medium",
+          "metrics": {
+            "gap_pct": 66.6
+          },
+          "text": "存在间隙气泡（gap=67%）",
+          "advice_l1": "该节点 wall 显著大于设备忙碌时间，空档不在本节点的 kernel 内部。先确认空档落在哪里：按 `start_time_us` 排序本节点 op，算相邻 op 的 `start[i+1] - (start[i]+duration[i])`，取最大的几段。",
+          "next_data": "`raw_ops_details.json` 本节点 `op_indices` 的 `start_time_us` / `duration_us`；`ASCEND_PROFILER_OUTPUT/trace_view.json` 对应时间窗；host 侧下发间隔看 `api_statistic.csv`。",
+          "not_applicable": "节点 kernel 数 ≤ 2 时 gap 比例无统计意义；`metric_scope == \"aggregate\"` 时该值是跨实例累加的假空档。"
+        },
+        {
+          "code": "UTIL_LOW",
+          "severity": "high",
+          "metrics": {
+            "utilization_pct": 33.4
+          },
+          "text": "利用率偏低（33%）",
+          "advice_l1": "忙碌时间占 wall 不足 80%。先区分是「本节点自身有空档」还是「本节点被上游拖慢」：若同时命中 GAP_BUBBLE，按 GAP_BUBBLE 处理；若未命中 GAP_BUBBLE 而利用率仍低，说明 wall 被少数长 kernel 拉长，看 `op_ratio` 里占比最高的算子类型。",
+          "next_data": "本节点 `op_ratio`（Skill 2 的 `ui_facts/*_perf_data.json` 已含该字段）；对应算子的 `aic_mac_ratio` / `aiv_vec_ratio` / `aic_mte2_ratio` 判断是计算受限还是访存受限。",
+          "not_applicable": "聚合作用域；以及节点只含通信算子时（通信节点的「利用率」语义不同，等待是其正常状态）。"
+        }
+      ]
+    },
+    {
+      "path": "DeepseekV3DecoderLayer_dense/self_attn/mla_epilog",
+      "name": "mla_epilog",
+      "depth": 3,
+      "metric_scope": "instance",
+      "invocation_count": 1,
+      "metrics": {
+        "wall_ms": 0.925,
+        "busy_union_ms": 0.257,
+        "kernel_sum_ms": 0.257,
+        "total_cost_ms": 0.262,
+        "bubble_ms": 0.668,
+        "kernel_count": 8
+      },
+      "findings": [
+        {
+          "code": "GAP_BUBBLE",
+          "severity": "medium",
+          "metrics": {
+            "gap_pct": 72.2
+          },
+          "text": "存在间隙气泡（gap=72%）",
+          "advice_l1": "该节点 wall 显著大于设备忙碌时间，空档不在本节点的 kernel 内部。先确认空档落在哪里：按 `start_time_us` 排序本节点 op，算相邻 op 的 `start[i+1] - (start[i]+duration[i])`，取最大的几段。",
+          "next_data": "`raw_ops_details.json` 本节点 `op_indices` 的 `start_time_us` / `duration_us`；`ASCEND_PROFILER_OUTPUT/trace_view.json` 对应时间窗；host 侧下发间隔看 `api_statistic.csv`。",
+          "not_applicable": "节点 kernel 数 ≤ 2 时 gap 比例无统计意义；`metric_scope == \"aggregate\"` 时该值是跨实例累加的假空档。"
+        },
+        {
+          "code": "UTIL_LOW",
+          "severity": "high",
+          "metrics": {
+            "utilization_pct": 27.8
+          },
+          "text": "利用率偏低（28%）",
+          "advice_l1": "忙碌时间占 wall 不足 80%。先区分是「本节点自身有空档」还是「本节点被上游拖慢」：若同时命中 GAP_BUBBLE，按 GAP_BUBBLE 处理；若未命中 GAP_BUBBLE 而利用率仍低，说明 wall 被少数长 kernel 拉长，看 `op_ratio` 里占比最高的算子类型。",
+          "next_data": "本节点 `op_ratio`（Skill 2 的 `ui_facts/*_perf_data.json` 已含该字段）；对应算子的 `aic_mac_ratio` / `aiv_vec_ratio` / `aic_mte2_ratio` 判断是计算受限还是访存受限。",
+          "not_applicable": "聚合作用域；以及节点只含通信算子时（通信节点的「利用率」语义不同，等待是其正常状态）。"
+        }
+      ]
+    },
+    {
+      "path": "DeepseekV3DecoderLayer_dense/self_attn/mla_prolog",
+      "name": "mla_prolog",
+      "depth": 3,
+      "metric_scope": "instance",
+      "invocation_count": 1,
+      "metrics": {
+        "wall_ms": 0.893,
+        "busy_union_ms": 0.185,
+        "kernel_sum_ms": 0.185,
+        "total_cost_ms": 0.188,
+        "bubble_ms": 0.708,
+        "kernel_count": 2
+      },
+      "findings": [
+        {
+          "code": "GAP_BUBBLE",
+          "severity": "medium",
+          "metrics": {
+            "gap_pct": 79.3
+          },
+          "text": "存在间隙气泡（gap=79%）",
+          "advice_l1": "该节点 wall 显著大于设备忙碌时间，空档不在本节点的 kernel 内部。先确认空档落在哪里：按 `start_time_us` 排序本节点 op，算相邻 op 的 `start[i+1] - (start[i]+duration[i])`，取最大的几段。",
+          "next_data": "`raw_ops_details.json` 本节点 `op_indices` 的 `start_time_us` / `duration_us`；`ASCEND_PROFILER_OUTPUT/trace_view.json` 对应时间窗；host 侧下发间隔看 `api_statistic.csv`。",
+          "not_applicable": "节点 kernel 数 ≤ 2 时 gap 比例无统计意义；`metric_scope == \"aggregate\"` 时该值是跨实例累加的假空档。"
+        },
+        {
+          "code": "UTIL_LOW",
+          "severity": "high",
+          "metrics": {
+            "utilization_pct": 20.7
+          },
+          "text": "利用率偏低（21%）",
+          "advice_l1": "忙碌时间占 wall 不足 80%。先区分是「本节点自身有空档」还是「本节点被上游拖慢」：若同时命中 GAP_BUBBLE，按 GAP_BUBBLE 处理；若未命中 GAP_BUBBLE 而利用率仍低，说明 wall 被少数长 kernel 拉长，看 `op_ratio` 里占比最高的算子类型。",
+          "next_data": "本节点 `op_ratio`（Skill 2 的 `ui_facts/*_perf_data.json` 已含该字段）；对应算子的 `aic_mac_ratio` / `aiv_vec_ratio` / `aic_mte2_ratio` 判断是计算受限还是访存受限。",
+          "not_applicable": "聚合作用域；以及节点只含通信算子时（通信节点的「利用率」语义不同，等待是其正常状态）。"
+        }
+      ]
+    },
+    {
+      "path": "DeepseekV3DecoderLayer_dense/self_attn/sparse_flash_attention",
+      "name": "sparse_flash_attention",
+      "depth": 3,
+      "metric_scope": "instance",
+      "invocation_count": 1,
+      "metrics": {
+        "wall_ms": 0.899,
+        "busy_union_ms": 0.209,
+        "kernel_sum_ms": 0.209,
+        "total_cost_ms": 0.213,
+        "bubble_ms": 0.69,
+        "kernel_count": 4
+      },
+      "findings": [
+        {
+          "code": "GAP_BUBBLE",
+          "severity": "medium",
+          "metrics": {
+            "gap_pct": 76.7
+          },
+          "text": "存在间隙气泡（gap=77%）",
+          "advice_l1": "该节点 wall 显著大于设备忙碌时间，空档不在本节点的 kernel 内部。先确认空档落在哪里：按 `start_time_us` 排序本节点 op，算相邻 op 的 `start[i+1] - (start[i]+duration[i])`，取最大的几段。",
+          "next_data": "`raw_ops_details.json` 本节点 `op_indices` 的 `start_time_us` / `duration_us`；`ASCEND_PROFILER_OUTPUT/trace_view.json` 对应时间窗；host 侧下发间隔看 `api_statistic.csv`。",
+          "not_applicable": "节点 kernel 数 ≤ 2 时 gap 比例无统计意义；`metric_scope == \"aggregate\"` 时该值是跨实例累加的假空档。"
+        },
+        {
+          "code": "UTIL_LOW",
+          "severity": "high",
+          "metrics": {
+            "utilization_pct": 23.3
+          },
+          "text": "利用率偏低（23%）",
+          "advice_l1": "忙碌时间占 wall 不足 80%。先区分是「本节点自身有空档」还是「本节点被上游拖慢」：若同时命中 GAP_BUBBLE，按 GAP_BUBBLE 处理；若未命中 GAP_BUBBLE 而利用率仍低，说明 wall 被少数长 kernel 拉长，看 `op_ratio` 里占比最高的算子类型。",
+          "next_data": "本节点 `op_ratio`（Skill 2 的 `ui_facts/*_perf_data.json` 已含该字段）；对应算子的 `aic_mac_ratio` / `aiv_vec_ratio` / `aic_mte2_ratio` 判断是计算受限还是访存受限。",
+          "not_applicable": "聚合作用域；以及节点只含通信算子时（通信节点的「利用率」语义不同，等待是其正常状态）。"
+        }
+      ]
+    },
+    {
+      "path": "DeepseekV3DecoderLayer_dense_first/mlp/act_fn",
+      "name": "act_fn",
+      "depth": 3,
+      "metric_scope": "instance",
+      "invocation_count": 1,
+      "metrics": {
+        "wall_ms": 0.015,
+        "busy_union_ms": 0.015,
+        "kernel_sum_ms": 0.015,
+        "total_cost_ms": 0.015,
+        "bubble_ms": 0.0,
+        "kernel_count": 1
+      },
+      "findings": [
+        {
+          "code": "CLEAN_SEQUENTIAL",
+          "severity": "info",
+          "metrics": {},
+          "text": "干净顺序执行",
+          "advice_l1": "四项指标彼此接近，属干净顺序执行，无空档无显著等待，无需动作。",
+          "next_data": "无。",
+          "not_applicable": "无。"
+        }
+      ]
+    },
+    {
+      "path": "DeepseekV3DecoderLayer_dense_first/mlp/down_proj",
+      "name": "down_proj",
+      "depth": 3,
+      "metric_scope": "instance",
+      "invocation_count": 1,
+      "metrics": {
+        "wall_ms": 0.099,
+        "busy_union_ms": 0.099,
+        "kernel_sum_ms": 0.098,
+        "total_cost_ms": 0.1,
+        "bubble_ms": 0.0,
+        "kernel_count": 1
+      },
+      "findings": [
+        {
+          "code": "CLEAN_SEQUENTIAL",
+          "severity": "info",
+          "metrics": {},
+          "text": "干净顺序执行",
+          "advice_l1": "四项指标彼此接近，属干净顺序执行，无空档无显著等待，无需动作。",
+          "next_data": "无。",
+          "not_applicable": "无。"
+        }
+      ]
+    },
+    {
+      "path": "DeepseekV3DecoderLayer_dense_first/mlp/gate_up_proj",
+      "name": "gate_up_proj",
+      "depth": 3,
+      "metric_scope": "instance",
+      "invocation_count": 1,
+      "metrics": {
+        "wall_ms": 0.182,
+        "busy_union_ms": 0.182,
+        "kernel_sum_ms": 0.182,
+        "total_cost_ms": 0.183,
+        "bubble_ms": 0.0,
+        "kernel_count": 1
+      },
+      "findings": [
+        {
+          "code": "CLEAN_SEQUENTIAL",
+          "severity": "info",
+          "metrics": {},
+          "text": "干净顺序执行",
+          "advice_l1": "四项指标彼此接近，属干净顺序执行，无空档无显著等待，无需动作。",
+          "next_data": "无。",
+          "not_applicable": "无。"
+        }
+      ]
+    },
+    {
+      "path": "DeepseekV3DecoderLayer_dense_first/self_attn/indexer",
+      "name": "indexer",
+      "depth": 3,
+      "metric_scope": "instance",
+      "invocation_count": 1,
+      "metrics": {
+        "wall_ms": 0.158,
+        "busy_union_ms": 0.155,
+        "kernel_sum_ms": 0.212,
+        "total_cost_ms": 0.218,
+        "bubble_ms": 0.002,
+        "kernel_count": 22
+      },
+      "findings": [
+        {
+          "code": "STREAM_PARALLEL_MID",
+          "severity": "info",
+          "metrics": {
+            "kernel_sum_over_wall": 1.344
+          },
+          "text": "中等流并行（kernel_sum/wall=1.3×）",
+          "advice_l1": "存在中等程度多流重叠。同 STREAM_PARALLEL_HIGH，无需动作，注意口径差异即可。",
+          "next_data": "同 STREAM_PARALLEL_HIGH。",
+          "not_applicable": "同 STREAM_PARALLEL_HIGH。"
+        }
+      ]
+    },
+    {
+      "path": "DeepseekV3DecoderLayer_dense_first/self_attn/mla_epilog",
+      "name": "mla_epilog",
+      "depth": 3,
+      "metric_scope": "instance",
+      "invocation_count": 1,
+      "metrics": {
+        "wall_ms": 0.131,
+        "busy_union_ms": 0.129,
+        "kernel_sum_ms": 0.129,
+        "total_cost_ms": 0.132,
+        "bubble_ms": 0.002,
+        "kernel_count": 4
+      },
+      "findings": [
+        {
+          "code": "CLEAN_SEQUENTIAL",
+          "severity": "info",
+          "metrics": {},
+          "text": "干净顺序执行",
+          "advice_l1": "四项指标彼此接近，属干净顺序执行，无空档无显著等待，无需动作。",
+          "next_data": "无。",
+          "not_applicable": "无。"
+        }
+      ]
+    },
+    {
+      "path": "DeepseekV3DecoderLayer_dense_first/self_attn/mla_prolog",
+      "name": "mla_prolog",
+      "depth": 3,
+      "metric_scope": "instance",
+      "invocation_count": 1,
+      "metrics": {
+        "wall_ms": 0.092,
+        "busy_union_ms": 0.092,
+        "kernel_sum_ms": 0.092,
+        "total_cost_ms": 0.094,
+        "bubble_ms": 0.0,
+        "kernel_count": 1
+      },
+      "findings": [
+        {
+          "code": "CLEAN_SEQUENTIAL",
+          "severity": "info",
+          "metrics": {},
+          "text": "干净顺序执行",
+          "advice_l1": "四项指标彼此接近，属干净顺序执行，无空档无显著等待，无需动作。",
+          "next_data": "无。",
+          "not_applicable": "无。"
+        }
+      ]
+    },
+    {
+      "path": "DeepseekV3DecoderLayer_dense_first/self_attn/sparse_flash_attention",
+      "name": "sparse_flash_attention",
+      "depth": 3,
+      "metric_scope": "instance",
+      "invocation_count": 1,
+      "metrics": {
+        "wall_ms": 0.11,
+        "busy_union_ms": 0.109,
+        "kernel_sum_ms": 0.109,
+        "total_cost_ms": 0.11,
+        "bubble_ms": 0.001,
+        "kernel_count": 2
+      },
+      "findings": [
+        {
+          "code": "CLEAN_SEQUENTIAL",
+          "severity": "info",
+          "metrics": {},
+          "text": "干净顺序执行",
+          "advice_l1": "四项指标彼此接近，属干净顺序执行，无空档无显著等待，无需动作。",
+          "next_data": "无。",
+          "not_applicable": "无。"
+        }
+      ]
+    },
+    {
+      "path": "DeepseekV3DecoderLayer_moe/mlp/combine",
+      "name": "combine",
+      "depth": 3,
+      "metric_scope": "instance",
+      "invocation_count": 1,
+      "metrics": {
+        "wall_ms": 2.28,
+        "busy_union_ms": 0.071,
+        "kernel_sum_ms": 0.071,
+        "total_cost_ms": 0.08,
+        "bubble_ms": 2.208,
+        "kernel_count": 3
+      },
+      "findings": [
+        {
+          "code": "GAP_BUBBLE",
+          "severity": "high",
+          "metrics": {
+            "gap_pct": 96.9
+          },
+          "text": "存在间隙气泡（gap=97%）",
+          "advice_l1": "该节点 wall 显著大于设备忙碌时间，空档不在本节点的 kernel 内部。先确认空档落在哪里：按 `start_time_us` 排序本节点 op，算相邻 op 的 `start[i+1] - (start[i]+duration[i])`，取最大的几段。",
+          "next_data": "`raw_ops_details.json` 本节点 `op_indices` 的 `start_time_us` / `duration_us`；`ASCEND_PROFILER_OUTPUT/trace_view.json` 对应时间窗；host 侧下发间隔看 `api_statistic.csv`。",
+          "not_applicable": "节点 kernel 数 ≤ 2 时 gap 比例无统计意义；`metric_scope == \"aggregate\"` 时该值是跨实例累加的假空档。"
+        },
+        {
+          "code": "UTIL_LOW",
+          "severity": "high",
+          "metrics": {
+            "utilization_pct": 3.1
+          },
+          "text": "利用率偏低（3%）",
+          "advice_l1": "忙碌时间占 wall 不足 80%。先区分是「本节点自身有空档」还是「本节点被上游拖慢」：若同时命中 GAP_BUBBLE，按 GAP_BUBBLE 处理；若未命中 GAP_BUBBLE 而利用率仍低，说明 wall 被少数长 kernel 拉长，看 `op_ratio` 里占比最高的算子类型。",
+          "next_data": "本节点 `op_ratio`（Skill 2 的 `ui_facts/*_perf_data.json` 已含该字段）；对应算子的 `aic_mac_ratio` / `aiv_vec_ratio` / `aic_mte2_ratio` 判断是计算受限还是访存受限。",
+          "not_applicable": "聚合作用域；以及节点只含通信算子时（通信节点的「利用率」语义不同，等待是其正常状态）。"
+        }
+      ]
+    },
+    {
+      "path": "DeepseekV3DecoderLayer_moe/mlp/dispatch",
+      "name": "dispatch",
+      "depth": 3,
+      "metric_scope": "instance",
+      "invocation_count": 1,
+      "metrics": {
+        "wall_ms": 2.325,
+        "busy_union_ms": 0.139,
+        "kernel_sum_ms": 0.139,
+        "total_cost_ms": 0.143,
+        "bubble_ms": 2.186,
+        "kernel_count": 3
+      },
+      "findings": [
+        {
+          "code": "GAP_BUBBLE",
+          "severity": "high",
+          "metrics": {
+            "gap_pct": 94.0
+          },
+          "text": "存在间隙气泡（gap=94%）",
+          "advice_l1": "该节点 wall 显著大于设备忙碌时间，空档不在本节点的 kernel 内部。先确认空档落在哪里：按 `start_time_us` 排序本节点 op，算相邻 op 的 `start[i+1] - (start[i]+duration[i])`，取最大的几段。",
+          "next_data": "`raw_ops_details.json` 本节点 `op_indices` 的 `start_time_us` / `duration_us`；`ASCEND_PROFILER_OUTPUT/trace_view.json` 对应时间窗；host 侧下发间隔看 `api_statistic.csv`。",
+          "not_applicable": "节点 kernel 数 ≤ 2 时 gap 比例无统计意义；`metric_scope == \"aggregate\"` 时该值是跨实例累加的假空档。"
+        },
+        {
+          "code": "UTIL_LOW",
+          "severity": "high",
+          "metrics": {
+            "utilization_pct": 6.0
+          },
+          "text": "利用率偏低（6%）",
+          "advice_l1": "忙碌时间占 wall 不足 80%。先区分是「本节点自身有空档」还是「本节点被上游拖慢」：若同时命中 GAP_BUBBLE，按 GAP_BUBBLE 处理；若未命中 GAP_BUBBLE 而利用率仍低，说明 wall 被少数长 kernel 拉长，看 `op_ratio` 里占比最高的算子类型。",
+          "next_data": "本节点 `op_ratio`（Skill 2 的 `ui_facts/*_perf_data.json` 已含该字段）；对应算子的 `aic_mac_ratio` / `aiv_vec_ratio` / `aic_mte2_ratio` 判断是计算受限还是访存受限。",
+          "not_applicable": "聚合作用域；以及节点只含通信算子时（通信节点的「利用率」语义不同，等待是其正常状态）。"
+        }
+      ]
+    },
+    {
+      "path": "DeepseekV3DecoderLayer_moe/mlp/gate",
+      "name": "gate",
+      "depth": 3,
+      "metric_scope": "instance",
+      "invocation_count": 1,
+      "metrics": {
+        "wall_ms": 2.309,
+        "busy_union_ms": 0.098,
+        "kernel_sum_ms": 0.098,
+        "total_cost_ms": 0.098,
+        "bubble_ms": 2.211,
+        "kernel_count": 6
+      },
+      "findings": [
+        {
+          "code": "GAP_BUBBLE",
+          "severity": "high",
+          "metrics": {
+            "gap_pct": 95.8
+          },
+          "text": "存在间隙气泡（gap=96%）",
+          "advice_l1": "该节点 wall 显著大于设备忙碌时间，空档不在本节点的 kernel 内部。先确认空档落在哪里：按 `start_time_us` 排序本节点 op，算相邻 op 的 `start[i+1] - (start[i]+duration[i])`，取最大的几段。",
+          "next_data": "`raw_ops_details.json` 本节点 `op_indices` 的 `start_time_us` / `duration_us`；`ASCEND_PROFILER_OUTPUT/trace_view.json` 对应时间窗；host 侧下发间隔看 `api_statistic.csv`。",
+          "not_applicable": "节点 kernel 数 ≤ 2 时 gap 比例无统计意义；`metric_scope == \"aggregate\"` 时该值是跨实例累加的假空档。"
+        },
+        {
+          "code": "UTIL_LOW",
+          "severity": "high",
+          "metrics": {
+            "utilization_pct": 4.2
+          },
+          "text": "利用率偏低（4%）",
+          "advice_l1": "忙碌时间占 wall 不足 80%。先区分是「本节点自身有空档」还是「本节点被上游拖慢」：若同时命中 GAP_BUBBLE，按 GAP_BUBBLE 处理；若未命中 GAP_BUBBLE 而利用率仍低，说明 wall 被少数长 kernel 拉长，看 `op_ratio` 里占比最高的算子类型。",
+          "next_data": "本节点 `op_ratio`（Skill 2 的 `ui_facts/*_perf_data.json` 已含该字段）；对应算子的 `aic_mac_ratio` / `aiv_vec_ratio` / `aic_mte2_ratio` 判断是计算受限还是访存受限。",
+          "not_applicable": "聚合作用域；以及节点只含通信算子时（通信节点的「利用率」语义不同，等待是其正常状态）。"
+        }
+      ]
+    },
+    {
+      "path": "DeepseekV3DecoderLayer_moe/mlp/routed_experts",
+      "name": "routed_experts",
+      "depth": 3,
+      "metric_scope": "instance",
+      "invocation_count": 1,
+      "metrics": {
+        "wall_ms": 2.798,
+        "busy_union_ms": 1.603,
+        "kernel_sum_ms": 1.603,
+        "total_cost_ms": 1.61,
+        "bubble_ms": 1.195,
+        "kernel_count": 9
+      },
+      "findings": [
+        {
+          "code": "GAP_BUBBLE",
+          "severity": "medium",
+          "metrics": {
+            "gap_pct": 42.7
+          },
+          "text": "存在间隙气泡（gap=43%）",
+          "advice_l1": "该节点 wall 显著大于设备忙碌时间，空档不在本节点的 kernel 内部。先确认空档落在哪里：按 `start_time_us` 排序本节点 op，算相邻 op 的 `start[i+1] - (start[i]+duration[i])`，取最大的几段。",
+          "next_data": "`raw_ops_details.json` 本节点 `op_indices` 的 `start_time_us` / `duration_us`；`ASCEND_PROFILER_OUTPUT/trace_view.json` 对应时间窗；host 侧下发间隔看 `api_statistic.csv`。",
+          "not_applicable": "节点 kernel 数 ≤ 2 时 gap 比例无统计意义；`metric_scope == \"aggregate\"` 时该值是跨实例累加的假空档。"
+        },
+        {
+          "code": "UTIL_LOW",
+          "severity": "medium",
+          "metrics": {
+            "utilization_pct": 57.3
+          },
+          "text": "利用率偏低（57%）",
+          "advice_l1": "忙碌时间占 wall 不足 80%。先区分是「本节点自身有空档」还是「本节点被上游拖慢」：若同时命中 GAP_BUBBLE，按 GAP_BUBBLE 处理；若未命中 GAP_BUBBLE 而利用率仍低，说明 wall 被少数长 kernel 拉长，看 `op_ratio` 里占比最高的算子类型。",
+          "next_data": "本节点 `op_ratio`（Skill 2 的 `ui_facts/*_perf_data.json` 已含该字段）；对应算子的 `aic_mac_ratio` / `aiv_vec_ratio` / `aic_mte2_ratio` 判断是计算受限还是访存受限。",
+          "not_applicable": "聚合作用域；以及节点只含通信算子时（通信节点的「利用率」语义不同，等待是其正常状态）。"
+        }
+      ]
+    },
+    {
+      "path": "DeepseekV3DecoderLayer_moe/mlp/shared_expert",
+      "name": "shared_expert",
+      "depth": 3,
+      "metric_scope": "instance",
+      "invocation_count": 1,
+      "metrics": {
+        "wall_ms": 2.39,
+        "busy_union_ms": 0.31,
+        "kernel_sum_ms": 0.31,
+        "total_cost_ms": 0.314,
+        "bubble_ms": 2.08,
+        "kernel_count": 12
+      },
+      "findings": [
+        {
+          "code": "GAP_BUBBLE",
+          "severity": "high",
+          "metrics": {
+            "gap_pct": 87.0
+          },
+          "text": "存在间隙气泡（gap=87%）",
+          "advice_l1": "该节点 wall 显著大于设备忙碌时间，空档不在本节点的 kernel 内部。先确认空档落在哪里：按 `start_time_us` 排序本节点 op，算相邻 op 的 `start[i+1] - (start[i]+duration[i])`，取最大的几段。",
+          "next_data": "`raw_ops_details.json` 本节点 `op_indices` 的 `start_time_us` / `duration_us`；`ASCEND_PROFILER_OUTPUT/trace_view.json` 对应时间窗；host 侧下发间隔看 `api_statistic.csv`。",
+          "not_applicable": "节点 kernel 数 ≤ 2 时 gap 比例无统计意义；`metric_scope == \"aggregate\"` 时该值是跨实例累加的假空档。"
+        },
+        {
+          "code": "UTIL_LOW",
+          "severity": "high",
+          "metrics": {
+            "utilization_pct": 13.0
+          },
+          "text": "利用率偏低（13%）",
+          "advice_l1": "忙碌时间占 wall 不足 80%。先区分是「本节点自身有空档」还是「本节点被上游拖慢」：若同时命中 GAP_BUBBLE，按 GAP_BUBBLE 处理；若未命中 GAP_BUBBLE 而利用率仍低，说明 wall 被少数长 kernel 拉长，看 `op_ratio` 里占比最高的算子类型。",
+          "next_data": "本节点 `op_ratio`（Skill 2 的 `ui_facts/*_perf_data.json` 已含该字段）；对应算子的 `aic_mac_ratio` / `aiv_vec_ratio` / `aic_mte2_ratio` 判断是计算受限还是访存受限。",
+          "not_applicable": "聚合作用域；以及节点只含通信算子时（通信节点的「利用率」语义不同，等待是其正常状态）。"
+        }
+      ]
+    },
+    {
+      "path": "DeepseekV3DecoderLayer_moe/self_attn/indexer",
+      "name": "indexer",
+      "depth": 3,
+      "metric_scope": "instance",
+      "invocation_count": 1,
+      "metrics": {
+        "wall_ms": 2.437,
+        "busy_union_ms": 0.467,
+        "kernel_sum_ms": 0.636,
+        "total_cost_ms": 0.659,
+        "bubble_ms": 1.97,
+        "kernel_count": 66
+      },
+      "findings": [
+        {
+          "code": "GAP_BUBBLE",
+          "severity": "high",
+          "metrics": {
+            "gap_pct": 80.9
+          },
+          "text": "存在间隙气泡（gap=81%）",
+          "advice_l1": "该节点 wall 显著大于设备忙碌时间，空档不在本节点的 kernel 内部。先确认空档落在哪里：按 `start_time_us` 排序本节点 op，算相邻 op 的 `start[i+1] - (start[i]+duration[i])`，取最大的几段。",
+          "next_data": "`raw_ops_details.json` 本节点 `op_indices` 的 `start_time_us` / `duration_us`；`ASCEND_PROFILER_OUTPUT/trace_view.json` 对应时间窗；host 侧下发间隔看 `api_statistic.csv`。",
+          "not_applicable": "节点 kernel 数 ≤ 2 时 gap 比例无统计意义；`metric_scope == \"aggregate\"` 时该值是跨实例累加的假空档。"
+        },
+        {
+          "code": "UTIL_LOW",
+          "severity": "high",
+          "metrics": {
+            "utilization_pct": 19.1
+          },
+          "text": "利用率偏低（19%）",
+          "advice_l1": "忙碌时间占 wall 不足 80%。先区分是「本节点自身有空档」还是「本节点被上游拖慢」：若同时命中 GAP_BUBBLE，按 GAP_BUBBLE 处理；若未命中 GAP_BUBBLE 而利用率仍低，说明 wall 被少数长 kernel 拉长，看 `op_ratio` 里占比最高的算子类型。",
+          "next_data": "本节点 `op_ratio`（Skill 2 的 `ui_facts/*_perf_data.json` 已含该字段）；对应算子的 `aic_mac_ratio` / `aiv_vec_ratio` / `aic_mte2_ratio` 判断是计算受限还是访存受限。",
+          "not_applicable": "聚合作用域；以及节点只含通信算子时（通信节点的「利用率」语义不同，等待是其正常状态）。"
+        }
+      ]
+    },
+    {
+      "path": "DeepseekV3DecoderLayer_moe/self_attn/mla_epilog",
+      "name": "mla_epilog",
+      "depth": 3,
+      "metric_scope": "instance",
+      "invocation_count": 1,
+      "metrics": {
+        "wall_ms": 2.402,
+        "busy_union_ms": 0.379,
+        "kernel_sum_ms": 0.379,
+        "total_cost_ms": 0.386,
+        "bubble_ms": 2.023,
+        "kernel_count": 12
+      },
+      "findings": [
+        {
+          "code": "GAP_BUBBLE",
+          "severity": "high",
+          "metrics": {
+            "gap_pct": 84.2
+          },
+          "text": "存在间隙气泡（gap=84%）",
+          "advice_l1": "该节点 wall 显著大于设备忙碌时间，空档不在本节点的 kernel 内部。先确认空档落在哪里：按 `start_time_us` 排序本节点 op，算相邻 op 的 `start[i+1] - (start[i]+duration[i])`，取最大的几段。",
+          "next_data": "`raw_ops_details.json` 本节点 `op_indices` 的 `start_time_us` / `duration_us`；`ASCEND_PROFILER_OUTPUT/trace_view.json` 对应时间窗；host 侧下发间隔看 `api_statistic.csv`。",
+          "not_applicable": "节点 kernel 数 ≤ 2 时 gap 比例无统计意义；`metric_scope == \"aggregate\"` 时该值是跨实例累加的假空档。"
+        },
+        {
+          "code": "UTIL_LOW",
+          "severity": "high",
+          "metrics": {
+            "utilization_pct": 15.8
+          },
+          "text": "利用率偏低（16%）",
+          "advice_l1": "忙碌时间占 wall 不足 80%。先区分是「本节点自身有空档」还是「本节点被上游拖慢」：若同时命中 GAP_BUBBLE，按 GAP_BUBBLE 处理；若未命中 GAP_BUBBLE 而利用率仍低，说明 wall 被少数长 kernel 拉长，看 `op_ratio` 里占比最高的算子类型。",
+          "next_data": "本节点 `op_ratio`（Skill 2 的 `ui_facts/*_perf_data.json` 已含该字段）；对应算子的 `aic_mac_ratio` / `aiv_vec_ratio` / `aic_mte2_ratio` 判断是计算受限还是访存受限。",
+          "not_applicable": "聚合作用域；以及节点只含通信算子时（通信节点的「利用率」语义不同，等待是其正常状态）。"
+        }
+      ]
+    },
+    {
+      "path": "DeepseekV3DecoderLayer_moe/self_attn/mla_prolog",
+      "name": "mla_prolog",
+      "depth": 3,
+      "metric_scope": "instance",
+      "invocation_count": 1,
+      "metrics": {
+        "wall_ms": 2.356,
+        "busy_union_ms": 0.235,
+        "kernel_sum_ms": 0.235,
+        "total_cost_ms": 0.239,
+        "bubble_ms": 2.12,
+        "kernel_count": 3
+      },
+      "findings": [
+        {
+          "code": "GAP_BUBBLE",
+          "severity": "high",
+          "metrics": {
+            "gap_pct": 90.0
+          },
+          "text": "存在间隙气泡（gap=90%）",
+          "advice_l1": "该节点 wall 显著大于设备忙碌时间，空档不在本节点的 kernel 内部。先确认空档落在哪里：按 `start_time_us` 排序本节点 op，算相邻 op 的 `start[i+1] - (start[i]+duration[i])`，取最大的几段。",
+          "next_data": "`raw_ops_details.json` 本节点 `op_indices` 的 `start_time_us` / `duration_us`；`ASCEND_PROFILER_OUTPUT/trace_view.json` 对应时间窗；host 侧下发间隔看 `api_statistic.csv`。",
+          "not_applicable": "节点 kernel 数 ≤ 2 时 gap 比例无统计意义；`metric_scope == \"aggregate\"` 时该值是跨实例累加的假空档。"
+        },
+        {
+          "code": "UTIL_LOW",
+          "severity": "high",
+          "metrics": {
+            "utilization_pct": 10.0
+          },
+          "text": "利用率偏低（10%）",
+          "advice_l1": "忙碌时间占 wall 不足 80%。先区分是「本节点自身有空档」还是「本节点被上游拖慢」：若同时命中 GAP_BUBBLE，按 GAP_BUBBLE 处理；若未命中 GAP_BUBBLE 而利用率仍低，说明 wall 被少数长 kernel 拉长，看 `op_ratio` 里占比最高的算子类型。",
+          "next_data": "本节点 `op_ratio`（Skill 2 的 `ui_facts/*_perf_data.json` 已含该字段）；对应算子的 `aic_mac_ratio` / `aiv_vec_ratio` / `aic_mte2_ratio` 判断是计算受限还是访存受限。",
+          "not_applicable": "聚合作用域；以及节点只含通信算子时（通信节点的「利用率」语义不同，等待是其正常状态）。"
+        }
+      ]
+    },
+    {
+      "path": "DeepseekV3DecoderLayer_moe/self_attn/sparse_flash_attention",
+      "name": "sparse_flash_attention",
+      "depth": 3,
+      "metric_scope": "instance",
+      "invocation_count": 1,
+      "metrics": {
+        "wall_ms": 2.381,
+        "busy_union_ms": 0.314,
+        "kernel_sum_ms": 0.314,
+        "total_cost_ms": 0.321,
+        "bubble_ms": 2.067,
+        "kernel_count": 6
+      },
+      "findings": [
+        {
+          "code": "GAP_BUBBLE",
+          "severity": "high",
+          "metrics": {
+            "gap_pct": 86.8
+          },
+          "text": "存在间隙气泡（gap=87%）",
+          "advice_l1": "该节点 wall 显著大于设备忙碌时间，空档不在本节点的 kernel 内部。先确认空档落在哪里：按 `start_time_us` 排序本节点 op，算相邻 op 的 `start[i+1] - (start[i]+duration[i])`，取最大的几段。",
+          "next_data": "`raw_ops_details.json` 本节点 `op_indices` 的 `start_time_us` / `duration_us`；`ASCEND_PROFILER_OUTPUT/trace_view.json` 对应时间窗；host 侧下发间隔看 `api_statistic.csv`。",
+          "not_applicable": "节点 kernel 数 ≤ 2 时 gap 比例无统计意义；`metric_scope == \"aggregate\"` 时该值是跨实例累加的假空档。"
+        },
+        {
+          "code": "UTIL_LOW",
+          "severity": "high",
+          "metrics": {
+            "utilization_pct": 13.2
+          },
+          "text": "利用率偏低（13%）",
+          "advice_l1": "忙碌时间占 wall 不足 80%。先区分是「本节点自身有空档」还是「本节点被上游拖慢」：若同时命中 GAP_BUBBLE，按 GAP_BUBBLE 处理；若未命中 GAP_BUBBLE 而利用率仍低，说明 wall 被少数长 kernel 拉长，看 `op_ratio` 里占比最高的算子类型。",
+          "next_data": "本节点 `op_ratio`（Skill 2 的 `ui_facts/*_perf_data.json` 已含该字段）；对应算子的 `aic_mac_ratio` / `aiv_vec_ratio` / `aic_mte2_ratio` 判断是计算受限还是访存受限。",
+          "not_applicable": "聚合作用域；以及节点只含通信算子时（通信节点的「利用率」语义不同，等待是其正常状态）。"
+        }
+      ]
+    },
+    {
+      "path": "DeepseekV3DecoderLayer_mtp/mlp/combine",
+      "name": "combine",
+      "depth": 3,
+      "metric_scope": "instance",
+      "invocation_count": 1,
+      "metrics": {
+        "wall_ms": 7.612,
+        "busy_union_ms": 0.084,
+        "kernel_sum_ms": 0.084,
+        "total_cost_ms": 0.093,
+        "bubble_ms": 7.528,
+        "kernel_count": 3
+      },
+      "findings": [
+        {
+          "code": "GAP_BUBBLE",
+          "severity": "high",
+          "metrics": {
+            "gap_pct": 98.9
+          },
+          "text": "存在间隙气泡（gap=99%）",
+          "advice_l1": "该节点 wall 显著大于设备忙碌时间，空档不在本节点的 kernel 内部。先确认空档落在哪里：按 `start_time_us` 排序本节点 op，算相邻 op 的 `start[i+1] - (start[i]+duration[i])`，取最大的几段。",
+          "next_data": "`raw_ops_details.json` 本节点 `op_indices` 的 `start_time_us` / `duration_us`；`ASCEND_PROFILER_OUTPUT/trace_view.json` 对应时间窗；host 侧下发间隔看 `api_statistic.csv`。",
+          "not_applicable": "节点 kernel 数 ≤ 2 时 gap 比例无统计意义；`metric_scope == \"aggregate\"` 时该值是跨实例累加的假空档。"
+        },
+        {
+          "code": "UTIL_LOW",
+          "severity": "high",
+          "metrics": {
+            "utilization_pct": 1.1
+          },
+          "text": "利用率偏低（1%）",
+          "advice_l1": "忙碌时间占 wall 不足 80%。先区分是「本节点自身有空档」还是「本节点被上游拖慢」：若同时命中 GAP_BUBBLE，按 GAP_BUBBLE 处理；若未命中 GAP_BUBBLE 而利用率仍低，说明 wall 被少数长 kernel 拉长，看 `op_ratio` 里占比最高的算子类型。",
+          "next_data": "本节点 `op_ratio`（Skill 2 的 `ui_facts/*_perf_data.json` 已含该字段）；对应算子的 `aic_mac_ratio` / `aiv_vec_ratio` / `aic_mte2_ratio` 判断是计算受限还是访存受限。",
+          "not_applicable": "聚合作用域；以及节点只含通信算子时（通信节点的「利用率」语义不同，等待是其正常状态）。"
+        }
+      ]
+    },
+    {
+      "path": "DeepseekV3DecoderLayer_mtp/mlp/dispatch",
+      "name": "dispatch",
+      "depth": 3,
+      "metric_scope": "instance",
+      "invocation_count": 1,
+      "metrics": {
+        "wall_ms": 7.633,
+        "busy_union_ms": 0.136,
+        "kernel_sum_ms": 0.136,
+        "total_cost_ms": 0.14,
+        "bubble_ms": 7.497,
+        "kernel_count": 3
+      },
+      "findings": [
+        {
+          "code": "GAP_BUBBLE",
+          "severity": "high",
+          "metrics": {
+            "gap_pct": 98.2
+          },
+          "text": "存在间隙气泡（gap=98%）",
+          "advice_l1": "该节点 wall 显著大于设备忙碌时间，空档不在本节点的 kernel 内部。先确认空档落在哪里：按 `start_time_us` 排序本节点 op，算相邻 op 的 `start[i+1] - (start[i]+duration[i])`，取最大的几段。",
+          "next_data": "`raw_ops_details.json` 本节点 `op_indices` 的 `start_time_us` / `duration_us`；`ASCEND_PROFILER_OUTPUT/trace_view.json` 对应时间窗；host 侧下发间隔看 `api_statistic.csv`。",
+          "not_applicable": "节点 kernel 数 ≤ 2 时 gap 比例无统计意义；`metric_scope == \"aggregate\"` 时该值是跨实例累加的假空档。"
+        },
+        {
+          "code": "UTIL_LOW",
+          "severity": "high",
+          "metrics": {
+            "utilization_pct": 1.8
+          },
+          "text": "利用率偏低（2%）",
+          "advice_l1": "忙碌时间占 wall 不足 80%。先区分是「本节点自身有空档」还是「本节点被上游拖慢」：若同时命中 GAP_BUBBLE，按 GAP_BUBBLE 处理；若未命中 GAP_BUBBLE 而利用率仍低，说明 wall 被少数长 kernel 拉长，看 `op_ratio` 里占比最高的算子类型。",
+          "next_data": "本节点 `op_ratio`（Skill 2 的 `ui_facts/*_perf_data.json` 已含该字段）；对应算子的 `aic_mac_ratio` / `aiv_vec_ratio` / `aic_mte2_ratio` 判断是计算受限还是访存受限。",
+          "not_applicable": "聚合作用域；以及节点只含通信算子时（通信节点的「利用率」语义不同，等待是其正常状态）。"
+        }
+      ]
+    },
+    {
+      "path": "DeepseekV3DecoderLayer_mtp/mlp/gate",
+      "name": "gate",
+      "depth": 3,
+      "metric_scope": "instance",
+      "invocation_count": 1,
+      "metrics": {
+        "wall_ms": 7.614,
+        "busy_union_ms": 0.096,
+        "kernel_sum_ms": 0.096,
+        "total_cost_ms": 0.096,
+        "bubble_ms": 7.518,
+        "kernel_count": 6
+      },
+      "findings": [
+        {
+          "code": "GAP_BUBBLE",
+          "severity": "high",
+          "metrics": {
+            "gap_pct": 98.7
+          },
+          "text": "存在间隙气泡（gap=99%）",
+          "advice_l1": "该节点 wall 显著大于设备忙碌时间，空档不在本节点的 kernel 内部。先确认空档落在哪里：按 `start_time_us` 排序本节点 op，算相邻 op 的 `start[i+1] - (start[i]+duration[i])`，取最大的几段。",
+          "next_data": "`raw_ops_details.json` 本节点 `op_indices` 的 `start_time_us` / `duration_us`；`ASCEND_PROFILER_OUTPUT/trace_view.json` 对应时间窗；host 侧下发间隔看 `api_statistic.csv`。",
+          "not_applicable": "节点 kernel 数 ≤ 2 时 gap 比例无统计意义；`metric_scope == \"aggregate\"` 时该值是跨实例累加的假空档。"
+        },
+        {
+          "code": "UTIL_LOW",
+          "severity": "high",
+          "metrics": {
+            "utilization_pct": 1.3
+          },
+          "text": "利用率偏低（1%）",
+          "advice_l1": "忙碌时间占 wall 不足 80%。先区分是「本节点自身有空档」还是「本节点被上游拖慢」：若同时命中 GAP_BUBBLE，按 GAP_BUBBLE 处理；若未命中 GAP_BUBBLE 而利用率仍低，说明 wall 被少数长 kernel 拉长，看 `op_ratio` 里占比最高的算子类型。",
+          "next_data": "本节点 `op_ratio`（Skill 2 的 `ui_facts/*_perf_data.json` 已含该字段）；对应算子的 `aic_mac_ratio` / `aiv_vec_ratio` / `aic_mte2_ratio` 判断是计算受限还是访存受限。",
+          "not_applicable": "聚合作用域；以及节点只含通信算子时（通信节点的「利用率」语义不同，等待是其正常状态）。"
+        }
+      ]
+    },
+    {
+      "path": "DeepseekV3DecoderLayer_mtp/mlp/routed_experts",
+      "name": "routed_experts",
+      "depth": 3,
+      "metric_scope": "instance",
+      "invocation_count": 1,
+      "metrics": {
+        "wall_ms": 8.11,
+        "busy_union_ms": 0.988,
+        "kernel_sum_ms": 0.988,
+        "total_cost_ms": 1.019,
+        "bubble_ms": 7.122,
+        "kernel_count": 9
+      },
+      "findings": [
+        {
+          "code": "GAP_BUBBLE",
+          "severity": "high",
+          "metrics": {
+            "gap_pct": 87.8
+          },
+          "text": "存在间隙气泡（gap=88%）",
+          "advice_l1": "该节点 wall 显著大于设备忙碌时间，空档不在本节点的 kernel 内部。先确认空档落在哪里：按 `start_time_us` 排序本节点 op，算相邻 op 的 `start[i+1] - (start[i]+duration[i])`，取最大的几段。",
+          "next_data": "`raw_ops_details.json` 本节点 `op_indices` 的 `start_time_us` / `duration_us`；`ASCEND_PROFILER_OUTPUT/trace_view.json` 对应时间窗；host 侧下发间隔看 `api_statistic.csv`。",
+          "not_applicable": "节点 kernel 数 ≤ 2 时 gap 比例无统计意义；`metric_scope == \"aggregate\"` 时该值是跨实例累加的假空档。"
+        },
+        {
+          "code": "UTIL_LOW",
+          "severity": "high",
+          "metrics": {
+            "utilization_pct": 12.2
+          },
+          "text": "利用率偏低（12%）",
+          "advice_l1": "忙碌时间占 wall 不足 80%。先区分是「本节点自身有空档」还是「本节点被上游拖慢」：若同时命中 GAP_BUBBLE，按 GAP_BUBBLE 处理；若未命中 GAP_BUBBLE 而利用率仍低，说明 wall 被少数长 kernel 拉长，看 `op_ratio` 里占比最高的算子类型。",
+          "next_data": "本节点 `op_ratio`（Skill 2 的 `ui_facts/*_perf_data.json` 已含该字段）；对应算子的 `aic_mac_ratio` / `aiv_vec_ratio` / `aic_mte2_ratio` 判断是计算受限还是访存受限。",
+          "not_applicable": "聚合作用域；以及节点只含通信算子时（通信节点的「利用率」语义不同，等待是其正常状态）。"
+        }
+      ]
+    },
+    {
+      "path": "DeepseekV3DecoderLayer_mtp/mlp/shared_expert",
+      "name": "shared_expert",
+      "depth": 3,
+      "metric_scope": "instance",
+      "invocation_count": 1,
+      "metrics": {
+        "wall_ms": 7.987,
+        "busy_union_ms": 1.141,
+        "kernel_sum_ms": 1.141,
+        "total_cost_ms": 1.141,
+        "bubble_ms": 6.846,
+        "kernel_count": 12
+      },
+      "findings": [
+        {
+          "code": "GAP_BUBBLE",
+          "severity": "high",
+          "metrics": {
+            "gap_pct": 85.7
+          },
+          "text": "存在间隙气泡（gap=86%）",
+          "advice_l1": "该节点 wall 显著大于设备忙碌时间，空档不在本节点的 kernel 内部。先确认空档落在哪里：按 `start_time_us` 排序本节点 op，算相邻 op 的 `start[i+1] - (start[i]+duration[i])`，取最大的几段。",
+          "next_data": "`raw_ops_details.json` 本节点 `op_indices` 的 `start_time_us` / `duration_us`；`ASCEND_PROFILER_OUTPUT/trace_view.json` 对应时间窗；host 侧下发间隔看 `api_statistic.csv`。",
+          "not_applicable": "节点 kernel 数 ≤ 2 时 gap 比例无统计意义；`metric_scope == \"aggregate\"` 时该值是跨实例累加的假空档。"
+        },
+        {
+          "code": "UTIL_LOW",
+          "severity": "high",
+          "metrics": {
+            "utilization_pct": 14.3
+          },
+          "text": "利用率偏低（14%）",
+          "advice_l1": "忙碌时间占 wall 不足 80%。先区分是「本节点自身有空档」还是「本节点被上游拖慢」：若同时命中 GAP_BUBBLE，按 GAP_BUBBLE 处理；若未命中 GAP_BUBBLE 而利用率仍低，说明 wall 被少数长 kernel 拉长，看 `op_ratio` 里占比最高的算子类型。",
+          "next_data": "本节点 `op_ratio`（Skill 2 的 `ui_facts/*_perf_data.json` 已含该字段）；对应算子的 `aic_mac_ratio` / `aiv_vec_ratio` / `aic_mte2_ratio` 判断是计算受限还是访存受限。",
+          "not_applicable": "聚合作用域；以及节点只含通信算子时（通信节点的「利用率」语义不同，等待是其正常状态）。"
+        }
+      ]
+    },
+    {
+      "path": "DeepseekV3DecoderLayer_mtp/self_attn/indexer",
+      "name": "indexer",
+      "depth": 3,
+      "metric_scope": "instance",
+      "invocation_count": 1,
+      "metrics": {
+        "wall_ms": 7.745,
+        "busy_union_ms": 0.444,
+        "kernel_sum_ms": 0.62,
+        "total_cost_ms": 0.64,
+        "bubble_ms": 7.301,
+        "kernel_count": 66
+      },
+      "findings": [
+        {
+          "code": "GAP_BUBBLE",
+          "severity": "high",
+          "metrics": {
+            "gap_pct": 94.3
+          },
+          "text": "存在间隙气泡（gap=94%）",
+          "advice_l1": "该节点 wall 显著大于设备忙碌时间，空档不在本节点的 kernel 内部。先确认空档落在哪里：按 `start_time_us` 排序本节点 op，算相邻 op 的 `start[i+1] - (start[i]+duration[i])`，取最大的几段。",
+          "next_data": "`raw_ops_details.json` 本节点 `op_indices` 的 `start_time_us` / `duration_us`；`ASCEND_PROFILER_OUTPUT/trace_view.json` 对应时间窗；host 侧下发间隔看 `api_statistic.csv`。",
+          "not_applicable": "节点 kernel 数 ≤ 2 时 gap 比例无统计意义；`metric_scope == \"aggregate\"` 时该值是跨实例累加的假空档。"
+        },
+        {
+          "code": "UTIL_LOW",
+          "severity": "high",
+          "metrics": {
+            "utilization_pct": 5.7
+          },
+          "text": "利用率偏低（6%）",
+          "advice_l1": "忙碌时间占 wall 不足 80%。先区分是「本节点自身有空档」还是「本节点被上游拖慢」：若同时命中 GAP_BUBBLE，按 GAP_BUBBLE 处理；若未命中 GAP_BUBBLE 而利用率仍低，说明 wall 被少数长 kernel 拉长，看 `op_ratio` 里占比最高的算子类型。",
+          "next_data": "本节点 `op_ratio`（Skill 2 的 `ui_facts/*_perf_data.json` 已含该字段）；对应算子的 `aic_mac_ratio` / `aiv_vec_ratio` / `aic_mte2_ratio` 判断是计算受限还是访存受限。",
+          "not_applicable": "聚合作用域；以及节点只含通信算子时（通信节点的「利用率」语义不同，等待是其正常状态）。"
+        }
+      ]
+    },
+    {
+      "path": "DeepseekV3DecoderLayer_mtp/self_attn/mla_epilog",
+      "name": "mla_epilog",
+      "depth": 3,
+      "metric_scope": "instance",
+      "invocation_count": 1,
+      "metrics": {
+        "wall_ms": 7.713,
+        "busy_union_ms": 0.384,
+        "kernel_sum_ms": 0.384,
+        "total_cost_ms": 0.389,
+        "bubble_ms": 7.329,
+        "kernel_count": 12
+      },
+      "findings": [
+        {
+          "code": "GAP_BUBBLE",
+          "severity": "high",
+          "metrics": {
+            "gap_pct": 95.0
+          },
+          "text": "存在间隙气泡（gap=95%）",
+          "advice_l1": "该节点 wall 显著大于设备忙碌时间，空档不在本节点的 kernel 内部。先确认空档落在哪里：按 `start_time_us` 排序本节点 op，算相邻 op 的 `start[i+1] - (start[i]+duration[i])`，取最大的几段。",
+          "next_data": "`raw_ops_details.json` 本节点 `op_indices` 的 `start_time_us` / `duration_us`；`ASCEND_PROFILER_OUTPUT/trace_view.json` 对应时间窗；host 侧下发间隔看 `api_statistic.csv`。",
+          "not_applicable": "节点 kernel 数 ≤ 2 时 gap 比例无统计意义；`metric_scope == \"aggregate\"` 时该值是跨实例累加的假空档。"
+        },
+        {
+          "code": "UTIL_LOW",
+          "severity": "high",
+          "metrics": {
+            "utilization_pct": 5.0
+          },
+          "text": "利用率偏低（5%）",
+          "advice_l1": "忙碌时间占 wall 不足 80%。先区分是「本节点自身有空档」还是「本节点被上游拖慢」：若同时命中 GAP_BUBBLE，按 GAP_BUBBLE 处理；若未命中 GAP_BUBBLE 而利用率仍低，说明 wall 被少数长 kernel 拉长，看 `op_ratio` 里占比最高的算子类型。",
+          "next_data": "本节点 `op_ratio`（Skill 2 的 `ui_facts/*_perf_data.json` 已含该字段）；对应算子的 `aic_mac_ratio` / `aiv_vec_ratio` / `aic_mte2_ratio` 判断是计算受限还是访存受限。",
+          "not_applicable": "聚合作用域；以及节点只含通信算子时（通信节点的「利用率」语义不同，等待是其正常状态）。"
+        }
+      ]
+    },
+    {
+      "path": "DeepseekV3DecoderLayer_mtp/self_attn/mla_prolog",
+      "name": "mla_prolog",
+      "depth": 3,
+      "metric_scope": "instance",
+      "invocation_count": 1,
+      "metrics": {
+        "wall_ms": 7.673,
+        "busy_union_ms": 0.234,
+        "kernel_sum_ms": 0.234,
+        "total_cost_ms": 0.239,
+        "bubble_ms": 7.438,
+        "kernel_count": 3
+      },
+      "findings": [
+        {
+          "code": "GAP_BUBBLE",
+          "severity": "high",
+          "metrics": {
+            "gap_pct": 96.9
+          },
+          "text": "存在间隙气泡（gap=97%）",
+          "advice_l1": "该节点 wall 显著大于设备忙碌时间，空档不在本节点的 kernel 内部。先确认空档落在哪里：按 `start_time_us` 排序本节点 op，算相邻 op 的 `start[i+1] - (start[i]+duration[i])`，取最大的几段。",
+          "next_data": "`raw_ops_details.json` 本节点 `op_indices` 的 `start_time_us` / `duration_us`；`ASCEND_PROFILER_OUTPUT/trace_view.json` 对应时间窗；host 侧下发间隔看 `api_statistic.csv`。",
+          "not_applicable": "节点 kernel 数 ≤ 2 时 gap 比例无统计意义；`metric_scope == \"aggregate\"` 时该值是跨实例累加的假空档。"
+        },
+        {
+          "code": "UTIL_LOW",
+          "severity": "high",
+          "metrics": {
+            "utilization_pct": 3.1
+          },
+          "text": "利用率偏低（3%）",
+          "advice_l1": "忙碌时间占 wall 不足 80%。先区分是「本节点自身有空档」还是「本节点被上游拖慢」：若同时命中 GAP_BUBBLE，按 GAP_BUBBLE 处理；若未命中 GAP_BUBBLE 而利用率仍低，说明 wall 被少数长 kernel 拉长，看 `op_ratio` 里占比最高的算子类型。",
+          "next_data": "本节点 `op_ratio`（Skill 2 的 `ui_facts/*_perf_data.json` 已含该字段）；对应算子的 `aic_mac_ratio` / `aiv_vec_ratio` / `aic_mte2_ratio` 判断是计算受限还是访存受限。",
+          "not_applicable": "聚合作用域；以及节点只含通信算子时（通信节点的「利用率」语义不同，等待是其正常状态）。"
+        }
+      ]
+    },
+    {
+      "path": "DeepseekV3DecoderLayer_mtp/self_attn/sparse_flash_attention",
+      "name": "sparse_flash_attention",
+      "depth": 3,
+      "metric_scope": "instance",
+      "invocation_count": 1,
+      "metrics": {
+        "wall_ms": 7.702,
+        "busy_union_ms": 0.333,
+        "kernel_sum_ms": 0.333,
+        "total_cost_ms": 0.339,
+        "bubble_ms": 7.369,
+        "kernel_count": 6
+      },
+      "findings": [
+        {
+          "code": "GAP_BUBBLE",
+          "severity": "high",
+          "metrics": {
+            "gap_pct": 95.7
+          },
+          "text": "存在间隙气泡（gap=96%）",
+          "advice_l1": "该节点 wall 显著大于设备忙碌时间，空档不在本节点的 kernel 内部。先确认空档落在哪里：按 `start_time_us` 排序本节点 op，算相邻 op 的 `start[i+1] - (start[i]+duration[i])`，取最大的几段。",
+          "next_data": "`raw_ops_details.json` 本节点 `op_indices` 的 `start_time_us` / `duration_us`；`ASCEND_PROFILER_OUTPUT/trace_view.json` 对应时间窗；host 侧下发间隔看 `api_statistic.csv`。",
+          "not_applicable": "节点 kernel 数 ≤ 2 时 gap 比例无统计意义；`metric_scope == \"aggregate\"` 时该值是跨实例累加的假空档。"
+        },
+        {
+          "code": "UTIL_LOW",
+          "severity": "high",
+          "metrics": {
+            "utilization_pct": 4.3
+          },
+          "text": "利用率偏低（4%）",
+          "advice_l1": "忙碌时间占 wall 不足 80%。先区分是「本节点自身有空档」还是「本节点被上游拖慢」：若同时命中 GAP_BUBBLE，按 GAP_BUBBLE 处理；若未命中 GAP_BUBBLE 而利用率仍低，说明 wall 被少数长 kernel 拉长，看 `op_ratio` 里占比最高的算子类型。",
+          "next_data": "本节点 `op_ratio`（Skill 2 的 `ui_facts/*_perf_data.json` 已含该字段）；对应算子的 `aic_mac_ratio` / `aiv_vec_ratio` / `aic_mte2_ratio` 判断是计算受限还是访存受限。",
+          "not_applicable": "聚合作用域；以及节点只含通信算子时（通信节点的「利用率」语义不同，等待是其正常状态）。"
+        }
+      ]
+    }
+  ]
+}
