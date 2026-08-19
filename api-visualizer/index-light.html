@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="zh-CN" data-theme="dark">
+<html lang="zh-CN" data-theme="light">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -1394,9 +1394,9 @@
       align-items: center;
       min-width: 0;
       overflow: hidden;
-      border: 1px solid var(--input-border);
+      border: 0;
       border-radius: var(--input-radius);
-      background: var(--input-bg);
+      background: var(--surface-2);
     }
 
     .stepper-control button {
@@ -1873,7 +1873,6 @@
       z-index: 1;
       overflow: auto;
       padding: 0 var(--space-3) var(--space-3);
-      scrollbar-gutter: stable;
     }
 
     .op-load3d-matrix-head {
@@ -4569,6 +4568,32 @@
       stroke-linecap: round;
       stroke-linejoin: round;
     }
+
+    /* overlay 滚动条：非 macOS 平台（滚动条常驻）时，页面滚动条默认不可见、滚动时短暂出现，
+       与 macOS 原生 overlay scrollbar 的观感保持一致。由 JS 检测后挂到 <html> 上。 */
+    html.pto-overlay-scrollbars {
+      scrollbar-width: thin;
+      scrollbar-color: transparent transparent;
+    }
+    html.pto-overlay-scrollbars::-webkit-scrollbar {
+      width: 10px;
+      height: 10px;
+    }
+    html.pto-overlay-scrollbars::-webkit-scrollbar-track {
+      background: transparent;
+    }
+    html.pto-overlay-scrollbars::-webkit-scrollbar-thumb {
+      background: transparent;
+      border-radius: 5px;
+      border: 2px solid transparent;
+      background-clip: content-box;
+    }
+    html.pto-overlay-scrollbars.is-scrolling {
+      scrollbar-color: color-mix(in srgb, var(--foreground) 30%, transparent) transparent;
+    }
+    html.pto-overlay-scrollbars.is-scrolling::-webkit-scrollbar-thumb {
+      background: color-mix(in srgb, var(--foreground) 30%, transparent);
+    }
   </style>
 </head>
 <body>
@@ -4587,7 +4612,7 @@
           <button class="pto-ide-frame__window-action" type="button" data-ide-toggle="explorer" aria-label="切换左侧面板" aria-controls="api-visualizer-explorer-pane" aria-expanded="true" aria-pressed="false" title="切换左侧面板">
             <svg class="pto-ide-frame__window-icon" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="2"></rect><path d="M9 3v18"></path></svg>
           </button>
-          <button class="pto-ide-frame__window-action pto-ide-frame__theme-toggle" type="button" data-theme-toggle aria-label="切换到浅色模式" title="切换到浅色模式" aria-pressed="false">
+          <button class="pto-ide-frame__window-action pto-ide-frame__theme-toggle" type="button" data-theme-toggle aria-label="切换到深色模式" title="切换到深色模式" aria-pressed="true">
             <svg class="pto-ide-frame__window-icon pto-ide-frame__theme-icon--sun" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="4"></circle><path d="M12 2v2"></path><path d="M12 20v2"></path><path d="m4.93 4.93 1.41 1.41"></path><path d="m17.66 17.66 1.41 1.41"></path><path d="M2 12h2"></path><path d="M20 12h2"></path><path d="m6.34 17.66-1.41 1.41"></path><path d="m19.07 4.93-1.41 1.41"></path></svg>
             <svg class="pto-ide-frame__window-icon pto-ide-frame__theme-icon--moon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"></path></svg>
           </button>
@@ -5355,6 +5380,27 @@
       themeToggle?.addEventListener('click', () => {
         applyTheme(document.documentElement.dataset.theme === 'light' ? 'dark' : 'light');
       });
+
+      // overlay 滚动条 polyfill：检测系统滚动条是否常驻（非 macOS overlay），
+      // 若是则默认隐藏页面滚动条、滚动时短暂显示，与本地 macOS 观感一致。
+      try {
+        const probe = document.createElement('div');
+        probe.style.cssText = 'position:absolute;left:-9999px;top:-9999px;width:50px;height:50px;overflow:scroll';
+        document.body.appendChild(probe);
+        const isOverlayNative = probe.offsetWidth - probe.clientWidth === 0;
+        document.body.removeChild(probe);
+        if (!isOverlayNative) {
+          const root = document.documentElement;
+          root.classList.add('pto-overlay-scrollbars');
+          let hideTimer = null;
+          const reveal = () => {
+            root.classList.add('is-scrolling');
+            clearTimeout(hideTimer);
+            hideTimer = setTimeout(() => root.classList.remove('is-scrolling'), 600);
+          };
+          window.addEventListener('scroll', reveal, { capture: true, passive: true });
+        }
+      } catch (err) { /* 忽略 */ }
 
       const traceViews = {
         define: {

@@ -22,6 +22,14 @@
 - 顶部整卡地址总览条 `__address` 高度 62→31px：它只负责交代「放大的是哪一段」，不该和下面那幅主图占同等分量。
 - 横幅标题「故障分析」改「异常分析」，去掉其中重复的碎片率（上方读数卡已有），末尾补上后果链：「…引发 OOM —— 训练在 step 12003 中断（ACL_ERROR_MEMORY_ALLOCATION），吞吐由 2800 tokens/s 跌至 0」，数值取自 `incidentStep` / `summary.throughputAtPeak`。
 
+## 2026-08-18 — `api-visualizer` CannVision 收尾：默认浅色主题、滚动条 overlay、stepper 浅灰无边框、V1 双入口 + vendor submodule push
+
+- `api-visualizer/index-light.html` 默认主题由 dark 改为 light：`<html data-theme="light">`，右上角主题按钮初始态同步为「切换到深色模式」/`aria-pressed="true"`；用户手动切换仍经 `localStorage('api-visualizer-theme')` 持久化。
+- 滚动条观感对齐本地：移除 `.op-load3d-matrix-scroll` 的 `scrollbar-gutter: stable`（Windows 等非 overlay 平台会常驻滚动条槽）；新增 overlay 检测 polyfill——JS 探测系统滚动条是否原生 overlay（macOS），非 overlay 时给 `<html>` 挂 `pto-overlay-scrollbars`，页面滚动条默认透明、滚动时短暂显示（`.is-scrolling` 600ms 淡出），与本地 macOS overlay scrollbar 一致；macOS 原生 overlay 不挂 class，行为不变。
+- `.stepper-control`（参数加减输入框）从 `border:1px solid var(--input-border)` + `var(--input-bg)` 改回无边框 + `var(--surface-2)` 浅灰填充。
+- `launch-v2.html` API Visualizer 卡片 `variants` 增加第二入口「V1」→ `api-visualizer/index.html`，与「CannVision」→ `index-light.html` 并列。
+- vendor submodule `fa2cd90`：`floating-playback-control` 折叠态 split 模式（播放/展开并排）与 `matrix-canvas` cellStrokeAlpha 改动提交并 push 到 `pto-design-system` 远端（rebased onto 远端 matrix-canvas shared-scale 新提交）；主仓库 submodule 指针同步 bump，远端 Pages 播放条不再是旧版。
+
 ## 2026-08-18 — index_v3 显存页签：微调点阵画布 padding/横幅 margin、超出量文字改纯黑字、点阵减弱
 
 - `pto-hbm-snapshot__plots` 顶部 padding 48→38px；「故障分析」横幅上下各加 4px margin（`margin-bottom:10px` → `margin:4px 0 14px`，原来没有 margin-top）。
