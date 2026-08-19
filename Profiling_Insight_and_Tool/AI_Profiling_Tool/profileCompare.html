@@ -4593,7 +4593,7 @@ function runCheckItemHtml(r, idx) {
     <input type="checkbox" class="cmp-cb" data-id="${escapeHtml(r.id)}" ${checked ? 'checked' : ''} ${cbDisabled} title="${escapeHtml(cbTitle)}">
     <span class="dot ${dotClass}"></span>
     ${runNameMiddleEllipsisHtml(r.id)}
-    <span class="cmp-base-tag ${isBase ? 'is-selected' : ''}" data-base="${escapeHtml(r.id)}" title="设为基线（对比框上栏）">基线</span>
+    <span class="cmp-base-tag ${isBase ? 'is-selected' : ''}" data-base="${escapeHtml(r.id)}" title="设为基线（对比框上栏）">${isBase ? '基线' : '设为基线'}</span>
   </div>`;
 }
 
@@ -4610,7 +4610,7 @@ function extraRunItemHtml(r) {
     <input type="checkbox" class="cmp-cb" data-id="${escapeHtml(r.id)}" title="勾选后作为对比对象（对比框下栏）">
     <span class="dot ${r.dot}"></span>
     ${runNameMiddleEllipsisHtml(r.id)}
-    <span class="cmp-base-tag" data-base="${escapeHtml(r.id)}" title="设为基线（对比框上栏）">基线</span>
+    <span class="cmp-base-tag" data-base="${escapeHtml(r.id)}" title="设为基线（对比框上栏）">设为基线</span>
   </div>`;
 }
 
@@ -5229,15 +5229,20 @@ const TRAIN_SHAPE_DEFAULT = {
   ],
 };
 const TRAIN_RUN_SHAPES = {
-  /* 第三份数据（三方对比时的「对比 B」）：FFN + MoE 的另一套并行切分。
-     相对基线：多跑一个 step、每 step 的 Cube kernel 更多（任务条变多）；
-     Vector 算子被融合进 Cube，AIV 泳道任务条大幅变少；通信侧换成 AllToAll，
-     没有 P2P 流水（少一条泳道），并且通信整体更慢、空泡更大。 */
+  /* 第三份数据（三方对比时的「对比 B」）：FFN + MoE 的另一套并行切分，AllToAll 派发/回收
+     严重拖累整个 step —— 相对基线：多跑一个 step、每 step 的 Cube kernel 更多但单个 kernel
+     很短（任务条变多、变细）；Vector 算子被融合进 Cube，AIV 泳道任务条大幅变少；通信侧换成
+     AllToAll，没有 P2P 流水（少一条泳道），未掩盖通信占比与调度空泡都明显放大，计算占比被
+     压到一成多——综合性能分因此落在 40~50 区间（B/C 档），与另外两条记录在性能色条上明显拉开。
+     computeScale/commScale/freeScale 三个倍率直接决定综合分：
+     score ≈ 0.5 × 计算占比 + 40 + 稳定分（因为四段占比恒和为 100%，通信/调度/均衡三个倒扣维度
+     的权重都相互抵消，只剩计算占比与 step 抖动两个变量），故把 computeScale 压得远比通信/调度
+     倍率低，才能把计算占比拉到足够小。 */
   'pangu-ffn-a5-g2-20260701-211806': {
     steps: 15,
     kernelBase: 8, kernelSpread: 3,
     aivRate: 0.18,
-    computeScale: 0.88, commScale: 1.35, freeScale: 1.5,
+    computeScale: 0.15, commScale: 1.6, freeScale: 1.8,
     commLanes: [
       { lane: 'G1·collective', label: 'Comm-Transmit', part: 'overlap', name: 'AllReduce 传输' },
       { lane: 'G3·alltoall', label: 'Comm-Transmit', part: 'notOverlap', name: 'MoE AllToAll 派发/回收' },
@@ -8485,7 +8490,7 @@ function setMergedTrainPanelHidden(hidden) {
 
 function setSwimlaneViewMode(mode) {
   mode = mode === 'aggregated' ? 'aggregated' : 'grouped';
-  paintSwimlaneViewTabs(mode);
+  mode = paintSwimlaneViewTabs(mode); // 只勾了基线一条时聚合视图不可用，这里会被降级回 grouped
   if (state.swimlaneViewMode === mode) return;
   // 切换前先记下当前选中的任务和泳道差异高亮，挂载新数据后再恢复
   const pendingSelection = captureTrainSelection();
@@ -8581,6 +8586,7 @@ function bindSwimlaneViewTabs() {
   if (!tabs) return;
   tabs.querySelectorAll('[data-swimlane-view]').forEach((btn) => {
     btn.addEventListener('click', () => {
+      if (btn.disabled) return;
       const targetMode = btn.dataset.swimlaneView;
       // 聚合视图只在对比模式下有意义：不在对比模式时，先按左侧勾选栏当前/默认的
       // 对比对象进入对比模式，再切视图。
@@ -8618,21 +8624,35 @@ function bindAggViewInfoBubble() {
 
 /* 分组视图是写死的上下两栏，只承载得下「基线 + 1 个对比对象」；三方对比必须走聚合视图
    （每个叶子泳道拆成三条子行）。这里统一维护：三方时锁到聚合视图并禁掉分组页签，
-   退回两方时把页签解锁（视图模式保持不变，由用户自己决定要不要切回分组）。 */
+   退回两方时把页签解锁（视图模式保持不变，由用户自己决定要不要切回分组）。
+   反过来，只勾了基线一条（没有对比对象）时聚合视图没有意义（无第二份数据可合并），
+   禁掉聚合页签并强制回落到分组视图。 */
 function paintSwimlaneViewTabs(mode) {
   var tabs = document.getElementById('swimlaneViewTabs');
   if (!tabs) return;
+  var aggregatable = activeCompareRunIds().length > 1;
+  if (!aggregatable && mode === 'aggregated') mode = 'grouped';
   tabs.querySelectorAll('[data-swimlane-view]').forEach(function (btn) {
+    var isAggBtn = btn.dataset.swimlaneView === 'aggregated';
     var active = btn.dataset.swimlaneView === mode;
     btn.classList.toggle('is-selected', active);
     btn.setAttribute('aria-selected', String(active));
+    if (isAggBtn) {
+      btn.disabled = !aggregatable;
+      btn.setAttribute('aria-disabled', String(!aggregatable));
+      btn.title = aggregatable
+        ? '合并成一个面板，同一条泳道下基线/对比任务紧邻显示'
+        : '至少勾选一个对比对象才能使用聚合视图';
+    }
   });
+  return mode;
 }
 
 // 参与对比的 run 数变了：分组视图要加/减一栏，聚合视图要重排子行——两种模式都靠
 // setMergedTrainPanelHidden 把面板摆好，随后由 renderTrainingComparison 重新挂载数据。
 function syncSwimlaneViewAvailability() {
-  paintSwimlaneViewTabs(state.swimlaneViewMode);
+  var paintedMode = paintSwimlaneViewTabs(state.swimlaneViewMode);
+  state.swimlaneViewMode = paintedMode;
   if (state.secondaryViewMode === 'comparison') {
     setMergedTrainPanelHidden(state.swimlaneViewMode === 'aggregated');
   }
@@ -8644,17 +8664,39 @@ function openRunComparison(runIds) {
     .filter(function (id, i, arr) { return id && id !== state.selectedRunId && RUN_BY_ID[id] && arr.indexOf(id) === i; })
     .slice(0, MAX_COMPARE_RUNS - 1);
   if (!ids.length || !blockGraphView) return;
+  // 只增/只减槽位（已勾选的对比对象在剩下的槽位里相对顺序不变，只是从 2 方追加成 3 方，
+  // 或反过来从 3 方去掉一个变回 2 方）时，右侧下钻详情、泳道选中、关联代码左右侧指向的
+  // 仍是同一份没变过的数据，不该跟着清空重选；只有某个还留着的槽位换成了另一个对比对象
+  // （真正的"对比对象换了"）才需要按下面注释统一退回差异看板。挂载新数据后 DOM 会被
+  // 整个重建，所以即便状态保留了也要走 capture/restore 把选中态重新应用到新 DOM 上——
+  // 跟 setSwimlaneViewMode 切视图时的处理是同一套逻辑。
+  var prevCompareIds = [state.comparisonRunId, state.comparisonRunId2].filter(Boolean);
+  var isOrderedSubsequence = function (shorter, longer) {
+    var i = 0;
+    for (var j = 0; i < shorter.length && j < longer.length; j++) {
+      if (shorter[i] === longer[j]) i++;
+    }
+    return i === shorter.length;
+  };
+  var isSlotPreserving = state.secondaryViewMode === 'comparison'
+    && ids.length !== prevCompareIds.length
+    && (isOrderedSubsequence(prevCompareIds, ids) || isOrderedSubsequence(ids, prevCompareIds));
+  var pendingSelection = isSlotPreserving ? captureTrainSelection() : null;
+  var pendingDiffLane = isSlotPreserving ? state.diffSelectedLane : null;
+
   state.secondaryViewMode = 'comparison';
   state.comparisonRunId = ids[0];
   state.comparisonRunId2 = ids[1] || null;
-  state.diffSelectedLane = null;
-  // 对比对象换了，之前下钻的那条任务条在新数据里未必还存在：统一退回差异看板，
-  // 免得右侧详情停在一份已经被卸载的数据上。关联代码的左右选择也一并复位，
-  // 否则可能指向一个已经退出对比的槽位。
-  state.detailTaskKey = null;
-  state.inspectorView = 'dashboard';
-  state.codeDiffSides = null;
-  hideCrossLaneConnectors();
+  if (!isSlotPreserving) {
+    state.diffSelectedLane = null;
+    // 对比对象换了，之前下钻的那条任务条在新数据里未必还存在：统一退回差异看板，
+    // 免得右侧详情停在一份已经被卸载的数据上。关联代码的左右选择也一并复位，
+    // 否则可能指向一个已经退出对比的槽位。
+    state.detailTaskKey = null;
+    state.inspectorView = 'dashboard';
+    state.codeDiffSides = null;
+    hideCrossLaneConnectors();
+  }
   blockGraphTitle.textContent = RUN_BY_ID[ids[0]].id;
   if (blockGraphTitle2) blockGraphTitle2.textContent = ids[1] ? RUN_BY_ID[ids[1]].id : '';
   blockGraphView.hidden = false;
@@ -8675,7 +8717,16 @@ function openRunComparison(runIds) {
   window.requestAnimationFrame(function () {
     frameController?.refresh?.();
     layout();
-    window.requestAnimationFrame(function () { renderTrainingComparison(); });
+    window.requestAnimationFrame(function () {
+      renderTrainingComparison(function () {
+        if (!isSlotPreserving) return;
+        if (pendingDiffLane) {
+          window.requestAnimationFrame(function () { selectDiffLane(pendingDiffLane); });
+        } else if (pendingSelection) {
+          restoreTrainSelection(pendingSelection, state.swimlaneViewMode);
+        }
+      });
+    });
   });
 }
 
@@ -8698,6 +8749,7 @@ function closeRunComparison() {
     r.extraActiveLaneKeys = [];
   });
   setGroupedPanelVisibility(1);
+  syncSwimlaneViewAvailability(); // 对比对象清空后聚合视图不再可用，页签需要跟着禁用/回落
   renderInspector();
   window.requestAnimationFrame(function () {
     frameController?.refresh?.();
@@ -8941,6 +8993,7 @@ function init() {
   renderInspector();
   panelActions = bindTopPanelActions();
   applyDefaultCompareMode();
+  paintSwimlaneViewTabs(state.swimlaneViewMode); // 兜底：没有可用的默认对比对象时，聚合页签也要在启动时禁用
   initSharedCanvasTooltip();
   initCodeTabSwitch();
   applyResponsivePaneState();

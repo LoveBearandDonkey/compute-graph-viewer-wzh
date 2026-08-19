@@ -13,11 +13,35 @@
   <script>
     PtoHbmMemorySnapshot.render(document.getElementById("demo"), {
       step:12000,rank:17,
-      summary:{capacityGB:64,peakGB:64,freeGB:1.8,largestFreeBlockGB:.3,requestedGB:.5,fragmentationRatio:83},
+      incidentStep:12003,
+      summary:{capacityGB:64,peakGB:64,freeGB:1.8,largestFreeBlockGB:.3,requestedGB:.5,
+               requestedKind:"activation",fragmentationRatio:83,throughputAtPeak:2800},
       lifetimes:[
         {id:"params",name:"stage3.parameters",offsetGB:0,sizeGB:8.1,allocMs:0,freeMs:9000,kind:"parameters",stack:"load_state_dict ← model_provider"},
         {id:"dispatch",name:"layer38.expert_dispatch.buffer",offsetGB:11.4,sizeGB:1.2,allocMs:1040,freeMs:7920,kind:"activation",source:"modeling_openpangu.py",line:512,stack:"expert_dispatch ← router.forward ← TransformerLayer.forward"},
         {id:"logits",name:"lm_head.logits",offsetGB:28,sizeGB:1.8,allocMs:3660,freeMs:8120,kind:"activation",stack:"linear ← lm_head.forward ← GPTModel.forward"}
+      ],
+      // 立体容器那一幅的输入：空闲/占用交错的地址窗口。缺了它主图就退化成一个空容器，
+      // 所以 demo 必须带上 —— 这是本 pattern 的主要图形。
+      fragmentationWindow:{startGB:57.5,label:"OOM 前分配器碎片密集区"},
+      fragmentationMap:[
+        {kind:"free",sizeGB:.30},{kind:"blocker",sizeGB:.12,allocationId:"frag-router-indices"},
+        {kind:"free",sizeGB:.28},{kind:"blocker",sizeGB:.10,allocationId:"frag-expert-offsets"},
+        {kind:"free",sizeGB:.26},{kind:"blocker",sizeGB:.14,allocationId:"frag-dispatch-meta"},
+        {kind:"free",sizeGB:.24},{kind:"blocker",sizeGB:.09,allocationId:"frag-attn-mask"},
+        {kind:"free",sizeGB:.22},{kind:"blocker",sizeGB:.11,allocationId:"frag-expert-counts"},
+        {kind:"free",sizeGB:.20},{kind:"blocker",sizeGB:.08,allocationId:"frag-token-permute"},
+        {kind:"free",sizeGB:.18},{kind:"blocker",sizeGB:.13,allocationId:"frag-combine-workspace"},
+        {kind:"free",sizeGB:.12}
+      ],
+      fragmentAllocations:[
+        {id:"frag-router-indices",name:"layer38.router.topk_indices",kind:"activation",allocMs:1180,freeMs:8010,source:"modeling_openpangu.py",line:486,stack:"topk_expert_select → router.forward"},
+        {id:"frag-expert-offsets",name:"layer38.expert_offsets",kind:"activation",allocMs:1210,freeMs:7960,source:"moe_router.py",line:233,stack:"build_expert_offsets → expert_dispatch"},
+        {id:"frag-dispatch-meta",name:"layer38.dispatch_metadata",kind:"workspace",allocMs:1250,freeMs:7920,source:"moe_dispatch.py",line:174,stack:"alloc_dispatch_metadata → all_to_all_dispatch"},
+        {id:"frag-attn-mask",name:"layer39.attention_mask.tmp",kind:"activation",allocMs:1540,freeMs:7480,source:"attention.py",line:319,stack:"build_attention_mask → SelfAttn.forward"},
+        {id:"frag-expert-counts",name:"layer39.tokens_per_expert",kind:"activation",allocMs:1680,freeMs:7750,source:"moe_router.py",line:257,stack:"bincount_experts → router.forward"},
+        {id:"frag-token-permute",name:"layer40.token_permute.workspace",kind:"workspace",allocMs:2030,freeMs:7310,source:"moe_dispatch.py",line:208,stack:"token_permute → expert_dispatch"},
+        {id:"frag-combine-workspace",name:"layer40.combine.workspace",kind:"workspace",allocMs:2360,freeMs:8240,source:"moe_combine.py",line:141,stack:"alloc_combine_buffer → all_to_all_combine"}
       ]
     });
   </script>
