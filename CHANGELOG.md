@@ -112,6 +112,74 @@
 - 差异账目的字段口径统一收进标题旁的问号（`LEDGER_TIP`，悬浮展示），行内不再逐条铺解释小字——五行读数配五行小字会把这张卡撑成一整屏，而口径是查一次就够的东西。但判定结果留在行内：它随数据变（这次到底过没过噪声带、集中还是弥散），复用差异卡片列表的 `.sl-diff-card__flag` 做判定标签——总差值「噪声带内 / 真差异 · 更慢」、极差「三者等效 / 不等效」、差异最大的 3 项「集中 / 弥散」。落在噪声带内时总差值不再上红绿色，避免把基线自身抖动读成退化。
 - 「噪声带（基线抖动）」改名「抖动滤波范围（噪声带）」。
 
+## 2026-08-18 — `launch-v2.html` API Visualizer 卡片新增 CannVision 第二入口
+
+- API Visualizer 卡片新增 `variants` 第二入口按钮「CannVision」，指向 `api-visualizer/index-light.html`（合并版：四图标栏工作台 + 远端 gm2ub 新功能），复用「算子 IDE 助手」卡片同一套 `.variant-link` 机制（`has-variants` 下隐藏 tag-row）；卡片主入口仍为 `api-visualizer/index.html`（远端原版），预览 iframe 不变。
+
+## 2026-08-18 — `api-visualizer/index-light.html` 修复右上角「切换左侧面板」按钮失效
+
+- 根因：此前把左侧栏改为四个图标时删除了 rail 里的资源管理器按钮（`data-ide-toggle="explorer"`），但右上角按钮的自定义 JS 仍 `document.querySelector('[data-ide-toggle="explorer"]')?.click()`，元素已不存在 → 点击无效果。
+- 修复：右上角按钮直接改为 `data-ide-toggle="explorer"`（保留 `aria-controls="api-visualizer-explorer-pane"`），由 ide-frame pattern 的 `initExplorerToggle` 统一接管收起/展开与 `aria-expanded`/`aria-pressed`/`is-selected` 状态；删除失效的 `leftDockToggle` 自定义 JS；`ensureExplorerPaneOpen`/`openOperatorWorkspace` 中的选择器从 `.pto-ide-frame__activity-rail [data-ide-toggle="explorer"]` 改为全局 `[data-ide-toggle="explorer"]`。
+
+## 2026-08-18 — `api-visualizer/patterns/matrix-canvas/pattern.js` 浅色模式斜杠/填充/数字颜色再减淡
+
+- 上一轮浅色斜杠仍偏深，继续调优：斜杠色 `mix(fg, bg, .76)`、alpha `.12–.26`；wash 填充 alpha 降到 `.10–.20`（原先 `.14–.28`）。
+- 格子内数字/文字：浅色模式不再用近黑 `--foreground`，改用深灰 `mix(fg, bg, .82)` + alpha `.78`（默认/empty/written/muted 状态同步适配），既保留可读性又避免纯黑刺眼；深色模式保持原值。
+
+## 2026-08-18 — `api-visualizer/patterns/matrix-canvas/pattern.js` 浅色模式 padding 斜杠减淡
+
+- 浅色主题下 `--foreground` 为近黑 `rgba(0,0,0,.90)`，`drawPaddingPattern` 直接用它画斜杠（alpha 最高 .68），padding 格子的斜杠在浅色下黑得发闷；深色模式 foreground 是白色，无此问题。
+- 优化：`drawPaddingPattern` 按主题区分——浅色模式斜杠色改为 `mix(foreground, background, .62)` 的浅灰、alpha 降到 `.18–.38`，底色 wash 同步减淡（alpha `.14–.28`）；深色模式保持原逻辑不变。新增 `isLightTheme()` 辅助函数（读 `data-theme`）。
+
+## 2026-08-18 — `api-visualizer/patterns/matrix-canvas/pattern.js` 修复 Gm2UbAlign 格子标号不显示
+
+- 根因：本地 pattern.js 的 label 绘制阈值是 `minDimension < 40`（HEAD 遗留），而 Gm2UbAlign 矩阵为 32 列（uint8），每格远小于 40px，导致 scene 里已生成的 `label` 序号全部被跳过；远端版已把阈值降到 16px 并支持 label/value 双内容绘制与 selected 蓝色高亮。
+- 修复：以远端 `origin/main` 的 pattern.js 为基底（16px 阈值、label+value 双栏/紧凑绘制、selected 高亮、padding 紧凑适配），叠加本地 A2 描边减淡的 `strokeAlpha` 改动（`cellColors`/`drawCell` 加 `strokeAlpha` 参数 + `options.cellStrokeAlpha`，`index-light.html` A2 场景传 0.06）。`index.html` 与 `index-light.html` 两个页面共用此 pattern，一并生效；其它页面引用的是 `vendor/pto-design-system` 版本，不受影响。
+
+## 2026-08-18 — `api-visualizer/index.html` 左侧栏改为四个纯图标 tab
+
+- 左侧活动栏从 GitCode 站点导航改为 4 个 56×56 纯图标 tab：硬件架构（芯片）、算子流程（三点连线）、API（代码尖括号）、API2（花括号，`is-active` 选中态 + `aria-current="page"`）；去掉图标下方文字，hover/focus 与选中态样式沿用 `cannvision-rail-item`。
+- 按需求移除底部「资源管理器」切换按钮（`data-ide-toggle="explorer"`）与分隔线/spacer；`ensureExplorerPaneOpen`/`openOperatorWorkspace` 中对它的引用均走可选链，缺省时安全降级，左侧参数面板默认保持展开。
+
+## 2026-08-18 — `api-visualizer/index.html` 左侧导航换成 GitCode 页面左侧图标栏素材
+
+- 左侧活动栏改为复刻 GitCode 页面（gitcode.com/yinyucheng0601/CANNVision）左侧站点图标栏：56px 窄栏、56×74px 竖排项（16px 图标 + 12px 文字）、圆角 6px、hover 灰底加粗；分 3 组（首页/工作台、AI社区/大赛平台/应用市场、项目/组织/企业），组间 1px 分隔线。
+- 图标素材自 GitCode CDN 下载到 `api-visualizer/gitcode-icons/`（8 个 PNG，本地离线可用）；素材本身是浅色模式的黑色线条图，深色主题下用 `filter: brightness(0) invert(1)` 反白显示，浅色主题原样。
+- 顶部新增本页固定入口 tab（grid 矩阵图标 + 「API 可视化」），`is-active` 选中态——主色蓝 + 10% 底色、label 加粗，`aria-current="page"`，不可切换。
+- 底部保留资源管理器切换按钮（`data-ide-toggle="explorer"`，GitCode 风格竖排），面板开合与 `is-selected` 状态由 ide-frame pattern 照常驱动。
+
+## 2026-08-18 — `api-visualizer/index.html` 标题与左侧导航换成 CANN Vision 素材
+
+- 顶栏标题：移除 IDE host-chip，替换为 CANN Vision 品牌——`cann-logo.png`（自 `CANNVision-main/src/assets/` 拷贝到 `api-visualizer/`）+ 标题「CANN Vision · API Visualizer」，`<title>` 与 frame aria-label 同步更新。
+- 左侧活动栏：4 个通用 IDE 按钮换成 CANN Vision 图标导航样式（68px 窄栏、44×44 圆角 14 按钮、hover 上浮变蓝、悬浮 tooltip 两行 label+hint）；新增本页固定 icon（grid 矩阵图标，`is-active` 选中态——蓝色 + 10% 底色，`aria-current="page"`，无切换行为）；保留资源管理器切换按钮（`data-ide-toggle="explorer"`，面板开合与 `is-selected` 状态由 ide-frame pattern 照常驱动）。颜色走设计系统 token（`--primary` / `--foreground-muted`），深浅主题一致。
+
+## 2026-08-18 — `api-visualizer/index.html` A2 逻辑矩阵格子描边减淡
+
+- A2 逻辑矩阵格子描边用浅一号灰：`matrix-canvas` pattern 新增可选 `render(canvas, scene, { cellStrokeAlpha })`（默认 0.09 不变），A2 渲染传 0.06；Gm2Ub 等其它矩阵画布不受影响。
+
+## 2026-08-18 — `api-visualizer/index.html` 播放条折叠态按钮纯图标化
+
+- 折叠态两个按钮改为 32×32 正方形：播放/暂停为纯色方块（无 border），「展开」去掉文字只保留箭头（透明底、无 border、hover 浅色反馈）；`floating-playback-control` pattern 中 `collapsedExpandLabel` 改为可选（缺省即纯箭头）。
+
+## 2026-08-18 — `api-visualizer/index.html` 图表区域最大化 + 播放条折叠化 + 默认 Load3D
+
+- 卡片化：Load3D（输入形状 / A1 布局 / A2 逻辑矩阵）与 Gm2UbAlign（GM / UB）卡片只保留标题栏，描述与图例改为透明叠加层（top-left 描述、top-right 图例/状态），图表画布填满卡片；Load3D 舞台改为面板高度填充（body `auto + minmax(400px,1fr)`），A2 矩阵随窗口高度增长。
+- 播放条：三个视图的浮动播放条默认折叠收起，折叠态为并列两个按钮——播放/暂停（直接控制，不展开）与「展开」；`floating-playback-control` pattern 新增 `collapsedSplit` / `defaultCollapsed` / `collapsedExpandLabel` / `onCollapsedPlayPause` 能力（pattern.css/js/json 同步更新）。
+- 默认视图：页面打开即 Load3D API（`showApiVisualization('Load3D')`）。
+
+## 2026-08-14 — `api-visualizer/index.html` 浅色适配收尾 + 交互整理 + 文案中文化
+
+- 浅色模式：修复 load3d 顶部两个 3D 视图（tensor-volume-canvas pattern 的 neutral/padding voxel 硬编码暗色改为 token 驱动），主题切换时对全部 canvas 控制器（load3d NCHW/A1/A2、gm2ub src/dst）即时重绘；其余图表经排查均为 token 驱动，随主题自动切换。
+- 播放条：浮动播放控制条上移 24px（`bottom: 18px → 42px`），覆盖 Add / Load3D / Gm2UbAlign 三个沙盒。
+- 顶栏按钮：删除无效的设置按钮与右侧边栏按钮；左侧边栏按钮接线为控制左侧“API 参数”面板（Gm2UbAlign 参数 · 交互控制台）的开关。
+- 左侧资源管理器标题栏改为两行布局（标题在上、说明在下），不再遮挡/截断说明文字。
+- 全页面 UI 文案中文化：IDE 顶栏/活动栏/状态条、API 目录与算子输入面板、候选对比表、收敛图与谱系图全部标签/状态/度量、排除浏览器与资源案例、格式实验、播放条步进标签等均由英文/中英混杂统一为中文；API 名、代码、SoC/架构术语保留英文。
+
+## 2026-08-14 — `api-visualizer/index.html` 右上角浅色模式切换
+
+- 在 IDE 顶栏右上角窗口操作区新增主题切换按钮（太阳/月亮图标随主题互换），点击在 `data-theme="dark"` 与 `data-theme="light"` 间切换，复用 design-system 自带的 light 主题 token，无新增配色。
+- 偏好经 `localStorage('api-visualizer-theme')` 持久化并在加载时恢复；按钮 `aria-label`/`title`/`aria-pressed` 随主题同步更新，`file://` 下 localStorage 异常被静默忽略。
+
 ## 2026-08-14 — MatMul Code Recovery Step 6：尾块验证与交付回归
 - 新增 Divisible、M/N tail、K tail、Combined 四个 fixture 驱动的验证 case；按源码公式动态派生最后输出 tile、L1/L0 K slice、Mmad 次数、Tensor shape 与逻辑 payload。
 - 修正固定 16 Mmad、固定 4 次 L0 循环和非向上取整的 tile 坐标假设；K=1900 时恢复为 `364 → 128/128/108`、15 Mmad、45 个逻辑播放帧。
@@ -319,6 +387,7 @@
 - 2026-07-30 `Profiling_Insight_and_Tool/training-run-twin-standalone/`: `config-relation-observer` 卡顿修复（性能面板显示 83% 主线程花在渲染上：Layerize 25.8% / Recalc style 23.5% / Commit 18.7%，JS 仅 2%，不是泄漏也不是死循环）。三处：① `.cro-event-rail` 去掉 `flex-basis` 过渡 —— 布局属性做 160ms 动画会逐帧重排整个 workarea（deck + 46 刻度 + 结构条 + 256 专家 + 2048 热力格），同时其 18px `backdrop-filter` 每帧重采样底图；配套把 `setEventRailCollapsed` 里等动画的 180ms 定时器换成一帧 rAF。② document 级 click 兜底里把 `.cro-event` 放宽成 `.cro-event-rail` —— 分组标题与收起键也是 `<button>`，原先点一下展开箭头就会掉进通用 button 分支误触发 `clearSelection()`，白跑一整轮 applyRelation + deck 反选 + 连线重画 + 横幅收起。③ `#croDeckHost` 节点与 `.cro-bar` 的 `transition` 摘掉 `filter`（只留 `opacity`）—— `.is-focused` 一翻转数百个元素同时进入 filter 动画，Chrome 逐个提合成层再销毁，即 Layerize 大头；去色改为瞬时生效，静态 `filter` 规则不动，观感不变。
 
 - 2026-07-29 `ParallelDemo/`: 修复 MoE all-to-all 被错误表现为跨 DP 通信的问题。层节点唯一键补齐 DP/PP/CP/TP 坐标，EP 通信组严格限制在当前 DP 副本内；专家分片数、算子图和显存估算统一按 EP 而非 TP 计算，并在悬浮算子图中显示实际组内 ranks。同步重建 `dist.html`。
+- 2026-07-30 `ParallelDemo/`: 将原 picotron 教学 Demo 重构为基于 NVIDIA Megatron-LM / Megatron Core `RankGenerator` 语义的 Parallel Strategy Analysis 工作台。新增 Dense、MoE、Long Context 与 MoE Folding 预设，支持 TP/PP/CP/EP/DP、rank order 与 GPUs-per-node 输入；分别生成 Attention（TP×CP×DP×PP）和 Expert（TP×EP×EDP×PP）rank space，按物理节点呈现 rank deck，并可检查选中 rank 的正交 process groups、mixed-radix 方程、配置 JSON 与官方源码证据。新增纯函数 rank 模型及 6 项单测，并刷新自包含 `dist.html`。
 
 - 2026-07-28 `Memory-Visual/index.html`: 合并第二个 ICON 下的“生命周期与复用”和“流水 × 内存”为“生命周期 × 流水”联合页。上半区保留六条流水泳道，下半区改成与其共享 cycle 横轴的 Buffer 生命周期图；纵轴表示内存地址/大小，矩形宽度编码存活时间、高度编码实际字节数，同地址复用通过相同纵向区间与虚线边界表达。生命周期块支持悬浮查看周期、大小、地址和复用来源，并可点击联动右侧详情；同时移除导致分析页签被工具栏覆盖的错误 preview-slot 标记。
 - 2026-07-28 `Memory-Visual/index.html`: 修复真实鼠标点击硬件 Buffer 时被画布拖拽逻辑吞掉的问题。按 `memory-architecture` 的 `data-no-pan` 交互约定标记全部可选硬件节点和着色 cell，避免 `createZoomController` 在 pointerdown 阶段阻止 click；L1/L0/UB 点击现在会实际切换底部选中项与 API 详情。
@@ -389,6 +458,10 @@
 - 单文件自包含，复用 `vendor/pto-design-system` tokens 与 `.btn/.badge` 等类；纯 HTML/CSS/vanilla JS，无新增依赖。
 - 后续：整个 IDE 外壳改为消费设计系统标准 **`ide-frame` pattern**（`data-host="standalone"`：顶栏 chrome / 活动栏 / 三栏 split「资源管理器·编辑器·算子入图任务」/ pattern 自带 status strip），经 `PtoIdeFrame.initAll()` + `workbench-shell` 初始化可拖拽分栏；业务内容填入各 slot。同时修复底部状态栏位置异常——改用 pattern 的 `data-ide-slot="status"` 底部条，稳定固定在工作区底部。
 - 领域准确性修正（对齐 CANN 8.0 / AscendC OpDef 现代形态，不改交互骨架）：① 生成产物由旧 TBE 老三样（`.cc` `IMPLEMT_COMMON_INFERFUNC` / 手写 `.ini` `op_info_cfg` / `_plugin.cc` `REGISTER_CUSTOM_OP`）改为 `op_host` 的 **OpDef 原型（`Input().DataType().Format()` 支持列表 + `AICore().SetTiling()`）/ InferShape·InferDataType / Tiling** 三件套，并说明 `ops-info.json` 编译期自动生成、aclnn API 自动产出；② **Tiling 升为一等公民**：新增生成 Tab、静态校验项「Tiling 合法性」、预览「Tiling 绑定」、构建日志与确认文案均体现；③ 把入图核心的**「算子选择 CheckSupport」**在校验/预览/图注/构建日志中点明（FP16 组合缺失=CheckSupport 不命中；Cast 标注为 GE 插入的 format 转换节点）；④ 术语统一到 CANN 8.0：`build.sh`→`custom_opp_*.run`→`opp/vendors/custom`→注册 GE→回归确认被选中；文件树改为 `op_host`/`op_kernel` 结构。校验项 6→7（5 通过 + 2 提醒）。
+
+## 2026-07-23 — AscendPort MLA 算子架构图去除 parent 填充并规整连线
+
+- `model-graphviz` parent cluster 改为 `fill: none`；AscendPort MLA 页面继续使用 pattern 原生 cubic curves，并参照 Qwen/openPangu assets 把 Query / Position Query 放到 Query Block Stage 左侧 lane、Latent KV / Position Key 放到 KV Tile Stage 右侧 lane，四条输入边改为横向连接。
 
 ## 2026-07-22 — TaskCompare：图表对比底部新增「Media 对比」栏
 
@@ -595,8 +668,12 @@
 ## 2026-07-16 — openPangu Swimlane 事件详情信息收口
 - **按事件类型呈现悬浮详情**(`pangu-moe-trainviz/op-rank-time-openpangu-flash-events.html`):计算区间只显示层范围、时间与对应 activation/gradient 摘要；通信事件只显示 Tensor、通信算子和 Active/Wait/Exposed；Activation 保留区间只显示保留时长与显存，不再把无关指标堆进同一张悬浮卡。
 - **Profiling 下钻产品化**:展开区改为“模型算子 / 设备 Kernel / 集合通信”三层，头部只保留 MB、PP、阶段、事件计数与局部时间；Inspector 和 hover 统一使用所属阶段、阶段内时间、模型路径、关联 ID 等用户语义。可见界面不再暴露 `mock profile JSON`、fidelity 枚举、测试目的或点击操作说明，仅以“内置示例 Trace · 局部事件覆盖”标明数据属性。
-- **浅色悬浮面板背景**:页面已跟踪的 Swimlane tooltip pattern 增加背景变量，本页浅色主题设为 `#F8F8F8`，深色与 glass 主题保持原 surface。
+- **浅色悬浮面板背景**:为共享 Swimlane tooltip pattern 增加受支持的背景变量，本页浅色主题设为 `#F8F8F8`，深色与 glass 主题保持原 surface。
 - **空白点击取消选择**:Swimlane 空白区域现在统一清除 profiling span、通信事件、关联模型节点、Inspector 详情与联动去色；时间游标仍移动到点击位置，已展开的 task 明细保持展开，用户可继续选择同一 task 内的其他子事件。
+
+## 2026-07-15 — openPangu 三视图视窗交互统一
+- **旋转、平移与缩放手势**(`pangu-moe-trainviz/op-rank-time-openpangu-flash-events.html`):轴测视图保留普通拖拽旋转，并支持 `Ctrl/Command + 拖拽` 平移；正视与侧视锁定旋转后改为普通拖拽直接平移；CSS 3D 与 WebGL 后备渲染均支持无需修饰键的滚轮缩放。侧视 Layer 指标/PP 通信覆盖层同步接入直接平移，并抑制拖拽结束后的误点击选择。
+- **轴测 Layer 去重配色**:仅 PP0–PP3 的首层 L0、L12、L23、L35 保留完整算子语义色和不透明度；同一 stage 内其余重复 Layer 继续保留几何、文字、连线与交互，但在轴测视图统一使用中性色并降至 `8%` 近透明；hover 任一对象时，其所属 Layer 临时恢复 `100%` 不透明和完整语义色，移开后回落，选中/执行联动常驻态最多恢复至 `28%`；正视和侧视配色不受影响。
 
 ## 2026-07-15 — openPangu PP 边界增加双向通信桥
 - **侧视 PP Send/Recv 语义**(`pangu-moe-trainviz/op-rank-time-openpangu-flash-events.html`):三个 PP stage 分割点常驻紧凑黄色 `===` 桥，并稳定排在 PP 标签下方；hover、键盘聚焦或选中后展开为 `F ACT ===▶` 与 `◀=== dH B`，明确区分前向 activation handoff 和反向 dHidden return。通信桥复用原 Layer-gap 数据键、Tooltip、去色聚焦与 Swimlane 下钻，PP 竖线仍只表示模型切分位置；侧视投影使用独立的 80% 默认 Fit 比例，不再继承正视/轴测的 50%。
