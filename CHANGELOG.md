@@ -5,6 +5,11 @@
 
 ---
 
+## 2026-08-19 — `api-visualizer/index-light.html` Load3D 播放条展开状态 + 浅色主题 3D 填充方块描边
+
+- Load3D 播放条播放中点击展开会「展开一下又收起」：`renderLoad3dStage` 每个播放 tick 都会重挂载浮动播放条（`mountLoad3dPlayback` 先移除再以 `defaultCollapsed: true` 重建），用户刚展开的工具栏在下一拍就被重置回收起态。改为挂载前读取旧 shell 的 `is-expanded` 状态，重建时以 `defaultCollapsed: !wasExpanded` 创建并在挂载末尾 `setExpanded(true)` 恢复，播放中保持展开/收起选择不变（Add / Gm2UbAlign 两条播放条为一次性挂载 + 逐拍 sync，本就不存在该问题）。
+- `patterns/tensor-volume-canvas/pattern.js` 浅色主题（`surfaceStyle: 'soft-light'` + light theme）下所有方块都走 `softLightFaces` 实心软填充且无描边，padding 方块与真实数据方块无法区分；dark 主题走 `neutralFaces('padding')`（近透明填充 + 可见描边）所以是对的。为 `softLightFaces` 增加占位分支：`padding` / `ghost` / `skipped` 方块改为近透明填充 + **浅灰色（`--surface-4`）轮廓描边**（顶面描边略强），数据方块保持实心软填充 —— 与 dark 主题一致，描边镂空 = padding 补齐槽位。
+
 ## 2026-08-19 — `api-visualizer/index-light.html` 顶栏标题文字移除
 
 - 删除顶栏左侧 `workspace-title`（「CANN Vision · API Visualizer」）与 `workspace-meta`（「api-visualizer/index.html」）两行文字，仅保留 CANN Vision logo；清理已无引用的 `.workspace-title` CSS 规则（`.workspace-meta` 在 rejection-case / tiling 图例处仍在使用，保留）。V1 `index.html` 为保留的远端原版，未动。

@@ -120,6 +120,26 @@
     const background = tokenRgb('--background');
     const surface2 = tokenRgb('--surface-2');
     const surface3 = tokenRgb('--surface-3');
+
+    // Placeholder voxels (padding / ghost / skipped) render hollow in light mode:
+    // near-transparent fill + light-gray outline stroke, so they stay clearly distinct
+    // from the solid data blocks — matching the solid-vs-outline contrast dark mode
+    // already shows (outlined blocks = padding slots).
+    if (voxel.state === 'padding' || voxel.state === 'ghost' || voxel.state === 'skipped') {
+      const outline = tokenRgb('--surface-4');
+      const outlineAlpha = voxel.state === 'skipped' ? 0.45 : 0.65;
+      const fillAlpha = voxel.state === 'padding' ? 0.1 : 0.05;
+      return {
+        top: rgbString(surface2, fillAlpha + 0.04),
+        east: rgbString(surface2, fillAlpha),
+        south: rgbString(surface2, Math.max(0.02, fillAlpha - 0.02)),
+        edge: rgbString(outline, outlineAlpha),
+        topEdge: rgbString(outline, Math.min(1, outlineAlpha + 0.12)),
+        lineWidth: 1,
+        topLineWidth: 1.15,
+      };
+    }
+
     const tokenName = voxel.state === 'current'
       ? '--warning'
       : (voxel.state === 'window' ? '--primary' : TONE_TOKENS[voxel.tone]);

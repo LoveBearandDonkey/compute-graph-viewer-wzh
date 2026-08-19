@@ -9593,8 +9593,12 @@
           scrubberOpname: 'load3d-api-scrubber-opname',
           scrubberHover: 'load3d-api-scrubber-hover'
         };
-        $('#load3d-api-shell')?.closest('.pto-floating-playback')?.remove();
-        const control = helper.createControl({ ids, collapsedSplit: true, defaultCollapsed: true });
+        const existingControl = $('#load3d-api-shell')?.closest('.pto-floating-playback');
+        const wasExpanded = existingControl
+          ? existingControl.querySelector('.pto-floating-playback__shell')?.classList.contains('is-expanded') ?? false
+          : false;
+        existingControl?.remove();
+        const control = helper.createControl({ ids, collapsedSplit: true, defaultCollapsed: !wasExpanded });
         document.body.append(control);
         load3dApiPlayback = helper.init({
           root: control,
@@ -9672,6 +9676,9 @@
         });
         control.querySelector(`#${ids.play}`)?.addEventListener('click', toggleLoad3dPlay);
         setLoad3dApiPlaybackVisible(apiVisualizationMode === 'Load3D');
+        // Playback re-renders the stage every tick, which remounts this control; keep the
+        // user's expanded/collapsed choice instead of snapping back to collapsed mid-playback.
+        if (wasExpanded) load3dApiPlayback?.setExpanded(true);
         sync();
       };
 
