@@ -67,6 +67,10 @@
     return reference ? resolvedTokenRgb(reference[1], visited) : null;
   }
 
+  function isLightTheme() {
+    return document.documentElement?.dataset?.theme === 'light';
+  }
+
   function tokenRgb(name, fallback = '--foreground-secondary') {
     return resolvedTokenRgb(name) || resolvedTokenRgb(fallback) || [128, 128, 128];
   }
@@ -186,22 +190,27 @@
     return rect.x + rect.width >= 0 && rect.y + rect.height >= 0 && rect.x <= width && rect.y <= height;
   }
 
-  function cellColors(cell) {
+  function cellColors(cell, strokeAlpha = 0.09) {
     const background = tokenRgb('--background');
     const foreground = tokenRgb('--foreground');
     const surface2 = tokenRgb('--surface-2');
     const surface3 = tokenRgb('--surface-3');
     const tone = tokenRgb(TONE_TOKENS[cell.tone]);
+    const light = isLightTheme();
+    // In light mode the --foreground token is near-black; use a dark gray for
+    // cell text so numbers read clearly with softer contrast than pure black.
+    const textSource = light ? mix(foreground, background, 0.82) : foreground;
+    const textAlpha = light ? 0.78 : 0.68;
     let fill = rgba(mix(surface2, background, 0.82), 0.96);
-    let stroke = rgba(foreground, 0.09);
-    let text = rgba(foreground, 0.68);
+    let stroke = rgba(foreground, strokeAlpha);
+    let text = rgba(textSource, textAlpha);
 
     if (cell.style === 'empty') {
       fill = rgba(surface2, 0.32);
-      text = rgba(foreground, 0.38);
+      text = rgba(textSource, light ? 0.55 : 0.38);
     } else if (cell.style === 'aggregate') {
       fill = rgba(mix(surface3, background, 0.76), 0.98);
-      stroke = rgba(foreground, 0.14);
+      stroke = rgba(foreground, strokeAlpha + 0.05);
     } else if (cell.tone !== 'neutral') {
       fill = rgba(mix(tone, background, 0.22), 0.96);
     }
@@ -214,11 +223,11 @@
     if (cell.states.has('column-focus')) fill = rgba(mix(tokenRgb('--warning'), parseCssColor(fill) || background, 0.12), 0.98);
     if (cell.states.has('written')) {
       fill = rgba(mix(tokenRgb('--primary'), background, 0.34), 0.98);
-      text = rgba(foreground, 0.78);
+      text = rgba(textSource, light ? 0.95 : 0.78);
     }
     if (cell.states.has('muted')) {
       fill = rgba(surface2, 0.25);
-      text = rgba(foreground, 0.35);
+      text = rgba(textSource, light ? 0.5 : 0.35);
     }
     if (cell.states.has('selected')) {
       if (cell.style === 'aggregate') {
@@ -239,23 +248,27 @@
     const background = tokenRgb('--background');
     const surface3 = tokenRgb('--surface-3');
     const minDimension = Math.min(rect.width, rect.height);
+    const light = isLightTheme();
     // A 20px cell is already a compact overview cell in the GM → UB lane.
     // Start adapting before the old 18px threshold so padding does not fade
     // into the grid before the user can zoom or hover it.
     const compactness = clamp((30 - minDimension) / 12, 0, 1);
-    const wash = mix(foreground, surface3, 0.16 + compactness * 0.12);
+    // In light mode the --foreground token is near-black; soften the hatch so
+    // the padding stripes read as a subtle pattern instead of a heavy black grid.
+    const hatchSource = light ? mix(foreground, background, 0.76) : foreground;
+    const wash = mix(light ? mix(foreground, background, 0.62) : foreground, surface3, 0.16 + compactness * 0.12);
     ctx.save();
     ctx.beginPath();
     ctx.rect(rect.x, rect.y, rect.width, rect.height);
     ctx.clip();
 
-    ctx.fillStyle = rgba(wash, 0.28 + compactness * 0.28);
+    ctx.fillStyle = rgba(wash, light ? 0.1 + compactness * 0.1 : 0.28 + compactness * 0.28);
     ctx.fillRect(rect.x, rect.y, rect.width, rect.height);
 
     const step = minDimension < 26
       ? clamp(minDimension * 0.48, 5, 9)
       : clamp(minDimension * 0.42, 6, 12);
-    ctx.strokeStyle = rgba(foreground, 0.3 + compactness * 0.38);
+    ctx.strokeStyle = rgba(hatchSource, light ? 0.12 + compactness * 0.14 : 0.3 + compactness * 0.38);
     ctx.lineWidth = minDimension < 24 ? 1.5 : 1;
     ctx.lineCap = 'square';
     for (let start = rect.x - rect.height; start < rect.x + rect.width; start += step) {
@@ -266,7 +279,7 @@
     }
 
     if (minDimension < 26) {
-      ctx.strokeStyle = rgba(mix(foreground, background, 0.72), 0.68);
+      ctx.strokeStyle = rgba(light ? mix(hatchSource, background, 0.35) : mix(foreground, background, 0.72), light ? 0.42 : 0.68);
       ctx.lineWidth = clamp(minDimension * 0.14, 1.4, 2);
       ctx.beginPath();
       ctx.moveTo(rect.x + rect.width * 0.18, rect.y + rect.height * 0.82);
@@ -301,8 +314,8 @@
     return output ? `${output}…` : '';
   }
 
-  function drawCell(ctx, cell, rect) {
-    const colors = cellColors(cell);
+  function drawCell(ctx, cell, rect, strokeAlpha) {
+    const colors = cellColors(cell, strokeAlpha);
     const minDimension = Math.min(rect.width, rect.height);
     const box = {
       x: rect.x,
@@ -592,7 +605,7 @@
       drawGrid(ctx, bounds, width, height);
       cells.forEach((cell) => {
         const rect = cellScreenRect(cell, view);
-        if (visible(rect, width, height)) drawCell(ctx, cell, rect);
+        if (visible(rect, width, height)) drawCell(ctx, cell, rect, options.cellStrokeAlpha);
       });
       ctx.restore();
 

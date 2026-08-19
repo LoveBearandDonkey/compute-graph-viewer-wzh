@@ -111,8 +111,35 @@
     };
   }
 
+  function isLightTheme() {
+    const background = tokenRgb('--background');
+    return background.reduce((sum, value) => sum + value, 0) / background.length > 160;
+  }
+
+  function softLightFaces(voxel) {
+    const background = tokenRgb('--background');
+    const surface2 = tokenRgb('--surface-2');
+    const surface3 = tokenRgb('--surface-3');
+    const tokenName = voxel.state === 'current'
+      ? '--warning'
+      : (voxel.state === 'window' ? '--primary' : TONE_TOKENS[voxel.tone]);
+    const base = tokenName ? tokenRgb(tokenName) : surface3;
+    const isEmphasized = Boolean(tokenName);
+    const stateStrength = voxel.state === 'current' ? 1 : voxel.state === 'window' ? 0.82 : 0.66;
+    return {
+      top: rgbString(mixRgb(isEmphasized ? base : surface2, background, isEmphasized ? stateStrength * 0.5 : 0.52)),
+      east: rgbString(mixRgb(base, background, isEmphasized ? stateStrength * 0.82 : 0.82)),
+      south: rgbString(mixRgb(base, background, isEmphasized ? stateStrength * 0.66 : 0.64)),
+      edge: '',
+      topEdge: '',
+      lineWidth: 0,
+      topLineWidth: 0,
+    };
+  }
+
   function neutralFaces(state) {
     const foreground = tokenRgb('--foreground');
+    const background = tokenRgb('--background');
     if (state === 'ghost') {
       return {
         top: rgbString(tokenRgb('--surface-4'), 0.28),
@@ -123,10 +150,10 @@
     }
     if (state === 'padding') {
       return {
-        top: 'rgba(90, 96, 104, 0.25)',
-        east: 'rgba(54, 60, 68, 0.25)',
-        south: 'rgba(42, 48, 56, 0.25)',
-        edge: 'rgba(190, 200, 212, 0.18)',
+        top: rgbString(tokenRgb('--surface-3'), 0.42),
+        east: rgbString(tokenRgb('--surface-2'), 0.38),
+        south: rgbString(tokenRgb('--surface-2'), 0.3),
+        edge: rgbString(foreground, 0.22),
       };
     }
     if (state === 'skipped') {
@@ -137,11 +164,12 @@
         edge: rgbString(foreground, 0.18),
       };
     }
+    const surface = tokenRgb('--surface-3');
     return {
-      top: 'rgb(74, 80, 88)',
-      east: 'rgb(59, 65, 74)',
-      south: 'rgb(48, 54, 64)',
-      edge: 'rgba(10, 12, 16, 0.72)',
+      top: rgbString(mixRgb(surface, background, 0.85)),
+      east: rgbString(mixRgb(surface, background, 0.72)),
+      south: rgbString(mixRgb(surface, background, 0.58)),
+      edge: rgbString(foreground, 0.32),
       lineWidth: 1,
       topLineWidth: 1,
     };
@@ -192,7 +220,8 @@
     };
   }
 
-  function facesFor(voxel) {
+  function facesFor(voxel, surfaceStyle) {
+    if (surfaceStyle === 'soft-light' && isLightTheme()) return softLightFaces(voxel);
     if (voxel.state === 'current') return tokenFaces('--warning', 'current');
     if (
       voxel.state === 'ghost'
@@ -223,9 +252,11 @@
     ctx.closePath();
     ctx.fillStyle = fill;
     ctx.fill();
-    ctx.strokeStyle = stroke;
-    ctx.lineWidth = lineWidth;
-    ctx.stroke();
+    if (stroke && lineWidth > 0) {
+      ctx.strokeStyle = stroke;
+      ctx.lineWidth = lineWidth;
+      ctx.stroke();
+    }
   }
 
   function drawVoxel(ctx, layout, voxel, faces) {
@@ -253,21 +284,21 @@
     const b0 = p(c0, r0, d1);
     const b1 = p(c1, r0, d1);
     const b2 = p(c1, r1, d1);
-    drawQuad(ctx, [f0, f1, b1, b0], faces.top, faces.topEdge || faces.edge, faces.topLineWidth || faces.lineWidth || 1);
-    drawQuad(ctx, [f1, f2, b2, b1], faces.east, faces.edge, faces.lineWidth || 1);
-    drawQuad(ctx, [f0, f1, f2, f3], faces.south, faces.edge, faces.lineWidth || 1);
+    drawQuad(ctx, [f0, f1, b1, b0], faces.top, faces.topEdge ?? faces.edge, faces.topLineWidth ?? faces.lineWidth ?? 1);
+    drawQuad(ctx, [f1, f2, b2, b1], faces.east, faces.edge, faces.lineWidth ?? 1);
+    drawQuad(ctx, [f0, f1, f2, f3], faces.south, faces.edge, faces.lineWidth ?? 1);
     return {
       x: (f0.x + f1.x + f2.x + f3.x) / 4,
       y: (f0.y + f1.y + f2.y + f3.y) / 4,
     };
   }
 
-  function computeLayout(width, height, extent, padding) {
+  function computeLayout(width, height, extent, padding, maxUnit = 34) {
     const innerWidth = Math.max(1, width - padding.left - padding.right);
     const innerHeight = Math.max(1, height - padding.top - padding.bottom);
     const widthUnits = extent.columns + extent.depth * DEPTH_X_RATIO;
     const heightUnits = extent.rows + extent.depth * DEPTH_Y_RATIO;
-    const unit = Math.max(3, Math.min(34, innerWidth / Math.max(1, widthUnits), innerHeight / Math.max(1, heightUnits)));
+    const unit = Math.max(3, Math.min(Math.max(3, numberOr(maxUnit, 34)), innerWidth / Math.max(1, widthUnits), innerHeight / Math.max(1, heightUnits)));
     const depthX = unit * DEPTH_X_RATIO;
     const depthY = unit * DEPTH_Y_RATIO;
     const objectWidth = extent.columns * unit + extent.depth * depthX;
@@ -338,7 +369,7 @@
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
       ctx.clearRect(0, 0, width, height);
 
-      const layout = computeLayout(width, height, scene.extent, resolvePadding(options.padding));
+      const layout = computeLayout(width, height, scene.extent, resolvePadding(options.padding), options.maxUnit);
       if (options.showAxes !== false) drawAxes(ctx, layout, scene.extent, scene.axes);
 
       const voxels = scene.voxels
@@ -352,7 +383,7 @@
       ctx.textBaseline = 'middle';
 
       voxels.forEach((voxel) => {
-        const center = drawVoxel(ctx, layout, voxel, facesFor(voxel));
+        const center = drawVoxel(ctx, layout, voxel, facesFor(voxel, options.surfaceStyle));
         const shouldLabel = voxel.label
           && (options.autoLabelDensity === false || layout.unit >= 12 || voxel.state === 'current');
         if (shouldLabel && voxel.state !== 'skipped') {
