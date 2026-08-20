@@ -422,7 +422,11 @@
 .cro-region--net     { grid-column: net-start / net-end;   grid-row: 1 / 3; }
 .cro-region--arch    { grid-column: arch-start / arch-end; grid-row: 1; }
 .cro-region--moe     { grid-column: moe-start / moe-end;   grid-row: 1; }
-.cro-region--cluster { grid-column: arch-start / moe-end;  grid-row: 2; }
+/* min-height 给在网格项而不是行轨：fit-content(46%) 本身不接受 minmax() 嵌套，
+   只能靠撑大这一行唯一的项来间接撑高行轨。卡数少（如 qwen2-7b 默认 8 卡）时
+   矩阵格子本就没多高，没这个下限整个 Cluster 行会跟着矩阵一起塌，单卡容量栏
+   （height:0 + min-height:100%，见 config-relation-capacity.css）也会被连带压扁。 */
+.cro-region--cluster { grid-column: arch-start / moe-end;  grid-row: 2; min-height: 260px; }
 
 /* Explorer rail 键折叠「整网」区：整列塌掉，其余区域自然吃掉宽度 */
 .cro-board.is-net-collapsed {
@@ -432,6 +436,25 @@
 }
 
 .cro-board.is-net-collapsed .cro-region--net {
+  display: none;
+}
+
+/* 稠密模型（无 MoE，如 Qwen2-7B）：moe 整段塌掉，arch track 吃掉这段宽度，
+   与 is-net-collapsed 同一手法（把冗余的线名合并到相邻线上）。cluster 原本就横跨
+   arch-start / moe-end，moe-end 现在与 arch-end 重合，天然只剩 arch 那一列宽。
+   ⚠️ arch 的 fr 权重写成 1.9+1.05=2.95（而不是保留原来的 1.9）：fr 是按"当前
+   这组 track 的权重之和"分配剩余空间的，少了 moe 这一条 track，分母跟着变小，
+   net 的 0.85fr 分到的比例会自动变大——net 列会跟着跳宽。把 arch 权重吃下 moe
+   那一份，两种状态下 net/总权重 的比例都是 0.85/3.8，net 列宽度才不随模型切换
+   跳动（用户实测反馈：切到 qwen2-7b 时整网栏宽度不该变）。 */
+.cro-board.is-no-moe {
+  grid-template-columns:
+    [net-start] minmax(220px, 0.85fr)
+    [net-end arch-start] minmax(420px, 2.95fr)
+    [arch-end moe-start moe-end];
+}
+
+.cro-board.is-no-moe .cro-region--moe {
   display: none;
 }
 
@@ -1844,12 +1867,15 @@
   min-width: 0;
 }
 
-/* Stage 标签行 / stage 块容器 / EP 标签行三者用同一套 pp 列模板，左右对齐 */
+/* Stage 标签行 / stage 块容器 / EP 标签行三者用同一套 pp 列模板，左右对齐。
+   列间距从 --space-2(8px) 收到 --space-1(4px)：这道缝只用来说明「换了一个 PP
+   stage」，4px 已经够读；省下的 (pp-1)×4px 全部回到格子上 —— 矩阵里横向的每
+   一像素都摊给 pp×epCols 个格子，宽度比留白值钱。 */
 .cro-heat .twin-heat-pp-labels,
 .cro-heat .cro-heat-dp,
 .cro-heat .cro-heat-ep-labels {
   display: grid;
-  column-gap: var(--space-2);
+  column-gap: var(--space-1);
 }
 
 /* 每个 DP 副本一个横贯全宽的分组盒（基类提供左侧 DP 标签与边框） */
@@ -1859,8 +1885,13 @@
   gap: 3px;
 }
 
+/* 左右 padding 归零、只留上下：基类那 2px 四边 padding 加上 1.5px 的边框，
+   横向白白吃掉 7px；而 DP 组的边框本身已经把「这一组到哪儿为止」画清楚了，
+   贴着边框排格子并不会读混。上下留着 —— 竖直方向格子紧贴边框反而显脏。
+   本次只动横向，纵向仍是 2+2，js 的 clusterChromeH() 那份账不受影响；
+   ⚠️ 但若哪天改了上下这两个 2px 或那道边框，必须同步改它。 */
 .cro-heat .cro-heat-dp {
-  padding: 2px;
+  padding: 2px 0;
   border-radius: 3px;
 }
 
@@ -1902,12 +1933,13 @@
 .cro-heat .twin-heat-cell {
   --cro-cell-ring: color-mix(in srgb, var(--foreground-muted) 45%, transparent);
   background: transparent;   /* 不要 .ep-tint-N 的 8 色循环底色 */
-  /* 基类是 aspect-ratio:1，格高会被列宽牵着走；这里显式定高、与宽度解耦。
-     具体值由 renderCluster 随折行数一并写在 #croHeat 上（CLUSTER_CELL_H：
-     2 行→4px / 3 行→6px / 4 行→8px）——列数减半格子就宽一倍，高度不同步
-     放大就成了扁条。回落值 4px = 折 2 行时的原值。 */
+  /* 基类是 aspect-ratio:1（正方形），本页不适用：格宽由 EP 列数决定、格高由
+     纵向预算决定，两者各有各的约束。具体值由 syncCellWidth 实测后写在 #croHeat
+     上（js 里三道闸：纵向预算 / 不高过自己的宽 / 不低于 3px）。
+     回落值 4px 只在 js 还没跑到时用一下。 */
   aspect-ratio: auto;
   height: var(--cro-cell-h, 4px);
+  min-height: 3px;    /* 与 js 的 CLUSTER_CELL_H_MIN 同一道下限 */
   max-height: none;
   border-radius: 1px;
   box-shadow: inset 0 0 0 1px var(--cro-cell-ring);

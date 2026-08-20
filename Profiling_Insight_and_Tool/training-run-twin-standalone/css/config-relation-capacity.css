@@ -45,6 +45,9 @@
      写死一个两套主题都站得住的中间灰，不用 color-mix —— JS 要把它拆成 RGB
      分量去分三个面的明暗，而 color-mix 的计算值在各浏览器里格式不统一。 */
   --cro-cap-reserve: #8A98A2;
+  /* 底座比预留更暗一档：它是「已经被占掉、且你调不动」的那一段，视觉上要沉在
+     盒底当地基，不跟上面四段争。同样写死中间灰（理由见上）。 */
+  --cro-cap-base: #55606A;
 }
 
 /* ── 标题行 ── */
@@ -119,6 +122,9 @@
   min-height: 0;
 }
 
+/* 让路的那一半：图形盒子的宽度由高度解出（见 .cro-capacity__scene），本栏拿的
+   是剩下的，flex-shrink 与 min-width:0 保证它随时能让 —— 一个大百分比加几行
+   图例，本来就不需要一半的面板宽度。 */
 .cro-capacity__readouts {
   flex: 1 1 auto;
   min-width: 0;
@@ -179,23 +185,37 @@
    「高度只跟随矩阵」（见 .cro-capacity 的 height:0 + min-height:100%），柱子就得
    能跟着缩下去；留一道 px 下限，它就又会在矩阵矮的时候顶住不动、把行撑起来。
    窄屏那档另说 —— 那里 __main 是 align-items:center、盒子拿不到拉伸高度，
-   下限由文件末尾的 @media 单独给回。 */
+   下限由文件末尾的 @media 单独给回。
+
+   max-width 从 46% 一路放到 64%：盒子的宽度是由高度经 aspect-ratio 解出来的，
+   面板一高这道百分比封顶就先一步咬住 —— 图形明明还有竖向空间可用，却因为横向
+   被卡死而只能整幅缩小，右侧读数那半反倒空着一截。读数是「一个大百分比 + 几行
+   图例」，本来就不需要一半的宽度。读数那半是 flex:1 1 auto + min-width:0，随时
+   能让路，所以放宽不会把它挤到溢出。
+
+   aspect-ratio 从 10.7/14.9 改成 12.7/14.9：viewBox 已改成围着柱体中心**对称**
+   展开（见 config-relation-capacity.js 末尾的注释），左边那截阈值标签在右侧有了
+   等宽的镜像，viewBox 就比原来宽了约 2.0 user unit。这里跟着改，盒子的形状才和
+   画面的形状一致，不会平白多出一圈死边。 */
 .cro-capacity__scene {
   flex: 0 0 auto;
-  aspect-ratio: 10.7 / 14.9;
+  aspect-ratio: 12.7 / 14.9;
   width: auto;
   min-width: 0;
-  max-width: 46%;
+  max-width: 64%;
   min-height: 0;
   display: flex;
   align-items: center;
   justify-content: center;
 }
 
+/* 不铺满盒子，留一圈呼吸：撑得有多满画多满谈不上精致，而且柱体顶上还会摞
+   「装不下的那截」，贴着边缘会显得要冲出去。92% 由盒子的 align-items/justify-content
+   居中，四周留白均匀。 */
 .cro-capacity__scene svg {
-  width: 100%;
-  height: 100%;
-  max-height: 288px;
+  width: 92%;
+  height: 92%;
+  max-height: 276px;
   overflow: visible;
 }
 
@@ -235,6 +255,7 @@
 .cro-capacity__row[data-seg="grad"]   { --cro-seg-color: var(--cro-cap-grad); }
 .cro-capacity__row[data-seg="optim"]  { --cro-seg-color: var(--cro-cap-optim); }
 .cro-capacity__row[data-seg="act"]    { --cro-seg-color: var(--cro-cap-act); }
+.cro-capacity__row[data-seg="base"]   { --cro-seg-color: var(--cro-cap-base); }
 .cro-capacity__row[data-seg="reserve"] i {
   background: repeating-linear-gradient(
     45deg,
@@ -299,12 +320,37 @@
   gap: 3px;
 }
 
+/* 标题与「最满 Stage0 · 64%」连成一句读，中间用 · 隔开，而不是两端对齐分居左右。
+   两端对齐时中间那道空白会把它们读成两件事，而后半句本来就是前半句的结论
+   （峰值分布 → 最满的是谁）；何况栏宽让给了等距图之后，右对齐那截更容易撞上。
+   分隔符走 ::before 而不是写进 JS 的文本里：它是排版，不是数据。 */
 .cro-capacity__spread-head {
   display: flex;
-  justify-content: space-between;
-  gap: var(--space-2);
+  justify-content: flex-start;
+  align-items: baseline;
+  gap: var(--space-1);
+  min-width: 0;
   font-size: 10px;
   color: var(--foreground-muted);
+}
+
+.cro-capacity__spread-head > span + span::before {
+  content: "·";
+  margin-right: var(--space-1);
+  opacity: 0.6;
+}
+
+/* 窄栏时后半句先让 —— 前半句是这排小柱的名字，不能省 */
+.cro-capacity__spread-head > span:first-child {
+  flex: 0 0 auto;
+  white-space: nowrap;
+}
+
+.cro-capacity__spread-head > span + span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .cro-capacity__stages {
@@ -334,9 +380,12 @@
 
 .cro-capacity__stage:hover { opacity: 0.75; }
 
+/* 选中态只描边、不填色：填色会盖掉 data-level 的安全/偏满/预警/越界底色，
+   选中的往往正是最满（最危险）那根柱子，一填色它反而看着最安全。
+   用 inset 阴影而不是 outline —— 父容器 .cro-capacity__stages 是
+   overflow:hidden，outline 会被裁掉，inset 阴影画在元素自身盒内不受影响。 */
 .cro-capacity__stage.is-selected {
-  background: var(--accent);
-  box-shadow: 0 0 0 1px var(--accent);
+  box-shadow: inset 0 0 0 2px var(--accent);
 }
 
 /* ── 口径浮层：这套数字怎么算出来的。不写等于让人猜，猜出来的数没人敢用；
@@ -406,6 +455,13 @@
   font-size: 10px;
   font-weight: var(--font-weight-semibold);
   color: var(--foreground);
+}
+
+/* 标定方法那一段：不是 dl 的键值对而是一段连续说明，所以单列一段，
+   字号行高沿用浮层本身的。 */
+.cro-capacity__basis-note {
+  margin: 0;
+  color: var(--foreground-secondary);
 }
 
 .cro-capacity__basis-foot {

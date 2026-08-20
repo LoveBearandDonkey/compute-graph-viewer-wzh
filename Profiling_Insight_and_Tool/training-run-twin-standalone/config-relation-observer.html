@@ -25,9 +25,11 @@
   <!-- 集群热力图样式（复用 training-monitoring-v2 的 .twin-heat* 视觉） -->
   <link rel="stylesheet" href="./css/training-run-twin.css">
   <!-- 本页模块私有 layout -->
-  <link rel="stylesheet" href="./css/config-relation-observer.css?v=20260813-cluster-fit-2">
+  <link rel="stylesheet" href="./css/config-relation-observer.css?v=20260820-cell-fit-7">
   <!-- 单卡容量（Cluster 区右栏）：容量是「卡」的属性，与集群矩阵同区并排 -->
-  <link rel="stylesheet" href="./css/config-relation-capacity.css?v=20260813-cluster-fit-2">
+  <link rel="stylesheet" href="./css/config-relation-capacity.css?v=20260820-spread-head">
+  <!-- 顶栏视图页签 / 导出配置键 / YAML 代码框 -->
+  <link rel="stylesheet" href="./css/config-relation-yaml.css?v=20260820-yaml-view">
 </head>
 <body data-theme="dark">
   <section class="pto-ide-frame" data-ide-frame data-host="standalone" aria-label="Config and Relation Observer">
@@ -45,8 +47,26 @@
           <span>训练监控</span>
         </div>
       </div>
-      <div class="pto-ide-frame__topbar-center"></div>
+      <!-- 全局视图页签：关系视图（四域联动，默认）/ YAML 视图（右侧三区换成代码框）。
+           层级高于整网区内那三档（croNetView 只管整网列怎么摆），所以放顶栏正中。
+           样式与 profileCompare 顶栏的「分组视图 / 聚合视图」同款。 -->
+      <div class="pto-ide-frame__topbar-center">
+        <div class="segmented-control segmented-control-muted cro-view-tabs" id="croViewTabs" role="tablist" aria-label="观测视图切换">
+          <button class="btn btn-sm is-selected" type="button" role="tab" data-observer-view="relation" aria-selected="true" title="整网 / Model Architecture / MoE / Cluster 四域联动">关系视图</button>
+          <button class="btn btn-sm" type="button" role="tab" data-observer-view="yaml" aria-selected="false" title="按当前配置实时生成训练启动 yaml，整网列保留">YAML 视图</button>
+        </div>
+      </div>
       <div class="pto-ide-frame__topbar-right">
+        <!-- 导出配置：配置调完之后的终点动作，故带文字标签、独立于右侧那组窗口图标键。
+             ⚠ 目前只做样子（无 click 绑定），真正落盘的实现待定。 -->
+        <button class="btn btn-sm cro-export-btn" id="croExportConfig" type="button" title="导出当前配置为 yaml 文件">
+          <svg viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M12 3v12"></path>
+            <path d="m7 11 5 5 5-5"></path>
+            <path d="M4 19h16"></path>
+          </svg>
+          <span>导出配置</span>
+        </button>
         <div class="pto-ide-frame__window-actions" data-ide-slot="window-controls" aria-label="Window controls">
           <button class="pto-ide-frame__window-action" id="themeToggle" type="button" aria-pressed="false" title="切换主题" aria-label="切换主题">
             <svg class="pto-ide-frame__window-icon" id="themeToggleIcon" viewBox="0 0 24 24" aria-hidden="true">
@@ -240,6 +260,7 @@
                 <label class="cro-stepper__label" for="croModelSelect">模型</label>
                 <select class="cro-select" id="croModelSelect">
                   <option value="openpangu-flash">openPangu 2.0 flash 92B</option>
+                  <option value="qwen2-7b">Qwen2-7B（Dense）</option>
                 </select>
               </div>
               <div class="cro-deck-host" id="croDeckHost">
@@ -431,7 +452,9 @@
                       <span id="croCapacityVerdictText"></span>
                     </div>
 
-                    <div class="cro-capacity__spread">
+                    <!-- 预警/越界时让位给上面的判定横幅：横幅已经把「险不险」说清楚了，
+                         这排小柱这时只是重复信息还挤占竖向空间，故 alert/over 两档隐藏。 -->
+                    <div class="cro-capacity__spread" id="croCapacitySpread">
                       <div class="cro-capacity__spread-head">
                         <span>各 PP Stage 峰值</span>
                         <span id="croCapacitySpreadNote"></span>
@@ -440,6 +463,42 @@
                     </div>
                   </div>
                 </aside>
+              </div>
+            </section>
+
+            <!-- ═══ 区域 E · 配置 YAML（顶栏切到「YAML 视图」时顶掉 B/C/D 三区）═══
+                 只在 yaml 档显示，格位是 arch＋moe 两列 × 两行（见
+                 css/config-relation-yaml.css）。整网列不参与切换：左边始终回答
+                 「这份 yaml 描述的是哪张网」。内容由 js/config-relation-yaml.js
+                 从当前 config 实时生成，不是写死的样例。 -->
+            <section class="cro-region cro-region--yaml" id="croYamlRegion" aria-label="配置文件">
+              <div class="cro-yaml__head">
+                <!-- 字号与下栏「启动命令」取齐（.cro-yaml__title），不用区标题的 20px -->
+                <h2 class="cro-region__title cro-yaml__title">配置文件</h2>
+                <!-- 路径由 js 按模型名生成（configs/<家族>/run_<全名>.yaml），
+                     与 MindFormers 仓的 configs/ 目录同形 -->
+                <span class="cro-yaml__file" id="croYamlPath"></span>
+                <span class="cro-yaml__status" id="croYamlStatus" data-level="ok" role="status" aria-live="polite"></span>
+                <button class="btn btn-sm btn-ghost cro-yaml__copy" id="croYamlCopy" type="button" title="复制 yaml 全文">
+                  <span class="cro-yaml__copy-label">复制</span>
+                </button>
+              </div>
+              <ol class="cro-yaml__code" id="croYamlCode"></ol>
+
+              <!-- ── 下栏 · 启动命令 ──
+                   卡型号 / 单卡 HBM / 节点数 / 总卡数 都不写在 MindFormers 的
+                   run_*.yaml 里：前两项是硬件事实（yaml 里只有 context
+                   .max_device_memory 这个上限，写成它的行尾注释），后两项由启动器
+                   给。所以它们的落点在这一栏，而不是硬塞进上面那份 yaml。 -->
+              <div class="cro-yaml__launch">
+                <div class="cro-yaml__launch-head">
+                  <span class="cro-yaml__launch-title">启动命令</span>
+                  <span class="cro-yaml__launch-note">msrun · 集群规模</span>
+                  <button class="btn btn-sm btn-ghost cro-yaml__copy" id="croLaunchCopy" type="button" title="复制启动命令">
+                    <span class="cro-yaml__copy-label">复制</span>
+                  </button>
+                </div>
+                <ol class="cro-yaml__code cro-yaml__code--shell" id="croLaunchCode"></ol>
               </div>
             </section>
 
@@ -457,9 +516,11 @@
   <script src="./js/ide-frame-pattern.js"></script>
   <script src="./js/model-graphviz-pattern.js"></script>
   <script src="./js/model-architecture-3d-deck-pattern.js"></script>
-  <script src="./js/config-relation-observer.js?v=20260813-cluster-fit-2"></script>
+  <script src="./js/config-relation-observer.js?v=20260820-cell-fit-8"></script>
   <!-- 单卡容量：必须排在主脚本之后（要读它导出的 croObserver / croSelect） -->
-  <script src="./js/config-relation-capacity.js?v=20260812-capacity-figure"></script>
+  <script src="./js/config-relation-capacity.js?v=20260820-scene-center"></script>
+  <!-- YAML 视图：同样排在主脚本之后（要读它导出的 croObserver.topology） -->
+  <script src="./js/config-relation-yaml.js?v=20260820-yaml-view"></script>
   <script>
     // 主题切换：与 training-monitoring-v2.html 同款单图标按钮，只改 data-theme。
     (() => {
