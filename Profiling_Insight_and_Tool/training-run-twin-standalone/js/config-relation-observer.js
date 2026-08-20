@@ -39,7 +39,46 @@
         dp: 8, pp: 4, tp: 1, cp: 1,
         microBatch: 1, seqLen: 4096,
         routedExpert: 256, topK: 8, sharedExpert: 1, ep: 64,
-        totalRank: 2048, node: 256, card: "910b",
+        totalRank: 2048, node: 256, card: "910b-64",
+      },
+    },
+    /* Qwen2-7B：稠密（非 MoE）参考案例，用于验证「整网」栏在无 MoE 模型下的呈现。
+       结构参数取自用户给定的参考配置（GQA 28Q:4KV，PP 28 层均分 4 段，无 VPP）。 */
+    "qwen2-7b": {
+      id: "qwen2-7b",
+      label: "Qwen2-7B",
+      hidden: 3584,
+      vocab: 152064,
+      heads: 28,
+      kvHeads: 4,            // GQA：28 Q head : 4 KV head，head_dim 128
+      attentionLabel: "gqa",
+      noMoe: true,            // 稠密模型：derive() / deckConfigFrom() / renderMoe() 据此跳过 MoE 分支
+      denseIntermediate: 18944,
+      archType: "Qwen2ForCausalLM",
+      deck: {
+        depthGap: 46,
+        blockPostLayers: [],
+        residualLabel: "Residual stream",
+        sideRows: [
+          { label: "Input RMSNorm", ids: ["input_norm"] },
+          { label: "Q / K / V Projection", ids: ["q_proj", "k_proj", "v_proj"] },
+          { label: "RoPE", ids: ["q_rope", "k_rope"] },
+          { label: "FlashAttention · GQA", ids: ["attention_core"] },
+          { label: "Output Projection", ids: ["o_proj"] },
+          { label: "Attention Residual Add", ids: ["attn_residual_add"] },
+          { label: "Post-Attention RMSNorm", ids: ["post_attn_norm"] },
+          { label: "Gate / Up Linear", ids: ["ffn_gate_up"] },
+          { label: "SiLU × Multiply", ids: ["ffn_act"] },
+          { label: "Down Linear", ids: ["ffn_down"] },
+          { label: "FFN Residual Add", ids: ["ffn_residual_add"] },
+        ],
+      },
+      defaults: {
+        totalLayer: 28,
+        dp: 2, pp: 4, tp: 1, cp: 1,
+        microBatch: 1, seqLen: 4096,
+        routedExpert: 1, topK: 1, sharedExpert: 0, ep: 1,
+        totalRank: 8, node: 2, card: "910b-64",
       },
     },
   };
@@ -48,19 +87,24 @@
      只有 hbmGB 参与计算（它是「单卡容量」那个线框盒的高度）；specs 是纯说明，
      出现在容量栏口径浮层里。
 
-     ⚠️ 两个 HBM 数字的来源强度不一样，别当成同一档证据：
+     ⚠️ HBM 数字的来源强度不一样，别当成同一档证据：
        · 910B —— 本仓 AI_Profiling_Tool/AscendProfKit/skills/performance-health-score/
          SKILL.md 记「常见 32GB / 64GB 两种规格，需从 NPU_INFO 表确认型号后定」。
-         这里取 64GB 那一款。
+         两款都是真实存在的规格，故拆成 910b-32 / 910b-64 两个选项，而不是取其一。
        · 950  —— Profiling_Insight_and_Tool/KNOWLEDGE.md §3.1 只给了**整片** DDR
-         128 GB / 1.6 TB/s，没有单卡 HBM 容量。64 是按「两款都按 64G 对齐」的
+         128 GB / 1.6 TB/s，没有单卡 HBM 容量。64 是按「与 910B 高配对齐」的
          要求取的占位值，**待确认**。
      拿到准确规格后只改这一个表，容量栏与集群下拉会一起跟上。 */
   const CARD_SPECS = {
     /* label 给口径浮层（那里空间宽裕，带「昇腾」读着完整）；short 给下拉选项
        （集群表单那一格只有 128px，选项文本还要缀上容量）。 */
-    "910b": {
-      id: "910b", label: "昇腾 910B", short: "910B", hbmGB: 64,
+    "910b-32": {
+      id: "910b-32", label: "昇腾 910B", short: "910B", hbmGB: 32,
+      hbmNote: "常见 32 / 64 GB 两种规格，此处取 32 GB 款",
+      specs: "HBM2e 1.6 TB/s（来源：本仓 performance-health-score 技能卡）",
+    },
+    "910b-64": {
+      id: "910b-64", label: "昇腾 910B", short: "910B", hbmGB: 64,
       hbmNote: "常见 32 / 64 GB 两种规格，此处取 64 GB 款",
       specs: "HBM2e 1.6 TB/s（来源：本仓 performance-health-score 技能卡）",
     },
@@ -73,8 +117,8 @@
     },
   };
 
-  const CARD_ORDER = ["910b", "950"];
-  const DEFAULT_CARD = "910b";
+  const CARD_ORDER = ["910b-32", "910b-64", "950"];
+  const DEFAULT_CARD = "910b-64";
 
   /* ── stepper 字段规格：min/max/step 与取值方式（pow2 = 按 2 的幂增减） ── */
   const FIELD_SPECS = {
@@ -270,12 +314,12 @@
 
     const layers = [];
     for (let l = 0; l < totalLayer; l += 1) {
-      const dense = l < preset.firstKDense;
+      const dense = preset.noMoe ? true : l < preset.firstKDense;
       layers.push({
         index: l,
         stage: stageOfLayer[l],
         ffn: dense ? "dense" : "moe",
-        attention: l % preset.dsaEvery === 0 ? "dsa" : "swa",
+        attention: preset.dsaEvery ? (l % preset.dsaEvery === 0 ? "dsa" : "swa") : (preset.attentionLabel || "std"),
       });
     }
 
@@ -371,11 +415,12 @@
       config, preset, errors, valid: errors.length === 0,
       // 卡型号：只有 hbmGB 参与计算（单卡容量框的高度），其余是说明性规格
       card: CARD_SPECS[config.card] || CARD_SPECS[DEFAULT_CARD],
+      hasMoe: !preset.noMoe,
       stages, layers, epRanks,
       counts: {
         totalLayer,
-        denseLayers: Math.min(preset.firstKDense, totalLayer),
-        moeLayers: Math.max(0, totalLayer - preset.firstKDense),
+        denseLayers: preset.noMoe ? totalLayer : Math.min(preset.firstKDense, totalLayer),
+        moeLayers: preset.noMoe ? 0 : Math.max(0, totalLayer - preset.firstKDense),
         dsaLayers: layers.filter((l) => l.attention === "dsa").length,
         swaLayers: layers.filter((l) => l.attention === "swa").length,
         routedExpert, topK: config.topK, sharedExpert, ep, expertsPerEpRank,
@@ -494,6 +539,18 @@
       emit();
     }
 
+    /* 整网切换模型：不是单字段的 stepper 调整，而是把并行/批次/MoE 全部换成
+       新模型的 defaults（两个模型的层数、并行拓扑、是否有 MoE 都不同，不能只改
+       一个字段再 reconcile）。defaults 本身已自洽（见 MODEL_PRESETS 里的注释
+       校验），不需要再跑 reconcile()。 */
+    function setModel(modelId) {
+      const preset = MODEL_PRESETS[modelId];
+      if (!preset || config.model === modelId) return;
+      config.model = modelId;
+      Object.assign(config, preset.defaults);
+      emit();
+    }
+
     function emit() {
       const topology = derive(config);
       readouts.forEach((el, field) => { el.textContent = String(config[field]); });
@@ -518,6 +575,7 @@
       config,
       mount,
       set,
+      setModel,
       get topology() { return derive(config); },
       onChange(fn) { listeners.push(fn); return () => listeners.splice(listeners.indexOf(fn), 1); },
       refresh: emit,
@@ -535,20 +593,38 @@
   function deckConfigFrom(topology) {
     const { counts, stages, layers, preset } = topology;
     const lastLayer = Math.max(0, counts.totalLayer - 1);
-    return {
-      id: "openpangu-flash",
+    const base = {
+      id: preset.id,
       label: preset.label,
       layerCount: counts.totalLayer,
       depthGap: preset.deck.depthGap,
       frontLayer: Math.floor(lastLayer / 2),   // 正视图默认停在中间层（46 层 → L23）
+      blockPostLayers: preset.deck.blockPostLayers.filter((l) => l <= lastLayer),
+      stageRanges: stages.map((s) => [s.lo, s.hi]),
+      representativeLayers: stages.map((s) => s.lo),
+    };
+    if (preset.noMoe) {
+      return {
+        ...base,
+        firstMoeLayer: counts.totalLayer,     // 全 Dense：永不触发 MoE 分支
+        denseLayers: layers.map((l) => l.index),
+        dsaLayers: [],
+        routedExperts: 0,
+        topK: 0,
+        heads: preset.heads,
+        kvHeads: preset.kvHeads,
+        mtp: false,
+        residualLabel: preset.deck.residualLabel,
+        sideRows: preset.deck.sideRows,
+      };
+    }
+    return {
+      ...base,
       firstMoeLayer: counts.denseLayers,
       denseLayers: layers.filter((l) => l.ffn === "dense").map((l) => l.index),
       dsaLayers: layers.filter((l) => l.attention === "dsa").map((l) => l.index),
-      blockPostLayers: preset.deck.blockPostLayers.filter((l) => l <= lastLayer),
       routedExperts: counts.routedExpert,
       topK: counts.topK,
-      stageRanges: stages.map((s) => [s.lo, s.hi]),
-      representativeLayers: stages.map((s) => s.lo),
     };
   }
 
@@ -1134,6 +1210,8 @@
       ["gate", "a2a_dispatch", "expert_pool", "a2a_combine"],
       ["shared_expert"],
     ] },
+    // Qwen2-7B（GQA，无 mHC 低秩投影）：Q/K/V 三路并排，见 layerHtmlQwen
+    { id: "qwen_qkv", lanes: [["q_proj"], ["k_proj"], ["v_proj"]] },
   ];
   /* deckNode id → { group, lane, laneCount }：同一 id 只属于一组一栏。 */
   const PARALLEL_LOOKUP = (() => {
@@ -1237,10 +1315,14 @@
      每组 routedExpert / ep 个专家。分组与成员全部由 topology.epRanks 派生，
      改 Routed Expert / EP 立即重建。 */
   function renderMoe(sharedHost, routedHost, topology, emit) {
-    const { counts, epRanks } = topology;
+    const { counts, epRanks, hasMoe } = topology;
+    if (sharedHost) sharedHost.innerHTML = "";
+    if (routedHost) routedHost.innerHTML = "";
+    // 稠密模型（如 Qwen2-7B）没有 MoE：整个 MoE 区被 CSS 的 .is-no-moe 隐去，
+    // 这里只需清空，不必渲染「1 个专家」这类无意义的退化态。
+    if (!hasMoe) return;
 
     if (sharedHost) {
-      sharedHost.innerHTML = "";
       if (counts.sharedExpert > 0) {
         for (let i = 0; i < counts.sharedExpert; i += 1) {
           const chip = document.createElement("button");
@@ -1265,7 +1347,6 @@
     }
 
     if (!routedHost) return;
-    routedHost.innerHTML = "";
     if (!epRanks.length || !counts.expertsPerEpRank) {
       const empty = document.createElement("span");
       empty.className = "cro-empty";
@@ -1347,31 +1428,40 @@
      格高跟着行数走：列数减半格子就宽一倍，高度不同步放大就成了扁条。 */
   const CLUSTER_CELL_H = { 1: 4, 2: 4, 3: 6, 4: 8 };
 
-  /* 矩阵可用的高度预算。两个输入都与矩阵自身内容无关，所以不会出现
-     「内容撑高 → 预算变大 → 内容更高」的自激：
-       · .cro-board 的 clientHeight 由视口决定（它自己 overflow:auto）；
-       · chrome（区标题 + 表单行 + 间距）实测自上一帧 —— 行高减去矩阵视口的
-         可见高度，差值恒等于矩阵之外那部分，与折几行无关。 */
+  /* 矩阵可用的高度预算 = 它要装进去的那个视口本身。
+     原来是拿板面高度 × 46%/62% 再减去实测的区 chrome 去"估"，估出来的数和
+     syncBoardRows() 真正批给 Cluster 那一行的高度是两笔独立的账，对不上就一头
+     出滚动条、另一头空一截。现在直接读 .cro-cluster__grid 的 clientHeight：
+     两行的高度在 syncBoardRows() 里已经定好，且**只由 Model Architecture 的内容
+     需求决定、与矩阵无关**（见那边的注释），所以这里读到的是终局值，不会出现
+     "矩阵撑高预算 → 预算再撑高矩阵"的自激。
+     留 2px 余量：视口高度是分数值经 clientHeight 圆整来的，贴着铺满可能差半像素
+     顶出一条拖不动的滚动条。 */
   function clusterHeightBudget(host) {
+    const viewport = host.closest?.(".cro-cluster__grid");
+    if (viewport && viewport.clientHeight > 0) return viewport.clientHeight - 2;
+    /* 量不到视口的两种情况：首帧还没布局；事件详情的角色卡里另开的那几份矩阵
+       （host 不在 .cro-board 里，见 ROLE_DOMAINS 的重建）。退回板面比例估算。 */
     const board = host.closest?.(".cro-board");
     if (!board || !board.clientHeight) return 0;
-    // 行高封顶见 css 的 grid-template-rows（只看一边的两档放宽到 62%）
     const capRatio = board.classList.contains("is-view-single") ? 0.62 : 0.46;
-    const region = host.closest(".cro-region--cluster");
-    const viewport = host.closest(".cro-cluster__grid");
-    let chrome = 132;   // 首帧还没布局，先用一个保守估计
-    if (region && viewport && viewport.clientHeight) {
-      const measured = region.offsetHeight - viewport.clientHeight;
-      if (measured > 0 && measured < region.offsetHeight) chrome = measured;
-    }
-    return board.clientHeight * capRatio - chrome;
+    return board.clientHeight * capRatio - 132;
   }
 
-  /* 几何按真实 DOM 逐层算，不塞魔数：
+  /* 一幅矩阵里除了格子本身之外的那些高度（下面统称 chrome），几何按真实 DOM
+     逐层算，不塞魔数：
        block  = epRows 行 × 格高，行间 1px（.cro-heat-block 的 gap）
        DP 组  = innerRows 个 block 竖排 + 上下各 2px padding（.cro-heat-dp）
+                + 上下各 1.5px 边框（.twin-heat-dp-group，padding 被本页改过
+                但 border 没有）→ 每组固定 7px
        整幅   = dp 个组 + 组间 3px（.cro-heat-body 的 gap）+ 上下两条标签行
-     下限恒为 2：那是改动前的行为，量不到高度或实在放不下时不该比原来更差
+                与它们各自 4px 的 flex gap，合计约 32px
+     pickEpRows 与 verticalCellHeight 用的是同一份账，抽出来只写一处。 */
+  function clusterChromeH(dp, innerRows, epRows) {
+    return dp * (innerRows * (epRows - 1) + 7) + (dp - 1) * 3 + 32;
+  }
+
+  /* 下限恒为 2：那是改动前的行为，量不到高度或实在放不下时不该比原来更差
      （放不下就照旧由 .cro-cluster__grid 内部滚动）。
 
      只收 ep 能**整除**的行数。折不尽的话末行会缺格：64 EP 折 3 行是
@@ -1389,8 +1479,7 @@
 
     const heightOf = (rows) => {
       const cell = CLUSTER_CELL_H[rows] || 4;
-      const group = innerRows * (rows * cell + (rows - 1)) + 4;
-      return dp * group + (dp - 1) * 3 + 32;
+      return dp * innerRows * rows * cell + clusterChromeH(dp, innerRows, rows);
     };
 
     let best = floor;
@@ -1398,6 +1487,228 @@
       if (ep % rows === 0 && heightOf(rows) <= budget) best = rows;
     }
     return best;
+  }
+
+  /* 格高的上下限。rank 格不要求正方形，但要求**不高于自己的宽**（竖着长的格子
+     读起来像"条"不像"卡"），所以格宽是它的另一道硬上界，见 syncCellWidth。
+     CLUSTER_CELL_H_MAX 只是防止卡数很少时（如 qwen2-7b 默认 dp2×pp4×ep1，一个
+     stage 块只有 1×1 格）一格独吞整块预算、涨成一面墙。
+     CLUSTER_CELL_H_MIN = 3：再挤也得看得见一格是一格 —— 1~2px 时格子与 1px 描边
+     同量级，整片矩阵会糊成一条实心色带，rank 的疏密结构全丢了。 */
+  const CLUSTER_CELL_H_MAX = 32;
+  const CLUSTER_CELL_H_MIN = 3;
+
+  /* 按 pickEpRows 那份同源的账反解：这个 epRows 下，纵向预算刨掉 chrome 之后
+     摊到每一格行上能给多高。pickEpRows 用 CLUSTER_CELL_H 那张保守表只是为了
+     决定折几行，真正落到 --cro-cell-h 的是这里算出来的值 —— 折行定下来之后，
+     剩余的纵向空间应该全部摊进格子里，而不是留白在矩阵下方。 */
+  function verticalCellHeight(host, counts, epRows) {
+    const dp = counts.dp;
+    const innerRows = counts.ranksPerEp;
+    const budget = clusterHeightBudget(host);
+    if (!(budget > 0) || dp <= 0 || innerRows <= 0) return CLUSTER_CELL_H_MAX;
+    const totalCellRows = dp * innerRows * epRows;
+    const available = budget - clusterChromeH(dp, innerRows, epRows);
+    if (!(available > 0) || totalCellRows <= 0) return CLUSTER_CELL_H[epRows] || 4;
+    return Math.min(CLUSTER_CELL_H_MAX, Math.floor(available / totalCellRows));
+  }
+
+  /* 格宽必须整数像素、锁死到每个 block 上——不能再让 CSS Grid 的 1fr 各自取整。
+     cellTemplate 原来是 repeat(epCols, minmax(0,1fr))：同一个 block 内 1fr 按列
+     各自求值，折成十几二十列时哪怕只差 1px，摊到几像素宽的格子上就是肉眼可见
+     的「有的宽有的窄」（列数越多越明显，2 行仅 4px 格高时更甚）。
+     用已经排好版的第一个 block 反量出真实可用宽度，连它自己的 column-gap 一起
+     读出来（不在 JS 里重复硬编码 --space-2 这类 gap 常量），算出整数像素的轨道
+     列表后统一写回所有 block；block 之间原有的 stageTemplate（1fr）留着不动
+     ——那是 4 个 stage 块互相分宽度，不是本次要锁的"块内格子互相分宽度"。
+
+     余数不能丢在右边。floor 出来的统一格宽最多浪费 epCols-1 px（16 列时近
+     一格半的宽度），全堆在 block 右缘就是一道空隙：格子明明可以再宽一点，却
+     让 stage 块的右边空着。所以先取 base = floor(可用宽 / 列数)，再把余下的
+     extra 像素按 Bresenham **均匀间隔**地摊给 extra 个列（每列至多 +1px），
+     整行正好填满 block。
+     和当初 1fr 的区别在"均匀"二字：1fr 是每列各自取整、误差落在哪儿由浏览器
+     的累积舍入决定，会出现连着几个窄的再连着几个宽的；这里的 +1px 是等间隔
+     插入的，且格子早已不是当年的 4px 细条（现在按格宽做成正方形，动辄十几
+     二十像素），1px 的差别摊在上面看不出来，空着的那道缝反而更扎眼。
+
+     格高（--cro-cell-h）同一处一并写：取 base（不含 +1 的那档，保证没有格子
+     高过自己的宽）与纵向预算两个上限里更小的那个。
+
+     ⚠️ growHeight:false —— renderCluster 之后的那次补量（refitClusterCells）只许
+     格子变宽、不许变高。格高那时已经按终局视口算过一次并铺进 DOM 了，补量时若
+     矩阵恰好顶出一条滚动条，重算出来的值反而可能偏大，一涨就真溢出。变矮不会
+     溢出，所以只封上界、不封下界。 */
+  function syncCellWidth(host, epCols, counts, epRows, { growHeight = true } = {}) {
+    if (!(epCols > 0)) return;
+    const firstBlock = host.querySelector(".cro-heat-block");
+    if (!firstBlock) return;
+    const gap = parseFloat(getComputedStyle(firstBlock).columnGap) || 0;
+    const inner = Math.floor(firstBlock.clientWidth - gap * (epCols - 1));
+    const base = Math.floor(inner / epCols);
+    if (!(base > 0)) return;
+    const extra = inner - base * epCols;          // 0 … epCols-1
+    const tracks = [];
+    for (let i = 0; i < epCols; i += 1) {
+      // 第 i 列是否吃到 +1：等间隔地插 extra 次，不扎堆在头尾
+      const take = Math.floor(((i + 1) * extra) / epCols) - Math.floor((i * extra) / epCols);
+      tracks.push(`${base + take}px`);
+    }
+    const fixedTemplate = tracks.join(" ");
+    host.querySelectorAll(".cro-heat-block").forEach((block) => {
+      block.style.gridTemplateColumns = fixedTemplate;
+    });
+    /* 格高的三道闸，从松到紧：
+         · 纵向预算摊到每格行上能给多少（verticalCellHeight）；
+         · 不高过自己的宽 —— 竖着长的格子读起来像"条"不像"卡"，横向再宽也补不回来，
+           所以 base 是硬上界（base 是不含 Bresenham +1 的那档，取窄的一边）；
+         · 不低于 CLUSTER_CELL_H_MIN —— 再挤也得看得见一格是一格。
+       下限压过上限时以下限为准：宁可矩阵溢出让 .cro-cluster__grid 去滚，也不要
+       糊成一条实心色带。 */
+    let cellH = Math.min(verticalCellHeight(host, counts, epRows), base);
+    if (!growHeight) {
+      const now = parseFloat(host.style.getPropertyValue("--cro-cell-h")) || cellH;
+      cellH = Math.min(cellH, now);
+    }
+    host.style.setProperty("--cro-cell-h", `${Math.max(CLUSTER_CELL_H_MIN, cellH)}px`);
+  }
+
+  /* ══ Model Architecture / Cluster 两行怎么分：内容各自实测，不用写死的比例 ══
+     .cro-board 原来是「第 1 行 minmax(260px,1fr) + 第 2 行 fit-content(46%)」：
+     46% 是给 openPangu（46 层 · Dense/MoE 两段 · 64 EP 大矩阵）估的经验值，换成
+     qwen2-7b（28 层单 Dense 段 · 默认仅 8 卡）内容量整个反过来——Model
+     Architecture 变短、Cluster 里单卡容量的等距图反而要更多高度才撑得开。写死
+     的比例只能顾一头，另一头必然「一边挤出滚动条、一边空出一大截」。
+     scrollHeight 天然反映"不裁剪会有多高"，不受当前 grid 行高影响（MDN：包含
+     因 overflow 而未显示的内容），两块各量一次，按各自实际需要分这一行的高度；
+     只有两块之和超出可用高度时，才按「超出 260px 下限的那部分」等比例收缩——
+     两块各自的下限不因为对方要得多就被挤没，真收缩到底则由 .cro-board 自身的
+     overflow:auto 兜底（滚动可以接受，重叠/挤压不行，与原设计同一条准则）。
+     YAML 视图（css 的 .cro-board.is-yaml）另有一套「一行铺满 + 第二行归零」的
+     模板，那时 arch/cluster 整块隐藏、量出来的 scrollHeight 没有意义，交还给
+     那条 class 规则，不写内联样式。
+
+     ⚠️ 量之前不能只把 grid-template-rows 清空退回静态规则——静态规则第 1 行仍是
+     minmax(260px,1fr)，1fr 会把"这一行还剩多少空间"全部塞给 arch 这个网格项：
+     网格项默认 align-self:stretch，箱子本身就被撑到那么高，此时量 scrollHeight
+     量到的是"这一行给了多少"，不是"内容真正需要多少"——.cro-section--structure
+     的 flex:1 1 auto、#croCapacity 的 height:0+min-height:100% 这两处"主动填满
+     父容器"的机关（分别见本文件与 config-relation-capacity.css 的注释）会因此
+     被吃进读数里，两个模型来回切换只会越垒越大，降不回去。
+     量的时候把两行都临时设成 max-content：网格按"内在尺寸"排布轨道时，子项的
+     flex-grow 与百分比高度按 CSS 规范一律不计入内在尺寸贡献（因为这轮计算本来
+     就是在求"容器该多大"，用还没求出来的答案反过来定输入是循环定义），于是两个
+     机关在这一步自动失效，量到的是两块各自的真实内容高度，不必逐个手动去关。
+
+     ⚠️ 两行之和必须恒等于 available，不能"内容够用就不填满"——.cro-region--net
+     横跨这两行（grid-row:1/3），整网 3D deck 的可视高度就是这两行之和撑出来的。
+     早先按"内容不够就不硬撑"设计，两块都不需要太高时两行之和会小于 available，
+     直接后果是大屏（1080p）下整网画布下方空出一大截。所以余量必须找地方落。
+
+     ⚠️ 谁先拿够，取决于谁**不能变形**，而不是谁的读数大：
+       · Model Architecture 是**刚性**的 —— 典型层那 5 列（Dense×2 / MoE×44 …）
+         有多少根算子条就是多少根，给不够就只能滚动才看得完，那是实打实的信息
+         损失；Layer 导航、stepper 行更是一格都压不得（css 里全是 flex:0 0 auto）。
+       · Cluster 是**弹性**的 —— 矩阵的格高（--cro-cell-h）是自由变量，同一批
+         rank 铺在 200px 里和铺在 400px 里都成立，只是格子胖瘦不同；分到多少就
+         按多少铺满（见 clusterHeightBudget 直接读视口）。
+     所以次序是：**arch 按实测内容需求拿够，剩下的全给 Cluster**，矩阵再把拿到
+     的那格填满。曾经反过来让 Cluster 先拿（因为它当时"少一像素就出滚动条"），
+     结果矩阵一涨就把典型层挤出滚动条 —— 那条滚动条的真正病根是取整误差和残留的
+     测量姿势，已经在下面分别修掉了，不该拿版面比例去补。
+
+     Cluster 仍留一道天花板（46% / 只看一边档 62%）：arch 的读数是 max-content，
+     典型层算子条一多就能吃掉整块板子；而矩阵矮到一定程度就读不出 rank 分布了。
+     吃不完的余量退回给 arch —— 结构条长高本来就是 .cro-structure flex:1 的设计
+     意图，不算浪费。 */
+  const BOARD_ROW_MIN = 260;
+
+  /* Cluster 那一行的真实下限：矩阵按下限格高（CLUSTER_CELL_H_MIN）、按最少折行数
+     铺开时要占多高，加上区里矩阵之外那部分（区标题 + 表单行 + 间距，实测）。
+     不能沿用 arch 那个 260 的通用下限 —— 格高有 3px 的硬底（低于它整片矩阵糊成
+     一条实心色带），行数又不会低于 pickEpRows 的下限，两者一乘就是一个由 dp / tp /
+     cp 决定的具体数字，跟 260 没关系。给少了，矩阵压不下去，.cro-cluster__grid
+     就在"这一行明明还能再高"的时候先顶出纵向滚动条。 */
+  function clusterMinRowH(counts) {
+    if (!counts || !(counts.dp > 0)) return BOARD_ROW_MIN;
+    const epRows = Math.max(1, Math.min(2, counts.ep));   // 与 pickEpRows 的 floor 同源
+    const cellRows = counts.dp * counts.ranksPerEp * epRows;
+    const matrix = cellRows * CLUSTER_CELL_H_MIN + clusterChromeH(counts.dp, counts.ranksPerEp, epRows);
+    const region = document.querySelector(".cro-region--cluster");
+    const viewport = document.querySelector(".cro-cluster__grid");
+    let chrome = 132;   // 还没布局时的保守估计
+    if (region && viewport && viewport.clientHeight) {
+      const measured = region.offsetHeight - viewport.clientHeight;
+      if (measured > 0 && measured < region.offsetHeight) chrome = measured;
+    }
+    return Math.ceil(matrix + chrome);
+  }
+
+  function syncBoardRows(counts) {
+    const board = document.getElementById("croBoard");
+    if (!board) return;
+    if (board.classList.contains("is-yaml")) {
+      board.style.gridTemplateRows = "";
+      return;
+    }
+    const arch = document.querySelector(".cro-region--arch");
+    const cluster = document.querySelector(".cro-region--cluster");
+    if (!arch || !cluster) return;
+
+    /* 量之前先记下上一次的结果：下面那句 max-content 是**临时**的测量姿势，
+       一旦板子这会儿量不出高度（首帧未布局，或本页启动即进事件详情、.cro-board
+       整块 hidden）就必须原样退回去 —— 否则 "max-content max-content" 会以内联
+       样式的形式留在板子上，等它重新显示时两行各自按内容全高铺开（arch 那行会
+       把 .cro-structure__stack 里所有算子条一次摊平），远超板面，当场滚出条来。 */
+    const prevRows = board.style.gridTemplateRows;
+    board.style.gridTemplateRows = "max-content max-content";
+    /* 可用高度必须**向下**取整到整像素，且不能只信 clientHeight。
+       clientHeight 是把真实的分数高度（flex 链一路算下来，989.6px 这种再正常
+       不过）四舍五入成的整数，可能比实际大半像素；两行之和照它铺满，就会把
+       .cro-board 顶出零点几像素的溢出 —— 浏览器照样给一条滚动条，可拖动量却
+       不到 1px，就是"有条但滚不动"的那个恶心现象。
+       rect.height 是精确的分数值但不扣横向滚动条，clientHeight 扣了滚动条但被
+       圆整过，两者取小再 floor，才是"一定装得下"的整数。 */
+    const style = getComputedStyle(board);
+    const rowGap = parseFloat(style.rowGap) || 0;
+    const paddingV = (parseFloat(style.paddingTop) || 0) + (parseFloat(style.paddingBottom) || 0);
+    const borderV = (parseFloat(style.borderTopWidth) || 0) + (parseFloat(style.borderBottomWidth) || 0);
+    const innerH = Math.min(board.getBoundingClientRect().height - borderV, board.clientHeight);
+    const available = Math.floor(innerH - rowGap - paddingV);
+    // 板子还没铺开（首帧/隐藏）：退回上一次的结果，别把测量姿势留在样式里
+    if (!(available > 0)) { board.style.gridTemplateRows = prevRows; return; }
+
+    /* 用 rect.height 而不是 scrollHeight：scrollHeight 是**四舍五入**过的整数，
+       内容真高 456.4px 时它报 456，照它批下来的行高就比内容矮 0.4px —— 于是
+       那半当场冒出一条拖不动的滚动条（刷新即见的那个 1~2px）。
+       两行都是 max-content，网格项被拉伸到的正是自己的内在高度，rect.height
+       就是精确的内容高，再向上取整才保证一定装得下。 */
+    const archNeed = Math.max(BOARD_ROW_MIN, Math.ceil(arch.getBoundingClientRect().height));
+    /* Cluster 的下限是算出来的，不是那个通用的 260（见 clusterMinRowH）。
+       再封一道 available 的一半：卡数极多时（上万格）它能要到天上去，那种规模
+       本来就只能靠 .cro-cluster__grid 内部滚动，不该拿整块板子去填。 */
+    const clusterMin = Math.min(clusterMinRowH(counts), Math.round(available * 0.5));
+    // Cluster 的天花板：矩阵是弹性的，但不该把整块板子都吃掉（见上方注释）。
+    // 天花板低于下限时以下限为准 —— 下限是"不出滚动条"的硬条件。
+    const clusterCap = Math.max(
+      clusterMin,
+      Math.round(available * (board.classList.contains("is-view-single") ? 0.62 : 0.46)),
+    );
+    let row1;
+    let row2;
+    if (available < BOARD_ROW_MIN + clusterMin) {
+      // 窗口实在太矮，两个下限之和都装不下：各自守住下限，超出的那截交还
+      // .cro-board 自身的 overflow:auto 兜底（滚动可以接受，压穿下限不行）。
+      row1 = BOARD_ROW_MIN;
+      row2 = clusterMin;
+    } else {
+      // 刚性的那半先拿够，弹性的那半接住余量；余量超过天花板就退回给 arch
+      row1 = Math.min(archNeed, available - clusterMin);
+      row2 = available - row1;
+      if (row2 > clusterCap) { row2 = clusterCap; row1 = available - row2; }
+    }
+    // 两行都是整数、之和恒等于 available，不再有取整余数顶出零点几像素的溢出
+    board.style.gridTemplateRows = `${row1}px ${row2}px`;
   }
 
   function renderCluster(host, topology, emit) {
@@ -1440,6 +1751,8 @@
     const epRows = pickEpRows(host, counts);
     const epCols = Math.ceil(ep / epRows);
     host.dataset.epRows = String(epRows);
+    // 先给个粗略初值（格宽还没测出来），appendChild 之后 syncCellWidth 会按
+    // 实测格宽把它改成正方形的准确值。
     host.style.setProperty("--cro-cell-h", `${CLUSTER_CELL_H[epRows] || 4}px`);
     const stageTemplate = `repeat(${pp}, minmax(0, 1fr))`;
     const cellTemplate = `repeat(${epCols}, minmax(0, 1fr))`;
@@ -1544,6 +1857,9 @@
       body.appendChild(group);
     }
     host.appendChild(body);
+    // block 已经挂到文档上、stageTemplate 分好了每个 stage 的宽度，这时才量得到
+    // 真实可用宽度，把 cellTemplate 从 1fr 换成锁死的整数像素值
+    syncCellWidth(host, epCols, counts, epRows);
 
     /* ── 下：每个 stage 块底部标一次 EP 覆盖范围。
           EP 在块内是折行排布的（4 行 × 16 列），列位置不再一一对应某个 EP 序号，
@@ -3406,6 +3722,15 @@
       });
     })();
 
+    /* 模型：整网 / 典型 Layer / MoE 区 / Cluster 四域全部跟着重派。与卡型号不同，
+       这不是单字段调整 —— 见 createController 里 setModel() 的注释。 */
+    (() => {
+      const select = document.getElementById("croModelSelect");
+      if (!select) return;
+      select.value = controller.config.model;
+      select.addEventListener("change", () => controller.setModel(select.value));
+    })();
+
     /* 整网图 → 其余视图：点 deck 里的算子节点，反查成结构条的 (segment, bar)
        再走同一条 emitSelect 通路，与其他三个方向完全对称。 */
     const deck = createDeck("croDeckHost", {
@@ -4598,7 +4923,15 @@
         }
         // 隐藏期间刻度带量不到宽度，layoutLayerNav 会解出一堆 0 宽刻度。
         // 切回配置态时重算一次，否则 Layer 导航是塌的。
-        if (!on) requestAnimationFrame(() => layoutLayerNav(layerNav));
+        // 两行的高度分配同理：hidden 期间 syncBoardRows 量不到板子只能原样退回，
+        // 中途若改过配置/拉过窗口，留着的就是过期分配（Cluster 差几十像素就会
+        // 滚出条来）。等 layout 落定后补量一次。
+        // rAF 里跑，顺带避开 refitClusterCells 的 TDZ（它声明在本函数之后）
+        if (!on) requestAnimationFrame(() => {
+          layoutLayerNav(layerNav);
+          syncBoardRows(controller.topology.counts);
+          refitClusterCells();
+        });
       }
     }
 
@@ -5594,6 +5927,20 @@
       });
     }
 
+    /* 补量一次格宽/格高（不重建那 2048 个格子，只改 grid-template-columns 与一条
+       CSS 变量）。renderCluster 是在刚清空的矩阵上量的宽度，那一刻 .cro-cluster__grid
+       还没有纵向滚动条；铺完之后若因为几何误差冒出一条，block 的可用宽度就窄了
+       一条滚动条 —— 补量把它纠回来。
+       growHeight:false 用在 renderCluster 之后的那两处：那时格高已经按终局视口
+       算过一次了，再让它涨只会溢出（见 syncCellWidth 的注释）。 */
+    const refitClusterCells = (opts) => {
+      const heat = document.getElementById("croHeat");
+      if (!heat || !heat.dataset.epRows) return;   // 无矩阵（配置非法/超格数上限）时不管
+      const counts = controller.topology.counts;
+      const epRows = Number(heat.dataset.epRows) || 1;
+      syncCellWidth(heat, Math.ceil(counts.ep / epRows), counts, epRows, opts);
+    };
+
     controller.onChange((topology) => {
       // 配置一改，预解出来的那 49 步全是旧拓扑的（层数、rank 集合都可能变），
       // 而且四域马上要整块重建：先停播，别让下一拍去点亮已经不存在的 DOM
@@ -5605,6 +5952,8 @@
       deckNodeKey = null;
       // deck 的语义色变量搬到 board 上，结构条 bar 与整网节点取到同一个色值
       syncPalette();
+      // 稠密模型（无 MoE）：整块 MoE 区收起，Model Architecture 撑到右侧（见 css 的 .is-no-moe）
+      document.getElementById("croBoard")?.classList.toggle("is-no-moe", !topology.hasMoe);
       renderLayerNav(layerNav, topology, emitSelect);
       renderStructure(structure, topology, emitSelect);
       renderMoe(
@@ -5612,7 +5961,13 @@
         document.getElementById("croRoutedExperts"),
         topology, emitSelect,
       );
+      /* 次序要紧：两行的高度先定 —— 它只看 Model Architecture 的内容需求，与矩阵
+         无关（见 syncBoardRows 的注释），所以不必等矩阵铺完。定完之后 Cluster 那
+         一行的视口高度才是终局值，renderCluster 照着它算折几行、格子多高，铺出来
+         正好填满，既不留白也不溢出。 */
+      syncBoardRows(topology.counts);
       renderCluster(document.getElementById("croHeat"), topology, emitSelect);
+      refitClusterCells({ growHeight: false });
       if (activeIncident) requestAnimationFrame(() => selectIncident(activeIncident));
       else if (relation) reapplySelection(topology);
     });
@@ -5623,24 +5978,34 @@
        重建会连带清掉格子上的 is-related / is-selected，随后按当前选择重铺一次。 */
     const rebuildCluster = () => {
       const topology = controller.topology;
+      syncBoardRows(topology.counts);   // 同上：先定行高，矩阵再照着终局视口铺
       renderCluster(document.getElementById("croHeat"), topology, emitSelect);
+      refitClusterCells({ growHeight: false });
       if (activeIncident) requestAnimationFrame(() => selectIncident(activeIncident));
       else if (relation) reapplySelection(topology);
     };
 
     document.addEventListener("cro:view", rebuildCluster);
 
-    /* 窗口一变高，这一行能给矩阵的预算也就变了，折几行跟着变（见 pickEpRows）。
-       行数是建 DOM 时定的，只有重建一途 —— 但重建动辄 2048 个格子，不能每帧都来：
-       防抖之后先算一遍目标行数，跟当前渲染的一样就直接返回。 */
+    /* 窗口一变，两行的分配与矩阵的几何都要跟着重算，而且**必须按这个次序**：
+       先定行高（只看 arch 的内容需求），Cluster 那一行的视口高度才是终局值；
+       折几行（pickEpRows）与格子多高（verticalCellHeight）都是照着它算的。
+       曾经写成两条各自防抖的监听，谁先跑取决于注册次序，结果矩阵按旧行高量完
+       几何、行高才改 —— 合成一条就没有这个隐式依赖了。
+       net-view / YAML 视图切换也走这条通路（见 html 内联脚本与
+       config-relation-yaml.js 里各自那句 window.dispatchEvent(new Event("resize")))。
+       行数是建 DOM 时定的，改不了类就改不了，只有重建一途；但重建动辄 2048 个
+       格子，不能每帧都来，所以先算一遍目标行数，跟当前渲染的一样就只调样式。 */
     let clusterResizeTimer = 0;
     global.addEventListener("resize", () => {
       clearTimeout(clusterResizeTimer);
       clusterResizeTimer = setTimeout(() => {
+        syncBoardRows(controller.topology.counts);
         const heat = document.getElementById("croHeat");
         if (!heat || !heat.dataset.epRows) return;   // 无矩阵（配置非法/超格数上限）时不管
-        if (String(pickEpRows(heat, controller.topology.counts)) === heat.dataset.epRows) return;
-        rebuildCluster();
+        const epRows = pickEpRows(heat, controller.topology.counts);
+        if (String(epRows) !== heat.dataset.epRows) { rebuildCluster(); return; }
+        refitClusterCells();
       }, 180);
     });
 
@@ -5716,6 +6081,8 @@
       // 口径浮层被挂到 body 上（避开 pane 的 overflow/backdrop-filter），不在
       // .cro-capacity 子树里，得单独列一条，否则点它选中文字会清掉当前选择。
       ".cro-capacity", ".cro-capacity__basis",
+      // YAML 视图的代码框：在里面拖选文本、点复制键都不是「点空白」
+      ".cro-region--yaml",
       ".pto-model-deck__side-rule", ".cro-stepper", ".cro-event", ".pto-ide-frame__topbar",
       // 播放键组（播放/暂停/继续 + 退出）：点它不是「点空白」，不能顺手把当前选中清掉
       ".cro-flow-actions",

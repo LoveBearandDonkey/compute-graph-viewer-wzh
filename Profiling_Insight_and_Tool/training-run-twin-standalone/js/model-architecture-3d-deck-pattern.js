@@ -32,7 +32,24 @@
     stageRanges:[[0,11],[12,22],[23,34],[35,45]],
     representativeLayers:[0,12,23,35],sideRows:SIDE_ROWS
   };
-  const PRESETS={'openpangu-flash':OPENPANGU_FLASH};
+  // Qwen2-7B 一层的算子标注：与 openPangu 的 SIDE_ROWS 同款用法，id 对应 layerHtmlQwen 的节点 id。
+  const QWEN2_SIDE_ROWS=[
+    {label:'Input RMSNorm',ids:['input_norm']},{label:'Q / K / V Projection',ids:['q_proj','k_proj','v_proj']},
+    {label:'RoPE',ids:['q_rope','k_rope']},{label:'FlashAttention · GQA',ids:['attention_core']},
+    {label:'Output Projection',ids:['o_proj']},{label:'Attention Residual Add',ids:['attn_residual_add']},
+    {label:'Post-Attention RMSNorm',ids:['post_attn_norm']},{label:'Gate / Up Linear',ids:['ffn_gate_up']},
+    {label:'SiLU × Multiply',ids:['ffn_act']},{label:'Down Linear',ids:['ffn_down']},
+    {label:'FFN Residual Add',ids:['ffn_residual_add']}
+  ];
+  const QWEN2_7B={
+    id:'qwen2-7b',label:'Qwen2-7B',layerCount:28,depthGap:46,frontLayer:14,
+    firstMoeLayer:28,denseLayers:Array.from({length:28},(_,i)=>i),dsaLayers:[],
+    blockPostLayers:[],routedExperts:0,topK:0,
+    stageRanges:[[0,6],[7,13],[14,20],[21,27]],
+    representativeLayers:[0,7,14,21],sideRows:QWEN2_SIDE_ROWS,
+    heads:28,kvHeads:4,mtp:false,residualLabel:'Residual stream'
+  };
+  const PRESETS={'openpangu-flash':OPENPANGU_FLASH,'qwen2-7b':QWEN2_7B};
   const clamp=(value,min,max)=>Math.max(min,Math.min(max,value));
   const esc=(value)=>String(value??'').replace(/[&<>"']/g,ch=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]));
   const qs=(value,root=document)=>typeof value==='string'?root.querySelector(value):value;
@@ -61,6 +78,54 @@
   function clusterHtml(label,x,y,w,h,color){return `<div class="pto-model-deck__cluster opv-cssgraph__cluster" style="left:${x}px;top:${y}px;width:${w}px;height:${h}px;--cluster-color:${color}"><span>${esc(label)}</span></div>`;}
   function expertPoolHtml(nodes){const box={x:300,y:700,w:140,h:52},expanded={x:260,y:688,w:236,h:126};nodes.expert_pool={...box,id:'expert_pool',op:'moe'};return `<div class="pto-model-deck__experts opv-cssdeck-experts is-collapsed" data-node="expert_pool" data-op="moe" role="button" tabindex="0" aria-expanded="false" aria-label="Expert Pool · 72 experts" data-collapsed-x="${box.x}" data-collapsed-y="${box.y}" data-collapsed-w="${box.w}" data-collapsed-h="${box.h}" data-expanded-x="${expanded.x}" data-expanded-y="${expanded.y}" data-expanded-w="${expanded.w}" data-expanded-h="${expanded.h}" style="left:${box.x}px;top:${box.y}px;width:${box.w}px;height:${box.h}px"></div>`;}
   function layerHtml(layer,config){
+    return config.id==='qwen2-7b'?layerHtmlQwen(layer,config):layerHtmlPangu(layer,config);
+  }
+  /* 与 op-fusion（../op-fusion/app.js buildGraph 的非 Pangu / GQA 分支）对齐的节点集：
+     Q/K/V 独立 Linear（qwen2-7b 带 bias）→ 各自 RoPE（V 不经过）→ FlashAttention →
+     O-proj → 残差 → RMSNorm → Gate/Up → SwiGLU → Down → 残差。训练态省去 op-fusion
+     里推理专属的 KV Cache / 拆开的 QK^T-Scale-Softmax-AV 四步（与本文件 Attention
+     统一收成一个节点的既有惯例一致，见 layerHtmlPangu 的 Sparse FlashAttention）。
+     纵向坐标铺满整张卡（14~1120），与 openPangu 卡片同一量级，避免正视图里卡片
+     内容只占上半、下半留白一大截。 */
+  function layerHtmlQwen(layer,config){
+    const stage=config.stageRanges.findIndex(([lo,hi])=>layer>=lo&&layer<=hi);
+    const first=config.representativeLayers.includes(layer);
+    const stageRange=config.stageRanges[stage];
+    const qh=config.heads||28,kvh=config.kvHeads||4,nodes={},parts=[];
+    parts.push(`<div class="pto-model-deck__layer-label opv-cssgraph__layer-label">L${layer}<span>PP${stage} · L${stageRange[0]}-${stageRange[1]} · GQA ${qh}:${kvh} · qkv+bias</span></div>`);
+    parts.push(clusterHtml(`Attention · GQA ${qh}:${kvh} · TP/SP`,60,88,600,510,'var(--pto-model-deck-attention)'));
+    parts.push(clusterHtml('SwiGLU FFN · TP/SP',90,732,540,246,'var(--pto-model-deck-linear)'));
+    graphNode(parts,nodes,'mhc_state_in','X_l · residual state','mhc-state',500,14,190,28,'is-tiny');
+    graphNode(parts,nodes,'input_norm','Input RMSNorm','norm',270,106,180,36);
+    graphNode(parts,nodes,'q_proj','Q Projection','linear',70,198,170,34);
+    graphNode(parts,nodes,'k_proj','K Projection · GQA','linear',275,198,170,34);
+    graphNode(parts,nodes,'v_proj','V Projection · GQA','linear',480,198,170,34);
+    graphNode(parts,nodes,'q_rope','Q RoPE','act',70,290,170,28,'is-tiny');
+    graphNode(parts,nodes,'k_rope','K RoPE','act',275,290,170,28,'is-tiny');
+    graphNode(parts,nodes,'attention_core',`FlashAttention · GQA ${qh}:${kvh}`,'attention',230,382,260,42,'is-wide');
+    graphNode(parts,nodes,'o_proj','Output Projection','linear',270,474,180,34);
+    graphNode(parts,nodes,'attn_residual_add','+','add',348,566,24,24,'is-add is-compact-add');
+    graphNode(parts,nodes,'post_attn_norm','Post-Attention RMSNorm','norm',270,658,180,34);
+    graphNode(parts,nodes,'ffn_gate_up','Gate / Up Projection','linear',262,750,196,34);
+    graphNode(parts,nodes,'ffn_act','SwiGLU · SiLU × Mul','act',270,842,180,32);
+    graphNode(parts,nodes,'ffn_down','Down Projection','linear',264,934,192,34);
+    graphNode(parts,nodes,'ffn_residual_add','+','add',348,1026,24,24,'is-add is-compact-add');
+    graphNode(parts,nodes,'mhc_state_out','X_{l+1} · residual state','mhc-state',500,1118,190,28,'is-tiny');
+    const edges=[
+      ['mhc_state_in','input_norm','state-spine'],
+      ['input_norm','q_proj'],['input_norm','k_proj'],['input_norm','v_proj'],
+      ['q_proj','q_rope'],['k_proj','k_rope'],
+      ['q_rope','attention_core'],['k_rope','attention_core'],['v_proj','attention_core'],
+      ['attention_core','o_proj'],['o_proj','attn_residual_add'],
+      ['mhc_state_in','attn_residual_add','residual','right','right',{mode:'elbow',viaX:668}],
+      ['attn_residual_add','post_attn_norm'],
+      ['post_attn_norm','ffn_gate_up'],['ffn_gate_up','ffn_act'],['ffn_act','ffn_down'],['ffn_down','ffn_residual_add'],
+      ['attn_residual_add','ffn_residual_add','residual','right','right',{mode:'elbow',viaX:668}],
+      ['ffn_residual_add','mhc_state_out','state-spine']
+    ];
+    return `<section class="pto-model-deck__layer opv-cssdeck-card${layer===config.frontLayer?' is-front-layer':''}" data-layer="${layer}" data-stage="${stage}" data-stage-role="${first?'first':'repeat'}" data-stage-sample="true" style="--deck-opacity:${(1-.38*(layer/Math.max(1,config.layerCount-1))).toFixed(3)};transform:translate3d(0,0,${-layer*config.depthGap}px)"><div class="pto-model-deck__graph opv-cssgraph">${edgesHtml(nodes,edges,{height:1160})}${parts.join('')}</div></section>`;
+  }
+  function layerHtmlPangu(layer,config){
     const stage=config.stageRanges.findIndex(([lo,hi])=>layer>=lo&&layer<=hi);
     const first=config.representativeLayers.includes(layer);
     const dense=layer<config.firstMoeLayer,stageRange=config.stageRanges[stage],blockPost=config.blockPostLayers.includes(layer);
@@ -119,13 +184,17 @@
     }
     graphNode(parts,nodes,'final_norm','Final RMSNorm','norm',270,34,180,32,'is-tiny');graphNode(parts,nodes,'lm_head_weight','LM Head Weight','parameter',70,82,140,30,'is-tiny');
     graphNode(parts,nodes,'lm_head','LM Head','head',270,82,180,32,'is-tiny');graphNode(parts,nodes,'logits_allgather','Logits All-Gather','comm',270,128,180,32,'is-tiny');graphNode(parts,nodes,'logits','Logits','output',270,174,180,32,'is-tiny');
-    parts.push(clusterHtml('Multi Token Predictor · L46–L48 ×3',200,244,320,274,'var(--pto-model-deck-attention)'));
-    graphNode(parts,nodes,'mtp_input_norms','MTP Input Norms','norm',270,268,180,30,'is-tiny');graphNode(parts,nodes,'mtp_eh_proj','EH Projection','linear',270,314,180,30,'is-tiny');
-    graphNode(parts,nodes,'mtp_decoder_layer','MTP Decoder ×3','decoder',270,360,180,30,'is-tiny');graphNode(parts,nodes,'mtp_head_weight','MTP Head Weight','parameter',70,406,140,30,'is-tiny');
-    graphNode(parts,nodes,'mtp_shared_head','MTP Shared Head','head',270,406,180,30,'is-tiny');graphNode(parts,nodes,'mtp_logits','MTP Logits','output',270,452,180,30,'is-tiny');
+    const edges=[['decoder_exit_depth','final_norm','model-spine-depth'],['decoder_exit_front','final_norm','model-spine-front'],['decoder_exit_block','final_norm','model-spine-block'],['final_norm','lm_head'],['lm_head','logits_allgather','comm'],['logits_allgather','logits'],['lm_head_weight','lm_head','parameter']];
+    const hasMtp=config.mtp!==false;
+    if(hasMtp){
+      parts.push(clusterHtml('Multi Token Predictor · L46–L48 ×3',200,244,320,274,'var(--pto-model-deck-attention)'));
+      graphNode(parts,nodes,'mtp_input_norms','MTP Input Norms','norm',270,268,180,30,'is-tiny');graphNode(parts,nodes,'mtp_eh_proj','EH Projection','linear',270,314,180,30,'is-tiny');
+      graphNode(parts,nodes,'mtp_decoder_layer','MTP Decoder ×3','decoder',270,360,180,30,'is-tiny');graphNode(parts,nodes,'mtp_head_weight','MTP Head Weight','parameter',70,406,140,30,'is-tiny');
+      graphNode(parts,nodes,'mtp_shared_head','MTP Shared Head','head',270,406,180,30,'is-tiny');graphNode(parts,nodes,'mtp_logits','MTP Logits','output',270,452,180,30,'is-tiny');
+      edges.push(['final_norm','mtp_input_norms','activation','right','right',{mode:'elbow',viaX:548}],['mtp_input_norms','mtp_eh_proj'],['mtp_eh_proj','mtp_decoder_layer'],['mtp_decoder_layer','mtp_shared_head'],['mtp_head_weight','mtp_shared_head','parameter'],['mtp_shared_head','mtp_logits']);
+    }
     nodes.decoder_exit_depth={x:595,y:-66,w:0,h:0};nodes.decoder_exit_front={x:360,y:-126,w:0,h:0};nodes.decoder_exit_block={x:360,y:-86,w:0,h:0};
-    const edges=[['decoder_exit_depth','final_norm','model-spine-depth'],['decoder_exit_front','final_norm','model-spine-front'],['decoder_exit_block','final_norm','model-spine-block'],['final_norm','lm_head'],['lm_head','logits_allgather','comm'],['logits_allgather','logits'],['lm_head_weight','lm_head','parameter'],['final_norm','mtp_input_norms','activation','right','right',{mode:'elbow',viaX:548}],['mtp_input_norms','mtp_eh_proj'],['mtp_eh_proj','mtp_decoder_layer'],['mtp_decoder_layer','mtp_shared_head'],['mtp_head_weight','mtp_shared_head','parameter'],['mtp_shared_head','mtp_logits']];
-    return `<section class="pto-model-deck__static pto-model-deck__static--output opv-cssdeck-static opv-cssdeck-static--output" style="transform:translate3d(0,0,${-(config.layerCount+.5)*config.depthGap}px)"><div class="pto-model-deck__static-title opv-cssdeck-static__title">Main output + MTP tail · source checked</div>${edgesHtml(nodes,edges,{height:526})}${parts.join('')}</section>`;
+    return `<section class="pto-model-deck__static pto-model-deck__static--output opv-cssdeck-static opv-cssdeck-static--output" style="transform:translate3d(0,0,${-(config.layerCount+.5)*config.depthGap}px)"><div class="pto-model-deck__static-title opv-cssdeck-static__title">Main output${hasMtp?' + MTP tail':''} · source checked</div>${edgesHtml(nodes,edges,{height:526})}${parts.join('')}</section>`;
   }
   function shellHtml(config,options={}){
     const chrome=options.showChrome===false?'':`<div class="pto-model-deck__title">${esc(config.label)}<span>CSS 3D · ${config.layerCount} layers</span></div>
@@ -265,7 +334,7 @@
         if(inputPoint){const inputPath=document.createElementNS('http://www.w3.org/2000/svg','path');inputPath.classList.add('pto-model-deck__side-residual-connector');inputPath.dataset.stateRail=String(index);inputPath.setAttribute('d',`M${inputPoint.x.toFixed(1)},${inputPoint.y.toFixed(1)}C${(inputPoint.x+24).toFixed(1)},${inputPoint.y.toFixed(1)} ${(first.x-24).toFixed(1)},${railY.toFixed(1)} ${first.x.toFixed(1)},${railY.toFixed(1)}`);sideGuides.appendChild(inputPath);}
         if(outputPoint){const outputPath=document.createElementNS('http://www.w3.org/2000/svg','path');outputPath.classList.add('pto-model-deck__side-residual-connector');outputPath.dataset.stateRail=String(index);outputPath.setAttribute('d',`M${last.x.toFixed(1)},${railY.toFixed(1)}C${(last.x+24).toFixed(1)},${railY.toFixed(1)} ${(outputPoint.x-24).toFixed(1)},${outputPoint.y.toFixed(1)} ${outputPoint.x.toFixed(1)},${outputPoint.y.toFixed(1)}`);sideGuides.appendChild(outputPath);}
         const path=document.createElementNS('http://www.w3.org/2000/svg','path');path.classList.add('pto-model-deck__side-residual-spine');path.dataset.stateRail=String(index);path.setAttribute('d',`M${first.x.toFixed(1)},${railY.toFixed(1)}L${last.x.toFixed(1)},${railY.toFixed(1)}`);sideGuides.appendChild(path);statePoints.forEach(point=>{const dot=document.createElementNS('http://www.w3.org/2000/svg','circle');dot.classList.add('pto-model-deck__side-residual-dot');dot.dataset.stateRail=String(index);dot.setAttribute('cx',point.x.toFixed(1));dot.setAttribute('cy',railY.toFixed(1));dot.setAttribute('r','1.75');sideGuides.appendChild(dot);});});
-      const label=document.createElementNS('http://www.w3.org/2000/svg','text');label.classList.add('pto-model-deck__side-residual-label');label.setAttribute('x',(statePoints[0].x+8).toFixed(1));label.setAttribute('y',(y-10).toFixed(1));label.textContent='mHC residual state ×4';sideGuides.appendChild(label);
+      const label=document.createElementNS('http://www.w3.org/2000/svg','text');label.classList.add('pto-model-deck__side-residual-label');label.setAttribute('x',(statePoints[0].x+8).toFixed(1));label.setAttribute('y',(y-10).toFixed(1));label.textContent=config.residualLabel||'mHC residual state ×4';sideGuides.appendChild(label);
     }
     // 4 段 PP 分组的简单标注:灰字 + 灰色短分割线,贴在侧视层堆顶部,常显不随任何开关切换。
     function renderPpGroups(){

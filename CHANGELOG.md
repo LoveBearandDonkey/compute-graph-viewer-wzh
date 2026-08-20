@@ -5,6 +5,27 @@
 
 ---
 
+## 2026-08-20 — 单卡容量：运行时预留从「已用量 10%」拆成四项模型
+
+- `js/config-relation-capacity.js` 去掉 `BASIS.reserveRatio`（core × 10%）。原口径把一个几乎不随 core 变的量做成了正比项：大 EP/大 PP 的轻卡被低估（光驱动 + HCCL 就不止那点），重卡又虚高。新增 `RUNTIME` 四项，各跟各的标度量：
+  - **运行时底座** 2.0 GB 固定（驱动 + CANN/ACL context + kernel binary + 通信域元数据），与配置无关；
+  - **通信 buffer** = `HCCL_BUFFSIZE 0.2GB × 通信域数 × 2(双缓冲)`，域数 = TP/PP/DP/CP/EP 中 >1 的维度，EP>1 再加一条 MoE a2a 域（`commDomains()`）；
+  - **算子 workspace** = `2·topK·mb·(S/CP)·H·2B/TP`，峰值由单个最大算子（MoE permute + GroupedMatMul）定，∝ **一层**而非全部层，纯 dense stage 取 1.0 GB 下限（`workspaceBytes()`）；
+  - **内存碎片** = 已用量的 5% —— 四项里只有这一项本来就该按比例。
+- 等距容器多摞一段：底座贴盒底（暗灰实心、`--cro-cap-base`），后三项合成盒顶原有的「预留」虚线段。底座摞盒底而非从 cap 里扣，占比算法完全等价，但「64 GB 的卡一开机就少 2 GB」这件事变得看得见；调 EP/PP 时也能看出哪段是配置能管的、哪段是给运行时的死钱。
+- 图例「预留」「底座」两行加 `title` 给拆项读数；口径浮层把原来那行「已用量的 10%」换成四项各自的公式与当前域数，并新增「运行时四项怎么标定」一段：固定并行度只改 micro-batch 跑两三次，取 `实测峰值 − 理论四段` 两点拟合，截距 = 底座 + 通信、斜率 = workspace + 碎片；换一组 EP/TP 复跑即可分离通信项。系数标定后应挪进 `CARD_SPECS`（跟卡型号走）。
+- 「越界」判定文案补一句「其中底座与预留 X GB 压不掉」，避免读成「减配置就能全省回来」。
+## 2026-08-20 — config-relation-observer 增「导出配置」入口与 YAML 视图
+
+- 顶栏右侧主题键之前新增「导出配置」按钮（带下载图标 + 文字标签，独立于 window-actions 图标键组）。目前**只做样子，未绑定 click**。
+- 顶栏正中新增全局视图页签「关系视图 / YAML 视图」（`#croViewTabs`，样式对齐 `profileCompare.html` 的分组/聚合页签）。切到 YAML 档时 `.cro-board` 挂 `is-yaml`：Model Architecture / MoE / Cluster 三区整片让位给代码框，整网列保留。
+- 新增 `js/config-relation-yaml.js` + `css/config-relation-yaml.css`：YAML 视图做成上下分栏，两块都由 `croObserver.topology` **实时**生成、带行号与语法着色。
+  - 上栏 = `configs/<家族>/run_<全名>.yaml`，按 **MindSpore + MindFormers** 真实口径落键：`runner_config` / `context` / `parallel` / `parallel_config`（data_parallel·model_parallel·pipeline_stage·context_parallel·expert_parallel）/ `recompute_config` / `moe_config`（expert_num·num_experts_chosen·shared_expert_num）/ `model.model_config`（含 `offset` 表达 PP 非均分层切分）。
+  - 下栏 = `msrun` 启动命令：卡型号 / 单卡 HBM / 节点数 / 总卡数**不写进 yaml**（前两项是硬件事实，只作 `context.max_device_memory` 的行尾注释；后两项由启动器给），它们的落点在这里。
+  - 与模型预设默认值不同的行左侧标黄；校验未过时把冲突原因顶在文件头。只吃 `cro:change`，不改主控制器。
+- 主脚本 `SELECTABLE` 白名单补 `.cro-region--yaml`，避免在代码框里拖选文本被当成「点空白」清掉当前选择。
+- 选中运行事件（事件详情态）时整组视图页签隐藏：运行事件是既成事实，没有「当前配置」可导，两档都不成立；关闭横幅回配置仿真态再放出来。
+
 ## 2026-08-19 — `api-visualizer/index-light.html` Load3D 播放条展开状态 + 浅色主题 3D 填充方块描边
 
 - Load3D 播放条播放中点击展开会「展开一下又收起」：`renderLoad3dStage` 每个播放 tick 都会重挂载浮动播放条（`mountLoad3dPlayback` 先移除再以 `defaultCollapsed: true` 重建），用户刚展开的工具栏在下一拍就被重置回收起态。改为挂载前读取旧 shell 的 `is-expanded` 状态，重建时以 `defaultCollapsed: !wasExpanded` 创建并在挂载末尾 `setExpanded(true)` 恢复，播放中保持展开/收起选择不变（Add / Gm2UbAlign 两条播放条为一次性挂载 + 逐拍 sync，本就不存在该问题）。

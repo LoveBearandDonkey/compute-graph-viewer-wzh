@@ -27,8 +27,15 @@
       多背 head —— 容量在集群上本来就不均，OOM 只需要一张卡爆。
    2. 1F1B 下 stage s 同时在飞 (PP−s) 份 micro-batch 的激活，stage0 最紧。
       不算这一项会系统性低估最危险的那张卡。
-   3. 预留段（通信 buffer + 算子 workspace + 内存碎片）必须算进去。只画四段得到的
-      是一个更好看的黑洞。
+   3. 运行时开销必须算进去，且**不能做成 core 的固定百分比**。只画四段得到的是一
+      个更好看的黑洞；而按已用量抽 10%，等于把一个几乎不随 core 变的量做成了正比
+      项 —— 大 EP/大 PP 的轻卡被低估（光驱动+HCCL 就不止那点），重卡又虚高。这里
+      拆成四项，各自跟着各自的标度量走（见 RUNTIME）：
+        底座      固定，与配置无关         → 摞在盒底那一段
+        通信 buffer  ∝ HCCL 通信域个数
+        workspace  ∝ **一层**的 token 张量（不是全部层）
+        碎片      ∝ 已用量                ← 只有这一项本来就该按比例
+      后三项合成盒顶的「预留」段：它们会随配置动，正是这一页要给人看的东西。
    ═══════════════════════════════════════════════════════════════════════════ */
 (function (global) {
   "use strict";
@@ -51,7 +58,22 @@
     bytesGrad: 2,         // bf16
     bytesOptim: 12,       // Adam：fp32 master weight + momentum + variance
     actPerLayer: 34,      // 每层激活 ≈ 34·mb·s·h 字节（开 SP、不重计算）
-    reserveRatio: 0.10,   // 通信 buffer + workspace + 碎片，按已用量的 10% 预留
+  };
+
+  /* ══ 运行时开销的四项系数 ═══════════════════════════════════════════════
+     这四个数是**经验值，待实测标定**。标定方法（写在口径浮层脚注里，别只留在
+     注释中）：固定并行度、只改 micro-batch 跑两三次，取
+         实测显存峰值 − 理论四段(weight/grad/optim/act)
+     两点拟合 —— 截距 = 底座 + 通信 buffer（不随 mb 动），斜率 = workspace + 碎片
+     （∝ mb）；再换一组 EP/TP 复跑一次，就能把通信域那一项从截距里分离出来。
+     标定出来的值是跟着**卡型号**走的常量，届时应挪进 CARD_SPECS。 */
+  const RUNTIME = {
+    baseGB: 2.0,        // 驱动 + CANN/ACL context + kernel binary + 通信域元数据
+    hcclBufGB: 0.2,     // 单个通信域的 HCCL_BUFFSIZE（默认 200 MB）
+    hcclDouble: 2,      // 收发双缓冲
+    wsFactor: 2,        // MoE permute/unpermute：进出各一份临时区
+    wsFloorGB: 1.0,     // 纯 dense stage 由 FA 之类兜底的 workspace 下限
+    fragRatio: 0.05,    // caching allocator 碎片，按已用量
   };
 
   /* config 里那两个字段名与 BASIS 的键名不同（一个是配置项名、一个是口径量名），
@@ -70,11 +92,16 @@
     if (Number.isFinite(hbm) && hbm > 0) BASIS.capGB = hbm;
   }
 
-  /* 两条警戒线。只有一条 OOM 线是不够的：越过 70% 之后，通信 buffer 与碎片的
-     正常波动就足以把余量吃光，那时候「还没满」不等于「跑得下」。 */
+  /* 两条警戒线。只有一条 OOM 线是不够的：预留段算的是**稳态值**，而通信 buffer
+     与碎片本身还在逐 step 波动，越过 70% 之后这点波动就足以把余量吃光，那时候
+     「还没满」不等于「跑得下」。 */
   const THRESHOLD = { tight: 0.70, alert: 0.88 };
 
+  /* 自底向上的堆叠顺序。底座贴盒底、预留摞盒顶，中间四段才是「模型本身」：
+     底座固定不动，调 EP/PP 时只有中间四段和盒顶那段会变，一眼能看出哪部分是
+     配置能管的、哪部分是给运行时的死钱。 */
   const SEGS = [
+    { key: "base", label: "运行时底座" },
     { key: "weight", label: "权重分片" },
     { key: "grad", label: "梯度" },
     { key: "optim", label: "优化器状态" },
@@ -184,6 +211,8 @@
     const host = spec.host || el.root;
     const fmt = spec.format || ((v) => String(v));
     const bounds = { x0: Infinity, y0: Infinity, x1: -Infinity, y1: -Infinity };
+    // 阈值标签向左伸出的那截：只用来撑 viewBox 的左边界，不算进 bounds（见末尾）
+    let overhangX0 = Infinity;
     const P = (x, y, z) => {
       const px = (x - z) * ISO_C;
       const py = (x + z) * ISO_S - y;
@@ -310,15 +339,24 @@
       });
       label.textContent = `${Math.round(mark.at * 100)}%`;
       g.appendChild(label);
-      // 标签向左伸出的那截也要算进包围盒，否则会被 viewBox 裁掉
-      if (anchor[0] - 2.0 < bounds.x0) bounds.x0 = anchor[0] - 2.0;
+      /* 标签向左伸出的那截也要算进包围盒，否则会被 viewBox 裁掉。
+         但它**不进 bounds** —— bounds 要保持"柱体自身"的范围，viewBox 才能围着
+         柱体的中心对称展开（见下方）。混进去的话柱体就被推到右边了。 */
+      if (anchor[0] - 2.0 < overhangX0) overhangX0 = anchor[0] - 2.0;
     });
 
+    /* viewBox 围着**柱体的横向中心**对称展开，而不是紧贴包围盒。
+       紧贴的话，左边多出来的那截阈值标签（2.0 user unit）会把柱体整体挤到右半边
+       —— SVG 是 xMidYMid meet，居中的是 viewBox，viewBox 偏了柱体就跟着偏。
+       取"柱体中心到左右两侧最远处"里更大的那个做半宽，两侧等宽，柱体就正好落在
+       正中；短的那一侧多出来的空白无非是留白，本来也该有。 */
     const pad = 0.35;
+    const cx = (bounds.x0 + bounds.x1) / 2;
+    const half = Math.max(cx - Math.min(bounds.x0, overhangX0), bounds.x1 - cx) + pad;
     svg.setAttribute("viewBox", [
-      (bounds.x0 - pad).toFixed(2),
+      (cx - half).toFixed(2),
       (bounds.y0 - pad).toFixed(2),
-      (bounds.x1 - bounds.x0 + pad * 2).toFixed(2),
+      (half * 2).toFixed(2),
       (bounds.y1 - bounds.y0 + pad * 2).toFixed(2),
     ].join(" "));
     return svg;
@@ -341,8 +379,9 @@
         label: seg.label,
         value: m.values[seg.key],
         color: `var(--cro-cap-${seg.key}, #7C8A94)`,
+        // 预留是「留给意外的空当」故虚线棱；底座是实打实占掉的，只压暗不虚线
         dashed: seg.key === "reserve",
-        opacity: seg.key === "reserve" ? 0.62 : null,
+        opacity: seg.key === "reserve" ? 0.62 : (seg.key === "base" ? 0.72 : null),
       })),
       thresholds: [
         { at: THRESHOLD.tight, color: cssVar("--warning", "#F5A524") },
@@ -399,6 +438,39 @@
       * inflight;
   }
 
+  /* ── 通信 buffer：∝ 通信域个数，与这张卡背了多少参数无关 ────────────────
+     每个 >1 的并行维各建一个 HCCL 通信域；MoE 的 dispatch/combine 另起一条
+     all-to-all 域。TP=1 时不建 TP 域，所以这一项会跟着并行配置一起动 —— 这正是
+     它该画在「随配置动的预留」里、而不是揉进固定底座的原因。 */
+  function commDomains(topo) {
+    const c = topo.counts;
+    const n = [c.tp, c.pp, c.dp, c.cp, c.ep].filter((v) => v > 1).length;
+    return n + (c.ep > 1 ? 1 : 0);
+  }
+
+  function commBytes(topo) {
+    return commDomains(topo) * RUNTIME.hcclBufGB * RUNTIME.hcclDouble * GIB;
+  }
+
+  /* ── 算子 workspace：峰值由**单个最大算子**决定，∝ 一层的 token 张量 ──────
+     不是全部层的和 —— workspace 是算子跑完就还的临时区，同一时刻只有一个算子
+     在占。MoE 的 permute/unpermute + GroupedMatMul 要 topK 份 token 的临时区，
+     通常就是这个峰值；本 stage 全是 dense 层时由 FA 之类兜底，取下限。 */
+  function workspaceBytes(topo, stage) {
+    const { preset, counts, stages, layers } = topo;
+    const seg = stages[stage];
+    let peak = RUNTIME.wsFloorGB * GIB;
+    if (!seg || seg.count <= 0) return peak;
+    let hasMoe = false;
+    for (let l = seg.lo; l <= seg.hi; l += 1) {
+      if (layers[l] && layers[l].ffn !== "dense") { hasMoe = true; break; }
+    }
+    if (!hasMoe) return peak;
+    const tokens = BASIS.microBatch * (BASIS.seq / Math.max(1, counts.cp));
+    const tokenBytes = tokens * preset.hidden * BASIS.bytesWeight / Math.max(1, counts.tp);
+    return Math.max(peak, RUNTIME.wsFactor * counts.topK * tokenBytes);
+  }
+
   function measure(topo, stage) {
     const params = paramsOfStage(topo, stage);
     const weight = params * BASIS.bytesWeight;
@@ -406,15 +478,24 @@
     const optim = params * BASIS.bytesOptim;
     const act = activationBytes(topo, stage);
     const core = weight + grad + optim + act;
-    const reserve = core * BASIS.reserveRatio;
+    /* 底座摞在盒底而不是从 cap 里扣掉：两种算法对占比完全等价（都是
+       (base+core+reserve)/hbm），但画成盒底那一段能让人看见它有多大 —— 「64 GB
+       的卡为什么一开机就少 2 GB」是这一栏最常被问的一句。 */
+    const base = RUNTIME.baseGB * GIB;
+    const comm = commBytes(topo);
+    const workspace = workspaceBytes(topo, stage);
+    const frag = core * RUNTIME.fragRatio;
+    const reserve = comm + workspace + frag;
     const cap = BASIS.capGB * GIB;
-    const total = core + reserve;
+    const total = base + core + reserve;
     return {
       stage, params, cap, total,
       ratio: total / cap,
       inflight: Math.max(1, topo.counts.pp - stage),
       layers: topo.stages[stage] ? topo.stages[stage].count : 0,
-      values: { weight, grad, optim, act, reserve },
+      values: { base, weight, grad, optim, act, reserve },
+      // 预留段在图上是一整段，拆项只在图例 tooltip 与口径浮层里给
+      reserveParts: { comm, workspace, frag },
     };
   }
 
@@ -435,6 +516,7 @@
     const room = m.cap - m.total;
     if (m.ratio > 1) {
       return `占用 ${pct}%，溢出 ${gb(-room)} GB —— 该配置预计 OOM。`
+        + `其中底座与预留 ${gb(m.values.base + m.values.reserve)} GB 压不掉，`
         + `减容器要动 EP / PP / TP，加 DP 只增吞吐不增余量。`;
     }
     if (m.ratio > THRESHOLD.alert) {
@@ -469,7 +551,10 @@
       + row("共享专家", `在 EP 域内复制，每张卡各持一份`)
       + row("其余权重", `÷ TP(${c.tp})；全部 ÷ PP(${c.pp})，体现为这张卡只背本 stage 那几层`)
       + row("DP", `<b>不除任何东西</b>。DP(${c.dp}) 买的是吞吐不是余量，除非上 ZeRO / FSDP`)
-      + row("预留", `已用量的 ${Math.round(BASIS.reserveRatio * 100)}%（通信 buffer + 算子 workspace + 内存碎片）`)
+      + row("运行时底座", `<b>${RUNTIME.baseGB} GB 固定</b>：驱动 + CANN/ACL context + kernel binary + 通信域元数据，与配置无关 —— 64 GB 的卡一开机就少这么多`)
+      + row("通信 buffer", `<code>${RUNTIME.hcclBufGB} GB × 域数(${commDomains(topo)}) × ${RUNTIME.hcclDouble}（双缓冲）</code>；域数 = TP/PP/DP/CP/EP 中 >1 的维度${c.ep > 1 ? " + MoE 的 a2a 域" : ""}`)
+      + row("算子 workspace", `峰值由单个最大算子定，∝ <b>一层</b>的 token 张量：<code>${RUNTIME.wsFactor}·topK·mb·(S/CP)·H·2B/TP</code>（MoE permute + GroupedMatMul），下限 ${RUNTIME.wsFloorGB} GB`)
+      + row("内存碎片", `已用量的 ${Math.round(RUNTIME.fragRatio * 100)}% —— 四项里只有这一项真按比例；MoE 每 step token 数变长时更差`)
       + row("单卡显存", `${BASIS.capGB} GB，警戒线 ${Math.round(THRESHOLD.tight * 100)}% 偏满 / ${Math.round(THRESHOLD.alert * 100)}% 预警`)
       + (card ? row("卡型号", `<b>${card.label}</b> · ${card.hbmGB} GB HBM<br><span class="cro-capacity__basis-warn">${card.hbmNote}</span>`) : "")
       + (card && card.specs ? row("规格", card.specs) : "")
@@ -481,6 +566,10 @@
       + row("在飞份数", `1F1B 下 Stage s 同时压着 <code>PP−s</code> 份 micro-batch 的激活，Stage0 压 ${c.pp} 份、末段只压 1 份`)
       + row("同 stage 内", `各 DP / EP / TP / CP 副本切法一致、容量相同，所以差异只到 stage 这一级 —— 底部那排小柱就是全集群的完整分布`)
       + `</dl>`
+      + `<p class="cro-capacity__basis-sub">运行时四项怎么标定</p>`
+      + `<p class="cro-capacity__basis-note">上面四个系数是<b>经验值，待实测标定</b>：固定并行度、只改 micro-batch 跑两三次，`
+      + `取 <code>实测显存峰值 − 理论四段</code>，两点拟合 —— 截距 = 底座 + 通信 buffer（不随 mb 动），`
+      + `斜率 = workspace + 碎片（∝ mb）；再换一组 EP/TP 复跑一次，即可把通信域那一项从截距里分离出来。</p>`
       + `<p class="cro-capacity__basis-foot">`
       + `MTP 层、重计算、EP 与 DP 是否正交的口径差异均未计入。量级估算，用于看趋势与相对高低。</p>`;
   }
@@ -543,6 +632,15 @@
       li.className = "cro-capacity__row";
       li.dataset.seg = seg.key;
       li.innerHTML = `<i></i><span>${seg.label}</span><b>${gb(m.values[seg.key])} GB</b>`;
+      /* 预留是三项合成的一段，拆项只在这里给：常驻三行会把一栏窄面板压掉半屏，
+         而"哪一项占大头"是想清楚了才会问的第二层问题。 */
+      if (seg.key === "reserve") {
+        li.title = `通信 buffer ${gb(m.reserveParts.comm)} GB（${commDomains(topology)} 个 HCCL 域）`
+          + ` + 算子 workspace ${gb(m.reserveParts.workspace)} GB`
+          + ` + 碎片 ${gb(m.reserveParts.frag)} GB`;
+      } else if (seg.key === "base") {
+        li.title = `驱动 + CANN/ACL context + kernel binary，固定 ${RUNTIME.baseGB} GB，不随配置变`;
+      }
       el.legend.appendChild(li);
     });
     /* 头条读数：占比放大并按档位换色（安全档不出判定横幅后，它是唯一一眼能看出
@@ -562,24 +660,31 @@
       el.verdictText.textContent = verdictText(m, topology);
     }
 
-    /* 各 stage 峰值：容量只随 stage 变，所以这排小柱就是完整分布 */
+    /* 各 stage 峰值：容量只随 stage 变，所以这排小柱就是完整分布。
+       但判定横幅一出现（level !== "safe"，含"偏满" tight）就已经把「险不险」
+       说清楚了，这排小柱这时只是重复信息，却仍占着一整块竖向空间 —— 让位给
+       横幅，隐藏整个分区。与 showVerdict 用同一个条件，横幅在就该它不在。 */
+    const hideSpread = showVerdict;
+    el.spread.hidden = hideSpread;
     el.stages.innerHTML = "";
-    const peak = Math.max(1, fullest.ratio);
-    all.forEach((entry) => {
-      const bar = doc.createElement("button");
-      bar.type = "button";
-      bar.className = "cro-capacity__stage";
-      bar.dataset.stage = String(entry.stage);
-      bar.dataset.level = levelOf(entry.ratio);
-      bar.classList.toggle("is-selected", entry.stage === stage);
-      bar.style.height = `${Math.max(6, entry.ratio / peak * 100).toFixed(1)}%`;
-      bar.title = `Stage${entry.stage} · ${gb(entry.total)} GB / ${BASIS.capGB} GB`
-        + `（${Math.round(entry.ratio * 100)}%）· ${entry.layers} 层 · 在飞 ${entry.inflight}`;
-      bar.setAttribute("aria-label", bar.title);
-      bar.addEventListener("click", () => selectStage(entry.stage));
-      el.stages.appendChild(bar);
-    });
-    el.spreadNote.textContent = `最满 Stage${fullest.stage} · ${Math.round(fullest.ratio * 100)}%`;
+    if (!hideSpread) {
+      const peak = Math.max(1, fullest.ratio);
+      all.forEach((entry) => {
+        const bar = doc.createElement("button");
+        bar.type = "button";
+        bar.className = "cro-capacity__stage";
+        bar.dataset.stage = String(entry.stage);
+        bar.dataset.level = levelOf(entry.ratio);
+        bar.classList.toggle("is-selected", entry.stage === stage);
+        bar.style.height = `${Math.max(6, entry.ratio / peak * 100).toFixed(1)}%`;
+        bar.title = `Stage${entry.stage} · ${gb(entry.total)} GB / ${BASIS.capGB} GB`
+          + `（${Math.round(entry.ratio * 100)}%）· ${entry.layers} 层 · 在飞 ${entry.inflight}`;
+        bar.setAttribute("aria-label", bar.title);
+        bar.addEventListener("click", () => selectStage(entry.stage));
+        el.stages.appendChild(bar);
+      });
+      el.spreadNote.textContent = `最满 Stage${fullest.stage} · ${Math.round(fullest.ratio * 100)}%`;
+    }
 
     // 口径里带着当前的 EP/TP/PP/DP 取值，配置一改就得重写；浮层没打开时写了也不亏
     el.basis.innerHTML = basisHtml(topology);
@@ -619,6 +724,7 @@
     el.verdictBadge = doc.getElementById("croCapacityBadge");
     el.verdictText = doc.getElementById("croCapacityVerdictText");
     el.stages = doc.getElementById("croCapacityStages");
+    el.spread = doc.getElementById("croCapacitySpread");
     el.spreadNote = doc.getElementById("croCapacitySpreadNote");
     el.basis = doc.getElementById("croCapacityBasis");
     return true;
