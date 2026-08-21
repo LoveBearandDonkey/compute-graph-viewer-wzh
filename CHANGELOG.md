@@ -5,6 +5,60 @@
 
 ---
 
+## 2026-08-21 — config-relation-observer：主页瘦身，播放与 DP 口径开关归档
+
+- 新增归档页 `config-relation-observer-old.html`，配套冻结 `css/config-relation-observer-old.css` / `js/config-relation-observer-old.js`（从本次改动前的工作树完整复制，与主页彻底解耦）。**数据流播放与 Layer Rank 查询口径开关只在这一份里继续可用。**
+- 主页删掉数据流播放整套：`.cro-flow-play` / `.cro-flow-exit` 键组、6 条数据线泳道（`#croFlowLanes` + canvas）、`startFlow / stopFlow / flowTick / lanes*` 全族与 `.is-flowing` / `.is-flow-optimizer` 样式；`applyRelation` 的 `quiet` 形参一并去掉（它只为播放而存在）。
+- 主页删掉 `#croDpScope` 单 DP / 所有 DP 开关及其 `scopeLayerPayload / DP_SCOPED_KINDS / incidentDpHint / syncDpScopeLabels` 一整条链路。**结构对象（层 / 典型层算子 / Emb·Norm·Head 端点）的默认口径改为查全部 DP/EDP**，不再默认收窄到第一个 DP；只有明确带 `dpIdx` 的 payload（点某张 rank 卡）才收窄到那一个副本。
+- 净减 JS 906 行、CSS 247 行、HTML 49 行。
+
+---
+
+## 2026-08-21 — config-relation-observer：集群矩阵 d 轴正名 EDP（升级计划行 3）
+
+- 行 1 落地后表单里 DP 写着 512、矩阵左侧却标 DP0–7，是两个量重名。新增 `dAxisName(counts)` 一处判定（切出档且 EP>1 → `EDP`，否则 `DP`；稠密模型 EDP≡DP 不平添新词），矩阵行标签、组/块的 aria、格子提示与 aria 全部走它。**几何一格未动。**
+- `coordsOfRank` 的坐标文案原在关系卡片 / 计算血缘 / 事件详情三处逐字重复，合并成 `coordLine(topology, co)`；`#croDpScope` 那两枚查询范围键的文案改由 `syncDpScopeLabels()` 按口径写；写死的事件样例里 `PP3 / DP0 / EP23` 改成口径中立的 `PP3 / EP23`。
+- 换算式落在三处常驻可见：Cluster 区标题右侧一行 `矩阵纵轴 = EDP 8（DP 512 ÷ EP 64）· 一行是一个完整模型副本`（挂在标题行而不是矩阵下方 —— 矩阵的纵向预算是量 `.cro-cluster__grid` 得来的，多一行会直接从格子高度上扣）、每个格子的悬浮提示、容量栏口径浮层新增的 EDP 条目。浮层末尾那句「EP 与 DP 是否正交的口径差异未计入」同时改写成「只改读数与编址，本栏两档同值 —— 这里没有任何一段是按 DP 切的」。
+
+## 2026-08-21 — config-relation-observer：EP 口径开关（升级计划行 1），world 公式不再硬编码 EP 正交
+
+- MoE 区标题右侧新增二选一开关 `#croEpMode`（EP 切出 / EP 正交），落到 `config.moeOrthogonal`（默认 false = 切出，即 Megatron / MindSpeed / MindFormers 的做法）。`validate()` 的 world 公式随档取 `DP×PP×TP×CP×EP` 或 `DP×PP×TP×CP`，`#croConfigError` 的公式文案与 `fitParallelWorld` 的候选维（切出档摘掉 EP —— 改它补不上 world 的差额）同步。
+- 参考配置改按切出口径记：`MODEL_PRESETS.openpangu-flash.defaults.dp` 由 8 改成 512，`EDP = DP/EP = 8` 才是原先那个「8」。两种口径下 Total Rank 仍是 2048，**rank 编址的几何一格不动** —— `derive()` 新增 `edp`，集群矩阵的 d 轴、`ranksPerStage`、按 DP 副本遍历的两处关系查询全部改读它（正交档 EDP ≡ DP，与改动前逐位相同）。d 轴标签仍写 DP，正名为 EDP 是升级计划行 3。
+- YAML 视图跟着换口径：框架校验行按档写 `dp×mp×pp×cp×ep` 或 `dp×mp×pp×cp`（后者注明 ep 从 dp 内切出、不进乘积），`expert_parallel` 的行尾注释由死值「与 DP 正交」改成随档生成，`data_parallel` 在切出档补注「含 EP 组在内的真 DP」。
+- `FIELD_SPECS.dp.max` 1024 → 8192：切出档的 DP 比正交档大一个 EP 倍，旧上界会在换算时把值夹掉、连带改动 Total Rank。
+
+## 2026-08-21 — config-relation-observer：顶栏新增「文档」档，写清配置项之间的兼容规则
+
+- 顶栏视图页签由两档扩到三档（关系视图 / YAML 视图 / **文档**）。新增 `css/config-relation-doc.css` + `js/config-relation-doc.js`：左侧章节目录 196px，右侧正文栏封顶 800px 且自己是滚动容器（滚动条落在文字右缘而非面板右缘）。与 YAML 档的差别是**连整网列一起让位** —— yaml 档留着整网是因为左边要回答「这份 yaml 描述的是哪张网」，文档没有这层对照关系。
+- 正文写死在 `config-relation-observer.html` 的 `.cro-region--doc` 里而不是由 JS 拼串：它是一篇要逐字打磨的散文，塞进模板串后每改一个字都要在转义里找位置（与 yaml 那份「每行都随配置变、只能生成」正相反）。`config-relation-doc.js` 只从 `.cro-doc__section[id]` 生成目录、做点击跳转与滚动高亮，改标题只改正文一处。
+- 正文定位是**训练配置的领域文档，不是工具说明书**：不写「哪条已实现、哪条还没做」，与工具演进阶段无关。约束卡的分类维度因此是领域本身的 —— `data-kind` 三档：`hard` 违反则起不来（启动器/建图阶段报错）、`soft` 能起来但踩在性能悬崖上、`impl` 取决于所用框架口径。卡里那行小字是「违反时实际会看到什么」（报错点、卡死还是变慢），供排查现场直接用。
+- 九个章节：一份配置要过的三关 / 五个并行维度各切什么（含通信模式）/ world_size 与 rank 编址（含「编址顺序本身就是一次通信优化」）/ **EP 与 DP：正交还是从 DP 切出** / 切分维度与模型结构的整除关系 8 条 / 并行维度落到物理拓扑 4 条 / 单卡显存由什么构成 / **显存不够时该动哪一维**（八行决策表：省什么、代价、会撞上哪条约束）/ 配置项逐条详解。
+- 末章「配置项逐条详解」与关系视图的表单**一一对应**：13 个 stepper（`FIELD_ORDER` 的 parallel/moe/cluster/batch 四组）加卡型号下拉，共 14 条，顺序与屏幕上读下来的一致；整网区的「模型」下拉不在其中（它选的是一整套预设，是约束网的输入而非网上的可调节点）。每条给「是什么 / 解决什么问题」两段，再接一幅**联动图**：左列「该调大它 / 该调小它」→ 中心该配置项 → 右列「一定会跟着变（实线）/ 常常一起调（虚线）」，四枚箭头一律朝右，整幅是一条从左读到右的因果链。
+- 「配置项逐条详解」提到**第 2 章**（紧跟「一份配置要过三关」），当速查表用；章内 14 条在左侧目录里展开为**二级目录**，可直接跳到某个配置项而不必先跳章首再翻。二级常驻展开不跟着章节折叠——它存在的理由就是直跳，要先点开父章才看得见就失去了意义。当前词条与它所属的章用两档强度分别高亮（`is-active` / `is-within`），否则会读成两个并列的选中项。目录项超出可视高度时由 js 按 `offsetTop` 补位，仅在滚动驱动时补、点击驱动时不补（刚点的那一项就在手指底下）。
+- 正文节奏返工：此前「全部内容粘在一起，不知道自己看到哪」。章与章之间改为三重信号叠加（通栏细线 + 40px 留白 + 标题左侧 accent 竖条），节标题用同一套语言弱一档（更细更暗的竖条、更大的上方留白）；段间距 12→16px。表格套一层 `.cro-doc__table-wrap` 拿到外框、圆角与 `--surface-1` 底，表头再压一层 `--surface-2`（圆角要裁住表头底色只能由 wrap 负责 overflow，`<table>` 自己的 overflow 各家浏览器都不可靠），wrap 同时兼职横向滚动条——四列的决策表在 800px 正文栏里放不下时自己滚，不撑宽整页。代码块底色从 `--surface-1` 压到 `--background` 并加左缘 accent 竖条：「这是一块代码」要一眼看出来，不能靠一圈细边框暗示。
+- 联动图的连线**复用事件详情「计算血缘」页签那一套**：绝对定位的 SVG 覆在格子上、贝塞尔从源盒右缘弯到目标盒左缘、关系名写在曲线中点并带一圈同底色描边（`paint-order:stroke`）当挖空。算法整段照搬 `paintIncidentLineageEdges`（量两端 `getBoundingClientRect` → 换算到 shell 坐标系 → 控制点各自水平外推 Δx/2 → 标签摆中点上方 5px）。两边都是"有向关系图 + 边上写关系名"，本该长一样。方向按盒子中心在中心节点的哪一侧判、不按 `data-flow` 硬编码，改格位时方向自己跟对。
+- 与血缘那边有两处不同：`.cro-doc__map` 有 1px 描边，而 SVG 的 `inset:0` 从描边**内侧**起算，所以 viewBox 用 `clientWidth/Height`、原点补 `clientLeft/Top`（血缘的 shell 无描边，原版直接用 offset）；边不需要 `is-active/is-muted` 两态（静态文档）。重画由逐图 `ResizeObserver` 驱动而非只听 `window.resize`——格子高度会随字体载入与换行阈值变化，那时窗口没动但连线两端已经挪了。
+- 边上四个词收成两字/四字：**调大 / 调小 / 一定联调 / 考虑再调**（卡型号那条按语气对齐为「换大卡 / 通常不可选」）。配色：调大与调小同用 `--warning`——两者靠位置（上/下）与字面分，不靠颜色分，它们是同一个动作的两个方向，染成两色反而像两类东西；`--danger` 留给「一定联调」（硬绑定，最该被拦下看一眼），`--accent` 给「考虑再调」（可选项，语气最轻）。**连线颜色跟随文字**，经一个 `--cro-flow-color` 变量同时喂给 `stroke` 与 `fill`：一条边和它的名字是同一件事，颜色分家的话读者要在「这条线是哪一类」和「这个词是哪一类」之间来回对。线取 62% 混色比字淡一档——四条线同时满色会盖过它们要连的内容，而字是要读的。图例与窄板兜底同步这套配色。
+- 连线加朝右箭头（SVG `marker-end`）：没有箭头的曲线会被读成双向甚至反向，右半边尤其（中心 → 格子，光看形状分不出谁指谁）。marker 的 id 是文档级的、跨 `<svg>` 引用合法，所以 14 张图**共 4 枚** marker 而不是 56 枚；`orient="auto"` 跟着末端切线转，四条边都是左→右故不必按方向分建两套；`markerUnits="userSpaceOnUse"` 而非默认的 `strokeWidth`——线宽只有 1.25，按线宽缩放出来的箭头小到看不清，而这枚箭头正是要读的信息。路径两端各留空隙（起点 2px、终点 3px），否则线贴死在描边上、箭头压进边框里看不出是箭头。箭头比线实一档（80% vs 62%）：线是背景，箭头是要读的那个「方向」。
+- 中心节点描边由 accent 改为中性的 `--foreground`（深色主题下即白）、底色改 `--surface-2`：accent 已经被「考虑再调」那条边占了，中心再染同一个蓝会被读成「中心和那条边是一伙的」——中心不属于四类关系中的任何一类，它就该是无色的那个。
+- 颜色只留给**边上那四个词**，四个格子一律同色同描边：格子各染一色的话，颜色在讲「这是四类东西」，而真正要读的是边上那四个关系名，两处都在喊就都没被听见。格子标题节点保留但视觉隐藏（读屏仍要念出来），文案由 js 读它的 `textContent` 写进 SVG `<text>`。虚线仍留给「常常一起调」——它就是「可选、不是硬绑定」这句话本身。图例改为 `<dl>`，给的就是连线上那四个词本身（同字体同色），不另造记号。
+- 不引 mermaid：本页是纯静态无构建的 HTML，而 mermaid 的配色不跟随 `data-theme`，深浅主题一切换就成两套观感。现在颜色全部走设计系统 token。
+- 章标题提到 20px 并去掉左侧 accent 竖条，节标题同去；代码块与约束卡的左缘竖条改为**整圈增亮描边**（代码块 `--border-strong` + 更深的 `--background` 底；约束卡按 `hard/soft/impl` 整圈染 42% 类别色）。一圈淡色描边同样能扫出「这一列里有几条红的」，而且不会在正文左缘留下一排长短不一的竖线。窄板（≤900px）联动图塌成单列纵排时隐掉 SVG、把标题放回格子里——曲线要靠左右两列的水平距离才成立，纵排后源与目标几乎同一 x，弯不出可读的弧。
+- `js/config-relation-yaml.js` 的 `setup()` 由二值模式改为三档（它是 `#croViewTabs` 的唯一监听方，文档模块不碰页签）：`mode` 放开 `doc`，`.cro-board` 加挂 `is-doc`，退出运行事件的判据从 `mode === "yaml"` 放宽到 `mode !== "relation"` —— 两档的 DOM 都在 `.cro-board` 里，事件模式下整块被藏起来，不退出什么都看不到。
+- 文档档整条隐藏运行事件栏（`.pto-ide-frame__workarea.is-doc-view`）：事件栏与文档没有联动，点任一条事件都会把 `.cro-board` 整块换掉、连带退出文档档，留着一条点了就跳走的侧栏既占 292px 又把正文中线推偏。收起态那 40px 竖条仍占位，所以是 `display:none` 而不是复用 `is-event-rail-collapsed` —— 后者原样留着，退出文档档时侧栏回到用户原来的展开/收起状态。
+- 正文栏改为**正对板面中线**：三轨 `1fr | 800px | 1fr` 而不是「目录 + 正文」两轨，两轨的话正文只能在目录右边那片剩余空间里居中、整篇被推得偏右；右轨是空的，存在的意义就是抵掉目录宽度。目录 `justify-self:end` 贴着左轨右缘停。窄板断点从 1000px 提到 1340px（三轨要成立需板面 ≥ 1256px，加活动栏与 padding 即 1336px），以下目录塌成正文上方的横排药丸，正文靠 `margin-inline:auto` 继续居中。
+- 同时新增 `config-relation-observer-upgradeplan.md`：上述「计划中 / 待确认」各条的落地清单，14 行带勾选位，按四批排序。
+
+---
+
+## 2026-08-21 — config-relation-observer：首屏集群矩阵按终局板宽铺，不再「切走再切回」才规整
+
+- `js/config-relation-observer.js` 把「收起运行事件栏 + `syncDpScope()`」挪到 `controller.refresh()` **之前**。事件栏 292px ⇄ 40px 一翻，板面横向差 250 多像素，而首帧 `renderCluster` → `syncCellWidth` 已经把每个 stage 块的列轨写成了固定像素：先铺矩阵再收栏，格子就一直挤在「栏还开着」的窄宽度里、块右缘留一道缝、矩阵下方也空一截（openPangu 64 EP 下最明显）。切一次模型走完整条 `onChange` 才按终局宽度重铺，这就是「切到 Qwen 再切回来反而好看」的由来。
+- 新增 `resyncClusterGeometry()`：`syncBoardRows` → 比对 `pickEpRows` → 行数变了重建、没变只补量格宽/格高。窗口 `resize` 的防抖体改为直接复用它；`setEventRailCollapsed()` 的 rAF 里也调一次 —— 运行时手动收/展事件栏同样会让列轨失配，此前那里只重排了 Layer 导航与连线。
+- 点 rank 后对应 EP 组卡片的描边提到白 1.5px（`.cro-moe-group.is-related.is-pinpoint`），与同一次点击里共享专家的高亮同亮度 —— 此前它只有一档 `--border-strong` 灰边，两处亮度差一大截，读起来像 EP 组没被点上。只在关系集命中的 EP 数少于全部 EP 时提亮（`applyRelation` 里的 `epPinpoint`，判据与关系摘要那句「EP0、EP1… / 全部 EP」同源）：点整网节点 / 典型层会走 `allEpRanks()`，那时整列几十个组一起白框等于什么都没突出，仍走灰档。卡片保持空心不铺底。
+
+---
+
 ## 2026-08-20 — 单卡容量：运行时预留从「已用量 10%」拆成四项模型
 
 - `js/config-relation-capacity.js` 去掉 `BASIS.reserveRatio`（core × 10%）。原口径把一个几乎不随 core 变的量做成了正比项：大 EP/大 PP 的轻卡被低估（光驱动 + HCCL 就不止那点），重卡又虚高。新增 `RUNTIME` 四项，各跟各的标度量：

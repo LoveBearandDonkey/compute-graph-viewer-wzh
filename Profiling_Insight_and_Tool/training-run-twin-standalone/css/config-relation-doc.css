@@ -1,0 +1,785 @@
+/* ══════════════════════════════════════════════════════════════════════════
+   文档视图（顶栏第三档「文档」）
+   ------------------------------------------------------------------------
+   见 js/config-relation-doc.js。本文件只加，不改 config-relation-observer.css
+   与 config-relation-yaml.css 里已有的规则。
+
+   与 YAML 档的关键区别：**整网列也让位**。yaml 档留着整网是因为左边要回答
+   「这份 yaml 描述的是哪张网」；文档档没有这层对照关系，它是一篇要读的东西，
+   留半张 3D 图在旁边只是噪声。所以文档区吃满 net→moe 三列。
+   ══════════════════════════════════════════════════════════════════════════ */
+
+/* ── 在 .cro-board 里的格位 ── */
+.cro-region--doc {
+  grid-column: net-start / moe-end;
+  grid-row: 1 / 3;
+  min-height: 0;
+  display: grid;
+  /* 三条轨而不是「目录 + 正文」两条：两条的话正文只能在目录右边那片剩余空间里
+     居中，整篇文字会被目录推得偏右。左右两条 1fr 完全对称，中间那条就是正文
+     —— 正文因此**正对板面中线**，目录贴着左侧那条轨的右缘（justify-self:end）
+     停在正文左边。右边那条轨是空的，它存在的唯一意义就是抵掉目录的宽度。 */
+  grid-template-columns: minmax(0, 1fr) minmax(0, 800px) minmax(0, 1fr);
+  /* 行轨写死一条 minmax(0,1fr) 而不是留 auto：目录与正文各自 overflow:auto，
+     只有拿到确定高度才会自己滚。留 auto 的话内容多了是整块撑高、由 .cro-board
+     整体滚 —— 那样目录就跟着滚出屏幕了。 */
+  grid-template-rows: minmax(0, 1fr);
+  column-gap: calc(var(--space-4) * 2);
+}
+
+/* ── 文档档隐藏运行事件栏 ──
+   事件栏与文档没有任何联动：它是「已发生的事」，文档是「配置规则」，点任一条
+   事件都会把 .cro-board 整块换掉、连带退出文档档。留着一条点了就跳走的侧栏，
+   既占 292px 又把正文的中线推偏。
+   收起（40px）不够，要整条不显示——收起态那 40px 的竖条仍然占位。
+   ⚠ 只加 display:none，不动 .is-event-rail-collapsed：退出文档档时侧栏要回到
+   用户原来的展开/收起状态，那个状态得原样留着。 */
+.pto-ide-frame__workarea.is-doc-view .cro-event-rail {
+  display: none;
+}
+
+.cro-board:not(.is-doc) .cro-region--doc { display: none; }
+
+.cro-board.is-doc :is(.cro-region--net, .cro-region--arch,
+                     .cro-region--moe, .cro-region--cluster) {
+  display: none;
+}
+
+/* 第 2 行的内容全没了，模板收成「一行 + 0」——同 .cro-board.is-yaml 的理由 */
+.cro-board.is-doc {
+  grid-template-rows: minmax(0, 1fr) 0;
+}
+
+/* ══ 左 · 章节目录 ═══════════════════════════════════════════════════════
+   不画边框、不做成卡片：板面里其余四个区之间也没有描边，目录是这一区的一栏
+   而不是独立面板。层级只靠字号与选中态那根竖条给。 */
+.cro-doc__toc {
+  /* 贴着左轨的右缘停：目录要挨着正文，不是飘在左边那片空白的正中 */
+  justify-self: end;
+  width: 196px;
+  /* 目录项的 offsetTop 要以本元素为基准 —— 两级目录共 23 项，窄屏放不下时
+     js 要按 offsetTop 把当前项滚进视野（见 setActive 的 scrollToc 分支）。 */
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  min-height: 0;
+  overflow: auto;
+  padding-block: var(--space-1);
+  scrollbar-width: thin;
+  scrollbar-color: color-mix(in srgb, var(--foreground) 14%, transparent) transparent;
+}
+
+.cro-doc__toc-title {
+  padding-left: 10px;
+  color: var(--foreground-muted);
+  font-size: 11px;
+  font-weight: var(--font-weight-semibold);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.cro-doc__toc-list {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  counter-reset: cro-doc-toc;
+}
+
+.cro-doc__toc-link {
+  display: flex;
+  gap: 8px;
+  width: 100%;
+  padding: 5px 10px;
+  border: 0;
+  /* 选中那根竖条走 border-left 而不是绝对定位的伪元素：条要和文字一起被
+     padding 推开，也要跟着目录一起滚。 */
+  border-left: 2px solid transparent;
+  border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+  background: transparent;
+  color: var(--foreground-secondary);
+  font-size: 12px;
+  line-height: 1.5;
+  text-align: left;
+  cursor: pointer;
+  transition: color 0.12s ease, background 0.12s ease;
+}
+
+/* 序号由 counter 给：正文标题里不写死「1.」，调章节顺序时不用两头对着改 */
+.cro-doc__toc-link::before {
+  counter-increment: cro-doc-toc;
+  content: counter(cro-doc-toc);
+  flex: 0 0 1.1em;
+  color: var(--foreground-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.cro-doc__toc-link:hover {
+  background: var(--surface-2);
+  color: var(--foreground);
+}
+
+.cro-doc__toc-link.is-active {
+  border-left-color: var(--accent);
+  background: var(--surface-2);
+  color: var(--foreground);
+  font-weight: var(--font-weight-semibold);
+}
+
+.cro-doc__toc-link.is-active::before { color: var(--accent); }
+
+/* 停在某个词条上时，它所属的那一章标成「你在这一章里」—— 比 is-active 弱一档
+   （只提亮文字，不给底不给竖条）。两处高亮强度不同，才分得出「在哪一章」与
+   「在哪一条」；同强度的话会读成两个并列的选中项。 */
+.cro-doc__toc-link.is-within {
+  color: var(--foreground);
+  font-weight: var(--font-weight-semibold);
+}
+
+.cro-doc__toc-link.is-within::before { color: var(--foreground-secondary); }
+
+/* ── 二级目录（「配置项逐条详解」那一章的 14 个配置项）──
+   常驻展开而不是跟着章节折叠：这一级存在的理由就是「直接跳到某个配置项」，
+   要先点开父章才能看见就失去了意义。缩进对齐到一级标题文字的起点（10px padding
+   + 2px 竖条 + 1.1em 序号 + 8px 间距），读起来是挂在那一章名下的。 */
+.cro-doc__toc-sub {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  margin: 2px 0 4px;
+  padding: 0;
+  list-style: none;
+}
+
+.cro-doc__toc-sublink {
+  display: block;
+  width: 100%;
+  padding: 3px 8px 3px 30px;
+  border: 0;
+  border-left: 2px solid transparent;
+  border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+  background: transparent;
+  color: var(--foreground-muted);
+  font: 11.5px / 1.5 var(--font-mono);
+  text-align: left;
+  cursor: pointer;
+  transition: color 0.12s ease, background 0.12s ease;
+}
+
+.cro-doc__toc-sublink:hover {
+  background: var(--surface-2);
+  color: var(--foreground-secondary);
+}
+
+.cro-doc__toc-sublink.is-active {
+  border-left-color: color-mix(in srgb, var(--accent) 60%, transparent);
+  background: color-mix(in srgb, var(--accent) 10%, transparent);
+  color: var(--accent);
+}
+
+/* ══ 右 · 正文 ═══════════════════════════════════════════════════════════
+   正文自己就是滚动容器且封顶 800px：滚动条落在文字右缘而不是面板右缘，读起来
+   才像一栏文档而不是一整块被裁的面板。宽屏上右侧空出的那截是有意留白。 */
+.cro-doc__body {
+  /* position:relative 不是为了叠层，是为了让章节的 offsetTop 以本元素为基准
+     —— js/config-relation-doc.js 的目录跳转与滚动高亮都按它算。去掉这一行，
+     offsetTop 会挂到更外层的定位祖先上，跳转会跳偏。 */
+  position: relative;
+  max-width: 800px;
+  /* 三轨布局下中间那条轨本来就是 800px，这行是给下面窄板那档用的：
+     目录塌成横排之后只剩一条通栏轨，正文靠它自己居中。 */
+  margin-inline: auto;
+  width: 100%;
+  min-height: 0;
+  overflow: auto;
+  padding-right: var(--space-4);
+  padding-bottom: var(--space-6);
+  color: var(--foreground-secondary);
+  font-size: 13px;
+  line-height: 1.85;
+  scrollbar-width: thin;
+  scrollbar-color: color-mix(in srgb, var(--foreground) 14%, transparent) transparent;
+  overscroll-behavior: contain;
+}
+
+.cro-doc__toc::-webkit-scrollbar,
+.cro-doc__body::-webkit-scrollbar { width: 8px; height: 8px; }
+
+.cro-doc__toc::-webkit-scrollbar-track,
+.cro-doc__body::-webkit-scrollbar-track { background: transparent; }
+
+.cro-doc__toc::-webkit-scrollbar-thumb,
+.cro-doc__body::-webkit-scrollbar-thumb {
+  border: 2px solid transparent;
+  border-radius: var(--radius-pill);
+  background: color-mix(in srgb, var(--foreground) 14%, transparent);
+  background-clip: content-box;
+}
+
+.cro-doc__body:hover {
+  scrollbar-color: color-mix(in srgb, var(--foreground) 30%, transparent) transparent;
+}
+
+.cro-doc__body:hover::-webkit-scrollbar-thumb {
+  background: color-mix(in srgb, var(--foreground) 30%, transparent);
+  background-clip: content-box;
+}
+
+/* ── 文档头 ── */
+.cro-doc__lede {
+  margin: 0 0 var(--space-5);
+  padding-bottom: var(--space-4);
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.cro-doc__lede b {
+  color: var(--foreground);
+  font-weight: var(--font-weight-semibold);
+}
+
+/* ══ 章节 ══════════════════════════════════════════════════════════════
+   章与章之间要有明确的断点。此前只靠一段 24px 的间距，正文一长就读成一整块
+   ——「不知道自己看到哪了」。现在三重信号叠加：一道通栏细线、40px 的留白、
+   以及 20px 的章标题（比正文大出 7px，一眼能认出是标题不是加粗段落）。 */
+.cro-doc__section {
+  /* 点目录跳过来时标题不要贴着容器顶边 */
+  scroll-margin-top: var(--space-3);
+}
+
+.cro-doc__section + .cro-doc__section {
+  margin-top: 40px;
+  padding-top: 32px;
+  border-top: 1px solid var(--border-subtle);
+}
+
+/* 章标题：分章全靠上面那道通栏细线与 40px 留白，字号本身再拉到 20px 就够了
+   —— 不再挂左侧竖条。 */
+.cro-doc__h {
+  margin: 0 0 var(--space-4);
+  color: var(--foreground);
+  font-size: 20px;
+  font-weight: var(--font-weight-semibold);
+  line-height: 1.4;
+  letter-spacing: 0;
+}
+
+/* 节标题（章内的小标题）：比章标题弱一档，只靠字号与留白分层。
+   上方留白必须明显大于段间距，否则它读起来只是一个加粗的段落。 */
+.cro-doc__sub {
+  margin: var(--space-6) 0 var(--space-2);
+  color: var(--foreground);
+  font-size: 14px;
+  font-weight: var(--font-weight-semibold);
+  line-height: 1.5;
+}
+
+.cro-doc__body p { margin: 0 0 var(--space-4); }
+.cro-doc__body p:last-child { margin-bottom: 0; }
+
+.cro-doc__body b,
+.cro-doc__body strong {
+  color: var(--foreground);
+  font-weight: var(--font-weight-semibold);
+}
+
+.cro-doc__body ul {
+  margin: 0 0 var(--space-3);
+  padding-left: 1.1em;
+}
+
+.cro-doc__body li { margin-bottom: 4px; }
+
+.cro-doc__body code {
+  padding: 1px 5px;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+  color: var(--foreground);
+  font: 12px / 1.5 var(--font-mono);
+  white-space: nowrap;
+}
+
+/* 整块公式：底色压到 --background（比正文所在的面板更深一档，而不是 surface-1
+   那种几乎看不出的差别）——「这是一块代码」要一眼看出来。描边同时提到
+   --border-strong：底色 + 亮描边两重信号，不用再靠左缘那道竖条去拎它。 */
+.cro-doc__formula {
+  margin: 0 0 var(--space-4);
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-md);
+  background: var(--background);
+  color: var(--foreground);
+  font: 12px / 1.9 var(--font-mono);
+  white-space: pre;
+  overflow-x: auto;
+}
+
+/* ══ 约束卡 ══════════════════════════════════════════════════════════════
+   一条约束 = 表达式 + 类别 + 一句为什么 + 违反时的表现。左缘那道色条就是
+   类别本身，扫一眼能把「起不来」和「能起来但会慢」分开，不用逐条读徽章。
+     hard  违反则起不来（启动器或建图阶段报错）
+     soft  能起来，但踩在性能悬崖上
+     impl  取决于所用框架的口径，两种做法都存在 */
+.cro-doc__rule {
+  margin-bottom: var(--space-3);
+  padding: var(--space-3);
+  /* 整圈按类别染色，不挂左侧竖条：一圈淡色描边同样能扫出「这一列里有几条红的」，
+     而且不会在正文左缘留下一排长短不一的竖线。 */
+  border: 1px solid var(--comp-tag-border);
+  border-radius: var(--radius-md);
+  background: var(--surface-1);
+}
+
+.cro-doc__rule[data-kind="hard"] { border-color: color-mix(in srgb, var(--danger) 42%, transparent); }
+.cro-doc__rule[data-kind="soft"] { border-color: color-mix(in srgb, var(--warning) 42%, transparent); }
+.cro-doc__rule[data-kind="impl"] { border-color: color-mix(in srgb, var(--accent) 42%, transparent); }
+
+.cro-doc__rule-head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+  margin-bottom: 6px;
+}
+
+.cro-doc__rule-expr {
+  color: var(--foreground);
+  font: 600 12px / 1.6 var(--font-mono);
+}
+
+/* 类别徽章靠右：一列卡片扫下来，徽章在同一条竖线上才数得清 */
+.cro-doc__kind {
+  margin-left: auto;
+  flex: 0 0 auto;
+  padding: 1px 8px;
+  border: 1px solid var(--comp-tag-border);
+  border-radius: var(--radius-pill);
+  background: var(--comp-tag-bg);
+  color: var(--comp-tag-fg);
+  font-size: 11px;
+  line-height: 1.6;
+  white-space: nowrap;
+}
+
+.cro-doc__rule[data-kind="hard"] .cro-doc__kind {
+  border-color: color-mix(in srgb, var(--danger) 40%, transparent);
+  background: color-mix(in srgb, var(--danger) 12%, transparent);
+  color: var(--danger);
+}
+
+.cro-doc__rule[data-kind="soft"] .cro-doc__kind {
+  border-color: color-mix(in srgb, var(--warning) 40%, transparent);
+  background: color-mix(in srgb, var(--warning) 12%, transparent);
+  color: var(--warning);
+}
+
+.cro-doc__rule[data-kind="impl"] .cro-doc__kind {
+  border-color: color-mix(in srgb, var(--accent) 40%, transparent);
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+  color: var(--accent);
+}
+
+.cro-doc__rule p {
+  margin: 0;
+  font-size: 12.5px;
+  line-height: 1.75;
+}
+
+.cro-doc__rule p + p { margin-top: 6px; }
+
+/* 违反这条约束时实际会看到什么（报错点、卡死还是变慢）—— 和「为什么」分开写，
+   字更小更暗：知道原理的人跳过它，排查现场的人只看它。 */
+.cro-doc__effect {
+  color: var(--foreground-muted);
+  font-size: 12px;
+}
+
+/* ── 提示块 ── */
+.cro-doc__note {
+  margin: 0 0 var(--space-4);
+  padding: var(--space-3);
+  border: 1px solid color-mix(in srgb, var(--warning) 32%, transparent);
+  border-radius: var(--radius-md);
+  background: color-mix(in srgb, var(--warning) 8%, transparent);
+  font-size: 12.5px;
+  line-height: 1.75;
+}
+
+.cro-doc__note b { color: var(--warning); }
+
+/* ══ 对照表 ═════════════════════════════════════════════════════════════
+   此前只有一排 border-bottom，表就浮在正文底色上、和段落粘成一片。现在给它
+   一个真正的容器：外框 + 圆角 + 比正文浅一档的底，表头再压一层 surface-2。
+   圆角要能裁住表头那条底色，得让**外层 wrap** 负责 overflow —— <table> 自己
+   的 overflow 在各家浏览器上都不可靠。wrap 同时兼职横向滚动条：决策表有四列，
+   在 800px 的正文栏里放不下时可以自己滚，而不是把整页撑宽。 */
+.cro-doc__table-wrap {
+  margin: 0 0 var(--space-4);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  background: var(--surface-1);
+  overflow-x: auto;
+  scrollbar-width: thin;
+  scrollbar-color: color-mix(in srgb, var(--foreground) 14%, transparent) transparent;
+}
+
+.cro-doc__table {
+  width: 100%;
+  margin: 0;
+  border-collapse: collapse;
+  font-size: 12.5px;
+}
+
+.cro-doc__table th,
+.cro-doc__table td {
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--border-subtle);
+  text-align: left;
+  vertical-align: top;
+}
+
+.cro-doc__table th {
+  background: var(--surface-2);
+  color: var(--foreground);
+  font-weight: var(--font-weight-semibold);
+  white-space: nowrap;
+}
+
+.cro-doc__table td:first-child {
+  color: var(--foreground);
+  white-space: nowrap;
+}
+
+/* 行分隔只到倒数第二行：最后一行的下边线与 wrap 的外框会叠成两条 */
+.cro-doc__table tr:last-child td { border-bottom: 0; }
+
+/* ══ 名词条目 ═══════════════════════════════════════════════════════════
+   一个配置项一条，条与条之间只靠一道细线分隔 —— 不做成卡片：十几条卡片摞下来
+   会读成十几个独立面板，而它们其实是同一张表的行。 */
+/* 点二级目录跳过来时，条目名不要贴着容器顶边 */
+.cro-doc__term { scroll-margin-top: var(--space-3); }
+
+.cro-doc__term + .cro-doc__term {
+  margin-top: 36px;
+  padding-top: 32px;
+  border-top: 1px solid var(--border-subtle);
+}
+
+.cro-doc__term-head {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+  margin-bottom: var(--space-3);
+}
+
+.cro-doc__term-name {
+  color: var(--foreground);
+  font: 600 14.5px / 1.5 var(--font-mono);
+}
+
+.cro-doc__term-full {
+  color: var(--foreground-secondary);
+  font-size: 12.5px;
+}
+
+/* 它在哪个区的表单里 —— 读到一半想去调，得知道往哪儿找 */
+.cro-doc__term-where {
+  margin-left: auto;
+  flex: 0 0 auto;
+  padding: 1px 8px;
+  border: 1px solid var(--comp-tag-border);
+  border-radius: var(--radius-pill);
+  background: var(--comp-tag-bg);
+  color: var(--comp-tag-fg);
+  font-size: 11px;
+  line-height: 1.6;
+  white-space: nowrap;
+}
+
+.cro-doc__term > p {
+  margin: 0 0 var(--space-2);
+  font-size: 12.5px;
+  line-height: 1.8;
+}
+
+/* ══ 联动图 ═════════════════════════════════════════════════════════════
+   左（为什么动它）→ 中（它本身）→ 右（动了会牵动谁），一条从左读到右的因果链。
+   四个盒子分两列各两个，中间那枚是主角。
+
+   连线复用**事件详情「计算血缘」页签**那一套：绝对定位的 SVG 覆在格子之上、
+   贝塞尔从源盒右缘弯到目标盒左缘、关系名写在曲线中点并带一圈同底色描边
+   （paint-order:stroke）当作挖空。见 config-relation-observer.css 的
+   .cro-incident-lineage__edge / __edge-label —— 那边是「算子在五层之间怎么变换」，
+   这边是「配置项之间怎么牵动」，都是"有向关系图 + 边上写关系名"，本该长一样。
+
+   不引 mermaid：本页是纯静态无构建的 HTML，而且 mermaid 的配色不跟随
+   data-theme，深浅主题一切换就成两套观感。
+
+   颜色只给**边上的那四个词**。格子一律同色 —— 四个格子各染一色的话，颜色在
+   讲「这是四类东西」，而真正要读的是边上那四个关系名；两处都在喊，就都没被听见。 */
+.cro-doc__map {
+  position: relative;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) max-content minmax(0, 1fr);
+  align-items: center;
+  /* 列间距要放得下曲线的弯度与边上的字：56px 是「计算血缘」那条轨用的值，
+     这里取 64 —— 关系名比那边长（「一定会跟着变」6 个字）。 */
+  gap: var(--space-3) 64px;
+  margin: var(--space-4) 0 0;
+  padding: var(--space-4) var(--space-3);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  /* 这一层底色不只是装饰：边上文字的挖空描边就用它，有确定的底色才描得干净 */
+  background: var(--surface-1);
+}
+
+/* 连线层：覆在格子之上（z-index 1）而不是压在底下 —— 边上的关系名是要读的
+   主要信息，被格子盖住就白画了。pointer-events:none 保证不挡选中文字。 */
+.cro-doc__map-edges {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+  pointer-events: none;
+}
+
+/* ── 四类关系的颜色，线与字共用一个变量 ──
+   线跟着字走：一条边和它的名字是同一件事，颜色分家的话读者要在「这条线是哪一类」
+   和「这个词是哪一类」之间来回对，白搭一次认知。
+     调大 / 调小  黄  —— 同色。两者靠位置（上/下）与字面分，不靠颜色分：
+                          它们是同一个动作的两个方向，染成两色反而像两类东西。
+     一定联调     红  —— 硬绑定，最该被拦下来看一眼的
+     考虑再调     蓝  —— 可选项，语气最轻的一档 */
+.cro-doc__map-edge,
+.cro-doc__map-edge-label {
+  --cro-flow-color: var(--foreground-secondary);
+}
+
+:is(.cro-doc__map-edge, .cro-doc__map-edge-label)[data-flow="up"],
+:is(.cro-doc__map-edge, .cro-doc__map-edge-label)[data-flow="down"] {
+  --cro-flow-color: var(--warning);
+}
+
+:is(.cro-doc__map-edge, .cro-doc__map-edge-label)[data-flow="must"] {
+  --cro-flow-color: var(--danger);
+}
+
+:is(.cro-doc__map-edge, .cro-doc__map-edge-label)[data-flow="often"] {
+  --cro-flow-color: var(--accent);
+}
+
+/* 线比字淡一档（62%）：四条线同时满色会盖过它们要连的内容，
+   而字是要读的，保持满色。 */
+.cro-doc__map-edge {
+  fill: none;
+  stroke: color-mix(in srgb, var(--cro-flow-color) 62%, transparent);
+  stroke-width: 1.25;
+  vector-effect: non-scaling-stroke;
+}
+
+/* 虚线不是装饰 —— 它就是「这条联动可选、不是硬绑定」这句话本身 */
+.cro-doc__map-edge[data-flow="often"] { stroke-dasharray: 4 3; }
+
+/* ── 箭头 ──
+   没有箭头的曲线会被读成双向甚至反向（尤其右半边：中心 → 格子，光看形状分不出
+   是谁指谁）。四类各一枚，marker 共用一份 defs（id 是文档级的，跨 svg 引用合法），
+   所以 14 张图共 4 枚 marker，不是 56 枚。
+   箭头比线实一档（80% vs 62%）：线是背景，箭头是要读的那个「方向」。 */
+.cro-doc__map-defs {
+  position: absolute;
+  width: 0;
+  height: 0;
+  overflow: hidden;
+}
+
+.cro-doc__map-arrow {
+  --cro-flow-color: var(--foreground-secondary);
+  fill: color-mix(in srgb, var(--cro-flow-color) 80%, transparent);
+  stroke: none;
+}
+
+.cro-doc__map-arrow[data-flow="up"],
+.cro-doc__map-arrow[data-flow="down"]  { --cro-flow-color: var(--warning); }
+.cro-doc__map-arrow[data-flow="must"]  { --cro-flow-color: var(--danger); }
+.cro-doc__map-arrow[data-flow="often"] { --cro-flow-color: var(--accent); }
+
+.cro-doc__map-edge-label {
+  fill: var(--cro-flow-color);
+  /* 描边同 .cro-doc__map 的底色 + paint-order:stroke = 给字挖一圈空，
+     曲线从字底下穿过去时不会糊在一起。与 lineage 的 __edge-label 同法。 */
+  stroke: var(--surface-1);
+  stroke-width: 3px;
+  paint-order: stroke;
+  font-family: var(--font-mono);
+  font-size: var(--font-size-label-xs);
+  font-weight: 600;
+}
+
+.cro-doc__map-col {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+/* 中心节点：这一条讲的那个配置项，整幅图唯一的视觉锚点。
+   描边用中性的 --foreground（深色主题下即白）而不是 accent —— accent 已经被
+   「考虑再调」那条边占了，中心再染成同一个蓝，会被读成「中心和那条边是一伙的」。
+   中心不属于四类关系中的任何一类，它就该是无色的那个。 */
+.cro-doc__map-node {
+  display: grid;
+  place-items: center;
+  min-width: 74px;
+  padding: var(--space-3) var(--space-2);
+  border: 1.5px solid var(--foreground);
+  border-radius: var(--radius-md);
+  background: var(--surface-2);
+  color: var(--foreground);
+  font: 600 13px / 1.4 var(--font-mono);
+  text-align: center;
+}
+
+/* 四个格子一律同色同描边：区分它们的是**边上那个词**，不是格子本身。
+   格子只负责装内容，颜色全部让给关系名。 */
+.cro-doc__map-box {
+  position: relative;
+  padding: 8px 10px;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+  min-width: 0;
+}
+
+/* 标题文字搬到曲线上去了（由 js 读它的 textContent 写进 SVG <text>），
+   但节点本身要留着：它是这个格子的无障碍标签，读屏仍要念出「该调大它」。
+   视觉上隐藏，不用 display:none —— 那样读屏也读不到。 */
+.cro-doc__map-box-title {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+.cro-doc__map-box ul {
+  margin: 0;
+  padding-left: 1em;
+  font-size: 12px;
+  line-height: 1.65;
+}
+
+.cro-doc__map-box li { margin-bottom: 2px; }
+.cro-doc__map-box li:last-child { margin-bottom: 0; }
+
+.cro-doc__map-box code {
+  padding: 0 3px;
+  font-size: 11px;
+  white-space: normal;
+}
+
+/* 图例：四个关系名按它们在图上的样子给出（同字体、同色），后面跟一句解释。
+   不用另造记号 —— 图例和图上一模一样，才不用在两套符号之间做翻译。 */
+.cro-doc__legend {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+  gap: 6px var(--space-3);
+  margin: 0 0 var(--space-5);
+  padding: var(--space-3);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  background: var(--surface-1);
+  font-size: 12px;
+}
+
+.cro-doc__legend dt {
+  font: 600 var(--font-size-label-xs) / 1.6 var(--font-mono);
+  white-space: nowrap;
+}
+
+.cro-doc__legend dd {
+  margin: 0;
+  line-height: 1.6;
+}
+
+/* 与连线上那四个词同色（见 .cro-doc__map-edge-label 的 --cro-flow-color） */
+.cro-doc__legend dt[data-flow="up"],
+.cro-doc__legend dt[data-flow="down"]  { color: var(--warning); }
+.cro-doc__legend dt[data-flow="must"]  { color: var(--danger); }
+.cro-doc__legend dt[data-flow="often"] { color: var(--accent); }
+
+/* 正文栏被压窄时（小屏）三列排不下，塌成单列纵排。
+   这一档没有连线可画 —— 曲线要靠左右两列的水平距离才成立，纵排之后源与目标
+   几乎同一 x，弯不出可读的弧。所以隐掉 SVG、把标题放回格子里当小标题。 */
+@media (max-width: 900px) {
+  .cro-doc__map {
+    grid-template-columns: minmax(0, 1fr);
+    gap: var(--space-2);
+  }
+
+  .cro-doc__map-node { min-width: 0; }
+
+  .cro-doc__map-edges { display: none; }
+
+  .cro-doc__map-box-title {
+    position: static;
+    width: auto;
+    height: auto;
+    margin: 0 0 4px;
+    overflow: visible;
+    clip-path: none;
+    font-size: 11.5px;
+    font-weight: var(--font-weight-semibold);
+    line-height: 1.5;
+  }
+
+  .cro-doc__map-box[data-flow="up"]    .cro-doc__map-box-title,
+  .cro-doc__map-box[data-flow="down"]  .cro-doc__map-box-title { color: var(--warning); }
+  .cro-doc__map-box[data-flow="must"]  .cro-doc__map-box-title { color: var(--danger); }
+  .cro-doc__map-box[data-flow="often"] .cro-doc__map-box-title { color: var(--accent); }
+}
+
+/* ── 窄板兜底：目录塌成正文之上的一条横排药丸 ──
+   断点取 1340px 而不是常见的 1000px：三轨布局要成立，左轨得放得下 196px 的目录，
+   即板面 ≥ 800 + 64(两道 gap) + 196×2 = 1256px，再加上活动栏 48px 与板面左右
+   padding 32px，视口就是 1336px。低于这个数左轨会开始挤压目录（章节名折行、
+   再窄就被裁），不如整条搬到正文上方 —— 那时正文靠 margin-inline:auto 居中，
+   仍然对着板面中线。 */
+@media (max-width: 1340px) {
+  .cro-region--doc {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: max-content minmax(0, 1fr);
+    row-gap: var(--space-3);
+  }
+
+  .cro-doc__toc {
+    justify-self: stretch;
+    width: auto;
+    overflow: visible;
+  }
+
+  .cro-doc__toc-list {
+    flex-direction: row;
+    flex-wrap: wrap;
+    gap: 4px;
+  }
+
+  .cro-doc__toc-link {
+    width: auto;
+    border-left: 0;
+    border-radius: var(--radius-pill);
+    background: var(--surface-2);
+  }
+
+  .cro-doc__toc-link.is-active {
+    background: color-mix(in srgb, var(--accent) 16%, transparent);
+  }
+}

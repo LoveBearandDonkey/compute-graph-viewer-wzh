@@ -25,7 +25,7 @@
   <!-- 集群热力图样式（复用 training-monitoring-v2 的 .twin-heat* 视觉） -->
   <link rel="stylesheet" href="./css/training-run-twin.css">
   <!-- 本页模块私有 layout -->
-  <link rel="stylesheet" href="./css/config-relation-observer.css?v=20260821-edp">
+  <link rel="stylesheet" href="./css/config-relation-observer-old.css?v=20260821-archive">
   <!-- 单卡容量（Cluster 区右栏）：容量是「卡」的属性，与集群矩阵同区并排 -->
   <link rel="stylesheet" href="./css/config-relation-capacity.css?v=20260820-spread-head">
   <!-- 顶栏视图页签 / 导出配置键 / YAML 代码框 -->
@@ -285,9 +285,58 @@
               <div class="cro-section">
                 <div class="cro-section__heading">
                   <div class="cro-section__title">Layer 导航</div>
+                  <!-- 初始 hidden：本页启动即选中第一个运行事件（见 js 末尾的
+                       selectIncident），事件模式下这个静态查询口径不生效。清空
+                       选择后由 syncDpScope() 放出来。 -->
+                  <div class="segmented-control segmented-control-muted cro-dp-scope" id="croDpScope" role="group" aria-label="Layer Rank 查询范围" hidden>
+                    <!-- 两枚键的文案里那个「DP」在切出档下其实是 EDP（矩阵的
+                         一行 = 一个完整模型副本），由 syncDpScopeLabels() 按口径
+                         改写，这里写的是正交档的默认文案。 -->
+                    <button class="btn btn-sm is-selected" type="button" data-dp-scope="single" aria-pressed="true" title="默认查询 DP0；存在异常上下文时查询异常所在 DP">单 DP（默认第一个 DP）</button>
+                    <button class="btn btn-sm" type="button" data-dp-scope="all" aria-pressed="false" title="查询所有 DP 副本关联的物理 Rank">所有 DP</button>
+                  </div>
+                  <!-- 一个 step 的数据流：前向 Emb→…→Head、反向倒回、收尾 Optimizer step，
+                       逐格点亮四域并驱动下方 6 条数据线。默认不播放；播放期间不画关系连线
+                       （见 js 的 quiet 铺色）。
+                       播完不自停而是**循环重播**（训练本来就是成千上万个 step 连着跑，
+                       停在收尾格反倒像"训练结束了"）。
+                       播放中拆成两枚键：主键在 暂停/继续 之间翻转（画面定在当前这一步，
+                       方便看中间状态），退出才是真正结束并还原上一次选择。 -->
+                  <div class="cro-flow-actions">
+                    <button class="btn btn-sm btn-ghost cro-flow-play" id="croFlowPlay" type="button" aria-pressed="false" title="循环播放一个 step 的数据流，播完自动重来，退出才停">
+                      <svg class="cro-flow-play__icon" id="croFlowPlayIcon" viewBox="0 0 24 24" aria-hidden="true">
+                        <path d="M8 5v14l11-7z"></path>
+                      </svg>
+                      <span id="croFlowPlayLabel">播放数据流</span>
+                    </button>
+                    <button class="btn btn-sm btn-ghost cro-flow-exit" id="croFlowExit" type="button" title="退出播放，回到播放前的选择" hidden>
+                      <svg class="cro-flow-exit__icon" viewBox="0 0 24 24" aria-hidden="true">
+                        <path d="M18 6 6 18"></path>
+                        <path d="m6 6 12 12"></path>
+                      </svg>
+                      <span>退出</span>
+                    </button>
+                  </div>
                 </div>
                 <div class="cro-layer-nav" id="croLayerNav">
                   <div class="cro-placeholder">46 层刻度 · PP 分段 · Dense/MoE 分区 · 第 4 项接入</div>
+                </div>
+                <!-- 数据线：一个 step 里发生变化的 6 类数据，仅播放时展开。
+                     必须紧贴 Layer 导航之下、且与刻度带同宽同锚点 —— 泳道的 x 轴
+                     就是层号，小点从第 i 格垂直落到泳道上，落点即第 i 层。位置一挪
+                     这层投影关系就没了。x 坐标由 JS 实测刻度中心写入（见 lanesMeasure），
+                     不靠 CSS padding 碰巧对齐。 -->
+                <div class="cro-flow-lanes" id="croFlowLanes" hidden>
+                  <div class="cro-flow-lanes__head">
+                    <span class="cro-flow-lanes__phase" id="croFlowPhase"></span>
+                    <span class="cro-flow-lanes__note" id="croFlowNote"></span>
+                  </div>
+                  <!-- 6 条泳道共用一张 canvas：46 层 × （点 + 脉冲 + 刻痕 + 面积 + 填块）
+                       用 DOM 画会在每步建/删几十个节点，canvas 全量重绘反而更便宜。
+                       标签留在 DOM 里（静态文本，可无障碍读取），由 --i 定位。 -->
+                  <div class="cro-flow-lanes__plot" id="croFlowPlot">
+                    <canvas class="cro-flow-lanes__canvas" id="croFlowCanvas" aria-hidden="true"></canvas>
+                  </div>
                 </div>
               </div>
 
@@ -1734,7 +1783,7 @@ t  TP 序号              c  CP 序号      n  物理节点号</div>
   <script src="./js/ide-frame-pattern.js"></script>
   <script src="./js/model-graphviz-pattern.js"></script>
   <script src="./js/model-architecture-3d-deck-pattern.js"></script>
-  <script src="./js/config-relation-observer.js?v=20260821-edp"></script>
+  <script src="./js/config-relation-observer-old.js?v=20260821-archive"></script>
   <!-- 单卡容量：必须排在主脚本之后（要读它导出的 croObserver / croSelect） -->
   <script src="./js/config-relation-capacity.js?v=20260821-edp"></script>
   <!-- YAML 视图：同样排在主脚本之后（要读它导出的 croObserver.topology）。
