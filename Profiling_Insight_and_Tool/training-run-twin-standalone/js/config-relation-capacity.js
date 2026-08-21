@@ -551,6 +551,13 @@
       + row("共享专家", `在 EP 域内复制，每张卡各持一份`)
       + row("其余权重", `÷ TP(${c.tp})；全部 ÷ PP(${c.pp})，体现为这张卡只背本 stage 那几层`)
       + row("DP", `<b>不除任何东西</b>。DP(${c.dp}) 买的是吞吐不是余量，除非上 ZeRO / FSDP`)
+      /* 切出档下表单里的 DP 与集群矩阵纵轴上的编号差一个 EP 倍，这是本页最容易
+         被当成"算错了"的一处。矩阵旁已有一行常驻换算式，这里再给一遍是因为：
+         口径浮层是用户对着数字起疑时会点开的那个东西，答案该在这里等着他。 */
+      + (c.moeOrthogonal || c.ep <= 1 ? "" : row("EDP",
+        `集群矩阵的每一行是 <code>EDP = DP/EP = ${c.dp}/${c.ep} = ${c.edp}</code> 组之一，`
+        + `不是表单里那个 DP(${c.dp})。EP 从 DP 组内切出，专家权重只在剩下的 EDP 维上复制 —— `
+        + `两个数都对，指的不是同一个量`))
       + row("运行时底座", `<b>${RUNTIME.baseGB} GB 固定</b>：驱动 + CANN/ACL context + kernel binary + 通信域元数据，与配置无关 —— 64 GB 的卡一开机就少这么多`)
       + row("通信 buffer", `<code>${RUNTIME.hcclBufGB} GB × 域数(${commDomains(topo)}) × ${RUNTIME.hcclDouble}（双缓冲）</code>；域数 = TP/PP/DP/CP/EP 中 >1 的维度${c.ep > 1 ? " + MoE 的 a2a 域" : ""}`)
       + row("算子 workspace", `峰值由单个最大算子定，∝ <b>一层</b>的 token 张量：<code>${RUNTIME.wsFactor}·topK·mb·(S/CP)·H·2B/TP</code>（MoE permute + GroupedMatMul），下限 ${RUNTIME.wsFloorGB} GB`)
@@ -571,7 +578,8 @@
       + `取 <code>实测显存峰值 − 理论四段</code>，两点拟合 —— 截距 = 底座 + 通信 buffer（不随 mb 动），`
       + `斜率 = workspace + 碎片（∝ mb）；再换一组 EP/TP 复跑一次，即可把通信域那一项从截距里分离出来。</p>`
       + `<p class="cro-capacity__basis-foot">`
-      + `MTP 层、重计算、EP 与 DP 是否正交的口径差异均未计入。量级估算，用于看趋势与相对高低。</p>`;
+      + `MTP 层与重计算未计入。EP 口径（正交 / 从 DP 切出）只改 DP 的读数与集群矩阵的编址，`
+      + `本栏的各段体积两档相同 —— 因为这里没有任何一段是按 DP 切的。量级估算，用于看趋势与相对高低。</p>`;
   }
 
   /* ── 渲染 ───────────────────────────────────────────────────────────────── */

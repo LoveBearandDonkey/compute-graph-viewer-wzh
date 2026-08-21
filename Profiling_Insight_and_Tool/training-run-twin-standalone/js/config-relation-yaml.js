@@ -17,7 +17,8 @@
      · 卡型号与 HBM 是硬件事实，由驱动探测；yaml 里只有 context.max_device_memory
        这个「给框架划多少显存」的上限，故写成它的行尾注释；
      · 总卡数 / 节点数由启动器给（msrun 的 worker_num / local_worker_num），
-       框架只校验 dp×mp×pp×cp×ep == worker_num。
+       框架只校验并行度的乘积 == worker_num —— ep 进不进这个乘积取决于页面的
+       EP 口径开关：切出档（默认）是 dp×mp×pp×cp，正交档是 dp×mp×pp×cp×ep。
    把它们硬塞进 yaml 会骗人（写 64 GB 也变不出 64 GB），所以下沉到启动命令那一栏。
    ══════════════════════════════════════════════════════════════════════════ */
 (function (global) {
@@ -52,7 +53,10 @@
     const p = topology.preset;
     const card = topology.card;
     const cfg = topology.config;
-    const world = c.dp * c.pp * c.tp * c.cp * c.ep;
+    /* EP 进不进乘积由页面的 EP 口径开关定（见 observer.js 的 epInWorld）：
+       切出档（MindFormers 的实际做法）EP 从 DP 组内切出，不占独立 rank。 */
+    const orthogonal = Boolean(c.moeOrthogonal);
+    const world = c.dp * c.pp * c.tp * c.cp * (orthogonal ? c.ep : 1);
     const name = snake(p.label);
     const noMoe = Boolean(p.noMoe);
 
@@ -72,8 +76,12 @@
       L("# 硬件与集群规模不写在本文件里，由启动命令给出（见下栏）："),
       L("#   " + card.label + " · 单卡 HBM " + card.hbmGB + " GB · "
         + c.node + " 节点 × " + c.ranksPerNode + " 卡 = " + c.totalRank + " rank"),
-      L("# 框架校验 dp×mp×pp×cp×ep = " + c.dp + "×" + c.tp + "×" + c.pp + "×" + c.cp
-        + "×" + c.ep + " = " + world + "，须等于 msrun 的 worker_num"),
+      L(orthogonal
+        ? ("# 框架校验 dp×mp×pp×cp×ep = " + c.dp + "×" + c.tp + "×" + c.pp + "×" + c.cp
+          + "×" + c.ep + " = " + world + "，须等于 msrun 的 worker_num")
+        : ("# 框架校验 dp×mp×pp×cp = " + c.dp + "×" + c.tp + "×" + c.pp + "×" + c.cp
+          + " = " + world + "，须等于 msrun 的 worker_num"
+          + "（ep 从 dp 内切出，不进乘积）")),
       L(""),
       L("seed: 0"),
       L("run_mode: 'train'"),
@@ -102,11 +110,16 @@
       L("  enable_parallel_optimizer: True"),
       L(""),
       L("parallel_config:"),
-      L("  data_parallel: " + c.dp, "dp"),
+      // EP=1 时两种口径没有差别，不必解释 EDP（稠密模型走的就是这一支）
+      L("  data_parallel: " + c.dp, "dp",
+        !orthogonal && c.ep > 1 ? "含 EP 组在内的真 DP，专家只在 EDP=" + c.edp + " 维上复制" : null),
       L("  model_parallel: " + c.tp, "tp", "即 TP"),
       L("  pipeline_stage: " + c.pp, "pp", "即 PP，分层见 model_config.offset"),
       L("  context_parallel: " + c.cp, "cp", "即 CP"),
-      L("  expert_parallel: " + c.ep, "ep", "即 EP，与 DP 正交"),
+      L("  expert_parallel: " + c.ep, "ep",
+        c.ep <= 1 ? "即 EP"
+          : orthogonal ? "即 EP，与 DP 正交，独占自己的 rank"
+            : "即 EP，从 DP 内切出：EDP = DP/EP = " + c.edp),
       L("  micro_batch_num: " + c.pp * 4, null,
         "流水线微批数，须 ≥ pipeline_stage；本页未建模，按 4×PP 取"),
       L("  use_seq_parallel: False"),
@@ -301,9 +314,14 @@
   }
 
   /* ── 视图切换 ───────────────────────────────────────────────────────────
-     两档只改 .cro-board 上的一个类：yaml 档下 arch / moe / cluster 三个区
-     display:none，YAML 区顶上它们的格位（见 css/config-relation-yaml.css）。
-     整网列两档都在，不受影响。 */
+     三档只改 .cro-board 上的一个类，各档让位的范围不同：
+       relation  默认，四域联动
+       is-yaml   arch / moe / cluster 三个区 display:none，YAML 区顶上它们的
+                 格位；整网列留着 —— 左边回答「这份 yaml 描述的是哪张网」。
+       is-doc    连整网列一起让位（文档没有那层对照关系，留半张 3D 图只是
+                 噪声），文档区吃满三列。见 css/config-relation-doc.css。
+     本函数是 #croViewTabs 的唯一监听方：文档档的内容由 js/config-relation-doc.js
+     渲染，但它不碰页签，避免两处各绑一个 click 互相打架。 */
   function setup() {
     const board = doc.getElementById("croBoard");
     const tabs = doc.getElementById("croViewTabs");
@@ -313,14 +331,23 @@
     let mode = "relation";
 
     const apply = (next) => {
-      mode = next === "yaml" ? "yaml" : "relation";
+      mode = next === "yaml" || next === "doc" ? next : "relation";
       /* 事件模式与配置仿真模式互斥（主脚本 setIncidentLayout 会把 .cro-board
-         整块 hidden）。切到 YAML 时先走横幅关闭键这条既有通路退出事件，
-         别在这里另写一份收尾逻辑。 */
-      if (mode === "yaml" && incidentView && !incidentView.hidden) {
+         整块 hidden）。切到 YAML / 文档时先走横幅关闭键这条既有通路退出事件，
+         别在这里另写一份收尾逻辑 —— 这两档的内容都在 .cro-board 里面，事件
+         模式下整块被藏起来，不退出就什么都看不到。 */
+      if (mode !== "relation" && incidentView && !incidentView.hidden) {
         doc.getElementById("croIncidentBannerClose")?.click();
       }
       board.classList.toggle("is-yaml", mode === "yaml");
+      board.classList.toggle("is-doc", mode === "doc");
+      /* 运行事件栏在文档档整条不显示（见 css/config-relation-doc.css 的说明）。
+         类挂在 .pto-ide-frame__workarea 上而不是 .cro-board 上：事件栏是 board
+         的兄弟节点，board 上的类够不着它。
+         只加 is-doc-view 这一个类、不碰 is-event-rail-collapsed —— 退出文档档时
+         侧栏要回到用户原来那个展开/收起状态。 */
+      doc.querySelector(".pto-ide-frame__workarea")
+        ?.classList.toggle("is-doc-view", mode === "doc");
       tabs.querySelectorAll("[data-observer-view]").forEach((btn) => {
         const on = btn.dataset.observerView === mode;
         btn.classList.toggle("is-selected", on);
@@ -337,14 +364,14 @@
       if (btn) apply(btn.dataset.observerView);
     });
 
-    /* 选中运行事件时主脚本会把 .cro-board 收起换成事件详情：那时 YAML 档没有
-       落脚点（运行事件是已发生的既成事实，没有「当前配置」可导），所以
+    /* 选中运行事件时主脚本会把 .cro-board 收起换成事件详情：那时 YAML / 文档
+       两档都没有落脚点（它们的 DOM 就在 .cro-board 里，整块被藏起来了），所以
          · 先退回关系视图，页签状态才不会和画面对不上；
          · 整组页签随之隐藏 —— 一组点了没反应的页签比没有更糟。
        关闭横幅回到配置仿真态时再放出来。 */
     if (incidentView) {
       const syncTabs = () => {
-        if (!incidentView.hidden && mode === "yaml") apply("relation");
+        if (!incidentView.hidden && mode !== "relation") apply("relation");
         tabs.hidden = !incidentView.hidden;
       };
       new MutationObserver(syncTabs)
