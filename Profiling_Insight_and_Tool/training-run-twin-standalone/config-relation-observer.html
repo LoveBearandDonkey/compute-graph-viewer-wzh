@@ -275,12 +275,18 @@
 
             <!-- ═══ 区域 B · Model Architecture（配置 + Layer 导航 + 结构条） ═══ -->
             <section class="cro-region cro-region--arch" aria-label="Model Architecture">
+              <!-- 参数不兼容时这里从一行错误文字升格成横幅（建议修法 + 一键应用 /
+                   取消修改），内容全部由 JS 的 renderConfigError 写。
+                   摆在区标题**之上**而不是 stepper 行下方：它建议改的字段常常横跨
+                   Model Architecture / MoE / Cluster 三个区（EP 一个数就能牵动
+                   Routed 与 Total Rank），挂在某一个区里面会读成「这个区出错了」。 -->
+              <div class="cro-config-error" id="croConfigError" role="status" aria-live="polite"></div>
+
               <h2 class="cro-region__title">Model Architecture</h2>
 
               <div class="cro-stepper-row" id="croParallelSteppers">
                 <div class="cro-placeholder">Total Layer / DP / PP / TP / CP stepper · 第 2 项接入</div>
               </div>
-              <p class="cro-config-error" id="croConfigError" role="status" aria-live="polite"></p>
 
               <div class="cro-section">
                 <div class="cro-section__heading">
@@ -306,14 +312,17 @@
                    变 8，卡数一张没变。放在标题右侧而不是挤进 stepper 行，也是因为
                    那一行是 nowrap 的四等分，塞第五个控件会把 Routed / Top-K 的
                    标签压到省略号。详解见「文档」视图 EP 与 DP 一章。 -->
+              <!-- 「（主流）」写在页签上而不是只留在 title 里：这两档不是性能之争，
+                   用户唯一需要的判断是「我该按哪种记法读手上的数字」，而绝大多数
+                   情况下答案是切出。不点开悬浮就该看得见这一点。 -->
               <div class="cro-region__heading">
                 <h2 class="cro-region__title">MoE</h2>
                 <div class="segmented-control segmented-control-muted cro-ep-mode" id="croEpMode"
                      role="group" aria-label="EP 与 DP 的口径">
                   <button class="btn btn-sm is-selected" type="button" data-ep-mode="split" aria-pressed="true"
-                          title="EP 从 DP 组内切出（Megatron / MindSpeed / MindFormers 的做法）：world = DP×PP×TP×CP，EDP = DP/EP">EP 切出</button>
+                          title="拿不准就用这一档：Megatron / MindSpeed-LLM / MindFormers 都这么记，昇腾上的训练基本都落在这里。&#10;&#10;这不是性能选项 —— 两档说的是同一批卡，切换它一张卡都不会多、也不会少，变的只是页面怎么读你填的数字（DP 会在 512 与 8 之间换算）。所以按你要跑的框架选，不必权衡快慢。&#10;&#10;EP 切出 = 专家并行不额外占卡，而是把已有的数据并行组再切一刀：一张卡既是某个模型副本的成员，又持有其中一份专家。加大 EP 只是把同一批卡分得更细。&#10;world = DP×PP×TP×CP（EP 不进乘积） · EDP = DP/EP · 要求 DP % EP == 0">EP 切出（主流）</button>
                   <button class="btn btn-sm" type="button" data-ep-mode="orthogonal" aria-pressed="false"
-                          title="EP 独占 rank，与 DP 正交：world = DP×PP×TP×CP×EP">EP 正交</button>
+                          title="读别人的配置时用得上：论文、汇报表格和部分自研框架把 EP 单列成一维记，那里的 DP 就是字面的模型副本数。要复现这样一份材料就选这一档，页面才会按写它的人的原意去解释你填的数字。&#10;认它的办法：必须把 EP 也乘进去才凑得出总卡数。&#10;&#10;也可以拿它做对照 —— 切一下就能看到同一批卡的 DP 在 512 与 8 之间换算，两个数说的是同一件事。&#10;&#10;但自己配训练时用切出档：Megatron / MindSpeed-LLM / MindFormers 都是那么记的。这两档不是性能之争，说的是同一批卡，切换只改读法、不改硬件。&#10;&#10;EP 正交 = 专家并行与数据并行是两根互不相干的轴：每多一倍 EP 就要多一倍卡。DP 与 EP 之间没有整除关系。&#10;world = DP×PP×TP×CP×EP · 专家的数据并行度等于 DP">EP 正交</button>
                 </div>
               </div>
 
@@ -652,13 +661,13 @@
                           <ul>
                             <li><code>Total Rank</code> —— 乘积变了</li>
                             <li>全局 batch = MBS × DP × 累积步数</li>
+                            <li><code>EP</code> —— 切出口径下 DP 必须被 EP 整除</li>
                           </ul>
                         </div>
                         <div class="cro-doc__map-box" data-flow="often">
                           <div class="cro-doc__map-box-title">考虑再调</div>
                           <ul>
                             <li><code>Micro Batch</code> —— 反向补回全局 batch</li>
-                            <li><code>EP</code> —— 切出口径下要满足 DP % EP</li>
                           </ul>
                         </div>
                       </div>
@@ -1029,7 +1038,7 @@
                           <div class="cro-doc__map-box-title">一定联调</div>
                           <ul>
                             <li><code>Routed Expert</code> —— 必须被 EP 整除</li>
-                            <li>正交口径下 <code>Total Rank</code>；切出口径下 <code>DP</code></li>
+                            <li>正交口径下 <code>Total Rank</code>；切出口径下 <code>DP</code> —— 必须被 EP 整除</li>
                             <li>单卡显存（专家那一段 ÷ EP）</li>
                           </ul>
                         </div>
@@ -1420,11 +1429,92 @@ t  TP 序号              c  CP 序号      n  物理节点号</div>
                     正交读法里它是数据并行度，切出读法里那个 8 是专家的数据并行度，真正的 DP 是 512。
                     看一份配置时，判断依据是它跑在什么框架上，而不是字面。
                   </p>
+                  <p class="cro-doc__sub">那一个 batch 到底切几份</p>
+                  <p>
+                    <b>切 512 份。</b>切数据的只有 DP 这一维 —— 全局 batch = MBS × DP × 梯度累积步数，
+                    这里的 DP 是 512 而不是 8。EDP 那个 8 复制的是<b>专家权重</b>，不是数据。
+                  </p>
+                  <div class="cro-doc__formula">同一个 PP stage 上的 512 张卡 = 8 行 × 64 列
+（PP=4 → 这样的网格共 4 张，合起来才是 2048）
+
+         ├─── EP = 64 列，合持一整套 256 个专家（每卡 4 个）───┤
+           ep0     ep1    ···   ep63
+  EDP0     dp0     dp1    ···   dp63
+  EDP1     dp64    dp65   ···   dp127
+  ···                                    ← 共 8 行 = 专家权重的 8 份副本
+  EDP7     dp448   dp449  ···   dp511
+
+  每格 = 一个 DP 副本在这一 stage 上的那张卡，各吃一份数据分片
+  横向 all-to-all 收发 token · 纵向 all-reduce 专家梯度</div>
+                  <p>
+                    <b>注意 EP 组是横着跨副本的。</b>一个 DP 副本自己只有 <code>PP×TP×CP = 4</code> 张卡，
+                    而那 4 张卡是 4 个不同的 stage —— 它们装不下、也不需要装下一整套 256 个专家。
+                    同一层的专家永远散在<b>同一个 stage 的那 64 张卡</b>上，而这 64 张卡分属 64 个不同的 DP 副本。
+                    某个 token 被 router 打给第 200 号专家，all-to-all 就把它横着送到 <code>ep50</code> 那张卡
+                    （也就是 dp50 在这一 stage 上的卡）去算，combine 再送回来。
+                    所以一份 <code>1/512</code> 的数据照样能路由到全部 256 个专家 ——
+                    靠的是借用另外 63 个副本的卡，而不是在自己那 4 张卡里打转。
+                  </p>
+                  <p>
+                    但这趟横向搬运<b>不是又一次数据切分</b>。dispatch 前和 combine 后，
+                    每张卡手里都还是它原来那一份 <code>1/512</code> 的数据 —— token 只是出去算了一趟就回来了。
+                    切数据的始终只有 DP 这一维。
+                  </p>
+                  <p>
+                    由此带出一个容易被忽略的后果：<b>同一次训练里，两拨参数的梯度聚合域不一样大</b>。
+                    attention、dense、共享专家这些每张卡都持有一份的参数，梯度要在 512 张卡上 all-reduce；
+                    而路由专家的参数横向被 EP 切开了，同一个专家全局只有 8 份副本，
+                    它的梯度只在那 8 张卡之间 all-reduce。EDP 的真实身份就是这个 ——
+                    <b>专家参数的梯度聚合域</b>，不是数据切分的份数。
+                  </p>
+                  <p class="cro-doc__sub">反例：DP 不被 EP 整除会怎样</p>
+                  <p>
+                    切出口径下 <code>DP % EP == 0</code> 是硬约束，而它为什么硬，看一个具体的数就清楚了。
+                    设 <code>EP=64</code>、每个 MoE 层 <code>256</code> 个路由专家 ——
+                    一张卡持有 <code>256 / 64 = 4</code> 个专家，<b>凑齐一整套专家要 64 张卡</b>。
+                    此时若 <code>DP=120</code>：
+                  </p>
+                  <div class="cro-doc__formula">EDP = 120 / 64 = 1.875        ← 不是整数
+
+前 64 张：epRank 0–63 → 专家 0–255     ✓ 完整一套
+余 56 张：epRank 0–55 → 专家 0–223     ✗ 缺 224–255</div>
+                  <p>
+                    问题不在那 1.875 本身，而在<b>余下的 56 张卡组成了半套专家</b>。
+                    这半套照样在跑数据并行 —— 拿到自己的数据分片、算完 attention、进 router ——
+                    但 router 一旦把某个 token 打给第 240 号专家，all-to-all 在这半套里<b>找不到持有者</b>。
+                    这不是精度差一点的问题，是通信域里根本没有那个对端：
+                    实际表现通常是建图或通信域初始化阶段直接报错，跑不到第一个 step。
+                  </p>
+                  <p>
+                    而同一组数字换到<b>正交</b>口径就完全合法：<code>DP=120</code> 与 <code>EP=64</code>
+                    是两根独立的轴，<code>world = 120×PP×TP×CP×64</code>，每个 EP rank 都有自己独占的卡，
+                    120 个数据并行副本各自完整。<b>同一份数字合不合法取决于口径</b> —— 这是这一章最实际的用处。
+                  </p>
+                  <p>
+                    这个反例在页面上可以亲手拨出来，两条路径的表现<b>刻意不同</b>：
+                  </p>
+                  <ul>
+                    <li>
+                      <b>直接在 DP 框里键入 120</b> —— 页面会把 DP 与 EP 一起标红、
+                      <b>停止更新所有图形</b>（矩阵与容量柱停在上一组自洽参数上），
+                      并在表单下方给出建议修法与「一键应用 / 取消修改」两个出口。
+                      手输是「精确指定」，页面不会替你改别的数。
+                    </li>
+                    <li>
+                      <b>点 DP 的加减键</b>往下拨到 <code>32</code>（加减键只走 2 的幂档位）——
+                      你不会看到错误，而是会看到 <b>EP 自己跟着收到 32</b>：
+                      加减键是「联动配平」，页面把它当作必须的联动改动当场修掉了。
+                    </li>
+                  </ul>
                   <div class="cro-doc__note">
                     <b>值得注意的是：</b>两种口径下<b>卡的排布是同一个</b>。
                     那 512 张卡本来就该排成 <code>8 × 64</code> 的网格 ——
                     区别只在于你把行叫做「DP」还是「EDP」。
                     也正因为如此，这个混淆很难被卡数对不上暴露出来，只能靠事先问清楚。
+                    点集群矩阵里任意一格看到的关系也完全一样：一张卡只连<b>一个</b> EP 组
+                    （外加共享专家 —— 它每张卡上都有一份，不参与 EP 切分），
+                    两种口径下连的是同一个组、同一批专家编号。
+                    口径开关改的只有两件事：world 公式里乘不乘 EP，以及矩阵纵轴该叫 DP 还是 EDP。
                   </div>
                 </section>
 
@@ -1519,7 +1609,9 @@ t  TP 序号              c  CP 序号      n  物理节点号</div>
                     </div>
                     <p>
                       只在「EP 从 DP 切出」的口径下成立：专家组要能在数据并行组内均分，
-                      否则某些 DP 副本拿不到完整的专家集。EP 正交的口径下没有这条。
+                      否则某些 DP 副本拿不到完整的专家集 ——
+                      <code>DP=120 / EP=64</code> 的具体反例见「EP 与 DP」一章。
+                      EP 正交的口径下没有这条。
                       严格写法还要把专家内部的张量并行算进去：<code>DP × TP % (EP × ETP) == 0</code>。
                     </p>
                   </div>

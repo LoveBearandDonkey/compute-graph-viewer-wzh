@@ -168,12 +168,59 @@
     batch: ["microBatch", "seqLen"],
   };
 
+  /* ── 合法邻域 ─────────────────────────────────────────────────────────────
+     stepper 只按 2 的幂走时，修复约束靠反复减半就够了；手输放开任意整数之后
+     减半修不动了 —— 120 减半是 60，仍然不整除 256。所以「把某个字段挪到离现值
+     最近的合法值」升格成基本操作：reconcile 的修复分支和报错横幅的建议修法都用
+     它。三个纯函数，都不碰 config。 */
+  function gcd(a, b) { return b ? gcd(b, a % b) : a; }
+
+  function clampToSpec(value, spec) { return Math.min(spec.max, Math.max(spec.min, value)); }
+
+  /* base 的倍数里离 preferred 最近的那个。至少取到 base 本身 —— 0 不是合法并行度。
+     等距时取大的：约束多为「≥」（专家数 ≥ Top-K、DP ≥ EP），往大了取更容易同时成立。 */
+  function nearestMultiple(base, preferred, spec) {
+    if (!(base >= 1)) return clampToSpec(preferred, spec);
+    const candidates = [Math.floor(preferred / base) * base, Math.ceil(preferred / base) * base, base]
+      .filter((v) => v >= base && v >= spec.min && v <= spec.max);
+    if (!candidates.length) return clampToSpec(base, spec);
+    return candidates.sort((a, b) => Math.abs(a - preferred) - Math.abs(b - preferred) || b - a)[0];
+  }
+
+  /* target 的因子里离 preferred 最近的那个。target 上界是 8192，直接扫一遍即可，
+     不值得为它写筛法 —— 这个函数只在配置变动时跑，不在渲染路径上。 */
+  function nearestDivisor(target, preferred, spec) {
+    let best = spec.min;
+    let bestGap = Infinity;
+    for (let d = 1; d <= target; d += 1) {
+      if (target % d !== 0 || d < spec.min || d > spec.max) continue;
+      const gap = Math.abs(d - preferred);
+      if (gap < bestGap || (gap === bestGap && d > best)) { best = d; bestGap = gap; }
+    }
+    return best;
+  }
+
   /* ── 取值增减 ─────────────────────────────────────────────────────────── */
+  /* 2 的幂梯子上的上一档 / 下一档。手输过 120 之后再点加减，应当落回 64 / 128
+     这样的档位，而不是从 120 继续翻倍到 240 —— 手输是「精确指定」，加减是「回到
+     常规档位」，两者的职责不同。值本来就在梯子上时与旧的 ×2 / ÷2 逐位相同。 */
+  function snapPow2(value, direction) {
+    if (direction > 0) {
+      let next = 1;
+      while (next <= value) next *= 2;
+      return next;
+    }
+    if (value <= 1) return 1;
+    let next = 1;
+    while (next * 2 < value) next *= 2;
+    return next;
+  }
+
   function stepValue(field, value, direction) {
     const spec = FIELD_SPECS[field];
     let next;
     if (spec.pow2) {
-      next = direction > 0 ? value * 2 : Math.floor(value / 2);
+      next = snapPow2(value, direction);
       if (next < spec.min) next = spec.min;
     } else {
       next = value + direction * (spec.step || 1);
@@ -190,8 +237,8 @@
 
   /* d 轴（集群矩阵那一行、rank 编址的 dpIdx）的组数：正交档就是 DP，切出档是
      EDP = DP/EP —— 专家切完之后，专家权重只在剩下的这一维上复制。
-     除不尽时退到 floor（此时 world 公式不报错，但 DP % EP 的校验尚未落地，
-     见升级计划行 2），至少保证几何仍是整数格。 */
+     DP % EP 由 validate 拦、reconcile 修，除不尽的配置到不了这里；floor 只是
+     防御性的兜底，保证万一漏过去几何仍是整数格。 */
   function expertDataParallel(config) {
     if (config.moeOrthogonal) return config.dp;
     return Math.max(1, Math.floor(config.dp / Math.max(1, config.ep)));
@@ -231,6 +278,14 @@
     if (routedExpert % ep !== 0) {
       errors.push(`路由专家 ${routedExpert} 不能被 EP ${ep} 整除，专家无法均分到 EP rank`);
     }
+    /* 切出档：EDP = DP/EP 必须是整数 —— 专家组要能在 DP 组内均分，否则总有模型
+       副本拿不到完整的专家集；页面上还会直接穿帮成「矩阵格子数多于 Total Rank」。
+       正交档 EP 独占 rank，与 DP 之间没有整除关系，这条不生效。
+       文案里 DP 与 EP 两个 label 都要出现 —— emit() 按 label 子串匹配标红
+       stepper，这条错是两个字段共同造成的，两个都该红。 */
+    if (!config.moeOrthogonal && dp % ep !== 0) {
+      errors.push(`DP ${dp} 不能被 EP ${ep} 整除（EDP = DP ÷ EP 必须是整数），专家组无法在一个数据并行组内均分`);
+    }
     if (topK > routedExpert) {
       errors.push(`Top-K ${topK} 超过路由专家总数 ${routedExpert}`);
     }
@@ -262,6 +317,10 @@
     if (spec.pow2 && (value & (value - 1)) !== 0) return false;
     if (field === "pp" && value > config.totalLayer) return false;
     if (field === "ep" && config.routedExpert % value !== 0) return false;
+    /* 切出档下 DP 必须是 EP 的整数倍（见 validate 的 EDP 整除）。不挡在这里，
+       拖 Total Rank 时 fitParallelWorld 会自己配平出一个当场报错的 DP。
+       EP 不需要对称的一条：切出档下它已被 fitParallelWorld 的候选列表摘掉。 */
+    if (field === "dp" && !config.moeOrthogonal && value % config.ep !== 0) return false;
     return true;
   }
 
@@ -271,7 +330,24 @@
     return Math.max(FIELD_SPECS.node.min, node);
   }
 
+  /* 切出档下 DP 被「EDP 整除」钉住了下限（DP ≥ EP），当 pp/tp/cp 都已降到 1、
+     dp 又正好等于 ep 时，一轮配平会无维可动 —— Total Rank 拖不下去，页面卡在
+     一条红字上，而用户看不出该去动哪个 stepper。此时唯一正确的联动是 EP 跟着
+     DP 一起降一档：切出档 EP 不进 world，降它不改变乘积，只是把 DP 的下限放开，
+     再补一轮就收敛了。ep 每轮严格减半，必然终止。
+     只在「DP 确实被 EP 顶住」（dp ≤ ep）且目标在下方时才降 EP —— 别的原因导致的
+     不收敛（比如目标本就超出字段量程）降 EP 也没用，白白打乱 MoE 分组。
+     anchor === "ep" 时不降：那是用户刚拨的那一枚，配平不该把它拨回去。 */
   function fitParallelWorld(config, target, anchor) {
+    fitParallelWorldOnce(config, target, anchor);
+    while (!config.moeOrthogonal && anchor !== "ep" && config.ep > 1
+      && parallelWorld(config) > target && config.dp <= config.ep) {
+      config.ep = Math.floor(config.ep / 2);
+      fitParallelWorldOnce(config, target, anchor);
+    }
+  }
+
+  function fitParallelWorldOnce(config, target, anchor) {
     /* 切出档下 EP 不进 world，改它一分钱也补不上差额，必须从候选里摘掉，
        否则第一轮就会把 EP 调成一个既不解决问题又打乱 MoE 分组的值。 */
     const candidates = ["dp", "ep", "tp", "cp", "pp"]
@@ -315,20 +391,31 @@
 
     if (config.topK > config.routedExpert) {
       if (anchor === "topK") {
-        while (config.routedExpert < config.topK) config.routedExpert *= 2;
+        /* 专家数要容得下 Top-K，同时仍要能被 EP 整除 —— 一步取到位，别让下面的
+           EP 修复再为一个刚抬上来的数把 EP 削一遍。 */
+        config.routedExpert = nearestMultiple(config.ep, config.topK, FIELD_SPECS.routedExpert);
+        if (config.routedExpert < config.topK) config.topK = config.routedExpert;
       } else {
         config.topK = config.routedExpert;
       }
     }
 
-    if (config.routedExpert % config.ep !== 0) {
+    /* EP 的两条整除约束合成一条：EP 要整除专家数，切出档下还要整除 DP ——
+       也就是 EP 必须是 gcd(专家数, DP) 的因子（正交档只看专家数）。
+       手输放开之前这里是反复减半，现在改成直接取最近的合法值：120 减半是 60，
+       仍然不整除 256，减半那套修不动手输进来的数。 */
+    const epBasis = config.moeOrthogonal ? config.routedExpert : gcd(config.routedExpert, config.dp);
+    if (epBasis % config.ep !== 0) {
       if (anchor === "ep") {
-        while (config.routedExpert < config.ep) config.routedExpert *= 2;
-      } else {
-        while (config.ep > config.routedExpert || config.routedExpert % config.ep !== 0) {
-          config.ep = Math.max(1, Math.floor(config.ep / 2));
-        }
+        /* 锚在 EP 上：不动 EP，改让专家数（切出档还有 DP）成为它的倍数。
+           抬 DP 会让 Total Rank 跟着涨 —— 加大专家并行度本来就要更多卡。 */
+        config.routedExpert = nearestMultiple(config.ep, config.routedExpert, FIELD_SPECS.routedExpert);
+        if (!config.moeOrthogonal) config.dp = nearestMultiple(config.ep, config.dp, FIELD_SPECS.dp);
+        if (config.topK > config.routedExpert) config.topK = config.routedExpert;
       }
+      // 抬不动（撞量程）时仍会不整除，兜底还是把 EP 收到最近的合法因子
+      const basis = config.moeOrthogonal ? config.routedExpert : gcd(config.routedExpert, config.dp);
+      if (basis % config.ep !== 0) config.ep = nearestDivisor(basis, config.ep, FIELD_SPECS.ep);
     }
 
     if (anchor === "totalRank") {
@@ -511,7 +598,36 @@
   const MINUS = '<svg viewBox="0 0 24 24" aria-hidden="true" width="18" height="18" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round"><path d="M5.5 12h13"></path></svg>';
   const PLUS = '<svg viewBox="0 0 24 24" aria-hidden="true" width="18" height="18" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round"><path d="M12 5.5v13"></path><path d="M5.5 12h13"></path></svg>';
 
-  function buildStepper(field, value, onChange) {
+  /* ── 建议修法 ─────────────────────────────────────────────────────────────
+     手输了一个与其它字段不兼容的数之后，横幅要答出「把哪几个字段改成多少就兼容
+     了」。这件事 reconcile 本来就在做，区别只是结果不落到 config 上 —— 所以直接
+     拿它跑一份副本。reconcile 的所有修复分支都避开 anchor，唯一的例外是末尾那句
+     无条件重算 node，所以这里再校一次锚点：动了锚点就不算「兼容你输入的数」的
+     建议，宁可返回 null 让横幅退化成只有「取消修改」一个出口。 */
+  function proposeFix(config, anchor) {
+    const proposal = { ...config };
+    reconcile(proposal, anchor);
+    if (proposal[anchor] === config[anchor] && !validate(proposal).length) return proposal;
+
+    /* Total Rank 是唯一一个 reconcile 修不出建议的常用锚点：补它的差额要解一个
+       整数分解，而 fitParallelWorld 只在 2 的幂梯子上找解 —— 那是加减键该有的
+       手感，不该为手输放开。所以这里补一条直解：让 DP 独自吃掉整个差额，再由
+       reconcile 把 EP 收到合法因子上。手输 1000 卡时它答「DP 512→250、EP 64→2」，
+       而不是两手一摊。 */
+    if (anchor === "totalRank") {
+      const alt = { ...config };
+      const rest = alt.pp * alt.tp * alt.cp * epInWorld(alt);
+      const dp = rest > 0 ? alt.totalRank / rest : 0;
+      if (Number.isInteger(dp) && dp >= FIELD_SPECS.dp.min && dp <= FIELD_SPECS.dp.max) {
+        alt.dp = dp;
+        reconcile(alt, anchor);
+        if (alt.totalRank === config.totalRank && !validate(alt).length) return alt;
+      }
+    }
+    return null;
+  }
+
+  function buildStepper(field, value, onStep, onType) {
     const spec = FIELD_SPECS[field];
     const wrap = document.createElement("div");
     wrap.className = "cro-stepper";
@@ -530,10 +646,25 @@
     dec.innerHTML = MINUS;
     dec.setAttribute("aria-label", `减少 ${spec.label}`);
 
-    const readout = document.createElement("span");
-    readout.className = "zoom-control-readout";
-    readout.textContent = String(value);
-    readout.setAttribute("role", "status");
+    /* 读数是 input 不是 span：加减键只走 2 的幂档位，手输负责「精确指定」——
+       DP=120、PP=3 这类真实存在却不在 2 的幂梯子上的值只能由输入框给。
+       仍复用 .zoom-control-readout 的排版，只在本作用域抹掉输入框的原生外观。 */
+    const readout = document.createElement("input");
+    readout.className = "zoom-control-readout cro-stepper__input";
+    readout.type = "text";
+    readout.inputMode = "numeric";
+    readout.autocomplete = "off";
+    readout.spellcheck = false;
+    readout.value = String(value);
+    readout.setAttribute("aria-label", spec.label);
+    /* size 决定输入框的固有宽度。不给的话浏览器按 20 个字符算 —— 这正是换成
+       input 之后整行 stepper 变宽的原因。按当前值的位数给（下限 3），读数的宽度
+       就与还是 <span> 时的内容自适应一致。 */
+    readout.size = Math.max(3, String(value).length);
+    // 打字过程中同步跟宽，但**不提交**（提交仍在 Enter / 失焦，见下面的注释）
+    readout.addEventListener("input", () => {
+      readout.size = Math.max(3, readout.value.length || 1);
+    });
 
     const inc = document.createElement("button");
     inc.type = "button";
@@ -541,8 +672,25 @@
     inc.innerHTML = PLUS;
     inc.setAttribute("aria-label", `增加 ${spec.label}`);
 
-    dec.addEventListener("click", () => onChange(field, -1));
-    inc.addEventListener("click", () => onChange(field, 1));
+    dec.addEventListener("click", () => onStep(field, -1));
+    inc.addEventListener("click", () => onStep(field, 1));
+
+    /* Enter / 失焦才提交，Esc 放弃。**不监听 input 事件** —— 输 "120" 要先经过
+       "1" 和 "12" 两个中间态，逐键提交会让整页在打字过程中反复标红又复原，
+       而且 "1" 这种中间态多半就是不兼容的。 */
+    readout.addEventListener("focus", () => readout.select());
+    readout.addEventListener("keydown", (event) => {
+      if (event.key === "Enter") { event.preventDefault(); readout.blur(); }
+      else if (event.key === "Escape") { event.preventDefault(); readout.dataset.abort = "1"; readout.blur(); }
+      // 上下键当加减键使：焦点在输入框里时，这是最顺手的「回到常规档位」的动作
+      else if (event.key === "ArrowUp") { event.preventDefault(); onStep(field, 1); }
+      else if (event.key === "ArrowDown") { event.preventDefault(); onStep(field, -1); }
+    });
+    readout.addEventListener("blur", () => {
+      const abort = readout.dataset.abort;
+      delete readout.dataset.abort;
+      onType(field, abort ? null : readout.value);
+    });
 
     control.append(dec, readout, inc);
     wrap.append(label, control);
@@ -563,12 +711,21 @@
     const wraps = new Map();
     const linkedHighlightTimers = new Map();
     const listeners = [];
+    /* 手输进来的不兼容值：页面停在这一态，下游图形一律不更新，直到用户走三个出口
+       之一 —— 横幅的「一键应用」/「取消修改」，或用加减键把它步进回合法档位。 */
+    let invalidTyped = null;
+    // 超量程 / 非整数的一次性提示，与上面那种「参数互不兼容」是两回事
+    let rangeHint = null;
+    // 最近一次自洽的配置快照：「取消修改」整份退回到它，保证报错态一定有出口
+    let lastValidConfig = null;
+    // 同一时刻的拓扑，供 topology getter 在冻结期间兜底（见下面的 getter）
+    let lastValidTopology = null;
 
     function mount(container, group) {
       if (!container) return;
       container.innerHTML = "";
       FIELD_ORDER[group].forEach((field) => {
-        const stepper = buildStepper(field, config[field], apply);
+        const stepper = buildStepper(field, config[field], apply, commitTyped);
         readouts.set(field, stepper.querySelector(".zoom-control-readout"));
         wraps.set(field, stepper);
         container.appendChild(stepper);
@@ -594,16 +751,52 @@
     }
 
     function apply(field, direction) {
+      rangeHint = null;
       const next = stepValue(field, config[field], direction);
       if (next === config[field]) return;
       const before = { ...config };
       config[field] = next;
       reconcile(config, field);
+      /* 加减键永远经 reconcile 落到自洽态，所以它同时也是手输报错态的第三个出口：
+         「把错数步进回合理档位」—— snapPow2 保证从 120 加减是回到 128 / 64，
+         而不是在 240 / 60 上继续翻倍。 */
+      invalidTyped = null;
       highlightLinkedChanges(before, field);
       emit();
     }
 
+    /* 手输提交。与加减键的根本区别：**不做联动修复**。
+       联动一步能改掉三四个数（EP 输 120 会连带 Routed / DP / Total Rank 一起动），
+       而用户手输时是在明确指定一个值，替他改掉另外几个是错的手感。
+       所以这里只有两条路：能自洽就直接落；不能自洽就停在报错态，把「建议怎么改」
+       交给横幅，由用户按下「一键应用」才真的改。 */
+    function commitTyped(field, raw) {
+      rangeHint = null;
+      if (raw === null) { emit(); return; }               // Esc：还原显示，不动配置
+      const spec = FIELD_SPECS[field];
+      const parsed = Number(String(raw).trim());
+      /* 非整数 / 超量程不进报错态：那不是「参数之间不兼容」，是这个数根本不在这一
+         维的取值范围里，没有可建议的修法。直接还原，并把量程写给用户看。 */
+      if (!Number.isInteger(parsed) || parsed < spec.min || parsed > spec.max) {
+        rangeHint = { field, raw: String(raw).trim() };
+        emit();
+        return;
+      }
+      if (parsed === config[field]) { emit(); return; }
+      config[field] = parsed;
+      if (!validate(config).length) {
+        // 手输的数本身就自洽（PP=3、DP=120 配上对应的 Total Rank）：直接落，无需横幅
+        invalidTyped = null;
+        emit();
+        return;
+      }
+      invalidTyped = { field, value: parsed, proposal: proposeFix(config, field) };
+      emit();
+    }
+
     function set(field, value) {
+      rangeHint = null;
+      invalidTyped = null;                 // 程序化赋值走 reconcile，必然落到自洽态
       if (config[field] === value) return;
       const before = { ...config };
       config[field] = value;
@@ -619,6 +812,9 @@
     function setModel(modelId) {
       const preset = MODEL_PRESETS[modelId];
       if (!preset || config.model === modelId) return;
+      // 整份换成新模型的 defaults（本身自洽），手输留下的报错态随之作废
+      rangeHint = null;
+      invalidTyped = null;
       config.model = modelId;
       Object.assign(config, preset.defaults);
       // defaults 里的 dp 一律按切出口径记；正交档下要按 EP 换算回去，否则 world 差一个 EP 倍
@@ -635,6 +831,8 @@
     function setEpMode(orthogonal) {
       const next = Boolean(orthogonal);
       if (config.moeOrthogonal === next) return;
+      rangeHint = null;
+      invalidTyped = null;                 // 换口径后走 reconcile，落到自洽态
       const before = { ...config };
       config.moeOrthogonal = next;
       config.dp = convertDpAcrossEpMode(config.dp, config.ep, next);
@@ -644,9 +842,94 @@
       emit();
     }
 
+    /* 报错横幅：错在哪 → 建议怎么改 → 两个出口。
+       ⚠️ 设计系统没有 alert / banner 组件（css/style.css 里只有 .btn 系列），
+       这里用 tokens 拼一个最小实现，按钮复用 .btn / .btn-sm / .btn-ghost；
+       与本文件的 select 同属「缺失样式」，待批准后应吸收进共享系统。 */
+    function renderConfigError(topology) {
+      const el = document.getElementById("croConfigError");
+      if (!el) return;
+      el.textContent = "";
+      el.classList.toggle("is-blocking", !topology.valid);
+
+      if (rangeHint) {
+        const spec = FIELD_SPECS[rangeHint.field];
+        const line = document.createElement("p");
+        line.className = "cro-config-error__msg";
+        line.textContent = `${spec.label} 只接受 ${spec.min}–${spec.max} 之间的整数`
+          + `，「${rangeHint.raw}」已还原`;
+        el.appendChild(line);
+        rangeHint = null;                      // 一次性提示，下一次操作即消失
+        if (topology.valid) return;
+      }
+      if (topology.valid) return;
+
+      const msg = document.createElement("p");
+      msg.className = "cro-config-error__msg";
+      msg.textContent = topology.errors.join("；");
+      /* 停更接在错误文字后面同一行：它是这条错误的**后果**，不是第二条错误，
+         另起一行会读成并列的两件事。 */
+      const frozen = document.createElement("span");
+      frozen.className = "cro-config-error__frozen";
+      frozen.textContent = "图形已暂停更新，仍显示上一组自洽的参数";
+      msg.appendChild(frozen);
+      el.appendChild(msg);
+
+      const fix = document.createElement("div");
+      fix.className = "cro-config-error__fix";
+      const proposal = invalidTyped && invalidTyped.proposal;
+      if (proposal) {
+        const label = FIELD_SPECS[invalidTyped.field].label;
+        const changes = Object.keys(FIELD_SPECS)
+          .filter((f) => f !== invalidTyped.field && proposal[f] !== config[f])
+          .map((f) => `${FIELD_SPECS[f].label} ${config[f]} → ${proposal[f]}`);
+        fix.textContent = changes.length
+          ? `为了兼容 ${label} = ${invalidTyped.value}，建议把 ${changes.join("、")}`
+          : `为了兼容 ${label} = ${invalidTyped.value}，无需改动其它字段`;
+      } else {
+        fix.textContent = "没能算出兼容这个数的改法 —— 换一个值，或退回上一组参数";
+      }
+      el.appendChild(fix);
+
+      const actions = document.createElement("div");
+      actions.className = "cro-config-error__actions";
+      if (proposal) {
+        const applyBtn = document.createElement("button");
+        applyBtn.type = "button";
+        applyBtn.className = "btn btn-sm";
+        applyBtn.textContent = "一键应用";
+        applyBtn.addEventListener("click", () => {
+          const before = { ...config };
+          const anchor = invalidTyped.field;
+          Object.assign(config, proposal);
+          invalidTyped = null;
+          highlightLinkedChanges(before, anchor);   // 被建议改掉的那几枚闪一下
+          emit();
+        });
+        actions.appendChild(applyBtn);
+      }
+      const cancelBtn = document.createElement("button");
+      cancelBtn.type = "button";
+      cancelBtn.className = "btn btn-sm";
+      cancelBtn.textContent = "取消修改";
+      cancelBtn.addEventListener("click", () => {
+        // 整份退回最近一次自洽快照：手输可能连着改了几个字段，只还原最后一个不够
+        if (lastValidConfig) Object.assign(config, lastValidConfig);
+        invalidTyped = null;
+        emit();
+      });
+      actions.appendChild(cancelBtn);
+      el.appendChild(actions);
+    }
+
     function emit() {
       const topology = derive(config);
-      readouts.forEach((el, field) => { el.textContent = String(config[field]); });
+      readouts.forEach((el, field) => {
+        // 正在输入的那一枚不覆写，否则会打断光标和选区
+        if (el === document.activeElement) return;
+        el.value = String(config[field]);
+        el.size = Math.max(3, el.value.length);   // 跟着位数收放，见 buildStepper
+      });
       // 校验失败时给出提示：把相关 stepper 标红，并在 #croConfigError 写出原因
       const badFields = new Set();
       if (!topology.valid) {
@@ -655,11 +938,29 @@
             if (message.includes(FIELD_SPECS[field].label)) badFields.add(field);
           });
         });
+        // 手输的那一枚一定标红：错误文案里未必出现它的 label（比如 Total Rank）
+        if (invalidTyped) badFields.add(invalidTyped.field);
+        /* 横幅建议要改的那几枚也一起标红。只靠错误文案的 label 匹配会漏一大片：
+           「Routed 232 不能被 EP 53 整除」只点了 Routed 与 EP 的名，可 DP 与
+           Total Rank 同样与这个输入值不兼容，一个字都没出现。
+           **红圈的名单必须与横幅列的名单一致** —— 否则用户看到横幅让改三个数、
+           页面只红了一个，会以为横幅算错了。 */
+        if (invalidTyped && invalidTyped.proposal) {
+          Object.keys(FIELD_SPECS).forEach((field) => {
+            if (invalidTyped.proposal[field] !== config[field]) badFields.add(field);
+          });
+        }
       }
+      if (rangeHint) badFields.add(rangeHint.field);
       wraps.forEach((el, field) => el.classList.toggle("is-invalid", badFields.has(field)));
-      const errorEl = document.getElementById("croConfigError");
-      if (errorEl) errorEl.textContent = topology.errors.join("；");
+      renderConfigError(topology);
 
+      /* 参数不兼容时**不往下游发**：集群矩阵、整网 deck、单卡容量、YAML 一律停在
+         上一组自洽参数上。这页最会骗人的错误就是「数字和图形各说各话」——
+         宁可图形滞后一步，也不让它按一组自相矛盾的数字画出一个看着挺合理的样子。 */
+      if (!topology.valid) return;
+      lastValidConfig = { ...config };
+      lastValidTopology = topology;
       listeners.forEach((fn) => fn(topology));
       document.dispatchEvent(new CustomEvent("cro:change", { detail: topology }));
     }
@@ -670,7 +971,13 @@
       set,
       setModel,
       setEpMode,
-      get topology() { return derive(config); },
+      /* 冻结期间也返回上一组自洽拓扑：视图侧除了监听 cro:change，还会在别的时机
+         直接读它（比如窗口尺寸变化时重算集群矩阵的列数）。只掐事件不掐这里的话，
+         一次拖窗口就能把不自洽的参数画进矩阵，冻结就漏了。 */
+      get topology() {
+        const current = derive(config);
+        return current.valid || !lastValidTopology ? current : lastValidTopology;
+      },
       onChange(fn) { listeners.push(fn); return () => listeners.splice(listeners.indexOf(fn), 1); },
       refresh: emit,
     };
@@ -1914,6 +2221,12 @@
     /* 换算式进每一个格子的悬浮提示：表单上写着 DP 512、这里标着 EDP0–7，
        两个数对不上是本页最容易被当成算错的一处，光改名不够，得把桥给出来。 */
     const dTip = dName === "EDP" ? `\nEDP = DP ${counts.dp} ÷ EP ${ep} = ${dp}` : "";
+    /* 格子提示的最后一行：这张卡到底背着几个专家。EP 列号只说明它属于哪个专家组，
+       换算成「几个」还要再除一次，而这正是看矩阵时最想知道的那个数。
+       专家只存在于 MoE 层，所以整段都是 dense 层的 stage 上不写这一行
+       （稠密模型全程没有，naturally 也就整块不出现）。 */
+    const stageHasMoe = topology.stages.map((entry) =>
+      topology.layers.slice(entry.lo, entry.hi + 1).some((layer) => layer.ffn === "moe"));
     const body = document.createElement("div");
     body.className = "cro-heat-body";
 
@@ -1956,7 +2269,14 @@
             // 「被点亮了」，知道是第几份权重才谈得上定位。
             const shardTip = tp > 1 ? `\nTP 分片 ${shard + 1}/${tp}（持有该层权重的 1/${tp}）` : "";
             const cpTip = cp > 1 ? `\nCP 分片 ${cpIdx + 1}/${cp}` : "";
-            cell.dataset.tip = `rank ${rank}\nStage${s} · ${dName}${d} · EP${p} · TP${shard} · CP${cpIdx}${shardTip}${cpTip}${dTip}\nNode ${node}`;
+            const epEntry = topology.epRanks[p];
+            const sharedTip = counts.sharedExpert
+              ? ` + ${counts.sharedExpert} 个共享专家（每卡一份）` : "";
+            const expertTip = stageHasMoe[s] && epEntry && counts.expertsPerEpRank
+              ? `\n当前 rank 有 ${counts.expertsPerEpRank} 个路由专家`
+                + `（每个 MoE 层各一份，编号 ${epEntry.lo}–${epEntry.hi}）${sharedTip}`
+              : "";
+            cell.dataset.tip = `rank ${rank}\nStage${s} · ${dName}${d} · EP${p} · TP${shard} · CP${cpIdx}${shardTip}${cpTip}${dTip}\nNode ${node}${expertTip}`;
             if (tp > 1) {
               cell.dataset.tpShard = String(shard);
               // 高亮亮度分档由 CSS 读这枚变量（见 .twin-heat-cell.is-related）。
