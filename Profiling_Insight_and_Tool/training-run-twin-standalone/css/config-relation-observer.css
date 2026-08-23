@@ -722,6 +722,29 @@
   }
 }
 
+/* 读数从 span 换成 input（手输），抹掉原生外观让它继续长得像原来的读数。
+   .zoom-control-readout 的排版照旧生效，这里只补输入框特有的那几条。
+   ⚠️ 宽度不能写 width:100% —— input 是替换元素，固有宽度由 size 属性给
+   （默认 20 个字符），再叠一个 100% 会把整行 stepper 撑开。宽度全交给
+   JS 维护的 size（按当前值的位数）与 .zoom-control-readout 的 min-width。 */
+.cro-stepper__input {
+  appearance: none;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: center;
+  padding: 0;
+  width: auto;
+  cursor: text;
+}
+
+.cro-stepper__input:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 1px;
+  border-radius: var(--radius-sm);
+}
+
 /* 无错误时不占位（原来留了 min-height:1em 的空行） */
 .cro-config-error {
   margin: 0;
@@ -731,6 +754,47 @@
 
 .cro-config-error:empty {
   display: none;
+}
+
+/* 参数不兼容时它从一行文字升格成横幅：多了建议修法与两个出口，
+   而且此刻整页的图形都停更了，需要有足够分量让人注意到。
+   底色 / 描边与 .cro-incident-banner 逐条对齐 —— 页面里「出事了，先读这一条」
+   的视觉已经由事件横幅定下，这里不另起一套。 */
+.cro-config-error.is-blocking {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid color-mix(in srgb, var(--danger) 28%, transparent);
+  border-radius: var(--radius-md);
+  background: linear-gradient(
+    90deg,
+    color-mix(in srgb, var(--danger) 16%, var(--surface-1)),
+    color-mix(in srgb, var(--danger) 5%, var(--surface-1))
+  );
+  line-height: 1.45;
+}
+
+.cro-config-error__msg {
+  margin: 0;
+  color: var(--danger);
+}
+
+.cro-config-error__fix {
+  color: var(--foreground);
+  line-height: 1.5;
+}
+
+.cro-config-error__actions {
+  display: flex;
+  gap: var(--space-2);
+}
+
+/* 停更接在错误文字后面同一行（是那条错误的后果，不是第二条错误），
+   所以是 inline 的 span：要说清，但不该抢红字的戏。 */
+.cro-config-error__frozen {
+  margin-left: var(--space-2);
+  color: var(--foreground-secondary);
 }
 
 /* ── 模型下拉 ────────────────────────────────────────────────────────────
