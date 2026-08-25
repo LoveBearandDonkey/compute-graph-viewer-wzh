@@ -1,0 +1,984 @@
+<!doctype html>
+<html lang="zh-CN" data-theme="light">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Format Lab · Layout Model · Light</title>
+  <link rel="icon" href="data:,">
+  <script>
+    (() => {
+      const params = new URLSearchParams(window.location.search);
+      const theme = params.get('theme');
+      if (theme === 'light' || theme === 'dark' || theme === 'glass') {
+        document.documentElement.dataset.theme = theme;
+      }
+    })();
+  </script>
+  <link rel="stylesheet" href="../vendor/pto-design-system/tokens/foundation.css">
+  <link rel="stylesheet" href="../vendor/pto-design-system/tokens/semantic.css">
+  <link rel="stylesheet" href="../vendor/pto-design-system/tokens/components.css">
+  <link rel="stylesheet" href="../vendor/pto-design-system/css/style.css">
+  <link rel="stylesheet" href="../vendor/pto-design-system/patterns/workbench-shell/pattern.css">
+  <link rel="stylesheet" href="../vendor/pto-design-system/patterns/floating-playback-control/pattern.css">
+  <link rel="stylesheet" href="../vendor/pto-design-system/patterns/ide-frame/pattern.css">
+  <style>
+    * { box-sizing: border-box; }
+
+    html,
+    body {
+      width: 100%;
+      min-height: 100%;
+      margin: 0;
+      overflow: auto;
+      background: var(--ide-frame-page-bg);
+      color: var(--foreground);
+      font-family: var(--font-sans);
+    }
+
+    body { min-height: 100vh; }
+
+    /* API Visualizer Light parity: keep the page chrome on the same neutral canvas. */
+    :root[data-theme='light'],
+    :root[data-theme='light'] body {
+      background: #f3f4f6;
+    }
+
+    :root[data-theme='dark'],
+    :root[data-theme='dark'] body {
+      background: #101114;
+    }
+
+    :root[data-theme='light'] .format-lab-frame {
+      background: #f3f4f6;
+    }
+
+    :root[data-theme='light'] .format-lab-frame::before,
+    :root[data-theme='light'] .format-lab-frame::after {
+      background: none;
+    }
+
+    :root[data-theme='dark'] .format-lab-frame {
+      background: #101114;
+    }
+
+    /* Dark arrow strokes lose contrast on the light canvas; keep the data-viz path readable. */
+    :root[data-theme='light'] .format-layout-arrows .format-fractal-path,
+    :root[data-theme='light'] .format-layout-arrows .format-fractal-connector,
+    :root[data-theme='light'] .format-layout-arrows .format-reading-chevron {
+      stroke: color-mix(in srgb, var(--foreground) 72%, transparent);
+      filter: drop-shadow(0 1px 1px rgba(255, 255, 255, .72));
+    }
+    code { font-family: var(--font-mono); }
+
+    .format-lab-page {
+      width: 100%;
+      min-height: 100vh;
+      display: block;
+      padding: 0;
+    }
+
+    .format-lab-frame {
+      width: 100vw;
+      height: 100vh;
+      min-height: 100vh;
+      aspect-ratio: auto;
+      border-radius: 0;
+    }
+
+    .format-lab-frame .pto-ide-frame__topbar-center { display: none; }
+    .format-lab-frame .pto-ide-frame__topbar-left,
+    .format-lab-frame .pto-ide-frame__topbar-right { flex: 1 1 auto; }
+    .format-lab-frame .pto-ide-frame__split { padding-right: 0; }
+
+    .format-lab-workspace {
+      min-width: 0;
+      display: inline-flex;
+      align-items: baseline;
+      gap: var(--space-2);
+    }
+
+    .format-lab-workspace strong {
+      color: var(--foreground);
+      font: var(--ide-frame-title-font);
+    }
+
+    .format-lab-workspace span {
+      color: var(--foreground-muted);
+      font: var(--ide-frame-meta-font);
+    }
+
+    .format-lab-pane-scroll,
+    .format-lab-canvas-scroll,
+    .format-lab-inspector-scroll {
+      min-height: 0;
+      height: 100%;
+      overflow: auto;
+    }
+
+    .format-lab-pane-scroll,
+    .format-lab-inspector-scroll { padding: 0 var(--space-4) var(--space-5); }
+
+    .format-lab-section,
+    .inspector-section {
+      display: grid;
+      gap: var(--space-3);
+      padding: var(--space-4) 0;
+      border-bottom: 1px solid var(--border-subtle);
+    }
+
+    .format-lab-section:last-child,
+    .inspector-section:last-child { border-bottom: 0; }
+
+    .format-lab-section__head,
+    .format-lab-visual-head,
+    .format-lab-inspector-head {
+      display: flex;
+      align-items: baseline;
+      justify-content: space-between;
+      gap: var(--space-3);
+    }
+
+    .format-lab-section__head strong,
+    .format-lab-visual-head strong,
+    .format-lab-inspector-head strong {
+      color: var(--foreground);
+      font: var(--text-title-2);
+    }
+
+    .format-lab-section__head span,
+    .format-lab-visual-head span,
+    .format-lab-inspector-head span {
+      color: var(--foreground-muted);
+      font: var(--text-mono);
+      white-space: nowrap;
+    }
+
+    .format-lab-intro {
+      margin: 0;
+      color: var(--foreground-secondary);
+      font: var(--text-body-sm);
+      line-height: 1.6;
+    }
+
+    .format-lab-fields { display: grid; gap: var(--space-3); }
+    .format-lab-field { display: grid; gap: var(--space-2); }
+    .format-lab-field label,
+    .format-lab-field legend {
+      color: var(--foreground-secondary);
+      font: var(--text-label);
+      letter-spacing: var(--letter-spacing-label);
+    }
+
+    .format-lab-fieldset { min-width: 0; margin: 0; padding: 0; border: 0; }
+    .format-lab-fieldset legend { margin-bottom: var(--space-2); }
+    .format-lab-control-row { display: flex; align-items: center; gap: var(--space-2); }
+    .format-lab-control-row .btn { flex: 1 1 0; min-width: 0; }
+
+    .format-lab-format-tabs {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: var(--space-2);
+    }
+
+    .format-lab-format-tabs .btn {
+      min-width: 0;
+      min-height: 42px;
+      align-items: flex-start;
+      justify-content: center;
+      flex-direction: column;
+      padding: 5px var(--space-3);
+      text-align: left;
+      gap: 0;
+    }
+
+    .format-lab-format-tabs .btn small {
+      display: block;
+      margin-top: 2px;
+      color: var(--foreground-muted);
+      font: 500 10px / 1.2 var(--font-mono);
+    }
+
+    .format-lab-format-tabs .btn.is-selected small { color: currentColor; opacity: .68; }
+
+    .format-lab-stepper {
+      display: grid;
+      grid-template-columns: 32px minmax(0, 1fr) 32px;
+      align-items: center;
+      overflow: hidden;
+      border: 1px solid var(--input-border);
+      border-radius: var(--input-radius);
+      background: var(--input-bg);
+    }
+
+    .format-lab-stepper button {
+      min-height: var(--input-height-md);
+      border: 0;
+      background: transparent;
+      color: var(--foreground-secondary);
+      font: var(--text-title-2);
+      cursor: pointer;
+    }
+
+    .format-lab-stepper button:hover { background: var(--state-hover); color: var(--foreground); }
+    .format-lab-stepper output { text-align: center; color: var(--foreground); font: var(--text-mono); }
+
+    .format-lab-preset-row { display: flex; flex-wrap: wrap; gap: var(--space-2); }
+    .format-lab-preset-row .btn { flex: 1 1 100px; }
+
+    .format-lab-assumptions { display: grid; gap: var(--space-2); margin: 0; }
+    .format-lab-assumption { display: flex; justify-content: space-between; gap: var(--space-3); color: var(--foreground-secondary); font: var(--text-body-sm); }
+    .format-lab-assumption code { color: var(--foreground); white-space: nowrap; }
+
+    .format-lab-note {
+      margin: 0;
+      padding: var(--space-3);
+      border-radius: var(--radius-md);
+      background: var(--tone-warning-bg);
+      color: var(--foreground-secondary);
+      font: var(--text-body-sm);
+      line-height: 1.55;
+    }
+
+    .format-lab-note strong { color: var(--warning); }
+
+    .format-lab-main-body {
+      display: grid;
+      grid-template-rows: auto minmax(300px, 1fr) minmax(132px, .36fr);
+      gap: var(--space-3);
+      min-height: 0;
+      padding: var(--space-4);
+      overflow: hidden;
+    }
+
+    .format-lab-context-bar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: var(--space-3);
+      min-width: 0;
+    }
+
+    .format-lab-context-copy { min-width: 0; }
+    .format-lab-context-copy strong { display: block; color: var(--foreground); font: var(--text-title-2); }
+    .format-lab-context-copy span { display: block; margin-top: 2px; color: var(--foreground-secondary); font: var(--text-body-sm); }
+    .format-lab-context-meta { display: flex; align-items: center; gap: var(--space-2); flex-wrap: wrap; justify-content: flex-end; }
+    .format-lab-context-label { color: var(--warning); font: var(--text-label); letter-spacing: var(--letter-spacing-label); }
+    .format-lab-context-label.is-neutral { color: var(--foreground-muted); }
+
+    .format-lab-visual-shell,
+    .format-lab-physical-shell {
+      min-width: 0;
+      min-height: 0;
+      display: grid;
+      gap: var(--space-3);
+      padding: var(--space-4);
+      background: color-mix(in srgb, var(--surface-1) 76%, transparent);
+      border-radius: var(--radius-lg);
+    }
+
+    .format-lab-visual-shell { grid-template-rows: auto auto minmax(0, 1fr); }
+    .format-lab-physical-shell { grid-template-rows: auto auto minmax(0, 1fr); }
+
+    .format-lab-visual-head { min-height: 28px; }
+    .format-lab-visual-head > span { color: var(--foreground-secondary); }
+    .format-lab-visual-tools { display: inline-flex; align-items: center; gap: var(--space-1); }
+    .format-lab-visual-tools .btn { min-width: 28px; padding-inline: 7px; }
+    .format-lab-zoom-readout { min-width: 48px; text-align: center; color: var(--foreground-muted); font: var(--text-mono); }
+
+    .format-lab-legend { display: flex; flex-wrap: wrap; gap: var(--space-3); color: var(--foreground-muted); font: var(--text-body-sm); }
+    .format-lab-legend-item { display: inline-flex; align-items: center; gap: var(--space-1); white-space: nowrap; }
+    .format-lab-legend-mark { width: 12px; height: 12px; border-radius: 3px; background: var(--primary); }
+    .format-lab-legend-mark.is-pad { background: var(--warning); }
+    .format-lab-legend-mark.is-current { background: var(--success); }
+    .format-lab-legend-mark.is-block { background: var(--accent); }
+
+    .format-lab-canvas-scroll { position: relative; background: radial-gradient(circle at 50% 18%, color-mix(in srgb, var(--primary) 12%, transparent), transparent 58%); }
+    .format-lab-grid-zoom-host { position: relative; min-width: max-content; min-height: max-content; }
+    .format-lab-grid-zoom { transform-origin: top left; }
+    .format-lab-grid-stage { position: relative; min-width: max-content; min-height: max-content; }
+    .format-layout-arrows {
+      position: absolute;
+      inset: 0;
+      z-index: 3;
+      overflow: visible;
+      pointer-events: none;
+    }
+
+    .format-layout-arrows .format-fractal-outline {
+      fill: color-mix(in srgb, var(--primary) 4%, transparent);
+      stroke: color-mix(in srgb, var(--primary-hover) 92%, white);
+      stroke-width: 2px;
+      vector-effect: non-scaling-stroke;
+    }
+
+    .format-layout-arrows .format-fractal-path,
+    .format-layout-arrows .format-fractal-connector {
+      fill: none;
+      stroke: #fff;
+      stroke-width: 2.5px;
+      vector-effect: non-scaling-stroke;
+      stroke-linecap: round;
+      stroke-linejoin: round;
+      filter: drop-shadow(0 1px 1px rgba(3, 5, 14, .78));
+    }
+
+    .format-layout-arrows .format-reading-chevron {
+      fill: none;
+      stroke: #fff;
+      stroke-width: 2.4px;
+      vector-effect: non-scaling-stroke;
+      stroke-linecap: round;
+      stroke-linejoin: round;
+      filter: drop-shadow(0 1px 1px rgba(3, 5, 14, .78));
+    }
+
+    .format-lab-grid { position: relative; z-index: 2; }
+
+    .format-lab-cell {
+      appearance: none;
+      border: 1px solid color-mix(in srgb, var(--foreground) 12%, transparent);
+      border-radius: 6px;
+      cursor: pointer;
+      font: 700 9px / 1 var(--font-mono);
+      transition: filter var(--duration-fast) var(--easing-default), border-color var(--duration-fast) var(--easing-default), transform var(--duration-fast) var(--easing-default);
+    }
+
+    .format-lab-logical-cell {
+      position: absolute;
+      width: 34px;
+      height: 34px;
+      display: grid;
+      align-content: center;
+      gap: 3px;
+      padding: 3px;
+      background: #5868ee;
+      color: #fff;
+      transform: translate(var(--format-x), var(--format-y));
+    }
+
+    .format-lab-logical-cell:hover,
+    .format-lab-logical-cell.is-active { z-index: 5; border-color: var(--foreground); filter: brightness(1.18); }
+    .format-lab-logical-cell.is-block-active { filter: brightness(1.08); }
+    .format-lab-logical-cell.is-pad { background: var(--warning); color: #201703; }
+    .format-lab-logical-cell.is-reading-current { background: var(--success); color: #081a13; filter: brightness(1.1); }
+    .format-lab-logical-cell.is-reading-complete { background: #6349df; }
+    .format-lab-logical-cell.is-reading-trail-1 { background: #c7f25a; color: #172005; }
+    .format-lab-logical-cell.is-reading-trail-2 { background: #4fe0aa; color: #081a13; }
+    .format-lab-logical-index { font-size: 9px; }
+    .format-lab-coordinate { color: currentColor; opacity: .68; font-size: 8px; }
+
+    .format-fractal-outline { fill: color-mix(in srgb, var(--primary) 8%, transparent); stroke: color-mix(in srgb, var(--primary-hover) 92%, white); stroke-width: 2px; rx: 8; }
+    .format-fractal-path { fill: none; stroke: color-mix(in srgb, var(--foreground) 58%, transparent); stroke-width: 2px; stroke-linecap: round; stroke-linejoin: round; }
+    .format-fractal-connector { fill: none; stroke: color-mix(in srgb, var(--accent) 70%, transparent); stroke-width: 2px; stroke-dasharray: 3 4; }
+
+    .format-lab-ribbon-scroll { min-width: 0; overflow: auto hidden; padding-bottom: var(--space-2); }
+    .format-lab-ribbon { display: flex; gap: 4px; min-width: max-content; }
+    .format-lab-physical-cell { width: 54px; min-height: 58px; display: grid; align-content: center; gap: 5px; padding: 4px; background: var(--surface-3); color: var(--foreground); text-align: center; }
+    .format-lab-physical-cell:hover,
+    .format-lab-physical-cell.is-active { border-color: var(--foreground); filter: brightness(1.12); }
+    .format-lab-physical-cell.is-pad { background: color-mix(in srgb, var(--warning) 72%, var(--surface-3)); color: #201703; }
+    .format-lab-physical-cell.is-gap { border-style: dashed; color: var(--foreground-muted); cursor: default; }
+    .format-lab-physical-cell small { color: currentColor; opacity: .72; font-size: 8px; }
+    .format-lab-physical-offset { font: 700 9px / 1 var(--font-mono); }
+
+    .format-lab-model-rule { display: grid; gap: var(--space-2); }
+    .format-lab-rule-row { display: grid; gap: 4px; padding-bottom: var(--space-2); border-bottom: 1px solid var(--border-subtle); }
+    .format-lab-rule-row:last-child { padding-bottom: 0; border-bottom: 0; }
+    .format-lab-rule-row span { color: var(--foreground-secondary); font: var(--text-body-sm); }
+    .format-lab-rule-row code { color: var(--foreground); line-height: 1.5; overflow-wrap: anywhere; }
+
+    .format-lab-metrics { display: grid; gap: 0; }
+    .format-lab-metric { display: flex; justify-content: space-between; gap: var(--space-3); padding: var(--space-3) 0; border-bottom: 1px solid var(--border-subtle); color: var(--foreground-secondary); font: var(--text-body-sm); }
+    .format-lab-metric strong { color: var(--success); font: var(--text-mono); text-align: right; }
+    .format-lab-metric strong.is-warning { color: var(--warning); }
+
+    .format-lab-trace {
+      min-height: 72px;
+      padding: var(--space-3);
+      background: color-mix(in srgb, var(--surface-1) 82%, transparent);
+      border-radius: var(--radius-md);
+      color: var(--foreground-secondary);
+      font: var(--text-mono);
+      line-height: 1.55;
+      overflow-wrap: anywhere;
+    }
+
+    .format-lab-trace strong { color: var(--foreground); }
+    .format-lab-status { color: var(--foreground-secondary); font: var(--ide-frame-meta-font); }
+    .format-lab-status strong { color: var(--success); }
+
+    @media (max-width: 1100px) {
+      .format-lab-frame { height: 100vh; min-height: 100vh; }
+      .format-lab-frame .pto-ide-frame__split[data-ide-split="standalone-main"] { overflow: auto; }
+      .format-lab-frame .pto-ide-frame__split[data-ide-split="standalone-main"] > [data-ide-pane] { min-height: 620px; }
+      .format-lab-main-body { overflow: visible; }
+    }
+
+    @media (max-width: 760px) {
+      .format-lab-page { padding: 0; }
+      .format-lab-frame { width: 100vw; height: 100vh; min-height: 100vh; border-radius: 0; }
+      .format-lab-main-body { grid-template-rows: auto minmax(360px, 1fr) minmax(140px, .4fr); }
+      .format-lab-context-bar { align-items: flex-start; flex-direction: column; }
+      .format-lab-context-meta { justify-content: flex-start; }
+    }
+
+    /* API Visualizer Light control skin: segmented track, neutral chips, flat steppers. */
+    :root[data-theme='light'] .format-lab-format-tabs {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: var(--segmented-control-gap);
+      padding: var(--segmented-control-padding);
+      border: 0;
+      border-radius: var(--radius-lg);
+      background: var(--surface-2);
+      box-shadow: none;
+    }
+
+    :root[data-theme='light'] .format-lab-format-tabs .btn {
+      width: 100%;
+      min-width: 0;
+      min-height: 42px;
+      flex: 1 1 auto;
+      justify-content: center;
+      padding: 5px var(--space-3);
+      border: 0;
+      border-radius: calc(var(--radius-lg) - 3px);
+      background: transparent;
+      box-shadow: none;
+      color: var(--foreground-secondary);
+      font: var(--button-font);
+      transform: none;
+    }
+
+    :root[data-theme='light'] .format-lab-format-tabs .btn:hover {
+      border-color: transparent;
+      background: var(--state-hover);
+      box-shadow: none;
+      color: var(--foreground);
+      transform: none;
+    }
+
+    :root[data-theme='light'] .format-lab-format-tabs .btn.is-selected,
+    :root[data-theme='light'] .format-lab-format-tabs .btn.is-selected:hover {
+      border-color: transparent;
+      background: var(--surface-1);
+      color: var(--foreground);
+      box-shadow: var(--shadow-sm);
+      transform: none;
+    }
+
+    :root[data-theme='light'] .format-lab-format-tabs .btn:focus-visible,
+    :root[data-theme='light'] .format-lab-control-row[data-format-dtypes] .btn:focus-visible,
+    :root[data-theme='light'] .format-lab-preset-row .btn:focus-visible {
+      outline: none;
+      box-shadow: 0 0 0 3px var(--focus-ring);
+    }
+
+    :root[data-theme='light'] .format-lab-control-row[data-format-dtypes] {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: var(--segmented-control-gap);
+      padding: var(--segmented-control-padding);
+      border-radius: var(--radius-lg);
+      background: var(--surface-2);
+    }
+
+    :root[data-theme='light'] .format-lab-control-row[data-format-dtypes] .btn {
+      min-width: 0;
+      min-height: 36px;
+      flex: none;
+      padding-inline: var(--space-2);
+      border: 0;
+      border-radius: calc(var(--radius-lg) - 3px);
+      background: transparent;
+      box-shadow: none;
+      color: var(--foreground-secondary);
+      font: var(--button-font);
+      transform: none;
+    }
+
+    :root[data-theme='light'] .format-lab-control-row[data-format-dtypes] .btn:hover {
+      border-color: transparent;
+      background: var(--state-hover);
+      box-shadow: none;
+      color: var(--foreground);
+      transform: none;
+    }
+
+    :root[data-theme='light'] .format-lab-control-row[data-format-dtypes] .btn.is-selected,
+    :root[data-theme='light'] .format-lab-control-row[data-format-dtypes] .btn.is-selected:hover {
+      border-color: transparent;
+      background: var(--surface-1);
+      color: var(--foreground);
+      box-shadow: var(--shadow-sm);
+      font-weight: 700;
+      transform: none;
+    }
+
+    :root[data-theme='light'] .format-lab-stepper {
+      border: 0;
+      border-radius: var(--input-radius);
+      background: var(--surface-2);
+      box-shadow: none;
+    }
+
+    :root[data-theme='light'] .format-lab-stepper button {
+      min-height: var(--input-height-md);
+      border: 0;
+      background: transparent;
+      color: var(--foreground-secondary);
+      transform: none;
+    }
+
+    :root[data-theme='light'] .format-lab-stepper button:hover {
+      background: var(--state-hover);
+      color: var(--foreground);
+    }
+
+    :root[data-theme='light'] .format-lab-preset-row .btn {
+      min-height: 32px;
+      flex: 0 0 auto;
+      justify-content: flex-start;
+      padding-inline: var(--space-3);
+      border: 0;
+      border-radius: var(--radius-lg);
+      background: var(--surface-2);
+      box-shadow: none;
+      color: var(--foreground);
+      transform: none;
+    }
+
+    :root[data-theme='light'] .format-lab-preset-row .btn:hover {
+      border-color: transparent;
+      background: color-mix(in srgb, var(--foreground) 6%, var(--surface-2));
+      box-shadow: none;
+      transform: none;
+    }
+  </style>
+</head>
+<body class="format-lab-page">
+  <section class="pto-ide-frame format-lab-frame" data-ide-frame data-host="standalone" data-cursor-dots="true" aria-label="Format Lab 独立演示模型">
+    <header class="pto-ide-frame__topbar pto-ide-frame__standalone-chrome">
+      <div class="pto-ide-frame__topbar-left">
+        <div class="pto-ide-frame__host-chip">
+          <svg class="pto-ide-frame__host-icon" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2"></rect><path d="m7 9 3 3-3 3"></path><path d="M12 15h5"></path></svg>
+        </div>
+        <div class="format-lab-workspace"><strong>Format Lab</strong><span>layout model / memory mapping</span></div>
+      </div>
+      <div class="pto-ide-frame__topbar-right">
+        <div class="pto-ide-frame__window-actions" aria-label="Format Lab actions">
+          <button class="pto-ide-frame__window-action" type="button" data-format-reset aria-label="Reset model" title="Reset model"><svg class="pto-ide-frame__window-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 12a9 9 0 1 0 3-6.7"></path><path d="M3 4v6h6"></path></svg></button>
+          <button class="pto-ide-frame__window-action" type="button" data-format-theme aria-label="Toggle theme" title="Toggle theme"><svg class="pto-ide-frame__window-icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="4"></circle><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41"></path></svg></button>
+        </div>
+      </div>
+    </header>
+
+    <div class="pto-ide-frame__body">
+      <nav class="pto-ide-frame__activity-rail pto-ide-frame__standalone-chrome" aria-label="Activity rail">
+        <button class="btn btn-icon btn-ghost pto-ide-frame__rail-button is-selected" type="button" data-ide-toggle="explorer" aria-label="Toggle model explorer" aria-controls="format-lab-explorer" aria-expanded="true" aria-pressed="true" title="Explorer"><svg class="pto-ide-frame__rail-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9l-.81-1.2A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"></path></svg></button>
+        <button class="btn btn-icon btn-ghost pto-ide-frame__rail-button" type="button" aria-label="Search" title="Search"><svg class="pto-ide-frame__rail-icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="8"></circle><path d="m21 21-4.3-4.3"></path></svg></button>
+        <button class="btn btn-icon btn-ghost pto-ide-frame__rail-button" type="button" aria-label="Source control" title="Source control"><svg class="pto-ide-frame__rail-icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="6" cy="18" r="3"></circle><circle cx="18" cy="6" r="3"></circle><path d="M6 15V3"></path><path d="M9 18a9 9 0 0 0 9-9"></path></svg></button>
+        <button class="btn btn-icon btn-ghost pto-ide-frame__rail-button" type="button" aria-label="Terminal" title="Terminal"><svg class="pto-ide-frame__rail-icon" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="5" width="18" height="14" rx="2"></rect><path d="m7 9 3 3-3 3"></path><path d="M12 15h5"></path></svg></button>
+      </nav>
+
+      <div class="pto-ide-frame__workarea">
+        <div class="pto-ide-frame__split" data-ide-split="standalone-main" data-storage-key="format-lab-light-main-v1" data-split-direction="horizontal" data-sizes="24,52,24" data-pixel-sizes="288,0,0" data-min-size="250,520,270">
+          <aside class="pto-ide-frame__pane pto-ide-frame__explorer" data-ide-pane="explorer" id="format-lab-explorer">
+            <header class="pto-ide-frame__pane-header"><h2 class="pto-ide-frame__pane-title">Model Inputs</h2><span class="pto-ide-frame__pane-meta">independent</span></header>
+            <div class="pto-ide-frame__pane-body format-lab-pane-scroll">
+              <section class="format-lab-section">
+                <div class="format-lab-section__head"><strong>教学模型</strong><span>scope</span></div>
+                <p class="format-lab-intro">用一套可读的规则观察逻辑 Tensor 如何经过分块、对齐和重排，形成一维物理 slot。</p>
+                <p class="format-lab-note"><strong>演示边界</strong><br>这里的 C0、stride 和 offset 是模型参数，不代表某个 SoC、Buffer 或 API 的真实兼容性。</p>
+              </section>
+
+              <section class="format-lab-section">
+                <div class="format-lab-section__head"><strong>输入参数</strong><span>shape / dtype / layout</span></div>
+                <div class="format-lab-fields">
+                  <fieldset class="format-lab-fieldset format-lab-field"><legend>布局模型</legend><div class="format-lab-format-tabs" data-format-layouts></div></fieldset>
+                  <fieldset class="format-lab-fieldset format-lab-field"><legend>数据类型</legend><div class="format-lab-control-row" data-format-dtypes></div></fieldset>
+                  <div class="format-lab-control-row">
+                    <div class="format-lab-field"><label for="formatRows">行数</label><div class="format-lab-stepper"><button type="button" data-step="rows" data-delta="-1" aria-label="减少行数">−</button><output id="formatRows" data-format-value="rows">12</output><button type="button" data-step="rows" data-delta="1" aria-label="增加行数">+</button></div></div>
+                    <div class="format-lab-field"><label for="formatCols">列数</label><div class="format-lab-stepper"><button type="button" data-step="cols" data-delta="-1" aria-label="减少列数">−</button><output id="formatCols" data-format-value="cols">20</output><button type="button" data-step="cols" data-delta="1" aria-label="增加列数">+</button></div></div>
+                  </div>
+                </div>
+              </section>
+
+              <section class="format-lab-section">
+                <div class="format-lab-section__head"><strong>快速场景</strong><span>presets</span></div>
+                <div class="format-lab-preset-row"><button class="btn btn-sm" type="button" data-preset="flat">连续 ND</button><button class="btn btn-sm" type="button" data-preset="fractal">NZ 尾块</button><button class="btn btn-sm" type="button" data-preset="column">DN 列优先</button></div>
+              </section>
+
+              <section class="format-lab-section">
+                <div class="format-lab-section__head"><strong>模型假设</strong><span>assumptions</span></div>
+                <dl class="format-lab-assumptions" data-format-assumptions></dl>
+              </section>
+            </div>
+          </aside>
+
+          <main class="pto-ide-frame__pane" data-ide-pane="editor-preview">
+            <header class="pto-ide-frame__pane-header">
+              <h2 class="pto-ide-frame__pane-title">Logical → Physical</h2>
+              <div class="format-lab-visual-tools"><button class="btn btn-sm btn-ghost" type="button" data-zoom="-0.1" aria-label="缩小矩阵">−</button><span class="format-lab-zoom-readout" data-format-zoom>80%</span><button class="btn btn-sm btn-ghost" type="button" data-zoom="0.1" aria-label="放大矩阵">+</button></div>
+            </header>
+            <div class="pto-ide-frame__pane-body format-lab-main-body" data-format-main></div>
+          </main>
+
+          <aside class="pto-ide-frame__pane" data-ide-pane="inspector" id="format-lab-inspector">
+            <header class="pto-ide-frame__pane-header"><h2 class="pto-ide-frame__pane-title">Model Inspector</h2><span class="pto-ide-frame__pane-meta">mapping</span></header>
+            <div class="pto-ide-frame__pane-body format-lab-inspector-scroll" data-format-inspector></div>
+          </aside>
+        </div>
+
+        <footer class="pto-ide-frame__status-strip pto-ide-frame__standalone-chrome"><span class="format-lab-status" data-format-status><strong>Ready</strong> · independent layout model</span><span class="pto-ide-frame__status-spacer"></span><span class="format-lab-status">No runtime address / API compatibility check</span></footer>
+      </div>
+    </div>
+    <div class="pto-ide-frame__floating-playback-mount" data-ide-floating-playback data-total-steps="1" data-playback-state="reading order" aria-label="Reading order playback"></div>
+  </section>
+
+  <script src="../vendor/pto-design-system/patterns/workbench-shell/pattern.js"></script>
+  <script src="../vendor/pto-design-system/patterns/floating-playback-control/pattern.js"></script>
+  <script src="../vendor/pto-design-system/patterns/ide-frame/pattern.js"></script>
+  <script>
+    (() => {
+      'use strict';
+
+      const DTYPE_OPTIONS = [
+        { value: 'float16', label: 'FP16', bytes: 2 },
+        { value: 'float32', label: 'FP32', bytes: 4 },
+        { value: 'int8', label: 'INT8', bytes: 1 },
+        { value: 'fp8_e8m0_t', label: 'FP8', bytes: 1 },
+      ];
+
+      const LAYOUTS = {
+        ND: { label: 'ND', detail: 'row major', kind: 'flat', hint: '行优先：同一行的逻辑元素连续。' },
+        DN: { label: 'DN', detail: 'column major', kind: 'flat', hint: '列优先：同一列的逻辑元素连续。' },
+        NZ: { label: 'NZ', detail: 'outer N · inner Z', kind: 'fractal', hint: '分形按外层列优先，分形内部按行优先。' },
+        ZN: { label: 'ZN', detail: 'outer Z · inner N', kind: 'fractal', hint: '分形按外层行优先，分形内部按列优先。' },
+        ZZ: { label: 'ZZ', detail: 'outer Z · inner Z', kind: 'fractal', hint: '分形按外层行优先，分形内部按行优先。' },
+        NN: { label: 'NN', detail: 'demo permutation', kind: 'demo', hint: '演示用的双列优先排列，不代表官方 format enum。' },
+      };
+
+      const DEFAULT_STATE = { layout: 'NZ', dtype: 'float16', rows: 12, cols: 20, zoom: 0.8, selectedAddress: null, cursor: -1 };
+      const state = { ...DEFAULT_STATE };
+      const root = document.querySelector('[data-ide-frame]');
+      const main = document.querySelector('[data-format-main]');
+      const inspector = document.querySelector('[data-format-inspector]');
+      const playbackMount = document.querySelector('[data-ide-floating-playback]');
+      const clamp = (value, min, max) => Math.max(min, Math.min(max, value));
+      const dtypeInfo = () => DTYPE_OPTIONS.find((item) => item.value === state.dtype) || DTYPE_OPTIONS[0];
+
+      function getInfo() {
+        const dtype = dtypeInfo();
+        const base = {
+          sizeofT: dtype.bytes,
+          alignmentBytes: 32,
+          transferBlockBytes: 32,
+          c0: 32 / dtype.bytes,
+          paddedRows: state.rows,
+          paddedCols: state.cols,
+          shapeRow0: null,
+          shapeCol0: null,
+          shapeRow1: state.rows,
+          shapeCol1: state.cols,
+          rowStride: state.cols,
+          colStride: 1,
+          innerStride: null,
+          outerStride: null,
+        };
+        if (state.layout === 'ND') return base;
+        if (state.layout === 'DN') return { ...base, rowStride: 1, colStride: state.rows };
+        if (state.layout === 'NZ') {
+          const paddedRows = Math.ceil(state.rows / 16) * 16;
+          const paddedCols = Math.ceil(state.cols / base.c0) * base.c0;
+          return { ...base, paddedRows, paddedCols, shapeRow0: 16, shapeCol0: base.c0, shapeRow1: paddedRows / 16, shapeCol1: paddedCols / base.c0, rowStride: base.c0 * 16, colStride: 1, innerStride: base.c0, outerStride: base.c0 * paddedRows };
+        }
+        if (state.layout === 'ZN') {
+          const paddedRows = Math.ceil(state.rows / base.c0) * base.c0;
+          const paddedCols = Math.ceil(state.cols / 16) * 16;
+          return { ...base, paddedRows, paddedCols, shapeRow0: base.c0, shapeCol0: 16, shapeRow1: paddedRows / base.c0, shapeCol1: paddedCols / 16, rowStride: base.c0 * paddedCols, colStride: base.c0, innerStride: base.c0, outerStride: base.c0 * 16 };
+        }
+        if (state.layout === 'ZZ') {
+          const paddedRows = Math.ceil(state.rows / 16) * 16;
+          const paddedCols = Math.ceil(state.cols / base.c0) * base.c0;
+          return { ...base, paddedRows, paddedCols, shapeRow0: 16, shapeCol0: base.c0, shapeRow1: paddedRows / 16, shapeCol1: paddedCols / base.c0, rowStride: 16 * paddedCols, colStride: 1, innerStride: base.c0, outerStride: base.c0 * 16 };
+        }
+        const paddedRows = Math.ceil(state.rows / 2) * 2;
+        const paddedCols = Math.ceil(state.cols / 16) * 16;
+        return { ...base, paddedRows, paddedCols, shapeRow0: 2, shapeCol0: 16, shapeRow1: paddedRows / 2, shapeCol1: paddedCols / 16, rowStride: 32, colStride: 2, innerStride: 2, outerStride: paddedRows * 16 };
+      }
+
+      function address(r, c, info) {
+        if (state.layout === 'ND' || state.layout === 'DN') return { idx: r * info.rowStride + c * info.colStride, ir: 0, or: r, ic: 0, oc: c };
+        const ir = r % info.shapeRow0;
+        const or = Math.floor(r / info.shapeRow0);
+        const ic = c % info.shapeCol0;
+        const oc = Math.floor(c / info.shapeCol0);
+        if (state.layout === 'NZ') return { idx: oc * info.outerStride + or * info.rowStride + ic + ir * info.innerStride, ir, or, ic, oc };
+        if (state.layout === 'ZN') return { idx: or * info.rowStride + oc * info.outerStride + ic * info.innerStride + ir, ir, or, ic, oc };
+        if (state.layout === 'ZZ') return { idx: or * info.rowStride + oc * info.outerStride + ir * info.innerStride + ic, ir, or, ic, oc };
+        return { idx: oc * info.outerStride + or * info.rowStride + ic * 2 + ir, ir, or, ic, oc };
+      }
+
+      function computeProjection() {
+        const info = getInfo();
+        const byAddress = new Map();
+        const matrixElements = [];
+        const errors = [];
+        for (let r = 0; r < info.paddedRows; r += 1) {
+          for (let c = 0; c < info.paddedCols; c += 1) {
+            const mapped = address(r, c, info);
+            const isPad = r >= state.rows || c >= state.cols;
+            const element = { r, c, isPad, logicalIndex: isPad ? null : r * state.cols + c, address: mapped, blockId: LAYOUTS[state.layout].kind === 'fractal' || state.layout === 'NN' ? `${mapped.or}:${mapped.oc}` : null };
+            if (!Number.isInteger(mapped.idx) || mapped.idx < 0 || byAddress.has(mapped.idx)) errors.push(`offset @${mapped.idx} 重复`);
+            byAddress.set(mapped.idx, element);
+            matrixElements.push(element);
+          }
+        }
+        const physicalSize = byAddress.size;
+        const maxAddress = Math.max(...byAddress.keys());
+        if (physicalSize !== info.paddedRows * info.paddedCols || maxAddress !== physicalSize - 1) errors.push('物理 slot 不是连续的一维排列');
+        const physicalSlots = Array.from({ length: maxAddress + 1 }, (_item, index) => byAddress.get(index) || { isGap: true, address: { idx: index } });
+        return { info, matrixElements, physicalSlots, byAddress, physicalSize, maxAddress, errors };
+      }
+
+      const dims = (info) => LAYOUTS[state.layout].kind === 'flat'
+        ? `${info.paddedRows} × ${info.paddedCols}`
+        : `${info.shapeRow0} × ${info.shapeCol0} inner · ${info.shapeRow1} × ${info.shapeCol1} outer`;
+      const formula = (info) => {
+        if (state.layout === 'ND') return 'addr(r,c) = r × rowStride + c × colStride';
+        if (state.layout === 'DN') return 'addr(r,c) = r × 1 + c × rows';
+        if (state.layout === 'NZ') return `addr = floor(c/${info.c0})×${info.outerStride} + floor(r/16)×${info.rowStride} + (c%${info.c0}) + (r%16)×${info.innerStride}`;
+        if (state.layout === 'ZN') return `addr = floor(r/${info.c0})×${info.rowStride} + floor(c/16)×${info.outerStride} + (c%16)×${info.innerStride} + (r%${info.c0})`;
+        if (state.layout === 'ZZ') return `addr = floor(r/16)×${info.rowStride} + floor(c/${info.c0})×${info.outerStride} + (r%16)×${info.innerStride} + (c%${info.c0})`;
+        return `addr = floor(c/16)×${info.outerStride} + floor(r/2)×${info.rowStride} + (c%16)×2 + (r%2)`;
+      };
+
+      function cellPosition(item, info) {
+        const pitch = 38;
+        const fractalGap = LAYOUTS[state.layout].kind === 'fractal' || state.layout === 'NN' ? 16 : 0;
+        return { x: item.c * pitch + (fractalGap ? Math.floor(item.c / info.shapeCol0) * fractalGap : 0), y: item.r * pitch + (fractalGap ? Math.floor(item.r / info.shapeRow0) * fractalGap : 0) };
+      }
+
+      function stageSize(info) {
+        const pitch = 38;
+        const fractalGap = LAYOUTS[state.layout].kind === 'fractal' || state.layout === 'NN' ? 16 : 0;
+        return { width: info.paddedCols * pitch - 4 + (fractalGap ? (info.shapeCol1 - 1) * fractalGap : 0), height: info.paddedRows * pitch - 4 + (fractalGap ? (info.shapeRow1 - 1) * fractalGap : 0) };
+      }
+
+      function overlaySvg(projection) {
+        const info = projection.info;
+        const size = stageSize(info);
+        const fragmented = LAYOUTS[state.layout].kind === 'fractal' || state.layout === 'NN';
+        const step = 38;
+        const cellCenter = 17;
+        const fractalGap = fragmented ? 16 : 0;
+        const stableStroke = (3 / state.zoom).toFixed(2);
+        const xAt = (column, inset = 0) => column * step + inset + (fractalGap ? Math.floor(column / info.shapeCol0) * fractalGap : 0);
+        const yAt = (row, inset = 0) => row * step + inset + (fractalGap ? Math.floor(row / info.shapeRow0) * fractalGap : 0);
+        const groups = fragmented
+          ? Array.from(new Set(projection.matrixElements.map((item) => item.blockId))).map((blockId) => projection.matrixElements.filter((item) => item.blockId === blockId))
+          : [projection.matrixElements];
+        const routes = groups.map((items) => {
+          const ordered = items.slice().sort((a, b) => a.address.idx - b.address.idx);
+          const first = ordered[0];
+          const last = ordered[ordered.length - 1];
+          const minR = Math.min(...items.map((item) => item.r));
+          const maxR = Math.max(...items.map((item) => item.r));
+          const minC = Math.min(...items.map((item) => item.c));
+          const maxC = Math.max(...items.map((item) => item.c));
+          const framePad = fragmented ? 7 : 0;
+          const left = Math.max(1, xAt(minC, -framePad));
+          const right = Math.min(size.width - 1, xAt(maxC + 1, -4 + framePad) - fractalGap);
+          const top = Math.max(1, yAt(minR, -framePad));
+          const bottom = Math.min(size.height - 1, yAt(maxR + 1, -4 + framePad) - fractalGap);
+          const start = [xAt(first.c, cellCenter), yAt(first.r, cellCenter)];
+          const end = [xAt(last.c, cellCenter), yAt(last.r, cellCenter)];
+          const columnMajor = ['ZN', 'NN', 'DN'].includes(state.layout);
+          const pathPoints = columnMajor
+            ? [[xAt(minC, cellCenter), yAt(minR, cellCenter)], [xAt(minC, cellCenter), yAt(maxR, cellCenter)], [xAt(maxC, cellCenter), yAt(minR, cellCenter)], [xAt(maxC, cellCenter), yAt(maxR, cellCenter)]]
+            : [[xAt(minC, cellCenter), yAt(minR, cellCenter)], [xAt(maxC, cellCenter), yAt(minR, cellCenter)], [xAt(minC, cellCenter), yAt(maxR, cellCenter)], [xAt(maxC, cellCenter), yAt(maxR, cellCenter)]];
+          pathPoints[0] = start;
+          pathPoints[pathPoints.length - 1] = end;
+          const pointAlong = (a, b, distance) => {
+            const dx = b[0] - a[0];
+            const dy = b[1] - a[1];
+            const length = Math.hypot(dx, dy);
+            if (!length) return { x: a[0], y: a[1], angle: 0 };
+            const ratio = Math.min(.34, distance / length);
+            return { x: a[0] + dx * ratio, y: a[1] + dy * ratio, angle: Math.atan2(dy, dx) * 180 / Math.PI };
+          };
+          const startChevron = pointAlong(pathPoints[0], pathPoints[1], 14);
+          const middleChevron = {
+            x: (pathPoints[1][0] + pathPoints[2][0]) / 2,
+            y: (pathPoints[1][1] + pathPoints[2][1]) / 2,
+            angle: Math.atan2(pathPoints[2][1] - pathPoints[1][1], pathPoints[2][0] - pathPoints[1][0]) * 180 / Math.PI,
+          };
+          const path = pathPoints.map(([x, y], index) => `${index ? 'L' : 'M'} ${x.toFixed(2)} ${y.toFixed(2)}`).join(' ');
+          return { first, start, end, left, right, top, bottom, path, chevrons: [startChevron, middleChevron] };
+        }).filter((route) => route.first).sort((a, b) => a.first.address.idx - b.first.address.idx);
+        const outlines = routes.map((route) => `<rect class="format-fractal-outline" data-format-block-outline="${route.first.blockId || 'all'}" x="${route.left}" y="${route.top}" width="${Math.max(1, route.right - route.left)}" height="${Math.max(1, route.bottom - route.top)}" style="stroke-width:${stableStroke}px"></rect>`).join('');
+        const paths = routes.map((route) => `<path class="format-fractal-path" d="${route.path}" style="stroke-width:${stableStroke}px"></path>`).join('');
+        const connectors = routes.slice(0, -1).map((route, index) => { const next = routes[index + 1]; return `<path class="format-fractal-connector" d="M ${route.end[0]} ${route.end[1]} L ${next.start[0]} ${next.start[1]}" style="stroke-width:${stableStroke}px"></path>`; }).join('');
+        const chevronScale = (1 / state.zoom).toFixed(3);
+        const chevrons = routes.flatMap((route) => route.chevrons).map((chevron) => `<path class="format-reading-chevron" d="M -8 -5 L -3 0 L -8 5 M -1 -5 L 4 0 L -1 5" transform="translate(${chevron.x} ${chevron.y}) rotate(${chevron.angle}) scale(${chevronScale})"></path>`).join('');
+        return `<svg class="format-layout-arrows" viewBox="0 0 ${size.width} ${size.height}" aria-label="${LAYOUTS[state.layout].label} reading path">${outlines}${paths}${connectors}${chevrons}</svg>`;
+      }
+
+      function renderControls(info) {
+        const layoutRoot = document.querySelector('[data-format-layouts]');
+        layoutRoot.innerHTML = Object.entries(LAYOUTS).map(([key, item]) => `<button class="btn btn-sm${state.layout === key ? ' is-selected' : ''}" type="button" data-layout="${key}" aria-pressed="${state.layout === key}">${item.label}<small>${item.detail}</small></button>`).join('');
+        layoutRoot.querySelectorAll('[data-layout]').forEach((button) => button.addEventListener('click', () => { state.layout = button.dataset.layout; resetSelection(); render(); }));
+        const dtypeRoot = document.querySelector('[data-format-dtypes]');
+        dtypeRoot.innerHTML = DTYPE_OPTIONS.map((item) => `<button class="btn btn-sm${state.dtype === item.value ? ' is-selected' : ''}" type="button" data-dtype="${item.value}" aria-pressed="${state.dtype === item.value}">${item.label}</button>`).join('');
+        dtypeRoot.querySelectorAll('[data-dtype]').forEach((button) => button.addEventListener('click', () => { state.dtype = button.dataset.dtype; resetSelection(); render(); }));
+        document.querySelector('[data-format-value="rows"]').textContent = state.rows;
+        document.querySelector('[data-format-value="cols"]').textContent = state.cols;
+        document.querySelector('[data-format-zoom]').textContent = `${Math.round(state.zoom * 100)}%`;
+        document.querySelector('[data-format-assumptions]').innerHTML = [
+          ['地址对齐', `${info.alignmentBytes}B`],
+          ['搬运粒度', `${info.transferBlockBytes}B DataBlock`],
+          ['布局类型', LAYOUTS[state.layout].kind === 'flat' ? 'contiguous' : LAYOUTS[state.layout].kind],
+          ['stride 语义', LAYOUTS[state.layout].kind === 'flat' ? 'logical elements' : 'tile + inner offset'],
+        ].map(([label, value]) => `<div class="format-lab-assumption"><span>${label}</span><code>${value}</code></div>`).join('');
+      }
+
+      function logicalCells(projection) {
+        return projection.matrixElements.map((item) => {
+          const pos = cellPosition(item, projection.info);
+          const label = item.isPad ? 'PAD' : `L${item.logicalIndex}`;
+          return `<button class="format-lab-cell format-lab-logical-cell${item.isPad ? ' is-pad' : ''}" type="button" style="--format-x:${pos.x}px;--format-y:${pos.y}px" data-address="${item.address.idx}" data-block="${item.blockId || ''}" aria-label="${item.isPad ? `Padding 单元 (${item.r}, ${item.c})` : `逻辑单元 (${item.r}, ${item.c})，L${item.logicalIndex}`}" ><span class="format-lab-logical-index">${label}</span><small class="format-lab-coordinate">(${item.r},${item.c})</small></button>`;
+        }).join('');
+      }
+
+      function physicalSlots(projection) {
+        return projection.physicalSlots.map((item, offset) => {
+          if (item.isGap) return `<span class="format-lab-cell format-lab-physical-cell is-gap"><small>@${offset}</small><span>gap</span></span>`;
+          const label = item.isPad ? 'PAD' : `L${item.logicalIndex}`;
+          return `<button class="format-lab-cell format-lab-physical-cell${item.isPad ? ' is-pad' : ''}" type="button" data-address="${offset}" aria-label="物理 slot @${offset}，${item.isPad ? 'Padding' : `逻辑单元 (${item.r}, ${item.c})`}" ><span class="format-lab-physical-offset">@${offset}</span><small>${label}</small><small>(${item.r},${item.c})</small></button>`;
+        }).join('');
+      }
+
+      function renderMain(projection) {
+        const info = projection.info;
+        const size = stageSize(info);
+        const hostWidth = size.width * state.zoom;
+        const hostHeight = size.height * state.zoom;
+        main.innerHTML = `
+          <div class="format-lab-context-bar"><div class="format-lab-context-copy"><strong>${LAYOUTS[state.layout].label} · ${dtypeInfo().label} · ${state.rows} × ${state.cols}</strong><span>${LAYOUTS[state.layout].hint}</span></div><div class="format-lab-context-meta"><span class="format-lab-context-label">Teaching model</span><span class="format-lab-context-label is-neutral">padded ${info.paddedRows} × ${info.paddedCols}</span></div></div>
+          <section class="format-lab-visual-shell"><div class="format-lab-visual-head"><strong>2D logical tensor</strong><span>${state.layout} · L# coordinate</span></div><div class="format-lab-legend"><span class="format-lab-legend-item"><i class="format-lab-legend-mark is-block"></i>tile / fractal</span><span class="format-lab-legend-item"><i class="format-lab-legend-mark is-pad"></i>PAD</span><span class="format-lab-legend-item"><i class="format-lab-legend-mark is-current"></i>reading cursor</span></div><div class="format-lab-canvas-scroll"><div class="format-lab-grid-zoom-host" style="width:${hostWidth}px;height:${hostHeight}px"><div class="format-lab-grid-zoom" style="transform:scale(${state.zoom})"><div class="format-lab-grid-stage" style="width:${size.width}px;height:${size.height}px">${overlaySvg(projection)}<div class="format-lab-grid">${logicalCells(projection)}</div></div></div></div></div></section>
+          <section class="format-lab-physical-shell"><div class="format-lab-visual-head"><strong>1D physical slots</strong><span>offset 0 … ${projection.maxAddress} · element slot</span></div><div class="format-lab-legend"><span class="format-lab-legend-item">按 ${LAYOUTS[state.layout].label} 的 reading order 展开</span><span class="format-lab-legend-item">不表示运行时真实地址</span></div><div class="format-lab-ribbon-scroll"><div class="format-lab-ribbon">${physicalSlots(projection)}</div></div></section>`;
+        bindCells(projection);
+      }
+
+      function renderInspector(projection) {
+        const info = projection.info;
+        const logicalSize = state.rows * state.cols;
+        const padding = projection.physicalSize - logicalSize;
+        const overhead = projection.physicalSize / logicalSize;
+        const selected = state.selectedAddress == null ? null : projection.byAddress.get(state.selectedAddress);
+        const ruleRows = LAYOUTS[state.layout].kind === 'flat'
+          ? [['logical stride', `row=${info.rowStride} elements · col=${info.colStride} element`], ['address mapping', formula(info)]]
+          : [['inner tile', `${info.shapeRow0} × ${info.shapeCol0} elements · C0=${info.c0}`], ['outer tile', `${info.shapeRow1} × ${info.shapeCol1} blocks`], ['storage step', `inner=${info.innerStride} · outer=${info.outerStride} elements`], ['address mapping', formula(info)]];
+        inspector.innerHTML = `
+          <section class="inspector-section"><div class="format-lab-inspector-head"><strong>模型结论</strong><span>derived</span></div><div class="format-lab-metrics"><div class="format-lab-metric"><span>逻辑元素</span><strong>${logicalSize}</strong></div><div class="format-lab-metric"><span>物理 slot</span><strong class="${padding ? 'is-warning' : ''}">${projection.physicalSize}</strong></div><div class="format-lab-metric"><span>Padding</span><strong class="${padding ? 'is-warning' : ''}">${padding} elements</strong></div><div class="format-lab-metric"><span>模型开销</span><strong class="${overhead > 1 ? 'is-warning' : ''}">${overhead.toFixed(2)}×</strong></div><div class="format-lab-metric"><span>内部一致性</span><strong>${projection.errors.length ? '需检查' : '通过'}</strong></div></div></section>
+          <section class="inspector-section"><div class="format-lab-inspector-head"><strong>Layout contract</strong><span>${LAYOUTS[state.layout].kind}</span></div><div class="format-lab-model-rule">${ruleRows.map(([label, value]) => `<div class="format-lab-rule-row"><span>${label}</span><code>${value}</code></div>`).join('')}</div></section>
+          <section class="inspector-section"><div class="format-lab-inspector-head"><strong>Selected mapping</strong><span>trace</span></div><div class="format-lab-trace" data-format-trace>${selected ? `<strong>${selected.isPad ? 'PAD' : `L${selected.logicalIndex}`}</strong> · logical (${selected.r},${selected.c})<br>tile (${selected.address.or},${selected.address.oc}) · inner (${selected.address.ir},${selected.address.ic})<br>model slot <strong>@${selected.address.idx}</strong> · byte offset <strong>@${selected.address.idx * info.sizeofT}B</strong>` : '选择一个逻辑单元或物理 slot，查看坐标、tile 和模型 offset。'}</div></section>
+          <section class="inspector-section"><div class="format-lab-inspector-head"><strong>Compatibility boundary</strong><span>not checked</span></div><p class="format-lab-intro">当前页面只验证模型内部的 offset 唯一性和连续性，不验证具体 SoC、Buffer、DataCopy 或 Mmad 的合法性。</p></section>`;
+      }
+
+      function resetSelection() { stopPlayback(); state.selectedAddress = null; state.cursor = -1; }
+      function paintSelection(projection) {
+        root.querySelectorAll('[data-address]').forEach((cell) => cell.classList.toggle('is-active', Number(cell.dataset.address) === state.selectedAddress));
+        root.querySelectorAll('[data-block]').forEach((cell) => cell.classList.toggle('is-block-active', state.selectedAddress != null && cell.dataset.block === String(projection.byAddress.get(state.selectedAddress)?.blockId || '')));
+      }
+
+      function bindCells(projection) {
+        root.querySelectorAll('[data-address]').forEach((cell) => {
+          cell.addEventListener('mouseenter', () => { state.selectedAddress = Number(cell.dataset.address); renderInspector(projection); paintSelection(projection); });
+          cell.addEventListener('focus', () => { state.selectedAddress = Number(cell.dataset.address); renderInspector(projection); paintSelection(projection); });
+          cell.addEventListener('click', () => { state.selectedAddress = Number(cell.dataset.address); state.cursor = projection.physicalSlots.findIndex((item) => item.address?.idx === state.selectedAddress); renderInspector(projection); paintSelection(projection); });
+        });
+      }
+
+      function paintPlayback(projection) {
+        root.querySelectorAll('.format-lab-logical-cell').forEach((cell) => cell.classList.remove('is-reading-current', 'is-reading-complete', 'is-reading-trail-1', 'is-reading-trail-2'));
+        if (state.cursor < 0) return;
+        const address = projection.physicalSlots[state.cursor]?.address?.idx;
+        state.selectedAddress = address == null ? null : address;
+        root.querySelectorAll('.format-lab-logical-cell').forEach((cell) => {
+          const index = projection.physicalSlots.findIndex((item) => item.address?.idx === Number(cell.dataset.address));
+          if (index < 0 || index > state.cursor) return;
+          const age = state.cursor - index;
+          cell.classList.add(age === 0 ? 'is-reading-current' : age === 1 ? 'is-reading-trail-1' : age === 2 ? 'is-reading-trail-2' : 'is-reading-complete');
+        });
+        renderInspector(projection);
+        paintSelection(projection);
+      }
+
+      let playbackTimer = null;
+      let playbackPlaying = false;
+      function stopPlayback() { if (playbackTimer) window.clearTimeout(playbackTimer); playbackTimer = null; playbackPlaying = false; }
+      function tickPlayback() {
+        if (!playbackPlaying) return;
+        state.cursor += 1;
+        if (state.cursor >= getProjection().physicalSlots.length) { state.cursor = 0; }
+        const current = getProjection();
+        paintPlayback(current);
+        playbackTimer = window.setTimeout(tickPlayback, 260);
+      }
+      let projectCache = null;
+      function getProjection() { return projectCache || (projectCache = computeProjection()); }
+
+      function attachPlayback() {
+        const control = playbackMount?.querySelector('.pto-floating-playback');
+        if (!control) return;
+        const helper = window.PtoFloatingPlaybackControl;
+        const id = (suffix) => control.querySelector(`[id$="-${suffix}"]`);
+        const play = id('play');
+        const back = id('step-back');
+        const forward = id('step-fwd');
+        const replay = id('replay');
+        const scrubber = control.querySelector('.pto-floating-playback__scrubber');
+        const syncPlayback = () => helper?.sync?.({ root: control, playing: playbackPlaying });
+        play?.addEventListener('click', () => { playbackPlaying = !playbackPlaying; if (playbackPlaying) tickPlayback(); else stopPlayback(); syncPlayback(); });
+        back?.addEventListener('click', () => { stopPlayback(); state.cursor = clamp(state.cursor - 1, 0, Math.max(0, getProjection().physicalSlots.length - 1)); paintPlayback(getProjection()); syncPlayback(); });
+        forward?.addEventListener('click', () => { stopPlayback(); state.cursor = clamp(state.cursor + 1, 0, Math.max(0, getProjection().physicalSlots.length - 1)); paintPlayback(getProjection()); syncPlayback(); });
+        replay?.addEventListener('click', () => { stopPlayback(); state.cursor = 0; paintPlayback(getProjection()); syncPlayback(); });
+        scrubber?.addEventListener('input', () => { stopPlayback(); state.cursor = Number(scrubber.value) || 0; paintPlayback(getProjection()); syncPlayback(); });
+      }
+
+      function render() {
+        projectCache = null;
+        const projection = getProjection();
+        playbackMount.dataset.totalSteps = String(Math.max(1, projection.physicalSlots.length));
+        const scrubber = playbackMount.querySelector('.pto-floating-playback__scrubber');
+        const counter = playbackMount.querySelector('.pto-floating-playback__counter');
+        if (scrubber) {
+          scrubber.max = String(Math.max(1, projection.physicalSlots.length) - 1);
+          scrubber.value = String(Math.max(0, state.cursor));
+        }
+        if (counter) counter.textContent = `${Math.max(0, state.cursor)} / ${Math.max(1, projection.physicalSlots.length) - 1}`;
+        renderControls(projection.info);
+        renderMain(projection);
+        renderInspector(projection);
+        paintSelection(projection);
+        document.querySelector('[data-format-status]').innerHTML = `<strong>Ready</strong> · ${LAYOUTS[state.layout].label} · ${dtypeInfo().label} · ${projection.physicalSize} model slots`;
+      }
+
+      document.querySelectorAll('[data-step]').forEach((button) => button.addEventListener('click', () => { const key = button.dataset.step; state[key] = clamp(state[key] + Number(button.dataset.delta), 1, 24); resetSelection(); render(); }));
+      document.querySelectorAll('[data-zoom]').forEach((button) => button.addEventListener('click', () => { state.zoom = clamp(Number((state.zoom + Number(button.dataset.zoom)).toFixed(1)), .4, 1.2); render(); }));
+      document.querySelectorAll('[data-preset]').forEach((button) => button.addEventListener('click', () => { const presets = { flat: { layout: 'ND', dtype: 'float16', rows: 8, cols: 12 }, fractal: { layout: 'NZ', dtype: 'float16', rows: 12, cols: 20 }, column: { layout: 'DN', dtype: 'float32', rows: 10, cols: 14 } }; Object.assign(state, presets[button.dataset.preset], { zoom: .8 }); resetSelection(); render(); }));
+      document.querySelector('[data-format-reset]').addEventListener('click', () => { Object.assign(state, DEFAULT_STATE); resetSelection(); render(); });
+      document.querySelector('[data-format-theme]').addEventListener('click', () => { const current = document.documentElement.dataset.theme || 'light'; document.documentElement.dataset.theme = current === 'dark' ? 'light' : 'dark'; });
+
+      root.addEventListener('pointermove', (event) => { const rect = root.getBoundingClientRect(); root.style.setProperty('--ide-cursor-x', `${event.clientX - rect.left}px`); root.style.setProperty('--ide-cursor-y', `${event.clientY - rect.top}px`); root.style.setProperty('--ide-cursor-alpha', '.22'); root.style.setProperty('--ide-dot-opacity', '.34'); });
+      root.addEventListener('pointerleave', () => { root.style.setProperty('--ide-cursor-alpha', '0'); root.style.setProperty('--ide-dot-opacity', '0'); });
+
+      render();
+      window.PtoIdeFrame?.initAll?.();
+      window.requestAnimationFrame(attachPlayback);
+    })();
+  </script>
+</body>
+</html>
