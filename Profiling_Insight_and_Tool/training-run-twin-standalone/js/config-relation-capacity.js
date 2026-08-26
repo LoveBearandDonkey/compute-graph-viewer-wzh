@@ -17,10 +17,12 @@
    router / emb / head 六项，各自除以真正切它的那一维：
        路由专家  ÷ EP × TP      ← MoE 下减容器的主力
        其余权重  ÷ TP
+       词表 Emb/Head  vocab_emb_dp 开着时**不切 TP**，每卡背满（升级计划行 11）
        所有权重  ÷ PP（体现为「这张卡只背本 stage 那几层」）
-       DP        不除任何东西   ← 见 verdict 里那句话
+       DP        只切优化器状态那一段，且仅在优化器并行开着时（升级计划行 10）
    DP 那条是最反直觉也最有用的一条：把 DP 从 2 拉到 8，Total Rank 翻两番、集群矩阵
-   多出几百格，容量柱纹丝不动。「显存不够就加卡」只有加 TP/PP/EP 时才成立。
+   多出几百格，权重 / 梯度 / 激活纹丝不动。「显存不够就加卡」只有加 TP/PP/EP 时才成立
+   —— 唯一的例外是优化器并行（ZeRO-1），它让 DP 切得到那 12 B/参数的一段。
 
    ── 三条不能省的建模细节 ────────────────────────────────────────────────
    1. 各 stage 层数不等（46/4 → 12,12,11,11），且 stage0 多背 embedding、末 stage
@@ -57,8 +59,32 @@
     bytesWeight: 2,       // bf16
     bytesGrad: 2,         // bf16
     bytesOptim: 12,       // Adam：fp32 master weight + momentum + variance
-    actPerLayer: 34,      // 每层激活 ≈ 34·mb·s·h 字节（开 SP、不重计算）
   };
+
+  /* ── 每层激活的系数 ───────────────────────────────────────────────────────
+     单位是「字节 / (mb · S/CP · H · 层)」。activationBytes 统一再除以 TP，所以
+     本身不含 /t 的那两档要先把 t 乘回来，别看着别扭。
+     来源：Korthikanti et al. 2022《Reducing Activation Recomputation in Large
+     Transformer Models》§4 的 sbh 系数式 ——
+       不重计算 · 仅 TP       每卡 sbh·(10 + 24/t)   → 系数 10·t + 24
+       不重计算 · TP + SP     每卡 sbh·34/t          → 系数 34
+       全重计算 · TP + SP     每卡 sbh·2/t           → 系数 2
+       全重计算 · 仅 TP       每卡 sbh·2             → 系数 2·t
+     （全重计算只留每层的**输入**，反向再算一遍；那份输入正是 SP 能切走的东西，
+       所以关了 SP 它在 TP 组内是整份复制的。）
+     TP=1 时四档收敛成两个数 34 与 2，与 SP 无关 —— 这正是它该有的样子。
+     ⚠️ 5·a·s/h 那一项（attention 的平方项）一直未计入，本次也没补：它只在不走
+     FlashAttention 的实现里才显著，而本页两个模型都走 FA。
+
+     这两个开关**原先写死在 config-relation-yaml.js 里**（recompute: True /
+     use_seq_parallel: False），而这里按相反的假设（不重计算 + 开 SP）取 34 ——
+     同一份配置两套故事，是升级计划行 9 要治的病。现在两边读同一个 config 字段。 */
+  function actPerLayer(topo) {
+    const t = Math.max(1, topo.counts.tp);
+    const cfg = topo.config || {};
+    if (cfg.recompute) return cfg.seqParallel ? 2 : 2 * t;
+    return cfg.seqParallel ? 34 : 10 * t + 24;
+  }
 
   /* ══ 运行时开销的四项系数 ═══════════════════════════════════════════════
      这四个数是**经验值，待实测标定**。标定方法（写在口径浮层脚注里，别只留在
@@ -74,6 +100,12 @@
     wsFactor: 2,        // MoE permute/unpermute：进出各一份临时区
     wsFloorGB: 1.0,     // 纯 dense stage 由 FA 之类兜底的 workspace 下限
     fragRatio: 0.05,    // caching allocator 碎片，按已用量
+    /* FSDP2 前反向每算到一层，都要把这一层的完整权重 all-gather 回来（算完即弃，
+       反向再来一次）。同时在手的不止一层：为了让通信压住计算，实现会预取下一层 ——
+       PyTorch FSDP2 与 MindSpeed 的默认都是 1 层预取，即峰值同时有 2 份。
+       ⚠️ 与 MOE_SHARD_MIN 一样是**待实测标定**的口径常量：把 fsdp2 档跑起来，
+       看 Device 侧的临时分配峰值是不是 2 × 单层权重。 */
+    fsdpPrefetch: 2,
   };
 
   /* config 里那两个字段名与 BASIS 的键名不同（一个是配置项名、一个是口径量名），
@@ -390,37 +422,126 @@
     });
   }
 
-  /* ── 参数量：逐层分算，每项除以真正切它的那一维 ───────────────────────── */
+  /* ── 参数量：逐层分算，每项除以真正切它的那一维 ─────────────────────────
+     返回的是一份**拆分**而不是一个总数：优化器状态那一段的分母与权重/梯度不同
+     （见 shardPlan），而路由专家与其余权重的分母又彼此不同，合成一个数就再也
+     拆不开了。
+       total   这张卡上的参数量（权重与梯度按它算）
+       expert  其中的路由专家部分 —— 它只在 EDP 维上复制，优化器分片的域比其余权重
+               小一个 EP 倍
+       unit    这张卡上**最大的一个 FSDP 分片单元**的参数量（一层，或首尾 stage 的
+               词表那一块）。只有 fsdp2 档用得上：它决定 all-gather 暂存要多大 ——
+               FSDP 是逐单元 unshard 的，峰值由最大的那一个定，不是由总量定。 */
   function paramsOfStage(topo, stage) {
     const { preset, counts, layers, stages } = topo;
+    const cfg = topo.config || {};
     const seg = stages[stage];
-    if (!seg || seg.count <= 0) return 0;
+    if (!seg || seg.count <= 0) return { total: 0, expert: 0, unit: 0 };
 
     const H = preset.hidden;
     const tp = Math.max(1, counts.tp);
-    let sharded = 0;   // 沿 h / intermediate 被 TP 切的部分
-    let intact = 0;    // router 这类不切的小项
+    let sharded = 0;      // 沿 h / intermediate 被 TP 切的部分
+    let expert = 0;       // 路由专家：同样被 TP 切，但优化器分片的域是 EDP 而非整个 DP
+    let intact = 0;       // router 这类不切的小项
+    let replicated = 0;   // vocab_emb_dp 下**不被 TP 切**的词表矩阵
+    let layerMax = 0;     // 单层在这张卡上的参数量（取本 stage 里最大的一层）
 
     for (let l = seg.lo; l <= seg.hi; l += 1) {
       const layer = layers[l];
       if (!layer) continue;
+      const before = sharded + expert + intact;
       // Attention：q/k/v/o 四个 [H,H]。TP 切头，PP 已经体现在「只遍历本 stage 的层」。
       sharded += 4 * H * H;
       if (layer.ffn === "dense") {
         sharded += 3 * H * preset.denseIntermediate;   // SwiGLU：gate/up/down
       } else {
         // 路由专家：这张卡只持有 EP 分到的那几个（expertsPerEpRank = routed / EP）
-        sharded += counts.expertsPerEpRank * 3 * H * preset.moeIntermediate;
+        expert += counts.expertsPerEpRank * 3 * H * preset.moeIntermediate;
         // 共享专家：在 EP 域内复制，每张卡都有一份完整的
         sharded += counts.sharedExpert * 3 * H * preset.moeIntermediate;
         intact += H * counts.routedExpert;             // router / gate，量级可忽略但别漏
       }
+      // MoE 层比 dense 层重得多，混合 stage 里 all-gather 的峰值由重的那种定
+      layerMax = Math.max(layerMax, sharded + expert + intact - before);
     }
-    // Embedding 落在 stage0，LM Head 落在末 stage —— 首尾两段天然比中间重
-    if (stage === 0) sharded += preset.vocab * H;
-    if (stage === counts.pp - 1) sharded += preset.vocab * H;
+    /* Embedding 落在 stage0，LM Head 落在末 stage —— 首尾两段天然比中间重。
+       切不切 TP 由 vocab_emb_dp 决定（升级计划行 11）：开着时词表在 TP 组内整份
+       复制，每张卡背满 vocab×H；关掉才沿词表维切成 TP 份。原先这里无条件 ÷TP，
+       而 yaml 写的是 True —— 两边正好相反，TP=1 时看不出来，一提 TP 就错。 */
+    const embHead = (stage === 0 ? preset.vocab * H : 0)
+      + (stage === counts.pp - 1 ? preset.vocab * H : 0);
+    if (cfg.vocabEmbDp) replicated += embHead; else sharded += embHead;
 
-    return sharded / tp + intact;
+    const expertOnCard = expert / tp;
+    /* 词表那一块自成一个 FSDP 单元，且往往比一层还大（388M vs 一层几十 M）——
+       首尾两个 stage 的 all-gather 峰值由它定，不是由 transformer 层定。
+       vocab_emb_dp 开着时它不被 TP 切，这里跟着 embHead 的去向走。 */
+    const embOnCard = cfg.vocabEmbDp ? embHead : embHead / tp;
+    return {
+      total: sharded / tp + intact + replicated + expertOnCard,
+      expert: expertOnCard,
+      unit: Math.max(layerMax / tp, embOnCard),
+    };
+  }
+
+  /* ── 优化器状态的两个分母 ────────────────────────────────────────────────
+     六段里唯一被 DP 切得到的一段（MindSpore 的 enable_parallel_optimizer 就是
+     ZeRO-1：只切优化器状态，梯度仍是整份 all-reduce）。分母有两个，因为「同一份
+     参数被复制了多少份」对专家和其余权重不是一个数：
+       路由专家   只在 EDP 维上复制                     → ÷ EDP
+       其余权重   在整个数据并行域上复制（EDP × EP）    → ÷ EDP×EP
+     写成 EDP×EP 而不是 DP，是为了让**两个 EP 口径给出同一个数**：切出档
+     EDP×EP = DP，正交档 EDP×EP = DP×EP —— 后者的 attention 权重确实也在 EP 轴上
+     复制了一遍。两档说的本来就是同一批卡，容量柱不该跟着读法变。 */
+  const NO_SHARD = { other: 1, expert: 1 };
+
+  /* 数据并行维上的两个分母。**三档共用这一组**（升级计划行 15）——
+     ZeRO-1 与 FSDP2 切的是同一维，差别只在「切哪几段」，不在切成几份。 */
+  function dpShards(topo) {
+    const c = topo.counts;
+    const expert = Math.max(1, c.edp);
+    return { expert, other: expert * Math.max(1, c.ep) };
+  }
+
+  /* 哪几段被切：关=一段都不切；ZeRO-1=只切优化器状态；FSDP2=权重/梯度/优化器全切
+     （ZeRO-3 口径）。返回每一段各自该用的分母，调用处不必再判档。
+     ⚠️ 兼容读法：老配置里这枚是布尔 parallelOptimizer，true 等价于 "zero1" ——
+     只在这一处折算，别在下游再写第二遍。 */
+  function shardPlan(topo) {
+    const cfg = topo.config || {};
+    const mode = cfg.shardMode || (cfg.parallelOptimizer ? "zero1" : "none");
+    const d = dpShards(topo);
+    if (mode === "fsdp2") return { mode, weight: d, grad: d, optim: d };
+    if (mode === "none") return { mode, weight: NO_SHARD, grad: NO_SHARD, optim: NO_SHARD };
+    return { mode: "zero1", weight: NO_SHARD, grad: NO_SHARD, optim: d };
+  }
+
+  /* 一段参数按它自己的两个分母折成字节。专家与其余权重分母不同，合成一个数就再也
+     拆不开 —— 这正是 paramsOfStage 返回 { total, expert } 而不是一个总数的理由。 */
+  function shardedBytes(p, shards, bytes) {
+    return ((p.total - p.expert) / shards.other + p.expert / shards.expert) * bytes;
+  }
+
+  /* FSDP2 的 all-gather 暂存：前反向每算到一个分片单元，都要把它的完整权重收回来，
+     算完即弃、反向再来一次。峰值由**最大的那一个单元**乘预取深度定（见 parts.unit），
+     不是由这张卡的总参数量定 —— 后者会高估好几个数量级。
+     只有 fsdp2 档有这一段：ZeRO-1 的 all-gather 发生在优化器更新之后、按 DP 分片
+     收回权重，那份权重本来就常驻，不额外占峰值。 */
+  function unshardBytes(topo, parts) {
+    if (shardPlan(topo).mode !== "fsdp2") return 0;
+    return parts.unit * RUNTIME.fsdpPrefetch * BASIS.bytesWeight;
+  }
+
+  /* 词表那一块（Embedding 或 LM Head 之一）在一张卡上折成多少 GB —— 口径浮层的
+     「首尾更重」那一行要用。走与上面完全相同的两条口径，别在那里再算一遍。 */
+  function embHeadBytes(topo) {
+    const { preset, counts } = topo;
+    const params = preset.vocab * preset.hidden
+      / (topo.config && topo.config.vocabEmbDp ? 1 : Math.max(1, counts.tp));
+    const plan = shardPlan(topo);
+    return params / plan.weight.other * BASIS.bytesWeight
+      + params / plan.grad.other * BASIS.bytesGrad
+      + params / plan.optim.other * BASIS.bytesOptim;
   }
 
   /* ── 激活：1F1B 下 stage s 同时压着 (PP−s) 份 micro-batch ──────────────── */
@@ -429,7 +550,7 @@
     const seg = stages[stage];
     if (!seg || seg.count <= 0) return 0;
     const inflight = Math.max(1, counts.pp - stage);
-    return BASIS.actPerLayer
+    return actPerLayer(topo)
       * BASIS.microBatch
       * (BASIS.seq / Math.max(1, counts.cp))
       * preset.hidden
@@ -472,10 +593,15 @@
   }
 
   function measure(topo, stage) {
-    const params = paramsOfStage(topo, stage);
-    const weight = params * BASIS.bytesWeight;
-    const grad = params * BASIS.bytesGrad;
-    const optim = params * BASIS.bytesOptim;
+    const parts = paramsOfStage(topo, stage);
+    const params = parts.total;
+    /* 三段各按自己的分母折字节（升级计划行 15）：ZeRO-1 只有 optim 被切，
+       FSDP2 三段一起切。改前 weight / grad 是无条件的 params × B —— 那句话
+       只在前两档成立。 */
+    const plan = shardPlan(topo);
+    const weight = shardedBytes(parts, plan.weight, BASIS.bytesWeight);
+    const grad = shardedBytes(parts, plan.grad, BASIS.bytesGrad);
+    const optim = shardedBytes(parts, plan.optim, BASIS.bytesOptim);
     const act = activationBytes(topo, stage);
     const core = weight + grad + optim + act;
     /* 底座摞在盒底而不是从 cap 里扣掉：两种算法对占比完全等价（都是
@@ -485,7 +611,12 @@
     const comm = commBytes(topo);
     const workspace = workspaceBytes(topo, stage);
     const frag = core * RUNTIME.fragRatio;
-    const reserve = comm + workspace + frag;
+    /* FSDP2 的 all-gather 暂存进预留段而不是权重段：权重段的语义是「常驻」，
+       而这份缓冲算完即弃。不新开第七段是因为图例、配色、口径浮层都按六段写死，
+       为一档新增一段代价过大 —— 它在 reserveParts 里单列，图例 tooltip 与口径
+       浮层都报得出来，看得见就够了。 */
+    const unshard = unshardBytes(topo, parts);
+    const reserve = comm + workspace + frag + unshard;
     const cap = BASIS.capGB * GIB;
     const total = base + core + reserve;
     return {
@@ -495,7 +626,7 @@
       layers: topo.stages[stage] ? topo.stages[stage].count : 0,
       values: { base, weight, grad, optim, act, reserve },
       // 预留段在图上是一整段，拆项只在图例 tooltip 与口径浮层里给
-      reserveParts: { comm, workspace, frag },
+      reserveParts: { comm, workspace, frag, unshard },
     };
   }
 
@@ -510,18 +641,35 @@
 
   const gb = (bytes) => (bytes / GIB).toFixed(1);
 
-  /* ── 判定文案：越紧越要给出下一步动作，且必须点破 DP 不是那个动作 ──────── */
+  /* ── 判定文案：越紧越要给出下一步动作 ───────────────────────────────────
+     「加 DP 不增余量」曾是这里最该点破的一句，但它现在**有档次之分** —— 行 10 让
+     ZeRO-1 沿 DP 切走优化器状态，行 15 又让 FSDP2 把权重与梯度也切走。这一栏最常
+     被引用的就是这句话，说错方向比不说更糟，所以三档分开写。 */
   function verdictText(m, topo) {
     const pct = Math.round(m.ratio * 100);
     const room = m.cap - m.total;
+    const mode = shardPlan(topo).mode;
+    /* 关档时它是「还没试过的那个旋钮」，该被推荐；ZeRO-1 时 DP 不再是纯粹的吞吐维，
+       那句老话要收回一半；FSDP2 时它已经把三段全切了，DP 反倒成了最有效的一维 ——
+       同时要点破新出现的那笔账（all-gather 暂存不随 DP 变小）。 */
+    const dpNote = mode === "fsdp2"
+      ? `已开 FSDP2，权重 / 梯度 / 优化器三段都 ÷ DP，加 DP 直接减容器；`
+        + `但 all-gather 暂存（${gb(m.reserveParts.unshard)} GB）与激活不随 DP 变。`
+      : mode === "zero1"
+        ? `已开 ZeRO-1，加 DP 只摊薄优化器状态那一段（当前 ${gb(m.values.optim)} GB），权重 / 梯度 / 激活不动。`
+        : `加 DP 只增吞吐不增余量 —— 除非把「权重分片」拨到 ZeRO-1 或 FSDP2。`;
     if (m.ratio > 1) {
       return `占用 ${pct}%，溢出 ${gb(-room)} GB —— 该配置预计 OOM。`
         + `其中底座与预留 ${gb(m.values.base + m.values.reserve)} GB 压不掉，`
-        + `减容器要动 EP / PP / TP，加 DP 只增吞吐不增余量。`;
+        + `减容器要动 EP / PP / TP。` + dpNote;
     }
     if (m.ratio > THRESHOLD.alert) {
       return `占用 ${pct}%，余量仅 ${gb(room)} GB —— 已越过 ${Math.round(THRESHOLD.alert * 100)}% 预警线。`
-        + `建议提高 EP（切路由专家）或 PP（少背几层）。`;
+        + (mode === "none"
+          ? `建议先把「权重分片」拨到 ZeRO-1（优化器状态 ÷ DP，不撞任何整除约束），再考虑提高 EP 或 PP。`
+          : mode === "zero1"
+            ? `建议提高 EP（切路由专家）或 PP（少背几层）；权重与梯度还整份压着，再往上一档拨到 FSDP2 也能压掉 ${gb(m.values.weight + m.values.grad)} GB 里的大部分。`
+            : `三段都已沿 DP 切开，还紧的话只剩激活可动 —— 提高 EP / PP，或开重计算。`);
     }
     if (m.ratio > THRESHOLD.tight) {
       return `占用 ${pct}%，余量 ${gb(room)} GB —— 已越过 ${Math.round(THRESHOLD.tight * 100)}% 偏满线，`
@@ -531,26 +679,64 @@
       + `本 stage 背 ${m.layers} 层、在飞 ${m.inflight} 份 micro-batch。`;
   }
 
-  /* 口径浮层内容：谁除以谁写清楚，尤其「DP 不除任何东西」那一行 —— 它是这一栏
-     最反直觉、也最该被人当场核对的一条。
+  /* 口径浮层内容：谁除以谁写清楚，尤其 DP 那一行 —— 它是这一栏最反直觉、也最该
+     被人当场核对的一条。行 10 之后它有了两副面孔（优化器并行开着时 DP 是切东西
+     的），所以这一行按开关分写，不能再留一句「不除任何东西」。
      第二段专门回答「为什么各卡不一样」：这是看到 stage 小柱高低不齐时的第一个
      疑问，不解释就会被当成算错了。 */
   function basisHtml(topo) {
     const c = topo.counts;
     const card = topo.card;
+    const cfg = topo.config || {};
+    const plan = shardPlan(topo);
+    const shards = dpShards(topo);
+    const MODE_LABEL = { none: "关", zero1: "ZeRO-1", fsdp2: "FSDP2" };
+    /* 三档共用这一句分母，别在下面三行里各写一遍 */
+    const denom = c.ep > 1 && !c.moeOrthogonal
+      ? `路由专家 ÷ EDP(${shards.expert})、其余权重 ÷ ${shards.other}（= EDP×EP）`
+      : `÷ ${shards.other}`;
     const row = (k, v) => `<dt>${k}</dt><dd>${v}</dd>`;
     const stageSizes = topo.stages.map((s) => s.count).join(" / ");
     return `<dl>`
-      + row("权重 / 梯度", `bf16，各 ${BASIS.bytesWeight} B/参数`)
-      + row("优化器状态", `Adam ${BASIS.bytesOptim} B/参数（fp32 master + momentum + variance）`)
-      + row("激活", `<code>34·mb·(S/CP)·H·层数/TP</code> × 在飞份数，开 SP、不重计算`)
+      + row("权重 / 梯度", `bf16，各 ${BASIS.bytesWeight} B/参数`
+        + (plan.mode === "fsdp2"
+          ? `；<b>FSDP2 下这两段也沿 DP 切</b>：${denom}`
+          : `，每张卡各持一份完整的（${MODE_LABEL[plan.mode]} 档不切这两段）`))
+      + row("优化器状态", `Adam ${BASIS.bytesOptim} B/参数（fp32 master + momentum + variance）`
+        + (plan.mode === "none"
+          ? `，<b>权重分片：关</b>，每张卡各存一份完整的`
+          : `，<b>权重分片：${MODE_LABEL[plan.mode]}</b> —— ${denom}`
+            + `（同一份权重在数据并行域里复制了这么多份）`))
+      /* 只有 fsdp2 档有这一行：其余两档它恒为 0，写出来只会让人以为漏了什么 */
+      + (plan.mode === "fsdp2" ? row("all-gather 暂存",
+        `FSDP2 逐单元 unshard：算到哪一层就把<b>那一层的完整权重</b>收回来，算完即弃，反向再来一次。`
+        + `峰值 = <code>最大单元 × 预取 ${RUNTIME.fsdpPrefetch} 份 × ${BASIS.bytesWeight} B</code>，计在预留段里`
+        + `<br>由<b>最大的那个单元</b>定而不是总参数量 —— 首尾 stage 通常是词表那一块，中间 stage 是最重的一层`) : "")
+      + row("激活", `<code>${actPerLayer(topo)}·mb·(S/CP)·H·层数/TP</code> × 在飞份数`
+        + `（${topo.config.recompute ? "全重计算" : "不重计算"}、${topo.config.seqParallel ? "开 SP" : "关 SP"}`
+        + `，SP 在 Model Architecture 行、重计算在 Cluster 行）`
+        + (topo.config.recompute
+          ? `<br>全重计算只留每层的输入，反向再算一遍 —— 激活掉一个数量级，换来约 +30% 的算力开销（本页未建模算力）`
+          : ``))
       + row("micro-batch", `<b>mb=${BASIS.microBatch}</b>，激活与它成正比 —— 这是 batch 里唯一进显存的一半`)
-      + row("global batch", `<b>不进显存</b>。GBS 只决定梯度累积步数 <code>GBS/(MBS×DP)</code>，一步也不占容量 —— 与「DP 不减容器」是同一件事`)
+      /* 这一行同时是「yaml 里那个 batch_size 为什么和这里的 mb 对不上」的答案 ——
+         full_batch: True 下框架把 runner_config.batch_size 读成全局 batch（升级计划
+         行 12），两个数差着 DP × micro_batch_num 倍，不写在这里没人猜得到。 */
+      + row("global batch", `<b>不进显存</b>。GBS = <code>MBS × DP(${c.dp}) × 累积步数</code>，只决定累积几步，一步也不占容量 —— 累积多少步都不改这根柱子`
+        + `<br>⚠️ YAML 里 <code>runner_config.batch_size</code> 填的是 <b>GBS</b> 而不是这里的 mb：<code>full_batch: True</code> 下每张卡都读整份全局 batch，再在图内按 DP 切，落到每卡每次前反向才是 <b>mb=${BASIS.microBatch}</b>`)
       + row("序列长度", `S=${BASIS.seq}，激活与它成正比，CP(${c.cp}) 会把它切开`)
       + row("路由专家", `÷ EP(${c.ep}) × TP(${c.tp})，是 MoE 下减容器的主力`)
       + row("共享专家", `在 EP 域内复制，每张卡各持一份`)
       + row("其余权重", `÷ TP(${c.tp})；全部 ÷ PP(${c.pp})，体现为这张卡只背本 stage 那几层`)
-      + row("DP", `<b>不除任何东西</b>。DP(${c.dp}) 买的是吞吐不是余量，除非上 ZeRO / FSDP`)
+      + row("DP", plan.mode === "fsdp2"
+        ? `<b>权重 / 梯度 / 优化器三段全切</b>（FSDP2 = ZeRO-3 口径）。只有激活与 all-gather 暂存与 DP(${c.dp}) 无关`
+        : plan.mode === "zero1"
+          ? `只切<b>优化器状态那一段</b>（ZeRO-1）。权重、梯度、激活与 DP(${c.dp}) 无关 —— 再往上一档拨到 FSDP2，前两段也会跟着切`
+          : `<b>不除任何东西</b>。DP(${c.dp}) 买的是吞吐不是余量 —— 把 Model Architecture 行那枚「权重分片」拨离「关」才会变`)
+      + row("词表 Emb / Head", cfg.vocabEmbDp
+        ? `<b>走 DP，不切 TP</b>（vocab_emb_dp: True）。每张卡背满 ${topo.preset.vocab}×${topo.preset.hidden}`
+          + `，只压在 Stage0 与 Stage${c.pp - 1} 上`
+        : `÷ TP(${c.tp})，沿词表维切开`)
       /* 切出档下表单里的 DP 与集群矩阵纵轴上的编号差一个 EP 倍，这是本页最容易
          被当成"算错了"的一处。矩阵旁已有一行常驻换算式，这里再给一遍是因为：
          口径浮层是用户对着数字起疑时会点开的那个东西，答案该在这里等着他。 */
@@ -569,7 +755,8 @@
       + `<p class="cro-capacity__basis-sub">为什么各卡装的不一样多</p>`
       + `<dl>`
       + row("层数不均", `${c.totalLayer} 层分给 PP(${c.pp}) 段，除不尽时前几段各多 1 层 —— 本配置是 ${stageSizes} 层`)
-      + row("首尾更重", `Embedding 只在 Stage0、LM Head 只在 Stage${c.pp - 1}，各约 ${gb(topo.preset.vocab * topo.preset.hidden * (BASIS.bytesWeight + BASIS.bytesGrad + BASIS.bytesOptim) / Math.max(1, c.tp))} GB（含梯度与优化器状态）`)
+      + row("首尾更重", `Embedding 只在 Stage0、LM Head 只在 Stage${c.pp - 1}，各约 ${gb(embHeadBytes(topo))} GB`
+        + `（含梯度与优化器状态${cfg.vocabEmbDp ? "；走 DP 时它不被 TP 切，TP 越大这两根柱子越突出" : ""}）`)
       + row("在飞份数", `1F1B 下 Stage s 同时压着 <code>PP−s</code> 份 micro-batch 的激活，Stage0 压 ${c.pp} 份、末段只压 1 份`)
       + row("同 stage 内", `各 DP / EP / TP / CP 副本切法一致、容量相同，所以差异只到 stage 这一级 —— 底部那排小柱就是全集群的完整分布`)
       + `</dl>`
@@ -578,8 +765,9 @@
       + `取 <code>实测显存峰值 − 理论四段</code>，两点拟合 —— 截距 = 底座 + 通信 buffer（不随 mb 动），`
       + `斜率 = workspace + 碎片（∝ mb）；再换一组 EP/TP 复跑一次，即可把通信域那一项从截距里分离出来。</p>`
       + `<p class="cro-capacity__basis-foot">`
-      + `MTP 层与重计算未计入。EP 口径（正交 / 从 DP 切出）只改 DP 的读数与集群矩阵的编址，`
-      + `本栏的各段体积两档相同 —— 因为这里没有任何一段是按 DP 切的。量级估算，用于看趋势与相对高低。</p>`;
+      + `MTP 层未计入。EP 口径（正交 / 从 DP 切出）只改 DP 的读数与集群矩阵的编址，`
+      + `<b>本栏的各段体积两档相同</b> —— 优化器并行那两个分母（EDP、EDP×EP）都是从同一批卡数出来的，`
+      + `换个读法不会多出或少掉一张卡。量级估算，用于看趋势与相对高低。</p>`;
   }
 
   /* ── 渲染 ───────────────────────────────────────────────────────────────── */
@@ -645,7 +833,10 @@
       if (seg.key === "reserve") {
         li.title = `通信 buffer ${gb(m.reserveParts.comm)} GB（${commDomains(topology)} 个 HCCL 域）`
           + ` + 算子 workspace ${gb(m.reserveParts.workspace)} GB`
-          + ` + 碎片 ${gb(m.reserveParts.frag)} GB`;
+          + ` + 碎片 ${gb(m.reserveParts.frag)} GB`
+          // 只有 fsdp2 档不为 0，其余两档不写出来（写 0 会让人以为漏算了什么）
+          + (m.reserveParts.unshard > 0
+            ? ` + FSDP2 all-gather 暂存 ${gb(m.reserveParts.unshard)} GB` : "");
       } else if (seg.key === "base") {
         li.title = `驱动 + CANN/ACL context + kernel binary，固定 ${RUNTIME.baseGB} GB，不随配置变`;
       }

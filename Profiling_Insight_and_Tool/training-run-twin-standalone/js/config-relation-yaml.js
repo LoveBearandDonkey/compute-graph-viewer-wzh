@@ -30,6 +30,8 @@
      field  这一行对应的 stepper 字段名（没有就是结构常量行），用于把「与预设
             默认值不同」的行标出来 —— 一份几十行的 yaml 里用户真正改过的就那么
             两三处，不标出来等于让人拿眼睛做 diff。
+            允许给一个数组：runner_config.batch_size 这类由几个字段乘出来的行，
+            其中任何一个变了这一行就变了，只认头一个会漏标。
      note   行尾注释。由 L() 统一补空格对齐到 NOTE_COL，别在调用处手敲空格：
             值是算出来的（位数会变），手敲的对齐一改参数就散。 */
   const NOTE_COL = 38;
@@ -37,6 +39,9 @@
     text: note ? text.padEnd(NOTE_COL) + "# " + note : text,
     field,
   });
+
+  /* yaml 的布尔写法是首字母大写的 Python 风格，不是 js 的 true/false */
+  const bool = (v) => (v ? "True" : "False");
 
   /* openPangu 2.0 flash 92B → openpangu_2_0_flash_92b（MindFormers 的命名口径） */
   const snake = (label) => String(label).toLowerCase().replace(/[\s.-]+/g, "_");
@@ -69,13 +74,33 @@
        工作区，业界常见留 6 GB 上下。 */
     const deviceMem = Math.max(1, card.hbmGB - 6);
 
+    /* 流水线微批数：本页没有为它开字段（气泡占比未建模），按 4×PP 取一个常见值；
+       PP=1 时没有流水线可分，取 1 —— 写 4 会凭空多出一层梯度累积。
+       它同时是下面 batch_size 的一个因子，所以只算这一处，两行的数字必须对得上。 */
+    const microBatchNum = c.pp > 1 ? c.pp * 4 : 1;
+    /* full_batch 口径下 runner_config.batch_size 填的是**全局** batch —— 见那一行
+       上面的长注释（升级计划行 12）。 */
+    const globalBatch = cfg.microBatch * c.dp * microBatchNum;
+
+    /* 三档口径读同一个 config 字段（行 15）。兼容老配置里的布尔 parallelOptimizer：
+       true 等价于 "zero1" —— 折算只写这一处，与 capacity 的 shardPlan 同一条规矩。 */
+    const shardMode = cfg.shardMode || (cfg.parallelOptimizer ? "zero1" : "none");
+    const shardDenom = noMoe || c.ep <= 1
+      ? "沿 DP 分片，每卡只存 1/" + c.dp
+      : "专家 ÷ EDP=" + c.edp + "，其余权重 ÷ " + (c.edp * c.ep);
+
     const lines = [
       L("# " + yamlPath(p)),
       L("# " + p.label + " · MindSpore + MindFormers 训练配置"),
       L("#"),
       L("# 硬件与集群规模不写在本文件里，由启动命令给出（见下栏）："),
+      /* 末节点没装满时照实写出来（只有手输能拨到非整机倍数）—— 这一行是给人抄去
+         配集群的，"2 节点 × 8 卡 = 12 rank" 是一句算不平的话。 */
       L("#   " + card.label + " · 单卡 HBM " + card.hbmGB + " GB · "
-        + c.node + " 节点 × " + c.ranksPerNode + " 卡 = " + c.totalRank + " rank"),
+        + (c.tailRanks === c.ranksPerNode
+          ? c.node + " 节点 × " + c.ranksPerNode + " 卡 = " + c.totalRank + " rank"
+          : c.node + " 节点 × " + c.ranksPerNode + " 卡（末节点 " + c.tailRanks
+            + " 卡）= " + c.totalRank + " rank")),
       L(orthogonal
         ? ("# 框架校验 dp×mp×pp×cp×ep = " + c.dp + "×" + c.tp + "×" + c.pp + "×" + c.cp
           + "×" + c.ep + " = " + world + "，须等于 msrun 的 worker_num")
@@ -93,7 +118,22 @@
       L(""),
       L("runner_config:"),
       L("  epochs: 1"),
-      L("  batch_size: " + cfg.microBatch, "microBatch", "micro batch size，每 DP 每步喂进去的样本数"),
+      /* ⚠ 这一格填的是**全局** batch，不是表单上那枚 Micro Batch —— 升级计划行 12。
+         MindFormers《大模型性能调优指南》讲 IO 瓶颈时对 full_batch 的原话是：
+         「在配置为 true 时，每张卡都取 global batch size 的数据量，然后在图内完成
+         数据的切分，只取对应 DP 域内所需数据进行训练」；源码侧 base_dataset.py 在
+         semi + full_batch 下把分片信息置成 shard_id=0 / num_shards=1，batch 大小
+         原样交给 dataset.batch()，没有任何 ×device_num 的补偿。
+         所以这里写 MBS 会被框架当成全局 batch：DP=512 时每卡实际只训 1/512 个样本，
+         而且 batch 维根本切不开（1 分不成 512 份），这份 yaml 拿去跑就是错的。
+         页面文档里「全局 batch = MBS × DP × 累积步数」本来就是这么写的 —— 与前面
+         几行一样，这次是 yaml 追平文档；流水线下的累积步数就是 micro_batch_num。
+         反过来，**容量栏的 mb 不用再除 DP**：表单上那枚 Micro Batch 按定义就是每卡
+         每次前反向的样本数，行 12 的问句到此有了答案。 */
+      L("  batch_size: " + globalBatch, ["microBatch", "dp", "pp"],
+        "全局 batch = MBS " + cfg.microBatch + " × DP " + c.dp
+          + " × micro_batch_num " + microBatchNum
+          + "；图内按 dp 切、再分微批 → 每卡每次前反向 " + cfg.microBatch),
       L("  sink_mode: True"),
       L("  sink_size: 1"),
       L(""),
@@ -106,27 +146,64 @@
       L(""),
       L("parallel:"),
       L("  parallel_mode: 1", null, "1 = SEMI_AUTO_PARALLEL"),
-      L("  full_batch: True"),
-      L("  enable_parallel_optimizer: True"),
+      L("  full_batch: True", null,
+        "每张卡都读整份全局 batch，再在图内按 dp 切 —— 上面 batch_size 的口径由它定"),
+      /* 原先是死值，而 capacity 那边按「DP 不除任何东西」估优化器状态 —— 正好相反，
+         是升级计划行 10 要治的病。现在两边读同一个 config 字段。 */
+      /* 分母写全：MoE 下专家与其余权重不是同一个数（专家只在 EDP 维上复制），
+         这正是 capacity 里那两条口径，注释与容量柱说的必须是同一句话。
+         DP=1 时如实说它此刻等同于关 —— 表单上那枚开关此时也是灰的。 */
+      /* 三档共用这一段分母文字（升级计划行 15），两处注释读的必须是同一句 */
+      L("  enable_parallel_optimizer: " + bool(shardMode !== "none"), "shardMode",
+        shardMode === "none" ? "关：每张卡各存一份完整的权重 / 梯度 / 优化器状态"
+          : c.dp <= 1 ? "DP=1 无处可分，此档等同于关"
+            : (shardMode === "fsdp2" ? "FSDP2（ZeRO-3）：权重 / 梯度 / 优化器三段全切，" : "ZeRO-1：只切优化器状态，")
+              + shardDenom),
+      /* MindFormers 的 parallel 段里没有单独的 FSDP2 开关（它的 ZeRO-3 走
+         optimizer_weight_shard / MindSpeed 侧则是 --use-torch-fsdp2），所以这一行
+         **只在 fsdp2 档出现**，且明说它是本页的口径标注而不是可直接照抄的配置项。
+         写出来的理由是：容量柱此刻按 ZeRO-3 画，yaml 若一个字不提，
+         就又回到了行 9–11 治的那个病 —— 两个视图各讲一套故事。 */
+      ...(shardMode === "fsdp2" ? [
+        L("  # 本页按 ZeRO-3 口径估算（权重/梯度/优化器三段全切 + 逐层 all-gather）", null,
+          "MindFormers 无同名开关：MindSpore 侧对应 optimizer_weight_shard 的全分片档，"
+          + "Megatron/MindSpeed 侧对应 --use-torch-fsdp2。落到具体框架时改写这一行"),
+      ] : []),
       L(""),
       L("parallel_config:"),
       // EP=1 时两种口径没有差别，不必解释 EDP（稠密模型走的就是这一支）
       L("  data_parallel: " + c.dp, "dp",
         !orthogonal && c.ep > 1 ? "含 EP 组在内的真 DP，专家只在 EDP=" + c.edp + " 维上复制" : null),
-      L("  model_parallel: " + c.tp, "tp", "即 TP"),
+      /* TP 的整除对象是模型常量而不是别的并行维，写进行尾注释里 —— 这份 yaml
+         是拿去跑的，框架校验不过时这一行的注释就是答案。 */
+      L("  model_parallel: " + c.tp, "tp", "即 TP，须整除 num_heads " + p.heads),
       L("  pipeline_stage: " + c.pp, "pp", "即 PP，分层见 model_config.offset"),
       L("  context_parallel: " + c.cp, "cp", "即 CP"),
       L("  expert_parallel: " + c.ep, "ep",
         c.ep <= 1 ? "即 EP"
           : orthogonal ? "即 EP，与 DP 正交，独占自己的 rank"
             : "即 EP，从 DP 内切出：EDP = DP/EP = " + c.edp),
-      L("  micro_batch_num: " + c.pp * 4, null,
-        "流水线微批数，须 ≥ pipeline_stage；本页未建模，按 4×PP 取"),
-      L("  use_seq_parallel: False"),
-      L("  vocab_emb_dp: True"),
+      L("  micro_batch_num: " + microBatchNum, null,
+        c.pp > 1 ? "流水线微批数，须 ≥ pipeline_stage；本页未建模，按 4×PP 取"
+          : "无流水线，不分微批"),
+      /* 这两行原先是死值，与 capacity 的假设正好相反（那边按「不重计算 + 开 SP」
+         估激活）。现在两边读同一个 config 字段，改一次两处一起动 —— 升级计划行 9。 */
+      L("  use_seq_parallel: " + bool(cfg.seqParallel), "seqParallel",
+        cfg.seqParallel
+          ? "序列并行：TP 切不到的那部分激活再沿序列维切开"
+          : "关：LayerNorm / 残差流的激活在 TP 组内整份复制"),
+      /* 同上：capacity 原先无条件把 emb/head ÷TP，而这一行写的是 True（走 DP、
+         不切 TP）—— 升级计划行 11。TP=1 时两档数字相同，一提 TP 就分道扬镳。 */
+      L("  vocab_emb_dp: " + bool(cfg.vocabEmbDp), "vocabEmbDp",
+        cfg.vocabEmbDp
+          ? "词表走 DP：每卡背满 " + p.vocab + "×" + p.hidden + "，不沿词表维切 TP"
+          : "词表沿词表维切成 TP 份，每卡背 " + Math.floor(p.vocab / c.tp) + " 行"),
       L(""),
       L("recompute_config:"),
-      L("  recompute: True"),
+      L("  recompute: " + bool(cfg.recompute), "recompute",
+        cfg.recompute
+          ? "全重计算：每层只留输入，反向重算一遍前向"
+          : "关：每层的中间激活全部留在显存里"),
       L("  select_recompute: False"),
       L(""),
     ];
@@ -261,7 +338,10 @@
   function paint(el, lines, highlighter, changed) {
     if (!el) return;
     el.innerHTML = lines.map((line) => {
-      const mark = line.field && changed.has(line.field) ? " is-changed" : "";
+      /* field 可以是一组字段（batch_size 由 MBS × DP × micro_batch_num 乘出来），
+         其中任何一个动了这一行的数字就变了，只认头一个会漏标。 */
+      const fields = Array.isArray(line.field) ? line.field : (line.field ? [line.field] : []);
+      const mark = fields.some((key) => changed.has(key)) ? " is-changed" : "";
       return '<li class="cro-yaml__line' + mark + '"><code>' + highlighter(line.text) + "</code></li>";
     }).join("");
     el.dataset.raw = lines.map((line) => line.text).join("\n");

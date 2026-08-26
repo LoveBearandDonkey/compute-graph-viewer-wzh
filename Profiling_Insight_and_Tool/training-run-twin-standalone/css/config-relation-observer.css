@@ -634,6 +634,41 @@
   white-space: nowrap;
 }
 
+/* ── 「高级」折叠（parallel 行）─────────────────────────────────────────────
+   按钮站在原先 SP 的那一格，外壳复用 .cro-stepper 以求逐格对齐；按钮本身是设计系统
+   的 .btn / .btn-sm / .btn-ghost，这里只补「文字 + 下箭头」的排布与箭头的转向。 */
+.cro-advanced-toggle {
+  --button-height-sm: 28px;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.cro-advanced-toggle__caret {
+  display: inline-flex;
+  transition: transform var(--duration-fast, 120ms) ease;
+}
+
+.cro-advanced-toggle.is-open .cro-advanced-toggle__caret {
+  transform: rotate(180deg);
+}
+
+/* 面板永远自己占满一整行（flex-basis:100%），所以展开时是在 stepper 行下面另起
+   一行，而不是挤进某两枚 stepper 中间。收起走原生 [hidden]，但 .cro-stepper-row
+   给了 display:flex，子元素的 display 会盖掉 hidden 的 display:none，得补一条。 */
+.cro-advanced-panel {
+  flex: 0 0 100%;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: var(--space-4);
+  padding-top: var(--space-1);
+}
+
+.cro-advanced-panel[hidden] {
+  display: none;
+}
+
 /* .btn-icon 的宽度写死成 var(--button-height-md)=36px，.btn-sm 只改 min-height，
    所以默认是 36+8+34+8+36 ≈ 126×30。这里只在本作用域覆盖尺寸 token 与
    --zoom-control-gap，不改写 .btn / .zoom-control-group 的规则本身。 */
@@ -652,6 +687,26 @@
 .cro-stepper__control .btn svg {
   width: 18px;
   height: 18px;
+}
+
+/* 走不动的加减键（TP 到头数上限、量程端点）。用 aria-disabled 而不是原生
+   disabled：设计系统的 .btn:disabled 带 pointer-events:none，按钮收不到 hover，
+   title 提示就弹不出来 —— 而「为什么按不动」正是这一枚键此刻唯一还需要说的事。
+   视觉照抄 .btn:disabled 那一档（同一个 token），只是不掐指针事件。 */
+.cro-stepper__control .btn[aria-disabled="true"] {
+  opacity: var(--button-disabled-opacity);
+  cursor: not-allowed;
+  transform: none;
+}
+
+/* hover / active 的反馈要一起抹掉：灰着的键按下去还亮一下，会读成「能用」。 */
+.cro-stepper__control .btn[aria-disabled="true"]:hover,
+.cro-stepper__control .btn[aria-disabled="true"]:active {
+  background: transparent;
+  border-color: transparent;
+  color: var(--button-ghost-fg);
+  box-shadow: none;
+  transform: none;
 }
 
 .cro-stepper__control .zoom-control-readout {
@@ -690,8 +745,26 @@
 }
 
 /* 校验失败时用 danger 描边提示，不新造 error 视觉 */
-.cro-stepper.is-invalid .cro-stepper__control {
+/* 派生读数也要能标红：横幅列出「Node 256 → 128」时，红圈的名单必须与横幅一致，
+   否则会读成横幅算错了。 */
+/* 开关也要能红：横幅的改动清单里含布尔开关时（建议「TP → 1」会连带关掉 SP），
+   红圈的名单必须与横幅列的名单一致，否则用户会以为横幅算错了。
+   药丸形状的轨道用 outline 而不是 inset 阴影 —— 里面那颗圆点会盖住内描边。 */
+.cro-stepper.is-invalid .cro-stepper__control,
+.cro-stepper.is-invalid .cro-stepper__derived {
   box-shadow: inset 0 0 0 1px var(--danger);
+}
+
+.cro-stepper.is-invalid .cro-switch__track {
+  outline: 1px solid var(--danger);
+  outline-offset: 1px;
+}
+
+/* 三档控件（权重分片）同理 —— 描边落在整排页签的外框上，而不是选中的那一枚：
+   出问题的是这个字段，不是它当前停的那一档。 */
+.cro-stepper.is-invalid .cro-flag-choice {
+  outline: 1px solid var(--danger);
+  outline-offset: 1px;
 }
 
 /* 用户调整一个字段后，被自动配平的其他字段高亮 3 秒；锚点字段本身不提示。 */
@@ -699,7 +772,10 @@
   color: var(--accent);
 }
 
-.cro-stepper.is-auto-adjusted .cro-stepper__control {
+.cro-stepper.is-auto-adjusted .cro-stepper__control,
+.cro-stepper.is-auto-adjusted .cro-stepper__derived,
+.cro-stepper.is-auto-adjusted .cro-switch__track,
+.cro-stepper.is-auto-adjusted .cro-flag-choice {
   animation: cro-auto-adjusted-highlight 3s ease-out;
 }
 
@@ -715,7 +791,9 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .cro-stepper.is-auto-adjusted .cro-stepper__control {
+  .cro-stepper.is-auto-adjusted .cro-stepper__control,
+  .cro-stepper.is-auto-adjusted .cro-stepper__derived,
+  .cro-stepper.is-auto-adjusted .cro-switch__track {
     animation: none;
     background: var(--state-selected);
     box-shadow: inset 0 0 0 1px var(--accent);
@@ -739,6 +817,147 @@
   cursor: text;
 }
 
+/* 开关外壳仍是 .cro-stepper（label 在上、控件在下），高度与 .cro-stepper__control
+   那排圆键对齐，这样它和旁边的 stepper 逐格齐平，读下来仍是同一行表单。 */
+.cro-stepper--switch .cro-switch {
+  min-height: 32px;
+}
+
+/* ── 三档控件（权重分片）───────────────────────────────────────────────────
+   外壳与开关完全一样（.cro-stepper：label 在上、控件在下），控件本体照抄 MoE 那枚
+   EP 口径切换用的小号 segmented-control —— 同一页里「在几档之间选一档」已经有了
+   既定长相，不再造第二种。高度对齐 .cro-stepper__control 那排圆键（32px），
+   这样它和旁边的 stepper 逐格齐平。 */
+.cro-stepper--choice .cro-flag-choice {
+  min-height: 32px;
+  align-items: center;
+  flex: 0 0 auto;
+}
+
+.cro-flag-choice > .btn {
+  min-height: 24px;
+  padding-block: 1px;
+  padding-inline: var(--space-2);
+  font-size: var(--font-size-label-xs);
+}
+
+/* 不可用时（DP=1）与加减键同一档透明度、同一条规矩：置灰但仍能悬浮 ——
+   「为什么点不动」必须有地方说。所以用 aria-disabled 而不是原生 disabled
+   （设计系统的 .btn:disabled 带 pointer-events:none，按钮收不到 hover，
+   title 压根弹不出来），并把 hover 的反馈抹掉：灰着的键按下去还亮一下会读成「能用」。 */
+.cro-stepper--choice.is-unavailable .cro-flag-choice,
+.cro-stepper--choice.is-unavailable .cro-stepper__label {
+  opacity: var(--button-disabled-opacity);
+}
+
+.cro-stepper--choice.is-unavailable .cro-flag-choice > .btn {
+  cursor: not-allowed;
+}
+
+.cro-stepper--choice.is-unavailable .cro-flag-choice > .btn:hover {
+  background: transparent;
+}
+
+/* ── 开关（常驻状态位）─────────────────────────────────────────────────────
+   「重计算」「序列并行 SP」这类只有开与关、且**开着的时候要一直看得见**的量，
+   用开关而不是按钮：按钮读起来是「点它会发生一件事」，开关读起来是「现在是这个
+   状态」—— 而这两项正是后者，它们时刻决定着右边那根容量柱怎么画。
+
+   ⚠️ 设计系统没有 switch 原语（css/style.css 只有 .btn 系列）。这份实现与
+   TaskCompare.html 的 .cmp-switch（那里是「标记最优 / 只看差异」）**逐条相同**，
+   只按本页前缀改了名；两处应当一起被吸收进共享系统，改动时请同步。 */
+.cro-switch {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  cursor: pointer;
+  user-select: none;
+  font-size: 12px;
+  color: var(--foreground-secondary);
+}
+
+.cro-switch input {
+  position: absolute;
+  opacity: 0;
+  width: 0;
+  height: 0;
+}
+
+.cro-switch__track {
+  position: relative;
+  width: 30px;
+  height: 17px;
+  border-radius: 999px;
+  flex-shrink: 0;
+  background: var(--surface-4);
+  transition: background var(--duration-fast) var(--easing-default);
+}
+
+.cro-switch__track::after {
+  content: "";
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 13px;
+  height: 13px;
+  border-radius: 50%;
+  background: var(--foreground);
+  transition: transform var(--duration-fast) var(--easing-default);
+}
+
+.cro-switch input:checked + .cro-switch__track {
+  background: var(--primary);
+}
+
+.cro-switch input:checked + .cro-switch__track::after {
+  transform: translateX(13px);
+  background: var(--primary-foreground);
+}
+
+.cro-switch input:focus-visible + .cro-switch__track {
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--primary) 30%, transparent);
+}
+
+.cro-switch input:checked ~ .cro-switch__label {
+  color: var(--foreground);
+  font-weight: 500;
+}
+
+/* 用不上的开关（TP=1 时的 SP）：置灰而不隐藏。与加减键那边同一档透明度与同一条
+   规矩 —— 不可用的控件必须还能悬浮，否则「为什么点不动」没地方说。
+   这里能直接用原生 disabled：title 挂在外层 <label> 上，input 自己收不到指针
+   事件不影响提示弹出（.btn:disabled 那边不行，是因为它自带 pointer-events:none
+   且 title 就挂在按钮本身）。 */
+.cro-stepper--switch.is-unavailable .cro-switch {
+  cursor: not-allowed;
+}
+
+.cro-stepper--switch.is-unavailable .cro-switch__track,
+.cro-stepper--switch.is-unavailable .cro-switch__label {
+  opacity: var(--button-disabled-opacity);
+}
+
+.cro-stepper--switch.is-unavailable .cro-stepper__label {
+  opacity: var(--button-disabled-opacity);
+}
+
+/* Node 的只读读数：派生量，没有加减键，但排版要与旁边的 stepper 齐平 ——
+   同一枚药丸底色、同样的 28px 高，只是里面没有两个圆键。cursor:help 是它与
+   可拨字段唯一的外观差别，悬浮给出「Total Rank ÷ 每节点卡数」的换算。 */
+.cro-stepper__derived {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 32px;
+  min-width: 44px;
+  padding: 0 var(--space-3);
+  border-radius: var(--radius-pill);
+  background: var(--surface-2);
+  font-size: var(--font-size-body-sm);
+  color: var(--foreground-secondary);
+  cursor: help;
+}
+
 .cro-stepper__input:focus-visible {
   outline: 2px solid var(--focus-ring);
   outline-offset: 1px;
@@ -756,28 +975,59 @@
   display: none;
 }
 
-/* 参数不兼容时它从一行文字升格成横幅：多了建议修法与两个出口，
-   而且此刻整页的图形都停更了，需要有足够分量让人注意到。
-   底色 / 描边与 .cro-incident-banner 逐条对齐 —— 页面里「出事了，先读这一条」
-   的视觉已经由事件横幅定下，这里不另起一套。 */
-.cro-config-error.is-blocking {
+/* 有话要说时它从一行文字升格成横幅。两档共用同一副几何 —— 都是「先读这一条」，
+   横幅的形状不该因为严重程度而变；分色只落在描边与底色上。
+   底色 / 描边与 .cro-incident-banner 逐条对齐 —— 页面里这类横幅的视觉已经由
+   事件横幅定下，这里不另起一套。 */
+.cro-config-error.is-blocking,
+.cro-config-error.is-warning {
   display: flex;
   flex-direction: column;
   gap: var(--space-2);
   padding: var(--space-2) var(--space-3);
-  border: 1px solid color-mix(in srgb, var(--danger) 28%, transparent);
   border-radius: var(--radius-md);
+  line-height: 1.45;
+}
+
+/* 红：参数不兼容，整页图形已停更，需要足够分量让人注意到。 */
+.cro-config-error.is-blocking {
+  border: 1px solid color-mix(in srgb, var(--danger) 28%, transparent);
   background: linear-gradient(
     90deg,
     color-mix(in srgb, var(--danger) 16%, var(--surface-1)),
     color-mix(in srgb, var(--danger) 5%, var(--surface-1))
   );
-  line-height: 1.45;
+}
+
+/* 黄：配置合法、照常出图，只是这么配性能会掉。两档不会同时出现 ——
+   renderConfigError 在冻结态下不说软警告（那时的提示是照着一组不成立的数算的），
+   所以这两个 class 是互斥的，不必考虑叠加。 */
+.cro-config-error.is-warning {
+  border: 1px solid color-mix(in srgb, var(--warning) 28%, transparent);
+  background: linear-gradient(
+    90deg,
+    color-mix(in srgb, var(--warning) 16%, var(--surface-1)),
+    color-mix(in srgb, var(--warning) 5%, var(--surface-1))
+  );
 }
 
 .cro-config-error__msg {
   margin: 0;
   color: var(--danger);
+}
+
+/* 软警告正文。与红字同一个容器，容器本身的 color 是 --danger，这里必须显式改写。 */
+.cro-config-error__warn {
+  margin: 0;
+  color: var(--warning);
+}
+
+/* 「不拦截」这件事要写在横幅里 —— 黄和红的差别不能只靠颜色记。位置与红色横幅里
+   那句「图形已暂停更新」对称：接在正文后同一行，它是这条提示的**限定**而不是
+   第二条提示。 */
+.cro-config-error__warn-note {
+  margin-left: var(--space-2);
+  color: var(--foreground-secondary);
 }
 
 .cro-config-error__fix {
