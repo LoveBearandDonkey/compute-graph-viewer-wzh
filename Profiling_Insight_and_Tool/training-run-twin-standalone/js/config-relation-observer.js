@@ -46,7 +46,10 @@
          切到正交档时由 controller.setEpMode() / setModel() 按 EP 换算回 8。 */
       defaults: {
         totalLayer: 46,
-        dp: 512, pp: 4, tp: 1, cp: 1,
+        /* vpp = 1 是这个预设唯一的合法值：46 层连 PP=4 都除不尽（本页的 stage 允许
+           不均分，交错式流水不允许），46 % (4×v) 对任何 v > 1 都不为 0。要试 VPP
+           得先把 Total Layer 拨到 48 —— 见 term-vpp。 */
+        dp: 512, pp: 4, vpp: 1, tp: 1, cp: 1,
         microBatch: 1, seqLen: 4096,
         routedExpert: 256, topK: 8, sharedExpert: 1, ep: 64,
         totalRank: 2048, node: 256, card: "910b-64",
@@ -55,13 +58,25 @@
            vocab_emb_dp: True），所以默认档下 YAML 视图逐字不变 —— 变的是
            capacity 终于读得到它们了（升级计划行 9 / 10 / 11）。
            shardMode 是其中唯一不止两档的一枚（行 15）：ZeRO-1 对应原先那个
-           enable_parallel_optimizer: True，所以默认档仍逐字不变。 */
-        recompute: true, seqParallel: false,
+           enable_parallel_optimizer: True，所以默认档仍逐字不变。
+           recompute 于行 19 同样升成多档的 recomputeMode，"full" 对应原先那个
+           recompute: True —— 默认档仍逐字不变；recomputeLayers 只在「按层数」
+           那一档生效，取 MindFormers 文档里那个 recompute: [4,4,4,4] 的 4 作种子。 */
+        recomputeMode: "full", recomputeLayers: 4, seqParallel: false,
         shardMode: "zero1", vocabEmbDp: true,
+        /* LoRA（行 18）。默认关 —— 本页两个预设写的都是**预训练**配置，
+           而 LoRA 是微调侧的东西：开着它 yaml 会多出一段 pet_config，
+           容量柱的梯度段与优化器段几乎归零，那不是这两份参考配置在说的事。 */
+        lora: false, loraRank: 16,
+        /* CP 的算法口径（行 16）。默认 Ulysses —— MindSpeed MM 的特性表里标 CP 的
+           模型多数走的是它。CP=1 时两档没有任何差别，所以默认档逐位未变。 */
+        cpMode: "ulysses",
       },
     },
     /* Qwen2-7B：稠密（非 MoE）参考案例，用于验证「整网」栏在无 MoE 模型下的呈现。
-       结构参数取自用户给定的参考配置（GQA 28Q:4KV，PP 28 层均分 4 段，无 VPP）。 */
+       结构参数取自用户给定的参考配置（GQA 28Q:4KV，PP 28 层均分 4 段，VPP=1）。
+       28 层 / PP4 每段 7 层，所以这个预设的 VPP 只有 1 与 7 两档合法（7 段各 1 层，
+       实际不会那么配）—— 行 17 之后 VPP 是一枚真的 stepper，不再是一句假设。 */
     "qwen2-7b": {
       id: "qwen2-7b",
       label: "Qwen2-7B",
@@ -93,12 +108,14 @@
       },
       defaults: {
         totalLayer: 28,
-        dp: 2, pp: 4, tp: 1, cp: 1,
+        dp: 2, pp: 4, vpp: 1, tp: 1, cp: 1,
         microBatch: 1, seqLen: 4096,
         routedExpert: 1, topK: 1, sharedExpert: 0, ep: 1,
         totalRank: 8, node: 1, card: "910b-64",   // 8 卡 = 910B 整机一台
-        recompute: true, seqParallel: false,
+        recomputeMode: "full", recomputeLayers: 4, seqParallel: false,
         shardMode: "zero1", vocabEmbDp: true,
+        cpMode: "ulysses",
+        lora: false, loraRank: 16,
       },
     },
   };
@@ -156,6 +173,45 @@
        换算夹掉、Total Rank 跟着变。8192 = node 的上界，两者是同一个量级。 */
     dp:           { label: "DP",             group: "parallel", min: 1,  max: 8192, pow2: true },
     pp:           { label: "PP",             group: "parallel", min: 1,  max: 128,  pow2: true },
+    /* VPP（虚拟流水，升级计划行 17）**不进 world 的乘积** —— 它一张卡都不多占，
+       只把本卡已有的那几层再拆成 VPP 段轮流跑，拿更小的气泡换更多的在飞激活。
+       所以它虽然排在并行度里，作用却和 Micro Batch 一样落在「单卡装多少」上。
+       正因为不进乘积，它**不在 FIELD_ORDER.parallel 里**，而在「高级选项」折叠内
+       （见 ADVANCED_ITEMS）—— 那一行可见的几枚恰好就是 world 的因子。
+       不标 pow2：VPP=3 是常见档，唯一的硬要求是层数被 PP×VPP 整除；那条约束的
+       对手字段是 Total Layer（改它不改卡数），故加减键照常步过去、由 reconcile 抬层数。
+
+       ── title：stepper 也能有悬浮说明了 ──────────────────────────────────
+       原先只有 FLAG_SPECS 那几枚开关带 title，stepper 一枚都没有 —— 折叠里四枚开关
+       悬浮都答得出话，唯独 VPP 不吭声，这在同一个面板里读着就是漏了一块。
+       `spec.title` 挂在 .cro-stepper 外壳上（见 buildStepper），所以悬浮标签或读数
+       都会出来；加减键走不动时按钮自己的 `stepBlockReason` 更靠内，照旧优先显示 ——
+       「这枚是干什么的」与「为什么点不动」是两个问题，分两处答。
+       这条通路对任何 FIELD_SPECS 字段都可用，目前只填了 VPP：其余几枚的名字
+       （DP / PP / TP / CP）是这个领域里不用解释的通用缩写，而 VPP 不是。 */
+    vpp: {
+      label: "VPP", group: "parallel", min: 1, max: 16, step: 1,
+      title: "VPP · 虚拟流水（virtual pipeline / 交错式 1F1B）\n\n"
+        + "把每个 PP stage 上的层**再拆成 VPP 段**，让同一张卡轮流跑属于自己的第 1 段、"
+        + "第 2 段……卡数一张不变（VPP 不进 world 的乘积，拨它 Total Rank 不动），"
+        + "变的只是这些层在时间上怎么排。\n\n"
+        + "── 调大：治流水线气泡 ──\n"
+        + "1F1B 的气泡比例约 (PP−1)/micro_batch_num。交错之后每一段变短、流水线填得更快，"
+        + "气泡按 1/VPP 缩小。\n"
+        + "什么时候该调大：PP 已经不小、micro-batch 数又受全局 batch 卡住加不上去，"
+        + "而单卡显存还有余量 —— 这时 VPP 是唯一还能压气泡的旋钮。\n\n"
+        + "── 调小（回到 1）：治激活峰值 ──\n"
+        + "代价全落在这里：warmup 段要多灌几份 micro-batch，每张卡同时压着的未反向激活变多。"
+        + "「各 PP Stage 峰值」那排小柱会**整体抬高、而且变平** —— 末段抬得比首段还多"
+        + "（PP=4 / VPP=2 时首段在飞 4 → 5.5 份，末段 1 → 2.5 份）。\n"
+        + "什么时候该调小：容量柱已经偏满或预警；或 stage 间通信次数按 VPP 倍增，跨机时不划算。\n\n"
+        + "── 它比 PP 严格 ──\n"
+        + "层数必须被 PP × VPP 整除（交错式要求每段等长），而本页的 PP 允许不均分。"
+        + "openPangu 的 46 层连 PP=4 都除不尽，所以默认档下 VPP 只能是 1 —— "
+        + "按加号会把 Total Layer 抬到 48（这条约束里唯一一个改了不连累卡数的对手字段）。\n\n"
+        + "本页按 Korthikanti et al. 2022 §2.2 的口径算这笔账；"
+        + "层 → stage 的画法未按交错重排，见文档的 term-vpp。",
+    },
     tp:           { label: "TP",             group: "parallel", min: 1,  max: 64,   pow2: true },
     cp:           { label: "CP",             group: "parallel", min: 1,  max: 64,   pow2: true },
     /* 下面两项不参与切分、不进 world_size，只决定**单卡装多少**，所以排在 Cluster
@@ -167,8 +223,52 @@
        GBS/(MBS×DP)，一步也不进显存 —— 与「DP 不减容器」是同一件事。 */
     /* 写全称不写 MBS / Seq：DP·PP·TP·CP 是这个领域里没人会认错的通用缩写，这两个
        不是 —— MBS 还容易和 GBS 混，而两者对显存的作用完全相反（见容量栏口径）。 */
-    microBatch:   { label: "Micro Batch",    group: "batch",    min: 1,  max: 64,   step: 1 },
+    /* digits: 2 —— 上界 64，两位数就够，不必按默认的三位留白。这一格与 Seq Length
+       同处 Cluster 那一行，而那一行要在一行之内容下七枚控件（见 css 里
+       .cro-cluster__form 那段）；读数框的字符宽度是这里唯一能省又不伤可读性的一处。 */
+    microBatch:   { label: "Micro Batch",    group: "batch",    min: 1,  max: 64,   step: 1, digits: 2 },
     seqLen:       { label: "Seq Length",     group: "batch",    min: 128, max: 131072, pow2: true },
+    /* ── 只在某一档下才有意义的两枚（升级计划行 18 / 19）────────────────────
+       它们与上面那些的区别是 **enabledWhen**：不是一直可拨的量，而是另一枚控件
+       拨到某一档之后才有意义的参数。不可用时置灰（不隐藏）—— 与 SP / 权重分片
+       那几枚开关同一条判据：藏起来等于让人看不见这一档还带着一个数。
+       没有 disabledValue：它们此刻的值不会出现在 yaml 里（重算层数只在「按层数」
+       档写出来、LoRA Rank 只在开着时写出来），留在原处不会留下需要解释的字。
+
+       recomputeLayers 的上界是**算出来的**（maxOf）：每个 stage 只有那么多层，
+       再往上加一层也没有东西可重算。这是本页第一个动态量程 —— 加减键与手输
+       都走它，见 specMax()。 */
+    recomputeLayers: {
+      label: "重算层数", group: "batch", min: 1, max: 256, step: 1,
+      maxOf: (config) => maxStageLayers(config),
+      enabledWhen: (config) => recomputeModeOf(config) === "layers",
+      disabledReason: "只有「重计算 · 按层数」这一档才按层数算 —— 其余三档要么整段重算、要么整段不重算。",
+      maxReason: (config) => `每个 stage 只背 ${maxStageLayers(config)} 层`
+        + `（${config.totalLayer} 层 ÷ PP ${config.pp}，除不尽时前几段各多 1 层）`
+        + `，再往上没有层可重算了 —— 要抬这个上界得先抬 Total Layer 或调小 PP`,
+      title: "重算层数 N（MindFormers 的 recompute: [4,4,4,4]）\n\n"
+        + "「重计算 · 按层数」那一档带着的那个数：**每个 stage 的前 N 层按「全开」算**"
+        + "（每层激活系数 2），其余层按「关」算（系数 34）。\n\n"
+        + "它是四档里唯一能让激活段停在**任意中间高度**的一档，也是唯一**逐 stage 分别生效**的一档 ——"
+        + "Stage0 在飞的 micro-batch 最多，同样重算一层，它省下的绝对值也最多，"
+        + "所以「各 PP Stage 峰值」那排小柱会一起变矮、而且变平。\n\n"
+        + "N 按各段层数截断：46 层分 4 段是 12/12/11/11，填 12 时后两段就是整段重算。"
+        + "yaml 写出去的数组也照这个截断，拿去跑不会出现「11 层的 stage 重算 12 层」。\n"
+        + "上界因此跟着 Total Layer 与 PP 走 —— 再往上没有层可重算了。",
+    },
+    loraRank: {
+      label: "LoRA Rank", group: "batch", min: 1, max: 512, pow2: true,
+      enabledWhen: (config) => Boolean(config.lora),
+      disabledReason: "未开 LoRA 时没有 adapter，秩也就无从谈起 —— 把左边那枚 LoRA 打开即可。",
+      title: "LoRA Rank r（pet_config.lora_rank）\n\n"
+        + "adapter 那对低秩矩阵 A(r×d_in) / B(d_out×r) 的秩。本页按注意力的 q/k/v/o 四个 "
+        + "[H,H] 建模，每层可训练参数 = 4·r·2H = 8rH，**与 r 成正比**。\n\n"
+        + "梯度段与优化器段（那 14 B/参数）也就与 r 成正比 —— 但基数极小："
+        + "openPangu 的 hidden 2560、r=16 时每层每卡才 33 万参数，"
+        + "两段加起来仍在几十 MB 量级。所以调 r 主要是在调**效果**（秩越高越接近全参微调的表达能力），"
+        + "显存上怎么调都便宜。\n\n"
+        + "常见取值 8 / 16 / 32 / 64；lora_alpha 一般取 2r（不占显存，本页只在 yaml 里写出来）。",
+    },
     routedExpert: { label: "Routed",         group: "moe",      min: 1,  max: 1024, pow2: true },
     topK:         { label: "Top-K",          group: "moe",      min: 1,  max: 64,   step: 1 },
     sharedExpert: { label: "Shared",         group: "moe",      min: 0,  max: 8,    step: 1 },
@@ -184,7 +284,7 @@
   /* ── 布尔开关 ─────────────────────────────────────────────────────────────
      没有 min/max/step 的量：不进 world 的乘积、不参与任何配平，拨它们只改
      capacity 的分段口径与 yaml 的对应行，所以不进 FIELD_SPECS，单列一张表。
-     多数是布尔（渲染成开关）；带 options 的那一枚是有限档位（渲染成
+     多数是布尔（渲染成开关）；带 options 的那两枚是有限档位（渲染成
      segmented-control）—— 两者走的是同一套 set / reconcile / 联动高亮 / 红圈 /
      disabledValue，只有控件长相不同，见 buildFlagSwitch 与 buildFlagChoice。
      这四枚正是升级计划附录点名的那四个「显存估算里影响最大、却唯独 capacity 看不见」
@@ -192,6 +292,9 @@
      其中 parallel_optimizer 已于行 15 升成三档的 shardMode（关 / ZeRO-1 / FSDP2）——
      行 9 提了前两枚，行 10 / 行 11 补齐后两枚。至此 capacity 与 yaml 读的是同一份来源。
      **各自跟着所属的那一行走**，判据是那一行自己写的口径：
+       cpMode           → parallel 行 —— CP 切成几份由 CP 那枚 stepper 定，这一枚定的是
+                          「切完之后 attention 怎么把全局补回来」。它是这张表里唯一一枚
+                          **会换掉硬校验本身**的（Ulysses 拦头数、Ring 拦序列长度，行 16）；
        seqParallel      → parallel 行（「模型怎么切开」）—— SP 是实打实在切，沿序列维
                           切激活，只是不额外占卡；
        vocabEmbDp       → parallel 行 —— 它决定词表那张大矩阵到底走 TP 还是走 DP，
@@ -199,8 +302,12 @@
        shardMode        → parallel 行 —— 沿 DP 维切权重相关的若干段（ZeRO-1 / FSDP2），
                           同样是切法，同样不额外占卡。它是这张表里唯一一枚三档的，
                           不是布尔（行 15）；
-       recompute        → batch 行（「往这张卡里装多少」）—— 它一刀不切，只决定每份
-                          留不留。
+       recomputeMode    → batch 行（「往这张卡里装多少」）—— 它一刀不切，只决定每份
+                          留不留。行 19 之后是四档，不是开关；「按层数」那一档还带着
+                          一枚 recomputeLayers stepper（在 FIELD_SPECS 里）；
+       lora             → batch 行 —— 同样一刀不切，但它改的是**哪些参数需要梯度**：
+                          冻结主干后梯度段与优化器段只跟 adapter 走（行 18）。
+                          它带着的 loraRank 同样是一枚 FIELD_SPECS stepper。
 
      ── disabledValue：不可用时该停在哪一档 ────────────────────────────────
      开关不可用（enabledWhen 为假）时不能就地放着不管：yaml 里会留下一行
@@ -208,6 +315,46 @@
      的那个 —— SP 是 false，另两枚是 true。这条原先是 reconcile 里写死的一句
      `if (config.tp <= 1) config.seqParallel = false;`，现在升成表里的一栏。 */
   const FLAG_SPECS = {
+    /* ── CP 的两种算法（升级计划行 16）─────────────────────────────────────
+       页面此前全按 ring attention 一种口径建模，`seq % (2×CP)` 那条硬校验是 ring
+       专属的（因果掩码下序列前段算得少、后段算得多，要对半交叉分配才均衡）。
+       但 MindSpeed MM 的特性表里标 CP 的模型多数走 **Ulysses** —— 它沿**头**维做
+       all-to-all，序列长度爱是多少是多少，约束改落在头数上。对那批配置，页面此前
+       给的是一条**错误的红线**。
+
+       所以它不是 EP 口径那种「同一批卡的两种读法」（切一下一个数都不该变），
+       而是两种真的算法：拦的字段不同、上限不同、通信形态不同。两档共同的部分是
+       显存 —— 都是每卡留 S/CP 份激活，capacity 一个数都不动，差别只在通信。 */
+    cpMode: {
+      group: "parallel",
+      label: "CP 口径",
+      options: [
+        { value: "ulysses", label: "Ulysses" },
+        { value: "ring", label: "Ring" },
+      ],
+      /* CP=1 时没有上下文并行组，两档说的都是同一件「不切」—— 与 SP 在 TP=1 时同构。
+         停在 "ulysses"（预设默认值）：yaml 里那行本来就只在 CP>1 时才写出来，
+         停哪一档都不会留下需要解释的字，那就停在默认值上。 */
+      enabledWhen: (config) => config.cp > 1,
+      disabledValue: "ulysses",
+      disabledReason: "CP = 1 时没有上下文并行组，两种算法都退化成「不切」—— 把 CP 调大即可选择。",
+      title: "CP 的两种切法：Ulysses（沿头维 all-to-all）/ Ring（沿序列维轮转 KV）\n\n"
+        + "两档都把序列切成 CP 份、每卡只留 S/CP 个 token 的激活，所以**单卡显存完全相同** —— "
+        + "本页容量栏切换这一档一个数都不会变。差别在 attention 那一步怎么把「要看全局」"
+        + "这件事补回来，代价与硬约束因此完全不同。\n\n"
+        + "· Ulysses（DeepSpeed-Ulysses；MindSpeed 的 ulysses_cp_algo）\n"
+        + "  进 attention 前一次 all-to-all，把「每卡一段序列、全部头」换成「每卡整条序列、"
+        + "一部分头」，算完再换回来。attention 内部完全不用改，FlashAttention 原样能用。\n"
+        + "  代价：头已经被 TP 切过一轮，CP 再切一轮 —— **TP × CP 必须整除 num_heads**。"
+        + "这同时就是它的并行度天花板（48 头的模型，TP×CP 最多 48）；GQA 下超过 KV 头数还要复制 KV。\n\n"
+        + "· Ring（ring attention；Megatron 的 context parallel / megatron_cp_algo）\n"
+        + "  各卡只持有自己那段序列的 KV，沿环轮转传给邻居，边传边算。与头数无关，"
+        + "序列想切多细就切多细 —— 十万 token 以上的超长序列实际只有这一条路。\n"
+        + "  代价：**seq 必须被 2×CP 整除** —— 因果掩码下要把序列对半交叉分给各 rank "
+        + "才均衡得了负载；attention 内部也得改写成分块累加。\n\n"
+        + "怎么选：头数够切就用 Ulysses（通信一次性、实现最省事，特性表里多数模型标的是它）；"
+        + "头数不够切、或序列长到撞上 Ulysses 的天花板，就换 Ring。两者还能混用（hybrid），本页未建模。",
+    },
     seqParallel: {
       group: "parallel",
       label: "序列并行 SP",
@@ -324,17 +471,85 @@
         + "它与 TP / PP / CP 同用属于两条路线混用（FSDP 已经沿 DP 把整个模型切开了），"
         + "本页不拦截，只给一条软警告。",
     },
-    recompute: {
+    /* ── 四档，不是开关（升级计划行 19）─────────────────────────────────
+       原先这里是一枚布尔 recompute，只拨得出 34 与 2 两个系数 —— 而这两档之间
+       差着一个数量级，**实际调优最常落的正是中间**。行 9 落地时自己记下了这个
+       缺口（那条 title 的末句写的就是「要调中间档，这枚开关得换成一枚有档位的
+       控件」），这一档兑现它。
+
+       四档的系数全部出自与行 9 同一篇（Korthikanti et al. 2022 §4）：那里把
+       每层 34·sbh 拆成 attention 11 + FFN 19 + LayerNorm 4，其中
+       **10 是 TP 复制的、24 是 TP 切得动的**（10 = 两个 LN 输入 4 + 两段 block
+       输入 4 + 两个 dropout mask 2）。四档就是从这张拆分表里读出来的：
+         关       全留                              → 34（开 SP）/ 10t+24（关 SP）
+         选择性   重算 FFN 段，只留它的输入          → 17 / 9t+8
+         按层数   前 N 层按「全开」、其余按「关」    → 逐层混合
+         全开     只留每层输入，反向重算一遍前向     → 2 / 2t
+       自洽性检查：TP=1 时四档收敛成 34 / 17 / 混合 / 2，与 SP 无关。
+
+       「选择性」这一档的口径要说清（真实框架里它是可配的算子名单，不是一个定值）：
+       本页取「整个 FFN 段」这一端。MindFormers 的 select_recompute 常见默认只挑
+       FFN 里的 SiLU / mul 那几个中间量，落点在 17 与 34 之间；Megatron 的
+       --recompute-granularity selective 挑的是 attention 里的 softmax/dropout，
+       而那一块（5as²/h）本页按 FlashAttention 建模、本来就不计入 —— 所以那一档
+       在本页等于「关」，没有列进来。 */
+    recomputeMode: {
       group: "batch",
       label: "重计算",
-      title: "重计算（recompute_config.recompute）\n\n"
-        + "前向不留每层的中间激活，反向要用时按需重算一遍前向 —— 拿算力换显存，"
-        + "而且汇率极高：每层激活从 34·mb·S·H 掉到 2·mb·S·H（只留层输入），差一个数量级；"
+      options: [
+        { value: "none", label: "关" },
+        { value: "selective", label: "选择性" },
+        { value: "layers", label: "按层数" },
+        { value: "full", label: "全开" },
+      ],
+      title: "重计算（recompute_config）：前向不留的那部分激活，反向按需重算一遍\n\n"
+        + "拿算力换显存，而且汇率极高 —— 但它不是一枚开关，四档之间差着一个数量级，"
+        + "实际调优最常落的正是中间两档。\n\n"
+        + "每层激活 34·mb·S·H（开 SP、TP 已除）拆开是：attention 11 + FFN 19 + LayerNorm 4"
+        + "（Korthikanti et al. 2022 §4，本页容量栏用的就是这组系数）。四档按这张表取：\n\n"
+        + "· 关 → 系数 34\n"
+        + "  每层的中间激活全部留在显存里。算力最省，显存最贵。\n\n"
+        + "· 选择性 → 系数 17\n"
+        + "  重算 FFN 段（只留它的输入），attention 与 LayerNorm 照留 —— 正好砍掉一半。"
+        + "FFN 是这三块里最大的一块，而它的重算只是两三个矩阵乘，性价比最高。\n"
+        + "  ⚠️ 真实框架里这一档是**可配的算子名单**：MindFormers 的 select_recompute 常见默认"
+        + "只挑 FFN 里的 SiLU / mul，落点在 17 与 34 之间；本页取「整个 FFN 段」这一端。\n\n"
+        + "· 按层数 → 前 N 层按「全开」算，其余按「关」算\n"
+        + "  MindFormers 的 recompute: [4,4,4,4]（每个 stage 各重算几层）。"
+        + "它是唯一能让激活段停在任意中间高度的一档，也是唯一按 stage 分别生效的一档 ——"
+        + "Stage0 在飞的 micro-batch 最多，同样重算一层，它省下的绝对值也最多。\n\n"
+        + "· 全开 → 系数 2\n"
+        + "  每层只留输入，反向重算一遍整层前向。激活掉一个数量级，"
         + "代价是反向多跑一遍前向，算力开销约 +30%（本页未建模算力）。\n\n"
-        + "只有开与关 —— 因为本页按「全开 / 全关」两档建模。真实世界还有中间档："
-        + "MindFormers 的 select_recompute、按 stage 给层数的 recompute: [4,4,4,4]，"
-        + "Megatron 的 --recompute-granularity selective / --recompute-num-layers N。"
-        + "要调中间档，这枚开关得换成一枚有档位的控件。",
+        + "Megatron 的 --recompute-granularity selective 没有单列成一档：它重算的是 attention 里的"
+        + " softmax/dropout（5·a·s²/h 那一项），而本页按 FlashAttention 建模、这一项本来就不计入，"
+        + "那一档在本页等于「关」。",
+    },
+    /* ── LoRA（升级计划行 18）───────────────────────────────────────────
+       它与这张表里其余几枚都不同类：那几枚改的是「同一份东西怎么摆」，
+       LoRA 改的是**哪些参数需要梯度**。冻结主干之后，梯度段与优化器状态段
+       只跟 adapter 走，而权重段一个字节不少 —— 容量柱上最大的一次形变。
+
+       落在 batch 行而不是 parallel 行的「高级」里，判据仍是那两行各自写的口径：
+       它一刀不切（不进任何并行维、不改 world），只决定这张卡上留不留那几段，
+       与「重计算」是同一类。两枚一起收在 batch 行的「高级」折叠里 ——
+       本页两个预设写的都是预训练配置，微调侧的旋钮不该占着首屏那一格。 */
+    lora: {
+      group: "batch",
+      label: "LoRA",
+      title: "LoRA（低秩适配微调；MindFormers 的 pet_config.pet_type: lora）\n\n"
+        + "主干权重全部冻结，只在若干矩阵旁挂一对低秩矩阵 A(r×d_in) / B(d_out×r) 参与训练。"
+        + "可训练参数量掉到 r·(d_in+d_out) 一档 —— 本页按注意力的 q/k/v/o 四个 [H,H] 建模，"
+        + "每层 4·r·2H = 8rH 个 adapter 参数。\n\n"
+        + "为什么它对显存的影响比任何一档权重分片都大：一张卡上「权重相关」共 16 B/参数，"
+        + "其中 14 B（梯度 2 + 优化器状态 12）**只跟可训练参数走**。冻结主干等于把这 14 B "
+        + "从几十亿参数身上挪到几百万参数身上，梯度段几乎归零、优化器段塌到零头，"
+        + "而权重段纹丝不动 —— 主干还是要整份背在卡上的。\n\n"
+        + "⚠️ 激活也几乎不变：反向仍要穿过整个网络才能算到 adapter 的梯度，"
+        + "每层的中间激活该留还得留。所以 LoRA 省的是权重相关那三段里的两段，"
+        + "长序列 / 大 micro-batch 撑起来的激活段它一点都帮不上 —— 那仍要靠重计算与 CP。\n\n"
+        + "它不是并行配置的一档，而是**换了一种训练**：主干不再更新，学到的东西只在 adapter 里。"
+        + "本页两个预设写的都是预训练配置，所以默认关着。",
     },
   };
 
@@ -352,12 +567,19 @@
   /* batch 单独成组而不是并进 cluster：它要挂到卡型号下拉**之后**的那个容器里
      （#croBatchSteppers），而 cluster 组的容器排在下拉之前。 */
   const FIELD_ORDER = {
+    /* 这一行**可见的几枚，恰好就是 world 乘积的因子**（DP×PP×TP×CP）加上模型自身的
+       层数 —— 判据从「都是切法」换成了「进不进 rank 乘积」，因为前者解释不了
+       CP 口径为什么也在折叠里。凡是拨了 Total Rank 一张卡都不变的，一律收进
+       「高级」：VPP 与那四枚开关 / 档位控件，见 ADVANCED_ITEMS.parallel。 */
     parallel: ["totalLayer", "dp", "pp", "tp", "cp"],
     moe: ["routedExpert", "topK", "sharedExpert", "ep"],
     /* node 不在这里：每节点卡数是硬件事实（CARD_SPECS.ranksPerNode），Node 数
        因而由 Total Rank 整除得来，只有唯一一个合法值 —— 一枚只能停在一个值上的
        stepper 不是 stepper。它改由 mount() 在这一行末尾补一枚只读读数。 */
     cluster: ["totalRank"],
+    /* 重算层数与 LoRA Rank 不在这里：两枚都只在另一枚控件拨到某一档之后才有意义
+       （见 FIELD_SPECS 里各自的 enabledWhen），与 VPP 同样收进「高级」折叠 ——
+       见 ADVANCED_ITEMS。 */
     batch: ["microBatch", "seqLen"],
   };
 
@@ -393,6 +615,25 @@
     return best;
   }
 
+  /* 与 nearestDivisor 同形，但**只在 2 的幂档位上找解**。
+     分出这一支的理由（行 16 的验证跑出来的）：CP 的合法基数可能带奇因子 ——
+     `heads 48 / TP 8 = 6`，nearestDivisor 会给出 3 或 6。而 fitParallelWorld 只在
+     2 的幂梯子上配平，一个 CP=3 会让 world 永远卡在 `3·2^k`、凑不回 `2^15` 的
+     Total Rank，页面就停在一条**它自己造出来的**红字上。
+     手输仍可以停在 3（那是用户明确指定的值，validate 也认），但**联动修出来的值
+     必须留在梯子上** —— 联动不该产生一个用户没要求、页面又收不回来的数。
+     spec.min（各 pow2 字段都是 1）恒是 2 的幂且整除任何 target，兜底安全。 */
+  function nearestPow2Divisor(target, preferred, spec) {
+    let best = spec.min;
+    let bestGap = Infinity;
+    for (let d = 1; d <= target; d *= 2) {
+      if (target % d !== 0 || d < spec.min || d > spec.max) continue;
+      const gap = Math.abs(d - preferred);
+      if (gap < bestGap || (gap === bestGap && d > best)) { best = d; bestGap = gap; }
+    }
+    return best;
+  }
+
   /* ── 模型结构硬约束 ───────────────────────────────────────────────────────
      并行度与**模型常量**（头数、KV 头数）之间的整除关系。它与 world 乘积那一族
      约束有个根本区别：冲突时**没有任何字段可以被改来兼容它** —— heads 写在
@@ -420,9 +661,101 @@
     return Math.max(1, basis);
   }
 
+  /* CP 的算法口径（升级计划行 16）。整页只此一处判断字符串 —— validate /
+     reconcile / stepValue / warn / capacity / yaml 都读它，别再各写各的比较。
+     缺字段的老配置按 Ulysses（预设默认值）走。 */
+  function cpIsUlysses(config) {
+    return (config.cpMode || "ulysses") === "ulysses";
+  }
+
+  /* Ulysses 沿**头**维做 all-to-all，而 TP 早已先切过一轮头 —— 两者争的是同一批头，
+     真正的约束是 `num_heads % (TP × CP) == 0`。这里把它折成「CP 这一维自己的合法
+     档位表」= heads / TP，供 stepValue 跳档与 reconcile 收值用，与 tpShardBasis 同形。
+     Ring 档不看头数（它沿序列维轮转 KV），这个函数在 Ring 档下不该被调用。 */
+  function ulyssesCpBasis(config) {
+    const heads = presetOf(config).heads || 1;
+    const tp = Math.max(1, config.tp);
+    return heads % tp === 0 ? Math.max(1, heads / tp) : 1;
+  }
+
+  /* 一共有几张卡在分这批注意力头：TP 一定算，CP 只在 Ulysses 档算。
+     GQA 的「KV 会被复制」警告读它 —— 那条的判据从来就是「头够不够分」，
+     而不是「TP 有多大」，行 16 之后 CP 也成了分头的一方。 */
+  function headConsumers(config) {
+    return Math.max(1, config.tp) * (cpIsUlysses(config) ? Math.max(1, config.cp) : 1);
+  }
+
+  /* 被模型常量挡死、**没有对手字段可改**的那些档位（见上面这段的判据）。
+     三个字段各有各的落点：
+       tp   要整除 gcd(heads, 两个 intermediate)；Ulysses 档下还要与 CP 一起整除 heads
+       cp   只有 Ulysses 档进来 —— Ring 那条的对手是 seqLen，可以联动修，不该跳档
+       vpp  只判「有没有流水线可交错」；层数整除那条的对手是 Total Layer，同样走联动修 */
   function structurallyAllowed(field, value, config) {
-    if (field !== "tp") return true;
-    return value >= 1 && tpShardBasis(config) % value === 0;
+    if (field === "tp") {
+      if (!(value >= 1 && tpShardBasis(config) % value === 0)) return false;
+      if (!cpIsUlysses(config) || config.cp <= 1) return true;
+      const heads = presetOf(config).heads || 1;
+      return heads % (value * config.cp) === 0;
+    }
+    if (field === "cp") {
+      if (value <= 1 || !cpIsUlysses(config)) return true;
+      return ulyssesCpBasis(config) % value === 0;
+    }
+    if (field === "vpp") return value <= 1 || config.pp > 1;
+    return true;
+  }
+
+  /* 当前层数与 PP 下、离现值最近的合法 VPP。**不能**写成
+     `nearestDivisor(层数/PP, …)`：层数未必被 PP 整除（openPangu 46 层 / PP4 就不
+     整除，本页的 stage 本来就允许不均分），那样会取到一个乘起来仍除不尽的档。
+     VPP=1 恒合法（那一档根本不受这条约束），是兜底。 */
+  function nearestVpp(config) {
+    const spec = FIELD_SPECS.vpp;
+    let best = 1;
+    let bestGap = Infinity;
+    for (let v = spec.min; v <= spec.max; v += 1) {
+      if (v > 1 && config.totalLayer % (config.pp * v) !== 0) continue;
+      const gap = Math.abs(v - config.vpp);
+      if (gap < bestGap || (gap === bestGap && v > best)) { best = v; bestGap = gap; }
+    }
+    return best;
+  }
+
+  /* 重计算的档位（升级计划行 19）。整页只此一处判断字符串 —— capacity / yaml /
+     stepper 的 enabledWhen 都读它，别再各写各的比较。
+     ⚠️ 兼容读法：老配置里这枚是布尔 recompute，true 等价于 "full"，与 shardMode
+     那边同一条规矩（capacity / yaml 各自也要留一份，因为它们不引本文件的函数）。 */
+  function recomputeModeOf(config) {
+    if (config.recomputeMode) return config.recomputeMode;
+    return config.recompute ? "full" : "none";
+  }
+
+  /* 最重的那个 stage 有多少层。derive() 里层→stage 是「尽量均分、前 (L mod PP) 段
+     各多 1 层」，所以最大值就是 ceil(L/PP) —— 这里不重跑那段划分，只取它的上界。
+     recomputeLayers 的动态量程读它：每个 stage 只有那么多层，再往上加一层也没有
+     东西可重算，加号该在那里停住（capacity 侧同样按 min(N, 本段层数) 逐段截断）。 */
+  function maxStageLayers(config) {
+    const pp = Math.max(1, config.pp || 1);
+    return Math.max(1, Math.ceil((config.totalLayer || 1) / pp));
+  }
+
+  /* 字段的**当前**上界。多数字段是写死的 spec.max，只有 recomputeLayers 的上界
+     跟着别的字段算（见 maxOf）。加减键、手输的量程校验、走不动时的悬浮理由
+     三处都必须读同一个数，否则会出现「加号还亮着但按不动」这种状态。 */
+  /* 读数框的字符宽度。下限默认 3 —— 那是「还是 <span> 时」的内容自适应宽度，
+     换成 input 之后照抄过来，免得一位数的读数窄成一条缝。
+     但**量程本来就只有两位数的字段不该按三位留白**：Micro Batch 上界 64，
+     常年显示一个 1，却比它的邻居宽出一个字符。Cluster 那一行要在一行里容下
+     七枚控件，这一格是省得最干净的一处（`spec.digits`）。
+     只改下限，不封上限：手输 120 时它照旧跟着位数长。 */
+  function readoutSize(field, text) {
+    const spec = FIELD_SPECS[field] || {};
+    return Math.max(spec.digits || 3, String(text || "").length || 1);
+  }
+
+  function specMax(field, config) {
+    const spec = FIELD_SPECS[field];
+    return spec.maxOf && config ? Math.min(spec.max, Math.max(spec.min, spec.maxOf(config))) : spec.max;
   }
 
   function ranksPerNodeOf(config) {
@@ -460,7 +793,8 @@
     return next;
   }
 
-  function rawStep(spec, value, direction) {
+  /* max 由调用方给（默认 spec.max）：recomputeLayers 的上界是算出来的，见 specMax。 */
+  function rawStep(spec, value, direction, max) {
     let next;
     if (spec.pow2) {
       next = snapPow2(value, direction);
@@ -468,7 +802,7 @@
     } else {
       next = value + direction * (spec.step || 1);
     }
-    return Math.min(spec.max, Math.max(spec.min, next));
+    return Math.min(max === undefined ? spec.max : max, Math.max(spec.min, next));
   }
 
   /* 被模型结构硬约束挡住的档位直接跳过（当前只有 TP 除头数）：48 头的模型从
@@ -478,10 +812,14 @@
      不传 config 时退化成纯量程步进（导出给外部调用的兼容路径）。 */
   function stepValue(field, value, direction, config) {
     const spec = FIELD_SPECS[field];
-    let next = rawStep(spec, value, direction);
+    const max = specMax(field, config);
+    /* 不可用的字段（未开 LoRA 的 Rank、非「按层数」档的重算层数）加减键原地不动：
+       控件此刻是灰的，让它还能走会拨出一个既看不出效果、又没人解释的数。 */
+    if (config && spec.enabledWhen && !spec.enabledWhen(config)) return value;
+    let next = rawStep(spec, value, direction, max);
     if (!config) return next;
     for (let guard = 0; guard < 64 && !structurallyAllowed(field, next, config); guard += 1) {
-      const after = rawStep(spec, next, direction);
+      const after = rawStep(spec, next, direction, max);
       if (after === next) return value;          // 撞到量程端点仍非法：原地不动
       next = after;
     }
@@ -495,7 +833,15 @@
     const spec = FIELD_SPECS[field];
     const value = config[field];
     const up = direction > 0;
-    if (up && value >= spec.max) return `${spec.label} 已到量程上界 ${spec.max}`;
+    /* 不可用的字段（未开 LoRA 的 Rank、非「按层数」档的重算层数）：此刻用户想知道的
+       不是量程，而是「这枚为什么是灰的」，理由由 FLAG 那边同名的一栏给。 */
+    if (spec.enabledWhen && !spec.enabledWhen(config)) return spec.disabledReason;
+    const max = specMax(field, config);
+    if (up && value >= max) {
+      /* 算出来的上界要连**它是怎么算出来的**一起说 —— 一个写死的数说「已到上界」就够了，
+         一个跟着 Total Layer / PP 变的数不说来路，就成了「按不动，也不知道去哪儿改」。 */
+      return spec.maxReason ? spec.maxReason(config) : `${spec.label} 已到量程上界 ${max}`;
+    }
     if (!up && value <= spec.min) return `${spec.label} 已到量程下界 ${spec.min}`;
     if (field === "tp") {
       const preset = presetOf(config);
@@ -504,21 +850,44 @@
       const divisors = [`注意力头 ${preset.heads}`];
       if (preset.denseIntermediate) divisors.push(`Dense intermediate ${preset.denseIntermediate}`);
       if (!preset.noMoe && preset.moeIntermediate) divisors.push(`MoE intermediate ${preset.moeIntermediate}`);
-      /* 把被跳过的那几档逐个报出来。能走到这里就说明从当前值到量程端点之间的档位
-         全都非法，所以这一串直接沿梯子取即可，不必再逐个验一遍。 */
-      const skipped = [];
-      let v = rawStep(spec, value, direction);
-      while (skipped.length < 4) {
-        skipped.push(v);
-        const after = rawStep(spec, v, direction);
-        if (after === v) break;
-        v = after;
-      }
+      /* Ulysses 档下 CP 也在切同一批头，此时这一头卡住未必怪模型 —— 尾句要跟着换：
+         头数确实改不了，但 CP 是可调的，得把这条出路说出来。 */
+      const tail = cpIsUlysses(config) && config.cp > 1
+        ? `。Ulysses 档下 CP ${config.cp} 也在切同一批头（TP × CP 必须整除 ${preset.heads}）`
+          + ` —— 头数是模型常量改不了，但 CP 可以：把它调小就给 TP 腾出了档位`
+        : `。这几个数都是模型结构常量、不是可调字段，所以这一头没有可用的档位了`;
       return `TP 必须同时整除 ${divisors.join(" / ")}（公约数 ${tpShardBasis(config)}），`
-        + `${up ? "往上" : "往下"}的 ${skipped.join(" / ")} 都除不尽。`
-        + `这几个数都是模型结构常量、不是可调字段，所以这一头没有可用的档位了`;
+        + `${up ? "往上" : "往下"}的 ${skippedSteps(spec, value, direction).join(" / ")} 都除不尽`
+        + tail;
+    }
+    /* CP 走不动只可能是 Ulysses 档（Ring 那条有 seqLen 这个对手字段，加减键照常
+       步过去、由 reconcile 抬序列长度，不会停在这里）。 */
+    if (field === "cp" && cpIsUlysses(config)) {
+      const preset = presetOf(config);
+      return `Ulysses 沿头维做 all-to-all，TP × CP 必须整除注意力头 ${preset.heads}：`
+        + `TP ${config.tp} 已经占走一轮，CP 只能取 ${ulyssesCpBasis(config)} 的因子，`
+        + `${up ? "往上" : "往下"}的 ${skippedSteps(spec, value, direction).join(" / ")} 都除不尽。`
+        + `把 TP 调小能给 CP 腾出档位；序列长到头数不够切时改用 Ring 档 —— 它不看头数`;
+    }
+    if (field === "vpp" && config.pp <= 1) {
+      return `PP = 1 时没有流水线，虚拟流水无从交错（VPP 是把每个 stage 的层再拆成`
+        + ` VPP 段轮流跑）—— 把 PP 调大之后 VPP 才有档位`;
     }
     return `${spec.label} 这一头没有可用的档位`;
+  }
+
+  /* 被跳过的那几档，逐个报出来给悬浮理由用。能走到这里就说明从当前值到量程端点
+     之间的档位全都非法，所以这一串直接沿梯子取即可，不必再逐个验一遍。 */
+  function skippedSteps(spec, value, direction, limit = 4) {
+    const out = [];
+    let v = rawStep(spec, value, direction);
+    while (out.length < limit) {
+      out.push(v);
+      const after = rawStep(spec, v, direction);
+      if (after === v) break;
+      v = after;
+    }
+    return out;
   }
 
   /* ── EP 口径 ──────────────────────────────────────────────────────────────
@@ -581,7 +950,7 @@
   /* ── 校验：返回 [] 表示配置自洽 ───────────────────────────────────────── */
   function validate(config) {
     const errors = [];
-    const { totalLayer, dp, pp, tp, cp, seqLen, routedExpert, topK, ep, totalRank, node } = config;
+    const { totalLayer, dp, pp, vpp, tp, cp, seqLen, routedExpert, topK, ep, totalRank, node } = config;
 
     if (totalLayer < pp) {
       errors.push(`层数 ${totalLayer} 少于 PP ${pp}，至少每个 stage 要有 1 层`);
@@ -602,13 +971,39 @@
     if (!preset.noMoe && preset.moeIntermediate && preset.moeIntermediate % tp !== 0) {
       errors.push(`MoE 区专家的 intermediate ${preset.moeIntermediate} 不能被 TP ${tp} 整除`);
     }
-    /* CP 沿序列维切分，ring attention 还要能对半交叉分配才均衡得了因果掩码下的
-       负载（序列前段算得少、后段算得多），所以是 2×CP 而不只是 CP。
-       CP=1 时不生效：没有 ring 也就没有负载均衡这回事，此时这条会退化成「序列长度
-       必须是偶数」这样一条与 CP 无关的约束，还会连累 CP 的 stepper 被标红。
-       2 的幂梯子上这条永不触发（seqLen 下界 128 正是 2×CP 的上界），它只拦手输。 */
-    if (cp > 1 && seqLen % (2 * cp) !== 0) {
-      errors.push(`Seq Length ${seqLen} 不能被 2×CP ${2 * cp} 整除，ring attention 无法把序列对半交叉切给 CP 组`);
+    /* CP 的硬约束**跟着口径走**（升级计划行 16）—— 两档拦的根本不是同一个字段：
+         Ulysses  沿头维 all-to-all，而 TP 已切过一轮头 → TP×CP 必须整除 num_heads
+         Ring     沿序列维轮转 KV，与头数无关 → seq 必须被 2×CP 整除
+       改前全页只有 Ring 那一条，等于对 Ulysses 场景画了一条**错误的红线**。
+       两条都只在 CP > 1 时生效：CP=1 时 Ulysses 那条退化成「头数被 TP 整除」（上面
+       已有一条），Ring 那条退化成「序列长度必须是偶数」这样一条与 CP 无关的约束，
+       还会连累 CP 的 stepper 被标红。
+       ⚠️ 括注里不能出现 "Seq Length" 四个字：emit() 按 label 子串匹配标红 stepper，
+       Ulysses 档下序列长度是无辜的，写全称会把它一起圈红。 */
+    if (cp > 1) {
+      if (cpIsUlysses(config)) {
+        if (preset.heads && preset.heads % (tp * cp) !== 0) {
+          errors.push(`Ulysses 口径下 CP 也沿头维切：注意力头 ${preset.heads} 不能被 `
+            + `TP ${tp} × CP ${cp} = ${tp * cp} 整除`
+            + `（Ring 口径不看头数，那一档的约束换成序列长度被 2×CP 整除）`);
+        }
+      } else if (seqLen % (2 * cp) !== 0) {
+        errors.push(`Seq Length ${seqLen} 不能被 2×CP ${2 * cp} 整除，ring attention 无法把序列对半交叉切给 CP 组`);
+      }
+    }
+    /* 虚拟流水（升级计划行 17）。交错式 1F1B 要求每个 chunk 层数相等，比 PP 严格 ——
+       本页的 stage 允许不均分（46/4 → 12,12,11,11），VPP 不允许。
+       ⚠️ 文案里出现 "VPP" 就一定会同时标红 PP（emit() 按 label 子串匹配，而 "PP"
+       是 "VPP" 的子串）。这里**不做消歧**：这两条错本来就是 PP 与 VPP 共同造成的
+       （层数要被两者的乘积整除），两枚一起红正是想要的结果。 */
+    if (vpp > 1) {
+      if (pp <= 1) {
+        errors.push(`PP ${pp} 时没有流水线可交错，VPP ${vpp} 无处落地`
+          + ` —— 虚拟流水是把每个 stage 的层再拆成 VPP 段轮流跑`);
+      } else if (totalLayer % (pp * vpp) !== 0) {
+        errors.push(`层数 ${totalLayer} 不能被 PP ${pp} × VPP ${vpp} = ${pp * vpp} 整除`
+          + `，交错式流水要求每一段层数相等（PP 允许不均分，VPP 不允许）`);
+      }
     }
     if (routedExpert % ep !== 0) {
       errors.push(`路由专家 ${routedExpert} 不能被 EP ${ep} 整除，专家无法均分到 EP rank`);
@@ -675,15 +1070,32 @@
         + ` 切成每卡 ${preset.moeIntermediate / config.tp}（< ${MOE_SHARD_MIN}）`
         + `，GroupedMatMul 的 N 维太窄，矩阵乘掉出高效区间`);
     }
-    /* GQA：TP 超过 KV 头数在 Megatron 里是**复制 KV** 而不是报错，功能上合法，
+    /* GQA：分头的卡数超过 KV 头数时，Megatron 是**复制 KV** 而不是报错，功能上合法，
        只是每张卡都背一份完整 KV、通信与显存都变差 —— 与上面那条同属「性能悬崖
        而非功能错误」，所以放这里而不是 validate。heads 那条仍是硬错误。
-       ⚠️ 行 8 落地后这条在当前两个预设上**不可达**：Qwen2 的 TP 被
-       gcd(28, 18944) = 4 顶死，而 4 正好等于它的 KV 头数。留着不是为了现在 ——
-       判据本身没错，换一个 intermediate 更「整」的 GQA 模型进来它就活了。 */
-    if (preset.kvHeads && preset.heads % config.tp === 0 && preset.kvHeads % config.tp !== 0) {
-      warnings.push(`KV 头 ${preset.kvHeads} 不能被 TP ${config.tp} 整除，KV 会在 TP 组内复制`
-        + ` —— 本页的显存与 yaml 均按不复制估算，TP > ${preset.kvHeads} 时偏乐观`);
+       判据读 headConsumers 而不是 config.tp：行 16 之后 Ulysses 档的 CP 也在分同一批
+       头，只看 TP 会漏掉「TP 2 × CP 4 = 8 份，而 KV 只有 4 个头」这种。
+       ⚠️ 判据改对了，但在**当前两个预设上仍然不可达**（行 16 的验证跑出来的）：
+       Qwen2 的 TP 被 gcd(28, 18944) = 4 顶死，Ulysses 档下 TP×CP 又必须整除 28，
+       2 的幂梯子上能凑出的只有 1 / 2 / 4 —— 全都整除 KV 头数 4。
+       留着仍不是为了现在：换一个 heads 与 kvHeads 比值更大的 GQA 模型进来它就活了，
+       而那时若判据只看 TP，Ulysses 档就会漏报。 */
+    const headSplit = headConsumers(config);
+    if (preset.kvHeads && preset.heads % headSplit === 0 && preset.kvHeads % headSplit !== 0) {
+      const who = cpIsUlysses(config) && config.cp > 1
+        ? `TP ${config.tp} × CP ${config.cp} = ${headSplit} 份` : `TP ${config.tp}`;
+      warnings.push(`KV 头 ${preset.kvHeads} 不能被 ${who} 整除，KV 会在组内复制`
+        + ` —— 本页的显存与 yaml 均按不复制估算，超过 ${preset.kvHeads} 份时偏乐观`);
+    }
+    /* Ulysses 的 all-to-all 与 TP 的 all-reduce 争的是同一批头、也争同一条链路，
+       两者的组内卡数是乘起来的 —— TP 单独没超节点、乘上 CP 就超了，是这一档特有的
+       坑。与行 7 那条 TP 跨节点同属选型提示，不拦截。
+       Ring 档没有这条：它的 KV 轮转是点对点、可与计算重叠，跨机代价小得多。 */
+    if (cpIsUlysses(config) && config.cp > 1 && config.tp * config.cp > perNode) {
+      warnings.push(`Ulysses 档下 CP 与 TP 切的是同一批头，两者合起来 TP ${config.tp}`
+        + ` × CP ${config.cp} = ${config.tp * config.cp} 卡，超过单节点 ${perNode} 卡`
+        + ` —— 头维的 all-to-all 被迫跨节点，且和 TP 的 all-reduce 一样在关键路径上；`
+        + `序列长到非切不可时，Ring 档的 KV 轮转是点对点、可与计算重叠，更扛跨机`);
     }
     /* FSDP2 与张量 / 流水 / 序列并行同用：功能上合法（HSDP + TP 是有人在跑的），
        但它是两条路线的混用：FSDP 已经沿 DP 把整个模型切开了，再叠一层模型切分，
@@ -719,7 +1131,11 @@
     /* 结构与序列的整除约束也要挡在这里 —— 不挡的话拖 Total Rank 时
        fitParallelWorld 会自己配平出一个当场报错的 TP / CP（DP 踩过一次）。 */
     if (field === "tp" && !structurallyAllowed("tp", value, config)) return false;
-    if (field === "cp" && value > 1 && config.seqLen % (2 * value) !== 0) return false;
+    /* CP 的合法邻域也跟着口径走：Ulysses 那半由 structurallyAllowed 判（TP×CP 整除
+       头数），Ring 那半判序列。少了任一半，拖 Total Rank 时 fitParallelWorld 都会
+       自己配平出一个当场报错的 CP —— 行 2 的 DP 已经踩过一次同样的坑。 */
+    if (field === "cp" && !structurallyAllowed("cp", value, config)) return false;
+    if (field === "cp" && !cpIsUlysses(config) && value > 1 && config.seqLen % (2 * value) !== 0) return false;
     if (field === "ep" && config.routedExpert % value !== 0) return false;
     /* 切出档下 DP 必须是 EP 的整数倍（见 validate 的 EDP 整除）。不挡在这里，
        拖 Total Rank 时 fitParallelWorld 会自己配平出一个当场报错的 DP。
@@ -799,10 +1215,26 @@
       config.tp = nearestDivisor(shardBasis, config.tp, FIELD_SPECS.tp);
     }
 
-    /* 序列除不尽 2×CP：这一条两边都是可调字段，按锚点决定动谁。
-       锚在 seqLen 上就收 CP（序列为奇数时无解，退回 CP=1 —— 那一档本就不受这条
-       约束）；否则把序列抬到 2×CP 的最近倍数。 */
-    if (config.cp > 1 && config.seqLen % (2 * config.cp) !== 0) {
+    /* CP 的整除约束按口径分两条（升级计划行 16）。两条同形 —— 都是「两边都可调、
+       按锚点决定动谁」，只是对手字段不同：Ulysses 的对手是 TP，Ring 的对手是 seqLen。 */
+    if (cpIsUlysses(config)) {
+      const heads = presetOf(config).heads || 1;
+      if (config.cp > 1 && heads % (config.tp * config.cp) !== 0) {
+        if (anchor === "cp") {
+          /* 锚在 CP 上：收 TP。它同时还要整除两个 intermediate，所以合法值是
+             gcd(原基数, heads/CP) 的因子 —— 少了这个 gcd 会修出一个刚好除得尽头数、
+             却除不尽 MoE intermediate 的 TP，等于把一条错换成另一条错。 */
+          const room = heads % config.cp === 0 ? heads / config.cp : 1;
+          config.tp = nearestDivisor(gcd(tpShardBasis(config), room), config.tp, FIELD_SPECS.tp);
+        } else {
+          /* 只在 2 的幂档位上收 —— 基数 heads/TP 可能带奇因子（48/8 = 6），
+             收成 CP=3 会让 Total Rank 再也配不平，见 nearestPow2Divisor 的注释。 */
+          config.cp = nearestPow2Divisor(ulyssesCpBasis(config), config.cp, FIELD_SPECS.cp);
+        }
+      }
+    } else if (config.cp > 1 && config.seqLen % (2 * config.cp) !== 0) {
+      /* 锚在 seqLen 上就收 CP（序列为奇数时无解，退回 CP=1 —— 那一档本就不受这条
+         约束）；否则把序列抬到 2×CP 的最近倍数。 */
       if (anchor === "seqLen") {
         const half = config.seqLen % 2 === 0 ? config.seqLen / 2 : 0;
         config.cp = half ? nearestDivisor(half, config.cp, FIELD_SPECS.cp) : 1;
@@ -852,7 +1284,32 @@
       config.totalRank = world;
     }
 
-    /* 开关不可用时（TP=1 的 SP 与词表、DP=1 的优化器并行）一律停到 disabledValue，
+    /* 虚拟流水（升级计划行 17）。放在配平**之后**：PP 可能刚被 fitParallelWorld 改过，
+       而 VPP 的合法性完全依赖 PP 与层数。它不进 world 的乘积（VPP 一张卡都不多占），
+       所以这里只是把它收到合法档位上，不会反过来牵动 Total Rank。 */
+    if (config.pp <= 1) {
+      config.vpp = 1;
+    } else if (config.vpp > 1 && config.totalLayer % (config.pp * config.vpp) !== 0) {
+      /* 锚在 VPP 上：抬层数。Total Layer 是这条约束里唯一一个改了**不连累卡数**的
+         对手字段（动 PP 会改 Total Rank）—— openPangu 的 46 层连 PP=4 都除不尽，
+         所以按一下 VPP 的加号会把它抬到 48。这一跳走联动高亮，不是悄悄发生的。 */
+      if (anchor === "vpp") {
+        config.totalLayer = nearestMultiple(config.pp * config.vpp, config.totalLayer, FIELD_SPECS.totalLayer);
+      }
+      // 抬不动（撞量程，或锚不在 VPP 上）时把 VPP 自己收到最近的合法档
+      if (config.totalLayer % (config.pp * config.vpp) !== 0) config.vpp = nearestVpp(config);
+    }
+
+    /* 重算层数跟着「最重的那个 stage 有多少层」走（升级计划行 19）。同样放在配平之后：
+       PP 与 Total Layer 都可能刚被上面几段改过。这里只夹上界，不报错 ——
+       「12 层的 stage 想重算 16 层」不是一处矛盾，只是一个多余的数，夹回去即可。
+       加减键那边由 specMax 提前停住，走到这里的是手输与联动（PP 变大 → 每段变薄）。 */
+    config.recomputeLayers = Math.min(
+      Math.max(FIELD_SPECS.recomputeLayers.min, config.recomputeLayers || FIELD_SPECS.recomputeLayers.min),
+      specMax("recomputeLayers", config),
+    );
+
+    /* 开关不可用时（TP=1 的 SP 与词表、DP=1 的权重分片、CP=1 的 CP 口径）一律停到 disabledValue，
        不能就地放着不管：不这么做的话「TP=8 开着 SP → 把 TP 降回 1」会留下一个改不动
        的开状态 —— 控件此时是灰的，而 yaml 仍写 use_seq_parallel: True 并标成「与默认
        不同」，成了一个用户看得见却无从解释的数。
@@ -877,7 +1334,7 @@
   /* ── 派生：把配置展开成四个视图共用的实体表 ───────────────────────────── */
   function derive(config) {
     const preset = presetOf(config);
-    const { totalLayer, dp, pp, tp, cp, routedExpert, sharedExpert, ep, totalRank } = config;
+    const { totalLayer, dp, pp, vpp, tp, cp, routedExpert, sharedExpert, ep, totalRank } = config;
     const errors = validate(config);
     const warnings = warn(config);
     /* 不读 config.node —— 它是 reconcile 落下的同一份派生结果，这里重算一遍，
@@ -1018,7 +1475,10 @@
            edp 是集群矩阵 d 轴、rank 编址真正用的组数。凡是「有几个副本要画 / 要
            遍历」一律读 edp，凡是「显示这个配置项的值」读 dp。 */
         dp, edp, moeOrthogonal: Boolean(config.moeOrthogonal),
-        pp, tp, cp, totalRank, node, ranksPerNode,
+        /* vpp / cpMode 不参与 rank 编址，也不进 world —— 放进 counts 只是因为
+           capacity（在飞份数）与 yaml（那两行）要读它们，而两个模块都只吃 topology。 */
+        pp, vpp: vpp || 1, cpMode: config.cpMode || "ulysses",
+        tp, cp, totalRank, node, ranksPerNode,
         /* 末节点实际装了几张卡。整机倍数时等于 ranksPerNode；只有手输能拨出
            不足一机的尾数（dp=3 → 12 卡 = 1 整机 + 4 张），yaml 那行要照实写。 */
         tailRanks,
@@ -1044,9 +1504,47 @@
      所以按常规图标口径给 2 格描边、12px 渲染，展开时由 CSS 转 180°。 */
   const CARET = '<svg viewBox="0 0 24 24" aria-hidden="true" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9.5l6 6 6-6"></path></svg>';
 
-  /* 哪一行的开关收进「高级」里。目前只有 parallel（三枚切法）——
-     batch 行只有「重计算」一枚，收起来反而多一次点击。 */
-  const ADVANCED_GROUP = "parallel";
+  /* ── 哪几枚收进各行末尾的「高级」折叠 ──────────────────────────────────
+     两行各有各的判据，都能一眼验：
+
+     parallel —— **拨了 Total Rank 一张卡都不变的，就不该占着行里那一格**。
+       于是行里留下的恰好是 world 乘积的四个因子（DP×PP×TP×CP）加模型自身的层数。
+       VPP 是其中唯一一枚普通 stepper：它有真的档位要拨，却不进 world 的乘积；
+       真实调参里它也在第二梯队（先 DP/TP/PP/EP 把模型装下、再重计算与 ZeRO 挤余量，
+       最后才在性能阶段动它），而且默认预设下它压根拨不动（46 层连 PP=4 都除不尽），
+       摆在首屏正中间等于再犯一次「一枚只能停在一个值上的 stepper 不是 stepper」。
+
+     batch —— **只在另一枚控件拨到某一档之后才有意义的，收进来**（升级计划行 18 / 19）。
+       重算层数只有「重计算 · 按层数」那一档才生效（拨到那一档时折叠会自动掀开，
+       见 set()）；LoRA 那一对是微调侧的旋钮，而本页两个预设写的都是预训练配置。
+       行里因此仍只留 Micro Batch / Seq Length / 重计算 三枚 —— 前两枚是「装多少」，
+       第三枚是「留不留」，一行读完仍是一句完整的话。
+
+     列表里既可以是 FIELD_SPECS 的字段（走 attachStepper），也可以是 FLAG_SPECS 的
+     开关 / 档位控件 —— 面板按这里的顺序铺，与两张表各自的顺序无关。
+     未列到的开关照旧接在自己那一行的末尾（目前 batch 的「重计算」就是）。 */
+  const ADVANCED_ITEMS = {
+    parallel: ["vpp", "cpMode", "seqParallel", "vocabEmbDp", "shardMode"],
+    batch: ["recomputeLayers", "lora", "loraRank"],
+  };
+
+  /* 折叠按钮的悬浮说明：里面收着什么、为什么收在这里。按行分写 —— 两行的判据
+     本来就不是同一条。 */
+  const ADVANCED_TITLE = {
+    parallel: "VPP / CP 口径 / 序列并行 SP / 词表走 DP / 权重分片\n\n"
+      + "收在这里的判据只有一条：**拨了 Total Rank 一张卡都不变**。"
+      + "所以外面留下的五枚恰好是 world 乘积的因子（DP×PP×TP×CP）加模型自身的层数。\n"
+      + "这几枚不占卡，却各自改着别的东西：\n"
+      + "· VPP —— 把每个 stage 的层再拆成几段轮流跑，气泡变小、在飞激活变多\n"
+      + "· CP 口径 —— CP > 1 时换掉一条硬校验（Ulysses 拦 TP×CP 整除注意力头，"
+      + "Ring 拦序列长度整除 2×CP）\n"
+      + "· SP / 词表走 DP / 权重分片 —— 三种不额外占卡的切法",
+    batch: "重算层数 / LoRA / LoRA Rank\n\n"
+      + "收在这里的判据是：**只在另一枚控件拨到某一档之后才有意义**。\n"
+      + "· 重算层数 —— 只有「重计算 · 按层数」那一档才按它算（拨到那一档时这个折叠会自动掀开）\n"
+      + "· LoRA / LoRA Rank —— 冻结主干只训 adapter，梯度段与优化器段跟着 adapter 走、"
+      + "权重段一个字节不少。本页两个预设写的都是预训练配置，所以它默认关着",
+  };
 
   /* ── 建议修法 ─────────────────────────────────────────────────────────────
      手输了一个与其它字段不兼容的数之后，横幅要答出「把哪几个字段改成多少就兼容
@@ -1082,6 +1580,10 @@
     const wrap = document.createElement("div");
     wrap.className = "cro-stepper";
     wrap.dataset.field = field;
+    /* 挂在外壳上而不是标签上：悬浮标签、读数、以及**没被置灰的**加减键都该答出
+       「这枚是干什么的」。加减键走不动时 emit() 会给按钮自己挂上 stepBlockReason，
+       那个更靠内、优先显示 —— 「为什么点不动」是另一个问题，不该和这段揉在一起。 */
+    if (spec.title) wrap.title = spec.title;
 
     const label = document.createElement("span");
     label.className = "cro-stepper__label";
@@ -1108,12 +1610,12 @@
     readout.value = String(value);
     readout.setAttribute("aria-label", spec.label);
     /* size 决定输入框的固有宽度。不给的话浏览器按 20 个字符算 —— 这正是换成
-       input 之后整行 stepper 变宽的原因。按当前值的位数给（下限 3），读数的宽度
-       就与还是 <span> 时的内容自适应一致。 */
-    readout.size = Math.max(3, String(value).length);
+       input 之后整行 stepper 变宽的原因。按当前值的位数给（下限见 readoutSize），
+       读数的宽度就与还是 <span> 时的内容自适应一致。 */
+    readout.size = readoutSize(field, String(value));
     // 打字过程中同步跟宽，但**不提交**（提交仍在 Enter / 失焦，见下面的注释）
     readout.addEventListener("input", () => {
-      readout.size = Math.max(3, readout.value.length || 1);
+      readout.size = readoutSize(field, readout.value);
     });
 
     const inc = document.createElement("button");
@@ -1162,7 +1664,7 @@
     const stepButtons = new Map();       // [减, 加]，每次 emit 按能不能走动来置灰
     let nodeReadout = null;              // Node 的只读读数（派生量，没有加减键）
     const flagControls = new Map();      // 布尔开关的 input 与「开/关」两个字
-    const choiceControls = new Map();    // 三档字段（shardMode）的那排页签
+    const choiceControls = new Map();    // 有限档位字段（shardMode / cpMode）的那排页签
     const linkedHighlightTimers = new Map();
     const listeners = [];
     /* 手输进来的不兼容值：页面停在这一态，下游图形一律不更新，直到用户走三个出口
@@ -1175,62 +1677,84 @@
     // 同一时刻的拓扑，供 topology getter 在冻结期间兜底（见下面的 getter）
     let lastValidTopology = null;
 
+    /* 建一枚 stepper 并登记进三张表（读数 / 加减键 / 外壳）。行里和「高级」面板里
+       用的是同一个 —— 两处只是挂载的容器不同，别的一切（红圈、联动高亮、置灰理由）
+       都靠这三张表工作，漏登记哪一张就漏哪一种反馈。 */
+    function attachStepper(field) {
+      const stepper = buildStepper(field, config[field], apply, commitTyped);
+      readouts.set(field, stepper.querySelector(".zoom-control-readout"));
+      stepButtons.set(field, stepper.querySelectorAll(".cro-stepper__control button"));
+      wraps.set(field, stepper);
+      return stepper;
+    }
+
     function mount(container, group) {
       if (!container) return;
       container.innerHTML = "";
-      FIELD_ORDER[group].forEach((field) => {
-        const stepper = buildStepper(field, config[field], apply, commitTyped);
-        readouts.set(field, stepper.querySelector(".zoom-control-readout"));
-        stepButtons.set(field, stepper.querySelectorAll(".cro-stepper__control button"));
-        wraps.set(field, stepper);
-        container.appendChild(stepper);
-      });
-      /* 布尔开关接在自己那一行的末尾，外壳仍是 .cro-stepper（label 在上、控件在下），
+      FIELD_ORDER[group].forEach((field) => container.appendChild(attachStepper(field)));
+      /* 开关接在自己那一行的末尾，外壳仍是 .cro-stepper（label 在上、控件在下），
          所以它和旁边的 stepper 逐格对齐，读下来仍是同一行表单。
-         parallel 那一行例外：三枚一起收进「高级」后面，见 mountAdvanced()。 */
-      const flags = Object.keys(FLAG_SPECS).filter((flag) => FLAG_SPECS[flag].group === group);
-      if (group === ADVANCED_GROUP) {
-        mountAdvanced(container, flags);
-      } else {
-        flags.forEach((flag) => container.appendChild(
-          FLAG_SPECS[flag].options ? buildFlagChoice(flag) : buildFlagSwitch(flag)));
-      }
+         被 ADVANCED_ITEMS 点名的那几枚除外：它们一起收进「高级」后面，见 mountAdvanced()。 */
+      const advanced = ADVANCED_ITEMS[group] || [];
+      Object.keys(FLAG_SPECS)
+        .filter((flag) => FLAG_SPECS[flag].group === group && advanced.indexOf(flag) < 0)
+        .forEach((flag) => container.appendChild(buildFlagControl(flag)));
+      if (advanced.length) mountAdvanced(container, group, advanced);
       /* Node 接在 Total Rank 之后，仍占 stepper 的位置和排版，只是没有加减键 ——
          它是被 Total Rank 和卡型号一起定死的派生量。留在这一行而不是挪走，是因为
          「多少卡 → 多少节点」正是这一行要读出来的一句话，yaml 的 msrun 也照抄它。 */
       if (group === "cluster") container.appendChild(buildNodeReadout());
     }
 
-    /* ── 「高级」折叠：parallel 行末尾那三枚 ──────────────────────────────────
-       SP / 词表走 DP / 权重分片都是「不额外占卡的切法」，日常调参很少动，却各占一格
-       宽把前面五枚 stepper 挤到第二行去。收在一枚「高级 ⌄」后面：按钮本身就站在原先
-       SP 的那一格（行末），展开时三枚一起铺在下面一整行 —— 面板 flex-basis:100%，
-       所以它总是自己另起一行，不会插进 stepper 的缝里。
+    /* ── 「高级」折叠：每一行末尾各一枚 ──────────────────────────────────────
+       收进来的判据按行分写，见 ADVANCED_ITEMS 上面那段。收在一枚「高级 ⌄」后面：
+       按钮本身就站在行末那一格，展开时几枚一起铺在下面一整行 —— 面板
+       flex-basis:100%，所以它总是自己另起一行，不会插进 stepper 的缝里。
 
-       展开态记在 localStorage：这是「我这类活儿要不要一直看着这三枚」的长期偏好，
-       不是一次会话内的临时状态，下次进页面该照旧展开。 */
-    const ADVANCED_STORE_KEY = "cro:parallel-advanced-open";
-    let advancedPanel = null;
-    let advancedToggle = null;
+       展开态记在 localStorage，**每行各记各的**：parallel 那几枚切法与 batch 这几枚
+       微调侧的旋钮，是两类活儿，一个人可能常看前者、从不看后者。
+       parallel 的键名保持不变，老用户存下的偏好不会因为这次多出一个折叠而丢。 */
+    const advancedPanels = [];      // [{ group, panel, toggle, storeKey }]
 
-    function readAdvancedOpen() {
+    function advancedStoreKey(group) { return `cro:${group}-advanced-open`; }
+
+    function readAdvancedOpen(storeKey) {
       // 隐私窗口 / 站点数据被禁时读写都可能直接抛，一律当作「收起」，不能连页面都渲染不出来
-      try { return window.localStorage.getItem(ADVANCED_STORE_KEY) === "1"; }
+      try { return window.localStorage.getItem(storeKey) === "1"; }
       catch (e) { return false; }
     }
 
-    function setAdvancedOpen(open, remember) {
-      if (!advancedPanel || !advancedToggle) return;
-      advancedPanel.hidden = !open;
-      advancedToggle.setAttribute("aria-expanded", String(open));
-      advancedToggle.classList.toggle("is-open", open);
+    function setAdvancedOpen(entry, open, remember) {
+      if (!entry || !entry.panel || !entry.toggle) return;
+      const changed = entry.panel.hidden === open;      // hidden 与 open 相反即为翻转
+      entry.panel.hidden = !open;
+      entry.toggle.setAttribute("aria-expanded", String(open));
+      entry.toggle.classList.toggle("is-open", open);
+      /* 面板一开一合，**它下面的所有东西整块平移一行的高度** —— Cluster 那一枚
+         尤其明显：矩阵直接上下挪一整行。于是两件事得跟着补：关系图的连线画在
+         viewport 坐标上，不重画就还连在旧位置；收起腾出来的那截高度得让矩阵吃掉，
+         否则下面白着一条。两件都由 boot 里那条 cro:layout 监听统一做 ——
+         控制器持有的是 config 与表单，不认识矩阵，也不该认识。
+         只在真的翻转时发：mount() 的首次恢复与「本来就开着又被联动掀一次」都不是
+         版面变化，白发一次就是白量一次几何。 */
+      if (changed) {
+        document.dispatchEvent(new CustomEvent("cro:layout", {
+          detail: { source: "advanced", group: entry.group, open },
+        }));
+      }
       // remember=false 用于「被联动强行掀开」那一路：不该把用户的偏好改掉
       if (!remember) return;
-      try { window.localStorage.setItem(ADVANCED_STORE_KEY, open ? "1" : "0"); }
+      try { window.localStorage.setItem(entry.storeKey, open ? "1" : "0"); }
       catch (e) { /* 存不下就只是记不住，不该连展开这个动作本身都失败 */ }
     }
 
-    function mountAdvanced(container, flags) {
+    /* 某个控件所在的折叠（不在任何折叠里就返回 undefined）。联动高亮与
+       「拨到按层数就把折叠掀开」两处都靠它找面板。 */
+    function advancedPanelOf(wrap) {
+      return wrap ? advancedPanels.find((entry) => entry.panel && entry.panel.contains(wrap)) : undefined;
+    }
+
+    function mountAdvanced(container, group, items) {
       /* 按钮外壳仍是 .cro-stepper，为的是和左边五枚 stepper 逐格对齐 —— 那边是
          「label 在上、控件在下」两行，这里的 label 位置空着但要占住，否则按钮会顶到
          行首去（.cro-stepper-row 是 align-items:flex-start）。用一个 aria-hidden 的
@@ -1243,35 +1767,51 @@
       spacer.setAttribute("aria-hidden", "true");
       spacer.textContent = " ";   // nbsp：占住 label 那一行的高度，按钮才和邻居对齐
 
-      advancedToggle = document.createElement("button");
-      advancedToggle.type = "button";
-      advancedToggle.className = "btn btn-sm btn-ghost cro-advanced-toggle";
-      advancedToggle.id = "croParallelAdvancedToggle";
-      advancedToggle.setAttribute("aria-controls", "croParallelAdvanced");
-      advancedToggle.title = "序列并行 SP / 词表走 DP / 权重分片 —— 三者都是切法，都不额外占卡，"
-        + "日常调参不常动，所以收在这里。";
+      /* id 按行拼（croParallelAdvanced / croBatchAdvanced）—— parallel 那一份与
+         改动前逐字相同，页面里指向它的 aria 关系不受影响。 */
+      const baseId = "cro" + group.charAt(0).toUpperCase() + group.slice(1) + "Advanced";
+      const toggle = document.createElement("button");
+      toggle.type = "button";
+      toggle.className = "btn btn-sm btn-ghost cro-advanced-toggle";
+      toggle.id = baseId + "Toggle";
+      toggle.setAttribute("aria-controls", baseId);
+      toggle.title = ADVANCED_TITLE[group] || "";
       const text = document.createElement("span");
-      text.textContent = "高级";
+      text.textContent = "高级选项";
       const caret = document.createElement("span");
       caret.className = "cro-advanced-toggle__caret";
       caret.innerHTML = CARET;
-      advancedToggle.append(text, caret);
-      advancedToggle.addEventListener("click", () => {
-        setAdvancedOpen(advancedToggle.getAttribute("aria-expanded") !== "true", true);
-      });
+      toggle.append(text, caret);
 
-      wrap.append(spacer, advancedToggle);
+      wrap.append(spacer, toggle);
       container.appendChild(wrap);
 
-      advancedPanel = document.createElement("div");
-      advancedPanel.className = "cro-advanced-panel";
-      advancedPanel.id = "croParallelAdvanced";
-      advancedPanel.setAttribute("aria-labelledby", "croParallelAdvancedToggle");
-      flags.forEach((flag) => advancedPanel.appendChild(
-        FLAG_SPECS[flag].options ? buildFlagChoice(flag) : buildFlagSwitch(flag)));
-      container.appendChild(advancedPanel);
+      const panel = document.createElement("div");
+      panel.className = "cro-advanced-panel";
+      panel.id = baseId;
+      panel.setAttribute("aria-labelledby", toggle.id);
+      /* 顺序完全由 ADVANCED_ITEMS 给：普通 stepper 与开关混排，谁挨着谁按「读下来是
+         一句话」排 —— parallel 那一行是「先量后档」（VPP 在四枚档位控件之前），
+         batch 那一行是「重算层数 / LoRA / LoRA Rank」，各自紧挨着它所属的那一档。
+         两种控件走的都是同一个 attachStepper / buildFlagControl，所以红圈、联动高亮、
+         置灰理由一样不少。 */
+      items.forEach((name) => panel.appendChild(
+        FIELD_SPECS[name] ? attachStepper(name) : buildFlagControl(name)));
+      container.appendChild(panel);
 
-      setAdvancedOpen(readAdvancedOpen(), false);
+      const entry = { group, panel, toggle, storeKey: advancedStoreKey(group) };
+      advancedPanels.push(entry);
+      toggle.addEventListener("click", () => {
+        setAdvancedOpen(entry, toggle.getAttribute("aria-expanded") !== "true", true);
+      });
+
+      setAdvancedOpen(entry, readAdvancedOpen(entry.storeKey), false);
+    }
+
+    /* 一枚 FLAG_SPECS 控件：带 options 的是 segmented-control，不带的是开关。
+       主行与折叠面板都从这里取，别在两处各判一次。 */
+    function buildFlagControl(flag) {
+      return FLAG_SPECS[flag].options ? buildFlagChoice(flag) : buildFlagSwitch(flag);
     }
 
     /* 开关：原生 checkbox + 自绘轨道，选中态 / 空格键 / 焦点环全部由浏览器给。
@@ -1310,7 +1850,7 @@
       return wrap;
     }
 
-    /* 三档字段（当前只有 shardMode）：外壳与开关完全相同（.cro-stepper，label 在上、
+    /* 有限档位字段（权重分片三档、CP 口径两档）：外壳与开关完全相同（.cro-stepper，label 在上、
        控件在下），控件本身换成 MoE 那枚 EP 口径切换用的同一款小号 segmented-control ——
        同一页里「一个量在几档之间二选一/三选一」已经有了既定长相，不再造第二种。
        没有做成 <select>：三档要一眼看全（关 ⊂ ZeRO-1 ⊂ ZeRO-3 是一条阶梯，
@@ -1372,9 +1912,8 @@
         /* 被联动改掉的字段正收在「高级」里（TP 落回 1 会强制关掉 SP）：先掀开面板，
            否则这 3 秒高亮就播在一个看不见的地方，yaml 那行自己变了而表单上什么都没动
            —— 正是 disabledValue 那一段要避免的情形。不写回偏好：这是页面替用户掀的。 */
-        if (advancedPanel && advancedPanel.contains(wrap) && advancedPanel.hidden) {
-          setAdvancedOpen(true, false);
-        }
+        const holder = advancedPanelOf(wrap);
+        if (holder && holder.panel.hidden) setAdvancedOpen(holder, true, false);
 
         clearTimeout(linkedHighlightTimers.get(field));
         // 先移除并触发布局，再加回 class，使连续联动也能重新播放 3 秒提示。
@@ -1414,9 +1953,12 @@
       const spec = FIELD_SPECS[field];
       const parsed = Number(String(raw).trim());
       /* 非整数 / 超量程不进报错态：那不是「参数之间不兼容」，是这个数根本不在这一
-         维的取值范围里，没有可建议的修法。直接还原，并把量程写给用户看。 */
-      if (!Number.isInteger(parsed) || parsed < spec.min || parsed > spec.max) {
-        rangeHint = { field, raw: String(raw).trim() };
+         维的取值范围里，没有可建议的修法。直接还原，并把量程写给用户看。
+         上界读 specMax 而不是 spec.max：重算层数的上界是算出来的（每个 stage 只有
+         那么多层），加减键与手输必须认同一个数，否则「加号停在 12、手输 16 却收下了」。 */
+      const max = specMax(field, config);
+      if (!Number.isInteger(parsed) || parsed < spec.min || parsed > max) {
+        rangeHint = { field, raw: String(raw).trim(), max };
         emit();
         return;
       }
@@ -1440,6 +1982,14 @@
       config[field] = value;
       reconcile(config, field);
       highlightLinkedChanges(before, field);
+      /* 拨到「重计算 · 按层数」时把 batch 那个折叠掀开（升级计划行 19）：这一档带着
+         的那枚「重算层数」正收在里面，不掀开等于拨了一个当场看不出效果的档 ——
+         而这一档与另外三档的区别恰恰全在那个数上。
+         与联动高亮同一路：不写回用户偏好，这是页面替他掀的。 */
+      if (field === "recomputeMode" && value === "layers") {
+        const holder = advancedPanelOf(wraps.get("recomputeLayers"));
+        if (holder && holder.panel.hidden) setAdvancedOpen(holder, true, false);
+      }
       emit();
     }
 
@@ -1498,7 +2048,8 @@
         const spec = FIELD_SPECS[rangeHint.field];
         const line = document.createElement("p");
         line.className = "cro-config-error__msg";
-        line.textContent = `${spec.label} 只接受 ${spec.min}–${spec.max} 之间的整数`
+        line.textContent = `${spec.label} 只接受 ${spec.min}–`
+          + `${rangeHint.max === undefined ? spec.max : rangeHint.max} 之间的整数`
           + `，「${rangeHint.raw}」已还原`;
         el.appendChild(line);
         rangeHint = null;                      // 一次性提示，下一次操作即消失
@@ -1600,7 +2151,7 @@
         // 正在输入的那一枚不覆写，否则会打断光标和选区
         if (el === document.activeElement) return;
         el.value = String(config[field]);
-        el.size = Math.max(3, el.value.length);   // 跟着位数收放，见 buildStepper
+        el.size = readoutSize(field, el.value);   // 跟着位数收放，见 buildStepper
       });
       flagControls.forEach(({ input, state, control, wrap }, flag) => {
         input.checked = Boolean(config[flag]);
@@ -1646,6 +2197,27 @@ ${spec.title}`;
          pointer-events:none，按钮收不到 hover，title 压根弹不出来。点击无害 ——
          apply() 里 next === 现值时本来就直接 return。 */
       stepButtons.forEach((btns, field) => {
+        /* 整枚不可用的（未开 LoRA 的 Rank、非「按层数」档的重算层数，升级计划行 18 / 19）：
+           连输入框一起置灰，外壳挂上 is-unavailable —— 与那几枚开关同一副长相，
+           判据也同一条（stepValue 已经让加减键原地不动，这里只是把它说出来）。
+           输入框用原生 disabled：理由挂在外壳 .cro-stepper 上，指针事件到得了。 */
+        const spec = FIELD_SPECS[field];
+        const usable = !spec.enabledWhen || spec.enabledWhen(config);
+        const wrap = wraps.get(field);
+        if (wrap) {
+          wrap.classList.toggle("is-unavailable", !usable);
+          /* 两件事挂在同一个 title 上，得叠而不是互相抹掉：
+             `spec.title` 是「这枚是干什么的」（buildStepper 建好时挂的，目前只有 VPP 有），
+             `spec.disabledReason` 是「此刻为什么不可用」。理由排在正文之前 —— 与那几枚
+             开关（buildFlagSwitch / buildFlagChoice 那两处）逐字同一种写法。
+             ⚠️ 早先这里是 `usable ? "" : reason`，会把 buildStepper 挂上的说明在第一次
+             emit() 时就抹掉，VPP 的悬浮因此一直不出来。 */
+          wrap.title = usable
+            ? (spec.title || "")
+            : (spec.title ? `${spec.disabledReason}\n\n${spec.title}` : spec.disabledReason);
+        }
+        const readout = readouts.get(field);
+        if (readout) readout.disabled = !usable;
         [-1, 1].forEach((dir, i) => {
           const btn = btns[i];
           if (stepValue(field, config[field], dir, config) !== config[field]) {
@@ -1680,6 +2252,15 @@ ${spec.title}`;
       }
       if (rangeHint) badFields.add(rangeHint.field);
       wraps.forEach((el, field) => el.classList.toggle("is-invalid", badFields.has(field)));
+      /* 被标红的字段正收在「高级」里就先掀开面板 —— 「红圈的名单必须与横幅列的名单
+         一致」这条，在折叠出现之后要多守一步：横幅让改 VPP，页面却红在一个看不见的
+         地方，读起来就是横幅算错了。与联动高亮同一路，同样不写回用户偏好。
+         （VPP 进折叠之后这条才真正必要：手输它得先展开，但**别的字段**手输后的建议
+         修法里可以带上它。） */
+      badFields.forEach((field) => {
+        const holder = advancedPanelOf(wraps.get(field));
+        if (holder && holder.panel.hidden) setAdvancedOpen(holder, true, false);
+      });
       renderConfigError(topology);
 
       /* 参数不兼容时**不往下游发**：集群矩阵、整网 deck、单卡容量、YAML 一律停在
@@ -2842,21 +3423,10 @@ ${spec.title}`;
     board.style.gridTemplateRows = `${row1}px ${row2}px`;
   }
 
-  /* ── d 轴口径的两处常驻文案 ──────────────────────────────────────────────
-     只改文字，不碰任何几何。之所以要有这两个函数：切出档下表单里的 DP 是 512、
-     矩阵左侧标的是 EDP0–7，光把标签改名还不够 —— 得把「512 ÷ 64 = 8」这句
-     换算摆在不用悬浮就看得见的地方，否则读者只会认为其中一个数算错了。 */
-  function syncClusterAxisNote(topology) {
-    const el = document.getElementById("croClusterAxisNote");
-    if (!el) return;
-    const c = topology.counts;
-    const text = dAxisName(c) === "EDP"
-      ? `矩阵纵轴 = EDP ${c.edp}（DP ${c.dp} ÷ EP ${c.ep}）· 一行是一个完整模型副本，含全部 ${c.ep} 个 EP rank`
-      : `矩阵纵轴 = DP ${c.dp} · 一行是一个完整模型副本`;
-    el.textContent = text;
-    // 窄窗口下这行会被省略号截断，完整句子留在 title 里
-    el.title = text;
-  }
+  /* Cluster 区标题右侧原先常驻一行 d 轴口径说明（「矩阵纵轴 = EDP 8（DP 512 ÷ EP 64）…」），
+     由 syncClusterAxisNote 按配置改写。已整体移除 —— 标题行只留区名。
+     那句换算并没有丢，仍在三处答得出来：矩阵格子的悬浮提示、单卡容量栏口径浮层里
+     的「EDP」一行、以及文档视图「EP 与 DP：正交还是从 DP 切出」一章。 */
 
   function renderCluster(host, topology, emit) {
     if (!host) return;
@@ -4878,8 +5448,11 @@ ${spec.title}`;
         const spec = CARD_SPECS[id];
         const option = document.createElement("option");
         option.value = id;
-        // 容量直接写进选项：选卡的当下就是在选容量框的高度，不该等到看口径才知道
-        option.textContent = `${spec.short}（${spec.hbmGB}G）`;
+        /* 容量直接写进选项：选卡的当下就是在选容量框的高度，不该等到看口径才知道。
+           分隔用「·」而不是全角括号 —— 那对括号各占一个汉字宽（26px），
+           而这一格与另外六枚控件共用 Cluster 那一行的宽度预算，
+           一对括号就够别处的一枚加减键了。信息一个字没少。 */
+        option.textContent = `${spec.short} · ${spec.hbmGB}G`;
         option.title = `${spec.label} · ${spec.hbmGB} GB HBM · ${spec.hbmNote}`
           + ` · 整机 ${spec.ranksPerNode || 8} 卡（决定 Node）`;
         if (id === controller.config.card) option.selected = true;
@@ -6368,7 +6941,6 @@ ${spec.title}`;
          一行的视口高度才是终局值，renderCluster 照着它算折几行、格子多高，铺出来
          正好填满，既不留白也不溢出。 */
       syncBoardRows(topology.counts);
-      syncClusterAxisNote(topology);
       renderCluster(document.getElementById("croHeat"), topology, emitSelect);
       refitClusterCells({ growHeight: false });
       if (activeIncident) requestAnimationFrame(() => selectIncident(activeIncident));
@@ -6404,6 +6976,27 @@ ${spec.title}`;
       clearTimeout(clusterResizeTimer);
       clusterResizeTimer = setTimeout(resyncClusterGeometry, 180);
     });
+
+    /* ── 版面自己变了（不是窗口变了）：「高级选项」折叠一开一合 ──────────────
+       它把**它下面的所有东西整块平移**一行的高度。Cluster 那一枚尤其明显：
+       矩阵直接上下挪一整行。要补的正是窗口 resize 那两件事，一件都不能省：
+         · 关系图的连线画在 viewport 坐标上，不重画就还连在旧位置 ——
+           与滚动、窗口缩放同一类位移，那两处早有处理（见下面 scroll/wheel 与
+           resize 两条），折叠是第三处；
+         · 收起腾出来的那截高度得让矩阵吃掉，否则 Cluster 区下面白着一条 ——
+           走的就是事件栏折叠那条同样的补量（resyncClusterGeometry）。
+       **不防抖**：这是一次确定的、一步到位的版面变化，不是 resize 那种连续事件，
+       180ms 的防抖只会让矩阵慢半拍才长开。rAF 一帧是为了等 [hidden] 生效后再量。
+       事件由 createController 的 setAdvancedOpen 发 —— 控制器不认识矩阵，也不该
+       认识；这里是唯一知道「版面变了要补什么」的地方。 */
+    document.addEventListener("cro:layout", () => requestAnimationFrame(() => {
+      resyncClusterGeometry();
+      /* 连线要等矩阵**落定**再画，所以隔一帧：resyncClusterGeometry 有一条会走
+         rebuildCluster 的分支（腾出来的高度可能让 EP 折行数都变了 —— 折几行是
+         按可用高度算的），而重建之后还有一次 rAF 里的补量。同一帧里画就画在了
+         中间态上。一次点击晚一帧看不出来，画错位置看得出来。 */
+      requestAnimationFrame(redrawLinks);
+    }));
 
     // 列宽随窗口变化，PP 带的实测定位要跟着重排
     if (layerNav && global.ResizeObserver) {

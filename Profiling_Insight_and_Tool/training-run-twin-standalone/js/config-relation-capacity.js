@@ -20,6 +20,7 @@
        词表 Emb/Head  vocab_emb_dp 开着时**不切 TP**，每卡背满（升级计划行 11）
        所有权重  ÷ PP（体现为「这张卡只背本 stage 那几层」）
        DP        只切优化器状态那一段，且仅在优化器并行开着时（升级计划行 10）
+       梯度/优化器  只按**可训练**参数算 —— LoRA 冻结主干后这两段跟 adapter 走（行 18）
    DP 那条是最反直觉也最有用的一条：把 DP 从 2 拉到 8，Total Rank 翻两番、集群矩阵
    多出几百格，权重 / 梯度 / 激活纹丝不动。「显存不够就加卡」只有加 TP/PP/EP 时才成立
    —— 唯一的例外是优化器并行（ZeRO-1），它让 DP 切得到那 12 B/参数的一段。
@@ -28,7 +29,8 @@
    1. 各 stage 层数不等（46/4 → 12,12,11,11），且 stage0 多背 embedding、末 stage
       多背 head —— 容量在集群上本来就不均，OOM 只需要一张卡爆。
    2. 1F1B 下 stage s 同时在飞 (PP−s) 份 micro-batch 的激活，stage0 最紧。
-      不算这一项会系统性低估最危险的那张卡。
+      不算这一项会系统性低估最危险的那张卡。开了虚拟流水（VPP>1）后换成交错式
+      1F1B 的份数，每张卡压得更多 —— 见 inflightMicroBatches（升级计划行 17）。
    3. 运行时开销必须算进去，且**不能做成 core 的固定百分比**。只画四段得到的是一
       个更好看的黑洞；而按已用量抽 10%，等于把一个几乎不随 core 变的量做成了正比
       项 —— 大 EP/大 PP 的轻卡被低估（光驱动+HCCL 就不止那点），重卡又虚高。这里
@@ -79,11 +81,64 @@
      这两个开关**原先写死在 config-relation-yaml.js 里**（recompute: True /
      use_seq_parallel: False），而这里按相反的假设（不重计算 + 开 SP）取 34 ——
      同一份配置两套故事，是升级计划行 9 要治的病。现在两边读同一个 config 字段。 */
-  function actPerLayer(topo) {
+  /* ── 重计算的四档（升级计划行 19）──────────────────────────────────────
+     行 9 只落了「全开 / 全关」两档，而这两档之间差着一个数量级 —— 实际调优最常
+     落的正是中间。四档的系数出自同一篇（Korthikanti et al. 2022 §4）：那里把每层
+     34·sbh 拆成 **attention 11 + FFN 19 + LayerNorm 4**，其中 10 是 TP 复制的、
+     24 是 TP 切得动的（10 = 两个 LN 输入 4 + 两段 block 输入 4 + 两个 dropout mask 2；
+     24 = attention 内部 8 + FFN 内部 16）。三个系数就是从这张表里读出来的：
+       关       全留                            → 34（开 SP）/ 10t+24（关 SP）
+       选择性   重算 FFN 段，只留它的输入        → 34−(16+1)=17 / 9t+8
+       全开     只留每层输入，反向重算一遍前向   → 2 / 2t
+     （关 SP 时把复制的那部分乘回 t：选择性是 (10−1) + (24−16)/t → 系数 9t+8。）
+     自洽性检查：**TP=1 时三个系数收敛成 34 / 17 / 2**，与 SP 无关 —— 与行 9 那两档
+     同一个性质。
+     「按层数」不在这里：它是**逐层混合**（前 N 层按 full、其余按 none），
+     没有单一的每层系数，见 actUnitsOfStage。
+
+     ⚠️ 「选择性」在真实框架里是**可配的算子名单**，不是一个定值：MindFormers 的
+     select_recompute 常见默认只挑 FFN 里的 SiLU / mul，落点在 17 与 34 之间；
+     本页取「整个 FFN 段」这一端。Megatron 的 --recompute-granularity selective
+     重算的是 attention 里的 softmax/dropout（5·a·s²/h 那一项），而本页按
+     FlashAttention 建模、这一项本来就不计入 —— 那一档在本页等于「关」，没有列进来。 */
+  function actCoeffs(topo) {
     const t = Math.max(1, topo.counts.tp);
+    const sp = Boolean((topo.config || {}).seqParallel);
+    return {
+      none: sp ? 34 : 10 * t + 24,
+      selective: sp ? 17 : 9 * t + 8,
+      full: sp ? 2 : 2 * t,
+    };
+  }
+
+  /* 重计算档位。⚠️ 兼容读法：老配置里这枚是布尔 recompute，true 等价于 "full" ——
+     只在这一处折算，与 shardPlan 对 parallelOptimizer 的处理同一条规矩。 */
+  function recomputeModeOf(topo) {
     const cfg = topo.config || {};
-    if (cfg.recompute) return cfg.seqParallel ? 2 : 2 * t;
-    return cfg.seqParallel ? 34 : 10 * t + 24;
+    if (cfg.recomputeMode) return cfg.recomputeMode;
+    return cfg.recompute ? "full" : "none";
+  }
+
+  /* 这个 stage 的激活系数**总和**（Σ 逐层系数），不是「每层系数 × 层数」——
+     「按层数」那一档下同一个 stage 里的层不是同一个系数。
+     N 逐段截断成 min(N, 本段层数)：12/12/11/11 这种不均分的分段里，同一个 N 对
+     短的那几段就是「整段全重算」。yaml 写出去的那个数组也按这里截断，两处必须一致。 */
+  function actUnitsOfStage(topo, stage) {
+    const seg = topo.stages[stage];
+    if (!seg || seg.count <= 0) return 0;
+    const coeff = actCoeffs(topo);
+    const mode = recomputeModeOf(topo);
+    if (mode !== "layers") return seg.count * (coeff[mode] !== undefined ? coeff[mode] : coeff.none);
+    const n = recomputedLayersOf(topo, stage);
+    return n * coeff.full + (seg.count - n) * coeff.none;
+  }
+
+  /* 「按层数」档下这个 stage 实际重算几层。别处（yaml、口径浮层）也读它。 */
+  function recomputedLayersOf(topo, stage) {
+    const seg = topo.stages[stage];
+    if (!seg || seg.count <= 0) return 0;
+    const want = Math.max(0, Math.floor((topo.config || {}).recomputeLayers || 0));
+    return Math.min(seg.count, want);
   }
 
   /* ══ 运行时开销的四项系数 ═══════════════════════════════════════════════
@@ -532,29 +587,85 @@
     return parts.unit * RUNTIME.fsdpPrefetch * BASIS.bytesWeight;
   }
 
+  /* ── LoRA：谁还需要梯度（升级计划行 18）─────────────────────────────────
+     冻结主干，只在若干矩阵旁挂一对低秩矩阵 A(r×d_in) / B(d_out×r)。本页按注意力的
+     q/k/v/o 四个 [H,H] 建模：每层 4 · r · (H+H) = 8rH 个 adapter 参数，同样 ÷ TP
+     （adapter 跟着它贴的那张矩阵一起被 TP 切）。
+     FFN / 专家上也可以挂 adapter（PEFT 的 target_modules 是可配的），本页不建模 ——
+     MoE 模型上给几百个专家逐个挂 adapter 不是常见做法，而注意力四件套是各家默认。
+
+     这一段的意义全在下面 measure() 里那三行：**梯度与优化器状态只跟可训练参数走**，
+     而权重段一个字节不少。16 B/参数里的 14 B 就这样从几十亿参数身上挪到几百万上。 */
+  function loraOn(topo) {
+    return Boolean((topo.config || {}).lora);
+  }
+
+  function loraParamsOfStage(topo, stage) {
+    if (!loraOn(topo)) return 0;
+    const seg = topo.stages[stage];
+    if (!seg || seg.count <= 0) return 0;
+    const r = Math.max(1, Math.floor((topo.config || {}).loraRank || 1));
+    const tp = Math.max(1, topo.counts.tp);
+    return seg.count * 4 * r * 2 * topo.preset.hidden / tp;
+  }
+
   /* 词表那一块（Embedding 或 LM Head 之一）在一张卡上折成多少 GB —— 口径浮层的
-     「首尾更重」那一行要用。走与上面完全相同的两条口径，别在那里再算一遍。 */
+     「首尾更重」那一行要用。走与上面完全相同的两条口径，别在那里再算一遍。
+     LoRA 下它是冻结的（adapter 只挂在注意力上），所以只剩权重那 2 B —— 「首尾更重」
+     这条结论仍成立，但重的程度小了三倍多，那一行的数字必须跟着变。 */
   function embHeadBytes(topo) {
     const { preset, counts } = topo;
     const params = preset.vocab * preset.hidden
       / (topo.config && topo.config.vocabEmbDp ? 1 : Math.max(1, counts.tp));
     const plan = shardPlan(topo);
-    return params / plan.weight.other * BASIS.bytesWeight
+    const weight = params / plan.weight.other * BASIS.bytesWeight;
+    if (loraOn(topo)) return weight;
+    return weight
       + params / plan.grad.other * BASIS.bytesGrad
       + params / plan.optim.other * BASIS.bytesOptim;
   }
 
-  /* ── 激活：1F1B 下 stage s 同时压着 (PP−s) 份 micro-batch ──────────────── */
+  /* ── 在飞的 micro-batch 份数（升级计划行 17）─────────────────────────────
+     **非交错 1F1B**（VPP=1）：stage s 同时压着 (PP−s) 份未反向的激活，stage0 最紧。
+
+     **交错式 1F1B**（VPP>1，虚拟流水）：每张卡持有 VPP 个 chunk，warmup 段要多灌
+     `2(PP−s−1) + (VPP−1)·PP` 份，加上正在算的那一份。但每一份只压着**一个 chunk**
+     的激活（本卡层数的 1/VPP），折回「整段 stage」的单位要再 ÷ VPP：
+
+         inflight(s) = [ 2(PP−s−1) + (VPP−1)·PP + 1 ] / VPP
+
+     s=0 时它化简成 `PP · (1 + (PP−1)/(PP·VPP))` —— 正是 Korthikanti et al. 2022 §2.2
+     给的交错式内存惩罚因子（本页 actPerLayer 的系数也出自这一篇），两处对得上。
+     这就是 VPP 的账：气泡按 1/VPP 缩小，代价全落在激活峰值上。
+
+     两条分支不能合并成一个式子：VPP=1 时框架走的是**另一套调度**（Megatron 在 vpp
+     为空时用非交错路径），把上式代到 VPP=1 会算出 1.75×PP，那不是页面此刻画的东西。
+
+     ⚠️ 未取 `min(warmup, micro_batch_num)`：capacity 不持有 micro_batch_num（它只
+     出现在 yaml 那一栏，按 4×PP 取）。micro-batch 数少于 warmup 时这里偏高估。 */
+  function inflightMicroBatches(topo, stage) {
+    const p = Math.max(1, topo.counts.pp);
+    const v = Math.max(1, topo.counts.vpp || 1);
+    if (v <= 1) return Math.max(1, p - stage);
+    return (2 * (p - stage - 1) + (v - 1) * p + 1) / v;
+  }
+
+  /* 在飞份数在交错档下不是整数（PP4 / VPP2 的 Stage0 是 5.5 段）。写给人看时保留
+     一位小数 —— 取整会把「交错让它变重了多少」这件事抹平，而那正是这一行要说的。 */
+  const inflightText = (n) => (Number.isInteger(n) ? String(n) : n.toFixed(1));
+
+  /* ── 激活：1F1B 下 stage s 同时压着若干份 micro-batch ──────────────────── */
   function activationBytes(topo, stage) {
     const { preset, counts, stages } = topo;
     const seg = stages[stage];
     if (!seg || seg.count <= 0) return 0;
-    const inflight = Math.max(1, counts.pp - stage);
-    return actPerLayer(topo)
+    const inflight = inflightMicroBatches(topo, stage);
+    /* 系数 × 层数合成了一个数（actUnitsOfStage）：「按层数」那一档下同一个 stage
+       里的层不是同一个系数，再乘一次 seg.count 就重了。 */
+    return actUnitsOfStage(topo, stage)
       * BASIS.microBatch
       * (BASIS.seq / Math.max(1, counts.cp))
       * preset.hidden
-      * seg.count
       / Math.max(1, counts.tp)
       * inflight;
   }
@@ -599,9 +710,17 @@
        FSDP2 三段一起切。改前 weight / grad 是无条件的 params × B —— 那句话
        只在前两档成立。 */
     const plan = shardPlan(topo);
-    const weight = shardedBytes(parts, plan.weight, BASIS.bytesWeight);
-    const grad = shardedBytes(parts, plan.grad, BASIS.bytesGrad);
-    const optim = shardedBytes(parts, plan.optim, BASIS.bytesOptim);
+    /* LoRA 下梯度与优化器状态**只跟 adapter 走**（升级计划行 18）：主干冻结，
+       那 14 B/参数一个字节也不为它留。权重段照旧是整份主干，另加 adapter 自己那点
+       权重 —— 三段的分母仍是同一组（adapter 不是专家权重，走 other 那一条）。
+       这是容量柱上最大的一次形变，比行 15 的 FSDP2 还大：FSDP2 是把 16 B 除以 DP，
+       LoRA 是让其中 14 B 换一个数量级小得多的乘数。 */
+    const adapter = loraOn(topo) ? { total: loraParamsOfStage(topo, stage), expert: 0 } : null;
+    const trainable = adapter || parts;
+    const weight = shardedBytes(parts, plan.weight, BASIS.bytesWeight)
+      + (adapter ? shardedBytes(adapter, plan.weight, BASIS.bytesWeight) : 0);
+    const grad = shardedBytes(trainable, plan.grad, BASIS.bytesGrad);
+    const optim = shardedBytes(trainable, plan.optim, BASIS.bytesOptim);
     const act = activationBytes(topo, stage);
     const core = weight + grad + optim + act;
     /* 底座摞在盒底而不是从 cap 里扣掉：两种算法对占比完全等价（都是
@@ -622,8 +741,15 @@
     return {
       stage, params, cap, total,
       ratio: total / cap,
-      inflight: Math.max(1, topo.counts.pp - stage),
+      inflight: inflightMicroBatches(topo, stage),
+      // chunks > 1 就是交错档：在飞份数的读法要跟着换（见 verdictText 与小柱 tooltip）
+      chunks: Math.max(1, topo.counts.vpp || 1),
       layers: topo.stages[stage] ? topo.stages[stage].count : 0,
+      /* LoRA 下「这张卡上有多少参数」与「其中多少个要梯度」是两个差着三四个数量级
+         的数，判定文案要拿它说话（见 verdictText）。未开时两者相等。 */
+      trainable: trainable.total,
+      // 这个 stage 实际重算了几层（「按层数」档之外恒为 0）—— 小柱 tooltip 要报
+      recomputed: recomputeModeOf(topo) === "layers" ? recomputedLayersOf(topo, stage) : 0,
       values: { base, weight, grad, optim, act, reserve },
       // 预留段在图上是一整段，拆项只在图例 tooltip 与口径浮层里给
       reserveParts: { comm, workspace, frag, unshard },
@@ -658,10 +784,27 @@
       : mode === "zero1"
         ? `已开 ZeRO-1，加 DP 只摊薄优化器状态那一段（当前 ${gb(m.values.optim)} GB），权重 / 梯度 / 激活不动。`
         : `加 DP 只增吞吐不增余量 —— 除非把「权重分片」拨到 ZeRO-1 或 FSDP2。`;
+    /* 重计算还没拨满时它就是「还没试过、又不撞任何整除约束」的那一项，该被点名 ——
+       而且要说清下一档能到哪（四档的系数差得很远，只说「开重计算」等于没说，
+       升级计划行 19）。 */
+    const rMode = recomputeModeOf(topo);
+    const rNote = rMode === "none"
+      ? `重计算一格没开：拨到「选择性」激活段直接减半，「全开」再掉一个数量级 —— 它不撞任何整除约束。`
+      : rMode === "selective"
+        ? `重计算停在「选择性」（每层 FFN 重算），再往上还有「按层数」与「全开」两档。`
+        : rMode === "layers"
+          ? `重计算按层数：本 stage 重算 ${m.recomputed}/${m.layers} 层，加大这个数即可继续压激活段。`
+          : `重计算已全开，激活段压无可压。`;
+    /* LoRA 只在**还没开**时提一句，而且必须带上前提 —— 它不是一个省显存的旋钮，
+       是换一种训练（升级计划行 18）。把它写成「省显存的下一步」是骗人的。 */
+    const loraNote = loraOn(topo)
+      ? ``
+      : `若这一跑本来就是微调而非预训练，Cluster 行「高级选项」里的 LoRA 会让梯度与优化器两段几乎归零`
+        + `（当前两段共 ${gb(m.values.grad + m.values.optim)} GB）—— 但它改的是训练本身，激活段一点不动。`;
     if (m.ratio > 1) {
       return `占用 ${pct}%，溢出 ${gb(-room)} GB —— 该配置预计 OOM。`
         + `其中底座与预留 ${gb(m.values.base + m.values.reserve)} GB 压不掉，`
-        + `减容器要动 EP / PP / TP。` + dpNote;
+        + `减容器要动 EP / PP / TP。` + dpNote + rNote + loraNote;
     }
     if (m.ratio > THRESHOLD.alert) {
       return `占用 ${pct}%，余量仅 ${gb(room)} GB —— 已越过 ${Math.round(THRESHOLD.alert * 100)}% 预警线。`
@@ -669,14 +812,19 @@
           ? `建议先把「权重分片」拨到 ZeRO-1（优化器状态 ÷ DP，不撞任何整除约束），再考虑提高 EP 或 PP。`
           : mode === "zero1"
             ? `建议提高 EP（切路由专家）或 PP（少背几层）；权重与梯度还整份压着，再往上一档拨到 FSDP2 也能压掉 ${gb(m.values.weight + m.values.grad)} GB 里的大部分。`
-            : `三段都已沿 DP 切开，还紧的话只剩激活可动 —— 提高 EP / PP，或开重计算。`);
+            : `三段都已沿 DP 切开，还紧的话只剩激活可动 —— 提高 EP / PP。`)
+        + rNote;
     }
     if (m.ratio > THRESHOLD.tight) {
       return `占用 ${pct}%，余量 ${gb(room)} GB —— 已越过 ${Math.round(THRESHOLD.tight * 100)}% 偏满线，`
         + `通信 buffer 与碎片的正常波动即可能触发 OOM。`;
     }
     return `占用 ${pct}%，余量 ${gb(room)} GB。`
-      + `本 stage 背 ${m.layers} 层、在飞 ${m.inflight} 份 micro-batch。`;
+      + (m.chunks > 1
+        ? `本 stage 背 ${m.layers} 层，交错成 ${m.chunks} 段轮流跑（VPP），`
+          + `在飞的激活折合 ${inflightText(m.inflight)} 份整段 micro-batch —— `
+          + `交错换来的小气泡就是拿这一项付的账。`
+        : `本 stage 背 ${m.layers} 层、在飞 ${m.inflight} 份 micro-batch。`);
   }
 
   /* 口径浮层内容：谁除以谁写清楚，尤其 DP 那一行 —— 它是这一栏最反直觉、也最该
@@ -684,7 +832,11 @@
      的），所以这一行按开关分写，不能再留一句「不除任何东西」。
      第二段专门回答「为什么各卡不一样」：这是看到 stage 小柱高低不齐时的第一个
      疑问，不解释就会被当成算错了。 */
-  function basisHtml(topo) {
+  function basisHtml(topo, shownStage) {
+    /* shownStage 是此刻柱子画的那个 stage —— 「按层数」那一档的读数是逐 stage 的
+       （前 N 层重算，N 按本段层数截断），浮层报的必须是眼前这根柱子的账。
+       其余各档与 stage 无关，这个参数用不上。 */
+    const stage = Number.isFinite(shownStage) && topo.stages[shownStage] ? shownStage : 0;
     const c = topo.counts;
     const card = topo.card;
     const cfg = topo.config || {};
@@ -697,34 +849,89 @@
       : `÷ ${shards.other}`;
     const row = (k, v) => `<dt>${k}</dt><dd>${v}</dd>`;
     const stageSizes = topo.stages.map((s) => s.count).join(" / ");
+    /* LoRA 下梯度与优化器状态**只跟 adapter 走**（行 18），而权重段一个字节不少 ——
+       这两行的主语因此换了人，不能只在末尾追一句「另外还有 LoRA」。 */
+    const loraNote = loraOn(topo)
+      ? `<br><b>LoRA 开着：这一段只算 adapter</b> —— 主干冻结、不需要梯度，`
+        + `每层只有注意力 q/k/v/o 四个矩阵旁挂的 <code>4·r·2H = ${4 * 2 * (cfg.loraRank || 1)}·H</code> 个参数（r=${cfg.loraRank || 1}）`
+      : "";
     return `<dl>`
-      + row("权重 / 梯度", `bf16，各 ${BASIS.bytesWeight} B/参数`
+      + row("权重", `bf16，${BASIS.bytesWeight} B/参数`
         + (plan.mode === "fsdp2"
-          ? `；<b>FSDP2 下这两段也沿 DP 切</b>：${denom}`
-          : `，每张卡各持一份完整的（${MODE_LABEL[plan.mode]} 档不切这两段）`))
-      + row("优化器状态", `Adam ${BASIS.bytesOptim} B/参数（fp32 master + momentum + variance）`
+          ? `；<b>FSDP2 下这一段也沿 DP 切</b>：${denom}`
+          : `，每张卡各持一份完整的（${MODE_LABEL[plan.mode]} 档不切这一段）`)
+        + (loraOn(topo) ? `<br>LoRA 下它<b>纹丝不动</b>：冻结不等于不用背，主干仍要整份留在卡上` : ""))
+      + row("梯度", `bf16，${BASIS.bytesGrad} B/<b>可训练</b>参数`
+        + (plan.mode === "fsdp2"
+          ? `；<b>FSDP2 下这一段也沿 DP 切</b>：${denom}`
+          : `，每张卡各持一份完整的（${MODE_LABEL[plan.mode]} 档不切这一段）`)
+        + loraNote)
+      + row("优化器状态", `Adam ${BASIS.bytesOptim} B/<b>可训练</b>参数（fp32 master + momentum + variance）`
         + (plan.mode === "none"
           ? `，<b>权重分片：关</b>，每张卡各存一份完整的`
           : `，<b>权重分片：${MODE_LABEL[plan.mode]}</b> —— ${denom}`
-            + `（同一份权重在数据并行域里复制了这么多份）`))
+            + `（同一份权重在数据并行域里复制了这么多份）`)
+        + loraNote)
       /* 只有 fsdp2 档有这一行：其余两档它恒为 0，写出来只会让人以为漏了什么 */
       + (plan.mode === "fsdp2" ? row("all-gather 暂存",
         `FSDP2 逐单元 unshard：算到哪一层就把<b>那一层的完整权重</b>收回来，算完即弃，反向再来一次。`
         + `峰值 = <code>最大单元 × 预取 ${RUNTIME.fsdpPrefetch} 份 × ${BASIS.bytesWeight} B</code>，计在预留段里`
         + `<br>由<b>最大的那个单元</b>定而不是总参数量 —— 首尾 stage 通常是词表那一块，中间 stage 是最重的一层`) : "")
-      + row("激活", `<code>${actPerLayer(topo)}·mb·(S/CP)·H·层数/TP</code> × 在飞份数`
-        + `（${topo.config.recompute ? "全重计算" : "不重计算"}、${topo.config.seqParallel ? "开 SP" : "关 SP"}`
-        + `，SP 在 Model Architecture 行、重计算在 Cluster 行）`
-        + (topo.config.recompute
-          ? `<br>全重计算只留每层的输入，反向再算一遍 —— 激活掉一个数量级，换来约 +30% 的算力开销（本页未建模算力）`
-          : ``))
+      /* 重计算升成四档之后（行 19），这一行必须报出**当前这一档的系数**而不是
+         一句「开 / 关」—— 中间两档的整个意义就是那个系数落在 34 与 2 之间的哪里。
+         「按层数」档没有单一系数，改报「几层按 2 算、几层按 34 算」。 */
+      + row("激活", (() => {
+        const coeff = actCoeffs(topo);
+        const mode = recomputeModeOf(topo);
+        const spNote = `（${topo.config.seqParallel ? "开 SP" : "关 SP"}；`
+          + `SP 在 Model Architecture 行的「高级选项」里、重计算在 Cluster 行）`;
+        if (mode === "layers") {
+          const n = recomputedLayersOf(topo, stage);
+          return `<b>重计算：按层数</b> —— 本 stage 的前 ${n} 层按 <code>${coeff.full}</code> 算、`
+            + `其余 ${Math.max(0, (topo.stages[stage] || { count: 0 }).count - n)} 层按 `
+            + `<code>${coeff.none}</code> 算，合计 <code>${actUnitsOfStage(topo, stage)}·mb·(S/CP)·H/TP</code>`
+            + ` × 在飞份数（见下）${spNote}`
+            + `<br>每个 stage 各按 <code>min(重算层数, 本段层数)</code> 截断 —— 这是唯一一档`
+            + `**逐 stage 分别生效**的：Stage0 在飞的份数最多，同样重算一层，它省下的绝对值也最多`;
+        }
+        const label = { none: "关", selective: "选择性", full: "全开" }[mode] || "关";
+        return `<code>${coeff[mode] !== undefined ? coeff[mode] : coeff.none}·mb·(S/CP)·H·层数/TP</code>`
+          + ` × 在飞份数（见下）（<b>重计算：${label}</b>）${spNote}`
+          + (mode === "full"
+            ? `<br>全开只留每层的输入，反向再算一遍 —— 激活掉一个数量级，换来约 +30% 的算力开销（本页未建模算力）`
+            : mode === "selective"
+              ? `<br>选择性只重算 FFN 段（每层 34 = attention 11 + FFN 19 + LayerNorm 4，`
+                + `砍掉 FFN 的 17 只留它的输入）—— 正好一半，算力只多两三个矩阵乘`
+              : ``);
+      })())
+      /* 只在开着时写这一行：关着时它恒等于「全部参数都可训练」，写出来是句废话。
+         两个数一起给 —— 「可训练占几分之几」正是这一档为什么能把两段压掉的全部理由。 */
+      + (loraOn(topo) ? (() => {
+        const parts = paramsOfStage(topo, stage);
+        const adapter = loraParamsOfStage(topo, stage);
+        const pct = parts.total > 0 ? (adapter / parts.total * 100) : 0;
+        return row("LoRA", `<b>r=${cfg.loraRank || 1}</b>，只在注意力 q/k/v/o 四个矩阵旁挂 A/B 一对`
+          + `（每层 <code>4·r·2H</code> 个参数，÷TP）`
+          + `<br>本 stage 每卡 <b>${(adapter / 1e6).toFixed(1)}M</b> 可训练 / `
+          + `${(parts.total / 1e6).toFixed(0)}M 参数 = <b>${pct < 0.01 ? "<0.01" : pct.toFixed(2)}%</b>`
+          + ` —— 梯度与优化器状态那 ${BASIS.bytesGrad + BASIS.bytesOptim} B/参数只按前一个数算`
+          + `<br>⚠️ <b>激活一点没少</b>：反向仍要穿过整个网络才算得到 adapter 的梯度，`
+          + `每层的中间激活该留还得留 —— 长序列 / 大 micro-batch 撑起来的那一段只能靠重计算与 CP`);
+      })() : "")
       + row("micro-batch", `<b>mb=${BASIS.microBatch}</b>，激活与它成正比 —— 这是 batch 里唯一进显存的一半`)
       /* 这一行同时是「yaml 里那个 batch_size 为什么和这里的 mb 对不上」的答案 ——
          full_batch: True 下框架把 runner_config.batch_size 读成全局 batch（升级计划
          行 12），两个数差着 DP × micro_batch_num 倍，不写在这里没人猜得到。 */
       + row("global batch", `<b>不进显存</b>。GBS = <code>MBS × DP(${c.dp}) × 累积步数</code>，只决定累积几步，一步也不占容量 —— 累积多少步都不改这根柱子`
         + `<br>⚠️ YAML 里 <code>runner_config.batch_size</code> 填的是 <b>GBS</b> 而不是这里的 mb：<code>full_batch: True</code> 下每张卡都读整份全局 batch，再在图内按 DP 切，落到每卡每次前反向才是 <b>mb=${BASIS.microBatch}</b>`)
-      + row("序列长度", `S=${BASIS.seq}，激活与它成正比，CP(${c.cp}) 会把它切开`)
+      /* 行 16：两档 CP 在这一栏里逐位相同，必须明说 —— 不说的话用户拨一下发现容量柱
+         纹丝不动，会以为开关没接上，而这正是「两个视图各讲一套故事」的反面教材。 */
+      + row("序列长度", `S=${BASIS.seq}，激活与它成正比，CP(${c.cp}) 会把它切开`
+        + (c.cp > 1
+          ? `<br>CP 口径当前是 <b>${c.cpMode === "ring" ? "Ring" : "Ulysses"}</b>，`
+            + `但<b>本栏两档逐位相同</b> —— 两种算法都让每张卡只留 S/CP 份激活，`
+            + `差别在通信（Ulysses 一次 all-to-all / Ring 逐块轮转 KV）与硬约束，不在显存`
+          : ``))
       + row("路由专家", `÷ EP(${c.ep}) × TP(${c.tp})，是 MoE 下减容器的主力`)
       + row("共享专家", `在 EP 域内复制，每张卡各持一份`)
       + row("其余权重", `÷ TP(${c.tp})；全部 ÷ PP(${c.pp})，体现为这张卡只背本 stage 那几层`)
@@ -733,6 +940,15 @@
         : plan.mode === "zero1"
           ? `只切<b>优化器状态那一段</b>（ZeRO-1）。权重、梯度、激活与 DP(${c.dp}) 无关 —— 再往上一档拨到 FSDP2，前两段也会跟着切`
           : `<b>不除任何东西</b>。DP(${c.dp}) 买的是吞吐不是余量 —— 把 Model Architecture 行那枚「权重分片」拨离「关」才会变`)
+      /* LoRA 把「权重分片」这一档的收益抽走了大半：它切的两段此刻本来就没剩多少。
+         这两枚控件是页面上仅有的两处「改变哪几段字节」的旋钮，同时开着时它们的
+         相互作用必须写出来，否则用户会以为其中一枚没接上。 */
+      + (loraOn(topo) && plan.mode !== "none" ? row("LoRA × 权重分片",
+        plan.mode === "zero1"
+          ? `ZeRO-1 切的正是优化器状态那一段，而 LoRA 已经把它压到了零头 —— `
+            + `<b>此刻这一档几乎不省什么</b>。LoRA 场景下真正压得动的是 FSDP2（它连冻结的主干权重一起切）`
+          : `FSDP2 连冻结的主干权重也沿 DP 切开 —— <b>LoRA 场景下这一档仍然有用</b>，`
+            + `因为此刻权重段就是权重相关字节里几乎唯一剩下的那一块`) : "")
       + row("词表 Emb / Head", cfg.vocabEmbDp
         ? `<b>走 DP，不切 TP</b>（vocab_emb_dp: True）。每张卡背满 ${topo.preset.vocab}×${topo.preset.hidden}`
           + `，只压在 Stage0 与 Stage${c.pp - 1} 上`
@@ -757,7 +973,13 @@
       + row("层数不均", `${c.totalLayer} 层分给 PP(${c.pp}) 段，除不尽时前几段各多 1 层 —— 本配置是 ${stageSizes} 层`)
       + row("首尾更重", `Embedding 只在 Stage0、LM Head 只在 Stage${c.pp - 1}，各约 ${gb(embHeadBytes(topo))} GB`
         + `（含梯度与优化器状态${cfg.vocabEmbDp ? "；走 DP 时它不被 TP 切，TP 越大这两根柱子越突出" : ""}）`)
-      + row("在飞份数", `1F1B 下 Stage s 同时压着 <code>PP−s</code> 份 micro-batch 的激活，Stage0 压 ${c.pp} 份、末段只压 1 份`)
+      + row("在飞份数", c.vpp > 1
+        ? `<b>交错式 1F1B（VPP=${c.vpp}）</b>：每卡的 ${c.totalLayer}/${c.pp} 层再拆成 ${c.vpp} 段轮流跑，`
+          + `warmup 段要多灌几份 —— <code>[2(PP−s−1) + (VPP−1)·PP + 1] / VPP</code> 份整段激活，`
+          + `Stage0 折合 ${inflightText(inflightMicroBatches(topo, 0))} 份、末段 ${inflightText(inflightMicroBatches(topo, c.pp - 1))} 份`
+          + `<br>非交错档 Stage0 只压 ${c.pp} 份 —— 差出来的就是 VPP 的代价：`
+          + `气泡按 <code>1/VPP</code> 缩小，账全记在激活峰值上（Korthikanti et al. 2022 §2.2）`
+        : `1F1B 下 Stage s 同时压着 <code>PP−s</code> 份 micro-batch 的激活，Stage0 压 ${c.pp} 份、末段只压 1 份`)
       + row("同 stage 内", `各 DP / EP / TP / CP 副本切法一致、容量相同，所以差异只到 stage 这一级 —— 底部那排小柱就是全集群的完整分布`)
       + `</dl>`
       + `<p class="cro-capacity__basis-sub">运行时四项怎么标定</p>`
@@ -877,7 +1099,11 @@
         bar.classList.toggle("is-selected", entry.stage === stage);
         bar.style.height = `${Math.max(6, entry.ratio / peak * 100).toFixed(1)}%`;
         bar.title = `Stage${entry.stage} · ${gb(entry.total)} GB / ${BASIS.capGB} GB`
-          + `（${Math.round(entry.ratio * 100)}%）· ${entry.layers} 层 · 在飞 ${entry.inflight}`;
+          + `（${Math.round(entry.ratio * 100)}%）· ${entry.layers} 层`
+          + (entry.chunks > 1 ? ` / ${entry.chunks} 段（VPP）` : "")
+          // 「按层数」档下各 stage 重算的层数可能不同（按本段层数截断），逐根报出来
+          + (entry.recomputed > 0 ? ` · 重算 ${entry.recomputed} 层` : "")
+          + ` · 在飞 ${inflightText(entry.inflight)}`;
         bar.setAttribute("aria-label", bar.title);
         bar.addEventListener("click", () => selectStage(entry.stage));
         el.stages.appendChild(bar);
@@ -886,7 +1112,7 @@
     }
 
     // 口径里带着当前的 EP/TP/PP/DP 取值，配置一改就得重写；浮层没打开时写了也不亏
-    el.basis.innerHTML = basisHtml(topology);
+    el.basis.innerHTML = basisHtml(topology, stage);
   }
 
   /* 点 stage 小柱 = 选中该 stage 的首卡。payload 形状与集群矩阵格子完全一致

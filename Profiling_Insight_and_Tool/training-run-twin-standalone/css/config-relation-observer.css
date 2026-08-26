@@ -715,6 +715,29 @@
   color: var(--foreground);
 }
 
+/* ── 整枚用不上的 stepper ─────────────────────────────────────────────────
+   未开 LoRA 时的 Rank、不在「按层数」档的重算层数（升级计划行 18 / 19）：
+   与那几枚开关同一档透明度、同一条规矩 —— **置灰而不隐藏**，且必须还能悬浮，
+   否则「为什么点不动」没地方说。理由挂在外壳 .cro-stepper 的 title 上（由 JS 写），
+   指针事件到得了它，所以这里只需要抹掉「看着能用」的那些反馈。 */
+.cro-stepper.is-unavailable .cro-stepper__control,
+.cro-stepper.is-unavailable .cro-stepper__label {
+  opacity: var(--button-disabled-opacity);
+}
+
+.cro-stepper.is-unavailable .cro-stepper__control,
+.cro-stepper.is-unavailable .cro-stepper__input {
+  cursor: not-allowed;
+}
+
+/* 输入框走原生 disabled，浏览器默认会把文字压灰一次 —— 外壳已经压过一档，
+   再压一次就读不清了，颜色收回来。 */
+.cro-stepper__input:disabled {
+  color: inherit;
+  -webkit-text-fill-color: currentColor;
+  opacity: 1;
+}
+
 /* MoE 的 4 个 stepper 要在约 300px 宽的一列里排成一行：
    四者等分宽度一起收缩（而不是各自占固定宽再换行），控件本身也解除最小宽，
    这样无论列宽怎么变都不会掉到第二行。 */
@@ -1940,21 +1963,7 @@
   flex: 0 0 auto;
 }
 
-/* d 轴口径说明：贴着标题右侧，不是标题的一部分，所以给次级色与最小字号。
-   靠左紧跟标题而不是顶到最右 —— 它解释的是标题下方那幅矩阵的纵轴，离标题
-   越近读起来越像一句话；顶到通栏最右会飘到「单卡容量」那一半的上方。 */
-.cro-cluster__axis-note {
-  flex: 0 1 auto;
-  min-width: 0;
-  margin-right: auto;
-  font-size: var(--font-size-label-xs);
-  color: var(--foreground-muted);
-  /* 窄窗口下截断而不是换行：换行会把标题行撑高，而矩阵的纵向预算是量
-     .cro-cluster__grid 得来的，标题行一高就直接从格子上扣。完整句子在 title 里 */
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
+/* .cro-cluster__axis-note 已随那行 d 轴口径说明一并移除（标题行只留区名）。 */
 
 /* EDP 比 DP 多一个字符（.twin-heat-dp-group::before 是 9px 绝对定位在组左外侧），
    26px 的留白在 EDP15 这种两位数编号上会被切掉半个字。 */
@@ -1978,6 +1987,104 @@
 
 .cro-cluster__card {
   min-width: 128px;
+}
+
+/* ── 这一行要收起时占一行、展开时占两行 ─────────────────────────────────────
+   ⚠️ 换行是**按组**发生的，不是按格：这一层的三个直接子元素里有两个自己就是
+   flex 容器（`#croClusterSteppers` = Total Rank + Node、`#croBatchSteppers` =
+   Micro Batch + Seq Length + 重计算 + 高级选项），于是每一组作为一个整体折行 ——
+   七枚控件明明还剩得下空当，batch 那一组也会整块掉到第二行，展开的面板再占第三行。
+
+   `display: contents` 让这两个容器**不生成盒子**，七枚控件直接成为
+   .cro-cluster__form 自己的 flex 项，于是按格换行（宽度真不够时才折，而且只折
+   最后一两枚）。「高级选项」面板仍是 `flex: 0 0 100%`，照旧把自己顶到下一整行 ——
+   这正是「收起一行、展开两行」想要的形状。
+   （不改 HTML 结构：那两个容器是 JS 的挂载点，mount() 按 id 找它们。） */
+.cro-cluster__form > .cro-stepper-row {
+  display: contents;
+}
+
+/* 七枚控件同处一行，就得量体裁衣 —— 尺度整体收到与 MoE 那一行**同一档**
+   （26px 圆键 + 2px 内衬 = 30px 高），那边同样是「一列里要塞下四枚」的处境。
+   收的是留白不是可读性：读数字号、标签字号一个没动。 */
+.cro-cluster__form {
+  /* 横向收到 8px（与 MoE 那一行同值），纵向留 12px —— 展开的面板贴着上一行会
+     读成同一行的续行。两个方向本来就不是同一件事，别用一个 gap 兼着。 */
+  column-gap: var(--space-2);
+  row-gap: var(--space-3);
+}
+
+.cro-cluster__form .cro-stepper__control {
+  --button-height-md: 26px;
+  --button-height-sm: 26px;
+  --zoom-control-gap: 1px;
+}
+
+/* 圆键从 28 收到 26 之后，18px 的符号在键内只剩左右各 4px，挤得发闷 */
+.cro-cluster__form .cro-stepper__control .btn svg {
+  width: 16px;
+  height: 16px;
+}
+
+/* 读数宽度本来就由 JS 按位数给的 size 撑（见 buildStepper / readoutSize），
+   min-width 只是兜底 —— 32px 是给三位数留的。这一行里 Micro Batch 的量程只到 64
+   （`digits: 2`），兜底也得跟着让到两位，否则 JS 那边省下来的宽度会被这条又顶回去。
+   Total Rank / Seq Length 本来就是四位以上，由 size 撑着，这一条碰不到它们。 */
+.cro-cluster__form .cro-stepper__control .zoom-control-readout {
+  min-width: 20px;
+}
+
+/* 卡型号：选项文本最长是「910B（64G）」，128px 里有二十来个像素是空的。
+   放开固定下限，让它按内容取宽（.cro-select 自己会给箭头留位置）。
+   它同时是这一行里**唯一允许被压**的一格：真到摆不下的宽度时，宁可让它的
+   文字收一截（型号就那么两三个，看半截也认得出），也好过整格掉到第二行去。
+   其余六格一律不压 —— 读数被压就是读错数。 */
+.cro-cluster__form .cro-cluster__card {
+  flex: 0 1 auto;
+  min-width: 84px;
+}
+
+.cro-cluster__form .cro-select {
+  height: 30px;
+  padding-left: var(--space-2);
+  padding-right: 18px;
+  background-position: right var(--space-1) center;
+  background-size: 10px 10px;
+  text-overflow: ellipsis;
+}
+
+/* 其余几种控件跟着落到同一个 30px 上，否则一行里高矮不齐。
+   Node 是只读读数，最多三位（8192 是量程上界但实际由整机卡数除出来），
+   内衬从 12px 收到 4px —— 它没有加减键要瞄准，内衬只是让药丸不贴着字。 */
+.cro-cluster__form .cro-stepper__derived {
+  height: 30px;
+  min-width: 30px;
+  padding: 0 var(--space-1);
+}
+
+.cro-cluster__form .cro-stepper--choice .cro-flag-choice,
+.cro-cluster__form .cro-stepper--switch .cro-switch {
+  min-height: 30px;
+}
+
+/* 四档「重计算」是这一行里最宽的一格：八个汉字各带 8px 内衬，光留白就 64px。
+   收到 3px —— 页签之间本来就有分隔（选中态是底色不是描边），靠内衬拉开的
+   那点距离读不出来；字号一个没动。 */
+.cro-cluster__form .cro-flag-choice > .btn {
+  padding-inline: 3px;
+}
+
+/* 折叠按钮：四个汉字左右各 12px 内衬，在这一行里是纯留白。收到 8px，
+   与它右邻的 segmented 页签同一档内衬；文字与箭头之间也从 4px 收到 2px。 */
+.cro-cluster__form .cro-advanced-toggle {
+  --button-height-sm: 30px;
+  padding-inline: var(--space-2);
+  gap: 2px;
+}
+
+/* 展开的那一行与上面一行同一套间距，读下来才是同一张表单 */
+.cro-cluster__form .cro-advanced-panel {
+  gap: var(--space-3);
 }
 
 /* 集群网格：几何全部由 JS 按 rank 编址算，这里只补 training-run-twin.css 里
