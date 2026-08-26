@@ -1,6 +1,6 @@
 ---
 name: build-pptx
-description: Create, revise, and validate polished presentations as either true PowerPoint files (.pptx) or PTO-standard browser-based HTML decks, using the skill's bundled portable PTO visual specification without an external design-system checkout. Online HTML decks natively support coherent light/dark theme switching; true PowerPoint work requires the user to choose light or dark when the theme is not already explicit. Use when Codex needs to turn Markdown, documents, screenshots, or structured narratives into an executive deck, product introduction, proposal, review, training deck, comparison deck, online PPT, or other presentation; create diagrams and screenshot-led slides; or regenerate an existing code-authored deck consistently. If the requested presentation format is ambiguous, ask whether the user wants a real PowerPoint file or an online HTML presentation before building.
+description: Create, revise, and validate polished presentations as either true PowerPoint files (.pptx) or PTO-standard browser-based HTML decks, using the skill's bundled portable PTO visual specification without an external design-system checkout. Online HTML decks natively support coherent light/dark theme switching; true PowerPoint work requires the user to choose light or dark when the theme is not already explicit. Use when Codex needs to turn Markdown, documents, screenshots, or structured narratives into an executive deck, product introduction, proposal, review, training deck, comparison deck, online PPT, or other presentation; create diagrams and screenshot-led slides; or regenerate an existing code-authored deck consistently. If the requested presentation format is ambiguous, ask whether the user wants a real PowerPoint file or an online HTML presentation before building. Always ask the user to choose a text-fidelity mode—keep all source text, or allow the skill to condense it—before outlining or writing any slide.
 ---
 
 # Build PPTX or PTO online PPT
@@ -29,18 +29,44 @@ Resolve theme behavior immediately after resolving the output mode:
 - For a **true PowerPoint**, if the user has not explicitly selected light or dark and has not explicitly asked to preserve an existing deck's theme, stop and ask one blocking question before designing: `真正的 PowerPoint 需要浅色版还是深色版？` Do not infer a static PowerPoint theme from browser/OS preference, the source document, or a convenient template. If the user explicitly requests both, build two clearly named `.pptx` files from the same approved outline.
 - For a **PTO online PPT**, do not block on a theme question. Build both complete light and dark states with an accessible runtime switch. Use the user's explicit choice as the authored default when supplied; resolve the actual initial state in the order documented in `references/design.md` while keeping both modes available.
 
+## Resolve the text-fidelity mode before building
+
+Condensing the source is the user's decision, not a default. This applies to both output modes. After resolving the output mode (and the PowerPoint theme when required), and before writing the outline, the slide map, or any slide file, ask one blocking question and wait for the answer:
+
+  `这份 PPT 的正文，你希望「保留全部文字」还是「允许我精简」？`
+  `A. 保留全文 —— 源文档的每一条实质内容都上片，页数可以多；`
+  `B. 允许精简 —— 我把长段落压缩成结论和要点，去掉重复表述。`
+
+Do not start condensing while waiting, do not deliver an unrequested "先出一版精简的看看", and do not infer the mode from source length, an expected slide count, or the general convention that slides carry short bullets.
+
+Skip the question only when the user already stated the preference in this conversation (for example `别删我的字` or `帮我提炼成要点`). Reuse the stated preference across later revisions of the same deck; ask again when the user brings a new source document.
+
+### Mode A - keep all text
+
+- Carry every substantive sentence of the source into the deck. Rewording for grammar, terminology consistency, and merging a literally duplicated sentence is allowed; dropping a point, example, caveat, or number is not.
+- Solve crowding by adding slides, splitting a section, or changing layout - never by deleting text, moving body copy into speaker notes, or shrinking type below the documented baseline.
+- Still headline every slide with a conclusion, but keep the supporting source text on the slide beneath it.
+- Diagrams supplement the sentences they illustrate in this mode; they do not replace them.
+- On delivery, state source coverage: every source section maps to at least one slide and nothing was cut.
+
+### Mode B - condensing allowed
+
+- Compress prose into conclusions, bullets, and diagrams; drop repetition and background the audience already has.
+- Preserve regardless of compression: numbers with their units and baselines, evidence-status labels, explicit caveats and limitations, and named entities.
+- On delivery, list what was merged, summarized, or omitted so the user can ask for anything back.
+
 ## Follow the shared narrative workflow
 
 1. Read repository instructions and all user-named sources. Preserve unrelated worktree changes.
 2. Read [references/design.md](references/design.md) completely before designing either output mode. Treat it as the authoritative, self-contained PTO presentation visual contract. Do not require or import an external `pto-design-system` folder.
-3. Define the audience, decision, central message, evidence boundary, presentation mode, and theme behavior. Complete the true-PowerPoint theme question before visual design when required.
-4. Create a short outline. Give every slide one conclusion that the audience can absorb at once, not merely a topic heading.
+3. Define the audience, decision, central message, evidence boundary, presentation mode, theme behavior, and text-fidelity mode. Complete the text-fidelity question - and the true-PowerPoint theme question when required - before outlining or visual design.
+4. Create a short outline. Give every slide one conclusion that the audience can absorb at once, not merely a topic heading. Under Mode A, size the outline to fit the full source text instead of trimming the source to fit a target slide count.
 5. Convert prose into visual relationships where useful: flow, branch, timeline, hierarchy, architecture, comparison, or annotated evidence. Do not decorate a text dump.
 6. Preserve verified facts and distinguish examples, inference, concept proposals, and unverified claims.
 
 ## Build a true PowerPoint file
 
-1. Confirm a single light or dark delivery theme before visual design. If it remains unclear, ask `真正的 PowerPoint 需要浅色版还是深色版？` and wait; do not silently choose. Then copy [assets/deck-template.js](assets/deck-template.js) into a task-local build directory and replace all sample content. Do not edit the bundled template in place for a deck.
+1. Confirm the text-fidelity mode and a single light or dark delivery theme before visual design. If it remains unclear, ask `真正的 PowerPoint 需要浅色版还是深色版？` and wait; do not silently choose. Then copy [assets/deck-template.js](assets/deck-template.js) into a task-local build directory and replace all sample content. Do not edit the bundled template in place for a deck.
 2. Use [scripts/slide-kit.js](scripts/slide-kit.js) through the template's `buildDeck` interface. Prefer diagrams, comparisons, and real screenshots when they clarify a relationship; avoid decorative clutter.
 3. Generate SVG slides with [scripts/render-deck.js](scripts/render-deck.js).
 4. Assemble the SVG files into `.pptx` with [scripts/assemble-pptx.ps1](scripts/assemble-pptx.ps1). This step requires Windows with Microsoft PowerPoint installed.
@@ -57,8 +83,8 @@ Follow this branch only after the user has selected an online/browser presentati
 
 1. Read the entire Markdown and any linked sources before writing HTML.
 2. Separate the document into audience-sized conclusions. Split a dense section across slides; combine short sections only when they support the same conclusion.
-3. Put the requested opening journey, summary, or decision context first. Preserve the source's main-business focus and remove repetitive exposition.
-4. Build an explicit slide map containing `section`, `title`, `takeaway`, `visual form`, and source coverage. Ensure every important Markdown section is represented exactly once unless intentional repetition is useful.
+3. Put the requested opening journey, summary, or decision context first. Preserve the source's main-business focus. Remove repetitive exposition only under Mode B; under Mode A, re-split slides instead of cutting.
+4. Build an explicit slide map containing `section`, `title`, `takeaway`, `visual form`, and source coverage. Ensure every important Markdown section is represented exactly once unless intentional repetition is useful. Under Mode A, the map must also account for every substantive source paragraph, not only every section.
 5. Keep explanatory examples concrete enough to create a mental picture. Use diagrams and annotated examples instead of introducing a second domain knowledge problem.
 
 ### 2. Apply the bundled portable PTO presentation design
@@ -112,13 +138,15 @@ Treat these as blockers:
 - a missing/inoperable theme switch, a visible wrong-theme flash on initialization, a theme choice that is not persisted when storage is available, or any component/diagram that remains styled for the opposite theme;
 - malformed SVG paths, arbitrary diagonal routing where orthogonal routing is intended, detached annotations, or redundant legends;
 - external PTO design-system imports, missing local resources, unresolved CSS imports, local script references in a standalone build, mojibake, placeholder copy, or truncation markers;
+- a deck built without asking the text-fidelity question when the user never stated a preference;
+- source text condensed, summarized, or dropped under Mode A, or a Mode B delivery that does not say what was cut;
 - invented evidence or presentation claims that exceed the source.
 
 Audit the output against the typography, token, component, and density tables in `references/design.md`. Treat prose below the documented baseline, ordinary UI below 12px, unexplained hard-coded colors, border-heavy containers, and page-level scaling as blockers.
 
 Perform a browser visual review at representative viewport sizes in both light and dark modes unless the user explicitly asks to own or skip screenshot/visual verification. Even when visual review is delegated, still run dependency, tag-balance, slide-count, navigation, text, theme-switch, persistence, and initialization checks.
 
-Deliver the development HTML and, when requested, the standalone HTML. State which portable PTO shell and component recipes were used, how the initial theme is resolved, whether both theme states were validated, whether the file has runtime dependencies, and which interactions were validated.
+Deliver the development HTML and, when requested, the standalone HTML. State the text-fidelity mode used and its consequence (full coverage, or what was condensed), which portable PTO shell and component recipes were used, how the initial theme is resolved, whether both theme states were validated, whether the file has runtime dependencies, and which interactions were validated.
 
 ## Create a true-PowerPoint deck project
 
@@ -189,6 +217,7 @@ This workflow places each SVG slide into PowerPoint as one full-slide graphic. I
 
 Treat these as blockers:
 
+- a text-fidelity mode that was assumed instead of confirmed, source text condensed under Mode A, or a Mode B delivery that does not say what was cut;
 - a light/dark theme that was inferred for a new static PowerPoint instead of explicitly confirmed when the user's request was unclear;
 - render command fails or reports an empty/out-of-bounds slide;
 - PowerPoint assembly produces fewer slides than the SVG manifest;

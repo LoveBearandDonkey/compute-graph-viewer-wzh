@@ -284,6 +284,14 @@
 
               <h2 class="cro-region__title">Model Architecture</h2>
 
+              <!-- 五枚 stepper 之后，JS 还会在这一行末尾接一枚「高级」折叠按钮（见 mount()
+                   与 mountAdvanced()），里面是两枚开关加一枚三档控件：
+                   序列并行 SP / 词表走 DP / 权重分片。判据是这一行自己的口径 ——
+                   「模型怎么切开」：SP 沿序列维切激活、词表决定那张大矩阵走 TP 还是走 DP、
+                   权重分片沿 DP 维切权重相关的若干段，三者都是切法，只是都不额外占卡；
+                   也正因为都不占卡、日常调参很少动，才收进「高级」里（展开态记在
+                   localStorage，跨会话保留）。
+                   重计算不在这里，它一刀不切，在 Cluster 的 batch 行。 -->
               <div class="cro-stepper-row" id="croParallelSteppers">
                 <div class="cro-placeholder">Total Layer / DP / PP / TP / CP stepper · 第 2 项接入</div>
               </div>
@@ -383,6 +391,11 @@
                          这两项给装进去的体积，一行读完就是「单卡容量」的全部输入。
                          由 config-relation-observer.js 的 FIELD_ORDER.batch 渲染。 -->
                     <div class="cro-stepper-row" id="croBatchSteppers"></div>
+                    <!-- 「重计算」开关由 JS 接在这一行末尾（见 mount()）：它与 Micro Batch /
+                         Seq Length 同属「往这张卡里装多少」—— 一刀不切，只是每份留不留。
+                         另外三枚（SP / 词表走 DP / 权重分片）不在这里，它们收在
+                         Model Architecture 那一行的「高级」折叠里：那一行讲「模型怎么切开」，
+                         而它们三个都是实打实在切，只是都不额外占卡。 -->
                   </div>
                   <div class="cro-cluster__grid">
                     <!-- .cro-heat 是集群矩阵的样式钩子（原先挂在 #croHeat 上）。
@@ -633,8 +646,10 @@
                     <p>
                       它解决的是「算得太慢」，不是「装不下」 ——
                       这是五个维度里唯一一个加了<b>不省显存</b>的。把 DP 从 2 拉到 8，总卡数翻两番，
-                      每张卡上的权重、梯度、优化器状态一个字节都没少。唯一的例外是开了优化器并行，
-                      那时优化器状态会沿 DP 维分片。
+                      每张卡上的权重、梯度一个字节都没少。唯一的例外是<b>权重分片</b> ——
+                      拨到 ZeRO-1 时优化器状态沿 DP 维分片，拨到 FSDP2 时权重与梯度也跟着切。
+                      本页 Model Architecture 那一行就有这枚三档控件，
+                      拨一下容量柱当场变矮（见 <code>term-parallel-optimizer</code>）。
                     </p>
                     <div class="cro-doc__map">
                       <div class="cro-doc__map-col">
@@ -643,7 +658,7 @@
                           <ul>
                             <li>要提高吞吐、缩短一个 epoch 的墙钟时间</li>
                             <li>全局 batch 需要更大</li>
-                            <li>开了优化器并行，想让优化器状态分得更细</li>
+                            <li>权重分片已拨离「关」，想让被切的那几段分得更细</li>
                           </ul>
                         </div>
                         <div class="cro-doc__map-box" data-flow="down">
@@ -746,6 +761,16 @@
                       而且这些通信都在关键路径上、无法与计算重叠掉。
                       所以 TP 组一旦跨出节点就是性能悬崖 —— 吞吐可能掉一半以上。
                     </p>
+                    <p>
+                      本页把这条整除关系落成了硬校验：<b>TP 必须同时整除 <code>num_heads</code> 与两个
+                      <code>intermediate</code></b>，也就是它们公约数的因子。
+                      openPangu 是 <code>gcd(48, 9216, 1024) = 16</code> → 可取 1/2/4/8/16；
+                      Qwen2 是 <code>gcd(28, 18944) = 4</code> → 1/2/4。
+                      头数是模型常量、不是可调字段，撞上它时没有「改另一个数来兼容」的修法 ——
+                      所以加减键会跳过除不尽的档位，到顶之后加号直接置灰，而不是让你步进到一个报错态里去。
+                      <code>n_kv_heads</code> 则<b>不</b>硬拦：GQA 下 TP 超过 KV 头数只是把 KV 复制一份，
+                      功能上合法、通信与显存变差，页面按软警告提示 —— 与「TP 组跨节点」同一档。
+                    </p>
                     <div class="cro-doc__map">
                       <div class="cro-doc__map-col">
                         <div class="cro-doc__map-box" data-flow="up">
@@ -771,7 +796,7 @@
                           <ul>
                             <li><code>Total Rank</code> —— 乘积变了</li>
                             <li>单卡显存（参数与激活同时变）</li>
-                            <li>受 <code>num_heads</code> / <code>n_kv_heads</code> / <code>intermediate</code> 整除约束</li>
+                            <li>受 <code>num_heads</code> / <code>intermediate</code> 整除约束（<code>n_kv_heads</code> 除不尽只警告，不拦）</li>
                           </ul>
                         </div>
                         <div class="cro-doc__map-box" data-flow="often">
@@ -800,6 +825,7 @@
                       CP 是唯一直接压这一项的维度。序列不长时它没有意义：白付一轮 ring 通信，
                       而省下的激活本来就不是瓶颈。要求 <code>seq % (2×CP) == 0</code> 而不只是 CP，
                       是因为因果注意力下序列前段计算量远小于后段，得对半交叉分配才能均衡负载。
+                      这条同样已落成硬校验，只在 <code>CP &gt; 1</code> 时生效 —— CP=1 没有 ring，也就没有负载均衡这回事。
                     </p>
                     <div class="cro-doc__map">
                       <div class="cro-doc__map-col">
@@ -832,6 +858,207 @@
                           <ul>
                             <li><code>Seq Length</code> —— 两者是同一件事的两头</li>
                             <li><code>Micro Batch</code> —— 都在压激活，先动便宜的那个</li>
+                          </ul>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div class="cro-doc__term" id="term-sp">
+                    <div class="cro-doc__term-head">
+                      <code class="cro-doc__term-name">序列并行 SP</code>
+                      <span class="cro-doc__term-full">use_seq_parallel · Sequence Parallel</span>
+                      <span class="cro-doc__term-where">Model Architecture</span>
+                    </div>
+                    <p>
+                      TP 只切得动矩阵乘那一段，LayerNorm / Dropout 前后的残差流在 TP 组内是<b>整份复制</b>的。
+                      SP 把这部分也沿序列维切给同一个 TP 组 —— 不额外占卡、不新增通信量
+                      （原来的 all-reduce 拆成 reduce-scatter + all-gather，总字节数不变）。
+                    </p>
+                    <p>
+                      <b>它没有自己的并行度</b> —— 切成几份由 TP 决定，所以表单里它只有开与关，
+                      不像 DP / TP / CP 那样有 1/2/4 的档位。
+                      所以它几乎是白拿的：<b>只要 TP &gt; 1 就该开</b>。
+                      <code>TP=1</code> 时没有 TP 组，也就没有「在组内复制」这回事 ——
+                      本页此时把这枚开关<b>置灰并强制关掉</b>（悬浮会说明原因）：
+                      留着一个开着却改不动的它，只会在 YAML 里留下一行没人能解释的
+                      <code>use_seq_parallel: True</code>。
+                      注意它和 <code>CP</code> 切的是同一个维度但目的不同：CP 为了长序列而多占卡，SP 只在已有的 TP 组里做文章。
+                    </p>
+                    <div class="cro-doc__map">
+                      <div class="cro-doc__map-col">
+                        <div class="cro-doc__map-box" data-flow="up">
+                          <div class="cro-doc__map-box-title">开</div>
+                          <ul>
+                            <li><code>TP &gt; 1</code>，几乎总该开</li>
+                          </ul>
+                        </div>
+                        <div class="cro-doc__map-box" data-flow="down">
+                          <div class="cro-doc__map-box-title">关</div>
+                          <ul>
+                            <li><code>TP = 1</code> —— 此时由页面强制关掉，开关置灰</li>
+                            <li>框架/版本不支持，或与某个融合算子冲突</li>
+                          </ul>
+                        </div>
+                      </div>
+                      <div class="cro-doc__map-node">SP</div>
+                      <div class="cro-doc__map-col">
+                        <div class="cro-doc__map-box" data-flow="must">
+                          <div class="cro-doc__map-box-title">一定联调</div>
+                          <ul>
+                            <li>单卡显存的激活段（TP&gt;1 时立刻可见）</li>
+                            <li>要求序列长度能被 TP 整除</li>
+                          </ul>
+                        </div>
+                        <div class="cro-doc__map-box" data-flow="often">
+                          <div class="cro-doc__map-box-title">考虑再调</div>
+                          <ul>
+                            <li><code>TP</code> —— 没有它 SP 无从谈起</li>
+                            <li>重计算 —— 两者都压激活，全重计算下 SP 的增益变小</li>
+                          </ul>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div class="cro-doc__term" id="term-vocab-emb-dp">
+                    <div class="cro-doc__term-head">
+                      <code class="cro-doc__term-name">词表走 DP</code>
+                      <span class="cro-doc__term-full">vocab_emb_dp · Embedding 的两种放法</span>
+                      <span class="cro-doc__term-where">Model Architecture</span>
+                    </div>
+                    <p>
+                      词表矩阵是全模型最大的<b>单块</b>权重：<code>vocab × hidden</code>，
+                      151552 × 2560 ≈ 388M 参数 —— 光权重加梯度就 1.5 GB，
+                      权重分片拨在「关」时连同优化器状态共 6.2 GB。
+                      它有两种放法 —— <b>走 DP</b>（在 TP 组内整份复制，每张卡背满）
+                      或<b>走 TP</b>（沿词表维切成 TP 份，每卡只背 <code>vocab/TP</code> 行）。
+                    </p>
+                    <p>
+                      默认是走 DP，而且不是随手选的：切开之后每次查表都要一次通信把散在各卡的结果拼回来，
+                      而词表矩阵<b>虽大、算得却很轻</b>，这笔通信常常不划算。
+                      代价是它<b>不随 TP 变小</b> —— <code>TP=1</code> 时两档数字一模一样（÷1，此时本页把开关置灰），
+                      一提 TP 就分道扬镳：其余权重都在缩，只有它原地不动。
+                      Embedding 又只压在 Stage0、LM Head 只压在末 Stage，
+                      所以「各 PP Stage 峰值」那排小柱<b>首尾两根</b>会越来越突兀 —— 那就是它。
+                    </p>
+                    <div class="cro-doc__map">
+                      <div class="cro-doc__map-col">
+                        <div class="cro-doc__map-box" data-flow="up">
+                          <div class="cro-doc__map-box-title">开（走 DP）</div>
+                          <ul>
+                            <li>默认。词表算得轻，不值得为它多一轮通信</li>
+                            <li>TP 不大，每卡背满 6 GB 还装得下</li>
+                          </ul>
+                        </div>
+                        <div class="cro-doc__map-box" data-flow="down">
+                          <div class="cro-doc__map-box-title">关（走 TP）</div>
+                          <ul>
+                            <li>TP 大且首尾两个 stage 已经顶到警戒线</li>
+                            <li>词表特别大（多语言 / 大 BPE 表）</li>
+                          </ul>
+                        </div>
+                      </div>
+                      <div class="cro-doc__map-node">词表走 DP</div>
+                      <div class="cro-doc__map-col">
+                        <div class="cro-doc__map-box" data-flow="must">
+                          <div class="cro-doc__map-box-title">一定联调</div>
+                          <ul>
+                            <li>Stage0 / 末 Stage 的单卡显存（TP&gt;1 时立刻可见）</li>
+                            <li><code>TP</code> —— <code>TP=1</code> 时两档等价，本页此时置灰</li>
+                          </ul>
+                        </div>
+                        <div class="cro-doc__map-box" data-flow="often">
+                          <div class="cro-doc__map-box-title">考虑再调</div>
+                          <ul>
+                            <li><code>PP</code> —— 首尾两段的不均要靠它重新分层来缓</li>
+                            <li>权重分片 —— 词表那一块的优化器状态（FSDP2 档还有权重与梯度）也跟着 ÷ DP</li>
+                          </ul>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div class="cro-doc__term" id="term-parallel-optimizer">
+                    <div class="cro-doc__term-head">
+                      <code class="cro-doc__term-name">权重分片</code>
+                      <span class="cro-doc__term-full">关 / ZeRO-1 / FSDP2 · 三档</span>
+                      <span class="cro-doc__term-where">Model Architecture</span>
+                    </div>
+                    <p>
+                      一张卡上「权重相关」共 <code>16 B/参数</code>：权重 2 B（bf16）、梯度 2 B、
+                      优化器状态 12 B（Adam 的 fp32 master weight + momentum + variance）。
+                      这三段在数据并行组内本来是<b>整份复制</b>的 —— 这一档决定沿 DP 维切掉其中几段。
+                    </p>
+                    <div class="cro-doc__table-wrap">
+                      <table class="cro-doc__table">
+                        <thead><tr><th>档位</th><th>切哪几段</th><th>每卡权重相关字节</th><th>额外代价</th></tr></thead>
+                        <tbody>
+                          <tr><td>关</td><td>一段都不切</td><td><code>2 + 2 + 12</code></td><td>—</td></tr>
+                          <tr><td>ZeRO-1</td><td>只切优化器状态</td><td><code>2 + 2 + 12/D</code></td><td>每步多一轮 all-gather</td></tr>
+                          <tr><td>FSDP2</td><td>三段全切（ZeRO-3 口径）</td><td><code>(2 + 2 + 12)/D</code></td><td>每<b>层</b>一轮 all-gather，外加暂存</td></tr>
+                        </tbody>
+                      </table>
+                    </div>
+                    <p>
+                      <b>ZeRO-1 与 FSDP2 不是一回事</b>，这是本页先前说错过的一处：
+                      ZeRO-1（MindSpore 的 <code>enable_parallel_optimizer</code>）只切优化器状态，
+                      梯度仍是整份 all-reduce、权重仍是整份常驻；
+                      FSDP2 是 ZeRO-3 口径，权重与梯度也一起切，
+                      代价是前反向<b>每算到一层就要把那一层的完整权重 all-gather 回来</b>，算完即弃、反向再来一次。
+                      这份暂存本页按预取 2 层估，计在容量柱的<b>预留段</b>里 ——
+                      它由<b>最大的那个分片单元</b>定（首尾 stage 通常是词表那一块，中间 stage 是最重的一层），
+                      不是由这张卡的总参数量定。
+                    </p>
+                    <p>
+                      <b>分母 D 有两个</b>，本页分开算：路由专家只在 EDP 维上复制，除以 <code>EDP</code>；
+                      其余权重（attention / dense / 共享专家 / 词表）在整个数据并行域上复制，
+                      除以 <code>EDP × EP</code>。三档共用这同一组分母 —— 它们切的是同一维，
+                      差别只在切哪几段，不在切成几份。
+                      写成 <code>EDP × EP</code> 而不是 <code>DP</code>，是为了让两个 EP 口径给出同一个数 ——
+                      两档说的本来就是同一批卡，容量柱不该跟着读法变。
+                      <code>DP=1</code> 时没有数据并行组，三档都无处可分，本页把控件置灰并停在 ZeRO-1。
+                    </p>
+                    <p>
+                      <b>ZeRO-2 没有列出来</b>（它比 ZeRO-1 多切一段梯度）：
+                      MindSpeed / MindFormers 都不把它作为一档暴露。
+                      三档是一条<b>阶梯</b>而不是几个独立开关（关 ⊂ ZeRO-1 ⊂ ZeRO-3），
+                      做成布尔组合会拨得出「切权重但不切优化器」这种不存在的状态。
+                    </p>
+                    <div class="cro-doc__map">
+                      <div class="cro-doc__map-col">
+                        <div class="cro-doc__map-box" data-flow="up">
+                          <div class="cro-doc__map-box-title">往右拨</div>
+                          <ul>
+                            <li>显存不够，而且不想撞任何整除约束 —— 先试 ZeRO-1</li>
+                            <li>走 FSDP 路线：不想为 TP/PP 对整除、切注意力头、均分层、吃流水线气泡 —— 这条路线的常见配方是纯 DP，一个模型切分维都不开</li>
+                          </ul>
+                        </div>
+                        <div class="cro-doc__map-box" data-flow="down">
+                          <div class="cro-doc__map-box-title">往左拨</div>
+                          <ul>
+                            <li><code>DP = 1</code> —— 此时三档等价，控件置灰</li>
+                            <li>要对齐一份没开它的基线做显存对比</li>
+                            <li>通信已经是瓶颈：FSDP2 把 all-gather 从每步一轮变成每层一轮</li>
+                          </ul>
+                        </div>
+                      </div>
+                      <div class="cro-doc__map-node">权重分片</div>
+                      <div class="cro-doc__map-col">
+                        <div class="cro-doc__map-box" data-flow="must">
+                          <div class="cro-doc__map-box-title">一定联调</div>
+                          <ul>
+                            <li>单卡显存的优化器状态段（本页会立刻重画）</li>
+                            <li>FSDP2 档还会一起改<b>权重段与梯度段</b>，以及预留段里的 all-gather 暂存</li>
+                            <li><code>DP</code> —— 分母就是它，DP 越大分得越细</li>
+                          </ul>
+                        </div>
+                        <div class="cro-doc__map-box" data-flow="often">
+                          <div class="cro-doc__map-box-title">考虑再调</div>
+                          <ul>
+                            <li>通信开销 —— 本页<b>未建模算力</b>，这一项看不出来</li>
+                            <li><code>EP</code> —— 专家那一半的分母是 <code>EDP=DP/EP</code>，提 EP 会让它变小</li>
+                            <li><code>TP / PP / CP</code> —— FSDP2 与它们同用属两条路线混用，本页给一条软警告</li>
                           </ul>
                         </div>
                       </div>
@@ -1115,8 +1342,12 @@
                       <span class="cro-doc__term-where">Cluster</span>
                     </div>
                     <p>
-                      参与这次训练的服务器台数。每节点卡数 = 总卡数 / 节点数，
-                      而这个数由硬件形态定死（昇腾 910B 一节点 8 卡），不是可以随意填的量。
+                      参与这次训练的服务器台数。每节点卡数由硬件形态定死（昇腾 910B 一节点 8 卡），
+                      所以节点数其实没有自由度：<b>Node = 总卡数 ÷ 每节点卡数</b>，它是被算出来的，不是被填的。
+                    </p>
+                    <p>
+                      表单里它因此是一枚<b>只读读数</b>（没有加减键），随 Total Rank 与卡型号自动重算，
+                      悬浮可以看到换算式。这样也就填不出「1 节点 2048 卡」这类硬件上不存在的形状。
                     </p>
                     <p>
                       它真正决定的是<b>并行维度落在哪一侧的互联上</b>：同节点内走高速片间互联，
@@ -1129,14 +1360,14 @@
                         <div class="cro-doc__map-box" data-flow="up">
                           <div class="cro-doc__map-box-title">调大</div>
                           <ul>
-                            <li>总卡数变大后必然增加（每节点卡数是定值）</li>
+                            <li>不能直接调 —— 只会随 <code>Total Rank</code> 变大而增加</li>
                           </ul>
                         </div>
                         <div class="cro-doc__map-box" data-flow="down">
                           <div class="cro-doc__map-box-title">调小</div>
                           <ul>
-                            <li>想把通信密集的维度收进更少的节点里</li>
-                            <li>减少跨机网络上的通信域个数</li>
+                            <li>同样不能直接调：想把通信密集的维度收进更少节点，得去减 <code>Total Rank</code></li>
+                            <li>或换一种每机卡数更多的硬件形态（本页三档都是 8 卡/机）</li>
                           </ul>
                         </div>
                       </div>
@@ -1145,7 +1376,7 @@
                         <div class="cro-doc__map-box" data-flow="must">
                           <div class="cro-doc__map-box-title">一定联调</div>
                           <ul>
-                            <li>每节点卡数 = <code>Total Rank</code> / Node，必须整除</li>
+                            <li>Node = <code>Total Rank</code> ÷ 每节点卡数，本页自动重算</li>
                             <li>启动命令里的 local_worker_num 与 node_rank 范围</li>
                           </ul>
                         </div>
@@ -1222,6 +1453,14 @@
                     <p>
                       一次前向/反向真正喂进去的样本数。<b>注意它不是全局 batch</b> ——
                       全局 batch = MBS × DP × 梯度累积步数，而只有 MBS 直接进显存。
+                    </p>
+                    <p>
+                      <b>YAML 里的 <code>runner_config.batch_size</code> 填的不是这个数。</b>
+                      MindFormers 的配置写着 <code>full_batch: True</code>，框架口径是
+                      「每张卡都取 global batch size 的数据量，然后在图内完成数据的切分，
+                      只取对应 DP 域内所需数据」—— 那一格要填
+                      <code>MBS × DP × micro_batch_num</code>（本页 YAML 视图已按此写出）。
+                      直接把 MBS 填进去，DP=512 时每卡实际只训 1/512 个样本，batch 维还切不开。
                     </p>
                     <p>
                       激活显存与它<b>成正比</b>，而且它不参与任何切分、不撞任何整除约束 ——
@@ -1317,6 +1556,64 @@
                       </div>
                     </div>
                   </div>
+
+                  <div class="cro-doc__term" id="term-recompute">
+                    <div class="cro-doc__term-head">
+                      <code class="cro-doc__term-name">重计算</code>
+                      <span class="cro-doc__term-full">recompute · 激活重计算</span>
+                      <span class="cro-doc__term-where">Cluster</span>
+                    </div>
+                    <p>
+                      前向不留每层的中间激活，反向要用时按需重算一遍前向。
+                      它是<b>拿算力换显存</b>，而且汇率极高：每层激活从 <code>34·mb·S·H</code>
+                      掉到 <code>2·mb·S·H</code>（只留层输入），差一个数量级，代价约 +30% 的算力开销。
+                    </p>
+                    <p>
+                      与并行维度的根本差别是：并行维度靠<b>多加卡</b>把东西分摊出去，重计算不加一张卡 ——
+                      所以显存不够时它常常是第一个该试的旋钮，而不是最后一个。
+                      表单里它是一枚开关，因为本页按<b>全开 / 全关</b>两档建模。
+                      真实世界还有中间档：MindFormers 的 <code>select_recompute</code>（只重算挑出来的那几类算子）
+                      与按 stage 给层数的写法（<code>recompute: [4,4,4,4]</code>），
+                      Megatron 对应 <code>--recompute-granularity selective</code> / <code>--recompute-num-layers N</code>。
+                      这些本页都未建模 —— 真要调中间档时，这枚开关得换成一枚有档位的控件。
+                    </p>
+                    <div class="cro-doc__map">
+                      <div class="cro-doc__map-col">
+                        <div class="cro-doc__map-box" data-flow="up">
+                          <div class="cro-doc__map-box-title">开</div>
+                          <ul>
+                            <li>激活段撑满了容器，而并行度已不好再加</li>
+                            <li>想把省下的余量换成更大的 Micro Batch / 更长序列</li>
+                          </ul>
+                        </div>
+                        <div class="cro-doc__map-box" data-flow="down">
+                          <div class="cro-doc__map-box-title">关</div>
+                          <ul>
+                            <li>显存本来就宽裕，不必白付 30% 算力</li>
+                            <li>要压单步时间，且激活不是瓶颈</li>
+                          </ul>
+                        </div>
+                      </div>
+                      <div class="cro-doc__map-node">重计算</div>
+                      <div class="cro-doc__map-col">
+                        <div class="cro-doc__map-box" data-flow="must">
+                          <div class="cro-doc__map-box-title">一定联调</div>
+                          <ul>
+                            <li>单卡显存的激活段（本页会立刻重画）</li>
+                            <li>单步时间 —— 本页<b>未建模算力</b>，这一项看不出来</li>
+                          </ul>
+                        </div>
+                        <div class="cro-doc__map-box" data-flow="often">
+                          <div class="cro-doc__map-box-title">考虑再调</div>
+                          <ul>
+                            <li><code>Micro Batch</code> / <code>Seq Length</code> —— 省出来的余量拿去装什么</li>
+                            <li><code>PP</code> —— 两者都在压激活，不必同时用满</li>
+                          </ul>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
                 </section>
                 <!-- ── 3 ── -->
                 <section class="cro-doc__section" id="doc-dims">
@@ -1345,10 +1642,21 @@
                     DP 副本之间是复制关系而不是切分关系。DP 买的是吞吐，不是余量。
                   </p>
                   <p>
-                    这条有一个重要的例外：开了<b>优化器并行</b>（ZeRO-1 / FSDP 一类）之后，
-                    优化器状态会沿 DP 维分片。由于优化器状态通常占权重相关字节的四分之三
+                    这条有一个重要的例外：把<b>权重分片</b>拨离「关」之后，权重相关的字节会沿 DP 维分片。
+                    由于优化器状态通常占权重相关字节的四分之三
                     （fp32 master weight + momentum + variance 共 12 字节，对 bf16 的 2 字节权重），
-                    这一开关对显存的影响往往比再加一维并行还大。
+                    这一档对显存的影响往往比再加一维并行还大。
+                  </p>
+                  <p>
+                    <b>但 ZeRO-1 和 FSDP2 切的不是同一批段，别混成一句话说</b>：
+                    ZeRO-1（<code>enable_parallel_optimizer</code>）只切优化器状态，权重与梯度仍是整份；
+                    FSDP2 是 ZeRO-3 口径，三段全切，代价是每层前反向都要把那一层的权重 all-gather 回来。
+                    近两年不少新模型的首发配方直接就是「纯 DP + FSDP2 + 重计算」，
+                    对这类配置按 ZeRO-1 估会高出一大截。
+                    <b>本页已如此落地</b>：Model Architecture 行的「权重分片」三档控件直接改容量柱 ——
+                    ZeRO-1 只动优化器段，FSDP2 连权重段与梯度段一起压下去、并在预留段里加一笔 all-gather 暂存；
+                    分母三档共用，专家按 <code>EDP</code> 分、其余权重按 <code>EDP × EP</code> 分
+                    （两者都是同一批卡数，与 EP 口径无关）。
                   </p>
                 </section>
 
@@ -1569,6 +1877,7 @@ t  TP 序号              c  CP 序号      n  物理节点号</div>
                       （典型值 1024 对 9216），所以<b>同一个模型里 MoE 层比 dense 层更早卡住 TP</b>。
                     </p>
                     <p class="cro-doc__effect">即使整除得开，切得过碎也会让矩阵乘掉出高效区间，性能先垮在切分粒度上。</p>
+                    <p class="cro-doc__effect">本页两条都已落地：除不尽是红色报错（<code>TP</code> 的可选档位因此收成 <code>gcd(头数, intermediate)</code> 的因子），每卡分片薄于 256 是黄色性能提示。</p>
                   </div>
 
                   <div class="cro-doc__rule" data-kind="hard">
@@ -1631,6 +1940,7 @@ t  TP 序号              c  CP 序号      n  物理节点号</div>
                       <span class="cro-doc__kind">硬约束</span>
                     </div>
                     <p>每节点卡数要是整数，且这个数由硬件形态定死（昇腾 910B 一节点 8 卡），不是可以随便填的量。</p>
+                    <p class="cro-doc__effect">本页已按这条把 Node 做成只读派生量（<code>Total Rank ÷ 每节点卡数</code>），所以它不再可能被违反。</p>
                   </div>
 
                   <div class="cro-doc__rule" data-kind="soft">
@@ -1643,7 +1953,7 @@ t  TP 序号              c  CP 序号      n  物理节点号</div>
                       一旦 TP 组跨出节点，这些 all-reduce 全部落到跨机网络上 —— 带宽差着数量级，
                       而它们又都在关键路径上，无法与计算重叠掉。
                     </p>
-                    <p class="cro-doc__effect">这是典型的性能悬崖：配置合法、训练能跑，但吞吐可能掉一半以上。</p>
+                    <p class="cro-doc__effect">这是典型的性能悬崖：配置合法、训练能跑，但吞吐可能掉一半以上。本页在表单下方用一枚黄色横幅「性能提示」说出来（形状与红色报错横幅相同，只是换了颜色），<b>不拦截、不冻结图形</b> —— 它是让你知情，不是替你否决。</p>
                   </div>
 
                   <div class="cro-doc__rule" data-kind="soft">
@@ -1689,7 +1999,7 @@ t  TP 序号              c  CP 序号      n  物理节点号</div>
                         <tr><td>权重</td><td>参数量 × 2（bf16）</td><td rowspan="3">见下表</td></tr>
                         <tr><td>梯度</td><td>参数量 × 2</td></tr>
                         <tr><td>优化器状态</td><td>参数量 × 12（fp32 master + momentum + variance）</td></tr>
-                        <tr><td>激活</td><td>≈ 34 · mb · s · h 每层（不重计算时）</td><td>÷ TP、÷ CP，× 在飞的 micro-batch 数</td></tr>
+                        <tr><td>激活</td><td>≈ 34 · mb · s · h 每层（不重计算 + 开 SP）；全重计算掉到 2 · mb · s · h</td><td>÷ TP、÷ CP，× 在飞的 micro-batch 数</td></tr>
                         <tr><td>运行时底座</td><td>驱动 + context + kernel binary，几个 GB</td><td>不随配置变</td></tr>
                         <tr><td>预留 buffer / 碎片</td><td>通信 buffer + 算子临时区 + 分配器碎片</td><td>随并行配置变，见下</td></tr>
                       </tbody>
@@ -1711,9 +2021,9 @@ t  TP 序号              c  CP 序号      n  物理节点号</div>
                         <tr><td>共享专家</td><td>÷ TP。在 EP 域内每卡复制一份完整的，EP 帮不上忙</td></tr>
                         <tr><td>Attention / Dense MLP</td><td>÷ TP</td></tr>
                         <tr><td>router / gate</td><td>不切。量级小，但逐层累加不完全可忽略</td></tr>
-                        <tr><td>Embedding / LM Head</td><td>看是否沿词表维做 TP —— 这是个开关，不是默认行为</td></tr>
+                        <tr><td>Embedding / LM Head</td><td>看 <code>vocab_emb_dp</code>：走 DP 则<b>不切</b>、每卡背满，走 TP 才 ÷ TP。<b>本页已落成一枚开关</b>，默认走 DP</td></tr>
                         <tr><td>以上全部</td><td>÷ PP，体现为「这张卡只背本 stage 那几层」</td></tr>
-                        <tr><td>DP</td><td><b>不切</b>，除非开了优化器并行（那时优化器状态 ÷ DP）</td></tr>
+                        <tr><td>DP</td><td><b>不切</b>，除非拨了「权重分片」：ZeRO-1 档优化器状态 ÷ DP，FSDP2 档权重 / 梯度 / 优化器三段全 ÷ DP（另加 all-gather 暂存）。<b>本页已落成一枚三档控件</b>，默认 ZeRO-1</td></tr>
                       </tbody>
                     </table>
                   </div>
@@ -1788,8 +2098,13 @@ t  TP 序号              c  CP 序号      n  物理节点号</div>
                           <td>多一次前向，算力换显存</td><td>不撞整除约束，是最容易先试的一项</td>
                         </tr>
                         <tr>
-                          <td>开优化器并行</td><td>优化器状态 ÷ DP，权重相关字节里最大的一块</td>
-                          <td>每步多一轮 all-gather</td><td>需要 DP &gt; 1 才有效</td>
+                          <td>权重分片 → ZeRO-1</td><td>优化器状态 ÷ DP，权重相关字节里最大的一块</td>
+                          <td>每步多一轮 all-gather</td><td>需要 DP &gt; 1 才有效（DP=1 时本页把控件置灰）</td>
+                        </tr>
+                        <tr>
+                          <td>权重分片 → FSDP2</td><td>权重 / 梯度 / 优化器三段全 ÷ DP（ZeRO-3 口径）</td>
+                          <td>每<b>层</b>一轮 all-gather，外加约 2 层权重的暂存</td>
+                          <td>同上；与 TP/PP/CP 同用属两条路线混用，本页给软警告</td>
                         </tr>
                         <tr>
                           <td>降 micro-batch</td><td>激活线性下降</td>
@@ -1803,8 +2118,9 @@ t  TP 序号              c  CP 序号      n  物理节点号</div>
                     </table>
                   </div>
                   <div class="cro-doc__note">
-                    <b>顺序上的经验：</b>先试不撞任何整除约束的那两项（重计算、优化器并行），
-                    它们只在算力和一轮通信上付账；再考虑 EP / PP，它们要重新对整除关系；
+                    <b>顺序上的经验：</b>先试不撞任何整除约束的那两项（重计算、权重分片 → ZeRO-1），
+                    它们只在算力和一轮通信上付账；还不够就把权重分片再往上拨到 FSDP2
+                    （压得最多，但通信从每步一轮变成每层一轮）；再考虑 EP / PP，它们要重新对整除关系；
                     TP 放到最后 —— 它同时被模型结构和节点边界两头夹住，是最容易一提就撞墙的一维。
                   </div>
                 </section>

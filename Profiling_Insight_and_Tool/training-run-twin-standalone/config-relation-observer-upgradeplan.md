@@ -21,6 +21,7 @@
 - **第二批 = 行 4–8**　结构硬约束
 - **第三批 = 行 9–12**　跨模块口径对齐
 - **第四批 = 行 13–14**　自动配平手感
+- **第五批 = 行 15–19**　对齐 MindSpeed MM 特性矩阵（来源见文末「附：第五批的由来」）
 
 改完一行就把首列的 `[ ]` 勾成 `[x]`。
 
@@ -29,17 +30,22 @@
 | [x] | **1** 加 `moeOrthogonal` 开关（默认 false=切出），`validate` 的 world 公式按开关取 `DP×PP×TP×CP×EP` 或 `DP×PP×TP×CP` | EP 是否独占 rank。主流实现（Megatron/MindSpeed/MindFormers）EP 不进 world，而是从 DP 组内再切一刀 | MoE 区多一枚二选一切换；切到「切出」后同样 2048 卡的配置里 DP 显示从 8 变 512，Total Rank 不变；`#croConfigError` 那行公式文案跟着换 |
 | [x] | **2** `validate` 增 `DP % EP == 0`（切出档生效），`reconcile` 里 ep 的合法值判定同步加这条 | EP 必须整除 DP —— 专家组要能在 DP 组内均分，否则某些 DP 副本拿不到完整专家集 | 把 DP 调到不被 EP 整除时当场报错并标红 DP/EP 两个 stepper；正交档下这条不出现 |
 | [x] | **3** 集群矩阵 d 轴与 `coordsOfRank` 的 `dpIdx` 正名为 EDP（`DP/EP`），tooltip / 关系连线文案同步 | 「DP=8」到底是 attention DP 还是 expert DP。参考配置里那个 8 是 EDP，真 DP 是 512 | 矩阵几何**完全不动**（rank 编址本来就对），只有轴标签、格子 tooltip、事件详情里的角色卡文字从「DP 0–7」变成「EDP 0–7」 |
-| [ ] | **4** `validate` 增 `heads % TP == 0`；GQA 模型再加 `kvHeads % TP == 0` | TP 切的是注意力头，切不整就非法。Qwen2 只有 4 个 KV head，TP>4 需复制 KV | TP 从 1 往上调时，48 头模型在 TP=64 处被拦、Qwen2 在 TP=8 处被拦，报错说明写清是哪个头数除不尽 |
-| [ ] | **5** `validate` 增 `seqLen % (2×CP) == 0`（或至少 `% CP`） | CP 沿序列维切分，ring attention 还要能对半做负载均衡 | CP>1 时 Seq Length 的非法取值被拦；单卡容量栏里 `seq/cp` 不再出现小数序列长度 |
-| [ ] | **6** `ranksPerNode` 从 `CARD_SPECS` 取合法枚举（910B=8），`node` 改为受约束派生而非自由 stepper | 每节点卡数是硬件事实，不是任意整除 | Node stepper 只能落在合法值上（2048 卡 → 256 节点），填不出「1 节点 2048 卡」这种；卡型号一换 Node 跟着重算 |
-| [ ] | **7** 增 `TP > ranksPerNode` 的**软警告**（不拦截） | TP 每层前反向都要 all-reduce，跨节点是性能悬崖而非功能错误 | `#croConfigError` 下方多一条黄色提示行（现在只有红色错误一档，需要加个 warning 级别样式） |
-| [ ] | **8** `validate` 增 `denseIntermediate % TP`、`moeIntermediate % TP` | FFN 沿 intermediate 维切分，moeIntermediate 只有 1024，TP 大了会切碎 | 大 TP + MoE 组合被拦；提示指向 MoE 区而不是 Model Architecture 区 |
-| [ ] | **9** `recompute` / `use_seq_parallel` 从 yaml 硬编码提成 config 字段，capacity 的 `actPerLayer` 按这两个开关取值（全重计算 ≈ `2·mb·s·h`／层） | 激活显存口径。现在 capacity 假设「开 SP、不重计算」，yaml 写的是「关 SP、全重计算」，两条都反了 | 单卡容量的激活段体积明显变化（重计算档大幅缩短）；YAML 视图里这两行从死值变成跟随配置；口径浮层的假设行随之改写 |
-| [ ] | **10** capacity 的 optim 段按 EDP 切分（`enable_parallel_optimizer` 为真时），或把该开关也提成 config 字段 | 优化器状态是否按数据并行组分片。MindSpore 的 `enable_parallel_optimizer` 就是 ZeRO-1 | 容量柱的「优化器状态」段大幅缩短；判定文案里「DP 不除任何东西」那句要改成有条件成立，这是这一栏最常被引用的一句，改动最扎眼 |
-| [ ] | **11** capacity 的 emb/head **不再** `/tp`（`vocab_emb_dp: True` 时） | Embedding 走 DP 不走 TP，每卡背满 151552×2560 ≈ 388M 参数 ≈ 6.2 GB（含梯度+优化器） | TP=1 时数字不变（除以 1），TP>1 时 stage0 / 末 stage 两根柱子明显抬高 —— 「各 PP Stage 峰值」那排小柱的首尾不均会更突出 |
-| [ ] | **12** 确认 `full_batch: True` 下 `batch_size` 是全局还是每 DP，据此决定 `BASIS.microBatch` 要不要再除 DP | micro-batch 口径。全局语义下现在的容量估算按 DP 倍数高估激活 | 若结论是全局：激活段随 DP 变化（当前完全不变），会推翻「调 DP 容量柱纹丝不动」这个当前刻意强调的现象 —— **需先确认再动，不建议猜** |
-| [ ] | **13** `reconcile` 里 anchor=`node` 那条分支（`node > world` 时撑 world）改为夹取到合法节点数 | 用户改节点数不该反向重排并行度 | 拖 Node 时并行度 stepper 不再被动跳变，Node 自己被夹到最近合法值 |
-| [ ] | **14** `fitParallelWorld` 候选序从 `dp→ep→tp→cp→pp` 改为 `dp→tp→cp→ep→pp` | EP 是牵连最广的一维（同时动 MoE 分组、矩阵列数、容量专家段），不该在 DP 之后第一个被牺牲 | 拖 Total Rank 时优先动 DP/TP，MoE 区与集群矩阵的列数保持稳定，画面跳动明显减少 |
+| [x] | **4** `validate` 增 `heads % TP == 0`；GQA 模型再加 `kvHeads % TP == 0` | TP 切的是注意力头，切不整就非法。Qwen2 只有 4 个 KV head，TP>4 需复制 KV | TP 从 1 往上调时，48 头模型在 TP=64 处被拦、Qwen2 在 TP=8 处被拦，报错说明写清是哪个头数除不尽 |
+| [x] | **5** `validate` 增 `seqLen % (2×CP) == 0`（或至少 `% CP`） | CP 沿序列维切分，ring attention 还要能对半做负载均衡 | CP>1 时 Seq Length 的非法取值被拦；单卡容量栏里 `seq/cp` 不再出现小数序列长度 |
+| [x] | **6** `ranksPerNode` 从 `CARD_SPECS` 取合法枚举（910B=8），`node` 改为受约束派生而非自由 stepper | 每节点卡数是硬件事实，不是任意整除 | Node stepper 只能落在合法值上（2048 卡 → 256 节点），填不出「1 节点 2048 卡」这种；卡型号一换 Node 跟着重算 |
+| [x] | **7** 增 `TP > ranksPerNode` 的**软警告**（不拦截） | TP 每层前反向都要 all-reduce，跨节点是性能悬崖而非功能错误 | `#croConfigError` 下方多一条黄色提示行（现在只有红色错误一档，需要加个 warning 级别样式） |
+| [x] | **8** `validate` 增 `denseIntermediate % TP`、`moeIntermediate % TP` | FFN 沿 intermediate 维切分，moeIntermediate 只有 1024，TP 大了会切碎 | 大 TP + MoE 组合被拦；提示指向 MoE 区而不是 Model Architecture 区 |
+| [x] | **9** `recompute` / `use_seq_parallel` 从 yaml 硬编码提成 config 字段，capacity 的 `actPerLayer` 按这两个开关取值（全重计算 ≈ `2·mb·s·h`／层） | 激活显存口径。现在 capacity 假设「开 SP、不重计算」，yaml 写的是「关 SP、全重计算」，两条都反了 | 单卡容量的激活段体积明显变化（重计算档大幅缩短）；YAML 视图里这两行从死值变成跟随配置；口径浮层的假设行随之改写 |
+| [x] | **10** capacity 的 optim 段按 EDP 切分（`enable_parallel_optimizer` 为真时），或把该开关也提成 config 字段 | 优化器状态是否按数据并行组分片。MindSpore 的 `enable_parallel_optimizer` 就是 ZeRO-1 | 容量柱的「优化器状态」段大幅缩短；判定文案里「DP 不除任何东西」那句要改成有条件成立，这是这一栏最常被引用的一句，改动最扎眼 |
+| [x] | **11** capacity 的 emb/head **不再** `/tp`（`vocab_emb_dp: True` 时） | Embedding 走 DP 不走 TP，每卡背满 151552×2560 ≈ 388M 参数 ≈ 6.2 GB（含梯度+优化器） | TP=1 时数字不变（除以 1），TP>1 时 stage0 / 末 stage 两根柱子明显抬高 —— 「各 PP Stage 峰值」那排小柱的首尾不均会更突出 |
+| [x] | **12** 查证结论：`full_batch: True` 下 `batch_size` 是**全局** batch。`BASIS.microBatch` **不除 DP**（它按定义就是每卡量），要改的是 yaml —— 那一格改写成 `MBS × DP × micro_batch_num` | micro-batch 口径。错的一直是 yaml 的落盘值，不是容量估算 | 容量栏**一个数都不动**（「调 DP 容量柱纹丝不动」保住了）；YAML 视图里 `batch_size` 从 1 变成 8192，并随 DP / PP 一起动 |
+| [x] | **13** ~~`reconcile` 里 anchor=`node` 那条分支改为夹取到合法节点数~~ **由行 6 吸收**：Node 不再是输入字段，那条分支已随之删除 | 用户改节点数不该反向重排并行度 | 已无「拖 Node」这个动作 —— Node 是只读派生量 |
+| [x] | **14** `fitParallelWorld` 候选序从 `dp→ep→tp→cp→pp` 改为 `dp→tp→cp→ep→pp` | EP 是牵连最广的一维（同时动 MoE 分组、矩阵列数、容量专家段），不该在 DP 之后第一个被牺牲 | 拖 Total Rank 时优先动 DP/TP，MoE 区与集群矩阵的列数保持稳定，画面跳动明显减少 |
+| [x] | **15** `parallelOptimizer` 布尔升成 `shardMode` 三档（关 / ZeRO-1 / FSDP2），FSDP2 档下权重与梯度也按同一组分母切，另计 all-gather 暂存段 | **FSDP2 不是 ZeRO-1**。页面现在把两者混在一句话里说（`term-parallel-optimizer` 正文的「ZeRO-1 / FSDP 一类」），但 ZeRO-1 只切优化器状态、FSDP2 是 ZeRO-3 口径连权重与梯度一起切，容量柱的形状完全不同 | Model Architecture 行那枚开关换成三档 segmented-control；拨到 FSDP2 后权重段与梯度段一起塌下去，预留段多出 all-gather 暂存；`TP/PP/CP > 1` 时给行 7 那一档软警告 |
+| [ ] | **16** CP 增 Ulysses / Ring 口径切换（与 `croEpMode` 同构），`seq % (2×CP)` 只在 Ring 档生效，Ulysses 档改判 `heads % CP` | **`seq % (2×CP)` 是 ring attention 专属的约束**（对半交叉分配才均衡得了因果掩码），而实际用得最多的是 Ulysses —— 它沿 head 维做 all-to-all，约束是头数能被 CP 整除。这条硬校验现在对 Ulysses 场景给的是一条错误的红线 | CP 旁多一枚二选一；Ulysses 档下 `seqLen` 不再被 `2×CP` 拦，改成 CP 被头数拦（与行 4 的 TP 同一族约束，走同一套跳档 + 置灰理由） |
+| [ ] | **17** 加 `vpp` stepper（虚拟流水，`totalLayer % (pp × vpp) == 0`），激活的 in-flight 份数按 1F1B-interleaved 口径重算 | 虚拟流水把每个 stage 的层拆成多段轮流跑，**代价直接落在激活峰值上**：bubble 变小，但每个 stage 同时压着的 micro-batch 变多。现在 `inflight = PP − s` 写死的是非交错 1F1B | 「各 PP Stage 峰值」那排小柱的形状随 VPP 变化 —— 这是页面已经画着、却还没有旋钮能动的一处；yaml 补 `virtual_pipeline_model_parallel_size` |
+| [ ] | **18** 加 `lora` 开关与 `loraRank` 档位，开启后梯度段与优化器段只按 adapter 参数量算，权重段不变 | LoRA 冻结主干：可训练参数掉到 `2·r·(d_in+d_out)` 一档，而**梯度与优化器状态只跟可训练参数走** —— 这是容量柱上最大的一次形变，比行 10 的 ZeRO-1 还大 | 梯度段几乎归零、优化器段塌到零头，权重段纹丝不动 —— 正好把「哪一段跟谁走」讲清楚；判定文案里多一个可推荐的旋钮 |
+| [ ] | **19** `recompute` 从两档开关换成有档位的控件（关 / 选择性 / 按 stage 给层数 / 全开） | 行 9 落地时自己记下的缺口：真实世界有 `select_recompute`、`recompute: [4,4,4,4]`、Megatron 的 `--recompute-granularity selective`。全开与全关之间差着一个数量级（系数 34 → 2），**实际调优最常落的正是中间档** | 激活段可以停在中间高度而不是只有两个位置；按 stage 给层数时那排小柱可以被单独压平某一根 —— 这是当前显存估算里误差最大的一处简化 |
 
 ### 行 1 落地记录（2026-08-21）
 
@@ -95,9 +101,472 @@
 
 **已知缺口**：手输 `Node` 给不出建议（横幅只剩「取消修改」）—— 它的修复要动 Total Rank，而 Total Rank 又由并行度乘积定死。这个缺口在**行 6** 落地后自然消失（那时 Node 变成受约束派生，不再是自由字段），故不单独补。
 
+### 行 4 / 行 5 落地记录（2026-08-24）
+
+第二批开头两行一起做 —— 它们是同一类约束（并行度对着一个**非并行**的量取整除），
+但行 4 里藏着前三行都没出现过的一种情形，值得单记一笔。
+
+**这两条约束页面本来就写着，只是没落成规则。** `term-tp` 的「一定联调」里早写着
+「受 `num_heads` / `n_kv_heads` / `intermediate` 整除约束」，`term-cp` 正文直接给了
+`seq % (2×CP) == 0` 连同它的理由。所以这次是**代码去追平文档**，文档侧只补了两句
+「已落成硬校验」，没有行 3 那种表述成本。
+
+**行 4 的形状与行 2 的 EP 同构**：TP 必须是 `gcd(heads, kvHeads)` 的因子（无 GQA 时
+就是 `heads`）。算下来两个预设的合法档位是 openPangu 48 头 → 1/2/4/8/16、
+Qwen2 28Q:4KV → 1/2/4。**计划里那句「48 头模型在 TP=64 处被拦」少说了一半 ——
+32 同样除不尽**（48/32 = 1.5），实际是 16 封顶。
+
+**新情形：这是第一条「没有对手字段」的约束。** 前面每一条冲突都有另一个字段可以被改
+来兼容（DP 抬、专家数抬、Total Rank 跟着涨），而 `heads` 写在 `MODEL_PRESETS` 里、
+根本不是 stepper。于是加减键撞上它时 `reconcile` 修不动，会把页面推进一个**它自己
+造出来的**报错态 —— 而加减键正是手输报错态的第三个出口，它不能自己制造报错态。
+落点因此比计划里多了两处：
+
+- `stepValue` 吃进 `config`，**跳过被结构约束挡住的档位**：从 TP=16 按 + 时 32 与 64
+  都非法，加号原地不动。原来的步进体拆成 `rawStep`，`stepValue` 在它外面套一层跳档
+  循环；不传 config 时退化成纯量程步进（导出接口的兼容路径）。只对 tp 生效 ——
+  `pp > totalLayer` 那类**有**对手字段的约束仍旧走「步过去再联动修」，手感不变。
+- 走不动的那一头**置灰，并在悬浮时答出为什么**（`emit()` 里直接问 `stepValue` 会不会
+  动，不另写一套档位规则）。这不是附赠品：不置灰的话「加号按下去毫无反应」看着就是
+  页面卡了；而**只置灰不给理由同样解释不了** —— TP 到顶的原因根本不在这一行表单里，
+  而在模型的头数上，用户盯着 stepper 是看不出来的。理由分三档：撞量程（「Seq Length
+  已到量程下界 128」）、撞模型结构（「TP 必须整除注意力头 48，往上的 32 / 64 都除不尽。
+  头数是模型结构常量、不是可调字段」，被跳过的档位逐个报出来）、兜底。
+  顺带把量程端点（Seq Length 到下界、Shared 到 0）也如实标出来了 —— 本来就是同一种
+  「按了不动」。
+- ⚠️ **置灰用 `aria-disabled` 而不是原生 `disabled`**：设计系统的 `.btn:disabled` 带
+  `pointer-events: none`，按钮收不到 hover，`title` 压根弹不出来 —— 想给理由就不能用它。
+  CSS 里照抄同一个 `--button-disabled-opacity`、只是不掐指针事件，并把 hover / active
+  的反馈抹掉（灰着的键按下去还亮一下会读成「能用」）。点击无害：`apply()` 里
+  `next === 现值` 时本来就直接 return。
+
+其余落点与行 2 逐条对应：`validate` 两条（heads 与 kvHeads 用 else-if 级联，TP=8 的
+Qwen2 只报一条而不是两条）、`isAllowedParallelValue` 的 tp/cp 分支（不加则拖 Total Rank
+时 `fitParallelWorld` 会自己配平出一个当场报错的 TP，行 2 已经踩过一次）、`reconcile`
+的修复分支（`anchor !== "tp"` 时把 TP 收到 `nearestDivisor(gcd(heads,kvHeads), …)`）。
+错误文案里**只让 "TP" 出现**：`emit()` 按 label 子串匹配标红，而对手字段不是 stepper，
+红圈只该落在 TP 一枚上 —— 与行 2 那条「两个都要红」的取舍方向正好相反。
+
+**行 5 比计划里预期的轻得多：在 2 的幂梯子上它永远不触发。** `seqLen` 下界 128 恰好
+等于 `2 × cp.max`，加减键怎么拨都整除。它实际只拦手输（seqLen = 6000 之类），
+capacity 里 `BASIS.seq / cp` 从此保证是整数。另外这条**只在 CP > 1 时生效**：CP=1 时
+它会退化成一条与 CP 无关的「序列长度必须是偶数」，还会连累 CP 的 stepper 被标红。
+
+**kvHeads 那条按硬错误拦，是一处口径选择。** Megatron 在 TP > kvHeads 时是**复制 KV**
+而不是报错，功能上合法、只是通信与显存变差。本页按不复制的口径拦；等**行 7** 的
+warning 档落地后，这一半可以降级成软警告 —— 到时候只需把那个分支从 `errors` 挪到
+`warnings`，判据本身不用动。
+（**已于行 7 兑现，见下**。降级后 `attentionHeadBasis` 也从 `gcd(heads, kvHeads)`
+收回成 `heads`。）
+
+跑了一遍规则层（node 直接跑 `validate`/`reconcile`/`stepValue`，不起页面）：两个模型 ×
+两档口径的**加减键随机游走 20.9 万个状态**，「落在报错态 / TP 除不尽头数 / 序列除不尽
+2×CP / DP 除不尽 EP / 矩阵格子数 ≠ Total Rank」五项全为 0；另跑 1.56 万个手输值，
+`reconcile` 没有出现过「改了锚点却仍不自洽」。
+
+yaml 里 `model_parallel` 的行尾注释从「即 TP」补成「即 TP，须整除 num_heads 48」
+（GQA 模型再缀上 n_kv_heads）—— 那份 yaml 是拿去跑的，框架校验不过时这行注释就是答案。
+
+**没做**：`denseIntermediate / moeIntermediate % TP`（行 8）。它与行 4 是同一族约束、
+落点也是同一批函数，但会把 openPangu 的 TP 上限再压一档，属于行 8 自己的决定。
+
+### 行 6 / 行 7 落地记录（2026-08-24）
+
+两行一起做：行 7 的判据是 `TP > ranksPerNode`，而 `ranksPerNode` 正是行 6 才被
+提成硬件事实的那个量 —— 先做行 6，行 7 只剩一句话。
+
+**每节点卡数在本仓有硬证据，三档都是 8。** 910B 来自
+`Analysis Report/ascend_analysis_verl_20260602/report.md`（rank0 到 peer1–7 全走
+HCCS、无 RDMA，即 8 卡同处一节点），另有两份「2 节点 × 8 卡」「4 节点 × 8 卡」的
+报告佐证；950 由 `KNOWLEDGE.md` §4.4「128 NPU / 16 台 Server」反推。写进
+`CARD_SPECS.ranksPerNode`，来源落在各自的 `specs` 串里。
+**代价是「卡型号一换 Node 跟着重算」这条今天看不出效果** —— 机制建好了，但三档同值。
+将来出现每机非 8 卡的型号时只改这一个字段。
+
+**Node 不是「受约束的 stepper」，是只读读数。** 计划里写的是「只能落在合法值上」，
+但每节点卡数一旦是定值，Node 就只剩**唯一一个**合法值 —— 一枚只能停在一个值上的
+stepper 不是 stepper。所以它退出 `FIELD_ORDER.cluster`，改由 `mount()` 在同一行末尾
+补一枚 `.cro-stepper--derived`：同样的药丸底色与高度，没有加减键，`cursor: help`，
+悬浮给出换算式（「昇腾 910B 整机 8 卡（硬件事实，不可调）；Total Rank 2048 ÷ 8 = 256 节点」）。
+它仍进 `wraps`，所以联动高亮与红圈照旧 —— 横幅会列「Node 256 → 128」，红圈的名单
+必须跟横幅一致。
+
+**不足一机与非整机倍数，按实际形状说，不摊薄。** `nodeLayout()` 是整页唯一算节点数
+的地方：`ranksPerNode = min(整机卡数, Total Rank)`、`node = ceil(Total Rank / ranksPerNode)`。
+1/2/4 卡 → 1 节点（只用其中几张）；12 卡（手输 `dp=3` 能拨出来）→ **2 节点 × 8，末节点
+只装 4 张**，而不是摊成「2 × 6」—— 摊薄会把一个真实的硬件形状算成一个不存在的形状，
+`rank → node` 的映射也跟着错。yaml 那行注释因此也带上了「末节点 N 卡」的分支。
+
+**顺带关掉一个先前就有、现在会穿帮的洞。** 手输一个非 2 的幂的并行度能把乘积顶出量程
+（TP 手输 48 → 512×4×48 = 98304 > 65536），而 `fitParallelWorld` 只在 2 的幂梯子上找解、
+收不回来。改前它只是悄悄算出「256 节点 × 384 卡」这种不存在的机器；改后 Node 被
+`node.max` 夹到 8192，8192 × 8 装不下 98304，`rank → node` 直接越界。所以 `validate`
+补了一条 `Total Rank ≤ 65536` —— 它同时让 `proposeFix` 拒掉那份建议，横幅退化成只有
+「取消修改」，而不是给出一个**点了就把矩阵画错**的「一键应用」。
+
+**行 7 的 warning 是新的一档，与红字的区别不只是颜色。** 新增 `warn(config)` 与
+`validate` 并列（判据不散到视图里，否则又会变成 capacity / yaml 那样各养一套假设），
+`derive()` 带出 `warnings`。渲染上是一枚**与红色报错同构的黄色横幅**（同一副几何，
+只有描边与底色按语义分色），但**不标红 stepper、不冻结图形、不进建议修法**。
+两档天然互斥（冻结态下不说软警告），所以不必考虑红黄叠加。
+横幅里那句「配置合法，图形照常更新 —— 这一条不拦截」与红色横幅里的
+「图形已暂停更新」位置对称：黄和红的差别不能只靠颜色记，得写出来。两条取舍：
+
+- **只在配置自洽时说**。冻结态下的配置本身还自相矛盾，此刻的性能提示是照着一组不成立
+  的数算出来的，摆在红字旁边只会分散注意力。
+- **不给黄圈**（用户定）。红圈现在的含义很硬 —— 「就是它把页面冻住了」；再添一种颜色的
+  圈会稀释这个约定，而警告文案里本来就点住了 TP 的名字。
+
+目前两条警告：`TP > 每节点卡数`（行 7 本体，openPangu 把 TP 拨到 16 就会出现），以及从
+行 4 降级下来的 `kvHeads % TP`。**后者的实际影响比预想的小**：Qwen2 的 28 头在 2 的幂
+梯子上仍然只到 TP=4（28 % 8 ≠ 0，这是 `heads` 硬拦的，与 KV 无关），所以降级只在**手输**
+TP=7 / 14 / 28 时才看得见 —— 那几档 `heads` 除得尽、`kvHeads` 除不尽，改前被拦、现在
+放行并提示「KV 会在 TP 组内复制，本页显存与 yaml 按不复制估算，偏乐观」。
+
+**行 13 被行 6 吸收**：`reconcile` 里 `anchor === "node"` 那条「Node 大于乘积时反向撑
+world」的分支正是行 13 要治的病，Node 退出输入字段后它成了死代码，直接删掉；
+`nearestDivisorNode()` 一并删除。行 2 记录里「手输 Node 给不出建议」的已知缺口也按当时
+的预判自然消失了。
+
+文档侧仍是**代码追平文档**：`term-node` 早写着「这个数由硬件形态定死，不是可以随意填的
+量」，规则章里也早有 `TP 组不跨节点` 这条 soft 规则。这次把 `term-node` 的调大/调小两栏
+改写成「不能直接调」，并在两条规则下各补一句「本页已如此落地」。
+
+验证（node 跑规则层，不起页面）：两模型 × 两口径 × 三种卡的**加减键随机游走 21.1 万个
+状态**，除原有五项外新增「每节点卡数 ≤ 整机」「节点数刚好装下」「无空节点」「末节点不越界」
+「`config.node` 与派生一致」「最大 rank 落在末节点内」六项，全为 0；1.44 万个手输值里，
+凡通过 `validate` 的口径异常也是 0。软警告在随机游走里覆盖到 2.8% 的状态。
+
+### 行 8 / 行 9 落地记录（2026-08-24）
+
+**行 8 按字面做完全看不出变化，所以多做了一条。** openPangu 的 9216 / 1024 与 Qwen2 的
+18944（= 512 × 37）都能被 2 的幂梯子上的每一档 TP 整除，而 TP 又已被头数卡在 16 / 4 以内
+——「大 TP + MoE 组合被拦」靠整除是拦不出来的。整除只拦得住**手输**：openPangu 的
+TP=3 / 6 / 12 / 24 / 48（`1024 % 3 ≠ 0`）、Qwen2 的 TP=7 / 14 / 28（`18944 % 7 ≠ 0`）。
+
+行 8 真正想说的「切碎」是另一回事：`1024 ÷ 16 = 每卡 64` —— 除得尽，但 GroupedMatMul
+的 N 维只剩 64。那是性能问题，正好是行 7 刚建好的那一档，所以补了一条软警告
+（用户定的阈值 256）。**`MOE_SHARD_MIN = 256` 是启发式的，代码里明确标了「待实测标定」**，
+标定方法与 `RUNTIME` 那几个系数写在一起：固定其它维只扫 TP，看 MoE 那几个算子的
+`aic_mte2_ratio` 从哪一档开始抬头。openPangu 在 TP=8（每卡 128）与 TP=16（每卡 64）各触发一次。
+
+`attentionHeadBasis` 随之更名 `tpShardBasis`，从 `heads` 扩成
+`gcd(heads, denseIntermediate, moeIntermediate)`：openPangu 16、Qwen2 4。
+**2 的幂梯子上的可达档位逐位未变**（48 的 2 的幂因子本来就到 16 为止），
+`stepBlockReason` 的悬浮理由则从只报头数改成把三个数都列出来 —— 否则用户对着 48 头想不通
+「16 之后为什么没有 32」，真正卡住的是那个公约数。
+
+**副作用：行 7 里从行 4 降级来的 `kvHeads % TP` 警告，现在不可达了。** Qwen2 的 TP 被
+`gcd(28, 18944) = 4` 顶死，而 4 正好等于它的 KV 头数。代码里留着并注明了原因 ——
+判据没错，换一个 intermediate 更「整」的 GQA 模型进来它就活了。
+
+---
+
+**行 9 是这份清单里第一条「capacity 与 yaml 各讲一套故事」的病**，两边的假设**正好相反**：
+capacity 按「不重计算 + 开 SP」取 `actPerLayer: 34`，yaml 却写死 `recompute: True` +
+`use_seq_parallel: False`。现在两者读同一份 `config.recompute / config.seqParallel`
+（进 `MODEL_PRESETS.defaults`，于是 yaml 视图的「与默认不同」高亮自动跟上）。
+
+**四档系数，来源是 Korthikanti et al. 2022（Megatron 那篇激活重计算论文）§4 的 sbh 系数式**：
+
+| | 仅 TP | TP + SP |
+|---|---|---|
+| 不重计算 | 每卡 `sbh·(10 + 24/t)` → 系数 `10t + 24` | 每卡 `sbh·34/t` → 系数 `34` |
+| 全重计算 | 每卡 `sbh·2` → 系数 `2t` | 每卡 `sbh·2/t` → 系数 `2` |
+
+（`activationBytes` 统一再除以 TP，所以不含 `/t` 的那两档要先把 t 乘回来。）
+自洽性检查：**TP=1 时四档收敛成 34 与 2 两个数**，与 SP 无关 —— 这正是它该有的样子。
+`5·a·s/h` 那一项仍未计入，也没补：它只在不走 FlashAttention 的实现里才显著。
+
+**默认档下 YAML 视图逐字不变**（两个默认值就照抄原先写死的那两行），**变的是容量柱**：
+默认是全重计算，激活系数从 34 掉到 2，激活段大幅缩短 —— 这正是计划里预告的那个变化，
+只不过方向是「原先高估了」。
+
+**UI：两枚开关，不是按钮、也不是 stepper，而且分在两行。**
+走普通的 `controller.set()`：布尔字段不进 world 乘积、不参与任何配平，`reconcile` 对它们是空转。
+
+先前两枚都放在 Cluster 的 batch 行（标题「激活显存」），**按那一行自己写的判据这是错的** ——
+那行的原话是「不参与切分、不进 world_size，只决定单卡装多少」，而 SP 是实打实在切
+（沿序列维切激活），只是不额外占卡。所以按用户意见拆开：
+
+- `seqParallel` → **Model Architecture 行**，接在 CP 之后，与 DP/PP/TP/CP 同排。它是「P」系列
+  的一员，那一行讲的正是「模型怎么切开」。
+- `recompute` → 留在 **batch 行**。它一刀不切，只决定每份留不留，符合那一行的判据。
+
+两枚由 `mount()` 按 `FLAG_SPECS[flag].group` 各自接到所属行的末尾（与 Node 只读读数同一种做法），
+外壳仍是 `.cro-stepper`（label 在上、控件在下），所以和旁边的 stepper 逐格齐平。
+轨道右边跟一个「开 / 关」的字 —— 这一行里别的每一格显示的都是一个值，只有轨道位置没有值可读。
+
+控件选型上先做成了两枚 `.btn` toggle，随后按用户意见换成 **TaskCompare.html 里「标记最优」
+那款开关**（原生 checkbox + 自绘轨道，CSS 与那边的 `.cmp-switch` 逐条相同，只按本页前缀改名
+为 `.cro-switch`）。理由是这两项**只有开与关，没有 1/2/4 的档位**，而按钮读起来是「点它会发生
+一件事」、开关读起来是「现在是这个状态」—— 这两项时刻决定着右边那根容量柱怎么画，属于后者。
+⚠️ 设计系统没有 switch 原语，于是同一个组件现在有了两份 page-local 实现，两处应当一起吸收
+进共享系统（两边的注释都写了这句）。
+
+**「只有开关」这件事对两项的准确程度不同，两处悬浮与文档都分开写了**：SP 确实没有自己的
+并行度 —— 它切成几份由 TP 决定，悬浮里连算法一并给了（TP 只切得动两段矩阵乘，夹在中间的
+LayerNorm / Dropout / 残差 add 在 TP 组内整份复制，SP 把这几段沿 token 位置切成 TP 份；
+进出时那次 all-reduce 拆成 reduce-scatter + all-gather，总通信字节数不变 —— 所以它几乎是白拿的）；
+而**重计算在真实世界里有中间档**（MindFormers 的 `select_recompute` 与按 stage 给层数的
+`recompute: [4,4,4,4]`，Megatron 的 `--recompute-granularity selective` /
+`--recompute-num-layers N`），本页按全开 / 全关两档建模，悬浮与 `term-recompute` 都注明了
+「要调中间档，这枚开关得换成一枚有档位的控件」。
+
+文档词条 `term-sp` 的所属区随之从 Cluster 改成 Model Architecture，位置也挪到 `term-cp` 之后。
+
+**TP = 1 时 SP 置灰并被强制关掉（用户提的「TP≠1 再出现 SP」，落成置灰而不是隐藏）。**
+两条理由都不是审美：
+
+- **默认配置就是 TP=1**，隐藏等于首屏根本看不到这枚开关，也就没人会知道有这回事；
+- 更要紧的是 `reconcile` 会在 TP 落回 1 时把 `seqParallel` 强制关掉 —— 不这么做的话
+  「TP=8 开着 SP → 把 TP 降回 1」会留下一个改不动的开状态：控件是灰的，而 YAML 里
+  `use_seq_parallel: True` 还标着「与默认不同」，成了一个用户看得见却无从解释的数。
+  这正是本页一路在消灭的那类错误。隐藏的话，这次强制关闭就发生在**看不见的地方**。
+
+强制关闭走的是既有的联动高亮（`highlightLinkedChanges` 这次把布尔开关也纳入了，
+CSS 里 `.cro-switch__track` 加进那条闪烁选择器），所以它不是悄悄发生的。
+置灰用原生 `disabled` 就够：`title` 挂在外层 `<label>` 上，指针事件到得了 ——
+与加减键那边必须绕开 `.btn:disabled` 的 `pointer-events: none` 不同。
+
+文档侧这次要自己写：`term-recompute` 与 `term-sp` 两个新词条（前面每个表单字段都有一条，
+新加了控件不补就成了缺口）。规则章的 `intermediate_size % TP` 与 `term-tp` 补上「已如此落地」，
+「单卡显存由什么构成」那张表的激活行补上全重计算的那一档。
+
+验证：加减键随机游走 21.1 万个状态仍全为 0，软警告覆盖率从 2.8% 升到 8.1%（新增的切碎警告）；
+四档系数逐一核对（见上表）；手输 TP 的硬校验逐档核对（openPangu 3/6/12/24/48 被拦、16 通过；
+Qwen2 7/14/28 被拦、4 通过）。
+
+### 行 10 / 行 11 落地记录（2026-08-24）
+
+两行一起做：它们是附录那张「capacity 与 yaml 各讲一套故事」的表里剩下的两条，
+落点也是同一批函数（`paramsOfStage` 与 `measure`）。做完这两条，**那张表四行全部消解** ——
+`recompute / seq_parallel / parallel_optimizer / vocab_emb_dp` 四枚开关都进了 config，
+capacity 与 yaml 读的是同一份来源，附录里那句「方向建议」兑现完毕。
+
+**又是代码追平文档。** `term-dp` 早写着「唯一的例外是开了优化器并行」，
+「单卡显存由什么构成」那张表里 `Embedding / LM Head` 一行原话就是
+「看是否沿词表维做 TP —— **这是个开关**，不是默认行为」。文档侧因此只补了
+「本页已如此落地」，外加两个新词条（`term-parallel-optimizer` / `term-vocab-emb-dp`）——
+每个表单控件都该有一条，新加了控件不补就是缺口。
+（顺手把行 9 遗留的一处挪错归位：`═ MoE 区 ═` 那枚分区标记当时被落在了 `term-sp`
+**前面**，现在挪回 `term-routed` 之前，新的两条正好填进这段空隙。）
+
+**行 10 的分母不是计划里写的那一个，是两个。** 计划写「按 EDP 切分」，
+但一张卡上的参数分两类，「同一份参数被复制了多少份」不是同一个数：
+
+| | 复制在哪一维上 | 优化器分片分母 |
+|---|---|---|
+| 路由专家 | 只在 EDP 维上（每个 EP rank 持不同的专家） | `÷ EDP` |
+| 其余权重（attention / dense / 共享专家 / 词表 / router） | 整个数据并行域 | `÷ EDP × EP` |
+
+合成一个数就再也拆不开，所以 `paramsOfStage` 从返回一个总数改成返回
+`{ total, expert }` —— 权重与梯度按 `total` 算，只有优化器状态那一段要拆开。
+
+**分母写成 `EDP × EP` 而不是 `DP`，是为了守住「两档说的是同一批卡」这条。**
+切出档 `EDP×EP = DP`；正交档 `EDP×EP = DP×EP` —— 后者的 attention 权重确实也在
+EP 轴上复制了一遍（每个 EP rank 都持有一份完整的 attention）。写成 `DP` 的话，
+同一批 2048 卡切一下 EP 口径，优化器段会差 64 倍，而口径开关一张卡都不该改。
+**测下来两档的六段体积逐位相同**，容量栏脚注那句「本栏各段体积两档相同」得以保住 ——
+只是理由换了：不再是「这里没有任何一段是按 DP 切的」（已不成立），
+而是「两个分母都是从同一批卡数出来的」。
+
+**默认档的容量柱掉了一半多**：openPangu 2048 卡默认配置下最满的那张卡
+（Stage0）从 **25.0 GB / 39%** 降到 **10.9 GB / 17%**，优化器段 13.9 GB → 0.46 GB。
+DP=512 时非专家权重几乎被摊没，专家那一半 ÷ EDP=8。这是计划里预告的「大幅缩短」。
+
+**行 11 在默认档上一个数都不动**（TP=1，÷1），要拨到 TP>1 才看得见：
+TP=8 时 Stage0 的权重段 0.30 → 0.93 GB、末 Stage 0.27 → 0.90 GB，
+其余 stage 不变 —— 正是计划说的「首尾两根柱子明显抬高」。
+顺带更正计划里那个数：`388M 参数 ≈ 6.2 GB（含梯度+优化器）` 只在**未开优化器并行**时成立；
+默认档（ZeRO 开着）光权重加梯度是 1.5 GB。两处文案都按这个分档写了。
+
+**UI：Model Architecture 那一行现在是 5 枚 stepper + 3 枚开关。**
+两枚新开关的归属按那一行自己的判据判 —— 「模型怎么切开」：
+词表决定那张大矩阵走 TP 还是走 DP，优化器并行沿 DP 维切优化器状态，
+两者都是切法，只是都不额外占卡（与行 9 判 SP 时同一条尺子）。
+这一行是 `flex-wrap: wrap` 的，八格会折行，区高会长一截。
+
+**`disabledValue`：置灰时停在哪一档，从三条散在 `reconcile` 里的 if 升成表里的一栏。**
+两枚新开关都有各自的「此刻毫无效果」的条件（词表在 TP=1、优化器并行在 DP=1），
+和 SP 在 TP=1 时同构，都做成置灰 + 强制取值。但**停的那一档与 SP 相反**：
+
+- 判据不是「关掉」，而是**「停在没有效果、且不会在 yaml 里留下一行需要解释的值上」**。
+- SP 的默认是 `False`，所以它停在 false；另两枚的默认是 `True`，停在 true ——
+  把它们写成 `False` 反倒会在 YAML 视图里多标出两行「与默认不同」，
+  是行 9 治的那个病换个方向再犯一次。
+
+`reconcile` 末尾那句写死的 `if (config.tp <= 1) config.seqParallel = false;` 因此换成
+按 `FLAG_SPECS[flag].disabledValue` 遍历，**SP 的行为逐位未变**。
+
+**顺带关掉一个行 9 就埋下、开关变三枚后会穿帮的洞。** 手输报错横幅的「改动清单」
+与红圈的名单都只遍历 `FIELD_SPECS` —— 建议里若含「TP 降到 1」，SP 会被 `reconcile`
+一并关掉，而横幅一个字不提，「一键应用」等于**偷偷拨了一枚开关**。
+两处都补上 `FLAG_SPECS`（值写「开 / 关」而不是 true/false），
+CSS 补一条 `.cro-stepper.is-invalid .cro-switch__track` —— 那段代码自己的注释就写着
+「红圈的名单必须与横幅列的名单一致」。药丸轨道用 `outline` 而不是 inset 阴影：
+里面那颗圆点会盖住内描边。
+
+**判定文案分了两档写**（计划点名这是「这一栏最常被引用的一句，改动最扎眼」）：
+优化器并行关着时它是「还没试过的那个旋钮」，预警档的建议改成先开它
+（不撞任何整除约束）再考虑 EP / PP；开着时那句老话要收回一半 ——
+改成「加 DP 只摊薄优化器状态那一段（当前 X GB），权重 / 梯度 / 激活不动」。
+口径浮层的 `DP` 一行同样分档，并新增「词表 Emb / Head」一行。
+
+yaml 两行的行尾注释把分母写全（`ZeRO-1：专家 ÷ EDP=8，其余权重 ÷ 512`），
+稠密模型与 `DP=1` 各走一支 —— 后者如实说「此档等同于关」，与表单上那枚灰开关对得上。
+
+验证（node 跑规则层 + 容量层，不起页面）：两模型 × 两口径 × 三种卡的
+**随机游走 36 万个状态**（每 20 步随机拨一枚开关），除既有的十二项外新增
+「专家参数 ≤ 总参数」「各段非负且有限」「开优化器并行后 optim 不大于关着时」
+「两个分母确为 EDP / EDP×EP」「开关置灰时停在 disabledValue」
+「词表走 DP 时首尾更重、TP=1 时两档相等」六项，**全为 0**；
+另单点核对了 EP 两档的六段体积逐位相同、默认档四个 stage 的读数、
+以及 TP=1/8 下 vocabEmbDp 两档的差额（0.63 GB = 388M×2B×(1 − 1/8)）。
+
+**没做**：行 12（`full_batch` 语义下 `batch_size` 是全局还是每 DP）。
+它仍是计划里唯一一条「建议先查证再动」的 —— 见下面那条提醒。
+（**已于 2026-08-25 查证并落地**，见下一节：结论是「全局」，但要改的是 yaml 不是 capacity。）
+
+### 行 12 / 行 14 落地记录（2026-08-25）
+
+清单收尾。两行没有共同点，只是都很小 —— 行 12 的功夫全花在查证上，行 14 是一行数组字面量。
+
+**行 12 的答案是「全局」，但要治的不是 capacity，是 yaml。** 查证落到两处证据：
+
+- MindFormers《大模型性能调优指南》讲 IO 瓶颈时的原话 ——「在配置为 true 时，每张卡都取
+  global batch size 的数据量，然后在图内完成数据的切分，只取对应 DP 域内所需数据进行训练」；
+  同段还说这么做「每张卡读取 IO 量都存在 DP 倍的冗余」，正是「每卡读整份」的旁证。
+- 源码侧 `mindformers/dataset/base_dataset.py`：semi + full_batch 时 `_generate_shard_info`
+  把分片信息置成 `shard_id=0 / num_shards=1`，而 `dataset.batch()` 收的就是配置里那个
+  `batch_size` 本身，**没有任何 ×device_num 的补偿**。两条合起来，那一格就是全局 batch。
+
+于是**计划里那个问句的答案是「不除」**：表单上那枚 Micro Batch 按定义就是每卡每次前反向的
+样本数，capacity 一个数都不用改 ——「加 DP 容量柱纹丝不动」这个卖点保住了，它本来就没错。
+错的是 yaml：`runner_config.batch_size` 那一格填的是 MBS，而框架把它读成全局 batch。
+这份 yaml 拿去跑，DP=512 时每卡实际只训 1/512 个样本，而且 batch 维根本切不开
+（1 分不成 512 份）。改成 `MBS × DP × micro_batch_num`，默认档 `1 × 512 × 16 = 8192`。
+
+**又是代码追平文档。** `term-mbs` 早写着「全局 batch = MBS × DP × 梯度累积步数」，
+附录那张打架表的末行也早点出了这处矛盾。文档侧只补两处**同一句话**：`term-mbs` 里一段
+「YAML 里那一格填的不是这个数」，以及容量栏口径浮层的 `global batch` 一行 —— 后者是
+用户对着「表单写 mb=1、yaml 写 8192」起疑时会点开的地方，答案该在那里等着他。
+
+顺带两处，都是行 12 自身的正确性所必需：
+
+- `micro_batch_num` 从无条件 `4×PP` 改成 `PP > 1 ? 4×PP : 1`。它现在是 `batch_size` 的
+  一个因子，PP=1 时写 4 等于凭空多出一层梯度累积（改前它只是一行不参与计算的展示值，
+  怎么写都不出事）。
+- `L()` 的 `field` 允许给一组字段。`batch_size` 由 MBS × DP × micro_batch_num 乘出来，
+  只认头一个字段的话，改 DP 时这一行的数字变了却不标「与默认不同」的高亮。
+
+**行 14 只有正交档看得见。** 切出档下 EP 早就被 `fitParallelWorldOnce` 从候选里摘掉了
+（它不进 world，改它补不上差额），所以候选序 `dp→ep→tp→cp→pp` 换成 `dp→tp→cp→ep→pp`
+影响的只是正交档那一半 —— 计划里那句「拖 Total Rank 时画面跳动明显减少」要按这个折一半读。
+
+验证（node 跑规则层，不起页面）：两模型 × 两口径 × 三种卡的加减键随机游走 **32.5 万步**
+（每 20 步随机拨一枚开关），「落在报错态 / 矩阵格子数≠Total Rank / DP 除不尽 EP /
+节点装载 / world 乘积」五项全为 0。新旧候选序各跑一遍同一条随机序列，拖 Total Rank 导致
+**EP 被动的次数：正交档 1177 → 287（−76%）**，切出档 **11 → 11 逐位不变**（那 11 次来自
+行 2 补的「DP 被 EP 顶住时降 EP 再补一轮」，与候选序无关）。
+
+至此前 14 行全部落地；第五批（行 15–19）见下。
+
+### 行 15 落地记录（2026-08-25）
+
+第五批开头。行 15 与前 14 行有一处不同：**它治的不是一处算错，而是一处「说得太笼统」** ——
+`term-parallel-optimizer` 的正文里写着「ZeRO-1 / FSDP 一类」，把两个切法不同的东西并成了一句。
+
+**布尔升成三档，而不是再加一枚布尔。** 关 ⊂ ZeRO-1 ⊂ ZeRO-3 是一条**阶梯**：
+做成两个独立开关会拨得出「切权重但不切优化器」这种不存在的状态。所以
+`FLAG_SPECS.parallelOptimizer` 整个换成 `shardMode`，取值 `none / zero1 / fsdp2`。
+**`zero1` 就是原先那个 `true`**，所以默认档一个数都没变（见下面的核对）。
+ZeRO-2（比 ZeRO-1 多切一段梯度）没有列进去：MindSpeed / MindFormers 都不把它作为一档
+暴露；真要补就插在中间，`shardPlan` 那张表多一行，判据本身不用动。
+
+**FLAG_SPECS 顺势长出了「带 options 就不是布尔」这条通路**，代价比预想的小 ——
+`reconcile` 的 `disabledValue` 遍历、联动高亮、红圈名单、横幅改动清单**全是按字段名遍历的，
+一行没改**。只有三处要动：`mount()` 按 `spec.options` 分发到 `buildFlagChoice`、
+sync 里多一个 `choiceControls` 循环、以及横幅里那个写死的 `onOff()` 升成
+`flagText(flag, value)`（开关写「开 / 关」，三档写那一档的 label —— 别把 `"fsdp2"`
+这种内部值露给用户）。`flagText` 一并进了导出，yaml 与将来的行 18 / 行 19 都读它。
+
+**控件用 segmented-control 而不是下拉**：三档要一眼看全，收进下拉里就读不出
+「关 ⊂ ZeRO-1 ⊂ ZeRO-3」这层递进。样式直接照抄 MoE 那枚 EP 口径切换（`.cro-ep-mode`），
+只把外壳换成 `.cro-stepper`，所以它与旁边的 stepper 逐格齐平。
+⚠️ 置灰用 `aria-disabled` 而不是原生 `disabled` —— 与加减键那边同一个坑
+（`.btn:disabled` 带 `pointer-events: none`，按钮收不到 hover，`title` 弹不出来），
+而 DP=1 时「为什么点不动」必须有地方说。这和 SP 那两枚用原生 `disabled` 的开关不同，
+原因也一样：那边 `title` 挂在外层 `<label>` 上，指针事件到得了。
+
+**显存模型：三段各按自己的分母折字节。** `optimShards` 拆成
+`dpShards`（两个分母，逐字未改）+ `shardPlan`（哪几段被切）。
+**三档共用同一组分母** —— 它们切的是同一维，差别只在切哪几段，不在切成几份，
+所以行 10 那条「两个 EP 口径给出同一个数」自动继承，不必重证（但还是测了，见下）。
+
+**新增的一段是 all-gather 暂存，落在预留段里。** FSDP2 前反向每算到一个分片单元，
+都要把它的完整权重收回来，算完即弃、反向再来一次。两处口径选择：
+
+- **峰值由「最大的那个单元」定，不是由这张卡的总参数量定**（`paramsOfStage` 因此
+  多返回一个 `unit`）。按总量估会高出一个数量级 —— FSDP 是逐单元 unshard 的。
+  单元取「本 stage 里最重的一层」与「词表那一块」的较大者：词表 388M 参数，
+  比一层（openPangu 约 66M）重得多，**首尾两个 stage 的暂存因此是中间 stage 的 5.8 倍**。
+  「首尾更重」这个老结论在 FSDP2 档换了个理由继续成立。
+- **预取深度 `RUNTIME.fsdpPrefetch = 2`（同时在手 2 份）** —— PyTorch FSDP2 与
+  MindSpeed 的默认都是预取 1 层。⚠️ 与 `MOE_SHARD_MIN` 一样**标了「待实测标定」**：
+  跑起 fsdp2 档看 Device 侧临时分配峰值是不是 2 × 单层权重。
+- **进预留段而不是新开第七段**：权重段的语义是「常驻」，而这份缓冲算完即弃；
+  而图例、配色、口径浮层都按六段写死，为一档新增一段代价过大。它在
+  `reserveParts.unshard` 里单列，图例 tooltip 与口径浮层都报得出来（且**只在
+  fsdp2 档写出来** —— 另两档它恒为 0，写个 0 会让人以为漏算了什么）。
+
+**默认档（openPangu 2048 卡）逐位未变，三档实测：**
+
+| 档位 | 峰值卡占用 | 权重 / 梯度 / 优化器（GB） | all-gather 暂存 |
+|---|---|---|---|
+| 关 | 25.0 GB / 39% | 2.32 / 2.32 / 13.90 | — |
+| ZeRO-1（默认） | **10.9 GB / 17%** | 2.32 / 2.32 / 0.46 | — |
+| FSDP2 | 7.7 GB / 12% | 0.08 / 0.08 / 0.46 | 1.45 GB |
+
+前两行与**行 10 落地记录里的数字逐位相同**（25.0/39%、10.9/17%、optim 13.9 → 0.46），
+这是「zero1 就是原先那个 true」最直接的证据。
+FSDP2 档有意思的地方在最后一列：DP=512 把权重切得只剩 0.08 GB，
+而**不被切的 all-gather 暂存（1.45 GB）反倒成了权重相关里最大的一块** ——
+判定文案因此专门点了这一笔（「加 DP 直接减容器；但 all-gather 暂存与激活不随 DP 变」）。
+
+**软警告复用行 7 那一档，零新机制**：`shardMode === "fsdp2"` 且 TP/PP/CP 有一个大于 1
+就提示两条路线混用。**硬拦是错的** —— HSDP + TP 有人在跑；但 MindSpeed MM 特性矩阵里
+勾 FSDP2 的那批模型（Qwen3-VL / InternVL3.5 / Wan2.2 / Qwen3-Omni / Magistral）
+TP/PP/CP 一格都没勾，值得说一句。默认配置 PP=4，所以拨到 FSDP2 当场就能看见这条黄横幅。
+
+**yaml 多写一行注释，不多写一个开关。** MindFormers 的 `parallel` 段里没有 FSDP2 的同名项
+（MindSpore 侧是 `optimizer_weight_shard` 的全分片档，Megatron/MindSpeed 侧是
+`--use-torch-fsdp2`），所以 fsdp2 档只补一行 `#` 注释，明说它是本页的口径标注而不是
+可照抄的配置项。**写出来的理由是不能不写**：容量柱此刻按 ZeRO-3 画，yaml 若一个字不提，
+就又回到了行 9–11 治的那个病 —— 两个视图各讲一套故事。
+`enable_parallel_optimizer` 那一行改成 `shardMode !== "none"`，三档的行尾注释共用同一段
+分母文字（`shardDenom`），与容量柱说的必须是同一句话。
+
+**文档侧这次要自己写，不是代码追平文档** —— 原来那条 `term-parallel-optimizer` 的正文
+说的就是错的。词条整条重写（表头从「优化器并行」改成「权重分片」，新增一张三档对照表），
+另有六处正文点名了旧开关，逐处改口：规则章「DP 不省显存」那条的例外说明、
+Model Architecture / Cluster 两处的行内注释、`term-dp` 的正文与「调大」栏、
+`term-vocab-emb-dp` 的两处、「单卡显存由什么构成」表的 DP 行、
+「显存不够时按什么顺序调」表（多出 FSDP2 一行）与它下面那条顺序经验。
+词条 id 仍是 `term-parallel-optimizer`，没跟着改名 —— 页内有链接指向它。
+
+**验证**（node 跑规则层 + 容量层，不起页面）：两模型 × 两 EP 口径 × 三档的
+**加减键随机游走 16 万步**（每 20 步随机拨一枚开关 / 档位），
+「落在报错态 / world 乘积不符 / 段非法 / unshard 异常」四项全为 0；
+另逐条核对了：三档的权重相关三段单调不增、ZeRO-1 不动权重与梯度段、
+非 fsdp2 档 `unshard` 恒为 0、**两个 EP 口径下六段逐位相同**（三档各测一遍）、
+DP=1 时 `reconcile` 把三档都停到 `zero1`、软警告的四种触发/不触发组合、
+以及三档的 yaml 输出（`enable_parallel_optimizer` 的 True/False 与 FSDP2 标注行的有无）。
+
 ### 两点提醒
 
-- **行 12 是唯一一条建议先查证再动的**：结论会推翻页面现在刻意讲的一个卖点（「加 DP 只增吞吐不增余量，容量柱纹丝不动」）。
+- ~~**行 12 是唯一一条建议先查证再动的**：结论会推翻页面现在刻意讲的一个卖点（「加 DP 只增吞吐不增余量，容量柱纹丝不动」）。~~
+  **已查证（2026-08-25）**：结论是「全局」，但那个卖点**没被推翻** —— 全局语义落在 yaml 的 `batch_size` 上，不落在表单那枚 Micro Batch 上。见行 12 落地记录。
 - **行 3 的实现成本远低于它的表述成本**：代码只改标签，但「DP 8 变 512」这件事需要在容量栏口径浮层里给一句解释，否则老用户会以为算错了。
 
 ---
@@ -145,15 +614,64 @@ EDP    = 512 / EP64               = 8      ← 这就是配置里写的那个 "8
 
 ## 附：行 9–12 的跨模块口径打架明细
 
-同一份配置，capacity 和 yaml 讲的是两套故事：
+同一份配置，capacity 和 yaml 讲的是两套故事。
+**下表前四行已于 2026-08-24 全部消解**（行 9 提了 recompute / seq_parallel，
+行 10 / 行 11 提了 parallel_optimizer / vocab_emb_dp），保留原文是因为它记着
+每一处**当初错在哪个方向** —— 高估还是低估，日后核对数量级时用得上。
+表末那条 `full_batch` 已于 2026-08-25 定案（行 12），一并标在原处。
 
 | capacity 的假设 | yaml 实际写出去的 | 后果 |
 |---|---|---|
-| 「DP **不除任何东西**，除非上 ZeRO/FSDP」（[capacity.js:553](js/config-relation-capacity.js#L553)） | `enable_parallel_optimizer: True`（[yaml.js:102](js/config-relation-yaml.js#L102)） | MindSpore 这个开关就是 ZeRO-1，优化器态按 DP 切。默认配置下 optim 段（占 12/16 的权重相关字节）被**整体高估** |
-| `actPerLayer: 34`，注明「**不重计算**」（[capacity.js:60](js/config-relation-capacity.js#L60)） | `recompute: True`（[yaml.js:116](js/config-relation-yaml.js#L116)） | 全重计算下激活段应掉到 ~`2·mb·s·h`／层，现在高估近一个量级 |
-| 同上，注明「**开 SP**」 | `use_seq_parallel: False`（[yaml.js:112](js/config-relation-yaml.js#L112)） | 方向相反，这次是**低估** |
-| Embedding/Head 按 `/tp` 切（[capacity.js:420-422](js/config-relation-capacity.js#L420-L422)） | `vocab_emb_dp: True`（[yaml.js:113](js/config-relation-yaml.js#L113)） | emb 走 DP 不切 TP，每卡都要背满 151552×2560 ≈ 388M 参数 ≈ 6.2 GB（含梯度+优化器）。TP=1 时看不出来，一提 TP 就错 |
+| 「DP **不除任何东西**，除非上 ZeRO/FSDP」（[capacity.js:553](js/config-relation-capacity.js#L553)） | `enable_parallel_optimizer: True`（[yaml.js:102](js/config-relation-yaml.js#L102)） | MindSpore 这个开关就是 ZeRO-1，优化器态按 DP 切。默认配置下 optim 段（占 12/16 的权重相关字节）被**整体高估** —— ✅ 行 10 已消解，分母是 `EDP`（专家）与 `EDP×EP`（其余） |
+| `actPerLayer: 34`，注明「**不重计算**」（[capacity.js:60](js/config-relation-capacity.js#L60)） | `recompute: True`（[yaml.js:116](js/config-relation-yaml.js#L116)） | 全重计算下激活段应掉到 ~`2·mb·s·h`／层，现在高估近一个量级 —— ✅ 行 9 已消解 |
+| 同上，注明「**开 SP**」 | `use_seq_parallel: False`（[yaml.js:112](js/config-relation-yaml.js#L112)） | 方向相反，这次是**低估** —— ✅ 行 9 已消解 |
+| Embedding/Head 按 `/tp` 切（[capacity.js:420-422](js/config-relation-capacity.js#L420-L422)） | `vocab_emb_dp: True`（[yaml.js:113](js/config-relation-yaml.js#L113)） | emb 走 DP 不切 TP，每卡都要背满 151552×2560 ≈ 388M 参数（含梯度 1.5 GB；未开优化器并行时连同优化器状态 6.2 GB）。TP=1 时看不出来，一提 TP 就错 —— ✅ 行 11 已消解 |
 
 另外 [js/config-relation-yaml.js:88](js/config-relation-yaml.js#L88) 把 `runner_config.batch_size` 注释成「每 DP 每步喂进去的样本数」，但同时写了 `full_batch: True` —— MindSpore 半自动并行下 full_batch 语义是喂**全局** batch 由框架切分。这一条直接决定 `BASIS.microBatch` 该不该再除以 DP（即行 12）。
+✅ **行 12 已消解**：查证结论是**全局**（框架原话「每张卡都取 global batch size 的数据量，然后在图内完成数据的切分」）。
+但要改的不是 `BASIS.microBatch` —— 它按定义就是每卡量，capacity 一直是对的；改的是 yaml 那一格，现在写 `MBS × DP × micro_batch_num`，注释也从「每 DP 每步喂进去的样本数」改成全局口径。
 
 **方向建议**：把 `recompute / seq_parallel / parallel_optimizer / vocab_emb_dp` 这四个开关从 yaml 的硬编码里提出来变成 config 字段（哪怕先只在 YAML 视图里可读不可调），让 capacity 读同一份来源。现在这四个是显存估算里影响最大的旋钮，却是唯一 capacity 看不见的。
+
+> ✅ **已兑现（行 9 / 行 10 / 行 11）**：四个开关全部进了 `MODEL_PRESETS.defaults` 与 `FLAG_SPECS`，
+> 表单上是四枚可拨的开关（SP / 词表走 DP / 优化器并行在 Model Architecture 行，重计算在 batch 行），
+> capacity 与 yaml 读同一份 `config`。落地范围比「可读不可调」更进一步。
+
+---
+
+## 附：第五批的由来（MindSpeed MM 特性矩阵对照）
+
+前 14 行都是**从页面内部找出来的**病（三个模块各拿一套假设、规则集太薄）。第五批的来源在外面：
+[pic/README (1).md](pic/README%20(1).md) 里 MindSpeed MM 的「已支持特性概览」表头列了 10 项特性，
+拿它当 checklist 逐列比对本页，得到下面这张对照表。
+
+**判据不是「表里有就要做」**：这页是「切分 × 单卡显存」的关系推演，README 那张表是「模型 × 特性」的
+支持矩阵，两者坐标系不同。只有当某一列**会改变切分拓扑、或改变单卡显存的分子 / 分母**时，它才落进本清单。
+
+| README 列 | 本页现状 | 结论 |
+|---|---|---|
+| TP | `tp` stepper + 容量分母 + 行 4 的头数约束 + `term-tp` | ✅ 覆盖到位 |
+| TP-SP | `seqParallel` 开关（行 9），四档激活系数 | ✅ 覆盖到位 |
+| VPP | 无。[js/config-relation-observer.js:62](js/config-relation-observer.js#L62) 只有一句「无 VPP」把它当假设排除了 | → **行 17** |
+| PP | `pp` stepper + 分 stage 容量柱 + `totalLayer % pp` | ✅ 覆盖到位 |
+| CP | `cp` stepper，但**全页只按 ring attention 一种口径建模** | → **行 16**（口径偏差，不是缺失） |
+| Distributed Optimizer | `parallelOptimizer` 开关（行 10），两个分母 | ✅ 覆盖到位 |
+| Recomputation | `recompute` 开关，只有全开 / 全关两档 | → **行 19**（行 9 已自记缺口） |
+| LoRA | 全无（grep 零命中） | → **行 18** |
+| RL (GRPO/DPO) | 全无 | ⭕ **不做，理由见下** |
+| FSDP2 | 只有 [config-relation-observer.html:1615](config-relation-observer.html#L1615) 正文一句「ZeRO-1 / FSDP 一类」顺带提及 | → **行 15** |
+
+**为什么行 15 排在最前**：看 README 那张表的行分布 —— 最新那批模型（Magistral、InternVL3.5-30B、
+Qwen3-VL-8B/30B、Wan2.2、HunyuanVideo1.5、Qwen3-Omni）**几乎全部只勾 FSDP2 + Recomputation 两列，
+TP / PP / CP 一格不勾**。也就是说本页精心建模的这套 Megatron 式切分对应的是表格下半部分的老模型，
+而新模型走的那条路，页面一个旋钮都没有。这是覆盖面上最大的一处偏斜，不是某个系数不准。
+
+**为什么 RL 不做**：它不是一枚切分旋钮，而是训练范式 —— 涉及 actor / ref / reward 多模型共存、
+rollout 与训练两阶段的显存错峰。硬塞进这张单模型静态容量图，会把本页
+「一份模型怎么切开、单卡装多少」的心智模型搞坏（这正是行 9 判 SP 归属时用的同一条尺子：
+按那一区自己写的判据判归属，判不进去的就不该硬塞）。它值得单独成页。
+
+**反向也记一笔**：页面覆盖了 README 表里没有的一批量 —— MoE 那一组（`routedExpert / topK /
+sharedExpert / ep` + EP 口径开关）、`vocabEmbDp`、Total Layer / Seq Length / Micro Batch /
+Total Rank / 卡型号。它们不是多余，容量估算离了它们算不出来；这条只是再说一遍两个坐标系不同，
+别把 README 那张表当成本页的完整需求。
