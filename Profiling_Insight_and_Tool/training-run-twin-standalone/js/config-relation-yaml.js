@@ -35,8 +35,11 @@
      note   行尾注释。由 L() 统一补空格对齐到 NOTE_COL，别在调用处手敲空格：
             值是算出来的（位数会变），手敲的对齐一改参数就散。 */
   const NOTE_COL = 38;
+  /* 代码本身超过 NOTE_COL 时 padEnd 一个字符都不补，注释会直接贴在值后面
+     （`'colossalai_cp'# Ring…`）—— 至少留一个空格。行 16 加 context_parallel_algo
+     时撞上的，与那一行无关，是这个 helper 一直缺的一条兜底。 */
   const L = (text, field, note) => ({
-    text: note ? text.padEnd(NOTE_COL) + "# " + note : text,
+    text: note ? (text.length >= NOTE_COL ? text + " " : text.padEnd(NOTE_COL)) + "# " + note : text,
     field,
   });
 
@@ -50,6 +53,48 @@
   function yamlPath(preset) {
     const full = snake(preset.label);
     return "configs/" + full.split("_")[0] + "/run_" + full + ".yaml";
+  }
+
+  /* ── recompute_config 那两行（升级计划行 19）─────────────────────────────
+     四档落到 MindFormers 的两个键上。⚠️ 兼容读法：老配置里这枚是布尔 recompute，
+     true 等价于 "full" —— 与 shardMode 那边同一条规矩，折算只写这一处。
+
+     「按层数」写成逐 stage 的数组，每段按本段层数截断 —— 与容量栏的
+     recomputedLayersOf 是同一条口径，两个视图必须给出同一个数组。
+     「选择性」这一档 MindFormers 的 select_recompute 收的是**算子名的正则**，
+     不是一个布尔，所以这里写 True 的同时用注释说清本页把它建模成了哪一种选法 ——
+     与 FSDP2 / VPP 那两处同一种处理：本页算的是什么、落到框架里对应哪个键都写出来，
+     但不伪造一个可以直接照抄的值。 */
+  function recomputeLines(topology) {
+    const c = topology.counts;
+    const cfg = topology.config;
+    const mode = cfg.recomputeMode || (cfg.recompute ? "full" : "none");
+    if (mode === "layers") {
+      const perStage = topology.stages.map((s) => Math.min(s.count, Math.max(0, cfg.recomputeLayers || 0)));
+      return [
+        L("  recompute: [" + perStage.join(", ") + "]", ["recomputeLayers", "pp", "totalLayer"],
+          "每个 stage 各重算前几层，其余层的中间激活照留；"
+            + "填的是 " + (cfg.recomputeLayers || 0) + "，按各段层数（" + c.totalLayer + "/" + c.pp
+            + " → " + topology.stages.map((s) => s.count).join(",") + "）截断"),
+        L("  select_recompute: False"),
+      ];
+    }
+    if (mode === "selective") {
+      return [
+        L("  recompute: False", "recomputeMode", "整层不重算，只挑算子 —— 见下一行"),
+        L("  select_recompute: True", "recomputeMode",
+          "本页按「重算整个 FFN 段」建模（每层激活系数 34 → 17）。"
+            + "⚠️ 框架里这一项收的是算子名正则，常见默认只挑 FFN 里的 SiLU / mul，落点在 17 与 34 之间，"
+            + "落到具体配置时改写成那份名单"),
+      ];
+    }
+    return [
+      L("  recompute: " + bool(mode === "full"), "recomputeMode",
+        mode === "full"
+          ? "全开：每层只留输入，反向重算一遍前向"
+          : "关：每层的中间激活全部留在显存里"),
+      L("  select_recompute: False"),
+    ];
   }
 
   /* ── 上栏：MindFormers run_*.yaml ─────────────────────────────────────── */
@@ -76,8 +121,11 @@
 
     /* 流水线微批数：本页没有为它开字段（气泡占比未建模），按 4×PP 取一个常见值；
        PP=1 时没有流水线可分，取 1 —— 写 4 会凭空多出一层梯度累积。
-       它同时是下面 batch_size 的一个因子，所以只算这一处，两行的数字必须对得上。 */
-    const microBatchNum = c.pp > 1 ? c.pp * 4 : 1;
+       它同时是下面 batch_size 的一个因子，所以只算这一处，两行的数字必须对得上。
+       开了虚拟流水时再抬到 PP×VPP 之上（升级计划行 17）：交错式调度的 warmup 段本身
+       就要灌 (VPP−1)·PP 份，micro-batch 数少于它，交错换来的那点气泡收益直接归零。
+       VPP ≤ 4 时 4×PP 已经够，所以默认档的数一个都没变。 */
+    const microBatchNum = c.pp > 1 ? Math.max(c.pp * 4, c.pp * (c.vpp || 1)) : 1;
     /* full_batch 口径下 runner_config.batch_size 填的是**全局** batch —— 见那一行
        上面的长注释（升级计划行 12）。 */
     const globalBatch = cfg.microBatch * c.dp * microBatchNum;
@@ -130,7 +178,7 @@
          几行一样，这次是 yaml 追平文档；流水线下的累积步数就是 micro_batch_num。
          反过来，**容量栏的 mb 不用再除 DP**：表单上那枚 Micro Batch 按定义就是每卡
          每次前反向的样本数，行 12 的问句到此有了答案。 */
-      L("  batch_size: " + globalBatch, ["microBatch", "dp", "pp"],
+      L("  batch_size: " + globalBatch, ["microBatch", "dp", "pp", "vpp"],
         "全局 batch = MBS " + cfg.microBatch + " × DP " + c.dp
           + " × micro_batch_num " + microBatchNum
           + "；图内按 dp 切、再分微批 → 每卡每次前反向 " + cfg.microBatch),
@@ -176,15 +224,49 @@
         !orthogonal && c.ep > 1 ? "含 EP 组在内的真 DP，专家只在 EDP=" + c.edp + " 维上复制" : null),
       /* TP 的整除对象是模型常量而不是别的并行维，写进行尾注释里 —— 这份 yaml
          是拿去跑的，框架校验不过时这一行的注释就是答案。 */
-      L("  model_parallel: " + c.tp, "tp", "即 TP，须整除 num_heads " + p.heads),
+      L("  model_parallel: " + c.tp, "tp",
+        c.cp > 1 && c.cpMode !== "ring"
+          ? "即 TP，Ulysses 档下与 CP 争同一批头：TP × CP 须整除 num_heads " + p.heads
+          : "即 TP，须整除 num_heads " + p.heads),
       L("  pipeline_stage: " + c.pp, "pp", "即 PP，分层见 model_config.offset"),
-      L("  context_parallel: " + c.cp, "cp", "即 CP"),
+      /* 虚拟流水在 MindFormers 里**不在 parallel_config 段**，而是分写在
+         parallel.pipeline_config 与 model_config 两处，所以这里只能给一行标注 ——
+         与 FSDP2 那一行同一种处理：本页算的是什么、落到框架里对应哪个键，都写出来，
+         但不伪造一个可以直接照抄的 parallel_config 项。
+         只在 VPP > 1 时出现：VPP=1 就是没开虚拟流水，写一行 1 只会让人多问一句。 */
+      ...(c.vpp > 1 ? [
+        L("  # 虚拟流水 VPP = " + c.vpp + "（不占 rank，不进上面那个乘积）", null,
+          "MindFormers 分写两处：parallel.pipeline_config.pipeline_interleave: True"
+          + " + model_config.pp_interleave_num: " + c.vpp
+          + "；Megatron/MindSpeed 侧是 --num-layers-per-virtual-pipeline-stage "
+          + (c.totalLayer / (c.pp * c.vpp))),
+        L("  # 每卡 " + (c.totalLayer / c.pp) + " 层拆成 " + c.vpp + " 段 × "
+          + (c.totalLayer / (c.pp * c.vpp)) + " 层轮流跑", null,
+          "气泡按 1/VPP 缩小，代价是在飞激活变多 —— 见单卡容量栏的「在飞份数」"),
+      ] : []),
+      L("  context_parallel: " + c.cp, "cp",
+        c.cp <= 1 ? "即 CP"
+          : c.cpMode === "ring"
+            ? "即 CP，Ring 口径：须整除 seq_length 的一半（" + (cfg.seqLen / 2) + "）"
+            : "即 CP，Ulysses 口径：TP × CP = " + (c.tp * c.cp) + " 须整除 num_heads " + p.heads),
+      /* CP 的算法档（升级计划行 16）。同样只在 CP > 1 时写：CP=1 时两档没有差别，
+         多一行只会多一个要解释的字。键名在 MindFormers 侧随版本变动，所以注释里
+         把 MindSpeed 的写法一并给出 —— 这份 yaml 是拿去跑的，对不上时注释就是答案。 */
+      ...(c.cp > 1 ? [
+        L("  context_parallel_algo: '" + (c.cpMode === "ring" ? "colossalai_cp" : "ulysses_cp") + "'", "cpMode",
+          c.cpMode === "ring"
+            ? "Ring：沿序列维轮转 KV，与头数无关（MindSpeed 侧 --context-parallel-algo megatron_cp_algo）"
+            : "Ulysses：沿头维 all-to-all（MindSpeed 侧 --context-parallel-algo ulysses_cp_algo）"),
+      ] : []),
       L("  expert_parallel: " + c.ep, "ep",
         c.ep <= 1 ? "即 EP"
           : orthogonal ? "即 EP，与 DP 正交，独占自己的 rank"
             : "即 EP，从 DP 内切出：EDP = DP/EP = " + c.edp),
-      L("  micro_batch_num: " + microBatchNum, null,
-        c.pp > 1 ? "流水线微批数，须 ≥ pipeline_stage；本页未建模，按 4×PP 取"
+      L("  micro_batch_num: " + microBatchNum, c.vpp > 1 ? "vpp" : null,
+        c.pp > 1
+          ? (c.vpp > 1
+            ? "流水线微批数，交错式下须 ≥ PP×VPP = " + (c.pp * c.vpp) + "；本页未建模，取 max(4×PP, PP×VPP)"
+            : "流水线微批数，须 ≥ pipeline_stage；本页未建模，按 4×PP 取")
           : "无流水线，不分微批"),
       /* 这两行原先是死值，与 capacity 的假设正好相反（那边按「不重计算 + 开 SP」
          估激活）。现在两边读同一个 config 字段，改一次两处一起动 —— 升级计划行 9。 */
@@ -200,11 +282,11 @@
           : "词表沿词表维切成 TP 份，每卡背 " + Math.floor(p.vocab / c.tp) + " 行"),
       L(""),
       L("recompute_config:"),
-      L("  recompute: " + bool(cfg.recompute), "recompute",
-        cfg.recompute
-          ? "全重计算：每层只留输入，反向重算一遍前向"
-          : "关：每层的中间激活全部留在显存里"),
-      L("  select_recompute: False"),
+      /* 四档写成 MindFormers 的两个键（升级计划行 19）。「按层数」那一档写的是
+         **逐 stage 的数组**（recompute: [4,4,4,4]）—— 这正是框架本来的语法，
+         而且每一段都按本段层数截断过，照抄下去不会出现「12 层的 stage 重算 16 层」。
+         截断口径与容量栏的 recomputedLayersOf 必须是同一条，两个视图不能各讲一套。 */
+      ...recomputeLines(topology),
       L(""),
     ];
     if (!noMoe) {
@@ -255,6 +337,25 @@
       L("    compute_dtype: 'bfloat16'"),
       L("    use_flash_attention: True"),
     );
+    /* LoRA（升级计划行 18）。MindFormers 把参数高效微调写在 model_config.pet_config
+       下，pet_type: 'lora' —— 与 FSDP2 / VPP 那两处不同，这一段是**框架里真有的键**，
+       所以照实写出来，只在注释里点明本页只建模了 target_modules 里的注意力四件套。
+       只在开着时出现：关着时整段不该存在（写 pet_type: None 是另一种意思）。
+       lora_alpha 取 2r、dropout 取 0.05 是 PEFT 侧最常见的一组起手值，本页不建模它们
+       对显存的影响（都不占字节），写出来是为了这份 yaml 拿去能跑。 */
+    if (cfg.lora) {
+      lines.push(
+        L("    pet_config:", "lora", "参数高效微调：冻结主干，只训 adapter"),
+        L("      pet_type: 'lora'", "lora"),
+        L("      lora_rank: " + cfg.loraRank, "loraRank",
+          "每层 4 个注意力矩阵各挂 A(r×H)/B(H×r)，共 4·r·2H = "
+            + (8 * cfg.loraRank) + "·H 个可训练参数"),
+        L("      lora_alpha: " + (cfg.loraRank * 2), "loraRank", "常见取 2×rank，不占显存"),
+        L("      lora_dropout: 0.05"),
+        L("      target_modules: '.*wq|.*wk|.*wv|.*wo'", null,
+          "本页的容量估算就按这四个矩阵算；改成也挂 FFN / 专家会让可训练参数量抬上去"),
+      );
+    }
 
     if (!topology.valid) {
       /* 校验没过时把原因原样顶在文件头：这份 yaml 拿去启动会当场挂，

@@ -284,14 +284,18 @@
 
               <h2 class="cro-region__title">Model Architecture</h2>
 
-              <!-- 五枚 stepper 之后，JS 还会在这一行末尾接一枚「高级」折叠按钮（见 mount()
-                   与 mountAdvanced()），里面是两枚开关加一枚三档控件：
-                   序列并行 SP / 词表走 DP / 权重分片。判据是这一行自己的口径 ——
-                   「模型怎么切开」：SP 沿序列维切激活、词表决定那张大矩阵走 TP 还是走 DP、
-                   权重分片沿 DP 维切权重相关的若干段，三者都是切法，只是都不额外占卡；
-                   也正因为都不占卡、日常调参很少动，才收进「高级」里（展开态记在
-                   localStorage，跨会话保留）。
-                   重计算不在这里，它一刀不切，在 Cluster 的 batch 行。 -->
+              <!-- 五枚 stepper 之后，JS 还会在这一行末尾接一枚「高级选项」折叠按钮（见 mount()
+                   与 mountAdvanced()），里面是一枚 stepper（VPP）加四枚开关 / 档位控件
+                   （CP 口径 / 序列并行 SP / 词表走 DP / 权重分片）。
+                   分界只有一条、且一眼可验：**拨了 Total Rank 一张卡都不变的，收进折叠**。
+                   所以留在明面上的恰好是 world 乘积的四个因子（DP×PP×TP×CP）加模型自身的
+                   层数 —— 五格，不折行。
+                   收进去的那几枚不占卡，却各自改着别的东西：VPP 改调度（气泡换在飞激活）、
+                   CP 口径改硬校验本身、另外三枚是不额外占卡的切法。展开态记在
+                   localStorage，跨会话保留；被联动改到或被标红时页面会自己掀开面板。
+                   重计算不在这里，它一刀不切，在 Cluster 的 batch 行 —— 那一行末尾也有
+                   一枚同款折叠（重算层数 / LoRA / LoRA Rank），判据是另一条：
+                   「只在另一枚控件拨到某一档之后才有意义」。 -->
               <div class="cro-stepper-row" id="croParallelSteppers">
                 <div class="cro-placeholder">Total Layer / DP / PP / TP / CP stepper · 第 2 项接入</div>
               </div>
@@ -359,22 +363,24 @@
                    区里的一栏而不是与它并列的第五个区，标题只压在左半上会读成两块
                    各自为政的内容。与整网 / Model Architecture / MoE 三个区的排法
                    一致（.cro-region__title 后跟内容）。 -->
-              <!-- 标题右侧那行小字是矩阵 d 轴的口径说明，由 JS 按当前配置写
-                   （见 config-relation-observer.js 的 syncClusterAxisNote）。
-                   切出档下表单里的 DP 是 512、矩阵左侧标的却是 EDP0–7，两个数
-                   对不上是本页最容易被当成算错的一处，换算式必须常驻可见，
-                   不能只藏在格子的悬浮提示里。放在标题行不占额外高度 ——
-                   矩阵的纵向预算是量 .cro-cluster__grid 得来的，多一行会挤掉格子。 -->
+              <!-- 标题行只留区名。这里原先常驻一行 d 轴口径说明（「矩阵纵轴 = EDP 8
+                   （DP 512 ÷ EP 64）· 一行是一个完整模型副本…」），已整体移除。
+                   那句换算没有丢，仍有三处答得出来：矩阵格子的悬浮提示、单卡容量栏
+                   口径浮层里的「EDP」一行、文档视图「EP 与 DP」一章。 -->
               <div class="cro-region__heading">
                 <h2 class="cro-region__title">Cluster</h2>
-                <span class="cro-cluster__axis-note" id="croClusterAxisNote"></span>
               </div>
               <div class="cro-cluster">
                 <!-- 左半是「表单在上、矩阵在下」的纵向两段，右半是单卡容量栏。
-                     表单横排（Total Rank / Node / 卡型号 / Micro Batch / Seq Length
-                     一行读完）之后，矩阵拿到了
+                     表单横排（Total Rank / Node / 卡型号 / Micro Batch / Seq Length /
+                     重计算 / 高级选项 一行读完）之后，矩阵拿到了
                      整个左半宽度 —— 默认 4 个 stage 块 × 64 EP 列要在不横向滚动的
-                     前提下画完，宽度比高度值钱。 -->
+                     前提下画完，宽度比高度值钱。
+                     ⚠️ 下面三个 div 是**三个挂载点**（JS 按 id 找它们），但视觉上必须是
+                     同一行：CSS 给两个 .cro-stepper-row 上了 display:contents，七枚控件
+                     因此是 .cro-cluster__form 自己的 flex 项 —— 否则换行会按「组」发生，
+                     batch 那四枚会整块掉到第二行。加控件时记得它们共用一行的宽度预算
+                     （尺度已按 MoE 那一行收到 30px 一档，见 css 里 .cro-cluster__form 那段）。 -->
                 <div class="cro-cluster__main">
                   <div class="cro-cluster__form">
                     <div class="cro-stepper-row" id="croClusterSteppers"></div>
@@ -391,11 +397,18 @@
                          这两项给装进去的体积，一行读完就是「单卡容量」的全部输入。
                          由 config-relation-observer.js 的 FIELD_ORDER.batch 渲染。 -->
                     <div class="cro-stepper-row" id="croBatchSteppers"></div>
-                    <!-- 「重计算」开关由 JS 接在这一行末尾（见 mount()）：它与 Micro Batch /
+                    <!-- 「重计算」由 JS 接在这一行末尾（见 mount()）：它与 Micro Batch /
                          Seq Length 同属「往这张卡里装多少」—— 一刀不切，只是每份留不留。
-                         另外三枚（SP / 词表走 DP / 权重分片）不在这里，它们收在
-                         Model Architecture 那一行的「高级」折叠里：那一行讲「模型怎么切开」，
-                         而它们三个都是实打实在切，只是都不额外占卡。 -->
+                         它是**四档**而不是开关（升级计划行 19：关 / 选择性 / 按层数 / 全开），
+                         因为 34 与 2 之间差着一个数量级，实际调优最常落的正是中间。
+                         行末还有一枚「高级选项」折叠，里面三枚（见 ADVANCED_ITEMS.batch）：
+                           · 重算层数 —— 只有「按层数」那一档才生效，拨到那一档时折叠自动掀开
+                           · LoRA / LoRA Rank —— 冻结主干只训 adapter，梯度段与优化器段跟着
+                             adapter 走、权重段一个字节不少（行 18）。两个预设写的都是预训练
+                             配置，所以它默认关着，不该占首屏那一格。
+                         SP / 词表走 DP / 权重分片 / CP 口径 / VPP 不在这里，它们收在
+                         Model Architecture 那一行的「高级选项」折叠里：那一行的判据是
+                         「拨了 Total Rank 一张卡都不变」。 -->
                   </div>
                   <div class="cro-cluster__grid">
                     <!-- .cro-heat 是集群矩阵的样式钩子（原先挂在 #croHeat 上）。
@@ -731,6 +744,7 @@
                           <ul>
                             <li><code>Total Rank</code> —— 乘积变了</li>
                             <li><code>Total Layer</code> —— 必须 ≥ PP</li>
+                            <li><code>VPP</code> —— 层数要被 <code>PP × VPP</code> 整除</li>
                             <li>各 stage 的层数划分与首末段的额外负担</li>
                           </ul>
                         </div>
@@ -738,7 +752,93 @@
                           <div class="cro-doc__map-box-title">考虑再调</div>
                           <ul>
                             <li><code>Micro Batch</code> —— 压气泡要更多 micro-batch</li>
+                            <li><code>VPP</code> —— 压气泡的另一条路，代价落在激活上</li>
                             <li><code>Node</code> —— PP 最适合切在节点边界</li>
+                          </ul>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div class="cro-doc__term" id="term-vpp">
+                    <div class="cro-doc__term-head">
+                      <code class="cro-doc__term-name">VPP</code>
+                      <span class="cro-doc__term-full">Virtual Pipeline · 虚拟流水（交错式 1F1B）</span>
+                      <span class="cro-doc__term-where">Model Architecture · 高级选项</span>
+                    </div>
+                    <p>
+                      把每个 PP stage 上的层<b>再拆成 VPP 段</b>，让同一张卡轮流跑属于自己的第 1 段、第 2 段……
+                      卡数一张不变（VPP <b>不进</b> <code>world</code> 的乘积），变的只是这些层在时间上怎么排。
+                    </p>
+                    <p>
+                      <b>它收在 Model Architecture 行的「高级选项」折叠里</b>，判据就是上面这句：
+                      那一行留在明面上的五枚恰好是 <code>world</code> 乘积的因子加模型自身的层数，
+                      拨了 <code>Total Rank</code> 一张卡都不变的一律收进折叠。
+                      真实调参的顺序也对得上 —— 先 DP/TP/PP/EP 把模型装下，再用重计算与权重分片挤余量，
+                      VPP 是量到气泡占比之后才动的第二梯队旋钮。
+                    </p>
+                    <p>
+                      它治的是<b>流水线气泡</b>：非交错 1F1B 的气泡比例约 <code>(PP − 1) / m</code>，
+                      交错之后每一段变短、流水线填得更快，气泡按 <code>1/VPP</code> 缩小。
+                      但气泡不是白省的 —— <b>代价整个落在激活峰值上</b>：
+                      warmup 段要多灌几份 micro-batch，每张卡同时压着的未反向激活变多。
+                    </p>
+                    <p>
+                      本页按 Korthikanti et al. 2022 §2.2 的口径算这笔账，
+                      逐 stage 给出在飞份数 <code>[2(PP−s−1) + (VPP−1)·PP + 1] / VPP</code>；
+                      <code>s = 0</code> 时它正好化简成那篇论文给的整体惩罚因子
+                      <code>PP · (1 + (PP−1)/(PP·VPP))</code>。
+                      直观结果是：<b>「各 PP Stage 峰值」那排小柱整体抬高、而且变平</b> ——
+                      末段抬得比首段还多（PP=4 / VPP=2 时首段在飞 4 → 5.5 份，末段 1 → 2.5 份）。
+                    </p>
+                    <p>
+                      <b>它比 PP 严格：层数必须被 <code>PP × VPP</code> 整除。</b>
+                      本页的 PP 允许不均分（46 层分 4 段 = 12,12,11,11），交错式流水不允许 —— 每一段都得等长。
+                      这一条在默认预设上会立刻咬人：openPangu 的 <b>46 层连 PP=4 都除不尽</b>，
+                      所以 <code>46 % (4 × VPP)</code> 对任何 VPP &gt; 1 都不为 0，默认档下 VPP 只能是 1。
+                      按一下加号，页面会把 <code>Total Layer</code> 抬到 48（唯一一个改了不连累卡数的对手字段），
+                      这时 VPP 才有 2 / 3 / 4 / 6 / 12 可选。
+                    </p>
+                    <p class="cro-doc__effect">
+                      ⚠️ <b>本页只建模 VPP 的调度代价，不改层→stage 的画法。</b>
+                      真实的交错式流水下 stage0 持有的是分散在全模型各处的几段（chunk 0、chunk 4……），
+                      而 Layer 导航、整网 deck、集群矩阵仍按连续分段显示。
+                      改这一处要动 deck pattern 的 <code>stageRanges</code> 契约（它收的是连续区间），
+                      范围远超这一条，故明确记为已知简化。
+                    </p>
+                    <div class="cro-doc__map">
+                      <div class="cro-doc__map-col">
+                        <div class="cro-doc__map-box" data-flow="up">
+                          <div class="cro-doc__map-box-title">调大</div>
+                          <ul>
+                            <li>气泡占比高，而 micro-batch 数已经加不动了</li>
+                            <li>PP 大、单卡显存却还有余量</li>
+                          </ul>
+                        </div>
+                        <div class="cro-doc__map-box" data-flow="down">
+                          <div class="cro-doc__map-box-title">调小</div>
+                          <ul>
+                            <li>激活已是瓶颈 —— VPP 只会让它更紧</li>
+                            <li>层数除不尽 <code>PP × VPP</code></li>
+                            <li>stage 间通信次数按 VPP 倍增，跨机时不划算</li>
+                          </ul>
+                        </div>
+                      </div>
+                      <div class="cro-doc__map-node">VPP</div>
+                      <div class="cro-doc__map-col">
+                        <div class="cro-doc__map-box" data-flow="must">
+                          <div class="cro-doc__map-box-title">一定联调</div>
+                          <ul>
+                            <li><code>Total Layer</code> —— 要被 <code>PP × VPP</code> 整除</li>
+                            <li>单卡显存的激活段（在飞份数变多）</li>
+                            <li><b>不动</b> <code>Total Rank</code> —— VPP 不占卡</li>
+                          </ul>
+                        </div>
+                        <div class="cro-doc__map-box" data-flow="often">
+                          <div class="cro-doc__map-box-title">考虑再调</div>
+                          <ul>
+                            <li><code>Micro Batch</code> 数 —— 交错式要求 <code>m ≥ PP × VPP</code></li>
+                            <li>重计算 —— 激活被抬高之后常常要往上拨一档</li>
                           </ul>
                         </div>
                       </div>
@@ -818,14 +918,21 @@
                     </div>
                     <p>
                       把一条序列按 token 位置切成若干段分给不同卡。
-                      attention 要看全局，所以各卡之间用 ring 的方式轮转传递 KV。
+                      attention 要看全局，所以各卡之间还要把缺的那部分补回来 ——
+                      <b>怎么补有两种做法</b>，见下面的 <code>CP 口径</code>。
                     </p>
                     <p>
                       它<b>专治长序列</b>。激活随序列长度线性增长，attention 的中间量甚至是平方级 ——
-                      CP 是唯一直接压这一项的维度。序列不长时它没有意义：白付一轮 ring 通信，
-                      而省下的激活本来就不是瓶颈。要求 <code>seq % (2×CP) == 0</code> 而不只是 CP，
-                      是因为因果注意力下序列前段计算量远小于后段，得对半交叉分配才能均衡负载。
-                      这条同样已落成硬校验，只在 <code>CP &gt; 1</code> 时生效 —— CP=1 没有 ring，也就没有负载均衡这回事。
+                      CP 是唯一直接压这一项的维度。序列不长时它没有意义：白付一轮通信，
+                      而省下的激活本来就不是瓶颈。
+                    </p>
+                    <p>
+                      <b>它的硬约束跟着口径走，不是一条固定的式子。</b>
+                      页面早先只按 ring attention 一种口径建模，把 <code>seq % (2×CP) == 0</code> 当成 CP 的通用约束 ——
+                      但那是 <b>ring 专属</b>的（因果注意力下序列前段计算量远小于后段，得对半交叉分配才能均衡负载）。
+                      Ulysses 沿头维切，序列长度多少都行，约束改落在 <code>num_heads % (TP × CP) == 0</code> 上。
+                      两条都已落成硬校验，都只在 <code>CP &gt; 1</code> 时生效 ——
+                      CP=1 时两档说的都是同一件「不切」，此时 <code>CP 口径</code> 那枚控件也是灰的。
                     </p>
                     <div class="cro-doc__map">
                       <div class="cro-doc__map-col">
@@ -840,7 +947,8 @@
                           <div class="cro-doc__map-box-title">调小</div>
                           <ul>
                             <li>序列本来就不长，CP 只是白付通信</li>
-                            <li>序列长度除不尽 2×CP</li>
+                            <li>Ring 档：序列长度除不尽 2×CP</li>
+                            <li>Ulysses 档：<code>TP × CP</code> 除不尽头数</li>
                           </ul>
                         </div>
                       </div>
@@ -850,7 +958,8 @@
                           <div class="cro-doc__map-box-title">一定联调</div>
                           <ul>
                             <li><code>Total Rank</code> —— 乘积变了</li>
-                            <li>受 <code>Seq Length</code> 整除约束</li>
+                            <li><code>CP 口径</code> —— 它决定下面这条约束是哪一条</li>
+                            <li>Ring 受 <code>Seq Length</code>、Ulysses 受 <code>TP</code> 与头数约束</li>
                           </ul>
                         </div>
                         <div class="cro-doc__map-box" data-flow="often">
@@ -862,6 +971,45 @@
                         </div>
                       </div>
                     </div>
+                  </div>
+
+                  <div class="cro-doc__term" id="term-cp-mode">
+                    <div class="cro-doc__term-head">
+                      <code class="cro-doc__term-name">CP 口径</code>
+                      <span class="cro-doc__term-full">Ulysses / Ring —— 上下文并行的两种算法</span>
+                      <span class="cro-doc__term-where">Model Architecture · 高级选项</span>
+                    </div>
+                    <p>
+                      CP 切成几份由 CP 那枚 stepper 定；这一枚定的是<b>切完之后 attention 怎么把「要看全局」补回来</b>。
+                      两档都让每张卡只留 <code>S/CP</code> 份激活，所以<b>单卡显存完全相同</b> ——
+                      拨这一枚，容量栏一个数都不会变。差别在通信形态与硬约束上。
+                    </p>
+                    <div class="cro-doc__table-wrap">
+                      <table class="cro-doc__table">
+                        <thead>
+                          <tr><th></th><th>Ulysses</th><th>Ring</th></tr>
+                        </thead>
+                        <tbody>
+                          <tr><td>怎么补</td><td>进 attention 前一次 all-to-all，换成「每卡整条序列、一部分头」，算完换回来</td><td>各卡只持自己那段的 KV，沿环轮转传给邻居，边传边算</td></tr>
+                          <tr><td>硬约束</td><td><code>num_heads % (TP × CP) == 0</code></td><td><code>seq % (2 × CP) == 0</code></td></tr>
+                          <tr><td>并行度上限</td><td>头数（48 头的模型，<code>TP × CP</code> 最多 48）</td><td>没有上限，序列想切多细就切多细</td></tr>
+                          <tr><td>attention 内核</td><td>不用改，FlashAttention 原样能用</td><td>要改写成分块累加</td></tr>
+                          <tr><td>通信形态</td><td>一次性 all-to-all，在关键路径上</td><td>逐块点对点轮转，可与计算重叠</td></tr>
+                          <tr><td>框架写法</td><td>MindSpeed <code>--context-parallel-algo ulysses_cp_algo</code></td><td>Megatron context parallel / <code>megatron_cp_algo</code></td></tr>
+                        </tbody>
+                      </table>
+                    </div>
+                    <p>
+                      <b>怎么选：</b>头数够切就用 Ulysses —— 实现最省事，MindSpeed MM 的特性表里多数模型标的就是它，
+                      本页也以它为默认档。头数不够切（<code>TP × CP</code> 已顶到 <code>num_heads</code>）、
+                      或序列长到十万 token 以上，就换 Ring。两者还能混用（hybrid：外层 Ring、内层 Ulysses），本页未建模。
+                    </p>
+                    <p class="cro-doc__effect">
+                      这一枚是页面上唯一一个<b>会换掉硬校验本身</b>的控件 ——
+                      同一组 <code>TP / CP / Seq Length</code>，在一档下合法、在另一档下报红字。
+                      页面此前只有 Ring 那一条，等于对走 Ulysses 的配置画了一条<b>错误的红线</b>；
+                      这一条正是为治那个而加的。
+                    </p>
                   </div>
 
                   <div class="cro-doc__term" id="term-sp">
@@ -914,7 +1062,7 @@
                           <div class="cro-doc__map-box-title">考虑再调</div>
                           <ul>
                             <li><code>TP</code> —— 没有它 SP 无从谈起</li>
-                            <li>重计算 —— 两者都压激活，全重计算下 SP 的增益变小</li>
+                            <li>重计算 —— 两者都压激活，拨到「全开」之后 SP 省下的绝对值就小了</li>
                           </ul>
                         </div>
                       </div>
@@ -1560,7 +1708,7 @@
                   <div class="cro-doc__term" id="term-recompute">
                     <div class="cro-doc__term-head">
                       <code class="cro-doc__term-name">重计算</code>
-                      <span class="cro-doc__term-full">recompute · 激活重计算</span>
+                      <span class="cro-doc__term-full">recompute_config · 激活重计算，四档 + 「重算层数」</span>
                       <span class="cro-doc__term-where">Cluster</span>
                     </div>
                     <p>
@@ -1571,23 +1719,60 @@
                     <p>
                       与并行维度的根本差别是：并行维度靠<b>多加卡</b>把东西分摊出去，重计算不加一张卡 ——
                       所以显存不够时它常常是第一个该试的旋钮，而不是最后一个。
-                      表单里它是一枚开关，因为本页按<b>全开 / 全关</b>两档建模。
-                      真实世界还有中间档：MindFormers 的 <code>select_recompute</code>（只重算挑出来的那几类算子）
-                      与按 stage 给层数的写法（<code>recompute: [4,4,4,4]</code>），
-                      Megatron 对应 <code>--recompute-granularity selective</code> / <code>--recompute-num-layers N</code>。
-                      这些本页都未建模 —— 真要调中间档时，这枚开关得换成一枚有档位的控件。
                     </p>
+                    <p>
+                      <b>但它不是一枚开关，而是四档</b>：34 与 2 之间差着一个数量级，
+                      而实际调优最常落的正是中间。四档的系数出自同一篇（Korthikanti et al. 2022 §4）——
+                      那里把每层的 <code>34·sbh</code> 拆成 <b>attention 11 + FFN 19 + LayerNorm 4</b>，
+                      各档就是从这张拆分表里读出来的：
+                    </p>
+                    <div class="cro-doc__table-wrap">
+                      <table class="cro-doc__table">
+                        <thead>
+                          <tr><th>档</th><th>留下什么</th><th>每层系数（开 SP）</th><th>落到 yaml</th></tr>
+                        </thead>
+                        <tbody>
+                          <tr><td>关</td><td>全留</td><td><code>34</code></td><td><code>recompute: False</code></td></tr>
+                          <tr>
+                            <td>选择性</td><td>重算 FFN 段，只留它的输入（attention 与 LayerNorm 照留）</td>
+                            <td><code>17</code> —— 正好一半</td><td><code>select_recompute: True</code></td>
+                          </tr>
+                          <tr>
+                            <td>按层数</td><td>每个 stage 的前 N 层按「全开」算，其余按「关」算</td>
+                            <td>逐层混合，可停在任意中间高度</td><td><code>recompute: [4,4,4,4]</code></td>
+                          </tr>
+                          <tr><td>全开</td><td>只留每层的输入</td><td><code>2</code></td><td><code>recompute: True</code></td></tr>
+                        </tbody>
+                      </table>
+                    </div>
+                    <p>
+                      「按层数」是唯一<b>逐 stage 分别生效</b>的一档，也是这一栏里唯一能改变
+                      「各 PP Stage 峰值」那排小柱<b>形状</b>的旋钮：Stage0 在飞的 micro-batch 最多，
+                      同样重算一层，它省下的绝对值也最多 —— 整排小柱会一起变矮、而且变平。
+                      填进去的那个数按各段层数截断（46/4 → 12,12,11,11 时填 12，后两段就是整段重算），
+                      yaml 写出去的数组也照这个截断，拿去跑不会出现「11 层的 stage 重算 12 层」。
+                    </p>
+                    <div class="cro-doc__note">
+                      <b>两处口径要说在前面。</b>
+                      「选择性」在真实框架里是<b>可配的算子名单</b>而不是一个定值：
+                      MindFormers 的 <code>select_recompute</code> 常见默认只挑 FFN 里的 SiLU / mul，
+                      落点在 17 与 34 之间；本页取「重算整个 FFN 段」这一端。
+                      而 Megatron 的 <code>--recompute-granularity selective</code> 没有单列成一档 ——
+                      它重算的是 attention 里的 softmax / dropout（<code>5·a·s²/h</code> 那一项），
+                      本页按 FlashAttention 建模、这一项本来就不计入，那一档在本页等于「关」。
+                    </div>
                     <div class="cro-doc__map">
                       <div class="cro-doc__map-col">
                         <div class="cro-doc__map-box" data-flow="up">
-                          <div class="cro-doc__map-box-title">开</div>
+                          <div class="cro-doc__map-box-title">往上拨</div>
                           <ul>
                             <li>激活段撑满了容器，而并行度已不好再加</li>
                             <li>想把省下的余量换成更大的 Micro Batch / 更长序列</li>
+                            <li>只差一点点时先拨到「选择性」或「按层数」，别一步到「全开」白付算力</li>
                           </ul>
                         </div>
                         <div class="cro-doc__map-box" data-flow="down">
-                          <div class="cro-doc__map-box-title">关</div>
+                          <div class="cro-doc__map-box-title">往下拨</div>
                           <ul>
                             <li>显存本来就宽裕，不必白付 30% 算力</li>
                             <li>要压单步时间，且激活不是瓶颈</li>
@@ -1606,8 +1791,75 @@
                         <div class="cro-doc__map-box" data-flow="often">
                           <div class="cro-doc__map-box-title">考虑再调</div>
                           <ul>
+                            <li><code>重算层数</code> —— 「按层数」那一档带着的那个 N</li>
                             <li><code>Micro Batch</code> / <code>Seq Length</code> —— 省出来的余量拿去装什么</li>
                             <li><code>PP</code> —— 两者都在压激活，不必同时用满</li>
+                          </ul>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div class="cro-doc__term" id="term-lora">
+                    <div class="cro-doc__term-head">
+                      <code class="cro-doc__term-name">LoRA</code>
+                      <span class="cro-doc__term-full">pet_config · 低秩适配微调，含「LoRA Rank」</span>
+                      <span class="cro-doc__term-where">Cluster · 高级选项</span>
+                    </div>
+                    <p>
+                      主干权重<b>全部冻结</b>，只在若干矩阵旁挂一对低秩矩阵
+                      <code>A(r×d_in)</code> / <code>B(d_out×r)</code> 参与训练。
+                      本页按注意力的 q/k/v/o 四个 <code>[H,H]</code> 建模，每层
+                      <code>4·r·2H = 8rH</code> 个 adapter 参数（<code>r</code> 由「LoRA Rank」给）。
+                    </p>
+                    <p>
+                      它在这一页里的位置很特别：<b>它是唯一一个改变「哪些参数需要梯度」的旋钮</b>。
+                      一张卡上「权重相关」共 16 B/参数，其中 14 B（梯度 2 + 优化器状态 12）
+                      <b>只跟可训练参数走</b>。冻结主干等于把这 14 B 从几十亿参数身上挪到几百万参数身上 ——
+                      梯度段几乎归零、优化器段塌到零头，而<b>权重段纹丝不动</b>（冻结不等于不用背）。
+                      这是容量柱上最大的一次形变，比权重分片拨到 FSDP2 还大：
+                      后者是把 16 B 除以 DP，LoRA 是让其中 14 B 换一个小三四个数量级的乘数。
+                    </p>
+                    <div class="cro-doc__note">
+                      <b>它省不到激活。</b>反向仍要穿过整个网络才算得到 adapter 的梯度，
+                      每层的中间激活该留还得留 —— 本页拨这枚开关时激活段一动不动，这不是漏算。
+                      长序列 / 大 micro-batch 撑起来的那一段只能靠重计算与 CP。
+                      同理，它也<b>不是一个「显存不够就打开」的旋钮</b>：它改的是训练本身
+                      （主干不再更新，学到的东西只在 adapter 里），是微调而不是预训练。
+                      本页两个预设写的都是预训练配置，所以默认关着。
+                    </div>
+                    <div class="cro-doc__map">
+                      <div class="cro-doc__map-col">
+                        <div class="cro-doc__map-box" data-flow="up">
+                          <div class="cro-doc__map-box-title">开</div>
+                          <ul>
+                            <li>这一跑本来就是<b>微调</b>：在已有权重上适配下游任务</li>
+                            <li>卡数有限，全参微调连优化器状态都装不下</li>
+                          </ul>
+                        </div>
+                        <div class="cro-doc__map-box" data-flow="down">
+                          <div class="cro-doc__map-box-title">关</div>
+                          <ul>
+                            <li>预训练 / 全参微调 —— 主干必须更新</li>
+                            <li>瓶颈在激活而不在权重相关那三段（LoRA 帮不上）</li>
+                          </ul>
+                        </div>
+                      </div>
+                      <div class="cro-doc__map-node">LoRA</div>
+                      <div class="cro-doc__map-col">
+                        <div class="cro-doc__map-box" data-flow="must">
+                          <div class="cro-doc__map-box-title">一定联调</div>
+                          <ul>
+                            <li>容量柱的梯度段与优化器段（本页会立刻重画）</li>
+                            <li><code>LoRA Rank</code> —— 两段的体积与它成正比</li>
+                          </ul>
+                        </div>
+                        <div class="cro-doc__map-box" data-flow="often">
+                          <div class="cro-doc__map-box-title">考虑再调</div>
+                          <ul>
+                            <li><code>权重分片</code> —— ZeRO-1 切的那一段此刻已经没剩多少，
+                              要压只能靠 FSDP2（它连冻结的主干一起切）</li>
+                            <li><code>Micro Batch</code> / <code>Seq Length</code> —— 省出来的余量在激活侧才花得掉</li>
                           </ul>
                         </div>
                       </div>
@@ -1631,11 +1883,17 @@
                         <tr><td>DP</td><td>切数据，每副本一份完整权重</td><td>每步末 all-reduce 梯度一次</td><td>不省</td></tr>
                         <tr><td>PP</td><td>切层，每卡只背本 stage 那几层</td><td>相邻 stage 点对点传激活，最稀</td><td>省</td></tr>
                         <tr><td>TP</td><td>切张量：注意力头、FFN 的 intermediate</td><td>每层前反向各 all-reduce 一次激活，最密</td><td>省</td></tr>
-                        <tr><td>CP</td><td>切序列长度</td><td>attention 内部 ring 传 KV</td><td>省激活</td></tr>
+                        <tr><td>CP</td><td>切序列长度</td><td>看口径：Ulysses 一次 all-to-all 换头 / Ring 逐块轮转 KV</td><td>省激活</td></tr>
                         <tr><td>EP</td><td>切专家，每卡只持有一部分路由专家</td><td>MoE 层 all-to-all 收发 token</td><td>MoE 下省得最多</td></tr>
                       </tbody>
                     </table>
                   </div>
+                  <p>
+                    <b>VPP 不在这张表里，因为它不是第六个维度。</b>
+                    它一张卡都不多占（不进 <code>world</code> 的乘积），也不切任何东西 ——
+                    只是把本卡已有的那几层再拆成 VPP 段轮流跑，换的是更小的流水线气泡。
+                    它<b>反过来吃显存</b>：在飞的 micro-batch 变多，激活段抬高。详见 <code>term-vpp</code>。
+                  </p>
                   <p>
                     <b>「显存不够就加卡」只有加 TP / PP / EP / CP 时才成立。</b>
                     把 DP 从 2 拉到 8，总卡数翻两番，每张卡上的权重、梯度、优化器状态一个字节都没少 ——
@@ -1882,12 +2140,49 @@ t  TP 序号              c  CP 序号      n  物理节点号</div>
 
                   <div class="cro-doc__rule" data-kind="hard">
                     <div class="cro-doc__rule-head">
-                      <code class="cro-doc__rule-expr">seq_length % (2 × CP) == 0</code>
+                      <code class="cro-doc__rule-expr">seq_length % (2 × CP) == 0　（Ring 口径）</code>
                       <span class="cro-doc__kind">硬约束</span>
                     </div>
                     <p>
                       CP 沿序列维切分。要求 2 倍而不只是 CP，是因为因果注意力下序列前段的计算量远小于后段，
                       ring attention 要把序列对半交叉分配才能让各 rank 负载均衡。
+                    </p>
+                    <p class="cro-doc__effect">
+                      <b>这是 ring 专属的一条，不是 CP 的通用约束。</b>
+                      页面早先按它一条建模，等于对走 Ulysses 的配置画了一条错误的红线；
+                      现在它只在 <code>CP 口径 = Ring</code> 时生效。
+                    </p>
+                  </div>
+
+                  <div class="cro-doc__rule" data-kind="hard">
+                    <div class="cro-doc__rule-head">
+                      <code class="cro-doc__rule-expr">num_heads % (TP × CP) == 0　（Ulysses 口径）</code>
+                      <span class="cro-doc__kind">硬约束</span>
+                    </div>
+                    <p>
+                      Ulysses 沿<b>头</b>维做 all-to-all，而 TP 早已先切过一轮头 ——
+                      两者争的是同一批注意力头，所以要整除的是它们的<b>乘积</b>。
+                      这同时就是 Ulysses 的并行度天花板：48 头的模型，<code>TP × CP</code> 最多到 48。
+                    </p>
+                    <p class="cro-doc__effect">
+                      本页已落成硬校验，并且两枚 stepper 会互相让路：TP 到顶时加号置灰并说明「CP 也在切同一批头」，
+                      反过来也一样。这是页面上第一条<b>把两个可调字段绑在一个乘积上</b>的约束。
+                    </p>
+                  </div>
+
+                  <div class="cro-doc__rule" data-kind="hard">
+                    <div class="cro-doc__rule-head">
+                      <code class="cro-doc__rule-expr">num_layers % (PP × VPP) == 0</code>
+                      <span class="cro-doc__kind">硬约束</span>
+                    </div>
+                    <p>
+                      交错式 1F1B 把每个 stage 的层再拆成 VPP 段轮流跑，每一段都得<b>等长</b>。
+                      这比 PP 自己严格：PP 允许不均分（46 层分 4 段 = 12,12,11,11），VPP 不允许。
+                    </p>
+                    <p class="cro-doc__effect">
+                      本页已落成硬校验。它在默认预设上立刻咬人 —— openPangu 的 46 层连 PP=4 都除不尽，
+                      所以默认档下 VPP 只能是 1；按一下加号，页面会把 <code>Total Layer</code> 抬到 48
+                      （唯一一个改了不连累卡数的对手字段）。
                     </p>
                   </div>
 
@@ -1971,15 +2266,37 @@ t  TP 序号              c  CP 序号      n  物理节点号</div>
 
                   <div class="cro-doc__rule" data-kind="soft">
                     <div class="cro-doc__rule-head">
-                      <code class="cro-doc__rule-expr">PP 的 micro-batch 数 ≥ PP</code>
+                      <code class="cro-doc__rule-expr">Ulysses 档：TP × CP ≤ 每节点卡数</code>
+                      <span class="cro-doc__kind">软约束</span>
+                    </div>
+                    <p>
+                      Ulysses 的 all-to-all 与 TP 的 all-reduce 争的是同一批头，也争同一条链路，
+                      两者的组内卡数是<b>乘起来</b>的 —— TP 单独没超节点、乘上 CP 就超了，是这一档特有的坑。
+                      而且这次 all-to-all 和 TP 的 all-reduce 一样在关键路径上，重叠不掉。
+                    </p>
+                    <p class="cro-doc__effect">
+                      与「TP 组不跨节点」同一档，黄色横幅提示、不拦截。
+                      Ring 档没有这条：它的 KV 轮转是点对点、可与计算重叠，跨机代价小得多 ——
+                      序列长到非切不可时，这正是换档的理由。
+                    </p>
+                  </div>
+
+                  <div class="cro-doc__rule" data-kind="soft">
+                    <div class="cro-doc__rule-head">
+                      <code class="cro-doc__rule-expr">PP 的 micro-batch 数 ≥ PP（交错式：≥ PP × VPP）</code>
                       <span class="cro-doc__kind">软约束</span>
                     </div>
                     <p>
                       流水线的 micro-batch 数太少，气泡（bubble）占比就上去了：
-                      1F1B 下气泡比例约 <code>(PP − 1) / micro_batch_num</code>。
+                      1F1B 下气泡比例约 <code>(PP − 1) / micro_batch_num</code>，
+                      交错式（VPP &gt; 1）把它按 <code>1/VPP</code> 缩小，代价是在飞激活变多。
                       要把气泡压到 10% 以下，micro-batch 数大致得是 PP 的十倍。
                     </p>
-                    <p class="cro-doc__effect">但 micro-batch 数受全局 batch 约束，两头都紧时只能回头压 PP。</p>
+                    <p class="cro-doc__effect">
+                      但 micro-batch 数受全局 batch 约束，两头都紧时只能回头压 PP。
+                      开了 VPP 之后门槛还要再抬一档：micro-batch 数少于 <code>PP × VPP</code>，
+                      交错换来的那点气泡收益直接归零 —— YAML 视图的 <code>micro_batch_num</code> 已按此取值。
+                    </p>
                   </div>
                 </section>
 
@@ -1997,9 +2314,13 @@ t  TP 序号              c  CP 序号      n  物理节点号</div>
                       </thead>
                       <tbody>
                         <tr><td>权重</td><td>参数量 × 2（bf16）</td><td rowspan="3">见下表</td></tr>
-                        <tr><td>梯度</td><td>参数量 × 2</td></tr>
-                        <tr><td>优化器状态</td><td>参数量 × 12（fp32 master + momentum + variance）</td></tr>
-                        <tr><td>激活</td><td>≈ 34 · mb · s · h 每层（不重计算 + 开 SP）；全重计算掉到 2 · mb · s · h</td><td>÷ TP、÷ CP，× 在飞的 micro-batch 数</td></tr>
+                        <tr><td>梯度</td><td><b>可训练</b>参数量 × 2</td></tr>
+                        <tr><td>优化器状态</td><td><b>可训练</b>参数量 × 12（fp32 master + momentum + variance）</td></tr>
+                        <tr>
+                          <td>激活</td>
+                          <td>每层 ≈ 34 · mb · s · h（不重计算 + 开 SP）；选择性掉到 17、全开掉到 2</td>
+                          <td>÷ TP、÷ CP，× 在飞的 micro-batch 数（VPP 会把这个份数抬上去）</td>
+                        </tr>
                         <tr><td>运行时底座</td><td>驱动 + context + kernel binary，几个 GB</td><td>不随配置变</td></tr>
                         <tr><td>预留 buffer / 碎片</td><td>通信 buffer + 算子临时区 + 分配器碎片</td><td>随并行配置变，见下</td></tr>
                       </tbody>
@@ -2024,6 +2345,7 @@ t  TP 序号              c  CP 序号      n  物理节点号</div>
                         <tr><td>Embedding / LM Head</td><td>看 <code>vocab_emb_dp</code>：走 DP 则<b>不切</b>、每卡背满，走 TP 才 ÷ TP。<b>本页已落成一枚开关</b>，默认走 DP</td></tr>
                         <tr><td>以上全部</td><td>÷ PP，体现为「这张卡只背本 stage 那几层」</td></tr>
                         <tr><td>DP</td><td><b>不切</b>，除非拨了「权重分片」：ZeRO-1 档优化器状态 ÷ DP，FSDP2 档权重 / 梯度 / 优化器三段全 ÷ DP（另加 all-gather 暂存）。<b>本页已落成一枚三档控件</b>，默认 ZeRO-1</td></tr>
+                        <tr><td>可训练与否</td><td>上面几行说的是「一张卡上有多少参数」。而梯度与优化器状态那 14 B <b>只按可训练的那部分算</b> —— 开 LoRA 后主干冻结，这两段只剩每层 <code>4·r·2H</code> 个 adapter 参数的份，权重段一个字节不少。<b>本页已落成一枚开关加一枚 Rank</b>，默认关</td></tr>
                       </tbody>
                     </table>
                   </div>
@@ -2037,6 +2359,9 @@ t  TP 序号              c  CP 序号      n  物理节点号</div>
                     <li>
                       <b>激活要乘在飞的 micro-batch 数。</b>1F1B 下 stage <i>s</i> 同时压着 <code>PP − s</code> 份未反向的激活，
                       stage0 最紧。忽略这一项会系统性低估最危险的那张卡，而且 PP 越大低估越多。
+                      开了虚拟流水（<code>VPP &gt; 1</code>）换成交错式调度，份数变成
+                      <code>[2(PP−s−1) + (VPP−1)·PP + 1] / VPP</code> —— 整排小柱一起抬高、而且变平，
+                      末段抬得比首段还多。这就是 VPP 的账：气泡按 <code>1/VPP</code> 缩小，代价全记在这里。
                     </li>
                     <li>
                       <b>运行时开销不是固定百分比。</b>按已用量抽一个比例，等于把一个几乎不随模型变的量做成正比项：
@@ -2091,11 +2416,31 @@ t  TP 序号              c  CP 序号      n  物理节点号</div>
                         </tr>
                         <tr>
                           <td>提 CP</td><td>只降激活，长序列下才有意义</td>
-                          <td>attention 内部多一轮 ring 通信</td><td><code>seq % (2×CP)</code></td>
+                          <td>attention 内部多一轮通信（Ulysses 一次 all-to-all / Ring 逐块轮转）</td>
+                          <td>Ulysses 撞 <code>num_heads % (TP×CP)</code>，Ring 撞 <code>seq % (2×CP)</code></td>
                         </tr>
                         <tr>
-                          <td>开重计算</td><td>激活大幅下降，可到原来的十分之一量级</td>
-                          <td>多一次前向，算力换显存</td><td>不撞整除约束，是最容易先试的一项</td>
+                          <td>提 VPP</td><td><b>什么都不省 —— 反而更费</b></td>
+                          <td>在飞激活变多，整排小柱一起抬高</td>
+                          <td><code>num_layers % (PP×VPP)</code>；它买的是气泡不是显存，列在这里是为了别把它当省显存的旋钮</td>
+                        </tr>
+                        <tr>
+                          <td>重计算 → 选择性</td><td>激活<b>正好减半</b>（每层 34 → 17：只重算 FFN 段）</td>
+                          <td>反向多算两三个矩阵乘，比全开便宜得多</td><td>不撞整除约束 —— 显存只差一点时先试这一档</td>
+                        </tr>
+                        <tr>
+                          <td>重计算 → 按层数</td><td>停在任意中间高度：每个 stage 的前 N 层按全开算</td>
+                          <td>只有被选中的那几层付重算的账</td>
+                          <td>不撞整除约束；N 按各段层数截断，这是唯一逐 stage 分别生效的一档</td>
+                        </tr>
+                        <tr>
+                          <td>重计算 → 全开</td><td>激活掉一个数量级（每层 34 → 2）</td>
+                          <td>反向多跑一遍完整前向，约 +30% 算力</td><td>不撞整除约束，是最容易先试的一项</td>
+                        </tr>
+                        <tr>
+                          <td>开 LoRA</td><td>梯度段与优化器段几乎归零（那 14 B/参数只按 adapter 算）</td>
+                          <td><b>换了一种训练</b>：主干冻结，只在 adapter 里学</td>
+                          <td>不撞整除约束，但<b>激活一点不省</b>；只有这一跑本来就是微调时才谈得上</td>
                         </tr>
                         <tr>
                           <td>权重分片 → ZeRO-1</td><td>优化器状态 ÷ DP，权重相关字节里最大的一块</td>
@@ -2119,9 +2464,13 @@ t  TP 序号              c  CP 序号      n  物理节点号</div>
                   </div>
                   <div class="cro-doc__note">
                     <b>顺序上的经验：</b>先试不撞任何整除约束的那两项（重计算、权重分片 → ZeRO-1），
-                    它们只在算力和一轮通信上付账；还不够就把权重分片再往上拨到 FSDP2
+                    它们只在算力和一轮通信上付账 —— 而重计算<b>有四档，别一步拨到底</b>：
+                    差得不多时「选择性」（减半）或「按层数」就够，把算力留给真正需要的地方。
+                    还不够就把权重分片再往上拨到 FSDP2
                     （压得最多，但通信从每步一轮变成每层一轮）；再考虑 EP / PP，它们要重新对整除关系；
                     TP 放到最后 —— 它同时被模型结构和节点边界两头夹住，是最容易一提就撞墙的一维。
+                    <br><b>LoRA 不在这条顺序里</b>：它不是「显存不够时的下一步」，而是换一种训练。
+                    这一跑是微调就该一开始就开着，是预训练就一直关着。
                   </div>
                 </section>
 
