@@ -96,6 +96,8 @@
     padding: var(--space-3) var(--space-4); background: var(--ide-frame-pane-header-fill);
     backdrop-filter: var(--ide-frame-pane-backdrop-filter); -webkit-backdrop-filter: var(--ide-frame-pane-backdrop-filter); }
   .cmp-topbar-right { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+  /* Smoothing 拖动条与右侧开关组之间再多留 8px（拖动条右端的数值和开关贴太近，读起来粘在一起） */
+  .smooth-ctrl + .cmp-switch { margin-left: 8px; }
 
   /* 曲线平滑拖动条（TensorBoard 式 Smoothing） */
   .smooth-ctrl { display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--foreground-secondary);
@@ -129,6 +131,17 @@
   .cmp-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
   /* 图表卡片去边框，仅靠 surface 底色区分，避免每张折线图外多一圈框线 */
   .cmp-grid .card { border: none; }
+  /* 浅色主题下把卡片底色对齐设计系统的卡片口径：
+     --surface-2 在浅色是不透明中灰 #F2F2F2，而 ide-frame 的 pane 在浅色是近白（--ide-frame-pane-bg
+     #ffffff 的 80% 混色）——灰板压在近白底上，每张图就成了一块生硬的色块。设计系统里卡片用的是
+     --card-bg（浅色 = --surface-1 = #FFFFFF）+ --card-border，并在浅色下用一层极淡投影做分层
+     （见 css/style.css 的 :root[data-theme='light'] .card-demo/.panel-shell，同一投影值）。
+     只覆盖浅色，深色仍保持 --surface-2 的既有层级不动。 */
+  :root[data-theme='light'] .card {
+    background: var(--card-bg);
+    border-color: var(--card-border);
+    box-shadow: 0 10px 30px rgba(15, 23, 42, 0.06);
+  }
   /* 放大态：grid-column 撑满整行——sparse 打包算法（默认，非 dense）下，若该卡片左侧同行已有其他
      卡片放不下整行宽度，会自动换到下一行再撑大；撑大后原本排在它后面的卡片也自然被挤到下一行，
      两条需求都由 grid 默认排布规则满足，无需额外 JS 计算行位置 */
@@ -148,6 +161,18 @@
   .cmp-chart-expand-btn:hover { color: var(--foreground); background: var(--state-hover); }
   .cmp-chart-expand-btn.is-active { color: var(--primary); }
   .cmp-chart-expand-btn svg { width: 13px; height: 13px; }
+  /* 框选缩放：卡片头「恢复」图标，仅在本图当前处于缩放态时显示（.is-shown 由 cmpSyncZoomBtns 挂），
+     规格对齐放大/还原图标 */
+  .cmp-chart-head-actions { display: inline-flex; align-items: center; gap: 2px; flex-shrink: 0; }
+  .cmp-chart-reset-btn { display: none; align-items: center; justify-content: center; width: 20px; height: 20px;
+    flex-shrink: 0; border-radius: var(--radius-md); color: var(--foreground-muted); cursor: pointer;
+    transition: all var(--duration-fast) var(--easing-default); }
+  .cmp-chart-reset-btn:hover { color: var(--foreground); background: var(--state-hover); }
+  .cmp-chart-reset-btn svg { width: 13px; height: 13px; }
+  .cmp-chart-reset-btn.is-shown { display: inline-flex; }
+  /* 拖拽框选时的高亮区间矩形；框选期间禁止图区文本选中 */
+  .cmp-brush { fill: var(--primary); fill-opacity: .12; stroke: var(--primary); stroke-width: 1; stroke-dasharray: 3 3; }
+  .cmp-chart-area { user-select: none; }
   .cmp-best-tag { display: inline-flex; align-items: center; gap: 5px; font-size: 10px; font-family: var(--font-mono);
     font-weight: 400; white-space: nowrap; color: var(--foreground-secondary); }
   .cmp-best-medal { font-size: 11px; }
@@ -212,12 +237,36 @@
   .best-rank-chevron { color: var(--foreground-muted); font-size: 14px; font-weight: 400; transition: transform .2s;
     flex-shrink: 0; display: inline-flex; line-height: 1; }
   .best-rank-card.expanded .best-rank-chevron { transform: rotate(90deg); }
-  /* 排名设置入口：暂只做展示，样式沿用 .cmp-chart-expand-btn 的图标按钮规格，未接功能 */
+  /* 排名设置入口：点开「评比指标」下拉，样式沿用 .cmp-chart-expand-btn 的图标按钮规格 */
   .best-rank-settings-btn { display: inline-flex; align-items: center; justify-content: center; width: 22px; height: 22px;
     margin-left: auto; flex-shrink: 0; border-radius: var(--radius-md); color: var(--foreground-muted); cursor: pointer;
     transition: all var(--duration-fast) var(--easing-default); }
   .best-rank-settings-btn:hover { color: var(--foreground); background: var(--state-hover); }
   .best-rank-settings-btn svg { width: 14px; height: 14px; }
+  .best-rank-settings-btn.is-open { color: var(--foreground); background: var(--state-hover); }
+  /* 评比指标下拉：结构/交互对齐页面里已有的 .lane-add-menu，底色改用 --background-elevated
+     （设计系统里浮层面板的口径，见 --panel-shell-bg），才能从同为 --surface-2 的卡片上浮起来。
+     卡片本身是 overflow:hidden（为行的圆角裁切），菜单展开时需临时放开，否则会被裁掉 */
+  .best-rank-card.menu-open { overflow: visible; }
+  .best-rank-head { position: relative; }
+  .best-rank-menu { position: absolute; top: calc(100% - 2px); right: 12px; z-index: 40; min-width: 236px;
+    display: none; padding: 8px; cursor: default; background: var(--background-elevated);
+    border: 1px solid var(--border-default); border-radius: var(--radius-lg); }
+  .best-rank-menu.open { display: block; }
+  .best-rank-menu-head { display: flex; align-items: center; justify-content: space-between; gap: 8px;
+    margin-bottom: 6px; padding: 2px 8px 8px; font-size: 11px; font-weight: 500; letter-spacing: .02em;
+    color: var(--foreground-muted); border-bottom: 1px solid var(--border-subtle); }
+  .best-rank-menu-count { font-family: var(--font-mono); }
+  .best-rank-menu-item { display: flex; align-items: center; gap: 8px; padding: 7px 8px; border-radius: var(--radius-lg);
+    cursor: pointer; font-size: 12px; font-weight: 400; color: var(--foreground-secondary); }
+  .best-rank-menu-item:hover { background: var(--state-hover); color: var(--foreground); }
+  /* 锁住的两种情况：指标本身没有优劣方向（lr / KL / 显存），或已勾满 3 项 / 只剩最后 1 项 */
+  .best-rank-menu-item.is-locked { cursor: not-allowed; color: var(--foreground-disabled); }
+  .best-rank-menu-item.is-locked:hover { background: transparent; color: var(--foreground-disabled); }
+  /* .cmp-cb 是自绘勾选框，原生 :disabled 不会自动变淡，锁住时手动压一档 */
+  .best-rank-menu-item.is-locked .cmp-cb { opacity: .45; cursor: not-allowed; }
+  .best-rank-menu-note { flex-shrink: 0; font-size: 10px; color: var(--foreground-disabled); }
+  .best-rank-menu-name { flex: 1; min-width: 0; }
   .best-rank-single { display: block; }
   .best-rank-body { display: none; }
   .best-rank-card.expanded .best-rank-single { display: none; }
@@ -1276,6 +1325,24 @@ function diffSwitchHtml(){
     <span class="cmp-switch-label${compareDiffOnly?' is-on':''}">只看差异</span>
   </label>`;
 }
+// 「视图联动」开关控件 HTML + 事件绑定（仅图表对比用，状态用全局 cmpLinkView）
+function linkViewSwitchHtml(){
+  return `<label class="cmp-switch" title="开启后，悬浮竖线/气泡与框选缩放在同一横轴口径的图之间联动；关闭后每张图各管各的">
+    <input type="checkbox" data-switch="link" ${cmpLinkView?'checked':''}>
+    <span class="cmp-switch-track"></span>
+    <span class="cmp-switch-label${cmpLinkView?' is-on':''}">视图联动</span>
+  </label>`;
+}
+function bindLinkViewSwitch(container){
+  const input = container.querySelector('[data-switch="link"]');
+  if(!input) return;
+  input.addEventListener('change', ()=>{
+    cmpLinkView = input.checked;
+    const lab = input.parentElement.querySelector('.cmp-switch-label');
+    if(lab) lab.classList.toggle('is-on', cmpLinkView);
+    cmpHideAll();   // 只改后续扩散行为，不动已有缩放；顺手清掉当前的联动标记
+  });
+}
 function bindDiffSwitch(container, rerender){
   const input = container.querySelector('[data-switch="diff"]');
   if(!input) return;
@@ -1294,6 +1361,27 @@ function fmtNum(v){
   const a = Math.abs(v);
   return a>=100 ? v.toFixed(0) : a>=1 ? v.toFixed(2) : v.toFixed(3);
 }
+// runtime.big 形如「1小时21分」，解析成分钟；解析不出（如 RLHF 的「1.0M episodes」）返回 0
+function taskDurMin(id){
+  const big = (TASKS[id] && TASKS[id].runtime && TASKS[id].runtime.big) || '';
+  const h = big.match(/(\d+(?:\.\d+)?)\s*小时/);
+  const mi = big.match(/(\d+(?:\.\d+)?)\s*分/);
+  if(!h && !mi) return 0;
+  return (h ? +h[1]*60 : 0) + (mi ? +mi[1] : 0);
+}
+// 时间轴刻度：可见跨度 ≥1 小时给 H:MM，否则给 M:SS（轴上只有 5 个位置，不放到时分秒）
+function fmtAxisTime(sec, spanSec){
+  sec = Math.max(0, Math.round(sec));
+  if(spanSec >= 3600) return Math.floor(sec/3600) + ':' + String(Math.floor((sec%3600)/60)).padStart(2,'0');
+  return Math.floor(sec/60) + ':' + String(sec%60).padStart(2,'0');
+}
+// 气泡里的时间：整段 ≥1 小时给 H:MM:SS，否则 M:SS（气泡有空间，给到秒便于和事件时间轴对齐）
+function fmtTipTime(sec, totalSec){
+  sec = Math.max(0, Math.round(sec));
+  const mm = String(Math.floor((sec%3600)/60)).padStart(2,'0');
+  const ss = String(sec%60).padStart(2,'0');
+  return totalSec >= 3600 ? Math.floor(sec/3600) + ':' + mm + ':' + ss : Math.floor(sec/60) + ':' + ss;
+}
 function fillYAxis(el, min, max, pctFmt){
   if(!el) return;
   const fmt = pctFmt ? (v => (v*100).toFixed(0)+'%') : fmtNum;
@@ -1306,15 +1394,19 @@ function fillYAxis(el, min, max, pctFmt){
 // 图表分组（TensorBoard scalars 风格）：按业务类别把对比图归入可折叠分区。
 const CMP_GROUPS = [
   { id:'converge', label:'训练收敛',        hint:'loss / grad_norm' },
-  { id:'infra',    label:'算力 · 基础设施', hint:'GPU / MFU / 显存 / 吞吐' },
+  { id:'infra',    label:'算力 · 基础设施', hint:'MFU / GPU / 显存 / 吞吐' },
   { id:'optim',    label:'优化 · 策略',      hint:'学习率 / KL' },
 ];
+// axis:'time' —— 该指标在真实业务里不是训练循环按 step 打点出来的，而是 npu-smi / DCGM /
+// Prometheus 这类硬件遥测按固定墙钟间隔（秒级）轮询采集的，采样点和 step 边界并不对齐，
+// 因此横轴按整段运行时长换算成时间；其余指标（loss / grad_norm / MFU / 吞吐 / lr / KL）
+// 都在训练循环里随 step 落库，横轴保持 step。
 const CMP_METRICS = [
   { id:'loss',      label:'loss',       dir:'down', group:'converge' },
   { id:'grad_norm', label:'grad_norm',  dir:'down', alias:{ dpo:'grad' }, group:'converge' },
-  { id:'gpu',       label:'GPU 利用率',  dir:'up',   group:'infra' },
   { id:'mfu',       label:'MFU',         dir:'up',   group:'infra' },
-  { id:'vram',      label:'显存占用',     dir:'flat', group:'infra' },
+  { id:'gpu',       label:'GPU 利用率',  dir:'up',   group:'infra', axis:'time' },
+  { id:'vram',      label:'显存占用',     dir:'flat', group:'infra', axis:'time' },
   { id:'tput',      label:'吞吐量',       dir:'up',   group:'infra' },
   { id:'lr',        label:'学习率',       dir:'flat', group:'optim' },
   { id:'kl',        label:'KL 散度',     dir:'flat', group:'optim' },
@@ -1364,7 +1456,11 @@ const MEDIA_SCORE = {
 };
 // 最佳任务栏（renderBestRankCard）只比这 3 个最关键指标，按此顺序展示：
 // 收敛信号 loss + 多模态产出 media + 算力效率 mfu
-const BEST_RANK_METRIC_IDS = ['loss', 'media', 'mfu'];
+// 参与评比的指标（可在「最佳任务」栏右上角齿轮里改），默认收敛信号 loss + 多模态产出 media +
+// 算力效率 MFU。改为可变：勾选变动后 computeRankings / renderBestRankCard 都按新集合重算。
+let BEST_RANK_METRIC_IDS = ['loss', 'media', 'mfu'];
+const BEST_RANK_MAX = 3;          // 最多勾 3 项：一行放得下 3 列，再多会被迫换行、稀释重点
+let bestRankMenuOpen = false;
 // media 不是时序指标，CMP_METRICS 里没有它，故单独给一个同形描述符：media:true 表示取值走
 // MEDIA_SCORE 而非 cmpSeries 的稳态均值
 const BEST_RANK_MEDIA_METRIC = { id:'media', label:'media', dir:'up', media:true };
@@ -1389,7 +1485,11 @@ function bestRankMetricLabel(m){
 // 每个指标列各自的固定宽度（而非 3 列统一取最宽的那个），让 key/value 间距贴合各自 label 长度，
 // 不会因为跟「grad_norm」这种长 label 共用一个列宽而空出一大截；同一指标在所有行里仍是同一列宽，
 // 保证跨行对齐——只是「每列多宽」不再强行取齐
+// 可勾选的指标不止这三个，未列出的按「稳态 X 均值」这串标题的字符数估一个宽度兜底
 const BEST_RANK_METRIC_WIDTH = { loss: 194, media: 224, mfu: 188 };
+function bestRankColWidth(m){
+  return BEST_RANK_METRIC_WIDTH[m.id] || Math.round(96 + bestRankMetricLabel(m).length * 9);
+}
 function cmpSeries(id, m){
   const key = (m.alias && m.alias[id]) || m.id;
   return TASKS[id].series[key] || null;
@@ -1508,6 +1608,27 @@ function computeRankings(sel){
   return result;
 }
 let bestRankExpanded = false;
+// 评比指标下拉：列出本页全部指标 + media 综合评分。dir 为 flat 的指标（学习率 / KL 散度 /
+// 显存占用）没有「更好」的定义，列出但禁用；已勾满 BEST_RANK_MAX 时锁住其余未勾项；
+// 只剩 1 项时锁住它本身，避免勾成 0 项让排名失去依据。
+function bestRankMenuHtml(){
+  const picked = BEST_RANK_METRIC_IDS;
+  const items = CMP_METRICS.concat([BEST_RANK_MEDIA_METRIC]).map(function(m){
+    const rankable = m.dir === 'up' || m.dir === 'down';
+    const on = picked.indexOf(m.id) > -1;
+    const locked = !rankable || (on ? picked.length <= 1 : picked.length >= BEST_RANK_MAX);
+    const note = !rankable ? '无优劣方向' : '';
+    return '<label class="best-rank-menu-item'+(locked?' is-locked':'')+'">'
+      +'<input class="cmp-cb" type="checkbox" data-metric="'+m.id+'"'+(on?' checked':'')+(locked?' disabled':'')+'>'
+      +'<span class="best-rank-menu-name">'+(m.media?'media 综合评分':m.label)+'</span>'
+      +(note?'<span class="best-rank-menu-note">'+note+'</span>':'')
+      +'</label>';
+  }).join('');
+  return '<div class="best-rank-menu'+(bestRankMenuOpen?' open':'')+'" id="bestRankMenu">'
+    +'<div class="best-rank-menu-head"><span>评比指标</span>'
+    +'<span class="best-rank-menu-count">'+picked.length+' / '+BEST_RANK_MAX+'</span></div>'
+    +items+'</div>';
+}
 // 生成最佳任务排名卡片 HTML
 function renderBestRankCard(rankings, sel){
   if(!rankings||!rankings.length) return '';
@@ -1517,7 +1638,7 @@ function renderBestRankCard(rankings, sel){
                         .filter(function(m){ return m && (m.dir==='up'||m.dir==='down'); })
                         .filter(function(m){ return sel.some(function(id){ return bestRankHas(id,m); }); });
   // 按实际展示的指标顺序拼出对应列宽，而非统一 repeat(3, 固定值)
-  const metricsColStyle = 'grid-template-columns:'+dm.map(function(m){ return (BEST_RANK_METRIC_WIDTH[m.id]||200)+'px'; }).join(' ')+';';
+  const metricsColStyle = 'grid-template-columns:'+dm.map(function(m){ return bestRankColWidth(m)+'px'; }).join(' ')+';';
   function rowHtml(entry, rank){
     const t = TASKS[entry.id];
     const isGold = rank===1;
@@ -1542,18 +1663,78 @@ function renderBestRankCard(rankings, sel){
   }
   const top1Html = rowHtml(rankings[0], 1);
   const allHtml  = rankings.map(function(e,i){ return rowHtml(e,i+1); }).join('');
-  return '<div class="best-rank-card'+(bestRankExpanded?' expanded':'')+'" id="bestRankCard">'
+  return '<div class="best-rank-card'+(bestRankExpanded?' expanded':'')+(bestRankMenuOpen?' menu-open':'')+'" id="bestRankCard">'
     +'<div class="best-rank-head" id="bestRankToggle">'
     +'<span class="best-rank-chevron">›</span>'
     +'<span>最佳任务</span>'
-    +'<span class="best-rank-settings-btn" id="bestRankSettingsBtn" title="排名设置" role="button" aria-label="排名设置">'
+    +'<span class="best-rank-settings-btn'+(bestRankMenuOpen?' is-open':'')+'" id="bestRankSettingsBtn" title="评比指标设置" role="button" aria-label="评比指标设置" aria-expanded="'+(bestRankMenuOpen?'true':'false')+'">'
     +'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">'
     +CMP_SETTINGS_ICON+'</svg></span>'
+    +bestRankMenuHtml()
     +'</div>'
     +'<div class="best-rank-single">'+top1Html+'</div>'
     +'<div class="best-rank-body">'+allHtml+'</div>'
     +'</div>';
 }
+// 最佳任务卡片的全部交互绑定（展开折叠 / 齿轮下拉 / 指标勾选）。卡片会在勾选变动后被整块替换，
+// 所以绑定必须是「对给定根节点绑一次」的形式，而不是一次性挂在文档上。
+function bindBestRankCard(card){
+  if(!card) return;
+  const toggle = card.querySelector('#bestRankToggle');
+  if(toggle) toggle.addEventListener('click', function(){
+    bestRankExpanded = !bestRankExpanded;
+    card.classList.toggle('expanded', bestRankExpanded);
+  });
+  const btn = card.querySelector('#bestRankSettingsBtn');
+  if(btn) btn.addEventListener('click', function(e){
+    e.stopPropagation();          // 别冒泡到 bestRankToggle 引发误展开/收起
+    bestRankMenuOpen = !bestRankMenuOpen;
+    applyBestRankMenuState(card);
+  });
+  const menu = card.querySelector('#bestRankMenu');
+  if(menu){
+    menu.addEventListener('click', function(e){ e.stopPropagation(); });
+    menu.querySelectorAll('input[data-metric]').forEach(function(cb){
+      cb.addEventListener('change', function(){
+        const id = cb.dataset.metric;
+        const i = BEST_RANK_METRIC_IDS.indexOf(id);
+        if(cb.checked){
+          if(i < 0 && BEST_RANK_METRIC_IDS.length < BEST_RANK_MAX) BEST_RANK_METRIC_IDS.push(id);
+        } else if(i > -1 && BEST_RANK_METRIC_IDS.length > 1){
+          BEST_RANK_METRIC_IDS.splice(i, 1);
+        }
+        refreshBestRankCard();    // 重算排名；菜单保持展开，便于连续改几项
+      });
+    });
+  }
+}
+function applyBestRankMenuState(card){
+  card.classList.toggle('menu-open', bestRankMenuOpen);
+  const btn = card.querySelector('#bestRankSettingsBtn');
+  if(btn){ btn.classList.toggle('is-open', bestRankMenuOpen); btn.setAttribute('aria-expanded', bestRankMenuOpen?'true':'false'); }
+  const menu = card.querySelector('#bestRankMenu');
+  if(menu) menu.classList.toggle('open', bestRankMenuOpen);
+}
+// 勾选变动后只换掉最佳任务卡片这一块，不整页重渲染——图表的缩放/平滑状态与滚动位置都保住，
+// 展开态和菜单开合态由 bestRankExpanded / bestRankMenuOpen 带进新 HTML 里
+function refreshBestRankCard(){
+  const old = document.getElementById('bestRankCard');
+  if(!old) return;
+  const sel = [...compareSel];
+  const holder = document.createElement('div');
+  holder.innerHTML = renderBestRankCard(computeRankings(sel), sel);
+  const next = holder.firstElementChild;
+  if(!next) return;
+  old.replaceWith(next);
+  bindBestRankCard(next);
+}
+// 点空白处收起评比指标下拉（菜单/齿轮内部的点击都已 stopPropagation）
+document.addEventListener('click', function(){
+  if(!bestRankMenuOpen) return;
+  bestRankMenuOpen = false;
+  const card = document.getElementById('bestRankCard');
+  if(card) applyBestRankMenuState(card);
+});
 // 相对基线偏差：abs 绝对差、pct 相对差；bad 表示朝"坏"方向偏离超阈值
 function deviation(cur, base, dir){
   const abs = cur - base;
@@ -1573,6 +1754,18 @@ const collapsedGroups = new Set();        // 图表对比：已折叠的分区 i
 const expandedCharts = new Set();         // 图表对比：已放大的图表 mi（字符串），默认无
 const CMP_EXPAND_ICON = '<path d="M15 3h6v6"/><path d="M9 21H3v-6"/><path d="M21 3l-7 7"/><path d="M3 21l7-7"/>';
 const CMP_COLLAPSE_ICON = '<path d="M4 14h6v6"/><path d="M20 10h-6V4"/><path d="M14 10l7-7"/><path d="M3 21l7-7"/>';
+const CMP_RESET_ICON = '<polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/>';
+// 图表对比·框选缩放：按图（CMP_METRICS 下标 mi）各存一份可见区间（归一化 0~1），没有键=全量。
+// 之所以按图存而不是按组存一份：「视图联动」可以随时关掉，关掉后各图的缩放互相独立；
+// 存储粒度固定在图上、只让「写入时是否扩散到同组」受开关影响，切换开关就不会让已放大的图突然跳回。
+// 用归一化分数而非原始索引，是为了让长度不同的序列能对齐到同一段。
+const cmpZoom = {};
+// 横轴口径：'time'（GPU 利用率 / 显存占用等墙钟采样）与 'step' 两组物理含义不同，
+// 同一归一化位置不指向同一件事，因此联动只在同口径的图之间发生。
+const cmpAxisOf = m => (m && m.axis === 'time' ? 'time' : 'step');
+// 视图联动开关（默认开）：控制 hover 竖线/气泡与框选缩放是否跨图扩散
+let cmpLinkView = true;
+let cmpBrush = null;   // 框选手势状态 { obj, startX, curX }（x 为 svg viewBox 坐标）
 // 排名设置入口图标（暂不接功能），标准齿轮图形
 const CMP_SETTINGS_ICON = '<path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/>';
 let cmpSmooth = 0.8;   // 任务对比·图表对比平滑系数（默认 0.8）
@@ -1734,8 +1927,9 @@ function renderMediaCompare(sel, hasBase){
 
 function renderCompareChart(){
   const right = document.getElementById('cmpTopRight');
-  right.innerHTML = smoothCtrlHtml('cmpSmoothRange', cmpSmooth) + markBestSwitchHtml();
+  right.innerHTML = smoothCtrlHtml('cmpSmoothRange', cmpSmooth) + markBestSwitchHtml() + linkViewSwitchHtml();
   bindMarkBestSwitch(right, renderCompareChart);
+  bindLinkViewSwitch(right);
   const cmpRange = document.getElementById('cmpSmoothRange');
   if(cmpRange) cmpRange.addEventListener('input', ()=>{
     cmpSmooth = +cmpRange.value;
@@ -1779,10 +1973,17 @@ function renderCompareChart(){
     return `<div class="card${expanded?' is-expanded':''}" style="padding:14px;min-width:0;">
       <div class="cmp-chart-head">
         <span class="cmp-chart-head-left"><span class="cmp-chart-title">${m.label}</span>${bestTag}</span>
-        <span class="cmp-chart-expand-btn${expanded?' is-active':''}" data-mi="${mi}"
-          title="${expanded?'还原':'放大'}" role="button" aria-label="${expanded?'还原图表':'放大图表'}">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
-            stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${expanded?CMP_COLLAPSE_ICON:CMP_EXPAND_ICON}</svg>
+        <span class="cmp-chart-head-actions">
+          <span class="cmp-chart-reset-btn" data-mi="${mi}" data-axis="${cmpAxisOf(m)}"
+            title="恢复原始区间" role="button" aria-label="恢复原始区间">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+              stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${CMP_RESET_ICON}</svg>
+          </span>
+          <span class="cmp-chart-expand-btn${expanded?' is-active':''}" data-mi="${mi}"
+            title="${expanded?'还原':'放大'}" role="button" aria-label="${expanded?'还原图表':'放大图表'}">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+              stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${expanded?CMP_COLLAPSE_ICON:CMP_EXPAND_ICON}</svg>
+          </span>
         </span>
       </div>
       <div class="km-chart-row">
@@ -1790,7 +1991,7 @@ function renderCompareChart(){
         <div class="cmp-chart-area" data-mi="${mi}"></div>
       </div>
       <div class="km-axis"></div>
-      <div class="km-axis-title">step</div>
+      <div class="km-axis-title">${m.axis==='time'?'时间':'step'}</div>
       <div class="cmp-chart-legend">${legend}</div>
     </div>`;
   }
@@ -1814,15 +2015,8 @@ function renderCompareChart(){
 
   const rankings = computeRankings(sel);
   body.innerHTML = renderBestRankCard(rankings, sel) + groupsHtml + renderMediaCompare(sel, hasBase);
-  const _brt = document.getElementById('bestRankToggle');
-  if(_brt) _brt.addEventListener('click', function(){
-    bestRankExpanded = !bestRankExpanded;
-    const card = document.getElementById('bestRankCard');
-    if(card) card.classList.toggle('expanded', bestRankExpanded);
-  });
-  // 设置入口暂不接功能，仅阻止点击冒泡到 bestRankToggle 引发误展开/收起
-  const _brs = document.getElementById('bestRankSettingsBtn');
-  if(_brs) _brs.addEventListener('click', function(e){ e.stopPropagation(); });
+  cmpSyncZoomBtns();   // 重渲染后按图恢复「恢复」图标的显隐
+  bindBestRankCard(document.getElementById('bestRankCard'));
   // 分区折叠：切换 collapsed 后重绘可见图（隐藏图 offsetParent 为 null，cmpDrawAll 会跳过）
   body.querySelectorAll('.cmp-group-head').forEach(head=> head.addEventListener('click', ()=>{
     const gid = head.dataset.group;
@@ -1849,6 +2043,13 @@ function renderCompareChart(){
     btn.querySelector('svg').innerHTML = nowExpanded ? CMP_COLLAPSE_ICON : CMP_EXPAND_ICON;
     cmpDrawAll();
     if(scroller) scroller.scrollTop += (card.getBoundingClientRect().top - beforeTop);
+  }));
+
+  // 恢复原始区间：联动开着就整组还原（同横轴口径的图一起），关掉则只还原本图
+  body.querySelectorAll('.cmp-chart-reset-btn').forEach(btn=> btn.addEventListener('click', function(e){
+    e.stopPropagation();
+    cmpZoomTargets(btn.dataset.mi, btn.dataset.axis).forEach(k=> { delete cmpZoom[k]; });
+    cmpApplyZoom();
   }));
 
   cmpDrawAll();
@@ -2162,12 +2363,32 @@ function cmpChart(area, m){
   const w = area.clientWidth || 300, h = isExpanded ? 180 : 120, pad = 12;
   const datas = sel.map(id=>({ id, color:dotColor(id), vals:cmpSeriesEnriched(id, m),
     name:TASKS[id].name, base:id===baselineKey }));
-  const allV = datas.flatMap(d=> d.vals);
-  const min = Math.min(...allV), max = Math.max(...allV), rng = (max-min)||1;
   const n = Math.max(...datas.map(d=> d.vals.length));
-  const X = i => pad + i*(w-pad*2)/(n-1);
+  const axisKind = cmpAxisOf(m);           // 'step' | 'time'，决定本图跟谁联动
+  const mi = area.dataset.mi;
+  const zoom = cmpZoom[mi];
+  // 把本组的归一化区间换算成本图可见索引区间；纵轴只按可见段取极值，放大后细节才铺得开
+  let i0 = 0, i1 = n-1;
+  if(zoom){
+    i0 = Math.round(zoom.a*(n-1));
+    i1 = Math.round(zoom.b*(n-1));
+    if(i1-i0 < 1){ i1 = Math.min(n-1, i0+1); i0 = Math.max(0, i1-1); }   // 至少保留两个点
+  }
+  const span = (i1-i0) || 1;
+  const visV = datas.flatMap(d=> d.vals.slice(i0, i1+1)).filter(v=> Number.isFinite(v));
+  const min = visV.length ? Math.min(...visV) : 0, max = visV.length ? Math.max(...visV) : 1;
+  const rng = (max-min)||1;
+  const X = i => pad + (i-i0)*(w-pad*2)/span;
   const Y = v => pad + (h-pad*2)*(1-(v-min)/rng);
-  const pathOf = vals => vals.map((v,i)=>(i?'L':'M')+X(i).toFixed(1)+' '+Y(v).toFixed(1)).join(' ');
+  const pathOf = vals => {
+    let s = '';
+    for(let i=i0; i<=i1; i++){
+      const v = vals[i];
+      if(!Number.isFinite(v)) continue;   // 该任务序列比本图最长序列短时，尾部空点直接跳过
+      s += (s?'L':'M') + X(i).toFixed(1) + ' ' + Y(v).toFixed(1) + ' ';
+    }
+    return s.trim();
+  };
   const sm = cmpSmooth>0;
   datas.forEach(d=> d.svals = sm ? smoothEMA(d.vals, cmpSmooth) : null);
   // 非基线先画、基线后画（置于顶层，加粗）；颜色统一用任务本色，与侧栏图例保持一致——
@@ -2192,14 +2413,20 @@ function cmpChart(area, m){
   area.innerHTML = `<svg width="100%" height="${h}" viewBox="0 0 ${w} ${h}" preserveAspectRatio="none">
     ${grid}
     ${lines}
+    <rect class="cmp-brush" x="0" y="${pad}" width="0" height="${Math.max(0, h-pad*2)}" style="display:none"/>
     <line class="cmp-vline" x1="0" y1="${pad}" x2="0" y2="${h-pad}"
       stroke="rgba(33,33,33,.32)" stroke-width="1" stroke-dasharray="3 3" style="display:none"/>
     <g class="cmp-dots"></g>
   </svg><div class="cmp-chart-tip"></div>`;
   const svg = area.querySelector('svg');
   const chartStepMax = Math.max(...datas.map(d => parseInt(TASKS[d.id].runtime && TASKS[d.id].runtime.stepCur) || d.vals.length));
-  const obj = { area, m, datas, n, w, X, Y, stepMax: chartStepMax,
+  // 时间轴指标取参与本图的任务中最长的墙钟时长做满量程；一个能解析的都没有时退回 step 轴
+  const chartDurSec = Math.max(0, ...datas.map(d=> taskDurMin(d.id)*60));
+  const useTime = m.axis === 'time' && chartDurSec > 0;
+  const obj = { area, m, datas, n, w, pad, i0, i1, span, X, Y, stepMax: chartStepMax,
+    mi, axisKind, useTime, durSec: chartDurSec,
     vline: svg.querySelector('.cmp-vline'), dots: svg.querySelector('.cmp-dots'),
+    brush: svg.querySelector('.cmp-brush'),
     tip: area.querySelector('.cmp-chart-tip') };
   cmpCharts.push(obj);
   // 填充纵坐标
@@ -2210,24 +2437,47 @@ function cmpChart(area, m){
   const axEl = _row ? _row.nextElementSibling : area.nextElementSibling;
   if(axEl && axEl.classList.contains('km-axis')){
     const ticks = 4;
-    axEl.innerHTML = Array.from({length:ticks+1},(_,j)=>
-      `<span>${Math.round(chartStepMax*j/ticks)}</span>`).join('');
+    const full = useTime ? chartDurSec : chartStepMax;
+    const s0 = full*i0/((n-1)||1), s1 = full*i1/((n-1)||1);
+    axEl.innerHTML = Array.from({length:ticks+1},(_,j)=>{
+      const v = s0+(s1-s0)*j/ticks;
+      return `<span>${useTime ? fmtAxisTime(v, s1-s0) : Math.round(v)}</span>`;
+    }).join('');
   }
   // 在任意一张图上移动，都联动刷新所有图（竖线 + 数据点 + 各自气泡）
   area.addEventListener('mousemove', e=>{
+    if(cmpBrush) return;   // 框选进行中不走 hover 联动
     const rect = area.getBoundingClientRect();
     const px = (e.clientX-rect.left)/rect.width*w;
-    let idx = Math.round((px-pad)/((w-pad*2)/(n-1)));
-    idx = Math.max(0, Math.min(n-1, idx));
-    cmpSyncAll(idx, area, e.clientX);
+    let idx = i0 + Math.round((px-pad)/((w-pad*2)/span));
+    idx = Math.max(i0, Math.min(i1, idx));
+    cmpSyncAll(idx/((n-1)||1), area, e.clientX, axisKind);
   });
-  area.addEventListener('mouseleave', cmpHideAll);
+  area.addEventListener('mouseleave', ()=>{ if(!cmpBrush) cmpHideAll(); });
+  // 左键按下开始框选；移动/抬起交给文档级监听，允许把鼠标拖出图外再松手
+  area.addEventListener('mousedown', e=>{
+    if(e.button !== 0) return;
+    e.preventDefault();
+    const rect = area.getBoundingClientRect();
+    const x0 = (e.clientX-rect.left)/rect.width*w;
+    cmpBrush = { obj, startX: Math.max(pad, Math.min(w-pad, x0)), curX: null };
+    cmpHideAll();
+  });
 }
 
 // 联动：所有对比图在同一 idx 处画竖线、标记数据点，并各自弹出信息气泡
 // hoverArea/clientX：实际触发 mousemove 的那张图与鼠标视口坐标，用于让该图的气泡贴着鼠标走
-function cmpSyncAll(idx, hoverArea, clientX){
+function cmpSyncAll(frac, hoverArea, clientX, axisKind){
   cmpCharts.forEach(c=>{
+    // 联动开：只带同一横轴口径的图（另一组横轴含义不同，不跟随）；联动关：只画鼠标所在这张。
+    // 不参与的图顺手清掉上一次的残留标记，避免鼠标在图之间快速切换时留下僵尸竖线
+    const follow = cmpLinkView ? (c.axisKind === axisKind) : (c.area === hoverArea);
+    if(!follow){
+      c.vline.style.display='none'; c.dots.innerHTML=''; c.tip.style.display='none';
+      return;
+    }
+    // 各图点数不同、缩放后的可见段也不同，统一由归一化位置反推本图索引并钳制在可见段内
+    const idx = Math.max(c.i0, Math.min(c.i1, Math.round(frac*((c.n-1)||1))));
     const x = c.X(idx).toFixed(1);
     c.vline.setAttribute('x1', x); c.vline.setAttribute('x2', x);
     c.vline.style.display = '';
@@ -2240,10 +2490,62 @@ function cmpSyncAll(idx, hoverArea, clientX){
 function cmpHideAll(){
   cmpCharts.forEach(c=>{ c.vline.style.display='none'; c.dots.innerHTML=''; c.tip.style.display='none'; });
 }
+// ---- 框选缩放 ----
+// 拖拽中只在起手那张图上画高亮矩形；松手后把像素区间换算成归一化区间写进 cmpZoom，再整体重绘。
+// 写入范围由「视图联动」决定：开着就写给同横轴口径的所有图（含当前折叠不可见的），关掉只写本图。
+function cmpBrushMove(e){
+  if(!cmpBrush) return;
+  const c = cmpBrush.obj, rect = c.area.getBoundingClientRect();
+  if(!rect.width) return;
+  const x = Math.max(c.pad, Math.min(c.w-c.pad, (e.clientX-rect.left)/rect.width*c.w));
+  cmpBrush.curX = x;
+  const a = Math.min(cmpBrush.startX, x), b = Math.max(cmpBrush.startX, x);
+  if(c.brush){
+    c.brush.setAttribute('x', a.toFixed(1));
+    c.brush.setAttribute('width', Math.max(0, b-a).toFixed(1));
+    c.brush.style.display = '';
+  }
+}
+function cmpBrushEnd(){
+  if(!cmpBrush) return;
+  const c = cmpBrush.obj, st = cmpBrush.startX, en = cmpBrush.curX;
+  cmpBrush = null;
+  if(c.brush){ c.brush.style.display = 'none'; c.brush.setAttribute('width', '0'); }
+  if(en == null || Math.abs(en-st) < 6) return;   // 位移过小视为点击，不缩放
+  const toFrac = px => {
+    const i = c.i0 + (px-c.pad)/((c.w-c.pad*2)/c.span);
+    return Math.max(0, Math.min(1, i/((c.n-1)||1)));
+  };
+  const a = toFrac(Math.min(st, en)), b = toFrac(Math.max(st, en));
+  if(b-a < 1e-4) return;
+  cmpZoomTargets(c.mi, c.axisKind).forEach(k=> { cmpZoom[k] = { a, b }; });
+  cmpApplyZoom();
+}
+// 一次缩放/还原要落到哪些图（返回 CMP_METRICS 下标字符串）：联动开=同横轴口径的全部图，
+// 关=只有自己。这里遍历 CMP_METRICS 而不是 cmpCharts，是为了让当前折叠隐藏的图也一并写到，
+// 展开后区间才是对齐的。
+function cmpZoomTargets(mi, axisKind){
+  if(!cmpLinkView) return [String(mi)];
+  return CMP_METRICS.map((mm, i)=> cmpAxisOf(mm) === axisKind ? String(i) : null).filter(Boolean);
+}
+function cmpSyncZoomBtns(){
+  document.querySelectorAll('.cmp-chart-reset-btn').forEach(b=>
+    b.classList.toggle('is-shown', !!cmpZoom[b.dataset.mi]));
+}
+function cmpApplyZoom(){
+  cmpSyncZoomBtns();
+  cmpHideAll();
+  cmpDrawAll();
+}
+document.addEventListener('mousemove', cmpBrushMove);
+document.addEventListener('mouseup', cmpBrushEnd);
 // 单张图的信息气泡：列出各任务在 idx 处取值及相对基线偏差，定位在竖线一侧
 function cmpFillTip(c, idx, hoverArea, clientX){
   const base = c.datas.find(d=> d.base);
-  c.tip.innerHTML = `<div class="cmp-tip-head">step ${Math.round(idx/(c.n-1)*c.stepMax)}</div>` +
+  const headTxt = c.useTime
+    ? '时间 ' + fmtTipTime(c.durSec*idx/((c.n-1)||1), c.durSec)
+    : 'step ' + Math.round(idx/((c.n-1)||1)*c.stepMax);
+  c.tip.innerHTML = `<div class="cmp-tip-head">${headTxt}</div>` +
     c.datas.map(d=>{
       const v = (d.svals||d.vals)[idx];
       // 差异列固定渲染（基线行本身留空），保证数值列/差异列在各行右对齐、不随有无差异跳动宽度
