@@ -14,6 +14,15 @@
        8 × 4 × 1 × 1 × 64 = 2048 ✓   EDP ≡ DP
    两种口径下 Node = 2048 / 8卡每节点 = 256 ✓，**rank 编址的几何也完全一致** ——
    那 512 张卡本来就排成 8×64 的网格，区别只在把行叫 DP 还是 EDP。
+   由此定死一条业务口径（validate / 文档 / 口径浮层都按它写）：**一整套专家的持有者
+   永远是网格的一整行 —— 横着的那 EP 张卡，也就是一个 EP 组（all-to-all 域）**。
+   正交档这一行就是一个 DP 副本，每个 DP 自带一整套专家，所以 DP 与 EP 之间无须整除；
+   切出档这一行只占 DP 的 1/EP，单个 DP 副本并不持有整套，所以才要求 DP % EP == 0 ——
+   让那些卡不多不少地切成 EDP = DP/EP 个**完整**的 EP 组。
+   ⚠️ EDP 是**份数**（完整组有几个 = 专家权重的副本数 = 专家梯度 all-reduce 域的大小），
+   不是「一行」的名字：纵向同一列的那 EDP 张卡持有的是同一份 E/EP 个专家，只是一套里的
+   一小块。行标签写作 EDP0…EDPn 是在标 d 轴的**索引**（如同 DP0…DPn 标副本），
+   别把一行说成「一个 EDP 组」—— 那与框架里的 expert_data_parallel_group 撞车。
 
    确定性映射（无随机、无数据文件）：
      layer  ℓ → PP stage  s     : 按 PP 把 L 层尽量均分，前 (L mod PP) 段多 1 层
@@ -1008,13 +1017,20 @@
     if (routedExpert % ep !== 0) {
       errors.push(`路由专家 ${routedExpert} 不能被 EP ${ep} 整除，专家无法均分到 EP rank`);
     }
-    /* 切出档：EDP = DP/EP 必须是整数 —— 专家组要能在 DP 组内均分，否则总有模型
-       副本拿不到完整的专家集；页面上还会直接穿帮成「矩阵格子数多于 Total Rank」。
-       正交档 EP 独占 rank，与 DP 之间没有整除关系，这条不生效。
+    /* 切出档：EDP = DP/EP 必须是整数。这条的业务口径要说准 —— 切出档下**一个 DP
+       副本本来就不持有一整套专家**（它自己只有 PP×TP×CP 张卡），持有一整套的是
+       集群矩阵上的**一整行、一个 EP 组**：横着的 EP 张卡合起来才凑齐全部专家，
+       all-to-all 也正是在这个域里收发 token。DP 除不尽 EP，末尾就剩下不足一组的卡，
+       router 打过去的 token 在域里找不到对端；页面上还会直接穿帮成
+       「矩阵格子数多于 Total Rank」。
+       EDP 是这样的完整组**共有几个**（= 专家权重的副本份数），不是那一行的名字。
+       正交档不受这条管：那里 EP 是 DP 之外独占 rank 的一根正交轴，**每个 DP 副本
+       自带一套完整专家**（它横跨全部 EP rank），所以 DP 与 EP 之间无须整除。
        文案里 DP 与 EP 两个 label 都要出现 —— emit() 按 label 子串匹配标红
        stepper，这条错是两个字段共同造成的，两个都该红。 */
     if (!config.moeOrthogonal && dp % ep !== 0) {
-      errors.push(`DP ${dp} 不能被 EP ${ep} 整除（EDP = DP ÷ EP 必须是整数），专家组无法在一个数据并行组内均分`);
+      errors.push(`DP ${dp} 不能被 EP ${ep} 整除（EDP = DP ÷ EP 必须是整数），`
+        + `末尾剩下的 ${dp % ep} 张卡凑不齐一个完整的 EP 组 —— 一套专家要 ${ep} 张卡合持`);
     }
     if (topK > routedExpert) {
       errors.push(`Top-K ${topK} 超过路由专家总数 ${routedExpert}`);

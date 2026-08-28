@@ -5,6 +5,91 @@
 
 ---
 
+## 2026-08-28 — TaskCompare 最佳任务栏：齿轮接入「评比指标」勾选
+
+- `Profiling_Insight_and_Tool/training-run-twin-standalone/TaskCompare.html` — 最佳任务栏右上角齿轮
+  由占位改为可用：点开下拉列出本页全部指标 + media 综合评分，勾选变动即时重算 Borda 排名与奖牌。
+  `BEST_RANK_METRIC_IDS` 相应由 const 改为可变。
+- 同文件 — 勾选约束：`dir:'flat'` 的指标（学习率 / KL 散度 / 显存占用）没有优劣方向，列出但禁用
+  并标注「无优劣方向」；上限 3 项（勾满后锁住其余）；下限 1 项（只剩一项时锁住它本身，避免排名失据）。
+- 同文件 — 勾选后只就地替换最佳任务卡片（`refreshBestRankCard`），不整页重渲染，图表缩放/平滑状态
+  与滚动位置都保住，下拉保持展开便于连续改；指标列宽新增按标题长度估算的兜底（原先只有三项写死）。
+
+## 2026-08-28 — TaskCompare 图表对比：新增「视图联动」开关
+
+- `Profiling_Insight_and_Tool/training-run-twin-standalone/TaskCompare.html` — 顶栏「标记最优」右侧
+  新增「视图联动」开关（默认开），统一管住 hover 竖线/气泡联动与框选缩放的扩散：开启时按横轴口径
+  整组联动，关闭后每张图各管各的。
+- 同文件 — 缩放状态由 `{ step, time }` 双槽改为按图存（键为 CMP_METRICS 下标），开关只影响
+  「写入时是否扩散到同组」，切换开关不会让已放大的图跳回；「恢复」图标改为按图显隐（`.is-shown`），
+  联动关时只有被缩放的那张图出现。
+- 同文件 — Smoothing 拖动条与右侧开关组之间加 8px 间距（`.smooth-ctrl + .cmp-switch`）。
+
+## 2026-08-28 — TaskCompare 浅色主题：卡片底色对齐设计系统卡片口径
+
+- `Profiling_Insight_and_Tool/training-run-twin-standalone/TaskCompare.html` — 页面级 `.card` 一直用
+  `--surface-2`（设计系统里那是 **panel** surface，不是 card），浅色下解析为不透明中灰 `#F2F2F2`，
+  压在 ide-frame 近白的 pane 上就成了生硬灰块。改为在浅色下用 `--card-bg`（= `--surface-1` = 纯白）
+  + `--card-border`，并补上设计系统浅色卡片同款极淡投影 `0 10px 30px rgba(15,23,42,.06)`
+  （对齐 `css/style.css` 里 `.card-demo`/`.panel-shell` 的浅色处理）。深色层级保持不变。
+
+## 2026-08-28 — TaskCompare 图表对比：联动按横轴口径分组
+
+- `Profiling_Insight_and_Tool/training-run-twin-standalone/TaskCompare.html` — hover 竖线联动与框选缩放
+  改为按横轴分两组：**step 组**（loss / grad_norm / MFU / 吞吐 / lr / KL）与 **time 组**
+  （GPU 利用率 / 显存占用）各自独立。两组横轴物理含义不同（训练步 vs 墙钟秒），同一归一化位置
+  不指向同一件事，强行联动会误导。
+- 同文件 — `cmpZoom` 由单值改为 `{ step, time }` 双槽；`cmpSyncAll` 增加 axisKind 入参、只刷同组
+  并清掉另一组残留；卡片头「恢复」图标带 `data-axis`，只在本组处于缩放态时出现、只还原本组。
+
+## 2026-08-28 — TaskCompare 图表对比：硬件遥测类指标横轴改为时间
+
+- `Profiling_Insight_and_Tool/training-run-twin-standalone/TaskCompare.html` — 给 `CMP_METRICS` 增加
+  `axis` 口径：**GPU 利用率**、**显存占用**两条改为时间轴。理由是真实业务里这两条来自 npu-smi /
+  DCGM / Prometheus 按固定墙钟间隔轮询的硬件遥测，采样点与 step 边界不对齐；loss / grad_norm /
+  MFU / 吞吐量 / lr / KL 则在训练循环里随 step 落库，横轴保持 step。
+- 同文件 — 时间轴满量程取参与该图任务里最长的 `runtime.big`（「1小时58分」式）墙钟时长，
+  刻度跨度 ≥1h 显示 H:MM、否则 M:SS，气泡显示到秒；轴标题随之切「时间 / step」，
+  与框选缩放联动（缩放后时间刻度按可见段换算）。全部任务都取不到时长时自动退回 step 轴。
+
+## 2026-08-28 — TaskCompare 图表对比：框选区间放大
+
+- `Profiling_Insight_and_Tool/training-run-twin-standalone/TaskCompare.html` — 折线图支持左键拖拽框选区间放大：
+  框选中在起手图上画高亮矩形，松手后按归一化区间（`cmpZoom`）重绘，**所有对比图联动放大到同一段**，
+  可在放大结果上继续框选逐级下钻；纵轴按可见段重新取极值、step 横轴刻度跟随区间换算。
+- 同文件 — 卡片头右上角新增「恢复」图标（仅缩放态显示），点击还原全部图表到原始区间；
+  hover 联动改为按归一化位置换算各图索引，兼容不同长度序列与缩放后的可见段钳制。
+
+## 2026-08-28 — config-relation-observer 升级计划：追加第六批（行 20–32）
+
+- `config-relation-observer-upgradeplan.md` — 拿 `config-test/` 里 11 份公开训练配置反向撞四域表单，
+  盘出 13 条界面无落点的配置项，作为**第六批**追加到落地清单（行 20–32），按 P0/P1/P2 分档。
+  P0 三条：精度 dtype（`BASIS` 三个字节数写死成 bf16+Adam）、Global Batch / micro_batch_num
+  （在飞份数与气泡比例都缺分母）、EP 的第三种口径（MindFormers 在 dp×mp 域切，deepseek3 那份必红）。
+- 同文件 — 在「落地清单」开头补一张**来源对照表**，把此前混在一起的三个进货渠道分开写明：
+  行 1–14 = 页面内部审视，行 15–19 = MindSpeed MM 特性矩阵对照，行 20–32 = 外部真实配置反向映射。
+- 同文件 — 新增文末附录「附：第六批的由来（外部真实训练配置反向映射）」，记来源样本、判据、
+  键的三分堆（有落点 / 没落点且错 / 没落点但不该有），以及建议顺序 20→23→21→24→22。
+- 纯文档改动，未动 `js/config-relation-observer.js` 与 `js/config-relation-capacity.js`。
+
+---
+
+## 2026-08-27 — ParallelDemo 知识库：单点收敛 + 更名
+
+- 用 trainman 侧 v20260720 版覆盖仓内 `Profiling_Insight_and_Tool/ParallelDemo/knowledge.md`（新增 mHC 中间残差小节、第三部分「并行策略与 micro batch」整章），归一化为 UTF-8 无 BOM + CRLF；同时删除 `D:\Projects\trainman\ParallelDemo\knowledge.md`，此后仓内这份为唯一副本。
+- 修好上一步覆盖引入的结构错位：新增的「并行策略与 micro batch」章被误插进第二部分中间（把「层级结构」一节劈成两半），现整块移到第二部分之后；随之把原「第三部分 · 并行训练（权重如何切到多张卡）」改编号为第四部分，全文 11 处跨章引用（第三部分第 1/2/3/4 节等）同步改指。
+- 合并根目录残稿 `ParallelDemo/knowledge.md`（5KB，2026-06-25，同名 H1，最易混淆）后删除：其中仅有的两节独有内容「Tensor Parallel 下的变化」（列切/行切 + TP 切分后的 Attention/MLP 前向算子链）与「Weight Tying（W_emb = W_head）」补进第二部分——前者原本被第二、五部分三处引用却根本不存在，属死链。
+- 更名 `knowledge.md` → `Transformer结构与并行策略知识库.md`（旧名只提"并行训练可视化"，但全文前半讲的是模型结构）；文内 H1 与 `Profiling_Insight_and_Tool/工具矩阵.md` 的登记名/路径/内容摘要同步更新，摘要按当前六部分结构重写。
+
+## 2026-08-27 — config-relation-observer：把「谁持有一整套专家」这条业务口径写准
+
+- **口径**：一整套专家的持有者永远是集群矩阵的**一整行 —— 横着的那 EP 张卡，也就是一个 EP 组（token 的 all-to-all 域）**。正交档这一行就是一个 DP 副本，每个 DP 自带整套专家，故 DP 与 EP 无须整除；切出档一个 DP 副本**不**持有整套（它只有 PP×TP×CP 张卡），故要求 `DP % EP == 0` —— 让卡能不多不少切成若干个**完整**的 EP 组。
+- **顺带纠正一处术语**：`EDP = DP/EP` 是这样的完整组**共有几个**（专家权重的副本份数 / 专家梯度 all-reduce 域的大小），**不是「一行」的名字** —— 纵向同一列的那 EDP 张卡持有的是同一份 `E/EP` 个专家。行标签 EDP0…EDPn 标的是 d 轴索引（如同 DP0…DPn 标副本），说成「一个 EDP 组」会与框架里的 `expert_data_parallel_group` 撞车。
+- **改到哪**：`js/config-relation-observer.js` 文件头把这条定为全页口径；`validate()` 的 `DP % EP` 一条改掉「某些 DP 副本拿不到完整专家集」这句错话，报错文案改成「末尾剩下的 N 张卡凑不齐一个完整的 EP 组」；文档视图「EP 与 DP」一章的口径对照表补一行「谁持有一整套专家」并给 EDP 那一行点明身份，反例收尾与 `DP % EP == 0` 约束卡同步改写；`js/config-relation-capacity.js` 口径浮层的 EDP 一行同改；EP 口径两枚按钮的 title 各补一句。
+- **只改文案与注释，判据一个字节没动**：`tools/cro-selfcheck.js` 36000 步随机游走全绿。
+
+---
+
 ## 2026-08-26 — config-relation-observer：新增 config-test/ 外部真实训练配置样本集
 
 - **动机**：这页的四域表单一直只拿两个内置预设自测，没验过「业界真配置里的属性，本页能不能全接住」。`Profiling_Insight_and_Tool/training-run-twin-standalone/config-test/` 收 11 份公开配置 + 一份 README 对照表（2026-08-26 下载）。

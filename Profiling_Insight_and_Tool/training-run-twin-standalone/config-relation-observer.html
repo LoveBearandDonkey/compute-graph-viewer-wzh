@@ -249,17 +249,17 @@
               <h2 class="cro-region__title">整网</h2>
               <!-- 视图口径：整网 deck 的层卡展开的就是「典型 Layer」里那串算子，
                    两块信息重复度高。与其硬删一边，不如把「看哪一边」交给用户 ——
-                   只看整网 / 只看典型 Layer / 两者并看（= 改动前的现状，默认值）。
+                   只看整网（默认）/ 只看典型 Layer / 两者并看。
                    选「只看典型 Layer」时 deck 收起，典型层那一节整节搬进本列，改
                    2+2+1 宫格（见 html 末尾的 croNetView 脚本与 .cro-region--net
                    .cro-structure 的排布）。 -->
               <div class="tab-control cro-net-view" id="croNetView" role="group" aria-label="整网视图">
-                <button class="tab-control-item" type="button" data-net-view="net"
-                        aria-pressed="false" title="只看整网">整网</button>
+                <button class="tab-control-item is-selected" type="button" data-net-view="net"
+                        aria-pressed="true" title="只看整网">整网</button>
                 <button class="tab-control-item" type="button" data-net-view="layer"
                         aria-pressed="false" title="只看典型 Layer">典型 Layer</button>
-                <button class="tab-control-item is-selected" type="button" data-net-view="both"
-                        aria-pressed="true" title="同时看整网与典型 Layer">两者并看</button>
+                <button class="tab-control-item" type="button" data-net-view="both"
+                        aria-pressed="false" title="同时看整网与典型 Layer">两者并看</button>
               </div>
               <div class="cro-stepper">
                 <label class="cro-stepper__label" for="croModelSelect">模型</label>
@@ -332,9 +332,9 @@
                 <div class="segmented-control segmented-control-muted cro-ep-mode" id="croEpMode"
                      role="group" aria-label="EP 与 DP 的口径">
                   <button class="btn btn-sm is-selected" type="button" data-ep-mode="split" aria-pressed="true"
-                          title="拿不准就用这一档：Megatron / MindSpeed-LLM / MindFormers 都这么记，昇腾上的训练基本都落在这里。&#10;&#10;这不是性能选项 —— 两档说的是同一批卡，切换它一张卡都不会多、也不会少，变的只是页面怎么读你填的数字（DP 会在 512 与 8 之间换算）。所以按你要跑的框架选，不必权衡快慢。&#10;&#10;EP 切出 = 专家并行不额外占卡，而是把已有的数据并行组再切一刀：一张卡既是某个模型副本的成员，又持有其中一份专家。加大 EP 只是把同一批卡分得更细。&#10;world = DP×PP×TP×CP（EP 不进乘积） · EDP = DP/EP · 要求 DP % EP == 0">EP 切出（主流）</button>
+                          title="拿不准就用这一档：Megatron / MindSpeed-LLM / MindFormers 都这么记，昇腾上的训练基本都落在这里。&#10;&#10;这不是性能选项 —— 两档说的是同一批卡，切换它一张卡都不会多、也不会少，变的只是页面怎么读你填的数字（DP 会在 512 与 8 之间换算）。所以按你要跑的框架选，不必权衡快慢。&#10;&#10;EP 切出 = 专家并行不额外占卡，而是把已有的数据并行组再切一刀：一张卡既是某个模型副本的成员，又持有其中一份专家。加大 EP 只是把同一批卡分得更细。&#10;world = DP×PP×TP×CP（EP 不进乘积） · EDP = DP/EP · 要求 DP % EP == 0&#10;一整套专家由横着的 EP 张卡合持（集群矩阵的一整行 = 一个 EP 组 = all-to-all 域），单个 DP 副本并不持有整套；EDP 是这样的完整组共有几个。">EP 切出（主流）</button>
                   <button class="btn btn-sm" type="button" data-ep-mode="orthogonal" aria-pressed="false"
-                          title="读别人的配置时用得上：论文、汇报表格和部分自研框架把 EP 单列成一维记，那里的 DP 就是字面的模型副本数。要复现这样一份材料就选这一档，页面才会按写它的人的原意去解释你填的数字。&#10;认它的办法：必须把 EP 也乘进去才凑得出总卡数。&#10;&#10;也可以拿它做对照 —— 切一下就能看到同一批卡的 DP 在 512 与 8 之间换算，两个数说的是同一件事。&#10;&#10;但自己配训练时用切出档：Megatron / MindSpeed-LLM / MindFormers 都是那么记的。这两档不是性能之争，说的是同一批卡，切换只改读法、不改硬件。&#10;&#10;EP 正交 = 专家并行与数据并行是两根互不相干的轴：每多一倍 EP 就要多一倍卡。DP 与 EP 之间没有整除关系。&#10;world = DP×PP×TP×CP×EP · 专家的数据并行度等于 DP">EP 正交</button>
+                          title="读别人的配置时用得上：论文、汇报表格和部分自研框架把 EP 单列成一维记，那里的 DP 就是字面的模型副本数。要复现这样一份材料就选这一档，页面才会按写它的人的原意去解释你填的数字。&#10;认它的办法：必须把 EP 也乘进去才凑得出总卡数。&#10;&#10;也可以拿它做对照 —— 切一下就能看到同一批卡的 DP 在 512 与 8 之间换算，两个数说的是同一件事。&#10;&#10;但自己配训练时用切出档：Megatron / MindSpeed-LLM / MindFormers 都是那么记的。这两档不是性能之争，说的是同一批卡，切换只改读法、不改硬件。&#10;&#10;EP 正交 = 专家并行与数据并行是两根互不相干的轴：每多一倍 EP 就要多一倍卡。DP 与 EP 之间没有整除关系。&#10;world = DP×PP×TP×CP×EP · 专家的数据并行度等于 DP&#10;每个 DP 副本横跨全部 EP rank、自带一整套完整专家 —— 这正是这一档无须 DP % EP == 0 的原因。">EP 正交</button>
                 </div>
               </div>
 
@@ -1971,7 +1971,16 @@ t  TP 序号              c  CP 序号      n  物理节点号</div>
                         <tr><td>world_size</td><td><code>DP×PP×TP×CP×EP</code></td><td><code>DP×PP×TP×CP</code></td></tr>
                         <tr><td>EP 的 rank</td><td>独占</td><td>与 DP 复用同一批卡</td></tr>
                         <tr><td>额外约束</td><td>只要 <code>E % EP == 0</code></td><td>再加 <code>DP % EP == 0</code></td></tr>
-                        <tr><td>专家的数据并行度</td><td>等于 DP</td><td>EDP = <code>DP / EP</code></td></tr>
+                        <tr>
+                          <td>专家的数据并行度</td>
+                          <td>等于 DP</td>
+                          <td>EDP = <code>DP / EP</code><br>专家权重的副本份数，也是专家梯度的 all-reduce 域</td>
+                        </tr>
+                        <tr>
+                          <td>谁持有一整套专家</td>
+                          <td><b>1 个 DP 副本自带一整套</b><br>它横跨全部 EP rank</td>
+                          <td>1 个 DP 副本<b>没有</b>整套<br>横着的 <code>EP</code> 张卡（一个 <b>EP 组</b>、也就是 all-to-all 域）才凑齐一套，这样的完整组共 <code>DP/EP</code> 个</td>
+                        </tr>
                       </tbody>
                     </table>
                   </div>
@@ -2054,7 +2063,9 @@ t  TP 序号              c  CP 序号      n  物理节点号</div>
                   <p>
                     而同一组数字换到<b>正交</b>口径就完全合法：<code>DP=120</code> 与 <code>EP=64</code>
                     是两根独立的轴，<code>world = 120×PP×TP×CP×64</code>，每个 EP rank 都有自己独占的卡，
-                    120 个数据并行副本各自完整。<b>同一份数字合不合法取决于口径</b> —— 这是这一章最实际的用处。
+                    <b>每个 DP 副本自带一整套 256 个专家</b>（它横跨全部 64 个 EP rank），120 份都完整，
+                    凑不齐半套的情形根本不会出现 —— 这正是正交档不需要 <code>DP % EP == 0</code> 的原因。
+                    <b>同一份数字合不合法取决于口径</b> —— 这是这一章最实际的用处。
                   </p>
                   <p>
                     这个反例在页面上可以亲手拨出来，两条路径的表现<b>刻意不同</b>：
@@ -2212,10 +2223,15 @@ t  TP 序号              c  CP 序号      n  物理节点号</div>
                       <span class="cro-doc__kind">依实现而定</span>
                     </div>
                     <p>
-                      只在「EP 从 DP 切出」的口径下成立：专家组要能在数据并行组内均分，
-                      否则某些 DP 副本拿不到完整的专家集 ——
+                      只在「EP 从 DP 切出」的口径下成立。要求的对象是 <b>EP 组而不是 DP 副本</b>：
+                      切出档下一个 DP 副本本来就<b>不</b>持有整套专家，凑齐一套要横着的 <code>EP</code> 张卡 ——
+                      集群矩阵的一整行，也就是一个 EP 组（token 的 all-to-all 就在这个域里收发）。
+                      除不尽意味着末尾剩下的卡凑不满一个完整的 EP 组，
+                      router 打过去的 token 在域里找不到对端。
+                      <b>EDP = DP/EP 是这样的完整组共有几个</b>（专家权重的副本份数），不是那一行的名字 ——
+                      纵向同一列的 EDP 张卡持有的是同一份 <code>E/EP</code> 个专家。
                       <code>DP=120 / EP=64</code> 的具体反例见「EP 与 DP」一章。
-                      EP 正交的口径下没有这条。
+                      EP 正交的口径下没有这条 —— 那里每个 DP 副本横跨全部 EP rank，自带一整套专家。
                       严格写法还要把专家内部的张量并行算进去：<code>DP × TP % (EP × ETP) == 0</code>。
                     </p>
                   </div>
@@ -2521,7 +2537,7 @@ t  TP 序号              c  CP 序号      n  物理节点号</div>
       });
     })();
 
-    // 整网视图三档：只看整网 / 只看典型 Layer / 两者并看（默认，= 改动前现状）。
+    // 整网视图三档：只看整网（默认）/ 只看典型 Layer / 两者并看。
     // 「只看典型 Layer」把 .cro-section--structure **整节搬进**整网列，而不是在
     // 那边另画一份 —— 搬的是 DOM 节点本身，#croStructure 的 id、每根算子条的
     // click 监听、is-selected / is-related 类和关系连线的锚点选择器全部原样有效，
@@ -2562,6 +2578,14 @@ t  TP 序号              c  CP 序号      n  物理节点号</div>
         const btn = event.target.closest("[data-net-view]");
         if (btn) apply(btn.dataset.netView);
       });
+
+      /* 默认档从 DOM 读 —— 标着 is-selected 的那一枚就是默认，别在这里再写死
+         第二个字符串。初始化补跑一次 apply()：markup 只写得了按钮的选中态，
+         board 上那几个 is-view-* 类还得靠它挂上去。此刻主脚本尚未 boot
+         （它挂在 DOMContentLoaded 上），cro:view 与 resize 暂时没有监听者，
+         但 boot 里首次 renderCluster / 容量栏读的就是这几个类，不会漏。 */
+      const initial = tabs.querySelector("[data-net-view].is-selected");
+      apply(initial ? initial.dataset.netView : "both");
     })();
 
     // rail 底部互跳组：跳转另两页（本页「配置关系」键即当前页，不绑定）。

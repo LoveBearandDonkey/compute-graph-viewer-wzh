@@ -15,13 +15,26 @@
 
 ## 落地清单
 
-按建议顺序排，分四批。批次只影响做的先后，行内互相独立。
+按建议顺序排，分六批。批次只影响做的先后，行内互相独立。
 
 - **第一批 = 行 1–3**　核心口径（EP 正交性）
 - **第二批 = 行 4–8**　结构硬约束
 - **第三批 = 行 9–12**　跨模块口径对齐
 - **第四批 = 行 13–14**　自动配平手感
 - **第五批 = 行 15–19**　对齐 MindSpeed MM 特性矩阵（来源见文末「附：第五批的由来」）
+- **第六批 = 行 20–32**　对齐外部真实训练配置（来源见文末「附：第六批的由来」）
+
+**三种来源，别混着读**——这份清单到今天为止只有三个进货渠道，每一批的判据跟着渠道走：
+
+| 批次 | 行 | 来源 | 判据 |
+|---|---|---|---|
+| 一 ~ 四 | 1–14 | **页面内部审视**：三个 js 模块的规则层自查，结论是「规则集太薄 + 三个模块各拿一套隐含假设」 | 页面自己前后矛盾、或算错 |
+| 五 | 15–19 | **外部特性矩阵**：`pic/README (1).md` 的 MindSpeed MM「已支持特性概览」当 checklist 逐列比对 | 那一列会不会改变切分拓扑 / 单卡显存的分子分母 |
+| 六 | 20–32 | **外部真实配置**：`config-test/` 里 11 份公开训练配置反向撞四域表单 | 那个键导进来有没有落点；没落点时数会不会错 |
+
+前两种问的是「页面自己讲得对不对」和「业界有的特性页面有没有」，第六批问的是第三个问题：
+**「拿一份真配置进来，页面接不接得住」**。三者会撞到不同的洞——行 20 / 21（精度、GBS）
+在前两种视角下都不算病，因为页面内部自洽、MindSpeed 那张表也没有这两列。
 
 改完一行就把首列的 `[ ]` 勾成 `[x]`。
 
@@ -46,6 +59,19 @@
 | [x] | **17** 加 `vpp` stepper（虚拟流水，`totalLayer % (pp × vpp) == 0`），激活的 in-flight 份数按 1F1B-interleaved 口径重算 | 虚拟流水把每个 stage 的层拆成多段轮流跑，**代价直接落在激活峰值上**：bubble 变小，但每个 stage 同时压着的 micro-batch 变多。现在 `inflight = PP − s` 写死的是非交错 1F1B | 「各 PP Stage 峰值」那排小柱的形状随 VPP 变化 —— 这是页面已经画着、却还没有旋钮能动的一处；yaml 补 `virtual_pipeline_model_parallel_size` |
 | [x] | **18** 加 `lora` 开关与 `loraRank` 档位，开启后梯度段与优化器段只按 adapter 参数量算，权重段不变 | LoRA 冻结主干：可训练参数掉到 `2·r·(d_in+d_out)` 一档，而**梯度与优化器状态只跟可训练参数走** —— 这是容量柱上最大的一次形变，比行 10 的 ZeRO-1 还大 | 梯度段几乎归零、优化器段塌到零头，权重段纹丝不动 —— 正好把「哪一段跟谁走」讲清楚；判定文案里多一个可推荐的旋钮 |
 | [x] | **19** `recompute` 从两档开关换成有档位的控件（关 / 选择性 / 按 stage 给层数 / 全开） | 行 9 落地时自己记下的缺口：真实世界有 `select_recompute`、`recompute: [4,4,4,4]`、Megatron 的 `--recompute-granularity selective`。全开与全关之间差着一个数量级（系数 34 → 2），**实际调优最常落的正是中间档** | 激活段可以停在中间高度而不是只有两个位置；按 stage 给层数时那排小柱可以被单独压平某一根 —— 这是当前显存估算里误差最大的一处简化 |
+| [ ] | **20** 〔前置〕加一条**导入通路**（贴 / 传一份 yaml · sh · json），解析成 config 覆盖表单；同屏给一张**「未映射键」清单**，分「已识别·不建模」与「已识别·缺口」两栏 | 页面至今没有任何入口（`grep` 不到 file input / FileReader / 粘贴框），`config-relation-yaml.js` 是单向导出。没有它，下面 11 行的价值验不出来，用户也无从知道页面**读到了什么、故意丢了什么** | 顶栏多一个「导入配置」；导入后表单整体跳到那份配置的档位；未映射清单把 `moe_token_dispatcher_type` / `overlap-grad-reduce` / lr / dataset / callbacks 这类原样列出并注明「不进显存模型」 |
+| [ ] | **21** 〔P0〕加**精度档**：`dtype`（bf16 / fp16 / fp8-hybrid）与 `paramsDtype`（主权重 bf16 / fp32），`BASIS.bytesWeight / bytesGrad / bytesOptim` 从常量改为按档取 | [capacity.js:61-63](js/config-relation-capacity.js#L61-L63) 把这三个数写死成「bf16 + Adam fp32 master」，页面上**一个控件都没有**。而 `megatron_llama3_8b_fp8.sh` 整份脚本的主题就是 FP8、`hf_deepseekv3_config.json` 带 `quantization_config: {fmt: e4m3}`、两份 MindFormers yaml 都写着 `params_dtype: float32` + `compute_dtype: bfloat16` —— 后面这一对直接决定 `bytesWeight` 是 2 还是 4 | 容量柱**整体**高度随精度档变化（fp8 权重段减半、params fp32 时权重段翻倍）；口径浮层里那句「权重 2 B（bf16）」从固定文案变成跟随档位；这是第六批里唯一一条会动**全部六段**的 |
+| [ ] | **22** 〔P0〕加 `globalBatch`（或等价的 `microBatchNum`）stepper，各 stage 在飞份数取 `min(1F1B/VPP 公式, microBatchNum)` | `FIELD_ORDER.batch` 只有 `microBatch` / `seqLen`，而每份样本都给了另一半：`micro_batch_num: 32`（MindFormers）、`--global-batch-size 256`（Megatron）、`gradient_accumulation_steps`（LLaMA-Factory / DeepSpeed）。`FIELD_SPECS.microBatch` 的注释写「GBS 一步也不进显存」，**这句在 PP>1 时不成立**：[capacity.js:650](js/config-relation-capacity.js#L650) 那个在飞份数公式隐含假设 `micro_batch_num ≥ PP`。而且 VPP 的 title 已经在解释「气泡比例约 (PP−1)/micro_batch_num」—— 页面在解释一个自己没有输入的量 | 「各 PP Stage 峰值」那排小柱在 GBS 小时整体压低（被 micro_batch_num 夹住）；VPP 那条 title 里的气泡比例第一次有真数可填；yaml 的 `micro_batch_num` 从派生值变成输入 |
+| [ ] | **23** 〔P0〕EP 口径补**第三档**「MindFormers（DP×MP 域）」：校验从 `dp % ep == 0` 换成 `(dp × tp) % ep == 0`，`edp = dp × tp / ep` | `mf_pretrain_deepseek3_671b.yaml` 是 `dp:4 / mp:8 / pp:8 / ep:32`，页面两档**都接不住**：切出档 `4 % 32 ≠ 0` 当场红，正交档 world = 4×8×8×32 = 8192 ≠ 实际 256。因为 MindFormers 的 `expert_parallel` 是在 **dp×mp 域**上切的（4×8=32，整除成立）。README 说这份「最贴页面口径」，结果它是唯一一份**必然报错**的 | `croEpMode` 从二选一变三档；导入 deepseek3 那份配置不再红；集群矩阵的 d 轴长度按新 EDP 重算。行 1 的附录里那句「严格些是 `DP × TP % (EP × ETP) == 0`」正是这一档，当时记下了却没落成规则 |
+| [ ] | **24** 〔P1〕卡型号旁加一枚**可用显存**输入（默认取 `CARD_SPECS.hbmGB`），容量框高度改读它 | `context.max_device_memory: "56GB"` / `"58GB"` —— 两份 MindFormers yaml 都显式把 64 GB 卡压到了 56/58。容量柱那条红线现在取自 `CARD_SPECS.hbmGB`，比真实可用高出 6–8 GB | 容量框的**框线本身**下移，判定文案里的余量与百分比跟着变。第六批里实现成本最低的一条（一个数覆盖一个常量），却直接改「爆没爆」这个结论 |
+| [ ] | **25** 〔P1〕PP 增 `offset`（各 stage 层数偏移），层→stage 的分配从「均分、除不尽前几段各多 1」改为可配 | deepseek3 那份写的是 `offset: [[1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,-2]]` —— 手工配的偏移，正是为了平衡首尾 stage 额外背的 embedding / LM head / MTP。而「各 PP Stage 峰值」那排小柱恰恰是**最受它影响**的图，真实大模型几乎都要手调 | 那排小柱从「只能靠 PP / VPP 整体改形」变成可以逐根调；yaml 的 `offset` 从缺省变成写出去。与行 17（VPP）同属「层怎么排在 stage 上」，两者要一起校 `totalLayer % (pp × vpp)` |
+| [ ] | **26** 〔P1〕加**优化器 offload** 开关（`optimizer.swap` / DeepSpeed `offload_optimizer`），开启后 optim 段整段移出 HBM 计入 host | deepseek3 那份写了 `optimizer.swap: True`：12 B/参数**整段消失**。这是比 shardMode 三档更大的一次形变（ZeRO-1 只是把它除以 EDP，offload 是直接归零） | 优化器状态段整体消失、预留段里多一条换入换出的说明；判定文案里多一个可推荐的旋钮。要和行 15 的三档说清关系：offload 与分片是两件事，可以叠加 |
+| [ ] | **27** 〔P1〕`shardMode` 的分母从 `EDP` / `EDP×EP` 改为可配子组（`optimizer_weight_shard_size`） | deepseek3 那份写了 `optimizer_weight_shard_size: 256` —— ZeRO-1 的分母不是整个 DP 域，而是这个显式子组。页面 shardMode 只有档位、没有分母输入 | 拨到 ZeRO-1 / FSDP2 后多一枚分母 stepper（置灰规则同 `loraRank`：关档下不可用）；容量柱的优化器段不再必然按最大分母塌到最低 |
+| [ ] | **28** 〔P2〕加 `flashAttention` 开关，关档下每层激活补回 `5·a·s²/h` 那一项 | 页面全按 FlashAttention 建模、这一项**本来就不计入**（`recomputeMode` 的 title 里明说了），但页面上没有对应的开关 —— 相当于把 `use_flash_attention: True` 当成了公理。它随 `s²` 增长，长序列下关掉就是数量级差别 | 关档下激活段随 Seq Length 二次增长，是页面唯一一处非线性项；样本里全是开着的，所以这一条更像是**把已有假设显式化**，而不是接一份配置 |
+| [ ] | **29** 〔P2〕加 `pipelineScheduler` 档（1F1B / interleaved / seqpipe），在飞份数按档取 | deepseek3 显式写了 `pipeline_scheduler: seqpipe` + `pipeline_interleave: True`。行 17 落地时只建了交错式 1F1B 一种，seqpipe / dualpipe 的 warmup 深度不同 | 与行 17 / 行 22 共同决定那排小柱的形状 —— 这三条改的是同一个量（在飞份数），建议一起做、一起校 |
+| [ ] | **30** 〔P2〕MoE 增 capacity factor / `moe_token_drop_policy`，专家侧激活按容量上界截断 | deepseek3 写 `moe_token_drop_policy: False`（不丢弃，专家侧激活无上界）、qwen3 写 `probs`（按概率丢，有上界）。页面按「均匀路由、不丢弃」建模，MoE 不均衡时专家段会被低估 | MoE 那一组多一枚控件；容量柱的专家段出现上界，判定文案里多一句「路由不均时的最坏情况」 |
+| [ ] | **31** 〔P2〕加**优化器类型**档（AdamW 12 B / SGD-M 4 B / Adafactor），`shardMode` 顺带补 ZeRO-2 档 | `BASIS.bytesOptim: 12` 是 Adam 专属。样本全是 AdamW，所以实际撞不上——但它和行 21 是同一个常量表里的邻居，一起改成本最低。ZeRO-2 那一档 `shardMode` 的注释里已主动承认缺了（`ds_z2_config.json` 就是这一档） | 优化器段随类型档变化；`shardMode` 从三档变四档，capacity 那边只是少切一段、判据不动（注释里已写明「真要补就插在中间」） |
+| [ ] | **32** 〔P2〕LoRA 增**作用面**档（attention-only / all），adapter 参数量按覆盖的矩阵数算 | `lf_qwen3_lora_sft.yaml` 写的是 `lora_target: all`，会覆盖到 FFN；页面按注意力 q/k/v/o 四个 `[H,H]` 建模（`4·r·2H`），差好几倍。MoE 模型下差得更多（专家矩阵也在里面） | `loraRank` 旁多一枚档位；梯度段与优化器段随作用面变化。第六批里最靠后的一条 —— 两档都很小，主要是别让 `all` 被静默按 attention-only 算 |
 
 ### 行 1 落地记录（2026-08-21）
 
@@ -982,3 +1008,82 @@ rollout 与训练两阶段的显存错峰。硬塞进这张单模型静态容量
 sharedExpert / ep` + EP 口径开关）、`vocabEmbDp`、Total Layer / Seq Length / Micro Batch /
 Total Rank / 卡型号。它们不是多余，容量估算离了它们算不出来；这条只是再说一遍两个坐标系不同，
 别把 README 那张表当成本页的完整需求。
+
+---
+
+## 附：第六批的由来（外部真实训练配置反向映射）
+
+### 来源与前提
+
+前两种来源问的是页面自己的事：**前 14 行**问「页面内部自洽吗」（三个模块各拿一套假设），
+**行 15–19** 问「业界有的特性页面有没有」（MindSpeed MM 那张支持矩阵）。
+第六批问的是第三个问题：**拿一份真配置进来，页面接不接得住。**
+
+素材是 [config-test/](config-test/) 里 2026-08-26 从公开仓下载的 11 份训练配置，覆盖四种方言：
+
+| 方言 | 样本 | 撞出来的行 |
+|---|---|---|
+| MindFormers YAML | `mf_pretrain_deepseek3_671b` / `mf_pretrain_qwen3_30b_a3b` | 21 / 22 / 23 / 24 / 25 / 26 / 27 / 29 / 30 |
+| Megatron 命令行 | `mixtral_8x7b` / `megatron_175b` / `megatron_llama3_8b_fp8` | 21 / 22 / 29 |
+| HF config.json | `hf_qwen2_7b` / `hf_mixtral` / `hf_deepseekv3` | 21（`quantization_config`） |
+| HF Trainer + DeepSpeed | `lf_qwen3_full_sft` / `lf_qwen3_lora_sft` / `ds_z3_config` | 22 / 26 / 31 / 32 |
+
+**前提：模型计算图已有。** 这一批**不处理**结构常量（hidden / vocab / heads / kvHeads /
+intermediate / moeIntermediate / firstKDense / mtpLayers），因为那些由计算图给。
+`config-test/README.md` 末尾记着的那个「结构常量写死在 `MODEL_PRESETS`」缺口，在这个前提下不成立
+—— 它是另一条路线（模型侧）的事，不该混进这份并行/显存清单。
+
+**但有一处重叠要先定规矩**：`totalLayer` / `routedExpert` / `topK` / `sharedExpert`
+四项计算图和配置**都给得出**。导入时谁赢要在行 20 里定死并在界面上说明，否则会出现
+「图里 61 层、配置写 61 层、表单显示 48 层」这种没人解释得清的状态。
+
+### 判据
+
+沿用第五批那条尺子（**会不会改变切分拓扑、或改变单卡显存的分子 / 分母**），加一条本批专属的：
+
+> 一个键有没有落点，和它有没有落点**要不要紧**，是两个问题。
+> 没落点但不进显存模型的（通信、融合、调度器超参），只要在导入面板上**明说读到了、故意没用**就够了；
+> 只有「没落点、而且不补数就是错的」才进清单。
+
+按这条尺子，样本里的键分成三堆：
+
+**① 有落点（页面已覆盖）**——`data_parallel` / `model_parallel` / `pipeline_stage` /
+`expert_parallel` / `context-parallel-size` / `seq_length` / `micro-batch-size` /
+`use_seq_parallel` / `enable_parallel_optimizer` / `zero_optimization.stage` /
+`recompute_config` / `pp_interleave_num` / `finetuning_type: lora` + `lora_rank` /
+`GPUS_PER_NODE × NNODES`。这一堆验证了前五批做对了 —— 11 份配置的**主干**是接得住的。
+
+**② 没落点、且不补就是错的**——即行 21–32。按后果分三档：
+
+- **P0（行 21–23）**：导不进，或导进来数是错的。行 23 是硬报错（deepseek3 那份必红），
+  行 21 / 22 是**静默错**——页面照常出图，只是高度不对，这比报错更危险。
+- **P1（行 24–27）**：能导进去，但容量柱的高度或那条红线对不上。行 24 实现成本近乎为零。
+- **P2（行 28–32）**：形态影响，样本里多数没撞上，可以先记后建模。
+
+**③ 没落点、但不该有落点**——`moe_token_dispatcher_type` / `enable_alltoall` /
+`gradient_aggregation_group` / `--overlap-grad-reduce` / `--overlap-param-gather` /
+`moe_grouped_gemm` / `use_fused_ops_topkrouter` / `mp_comm_recompute` /
+`micro_batch_interleave_num` / `gradient_accumulation_shard` / `full_batch` /
+`dataset_strategy`，以及整块的 lr_schedule / dataset / callbacks / checkpoint /
+profile / tokenizer / logging。它们全是通信、融合与训练流程侧，不进显存模型。
+**但这一堆恰恰是行 20 存在的理由**：不显式列出来，用户会以为页面漏读了。
+
+### 建议顺序
+
+如果只做一轮：**行 20 → 23 → 21 → 24 → 22**。
+
+行 20 是前置（没有入口，下面几行的价值验不出来）；行 23 是「导不进」；
+行 21 / 22 / 24 是「导进来数是错的」，其中行 24 只是把一个常量换成输入，
+性价比最高。行 25 / 26 值钱但都要动 capacity 的分段逻辑，放第二轮。
+
+行 22 / 25 / 29 改的是同一个量（各 stage 在飞的 micro-batch 份数），
+和已落地的行 17（VPP）共用一套公式，建议一起做、一起进随机游走自检
+（[tools/cro-selfcheck.js](tools/cro-selfcheck.js)，见行 18 / 19 落地记录里的十四项断言）。
+
+### 反向也记一笔
+
+和第五批那条对称：**页面覆盖了这 11 份配置里没有的东西** —— `cpMode` 两档、
+`vocabEmbDp`、`shardMode` 的 FSDP2 档、EP 的两种口径开关、卡型号与 HBM。
+前三项是从 MindSpeed 特性矩阵（第五批）来的，后两项是硬件事实、本来就不在 yaml 里
+（`config-relation-yaml.js` 开头那段注释解释过为什么集群那几项下沉到启动命令栏）。
+所以这三种来源是**互补而非包含**关系，哪一种都不是本页的完整需求。
