@@ -6968,6 +6968,9 @@ body.chat-shell-page {
       return '<span class="msi-bar' + (text ? '' : ' msi-bar--tick') + '" style="left:' + x.toFixed(2) +
         '%;width:' + w.toFixed(2) + '%;background:' + c.bg + ';color:' + c.fg + '"' +
         ' data-op="' + esc(name) + '" data-dur="' + ms + '"' +
+        // data-label 是"这条上本来要写的字"的原件。条上显示的可能是中间省略后的结果,
+        // 窗口一宽还要能还原回去,所以原文必须单独留一份,不能只靠 textContent。
+        (text ? ' data-label="' + esc(text) + '"' : '') +
         ' title="' + esc(name) + ' · ' + ms + 'ms">' + (text ? esc(text) : '') + '</span>';
     };
 
@@ -7054,6 +7057,55 @@ body.chat-shell-page {
     );
   }
 
+  /* ══ 任务条上的算子名:超长时中间省略 ═══════════════════════════════
+     CSS 的 text-overflow 只会省尾巴,而条上的字是居中的 —— 溢出时头尾同时被切,
+     "…nvFusion…" 这种两头都缺的样子最难认。改成头尾各留一截、中间用 … 顶掉:
+     算子名的辨识度基本都在前缀(算子类别)和后缀(序号/精度)上,这两截留住就够认。
+     只能靠 JS 量宽度,CSS 做不到中间省略。 */
+  const ELLIPSIS = '…';
+  let measureCtx = null;
+
+  // 用 canvas 量而不是往 DOM 里塞一个探针元素:量一次不触发重排,二分时要量十几次
+  function textWidth(str, font) {
+    if (!measureCtx) measureCtx = document.createElement('canvas').getContext('2d');
+    measureCtx.font = font;
+    return measureCtx.measureText(str).width;
+  }
+
+  // 二分"总共保留几个字",头 ceil(k/2) 尾 floor(k/2) —— 头比尾多留一个,
+  // 因为读的时候先看到头,前缀多一个字对认算子更有用。
+  function middleEllipsis(text, avail, font) {
+    if (textWidth(text, font) <= avail) return text;
+    if (textWidth(ELLIPSIS, font) > avail) return '';   // 连一个省略号都摆不下,索性空着
+    let lo = 0, hi = text.length - 1, best = ELLIPSIS;
+    while (lo <= hi) {
+      const k = (lo + hi) >> 1;
+      const head = text.slice(0, Math.ceil(k / 2));
+      const tailLen = k - head.length;
+      const str = head + ELLIPSIS + (tailLen ? text.slice(text.length - tailLen) : '');
+      if (textWidth(str, font) <= avail) { best = str; lo = k + 1; } else { hi = k - 1; }
+    }
+    return best;
+  }
+
+  function fitBarLabels(body) {
+    const bars = body.querySelectorAll('.msi-bar[data-label]');
+    if (!bars.length) return;
+    const cs = getComputedStyle(bars[0]);
+    // canvas 的 font 简写里 line-height 可省;省掉免得 computed 值是 normal 时拼出非法字符串
+    const font = cs.fontStyle + ' ' + cs.fontWeight + ' ' + cs.fontSize + ' ' + cs.fontFamily;
+    const pad = parseFloat(cs.paddingLeft) + parseFloat(cs.paddingRight);
+    // 先全部量完再统一写:量(读布局)和写交替会来回触发重排
+    const jobs = [];
+    bars.forEach((el) => {
+      const w = el.getBoundingClientRect().width;
+      if (w > 0) jobs.push([el, w - pad]);   // 宽度为 0 = 面板收着还没布局,这轮跳过,等 RO 再来
+    });
+    jobs.forEach(([el, avail]) => {
+      el.textContent = avail > 0 ? middleEllipsis(el.dataset.label, avail, font) : '';
+    });
+  }
+
   function renderSwimlanes() {
     const body = document.getElementById('msiSwimBody');
     if (!body) return;
@@ -7067,6 +7119,7 @@ body.chat-shell-page {
       }
     });
     body.innerHTML = out.join('');
+    fitBarLabels(body);
   }
 
   /* ══ 色块的左键选中 + 右键菜单 ═══════════════════════════════════
@@ -7090,6 +7143,11 @@ body.chat-shell-page {
 
   let menuEl = null;
   let menuCtx = null;   // 右键点中的那个色块的信息
+  let menuOpenedAt = 0; // 弹出时刻:用来忽略「开菜单这一下自己带出来的」click
+  let menuAnchor = null; // 菜单锚在哪个色块上 —— 判断某次滚动关不关菜单要靠它
+
+  // 刚弹出来的 120ms 内的 click 不算「点了外面」,只为吃掉右键手势自己派生出来的那一次。
+  const settled = (ms) => performance.now() - menuOpenedAt >= ms;
 
   function buildMenu() {
     const el = document.createElement('div');
@@ -7112,12 +7170,15 @@ body.chat-shell-page {
   function closeMenu() {
     if (menuEl) menuEl.hidden = true;
     menuCtx = null;
+    menuAnchor = null;
   }
 
-  function openMenu(x, y, ctx) {
+  function openMenu(x, y, ctx, anchor) {
     if (!menuEl) menuEl = buildMenu();
     menuCtx = ctx;
+    menuAnchor = anchor || null;
     menuEl.hidden = false;
+    menuOpenedAt = performance.now();
     // 先摆到 0,0 量出尺寸,再决定往哪边翻,免得贴着视口边缘被切掉
     menuEl.style.left = '0px';
     menuEl.style.top = '0px';
@@ -7182,7 +7243,7 @@ body.chat-shell-page {
         op: bar.dataset.op || '未命名事件',
         dur: bar.dataset.dur || '0',
         lane: row ? (row.querySelector('.msi-lane-text')?.textContent || '') : '',
-      });
+      }, bar);
     });
 
     document.addEventListener('click', (e) => {
@@ -7194,12 +7255,26 @@ body.chat-shell-page {
         closeMenu();
         return;
       }
+      if (!settled(120)) return;
       closeMenu();
     });
     document.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeMenu(); });
-    // 页面一滚菜单就跟不上锚点了,直接关掉
-    window.addEventListener('scroll', closeMenu, true);
+    // 滚动会让菜单和它锚定的色块错位,所以要关 —— 但只关"真把色块滚跑了"的那种。
+    // 这个监听挂在 window 捕获阶段,页面里任意滚动容器的 scroll 都会打到它。
+    // 右侧对话区回答生成时每帧都在自动贴底,那跟泳道图里的色块没有半点关系;
+    // 早先无条件 closeMenu,结果就是"回答中右键,菜单一出来就没了"。
+    // 判据只有一条:滚的这个容器包不包着当前锚点。不包 = 色块没动 = 不用管。
+    window.addEventListener('scroll', (e) => {
+      if (!menuAnchor) return;
+      const t = e.target === document || e.target === window ? document.documentElement : e.target;
+      if (!(t instanceof Node) || !t.contains(menuAnchor)) return;
+      closeMenu();
+    }, true);
     window.addEventListener('resize', closeMenu);
+    // 菜单自己身上再右键,别把系统菜单叠上来
+    document.addEventListener('contextmenu', (e) => {
+      if (menuEl && !menuEl.hidden && menuEl.contains(e.target)) e.preventDefault();
+    });
   }
 
   function initSwimlanes() {
@@ -7219,6 +7294,11 @@ body.chat-shell-page {
       body.querySelectorAll('.msi-lane-row.is-selected').forEach((el) => el.classList.remove('is-selected'));
       row.classList.add('is-selected');
     });
+    // 条宽写的是百分比,容器一变宽窄,能塞下的字数就变了 —— 面板展开/收起、窗口缩放
+    // 都要重算一遍省略位置。只改 textContent 不改布局,不会把 RO 自己再触发一轮。
+    if (typeof ResizeObserver === 'function') {
+      new ResizeObserver(() => fitBarLabels(body)).observe(body);
+    }
     renderSwimlanes();
   }
 
@@ -8640,12 +8720,17 @@ ${issuesText || '（暂无）'}
       '</div>' +
     '</div>';
 
+  // 自动录屏输入和「新建对话」共用这个代次号。新建对话时递增，仍在 await 的旧打字任务
+  // 下一拍就会自行退出，避免欢迎页已经重置后旧文字又继续写回输入框。
+  let demoInputEpoch = 0;
+
   // 「新建对话」任何时候都能点,包括回答到一半:当前这轮就地掐断——abort 掉真实请求、
   // 让打字机脚本停在原地,然后整段对话直接丢弃。真实业务里这一下应该把当前会话归档进
   // 历史列表,这个 demo 没有历史对话,所以就是销毁,不做二次确认。
   function resetConversation() {
     const msgEl = $('trainChatMessages');
     if (!msgEl) return;
+    demoInputEpoch++;
     chatEpoch++; // 老的异步收尾靠它认出自己已经过期,不会再往新会话上写东西
     if (chatStreaming) {
       chatStopped = true; // 打字机和 chatSleep 每一拍都看这个标志,能立刻停在半截
@@ -8663,6 +8748,17 @@ ${issuesText || '（暂无）'}
     pendingModelNote = ''; // 上一轮对话没用上的切换标记,别带到新对话里
     streamingNote = null;
     streamingNoteFrom = '';
+    // 欢迎页本身重建前后长得一样；必须同时清空草稿，用户才能明确得到一轮真正的新对话。
+    // 这里直接同步高亮层和高度，不派发 input 事件，避免把程序重置误记成用户正在输入。
+    ctxPicker?.close();
+    const input = $('trainChatInput');
+    if (input) {
+      input.value = '';
+      input.style.height = '';
+      input.scrollTop = 0;
+    }
+    chatInputTyped = false;
+    autoResizeInput();
     syncSendState();  // 发送键从「停止回答」形态回到常态
     syncInputFlow();  // 描边上的流光跟着停
     playWelcomeTypewriter();
@@ -8682,14 +8778,13 @@ ${issuesText || '（暂无）'}
   // 否则每个节点都是「2s」,看不出"这活确实花了时间"。真实对话不做任何缩放。
   const PROFILING_DEMO_CLOCK_SCALE = 24;
 
-  // 提问故意写满 5 行:既交代清楚诉求(定性、举证、实算、排优先级),也把问题卡片
-  // 「超过 3 行自动折叠」这条一并演示出来。
+  // 提问压成普通用户更可能说出口的 4 行:保留定性、举证、实算、排优先级四个诉求,
+  // 同时避免引导卡点开后 textarea 被十来行长提示词塞满。
   const PROFILING_QUESTION =
-    '帮我诊断一下 #{profile_dir} 这次落盘的 profiling：2 节点 × 4 卡、TP1·PP4·DP2，只采到 2 个有效 step，\n' +
-    '单步稳定在 10.8 秒左右，比我按算力估的慢了快三成，可我自己翻 kernel_details 没找出哪个算子特别离谱。\n' +
-    '集群该跑的分析你都跑一遍，先把"到底是慢卡、慢链路，还是并行切分不均"这件事定死，别上来就给建议。\n' +
-    '每条结论都要能指回落盘里的具体表和列，顺便把 cube 利用率、MFU 和性能健康度都实算出来。\n' +
-    '最后按预期收益排一份行动清单，标清优先级、改动位置和改起来的难度。';
+    '帮我诊断 #{profile_dir}：单步约 10.8 秒，比预期慢近三成。\n' +
+    '看看是慢卡、慢链路，还是并行切分不均，并给出数据依据。\n' +
+    '算一下 cube 利用率、MFU 和性能健康度。\n' +
+    '最后按收益排一份带优先级的优化清单。';
 
   const PROFILING_THINK_SCRIPT = [
     {
@@ -9225,6 +9320,88 @@ ${issuesText || '（暂无）'}
     return { refresh, close, onKeyDown, isOpen };
   }
 
+  // 录屏快捷演示：按 Ctrl + Shift + Enter，留出 3 秒开录窗口，再用真实输入事件逐字写入问题；
+  // 敲到 # 时让真实上下文浮窗打开，
+  // 停一拍后用 Enter 选中首项 profile_dir，再继续输入并点击真实发送按钮。
+  // 不直接灌最终字符串，这样录到的高亮标签、浮窗、输入框增高和发送状态都是产品本身的行为。
+  let recordingDemoActive = false;
+  const recordingWait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+  function dispatchRecordingInput(input) {
+    const end = input.value.length;
+    try { input.setSelectionRange(end, end); } catch (e) { /* 非文本控件时忽略 */ }
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+  }
+
+  async function typeRecordingText(input, text, ticket) {
+    for (const ch of Array.from(text)) {
+      if (ticket !== demoInputEpoch) return false;
+      input.value += ch;
+      dispatchRecordingInput(input);
+      await recordingWait(ch === '\n' ? 150 : 42);
+    }
+    return ticket === demoInputEpoch;
+  }
+
+  async function playProfilingQuestionRecording() {
+    if (recordingDemoActive || chatStreaming) return;
+    const triggeredAt = performance.now();
+    const input = $('trainChatInput');
+    const sendBtn = $('trainChatSendBtn');
+    const msgEl = $('trainChatMessages');
+    if (!input || !sendBtn || !msgEl || !ctxPicker) return;
+
+    recordingDemoActive = true;
+    try {
+      // 允许从任意空闲画面触发：如果已有对话，先回到一张干净的新欢迎页。
+      if (!msgEl.querySelector('.wzh-chat-welcome')) {
+        resetConversation();
+        await recordingWait(300);
+      }
+      const toggle = $('trainChatToggle');
+      if (!isChatPanelOpen() && toggle) {
+        toggle.click();
+        await recordingWait(250);
+      }
+
+      const match = PROFILING_QUESTION.match(/^([\s\S]*?)#\{([^}]+)\}([\s\S]*)$/);
+      if (!match) return;
+      const ticket = ++demoInputEpoch;
+
+      ctxPicker.close();
+      input.value = '';
+      input.style.height = '';
+      dispatchRecordingInput(input);
+      focusChatInput();
+
+      // 从快捷键按下的时刻算满 3 秒，而不是页面复位结束后再额外等 3 秒。
+      // 这样无论触发前在欢迎页还是已有对话，第一字都会在约第 3 秒出现。
+      const countdownLeft = Math.max(0, 3000 - (performance.now() - triggeredAt));
+      await recordingWait(countdownLeft);
+      if (ticket !== demoInputEpoch) return;
+
+      if (!await typeRecordingText(input, match[1], ticket)) return;
+      if (!await typeRecordingText(input, '#', ticket)) return;
+
+      // 给录屏留足时间看清浮窗；首项就是整个 profile_dir 采集目录。
+      await recordingWait(900);
+      if (ticket !== demoInputEpoch) return;
+      if (!ctxPicker.isOpen()) ctxPicker.refresh();
+      if (!ctxPicker.isOpen()) return;
+      input.dispatchEvent(new KeyboardEvent('keydown', {
+        key: 'Enter', code: 'Enter', bubbles: true, cancelable: true,
+      }));
+
+      await recordingWait(320);
+      if (!await typeRecordingText(input, match[3], ticket)) return;
+      await recordingWait(700);
+      if (ticket !== demoInputEpoch) return;
+      sendBtn.click();
+    } finally {
+      recordingDemoActive = false;
+    }
+  }
+
   function initInput() {
     const input = $('trainChatInput');
     const sendBtn = $('trainChatSendBtn');
@@ -9263,6 +9440,13 @@ ${issuesText || '（暂无）'}
     ctxPicker = initCtxPicker();
     autoResizeInput();
     syncSendState(); // 初始空输入 => 发送按钮置灰
+    document.addEventListener('keydown', (e) => {
+      const isRecordingShortcut = e.key === 'Enter' && e.ctrlKey && e.shiftKey && !e.altKey && !e.metaKey;
+      if (!isRecordingShortcut || e.repeat) return;
+      e.preventDefault();
+      e.stopPropagation();
+      playProfilingQuestionRecording();
+    });
     // 首屏补两次校准:图片/样式全部就绪后一次、字体真正换上之后一次。
     // boot 跑在 DOMContentLoaded,那一刻量到的行高不一定是最终值。
     window.addEventListener('load', () => autoResizeInput(), { once: true });
