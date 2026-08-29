@@ -25,11 +25,11 @@
   <!-- 集群热力图样式（复用 training-monitoring-v2 的 .twin-heat* 视觉） -->
   <link rel="stylesheet" href="./css/training-run-twin.css">
   <!-- 本页模块私有 layout -->
-  <link rel="stylesheet" href="./css/config-relation-observer.css?v=20260821-edp">
+  <link rel="stylesheet" href="./css/config-relation-observer.css?v=20260828-picker">
   <!-- 单卡容量（Cluster 区右栏）：容量是「卡」的属性，与集群矩阵同区并排 -->
   <link rel="stylesheet" href="./css/config-relation-capacity.css?v=20260820-spread-head">
   <!-- 顶栏视图页签 / 导出配置键 / YAML 代码框 -->
-  <link rel="stylesheet" href="./css/config-relation-yaml.css?v=20260820-yaml-view">
+  <link rel="stylesheet" href="./css/config-relation-yaml.css?v=20260828-picker">
   <!-- 文档视图（顶栏第三档）：章节目录 + 800px 正文栏 -->
   <link rel="stylesheet" href="./css/config-relation-doc.css?v=20260821-doc-arrow">
 </head>
@@ -62,6 +62,21 @@
         </div>
       </div>
       <div class="pto-ide-frame__topbar-right">
+        <!-- 导入配置（升级计划行 20）：与「导出配置」成一对，摆在它左边 ——
+             读进来在先、写出去在后，顺序就是这一页的用法。
+             这一页此前是**单向**的（yaml 视图只写不读），于是「拿一份真配置进来，
+             页面接不接得住」这个问题根本问不出口。面板同屏还给一张「未映射键」清单，
+             把「读到了、故意没用」与「读到了、确实缺」分开摆出来 —— 那才是它存在的
+             真正理由，见 js/config-relation-import.js 的文件头。 -->
+        <button class="btn btn-sm cro-export-btn" id="croImportConfig" type="button"
+                title="贴一份 yaml / sh / json，或选一个文件：解析成表单档位，并列出页面没用上的键">
+          <svg viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M12 21V9"></path>
+            <path d="m7 13 5-5 5 5"></path>
+            <path d="M4 5h16"></path>
+          </svg>
+          <span>导入配置</span>
+        </button>
         <!-- 导出配置：配置调完之后的终点动作，故带文字标签、独立于右侧那组窗口图标键。
              ⚠ 目前只做样子（无 click 绑定），真正落盘的实现待定。 -->
         <button class="btn btn-sm cro-export-btn" id="croExportConfig" type="button" title="导出当前配置为 yaml 文件">
@@ -324,9 +339,11 @@
                    变 8，卡数一张没变。放在标题右侧而不是挤进 stepper 行，也是因为
                    那一行是 nowrap 的四等分，塞第五个控件会把 Routed / Top-K 的
                    标签压到省略号。详解见「文档」视图 EP 与 DP 一章。 -->
-              <!-- 「（主流）」写在页签上而不是只留在 title 里：这两档不是性能之争，
+              <!-- 「（主流）」写在页签上而不是只留在 title 里：这几档不是性能之争，
                    用户唯一需要的判断是「我该按哪种记法读手上的数字」，而绝大多数
-                   情况下答案是切出。不点开悬浮就该看得见这一点。 -->
+                   情况下答案是切出。不点开悬浮就该看得见这一点。
+                   行 23 之后是三档：第三档「MindFormers（DP×MP）」与切出档的 world 公式相同，
+                   差别在 EP 从哪个域里切 —— 它决定 EDP，也就是集群矩阵的行数。 -->
               <div class="cro-region__heading">
                 <h2 class="cro-region__title">MoE</h2>
                 <div class="segmented-control segmented-control-muted cro-ep-mode" id="croEpMode"
@@ -335,6 +352,11 @@
                           title="拿不准就用这一档：Megatron / MindSpeed-LLM / MindFormers 都这么记，昇腾上的训练基本都落在这里。&#10;&#10;这不是性能选项 —— 两档说的是同一批卡，切换它一张卡都不会多、也不会少，变的只是页面怎么读你填的数字（DP 会在 512 与 8 之间换算）。所以按你要跑的框架选，不必权衡快慢。&#10;&#10;EP 切出 = 专家并行不额外占卡，而是把已有的数据并行组再切一刀：一张卡既是某个模型副本的成员，又持有其中一份专家。加大 EP 只是把同一批卡分得更细。&#10;world = DP×PP×TP×CP（EP 不进乘积） · EDP = DP/EP · 要求 DP % EP == 0&#10;一整套专家由横着的 EP 张卡合持（集群矩阵的一整行 = 一个 EP 组 = all-to-all 域），单个 DP 副本并不持有整套；EDP 是这样的完整组共有几个。">EP 切出（主流）</button>
                   <button class="btn btn-sm" type="button" data-ep-mode="orthogonal" aria-pressed="false"
                           title="读别人的配置时用得上：论文、汇报表格和部分自研框架把 EP 单列成一维记，那里的 DP 就是字面的模型副本数。要复现这样一份材料就选这一档，页面才会按写它的人的原意去解释你填的数字。&#10;认它的办法：必须把 EP 也乘进去才凑得出总卡数。&#10;&#10;也可以拿它做对照 —— 切一下就能看到同一批卡的 DP 在 512 与 8 之间换算，两个数说的是同一件事。&#10;&#10;但自己配训练时用切出档：Megatron / MindSpeed-LLM / MindFormers 都是那么记的。这两档不是性能之争，说的是同一批卡，切换只改读法、不改硬件。&#10;&#10;EP 正交 = 专家并行与数据并行是两根互不相干的轴：每多一倍 EP 就要多一倍卡。DP 与 EP 之间没有整除关系。&#10;world = DP×PP×TP×CP×EP · 专家的数据并行度等于 DP&#10;每个 DP 副本横跨全部 EP rank、自带一整套完整专家 —— 这正是这一档无须 DP % EP == 0 的原因。">EP 正交</button>
+                  <!-- 行 23 新增的第三档：MindFormers 的 expert_parallel 在 dp×mp 域上切。
+                       没有它，config-test/ 里那份 mf_pretrain_deepseek3_671b.yaml
+                       （dp:4 / mp:8 / pp:8 / ep:32）两档都接不住 —— 而 README 说它「最贴页面口径」。 -->
+                  <button class="btn btn-sm" type="button" data-ep-mode="mf" aria-pressed="false"
+                          title="读 MindFormers 的配置时用这一档。MindSpore / MindFormers 的 expert_parallel 是在 dp × mp 域上切的：一个 EP 组的成员既跨数据并行、也跨张量并行。&#10;&#10;认它的办法：配置里 dp 明显小于 ep（比如 dp:4 / mp:8 / ep:32），按切出档算 4 % 32 除不尽、按正交档算总卡数又对不上 —— 而 dp×mp = 32 正好整除。&#10;&#10;world = DP×PP×TP×CP（ep 不进乘积，与切出档相同） · 要求 (DP × TP) % EP == 0 · EDP = DP×TP/EP&#10;集群矩阵的行数因此比切出档多 TP 倍：域大了 TP 倍，一整套专家仍由横着的 EP 张卡合持。&#10;&#10;⚠️ 本页按专家张量并行 ETP=1 建模：这一档下路由专家只 ÷EP、不再另 ÷TP（EP 已经吃掉了 mp 那一维）。真实 MindFormers 里 ETP>1 时，严格式是 (DP×TP) % (EP×ETP) == 0，专家还要再 ÷ETP —— 那一档本页没建。">MindFormers（DP×MP）</button>
                 </div>
               </div>
 
@@ -372,12 +394,12 @@
               </div>
               <div class="cro-cluster">
                 <!-- 左半是「表单在上、矩阵在下」的纵向两段，右半是单卡容量栏。
-                     表单横排（Total Rank / Node / 卡型号 / Micro Batch / Seq Length /
+                     表单横排（Total Rank / Node / 卡型号 / Micro Batch / 微批数 / Seq Length /
                      重计算 / 高级选项 一行读完）之后，矩阵拿到了
                      整个左半宽度 —— 默认 4 个 stage 块 × 64 EP 列要在不横向滚动的
                      前提下画完，宽度比高度值钱。
                      ⚠️ 下面三个 div 是**三个挂载点**（JS 按 id 找它们），但视觉上必须是
-                     同一行：CSS 给两个 .cro-stepper-row 上了 display:contents，七枚控件
+                     同一行：CSS 给两个 .cro-stepper-row 上了 display:contents，八枚控件
                      因此是 .cro-cluster__form 自己的 flex 项 —— 否则换行会按「组」发生，
                      batch 那四枚会整块掉到第二行。加控件时记得它们共用一行的宽度预算
                      （尺度已按 MoE 那一行收到 30px 一档，见 css 里 .cro-cluster__form 那段）。 -->
@@ -392,16 +414,22 @@
                       <label class="cro-stepper__label" for="croCardSelect">卡型号</label>
                       <select class="cro-select" id="croCardSelect"></select>
                     </div>
-                    <!-- Micro Batch / Seq Length：不参与切分、不进 world_size，只决定
+                    <!-- Micro Batch / 微批数 / Seq Length：不参与切分、不进 world_size，只决定
                          往这张卡里装多少，所以接在卡型号之后 —— 型号给容量框的高度，
-                         这两项给装进去的体积，一行读完就是「单卡容量」的全部输入。
+                         这三项给装进去的体积（每份多大 × 分成几份 × 每份多长），
+                         一行读完就是「单卡容量」的全部输入。
+                         微批数是升级计划行 22 补的：在飞份数取 min(1F1B 公式, 它)，
+                         而它同时是 yaml 那个全局 batch 的第三个因子。
                          由 config-relation-observer.js 的 FIELD_ORDER.batch 渲染。 -->
                     <div class="cro-stepper-row" id="croBatchSteppers"></div>
                     <!-- 「重计算」由 JS 接在这一行末尾（见 mount()）：它与 Micro Batch /
                          Seq Length 同属「往这张卡里装多少」—— 一刀不切，只是每份留不留。
                          它是**四档**而不是开关（升级计划行 19：关 / 选择性 / 按层数 / 全开），
                          因为 34 与 2 之间差着一个数量级，实际调优最常落的正是中间。
-                         行末还有一枚「高级选项」折叠，里面三枚（见 ADVANCED_ITEMS.batch）：
+                         行末还有一枚「高级选项」折叠，里面五枚（见 ADVANCED_ITEMS.batch）：
+                           · 计算精度 / 主权重精度 —— 每个数占几个字节（行 21）：权重、梯度、
+                             优化器三段的字节口径全跟着它们走。收在折叠里是因为它一年也未必
+                             动一次，却让六段全体升降
                            · 重算层数 —— 只有「按层数」那一档才生效，拨到那一档时折叠自动掀开
                            · LoRA / LoRA Rank —— 冻结主干只训 adapter，梯度段与优化器段跟着
                              adapter 走、权重段一个字节不少（行 18）。两个预设写的都是预训练
@@ -492,9 +520,25 @@
               <div class="cro-yaml__head">
                 <!-- 字号与下栏「启动命令」取齐（.cro-yaml__title），不用区标题的 20px -->
                 <h2 class="cro-region__title cro-yaml__title">配置文件</h2>
-                <!-- 路径由 js 按模型名生成（configs/<家族>/run_<全名>.yaml），
-                     与 MindFormers 仓的 configs/ 目录同形 -->
-                <span class="cro-yaml__file" id="croYamlPath"></span>
+                <!-- 文件名同时是**样例配置的切换口**：路径由 js 按模型名生成
+                     （configs/<家族>/run_<全名>.yaml，与 MindFormers 仓的 configs/
+                     目录同形），点开则是 config-test/ 那 11 份公开配置的卡片菜单。
+                     摆在这儿而不是导入面板里：这一格本来就在回答「你现在看的是哪份
+                     配置」，换一份的动作理应从同一处发起。
+                     选项做成两行卡片（第一行名字 + 来源，第二行「选它能看到什么」），
+                     不用 title —— 代表性是**选之前**要读到的东西，藏进悬浮等于没写。 -->
+                <div class="cro-yaml__picker" id="croYamlPicker">
+                  <button class="cro-yaml__file" id="croYamlPickerBtn" type="button"
+                          aria-haspopup="true" aria-expanded="false"
+                          title="切换样例配置：从 config-test/ 的公开配置里选一份">
+                    <span id="croYamlPath"></span>
+                    <span class="cro-yaml__file-tag" id="croYamlPickedTag" hidden></span>
+                    <svg class="cro-yaml__file-caret" viewBox="0 0 24 24" aria-hidden="true">
+                      <path d="m6 9 6 6 6-6"></path>
+                    </svg>
+                  </button>
+                  <div class="cro-yaml__menu" id="croYamlMenu" hidden role="menu" aria-label="样例配置"></div>
+                </div>
                 <span class="cro-yaml__status" id="croYamlStatus" data-level="ok" role="status" aria-live="polite"></span>
                 <button class="btn btn-sm btn-ghost cro-yaml__copy" id="croYamlCopy" type="button" title="复制 yaml 全文">
                   <span class="cro-yaml__copy-label">复制</span>
@@ -1384,6 +1428,12 @@
                       token 先按路由结果 all-to-all 发到专家所在的卡，算完再 all-to-all 收回来。
                     </p>
                     <p>
+                      <b>它切自哪个域，要看框架</b>：Megatron 系从 DP 组里切、MindFormers 从
+                      <code>DP × MP</code> 域里切、论文常把它单列成一根正交轴 ——
+                      三种记法对同一组数字的解释完全不同，MoE 区标题旁那排页签就是选这个的
+                      （详见 <a href="#doc-ep">EP 与 DP</a> 一章）。
+                    </p>
+                    <p>
                       它是 <b>MoE 模型减少单卡显存的主力</b> —— 专家参数常占全模型 95% 以上，
                       而这一维正好切在这块最大的肉上。代价是每个 MoE 层要做两次 all-to-all，
                       而 all-to-all 是全连接通信模式，对拓扑最敏感：EP 域一旦跨出超节点，
@@ -1413,7 +1463,7 @@
                           <div class="cro-doc__map-box-title">一定联调</div>
                           <ul>
                             <li><code>Routed Expert</code> —— 必须被 EP 整除</li>
-                            <li>正交口径下 <code>Total Rank</code>；切出口径下 <code>DP</code> —— 必须被 EP 整除</li>
+                            <li>正交口径下 <code>Total Rank</code>；切出口径下 <code>DP</code>；MindFormers 口径下 <code>DP × TP</code> —— 必须被 EP 整除</li>
                             <li>单卡显存（专家那一段 ÷ EP）</li>
                           </ul>
                         </div>
@@ -1600,7 +1650,10 @@
                     </div>
                     <p>
                       一次前向/反向真正喂进去的样本数。<b>注意它不是全局 batch</b> ——
-                      全局 batch = MBS × DP × 梯度累积步数，而只有 MBS 直接进显存。
+                      全局 batch = MBS × DP × <a href="#term-micro-batch-num">微批数</a>，
+                      而<b>直接</b>进显存的只有 MBS：激活与它成正比。
+                      另外两个因子不是完全不进 —— 微批数在 PP &gt; 1 时决定在飞几份，
+                      少于流水线深度时会把整排小柱压低（见那一条）。
                     </p>
                     <p>
                       <b>YAML 里的 <code>runner_config.batch_size</code> 填的不是这个数。</b>
@@ -1646,6 +1699,68 @@
                           <ul>
                             <li>梯度累积步数 —— 把全局 batch 补回来</li>
                             <li><code>PP</code> —— micro-batch 数决定气泡占比</li>
+                          </ul>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div class="cro-doc__term" id="term-micro-batch-num">
+                    <div class="cro-doc__term-head">
+                      <code class="cro-doc__term-name">微批数</code>
+                      <span class="cro-doc__term-full">micro_batch_num · 梯度累积步数</span>
+                      <span class="cro-doc__term-where">Cluster</span>
+                    </div>
+                    <p>
+                      一个全局 batch 被切成几份轮流喂进去。它与 Micro Batch 是同一句话的两半：
+                      <b>全局 batch = MBS × DP × 微批数</b>（YAML 视图那格
+                      <code>runner_config.batch_size</code> 就是这么算出来的）。
+                      流水线里它还有第二个身份：<b>一步之内可灌的 micro-batch 总数</b>。
+                    </p>
+                    <p>
+                      <b>它对显存不是线性的。</b>只有<b>在飞</b>（已前向、还没反向）的那几份激活压在卡上，
+                      而在飞份数有上界 —— 1F1B 下 stage <i>s</i> 最多压 <code>PP − s</code> 份。所以：
+                      微批数 ≥ PP（交错档是 <code>PP × VPP</code>）时，调它一个字节都不动；
+                      小于时才把「各 PP Stage 峰值」那排小柱整体压低，首段压得最多。
+                      PP = 1 时在飞恒为 1，调它容量柱纹丝不动 —— 那时它只改全局 batch。
+                    </p>
+                    <p>
+                      <b>但别拿它当省显存的旋钮。</b>流水线气泡占比约
+                      <code>(PP−1)/微批数</code>（交错档再 ÷ VPP）：PP=4、微批数=2 时，
+                      流水线一半以上的时间在空转。省下的那点显存是拿吞吐换的 ——
+                      重计算、CP、权重分片都比它便宜。低于 <code>PP × VPP</code> 时页面给一条软警告。
+                    </p>
+                    <div class="cro-doc__map">
+                      <div class="cro-doc__map-col">
+                        <div class="cro-doc__map-box" data-flow="up">
+                          <div class="cro-doc__map-box-title">调大</div>
+                          <ul>
+                            <li>PP 大、气泡吃掉了吞吐</li>
+                            <li>收敛需要更大的全局 batch</li>
+                          </ul>
+                        </div>
+                        <div class="cro-doc__map-box" data-flow="down">
+                          <div class="cro-doc__map-box-title">调小</div>
+                          <ul>
+                            <li>一步的墙钟时间太长，想快点看到 loss 曲线</li>
+                            <li>（不推荐）压在飞份数救显存 —— 代价是气泡</li>
+                          </ul>
+                        </div>
+                      </div>
+                      <div class="cro-doc__map-node">微批数</div>
+                      <div class="cro-doc__map-col">
+                        <div class="cro-doc__map-box" data-flow="must">
+                          <div class="cro-doc__map-box-title">一定联调</div>
+                          <ul>
+                            <li>全局 batch = MBS × DP × 微批数</li>
+                            <li>在飞份数 = <code>min(1F1B 公式, 微批数)</code></li>
+                          </ul>
+                        </div>
+                        <div class="cro-doc__map-box" data-flow="often">
+                          <div class="cro-doc__map-box-title">考虑再调</div>
+                          <ul>
+                            <li><code>PP</code> / <code>VPP</code> —— 一起定气泡占比</li>
+                            <li><code>DP</code> —— 改它全局 batch 跟着变</li>
                           </ul>
                         </div>
                       </div>
@@ -1794,6 +1909,92 @@
                             <li><code>重算层数</code> —— 「按层数」那一档带着的那个 N</li>
                             <li><code>Micro Batch</code> / <code>Seq Length</code> —— 省出来的余量拿去装什么</li>
                             <li><code>PP</code> —— 两者都在压激活，不必同时用满</li>
+                          </ul>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div class="cro-doc__term" id="term-precision">
+                    <div class="cro-doc__term-head">
+                      <code class="cro-doc__term-name">计算精度 / 主权重精度</code>
+                      <span class="cro-doc__term-full">compute_dtype · params_dtype · --fp8-format</span>
+                      <span class="cro-doc__term-where">Cluster · 高级选项</span>
+                    </div>
+                    <p>
+                      这两枚不切分、也不决定装几份，它们决定<b>每个数占几个字节</b> ——
+                      权重、梯度、优化器状态三段的高度全跟着它们走。
+                      分成两枚，是因为它们管的是两件事。
+                    </p>
+                    <p class="cro-doc__sub">主权重精度：那份 fp32 master 摆在哪一段</p>
+                    <p>
+                      混合精度训练总要留一份 fp32 的权重（低精度累加会把小的更新吃掉），区别只在它放在哪儿：
+                    </p>
+                    <div class="cro-doc__table-wrap">
+                      <table class="cro-doc__table">
+                        <thead>
+                          <tr><th>档</th><th>权重</th><th>梯度</th><th>优化器</th><th>合计</th></tr>
+                        </thead>
+                        <tbody>
+                          <tr><td>BF16（业界标准做法）</td><td>2 B</td><td>2 B</td><td>12 B（fp32 master + m + v）</td><td>16 B</td></tr>
+                          <tr><td>FP32（两份 MindFormers yaml 写的都是它）</td><td>4 B</td><td>4 B</td><td>8 B（m + v，master 就是参数）</td><td>16 B</td></tr>
+                        </tbody>
+                      </table>
+                    </div>
+                    <p>
+                      <b>两档合计一模一样</b>，变的是哪一段扛着它 —— 单看柱子的总高度看不出区别。
+                      但一旦拨了「权重分片」，两档就分道扬镳：ZeRO-1 只切优化器那一段，
+                      BF16 档能切走 12 B、每卡留 4 B，FP32 档只能切走 8 B、每卡留 8 B。
+                      <b>DP 越大，FP32 档越吃亏。</b>
+                    </p>
+                    <p class="cro-doc__sub">计算精度：常驻权重按几个字节存</p>
+                    <p>
+                      BF16 与 FP16 的<b>字节数完全相同</b>，本页六段一个数都不变 ——
+                      差别在动态范围（fp16 指数只有 5 位，要配 loss scaling）。列出 FP16 这一档，
+                      是为了如实接住那些写 <code>--fp16</code> 的配置，而不是假装页面没读到。
+                    </p>
+                    <p>
+                      FP8 档让权重段<b>减半</b>（1 B/参数）。⚠️ 它建模的是<b>权重直存 fp8</b>
+                      （Megatron 的 <code>--fp8-param-gather</code>）；不开那一项时，fp8 只是进 matmul 前的一次转换，
+                      权重仍按 2 B 常驻、另有一份 fp8 缓存（2 + 1 B）—— 那一档本页没建。
+                      openPangu 参考配置里的「forward FP8」正是后一种（HiF8 算子级格式），所以默认档停在 BF16。
+                    </p>
+                    <p>
+                      <b>激活段不随这两枚变。</b>那组系数（34 / 17 / 2）出自 Korthikanti et al. 2022，
+                      本身已按 2 B/元素折算；fp8 只作用在 matmul 的输入副本上，
+                      哪些激活能跟着降到 1 B 取决于实现 —— 本页不猜，宁可这一段偏保守。
+                    </p>
+                    <div class="cro-doc__map">
+                      <div class="cro-doc__map-col">
+                        <div class="cro-doc__map-box" data-flow="up">
+                          <div class="cro-doc__map-box-title">往低了调</div>
+                          <ul>
+                            <li>权重段吃掉太多，且硬件支持 fp8 矩阵乘</li>
+                            <li>要对齐一份 FP8 的公开配方</li>
+                          </ul>
+                        </div>
+                        <div class="cro-doc__map-box" data-flow="down">
+                          <div class="cro-doc__map-box-title">往高了调</div>
+                          <ul>
+                            <li>低精度训练不收敛 / loss 出现 spike</li>
+                            <li>框架要求 <code>params_dtype: float32</code></li>
+                          </ul>
+                        </div>
+                      </div>
+                      <div class="cro-doc__map-node">精度</div>
+                      <div class="cro-doc__map-col">
+                        <div class="cro-doc__map-box" data-flow="must">
+                          <div class="cro-doc__map-box-title">一定联调</div>
+                          <ul>
+                            <li>权重 / 梯度 / 优化器三段的字节口径</li>
+                            <li>YAML 的 <code>params_dtype</code> / <code>compute_dtype</code></li>
+                          </ul>
+                        </div>
+                        <div class="cro-doc__map-box" data-flow="often">
+                          <div class="cro-doc__map-box-title">考虑再调</div>
+                          <ul>
+                            <li><code>权重分片</code> —— 两档能切走的量不同</li>
+                            <li>loss scaling（FP16 档必需，本页不建模）</li>
                           </ul>
                         </div>
                       </div>
@@ -1957,38 +2158,66 @@ t  TP 序号              c  CP 序号      n  物理节点号</div>
 
                 <!-- ── 5 ── -->
                 <section class="cro-doc__section" id="doc-ep">
-                  <h3 class="cro-doc__h">EP 与 DP：正交还是从 DP 切出</h3>
+                  <h3 class="cro-doc__h">EP 与 DP：正交、从 DP 切出，还是从 DP×MP 域切出</h3>
                   <p>
-                    读任何一份 MoE 训练配置，第一件要确认的事是：<b>EP 占不占自己的 rank。</b>
-                    两种口径都存在，而它们对同一组数字的解释完全不同 —— 搞反了，卡数会差出一个 EP 倍。
+                    读任何一份 MoE 训练配置，第一件要确认的事是：<b>EP 占不占自己的 rank，
+                    以及它是从哪个域里切出来的。</b>三种口径都存在，而它们对同一组数字的解释完全不同 ——
+                    搞反了，卡数会差出一个 EP 倍，或者一份能跑的配置在页面上当场报错。
                   </p>
                   <div class="cro-doc__table-wrap">
                     <table class="cro-doc__table">
                       <thead>
-                        <tr><th></th><th>正交</th><th>从 DP 切出</th></tr>
+                        <tr><th></th><th>正交</th><th>从 DP 切出（默认）</th><th>MindFormers · DP×MP 域</th></tr>
                       </thead>
                       <tbody>
-                        <tr><td>world_size</td><td><code>DP×PP×TP×CP×EP</code></td><td><code>DP×PP×TP×CP</code></td></tr>
-                        <tr><td>EP 的 rank</td><td>独占</td><td>与 DP 复用同一批卡</td></tr>
-                        <tr><td>额外约束</td><td>只要 <code>E % EP == 0</code></td><td>再加 <code>DP % EP == 0</code></td></tr>
+                        <tr><td>world_size</td><td><code>DP×PP×TP×CP×EP</code></td><td><code>DP×PP×TP×CP</code></td><td><code>DP×PP×TP×CP</code>（同左）</td></tr>
+                        <tr><td>EP 的 rank</td><td>独占</td><td>与 DP 复用同一批卡</td><td>与 <b>DP 和 TP</b> 一起复用同一批卡</td></tr>
+                        <tr><td>额外约束</td><td>只要 <code>E % EP == 0</code></td><td>再加 <code>DP % EP == 0</code></td><td>再加 <code>(DP × TP) % EP == 0</code></td></tr>
                         <tr>
                           <td>专家的数据并行度</td>
                           <td>等于 DP</td>
                           <td>EDP = <code>DP / EP</code><br>专家权重的副本份数，也是专家梯度的 all-reduce 域</td>
+                          <td>EDP = <code>DP × TP / EP</code><br>域大了 TP 倍，集群矩阵的行数跟着变</td>
                         </tr>
                         <tr>
                           <td>谁持有一整套专家</td>
                           <td><b>1 个 DP 副本自带一整套</b><br>它横跨全部 EP rank</td>
                           <td>1 个 DP 副本<b>没有</b>整套<br>横着的 <code>EP</code> 张卡（一个 <b>EP 组</b>、也就是 all-to-all 域）才凑齐一套，这样的完整组共 <code>DP/EP</code> 个</td>
+                          <td>同左，只是那 <code>EP</code> 张卡<b>横跨 DP 与 TP 两维</b><br>完整组共 <code>DP×TP/EP</code> 个</td>
                         </tr>
                       </tbody>
                     </table>
                   </div>
                   <p>
                     切出式的意思是：一张卡<b>既</b>是某个数据并行副本的成员，<b>又</b>是某个 EP rank 的持有者。
-                    这也是 Megatron 系（含 MindSpeed-LLM）与 MindFormers 的做法 —— EP 不进 world_size 的乘积，
+                    这是 Megatron 系（含 MindSpeed-LLM）的做法 —— EP 不进 world_size 的乘积，
                     而是把已有的 DP 组再切一刀。切完之后专家权重只在剩下的 <code>DP / EP</code> 维上复制，
                     这一维就叫 <b>EDP（expert data parallel）</b>。
+                  </p>
+                  <p class="cro-doc__sub">第三档：MindFormers 在 DP×MP 域上切</p>
+                  <p>
+                    MindSpore / MindFormers 的 <code>expert_parallel</code> 同样不占额外的卡，
+                    但它切的域<b>不是 DP，而是 DP × MP</b>（mp 就是 <code>model_parallel</code>，即 TP）——
+                    一个 EP 组的成员既跨数据并行、也跨张量并行。约束因此换成
+                    <code>(DP × TP) % EP == 0</code>，而 <code>EDP = DP×TP/EP</code>。
+                  </p>
+                  <p>
+                    <b>不补这一档，一份真配置就读不进来。</b>MindFormers 的 DeepSeek-V3 参考配置写的是
+                    <code>dp:4 / mp:8 / pp:8 / ep:32</code>：按「从 DP 切出」算 <code>4 % 32</code> 除不尽、当场报错；
+                    按「正交」算 <code>4×8×8×32 = 8192</code>，而它实际只有 256 张卡。
+                    只有在 dp×mp 域上 <code>4×8 = 32</code> 才整除得开。
+                  </p>
+                  <p>
+                    这一档还有一个连带后果：<b>TP 不再是独立的一根轴。</b>
+                    集群矩阵里横着的那 <code>EP</code> 张卡本身就横跨了 TP，
+                    所以一张卡的 TP 分片号要从它在域里的位置反推
+                    （<code>(EDP索引 × EP + EP索引) % TP</code>），
+                    而路由专家<b>只 ÷EP、不再另 ÷TP</b> —— EP 已经吃掉了 mp 那一维。
+                  </p>
+                  <p>
+                    ⚠️ 本页按<b>专家张量并行 ETP = 1</b> 建模。真实 MindFormers 里专家自身还能再切 TP，
+                    那时严格的约束是 <code>(DP × TP) % (EP × ETP) == 0</code>，专家权重还要再 ÷ETP ——
+                    那一档本页没有建模，遇到写了 <code>expert_model_parallel</code> 的配置要自己折算。
                   </p>
                   <p class="cro-doc__sub">同一组数字的两种读法</p>
                   <p>
@@ -2084,14 +2313,24 @@ t  TP 序号              c  CP 序号      n  物理节点号</div>
                     </li>
                   </ul>
                   <div class="cro-doc__note">
-                    <b>值得注意的是：</b>两种口径下<b>卡的排布是同一个</b>。
+                    <b>值得注意的是：</b>正交与切出<b>两档下卡的排布是同一个</b>。
                     那 512 张卡本来就该排成 <code>8 × 64</code> 的网格 ——
                     区别只在于你把行叫做「DP」还是「EDP」。
                     也正因为如此，这个混淆很难被卡数对不上暴露出来，只能靠事先问清楚。
                     点集群矩阵里任意一格看到的关系也完全一样：一张卡只连<b>一个</b> EP 组
                     （外加共享专家 —— 它每张卡上都有一份，不参与 EP 切分），
                     两种口径下连的是同一个组、同一批专家编号。
-                    口径开关改的只有两件事：world 公式里乘不乘 EP，以及矩阵纵轴该叫 DP 还是 EDP。
+                    这两档的开关改的只有两件事：world 公式里乘不乘 EP，以及矩阵纵轴该叫 DP 还是 EDP。
+                  </div>
+                  <div class="cro-doc__note">
+                    <b>但第三档不一样 —— 它真的会改排布。</b>
+                    MindFormers 档的 EP 是从 <code>DP × MP</code> 域里切的，
+                    横着的那 <code>EP</code> 张卡因此<b>横跨了 TP</b>：
+                    行数从 <code>DP/EP</code> 变成 <code>DP×TP/EP</code>，
+                    一张卡的 TP 分片号也不再是「格子在行内的第几个」，
+                    而要从它在域里的位置反推。
+                    换句话说，前两档是<b>同一张网格的两种读法</b>，
+                    第三档是<b>另一张网格</b>。
                   </div>
                 </section>
 
@@ -2329,13 +2568,13 @@ t  TP 序号              c  CP 序号      n  物理节点号</div>
                         <tr><th>段</th><th>大小</th><th>被谁切</th></tr>
                       </thead>
                       <tbody>
-                        <tr><td>权重</td><td>参数量 × 2（bf16）</td><td rowspan="3">见下表</td></tr>
-                        <tr><td>梯度</td><td><b>可训练</b>参数量 × 2</td></tr>
-                        <tr><td>优化器状态</td><td><b>可训练</b>参数量 × 12（fp32 master + momentum + variance）</td></tr>
+                        <tr><td>权重</td><td>参数量 × 2（bf16；<b>随精度档变</b>：主权重 fp32 时 4、FP8 档 1）</td><td rowspan="3">见下表</td></tr>
+                        <tr><td>梯度</td><td><b>可训练</b>参数量 × 2（主权重 fp32 时 4）</td></tr>
+                        <tr><td>优化器状态</td><td><b>可训练</b>参数量 × 12（fp32 master + momentum + variance）；主权重 fp32 时只剩 8（master 就是参数本身）</td></tr>
                         <tr>
                           <td>激活</td>
                           <td>每层 ≈ 34 · mb · s · h（不重计算 + 开 SP）；选择性掉到 17、全开掉到 2</td>
-                          <td>÷ TP、÷ CP，× 在飞的 micro-batch 数（VPP 会把这个份数抬上去）</td>
+                          <td>÷ TP、÷ CP，× 在飞的 micro-batch 数（VPP 会把这个份数抬上去，<b>微批数</b>会把它夹下来）</td>
                         </tr>
                         <tr><td>运行时底座</td><td>驱动 + context + kernel binary，几个 GB</td><td>不随配置变</td></tr>
                         <tr><td>预留 buffer / 碎片</td><td>通信 buffer + 算子临时区 + 分配器碎片</td><td>随并行配置变，见下</td></tr>
@@ -2361,6 +2600,7 @@ t  TP 序号              c  CP 序号      n  物理节点号</div>
                         <tr><td>Embedding / LM Head</td><td>看 <code>vocab_emb_dp</code>：走 DP 则<b>不切</b>、每卡背满，走 TP 才 ÷ TP。<b>本页已落成一枚开关</b>，默认走 DP</td></tr>
                         <tr><td>以上全部</td><td>÷ PP，体现为「这张卡只背本 stage 那几层」</td></tr>
                         <tr><td>DP</td><td><b>不切</b>，除非拨了「权重分片」：ZeRO-1 档优化器状态 ÷ DP，FSDP2 档权重 / 梯度 / 优化器三段全 ÷ DP（另加 all-gather 暂存）。<b>本页已落成一枚三档控件</b>，默认 ZeRO-1</td></tr>
+                        <tr><td>每个数几个字节</td><td>由<b>精度两档</b>定（<a href="#term-precision">计算精度 / 主权重精度</a>）：主权重 bf16 时是 2 + 2 + 12，fp32 时是 4 + 4 + 8（<b>合计都是 16 B</b>，变的是哪一段扛着），FP8 档权重那一份再减半。<b>本页已落成两枚档位控件</b>，默认 BF16 / BF16</td></tr>
                         <tr><td>可训练与否</td><td>上面几行说的是「一张卡上有多少参数」。而梯度与优化器状态那 14 B <b>只按可训练的那部分算</b> —— 开 LoRA 后主干冻结，这两段只剩每层 <code>4·r·2H</code> 个 adapter 参数的份，权重段一个字节不少。<b>本页已落成一枚开关加一枚 Rank</b>，默认关</td></tr>
                       </tbody>
                     </table>
@@ -2378,6 +2618,9 @@ t  TP 序号              c  CP 序号      n  物理节点号</div>
                       开了虚拟流水（<code>VPP &gt; 1</code>）换成交错式调度，份数变成
                       <code>[2(PP−s−1) + (VPP−1)·PP + 1] / VPP</code> —— 整排小柱一起抬高、而且变平，
                       末段抬得比首段还多。这就是 VPP 的账：气泡按 <code>1/VPP</code> 缩小，代价全记在这里。
+                      反过来，一共只有 <b>微批数</b>那么多份可灌：少于 warmup 深度时
+                      在飞份数按 <code>min(公式, 微批数)</code> 夹下来，整排小柱一起矮下去 ——
+                      那不是配置变省了，是流水线没灌满（气泡换来的）。
                     </li>
                     <li>
                       <b>运行时开销不是固定百分比。</b>按已用量抽一个比例，等于把一个几乎不随模型变的量做成正比项：
@@ -2503,6 +2746,72 @@ t  TP 序号              c  CP 序号      n  物理节点号</div>
        事件详情模式下四域收起，没有可连的锚点，这层会被清空。 -->
   <svg class="cro-link-layer" id="croLinkLayer" aria-hidden="true"></svg>
 
+  <!-- ═══ 导入配置面板（升级计划行 20）═══════════════════════════════════════
+       ⚠ 设计系统没有 dialog / drawer 原语（css/style.css 只有 .btn 系列），这里用
+       tokens 拼一个最小实现，按钮一律复用 .btn —— 与本页的横幅、开关、segmented
+       同属「缺失样式」，待批准后一并吸收进共享系统。
+       放在 frame 之外、body 末尾：它是覆盖全屏的浮层，留在 .pto-ide-frame 里会被
+       那一层的 overflow 裁掉（与单卡容量的口径浮层挪出面板是同一个原因）。 -->
+  <div class="cro-import" id="croImportPanel" hidden role="dialog" aria-modal="true"
+       aria-labelledby="croImportTitle">
+    <div class="cro-import__box">
+      <header class="cro-import__head">
+        <h2 class="cro-import__title" id="croImportTitle">导入配置</h2>
+        <span class="cro-import__name" id="croImportName">未选择文件</span>
+        <button class="btn btn-sm btn-ghost" id="croImportClose" type="button">关闭</button>
+      </header>
+      <div class="cro-import__body">
+        <p class="cro-import__intro">
+          支持三种方言：<b>MindFormers / LLaMA-Factory 的 yaml</b>、<b>Megatron 的 sh</b>、
+          <b>HF config.json 与 DeepSpeed json</b>。
+          解析只读**并行 / 批次 / MoE / 开关**这几类键 ——
+          结构常量（hidden / vocab / heads / intermediate）由计算图那条路线给，本页<b>不覆盖</b>。
+          <br>手上没有配置也能试：切到<b>「YAML 视图」</b>，点文件名那一格，
+          里面是 <code>config-test/</code> 的 11 份公开配置。
+        </p>
+        <!-- 这个面板只留「传文件 / 贴文本」两条 —— 切换 config-test/ 的样例配置
+             挪到了 YAML 视图的文件名那一格（.cro-yaml__picker），那里本来就在
+             回答「你现在看的是哪份配置」，换一份理应从同一处发起。 -->
+        <div class="cro-import__actions">
+          <label class="btn btn-sm" for="croImportFile">选择文件…</label>
+          <input type="file" id="croImportFile" accept=".yaml,.yml,.sh,.bash,.json,.txt" hidden>
+          <button class="btn btn-sm" id="croImportParse" type="button">解析</button>
+          <button class="btn btn-sm cro-import__apply" id="croImportApply" type="button" disabled>应用到表单</button>
+        </div>
+        <textarea class="cro-import__text" id="croImportText" spellcheck="false"
+                  placeholder="把一份训练配置贴在这里，或从上面选一个文件…"></textarea>
+        <div class="cro-import__report" id="croImportReport">
+          <p class="cro-import__empty">解析之后，这里会列出：落到表单的键、页面配平时改过的数、
+            没覆盖的结构常量、已知缺口（挂着升级计划行号），以及读到了但不建模的那一堆。</p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══ 样例配置 · 应用前的解析弹窗 ═════════════════════════════════════════
+       从上面那个卡片菜单选中一份之后，先到这里：整份解析报告摊开（落到哪几档、
+       页面配平会改哪几个数、哪些键读到了但不建模、哪些是已知缺口），底部才是
+       【取消】【应用】。**看完再决定**是这个面板存在的全部理由 —— 直接把一份陌生
+       配置糊到表单上，用户是看不出页面替他改了什么的。
+       【取消】退回卡片菜单（不是回到空屏：用户的动作是「挑一份」，还没挑完）。
+       报告复用 .cro-import__* 那套块样式，样式与导入面板同源。 -->
+  <div class="cro-preview" id="croPreviewPanel" hidden role="dialog" aria-modal="true"
+       aria-labelledby="croPreviewTitle">
+    <div class="cro-preview__box">
+      <header class="cro-import__head">
+        <h2 class="cro-import__title" id="croPreviewTitle">解析预览</h2>
+        <span class="cro-import__name" id="croPreviewName"></span>
+      </header>
+      <p class="cro-preview__source" id="croPreviewSource"></p>
+      <div class="cro-import__report cro-preview__report" id="croPreviewReport"></div>
+      <footer class="cro-preview__foot">
+        <span class="cro-preview__hint" id="croPreviewHint"></span>
+        <button class="btn btn-sm" id="croPreviewCancel" type="button">取消</button>
+        <button class="btn btn-sm cro-import__apply" id="croPreviewApply" type="button">应用</button>
+      </footer>
+    </div>
+  </div>
+
   <script src="./js/workbench-shell-pattern.js"></script>
   <script src="./js/ide-frame-pattern.js"></script>
   <script src="./js/model-graphviz-pattern.js"></script>
@@ -2516,6 +2825,10 @@ t  TP 序号              c  CP 序号      n  物理节点号</div>
   <!-- 文档视图：只从正文的章节标题建目录 + 滚动高亮，不依赖 croObserver，
        所以排在哪里都行；跟着另两个视图模块放在一起便于对照。 -->
   <script src="./js/config-relation-doc.js?v=20260821-doc-arrow"></script>
+  <!-- 导入配置（行 20）：同样排在主脚本之后（要用它导出的 croObserver.importConfig）。
+       解析层与 DOM 无关、整块导出到 croImport，好让 tools/cro-selfcheck.js
+       拿 config-test/ 那 11 份样本直接撞它。 -->
+  <script src="./js/config-relation-import.js?v=20260828-picker"></script>
   <script>
     // 主题切换：与 training-monitoring-v2.html 同款单图标按钮，只改 data-theme。
     (() => {

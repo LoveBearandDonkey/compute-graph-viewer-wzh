@@ -1421,11 +1421,12 @@
   overflow: hidden;
 }
 
-/* 组内刻度等距，间隙与刻度同宽 */
+/* 组内刻度等距，间隙常态与刻度同宽；层数多到塞不下时 layoutLayerNav 会单独
+   压这一项（--cro-tick-gap），压完还不够才动刻度宽度 —— 顺序见那里的说明。 */
 .cro-layer-nav__group {
   display: flex;
   flex: 0 0 auto;
-  gap: var(--cro-tick-w, 4px);
+  gap: var(--cro-tick-gap, var(--cro-tick-w, 4px));
 }
 
 /* 竖分隔线：1px，与 .cro-tick 的描边同色 —— 分割线和刻度是同一层视觉骨架，
@@ -1523,6 +1524,21 @@
 }
 
 .cro-tick:hover { border-color: var(--foreground-secondary); }
+
+/* 层数多到刻度不足 2px（96 层 × PP16 这类）：空心药丸的两条描边已经糊成一团，
+   改画实心细条 —— 一排等距细线还读得出「一层一层」，糊掉的药丸只是一片灰。
+   类由 layoutLayerNav 按解出的刻度宽度挂上。 */
+.cro-layer-nav.is-dense .cro-tick { border-radius: 1px; }
+
+/* 选中态 / 关系高亮的描边与填充不能被这条盖掉（它们的选择器更弱），故排除在外 */
+.cro-layer-nav.is-dense .cro-tick:not(.is-selected):not(.is-related) {
+  border-color: transparent;
+  background: var(--border-strong);
+}
+
+.cro-layer-nav.is-dense .cro-tick:not(.is-selected):not(.is-related):hover {
+  background: var(--foreground-secondary);
+}
 
 .cro-tick:focus-visible {
   outline: none;
@@ -3428,4 +3444,278 @@
     left: var(--space-2);
     width: auto;
   }
+}
+
+/* ══ 导入配置面板（升级计划行 20）══════════════════════════════════════════
+   ⚠️ 设计系统没有 dialog / drawer 原语（css/style.css 只有 .btn 系列），这里用
+   tokens 拼一个最小实现，按钮一律复用 .btn —— 与本页的横幅（.cro-config-error）、
+   开关（.cro-switch）、三档控件同属「缺失样式」，待批准后一并吸收进共享系统。
+
+   面板挂在 body 末尾而不是 frame 里：它要盖满视口，留在 .pto-ide-frame 内会被那
+   一层的 overflow 裁掉（与单卡容量口径浮层挪出面板是同一个原因）。 */
+.cro-import {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--space-6, 24px);
+  /* 底衬压暗而不是纯黑：后面那张表单是这次导入的落点，看得见才知道改了什么 */
+  background: color-mix(in srgb, var(--background) 72%, transparent);
+  backdrop-filter: blur(2px);
+}
+
+.cro-import[hidden] { display: none; }
+
+.cro-import__box {
+  display: flex;
+  flex-direction: column;
+  width: min(880px, 100%);
+  max-height: 100%;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-lg, 12px);
+  background: var(--surface-1);
+  box-shadow: var(--shadow-lg, 0 24px 64px rgba(0, 0, 0, 0.35));
+  overflow: hidden;
+}
+
+.cro-import__head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-4);
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.cro-import__title {
+  margin: 0;
+  font-size: var(--font-size-body);
+  font-weight: var(--font-weight-semibold);
+  color: var(--foreground);
+}
+
+/* 文件名占住中间那段弹性宽度，「关闭」因此恒在右端 */
+.cro-import__name {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-size: var(--font-size-label-xs);
+  color: var(--foreground-secondary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cro-import__body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding: var(--space-4);
+  overflow: auto;
+  min-height: 0;
+}
+
+.cro-import__intro,
+.cro-import__empty {
+  margin: 0;
+  font-size: var(--font-size-body-sm);
+  line-height: 1.55;
+  color: var(--foreground-secondary);
+}
+
+.cro-import__actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+/* 「应用到表单」是这个面板的终点动作，给它主色；不可用时与加减键同一档透明度 */
+.cro-import__apply:disabled {
+  opacity: var(--button-disabled-opacity);
+  cursor: not-allowed;
+}
+
+/* 贴进来的配置动辄一两百行，给一个够看几屏的高度就够 —— 再高会把下面的报告顶出去，
+   而报告才是这个面板的正题。 */
+.cro-import__text {
+  min-height: 140px;
+  max-height: 30vh;
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md, 8px);
+  background: var(--surface-2);
+  color: var(--foreground);
+  font-family: ui-monospace, Menlo, Consolas, monospace;
+  font-size: 12px;
+  line-height: 1.5;
+  resize: vertical;
+}
+
+.cro-import__text:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+}
+
+.cro-import__lede {
+  margin: 0 0 var(--space-3);
+  font-size: var(--font-size-body-sm);
+  color: var(--foreground);
+}
+
+/* 报告的五段各有各的左缘色条：绿=落到表单、黄=页面改过、蓝=结构常量、
+   红=缺口、灰=不建模。颜色只是分组，正文里每一段都自己写清楚是什么。 */
+.cro-import__block {
+  margin: 0 0 var(--space-3);
+  padding: var(--space-2) var(--space-3);
+  border-left: 3px solid var(--border-strong);
+  border-radius: 0 var(--radius-md, 8px) var(--radius-md, 8px) 0;
+  background: var(--surface-2);
+}
+
+.cro-import__block h4 {
+  margin: 0 0 var(--space-1);
+  font-size: var(--font-size-body-sm);
+  font-weight: var(--font-weight-semibold);
+  color: var(--foreground);
+}
+
+.cro-import__block h4 span {
+  margin-left: var(--space-1);
+  color: var(--foreground-secondary);
+  font-weight: var(--font-weight-regular, 400);
+}
+
+.cro-import__block ul {
+  margin: var(--space-1) 0 0;
+  padding-left: var(--space-4);
+  font-size: var(--font-size-body-sm);
+  line-height: 1.6;
+  color: var(--foreground);
+}
+
+.cro-import__block li { overflow-wrap: anywhere; }
+
+.cro-import__block.is-warn { border-left-color: var(--warning); }
+.cro-import__block.is-gap { border-left-color: var(--danger); }
+.cro-import__block.is-struct { border-left-color: var(--accent); }
+.cro-import__block.is-skip,
+.cro-import__block.is-unknown { border-left-color: var(--border-strong); opacity: 0.9; }
+.cro-import__block:not(.is-warn):not(.is-gap):not(.is-struct):not(.is-skip):not(.is-unknown) {
+  border-left-color: var(--success, #30A46C);
+}
+
+.cro-import__hint {
+  margin: 0;
+  font-size: var(--font-size-label-xs);
+  line-height: 1.5;
+  color: var(--foreground-secondary);
+}
+
+/* 「← 从哪个键来的」压小压暗跟在值后面：它是溯源，不是读数 */
+.cro-import__from {
+  margin-left: var(--space-2);
+  font-size: var(--font-size-label-xs);
+  color: var(--foreground-secondary);
+}
+
+.cro-import__note {
+  font-size: var(--font-size-label-xs);
+  color: var(--foreground-secondary);
+  line-height: 1.5;
+}
+
+.cro-import__row {
+  padding: 0 6px;
+  border-radius: var(--radius-pill);
+  background: var(--surface-3, var(--surface-1));
+  font-size: var(--font-size-label-xs);
+  color: var(--foreground-secondary);
+}
+
+.cro-import__diff { color: var(--warning); font-size: var(--font-size-label-xs); }
+
+.cro-import__block.is-unknown summary {
+  cursor: pointer;
+  font-size: var(--font-size-body-sm);
+  font-weight: var(--font-weight-semibold);
+  color: var(--foreground);
+}
+
+.cro-import__report code {
+  padding: 0 4px;
+  border-radius: 4px;
+  background: var(--surface-1);
+  font-family: ui-monospace, Menlo, Consolas, monospace;
+  font-size: 11px;
+}
+
+
+/* ══ 样例配置 · 应用前的解析弹窗 ═══════════════════════════════════════════
+   与导入面板同一套外壳（同样是「缺失样式」的最小实现），差别只在结构：这里没有
+   输入区，整个身体就是一份报告，底部才是【取消】【应用】—— 面板的正题是**看完
+   再决定**。报告块复用 .cro-import__* 的样式，两处报告长得一模一样。 */
+.cro-preview {
+  position: fixed;
+  inset: 0;
+  z-index: 70;                    /* 压住导入面板（60）：它可能开在下面 */
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--space-6, 24px);
+  background: color-mix(in srgb, var(--background) 72%, transparent);
+  backdrop-filter: blur(2px);
+}
+
+.cro-preview[hidden] { display: none; }
+
+.cro-preview__box {
+  display: flex;
+  flex-direction: column;
+  width: min(760px, 100%);
+  max-height: 100%;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-lg, 12px);
+  background: var(--surface-1);
+  box-shadow: var(--shadow-lg, 0 24px 64px rgba(0, 0, 0, 0.35));
+  overflow: hidden;
+}
+
+/* 来源与「选它能看到什么」跟到弹窗里：菜单里读过一遍，决定的那一刻还要能看见 */
+.cro-preview__source {
+  margin: 0;
+  padding: var(--space-2) var(--space-4) 0;
+  font-size: var(--font-size-label-xs);
+  line-height: 1.55;
+  color: var(--foreground-secondary);
+}
+
+.cro-preview__source code {
+  font: 400 11px / 1 var(--font-mono);
+  padding: 0 3px;
+  border-radius: 3px;
+  background: var(--surface-2);
+}
+
+.cro-preview__report {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
+  padding: var(--space-3) var(--space-4) var(--space-4);
+}
+
+.cro-preview__foot {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-3) var(--space-4);
+  border-top: 1px solid var(--border-subtle);
+}
+
+/* 提示占住中间那段弹性宽度，两枚按钮因此恒在右端 */
+.cro-preview__hint {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-size: var(--font-size-label-xs);
+  line-height: 1.5;
+  color: var(--foreground-secondary);
 }

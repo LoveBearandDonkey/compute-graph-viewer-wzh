@@ -4,21 +4,30 @@
    本文件是整页唯一的数据源。四个视图（整网 / Layer 导航 / MoE / Cluster）
    全部从 CroTopology.derive(config) 的产物渲染，不各自维护状态。
 
-   并行维度语义 —— EP 占不占自己的 rank 有两套口径，由 config.moeOrthogonal 选，
-   页内「文档」视图 #doc-ep 一章是它的完整说明：
-     切出（moeOrthogonal=false，默认，Megatron / MindSpeed / MindFormers 的做法）
+   并行维度语义 —— EP 占不占自己的 rank、又是从哪个域里切出来的，有**三套口径**
+   （升级计划行 23 之前是两套），由 config.epMode 选，页内「文档」视图 #doc-ep 一章
+   是它的完整说明：
+     split · 切出（默认，Megatron / MindSpeed-LLM 的做法）
        world = DP × PP × TP × CP，EP 不进乘积，而是把 DP 组再切一刀
        512 × 4 × 1 × 1 = 2048 ✓   EDP = DP/EP = 512/64 = 8
-     正交（moeOrthogonal=true）
+     orthogonal · 正交（论文与部分自研框架的记法）
        world = DP × PP × TP × CP × EP
        8 × 4 × 1 × 1 × 64 = 2048 ✓   EDP ≡ DP
-   两种口径下 Node = 2048 / 8卡每节点 = 256 ✓，**rank 编址的几何也完全一致** ——
+     mf · MindFormers 的 DP×MP 域（行 23 新增）
+       world = DP × PP × TP × CP（同切出档），但 EP 是从 **DP×MP 域**里切的
+       约束 (DP × TP) % EP == 0，EDP = DP×TP/EP
+       deepseek3 的 dp:4 / mp:8 / pp:8 / ep:32 只有这一档接得住
+   前两档下 Node = 2048 / 8卡每节点 = 256 ✓，**rank 编址的几何也完全一致** ——
    那 512 张卡本来就排成 8×64 的网格，区别只在把行叫 DP 还是 EDP。
    由此定死一条业务口径（validate / 文档 / 口径浮层都按它写）：**一整套专家的持有者
    永远是网格的一整行 —— 横着的那 EP 张卡，也就是一个 EP 组（all-to-all 域）**。
    正交档这一行就是一个 DP 副本，每个 DP 自带一整套专家，所以 DP 与 EP 之间无须整除；
    切出档这一行只占 DP 的 1/EP，单个 DP 副本并不持有整套，所以才要求 DP % EP == 0 ——
    让那些卡不多不少地切成 EDP = DP/EP 个**完整**的 EP 组。
+   mf 档同一条口径，只是「那些卡」换成了 DP×MP 域里的全部卡：一整行仍是一个 EP 组，
+   但它横跨的是数据并行与张量并行两维 —— **于是 TP 不再是独立的一根轴**，编址里
+   ranksPerEp 从 TP×CP 变成 CP，TP 分片号由 (EDP索引 × EP + EP索引) % TP 还原
+   （见 derive() 里的 shardOf；照抄另两档的算法会把每个 stage 撑成 TP 倍）。
    ⚠️ EDP 是**份数**（完整组有几个 = 专家权重的副本数 = 专家梯度 all-reduce 域的大小），
    不是「一行」的名字：纵向同一列的那 EDP 张卡持有的是同一份 E/EP 个专家，只是一套里的
    一小块。行标签写作 EDP0…EDPn 是在标 d 轴的**索引**（如同 DP0…DPn 标副本），
@@ -60,6 +69,27 @@
            得先把 Total Layer 拨到 48 —— 见 term-vpp。 */
         dp: 512, pp: 4, vpp: 1, tp: 1, cp: 1,
         microBatch: 1, seqLen: 4096,
+        /* ── 微批数（升级计划行 22）────────────────────────────────────────
+           24 不是估的：架构参考 §6.4 给了 Global Batch Size **12288**，而
+           GBS = MBS × DP × 微批数 = 1 × 512 × 24。行 22 之前 yaml 那一格按 4×PP
+           取 16，是一句自己都标着「本页未建模」的占位；现在页面这三个数第一次
+           和那份参考配置对得上。
+           24 ≥ PP 4，所以在飞份数不被它夹住 —— 默认档的容量柱逐位不变。 */
+        microBatchNum: 24,
+        /* ── 精度两档（升级计划行 21）──────────────────────────────────────
+           参考配置 §6.1 那一行写的是「FP8 E4M3（HiF8 混合精度：forward FP8,
+           backward BF16, master weights FP32）」。三句话分别落在哪，要一句句拆：
+           · **master weights FP32** 是混合精度的标准做法 —— 那 4 B 记在优化器的
+             12 B 里（fp32 master + momentum + variance），正是 paramsDtype = bf16
+             这一档。它**不是** MindFormers 的 params_dtype: float32（那一档是参数
+             本身以 fp32 常驻，master 就是参数，优化器只剩 momentum + variance）；
+           · **backward BF16** 就是梯度 2 B，与默认同；
+           · **forward FP8** 是**算子级的计算格式**：权重仍以 bf16 常驻，进 matmul
+             前才转一次。而本页 FP8 档建模的是「fp8 权重直存」（Megatron 的
+             --fp8-param-gather），两者不是同一件事。
+           所以默认取 bf16 / bf16 —— 与行 21 之前那三个写死的常量（2 / 2 / 12）逐位
+           相同；拨到 FP8 档看的是「把权重也按 fp8 存下来能省多少」。 */
+        dtype: "bf16", paramsDtype: "bf16",
         routedExpert: 256, topK: 8, sharedExpert: 1, ep: 64,
         totalRank: 2048, node: 256, card: "910b-64",
         /* 四枚开关，取值一律照抄 yaml 原先写死的那四行（recompute: True /
@@ -119,6 +149,10 @@
         totalLayer: 28,
         dp: 2, pp: 4, vpp: 1, tp: 1, cp: 1,
         microBatch: 1, seqLen: 4096,
+        /* 这份参考配置没给全局 batch，微批数沿用行 22 之前 yaml 的取法（4×PP）——
+           它同样 ≥ PP，容量柱逐位不变。GBS 因此是 1 × 2 × 16 = 32。 */
+        microBatchNum: 16,
+        dtype: "bf16", paramsDtype: "bf16",
         routedExpert: 1, topK: 1, sharedExpert: 0, ep: 1,
         totalRank: 8, node: 1, card: "910b-64",   // 8 卡 = 910B 整机一台
         recomputeMode: "full", recomputeLayers: 4, seqParallel: false,
@@ -228,14 +262,56 @@
        三者凑成「单卡容量」那一栏的全部可调输入，读下来是一句完整的话。
        （早先它们和 DP/PP/TP/CP 同排在 Model Architecture，那一行讲的是「模型怎么
        切开」，而这两项一刀不切，混在里面反而要多解释一遍。）
-       注意是 micro-batch 不是 global batch：GBS 只决定梯度累积步数
-       GBS/(MBS×DP)，一步也不进显存 —— 与「DP 不减容器」是同一件事。 */
+       注意是 micro-batch 不是 global batch —— 但这句话在行 22 之前只说了一半：
+       GBS 决定的是**分成几份**（GBS/(MBS×DP) = 微批数），而 PP > 1 时在飞的那几份
+       就是压在卡上的激活。所以准确的说法是「GBS 本身不进显存，它派生出来的微批数
+       在 PP > 1 时进」：微批数 ≥ PP 时确实一个字节都不动（在飞份数由 1F1B 公式定），
+       小于 PP 时才把在飞份数夹小。那半句话现在由旁边那枚「微批数」stepper 说全。 */
     /* 写全称不写 MBS / Seq：DP·PP·TP·CP 是这个领域里没人会认错的通用缩写，这两个
        不是 —— MBS 还容易和 GBS 混，而两者对显存的作用完全相反（见容量栏口径）。 */
     /* digits: 2 —— 上界 64，两位数就够，不必按默认的三位留白。这一格与 Seq Length
        同处 Cluster 那一行，而那一行要在一行之内容下七枚控件（见 css 里
        .cro-cluster__form 那段）；读数框的字符宽度是这里唯一能省又不伤可读性的一处。 */
     microBatch:   { label: "Micro Batch",    group: "batch",    min: 1,  max: 64,   step: 1, digits: 2 },
+    /* ── 微批数（升级计划行 22）──────────────────────────────────────────
+       行 22 之前页面只握着 GBS = MBS × DP × 微批数 里的两个数，第三个是**派生**的：
+       yaml 按 4×PP 取（那一行的注释自己写着「本页未建模」），capacity 的在飞份数
+       则隐含假设它 ≥ PP，而 VPP 的 title 早就在解释「气泡比例约 (PP−1)/micro_batch_num」
+       —— 页面在解释一个自己没有输入的量。这一枚补上它。
+
+       它和 Micro Batch 是同一句话的两半，但进显存的方式完全不同：
+       · MBS 是**每一份多大** —— 激活与它成正比，调它整根柱子跟着动；
+       · 微批数是**分成几份** —— 只有在飞的那几份占显存，而在飞份数有上界
+         （1F1B 下 stage s 最多压 PP−s 份）。所以它对显存**不是线性的**：
+         大于流水线深度时一个字节都不动，小于时才把柱子压下来（capacity 那边取
+         min(1F1B/VPP 公式, 它)）。PP=1 时在飞恒为 1，调它容量柱纹丝不动 ——
+         那时它只改 yaml 里的全局 batch。
+
+       pow2 而不是 step 1：量程 1–4096，逐 1 走没法用；真实配置里的档位
+       （16 / 32 / 128 / 256）本来就是乘着长的。默认值 24 不在梯子上 —— 与手输
+       120 之后的 DP 同一条规矩：手输是精确指定，加减键是回到常规档位。 */
+    microBatchNum: {
+      label: "微批数", group: "batch", min: 1, max: 4096, pow2: true, digits: 3,
+      title: "微批数 micro_batch_num（Megatron 的 global-batch-size ÷ (mbs × dp)，"
+        + "HF / DeepSpeed 的 gradient_accumulation_steps）\n\n"
+        + "一个全局 batch 被切成几份轮流喂进去。三者是同一句话：\n"
+        + "**全局 batch = Micro Batch × DP × 微批数**"
+        + "（本页 YAML 视图 runner_config.batch_size 那一格就是这么算出来的）。\n\n"
+        + "── 它对显存不是线性的 ──\n"
+        + "只有**在飞**（已前向、还没反向）的那几份激活占着显存，而在飞份数有上界："
+        + "1F1B 下 stage s 最多压 PP−s 份。所以\n"
+        + "· 微批数 ≥ PP（交错档是 PP×VPP）：一个字节都不动，柱子由公式定；\n"
+        + "· 微批数 < PP：warmup 段还没灌满就要开始反向，「各 PP Stage 峰值」"
+        + "那排小柱**整体压低**，首段压得最多。\n"
+        + "PP=1 时在飞恒为 1，调它容量柱纹丝不动 —— 那时它只改全局 batch。\n\n"
+        + "── 为什么不该靠压它省显存 ──\n"
+        + "流水线气泡占比约 (PP−1)/微批数（交错档再 ÷VPP）。PP=4、微批数=2 时"
+        + "流水线一半以上的时间在空转 —— 这是最贵的一种省法，"
+        + "先动重计算、CP、权重分片。低于 PP×VPP 时页面给一条软警告。\n\n"
+        + "── 什么时候该调大 ──\n"
+        + "PP 大、气泡吃掉了吞吐；或全局 batch 本来就要那么大（收敛需要）。"
+        + "代价只有一步的墙钟时间变长 —— 显存那边越过 PP×VPP 之后就不再变了。",
+    },
     seqLen:       { label: "Seq Length",     group: "batch",    min: 128, max: 131072, pow2: true },
     /* ── 只在某一档下才有意义的两枚（升级计划行 18 / 19）────────────────────
        它们与上面那些的区别是 **enabledWhen**：不是一直可拨的量，而是另一枚控件
@@ -317,6 +393,11 @@
        lora             → batch 行 —— 同样一刀不切，但它改的是**哪些参数需要梯度**：
                           冻结主干后梯度段与优化器段只跟 adapter 走（行 18）。
                           它带着的 loraRank 同样是一枚 FIELD_SPECS stepper。
+       dtype / paramsDtype → batch 行 —— 这两枚与上面所有的都不同类：它们既不切、
+                          也不决定装几份，改的是**每个数占几个字节**（行 21）。
+                          六段里除激活外的五段全跟着它们走，是这张表里牵连最广的
+                          一对；两枚分开是因为一个决定 fp32 master 摆在哪一段、
+                          另一个决定常驻权重按几个字节存。
 
      ── disabledValue：不可用时该停在哪一档 ────────────────────────────────
      开关不可用（enabledWhen 为假）时不能就地放着不管：yaml 里会留下一行
@@ -560,6 +641,80 @@
         + "它不是并行配置的一档，而是**换了一种训练**：主干不再更新，学到的东西只在 adapter 里。"
         + "本页两个预设写的都是预训练配置，所以默认关着。",
     },
+    /* ── 精度两档（升级计划行 21）───────────────────────────────────────
+       行 21 之前 capacity 把「每个数占几个字节」写死成三个常量（2 / 2 / 12 =
+       bf16 权重 + bf16 梯度 + Adam 的 fp32 master），页面上**一个控件都没有**。
+       而 11 份样本里这一项人人都写：`megatron_llama3_8b_fp8.sh` 整份脚本的主题
+       就是 FP8，`hf_deepseekv3_config.json` 带 `quantization_config: {fmt: e4m3}`，
+       两份 MindFormers yaml 都写着 `params_dtype: float32` + `compute_dtype:
+       bfloat16`。这是第六批里唯一一条会动**全部六段**的。
+
+       **两枚而不是一枚**，因为它们改的是两件事：
+       · paramsDtype（主权重精度）—— 决定那份 fp32 master **摆在哪一段**。
+         bf16 档：参数以 bf16 常驻（2 B），master 在优化器的 12 B 里；
+         fp32 档：参数本身就是 master（4 B），优化器只剩 momentum + variance（8 B），
+         梯度也按参数精度累加（4 B）。两档加起来都是 16 B/参数 —— **总量不变，
+         变的是哪一段扛着它**。这句在关档下听着像废话，一旦拨了权重分片就不是：
+         ZeRO-1 切的只有优化器那一段，fp32 档能切走的从 12 B 掉到 8 B，
+         留在每张卡上的从 4 B 涨到 8 B。容量柱上看得见。
+       · dtype（计算/存储格式）—— bf16 与 fp16 的字节数相同（差别在动态范围与
+         loss scale，不进显存模型），FP8 档则让常驻的那份权重按 1 B 存。
+
+       ⚠️ FP8 档建模的是**权重直存 fp8**（Megatron 的 --fp8-param-gather，
+       llama3 那份脚本正好开着）。不开那一项时 fp8 只是 matmul 前的一次转换，
+       权重仍按 2 B 常驻、另有一份 fp8 缓存（2 + 1 B）—— 本页没建那一档，
+       与 FSDP2 / VPP 同一种处理：算的是什么、对应框架里哪个开关都写出来。
+       激活段**不随精度档变**：那组系数（34 / 17 / 2）出自 Korthikanti et al.
+       2022，本身就按 2 B/元素折算过；fp8 只作用在 matmul 的输入副本上，
+       哪些激活能跟着降到 1 B 取决于实现，本页不猜。 */
+    dtype: {
+      group: "batch",
+      label: "计算精度",
+      options: [
+        { value: "bf16", label: "BF16" },
+        { value: "fp16", label: "FP16" },
+        { value: "fp8", label: "FP8" },
+      ],
+      title: "计算精度（compute_dtype / --fp8-format / --bf16 / --fp16）\n\n"
+        + "· BF16 —— 今天的默认。8 位指数与 fp32 同宽，动态范围够，训练不用 loss scale。\n"
+        + "· FP16 —— **字节数与 BF16 完全相同**，本页六段一个数都不变。"
+        + "差别在动态范围：指数只有 5 位，要配 loss scaling 才不溢出。"
+        + "列出来是为了如实接住那些写 `--fp16` 的配置（如 megatron_175b.sh），"
+        + "而不是假装页面没读到。\n"
+        + "· FP8 —— 权重按 1 B 存，权重段**减半**。\n\n"
+        + "⚠️ FP8 这一档建模的是**权重直存 fp8**（Megatron 的 `--fp8-param-gather`）。"
+        + "不开那一项时，fp8 只是进 matmul 前的一次转换，权重仍按 2 B 常驻、"
+        + "另加一份 fp8 缓存（2 + 1 B）—— 那一档本页没建。\n"
+        + "openPangu 参考配置里的「forward FP8」正是后一种（HiF8 算子级计算格式，"
+        + "权重仍是 bf16），所以默认档停在 BF16，而不是 FP8。\n\n"
+        + "梯度不跟着降：反向的 dgrad 累加仍走 bf16（llama3 那份脚本连"
+        + "`--grad-reduce-in-bf16` 都单独写了一行）。激活也不随这一档变 —— "
+        + "见单卡容量栏口径浮层里的那句说明。",
+    },
+    paramsDtype: {
+      group: "batch",
+      label: "主权重精度",
+      options: [
+        { value: "bf16", label: "BF16" },
+        { value: "fp32", label: "FP32" },
+      ],
+      title: "主权重精度（MindFormers 的 model_config.params_dtype）\n\n"
+        + "混合精度训练里总要有一份 fp32 的权重（低精度累加会把小的更新吃掉），"
+        + "区别只在**它摆在哪儿**：\n\n"
+        + "· BF16 档（业界混合精度的标准做法）\n"
+        + "  参数以 bf16 常驻 → 权重 2 B；那份 fp32 master 由优化器持有，"
+        + "算在 Adam 的 12 B 里（4 master + 4 momentum + 4 variance）。\n"
+        + "  → 2 + 2 + 12 = 16 B/参数\n\n"
+        + "· FP32 档（两份 MindFormers yaml 写的都是这一档）\n"
+        + "  参数本身就是那份 master → 权重 4 B；优化器不必再存一份，只剩"
+        + " momentum + variance 8 B；梯度按参数精度累加，也是 4 B。\n"
+        + "  → 4 + 4 + 8 = 16 B/参数\n\n"
+        + "**两档的总量一模一样**，变的是哪一段扛着它 —— 所以单看容量柱的高度"
+        + "看不出区别，看的是段与段之间的比例。\n\n"
+        + "一旦拨了「权重分片」，两档就分道扬镳：ZeRO-1 只切优化器那一段，"
+        + "BF16 档能切走 12 B、每卡留 4 B，FP32 档只能切走 8 B、每卡留 8 B —— "
+        + "**DP 越大，FP32 档越吃亏**。FSDP2 档三段全切，两档才又拉平。",
+    },
   };
 
   /* 一枚 FLAG_SPECS 字段当前值的中文读数。开关是「开 / 关」，带 options 的取
@@ -589,7 +744,7 @@
     /* 重算层数与 LoRA Rank 不在这里：两枚都只在另一枚控件拨到某一档之后才有意义
        （见 FIELD_SPECS 里各自的 enabledWhen），与 VPP 同样收进「高级」折叠 ——
        见 ADVANCED_ITEMS。 */
-    batch: ["microBatch", "seqLen"],
+    batch: ["microBatch", "microBatchNum", "seqLen"],
   };
 
   /* ── 合法邻域 ─────────────────────────────────────────────────────────────
@@ -899,20 +1054,85 @@
     return out;
   }
 
-  /* ── EP 口径 ──────────────────────────────────────────────────────────────
-     正交档 EP 独占 rank，进 world 的乘积；切出档 EP 是从 DP 组内再切一刀，
-     不进乘积。整页只此一处判断，validate / reconcile / derive / yaml 都走它。 */
-  function epInWorld(config) {
-    return config.moeOrthogonal ? config.ep : 1;
+  /* ── EP 口径（升级计划行 23：从二档升成三档）─────────────────────────────
+     同一批卡，三种记法。差别只在两件事：**EP 进不进 world 的乘积**，以及
+     **EP 是从哪个域里切出来的**（这决定 EDP，也就是集群矩阵的行数）。
+
+       split（切出，默认）—— Megatron / MindSpeed-LLM 的做法
+         EP 从 DP 组内再切一刀，不进乘积：world = DP×PP×TP×CP
+         约束 DP % EP == 0，EDP = DP/EP
+
+       orthogonal（正交）—— 论文与部分自研框架的记法
+         EP 独占自己的 rank：world = DP×PP×TP×CP×EP
+         DP 与 EP 之间无整除关系，EDP = DP
+
+       mf（MindFormers · DP×MP 域）—— 行 23 新增
+         MindFormers 的 expert_parallel 是在 **dp × mp 域**上切的：一个 EP 组的
+         成员既跨数据并行、也跨张量并行。所以它同样不进乘积（world = DP×PP×TP×CP），
+         但约束换成 **(DP × TP) % EP == 0**，EDP = DP×TP/EP。
+
+     为什么非要有第三档：`mf_pretrain_deepseek3_671b.yaml` 写的是
+     dp:4 / mp:8 / pp:8 / ep:32 —— 前两档**都接不住**。切出档 4 % 32 ≠ 0 当场红；
+     正交档 world = 4×8×8×32 = 8192，而那份配置实际是 256 卡。而在 dp×mp 域上
+     4×8 = 32，整除成立。README 说这份「最贴页面口径」，结果它是唯一一份**必然报错**的。
+     行 1 的附录里那句「严格些是 DP × TP % (EP × ETP) == 0」正是这一档，
+     当时记下了却没落成规则。
+
+     ⚠️ **ETP（专家张量并行）本页取 1，没有建模**。真实 MindFormers 里专家自身还能
+     再切 TP，那时约束是 (DP×TP) % (EP×ETP) == 0，且专家权重要再 ÷ETP。
+     本档按 ETP=1 建模：**专家只 ÷EP，不再另 ÷TP** —— 因为 EP 已经吃掉了 mp 那一维
+     （见 capacity 的 paramsOfStage）。这是三档里唯一一处专家分母与另两档不同的地方，
+     不写出来就会变成一个静默偏差。
+
+     ── 兼容读法 ──────────────────────────────────────────────────────────
+     老配置里这枚是布尔 moeOrthogonal（true = 正交）。折算只写在 epModeOf 这一处，
+     与 shardMode / recomputeMode 同一条规矩：下游一律读 epModeOf(config)，
+     别再各自 `config.moeOrthogonal ? …` 一遍。 */
+  const EP_MODES = ["split", "orthogonal", "mf"];
+
+  function epModeOf(config) {
+    const mode = config && config.epMode;
+    if (EP_MODES.indexOf(mode) >= 0) return mode;
+    return config && config.moeOrthogonal ? "orthogonal" : "split";
   }
 
-  /* d 轴（集群矩阵那一行、rank 编址的 dpIdx）的组数：正交档就是 DP，切出档是
-     EDP = DP/EP —— 专家切完之后，专家权重只在剩下的这一维上复制。
-     DP % EP 由 validate 拦、reconcile 修，除不尽的配置到不了这里；floor 只是
+  const epIsOrthogonal = (config) => epModeOf(config) === "orthogonal";
+  const epIsMf = (config) => epModeOf(config) === "mf";
+
+  /* EP 从哪个域里切出来（正交档没有「切出」这回事，返回 dp 只是为了让
+     gcd 那几处不必分支 —— 正交档的 epBasis 本来就只看专家数）。 */
+  function epDomainOf(config) {
+    if (epIsMf(config)) return Math.max(1, config.dp) * Math.max(1, config.tp);
+    return Math.max(1, config.dp);
+  }
+
+  /* 正交档 EP 独占 rank，进 world 的乘积；另两档 EP 是从已有的卡里再切一刀，
+     不进乘积。整页只此一处判断，validate / reconcile / derive / yaml 都走它。 */
+  function epInWorld(config) {
+    return epIsOrthogonal(config) ? config.ep : 1;
+  }
+
+  /* d 轴（集群矩阵那一行、rank 编址的 dpIdx）的组数：
+       正交  EDP = DP（EP 是另一根轴）
+       切出  EDP = DP/EP
+       mf    EDP = DP×TP/EP —— 域大了 TP 倍，行数跟着变，这正是行 23 说的
+             「集群矩阵的 d 轴长度按新 EDP 重算」。
+     整除性由 validate 拦、reconcile 修，除不尽的配置到不了这里；floor 只是
      防御性的兜底，保证万一漏过去几何仍是整数格。 */
   function expertDataParallel(config) {
-    if (config.moeOrthogonal) return config.dp;
-    return Math.max(1, Math.floor(config.dp / Math.max(1, config.ep)));
+    if (epIsOrthogonal(config)) return config.dp;
+    return Math.max(1, Math.floor(epDomainOf(config) / Math.max(1, config.ep)));
+  }
+
+  /* 一份**非专家**权重（已被 TP 切过）在数据并行域里复制了多少份 —— ZeRO / FSDP2
+     的分母就是它。三档各不相同，而 capacity 只该读一个数：
+       切出  dp          （EDP×EP = DP，与改动前逐位相同）
+       正交  dp×ep       （每个 DP 副本横跨全部 EP rank，同上）
+       mf    dp          ← EDP×EP = DP×TP 会把 TP 那一维重复算进来，必须单给
+     专家那一段的分母是 EDP（三档同形），见 capacity 的 dpShards。 */
+  function dpReplicaOf(config) {
+    if (epIsOrthogonal(config)) return Math.max(1, config.dp) * Math.max(1, config.ep);
+    return Math.max(1, config.dp);
   }
 
   /* d 轴对人显示的名字。切出档下集群矩阵的每一行是 EDP 而不是 DP —— 表单里
@@ -920,7 +1140,7 @@
      EP=1（稠密模型）时 EDP ≡ DP，仍叫 DP，不给没有专家的模型平添一个新词。
      凡是要把 dpIdx 写给人看的地方都走这个函数，别再各写各的。 */
   function dAxisName(counts) {
-    return !counts.moeOrthogonal && counts.ep > 1 ? "EDP" : "DP";
+    return counts.epMode !== "orthogonal" && counts.ep > 1 ? "EDP" : "DP";
   }
 
   /* rank 的坐标一行文案：关系卡片、计算血缘、事件详情三处共用一份 */
@@ -1028,9 +1248,16 @@
        自带一套完整专家**（它横跨全部 EP rank），所以 DP 与 EP 之间无须整除。
        文案里 DP 与 EP 两个 label 都要出现 —— emit() 按 label 子串匹配标红
        stepper，这条错是两个字段共同造成的，两个都该红。 */
-    if (!config.moeOrthogonal && dp % ep !== 0) {
-      errors.push(`DP ${dp} 不能被 EP ${ep} 整除（EDP = DP ÷ EP 必须是整数），`
-        + `末尾剩下的 ${dp % ep} 张卡凑不齐一个完整的 EP 组 —— 一套专家要 ${ep} 张卡合持`);
+    /* 行 23：切出档看 DP，mf 档看 DP×MP 域 —— 同一条「凑得齐一个完整 EP 组」，
+       只是域不同。正交档仍不受这条管。 */
+    if (!epIsOrthogonal(config) && epDomainOf(config) % ep !== 0) {
+      const domain = epDomainOf(config);
+      errors.push(epIsMf(config)
+        ? `DP ${dp} × TP ${tp} = ${domain} 不能被 EP ${ep} 整除`
+          + `（MindFormers 档的专家并行在 DP×MP 域上切，EDP = DP×TP ÷ EP 必须是整数），`
+          + `末尾剩下的 ${domain % ep} 张卡凑不齐一个完整的 EP 组`
+        : `DP ${dp} 不能被 EP ${ep} 整除（EDP = DP ÷ EP 必须是整数），`
+          + `末尾剩下的 ${domain % ep} 张卡凑不齐一个完整的 EP 组 —— 一套专家要 ${ep} 张卡合持`);
     }
     if (topK > routedExpert) {
       errors.push(`Top-K ${topK} 超过路由专家总数 ${routedExpert}`);
@@ -1040,9 +1267,9 @@
       /* 公式文案跟着口径换：切出档 EP 不占 rank，写进乘积会读成"少算了一维"。
          括注里写「专家并行」而不是「EP」—— emit() 是按 FIELD_SPECS 的 label 在
          错误文案里做子串匹配来标红 stepper 的，出现 "EP" 会把无辜的 EP 也标红。 */
-      const expr = config.moeOrthogonal
+      const expr = epIsOrthogonal(config)
         ? `DP${dp}×PP${pp}×TP${tp}×CP${cp}×EP${ep}`
-        : `DP${dp}×PP${pp}×TP${tp}×CP${cp}（专家并行从 DP 内切出，不进乘积）`;
+        : `DP${dp}×PP${pp}×TP${tp}×CP${cp}（专家并行从${epIsMf(config) ? " DP×MP 域" : " DP"}内切出，不进乘积）`;
       errors.push(`${expr} = ${world}，与 Total Rank ${totalRank} 不符`);
     }
     /* Total Rank 是并行度的乘积，本身没有 stepper 之外的输入口，但**手输一个非
@@ -1130,6 +1357,23 @@
           + `FSDP 路线的常见配方是纯 DP，一个模型切分维都不开。本页照配置如实估算，不拦截`);
       }
     }
+    /* 微批数少于流水线深度（升级计划行 22）：warmup 段还没灌满就要开始反向，
+       整条流水线一直有一半的 stage 闲着。气泡占比约 (PP−1)/微批数（交错档再
+       ÷VPP），PP=4、微批数=2 时已经超过 100% —— 空转的时间比算的还长。
+       能跑，只是跑得不好，与行 7 的 TP 跨节点同属选型提示，不拦截。
+       容量那边照实按 min(公式, 微批数) 把在飞份数夹小（柱子会矮一截），
+       所以这条警告要连「省下的那点显存是拿吞吐换的」一起说。 */
+    if (config.pp > 1) {
+      const need = config.pp * Math.max(1, config.vpp || 1);
+      const num = Math.max(1, config.microBatchNum || 1);
+      if (num < need) {
+        const bubble = Math.round((config.pp - 1) / (num * Math.max(1, config.vpp || 1)) * 100);
+        warnings.push(`微批数 ${num} 少于流水线深度 ${config.pp === need ? `PP ${config.pp}`
+          : `PP ${config.pp} × VPP ${config.vpp} = ${need}`}`
+          + `，warmup 段灌不满，气泡占比约 ${bubble}%`
+          + ` —— 在飞份数被它夹到 ${num} 份，容量柱因此矮一截，但那点显存是拿吞吐换的`);
+      }
+    }
     return warnings;
   }
 
@@ -1156,7 +1400,11 @@
     /* 切出档下 DP 必须是 EP 的整数倍（见 validate 的 EDP 整除）。不挡在这里，
        拖 Total Rank 时 fitParallelWorld 会自己配平出一个当场报错的 DP。
        EP 不需要对称的一条：切出档下它已被 fitParallelWorld 的候选列表摘掉。 */
-    if (field === "dp" && !config.moeOrthogonal && value % config.ep !== 0) return false;
+    /* 行 23：mf 档的域是 DP×TP，所以判据里要带上 TP。 */
+    if (field === "dp" && !epIsOrthogonal(config)
+      && (value * (epIsMf(config) ? config.tp : 1)) % config.ep !== 0) return false;
+    /* mf 档下 TP 也在域里：改 TP 会改变 (DP×TP) % EP —— 切出档没有这条。 */
+    if (field === "tp" && epIsMf(config) && (config.dp * value) % config.ep !== 0) return false;
     return true;
   }
 
@@ -1170,8 +1418,8 @@
      anchor === "ep" 时不降：那是用户刚拨的那一枚，配平不该把它拨回去。 */
   function fitParallelWorld(config, target, anchor) {
     fitParallelWorldOnce(config, target, anchor);
-    while (!config.moeOrthogonal && anchor !== "ep" && config.ep > 1
-      && parallelWorld(config) > target && config.dp <= config.ep) {
+    while (!epIsOrthogonal(config) && anchor !== "ep" && config.ep > 1
+      && parallelWorld(config) > target && epDomainOf(config) <= config.ep) {
       config.ep = Math.floor(config.ep / 2);
       fitParallelWorldOnce(config, target, anchor);
     }
@@ -1184,7 +1432,7 @@
        的一维（同时动 MoE 分组、集群矩阵的列数、容量栏的专家段），先动它画面跳得
        最厉害。只有正交档看得见这条改动：切出档 EP 压根不在候选里。 */
     const candidates = ["dp", "tp", "cp", "ep", "pp"]
-      .filter((field) => field !== anchor && (field !== "ep" || config.moeOrthogonal));
+      .filter((field) => field !== anchor && (field !== "ep" || epIsOrthogonal(config)));
 
     // 常见的 Rank ±2 倍只需改一个并行维度；优先 DP，避免扰动模型切分。
     for (const field of candidates) {
@@ -1274,17 +1522,25 @@
        也就是 EP 必须是 gcd(专家数, DP) 的因子（正交档只看专家数）。
        手输放开之前这里是反复减半，现在改成直接取最近的合法值：120 减半是 60，
        仍然不整除 256，减半那套修不动手输进来的数。 */
-    const epBasis = config.moeOrthogonal ? config.routedExpert : gcd(config.routedExpert, config.dp);
+    const epBasis = epIsOrthogonal(config)
+      ? config.routedExpert : gcd(config.routedExpert, epDomainOf(config));
     if (epBasis % config.ep !== 0) {
       if (anchor === "ep") {
         /* 锚在 EP 上：不动 EP，改让专家数（切出档还有 DP）成为它的倍数。
            抬 DP 会让 Total Rank 跟着涨 —— 加大专家并行度本来就要更多卡。 */
         config.routedExpert = nearestMultiple(config.ep, config.routedExpert, FIELD_SPECS.routedExpert);
-        if (!config.moeOrthogonal) config.dp = nearestMultiple(config.ep, config.dp, FIELD_SPECS.dp);
+        /* 锚在 EP 上时抬 DP 让域成为 EP 的倍数。mf 档的域已经带着 TP 那一倍，
+           所以要抬的是 DP × TP —— 只动 DP（TP 由模型结构钉着，不该为 EP 让路）。 */
+        if (!epIsOrthogonal(config)) {
+          const need = epIsMf(config)
+            ? config.ep / gcd(config.ep, Math.max(1, config.tp)) : config.ep;
+          config.dp = nearestMultiple(need, config.dp, FIELD_SPECS.dp);
+        }
         if (config.topK > config.routedExpert) config.topK = config.routedExpert;
       }
       // 抬不动（撞量程）时仍会不整除，兜底还是把 EP 收到最近的合法因子
-      const basis = config.moeOrthogonal ? config.routedExpert : gcd(config.routedExpert, config.dp);
+      const basis = epIsOrthogonal(config)
+        ? config.routedExpert : gcd(config.routedExpert, epDomainOf(config));
       if (basis % config.ep !== 0) config.ep = nearestDivisor(basis, config.ep, FIELD_SPECS.ep);
     }
 
@@ -1396,16 +1652,39 @@
 
     /* rank 编址：stage 最外，EDP 次之，ep 最内（TP/CP 内联在最内层）。
        d 轴走 EDP 而不是 DP —— 切出档下那 DP 个副本里已经含了 EP 组，再乘一次 EP
-       会把每个 stage 撑成 world 的 EP 倍。正交档 EDP ≡ DP，与改动前逐位相同。 */
+       会把每个 stage 撑成 world 的 EP 倍。正交档 EDP ≡ DP，与改动前逐位相同。
+
+       ── mf 档的几何不一样（升级计划行 23）────────────────────────────────
+       MindFormers 的 EP 是在 **DP×MP 域**上切的：一个 EP 组的成员既跨数据并行、
+       也跨张量并行。于是 TP **不再是独立的一根轴** —— 它被 EP 那一维吃掉了：
+
+         另两档  ranksPerEp = TP×CP，域里的坐标是 (edp, ep, tp, cp) 四个自由维
+         mf 档   ranksPerEp = CP，   自由维只有 (edp, ep, cp)，而
+                 域序号 m = edp索引 × EP + ep索引 ∈ [0, DP×TP)，
+                 TP 分片号 = m % TP、真正的 DP 副本号 = ⌊m / TP⌋
+
+       两套都满足 ranksPerStage = DP×TP×CP = world/PP（mf 档若照抄 TP×CP 会把 TP
+       乘两遍，每个 stage 撑成 TP 倍 —— 那正是「矩阵格子数 ≠ Total Rank」那条断言
+       会当场逮住的错）。
+       TP 仍然连号：cp=1 时 m 就是 stage 内的序号，TP 组的 tp 张卡依旧相邻。 */
     const edp = expertDataParallel(config);
-    const ranksPerEp = tp * cp;
+    const epMode = epModeOf(config);
+    const mfDomain = epMode === "mf";
+    const ranksPerEp = mfDomain ? cp : tp * cp;
     const ranksPerDp = ep * ranksPerEp;
     const ranksPerStage = edp * ranksPerDp;
 
     const rankOf = (stage, dpIdx, epIdx, inner = 0) =>
       stage * ranksPerStage + dpIdx * ranksPerDp + epIdx * ranksPerEp + inner;
+    /* (dpIdx, epIdx, inner) → TP / CP 分片号。两套编址各一条，**只此一处**，
+       集群矩阵与 coordsOfRank 都读它 —— 原先矩阵那边自己又算了一遍
+       （tpShardOf / cpIdxOf），mf 档下那份算法是错的。 */
+    const shardOf = (dpIdx, epIdx, inner) => (mfDomain
+      ? { tpIdx: (dpIdx * ep + epIdx) % tp, cpIdx: inner, dpReal: Math.floor((dpIdx * ep + epIdx) / tp) }
+      : { tpIdx: inner % tp, cpIdx: Math.floor(inner / tp), dpReal: dpIdx });
+    /* mf 档下 tpIdx 不是自由维（它由 (dpIdx, epIdx) 定），所以这一支只收 cpIdx */
     const rankOfCoords = (stage, dpIdx, epIdx, tpIdx = 0, cpIdx = 0) =>
-      rankOf(stage, dpIdx, epIdx, cpIdx * tp + tpIdx);
+      rankOf(stage, dpIdx, epIdx, mfDomain ? cpIdx : cpIdx * tp + tpIdx);
     const nodeOfRank = (rank) => (ranksPerNode ? Math.floor(rank / ranksPerNode) : 0);
 
     /* ── 关系查询（第 7 项的双向互查全部走这几个函数） ── */
@@ -1469,9 +1748,10 @@
       const withinDp = withinStage - dpIdx * ranksPerDp;
       const epIdx = Math.floor(withinDp / ranksPerEp);
       const inner = withinDp - epIdx * ranksPerEp;
-      const tpIdx = inner % tp;
-      const cpIdx = Math.floor(inner / tp);
-      return { rank, stage, dpIdx, epIdx, tpIdx, cpIdx, inner, node: nodeOfRank(rank) };
+      /* 行 23：两套编址的分解只写在 shardOf 一处 —— mf 档下 tpIdx 由 (d, ep) 定，
+         dpReal 是那个域序号还原出来的**真正的 DP 副本号**（另两档 ≡ dpIdx）。 */
+      const { tpIdx, cpIdx, dpReal } = shardOf(dpIdx, epIdx, inner);
+      return { rank, stage, dpIdx, epIdx, tpIdx, cpIdx, dpReal, inner, node: nodeOfRank(rank) };
     }
 
     return {
@@ -1490,10 +1770,21 @@
         /* dp 是配置里那个数（切出档 = 真 DP，正交档 = EP 之外的数据并行度）；
            edp 是集群矩阵 d 轴、rank 编址真正用的组数。凡是「有几个副本要画 / 要
            遍历」一律读 edp，凡是「显示这个配置项的值」读 dp。 */
-        dp, edp, moeOrthogonal: Boolean(config.moeOrthogonal),
+        dp, edp,
+        /* 行 23：口径升成三档之后，counts 里留的是**档位本身**而不是那个布尔 ——
+           下游（yaml / capacity / 集群矩阵）问的是「按哪一档读」，不是「是不是正交」。
+           moeOrthogonal 仍然留着：外部调用与老快照读它，值等于 epMode === "orthogonal"。 */
+        epMode: epModeOf(config), moeOrthogonal: epIsOrthogonal(config),
+        /* 非专家权重的复制份数（ZeRO / FSDP2 的分母）。三档只有 mf 与 EDP×EP 不同，
+           单给一个数免得 capacity 那边再判一次档 —— 见 dpReplicaOf。 */
+        dpReplica: dpReplicaOf(config),
         /* vpp / cpMode 不参与 rank 编址，也不进 world —— 放进 counts 只是因为
            capacity（在飞份数）与 yaml（那两行）要读它们，而两个模块都只吃 topology。 */
         pp, vpp: vpp || 1, cpMode: config.cpMode || "ulysses",
+        /* 微批数同样不进 rank 编址（升级计划行 22）：它是「一个全局 batch 分成
+           几份」，与切分无关。放进 counts 的理由与 vpp 一样 —— capacity 要拿它
+           夹在飞份数、yaml 要把它和全局 batch 一起写出去，两个模块都只吃 topology。 */
+        microBatchNum: Math.max(1, config.microBatchNum || 1),
         tp, cp, totalRank, node, ranksPerNode,
         /* 末节点实际装了几张卡。整机倍数时等于 ranksPerNode；只有手输能拨出
            不足一机的尾数（dp=3 → 12 卡 = 1 整机 + 4 张），yaml 那行要照实写。 */
@@ -1503,7 +1794,7 @@
       stageOfLayer: (l) => stageOfLayer[l],
       epRankOfExpert,
       expertsOfEpRank: (p) => (epRanks[p] ? epRanks[p].experts : []),
-      rankOf, rankOfCoords, nodeOfRank, coordsOfRank,
+      rankOf, rankOfCoords, nodeOfRank, coordsOfRank, shardOf,
       ranksOfStage, ranksOfLayer, ranksOfStageInDp, ranksOfLayerInDp,
       ranksOfExpertInLayer, ranksOfEpRankInStage, nodesOfRanks,
     };
@@ -1530,18 +1821,23 @@
        最后才在性能阶段动它），而且默认预设下它压根拨不动（46 层连 PP=4 都除不尽），
        摆在首屏正中间等于再犯一次「一枚只能停在一个值上的 stepper 不是 stepper」。
 
-     batch —— **只在另一枚控件拨到某一档之后才有意义的，收进来**（升级计划行 18 / 19）。
-       重算层数只有「重计算 · 按层数」那一档才生效（拨到那一档时折叠会自动掀开，
-       见 set()）；LoRA 那一对是微调侧的旋钮，而本页两个预设写的都是预训练配置。
-       行里因此仍只留 Micro Batch / Seq Length / 重计算 三枚 —— 前两枚是「装多少」，
-       第三枚是「留不留」，一行读完仍是一句完整的话。
+     batch —— 两类收进来（升级计划行 18 / 19 / 21）：
+       · **只在另一枚控件拨到某一档之后才有意义的** —— 重算层数只有「重计算 ·
+         按层数」那一档才生效（拨到那一档时折叠会自动掀开，见 set()）；LoRA 那一对
+         是微调侧的旋钮，而本页两个预设写的都是预训练配置。
+       · **换算口径** —— 精度那两枚（行 21）不改「装多少」，改的是「每个数占几个
+         字节」。它一年也未必动一次，却让六段全体升降，摆在首屏会盖过真正天天要
+         拨的那几枚。
+       行里因此留下 Micro Batch / 微批数 / Seq Length / 重计算 四枚 —— 前三枚是
+       「装多少」（每份多大 × 分成几份 × 每份多长），第四枚是「留不留」，
+       一行读下来仍是一句完整的话。
 
      列表里既可以是 FIELD_SPECS 的字段（走 attachStepper），也可以是 FLAG_SPECS 的
      开关 / 档位控件 —— 面板按这里的顺序铺，与两张表各自的顺序无关。
      未列到的开关照旧接在自己那一行的末尾（目前 batch 的「重计算」就是）。 */
   const ADVANCED_ITEMS = {
     parallel: ["vpp", "cpMode", "seqParallel", "vocabEmbDp", "shardMode"],
-    batch: ["recomputeLayers", "lora", "loraRank"],
+    batch: ["dtype", "paramsDtype", "recomputeLayers", "lora", "loraRank"],
   };
 
   /* 折叠按钮的悬浮说明：里面收着什么、为什么收在这里。按行分写 —— 两行的判据
@@ -1555,10 +1851,14 @@
       + "· CP 口径 —— CP > 1 时换掉一条硬校验（Ulysses 拦 TP×CP 整除注意力头，"
       + "Ring 拦序列长度整除 2×CP）\n"
       + "· SP / 词表走 DP / 权重分片 —— 三种不额外占卡的切法",
-    batch: "重算层数 / LoRA / LoRA Rank\n\n"
-      + "收在这里的判据是：**只在另一枚控件拨到某一档之后才有意义**。\n"
-      + "· 重算层数 —— 只有「重计算 · 按层数」那一档才按它算（拨到那一档时这个折叠会自动掀开）\n"
-      + "· LoRA / LoRA Rank —— 冻结主干只训 adapter，梯度段与优化器段跟着 adapter 走、"
+    batch: "精度两档 / 重算层数 / LoRA / LoRA Rank\n\n"
+      + "行里留下的四枚是每次调参真的会动的（装多少份、每份多大、留不留）；"
+      + "收进来的是另外两类：\n"
+      + "· 换算口径 —— 计算精度 / 主权重精度：不改「装多少」，改的是「每个数占几个字节」，"
+      + "六段的高度全跟着它走，但它一年也未必动一次（升级计划行 21）\n"
+      + "· 条件生效 —— 只在另一枚控件拨到某一档之后才有意义：\n"
+      + "  · 重算层数 —— 只有「重计算 · 按层数」那一档才按它算（拨到那一档时这个折叠会自动掀开）\n"
+      + "  · LoRA / LoRA Rank —— 冻结主干只训 adapter，梯度段与优化器段跟着 adapter 走、"
       + "权重段一个字节不少。本页两个预设写的都是预训练配置，所以它默认关着",
   };
 
@@ -1671,7 +1971,7 @@
     /* moeOrthogonal 不进 MODEL_PRESETS.defaults：它是读配置的**口径**而不是模型
        的属性，换模型时应当沿用用户当前选的那一档（见 setModel）。 */
     const config = Object.assign(
-      { model: modelId, moeOrthogonal: false },
+      { model: modelId, epMode: "split", moeOrthogonal: false },
       MODEL_PRESETS[modelId].defaults,
       options.config,
     );
@@ -2022,25 +2322,39 @@
       config.model = modelId;
       Object.assign(config, preset.defaults);
       config.node = nodeLayout(config).node;      // defaults 的 node 只是种子
-      // defaults 里的 dp 一律按切出口径记；正交档下要按 EP 换算回去，否则 world 差一个 EP 倍
-      if (config.moeOrthogonal) {
+      // defaults 里的 dp 一律按切出口径记；正交档下要按 EP 换算回去，否则 world 差一个 EP 倍。
+      // mf 档与切出档的 world 公式相同，不必换算（行 23）。
+      if (epIsOrthogonal(config)) {
         config.dp = convertDpAcrossEpMode(config.dp, config.ep, true);
       }
       emit();
     }
 
-    /* EP 口径切换：不是一个 stepper 字段 —— 它改的是 world 公式本身，所以单开
-       一个入口而不是走 set()。切换的同时按 EP 换算 DP，让 Total Rank 不变：
-       同一份 2048 卡，切出档读作 DP512（EDP=8），正交档读作 DP8。
+    /* EP 口径切换：不是一个 stepper 字段 —— 它改的是 world 公式与 EP 切自哪个域，
+       所以单开一个入口而不是走 set()。三档（升级计划行 23）：
+
+         split ↔ mf   world 公式相同（EP 都不进乘积），**DP 不换算** —— 变的只是
+                      EP 从哪个域里切：DP 还是 DP×MP。换过去之后 EDP 会变（行数
+                      多出 TP 倍），整除约束也从 DP%EP 换成 (DP×TP)%EP。
+         ↔ orthogonal 那一档 EP 独占 rank，DP 要按 EP 换算，Total Rank 才不变：
+                      同一份 2048 卡，切出/mf 档读作 DP512，正交档读作 DP8。
+
        anchor 传 dp：reconcile 走 else 分支，由换算后的 world 反推 Total Rank。 */
-    function setEpMode(orthogonal) {
-      const next = Boolean(orthogonal);
-      if (config.moeOrthogonal === next) return;
+    function setEpMode(mode) {
+      /* 兼容老调用：setEpMode(true/false) 是行 23 之前的布尔签名。 */
+      const next = typeof mode === "boolean"
+        ? (mode ? "orthogonal" : "split")
+        : (EP_MODES.indexOf(mode) >= 0 ? mode : "split");
+      const current = epModeOf(config);
+      if (current === next) return;
       rangeHint = null;
       invalidTyped = null;                 // 换口径后走 reconcile，落到自洽态
       const before = { ...config };
-      config.moeOrthogonal = next;
-      config.dp = convertDpAcrossEpMode(config.dp, config.ep, next);
+      config.epMode = next;
+      config.moeOrthogonal = next === "orthogonal";   // 老字段跟着走，别留两套真相
+      if ((current === "orthogonal") !== (next === "orthogonal")) {
+        config.dp = convertDpAcrossEpMode(config.dp, config.ep, next === "orthogonal");
+      }
       reconcile(config, "dp");
       // anchor 传 null：DP 这一跳正是要提示的联动，不该被当成"用户自己改的"而排除
       highlightLinkedChanges(before, null);
@@ -2289,12 +2603,65 @@ ${spec.title}`;
       document.dispatchEvent(new CustomEvent("cro:change", { detail: topology }));
     }
 
+    /* ── 批量导入（升级计划行 20）─────────────────────────────────────────
+       与 set() 的区别是「一次落一片」：导入一份外部配置时，dp / tp / pp / ep / 层数
+       / 开关十几项要同时生效，逐个 set 会在中途反复走 reconcile —— 第一次就把还没
+       落地的那几项当成矛盾去「修」了（先落 ep=32 而 dp 还是旧值，EP 当场被收回去），
+       落到最后是一组谁也不认识的数。所以：**先整片赋值，最后配平一次**。
+
+       anchor 传 null：这一片里没有哪个字段是「用户刚拨的那一枚」，
+       reconcile 的所有修复分支因此都走「不锚定」那条路 —— 该收谁收谁。
+
+       返回 before/after 两份快照，调用方拿它算「你给的 vs 页面收下的」。
+       ⚠️ 这个差值必须被显示出来：外部配置常常与本页口径不兼容（MindFormers 的 EP
+       是在 dp×mp 域上切的，页面按 dp 域校验，见升级计划行 23），配平会**改数**，
+       不报出来就是静默篡改 —— 比当场报错更危险。 */
+    function importConfig(partial) {
+      const before = { ...config };
+      const known = Object.keys(partial).filter((f) => FIELD_SPECS[f] || FLAG_SPECS[f]);
+      /* EP 口径既不是 stepper 也不是开关（它改的是 world 公式与切分域，走 setEpMode），
+         所以两张表都筛不到它 —— 但它必须**先**落：dp / ep 的整除判据跟着它换（行 23）。
+         这里不做 DP 换算：那份配置里的 dp 本来就是按它自己那一档写的。 */
+      let epModeApplied = false;
+      if (EP_MODES.indexOf(partial.epMode) >= 0 && partial.epMode !== epModeOf(config)) {
+        config.epMode = partial.epMode;
+        config.moeOrthogonal = partial.epMode === "orthogonal";
+        epModeApplied = true;
+      }
+      known.forEach((field) => {
+        const value = partial[field];
+        if (FIELD_SPECS[field]) {
+          const spec = FIELD_SPECS[field];
+          const n = Number(value);
+          // 超量程的整数夹回去，非整数直接丢 —— 导入不该把页面推进报错态
+          if (!Number.isFinite(n) || !Number.isInteger(n)) return;
+          config[field] = Math.min(spec.max, Math.max(spec.min, n));
+          return;
+        }
+        const spec = FLAG_SPECS[field];
+        if (spec.options) {
+          if (spec.options.some((o) => o.value === value)) config[field] = value;
+        } else {
+          config[field] = Boolean(value);
+        }
+      });
+      if (epModeApplied) known.push("epMode");
+      rangeHint = null;
+      invalidTyped = null;
+      reconcile(config, null);
+      // 被配平改掉的那几枚一并闪一下：导入是一次「页面替你改了十几个数」的动作
+      highlightLinkedChanges(before, null);
+      emit();
+      return { before, after: { ...config }, known };
+    }
+
     return {
       config,
       mount,
       set,
       setModel,
       setEpMode,
+      importConfig,
       /* 冻结期间也返回上一组自洽拓扑：视图侧除了监听 cro:change，还会在别的时机
          直接读它（比如窗口尺寸变化时重算集群矩阵的列数）。只掐事件不掐这里的话，
          一次拖窗口就能把不自洽的参数画进矩阵，冻结就漏了。 */
@@ -2628,6 +2995,11 @@ ${spec.title}`;
      刻度与空当一起变粗，而不是把余量全丢给某一边。 */
   const NAV_SPLIT_RATIO = 6.5;
   const NAV_TICK_MIN = 1.5;
+  /* 撞到下限还塞不下时的三级退让底线（见 layoutLayerNav）：
+     组间缝 → 组内间隙 → 刻度本身。刻度 0.75px 时 256 层也不溢出。 */
+  const NAV_SPLIT_MIN = 4;
+  const NAV_GAP_MIN = 0.25;
+  const NAV_TICK_FLOOR = 0.6;
   const NAV_TICK_MAX = 8;
 
   /* 把五列摊平成一条刻度槽序列，并解出两套分组的切点。
@@ -2837,6 +3209,9 @@ ${spec.title}`;
       span.dataset.g0 = String(entry.g0);
       span.dataset.g1 = String(entry.g1);
       span.textContent = `PP${entry.stage}`;
+      // 段窄到放不下全名时退到短名（PP15 → 15），见 fitNavLabel
+      span.dataset.full = `PP${entry.stage}`;
+      span.dataset.short = String(entry.stage);
       span.dataset.tip = entry.title;
       span.setAttribute("aria-label", entry.title);
       span.addEventListener("click", () => emit({ kind: "stage", stage: entry.stage }));
@@ -2851,6 +3226,10 @@ ${spec.title}`;
       span.dataset.g0 = String(entry.g0);
       span.dataset.g1 = String(entry.g1);
       span.textContent = entry.label;
+      span.dataset.full = entry.label;
+      span.dataset.short = entry.label.slice(0, 1);
+      // 标签被压短/压没时还得答得出这一段是什么，故补一条 tip
+      span.dataset.tip = entry.label;
       band.appendChild(span);
     });
 
@@ -2886,12 +3265,37 @@ ${spec.title}`;
     if (!groups.length || !ticks) return;
 
     const width = strip.clientWidth;
-    const span = 2 * ticks - groups.length;
-    const tick = Math.max(NAV_TICK_MIN, Math.min(NAV_TICK_MAX,
-      width / (span + NAV_SPLIT_RATIO * groups.length)));
-    const split = Math.max(4, (width - tick * span) / groups.length);
+    const g = groups.length;
+    const inner = ticks - g;                 // 组内间隙总数
+    const span = 2 * ticks - g;
+    let tick = Math.max(NAV_TICK_MIN, Math.min(NAV_TICK_MAX,
+      width / (span + NAV_SPLIT_RATIO * g)));
+    let gap = tick;                          // 常态：组内间隙与刻度同宽
+    let split = (width - tick * ticks - gap * inner) / g;
+
+    /* 层数很多时（61 层的 deepseek3、96 层的 175B，再叠上 PP16 的分段），刻度撞到
+       下限之后总宽仍然超出带子 —— 原先的写法把 split 硬夹到 4px 就不管了，于是
+       整条刻度带**横向溢出**：右侧的层被 overflow:hidden 切掉，而分隔线与 PP 标签
+       是按实测组位置定位的，它们跟着跑到带子外面 —— 这就是「有些配置 layer 导航
+       错位、看不到层」的由来。
+       解法是按「先压组间缝、再压组内间隙、最后才压刻度本身」的顺序退让，保证
+       等式 width = tick·n + gap·inner + split·g 始终成立，一格都不溢出。 */
+    if (split < NAV_SPLIT_MIN) {
+      split = NAV_SPLIT_MIN;
+      if (inner > 0) {
+        gap = (width - split * g - tick * ticks) / inner;
+        if (gap < NAV_GAP_MIN) gap = NAV_GAP_MIN;
+      }
+      const rest = width - split * g - gap * Math.max(0, inner);
+      tick = Math.max(NAV_TICK_FLOOR, Math.min(tick, rest / ticks));
+    }
     container.style.setProperty("--cro-tick-w", `${tick}px`);
+    container.style.setProperty("--cro-tick-gap", `${gap}px`);
     container.style.setProperty("--cro-nav-split", `${split}px`);
+    /* 刻度窄到 2px 以下时，空心药丸的两条 1px 描边已经糊在一起 —— 那时改画成
+       实心细条（见 .cro-layer-nav.is-dense），一排等距细线至少还读得出「这里是
+       一层一层」，而糊掉的药丸只是一片灰。 */
+    container.classList.toggle("is-dense", tick < 2);
 
     const base = band.getBoundingClientRect();
     const stripRect = strip.getBoundingClientRect();
@@ -2909,10 +3313,30 @@ ${spec.title}`;
     band.querySelectorAll(".cro-pp-span, .cro-ffn-span").forEach((el) => {
       const left = boundaryX(Number(el.dataset.g0));
       const right = boundaryX(Number(el.dataset.g1));
+      const box = Math.max(0, right - left);
       el.style.left = `${left}px`;
-      el.style.width = `${Math.max(0, right - left)}px`;
+      el.style.width = `${box}px`;
       el.style.visibility = "visible";
+      fitNavLabel(el, box);
     });
+  }
+
+  /* 段窄到放不下标签时怎么办：标签是绝对定位 + 定宽 + overflow:hidden 的，硬塞
+     进去会被从两侧切掉，「PP15」只剩中间的「P1」—— 读不出，还看着像错位。
+     所以退让两步：全名 → 短名（PP15 → 15、Dense → D），仍放不下就整条不显示。
+     段界由分隔线交代，段名悬浮到标签位或刻度上照样报得出（data-tip），
+     信息一条没丢，只是不硬印在一个放不下它的格子里。 */
+  function fitNavLabel(el, box) {
+    const full = el.dataset.full || el.textContent;
+    const short = el.dataset.short || full;
+    el.textContent = full;
+    // 1px 容差：box 是实测的小数宽，scrollWidth 取整后常大 0.x
+    if (el.scrollWidth <= box + 1) return;
+    if (short !== full) {
+      el.textContent = short;
+      if (el.scrollWidth <= box + 1) return;
+    }
+    el.textContent = "";
   }
 
   /* ══ 典型层里的并行分支 ══════════════════════════════════════════════════
@@ -3500,8 +3924,11 @@ ${spec.title}`;
        的一致做法。CP 次之，两者共同占满 ranksPerEp。
        所以分片序号 tpIdx = inner % tp，而 inner 正是集群图里 DP 组内的行序 ——
        每 tp 行走完一轮分片，横向天然成条带，斑马纹按行铺就是客观的分片分布。 */
-    const tpShardOf = (inner) => inner % tp;
-    const cpIdxOf = (inner) => Math.floor(inner / tp);
+    /* 行 23：两套编址的分解统一走 topology.shardOf —— 这里原先自己又算了一遍
+       （inner % tp / ⌊inner/tp⌋），那是「另两档」的算法；mf 档下 TP 分片号由
+       (d, ep) 定，照旧算会给出一片全是 TP0 的斑马纹。 */
+    const tpShardOf = (d, p2, inner) => topology.shardOf(d, p2, inner).tpIdx;
+    const cpIdxOf = (d, p2, inner) => topology.shardOf(d, p2, inner).cpIdx;
     /* 亮度是**间隔**的，不是渐变的：单调递减的斜坡在整片格子上会读成一团渐变，
        看不出"一份一份"的边界；明暗交替才切得出条带。
          偶数份 → 100%（与单 TP 时的高亮同强度）
@@ -3533,7 +3960,12 @@ ${spec.title}`;
     host.dataset.dAxis = dName.toLowerCase();
     /* 换算式进每一个格子的悬浮提示：表单上写着 DP 512、这里标着 EDP0–7，
        两个数对不上是本页最容易被当成算错的一处，光改名不够，得把桥给出来。 */
-    const dTip = dName === "EDP" ? `\nEDP = DP ${counts.dp} ÷ EP ${ep} = ${dp}` : "";
+    /* 行 23：mf 档的 EDP 是 DP×TP÷EP —— 换算式要跟着档位写，否则矩阵旁那句
+       常驻说明会和行数对不上。 */
+    const dTip = dName !== "EDP" ? ""
+      : counts.epMode === "mf"
+        ? `\nEDP = DP ${counts.dp} × TP ${counts.tp} ÷ EP ${ep} = ${dp}（MindFormers 档：EP 在 DP×MP 域上切）`
+        : `\nEDP = DP ${counts.dp} ÷ EP ${ep} = ${dp}`;
     /* 格子提示的最后一行：这张卡到底背着几个专家。EP 列号只说明它属于哪个专家组，
        换算成「几个」还要再除一次，而这正是看矩阵时最想知道的那个数。
        专家只存在于 MoE 层，所以整段都是 dense 层的 stage 上不写这一行
@@ -3573,8 +4005,8 @@ ${spec.title}`;
             cell.dataset.stage = String(s);
             cell.dataset.dp = String(d);
             cell.dataset.ep = String(p);
-            const shard = tpShardOf(inner);
-            const cpIdx = cpIdxOf(inner);
+            const shard = tpShardOf(d, p, inner);
+            const cpIdx = cpIdxOf(d, p, inner);
             cell.dataset.tp = String(shard);
             cell.dataset.cp = String(cpIdx);
             cell.dataset.node = String(node);
@@ -5488,13 +5920,14 @@ ${spec.title}`;
 
     /* EP 口径：与卡型号、模型一样是"不进 stepper"的配置，但它改的是 world 的
        公式本身（EP 进不进乘积），所以走 controller.setEpMode() 单独一条通路。
-       两枚键而不是下拉：只有两档，且切换的后果要能一眼比出来。 */
+       三枚键而不是下拉（行 23 之前是两枚）：档位不多，且切换的后果要能一眼比出来。 */
     (() => {
       const group = document.getElementById("croEpMode");
       if (!group) return;
       const buttons = Array.from(group.querySelectorAll("[data-ep-mode]"));
       const sync = () => {
-        const current = controller.config.moeOrthogonal ? "orthogonal" : "split";
+        const current = controller.config.epMode
+          || (controller.config.moeOrthogonal ? "orthogonal" : "split");
         buttons.forEach((button) => {
           const on = button.dataset.epMode === current;
           button.classList.toggle("is-selected", on);
@@ -5502,10 +5935,13 @@ ${spec.title}`;
         });
       };
       sync();
+      /* 导入一份 MindFormers 配置会把口径换成 mf（行 23），而这排按钮原先只在
+         自己被点击时才 sync —— 于是出现「页面按 mf 算、按钮还停在切出档」。 */
+      controller.onChange(sync);
       group.addEventListener("click", (event) => {
         const button = event.target.closest?.("[data-ep-mode]");
         if (!button || !group.contains(button)) return;
-        controller.setEpMode(button.dataset.epMode === "orthogonal");
+        controller.setEpMode(button.dataset.epMode);
         sync();
       });
     })();

@@ -5,6 +5,51 @@
 
 ---
 
+## 2026-08-28 — config-relation-observer 升级计划行 23：EP 口径补第三档（MindFormers · DP×MP 域）
+
+- `js/config-relation-observer.js` — `croEpMode` 从二选一变三档，新增「MindFormers（DP×MP）」：world 公式同切出档，但约束换成 `(DP × TP) % EP == 0`、`EDP = DP×TP/EP`。口径字段从布尔 `moeOrthogonal` 升成 `epMode` 三值（老字段保留并同步，读法统一收进 `epModeOf`）；validate / reconcile / fitParallelWorld 的整除判据按域取；**编址几何**跟着换 —— mf 档下 `ranksPerEp` 从 `TP×CP` 变成 `CP`，TP 分片号由 `(EDP索引 × EP + EP索引) % TP` 反推，两套分解统一收进 `derive().shardOf()`（集群矩阵原先自己又算了一遍，那份算法在新档下会画错斑马纹）。
+- `js/config-relation-capacity.js` — ZeRO / FSDP2 的非专家分母改读新增的 `counts.dpReplica`（mf 档是 DP，而 `EDP×EP` 会算成 DP×TP，优化器段偏小 TP 倍）；mf 档下路由专家**只 ÷EP、不再另 ÷TP**（EP 已经吃掉 mp 那一维，本页按专家张量并行 ETP=1 建模）；口径浮层的「路由专家」「EDP」两行按档改写。
+- `js/config-relation-yaml.js` — 校验行与 `expert_parallel` 的行尾注释补第三档（写出 `dp×mp = N 须被 EP 整除` 与 EDP 的换算），并注明 ETP>1 时的严格式。
+- `js/config-relation-import.js` — 新增 EP 口径的推断规则：判据是「这份配置写的是 MindFormers 的 `parallel_config`」而不是「除不尽」。导入 `mf_pretrain_deepseek3_671b.yaml`（dp:4/mp:8/ep:32）不再当场报错，`mf_pretrain_qwen3_30b_a3b.yaml` 的 EP 也不再被配平从 4 静默收到 1。
+- `config-relation-observer.html` — MoE 区多一枚页签；「EP 与 DP」一章改成三档对照，并点明前两档是同一张网格的两种读法、第三档是另一张网格；`term-ep` 补上「切自哪个域要看框架」。
+- `config-relation-observer-upgradeplan.md` — 行 23 勾掉并写落地记录（含未建模项 ETP）。自检台新增第 8 节：三档 × 四组并行度的 rank↔坐标双射、格子数恒等、TP=1 时切出档与 mf 档逐位相同；随机游走从两档扩到三档共 5.4 万个状态，十二项断言全为 0。基线数字逐位不变。
+
+## 2026-08-28 — config-relation-observer 升级计划第六批：行 21（精度档）/ 行 22（微批数）
+
+- `js/config-relation-observer.js` — 新增「计算精度」（BF16 / FP16 / FP8）与「主权重精度」（BF16 / FP32）两枚档位控件（Cluster 行「高级选项」内）、「微批数」stepper（Cluster 行，pow2 梯子）；两个预设补默认值 —— openPangu 微批数 24 取自架构参考 §6.4 的 GBS 12288 = 1×512×24，精度按参考配置的口径停在 BF16 / BF16（那份「forward FP8」是算子级计算格式，不是权重直存）；新增软警告「微批数少于 PP×VPP，warmup 灌不满，气泡约 N%」。
+- `js/config-relation-capacity.js` — 三个写死的字节常量（2 / 2 / 12）改由 `precisionBytes()` 按精度两档折算：主权重 FP32 → 4 / 4 / 8（合计仍是 16 B，但 ZeRO-1 能切走的从 12 B 掉到 8 B），FP8 → 权重段减半（按 Megatron `--fp8-param-gather` 的「权重直存」建模）；新增 `bytesAct` 供算子 workspace 用（激活不随精度档变，理由写进口径浮层）；在飞份数改取 `min(1F1B/VPP 公式, 微批数)`，浮层新增「精度」「微批数夹取」两行，全局 batch 那一行改报真数。
+- `js/config-relation-yaml.js` — `micro_batch_num` 从派生值（4×PP）变成输入，`batch_size` 跟着它算（默认档 8192 → 12288，与架构参考对齐）；model_config 新增 `params_dtype` / `compute_dtype` 两行跟随档位，FP8 档补一行口径注释（MindFormers 无同名键）。
+- `js/config-relation-import.js` — 精度与批次相关的 12 条从「已识别 · 缺口」撤下（MindFormers 的 params_dtype / compute_dtype / micro_batch_num、Megatron 的 --fp8-format / --bf16 / --fp16 / --global-batch-size 反推微批数、HF 的 gradient_accumulation_steps 均已落到表单）；修 sh 解析漏读带引号参数的 bug —— `megatron_llama3_8b_fp8.sh` 的 fp8 参数整组读不到，而那份脚本整个主题就是 fp8；补 `vocab-size` 进结构常量。11 份样本仍是「未识别 0、每个键都有归宿」。
+- `config-relation-observer.html` — 文档新增「微批数」「计算精度 / 主权重精度」两个条目；「单卡显存由什么构成」一章的字节口径、在飞份数说明、Micro Batch 条目里那句「只有 MBS 进显存」一并补全。
+- `config-relation-observer-upgradeplan.md` — 行 21 / 22 勾掉并写落地记录（含两处主动留白：激活段不随精度变、FP8 只建「权重直存」一种）。基线数字逐位不变：默认档 10.9 GB / 17%。
+
+## 2026-08-28 — config-relation-observer：切进来的配置显示原文 + Layer 导航密排修复
+
+- **应用一份样例后，yaml 栏显示的是那份文件的原文，文件名也换成它**（`config-test/mixtral_8x7b.sh`）。此前只有数字跟着变、内容仍是按 openPangu 结构生成的 MindFormers yaml —— 文件名说一件事、正文说另一件事。新增 `cro:source` 事件（`js/config-relation-import.js` 发，`js/config-relation-yaml.js` 收），贴/传进来的配置走同一条通路。
+- **原文是只读的，一改表单就退回生成视图**，这条写在状态栏那一行。理由：这一栏的本职是「你此刻的档位写成配置文件长什么样」，原文是静态的，留着它跟着表单一起变才是骗人。启动命令那一栏照旧按表单生成（卡型号 / 节点数 / 总卡数本来就不在配置文件里）。
+- **原文上标出「页面读了哪几行、哪几行没照收」**：`R` = 收下了，`≠` = 读到了但配平改了数（mixtral 的 EP 文件写 8、页面收 2），悬浮给出两个数。状态栏同时报「N 处页面没照收」。文件里一个数、表单上另一个数而不指出来，就是让人猜哪个算数。
+- **Layer 导航：层数一多就错位、看不出层的三处成因一并修掉**（`layoutLayerNav`）。
+  （1）**标签硬塞**：PP / Dense / Emb 这些标签是绝对定位 + 定宽 + `overflow:hidden`，段窄到放不下时会被从两侧切掉，「PP15」只剩中间的「P1」。改成两级退让：全名 → 短名（`PP15`→`15`、`Embedding`→`E`），仍放不下就整条不显示，段界由分隔线交代、段名仍由 `data-tip` 答出。Emb / Norm / Head 那三条注记只占 1 格宽，此前**任何配置下**都是被切碎的残字。
+  （2）**横向溢出**：原先刻度撞到 1.5px 下限后就把组间缝硬夹到 4px 不管了，总宽超出带子 —— 右侧的层被裁掉，而分隔线与标签按实测组位置定位，跟着跑到带子外面。改成「先压组间缝 → 再压组内间隙（新增 `--cro-tick-gap`）→ 最后才压刻度」的三级退让，等式 `width = tick·n + gap·inner + split·g` 始终成立，256 层（stepper 上限）也一格不溢出。
+  （3）**刻度糊成一片**：不足 2px 时空心药丸的两条描边已经叠在一起，改画实心细条（`.cro-layer-nav.is-dense`），一排等距细线还读得出「一层一层」。选中态与关系高亮排除在外，不被这条盖掉。
+- 样例菜单的卡片**常态就带边框与底色**，hover 只加重一档（此前是悬浮才显形，读成一片没有边界的文字流，而这个菜单的正题恰恰是逐张比较着挑）；下拉滚动条改细（`scrollbar-width: thin` + `::-webkit-scrollbar` 两套都写，滑块靠透明描边收窄成 4px）。
+- 应用后文件名旁那枚角标改为**只在退回生成视图时出现**：显示原文时路径本身就是文件名，两处写同一个名字只是噪声。
+
+## 2026-08-28 — config-relation-observer：样例配置切换挪到 yaml 文件名那一格，改成卡片菜单 + 应用前预览
+
+- **入口换了位置：从导入面板里的一枚下拉，挪到 YAML 视图的 `.cro-yaml__file`**（`configs/<家族>/run_<全名>.yaml` 那一格，现在是可点的 `#croYamlPickerBtn`）。理由是这一格本来就在回答「你现在看的是哪份配置」—— 换一份的动作理应从同一处发起，而不是先去顶栏开一个叫「导入」的面板。导入面板保留「传文件 / 贴文本」两条，正文补一句指路。
+- **选项改成两行卡片，`title` 就此不用了**：第一行「名字 + 来源」（`DeepSeek-V3 671B 预训练` / `mindspore-ai/mindformers · configs/deepseek3/`），第二行是「选它能看到什么」那一句。理由与上一轮把来源做成常驻行是同一条 —— **有没有代表性是选之前要读到的东西**，`<option title>` 要悬停半秒才出、还只给纯文本，等于没写。note 里的 `**着重**` 与 `` `键名` `` 按原样渲染成粗体与等宽（`rich()`）。
+- **中间加了一步解析弹窗，这是这次改动的正题**：点卡片 → fetch + `analyze()` → 整份报告摊开（落到哪几档 / 页面配平会改哪几个数 / 结构常量不覆盖 / 已知缺口挂着行号 / 读到但不建模）→ 底部才是【取消】【应用】。**看完再决定** —— 一份陌生配置直接糊到表单上，用户看不出页面替他改了什么（deepseek3 的 EP 32→4、175b 的 Total Rank 8→128 这类，全在报告里）。报告复用 `.cro-import__*` 那套块样式，两处长得一模一样。
+- **【取消】退回卡片菜单，不是退回空屏**：用户的动作是「挑一份」，取消的是**这一份**，不是挑这件事。点遮罩、按 Esc 同此。
+- **模型不换，这条是硬的**：`importConfig()` 只收 FIELD/FLAG 认得的字段，`MAP` 里根本没有 `model` —— 样例的结构常量（hidden / layers / 专家数）一律不覆盖。应用后文件名旁多一枚角标记住「现在这些数来自哪一份」（路径那段由 yaml 模块按模型名重算、样例名不在其中，一次高亮闪过就没了），角标 title 里带上配平改过的项。
+- **「页面默认」照旧是第一张卡**，预览这一步给的是「应用会改回哪几项」的逐条 diff；⚠️ 卡型号与 EP 口径不在恢复范围（硬件与读法，不是配置内容）。
+- `js/config-relation-import.js` 新增 `bootYamlPicker()`（与 `boot()` 并列，两个入口互不依赖）；样式在 `css/config-relation-yaml.css`（`.cro-yaml__picker/__menu/__opt`）与 `css/config-relation-observer.css`（`.cro-preview`），删掉随下拉一起作废的 `.cro-import__label/__select/__source`。⚠️ 设计系统没有 menu / popover / dialog 原语，两处都是用 tokens 拼的最小实现，与本页的横幅、开关同属「缺失样式」。
+- **验证**：`node --check` 干净，HTML 标签栈平衡，两份 CSS 括号配平，`tools/cro-selfcheck.js` 全过（解析层与 DOM 无关，这次改动没碰它）。视觉与交互留给人工过一遍。
+
+## 2026-08-28 — 配置 YAML 视图：注明数据出处 + 点名 mp
+
+- `js/config-relation-yaml.js` — yaml 头新增一行来源注释（openPangu 结构常量取自仓内 `openPangu-2.0-Flash架构参考.md` §4、默认并行度取自 §6.1；Qwen2-7B 取自公开配置），并说明并行度/batch/开关是四域当前值实时生成；「框架校验 dp×mp×pp×cp」一行补上 `mp = parallel_config.model_parallel，即 TP`。
+
 ## 2026-08-28 — TaskCompare 最佳任务栏：齿轮接入「评比指标」勾选
 
 - `Profiling_Insight_and_Tool/training-run-twin-standalone/TaskCompare.html` — 最佳任务栏右上角齿轮
@@ -97,6 +142,21 @@
 - **已知缺口，先记下来不急着治**：模型结构常量（hidden / vocab / heads / kvHeads / intermediate / moeIntermediate / firstKDense / mtpLayers）写死在 `MODEL_PRESETS` 的两个预设里，外部配置进来只能挑形状最近的一个，DeepSeek-V3 的 hidden 7168 / 61 层拨不出来；页面也没有粘贴导入通路，眼下只能照着手拨 stepper。真要常态化验证，最小改动是先只认 MindFormers 的 `parallel_config` + `recompute_config` 两段。
 - **DeepSeek-V3 那份还压着一个真问题**：`data_parallel: 4` 与 `expert_parallel: 32` 并存 —— 按本页切出口径 EDP×EP = 真 DP，world = 4×32×8×8 = 8192 卡，而 MindFormers 自己校验的是 dp×mp×pp = 256。两种读法本页能不能都表示出来，正是 EP 口径开关该被撞一次的地方。
 - 顺手对表：`hf_qwen2_7b_config.json` 与内置 qwen2-7b 预设六项（hidden 3584 / heads 28 / kv 4 / intermediate 18944 / vocab 152064 / 28 层）逐位相同，预设本身可信。
+
+## 2026-08-26 — config-relation-observer：新增导入配置通路 + 未映射键清单（升级计划行 20）
+
+- **第六批开头，也是第一条不改任何数、只改「页面知不知道自己漏了什么」的行**。这一页此前是**单向**的（yaml 视图只写不读，grep 不到 file input / FileReader / 粘贴框），于是「拿一份真配置进来，页面接不接得住」这个问题根本问不出口 —— 行 21–32 的价值也就验不出来。新增 `js/config-relation-import.js` 与 `croObserver.importConfig()`，顶栏「导出配置」左边多一枚「导入配置」。
+- **解析：三种方言，一个不引库的子集。** 本页纯静态无打包器（CLAUDE.md），引不进 yaml 库，所以自己写了个子集：缩进映射 + `- ` 列表 + 行内 `[a,b]`（含一层嵌套，deepseek3 的 `offset` 是 `[[…],[…]]`）+ 注释 + 引号 + 剥锚点。**刻意不做**多行字符串 / `<<: *ref` / 多文档 —— 样本里一次都没出现，做了就是挖一个「看着能用其实不准」的坑。文件头写死：⚠️ 不是通用 yaml 解析器。
+- **sh 那支踩到一个必须修的坑**：真实脚本里要紧的数几乎全是变量引用（`--tensor-model-parallel-size $TP_SIZE`）。不回代的话落到表单的是字符串 `"$TP_SIZE"` —— **比读不到更糟**，是个看着像配置的假值。解析完统一回代（最多三层），自检台为此单列一条断言。
+- **报告分五堆，第三堆才是这一行存在的理由**：落到表单 / 已识别·缺口（逐条挂着行 21–32 的行号）/ 结构常量（不覆盖）/ 已识别·不建模（通信、融合、调度、数据流程，整块折叠）/ **未识别（照样列出来 —— 吞掉就等于骗人说「都读了」）**。首行是一句可以核对的账：`总键数 ＝ 五堆之和`，数的是**键**不是行；核不平面板会直接印「有 N 个键没交代（这是本页的 bug）」。
+- **「你给的 vs 页面收下的」是最要紧的一栏。** 导入后要走一遍配平，而外部配置常与本页口径不兼容 —— 配平会**改数**，不报出来就是静默篡改。11 份样本里 5 份被改过，每处都指向一个真问题：deepseek3 的 **EP 32→4**（MindFormers 的 `expert_parallel` 在 dp×mp 域上切，正是**行 23**）与 `VPP 2→1`（61 层除不尽 pp8×vpp2）；qwen3_30b 的 `shardMode none→zero1`（dp=1 时那枚控件本就置灰）；mixtral 的 `EP 8→2`、`SP true→false`。
+- **一处必须落值、不能返回 null 的判断**：Megatron 不写 DP（由 world 反推），而公开样例多是模板（`NUM_NODES=1` 等着人填，可 TP8×PP16 至少要 128 张），world 除不尽。早先「除不尽就不落 DP」的写法会让表单留着上一个预设的 dp=512，配平把 Total Rank 顶到 **65536** —— 导入一份 175B 脚本得到六万五千张卡，比读不到还离谱。改成「配置没写就按 1 记」并写进报告注释。
+- **三条入口，下拉框排第一。** 计划只写了「贴 / 传」，但那两条都要求用户手上先有一份配置。补了第三条：下拉框直接切 `config-test/` 里那 11 份公开配置（它们本来就是第六批的验收材料）。两处细节是这枚下拉好不好用的全部：（1）**每一项都带来源与「选它能看到什么」，常驻一行、不做 tooltip** —— 只写文件名的下拉是没法选的（凭什么知道 `mixtral_8x7b.sh` 与 `megatron_175b.sh` 该先试哪个），而「有没有代表性」是**选之前**就该看到的东西，藏进悬浮等于没写；（2）**页面默认配置也进了下拉，并且第一次有了名字**（`页面默认 · openPangu 2.0 flash 92B · 2048 卡`）—— 一个「别的都有名字、唯独你现在看的这屏没有」的下拉读不通。选它走的是**恢复**（把预设 defaults 整片喂回 importConfig）并报出改回了哪几项；⚠️ 卡型号与 EP 口径不在恢复范围（硬件与读法，不是配置内容）。
+- 样例走 `fetch('./config-test/…')`；`file://` 下报的不是「读取失败」而是「这一页需要用 http 打开，也可以直接把内容贴进框里」。自检台加了一组**双向**断言：目录里列到的文件必须存在、目录下的文件必须都被列到（改名一个文件就在下拉里留下一条点了报 404 的死链，而那是用户最先碰到的入口），外加每项必须有名字、来源、代表性说明。
+- **谁赢：定死并写在界面上**（计划明确要求的一条）。`totalLayer` / `routedExpert` / `topK` / `sharedExpert` 四项**配置赢**（它们本就是可调字段，导入的目的就是让表单跳档）；**结构常量一个都不覆盖**（由计算图给）。⚠️ 后者有个必须当面说清的后果，面板单开一栏：把 deepseek3 的并行度导到 openPangu 的结构上，**算出来的容量不是 deepseek3 的容量**（hidden 7168 vs 2560）。
+- `importConfig()` 与 `set()` 的区别是「一次落一片」：十几项要同时生效，逐个 set 会在中途反复配平（先落 ep=32 而 dp 还是旧值，EP 当场被收回去），落到最后是一组谁也不认识的数。所以**先整片赋值、最后配平一次**，anchor 传 null。
+- ⚠️ 设计系统没有 dialog / drawer 原语，面板用 tokens 拼了个最小实现（按钮复用 `.btn`），与本页的横幅、开关、segmented 同属「缺失样式」，待批准后一并吸收。
+- **验证**：`tools/cro-selfcheck.js` 新增第 6 节，拿 `config-test/` 那 11 份真配置逐份撞 —— 解析不抛 / 方言认对 / 每份至少接住 N 个字段（回归下界）/ **每个键都有归宿** / **导入后 `validate` 为空**；另逐字核对 deepseek3 的 10 项、mixtral 的 world 反推、llama3 的变量全部解引用。11 份全过。这一行**没改任何显存口径**，基线数字（10.9/17%、25.0/10.9/7.7）与随机游走十二项断言逐位不变。
 
 ## 2026-08-26 — config-relation-observer：重计算升成四档 + LoRA 落地（升级计划行 18 / 行 19）
 
