@@ -59,10 +59,10 @@
 | [x] | **17** 加 `vpp` stepper（虚拟流水，`totalLayer % (pp × vpp) == 0`），激活的 in-flight 份数按 1F1B-interleaved 口径重算 | 虚拟流水把每个 stage 的层拆成多段轮流跑，**代价直接落在激活峰值上**：bubble 变小，但每个 stage 同时压着的 micro-batch 变多。现在 `inflight = PP − s` 写死的是非交错 1F1B | 「各 PP Stage 峰值」那排小柱的形状随 VPP 变化 —— 这是页面已经画着、却还没有旋钮能动的一处；yaml 补 `virtual_pipeline_model_parallel_size` |
 | [x] | **18** 加 `lora` 开关与 `loraRank` 档位，开启后梯度段与优化器段只按 adapter 参数量算，权重段不变 | LoRA 冻结主干：可训练参数掉到 `2·r·(d_in+d_out)` 一档，而**梯度与优化器状态只跟可训练参数走** —— 这是容量柱上最大的一次形变，比行 10 的 ZeRO-1 还大 | 梯度段几乎归零、优化器段塌到零头，权重段纹丝不动 —— 正好把「哪一段跟谁走」讲清楚；判定文案里多一个可推荐的旋钮 |
 | [x] | **19** `recompute` 从两档开关换成有档位的控件（关 / 选择性 / 按 stage 给层数 / 全开） | 行 9 落地时自己记下的缺口：真实世界有 `select_recompute`、`recompute: [4,4,4,4]`、Megatron 的 `--recompute-granularity selective`。全开与全关之间差着一个数量级（系数 34 → 2），**实际调优最常落的正是中间档** | 激活段可以停在中间高度而不是只有两个位置；按 stage 给层数时那排小柱可以被单独压平某一根 —— 这是当前显存估算里误差最大的一处简化 |
-| [ ] | **20** 〔前置〕加一条**导入通路**（贴 / 传一份 yaml · sh · json），解析成 config 覆盖表单；同屏给一张**「未映射键」清单**，分「已识别·不建模」与「已识别·缺口」两栏 | 页面至今没有任何入口（`grep` 不到 file input / FileReader / 粘贴框），`config-relation-yaml.js` 是单向导出。没有它，下面 11 行的价值验不出来，用户也无从知道页面**读到了什么、故意丢了什么** | 顶栏多一个「导入配置」；导入后表单整体跳到那份配置的档位；未映射清单把 `moe_token_dispatcher_type` / `overlap-grad-reduce` / lr / dataset / callbacks 这类原样列出并注明「不进显存模型」 |
-| [ ] | **21** 〔P0〕加**精度档**：`dtype`（bf16 / fp16 / fp8-hybrid）与 `paramsDtype`（主权重 bf16 / fp32），`BASIS.bytesWeight / bytesGrad / bytesOptim` 从常量改为按档取 | [capacity.js:61-63](js/config-relation-capacity.js#L61-L63) 把这三个数写死成「bf16 + Adam fp32 master」，页面上**一个控件都没有**。而 `megatron_llama3_8b_fp8.sh` 整份脚本的主题就是 FP8、`hf_deepseekv3_config.json` 带 `quantization_config: {fmt: e4m3}`、两份 MindFormers yaml 都写着 `params_dtype: float32` + `compute_dtype: bfloat16` —— 后面这一对直接决定 `bytesWeight` 是 2 还是 4 | 容量柱**整体**高度随精度档变化（fp8 权重段减半、params fp32 时权重段翻倍）；口径浮层里那句「权重 2 B（bf16）」从固定文案变成跟随档位；这是第六批里唯一一条会动**全部六段**的 |
-| [ ] | **22** 〔P0〕加 `globalBatch`（或等价的 `microBatchNum`）stepper，各 stage 在飞份数取 `min(1F1B/VPP 公式, microBatchNum)` | `FIELD_ORDER.batch` 只有 `microBatch` / `seqLen`，而每份样本都给了另一半：`micro_batch_num: 32`（MindFormers）、`--global-batch-size 256`（Megatron）、`gradient_accumulation_steps`（LLaMA-Factory / DeepSpeed）。`FIELD_SPECS.microBatch` 的注释写「GBS 一步也不进显存」，**这句在 PP>1 时不成立**：[capacity.js:650](js/config-relation-capacity.js#L650) 那个在飞份数公式隐含假设 `micro_batch_num ≥ PP`。而且 VPP 的 title 已经在解释「气泡比例约 (PP−1)/micro_batch_num」—— 页面在解释一个自己没有输入的量 | 「各 PP Stage 峰值」那排小柱在 GBS 小时整体压低（被 micro_batch_num 夹住）；VPP 那条 title 里的气泡比例第一次有真数可填；yaml 的 `micro_batch_num` 从派生值变成输入 |
-| [ ] | **23** 〔P0〕EP 口径补**第三档**「MindFormers（DP×MP 域）」：校验从 `dp % ep == 0` 换成 `(dp × tp) % ep == 0`，`edp = dp × tp / ep` | `mf_pretrain_deepseek3_671b.yaml` 是 `dp:4 / mp:8 / pp:8 / ep:32`，页面两档**都接不住**：切出档 `4 % 32 ≠ 0` 当场红，正交档 world = 4×8×8×32 = 8192 ≠ 实际 256。因为 MindFormers 的 `expert_parallel` 是在 **dp×mp 域**上切的（4×8=32，整除成立）。README 说这份「最贴页面口径」，结果它是唯一一份**必然报错**的 | `croEpMode` 从二选一变三档；导入 deepseek3 那份配置不再红；集群矩阵的 d 轴长度按新 EDP 重算。行 1 的附录里那句「严格些是 `DP × TP % (EP × ETP) == 0`」正是这一档，当时记下了却没落成规则 |
+| [x] | **20** 〔前置〕加一条**导入通路**（贴 / 传一份 yaml · sh · json），解析成 config 覆盖表单；同屏给一张**「未映射键」清单**，分「已识别·不建模」与「已识别·缺口」两栏 | 页面至今没有任何入口（`grep` 不到 file input / FileReader / 粘贴框），`config-relation-yaml.js` 是单向导出。没有它，下面 11 行的价值验不出来，用户也无从知道页面**读到了什么、故意丢了什么** | 顶栏多一个「导入配置」；导入后表单整体跳到那份配置的档位；未映射清单把 `moe_token_dispatcher_type` / `overlap-grad-reduce` / lr / dataset / callbacks 这类原样列出并注明「不进显存模型」 |
+| [x] | **21** 〔P0〕加**精度档**：`dtype`（bf16 / fp16 / fp8-hybrid）与 `paramsDtype`（主权重 bf16 / fp32），`BASIS.bytesWeight / bytesGrad / bytesOptim` 从常量改为按档取 | [capacity.js:61-63](js/config-relation-capacity.js#L61-L63) 把这三个数写死成「bf16 + Adam fp32 master」，页面上**一个控件都没有**。而 `megatron_llama3_8b_fp8.sh` 整份脚本的主题就是 FP8、`hf_deepseekv3_config.json` 带 `quantization_config: {fmt: e4m3}`、两份 MindFormers yaml 都写着 `params_dtype: float32` + `compute_dtype: bfloat16` —— 后面这一对直接决定 `bytesWeight` 是 2 还是 4 | 容量柱**整体**高度随精度档变化（fp8 权重段减半、params fp32 时权重段翻倍）；口径浮层里那句「权重 2 B（bf16）」从固定文案变成跟随档位；这是第六批里唯一一条会动**全部六段**的 |
+| [x] | **22** 〔P0〕加 `globalBatch`（或等价的 `microBatchNum`）stepper，各 stage 在飞份数取 `min(1F1B/VPP 公式, microBatchNum)` | `FIELD_ORDER.batch` 只有 `microBatch` / `seqLen`，而每份样本都给了另一半：`micro_batch_num: 32`（MindFormers）、`--global-batch-size 256`（Megatron）、`gradient_accumulation_steps`（LLaMA-Factory / DeepSpeed）。`FIELD_SPECS.microBatch` 的注释写「GBS 一步也不进显存」，**这句在 PP>1 时不成立**：[capacity.js:650](js/config-relation-capacity.js#L650) 那个在飞份数公式隐含假设 `micro_batch_num ≥ PP`。而且 VPP 的 title 已经在解释「气泡比例约 (PP−1)/micro_batch_num」—— 页面在解释一个自己没有输入的量 | 「各 PP Stage 峰值」那排小柱在 GBS 小时整体压低（被 micro_batch_num 夹住）；VPP 那条 title 里的气泡比例第一次有真数可填；yaml 的 `micro_batch_num` 从派生值变成输入 |
+| [x] | **23** 〔P0〕EP 口径补**第三档**「MindFormers（DP×MP 域）」：校验从 `dp % ep == 0` 换成 `(dp × tp) % ep == 0`，`edp = dp × tp / ep` | `mf_pretrain_deepseek3_671b.yaml` 是 `dp:4 / mp:8 / pp:8 / ep:32`，页面两档**都接不住**：切出档 `4 % 32 ≠ 0` 当场红，正交档 world = 4×8×8×32 = 8192 ≠ 实际 256。因为 MindFormers 的 `expert_parallel` 是在 **dp×mp 域**上切的（4×8=32，整除成立）。README 说这份「最贴页面口径」，结果它是唯一一份**必然报错**的 | `croEpMode` 从二选一变三档；导入 deepseek3 那份配置不再红；集群矩阵的 d 轴长度按新 EDP 重算。行 1 的附录里那句「严格些是 `DP × TP % (EP × ETP) == 0`」正是这一档，当时记下了却没落成规则 |
 | [ ] | **24** 〔P1〕卡型号旁加一枚**可用显存**输入（默认取 `CARD_SPECS.hbmGB`），容量框高度改读它 | `context.max_device_memory: "56GB"` / `"58GB"` —— 两份 MindFormers yaml 都显式把 64 GB 卡压到了 56/58。容量柱那条红线现在取自 `CARD_SPECS.hbmGB`，比真实可用高出 6–8 GB | 容量框的**框线本身**下移，判定文案里的余量与百分比跟着变。第六批里实现成本最低的一条（一个数覆盖一个常量），却直接改「爆没爆」这个结论 |
 | [ ] | **25** 〔P1〕PP 增 `offset`（各 stage 层数偏移），层→stage 的分配从「均分、除不尽前几段各多 1」改为可配 | deepseek3 那份写的是 `offset: [[1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,-2]]` —— 手工配的偏移，正是为了平衡首尾 stage 额外背的 embedding / LM head / MTP。而「各 PP Stage 峰值」那排小柱恰恰是**最受它影响**的图，真实大模型几乎都要手调 | 那排小柱从「只能靠 PP / VPP 整体改形」变成可以逐根调；yaml 的 `offset` 从缺省变成写出去。与行 17（VPP）同属「层怎么排在 stage 上」，两者要一起校 `totalLayer % (pp × vpp)` |
 | [ ] | **26** 〔P1〕加**优化器 offload** 开关（`optimizer.swap` / DeepSpeed `offload_optimizer`），开启后 optim 段整段移出 HBM 计入 host | deepseek3 那份写了 `optimizer.swap: True`：12 B/参数**整段消失**。这是比 shardMode 三档更大的一次形变（ZeRO-1 只是把它除以 EDP，offload 是直接归零） | 优化器状态段整体消失、预留段里多一条换入换出的说明；判定文案里多一个可推荐的旋钮。要和行 15 的三档说清关系：offload 与分片是两件事，可以叠加 |
@@ -896,11 +896,326 @@ Ulysses 头数除不尽 / Ring 序列除不尽 / VPP>1 而 PP=1 / 层数除不�
 LoRA 下激活逐位不变且梯度 ∝ rank、四档 × 三档权重分片 × LoRA 两态的六段全部非负有限、
 以及四档 + LoRA 的 yaml 输出。
 
+### 行 20 落地记录（2026-08-26）
+
+第六批开头，也是**第一条不改任何数、只改「页面知不知道自己漏了什么」的行**。
+前 19 行都在动模型或口径，这一行动的是**页面与外部世界的接口**。
+
+新增 [js/config-relation-import.js](js/config-relation-import.js)（解析 + 归类 + 面板）
+与 `croObserver.importConfig()`（批量落值入口），顶栏「导出配置」左边多一枚「导入配置」。
+
+---
+
+**一、解析：三种方言，一个不引库的子集。**
+本页是纯静态、无打包器（CLAUDE.md），引不进 yaml 库，所以自己写了个**子集解析**：
+缩进映射 + `- ` 列表 + 行内 `[a, b]`（含一层嵌套，deepseek3 的 `offset` 是 `[[…],[…]]`）
++ 注释 + 引号 + 剥锚点。**刻意不做**多行字符串、`<<: *ref` 合并、多文档 —— 那三样
+样本里一次都没出现，做了就是给自己挖一个「看着能用其实不准」的坑。
+文件头写死了一句：⚠️ 这不是通用 yaml 解析器，别拿去解析别的东西。
+
+sh 那支踩到一个**必须修的坑**：真实脚本里要紧的数几乎全是变量引用
+（`--tensor-model-parallel-size $TP_SIZE`）。不回代的话，落到表单上的是字符串
+`"$TP_SIZE"` —— **那比读不到更糟**，是一个看着像配置的假值。所以解析完统一回代一次
+（最多三层），自检台里为此单列一条断言：落到表单的值不得以 `$` 开头。
+
+**二、映射：三堆键、四种归宿，外加一句必须报出来的差值。**
+
+| | 是什么 | 怎么处理 |
+|---|---|---|
+| 落到表单 | 页面认得的十几个键 | 直接落，**并报出「你给的 vs 页面收下的」** |
+| 已识别 · 缺口 | 不补数就是错的 | 逐条挂着行 21–32 的行号与一句为什么 |
+| 结构常量 | hidden / vocab / heads / intermediate… | **不覆盖**，与当前预设并排列出差异 |
+| 已识别 · 不建模 | 通信 / 融合 / 调度 / 数据流程 | 整块折叠，写清「读到了、故意没用」 |
+| 未识别 | 没见过的键 | **照样列出来** —— 吞掉就等于骗人说「都读了」 |
+
+**「你给的 vs 页面收下的」这一栏是这一行里最要紧的东西。** 导入之后要走一遍配平
+（`reconcile`），而外部配置常常与本页口径不兼容 —— 配平会**改数**。不报出来就是
+静默篡改，比当场报错更危险。实测 11 份样本里有 5 份被改过，每一处都指向一个真问题：
+
+- `deepseek3`：**EP 32 → 4**（页面按 `dp % ep` 校验，而 MindFormers 的 `expert_parallel`
+  是在 dp×mp 域上切的 —— 这正是**行 23**）；`VPP 2 → 1`（61 层除不尽 `pp8 × vpp2`）。
+- `qwen3_30b`：`shardMode none → zero1`（dp=1 时那枚控件本就置灰停在 zero1）。
+- `mixtral`：`EP 8 → 2`（world 8 只够 dp=2）、`SP true → false`（tp=1 时 SP 无从切起）。
+- `megatron_175b`：`Total Rank 8 → 128`。
+
+最后这条逼出一个**必须落值、不能返回 null 的判断**：Megatron 不写 DP（由 world 反推），
+而公开样例多是模板（`NUM_NODES=1` 等着人自己填，可 TP8×PP16 至少要 128 张），
+于是 world 除不尽。早先的写法是「除不尽就不落 DP」，结果表单里还留着上一个预设的
+**dp=512**，配平把 Total Rank 顶到 **65536** —— 导入一份 175B 的脚本得到六万五千张卡，
+比读不到还离谱。改成「配置没写 DP 就按 1 记」，并把这一跳写进报告的注释里。
+
+**三、谁赢：定死了，并且写在界面上。**
+计划要求「`totalLayer` / `routedExpert` / `topK` / `sharedExpert` 四项谁赢要在行 20 里
+定死」。规矩是**配置赢**（它们本来就是表单里可调的字段，导入的目的就是让表单跳到那份
+配置的档位），而**结构常量一个都不覆盖**（由计算图给）。
+⚠️ 第二条有个必须当面说清的后果，面板上因此单开一栏：把 deepseek3 的并行度导到
+openPangu 的结构上，**算出来的容量不是 deepseek3 的容量**（hidden 7168 vs 2560）。
+宁可显得啰嗦，也不能让人对着一根按别人并行度、自家结构算出来的柱子做决定。
+
+**四、第三条入口：直接切样例配置（2026-08-28 改到 yaml 文件名那一格）。**
+计划只写了「贴 / 传」，但那两条都要求用户**手上先有一份配置**。所以补了第三条：直接切
+[config-test/](config-test/) 里那 11 份公开配置 —— 它们本来就是第六批的验收材料，用户
+拿它们试一遍，等于把这一批的结论自己复核了一遍。
+
+入口起初是导入面板里的一枚下拉，后来挪到了 **YAML 视图的文件名那一格**
+（`.cro-yaml__file` → `#croYamlPickerBtn`）：这一格本来就在回答「你现在看的是哪份配置」，
+换一份的动作理应从同一处发起，而不是先去顶栏开一个叫「导入」的面板。三处细节是这个
+菜单好不好用的全部：
+
+- **选项是两行卡片，`title` 就此不用了。** 第一行「名字 + 来源」，第二行「选它能看到
+  什么」。一个只写文件名的菜单是没法选的 —— 用户凭什么知道 `mixtral_8x7b.sh` 与
+  `megatron_175b.sh` 该先试哪个。而「这份配置有没有代表性」是**选之前**就该看到的东西，
+  `<option title>` 要悬停半秒才出、还只给纯文本，等于没写。文案与 `config-test/README.md`
+  同源，但换成了「选它能看到什么」的说法（deepseek3 那条写的是「唯一必然被页面改数的
+  一份 —— 它的 EP 在 dp×mp 域上切」）。
+- **点卡片不直接生效，中间隔一步解析弹窗。** 整份报告先摊开（落到哪几档 / 配平会改哪
+  几个数 / 结构常量不覆盖 / 缺口 / 不建模），底部才是【取消】【应用】。**看完再决定**是
+  这一步存在的全部理由 —— 把一份陌生配置直接糊到表单上，用户看不出页面替他改了什么。
+  【取消】退回卡片菜单而不是空屏：用户的动作是「挑一份」，取消的是这一份，不是挑这件事。
+  ⚠️ 应用只改并行/批次/开关那几档，**模型与结构常量不跟着换**（`MAP` 里没有 `model`）；
+  应用后文件名旁留一枚角标记住「现在这些数来自哪一份」，因为路径那段由 yaml 模块按模型名
+  重算、样例名不在其中。
+- **页面自己的默认配置也是其中一张卡，并且第一次有了名字**
+  （`页面默认 · openPangu 2.0 flash 92B · 2048 卡`）。一个「别的选项都有名字、唯独你
+  现在看的这一屏没有」的菜单是读不通的，用户会以为默认配置不在其中。选它走的是
+  **恢复**而不是导入：把预设的 `defaults` 整片喂回 `importConfig`（它本身自洽，配平不
+  改动它），预览这一步给的是「应用会改回哪几项」的逐条 diff。
+  ⚠️ 卡型号与 EP 口径**不在恢复范围内** —— 它们是硬件与读法，不是这份配置的内容。
+
+样例走 `fetch('./config-test/…')` 读同目录文件，`file://` 下会被浏览器拦掉；那时报的
+不是一句「读取失败」，而是「这一页需要用 http 打开（`python3 -m http.server`），
+也可以用顶栏『导入配置』把内容直接贴进去」—— 页面本来就必须用 http 打开（CLAUDE.md）。
+自检台为这个菜单加了一组**双向**断言：目录里列到的文件必须存在、目录下的文件必须都被
+列到（改名一个文件就会在菜单里留下一张点了报 404 的死卡，而那是用户最先碰到的入口），
+外加每一项都必须有名字、来源与代表性说明。
+
+**五、一句可以核对的账。** 报告首行是
+`总键数 ＝ 落到表单 ＋ 缺口 ＋ 结构常量 ＋ 不建模 ＋ 未识别`，数的是**键**不是行
+（整块折叠的那几条各自压着几十个键）。核不平就说明有键被悄悄丢了 —— 面板会直接把
+「有 N 个键没交代（这是本页的 bug）」印出来。自检台断言的也是这一条。
+
+**验证**：[tools/cro-selfcheck.js](tools/cro-selfcheck.js) 新增第 6 节，拿
+[config-test/](config-test/) 那 11 份真配置逐份撞：解析不抛 / 方言认对 /
+**每份至少接住 N 个字段**（回归下界，接少了当场知道）/ **每个键都有归宿** /
+**导入后 `validate` 为空**（导入不该把页面推进报错态）；另逐字核对 deepseek3 的
+10 项与 mixtral 的 world 反推，以及 llama3 的变量全部解引用。11 份全过。
+
+**这一行没有改动任何显存口径**，所以基线数字（默认档 10.9 GB / 17%、三档
+25.0 / 10.9 / 7.7）与随机游走十二项断言逐位不变。
+
 ### 两点提醒
 
 - ~~**行 12 是唯一一条建议先查证再动的**：结论会推翻页面现在刻意讲的一个卖点（「加 DP 只增吞吐不增余量，容量柱纹丝不动」）。~~
   **已查证（2026-08-25）**：结论是「全局」，但那个卖点**没被推翻** —— 全局语义落在 yaml 的 `batch_size` 上，不落在表单那枚 Micro Batch 上。见行 12 落地记录。
 - **行 3 的实现成本远低于它的表述成本**：代码只改标签，但「DP 8 变 512」这件事需要在容量栏口径浮层里给一句解释，否则老用户会以为算错了。
+
+---
+
+### 行 21 / 行 22 落地记录（2026-08-28）
+
+第六批的两条 P0。它们是**静默错**：页面照常出图，只是高度不对 —— 比报错更危险。
+两条一起做，因为它们撞的是同一栏（单卡容量）的两个方向：行 21 改「每个数几个字节」，
+行 22 改「同时压着几份」。
+
+---
+
+**一、行 21：精度从三个写死的常量升成两枚档位控件。**
+
+改前 [capacity.js](js/config-relation-capacity.js) 里是 `bytesWeight: 2 / bytesGrad: 2 /
+bytesOptim: 12`，页面上**一个控件都没有**；而 11 份样本里这一项人人都写。
+现在由 `precisionBytes()` 按两枚控件折算，`syncBasis()` 每次渲染前同步。
+
+**为什么是两枚而不是一枚**——它们管的是两件事：
+
+| | 权重 | 梯度 | 优化器 | 合计 |
+|---|---|---|---|---|
+| 主权重 BF16（业界标准做法） | 2 | 2 | 12（fp32 master + m + v） | **16 B** |
+| 主权重 FP32（两份 MindFormers yaml 写的都是它） | 4 | 4 | 8（m + v，master 就是参数） | **16 B** |
+
+**两档合计一模一样**，变的是哪一段扛着那份 fp32 master —— 这句在「权重分片：关」
+时听着像废话，一拨 ZeRO-1 就不是：ZeRO-1 只切优化器那一段，BF16 档切走 12 B、每卡
+留 4 B，FP32 档只切走 8 B、每卡留 8 B。**DP 越大，FP32 档越吃亏**，容量柱上看得见。
+
+计算精度那一枚（BF16 / FP16 / FP8）：前两档字节数相同（差别在动态范围与 loss scale，
+不进显存模型），**FP16 仍然列出来**是为了如实接住 `megatron_175b.sh` 那种写 `--fp16`
+的配置 —— 假装没读到比读错更糟。FP8 档让常驻权重按 1 B 存。
+
+⚠️ **FP8 这一档建模的是「权重直存 fp8」**（Megatron 的 `--fp8-param-gather`，
+`megatron_llama3_8b_fp8.sh` 正好开着）。不开那一项时 fp8 只是进 matmul 前的一次转换，
+权重仍按 2 B 常驻、另有一份 fp8 缓存（2 + 1 B）—— 那一档没建，与 FSDP2 / VPP 同一种
+处理：算的是什么、对应框架里哪个开关，都写出来，但不伪造一个可以照抄的值。
+
+**默认档为什么仍是 BF16 / BF16**：架构参考 §6.1 写的是「FP8 E4M3（HiF8 混合精度：
+forward FP8, backward BF16, master weights FP32）」，三句话要一句句拆 ——
+「master weights FP32」是混合精度的标准做法（那 4 B 记在优化器的 12 B 里），**不是**
+MindFormers 的 `params_dtype: float32`；「forward FP8」是**算子级的计算格式**，权重仍
+以 bf16 常驻，与本页 FP8 档的「权重直存」不是同一件事。所以默认档停在 BF16 / BF16，
+与行 21 之前那三个常量逐位相同 —— **基线数字一个都没动**。
+
+**激活段不随精度档变**，这是本轮唯一一处主动留白：那组系数（34 / 17 / 2）出自
+Korthikanti et al. 2022，本身已按 2 B/元素折算；fp8 只作用在 matmul 的输入副本上，
+哪些激活能跟着降到 1 B 取决于实现 —— 不猜，宁可这一段偏保守，并把这句话写进口径浮层。
+顺带把算子 workspace 那一项从 `bytesWeight` 改读新增的 `bytesAct`：那份 token 张量是
+**激活**不是权重，拨到 FP8 档时它不该跟着权重一起缩水。
+
+---
+
+**二、行 22：微批数从派生值升成一枚 stepper。**
+
+改前页面只握着 `GBS = MBS × DP × 微批数` 里的两个数：yaml 按 `4×PP` 派生（那行注释
+自己写着「本页未建模」），capacity 的在飞份数**隐含假设它 ≥ PP**，而 VPP 的 title
+早就在解释「气泡比例约 (PP−1)/micro_batch_num」—— **页面在解释一个自己没有输入的量**。
+
+现在它是 Cluster 那一行的第四枚控件（Micro Batch / 微批数 / Seq Length / 重计算），
+三处读同一个 config 字段：
+
+- **capacity**：`inflight = min(1F1B/VPP 公式, 微批数)`。Megatron 两条调度路径都写着
+  这一步（`num_warmup_microbatches = min(…, num_microbatches)`，交错档的上界是
+  `num_microbatches × VPP`，折回整段单位后同样是 `min(raw, num)`）。
+- **yaml**：`micro_batch_num` 从派生值变成输入，`batch_size` 跟着它算。
+- **软警告**：微批数 < `PP × VPP` 时给一条 —— 能跑，只是气泡占比约 `(PP−1)/微批数`，
+  PP=4、微批数=2 时已经超过 100%。**省下的显存是拿吞吐换的**，这句话必须跟着一起说，
+  否则用户会把它当成一枚省显存的旋钮。
+
+**openPangu 的默认值 24 是有出处的**：架构参考 §6.4 给了 Global Batch Size **12288**，
+而 `12288 = 1 × 512 × 24`。于是默认档的 yaml 第一次和那份参考配置对上了
+（`batch_size` 从 8192 变成 12288）。24 ≥ PP 4，所以在飞份数不被它夹住 ——
+**容量柱逐位不变**。Qwen2 那份参考配置没给全局 batch，沿用旧取法 `4×PP = 16`。
+
+它对显存**不是线性的**，这一点写进了 title、文档条目与口径浮层：微批数 ≥ PP（交错档
+`PP×VPP`）时调它一个字节都不动；小于时才把整排小柱压低。PP=1 时在飞恒为 1，
+调它容量柱纹丝不动 —— 那时它只改全局 batch。
+
+---
+
+**三、导入通路：12 条缺口从清单里撤下来。**
+
+行 20 那张「已识别 · 缺口」清单是这两行的验收标准。撤下来的是
+`params_dtype` / `compute_dtype` / `fp8-format` / `bf16` / `fp16` /
+`quantization_config` 与 `micro_batch_num` / `global-batch-size` /
+`gradient_accumulation_steps` / `train_batch_size` / `batch_size`，各自的去处：
+
+- 直接接住：MindFormers 的 `params_dtype` + `compute_dtype`、Megatron 的
+  `--fp8-format` / `--bf16` / `--fp16`、MindFormers 的 `micro_batch_num`、
+  HF 的 `gradient_accumulation_steps`；
+- **反推接住**：Megatron 不写微批数，由 `--global-batch-size ÷ (--micro-batch-size × DP)`
+  算出来（除不尽就不落 —— 那说明这份脚本的 GBS 与它自己的并行度对不上，硬凑一个整数
+  不如如实报出来）；
+- **接住但要说明白**：`hf_deepseekv3_config.json` 的 `quantization_config` 说的是
+  **发布权重的量化格式**（checkpoint 本来就按 fp8 e4m3 存），不是训练精度。本页这一档
+  问的正是「权重按几个字节存」，所以接得住，但报告里明写这句话；
+- **仍然不接、但改挂到「不建模」**：MindFormers 的 `runner_config.batch_size`
+  （full_batch 下是全局 batch，见行 12，读它就得反推 MBS，三个数里错一个全错）、
+  DeepSpeed 那三个 `auto`。页面有落点了却读不出来，那不叫缺口，叫读不出来 —— 分开写。
+
+顺带修了 sh 解析的一个真 bug：`megatron_llama3_8b_fp8.sh` 把 fp8 那几项放在一个 bash
+数组里、**每行都带引号**（`"--fp8-format hybrid"`），原先整组读不到 —— 而那份脚本整个
+主题就是 fp8。现在剥掉紧挨着 `--` 的那个引号（以及布尔开关尾部的那个），
+同时补了 `vocab-size` 进结构常量、几个数据流水键进「不建模」。
+
+**导入清单的变化**（缺口数）：megatron 两份 2 → **0**，mixtral 2 → **0**，
+llama3 2 → **0**，deepseek3 13 → **9**，qwen3 10 → **5**，lf 两份 2/3 → 0/1，
+ds_z3 2 → **0**。11 份仍然**未识别 0、每个键都有归宿**。
+
+---
+
+**验证**（[tools/cro-selfcheck.js](tools/cro-selfcheck.js)，不起页面）：
+
+- **基线一个数没动**：默认档 10.9 GB / 17%，三档 25.0 / 10.9 / 7.7，
+  权重 2.3 / 梯度 2.3 / 优化器 0.5 / 激活 0.9 —— 与行 15 / 17 / 20 的记录逐位相同。
+  这正是「默认档取 BF16 / BF16 且 24 ≥ PP」的用意：新增两个维度，旧结论不动。
+- 新增第 7 节：精度六种组合的字节口径（含「两档合计都是 16 B」与 ZeRO-1 下
+  两档能切走的量不同）、FP8 档权重段正好减半、微批数夹取的三条性质
+  （≥ 公式值时逐位不变 / < 时严格变矮 / PP=1 时怎么拨都不动）。
+- 加减键随机游走 3.6 万个状态，十二项断言仍全为 0；软警告覆盖率从 33.1% 升到 48.5%
+  （新增的「微批数灌不满流水线」那一条）。
+
+**页面上还留着的两处已知偏差**（写在这里免得下次当成新发现）：
+1. 激活段不随精度档变（上面说了为什么）；
+2. FP8 档只建了「权重直存」那一种，未建「额外一份 fp8 缓存」那一种 ——
+   导入 llama3 时若没看到 `--fp8-param-gather`，报告里会明说这份配置会被高估。
+
+---
+### 行 23 落地记录（2026-08-28）
+
+第六批第三条 P0，也是**唯一一条会改 rank 编址几何**的。前两条（行 21 / 22）改的是
+「每个数几个字节」「同时压着几份」，这一条改的是「这批卡到底怎么排」。
+
+`croEpMode` 从二选一变三档，新增 **MindFormers（DP×MP）**：
+
+| | 正交 | 从 DP 切出（默认） | MindFormers · DP×MP 域 |
+|---|---|---|---|
+| world | `DP×PP×TP×CP×EP` | `DP×PP×TP×CP` | `DP×PP×TP×CP`（同左） |
+| 额外约束 | `E % EP == 0` | 再加 `DP % EP == 0` | 再加 **`(DP × TP) % EP == 0`** |
+| EDP | `DP` | `DP / EP` | **`DP × TP / EP`** |
+
+---
+
+**一、为什么非补不可。**
+
+`config-test/mf_pretrain_deepseek3_671b.yaml` 写的是 `dp:4 / mp:8 / pp:8 / ep:32`，
+**两档都接不住**：切出档 `4 % 32` 除不尽、当场红；正交档 `4×8×8×32 = 8192`，
+而它实际是 256 卡。README 说这份「最贴页面口径」，结果它是 11 份里唯一一份**必然报错**的。
+`mf_pretrain_qwen3_30b_a3b.yaml`（`dp:1 / mp:4 / ep:4`）更隐蔽：它不报错，
+但配平会把 `ep` 从 4 收到 1 —— **专家并行度被静默改没了**。
+
+行 1 的附录里那句「严格些是 `DP × TP % (EP × ETP) == 0`」正是这一档，当时记下了没落成规则。
+
+**二、这一档真的会改几何，不是换个读法。**
+
+正交与切出是**同一张网格的两种读法**（512 张卡本来就排成 8×64，区别只在行叫 DP 还是 EDP），
+所以那两档切换时容量柱一个数都不动。mf 档不是：EP 组横跨了 TP，于是
+
+- 行数从 `DP/EP` 变成 `DP×TP/EP`；
+- **TP 不再是独立的一根轴** —— 编址里 `ranksPerEp` 从 `TP×CP` 变成 `CP`，
+  TP 分片号要从域里的位置反推：`(EDP索引 × EP + EP索引) % TP`。
+
+照抄另两档的 `ranksPerEp = TP×CP` 会把每个 stage 撑成 TP 倍 —— 那正是自检台里
+「矩阵格子数 == Total Rank」那条断言会当场逮住的错。两套编址的分解统一收进
+`derive()` 的 `shardOf()` 一处：集群矩阵原先自己又算了一遍（`inner % tp`），
+那份算法在 mf 档下会画出一片全是 TP0 的斑马纹。
+
+**三、连带的两处口径，不写出来就是静默偏差。**
+
+1. **路由专家在 mf 档下只 ÷EP，不再另 ÷TP** —— EP 已经吃掉了 mp 那一维，再除一次
+   是把同一刀切两遍。本页按**专家张量并行 ETP = 1** 建模，`expert_model_parallel`
+   那一档没建，注释与文档都写明了。
+2. **ZeRO / FSDP2 的分母**：非专家权重的复制份数在 mf 档下仍是 `DP`，
+   而 `EDP × EP = DP×TP` —— 照旧乘出来会把 TP 那一维当成数据并行的复制，
+   优化器段直接偏小 TP 倍。所以 `derive()` 单给一个 `dpReplica`，capacity 不再判档
+   （切出档 = DP、正交档 = DP×EP，与改动前逐位相同）。
+
+**四、导入：deepseek3 不再红。**
+
+导入通路加一条 DERIVED 规则 —— 判据是**「这份配置写的是 MindFormers 的
+`parallel_config`」而不是「除不尽」**：按框架选档，不按算得通不通选档，
+否则同一个框架的两份配置会落到两个口径上。`epMode` 既不是 stepper 也不是开关
+（它走 `setEpMode`），所以 `importConfig` 里单独接了一条，并把它加进「落到表单」清单；
+EP 口径那排页签也补了 `controller.onChange(sync)` —— 否则会出现
+「页面按 mf 算、按钮还停在切出档」。
+
+导入结果的变化：
+- deepseek3：配平从「ep 32→4、vpp 2→1」变成只剩「vpp 2→1」（那是 VPP 的层数约束，另一回事）；
+- qwen3：配平从「ep 4→1、shardMode none→zero1」变成只剩后者。
+- 两份的「落到表单」各多一项（EP 口径），缺口数不变。
+
+---
+
+**验证**（[tools/cro-selfcheck.js](tools/cro-selfcheck.js) 新增第 8 节）：
+
+- **双射不变式**：三档 × 四组并行度，逐个 rank 验 `rankOf → coordsOfRank` 回得来、
+  每个 rank 恰好被编址一次、TP/CP 分片号不越界、格子数 == Total Rank。
+- **TP=1 时切出档与 mf 档必须逐位相同**（域就是 DP）—— 这条保证新档不会悄悄污染老档。
+- deepseek3 的那组并行度：切出档必报错、mf 档必自洽，且 `EDP = DP×TP/EP`、`dpReplica = DP`。
+- 导入两份 MindFormers 样本：口径落到 mf，且 EP 不再被配平收走。
+- 加减键随机游走从「两档 × 两模型 × 三种卡」扩成**三档**，共 5.4 万个状态，
+  十二项断言仍全为 0（`DP除不尽EP` 那条按档换成域的判据）。
+
+**基线数字仍逐位不变**：默认档（切出档）10.9 GB / 17%，三档分片 25.0 / 10.9 / 7.7。
+
+**已知未建模**（写在这里免得下次当成新发现）：专家张量并行 ETP。真实 MindFormers 里
+ETP > 1 时约束是 `(DP×TP) % (EP×ETP) == 0`、专家权重还要再 ÷ETP —— 本页按 ETP=1 建模，
+遇到写了 `expert_model_parallel` 的配置要自己折算。
 
 ---
 

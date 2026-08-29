@@ -31,6 +31,8 @@
    2. 1F1B 下 stage s 同时在飞 (PP−s) 份 micro-batch 的激活，stage0 最紧。
       不算这一项会系统性低估最危险的那张卡。开了虚拟流水（VPP>1）后换成交错式
       1F1B 的份数，每张卡压得更多 —— 见 inflightMicroBatches（升级计划行 17）。
+      份数还要被**微批数**夹住（行 22）：一共只有那么多份可灌，少于 warmup 深度时
+      整排小柱一起矮下去 —— 那是拿流水线气泡换来的，不是配置变省了。
    3. 运行时开销必须算进去，且**不能做成 core 的固定百分比**。只画四段得到的是一
       个更好看的黑洞；而按已用量抽 10%，等于把一个几乎不随 core 变的量做成了正比
       项 —— 大 EP/大 PP 的轻卡被低估（光驱动+HCCL 就不止那点），重卡又虚高。这里
@@ -47,20 +49,27 @@
   const doc = global.document;
   const GIB = 1024 * 1024 * 1024;
 
-  /* 口径常量。前三项（microBatch / seq / capGB）是**用户可调**的：它们是除并行维
-     之外仅有的、能改变单卡占用的输入，写死了「事前配置校验」就缺一角。它们由
-     Cluster 区表单那一行持有：Micro Batch / Seq Length 两个 stepper（训练超参）与
-     卡型号下拉（硬件属性，HBM 决定容量）并排，每次渲染前由 syncBasis() 从
-     topology.config / topology.card 同步过来；这里的值只是它们还没就绪时的兜底。
+  /* 口径常量。**这里没有一个是真常量了**：microBatch / seq / capGB 由 Cluster 那一行
+     的控件给，四个字节数由精度两档给（升级计划行 21），每次渲染前统一由 syncBasis()
+     从 topology.config / topology.card 折算过来 —— 下面写的值只是它们还没就绪时的兜底。
+     Cluster 区那一行持有的是：Micro Batch / 微批数 / Seq Length 三个 stepper（训练超参）、
+     卡型号下拉（硬件属性，HBM 决定容量），以及「高级选项」里的计算精度 / 主权重精度。
      其余是估算模型本身的系数，改它等于改整栏口径，同一组值也要出现在 basisHtml()
      （标题右侧那枚问号）里说给用户听 —— 不写等于让人猜。 */
   const BASIS = {
     seq: 4096,            // 序列长度 S ← config.seqLen
     microBatch: 1,        // 单卡 micro-batch ← config.microBatch
     capGB: 64,            // 单卡显存 ← topology.card.hbmGB（Cluster 区卡型号下拉）
-    bytesWeight: 2,       // bf16
+    /* ── 下面四项由精度档定，不是常量（升级计划行 21）────────────────────
+       改前它们写死成「bf16 权重 + bf16 梯度 + Adam 的 fp32 master」，而 11 份样本里
+       这一项人人都写（fp8 / params_dtype: float32 / --fp16）。现在由 syncBasis 从
+       config.dtype 与 config.paramsDtype 折算，折算表见 precisionBytes()。
+       bytesAct 单列而不是复用 bytesWeight：算子 workspace 里那份 token 张量是**激活**
+       不是权重，拨到 FP8 档时权重段该减半、workspace 不该跟着减（见 workspaceBytes）。 */
+    bytesWeight: 2,       // 常驻权重副本：bf16 参数
     bytesGrad: 2,         // bf16
     bytesOptim: 12,       // Adam：fp32 master weight + momentum + variance
+    bytesAct: 2,          // 激活 / 算子临时区，bf16
   };
 
   /* ── 每层激活的系数 ───────────────────────────────────────────────────────
@@ -169,12 +178,57 @@
      那款卡的 HBM（topology.card.hbmGB）。 */
   const BASIS_FROM_CONFIG = { microBatch: "microBatch", seq: "seqLen" };
 
+  /* ── 精度档 → 每个数占几个字节（升级计划行 21）──────────────────────────
+     两枚控件、两件事，合起来给出权重 / 梯度 / 优化器三段的字节口径：
+
+       paramsDtype（主权重精度）—— 那份 fp32 master **摆在哪一段**
+         bf16 档：参数以 bf16 常驻（2 B），master 由优化器持有 → Adam 12 B
+                  （4 master + 4 momentum + 4 variance）
+         fp32 档：参数本身就是 master（4 B），优化器只剩 momentum + variance（8 B），
+                  梯度也按参数精度累加（4 B）
+         两档合计都是 16 B/参数 —— **总量不变，变的是哪一段扛着它**。一旦拨了
+         权重分片就不一样了：ZeRO-1 只切优化器那一段，bf16 档切走 12 B、每卡留 4 B，
+         fp32 档只切走 8 B、每卡留 8 B。DP 越大，fp32 档越吃亏。
+
+       dtype（计算 / 存储格式）—— 常驻的那份权重按几个字节存
+         bf16 与 fp16 字节数相同（差别在动态范围与 loss scale，不进显存模型）；
+         FP8 档按**权重直存 fp8** 建模（Megatron 的 --fp8-param-gather，
+         megatron_llama3_8b_fp8.sh 正好开着）→ 1 B。
+         ⚠️ 不开那一项时 fp8 只是进 matmul 前的一次转换，权重仍按 2 B 常驻、另有一份
+         fp8 缓存（2 + 1 B）—— 本页没建那一档。fp32 主权重 + fp8 计算这一组合下，
+         那份 fp8 副本必然是**额外**的一份（主权重不能降精度），故记 4 + 1。
+
+     激活不随精度档变：那组系数（34 / 17 / 2）出自 Korthikanti et al. 2022，
+     本身已按 2 B/元素折算；fp8 只作用在 matmul 的输入副本上，哪些激活能跟着降到
+     1 B 取决于实现 —— 本页不猜，宁可这一段偏保守。 */
+  function precisionBytes(config) {
+    const cfg = config || {};
+    const master = cfg.paramsDtype === "fp32" ? "fp32" : "bf16";
+    const compute = cfg.dtype || "bf16";
+    const fp8 = compute === "fp8";
+    return {
+      master,
+      compute,
+      weight: master === "fp32" ? (fp8 ? 5 : 4) : (fp8 ? 1 : 2),
+      grad: master === "fp32" ? 4 : 2,
+      optim: master === "fp32" ? 8 : 12,
+      act: 2,
+    };
+  }
+
   function syncBasis(topo) {
     const config = (topo && topo.config) || {};
     Object.keys(BASIS_FROM_CONFIG).forEach((key) => {
       const v = config[BASIS_FROM_CONFIG[key]];
       if (Number.isFinite(v) && v > 0) BASIS[key] = v;
     });
+    /* 精度档（行 21）：三段的字节数不是常量，按两枚控件折算 —— 这一句是本栏与
+       yaml 读同一份来源的最后一处缺口。 */
+    const bytes = precisionBytes(config);
+    BASIS.bytesWeight = bytes.weight;
+    BASIS.bytesGrad = bytes.grad;
+    BASIS.bytesOptim = bytes.optim;
+    BASIS.bytesAct = bytes.act;
     const hbm = topo && topo.card && topo.card.hbmGB;
     if (Number.isFinite(hbm) && hbm > 0) BASIS.capGB = hbm;
   }
@@ -527,7 +581,10 @@
       + (stage === counts.pp - 1 ? preset.vocab * H : 0);
     if (cfg.vocabEmbDp) replicated += embHead; else sharded += embHead;
 
-    const expertOnCard = expert / tp;
+    /* mf 档（行 23）：EP 是在 DP×MP 域上切的 —— 它**已经吃掉了 mp 那一维**，
+       再 ÷TP 就是把同一刀切两遍。本页按 ETP=1 建模（MindFormers 的专家张量并行
+       未建模，那时严格式是 (DP×TP) % (EP×ETP) == 0）。另两档逐位不变。 */
+    const expertOnCard = expert / (counts.epMode === "mf" ? 1 : tp);
     /* 词表那一块自成一个 FSDP 单元，且往往比一层还大（388M vs 一层几十 M）——
        首尾两个 stage 的 all-gather 峰值由它定，不是由 transformer 层定。
        vocab_emb_dp 开着时它不被 TP 切，这里跟着 embHead 的去向走。 */
@@ -552,10 +609,18 @@
 
   /* 数据并行维上的两个分母。**三档共用这一组**（升级计划行 15）——
      ZeRO-1 与 FSDP2 切的是同一维，差别只在「切哪几段」，不在切成几份。 */
+  /* ZeRO / FSDP2 的两个分母（升级计划行 10，行 23 补第三档）：
+       专家     ÷ EDP        —— 一份专家分片在数据并行域里复制了几次，三档同形
+       其余权重 ÷ dpReplica  —— 切出档 = DP、正交档 = DP×EP、**mf 档 = DP**
+     mf 档下 EDP×EP = DP×TP，照旧乘出来会把 TP 那一维当成数据并行的复制，
+     优化器段直接偏小 TP 倍 —— 所以分母由 derive() 单给一个数（dpReplicaOf），
+     这里不再判档。切出档与正交档的值与改动前逐位相同。 */
   function dpShards(topo) {
     const c = topo.counts;
     const expert = Math.max(1, c.edp);
-    return { expert, other: expert * Math.max(1, c.ep) };
+    const other = Number.isFinite(c.dpReplica) && c.dpReplica > 0
+      ? c.dpReplica : expert * Math.max(1, c.ep);
+    return { expert, other };
   }
 
   /* 哪几段被切：关=一段都不切；ZeRO-1=只切优化器状态；FSDP2=权重/梯度/优化器全切
@@ -625,7 +690,7 @@
       + params / plan.optim.other * BASIS.bytesOptim;
   }
 
-  /* ── 在飞的 micro-batch 份数（升级计划行 17）─────────────────────────────
+  /* ── 在飞的 micro-batch 份数（升级计划行 17 / 22）───────────────────────
      **非交错 1F1B**（VPP=1）：stage s 同时压着 (PP−s) 份未反向的激活，stage0 最紧。
 
      **交错式 1F1B**（VPP>1，虚拟流水）：每张卡持有 VPP 个 chunk，warmup 段要多灌
@@ -641,13 +706,29 @@
      两条分支不能合并成一个式子：VPP=1 时框架走的是**另一套调度**（Megatron 在 vpp
      为空时用非交错路径），把上式代到 VPP=1 会算出 1.75×PP，那不是页面此刻画的东西。
 
-     ⚠️ 未取 `min(warmup, micro_batch_num)`：capacity 不持有 micro_batch_num（它只
-     出现在 yaml 那一栏，按 4×PP 取）。micro-batch 数少于 warmup 时这里偏高估。 */
-  function inflightMicroBatches(topo, stage) {
+     ── 微批数的夹取（行 22）────────────────────────────────────────────────
+     公式给的是「流水线满载时压几份」，而一共只有 micro_batch_num 份可灌 —— 少于
+     warmup 深度时，warmup 还没走完 batch 就没了。Megatron 两条调度路径都写着这一
+     步（`num_warmup_microbatches = min(…, num_microbatches)`，交错档的上界是
+     num_microbatches × VPP，折回整段单位后同样是 min(raw, num)）。
+     行 22 之前这里只有那个 `⚠️ 未取 min(warmup, micro_batch_num)` 的注释，因为
+     capacity 拿不到那个数（它只出现在 yaml 那一栏，还是按 4×PP 派生的）。现在它是
+     一枚真的 stepper，两处读同一个 config 字段。 */
+  function inflightRaw(topo, stage) {
     const p = Math.max(1, topo.counts.pp);
     const v = Math.max(1, topo.counts.vpp || 1);
     if (v <= 1) return Math.max(1, p - stage);
     return (2 * (p - stage - 1) + (v - 1) * p + 1) / v;
+  }
+
+  function microBatchNumOf(topo) {
+    const c = topo.counts || {};
+    const cfg = topo.config || {};
+    return Math.max(1, c.microBatchNum || cfg.microBatchNum || 1);
+  }
+
+  function inflightMicroBatches(topo, stage) {
+    return Math.min(inflightRaw(topo, stage), microBatchNumOf(topo));
   }
 
   /* 在飞份数在交错档下不是整数（PP4 / VPP2 的 Stage0 是 5.5 段）。写给人看时保留
@@ -699,7 +780,10 @@
     }
     if (!hasMoe) return peak;
     const tokens = BASIS.microBatch * (BASIS.seq / Math.max(1, counts.cp));
-    const tokenBytes = tokens * preset.hidden * BASIS.bytesWeight / Math.max(1, counts.tp);
+    /* 这份 token 张量是**激活**不是权重（行 21）：拨到 FP8 档时权重段减半，
+       而 permute/unpermute 的临时区仍按 bf16 走 —— 用 bytesWeight 会让它跟着权重一起
+       缩水，那是一个没人验证过的假设。 */
+    const tokenBytes = tokens * preset.hidden * BASIS.bytesAct / Math.max(1, counts.tp);
     return Math.max(peak, RUNTIME.wsFactor * counts.topK * tokenBytes);
   }
 
@@ -742,6 +826,10 @@
       stage, params, cap, total,
       ratio: total / cap,
       inflight: inflightMicroBatches(topo, stage),
+      /* 公式值与夹取后的值都留着（行 22）：小柱 tooltip 与判定文案要说清「这根柱子
+         矮下去是因为微批数不够灌满流水线」，只给结果说不出这句话。 */
+      inflightFull: inflightRaw(topo, stage),
+      microBatchNum: microBatchNumOf(topo),
       // chunks > 1 就是交错档：在飞份数的读法要跟着换（见 verdictText 与小柱 tooltip）
       chunks: Math.max(1, topo.counts.vpp || 1),
       layers: topo.stages[stage] ? topo.stages[stage].count : 0,
@@ -824,7 +912,10 @@
         ? `本 stage 背 ${m.layers} 层，交错成 ${m.chunks} 段轮流跑（VPP），`
           + `在飞的激活折合 ${inflightText(m.inflight)} 份整段 micro-batch —— `
           + `交错换来的小气泡就是拿这一项付的账。`
-        : `本 stage 背 ${m.layers} 层、在飞 ${m.inflight} 份 micro-batch。`);
+        : `本 stage 背 ${m.layers} 层、在飞 ${inflightText(m.inflight)} 份 micro-batch。`)
+      + (m.inflight < m.inflightFull
+        ? `在飞份数被微批数 ${m.microBatchNum} 夹住（公式值 ${inflightText(m.inflightFull)}）—— 这一段矮下去是拿流水线气泡换的，不是配置变省了。`
+        : ``);
   }
 
   /* 口径浮层内容：谁除以谁写清楚，尤其 DP 那一行 —— 它是这一栏最反直觉、也最该
@@ -843,6 +934,9 @@
     const plan = shardPlan(topo);
     const shards = dpShards(topo);
     const MODE_LABEL = { none: "关", zero1: "ZeRO-1", fsdp2: "FSDP2" };
+    /* 精度档（行 21）：下面三行的字节数与「精度」那一行都读它，别各算各的 */
+    const prec = precisionBytes(cfg);
+    const DT_LABEL = { bf16: "BF16", fp16: "FP16", fp8: "FP8" };
     /* 三档共用这一句分母，别在下面三行里各写一遍 */
     const denom = c.ep > 1 && !c.moeOrthogonal
       ? `路由专家 ÷ EDP(${shards.expert})、其余权重 ÷ ${shards.other}（= EDP×EP）`
@@ -856,17 +950,17 @@
         + `每层只有注意力 q/k/v/o 四个矩阵旁挂的 <code>4·r·2H = ${4 * 2 * (cfg.loraRank || 1)}·H</code> 个参数（r=${cfg.loraRank || 1}）`
       : "";
     return `<dl>`
-      + row("权重", `bf16，${BASIS.bytesWeight} B/参数`
+      + row("权重", `${DT_LABEL[prec.compute] || "BF16"}，${BASIS.bytesWeight} B/参数${prec.compute === "fp8" ? "（<b>权重直存 fp8</b>：按 Megatron 的 --fp8-param-gather 建模；不开那一项时是 2 + 1 B，本页没建那一档）" : ""}${prec.master === "fp32" ? "（<b>主权重 FP32</b>：参数本身就是那份 master，所以优化器那一段少 4 B —— 两档合计都是 16 B/参数，变的是哪一段扛着它）" : ""}`
         + (plan.mode === "fsdp2"
           ? `；<b>FSDP2 下这一段也沿 DP 切</b>：${denom}`
           : `，每张卡各持一份完整的（${MODE_LABEL[plan.mode]} 档不切这一段）`)
         + (loraOn(topo) ? `<br>LoRA 下它<b>纹丝不动</b>：冻结不等于不用背，主干仍要整份留在卡上` : ""))
-      + row("梯度", `bf16，${BASIS.bytesGrad} B/<b>可训练</b>参数`
+      + row("梯度", `${prec.master === "fp32" ? "FP32（按参数精度累加）" : "BF16"}，${BASIS.bytesGrad} B/<b>可训练</b>参数`
         + (plan.mode === "fsdp2"
           ? `；<b>FSDP2 下这一段也沿 DP 切</b>：${denom}`
           : `，每张卡各持一份完整的（${MODE_LABEL[plan.mode]} 档不切这一段）`)
         + loraNote)
-      + row("优化器状态", `Adam ${BASIS.bytesOptim} B/<b>可训练</b>参数（fp32 master + momentum + variance）`
+      + row("优化器状态", `Adam ${BASIS.bytesOptim} B/<b>可训练</b>参数${prec.master === "fp32" ? "（momentum + variance；master 就是参数本身，不再另存一份）" : "（fp32 master + momentum + variance）"}`
         + (plan.mode === "none"
           ? `，<b>权重分片：关</b>，每张卡各存一份完整的`
           : `，<b>权重分片：${MODE_LABEL[plan.mode]}</b> —— ${denom}`
@@ -918,11 +1012,16 @@
           + `<br>⚠️ <b>激活一点没少</b>：反向仍要穿过整个网络才算得到 adapter 的梯度，`
           + `每层的中间激活该留还得留 —— 长序列 / 大 micro-batch 撑起来的那一段只能靠重计算与 CP`);
       })() : "")
+      /* 行 21：三段的字节口径此前是三个写死的常量，页面上一个控件都没有。
+         单列一行而不是塞进上面三行的尾巴 —— 它是**一个**输入同时改着那三行。 */
+      + row("精度", `计算 <b>${DT_LABEL[prec.compute] || "BF16"}</b> · 主权重 <b>${prec.master === "fp32" ? "FP32" : "BF16"}</b> → 权重 ${BASIS.bytesWeight} + 梯度 ${BASIS.bytesGrad} + 优化器 ${BASIS.bytesOptim} = <b>${BASIS.bytesWeight + BASIS.bytesGrad + BASIS.bytesOptim} B/参数</b>`
+        + `<br>两枚控件在 Cluster 行的「高级选项」里。<b>激活段不随它变</b>：那组系数（34 / 17 / 2）出自 Korthikanti et al. 2022，本身已按 2 B/元素折算；fp8 只作用在 matmul 的输入副本上，哪些激活能跟着降取决于实现 —— 本页不猜${prec.compute === "fp16" ? "<br>FP16 与 BF16 <b>字节数相同</b>，本栏六段逐位一致；差别在动态范围（fp16 要配 loss scaling）" : ""}`)
       + row("micro-batch", `<b>mb=${BASIS.microBatch}</b>，激活与它成正比 —— 这是 batch 里唯一进显存的一半`)
       /* 这一行同时是「yaml 里那个 batch_size 为什么和这里的 mb 对不上」的答案 ——
          full_batch: True 下框架把 runner_config.batch_size 读成全局 batch（升级计划
          行 12），两个数差着 DP × micro_batch_num 倍，不写在这里没人猜得到。 */
-      + row("global batch", `<b>不进显存</b>。GBS = <code>MBS × DP(${c.dp}) × 累积步数</code>，只决定累积几步，一步也不占容量 —— 累积多少步都不改这根柱子`
+      + row("global batch", `GBS = <code>MBS ${BASIS.microBatch} × DP ${c.dp} × 微批数 ${microBatchNumOf(topo)}</code> = <b>${BASIS.microBatch * c.dp * microBatchNumOf(topo)}</b>`
+        + `<br><b>GBS 本身不进显存</b>，但它派生出来的微批数在 PP > 1 时进：只有在飞的那几份激活压在卡上，而在飞份数 = <code>min(1F1B 公式, 微批数)</code>（行 22）。微批数 ${microBatchNumOf(topo)} ${microBatchNumOf(topo) >= inflightRaw(topo, 0) ? `≥ Stage0 的公式值 ${inflightText(inflightRaw(topo, 0))}，这一栏一个字节都不受它影响` : `< Stage0 的公式值 ${inflightText(inflightRaw(topo, 0))}，<b>整排小柱被它夹矮了</b> —— 省下的显存是拿流水线气泡换的`}`
         + `<br>⚠️ YAML 里 <code>runner_config.batch_size</code> 填的是 <b>GBS</b> 而不是这里的 mb：<code>full_batch: True</code> 下每张卡都读整份全局 batch，再在图内按 DP 切，落到每卡每次前反向才是 <b>mb=${BASIS.microBatch}</b>`)
       /* 行 16：两档 CP 在这一栏里逐位相同，必须明说 —— 不说的话用户拨一下发现容量柱
          纹丝不动，会以为开关没接上，而这正是「两个视图各讲一套故事」的反面教材。 */
@@ -932,7 +1031,9 @@
             + `但<b>本栏两档逐位相同</b> —— 两种算法都让每张卡只留 S/CP 份激活，`
             + `差别在通信（Ulysses 一次 all-to-all / Ring 逐块轮转 KV）与硬约束，不在显存`
           : ``))
-      + row("路由专家", `÷ EP(${c.ep}) × TP(${c.tp})，是 MoE 下减容器的主力`)
+      + row("路由专家", c.epMode === "mf"
+        ? `÷ EP(${c.ep})，<b>不再另 ÷ TP</b> —— MindFormers 档的 EP 在 DP×MP 域上切，已经吃掉了 mp 那一维（本页按专家张量并行 ETP=1 建模）`
+        : `÷ EP(${c.ep}) × TP(${c.tp})，是 MoE 下减容器的主力`)
       + row("共享专家", `在 EP 域内复制，每张卡各持一份`)
       + row("其余权重", `÷ TP(${c.tp})；全部 ÷ PP(${c.pp})，体现为这张卡只背本 stage 那几层`)
       + row("DP", plan.mode === "fsdp2"
@@ -957,13 +1058,16 @@
          被当成"算错了"的一处。矩阵旁已有一行常驻换算式，这里再给一遍是因为：
          口径浮层是用户对着数字起疑时会点开的那个东西，答案该在这里等着他。 */
       + (c.moeOrthogonal || c.ep <= 1 ? "" : row("EDP",
-        `集群矩阵纵向分 <code>EDP = DP/EP = ${c.dp}/${c.ep} = ${c.edp}</code> 行，`
+        (c.epMode === "mf"
+          ? `集群矩阵纵向分 <code>EDP = DP×TP/EP = ${c.dp}×${c.tp}/${c.ep} = ${c.edp}</code> 行`
+            + `（MindFormers 档：EP 在 <b>DP×MP 域</b>上切，域比 DP 大 TP 倍），`
+          : `集群矩阵纵向分 <code>EDP = DP/EP = ${c.dp}/${c.ep} = ${c.edp}</code> 行，`)
         + `每一行是横着的 ${c.ep} 张卡合持的一整套专家（一个 EP 组）。`
         + `纵轴上的行号因此是 EDP 索引，不是表单里那个 DP(${c.dp})：EP 从 DP 组内切出，`
         + `专家权重只在剩下的 EDP 维上复制 —— 两个数都对，指的不是同一个量`))
       + row("运行时底座", `<b>${RUNTIME.baseGB} GB 固定</b>：驱动 + CANN/ACL context + kernel binary + 通信域元数据，与配置无关 —— 64 GB 的卡一开机就少这么多`)
       + row("通信 buffer", `<code>${RUNTIME.hcclBufGB} GB × 域数(${commDomains(topo)}) × ${RUNTIME.hcclDouble}（双缓冲）</code>；域数 = TP/PP/DP/CP/EP 中 >1 的维度${c.ep > 1 ? " + MoE 的 a2a 域" : ""}`)
-      + row("算子 workspace", `峰值由单个最大算子定，∝ <b>一层</b>的 token 张量：<code>${RUNTIME.wsFactor}·topK·mb·(S/CP)·H·2B/TP</code>（MoE permute + GroupedMatMul），下限 ${RUNTIME.wsFloorGB} GB`)
+      + row("算子 workspace", `峰值由单个最大算子定，∝ <b>一层</b>的 token 张量：<code>${RUNTIME.wsFactor}·topK·mb·(S/CP)·H·${BASIS.bytesAct}B/TP</code>（MoE permute + GroupedMatMul，激活精度），下限 ${RUNTIME.wsFloorGB} GB`)
       + row("内存碎片", `已用量的 ${Math.round(RUNTIME.fragRatio * 100)}% —— 四项里只有这一项真按比例；MoE 每 step token 数变长时更差`)
       + row("单卡显存", `${BASIS.capGB} GB，警戒线 ${Math.round(THRESHOLD.tight * 100)}% 偏满 / ${Math.round(THRESHOLD.alert * 100)}% 预警`)
       + (card ? row("卡型号", `<b>${card.label}</b> · ${card.hbmGB} GB HBM<br><span class="cro-capacity__basis-warn">${card.hbmNote}</span>`) : "")
@@ -980,7 +1084,11 @@
           + `Stage0 折合 ${inflightText(inflightMicroBatches(topo, 0))} 份、末段 ${inflightText(inflightMicroBatches(topo, c.pp - 1))} 份`
           + `<br>非交错档 Stage0 只压 ${c.pp} 份 —— 差出来的就是 VPP 的代价：`
           + `气泡按 <code>1/VPP</code> 缩小，账全记在激活峰值上（Korthikanti et al. 2022 §2.2）`
-        : `1F1B 下 Stage s 同时压着 <code>PP−s</code> 份 micro-batch 的激活，Stage0 压 ${c.pp} 份、末段只压 1 份`)
+        : `1F1B 下 Stage s 同时压着 <code>PP−s</code> 份 micro-batch 的激活，Stage0 压 ${Math.min(c.pp, microBatchNumOf(topo))} 份、末段只压 1 份`)
+      /* 行 22：夹取只在微批数不够时才有话说，够的时候写出来是句废话 —— 但**不够**的时候
+         它是整排小柱矮下去的唯一原因，不说清就成了一个没人解释得了的落差。 */
+      + (microBatchNumOf(topo) < inflightRaw(topo, 0) ? row("微批数夹取",`一共只有 <b>${microBatchNumOf(topo)}</b> 份 micro-batch 可灌，少于 Stage0 的公式值 <code>${inflightText(inflightRaw(topo, 0))}</code> —— warmup 还没走完 batch 就没了，在飞份数按 <code>min(公式, 微批数)</code> 夹到 ${microBatchNumOf(topo)} 份`
+        + `<br>Megatron 两条调度路径都写着这一步。省下的显存是拿气泡换的：气泡占比约 <code>(PP−1)/微批数</code> = ${Math.round((c.pp - 1) / microBatchNumOf(topo) / Math.max(1, c.vpp) * 100)}%，横幅那条软警告说的就是它`) : "")
       + row("同 stage 内", `各 DP / EP / TP / CP 副本切法一致、容量相同，所以差异只到 stage 这一级 —— 底部那排小柱就是全集群的完整分布`)
       + `</dl>`
       + `<p class="cro-capacity__basis-sub">运行时四项怎么标定</p>`
@@ -1104,7 +1212,9 @@
           + (entry.chunks > 1 ? ` / ${entry.chunks} 段（VPP）` : "")
           // 「按层数」档下各 stage 重算的层数可能不同（按本段层数截断），逐根报出来
           + (entry.recomputed > 0 ? ` · 重算 ${entry.recomputed} 层` : "")
-          + ` · 在飞 ${inflightText(entry.inflight)}`;
+          + ` · 在飞 ${inflightText(entry.inflight)}`
+          // 被微批数夹住时把公式值一起报出来（行 22）：否则这根柱子矮下去没有出处
+          + (entry.inflight < entry.inflightFull ? `（微批数 ${entry.microBatchNum} 夹取，公式值 ${inflightText(entry.inflightFull)}）` : ``);
         bar.setAttribute("aria-label", bar.title);
         bar.addEventListener("click", () => selectStage(entry.stage));
         el.stages.appendChild(bar);

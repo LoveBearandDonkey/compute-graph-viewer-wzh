@@ -83,14 +83,170 @@
   letter-spacing: 0;
 }
 
+/* ── 文件名 = 样例配置的切换口 ───────────────────────────────────────────────
+   这一格本来就在回答「你现在看的是哪份配置」，换一份的动作就落在同一处。
+   外形保持原来那枚等宽小标签，只多一个角标 —— 它仍首先是「路径」，其次才是按钮。
+   ⚠️ 设计系统没有 menu / popover 原语（css/style.css 只有 .btn 系列），这里用
+   tokens 拼一个最小实现，与本页的横幅、开关同属「缺失样式」，待批准后一并吸收。 */
+.cro-yaml__picker { position: relative; }
+
 .cro-yaml__file {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
   font: 500 12px / 1.2 var(--font-mono);
   color: var(--foreground-secondary);
-  padding: 3px 8px;
+  padding: 3px 6px 3px 8px;
   border: 1px solid var(--border-subtle);
   border-radius: var(--radius-sm);
   background: var(--surface-2);
+  cursor: pointer;
 }
+
+.cro-yaml__file:hover { border-color: var(--border-strong); color: var(--foreground); }
+.cro-yaml__file:focus-visible { outline: none; box-shadow: var(--focus-ring); }
+
+.cro-yaml__file-caret {
+  width: 12px;
+  height: 12px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  opacity: 0.7;
+  transition: transform var(--duration-fast, 120ms) ease;
+}
+
+.cro-yaml__file[aria-expanded="true"] .cro-yaml__file-caret { transform: rotate(180deg); }
+
+/* 应用过样例之后的角标：路径那一段由 js 按模型名重算、样例名不在其中，
+   所以「现在这些数是从哪来的」得单独留一处，否则一次高亮闪过就没了。 */
+.cro-yaml__file-tag {
+  padding: 1px 5px;
+  border-radius: var(--radius-sm);
+  background: var(--accent-subtle, var(--surface-3));
+  color: var(--accent, var(--foreground));
+  font-size: 11px;
+}
+
+.cro-yaml__file-tag[hidden] { display: none; }
+
+/* ── 卡片菜单 ── */
+.cro-yaml__menu {
+  position: absolute;
+  top: calc(100% + var(--space-1));
+  left: 0;
+  z-index: 40;
+  width: min(460px, 78vw);
+  max-height: min(60vh, 520px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  /* 细滚动条：默认那条在这么窄的浮层里又宽又硬，压着卡片右缘读。
+     火狐走标准属性，WebKit 走下面的 ::-webkit-scrollbar（两套都要写）。 */
+  scrollbar-width: thin;
+  scrollbar-color: var(--border-strong) transparent;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  padding: var(--space-2);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-md, 8px);
+  background: var(--surface-1);
+  box-shadow: var(--shadow-lg, 0 16px 40px rgba(0, 0, 0, 0.3));
+}
+
+.cro-yaml__menu[hidden] { display: none; }
+
+.cro-yaml__menu::-webkit-scrollbar { width: 8px; }
+.cro-yaml__menu::-webkit-scrollbar-track { background: transparent; }
+.cro-yaml__menu::-webkit-scrollbar-thumb {
+  border: 2px solid transparent;      /* 靠透明描边把滑块收窄成 4px，两侧留气 */
+  border-radius: var(--radius-pill, 999px);
+  background: var(--border-strong);
+  background-clip: content-box;
+}
+.cro-yaml__menu::-webkit-scrollbar-thumb:hover { background: var(--foreground-muted, var(--foreground-secondary)); background-clip: content-box; }
+
+.cro-yaml__menu-head {
+  margin: 0 0 var(--space-1);
+  padding: 0 var(--space-2);
+  font-size: var(--font-size-label-xs);
+  line-height: 1.5;
+  color: var(--foreground-secondary);
+}
+
+.cro-yaml__opt-group {
+  padding: var(--space-2) var(--space-2) var(--space-1);
+  font-size: var(--font-size-label-xs);
+  font-weight: var(--font-weight-semibold);
+  color: var(--foreground-tertiary, var(--foreground-secondary));
+}
+
+/* 两行卡片：名字 + 来源 / 「选它能看到什么」。第二行才是选择的依据，
+   所以它给足行高而不是省略成一行。 */
+/* 卡片常态就是卡片：边框与底色默认就在，hover 只加重一档。
+   「悬浮才显形」的做法在这里读成一片没有边界的文字流 —— 用户要先扫一遍才知道
+   这是一张张可点的东西，而这个菜单的正题恰恰是「逐张比较着挑」。 */
+.cro-yaml__opt {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  width: 100%;
+  padding: var(--space-2);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md, 8px);
+  background: var(--surface-2);
+  text-align: left;
+  cursor: pointer;
+  transition: border-color 120ms ease, background-color 120ms ease;
+}
+
+.cro-yaml__opt:hover {
+  background: var(--surface-3, var(--surface-2));
+  border-color: var(--border-strong);
+}
+.cro-yaml__opt:focus-visible { outline: none; box-shadow: var(--focus-ring); }
+
+.cro-yaml__opt-line {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+.cro-yaml__opt-line b {
+  font-size: var(--font-size-body-sm);
+  font-weight: var(--font-weight-semibold);
+  color: var(--foreground);
+}
+
+.cro-yaml__opt-line em {
+  flex: 1 1 auto;
+  min-width: 0;
+  font: 400 11px / 1.2 var(--font-mono);
+  font-style: normal;
+  color: var(--foreground-secondary);
+  text-align: right;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cro-yaml__opt-note {
+  font-size: var(--font-size-label-xs);
+  line-height: 1.5;
+  color: var(--foreground-secondary);
+}
+
+.cro-yaml__opt-note code {
+  font: 400 11px / 1 var(--font-mono);
+  padding: 0 3px;
+  border-radius: 3px;
+  background: var(--surface-3, var(--surface-2));
+}
+
+.cro-yaml__opt-note b { color: var(--foreground); font-weight: var(--font-weight-semibold); }
 
 .cro-yaml__status {
   font-size: 12px;
@@ -98,6 +254,9 @@
 }
 
 .cro-yaml__status[data-level="bad"] { color: var(--danger); }
+/* 原文档那一行「N 处页面没照收」用警告色：不是错误（配平本来就该改），
+   但也不能和普通说明同一个灰度混过去。 */
+.cro-yaml__status[data-level="warn"] { color: var(--warning); }
 
 /* 校验通过时这一格是空的（改了几项由行号旁的 M 说），别留一份 flex gap 的空隙 */
 .cro-yaml__status:empty { display: none; }
@@ -230,6 +389,35 @@
 .cro-yaml__line.is-changed::before {
   content: "M\00a0\00a0" counter(cro-yaml-line);
   color: var(--warning);
+  opacity: 1;
+}
+
+/* ── 原文档专用的两种行标 ─────────────────────────────────────────────────
+   切进一份样例配置后，这一栏显示的是**那份文件本身**。整份文件里页面真正读的
+   只有十来行，剩下的是它读不懂或故意不用的 —— 不标出来，用户没法判断「这份配置
+   被接住了多少」。
+     R  页面收下了这一行的值
+     ≠  读到了、但**没照收**（配平改了数：mixtral 的 EP 文件写 8、页面收 2）
+   ≠ 那一档必须比 R 显眼：文件里一个数、表单上另一个数，不指出来就是让人猜
+   哪个算数。 */
+.cro-yaml__line.is-read {
+  border-left-color: color-mix(in srgb, var(--accent, var(--primary)) 55%, transparent);
+}
+
+.cro-yaml__line.is-read::before {
+  content: "R\00a0\00a0" counter(cro-yaml-line);
+  color: var(--accent, var(--primary));
+  opacity: 0.85;
+}
+
+.cro-yaml__line.is-not-taken {
+  border-left-color: var(--danger);
+  background: color-mix(in srgb, var(--danger) 8%, transparent);
+}
+
+.cro-yaml__line.is-not-taken::before {
+  content: "≠\00a0\00a0" counter(cro-yaml-line);
+  color: var(--danger);
   opacity: 1;
 }
 

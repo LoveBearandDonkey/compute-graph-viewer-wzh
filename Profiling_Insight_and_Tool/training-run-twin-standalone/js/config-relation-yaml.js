@@ -49,6 +49,16 @@
   /* openPangu 2.0 flash 92B → openpangu_2_0_flash_92b（MindFormers 的命名口径） */
   const snake = (label) => String(label).toLowerCase().replace(/[\s.-]+/g, "_");
 
+  /* ── 这份 yaml 的数从哪来 ─────────────────────────────────────────────
+     结构常量（层数 / hidden / 头数 / 专家数…）是模型预设里的死数，逐个预设注明出处；
+     并行度 / batch / 那几枚开关全是用户此刻在左边四域里的值，实时算出来的。
+     出处写进 yaml 头而不是只写在代码里：这一栏会被人抄去跑，「这些数哪来的」
+     得在框里当场答得上。 */
+  const PRESET_SOURCE = {
+    "openpangu-flash": "结构常量取自仓内 openPangu-2.0-Flash架构参考.md §4（source-verified：官方 config.json + openPangu-2.0-Infer 源码），默认并行度取自同文 §6.1（2048 卡 · DP512/PP4/TP1/CP1/EP64）",
+    "qwen2-7b": "结构常量取自 Qwen2-7B 公开配置（28 层 · hidden 3584 · GQA 28Q:4KV）",
+  };
+
   /* configs/<家族>/run_<全名>.yaml —— 与 MindFormers 仓的 configs/ 目录同形 */
   function yamlPath(preset) {
     const full = snake(preset.label);
@@ -105,7 +115,11 @@
     const cfg = topology.config;
     /* EP 进不进乘积由页面的 EP 口径开关定（见 observer.js 的 epInWorld）：
        切出档（MindFormers 的实际做法）EP 从 DP 组内切出，不占独立 rank。 */
-    const orthogonal = Boolean(c.moeOrthogonal);
+    /* 行 23：口径三档。yaml 只关心两件事 —— EP 进不进 world 的乘积（只有正交档进），
+       以及那句注释该怎么写（EP 从 DP 还是从 DP×MP 域里切出）。 */
+    const epMode = c.epMode || (c.moeOrthogonal ? "orthogonal" : "split");
+    const orthogonal = epMode === "orthogonal";
+    const mfDomain = epMode === "mf";
     const world = c.dp * c.pp * c.tp * c.cp * (orthogonal ? c.ep : 1);
     const name = snake(p.label);
     const noMoe = Boolean(p.noMoe);
@@ -119,13 +133,12 @@
        工作区，业界常见留 6 GB 上下。 */
     const deviceMem = Math.max(1, card.hbmGB - 6);
 
-    /* 流水线微批数：本页没有为它开字段（气泡占比未建模），按 4×PP 取一个常见值；
-       PP=1 时没有流水线可分，取 1 —— 写 4 会凭空多出一层梯度累积。
-       它同时是下面 batch_size 的一个因子，所以只算这一处，两行的数字必须对得上。
-       开了虚拟流水时再抬到 PP×VPP 之上（升级计划行 17）：交错式调度的 warmup 段本身
-       就要灌 (VPP−1)·PP 份，micro-batch 数少于它，交错换来的那点气泡收益直接归零。
-       VPP ≤ 4 时 4×PP 已经够，所以默认档的数一个都没变。 */
-    const microBatchNum = c.pp > 1 ? Math.max(c.pp * 4, c.pp * (c.vpp || 1)) : 1;
+    /* 流水线微批数：行 22 之前这里是**派生**的（PP=1 取 1、否则 max(4×PP, PP×VPP)），
+       注释里自己写着「本页没有为它开字段」。现在它是 Cluster 那一行的一枚 stepper，
+       两处读同一个 config 字段 —— 与行 9 / 10 / 11 那几处同一条规矩。
+       它同时是下面 batch_size 的一个因子，所以仍只取这一处，两行的数字必须对得上。
+       PP=1 时照写：没有流水线可分，但它仍是梯度累积步数，全局 batch 少不了它。 */
+    const microBatchNum = Math.max(1, c.microBatchNum || cfg.microBatchNum || 1);
     /* full_batch 口径下 runner_config.batch_size 填的是**全局** batch —— 见那一行
        上面的长注释（升级计划行 12）。 */
     const globalBatch = cfg.microBatch * c.dp * microBatchNum;
@@ -141,6 +154,9 @@
       L("# " + yamlPath(p)),
       L("# " + p.label + " · MindSpore + MindFormers 训练配置"),
       L("#"),
+      L("# " + (PRESET_SOURCE[p.id] || "结构常量来自本页模型预设")
+        + "；并行度 / batch / 开关是左边四域的当前值，改一个数这份 yaml 立刻跟着变"),
+      L("#"),
       L("# 硬件与集群规模不写在本文件里，由启动命令给出（见下栏）："),
       /* 末节点没装满时照实写出来（只有手输能拨到非整机倍数）—— 这一行是给人抄去
          配集群的，"2 节点 × 8 卡 = 12 rank" 是一句算不平的话。 */
@@ -151,10 +167,12 @@
             + " 卡）= " + c.totalRank + " rank")),
       L(orthogonal
         ? ("# 框架校验 dp×mp×pp×cp×ep = " + c.dp + "×" + c.tp + "×" + c.pp + "×" + c.cp
-          + "×" + c.ep + " = " + world + "，须等于 msrun 的 worker_num")
+          + "×" + c.ep + " = " + world + "，须等于 msrun 的 worker_num"
+          + "（mp = parallel_config.model_parallel，即 TP）")
         : ("# 框架校验 dp×mp×pp×cp = " + c.dp + "×" + c.tp + "×" + c.pp + "×" + c.cp
           + " = " + world + "，须等于 msrun 的 worker_num"
-          + "（ep 从 dp 内切出，不进乘积）")),
+          + "（mp = parallel_config.model_parallel，即 TP；ep 从 "
+          + (mfDomain ? "dp×mp 域" : "dp") + " 内切出，不进乘积）")),
       L(""),
       L("seed: 0"),
       L("run_mode: 'train'"),
@@ -178,7 +196,7 @@
          几行一样，这次是 yaml 追平文档；流水线下的累积步数就是 micro_batch_num。
          反过来，**容量栏的 mb 不用再除 DP**：表单上那枚 Micro Batch 按定义就是每卡
          每次前反向的样本数，行 12 的问句到此有了答案。 */
-      L("  batch_size: " + globalBatch, ["microBatch", "dp", "pp", "vpp"],
+      L("  batch_size: " + globalBatch, ["microBatch", "dp", "microBatchNum"],
         "全局 batch = MBS " + cfg.microBatch + " × DP " + c.dp
           + " × micro_batch_num " + microBatchNum
           + "；图内按 dp 切、再分微批 → 每卡每次前反向 " + cfg.microBatch),
@@ -221,7 +239,10 @@
       L("parallel_config:"),
       // EP=1 时两种口径没有差别，不必解释 EDP（稠密模型走的就是这一支）
       L("  data_parallel: " + c.dp, "dp",
-        !orthogonal && c.ep > 1 ? "含 EP 组在内的真 DP，专家只在 EDP=" + c.edp + " 维上复制" : null),
+        !orthogonal && c.ep > 1
+          ? "含 EP 组在内的真 DP，专家只在 EDP=" + c.edp + " 维上复制"
+            + (mfDomain ? "（EDP = dp×mp/ep = " + c.dp + "×" + c.tp + "/" + c.ep + "）" : "")
+          : null),
       /* TP 的整除对象是模型常量而不是别的并行维，写进行尾注释里 —— 这份 yaml
          是拿去跑的，框架校验不过时这一行的注释就是答案。 */
       L("  model_parallel: " + c.tp, "tp",
@@ -261,13 +282,23 @@
       L("  expert_parallel: " + c.ep, "ep",
         c.ep <= 1 ? "即 EP"
           : orthogonal ? "即 EP，与 DP 正交，独占自己的 rank"
+            : mfDomain
+              ? "即 EP。MindFormers 在 **dp×mp 域**上切它：" + c.dp + "×" + c.tp
+                + " = " + (c.dp * c.tp) + " 须被 " + c.ep + " 整除，EDP = " + c.edp
+                + "（本页按专家张量并行 ETP=1 建模；ETP>1 时严格式是 (dp×mp) % (ep×etp) == 0）"
             : "即 EP，从 DP 内切出：EDP = DP/EP = " + c.edp),
-      L("  micro_batch_num: " + microBatchNum, c.vpp > 1 ? "vpp" : null,
+      /* 行 22：这一格从派生值变成输入 —— 注释也跟着换，不能再写「本页未建模」。
+         够不够灌满流水线由页面的软警告说，这里只如实报出此刻的账。 */
+      L("  micro_batch_num: " + microBatchNum, "microBatchNum",
         c.pp > 1
-          ? (c.vpp > 1
-            ? "流水线微批数，交错式下须 ≥ PP×VPP = " + (c.pp * c.vpp) + "；本页未建模，取 max(4×PP, PP×VPP)"
-            : "流水线微批数，须 ≥ pipeline_stage；本页未建模，按 4×PP 取")
-          : "无流水线，不分微批"),
+          ? "流水线微批数（= 梯度累积步数）。"
+            + (microBatchNum >= c.pp * c.vpp
+              ? "≥ " + (c.vpp > 1 ? "PP×VPP = " + (c.pp * c.vpp) : "pipeline_stage " + c.pp)
+                + "，流水线灌得满；在飞份数由 1F1B 公式定"
+              : "⚠️ 少于 " + (c.vpp > 1 ? "PP×VPP = " + (c.pp * c.vpp) : "pipeline_stage " + c.pp)
+                + "，warmup 段灌不满，气泡占比约 "
+                + Math.round((c.pp - 1) / (microBatchNum * Math.max(1, c.vpp)) * 100) + "%")
+          : "无流水线，这一格只是梯度累积步数 —— 它仍是上面那个全局 batch 的因子"),
       /* 这两行原先是死值，与 capacity 的假设正好相反（那边按「不重计算 + 开 SP」
          估激活）。现在两边读同一个 config 字段，改一次两处一起动 —— 升级计划行 9。 */
       L("  use_seq_parallel: " + bool(cfg.seqParallel), "seqParallel",
@@ -333,8 +364,31 @@
         "相对均分 " + base + " 层的偏移 → 各 stage " + split),
     );
     if (!noMoe) lines.push(L("    mtp_depth: " + p.mtpLayers));
+    /* ── 精度两行（升级计划行 21）───────────────────────────────────────────
+       改前这里只有一行写死的 compute_dtype: 'bfloat16'，而 params_dtype 压根没写 ——
+       两份 MindFormers 参考 yaml 里它是显式的 "float32"，且正是它决定容量栏的权重段
+       是 2 B 还是 4 B。现在两行都跟着控件走。
+       FP8 档没有对应的 MindFormers 键（那是 Megatron/TE 侧的 --fp8-format），
+       所以只写一行注释 —— 与 FSDP2 / VPP 那两处同一种处理：本页算的是什么、
+       落到框架里对应哪个开关都写出来，但不伪造一个可以直接照抄的键。 */
+    const MF_DTYPE = { bf16: "bfloat16", fp16: "float16", fp8: "bfloat16" };
+    const computeDtype = cfg.dtype || "bf16";
     lines.push(
-      L("    compute_dtype: 'bfloat16'"),
+      L("    params_dtype: '" + (cfg.paramsDtype === "fp32" ? "float32" : "bfloat16") + "'", "paramsDtype",
+        cfg.paramsDtype === "fp32"
+          ? "参数本身以 fp32 常驻（权重段 4 B/参数），优化器不再另存 master，只剩 momentum + variance"
+          : "参数以 bf16 常驻（权重段 2 B/参数），那份 fp32 master 记在优化器的 12 B 里"),
+      L("    compute_dtype: '" + (MF_DTYPE[computeDtype] || "bfloat16") + "'", "dtype",
+        computeDtype === "fp16" ? "字节数与 bf16 相同，差别在动态范围（要配 loss scaling）" : null),
+    );
+    if (computeDtype === "fp8") {
+      lines.push(
+        L("    # 计算精度档：FP8（权重直存 fp8，本页按权重段 1 B/参数估）", null,
+          "MindFormers 无同名键：Megatron/TE 侧是 --fp8-format hybrid + --fp8-param-gather；"
+          + "不开 param-gather 时 fp8 只是 matmul 前的一次转换，权重仍按 2 B 常驻 —— 那一档本页没建"),
+      );
+    }
+    lines.push(
       L("    use_flash_attention: True"),
     );
     /* LoRA（升级计划行 18）。MindFormers 把参数高效微调写在 model_config.pet_config
@@ -436,6 +490,55 @@
     return html + (tail ? comment(tail) : "");
   }
 
+  /* ── 原文档：样例配置切进来的那一份 ───────────────────────────────────────
+     从 yaml 文件名那枚菜单应用一份样例之后，这一栏改成**显示那份文件本身**，
+     文件名也换成它的路径。理由是这一格回答的是「你现在看的是哪份配置」——
+     名字写着 mixtral_8x7b.sh、内容却是一份按 openPangu 结构生成的 MindFormers
+     yaml，两边说的不是一件事。
+
+     ⚠️ 只读、且**一改表单就退回生成视图**（见 cro:change 里的 source = null）：
+     这一栏的本职是「你此刻的档位写成配置文件长什么样」，原文是静态的，留着它
+     跟着表单一起变才是骗人。两处口径都写进状态栏那一行。
+
+     marks 是解析层给的「哪几行页面真的读了」：taken 的行标一条淡色，页面**没照收**
+     的行标成 ≠（配平改了数，例如 mixtral 的 EP 8 → 2）。后者必须显眼 ——
+     文件里写着 8、表单上是 2，不指出来就是让人对着两个数猜哪个算数。 */
+  let source = null;   // { name, label, dialect, text, marks: [{token, label, value, got}] }
+
+  const highlightJson = (text) => {
+    const m = String(text).match(/^(\s*)("(?:[^"\\]|\\.)*")(\s*:)(.*)$/);
+    if (!m) return esc(text);
+    const value = m[4];
+    const cls = /^\s*-?\d/.test(value) ? "num"
+      : /^\s*(true|false|null)/.test(value) ? "bool" : "str";
+    return m[1] + '<span class="cro-yaml__key">' + esc(m[2]) + "</span>"
+      + '<span class="cro-yaml__punct">' + esc(m[3]) + "</span>"
+      + (value ? '<span class="cro-yaml__' + cls + '">' + esc(value) + "</span>" : "");
+  };
+
+  function paintSource(el) {
+    if (!el) return;
+    const highlighter = source.dialect === "sh" ? highlightShell
+      : source.dialect === "json" ? highlightJson : highlightYaml;
+    const marks = source.marks || [];
+    el.innerHTML = source.text.replace(/\r\n?/g, "\n").split("\n").map((text) => {
+      /* 按键名的末段在行内找 —— 扁平化之后的路径（parallel_config.expert_parallel）
+         在文件里只出现最后一段。命中注释里的同名词是可以接受的误差：这一层是
+         「提示看哪几行」，不是数据通路。 */
+      const hit = marks.find((m) => m.token && text.includes(m.token));
+      const cls = !hit ? "" : hit.got !== null && hit.got !== undefined ? " is-not-taken" : " is-read";
+      /* 值可能是数字或布尔，esc 只吃字符串；引号也得转，否则一个带引号的值
+         就能把 data-tip 这个属性截断。 */
+      const attr = (v) => esc(String(v)).replace(/"/g, "&quot;");
+      const tip = !hit ? "" : hit.got !== null && hit.got !== undefined
+        ? ` data-tip="${attr(hit.label)}：文件写 ${attr(hit.value)}，页面配平后收下的是 ${attr(hit.got)}"`
+        : ` data-tip="${attr(hit.label)}：页面收下 ${attr(hit.value)}"`;
+      return '<li class="cro-yaml__line' + cls + '"' + tip + "><code>"
+        + highlighter(text) + "</code></li>";
+    }).join("");
+    el.dataset.raw = source.text;
+  }
+
   function paint(el, lines, highlighter, changed) {
     if (!el) return;
     el.innerHTML = lines.map((line) => {
@@ -456,21 +559,40 @@
     const changed = new Set(Object.keys(defaults)
       .filter((key) => topology.config[key] !== defaults[key]));
 
-    paint(codeEl, buildYamlLines(topology), highlightYaml, changed);
+    if (source) paintSource(codeEl);
+    else paint(codeEl, buildYamlLines(topology), highlightYaml, changed);
+    /* 启动命令那一栏照旧按表单生成：卡型号 / 节点数 / 总卡数本来就不在配置文件里
+       （见文件头），换成原文也补不出这几个数，反而会和上面的原文互相矛盾。 */
     paint(doc.getElementById("croLaunchCode"), buildLaunchLines(topology), highlightShell, changed);
 
     const pathEl = doc.getElementById("croYamlPath");
-    if (pathEl) pathEl.textContent = yamlPath(topology.preset);
+    if (pathEl) pathEl.textContent = source ? source.name : yamlPath(topology.preset);
+
+    /* 角标（「这些数来自哪一份」）在显示原文时收起来 —— 那时路径本身就是它，
+       两处写同一个文件名只是噪声。退回生成视图后它才重新出场：那正是「路径说
+       openpangu、数却是 mixtral 的」那一刻，非说不可。 */
+    const tagEl = doc.getElementById("croYamlPickedTag");
+    if (tagEl) tagEl.hidden = Boolean(source) || !tagEl.dataset.name;
 
     /* 标题栏只在**出事**时说话：改了几项由行号旁的 M 标记自己交代（见
        .cro-yaml__line.is-changed），不必再用一句「N 项已改」复述一遍；
        校验没过则必须有一句，否则用户只会看到文件头那几行注释。 */
     const statusEl = doc.getElementById("croYamlStatus");
     if (statusEl) {
-      statusEl.textContent = topology.valid
-        ? ""
-        : "校验未通过 · " + topology.errors.length + " 处冲突";
-      statusEl.dataset.level = topology.valid ? "ok" : "bad";
+      if (!topology.valid) {
+        statusEl.textContent = "校验未通过 · " + topology.errors.length + " 处冲突";
+        statusEl.dataset.level = "bad";
+      } else if (source) {
+        /* 原文档必须自报两件事：这是只读的原文（不是本页生成的），以及页面
+           没照收的那几处 —— 否则「文件里写 8、表单上是 2」只能靠用户自己发现。 */
+        const off = (source.marks || []).filter((m) => m.got !== null && m.got !== undefined).length;
+        statusEl.textContent = "原文 · 只读，改动表单即回到生成的 yaml"
+          + (off ? " · " + off + " 处页面没照收（标 ≠）" : "");
+        statusEl.dataset.level = off ? "warn" : "ok";
+      } else {
+        statusEl.textContent = "";
+        statusEl.dataset.level = "ok";
+      }
     }
   }
 
@@ -562,8 +684,19 @@
       syncTabs();
     }
 
+    /* 表单一动就退回生成视图：原文是静态的，留着它跟着表单一起变才是骗人。
+       导入自己也走 cro:change（importConfig 内部 emit），所以顺序是
+       「先清掉、再由 cro:source 重新挂上」—— 两次 render 连着跑，无副作用。 */
     doc.addEventListener("cro:change", (event) => {
+      source = null;
       if (mode === "yaml") render(event.detail);
+    });
+
+    /* 由 js/config-relation-import.js 的样例菜单在应用之后发出；detail 为空
+       表示回到本页生成的 yaml（选「页面默认」那一张卡就是这条）。 */
+    doc.addEventListener("cro:source", (event) => {
+      source = event.detail || null;
+      if (mode === "yaml") render(global.croObserver && global.croObserver.topology);
     });
 
     bindCopy("croYamlCopy", "croYamlCode");
