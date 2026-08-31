@@ -5281,7 +5281,7 @@ html[data-embed-preview="true"][data-frame-ratio="wide"] .pto-ide-frame {
     }
     .wzh-chat-mic-btn img { width: 18px; height: 18px; display: block; }
     .wzh-chat-send-btn {
-      position: static;
+      position: relative; overflow: hidden; isolation: isolate;
       width: 32px; height: 32px; padding: 0; border-radius: 50%;
       background: var(--mi-brand-blue); border: none; color: var(--primary-foreground);
       cursor: pointer; display: inline-flex; align-items: center; justify-content: center;
@@ -5291,7 +5291,41 @@ html[data-embed-preview="true"][data-frame-ratio="wide"] .pto-ide-frame {
     /* 空输入(或回答中)时按钮置为浅蓝不可点,输入文字后立刻亮成品牌蓝(见 syncSendState) */
     .wzh-chat-send-btn:disabled { background: #9DBDFC; opacity: 1; cursor: default; }
     /* sent.svg 是黑色描边,反相成白色箭头 */
-    .wzh-chat-send-btn img { width: 16px; height: 16px; display: block; filter: brightness(0) invert(1); }
+    .wzh-chat-send-btn img {
+      position: relative; z-index: 2;
+      width: 16px; height: 16px; display: block; filter: brightness(0) invert(1);
+    }
+    /* 发送按下动效：72px 的渐变填充从真实按下位置向外铺满 32px 圆钮。
+       波纹单独盖在按钮底色上，因此发送后按钮立刻切成「停止回答」态也不会截断这一下反馈。 */
+    .wzh-chat-send-btn::after {
+      content: ''; position: absolute; z-index: 1; pointer-events: none;
+      left: var(--wzh-send-press-x, 50%); top: var(--wzh-send-press-y, 50%);
+      width: 72px; height: 72px; border-radius: 50%; opacity: 0;
+      background: radial-gradient(circle,
+        rgba(91, 132, 242, .42) 0%,
+        rgba(83, 151, 239, .32) 26%,
+        rgba(102, 104, 225, .24) 54%,
+        rgba(67, 105, 239, .08) 70%,
+        rgba(67, 105, 239, 0) 78%);
+      transform: translate(-50%, -50%) scale(.04);
+    }
+    .wzh-chat-send-btn.is-press-fx { animation: wzh-chat-send-press 320ms var(--easing-default) both; }
+    .wzh-chat-send-btn.is-press-fx::after { animation: wzh-chat-send-fill 400ms ease-out both; }
+    @keyframes wzh-chat-send-press {
+      0% { transform: scale(1); }
+      28% { transform: scale(.96); }
+      100% { transform: scale(1); }
+    }
+    @keyframes wzh-chat-send-fill {
+      0% { opacity: 0; transform: translate(-50%, -50%) scale(.04); }
+      12% { opacity: .58; }
+      72% { opacity: .36; }
+      100% { opacity: 0; transform: translate(-50%, -50%) scale(1); }
+    }
+    @media (prefers-reduced-motion: reduce) {
+      .wzh-chat-send-btn.is-press-fx { animation: none; }
+      .wzh-chat-send-btn.is-press-fx::after { animation: none; }
+    }
     /* 「停止回答」态:回答中且输入框为空时,发送键换成灰底停止键(见 syncSendState)。
        stop.svg 本身是深色描边,这里不做反相 */
     .wzh-chat-send-btn.is-stop { background: color-mix(in srgb, var(--foreground) 9%, transparent); }
@@ -5468,6 +5502,12 @@ html[data-embed-preview="true"][data-frame-ratio="wide"] .pto-ide-frame {
       flex: 1; min-width: 0;
       font-size: 14px; color: var(--foreground);
       overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    }
+    /* 队列消息里的 # 引用复用输入框蓝色标签；输入框为光标逐字对齐使用了负 margin，
+       队列是普通文本流，不需要抵消宽度，因此在这里恢复为正常的行内胶囊。 */
+    .wzh-chat-queue-text .wzh-chat-input-chip {
+      display: inline; margin: 0 2px; padding: 1px 4px;
+      white-space: nowrap; font-weight: 500;
     }
     .wzh-chat-queue-del {
       width: 20px; height: 20px; flex-shrink: 0; padding: 0; border-radius: 4px;
@@ -8594,6 +8634,19 @@ ${issuesText || '（暂无）'}
   let chatQueueSeq = 0;
   let chatQueueCollapsed = false;
 
+  function renderQueueText(text) {
+    const source = String(text || '');
+    let html = '';
+    let last = 0;
+    source.replace(/# ?[^\s#]+/g, (token, offset) => {
+      html += escHtml(source.slice(last, offset));
+      html += '<span class="wzh-chat-input-chip">' + escHtml(token) + '</span>';
+      last = offset + token.length;
+      return token;
+    });
+    return html + escHtml(source.slice(last));
+  }
+
   function renderChatQueue() {
     const box = $('trainChatQueue');
     const listEl = $('trainChatQueueList');
@@ -8605,7 +8658,7 @@ ${issuesText || '（暂无）'}
     listEl.innerHTML = chatQueue.map((item) =>
       '<li class="wzh-chat-queue-item" data-id="' + item.id + '">' +
         '<span class="wzh-chat-queue-dot" aria-hidden="true"></span>' +
-        '<span class="wzh-chat-queue-text" title="' + escHtml(item.text).replace(/"/g, '&quot;') + '">' + escHtml(item.text) + '</span>' +
+        '<span class="wzh-chat-queue-text" title="' + escHtml(item.text).replace(/"/g, '&quot;') + '">' + renderQueueText(item.text) + '</span>' +
         '<button class="wzh-chat-queue-del" type="button" title="移除这条" aria-label="移除这条排队消息">' +
           '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18"></path></svg>' +
         '</button>' +
@@ -9320,12 +9373,16 @@ ${issuesText || '（暂无）'}
     return { refresh, close, onKeyDown, isOpen };
   }
 
-  // 录屏快捷演示：按 Ctrl + Shift + Enter，留出 3 秒开录窗口，再用真实输入事件逐字写入问题；
+  // 录屏快捷演示：按 Ctrl + Shift + Enter，留出 1.5 秒开录窗口，再用真实输入事件逐字写入问题；
   // 敲到 # 时让真实上下文浮窗打开，
   // 停一拍后用 Enter 选中首项 profile_dir，再继续输入并点击真实发送按钮。
   // 不直接灌最终字符串，这样录到的高亮标签、浮窗、输入框增高和发送状态都是产品本身的行为。
   let recordingDemoActive = false;
   const recordingWait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+  const PROFILING_QUEUE_QUESTIONS = [
+    '能把 rank6/7 多出来的 MatMulV2 定位到具体模型层吗？',
+    '再对比 #{rank0/kernel_details.csv} 里的 MatMulV2，确认是否只在末级出现。',
+  ];
 
   function dispatchRecordingInput(input) {
     const end = input.value.length;
@@ -9341,6 +9398,25 @@ ${issuesText || '（暂无）'}
       await recordingWait(ch === '\n' ? 150 : 42);
     }
     return ticket === demoInputEpoch;
+  }
+
+  // 队列追问里也可以带 #{文件名}：自动输入时真的敲出 #、打开并筛选浮窗、回车选中，
+  // 最终由输入框自己的高亮层画成蓝色标签。没有标记的普通问题仍直接逐字输入。
+  async function typeRecordingQuestion(input, template, ticket) {
+    const match = template.match(/^([\s\S]*?)#\{([^}]+)\}([\s\S]*)$/);
+    if (!match) return typeRecordingText(input, template, ticket);
+
+    if (!await typeRecordingText(input, match[1], ticket)) return false;
+    if (!await typeRecordingText(input, '#', ticket)) return false;
+    await recordingWait(520); // 先让完整的上下文列表在录屏里露一拍
+    if (!await typeRecordingText(input, match[2], ticket)) return false;
+    await recordingWait(420); // 筛到唯一文件后再确认，让选择动作看得清
+    if (ticket !== demoInputEpoch || !ctxPicker?.isOpen()) return false;
+    input.dispatchEvent(new KeyboardEvent('keydown', {
+      key: 'Enter', code: 'Enter', bubbles: true, cancelable: true,
+    }));
+    await recordingWait(260);
+    return typeRecordingText(input, match[3], ticket);
   }
 
   async function playProfilingQuestionRecording() {
@@ -9374,9 +9450,9 @@ ${issuesText || '（暂无）'}
       dispatchRecordingInput(input);
       focusChatInput();
 
-      // 从快捷键按下的时刻算满 3 秒，而不是页面复位结束后再额外等 3 秒。
-      // 这样无论触发前在欢迎页还是已有对话，第一字都会在约第 3 秒出现。
-      const countdownLeft = Math.max(0, 3000 - (performance.now() - triggeredAt));
+      // 从快捷键按下的时刻算满 1.5 秒，而不是页面复位结束后再额外等待。
+      // 这样无论触发前在欢迎页还是已有对话，第一字都会在约第 1.5 秒出现。
+      const countdownLeft = Math.max(0, 1500 - (performance.now() - triggeredAt));
       await recordingWait(countdownLeft);
       if (ticket !== demoInputEpoch) return;
 
@@ -9402,10 +9478,65 @@ ${issuesText || '（暂无）'}
     }
   }
 
+  // 主问题仍在思考或回答时，再按一次录屏快捷键：逐字输入两条单行追问，第一条发送后
+  // 立刻开始敲第二条。发送走原本的 sendMessage → enqueueChatMessage 路径，因此录到的
+  // 队列卡片、计数递增和后续自动消费都是真实产品行为，不是额外伪造的动画。
+  async function playProfilingQueueRecording() {
+    if (recordingDemoActive || !chatStreaming) return;
+    const input = $('trainChatInput');
+    const sendBtn = $('trainChatSendBtn');
+    if (!input || !sendBtn) return;
+
+    recordingDemoActive = true;
+    const ticket = ++demoInputEpoch;
+    try {
+      ctxPicker?.close();
+      input.value = '';
+      input.style.height = '';
+      dispatchRecordingInput(input);
+      focusChatInput();
+
+      for (const question of PROFILING_QUEUE_QUESTIONS) {
+        if (!await typeRecordingQuestion(input, question, ticket)) return;
+        await recordingWait(180);
+        if (ticket !== demoInputEpoch) return;
+        sendBtn.click();
+        // 第一条落成队列卡片后多停一秒，让队列卡片和计数变化在录屏里被看清。
+        await recordingWait(1240);
+      }
+    } finally {
+      recordingDemoActive = false;
+    }
+  }
+
   function initInput() {
     const input = $('trainChatInput');
     const sendBtn = $('trainChatSendBtn');
     if (!input || !sendBtn) return;
+    let lastPointerPressFxAt = -Infinity;
+    let sendPressFxTimer = 0;
+
+    function playSendPressFx(clientX, clientY) {
+      // 停止回答是另一种语义，保留它原本克制的灰色反馈；只有真正的「发送」播放 AI 渐变。
+      if (sendBtn.disabled || sendBtn.classList.contains('is-stop')) return;
+      const rect = sendBtn.getBoundingClientRect();
+      const hasPoint = Number.isFinite(clientX) && Number.isFinite(clientY) && (clientX || clientY);
+      const x = hasPoint ? Math.max(0, Math.min(rect.width, clientX - rect.left)) : rect.width / 2;
+      const y = hasPoint ? Math.max(0, Math.min(rect.height, clientY - rect.top)) : rect.height / 2;
+      sendBtn.style.setProperty('--wzh-send-press-x', x + 'px');
+      sendBtn.style.setProperty('--wzh-send-press-y', y + 'px');
+      sendBtn.classList.remove('is-press-fx');
+      void sendBtn.offsetWidth; // 连续快速发送时也要从头重播
+      sendBtn.classList.add('is-press-fx');
+      clearTimeout(sendPressFxTimer);
+      sendPressFxTimer = setTimeout(() => sendBtn.classList.remove('is-press-fx'), 500);
+    }
+
+    // 鼠标/触控在按下瞬间起波纹；键盘触发和录屏脚本的 .click() 没有坐标，改从圆心扩散。
+    sendBtn.addEventListener('pointerdown', (e) => {
+      lastPointerPressFxAt = performance.now();
+      playSendPressFx(e.clientX, e.clientY);
+    });
     function doSend() {
       const text = input.value.trim();
       if (!text) return;
@@ -9417,6 +9548,7 @@ ${issuesText || '（暂无）'}
       sendMessage(text);
     }
     sendBtn.addEventListener('click', () => {
+      if (performance.now() - lastPointerPressFxAt > 800) playSendPressFx();
       // 空输入 + 回答中 = 停止键;其余情况都是发送(回答中发送 = 排队)
       if (sendBtn.classList.contains('is-stop')) { stopAnswering(); return; }
       doSend();
@@ -9445,7 +9577,8 @@ ${issuesText || '（暂无）'}
       if (!isRecordingShortcut || e.repeat) return;
       e.preventDefault();
       e.stopPropagation();
-      playProfilingQuestionRecording();
+      if (chatStreaming) playProfilingQueueRecording();
+      else playProfilingQuestionRecording();
     });
     // 首屏补两次校准:图片/样式全部就绪后一次、字体真正换上之后一次。
     // boot 跑在 DOMContentLoaded,那一刻量到的行高不一定是最终值。
