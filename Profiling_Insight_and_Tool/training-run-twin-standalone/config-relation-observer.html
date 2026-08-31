@@ -25,11 +25,11 @@
   <!-- 集群热力图样式（复用 training-monitoring-v2 的 .twin-heat* 视觉） -->
   <link rel="stylesheet" href="./css/training-run-twin.css">
   <!-- 本页模块私有 layout -->
-  <link rel="stylesheet" href="./css/config-relation-observer.css?v=20260828-picker">
+  <link rel="stylesheet" href="./css/config-relation-observer.css?v=20260831-flat-picker">
   <!-- 单卡容量（Cluster 区右栏）：容量是「卡」的属性，与集群矩阵同区并排 -->
   <link rel="stylesheet" href="./css/config-relation-capacity.css?v=20260820-spread-head">
   <!-- 顶栏视图页签 / 导出配置键 / YAML 代码框 -->
-  <link rel="stylesheet" href="./css/config-relation-yaml.css?v=20260828-picker">
+  <link rel="stylesheet" href="./css/config-relation-yaml.css?v=20260831-flat-picker">
   <!-- 文档视图（顶栏第三档）：章节目录 + 800px 正文栏 -->
   <link rel="stylesheet" href="./css/config-relation-doc.css?v=20260821-doc-arrow">
 </head>
@@ -529,7 +529,7 @@
                      不用 title —— 代表性是**选之前**要读到的东西，藏进悬浮等于没写。 -->
                 <div class="cro-yaml__picker" id="croYamlPicker">
                   <button class="cro-yaml__file" id="croYamlPickerBtn" type="button"
-                          aria-haspopup="true" aria-expanded="false"
+                          aria-haspopup="dialog" aria-expanded="false"
                           title="切换样例配置：从 config-test/ 的公开配置里选一份">
                     <span id="croYamlPath"></span>
                     <span class="cro-yaml__file-tag" id="croYamlPickedTag" hidden></span>
@@ -537,7 +537,27 @@
                       <path d="m6 9 6 6 6-6"></path>
                     </svg>
                   </button>
-                  <div class="cro-yaml__menu" id="croYamlMenu" hidden role="menu" aria-label="样例配置"></div>
+                  <div class="cro-yaml__menu" id="croYamlMenu" hidden role="dialog"
+                       aria-modal="false" aria-labelledby="croPreviewTitle">
+                    <div class="cro-yaml__menu-body">
+                      <div class="cro-yaml__options" id="croYamlOptions" role="listbox"
+                           aria-label="配置文件选项"></div>
+                      <section class="cro-yaml__preview" aria-live="polite">
+                        <header class="cro-import__head">
+                          <h2 class="cro-import__title" id="croPreviewTitle">兼容度</h2>
+                          <span class="cro-import__name" id="croPreviewName">请选择左侧配置文件</span>
+                        </header>
+                        <p class="cro-preview__source" id="croPreviewSource"></p>
+                        <div class="cro-import__report cro-preview__report" id="croPreviewReport">
+                          <p class="cro-import__empty">选择一份配置后，这里会显示它能落到当前表单的配置项、页面配平会调整的数值，以及未建模或尚未支持的内容。</p>
+                        </div>
+                      </section>
+                    </div>
+                    <footer class="cro-preview__foot">
+                      <button class="btn btn-sm" id="croPreviewCancel" type="button">取消</button>
+                      <button class="btn btn-sm btn-solid" id="croPreviewApply" type="button" disabled>应用</button>
+                    </footer>
+                  </div>
                 </div>
                 <span class="cro-yaml__status" id="croYamlStatus" data-level="ok" role="status" aria-live="polite"></span>
                 <button class="btn btn-sm btn-ghost cro-yaml__copy" id="croYamlCopy" type="button" title="复制 yaml 全文">
@@ -2788,30 +2808,6 @@ t  TP 序号              c  CP 序号      n  物理节点号</div>
     </div>
   </div>
 
-  <!-- ═══ 样例配置 · 应用前的解析弹窗 ═════════════════════════════════════════
-       从上面那个卡片菜单选中一份之后，先到这里：整份解析报告摊开（落到哪几档、
-       页面配平会改哪几个数、哪些键读到了但不建模、哪些是已知缺口），底部才是
-       【取消】【应用】。**看完再决定**是这个面板存在的全部理由 —— 直接把一份陌生
-       配置糊到表单上，用户是看不出页面替他改了什么的。
-       【取消】退回卡片菜单（不是回到空屏：用户的动作是「挑一份」，还没挑完）。
-       报告复用 .cro-import__* 那套块样式，样式与导入面板同源。 -->
-  <div class="cro-preview" id="croPreviewPanel" hidden role="dialog" aria-modal="true"
-       aria-labelledby="croPreviewTitle">
-    <div class="cro-preview__box">
-      <header class="cro-import__head">
-        <h2 class="cro-import__title" id="croPreviewTitle">解析预览</h2>
-        <span class="cro-import__name" id="croPreviewName"></span>
-      </header>
-      <p class="cro-preview__source" id="croPreviewSource"></p>
-      <div class="cro-import__report cro-preview__report" id="croPreviewReport"></div>
-      <footer class="cro-preview__foot">
-        <span class="cro-preview__hint" id="croPreviewHint"></span>
-        <button class="btn btn-sm" id="croPreviewCancel" type="button">取消</button>
-        <button class="btn btn-sm cro-import__apply" id="croPreviewApply" type="button">应用</button>
-      </footer>
-    </div>
-  </div>
-
   <script src="./js/workbench-shell-pattern.js"></script>
   <script src="./js/ide-frame-pattern.js"></script>
   <script src="./js/model-graphviz-pattern.js"></script>
@@ -2828,7 +2824,7 @@ t  TP 序号              c  CP 序号      n  物理节点号</div>
   <!-- 导入配置（行 20）：同样排在主脚本之后（要用它导出的 croObserver.importConfig）。
        解析层与 DOM 无关、整块导出到 croImport，好让 tools/cro-selfcheck.js
        拿 config-test/ 那 11 份样本直接撞它。 -->
-  <script src="./js/config-relation-import.js?v=20260828-picker"></script>
+  <script src="./js/config-relation-import.js?v=20260831-flat-picker"></script>
   <script>
     // 主题切换：与 training-monitoring-v2.html 同款单图标按钮，只改 data-theme。
     (() => {

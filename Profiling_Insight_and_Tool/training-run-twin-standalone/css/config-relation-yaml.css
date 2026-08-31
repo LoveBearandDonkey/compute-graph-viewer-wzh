@@ -138,35 +138,54 @@
   top: calc(100% + var(--space-1));
   left: 0;
   z-index: 40;
-  width: min(460px, 78vw);
-  max-height: min(60vh, 520px);
-  overflow-y: auto;
-  overscroll-behavior: contain;
-  /* 细滚动条：默认那条在这么窄的浮层里又宽又硬，压着卡片右缘读。
-     火狐走标准属性，WebKit 走下面的 ::-webkit-scrollbar（两套都要写）。 */
-  scrollbar-width: thin;
-  scrollbar-color: var(--border-strong) transparent;
+  width: min(920px, calc(100vw - 2 * var(--space-4)));
+  height: min(600px, calc(100vh - 2 * var(--space-4)));
+  min-height: 360px;
   display: flex;
   flex-direction: column;
-  gap: var(--space-1);
-  padding: var(--space-2);
   border: 1px solid var(--border-strong);
   border-radius: var(--radius-md, 8px);
   background: var(--surface-1);
   box-shadow: var(--shadow-lg, 0 16px 40px rgba(0, 0, 0, 0.3));
+  overflow: hidden;
 }
 
 .cro-yaml__menu[hidden] { display: none; }
 
-.cro-yaml__menu::-webkit-scrollbar { width: 8px; }
-.cro-yaml__menu::-webkit-scrollbar-track { background: transparent; }
-.cro-yaml__menu::-webkit-scrollbar-thumb {
+.cro-yaml__menu-body {
+  display: grid;
+  grid-template-columns: minmax(300px, 0.82fr) minmax(420px, 1.18fr);
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+.cro-yaml__options {
+  min-width: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+  scrollbar-color: var(--border-strong) transparent;
+  padding: var(--space-3);
+  border-right: 1px solid var(--border-subtle);
+  background: var(--background-elevated, var(--surface-1));
+}
+
+.cro-yaml__options::-webkit-scrollbar,
+.cro-preview__report::-webkit-scrollbar { width: 8px; }
+.cro-yaml__options::-webkit-scrollbar-track,
+.cro-preview__report::-webkit-scrollbar-track { background: transparent; }
+.cro-yaml__options::-webkit-scrollbar-thumb,
+.cro-preview__report::-webkit-scrollbar-thumb {
   border: 2px solid transparent;      /* 靠透明描边把滑块收窄成 4px，两侧留气 */
   border-radius: var(--radius-pill, 999px);
   background: var(--border-strong);
   background-clip: content-box;
 }
-.cro-yaml__menu::-webkit-scrollbar-thumb:hover { background: var(--foreground-muted, var(--foreground-secondary)); background-clip: content-box; }
+.cro-yaml__options::-webkit-scrollbar-thumb:hover,
+.cro-preview__report::-webkit-scrollbar-thumb:hover {
+  background: var(--foreground-muted, var(--foreground-secondary));
+  background-clip: content-box;
+}
 
 .cro-yaml__menu-head {
   margin: 0 0 var(--space-1);
@@ -177,7 +196,7 @@
 }
 
 .cro-yaml__opt-group {
-  padding: var(--space-2) var(--space-2) var(--space-1);
+  padding: var(--space-3) var(--space-1) var(--space-2);
   font-size: var(--font-size-label-xs);
   font-weight: var(--font-weight-semibold);
   color: var(--foreground-tertiary, var(--foreground-secondary));
@@ -191,20 +210,28 @@
 .cro-yaml__opt {
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: var(--space-2);
   width: 100%;
-  padding: var(--space-2);
-  border: 1px solid var(--border-subtle);
+  padding: var(--space-3);
+  border: 1px solid var(--border-default);
   border-radius: var(--radius-md, 8px);
   background: var(--surface-2);
   text-align: left;
   cursor: pointer;
-  transition: border-color 120ms ease, background-color 120ms ease;
+  transition: border-color 120ms ease, background-color 120ms ease, transform 120ms ease;
 }
+
+.cro-yaml__opt + .cro-yaml__opt { margin-top: var(--space-2); }
 
 .cro-yaml__opt:hover {
   background: var(--surface-3, var(--surface-2));
   border-color: var(--border-strong);
+  transform: translateY(-1px);
+}
+.cro-yaml__opt.is-selected {
+  background: var(--surface-4, var(--surface-3));
+  border-color: var(--border-strong);
+  box-shadow: inset 0 0 0 1px var(--border-strong);
 }
 .cro-yaml__opt:focus-visible { outline: none; box-shadow: var(--focus-ring); }
 
@@ -247,6 +274,39 @@
 }
 
 .cro-yaml__opt-note b { color: var(--foreground); font-weight: var(--font-weight-semibold); }
+
+.cro-yaml__preview {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  background: var(--surface-1);
+}
+
+@media (max-width: 760px) {
+  .cro-yaml__menu {
+    width: calc(100vw - 2 * var(--space-3));
+    height: calc(100vh - 2 * var(--space-3));
+    min-height: 0;
+  }
+
+  .cro-yaml__menu-body {
+    grid-template-columns: 1fr;
+    grid-template-rows: minmax(180px, 42%) minmax(0, 1fr);
+  }
+
+  .cro-yaml__options {
+    border-right: 0;
+    border-bottom: 1px solid var(--border-subtle);
+  }
+}
+
+@media (max-height: 520px) {
+  .cro-yaml__menu {
+    height: calc(100vh - 2 * var(--space-3));
+    min-height: 0;
+  }
+}
 
 .cro-yaml__status {
   font-size: 12px;

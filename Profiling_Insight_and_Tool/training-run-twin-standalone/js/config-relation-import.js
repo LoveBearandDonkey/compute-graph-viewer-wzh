@@ -1002,7 +1002,7 @@
     }
 
     if (r.gaps.length) {
-      out.push(`<div class="cro-import__block is-gap"><h4>已识别 · 缺口（不补数就是错的）</h4>`
+      out.push(`<div class="cro-import__block is-gap"><h4>已识别 · 缺口</h4>`
         + `<p class="cro-import__hint">页面读到了，但没有对应的旋钮 —— 每条挂着升级计划的行号。</p><ul>`
         + r.gaps.map((g) => `<li><code>${escapeHtml(g.key)}</code> = <b>${fmt(g.value)}</b>`
           + ` <span class="cro-import__row">行 ${g.row}</span><br>`
@@ -1036,29 +1036,28 @@
      入口不在导入面板里，而在 .cro-yaml__file —— 那一格本来就在回答「你现在看的是
      哪份配置」，换一份的动作理应从同一处发起。
 
-     两段式：卡片菜单 → 解析弹窗 → 应用。中间那步不能省 —— 一份陌生配置直接糊到
-     表单上，用户看不出页面替他改了什么（EP 口径不合、VPP 被配平、总卡数反推……
-     这些都写在报告里）。【取消】退回菜单而不是退回空屏：用户的动作是「挑一份」，
-     取消的是这一份，不是挑的这件事。
+     单层选择器：左边卡片菜单，右边解析报告，底部统一放【应用】【取消】。报告这步
+     不能省 —— 一份陌生配置直接糊到表单上，用户看不出页面替他改了什么（EP 口径
+     不合、VPP 被配平、总卡数反推……这些都写在报告里）。
 
      ⚠️ 模型不换。importConfig 只收 FIELD/FLAG 认得的字段，MAP 里根本没有 model ——
      样例的结构常量（hidden / layers / 专家数）一律不覆盖，那是计算图那条路线的活。 */
   function bootYamlPicker() {
     const trigger = doc.getElementById("croYamlPickerBtn");
     const menu = doc.getElementById("croYamlMenu");
-    const dialog = doc.getElementById("croPreviewPanel");
-    if (!trigger || !menu || !dialog) return;
+    const options = doc.getElementById("croYamlOptions");
+    if (!trigger || !menu || !options) return;
     const el = {
       tag: doc.getElementById("croYamlPickedTag"),
       name: doc.getElementById("croPreviewName"),
       source: doc.getElementById("croPreviewSource"),
       report: doc.getElementById("croPreviewReport"),
-      hint: doc.getElementById("croPreviewHint"),
       apply: doc.getElementById("croPreviewApply"),
       cancel: doc.getElementById("croPreviewCancel"),
     };
     const DEFAULT_FILE = "__default__";
     let pending = null;   // 当前预览的那一份：{ meta, partial, adjustedNote }
+    let previewToken = 0; // 连续点不同卡片时，较早返回的 fetch 不得覆盖当前报告
 
     const presetNow = () => {
       const presets = (global.CroTopology && global.CroTopology.MODEL_PRESETS) || {};
@@ -1084,8 +1083,8 @@
 
     /* 卡片两行：第一行「名字 + 来源」，第二行「选它能看到什么」。
        不用 title —— 代表性是**选之前**要读到的东西，藏进悬浮里等于没写。 */
-    const card = (meta) => `<button class="cro-yaml__opt" type="button" role="menuitem"`
-      + ` data-file="${escapeHtml(meta.file)}">`
+    const card = (meta) => `<button class="cro-yaml__opt" type="button" role="option"`
+      + ` aria-selected="false" data-file="${escapeHtml(meta.file)}">`
       + `<span class="cro-yaml__opt-line"><b>${escapeHtml(meta.label)}</b>`
       + `<em>${escapeHtml(meta.source)}</em></span>`
       + `<span class="cro-yaml__opt-note">${rich(meta.note)}</span></button>`;
@@ -1097,30 +1096,46 @@
         rows.push(`<div class="cro-yaml__opt-group">${escapeHtml(g.group)}</div>`);
         g.items.forEach((i) => rows.push(card(i)));
       });
-      menu.innerHTML = rows.join("");
+      options.innerHTML = rows.join("");
+    }
+
+    function resetPreview() {
+      pending = null;
+      previewToken += 1;
+      el.name.textContent = "请选择左侧配置文件";
+      el.source.textContent = "";
+      el.report.innerHTML = `<p class="cro-import__empty">选择一份配置后，这里会显示它能落到当前表单的配置项、页面配平会调整的数值，以及未建模或尚未支持的内容。</p>`;
+      el.report.scrollTop = 0;
+      el.apply.disabled = true;
+    }
+
+    function positionMenu() {
+      const margin = 16;
+      const anchor = trigger.getBoundingClientRect();
+      const availableWidth = Math.max(280, global.innerWidth - anchor.left - margin);
+      menu.style.width = `${Math.min(920, availableWidth)}px`;
     }
 
     function openMenu() {
       fillMenu();                       // 每次重建：模型可能已经切过，默认那张卡要换名字
+      resetPreview();
       menu.hidden = false;
       trigger.setAttribute("aria-expanded", "true");
+      positionMenu();
     }
     function closeMenu() {
       menu.hidden = true;
       trigger.setAttribute("aria-expanded", "false");
+      resetPreview();
     }
 
-    function showDialog(meta, html, canApply, hint) {
+    function showPreview(meta, html, canApply) {
       el.name.textContent = meta.label;
       el.source.innerHTML = `<b>来源</b> ${escapeHtml(meta.source)}　·　${rich(meta.note)}`;
       el.report.innerHTML = html;
       el.report.scrollTop = 0;
-      el.hint.textContent = hint || "";
       el.apply.disabled = !canApply;
-      dialog.hidden = false;
     }
-
-    const closeDialog = () => { dialog.hidden = true; pending = null; };
 
     /* 「页面默认」没有文件可解析，走的是**恢复**而不是导入：把预设自己的 defaults
        整片喂回去（它本身自洽，配平不会改动它）。预览这一步照样给报告 ——
@@ -1128,6 +1143,7 @@
     function previewDefault() {
       const p = presetNow();
       if (!p) return;
+      previewToken += 1;
       const meta = defaultMeta();
       const now = (global.croObserver && global.croObserver.config) || {};
       const rows = Object.keys(p.defaults || {})
@@ -1135,25 +1151,32 @@
         .map((k) => `<li><code>${escapeHtml(k)}</code>`
           + `<span class="cro-import__diff">${fmt(now[k])} → ${fmt(p.defaults[k])}</span></li>`);
       pending = { meta, partial: p.defaults };
-      showDialog(meta,
+      showPreview(meta,
         `<div class="cro-import__block is-warn"><h4>恢复页面默认配置 <span>${rows.length}</span></h4>`
         + `<p class="cro-import__hint">${escapeHtml(p.label || "")} 的内置参考配置。`
         + (rows.length ? `应用会改回下面这几项：` : `表单现在就停在默认档位，应用不会动任何数。`)
         + `</p>` + (rows.length ? `<ul>${rows.join("")}</ul>` : "") + `</div>`,
-        true, "恢复默认档位；卡型号与 EP 口径保持当前选择。");
+        true);
     }
 
     function choose(file) {
-      closeMenu();
+      options.querySelectorAll(".cro-yaml__opt").forEach((cardEl) => {
+        const selected = cardEl.dataset.file === file;
+        cardEl.classList.toggle("is-selected", selected);
+        cardEl.setAttribute("aria-selected", String(selected));
+      });
       if (file === DEFAULT_FILE) { previewDefault(); return; }
       const meta = sampleOf(file);
       if (!meta) return;
-      showDialog(meta, `<p class="cro-import__empty">正在读取 <code>config-test/${escapeHtml(file)}</code> …</p>`, false, "");
+      const token = ++previewToken;
+      pending = null;
+      showPreview(meta, `<p class="cro-import__empty">正在读取 <code>config-test/${escapeHtml(file)}</code> …</p>`, false);
       /* 走 fetch 读同目录下的文件：这一页本来就必须用 http 打开（见 CLAUDE.md，
          整页到处 fetch json / 嵌 iframe），file:// 下会被拦掉，如实说清楚。 */
       global.fetch(`./config-test/${file}`)
         .then((res) => { if (!res.ok) throw new Error(`HTTP ${res.status}`); return res.text(); })
         .then((text) => {
+          if (token !== previewToken) return;
           const r = analyze(text, file, global.croObserver && global.croObserver.config);
           /* token = 扁平化路径的末段（parallel_config.expert_parallel →
              expert_parallel）：yaml 视图拿它在原文里找「页面读的是哪几行」。 */
@@ -1165,11 +1188,9 @@
           el.report.innerHTML = renderReport(r, null);
           el.report.scrollTop = 0;
           el.apply.disabled = !r.mapped.length;
-          el.hint.textContent = r.mapped.length
-            ? `落到表单 ${r.mapped.length} 项；应用后 yaml 与关系视图一起改，模型不变。`
-            : "这份配置没有一个键落到表单，应用它没有意义。";
         })
         .catch((err) => {
+          if (token !== previewToken) return;
           el.apply.disabled = true;
           el.report.innerHTML = `<p class="cro-import__empty">读不到 <code>config-test/${escapeHtml(file)}</code>`
             + `（${escapeHtml(err.message)}）。<br>这一页需要用 http 打开`
@@ -1182,7 +1203,7 @@
       event.stopPropagation();
       if (menu.hidden) openMenu(); else closeMenu();
     });
-    menu.addEventListener("click", (event) => {
+    options.addEventListener("click", (event) => {
       const btn = event.target.closest && event.target.closest(".cro-yaml__opt");
       if (btn) choose(btn.dataset.file);
     });
@@ -1190,15 +1211,12 @@
       if (!menu.hidden && !menu.contains(event.target) && !trigger.contains(event.target)) closeMenu();
     });
 
-    // 取消 = 退回卡片菜单（取消的是这一份，不是「挑一份」这件事）
-    const cancel = () => { closeDialog(); openMenu(); };
-    el.cancel.addEventListener("click", cancel);
-    dialog.addEventListener("click", (event) => { if (event.target === dialog) cancel(); });
+    el.cancel.addEventListener("click", closeMenu);
     doc.addEventListener("keydown", (event) => {
       if (event.key !== "Escape") return;
-      if (!dialog.hidden) cancel();
-      else if (!menu.hidden) closeMenu();
+      if (!menu.hidden) closeMenu();
     });
+    global.addEventListener("resize", () => { if (!menu.hidden) positionMenu(); });
 
     el.apply.addEventListener("click", () => {
       if (!pending || !global.croObserver || !global.croObserver.importConfig) return;
@@ -1223,7 +1241,7 @@
       } : null;
       doc.dispatchEvent(new CustomEvent("cro:source", { detail }));
 
-      closeDialog();                     // ⚠️ 这一句之后 pending 已被清空
+      closeMenu();
       if (el.tag) {
         // hidden 由 yaml 模块按「此刻显示的是不是原文」定（见那里的 render）
         el.tag.dataset.name = meta.file === DEFAULT_FILE ? "页面默认" : meta.file;
