@@ -5168,10 +5168,10 @@ html[data-embed-preview="true"][data-frame-ratio="wide"] .pto-ide-frame {
     .wzh-chat-input-bar {
       /* 排队卡片收起时要沉到输入框背后,这里必须压在它上面且底不透明(见 .wzh-chat-queue) */
       position: relative; z-index: 2; flex-shrink: 0;
-      margin: 0 16px 16px; padding: 12px 8px 8px 12px; box-sizing: border-box;
+      margin: 0 16px 16px; padding: 8px; box-sizing: border-box;
       /* 描边粗细只在这里改一处:跑马光的外撑量也是按它算的(见 .wzh-chat-input-glow) */
       --wzh-input-border-w: 1.5px;
-      border: var(--wzh-input-border-w) solid transparent; border-radius: 20px;
+      border: var(--wzh-input-border-w) solid transparent; border-radius: 24px;
       background:
         linear-gradient(var(--surface-1), var(--surface-1)) padding-box,
         linear-gradient(90deg, var(--mi-brand-blue) 0%, var(--brand-purple) 100%) border-box;
@@ -5235,11 +5235,11 @@ html[data-embed-preview="true"][data-frame-ratio="wide"] .pto-ide-frame {
        把整条输入栏抬到 4 以上,关掉再落回来——常态下仍让「回到底部」浮在输入栏上方。 */
     .wzh-chat-input-bar.is-pop-open { z-index: 6; }
     /* 输入区高度由内容撑,到 6 行(14px × 1.5 = 21px/行)封顶后内部滚动,见 autoResizeInput */
-    .wzh-chat-input-wrap { position: relative; margin: 0; }
+    .wzh-chat-input-wrap { position: relative; width: calc(100% - 4px); margin: 0; }
     .wzh-chat-input {
-      display: block; width: 100%; box-sizing: border-box;
+      display: block; width: calc(100% - 8px); box-sizing: border-box;
       background: transparent; border: none; border-radius: 0;
-      margin: 0; padding: 0;
+      margin: 0 0 0 8px; padding: 0;
       color: transparent; caret-color: var(--foreground);
       font-size: 14px; font-family: var(--font-sans); resize: none;
       min-height: 44px; max-height: 126px; overflow-y: auto; line-height: 1.5;
@@ -5251,11 +5251,10 @@ html[data-embed-preview="true"][data-frame-ratio="wide"] .pto-ide-frame {
     .wzh-chat-input::-webkit-scrollbar { width: 0; height: 0; }
     /* 高亮层:与 textarea 同样的字体度量、同样的换行规则,逐字对齐地盖在上面。
        只画字,不接事件——点击、选中、光标全部还是 textarea 在处理。 */
-    /* 左右各外扩 4px、再用等量 padding 补回来:内容盒的位置和宽度跟原来分毫不差(逐字对齐
-       不受影响),但裁切边界往外挪了 4px,行首/行尾的 .wzh-chat-input-chip 那 4px 负 margin
-       溢出的底色不会再被 overflow:hidden 削掉一条。 */
+    /* 高亮层左侧跟随 textarea 的 8px 外边距；inset 的 right:-4px 表示向右外扩 4px，
+       避免行尾的 .wzh-chat-input-chip 负 margin 被 overflow:hidden 削掉一条。 */
     .wzh-chat-input-hl {
-      position: absolute; inset: 0 -4px; overflow: hidden; pointer-events: none;
+      position: absolute; inset: 0 -4px 0 4px; overflow: hidden; pointer-events: none;
       padding: 0 4px; margin: 0; border: none;
       font-size: 14px; font-family: var(--font-sans); line-height: 1.5;
       color: var(--foreground);
@@ -5320,11 +5319,19 @@ html[data-embed-preview="true"][data-frame-ratio="wide"] .pto-ide-frame {
     .wzh-chat-input::placeholder { color: var(--foreground-placeholder); }
 
     /* 工具栏:Agent / 模型 在左,语音 + 发送在右 */
-    .wzh-chat-composer-toolbar { display: flex; align-items: center; gap: 16px; }
+    .wzh-chat-composer-toolbar { display: flex; align-items: center; gap: 0; }
     .wzh-chat-tool {
-      display: inline-flex; align-items: center; gap: 6px; padding: 2px 0;
-      border: none; background: none; cursor: pointer;
+      box-sizing: border-box; height: 32px;
+      display: inline-flex; align-items: center; gap: 6px; padding: 0 10px;
+      border: none; border-radius: 999px; background: transparent; cursor: pointer;
       font: 12px/1.4 var(--font-sans); color: var(--foreground);
+      transition: background var(--duration-fast) var(--easing-default);
+    }
+    .wzh-chat-tool:hover,
+    .wzh-chat-tool:focus-visible,
+    .wzh-chat-tool[aria-expanded='true'] {
+      outline: none;
+      background: var(--state-hover);
     }
     .wzh-chat-tool img { width: 16px; height: 16px; display: block; }
 
@@ -5362,9 +5369,9 @@ html[data-embed-preview="true"][data-frame-ratio="wide"] .pto-ide-frame {
       -webkit-mask-position: center; mask-position: center;
       --wzh-wave: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='16' height='8' viewBox='0 0 16 8'><path d='M0 4 Q 4 0.9 8 4 T 16 4' fill='none' stroke='%23000' stroke-width='1.2' stroke-linecap='round'/></svg>");
     }
-    .wzh-chat-composer-actions { display: flex; align-items: center; gap: 10px; margin-left: auto; }
+    .wzh-chat-composer-actions { display: flex; align-items: center; gap: 4px; margin-left: auto; }
     .wzh-chat-clean-btn {
-      width: 24px; height: 24px; padding: 0;
+      width: 24px; height: 24px; margin-right: 4px; padding: 0;
       display: inline-flex; align-items: center; justify-content: center;
       border: none; background: none; cursor: pointer;
     }
@@ -5381,9 +5388,15 @@ html[data-embed-preview="true"][data-frame-ratio="wide"] .pto-ide-frame {
       background: var(--border-default);
     }
     .wzh-chat-mic-btn {
-      width: 24px; height: 24px; padding: 0;
+      width: 32px; height: 32px; padding: 0;
       display: inline-flex; align-items: center; justify-content: center;
-      border: none; background: none; cursor: pointer;
+      border: none; border-radius: 999px; background: transparent; cursor: pointer;
+      transition: background var(--duration-fast) var(--easing-default);
+    }
+    .wzh-chat-mic-btn:hover,
+    .wzh-chat-mic-btn:focus-visible {
+      outline: none;
+      background: var(--state-hover);
     }
     .wzh-chat-mic-btn img { width: 18px; height: 18px; display: block; }
     .wzh-chat-send-btn {
@@ -5456,10 +5469,10 @@ html[data-embed-preview="true"][data-frame-ratio="wide"] .pto-ide-frame {
     .wzh-chat-anchor-chip[hidden] { display: none; }
     .wzh-chat-anchor-chip {
       /* relative:关闭键绝对定位到右端,靠这一层定位 */
-      position: relative; margin-bottom: 8px;
+      position: relative; margin: 4px 0 8px 4px;
       display: inline-flex; align-items: center; gap: 4px;
       max-width: 100%; overflow: hidden;
-      padding: 3px 8px; border: 1px dashed var(--border-strong); border-radius: 6px;
+      padding: 3px 8px; border: 1px dashed var(--border-strong); border-radius: 8px;
       background: transparent;
       color: var(--foreground); font-size: 12px; font-weight: 400;
     }
@@ -5534,8 +5547,21 @@ html[data-embed-preview="true"][data-frame-ratio="wide"] .pto-ide-frame {
        文字颜色不变,收起前后读起来是同一块内容。 */
     .wzh-chat-queue.is-collapsed .wzh-chat-queue-card {
       margin: 0 16px; padding: 13px 16px 24px; gap: 0;
-      /* 填充与描边取欢迎屏引导卡片(.wzh-chat-guide-card)那一套,同一组 token */
-      background: var(--card-neutral-bg); border-color: var(--card-neutral-border);
+      /* 浅色主题使用黑色 3%→8% 的纵向渐变；描边沿用中性卡片 token。 */
+      background: linear-gradient(
+        to bottom,
+        rgba(0, 0, 0, .03),
+        rgba(0, 0, 0, .08)
+      );
+      border-color: var(--card-neutral-border);
+    }
+    /* 深色主题用等透明度的白色渐变，保持相同层次而不压黑背景。 */
+    :root[data-theme='dark'] .wzh-chat-queue.is-collapsed .wzh-chat-queue-card {
+      background: linear-gradient(
+        to bottom,
+        rgba(255, 255, 255, .03),
+        rgba(255, 255, 255, .08)
+      );
     }
     /* 每次展开/收起都放一次 z 轴位移:先退到后面、往下坠一点,再回到本位。
        终态是 identity,所以头部文字最后仍是正常大小,不会停在缩小状态。 */
@@ -6662,10 +6688,10 @@ body.chat-shell-page {
           </div>
           <div class="wzh-chat-input-bar">
             <!-- 描边流光,回答期间由 .is-flowing 点亮,见 syncInputFlow。
-                 rx=19.5 = 输入栏的 20px 圆角减去描边中心线那 0.5px 内移。 -->
+                 rx=23.5 = 输入栏的 24px 圆角减去描边中心线那 0.5px 内移。 -->
             <svg class="wzh-chat-input-glow" aria-hidden="true" focusable="false">
-              <rect class="wzh-chat-input-glow-halo" width="100%" height="100%" rx="19.5" pathLength="100"></rect>
-              <rect class="wzh-chat-input-glow-core" width="100%" height="100%" rx="19.5" pathLength="100"></rect>
+              <rect class="wzh-chat-input-glow-halo" width="100%" height="100%" rx="23.5" pathLength="100"></rect>
+              <rect class="wzh-chat-input-glow-core" width="100%" height="100%" rx="23.5" pathLength="100"></rect>
             </svg>
             <div class="wzh-chat-anchor-chip" id="trainChatAnchorChip" title="当前对话已锚定到该任务，提问无需再报任务名" aria-hidden="true">
               <img src="data:image/svg+xml;base64,PHN2ZyB2aWV3Qm94PSIwIDAgMTIgMTIiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyIgeG1sbnM6eGxpbms9Imh0dHA6Ly93d3cudzMub3JnLzE5OTkveGxpbmsiIHdpZHRoPSIxMi4wMDAwMDAiIGhlaWdodD0iMTIuMDAwMDAwIiBmaWxsPSJub25lIiBjdXN0b21GcmFtZT0iIzAwMDAwMCI+Cgk8ZGVmcz4KCQk8Y2xpcFBhdGggaWQ9ImNsaXBQYXRoXzAiPgoJCQk8cmVjdCB3aWR0aD0iMTIuMDAwMDAwIiBoZWlnaHQ9IjEyLjAwMDAwMCIgeD0iMC4wMDAwMDAiIHk9IjAuMDAwMDAwIiBmaWxsPSJyZ2IoMjU1LDI1NSwyNTUpIiAvPgoJCTwvY2xpcFBhdGg+CgkJPGNsaXBQYXRoIGlkPSJjbGlwUGF0aF8xIj4KCQkJPHJlY3Qgd2lkdGg9IjEwLjQ3NzIwMyIgaGVpZ2h0PSI5Ljc1MDAwMCIgeD0iMC43NjEyMzAiIHk9IjEuMTI1MDAwIiBmaWxsPSJyZ2IoMjU1LDI1NSwyNTUpIiAvPgoJCTwvY2xpcFBhdGg+Cgk8L2RlZnM+Cgk8cmVjdCBpZD0i5a2Q57uE5Lu2L+aWh+S7tuWkuSIgd2lkdGg9IjEyLjAwMDAwMCIgaGVpZ2h0PSIxMi4wMDAwMDAiIHg9IjAuMDAwMDAwIiB5PSIwLjAwMDAwMCIgLz4KCTxnIGlkPSJmbG93IGNoYXJ0LTMyIiBjdXN0b21GcmFtZT0idXJsKCNjbGlwUGF0aF8wKSI+CgkJPHJlY3QgaWQ9ImZsb3cgY2hhcnQtMzIiIHdpZHRoPSIxMi4wMDAwMDAiIGhlaWdodD0iMTIuMDAwMDAwIiB4PSIwLjAwMDAwMCIgeT0iMC4wMDAwMDAiIGZpbGw9InJnYigyNTUsMjU1LDI1NSkiIGZpbGwtb3BhY2l0eT0iMCIgLz4KCQk8ZyBpZD0iZmxvZGVyLWNsb3NlZCIgY3VzdG9tRnJhbWU9InVybCgjY2xpcFBhdGhfMSkiPgoJCQk8cmVjdCBpZD0iZmxvZGVyLWNsb3NlZCIgd2lkdGg9IjEwLjQ3NzIwMyIgaGVpZ2h0PSI5Ljc1MDAwMCIgeD0iMC43NjEyMzAiIHk9IjEuMTI1MDAwIiBmaWxsPSJyZ2IoMjU1LDI1NSwyNTUpIiBmaWxsLW9wYWNpdHk9IjAiIC8+CgkJCTxwYXRoIGlkPSLot6/lvoQiIGQ9Ik0zLjk5NDc5IDEuMTI1QzQuMjgwNTkgMS4xMjUgNC41NTAzNSAxLjI0ODE4IDQuNzQwMjUgMS40NTk4Mkw0LjgwNzU5IDEuNTQzMjZMNS40MDUwOCAyLjM2ODA5QzUuNDUzODYgMi40MzU0MiA1LjUyMzA0IDIuNDc5NjQgNS41OTg0NCAyLjQ5NDY0TDkuNDc4IDIuNTAwMzFDMTAuMDA2NCAyLjUwMDMxIDEwLjQzNTUgMi45MTIxMSAxMC40ODQyIDMuNDMyOTRMMTAuNDg4OCAzLjUzMThMMTAuNDg4OCA0LjkyNDkyTDEuNDg4NzcgNC45ODYwOEwxLjQ4ODc3IDIuMTU2NDhDMS40ODg3NyAxLjYyMzIxIDEuODg2NzcgMS4xODAwNCAyLjQwMTY5IDEuMTI5NzVMMi40OTk1NCAxLjEyNUwzLjk5NDc5IDEuMTI1WiIgZmlsbD0icmdiKDEwLDg5LDI0NykiIGZpbGwtcnVsZT0ibm9uemVybyIgLz4KCQkJPHBhdGggaWQ9Iui3r+W+hCIgZD0iTTQuNzQwMjUgMS40NTk4Mkw0LjgwNzU5IDEuNTQzMjZMNS40MDUwOCAyLjM2ODA5QzUuNDUzODYgMi40MzU0MiA1LjUyMzA0IDIuNDc5NjQgNS41OTg0NCAyLjQ5NDY0TDkuNDc4IDIuNTAwMzFDMTAuMDA2NCAyLjUwMDMxIDEwLjQzNTUgMi45MTIxMSAxMC40ODQyIDMuNDMyOTRMMTAuNDg4OCAzLjUzMThMMTAuNDg4OCA0LjkyNDkyTDEuNDg4NzcgNC45ODYwOEwxLjQ4ODc3IDIuMTU2NDhDMS40ODg3NyAxLjYyMzIxIDEuODg2NzcgMS4xODAwNCAyLjQwMTY5IDEuMTI5NzVMMi40OTk1NCAxLjEyNUwzLjk5NDc5IDEuMTI1QzQuMjgwNTkgMS4xMjUgNC41NTAzNSAxLjI0ODE4IDQuNzQwMjUgMS40NTk4MloiIGZpbGwtcnVsZT0ibm9uemVybyIgc3Ryb2tlPSJyZ2IoMCwwLDApIiBzdHJva2Utb3BhY2l0eT0iMCIgc3Ryb2tlLXdpZHRoPSIwLjc1MDAwMCIgLz4KCQkJPHBhdGggaWQ9IuefqeW9ouWkh+S7vSIgZD0iTTEuODg2MzMgNC4xMjVMMTAuMTEzNCA0LjEyNUMxMC43MzQ4IDQuMTI1IDExLjIzODQgNC42Mjg2OCAxMS4yMzg0IDUuMjVDMTEuMjM4NCA1LjI5MjQ4IDExLjIzNiA1LjMzNDkyIDExLjIzMTIgNS4zNzcxM0wxMC43MTk0IDkuODc3MTNDMTAuNjU0OCAxMC40NDU2IDEwLjE3MzggMTAuODc1IDkuNjAxNjUgMTAuODc1TDIuMzk4MTIgMTAuODc1QzEuODI1OTkgMTAuODc1IDEuMzQ0OTggMTAuNDQ1NiAxLjI4MDMyIDkuODc3MTNMMC43Njg1MzkgNS4zNzcxM0MwLjY5ODMyOSA0Ljc1OTc5IDEuMTQxODcgNC4yMDI0MiAxLjc1OTIxIDQuMTMyMjFDMS44MDE0MSA0LjEyNzQxIDEuODQzODYgNC4xMjUgMS44ODYzMyA0LjEyNVoiIGZpbGw9InJnYig5MywxNDQsMjQ2KSIgZmlsbC1ydWxlPSJldmVub2RkIiAvPgoJCQk8cGF0aCBpZD0i55+p5b2i5aSH5Lu9IiBkPSJNMTAuMTEzNCA0LjEyNUMxMC43MzQ4IDQuMTI1IDExLjIzODQgNC42Mjg2OCAxMS4yMzg0IDUuMjVDMTEuMjM4NCA1LjI5MjQ4IDExLjIzNiA1LjMzNDkyIDExLjIzMTIgNS4zNzcxM0wxMC43MTk0IDkuODc3MTNDMTAuNjU0OCAxMC40NDU2IDEwLjE3MzggMTAuODc1IDkuNjAxNjUgMTAuODc1TDIuMzk4MTIgMTAuODc1QzEuODI1OTkgMTAuODc1IDEuMzQ0OTggMTAuNDQ1NiAxLjI4MDMyIDkuODc3MTNMMC43Njg1MzkgNS4zNzcxM0MwLjY5ODMyOSA0Ljc1OTc5IDEuMTQxODcgNC4yMDI0MiAxLjc1OTIxIDQuMTMyMjFDMS44MDE0MSA0LjEyNzQxIDEuODQzODYgNC4xMjUgMS44ODYzMyA0LjEyNUwxMC4xMTM0IDQuMTI1WiIgZmlsbC1ydWxlPSJldmVub2RkIiBzdHJva2U9InJnYigwLDAsMCkiIHN0cm9rZS1vcGFjaXR5PSIwIiBzdHJva2Utd2lkdGg9IjAuNzUwMDAwIiAvPgoJCTwvZz4KCTwvZz4KPC9zdmc+Cg==" alt="">

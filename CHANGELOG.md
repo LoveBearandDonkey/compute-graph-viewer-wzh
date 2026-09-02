@@ -5,6 +5,10 @@
 
 ---
 
+## 2026-09-02 — launch-v2 「训练任务监控」卡片新增「学习」入口
+
+- 在卡片底部 variants 末尾追加「学习」按钮，新标签页打开 `Profiling_Insight_and_Tool/Learning/public/index.html`。
+
 ## 2026-08-28 — config-relation-observer 升级计划行 23：EP 口径补第三档（MindFormers · DP×MP 域）
 
 - `js/config-relation-observer.js` — `croEpMode` 从二选一变三档，新增「MindFormers（DP×MP）」：world 公式同切出档，但约束换成 `(DP × TP) % EP == 0`、`EDP = DP×TP/EP`。口径字段从布尔 `moeOrthogonal` 升成 `epMode` 三值（老字段保留并同步，读法统一收进 `epModeOf`）；validate / reconcile / fitParallelWorld 的整除判据按域取；**编址几何**跟着换 —— mf 档下 `ranksPerEp` 从 `TP×CP` 变成 `CP`，TP 分片号由 `(EDP索引 × EP + EP索引) % TP` 反推，两套分解统一收进 `derive().shardOf()`（集群矩阵原先自己又算了一遍，那份算法在新档下会画错斑马纹）。
