@@ -107,6 +107,10 @@
         prep: function () {
           window.PtoTrainingTwinTimelineDock && window.PtoTrainingTwinTimelineDock.setVisible(true);
           window.PtoTrainingTwinDockTabs && window.PtoTrainingTwinDockTabs.select("timeline");
+          // 光洞只能把视线引到"这块面板"，面板里还有 32 条泳道。让泳道自己再收一次：
+          // 切到事故步 + 事故窗口、把 rank 23 那行滚到中间、整图去色只留那条红的。
+          // 复位由 render() 每步开头统一做（见下方 clearSwimlaneFocus）。
+          window.PtoTrainingRankSwimlane && window.PtoTrainingRankSwimlane.focusFault();
         },
         body: "EP rank 23（node2 GPU7）在 all-to-all 处 30s 超时死锁：send=0，其余 63 rank 卡在同步屏障空等——但死锁只是「果」。",
         nums: ["rank 23 timeout", "63 rank 空等"],
@@ -486,6 +490,10 @@
       try { e.fixEls[st.fix[0]].scrollIntoView({ block: "nearest", behavior: "smooth" }); } catch (x) {}
     }
 
+    // 跨组件的临时视觉态在每一步开头统一复位,再由本步的 prep 按需重新打开 ——
+    // 这样组件不必知道"上一步是谁",步与步之间也不会互相漏状态。
+    clearSwimlaneFocus();
+
     // 把当前证据挪到可见
     if (st.prep) { try { st.prep(); } catch (x) {} }
 
@@ -663,9 +671,16 @@
     return true;
   }
 
+  // 底部泳道的「定位聚焦」(js/training-rank-swimlane.js:focusFault) 是本层开出去的临时视觉态,
+  // 谁开的谁负责关:每步开头 + 关闭聚光灯各复位一次。组件没渲染过时该调用是空操作。
+  function clearSwimlaneFocus() {
+    try { window.PtoTrainingRankSwimlane && window.PtoTrainingRankSwimlane.clearFocus(); } catch (x) {}
+  }
+
   function doClose() {
     if (!open) return;
     open = false;
+    clearSwimlaneFocus();
     if (raf) { window.cancelAnimationFrame(raf); raf = 0; }
     guideOn = true;
     if (els) {

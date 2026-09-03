@@ -6,6 +6,7 @@ const state = {
   index: 0,
   selectedChapters: new Set(),
   saved: new Set(JSON.parse(localStorage.getItem('pocket-saved') || '[]')),
+  doubted: new Set(JSON.parse(localStorage.getItem('pocket-doubted') || '[]')),
   mastered: new Set(JSON.parse(localStorage.getItem('pocket-mastered') || '[]')),
   todayCount: Number(localStorage.getItem(todayKey()) || 0),
   touchStartY: 0,
@@ -94,17 +95,20 @@ function shuffle(items) {
 
 function persist() {
   localStorage.setItem('pocket-saved', JSON.stringify([...state.saved]));
+  localStorage.setItem('pocket-doubted', JSON.stringify([...state.doubted]));
   localStorage.setItem('pocket-mastered', JSON.stringify([...state.mastered]));
   localStorage.setItem(todayKey(), state.todayCount);
   $('#masteredCount').textContent = state.mastered.size;
   $('#masteredCollectionCount').textContent = state.mastered.size;
   $('#savedCount').textContent = state.saved.size;
+  $('#doubtedCount').textContent = state.doubted.size;
   $('#streakCount').textContent = state.todayCount;
 }
 
 function reconcileProgress() {
   const valid = new Set(state.allCards.map(card => card.id));
   state.saved = new Set([...state.saved].filter(id => valid.has(id)));
+  state.doubted = new Set([...state.doubted].filter(id => valid.has(id)));
   state.mastered = new Set([...state.mastered].filter(id => valid.has(id)));
   persist();
 }
@@ -115,7 +119,7 @@ function showCard(direction = 'next') {
   const card = currentCard();
   if (!card) return;
   const el = $('#knowledgeCard');
-  el.classList.remove('exit-up', 'exit-down', 'enter');
+  el.classList.remove('exit-left', 'exit-right', 'enter-next', 'enter-previous');
   $('#cardIndex').textContent = `CARD ${String(state.index + 1).padStart(3, '0')}`;
   $('#breadcrumb').textContent = `${card.chapter}  /  ${card.section}`;
   $('#cardTitle').textContent = card.title;
@@ -126,10 +130,12 @@ function showCard(direction = 'next') {
   $('#progressBar').style.width = `${((state.index + 1) / state.deck.length) * 100}%`;
   $('#saveButton').classList.toggle('active', state.saved.has(card.id));
   $('#saveButton span').textContent = state.saved.has(card.id) ? '♥' : '♡';
+  $('#doubtButton').classList.toggle('active', state.doubted.has(card.id));
+  $('#doubtButton').setAttribute('aria-label', state.doubted.has(card.id) ? '取消存疑' : '标记为存疑');
   $('#masterButton').classList.toggle('mastered', state.mastered.has(card.id));
   $('#masterButton').innerHTML = state.mastered.has(card.id) ? '<span>✓</span>已掌握' : '<span>✓</span>我掌握了';
   $('#previousButton').disabled = state.index === 0;
-  el.classList.add('enter');
+  el.classList.add(direction === 'previous' ? 'enter-previous' : 'enter-next');
   state.animating = false;
 }
 
@@ -138,7 +144,7 @@ function navigate(step) {
   if (step < 0 && state.index === 0) { toast('已经是第一张了'); return; }
   state.animating = true;
   const el = $('#knowledgeCard');
-  el.classList.add(step > 0 ? 'exit-up' : 'exit-down');
+  el.classList.add(step > 0 ? 'exit-left' : 'exit-right');
   setTimeout(() => {
     state.index = step > 0 ? (state.index + 1) % state.deck.length : state.index - 1;
     if (step > 0) state.todayCount += 1;
@@ -155,11 +161,12 @@ function start(mode = 'all') {
     all: selected,
     unmastered: selected.filter(card => !state.mastered.has(card.id)),
     mastered: selected.filter(card => state.mastered.has(card.id)),
-    saved: selected.filter(card => state.saved.has(card.id))
+    saved: selected.filter(card => state.saved.has(card.id)),
+    doubted: selected.filter(card => state.doubted.has(card.id))
   };
   const pool = pools[mode] || selected;
   if (!pool.length) {
-    const messages = { unmastered: '太棒了，这些卡片都掌握了', mastered: '还没有已掌握的卡片', saved: '收藏夹还是空的' };
+    const messages = { unmastered: '太棒了，这些卡片都掌握了', mastered: '还没有已掌握的卡片', saved: '收藏夹还是空的', doubted: '还没有存疑的卡片' };
     toast(messages[mode] || '当前筛选没有卡片');
     return;
   }
@@ -241,11 +248,11 @@ if ('serviceWorker' in navigator && location.protocol !== 'file:') {
 $('#startButton').addEventListener('click', () => start('all'));
 $('#reviewButton').addEventListener('click', () => start('unmastered'));
 $('#savedButton').addEventListener('click', () => start('saved'));
+$('#doubtedButton').addEventListener('click', () => start('doubted'));
 $('#masteredButton').addEventListener('click', () => start('mastered'));
 $('#masteredStat').addEventListener('click', () => start('mastered'));
 $('#previousButton').addEventListener('click', () => navigate(-1));
 $('#nextButton').addEventListener('click', () => navigate(1));
-$('#backButton').addEventListener('click', goHome);
 $('#homeButton').addEventListener('click', goHome);
 $('#filterButton').addEventListener('click', openSheet);
 $('#closeSheet').addEventListener('click', closeSheet);
@@ -262,6 +269,12 @@ $('#saveButton').addEventListener('click', () => {
   persist(); showCard();
   toast(state.saved.has(id) ? '已收藏' : '已取消收藏');
 });
+$('#doubtButton').addEventListener('click', () => {
+  const id = currentCard().id;
+  state.doubted.has(id) ? state.doubted.delete(id) : state.doubted.add(id);
+  persist(); showCard();
+  toast(state.doubted.has(id) ? '已标记为存疑' : '已取消存疑');
+});
 $('#masterButton').addEventListener('click', () => {
   const id = currentCard().id;
   if (state.mastered.has(id)) state.mastered.delete(id); else state.mastered.add(id);
@@ -270,8 +283,13 @@ $('#masterButton').addEventListener('click', () => {
 });
 $('#againButton').addEventListener('click', () => {
   $('#cardContent').scrollTo({ top: 0, behavior: 'smooth' });
-  toast('这张卡稍后还会出现');
-  state.deck.splice(Math.min(state.index + 5, state.deck.length), 0, currentCard());
+  const cardsRemaining = state.deck.length - state.index - 1;
+  if (cardsRemaining >= 10) {
+    state.deck.splice(state.index + 11, 0, currentCard());
+    toast('已安排在 10 张卡片之后');
+  } else {
+    toast('已安排到下一轮再看');
+  }
 });
 
 const stage = $('#cardStage');
@@ -282,16 +300,15 @@ stage.addEventListener('touchstart', (event) => {
 stage.addEventListener('touchend', (event) => {
   const dy = event.changedTouches[0].clientY - state.touchStartY;
   const dx = event.changedTouches[0].clientX - state.touchStartX;
-  const content = $('#cardContent');
-  if (Math.abs(dy) > 70 && Math.abs(dy) > Math.abs(dx) * 1.35) {
-    if (dy < 0 && content.scrollTop + content.clientHeight >= content.scrollHeight - 8) navigate(1);
-    if (dy > 0 && content.scrollTop <= 8) navigate(-1);
+  if (Math.abs(dx) > 70 && Math.abs(dx) > Math.abs(dy) * 1.35) {
+    if (dx < 0) navigate(1);
+    if (dx > 0) navigate(-1);
   }
 }, { passive: true });
 window.addEventListener('keydown', (event) => {
   if ($('#study').hidden) return;
-  if (['ArrowUp', 'ArrowRight', ' '].includes(event.key)) navigate(1);
-  if (['ArrowDown', 'ArrowLeft'].includes(event.key)) navigate(-1);
+  if (event.key === 'ArrowRight') navigate(1);
+  if (event.key === 'ArrowLeft') navigate(-1);
 });
 
 init();

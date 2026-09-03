@@ -1,4 +1,4 @@
-const CACHE = 'transformer-pocket-v4';
+const CACHE = 'transformer-pocket-v8';
 const SHELL = ['/', '/index.html', '/styles.css', '/app.js', '/cards-data.js', '/manifest.webmanifest', '/icon.svg', '/cards.json'];
 
 self.addEventListener('install', (event) => {

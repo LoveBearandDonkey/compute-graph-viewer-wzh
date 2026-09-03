@@ -291,21 +291,27 @@
        （16 / 32 / 128 / 256）本来就是乘着长的。默认值 24 不在梯子上 —— 与手输
        120 之后的 DP 同一条规矩：手输是精确指定，加减键是回到常规档位。 */
     microBatchNum: {
-      label: "微批数", group: "batch", min: 1, max: 4096, pow2: true, digits: 3,
-      title: "微批数 micro_batch_num（Megatron 的 global-batch-size ÷ (mbs × dp)，"
-        + "HF / DeepSpeed 的 gradient_accumulation_steps）\n\n"
+      /* label 写下划线全名而不是中文的「微批数」：那三个字太像 Micro Batch 的简称，
+         路人第一眼会把它读成「微批(的)数(值)」，也就是 MBS 本身 —— 而这两枚的意思
+         恰好相反（一个是每份多大、一个是分成几份）。写成框架里的键名就没有这种歧义，
+         MindFormers 的 parallel_config.micro_batch_num 也正是这么写的。
+         注释里仍按中文的「微批数」称呼它 —— 那是给读代码的人看的，不会误读。 */
+      label: "micro_batch_num", group: "batch", min: 1, max: 4096, pow2: true, digits: 3,
+      title: "micro_batch_num（Megatron 的 num_microbatches = global-batch-size ÷ (mbs × dp)，"
+        + "HF / DeepSpeed 的 gradient_accumulation_steps，中文常说「微批数」）\n\n"
+        + "⚠️ 它不是 Micro Batch：那一枚是**每份多大**，这一枚是**分成几份**。\n\n"
         + "一个全局 batch 被切成几份轮流喂进去。三者是同一句话：\n"
-        + "**全局 batch = Micro Batch × DP × 微批数**"
+        + "**Global Batch = Micro Batch × DP × micro_batch_num**"
         + "（本页 YAML 视图 runner_config.batch_size 那一格就是这么算出来的）。\n\n"
         + "── 它对显存不是线性的 ──\n"
         + "只有**在飞**（已前向、还没反向）的那几份激活占着显存，而在飞份数有上界："
         + "1F1B 下 stage s 最多压 PP−s 份。所以\n"
-        + "· 微批数 ≥ PP（交错档是 PP×VPP）：一个字节都不动，柱子由公式定；\n"
-        + "· 微批数 < PP：warmup 段还没灌满就要开始反向，「各 PP Stage 峰值」"
+        + "· micro_batch_num ≥ PP（交错档是 PP×VPP）：一个字节都不动，柱子由公式定；\n"
+        + "· micro_batch_num < PP：warmup 段还没灌满就要开始反向，「各 PP Stage 峰值」"
         + "那排小柱**整体压低**，首段压得最多。\n"
         + "PP=1 时在飞恒为 1，调它容量柱纹丝不动 —— 那时它只改全局 batch。\n\n"
         + "── 为什么不该靠压它省显存 ──\n"
-        + "流水线气泡占比约 (PP−1)/微批数（交错档再 ÷VPP）。PP=4、微批数=2 时"
+        + "流水线气泡占比约 (PP−1)/micro_batch_num（交错档再 ÷VPP）。PP=4、它=2 时"
         + "流水线一半以上的时间在空转 —— 这是最贵的一种省法，"
         + "先动重计算、CP、权重分片。低于 PP×VPP 时页面给一条软警告。\n\n"
         + "── 什么时候该调大 ──\n"
@@ -737,14 +743,48 @@
        「高级」：VPP 与那四枚开关 / 档位控件，见 ADVANCED_ITEMS.parallel。 */
     parallel: ["totalLayer", "dp", "pp", "tp", "cp"],
     moe: ["routedExpert", "topK", "sharedExpert", "ep"],
-    /* node 不在这里：每节点卡数是硬件事实（CARD_SPECS.ranksPerNode），Node 数
-       因而由 Total Rank 整除得来，只有唯一一个合法值 —— 一枚只能停在一个值上的
-       stepper 不是 stepper。它改由 mount() 在这一行末尾补一枚只读读数。 */
+    /* node 不在这里，而且**整个收进了「高级」**（见 ADVANCED_ITEMS.batch）：
+       每节点卡数是硬件事实（CARD_SPECS.ranksPerNode），Node 数因而由 Total Rank
+       整除得来，只有唯一一个合法值 —— 一枚只能停在一个值上的 stepper 不是 stepper，
+       而一个算得出来的数也不值得占首屏那一格。它在折叠里仍是只读读数。 */
     cluster: ["totalRank"],
-    /* 重算层数与 LoRA Rank 不在这里：两枚都只在另一枚控件拨到某一档之后才有意义
-       （见 FIELD_SPECS 里各自的 enabledWhen），与 VPP 同样收进「高级」折叠 ——
-       见 ADVANCED_ITEMS。 */
-    batch: ["microBatch", "microBatchNum", "seqLen"],
+    /* 这一组是**这一行首屏留下的全部**，四枚读下来是一句话：
+         Global Batch —— 这一步一共吃多少样本（只读，MBS × DP × 微批数）
+         Micro Batch / Seq Length / Hidden —— 这张卡上那个张量的 [B, S, H]
+       Global Batch 排在最前而不是跟在因子后面：先说「一步多大」，再说「摊到这张
+       卡上是多大」，从粗到细，正是看配置的顺序。B 与 S 之间不插任何东西 ——
+       这一行要和大家嘴里那个输入矩阵形状逐字对得上。
+
+       收进「高级」的判据到这一版有三类（见 ADVANCED_ITEMS.batch）：
+       · **算得出来的**（Node）；
+       · **不是形状、也不是这一步吃多少的**（微批数 —— 它是「这个 [B,S,H] 一步之内
+         跑几遍」，值仍进 Global Batch 的乘积，只是不必占首屏）；
+       · **换算口径与条件生效的**（精度两档 / 重计算与重算层数 / LoRA 那一对）。
+       ⚠️ 派生读数（globalBatch / hiddenDim）与真字段混在同一张表里，由 mount()
+       的 buildItem 按名字分派 —— 它们不是 FIELD_SPECS 的字段，别拿去查量程。 */
+    batch: ["globalBatch", "microBatch", "seqLen", "hiddenDim"],
+  };
+
+  /* ── 派生读数：长得像 stepper，但没有加减键 ───────────────────────────────
+     判据一条：**它不是输入**，由别的字段乘除出来，拨不动。三枚：
+
+       Node          Total Rank ÷ 整机卡数（收在「高级」里）
+       Hidden        [B, S, H] 的 H，模型预设里的结构常量（换模型才变）
+       Global Batch  MBS × DP × 微批数，这一步一共吃多少样本
+
+     后两枚原先只活在 YAML 视图里（model_config.hidden_size 与
+     runner_config.batch_size），于是这一行有两处读不出来：按 [B,S,H] 排却没有 H；
+     表单上那枚 Micro Batch 常被当成 batch size 看，而真正的 global batch 要切到
+     另一个视图才见得着。三枚都只读、都带口径浮层，数与 yaml 那几行同源。
+
+     它们**与真字段并排写在 FIELD_ORDER / ADVANCED_ITEMS 里**，由 buildItem 按名字
+     分派 —— 位置就是列表里的位置，不再另有一张「插在谁后面」的表。
+     summary 每次 emit 重算，返回 { text, title }：text 是格子里那个数，title 是
+     问号浮层里的口径。 */
+  const DERIVED_SPECS = {
+    node:        { label: FIELD_SPECS.node.label, summary: nodeSummary },
+    hiddenDim:   { label: "Hidden",               summary: hiddenSummary },
+    globalBatch: { label: "Global Batch",         summary: globalBatchSummary },
   };
 
   /* ── 合法邻域 ─────────────────────────────────────────────────────────────
@@ -1176,6 +1216,57 @@
     return { node, text: String(node), title: `${head}；${detail}` };
   }
 
+  /* ── 另两枚派生读数的口径（见 DERIVED_SPECS）─────────────────────────────
+     与 nodeSummary 同一副形状（{ text, title }）、同一条判据（不是输入）。
+     两枚都在 Cluster 那一行上，各答一个原先只有 YAML 视图答得出的问题。 */
+
+  /* Hidden：[B, S, H] 的 H。模型预设里的结构常量，**换模型才会变** —— 所以它没有
+     加减键不是「暂时没做」，而是这一页压根不该让人拨它（拨了就不是这个模型了）。 */
+  function hiddenSummary(config) {
+    const preset = presetOf(config);
+    const tp = Math.max(1, config.tp || 1);
+    return {
+      text: String(preset.hidden),
+      title: "Hidden Size · [B, S, H] 的 H（" + preset.label + " = " + preset.hidden + "）\n\n"
+        + "一个 token 的向量宽度。它和层数一起决定模型多大，但**不是这一页能拨的量**："
+        + "它是模型预设里的结构常量，换模型才会变（YAML 的 model_config.hidden_size 照抄它）。\n\n"
+        + "── 它怎么进显存 ──\n"
+        + "权重 ∝ H²（每层几个 H×H 的投影矩阵），激活 ∝ B×S×H。所以同样是翻一倍，"
+        + "H 抬的是权重那一段（平方），Seq Length 抬的是激活那一段（线性）。\n\n"
+        + "── 单卡上其实是 H/TP ──\n"
+        + (tp > 1
+          ? "TP 沿 H 切开权重与激活，当前 TP=" + tp + " → 每卡这一维实际是 "
+            + (preset.hidden / tp) + "。"
+          : "TP 沿 H 切开权重与激活；当前 TP=1，每卡背的就是整个 " + preset.hidden + "。"),
+    };
+  }
+
+  /* 全局 Batch：三个可调量乘出来的那个数。与 yaml 的 runner_config.batch_size
+     同源同式（见 config-relation-yaml.js 那一行的长注释）—— dp 取 config 里那个数，
+     与 counts.dp 逐位相同，两处的数字必须对得上。 */
+  function globalBatchSummary(config) {
+    const mbs = Math.max(1, config.microBatch || 1);
+    const dp = Math.max(1, config.dp || 1);
+    const num = Math.max(1, config.microBatchNum || 1);
+    const total = mbs * dp * num;
+    return {
+      text: String(total),
+      title: "Global Batch · global batch size（一次参数更新吃掉多少样本）\n\n"
+        + "= Micro Batch " + mbs + " × DP " + dp + " × micro_batch_num " + num + " = " + total + "\n"
+        + "三个因子分散在三处：Micro Batch 就在右边，DP 在 Model Architecture 那一行，"
+        + "micro_batch_num 收在这一行末尾的「高级选项」里。"
+        + "它是**派生量**，没有加减键：要改就动那三个数之一。\n\n"
+        + "── 表单上那枚 Micro Batch 不是它 ──\n"
+        + "MBS 是每卡每次前反向真正喂进去的样本数；这个数是全集群一步的总量。"
+        + "YAML 的 runner_config.batch_size 填的是**这个**（full_batch: True 的口径 —— "
+        + "每张卡都取全局 batch 的数据量，再在图内按 dp 切）。\n\n"
+        + "── 它几乎不进显存 ──\n"
+        + "直接压激活的只有 MBS；micro_batch_num 只在 < PP 时把在飞份数夹小；DP 越大每卡反而越省"
+        + "（权重相关的段切得更碎）。所以它管的不是容量柱，是收敛："
+        + "太小噪声大、太大收敛质量下降，而它一旦定死，MBS 与 micro_batch_num 就只能互相换。",
+    };
+  }
+
   /* ── 校验：返回 [] 表示配置自洽 ───────────────────────────────────────── */
   function validate(config) {
     const errors = [];
@@ -1368,7 +1459,7 @@
       const num = Math.max(1, config.microBatchNum || 1);
       if (num < need) {
         const bubble = Math.round((config.pp - 1) / (num * Math.max(1, config.vpp || 1)) * 100);
-        warnings.push(`微批数 ${num} 少于流水线深度 ${config.pp === need ? `PP ${config.pp}`
+        warnings.push(`micro_batch_num ${num} 少于流水线深度 ${config.pp === need ? `PP ${config.pp}`
           : `PP ${config.pp} × VPP ${config.vpp} = ${need}`}`
           + `，warmup 段灌不满，气泡占比约 ${bubble}%`
           + ` —— 在飞份数被它夹到 ${num} 份，容量柱因此矮一截，但那点显存是拿吞吐换的`);
@@ -1821,23 +1912,31 @@
        最后才在性能阶段动它），而且默认预设下它压根拨不动（46 层连 PP=4 都除不尽），
        摆在首屏正中间等于再犯一次「一枚只能停在一个值上的 stepper 不是 stepper」。
 
-     batch —— 两类收进来（升级计划行 18 / 19 / 21）：
+     batch —— 判据换成了一条更硬的：**首屏那一行只留「这一步吃多少 + 这张卡上那个
+       张量长什么样」**，即 Global Batch 与 [B, S, H]。别的一律收进来，分四类：
+       · **算得出来的** —— Node（Total Rank ÷ 整机卡数，只有唯一一个合法值）。它
+         原先站在 Total Rank 旁边，但一个不能拨的数不该占首屏那一格。
+       · **不是形状、也不是这一步吃多少的** —— 微批数。它是「这个 [B,S,H] 一步之内
+         跑几遍」，值仍进 Global Batch 的乘积（那一格的浮层写着三个因子各在哪儿），
+         夹在 B 与 S 之间反而把「输入矩阵形状」这句话打断了。
        · **只在另一枚控件拨到某一档之后才有意义的** —— 重算层数只有「重计算 ·
          按层数」那一档才生效（拨到那一档时折叠会自动掀开，见 set()）；LoRA 那一对
          是微调侧的旋钮，而本页两个预设写的都是预训练配置。
        · **换算口径** —— 精度那两枚（行 21）不改「装多少」，改的是「每个数占几个
-         字节」。它一年也未必动一次，却让六段全体升降，摆在首屏会盖过真正天天要
-         拨的那几枚。
-       行里因此留下 Micro Batch / 微批数 / Seq Length / 重计算 四枚 —— 前三枚是
-       「装多少」（每份多大 × 分成几份 × 每份多长），第四枚是「留不留」，
-       一行读下来仍是一句完整的话。
+         字节」。它一年也未必动一次，却让六段全体升降。
+       「重计算」也一并收了进来：它治的是激活留不留，不是张量的形状，留在行里就得
+       解释它和旁边四枚不是一类东西 —— 它与自己的搭档「重算层数」挨着放更好读。
 
-     列表里既可以是 FIELD_SPECS 的字段（走 attachStepper），也可以是 FLAG_SPECS 的
-     开关 / 档位控件 —— 面板按这里的顺序铺，与两张表各自的顺序无关。
-     未列到的开关照旧接在自己那一行的末尾（目前 batch 的「重计算」就是）。 */
+     列表里可以是 DERIVED_SPECS 的只读读数、FIELD_SPECS 的字段（走 attachStepper），
+     也可以是 FLAG_SPECS 的开关 / 档位控件 —— 三者由 buildItem 按名字分派，面板按
+     这里的顺序铺，与那几张表各自的顺序无关。
+     未列到的开关照旧接在自己那一行的末尾（batch 收完之后已经一枚不剩）。 */
   const ADVANCED_ITEMS = {
     parallel: ["vpp", "cpMode", "seqParallel", "vocabEmbDp", "shardMode"],
-    batch: ["dtype", "paramsDtype", "recomputeLayers", "lora", "loraRank"],
+    /* 顺序按「先量后档」，且让搭档挨着：Node / 微批数两枚数在前，
+       重计算与它的重算层数紧挨着，再是两枚精度，最后 LoRA 那一对。 */
+    batch: ["node", "microBatchNum", "recomputeMode", "recomputeLayers",
+      "dtype", "paramsDtype", "lora", "loraRank"],
   };
 
   /* 折叠按钮的悬浮说明：里面收着什么、为什么收在这里。按行分写 —— 两行的判据
@@ -1851,14 +1950,18 @@
       + "· CP 口径 —— CP > 1 时换掉一条硬校验（Ulysses 拦 TP×CP 整除注意力头，"
       + "Ring 拦序列长度整除 2×CP）\n"
       + "· SP / 词表走 DP / 权重分片 —— 三种不额外占卡的切法",
-    batch: "精度两档 / 重算层数 / LoRA / LoRA Rank\n\n"
-      + "行里留下的四枚是每次调参真的会动的（装多少份、每份多大、留不留）；"
-      + "收进来的是另外两类：\n"
-      + "· 换算口径 —— 计算精度 / 主权重精度：不改「装多少」，改的是「每个数占几个字节」，"
+    batch: "Node / micro_batch_num / 重计算 / 重算层数 / 精度两档 / LoRA 那一对\n\n"
+      + "行里留下的只有 Global Batch 与 [B, S, H] —— 这一步吃多少样本，"
+      + "以及摊到这张卡上那个张量长什么样。别的都在这里：\n"
+      + "· Node —— Total Rank ÷ 整机卡数，算得出来，拨不动（只读读数）\n"
+      + "· micro_batch_num —— 这个 [B,S,H] 一步之内跑几遍（Megatron 的 num_microbatches / "
+      + "HF·DeepSpeed 的 gradient_accumulation_steps）。它仍是 Global Batch 的第三个因子，"
+      + "PP > 1 时还夹着在飞份数，只是它不是形状的一维\n"
+      + "· 重计算 / 重算层数 —— 激活留不留：四档一刀不切，只决定每份留多少；"
+      + "「按层数」那一档才按重算层数算（拨到那一档时这个折叠会自动掀开）\n"
+      + "· 计算精度 / 主权重精度 —— 换算口径：不改「装多少」，改的是「每个数占几个字节」，"
       + "六段的高度全跟着它走，但它一年也未必动一次（升级计划行 21）\n"
-      + "· 条件生效 —— 只在另一枚控件拨到某一档之后才有意义：\n"
-      + "  · 重算层数 —— 只有「重计算 · 按层数」那一档才按它算（拨到那一档时这个折叠会自动掀开）\n"
-      + "  · LoRA / LoRA Rank —— 冻结主干只训 adapter，梯度段与优化器段跟着 adapter 走、"
+      + "· LoRA / LoRA Rank —— 冻结主干只训 adapter，梯度段与优化器段跟着 adapter 走、"
       + "权重段一个字节不少。本页两个预设写的都是预训练配置，所以它默认关着",
   };
 
@@ -1891,19 +1994,228 @@
     return null;
   }
 
+  /* ── 悬浮说明：标签后的小问号 + 统一气泡 ──────────────────────────────────
+     这些解释原先挂在原生 title 上，三处都不好：要按住不动 ~1s 才弹、长文按系统
+     样式排版（深色主题下仍是白底）、而且没有任何视觉线索告诉人「这里能悬浮」。
+     现在改成：
+       · 触发点是表单标签后面那枚小问号（buildHint / fillLabel），看得见、悬浮即出；
+       · 文案一个字不改（仍是带 \n 的那几段），首段升格成气泡标题，正文 pre-wrap，
+         作者手排的空行与「· 」列表原样保留；
+       · 气泡只有一个，挂在 body 下 position:fixed —— 与容量口径浮层同一个理由：
+         祖先 .pto-ide-frame__pane 既 overflow:hidden 又带 backdrop-filter，留在
+         里面既定位不到视口也会被裁，还会把 .cro-board 撑出滚动条。
+     任何元素带上 data-hint 就走这套（走不动的加减键、EP 口径那三档都是这么接的），
+     不必都长成问号 —— 本身就有可见文字的控件，整块都是触发面积更顺手。 */
+  const HINT_HIDE_DELAY = 140;    // 从问号滑向气泡的那几像素空当，没有它半路就收掉了
+  let hintEl = null;
+  let hintAnchor = null;
+  let hintTimer = 0;
+
+  function hintBubble() {
+    if (hintEl) return hintEl;
+    hintEl = document.createElement("div");
+    hintEl.className = "cro-hint-bubble";
+    hintEl.id = "croHintBubble";
+    hintEl.setAttribute("role", "tooltip");
+    hintEl.hidden = true;
+    // 气泡自己 hover 时保持展开：口径要能读完、也要能选中复制
+    hintEl.addEventListener("pointerenter", () => global.clearTimeout(hintTimer));
+    hintEl.addEventListener("pointerleave", () => hideHint());
+    document.body.appendChild(hintEl);
+    return hintEl;
+  }
+
+  /* 文案 → 气泡内容。约定：第一个空行之前是「一句话说清这是什么」，之后是详解；
+     `reason`（此刻为什么不可用）另起一格排在最前 —— 与改动前 title 里
+     「理由 \n\n 正文」的次序逐字相同，只是排版归页面自己管了。 */
+  function renderHint(box, text, reason) {
+    box.textContent = "";
+    if (reason) {
+      const note = document.createElement("div");
+      note.className = "cro-hint-bubble__reason";
+      note.textContent = String(reason).trim();
+      box.appendChild(note);
+    }
+    const raw = String(text || "").replace(/\r/g, "");
+    const cut = raw.indexOf("\n\n");
+    const head = cut > 0 ? raw.slice(0, cut).trim() : "";
+    const body = cut > 0 ? raw.slice(cut + 2).replace(/^\n+/, "") : raw.trim();
+    if (head) {
+      const h = document.createElement("div");
+      h.className = "cro-hint-bubble__head";
+      h.textContent = head;
+      box.appendChild(h);
+    }
+    if (body) {
+      const p = document.createElement("div");
+      p.className = "cro-hint-bubble__body";
+      p.textContent = body;
+      box.appendChild(p);
+    }
+  }
+
+  /* 贴放并避让视口：默认挂在触发点正下方左对齐，下方装不下就翻到上方，左右各夹
+     8px。表单在板面里能滚，触发点位置随时会变，所以每次显示都实测一遍。 */
+  function placeHint() {
+    if (!hintEl || hintEl.hidden || !hintAnchor || !hintAnchor.isConnected) return;
+    const anchor = hintAnchor.getBoundingClientRect();
+    const box = hintEl.getBoundingClientRect();
+    const gap = 6;
+    const margin = 8;
+    const vw = global.innerWidth;
+    const vh = global.innerHeight;
+
+    let left = Math.min(anchor.left, vw - box.width - margin);
+    left = Math.max(margin, left);
+
+    let top = anchor.bottom + gap;
+    if (top + box.height > vh - margin) {
+      const above = anchor.top - gap - box.height;
+      top = above >= margin ? above : Math.max(margin, vh - box.height - margin);
+    }
+    hintEl.style.left = `${Math.round(left)}px`;
+    hintEl.style.top = `${Math.round(top)}px`;
+  }
+
+  function showHint(anchor) {
+    if (!anchor || !anchor.dataset) return;
+    const text = anchor.dataset.hint;
+    const reason = anchor.dataset.hintReason;
+    if (!text && !reason) return;
+    global.clearTimeout(hintTimer);
+    const box = hintBubble();
+    if (hintAnchor && hintAnchor !== anchor) markHintOpen(hintAnchor, false);
+    hintAnchor = anchor;
+    renderHint(box, text, reason);
+    box.hidden = false;
+    box.scrollTop = 0;      // 换了一条就从头读，别沿用上一条滚到哪儿
+    // 先落位再上浮：位置是量出来的，量之前显示会让气泡从上一个位置滑过来
+    placeHint();
+    global.requestAnimationFrame(() => { if (hintAnchor === anchor) box.classList.add("is-open"); });
+    markHintOpen(anchor, true);
+  }
+
+  function markHintOpen(anchor, open) {
+    if (anchor && anchor.classList && anchor.classList.contains("cro-hint")) {
+      anchor.setAttribute("aria-expanded", String(open));
+    }
+  }
+
+  function hideHint(immediate) {
+    if (!hintEl) return;
+    global.clearTimeout(hintTimer);
+    const close = () => {
+      hintEl.classList.remove("is-open");
+      hintEl.hidden = true;
+      markHintOpen(hintAnchor, false);
+      hintAnchor = null;
+    };
+    if (immediate) close();
+    else hintTimer = global.setTimeout(close, HINT_HIDE_DELAY);
+  }
+
+  /* 委托一次挂好：触发点是 emit() 里反复重建的，逐个挂监听必漏。
+     pointerover/out 而不是 enter/leave —— 前者才冒泡，委托得到。 */
+  let hintsInstalled = false;
+  function installHints() {
+    if (hintsInstalled) return;
+    hintsInstalled = true;
+    document.addEventListener("pointerover", (event) => {
+      const target = event.target.closest?.("[data-hint], [data-hint-reason]");
+      if (!target) return;
+      if (target === hintAnchor && hintEl && !hintEl.hidden) { global.clearTimeout(hintTimer); return; }
+      showHint(target);
+    });
+    document.addEventListener("pointerout", (event) => {
+      const target = event.target.closest?.("[data-hint], [data-hint-reason]");
+      if (!target || target !== hintAnchor) return;
+      // 在同一枚触发点内部挪动（图标 → 它自己的文字）不算离开
+      if (event.relatedTarget && target.contains(event.relatedTarget)) return;
+      hideHint();
+    });
+    // 键盘可达：Tab 到问号同样展开（hover-only 的提示对键盘用户等于不存在）
+    document.addEventListener("focusin", (event) => {
+      const target = event.target.closest?.("[data-hint], [data-hint-reason]");
+      if (target) showHint(target);
+    });
+    document.addEventListener("focusout", (event) => {
+      const target = event.target.closest?.("[data-hint], [data-hint-reason]");
+      if (target && target === hintAnchor) hideHint();
+    });
+    /* 触屏没有 hover，问号留一个点击开合。stopPropagation 是必须的：页面在
+       document 上有一条「点空白清空选择」，问号虽落在 .cro-stepper 这个白名单里，
+       但气泡本身挂到了 body 下（另见 SELECTABLE 里补的那一条）。 */
+    document.addEventListener("click", (event) => {
+      const target = event.target.closest?.(".cro-hint");
+      if (!target) return;
+      event.preventDefault();
+      event.stopPropagation();
+      if (hintAnchor === target && hintEl && !hintEl.hidden) hideHint(true);
+      else showHint(target);
+    });
+    document.addEventListener("keydown", (event) => {
+      if (event.key === "Escape") hideHint(true);
+    });
+    /* 气泡脱离了文档流，触发点却还在会滚动的板面里 —— 面板一滚、窗口一改，两者
+       就对不上了。capture 是为了收到 .cro-board 这类内部滚动。 */
+    global.addEventListener("resize", placeHint);
+    document.addEventListener("scroll", placeHint, { passive: true, capture: true });
+  }
+
+  /* 标签后面那枚小问号。text 为 null / undefined 时不建 —— 没有解释的字段
+     不该多出一个空触发点；给了空串则先建好（此刻只有置灰理由可答，见 emit）。 */
+  function buildHint(text) {
+    if (text == null) return null;
+    installHints();
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "cro-hint";
+    btn.dataset.hint = String(text);
+    btn.setAttribute("aria-expanded", "false");
+    btn.setAttribute("aria-label", "说明");
+    btn.textContent = "?";
+    return btn;
+  }
+
+  /* 标签 = 文字 + 可选问号。文字单独包一层是为了省略号：标签本身已是 flex 容器，
+     text-overflow 只在块级文字上生效，而 MoE 那一行的标签是会被压窄的。 */
+  function fillLabel(label, text, hint) {
+    label.textContent = "";
+    const span = document.createElement("span");
+    span.className = "cro-stepper__label-text";
+    span.textContent = text;
+    label.appendChild(span);
+    const btn = buildHint(hint);
+    if (btn) label.appendChild(btn);
+    return btn;
+  }
+
+  /* 已建好的触发点换一份文案。两件事分两个属性存，气泡里也分两块排 ——
+     「此刻为什么点不动」与「这枚是干什么的」是两个问题。 */
+  function setHint(el, text, reason) {
+    if (!el || !el.dataset) return;
+    if (text) el.dataset.hint = String(text); else delete el.dataset.hint;
+    if (reason) el.dataset.hintReason = String(reason); else delete el.dataset.hintReason;
+    if (text || reason) installHints();
+    // 正显示着这一条就地重排，否则用户读到的还是上一份
+    if (el === hintAnchor && hintEl && !hintEl.hidden) {
+      if (text || reason) { renderHint(hintEl, text, reason); placeHint(); }
+      else hideHint(true);
+    }
+  }
+
   function buildStepper(field, value, onStep, onType) {
     const spec = FIELD_SPECS[field];
     const wrap = document.createElement("div");
     wrap.className = "cro-stepper";
     wrap.dataset.field = field;
-    /* 挂在外壳上而不是标签上：悬浮标签、读数、以及**没被置灰的**加减键都该答出
-       「这枚是干什么的」。加减键走不动时 emit() 会给按钮自己挂上 stepBlockReason，
-       那个更靠内、优先显示 —— 「为什么点不动」是另一个问题，不该和这段揉在一起。 */
-    if (spec.title) wrap.title = spec.title;
 
     const label = document.createElement("span");
     label.className = "cro-stepper__label";
-    label.textContent = spec.label;
+    /* 问号建在标签后面：整枚外壳当触发面积（原先 wrap.title 的做法）在这一行里
+       太糊 —— 表单挨得紧，扫过去会一路弹。带 disabledReason 的字段即使 title
+       为空也先把问号建出来（传空串而不是 undefined），置灰时它才有地方说话。 */
+    fillLabel(label, spec.label, spec.title != null ? spec.title : (spec.disabledReason != null ? "" : null));
 
     const control = document.createElement("div");
     control.className = "zoom-control-group cro-stepper__control";
@@ -1978,7 +2290,9 @@
     const readouts = new Map();
     const wraps = new Map();
     const stepButtons = new Map();       // [减, 加]，每次 emit 按能不能走动来置灰
-    let nodeReadout = null;              // Node 的只读读数（派生量，没有加减键）
+    /* 三枚只读读数的值格（Node / Hidden / 全局 Batch）：都是派生量，没有加减键。
+       键与 DERIVED_SPECS 同名，emit 里按同一段刷新，见 buildDerivedReadout。 */
+    const derivedReadouts = new Map();
     const flagControls = new Map();      // 布尔开关的 input 与「开/关」两个字
     const choiceControls = new Map();    // 有限档位字段（shardMode / cpMode）的那排页签
     const linkedHighlightTimers = new Map();
@@ -2004,10 +2318,19 @@
       return stepper;
     }
 
+    /* 一格控件：只读读数 / stepper / 开关三选一，按名字自己认。行里与「高级」面板里
+       用的是同一个 —— 两处只是挂载的容器不同，红圈、联动高亮、置灰理由都一样不少。
+       ⚠️ 先问 DERIVED_SPECS：node 两张表里都有（FIELD_SPECS 留着它的量程给
+       nodeLayout 夹取），当成 stepper 建出来就是一枚只能停在一个值上的加减键。 */
+    function buildItem(name) {
+      if (DERIVED_SPECS[name]) return buildDerivedReadout(name);
+      return FIELD_SPECS[name] ? attachStepper(name) : buildFlagControl(name);
+    }
+
     function mount(container, group) {
       if (!container) return;
       container.innerHTML = "";
-      FIELD_ORDER[group].forEach((field) => container.appendChild(attachStepper(field)));
+      FIELD_ORDER[group].forEach((name) => container.appendChild(buildItem(name)));
       /* 开关接在自己那一行的末尾，外壳仍是 .cro-stepper（label 在上、控件在下），
          所以它和旁边的 stepper 逐格对齐，读下来仍是同一行表单。
          被 ADVANCED_ITEMS 点名的那几枚除外：它们一起收进「高级」后面，见 mountAdvanced()。 */
@@ -2016,10 +2339,6 @@
         .filter((flag) => FLAG_SPECS[flag].group === group && advanced.indexOf(flag) < 0)
         .forEach((flag) => container.appendChild(buildFlagControl(flag)));
       if (advanced.length) mountAdvanced(container, group, advanced);
-      /* Node 接在 Total Rank 之后，仍占 stepper 的位置和排版，只是没有加减键 ——
-         它是被 Total Rank 和卡型号一起定死的派生量。留在这一行而不是挪走，是因为
-         「多少卡 → 多少节点」正是这一行要读出来的一句话，yaml 的 msrun 也照抄它。 */
-      if (group === "cluster") container.appendChild(buildNodeReadout());
     }
 
     /* ── 「高级」折叠：每一行末尾各一枚 ──────────────────────────────────────
@@ -2091,7 +2410,9 @@
       toggle.className = "btn btn-sm btn-ghost cro-advanced-toggle";
       toggle.id = baseId + "Toggle";
       toggle.setAttribute("aria-controls", baseId);
-      toggle.title = ADVANCED_TITLE[group] || "";
+      /* 这一枚不长问号：它自己就是一块写着「高级选项」的按钮，整块当触发面积比在
+         空着的标签行上吊一个孤零零的问号好读。走的仍是同一个气泡（data-hint）。 */
+      setHint(toggle, ADVANCED_TITLE[group] || "");
       const text = document.createElement("span");
       text.textContent = "高级选项";
       const caret = document.createElement("span");
@@ -2111,8 +2432,7 @@
          batch 那一行是「重算层数 / LoRA / LoRA Rank」，各自紧挨着它所属的那一档。
          两种控件走的都是同一个 attachStepper / buildFlagControl，所以红圈、联动高亮、
          置灰理由一样不少。 */
-      items.forEach((name) => panel.appendChild(
-        FIELD_SPECS[name] ? attachStepper(name) : buildFlagControl(name)));
+      items.forEach((name) => panel.appendChild(buildItem(name)));
       container.appendChild(panel);
 
       const entry = { group, panel, toggle, storeKey: advancedStoreKey(group) };
@@ -2141,11 +2461,10 @@
 
       const label = document.createElement("span");
       label.className = "cro-stepper__label";
-      label.textContent = spec.label;
+      fillLabel(label, spec.label, spec.title || "");
 
       const control = document.createElement("label");
       control.className = "cro-switch";
-      control.title = spec.title;
 
       const input = document.createElement("input");
       input.type = "checkbox";
@@ -2179,13 +2498,12 @@
 
       const label = document.createElement("span");
       label.className = "cro-stepper__label";
-      label.textContent = spec.label;
+      fillLabel(label, spec.label, spec.title || "");
 
       const group = document.createElement("div");
       group.className = "segmented-control segmented-control-muted cro-flag-choice";
       group.setAttribute("role", "group");
       group.setAttribute("aria-label", spec.label);
-      group.title = spec.title;
 
       const buttons = spec.options.map((opt) => {
         const btn = document.createElement("button");
@@ -2204,18 +2522,25 @@
       return wrap;
     }
 
-    function buildNodeReadout() {
+    /* 一枚派生读数（Node / Hidden / 全局 Batch 共用）。外壳与 stepper 同类同排版，
+       只是把加减键那一格换成一个药丸读数，所以它和左右的 stepper 逐格对齐。 */
+    function buildDerivedReadout(key) {
+      const spec = DERIVED_SPECS[key];
       const wrap = document.createElement("div");
       wrap.className = "cro-stepper cro-stepper--derived";
-      wrap.dataset.field = "node";
+      wrap.dataset.field = key;
       const label = document.createElement("span");
       label.className = "cro-stepper__label";
-      label.textContent = FIELD_SPECS.node.label;
+      // 说明都是算出来的（summary 每次 emit 都重算），先建好空的问号占位
+      fillLabel(label, spec.label, "");
       const value = document.createElement("span");
       value.className = "cro-stepper__derived";
       wrap.append(label, value);
-      nodeReadout = value;
-      wraps.set("node", wrap);      // 联动高亮照旧：Node 变了也该闪一下
+      derivedReadouts.set(key, value);
+      /* 进 wraps：问号浮层与「被联动改掉时闪一下」都按这张表找控件。后者只认
+         FIELD_SPECS / FLAG_SPECS 里的字段，所以实际会闪的只有 Node —— Hidden 与
+         全局 Batch 不是字段，值跟着别人变，不另外播一次高亮。 */
+      wraps.set(key, wrap);
       return wrap;
     }
 
@@ -2491,9 +2816,10 @@
         input.disabled = !usable;
         wrap.classList.toggle("is-unavailable", !usable);
         /* 置灰的理由排在正文**之前** —— 此刻用户想知道的是「为什么点不动」，
-           不是这个开关是干什么的。原生 disabled 的 input 收不到 hover，但 title
-           挂在外面那个 <label> 上，指针事件照旧到得了。 */
-        control.title = usable ? spec.title : `${spec.disabledReason}\n\n${spec.title}`;
+           不是这个开关是干什么的。问号是标签里的一枚 <button>，整枚控件置灰也不影响
+           它收 hover（原生 disabled 的 input 才收不到，那正是原先把 title 挂在外层
+           <label> 上的原因）。 */
+        setHint(wrap.querySelector(".cro-hint"), spec.title, usable ? "" : spec.disabledReason);
       });
       /* 与上面那段逐条对应，只是选中态落在按钮的 is-selected / aria-pressed 上。
          不可用时**不用原生 disabled**：设计系统的 .btn:disabled 带 pointer-events:none，
@@ -2509,15 +2835,15 @@
           btn.setAttribute("aria-disabled", String(!usable));
         });
         wrap.classList.toggle("is-unavailable", !usable);
-        group.title = usable ? spec.title : `${spec.disabledReason}
-
-${spec.title}`;
+        setHint(wrap.querySelector(".cro-hint"), spec.title, usable ? "" : spec.disabledReason);
       });
-      if (nodeReadout) {
-        const summary = nodeSummary(config);
-        nodeReadout.textContent = summary.text;
-        nodeReadout.title = summary.title;
-      }
+      /* 三枚派生读数一起刷：值与口径都由各自的 summary 现算（见 DERIVED_SPECS），
+         所以拨 Total Rank、拨 MBS / DP / 微批数、换模型都会就地跟上。 */
+      derivedReadouts.forEach((el, key) => {
+        const summary = DERIVED_SPECS[key].summary(config);
+        el.textContent = summary.text;
+        setHint(wraps.get(key)?.querySelector(".cro-hint"), summary.title);
+      });
       /* 走不动的那一头置灰并挂上理由。48 头的模型 TP 到 16 就到顶了（32、64 都除
          不尽头数，stepValue 会跳过它们），不置灰的话加号按下去毫无反应、看着像页面
          卡了；而只置灰不给理由同样解释不了 —— 它到顶的原因根本不在这一行表单里。
@@ -2536,15 +2862,13 @@ ${spec.title}`;
         const wrap = wraps.get(field);
         if (wrap) {
           wrap.classList.toggle("is-unavailable", !usable);
-          /* 两件事挂在同一个 title 上，得叠而不是互相抹掉：
-             `spec.title` 是「这枚是干什么的」（buildStepper 建好时挂的，目前只有 VPP 有），
-             `spec.disabledReason` 是「此刻为什么不可用」。理由排在正文之前 —— 与那几枚
-             开关（buildFlagSwitch / buildFlagChoice 那两处）逐字同一种写法。
-             ⚠️ 早先这里是 `usable ? "" : reason`，会把 buildStepper 挂上的说明在第一次
-             emit() 时就抹掉，VPP 的悬浮因此一直不出来。 */
-          wrap.title = usable
-            ? (spec.title || "")
-            : (spec.title ? `${spec.disabledReason}\n\n${spec.title}` : spec.disabledReason);
+          /* 两件事分两个属性存、气泡里分两块排，不再拼成一根字符串：
+             `spec.title` 是「这枚是干什么的」（buildStepper 建好时挂的），
+             `spec.disabledReason` 是「此刻为什么不可用」，后者排在正文之前 ——
+             与那几枚开关（buildFlagSwitch / buildFlagChoice 那两处）同一种写法。
+             ⚠️ 别写成「不可用时只留理由」：那会把 buildStepper 挂上的说明抹掉，
+             VPP 的悬浮曾经就是这么丢的。 */
+          setHint(wrap.querySelector(".cro-hint"), spec.title, usable ? "" : spec.disabledReason);
         }
         const readout = readouts.get(field);
         if (readout) readout.disabled = !usable;
@@ -2552,11 +2876,12 @@ ${spec.title}`;
           const btn = btns[i];
           if (stepValue(field, config[field], dir, config) !== config[field]) {
             btn.removeAttribute("aria-disabled");
-            btn.removeAttribute("title");
+            setHint(btn, "");
             return;
           }
           btn.setAttribute("aria-disabled", "true");
-          btn.title = stepBlockReason(field, dir, config);
+          // 加减键不长问号：它自己就是那个「按了不动」的东西，整枚键当触发面积
+          setHint(btn, "", stepBlockReason(field, dir, config));
         });
       });
       // 校验失败时给出提示：把相关 stepper 标红，并在 #croConfigError 写出原因
@@ -7502,6 +7827,9 @@ ${spec.title}`;
       // 口径浮层被挂到 body 上（避开 pane 的 overflow/backdrop-filter），不在
       // .cro-capacity 子树里，得单独列一条，否则点它选中文字会清掉当前选择。
       ".cro-capacity", ".cro-capacity__basis",
+      // 说明气泡同理：它也挂在 body 上，不在任何一个白名单子树里 —— 在里面
+      // 拖选文案不该顺手把当前选择清掉（问号本身落在 .cro-stepper 里，已覆盖）
+      ".cro-hint-bubble",
       // YAML 视图的代码框：在里面拖选文本、点复制键都不是「点空白」
       ".cro-region--yaml",
       // .cro-ep-mode 与 .cro-stepper 同理：EP 口径开关是配置控件而不是画布空白
@@ -7509,6 +7837,10 @@ ${spec.title}`;
     ].join(", ");
     document.addEventListener("click", (event) => {
       if (!relation) return;
+      /* 说明问号与气泡不参与选择：它们只是「这是什么」的开合，点一下不该把当前
+         选择或正在调查的事件关掉。放在最前面单独挡掉 —— 问号虽然落在 .cro-stepper
+         这个白名单里，但下面事件态那一支是按「点到任意 button 就算离开」判的。 */
+      if (event.target.closest?.(".cro-hint, .cro-hint-bubble")) return;
       // 运行事件是一次显式调查上下文：点击画布空白不应误退出。只有横幅关闭键
       // 或其他可响应对象触发新的选择时，才结束当前事件关系。
       if (activeIncident) {
@@ -7526,6 +7858,10 @@ ${spec.title}`;
       }
       if (!event.target.closest?.(SELECTABLE)) clearSelection();
     });
+
+    /* 页面里写死在 html 上的那几处 data-hint（MoE 那三档 EP 口径）不经过 buildHint，
+       在这里补挂一次委托；重复调用是幂等的。 */
+    installHints();
 
     global.croObserver = controller;
     global.croDeck = deck;

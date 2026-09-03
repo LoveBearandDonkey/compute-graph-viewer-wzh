@@ -6,7 +6,7 @@
   <meta name="theme-color" content="#f5f0e6" />
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <link rel="manifest" href="./manifest.webmanifest" />
-  <title>知识漫游</title>
+  <title>训练知识漫游</title>
   <link rel="stylesheet" href="./styles.css" />
 </head>
 <body>
@@ -14,8 +14,10 @@
   <main class="app-shell">
     <header class="topbar">
       <button class="brand" id="homeButton" aria-label="打开首页">
-        <span class="brand-mark">T</span>
-        <span><strong>知识漫游</strong><small>TRANSFORMER POCKET NOTES</small></span>
+        <span class="brand-mark">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3.5 10.8 12 3.9l8.5 6.9v8.4a1.3 1.3 0 0 1-1.3 1.3H4.8a1.3 1.3 0 0 1-1.3-1.3z"/><path d="M9 20.5v-6.7h6v6.7"/></svg>
+        </span>
+        <span><strong>训练知识漫游</strong><small>TRANSFORMER POCKET NOTES</small></span>
       </button>
       <button class="icon-button" id="filterButton" aria-label="筛选卡片">
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h10M18 7h2M4 17h2M10 17h10M14 4v6M6 14v6"/></svg>
@@ -25,16 +27,17 @@
     <section class="dashboard" id="dashboard">
       <div class="eyebrow">今日漫游</div>
       <h1>把复杂知识<br><em>划进记忆里。</em></h1>
-      <p class="intro">每张卡只讲清一件事。顺序已打乱，随时上划，随时停下。</p>
+      <p class="intro">每张卡只讲清一件事。顺序已打乱，左右滑动，随时停下。</p>
       <div class="stats">
         <div><strong id="totalCount">—</strong><span>知识卡</span></div>
         <button id="masteredStat" aria-label="查看已掌握的卡片"><strong id="masteredCount">0</strong><span>已掌握 ›</span></button>
         <div><strong id="streakCount">0</strong><span>今日张数</span></div>
       </div>
-      <button class="start-button" id="startButton"><span>开始随机漫游</span><b>↑</b></button>
+      <button class="start-button" id="startButton"><span>开始随机漫游</span><span class="start-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M4 7h2.7c4.8 0 5.8 10 10.6 10H20"/><path d="m17 14 3 3-3 3"/><path d="M4 17h2.7c2.1 0 3.4-1.9 4.6-4.1C12.8 10.1 14.2 7 17.3 7H20"/><path d="m17 4 3 3-3 3"/></svg></span></button>
       <button class="continue-button" id="reviewButton">只复习未掌握</button>
       <div class="collections">
         <button id="savedButton"><span class="collection-icon">♥</span><span><strong>我的收藏</strong><small>集中复习标记过的卡片</small></span><b id="savedCount">0</b></button>
+        <button id="doubtedButton"><span class="collection-icon doubt">?</span><span><strong>我的存疑</strong><small>集中查看仍需确认的卡片</small></span><b id="doubtedCount">0</b></button>
         <button id="masteredButton"><span class="collection-icon check">✓</span><span><strong>已掌握</strong><small>回看已经掌握的知识</small></span><b id="masteredCollectionCount">0</b></button>
       </div>
       <p class="sync-note" id="syncNote">正在连接知识库…</p>
@@ -42,9 +45,6 @@
 
     <section class="study" id="study" hidden>
       <div class="progress-row">
-        <button class="back-button" id="backButton" aria-label="返回首页" title="返回首页">
-          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3.5 10.8 12 3.9l8.5 6.9v8.4a1.3 1.3 0 0 1-1.3 1.3H4.8a1.3 1.3 0 0 1-1.3-1.3z"/><path d="M9 20.5v-6.7h6v6.7"/></svg>
-        </button>
         <div class="progress-track"><span id="progressBar"></span></div>
         <span id="progressText">1 / 1</span>
       </div>
@@ -53,7 +53,10 @@
         <article class="knowledge-card" id="knowledgeCard">
           <div class="card-topline">
             <span class="card-index" id="cardIndex">CARD 001</span>
-            <button class="save-button" id="saveButton" aria-label="收藏"><span>♡</span></button>
+            <div class="card-markers">
+              <button class="doubt-button" id="doubtButton" aria-label="标记为存疑" title="存疑"><span>?</span></button>
+              <button class="save-button" id="saveButton" aria-label="收藏" title="收藏"><span>♡</span></button>
+            </div>
           </div>
           <div class="breadcrumb" id="breadcrumb"></div>
           <h2 id="cardTitle"></h2>
@@ -61,7 +64,7 @@
           <div class="card-content markdown" id="cardContent"></div>
           <div class="card-footer">
             <span id="readTime">约 1 分钟</span>
-            <span>↑ 上划继续</span>
+            <span>← 左滑继续</span>
           </div>
         </article>
       </div>
@@ -70,7 +73,7 @@
         <button class="square-nav" id="previousButton" aria-label="上一张" title="上一张">
           <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m14.5 5-7 7 7 7"/></svg>
         </button>
-        <button class="action secondary" id="againButton"><span>↺</span>再看一次</button>
+        <button class="action secondary" id="againButton"><span>↺</span>稍后再看</button>
         <button class="action primary" id="masterButton"><span>✓</span>我掌握了</button>
         <button class="square-nav next" id="nextButton" aria-label="下一张" title="下一张">
           <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9.5 5 7 7-7 7"/></svg>

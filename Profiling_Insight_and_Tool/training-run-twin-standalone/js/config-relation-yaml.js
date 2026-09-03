@@ -134,7 +134,7 @@
     const deviceMem = Math.max(1, card.hbmGB - 6);
 
     /* 流水线微批数：行 22 之前这里是**派生**的（PP=1 取 1、否则 max(4×PP, PP×VPP)），
-       注释里自己写着「本页没有为它开字段」。现在它是 Cluster 那一行的一枚 stepper，
+       注释里自己写着「本页没有为它开字段」。现在它是 Cluster 那一行「高级选项」里的一枚 stepper，
        两处读同一个 config 字段 —— 与行 9 / 10 / 11 那几处同一条规矩。
        它同时是下面 batch_size 的一个因子，所以仍只取这一处，两行的数字必须对得上。
        PP=1 时照写：没有流水线可分，但它仍是梯度累积步数，全局 batch 少不了它。 */
@@ -291,7 +291,7 @@
          够不够灌满流水线由页面的软警告说，这里只如实报出此刻的账。 */
       L("  micro_batch_num: " + microBatchNum, "microBatchNum",
         c.pp > 1
-          ? "流水线微批数（= 梯度累积步数）。"
+          ? "流水线的 micro_batch_num（= 梯度累积步数）。"
             + (microBatchNum >= c.pp * c.vpp
               ? "≥ " + (c.vpp > 1 ? "PP×VPP = " + (c.pp * c.vpp) : "pipeline_stage " + c.pp)
                 + "，流水线灌得满；在飞份数由 1F1B 公式定"

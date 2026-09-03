@@ -628,9 +628,23 @@
   gap: 3px;
 }
 
+/* 标签行 = 文字 + 可选的小问号（见 js 的 fillLabel）。改成 flex 是为了让问号
+   贴着字尾、并与文字同一条基线；文字另包一层 .cro-stepper__label-text，
+   text-overflow 只在块级文字上生效 —— MoE 那一行的标签是会被压窄的。 */
 .cro-stepper__label {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  min-width: 0;
   font-size: 11px;
   color: var(--foreground-secondary);
+  white-space: nowrap;
+}
+
+.cro-stepper__label-text {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
   white-space: nowrap;
 }
 
@@ -721,7 +735,7 @@
    否则「为什么点不动」没地方说。理由挂在外壳 .cro-stepper 的 title 上（由 JS 写），
    指针事件到得了它，所以这里只需要抹掉「看着能用」的那些反馈。 */
 .cro-stepper.is-unavailable .cro-stepper__control,
-.cro-stepper.is-unavailable .cro-stepper__label {
+.cro-stepper.is-unavailable .cro-stepper__label-text {
   opacity: var(--button-disabled-opacity);
 }
 
@@ -751,9 +765,10 @@
   min-width: 0;
 }
 
+/* 省略号已由 .cro-stepper__label-text 统一负责（标签本身是 flex 容器，
+   在它身上写 text-overflow 不生效），这里只保留「可以被压窄」这一条。 */
 .cro-region--moe .cro-stepper__label {
   overflow: hidden;
-  text-overflow: ellipsis;
 }
 
 .cro-region--moe .cro-stepper__control {
@@ -869,7 +884,7 @@
    （设计系统的 .btn:disabled 带 pointer-events:none，按钮收不到 hover，
    title 压根弹不出来），并把 hover 的反馈抹掉：灰着的键按下去还亮一下会读成「能用」。 */
 .cro-stepper--choice.is-unavailable .cro-flag-choice,
-.cro-stepper--choice.is-unavailable .cro-stepper__label {
+.cro-stepper--choice.is-unavailable .cro-stepper__label-text {
   opacity: var(--button-disabled-opacity);
 }
 
@@ -960,7 +975,7 @@
   opacity: var(--button-disabled-opacity);
 }
 
-.cro-stepper--switch.is-unavailable .cro-stepper__label {
+.cro-stepper--switch.is-unavailable .cro-stepper__label-text {
   opacity: var(--button-disabled-opacity);
 }
 
@@ -2007,11 +2022,12 @@
 
 /* ── 这一行要收起时占一行、展开时占两行 ─────────────────────────────────────
    ⚠️ 换行是**按组**发生的，不是按格：这一层的三个直接子元素里有两个自己就是
-   flex 容器（`#croClusterSteppers` = Total Rank + Node、`#croBatchSteppers` =
-   Micro Batch + Seq Length + 重计算 + 高级选项），于是每一组作为一个整体折行 ——
-   七枚控件明明还剩得下空当，batch 那一组也会整块掉到第二行，展开的面板再占第三行。
+   flex 容器（`#croClusterSteppers` = Total Rank、`#croBatchSteppers` =
+   Global Batch + Micro Batch + Seq Length + Hidden + 高级选项），
+   于是每一组作为一个整体折行 —— 控件明明还剩得下空当，batch 那一组也会整块掉到
+   第二行，展开的面板再占第三行。
 
-   `display: contents` 让这两个容器**不生成盒子**，七枚控件直接成为
+   `display: contents` 让这两个容器**不生成盒子**，七格控件直接成为
    .cro-cluster__form 自己的 flex 项，于是按格换行（宽度真不够时才折，而且只折
    最后一两枚）。「高级选项」面板仍是 `flex: 0 0 100%`，照旧把自己顶到下一整行 ——
    这正是「收起一行、展开两行」想要的形状。
@@ -2020,7 +2036,7 @@
   display: contents;
 }
 
-/* 七枚控件同处一行，就得量体裁衣 —— 尺度整体收到与 MoE 那一行**同一档**
+/* 七格控件同处一行，就得量体裁衣 —— 尺度整体收到与 MoE 那一行**同一档**
    （26px 圆键 + 2px 内衬 = 30px 高），那边同样是「一列里要塞下四枚」的处境。
    收的是留白不是可读性：读数字号、标签字号一个没动。 */
 .cro-cluster__form {
@@ -2045,7 +2061,9 @@
 /* 读数宽度本来就由 JS 按位数给的 size 撑（见 buildStepper / readoutSize），
    min-width 只是兜底 —— 32px 是给三位数留的。这一行里 Micro Batch 的量程只到 64
    （`digits: 2`），兜底也得跟着让到两位，否则 JS 那边省下来的宽度会被这条又顶回去。
-   Total Rank / Seq Length 本来就是四位以上，由 size 撑着，这一条碰不到它们。 */
+   Total Rank / Seq Length 本来就是四位以上，由 size 撑着，这一条碰不到它们。
+   （只读的 Global Batch / Hidden 不走 size —— 它们是 .cro-stepper__derived，
+   由下面那条按内容取宽。） */
 .cro-cluster__form .cro-stepper__control .zoom-control-readout {
   min-width: 20px;
 }
@@ -2054,7 +2072,7 @@
    放开固定下限，让它按内容取宽（.cro-select 自己会给箭头留位置）。
    它同时是这一行里**唯一允许被压**的一格：真到摆不下的宽度时，宁可让它的
    文字收一截（型号就那么两三个，看半截也认得出），也好过整格掉到第二行去。
-   其余六格一律不压 —— 读数被压就是读错数。 */
+   其余几格一律不压 —— 读数被压就是读错数。 */
 .cro-cluster__form .cro-cluster__card {
   flex: 0 1 auto;
   min-width: 84px;
@@ -2070,8 +2088,9 @@
 }
 
 /* 其余几种控件跟着落到同一个 30px 上，否则一行里高矮不齐。
-   Node 是只读读数，最多三位（8192 是量程上界但实际由整机卡数除出来），
-   内衬从 12px 收到 4px —— 它没有加减键要瞄准，内衬只是让药丸不贴着字。 */
+   三枚只读读数（行里的 Global Batch / Hidden，折叠里的 Node）都走这一条：
+   min-width 只兜到 30px，内容更宽的自己撑开（Hidden 四位、Global Batch 五位起）。
+   内衬从 12px 收到 4px —— 它们没有加减键要瞄准，内衬只是让药丸不贴着字。 */
 .cro-cluster__form .cro-stepper__derived {
   height: 30px;
   min-width: 30px;
@@ -3684,4 +3703,153 @@
   gap: var(--space-2);
   padding: var(--space-3) var(--space-4);
   border-top: 1px solid var(--border-subtle);
+}
+
+/* ══ 悬浮说明：标签后的小问号 + 气泡 ═══════════════════════════════════════
+   原先这些解释挂在原生 title 上：要按住不动 ~1s 才弹、长文按系统样式排版、
+   在深色主题下还是一块白底黄框。改成「标签后一枚小问号 + 统一气泡」——
+   触发点看得见（不必靠猜哪里能悬浮），悬浮即出，排版归页面自己管。
+   逻辑见 js/config-relation-observer.js 的 buildHint / showHint。 */
+.cro-hint {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 13px;
+  height: 13px;
+  padding: 0;
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-pill);
+  background: transparent;
+  color: var(--foreground-muted);
+  font-size: 9px;
+  font-weight: var(--font-weight-semibold);
+  line-height: 1;
+  cursor: help;
+  transition: color 120ms ease, border-color 120ms ease, background-color 120ms ease;
+}
+
+.cro-hint:hover,
+.cro-hint:focus-visible,
+.cro-hint[aria-expanded="true"] {
+  color: var(--foreground);
+  border-color: var(--accent);
+  background: var(--surface-2);
+}
+
+/* 整枚控件置灰时问号**不跟着淡** —— 此刻它答的正是「为什么点不动」，是最该
+   读得到的一条。所以那几条 is-unavailable 的压暗规则都改压 .cro-stepper__label-text
+   而不是整个标签（opacity 在父元素上，子元素抬不回来）。 */
+.cro-stepper.is-unavailable .cro-hint {
+  color: var(--foreground-secondary);
+  border-color: var(--border-strong);
+}
+
+/* 气泡挂在 body 下 position:fixed：与容量口径浮层同一个理由 —— 祖先
+   .pto-ide-frame__pane 既 overflow:hidden 又带 backdrop-filter（后者会成为
+   fixed 的包含块），留在里面既定位不到视口也会被裁，还会把 .cro-board
+   撑出滚动条。落位由 js 的 placeHint() 按触发点实测。 */
+.cro-hint-bubble {
+  position: fixed;
+  z-index: 95;
+  top: 0;
+  left: 0;
+  width: 340px;
+  max-width: calc(100vw - 24px);
+  max-height: 58vh;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: var(--space-3) var(--space-3) var(--space-3) var(--space-3);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-md);
+  background: var(--surface-3);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.28);
+  font-size: 11px;
+  line-height: 1.7;
+  color: var(--foreground-secondary);
+  opacity: 0;
+  transform: translateY(-3px);
+  transition: opacity 120ms ease, transform 120ms ease;
+}
+
+.cro-hint-bubble.is-open {
+  opacity: 1;
+  transform: none;
+}
+
+.cro-hint-bubble[hidden] { display: none; }
+
+/* 滚动条：默认那条实心灰槽在一个 11px 的小气泡里显得很硬 —— 一条压着边框的
+   直棱灰带，比它旁边的正文还重。收成一根无槽的圆角细条：静止时只留一道浅痕
+   （「还有下文」这件事仍看得出来，不至于把内容截得不明不白），指针进到气泡里
+   才浮到正常对比度。
+   两套写法都写：Firefox 走 scrollbar-*，Chromium/WebKit 走伪元素。 */
+.cro-hint-bubble {
+  scrollbar-width: thin;
+  scrollbar-color: var(--border-subtle) transparent;
+  transition: opacity 120ms ease, transform 120ms ease, scrollbar-color 200ms ease;
+}
+
+.cro-hint-bubble:hover {
+  scrollbar-color: var(--border-strong) transparent;
+}
+
+.cro-hint-bubble::-webkit-scrollbar {
+  width: 10px;
+}
+
+.cro-hint-bubble::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.cro-hint-bubble::-webkit-scrollbar-thumb {
+  /* border + background-clip 是让细条两侧留白的老办法：拇指实际只有 4px 宽，
+     却仍有 10px 的可抓区域 —— 看着轻、抓得住。 */
+  background-color: var(--border-subtle);
+  border: 3px solid transparent;
+  border-radius: var(--radius-pill);
+  background-clip: content-box;
+  transition: background-color 200ms ease;
+}
+
+.cro-hint-bubble:hover::-webkit-scrollbar-thumb {
+  background-color: var(--border-strong);
+}
+
+.cro-hint-bubble::-webkit-scrollbar-thumb:hover {
+  background-color: var(--foreground-muted);
+}
+
+/* 首段升格成气泡标题（js 的 renderHint 按第一个空行切）：这些文案本来就是
+   「一句话说清这是什么」+ 详解的写法，照排会让两者糊成一块。 */
+.cro-hint-bubble__head {
+  margin: 0 0 var(--space-2);
+  padding-bottom: var(--space-2);
+  border-bottom: 1px solid var(--border-subtle);
+  font-size: var(--font-size-body-sm);
+  font-weight: var(--font-weight-semibold);
+  color: var(--foreground);
+  white-space: pre-wrap;
+}
+
+/* pre-wrap 而不是逐段拆 <p>：这些文案里的空行、「· 」缩进列表、公式行都是
+   手排出来的，拆开重排反而会把作者摆好的层次抹平。 */
+.cro-hint-bubble__body {
+  white-space: pre-wrap;
+}
+
+/* 置灰理由排在正文之前，并且自己带一格底色 —— 「此刻为什么点不动」与
+   「这枚是干什么的」是两个问题，读者多半只想要前一个。 */
+.cro-hint-bubble__reason {
+  margin: 0 0 var(--space-2);
+  padding: var(--space-2);
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+  color: var(--foreground);
+  white-space: pre-wrap;
+}
+
+/* 只有理由、没有正文的那一种（走不动的加减键）：不留下沿的空当 */
+.cro-hint-bubble__reason:only-child {
+  margin-bottom: 0;
 }

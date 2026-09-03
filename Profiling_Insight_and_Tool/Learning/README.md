@@ -1,6 +1,6 @@
 # Transformer 知识漫游
 
-把本地 Markdown 知识库自动切成适合手机上划复习的随机卡片。
+把本地 Markdown 知识库自动切成适合手机左右滑动复习的随机卡片。
 
 ## 启动
 
@@ -21,7 +21,7 @@ npm start
 
 项目默认从相邻目录 `../ParallelDemo/Transformer结构与并行策略知识库.md` 读取知识库，因此整个 `Profiling_Insight_and_Tool` 目录换位置后仍可正常工作。
 
-学习进度、收藏和掌握状态保存在当前浏览器的 `localStorage` 中。
+学习进度、收藏、存疑和掌握状态保存在当前浏览器的 `localStorage` 中。
 
 ## 手机离线使用 / 部署
 

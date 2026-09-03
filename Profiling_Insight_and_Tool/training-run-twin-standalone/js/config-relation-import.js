@@ -284,7 +284,7 @@
       keys: ["parallel_config.vocab_emb_dp", "vocab_emb_dp"], to: (v) => Boolean(v) },
     /* 微批数（行 22）。MindFormers 与 HF 各有一个直接的键，Megatron 那支要反推，
        在 DERIVED 里。顺序即优先级：文件里明写的数永远赢反推的。 */
-    { field: "microBatchNum", label: "微批数",
+    { field: "microBatchNum", label: "micro_batch_num",
       keys: ["parallel_config.micro_batch_num", "micro_batch_num", "gradient_accumulation_steps"],
       /* DeepSpeed 那份写的是 "auto"（由外层 Trainer 填）—— 落一个字符串进去，
          报告里就会出现一枚看着像配置的假值。只收正整数。 */
@@ -385,7 +385,7 @@
        除不尽就不落：那说明这份脚本的 GBS 与它自己的并行度对不上（公开样例多是模板，
        节点数等着人填），硬凑一个整数还不如让缺口清单如实报出来。 */
     {
-      field: "microBatchNum", label: "微批数",
+      field: "microBatchNum", label: "micro_batch_num",
       from: ["global-batch-size", "micro-batch-size"],
       to: (flat) => {
         if (pick(flat, ["parallel_config.micro_batch_num", "micro_batch_num",
@@ -403,7 +403,7 @@
         if (!Number.isFinite(num) || !Number.isInteger(num) || num < 1) return null;
         return {
           value: num, from: "--global-batch-size ÷ (--micro-batch-size × DP)",
-          note: `Megatron 不写微批数，由 GBS ${gbs} ÷ (MBS ${mbs} × DP `
+          note: `Megatron 不直接写 micro_batch_num，由 GBS ${gbs} ÷ (MBS ${mbs} × DP `
             + `${Number.isInteger(dp) && dp >= 1 ? dp : 1}) 反推`,
         };
       },
@@ -610,9 +610,9 @@
     /* 行 22 落地后这两个不再是缺口（页面有「微批数」那枚控件了），但仍然**不接**，
        各有各的理由 —— 写清楚比列进缺口更诚实。 */
     ["batch_size", "MindFormers 的 runner_config.batch_size 在 full_batch 下是**全局** batch（行 12），不是每卡 micro-batch。本页从 MBS × DP × 微批数 反过来算它，不读它 —— 读它就得反推 MBS，而这三个数里错一个全错"],
-    ["train_batch_size", "DeepSpeed 的全局 batch，样本里写的是 auto（由外层 Trainer 填）；这份文件也没有卡数与 MBS，反推不出微批数 —— 导入后手拨那枚控件即可"],
+    ["train_batch_size", "DeepSpeed 的全局 batch，样本里写的是 auto（由外层 Trainer 填）；这份文件也没有卡数与 MBS，反推不出 micro_batch_num —— 导入后手拨那枚控件即可"],
     ["train_micro_batch_size_per_gpu", "同上，样本里是 auto"],
-    ["gradient_accumulation_steps", "梯度累积步数 —— 已接到「微批数」那枚控件；这份文件写的是 auto，读不出来"],
+    ["gradient_accumulation_steps", "梯度累积步数 —— 已接到 micro_batch_num 那枚控件；这份文件写的是 auto，读不出来"],
     ["fp8-param-gather", "fp8 权重直存 —— 本页 FP8 档正是按它建模，已在「计算精度」那一行的备注里点名"],
     ["fp8-amax-history-len", "FP8 缩放因子的统计窗口，不进显存模型"],
     ["fp8-amax-compute-algo", "FP8 缩放因子的统计方式，不进显存模型"],

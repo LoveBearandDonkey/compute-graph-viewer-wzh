@@ -695,6 +695,26 @@
   // 逐层指标「?」说明:含义/采集阶段/判定优秀/判定异常,取自 temp.md 对照表;
   // 复用页面已有的 .wzh-help + window.wzhBindHelpTooltips 浮层(training-monitoring-v2.html 文末),
   // 不重新实现一套 tooltip。
+  /* 面板底部「推荐展示指标」气泡:按定位价值给出挑选顺序。判据是这条指标算「因」还是「果」——
+     因(梯度/数值分布/激活构成)在故障前就先动,看住它还有时间介入;果(耗时/水位/利用率)只能事后确证。
+     文案走 data-tooltip,由 .diagnosis-bubble 的 white-space:pre-wrap 原样换行。 */
+  var REC_HELP = [
+    '按定位价值挑,预示异常 ＞ 展示异常 ＞ 其他:',
+    '',
+    '预示异常 · 故障前先动',
+    '1 权重梯度 L2 范数 —— 先于 loss 崩,最早能拦住训练发散',
+    '2 hidden-state 标准差 —— 数值溢出前兆,先于 NaN 出现',
+    '3 单层激活值显存 —— 逼近上限即预示 OOM,且能归因到具体层',
+    '4 注意力权重熵 —— 熵发散/塌缩先于精度指标劣化',
+    '5 HBM 带宽利用率 —— 带宽先打满,耗时才被拖慢',
+    '',
+    '展示异常 · 事后确证',
+    '6 单层总耗时  7 激活峰值显存  8 单层 MFU  9 有效 FLOPs 占比',
+    '',
+    '其他 · 结构参考',
+    '10 PP 层间传输字节 —— 训练中基本恒定,只看切分是否合理',
+  ].join('\n');
+
   var METRIC_HELP = {
     grad_weight_l2_norm: '含义:本层权重梯度 L2 范数\n采集:反向 Bwd\n优秀:稳定区间 0.001–0.1,迭代间波动小\n异常:＜0.0001 梯度消失;＞1.0 梯度爆炸;剧烈震荡',
     hidden_states_std: '含义:本层前向输出 hidden-state 标准差\n采集:前向 Fwd\n优秀:迭代缓慢平稳收敛,逐步小幅下降\n异常:标准差持续飙升=数值溢出;持续不变=本层停止学习',
@@ -817,7 +837,7 @@
   function updateMetricDDLabel() {
     if (!metricDDLabel) return;
     var count = METRIC_DEFS.reduce(function (n, m) { return n + (selectedMetrics[m.key] ? 1 : 0); }, 0);
-    metricDDLabel.textContent = count + '项层指标';
+    metricDDLabel.textContent = '已选 ' + count + ' 项层指标';
   }
 
   function setMetricDDOpen(open) {
@@ -847,15 +867,19 @@
           '<span class="deck-metric-rank">Top' + m.rank + '</span>' +
           '<span class="deck-metric-name">' + m.name + '</span>' +
           '</label>' +
-          '<span class="wzh-help" tabindex="0" data-tooltip="' + (METRIC_HELP[m.key] || '') + '">?</span>' +
+          '<span class="wzh-help" tabindex="0" data-tooltip-wide="1" data-tooltip="' + (METRIC_HELP[m.key] || '') + '">?</span>' +
           '</div>';
       });
       html += '</div>';
     });
-    html += '<div class="deck-metric-panel__status" data-anim-status>训练过程动画</div>';
-    html += '<div class="deck-metric-panel__foot">前向 1s/层描点 · 反向待全亮后 0.2s/层回描</div>';
+    // 底部原来的「训练进度状态行 + 前/反向描点节奏」两行已去掉:下拉是挑指标的地方,
+    // 训练进度在画面上本来就看得见,不必在这里再讲一遍。改成一条分割线 + 「推荐展示指标」入口,
+    // 整行本身就是 .wzh-help 触发器,复用页面 #diagnosisTooltip 那套 hover/focus 气泡。
+    html += '<div class="deck-metric-panel__sep"></div>';
+    html += '<div class="deck-metric-panel__rec wzh-help" tabindex="0" data-tooltip-wide="1" data-tooltip="' + REC_HELP + '">' +
+      '<span class="deck-metric-panel__rec-q" aria-hidden="true">?</span>推荐展示指标</div>';
     metricPanel.innerHTML = html;
-    metricStatusEl = metricPanel.querySelector('[data-anim-status]');
+    metricStatusEl = null;   // 状态行已从面板移除,updateAnimStatus() 因此空转(见它开头的 guard)
     metricPanel.addEventListener('change', function (e) {
       var cb = e.target.closest('input[data-metric]');
       if (!cb) return;
@@ -1132,6 +1156,20 @@
     clearOverflowBadges: clearOverflowBadges,
     showSideOverview: showSideOverview,
     setFrozen: setFrozen,
+    // 当前这个 step 播到哪儿了(0~1)。一轮「前向 46 层 + 反向 46 层 + 两次停顿」= 一个 step,
+    // 跑满一圈就 twinAdvanceStep(1) —— 时光全景量尺里「进行中」那一格的填充直接读它,
+    // 两边共用同一个节拍,格子填满的那一刻正好换到下一格,不各自造一套假进度。
+    // 动画没在播(reduced-motion 静态态)时返回 null,让调用方自己降级。
+    stepProgress: function () {
+      if (!anim.running || animStatic) return null;
+      // 推进发生在进入 bwd-hold 的那一刻(= work 跑满),不是整个 cycle 跑完。按 work 归一化,
+      // 填满与换步才是同一时刻;尾部那段 bwd-hold 里 step 已经推进了,新的一格从 0 起。
+      var work = LAYER_COUNT * FWD_MS + HOLD_MS + LAYER_COUNT * BWD_MS;
+      var cycle = work + HOLD_MS;
+      var now = (global.performance && performance.now) ? performance.now() : Date.now();
+      var tc = (now - anim.t0) % cycle;
+      return tc >= work ? 0 : tc / work;
+    },
     get controller() { return controller; },
   };
 
