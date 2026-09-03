@@ -5,6 +5,60 @@
 
 ---
 
+## 2026-09-03 — 按 Rank 训练步泳道:调色板拉开色相 + 聚光灯到本图时「只留红、其余去色」
+
+- **红色只留给错误**。原来前向蓝 + 反向 `#ff4b7b` 粉红 + 琥珀 + 橙红挤在暖端,一屏下来到处像在报警,真正的故障条反而不跳。现在按色相环把各类事件铺开,每两类至少隔一个可辨的色相段:红 0°(fault) → 琥珀 38°(梯度同步) → 黄绿 77°(参数更新) → 翠绿 160°(通信) → 青 187°(激活驻留) → 天蓝 199°(训练步) → 蓝 228°(前向) → 紫 271°(反向) → 玫红 330°(loss),空等仍是中性灰。取值来自设计系统语义色与 combo-workbench 的 ARCH_NODE_COLORS,不新造色板。
+- 反向由粉红改紫 —— 反向是正常流程,不该长得像报警;反过来,**事故步的 `Loss = NaN` 从 loss 改判为 fault 走红色**,它本身就是错误现场之一。图例里「激活驻留」小方块的颜色改由 JS 端 `COLORS.hold` 通过内联 `--trs-c` 传入,换调色板不必再同步改 CSS。
+- 新增「定位聚焦」:`window.PtoTrainingRankSwimlane.focusFault() / clearFocus()`。打开后切到事故步 + 事故窗口、把 rank 23 那行滚到视野中间、**除 fault 条外全部压成中性灰(alpha .34)**,行头同样压暗(只留故障 Rank 那行),红条再加一圈外发光。工具条右上出现「定位聚焦中 · 仅高亮 rank 23 ✕」芯片,点它或点任一段控即退出;退出时把进入前的场景/范围/展开态/缩放原样还回去。
+- 接线:`js/training-spotlight.js` 的**问题二 · 步④「通信调度层」**在 prep 里调 `focusFault()` —— 光洞只能把视线引到底部这块面板,面板里还有 32 条泳道,让泳道自己再收一次。复位统一放在步进渲染开头(`clearSwimlaneFocus()`)与 `doClose()`,谁开的谁负责关,步与步之间不互相漏状态;组件没渲染过时是空操作。
+
+---
+
+## 2026-09-03 — training-monitoring-v2 底部 Timeline 换成「按 Rank 的训练步泳道」
+
+- 新增 `js/training-rank-swimlane.js` + `css/training-rank-swimlane.css`(`window.PtoTrainingRankSwimlane.render(host)`)。原来那张 `js/timeline-swimlane.js` 是算子/通信事务级的 1F1B trace,站在训练角度太细——一屏几百根 3px 柱子,读不出「这一步各 rank 的前向、反向、梯度同步、参数更新分别在什么时候」。
+- 架构照搬 hpc-topology-viewer `public/combo-workbench/swimlane.html`(微批次生命周期泳道):行是一棵可展开的树(训练步 → PP stage → Rank → Rank 内计算流/通信流/更新流)、单 canvas + 左侧 sticky gutter 行头、hitRects 反向命中、离散缩放 1×–64×、前向条叠向右 chevron / 反向条叠向左。事件条与 tooltip 复用已有的 `window.PtoSwimlaneTaskPattern`。**没有**搬上游那套 kernel 级色带——最细停在三轨,不再下钻到算子。
+- 内容按本页故事重排:32 Rank · DP2×PP4×TP2×EP2 · 1F1B · 8 micro-batch,`rank = stage×8 + dp×4 + tp×2 + ep`。层切分故意不均匀(PP0 = Embedding+L0–L9 / PP1 = L10–L23 / PP2 = L24–L39 / PP3 = L40–L45+LM Head),于是 **L38 的 MoE 落在 PP2,而 PP2 正好是 rank 16–23**,与定位链里既有的「node2 ranks 16-23, rank 23 all-to-all timeout」「EP rank 23 / PP stage 3」「rank 17 OOM」三条文案对上。
+- 顶部段控给两个场景:健康步 15202(1F1B 梯形 → DP 梯度 AllReduce → Optimizer Step 闭环)与事故步 15203(rank 23 在 B m3 的 L38 expert dispatch 发起 EP all-to-all 后不再返回)。事故按「谁先被堵住」逐圈扩散:EP 组同伴 rank 22 同刻挂住 → PP2 其余 rank 做完手上的 micro-batch 后空等 EP 栅栏 → PP0/PP1 收不到回传梯度 → PP3 的 send 队列积压;本该发生的 AllReduce / Optimizer 画成虚线空心框,说明它不是延后而是压根没开始。
+- 挂载点:`training-run-twin.js` 的 `renderTimelineDock()` 改为「有 `PtoTrainingRankSwimlane` 就用它,否则回落 `PtoProblemOneTimeline`」。只有 v2 加载新脚本,`training-monitoring.html` / `mc2-incident-monitoring.html` 行为不变;`renderProblemOneTimeline()`(问题一定位链里那条单 rank 23 泳道)也照旧走旧图。
+
+---
+
+## 2026-09-03 — training-monitoring-v2 整网侧视图「层指标」下拉:标题改「已选 N 项」,底部换成推荐指标气泡
+
+- 按钮文案由 `N项层指标` 改为 `已选 N 项层指标`(`updateMetricDDLabel()`),静态兜底文案同步改成「已选 4 项层指标」——默认勾选本来就是 4 项(三类 Top1 + 常驻的单层激活值显存),原来写 3 是旧值。
+- 去掉面板底部两行:`.deck-metric-panel__status`(前向/反向扫到第几层)与 `.deck-metric-panel__foot`(描点节奏说明)。下拉是挑指标的地方,训练进度画面上本来就看得见。`metricStatusEl` 置 null,`updateAnimStatus()` 因自带 guard 而安全空转;两条对应样式一并从 `training-monitoring-v2.html` 删除。
+- 底部补一条分割线 + 「? 推荐展示指标」入口:整行挂 `.wzh-help`,悬浮或点击(tabindex=0 聚焦)都出气泡,复用页面已有的 `#diagnosisTooltip` 浮层,不新造一套 tooltip。气泡文案 `REC_HELP` 给出按定位价值的挑选顺序——预示异常(梯度 L2 / hidden-state 标准差 / 单层激活值显存 / 注意力熵 / HBM 带宽)＞展示异常(总耗时 / 峰值显存 / MFU / 有效 FLOPs)＞其他(PP 层间传输字节),判据是这条指标算「因」还是「果」。
+- 说明气泡加宽变体:`.diagnosis-bubble.is-wide`(400px),由触发器上的 `data-tooltip-wide="1"` 开启,逐层指标的 `?` 与推荐入口都用它——这几条是「含义/采集/优秀/异常/定位价值」的多行结构化文本,260px 会把每行折成两三段。同时给 `position()` 补右/下边界兜底:右侧顶到视口就左推,下方放不下就翻到触发器上方(宽气泡更容易越界)。页面其它短说明仍走原来的窄气泡。
+
+---
+
+## 2026-09-03 — config-relation-observer 的 Cluster 表单行重排成「Global Batch + [B,S,H]」，其余下放高级选项
+
+- 首屏那一行现在只剩七格，从粗到细读成一句话：`Total Rank / 卡型号 / Global Batch / Micro Batch / Seq Length / Hidden / 高级选项`。前三格是「多少卡、什么卡、这一步吃多少样本」，中间三格是摊到这张卡上那个张量的 `[B, S, H]`，B 与 S 之间不再插任何东西。
+- 新增 `DERIVED_SPECS`，把原先只服务 Node 的 `buildNodeReadout()` 泛化成 `buildDerivedReadout(key)`，并补 `buildItem(name)` 统一分派三类控件（只读读数 / stepper / 开关）——`mount()` 与 `mountAdvanced()` 共用它，所以派生读数与真字段可以并排写在 `FIELD_ORDER` / `ADVANCED_ITEMS` 里，位置就是列表里的位置。⚠️ `buildItem` 必须先问 `DERIVED_SPECS`：`node` 在两张表里都有，当成 stepper 建出来就是一枚只能停在一个值上的加减键。
+- 两枚新只读格都带口径浮层，值与 YAML 视图同源：**Global Batch** = `Micro Batch × DP × 微批数`（`runner_config.batch_size`，full_batch 口径），**Hidden** 取模型预设的结构常量（`model_config.hidden_size`，换模型才变）。此前这两个数只在 YAML 视图里露过面，导致这一行既缺 `[B,S,H]` 的 H，又容易把 Micro Batch 误读成 batch size。
+- `ADVANCED_ITEMS.batch` 收进 Node、微批数、重计算三格（连同原有的重算层数 / 精度两档 / LoRA 那一对，共八格）：判据换成「首屏只留『这一步吃多少 + 这张卡上那个张量长什么样』」。微批数不是形状的一维（它是「这个 `[B,S,H]` 一步之内跑几遍」），值仍进 Global Batch 的乘积、仍夹在飞份数；Node 是算得出来的数；重计算与它的搭档重算层数挨着放更好读。`ADVANCED_TITLE.batch` 同步重写。
+- 「微批数」改名为 **`micro_batch_num`**：那三个字太像 Micro Batch 的简称，路人第一眼会读成 MBS 本身，而两者意思恰好相反（每份多大 vs 分成几份）。写成框架里的键名（MindFormers `parallel_config.micro_batch_num`）就没有歧义。改动覆盖所有用户可见文案——控件标签与口径浮层、软警告（`micro_batch_num N 少于流水线深度…`）、「高级选项」按钮说明、单卡容量口径浮层与小柱提示、导入报告的字段名、YAML 行尾注释、文档视图那一章的术语名（中文「微批数」退到 `term-full` 那行当别名保留）。代码注释仍按中文的「微批数」称呼它，读代码的人不会误读，也不必重排那些对齐到列的注释框。
+- `css/config-relation-observer.css` 只动注释与 `.cro-stepper__derived` 的宽度口径说明（min-width 兜 30px、内容更宽自撑）；控件由八枚收到七格，行宽预算反而松了。
+- `tools/cro-selfcheck.js` 那条「微批数不足时给软警告」的断言跟着改认 `micro_batch_num`；`node tools/cro-selfcheck.js` 全通过（54000 状态，断言 0 失败）。
+
+## 2026-09-03 — 时光全景浮窗加三级量尺（epoch / step / L2 阶段）
+
+- `js/training-timeline-panorama.js` 新增一份 `stepCostAt()` 迭代耗时模型（warmup 未进稳态、每 200 步一次全局指标归约、ckpt 落盘阻塞、straggler 抖动、HCCS 掉链路后回退 RoCE、事故步的停机与回滚），同时驱动三层量尺的块宽与 L2 阶段切分，不让各处各画各的。
+- 指标栏下方加三级量尺：① epoch（整段训练，块宽 = 该 epoch 实际耗时，HCCS 降级那段 1.64×）② step（选中步附近 24 步逐步一格，格宽 = 该步实际耗时，52~79px 不等，step 编号写在格子里）③ L2（选中那一步的前向传播 / 反向传播 / 更新，可折叠）。宽度是唯一表达耗时的维度；liveStep 之后的 step / epoch 一律按基线 T_iter 等宽占位 —— 没跑过的迭代不该显出宽窄差别。
+- 三层共用一套填充语言：蓝色 = 已完成、灰色斜线 = 未完成、交界处一道竖线被蓝色往右推。进行中的 epoch 与进行中的 step 因此长得一模一样，L2 三段也是同一套蓝 + 灰斜线，不另起三种颜色。
+- 进度不再按墙钟臆造：`js/training-monitoring-v2-deck.js` 补一个只读 `stepProgress()`，把「一轮前向 46 层 + 反向 46 层」的播放节拍（work 55.9s）暴露出来 —— liveStep 本来就是它跑满一圈时 `twinAdvanceStep(1)` 推进的。量尺直接读它，填满与换步是同一时刻，一格播完就接着播下一格；deck 静态态（reduced-motion）退回按观测到的 liveStep 变化节拍自校准。选中的若是最新一步，会跟着训练往前走；手动挑了历史步则钉住不动。
+- L2 三张卡按已进行 / 进行中 / 未进行三态呈现：底色抬一档、进行中补量尺同款蓝描边，未进行的落回面板底色 + 虚线框且只留 key 不填 value（不拿模型预估冒充实测）。key-value 两列的列间距拉到 `--space-5`，每对再垫一层浅底圈成整体，避免第一列的 value 贴着第二列的 key。
+- 事件类型筛选并进指标栏，作为「事件」一项排在总进度右侧；标题连同当前数值放在各自条形图上方，量尺因此与下面 L1 的事件轴等宽。L1 的轴、刻度、事件点也一并改走量尺那套 `runX()` 坐标，同一个事件在两处落在同一个 x。
+- 口径边界：量尺只表达相对耗时，KPI 的已训练时长与事件时间戳仍走顶栏 `step × TIME_MACHINE_STEP_SECONDS` 的统一口径，两边不会给出互相打架的数字。
+
+## 2026-09-03 — config-relation-observer 配置表单的悬浮说明改成「标签后小问号 + 气泡」
+
+- 表单里那些挂在原生 `title` 上的长说明（要按住 ~1s 才弹、排版归系统管、没有可悬浮的视觉线索）统一换成气泡：标签后一枚 `.cro-hint` 小问号，悬浮/聚焦即出，触屏可点开合，Esc 关闭。
+- 气泡单例挂在 `body` 下 `position:fixed`（与容量口径浮层同一个理由：祖先 pane 既 `overflow:hidden` 又带 `backdrop-filter`），落位由 `placeHint()` 实测避让视口；滚动条收成无槽圆角细条，静止只留一道浅痕、指针进气泡才浮到正常对比度。
+- 文案一字未改：首段升格成气泡标题，正文 `pre-wrap` 保留原有空行与「· 」列表；`disabledReason`（此刻为什么点不动）单独排在最前一格。加减键走不动的理由、「高级选项」折叠、MoE 的 EP 口径三档改走同一套 `data-hint`，不额外长问号。
+
 ## 2026-09-02 — launch-v2 「训练任务监控」卡片新增「学习」入口
 
 - 在卡片底部 variants 末尾追加「学习」按钮，新标签页打开 `Profiling_Insight_and_Tool/Learning/public/index.html`。

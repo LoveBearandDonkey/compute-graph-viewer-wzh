@@ -5749,11 +5749,18 @@
     if (host && window.PtoProblemOneTimeline) window.PtoProblemOneTimeline.render(host, { rankFilter: { from: 23, to: 23 } });
   }
 
-  // 底部「Timeline」面板:就地渲染同一张自包含 1F1B 泳道图(复制自 op-rank-time.html
-  // 的 Timeline/Swimlane 页签,不走 iframe)。始终常驻,进入问题一等诊断流程时保持不变。
+  // 底部「Timeline」面板的泳道图。两套实现按页面择一:
+  //   · v2 单屏页(training-monitoring-v2.html)走「按 Rank 的训练步泳道」
+  //     (js/training-rank-swimlane.js)——旧图是算子/通信事务级的 1F1B trace,站在训练角度太细;
+  //     新图按 训练步 → PP stage → Rank 分层,只讲关键的前向/反向/梯度同步/参数更新,
+  //     再往下钻才出通信细节,并带「健康步 / 事故步」两个场景。
+  //   · 其余页面(没加载该脚本的)仍用自包含 1F1B 泳道图(js/timeline-swimlane.js),行为不变。
+  // 始终常驻,进入问题一等诊断流程时保持不变。
   function renderTimelineDock() {
     const host = document.getElementById("twinTimelineBody");
-    if (host && window.PtoProblemOneTimeline) window.PtoProblemOneTimeline.render(host);
+    if (!host) return;
+    if (window.PtoTrainingRankSwimlane) { window.PtoTrainingRankSwimlane.render(host); return; }
+    if (window.PtoProblemOneTimeline) window.PtoProblemOneTimeline.render(host);
   }
 
   function hideLocateChainPanel() {

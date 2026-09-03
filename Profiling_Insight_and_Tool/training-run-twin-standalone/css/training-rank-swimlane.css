@@ -1,0 +1,183 @@
+/*
+ * 训练步泳道（按 Rank）—— js/training-rank-swimlane.js 的外壳样式
+ * ---------------------------------------------------------------------------
+ * 结构照 combo-workbench/swimlane.html 的 .timeline-pane：三行网格
+ *   ① 工具条（场景/范围段控 + 缩放）② 滚动区（canvas 画在里面）③ 图例条
+ * 三行都钉死 grid-row —— 宿主（底部 dock）随时可能把某一行藏掉，隐式排位会让
+ * 剩下两行顺位往前挤，把滚动区腰斩成一条标尺。钉死之后藏谁都不影响另外两行。
+ * 颜色/间距全部走 tokens（foundation/semantic.css），不引入新色值；条上的语义色
+ * 由 JS 端的 COLORS 表统一给，CSS 这边只负责图例小方块（--trs-c 由内联样式传入）。
+ */
+
+.trs-root {
+  position: relative;         /* tooltip 以它为 bounds 定位 */
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  height: 100%;
+  min-height: 0;
+  background: var(--background);
+  color: var(--foreground);
+}
+.trs-root > .trs-toolbar { grid-row: 1; }
+.trs-root > .trs-scroll { grid-row: 2; }
+.trs-root > .trs-footer { grid-row: 3; }
+
+/* ── 工具条 ───────────────────────────────────────────────────────────── */
+.trs-toolbar {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2, 8px);
+  min-height: 36px;
+  padding: 4px var(--space-3, 12px);
+  border-bottom: 1px solid var(--border-subtle);
+  background: var(--surface-2);
+  flex-wrap: wrap;
+}
+.trs-title {
+  color: var(--foreground);
+  font-family: var(--font-sans);
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+.trs-meta {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--foreground-muted);
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.trs-spacer { flex: 1 1 auto; }
+
+/* 段控：与设计系统 .segmented 同款观感，但作用域限定在本组件内 */
+.trs-group {
+  display: inline-flex;
+  padding: 2px;
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-md, 8px);
+  background: var(--surface-1);
+}
+.trs-seg {
+  min-height: 22px;
+  padding: 0 8px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--foreground-secondary);
+  font-family: var(--font-sans);
+  font-size: 11px;
+  font-weight: 600;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.trs-seg:hover { background: var(--state-hover); color: var(--foreground); }
+.trs-seg.is-on { background: var(--state-selected); color: var(--foreground); }
+.trs-seg:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 1px; }
+
+.trs-zoom { display: inline-flex; align-items: center; gap: 4px; }
+.trs-icon {
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: 1px solid var(--border-default);
+  border-radius: 6px;
+  background: var(--surface-1);
+  color: var(--foreground-secondary);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1;
+  cursor: pointer;
+}
+.trs-icon:hover { background: var(--state-hover); color: var(--foreground); }
+.trs-slider { width: 92px; height: 22px; margin: 0; accent-color: var(--primary); cursor: pointer; }
+.trs-zoom-readout {
+  min-width: 32px;
+  color: var(--foreground-muted);
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  text-align: center;
+}
+
+/* ── 画布 ─────────────────────────────────────────────────────────────── */
+.trs-scroll {
+  position: relative;
+  min-height: 0;
+  overflow: auto;
+  background: var(--background);
+}
+.trs-surface { position: relative; min-height: 100%; }
+/* canvas 只画视口那么宽，靠 sticky 钉在左边；横向滚动由 JS 换算成绘制偏移，
+   这样左侧行头那一列可以不随滚动移动（gutter 常驻）。 */
+.trs-scroll canvas { position: sticky; left: 0; display: block; cursor: crosshair; }
+
+/* ── 图例条 ───────────────────────────────────────────────────────────── */
+.trs-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3, 12px);
+  min-height: 26px;
+  padding: 3px var(--space-3, 12px);
+  border-top: 1px solid var(--border-subtle);
+  background: var(--surface-2);
+  color: var(--foreground-muted);
+  font-family: var(--font-sans);
+  font-size: 10.5px;
+}
+.trs-legend { display: flex; align-items: center; gap: var(--space-3, 12px); flex-wrap: wrap; }
+.trs-legend span { display: inline-flex; align-items: center; gap: 5px; white-space: nowrap; }
+.trs-legend i { width: 9px; height: 9px; border-radius: 2px; background: var(--trs-c); }
+/* 前向/反向的小方块也带上条上那层箭头底纹：图例和条是同一套编码，不只是颜色 */
+.trs-legend i.trs-flow {
+  background-color: var(--trs-c);
+  background-repeat: repeat-x;
+  background-size: 5px 100%;
+}
+.trs-legend i.trs-flow-f {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 5 9'%3E%3Cpath d='M.5 0 L4.5 4.5 L.5 9' fill='none' stroke='white' stroke-width='.55' stroke-linejoin='miter' opacity='.4'/%3E%3C/svg%3E");
+}
+.trs-legend i.trs-flow-b {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 5 9'%3E%3Cpath d='M4.5 0 L.5 4.5 L4.5 9' fill='none' stroke='white' stroke-width='.55' stroke-linejoin='miter' opacity='.4'/%3E%3C/svg%3E");
+}
+/* 激活驻留在图上是「半透明带 + 描边」，图例这块也照同一种画法，颜色由 JS 端的
+   COLORS.hold 通过内联 --trs-c 传进来 —— 换调色板时不用同时改这里。 */
+.trs-legend i.trs-hold {
+  width: 20px;
+  height: 9px;
+  border: 1px solid var(--trs-c);
+  border-radius: 3px;
+  background: color-mix(in srgb, var(--trs-c) 22%, transparent);
+}
+
+/* 「定位聚焦中」芯片：聚光灯把本图去色、只留故障那条红色时出现，点一下退出。
+   用 --danger 而不是 --primary —— 它标的就是"现在整张图被收窄到那个错误上"。 */
+.trs-focus-chip {
+  display: inline-flex;
+  align-items: center;
+  min-height: 22px;
+  padding: 0 8px;
+  border: 1px solid color-mix(in srgb, var(--danger) 46%, transparent);
+  border-radius: var(--radius-pill, 999px);
+  background: color-mix(in srgb, var(--danger) 14%, transparent);
+  color: var(--danger);
+  font-family: var(--font-sans);
+  font-size: 10.5px;
+  font-weight: 700;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.trs-focus-chip:hover { background: color-mix(in srgb, var(--danger) 22%, transparent); }
+.trs-focus-chip[hidden] { display: none; }
+.trs-status {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--foreground-secondary);
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+

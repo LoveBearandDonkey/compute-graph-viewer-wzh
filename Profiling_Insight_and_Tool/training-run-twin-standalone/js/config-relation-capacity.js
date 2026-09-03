@@ -914,7 +914,7 @@
           + `交错换来的小气泡就是拿这一项付的账。`
         : `本 stage 背 ${m.layers} 层、在飞 ${inflightText(m.inflight)} 份 micro-batch。`)
       + (m.inflight < m.inflightFull
-        ? `在飞份数被微批数 ${m.microBatchNum} 夹住（公式值 ${inflightText(m.inflightFull)}）—— 这一段矮下去是拿流水线气泡换的，不是配置变省了。`
+        ? `在飞份数被 micro_batch_num ${m.microBatchNum} 夹住（公式值 ${inflightText(m.inflightFull)}）—— 这一段矮下去是拿流水线气泡换的，不是配置变省了。`
         : ``);
   }
 
@@ -1020,8 +1020,8 @@
       /* 这一行同时是「yaml 里那个 batch_size 为什么和这里的 mb 对不上」的答案 ——
          full_batch: True 下框架把 runner_config.batch_size 读成全局 batch（升级计划
          行 12），两个数差着 DP × micro_batch_num 倍，不写在这里没人猜得到。 */
-      + row("global batch", `GBS = <code>MBS ${BASIS.microBatch} × DP ${c.dp} × 微批数 ${microBatchNumOf(topo)}</code> = <b>${BASIS.microBatch * c.dp * microBatchNumOf(topo)}</b>`
-        + `<br><b>GBS 本身不进显存</b>，但它派生出来的微批数在 PP > 1 时进：只有在飞的那几份激活压在卡上，而在飞份数 = <code>min(1F1B 公式, 微批数)</code>（行 22）。微批数 ${microBatchNumOf(topo)} ${microBatchNumOf(topo) >= inflightRaw(topo, 0) ? `≥ Stage0 的公式值 ${inflightText(inflightRaw(topo, 0))}，这一栏一个字节都不受它影响` : `< Stage0 的公式值 ${inflightText(inflightRaw(topo, 0))}，<b>整排小柱被它夹矮了</b> —— 省下的显存是拿流水线气泡换的`}`
+      + row("global batch", `GBS = <code>MBS ${BASIS.microBatch} × DP ${c.dp} × micro_batch_num ${microBatchNumOf(topo)}</code> = <b>${BASIS.microBatch * c.dp * microBatchNumOf(topo)}</b>`
+        + `<br><b>GBS 本身不进显存</b>，但它派生出来的 micro_batch_num 在 PP > 1 时进：只有在飞的那几份激活压在卡上，而在飞份数 = <code>min(1F1B 公式, micro_batch_num)</code>（行 22）。micro_batch_num ${microBatchNumOf(topo)} ${microBatchNumOf(topo) >= inflightRaw(topo, 0) ? `≥ Stage0 的公式值 ${inflightText(inflightRaw(topo, 0))}，这一栏一个字节都不受它影响` : `< Stage0 的公式值 ${inflightText(inflightRaw(topo, 0))}，<b>整排小柱被它夹矮了</b> —— 省下的显存是拿流水线气泡换的`}`
         + `<br>⚠️ YAML 里 <code>runner_config.batch_size</code> 填的是 <b>GBS</b> 而不是这里的 mb：<code>full_batch: True</code> 下每张卡都读整份全局 batch，再在图内按 DP 切，落到每卡每次前反向才是 <b>mb=${BASIS.microBatch}</b>`)
       /* 行 16：两档 CP 在这一栏里逐位相同，必须明说 —— 不说的话用户拨一下发现容量柱
          纹丝不动，会以为开关没接上，而这正是「两个视图各讲一套故事」的反面教材。 */
@@ -1087,8 +1087,8 @@
         : `1F1B 下 Stage s 同时压着 <code>PP−s</code> 份 micro-batch 的激活，Stage0 压 ${Math.min(c.pp, microBatchNumOf(topo))} 份、末段只压 1 份`)
       /* 行 22：夹取只在微批数不够时才有话说，够的时候写出来是句废话 —— 但**不够**的时候
          它是整排小柱矮下去的唯一原因，不说清就成了一个没人解释得了的落差。 */
-      + (microBatchNumOf(topo) < inflightRaw(topo, 0) ? row("微批数夹取",`一共只有 <b>${microBatchNumOf(topo)}</b> 份 micro-batch 可灌，少于 Stage0 的公式值 <code>${inflightText(inflightRaw(topo, 0))}</code> —— warmup 还没走完 batch 就没了，在飞份数按 <code>min(公式, 微批数)</code> 夹到 ${microBatchNumOf(topo)} 份`
-        + `<br>Megatron 两条调度路径都写着这一步。省下的显存是拿气泡换的：气泡占比约 <code>(PP−1)/微批数</code> = ${Math.round((c.pp - 1) / microBatchNumOf(topo) / Math.max(1, c.vpp) * 100)}%，横幅那条软警告说的就是它`) : "")
+      + (microBatchNumOf(topo) < inflightRaw(topo, 0) ? row("micro_batch_num 夹取",`一共只有 <b>${microBatchNumOf(topo)}</b> 份 micro-batch 可灌，少于 Stage0 的公式值 <code>${inflightText(inflightRaw(topo, 0))}</code> —— warmup 还没走完 batch 就没了，在飞份数按 <code>min(公式, 微批数)</code> 夹到 ${microBatchNumOf(topo)} 份`
+        + `<br>Megatron 两条调度路径都写着这一步。省下的显存是拿气泡换的：气泡占比约 <code>(PP−1)/micro_batch_num</code> = ${Math.round((c.pp - 1) / microBatchNumOf(topo) / Math.max(1, c.vpp) * 100)}%，横幅那条软警告说的就是它`) : "")
       + row("同 stage 内", `各 DP / EP / TP / CP 副本切法一致、容量相同，所以差异只到 stage 这一级 —— 底部那排小柱就是全集群的完整分布`)
       + `</dl>`
       + `<p class="cro-capacity__basis-sub">运行时四项怎么标定</p>`
@@ -1214,7 +1214,7 @@
           + (entry.recomputed > 0 ? ` · 重算 ${entry.recomputed} 层` : "")
           + ` · 在飞 ${inflightText(entry.inflight)}`
           // 被微批数夹住时把公式值一起报出来（行 22）：否则这根柱子矮下去没有出处
-          + (entry.inflight < entry.inflightFull ? `（微批数 ${entry.microBatchNum} 夹取，公式值 ${inflightText(entry.inflightFull)}）` : ``);
+          + (entry.inflight < entry.inflightFull ? `（micro_batch_num ${entry.microBatchNum} 夹取，公式值 ${inflightText(entry.inflightFull)}）` : ``);
         bar.setAttribute("aria-label", bar.title);
         bar.addEventListener("click", () => selectStage(entry.stage));
         el.stages.appendChild(bar);

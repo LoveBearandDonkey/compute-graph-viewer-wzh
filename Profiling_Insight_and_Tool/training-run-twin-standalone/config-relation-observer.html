@@ -25,7 +25,7 @@
   <!-- 集群热力图样式（复用 training-monitoring-v2 的 .twin-heat* 视觉） -->
   <link rel="stylesheet" href="./css/training-run-twin.css">
   <!-- 本页模块私有 layout -->
-  <link rel="stylesheet" href="./css/config-relation-observer.css?v=20260831-flat-picker">
+  <link rel="stylesheet" href="./css/config-relation-observer.css?v=20260903-hint-bubble">
   <!-- 单卡容量（Cluster 区右栏）：容量是「卡」的属性，与集群矩阵同区并排 -->
   <link rel="stylesheet" href="./css/config-relation-capacity.css?v=20260820-spread-head">
   <!-- 顶栏视图页签 / 导出配置键 / YAML 代码框 -->
@@ -349,14 +349,14 @@
                 <div class="segmented-control segmented-control-muted cro-ep-mode" id="croEpMode"
                      role="group" aria-label="EP 与 DP 的口径">
                   <button class="btn btn-sm is-selected" type="button" data-ep-mode="split" aria-pressed="true"
-                          title="拿不准就用这一档：Megatron / MindSpeed-LLM / MindFormers 都这么记，昇腾上的训练基本都落在这里。&#10;&#10;这不是性能选项 —— 两档说的是同一批卡，切换它一张卡都不会多、也不会少，变的只是页面怎么读你填的数字（DP 会在 512 与 8 之间换算）。所以按你要跑的框架选，不必权衡快慢。&#10;&#10;EP 切出 = 专家并行不额外占卡，而是把已有的数据并行组再切一刀：一张卡既是某个模型副本的成员，又持有其中一份专家。加大 EP 只是把同一批卡分得更细。&#10;world = DP×PP×TP×CP（EP 不进乘积） · EDP = DP/EP · 要求 DP % EP == 0&#10;一整套专家由横着的 EP 张卡合持（集群矩阵的一整行 = 一个 EP 组 = all-to-all 域），单个 DP 副本并不持有整套；EDP 是这样的完整组共有几个。">EP 切出（主流）</button>
+                          data-hint="拿不准就用这一档：Megatron / MindSpeed-LLM / MindFormers 都这么记，昇腾上的训练基本都落在这里。&#10;&#10;这不是性能选项 —— 两档说的是同一批卡，切换它一张卡都不会多、也不会少，变的只是页面怎么读你填的数字（DP 会在 512 与 8 之间换算）。所以按你要跑的框架选，不必权衡快慢。&#10;&#10;EP 切出 = 专家并行不额外占卡，而是把已有的数据并行组再切一刀：一张卡既是某个模型副本的成员，又持有其中一份专家。加大 EP 只是把同一批卡分得更细。&#10;world = DP×PP×TP×CP（EP 不进乘积） · EDP = DP/EP · 要求 DP % EP == 0&#10;一整套专家由横着的 EP 张卡合持（集群矩阵的一整行 = 一个 EP 组 = all-to-all 域），单个 DP 副本并不持有整套；EDP 是这样的完整组共有几个。">EP 切出（主流）</button>
                   <button class="btn btn-sm" type="button" data-ep-mode="orthogonal" aria-pressed="false"
-                          title="读别人的配置时用得上：论文、汇报表格和部分自研框架把 EP 单列成一维记，那里的 DP 就是字面的模型副本数。要复现这样一份材料就选这一档，页面才会按写它的人的原意去解释你填的数字。&#10;认它的办法：必须把 EP 也乘进去才凑得出总卡数。&#10;&#10;也可以拿它做对照 —— 切一下就能看到同一批卡的 DP 在 512 与 8 之间换算，两个数说的是同一件事。&#10;&#10;但自己配训练时用切出档：Megatron / MindSpeed-LLM / MindFormers 都是那么记的。这两档不是性能之争，说的是同一批卡，切换只改读法、不改硬件。&#10;&#10;EP 正交 = 专家并行与数据并行是两根互不相干的轴：每多一倍 EP 就要多一倍卡。DP 与 EP 之间没有整除关系。&#10;world = DP×PP×TP×CP×EP · 专家的数据并行度等于 DP&#10;每个 DP 副本横跨全部 EP rank、自带一整套完整专家 —— 这正是这一档无须 DP % EP == 0 的原因。">EP 正交</button>
+                          data-hint="读别人的配置时用得上：论文、汇报表格和部分自研框架把 EP 单列成一维记，那里的 DP 就是字面的模型副本数。要复现这样一份材料就选这一档，页面才会按写它的人的原意去解释你填的数字。&#10;认它的办法：必须把 EP 也乘进去才凑得出总卡数。&#10;&#10;也可以拿它做对照 —— 切一下就能看到同一批卡的 DP 在 512 与 8 之间换算，两个数说的是同一件事。&#10;&#10;但自己配训练时用切出档：Megatron / MindSpeed-LLM / MindFormers 都是那么记的。这两档不是性能之争，说的是同一批卡，切换只改读法、不改硬件。&#10;&#10;EP 正交 = 专家并行与数据并行是两根互不相干的轴：每多一倍 EP 就要多一倍卡。DP 与 EP 之间没有整除关系。&#10;world = DP×PP×TP×CP×EP · 专家的数据并行度等于 DP&#10;每个 DP 副本横跨全部 EP rank、自带一整套完整专家 —— 这正是这一档无须 DP % EP == 0 的原因。">EP 正交</button>
                   <!-- 行 23 新增的第三档：MindFormers 的 expert_parallel 在 dp×mp 域上切。
                        没有它，config-test/ 里那份 mf_pretrain_deepseek3_671b.yaml
                        （dp:4 / mp:8 / pp:8 / ep:32）两档都接不住 —— 而 README 说它「最贴页面口径」。 -->
                   <button class="btn btn-sm" type="button" data-ep-mode="mf" aria-pressed="false"
-                          title="读 MindFormers 的配置时用这一档。MindSpore / MindFormers 的 expert_parallel 是在 dp × mp 域上切的：一个 EP 组的成员既跨数据并行、也跨张量并行。&#10;&#10;认它的办法：配置里 dp 明显小于 ep（比如 dp:4 / mp:8 / ep:32），按切出档算 4 % 32 除不尽、按正交档算总卡数又对不上 —— 而 dp×mp = 32 正好整除。&#10;&#10;world = DP×PP×TP×CP（ep 不进乘积，与切出档相同） · 要求 (DP × TP) % EP == 0 · EDP = DP×TP/EP&#10;集群矩阵的行数因此比切出档多 TP 倍：域大了 TP 倍，一整套专家仍由横着的 EP 张卡合持。&#10;&#10;⚠️ 本页按专家张量并行 ETP=1 建模：这一档下路由专家只 ÷EP、不再另 ÷TP（EP 已经吃掉了 mp 那一维）。真实 MindFormers 里 ETP>1 时，严格式是 (DP×TP) % (EP×ETP) == 0，专家还要再 ÷ETP —— 那一档本页没建。">MindFormers（DP×MP）</button>
+                          data-hint="读 MindFormers 的配置时用这一档。MindSpore / MindFormers 的 expert_parallel 是在 dp × mp 域上切的：一个 EP 组的成员既跨数据并行、也跨张量并行。&#10;&#10;认它的办法：配置里 dp 明显小于 ep（比如 dp:4 / mp:8 / ep:32），按切出档算 4 % 32 除不尽、按正交档算总卡数又对不上 —— 而 dp×mp = 32 正好整除。&#10;&#10;world = DP×PP×TP×CP（ep 不进乘积，与切出档相同） · 要求 (DP × TP) % EP == 0 · EDP = DP×TP/EP&#10;集群矩阵的行数因此比切出档多 TP 倍：域大了 TP 倍，一整套专家仍由横着的 EP 张卡合持。&#10;&#10;⚠️ 本页按专家张量并行 ETP=1 建模：这一档下路由专家只 ÷EP、不再另 ÷TP（EP 已经吃掉了 mp 那一维）。真实 MindFormers 里 ETP>1 时，严格式是 (DP×TP) % (EP×ETP) == 0，专家还要再 ÷ETP —— 那一档本页没建。">MindFormers（DP×MP）</button>
                 </div>
               </div>
 
@@ -394,43 +394,63 @@
               </div>
               <div class="cro-cluster">
                 <!-- 左半是「表单在上、矩阵在下」的纵向两段，右半是单卡容量栏。
-                     表单横排（Total Rank / Node / 卡型号 / Micro Batch / 微批数 / Seq Length /
-                     重计算 / 高级选项 一行读完）之后，矩阵拿到了
-                     整个左半宽度 —— 默认 4 个 stage 块 × 64 EP 列要在不横向滚动的
+                     表单横排一行读完 —— Total Rank / 卡型号 / Global Batch /
+                     Micro Batch / Seq Length / Hidden / 高级选项 —— 之后，矩阵拿到了
+                     整个左半宽度：默认 4 个 stage 块 × 64 EP 列要在不横向滚动的
                      前提下画完，宽度比高度值钱。
+                     这七格是**从粗到细**的一句话：多少卡、什么卡、这一步吃多少样本，
+                     再到摊在这张卡上那个张量的 **[B, S, H]**（Micro Batch / Seq Length /
+                     Hidden，B 与 S 之间不插任何东西）。Node、微批数、重计算、精度两档、
+                     LoRA 那一对全部收进行末的「高级选项」—— 判据见 js 的
+                     ADVANCED_ITEMS.batch。Global Batch 与 Hidden 是只读派生格
+                     （DERIVED_SPECS），与真字段并排写在 FIELD_ORDER.batch 里，
+                     由 buildItem 按名字分派。
                      ⚠️ 下面三个 div 是**三个挂载点**（JS 按 id 找它们），但视觉上必须是
-                     同一行：CSS 给两个 .cro-stepper-row 上了 display:contents，八枚控件
+                     同一行：CSS 给两个 .cro-stepper-row 上了 display:contents，七格控件
                      因此是 .cro-cluster__form 自己的 flex 项 —— 否则换行会按「组」发生，
-                     batch 那四枚会整块掉到第二行。加控件时记得它们共用一行的宽度预算
+                     batch 那一组会整块掉到第二行。加控件时记得它们共用一行的宽度预算
                      （尺度已按 MoE 那一行收到 30px 一档，见 css 里 .cro-cluster__form 那段）。 -->
                 <div class="cro-cluster__main">
                   <div class="cro-cluster__form">
                     <div class="cro-stepper-row" id="croClusterSteppers"></div>
-                    <!-- 卡型号：硬件属性，和 Total Rank / Node 同属集群配置，接在 Node 之后。
+                    <!-- 卡型号：硬件属性，和 Total Rank 同属集群配置，接在它之后。
                          用 select 而不是 stepper —— 型号是枚举不是量。选项与显存规格由
                          config-relation-observer.js 的 CARD_SPECS 生成，它同时是「单卡容量」
-                         那个线框盒高度的来源。 -->
+                         那个线框盒高度的来源。
+                         （Node 已收进行末的「高级选项」：它是 Total Rank ÷ 整机卡数，
+                         算得出来、拨不动，不该占首屏那一格。） -->
                     <div class="cro-stepper cro-cluster__card">
                       <label class="cro-stepper__label" for="croCardSelect">卡型号</label>
                       <select class="cro-select" id="croCardSelect"></select>
                     </div>
-                    <!-- Micro Batch / 微批数 / Seq Length：不参与切分、不进 world_size，只决定
-                         往这张卡里装多少，所以接在卡型号之后 —— 型号给容量框的高度，
-                         这三项给装进去的体积（每份多大 × 分成几份 × 每份多长），
-                         一行读完就是「单卡容量」的全部输入。
-                         微批数是升级计划行 22 补的：在飞份数取 min(1F1B 公式, 它)，
-                         而它同时是 yaml 那个全局 batch 的第三个因子。
-                         由 config-relation-observer.js 的 FIELD_ORDER.batch 渲染。 -->
+                    <!-- Global Batch / Micro Batch / Seq Length / Hidden：不参与切分、
+                         不进 world_size，所以接在卡型号之后 —— 型号给容量框的高度，
+                         这几格给往框里装的东西。
+                         · Global Batch（只读）= MBS × DP × 微批数，这一步一共吃多少样本，
+                           与 yaml 的 runner_config.batch_size 同源。排在最前是因为看配置
+                           的顺序是从粗到细：先「一步多大」，再「摊到这张卡上是多大」。
+                         · Micro Batch / Seq Length / Hidden = 这张卡上那个张量的 [B, S, H]。
+                           B 与 S 之间不插任何东西；Hidden（只读）是模型预设的结构常量，
+                           换模型才变，与 yaml 的 model_config.hidden_size 同源。
+                         微批数不在这里 —— 它是「这个 [B,S,H] 一步之内跑几遍」，不是形状的
+                         一维，收进行末的「高级选项」（值仍进 Global Batch 的乘积，
+                         在飞份数也仍取 min(1F1B 公式, 它)，升级计划行 22）。
+                         由 config-relation-observer.js 的 FIELD_ORDER.batch 渲染，
+                         其中两格只读的走 DERIVED_SPECS。 -->
                     <div class="cro-stepper-row" id="croBatchSteppers"></div>
-                    <!-- 「重计算」由 JS 接在这一行末尾（见 mount()）：它与 Micro Batch /
-                         Seq Length 同属「往这张卡里装多少」—— 一刀不切，只是每份留不留。
-                         它是**四档**而不是开关（升级计划行 19：关 / 选择性 / 按层数 / 全开），
-                         因为 34 与 2 之间差着一个数量级，实际调优最常落的正是中间。
-                         行末还有一枚「高级选项」折叠，里面五枚（见 ADVANCED_ITEMS.batch）：
+                    <!-- 行末那枚「高级选项」折叠由 JS 接上（见 mount() / mountAdvanced()），
+                         里面八格（见 ADVANCED_ITEMS.batch，顺序即那里的顺序）：
+                           · Node —— Total Rank ÷ 整机卡数的只读读数，算得出来、拨不动
+                           · 微批数 —— 这个 [B,S,H] 一步之内跑几遍（Megatron 的
+                             num_microbatches / HF·DeepSpeed 的 gradient_accumulation_steps）：
+                             它是 Global Batch 的第三个因子，PP > 1 时还夹着在飞份数
+                           · 重计算 / 重算层数 —— 激活留不留。重计算是**四档**而不是开关
+                             （升级计划行 19：关 / 选择性 / 按层数 / 全开），因为 34 与 2 之间
+                             差着一个数量级，实际调优最常落的正是中间；「按层数」那一档才按
+                             重算层数算，拨到那一档时折叠自动掀开
                            · 计算精度 / 主权重精度 —— 每个数占几个字节（行 21）：权重、梯度、
                              优化器三段的字节口径全跟着它们走。收在折叠里是因为它一年也未必
                              动一次，却让六段全体升降
-                           · 重算层数 —— 只有「按层数」那一档才生效，拨到那一档时折叠自动掀开
                            · LoRA / LoRA Rank —— 冻结主干只训 adapter，梯度段与优化器段跟着
                              adapter 走、权重段一个字节不少（行 18）。两个预设写的都是预训练
                              配置，所以它默认关着，不该占首屏那一格。
@@ -468,7 +488,7 @@
                   <div class="cro-capacity__basis" id="croCapacityBasis" role="tooltip" hidden></div>
 
                   <!-- 口径里那三个可调量（Micro Batch / Seq Length / 单卡显存）不在
-                       这一栏里，而在同区左半的表单行（卡型号下拉 + 其后两个 stepper）
+                       这一栏里，而在同区左半的表单行（卡型号下拉 + 其后那几枚 stepper）
                        —— 它们是开训前要拍板的配置，不是这一栏的局部开关。本栏渲染前
                        由 syncBasis() 从 topology.config / topology.card 同步过来。 -->
                   <p class="cro-capacity__empty" id="croCapacityEmpty" hidden></p>
@@ -1670,9 +1690,9 @@
                     </div>
                     <p>
                       一次前向/反向真正喂进去的样本数。<b>注意它不是全局 batch</b> ——
-                      全局 batch = MBS × DP × <a href="#term-micro-batch-num">微批数</a>，
+                      全局 batch = MBS × DP × <a href="#term-micro-batch-num">micro_batch_num</a>，
                       而<b>直接</b>进显存的只有 MBS：激活与它成正比。
-                      另外两个因子不是完全不进 —— 微批数在 PP &gt; 1 时决定在飞几份，
+                      另外两个因子不是完全不进 —— micro_batch_num 在 PP &gt; 1 时决定在飞几份，
                       少于流水线深度时会把整排小柱压低（见那一条）。
                     </p>
                     <p>
@@ -1727,26 +1747,26 @@
 
                   <div class="cro-doc__term" id="term-micro-batch-num">
                     <div class="cro-doc__term-head">
-                      <code class="cro-doc__term-name">微批数</code>
-                      <span class="cro-doc__term-full">micro_batch_num · 梯度累积步数</span>
+                      <code class="cro-doc__term-name">micro_batch_num</code>
+                      <span class="cro-doc__term-full">一步切成几份喂 · 微批数 / 梯度累积步数</span>
                       <span class="cro-doc__term-where">Cluster</span>
                     </div>
                     <p>
                       一个全局 batch 被切成几份轮流喂进去。它与 Micro Batch 是同一句话的两半：
-                      <b>全局 batch = MBS × DP × 微批数</b>（YAML 视图那格
+                      <b>全局 batch = MBS × DP × micro_batch_num</b>（YAML 视图那格
                       <code>runner_config.batch_size</code> 就是这么算出来的）。
                       流水线里它还有第二个身份：<b>一步之内可灌的 micro-batch 总数</b>。
                     </p>
                     <p>
                       <b>它对显存不是线性的。</b>只有<b>在飞</b>（已前向、还没反向）的那几份激活压在卡上，
                       而在飞份数有上界 —— 1F1B 下 stage <i>s</i> 最多压 <code>PP − s</code> 份。所以：
-                      微批数 ≥ PP（交错档是 <code>PP × VPP</code>）时，调它一个字节都不动；
+                      它 ≥ PP（交错档是 <code>PP × VPP</code>）时，调它一个字节都不动；
                       小于时才把「各 PP Stage 峰值」那排小柱整体压低，首段压得最多。
                       PP = 1 时在飞恒为 1，调它容量柱纹丝不动 —— 那时它只改全局 batch。
                     </p>
                     <p>
                       <b>但别拿它当省显存的旋钮。</b>流水线气泡占比约
-                      <code>(PP−1)/微批数</code>（交错档再 ÷ VPP）：PP=4、微批数=2 时，
+                      <code>(PP−1)/micro_batch_num</code>（交错档再 ÷ VPP）：PP=4、它=2 时，
                       流水线一半以上的时间在空转。省下的那点显存是拿吞吐换的 ——
                       重计算、CP、权重分片都比它便宜。低于 <code>PP × VPP</code> 时页面给一条软警告。
                     </p>
@@ -1767,13 +1787,13 @@
                           </ul>
                         </div>
                       </div>
-                      <div class="cro-doc__map-node">微批数</div>
+                      <div class="cro-doc__map-node">micro_<br>batch_num</div>
                       <div class="cro-doc__map-col">
                         <div class="cro-doc__map-box" data-flow="must">
                           <div class="cro-doc__map-box-title">一定联调</div>
                           <ul>
-                            <li>全局 batch = MBS × DP × 微批数</li>
-                            <li>在飞份数 = <code>min(1F1B 公式, 微批数)</code></li>
+                            <li>全局 batch = MBS × DP × micro_batch_num</li>
+                            <li>在飞份数 = <code>min(1F1B 公式, micro_batch_num)</code></li>
                           </ul>
                         </div>
                         <div class="cro-doc__map-box" data-flow="often">
@@ -2594,7 +2614,7 @@ t  TP 序号              c  CP 序号      n  物理节点号</div>
                         <tr>
                           <td>激活</td>
                           <td>每层 ≈ 34 · mb · s · h（不重计算 + 开 SP）；选择性掉到 17、全开掉到 2</td>
-                          <td>÷ TP、÷ CP，× 在飞的 micro-batch 数（VPP 会把这个份数抬上去，<b>微批数</b>会把它夹下来）</td>
+                          <td>÷ TP、÷ CP，× 在飞的 micro-batch 数（VPP 会把这个份数抬上去，<b>micro_batch_num</b> 会把它夹下来）</td>
                         </tr>
                         <tr><td>运行时底座</td><td>驱动 + context + kernel binary，几个 GB</td><td>不随配置变</td></tr>
                         <tr><td>预留 buffer / 碎片</td><td>通信 buffer + 算子临时区 + 分配器碎片</td><td>随并行配置变，见下</td></tr>
@@ -2638,8 +2658,8 @@ t  TP 序号              c  CP 序号      n  物理节点号</div>
                       开了虚拟流水（<code>VPP &gt; 1</code>）换成交错式调度，份数变成
                       <code>[2(PP−s−1) + (VPP−1)·PP + 1] / VPP</code> —— 整排小柱一起抬高、而且变平，
                       末段抬得比首段还多。这就是 VPP 的账：气泡按 <code>1/VPP</code> 缩小，代价全记在这里。
-                      反过来，一共只有 <b>微批数</b>那么多份可灌：少于 warmup 深度时
-                      在飞份数按 <code>min(公式, 微批数)</code> 夹下来，整排小柱一起矮下去 ——
+                      反过来，一共只有 <b>micro_batch_num</b> 那么多份可灌：少于 warmup 深度时
+                      在飞份数按 <code>min(公式, micro_batch_num)</code> 夹下来，整排小柱一起矮下去 ——
                       那不是配置变省了，是流水线没灌满（气泡换来的）。
                     </li>
                     <li>
@@ -2812,7 +2832,7 @@ t  TP 序号              c  CP 序号      n  物理节点号</div>
   <script src="./js/ide-frame-pattern.js"></script>
   <script src="./js/model-graphviz-pattern.js"></script>
   <script src="./js/model-architecture-3d-deck-pattern.js"></script>
-  <script src="./js/config-relation-observer.js?v=20260821-edp"></script>
+  <script src="./js/config-relation-observer.js?v=20260903-hint-bubble"></script>
   <!-- 单卡容量：必须排在主脚本之后（要读它导出的 croObserver / croSelect） -->
   <script src="./js/config-relation-capacity.js?v=20260821-edp"></script>
   <!-- YAML 视图：同样排在主脚本之后（要读它导出的 croObserver.topology）。
