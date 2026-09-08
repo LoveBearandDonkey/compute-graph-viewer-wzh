@@ -20,6 +20,88 @@
     return Number.isFinite(number) && number > 0 ? Math.floor(number) : fallback;
   }
 
+  function greatestCommonDivisor(left, right) {
+    let a = Math.abs(Math.floor(left));
+    let b = Math.abs(Math.floor(right));
+    while (b) [a, b] = [b, a % b];
+    return a;
+  }
+
+  function normalizePositiveIntegers(value) {
+    const values = Array.isArray(value) ? value : value == null ? [] : [value];
+    return values.map(Number).filter((item) => Number.isInteger(item) && item > 0);
+  }
+
+  function resolveSharedAggregateScale(input) {
+    if (!input || typeof input !== 'object') {
+      throw new TypeError('PtoMatrixCanvas.resolveSharedAggregateScale expects a configuration object.');
+    }
+    if (!Array.isArray(input.tensors) || !input.tensors.length) {
+      throw new TypeError('Shared aggregate scale requires at least one tensor.');
+    }
+    const tensors = input.tensors.map((tensor, index) => {
+      if (!tensor || typeof tensor !== 'object') {
+        throw new TypeError(`Shared aggregate tensor ${index} must be an object.`);
+      }
+      const rowAxis = String(tensor.axes?.rows || '').trim();
+      const columnAxis = String(tensor.axes?.columns || '').trim();
+      if (!rowAxis || !columnAxis) {
+        throw new TypeError(`Shared aggregate tensor ${tensor.id || index} requires semantic row and column axes.`);
+      }
+      return {
+        id: String(tensor.id || `tensor-${index}`),
+        extent: {
+          rows: positiveInteger(tensor.extent?.rows),
+          columns: positiveInteger(tensor.extent?.columns),
+        },
+        axes: { rows: rowAxis, columns: columnAxis },
+      };
+    });
+    const axes = new Set(tensors.flatMap((tensor) => [tensor.axes.rows, tensor.axes.columns]));
+    const requestedScales = input.axisScales && typeof input.axisScales === 'object' ? input.axisScales : {};
+    const requestedBoundaries = input.hardBoundaries && typeof input.hardBoundaries === 'object'
+      ? input.hardBoundaries
+      : {};
+    const axisScales = {};
+    const hardBoundaries = {};
+    axes.forEach((axis) => {
+      const boundaries = normalizePositiveIntegers(requestedBoundaries[axis]);
+      const requestedScale = Number(requestedScales[axis]);
+      const hasRequestedScale = Number.isInteger(requestedScale) && requestedScale > 0;
+      if (!hasRequestedScale && !boundaries.length) {
+        throw new RangeError(`Shared aggregate axis ${axis} requires axisScales.${axis} or hardBoundaries.${axis}.`);
+      }
+      const scale = hasRequestedScale ? requestedScale : boundaries.reduce(greatestCommonDivisor);
+      const incompatibleBoundary = boundaries.find((boundary) => boundary % scale !== 0);
+      if (incompatibleBoundary) {
+        throw new RangeError(`Shared aggregate scale ${axis}=${scale} crosses hard boundary granularity ${incompatibleBoundary}.`);
+      }
+      axisScales[axis] = scale;
+      hardBoundaries[axis] = boundaries;
+    });
+    return {
+      axisScales,
+      hardBoundaries,
+      tensors: tensors.map((tensor) => {
+        const rowSpan = axisScales[tensor.axes.rows];
+        const columnSpan = axisScales[tensor.axes.columns];
+        return {
+          ...tensor,
+          rowSpan,
+          columnSpan,
+          grid: {
+            rows: Math.ceil(tensor.extent.rows / rowSpan),
+            columns: Math.ceil(tensor.extent.columns / columnSpan),
+          },
+          tail: {
+            rows: tensor.extent.rows % rowSpan || rowSpan,
+            columns: tensor.extent.columns % columnSpan || columnSpan,
+          },
+        };
+      }),
+    };
+  }
+
   function finiteOr(value, fallback) {
     const number = Number(value);
     return Number.isFinite(number) ? number : fallback;
@@ -145,6 +227,10 @@
       columnSpan,
       label: input.label == null ? '' : String(input.label),
       value: finiteOr(input.value, NaN),
+      // Real-cell matrices may intentionally omit labels/values. Keep an
+      // explicit flag so the canvas still paints each 1×1 cell and its grid
+      // without forcing noisy text into a dense matrix.
+      renderEmpty: Boolean(input.renderEmpty),
       tone: VALID_TONES.has(input.tone) ? input.tone : 'neutral',
       style,
       states,
@@ -350,7 +436,8 @@
 
     const hasLabel = Boolean(cell.label);
     const hasValue = Number.isFinite(cell.value);
-    if ((!hasLabel && !hasValue) || (minDimension < 16 && !cell.states.has('current'))) return;
+    if ((!hasLabel && !hasValue && !cell.renderEmpty)
+      || (minDimension < 16 && !cell.states.has('current'))) return;
     const fontSize = clamp(minDimension * 0.28, 9, 14);
     ctx.font = `700 ${fontSize}px ${mono}`;
     const value = hasValue ? String(cell.value) : '';
@@ -376,6 +463,77 @@
     if (fetchedValue) ctx.fillText(fetchedValue, box.x + box.width * 0.75, box.y + box.height / 2);
   }
 
+  function createAggregateLayoutCells(source, inputOptions = {}) {
+    if (!source || typeof source !== 'object') {
+      throw new TypeError('PtoMatrixCanvas.createAggregateLayoutCells expects a source object.');
+    }
+    const rows = positiveInteger(source.rows);
+    const columns = positiveInteger(source.columns);
+    const requestedThumbnailRows = Number(inputOptions.thumbnailRows);
+    const requestedThumbnailColumns = Number(inputOptions.thumbnailColumns);
+    const blockRows = Number.isFinite(requestedThumbnailRows) && requestedThumbnailRows > 0
+      ? Math.ceil(rows / Math.floor(requestedThumbnailRows))
+      : positiveInteger(inputOptions.blockRows, 16);
+    const blockColumns = Number.isFinite(requestedThumbnailColumns) && requestedThumbnailColumns > 0
+      ? Math.ceil(columns / Math.floor(requestedThumbnailColumns))
+      : positiveInteger(inputOptions.blockColumns, 16);
+    const cells = [];
+    for (let row = 0; row < rows; row += blockRows) {
+      const rowSpan = Math.min(blockRows, rows - row);
+      for (let column = 0; column < columns; column += blockColumns) {
+        const columnSpan = Math.min(blockColumns, columns - column);
+        cells.push({
+          id: `aggregate-${row}-${column}`,
+          row,
+          column,
+          rowSpan,
+          columnSpan,
+          style: 'aggregate',
+          tone: VALID_TONES.has(inputOptions.tone) ? inputOptions.tone : 'neutral',
+          summary: {
+            rows: rowSpan,
+            columns: columnSpan,
+            count: rowSpan * columnSpan,
+            min: NaN,
+            max: NaN,
+            mean: NaN,
+            intensity: clamp(finiteOr(inputOptions.intensity, 0.5), 0, 1),
+          },
+        });
+      }
+    }
+    return cells;
+  }
+
+  function createRealLayoutCells(source, inputOptions = {}) {
+    if (!source || typeof source !== 'object') {
+      throw new TypeError('PtoMatrixCanvas.createRealLayoutCells expects a source object.');
+    }
+    const rows = positiveInteger(source.rows);
+    const columns = positiveInteger(source.columns);
+    const tone = VALID_TONES.has(inputOptions.tone) ? inputOptions.tone : 'neutral';
+    const style = VALID_STYLES.has(inputOptions.style) ? inputOptions.style : 'value';
+    const cells = [];
+    for (let row = 0; row < rows; row += 1) {
+      for (let column = 0; column < columns; column += 1) {
+        cells.push({
+          id: `${inputOptions.idPrefix || 'cell'}-${row}-${column}`,
+          row,
+          column,
+          rowSpan: 1,
+          columnSpan: 1,
+          label: '',
+          value: NaN,
+          renderEmpty: true,
+          style,
+          tone,
+          states: [],
+        });
+      }
+    }
+    return cells;
+  }
+
   function createAggregatedCells(source, inputOptions = {}) {
     if (!source || typeof source !== 'object') {
       throw new TypeError('PtoMatrixCanvas.createAggregatedCells expects a source object.');
@@ -389,20 +547,8 @@
     if (!values && typeof source.valueAt !== 'function') {
       throw new TypeError('Aggregated matrix source requires values or valueAt(row, column).');
     }
-    const requestedThumbnailRows = Number(inputOptions.thumbnailRows);
-    const requestedThumbnailColumns = Number(inputOptions.thumbnailColumns);
-    const blockRows = Number.isFinite(requestedThumbnailRows) && requestedThumbnailRows > 0
-      ? Math.ceil(rows / Math.floor(requestedThumbnailRows))
-      : positiveInteger(inputOptions.blockRows, 16);
-    const blockColumns = Number.isFinite(requestedThumbnailColumns) && requestedThumbnailColumns > 0
-      ? Math.ceil(columns / Math.floor(requestedThumbnailColumns))
-      : positiveInteger(inputOptions.blockColumns, 16);
-    const cells = [];
-
-    for (let row = 0; row < rows; row += blockRows) {
-      const rowSpan = Math.min(blockRows, rows - row);
-      for (let column = 0; column < columns; column += blockColumns) {
-        const columnSpan = Math.min(blockColumns, columns - column);
+    const cells = createAggregateLayoutCells({ rows, columns }, inputOptions);
+    cells.forEach((cell) => {
         let min = Infinity;
         let max = -Infinity;
         let sum = 0;
@@ -419,25 +565,11 @@
           }
         }
 
-        cells.push({
-          id: `aggregate-${row}-${column}`,
-          row,
-          column,
-          rowSpan,
-          columnSpan,
-          style: 'aggregate',
-          tone: VALID_TONES.has(inputOptions.tone) ? inputOptions.tone : 'neutral',
-          summary: {
-            rows: rowSpan,
-            columns: columnSpan,
-            count,
-            min: count ? min : NaN,
-            max: count ? max : NaN,
-            mean: count ? sum / count : NaN,
-          },
-        });
-      }
-    }
+        cell.summary.count = count;
+        cell.summary.min = count ? min : NaN;
+        cell.summary.max = count ? max : NaN;
+        cell.summary.mean = count ? sum / count : NaN;
+    });
     const means = cells.map((cell) => cell.summary.mean).filter(Number.isFinite);
     const minimumMean = means.length ? Math.min(...means) : 0;
     const maximumMean = means.length ? Math.max(...means) : 1;
@@ -448,6 +580,28 @@
         : 0.5;
     });
     return cells;
+  }
+
+  function synchronizeScale(controllers, inputOptions = {}) {
+    const validControllers = (Array.isArray(controllers) ? controllers : [])
+      .filter((controller) => controller
+        && typeof controller.getViewState === 'function'
+        && typeof controller.setZoom === 'function');
+    if (!validControllers.length) {
+      throw new TypeError('PtoMatrixCanvas.synchronizeScale expects Matrix Canvas controllers.');
+    }
+    const scales = validControllers
+      .map((controller) => Number(controller.getViewState().scale))
+      .filter((scale) => Number.isFinite(scale) && scale > 0);
+    if (!scales.length) throw new RangeError('Matrix Canvas controllers do not expose a valid scale.');
+    const requestedScale = Number(inputOptions.scale);
+    const scale = Number.isFinite(requestedScale) && requestedScale > 0
+      ? requestedScale
+      : inputOptions.strategy === 'maximum'
+        ? Math.max(...scales)
+        : Math.min(...scales);
+    validControllers.forEach((controller) => controller.setZoom(scale));
+    return scale;
   }
 
   function render(canvas, inputScene, inputOptions = {}) {
@@ -829,5 +983,12 @@
     return controller;
   }
 
-  global.PtoMatrixCanvas = Object.freeze({ render, createAggregatedCells });
+  global.PtoMatrixCanvas = Object.freeze({
+    render,
+    createAggregatedCells,
+    createRealLayoutCells,
+    createAggregateLayoutCells,
+    resolveSharedAggregateScale,
+    synchronizeScale,
+  });
 })(window);

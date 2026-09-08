@@ -1,0 +1,309 @@
+/* API Visualizer 公共 primitive 样板。
+ * 案例只提供内容和状态；尺寸、间距、表面和状态色在这里集中定义。
+ */
+:root {
+  --avp-panel: var(--surface-1, #fff);
+  --avp-panel-alt: var(--surface-2, #f7f8fa);
+  --avp-border: var(--border-subtle, #dfe3ea);
+  --avp-text: var(--foreground, #17202b);
+  --avp-muted: var(--foreground-muted, #6d7786);
+  --avp-accent: var(--primary, #4669e8);
+  --avp-accent-soft: color-mix(in srgb, var(--avp-accent) 12%, transparent);
+  --avp-warning: var(--warning, #c98a1d);
+  --avp-radius: 12px;
+}
+
+.api-primitive-preview {
+  color: var(--avp-text);
+  background: var(--canvas-bg, #f3f4f6);
+  min-height: 100vh;
+  padding: 24px;
+  font: var(--type-body, 14px/1.45 var(--font-sans, system-ui));
+}
+
+.api-primitive-preview * { box-sizing: border-box; }
+.api-primitive-preview button,
+.api-primitive-preview input { font: inherit; }
+
+.avp-shell { max-width: 1440px; margin: 0 auto; display: grid; gap: 16px; }
+.avp-header { display: flex; align-items: flex-end; justify-content: space-between; gap: 16px; }
+.avp-eyebrow { color: var(--avp-accent); font: 600 11px/1.2 var(--font-mono, monospace); letter-spacing: .08em; text-transform: uppercase; }
+.avp-header h1 { margin: 4px 0 0; font-size: 24px; letter-spacing: -.02em; }
+.avp-header p { margin: 6px 0 0; color: var(--avp-muted); }
+.avp-header-actions { display: flex; gap: 8px; align-items: center; }
+.avp-badge { padding: 5px 9px; border: 1px solid color-mix(in srgb, var(--avp-accent) 28%, var(--avp-border)); border-radius: 999px; color: var(--avp-accent); background: var(--avp-accent-soft); font-size: 12px; }
+
+.avp-grid { display: grid; grid-template-columns: minmax(220px, .8fr) minmax(360px, 1.5fr) minmax(230px, .9fr); gap: 12px; align-items: stretch; }
+.avp-column { display: grid; gap: 12px; min-width: 0; }
+.avp-surface { background: var(--avp-panel); border: 1px solid var(--avp-border); border-radius: var(--avp-radius); box-shadow: 0 8px 24px rgb(20 30 50 / 5%); }
+.avp-surface-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 13px 15px; border-bottom: 1px solid var(--avp-border); }
+.avp-surface-head h2 { margin: 0; font-size: 14px; }
+.avp-primitive-tag { color: var(--avp-muted); font: 11px var(--font-mono, monospace); white-space: nowrap; }
+.avp-surface-body { padding: 14px 15px; }
+
+.api-primitive-preview .api-control-panel { display: grid; gap: 14px; padding: 15px; }
+.api-primitive-preview .api-control-panel > .avp-panel-title { font-weight: 650; }
+.api-primitive-preview .api-control-group { display: grid; gap: 9px; padding-top: 11px; border-top: 1px solid var(--avp-border); }
+.api-primitive-preview .api-control-group h3 { margin: 0; font-size: 12px; }
+.api-primitive-preview .api-control-group p { margin: -4px 0 0; color: var(--avp-muted); font-size: 12px; }
+.api-primitive-preview .api-field { display: grid; grid-template-columns: 1fr; gap: 8px; align-items: stretch; }
+.api-primitive-preview .api-field label { color: var(--avp-muted); font-size: 12px; }
+.api-primitive-preview .api-field input { width: 74px; padding: 7px 8px; border: 1px solid var(--avp-border); border-radius: 7px; background: var(--avp-panel-alt); color: var(--avp-text); text-align: right; }
+.api-primitive-preview .api-choice-group { display: inline-flex; gap: 4px; padding: 3px; border: 1px solid var(--avp-border); border-radius: 8px; background: var(--avp-panel-alt); }
+.api-primitive-preview .api-choice-group button { border: 0; border-radius: 6px; padding: 6px 9px; color: var(--avp-muted); background: transparent; cursor: pointer; }
+.api-primitive-preview .api-choice-group button[aria-pressed="true"] { color: var(--avp-accent); background: var(--avp-panel); box-shadow: 0 1px 4px rgb(20 30 50 / 10%); }
+.api-primitive-preview .api-stepper {
+  width: 100%;
+  display: grid;
+  grid-template-columns: 32px minmax(0, 1fr) 32px;
+  align-items: center;
+  min-width: 0;
+  overflow: hidden;
+  border: 0;
+  border-radius: var(--input-radius);
+  background: var(--surface-2);
+}
+.api-primitive-preview .api-stepper button {
+  min-width: 0;
+  min-height: var(--input-height-md);
+  border: 0;
+  background: transparent;
+  color: var(--foreground-secondary);
+  font: var(--text-title-2);
+  cursor: pointer;
+}
+.api-primitive-preview .api-stepper button:hover { background: var(--state-hover); color: var(--foreground); }
+.api-primitive-preview .api-stepper output {
+  width: 100%;
+  min-width: 0;
+  height: var(--input-height-md);
+  display: grid;
+  place-items: center;
+  color: var(--foreground);
+  font: var(--text-mono);
+  text-align: center;
+}
+
+/* 任何矩阵/图形区域都使用独立卡片；多个 viz-container 之间由业务布局决定 gap。 */
+.viz-container {
+  position: relative;
+  min-width: 0;
+  overflow: hidden;
+  border: 1px solid var(--avp-border);
+  border-radius: var(--avp-radius);
+  background: var(--avp-panel);
+  box-shadow: 0 8px 24px rgb(20 30 50 / 5%);
+}
+.viz-container--matrix { display: grid; grid-template-rows: auto minmax(0, 1fr); }
+.viz-container--matrix + .viz-container--matrix { margin-top: 0; }
+
+.api-primitive-preview .viz-container { min-height: 282px; display: grid; grid-template-rows: auto 1fr auto; }
+.viz-container .viz-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; padding: 15px; border-bottom: 1px solid var(--avp-border); }
+.viz-container .viz-title { font-weight: 650; }
+.viz-container .viz-meta { color: var(--avp-muted); font-size: 12px; }
+.viz-container .viz-stage { display: grid; place-items: center; padding: 24px; background: linear-gradient(180deg, var(--avp-panel-alt), var(--avp-panel)); }
+.avp-matrix { display: grid; grid-template-columns: repeat(8, 34px); grid-auto-rows: 26px; gap: 3px; }
+.avp-matrix span { display: grid; place-items: center; border-radius: 4px; color: #3850a9; background: #dce5ff; font: 11px var(--font-mono, monospace); }
+.avp-matrix span:nth-child(3n) { color: #1d6d58; background: #d8f1e7; }
+.viz-container .viz-footer { display: flex; justify-content: space-between; gap: 8px; padding: 10px 15px; color: var(--avp-muted); font-size: 12px; border-top: 1px solid var(--avp-border); }
+
+.api-kv { display: grid; }
+.api-kv-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 10px; padding: 9px 0; border-bottom: 1px solid var(--avp-border); font-size: 12px; }
+.api-kv-row:last-child { border-bottom: 0; }
+.api-kv-row span { color: var(--avp-muted); }
+.api-kv-row code { color: var(--avp-text); font: 12px var(--font-mono, monospace); }
+.api-kv-row.is-warning code { color: var(--avp-warning); }
+
+.api-timeline { display: grid; gap: 4px; padding: 13px 15px; }
+.api-timeline .timeline-row { display: grid; grid-template-columns: 23px minmax(0, 1fr); gap: 8px; align-items: center; padding: 8px 0; color: var(--avp-muted); font-size: 12px; }
+.api-timeline .timeline-index { display: grid; place-items: center; width: 22px; height: 22px; border: 1px solid var(--avp-border); border-radius: 50%; font: 11px var(--font-mono, monospace); }
+.api-timeline .timeline-row.is-current { color: var(--avp-accent); font-weight: 600; }
+.api-timeline .timeline-row.is-current .timeline-index { border-color: var(--avp-accent); background: var(--avp-accent-soft); }
+.api-timeline .timeline-row.is-complete .timeline-index { color: #167757; border-color: #9fd9c1; background: #e5f7ee; }
+
+.api-code-panel { overflow: hidden; }
+.api-code-panel pre { margin: 0; padding: 14px 15px; overflow: auto; color: #dae4ff; background: #182033; font: 12px/1.65 var(--font-mono, monospace); }
+.api-code-panel .code-toolbar { display: flex; align-items: center; justify-content: space-between; padding: 10px 15px; border-bottom: 1px solid var(--avp-border); }
+.api-code-panel .code-toolbar button { padding: 5px 9px; border: 1px solid var(--avp-border); border-radius: 6px; color: var(--avp-muted); background: var(--avp-panel); cursor: pointer; }
+
+.avp-audit { display: grid; grid-template-columns: 1.25fr 1fr; gap: 12px; }
+.avp-audit-list { display: grid; gap: 8px; padding: 14px 15px; }
+.avp-audit-item { display: grid; grid-template-columns: 18px minmax(0, 1fr); gap: 8px; align-items: start; color: var(--avp-muted); font-size: 12px; }
+.avp-audit-item b { color: var(--avp-text); font-weight: 600; }
+.avp-audit-item .ok { color: #16815e; }
+.avp-audit-note { margin: 0; padding: 14px 15px; color: var(--avp-muted); font-size: 12px; line-height: 1.6; }
+
+@media (max-width: 980px) {
+  .api-primitive-preview { padding: 14px; }
+  .avp-grid, .avp-audit { grid-template-columns: 1fr; }
+}
+
+/* ── API 控件公共实现 ────────────────────────────────────────────────
+ * 这些规则同时服务新 primitive class 与现有 API Visualizer class，
+ * 让历史案例迁移时只需补 primitive map，不再复制一套控件皮肤。
+ */
+.api-control-panel,
+.api-learn-controls {
+  --api-control-gap: var(--space-3, 12px);
+  --api-control-radius: var(--input-radius, 10px);
+  --api-control-surface: var(--surface-2);
+  --api-control-surface-selected: var(--surface-4, var(--surface-1));
+  --api-control-border: var(--border-subtle);
+}
+
+:root {
+  --api-control-surface: var(--surface-2);
+  --api-select-chevron: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='m4 6 4 4 4-4' fill='none' stroke='%23FFFFFF' stroke-opacity='0.4' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+}
+
+:root[data-theme='light'] {
+  --api-select-chevron: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='m4 6 4 4 4-4' fill='none' stroke='%23000000' stroke-opacity='0.42' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+}
+
+.api-control-panel { display: grid; gap: var(--api-control-gap); align-content: start; min-width: 0; }
+.api-control-group,
+.api-learn-controls .group { display: grid; gap: var(--space-2, 8px); min-width: 0; }
+.api-control-group + .api-control-group,
+.api-learn-controls .group + .group { border-top: 1px solid var(--api-control-border); padding-top: var(--space-3, 12px); }
+.api-control-group__heading,
+.api-learn-controls .group-heading { display: grid; gap: var(--space-1, 4px); min-width: 0; }
+.api-control-group__title,
+.api-learn-controls .group-title { color: var(--foreground); font: var(--text-title-2); }
+.api-control-group__description,
+.api-learn-controls .group-description,
+.api-hint,
+.api-learn-controls .hint-text { color: var(--foreground-muted); font: var(--text-body-sm); line-height: 1.45; }
+
+.api-selector,
+.api-selector-select,
+.api-input,
+.api-select,
+.api-learn-controls select,
+.api-learn-controls .input {
+  width: 100%;
+  min-width: 0;
+  height: var(--input-height-md, 34px);
+  border: 1px solid var(--api-control-border, var(--border-subtle));
+  border-radius: var(--api-control-radius, var(--input-radius, 10px));
+  background: var(--api-control-surface, var(--surface-2));
+  color: var(--input-fg, var(--foreground));
+  padding: 0 var(--space-3, 12px);
+  font: var(--text-body);
+  box-shadow: none;
+}
+.api-selector-select,
+.api-selector { height: 40px; border-color: transparent; }
+.api-selector-select,
+select.api-selector {
+  padding-right: calc(var(--space-6, 24px) + var(--space-1, 4px));
+  appearance: none;
+  -webkit-appearance: none;
+  cursor: pointer;
+  background-color: var(--api-control-surface, var(--surface-2));
+  background-image: var(--api-select-chevron);
+  background-repeat: no-repeat;
+  background-position: right var(--space-2, 8px) center;
+  background-size: 16px 16px;
+}
+.api-selector-select:hover,
+.api-input:hover,
+.api-select:hover,
+.api-learn-controls select:hover,
+.api-learn-controls .input:hover { background-color: color-mix(in srgb, var(--foreground) 6%, var(--api-control-surface)); }
+.api-selector-select:focus-visible,
+.api-input:focus-visible,
+.api-select:focus-visible,
+.api-learn-controls select:focus-visible,
+.api-learn-controls .input:focus-visible { outline: none; box-shadow: 0 0 0 3px var(--focus-ring); }
+
+.api-field,
+.api-learn-controls .field { display: grid; gap: var(--space-1, 4px); min-width: 0; }
+.api-field-label,
+.api-learn-controls .api-label-row,
+.api-learn-controls .field > label,
+.api-learn-controls .field > .api-label-row { display: inline-flex; align-items: center; gap: var(--space-1, 4px); min-width: 0; color: var(--foreground-secondary); font: var(--text-label); }
+.api-field-label label,
+.api-learn-controls .api-label-row label { min-width: 0; overflow-wrap: anywhere; line-height: 1.25; }
+.api-help,
+.api-learn-controls .api-param-help { width: 15px; height: 15px; display: inline-flex; align-items: center; justify-content: center; flex: 0 0 auto; border: 1px solid var(--border-default); border-radius: var(--radius-pill); background: color-mix(in srgb, var(--surface-3) 72%, transparent); color: var(--foreground-secondary); font: 700 var(--font-size-label-xs) / 1 var(--font-sans); cursor: help; }
+.api-help:hover,
+.api-help:focus-visible,
+.api-learn-controls .api-param-help:hover,
+.api-learn-controls .api-param-help:focus-visible { border-color: color-mix(in srgb, var(--primary) 56%, transparent); color: var(--foreground); outline: none; box-shadow: 0 0 0 3px var(--focus-ring); }
+
+.api-choice-group,
+.api-choice-group--segmented,
+.api-learn-controls .seg,
+.api-learn-controls .dtype-segment {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--segmented-control-gap, 2px);
+  max-width: 100%;
+  min-height: 36px;
+  padding: var(--segmented-control-padding, 3px);
+  overflow-x: auto;
+  border: 0;
+  border-radius: var(--segmented-control-radius, var(--radius-lg));
+  background: var(--segmented-control-bg, var(--surface-2));
+}
+.api-choice-group > button,
+.api-choice-group > .btn,
+.api-choice-group--segmented > button,
+.api-choice-group--segmented > .btn,
+.api-learn-controls .seg > button,
+.api-learn-controls .seg > .btn,
+.api-learn-controls .dtype-segment > button,
+.api-learn-controls .dtype-segment > .btn { min-width: 0; min-height: 30px; flex: 1 1 88px; justify-content: center; padding: 0 var(--space-3, 12px); border: 0; border-radius: calc(var(--radius-lg) - 3px); background: transparent; box-shadow: none; color: var(--foreground-secondary); font: var(--button-font); white-space: nowrap; }
+.api-choice-group > button[aria-pressed="true"],
+.api-choice-group > .btn.is-selected,
+.api-choice-group--segmented > button[aria-pressed="true"],
+.api-choice-group--segmented > .btn.is-selected,
+.api-learn-controls .seg > .btn.is-selected,
+.api-learn-controls .dtype-segment > .btn.is-selected { background: var(--api-control-surface-selected); color: var(--foreground); box-shadow: var(--shadow-sm); }
+.api-choice-group > button:focus-visible,
+.api-choice-group > .btn:focus-visible,
+.api-choice-group--segmented > button:focus-visible,
+.api-choice-group--segmented > .btn:focus-visible { outline: none; box-shadow: 0 0 0 3px var(--focus-ring); }
+
+.api-preset-group,
+.api-learn-controls .presets { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-start; gap: var(--space-2, 8px); min-width: 0; }
+.api-preset-group > button,
+.api-learn-controls .presets .preset { width: auto; min-width: 0; min-height: 32px; flex: 0 0 auto; border: 0; border-radius: var(--radius-md); background: var(--surface-2); color: var(--foreground-secondary); box-shadow: none; }
+.api-preset-group > button[aria-checked="true"],
+.api-preset-group > button.is-selected,
+.api-learn-controls .presets .preset.is-selected { background: var(--state-selected); color: var(--foreground); }
+
+.api-stepper,
+.api-learn-controls .stepper-control { display: grid; grid-template-columns: 32px minmax(0, 1fr) 32px; align-items: center; min-width: 0; overflow: hidden; border: 0; border-radius: var(--input-radius); background: var(--surface-2); }
+.api-stepper button,
+.api-learn-controls .stepper-control button { min-width: 0; min-height: var(--input-height-md, 34px); border: 0; background: transparent; color: var(--foreground-secondary); font: var(--text-title-2); cursor: pointer; }
+.api-stepper button:hover,
+.api-learn-controls .stepper-control button:hover { background: var(--state-hover); color: var(--foreground); }
+.api-stepper output,
+.api-stepper input,
+.api-learn-controls .stepper-control input { width: 100%; min-width: 0; height: var(--input-height-md, 34px); padding: 0; border: 0; border-radius: 0; background: transparent; color: var(--foreground); text-align: center; font: var(--text-mono); }
+.api-stepper button:disabled,
+.api-learn-controls .stepper-control button:disabled { color: var(--foreground-muted); cursor: not-allowed; }
+.api-field.is-disabled,
+.api-learn-controls .field.is-disabled { opacity: .55; }
+.api-field.is-disabled .api-stepper,
+.api-learn-controls .field.is-disabled .stepper-control { background: var(--surface-disabled); }
+
+.api-code-panel,
+.api-learn-controls .api-code-section-head,
+.api-learn-controls .api-prototype { min-width: 0; }
+.api-code-panel pre,
+.api-learn-controls .api-prototype { overflow: auto; border-radius: var(--radius-md); }
+
+/* 现有案例中的控件变体，统一映射到公共 primitive 的几何规则。 */
+.api-learn-controls .api-choice-group,
+.api-learn-controls .seg { width: 100%; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); overflow: hidden; }
+.api-learn-controls .dtype-segment { width: 100%; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); overflow: hidden; }
+.api-learn-controls .compact-choice-tabs { width: fit-content; display: inline-flex; grid-template-columns: none; }
+.api-learn-controls .compact-choice-tabs .btn { width: 88px; min-width: 88px; max-width: 88px; flex: 0 0 88px; }
+.add-api-panel { display: grid; gap: var(--api-control-gap, var(--space-3)); }
+.add-api-panel .control-field,
+.format-lab-controls .control-field { display: grid; gap: var(--space-1); min-width: 0; }
+.add-api-presets { display: flex; flex-wrap: wrap; gap: var(--space-2); }
+.add-api-panel .stepper-control,
+.format-lab-controls .stepper-control { display: grid; grid-template-columns: 32px minmax(0, 1fr) 32px; align-items: center; overflow: hidden; border-radius: var(--input-radius); background: var(--surface-2); }
