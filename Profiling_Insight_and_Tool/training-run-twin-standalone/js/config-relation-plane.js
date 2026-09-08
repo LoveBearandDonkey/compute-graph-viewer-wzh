@@ -88,23 +88,27 @@
   /* 下界给到 0.03：列宽按专家标签实测之后，大配置的世界能有六七千 × 一万多像素，
      0.06 那一档的「适配」其实还装不下，会留下一截永远看不见的内容。 */
   const MIN_K = 0.03;
-  const MAX_K = 4;
+  /* 上界给到 16 而不是 4：格内最细那一档（逐个计算节点，见 detailScale）要求那张
+     详情面板缩进格子之后字还看得清，而格子的世界高度随配置差着一个数量级 ——
+     每卡 32 个专家的格子有 139px 高，k≈2 就够；每卡 4 个的只有 22px，得放到 14
+     倍上去。封在 4 的话，后一类配置永远进不到最细档，等于这个功能只对半数配置存在。 */
+  const MAX_K = 16;
   /* ── 一帧最多铺多少个 DOM 节点 ──────────────────────────────────────────
      两条预算，都是**整幅一起降级**而不是铺到一半停手（后者会让后半段 stage 看着
      像没有卡）：
        CELL_BUDGET —— 格子数。超了就只画块底板、行标与高亮带。
-       NODE_BUDGET —— 格子 + 格内专家胶囊的**总节点数**。这一条才是真正的性能闸：
-         一个格子里最多有 EXPERT_CHIP_MAX 枚胶囊，光按格子数算，8 枚一格时
-         2000 格就是 18000 个节点 ——
-         每次重绘都要新建、排版、上色一遍，缩放时一帧做不完，就是「缩几下就卡」
-         的来源。超了就退掉胶囊、整格上色（与 chipsOK 那一档同一个降级方向），
-         格子本身照画。 */
+     格**内**的东西不再单列一条节点预算：三档内容全部由「这一格在屏幕上有多大」
+     开闸（BLOCK_MIN_H / DETAIL_MIN_S），而屏幕就那么大 —— 一格至少 40×54 像素时
+     一屏最多也就几百格，一格要占满 DETAIL_MIN_S 那个尺寸时更是只剩几十格。闸门
+     本身就把节点数封住了，再挂一条总数预算只是重复计一遍。
+     （原先这里有一条 NODE_BUDGET：那时专家胶囊铺满整格、只受 k ≥ 0.5 一条约束，
+     几千格 × 32 枚是真会一帧建不完，才需要单独兜。现在胶囊缩进了 Expert Compute
+     盒子里，跟着最细那一档走，那条约束没有对象了。） */
   const CELL_BUDGET = 12000;
   /* 热力降级档一帧最多铺多少条色带（见 render 里那段）。比 CELL_BUDGET 低一半：
      色带没有内容、只有一个背景色，但它是**每一列都铺满整个可见高度**的，
      实际盖住的面积远大于同样数量的格子。 */
   const HEAT_LOD_BUDGET = 6000;
-  const NODE_BUDGET = 9000;
   /* ── 交互期的重绘节流 ────────────────────────────────────────────────────
      缩放 / 拖动本身只改一条 CSS transform，是 GPU 的活，几乎不要钱；真正贵的是
      后面那次「按新视口重铺几千个节点」。原先每个 rAF 都铺一次 —— 滚轮一圈发几十
@@ -119,7 +123,42 @@
   const DETAIL_MIN_H = 3;
   // 行标在屏幕上至少要有这么高才写得下字（列名已经交给顶部量尺，不受此限）
 
-  // 格内专家胶囊是 9px 字，缩到一半以下只剩噪声
+  /* ── 格内的三档 ──────────────────────────────────────────────────────────
+     一格问的是「这张卡 × 这一层」。它答得多细，该由**这一格在屏幕上有多大**决定，
+     而不是由某个写死的 k 决定 —— 同一个 k 下，每卡 32 个专家的格子有 139px 高、
+     每卡 4 个的只有 22px，两者能写下的东西差着一个数量级。三档从粗到细：
+
+       ① 整格上色 —— 一格不足 BLOCK_MIN_H 高。这时只剩「这是哪一套专家」一件事
+          还答得出，交给底色（与热力档、整机跨 EP 那几档同一个降级方向）。
+       ② 三段块 —— Hidden / Attention / MoE 三条横带，MoE 那条带着那一套专家的
+          颜色。答的是「这一层的活分成哪几段」，还不到算子的粒度；「同色一块 =
+          一整套专家」这条读法靠 MoE 带留住。
+       ③ 逐个计算节点 —— 把这张卡在这一层里真正要跑的那些算子铺出来（Attention
+          的两支投影与注意力核、MoE 的路由四步，专家编号缩进 Expert Compute 盒
+          子里）。判据不是 k，是那张详情面板缩进格子之后**字还有多大**：面板高度
+          随每卡专家数变（专家网格折几行），写死一个 k 会让某些配置永远进不来。 */
+  const BLOCK_MIN_H = 54;    // 一格在屏幕上至少这么高，三段块才写得下字（三条 ≈ 18px）
+  const BLOCK_MIN_W = 40;
+  const BAND_FONT_MIN = 9;   // 三段块的字在屏幕上恒定这么大（与行标同一套反向缩放）
+  const DETAIL_MIN_S = 1.1;  // 详情面板：设计像素 → 屏幕像素的放大率下界
+
+  /* 详情面板的**设计像素**。面板先按这一套尺寸排一遍版，再整体 scale 进格子里
+     （见 detailScale / buildDetail）—— 格子的世界尺寸随配置变（列宽由列名与专家
+     网格一起定），面板的比例不该跟着变形。
+     ⚠️ 这几个数同时写进 css 变量（见 buildLayout 末尾那几行 setProperty），css 侧
+     一律 var() 取值：面板高度是 js 按它们算出来的，两边对不上就会截掉最后一条
+     Residual Add。改这里就是改两边。 */
+  const D_PANEL_W = 132;
+  const D_PILL_H = 11;       // 一枚算子的高度
+  const D_GAP = 2;
+  const D_TITLE_H = 9;       // 组标题（Attention / MoE / Expert Compute）
+  const D_PAD = 3;           // 组的内衬（上下左右同值）
+  const D_CHIP_H = 8;        // 面板里那枚缩小版专家胶囊
+  const D_RES_H = 10;        // 「+ Residual Add」那条
+
+  /* 自适应粒度（卡 ↔ 整机）在这个缩放上换档，见 currentUnit()。
+     （它原先还兼管「格内的专家胶囊写不写得出字」。格内三档现在一律按屏幕尺寸判，
+     那一半职责已经交给 BLOCK_MIN_H / DETAIL_MIN_S，这里只剩粒度这一件事。） */
   const TEXT_MIN_K = 0.5;
   /* 一行最多铺几枚专家胶囊，多出来的折行 —— 列宽因此不再随每卡专家数线性变宽
      （8 枚一行的格子比列名宽一倍，整幅平面横着拉长一倍），改成「宽度封顶、
@@ -132,8 +171,8 @@
      出编号 —— 原先卡在 8 枚的门槛上，这种配置整幅平面一个编号都没有，而编号正是
      这幅图最值钱的一条信息。代价是这一档行高涨到 130px 上下（9px 字 × 8 行），
      纵向世界跟着长几倍，靠滚；横向一点没变（列宽仍是 4 枚胶囊）。
-     缩到看不清时不必担心堆节点：TEXT_MIN_K 与 NODE_BUDGET 两道闸照旧会把整幅
-     退回「整格上色」那一档，见 render 里的 chipsOK。 */
+     缩到看不清时不必担心堆节点：格内三档按屏幕尺寸开闸（BLOCK_MIN_H /
+     DETAIL_MIN_S），编号只在最细那一档、且一屏只剩几十格时才铺得出来。 */
   const EXPERT_ROWS_MAX = 8;
   /* 每卡专家数超过这个就不逐个铺编号，整格交给颜色（同色一块 = 一整套专家）。
      不退到「E32–E63」那种区间胶囊：区间既不可点、也答不出「属于哪一套」。
@@ -725,7 +764,7 @@
       const busy = flops / rate * 1000;
 
       /* 通信：四条轴各按自己的组宽找带宽。组宽 = 这一组在 rank 编址上跨多少号，
-         它决定了机内还是机外 —— 与「通信查询」那一档的 commLink 同一条判据。 */
+         它决定了机内还是机外 —— 与「通信观测」那一档的 commLink 同一条判据。 */
       let comm = 0;
       let commCross = 0;
       function add(bytes, span) {
@@ -1177,11 +1216,11 @@
   if (routedSec) engine.appendChild(routedSec);
 
   /* ── 中栏外壳：三档观测模式 ──────────────────────────────────────────────
-     画布不再是中栏的全部：它是「配置寻优」这一档的内容。另两档（通信查询 /
+     画布不再是中栏的全部：它是「配置寻优」这一档的内容。另两档（通信观测 /
      负载热力）问的是同一份配置的另外两个侧面，共用同一栏、同一份 topology：
 
        配置寻优  这份配置切成什么形状 —— stage × layer × rank × 专家 的平面
-       通信查询  这份配置跑一个 step 会发生哪些跨卡通信、谁和谁、多大范围
+       通信观测  这份配置跑一个 step 会发生哪些跨卡通信、谁和谁、多大范围
        负载热力  同一幅平面按某个度量上色（内存 / 计算 / 空闲 / 通信）
 
      三档做成中栏自己的页签而不是顶栏的第四档：顶栏那三枚（关系视图 / YAML /
@@ -1197,7 +1236,7 @@
   modeTabs.setAttribute("aria-label", "中栏观测模式");
   [
     ["config", "配置寻优", "这份配置切成什么形状：stage × layer × rank × 专家"],
-    ["comm", "通信查询", "跑一个 step 会发生哪些跨卡通信：谁和谁、多大范围、走哪条链路"],
+    ["comm", "通信观测", "跑一个 step 会发生哪些跨卡通信：谁和谁、多大范围、走哪条链路"],
     ["heat", "负载热力", "同一幅平面按某个度量上色"],
   ].forEach(([id, label, tip], i) => {
     const btn = el("button", `tab-control-item${i === 0 ? " is-selected" : ""}`, label);
@@ -1209,7 +1248,7 @@
     modeTabs.appendChild(btn);
   });
 
-  /* ══ 通信查询档 ══════════════════════════════════════════════════════════
+  /* ══ 通信观测档 ══════════════════════════════════════════════════════════
      这一档回答的是「这份配置跑一个 step，卡与卡之间实际发生了什么」。它不是一张
      新图，而是把并行配置**翻译**成通信事件序列 —— 每一条都由当前 counts 现算：
      组大小、组内成员的 rank 步长、跨不跨机器边界，全部随左栏拨动实时变。
@@ -1225,7 +1264,7 @@
 
   const comm = el("div", "crop-comm");
   comm.id = "cropComm";
-  comm.setAttribute("aria-label", "通信查询");
+  comm.setAttribute("aria-label", "通信观测");
 
   const commBar = el("div", "crop-comm__bar");
   const commPlay = el("button", "btn btn-icon crop-comm__play");
@@ -1408,11 +1447,17 @@
   heatExtra.dataset.metric = heatMetric;
   heatExtra.append(heatDivider1, heatPills, heatDivider2, heatLegend, routeWrap, heatHelp);
 
+  /* 通信观测档的**口径**写在页签右边：这一档整趟行程只跟一张卡走（默认第一行那
+     张），它是一个选择而不是事实 —— 不说出来，用户会把"这一行"读成"整个集群都这么
+     通信"。摆在页签旁而不是带子里：它说的是这一档在数什么，不随播放变。 */
+  const commNote = el("span", "crop-comm-note",
+    "默认以第一行的单个 rank 作为通信故事主角，可手动切换");
+
   /* 页签与热力工具合成一行：三档页签始终在，热力那半只在选中「负载热力」时
      露出来（css 控制），画布拿回了原先被独立一整条工具带占掉的高度。 */
   const toolbar = el("div", "crop-toolbar");
   toolbar.id = "cropToolbar";
-  toolbar.append(modeTabs, heatExtra, commExtra);
+  toolbar.append(modeTabs, commNote, heatExtra, commExtra);
 
   center.append(toolbar, comm, stage);
 
@@ -1624,13 +1669,18 @@
     let cellH = CELL_H;
     let chipW = 0;
     let chipsW = 0;
+    /* 专家网格折成几行几列。原先是这个函数里的两个局部量，现在要交出去 ——
+       详情面板里那个 Expert Compute 盒子铺的是同一张网格，面板高度（panelH）
+       得按同样的行数算，否则算出来的缩放比会把面板底下那条 Residual Add 截掉。 */
+    let chipCols = 1;
+    let chipRows = 1;
     if (t.hasMoe && epr > 0) {
       if (epr <= EXPERT_CHIP_MAX) {
         expertMode = "chips";
         chipW = measure(probeChip, `E${maxId}`);
         const chipH = measureH(probeChip, `E${maxId}`);
-        const chipCols = Math.min(epr, EXPERT_COLS_MAX);
-        const chipRows = Math.ceil(epr / chipCols);
+        chipCols = Math.min(epr, EXPERT_COLS_MAX);
+        chipRows = Math.ceil(epr / chipCols);
         chipsW = chipCols * chipW + (chipCols - 1) * EXPERT_GAP;
         cellW = chipsW + CELL_PAD;
         cellH = Math.max(CELL_H, chipRows * chipH + (chipRows - 1) * EXPERT_GAP + CELL_VPAD);
@@ -1651,10 +1701,22 @@
     ) + CELL_PAD;
     cellW = clamp(Math.ceil(Math.max(cellW, nameW)), CELL_W_MIN, CELL_W_MAX);
     cellH = Math.ceil(cellH);
-    /* 折行宽度交给 css（两个变量全局同值，写在 .crop-world 上而不是逐格写）。
-       没有 chips 档时清空，免得上一份配置的值留在世界上继续限宽。 */
-    world.style.setProperty("--crop-chip-w", chipW ? `${chipW}px` : "auto");
-    world.style.setProperty("--crop-chips-w", chipsW ? `${chipsW}px` : "100%");
+    /* ── 交给 css 的两组变量（全局同值，写在 .crop-world 上而不是逐格写）──────
+       ① 专家网格的列数：详情面板里那个 Expert Compute 盒子按它排 grid。
+       ② 详情面板那一套**设计像素**。面板的实际高度是 css 按这些数堆出来的，而
+          缩放比是 js 用 panelH() 按同样的数算出来的 —— 必须同源，差一个像素就会
+          在最细那一档上截掉面板底部。
+       （原先这里还写 --crop-chip-w / --crop-chips-w 两个数，用来把铺满整格的胶囊
+       行限宽居中。胶囊不再直接铺在格子里，那两个变量没有对象了，一并撤掉；
+       chipsW 仍然留着定列宽 —— 格子的世界尺寸这一版没有动。） */
+    world.style.setProperty("--crop-chip-cols", String(chipCols));
+    world.style.setProperty("--crop-d-pill", `${D_PILL_H}px`);
+    world.style.setProperty("--crop-d-gap", `${D_GAP}px`);
+    world.style.setProperty("--crop-d-title", `${D_TITLE_H}px`);
+    world.style.setProperty("--crop-d-pad", `${D_PAD}px`);
+    world.style.setProperty("--crop-d-chip", `${D_CHIP_H}px`);
+    world.style.setProperty("--crop-d-res", `${D_RES_H}px`);
+    world.style.setProperty("--crop-d-w", `${D_PANEL_W}px`);
 
     /* ── stage 块之间那条「行标道」──────────────────────────────────────────
        每个 stage 块的左边都留一条空道，行标（"rank 2047" / "整机 255"）就写在
@@ -1712,6 +1774,9 @@
       cellW,
       cellH,
       expertMode,
+      /* 专家网格折成几行 —— 详情面板的高度按它算（见 panelH）。range 档不铺编号、
+         盒子里只有一行「E128–E191 · 64 个」，所以那一档它是 1。 */
+      chipRows: expertMode === "chips" ? chipRows : 1,
       labelTextW,
       labelTextWNode,
       probeFontPx,
@@ -2145,6 +2210,177 @@
     rulerCorner.title = unit === "node" ? "当前按整机粒度画" : "当前按卡粒度画";
   }
 
+  /* ══ 四·五、格内的两种内容：三段块 与 详情面板 ══════════════════════════
+     三档的选档逻辑在 render 里（BLOCK_MIN_H / DETAIL_MIN_S），这里只管「选到某
+     一档之后，那一格里长什么样」。 */
+
+  /* ── 关键计算节点的词表 ──────────────────────────────────────────────────
+     id 与文案照抄 patterns/model-architecture-3d-deck 那张「典型 Layer」卡（见
+     model-architecture-3d-deck-pattern.js 里 layerHtml 的那批 graphNode）：平面
+     里的一个算子，与整网图、与右栏结构条里的同一个算子，必定同名。
+
+     只取**关键**的那些：整层 ~25 个节点铺进一个格子既写不下，也不是这一档要答的
+     问题（那是整网图的活）。取舍按「这一格在训练里为什么慢、为什么爆」来定 ——
+     Attention 留两支 Q/KV 投影与注意力核（TP 切在这儿，长序列爆在这儿），MoE 留
+     路由四步（Router 打分 → EP Dispatch → 专家算 → EP Combine，慢和 hang 都在
+     这条链上）。中间那些纯粹的 RMSNorm / Conv / SiLU 折进相邻节点，不单列。
+
+     ⚠️ 这里**不带 op**（deck 那边每个节点有一个 data-op，用来取语义色）。整幅平面
+     上唯一带颜色的东西是专家 —— 颜色在这幅图里已经被占用了，它说的是「这一片属于
+     哪一套专家」。再给算子铺一层 deck 的语义色，就是在同一个画面上并排放两套互不
+     相干的色码，读的人分不清哪一片绿说的是哪件事。算子之间的区别由**文案与位置**
+     说，那本来就够了。 */
+  const ATTN_ROWS = [
+    [["attn_norm", "Input RMSNorm"]],
+    [["q_a_norm", "Q LayerNorm"], ["kv_a_norm", "KV LayerNorm"]],
+    [["q_b_proj", "Q Up Linear"], ["kv_b_proj", "KV Up Linear"]],
+    [["attention_core", "Sparse FlashAttention"]],
+    [["o_proj", "Output Projection"]],
+  ];
+  const DENSE_ROWS = [
+    [["dense_gate_up", "Gate / Up Linear"]],
+    [["dense_silu", "SiLU × Multiply"]],
+    [["dense_down", "Dense Down Linear"]],
+  ];
+  /* MoE 那一组：Expert Compute 不是一枚算子而是一个盒子（里面是这张卡持有的那
+     几个专家），所以它在这张表里留一个 null 占位，由 buildDetail 换成盒子。 */
+  const MOE_ROWS = [
+    [["gate", "Router"]],
+    [["a2a_dispatch", "EP Dispatch"]],
+    null,
+    [["a2a_combine", "EP Combine"]],
+  ];
+  // 端点列（Emb / Norm / Head）不是一层，没有 Attention/FFN 两段，只有各自那几枚
+  const UNIT_ROWS = {
+    emb: [[["embedding", "Token Embedding"]]],
+    norm: [[["final_norm", "Final RMSNorm"]]],
+    head: [[["lm_head", "LM Head"]], [["logits", "Logits"]]],
+  };
+
+  /* 一组（Attention / MoE / Dense FFN）在设计像素下有多高。rows 是里面的算子行数，
+     extra 给 MoE 那一组补「专家盒子比一枚算子高出多少」。 */
+  function detailGroupH(rows, extra) {
+    return D_TITLE_H + D_GAP + rows * D_PILL_H + (rows - 1) * D_GAP
+      + 2 * D_PAD + 2 + (extra || 0);
+  }
+
+  // 专家盒子的高度：标题 + chipRows 行胶囊（或一行「E128–E191 · 64 个」）
+  function detailExpertsH(chipRows) {
+    return D_TITLE_H + D_GAP + chipRows * D_CHIP_H + (chipRows - 1) * D_GAP
+      + 2 * D_PAD + 2;
+  }
+
+  /* 一格的详情面板在设计像素下有多高。必须与 css 里那套 var() 算出来的实际高度
+     一致 —— 面板是按这个数去算缩放比的，算小了会把最后一条 Residual Add 截掉。 */
+  function panelH(col, chipRows) {
+    if (col.type === "unit") {
+      const rows = (UNIT_ROWS[col.id] || UNIT_ROWS.emb).length;
+      return rows * D_PILL_H + (rows - 1) * D_GAP;
+    }
+    const ffnH = col.moe
+      ? detailGroupH(MOE_ROWS.length, detailExpertsH(chipRows) - D_PILL_H)
+      : detailGroupH(DENSE_ROWS.length);
+    // Attention 组 + 残差 + FFN 组 + 残差
+    return detailGroupH(ATTN_ROWS.length) + ffnH + 2 * (D_RES_H + 2 * D_GAP);
+  }
+
+  /* 面板缩进这一格之后的比例。留 2px 世界余量给格子的描边。 */
+  function detailScale(cellW, rowH, h) {
+    return Math.min((cellW - 2) / D_PANEL_W, (rowH - 2) / h);
+  }
+
+  function opPill(spec, cls) {
+    const [id, label] = spec;
+    const n = el("div", `crop-op${cls ? ` ${cls}` : ""}`, label);
+    n.dataset.node = id;
+    return n;
+  }
+
+  function opRow(list) {
+    const row = el("div", "crop-detail__row");
+    list.forEach((spec) => row.appendChild(opPill(spec)));
+    return row;
+  }
+
+  function opGroup(title, rows, boxAt, box) {
+    const g = el("div", "crop-detail__group");
+    g.appendChild(el("div", "crop-detail__title", title));
+    rows.forEach((r, i) => g.appendChild(i === boxAt ? box : opRow(r)));
+    return g;
+  }
+
+  /* ── Expert Compute 盒子 ────────────────────────────────────────────────
+     格内胶囊从「铺满整格」缩进这里之后，它答的问题变了：原先是「这张卡持有哪几
+     个专家」（编号本身就是主角），现在是「这张卡在这一层的活里，专家计算占多大
+     一块、装着哪几个」—— 编号仍在，但它是这条链上的一环，不再是整格的全部。 */
+  function expertBox(experts, chipsOn, rangeText, p, rel) {
+    const box = el("div", "crop-detail__group crop-detail__experts");
+    box.appendChild(el("div", "crop-detail__title", "Expert Compute"));
+    const grid = el("div", "crop-detail__grid");
+    if (chipsOn) {
+      experts.forEach((e) => {
+        const chip = el("span", "crop-expert crop-expert--mini", `E${e}`);
+        chip.dataset.kind = "expert";
+        chip.dataset.expert = e;
+        if (p && p.kind === "expert" && p.expert === e) chip.classList.add("is-selected");
+        else if (rel && rel.experts.has(e)) chip.classList.add("is-related");
+        grid.appendChild(chip);
+      });
+    } else {
+      /* 每卡专家多过 EXPERT_CHIP_MAX：逐个铺就是一面编号墙。这一格给区间与个数
+         —— 它不是可点的对象（那条理由没变），但在这张面板里它答的是「这一环装了
+         多少活」，那个问题一个数就答完了。 */
+      grid.appendChild(el("span", "crop-detail__count", rangeText || "—"));
+    }
+    box.appendChild(grid);
+    return box;
+  }
+
+  function residual() {
+    return el("div", "crop-detail__res", "+ Residual Add");
+  }
+
+  /* 一格的详情面板。scale 由调用方算好（每一帧、每一种列各算一次，不逐格算）。 */
+  function buildDetail(col, ctx, scale, h) {
+    const panel = el("div", "crop-detail");
+    panel.style.cssText = `height:${h}px;transform:scale(${scale})`;
+    if (col.type === "unit") {
+      panel.classList.add("crop-detail--unit");
+      (UNIT_ROWS[col.id] || UNIT_ROWS.emb).forEach((r) => panel.appendChild(opRow(r)));
+      return panel;
+    }
+    panel.appendChild(opGroup("Attention", ATTN_ROWS, -1, null));
+    panel.appendChild(residual());
+    panel.appendChild(col.moe
+      ? opGroup("MoE", MOE_ROWS, 2,
+        expertBox(ctx.experts, ctx.chipsOn, ctx.rangeText, ctx.primary, ctx.rel))
+      : opGroup("Dense FFN", DENSE_ROWS, -1, null));
+    panel.appendChild(residual());
+    return panel;
+  }
+
+  /* ── 中档：三段块 ────────────────────────────────────────────────────────
+     Hidden / Attention / MoE 三条横带。MoE 那条带着「这一套专家」的颜色 —— 整格
+     上色那一档说的同一件事，在这里由三分之一的面积继续说，所以缩放穿过这个档口
+     时「同色一块」的图案不断。dense 层第三条写 Dense、用中性色：那一层里本来就
+     没有专家，涂成一套专家的颜色是在说谎。 */
+  function buildBands(col) {
+    const wrap = el("div", "crop-segs");
+    const seg = (kind, text) => {
+      const s = el("div", "crop-seg", text);
+      s.dataset.seg = kind;
+      return s;
+    };
+    if (col.type === "unit") {
+      wrap.appendChild(seg("unit", UNIT_LABEL[col.id] || col.id));
+      return wrap;
+    }
+    wrap.appendChild(seg("hidden", "Hidden"));
+    wrap.appendChild(seg("attn", "Attention"));
+    wrap.appendChild(seg(col.moe ? "moe" : "dense", col.moe ? "MoE" : "Dense"));
+    return wrap;
+  }
+
   /* ══ 五、画布重绘（视口裁剪 + 两档粒度）══════════════════════════════════
      世界很大（46 层 × 512 行 = 2 万多格），但一屏永远只看得见几百上千格：每帧
      按当前 transform 反解出可见的行 / 列区间，只铺那一段。再小就走两级降级 ——
@@ -2186,8 +2422,37 @@
     const rowFontWorld = rowInfo.font;
     const showRowText = rowInfo.show;
     const rowTwoLine = rowInfo.two;
-    // 格内的专家胶囊是 9px 字，缩到一半以下就只是噪声了
-    const showExperts = layout.expertMode !== "none" && k >= TEXT_MIN_K;
+    /* ── 格内选到第几档 ──────────────────────────────────────────────────
+       两道闸都按「这一格在屏幕上有多大」判，理由见 BLOCK_MIN_H 那一段。
+       字号那一档（三段块）与行标同一套做法：世界字号取 BAND_FONT_MIN / k，
+       屏幕上因此恒定 9px；格子太矮时再让位给 rowH / 5.6，宁可小也不撑破。 */
+    const cellPxW = cellW * k;
+    const cellPxH = rowH * k;
+    const showBands = cellPxH >= BLOCK_MIN_H && cellPxW >= BLOCK_MIN_W;
+    const bandFontWorld = Math.min(rowH / 5.6, BAND_FONT_MIN / k);
+    /* ── 最细那一档：整幅**一个**缩放比、**一个**档口 ─────────────────────
+       比例按最高的那种面板（有 MoE 层就是 MoE 那一种）算一次，dense 列与端点列
+       共用它，各自的面板高度不同、居中放着就行。
+       ⚠️ 不能各算各的。各算各的时候 dense 面板矮、比例就大，于是它比 MoE 早一截
+       进最细档 —— 中间那段缩放里，同一屏上 dense 列已经是计算图、MoE 列还是三段
+       块，一幅图上并排摆着两种粒度，读的人会以为那是两种层的**区别**，而它其实
+       只是两个门槛。同理，比例统一之后两种列里的算子块也一样大，横着扫一行时
+       字号不跳。 */
+    const chipRows = layout.chipRows || 1;
+    const detailTallest = panelH(
+      { type: "layer", moe: Boolean(topology.hasMoe) }, chipRows);
+    const detailS = detailScale(cellW, rowH, detailTallest);
+    const detailOn = detailS * k >= DETAIL_MIN_S;
+    const detailCache = new Map();
+    const detailFor = (col) => {
+      const key = col.type === "unit" ? `u:${col.id}` : (col.moe ? "moe" : "dense");
+      let d = detailCache.get(key);
+      if (!d) {
+        d = { h: panelH(col, chipRows), s: detailS, on: detailOn };
+        detailCache.set(key, d);
+      }
+      return d;
+    };
     /* 热力档：整幅平面改按一个度量上色。色阶两端每帧读一次（模型自己缓存），
        别在格子循环里问 —— 那是一帧几千次的重复问答。 */
     const heatOn = center.dataset.mode === "heat";
@@ -2220,18 +2485,11 @@
     const wanted = visible.reduce((n, x) => n + (x.c1 - x.c0 + 1) * rowsVisible, 0);
     const drawCells = cellW * k >= DETAIL_MIN_W && rowH * k >= DETAIL_MIN_H
       && wanted <= CELL_BUDGET;
-    /* 胶囊的**总数**闸：格子数 × 每卡专家数。一个格子带 8 枚胶囊时，2000 格就是
-       18000 个节点，一帧建不完 —— 那正是缩放时卡顿的来源。每卡专家数越大这条闸
-       咬得越早（EP=8 那类配置每格 32 枚，同样的格子数四倍于此），正是靠它兜住
-       EXPERT_CHIP_MAX 放宽之后的极端视口。超了就整幅退掉胶囊、
-       改成整格上色（与 chipsOK 那一档同一个降级方向），格子本身照画。
-       只在 MoE 层上算：dense 列与端点列本来就没有胶囊。 */
-    const moeCols = visible.reduce((n, x) => {
-      let m = 0;
-      for (let ci = x.c0; ci <= x.c1; ci += 1) if (x.block.cols[ci].moe) m += 1;
-      return n + m;
-    }, 0);
-    const chipBudgetOk = wanted + moeCols * rowsVisible * Math.max(1, epr) <= NODE_BUDGET;
+    /* （原先这里还有一条「格子数 × 每卡专家数」的总节点闸。胶囊铺满整格的那一版
+       需要它 —— 那时胶囊只受 k ≥ 0.5 一条约束，几千格 × 32 枚一帧真的建不完。
+       现在格内三档全部按屏幕尺寸开闸：三段块那一档一格至少 40×54 像素，一屏顶多
+       几百格；最细那一档一格要占到面板尺寸，一屏只剩几十格。闸门自己把节点数封住
+       了，再算一遍总数是白算。） */
 
     visible.forEach(({ block, c0, c1 }) => {
       // 块底板
@@ -2369,23 +2627,31 @@
              两个方向的邻居因此一定不同色。
              ⚠️ 这不是 EP 的颜色 —— EP 是这一套内部的分片，同一套里的每张卡颜色
              相同、编号不同，那才是「一套被切开」该有的读法。 */
-          /* 这一格逐个铺得出专家编号吗？三个条件缺一不可：是 MoE 层、缩放还写得下
-             字、且这一格只对应**一个** EP rank（整机档跨了几个 EP 就没有单一答案）。
-             铺不出时不再退到「E32–E63」那种区间胶囊 —— 一个区间既不是可点的对象、
-             也答不出「这一片属于哪一套」，读的人还得把两个编号在脑子里减一遍。
-             那一档直接交给颜色：整格（整机行就是整台机器）按它那一套专家上色，
-             要编号就点进去看右栏。 */
-          /* 热力档里胶囊一律不铺：那时格子底色说的是「多重」，编号说的是「哪一套」，
-             两套编码叠在同一格上，谁也读不清。要编号就切回配置寻优那一档。 */
-          const chipsOK = !heatOn && moe && showExperts && chipBudgetOk && eLo != null
-            && layout.expertMode === "chips" && epLo === epHi;
+          /* ── 这一格落在三档里的哪一档 ────────────────────────────────────
+             热力档一律留在最粗那一档：那时格子底色说的是「多重」，格内的结构说的
+             是「里面有什么」，两套编码叠在同一格上谁也读不清。要看结构就切回配置
+             寻优那一档。 */
+          const d = detailFor(col);
+          const showDetail = !heatOn && d.on;
+          const showSegs = !heatOn && !showDetail && showBands;
 
+          /* 详情面板里的 Expert Compute 逐个铺得出编号吗？两个条件：每卡专家数没
+             超过 EXPERT_CHIP_MAX（超了就是一面编号墙），且这一格只对应**一个**
+             EP rank —— 整机档一行跨了几个 EP 时「这一格持有哪几个」没有单一答案，
+             那时盒子里给区间与个数。 */
+          const chipsOK = layout.expertMode === "chips" && eLo != null && epLo === epHi;
+
+          /* 上面那套颜色**落在哪儿**随档位走，说的始终是同一件事：
+               · 最粗档 —— 落在格子底上（data-paint="bg"）。那时它是唯一还能表达
+                 「这一片属于哪一套」的东西。
+               · 三段块 —— 落在 MoE 那一条带上。面积小了三分之二，但「同色一块 =
+                 一整套专家」的图案不断，穿过档口时不会突然改口。
+               · 详情面板 —— 落在 Expert Compute 里那几枚编号上。编号与颜色本来就
+                 是同一件事的两半（这一片属于哪一套），分开摆等于让底色去和选中高亮
+                 抢面积。
+             ⚠️ --crop-set 无论哪一档都要写：后两档靠它给带子和胶囊上色。 */
           const paint = paintExperts && moe && !heatOn;
-          /* 编号铺得出来时颜色就落在标签上 —— 编号与颜色本来就是同一件事的两半
-             （这一片属于哪一套），分开摆等于让底色去和高亮抢面积。
-             铺不出来就退回给格子底上色：那时颜色是唯一还能表达「这是哪一套」的
-             东西，而这正是上一段说的那一档。 */
-          if (paint && !chipsOK) ds.paint = "bg";
+          if (paint && !showDetail && !showSegs) ds.paint = "bg";
 
           const colHit = col.type === "layer"
             ? Boolean(rel) && rel.layers.has(col.layer)
@@ -2397,8 +2663,11 @@
           /* ⚠️ 这里**不写** data-tip：那串气泡文案有五六行、要拼四五个模板字符串，
              一帧几千格就是几千个长字符串，而其中至多一个会被人看到。改成悬浮时
              现拼，见下面 stage 上那条 pointerover（cellTip）。 */
-          // 整机档的格子不再让出顶上那条标签带（已撤），整行都归格子
-          place(cell, block.x + ci * cellW, y, cellW - 1, rowH - 1);
+          /* 整机档的格子不再让出顶上那条标签带（已撤），整行都归格子。
+             三段块那一档要给格子写一个世界字号（带子的字继承它），最细那一档不写
+             —— 面板内部一律用设计像素，再由 transform 整体缩放。 */
+          place(cell, block.x + ci * cellW, y, cellW - 1, rowH - 1,
+            showSegs ? bandFontWorld : 0);
           /* ⚠️ 必须排在 place 之后：place 写的是整条 cssText，会把先设的
              自定义属性一起冲掉。 */
           if (paint) {
@@ -2418,18 +2687,29 @@
             }
           }
 
-          if (chipsOK) {
-            /* 胶囊只带两个属性：kind（pick 要靠它认出这是一枚专家）与 expert。
-               rank / stage / layer / epRank 都在**父格子**上，pick 顺着 closest
-               去取 —— 一格四枚胶囊时，这一条省下 16 次属性写。 */
-            expertsLo.forEach((e) => {
-              const chip = el("span", "crop-expert", `E${e}`);
-              chip.dataset.kind = "expert";
-              chip.dataset.expert = e;
-              if (p && p.kind === "expert" && p.expert === e) chip.classList.add("is-selected");
-              else if (rel && rel.experts.has(e)) chip.classList.add("is-related");
-              cell.appendChild(chip);
-            });
+          /* ── 格内的内容 ────────────────────────────────────────────────
+             最细档铺详情面板，中档铺三段块，最粗档什么都不铺（颜色已经落在格子
+             底上）。面板里的算子块一律不带 data-kind、也不吃指针事件：pick() 是
+             顺着 closest("[data-kind]") 往上找的，所以点在算子上等于点在这一格上
+             （问的仍是「这张卡 × 这一层」）。唯一例外是专家胶囊 —— 它本来就是一
+             个可点的对象，data-kind="expert" 照旧，pick() 顺着父格子取坐标。 */
+          if (showDetail) {
+            /* 铺不出编号时盒子里给区间与个数。整机档一行跨了几个 EP，区间要从首尾
+               两个 EP 各取一次 —— 这一步只在真的铺面板的那几十格上做，逐行预算不
+               起（与 cellTip 里同一条理由）。 */
+            let rangeText = null;
+            if (moe && !chipsOK && expertsLo.length) {
+              const hiList = epHi === epLo ? expertsLo : topology.expertsOfEpRank(epHi);
+              const e0 = expertsLo[0];
+              const e1 = hiList[hiList.length - 1];
+              if (Number.isFinite(e1)) rangeText = `E${e0}–E${e1} · ${e1 - e0 + 1} 个`;
+            }
+            cell.classList.add("crop-cell--detail");
+            cell.appendChild(buildDetail(col, {
+              experts: expertsLo, chipsOn: chipsOK, rangeText, primary: p, rel,
+            }, d.s, d.h));
+          } else if (showSegs) {
+            cell.appendChild(buildBands(col));
           }
           frag.appendChild(cell);
         }
@@ -2621,7 +2901,7 @@
     // 主脚本还没 boot（croSelect 未导出）或拓扑还没派下来：这一击没有可回答的对象
     if (typeof global.croSelect !== "function" || !topology) return;
 
-    /* 通信查询档里，画布上的一格问的不是「这是什么」而是「**从这儿开始演**」——
+    /* 通信观测档里，画布上的一格问的不是「这是什么」而是「**从这儿开始演**」——
        这一档的主体是那条时间轴，右栏那份静态档案（这张卡是谁、持有哪些专家）在
        这里既答非所问、又要抢掉画布近三分之一的宽度。所以这一档下点格子不发选择，
        直接把行程挪到那一列开播；其余对象（行标、量尺、stage 带）照旧发选择。 */
@@ -3456,7 +3736,7 @@
     });
   });
 
-  /* ══ 六·五、通信查询档 ═══════════════════════════════════════════════════
+  /* ══ 六·五、通信观测档 ═══════════════════════════════════════════════════
      ── 这一档在算什么 ──────────────────────────────────────────────────────
      左栏那五个并行度（TP / CP / EP / PP / DP）在表单里只是五个数字。它们真正的
      代价要到通信里才显形：一次 All-Reduce 到底摊在几张卡上、那几张卡是不是同一
@@ -3805,9 +4085,9 @@
     if (s.kind) tags.appendChild(el("span", "crop-comm__card-kind", s.kind));
     card.appendChild(tags);
 
+    /* 阶段（前向 / 反向 / 更新）不再在浮卡里挂一枚胶囊：页签下那条阶段带一直亮着
+       当前是哪一段，浮卡再写一遍是同一件事说第二遍，还挤掉了标题的横向空间。 */
     const head = el("div", "crop-comm__card-head");
-    const phase = COMM_PHASES.find((p) => p[0] === s.phase);
-    head.append(el("span", "crop-comm__card-phase", phase ? phase[1] : ""));
     /* 标题带上层号与卡号：行程是一层一层往前推的，浮卡不写「在哪一层、哪张卡」，
        连着看几拍就分不清换的是层还是卡。 */
     const at = flowBeat && flowBeat.label ? `${flowBeat.label} · rank ${anchor} — ` : "";
@@ -4116,7 +4396,15 @@
         bar.setAttribute("width", v ? Math.max(2, m.dw * (v / MOE_TOK_SHOWN)) : 0);
         bar.style.fill = heatColor(u);
         // 整张卡跟着同一个值淡染：卡与卡底那条必须是同一件事的两种强度
-        if (m.boxes[i]) m.boxes[i].style.fill = moeHeatFill(u, v ? 0.26 : 0);
+        if (m.boxes[i]) {
+          m.boxes[i].style.fill = moeHeatFill(u, v ? 0.26 : 0);
+          /* 描边与底色同色阶、同一个值，只是实一档：一张卡的框和它的底若一个按
+             热力走、另一个停在中性灰，扫过去会读成两套无关的编码。还没被选到的
+             那几张（v=0）底色是透明的，描边取色阶最冷那一端的淡色 —— 仍在同一副
+             色阶上，只是"最轻"。机内 / 机间那一档因此从描边的**颜色**挪到它的
+             虚实上（见 css 里 .crop-moe__dest[data-link="inter"]）。 */
+          m.boxes[i].style.stroke = moeHeatFill(u, v ? 0.72 : 0.34);
+        }
       });
       m.focus = idx;
     }
@@ -4723,8 +5011,8 @@
   }
 
   /* 在画布上点中一格 = 把行程挪到这一格、从这儿往右接着演（见 pick 里那一支）。
-     行程认的是**行**，所以点到别的行要整趟重排；落点取前向那一趟里这一列的第一拍
-     —— 一格上可能有好几拍（一层里几条通信），从头一条起演才是"从这儿开始"。 */
+     行程认的是**行**，所以点到别的行要整趟重排；落点取**当前那一阶段**里这一列的
+     第一拍 —— 一格上可能有好几拍（一层里几条通信），从头一条起演才是"从这儿开始"。 */
   function flowJumpToCell(host) {
     if (!topology || !layout) return false;
     const rank = Number(host.dataset.rank);
@@ -4733,8 +5021,17 @@
     if (!seq.length) return false;
     const layer = host.dataset.layer === undefined ? null : Number(host.dataset.layer);
     const unit = host.dataset.unit || null;
-    let i = seq.findIndex((b) => b.phase === "fwd" && b.rank === rank
-      && (layer == null ? b.unit === unit : b.layer === layer));
+    /* 从**当前那一阶段**的这一格开演，不是一味回到前向：正在看反向的人点一格，
+       问的是"反向走到这儿是什么样"，把他甩回前向等于换了个问题。当前阶段就是这一
+       拍所在的阶段（阶段带上高亮的那一段），还没开演过则是前向。 */
+    const phase = (flowBeat && flowBeat.phase) || "fwd";
+    const atCell = (b) => b.rank === rank
+      && (layer == null ? b.unit === unit : b.layer === layer);
+    let i = seq.findIndex((b) => b.phase === phase && atCell(b));
+    // 这一阶段不落在列上（更新那一段是整块一拍）：退到这一阶段里这张卡的第一拍
+    if (i < 0) i = seq.findIndex((b) => b.phase === phase && b.rank === rank);
+    // 这张卡在这一阶段一拍都没有：退到这一阶段的开头，阶段总比列更该守住
+    if (i < 0) i = seq.findIndex((b) => b.phase === phase);
     if (i < 0) i = 0;
     flowSeq = seq;
     flowPos = i;
@@ -5043,7 +5340,7 @@
     // 世界尺寸变了（层数 / 卡数被拨动），首次或规模跳变时重新适配
     if (!fitted) { fitted = true; fit(); }
     scheduleRender();
-    /* 通信查询档整档由 counts 现算，配置一拨（并行度、卡数、EP 口径）就要重列。
+    /* 通信观测档整档由 counts 现算，配置一拨（并行度、卡数、EP 口径）就要重列。
        播放同时停掉：事件清单本身换了一份，接着往下播等于在两份时间轴之间跳。 */
     setPlaying(false);
     renderComm();
@@ -5076,7 +5373,7 @@
     renderDetail();
     annotateStructure();
     scheduleRender();
-    /* 通信查询的「谁和谁」以选中的那张卡为锚。在画布上点中另一张卡 = 换一个视角
+    /* 通信观测的「谁和谁」以选中的那张卡为锚。在画布上点中另一张卡 = 换一个视角
        重看，所以行程停下来、锚点跟过去、从新那张卡所在段的第一层重新摆一拍 ——
        否则连线还画在上一张卡上，与刚点亮的那一行对不上。 */
     if (center.dataset.mode === "comm"
