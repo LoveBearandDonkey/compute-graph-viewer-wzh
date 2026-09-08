@@ -3539,10 +3539,10 @@
   }
 
   /* ── 事件清单 ────────────────────────────────────────────────────────────
-     按「一个 micro-batch 穿过一个 layer」的时间序排，三段：
+     按「一个 step 里最后一个 micro-batch 穿过一个 layer」的时间序排，三段：
        fwd   前向：进 stage → Attention → Router → MoE → 出 stage
-       bwd   反向：与前向严格镜像（所以行内箭头朝左）
-       sync  梯度同步：不属于任何一层的时间点，它在整个 step 的反向做完之后
+       bwd   反向：主体与前向镜像；梯度就绪后允许插入跨 EDP 的异步梯度桶
+       sync  同步 / 更新：等待其余梯度同步完成，并在需要时拼回分片参数
      每条都带一个 when 判据 —— 并行度为 1 的维度不产生通信，那一条整条不出现，
      而不是列出来标一句「本配置下没有」。清单长度本身就是一个读数。 */
   function commSteps(c) {
@@ -3624,6 +3624,18 @@
         payload: "专家算出的输入梯度发回 token 原始 rank", kind: "gradient",
         why: "token 那张卡要拿回梯度，才能接着往前一层传",
         per: "每个 MoE 层 1 次" },
+      /* 专家权重在每个 EDP 副本里各算出一份梯度；该层的专家反向一结束，同一
+         专家分片就可以跨 EDP 启动梯度桶同步，不必等整条反向全部走完。把这一拍
+         放在 Dispatch 反向之后，画布会先演完本层 EP 域内的输入梯度回传，再沿
+         EDP 轴连到持有同一专家分片的那些 rank。存在梯度累积时，只有最后一个
+         micro-batch 发起通信，前面的 micro-batch 只在本地累积。 */
+      { phase: "bwd", when: moe && c.edp > 1, dom: "edp", module: "Routed Expert",
+        event: "EDP Reduce-Scatter（梯度桶）",
+        payload: "该 MoE 层中，本卡所持专家分片的参数梯度", kind: "gradient",
+        why: "不同 EDP 用不同数据算出了同一专家分片的梯度，必须聚合后才能得到一致的专家更新；梯度一就绪便可与前面层的反向计算重叠",
+        per: c.microBatchNum > 1
+          ? `每个 step、每个 MoE 层 1 次；仅最后一个 micro-batch 发起（前 ${c.microBatchNum - 1} 个只本地累积）`
+          : "每个 step、每个 MoE 层 1 次（梯度就绪即启动）" },
       { phase: "bwd", when: c.tp > 1, dom: "tp", module: "Attention",
         event: "TP All-Reduce / Reduce-Scatter",
         payload: "QKV 列切产生的输入梯度部分和", kind: "gradient",
@@ -3644,11 +3656,6 @@
         kind: "gradient",
         why: "同一份权重在各 DP 副本上各算出一份梯度，必须平均成一份，优化器才更新得出一致的权重",
         per: "每个 step 1 次（与 micro-batch 数无关）" },
-      { phase: "sync", when: moe && c.edp > 1, dom: "edp", module: "Routed Expert",
-        event: "EDP All-Reduce / Reduce-Scatter",
-        payload: "只在持有同一份本地专家的副本之间同步专家梯度", kind: "gradient",
-        why: "跨 EP 组的卡拿的根本不是同一份专家，把它们平均进来就是把不同的专家搅在一起",
-        per: "每个 step 1 次（与 micro-batch 数无关）" },
       /* 切了优化器状态（ZeRO-1 / FSDP2）才有的那一趟回程：每张卡只更新自己那一片
          参数，下一个 step 的前向要用完整权重，所以更新完还要 All-Gather 拼回来。
          不切（shardMode: none）时每张卡自己就持有完整的优化器状态与权重，这一条
@@ -3668,7 +3675,7 @@
 
   /* 阶段名摆在每一行左侧，不带描述文字：箭头方向已经把「前向 / 反向」说完了，
      再补一句「进 stage → Attention → …」是把下面那排事件条又用文字复述一遍。 */
-  const COMM_PHASES = [["fwd", "前向"], ["bwd", "反向"], ["sync", "更新"]];
+  const COMM_PHASES = [["fwd", "前向"], ["bwd", "反向"], ["sync", "同步 / 更新"]];
 
   function renderComm() {
     if (!topology) return;
@@ -3758,7 +3765,7 @@
     const s = flowBeat ? flowBeat.step : null;
     commHint.textContent = s ? ""
       : (steps.length
-        ? "按左边的播放键，跟着一个 micro-batch 从 Emb 一路走到 Head；或点任意一条单看 ——"
+        ? "按左边的播放键，跟着一个 step 里的最后一个 micro-batch 从 Emb 走到 Head、再完成梯度同步；或点任意一条单看 ——"
           + "画布上会画出这一条是谁和谁在通信（青线机内、绯线机间，动点表示数据方向），"
           + "左下角浮出它的范围与频次。"
         : "把左栏任意一个并行度（TP / CP / EP / PP / DP）拨大，这里就会列出它带来的通信。");
@@ -4158,8 +4165,8 @@
        Stage 入口 / 出口        只在本段的首层 / 末层
        Router / MoE / 共享专家  只在 MoE 层（Dense 层没有专家，也就没有 All-to-All）
        TP / CP                  每一层都有
-     梯度同步那两条不属于任何一层（它在整个 step 的反向做完之后），行程里不排它，
-     点带子单看时按块中段一层作代表。
+     后段的全参数同步 / 回收不属于任何一层，按整段表示；专家梯度桶是例外，它在
+     对应 MoE 层的反向梯度就绪后立刻跨 EDP 启动。
 
      ── 连线怎么染色 ────────────────────────────────────────────────────────
      同一条 TP All-Reduce，落在连号的 8 行上（一台机器里）和被步长撑到跨了三台
@@ -4170,9 +4177,11 @@
      就是这份摆法的代价。
 
      ⚠️ 屏幕坐标每帧现算（而不是建线时算一次）：播放期间用户照样可以缩放平移，
-     线必须钉在格子上。一条通信最多画 FLOW_LINKS_MAX 条线 —— DP=64 那种域全画
+     线必须钉在格子上。常见的 DP=16 要把 15 个对端完整画出，否则等距抽样会让
+     通信组看起来像是无规律地漏了几张卡；更大的 DP 域才按 FLOW_LINKS_MAX 抽样，
+     避免 DP=64 那种域全画
      出来是一团毛线，等距抽样既留下近邻也留下最远的那一端。 */
-  const FLOW_LINKS_MAX = 10;
+  const FLOW_LINKS_MAX = 15;
 
   let flowLinks = [];       // 当前这一拍在平面上的连线
   let flowCtx = null;       // { beat, mode, src }
@@ -4234,7 +4243,7 @@
     }
     const info = topology.layers[layer];
     const moe = Boolean(info && info.ffn === "moe");
-    if (s.dom === "ep" || s.module === "Shared Expert") return moe;
+    if (s.dom === "ep" || s.dom === "edp" || s.module === "Shared Expert") return moe;
     if (s.module === "MLP（Dense）") return !moe;
     return true;
   }
@@ -4284,8 +4293,8 @@
     };
     sweep("fwd", false);
     sweep("bwd", true);
-    /* 更新（梯度同步）不属于任何**一层** —— 它同步的是这张卡上**全部**参数的
-       梯度，一个 step 末尾一次。所以它既不该扫列（那会读成"一层一层地同步"），
+    /* 后段的同步 / 更新不属于任何**一层** —— 它处理的是这张卡上**全部**参数，
+       一个 step 末尾一次。所以它既不该扫列（那会读成"一层一层地同步"），
        也不该像原先那样落在某一列上（落在块中段那一列，看起来就成了"只有 Layer 6
        在同步"，纯属摆错位置）。
        改成一段一拍、框住**整块**：每个 stage 的那一行整段亮起来，说的正是"这一
@@ -4368,8 +4377,8 @@
   }
 
   /* 手点带子里的一条时，把它摆到哪一列：取这一条在本段里**最早**发生的那一层
-     （PP Recv 在首层、PP Send 在末层、MoE 那几条在第一个 MoE 层）。梯度同步不属于
-     任何一层（它在整个 step 的反向做完之后），落在块中段一列作代表。 */
+     （PP Recv 在首层、PP Send 在末层、MoE / EDP 梯度桶在第一个 MoE 层）。后段的
+     全参数同步 / 回收不属于任何一层，落在块中段一列作代表。 */
   function flowBeatFor(s, rank) {
     const entry = flowStageOf(rank);
     const block = layout.blocks.find((b) => b.stage === entry.stage) || layout.blocks[0];
