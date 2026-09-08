@@ -1,0 +1,57 @@
+{
+  "id": "candidate-population-lineage",
+  "name": "Candidate Population Lineage",
+  "type": "svg",
+  "approvalStatus": "approved-for-project",
+  "description": "A configurable multi-stage candidate lineage that visualizes population expansion and convergence while preserving stage counts, branch attribution, rejection categories, and keyboard-accessible selection.",
+  "closestExistingPattern": "communication-traffic-sankey",
+  "whyExistingIsInsufficient": "The communication Sankey explains many-to-many traffic between two endpoint columns. Candidate lineage needs an ordered sequence of stages, stage-local candidate populations, alternating expansion and convergence, and conservation checks across every adjacent stage.",
+  "source": {
+    "patternHtml": "components/candidate-population-lineage/pattern.html",
+    "patternCss": "components/candidate-population-lineage/pattern.css",
+    "renderScript": "components/candidate-population-lineage/pattern.js",
+    "extractedFrom": "operator-planning/recommendation-trace-V3.html"
+  },
+  "states": ["normal", "hover", "focus-visible", "selected", "empty-stage", "aggregated-population"],
+  "requiredApis": [
+    "window.PtoCandidatePopulationLineage.render(container, options)",
+    "controller.setData(data)",
+    "controller.select(id, options)",
+    "controller.clearSelection(options)",
+    "controller.resize()",
+    "controller.destroy()"
+  ],
+  "dataContract": {
+    "graph": ["optional title", "stages"],
+    "stage": ["id", "label", "count", "optional kind", "optional summary", "optional segments", "optional candidateLabels", "optional layout", "next except on final stage"],
+    "stage.next": ["id", "type: diverge | converge", "optional label", "optional summary", "branches for diverge", "rejected for converge"],
+    "branch": ["label", "count", "optional tone"],
+    "rejected": ["label", "count", "optional tone"]
+  },
+  "validation": {
+    "diverge": "The target stage count must be greater than or equal to the source count, and branch counts must sum to the target count.",
+    "converge": "The target stage count must be less than or equal to the source count, and rejected counts must equal source minus target.",
+    "segments": "When supplied, stage segment counts must sum to the stage count."
+  },
+  "allowedOverrides": [
+    "stage data and order",
+    "candidate counts",
+    "diverge branches and converge rejection categories",
+    "candidate labels",
+    "optional stage cloud layout hints",
+    "maximum visible candidate dots",
+    "initial selection",
+    "selection callback",
+    "container size through the consuming layout"
+  ],
+  "forbiddenOverrides": [
+    "embedding product detail panels or business narratives inside the pattern root",
+    "setting a component-local dark or light theme",
+    "recreating SVG geometry in a consuming page",
+    "bypassing population conservation validation",
+    "restyling internal pattern classes from a consuming page"
+  ],
+  "themeContract": "The component contains no theme switch or fixed theme. It consumes PTO semantic tokens and follows the nearest calling document data-theme state.",
+  "agentReuseRule": "Load pattern.css and pattern.js, mount one empty container, pass stages with each non-final stage's outgoing next operation, and use onSelect to render product-owned details outside the component.",
+  "previewGate": "The user explicitly approved the extracted visual direction and onSelect-only integration on 2026-08-29."
+}

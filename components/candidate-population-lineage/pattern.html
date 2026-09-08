@@ -1,0 +1,148 @@
+<!doctype html>
+<html lang="zh-CN" data-theme="dark">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>PTO Component · Candidate Population Lineage</title>
+  <link rel="icon" href="data:,">
+  <link rel="stylesheet" href="../../../pto-design-system/tokens/foundation.css">
+  <link rel="stylesheet" href="../../../pto-design-system/tokens/semantic.css">
+  <link rel="stylesheet" href="../../../pto-design-system/tokens/components.css">
+  <link rel="stylesheet" href="../../../pto-design-system/css/style.css">
+  <link rel="stylesheet" href="./pattern.css">
+  <style>
+    * { box-sizing: border-box; }
+    html, body { margin: 0; min-height: 100%; background: var(--background); color: var(--foreground); font-family: var(--font-sans); }
+    body { padding: var(--space-6); }
+    .preview-shell { display: grid; gap: var(--space-6); max-width: 1440px; margin: 0 auto; }
+    .preview-header { display: flex; align-items: flex-start; justify-content: space-between; gap: var(--space-4); }
+    .preview-copy { display: grid; gap: var(--space-2); }
+    .preview-copy h1, .preview-copy h2, .preview-copy p { margin: 0; }
+    .preview-copy h1 { font: var(--text-title-1); }
+    .preview-copy h2 { font: var(--text-title-2); }
+    .preview-copy p { max-width: 840px; color: var(--foreground-secondary); font: var(--text-body); }
+    .preview-actions { display: flex; gap: var(--space-2); }
+    .preview-section { display: grid; gap: var(--space-3); }
+    .preview-lineage-host { --trace-chart-height: 320px; }
+    .preview-comparison { width: 100%; height: 360px; border: 0; background: var(--surface-1); }
+    .preview-state-list { display: flex; flex-wrap: wrap; gap: var(--space-2); color: var(--foreground-muted); font: var(--text-label); }
+    .preview-selection { min-height: 22px; color: var(--foreground-secondary); font: var(--text-body-sm); }
+  </style>
+</head>
+<body>
+  <main class="preview-shell">
+    <header class="preview-header">
+      <div class="preview-copy">
+        <h1>Candidate Population Lineage</h1>
+        <p>保留 Recommendation Trace V3 的候选点阵与 river visual。阶段、候选数和出边的发散/收敛类型由数据配置；详情通过 onSelect 留给调用页面。</p>
+      </div>
+      <div class="preview-actions" aria-label="Theme">
+        <button class="btn btn-sm is-selected" type="button" data-theme-value="dark">Dark</button>
+        <button class="btn btn-sm" type="button" data-theme-value="light">Light</button>
+      </div>
+    </header>
+
+    <section class="preview-section" aria-labelledby="proposedTitle">
+      <div class="preview-copy">
+        <h2 id="proposedTitle">Proposed reusable component</h2>
+        <p>交互状态：normal、hover、focus-visible、selected；当前示例同时覆盖两次发散与三次收敛。</p>
+      </div>
+      <div class="preview-state-list"><span>normal</span><span>hover</span><span>focus-visible</span><span>selected</span><span>aggregated population</span></div>
+      <div class="preview-lineage-host" id="lineagePreview"></div>
+      <div class="preview-selection" id="selectionPreview" aria-live="polite">选择任意阶段或转换节点查看 onSelect 输出。</div>
+    </section>
+
+    <section class="preview-section" aria-labelledby="closestTitle">
+      <div class="preview-copy">
+        <h2 id="closestTitle">Closest existing pattern · Communication Traffic Sankey</h2>
+        <p>它适合双列多对多通信流量，不支持有序多阶段候选集、交替发散/收敛和逐阶段数量守恒，因此不能直接替代 lineage。</p>
+      </div>
+      <iframe class="preview-comparison" title="Communication Traffic Sankey comparison" src="../../../pto-design-system/patterns/communication-traffic-sankey/pattern.html"></iframe>
+    </section>
+  </main>
+
+  <script src="./pattern.js"></script>
+  <script>
+    const previewData = {
+      title: 'Configurable candidate population lineage',
+      stages: [
+        {
+          id: 'seed', label: 'SEED', count: 80, kind: 'partial plan',
+          next: {
+            id: 'expand-path', type: 'diverge',
+            branches: [
+              { label: 'Path A · 80', count: 80, tone: 1 },
+              { label: 'Path B · 80', count: 80, tone: 2 }
+            ]
+          }
+        },
+        {
+          id: 'paths', label: 'PATHS', count: 160, kind: 'realization', segments: [80, 80],
+          next: {
+            id: 'legal-filter', type: 'converge',
+            rejected: [
+              { label: 'Contract · 28', count: 28 },
+              { label: 'Alignment · 20', count: 20 }
+            ]
+          }
+        },
+        {
+          id: 'legal', label: 'LEGAL', count: 112, kind: 'realization',
+          next: {
+            id: 'expand-schedule', type: 'diverge',
+            branches: [
+              { label: 'Serial · 112', count: 112, tone: 1 },
+              { label: 'Overlap · 112', count: 112, tone: 2 },
+              { label: 'Staged · 112', count: 112, tone: 3 }
+            ]
+          }
+        },
+        {
+          id: 'schedules', label: 'SCHEDULES', count: 336, kind: 'executable plan', segments: [112, 112, 112],
+          next: {
+            id: 'resource-filter', type: 'converge',
+            rejected: [
+              { label: 'Memory · 96', count: 96 },
+              { label: 'Lifecycle · 72', count: 72 },
+              { label: 'Order · 48', count: 48 }
+            ]
+          }
+        },
+        {
+          id: 'executable', label: 'EXECUTABLE', count: 120, kind: 'verified plan',
+          next: {
+            id: 'rank-filter', type: 'converge',
+            label: 'RANK −117',
+            rejected: [
+              { label: 'Dominated · 70', count: 70 },
+              { label: 'Equivalent · 32', count: 32 },
+              { label: 'Low confidence · 15', count: 15 }
+            ]
+          }
+        },
+        { id: 'shortlist', label: 'SHORTLIST', count: 3, kind: 'decision', candidateLabels: ['A', 'B', 'C'] }
+      ]
+    };
+
+    const selectionPreview = document.getElementById('selectionPreview');
+    window.PtoCandidatePopulationLineage.render(document.getElementById('lineagePreview'), {
+      data: previewData,
+      initialSelection: 'shortlist',
+      onSelect(selection) {
+        selectionPreview.textContent = selection
+          ? `onSelect → ${selection.kind}: ${selection.id} · ${selection.item.from ?? selection.item.count} → ${selection.item.to ?? selection.item.count}`
+          : 'onSelect → null';
+      }
+    });
+
+    document.querySelectorAll('[data-theme-value]').forEach((button) => {
+      button.addEventListener('click', () => {
+        document.documentElement.dataset.theme = button.dataset.themeValue;
+        document.querySelectorAll('[data-theme-value]').forEach((control) => {
+          control.classList.toggle('is-selected', control === button);
+        });
+      });
+    });
+  </script>
+</body>
+</html>
