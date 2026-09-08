@@ -163,6 +163,76 @@
     },
   };
 
+  /* ── 配置预设 ─────────────────────────────────────────────────────────────
+     与 MODEL_PRESETS 的分工：模型预设持有**结构常量**（层数、hidden、vocab、专家
+     规格、注意力形态），配置预设持有「同一个模型这一次怎么跑」——— 并行度、批次、
+     卡数。所以这里只写 overrides，底子一律是 MODEL_PRESETS[model].defaults：
+     预设之间只该差在它们真正想说的那几个数上，别各自抄一份完整默认值，那样以后
+     改一处默认要改 N 份。
+
+     overrides 为 null 的那一档就是模型自己的 defaults —— 它必须存在，否则用户从
+     别的预设切回来时没有回头路。它**不一定排在第一位**：数组首元素是「这一页打开
+     时用哪一档」（defaultConfigPresetId），与「哪一档是模型 defaults」是两件事。
+
+     ⚠️ overrides 里**不写派生量**：totalRank 由 world 乘积算（切出档 = DP×PP×TP×CP）、
+     node 由 totalRank ÷ 整机卡数算，两者都在 reconcile 末尾被回写。写进来只会
+     制造「表里的数」与「页面算出来的数」两份真相。整份 patch 经 importConfig 落地
+     （整片赋值 + 末尾配平一次），不是逐个 set —— 理由见那个函数的注释。 */
+  const CONFIG_PRESETS = {
+    "openpangu-flash": [
+      /* ⚠️ **排在第一位的那一档就是这一页打开时的配置**（defaultConfigPresetId 取
+         的是数组首元素，首帧的种子由 configSeed 按它落地）。cinnnnnndy 放首位是
+         一次刻意的选择：这一页最常被用来看这份 128 卡的实跑配置，而 2048 卡的
+         参考配置一屏根本铺不完，开局就要缩到 6% 才看得见全貌。
+         cinnnnnndy 配置：DP16 × PP4 × TP2 × CP1 = 128 卡（切出档下 EP 不进乘积），
+         EP=8 → EDP = DP/EP = 2，集群矩阵两行。三条硬约束都对得上：
+           world 128 = 16×4×2×1 · DP % EP = 16 % 8 = 0 · 专家 256 % EP 8 = 0
+         余下的层数 / 批次 / 专家规格 / 精度全部沿用 openPangu 的 defaults。 */
+      {
+        id: "cinnnnnndy",
+        label: "cinnnnnndy 配置",
+        overrides: { epMode: "split", dp: 16, pp: 4, tp: 2, cp: 1, ep: 8 },
+      },
+      /* overrides:null 那一档 = 模型自己的 defaults（架构参考 §6.1 的 2048 卡）。
+         它必须留着：既是「回头路」，也是超规模软警告的参照系（warn() 读的仍是
+         MODEL_PRESETS.defaults.totalRank，不随这里的排序变）。 */
+      { id: "openpangu-default", label: "openPangu 2.0 参考配置（2048 卡）", overrides: null },
+    ],
+    "qwen2-7b": [
+      { id: "qwen2-7b-default", label: "Qwen2-7B 默认配置", overrides: null },
+    ],
+  };
+
+  /* 当前模型下可选的那几档。模型没登记过预设时至少给出一档「默认配置」，
+     免得下拉是空的 —— 新增模型时忘了写 CONFIG_PRESETS 不该把这一格弄坏。 */
+  function configPresetsFor(modelId) {
+    return CONFIG_PRESETS[modelId] || [{ id: modelId + "-default", label: "默认配置", overrides: null }];
+  }
+
+  function configPresetOf(presetId) {
+    for (const modelId of Object.keys(CONFIG_PRESETS)) {
+      const hit = CONFIG_PRESETS[modelId].find((preset) => preset.id === presetId);
+      if (hit) return { ...hit, model: modelId };
+    }
+    return null;
+  }
+
+  function defaultConfigPresetId(modelId) {
+    return configPresetsFor(modelId)[0].id;
+  }
+
+  /* 一档预设落地成的那份配置：底子永远是模型 defaults，overrides 只覆写它真正想说
+     的那几个数（见 CONFIG_PRESETS 上面那段）。
+     三处共用同一份，别再各拼各的 —— 首帧的种子、换模型之后的落档、下拉里换档，
+     说的都是同一件事「这一档展开是什么」。少一处就会出现「下拉写着 A、页面上的数
+     却是 B」，而那是这一页最不该有的一种谎。
+     不认识的 presetId、或那一档属于别的模型时，退回该模型的 defaults。 */
+  function configSeed(modelId, presetId) {
+    const preset = presetId ? configPresetOf(presetId) : null;
+    const overrides = preset && preset.model === modelId ? preset.overrides : null;
+    return Object.assign({}, MODEL_PRESETS[modelId].defaults, overrides || {});
+  }
+
   /* ── 卡型号 ───────────────────────────────────────────────────────────────
      只有 hbmGB 参与计算（它是「单卡容量」那个线框盒的高度）；specs 是纯说明，
      出现在容量栏口径浮层里。
@@ -171,9 +241,8 @@
        · 910B —— 本仓 AI_Profiling_Tool/AscendProfKit/skills/performance-health-score/
          SKILL.md 记「常见 32GB / 64GB 两种规格，需从 NPU_INFO 表确认型号后定」。
          两款都是真实存在的规格，故拆成 910b-32 / 910b-64 两个选项，而不是取其一。
-       · 950  —— Profiling_Insight_and_Tool/KNOWLEDGE.md §3.1 只给了**整片** DDR
-         128 GB / 1.6 TB/s，没有单卡 HBM 容量。64 是按「与 910B 高配对齐」的
-         要求取的占位值，**待确认**。
+       · 950PR —— Profiling_Insight_and_Tool/KNOWLEDGE.md §3.1 给的是**整片** DDR
+         128 GB / 1.6 TB/s，此处即按 128 GB 作单卡容量取。
      拿到准确规格后只改这一个表，容量栏与集群下拉会一起跟上。 */
   const CARD_SPECS = {
     /* label 给口径浮层（那里空间宽裕，带「昇腾」读着完整）；short 给下拉选项
@@ -183,8 +252,8 @@
        三档都是 8，来源分别是本仓的 profiling 报告与 KNOWLEDGE.md，见各自的注释；
        将来出现每机非 8 卡的型号时，只改这一个字段，Node 与 msrun 命令一起跟上。 */
     "910b-32": {
-      id: "910b-32", label: "昇腾 910B", short: "910B", hbmGB: 32, ranksPerNode: 8,
-      hbmNote: "常见 32 / 64 GB 两种规格，此处取 32 GB 款",
+      id: "910b-32", label: "昇腾 910", short: "910", hbmGB: 32, ranksPerNode: 8,
+      hbmNote: "32 GB 款（同系列另有 64 GB 的 910B）",
       specs: "HBM2e 1.6 TB/s（来源：本仓 performance-health-score 技能卡）"
         + "；单机 8 卡（来源：Analysis Report/ascend_analysis_verl_20260602 —— "
         + "rank0 到 peer1–7 全走 HCCS、无 RDMA，即 8 卡同处一节点）",
@@ -196,8 +265,8 @@
         + "；单机 8 卡（同上）",
     },
     "950": {
-      id: "950", label: "昇腾 950", short: "950", hbmGB: 64, ranksPerNode: 8,
-      hbmNote: "KNOWLEDGE.md 未给单卡 HBM 容量，64 GB 为占位值，待确认",
+      id: "950", label: "昇腾 950PR", short: "950PR", hbmGB: 128, ranksPerNode: 8,
+      hbmNote: "128 GB（取 KNOWLEDGE.md §3.1 的整片 DDR 128 GB）",
       specs: "32 Cube × 64 Vector @1.65 GHz；FP16 432 / FP8 864 / FP4 1728 TFLOPS；"
         + "整片 DDR 128 GB · 1.6 TB/s；Chiplet 2×Compute Die + 2×IO Die，CCU 在 IO-Die；"
         + "超节点 128P / 1024P（来源：KNOWLEDGE.md §3.1、§4.4）"
@@ -1449,6 +1518,25 @@
     const warnings = [];
     const preset = presetOf(config);
     const perNode = ranksPerNodeOf(config);
+    /* 卡数涨过参考配置（升级计划外，用户口径）：**不拦**。往下调是常事（拿小规模
+       试算、或就是要看 512 卡怎么摆），往上调却几乎总是手滑 —— 加减键一按就是
+       ×2，DP 512 → 1024 那一下屏幕上只动了一个数字，卡数已经翻了一倍，而下游
+       容量柱、通信估算、YAML 的 worker_num 全都跟着按新规模在报。
+       所以只在**大于**参考值时说一句，小于不说。判据取预设自己的 defaults.totalRank
+       （openPangu 2048 / Qwen2-7B 8），不写死 2048 —— 换模型时它自己跟着换。 */
+    /* 读 parallelWorld 而不是 config.totalRank：后者是 reconcile 落下的缓存，
+       外部直接塞一份 config 进 derive（createController 的 options.config）时
+       可能还没同步 —— 与紧邻的 nodeLayout 重算是同一条理由。 */
+    const refRank = preset.defaults && preset.defaults.totalRank;
+    const world = parallelWorld(config);
+    if (refRank && world > refRank) {
+      const times = world / refRank;
+      warnings.push(`当前 ${world} 卡，是 ${preset.label} 参考配置 ${refRank} 卡的 `
+        + `${Number.isInteger(times) ? times : times.toFixed(1)} 倍`
+        + ` —— 能算，但这已经不是那份配置的规模：容量栏、YAML 的 worker_num、`
+        + `集群矩阵的格子数都按 ${world} 卡在报。`
+        + `把 Total Rank 拨回 ${refRank} 即可回到参考配置的规模`);
+    }
     if (config.tp > perNode) {
       warnings.push(`TP ${config.tp} 超过单节点 ${perNode} 卡，张量并行组被迫跨节点`
         + ` —— 每层前反向各一次 all-reduce 都要走机间链路，且在关键路径上无法与计算重叠`);
@@ -2349,13 +2437,27 @@
   /* ══ 控制器：持有 config，渲染 stepper，广播 cro:change ══════════════════ */
   function createController(options = {}) {
     const modelId = options.model || "openpangu-flash";
+    /* 当前落在哪一档配置预设（见 CONFIG_PRESETS）。它不是一个可调字段，而是
+       「这份配置是从哪来的」的一条出处标记：用户手动拨过任何一枚控件之后就置空，
+       下拉随之落到「自定义」。空值是合法态，不是错误态。 */
+    const presetId = options.configPreset || defaultConfigPresetId(modelId);
     /* moeOrthogonal 不进 MODEL_PRESETS.defaults：它是读配置的**口径**而不是模型
-       的属性，换模型时应当沿用用户当前选的那一档（见 setModel）。 */
+       的属性，换模型时应当沿用用户当前选的那一档（见 setModel）。
+       ⚠️ 首帧的种子走 configSeed 而**不是**直接摊开 defaults：默认那一档未必是
+       「模型自己的 defaults」那一档（openPangu 的首档是 cinnnnnndy），只摊 defaults
+       的话下拉写着 cinnnnnndy、页面上的数却是 2048 卡的参考配置。 */
     const config = Object.assign(
       { model: modelId, epMode: "split", moeOrthogonal: false },
-      MODEL_PRESETS[modelId].defaults,
+      configSeed(modelId, presetId),
       options.config,
     );
+    config.configPreset = presetId;
+    /* defaults 本身自洽，但盖上 overrides 之后两个**派生**字段要重算：world 是
+       dp×pp×tp×cp 的乘积、node 是它 ÷ 整机卡数。两者平时由 reconcile 末尾回写，
+       首帧没人跑过 reconcile（refresh 就是 emit），所以在这里补一次。
+       ——— 与 setModel 里那两行同源，理由见那边的注释。 */
+    config.totalRank = parallelWorld(config);
+    config.node = nodeLayout(config).node;
     const readouts = new Map();
     const wraps = new Map();
     const stepButtons = new Map();       // [减, 加]，每次 emit 按能不能走动来置灰
@@ -2619,11 +2721,17 @@
         if (field === anchor || before[field] === config[field]) return;
         const wrap = wraps.get(field);
         if (!wrap) return;
-        /* 被联动改掉的字段正收在「高级」里（TP 落回 1 会强制关掉 SP）：先掀开面板，
-           否则这 3 秒高亮就播在一个看不见的地方，yaml 那行自己变了而表单上什么都没动
-           —— 正是 disabledValue 那一段要避免的情形。不写回偏好：这是页面替用户掀的。 */
-        const holder = advancedPanelOf(wrap);
-        if (holder && holder.panel.hidden) setAdvancedOpen(holder, true, false);
+        /* 被联动改掉的字段正收在「高级」里（TP 落回 1 会强制关掉 SP）：原先在这里
+           替用户把面板掀开，好让那 3 秒高亮有地方播。
+           平面视图里不掀 —— 那一栏只有 344px 宽，拨一格数字就自己弹开一整片折叠，
+           版面在手底下跳，比「高亮播在看不见的地方」更难受；折叠是用户收起来的，
+           页面不该拿一次联动去推翻它。信息没有丢：折叠仍在，展开就看得到新值。
+           判据挂在 board 的 is-plane 上（由 js/config-relation-plane.js 在 boot 之前
+           加），原版 config-relation-observer.html 那边一如既往地掀。 */
+        if (!document.getElementById("croBoard")?.classList.contains("is-plane")) {
+          const holder = advancedPanelOf(wrap);
+          if (holder && holder.panel.hidden) setAdvancedOpen(holder, true, false);
+        }
 
         clearTimeout(linkedHighlightTimers.get(field));
         // 先移除并触发布局，再加回 class，使连续联动也能重新播放 3 秒提示。
@@ -2641,6 +2749,7 @@
       rangeHint = null;
       const next = stepValue(field, config[field], direction, config);
       if (next === config[field]) return;
+      config.configPreset = null;        // 拨过一下就不再是那份预设了
       const before = { ...config };
       config[field] = next;
       reconcile(config, field);
@@ -2673,6 +2782,7 @@
         return;
       }
       if (parsed === config[field]) { emit(); return; }
+      config.configPreset = null;        // 同 apply()：手输落地即脱离预设
       config[field] = parsed;
       if (!validate(config).length) {
         // 手输的数本身就自洽（PP=3、DP=120 配上对应的 Total Rank）：直接落，无需横幅
@@ -2688,6 +2798,7 @@
       rangeHint = null;
       invalidTyped = null;                 // 程序化赋值走 reconcile，必然落到自洽态
       if (config[field] === value) return;
+      config.configPreset = null;        // 同 apply()
       const before = { ...config };
       config[field] = value;
       reconcile(config, field);
@@ -2714,7 +2825,13 @@
       rangeHint = null;
       invalidTyped = null;
       config.model = modelId;
-      Object.assign(config, preset.defaults);
+      /* 换模型 = 落到新模型的**第一档预设**，所以摊的是 configSeed 而不是裸的
+         defaults —— 两者在「首档就是 defaults」的模型上完全一样（Qwen2-7B），
+         但 openPangu 的首档是 cinnnnnndy，只摊 defaults 会让下拉与页面对不上。 */
+      const presetId = defaultConfigPresetId(modelId);
+      Object.assign(config, configSeed(modelId, presetId));
+      config.configPreset = presetId;
+      config.totalRank = parallelWorld(config);   // 预设覆写了并行度，world 要重算
       config.node = nodeLayout(config).node;      // defaults 的 node 只是种子
       // defaults 里的 dp 一律按切出口径记；正交档下要按 EP 换算回去，否则 world 差一个 EP 倍。
       // mf 档与切出档的 world 公式相同，不必换算（行 23）。
@@ -2733,7 +2850,17 @@
          ↔ orthogonal 那一档 EP 独占 rank，DP 要按 EP 换算，Total Rank 才不变：
                       同一份 2048 卡，切出/mf 档读作 DP512，正交档读作 DP8。
 
-       anchor 传 dp：reconcile 走 else 分支，由换算后的 world 反推 Total Rank。 */
+       ⚠️ **切档一张卡都不许多、也不许少**，这是这三档的立身之本：它们说的是同一批
+       硬件，只是读法不同。所以这里的锚是 **Total Rank**（切档前那个数），由
+       fitParallelWorld 按它倒推 cluster 那几维 —— 而不是拿换算完的 DP 反推卡数。
+
+       两者在默认档上结果相同（换算式本来就是照着「world 不变」推的），差别在边界：
+       convertDpAcrossEpMode 会撞 dp 的量程上限、除不尽时还要 floor 一下，任何一次
+       夹取都会把卡数悄悄带偏。锚在卡数上，这类偏差当场被 fitParallelWorld 拉回来。
+
+       倒推只动 dp / tp / cp / pp（正交档下还可能动 ep —— 那一档 EP 进乘积，是
+       cluster 维而不是模型属性），totalLayer / routedExpert / topK 一概不碰：
+       换个读法不该改动模型结构与 MoE 分组。 */
     function setEpMode(mode) {
       /* 兼容老调用：setEpMode(true/false) 是行 23 之前的布尔签名。 */
       const next = typeof mode === "boolean"
@@ -2741,18 +2868,54 @@
         : (EP_MODES.indexOf(mode) >= 0 ? mode : "split");
       const current = epModeOf(config);
       if (current === next) return;
+      config.configPreset = null;        // 换口径会连带换算 DP，不再是预设那份数
       rangeHint = null;
       invalidTyped = null;                 // 换口径后走 reconcile，落到自洽态
       const before = { ...config };
+      /* 切档前那批卡 —— 读 parallelWorld 而不是 config.totalRank：后者在手输报错态
+         下可能还停在用户敲进来的那个数，而我们要守的是**当前图形画着的**那批卡。 */
+      const keepWorld = parallelWorld(config);
       config.epMode = next;
       config.moeOrthogonal = next === "orthogonal";   // 老字段跟着走，别留两套真相
       if ((current === "orthogonal") !== (next === "orthogonal")) {
         config.dp = convertDpAcrossEpMode(config.dp, config.ep, next === "orthogonal");
       }
-      reconcile(config, "dp");
+      config.totalRank = keepWorld;
+      reconcile(config, "totalRank");
+      /* reconcile 的 totalRank 分支只管把 world 拉向目标，不回写 config.totalRank。
+         够不到的时候（mf→切出档下 EP 被 DP 的整除约束逼降那一类）必须照实写回，
+         否则 Total Rank 那格会显示一个几何上并不存在的数。 */
+      config.totalRank = parallelWorld(config);
       // anchor 传 null：DP 这一跳正是要提示的联动，不该被当成"用户自己改的"而排除
       highlightLinkedChanges(before, null);
       emit();
+    }
+
+    /* 换一整份配置预设（见 CONFIG_PRESETS）。与 setModel 的关系是「粗一层 / 细一层」：
+       setModel 换结构常量并顺带落到该模型的第一档预设，这里换的是同一个模型下
+       「这一次怎么跑」的那十几个数。
+
+       落地走 importConfig 而不是逐个 set()：一份预设里 dp / pp / tp / ep 是**一起**
+       才自洽的，逐个落会在中途被 reconcile 当成矛盾去修（先落 ep=8 而 dp 还是 512，
+       EP 当场被别的约束收回去）—— 那个坑 importConfig 的注释里写得很清楚。
+
+       patch 的底子一律是模型 defaults：预设只写它真正想说的那几个数（overrides），
+       其余字段必须显式回到默认，否则从 cinnnnnndy 切回默认档时上一份的 dp / tp
+       会赖着不走。card 不在 FIELD_SPECS / FLAG_SPECS 里（它是个 select，不是
+       stepper 也不是开关），importConfig 筛不到，单独落一次。 */
+    function setConfigPreset(presetId) {
+      const preset = configPresetOf(presetId);
+      if (!preset) return null;
+      // 跨模型的预设：先把模型换过去（它自己会整份换成新模型的 defaults）
+      if (preset.model !== config.model) setModel(preset.model);
+      const patch = configSeed(preset.model, presetId);
+      if (patch.card && CARD_SPECS[patch.card]) config.card = patch.card;
+      const result = importConfig(patch);
+      /* importConfig 把 configPreset 置了空（它服务的主用例是导入外部 yaml）。
+         这一条通路知道自己是从哪一档来的，写回去 —— 再 emit 一次让下拉的选中态跟上。 */
+      config.configPreset = presetId;
+      emit();
+      return result;
     }
 
     /* 报错横幅：错在哪 → 建议怎么改 → 两个出口。
@@ -3013,6 +3176,9 @@
        不报出来就是静默篡改 —— 比当场报错更危险。 */
     function importConfig(partial) {
       const before = { ...config };
+      /* 导入的是一份外部配置，不再属于任何预设。setConfigPreset 也走这条通路，
+         它会在返回之后把自己的 id 重新写回去 —— 顺序如此，别反过来。 */
+      config.configPreset = null;
       const known = Object.keys(partial).filter((f) => FIELD_SPECS[f] || FLAG_SPECS[f]);
       /* EP 口径既不是 stepper 也不是开关（它改的是 world 公式与切分域，走 setEpMode），
          所以两张表都筛不到它 —— 但它必须**先**落：dp / ep 的整除判据跟着它换（行 23）。
@@ -3056,6 +3222,7 @@
       set,
       setModel,
       setEpMode,
+      setConfigPreset,
       importConfig,
       /* 冻结期间也返回上一组自洽拓扑：视图侧除了监听 cro:change，还会在别的时机
          直接读它（比如窗口尺寸变化时重算集群矩阵的列数）。只掐事件不掐这里的话，
@@ -5336,6 +5503,10 @@
 
   global.CroTopology = {
     MODEL_PRESETS,
+    CONFIG_PRESETS,
+    configPresetsFor,
+    configPresetOf,
+    defaultConfigPresetId,
     FIELD_SPECS,
     FLAG_SPECS,
     FIELD_ORDER,
@@ -7516,6 +7687,49 @@
       select.addEventListener("change", () => controller.setModel(select.value));
     })();
 
+    /* 配置预设：整份并行 / 批次参数的切换口（见 CONFIG_PRESETS 与 setConfigPreset）。
+       两点与「模型」那一格不同：
+         · 选项**跟着模型重派** —— 每个模型自带一组预设，换模型这一格要换一批选项，
+           所以挂 onChange 而不是只在挂载时填一次；
+         · 多一档合成的「自定义」—— 用户手拨过任何一枚控件后 config.configPreset
+           被置空，此时下拉必须能显示这个事实。它不是一个可选的目标（选中它没有
+           任何配置可以套用），所以 change 到它时只是把显示拨回去，不动配置。 */
+    (() => {
+      const select = document.getElementById("croConfigPresetSelect");
+      if (!select) return;
+      const CUSTOM = "__custom__";
+      const sync = () => {
+        const list = configPresetsFor(controller.config.model);
+        const current = controller.config.configPreset;
+        const custom = !current || !list.some((preset) => preset.id === current);
+        // 选项集没变就别重建 DOM：重建会打断原生下拉的展开态与键盘焦点
+        const signature = list.map((preset) => preset.id).join("|") + (custom ? "|+custom" : "");
+        if (select.dataset.presetSignature !== signature) {
+          select.textContent = "";
+          list.forEach((preset) => {
+            const option = document.createElement("option");
+            option.value = preset.id;
+            option.textContent = preset.label;
+            select.appendChild(option);
+          });
+          if (custom) {
+            const option = document.createElement("option");
+            option.value = CUSTOM;
+            option.textContent = "自定义（已手动调整）";
+            select.appendChild(option);
+          }
+          select.dataset.presetSignature = signature;
+        }
+        select.value = custom ? CUSTOM : current;
+      };
+      sync();
+      controller.onChange(sync);
+      select.addEventListener("change", () => {
+        if (select.value === CUSTOM) { sync(); return; }
+        controller.setConfigPreset(select.value);
+      });
+    })();
+
     /* 整网图 → 其余视图：点 deck 里的算子节点，反查成结构条的 (segment, bar)
        再走同一条 emitSelect 通路，与其他三个方向完全对称。 */
     const deck = createDeck("croDeckHost", {
@@ -9200,6 +9414,10 @@
       ".cro-region--yaml",
       // .cro-ep-mode 与 .cro-stepper 同理：EP 口径开关是配置控件而不是画布空白
       ".pto-model-deck__side-rule", ".cro-stepper", ".cro-ep-mode", ".cro-event", ".pto-ide-frame__topbar",
+      // 平面视图左栏底部那枚 AI 输入框：点进去打字是在用一个控件，不是点画布空白。
+      // 不列在这里的话，一落焦就把当前选中的 rank / layer / 专家清掉 —— 而用户
+      // 十有八九正是**对着那个选中对象**在提问。
+      ".crop-ai",
     ].join(", ");
     document.addEventListener("click", (event) => {
       if (!relation) return;
