@@ -16,6 +16,7 @@
   <link rel="stylesheet" href="../vendor/pto-design-system/patterns/memory-architecture/pattern.css">
   <link rel="stylesheet" href="../vendor/pto-design-system/patterns/hardware-architecture-viewport/pattern.css">
   <link rel="stylesheet" href="../vendor/pto-design-system/patterns/floating-playback-control/pattern.css">
+  <link rel="stylesheet" href="../vendor/pto-design-system/patterns/tensor-title/pattern.css">
   <link rel="stylesheet" href="patterns/matrix-canvas/pattern.css">
   <link rel="stylesheet" href="patterns/tensor-volume-canvas/pattern.css">
   <style>
@@ -929,33 +930,6 @@
       font: var(--text-body);
     }
 
-    /* API 下拉框：去掉浏览器原生箭头（贴边无留白），改用带右侧留白的自定义 chevron，颜色随主题 */
-    :root {
-      --api-select-chevron: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='m4 6 4 4 4-4' fill='none' stroke='%23FFFFFF' stroke-opacity='0.4' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
-    }
-    :root[data-theme='light'] {
-      --api-select-chevron: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='m4 6 4 4 4-4' fill='none' stroke='%23000000' stroke-opacity='0.42' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
-    }
-
-    .api-selector-select {
-      width: 100%;
-      height: 40px;
-      padding: 0 calc(var(--space-6) + var(--space-1)) 0 var(--space-3);
-      border: 0;
-      border-radius: var(--input-radius);
-      background: var(--surface-2);
-      color: var(--foreground);
-      font: var(--text-body);
-      box-shadow: none;
-      cursor: pointer;
-      appearance: none;
-      -webkit-appearance: none;
-      background-image: var(--api-select-chevron);
-      background-repeat: no-repeat;
-      background-position: right var(--space-2) center;
-      background-size: 16px 16px;
-    }
-
     .api-selector-select option:disabled,
     .api-selector-select optgroup {
       color: var(--foreground-muted);
@@ -967,10 +941,6 @@
     .api-learn-controls select:focus-visible {
       outline: none;
       box-shadow: 0 0 0 3px var(--focus-ring);
-    }
-
-    .api-selector-select:hover {
-      background-color: color-mix(in srgb, var(--foreground) 6%, var(--surface-2));
     }
 
     .api-mode-controls[hidden],
@@ -1441,7 +1411,8 @@
       overflow: hidden;
       border: 1px solid color-mix(in srgb, var(--primary) 22%, var(--border-default));
       border-radius: var(--radius-lg);
-      background: color-mix(in srgb, var(--surface-1) 92%, var(--primary) 8%);
+      background: color-mix(in srgb, var(--surface-1) 97%, var(--primary) 3%);
+      color: var(--foreground);
       box-shadow: var(--ide-frame-pane-shadow);
       backdrop-filter: blur(18px) saturate(1.15);
       -webkit-backdrop-filter: blur(18px) saturate(1.15);
@@ -1501,7 +1472,7 @@
 
     .cann-feedback-header p {
       margin: var(--space-1) 0 0;
-      color: var(--foreground-muted);
+      color: var(--foreground-secondary);
       font: var(--text-body-sm);
       white-space: nowrap;
     }
@@ -1517,17 +1488,12 @@
       gap: var(--space-2);
     }
 
-    .cann-feedback-kicker {
-      color: var(--foreground-muted);
-      font: var(--text-label);
-      letter-spacing: var(--letter-spacing-label);
-      text-transform: uppercase;
-    }
-
-    .cann-feedback-question h3 {
+    .cann-feedback-question h3,
+    .cann-feedback-comment label {
       margin: 0;
       color: var(--foreground);
       font: var(--text-title-2);
+      font-weight: var(--font-weight-semibold);
     }
 
     .cann-feedback-question > p {
@@ -1540,7 +1506,7 @@
     .cann-feedback-rating-wrap {
       display: grid;
       gap: var(--space-2);
-      margin-top: var(--space-3);
+      margin-block: var(--space-4) var(--space-3);
     }
 
     .cann-feedback-rating-group {
@@ -1585,24 +1551,10 @@
 
     .cann-feedback-star.is-rated svg { fill: currentColor; }
 
-    .cann-feedback-rating-labels {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      color: var(--foreground-muted);
-      font: var(--text-label);
-    }
-
     .cann-feedback-comment {
       display: grid;
       gap: var(--space-2);
-      margin-top: var(--space-3);
-    }
-
-    .cann-feedback-comment label {
-      color: var(--foreground);
-      font: var(--text-body-sm);
-      font-weight: var(--font-weight-semibold);
+      margin-top: var(--space-4);
     }
 
     .cann-feedback-comment label span { color: var(--foreground-muted); font-weight: 400; }
@@ -1623,7 +1575,14 @@
 
     .cann-feedback-comment textarea::placeholder { color: var(--foreground-muted); }
     .cann-feedback-comment textarea:hover { background: color-mix(in srgb, var(--foreground) 6%, var(--surface-2)); }
-    .cann-feedback-comment textarea:focus-visible { box-shadow: 0 0 0 3px var(--button-focus-ring); }
+    .cann-feedback-comment textarea:focus {
+      background: var(--surface-1);
+      color: var(--foreground);
+      caret-color: var(--primary);
+    }
+    .cann-feedback-comment textarea:focus-visible {
+      box-shadow: 0 0 0 1px color-mix(in srgb, var(--primary) 56%, transparent), 0 0 0 4px color-mix(in srgb, var(--primary) 14%, transparent);
+    }
 
     .cann-feedback-count {
       color: var(--foreground-muted);
@@ -1772,12 +1731,16 @@
       box-shadow: var(--shadow-sm);
     }
 
-    /* 参数列较窄时，填充值来源按钮必须在字段内等分，不能沿用 tab 的固定宽度。 */
+    /* 参数型 choice group 按选项数量自适应；三项关联选项保持一行三列。 */
     .api-learn-controls .api-choice-group {
       width: 100%;
       display: grid;
-      grid-template-columns: repeat(2, minmax(0, 1fr));
+      grid-template-columns: repeat(auto-fit, minmax(96px, 1fr));
       overflow: hidden;
+    }
+
+    .api-learn-controls .api-choice-group:has(> :nth-child(3)):not(:has(> :nth-child(4))) {
+      grid-template-columns: repeat(3, minmax(0, 1fr));
     }
 
     .api-learn-controls .api-choice-group .btn {
@@ -2153,6 +2116,11 @@
       position: relative;
       min-width: 0;
       overflow: hidden;
+    }
+
+    /* 矩阵类 surface 由公共 viz-container 提供；这里仅保留 inspector / memory row 的旧布局皮肤。 */
+    .op-load3d-inspector,
+    .add-api-memory-row {
       border: 0;
       border-radius: 16px;
       background: #FFFFFF;
@@ -2161,10 +2129,7 @@
         0 10px 26px rgba(15, 23, 42, 0.04);
     }
 
-    :root[data-theme='dark'] .op-load3d-canvas-card,
     :root[data-theme='dark'] .op-load3d-inspector,
-    :root[data-theme='dark'] .op-load3d-matrix,
-    :root[data-theme='dark'] .gm2ub-align-matrix,
     :root[data-theme='dark'] .add-api-memory-row {
       background: color-mix(in srgb, #F8FBFF 7%, var(--surface-2));
       box-shadow: var(--shadow-md);
@@ -2176,25 +2141,13 @@
       grid-template-rows: auto minmax(0, 1fr);
     }
 
-    .op-load3d-viz-head {
+    .matrix-tensor-title-host {
       position: relative;
       z-index: 2;
-      display: grid;
-      grid-template-columns: minmax(0, 1fr) auto;
-      align-items: center;
-      gap: var(--space-2) var(--space-3);
-      min-height: 0;
       padding: var(--space-2) var(--space-3);
-      color: var(--foreground-secondary);
-      font: var(--text-body-sm);
     }
 
-    .op-load3d-viz-head h4,
-    .op-load3d-inspector h4 {
-      margin: 0;
-      color: var(--foreground);
-      font: var(--text-title-2);
-    }
+    .op-load3d-inspector h4 { margin: 0; color: var(--foreground); font: var(--text-title-2); }
 
     .op-load3d-viz-meta {
       display: grid;
@@ -2315,11 +2268,6 @@
       z-index: 1;
       overflow: auto;
       padding: 0 var(--space-3) var(--space-3);
-    }
-
-    .op-load3d-matrix-head {
-      min-height: 0;
-      border-bottom: 0;
     }
 
     .op-load3d-legend,
@@ -2466,22 +2414,6 @@
       border-left: 0;
     }
 
-    .gm2ub-align-matrix-head {
-      display: flex;
-      align-items: baseline;
-      flex-wrap: wrap;
-      gap: var(--space-2) var(--space-3);
-      min-height: 0;
-      padding: var(--space-3) var(--space-4);
-      color: var(--foreground-secondary);
-      font: var(--text-body-sm);
-    }
-
-    .gm2ub-align-matrix-head strong {
-      color: var(--foreground);
-      font: var(--text-title-2);
-    }
-
     .gm2ub-align-matrix-host {
       position: relative;
       min-width: 0;
@@ -2560,7 +2492,7 @@
     }
 
     /* gm2ub 页面内嵌 playback：复用共享控件结构，但不使用浮动定位和收起态。 */
-    :is(.gm2ub-align-status, .op-load3d-playback) > .pto-floating-playback {
+    :is(.gm2ub-align-status, .op-load3d-playback, .mmad-api-status) > .pto-floating-playback {
       display: block;
       position: static;
       inset: auto;
@@ -2570,7 +2502,7 @@
       pointer-events: auto;
     }
 
-    :is(.gm2ub-align-status, .op-load3d-playback) > .pto-floating-playback .pto-floating-playback__shell {
+    :is(.gm2ub-align-status, .op-load3d-playback, .mmad-api-status) > .pto-floating-playback .pto-floating-playback__shell {
       display: block;
       width: 100%;
       min-height: 0;
@@ -2586,7 +2518,7 @@
       -webkit-backdrop-filter: none;
     }
 
-    :is(.gm2ub-align-status, .op-load3d-playback) > .pto-floating-playback .pto-floating-playback__controls {
+    :is(.gm2ub-align-status, .op-load3d-playback, .mmad-api-status) > .pto-floating-playback .pto-floating-playback__controls {
       display: flex;
       align-items: center;
       justify-content: flex-start;
@@ -2596,7 +2528,7 @@
       transform: none;
     }
 
-    :is(.gm2ub-align-status, .op-load3d-playback) > .pto-floating-playback .pto-floating-playback__group--playback {
+    :is(.gm2ub-align-status, .op-load3d-playback, .mmad-api-status) > .pto-floating-playback .pto-floating-playback__group--playback {
       gap: 2px;
       padding: 2px;
       border: 1px solid var(--border-subtle);
@@ -2604,7 +2536,7 @@
       background: color-mix(in srgb, var(--surface-1) 68%, transparent);
     }
 
-    :is(.gm2ub-align-status, .op-load3d-playback) > .pto-floating-playback .pto-floating-playback__button {
+    :is(.gm2ub-align-status, .op-load3d-playback, .mmad-api-status) > .pto-floating-playback .pto-floating-playback__button {
       min-width: 34px;
       height: 32px;
       padding: 0 var(--space-2);
@@ -2613,24 +2545,24 @@
       background: transparent;
     }
 
-    :is(.gm2ub-align-status, .op-load3d-playback) > .pto-floating-playback .pto-floating-playback__button:hover {
+    :is(.gm2ub-align-status, .op-load3d-playback, .mmad-api-status) > .pto-floating-playback .pto-floating-playback__button:hover {
       border-color: var(--border-subtle);
       background: color-mix(in srgb, var(--surface-3) 72%, transparent);
     }
 
-    :is(.gm2ub-align-status, .op-load3d-playback) > .pto-floating-playback .pto-floating-playback__button--primary {
+    :is(.gm2ub-align-status, .op-load3d-playback, .mmad-api-status) > .pto-floating-playback .pto-floating-playback__button--primary {
       min-width: 76px;
       border-color: var(--primary);
       background: var(--primary);
       color: var(--primary-foreground, #fff);
     }
 
-    :is(.gm2ub-align-status, .op-load3d-playback) > .pto-floating-playback .pto-floating-playback__button--primary:hover {
+    :is(.gm2ub-align-status, .op-load3d-playback, .mmad-api-status) > .pto-floating-playback .pto-floating-playback__button--primary:hover {
       border-color: var(--primary-hover);
       background: var(--primary-hover);
     }
 
-    :is(.gm2ub-align-status, .op-load3d-playback) > .pto-floating-playback .pto-floating-playback__button--primary .pto-floating-playback__icon {
+    :is(.gm2ub-align-status, .op-load3d-playback, .mmad-api-status) > .pto-floating-playback .pto-floating-playback__button--primary .pto-floating-playback__icon {
       --floating-playback-icon-stroke-current: var(--primary-foreground, #fff);
     }
 
@@ -2682,6 +2614,78 @@
     .gm2ub-align-step.is-complete {
       color: var(--foreground-secondary);
     }
+
+    .mmad-api-stage {
+      min-width: 0;
+      min-height: 0;
+      height: 100%;
+      display: grid;
+      grid-template-columns: minmax(0, 2.2fr) minmax(300px, 1fr);
+      gap: var(--space-3);
+      overflow: auto;
+    }
+
+    .mmad-api-workspace {
+      min-width: 0;
+      min-height: 0;
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      grid-template-rows: repeat(2, minmax(260px, 1fr));
+      gap: var(--space-3);
+    }
+
+    .mmad-api-matrix {
+      min-width: 0;
+      min-height: 0;
+      display: grid;
+      grid-template-rows: auto minmax(0, 1fr);
+      overflow: hidden;
+    }
+
+    .mmad-api-matrix--output { grid-column: 1 / -1; }
+
+    .mmad-api-matrix-host {
+      min-width: 0;
+      min-height: 0;
+      position: relative;
+      overflow: hidden;
+      padding: var(--space-3);
+    }
+
+    .mmad-api-status {
+      min-width: 0;
+      display: grid;
+      align-content: start;
+      gap: var(--space-3);
+      padding: var(--space-4);
+      color: var(--foreground-secondary);
+      font: var(--type-body);
+    }
+
+    .mmad-api-summary { display: grid; gap: var(--space-2); }
+    .mmad-api-summary h3 { margin: 0; color: var(--foreground); font: var(--type-title-1); }
+    .mmad-api-summary p { margin: 0; line-height: 1.5; }
+
+    .mmad-api-note {
+      margin: 0;
+      padding: var(--space-3);
+      border-left: 2px solid var(--warning);
+      background: color-mix(in srgb, var(--warning) 8%, transparent);
+      line-height: 1.5;
+    }
+
+    .mmad-api-empty {
+      grid-column: 1 / -1;
+      min-height: 320px;
+      display: grid;
+      place-items: center;
+      padding: var(--space-6);
+      color: var(--foreground-secondary);
+      text-align: center;
+      font: var(--type-body);
+    }
+
+    .mmad-api-empty strong { display: block; margin-bottom: var(--space-2); color: var(--foreground); font: var(--type-title-1); }
 
     .gm2ub-align-step.is-current {
       border-left-color: var(--primary);
@@ -2831,6 +2835,7 @@
 
       .load3d-native-stage,
       .gm2ub-align-stage,
+      .mmad-api-stage,
       .add-api-stage-shell {
         height: auto;
         overflow: visible;
@@ -2840,6 +2845,9 @@
         grid-template-columns: 1fr;
         grid-template-rows: auto;
       }
+
+      .mmad-api-stage { grid-template-columns: 1fr; height: auto; }
+      .mmad-api-workspace { grid-template-rows: repeat(2, minmax(300px, auto)); }
 
       .gm2ub-align-flow {
         grid-template-rows: repeat(3, minmax(280px, auto));
@@ -5259,6 +5267,8 @@
       background: color-mix(in srgb, var(--foreground) 30%, transparent);
     }
   </style>
+  <!-- 公共 API Visualizer primitive：矩阵卡片与控件皮肤的统一实现。 -->
+  <link rel="stylesheet" href="api-visualizer-primitives.css">
 </head>
 <body>
   <section class="pto-ide-frame trace-demo-frame api-visualizer-frame" data-ide-frame data-host="standalone" aria-label="CANN Vision · API Visualizer">
@@ -5737,9 +5747,10 @@
                 <aside class="add-api-sidebar" aria-label="API 参数沙盒">
                   <div class="add-api-panel">
                     <label id="apiSelectorLabel" for="apiSelector"><strong>API</strong></label>
-                    <select class="api-selector-select" id="apiSelector" aria-labelledby="apiSelectorLabel" data-api-switcher>
+                    <select class="api-selector-select api-selector" id="apiSelector" aria-labelledby="apiSelectorLabel" data-api-switcher>
                       <option value="Load3D">load3d</option>
                       <option value="Gm2UbAlign" selected>asc_copy_gm2ub_align</option>
+                      <option value="AscMmad">asc_mmad</option>
                       <option value="Add">add</option>
                       <optgroup label="即将支持">
                         <option disabled>asc_copy_ub2gm</option>
@@ -5764,13 +5775,16 @@
                   <div class="api-mode-controls" id="gm2ub-api-controls" role="tabpanel" data-api-controls-pane="Gm2UbAlign" hidden>
                     <div id="gm2ubApiControls"></div>
                   </div>
+                  <div class="api-mode-controls" id="mmad-api-controls" role="tabpanel" data-api-controls-pane="AscMmad" hidden>
+                    <div id="mmadApiControls"></div>
+                  </div>
                   <div class="api-mode-controls" id="add-api-controls" role="tabpanel" data-api-controls-pane="Add">
-                    <div class="add-api-panel" aria-label="Add 可视化参数">
+                    <div class="add-api-panel api-control-panel" aria-label="Add 可视化参数">
                       <div class="group-heading">
                         <div class="group-title">预设场景</div>
                         <div class="group-description">载入典型的逐块向量相加访问模式。</div>
                       </div>
-                      <div class="add-api-presets" role="radiogroup" aria-label="Add 预设场景">
+                      <div class="api-preset-group add-api-presets" role="radiogroup" aria-label="Add 预设场景">
                         <button class="btn btn-sm preset is-selected" type="button" role="radio" aria-checked="true" tabindex="0" data-add-api-preset="continuous">连续写入</button>
                         <button class="btn btn-sm preset" type="button" role="radio" aria-checked="false" tabindex="-1" data-add-api-preset="src-gap">源跳读</button>
                         <button class="btn btn-sm preset" type="button" role="radio" aria-checked="false" tabindex="-1" data-add-api-preset="dst-gap">目标留缝</button>
@@ -5816,7 +5830,7 @@
                         </div>
                       </div>
                     </div>
-                    <div class="api-learn-controls" data-add-api-code-controls>
+                    <div class="api-learn-controls api-control-panel" data-add-api-code-controls>
                       <section class="group">
                         <div class="api-code-section-head">
                           <div class="api-code-section-title-row">
@@ -5859,11 +5873,8 @@
                 <div class="load3d-native-stage" id="load3d-api-stage" role="tabpanel" data-api-stage-pane="Load3D" hidden></div>
                 <div class="gm2ub-align-stage" id="gm2ub-api-stage" role="tabpanel" data-api-stage-pane="Gm2UbAlign" hidden>
                   <div class="gm2ub-align-flow">
-                    <section class="gm2ub-align-matrix" aria-labelledby="gm2ubSrcTitle">
-                      <div class="gm2ub-align-matrix-head">
-                        <strong id="gm2ubSrcTitle">GM</strong>
-                        <span class="gm2ub-align-overlay" data-gm2ub-src-copy aria-hidden="true">3 blocks × 48 B · src_stride 128 B · gap 80 B</span>
-                      </div>
+                    <section class="gm2ub-align-matrix viz-container viz-container--matrix" aria-labelledby="gm2ubSrcTitle">
+                      <div class="matrix-tensor-title-host" id="gm2ubSrcTitle" data-tensor-title="gm2ub-src"></div>
                       <div class="gm2ub-align-matrix-host">
                         <canvas class="pto-matrix-canvas" id="gm2ubSrcMatrixCanvas" aria-label="asc_copy_gm2ub_align 的 GM 源矩阵"></canvas>
                       </div>
@@ -5876,11 +5887,8 @@
                         <code data-gm2ub-formula>GM上144B搬运至UB，按32B对齐后共占用160B</code>
                       </div>
                     </section>
-                    <section class="gm2ub-align-matrix" aria-labelledby="gm2ubDstTitle">
-                      <div class="gm2ub-align-matrix-head">
-                        <strong id="gm2ubDstTitle">UB</strong>
-                        <span class="gm2ub-align-overlay" data-gm2ub-dst-copy aria-hidden="true">紧凑布局 · 块紧密排列 · 尾部填充 16 B</span>
-                      </div>
+                    <section class="gm2ub-align-matrix viz-container viz-container--matrix" aria-labelledby="gm2ubDstTitle">
+                      <div class="matrix-tensor-title-host" id="gm2ubDstTitle" data-tensor-title="gm2ub-dst"></div>
                       <div class="gm2ub-align-matrix-host">
                         <canvas class="pto-matrix-canvas" id="gm2ubDstMatrixCanvas" aria-label="asc_copy_gm2ub_align 的 UB 目标矩阵"></canvas>
                       </div>
@@ -5897,6 +5905,19 @@
                     <ol class="gm2ub-align-timeline" data-gm2ub-warning aria-label="asc_copy_gm2ub_align 执行步骤"></ol>
                     <div class="gm2ub-align-notes" data-gm2ub-notes aria-live="polite"></div>
                   </section>
+                </div>
+                <div class="mmad-api-stage" id="mmad-api-stage" role="tabpanel" data-api-stage-pane="AscMmad" hidden>
+                  <div class="mmad-api-workspace" data-mmad-workspace></div>
+                  <aside class="mmad-api-status" aria-label="Mmad 参数推导与逻辑播放">
+                    <div class="mmad-api-summary">
+                      <h3 data-mmad-title>asc_mmad · C = A × B + C</h3>
+                      <p data-mmad-summary></p>
+                    </div>
+                    <div class="op-load3d-kv" data-mmad-kv></div>
+                    <div data-mmad-playback></div>
+                    <ol class="gm2ub-align-timeline" data-mmad-timeline aria-label="Mmad 逻辑 K 分片步骤"></ol>
+                    <p class="mmad-api-note" data-mmad-note></p>
+                  </aside>
                 </div>
                 <div class="add-api-stage-shell" id="add-api-stage" role="tabpanel" data-api-stage-pane="Add">
                   <div class="add-api-playback" data-add-api-playback></div>
@@ -6026,25 +6047,23 @@
       <div class="cann-feedback-body">
         <form id="cannFeedbackForm" data-feedback-form>
           <div class="cann-feedback-question">
-            <span class="cann-feedback-kicker">体验评分</span>
             <h3>这次使用体验如何？</h3>
-            <p>请选择 1–5 分，分数越高表示越喜欢。</p>
+            <p>请选择 1–5 分，分数越高代表体验越好。</p>
           </div>
 
           <div class="cann-feedback-rating-wrap">
-            <div class="cann-feedback-rating-group" role="radiogroup" aria-label="CANN Vision 体验评分">
-              <button class="btn btn-ghost cann-feedback-star" type="button" role="radio" aria-checked="false" aria-label="1 分，不喜欢" data-feedback-rating="1" title="1 分 · 不喜欢"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m12 3 2.8 5.7 6.2.9-4.5 4.4 1.1 6.2-5.6-3-5.6 3 1.1-6.2L3 9.6l6.2-.9L12 3Z"></path></svg></button>
-              <button class="btn btn-ghost cann-feedback-star" type="button" role="radio" aria-checked="false" aria-label="2 分，不太喜欢" data-feedback-rating="2" title="2 分 · 不太喜欢"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m12 3 2.8 5.7 6.2.9-4.5 4.4 1.1 6.2-5.6-3-5.6 3 1.1-6.2L3 9.6l6.2-.9L12 3Z"></path></svg></button>
-              <button class="btn btn-ghost cann-feedback-star" type="button" role="radio" aria-checked="false" aria-label="3 分，一般" data-feedback-rating="3" title="3 分 · 一般"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m12 3 2.8 5.7 6.2.9-4.5 4.4 1.1 6.2-5.6-3-5.6 3 1.1-6.2L3 9.6l6.2-.9L12 3Z"></path></svg></button>
-              <button class="btn btn-ghost cann-feedback-star" type="button" role="radio" aria-checked="false" aria-label="4 分，比较喜欢" data-feedback-rating="4" title="4 分 · 比较喜欢"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m12 3 2.8 5.7 6.2.9-4.5 4.4 1.1 6.2-5.6-3-5.6 3 1.1-6.2L3 9.6l6.2-.9L12 3Z"></path></svg></button>
-              <button class="btn btn-ghost cann-feedback-star" type="button" role="radio" aria-checked="false" aria-label="5 分，非常喜欢" data-feedback-rating="5" title="5 分 · 非常喜欢"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m12 3 2.8 5.7 6.2.9-4.5 4.4 1.1 6.2-5.6-3-5.6 3 1.1-6.2L3 9.6l6.2-.9L12 3Z"></path></svg></button>
+            <div class="cann-feedback-rating-group" role="radiogroup" aria-label="CANN Vision 五星评分">
+              <button class="btn btn-ghost cann-feedback-star" type="button" role="radio" aria-checked="false" aria-label="1 分" data-feedback-rating="1" title="1 分"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m12 3 2.8 5.7 6.2.9-4.5 4.4 1.1 6.2-5.6-3-5.6 3 1.1-6.2L3 9.6l6.2-.9L12 3Z"></path></svg></button>
+              <button class="btn btn-ghost cann-feedback-star" type="button" role="radio" aria-checked="false" aria-label="2 分" data-feedback-rating="2" title="2 分"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m12 3 2.8 5.7 6.2.9-4.5 4.4 1.1 6.2-5.6-3-5.6 3 1.1-6.2L3 9.6l6.2-.9L12 3Z"></path></svg></button>
+              <button class="btn btn-ghost cann-feedback-star" type="button" role="radio" aria-checked="false" aria-label="3 分" data-feedback-rating="3" title="3 分"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m12 3 2.8 5.7 6.2.9-4.5 4.4 1.1 6.2-5.6-3-5.6 3 1.1-6.2L3 9.6l6.2-.9L12 3Z"></path></svg></button>
+              <button class="btn btn-ghost cann-feedback-star" type="button" role="radio" aria-checked="false" aria-label="4 分" data-feedback-rating="4" title="4 分"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m12 3 2.8 5.7 6.2.9-4.5 4.4 1.1 6.2-5.6-3-5.6 3 1.1-6.2L3 9.6l6.2-.9L12 3Z"></path></svg></button>
+              <button class="btn btn-ghost cann-feedback-star" type="button" role="radio" aria-checked="false" aria-label="5 分" data-feedback-rating="5" title="5 分"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m12 3 2.8 5.7 6.2.9-4.5 4.4 1.1 6.2-5.6-3-5.6 3 1.1-6.2L3 9.6l6.2-.9L12 3Z"></path></svg></button>
             </div>
-            <div class="cann-feedback-rating-labels" aria-hidden="true"><span>不喜欢</span><span>喜欢</span></div>
           </div>
 
           <div class="cann-feedback-comment">
             <label for="cannFeedbackComment">告诉我们更多 <span>(可选)</span></label>
-            <textarea id="cannFeedbackComment" maxlength="500" placeholder="哪一点让你喜欢或不喜欢？有什么建议？" data-feedback-comment></textarea>
+            <textarea id="cannFeedbackComment" maxlength="500" placeholder="哪一点印象最深？有什么建议？" data-feedback-comment></textarea>
             <div class="cann-feedback-count"><span data-feedback-count>0</span>/500</div>
           </div>
         </form>
@@ -6069,6 +6088,7 @@
   <script src="../vendor/pto-design-system/patterns/memory-architecture/pattern.js"></script>
   <script src="../vendor/pto-design-system/patterns/floating-playback-control/pattern.js"></script>
   <script src="../vendor/pto-design-system/patterns/hardware-architecture-viewport/pattern.js"></script>
+  <script src="../vendor/pto-design-system/patterns/tensor-title/pattern.js"></script>
   <script src="patterns/matrix-canvas/pattern.js"></script>
   <script src="patterns/tensor-volume-canvas/pattern.js"></script>
   <script>
@@ -6088,7 +6108,8 @@
         // 重绘依赖 token 取色的 canvas，使浅色/深色即时生效
         try {
           [load3dNchwPatternController, load3dA1PatternController, load3dA2MatrixController,
-           gm2ubSrcMatrixController, gm2ubDstMatrixController].forEach((controller) => controller?.resize?.());
+           gm2ubSrcMatrixController, gm2ubDstMatrixController,
+           ascMmadAMatrixController, ascMmadBMatrixController, ascMmadCMatrixController].forEach((controller) => controller?.resize?.());
         } catch (err) { /* 控制器尚未声明（页面初始化早期）时忽略 */ }
       };
       let savedTheme = null;
@@ -7709,6 +7730,25 @@
 
       const $ = (selector, root = document) => root.querySelector(selector);
       const $$ = (selector, root = document) => [...root.querySelectorAll(selector)];
+      const tensorTitleControllers = new Map();
+      const mountTensorTitle = (key, host, scene, options = {}) => {
+        if (!host || !window.PtoTensorTitle) return null;
+        const current = tensorTitleControllers.get(key);
+        if (current?.host === host) {
+          current.controller.update(scene, options);
+          return current.controller;
+        }
+        current?.controller?.destroy?.();
+        const controller = window.PtoTensorTitle.render(host, scene, options);
+        tensorTitleControllers.set(key, { host, controller });
+        return controller;
+      };
+      const destroyTensorTitles = (keys) => {
+        keys.forEach((key) => {
+          tensorTitleControllers.get(key)?.controller?.destroy?.();
+          tensorTitleControllers.delete(key);
+        });
+      };
       const setText = (selector, value, root = document) => {
         const node = $(selector, root);
         if (node) node.textContent = value;
@@ -8006,6 +8046,8 @@
         setLoad3dApiPlaybackVisible(false);
         stopGm2ubPlayback();
         setGm2ubPlaybackVisible(false);
+        stopAscMmadPlayback();
+        setAscMmadPlaybackVisible(false);
         $('[data-generated-project-view]').hidden = false;
         $('[data-generated-project-tabstrip]').hidden = false;
         setText('[data-center-title]', '预览');
@@ -9741,9 +9783,45 @@
         load3dNchwPatternController?.destroy?.();
         load3dA1PatternController?.destroy?.();
         load3dA2MatrixController?.destroy?.();
+        destroyTensorTitles(['load3d-nchw', 'load3d-a1', 'load3d-a2']);
         load3dNchwPatternController = null;
         load3dA1PatternController = null;
         load3dA2MatrixController = null;
+      };
+
+      const mountLoad3dTensorTitles = (p, shape, context) => {
+        const step = { phase: 'load3d', stepIndex: context.step + 1, totalSteps: context.maxStep + 1 };
+        const current = context.element;
+        mountTensorTitle('load3d-nchw', $('#opLoad3dNchwTitle'), {
+          label: '输入形状',
+          role: 'input',
+          logicalShape: { label: 'NCHW', dims: [1, p.Ci, p.Hi, p.Wi] },
+          format: 'NCHW',
+          axes: ['N', 'C', 'H', 'W'],
+          memory: { tier: 'GM' },
+          step,
+          status: `窗口 (${context.patch.oh}, ${context.patch.ow})`
+        }, { ariaLabel: 'Load3D 输入张量标题', density: 'compact' });
+        mountTensorTitle('load3d-a1', $('#opLoad3dA1Title'), {
+          label: 'A1 布局',
+          role: 'input',
+          physicalShape: { label: 'NC1HWC0', dims: [1, shape.C1, p.Hi, p.Wi, p.C0] },
+          format: 'NC1HWC0',
+          axes: ['N', 'C1', 'H', 'W', 'C0'],
+          memory: { tier: 'L1' },
+          step,
+          status: `kh=${current.kh}, kw=${current.kw}`
+        }, { ariaLabel: 'Load3D A1 张量标题', density: 'compact' });
+        mountTensorTitle('load3d-a2', $('#opLoad3dA2Title'), {
+          label: 'A2 逻辑矩阵',
+          role: 'output',
+          logicalShape: { label: 'A2', dims: [shape.rows, shape.cols] },
+          axes: ['Ho×Wo', 'Hk×Wk×Ci'],
+          memory: { tier: 'L0A' },
+          state: '当前写入',
+          step: { ...step, operationChips: [`row ${current.row}`, `cols ${context.sampleElements[0]?.col ?? current.col}…${context.sampleElements.at(-1)?.col ?? current.col}`] },
+          status: `${shape.rows}×${shape.cols}`
+        }, { ariaLabel: 'Load3D A2 矩阵标题', density: 'compact' });
       };
 
       // Convert the Load3D business state into the shared Tensor Volume Canvas scene contract.
@@ -10012,6 +10090,20 @@
           meta: '当前参数 · 当前 playback context',
           copyLabel: '复制 asc_copy_gm2ub_align 生成代码',
           copiedLabel: '已复制 asc_copy_gm2ub_align 生成代码'
+        },
+        'mmad-prototype': {
+          source: '[data-api-code-source="mmad-prototype"]',
+          title: 'asc_mmad 函数原型',
+          meta: 'C++ prototype',
+          copyLabel: '复制 asc_mmad 函数原型',
+          copiedLabel: '已复制 asc_mmad 函数原型'
+        },
+        'mmad-generated': {
+          source: '[data-api-code-source="mmad-generated"]',
+          title: 'asc_mmad 生成代码',
+          meta: '当前参数 · 当前逻辑 K 分片',
+          copyLabel: '复制 asc_mmad 生成代码',
+          copiedLabel: '已复制 asc_mmad 生成代码'
         }
       };
 
@@ -10081,9 +10173,9 @@
       };
 
       const apiStepperMarkup = ({ id, label, value, min, max, step = 1, dataAttribute = '', fieldClass = 'field', labelMarkup = `<label for="${id}">${label}</label>`, disabled = false }) => `
-        <div class="${fieldClass}${disabled ? ' is-disabled' : ''}">
+        <div class="${fieldClass} api-field${disabled ? ' is-disabled' : ''}">
           ${labelMarkup}
-          <div class="stepper-control">
+          <div class="stepper-control api-stepper">
             <button type="button" aria-label="Decrease ${label}" data-api-stepper-target="${id}" data-api-stepper-delta="-1"${disabled ? ' disabled' : ''}>-</button>
             <input class="input" id="${id}" type="number" min="${min}" max="${max}" step="${step}" value="${value}" readonly tabindex="-1"${disabled ? ' disabled' : ''} ${dataAttribute}>
             <button type="button" aria-label="Increase ${label}" data-api-stepper-target="${id}" data-api-stepper-delta="1"${disabled ? ' disabled' : ''}>+</button>
@@ -10144,6 +10236,7 @@
         const patches = load3dPatches(p, shape);
         const context = load3dContext(patches);
         destroyLoad3dPatternControllers();
+        mountLoad3dTensorTitles(p, shape, context);
         const nchwCanvas = $('#opLoad3dNchwCanvas');
         if (nchwCanvas && window.PtoTensorVolumeCanvas) {
           load3dNchwPatternController = window.PtoTensorVolumeCanvas.render(
@@ -10225,10 +10318,8 @@
               <div class="op-load3d-left">
                 <section class="op-load3d-input">
                 <div class="op-load3d-views">
-                  <div class="op-load3d-canvas-card">
-                    <div class="op-load3d-viz-head">
-                      <h4>输入形状</h4>
-                    </div>
+                  <div class="op-load3d-canvas-card viz-container viz-container--matrix">
+                    <div class="matrix-tensor-title-host" id="opLoad3dNchwTitle" data-tensor-title="load3d-nchw"></div>
                     <div class="op-load3d-canvas-wrap">
                       <canvas class="op-load3d-canvas" id="opLoad3dNchwCanvas" aria-label="NCHW 输入张量"></canvas>
                       <div class="op-load3d-overlay op-load3d-overlay--tl" aria-hidden="true">
@@ -10237,10 +10328,8 @@
                       </div>
                     </div>
                   </div>
-                  <div class="op-load3d-canvas-card">
-                    <div class="op-load3d-viz-head">
-                      <h4>A1 布局</h4>
-                    </div>
+                  <div class="op-load3d-canvas-card viz-container viz-container--matrix">
+                    <div class="matrix-tensor-title-host" id="opLoad3dA1Title" data-tensor-title="load3d-a1"></div>
                     <div class="op-load3d-canvas-wrap">
                       <canvas class="op-load3d-canvas" id="opLoad3dA1Canvas" aria-label="NC1HWC0 A1 布局"></canvas>
                       <div class="op-load3d-overlay op-load3d-overlay--tl" aria-hidden="true">
@@ -10254,14 +10343,8 @@
                   </div>
                 </div>
                 </section>
-              <section class="op-load3d-matrix">
-                <div class="op-load3d-viz-head op-load3d-matrix-head">
-                  <h4>A2 逻辑矩阵</h4>
-                  <div class="op-load3d-pills">
-                    <span class="op-load3d-pill is-hot">row = oh × Wo + ow = ${element.row}</span>
-                    <span class="op-load3d-pill">cols ${firstSampleCol}…${lastSampleCol}：固定 kh=${element.kh}, kw=${element.kw}，遍历 c</span>
-                  </div>
-                </div>
+              <section class="op-load3d-matrix viz-container viz-container--matrix">
+                <div class="matrix-tensor-title-host" id="opLoad3dA2Title" data-tensor-title="load3d-a2"></div>
                 <div class="op-load3d-matrix-scroll" aria-label="A2 逻辑矩阵滚动区域">
                   <div class="op-load3d-matrix-canvas-host">
                     <canvas id="opLoad3dA2Canvas" aria-label="A2 逻辑矩阵"></canvas>
@@ -10520,7 +10603,7 @@
             ${apiStepperMarkup({ id: 'load3d-api-C0', label: 'C0', value: load3dApiState.C0, min: 16, max: 32, step: 16, dataAttribute: 'data-load3d-param="C0"' })}
             <div class="field" style="grid-column:1/-1">
               <label>padding 通道</label>
-              <div class="seg api-choice-group compact-choice-tabs" role="radiogroup" aria-label="padding 通道显示方式">
+              <div class="api-choice-group compact-choice-tabs" role="radiogroup" aria-label="padding 通道显示方式">
                 <button class="btn btn-sm ${load3dApiState.showChannelPadding ? 'is-selected' : ''}" type="button" role="radio" aria-checked="${load3dApiState.showChannelPadding}" tabindex="${load3dApiState.showChannelPadding ? '0' : '-1'}" data-load3d-channel-padding="1">显示</button>
                 <button class="btn btn-sm ${!load3dApiState.showChannelPadding ? 'is-selected' : ''}" type="button" role="radio" aria-checked="${!load3dApiState.showChannelPadding}" tabindex="${!load3dApiState.showChannelPadding ? '0' : '-1'}" data-load3d-channel-padding="0">隐藏</button>
               </div>
@@ -10529,7 +10612,7 @@
           const repeatMode = title === '重复参数' ? `
             <div class="field">
               <label>repeatMode</label>
-              <div class="seg api-choice-group compact-choice-tabs" role="radiogroup" aria-label="repeatMode">
+              <div class="api-choice-group compact-choice-tabs" role="radiogroup" aria-label="repeatMode">
                 <button class="btn btn-sm ${load3dApiState.repeatMode === 0 ? 'is-selected' : ''}" type="button" role="radio" aria-checked="${load3dApiState.repeatMode === 0}" tabindex="${load3dApiState.repeatMode === 0 ? '0' : '-1'}" data-load3d-repeat="0">模式 0</button>
                 <button class="btn btn-sm ${load3dApiState.repeatMode === 1 ? 'is-selected' : ''}" type="button" role="radio" aria-checked="${load3dApiState.repeatMode === 1}" tabindex="${load3dApiState.repeatMode === 1 ? '0' : '-1'}" data-load3d-repeat="1">模式 1</button>
               </div>
@@ -10557,10 +10640,10 @@
           `;
         }).join('');
         $('#load3dApiControls').innerHTML = `
-          <div class="api-learn-controls">
+          <div class="api-learn-controls api-control-panel">
             <section class="group">
               <div class="group-heading"><div class="group-title">预设场景</div><div class="group-description">载入典型的 Load3D 输入与采样组合。</div></div>
-              <div class="presets" role="radiogroup" aria-label="Load3D 预设场景">
+              <div class="api-preset-group" role="radiogroup" aria-label="Load3D 预设场景">
                 ${presets.map((preset, index) => `<button class="btn btn-sm preset${load3dActivePreset === index ? ' is-selected' : ''}" type="button" role="radio" aria-checked="${load3dActivePreset === index}" tabindex="${load3dActivePreset === index || (load3dActivePreset === null && index === 0) ? '0' : '-1'}" data-load3d-preset="${index}">${preset.name}</button>`).join('')}
               </div>
               <p class="preset-description active-preset-description">${load3dActivePreset === null ? '当前参数不对应任何预设场景。' : presets[load3dActivePreset].description}</p>
@@ -11040,18 +11123,42 @@ __aicore__ inline void LoadData(const LocalTensor&lt;T&gt;&amp; dst, const Local
             : '按首值补齐';
         const formLabel = context.form === 'linear' ? '连续搬运' : '高维切分搬运';
         const modeLabel = context.isBurst ? (context.compact ? 'Compact' : 'Normal') : 'Contiguous';
+        const srcCopy = context.isBurst
+          ? `${context.nBurst} blocks × ${context.lenBurst} B · src_stride ${context.srcStride} B · gap ${srcGap} B`
+          : `${context.lenBurst} B contiguous valid data · no burst stride parameter`;
+        const dstCopy = context.isBurst
+          ? context.compact
+            ? `Compact layout · blocks packed together · tail padding ${context.dstTotalBytes - context.validBytes} B`
+            : `Normal layout · dst_stride ${context.dstStride} B · each block footprint ${context.perBlockAlignedBytes} B`
+          : `${context.lenBurst} B valid write · alignment padding ${context.dstTotalBytes - context.validBytes} B`;
 
         setText('[data-gm2ub-mode]', formLabel, stage);
         setText('[data-gm2ub-valid-bytes]', `${context.validBytes} B`, stage);
         setText('[data-gm2ub-footprint-bytes]', `${context.dstTotalBytes} B`, stage);
-        setText('[data-gm2ub-src-copy]', context.isBurst
-          ? `${context.nBurst} blocks × ${context.lenBurst} B · src_stride ${context.srcStride} B · gap ${srcGap} B`
-          : `${context.lenBurst} B contiguous valid data · no burst stride parameter`, stage);
-        setText('[data-gm2ub-dst-copy]', context.isBurst
-          ? context.compact
-            ? `Compact layout · blocks packed together · tail padding ${context.dstTotalBytes - context.validBytes} B`
-            : `Normal layout · dst_stride ${context.dstStride} B · each block footprint ${context.perBlockAlignedBytes} B`
-          : `${context.lenBurst} B valid write · alignment padding ${context.dstTotalBytes - context.validBytes} B`, stage);
+        mountTensorTitle('gm2ub-src', $('#gm2ubSrcTitle'), {
+          label: 'GM 源矩阵',
+          role: 'input',
+          logicalShape: { label: 'source', dims: [context.nBurst, context.columns] },
+          dtype: context.dtype.label,
+          axes: ['burst', 'width'],
+          memory: { tier: 'GM', stride: context.isBurst ? `${context.srcStride} B` : '' },
+          partition: { blockCount: context.nBurst, blockLength: `${context.lenBurst} B` },
+          state: playback.step < playback.timeline.length - 1 ? '读取中' : '读取完成',
+          constraints: [srcCopy],
+          status: `${context.validBytes} B valid`
+        }, { ariaLabel: 'asc_copy_gm2ub_align GM 源矩阵标题', density: 'compact' });
+        mountTensorTitle('gm2ub-dst', $('#gm2ubDstTitle'), {
+          label: 'UB 目标矩阵',
+          role: 'output',
+          logicalShape: { label: 'destination', dims: [context.nBurst, context.columns] },
+          dtype: context.dtype.label,
+          axes: ['burst', 'width'],
+          memory: { tier: 'UB', sizeBytes: context.dstTotalBytes, alignment: 32 },
+          partition: { blockCount: context.nBurst, blockLength: `${context.lenBurst} B` },
+          state: playback.step < playback.timeline.length - 1 ? '写入中' : '写入完成',
+          constraints: [dstCopy],
+          status: `${context.dstTotalBytes} B footprint`
+        }, { ariaLabel: 'asc_copy_gm2ub_align UB 目标矩阵标题', density: 'compact' });
         setText('[data-gm2ub-formula]', context.compact
           ? `GM上${context.validBytes}B搬运至UB，按32B对齐后共占用${context.dstTotalBytes}B`
           : `每个block写入UB前占用${context.blockFootprintBytes}B，按32B对齐后每块占用${context.perBlockAlignedBytes}B`, stage);
@@ -11220,15 +11327,15 @@ __aicore__ inline void LoadData(const LocalTensor&lt;T&gt;&amp; dst, const Local
           { name: '左右 padding', description: '在每个块的前后加入固定补齐。', values: { form: 'burst', dtype: 'half', nBurst: 3, lenBurst: 48, srcStride: 128, dstStride: 96, leftPadding: 4, rightPadding: 4, enableConstantPad: true, l2CacheMode: 'default', padValue: 0 } }
         ];
         const controlLabel = (forId, label, tooltip) => `
-          <div class="api-label-row">
+          <div class="api-label-row api-field-label">
             <label${forId ? ` for="${forId}"` : ''}>${label}</label>
-            <span class="api-param-help" tabindex="0" title="${tooltip}" aria-label="${tooltip}">?</span>
+            <span class="api-param-help api-help" tabindex="0" title="${tooltip}" aria-label="${tooltip}">?</span>
           </div>
         `;
         const commonControls = `
           <section class="group">
             <div class="group-heading"><div class="group-title">搬运方式</div><div class="group-description">选择单段连续搬运或多块高维切分搬运。</div></div>
-            <div class="seg mode-segment api-choice-group" role="radiogroup" aria-label="搬运方式">
+            <div class="api-choice-group" role="radiogroup" aria-label="搬运方式">
               ${Object.entries(forms).map(([key, item]) => `<button class="btn btn-sm ${gm2ubApiState.form === key ? 'is-selected' : ''}" type="button" role="radio" aria-checked="${gm2ubApiState.form === key}" data-gm2ub-form="${key}">${item.label}</button>`).join('')}
             </div>
             ${gm2ubApiState.form === 'burst'
@@ -11242,7 +11349,7 @@ __aicore__ inline void LoadData(const LocalTensor&lt;T&gt;&amp; dst, const Local
                 ${controlLabel('gm2ub-api-dtype', 'dtype', '数据类型，用于换算每个元素占用的字节数')}
                 <span class="dtype-readout" data-gm2ub-dtype-readout>${currentDtype.label} · ${currentDtype.bytes}B</span>
               </div>
-              <div class="dtype-segment" id="gm2ub-api-dtype" role="radiogroup" aria-label="dtype">
+              <div class="api-choice-group" id="gm2ub-api-dtype" role="radiogroup" aria-label="dtype">
                 ${dtypeKeys.map((key) => `<button class="btn btn-sm ${gm2ubApiState.dtype === key ? 'is-selected' : ''}" type="button" role="radio" aria-checked="${gm2ubApiState.dtype === key ? 'true' : 'false'}" tabindex="${gm2ubApiState.dtype === key ? '0' : '-1'}" data-gm2ub-dtype="${key}">${gm2ubDtypes[key].label}</button>`).join('')}
               </div>
             </div>
@@ -11258,14 +11365,14 @@ __aicore__ inline void LoadData(const LocalTensor&lt;T&gt;&amp; dst, const Local
               ${apiStepperMarkup({ id: 'gm2ub-api-rightPadding', label: 'right_padding_num / elements', value: gm2ubApiState.rightPadding, min: 0, max: 16, labelMarkup: controlLabel('gm2ub-api-rightPadding', 'right_padding_num / elements', '每个数据块写入 UB 后侧补齐的元素个数'), dataAttribute: 'data-gm2ub-param="rightPadding"' })}
               <div class="field">
                 ${controlLabel('', 'enable_constant_pad', '是否使用 asc_set_copy_pad_val(...) 设置的固定补齐值')}
-                <div class="seg api-choice-group" role="radiogroup" aria-label="填充值来源">
+                <div class="api-choice-group" role="radiogroup" aria-label="填充值来源">
                   <button class="btn btn-sm ${gm2ubApiState.enableConstantPad ? '' : 'is-selected'}" type="button" role="radio" aria-checked="${!gm2ubApiState.enableConstantPad}" data-gm2ub-constant-pad="false">按首值</button>
                   <button class="btn btn-sm ${gm2ubApiState.enableConstantPad ? 'is-selected' : ''}" type="button" role="radio" aria-checked="${gm2ubApiState.enableConstantPad}" data-gm2ub-constant-pad="true">设定值</button>
                 </div>
               </div>
               <div class="field">
                 ${controlLabel('gm2ub-api-l2CacheMode', 'l2_cache_mode', 'L2 缓存策略，不改变矩阵布局')}
-                <select id="gm2ub-api-l2CacheMode" data-gm2ub-param="l2CacheMode">
+                <select class="api-select" id="gm2ub-api-l2CacheMode" data-gm2ub-param="l2CacheMode">
                   <option value="default" ${gm2ubApiState.l2CacheMode === 'default' ? 'selected' : ''}>default</option>
                   <option value="cache" ${gm2ubApiState.l2CacheMode === 'cache' ? 'selected' : ''}>cache</option>
                   <option value="no-cache" ${gm2ubApiState.l2CacheMode === 'no-cache' ? 'selected' : ''}>no-cache</option>
@@ -11287,10 +11394,10 @@ __aicore__ inline void LoadData(const LocalTensor&lt;T&gt;&amp; dst, const Local
         const root = $('#gm2ubApiControls');
         if (!root) return;
         root.innerHTML = `
-          <div class="api-learn-controls">
+          <div class="api-learn-controls api-control-panel">
             <section class="group">
               <div class="group-heading"><div class="group-title">预设场景</div><div class="group-description">载入典型的 GM 到 UB 搬运布局。</div></div>
-              <div class="presets" role="radiogroup" aria-label="Gm2UbAlign 预设场景">
+              <div class="api-preset-group" role="radiogroup" aria-label="Gm2UbAlign 预设场景">
                 ${presets.map((preset, index) => `<button class="btn btn-sm preset${gm2ubActivePreset === index ? ' is-selected' : ''}" type="button" role="radio" aria-checked="${gm2ubActivePreset === index}" tabindex="${gm2ubActivePreset === index || (gm2ubActivePreset === null && index === 0) ? '0' : '-1'}" data-gm2ub-preset="${index}">${preset.name}</button>`).join('')}
               </div>
               <p class="preset-description active-preset-description">${gm2ubActivePreset === null ? '当前参数不对应任何预设场景。' : presets[gm2ubActivePreset].description}</p>
@@ -11414,6 +11521,498 @@ __aicore__ inline void LoadData(const LocalTensor&lt;T&gt;&amp; dst, const Local
         gm2ubControlsMounted = true;
       };
 
+      let ascMmadControlsMounted = false;
+      let ascMmadPlaybackMounted = false;
+      let ascMmadPlaying = false;
+      let ascMmadTimer = null;
+      let ascMmadStep = 0;
+      let ascMmadPlayback = null;
+      let ascMmadActivePreset = 0;
+      let ascMmadAMatrixController = null;
+      let ascMmadBMatrixController = null;
+      let ascMmadCMatrixController = null;
+
+      const ascMmadDtypes = {
+        half: { label: 'half → float', input: 'half', output: 'float', kSpan: 16 },
+        bfloat16_t: { label: 'bfloat16 → float', input: 'bfloat16_t', output: 'float', kSpan: 16 },
+        float: { label: 'float → float', input: 'float', output: 'float', kSpan: 8 },
+        int8_t: { label: 'int8 → int32', input: 'int8_t', output: 'int32_t', kSpan: 32 }
+      };
+
+      const ascMmadPresets = [
+        { name: '基线', description: 'A2/A3 上的 16×16×16 half 清零计算。', values: { platform: 'a2a3', variant: 'async', dtype: 'half', M: 16, K: 16, N: 16, initMode: 'zero', kDirectionAlign: false, disableGemv: false, unitFlag: 0 } },
+        { name: '官方尾块', description: '官方样例的 M=30、K=70、N=40 b16 分形占用。', values: { platform: '950', variant: 'async', dtype: 'bfloat16_t', M: 30, K: 70, N: 40, initMode: 'zero', kDirectionAlign: false, disableGemv: true, unitFlag: 0 } },
+        { name: 'BT 初值', description: 'C 从 Bias Table Buffer 初始化后进行 int8 矩阵乘加。', values: { platform: '950', variant: 'async', dtype: 'int8_t', M: 30, K: 70, N: 64, initMode: 'bt', kDirectionAlign: false, disableGemv: true, unitFlag: 0 } },
+        { name: 'L0C 累加', description: 'C 读取既有 L0C 结果，表达第二次 asc_mmad 累加。', values: { platform: '950', variant: 'async', dtype: 'bfloat16_t', M: 30, K: 70, N: 40, initMode: 'l0c', kDirectionAlign: false, disableGemv: true, unitFlag: 0 } },
+        { name: '950 GEMV', description: 'left_height=1 且 disable_gemv=false，L0A 按 ND 读取。', values: { platform: '950', variant: 'sync', dtype: 'half', M: 1, K: 64, N: 32, initMode: 'zero', kDirectionAlign: false, disableGemv: false, unitFlag: 0 } },
+        { name: 'NOP', description: 'left_height=0，文档规定该指令不执行。', values: { platform: 'a2a3', variant: 'async', dtype: 'half', M: 0, K: 16, N: 16, initMode: 'zero', kDirectionAlign: false, disableGemv: false, unitFlag: 0 } }
+      ];
+
+      const ascMmadState = { ...ascMmadPresets[0].values };
+
+      const ascMmadModel = () => {
+        const dtype = ascMmadDtypes[ascMmadState.dtype] || ascMmadDtypes.half;
+        const noOp = ascMmadState.M === 0 || ascMmadState.K === 0 || ascMmadState.N === 0;
+        const kDirectionAlignEffective = ascMmadState.platform === 'a2a3'
+          && ascMmadState.dtype === 'float'
+          && ascMmadState.kDirectionAlign;
+        const kSpan = kDirectionAlignEffective ? 16 : dtype.kSpan;
+        const disableGemvEffective = ascMmadState.platform === '950'
+          && ascMmadState.M === 1
+          && ascMmadState.disableGemv;
+        const gemv = ascMmadState.platform === '950'
+          && ascMmadState.M === 1
+          && !ascMmadState.disableGemv;
+        const init = {
+          zero: { label: '清零', cMatrixSource: false, cMatrixInitVal: true },
+          bt: { label: 'BT 初值', cMatrixSource: true, cMatrixInitVal: false },
+          l0c: { label: 'L0C 累加', cMatrixSource: false, cMatrixInitVal: false }
+        }[ascMmadState.initMode];
+        const kFragments = noOp ? 0 : Math.ceil(ascMmadState.K / kSpan);
+        const timeline = noOp ? [{ phase: 'noop', label: '维度含 0：不执行 asc_mmad 指令' }] : [
+          { phase: 'init', label: `解析 C 初值：${init.label}` },
+          ...Array.from({ length: kFragments }, (_, index) => ({
+            phase: 'compute',
+            fragment: index,
+            label: `累加 K[${index * kSpan}…${Math.min(ascMmadState.K, (index + 1) * kSpan) - 1}]`
+          })),
+          { phase: 'complete', label: `C(${ascMmadState.M}×${ascMmadState.N}) 就绪` }
+        ];
+        const step = Math.max(0, Math.min(ascMmadStep, timeline.length - 1));
+        const displayTensors = [
+          { id: 'A', extent: { rows: ascMmadState.M, columns: ascMmadState.K }, axes: { rows: 'M', columns: 'K' } },
+          { id: 'B', extent: { rows: ascMmadState.K, columns: ascMmadState.N }, axes: { rows: 'K', columns: 'N' } },
+          { id: 'C', extent: { rows: ascMmadState.M, columns: ascMmadState.N }, axes: { rows: 'M', columns: 'N' } }
+        ];
+        // 公共矩阵标准：同一视图内所有矩阵都能放下时使用真实 1×1 cell；
+        // 任一矩阵过大时才启用共享轴尺度的 aggregate cell，避免各矩阵各自缩放。
+        const maxRealMatrixCells = 256;
+        const renderRealCells = !noOp && displayTensors.every((tensor) => tensor.extent.rows * tensor.extent.columns <= maxRealMatrixCells);
+        const scalePlan = noOp || !window.PtoMatrixCanvas?.resolveSharedAggregateScale ? null : window.PtoMatrixCanvas.resolveSharedAggregateScale({
+          tensors: displayTensors,
+          axisScales: renderRealCells ? { M: 1, N: 1, K: 1 } : { M: 16, N: 16, K: kSpan },
+          hardBoundaries: { M: [16], N: [16], K: [kSpan] }
+        });
+        const warnings = [];
+        if (ascMmadState.unitFlag !== 0 && ascMmadState.initMode === 'l0c') {
+          warnings.push('文档约束：unit_flag 不适用于 L0C Buffer 累加场景。');
+        }
+        if (ascMmadState.platform === 'a2a3' && ascMmadState.kDirectionAlign && ascMmadState.dtype !== 'float') {
+          warnings.push('k_direction_align 已请求，但仅在 float 场景产生对齐效果。');
+        }
+        if (ascMmadState.platform === '950' && ascMmadState.disableGemv && ascMmadState.M !== 1) {
+          warnings.push('disable_gemv 会传入接口，但当前 left_height≠1，不改变执行路径。');
+        }
+        return { dtype, noOp, kSpan, kFragments, timeline, step, event: timeline[step], init, gemv, disableGemvEffective, kDirectionAlignEffective, scalePlan, renderRealCells, maxRealMatrixCells, warnings };
+      };
+
+      const ascMmadFunctionName = () => ascMmadState.variant === 'sync' ? 'asc_mmad_sync' : 'asc_mmad';
+
+      const ascMmadPrototype = (model) => {
+        const platformBoolean = ascMmadState.platform === '950' ? 'disable_gemv' : 'k_direction_align';
+        return `__aicore__ inline void ${ascMmadFunctionName()}(\n    __cc__ ${model.dtype.output}* c_matrix,\n    __ca__ ${model.dtype.input}* a_matrix,\n    __cb__ ${model.dtype.input}* b_matrix,\n    uint16_t left_height, uint16_t n_dim, uint16_t right_width,\n    uint8_t unit_flag, bool ${platformBoolean},\n    bool c_matrix_source, bool c_matrix_init_val);`;
+      };
+
+      const ascMmadGeneratedCode = (model) => {
+        const platformBoolean = ascMmadState.platform === '950'
+          ? `bool disable_gemv = ${ascMmadState.disableGemv};`
+          : `bool k_direction_align = ${ascMmadState.kDirectionAlign};`;
+        const booleanArgument = ascMmadState.platform === '950' ? 'disable_gemv' : 'k_direction_align';
+        const logicalContext = model.noOp
+          ? '// NOP: left_height / n_dim / right_width 中至少一个为 0，指令不执行。'
+          : `// 学习视图：${model.event.label}；这不是额外的 API 调用。`;
+        return [
+          '#include "c_api/cube_compute/cube_compute.h"',
+          '',
+          `// ${ascMmadState.platform === '950' ? 'Ascend 950PR / 950DT' : 'Atlas A2 / A3'} · PIPE_M`,
+          logicalContext,
+          `uint16_t left_height = ${ascMmadState.M}; // M`,
+          `uint16_t n_dim = ${ascMmadState.K};       // K`,
+          `uint16_t right_width = ${ascMmadState.N}; // N`,
+          `uint8_t unit_flag = ${ascMmadState.unitFlag};`,
+          platformBoolean,
+          `bool c_matrix_source = ${model.init.cMatrixSource};`,
+          `bool c_matrix_init_val = ${model.init.cMatrixInitVal};`,
+          '',
+          `${ascMmadFunctionName()}(`,
+          '    c_matrix, a_matrix, b_matrix,',
+          '    left_height, n_dim, right_width, unit_flag,',
+          `    ${booleanArgument}, c_matrix_source, c_matrix_init_val);`
+        ].join('\n');
+      };
+
+      const updateAscMmadCodePanels = (model = ascMmadModel()) => {
+        setText('[data-api-code-source="mmad-prototype"]', ascMmadPrototype(model));
+        setText('[data-api-code-source="mmad-generated"]', ascMmadGeneratedCode(model));
+        highlightCppCode('[data-api-code-source="mmad-prototype"]');
+        highlightCppCode('[data-api-code-source="mmad-generated"]');
+      };
+
+      const ascMmadCells = (kind, model) => {
+        const plan = model.scalePlan.tensors.find((item) => item.id === kind);
+        const cells = model.renderRealCells
+          ? window.PtoMatrixCanvas.createRealLayoutCells(
+            { rows: plan.extent.rows, columns: plan.extent.columns },
+            { idPrefix: kind, tone: kind === 'C' ? 'output' : 'input' }
+          )
+          : window.PtoMatrixCanvas.createAggregateLayoutCells(
+            { rows: plan.extent.rows, columns: plan.extent.columns },
+            { blockRows: plan.rowSpan, blockColumns: plan.columnSpan, tone: kind === 'C' ? 'output' : 'input' }
+          );
+        const currentFragment = model.event.phase === 'compute' ? model.event.fragment : -1;
+        let cMovedCount = 0;
+        if (kind === 'C') {
+          cMovedCount = model.event.phase === 'complete'
+            ? cells.length
+            : model.event.phase === 'compute'
+              ? Math.min(cells.length, model.event.fragment + 1)
+              : 0;
+        }
+        cells.forEach((cell, cellIndex) => {
+          if (!model.renderRealCells && cell.summary) {
+            const fullArea = plan.rowSpan * plan.columnSpan;
+            cell.summary.intensity = Math.max(0.18, (cell.rowSpan * cell.columnSpan) / fullArea);
+          }
+          const states = [];
+          // 着色协议跟随 asc_copy_gm2ub_align：当前搬运/计算对象由
+          // `selected` 表示蓝色；`current` 只用于 style:'padding' 的橙色突出。
+          // 不把同一个 cell 同时标记为 selected/current，避免状态优先级覆盖。
+          if (kind === 'A' && currentFragment >= 0 && Math.floor(cell.column / model.kSpan) === currentFragment) states.push('selected');
+          if (kind === 'B' && currentFragment >= 0 && Math.floor(cell.row / model.kSpan) === currentFragment) states.push('selected');
+          if (kind === 'C') {
+            const hasMoved = cellIndex < cMovedCount;
+            if (hasMoved) states.push('selected');
+            if (model.event.phase === 'complete' && hasMoved) states.push('written');
+            // 未搬运的 C 保持中性；每完成一次搬运，只新增一个蓝色 cell。
+            cell.tone = hasMoved ? 'output' : 'neutral';
+          }
+          cell.states = states;
+          if (!model.renderRealCells) {
+            cell.id = `${kind}[${cell.row}…${cell.row + cell.rowSpan - 1}, ${cell.column}…${cell.column + cell.columnSpan - 1}]`;
+          }
+        });
+        return {
+          extent: { rows: plan.extent.rows, columns: plan.extent.columns },
+          axes: {
+            rows: kind === 'B' ? `K · ${model.renderRealCells ? 1 : model.kSpan} source units / cell` : `M · ${model.renderRealCells ? 1 : 16} source units / cell`,
+            columns: kind === 'A' ? `K · ${model.renderRealCells ? 1 : model.kSpan} source units / cell` : `N · ${model.renderRealCells ? 1 : 16} source units / cell`
+          },
+          cells,
+          displayMode: model.renderRealCells ? 'real' : 'aggregate'
+        };
+      };
+
+      const destroyAscMmadMatrices = () => {
+        [ascMmadAMatrixController, ascMmadBMatrixController, ascMmadCMatrixController].forEach((controller) => controller?.destroy?.());
+        destroyTensorTitles(['mmad-A', 'mmad-B', 'mmad-C']);
+        ascMmadAMatrixController = null;
+        ascMmadBMatrixController = null;
+        ascMmadCMatrixController = null;
+      };
+
+      const mountAscMmadTensorTitles = (model, plans) => {
+        const specs = {
+          A: { label: 'A · left matrix', role: 'input', dims: [ascMmadState.M, ascMmadState.K], axes: ['M', 'K'], dtype: model.dtype.input, tier: 'L0A', owner: '__ca__' },
+          B: { label: 'B · right matrix', role: 'input', dims: [ascMmadState.K, ascMmadState.N], axes: ['K', 'N'], dtype: model.dtype.input, tier: 'L0B', owner: '__cb__' },
+          C: { label: 'C · result matrix', role: 'output', dims: [ascMmadState.M, ascMmadState.N], axes: ['M', 'N'], dtype: model.dtype.output, tier: 'L0C', owner: '__cc__' }
+        };
+        Object.entries(specs).forEach(([kind, spec]) => {
+          const state = kind === 'C'
+            ? model.event.phase === 'complete' ? '就绪' : model.event.phase === 'init' ? '初始化' : '累加中'
+            : model.event.phase === 'compute' ? '读取中' : model.event.phase === 'complete' ? '读取完成' : '等待';
+          mountTensorTitle(`mmad-${kind}`, $(`#mmad${kind}Title`), {
+            label: spec.label,
+            role: spec.role,
+            logicalShape: { label: kind, dims: spec.dims },
+            dtype: spec.dtype,
+            format: spec.tier,
+            axes: spec.axes,
+            memory: { tier: spec.tier },
+            owner: spec.owner,
+            state,
+            step: {
+              phase: model.event.phase,
+              stepIndex: model.step + 1,
+              totalSteps: model.timeline.length,
+              operationChips: model.event.fragment === undefined ? [] : [`K fragment ${model.event.fragment + 1}/${model.kFragments}`]
+            },
+            status: model.renderRealCells
+              ? 'cell: 1×1'
+              : `cell: ${plans[kind].rowSpan}×${plans[kind].columnSpan}`
+          }, {
+            ariaLabel: `asc_mmad ${kind} 矩阵标题`,
+            // shape 由共享标题模式的 meta 行承载；右侧 status 只保留 cell 粒度。
+            density: 'full',
+            showChips: false
+          });
+        });
+      };
+
+      const renderAscMmadTimeline = (model) => {
+        const container = $('[data-mmad-timeline]');
+        if (!container) return;
+        container.replaceChildren(...model.timeline.map((item, index) => {
+          const row = document.createElement('li');
+          row.className = `gm2ub-align-step ${index === model.step ? 'is-current' : index < model.step ? 'is-complete' : 'is-upcoming'}`;
+          row.setAttribute('role', 'button');
+          row.tabIndex = index === model.step ? 0 : -1;
+          if (index === model.step) row.setAttribute('aria-current', 'step');
+          const indexLabel = document.createElement('span');
+          indexLabel.className = 'gm2ub-align-step__index';
+          indexLabel.textContent = `Step ${String(index + 1).padStart(2, '0')}`;
+          const label = document.createElement('span');
+          label.className = 'gm2ub-align-step__label';
+          label.textContent = item.label;
+          const go = () => {
+            stopAscMmadPlayback();
+            ascMmadStep = index;
+            renderAscMmadStage();
+          };
+          row.addEventListener('click', go);
+          row.addEventListener('keydown', (event) => {
+            if (event.key !== 'Enter' && event.key !== ' ') return;
+            event.preventDefault();
+            go();
+          });
+          row.append(indexLabel, label);
+          return row;
+        }));
+      };
+
+      const syncAscMmadPlayback = (model = ascMmadModel()) => {
+        const helper = window.PtoFloatingPlaybackControl;
+        const control = $('#mmad-api-shell')?.closest('.pto-floating-playback');
+        if (!helper || !control) return;
+        const scrubber = control.querySelector('#mmad-api-scrubber');
+        if (scrubber) {
+          scrubber.max = String(Math.max(0, model.timeline.length - 1));
+          scrubber.value = String(model.step);
+        }
+        const label = control.querySelector('#mmad-api-scrubber-label');
+        if (label) label.textContent = `${model.step + 1} / ${model.timeline.length}`;
+        const opname = control.querySelector('#mmad-api-scrubber-opname');
+        if (opname) opname.textContent = model.event.label;
+        const play = control.querySelector('#mmad-api-play');
+        if (play) play.innerHTML = helper.iconLabel(ascMmadPlaying ? 'pause' : 'play', ascMmadPlaying ? 'Pause' : 'Play');
+        ascMmadPlayback?.sync({ playing: ascMmadPlaying });
+      };
+
+      const stopAscMmadPlayback = () => {
+        ascMmadPlaying = false;
+        if (ascMmadTimer) clearInterval(ascMmadTimer);
+        ascMmadTimer = null;
+      };
+
+      const setAscMmadPlaybackVisible = (visible) => {
+        const control = $('#mmad-api-shell')?.closest('.pto-floating-playback');
+        if (control) control.hidden = !visible;
+      };
+
+      const setupAscMmadPlayback = () => {
+        if (ascMmadPlaybackMounted) {
+          setAscMmadPlaybackVisible(apiVisualizationMode === 'AscMmad');
+          syncAscMmadPlayback();
+          return;
+        }
+        const helper = window.PtoFloatingPlaybackControl;
+        const slot = $('[data-mmad-playback]');
+        if (!helper || !slot) return;
+        ascMmadPlaybackMounted = true;
+        const ids = {
+          shell: 'mmad-api-shell', toggle: 'mmad-api-toggle', collapsedButton: 'mmad-api-collapsed', collapsedIcon: 'mmad-api-collapsed-icon',
+          controls: 'mmad-api-controls-row', stepBack: 'mmad-api-prev', play: 'mmad-api-play', stepForward: 'mmad-api-next', replay: 'mmad-api-replay',
+          scrubber: 'mmad-api-scrubber', scrubberLabel: 'mmad-api-scrubber-label', scrubberOpname: 'mmad-api-scrubber-opname', scrubberHover: 'mmad-api-scrubber-hover'
+        };
+        const control = helper.createControl({ ids, showTimeline: false, defaultCollapsed: false });
+        control.querySelector('.pto-floating-playback__group--timeline')?.remove();
+        control.querySelector('.pto-floating-playback__toggle')?.remove();
+        control.querySelector('.pto-floating-playback__collapsed-button')?.remove();
+        slot.replaceWith(control);
+        ascMmadPlayback = helper.init({ root: control, ids, isPlaying: () => ascMmadPlaying });
+        helper.initScrubberHover({
+          root: control,
+          ids,
+          getTotalSteps: () => ascMmadModel().timeline.length,
+          getLabelForStep: (step) => ascMmadModel().timeline[step]?.label || '结束'
+        });
+        const go = (next) => {
+          const model = ascMmadModel();
+          ascMmadStep = Math.max(0, Math.min(model.timeline.length - 1, next));
+          renderAscMmadStage();
+        };
+        control.querySelector('#mmad-api-prev')?.addEventListener('click', () => { stopAscMmadPlayback(); go(ascMmadStep - 1); });
+        control.querySelector('#mmad-api-next')?.addEventListener('click', () => {
+          stopAscMmadPlayback();
+          const finalStep = ascMmadModel().timeline.length - 1;
+          go(ascMmadStep >= finalStep ? 0 : ascMmadStep + 1);
+        });
+        control.querySelector('#mmad-api-replay')?.addEventListener('click', () => { stopAscMmadPlayback(); go(0); });
+        control.querySelector('#mmad-api-scrubber')?.addEventListener('input', (event) => { stopAscMmadPlayback(); go(Number(event.target.value)); });
+        const toggle = () => {
+          if (ascMmadPlaying) {
+            stopAscMmadPlayback();
+            syncAscMmadPlayback();
+            return;
+          }
+          const model = ascMmadModel();
+          if (ascMmadStep >= model.timeline.length - 1) ascMmadStep = 0;
+          ascMmadPlaying = true;
+          ascMmadTimer = setInterval(() => {
+            const nextModel = ascMmadModel();
+            if (ascMmadStep >= nextModel.timeline.length - 1) stopAscMmadPlayback();
+            else ascMmadStep += 1;
+            renderAscMmadStage();
+          }, 620);
+          renderAscMmadStage();
+        };
+        control.querySelector('#mmad-api-play')?.addEventListener('click', toggle);
+        setAscMmadPlaybackVisible(apiVisualizationMode === 'AscMmad');
+      };
+
+      const renderAscMmadStage = () => {
+        const stage = $('[data-api-stage-pane="AscMmad"]');
+        const workspace = $('[data-mmad-workspace]', stage);
+        if (!stage || !workspace) return;
+        const model = ascMmadModel();
+        ascMmadStep = model.step;
+        updateAscMmadCodePanels(model);
+        destroyAscMmadMatrices();
+        if (model.noOp) {
+          workspace.innerHTML = '<div class="mmad-api-empty"><div><strong>NOP · 不下发指令</strong><span>left_height、n_dim、right_width 中任意一个为 0，文档规定 asc_mmad 不执行。</span></div></div>';
+        } else {
+          const plans = Object.fromEntries(model.scalePlan.tensors.map((item) => [item.id, item]));
+          const matrixMarkup = (kind, title, className = '') => `
+            <section class="mmad-api-matrix viz-container viz-container--matrix ${className}" aria-labelledby="mmad${kind}Title" data-display-mode="${model.renderRealCells ? 'real' : 'aggregate'}" data-cell-count="${plans[kind].extent.rows * plans[kind].extent.columns}">
+              <div class="matrix-tensor-title-host" id="mmad${kind}Title" data-tensor-title="mmad-${kind}"></div>
+              <div class="mmad-api-matrix-host"><canvas id="mmad${kind}Canvas" aria-label="asc_mmad ${title} matrix"></canvas></div>
+            </section>`;
+          workspace.innerHTML = [
+            matrixMarkup('A', 'A · left matrix'),
+            matrixMarkup('B', 'B · right matrix'),
+            matrixMarkup('C', 'C · result matrix', 'mmad-api-matrix--output')
+          ].join('');
+          mountAscMmadTensorTitles(model, plans);
+          const options = { showAxes: true, showGrid: true, interactive: true, showTooltip: true, autoFit: true, minZoom: 0.08, maxZoom: 4, padding: { top: 24, right: 18, bottom: 44, left: 62 } };
+          ascMmadAMatrixController = window.PtoMatrixCanvas.render($('#mmadACanvas'), ascMmadCells('A', model), { ...options, ariaLabel: 'A matrix in L0A' });
+          ascMmadBMatrixController = window.PtoMatrixCanvas.render($('#mmadBCanvas'), ascMmadCells('B', model), { ...options, ariaLabel: 'B matrix in L0B' });
+          ascMmadCMatrixController = window.PtoMatrixCanvas.render($('#mmadCCanvas'), ascMmadCells('C', model), { ...options, ariaLabel: 'C matrix in L0C' });
+          window.PtoMatrixCanvas.synchronizeScale([ascMmadAMatrixController, ascMmadBMatrixController, ascMmadCMatrixController]);
+        }
+        setText('[data-mmad-summary]', `${ascMmadFunctionName()} · ${model.dtype.label} · ${ascMmadState.M}×${ascMmadState.K} × ${ascMmadState.K}×${ascMmadState.N}`);
+        const platformParam = ascMmadState.platform === '950'
+          ? `disable_gemv=${ascMmadState.disableGemv} · ${model.gemv ? 'GEMV 生效' : model.disableGemvEffective ? 'GEMV 已关闭' : '当前不触发 GEMV'}`
+          : `k_direction_align=${ascMmadState.kDirectionAlign} · effective=${model.kDirectionAlignEffective}`;
+        const kv = $('[data-mmad-kv]');
+        if (kv) kv.innerHTML = [
+          ['平台 / 流水', `${ascMmadState.platform === '950' ? '950PR / 950DT' : 'Atlas A2 / A3'} · PIPE_M`],
+          ['共享 source scale', `M=16 · K=${model.kSpan} · N=16`],
+          ['分形占用 A / B / C', model.noOp ? '0 / 0 / 0' : `${Math.ceil(ascMmadState.M / 16)}×${model.kFragments} / ${model.kFragments}×${Math.ceil(ascMmadState.N / 16)} / ${Math.ceil(ascMmadState.M / 16)}×${Math.ceil(ascMmadState.N / 16)}`],
+          ['C 初值', `${model.init.label} · source=${model.init.cMatrixSource} · init=${model.init.cMatrixInitVal}`],
+          ['平台参数', platformParam],
+          ['unit_flag', String(ascMmadState.unitFlag)]
+        ].map(([label, value]) => `<div class="op-load3d-kv-row"><span>${label}</span><code>${value}</code></div>`).join('');
+        renderAscMmadTimeline(model);
+        setText('[data-mmad-note]', model.warnings.length
+          ? model.warnings.join(' ')
+          : '播放把一次调用拆成逻辑 K 分片，便于理解读写关系；不表示真实指令数、duration 或 runtime overlap。');
+        setupAscMmadPlayback();
+        syncAscMmadPlayback(model);
+      };
+
+      const renderAscMmadControls = () => {
+        const root = $('#mmadApiControls');
+        if (!root) return;
+        const model = ascMmadModel();
+        const radio = (attribute, value, label, selected, disabled = false) => `<button class="btn btn-sm ${selected ? 'is-selected' : ''}" type="button" role="radio" aria-checked="${selected}" ${attribute}="${value}"${disabled ? ' disabled' : ''}>${label}</button>`;
+        const codeAction = (kind, label) => `
+          <button class="btn btn-icon btn-ghost api-code-action" type="button" data-api-copy-code="${kind}" aria-label="复制 ${label}" title="复制 ${label}"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="8" y="8" width="12" height="12" rx="2"></rect><path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2"></path></svg></button>
+          <button class="btn btn-icon btn-ghost api-code-action" type="button" data-api-preview-code="${kind}" aria-label="弹窗查看 ${label}" title="弹窗查看 ${label}" aria-haspopup="dialog"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 3H3v5M16 3h5v5M8 21H3v-5M21 16v5h-5"></path><path d="M3 3l6 6M21 3l-6 6M3 21l6-6M21 21l-6-6"></path></svg></button>
+          <span class="api-code-copy-status" data-api-copy-status="${kind}" aria-live="polite"></span>`;
+        root.innerHTML = `
+          <div class="api-learn-controls api-control-panel">
+            <section class="group">
+              <div class="group-heading"><div class="group-title">预设场景</div><div class="group-description">覆盖基线、官方尾块、初值来源、GEMV 与 NOP。</div></div>
+              <div class="api-preset-group" role="radiogroup" aria-label="asc_mmad 预设">${ascMmadPresets.map((preset, index) => `<button class="btn btn-sm preset${ascMmadActivePreset === index ? ' is-selected' : ''}" type="button" role="radio" aria-checked="${ascMmadActivePreset === index}" data-mmad-preset="${index}">${preset.name}</button>`).join('')}</div>
+              <p class="preset-description active-preset-description">${ascMmadActivePreset === null ? '当前参数不对应预设。' : ascMmadPresets[ascMmadActivePreset].description}</p>
+            </section>
+            <section class="group">
+              <div class="group-heading"><div class="group-title">平台与函数</div><div class="group-description">平台决定第 8 个参数是 k_direction_align 还是 disable_gemv。</div></div>
+              <div class="api-choice-group" role="radiogroup" aria-label="产品平台">${radio('data-mmad-platform', 'a2a3', 'A2 / A3', ascMmadState.platform === 'a2a3')}${radio('data-mmad-platform', '950', '950', ascMmadState.platform === '950')}</div>
+              <div class="api-choice-group" role="radiogroup" aria-label="函数形式">${radio('data-mmad-variant', 'async', 'asc_mmad', ascMmadState.variant === 'async')}${radio('data-mmad-variant', 'sync', '同步形式', ascMmadState.variant === 'sync')}</div>
+            </section>
+            <section class="group">
+              <div class="group-heading"><div class="group-title">数据类型</div><div class="group-description">选择文档中两平台共有的类型组合。</div></div>
+              <div class="api-choice-group" role="radiogroup" aria-label="asc_mmad dtype">${Object.entries(ascMmadDtypes).map(([key, item]) => radio('data-mmad-dtype', key, item.label, ascMmadState.dtype === key)).join('')}</div>
+            </section>
+            <section class="group">
+              <div class="group-heading"><div class="group-title">矩阵维度</div><div class="group-description">演示范围 0…128；接口文档范围 0…4095。</div></div>
+              <div class="grid-2">
+                ${apiStepperMarkup({ id: 'mmad-api-M', label: 'left_height / M', value: ascMmadState.M, min: 0, max: 128, dataAttribute: 'data-mmad-param="M"' })}
+                ${apiStepperMarkup({ id: 'mmad-api-K', label: 'n_dim / K', value: ascMmadState.K, min: 0, max: 128, dataAttribute: 'data-mmad-param="K"' })}
+                ${apiStepperMarkup({ id: 'mmad-api-N', label: 'right_width / N', value: ascMmadState.N, min: 0, max: 128, fieldClass: 'field field-wide', dataAttribute: 'data-mmad-param="N"' })}
+              </div>
+            </section>
+            <section class="group">
+              <div class="group-heading"><div class="group-title">C 初值</div><div class="group-description">直接映射 c_matrix_source 与 c_matrix_init_val。</div></div>
+              <div class="api-choice-group" role="radiogroup" aria-label="C 初值来源">${radio('data-mmad-init', 'zero', '清零', ascMmadState.initMode === 'zero')}${radio('data-mmad-init', 'bt', 'BT', ascMmadState.initMode === 'bt')}${radio('data-mmad-init', 'l0c', 'L0C', ascMmadState.initMode === 'l0c')}</div>
+            </section>
+            <section class="group">
+              <div class="group-heading"><div class="group-title">平台参数与 unit_flag</div><div class="group-description">不适用时保留 requested 值，并显示 effective 状态。</div></div>
+              <div class="api-choice-group" role="radiogroup" aria-label="${ascMmadState.platform === '950' ? 'disable_gemv' : 'k_direction_align'}">
+                ${ascMmadState.platform === '950'
+                  ? `${radio('data-mmad-bool', 'false', 'GEMV 开', !ascMmadState.disableGemv)}${radio('data-mmad-bool', 'true', 'GEMV 关', ascMmadState.disableGemv)}`
+                  : `${radio('data-mmad-bool', 'false', 'K 默认', !ascMmadState.kDirectionAlign)}${radio('data-mmad-bool', 'true', 'K 对齐', ascMmadState.kDirectionAlign, ascMmadState.dtype !== 'float')}`}
+              </div>
+              <div class="api-choice-group" role="radiogroup" aria-label="unit_flag">${[0, 2, 3].map((value) => radio('data-mmad-unit', value, `unit ${value}`, ascMmadState.unitFlag === value)).join('')}</div>
+              <div class="hint-text">unit 1 为文档保留值，不作为可选状态。当前：${model.warnings.join(' ') || '参数组合未触发文档约束警告。'}</div>
+            </section>
+            <section class="group">
+              <div class="api-code-section-head"><div class="api-code-section-title-row"><div class="group-title">函数原型</div><div class="api-code-actions">${codeAction('mmad-prototype', 'asc_mmad 函数原型')}</div></div><div class="group-description">原型随平台、同步形式和 dtype 联动。</div></div>
+              <pre class="api-prototype"><code class="cpp-code" data-api-code-source="mmad-prototype"></code></pre>
+            </section>
+            <section class="group">
+              <div class="api-code-section-head"><div class="api-code-section-title-row"><div class="group-title">生成代码</div><div class="api-code-actions">${codeAction('mmad-generated', 'asc_mmad 生成代码')}</div></div><div class="group-description">由当前参数与逻辑播放位置生成。</div></div>
+              <pre class="api-prototype api-generated-code"><code class="cpp-code" data-api-code-source="mmad-generated"></code></pre>
+            </section>
+          </div>`;
+        updateAscMmadCodePanels(model);
+        bindApiStepperControls(root);
+        bindApiRadioKeyboard(root);
+        bindApiCodeActions();
+        const commit = () => {
+          stopAscMmadPlayback();
+          ascMmadStep = 0;
+          ascMmadActivePreset = null;
+          renderAscMmadControls();
+          renderAscMmadStage();
+        };
+        $$('[data-mmad-param]', root).forEach((input) => input.addEventListener('input', () => {
+          const value = Number.parseInt(input.value, 10);
+          if (!Number.isInteger(value) || value < 0 || value > 128) return;
+          ascMmadState[input.dataset.mmadParam] = value;
+          commit();
+        }));
+        $$('[data-mmad-platform]', root).forEach((button) => button.addEventListener('click', () => { ascMmadState.platform = button.dataset.mmadPlatform; commit(); }));
+        $$('[data-mmad-variant]', root).forEach((button) => button.addEventListener('click', () => { ascMmadState.variant = button.dataset.mmadVariant; commit(); }));
+        $$('[data-mmad-dtype]', root).forEach((button) => button.addEventListener('click', () => { ascMmadState.dtype = button.dataset.mmadDtype; commit(); }));
+        $$('[data-mmad-init]', root).forEach((button) => button.addEventListener('click', () => { ascMmadState.initMode = button.dataset.mmadInit; commit(); }));
+        $$('[data-mmad-bool]', root).forEach((button) => button.addEventListener('click', () => {
+          if (ascMmadState.platform === '950') ascMmadState.disableGemv = button.dataset.mmadBool === 'true';
+          else ascMmadState.kDirectionAlign = button.dataset.mmadBool === 'true';
+          commit();
+        }));
+        $$('[data-mmad-unit]', root).forEach((button) => button.addEventListener('click', () => { ascMmadState.unitFlag = Number(button.dataset.mmadUnit); commit(); }));
+        $$('[data-mmad-preset]', root).forEach((button) => button.addEventListener('click', () => {
+          ascMmadActivePreset = Number(button.dataset.mmadPreset);
+          Object.assign(ascMmadState, ascMmadPresets[ascMmadActivePreset].values);
+          stopAscMmadPlayback();
+          ascMmadStep = 0;
+          renderAscMmadControls();
+          renderAscMmadStage();
+        }));
+        ascMmadControlsMounted = true;
+      };
+
       const showRecommendationTrace = () => {
         setApiPaneScrollLock(false);
         $('#formatLabView').hidden = true;
@@ -11424,6 +12023,8 @@ __aicore__ inline void LoadData(const LocalTensor&lt;T&gt;&amp; dst, const Local
         setLoad3dApiPlaybackVisible(false);
         stopGm2ubPlayback();
         setGm2ubPlaybackVisible(false);
+        stopAscMmadPlayback();
+        setAscMmadPlaybackVisible(false);
         $('[data-generated-project-view]').hidden = true;
         $('[data-generated-project-tabstrip]').hidden = true;
         $('#decisionTracePanel').hidden = false;
@@ -11451,16 +12052,50 @@ __aicore__ inline void LoadData(const LocalTensor&lt;T&gt;&amp; dst, const Local
         item?.setAttribute('aria-current', 'page');
       };
 
+      const apiVisualizationRegistry = {
+        Load3D: {
+          label: 'Load3D',
+          doc: 'https://www.hiascend.com/document/detail/zh/CANNCommunityEdition/910beta3/API/ascendcopapi/atlasascendc_api_07_00170.html',
+          note: 'Load3D 展示滑窗如何从 NCHW 输入映射到 NC1HWC0 A1 布局，再按采样位置沿 C 轴批量写入 A2 逻辑矩阵。',
+          activate: () => { renderLoad3dControls(); renderLoad3dStage(); }
+        },
+        Gm2UbAlign: {
+          label: 'asc_copy_gm2ub_align',
+          doc: 'https://gitcode.com/cann/asc-devkit/blob/master/docs/zh/api/SIMD-API/c_api/vector_data_move/asc_copy_gm2ub_align/asc_copy_gm2ub_align_arch_3510.md',
+          note: 'asc_copy_gm2ub_align 展示 GM 到 UB 的数据搬运、stride 起点距离、compact / normal 目的布局和 32B 对齐 padding。',
+          activate: () => { if (!gm2ubControlsMounted) renderGm2ubControls(); setupGm2ubPlayback(); setGm2ubPlaybackVisible(true); renderGm2ubStage(); }
+        },
+        AscMmad: {
+          label: 'asc_mmad',
+          doc: 'https://gitcode.com/cann/asc-devkit/blob/master/docs/zh/api/SIMD-API/c_api/cube_compute/asc_mmad.md',
+          note: 'asc_mmad 展示 A(M×K)、B(K×N) 到 C(M×N) 的共享分形尺度、K 分片累加、C 初值来源以及 A2/A3 与 950 的参数差异。',
+          activate: () => { renderAscMmadControls(); setupAscMmadPlayback(); setAscMmadPlaybackVisible(true); renderAscMmadStage(); }
+        },
+        Add: {
+          label: 'Add',
+          doc: 'https://www.hiascend.com/document/detail/zh/CANNCommunityEdition/910beta3/API/ascendcopapi/atlasascendc_api_07_0035.html',
+          note: 'Add 按 load → src → dst → process 阶段逐 block 推进；输入值与 dstLocal 结果均在网格中可见。',
+          activate: () => { setupAddApiPlayback(); setAddApiPlaybackVisible(true); renderAddApiCells(); }
+        }
+      };
+
+      const stopApiVisualizationPlayback = () => {
+        stopAddApiPlayback();
+        setAddApiPlaybackVisible(false);
+        stopLoad3dApiPlayback();
+        setLoad3dApiPlaybackVisible(false);
+        stopGm2ubPlayback();
+        setGm2ubPlaybackVisible(false);
+        stopAscMmadPlayback();
+        setAscMmadPlaybackVisible(false);
+      };
+
       const showApiVisualization = (apiKey = 'Add') => {
         setApiPaneScrollLock(true);
         mountApiSidebarInExplorer();
         setActiveRailItem($('[data-api-visualizer]'));
-        const apiDocs = {
-          Load3D: 'https://www.hiascend.com/document/detail/zh/CANNCommunityEdition/910beta3/API/ascendcopapi/atlasascendc_api_07_00170.html',
-          Gm2UbAlign: 'https://gitcode.com/cann/asc-devkit/blob/master/docs/zh/api/SIMD-API/c_api/vector_data_move/asc_copy_gm2ub_align/asc_copy_gm2ub_align_arch_3510.md',
-          Add: 'https://www.hiascend.com/document/detail/zh/CANNCommunityEdition/910beta3/API/ascendcopapi/atlasascendc_api_07_0035.html'
-        };
-        apiVisualizationMode = apiKey === 'Load3D' || apiKey === 'Gm2UbAlign' ? apiKey : 'Add';
+        apiVisualizationMode = apiVisualizationRegistry[apiKey] ? apiKey : 'Add';
+        const definition = apiVisualizationRegistry[apiVisualizationMode];
         $('#decisionTracePanel').hidden = true;
         $('#formatLabView').hidden = true;
         $('[data-generated-project-view]').hidden = true;
@@ -11468,25 +12103,18 @@ __aicore__ inline void LoadData(const LocalTensor&lt;T&gt;&amp; dst, const Local
         $('#addApiView').hidden = false;
         setText('[data-center-title]', 'API 可视化');
         setExplorerHeading('参数面板');
-        setText('[data-status-stage]', `${apiVisualizationMode} API · 原生可视化`);
-        setText('[data-api-mode-label]', apiVisualizationMode);
-        setText(
-          '[data-api-mode-note-copy]',
-          apiVisualizationMode === 'Load3D'
-            ? 'Load3D 展示滑窗如何从 NCHW 输入映射到 NC1HWC0 A1 布局，再按采样位置沿 C 轴批量写入 A2 逻辑矩阵。'
-            : apiVisualizationMode === 'Gm2UbAlign'
-              ? 'asc_copy_gm2ub_align 展示 GM 到 UB 的数据搬运、stride 起点距离、compact / normal 目的布局和 32B 对齐 padding。'
-              : 'Add 按 load → src → dst → process 阶段逐 block 推进；输入值与 dstLocal 结果均在网格中可见。'
-        );
+        setText('[data-status-stage]', `${definition.label} API · 原生可视化`);
+        setText('[data-api-mode-label]', definition.label);
+        setText('[data-api-mode-note-copy]', definition.note);
         const docLink = $('[data-api-mode-doc-link]');
         if (docLink) {
-          docLink.href = apiDocs[apiVisualizationMode];
-          docLink.setAttribute('aria-label', `${apiVisualizationMode} API 官方文档`);
+          docLink.href = definition.doc;
+          docLink.setAttribute('aria-label', `${definition.label} API 官方文档`);
         }
         const centerScroll = $('[data-ide-pane="editor-preview"] .pane-scroll');
         if (centerScroll) centerScroll.scrollTop = 0;
 
-        const apiKeys = ['Load3D', 'Gm2UbAlign', 'Add'];
+        const apiKeys = Object.keys(apiVisualizationRegistry);
         const switcher = $('[data-api-switcher]');
         if (switcher) {
           switcher.value = apiVisualizationMode;
@@ -11505,31 +12133,8 @@ __aicore__ inline void LoadData(const LocalTensor&lt;T&gt;&amp; dst, const Local
           pane.hidden = pane.dataset.apiStagePane !== apiVisualizationMode;
         });
 
-        if (apiVisualizationMode === 'Load3D') {
-          stopAddApiPlayback();
-          setAddApiPlaybackVisible(false);
-          stopGm2ubPlayback();
-          setGm2ubPlaybackVisible(false);
-          renderLoad3dControls();
-          renderLoad3dStage();
-        } else if (apiVisualizationMode === 'Gm2UbAlign') {
-          stopAddApiPlayback();
-          setAddApiPlaybackVisible(false);
-          stopLoad3dApiPlayback();
-          setLoad3dApiPlaybackVisible(false);
-          if (!gm2ubControlsMounted) renderGm2ubControls();
-          setupGm2ubPlayback();
-          setGm2ubPlaybackVisible(true);
-          renderGm2ubStage();
-        } else {
-          stopLoad3dApiPlayback();
-          setLoad3dApiPlaybackVisible(false);
-          stopGm2ubPlayback();
-          setGm2ubPlaybackVisible(false);
-          setupAddApiPlayback();
-          setAddApiPlaybackVisible(true);
-          renderAddApiCells();
-        }
+        stopApiVisualizationPlayback();
+        definition.activate();
         bindApiCodeActions();
       };
 
