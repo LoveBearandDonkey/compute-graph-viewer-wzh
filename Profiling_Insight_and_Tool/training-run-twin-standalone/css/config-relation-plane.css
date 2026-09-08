@@ -658,19 +658,10 @@ body:has(.cro-board.is-plane) .cro-link-layer { display: none; }
 
 .crop-cell:hover { background: color-mix(in srgb, var(--foreground) 20%, transparent); }
 
-/* ── 一行最多几枚专家 ──────────────────────────────────────────────────────
-   列宽是「一行 EXPERT_COLS_MAX 枚胶囊」量出来的，但它还要和顶部量尺的列名
-   （"Layer45 · Dense"）取大 —— 名字更宽时格子里就多出一截空地，第 5 枚会被
-   flex-wrap 拉上来。所以把胶囊区**限宽**在 --crop-chips-w（= 一整行胶囊的实测
-   宽度）内、居中，多出来的宽度全部让给左右内衬：折行位置因此只由这个数决定，
-   与格子实际多宽无关。两个变量都由 js 每次布局后写在 .crop-world 上（全局同值，
-   不逐格写）。 */
-.crop-cell[data-ffn="moe"] {
-  padding-inline: max(2px, calc((100% - var(--crop-chips-w, 100%)) / 2));
-}
-
-/* 胶囊等宽（按最长编号 E{routedExpert-1} 量的）：不等宽的话一行能挤进第 5 枚 */
-.crop-cell .crop-expert { min-width: var(--crop-chip-w, auto); }
+/* （这里曾有两条规则把「铺满整格的那一行专家胶囊」限宽居中、并让每枚等宽。
+   胶囊现在缩进了详情面板的 Expert Compute 盒子里，按设计像素排 grid，两条规则
+   都没有对象了，与它们配套的 --crop-chip-w / --crop-chips-w 也一并撤掉。
+   列宽仍由那一行胶囊的实测宽度定 —— 格子的世界尺寸这一版没有动。） */
 
 /* 标签画不出来（缩得太小、或整机档一行代表 8 张卡）时，颜色退回到格子底上 ——
    那时它是唯一还能表达「这一片属于哪一套专家」的东西。由 js 写 data-paint。 */
@@ -782,6 +773,182 @@ body:has(.cro-board.is-plane) .cro-link-layer { display: none; }
    整机行跨了几个 EP 的那一档。已删：区间不是一个可点的对象，也答不出「这一片
    属于哪一套」，读的人还得把两个编号在脑子里减一遍。那一档现在整格交给颜色，
    见 js 里 chipsOK 那一段。） */
+
+/* ══ 格内的中档：三段块 ══════════════════════════════════════════════════
+   Hidden / Attention / MoE 三条横带，把一格从「一块颜色」变成「一层里的三段活」。
+   它是整格上色与逐个算子之间的过渡档，判据见 js 的 BLOCK_MIN_H。
+   字号由 js 写在**格子**上（世界单位、随缩放反向变，屏幕上恒 9px），这里一律
+   继承，不再自设 —— 自设就等于在世界坐标里写死了一个屏幕尺寸。
+   整条不吃指针事件：一格问的仍是「这张卡 × 这一层」，带子不是独立的对象。 */
+.crop-segs {
+  position: absolute;
+  inset: 1px;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  pointer-events: none;
+}
+
+.crop-seg {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 0;
+  border-radius: 1px;
+  overflow: hidden;
+  white-space: nowrap;
+  background: color-mix(in srgb, var(--foreground) 10%, transparent);
+  color: var(--foreground-secondary);
+}
+
+/* ⚠️ 三条带子里**只有 MoE 那条带颜色**，其余一律是中性灰的深浅。
+   这幅图上颜色只说一件事：「这一片属于哪一套专家」。给 Attention 涂上蓝、给
+   Dense 涂上靛，就是在同一个画面上并排放两套互不相干的色码 —— 满屏五颜六色之后
+   「同色一块 = 一整套」这条读法先没的就是它自己。三条带子谁是谁，靠文案与位置
+   （从上到下就是数据流的次序）说，那本来就够了。
+   Hidden 是这一层的入口张量、不是一段计算，给最淡的一档，读成「从这儿进来」。 */
+.crop-seg[data-seg="hidden"] { background: color-mix(in srgb, var(--foreground) 6%, transparent); }
+.crop-seg[data-seg="attn"] { background: color-mix(in srgb, var(--foreground) 15%, transparent); }
+.crop-seg[data-seg="dense"] { background: color-mix(in srgb, var(--foreground) 15%, transparent); }
+.crop-seg[data-seg="unit"] { background: color-mix(in srgb, var(--foreground) 15%, transparent); }
+
+/* MoE 这一条接 --crop-set：整格上色那一档说的「同色一块 = 一整套专家」，在这里
+   由三分之一的面积继续说，穿过档口时图案不断。dense 层没有专家，所以上面那条
+   走中性 —— 涂成一套专家的颜色是在说谎。 */
+.crop-seg[data-seg="moe"] {
+  background: color-mix(in srgb, var(--crop-set, var(--crop-set-neutral)) 55%, transparent);
+  color: var(--foreground);
+}
+
+/* ══ 格内的最细档：详情面板 ══════════════════════════════════════════════
+   把这张卡在这一层里真正要跑的那些算子铺出来。面板按一套**设计像素**排版
+   （--crop-d-*，由 js 写在 .crop-world 上），再由 js 算一个 scale 整体缩进格子
+   —— 格子的世界尺寸随配置差着一个数量级，让面板跟着变形不如让它整体缩放。
+   ⚠️ 面板高度是 js 的 panelH() 按同一套数算出来的，写成 inline height。这里的
+   盒模型（边框 1px + 内衬 --crop-d-pad + gap --crop-d-gap）必须与那个算式一致，
+   改一边就要改另一边。overflow:hidden 只是兜底，不是许可证。 */
+/* 最细档的格子让出自己那 2px 左右内衬：缩放比是 js 按格子的**外**宽算的
+   （detailScale 用 cellW - 2），留着内衬会让面板比内容盒宽出这一截，被
+   overflow:hidden 从两侧各削掉一点 —— 在这一档上那就是削掉半个字。 */
+.crop-cell--detail { padding: 0; }
+
+.crop-detail {
+  flex: none;
+  width: var(--crop-d-w, 132px);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  /* 面板整体不吃指针事件：pick() 顺着 closest("[data-kind]") 往上找，点在算子上
+     就等于点在这一格上。唯一例外是专家胶囊，它本来就是可点的对象。 */
+  pointer-events: none;
+}
+
+/* 端点列（Emb / Norm / Head）没有 Attention / FFN 两段，面板就是那一两枚算子，
+   彼此之间要有缝 —— 层列那边的缝由残差条自己的外边距给。 */
+.crop-detail--unit { gap: var(--crop-d-gap, 2px); }
+
+.crop-detail__group {
+  display: flex;
+  flex-direction: column;
+  gap: var(--crop-d-gap, 2px);
+  padding: var(--crop-d-pad, 3px);
+  border: 1px solid color-mix(in srgb, var(--foreground) 26%, transparent);
+  border-radius: 2px;
+  background: color-mix(in srgb, var(--foreground) 5%, transparent);
+}
+
+.crop-detail__title {
+  height: var(--crop-d-title, 9px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 5.5px;
+  letter-spacing: 0.2px;
+  color: var(--foreground-secondary);
+}
+
+.crop-detail__row {
+  display: flex;
+  gap: var(--crop-d-gap, 2px);
+  height: var(--crop-d-pill, 11px);
+}
+
+/* 一枚算子。一律中性灰 —— 这幅图上颜色是专家的（见文件末尾那段说明）。算子之间
+   的区别由文案与位置说，那本来就够了：Attention 那一组里 Q / KV 两支并排、注意力
+   核独占一行，MoE 那一组从上到下就是路由的次序。 */
+.crop-op {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 1px;
+  border-radius: 1.5px;
+  background: color-mix(in srgb, var(--foreground) 20%, transparent);
+  color: var(--foreground);
+  font-size: 6px;
+  line-height: 1;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* 残差那条：它不是一枚算子，是把两段接起来的一根线，所以画成一条淡描边的横条，
+   不进任何组、也不吃 op 的颜色。上下外边距就是层内两段之间的缝。 */
+.crop-detail__res {
+  height: var(--crop-d-res, 10px);
+  margin: var(--crop-d-gap, 2px) 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px dashed color-mix(in srgb, var(--foreground) 26%, transparent);
+  border-radius: var(--radius-pill);
+  color: var(--foreground-muted);
+  font-size: 5.5px;
+  white-space: nowrap;
+}
+
+/* Expert Compute：MoE 组里唯一一个「盒子」而不是「一枚算子」的环节 —— 这张卡
+   持有的那几个专家就铺在里面。列数由 js 写（与 EXPERT_COLS_MAX 同源）。 */
+.crop-detail__grid {
+  display: grid;
+  grid-template-columns: repeat(var(--crop-chip-cols, 4), 1fr);
+  gap: var(--crop-d-gap, 2px);
+}
+
+.crop-expert--mini {
+  height: var(--crop-d-chip, 8px);
+  min-width: 0;
+  padding: 0 1px;
+  border-radius: 1.5px;
+  font-size: 5.5px;
+  overflow: hidden;
+  pointer-events: auto;   /* 面板整体让开指针，唯独它是可点的对象 */
+}
+
+/* 铺不出编号那一档（每卡专家多过 EXPERT_CHIP_MAX、或整机行跨了几个 EP）：
+   盒子里给一行区间与个数。它不可点 —— 区间不是一个对象，这一条没变。 */
+.crop-detail__count {
+  grid-column: 1 / -1;
+  height: var(--crop-d-chip, 8px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 1.5px;
+  background: color-mix(in srgb, var(--crop-set, var(--crop-set-neutral)) 40%, transparent);
+  color: var(--foreground);
+  font-family: var(--font-mono);
+  font-size: 5.5px;
+  white-space: nowrap;
+}
+
+/* （这里曾有一张 data-op → deck 语义色的对照表，给每一枚算子按类型上色。已删：
+   这幅图上颜色只说一件事 ——「这一片属于哪一套专家」。算子那一套色码（norm 蓝、
+   linear 靛、comm 青、moe 橙红…）与它毫不相干，叠在同一个画面上，读的人分不清
+   哪一片绿说的是哪件事，而先被冲掉的正是专家那一套。整张面板里唯一带颜色的东西
+   因此是 Expert Compute 盒子里那几枚编号；算子之间靠文案与位置区分。
+   deck 那边照旧按 op 上色 —— 那张图上没有专家着色，两套色码不打架。） */
 
 /* 量列宽用的隐形探针：必须挂在**未缩放**的 stage 下，量到的才是 scale=1 的像素。
    两枚各量一样东西 —— 专家胶囊（.crop-expert 那套样式）与顶部量尺的列名。
@@ -1197,7 +1364,7 @@ body:has(.cro-board.is-plane) .cro-link-layer { display: none; }
   .cro-board.is-plane .crop-right { position: absolute; right: 0; top: 0; bottom: 0; z-index: var(--z-overlay); box-shadow: var(--shadow-lg); }
 }
 
-/* ══ 中栏三档：配置寻优 / 通信查询 / 负载热力 ═══════════════════════════════
+/* ══ 中栏三档：配置寻优 / 通信观测 / 负载热力 ═══════════════════════════════
    中栏从「一张画布」变成「一个壳 + 三档内容」。壳（.crop-center）是纵向 flex：
    页签一条固定高度的带，下面那块给当前这一档铺满。
 
@@ -1219,30 +1386,44 @@ body:has(.cro-board.is-plane) .cro-link-layer { display: none; }
 .cro-board.is-plane.is-doc .crop-center { display: none; }
 
 /* 页签与热力工具合成一行：.crop-toolbar 是 .crop-center 的第一个子级，
-   modeTabs（配置寻优 / 通信查询 / 负载热力）与 heatExtra（度量胶囊 + 图例 +
+   modeTabs（配置寻优 / 通信观测 / 负载热力）与 heatExtra（度量胶囊 + 图例 +
    问号）都是它的直接子级 —— heatExtra 只在「负载热力」这一档亮起。 */
 .crop-toolbar {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: var(--space-6);
+  gap: var(--space-3);
   flex: 0 0 auto;
   /* 整行铺满（而不是只包住内容）：右端要挂通信档的链路图例，靠 margin-left:auto
      顶到最右侧 —— 内容宽的盒子里 auto 顶不出去。 */
   align-self: stretch;
-  margin: var(--space-3) var(--space-3) 0;
+  margin: var(--space-2) var(--space-3);
 }
 
 .crop-modes { flex: 0 0 auto; }
 
+/* 页签右边那句口径说明：只在「通信观测」这一档露出来 —— 它说的是那一档整趟行程
+   只跟一张卡走（默认第一行那张），别的两档没有这个口径。一句静态的说明文字，
+   不是控件，所以不加边框、不占独立一行，跟在页签后面同一条基线上。 */
+.crop-comm-note {
+  display: none;
+  flex: 0 1 auto;
+  min-width: 0;
+  font-size: var(--font-size-label-xs);
+  line-height: 1.4;
+  color: var(--foreground-muted);
+}
+
+.crop-center[data-mode="comm"] .crop-comm-note { display: block; }
+
 /* 热力那半：度量胶囊、图例、问号一组，只在「负载热力」这一档露出来 —— 平时
-   （配置寻优 / 通信查询）它跟画布一样不该占位，不然页签右边总跟着一截空的
+   （配置寻优 / 通信观测）它跟画布一样不该占位，不然页签右边总跟着一截空的
    分隔线。 */
 .crop-heat-extra {
   display: none;
   flex-wrap: wrap;
   align-items: center;
-  gap: var(--space-6);
+  gap: var(--space-3);
 }
 
 .crop-center[data-mode="heat"] .crop-heat-extra { display: flex; }
@@ -1265,7 +1446,7 @@ body:has(.cro-board.is-plane) .cro-link-layer { display: none; }
   background: var(--border-subtle);
 }
 
-/* 通信查询档的显隐。画布不跟着收 —— 它挂着一个 ResizeObserver，留在布局里会
+/* 通信观测档的显隐。画布不跟着收 —— 它挂着一个 ResizeObserver，留在布局里会
    在另一档里被反复量、反复重铺几千个节点；代价是切回来时视口尺寸要等一帧才
    算得准，setMode 里那次 rAF 补的就是这个。 */
 .crop-center > .crop-comm { display: none; }
@@ -1281,7 +1462,7 @@ body:has(.cro-board.is-plane) .cro-link-layer { display: none; }
    「多重」，不是「哪一套」）—— 一枚点了没反应的开关比没有更糟，整枚收起。 */
 .crop-center[data-mode="heat"] .crop-paint { display: none; }
 
-/* ══ 通信查询档 ═══════════════════════════════════════════════════════════
+/* ══ 通信观测档 ═══════════════════════════════════════════════════════════
    版式是三段，从上往下回答三个递进的问题：
      bar     这一屏在数什么（前向几步、反向几步、以哪张卡为例）
      rows    按时间序有哪些通信 —— 一行一个阶段，一枚箭头一条事件
@@ -1718,6 +1899,16 @@ body:has(.cro-board.is-plane) .cro-link-layer { display: none; }
    分不出「浮在图上的窗口」和「图里的一块」。
    kv 横着摊而不是竖着堆五行 —— 竖排要 120px，浮卡会盖掉小半张图。 */
 .crop-comm__card {
+  /* 整张卡一副**两列**骨架：左列是「阶段」这一档标签，右列是读数。头一行（阶段
+     胶囊 + 标题）与下面五条 kv 都挂在这同一副列上 —— 各排一个自己的网格时两块的
+     列宽由各自内容决定，标题的左缘与 value 的左缘永远差一截，卡上于是有两条彼此
+     错开的左缘。共用之后只剩一条：胶囊与 key 同宽同左缘，标题与 value 同左缘。 */
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+  column-gap: var(--space-3);
+  /* 行距在这里给：头一行成了 display:contents（见下），它自己没有盒子、挂不住
+     margin —— 标签行、标题、读数区之间的那 4px 由卡统一发。 */
+  row-gap: var(--space-1);
   padding: var(--space-2) var(--space-3);
   border-radius: var(--radius-md);
   border: 1px solid var(--border-subtle);
@@ -1726,24 +1917,29 @@ body:has(.cro-board.is-plane) .cro-link-layer { display: none; }
   box-shadow: var(--shadow-lg);
 }
 
-.crop-comm__card-head {
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
-  margin-bottom: var(--space-1);
+/* 标签行与 MoE 舞台不参与那两列，各自铺满整卡 */
+.crop-comm__card-tags,
+.crop-comm__card > .crop-moe { grid-column: 1 / -1; }
+
+/* 头一行里只剩标题（阶段胶囊已撤：阶段在页签下那条阶段带上一直写着，浮卡里再挂
+   一枚是同一件事说第二遍）。所以它不自己排一个网格，而是 display:contents 把标题
+   直接交给**卡**的那两列 —— 少一层盒子，标题与下面 value 的左缘由同一副列保证。 */
+.crop-comm__card-head { display: contents; }
+
+/* 读数区把卡的两列**借**过来用（subgrid）：列宽由卡上所有内容一起定，标题与
+   value 因此落在同一条左缘上，不必在这里写死任何一个宽度。 */
+@supports (grid-template-columns: subgrid) {
+  .crop-comm__card-body { grid-template-columns: subgrid; }
 }
 
-.crop-comm__card-phase {
-  padding: 0 var(--space-2);
-  border-radius: var(--radius-pill);
-  border: 1px solid var(--border-subtle);
-  font-size: var(--font-size-label-xs);
-  color: var(--foreground-muted);
-}
-
+/* 标题落在右列 = 与五条读数的 value 同一条左缘。
+   字号：原先那条 var(--font-size-label-sm) 是个全仓没定义的 token，声明失效、实际
+   吃的是 h3 的 UA 字号（body 12px × 1.17 ≈ 14px，正好是 body-md 那一档）。这里在
+   那一档上明确加 4px —— 浮卡的第一行要能在一屏读数里先被看见。 */
 .crop-comm__card-title {
+  grid-column: 2;
   margin: 0;
-  font-size: var(--font-size-label-sm);
+  font-size: calc(var(--font-size-body-md) + 4px);
   font-weight: var(--font-weight-medium);
   color: var(--foreground);
 }
@@ -1754,7 +1950,6 @@ body:has(.cro-board.is-plane) .cro-link-layer { display: none; }
   display: flex;
   align-items: center;
   gap: var(--space-2);
-  margin-bottom: var(--space-1);
 }
 
 /* 链路徽标是这张卡上唯一带颜色的东西：一次通信贵不贵，先看它出不出机器。 */
@@ -1778,24 +1973,32 @@ body:has(.cro-board.is-plane) .cro-link-layer { display: none; }
   background: color-mix(in srgb, var(--crop-link-inter) 22%, transparent);
 }
 
-/* 数据类别（activation / gradient / optimizer）：中性色、等宽小字 —— 它是一个
+/* 数据类别（activation / gradient / optimizer）：等宽小字、**不带颜色** —— 它是一个
    分类名而不是一个状态，不该和链路徽标抢颜色。传的是哪一类，决定了这条通信的量
-   随什么变（激活跟 batch×seq 走、梯度跟参数量走、优化器状态跟切分档走）。 */
+   随什么变（激活跟 batch×seq 走、梯度跟参数量走、优化器状态跟切分档走）。
+   原先底色 surface-2、字 secondary，在毛玻璃卡面上几乎和卡底一个色，读成了一段
+   灰字而不是一枚标签。加的是**对比度**而不是色相：底深一档、边框实一档、字给足，
+   再把字母抬成大写 —— 于是它一眼是一枚标签，颜色仍旧只有链路那枚有。 */
 .crop-comm__card-kind {
   padding: 2px var(--space-2);
   border-radius: var(--radius-pill);
-  border: 1px solid var(--border-subtle);
-  background: var(--surface-2);
-  color: var(--foreground-secondary);
+  border: 1px solid var(--border-default);
+  background: var(--surface-4);
+  color: var(--foreground);
   font-family: var(--font-mono);
   font-size: var(--font-size-label-xs);
+  font-weight: var(--font-weight-semibold);
   letter-spacing: var(--letter-spacing-label);
+  text-transform: uppercase;
 }
 
 /* 五条读数摆成**两列网格**：key 一列、value 一列，两列各自左对齐。原先是长的独
    占一行、短的两两并排，每一行的 key 都落在不同的位置上，扫下来要重新找一次左缘。
-   .crop-comm__kv 用 display:contents 把这一对直接交给网格，行的语义仍在。 */
+   .crop-comm__kv 用 display:contents 把这一对直接交给网格，行的语义仍在。
+   这两列与头一行是**同一副**（见 .crop-comm__card 的 subgrid）：标题对着 value、
+   阶段胶囊对着 key。 */
 .crop-comm__card-body {
+  grid-column: 1 / -1;
   display: grid;
   grid-template-columns: max-content minmax(0, 1fr);
   column-gap: var(--space-3);
@@ -1857,17 +2060,20 @@ body:has(.cro-board.is-plane) .cro-link-layer { display: none; }
 /* 目的卡：**底色跟着负载走**（由 js 写 style.fill，与卡底那条同一个热力色阶、
    同一个值，只是淡一档）—— 整张卡和它底下那条说的必须是同一件事，一个按热力涨、
    另一个按链路染，扫过去会读成两套无关的编码。
-   链路（机内 HCCS / 机间 RDMA）那一档因此只留在**描边**上：它是这张卡的固有属性，
-   不随打分变，正适合放在不变的那一层。 */
+   描边也跟着热力走（同样由 js 写 style.stroke，同一个值、实一档）：一张卡的框与
+   它的底必须是同一件事的两种强度，一个按负载涨、另一个停在别的色系上，扫过去会
+   读成两套无关的编码。
+   链路（机内 HCCS / 机间 RDMA）那一档因此从描边的**颜色**挪到它的**虚实**上：
+   它是这张卡的固有属性、不随打分变，放在不变的那一层仍然成立，只是不再占颜色。 */
 .crop-moe__dest {
   fill: var(--surface-2);
   stroke: var(--border-subtle);
   stroke-width: 0.8;
-  transition: fill 160ms linear;
+  transition: fill 160ms linear, stroke 160ms linear;
 }
 
-.crop-moe__dest[data-link="local"] { stroke: color-mix(in srgb, var(--crop-link-local) 62%, transparent); }
-.crop-moe__dest[data-link="inter"] { stroke: color-mix(in srgb, var(--crop-link-inter) 62%, transparent); }
+/* 机外那几张：同色系的描边改成虚线 —— 颜色让给了热力，机内 / 机间这一档只剩虚实 */
+.crop-moe__dest[data-link="inter"] { stroke-dasharray: 2.5 1.5; }
 
 /* 卡底那条实心：宽度 = 这张卡收到的抽样 token 数，颜色 = 它的相对负载（由 js 写
    style.fill，复用「负载热力」那条色阶 heatColor —— 冷蓝最轻、火红最重）。
