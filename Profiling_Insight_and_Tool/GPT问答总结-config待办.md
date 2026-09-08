@@ -15,18 +15,23 @@ EDP size = Dₑ
 
 | 模块 | 阶段 | 通信事件 | 传输内容 | 通信范围 |
 |---|---|---|---|---:|
-| Attention | 前向 | TP All-Reduce | `W_O` 行切后，各 TP rank 算出的部分和 | 同一 TP group，`T` 个 rank |
+| Attention | 前向 | TP All-Reduce | 局部 Attention 输出乘以按输入维切分的 `W_O` 后得到的输出部分和，需跨 TP 求和 | 同一 TP group，`T` 个 rank |
 | Attention | 反向 | TP All-Reduce / Reduce-Scatter | QKV 列切产生的输入梯度部分和 | 同一 TP group，`T` 个 rank |
 | Attention | 前向/反向 | CP Ring Send/Recv | 分块的 K/V，以及反向时相应梯度 | 同一 CP group，`C` 个 rank |
 | Attention | 前向/反向 | CP All-to-All | Ulysses 实现中重新排列 Q/K/V 和 Attention 输出 | 同一 CP group，`C` 个 rank |
 | Router | 前向 | 通常无通信 | 每个 rank 对自己的 token 本地算专家分数 | 本地 |
 | Router | 前向 | 可选 All-Reduce | 专家 token 计数、负载均衡统计 | 通常 EP group，`P` 个 rank；依实现而定 |
-| Routed MoE | 前向 | All-to-All Dispatch | token 隐状态及路由信息，从原始 rank 发往专家所在 rank | 同一 EP group，`P` 个 rank |
+| Routed MoE | 前向 | All-to-All Dispatch | 按路由结果重排后的 token 激活，从原始 rank 发往专家所在 rank；同时交换或维护分发所需的路由元数据 | 同一 EP group，`P` 个 rank |
 | Routed MoE | 前向 | All-to-All Combine | 专家输出从专家 rank 返回 token 原始 rank | 同一 EP group，`P` 个 rank |
 | Routed MoE | 反向 | 反向 Combine All-to-All | 输出梯度从 token 原始 rank 发回专家 rank | 同一 EP group，`P` 个 rank |
 | Routed MoE | 反向 | 反向 Dispatch All-to-All | 专家计算出的输入梯度发回 token 原始 rank | 同一 EP group，`P` 个 rank |
 | Routed Expert | 前向/反向 | ETP All-Reduce 等 | 专家内部张量并行产生的部分结果或梯度 | 同一 ETP group，`ETP` 个 rank |
 | Shared Expert | 前向/反向 | TP All-Reduce 等 | 共享专家 MLP 的部分结果或梯度 | 同一 TP group，`T` 个 rank；不走 EP All-to-All |
+
+说明：
+
+- **`W_O` 行切**：典型 TP Attention 中，`W_QKV` 按输出维切分，各 rank 可独立计算本地 attention heads；`W_O` 则按输入维切分（“行切”指逻辑输入维，不一定对应代码中的第一维）。每个 rank 得到同一最终输出的一个部分和，因此需要 All-Reduce；启用 Sequence Parallel 时也可能使用 Reduce-Scatter。
+- **token 激活与路由元数据**：token 激活是进入 MoE 的 hidden vector，而非 RNN 的隐藏状态；路由元数据包括目标 expert/rank、收发计数、原 token 位置及 Top-K 权重等，用于分组、分发和 Combine 时恢复顺序。具体实现中，这些元数据可能随通信发送，也可能保留在源 rank 或由排列顺序隐式表示。
 
 知识库中的 Attention TP 前向链路见 [Transformer结构与并行策略知识库.md](D:/Projects/compute-graph-viewer-wzh/Profiling_Insight_and_Tool/ParallelDemo/Transformer结构与并行策略知识库.md:1082)，MoE 的两次前向 All-to-All 见 [同一文件](D:/Projects/compute-graph-viewer-wzh/Profiling_Insight_and_Tool/ParallelDemo/Transformer结构与并行策略知识库.md:1140)。
 

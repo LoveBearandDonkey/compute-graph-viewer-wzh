@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Config &amp; Relation Observer</title>
+  <title>Config &amp; Relation Observer · 平面视图</title>
   <script>
     (() => {
       const theme = new URLSearchParams(window.location.search).get("theme");
@@ -32,6 +32,10 @@
   <link rel="stylesheet" href="./css/config-relation-yaml.css?v=20260831-flat-picker">
   <!-- 文档视图（顶栏第三档）：章节目录 + 800px 正文栏 -->
   <link rel="stylesheet" href="./css/config-relation-doc.css?v=20260821-doc-arrow">
+  <!-- 平面视图（本页专属）：把四域重排成「左配置 / 中无限画布 / 右详情」三栏。
+       只加规则、不改上面任何一份 —— 与 config-relation-observer.html 共用同一套
+       CSS/JS，视图差异全部收在这一份与 js/config-relation-plane.js 里。 -->
+  <link rel="stylesheet" href="./css/config-relation-plane.css?v=20260908-assesscard2">
 </head>
 <body data-theme="dark">
   <section class="pto-ide-frame" data-ide-frame data-host="standalone" aria-label="Config and Relation Observer">
@@ -316,6 +320,17 @@
                   <option value="openpangu-flash">openPangu 2.0 flash 92B</option>
                   <option value="qwen2-7b">Qwen2-7B（Dense）</option>
                 </select>
+              </div>
+              <!-- 配置预设：模型下面这一格换的是**整份**并行 / 批次 / MoE 参数，
+                   而不是某一枚 stepper —— 与「模型」下拉分成两格，正是因为两者换的
+                   东西不同：模型换的是结构常量（层数、hidden、专家规格），配置换的
+                   是同一个模型「这一次怎么跑」。选项按当前模型过滤、由 JS 填充
+                   （见 config-relation-observer.js 的 CONFIG_PRESETS）。
+                   用户手动拨过任何一枚控件后，这一格自己落到「自定义」那一档 ——
+                   预设名停在一份早被改过的配置上会读成一句假话。 -->
+              <div class="cro-stepper">
+                <label class="cro-stepper__label" for="croConfigPresetSelect">配置</label>
+                <select class="cro-select" id="croConfigPresetSelect"></select>
               </div>
               <div class="cro-deck-host" id="croDeckHost">
                 <div class="cro-placeholder">整网 3D deck（正视图）· 第 3 项接入</div>
@@ -2882,9 +2897,9 @@ t  TP 序号              c  CP 序号      n  物理节点号</div>
   <script src="./js/ide-frame-pattern.js"></script>
   <script src="./js/model-graphviz-pattern.js"></script>
   <script src="./js/model-architecture-3d-deck-pattern.js"></script>
-  <script src="./js/config-relation-observer.js?v=20260908-default-preset"></script>
+  <script src="./js/config-relation-observer.js?v=20260908-assesscard2"></script>
   <!-- 单卡容量：必须排在主脚本之后（要读它导出的 croObserver / croSelect） -->
-  <script src="./js/config-relation-capacity.js?v=20260821-edp"></script>
+  <script src="./js/config-relation-capacity.js?v=20260908-assess"></script>
   <!-- YAML 视图：同样排在主脚本之后（要读它导出的 croObserver.topology）。
        它同时是 #croViewTabs 三档切换的唯一监听方。 -->
   <script src="./js/config-relation-yaml.js?v=20260821-ep-mode"></script>
@@ -2977,5 +2992,11 @@ t  TP 序号              c  CP 序号      n  物理节点号</div>
       go("navTaskCompare", "./TaskCompare.html");
     })();
   </script>
+
+  <!-- ═══ 平面视图重排（本页与 config-relation-observer.html 的唯一差别）═══════
+       排在最后：它要把已经解析完的四个 .cro-region 搬进新的三栏骨架，而主脚本
+       挂在 DOMContentLoaded 上、此刻尚未 boot —— 搬完再 boot，所有 getElementById
+       拿到的还是同一批节点，配置 / 校验 / 关系解析一行逻辑都没动。 -->
+  <script src="./js/config-relation-plane.js?v=20260908-assesscard2"></script>
 </body>
 </html>

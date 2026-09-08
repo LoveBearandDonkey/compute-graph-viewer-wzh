@@ -852,6 +852,27 @@
   }
 
   const LEVEL_LABEL = { safe: "安全", tight: "偏满", alert: "预警", over: "越界" };
+  /* ── 只读的估算入口（平面视图右栏的「当前配置评估」要用）──────────────────
+     它与本栏画的是同一组数：syncBasis 之后逐 stage measure 一遍。单独导出而不是
+     让调用方自己再算一遍显存，是因为这套口径（六段、1F1B 在飞份数、四项预留，加上
+     LoRA / 分片 / 精度三处分支）只应该有一份实现 —— 另写一份就一定会走散，
+     而「同一页两处各报一个不同的显存数」是这一页最不能出的错。
+     纯只读：不碰 pinnedStage、不触发 render。唯一的副作用是 syncBasis 改 BASIS，
+     而那正是 render() 每帧自己要做的第一件事，两边谁先谁后都不会互相污染。 */
+  global.croCapacityModel = {
+    THRESHOLD, LEVEL_LABEL, levelOf,
+    /* 逐 stage 的 measure 结果（ratio / values / reserveParts / inflight / recomputed 都在内）。
+       配置不自洽时返回空数组 —— 与 render() 里那句 setEmpty 同一条判据。 */
+    measureAll(topo) {
+      if (!topo || !topo.valid || !topo.counts) return [];
+      syncBasis(topo);
+      const pp = Math.max(1, topo.counts.pp);
+      const out = [];
+      for (let s = 0; s < pp; s += 1) out.push(measure(topo, s));
+      return out;
+    },
+  };
+
 
   const gb = (bytes) => (bytes / GIB).toFixed(1);
 
