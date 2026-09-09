@@ -1,0 +1,31 @@
+{
+  "id": "dv4-pro-synthetic-1f1b-v1",
+  "step": 18420,
+  "dp": 2,
+  "pp": 4,
+  "tp": 1,
+  "ep": 2,
+  "globalBatchSize": 32,
+  "microBatchSize": 2,
+  "sequenceLength": 4096,
+  "schedule": "non-interleaved-1f1b",
+  "stageLayerRanges": [[0,14],[15,29],[30,44],[45,60]],
+  "detailLayer": 2,
+  "layerForwardMs": 4,
+  "epTransferMs": 0.15,
+  "ppTransferMs": 0.4,
+  "gradientSyncMs": 3,
+  "gradientClipMs": 1.5,
+  "optimizerMs": 5,
+  "parameterAllGatherMs": 2,
+  "optimizerSharding": "reference-shaped",
+  "recompute": false,
+  "assumptions": [
+    "This is not an official DeepSeek training deployment or a performance prediction.",
+    "DP denotes independent complete replicas. Each replica has PP4 and EP2 with TP1; world=16. EP partitions the two samples/tokens inside each local microbatch; it does not multiply the logical MB count.",
+    "Dense weights are replicated across DP and EP coordinates; routed expert weights are sharded by EP and replicated across DP. Optimizer states are reference-shaped shards inside each gradient collective group.",
+    "Only L2 has representative operator events. Other layers and the output/MTP/loss head are coarse context blocks, not full-layer or kernel traces. This is a lightweight visual demo.",
+    "Synthetic role weights, EP/PP times and absolute ms scale are illustrative. Only the aggregate backward/forward duration ratio is derived from ST; ST stage imbalance is not transplanted.",
+    "One serial compute resource per rank, explicit EP/PP communication dependencies and no activation recomputation. The reduce-scatter, clip, optimizer and parameter-all-gather lifecycle follows ST event categories, while parameter groups, shard ownership and durations are simulated rather than claimed as an official DeepSeek deployment."
+  ]
+}

@@ -1,0 +1,100 @@
+<!doctype html>
+<html lang="zh-CN" data-theme="dark">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>训练结构与执行时序</title>
+  <link rel="stylesheet" href="../../vendor/pto-design-system/tokens/foundation.css">
+  <link rel="stylesheet" href="../../vendor/pto-design-system/tokens/semantic.css">
+  <link rel="stylesheet" href="../../vendor/pto-design-system/tokens/components.css">
+  <link rel="stylesheet" href="../../vendor/pto-design-system/css/style.css">
+  <link rel="stylesheet" href="../../vendor/pto-design-system/patterns/workbench-shell/pattern.css">
+  <link rel="stylesheet" href="../../vendor/pto-design-system/patterns/ide-frame/pattern.css">
+  <link rel="stylesheet" href="../vendor/swimlane-task/pattern.css">
+  <link rel="stylesheet" href="./training-structure-time-v3.css?v=20260909-runtime-contract-v2">
+</head>
+<body>
+  <main class="training-workspace" data-ide-frame data-host="standalone">
+    <header class="pto-ide-frame__topbar">
+      <div class="pto-ide-frame__topbar-left">
+        <span class="pto-ide-frame__brand">PTO</span>
+        <span class="pto-ide-frame__workspace">训练结构与执行时序</span>
+      </div>
+      <div class="pto-ide-frame__topbar-right">
+        <span class="pto-ide-frame__pane-meta">DeepSeek V4 Pro · 训练模拟</span>
+        <span class="pto-ide-frame__pane-meta" id="training-context">正在加载训练 JSON…</span>
+        <button class="btn btn-ghost btn-sm" id="fidelity" aria-expanded="false">模拟配置 / 数据依据 ⓘ</button>
+        <button class="btn btn-ghost btn-sm" id="theme" aria-label="切换明暗主题">◐ 主题</button>
+      </div>
+    </header>
+    <div class="pto-ide-frame__split training-split" data-ide-split="training-structure-time-v3" data-sizes="40,60" data-min-size="420,680" data-gutter-size="8">
+      <section class="pto-ide-frame__pane" data-ide-pane="structure" aria-label="模型结构与训练运行时">
+        <header class="pto-ide-frame__pane-header">
+          <h1 class="pto-ide-frame__pane-title" id="structure-title">DeepSeek V4 Pro · 模型结构 + 训练运行时</h1>
+          <span class="pto-ide-frame__pane-meta" id="structure-meta">61 主层 + 1 MTP</span>
+        </header>
+        <div class="pto-ide-frame__domain-toolbar pto-ide-frame__tabstrip">
+          <div class="tab-control" id="graph-level" role="group" aria-label="模型结构层级">
+            <button class="tab-control-item" data-level="network" aria-pressed="false" title="整网：收起代表层内部的 Attention 与 FFN">整网</button>
+            <button class="tab-control-item is-selected" data-level="l1" aria-pressed="true" title="结构层级 L1：查看代表层概览，Attention 与 MoE 保持模块级">L1</button>
+            <button class="tab-control-item" data-level="l2" aria-pressed="false" title="结构层级 L2：展开 Attention 角色和 MoE 路由 / 专家；不代表 Layer 2 编号">L2</button>
+          </div>
+          <button class="btn btn-ghost btn-sm" id="graph-fit">适配 ⤢</button>
+        </div>
+        <div id="unlinked-structure" class="inspector-rail"><p>加载经过 schema 校验的训练数据后显示结构模板。模板用于模型角色定位，不代表实测算子。</p></div>
+        <iframe hidden id="model-graph" class="model-graph" title="DeepSeek V4 Pro 模型结构与训练运行时" src="../architecture/deepseek_v4_flash_csa/index.html?embed=1&amp;modelGraph=1&amp;level=l1&amp;theme=dark&amp;surface=white&amp;externalControls=1&amp;trainingProfile=pro&amp;revision=20260909-runtime-contract-v2"></iframe>
+      </section>
+      <section class="pto-ide-frame__pane" data-ide-pane="timeline" id="timeline-pane" aria-label="执行时序">
+        <header class="pto-ide-frame__pane-header">
+          <h2 class="pto-ide-frame__pane-title">执行时序</h2>
+          <span class="pto-ide-frame__pane-meta" id="timeline-meta">数据由独立生成器提供</span>
+        </header>
+        <div class="pto-ide-frame__domain-toolbar pto-ide-frame__tabstrip timeline-controls">
+          <div class="pto-ide-frame__toolbar-group">
+            <select class="training-select" id="deployment" aria-label="部署范围"></select>
+            <select class="training-select" id="view" aria-label="时间窗口">
+              <option value="global">完整 step</option><option value="stage">PP 阶段</option><option value="object">层对象</option><option value="forward">Rank 前向</option><option value="backward">Rank 反向</option>
+            </select>
+            <select class="training-select" id="stage" aria-label="PP 阶段" hidden></select>
+            <select class="training-select training-select-wide" id="microbatch" aria-label="Microbatch 焦点"></select>
+            <div class="tab-control" id="time-mode" role="group" aria-label="时间表达">
+              <button class="tab-control-item is-selected" data-mode="events" aria-pressed="true">事件</button><button class="tab-control-item" data-mode="union" aria-pressed="false">并集</button>
+            </div>
+          </div>
+          <div class="toolbar-control">
+            <button class="btn btn-ghost btn-sm" id="zoom-out" aria-label="缩小时间轴">−</button>
+            <input type="range" id="zoom" min="0" max="4" value="0" aria-label="时间轴缩放">
+            <span class="toolbar-readout" id="zoom-value">1×</span>
+            <button class="btn btn-ghost btn-sm" id="zoom-in" aria-label="放大时间轴">＋</button>
+            <button class="btn btn-ghost btn-sm" id="hierarchy" aria-label="泳道层级说明" aria-expanded="false">ⓘ</button>
+          </div>
+        </div>
+        <div class="selection-context" id="selection-context" aria-live="polite" hidden>
+          <span id="selection-copy"></span>
+          <div id="selection-actions" hidden><button class="btn btn-ghost btn-sm" id="trace">追踪此 MB</button><button class="btn btn-ghost btn-sm" id="clear">清除结构选择</button><button class="btn btn-ghost btn-sm" id="clear-mb" hidden>全部 MB</button></div>
+        </div>
+        <div class="timeline-viewport" id="timeline-viewport">
+          <div class="timeline-extent" id="timeline-extent"><canvas id="timeline" tabindex="0" aria-label="训练执行泳道，点击行头展开，点击事件定位模型；方向键选择事件，Enter 定位，Escape 清除"></canvas></div>
+        </div>
+        <footer class="timeline-legend">
+          <div class="lifecycle-legend">
+            <span><i class="is-flow is-forward" style="--legend-color:var(--primary)"></i>前向</span>
+            <span><i class="is-flow is-backward" style="--legend-color:var(--danger)"></i>反向</span>
+            <span><i style="--legend-color:var(--warning)"></i>优化器</span>
+            <span><i style="--legend-color:var(--foreground-muted)"></i>等待</span>
+            <span><i style="--legend-color:var(--success)"></i>通信</span>
+            <span><i class="is-hold"></i>激活驻留</span>
+          </div>
+          <span id="range-label">记录时间范围</span>
+        </footer>
+      </section>
+    </div>
+  </main>
+  <div id="detail" class="panel-shell panel-shell-quiet event-popover" role="dialog" aria-label="事件详情" hidden></div>
+  <script src="../../vendor/pto-design-system/patterns/workbench-shell/pattern.js"></script>
+  <script src="../../vendor/pto-design-system/patterns/ide-frame/pattern.js"></script>
+  <script src="../vendor/swimlane-task/pattern.js"></script>
+  <script src="./timeline-contract.js?v=20260909-runtime-contract-v2"></script>
+  <script src="./training-structure-time-v3.js?v=20260909-runtime-contract-v2"></script>
+</body>
+</html>

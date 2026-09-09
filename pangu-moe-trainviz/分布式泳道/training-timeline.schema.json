@@ -1,0 +1,56 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "training-timeline.v2",
+  "type": "object",
+  "required": ["schemaVersion","id","label","step","fidelity","timeUnit","model","training","stages","ranks","parameterGroups","optimizerStateGroups","collectiveGroups","runtimeGraph","events","summaries","provenance","stepBounds"],
+  "properties": {
+    "schemaVersion": {"enum":["training-timeline.v2"]},
+    "timeUnit": {"enum":["ms"]},
+    "fidelity": {"enum":["simulated","measured"]},
+    "id":{"type":"string"}, "label":{"type":"string"}, "step":{"type":"integer"},
+    "model":{"type":"object"}, "training":{"type":"object"}, "stepBounds":{"type":"object"},
+    "stages":{"type":"array","items":{"type":"object","required":["id","first","last"]}},
+    "ranks":{"type":"array","items":{"type":"object","required":["rank","dp","stage","tp","ep"]}},
+    "provenance":{"type":"array","items":{"type":"object","required":["id","kind"]}},
+    "parameterGroups":{"type":"array","items":{"type":"object","required":["id","label","stage","layerRange","parameterClass","modelNodeIds","distribution","fidelity","provenanceIds"],"properties":{
+      "id":{"type":"string"},"label":{"type":"string"},"stage":{"type":"integer"},"layerRange":{"type":"array","items":{"type":"integer"}},"parameterClass":{"enum":["dense","routed-expert"]},"modelNodeIds":{"type":"array","items":{"type":"string"}},
+      "distribution":{"type":"object","required":["mode","replicatedAxes","shardedAxes","shardCount"],"properties":{"mode":{"enum":["replicated","hybrid"]},"replicatedAxes":{"type":"array","items":{"type":"string"}},"shardedAxes":{"type":"array","items":{"type":"string"}},"shardCount":{"type":"integer","minimum":1}}},
+      "fidelity":{"enum":["simulated","measured"]},"provenanceIds":{"type":"array","items":{"type":"string"}}
+    }}},
+    "optimizerStateGroups":{"type":"array","items":{"type":"object","required":["id","label","parameterGroupId","algorithm","distribution","fidelity","provenanceIds"],"properties":{
+      "id":{"type":"string"},"label":{"type":"string"},"parameterGroupId":{"type":"string"},"algorithm":{"type":["string","null"]},
+      "distribution":{"type":"object","required":["mode","axes","shardCount"],"properties":{"mode":{"enum":["sharded"]},"axes":{"type":"array","items":{"type":"string"}},"shardCount":{"type":"integer","minimum":1}}},
+      "fidelity":{"enum":["simulated","measured"]},"provenanceIds":{"type":"array","items":{"type":"string"}}
+    }}},
+    "collectiveGroups":{"type":"array","items":{"type":"object","required":["id","label","kind","ranks","axes","fidelity","provenanceIds"],"properties":{
+      "id":{"type":"string"},"label":{"type":"string"},"kind":{"enum":["dense-gradient","expert-gradient"]},"ranks":{"type":"array","items":{"type":"integer"}},"axes":{"type":"array","items":{"type":"string"}},"fidelity":{"enum":["simulated","measured"]},"provenanceIds":{"type":"array","items":{"type":"string"}}
+    }}},
+    "runtimeGraph":{"type":"object","required":["id","label","nodes","edges"],"properties":{
+      "id":{"type":"string"},"label":{"type":"string"},
+      "nodes":{"type":"array","items":{"type":"object","required":["id","label","kind","scope","sourceCategories","parameterGroupIds","optimizerStateGroupIds","fidelity","provenanceIds"],"properties":{"id":{"type":"string"},"label":{"type":"string"},"kind":{"enum":["collective","gradient-transform","optimizer","parameter-materialization"]},"scope":{"enum":["step"]},"sourceCategories":{"type":"array","items":{"type":"string"}},"parameterGroupIds":{"type":"array","items":{"type":"string"}},"optimizerStateGroupIds":{"type":"array","items":{"type":"string"}},"fidelity":{"enum":["simulated","measured"]},"provenanceIds":{"type":"array","items":{"type":"string"}}}}},
+      "edges":{"type":"array","items":{"type":"object","required":["id","source","target","semanticEdgeType"],"properties":{"id":{"type":"string"},"source":{"type":"string"},"target":{"type":"string"},"semanticEdgeType":{"enum":["control","gradient","parameter"]}}}}
+    }},
+    "summaries":{"type":"array","items":{"$ref":"#/$defs/event"}},
+    "events":{"type":"array","items":{"$ref":"#/$defs/event"}}
+  },
+  "$defs": {
+    "event": {
+      "type":"object",
+      "required":["id","label","kind","start","end","scope","microbatchId","rank","dp","stage","tp","ep","layer","graphNodeIds","templateNodeIds","runtimeNodeIds","parameterGroupIds","optimizerStateGroupIds","collectiveGroupId","shards","referenceEventCategory","participants","sourceEventIds","dependsOn","fidelity","provenanceIds","stream","relation"],
+      "properties": {
+        "id":{"type":"string"}, "label":{"type":"string"},
+        "kind":{"enum":["forward","backward","comm","optimizer","hold","wait","misc"]},
+        "start":{"type":"number","minimum":0}, "end":{"type":"number","minimum":0}, "scope":{"enum":["microbatch","layer","step","parameter-group"]},
+        "microbatchId":{"type":["string","null"]},
+        "rank":{"type":"integer"},"dp":{"type":"integer"},"stage":{"type":"integer"},"tp":{"type":"integer"},"ep":{"type":["integer","null"]},"layer":{"type":["integer","null"]},
+        "graphNodeIds":{"type":"array","items":{"type":"string"}},"templateNodeIds":{"type":"array","items":{"type":"string"}},"runtimeNodeIds":{"type":"array","items":{"type":"string"}},
+        "parameterGroupIds":{"type":"array","items":{"type":"string"}},"optimizerStateGroupIds":{"type":"array","items":{"type":"string"}},"collectiveGroupId":{"type":["string","null"]},
+        "shards":{"type":"array","items":{"type":"object","required":["optimizerStateGroupId","index","count","axes","ownerRanks"],"properties":{"optimizerStateGroupId":{"type":"string"},"index":{"type":"integer","minimum":0},"count":{"type":"integer","minimum":1},"axes":{"type":"array","items":{"type":"string"}},"ownerRanks":{"type":"array","items":{"type":"integer"}}}}},
+        "referenceEventCategory":{"type":["string","null"]},
+        "participants":{"type":"array","items":{"type":"integer"}},
+        "sourceEventIds":{"type":"array","items":{"type":"string"}},"dependsOn":{"type":"array","items":{"type":"string"}},"provenanceIds":{"type":"array","items":{"type":"string"}},
+        "fidelity":{"enum":["simulated","measured"]},"stream":{"type":"string"},"relation":{"type":"string"}
+      }
+    }
+  }
+}
