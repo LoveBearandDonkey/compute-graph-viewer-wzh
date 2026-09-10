@@ -54,8 +54,13 @@
   const GAP_MIN_PX = 14;         // 没有行标时块与块之间的最小缝（屏幕像素）
   /* 行标左右的余量。单位与 labelTextW 同（探针字号下的像素），所以它跟着字号一起
      缩放 —— 写成固定的世界像素的话，缩到 10% 时这点余量在屏幕上只剩两像素，
-     而 css 那 8px 右内衬同样缩掉了，字就贴着块的左缘甚至被截。 */
-  const LANE_SLACK = 20;
+     而 css 那点右内衬同样缩掉了，字就贴着块的左缘甚至被截。
+     ⚠️ 行标是**右对齐**贴着块画的，所以这条余量减去右内衬之后，剩下的全部堆在
+     文字左边。20 那时右内衬还是固定的 8 世界像素（缩小时屏幕上趋近 0），于是缩到
+     中间那几档时文字右边贴着块、左边空出十几个屏幕像素，整条道看着比需要的宽一倍。
+     现在右内衬改成随字号走的 em（见 css .crop-rowlabel），左右两边都恒定，余量
+     本身就不必再留那么多：12 −（右内衬约 0.5em ≈ 5 屏幕像素）≈ 左边 6 像素。 */
+  const LANE_SLACK = 12;
   const LANE_EDGE = 6;           // 道与块之间那点固定的世界间隙
   /* 纵向的两级缝，都是**分区感**用的 —— 缩小之后格子糊成一片，能读出边界的
      就只剩这两条缝：
@@ -130,16 +135,29 @@
 
        ① 整格上色 —— 一格不足 BLOCK_MIN_H 高。这时只剩「这是哪一套专家」一件事
           还答得出，交给底色（与热力档、整机跨 EP 那几档同一个降级方向）。
-       ② 三段块 —— Hidden / Attention / MoE 三条横带，MoE 那条带着那一套专家的
-          颜色。答的是「这一层的活分成哪几段」，还不到算子的粒度；「同色一块 =
-          一整套专家」这条读法靠 MoE 带留住。
+       ② 两段块 —— Attention / MoE（dense 层写 Dense）两条横带，MoE 那条带着那
+          一套专家的颜色。答的是「这一层的活分成哪几块」，还不到算子的粒度；
+          「同色一块 = 一整套专家」这条读法靠 MoE 带留住。
+          ⚠️ 不写 Hidden：它是这一层的入口张量、不是一段活；一旦开始列张量与
+          norm，这张清单就收不住（两块各有自己的入口 RMSNorm、之间还各有一次
+          Residual Add）—— 那是 ③ 的事。详见 buildBands。
        ③ 逐个计算节点 —— 把这张卡在这一层里真正要跑的那些算子铺出来（Attention
           的两支投影与注意力核、MoE 的路由四步，专家编号缩进 Expert Compute 盒
           子里）。判据不是 k，是那张详情面板缩进格子之后**字还有多大**：面板高度
-          随每卡专家数变（专家网格折几行），写死一个 k 会让某些配置永远进不来。 */
-  const BLOCK_MIN_H = 54;    // 一格在屏幕上至少这么高，三段块才写得下字（三条 ≈ 18px）
+          随每卡专家数变（专家网格折几行），写死一个 k 会让某些配置永远进不来。
+
+     ⚠️ **②③ 只属于卡粒度**（showSegs / showDetail 那两闸都要求 span === 1）。
+     它们答的都是「**一张卡**在这一层里的活」——「上半格 Attention、下半格 MoE」
+     「这里跑 Router、那里跑 Expert Compute」—— 而整机行一格是 span 张卡，这两句话
+     在那里没有单一答案：那台机器的 8 张卡每一张都从头到尾跑完这两块，把它们画进一
+     个机器格子里，读出来却是「这台机器上半截在做 Attention」。
+     所以整机档只有 ① 一档，它的「更精细一步」不是格内长出内容，而是**换粒度** ——
+     一行摊开成 span 行 rank 格子，②③ 从那时起才有意义。自适应缩放因此在「整机格
+     子大到该有内容」的同一个门槛上换档（见 currentUnit），两条阶梯正好接上：
+       整机·纯颜色 → rank·纯颜色 → rank·两段块 → rank·逐个算子 */
+  const BLOCK_MIN_H = 54;    // 一格在屏幕上至少这么高，两段块才写得下字（两条 ≈ 27px）
   const BLOCK_MIN_W = 40;
-  const BAND_FONT_MIN = 9;   // 三段块的字在屏幕上恒定这么大（与行标同一套反向缩放）
+  const BAND_FONT_MIN = 9;   // 两段块的字在屏幕上恒定这么大（与行标同一套反向缩放）
   const DETAIL_MIN_S = 1.1;  // 详情面板：设计像素 → 屏幕像素的放大率下界
 
   /* 详情面板的**设计像素**。面板先按这一套尺寸排一遍版，再整体 scale 进格子里
@@ -156,10 +174,11 @@
   const D_CHIP_H = 8;        // 面板里那枚缩小版专家胶囊
   const D_RES_H = 10;        // 「+ Residual Add」那条
 
-  /* 自适应粒度（卡 ↔ 整机）在这个缩放上换档，见 currentUnit()。
-     （它原先还兼管「格内的专家胶囊写不写得出字」。格内三档现在一律按屏幕尺寸判，
-     那一半职责已经交给 BLOCK_MIN_H / DETAIL_MIN_S，这里只剩粒度这一件事。） */
-  const TEXT_MIN_K = 0.5;
+  /* （原先这里有一个 TEXT_MIN_K = 0.5：自适应粒度在这个**写死的缩放**上换档。
+     已撤 —— 判据换成「整机格子大到该有内容了吗」，那是一个屏幕尺寸而不是一个 k，
+     理由与格内三档同一条：同一个 k 下，每卡 32 个专家的格子有 139px 高、每卡 4 个
+     的只有 22px，写死一个 k 在两种配置上换出来的画面差着一个数量级。见
+     currentUnit()。） */
   /* 一行最多铺几枚专家胶囊，多出来的折行 —— 列宽因此不再随每卡专家数线性变宽
      （8 枚一行的格子比列名宽一倍，整幅平面横着拉长一倍），改成「宽度封顶、
      高度自适应」：行高由 buildLayout 按折出的行数算进 layout.cellH。 */
@@ -187,10 +206,13 @@
      而相邻有两个方向 —— 左右是换层、上下是换副本 —— 所以索引取
      (层号 + 2×副本号) % 4，两个方向的邻居都必定落到不同色上。 */
   const SET_TINTS = 4;
-  /* auto 粒度的切换判据：**专家标签还写不写得下**。写不下的那一刻，卡粒度就已经
-     没有信息可给了（一行只剩一个色块），不如聚成整机 —— 整机行高 8 倍，标签、
-     "整机 N" 那条带、行标都重新写得下。回到卡粒度要多缩放一点点（迟滞系数），
-     免得停在阈值上来回抖。 */
+  /* auto 粒度的切换判据：**整机格子还只够铺一块颜色吗**（见 currentUnit）。
+     整机行的高度恰好是它那 span 行卡之和，所以一格长到 BLOCK_MIN_H —— 格内本该
+     开始有内容的那个门槛 —— 时，整机档就已经把它能给的都给完了：它给不出格内的
+     两段块（那是**一张卡**在这一层里的活，一台机器有 span 张，没有单一答案），
+     能给的下一步只有换粒度，把这一行摊开成 span 行 rank 格子。两条阶梯因此在同一
+     个门槛上接头：整机·纯颜色 → rank·纯颜色 → rank·两段块 → rank·逐个算子。
+     反向（缩回整机）要多缩一点点（迟滞系数），免得停在阈值上来回抖。 */
   const AUTO_NODE_HYST = 1.15;
   const CHIP_CAP = 10;           // 右栏一行胶囊最多列几个，其余折成「+N」
 
@@ -291,6 +313,56 @@
   const ROUTE_COLLAPSE_AT = ROUTE_PHASES[3].at;   // 从这里开始才向 one-hot 混合
   const ROUTE_COLLAPSE_MAX = 0.98;               // 事件 2.5 的读数：单专家吃掉 98%
 
+  /* ── 这根轴的时间口径：step ────────────────────────────────────────────────
+     轴上那个 τ 只是「进程」，读的人第一个问题一定是「这是多长的一段时间」。答案
+     是 step，而且是**整条 run 上其它页共用的那一条时间线**：问题一的事故步钉在
+     15203（training-run-twin.js 的 INCIDENT_STEP、training-log-drawer.js 的日志
+     行、training-rank-swimlane.js 的泳道都是这个数），慢性偏斜从事故前 4200 步
+     开始爬（twin 的 LV_SKEW_CLIMB_FROM = INCIDENT_STEP - 4200）。所以这根轴写的
+     是 step 11003 → 15203。
+
+     ⚠️ 这段时间不是一把匀速的尺子，而是**两种时间基**接在一起 —— 这正是这次事故
+     难查的地方，所以宁可在轴上说清楚，不要为了「一格一格等距」把它抹平：
+       · ① → ② → ③（τ 0 → 0.60）是**慢性**的，跨了四千多个 step：均衡损失一点点
+         压不住，热门专家的份额慢慢抬起来。这一段按 step 线性铺。
+       · ③ → ④（τ 0.60 → 1）全部发生在**同一个 step 15203 之内**：logits 越界 →
+         exp() = Inf → softmax 塌成 one-hot。所以轴的后 4 成 step 号不再往前走，
+         读数改写「step 15203 内」，说的是那一步里的数值级联。
+     ROUTE_STEP_INSTEP_AT 取第三相的门槛：③ 的读数（max(logits) 1846 › FP8 448）
+     本来就是那一步里的事。 */
+  const ROUTE_STEP_FROM = 11003;
+  const ROUTE_STEP_TO = 15203;
+  const ROUTE_STEP_INSTEP_AT = ROUTE_PHASES[2].at;
+
+  /* τ → 这一刻是第几个 step。inStep 为真时表示「已经进到事故步内部」，那时 step
+     号不动（见上面那段），说明由 routeStepText 补。 */
+  function routeStepAt(tau) {
+    if (tau >= ROUTE_STEP_INSTEP_AT) return { step: ROUTE_STEP_TO, inStep: true };
+    const t = ROUTE_STEP_INSTEP_AT > 0 ? tau / ROUTE_STEP_INSTEP_AT : 0;
+    // 上界取事故步的前一步：15203 只属于 inStep 那一段，慢性段最多爬到 15202
+    const span = ROUTE_STEP_TO - 1 - ROUTE_STEP_FROM;
+    return { step: Math.round(ROUTE_STEP_FROM + span * clamp(t, 0, 1)), inStep: false };
+  }
+
+  function routeStepText(tau) {
+    const s = routeStepAt(tau);
+    return s.inStep ? `step ${s.step} 内` : `step ${s.step}`;
+  }
+
+  /* 第 i 相**跨了哪几个 step**：给横幅那条四段相位条用。区间左闭右开 —— 下一相的
+     门槛属于下一相，所以右端取它前一步。
+     ③ 与 ④ 都落回「step 15203 内」不是重复：这两相本来就发生在事故步那一步之内
+     （logits 越界 → exp()=Inf → 塌成 one-hot），四段并排时正好把「前三相跨四千多
+     步、后两相挤在一步里」这件事摆到明面上。 */
+  function routePhaseSteps(i) {
+    const a = routeStepAt(ROUTE_PHASES[i].at);
+    if (a.inStep) return `step ${ROUTE_STEP_TO} 内`;
+    const next = i + 1 < ROUTE_PHASES.length ? ROUTE_PHASES[i + 1].at : 1;
+    const b = routeStepAt(next);
+    const hi = b.inStep ? ROUTE_STEP_TO - 1 : b.step - 1;
+    return hi <= a.step ? `step ${a.step}` : `step ${a.step}–${hi}`;
+  }
+
   /* 量程按采样算的那几个（live 的自己算，见 routeRange）。allRanges 那圈循环是
      一帧几万次 evalCell 的来源，多带一个用不到的度量就是白跑一遍。 */
   const HEAT_SCALED = HEAT_METRICS.filter((m) => !m.live);
@@ -299,10 +371,16 @@
      时间轴不必重建模型（模型按 topology 缓存，重建等于每拖一格重算一次拓扑）。 */
   let routeTau = 0;
 
+  /* 走到第几相。返回下标而不是对象：横幅那条四段相位条要按「走过 / 当前 / 未到」
+     三态给样式，光有当前那一相的对象判不出前后。 */
+  function routePhaseIndex(tau) {
+    let idx = 0;
+    ROUTE_PHASES.forEach((p, i) => { if (tau >= p.at) idx = i; });
+    return idx;
+  }
+
   function routePhase(tau) {
-    let ph = ROUTE_PHASES[0];
-    ROUTE_PHASES.forEach((p) => { if (tau >= p.at) ph = p; });
-    return ph;
+    return ROUTE_PHASES[routePhaseIndex(tau)];
   }
 
   /* 五个度量的说明 + 这套数是怎么算出来的，合并成一段：挂在工具带最右侧那枚
@@ -329,7 +407,12 @@
     + "「专家负载」多一根时间轴，与前五个不同：它复刻运行事件 2.5（Router FP8 溢出，"
     + "E193 吸收 98% token）那条曲线 —— "
     + ROUTE_PHASES.map(function (p) { return p.tag + "（" + p.clock + "）"; }).join(" → ")
-    + "。前五个度量**不受**这根轴影响：那次事故改的是路由分布本身，把它一并算进"
+    + "。\n这根轴的刻度是 **step**，与时光机、日志抽屉、rank 泳道钉的是同一条时间线："
+    + "step " + ROUTE_STEP_FROM + "（慢性偏斜开始爬坡）到 step " + ROUTE_STEP_TO
+    + "（问题一的事故步，loss NaN）。它不是一把匀速的尺子 —— 前三相跨了四千多个 step，"
+    + "而 ③ → ④ 全部发生在 step " + ROUTE_STEP_TO + " **那一步之内**（logits 越界 → "
+    + "exp() = Inf → softmax 塌成 one-hot），所以轴的后一段 step 号不再往前走。"
+    + "\n前五个度量**不受**这根轴影响：那次事故改的是路由分布本身，把它一并算进"
     + "显存与耗时是另一回事，这里不替你下那个结论。";
 
   /* 冷蓝 → 火红。六段线性插值，亮度单调上升（深色底上「越热越亮」这条不能破）。
@@ -939,6 +1022,9 @@
   /* 当前这一档的状态。模型按 topology 惰性建、配置一变就丢（onChange 里清）。 */
   let heatMetric = HEAT_METRICS[0].id;
   let heatCache = null;
+  /* 热力档自己的交叉格选择。主脚本的 relation 只表达单一对象（rank 或 layer），
+     不能表达 rank × layer；这里单独保存，右栏与白框都读这一份。 */
+  let heatPick = null;
 
   function heatModel() {
     if (!topology) return null;
@@ -1186,7 +1272,9 @@
   stage.append(world, rulerTop, rulerLeft, rulerCorner, tools);
 
   /* ── 右栏：选中详情 ── */
-  const right = el("aside", "crop-right");
+  /* 默认把静息态的「当前配置评估」收起，把宽度先还给主画布；用户点中具体对象时，
+     cro:select 仍会按原逻辑自动展开详情栏。 */
+  const right = el("aside", "crop-right is-collapsed");
   right.id = "cropRight";
   right.setAttribute("aria-label", "选中对象详情");
   const rightHead = el("div", "crop-right__head");
@@ -1236,7 +1324,7 @@
   modeTabs.setAttribute("aria-label", "中栏观测模式");
   [
     ["config", "配置寻优", "这份配置切成什么形状：stage × layer × rank × 专家"],
-    ["comm", "通信观测", "跑一个 step 会发生哪些跨卡通信：谁和谁、多大范围、走哪条链路"],
+    ["comm", "运行观测", "跑一个 step 会发生哪些跨卡通信：谁和谁、多大范围、走哪条链路"],
     ["heat", "负载热力", "同一幅平面按某个度量上色"],
   ].forEach(([id, label, tip], i) => {
     const btn = el("button", `tab-control-item${i === 0 ? " is-selected" : ""}`, label);
@@ -1264,7 +1352,7 @@
 
   const comm = el("div", "crop-comm");
   comm.id = "cropComm";
-  comm.setAttribute("aria-label", "通信观测");
+  comm.setAttribute("aria-label", "运行观测");
 
   const commBar = el("div", "crop-comm__bar");
   const commPlay = el("button", "btn btn-icon crop-comm__play");
@@ -1329,13 +1417,54 @@
   heatBanner.setAttribute("role", "status");
   const heatBannerTag = el("span", "crop-heatbanner__tag", "本图的问题");
   const heatBannerText = el("span", "crop-heatbanner__text");
-  heatBanner.append(heatBannerTag, heatBannerText);
+  const heatBannerLead = el("div", "crop-heatbanner__lead");
+  heatBannerLead.append(heatBannerTag, heatBannerText);
+
+  /* ── 「专家负载」那一档：横幅下面再铺一条四段相位条 ────────────────────────
+     另五个度量的故障是**一句话**说得完的静态事实，横幅一行就够；这一档不同 ——
+     它讲的是一条有先后的因果链（正常 → 走偏 → 越界 → 塌缩），而链条里最该被看见
+     的是 ② 与 ③ 在图上**长得一样**、④ 才突然变形。一次只显示当前那一相（原先工具
+     带右侧那块读数就是这么做的），读的人得靠记忆把四相接起来，也就再也读不出
+     「② 和 ③ 同形」这件事。
+
+     所以改成四段一口气铺开、按时间轴分步高亮：走过的置灰、当前的亮起、没到的
+     压暗 —— 进度与因果同框，横幅本身就成了这根时间轴的图例。工具带那侧因此不再
+     重复一份读数（step 号并进下面这行 lead）。 */
+  const heatBannerPhases = el("div", "crop-heatbanner__phases");
+  const heatBannerPhaseEls = ROUTE_PHASES.map((p, i) => {
+    const seg = el("div", "crop-heatbanner__phase");
+    /* 序号与相位名拆成两截：css 把这一段排成两列网格（序号一列、文字一列），
+       下面那行正文落在**文字**那一列里 —— 与「正常路由」对齐，而不是与「①」对齐。
+       挂在序号左边的那一竖列数字于是自己成一条对齐线，四段扫下来一眼看得出顺序。 */
+    const cut = p.tag.indexOf(" ");
+    const segNum = el("span", "crop-heatbanner__phase-num", cut > 0 ? p.tag.slice(0, cut) : "");
+    const segTag = el("span", "crop-heatbanner__phase-tag", cut > 0 ? p.tag.slice(cut + 1) : p.tag);
+    /* 正文一行两截：这一相**跨了哪几个 step** + 那一刻的数值口径。step 范围不是
+       补充说明 —— 前三相跨了四千多步、后两相全挤在事故步那一步之内，四段并排时
+       这个「不等宽的时间」正是最该被看见的东西（轴上只写得下首尾两个 step 号）。 */
+    const segBody = el("div", "crop-heatbanner__phase-body");
+    const segSteps = el("span", "crop-heatbanner__phase-steps", routePhaseSteps(i));
+    const segClock = el("span", "crop-heatbanner__phase-clock", p.clock);
+    segBody.append(segSteps, segClock);
+    seg.append(segNum, segTag, segBody);
+    heatBannerPhases.appendChild(seg);
+    return { seg, clock: segClock };
+  });
+
+  heatBanner.append(heatBannerLead, heatBannerPhases);
   stage.appendChild(heatBanner);
 
   const commDetail = el("div", "crop-comm__detail");
   commDetail.hidden = true;
-  commDetail.setAttribute("aria-label", "通信事件详情");
-  stage.appendChild(commDetail);
+  commDetail.setAttribute("aria-label", "运行详解");
+  /* 运行观测的详解与配置寻优的「当前配置评估」共用右栏位置；切档时只换内容，
+     不再把详解作为浮卡压在画布左下角。 */
+  rightBody.appendChild(commDetail);
+
+  const heatDetail = el("div", "crop-heat-detail");
+  heatDetail.hidden = true;
+  heatDetail.setAttribute("aria-label", "负载格子详情");
+  rightBody.appendChild(heatDetail);
 
   /* 通信连线层：一张盖在世界之上的 svg，坐标是**屏幕坐标**（与两条量尺同一套
      算法：world→screen 自己换算），所以线宽与动点不随缩放糊掉，缩放平移时线跟着
@@ -1419,7 +1548,8 @@
   const routePlay = el("button", "btn btn-icon btn-sm crop-heat__routeplay");
   routePlay.type = "button";
   /* 切进这一档已经自动演过一遍，所以这枚键的正职是**重播 / 暂停**，不是「开始」 */
-  routePlay.title = "重播 / 暂停：从均衡演到塌缩 —— α 锐化那一段是慢性的，最后那一跳才是数值事故";
+  routePlay.title = `重播 / 暂停：step ${ROUTE_STEP_FROM} 演到 step ${ROUTE_STEP_TO}`
+    + " —— 前一段偏斜是慢性的（跨四千多步），最后那一跳全发生在事故步那一步之内";
   routePlay.setAttribute("aria-label", "重播路由塌缩");
   routePlay.innerHTML = ICON_PLAY;
 
@@ -1430,18 +1560,24 @@
   routeSlider.max = "100";
   routeSlider.step = "1";
   routeSlider.value = "0";
-  routeSlider.setAttribute("aria-label", "路由塌缩进程");
+  routeSlider.setAttribute("aria-label",
+    `路由塌缩进程：step ${ROUTE_STEP_FROM} 到 step ${ROUTE_STEP_TO}`);
 
-  /* 相位读数两行：上行是这一相叫什么（与事件 2.5 同名），下行是那一刻的数值口径。
-     它不是装饰 —— ② 与 ③ 在图上**长得一样**，只有这行字说得出差别在哪。 */
-  const routeReadout = el("div", "crop-heat__routeread");
-  const routeTag = el("span", "crop-heat__routetag", ROUTE_PHASES[0].tag);
-  const routeClock = el("span", "crop-heat__routeclock", ROUTE_PHASES[0].clock);
-  routeReadout.append(routeTag, routeClock);
+  /* 滑杆两端写死 step 号 —— 一根拖得动的轴，第一个要答的问题是「这是多长的一段
+     时间」。不写的话它旁边最近的那个数字是色阶图例的热端（那个「7.87×」说的是
+     颜色对应多少倍均分，与时间毫无关系），紧挨着摆在一起就会被读成轴的刻度。
+     两端不是装饰性的起止点：左端 11003 是慢性偏斜开始爬坡的那一步，右端 15203
+     是问题一的事故步 —— 与 twin 时光机、日志抽屉、rank 泳道钉的是同一个数。 */
+  const routeFrom = el("span", "crop-heat__routeend", `step ${ROUTE_STEP_FROM}`);
+  const routeTo = el("span", "crop-heat__routeend", `step ${ROUTE_STEP_TO}`);
 
+  /* ⚠️ 滑杆右侧原先还有一块「当前相位 + step + 数值口径」的读数，已经删掉 ——
+     画布顶上那条红横幅现在把四相一口气铺开、按进度高亮（见 heatBannerPhases），
+     两处说的是同一件事，而横幅那份还多出前后文。同一个读数摆两遍，读的人第一个
+     反应是「这两块有什么不一样」，那是白付的注意力。当前 step 并进横幅的 lead 行。 */
   const heatDivider3 = el("span", "crop-toolbar__divider");
   heatDivider3.setAttribute("aria-hidden", "true");
-  routeWrap.append(heatDivider3, routePlay, routeSlider, routeReadout);
+  routeWrap.append(heatDivider3, routePlay, routeFrom, routeSlider, routeTo);
 
   const heatExtra = el("div", "crop-heat-extra");
   heatExtra.dataset.metric = heatMetric;
@@ -1459,10 +1595,12 @@
   toolbar.id = "cropToolbar";
   toolbar.append(modeTabs, commNote, heatExtra, commExtra);
 
-  center.append(toolbar, comm, stage);
+  center.append(comm, stage);
 
-  board.prepend(left, center, right, engine);
+  /* 页签工具栏提升为整块内容区的第一行；三栏都从第二行开始。 */
+  board.prepend(toolbar, left, center, right, engine);
   board.classList.add("is-plane");
+  board.dataset.mode = "config";
 
   /* 用户**主动**收起右栏之后，再选中别的东西不该把它顶回来 —— 收起是一次表态，
      不是一次临时状态。只有再点开关（或收起键旁那枚）才解除。 */
@@ -1508,6 +1646,7 @@
       rightPinnedClosed = true;
       sync(); scheduleRender();
     });
+    sync();
   })();
 
   /* ══ 二、左栏三档 ════════════════════════════════════════════════════════ */
@@ -1554,6 +1693,11 @@
   let frame = 0;
   let softTimer = 0;      // 交互期节流的 trailing 定时器，见 scheduleRenderSoft()
   let lastRenderAt = 0;   // 上一次真正铺完节点的时刻，leading 那一半按它判
+  /* 重绘代数。render() 每次都是 world.replaceChildren(frag) —— 一整批新节点，旧的
+     全部脱离文档。凡是**攥着格内某个节点**的地方（连线的格内落点缓存、计算流动那
+     一圈类名）都要认得出「我手上这批已经不在文档里了」，靠比这个数，比逐个
+     isConnected 便宜、也比每帧重查一遍稳。 */
+  let renderGen = 0;
   /* 粒度（LOD）：auto = 跟着缩放自动切，rank / node = 手动锁死。开关在右下角。
      为什么值得有这一档 —— node 是这幅图里唯一一个**物理**单位（其余 stage / DP /
      EP / TP / CP 全是逻辑切法）：它就是机房里那台服务器，8 张卡由机内互联
@@ -1831,17 +1975,43 @@
     return layoutOut;
   }
 
+  /* 按 rank 粒度画，这一帧的格子数在预算之内吗（见 currentUnit 的判据 ②）。
+     与 render 里那笔 wanted 的账同口径，但**故意估得偏大**：render 每个可见块的
+     列区间还要各往外铺一列、行区间上下各铺一行，而且真超了预算它是整幅退成「一个
+     格子都不画」。估小了的后果正是那一幕 —— 切到 rank 档、然后满屏空白，比留在
+     整机档的一片颜色差得多。所以宁可晚换一档：加一圈余量，再留 15% 的富余。 */
+  function rankAffordable(k) {
+    if (!layout) return true;
+    const v = viewport();
+    const w = Math.max(1, v.x1 - v.x0);
+    const h = Math.max(1, v.y1 - v.y0);
+    const cols = w / Math.max(1e-6, layout.cellW * k) + 4;
+    const rows = h / Math.max(1e-6, layout.cellH * k) + 2;
+    return cols * rows <= CELL_BUDGET * 0.85;
+  }
+
   /* 这一帧按什么粒度画。
      ⚠️ 整机行在世界坐标里**恰好等于它那 8 行卡的高度**，所以切粒度时几何一动
      不动、视口不跳 —— 变的只是「这 8 行合成一格，还是各画一格」。 */
   function currentUnit() {
     if (!layout || !layout.nodeAllowed) return "rank";
     if (unitMode !== "auto") return unitMode;
-    /* 判据 = 专家标签还写不写得下。写不下的那一刻，卡粒度已经没有信息可给了
-       （一行只剩一个色块），不如聚成整机：行高 8 倍，标签、"整机 N" 那条带、
-       行标全都重新写得下。回来要多缩放一点点（迟滞），免得停在阈值上抖。 */
-    if (view.k < TEXT_MIN_K) lastUnit = "node";
-    else if (view.k > TEXT_MIN_K * AUTO_NODE_HYST) lastUnit = "rank";
+    /* ── 换档判据：两条，都要成立才换到 rank ──────────────────────────────
+       ① 整机格子已经大到「该有内容了」（≥ BLOCK_MIN_H，与 render 里 showBands
+          用的是同一个数）。整机档能给的只有一块颜色 —— 格内的两段块答的是「一张
+          卡在这一层里的活」，一台机器有 span 张卡，画进机器格子里读出来是错的。
+          所以它的下一档不是格内长出内容，而是换粒度：一行摊开成 span 行 rank
+          格子。整机行的高度恰好是那 span 行之和，所以这个门槛换算过去就是「rank
+          格子刚够 BLOCK_MIN_H / span 高」。
+       ② rank 格子这一帧**铺得动**（rankAffordable）。这一条是硬的：CELL_BUDGET
+          之外 render 会整幅退成「只画块底板与高亮带」，一个格子都不铺 —— 那比整机
+          档的一片颜色更糟。同一片区域换成 rank 粒度是 span 倍的格子数，所以在
+          cellH 大的配置上（每卡 32 个专家的格子有 139px 高），① 早就成立了、②
+          还差得远，那时留在整机档是唯一还画得出东西的选择。
+       缩回整机要多缩一点点（迟滞系数），免得停在阈值上来回抖。 */
+    const nodeCellPx = layout.cellH * layout.ranksPerNode * view.k;
+    if (nodeCellPx < BLOCK_MIN_H || !rankAffordable(view.k)) lastUnit = "node";
+    else if (nodeCellPx > BLOCK_MIN_H * AUTO_NODE_HYST) lastUnit = "rank";
     return lastUnit;
   }
 
@@ -1897,7 +2067,9 @@
         btn.title = `这组配置不给整机视角：一台 ${rpn} 卡的机器会骑在两个副本之间`
           + `（每副本 ${layout ? layout.ranksPerDp : "?"} 卡，除不尽），聚出来的格子会说谎`;
       } else if (id === "auto") {
-        btn.title = "跟着缩放自动切：Rank 格缩到看不清就聚成整机"
+        btn.title = "跟着缩放自动切：Rank 格缩到看不清就聚成整机，"
+          + "整机格子一旦大到该有内容就摊回 Rank 格 —— 层内那两块（Attention / "
+          + "MoE）是一张卡的事，只在 Rank 视角出现"
           + `（当前正按「${unit === "node" ? "整机" : "Rank"}视角」画）`;
       } else if (id === "rank") {
         btn.title = "一行 = 一张卡（rank）";
@@ -2210,7 +2382,7 @@
     rulerCorner.title = unit === "node" ? "当前按整机粒度画" : "当前按卡粒度画";
   }
 
-  /* ══ 四·五、格内的两种内容：三段块 与 详情面板 ══════════════════════════
+  /* ══ 四·五、格内的两种内容：两段块 与 详情面板 ══════════════════════════
      三档的选档逻辑在 render 里（BLOCK_MIN_H / DETAIL_MIN_S），这里只管「选到某
      一档之后，那一格里长什么样」。 */
 
@@ -2237,14 +2409,24 @@
     [["attention_core", "Sparse FlashAttention"]],
     [["o_proj", "Output Projection"]],
   ];
+  /* ⚠️ 两组各以自己的**入口 norm** 开头（Attention 那组是 attn_norm「Input
+     RMSNorm」，这两组是 pre_mlp_norm「Pre-MLP RMSNorm」）—— pre-norm 结构里
+     每一块前面都有一次归一化，deck 那张「典型 Layer」卡上也是这么排的
+     （model-architecture-3d-deck-pattern.js：attn_norm → … → pre_mlp_norm →
+     gate / dense_gate_up）。原先只有 Attention 那组写了 norm、FFN 这两组从
+     Router / Gate 直接开始，两块的读法因此不对等：看着像「Attention 要先归一化、
+     MoE 不用」。要么两块都不写 norm（那是更粗的一档该做的事），要么两块都写。 */
   const DENSE_ROWS = [
+    [["pre_mlp_norm", "Pre-MLP RMSNorm"]],
     [["dense_gate_up", "Gate / Up Linear"]],
     [["dense_silu", "SiLU × Multiply"]],
     [["dense_down", "Dense Down Linear"]],
   ];
   /* MoE 那一组：Expert Compute 不是一枚算子而是一个盒子（里面是这张卡持有的那
-     几个专家），所以它在这张表里留一个 null 占位，由 buildDetail 换成盒子。 */
+     几个专家），所以它在这张表里留一个 null 占位，由 buildDetail 换成盒子
+     （位置由 indexOf(null) 现找，不写死下标 —— 这张表增删一行就会错位）。 */
   const MOE_ROWS = [
+    [["pre_mlp_norm", "Pre-MLP RMSNorm"]],
     [["gate", "Router"]],
     [["a2a_dispatch", "EP Dispatch"]],
     null,
@@ -2352,18 +2534,33 @@
     panel.appendChild(opGroup("Attention", ATTN_ROWS, -1, null));
     panel.appendChild(residual());
     panel.appendChild(col.moe
-      ? opGroup("MoE", MOE_ROWS, 2,
+      ? opGroup("MoE", MOE_ROWS, MOE_ROWS.indexOf(null),
         expertBox(ctx.experts, ctx.chipsOn, ctx.rangeText, ctx.primary, ctx.rel))
       : opGroup("Dense FFN", DENSE_ROWS, -1, null));
     panel.appendChild(residual());
     return panel;
   }
 
-  /* ── 中档：三段块 ────────────────────────────────────────────────────────
-     Hidden / Attention / MoE 三条横带。MoE 那条带着「这一套专家」的颜色 —— 整格
-     上色那一档说的同一件事，在这里由三分之一的面积继续说，所以缩放穿过这个档口
-     时「同色一块」的图案不断。dense 层第三条写 Dense、用中性色：那一层里本来就
-     没有专家，涂成一套专家的颜色是在说谎。 */
+  /* ── 中档：两段块 ────────────────────────────────────────────────────────
+     Attention / MoE（dense 层写 Dense）两条横带 —— 一层的活就是这两块，
+     从上到下就是数据流的次序。MoE 那条带着「这一套专家」的颜色：整格上色那一档
+     说的同一件事，在这里由一半的面积继续说，所以缩放穿过这个档口时「同色一块」
+     的图案不断。dense 层那条走中性色 —— 那一层里本来就没有专家，涂成一套专家的
+     颜色是在说谎。
+
+     ⚠️ **这一档不写 Hidden**（原先它是三条里的第一条）。Hidden 不是一段活，它是
+     这一层的**入口张量** —— 把一个张量与两个计算块并排列成「这一层分成哪几段」，
+     是把两类东西摆在同一张清单上。而且一旦开始列张量与norm，这张清单就收不住了：
+     Attention 前有 Input RMSNorm、MoE 前有 Pre-MLP RMSNorm（见 ATTN_ROWS /
+     MOE_ROWS，两处都照抄 model-architecture-3d-deck 那张「典型 Layer」卡），两块
+     之间还各有一次 Residual Add —— 那是**下一档**（逐个计算节点）的事，它有的是
+     地方按次序铺完。这一档只答「这一层的活分成哪几块」，答案就是两块。
+     省下的那三分之一面积也不白给：两条带子各拿到半格（一格 54px 时约 27px 一条），
+     字与色块都比原先三条 18px 的读得清。
+
+     ⚠️ 只在**卡粒度**铺（调用处 showSegs 已经要求 span === 1）：这两段说的是「一张
+     卡在这一层里的活」，整机行一格是 span 张卡，那里没有单一答案 —— 详见文件开头
+     「格内的三档」那段末尾。 */
   function buildBands(col) {
     const wrap = el("div", "crop-segs");
     const seg = (kind, text) => {
@@ -2375,8 +2572,9 @@
       wrap.appendChild(seg("unit", UNIT_LABEL[col.id] || col.id));
       return wrap;
     }
-    wrap.appendChild(seg("hidden", "Hidden"));
     wrap.appendChild(seg("attn", "Attention"));
+    /* dense 那条仍写短名「Dense」而不是详情面板里的组标题「Dense FFN」：一格最窄
+       只有 BLOCK_MIN_W = 40px，9px 字下「Dense FFN」正好被 overflow 切掉半截。 */
     wrap.appendChild(seg(col.moe ? "moe" : "dense", col.moe ? "MoE" : "Dense"));
     return wrap;
   }
@@ -2424,17 +2622,22 @@
     const rowTwoLine = rowInfo.two;
     /* ── 格内选到第几档 ──────────────────────────────────────────────────
        两道闸都按「这一格在屏幕上有多大」判，理由见 BLOCK_MIN_H 那一段。
-       字号那一档（三段块）与行标同一套做法：世界字号取 BAND_FONT_MIN / k，
+       字号那一档（两段块）与行标同一套做法：世界字号取 BAND_FONT_MIN / k，
        屏幕上因此恒定 9px；格子太矮时再让位给 rowH / 5.6，宁可小也不撑破。 */
     const cellPxW = cellW * k;
     const cellPxH = rowH * k;
-    const showBands = cellPxH >= BLOCK_MIN_H && cellPxW >= BLOCK_MIN_W;
+    /* ⚠️ 格内有内容的那两档（两段块 / 详情面板）**只在卡粒度成立** —— 它们答的是
+       「一张卡在这一层里的活」，整机行一格是 span 张卡，那里没有单一答案。整机档
+       只有「一块颜色」这一档，再要细就该换粒度（自适应正是在同一个门槛上换的，
+       见 currentUnit）。理由与那条阶梯见文件开头「格内的三档」末尾。 */
+    const cellIsRank = span === 1;
+    const showBands = cellIsRank && cellPxH >= BLOCK_MIN_H && cellPxW >= BLOCK_MIN_W;
     const bandFontWorld = Math.min(rowH / 5.6, BAND_FONT_MIN / k);
     /* ── 最细那一档：整幅**一个**缩放比、**一个**档口 ─────────────────────
        比例按最高的那种面板（有 MoE 层就是 MoE 那一种）算一次，dense 列与端点列
        共用它，各自的面板高度不同、居中放着就行。
        ⚠️ 不能各算各的。各算各的时候 dense 面板矮、比例就大，于是它比 MoE 早一截
-       进最细档 —— 中间那段缩放里，同一屏上 dense 列已经是计算图、MoE 列还是三段
+       进最细档 —— 中间那段缩放里，同一屏上 dense 列已经是计算图、MoE 列还是两段
        块，一幅图上并排摆着两种粒度，读的人会以为那是两种层的**区别**，而它其实
        只是两个门槛。同理，比例统一之后两种列里的算子块也一样大，横着扫一行时
        字号不跳。 */
@@ -2442,7 +2645,8 @@
     const detailTallest = panelH(
       { type: "layer", moe: Boolean(topology.hasMoe) }, chipRows);
     const detailS = detailScale(cellW, rowH, detailTallest);
-    const detailOn = detailS * k >= DETAIL_MIN_S;
+    // 与两段块同一条：整机行一格是 span 张卡，一份算子链在那里没有单一答案
+    const detailOn = cellIsRank && detailS * k >= DETAIL_MIN_S;
     const detailCache = new Map();
     const detailFor = (col) => {
       const key = col.type === "unit" ? `u:${col.id}` : (col.moe ? "moe" : "dense");
@@ -2487,7 +2691,7 @@
       && wanted <= CELL_BUDGET;
     /* （原先这里还有一条「格子数 × 每卡专家数」的总节点闸。胶囊铺满整格的那一版
        需要它 —— 那时胶囊只受 k ≥ 0.5 一条约束，几千格 × 32 枚一帧真的建不完。
-       现在格内三档全部按屏幕尺寸开闸：三段块那一档一格至少 40×54 像素，一屏顶多
+       现在格内三档全部按屏幕尺寸开闸：两段块那一档一格至少 40×54 像素，一屏顶多
        几百格；最细那一档一格要占到面板尺寸，一屏只剩几十格。闸门自己把节点数封住
        了，再算一遍总数是白算。） */
 
@@ -2644,7 +2848,7 @@
           /* 上面那套颜色**落在哪儿**随档位走，说的始终是同一件事：
                · 最粗档 —— 落在格子底上（data-paint="bg"）。那时它是唯一还能表达
                  「这一片属于哪一套」的东西。
-               · 三段块 —— 落在 MoE 那一条带上。面积小了三分之二，但「同色一块 =
+               · 两段块 —— 落在 MoE 那一条带上。面积小了一半，但「同色一块 =
                  一整套专家」的图案不断，穿过档口时不会突然改口。
                · 详情面板 —— 落在 Expert Compute 里那几枚编号上。编号与颜色本来就
                  是同一件事的两半（这一片属于哪一套），分开摆等于让底色去和选中高亮
@@ -2659,12 +2863,18 @@
           if (rowSel && colHit) cell.classList.add("is-selected");
           else if (rowHit && colHit) cell.classList.add("is-cross");
           else if (rowHit || colHit) cell.classList.add("is-related");
+          if (heatOn && heatPick && heatPick.rank === rank
+            && (col.type === "layer"
+              ? heatPick.layer === col.layer
+              : heatPick.unit === col.id)) {
+            cell.classList.add("is-heat-selected");
+          }
 
           /* ⚠️ 这里**不写** data-tip：那串气泡文案有五六行、要拼四五个模板字符串，
              一帧几千格就是几千个长字符串，而其中至多一个会被人看到。改成悬浮时
              现拼，见下面 stage 上那条 pointerover（cellTip）。 */
           /* 整机档的格子不再让出顶上那条标签带（已撤），整行都归格子。
-             三段块那一档要给格子写一个世界字号（带子的字继承它），最细那一档不写
+             两段块那一档要给格子写一个世界字号（带子的字继承它），最细那一档不写
              —— 面板内部一律用设计像素，再由 transform 整体缩放。 */
           place(cell, block.x + ci * cellW, y, cellW - 1, rowH - 1,
             showSegs ? bandFontWorld : 0);
@@ -2688,7 +2898,7 @@
           }
 
           /* ── 格内的内容 ────────────────────────────────────────────────
-             最细档铺详情面板，中档铺三段块，最粗档什么都不铺（颜色已经落在格子
+             最细档铺详情面板，中档铺两段块，最粗档什么都不铺（颜色已经落在格子
              底上）。面板里的算子块一律不带 data-kind、也不吃指针事件：pick() 是
              顺着 closest("[data-kind]") 往上找的，所以点在算子上等于点在这一格上
              （问的仍是「这张卡 × 这一层」）。唯一例外是专家胶囊 —— 它本来就是一
@@ -2717,6 +2927,7 @@
     });
 
     world.replaceChildren(frag);
+    renderGen += 1;                            // 这一批格内节点是新的，见 renderGen 那段
     lastRenderAt = global.performance.now();   // 交互期节流的 leading 那一半按它判
   }
 
@@ -2759,7 +2970,7 @@
       const share = v / Math.max(1, c2.ep || 1) * 100;
       const hot = hm.hot();
       line += `\n占本层 token ${share < 0.01 ? "<0.01" : share.toFixed(2)}%`
-        + ` · ${routePhase(routeTau).tag}`;
+        + ` · ${routePhase(routeTau).tag} · ${routeStepText(routeTau)}`;
       if (hot && col.type === "layer" && col.layer === hot.layer
         && topology.coordsOfRank(Number(cell.dataset.rank)).epIdx === hot.epIdx) {
         line += `\n⚠ 塌缩点：这张卡持有 E${hot.expert}`;
@@ -2816,7 +3027,13 @@
 
   stage.addEventListener("pointerover", (event) => {
     const cell = event.target.closest?.(".crop-cell");
-    if (!cell || cell.dataset.tip) return;
+    if (!cell) return;
+    /* 热力读数已经常驻右栏；悬浮气泡会遮住相邻色块，也与右栏重复。 */
+    if (center.dataset.mode === "heat") {
+      delete cell.dataset.tip;
+      return;
+    }
+    if (cell.dataset.tip) return;
     cell.dataset.tip = cellTip(cell);
   });
 
@@ -2908,6 +3125,16 @@
     if (center.dataset.mode === "comm" && target) {
       const host = target.closest?.(".crop-cell");
       if (host && flowJumpToCell(host)) return;
+    }
+
+    /* 热力格子点击选的是 rank × layer 交叉点，不再退化成只选中 rank。行标、列标
+       仍继续走下面原有的 relation 通路，分别表达整行与整列。 */
+    if (center.dataset.mode === "heat" && target) {
+      const host = target.closest?.(".crop-cell");
+      if (host) {
+        selectHeatCell(host);
+        return;
+      }
     }
 
     if (!target) { emit(null); return; }
@@ -3659,6 +3886,111 @@
     rightFacts.appendChild(cardSection());
   }
 
+  /* ══ 热力右栏：一个 rank × layer 交叉格的常驻读数 ═════════════════════════
+     relation 负责行 / 列等单对象联动；heatPick 专门负责二维交叉格。两份状态分开，
+     点击一列或一行时不会把正在核对的单格读数冲掉。 */
+  function heatPickFromCell(cell) {
+    if (!cell) return null;
+    return {
+      rank: Number(cell.dataset.rank),
+      stage: Number(cell.dataset.stage),
+      layer: cell.dataset.layer == null ? null : Number(cell.dataset.layer),
+      unit: cell.dataset.unit || null,
+      span: cell.dataset.kind === "node"
+        ? Math.max(1, topology.counts.ranksPerNode || 1) : 1,
+    };
+  }
+
+  function selectHeatCell(cell) {
+    heatPick = heatPickFromCell(cell);
+    renderHeatDetail();
+    scheduleRender();
+  }
+
+  /* 当前度量的全图最大格。默认只在真正的 Layer 列里找：Emb / Norm / Head 虽然也
+     有成本，但右栏此处的合同是 rank × layer，不能默认选成一个端点结构。 */
+  function heatWorstPick() {
+    const hm = heatModel();
+    if (!hm || !layout) return null;
+    let best = null;
+    let bestValue = -Infinity;
+    layout.blocks.forEach((block) => {
+      block.cols.forEach((col) => {
+        if (col.type !== "layer") return;
+        for (let row = 0; row < layout.ranksPerStage; row += 1) {
+          const rank = block.stage * layout.ranksPerStage + row;
+          const value = hm.value(heatMetric, col, rank, 1);
+          if (!Number.isFinite(value) || value <= bestValue) continue;
+          bestValue = value;
+          best = {
+            rank, stage: block.stage, layer: col.layer, unit: null, span: 1,
+            isWorst: true, worstMetric: heatMetric, worstTau: routeTau,
+          };
+        }
+      });
+    });
+    return best;
+  }
+
+  function selectHeatWorst() {
+    heatPick = heatWorstPick();
+    renderHeatDetail();
+  }
+
+  function renderHeatDetail() {
+    heatDetail.replaceChildren();
+    const active = center.dataset.mode === "heat";
+    heatDetail.hidden = !active || !heatPick;
+    if (!active) return;
+    rightTitle.textContent = "负载详情";
+    if (!heatPick || !topology) {
+      heatDetail.hidden = false;
+      heatDetail.appendChild(el("p", "crop-empty", "当前度量没有可用的 Layer 格子。"));
+      return;
+    }
+
+    const hm = heatModel();
+    if (!hm) return;
+    const c = topology.counts;
+    const p = heatPick;
+    const co = topology.coordsOfRank(p.rank);
+    const col = p.layer == null
+      ? { type: "unit", id: p.unit, stage: p.stage }
+      : {
+        type: "layer", layer: p.layer, stage: p.stage,
+        moe: Boolean(topology.layers[p.layer] && topology.layers[p.layer].ffn === "moe"),
+      };
+    const meta = heatMeta(heatMetric);
+    const value = hm.value(heatMetric, col, p.rank, p.span || 1);
+    const range = hm.range(heatMetric);
+    const pct = Number.isFinite(value) && range
+      ? Math.round(clamp((value - range.lo) / Math.max(1e-12, range.hi - range.lo), 0, 1) * 100)
+      : null;
+    const dName = c.edp === c.dp ? "DP" : "EDP";
+
+    const where = section("选中格");
+    where.appendChild(kvRow("位置", `rank ${p.rank} × ${p.layer == null ? (UNIT_LABEL[p.unit] || p.unit) : `Layer ${p.layer}`}`, true));
+    where.appendChild(kvRow("当前度量", Number.isFinite(value) ? heatFmt(value, meta) : "不适用", true));
+    const isCurrentWorst = p.isWorst && p.worstMetric === heatMetric
+      && (heatMetric !== "route" || Math.abs(p.worstTau - routeTau) < 1e-6);
+    where.appendChild(kvRow("冷热位置", pct == null ? "—"
+      : `${isCurrentWorst ? "Layer 格最大 · " : ""}本图第 ${pct}%`, true));
+    where.appendChild(kvRow("物理位置", `PP Stage${co.stage} · Node ${co.node}`, true));
+    where.appendChild(kvRow("并行坐标",
+      `${dName} ${co.dpIdx} · EP ${co.epIdx} · TP ${co.tpIdx} · CP ${co.cpIdx}`, true));
+    heatDetail.appendChild(where);
+
+    const metrics = section("同格指标");
+    HEAT_METRICS.forEach((m) => {
+      const v = hm.value(m.id, col, p.rank, p.span || 1);
+      metrics.appendChild(kvRow(m.label, Number.isFinite(v) ? heatFmt(v, m) : "不适用", true));
+    });
+    heatDetail.appendChild(metrics);
+
+    const note = hm.note(heatMetric, col, p.rank);
+    if (note) heatDetail.appendChild(el("p", "crop-warn", note.trim()));
+  }
+
   /* 卡规格：选中任何对象都值得同屏看到「跑在什么卡上」——右栏下面紧接着就是
      单卡容量（那一栏是这份规格的后果），两块贴在一起才读成一句话。 */
   function cardSection() {
@@ -3959,6 +4291,7 @@
 
   function renderComm() {
     if (!topology) return;
+    if (center.dataset.mode === "comm") rightTitle.textContent = "运行详解";
     const c = topology.counts;
     const steps = commSteps(c);
     /* 拍里存的 step 是**上一次**算出来的对象，配置一拨就整批换新 —— 按 id 认回来，
@@ -4047,7 +4380,7 @@
       : (steps.length
         ? "按左边的播放键，跟着一个 step 里的最后一个 micro-batch 从 Emb 走到 Head、再完成梯度同步；或点任意一条单看 ——"
           + "画布上会画出这一条是谁和谁在通信（青线机内、绯线机间，动点表示数据方向），"
-          + "左下角浮出它的范围与频次。"
+          + "右侧运行详解会同步显示它的范围与频次。"
         : "把左栏任意一个并行度（TP / CP / EP / PP / DP）拨大，这里就会列出它带来的通信。");
     commHint.hidden = Boolean(flowBeat);
     // 浮卡挂在画布上（画布三档都在），所以它自己要认得「现在是不是通信档」
@@ -4730,14 +5063,211 @@
     return Math.min(n - 1, first + Math.floor((n - first) / 2));
   }
 
+  /* ══ 连线的**格内落点** ══════════════════════════════════════════════════
+     缩到只剩一块颜色时，一条通信画到格子中心就够了 —— 那一档格子里本来就没有别的
+     东西可指。格内一旦铺开内容（两段块 / 算子面板），中心点就开始说错话：
+     「EP Dispatch 从这张卡发出去」这句话的主语是**格子里那一枚 EP Dispatch 块**，
+     它离格子中心可能差着大半格；线从中心飞出来，读的人对不上是哪一步发的。
+
+     两档共用同一份规格 —— flowAnchorOf 返回的 { seg, at }：
+       · 算子面板 —— at 指名那枚算子（id 与 ATTN_ROWS / MOE_ROWS 同一套，也与 deck
+         那张「典型 Layer」卡同名）；"head" / "tail" 指那一组的第一 / 最后一枚
+         （PP 进出段落在层的头尾上，而头尾是什么随 dense / MoE 变，指名反而写不全）；
+         "experts" 指 Expert Compute 那个盒子。
+       · 两段块 —— 只落到 seg 那一条带上：那一档格内只有两条带，再细没有对象。
+     取不到（格子滚出视口、这一档不铺格子、整机粒度、或者这条通信本来就不属于某一
+     枚块）一律退回格子中心，也就是原先的行为。 */
+  function flowAnchorOf(s) {
+    /* 更新那两拍同步的是整段的全部参数（beat.wide），不落在某一枚块上 —— 它的
+       module 写着 "Attention / Router / Shared Expert"，正说明它不是某一处的事。 */
+    if (!s || s.phase === "sync") return null;
+    const e = s.event || "";
+    // PP：进段落在这一层的头上（Input RMSNorm），出段落在尾上（Down / EP Combine）
+    if (s.module === "Stage 入口") return { seg: "attn", at: "head" };
+    if (s.module === "Stage 出口") return { seg: "ffn", at: "tail" };
+    // CP 切的是序列，收发都围着注意力核那一枚
+    if (s.dom === "cp") return { seg: "attn", at: "attention_core" };
+    // TP 切的是 QKV 的列，部分和要到输出投影之后才凑齐
+    if (s.module === "Attention") return { seg: "attn", at: "o_proj" };
+    if (s.module === "Router") return { seg: "ffn", at: "gate" };
+    if (s.dom === "ep") {
+      return { seg: "ffn", at: /Dispatch/.test(e) ? "a2a_dispatch" : "a2a_combine" };
+    }
+    // 专家权重的梯度归约：落在 Expert Compute 那个盒子上，那才是这些权重所在处
+    if (s.dom === "edp") return { seg: "ffn", at: "experts" };
+    if (s.module === "MLP（Dense）") return { seg: "ffn", at: "tail" };
+    // 共享专家与路由专家并联，面板里没有单独一枚；落到 FFN 那一组上
+    if (s.module === "Shared Expert") return { seg: "ffn", at: null };
+    return null;
+  }
+
+  /* 「这张卡 × 这一列」那一格的 DOM。层号在整个模型里唯一、端点列每行也只有一个，
+     所以 rank + 层号 / 端点 id 就够定位，不必再带 stage。 */
+  function flowCellEl(rank, block, ci) {
+    const col = block && block.cols[ci];
+    if (!col) return null;
+    return world.querySelector(col.type === "layer"
+      ? `.crop-cell[data-rank="${rank}"][data-layer="${col.layer}"]`
+      : `.crop-cell[data-rank="${rank}"][data-unit="${col.id}"]`);
+  }
+
+  // 格内那枚块。面板档按组 + at 找，两段块档只认那条带；都取不到就 null
+  function flowInnerEl(cell, spec) {
+    if (!cell || !spec) return null;
+    const panel = cell.querySelector(".crop-detail");
+    if (panel) {
+      const groups = panel.querySelectorAll(":scope > .crop-detail__group");
+      // 端点列（Emb / Norm / Head）的面板不分组，只有几枚算子：取第一枚
+      if (!groups.length) return panel.querySelector("[data-node]");
+      const g = groups[spec.seg === "attn" ? 0 : Math.min(1, groups.length - 1)];
+      if (!g) return null;
+      if (spec.at === "experts") return g.querySelector(".crop-detail__experts") || g;
+      const ops = g.querySelectorAll("[data-node]");
+      if (spec.at === "head") return ops[0] || g;
+      if (spec.at === "tail") return ops[ops.length - 1] || g;
+      if (spec.at) return g.querySelector(`[data-node="${spec.at}"]`) || g;
+      return g;
+    }
+    const segs = cell.querySelector(".crop-segs");
+    if (!segs) return null;
+    return segs.querySelector(spec.seg === "attn"
+      ? '.crop-seg[data-seg="attn"]'
+      : '.crop-seg[data-seg="moe"], .crop-seg[data-seg="dense"]')
+      || segs.querySelector('.crop-seg[data-seg="unit"]');
+  }
+
+  let flowAnchorGen = -1;
+  const flowAnchorCache = new Map();
+
+  /* 那枚块的中心，量成**相对这一格左上角的世界单位偏移** { dx, dy }。
+     ⚠️ 量一次就够，之后逐帧只做 world→screen 的乘加：格内的排版在一次重绘之内是
+     常量（面板按设计像素排好再整体 scale，带子的字号也是重绘时写死的），变的只是
+     外面那一条 transform。反过来每帧对着十几条线的两端各读一次
+     getBoundingClientRect，就是每帧几十次「读—写—读」交替，每次都逼出一趟强制
+     重排 —— 而这一档正是一秒 60 帧都在跑的那一档。
+     ⚠️ 存的是**相对格子的偏移**，不是绝对世界坐标：行标道的宽度随缩放变（见
+     laneWorldAt），块的 x 跟着变，而重绘是节流的 —— 存绝对坐标的话，缩放那 170ms
+     里线的起点会从格子上漂开。偏移是格内的量，与外面那条道无关，怎么缩都对得上。
+     缓存按 renderGen 整批作废：重绘换了一批节点，量出来的旧偏移就不作数了。 */
+  function flowInnerWorld(rank, block, ci, spec) {
+    if (!spec || !layout || currentUnit() === "node") return null;
+    if (flowAnchorGen !== renderGen) {
+      flowAnchorCache.clear();
+      flowAnchorGen = renderGen;
+    }
+    const key = `${rank}|${block.stage}|${ci}|${spec.seg}|${spec.at || ""}`;
+    if (flowAnchorCache.has(key)) return flowAnchorCache.get(key);
+    const cellEl = flowCellEl(rank, block, ci);
+    const el = flowInnerEl(cellEl, spec);
+    let out = null;
+    if (el) {
+      const r = el.getBoundingClientRect();
+      const c = cellEl.getBoundingClientRect();
+      if (r.width > 0 && r.height > 0 && view.k > 0) {
+        out = {
+          dx: (r.left + r.width / 2 - c.left) / view.k,
+          dy: (r.top + r.height / 2 - c.top) / view.k,
+        };
+      }
+    }
+    flowAnchorCache.set(key, out);
+    return out;
+  }
+
+  /* ══ 格内的计算流动 ══════════════════════════════════════════════════════
+     一拍之内，把主角那一格内部的块按数据流次序点一遍白边：走过的留一道淡白边、
+     正在算的那一枚是实白、这一拍的通信落点再单挂一圈 —— 于是「这条线是算到哪一步
+     才发出去的」在图上看得见，而不是一条线突然从格子里飞出来。
+
+     ⚠️ 起点不是每拍都从头来。一层里常有好几拍（TP、Router、Dispatch、Combine…），
+     每拍都从 Input RMSNorm 重新点一遍就成了原地打转；同一格上连着的这几拍要从上一
+     拍停下的那一枚接着往下点，那才是「一个 micro-batch 穿过这一层」的样子。换了格
+     子（换层 / 换段 / 换卡）才归零。
+     ⚠️ 只点主角那一格。对端那十几张卡也同时点，就是满屏白框闪 —— 而且它们那一格的
+     内容在屏幕上往往还没铺出来（滚出视口就没有 DOM）。 */
+  const FLOW_SWEEP_SEL = "[data-node], .crop-detail__experts, .crop-detail__res, .crop-seg";
+  let flowSweep = null;
+
+  function flowSweepStrip(sw) {
+    if (!sw) return;
+    sw.els.forEach((el) => el.classList.remove("is-flow", "is-flowdone", "is-flowsrc"));
+  }
+
+  function flowSweepReset() {
+    flowSweepStrip(flowSweep);
+    flowSweep = null;
+  }
+
+  /* 这一拍要点哪一格、从第几枚点到第几枚。resume 是上一拍的落点（同一格才接着走）。 */
+  function flowSweepBuild(beat, resume) {
+    flowSweepStrip(flowSweep);
+    flowSweep = null;
+    if (!beat || !layout || beat.wide || currentUnit() === "node") return;
+    const block = flowBlockOf(beat.rank);
+    const ci = clamp(beat.ci, 0, block.cols.length - 1);
+    const els = Array.from(
+      flowCellEl(beat.rank, block, ci)?.querySelectorAll(FLOW_SWEEP_SEL) || []);
+    // 一枚也没有（整格上色那一档）或只有一枚：没有「逐个」可言，白框自己说完了
+    if (els.length < 2) return;
+    const key = `${beat.rank}|${block.stage}|${ci}`;
+    const target = flowSweepTarget(els, beat, block, ci);
+    const from = resume && resume.key === key ? clamp(resume.idx + 1, 0, target) : 0;
+    flowSweep = { key, els, from, target, idx: -1, gen: renderGen, beat };
+  }
+
+  // 这一拍点到哪一枚为止 = 这条通信的落点那一枚；不落在某一枚上就点完整格
+  function flowSweepTarget(els, beat, block, ci) {
+    const el = flowInnerEl(flowCellEl(beat.rank, block, ci), flowAnchorOf(beat.step));
+    const i = el ? els.indexOf(el) : -1;
+    return i >= 0 ? i : els.length - 1;
+  }
+
+  /* 重绘换了一批 DOM：重新取一遍节点，进度（from / target / idx）原样保留。
+     数目对不上说明格内换了一档（两段块 ↔ 算子面板），那时重建、从头点。 */
+  function flowSweepReattach() {
+    const sw = flowSweep;
+    const block = flowBlockOf(sw.beat.rank);
+    const ci = clamp(sw.beat.ci, 0, block.cols.length - 1);
+    const els = Array.from(
+      flowCellEl(sw.beat.rank, block, ci)?.querySelectorAll(FLOW_SWEEP_SEL) || []);
+    if (els.length !== sw.els.length) {
+      flowSweep = null;              // 旧节点已脱离文档，不必再摘类名
+      flowSweepBuild(sw.beat, null);
+      return;
+    }
+    sw.els = els;
+    sw.gen = renderGen;
+    sw.idx = -1;                     // 逼下一步重新贴一遍类名
+  }
+
+  function flowSweepAt(t) {
+    if (!flowSweep) return;
+    if (flowSweep.gen !== renderGen) flowSweepReattach();
+    if (!flowSweep) return;
+    const sw = flowSweep;
+    const idx = clamp(sw.from + Math.floor(t * (sw.target - sw.from + 1)), sw.from, sw.target);
+    if (idx === sw.idx) return;
+    sw.idx = idx;
+    sw.els.forEach((el, i) => {
+      el.classList.toggle("is-flow", i === idx);
+      el.classList.toggle("is-flowdone", i >= sw.from && i < idx);
+      el.classList.toggle("is-flowsrc", i === sw.target);
+    });
+  }
+
   function flowPoint(rank, s, otherRank, beat) {
     const rps = Math.max(1, layout.ranksPerStage);
     const block = flowBlockOf(rank);
     const row = clamp(rank - block.stage * rps, 0, layout.rows - 1);
     const ci = clamp(flowCol(s, block, Math.floor(otherRank / rps), beat),
       0, block.cols.length - 1);
-    const wx = block.x + (ci + 0.5) * layout.cellW;
-    const wy = layout.rowY(row) + layout.cellH / 2;
+    /* 格内铺了内容的那两档钉到那枚块上；取不到就退回格子中心 —— 缩到只剩一块颜色
+       时那本来就是唯一的落点。更新那两拍框的是整块（beat.wide），也走中心。 */
+    const inner = beat && beat.wide ? null
+      : flowInnerWorld(rank, block, ci, flowAnchorOf(s));
+    const wx = block.x + ci * layout.cellW
+      + (inner ? inner.dx : layout.cellW / 2);
+    const wy = layout.rowY(row) + (inner ? inner.dy : layout.cellH / 2);
     return { x: view.x + wx * view.k, y: view.y + wy * view.k };
   }
 
@@ -4785,9 +5315,15 @@
     flowLinks = [];
     flowCtx = null;
     commFlow.textContent = "";
+    /* 只摘掉格内那一圈类名、**不清** flowSweep：下一拍要靠它接着往下点。真正的
+       归零在退出通信档 / 没有拍可播的地方（flowSweepReset）。 */
+    flowSweepStrip(flowSweep);
   }
 
   function flowBuild(beat) {
+    /* 计算流动的接力点要在 flowClear 之前取：flowClear 只摘类名、不动 flowSweep，
+       正是为了让「上一拍点到第几枚」还读得到（见 flowSweepBuild 的 resume）。 */
+    const resume = flowSweep ? { key: flowSweep.key, idx: flowSweep.idx } : null;
     flowClear();
     /* 计时器**先**归零再判有没有线可画：不产生跨卡通信的那几列（Emb / Head、
        并行度为 1 的 Dense 层）同样占一拍，漏掉这一行会让行程在那些列上瞬间穿过去。 */
@@ -4842,6 +5378,16 @@
     }
     commFlow.appendChild(g);
     flowCtx = { beat, mode, src, halo, cell };
+    flowSweepBuild(beat, resume);
+    /* 先把两端的格内落点各问一遍再交给 flowDraw：flowPoint 是纯读的，而 flowDraw
+       是一边读一边写 SVG 属性 —— 冷缓存那一帧里读写交替，几十条线就是几十趟强制
+       重排。预热一次之后，flowDraw 那边全是缓存命中。 */
+    if (s) {
+      flowLinks.forEach((l) => {
+        flowPoint(anchor, s, l.peer, beat);
+        flowPoint(l.peer, s, anchor, beat);
+      });
+    }
     flowDraw();
   }
 
@@ -4893,6 +5439,8 @@
       const step16 = t * MOE_TOK_SHOWN;
       updateMoeFocus(Math.min(MOE_TOK_SHOWN - 1, Math.floor(step16)), step16 % 1);
     }
+    // 格内的计算流动：逐枚点白边，点到这一拍的通信落点为止（见 flowSweepAt）
+    flowSweepAt(t);
     if (flowPlaying && flowPhaseCell && flowPhaseCell.n) {
       const p = (flowPos - flowPhaseCell.from + t) / flowPhaseCell.n;
       flowPhaseCell.el.style.setProperty("--prog", clamp(p, 0, 1).toFixed(4));
@@ -4991,6 +5539,7 @@
     commFlow.classList.toggle("is-on", Boolean(flowBeat) && inComm);
     if (!flowBeat || !inComm) {
       flowClear();
+      flowSweepReset();
       setPlaying(false);
       flowStopRaf();
       refreshRulers();
@@ -5101,6 +5650,7 @@
   /* ── 三档切换 ──────────────────────────────────────────────────────────── */
   function setMode(mode) {
     center.dataset.mode = mode;
+    board.dataset.mode = mode;
     modeTabs.querySelectorAll("[data-mode]").forEach((btn) => {
       const on = btn.dataset.mode === mode;
       btn.classList.toggle("is-selected", on);
@@ -5111,6 +5661,7 @@
       commDetail.hidden = true;
       setPlaying(false);
       flowClear();
+      flowSweepReset();
       flowStopRaf();
       commFlow.classList.remove("is-on");
     }
@@ -5127,6 +5678,9 @@
     }
     if (mode === "heat") {
       syncHeat();
+      /* 热力档不沿用配置档留下的行 / 列选择；先把视线落到当前度量最严重的单格。 */
+      if (relation) emit(null);
+      selectHeatWorst();
       // 进这一档时正停在「专家负载」上：同样自动演一遍，不必先去找播放键
       if (heatMetric === "route") startRouteDemo();
     } else {
@@ -5150,6 +5704,14 @@
          省得平面上还亮着一行一列却无人认领。 */
       if (relation) emit(null);
       if (!rightPinnedClosed) right.classList.remove("is-collapsed");
+    } else if (mode === "comm") {
+      /* 运行观测把详解放进右栏，进入本档时默认展示；用户主动收起后仍尊重其选择。 */
+      rightTitle.textContent = "运行详解";
+      if (!rightPinnedClosed) right.classList.remove("is-collapsed");
+    } else if (mode === "heat") {
+      rightTitle.textContent = "负载详情";
+      renderHeatDetail();
+      if (!rightPinnedClosed) right.classList.remove("is-collapsed");
     } else {
       right.classList.add("is-collapsed");
     }
@@ -5170,11 +5732,12 @@
   function heatBannerLine(hm) {
     if (!hm) return "";
     const F = hm.faults;
+    /* 这一档的 lead 行不再重复相位名 —— 它就写在下面那条四段相位条上，而且是四相
+       同框。lead 只留两样下面那条说不了的：拖到了第几个 step，以及塌缩点是哪张卡。 */
     if (heatMetric === "route") {
       const hot = hm.hot();
       if (!hot) return "";
-      const ph = routePhase(routeTau);
-      return `路由塌缩 · ${ph.tag} —— 塌缩点在 Layer ${hot.layer} 的 E${hot.expert}`
+      return `${routeStepText(routeTau)} —— 塌缩点在 Layer ${hot.layer} 的 E${hot.expert}`
         + `（EP rank ${hot.epIdx}）`
         + (routeTau > ROUTE_COLLAPSE_AT
           ? `：它正在吃掉本层 ${Math.round(ROUTE_COLLAPSE_MAX * 100)}% 的 token，同层其余全灭`
@@ -5207,9 +5770,30 @@
   }
 
   function syncHeatBanner(hm) {
-    const line = center.dataset.mode === "heat" ? heatBannerLine(hm || heatModel()) : "";
+    const model = hm || heatModel();
+    const line = center.dataset.mode === "heat" ? heatBannerLine(model) : "";
     heatBanner.hidden = !line;
     heatBannerText.textContent = line;
+
+    /* 四段相位条只属于「专家负载」那一档：别的度量没有时间轴，铺四段等于凭空多出
+       一条读不动的进度。is-route 一挂，css 才把 .crop-heatbanner__phases 放出来。 */
+    const isRoute = Boolean(line) && center.dataset.mode === "heat" && heatMetric === "route";
+    heatBanner.classList.toggle("is-route", isRoute);
+    heatBannerTag.textContent = isRoute ? "路由塌缩" : "本图的问题";
+    if (!isRoute) return;
+
+    const idx = routePhaseIndex(routeTau);
+    heatBannerPhaseEls.forEach((p, i) => {
+      p.seg.classList.toggle("is-active", i === idx);
+      p.seg.classList.toggle("is-past", i < idx);
+    });
+    /* 末相把塌缩点写实：不指名道姓的话，「④ 路由塌缩」只是一句形容词，而这幅图
+       真正的用处是**指到那张卡上**（同一份配置每次指同一张，可复现）。 */
+    const hot = model ? model.hot() : null;
+    const last = heatBannerPhaseEls[heatBannerPhaseEls.length - 1];
+    last.clock.textContent = routeTau >= 1 && hot
+      ? `E${hot.expert} 吃掉 ${Math.round(ROUTE_COLLAPSE_MAX * 100)}% · Layer ${hot.layer} · EP rank ${hot.epIdx}`
+      : ROUTE_PHASES[ROUTE_PHASES.length - 1].clock;
   }
 
   /* 胶囊的选中态、图例两端跟着当前度量一起写。「这是推演不是实测」那句不再是
@@ -5229,17 +5813,11 @@
     heatLegend.title = `冷蓝 = 这幅平面上最轻的一格，火红 = 最重的一格（${meta.label}）`;
     syncHeatBanner(hm);
 
-    /* 时间轴那一组：只在「专家负载」露面，读数每次现写。 */
+    /* 时间轴那一组：只在「专家负载」露面。相位读数已经并进画布顶上那条横幅的四段
+       相位条（syncHeatBanner 里写），这里只剩「拖不拖得动」这一件事。 */
     heatExtra.dataset.metric = heatMetric;
     if (heatMetric === "route") {
-      const ph = routePhase(routeTau);
       const hot = hm ? hm.hot() : null;
-      routeTag.textContent = ph.tag;
-      /* 末相把塌缩点写实：不指名道姓的话，「④ 路由塌缩」只是一句形容词，而这幅图
-         真正的用处是**指到那张卡上**（同一份配置每次指同一张，可复现）。 */
-      routeClock.textContent = routeTau >= 1 && hot
-        ? `E${hot.expert} 吃掉 ${Math.round(ROUTE_COLLAPSE_MAX * 100)}% · Layer ${hot.layer} · EP rank ${hot.epIdx}`
-        : ph.clock;
       routeWrap.title = hot
         ? `塌缩点：Layer ${hot.layer} 的 E${hot.expert}（EP rank ${hot.epIdx}）—— 由当前配置定死，拖时间轴只改偏多少，不改偏在哪`
         : "当前配置没有路由专家（EP / Routed 不成立），这一档无内容";
@@ -5262,6 +5840,7 @@
        白烧一帧。 */
     if (heatMetric === "route") startRouteDemo();
     else setRoutePlaying(false);
+    selectHeatWorst();
     scheduleRender();
   });
 
@@ -5306,6 +5885,7 @@
     /* 色阶两端跟着 τ 变（塌缩那一刻量程从 ~3× 跳到 ~60×），所以每一格都要重写
        图例 —— 不写的话颜色变了、刻度没变，读出来的倍数全是错的。 */
     syncHeat();
+    renderHeatDetail();
     scheduleRender();
   }
 
@@ -5346,7 +5926,10 @@
     renderComm();
     /* 热力模型按 topology 的身份缓存，换一份配置自动失效；图例两端是现写的
        文本，得在这里补一次 —— 否则色阶还标着上一份配置的量程。 */
-    if (center.dataset.mode === "heat") syncHeat();
+    if (center.dataset.mode === "heat") {
+      syncHeat();
+      selectHeatWorst();
+    }
   }
 
   /* 「高级选项」在这一栏里是一句可点的蓝字，不是一枚按钮 —— 悬浮气泡跟着一起撤：
@@ -5371,6 +5954,7 @@
       syncPanelButtons();
     }
     renderDetail();
+    if (center.dataset.mode === "heat") renderHeatDetail();
     annotateStructure();
     scheduleRender();
     /* 通信观测的「谁和谁」以选中的那张卡为锚。在画布上点中另一张卡 = 换一个视角

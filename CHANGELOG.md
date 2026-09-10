@@ -5,6 +5,58 @@
 
 ---
 
+## 2026-09-09 — 平面视图·通信观测：连线钉进格子内部，格内补一条「计算流动」
+
+- **连线两端从「格子中心」改成「格内那枚块」**（`js/config-relation-plane.js` 新增 `flowAnchorOf` / `flowCellEl` / `flowInnerEl` / `flowInnerWorld`，`flowPoint` 取用）：中心点只适合缩到「一格一块颜色」那一档 —— 那时格里本来就没有别的东西可指。格内一旦铺开内容，中心就开始说错话：「EP Dispatch 从这张卡发出去」这句话的主语是格子里那一枚 EP Dispatch 块，线却从半格之外飞出来，读的人对不上是算到哪一步发的。两档共用一份规格 `{ seg, at }`：算子面板档按 `at` 指名那枚算子（`attention_core` / `o_proj` / `gate` / `a2a_dispatch` / `a2a_combine`，id 与 `ATTN_ROWS` / `MOE_ROWS` 和 deck 那张「典型 Layer」卡同名；PP 进出段用 `head` / `tail`，因为层的头尾是什么随 dense / MoE 变；EDP 的专家梯度归约落在 `experts` 那个盒子上），两段块档只落到对应那条带。取不到（滚出视口、整机粒度、只剩一块颜色、或这条通信本来就不属于某一枚块，如更新那两拍同步的是整段参数）一律退回格子中心，也就是原先的行为。
+- **格内新增「计算流动」：一拍之内逐枚点白边**（`flowSweepBuild` / `flowSweepAt`，css 的 `.is-flow` / `.is-flowdone` / `.is-flowsrc`）：走过的留一道淡白边、正在算的那一枚是实白、这一拍的通信落点单挂一圈常亮白 —— 于是「这条线是算到哪一步才发出去的」在图上看得见。⚠️ 起点不是每拍归零：一层里常有好几拍（TP → Router → Dispatch → Combine），每拍都从 Input RMSNorm 重点一遍就成了原地打转；同一格上连着的这几拍从上一拍停下的那一枚接着往下点，换了格子（换层 / 换段 / 换卡）才归零。只点主角那一格 —— 对端十几张卡同时点就是满屏白框闪，而且它们那一格往往还没铺出来。
+- **两处性能上的取舍**：① 格内落点量成**相对格子左上角的世界偏移** `{dx, dy}`，不存绝对世界坐标 —— 行标道的宽度随缩放变（`laneWorldAt`）、块的 x 跟着变，而重绘是节流的，存绝对坐标会让缩放那 170ms 里线的起点从格子上漂开；② 一拍开头先用 `flowPoint` 把两端各问一遍（纯读）再交给 `flowDraw`（写 SVG 属性），冷缓存那一帧才不会读写交替、逼出几十趟强制重排。缓存按新增的 `renderGen` 整批作废：`render()` 每次都是 `world.replaceChildren`，攥着的旧节点全部脱离文档。
+- **`.is-flow` 三态用 inset box-shadow，不用 border / outline**：border 会改盒子尺寸，而面板高度是 `panelH()` 按设计像素算好写成 inline height 的，每枚块多 2px 就会截掉底下那条 Residual Add；outline 画在盒子外面会被格子的 overflow 切掉。三态一律不动背景色 —— 背景已经归专家配色与热力用了。
+
+---
+
+## 2026-09-09 — 平面视图·集群矩阵：中档从三段收到两段（撤掉 Hidden），算子档补回 Pre-MLP RMSNorm
+
+- **中档去掉 Hidden 那一条，从三段收到两段**（`js/config-relation-plane.js` 的 `buildBands`，css 的 `.crop-seg[data-seg="hidden"]` 一并删除）：这一档答的是「这一层的活分成哪几块」，而 Hidden 不是一段活，它是这一层的**入口张量** —— 把一个张量和两个计算块并排列在同一张清单上，是把两类东西摆在了一起。而且一旦开始列张量与 norm，这张清单就收不住：Attention 前有 Input RMSNorm、MoE 前有 Pre-MLP RMSNorm，两块之间还各有一次 Residual Add —— 那是最细那一档（逐个计算节点）的事，它有的是地方按次序铺完。现在两条：`Attention` / `MoE`（dense 层写 `Dense`，短名是因为一格最窄只有 `BLOCK_MIN_W` = 40px，9px 字下「Dense FFN」会被 overflow 切掉半截）。
+- **省下的面积不白给**：两条带子各拿到半格（一格 54px 时约 27px 一条），比原先三条 18px 的字与色块都读得清。`BLOCK_MIN_H` 仍是 54（它同时是整机 → rank 的换档门槛，见上一条 changelog，不为这一处改动去动那条阶梯）。
+- **最细那一档补回 FFN 块的入口 norm**（`MOE_ROWS` / `DENSE_ROWS` 各加一行 `pre_mlp_norm`「Pre-MLP RMSNorm」）：pre-norm 结构里每一块前面都有一次归一化，deck 那张「典型 Layer」卡上也是这么排的（`model-architecture-3d-deck-pattern.js`：`attn_norm` → … → `pre_mlp_norm` → `gate` / `dense_gate_up`）。原先只有 Attention 那组写了 norm、FFN 两组从 Router / Gate 直接开始，读出来像是「Attention 要先归一化、MoE 不用」。要么两块都不写（那是更粗一档该做的事），要么两块都写。
+- **`Expert Compute` 盒子的插入位置改用 `MOE_ROWS.indexOf(null)`**，不再写死下标 2 —— 这张表增删一行就会错位，而刚刚就增了一行。面板高度由 `panelH()` 按 `*_ROWS.length` 现算，两组各长 13px（一枚算子 + 一道 gap），与 css 的盒模型仍然同源。
+
+---
+
+## 2026-09-09 — 平面视图：PP stage 之间那条行标道收窄
+
+- **行标道的余量从 20 收到 12，右内衬改成随字号走的 `0.5em`**（`js/config-relation-plane.js` 的 `LANE_SLACK`，css 的 `.crop-rowlabel`）：这条道的本意只是「够写下最长那串行标」（`整机 255` / `rank 1016–1023`），但行标是右对齐贴着块画的，余量减去右内衬之后剩下的全部堆在文字左边。而原先右内衬是固定的 8 世界像素，被 `scale` 一起缩掉——缩到中间那几档时字右边贴死在块缘、左边空出十几个屏幕像素，整条道看着比需要的宽一倍。右内衬跟着 em 走之后左右两侧在屏幕上都是恒定的一小条，余量本身也就不必再留那么多。
+
+## 2026-09-09 — 平面视图·负载热力：路由塌缩四相改为「一条横幅铺开、分步高亮」
+
+- **删掉滑杆右侧那块相位读数**（`js/config-relation-plane.js` 的 `routeReadout` / `routeHead` / `routeTag` / `routeStepNow` / `routeClock`，css 的 `.crop-heat__routeread` 一族）：它与画布顶上那条红横幅说的是同一件事（当前相位名 + step + 数值口径），而横幅那份还多出前后文。同一个读数摆两遍，读的人第一反应是「这两块有什么不一样」——那是白付的注意力。工具带这一档现在只剩播放键 + 两端 step 号 + 滑杆。
+- **红横幅改成四段相位条，一口气铺开、按时间轴分步高亮**（`heatBannerPhases` / `.crop-heatbanner__phases`）：这一档与另五个度量不同，它讲的是一条有先后的因果链（① 正常路由 → ② 分布走偏 → ③ logits 越界 → ④ 路由塌缩），而链条里最该被看见的是「② 与 ③ 在图上长得一模一样，④ 才突然变形」。一次只显示当前那一相的话，这个对照要靠读的人自己记住前一相长什么样，也就基本读不出来。四段同框后进度与因果同框，横幅本身成了这根时间轴的图例。三态：走过（`is-past`，压暗但仍可读）· 当前（`is-active`，`--danger` 亮起）· 未到（默认最暗）；段间一枚 `›` 说明这是时间顺序而不是四个并列页签。
+- **横幅本体改竖排**（`.crop-heatbanner` 加 `flex-direction: column`，新增 `.crop-heatbanner__lead`）：第一行仍是「本图的问题 + 一句结论」，另五个度量高度不变；「专家负载」这一档标签改写「路由塌缩」，lead 只留四段条说不了的两样——拖到了第几个 step、塌缩点是哪张卡（`Layer / E / EP rank`），末相把「吃掉 98%」写进 ④ 那一段。
+- **四段块内改两列网格排版**（`.crop-heatbanner__phase` 由竖排 flex 改 `grid-template-columns: auto minmax(0,1fr)`，序号拆出 `.crop-heatbanner__phase-num`）：序号（①②③④）独占左列，相位名与下面那行正文同落右列——正文因此与「正常路由」这几个字左对齐，而不是与序号左对齐；序号自己成一条竖直对齐线。
+- **正文行前置这一相跨了哪几个 step**（`routePhaseSteps()` / `.crop-heatbanner__phase-steps`）：① `step 11003–13102` · ② `step 13103–15202` · ③④ 都是 `step 15203 内`。四段并排时这个「不等宽的时间」正是最该被看见的东西——前三相跨了四千多步，后两相全挤在事故步那一步之内（轴上只写得下首尾两个 step 号，看不出这件事）。区间左闭右开，右端取下一相门槛的前一步。
+- 配套：`routePhaseIndex()` 从 `routePhase()` 里拆出来（三态要判前后，光有当前相位的对象判不出走没走过）。
+
+---
+
+## 2026-09-09 — 平面视图·负载热力：「专家负载」的时间轴给出 step 口径
+
+- **滑杆两端写死 step 号**（`js/config-relation-plane.js` 的 `ROUTE_STEP_FROM` / `ROUTE_STEP_TO`，css 的 `.crop-heat__routeend`）：轴上原先只有一个 τ∈[0,1] 的进程，而读的人第一个问题一定是「这是多长的一段时间」。不写的话，离播放条最近的那个数字是色阶图例的热端（`7.87×`，说的是颜色对应多少倍均分），紧挨着摆在一起就会被读成轴的刻度。现在两端明写 `step 11003` → `step 15203`，与时光机（`training-run-twin.js` 的 `INCIDENT_STEP=15203`、`LV_SKEW_CLIMB_FROM=INCIDENT_STEP-4200`）、日志抽屉、rank 泳道钉的是同一条时间线。
+- **读数上行补「拖到了第几个 step」**（`routeStepAt` / `routeStepText`，`.crop-heat__routehead` / `.crop-heat__routestep`）：相位名后面跟一个当前 step，格子气泡与红横幅里也各补一处。
+- **映射是分段的，不是一把匀速的尺子**：① → ③ 那段慢性偏斜跨了四千多个 step，按 step 线性铺（τ 0→0.60 ⇒ step 11003→15202）；③ → ④ 全部发生在 **step 15203 那一步之内**（logits 越界 → `exp()=Inf` → softmax 塌成 one-hot），所以轴的后 4 成 step 号不再往前走、改写「step 15203 内」。为「一格一格等距」把它抹平，就等于把「后一段进程全在同一个 step 里」这条——这次事故最难查的地方——抹掉了。
+- 「?」气泡里补一段这根轴的 step 口径与两种时间基的说明。
+
+---
+
+## 2026-09-09 — 平面视图·集群矩阵：整机档只留「一块颜色」一档，三段块与算子面板收归 Rank 视角
+
+- **格内那两档内容（三段块 / 算子面板）加一条 `span === 1` 的硬闸**（`js/config-relation-plane.js` 的 `cellIsRank` → `showBands` / `detailOn`）：它们答的都是「**一张卡**在这一层里的活」——「上面 Hidden、中间 Attention、下面 MoE」「这里跑 Router、那里跑 Expert Compute」——而整机行一格是 span 张卡，这两句话在那里没有单一答案：那台机器的 8 张卡每一张都从头到尾跑完这三段，画进一个机器格子里却读成「这台机器上面三分之一在做 Hidden」。整机档因此只有「一块颜色」这一档。
+- **整机档的「更精细一步」不是格内长内容，而是换粒度**：自适应的阶梯改成 整机·纯颜色 → rank·纯颜色 → rank·三段块 → rank·逐个算子。
+- **自适应换档判据从写死的 `k` 换成两条现算的**（`currentUnit` / 新增 `rankAffordable`，撤掉 `TEXT_MIN_K = 0.5`）：① 整机格子已经大到 `BLOCK_MIN_H`（与 `showBands` 同一个数，换算过去就是「rank 格子刚够 `BLOCK_MIN_H / span` 高」）；② rank 格子这一帧铺得动。第二条是硬的 —— 同一片区域换成 rank 粒度是 span 倍的格子数，每卡 32 个专家那类配置（格子 139px 高）在 ① 成立时离 `CELL_BUDGET` 还差好几倍，超了预算 render 会整幅退成「一个格子都不画」，那比整机档的一片颜色更糟。所以估算故意偏大（各加一圈余量、再留 15% 富余）：宁可晚换一档。
+- 原先写死的 `k >= 0.5` 在两类配置上换出来的画面差着一个数量级（同一个 k 下格子高度差 6 倍），换成屏幕尺寸判之后，整机格子在任何配置上都在 54~105px 之间交班，不会再出现「整机格子几百像素高却只有一块颜色」。
+- ⚠️ 撤销了本日早先那版「整机行的三段块转 90° + 画 rank 泳道」（`.crop-segs--node`、`BLOCK_MIN_W_NODE`、`LANE_MIN_H`、`--crop-lane-line` 一并删除）：那一版把三段转成竖排、上下让给 rank，解决的是「方向错位」；但真正的问题是**这一档整个不该出现在整机格子上**，转个方向仍然是在机器格子里回答一张卡的问题。
+
+---
+
 ## 2026-09-08 — 平面视图·通信观测：浮卡撤掉阶段胶囊、标题加大 4px
 
 - **浮卡不再挂阶段胶囊（`.crop-comm__card-phase` 整枚删除）**：页签下那条阶段带一直写着当前是前向 / 反向 / 更新哪一段，浮卡里再写一遍是同一件事说第二遍，还挤掉标题的横向空间。头一行只剩标题，于是改成 `display:contents`，标题直接落进卡的第 2 列 —— 与五条读数的 value 仍是同一条左缘。
