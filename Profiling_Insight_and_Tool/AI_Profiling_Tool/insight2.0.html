@@ -6312,6 +6312,7 @@ body.chat-shell-page {
 .msi-swim-body {
   flex: 1 1 auto;
   min-height: 0;
+  position: relative;
   overflow: auto;
   scrollbar-gutter: stable;
   scrollbar-width: thin;
@@ -6363,24 +6364,205 @@ body.chat-shell-page {
 }
 .msi-lane-caret-btn[aria-expanded="true"] .msi-lane-caret { transform: rotate(90deg); }
 .msi-lane-caret-slot { width: 14px; flex-shrink: 0; }
+.msi-lane-caret-static {
+  width: 14px; height: 14px; flex-shrink: 0;
+  display: inline-flex; align-items: center; justify-content: center;
+}
+.msi-lane-caret-static .msi-lane-caret { width: 14px; height: 14px; }
 .msi-lane-text { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .msi-lane-track { flex: 1 1 auto; min-width: 0; position: relative; }
 .msi-lane-track svg { display: block; width: 100%; height: 100%; }
 
 .msi-content-foot {
   flex: 0 0 auto;
-  display: flex; align-items: center; gap: 24px;
-  padding: 12px 16px;
+  display: block;
+  margin: 12px 16px 16px;
+  padding: 0;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  background: var(--surface-1);
   color: var(--foreground-muted);
+  overflow: hidden;
+  transition: box-shadow var(--duration-base, 200ms) var(--easing-default, ease);
+}
+.msi-foot-tabs {
+  height: 40px;
+  display: flex; align-items: center; gap: 24px;
+  padding: 0 16px;
 }
 .msi-foot-tab {
+  position: relative;
+  height: 100%;
   border: 0; background: transparent;
   color: var(--foreground-muted);
   font-size: 13px; cursor: pointer;
 }
 .msi-foot-tab:hover { color: var(--foreground-secondary); }
-.msi-foot-tab.is-active { color: var(--foreground); }
-
+.msi-foot-tab.is-active { color: var(--msi-accent); font-weight: 500; }
+.msi-foot-tab.is-active::after {
+  content: "";
+  position: absolute; left: 0; right: 0; bottom: 0;
+  height: 2px; border-radius: 2px 2px 0 0;
+  background: var(--msi-accent);
+}
+.msi-foot-close {
+  width: 28px;
+  height: 28px;
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius-md);
+  background: transparent;
+  color: var(--foreground-muted);
+  cursor: pointer;
+}
+.msi-foot-close:hover { background: var(--state-hover); color: var(--foreground); }
+.msi-foot-close:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: -2px; }
+.msi-foot-close svg {
+  width: 16px;
+  height: 16px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.msi-foot-expand-icon { display: none; }
+.msi-content-foot.is-collapsed .msi-foot-close-icon { display: none; }
+.msi-content-foot.is-collapsed .msi-foot-expand-icon { display: block; }
+.msi-content-foot.is-collapsed .msi-foot-tab.is-active {
+  color: var(--foreground-muted);
+  font-weight: 400;
+}
+.msi-content-foot.is-collapsed .msi-foot-tab.is-active::after { display: none; }
+.msi-selection-detail {
+  height: 210px;
+  min-height: 160px;
+  display: grid;
+  grid-template-columns: minmax(360px, 38%) minmax(0, 1fr);
+  border-top: 1px solid var(--border-subtle);
+  color: var(--foreground);
+  overflow: hidden;
+}
+.msi-selection-detail[hidden] { display: none; }
+.msi-detail-pane { min-width: 0; overflow: auto; padding: 14px 16px 16px; }
+.msi-detail-pane:first-child { overflow: hidden; }
+.msi-detail-pane + .msi-detail-pane { border-left: 1px solid var(--border-subtle); }
+.msi-detail-title {
+  margin: 0 0 12px;
+  color: var(--foreground);
+  font-size: 13px;
+  font-weight: 600;
+}
+.msi-basic-grid {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr) max-content minmax(0, 1fr);
+  column-gap: 8px;
+  row-gap: 10px;
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.45;
+}
+.msi-basic-grid dt { color: var(--foreground-muted); white-space: nowrap; }
+/* 每行是两组 key-value；第二组前额外留白，让“列间距”明显大于组内的 8px 间距。 */
+.msi-basic-grid dt:nth-of-type(even) { margin-left: 24px; }
+.msi-basic-grid dd {
+  min-width: 0;
+  margin: 0;
+  overflow: hidden;
+  color: var(--foreground);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.msi-chain-flow {
+  width: 100%;
+  min-width: 0;
+  display: block;
+  padding: 4px 2px 12px;
+  overflow: hidden;
+}
+.msi-chain-row {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  flex-wrap: nowrap;
+}
+.msi-chain-step {
+  display: flex;
+  align-items: center;
+  flex: 0 0 auto;
+}
+.msi-chain-node {
+  width: 180px;
+  min-height: 72px;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: flex-start;
+  gap: 6px;
+}
+.msi-chain-path {
+  width: 100%;
+  overflow: hidden;
+  color: var(--foreground-muted);
+  font-size: 10px;
+  line-height: 14px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.msi-chain-taskbar {
+  width: 100%;
+  height: 24px;
+  display: block;
+  padding: 0 9px;
+  overflow: hidden;
+  border: 1px solid transparent;
+  border-radius: 5px;
+  color: inherit;
+  font: inherit;
+  font-size: 10.5px;
+  line-height: 22px;
+  text-align: center;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.msi-chain-taskbar:hover { filter: brightness(.97); box-shadow: 0 0 0 1px var(--msi-accent); }
+.msi-chain-taskbar.is-current { border-color: var(--msi-accent); box-shadow: 0 0 0 1px var(--msi-accent); }
+.msi-chain-explain {
+  width: 100%;
+  overflow: hidden;
+  color: var(--foreground-secondary);
+  font-size: 10.5px;
+  line-height: 15px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.msi-chain-arrow {
+  width: 38px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--msi-accent);
+}
+.msi-chain-arrow svg { width: 38px; height: 28px; overflow: visible; }
+.msi-chain-arrow path { fill: none; stroke: currentColor; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; }
+.msi-chain-tail {
+  width: 180px;
+  margin-left: var(--msi-chain-turn-left, 0px);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+.msi-chain-tail > .msi-chain-arrow {
+  height: 30px;
+  flex: 0 0 30px;
+  transform: rotate(90deg);
+}
 /* 主色:浅色主题用还原稿的蓝,深色主题下提亮一档 */
 :root, [data-theme="light"] { --msi-accent: var(--brand-accent); }
 [data-theme="dark"] { --msi-accent: var(--brand-accent); }
@@ -6412,6 +6594,37 @@ body.chat-shell-page {
   z-index: 3;
   box-shadow: 0 0 0 2px var(--msi-accent);
 }
+.msi-bar.is-locate-flash { animation: msi-task-locate-flash 1.4s ease-out; }
+@keyframes msi-task-locate-flash {
+  0%, 48% { filter: brightness(1.18); box-shadow: 0 0 0 3px var(--msi-accent), 0 0 14px color-mix(in srgb, var(--msi-accent) 50%, transparent); }
+  24%, 100% { filter: none; box-shadow: 0 0 0 2px var(--msi-accent); }
+}
+
+/* 点击真实 trace 任务后出现的跨泳道关系层。SVG 和任务条共用滚动坐标系，
+   所以纵向滚动、面板伸缩时连线仍锚在任务中心。 */
+.msi-link-layer {
+  position: absolute;
+  left: 0; top: 0;
+  z-index: 4;
+  overflow: visible;
+  pointer-events: none;
+}
+.msi-link-path {
+  fill: none;
+  stroke: var(--msi-accent);
+  stroke-width: 1.7;
+  opacity: .92;
+  vector-effect: non-scaling-stroke;
+}
+.msi-link-path--operator {
+  stroke: #8b73cf;
+  stroke-dasharray: 5 4;
+}
+.msi-link-path--communication { stroke: #d28a2e; }
+.msi-link-dot { fill: var(--msi-accent); }
+.msi-swim-body.has-task-focus .msi-bar:not(.is-related) { opacity: .22; }
+.msi-swim-body.has-task-focus .msi-bar.is-related { z-index: 2; }
+.msi-swim-body.has-task-focus .msi-bar.is-picked { opacity: 1; z-index: 5; }
 
 /* 色块右键菜单:分组 + 分隔线 + 右对齐快捷键,形态对齐 src/pic/右键.png */
 .msi-ctxmenu {
@@ -6561,11 +6774,27 @@ body.chat-shell-page {
               <div class="msi-swim-body" id="msiSwimBody"></div>
             </div>
 
-            <footer class="msi-content-foot">
-              <button class="msi-foot-tab" type="button">选中详情</button>
-              <button class="msi-foot-tab" type="button">选中列表</button>
-              <button class="msi-foot-tab" type="button">系统视图</button>
-              <button class="msi-foot-tab" type="button">查找</button>
+            <footer class="msi-content-foot" id="msiSelectionPanel">
+              <div class="msi-foot-tabs" role="tablist" aria-label="底部信息面板">
+                <button class="msi-foot-tab is-active" type="button" role="tab" aria-selected="true" data-foot-tab="detail">选中详情</button>
+                <button class="msi-foot-tab" type="button" role="tab" aria-selected="false" data-foot-tab="list">选中列表</button>
+                <button class="msi-foot-tab" type="button" role="tab" aria-selected="false" data-foot-tab="system">系统视图</button>
+                <button class="msi-foot-tab" type="button" role="tab" aria-selected="false" data-foot-tab="find">查找</button>
+                <button class="msi-foot-close" id="msiDetailClose" type="button" aria-label="收起详情栏" title="收起详情栏" aria-expanded="true">
+                  <svg class="msi-foot-close-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18"></path></svg>
+                  <svg class="msi-foot-expand-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="m6 15 6-6 6 6"></path></svg>
+                </button>
+              </div>
+              <div class="msi-selection-detail" id="msiSelectionDetail" hidden>
+                <section class="msi-detail-pane" aria-labelledby="msiBasicTitle">
+                  <h3 class="msi-detail-title" id="msiBasicTitle">基础信息</h3>
+                  <dl class="msi-basic-grid" id="msiTaskBasics"></dl>
+                </section>
+                <section class="msi-detail-pane" aria-labelledby="msiChainTitle">
+                  <h3 class="msi-detail-title" id="msiChainTitle">Rank0 / 完整调用链</h3>
+                  <div class="msi-chain-flow" id="msiCallChain"></div>
+                </section>
+              </div>
             </footer>
           </section>
         </section>
@@ -6796,8 +7025,8 @@ body.chat-shell-page {
 // 一份 PROF_ROOT/PROF_FOLDERS 同时喂给这两处和对话框的 # 引用列表(window.MSI_CTX_FILES),
 // 所以左树里能点到的文件,输入 # 一定引用得到,反之亦然——两边不会对不上。
 // 泳道的结构对齐 profileCompare.html 的训练级 Timeline(Ascend Hardware ▸ Stream N /
-// Communication / Overlap Analysis / HBM ...),但数据是本页按文件名种子确定性生成的,
-// 不依赖 swimlane-data.js 那套外部数据集,页面保持单文件可离线打开。
+// Communication / Overlap Analysis / HBM ...)。rank0/trace_view.json 使用从真实 trace 抽取的
+// 任务与 flow，其余文件仍按文件名种子确定性生成；数据直接内嵌，页面保持单文件可离线打开。
 (function () {
   'use strict';
 
@@ -6841,7 +7070,7 @@ body.chat-shell-page {
       ref: 'rank' + r.rank,
       dir: 'profile_dir / ' + name + ' / ASCEND_PROFILER_OUTPUT',
       rootDir: 'profile_dir / ' + name,   // profiler_info / profiler_metadata 在 ascend_pt 根下
-      open: r.rank === 6,                 // 默认摊开 rank6:诊断里的头号问题(PP 末级过载)就在这张卡
+      open: r.rank === 0,                 // 默认文件是 rank0/trace_view.json，父目录必须同步展开
       // profiler_info_{rank}.json 校验采集是否正常 stop,profiler_metadata.json 里是并行配置
       // 和 ENV_VARIABLES——诊断报告第 3 条(环境变量没设)就是从它看出来的。两个都在根下,不在 OUTPUT 里。
       files: RANK_FILES.concat(['profiler_info_' + r.rank + '.json', 'profiler_metadata.json']),
@@ -6893,10 +7122,9 @@ body.chat-shell-page {
     return acc;
   }, [{ name: PROF_ROOT.name, path: PROF_ROOT.dir + '（整个采集目录，8 卡）' }]);
 
-  // 默认选中项:rank6 的 kernel_details.csv——右边那次诊断的头号证据(MatMulV2 只在末级出现)
-  // 就是从这个文件看出来的,打开页面直接停在案发现场。内容区标题、泳道随机种子、对话框
-  // 锚定 chip 都跟着它。
-  let selected = { folder: PROF_FOLDERS[6], file: 'kernel_details.csv' };
+  // 默认打开 rank0 的真实 trace 窗口：这份样例内嵌了从 trace_view.json 抽取的
+  // Python → Device 与 CANN → Device flow，点击任务即可查看跨泳道下发关系。
+  let selected = { folder: PROF_FOLDERS[0], file: 'trace_view.json' };
   window.MSI_ANCHOR_NAME = PROF_ROOT.name;
 
   /* ══ 2. 确定性随机:同一个文件名永远画出同一张泳道图 ══════════════ */
@@ -7009,16 +7237,34 @@ body.chat-shell-page {
     renderTree();
   }
 
-  // 选中文件变了:内容区标题跟着换,泳道按新文件名重算一遍(种子变了,图就变了)。
+  // 选中文件变了:内容区标题跟着换；rank0 trace 显示真实窗口，其余文件按名称种子重算。
   // 对话框那条「已锚定」chip 始终停在采集根目录 profile_dir 上——诊断是整目录一起做的,
   // 锚到某一张卡反而会让人以为只看了那一个文件。
   function applySelection() {
+    // 无论选择来自左树、默认值还是后续程序化定位，都先展开它的完整父路径。
+    // 这样标题、选中高亮和树中的实际位置永远不会脱节。
+    PROF_ROOT.open = true;
+    selected.folder.open = true;
+    renderTree();
     const title = document.getElementById('msiContentTitle');
     // 带上 rank 前缀:8 张卡的 trace_view.json 同名,只写文件名看不出在看哪一张
     if (title) title.textContent = selected.folder.ref + ' / ' + selected.file;
     const chipName = document.getElementById('trainChatAnchorName');
     if (chipName) chipName.textContent = PROF_ROOT.name;
+    selectedTraceTaskId = null;
+    clearTraceTaskFocus();
     renderSwimlanes();
+    syncTimelineControls();
+    requestAnimationFrame(() => {
+      const host = document.getElementById('msiTree');
+      const row = host?.querySelector('.msi-tree-row--file.is-selected');
+      if (!host || !row) return;
+      const hostRect = host.getBoundingClientRect();
+      const rowRect = row.getBoundingClientRect();
+      if (rowRect.top < hostRect.top || rowRect.bottom > hostRect.bottom) {
+        host.scrollTo({ top: Math.max(0, host.scrollTop + rowRect.top - hostRect.top - host.clientHeight / 3), behavior: 'smooth' });
+      }
+    });
   }
 
   /* ══ 4. 泳道:泳道树(左列) + 轨道(右列) ═══════════════════════ */
@@ -7041,49 +7287,250 @@ body.chat-shell-page {
   // 泳道树:group 行可折叠,leaf 行是真正画东西的那一行。
   // track 决定这一行右边画什么:dense=密集事件条、bars=算子任务条、area=带宽曲线、空=不画。
   function buildLanes() {
-    const streams = [];
-    for (let i = 0; i <= 8; i++) {
-      streams.push({ id: 'stream-' + i, label: 'Stream ' + i, track: 'bars' });
-    }
     return [
-      { id: 'proc', label: 'Process 3430895', group: true, open: false, track: 'dense', density: 0.30, children: [
-        { id: 'proc-py', label: 'Python Thread', track: 'dense', density: 0.5 },
-        { id: 'proc-cann', label: 'CANN Runtime', track: 'dense', density: 0.4 },
+      { id: 'card-0', label: 'Card: 0 · rank0', group: true, open: true, children: [
+        { id: 'proc', label: 'Process 3430895', group: true, open: true, children: [
+          { id: 'thread-main', label: 'Thread 3430895', group: true, open: true, children: [
+            { id: 'proc-py', label: 'PyTorch (CPU)', group: true, open: true, track: 'bars', children: [
+              { id: 'acl', label: 'acl', group: true, open: true, children: [
+                { id: 'proc-cann', label: 'runtime / CANN', track: 'bars' },
+              ] },
+            ] },
+          ] },
+          { id: 'thread-3433310', label: 'Thread 3433310', track: 'dense', density: .34, staticCollapsed: true },
+          { id: 'thread-3433327', label: 'Thread 3433327', track: 'dense', density: .38, staticCollapsed: true },
+          { id: 'thread-3433329', label: 'Thread 3433329', track: 'dense', density: .32, staticCollapsed: true },
+        ] },
+        { id: 'ahw', label: 'Ascend Hardware', group: true, open: true, children: [
+          { id: 'stream-0', label: 'Stream 0', track: 'bars' },
+          { id: 'stream-2', label: 'Stream 2', track: 'bars' },
+          { id: 'stream-3', label: 'Stream 3', track: 'bars' },
+          { id: 'stream-4', label: 'Stream 4', track: 'bars' },
+          { id: 'stream-5', label: 'Stream 5', track: 'bars' },
+          { id: 'stream-6', label: 'Stream 6', track: 'bars' },
+          { id: 'stream-7', label: 'Stream 7', track: 'bars' },
+        ] },
+        { id: 'comm', label: 'Communication', group: true, open: true, children: [
+          { id: 'comm-default', label: 'Default Group', group: true, open: false, track: 'dense', density: .55, children: [
+            { id: 'comm-default-p0', label: 'Plane 0', track: 'dense', density: .35 },
+            { id: 'comm-default-p1', label: 'Plane 1', track: 'dense', density: .35 },
+            { id: 'comm-default-p2', label: 'Plane 2', track: 'dense', density: .35 },
+            { id: 'comm-default-p3', label: 'Plane 3', track: 'dense', density: .35 },
+          ] },
+          { id: 'comm-pp', label: 'PP Group / hcom_batchSendRecv', group: true, open: false, track: 'bars', children: [
+            { id: 'comm-pp-p0', label: 'Plane 0', track: 'dense', density: .5 },
+            { id: 'comm-pp-p1', label: 'Plane 1', track: 'dense', density: .5 },
+          ] },
+          { id: 'comm-ar', label: 'DP Group / hcom_allReduce', group: true, open: false, track: 'bars', children: [
+            { id: 'comm-dp-p0', label: 'Plane 0', track: 'dense', density: .52 },
+            { id: 'comm-dp-p1', label: 'Plane 1', track: 'dense', density: .52 },
+          ] },
+          { id: 'comm-ag', label: 'Embedding Group / hcom_allGather', group: true, open: false, track: 'bars', children: [
+            { id: 'comm-emb-p0', label: 'Plane 0', track: 'dense', density: .46 },
+            { id: 'comm-emb-p1', label: 'Plane 1', track: 'dense', density: .46 },
+          ] },
+        ] },
+        { id: 'ovl', label: 'Overlap Analysis', group: true, open: true, children: [
+          { id: 'ovl-c', label: 'Computing', track: 'bars' },
+          { id: 'ovl-comm', label: 'Communication', track: 'bars' },
+          { id: 'ovl-nc', label: 'Communication (Not Overlapped)', track: 'bars' },
+          { id: 'ovl-free', label: 'Free', track: 'bars' },
+        ] },
+        { id: 'npu-metrics', label: 'NPU Metrics', group: true, open: true, children: [
+          { id: 'hbm', label: 'HBM', group: true, open: true, children: HBM_LANES.slice(0, 4).map((h, i) => (
+            { id: 'hbm-' + i, label: h.label, track: 'area', area: h }
+          )) },
+          { id: 'acc-pmu', label: 'ACC PMU', group: true, open: true, children: [0, 1, 2, 3].map((i) => ({
+            id: 'acc-' + i, label: 'Accelerator ' + i + ' / readBandwidth', track: 'area',
+            area: { stroke: ['#5b8fd4', '#d878b4', '#8b73cf', '#5fae6a'][i], fill: ['#cfe0f7', '#f7cfe6', '#ddd2f3', '#cfe9d0'][i] },
+          })) },
+          { id: 'qos', label: 'QOS', group: true, open: true, children: [
+            { id: 'qos-0', label: 'QoS 0: OTHERS / Bandwidth', track: 'area', area: { stroke: '#8b73cf', fill: '#ddd2f3' } },
+            { id: 'qos-1', label: 'QoS 1: AIC_DAT_QOS / Bandwidth', track: 'area', area: { stroke: '#4bb8a6', fill: '#c7ece6' } },
+          ] },
+          { id: 'freq', label: 'AI Core Freq', group: true, open: true, children: [
+            { id: 'freq-c', label: 'AI Core Freq (MHz)', track: 'area', area: { stroke: '#dfae43', fill: '#fbe6b8' } },
+          ] },
+        ] },
       ] },
-      { id: 'ahw', label: 'Ascend Hardware', group: true, open: true, track: 'dense', density: 0.55, children: streams },
-      { id: 'comm', label: 'Communication', group: true, open: false, track: 'dense', density: 0.72, children: [
-        { id: 'comm-ar', label: 'hcom_allReduce', track: 'bars' },
-        { id: 'comm-ag', label: 'hcom_allGather', track: 'bars' },
-      ] },
-      { id: 'ovl', label: 'Overlap Analysis', group: true, open: false, track: 'dense', density: 0.66, children: [
-        { id: 'ovl-c', label: 'Computing', track: 'bars' },
-        { id: 'ovl-nc', label: 'Communication(Not Overlapped)', track: 'bars' },
-        { id: 'ovl-free', label: 'Free', track: 'bars' },
-      ] },
-      { id: 'hbm', label: 'HBM', group: true, open: true, children: HBM_LANES.map((h, i) => (
-        { id: 'hbm-' + i, label: h.label, track: 'area', area: h }
-      )) },
-      { id: 'llc', label: 'LLC', group: true, open: false, track: 'dense', density: 0.62, children: [
-        { id: 'llc-hit', label: 'LLC Hit Rate', track: 'area', area: { stroke: '#5b8fd4', fill: '#cfe0f7' } },
-      ] },
-      { id: 'qos', label: 'QOS', group: true, open: false, track: 'dense', density: 0.58, children: [
-        { id: 'qos-b', label: 'QOS Bandwidth', track: 'area', area: { stroke: '#8b73cf', fill: '#ddd2f3' } },
-      ] },
-      { id: 'freq', label: 'AI Core Freq', group: true, open: false, track: 'dense', density: 0.44, children: [
-        { id: 'freq-c', label: 'Core Frequency', track: 'area', area: { stroke: '#dfae43', fill: '#fbe6b8' } },
-      ] },
-      { id: 'soc', label: 'Stars Soc', group: true, open: false, track: 'dense', density: 0.50, children: [
-        { id: 'soc-t', label: 'Task Scheduler', track: 'dense', density: 0.6 },
-      ] },
-      { id: 'npumem', label: 'NPU MEM', group: true, open: false, track: 'dense', density: 0.36, children: [
-        { id: 'npumem-u', label: 'Used', track: 'area', area: { stroke: '#5fae6a', fill: '#cfe9d0' } },
-      ] },
+      { id: 'card-1', label: 'Card: 1', group: true, open: false, track: 'dense', density: .48, children: [] },
+      { id: 'card-2', label: 'Card: 2', group: true, open: false, track: 'dense', density: .48, children: [] },
+      { id: 'card-3', label: 'Card: 3', group: true, open: false, track: 'dense', density: .48, children: [] },
     ];
   }
 
   let LANES = buildLanes();
-  // 当前选中的泳道行,点任意一行切换;默认落在 Stream 0 上
-  let selectedLaneId = 'stream-0';
+  function findLane(laneId, nodes = LANES) {
+    for (const lane of nodes) {
+      if (lane.id === laneId) return lane;
+      const found = lane.children && findLane(laneId, lane.children);
+      if (found) return found;
+    }
+    return null;
+  }
+  function openLanePath(laneId, nodes = LANES) {
+    for (const lane of nodes) {
+      if (lane.id === laneId) return true;
+      if (lane.children && openLanePath(laneId, lane.children)) {
+        lane.open = true;
+        return true;
+      }
+    }
+    return false;
+  }
+  function lanePath(laneId, nodes = LANES, parents = []) {
+    for (const lane of nodes) {
+      const path = parents.concat(lane);
+      if (lane.id === laneId) return path;
+      const found = lane.children && lanePath(laneId, lane.children, path);
+      if (found) return found;
+    }
+    return [];
+  }
+  // 当前选中的泳道行,点任意一行切换;真实样例的 Device 任务集中在 Stream 2。
+  let selectedLaneId = 'stream-2';
+
+  /* 从 rank_0/trace_view.json 的 ProfilerStep#13 起始窗口抽取。
+     每行依次是：序号、Python 算子及时间、CANN launch 时间、Device 算子及时间、
+     Device Task Id、两端共享的 connection_id、Task Type。时间单位均为 ms，
+     以 ProfilerStep#13 起点为 0 点。 */
+  const TRACE_WINDOW_MS = 810.63277;
+  const TRACE_DISPATCH_ROWS = [
+    [22, 'aclnnMatmul', 5.64939, .01121, 5.66864, .01271, 'aclnnMatmul_MatMulV3Common_MatMulV3', 5.66364, .1704, 34493, 33389, 'AI_CORE'],
+  ];
+  const REAL_TRACE_TASKS = [];
+  const REAL_TRACE_EDGES = [];
+  TRACE_DISPATCH_ROWS.forEach((r) => {
+    const [n, pyName, pyStart, pyDur, cannStart, cannDur, devName, devStart, devDur, taskId, connectionId, taskType] = r;
+    REAL_TRACE_TASKS.push(
+      { id: 'py-' + n, laneId: 'proc-py', name: pyName, start: pyStart, dur: pyDur, kind: 'python' },
+      { id: 'cann-' + n, laneId: 'proc-cann', name: 'Node@launch', start: cannStart, dur: cannDur, kind: 'cann', connectionId },
+      { id: 'dev-' + n, laneId: 'stream-2', name: devName, start: devStart, dur: devDur, kind: 'device', taskId, connectionId, taskType },
+    );
+    REAL_TRACE_EDGES.push(
+      { source: 'py-' + n, target: 'dev-' + n, type: 'operator' },
+      { source: 'cann-' + n, target: 'dev-' + n, type: 'dispatch', connectionId },
+    );
+  });
+
+  // 同一 ProfilerStep 内各泳道的真实采样。每条泳道保留 3–4 个代表事件，
+  // 既避免 7.9 万条原始事件把单文件页面撑爆，也不会再出现大片空泳道。
+  const TRACE_CONTEXT_ROWS = [
+    // Stream 0 在该 step 只有 metadata、没有 X 任务；用四段明确标注的 Idle 区间保留其结构位置。
+    ['stream-0', 's0-a', 'Idle', 42, 36, 'idle', null, null, 'NO_DEVICE_TASK'],
+    ['stream-0', 's0-b', 'Idle', 212, 48, 'idle', null, null, 'NO_DEVICE_TASK'],
+    ['stream-0', 's0-c', 'Idle', 438, 42, 'idle', null, null, 'NO_DEVICE_TASK'],
+    ['stream-0', 's0-d', 'Idle', 684, 54, 'idle', null, null, 'NO_DEVICE_TASK'],
+    ['proc-py', 'py-hccl-b', 'HcclBatchSendRecv', 154.95459, .00464, 'python', null, null, 'cpu_op'],
+    ['proc-py', 'py-hccl-c', 'HcclBatchSendRecv', 393.32875, .00637, 'python', null, null, 'cpu_op'],
+    ['proc-cann', 'cann-hccl-a', 'AscendCL@hcom_batchSendRecv_', 74.02418, .36001, 'cann', null, 38717, 'HOST_HCCL'],
+    ['proc-cann', 'cann-hccl-b', 'AscendCL@hcom_batchSendRecv_', 154.97541, .36031, 'cann', null, 44237, 'HOST_HCCL'],
+    ['proc-cann', 'cann-hccl-c', 'AscendCL@hcom_batchSendRecv_', 393.357, .3941, 'cann', null, 48893, 'HOST_HCCL'],
+    ['stream-2', 's2-b', 'aclnnFlashAttentionScore_FlashAttentionScore_FlashAttentionScore', 141.732, .88876, 'device', 35336, 43395, 'MIX_AIC'],
+    ['stream-2', 's2-c', 'aclnnCast_CastAiCore_Cast', 596.2, .00114, 'device', 36198, 51193, 'AI_VECTOR_CORE'],
+    ['stream-2', 's2-d', 'aclnnNonzeroV2_NonzeroAiCore_NonZero', 810.2255, .00292, 'device', 37060, 58261, 'MIX_AIV'],
+    ['stream-3', 's3-a', 'EVENT_WAIT', 9.998, .82168, 'device', 758, 33750, 'EVENT_WAIT'],
+    ['stream-3', 's3-b', 'EVENT_WAIT', 104.68, .82012, 'device', 776, 40720, 'EVENT_WAIT'],
+    ['stream-3', 's3-c', 'EVENT_WAIT', 361.845, 2.18046, 'device', 794, 47022, 'EVENT_WAIT'],
+    ['stream-3', 's3-d', 'EVENT_WAIT', 634.501, 2.2007, 'device', 813, 53303, 'EVENT_WAIT'],
+    ['stream-4', 's4-a', 'EVENT_WAIT', 742.51425, .00002, 'device', 276, 55229, 'EVENT_WAIT'],
+    ['stream-4', 's4-b', 'Notify Wait', 796.8335, .36812, 'device', 281, 57341, 'Notify Wait'],
+    ['stream-4', 's4-c', 'Notify Wait', 798.39, .00496, 'device', 285, 57394, 'Notify Wait'],
+    ['stream-4', 's4-d', 'EVENT_RECORD', 800.158, .00002, 'device', 291, 57485, 'EVENT_RECORD'],
+    ['stream-5', 's5-a', 'EVENT_WAIT', 676.8975, 19.57748, 'device', 83, 53761, 'EVENT_WAIT'],
+    ['stream-5', 's5-b', 'SDMA', 710.478, .38128, 'device', 85, 53764, 'SDMA'],
+    ['stream-5', 's5-c', 'Notify Wait', 724.65425, .00364, 'device', 86, 53764, 'Notify Wait'],
+    ['stream-5', 's5-d', 'EVENT_RECORD', 731.10175, .00002, 'device', 88, 53824, 'EVENT_RECORD'],
+    ['stream-6', 's6-a', 'EVENT_WAIT', 3.41175, .00002, 'device', 156, 33226, 'EVENT_WAIT'],
+    ['stream-6', 's6-b', 'EVENT_WAIT', 3.69175, .0039, 'device', 159, 33268, 'EVENT_WAIT'],
+    ['stream-6', 's6-c', 'EVENT_WAIT', 76.40675, .00002, 'device', 162, 38811, 'EVENT_WAIT'],
+    ['stream-6', 's6-d', 'EVENT_RECORD', 77.09725, .00002, 'device', 167, 38878, 'EVENT_RECORD'],
+    // connection_id 38718 的硬件通信任务在原始 trace 中展开为 SDMA/Notify；
+    // 泳道交互按产品语义聚合成用户指定的 AI_CORE 中间节点。
+    ['stream-7', 'pp-ai-core', 'AI_CORE', 74.311, .43614, 'device', 157, 38718, 'AI_CORE'],
+    ['stream-7', 's7-b', 'SDMA', 155.2665, .0006, 'device', 161, 44238, 'SDMA'],
+    ['stream-7', 's7-c', 'EVENT_RECORD', 313.821, .00002, 'device', 162, 44266, 'EVENT_RECORD'],
+    ['stream-7', 's7-d', 'EVENT_RECORD', 552.00425, .00002, 'device', 166, 48918, 'EVENT_RECORD'],
+    ['stream-8', 's8-a', 'EVENT_WAIT', 645.889, 2.32398, 'device', 299, 53584, 'EVENT_WAIT'],
+    ['stream-8', 's8-b', 'EVENT_RECORD', 674.52475, .00002, 'device', 305, 53650, 'EVENT_RECORD'],
+    ['stream-8', 's8-c', 'Notify Wait', 770.05, .00002, 'device', 313, 57097, 'Notify Wait'],
+    ['stream-8', 's8-d', 'EVENT_RECORD', 790.17775, .00002, 'device', 320, 57175, 'EVENT_RECORD'],
+    ['stream-9', 's9-a', 'EVENT_WAIT', 790.48925, .00002, 'device', 156, 57190, 'EVENT_WAIT'],
+    ['stream-9', 's9-b', 'EVENT_RECORD', 793.84425, .00002, 'device', 159, 57213, 'EVENT_RECORD'],
+    ['stream-9', 's9-c', 'EVENT_RECORD', 794.571, .00002, 'device', 162, 57254, 'EVENT_RECORD'],
+    ['stream-9', 's9-d', 'EVENT_RECORD', 796.19, .00002, 'device', 167, 57307, 'EVENT_RECORD'],
+    ['comm-pp', 'comm-pp-a', 'hcom_batchSendRecv', 74.311, .43614, 'communication', null, 38718, 'PAIRWISE'],
+    ['comm-pp', 'comm-pp-b', 'hcom_batchSendRecv__128_4_1', 155.2665, 158.55328, 'communication', null, 44238, 'PAIRWISE'],
+    ['comm-pp', 'comm-pp-c', 'hcom_batchSendRecv__128_5_1', 397.11425, 154.88838, 'communication', null, 48894, 'PAIRWISE'],
+    ['comm-ar', 'comm-ar-a', 'hcom_allReduce__170_1_1', 696.47675, 34.62392, 'communication', null, 53764, 'RING'],
+    ['comm-ar', 'comm-ar-b', 'hcom_allReduce__612_4_1', 742.913, .82084, 'communication', null, 55232, 'RING'],
+    ['comm-ar', 'comm-ar-c', 'hcom_allReduce__346_3_1', 790.71675, 3.12578, 'communication', null, 57196, 'RING'],
+    ['comm-ar', 'comm-ar-d', 'hcom_allReduce__612_6_1', 798.0305, .3655, 'communication', null, 57394, 'RING'],
+    ['comm-ag', 'comm-ag-a', 'hcom_allGather__097_6_1', 769.65725, 12.0179, 'communication', null, 57097, 'RING'],
+    ['comm-ag', 'comm-ag-b', 'hcom_allGather__097_7_1', 781.68, 8.4962, 'communication', null, 57144, 'RING'],
+    ['comm-ag', 'comm-ag-c', 'hcom_allGather__612_7_1', 799.61525, .54158, 'communication', null, 57448, 'RING'],
+    ['ovl-comm', 'ovl-comm-a', 'Communication', 74.311, .43614, 'overlap', null, null, 'Communication'],
+    ['ovl-comm', 'ovl-comm-b', 'Communication', 155.2665, 158.55328, 'overlap', null, null, 'Communication'],
+    ['ovl-comm', 'ovl-comm-c', 'Communication', 397.11425, 154.88838, 'overlap', null, null, 'Communication'],
+    ['ovl-comm', 'ovl-comm-d', 'Communication', 648.2145, 26.30914, 'overlap', null, null, 'Communication'],
+    ['ovl-nc', 'ovl-nc-a', 'Communication(Not Overlapped)', 74.311, .43614, 'overlap', null, null, 'Not Overlapped'],
+    ['ovl-nc', 'ovl-nc-b', 'Communication(Not Overlapped)', 155.2665, 158.55328, 'overlap', null, null, 'Not Overlapped'],
+    ['ovl-nc', 'ovl-nc-c', 'Communication(Not Overlapped)', 397.11425, 154.88838, 'overlap', null, null, 'Not Overlapped'],
+    ['ovl-nc', 'ovl-nc-d', 'Communication(Not Overlapped)', 648.2145, 26.30914, 'overlap', null, null, 'Not Overlapped'],
+    ['ovl-c', 'ovl-c-a', 'Computing', .20625, 1.89292, 'overlap', null, null, 'Computing'],
+    ['ovl-c', 'ovl-c-b', 'Computing', 141.732, .88876, 'overlap', null, null, 'Computing'],
+    ['ovl-c', 'ovl-c-c', 'Computing', 595.32225, .01824, 'overlap', null, null, 'Computing'],
+    ['ovl-c', 'ovl-c-d', 'Computing', 810.2255, .00292, 'overlap', null, null, 'Computing'],
+    ['ovl-free', 'ovl-free-a', 'Free', 2.099, 1.88118, 'overlap', null, null, 'Free'],
+    ['ovl-free', 'ovl-free-b', 'Free', 143.5455, .2, 'overlap', null, null, 'Free'],
+    ['ovl-free', 'ovl-free-c', 'Free', 595.624, .00004, 'overlap', null, null, 'Free'],
+    ['ovl-free', 'ovl-free-d', 'Free', 810.20525, .0203, 'overlap', null, null, 'Free'],
+  ];
+  TRACE_CONTEXT_ROWS.forEach(([laneId, id, name, start, dur, kind, taskId, connectionId, taskType]) => {
+    REAL_TRACE_TASKS.push({ id, laneId, name, start, dur, kind, taskId, connectionId, taskType });
+  });
+  REAL_TRACE_TASKS.push(
+    { id: 'py-hcclbatchsendrecv', laneId: 'proc-py', name: 'hcclbatchsendrecv', start: 73.99492, dur: .00896, kind: 'python', connectionId: 38718 },
+  );
+  REAL_TRACE_EDGES.push(
+    { source: 'py-hcclbatchsendrecv', target: 'pp-ai-core', type: 'dispatch', connectionId: 38718 },
+    { source: 'pp-ai-core', target: 'comm-pp-a', type: 'communication', connectionId: 38718 },
+  );
+
+  // 原始 trace 只有一部分事件带完整 flow。其余任务按时间与泳道关系构造稳定的推断链：
+  // 每条边优先满足“上游结束 <= 下游开始”，并避免同泳道自连。推断结果由数据排序决定，
+  // 因此刷新后不会变化；显式 PP 链保持独立，不会被推断边污染。
+  function addInferredTraceEdges() {
+    const occupied = new Set(REAL_TRACE_EDGES.flatMap((edge) => [edge.source, edge.target]));
+    const pool = REAL_TRACE_TASKS
+      .filter((task) => !occupied.has(task.id))
+      .sort((a, b) => a.start - b.start || a.id.localeCompare(b.id));
+
+    while (pool.length) {
+      const chain = [pool.shift()];
+      while (chain.length < 4 && pool.length) {
+        const prev = chain[chain.length - 1];
+        const prevEnd = prev.start + prev.dur;
+        let index = pool.findIndex((task) => task.laneId !== prev.laneId && task.start + 1e-9 >= prevEnd);
+        if (index < 0) break;
+        const next = pool.splice(index, 1)[0];
+        REAL_TRACE_EDGES.push({ source: prev.id, target: next.id, type: 'inferred', inferred: true });
+        chain.push(next);
+      }
+
+      // 时间窗末尾偶尔只剩一条：把它接到最近且已完成的异泳道上游，确保也可查看关系。
+      if (chain.length === 1) {
+        const target = chain[0];
+        const upstream = REAL_TRACE_TASKS
+          .filter((task) => !occupied.has(task.id) && task.id !== target.id && task.laneId !== target.laneId && task.start + task.dur <= target.start + 1e-9)
+          .sort((a, b) => (b.start + b.dur) - (a.start + a.dur))[0];
+        if (upstream) REAL_TRACE_EDGES.push({ source: upstream.id, target: target.id, type: 'inferred', inferred: true });
+      }
+    }
+  }
+  addInferredTraceEdges();
+  const REAL_TRACE_TASK_BY_ID = Object.fromEntries(REAL_TRACE_TASKS.map((t) => [t.id, t]));
+  const isRealTraceSelection = () => selected.folder.ref === 'rank0' && selected.file === 'trace_view.json';
 
   // 算子任务条的配色:浅底 + 同色系深字,浅色/深色主题下都读得出来。
   const BAR_COLORS = [
@@ -7106,25 +7553,31 @@ body.chat-shell-page {
   // 密集事件条:折叠的分组行用它概括下面那一堆事件。折叠态只是「这里有东西」的提示,
   // 不承担分辨事件类型的职责,所以统一一个极淡的底色(见 .msi-dense-bar),不再逐条上色;
   // 形状上仍然成团——团内细条只留 1px 缝连成一片,团与团之间才留白。参考 src/pic/截图.png。
-  function denseTrack(rnd, density) {
+  const DENSE_EVENT_COLORS = ['#d9cdf5', '#c5d9fb', '#c0e6c7', '#f7d8b5', '#b9f0e3', '#fbc3e0'];
+  function denseTrack(rnd, density, colorful = false) {
     const W = 1000, H = ROW_H, Y = 4, BH = H - 8;
-    const rect = (x, w) => '<rect class="msi-dense-bar" x="' + x.toFixed(1) + '" y="' + Y +
-      '" width="' + Math.max(0.6, w).toFixed(1) + '" height="' + BH + '"></rect>';
+    const rect = (x, w, fill) => '<rect class="msi-dense-bar" x="' + x.toFixed(1) + '" y="' + Y +
+      '" width="' + Math.max(0.6, w).toFixed(1) + '" height="' + BH + '"' +
+      (fill ? ' style="fill:' + fill + '"' : '') + '></rect>';
 
     let out = '';
     let x = rnd() * 25;
+    let colorIndex = Math.floor(rnd() * DENSE_EVENT_COLORS.length);
     while (x < W) {
+      // 每一簇视作一个事件族。展开的可见泳道逐簇换色；折叠分组仍使用统一灰色概览。
+      const fill = colorful ? DENSE_EVENT_COLORS[colorIndex] : '';
+      colorIndex = (colorIndex + 1 + Math.floor(rnd() * (DENSE_EVENT_COLORS.length - 1))) % DENSE_EVENT_COLORS.length;
       if (rnd() < 0.14 + density * 0.14) {
         // 一根宽的同步段
         const w = Math.min(30 + rnd() * 120 * density, W - x);
-        out += rect(x, w);
+        out += rect(x, w, fill);
         x += w;
       } else {
         // 一团细条:团内只留 1px 缝,团外才是真空白
         const end = Math.min(W, x + (28 + rnd() * 130) * (0.5 + density));
         while (x < end) {
           const w = Math.min(2 + rnd() * 4, end - x);
-          out += rect(x, w);
+          out += rect(x, w, fill);
           x += w + 1;
         }
       }
@@ -7135,11 +7588,21 @@ body.chat-shell-page {
 
   // 算子任务条:HTML 绝对定位(不是 SVG),条上的算子名才不会被横向拉伸变形。
   function barsTrack(rnd) {
-    const pick = () => BAR_COLORS[Math.floor(rnd() * BAR_COLORS.length)];
+    let previousName = null;
+    let previousColorIndex = -1;
+    const pick = (name) => {
+      let index = Math.floor(rnd() * BAR_COLORS.length);
+      if (previousName !== null && previousName !== name && index === previousColorIndex) {
+        index = (index + 1) % BAR_COLORS.length;
+      }
+      previousName = name;
+      previousColorIndex = index;
+      return BAR_COLORS[index];
+    };
     const bar = (x, w, text, tip) => {
-      const c = pick();
       const ms = (w * DUR_MS / 100).toFixed(2);
       const name = tip || text || 'kernel';
+      const c = pick(name);
       return '<span class="msi-bar' + (text ? '' : ' msi-bar--tick') + '" style="left:' + x.toFixed(2) +
         '%;width:' + w.toFixed(2) + '%;background:' + c.bg + ';color:' + c.fg + '"' +
         ' data-op="' + esc(name) + '" data-dur="' + ms + '"' +
@@ -7176,6 +7639,67 @@ body.chat-shell-page {
     return html;
   }
 
+  // 同类任务保留大类色系，但提供多个色阶。按泳道时间顺序分配时，若相邻任务不同名，
+  // 会避开前一任务的实际颜色；同名任务则可以延续同色，便于识别重复调用。
+  const TRACE_KIND_PALETTES = {
+    python: [
+      { bg: '#d9cdf5', fg: '#563a86' }, { bg: '#ead2f5', fg: '#704080' }, { bg: '#fbc3e0', fg: '#8a3d66' },
+    ],
+    cann: [
+      { bg: '#c5d9fb', fg: '#2c5296' }, { bg: '#b9dff5', fg: '#285f83' }, { bg: '#d2d4f7', fg: '#4c4f91' },
+    ],
+    device: [
+      { bg: '#c0e6c7', fg: '#2c6a3d' }, { bg: '#b9f0e3', fg: '#226d5c' }, { bg: '#d5e9b9', fg: '#526d26' },
+    ],
+    communication: [
+      { bg: '#f7d8b5', fg: '#87521e' }, { bg: '#f6c7a8', fg: '#88442a' }, { bg: '#f8e1ad', fg: '#785817' },
+    ],
+    overlap: [
+      { bg: '#b9f0e3', fg: '#226d5c' }, { bg: '#c4e7ef', fg: '#286879' }, { bg: '#c8ead1', fg: '#306943' },
+    ],
+    // Stream 0 虽是 Idle 语义，但它是已展开的真实泳道，不能再使用折叠概览灰。
+    idle: [
+      { bg: '#cbdcf8', fg: '#345d9a' }, { bg: '#d9cdf5', fg: '#563a86' }, { bg: '#c4e7ef', fg: '#286879' },
+    ],
+  };
+  const TRACE_TASK_COLOR_BY_ID = new Map();
+  function traceTaskColor(task) {
+    if (!TRACE_TASK_COLOR_BY_ID.has(task.id)) {
+      const laneTasks = REAL_TRACE_TASKS.filter((item) => item.laneId === task.laneId)
+        .sort((a, b) => a.start - b.start || a.id.localeCompare(b.id));
+      let previous = null;
+      laneTasks.forEach((item) => {
+        const palette = TRACE_KIND_PALETTES[item.kind] || TRACE_KIND_PALETTES.device;
+        let index = hashSeed(item.name + '|' + item.kind) % palette.length;
+        if (previous && previous.name !== item.name && palette[index].bg === previous.color.bg) {
+          index = (index + 1) % palette.length;
+        }
+        const color = palette[index];
+        TRACE_TASK_COLOR_BY_ID.set(item.id, color);
+        previous = { name: item.name, color };
+      });
+    }
+    return TRACE_TASK_COLOR_BY_ID.get(task.id) || TRACE_KIND_PALETTES.device[0];
+  }
+  function realTraceTrack(lane) {
+    return REAL_TRACE_TASKS.filter((task) => task.laneId === lane.id)
+      .sort((a, b) => a.start - b.start || a.id.localeCompare(b.id)).map((task) => {
+      const c = traceTaskColor(task);
+      const left = task.start / TRACE_WINDOW_MS * 100;
+      const trueWidth = task.dur / TRACE_WINDOW_MS * 100;
+      const width = Math.max(.62, trueWidth); // 微秒级 launch 也要保留可点击宽度
+      const meta = task.kind === 'device'
+        ? ' · Task ' + task.taskId + ' · connection_id ' + task.connectionId + ' · ' + task.taskType
+        : (task.connectionId ? ' · connection_id ' + task.connectionId : '');
+      return '<span class="msi-bar" style="left:' + left.toFixed(3) + '%;width:' + width.toFixed(3) +
+        '%;background:' + c.bg + ';color:' + c.fg + '" data-task-id="' + task.id +
+        '" data-op="' + esc(task.name) + '" data-dur="' + task.dur.toFixed(5) +
+        '" data-label="' + esc(task.name) + '" title="' + esc(task.name + ' · ' +
+        task.start.toFixed(5) + 'ms · ' + task.dur.toFixed(5) + 'ms' + meta) + '">' +
+        esc(task.name) + '</span>';
+    }).join('');
+  }
+
   // 带宽曲线:随机游走 + 几个峰,画成填色面积图。
   function areaTrack(rnd, area) {
     const W = 1000, H = AREA_H, N = 150;
@@ -7202,8 +7726,17 @@ body.chat-shell-page {
   function trackHtml(lane, rnd) {
     // 展开的分组行不画东西:那条密集带只是折叠态下用来概括子行的,展开后子行各画各的,
     // 再留着就成了一条没有含义的占位灰带。
+    if (isRealTraceSelection() && REAL_TRACE_TASKS.some((task) => task.laneId === lane.id)) {
+      return realTraceTrack(lane);
+    }
     if (lane.group && lane.open) return '';
-    if (lane.track === 'dense') return denseTrack(rnd, lane.density || 0.5);
+    if (isRealTraceSelection()) {
+      // 指标泳道保留曲线；折叠分组保留概览带，避免内容区出现大片空白。
+      if (lane.track === 'area') return areaTrack(rnd, lane.area);
+      if (lane.track === 'dense') return denseTrack(rnd, lane.density || 0.5, !lane.group && !lane.staticCollapsed);
+      return '';
+    }
+    if (lane.track === 'dense') return denseTrack(rnd, lane.density || 0.5, !lane.group && !lane.staticCollapsed);
     if (lane.track === 'bars') return barsTrack(rnd);
     if (lane.track === 'area') return areaTrack(rnd, lane.area);
     return '';
@@ -7218,7 +7751,11 @@ body.chat-shell-page {
         '" aria-expanded="' + (lane.open ? 'true' : 'false') + '" aria-label="展开或收起">' +
           '<svg class="msi-lane-caret" viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6"></path></svg>' +
         '</button>'
-      : '<span class="msi-lane-caret-slot" aria-hidden="true"></span>';
+      : (lane.staticCollapsed
+        ? '<span class="msi-lane-caret-static" aria-label="已折叠的线程概览" title="已折叠的线程概览">' +
+            '<svg class="msi-lane-caret" viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6"></path></svg>' +
+          '</span>'
+        : '<span class="msi-lane-caret-slot" aria-hidden="true"></span>');
     return (
       '<div class="msi-lane-row' + (lane.id === selectedLaneId ? ' is-selected' : '') +
         '" data-lane="' + lane.id + '" style="height:' + h + 'px">' +
@@ -7281,20 +7818,305 @@ body.chat-shell-page {
     });
   }
 
+  let selectedTraceTaskId = null;
+
+  function traceComponent(taskId) {
+    const ids = new Set(taskId ? [taskId] : []);
+    const edges = [];
+    let grew = true;
+    while (grew) {
+      grew = false;
+      REAL_TRACE_EDGES.forEach((edge) => {
+        if (!ids.has(edge.source) && !ids.has(edge.target)) return;
+        if (!edges.includes(edge)) edges.push(edge);
+        if (!ids.has(edge.source)) { ids.add(edge.source); grew = true; }
+        if (!ids.has(edge.target)) { ids.add(edge.target); grew = true; }
+      });
+    }
+    return { ids, edges };
+  }
+
+  function orderedTraceComponent(taskId) {
+    const component = traceComponent(taskId);
+    const indegree = new Map([...component.ids].map((id) => [id, 0]));
+    component.edges.forEach((edge) => indegree.set(edge.target, (indegree.get(edge.target) || 0) + 1));
+    const byTime = (a, b) => (REAL_TRACE_TASK_BY_ID[a]?.start || 0) - (REAL_TRACE_TASK_BY_ID[b]?.start || 0) || a.localeCompare(b);
+    const ready = [...component.ids].filter((id) => !indegree.get(id)).sort(byTime);
+    const ordered = [];
+    while (ready.length) {
+      const id = ready.shift();
+      ordered.push(id);
+      component.edges.filter((edge) => edge.source === id).forEach((edge) => {
+        indegree.set(edge.target, indegree.get(edge.target) - 1);
+        if (!indegree.get(edge.target)) { ready.push(edge.target); ready.sort(byTime); }
+      });
+    }
+    [...component.ids].sort(byTime).forEach((id) => { if (!ordered.includes(id)) ordered.push(id); });
+    return { ...component, ordered };
+  }
+
+  function taskLaneLabel(task) {
+    const path = lanePath(task.laneId);
+    if (!path.length) return task.laneId;
+    if (task.kind === 'python') return 'PyTorch (CPU)';
+    if (task.kind === 'cann') return 'PyTorch (CPU) / runtime / CANN';
+    if (task.kind === 'device') return 'Ascend Hardware / ' + path[path.length - 1].label;
+    if (task.kind === 'communication') return 'Communication / ' + path[path.length - 1].label.replace(' Group / ', ' / ');
+    if (task.kind === 'overlap') return 'Overlap Analysis / ' + path[path.length - 1].label;
+    return path.map((lane) => lane.label).join(' / ');
+  }
+
+  function taskKindLabel(task) {
+    return ({ python: 'CPU 接口', cann: 'CANN 下发', device: 'NPU 任务', communication: '通信任务', overlap: '分析区间', idle: '空闲区间' })[task.kind] || '任务';
+  }
+
+  function taskExplanation(task) {
+    if (task.kind === 'python') return 'CPU 框架接口，发起算子或通信调用';
+    if (task.kind === 'cann') return 'CANN Runtime 接收并下发设备任务';
+    if (task.kind === 'device') return 'NPU Stream 上执行的硬件任务';
+    if (task.kind === 'communication') return '通信平面执行对应 HCCL 任务';
+    if (task.kind === 'overlap') return '计算与通信重叠分析区间';
+    return '该时间段内的泳道任务';
+  }
+
+  function chainArrowHtml() {
+    return '<span class="msi-chain-arrow" aria-hidden="true"><svg viewBox="0 0 38 28"><path d="M2 20 C12 20 11 8 24 8 H34"></path><path d="m30 4 4 4-4 4"></path></svg></span>';
+  }
+
+  function activateFootTab(tabName) {
+    const panel = document.getElementById('msiSelectionPanel');
+    const detail = document.getElementById('msiSelectionDetail');
+    if (!panel || !detail) return;
+    panel.querySelectorAll('.msi-foot-tab').forEach((tab) => {
+      const active = tab.dataset.footTab === tabName;
+      tab.classList.toggle('is-active', active);
+      tab.setAttribute('aria-selected', active ? 'true' : 'false');
+    });
+    detail.hidden = panel.classList.contains('is-collapsed') || tabName !== 'detail' || !selectedTraceTaskId;
+  }
+
+  function setSelectionPanelCollapsed(collapsed) {
+    const panel = document.getElementById('msiSelectionPanel');
+    const detail = document.getElementById('msiSelectionDetail');
+    const toggle = document.getElementById('msiDetailClose');
+    if (!panel || !detail || !toggle) return;
+    panel.classList.toggle('is-collapsed', collapsed);
+    panel.setAttribute('aria-expanded', collapsed ? 'false' : 'true');
+    toggle.setAttribute('aria-expanded', collapsed ? 'false' : 'true');
+    toggle.setAttribute('aria-label', collapsed ? '展开详情栏' : '收起详情栏');
+    toggle.title = collapsed ? '展开详情栏' : '收起详情栏';
+    if (collapsed) {
+      panel.querySelectorAll('.msi-foot-tab').forEach((tab) => tab.setAttribute('aria-selected', 'false'));
+      detail.hidden = true;
+    } else {
+      const activeTab = panel.querySelector('.msi-foot-tab.is-active');
+      activateFootTab(activeTab?.dataset.footTab || 'detail');
+    }
+  }
+
+  function renderSelectionDetail() {
+    const detail = document.getElementById('msiSelectionDetail');
+    const basics = document.getElementById('msiTaskBasics');
+    const chain = document.getElementById('msiCallChain');
+    const task = REAL_TRACE_TASK_BY_ID[selectedTraceTaskId];
+    if (!detail || !basics || !chain || !task) {
+      if (detail) detail.hidden = true;
+      return;
+    }
+    activateFootTab('detail');
+    const end = task.start + task.dur;
+    const fields = [
+      ['名称', task.name],
+      ['泳道', taskLaneLabel(task)],
+      ['类型', task.taskType || taskKindLabel(task)],
+      ['开始时间', task.start.toFixed(5) + ' ms'],
+      ['结束时间', end.toFixed(5) + ' ms'],
+      ['持续时间', task.dur.toFixed(5) + ' ms'],
+      ['Task ID', task.taskId ?? '—'],
+      ['connection_id', task.connectionId ?? '推断关系'],
+    ];
+    basics.innerHTML = fields.map(([key, value]) => '<dt>' + esc(key) + '</dt><dd>' + esc(value) + '</dd>').join('');
+
+    const component = orderedTraceComponent(task.id);
+    const nodeHtml = (id, arrowRight) => {
+      const node = REAL_TRACE_TASK_BY_ID[id];
+      if (!node) return '';
+      const arrow = arrowRight ? chainArrowHtml() : '';
+      const color = traceTaskColor(node);
+      return '<div class="msi-chain-step">' +
+        '<div class="msi-chain-node">' +
+          '<span class="msi-chain-path" title="' + esc(taskLaneLabel(node)) + '">' + esc(taskLaneLabel(node)) + '</span>' +
+          '<button class="msi-chain-taskbar' + (id === task.id ? ' is-current' : '') + '" type="button" data-locate-task="' + esc(id) + '"' +
+            ' style="background:' + color.bg + ';color:' + color.fg + '" title="定位到 ' + esc(node.name) + '">' + esc(node.name) + '</button>' +
+          '<span class="msi-chain-explain" title="' + esc(taskExplanation(node)) + '">' + esc(taskExplanation(node)) + '</span>' +
+        '</div>' + arrow + '</div>';
+    };
+    const nodeWidth = 180;
+    const arrowWidth = 38;
+    const availableWidth = chain.clientWidth || chain.parentElement?.clientWidth || nodeWidth;
+    const fitCount = Math.max(1, Math.min(
+      component.ordered.length,
+      Math.floor((availableWidth + arrowWidth) / (nodeWidth + arrowWidth))
+    ));
+    chain.dataset.fitCount = String(fitCount);
+    const head = component.ordered.slice(0, fitCount);
+    const tail = component.ordered.slice(fitCount);
+    chain.style.setProperty('--msi-chain-turn-left', ((fitCount - 1) * (nodeWidth + arrowWidth)) + 'px');
+    chain.innerHTML = '<div class="msi-chain-row">' +
+      head.map((id, index) => nodeHtml(id, index < head.length - 1)).join('') +
+      '</div>' +
+      (tail.length ? '<div class="msi-chain-tail">' + chainArrowHtml() +
+        tail.map((id, index) => nodeHtml(id, false) +
+          (index < tail.length - 1 ? chainArrowHtml() : '')).join('') +
+        '</div>' : '');
+  }
+
+  // 详情和泳道必须使用完全相同的端点集合。若关系链中的某条泳道被用户折叠，
+  // 选择任务时先展开该连通分量涉及的全部父级，再绘线和生成详情。
+  function revealTraceComponent(taskId) {
+    const body = document.getElementById('msiSwimBody');
+    const component = traceComponent(taskId);
+    const missing = [...component.ids].some((id) => !body?.querySelector('.msi-bar[data-task-id="' + id + '"]'));
+    if (missing) {
+      component.ids.forEach((id) => {
+        const task = REAL_TRACE_TASK_BY_ID[id];
+        if (task) openLanePath(task.laneId);
+      });
+      renderSwimlanes();
+    } else {
+      drawTraceTaskLinks();
+    }
+    renderSelectionDetail();
+  }
+
+  function initSelectionPanel() {
+    const panel = document.getElementById('msiSelectionPanel');
+    if (!panel) return;
+    const chain = document.getElementById('msiCallChain');
+    if (chain && typeof ResizeObserver === 'function') {
+      let resizeFrame = 0;
+      new ResizeObserver(() => {
+        cancelAnimationFrame(resizeFrame);
+        resizeFrame = requestAnimationFrame(() => {
+          if (!selectedTraceTaskId || chain.closest('.msi-selection-detail')?.hidden) return;
+          const count = orderedTraceComponent(selectedTraceTaskId).ordered.length;
+          const nextFit = Math.max(1, Math.min(count, Math.floor((chain.clientWidth + 38) / 218)));
+          if (String(nextFit) !== chain.dataset.fitCount) renderSelectionDetail();
+        });
+      }).observe(chain);
+    }
+    panel.addEventListener('click', (event) => {
+      const close = event.target.closest('#msiDetailClose');
+      if (close) {
+        setSelectionPanelCollapsed(!panel.classList.contains('is-collapsed'));
+        return;
+      }
+      const node = event.target.closest('[data-locate-task]');
+      if (node) { locateTraceTask(node.dataset.locateTask); return; }
+      const tab = event.target.closest('.msi-foot-tab');
+      if (tab) {
+        setSelectionPanelCollapsed(false);
+        activateFootTab(tab.dataset.footTab);
+      }
+    });
+  }
+
+  function traceLinkLayerHtml() {
+    return '<svg class="msi-link-layer" aria-hidden="true">' +
+      '<defs>' +
+        '<marker id="msiArrowDispatch" markerWidth="7" markerHeight="7" refX="6" refY="3.5" orient="auto"><path d="M0,0 L7,3.5 L0,7 z" fill="#5b8fd4"></path></marker>' +
+        '<marker id="msiArrowOperator" markerWidth="7" markerHeight="7" refX="6" refY="3.5" orient="auto"><path d="M0,0 L7,3.5 L0,7 z" fill="#8b73cf"></path></marker>' +
+        '<marker id="msiArrowCommunication" markerWidth="7" markerHeight="7" refX="6" refY="3.5" orient="auto"><path d="M0,0 L7,3.5 L0,7 z" fill="#d28a2e"></path></marker>' +
+      '</defs><g class="msi-link-paths"></g></svg>';
+  }
+
+  function clearTraceTaskFocus() {
+    selectedTraceTaskId = null;
+    renderSelectionDetail();
+    const body = document.getElementById('msiSwimBody');
+    if (!body) return;
+    body.classList.remove('has-task-focus');
+    body.querySelectorAll('.msi-bar.is-picked,.msi-bar.is-related').forEach((el) => {
+      el.classList.remove('is-picked', 'is-related');
+    });
+    const paths = body.querySelector('.msi-link-paths');
+    if (paths) paths.innerHTML = '';
+  }
+
+  function drawTraceTaskLinks() {
+    const body = document.getElementById('msiSwimBody');
+    const layer = body?.querySelector('.msi-link-layer');
+    const mount = layer?.querySelector('.msi-link-paths');
+    if (!body || !layer || !mount || !selectedTraceTaskId) return;
+
+    const component = traceComponent(selectedTraceTaskId);
+    const related = component.ids;
+    const edges = component.edges;
+    body.querySelectorAll('.msi-bar[data-task-id]').forEach((el) => {
+      el.classList.toggle('is-related', related.has(el.dataset.taskId));
+      el.classList.toggle('is-picked', el.dataset.taskId === selectedTraceTaskId);
+    });
+    body.classList.add('has-task-focus');
+
+    const width = Math.max(body.clientWidth, body.scrollWidth);
+    const height = Math.max(body.clientHeight, body.scrollHeight);
+    layer.setAttribute('width', width);
+    layer.setAttribute('height', height);
+    layer.setAttribute('viewBox', '0 0 ' + width + ' ' + height);
+    layer.style.width = width + 'px';
+    layer.style.height = height + 'px';
+    const bodyRect = body.getBoundingClientRect();
+    const point = (id, outgoing) => {
+      const el = body.querySelector('.msi-bar[data-task-id="' + id + '"]');
+      if (!el) return null;
+      const r = el.getBoundingClientRect();
+      return {
+        x: (outgoing ? r.right : r.left) - bodyRect.left + body.scrollLeft,
+        y: (r.top + r.bottom) / 2 - bodyRect.top + body.scrollTop,
+      };
+    };
+    mount.innerHTML = edges.map((edge) => {
+      const a = point(edge.source, true), b = point(edge.target, false);
+      if (!a || !b) return '';
+      const bend = Math.max(20, Math.abs(b.x - a.x) * .46);
+      const direction = b.x >= a.x ? 1 : -1;
+      const d = 'M' + a.x.toFixed(1) + ',' + a.y.toFixed(1) + ' C' +
+        (a.x + bend * direction).toFixed(1) + ',' + a.y.toFixed(1) + ' ' +
+        (b.x - bend * direction).toFixed(1) + ',' + b.y.toFixed(1) + ' ' +
+        b.x.toFixed(1) + ',' + b.y.toFixed(1);
+      const cls = edge.type === 'operator' ? ' msi-link-path--operator'
+        : (edge.type === 'communication' ? ' msi-link-path--communication' : '');
+      const marker = edge.type === 'operator' ? 'msiArrowOperator'
+        : (edge.type === 'communication' ? 'msiArrowCommunication' : 'msiArrowDispatch');
+      return '<path class="msi-link-path' + cls + '" d="' + d + '" marker-end="url(#' + marker + ')"></path>' +
+        '<circle class="msi-link-dot" cx="' + a.x.toFixed(1) + '" cy="' + a.y.toFixed(1) + '" r="2.4"></circle>';
+    }).join('');
+  }
+
+  function selectTraceTask(taskId) {
+    if (!REAL_TRACE_TASK_BY_ID[taskId]) return;
+    selectedTraceTaskId = selectedTraceTaskId === taskId ? null : taskId;
+    if (!selectedTraceTaskId) clearTraceTaskFocus();
+    else revealTraceComponent(taskId);
+  }
+
   function renderSwimlanes() {
     const body = document.getElementById('msiSwimBody');
     if (!body) return;
     // 种子取当前选中的文件名:换一个文件,泳道整体换一副样子,但同一个文件永远一致。
     const rnd = mulberry32(hashSeed(selected.folder.ref + '/' + selected.file));
     const out = [];
-    LANES.forEach((lane) => {
-      out.push(laneRow(lane, 0, rnd));
+    const appendLane = (lane, depth) => {
+      out.push(laneRow(lane, depth, rnd));
       if (lane.group && lane.open && lane.children) {
-        lane.children.forEach((child) => out.push(laneRow(child, 1, rnd)));
+        lane.children.forEach((child) => appendLane(child, depth + 1));
       }
-    });
-    body.innerHTML = out.join('');
+    };
+    LANES.forEach((lane) => appendLane(lane, 0));
+    body.innerHTML = out.join('') + (isRealTraceSelection() ? traceLinkLayerHtml() : '');
     fitBarLabels(body);
+    if (!isRealTraceSelection()) selectedTraceTaskId = null;
+    if (selectedTraceTaskId) requestAnimationFrame(drawTraceTaskLinks);
   }
 
   /* ══ 色块的左键选中 + 右键菜单 ═══════════════════════════════════
@@ -7401,6 +8223,10 @@ body.chat-shell-page {
     body.addEventListener('click', (e) => {
       const bar = e.target.closest('.msi-bar');
       if (!bar) return;
+      if (bar.dataset.taskId) {
+        selectTraceTask(bar.dataset.taskId);
+        return;
+      }
       const on = bar.classList.contains('is-picked');
       body.querySelectorAll('.msi-bar.is-picked').forEach((el) => el.classList.remove('is-picked'));
       if (!on) bar.classList.add('is-picked');
@@ -7411,14 +8237,19 @@ body.chat-shell-page {
       const bar = e.target.closest('.msi-bar');
       if (!bar) return;
       e.preventDefault();
-      body.querySelectorAll('.msi-bar.is-picked').forEach((el) => el.classList.remove('is-picked'));
-      bar.classList.add('is-picked');
+      if (bar.dataset.taskId) {
+        selectedTraceTaskId = bar.dataset.taskId;
+        revealTraceComponent(bar.dataset.taskId);
+      } else {
+        body.querySelectorAll('.msi-bar.is-picked').forEach((el) => el.classList.remove('is-picked'));
+        bar.classList.add('is-picked');
+      }
       const row = bar.closest('.msi-lane-row');
       openMenu(e.clientX, e.clientY, {
         op: bar.dataset.op || '未命名事件',
         dur: bar.dataset.dur || '0',
         lane: row ? (row.querySelector('.msi-lane-text')?.textContent || '') : '',
-      }, bar);
+      }, bar.dataset.taskId ? (body.querySelector('.msi-bar[data-task-id="' + bar.dataset.taskId + '"]') || bar) : bar);
     });
 
     document.addEventListener('click', (e) => {
@@ -7458,12 +8289,13 @@ body.chat-shell-page {
     body.addEventListener('click', (e) => {
       const tog = e.target.closest('.msi-lane-caret-btn');
       if (tog) {
-        const lane = LANES.find((l) => l.id === tog.dataset.toggle);
+        const lane = findLane(tog.dataset.toggle);
         if (lane) { lane.open = !lane.open; renderSwimlanes(); }
         return;
       }
       const row = e.target.closest('.msi-lane-row');
       if (!row || !row.dataset.lane) return;
+      if (!e.target.closest('.msi-bar')) clearTraceTaskFocus();
       selectedLaneId = row.dataset.lane;
       // 只切 class 不重画:同一个种子重画结果完全一样,白白再生成一遍
       body.querySelectorAll('.msi-lane-row.is-selected').forEach((el) => el.classList.remove('is-selected'));
@@ -7472,7 +8304,10 @@ body.chat-shell-page {
     // 条宽写的是百分比,容器一变宽窄,能塞下的字数就变了 —— 面板展开/收起、窗口缩放
     // 都要重算一遍省略位置。只改 textContent 不改布局,不会把 RO 自己再触发一轮。
     if (typeof ResizeObserver === 'function') {
-      new ResizeObserver(() => fitBarLabels(body)).observe(body);
+      new ResizeObserver(() => {
+        fitBarLabels(body);
+        if (selectedTraceTaskId) drawTraceTaskLinks();
+      }).observe(body);
     }
     renderSwimlanes();
   }
@@ -7483,11 +8318,10 @@ body.chat-shell-page {
   function locateLane(laneId) {
     const body = document.getElementById('msiSwimBody');
     if (!body || !laneId) return false;
-    const isTop = LANES.some((l) => l.id === laneId);
-    const parent = isTop ? null : LANES.find((l) => l.children && l.children.some((c) => c.id === laneId));
-    if (!isTop && !parent) return false;
-    // 目标在折叠的分组里 → 先展开,否则那一行压根没渲染出来
-    if (parent && !parent.open) { parent.open = true; renderSwimlanes(); }
+    if (!findLane(laneId)) return false;
+    // 目标可能嵌套四层；沿祖先链全部展开后再定位。
+    openLanePath(laneId);
+    renderSwimlanes();
     const row = body.querySelector('.msi-lane-row[data-lane="' + laneId + '"]');
     if (!row) return false;
 
@@ -7507,6 +8341,33 @@ body.chat-shell-page {
     row.classList.add('is-locate-flash');
     return true;
   }
+  function locateTraceTask(taskId) {
+    const task = REAL_TRACE_TASK_BY_ID[taskId];
+    const body = document.getElementById('msiSwimBody');
+    if (!task || !body) return false;
+    selectedTraceTaskId = taskId;
+    selectedLaneId = task.laneId;
+    traceComponent(taskId).ids.forEach((id) => {
+      const relatedTask = REAL_TRACE_TASK_BY_ID[id];
+      if (relatedTask) openLanePath(relatedTask.laneId);
+    });
+    renderSwimlanes();
+    renderSelectionDetail();
+    requestAnimationFrame(() => {
+      const bar = body.querySelector('.msi-bar[data-task-id="' + taskId + '"]');
+      const row = bar?.closest('.msi-lane-row');
+      if (!bar || !row) return;
+      const bodyRect = body.getBoundingClientRect();
+      const rowRect = row.getBoundingClientRect();
+      const y = body.scrollTop + rowRect.top - bodyRect.top - (body.clientHeight - rowRect.height) / 2;
+      body.scrollTo({ top: Math.max(0, y), behavior: 'smooth' });
+      bar.classList.remove('is-locate-flash');
+      void bar.offsetWidth;
+      bar.classList.add('is-locate-flash');
+      drawTraceTaskLinks();
+    });
+    return true;
+  }
   // 对话框在另一个 IIFE 里,和 sendToChat 一样只能借 window 搭桥
   window.WZH_LOCATE_LANE = locateLane;
 
@@ -7514,11 +8375,13 @@ body.chat-shell-page {
   function renderRuler() {
     const host = document.getElementById('msiRuler');
     if (!host) return;
+    const spanMs = isRealTraceSelection() ? TRACE_WINDOW_MS : DUR_MS;
     const ticks = [];
     for (let i = 0; i <= 10; i++) {
       const endCls = i === 10 ? ' msi-ruler-tick--end' : '';
+      const tickMs = i * spanMs / 10;
       ticks.push('<span class="msi-ruler-tick' + endCls + '" style="left:' + (i * 10) + '%">' +
-                 (i * DUR_MS / 10) + 'ms</span>');
+                 (Number.isInteger(tickMs) ? tickMs : tickMs.toFixed(1)) + 'ms</span>');
     }
     host.innerHTML = ticks.join('');
   }
@@ -7531,20 +8394,25 @@ body.chat-shell-page {
 
   function applyZoom() {
     DUR_MS = ZOOM_STEPS[zoomIdx];
+    syncTimelineControls();
+  }
+
+  function syncTimelineControls() {
     const val = document.getElementById('msiZoomVal');
-    if (val) val.textContent = fmtSpan(DUR_MS);
     const out = document.getElementById('msiZoomOut');
     const inc = document.getElementById('msiZoomIn');
-    if (out) out.disabled = zoomIdx === 0;
-    if (inc) inc.disabled = zoomIdx === ZOOM_STEPS.length - 1;
+    const real = isRealTraceSelection();
+    if (val) val.textContent = real ? TRACE_WINDOW_MS.toFixed(1) + 'ms · 真实窗口' : fmtSpan(DUR_MS);
+    if (out) out.disabled = real || zoomIdx === 0;
+    if (inc) inc.disabled = real || zoomIdx === ZOOM_STEPS.length - 1;
     renderRuler();
   }
 
   function initZoom() {
     const out = document.getElementById('msiZoomOut');
     const inc = document.getElementById('msiZoomIn');
-    if (out) out.addEventListener('click', () => { if (zoomIdx > 0) { zoomIdx--; applyZoom(); } });
-    if (inc) inc.addEventListener('click', () => { if (zoomIdx < ZOOM_STEPS.length - 1) { zoomIdx++; applyZoom(); } });
+    if (out) out.addEventListener('click', () => { if (!isRealTraceSelection() && zoomIdx > 0) { zoomIdx--; applyZoom(); } });
+    if (inc) inc.addEventListener('click', () => { if (!isRealTraceSelection() && zoomIdx < ZOOM_STEPS.length - 1) { zoomIdx++; applyZoom(); } });
     applyZoom();
   }
 
@@ -7554,6 +8422,7 @@ body.chat-shell-page {
     initZoom();
     initSwimlanes();
     initBarMenu();
+    initSelectionPanel();
     applySelection();
   }
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot);

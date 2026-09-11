@@ -62,6 +62,12 @@
      本身就不必再留那么多：12 −（右内衬约 0.5em ≈ 5 屏幕像素）≈ 左边 6 像素。 */
   const LANE_SLACK = 12;
   const LANE_EDGE = 6;           // 道与块之间那点固定的世界间隙
+  /* TP 分组槽始终按屏幕像素留宽：rank 文本会随缩放反向补偿字号，这条槽也必须
+     同步反向补偿，否则缩小时括号会挤进 rank 文本、放大时又会留下大片空白。 */
+  const TP_GUTTER_PX = 34;
+  /* 槽的左侧刻意留白，让 TP 括号靠近它所修饰的 rank，而不是贴着前一块 PP Stage。
+     与槽宽一样按屏幕像素折算，任何缩放下亲疏关系都不漂移。 */
+  const TP_GUTTER_LEAD_PX = 12;
   /* 纵向的两级缝，都是**分区感**用的 —— 缩小之后格子糊成一片，能读出边界的
      就只剩这两条缝：
        DP_GAP   EDP 副本组之间（36 = 原先 12 的 3 倍）
@@ -1268,7 +1274,20 @@
     scheduleRender();
   });
 
-  tools.append(paintBtn, unitTabs, zoomOut, readout, zoomIn, fitBtn);
+  /* TP 是 rank 行之间的关系，开关因此只在 Rank 视角有实际画面；切到整机视角时
+     暂时禁用但保留偏好，回到 Rank 视角会恢复。按钮沿用设计系统的 btn.is-selected。 */
+  const tpBtn = el("button", "btn btn-sm crop-tp-toggle is-selected", "TP 分组");
+  tpBtn.type = "button";
+  tpBtn.setAttribute("aria-pressed", "true");
+  tpBtn.addEventListener("click", () => {
+    if (tpBtn.disabled) return;
+    tpGroupsVisible = !tpGroupsVisible;
+    tpBtn.classList.toggle("is-selected", tpGroupsVisible);
+    tpBtn.setAttribute("aria-pressed", String(tpGroupsVisible));
+    scheduleRender();
+  });
+
+  tools.append(tpBtn, paintBtn, unitTabs, zoomOut, readout, zoomIn, fitBtn);
   stage.append(world, rulerTop, rulerLeft, rulerCorner, tools);
 
   /* ── 右栏：选中详情 ── */
@@ -1706,6 +1725,7 @@
      时最先要问的。卡多了之后它顺带还压掉 8 倍的行数。 */
   let unitMode = "auto";
   let paintExperts = true;   // 「专家着色」开关，见右下角那枚按钮
+  let tpGroupsVisible = true;
   let lastUnit = "rank";     // auto 档的迟滞值，见 currentUnit()
 
   /* 两枚实测探针：列宽要按**真正会画出来的那串标签**定，不能拍脑袋写死。
@@ -2046,7 +2066,9 @@
     if (!m.show) return GAP_MIN_PX / Math.max(k, 1e-6);
     // 两行那一档要按更长的那一行（rank 区间）留，卡粒度只按 "rank N" 留
     const textW = m.span > 1 ? layout.labelTextWNode : layout.labelTextW;
-    return (textW + LANE_SLACK) * (m.font / layout.probeFontPx) + LANE_EDGE;
+    const tpGutter = tpGroupsVisible && topology && topology.counts.tp > 1 && m.span === 1
+      ? TP_GUTTER_PX / Math.max(k, 1e-6) : 0;
+    return (textW + LANE_SLACK) * (m.font / layout.probeFontPx) + LANE_EDGE + tpGutter;
   }
 
   // 把几何对齐到当前缩放，返回这一帧的道宽（世界单位）
@@ -2077,6 +2099,15 @@
         btn.title = `一行 = 一台整机（${rpn} 张卡，机内走 HCCS，出了这个边界才走网络）`;
       }
     });
+
+    const tp = topology ? Math.max(1, topology.counts.tp || 1) : 1;
+    const rankView = unit === "rank";
+    tpBtn.disabled = tp <= 1 || !rankView;
+    tpBtn.classList.toggle("is-selected", tpGroupsVisible);
+    tpBtn.setAttribute("aria-pressed", String(tpGroupsVisible));
+    if (tp <= 1) tpBtn.title = "当前 TP=1，没有 TP 分组";
+    else if (!rankView) tpBtn.title = `TP×${tp} 分组只在 Rank 视角显示；切回 Rank 视角后恢复`;
+    else tpBtn.title = `${tpGroupsVisible ? "隐藏" : "显示"}每个 PP Stage 内的 TP×${tp} rank 分组`;
   }
 
   /* ── 可视区（画布减去两条量尺占的边）与平移边界 ───────────────────────── */
@@ -2107,6 +2138,10 @@
 
   function applyTransform() {
     clampView();
+    /* 热力选中格住在随画布缩放的 world 里，运行观测主角框住在屏幕坐标 SVG 里。
+       用缩放倒数抵消 transform，二者在任何缩放级别都保持同样的 2px / 5px 线宽。 */
+    world.style.setProperty("--crop-cell-focus-line", `${2 / view.k}px`);
+    world.style.setProperty("--crop-cell-focus-halo", `${5 / view.k}px`);
     world.style.transform = `translate(${view.x}px, ${view.y}px) scale(${view.k})`;
     readout.textContent = `${Math.round(view.k * 100)}%`;
   }
@@ -2579,6 +2614,81 @@
     return wrap;
   }
 
+  /* 为可视行生成 TP 通信组。普通 / 正交口径下同组 rank 连续，画一只括号；
+     MindFormers 把 TP 吃进 DP×MP 域后，叠加 CP 时同组成员可能带步长，此时改画
+     每行的 Tn 成员标记，不能用一个连续括号把中间的非成员也圈进去。 */
+  function renderTpGroups(frag, block, r0, r1, k, primary) {
+    const c = topology.counts;
+    const rowInfo = rowMetrics(k);
+    if (!tpGroupsVisible || c.tp <= 1 || currentUnit() !== "rank" || !rowInfo.show) return;
+
+    const domain = commDomain(c, "tp");
+    const stageStart = block.stage * layout.ranksPerStage;
+    const groups = new Map();
+    for (let row = r0; row <= r1; row += 1) {
+      const anchor = stageStart + row;
+      const members = commPeers(domain, anchor).filter((rank) => rank >= stageStart
+        && rank < stageStart + layout.ranksPerStage);
+      const key = members.join(",");
+      if (!groups.has(key)) groups.set(key, members);
+    }
+
+    const gutterW = TP_GUTTER_PX / Math.max(k, 1e-6);
+    const leadInset = TP_GUTTER_LEAD_PX / Math.max(k, 1e-6);
+    const lineInset = 3 / Math.max(k, 1e-6);
+    const x = block.x - layout.lane + leadInset;
+    groups.forEach((members, key) => {
+      const rows = members.map((rank) => rank - stageStart);
+      const contiguous = rows.every((row, i) => i === 0 || row === rows[i - 1] + 1);
+      const selected = Boolean(primary && primary.kind === "rank" && members.includes(primary.rank));
+      const memberText = members.map((rank) => {
+        const co = topology.coordsOfRank(rank);
+        return `rank ${rank}（T${co.tpIdx}）`;
+      }).join("、");
+      const tip = `TP×${c.tp} 分组\n${memberText}`
+        + (contiguous ? "" : "\n成员在 rank 轴上不连续，因此逐行标出 TP shard");
+
+      if (contiguous) {
+        const first = rows[0];
+        const last = rows[rows.length - 1];
+        /* 端帽穿过首尾 rank 标签的纵向中心，读起来是“这两个名字属于一组”，
+           而不是把整行高度连同留白一起框进去。 */
+        const top = layout.rowY(first) + layout.cellH / 2;
+        const bottom = layout.rowY(last) + layout.cellH / 2;
+        const bracket = el("div", "crop-node crop-tp-bracket");
+        bracket.dataset.tpKey = key;
+        bracket.dataset.tpMembers = key;
+        bracket.dataset.tip = tip;
+        if (selected) bracket.classList.add("is-selected");
+        const label = el("span", "crop-tp-bracket__label",
+          (bottom - top) * k >= 32 ? `TP×${c.tp}` : "TP");
+        bracket.appendChild(label);
+        place(bracket, x, top, gutterW - leadInset - lineInset,
+          Math.max(1, bottom - top), rowInfo.font);
+        bracket.style.setProperty("--crop-tp-line", `${1 / k}px`);
+        bracket.style.setProperty("--crop-tp-cap", `${6 / k}px`);
+        frag.appendChild(bracket);
+        return;
+      }
+
+      rows.forEach((row, i) => {
+        if (row < r0 || row > r1) return;
+        const rank = members[i];
+        const marker = el("div", "crop-node crop-tp-marker", `T${topology.coordsOfRank(rank).tpIdx}`);
+        marker.dataset.tpKey = key;
+        marker.dataset.tpMembers = key;
+        marker.dataset.rank = String(rank);
+        marker.dataset.tip = tip;
+        if (selected) marker.classList.add("is-selected");
+        place(marker, x, layout.rowY(row), gutterW - leadInset - lineInset,
+          layout.cellH, rowInfo.font);
+        marker.style.setProperty("--crop-tp-line", `${1 / k}px`);
+        marker.style.setProperty("--crop-tp-cap", `${6 / k}px`);
+        frag.appendChild(marker);
+      });
+    });
+  }
+
   /* ══ 五、画布重绘（视口裁剪 + 两档粒度）══════════════════════════════════
      世界很大（46 层 × 512 行 = 2 万多格），但一屏永远只看得见几百上千格：每帧
      按当前 transform 反解出可见的行 / 列区间，只铺那一段。再小就走两级降级 ——
@@ -2700,6 +2810,8 @@
       const plate = el("div", "crop-node crop-block");
       place(plate, block.x - 4, -4, block.w + 8, layout.worldH + 8);
       frag.appendChild(plate);
+
+      renderTpGroups(frag, block, r0, r1, k, p);
 
       // 列高亮带：缩到看不见格子时，靠它读出「哪几层被牵连」
       for (let ci = c0; ci <= c1; ci += 1) {
@@ -2927,6 +3039,7 @@
     });
 
     world.replaceChildren(frag);
+    tpHoverKey = null;
     renderGen += 1;                            // 这一批格内节点是新的，见 renderGen 那段
     lastRenderAt = global.performance.now();   // 交互期节流的 leading 那一半按它判
   }
@@ -3025,7 +3138,26 @@
     return text;
   }
 
+  let tpHoverKey = null;
+  function paintTpHover(group) {
+    world.querySelectorAll(".is-tp-peer").forEach((node) => node.classList.remove("is-tp-peer"));
+    tpHoverKey = group ? group.dataset.tpKey : null;
+    if (!group) return;
+    const members = new Set((group.dataset.tpMembers || "").split(",").map(Number));
+    world.querySelectorAll("[data-rank]").forEach((node) => {
+      if (members.has(Number(node.dataset.rank))) node.classList.add("is-tp-peer");
+    });
+    world.querySelectorAll("[data-tp-key]").forEach((node) => {
+      if (node.dataset.tpKey === tpHoverKey) node.classList.add("is-tp-peer");
+    });
+  }
+
   stage.addEventListener("pointerover", (event) => {
+    const tpGroup = event.target.closest?.(".crop-tp-bracket, .crop-tp-marker");
+    if (tpGroup) {
+      if (tpGroup.dataset.tpKey !== tpHoverKey) paintTpHover(tpGroup);
+      return;
+    }
     const cell = event.target.closest?.(".crop-cell");
     if (!cell) return;
     /* 热力读数已经常驻右栏；悬浮气泡会遮住相邻色块，也与右栏重复。 */
@@ -3035,6 +3167,14 @@
     }
     if (cell.dataset.tip) return;
     cell.dataset.tip = cellTip(cell);
+  });
+
+  stage.addEventListener("pointerout", (event) => {
+    const tpGroup = event.target.closest?.(".crop-tp-bracket, .crop-tp-marker");
+    if (!tpGroup) return;
+    const next = event.relatedTarget?.closest?.(".crop-tp-bracket, .crop-tp-marker");
+    if (next && next.dataset.tpKey === tpGroup.dataset.tpKey) return;
+    paintTpHover(null);
   });
 
   /* ══ 五、画布交互 ════════════════════════════════════════════════════════ */
@@ -3050,7 +3190,7 @@
       x0: event.clientX, y0: event.clientY,
       vx: view.x, vy: view.y,
       moved: false,
-      target: event.target.closest?.("[data-kind]") || null,
+      target: event.target.closest?.("[data-kind], .crop-tp-bracket, .crop-tp-marker") || null,
     };
     stage.setPointerCapture(event.pointerId);
     stage.classList.add("is-panning");
@@ -3075,7 +3215,8 @@
     drag = null;
     stage.classList.remove("is-panning");
     try { stage.releasePointerCapture(event.pointerId); } catch (_) { /* 已释放 */ }
-    if (wasDrag || event.button === 1) return;
+    if (wasDrag || event.button === 1
+      || target?.matches?.(".crop-tp-bracket, .crop-tp-marker")) return;
     pick(target);
   };
   stage.addEventListener("pointerup", endDrag);
@@ -3192,7 +3333,7 @@
   }, { passive: false });
 
   stage.addEventListener("dblclick", (event) => {
-    if (event.target.closest("[data-kind]")) return;
+    if (event.target.closest("[data-kind], .crop-tp-bracket, .crop-tp-marker")) return;
     fit();
   });
 
@@ -4009,10 +4150,9 @@
   }
 
   /* ── 右栏「计算节点」（= 原版的典型 Layer）的两处补写 ─────────────────────
-     1) Emb / Norm / Head 这三列的名字只有一个词。它们确实不是层，但读的人一定
-        要问「那它在哪」—— 答案是它驻留的那一段 PP 的层号范围。主脚本给不出这一句
-        （structureColumns 里它们的 layers 是空数组，名字就是 "Emb"），在这里按
-        stageAnchor 补上，Dense / MoE 两列名字里本来就带着范围，不动。
+     1) 五列统一拆成两行：第一行只写 Emb / Dense xN / MoE xN / Norm / Head，第二行
+        用小字写 PP stage 与 Layer 范围。端点列按 stageAnchor 补范围；Dense / MoE
+        则从它们真实覆盖的层反推首尾 stage，不再把层号塞在第一行括号里。
      2) 有选择时只留相关的那几列。336px 的一栏摆五列，每列都窄得读不出算子名；
         而一次选择通常只压住其中一两列 —— 无关的那几列留着只是噪声。
         显隐由 css 做（.is-related / .is-selected 是主脚本铺的），这里只补名字。
@@ -4026,30 +4166,50 @@
     const first = stages[0];
     const last = stages[stages.length - 1];
     const at = { emb: first, norm: last, head: last };
+    const layerSpan = (ffn) => {
+      const layers = topology.layers.filter((layer) => layer && layer.ffn === ffn);
+      if (!layers.length) return null;
+      const lo = layers[0].index;
+      const hi = layers[layers.length - 1].index;
+      return {
+        lo, hi,
+        stageLo: topology.stageOfLayer(lo),
+        stageHi: topology.stageOfLayer(hi),
+      };
+    };
+    const spans = { dense: layerSpan("dense"), moe: layerSpan("moe") };
     structureSec.querySelectorAll(".cro-structure__col").forEach((col) => {
-      const entry = at[col.dataset.segment];
-      if (!entry) return;
+      const segment = col.dataset.segment;
+      const endpoint = at[segment];
+      const span = spans[segment] || (endpoint ? {
+        lo: endpoint.lo, hi: endpoint.hi,
+        stageLo: endpoint.stage, stageHi: endpoint.stage,
+      } : null);
+      if (!span) return;
       const name = col.querySelector(".cro-structure__name");
-      if (!name || name.dataset.cropAnnotated === col.dataset.segment + entry.lo + "-" + entry.hi) return;
-      const base = name.dataset.cropBase || name.textContent;
+      const mark = `${segment}:${span.stageLo}-${span.stageHi}:${span.lo}-${span.hi}`;
+      if (!name || name.dataset.cropAnnotated === mark) return;
+      const raw = name.dataset.cropBase || name.textContent;
+      const base = raw.replace(/（L\d+~L\d+）$/, "");
       name.dataset.cropBase = base;
-      /* 分两行写，而不是「Emb（PP0 · L0~L11）」挤成一行：右栏那一列只有几十像素宽，
-         一行装不下就被 text-overflow 截成「Emb（PP0 …」—— 括号里那半句正是这一列
-         最要紧的信息（这段结构驻留在哪批卡上），却恰好是被截掉的那半句。
-         拆成上下两行之后括号也不必要了：第二行本来就只可能是第一行的定语。 */
-      const text = `${base} PP${entry.stage} · L${entry.lo}~L${entry.hi}`;
+      /* 五列都分两行写：第一行负责“是什么 / 有几个”，第二行负责“位于哪里”。
+         右栏每列只有几十像素宽，把范围塞在第一行括号里会优先截掉位置信息；拆开后
+         也不再需要括号，第二行天然就是第一行的定语。 */
+      const stageText = span.stageLo === span.stageHi
+        ? `PP${span.stageLo}` : `PP${span.stageLo}~PP${span.stageHi}`;
+      const atText = `${stageText} · L${span.lo}~L${span.hi}`;
+      const text = `${base} ${atText}`;
       name.replaceChildren();
       const top = doc.createElement("span");
       top.className = "cro-structure__name-main";
       top.textContent = base;
       const sub = doc.createElement("span");
       sub.className = "cro-structure__name-at";
-      sub.textContent = `PP${entry.stage} · L${entry.lo}~L${entry.hi}`;
+      sub.textContent = atText;
       name.append(top, sub);
-      name.title = `${base} 不是一层：它驻留在 PP Stage${entry.stage} 那一段的卡上，`
-        + `也就是持有 Layer ${entry.lo}–${entry.hi} 的那批 rank`;
+      name.title = `${base} · ${stageText} · Layer ${span.lo}–${span.hi}`;
       name.setAttribute("aria-label", text);
-      name.dataset.cropAnnotated = col.dataset.segment + entry.lo + "-" + entry.hi;
+      name.dataset.cropAnnotated = mark;
     });
   }
 
@@ -5949,7 +6109,13 @@
   doc.addEventListener("cro:select", (event) => {
     relation = event.detail || null;
     board.classList.toggle("is-focused", Boolean(relation));
-    if (relation && !rightPinnedClosed) {
+    const selected = relation && relation.primary;
+    const forceConfigDetail = center.dataset.mode === "config" && selected
+      && (selected.kind === "rank" || selected.kind === "layer");
+    /* 配置寻优里点具体 rank / layer 的直接结果就是右栏详情，即使用户之前手动收起过，
+       这一击也要重新打开；其他对象与其他页签仍尊重用户的收起状态。 */
+    if (forceConfigDetail) rightPinnedClosed = false;
+    if (relation && (forceConfigDetail || !rightPinnedClosed)) {
       right.classList.remove("is-collapsed");
       syncPanelButtons();
     }
