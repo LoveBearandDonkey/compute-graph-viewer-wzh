@@ -253,6 +253,8 @@
   let topology = null;
   let pinnedStage = null;   // 选中某张卡/某层后钉住的 stage；null = 回落到最紧的卡
   let pinnedRank = null;
+  let pinnedKind = null;    // rank / layer 才是具体对象；stage 仍可保留全局峰值对照
+  let pinnedLayer = null;
 
   const el = {};
 
@@ -1157,15 +1159,22 @@
        DP/EP/TP/CP 副本容量相同，取该 stage 的首卡作代表，编号与 stage 一起标出，
        用户拿这个号能直接回集群矩阵里找。 */
     const shownRank = pinnedRank != null ? pinnedRank : topology.rankOf(stage, 0, 0, 0);
-    el.scope.textContent = pinnedRank != null
-      ? `rank ${shownRank} · Stage${stage}`
-      : (pinnedStage != null
+    const layerPicked = pinnedKind === "layer" && pinnedLayer != null;
+    if (el.title) el.title.textContent = layerPicked ? "最满单卡" : "单卡容量";
+    el.root.setAttribute("aria-label", layerPicked ? "最满单卡" : "单卡容量");
+    el.scope.textContent = layerPicked
+      ? `rank ${shownRank} · Layer ${pinnedLayer} · Stage${stage}`
+      : pinnedRank != null
         ? `rank ${shownRank} · Stage${stage}`
-        : `rank ${shownRank} · Stage${stage} · 最满`);
-    el.scope.title = pinnedRank != null
-      ? `当前显示选中的 rank ${shownRank}（Stage${stage}）`
-      : `未选中具体卡时，显示全集群里装得最满的那一张：rank ${shownRank}`
-        + `（Stage${fullest.stage} 的首卡，同 stage 内其余副本容量相同）`;
+        : (pinnedStage != null
+          ? `rank ${shownRank} · Stage${stage}`
+          : `rank ${shownRank} · Stage${stage} · 最满`);
+    el.scope.title = layerPicked
+      ? `Layer ${pinnedLayer} 由 Stage${stage} 的 rank 承载；本模型中同一 stage 的各并行副本容量相同，显示并列最满的 rank ${shownRank}`
+      : pinnedRank != null
+        ? `当前显示选中的 rank ${shownRank}（Stage${stage}）`
+        : `未选中具体卡时，显示全集群里装得最满的那一张：rank ${shownRank}`
+          + `（Stage${fullest.stage} 的首卡，同 stage 内其余副本容量相同）`;
 
     /* 等距容器：段色取自 deck 语义色变量（主题切换后会变，所以每次重解） */
     el.scene.innerHTML = "";
@@ -1215,7 +1224,9 @@
        但判定横幅一出现（level !== "safe"，含"偏满" tight）就已经把「险不险」
        说清楚了，这排小柱这时只是重复信息，却仍占着一整块竖向空间 —— 让位给
        横幅，隐藏整个分区。与 showVerdict 用同一个条件，横幅在就该它不在。 */
-    const hideSpread = showVerdict;
+    /* 已经点到具体 rank / layer 时，当前柱子就是问题本身；再挂一排全局 stage 峰值
+       会把局部详情重新拉回全局口径。只有未选中具体对象时才保留这份对照。 */
+    const hideSpread = showVerdict || pinnedKind === "rank" || pinnedKind === "layer";
     el.spread.hidden = hideSpread;
     el.stages.innerHTML = "";
     if (!hideSpread) {
@@ -1255,6 +1266,8 @@
     if (typeof global.croSelect !== "function") {
       pinnedStage = stage;
       pinnedRank = null;
+      pinnedKind = "stage";
+      pinnedLayer = null;
       render();
       return;
     }
@@ -1268,6 +1281,7 @@
   function cache() {
     el.root = doc.getElementById("croCapacity");
     if (!el.root) return false;
+    el.title = el.root.querySelector(".cro-capacity__title");
     el.body = doc.getElementById("croCapacityBody");
     el.empty = doc.getElementById("croCapacityEmpty");
     el.scope = doc.getElementById("croCapacityScope");
@@ -1381,6 +1395,8 @@
       if (topology && pinnedStage != null && pinnedStage >= topology.counts.pp) {
         pinnedStage = null;
         pinnedRank = null;
+        pinnedKind = null;
+        pinnedLayer = null;
       }
       render();
     });
@@ -1392,12 +1408,23 @@
       if (p && p.kind === "rank" && Number.isFinite(p.stage)) {
         pinnedStage = p.stage;
         pinnedRank = Number.isFinite(p.rank) ? p.rank : null;
+        pinnedKind = "rank";
+        pinnedLayer = null;
       } else if (p && p.kind === "layer" && topology && Number.isFinite(p.layer)) {
         pinnedStage = topology.stageOfLayer(p.layer);
-        pinnedRank = null;
+        /* 当前容量模型在同一 stage 的 DP/EP/TP/CP 副本间等值，因此该 layer 下所有
+           rank 都并列最满；固定取承载集合里的最小 rank，给右栏一个稳定、可回查的对象。 */
+        const ranks = event.detail && event.detail.ranks
+          ? Array.from(event.detail.ranks).filter(Number.isFinite) : [];
+        pinnedRank = ranks.length
+          ? Math.min(...ranks) : topology.rankOf(pinnedStage, 0, 0, 0);
+        pinnedKind = "layer";
+        pinnedLayer = p.layer;
       } else {
         pinnedStage = null;
         pinnedRank = null;
+        pinnedKind = null;
+        pinnedLayer = null;
       }
       render();
     });

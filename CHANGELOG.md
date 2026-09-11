@@ -5,6 +5,17 @@
 
 ---
 
+## 2026-09-10 — 平面视图：具体 Rank / Layer 的详情与选中反馈收敛
+
+- 配置寻优中点击 Rank 或 Layer 会直接展开右侧详情栏；即使用户此前手动收起，也以本次具体选择为准重新打开。
+- Layer 详情里的容量卡改称“最满单卡”，钉到该 Layer 承载集合中内存占用最大的 Rank；当前模型同一 Stage 的并行副本容量相同，平局时稳定取最小 Rank。
+- 选择具体 Rank 或 Layer 后隐藏“各 PP Stage 峰值”，避免局部详情混入全局分布。
+- 负载热力选中格改用与运行观测主角格相同的 2px 白色描边和 5px 深色光晕。
+- 右侧“典型 Layer”五列标题统一为两行：Dense、MoE 也将 PP Stage 与 Layer 范围移到第二行小字。
+- Cluster 平面在 Rank 视角新增 TP 分组槽与右下角开关：连续 peers 画朝向 rank 名称的 `[` 形括号，上下端帽对齐组内首尾 rank 名称的纵向中心；TP / `Tn` 字号始终与 rank 行标同大，标识在槽内靠近 rank、远离前一 PP Stage，以留白表达归属。MindFormers + CP 的非连续 peers 按 `Tn` 标记；悬浮会提亮真实组员，整机视角和 `TP=1` 时自动停用。
+
+---
+
 ## 2026-09-09 — 平面视图·通信观测：连线钉进格子内部，格内补一条「计算流动」
 
 - **连线两端从「格子中心」改成「格内那枚块」**（`js/config-relation-plane.js` 新增 `flowAnchorOf` / `flowCellEl` / `flowInnerEl` / `flowInnerWorld`，`flowPoint` 取用）：中心点只适合缩到「一格一块颜色」那一档 —— 那时格里本来就没有别的东西可指。格内一旦铺开内容，中心就开始说错话：「EP Dispatch 从这张卡发出去」这句话的主语是格子里那一枚 EP Dispatch 块，线却从半格之外飞出来，读的人对不上是算到哪一步发的。两档共用一份规格 `{ seg, at }`：算子面板档按 `at` 指名那枚算子（`attention_core` / `o_proj` / `gate` / `a2a_dispatch` / `a2a_combine`，id 与 `ATTN_ROWS` / `MOE_ROWS` 和 deck 那张「典型 Layer」卡同名；PP 进出段用 `head` / `tail`，因为层的头尾是什么随 dense / MoE 变；EDP 的专家梯度归约落在 `experts` 那个盒子上），两段块档只落到对应那条带。取不到（滚出视口、整机粒度、只剩一块颜色、或这条通信本来就不属于某一枚块，如更新那两拍同步的是整段参数）一律退回格子中心，也就是原先的行为。

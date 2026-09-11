@@ -597,6 +597,83 @@ body:has(.cro-board.is-plane) .cro-link-layer { display: none; }
 .crop-rowlabel.is-related { color: var(--ark-blue-500); }
 .crop-rowlabel.is-selected { color: var(--ark-blue-500); font-weight: var(--font-weight-semibold); }
 
+/* ── TP 分组槽 ────────────────────────────────────────────────────────────
+   连续 peers 用带端帽的括号，不连续 peers（MindFormers + CP）逐行标 Tn。
+   线宽与端帽由 JS 按缩放倒数写成世界单位；字号直接复用当帧 rank 行标的度量，
+   因而缩放、行高变化时两者始终同大。 */
+.crop-tp-bracket,
+.crop-tp-marker {
+  z-index: 3;
+  box-sizing: border-box;
+  color: var(--foreground-muted);
+  border-left: var(--crop-tp-line, 1px) solid currentColor;
+  pointer-events: auto;
+  cursor: help;
+}
+
+.crop-tp-bracket::before,
+.crop-tp-bracket::after,
+.crop-tp-marker::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  width: var(--crop-tp-cap, 6px);
+  border-top: var(--crop-tp-line, 1px) solid currentColor;
+}
+
+.crop-tp-bracket::before { top: 0; }
+.crop-tp-bracket::after { bottom: 0; }
+.crop-tp-marker::after { top: 50%; }
+
+.crop-tp-bracket__label,
+.crop-tp-marker {
+  font-family: var(--font-mono);
+  font-weight: var(--font-weight-medium);
+  line-height: 1;
+}
+
+.crop-tp-bracket__label {
+  position: absolute;
+  top: 50%;
+  left: calc(var(--crop-tp-cap, 6px) + 0.35em);
+  padding-block: 0.18em;
+  background: var(--surface-1);
+  transform: translateY(-50%);
+  white-space: nowrap;
+}
+
+.crop-tp-marker {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  padding-left: calc(var(--crop-tp-cap, 6px) + 0.4em);
+  white-space: nowrap;
+}
+
+.crop-tp-bracket:hover,
+.crop-tp-marker:hover,
+.crop-tp-bracket.is-tp-peer,
+.crop-tp-marker.is-tp-peer,
+.crop-tp-bracket.is-selected,
+.crop-tp-marker.is-selected {
+  color: var(--primary);
+}
+
+.crop-tp-bracket.is-selected,
+.crop-tp-marker.is-selected { font-weight: var(--font-weight-semibold); }
+
+/* 悬浮分组时让真实 peers 横向浮出，但不覆盖热力色、专家着色或既有选择描边。 */
+.crop-rowlabel.is-tp-peer {
+  color: var(--primary);
+  font-weight: var(--font-weight-semibold);
+  opacity: 1 !important;
+}
+
+.crop-cell.is-tp-peer {
+  filter: brightness(1.28) saturate(1.08);
+  opacity: 1 !important;
+}
+
 /* ── stage 块底板：一段 PP 的 layer × rank 全在这一块里 ── */
 .crop-block {
   background: color-mix(in srgb, var(--foreground) 6%, transparent);
@@ -731,10 +808,13 @@ body:has(.cro-board.is-plane) .cro-link-layer { display: none; }
   box-shadow: inset 0 0 0 1px var(--foreground);
 }
 
-/* 热力档点中的单格保留热力底色，只用加粗白框标出。整行 / 整列选择由下面通用的
-   crop-band--selected 覆盖层一次成框，不再逐格描边。 */
+/* 热力档点中的单格保留热力底色，描边与运行观测里的主角格完全同规格：2px 白线
+   压在 5px 深色光晕上。两层都向内画，不改变格子尺寸。整行 / 整列选择仍由下面
+   通用的 crop-band--selected 覆盖层一次成框，不再逐格描边。 */
 .cro-board.is-plane[data-mode="heat"] .crop-cell.is-heat-selected {
-  box-shadow: inset 0 0 0 4px #fff;
+  box-shadow:
+    inset 0 0 0 var(--crop-cell-focus-line, 2px) #fff,
+    inset 0 0 0 var(--crop-cell-focus-halo, 5px) rgba(0, 0, 0, 0.38);
 }
 
 
@@ -1088,6 +1168,18 @@ body:has(.cro-board.is-plane) .cro-link-layer { display: none; }
 
 .crop-units .btn { min-width: 0; padding-inline: var(--space-2); }
 .crop-units .btn:disabled { opacity: 0.42; cursor: not-allowed; }
+
+/* TP 分组开关与专家着色同属画布叠加层开关，继续使用通用 btn.is-selected 状态。
+   前置的小括号直接对应画布中的标记，比再造一枚业务图标更容易辨认。 */
+.crop-tp-toggle::before {
+  content: "[";
+  margin-right: 4px;
+  font-family: var(--font-mono);
+  color: var(--foreground-muted);
+}
+
+.crop-tp-toggle.is-selected::before { color: var(--primary); }
+.crop-tp-toggle:disabled { opacity: 0.42; cursor: not-allowed; }
 
 /* 「专家着色」开关。开着时按钮上带一颗四色点，直接说明它管的是哪一层颜色。 */
 .crop-paint {
@@ -2746,11 +2838,10 @@ body:has(.cro-board.is-plane) .cro-link-layer { display: none; }
    但 `?` 口径键与作用域读数要留着（它们只挂在这一行上）。 */
 .crop-capcard .cro-capacity__title { display: none; }
 
-/* ══ 典型 Layer：端点段名分两行 ════════════════════════════════════════════
-   「Emb（PP0 · L0~L11）」在右栏那种几十像素宽的一列里必被截成「Emb（PP0 …」，
-   而括号里那半句正是这一列最要紧的信息（这段结构驻留在哪批卡上）。拆成上下两行
-   之后括号也不必要了：第二行本来就只可能是第一行的定语。名字由 js 的
-   annotateStructure 写成两个 span。 */
+/* ══ 典型 Layer：五列段名统一分两行 ════════════════════════════════════════
+   第一行只保留段名 / 类型与数量，第二行用小字写 PP stage 和 Layer 范围，避免 Dense、
+   MoE 把层号挤在第一行括号里，而 Emb / Norm / Head 又是另一种信息层级。名字由
+   js 的 annotateStructure 写成两个 span。 */
 .cro-board.is-plane .crop-right .cro-structure__name {
   display: flex;
   flex-direction: column;
