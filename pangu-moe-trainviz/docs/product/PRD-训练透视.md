@@ -3,14 +3,14 @@
 > **工作代号**：TrainScope · 训练透视
 > **一句话**：在大模型训练**正在跑**的时候，沿「计算逻辑架构 × 物理多卡」两根轴，实时定位**哪个节点偏差最大**、解释**为什么**、并给出**该怎么调**。
 > **版本**：v2 草案（2026-06-16）　**状态**：待评审
-> **输入来源**：① 领导双轴定义；② `design-brief-昇腾CANN.md`（13 条用研 insight）；③ `INSIGHT-ANALYSIS.md`（现状对标）；④ 现有 `SPEC.md` 与 TrainScope 实现。
+> **输入来源**：① 领导双轴定义；② `design-brief-昇腾CANN.md`（13 条用研 insight）；③ `INSIGHT-ANALYSIS.md`（现状对标）；④ 现有 `../specs/SPEC.md` 与 TrainScope 实现。
 > **证据声明**：用研 13 条 insight 均 `review:unverified / confidence:high`（受访口径，非统计）。本 PRD 据此定方向，关键决策前需对核心支撑页人审。
 
 ---
 
 ## 0. 这版改了什么（为什么不再「四不像」）
 
-上一版（SPEC.md / 现有实现）是一个**做得很扎实、但定位错位**的产物。错位只在一个点上：
+上一版（`../specs/SPEC.md` / 现有实现）是一个**做得很扎实、但定位错位**的产物。错位只在一个点上：
 
 > **它把产品做成了「一次已知事故的复盘剧本」，而领导和用研要的是「训练过程中的实时偏差监测与即时干预」。**
 
@@ -293,4 +293,4 @@
 
 ---
 
-*配套文档：`design-brief-昇腾CANN.md`（用户事实约束）、`INSIGHT-ANALYSIS.md`（现状对标）、`SPEC.md`（事故回放剧本，本版降级为辅助模式内容）。*
+*配套文档：`design-brief-昇腾CANN.md`（用户事实约束）、`INSIGHT-ANALYSIS.md`（现状对标）、`../specs/SPEC.md`（事故回放剧本，本版降级为辅助模式内容）。*
