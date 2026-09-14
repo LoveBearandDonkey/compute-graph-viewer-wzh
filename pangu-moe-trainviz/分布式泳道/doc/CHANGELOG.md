@@ -1,5 +1,6 @@
 # 更新记录
 
+- 2026-09-14：统一整理分布式泳道文档；当前 Spec 与更新记录迁入 `doc/`，历史规格和模型事实说明迁入本地 `doc/archive/` 并从 Git 排除。
 - 2026-09-11：精简 v4 左侧重复工具栏与 Router KPI，只保留 Top1 Expert/Owner，将 Idle/CV 下沉事件详情；修复窄面板下架构 Module 展开/收起按钮的暗色可见性和点击命中区域。
 - 2026-09-11：将共享 `model-architecture-front-view` Pattern 接入 openPangu MoE 事故回放 v4，替换页面私有架构坐标/分层；补齐 46 Layer pager、Dense/MoE 分支、mHC ×4 residual、256 Routed Experts、E193 placement/load 与 Dispatch→Router 联动。
 - 2026-09-11：完成 openPangu 模型正视图事实层 Phase 1A，生成并验证 `model_architecture_graph.v1`，补齐 mHC/MoME 残差语义、互斥 MoE 通信分支与 E000–E255 Routed Experts 父子层级。

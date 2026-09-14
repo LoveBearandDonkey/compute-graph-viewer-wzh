@@ -767,8 +767,8 @@ MoE FFN
 - 场景依据：`Profiling_Insight_and_Tool/training-run-twin-standalone/定位链-openPangu-2.0-Flash.md`
 - 同事 fork 目录：<https://github.com/LoveBearandDonkey/compute-graph-viewer-wzh/tree/main/Profiling_Insight_and_Tool>
 - 专家负载与 EP All-to-All 参考：`Profiling_Insight_and_Tool/training-run-twin-standalone/training-monitoring-v2.html`
-- 当前页面规格：`training-structure-time-v2-spec.md`
-- 当前时间轴契约：`training-timeline.schema.json`、`timeline-contract.js`
+- 历史基线规格已迁入本地 `doc/archive/`，不随 Git 发布。
+- 当前时间轴契约：`training-timeline-v4.schema.json`、`timeline-contract-v4.js`
 - PTO Pattern：`swimlane-task`、`model-graphviz`、`model-architecture-training-sidecar`、`moe-routing`、`communication-traffic-sankey`
 - openPangu canonical architecture：`vendor/pto-design-system/patterns/model-graphviz/assets/openpangu_2_0_flash_model_architecture.json`
 - openPangu 源码验证：`vendor/pto-design-system/patterns/model-graphviz/assets/openpangu_2_0_flash_model_architecture_validation.md`
