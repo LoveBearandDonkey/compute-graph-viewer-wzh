@@ -27675,7 +27675,7 @@ var require_dist = __commonJS({
 
 // src/http-server.ts
 import { createServer } from "node:http";
-import { randomUUID as randomUUID2, timingSafeEqual } from "node:crypto";
+import { randomUUID as randomUUID2 } from "node:crypto";
 
 // node_modules/@modelcontextprotocol/sdk/dist/esm/types.js
 init_v4();
@@ -41025,14 +41025,222 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
   });
 }
 
+// src/access-control.ts
+import { createHash, timingSafeEqual } from "node:crypto";
+import { dirname as dirname2 } from "node:path";
+import {
+  existsSync as existsSync2,
+  mkdirSync,
+  readFileSync as readFileSync2,
+  renameSync,
+  statSync,
+  writeFileSync
+} from "node:fs";
+var HASH_PREFIX = "sha256:";
+function hashAccessToken(token) {
+  return `${HASH_PREFIX}${createHash("sha256").update(token, "utf8").digest("hex")}`;
+}
+function positiveInteger4(value, field) {
+  if (!Number.isSafeInteger(value) || value <= 0) throw new Error(`${field} must be a positive integer.`);
+  return value;
+}
+function parseAccessKeyFile(path) {
+  const parsed = JSON.parse(readFileSync2(path, "utf8"));
+  if (parsed.version !== 1 || !Array.isArray(parsed.keys)) throw new Error("Access key file must use version 1 and contain a keys array.");
+  const ids = /* @__PURE__ */ new Set();
+  const keys = parsed.keys.map((candidate, index) => {
+    if (!candidate || typeof candidate !== "object") throw new Error(`keys[${index}] must be an object.`);
+    const record2 = candidate;
+    if (typeof record2.id !== "string" || !/^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/.test(record2.id)) {
+      throw new Error(`keys[${index}].id is invalid.`);
+    }
+    if (ids.has(record2.id)) throw new Error(`Duplicate access key id: ${record2.id}`);
+    ids.add(record2.id);
+    if (typeof record2.name !== "string" || record2.name.trim().length === 0 || record2.name.length > 128) {
+      throw new Error(`keys[${index}].name is invalid.`);
+    }
+    if (typeof record2.tokenHash !== "string" || !/^sha256:[0-9a-f]{64}$/.test(record2.tokenHash)) {
+      throw new Error(`keys[${index}].tokenHash is invalid.`);
+    }
+    if (typeof record2.enabled !== "boolean") throw new Error(`keys[${index}].enabled must be boolean.`);
+    positiveInteger4(record2.dailyLimit ?? 0, `keys[${index}].dailyLimit`);
+    if (typeof record2.createdAt !== "string" || !Number.isFinite(Date.parse(record2.createdAt))) {
+      throw new Error(`keys[${index}].createdAt is invalid.`);
+    }
+    if (record2.expiresAt !== void 0 && (typeof record2.expiresAt !== "string" || !Number.isFinite(Date.parse(record2.expiresAt)))) {
+      throw new Error(`keys[${index}].expiresAt is invalid.`);
+    }
+    return record2;
+  });
+  return { version: 1, keys };
+}
+function safeHashEqual(left, right) {
+  const leftBuffer = Buffer.from(left, "utf8");
+  const rightBuffer = Buffer.from(right, "utf8");
+  return leftBuffer.length === rightBuffer.length && timingSafeEqual(leftBuffer, rightBuffer);
+}
+function emptyUsage() {
+  return { version: 1, days: {} };
+}
+function parseUsageFile(path) {
+  if (!existsSync2(path)) return emptyUsage();
+  const parsed = JSON.parse(readFileSync2(path, "utf8"));
+  if (parsed.version !== 1 || !parsed.days || typeof parsed.days !== "object") {
+    throw new Error("Usage file must use version 1 and contain a days object.");
+  }
+  for (const [day, counters] of Object.entries(parsed.days)) {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(day) || !counters || typeof counters !== "object") {
+      throw new Error("Usage file contains an invalid day entry.");
+    }
+    for (const [id, count] of Object.entries(counters)) {
+      if (!/^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/.test(id) || !Number.isSafeInteger(count) || count < 0) {
+        throw new Error("Usage file contains an invalid counter.");
+      }
+    }
+  }
+  return parsed;
+}
+var AccessController = class {
+  accessKeysFile;
+  usageFile;
+  legacyToken;
+  ownerDailyLimit;
+  perUserRatePerMinute;
+  now;
+  onConfigError;
+  accessKeys = [];
+  keysMtimeMs = -1;
+  usage;
+  minuteCounters = /* @__PURE__ */ new Map();
+  constructor(options) {
+    this.accessKeysFile = options.accessKeysFile;
+    this.usageFile = options.usageFile;
+    this.legacyToken = options.legacyToken;
+    this.ownerDailyLimit = positiveInteger4(options.ownerDailyLimit ?? 2e3, "ownerDailyLimit");
+    this.perUserRatePerMinute = positiveInteger4(options.perUserRatePerMinute ?? 30, "perUserRatePerMinute");
+    this.now = options.now ?? (() => /* @__PURE__ */ new Date());
+    this.onConfigError = options.onConfigError ?? (() => void 0);
+    if (!this.accessKeysFile && !this.legacyToken) {
+      throw new Error("MCP_ACCESS_KEYS_FILE or MCP_AUTH_TOKEN is required. Refusing to start without authentication.");
+    }
+    if (this.accessKeysFile) this.reloadAccessKeys(true);
+    this.usage = this.usageFile ? parseUsageFile(this.usageFile) : emptyUsage();
+  }
+  reloadAccessKeys(required2) {
+    if (!this.accessKeysFile) return;
+    try {
+      const mtimeMs = statSync(this.accessKeysFile).mtimeMs;
+      if (!required2 && mtimeMs === this.keysMtimeMs) return;
+      this.accessKeys = parseAccessKeyFile(this.accessKeysFile).keys.map((record2) => ({ ...record2 }));
+      this.keysMtimeMs = mtimeMs;
+    } catch (error62) {
+      const message = error62 instanceof Error ? error62.message : "Unknown access key configuration error.";
+      if (required2) throw new Error(`Cannot load MCP access keys: ${message}`);
+      this.onConfigError(message);
+    }
+  }
+  authorize(authorizationHeader) {
+    if (typeof authorizationHeader !== "string" || !authorizationHeader.startsWith("Bearer ")) {
+      return { ok: false, statusCode: 401, message: "Bearer token is required." };
+    }
+    const token = authorizationHeader.slice("Bearer ".length);
+    if (token.length < 24 || token.length > 512) {
+      return { ok: false, statusCode: 401, message: "Invalid bearer token." };
+    }
+    this.reloadAccessKeys(false);
+    const suppliedHash = hashAccessToken(token);
+    const record2 = this.accessKeys.find((candidate) => safeHashEqual(candidate.tokenHash, suppliedHash));
+    if (record2) {
+      if (!record2.enabled) return { ok: false, statusCode: 403, message: "Access key is disabled." };
+      if (record2.expiresAt && Date.parse(record2.expiresAt) <= this.now().getTime()) {
+        return { ok: false, statusCode: 403, message: "Access key is expired." };
+      }
+      return {
+        ok: true,
+        principal: { id: record2.id, name: record2.name, dailyLimit: record2.dailyLimit, kind: "access-key" }
+      };
+    }
+    if (this.legacyToken) {
+      const supplied = Buffer.from(token, "utf8");
+      const expected = Buffer.from(this.legacyToken, "utf8");
+      if (supplied.length === expected.length && timingSafeEqual(supplied, expected)) {
+        return {
+          ok: true,
+          principal: { id: "owner", name: "Owner", dailyLimit: this.ownerDailyLimit, kind: "legacy-owner" }
+        };
+      }
+    }
+    return { ok: false, statusCode: 401, message: "Invalid bearer token." };
+  }
+  consume(principal, amount = 1) {
+    positiveInteger4(amount, "amount");
+    const now = this.now();
+    const minute = now.toISOString().slice(0, 16);
+    const minuteKey = `${minute}:${principal.id}`;
+    const minuteUsed = this.minuteCounters.get(minuteKey) ?? 0;
+    if (minuteUsed + amount > this.perUserRatePerMinute) {
+      return { ok: false, statusCode: 429, message: "Per-minute request limit exceeded.", retryAfterSeconds: 60 };
+    }
+    const day = now.toISOString().slice(0, 10);
+    const dayCounters = this.usage.days[day] ?? {};
+    const dailyUsed = dayCounters[principal.id] ?? 0;
+    if (dailyUsed + amount > principal.dailyLimit) {
+      const tomorrow = /* @__PURE__ */ new Date(`${day}T00:00:00.000Z`);
+      tomorrow.setUTCDate(tomorrow.getUTCDate() + 1);
+      const retryAfterSeconds = Math.max(1, Math.ceil((tomorrow.getTime() - now.getTime()) / 1e3));
+      return { ok: false, statusCode: 429, message: "Daily request limit exceeded.", retryAfterSeconds };
+    }
+    this.minuteCounters.set(minuteKey, minuteUsed + amount);
+    dayCounters[principal.id] = dailyUsed + amount;
+    this.usage.days[day] = dayCounters;
+    this.prune(now);
+    this.persistUsage();
+    return { ok: true, dailyUsed: dailyUsed + amount, dailyLimit: principal.dailyLimit };
+  }
+  prune(now) {
+    const oldest = new Date(now);
+    oldest.setUTCDate(oldest.getUTCDate() - 7);
+    const oldestDay = oldest.toISOString().slice(0, 10);
+    for (const day of Object.keys(this.usage.days)) {
+      if (day < oldestDay) delete this.usage.days[day];
+    }
+    const currentMinute = now.toISOString().slice(0, 16);
+    for (const key of this.minuteCounters.keys()) {
+      if (!key.startsWith(currentMinute)) this.minuteCounters.delete(key);
+    }
+  }
+  persistUsage() {
+    if (!this.usageFile) return;
+    mkdirSync(dirname2(this.usageFile), { recursive: true });
+    const temporary = `${this.usageFile}.${process.pid}.tmp`;
+    writeFileSync(temporary, `${JSON.stringify(this.usage, null, 2)}
+`, { encoding: "utf8", mode: 384 });
+    renameSync(temporary, this.usageFile);
+  }
+  status() {
+    this.reloadAccessKeys(false);
+    return {
+      mode: this.accessKeysFile ? "per-user-keys" : "legacy-token",
+      enabledKeyCount: this.accessKeys.filter((record2) => record2.enabled).length
+    };
+  }
+};
+
 // src/http-server.ts
 var host = process.env.MCP_HOST ?? "127.0.0.1";
 var port = Number(process.env.MCP_PORT ?? "3000");
 var maxBodyBytes = Number(process.env.MCP_MAX_BODY_BYTES ?? String(2 * 1024 * 1024));
-var authToken = process.env.MCP_AUTH_TOKEN;
-if (!authToken) {
-  throw new Error("MCP_AUTH_TOKEN is required. Refusing to start without authentication.");
-}
+var allowedOrigins = new Set(
+  (process.env.MCP_ALLOWED_ORIGINS ?? "").split(",").map((origin) => origin.trim()).filter(Boolean)
+);
+var accessController = new AccessController({
+  ...process.env.MCP_ACCESS_KEYS_FILE ? { accessKeysFile: process.env.MCP_ACCESS_KEYS_FILE } : {},
+  ...process.env.MCP_USAGE_FILE ? { usageFile: process.env.MCP_USAGE_FILE } : {},
+  ...process.env.MCP_AUTH_TOKEN ? { legacyToken: process.env.MCP_AUTH_TOKEN } : {},
+  ownerDailyLimit: Number(process.env.MCP_OWNER_DAILY_LIMIT ?? "2000"),
+  perUserRatePerMinute: Number(process.env.MCP_PER_USER_RATE_PER_MINUTE ?? "30"),
+  onConfigError: (message) => audit("access_config_error", { message })
+});
 var sessions = /* @__PURE__ */ new Map();
 var HttpError = class extends Error {
   constructor(statusCode, message) {
@@ -41050,12 +41258,27 @@ function writeJson(res, statusCode, body) {
   });
   res.end(payload);
 }
-function isAuthorized(req) {
-  const header = req.headers.authorization;
-  if (typeof header !== "string" || !header.startsWith("Bearer ")) return false;
-  const supplied = Buffer.from(header.slice("Bearer ".length), "utf8");
-  const expected = Buffer.from(authToken, "utf8");
-  return supplied.length === expected.length && timingSafeEqual(supplied, expected);
+function audit(event, fields) {
+  console.log(JSON.stringify({ timestamp: (/* @__PURE__ */ new Date()).toISOString(), event, ...fields }));
+}
+function clientIp(req) {
+  const forwarded = req.headers["x-real-ip"];
+  if (typeof forwarded === "string" && forwarded.length <= 64) return forwarded;
+  return req.socket.remoteAddress ?? "unknown";
+}
+function jsonRpcMethods(body) {
+  const requests = Array.isArray(body) ? body : [body];
+  return requests.flatMap((candidate) => {
+    if (!candidate || typeof candidate !== "object") return [];
+    const method = candidate.method;
+    return typeof method === "string" ? [method] : [];
+  });
+}
+function isAllowedOrigin(req) {
+  const origin = req.headers.origin;
+  if (origin === void 0) return true;
+  if (typeof origin !== "string") return false;
+  return allowedOrigins.has(origin);
 }
 function sessionId(req) {
   const value = req.headers["mcp-session-id"];
@@ -41079,17 +41302,43 @@ async function readJsonBody(req) {
   }
 }
 async function handleMcp(req, res) {
-  if (!isAuthorized(req)) {
-    writeJson(res, 401, { error: "Unauthorized" });
+  const authorization = accessController.authorize(req.headers.authorization);
+  if (!authorization.ok) {
+    res.setHeader("www-authenticate", "Bearer");
+    audit("auth_denied", { ip: clientIp(req), statusCode: authorization.statusCode });
+    writeJson(res, authorization.statusCode, { error: authorization.message });
     return;
   }
+  const principal = authorization.principal;
   const currentSessionId = sessionId(req);
   const body = req.method === "POST" ? await readJsonBody(req) : void 0;
+  const methods = jsonRpcMethods(body);
+  const toolCallCount = methods.filter((method) => method === "tools/call").length;
+  if (toolCallCount > 0) {
+    const quota = accessController.consume(principal, toolCallCount);
+    if (!quota.ok) {
+      res.setHeader("retry-after", String(quota.retryAfterSeconds));
+      audit("quota_denied", { principalId: principal.id, ip: clientIp(req), reason: quota.message });
+      writeJson(res, quota.statusCode, { error: quota.message });
+      return;
+    }
+    audit("tool_call_accepted", {
+      principalId: principal.id,
+      ip: clientIp(req),
+      dailyUsed: quota.dailyUsed,
+      dailyLimit: quota.dailyLimit
+    });
+  }
   if (req.method === "POST") {
     if (currentSessionId) {
       const current = sessions.get(currentSessionId);
       if (!current) {
         writeJson(res, 404, { error: "Unknown MCP session." });
+        return;
+      }
+      if (current.principalId !== principal.id) {
+        audit("session_owner_mismatch", { principalId: principal.id, ip: clientIp(req) });
+        writeJson(res, 403, { error: "MCP session belongs to a different access key." });
         return;
       }
       await current.transport.handleRequest(req, res, body);
@@ -41104,7 +41353,7 @@ async function handleMcp(req, res) {
     transport = new StreamableHTTPServerTransport({
       sessionIdGenerator: () => randomUUID2(),
       onsessioninitialized: (id) => {
-        sessions.set(id, { server, transport });
+        sessions.set(id, { server, transport, principalId: principal.id });
       }
     });
     transport.onclose = () => {
@@ -41126,6 +41375,11 @@ async function handleMcp(req, res) {
       writeJson(res, 404, { error: "Unknown MCP session." });
       return;
     }
+    if (current.principalId !== principal.id) {
+      audit("session_owner_mismatch", { principalId: principal.id, ip: clientIp(req) });
+      writeJson(res, 403, { error: "MCP session belongs to a different access key." });
+      return;
+    }
     await current.transport.handleRequest(req, res);
     return;
   }
@@ -41135,11 +41389,15 @@ async function handleMcp(req, res) {
 var httpServer = createServer(async (req, res) => {
   try {
     if (req.url === "/healthz" && req.method === "GET") {
-      writeJson(res, 200, { status: "ok", service: "ascend-tiling-visualizer" });
+      writeJson(res, 200, { status: "ok", service: "ascend-tiling-visualizer", access: accessController.status() });
       return;
     }
     if (req.url !== "/mcp") {
       writeJson(res, 404, { error: "Not found." });
+      return;
+    }
+    if (!isAllowedOrigin(req)) {
+      writeJson(res, 403, { error: "Origin is not allowed." });
       return;
     }
     await handleMcp(req, res);

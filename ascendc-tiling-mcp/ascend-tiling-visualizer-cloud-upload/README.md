@@ -4,11 +4,14 @@
 
 ## 启动
 
-需要 Node.js 20+，并设置 MCP_AUTH_TOKEN：
+需要 Node.js 20+，并配置每用户访问密钥文件：
 
 ```bash
-MCP_AUTH_TOKEN="仅在服务器环境中设置" MCP_HOST=127.0.0.1 MCP_PORT=3000 ./start.sh
+MCP_ACCESS_KEYS_FILE=/data/access-keys.json MCP_USAGE_FILE=/data/usage.json MCP_HOST=127.0.0.1 MCP_PORT=3000 ./start.sh
 ```
+
+使用 `manage-access.mjs create --name <用户> --daily-limit 200` 创建独立 Token；服务端只保存 SHA-256 哈希。
+使用 `revoke` / `enable` 单独撤销或恢复用户。每分钟速率由 `MCP_PER_USER_RATE_PER_MINUTE` 控制，每日额度写入 `MCP_USAGE_FILE`。
 
 健康检查：`GET /healthz`。MCP 地址：`POST /mcp`。生产环境请在前面配置 HTTPS 反向代理。
 
