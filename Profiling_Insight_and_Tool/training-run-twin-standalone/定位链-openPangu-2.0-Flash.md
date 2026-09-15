@@ -177,7 +177,11 @@
 
 > **路径**：迭代层 → 日志/plog诊断层（穿插）→ 仅多卡异常 → 通信调度层（含 EP 切分校验）→ 模型层 → 数值层 → 熔断/预警层 → infra层（含错误扩散分析）→ 超参/代码层 → 止损链路总览
 
-**背景**：2048 NPU 训练 openPangu-2.0-Flash，EP=64，TP=1，PP=4，DP=8，FP8 精度，seq_len=4096，global_batch=1024。训练至 step ~15000 时 loss 突发 NaN。
+**背景**：2048 NPU 训练 openPangu-2.0-Flash，EP=64，TP=1，PP=4，DP=8，FP8 精度，seq_len=4096，micro_batch=2（每 rank 每次前向 2×4096 = **8192 token**），global_batch=1024；MoE 共 **256 个 expert，top_k=8**。<br>**精度配置**：前向激活/权重 **FP8 E4M3**（最大可表示值 **448**）；反向梯度 **FP8 E5M2**（最大可表示值 **57344**——指数位多 1 位、尾数少 1 位，用动态范围换精度，因为梯度的量级跨度远大于激活）；master weights 与 optimizer state **FP32**；AMP `GradScaler` 取 `init_scale=65536`、`backoff_factor=0.5`、`growth_interval=2000`。<br>⚠️ 注意前向与反向的天花板相差 **128 倍**（448 vs 57344）——这正是本案例"反向先报警 203 步、前向最后才崩"的格式层原因：反向侧既有更高的上界，又有 scaler 自适应兜底；前向侧上界低 128 倍，且没有任何缩放机制保护。<br>**expert→rank 映射**：由 **trace 给定的 placement 表**决定，**不可由 expert id 推算**——MoE 的 expert 放置常因负载均衡放置或冗余部署而偏离连续分块（参见案例四的修改③：把高负载 expert 复制到两张卡）。本次事故中 **expert 193 位于 EP rank 23**，对应全局 rank **1559**（= PP stage 3 × 512 + 23）、物理位置 node2 GPU 7；每个 EP rank 名义承载 4 个 expert（256/64），但具体是哪 4 个由 placement 表给出。训练至 step ~15000 时 loss 突发 NaN。
+
+> **本案例的定位（重要）**：这是一次**先导实验 / 失败训练**的复盘，用于把问题讲清楚。其超参与精度配置——全 FP8 反向（E5M2）、`global_batch=1024`、未开 z-loss、未开 grad clip、router lr 未降——**不等于 openPangu-2.0-Flash 最终发布的配置**，也不需要与 model card 或《openPangu-2.0-Flash架构参考》对齐（后者记 `global_batch=12288`、`Grad Clip=1.0`、HiF8 混合精度 backward BF16）。
+>
+> 恰恰相反：正式配置里已有的 `Grad Clip=1.0`（架构参考 §6.4），正是这类失败推导出来的结论。**本案例是"为什么最终配置长这样"的成因，而不是最终配置的快照**——后续若发现本案例数值与架构参考不一致，属预期，不需修正。
 
 **关键认知**：死锁本身不会产生 NaN（死锁的典型表现是 hang/无输出），但 router logits 的数值溢出会**同时**导致两个平行后果——softmax 出 NaN 污染 loss，与路由概率塌缩触发 all-to-all 死锁。本案例的诊断从通信表象出发，最终追溯到 router 的数值层根因。本案例覆盖了 **16 条用户原声痛点**，是完整的"从表象到底层再到修复"的专家诊断路径示范。
 
@@ -188,7 +192,7 @@
 | 步骤 | 内容 |
 |------|------|
 | **现象** | step 15203 训练中断，Python 侧仅报 `RuntimeError: NCCL timeout in all-to-all`，无法直接定位原因。通常用户此时需要：① 去 Device 侧 `grep plog` 找有效信息 → ② 看不懂 HCCL/corner ops 报错 → ③ 逐层找框架负责人/算子开发 → 链路 2~7 天 |
-| **plog 翻译** | `grep -i "error\|timeout\|mismatch" /var/log/npu/plog/plog_*.log` 在 step 15203 附近提取到：<br>① `hcom_all_to_all_v_` rank=23, send_count=0, recv_count=9832 → **send/recv 不匹配**（"你调用的 `dist.all_to_all` 在 rank 23 上 send buffer 为空，但期望接收 9832 个 token 的数据——buffer 大小不匹配导致死锁"）<br>② `aclnnSoftmaxV2` input[router_logits] contains inf values → **softmax 输入存在 inf**（"你代码中 router 的 softmax 收到了 inf 值——上游 `router_logits` 在 FP8 下溢出"） |
+| **plog 翻译** | `grep -i "error\|timeout\|mismatch" /var/log/npu/plog/plog_*.log` 在 step 15203 附近提取到：<br>① `hcom_all_to_all_v_` rank=23, send_count=0, recv_count=505764 → **send/recv 不匹配**（"你调用的 `dist.all_to_all` 在 rank 23 上 send buffer 为空，但期望接收 505764 个 token 的数据，而该 expert 的接收 buffer 只有 20480——buffer 大小不匹配导致死锁"）<br>② `aclnnSoftmaxV2` input[router_logits] contains inf values → **softmax 输入存在 inf**（"你代码中 router 的 softmax 收到了 inf 值——上游 `router_logits` 在 FP8 下溢出"） |
 | **Ascend C→torch_npu 命名映射** | `hcom_all_to_all_v_` → `dist.all_to_all`（通信库）；`aclnnSoftmaxV2` → `F.softmax`（在 `router.forward` 中调用）；`aclnnMatmulV3` → `F.linear`（router 的 Linear 层） |
 | **判据** | plog 已给出两个关键线索：① rank 23 的 all-to-all send/recv 不匹配（通信表象）；② router softmax 输入含 inf（数值根因）。这直接指引了后续的通信调度层→数值层排查方向 |
 | **产出** | 翻译后的可读诊断 + 关联的 torch_npu 调用位置：`model.layers.38.mlp.router.forward` 中的 `F.softmax(router_logits)` 收到了 inf 输入 → 继续追查 router_logits 的来源 |
@@ -223,7 +227,7 @@
 |------|------|
 | **观测** | 开启 `NCCL_DEBUG=INFO` 重跑 step 15203。NCCL trace 显示 EP rank 23（node2 GPU 7）在 `all-to-all` 调用处超时（30s timeout）。该调用属于 layer 38 MoE 的 expert dispatch 阶段。<br>↳ 可在 per-rank timeline 中复现：rank 23 的 all-to-all 横条拉满 30s（红），其余 63 rank 同期显示为空等（Wait 段）。 |
 | **进一步确认** | 对比各 rank 的 all-to-all send/recv buffer size：rank 23 的 send buffer 为 0（没有 token 被 router 分发到其他 rank 的 expert），而 recv buffer 期望接收大量 token 数据，size 不匹配导致死锁 |
-| **EP=64 切分校验** | EP=64 下，256 个 expert 均匀分配到 64 个 EP rank，每个 rank 承载 4 个 expert。正常运行时，all-to-all 的 send/recv 在两个方向上 token 数应大致匹配（每个 rank 发送 token 数 = 其他 63 rank 路由到本 rank 4 个 expert 的 token 总和；接收 token 数 = 本 rank token 被路由到其他 rank 的 expert 数的总和）。当前 rank 23 的 send=0、recv=9832 → **所有 token 被 router 判定应全部送往 rank 23 的 4 个 expert**，其他 252 个 expert 无 token 流入，EP 切分完全失效 |
+| **EP=64 切分校验** | **正常基线（与 placement 无关，可直接推算）**：每 rank 每步 8192 token × top_k=8 = 65536 个 (token, expert) 对；全组 64 rank 共 4194304 对，均摊到 256 个 expert → **每 expert 应收 16384 token**，按 capacity_factor=1.25 预分配的接收 buffer ≈ **20480**；每 rank 的 send 与 recv 总量应同为 65536 量级、两个方向大致匹配。<br>**实测**：rank 23 的 `send=0`、`recv=505764`。recv 可反推核对——塌缩后 softmax 输出为精确 one-hot，top_k 的非主选槽位组合权重 p=0、在 dispatch 前被过滤，每 token 实际只发 1 份，于是其余 63 个 rank 各把约 8028 个 token 投向 expert 193：`63 × 8028 = 505764`，是 buffer 容量 20480 的 **24.7 倍**。<br>→ **EP 切分名义均匀（256/64=4），实际完全失效**：全组流量压在 expert 193 单个 expert 上，其余 255 个 expert 中 247 个零流入 |
 | **判据** | all-to-all send/recv 不匹配 → 通信调度失步。EP 切分看似均匀（256/64=4），但因 router 输出塌缩为 one-hot，实际上只有 1 个 EP rank 在工作，63 个 rank 闲置。但死锁只是"果"，需继续追"因"——为什么 router 会把几乎所有 token 分配给 rank 23 的 expert 193？ |
 | **产出** | 异常通信原语：`all-to-all` / 异常 rank：EP rank 23 / 关联层：layer 38 MoE / EP 切分状态：名义均匀（4 expert/rank），实际塌缩（1 rank 承载 100% token） |
 
@@ -235,8 +239,49 @@
 
 | 步骤 | 内容 |
 |------|------|
-| **观测** | 提取 step 15203 所有 256 个 expert 的 token 分配统计：expert 193 收到 98% token（约 8028/8192），其余 255 个 expert 合计仅 164 token，其中 247 个 expert 为 dead expert（0 token）。expert 193 恰好位于 EP rank 23 |
+| **观测** | 提取 step 15203 所有 256 个 expert 的 token 分配统计：expert 193 收到 98% token（约 8028/8192），其余 255 个 expert 合计仅 164 token，其中 247 个 expert 为 dead expert（0 token）。按 trace 的 placement 表，expert 193 位于 **EP rank 23**（全局 rank 1559 / node2 GPU 7）——该落点**不可由 expert id 推算**，见背景中的 expert→rank 映射说明。<br>注：此处为 **top-1（主选 expert）统计**——塌缩后 softmax 输出精确 one-hot，top_k=8 的其余 7 个槽位组合权重为 0，dispatch 前即被过滤，因此实际参与通信的每 token 只有 1 份 |
 | **判据** | 全量 expert 分布严重塌缩——不仅是 expert 193 过载，255 个 expert 几乎完全闲置。这不是普通的路由倾斜（CV=10~20%），而是 router 的 softmax 输出几乎退化为 one-hot |
+| **产出** | 异常层：layer 38 MoE / 塌缩形态：top-1 退化为精确 one-hot / dead expert 占比 96.5%（247/256）/ 待追查：router 为什么会输出 one-hot → 进入数值层 |
+
+
+#### 补充：为什么定位到 layer 38，但修复不针对 layer 38
+
+> 这一小节回答两个容易混淆的问题：W_gate 是谁的；以及 layer 38 在本案例里到底是"病灶"还是"坐标"。
+
+**W_gate 的归属——层级私有、层内公用、rank 间复制**
+
+| 轴 | W_gate 的状态 |
+|---|---|
+| 同层内的 256 个 expert | **共用一个矩阵** `[hidden, 256]`，每列对应一个 expert；不是每个 expert 一份 |
+| 跨层 | **完全独立**。layer 38 有自己的 W_gate，layer 39 是另一个，互不共享、各自学习 |
+| 跨 EP / DP rank | **复制**。每个 rank 都要给自己手上的 token 打分，必须持有完整 gate；梯度 allreduce 后各 rank 完全一致（这也是路由塌缩在 64 个 rank 上同步发生的原因） |
+
+按本案例约 48 层推算（典型 MoE 前几层为 dense FFN），全模型约有 **45 个彼此独立的 W_gate**。
+
+**推论：这是 45 个独立赛跑者的赛跑**
+
+45 个 W_gate 都被同一股力推着涨（softmax 只奖励更自信、无 z-loss、router lr 未降、无 clip），各自沿自己的赛道逼近 FP8 E4M3 的 448 上界。**而只有第一个越界的那个有意义**——它一越界整个 run 就结束了，其余 44 个还在半路上。所以真正要解释的不是"layer 38 有什么病"，而是**为什么深层系统性地跑得更快**。
+
+**为什么是深层（38/48，位于最后四分之一）**
+
+| 机制 | 说明 |
+|---|---|
+| ① **深层表示各向异性更强**（主因） | token 表示随深度变得越来越专门化、越聚集。浅层 token 表示分散 → 各 token 的赢家也分散 → 负载天然均衡；深层 token 表示高度相似 → 同一个 expert 反复获胜 → 马太效应转速更高，W_gate 列间失衡积累更快 |
+| ② **靠近输出端的层梯度更强** | 反向从 loss 出发，靠后的层最先拿到梯度、尚未经多层衰减，其 W_gate 每步收到的更新信号更强 → 漂移更快 |
+| ③ ~~深层激活幅度更大~~ | **不成立，需排除**：router 吃的是 `RMSNorm(h)`，归一化把残差流 RMS 的增长掐断了。深层跑得快靠的是①的方向结构和②的梯度强度，**不是幅度** |
+
+**文档内部佐证**：案例四（step 18427 吞吐尖峰）独立地把路由热区也定位在 **layer 38~45**——两个成因完全不同的事故落在同一段深层区间，正是"深层路由最易倾斜"的体现。而 PP stage 3 恰为 layers 34~45，这一段既是路由最脆弱处，也是死锁引爆点最常出现的位置。
+
+**因此修复必须是全局的**
+
+```
+只给 layer 38 改 FP32 + 加 z-loss
+  → 下一次 run 会在 layer 37 或 41 爆，只是把时间推迟几百步
+```
+
+这正是第 7 节那 7 条修复项**一条都没提 layer 38** 的原因——它们全是跨层的全局配置（router softmax 统一改 FP32、全部 router 加 z-loss、router lr 统一 ×0.1、全模型 clip）。**层号在本案例里是定位坐标，不是修复对象**；这是"报错位置 ≠ 根因位置"在层维度上的又一次体现。
+
+**对监控的推论**：`max|router_logits|` 不能只采一层，应逐 MoE 层采样后取全模型 max，对这个 max 计算"预计撞墙步数"（谁最快就盯谁），并同时记录 argmax 落在哪一层。健康训练中该 argmax 应稳定落在深层；若它突然跳到浅层，说明另有异常（数据分布突变、某层权重恢复出错）。
 
 ### 5. 数值层 — 追查 router 的精度路径
 
@@ -260,7 +305,7 @@
 | 步骤 | 内容 |
 |------|------|
 | **复盘时间线** | step 15000：AMP scaler=65536（正常）。step 15050：AMP scaler → 32768（第 1 次减半，🟡 注意级）。step 15100：AMP scaler → 16384（第 2 次减半，仍 🟡）。step 15150：AMP scaler → 8192（第 3 次减半，接近 🟠 警告线）。step 15200：AMP scaler → 4096（第 4 次减半，🟠 警告级——**应触发自动 dump**）。step 15202：AMP scaler=4096，loss=3.1 尚正常——**这是最后的拦截窗口**。step 15203：loss NaN，🔴 熔断级——**但无人监控，训练在 NaN 后仍可能空跑日志** |
-| **如果部署了熔断** | step 15150（scaler=8192）触发 🟡 通知 → on-call 收到告警。step 15200（scaler=4096）触发 🟠 自动 dump router logits + 激活张量 → 可在 loss NaN 之前就发现 max(logits) 已从正常的 ~30 飙升至 ~800、z-loss 缺失使 logits 无约束。**如果 step 15202 触发 🔴 熔断（scaler < 65536/32=2048），可在 NaN 之前停训**——虽然本案例中 scaler=4096 尚未跌破 2048，但可设置更灵敏的规则：`scaler < 初始值/8 且持续 ≥100 step` 即熔断 |
+| **如果部署了熔断** | step 15150（scaler=8192）触发 🟡 通知 → on-call 收到告警。step 15200（scaler=4096）触发 🟠 自动 dump router logits + 激活张量 → 可在 loss NaN 之前就发现 max(logits) 已从正常的 ~30 升至 **~410**（占前向 FP8 E4M3 上界 448 的 **92%**，余量不足 8%）、z-loss 缺失使 logits 无约束。**如果 step 15202 触发 🔴 熔断（scaler < 65536/32=2048），可在 NaN 之前停训**——虽然本案例中 scaler=4096 尚未跌破 2048，但可设置更灵敏的规则：`scaler < 初始值/8 且持续 ≥100 step` 即熔断 |
 | **万卡成本核算** | 本案例 2048 NPU，从 step 15000（scaler 开始衰减）到 step 15203（loss NaN）共 203 step。若在 step 15150 拦截，可省 53 step × 2048 NPU × 2 元/卡时 ≈ **21.7 万元**。若是万卡集群同样模式，203 step 空跑 ≈ **百万元级损失** |
 | **产出** | 熔断规则建议：将 `AMP scaler < 初始值/8 且连续 50 step 未恢复` 设为 🔴 熔断条件；将 `AMP scaler < 初始值/4` 设为 🟠 自动 dump 条件。本案例的 AMP scaler 衰减曲线应作为后续训练监控的 baseline 参考 |
 
@@ -273,8 +318,8 @@
 
 | 步骤 | 内容 |
 |------|------|
-| **观测** | 问题集中在 EP rank 23（node2 GPU 7），属于 PP stage 3（layers 34~45）。AMP scaler 衰减在全部 64 rank 上同步发生，但 only rank 23 因 expert 193 的地理位置成为死锁的"引爆点"——如果 expert 193 位于其他 rank，只会换一个 rank 触发死锁 |
-| **错误扩散路径** | 这是一个典型的"单点故障→全局扩散"模式：① EP rank 23 的 router softmax 最先溢出（数值层根因）→ ② rank 23 的 expert 193 被分配 98% token，all-to-all send=0 / recv=9832 导致死锁（通信调度层表象）→ ③ all-to-all 是同步屏障操作，rank 23 未完成意味着所有 64 个 EP rank 全部卡在 barrier 上（扩散到全集群）→ ④ PP stage 3 的 rank 23 卡死 → PP pipeline 断裂 → **所有 PP stage 的 rank 全部等待** → ⑤ NCCL timeout 30s 后报错，但报的是"通信 timeout"而非"router 溢出"——表象与根因分离，这正是"报错那句代码不一定是原因"的典型场景 |
+| **观测** | 问题集中在 EP rank 23（node2 GPU 7），属于 PP stage 3（layers 34~45）。AMP scaler 衰减在全部 64 rank 上同步发生——router 的 `W_gate` 在 EP 组内是复制的，梯度 allreduce 后各 rank 完全一致，所以**路由塌缩是全组同步的**；但 logits 绝对值是否越过 FP8 的 448 取决于各 rank 自己的激活 `x`，step 15203 只有 rank 23 的 micro-batch 把 max(logits) 推过阈值，因此**只有它算出的 counts 被 NaN 污染（send=0）**。rank 23 成为死锁"引爆点"是两件事叠加：① 它是 expert 193 的宿主（决定流量往哪儿灌 → 24.7 倍容量超载）；② 它同时是首个越界 rank（决定 counts 账本从哪儿破）。两个条件各自都足以让这次 all-to-all 无法完成；若 expert 193 位于其他 rank，只会换一个 rank 触发死锁 |
+| **错误扩散路径** | 这是一个典型的"单点故障→全局扩散"模式：① EP rank 23 的 router softmax 最先溢出（数值层根因）→ ② rank 23 的 expert 193 被分配 98% token，all-to-all send=0 / recv=505764 导致死锁（通信调度层表象）→ ③ all-to-all 是同步屏障操作，rank 23 未完成意味着所有 64 个 EP rank 全部卡在 barrier 上（扩散到全集群）→ ④ PP stage 3 的 rank 23 卡死 → PP pipeline 断裂 → **所有 PP stage 的 rank 全部等待** → ⑤ NCCL timeout 30s 后报错，但报的是"通信 timeout"而非"router 溢出"——表象与根因分离，这正是"报错那句代码不一定是原因"的典型场景 |
 | **扩散可视化** | `EP rank 23 (node2 GPU 7) router FP8 overflow → rank 23 all-to-all 死锁 → 64 EP ranks barrier 同步等 → PP stage 3 断裂 → 4 PP stages 全卡 → 2048 NPUs 全部 hang → 30s 后 NCCL timeout 报错` |
 | **判据** | 问题聚集在单个 EP rank → 局部路由塌缩，非全局硬件故障。但根因（router FP8 overflow）是系统性的——只是 expert 193 恰好落在 rank 23 上使其成为"引爆点"。这种"单点引爆、全局扩散"的模式是分布式训练中最具迷惑性的一类故障：报错位置 ≠ 根因位置 |
 | **产出** | 嫌疑范围：node2 GPU 7（EP rank 23），PP stage 3，layer 38 MoE / 扩散范围：全部 64 rank（因 all-to-all barrier + PP 依赖链）/ 关键教训：在 512+ rank 的大规模训练中，一个 rank 的数值溢出可通过 gather/all-to-all 扩散到数百 rank，必须自动做跨 rank 的首因定位而非人工逐一比对 |
@@ -306,7 +351,7 @@
 | 🔍 发现 | step 15203 | loss NaN，训练中断 | Row 34：万卡训练突然 NaN/loss 跑飞，希望实时识别 |
 | 📋 日志翻译 | 排查开始 | plog 翻译 → `dist.all_to_all` send/recv 不匹配 + `F.softmax` 输入 inf | Row 17~19：plog 有信息但 Python 侧不显示，需手动 grep → 翻译为可读诊断；Ascend C 内部名→torch_npu 接口映射 |
 | 🔀 分叉判定 | 排查中 | 单卡重跑正常，多卡复现 NaN → 切入通信分支 | 定位链「分叉判定」机制 |
-| 📡 通信调度 | 排查中 | rank 23 all-to-all timeout，send=0/recv=9832 → EP 切分校验失败 | Row 5：通信死锁逐层排查；Row 25：EP=64 并行切分不匹配分析 |
+| 📡 通信调度 | 排查中 | rank 23 all-to-all timeout，send=0/recv=505764 → EP 切分校验失败 | Row 5：通信死锁逐层排查；Row 25：EP=64 并行切分不匹配分析 |
 | 🧠 模型层 | 排查中 | expert 193 收到 98% token，247 dead experts → 路由塌缩 | Row 20：HCCL all-to-all timeout 需逐层排查 |
 | 🔢 数值层 | 排查中 | router logits max=1846，FP8 softmax → inf，AMP scaler 65536→4096，z-loss 缺失 | Row 21：通信死锁是"果"，router FP8 溢出是"因"；Row 28：FP8 低精度训练 z-loss 缺失 |
 | 🛡️ 熔断预警 | 复盘 | 若 step 15200 部署 🟠 自动 dump，可在 NaN 前捕获证据；若 scaler < 2048 触发 🔴 熔断，可避免 NaN | Row 30：AMP scaler 衰减作为熔断预警；Row 32：报错即停，别占卡位 |
@@ -316,6 +361,240 @@
 **总止损时间估算**：
 - 无工具/无经验：2~7 天（从看不懂报错→逐层找人→定位→修复，典型链路）
 - 按本定位链 + plog 翻译 + 熔断：~30 分钟（plog 即时翻译 → 分叉判定 5min → 通信层 5min → 模型/数值层 10min → 修复 10min）
+
+### 用人话，按时间线解读清楚【案例一】
+
+#### 问题背景
+
+一切从**Router logits = x · W_gate**说起
+
+router logits 是给专家算出的得分张量，里面都是一些分值，这些分值下一步要通过softmax转化为0~1概率数值形成张量 router probs。
+
+
+>**x**是输入张量 [B, S, H] 拍平成二维，因为moe的 router / FFN 不看 token 之间的相互关系，所以b*s的总表示它一共要处理的一个个单元更直接，即[8192, 2560]，每一行表示一个tokens。
+>
+>而**W_gate**是专属于某一个MoE Layer的权重，它的形状是 [hidden, 256]，每列对应一个 expert，[:, 193]就是对应专家 193。
+>
+>具体地，token 1 给 expert 193 的分数，是 **x 的第 1 行**（2560 个数）和 **W_gate 的第 193 列**（2560 个数）**一对一配对相乘，再把 2560 个乘积加起来**，成为张量router logits中第1行第193列的单个数值
+
+
+
+三个张量的形状与一个 logit 是怎么乘出来的？
+
+```
+x            [8192, 2560]   每 rank 8192 个 token，每个 token 一行 2560 个数（hidden）
+W_gate       [2560, 256]    256 列，每列 2560 个数，一列对应一个 expert
+router logits[8192, 256]    = x @ W_gate，每个 token 一行，一行 256 个分数
+```
+
+```
+logits[t,193] = x[t,0]·W[0,193] + x[t,1]·W[1,193] + … + x[t,2559]·W[2559,193]
+```
+
+x 因为过了 RMSNorm，每个元素都是 ±1 量级的正态分布，整行的 L2 范数 ≈ √2560 ≈ 50，全程稳定。真正在变的是 W_gate ，它的增大有没有有效控制。
+
+>softmax 是一个只会说"再自信一点"的教练，它鼓励算出对比差异更大的概率结果，而 W_gate 是个听话的学生，从数学角度，它会让自己数值上更大，更容易迎合这个策略。z-loss 是本该在场的裁判。案例里裁判缺席，学生 W_gate 就一直练大，直到撞墙。
+
+张量的数值：
+
+**情景一：正常态（step ~10000，logit ≈ 30）**
+
+```
+x[t, :]        = [ 0.83, -1.27,  0.14,  2.06, -0.55, ... ]   ← ±1 量级
+W_gate[:, 193] = [ 0.0137, -0.0219, 0.0082, 0.0301, -0.0154, ... ]   ← ±0.04 量级，列范数 ≈ 2
+逐项乘积        = [ 0.011, 0.028, 0.001, 0.062, 0.008, ... ]   ← 每项 ±0.04 量级
+```
+
+2560 个乘积里正负各半、互相抵消，加起来只剩几十分之一；再算上训练后 x 与这一列的部分对齐，logit ≈ 30。256 列的范数都在 2 附近，彼此差不多，路由均衡。
+
+**情景二：塌缩前夕（step 15200，logit ≈ 410）→ 溢出（step 15203，logit = 1846）**
+
+```
+x[t, :]        = [ 0.83, -1.27,  0.14,  2.06, -0.55, ... ]   ← 没变，还是 ±1
+W_gate[:, 193] = [ 0.48, -0.61,  1.12,  0.93, -1.05, ... ]   ← 涨到 ±1 量级，列范数 ≈ 50（其它 255 列仍 ≈ 2）
+逐项乘积        = [ 0.40,  0.77,  0.16,  1.92,  0.58, ... ]   ← 每项 ±1 量级
+```
+
+- **step 15200**：2560 个 ±1 的乘积，符号仍以随机为主，抵消后 ≈ 410——已占 E4M3 上界 448 的 92%。
+- **step 15203**：某个 token 的 x 恰好和 193 列**同号的维度占了七成以上**，抵消不掉，2560 项几乎全是正数往上堆，一口气加到 **1846**（2560 × 0.72）。
+
+用范数写就是 `logit = ‖x‖ · ‖w‖ · cosθ = 50 × 50 × cosθ`：正常态 ‖w‖ 只有 2，怎么对齐也到不了 448；塌缩前夕 ‖w‖ 涨到 50，上限变成 2500，cos 从平时的 0.16 跳到 0.74 就是 1846。**W_gate 的元素本身从来没有"大"过（最大也就零点几到一），是 2560 个乘积累加后才顶穿天花板；而且只有 193 这一列在涨**——这就是"尺度无界增长 + 列间失衡"。
+
+| | 正常态 | 溢出前夕 | 溢出那一步 |
+|---|---|---|---|
+| W_gate[:, 193] 典型元素 | ±0.04 | ±1 | ±1 |
+| 列范数 ‖w‖ | 2 | 50 | 50 |
+| 其它 255 列范数 | 2 | 2 | 2 |
+| cos(x, w) | 0.3 | 0.16 | 0.74 |
+| logit_193 | ~30 | ~410 | **1846** |
+| 距 E4M3 上界 448 | 15 倍余量 | 8% 余量 | 越界 4 倍 |
+
+> 以上数字为示意值，量级按 hidden=2560、logits 30→410→1846 反推构造，不是真实 dump。
+
+在本次训练任务中，W_gate在不断变大，router logits也被越算越大。
+
+>router logits张量里的数值，就算越算越大,本身是正常的。它的值域是 ±∞，一般靠 z-loss 施加惩罚来约束尺度,动机是让 router 训练稳定、避免 logits 无界增长，这样间接使logits处于所选数值存储格式 FP8 E4M3 的 **448** 界内，让 loss 依然能正常计算，但案例这就是没加z-loss。
+
+此时，暂时loss=3.1、grad_norm=12.4，训练稳定。
+
+#### 同因异症的开始
+
+因为W_gate增大，它往下会在本案例引发2个影响，属于 **同因异症**（common cause, parallel symptoms）：**共享同一个根因，彼此之间没有因果**。
+
+>打个比方：发烧和皮疹都由同一次感染引起，但发烧不会引起皮疹。分支 I（反向梯度溢出）和分支 II（前向 logits 溢出）就是这个关系——它们是**同一条指数增长曲线，在两个不同格式窗口上留下的两个投影**：E5M2 的 57344，和 E4M3 的 448。
+
+```mermaid
+graph TD
+    ROOT["根因<br/>softmax 只奖励更自信 · 无 z-loss · 无 clip · router lr 未降<br/>→ W_gate 列间失衡 + 尺度无界增长"]
+
+    subgraph SI["分支 I · 反向侧 —— 预警半段"]
+        BI1["真实梯度尾部 × loss_scale 65536"]
+        BI2["撞 FP8 E5M2 上界 57344<br/>真实梯度超过 0.875 即越界"]
+        BI3["step 15000~15202 每 ~50 步碰顶一次<br/>scale 四次减半 65536 → 4096"]
+        BI4["丢弃本步 + 减半 → 可恢复"]
+        BI1 --> BI2 --> BI3 --> BI4
+    end
+
+    subgraph SII["分支 II · 前向侧 —— 致命半段"]
+        BII1["router logits 趋势项 ~30 → ~410<br/>占 448 上界的 92%"]
+        BII2["step 15203 数据抖动顶到 1846<br/>撞 FP8 E4M3 上界 448"]
+        LA["腿 A · 绝对值超界<br/>softmax 输出非法值"]
+        LB["腿 B · 差值超界<br/>exp 下溢 → 精确 one-hot"]
+        LA2["NaN 经 mean 污染全局<br/>loss 3.1 → NaN · grad_norm 12.4 → inf"]
+        LB2["98% token 塌缩到 expert 193<br/>rank 23 send=0 / recv=505764"]
+        LB3["all-to-all 死锁<br/>64 → 256 → 2048 卡全 hang"]
+        BII1 --> BII2
+        BII2 --> LA --> LA2
+        BII2 --> LB --> LB2 --> LB3
+    end
+
+    E1["权重被 NaN 污染<br/>不可逆，须回滚 checkpoint"]
+    E2["30s 后 NCCL timeout 打断训练<br/>报错与根因完全无关"]
+
+    ROOT --> BI1
+    ROOT --> BII1
+    LA2 --> E1
+    LB3 --> E2
+    LB -. "弱反馈：塌缩使有非零梯度的参数量骤降<br/>每元素 RMS ×3.8 → 加速 I 碰顶" .-> BI1
+```
+
+**三条关系，必须分清方向**
+
+| 关系 | 成立？ | 说明 |
+|---|---|---|
+| 根因 → I，根因 → II | ✅ **并列** | 两支各自独立被触发，互不依赖 |
+| II → I | ✅ **弱反馈** | 渐进塌缩使 dead expert 增多、有非零梯度的参数量 N 骤降（92B → 6.3B），同一个 grad_norm 摊到更少元素上，每元素 RMS 放大 **3.8 倍** → 推高 I 的碰顶频率 |
+| I → II | ❌ **不存在** | 梯度溢出不会推高 logits。step 15203 之后梯度的性质也变了——从"溢出"变成"被 NaN 传染" |
+
+所以"**分支 I 是分支 II 的预警信号**"这个定位是成立的，而且那条 II → I 的弱反馈让它作为预警指标**更**灵敏，不是更差。
+
+**为什么这不是"硬凑两个问题"**
+
+恰恰相反，这是本案例最有价值的部分。因为同因异症正是**误诊的主要来源**：
+
+```
+看到 NCCL timeout  → 工程师去查网络、查链路、查慢节点
+看到 loss NaN      → 工程师去查数据、查脏样本
+                     ↑ 两个症状看起来属于完全不同的子系统（通信 vs 数值）
+                       没人会想到它们同源，更没人会想到根因在 200 步前的一行精度配置
+```
+
+案例一存在的意义就是证明这两个看似无关的表象指向同一个配置根因。
+
+
+#### 问题影响1：200+步后引发loss从3.1跳成NaN，grad_norm 从 12.4 跳到 inf
+
+> 本节讲**分支 I（反向梯度溢出，预警半段）**与**腿 A（loss NaN）**；分支 II 的腿 B（路由塌缩 → 死锁）见「影响2」。
+
+由于W_gate 不断变大，梯度也被影响在涨。当前任务 amp `loss_scale=65536`——它乘在 **loss 标量**上，因反向传播的线性性（`∂(S·L)/∂w = S·∂L/∂w`）等效于把全图梯度放大 65536 倍；本意是**防下溢**（真实梯度常在 1e-5~1e-8，不放大会在低精度下被吃成 0），代价是把梯度推到格式窗口的最顶端。
+
+> **为什么使用AMP loss scale 缩放loss和梯度**
+>
+> ![为什么使用AMP loss scale 缩放loss和梯度](pic/为什么要amp%20loss%20scale缩放loss和梯度.png)
+
+同一个 65536，loss 和梯度的处境却完全不同：
+
+| | loss | 梯度 |
+|---|---|---|
+| 放大倍数 | ×65536 | ×65536（相同） |
+| 存储格式 | **FP32**，上界 3.4e38 | **FP8 E5M2**，上界 57344 |
+| 缩放后的值 | 3.1 × 65536 ≈ **20 万** | 越界门槛 = 57344/65536 ≈ **0.875** |
+| 余量 | **1.7e33 倍** | **贴顶** |
+| 元素个数 | 1 个 | 数百亿个（溢出看 max，不看均值） |
+| 分布 | 全 token 的均值，极稳定 | 逐元素、重尾、多离群值 |
+| AMP 是否检查 | ❌ 从不检查 | ✅ 只检查它 |
+
+注意缩放后的 loss（约 20 万）其实**比梯度的天花板 57344 还大 3.5 倍**——它安然无恙纯粹因为住在 FP32 里。所以梯度比前向异常提前 203 步报警，不是因为梯度更脆弱，而是因为它被放在了贴着天花板的位置、有百亿个元素去撞它，而且它是唯一被检查的那个。
+
+这里的"天花板"不是人设的阈值，而是**格式规范定死的最大可表示值**（反向走 FP8 E5M2 = 57344）；AMP 只对缩放后的梯度做一次 isinf/isnan 判断，人能设的只有 `init_scale` / `backoff_factor` / `growth_interval`。
+
+真实梯度的典型元素放大 65536 倍后也只有个位数，离 57344 差四个数量级；能撞顶的只是**分布尾部的少数离群元素**（真实值 > 57344/65536 ≈ 0.875）。这也是 `grad_norm=12.4` 全程平稳的原因：它是 `√Σg²` 的平均型指标，几个尾部大值淹没在百亿项里看不见；而 AMP 的 `found_inf = any(isinf)` 是极值型指标，专抓这几个——所以监控该记的是 `max|g|` 及其离 0.875 的余量，不是 grad_norm。（loss 本身全程没有越界，step 15203 变 NaN 是被前向 router 的 NaN 经 `mean` 传染的。）
+
+当 `真实梯度 × 65536` 撞上这个天花板、张量里出现非有限值时，AMP 做两件事：① **丢弃本 step 的更新**，避免 inf/NaN 被写进权重造成不可逆污染；② 把 scale 减半（65536 → 32768）供下一 step 使用。
+
+注意它改变的只是"缩放后的值能不能装进格式"——`unscale` 会在 optimizer step 前把 scale 除掉，所以**真实梯度的大小和参数更新的幅度都没有被改变**。scale 减半不是"抑制梯度暴涨"，而是给下一步腾出表示余量。
+
+但AMP缩放这个只能管住反向侧的表示范围，让下一 step 的梯度用较低的缩放系数、不再撞顶，并没有解决问题根因W_gate的增大。因此再过 200 个 step ，**缩放后的梯度依然每 ~50 步碰顶一次、scale 被减半 4 次**（65536 → 4096）；而真实的更新幅度因为 unscale 和 Adam 的归一化几乎没变，所以 loss 曲线一直平稳，**AMP scale loss捂住了症状，掩盖了病情正在恶化**。
+
+最后，logits 内的部分值也从正常的 ~30 一路爬到 step 15200 的 **~410**——已占 E4M3 上界 448 的 92%。然后在 step 15203，某个 micro-batch 的激活偏大，把它一举顶到了 **1846**。
+
+注意 1846 是在 **cast 成 FP8 之前**、以高精度 dump 出来的值。它就是那个 [8192, 256]（约 210 万个元素）张量里的最大值—————张量中坏一个就足够了，因为污染是三级放大。
+
+losgits 接下来要 cast 成 FP8 E4M3 算 softmax，但是 1846 撞 FP8 的 448 上界 → 数字没了，变成一个非有限值inf。
+
+
+**softmax 遇到非有限值，坏的是一行，不是一个元素，也不是全矩阵。** softmax 按行做（对每个 token 的 256 个 expert 分数），每个概率都依赖本行的 max 和本行的 sum：
+
+```
+probs[t, j] = exp(logits[t,j] - max_t) / Σ_k exp(logits[t,k] - max_t)
+```
+
+logits[t, 193] = inf 时，`max_t = inf`，193 位算 `exp(inf - inf)` = NaN；其它 255 位算 `exp(有限 - inf)` = 0，本来没事——但分母的 sum 里含了那个 NaN，于是 **token t 这一行 256 个概率全部变 NaN**。而其它 8191 个 token 各有自己的 max 和 sum，跟 t 行无关，**暂时完好**。
+
+NaN 会有传染性，NaN 和任何数做运算，结果都是 NaN，从这一行开始逐级扩散：
+1. **行 → token**：`probs[t, :]` 全 NaN → top-k 权重 NaN → token t 的 expert 输出 × NaN → 残差相加后 token t 的 hidden state 整条 2560 维 NaN。
+2. **token → 整条序列**：下一层 attention 里每个 query 都要对全部 key/value 做加权求和，4096 个 token 中只要有一个 value 是 NaN，加权和就是 NaN → 这条序列 4096 个 token 全 NaN。
+3. **序列 → 全局**：loss 是所有 token 的 `mean`，一个 NaN 项让 loss = NaN；反向梯度全 NaN；all-to-all 把 NaN token 送到其它 EP rank 的 expert，梯度 allreduce 再摊到 DP 组所有 rank。
+
+所以简单说就是前向 loss、反向梯度都被算成 NaN。
+
+因此，这一步，loss从3.1跳成NaN，grad_norm 从 12.4 跳到 inf
+
+NaN 本身不会引发停训。理论上它会一直"本step跳过更新—scale减半—算出NaN-继续跳过"地无限循环下去，loss 永远 NaN，卡位一直占着
+
+真正引发停训的是下面影响2的：64 EP rank 卡在 barrier，→ PP stage 3 断裂 → 2048 NPU 全 hang→ 30s 后 NCCL timeout 抛错 ← 训练是被这个打断的
+
+
+#### 问题影响2：64 EP rank 卡在 barrier，→ PP stage 3 断裂 → 2048 NPU 全 hang→ 30s 后 NCCL timeout 抛错，停训
+
+因为probs = softmax(logits)rank 23用的是被 NaN 污染的 probs算出自己只需要发送 0 token，
+
+rank 23的recv = 505764（= 63 × 8028）是其他 63 个 rank 各自算好后报给它的
+
+rank 23 因为 send/recv buffer 不匹配（send=0 / recv=505764）卡着出不来，组内其他63个rank也一同等着rank 23被卡。
+
+ top-k 只能选同一个 expert（本案例末期是 expert 193 ，98% token 去 expert 193，top8之外，247 个 expert 拿 0）
+
+all-to-all 契约要求组内所有 64 个 rank 都到齐并完成数据交换，函数才返回。
+
+什么叫send/recv buffer 不匹配？all to all 的契约是发送和接收的token要一致。每个rank只按自己那份 counts 去 post 收发操作，rank 23认为自己一点东西都没发出去，它自己觉得自己发送0也要接受0，最终rank 23和其他rank都面临不是自己意料中的数据传送，集合通信的前提没了。
+
+而且expert 193 要收 505764 个 token，而按 capacity_factor=1.25 预分配的 buffer 只有 20480，超载 24.7 倍 
+
+一个stage 3卡住，这一个DP副本的stage0，1，2也被卡，影响范围从64卡提升到256卡。
+
+
+8 个 DP 副本要做梯度 all reduce 才能更新权重。现在有 1 个副本的256卡，永远交不出梯度，其他7个副本的，一共2048卡都卡死了。
+
+卡到30s，就是训练时人工配置的超时时间，训练停止。
+
+
+
+### 解决方案
+
+文档把 scaler 衰减定性为**"前置信号"而不是"防线"——它是同一个病根（logits/激活整体上漂）在反向侧漏出来的相关症状**，是个免费的温度计，但它不是药。真正的药是 z-loss（约束 logits 尺度）和 FP32 softmax（放宽表示范围）。
+
+max|router_logits| 和 z-loss 值本身就是这条病灶最直接的探针，而且它们是缓慢单调上漂的，比 AMP scaler 衰减更早、更可解释。修复后稳定在 18~35 这个区间，就是该指标的健康基线。
 
 ---
 
