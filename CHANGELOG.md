@@ -5,6 +5,11 @@
 
 ---
 
+## 2026-09-15 — Router logits 张量计算可视化（training-run-twin-standalone/router-logits-viz.html）
+- 新增交互页：x · W_gate → logits → FP8 E4M3 cast → softmax → probs，四张量联动（x 按行、W_gate 按列、logits/probs 按格选中），三情景切换（step ~10000 / 15200 / 15203）。
+- 数值按定位链文档 365~597 行构造：x 行与 W 列为 2560 维真实向量，logits 为真实点积，probs 为真实 softmax；193 列范数 2→50，token 0 在 15203 步 cosθ 0.74 → 1846 撞 448 → 整行 NaN。
+- `config-relation-plane.html` / `config-relation-observer.html` — 右上角动作组最左侧新增「what is rank」入口（`#croRankIntro`），链接到 `rank-intro.html`。
+
 ## 2026-09-14 — 定位链文档·案例一：明确 expert placement 不可推算，修正 all-to-all counts 的算术自洽性
 
 - `定位链-openPangu-2.0-Flash.md` 案例一的 `expert 193 位于 EP rank 23` 用任何公式都推不出来（连续分块 `193 // 4 = 48`、轮转 `193 % 64 = 1`）。**结论是这个落点本来就不该被推算**：MoE 的 expert 放置常因负载均衡放置或冗余部署而偏离连续分块（参见案例四修改③把高负载 expert 复制到两张卡）。故背景改为显式声明 expert→rank 由 **trace 给定的 placement 表**决定、不可由 expert id 推算，并补上全局 rank **1559**（= PP stage 3 × 512 + 23）与 node2 GPU 7 的对应关系；**expert 编号与 rank 一律保持 193 / 23 不变**。
