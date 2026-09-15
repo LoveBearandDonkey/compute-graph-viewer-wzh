@@ -1,0 +1,318 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="light">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Router Logits 张量计算 · openPangu-2.0-Flash</title>
+<link rel="stylesheet" href="./css/foundation.css">
+<link rel="stylesheet" href="./css/semantic.css">
+<link rel="stylesheet" href="./css/components.css">
+<link rel="stylesheet" href="./css/style.css">
+<style>
+  /* 四个角色色：x=violet / W_gate=success / logits=primary / probs=warning，越界=danger */
+  :root{
+    --rl-x: var(--highlight-l0a-violet-500);
+    --rl-w: var(--success);
+    --rl-l: var(--primary);
+    --rl-p: var(--warning);
+    --rl-bad: var(--danger);
+  }
+  html,body{ background:var(--background); color:var(--foreground); font-family:var(--font-sans); }
+  body{ margin:0; padding-block:var(--space-6); padding-inline:var(--space-6); }
+  .rl-page{ max-width:1720px; margin:0 auto; display:flex; flex-direction:column; gap:var(--space-5); }
+
+  /* 头部 */
+  .rl-head{ display:flex; flex-wrap:wrap; align-items:center; gap:var(--space-4); justify-content:space-between; }
+  .rl-title{ margin:0; font-size:var(--font-size-display-lg); font-weight:var(--font-weight-bold); letter-spacing:-.01em; display:flex; align-items:baseline; gap:.35em; flex-wrap:wrap; }
+  .rl-title .k{ padding:0 .3em; border-radius:var(--radius-sm); }
+  .k-l{ background:color-mix(in srgb,var(--rl-l) 22%,transparent); color:var(--foreground); }
+  .k-x{ background:color-mix(in srgb,var(--rl-x) 22%,transparent); color:var(--foreground); }
+  .k-w{ background:color-mix(in srgb,var(--rl-w) 22%,transparent); color:var(--foreground); }
+  .k-p{ background:color-mix(in srgb,var(--rl-p) 22%,transparent); color:var(--foreground); }
+  .k-bad{ background:color-mix(in srgb,var(--rl-bad) 22%,transparent); color:var(--foreground); }
+
+  /* 公式区 */
+  .rl-formulas{ background:var(--surface-1); border:1px solid var(--border-subtle); border-radius:var(--radius-lg); padding:var(--space-3) var(--space-5); font-family:var(--font-mono); font-size:12px; line-height:1.8; overflow-x:auto; }
+  .rl-formulas > summary{ cursor:pointer; list-style:none; font-family:var(--font-sans); font-size:var(--font-size-body-sm); font-weight:var(--font-weight-semibold); color:var(--foreground); display:flex; align-items:center; gap:var(--space-2); user-select:none; }
+  .rl-formulas > summary::-webkit-details-marker{ display:none; }
+  .rl-formulas > summary::before{ content:"▸"; font-size:10px; color:var(--foreground-muted); transition:transform .15s; }
+  .rl-formulas[open] > summary::before{ transform:rotate(90deg); }
+  .rl-formulas[open] > summary{ margin-bottom:var(--space-2); }
+  .rl-formulas > div{ display:flex; flex-direction:column; gap:var(--space-2); }
+  .rl-formula{ display:flex; flex-wrap:wrap; align-items:center; gap:.45em; white-space:nowrap; }
+  .rl-formula .lbl{ font-family:var(--font-sans); color:var(--foreground-secondary); min-width:12em; }
+  .rl-formula .k{ padding:0 .3em; border-radius:var(--radius-sm); }
+  .rl-formula .eq{ color:var(--foreground-muted); }
+  .rl-formula .neg{ color:var(--foreground-secondary); }
+  .rl-formula .val{ font-weight:var(--font-weight-semibold); }
+  .rl-note{ font-family:var(--font-sans); color:var(--foreground-secondary); font-size:var(--font-size-body-sm); line-height:1.7; }
+  .rl-note b{ color:var(--foreground); font-weight:var(--font-weight-semibold); }
+
+  /* 张量区 */
+  /* 第一行 x × W = logits；softmax 在 logits 正下方向下转到 probs */
+  .rl-stage{ display:grid; grid-template-columns:repeat(5, auto); column-gap:var(--space-3); row-gap:var(--space-2); justify-content:start; align-items:start; overflow-x:auto; padding-block:var(--space-2); }
+  .rl-op-down{ grid-column:5; grid-row:2; }
+  .rl-probs{ grid-column:5; grid-row:3; }
+  .rl-op{ align-self:center; font-size:var(--font-size-title-sm); font-weight:var(--font-weight-bold); color:var(--foreground-secondary); padding:0 var(--space-1); margin-top:36px; text-align:center; white-space:nowrap; }
+  .rl-op-down{ margin-top:0; justify-self:center; display:flex; align-items:center; gap:var(--space-2); }
+  .rl-op small{ display:block; font-size:10px; font-weight:var(--font-weight-medium); color:var(--foreground-muted); }
+  .rl-op .arrow{ display:block; font-size:12px; }
+  .rl-tensor{ background:var(--surface-1); border:1px solid var(--border-subtle); border-radius:var(--radius-md); padding:var(--space-2) var(--space-3) var(--space-3); }
+  .rl-tensor h3{ margin:0; font-size:var(--font-size-body-sm); font-weight:var(--font-weight-semibold); display:flex; align-items:center; gap:var(--space-1); }
+  .rl-tensor h3 .dot{ width:8px; height:8px; border-radius:50%; background:var(--c); }
+  .rl-tensor .meta{ font-family:var(--font-mono); font-size:10px; color:var(--foreground-secondary); margin:1px 0 var(--space-2); display:flex; gap:var(--space-2); }
+  table.rl-grid{ border-collapse:collapse; border-spacing:0; font-family:var(--font-mono); font-size:10px; }
+  .rl-grid th{ font-weight:var(--font-weight-medium); color:var(--foreground-muted); font-size:10px; padding:1px 3px; text-align:center; white-space:nowrap; }
+  .rl-grid th.rh{ text-align:right; padding-right:5px; }
+  .rl-grid td{ min-width:42px; height:24px; text-align:center; border:1px solid var(--border-subtle); background:var(--surface-2); padding:0 4px; white-space:nowrap; box-sizing:border-box; }
+  .rl-grid td.ell{ color:var(--foreground-muted); background:transparent; border-color:transparent; min-width:20px; }
+  .rl-grid td.ell-r{ color:var(--foreground-muted); background:transparent; border-color:transparent; height:16px; }
+  .rl-grid td.clk{ cursor:pointer; transition:background .12s; }
+  .rl-grid td.clk:hover{ background:var(--state-hover); }
+  .rl-grid td.faint{ background:color-mix(in srgb,var(--c) 10%,var(--surface-2)); }
+  /* 选中格用共享边框描边（collapse 后相邻选中格边框合并，行/列选中无缝） */
+  .rl-grid td.sel{ background:color-mix(in srgb,var(--c) 18%,var(--surface-2)); border:1.5px solid var(--c); color:var(--foreground); font-weight:var(--font-weight-semibold); }
+  .rl-grid td.bad{ --c:var(--rl-bad); color:var(--rl-bad); font-weight:var(--font-weight-semibold); background:color-mix(in srgb,var(--rl-bad) 10%,var(--surface-2)); }
+  .rl-grid td.nan{ --c:var(--rl-bad); color:var(--rl-bad); background:color-mix(in srgb,var(--rl-bad) 10%,var(--surface-2)); }
+  .rl-grid th.sel{ color:var(--c); }
+
+  /* 天花板条 */
+  .rl-gauge{ display:inline-flex; align-items:center; gap:var(--space-2); margin-left:auto; white-space:nowrap; }
+  .rl-gauge .bar{ position:relative; width:110px; height:6px; border-radius:var(--radius-pill); background:var(--surface-3); overflow:hidden; }
+  .rl-gauge .bar i{ position:absolute; left:0; top:0; bottom:0; border-radius:var(--radius-pill); background:var(--rl-l); }
+  .rl-gauge .bar i.warn{ background:var(--rl-p); }
+  .rl-gauge .bar i.bad{ background:var(--rl-bad); }
+
+  @media (max-width:900px){ body{ padding-inline:var(--space-4); } .rl-formula .lbl{ min-width:auto; } }
+</style>
+</head>
+<body>
+<div class="rl-page">
+
+  <div class="rl-head">
+    <div>
+      <h1 class="rl-title"><span class="k k-l">Router logits</span><span>=</span><span class="k k-x">x</span><span>·</span><span class="k k-w">W_gate</span><span style="color:var(--foreground-muted)">→ softmax →</span><span class="k k-p">Router probs</span></h1>
+    </div>
+    <div class="segmented-control segmented-control-muted" id="scen"></div>
+  </div>
+
+  <details class="rl-formulas" open><summary>计算公式</summary><div id="formulas"></div></details>
+
+  <div class="rl-stage">
+    <section class="rl-tensor" style="--c:var(--rl-x)">
+      <h3><span class="dot"></span>x 输入张量</h3>
+      <div class="meta"><span>[8192, 2560]</span><span id="x-mag"></span></div>
+      <table class="rl-grid" id="tx"></table>
+    </section>
+    <div class="rl-op">×</div>
+    <section class="rl-tensor" style="--c:var(--rl-w)">
+      <h3><span class="dot"></span>W_gate</h3>
+      <div class="meta"><span>[2560, 256]</span><span id="w-mag"></span></div>
+      <table class="rl-grid" id="tw"></table>
+    </section>
+    <div class="rl-op">=</div>
+    <section class="rl-tensor" style="--c:var(--rl-l)">
+      <h3><span class="dot"></span>Router logits</h3>
+      <div class="meta"><span>[8192, 256]</span><span class="rl-gauge" id="gauge"></span></div>
+      <table class="rl-grid" id="tl"></table>
+    </section>
+    <div class="rl-op rl-op-down"><span>Softmax</span><span class="arrow">▼</span></div>
+    <section class="rl-tensor rl-probs" style="--c:var(--rl-p)">
+      <h3><span class="dot"></span>Router probs</h3>
+      <div class="meta"><span>[8192, 256]</span><span>0~1</span></div>
+      <table class="rl-grid" id="tp"></table>
+    </section>
+  </div>
+
+</div>
+
+<script>
+(function(){
+  'use strict';
+  const H = 2560, E = 256;
+  const TOKENS  = [0, 1, 8190, 8191];        // 展示的 token 行
+  const EXPERTS = [0, 1, 193, 254, 255];     // 展示的 expert 列
+  const HIDS    = [0, 1, 2558, 2559];        // 展示的 hidden 维
+  const FP8_MAX = 448;
+
+  // ---- 确定性随机 ----
+  function rng(seed){ let a = seed >>> 0; return function(){ a += 0x6D2B79F5; let t = a; t = Math.imul(t ^ (t >>> 15), t | 1); t ^= t + Math.imul(t ^ (t >>> 7), t | 61); return ((t ^ (t >>> 14)) >>> 0) / 4294967296; }; }
+  function normal(r){ const u = 1 - r(), v = r(); return Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * v); }
+  function vec(seed, n){ const r = rng(seed), o = new Float64Array(n); for (let i = 0; i < n; i++) o[i] = normal(r); return o; }
+  const dot  = (a, b) => { let s = 0; for (let i = 0; i < a.length; i++) s += a[i] * b[i]; return s; };
+  const norm = a => Math.sqrt(dot(a, a));
+
+  // ---- x：RMSNorm 后 ±1 量级，行范数 ≈ √2560 ≈ 50 ----
+  const xBase = {}; TOKENS.forEach(t => xBase[t] = vec(1000 + t, H));
+
+  // ---- W_gate 列：w_j = Σ_t (target[t,j]/‖x_t‖²)·x_t + ε·r，使 x_t·w_j ≈ target 且 ‖w_j‖ = 列范数 ----
+  function makeCol(j, targets, colNorm){
+    const w = new Float64Array(H);
+    TOKENS.forEach(t => { const x = xBase[t], c = targets[t] / dot(x, x); for (let i = 0; i < H; i++) w[i] += c * x[i]; });
+    // 噪声先对展示的 x 行做正交化，保证展示格的 logits 精确等于 target
+    const r = vec(5000 + j, H);
+    TOKENS.forEach(t => { const x = xBase[t], c = dot(r, x) / dot(x, x); for (let i = 0; i < H; i++) r[i] -= c * x[i]; });
+    const a2 = dot(w, w), eps = Math.sqrt(Math.max(colNorm * colNorm - a2, 0)) / norm(r);
+    for (let i = 0; i < H; i++) w[i] += eps * r[i];
+    return w;
+  }
+  // 正常态：256 列范数都 ≈ 2，logits ≈ 30 量级
+  const T = t => ({ 0: t[0], 1: t[1], 8190: t[2], 8191: t[3] });
+  const normalTargets = { 0: T([27, 12, -24, 36]), 1: T([-8, 22, 9, -15]), 193: T([31, 18, 15, 7]), 254: T([14, -21, 25, 3]), 255: T([19, -21, 16, 30]) };
+  const wNormal = {}; EXPERTS.forEach(j => wNormal[j] = makeCol(j, normalTargets[j], 2));
+  // 塌缩前夕：只有 193 列涨到范数 50（元素 ±1），趋势项 ≈ 410
+  const wGrown = Object.assign({}, wNormal, { 193: makeCol(193, T([410, 395, 418, 402]), 50) });
+  // 溢出那一步：W 不变，某个 token 的 x 恰好和 193 列对齐（cosθ 0.16 → 0.74）→ 1846
+  function alignRow(x, w, target){
+    const wn = norm(w), xn = norm(x), cos = target / (xn * wn);
+    const wh = Float64Array.from(w, v => v / wn);
+    const p = new Float64Array(H); const xw = dot(x, wh);
+    for (let i = 0; i < H; i++) p[i] = x[i] - xw * wh[i];
+    const pn = norm(p), s = Math.sqrt(1 - cos * cos);
+    return Float64Array.from(wh, (v, i) => xn * (cos * v + s * p[i] / pn));
+  }
+  const xOverflow = Object.assign({}, xBase, { 0: alignRow(xBase[0], wGrown[193], 1846) });
+
+  const SCEN = [
+    { id:'normal',   label:'step ~10000 · 正常态',   x:xBase,     w:wNormal, },
+    { id:'grown',    label:'step 15200 · 塌缩前夕',  x:xBase,     w:wGrown,  },
+    { id:'overflow', label:'step 15203 · 溢出',      x:xOverflow, w:wGrown,  },
+  ];
+
+  // ---- 展示外 expert 的 logits（三情景相同）----
+  const otherLogits = {}; TOKENS.forEach(t => { const r = rng(9000 + t); otherLogits[t] = Array.from({ length: E }, () => 18 + 4 * normal(r)); });
+
+  // ---- 计算一个情景下全部展示值 ----
+  function compute(s){
+    const logits = {}, cast = {}, probs = {}, rows = {};
+    TOKENS.forEach(t => {
+      const full = otherLogits[t].slice();
+      EXPERTS.forEach(j => full[j] = dot(s.x[t], s.w[j]));
+      logits[t] = {}; EXPERTS.forEach(j => logits[t][j] = full[j]);
+      // cast 到 FP8 E4M3：|v| > 448 → inf（非有限值）
+      const c = full.map(v => Math.abs(v) > FP8_MAX ? (v > 0 ? Infinity : -Infinity) : v);
+      cast[t] = {}; EXPERTS.forEach(j => cast[t][j] = c[j]);
+      const mx = Math.max(...c);
+      const ex = c.map(v => Math.exp(v - mx));          // inf - inf = NaN，整行传染
+      const sum = ex.reduce((a, b) => a + b, 0);
+      probs[t] = {}; EXPERTS.forEach(j => probs[t][j] = ex[j] / sum);
+      rows[t] = { max: mx, sum, ex: j => ex[j], full };
+    });
+    return { logits, cast, probs, rows };
+  }
+
+  // ---- 状态 ----
+  let si = 0, selT = 0, selJ = 193, R = compute(SCEN[0]);
+
+  // ---- 格式化 ----
+  const f2 = v => (Math.abs(v) < 10 ? v.toFixed(2) : v.toFixed(1));
+  const fx = v => v.toFixed(2);
+  const fw = (v, big) => big ? v.toFixed(2) : v.toFixed(4);
+  const fl = v => !isFinite(v) ? (v > 0 ? 'inf' : '-inf') : String(Math.round(v));
+  const fp = v => Number.isNaN(v) ? 'NaN' : (v < 0.005 && v > 0 ? '0.00' : v.toFixed(2));
+  const paren = v => v < 0 ? '(' + v + ')' : v;
+  const esc = s => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;');
+
+  // ---- 渲染表格 ----
+  function head(cols, label, fmt){
+    return '<tr><th class="rh"></th>' + cols.map((c, i) => {
+      const sep = (i > 0 && cols[i] - cols[i - 1] > 1) ? '<th>···</th>' : '';
+      return sep + `<th data-col="${c}">${fmt(c)}</th>`;
+    }).join('') + '</tr>';
+  }
+  function ellRow(n){ return `<tr><td class="ell-r rh"></td>${'<td class="ell-r">···</td>'.repeat(n)}</tr>`; }
+  function body(rows, cols, cell, rowLabel){
+    let out = '';
+    rows.forEach((r, ri) => {
+      if (ri > 0 && rows[ri] - rows[ri - 1] > 1) out += ellRow(cols.length + cols.filter((c, i) => i > 0 && cols[i] - cols[i - 1] > 1).length);
+      out += `<tr><th class="rh" data-row="${r}">${rowLabel(r)}</th>` + cols.map((c, i) => {
+        const sep = (i > 0 && cols[i] - cols[i - 1] > 1) ? '<td class="ell">···</td>' : '';
+        return sep + cell(r, c);
+      }).join('') + '</tr>';
+    });
+    return out;
+  }
+
+  function render(){
+    const s = SCEN[si], big = si > 0;
+    document.getElementById('x-mag').textContent = '±1 量级';
+    { const w = s.w[selJ], rms = Math.sqrt(dot(w, w) / H); document.getElementById('w-mag').textContent = 'E ' + selJ + ' 列 ±' + (rms < 0.1 ? rms.toFixed(2) : rms.toFixed(1)) + ' 量级'; }
+
+    // x：按行
+    document.getElementById('tx').innerHTML =
+      head(HIDS, '', h => 'h ' + h) +
+      body(TOKENS, HIDS, (t, h) => `<td class="clk ${t === selT ? 'sel' : ''}" data-t="${t}">${fx(s.x[t][h])}</td>`, t => 'token ' + t);
+    // W_gate：按列
+    document.getElementById('tw').innerHTML =
+      head(EXPERTS, '', e => 'E ' + e) +
+      body(HIDS, EXPERTS, (h, j) => `<td class="clk ${j === selJ ? 'sel' : ''}" data-j="${j}">${fw(s.w[j][h], big && j === 193)}</td>`, h => 'h ' + h);
+    // logits：按格
+    document.getElementById('tl').innerHTML =
+      head(EXPERTS, '', e => 'E ' + e) +
+      body(TOKENS, EXPERTS, (t, j) => {
+        const v = R.logits[t][j], bad = Math.abs(v) > FP8_MAX;
+        const cls = ['clk', bad ? 'bad' : '', (t === selT && j === selJ) ? 'sel' : (t === selT || j === selJ) ? 'faint' : ''].join(' ');
+        return `<td class="${cls}" data-t="${t}" data-j="${j}">${fl(v)}</td>`;
+      }, t => 'token ' + t);
+    // probs：按格
+    document.getElementById('tp').innerHTML =
+      head(EXPERTS, '', e => 'E ' + e) +
+      body(TOKENS, EXPERTS, (t, j) => {
+        const v = R.probs[t][j];
+        const cls = ['clk', Number.isNaN(v) ? 'nan' : '', (t === selT && j === selJ) ? 'sel' : (t === selT || j === selJ) ? 'faint' : ''].join(' ');
+        return `<td class="${cls}" data-t="${t}" data-j="${j}">${fp(v)}</td>`;
+      }, t => 'token ' + t);
+    // 表头高亮
+    document.querySelectorAll('#tw th[data-col]').forEach(th => th.classList.toggle('sel', +th.dataset.col === selJ));
+    document.querySelectorAll('#tl th[data-col],#tp th[data-col]').forEach(th => th.classList.toggle('sel', +th.dataset.col === selJ));
+    document.querySelectorAll('#tx th[data-row],#tl th[data-row],#tp th[data-row]').forEach(th => th.classList.toggle('sel', +th.dataset.row === selT));
+
+    renderFormulas(s, big);
+    renderGauge();
+    document.querySelectorAll('#scen .btn').forEach((b, i) => b.classList.toggle('is-selected', i === si));
+  }
+
+  function renderFormulas(s, big){
+    const t = selT, j = selJ, x = s.x[t], w = s.w[j];
+    const logit = R.logits[t][j], castV = R.cast[t][j], prob = R.probs[t][j], row = R.rows[t];
+    const bad = !isFinite(castV);
+    const wf = v => fw(v, big && j === 193);
+
+    // 逐项展开：取展示的 4 个维度
+    const terms = HIDS.map(h => `<span class="k k-x">${fx(x[h])}</span>×<span class="k k-w">${wf(w[h])}</span>`);
+    const expand = `${terms[0]} + ${terms[1]} + … + ${terms[3]}`;
+    const sym = HIDS.map(h => `<span class="k k-x">x[${t},${h}]</span>·<span class="k k-w">W[${h},${j}]</span>`);
+    const symExpand = `${sym[0]} + ${sym[1]} + … + ${sym[3]}`;
+
+    const probLine = bad
+      ? `<span class="lbl">token ${t} 选专家 ${j} 的概率</span><span class="k k-bad val">NaN</span><span class="eq">=</span> exp(<span class="k k-l">inf</span> − max_t) / Σ_k exp(logits[${t},k] − max_t) <span class="eq">=</span> exp(inf − inf) / (… + NaN + …) <span class="eq">=</span> NaN`
+      : (Number.isNaN(prob)
+        ? `<span class="lbl">token ${t} 选专家 ${j} 的概率</span><span class="k k-bad val">NaN</span><span class="eq">=</span> exp(<span class="k k-l">${fl(castV)}</span> − <span class="k k-bad">inf</span>) / Σ_k(含 NaN) <span class="eq">=</span> 0 / NaN <span class="eq">=</span> NaN <span class="note">（本行别的 expert 越界，整行 256 个概率一起坏）</span>`
+        : `<span class="lbl">token ${t} 选专家 ${j} 的概率</span><span class="k k-p val">${fp(prob)}</span><span class="eq">=</span> exp(<span class="k k-l">logits[${t},${j}]</span> − max_t) / Σ_k exp(logits[${t},k] − max_t) <span class="eq">=</span> exp(<span class="k k-l">${fl(castV)}</span> − ${fl(row.max)}) / ${row.sum < 1e6 ? row.sum.toFixed(2) : row.sum.toExponential(2)} <span class="eq">=</span> ${row.ex(j).toExponential(2)} / ${row.sum < 1e6 ? row.sum.toFixed(2) : row.sum.toExponential(2)}`);
+
+    const logitLine = `<span class="lbl">token ${t} 选专家 ${j} 的 logits</span><span class="k k-l val">${fl(logit)}</span><span class="eq">=</span> logits[${t},${j}] <span class="eq">=</span> ${symExpand} <span class="eq">=</span> ${expand}`;
+
+    document.getElementById('formulas').innerHTML =
+      `<div class="rl-formula">${probLine}</div><div class="rl-formula">${logitLine}</div>`;
+  }
+
+  function renderGauge(){
+    let mx = 0; TOKENS.forEach(t => EXPERTS.forEach(j => mx = Math.max(mx, Math.abs(R.logits[t][j]))));
+    const pct = Math.min(100, 100 * mx / FP8_MAX);   // 整条进度条 = 448
+    const cls = mx > FP8_MAX ? 'bad' : mx > 0.8 * FP8_MAX ? 'warn' : '';
+    document.getElementById('gauge').innerHTML =
+      `<span>max|logit| <b style="color:var(--foreground)">${Math.round(mx)}</b></span><span class="bar"><i class="${cls}" style="width:${pct}%"></i></span>${mx > FP8_MAX ? '<span style="color:var(--rl-bad)">超出 E4M3 上界 448</span>' : '<span>低于 E4M3 上界 448</span>'}`;
+  }
+
+  // ---- 交互 ----
+  const scen = document.getElementById('scen');
+  SCEN.forEach((s, i) => { const b = document.createElement('button'); b.className = 'btn btn-sm'; b.textContent = s.label; b.onclick = () => { si = i; R = compute(SCEN[si]); render(); }; scen.appendChild(b); });
+  document.getElementById('tx').addEventListener('click', e => { const td = e.target.closest('td[data-t]'); if (td) { selT = +td.dataset.t; render(); } });
+  document.getElementById('tw').addEventListener('click', e => { const td = e.target.closest('td[data-j]'); if (td) { selJ = +td.dataset.j; render(); } });
+  ['tl', 'tp'].forEach(id => document.getElementById(id).addEventListener('click', e => { const td = e.target.closest('td[data-t]'); if (td) { selT = +td.dataset.t; selJ = +td.dataset.j; render(); } }));
+
+  render();
+})();
+</script>
+</body>
+</html>
