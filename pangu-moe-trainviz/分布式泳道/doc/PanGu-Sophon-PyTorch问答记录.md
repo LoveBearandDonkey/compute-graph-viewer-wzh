@@ -4,8 +4,6 @@
 
 ---
 
----
-
 ## DEMO 并行配置 — 92B Omni MoE（256 expert）
 
 本配置来源于仓库以下三篇文档（stage2, seq 32K）：
@@ -435,7 +433,7 @@ Stage3 使用 **128K seq** 并包含 **DSA** 变体：
 | 文档 | 一句话说明 |
 |------|-----------|
 | 低精度训练特性说明书 | 整体低精度训练方案 |
-| MXFP8配方特性说明书 | MXFP8 精度格式的配方/配置 |a
+| MXFP8配方特性说明书 | MXFP8 精度格式的配方/配置 |
 | MXFP8_FSDP2低精度训练特性说明书 | FSDP2 分布式场景下 MXFP8 低精度训练 |
 | Hyper FSDP支持lMXFP8设计说明书 | Hyper FSDP 对低精度 MXFP8 的支持 |
 | 细粒度低精度训练控制说明书 | 不同模块/层独立配置精度 |
@@ -615,3 +613,126 @@ Stage3 使用 **128K seq** 并包含 **DSA** 变体：
 - **开源基座**：Megatron-LM（NVIDIA 开源）、MindSpeed（华为开源）、PyTorch
 - **GPU可复用设计**：1F1B/DP 通信掩盖方案、分级 EP 设计、PP 负载划分、pangu_dropless、Expert Placement、异构调度、DCP Checkpoint 方案、Muon 优化器、融合算子**设计理念**（但具体算子不可复用）
 - **NPU 优化重点**：通信与计算重叠（MC2）、跨节点 EP 通信分层、MoE 融合算子链、长序列 Memory/Attention 优化
+
+---
+
+## Q11：训练过程中观测的指标（Metrics/Observables）完整清单
+
+> 数据来源：`PanGu/monitor/metrics/metric_configs.py`、`PanGu/training/utils.py`、`PanGu/training/training.py`、`PanGu/training/trainer/pangu_trainer.py`、`PanGu/training/callback/vlm_plugin/logger_and_track_metrics_callback.py`
+
+### 一、基础训练指标（所有模型通用）
+
+| 指标名 | 显示格式 | 含义 | 采集频率 | 场景 |
+|--------|---------|------|---------|------|
+| `learning_rate` | `{:.6E}` | 当前学习率 | 每个 training step | 所有训练阶段，监控学习率调度 |
+| `decoupled_learning_rate` | `{:.6E}` | 解耦后的学习率（若启用解耦权重衰减） | 每个 step | 使用解耦优化器时 |
+| `loss_scale` | `{:.1f}` | 混合精度训练的 loss scale 值 | 每个 step | 混合精度训练，检测是否 overflow |
+| `grad_norm` | `{:.6E}` | 全局梯度范数 | 每个 step（optimizer.step 后） | 梯度裁剪、检测梯度爆炸/消失 |
+| `num_zeros_in_grad` | `{:.1f}` | 梯度中零值占比（百分比） | 每个 step | 检测梯度稀疏度/死神经元 |
+| `params_norm` | `{:.3f}` | 模型参数范数 | 每个 step | 监控参数更新幅度 |
+| `batch_size` | `{:5d}` | 全局 batch size | 每个 step | 确认当前 batch 配置 |
+| `consumed_train_samples` | `{:12d}` | 已消耗的总训练样本数 | 每个 step | 训练进度追踪 |
+| `consumed_tokens_per_iteration` | `{:5d}` | 每个 iteration 消耗的 token 数 | 每个 step | 计算吞吐量的基础数据 |
+| `elapsed_time_per_iteration` | `{:.1f} ms` | 每个 iteration 的耗时 | 每个 step | 性能监控 |
+| `throughput` | `{:.1f} TFLOP/s/GPU` 或 `{:.1f} B tokens/Day` | 单 GPU 吞吐量（TFLOPS 或 tokens/天） | 每个 step | 训练效率评估 |
+| `throughput_actual` | 同上 | 实际吞吐量（排除预热等） | 每个 step | 真实效率评估 |
+| `MFU` | `{:.1f}%` | Model Flops Utilization（模型算力利用率） | 每个 step | 硬件利用率监控 |
+| `sample_reset_MFU` | `{:.1f}%` | sample reset 模式下的 MFU | 每个 step | sample reset 场景 |
+| `mem_reserved_bytes` | - | 保留的显存字节数 | 每个 step | 显存监控 |
+| `mem_allocated_bytes` | - | 已分配的显存字节数 | 每个 step | 显存监控 |
+| `mem_allocated_count` | - | 显存分配次数 | 每个 step | 检测显存泄漏 |
+| `max_attn_logits` | - | 每层 attention logits 最大值（per-layer grouped） | 每个 step | 检测 attention 数值溢出 |
+| `grad_norm_groups` | - | 按层分组的梯度范数 | 每个 step | 各层梯度分布分析 |
+| `num_floating_point_current` | - | 当前 iteration 的理论计算量（FLOPs） | 每个 step | 计算 throughput/MFU 所需 |
+| `num_floating_point_current_actual` | - | 实际计算量 | 每个 step | 同上（考虑 padding 等） |
+| `logging_info` → `baseline(ms)` | `{}` | baseline 时间（ms） | 每个 step | 性能基准 |
+| `logging_info` → `actual_seq_length` | `{:5d}` | 实际序列长度 | 每个 step | 动态 batch 场景 |
+| `logging_info` → `global batch size` | `{:5d}` | 全局 batch size | 每个 step | 配置确认 |
+
+### 二、Loss 指标
+
+| 指标名 | 显示格式 | 含义 | 采集频率 | 场景 |
+|--------|---------|------|---------|------|
+| `lm loss` | `{:.6E}` | 主模型语言建模损失（交叉熵） | 每个 step | 所有预训练任务，核心 loss |
+| `token loss` | - | token 级别 loss | 每个 step | 辅助监控 |
+| `sample loss` | - | sample 级别 loss | 每个 step | 辅助监控 |
+
+### 三、MTP（Multi-Token Prediction）指标
+
+当 `args.mtp_num_total_tokens > 1` 时启用。34B 模型有 4 个 MTP head（对应 head 0~3），1.5/7B 通常 0~2 个。
+
+| 指标名 | 显示格式 | 含义 | 采集频率 | 场景 |
+|--------|---------|------|---------|------|
+| `mtp head {i} lm loss` | `{:.6E}` | 第 i 个 MTP head 的语言建模损失（i=0,1,2,...） | 每个 step | MTP 训练，每个 head 独立监控 |
+| `mtp head {i} token loss` | - | 第 i 个 MTP head 的 token 级别 loss | 每个 step | MTP 辅助监控 |
+| `mtp head {i} sample loss` | - | 第 i 个 MTP head 的 sample 级别 loss | 每个 step | MTP 辅助监控 |
+| `mtp_kl_loss` | `{:.6E}` | MTP head 与主 head 之间的 KL 散度（per-head grouped） | 每个 step / 可配置间隔 | 知识蒸馏场景，衡量 MTP head 与 teacher 的偏差 |
+| `mtp_tv_loss` | `{:.6E}` | MTP head 与主 head 之间的 Total Variation loss（per-head grouped） | 每个 step / 可配置间隔 | 同上，另一种分布差异度量 |
+| `mtp_accept_rate_all` | `{:.2f}%` | MTP head 的全面接受率（per-head grouped） | 每个 step / 可配置间隔 | 推理加速场景，衡量 MTP head 预测被主 head 接受的比率 |
+| `mtp_accept_rate_mask` | `{:.2f}%` | MTP head 的掩码接受率 | 每个 step / 可配置间隔 | 同上（考虑 mask 后的接受率） |
+| `mtp_accept_main_rate_all` | `{:.2f}%` | 主 head 对 MTP head 的全面接受率 | 每个 step / 可配置间隔 | 对称视角的接受率 |
+| `mtp_accept_main_rate_mask` | `{:.2f}%` | 主 head 对 MTP head 的掩码接受率 | 每个 step / 可配置间隔 | 同上 |
+
+### 四、MoE（Mixture of Experts）指标
+
+当启用 MoE 时增加：
+
+| 指标名 | 含义 | 采集频率 | 场景 |
+|--------|------|---------|------|
+| `load_balancing_loss` | 各 expert 负载均衡损失（per-layer grouped） | 每个 step | MoE 训练，防止 token 集中在少数 expert |
+| `z_loss` | z-loss 辅助损失 | 每个 step | MoE 训练，稳定路由 |
+| `max_vio` / `max_vio_global_dp` / `max_vio_dp_local_mean` / `max_vio_dp_local_max` / `max_vio_ep` / `max_vio_local` | Expert 容量违规统计 | 每个 step | MoE 容量限制监控 |
+| `expert_bias_mean` / `expert_bias_std` / `expert_bias_max` / `expert_bias_min` | Expert bias 统计量 | 每个 step | MoE bias 矫正监控 |
+
+### 五、DSA（Dynamic Sparse Attention）指标
+
+| 指标名 | 含义 | 采集频率 | 场景 |
+|--------|------|---------|------|
+| `dsa_loss` | DSA 辅助损失 | 每个 step | 使用 Dynamic Sparse Attention 时 |
+
+### 六、MHC（Multi-Head Context）指标
+
+| 指标名 | 含义 | 采集频率 | 场景 |
+|--------|------|---------|------|
+| `hpre_beta_alpha_ratio` | 前置 head 的 beta/alpha 比率 | 每个 step | MHC 机制监控 |
+| `hpost_beta_alpha_ratio` | 后置 head 的 beta/alpha 比率 | 每个 step | MHC 机制监控 |
+| `hres_beta_alpha_ratio` | 残差 head 的 beta/alpha 比率 | 每个 step | MHC 机制监控 |
+
+### 七、Golden Indicator（黄金指标，独立输出）
+
+写入 `training.py` 的 `golden_indicator_log()`：
+
+| 字段 | 含义 |
+|------|------|
+| `timestamp` | 时间戳 |
+| `iteration` | 当前 iteration |
+| `model_category` | 模型类别 |
+| `global_batch_size` | 全局 batch size |
+| `sequence_length` | 序列长度 |
+| `transformer_layer_num` | Transformer 层数 |
+| `vocabulary_size` | 词表大小 |
+| `hidden_size` | 隐藏层维度 |
+| `ffn_hidden_size` | FFN 隐藏层维度 |
+| `attention_head_size` | Attention head 维度 |
+| `num_query_groups` | Query group 数 |
+| `task_npu_num` | NPU 数量 |
+| `step_time_seconds` | 单步耗时（秒） |
+| `mfu_numerator_tflops_per_second_per_npu` | 单 NPU 每秒 TFLOPS |
+
+### 八、输出渠道
+
+| 渠道 | 说明 |
+|------|------|
+| **DeepTraceWriter** | 标量指标发送到 DeepTrace（训练追踪平台） |
+| **PrometheusWriter** | 按 `log_interval` 发送到 Prometheus（监控告警） |
+| **RankLocalJsonlWriter** | 每个 rank 写入 JSONL（包含 `iteration`, `rank`, `metrics` 字典），用于离线分析 |
+| **标准日志** | 通过 `training_log()` 和 `format_log_string()` 打印到控制台 |
+
+### 九、按模型规模区分说明
+
+| 模型规模 | MTP head 数 | 打印到日志的关键指标 |
+|----------|------------|-------------------|
+| **34B** | 4 | `learning rate`, `mtp head 0 lm loss` ~ `mtp head 3 lm loss`, `lm loss`, `loss scale`, `grad norm`, `throughput` |
+| **1.5/7B** | 0~2（通常 1） | `learning rate`, `lm loss`, `loss scale`, `grad norm`, `throughput`；若有 MTP 则增加 `mtp head 0 lm loss` |
+
+以上指标中，**标准日志打印的仅是子集**（主要是 lr、loss（含 MTP head loss）、loss_scale、grad_norm、throughput），其余指标（显存、FLOPs、MFU、per-layer 梯度范数、MTP accept rate 等）通过 DeepTrace/Prometheus/JSONL 等渠道记录，用于离线分析和监控告警。
