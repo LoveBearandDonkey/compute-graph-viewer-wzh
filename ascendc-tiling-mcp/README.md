@@ -19,6 +19,20 @@
 
 服务返回 Tiling 分析结果以及关联的 MCP App。它是静态源码分析和可视化服务，不会编译或执行用户提交的 Ascend C 代码。
 
+## 这个 MCP 的作用
+
+Ascend Tiling Visualizer MCP 用于把 Ascend C / C++ 算子源码中的 Tiling 逻辑转化为可理解、可交互的可视化结果。它帮助用户从源码和已知参数中回答：
+
+- 全局 Tensor 的形状、数据范围和切分关系是什么；
+- 使用了多少个核，以及不同核分别处理哪些数据范围或输出 Tile；
+- 选中某个核后，核内如何沿 X、M、N、K 或其他语义轴继续分块；
+- block、tile、循环边界和数据搬运之间如何对应；
+- 哪些结论直接来自源码，哪些是推导结果、输入假设或仍然未知。
+
+调用完成后，MCP 会返回带有来源和证据状态的分析结果，并尝试在宿主中显示关联的 Tiling MCP App。它适合用于理解算子结构、检查 Tiling 参数与 kernel 逻辑的对应关系，以及辅助定位边界和切分问题。
+
+它不是编译器、运行器或性能分析器：不会替用户编译、执行算子，也不会凭静态源码给出真实性能、核利用率或搬运重叠结论。涉及真实运行行为时，仍需要结合 CANN 环境、运行日志和 profiling 数据验证。
+
 ## 文件结构
 
 ```text
@@ -77,33 +91,59 @@ Token 不会写入 Codex 配置文件，也不会写入安装包。
 
 当前安装包面向 macOS 上的 Codex Desktop、Codex CLI 和 Codex IDE 扩展。ChatGPT 网页版不会读取用户电脑上的本地 Codex MCP 配置，因此不适用这套安装方式。
 
-## 用户测试
+## 使用方法
 
-安装完成并重启 Codex 后，新建任务，要求实际调用云端 MCP：
+安装完成并重启 Codex 后，新建任务。用户可以提供以下任意一种输入，Codex 会先读取或整理输入，再调用云端 MCP 的 `visualize_ascend_tiling` 工具：
+
+### 方式一：提供本地算子文件
+
+直接告诉 Codex 文件路径，并说明希望查看的内容，例如：
 
 ```text
-请只使用 MCP 服务器 ascend_tiling_visualizer_cloud，实际调用它的 visualize_ascend_tiling 工具。不要使用本地的 ascend-tiling-visualizer。
-
-请用以下输入生成 Tiling 可视化：
-sources:
-- role: kernel
-  language: ascendc
-  content: |
-    auto offset = GetBlockIdx() * blockLength;
-    DataCopy(xLocal, xGm[offset], tileLength);
-    Add(y, x, z, tileLength);
-
-context:
-  tilingValues:
-    blockDim: 2
-    totalLength: 256
-    blockLength: 128
-    tileLength: 64
-
-完成后明确告诉我实际调用的 MCP 服务器名、工具名，以及 MCP App 是否成功显示。
+请读取本地文件 /path/to/my_operator/kernel/add_kernel.cpp 和相关的 tiling 文件，调用 ascend_tiling_visualizer_cloud 的 visualize_ascend_tiling 工具，分析这个算子的核间和核内 Tiling，并显示 MCP App。
 ```
 
-用户应看到工具调用结果和关联的 Tiling MCP App。仅仅让 Codex“列出可用工具”不一定会产生工具调用日志；要验证服务是否真正被使用，应执行一次 `visualize_ascend_tiling`。
+如果算子依赖多个头文件、host 侧 tiling 文件或配置文件，应同时提供这些文件的路径，避免只分析单个 kernel 文件而缺少上下文。
+
+### 方式二：提供代码链接
+
+提供 GitHub、GitCode、企业 Git 或原始文件链接，并说明需要分析的文件或代码范围，例如：
+
+```text
+请读取这个链接中的 Ascend C 算子源码：<代码链接>
+找到 kernel、host tiling 和相关参数定义后，调用 ascend_tiling_visualizer_cloud 的 visualize_ascend_tiling 工具，分析核间映射、核内分块和边界处理，并显示 MCP App。
+```
+
+链接需要对当前 Codex 环境可访问。如果链接需要登录、位于内网或无法读取，可以改用本地文件或直接粘贴代码。
+
+### 方式三：直接粘贴代码片段
+
+直接粘贴 kernel、tiling 或 host 侧代码，并标注语言和文件角色，例如：
+
+~~~~text
+请使用 MCP 服务器 ascend_tiling_visualizer_cloud，实际调用 visualize_ascend_tiling 工具分析下面的 Ascend C kernel。请说明核间切分、核内 Tile、数据搬运范围和无法从代码确认的部分，并显示 MCP App。
+
+文件角色：kernel
+语言：ascendc
+
+```cpp
+auto offset = GetBlockIdx() * blockLength;
+DataCopy(xLocal, xGm[offset], tileLength);
+Add(y, x, z, tileLength);
+```
+~~~~
+
+如果已知 `shape`、`dtype`、`format`、`blockDim`、`tileLength` 或其他 host 侧 tiling 参数，也应一并提供。参数不完整时，MCP 会保留公式或标记为假设、未知，不应把补充的可视化参数误认为真实运行值。
+
+### 推荐调用要求
+
+为了确认使用的是云端服务，而不是本地版本，提示词中应明确写出：
+
+```text
+请实际调用 MCP 服务器 ascend_tiling_visualizer_cloud 的 visualize_ascend_tiling 工具，不要使用本地的 ascend-tiling-visualizer。完成后告诉我实际调用的服务器名、工具名，以及 MCP App 是否成功显示。
+```
+
+只要求 Codex“列出可用工具”不一定会产生实际工具调用日志。要验证服务是否真正被使用，应提交一次本地文件、代码链接或代码片段，让 Codex 执行 Tiling 分析。
 
 ## Token 管理
 
@@ -159,4 +199,3 @@ ascend-tiling-visualizer-cloud-upload
 - 不要关闭 HTTPS 证书校验；
 - 正式扩大用户规模前，建议绑定正式域名和受信任的 TLS 证书；
 - 用户数量较大时，建议把当前 Bearer Token 方案升级为 OAuth，减少人工分发和轮换凭证的成本。
-
