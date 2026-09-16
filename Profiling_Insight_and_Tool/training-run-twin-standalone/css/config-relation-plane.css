@@ -2913,3 +2913,211 @@ body:has(.cro-board.is-plane) .cro-link-layer { display: none; }
   font-size: 10px;
   color: var(--foreground-muted);
 }
+
+/* ══ 2026-09-16 · 五处版式修订 ═══════════════════════════════════════════════
+   ① 模型下拉升为页面标题（工具栏最左端）；② 代码档配置 / 启动命令左右 6:4；
+   ③ 顶栏正中视图页签藏起，文档入口挪到右上角；④ 左栏表单每格铺满两列网格；
+   ⑤ 底部 AI 输入框照 insight2.0 助手输入栏的版式。 */
+
+/* ── ① 模型标题：不套底框，只留 18px 粗体的模型名 + 一枚下拉箭头 ─────────────
+   搬进来的仍是那枚 .cro-stepper（label + select），label 藏起，select 抹掉 pill 外观。
+   箭头是兄弟节点而不是 select 的 background-image：那样字号一改箭头就得重画。 */
+.crop-model {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  flex: 0 0 auto;
+  margin-right: var(--space-2);
+}
+
+.crop-model .cro-stepper { gap: 0; width: auto; }
+.crop-model .cro-stepper__label { display: none; }
+
+.crop-model .cro-select {
+  width: auto;
+  height: auto;
+  padding: 2px 26px 2px 2px;
+  border-radius: var(--radius-sm);
+  background: none;
+  color: var(--foreground);
+  font-size: 18px;
+  font-weight: var(--font-weight-bold);
+  line-height: 1.3;
+  letter-spacing: -0.01em;
+}
+
+.crop-model .cro-select:hover { background: var(--state-hover); }
+.crop-model .cro-select:focus-visible { box-shadow: var(--focus-ring); }
+
+.crop-model__caret {
+  position: absolute;
+  right: 4px;
+  top: 50%;
+  transform: translateY(-50%);
+  pointer-events: none;
+  display: inline-flex;
+  color: var(--foreground-secondary);
+}
+
+/* ── ② 代码档：配置文件（左 6）与启动命令（右 4）并排 ─────────────────────────
+   代码档整板让位之后宽度够两块并排：yaml 说怎么切、命令说切给多少张卡，并排读
+   不必上下滚着对数。yaml 区改成两列网格，头行与代码框走左列，启动命令整块占右列。 */
+.cro-board.is-plane .crop-pane--code .cro-region--yaml {
+  display: grid;
+  grid-template-columns: minmax(0, 6fr) minmax(0, 4fr);
+  grid-template-rows: auto minmax(0, 1fr);
+  column-gap: var(--space-4);
+  row-gap: var(--space-3);
+}
+
+.cro-board.is-plane .crop-pane--code .cro-yaml__head { grid-column: 1; grid-row: 1; }
+.cro-board.is-plane .crop-pane--code #croYamlCode { grid-column: 1; grid-row: 2; }
+.cro-board.is-plane .crop-pane--code .cro-yaml__launch {
+  grid-column: 2;
+  grid-row: 1 / 3;
+  max-height: none;
+  min-height: 0;
+}
+
+/* 右列的启动命令头行与左列的「配置文件」头行取齐高度（左边那行有 28px 的按钮） */
+.cro-board.is-plane .crop-pane--code .cro-yaml__launch-head { min-height: 28px; }
+
+/* ── ③ 顶栏正中的视图页签藏起（DOM 留着：它仍是 config-relation-yaml.js 的开关） ── */
+/* 本文件只有 plane 页加载，不必再按 .is-plane 限定（那个类是 js 跑完才挂的，限定了反而首帧闪一下） */
+.pto-ide-frame__topbar-center { display: none; }
+
+/* 右上角文档入口的按下态：进了文档档就亮着，再点一次退出 */
+#croDocEntry.is-selected {
+  background: var(--state-selected, var(--state-hover));
+  color: var(--foreground);
+}
+
+/* ── ④ 表单每格铺满：加减键贴两端、读数吃掉中间 ─────────────────────────────
+   两列网格把每一格拉到了半栏宽，而 .cro-stepper__control 是 inline-flex 按内容收
+   （style.css 的 .zoom-control-group），于是 pill 底被拉满、里面的「− 数 +」还缩在
+   左端，右边空着一截 —— 读起来就是「输入框拉宽了、加减号没跟上」。
+   这里让控件整格铺满、读数 flex:1 撑开、两枚圆键各贴一端。 */
+.cro-board.is-plane .crop-left .cro-stepper__control {
+  display: flex;
+  width: 100%;
+  justify-content: space-between;
+}
+
+.cro-board.is-plane .crop-left .cro-stepper__control .cro-stepper__input {
+  flex: 1 1 auto;
+  min-width: 0;
+  width: auto;
+}
+
+.cro-board.is-plane .crop-left .cro-stepper__control .btn { flex: 0 0 auto; }
+
+/* 开关 / 多档按钮 / 下拉这几类控件也照同一条规矩铺满格宽 */
+.cro-board.is-plane .crop-left .cro-stepper .cro-select,
+.cro-board.is-plane .crop-left .cro-stepper .cro-flag-choice,
+.cro-board.is-plane .crop-left .cro-stepper .cro-switch { width: 100%; }
+.cro-board.is-plane .crop-left .cro-stepper .cro-flag-choice > .btn { flex: 1; min-width: 0; }
+
+/* ── ⑤ AI 输入框：照 insight2.0 的 .wzh-chat-input-bar ──────────────────────
+   24px 大圆角、蓝紫渐变描边、面色不透明；输入区两行高在上，工具行在下 ——
+   左端一枚助手身份胶囊，右端 32px 圆形品牌蓝发送键。 */
+.crop-ai {
+  flex-direction: column;
+  align-items: stretch;
+  gap: var(--space-1);
+  padding: var(--space-2) var(--space-2) var(--space-2);
+  border-width: 1.5px;
+  border-radius: 24px;
+  background:
+    linear-gradient(var(--surface-1), var(--surface-1)) padding-box,
+    linear-gradient(90deg, var(--ark-blue-500) 0%, var(--highlight-l0a-violet-400) 100%) border-box;
+  box-shadow: 0 6px 20px color-mix(in srgb, var(--foreground) 10%, transparent);
+}
+
+/* 深色底上满色渐变描边太扎眼，往面板底色里兑到 60%（同 insight2.0） */
+:root[data-theme="dark"] .crop-ai,
+[data-theme="dark"] .crop-ai {
+  background:
+    linear-gradient(var(--surface-1), var(--surface-1)) padding-box,
+    linear-gradient(90deg,
+      color-mix(in srgb, var(--ark-blue-500) 60%, var(--surface-1)) 0%,
+      color-mix(in srgb, var(--highlight-l0a-violet-400) 60%, var(--surface-1)) 100%) border-box;
+}
+
+.crop-ai:focus-within {
+  box-shadow:
+    0 6px 20px color-mix(in srgb, var(--foreground) 10%, transparent),
+    0 0 0 3px color-mix(in srgb, var(--ark-blue-500) 8%, transparent);
+}
+
+.crop-ai__input {
+  flex: 0 0 auto;
+  width: 100%;
+  box-sizing: border-box;
+  min-height: 44px;
+  max-height: 126px;
+  margin: 0;
+  padding: 4px 8px 0;
+  font-size: 14px;
+  line-height: 1.5;
+  overflow-y: auto;
+  scrollbar-width: none;
+}
+
+.crop-ai__input::-webkit-scrollbar { width: 0; height: 0; }
+
+.crop-ai__bar {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.crop-ai__tool {
+  box-sizing: border-box;
+  height: 32px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 10px;
+  border: none;
+  border-radius: var(--radius-pill);
+  background: transparent;
+  cursor: pointer;
+  font: 12px / 1.4 var(--font-sans);
+  color: var(--foreground);
+  transition: background var(--duration-fast, 140ms) var(--easing-default, ease);
+}
+
+.crop-ai__tool:hover,
+.crop-ai__tool:focus-visible {
+  outline: none;
+  background: var(--state-hover);
+}
+
+.crop-ai__tool svg { color: var(--ark-blue-500); }
+
+.crop-ai__send {
+  margin-left: auto;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border: none;
+  border-radius: 50%;
+  background: var(--ark-blue-500);
+  color: var(--primary-foreground, #fff);
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transition: background var(--duration-fast, 140ms) var(--easing-default, ease);
+}
+
+.crop-ai__send:hover { background: color-mix(in srgb, var(--ark-blue-500) 84%, #000); }
+.crop-ai__send:focus-visible { outline: none; box-shadow: var(--focus-ring); }
+
+/* 输入框长高了（两行输入区 + 工具行 ≈ 104px），表单底部的呼吸位跟着加 */
+.cro-board.is-plane .crop-left__body { padding-bottom: calc(var(--space-3) + 124px); }
+
+/* 左栏收起时，模型标题左侧露出一枚「三横」菜单键（点它开回配置栏）；
+   左栏在的时候它没有意义，整个不占位。 */
+.crop-model__menu { display: none; flex: 0 0 auto; margin-right: var(--space-1); }
+.cro-board.is-plane.is-left-collapsed .crop-model__menu { display: inline-flex; }

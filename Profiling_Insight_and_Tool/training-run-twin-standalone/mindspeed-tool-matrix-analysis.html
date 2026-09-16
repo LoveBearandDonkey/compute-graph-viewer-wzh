@@ -1,0 +1,1152 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="MindSpeed 与 Profiling Insight & Tool 工具矩阵的双向能力映射与 UX 设计机会分析">
+  <title>MindSpeed × Profiling Insight — 双向能力与 UX 机会地图</title>
+  <style>
+    :root {
+      --bg: #07100f;
+      --bg-soft: #0b1715;
+      --panel: rgba(15, 31, 28, .82);
+      --panel-solid: #0f1e1b;
+      --line: rgba(190, 229, 216, .14);
+      --line-strong: rgba(190, 229, 216, .28);
+      --text: #eef8f4;
+      --muted: #a8bdb6;
+      --dim: #6f8780;
+      --lime: #c9f45f;
+      --lime-soft: rgba(201, 244, 95, .13);
+      --mint: #61dfbd;
+      --mint-soft: rgba(97, 223, 189, .12);
+      --amber: #ffc76b;
+      --amber-soft: rgba(255, 199, 107, .12);
+      --coral: #ff887d;
+      --blue: #86b7ff;
+      --max: 1240px;
+      --radius-xl: 28px;
+      --radius-lg: 20px;
+      --radius-md: 14px;
+      --shadow: 0 30px 80px rgba(0, 0, 0, .28);
+    }
+
+    * { box-sizing: border-box; }
+    html { scroll-behavior: smooth; }
+    body {
+      margin: 0;
+      color: var(--text);
+      background:
+        radial-gradient(circle at 82% 9%, rgba(97, 223, 189, .12), transparent 27rem),
+        radial-gradient(circle at 8% 23%, rgba(201, 244, 95, .08), transparent 25rem),
+        var(--bg);
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", "Microsoft YaHei", sans-serif;
+      line-height: 1.65;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    body::before {
+      content: "";
+      position: fixed;
+      inset: 0;
+      pointer-events: none;
+      opacity: .35;
+      background-image:
+        linear-gradient(rgba(255,255,255,.018) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(255,255,255,.018) 1px, transparent 1px);
+      background-size: 44px 44px;
+      mask-image: linear-gradient(to bottom, black, transparent 75%);
+    }
+
+    a { color: inherit; }
+    button { font: inherit; }
+    ::selection { background: var(--lime); color: #0a120f; }
+
+    .shell { width: min(calc(100% - 40px), var(--max)); margin-inline: auto; }
+    .eyebrow {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      margin: 0 0 14px;
+      color: var(--lime);
+      font: 700 12px/1.2 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      letter-spacing: .12em;
+      text-transform: uppercase;
+    }
+    .eyebrow::before { content: ""; width: 20px; height: 1px; background: currentColor; }
+    h1, h2, h3, p { margin-top: 0; }
+    h1, h2, h3 { line-height: 1.16; letter-spacing: -.025em; }
+    h1 { font-size: clamp(42px, 6vw, 78px); max-width: 990px; margin-bottom: 26px; }
+    h2 { font-size: clamp(30px, 4.2vw, 52px); margin-bottom: 16px; }
+    h3 { font-size: 20px; margin-bottom: 10px; }
+    .muted { color: var(--muted); }
+    .small { font-size: 13px; color: var(--dim); }
+    .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+    .accent { color: var(--lime); }
+
+    .topbar {
+      position: sticky;
+      z-index: 30;
+      top: 0;
+      border-bottom: 1px solid var(--line);
+      background: rgba(7, 16, 15, .78);
+      backdrop-filter: blur(18px);
+    }
+    .nav {
+      min-height: 68px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 24px;
+    }
+    .nav-actions { display: flex; align-items: center; gap: 10px; }
+    .brand { display: flex; align-items: center; gap: 11px; text-decoration: none; font-weight: 800; }
+    .brand-mark {
+      width: 32px; height: 32px; display: grid; place-items: center;
+      border: 1px solid rgba(201, 244, 95, .55); border-radius: 10px;
+      color: var(--lime); background: var(--lime-soft);
+      font: 800 12px/1 ui-monospace, monospace;
+    }
+    .navlinks { display: flex; align-items: center; gap: 6px; }
+    .navlinks a {
+      padding: 8px 12px; border-radius: 999px; color: var(--muted);
+      text-decoration: none; font-size: 13px;
+    }
+    .navlinks a:hover, .navlinks a:focus-visible { color: var(--text); background: rgba(255,255,255,.05); outline: none; }
+    .repo-link {
+      display: inline-flex; align-items: center; gap: 7px; min-height: 36px; padding: 0 12px;
+      border: 1px solid rgba(201,244,95,.35); border-radius: 10px; color: var(--lime);
+      background: var(--lime-soft); text-decoration: none; font-size: 12px; font-weight: 800; white-space: nowrap;
+    }
+    .repo-link:hover, .repo-link:focus-visible { border-color: var(--lime); background: rgba(201,244,95,.18); outline: none; }
+    .status-dot { display: inline-block; width: 7px; height: 7px; border-radius: 50%; background: var(--lime); box-shadow: 0 0 15px var(--lime); }
+
+    .hero { padding: 102px 0 72px; }
+    .hero-grid { display: grid; grid-template-columns: minmax(0, 1fr) 310px; gap: 60px; align-items: end; }
+    .hero h1 span { color: var(--muted); }
+    .lede { max-width: 790px; color: var(--muted); font-size: clamp(17px, 2vw, 21px); margin-bottom: 34px; }
+    .hero-actions { display: flex; flex-wrap: wrap; gap: 12px; }
+    .button {
+      display: inline-flex; align-items: center; justify-content: center; gap: 9px;
+      min-height: 46px; padding: 0 18px; border: 1px solid var(--line-strong); border-radius: 12px;
+      text-decoration: none; font-weight: 750; font-size: 14px; transition: .2s ease;
+    }
+    .button.primary { color: #0a120f; background: var(--lime); border-color: var(--lime); }
+    .button.secondary { color: var(--text); background: rgba(255,255,255,.035); }
+    .button:hover { transform: translateY(-2px); box-shadow: 0 12px 30px rgba(0,0,0,.2); }
+    .hero-note {
+      padding: 22px; border: 1px solid var(--line); border-radius: var(--radius-lg);
+      background: linear-gradient(145deg, rgba(255,255,255,.045), rgba(255,255,255,.015));
+    }
+    .hero-note strong { display: block; font-size: 38px; line-height: 1; color: var(--lime); margin-bottom: 10px; }
+    .hero-note p { margin: 0; color: var(--muted); font-size: 14px; }
+
+    .voices { padding-top: 28px; }
+    .voice-stage {
+      position: relative; overflow: hidden; padding: 18px;
+      border: 1px solid var(--line); border-radius: var(--radius-xl);
+      background: linear-gradient(135deg, rgba(255,136,125,.055), rgba(255,255,255,.018));
+    }
+    .voice-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 20px; margin-bottom: 18px; }
+    .voice-count { color: var(--dim); font: 700 11px/1 ui-monospace, monospace; }
+    .carousel-controls { display: flex; gap: 8px; }
+    .carousel-button {
+      width: 38px; height: 38px; display: grid; place-items: center; cursor: pointer;
+      border: 1px solid var(--line); border-radius: 50%; color: var(--text); background: rgba(255,255,255,.03);
+    }
+    .carousel-button:hover, .carousel-button:focus-visible { border-color: var(--lime); color: var(--lime); outline: none; }
+    .voice-track {
+      display: grid; grid-auto-flow: column; grid-auto-columns: minmax(300px, 35%); gap: 14px;
+      overflow-x: auto; overscroll-behavior-inline: contain; scroll-snap-type: none;
+      scrollbar-width: none; padding-bottom: 3px;
+    }
+    .voice-track::-webkit-scrollbar { display: none; }
+    .voice-card {
+      min-height: 265px; display: flex; flex-direction: column; padding: 22px;
+      border: 1px solid var(--line); border-radius: var(--radius-lg);
+      background: rgba(8, 19, 17, .9);
+    }
+    .person { display: flex; align-items: center; gap: 12px; margin-bottom: 24px; }
+    .avatar {
+      width: 42px; height: 42px; flex: 0 0 auto; display: grid; place-items: center;
+      border-radius: 50%; color: #09110f; background: var(--avatar, var(--lime));
+      font: 900 13px/1 ui-monospace, monospace; text-align: center;
+    }
+    .person strong { display: block; font-size: 14px; }
+    .person > div > span { display: block; color: var(--dim); font-size: 11px; }
+    .voice-card blockquote { margin: 0; font-size: 17px; line-height: 1.6; letter-spacing: -.01em; }
+    .voice-card .pain {
+      margin: auto 0 0; padding-top: 18px; color: var(--coral); border-top: 1px solid var(--line);
+      font: 700 11px/1.5 ui-monospace, monospace;
+    }
+    .carousel-progress { height: 2px; margin-top: 18px; background: rgba(255,255,255,.06); }
+    .carousel-progress span { display: block; width: 18%; height: 100%; background: var(--lime); transition: width .2s ease; }
+
+    .thesis {
+      display: grid; grid-template-columns: 1fr auto 1fr; gap: 0;
+      border: 1px solid var(--line); border-radius: var(--radius-xl); overflow: hidden;
+      background: var(--panel); box-shadow: var(--shadow);
+    }
+    .thesis-side { padding: clamp(28px, 5vw, 54px); }
+    .thesis-side:first-child { background: linear-gradient(135deg, var(--mint-soft), transparent 65%); }
+    .thesis-side:last-child { background: linear-gradient(225deg, var(--lime-soft), transparent 65%); }
+    .thesis-side h3 { font-size: clamp(24px, 3vw, 34px); }
+    .thesis-side ul { margin: 20px 0 0; padding: 0; list-style: none; color: var(--muted); }
+    .thesis-side li { padding: 9px 0; border-top: 1px solid var(--line); display: flex; gap: 10px; }
+    .thesis-side li::before { content: "↳"; color: var(--lime); }
+    .thesis-bridge { width: 86px; display: grid; place-items: center; border-inline: 1px solid var(--line); color: var(--lime); }
+    .thesis-bridge span { writing-mode: vertical-rl; font: 700 11px/1 ui-monospace, monospace; letter-spacing: .18em; }
+
+    section { padding: 92px 0; scroll-margin-top: 64px; }
+    .section-head { display: grid; grid-template-columns: minmax(0, 1fr) minmax(280px, 470px); gap: 50px; align-items: end; margin-bottom: 42px; }
+    .section-head p { color: var(--muted); margin-bottom: 0; }
+
+    .loop {
+      display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 10px;
+      padding: 14px; border: 1px solid var(--line); border-radius: var(--radius-lg); background: rgba(255,255,255,.018);
+    }
+    .loop-step { min-height: 160px; padding: 18px; border-radius: 14px; background: var(--panel-solid); border: 1px solid var(--line); position: relative; }
+    .loop-step:not(:last-child)::after { content: "→"; position: absolute; right: -12px; top: 20px; z-index: 2; color: var(--lime); }
+    .step-num { display: block; margin-bottom: 26px; color: var(--dim); font: 700 11px/1 ui-monospace, monospace; }
+    .loop-step strong { display: block; margin-bottom: 8px; font-size: 15px; }
+    .loop-step span:last-child { display: block; color: var(--dim); font-size: 12px; line-height: 1.5; }
+    .loop-step:nth-child(-n+2) { box-shadow: inset 0 2px 0 var(--mint); }
+    .loop-step:nth-child(n+3):nth-child(-n+4) { box-shadow: inset 0 2px 0 var(--amber); }
+    .loop-step:nth-child(n+5) { box-shadow: inset 0 2px 0 var(--lime); }
+
+    .repo-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; }
+    .repo-card { padding: 24px; border: 1px solid var(--line); border-radius: var(--radius-lg); background: var(--panel); }
+    .repo-card .icon { width: 38px; height: 38px; display: grid; place-items: center; margin-bottom: 32px; border-radius: 12px; color: var(--lime); background: var(--lime-soft); font-weight: 900; }
+    .repo-card p { color: var(--muted); font-size: 14px; margin-bottom: 18px; }
+    .repo-card code, .path {
+      display: inline-block; max-width: 100%; padding: 4px 8px; border: 1px solid var(--line);
+      border-radius: 7px; color: #b8cbc5; background: rgba(0,0,0,.18);
+      font: 11px/1.5 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      overflow-wrap: anywhere;
+    }
+
+    .reality-grid { display: grid; grid-template-columns: 1.2fr .9fr .9fr; gap: 14px; margin-bottom: 18px; }
+    .reality-card { position: relative; padding: 26px; border: 1px solid var(--line); border-radius: var(--radius-lg); background: var(--panel); }
+    .reality-card.primary { background: linear-gradient(145deg, var(--amber-soft), var(--panel) 58%); }
+    .reality-label { display: inline-flex; margin-bottom: 32px; padding: 5px 9px; border-radius: 99px; color: var(--amber); background: var(--amber-soft); font: 800 10px/1 ui-monospace, monospace; }
+    .reality-card h3 { font-size: 25px; }
+    .reality-card p { color: var(--muted); font-size: 14px; margin-bottom: 0; }
+    .reality-list { margin: 18px 0 0; padding: 0; list-style: none; }
+    .reality-list li { padding: 9px 0; border-top: 1px solid var(--line); color: var(--muted); font-size: 13px; }
+    .reality-list strong { color: var(--text); }
+    .verdict {
+      display: grid; grid-template-columns: auto 1fr; gap: 16px; align-items: center; padding: 20px 22px;
+      border: 1px solid rgba(201,244,95,.24); border-radius: var(--radius-lg); background: var(--lime-soft);
+    }
+    .verdict-mark { width: 44px; height: 44px; display: grid; place-items: center; border-radius: 50%; color: #07100f; background: var(--lime); font-weight: 950; }
+    .verdict p { margin: 0; color: #d8e7e1; font-size: 14px; }
+
+    .usecase-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+    .usecase { overflow: hidden; border: 1px solid var(--line); border-radius: var(--radius-xl); background: var(--panel); }
+    .usecase-head { padding: 28px; border-bottom: 1px solid var(--line); }
+    .usecase-number { display: inline-block; color: var(--lime); font: 900 12px/1 ui-monospace, monospace; margin-bottom: 22px; }
+    .usecase-head h3 { font-size: 28px; }
+    .usecase-head p { margin-bottom: 0; color: var(--muted); }
+    .case-flow { display: grid; grid-template-columns: 1fr 1fr 1fr; }
+    .case-step { min-height: 185px; padding: 22px; border-right: 1px solid var(--line); }
+    .case-step:last-child { border-right: 0; }
+    .case-step span { color: var(--dim); font: 800 10px/1 ui-monospace, monospace; }
+    .case-step strong { display: block; margin: 16px 0 8px; font-size: 14px; }
+    .case-step p { margin: 0; color: var(--muted); font-size: 12px; }
+    .case-command { margin: 0 22px 22px; padding: 15px; overflow-x: auto; border: 1px solid var(--line); border-radius: 10px; color: #cce7dd; background: rgba(0,0,0,.25); font: 11px/1.7 ui-monospace, monospace; white-space: pre; }
+    .case-output { display: flex; flex-wrap: wrap; gap: 7px; padding: 0 22px 24px; }
+    .case-output span { padding: 6px 9px; border-radius: 99px; color: var(--mint); background: var(--mint-soft); font-size: 10px; font-weight: 800; }
+
+    .filters { display: flex; flex-wrap: wrap; gap: 8px; margin: -6px 0 28px; }
+    .filter {
+      cursor: pointer; border: 1px solid var(--line); border-radius: 999px; padding: 9px 14px;
+      color: var(--muted); background: rgba(255,255,255,.02); font-size: 13px;
+    }
+    .filter:hover, .filter:focus-visible { color: var(--text); border-color: var(--line-strong); outline: none; }
+    .filter.active { color: #0a120f; background: var(--lime); border-color: var(--lime); font-weight: 800; }
+
+    .scenario-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
+    .scenario {
+      position: relative; min-height: 310px; padding: 26px; border: 1px solid var(--line);
+      border-radius: var(--radius-lg); background: var(--panel); transition: .22s ease;
+    }
+    .scenario:hover { transform: translateY(-3px); border-color: var(--line-strong); box-shadow: 0 18px 55px rgba(0,0,0,.18); }
+    .scenario[hidden] { display: none; }
+    .scenario-top { display: flex; justify-content: space-between; gap: 18px; align-items: flex-start; margin-bottom: 24px; }
+    .index { color: var(--lime); font: 800 13px/1 ui-monospace, monospace; }
+    .tag { padding: 5px 9px; border-radius: 999px; color: var(--mint); background: var(--mint-soft); font-size: 11px; font-weight: 800; }
+    .scenario h3 { font-size: 24px; }
+    .scenario > p { color: var(--muted); font-size: 14px; }
+    .scenario-foot { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 24px; }
+    .mini { padding-top: 12px; border-top: 1px solid var(--line); }
+    .mini span { display: block; color: var(--dim); font-size: 10px; text-transform: uppercase; letter-spacing: .1em; margin-bottom: 5px; }
+    .mini strong { display: block; font-size: 12px; line-height: 1.5; }
+
+    .matrix-wrap { overflow-x: auto; border: 1px solid var(--line); border-radius: var(--radius-lg); background: var(--panel); }
+    .matrix { width: 100%; min-width: 850px; border-collapse: collapse; }
+    .matrix th, .matrix td { padding: 17px 18px; border-bottom: 1px solid var(--line); text-align: left; vertical-align: middle; }
+    .matrix th { color: var(--dim); font: 700 11px/1.4 ui-monospace, monospace; letter-spacing: .08em; text-transform: uppercase; }
+    .matrix td:first-child { width: 28%; font-weight: 750; }
+    .matrix tr:last-child td { border-bottom: 0; }
+    .level { display: inline-flex; align-items: center; gap: 7px; font-size: 12px; color: var(--muted); }
+    .level::before { content: ""; width: 8px; height: 8px; border-radius: 50%; background: var(--dim); }
+    .level.high::before { background: var(--lime); box-shadow: 0 0 10px rgba(201,244,95,.45); }
+    .level.mid::before { background: var(--amber); }
+    .level.low::before { background: var(--dim); }
+    .cell-note { color: var(--muted); font-size: 12px; }
+
+    .ux-intro { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-bottom: 18px; }
+    .ux-axiom { padding: 24px; border: 1px solid var(--line); border-radius: var(--radius-lg); background: var(--panel); }
+    .ux-axiom span { display: block; margin-bottom: 11px; color: var(--lime); font: 800 11px/1 ui-monospace, monospace; }
+    .ux-axiom strong { font-size: 18px; }
+
+    .ux-list { border-top: 1px solid var(--line); }
+    .ux-item {
+      display: grid; grid-template-columns: 78px minmax(200px, .8fr) minmax(320px, 1.55fr) 130px;
+      gap: 24px; align-items: start; padding: 28px 8px; border-bottom: 1px solid var(--line);
+    }
+    .priority { width: 52px; height: 52px; display: grid; place-items: center; border-radius: 50%; font: 900 13px/1 ui-monospace, monospace; }
+    .priority.p0 { color: #07100f; background: var(--lime); }
+    .priority.p1 { color: var(--amber); border: 1px solid rgba(255,199,107,.5); background: var(--amber-soft); }
+    .priority.p2 { color: var(--muted); border: 1px solid var(--line-strong); background: rgba(255,255,255,.03); }
+    .ux-item h3 { margin: 5px 0 7px; }
+    .ux-item p { color: var(--muted); font-size: 14px; margin: 3px 0 0; }
+    .deliverable { color: var(--muted); font-size: 12px; }
+    .deliverable strong { display: block; color: var(--text); margin-bottom: 6px; }
+
+    .prototype {
+      display: grid; grid-template-columns: 260px minmax(0, 1fr) 280px; min-height: 560px;
+      border: 1px solid var(--line-strong); border-radius: var(--radius-xl); overflow: hidden;
+      background: #0b1513; box-shadow: var(--shadow);
+    }
+    .prototype-prompts { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; margin-bottom: 18px; }
+    .prototype-prompt { position: relative; min-height: 230px; padding: 22px; border: 1px solid var(--line); border-radius: var(--radius-lg); background: var(--panel); }
+    .prompt-person { display: flex; align-items: center; gap: 10px; margin-bottom: 18px; }
+    .prompt-person .avatar { width: 34px; height: 34px; font-size: 10px; }
+    .prompt-person strong { display: block; font-size: 12px; }
+    .prompt-person > div > span { display: block; color: var(--dim); font-size: 10px; }
+    .prototype-prompt h3 { font-size: 19px; }
+    .prototype-prompt p { color: var(--muted); font-size: 13px; margin-bottom: 18px; }
+    .want { position: absolute; inset: auto 22px 20px; padding-top: 12px; border-top: 1px solid var(--line); color: var(--lime); font: 700 11px/1.5 ui-monospace, monospace; }
+    .proto-side, .proto-inspector { padding: 20px; background: rgba(255,255,255,.018); }
+    .proto-side { border-right: 1px solid var(--line); }
+    .proto-inspector { border-left: 1px solid var(--line); }
+    .proto-main { padding: 22px; }
+    .proto-title { display: flex; justify-content: space-between; gap: 12px; align-items: center; padding-bottom: 18px; border-bottom: 1px solid var(--line); }
+    .proto-title strong { font-size: 13px; }
+    .proto-title span { color: var(--lime); font: 11px/1 ui-monospace, monospace; }
+    .form-group { margin-top: 20px; }
+    .form-group label { display: block; color: var(--dim); font-size: 10px; text-transform: uppercase; letter-spacing: .1em; margin-bottom: 7px; }
+    .fake-input { padding: 10px 11px; border: 1px solid var(--line); border-radius: 8px; color: var(--muted); font-size: 12px; background: rgba(0,0,0,.18); }
+    .search-funnel { display: flex; align-items: end; gap: 9px; height: 170px; padding: 24px 0; }
+    .funnel-col { flex: 1; border-radius: 8px 8px 3px 3px; background: linear-gradient(to top, rgba(97,223,189,.1), rgba(97,223,189,.38)); border: 1px solid rgba(97,223,189,.22); position: relative; }
+    .funnel-col:nth-child(1) { height: 100%; }
+    .funnel-col:nth-child(2) { height: 70%; }
+    .funnel-col:nth-child(3) { height: 47%; }
+    .funnel-col:nth-child(4) { height: 24%; background: linear-gradient(to top, rgba(201,244,95,.18), rgba(201,244,95,.55)); }
+    .funnel-col span { position: absolute; inset: auto 0 -23px; text-align: center; color: var(--dim); font-size: 9px; }
+    .candidate { display: grid; grid-template-columns: 28px 1fr auto; gap: 12px; align-items: center; padding: 12px 0; border-top: 1px solid var(--line); }
+    .candidate:first-of-type { margin-top: 18px; }
+    .candidate-rank { width: 26px; height: 26px; display: grid; place-items: center; border-radius: 8px; background: var(--lime-soft); color: var(--lime); font: 800 10px/1 ui-monospace, monospace; }
+    .candidate strong { display: block; font-size: 12px; }
+    .candidate small { color: var(--dim); }
+    .score { color: var(--lime); font: 800 12px/1 ui-monospace, monospace; }
+    .gauge { height: 8px; margin: 8px 0 22px; border-radius: 99px; background: rgba(255,255,255,.06); overflow: hidden; }
+    .gauge::before { content: ""; display: block; width: 78%; height: 100%; background: linear-gradient(90deg, var(--mint), var(--lime)); }
+    .evidence { margin-top: 12px; padding: 11px; border: 1px solid var(--line); border-radius: 9px; color: var(--muted); font-size: 11px; }
+    .evidence strong { color: var(--text); }
+
+    .roadmap { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; }
+    .phase { padding: 26px; border: 1px solid var(--line); border-radius: var(--radius-lg); background: var(--panel); }
+    .phase .phase-time { color: var(--lime); font: 800 11px/1 ui-monospace, monospace; }
+    .phase h3 { margin-top: 18px; }
+    .phase ul { padding-left: 18px; margin: 18px 0 0; color: var(--muted); font-size: 14px; }
+    .phase li + li { margin-top: 8px; }
+
+    .principles { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; margin-top: 14px; }
+    .principle { padding: 22px; border-radius: var(--radius-lg); border: 1px dashed var(--line-strong); }
+    .principle strong { display: block; margin-bottom: 7px; }
+    .principle p { margin: 0; color: var(--muted); font-size: 13px; }
+
+    .sources { border-top: 1px solid var(--line); }
+    .source-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+    .source-card { padding: 22px; border: 1px solid var(--line); border-radius: var(--radius-lg); background: rgba(255,255,255,.018); }
+    .source-card h3 { font-size: 15px; }
+    .source-card ul { margin: 14px 0 0; padding: 0; list-style: none; }
+    .source-card li { padding: 8px 0; border-top: 1px solid var(--line); color: var(--muted); font-size: 12px; }
+    .source-card code { color: #c6d7d1; overflow-wrap: anywhere; }
+    .caveat { margin-top: 18px; padding: 18px 20px; border-left: 3px solid var(--amber); background: var(--amber-soft); color: #e9d6b5; font-size: 13px; }
+
+    footer { padding: 38px 0 50px; color: var(--dim); font-size: 12px; }
+    .footer-row { display: flex; justify-content: space-between; gap: 24px; padding-top: 24px; border-top: 1px solid var(--line); }
+
+    @media (max-width: 1000px) {
+      .hero-grid, .section-head { grid-template-columns: 1fr; }
+      .hero-note { max-width: 430px; }
+      .voice-track { grid-auto-columns: minmax(290px, 52%); }
+      .repo-grid { grid-template-columns: repeat(2, 1fr); }
+      .reality-grid { grid-template-columns: 1fr 1fr; }
+      .reality-card.primary { grid-column: 1 / -1; }
+      .usecase-grid { grid-template-columns: 1fr; }
+      .loop { grid-template-columns: repeat(3, 1fr); }
+      .loop-step:nth-child(3)::after { display: none; }
+      .ux-item { grid-template-columns: 58px 1fr; }
+      .ux-item > p, .ux-item > .deliverable { grid-column: 2; }
+      .prototype { grid-template-columns: 220px minmax(0, 1fr); }
+      .proto-inspector { grid-column: 1 / -1; border-left: 0; border-top: 1px solid var(--line); }
+    }
+
+    @media (max-width: 720px) {
+      .shell { width: min(calc(100% - 24px), var(--max)); }
+      .navlinks { display: none; }
+      .repo-link { min-height: 34px; padding-inline: 10px; }
+      .hero { padding-top: 72px; }
+      .voice-track { grid-auto-columns: 88%; }
+      .thesis { grid-template-columns: 1fr; }
+      .thesis-bridge { width: auto; height: 58px; border: 0; border-block: 1px solid var(--line); }
+      .thesis-bridge span { writing-mode: horizontal-tb; }
+      .loop, .repo-grid, .reality-grid, .scenario-grid, .ux-intro, .prototype-prompts, .roadmap, .principles, .source-grid { grid-template-columns: 1fr; }
+      .reality-card.primary { grid-column: auto; }
+      .case-flow { grid-template-columns: 1fr; }
+      .case-step { min-height: auto; border-right: 0; border-bottom: 1px solid var(--line); }
+      .case-step:last-child { border-bottom: 0; }
+      .loop-step:not(:last-child)::after { content: "↓"; right: 18px; top: auto; bottom: -16px; }
+      .loop-step:nth-child(3)::after { display: block; }
+      .prototype { grid-template-columns: 1fr; }
+      .proto-side { border-right: 0; border-bottom: 1px solid var(--line); }
+      .scenario-foot { grid-template-columns: 1fr; }
+      .footer-row { flex-direction: column; }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      html { scroll-behavior: auto; }
+      *, *::before, *::after { transition-duration: .001ms !important; animation-duration: .001ms !important; }
+    }
+  </style>
+</head>
+<body>
+  <header class="topbar">
+    <div class="shell nav">
+      <a class="brand" href="#top" aria-label="返回顶部">
+        <span class="brand-mark">MS</span>
+        <span>MindSpeed × Insight</span>
+      </a>
+      <div class="nav-actions">
+        <nav class="navlinks" aria-label="页面导航">
+          <a href="#voices">用户问题</a>
+          <a href="#repo">仓库画像</a>
+          <a href="#current">现状与案例</a>
+          <a href="#outbound">UX 反哺</a>
+          <a href="#roadmap">落地路径</a>
+        </nav>
+        <a class="repo-link" href="https://gitcode.com/Ascend/MindSpeed?source_module=search_result_repo" target="_blank" rel="noopener noreferrer" aria-label="在新窗口打开 MindSpeed GitCode 源仓">GitCode 源仓 <span aria-hidden="true">↗</span></a>
+      </div>
+    </div>
+  </header>
+
+  <main id="top">
+    <section class="hero">
+      <div class="shell hero-grid">
+        <div>
+          <p class="eyebrow">Repository × Product Opportunity Map</p>
+          <h1>让“训练加速”<br><span>变成可解释的优化闭环。</span></h1>
+          <p class="lede">MindSpeed 提供训练执行、性能建模与优化策略；现有工具矩阵提供图、时间、硬件与证据的可视化。两者结合的真正机会，不是再加一个看板，而是把“发现问题”推进到“生成可执行方案并验证收益”。</p>
+          <div class="hero-actions">
+            <a class="button primary" href="#inbound">先看可补充的场景 <span>↓</span></a>
+            <a class="button secondary" href="#outbound">再看 UX 反哺 <span>↗</span></a>
+          </div>
+        </div>
+        <aside class="hero-note" aria-label="核心结论">
+          <strong>1 + 1 &gt; 2</strong>
+          <p><b>MindSpeed 是优化引擎</b><br>工具矩阵是解释与决策界面。产品化重点应放在二者之间的“数据契约、建议契约、验证契约”。</p>
+        </aside>
+      </div>
+    </section>
+
+    <section id="voices" class="voices" aria-labelledby="voices-title">
+      <div class="shell">
+        <div class="section-head">
+          <div>
+            <p class="eyebrow">00 / User problem wall</p>
+            <h2 id="voices-title">没有 MindSpeed 时，<br>他们卡在哪里？</h2>
+          </div>
+          <p>这些问题发生在“大模型已经能跑”之后：配置组合太多、显存边界不明、Profile 看得懂却不知道怎么改。先看用户为什么焦虑，再看 MindSpeed 提供了什么。</p>
+        </div>
+        <div class="voice-stage">
+          <div class="voice-toolbar">
+            <span class="voice-count"><span id="voice-position">01</span> / 08 · DRAG OR NAVIGATE</span>
+            <div class="carousel-controls">
+              <button class="carousel-button" id="voice-toggle" type="button" aria-label="暂停自动滚动" aria-pressed="false">Ⅱ</button>
+              <button class="carousel-button" id="voice-prev" type="button" aria-label="上一组用户问题">←</button>
+              <button class="carousel-button" id="voice-next" type="button" aria-label="下一组用户问题">→</button>
+            </div>
+          </div>
+          <div class="voice-track" id="voice-track" tabindex="0" aria-label="用户问题轮播">
+            <article class="voice-card">
+              <div class="person"><span class="avatar" style="--avatar:#c9f45f">张</span><div><strong>张启明</strong><span>分布式训练工程师 · 64 卡集群</span></div></div>
+              <blockquote>“TP、PP、CP、EP、MBS 一组合就是几百套。我只能靠经验挑几组逐个跑，一轮调优要占掉几天集群。”</blockquote>
+              <p class="pain">PAIN · 搜索空间巨大 / 试错成本高</p>
+            </article>
+            <article class="voice-card">
+              <div class="person"><span class="avatar" style="--avatar:#61dfbd">李</span><div><strong>李媛</strong><span>训练平台运维 · 长序列任务</span></div></div>
+              <blockquote>“任务跑到第 11 个小时才 OOM。是哪个 PP stage、哪类张量顶满的？该开重计算还是降 batch，我没有可靠答案。”</blockquote>
+              <p class="pain">PAIN · OOM 发生太晚 / 容量不可预判</p>
+            </article>
+            <article class="voice-card">
+              <div class="person"><span class="avatar" style="--avatar:#ffc76b">王</span><div><strong>王哲</strong><span>性能工程师 · 多机训练</span></div></div>
+              <blockquote>“Timeline 告诉我 All-to-All 很慢，但没有告诉我是并行配置、跨域带宽还是 overlap 没做好，更不会直接给我可执行参数。”</blockquote>
+              <p class="pain">PAIN · 看见瓶颈 / 没有优化处方</p>
+            </article>
+            <article class="voice-card">
+              <div class="person"><span class="avatar" style="--avatar:#ff887d">陈</span><div><strong>陈默</strong><span>MoE 算法工程师 · 专家并行</span></div></div>
+              <blockquote>“有几张卡总在等最热专家。我能看到 token 倾斜，却不知道专家该怎么重新放、迁移一次值不值得。”</blockquote>
+              <p class="pain">PAIN · 热点专家拖慢全局 / 迁移靠猜</p>
+            </article>
+            <article class="voice-card">
+              <div class="person"><span class="avatar" style="--avatar:#86b7ff">周</span><div><strong>周楠</strong><span>算子优化工程师 · 图性能分析</span></div></div>
+              <blockquote>“我在计算图里找到了热点节点，还要手工翻 shape、FLOPs 和融合算子文档，才能判断 MindSpeed 有没有更好的实现。”</blockquote>
+              <p class="pain">PAIN · 热点与优化能力没有映射</p>
+            </article>
+            <article class="voice-card">
+              <div class="person"><span class="avatar" style="--avatar:#d3a8ff">刘</span><div><strong>刘洋</strong><span>模型迁移工程师 · Megatron → 昇腾</span></div></div>
+              <blockquote>“模型能迁过来不等于性能好。版本、参数和特性组合散在文档里，每次升级都怕某个优化互斥或失效。”</blockquote>
+              <p class="pain">PAIN · 配套复杂 / 特性兼容难判断</p>
+            </article>
+            <article class="voice-card">
+              <div class="person"><span class="avatar" style="--avatar:#ffb0d6">孙</span><div><strong>孙可</strong><span>性能负责人 · 多团队协作</span></div></div>
+              <blockquote>“大家各自改脚本、跑实验，最后只报一个吞吐数字。为什么这组最好、代价是什么、还能不能复现，没有证据链。”</blockquote>
+              <p class="pain">PAIN · 实验不可审计 / 经验无法复用</p>
+            </article>
+            <article class="voice-card">
+              <div class="person"><span class="avatar" style="--avatar:#9ee7e1">林</span><div><strong>林溪</strong><span>新入职工程师 · 首次大模型训练</span></div></div>
+              <blockquote>“几十个优化参数每个都像有用，但我不知道该从哪个开始，也不知道打开后会换来多少性能、付出多少显存。”</blockquote>
+              <p class="pain">PAIN · 专家知识门槛 / 缺少决策路径</p>
+            </article>
+          </div>
+          <div class="carousel-progress" aria-hidden="true"><span id="voice-progress"></span></div>
+        </div>
+      </div>
+    </section>
+
+    <div class="shell thesis" aria-label="双方能力定位">
+      <article class="thesis-side">
+        <p class="eyebrow">MindSpeed / Engine</p>
+        <h3>知道如何跑得更快</h3>
+        <ul>
+          <li>多维并行与自动策略搜索</li>
+          <li>计算、通信、内存性能建模</li>
+          <li>融合算子与昇腾亲和优化</li>
+          <li>MoE、长序列、超大集群专项优化</li>
+        </ul>
+      </article>
+      <div class="thesis-bridge" aria-hidden="true"><span>DECISION LOOP</span></div>
+      <article class="thesis-side">
+        <p class="eyebrow">Tool Matrix / Experience</p>
+        <h3>知道如何让人看懂</h3>
+        <ul>
+          <li>图 × Rank × 时间的统一视图</li>
+          <li>HBM、泳道、MFU、任务对比</li>
+          <li>问题诊断与聚光灯证据链</li>
+          <li>配置关系、容量仿真与报告输出</li>
+        </ul>
+      </article>
+    </div>
+
+    <section aria-labelledby="loop-title">
+      <div class="shell">
+        <div class="section-head">
+          <div>
+            <p class="eyebrow">North-star workflow</p>
+            <h2 id="loop-title">共同产品的北极星流程</h2>
+          </div>
+          <p>现有工具大多覆盖中间的“观察与诊断”；MindSpeed 能补齐前端的配置约束和后端的策略执行，把一次性分析升级为持续优化闭环。</p>
+        </div>
+        <div class="loop" role="list" aria-label="六步优化闭环">
+          <div class="loop-step" role="listitem"><span class="step-num">01 / DEFINE</span><strong>配置预检</strong><span>模型、集群、并行、显存约束</span></div>
+          <div class="loop-step" role="listitem"><span class="step-num">02 / COLLECT</span><strong>最小采集</strong><span>自动生成 Profile recipe</span></div>
+          <div class="loop-step" role="listitem"><span class="step-num">03 / OBSERVE</span><strong>统一观测</strong><span>图、Rank、Timeline、HBM</span></div>
+          <div class="loop-step" role="listitem"><span class="step-num">04 / EXPLAIN</span><strong>证据定位</strong><span>瓶颈 → 机制 → 根因</span></div>
+          <div class="loop-step" role="listitem"><span class="step-num">05 / ACT</span><strong>策略建议</strong><span>参数、特性、收益与风险</span></div>
+          <div class="loop-step" role="listitem"><span class="step-num">06 / VERIFY</span><strong>对比复验</strong><span>基线、收益、退化与回滚</span></div>
+        </div>
+      </div>
+    </section>
+
+    <section id="repo" aria-labelledby="repo-title">
+      <div class="shell">
+        <div class="section-head">
+          <div>
+            <p class="eyebrow">01 / Repository reading</p>
+            <h2 id="repo-title">这个仓库到底做什么？</h2>
+          </div>
+          <p>MindSpeed Core 是面向昇腾设备、适配 Megatron-LM 的大模型训练加速库。它不只是一个算子集合，而是围绕分布式训练执行栈，在并行、内存、通信和计算四个维度提供策略与实现。</p>
+        </div>
+        <div class="repo-grid">
+          <article class="repo-card">
+            <span class="icon">P</span>
+            <h3>并行编排</h3>
+            <p>覆盖 TP / PP / DP / CP / EP、2D TP、自动流水与多种长序列并行，解决模型如何拆、放到哪里、何时执行。</p>
+            <code>mindspeed/core/*parallel*</code>
+          </article>
+          <article class="repo-card">
+            <span class="icon">M</span>
+            <h3>显存治理</h3>
+            <p>通过重计算、压缩、参数复用、Smart Swap、Attention Swap、自动 Pipeline 等方式，在容量和性能之间做取舍。</p>
+            <code>mindspeed/core/memory</code>
+          </article>
+          <article class="repo-card">
+            <span class="icon">C</span>
+            <h3>通算优化</h3>
+            <p>覆盖通算融合、通信掩盖、MoE All-to-All / AllGather 优化、AI QoS 等，降低多卡与大集群中的等待。</p>
+            <code>mindspeed/core + features</code>
+          </article>
+          <article class="repo-card">
+            <span class="icon">A</span>
+            <h3>自动寻优</h3>
+            <p>解析 Profile，建立算子、通信和内存模型，搜索候选并行配置，并推荐显存可行、性能靠前的方案。</p>
+            <code>mindspeed/auto_settings</code>
+          </article>
+        </div>
+      </div>
+    </section>
+
+    <section id="current" aria-labelledby="current-title">
+      <div class="shell">
+        <div class="section-head">
+          <div>
+            <p class="eyebrow">02 / Current experience</p>
+            <h2 id="current-title">它现在有界面或可视化报告吗？</h2>
+          </div>
+          <p>简短答案：<strong style="color:var(--text)">MindSpeed Core 自身没有原生 GUI，也没有直接生成 HTML / PDF 分析报告。</strong>它已经产出大量可视化所需的数据，但当前体验仍以命令行、结果文件和外部分析工具为主。</p>
+        </div>
+
+        <div class="reality-grid">
+          <article class="reality-card primary">
+            <span class="reality-label">NATIVE UX · CURRENT</span>
+            <h3>原生形态：CLI + 日志</h3>
+            <p>训练和寻优通过 Python / Shell 参数启动。Auto Settings 会在终端打印搜索剪枝、OOM 淘汰和最终 Top-3 配置参数；搜索内部虽然使用性能与显存估计，但当前没有把它们组织成统一候选表、可交互漏斗或正式报告。</p>
+            <ul class="reality-list">
+              <li><strong>看得到：</strong>推荐参数、剪枝 / OOM 信息、建模与搜索日志</li>
+              <li><strong>看不到：</strong>统一性能—显存表、淘汰原因分布、预测置信度、实验谱系</li>
+            </ul>
+          </article>
+          <article class="reality-card">
+            <span class="reality-label">MACHINE OUTPUT</span>
+            <h3>结构化结果</h3>
+            <p>仓库会产生可供后续产品读取的 Profile 目录与中间数据。</p>
+            <ul class="reality-list">
+              <li>算子 / 内存明细：<strong>CSV</strong></li>
+              <li>通信与静态模型：<strong>JSON</strong></li>
+              <li>配置与运行信息：<strong>PKL</strong></li>
+              <li>推荐方案：<strong>终端日志对象</strong></li>
+            </ul>
+          </article>
+          <article class="reality-card">
+            <span class="reality-label">EXTERNAL VISUAL</span>
+            <h3>外部可视化</h3>
+            <p>仓库用户指南明确建议：采集性能数据后，使用 <strong style="color:var(--text)">MindStudio Insight</strong> 查看算子耗时、通信占比、Timeline 等视图。</p>
+            <ul class="reality-list">
+              <li><strong>已有：</strong>通用 Profile 图形化分析</li>
+              <li><strong>缺口：</strong>MindSpeed 策略搜索与优化建议的专属界面</li>
+            </ul>
+          </article>
+        </div>
+        <div class="verdict">
+          <span class="verdict-mark">→</span>
+          <p><strong>UX 机会判断：</strong>不是从零创造数据，而是把已有日志、JSON / CSV / PKL 与外部 Profile 证据，统一成“搜索为什么这样选、问题应该怎么改、改后是否有效”的决策产品。</p>
+        </div>
+      </div>
+    </section>
+
+    <section aria-labelledby="cases-title">
+      <div class="shell">
+        <div class="section-head">
+          <div>
+            <p class="eyebrow">03 / Two typical usages</p>
+            <h2 id="cases-title">现在 MindSpeed 的两种典型用法</h2>
+          </div>
+          <p>一种是“我已经知道要开什么优化，直接增强现有 Megatron 训练”；另一种是“组合太多不知道怎么配，让 Auto Settings 先建模再推荐”。</p>
+        </div>
+
+        <div class="usecase-grid">
+          <article class="usecase">
+            <div class="usecase-head">
+              <span class="usecase-number">CASE 01 · DIRECT ACCELERATION</span>
+              <h3>把现有 Megatron 训练迁到昇腾并定向优化</h3>
+              <p><strong style="color:var(--text)">场景：</strong>32 层 Llama 长序列训练能运行，但单卡显存不足。团队不想降低序列长度，希望用 MindSpeed 的亲和适配和 Smart Swap 跨过 OOM。</p>
+            </div>
+            <div class="case-flow">
+              <div class="case-step"><span>BEFORE</span><strong>训练脚本已存在</strong><p>Megatron 配置基本稳定，但在目标 NPU 配置上 OOM。</p></div>
+              <div class="case-step"><span>ACTION</span><strong>一行接入 + 特性参数</strong><p>导入适配器，再按问题开启 Smart Swap、重计算或融合算子。</p></div>
+              <div class="case-step"><span>RESULT</span><strong>原脚本继续训练</strong><p>MindSpeed 在训练执行链中完成 NPU 适配和内存策略。</p></div>
+            </div>
+            <pre class="case-command"># pretrain_gpt.py
+import mindspeed.megatron_adaptor
+
+# launch arguments
+--optimization-level 2 \
+--smart-swap</pre>
+            <div class="case-output"><span>终端训练日志</span><span>Loss / throughput</span><span>可选 Profile 目录</span></div>
+          </article>
+
+          <article class="usecase">
+            <div class="usecase-head">
+              <span class="usecase-number">CASE 02 · AUTO SETTINGS</span>
+              <h3>用小规模 Profile 搜索大规模并行配置</h3>
+              <p><strong style="color:var(--text)">场景：</strong>新模型准备扩到 64 卡，TP / PP / DP / CP / EP / MBS 组合过多。团队希望少跑实验，先得到显存可行且预测性能最佳的三组配置。</p>
+            </div>
+            <div class="case-flow">
+              <div class="case-step"><span>PROFILE</span><strong>自动拉起少量采样</strong><p>裁剪网络并采集算子、通信和内存数据，支持“以小仿大”。</p></div>
+              <div class="case-step"><span>MODEL</span><strong>建模并剪枝</strong><p>排除 OOM 方案，预测候选配置的耗时和峰值显存。</p></div>
+              <div class="case-step"><span>RECOMMEND</span><strong>输出 Top-3</strong><p>终端打印推荐配置，工程师选择一组进行完整训练复核。</p></div>
+            </div>
+            <pre class="case-command"># 在原训练启动参数中追加
+--auto-settings \
+--auto-settings-type mixed \
+--auto-settings-work-dir ./auto_settings_dir \
+--auto-settings-ranks 64</pre>
+            <div class="case-output"><span>搜索过程日志</span><span>Top-3 configs</span><span>性能 / 显存建模</span><span>JSON / CSV / PKL</span></div>
+          </article>
+        </div>
+      </div>
+    </section>
+
+    <section id="inbound" aria-labelledby="inbound-title">
+      <div class="shell">
+        <div class="section-head">
+          <div>
+            <p class="eyebrow">04 / MindSpeed → Your tools</p>
+            <h2 id="inbound-title">MindSpeed 能充实哪些服务场景？</h2>
+          </div>
+          <p>下面不是“把仓库文档搬进工具”，而是把 MindSpeed 的模型、规则、运行参数和优化机制转成用户可理解、可操作、可复验的产品服务。</p>
+        </div>
+
+        <div class="filters" role="group" aria-label="按能力筛选场景">
+          <button class="filter active" type="button" data-filter="all">全部 8 项</button>
+          <button class="filter" type="button" data-filter="profile">数据采集</button>
+          <button class="filter" type="button" data-filter="memory">内存</button>
+          <button class="filter" type="button" data-filter="communication">通信</button>
+          <button class="filter" type="button" data-filter="moe">MoE</button>
+          <button class="filter" type="button" data-filter="search">寻优决策</button>
+        </div>
+
+        <div class="scenario-grid" id="scenario-grid">
+          <article class="scenario" data-category="profile">
+            <div class="scenario-top"><span class="index">S01</span><span class="tag">采集入口</span></div>
+            <h3>Profile 采集向导</h3>
+            <p>把 <span class="mono">--profile-step-start/end</span>、采集等级、CPU / stack / memory / shapes、目标 ranks 变成“按问题选择”的 recipe。用户先说要查 OOM、通信或算子，工具反推最小采集集，避免采太多或证据不足。</p>
+            <div class="scenario-foot">
+              <div class="mini"><span>补强现有工具</span><strong>MindStudioNext v3<br>Training Twin</strong></div>
+              <div class="mini"><span>仓库依据</span><strong>用户指南 / profile.md</strong></div>
+            </div>
+          </article>
+
+          <article class="scenario" data-category="search profile">
+            <div class="scenario-top"><span class="index">S02</span><span class="tag">推荐引擎</span></div>
+            <h3>并行策略寻优驾驶舱</h3>
+            <p>将 Auto Settings 的“以小仿大”、白盒 / 黑盒 / 混合搜索、候选剪枝、Top-3 推荐做成可解释界面：为什么某配置被淘汰、预计迭代耗时、峰值显存、知识库覆盖率和模型置信度都能看见。</p>
+            <div class="scenario-foot">
+              <div class="mini"><span>补强现有工具</span><strong>Config & Relation Observer<br>Task Compare</strong></div>
+              <div class="mini"><span>仓库依据</span><strong>auto_settings/ 搜索与建模</strong></div>
+            </div>
+          </article>
+
+          <article class="scenario" data-category="memory search">
+            <div class="scenario-top"><span class="index">S03</span><span class="tag">容量决策</span></div>
+            <h3>OOM 方案规划器</h3>
+            <p>用静态 + 动态显存模型替换纯经验估算，按 PP stage 展示峰值；再把重计算、Smart Swap、激活压缩、参数复用等转成备选方案，明确“省多少显存、增加多少耗时、是否适用 MoE / 动态序列”。</p>
+            <div class="scenario-foot">
+              <div class="mini"><span>补强现有工具</span><strong>单卡容量图<br>HBM 快照 / OOM 定位链</strong></div>
+              <div class="mini"><span>仓库依据</span><strong>core/memory<br>auto_settings/module/memory</strong></div>
+            </div>
+          </article>
+
+          <article class="scenario" data-category="communication search">
+            <div class="scenario-top"><span class="index">S04</span><span class="tag">通信处方</span></div>
+            <h3>通信瓶颈“诊断 → 处方”</h3>
+            <p>在泳道识别出 AllReduce / All-to-All 等待后，不止停在“通信慢”：结合 TP / DP / PP / CP / EP 通信预测器、域内外带宽和流量类型，推荐 overlap、MC2、group buffer、AI QoS 或并行度调整，并说明触发条件。</p>
+            <div class="scenario-foot">
+              <div class="mini"><span>补强现有工具</span><strong>多卡 Timeline<br>PTO 泳道对比</strong></div>
+              <div class="mini"><span>仓库依据</span><strong>auto_settings/module/communication</strong></div>
+            </div>
+          </article>
+
+          <article class="scenario" data-category="moe communication">
+            <div class="scenario-top"><span class="index">S05</span><span class="tag">MoE 专项</span></div>
+            <h3>专家负载与迁移回放</h3>
+            <p>把专家 token 负载、EMA 预测、变异系数、专家—设备映射和迁移开销叠加到现有 Router 倾斜卡与 3D Rank 图上。用户可回放“迁移前 / 规划 / 参数交换 / 迁移后”，理解吞吐改善是否覆盖迁移成本。</p>
+            <div class="scenario-foot">
+              <div class="mini"><span>补强现有工具</span><strong>Training Twin<br>op-rank-time 3D</strong></div>
+              <div class="mini"><span>仓库依据</span><strong>expert_placement<br>balanced_moe</strong></div>
+            </div>
+          </article>
+
+          <article class="scenario" data-category="profile search">
+            <div class="scenario-top"><span class="index">S06</span><span class="tag">算子证据</span></div>
+            <h3>图节点优化卡</h3>
+            <p>把算子 shape、FLOPs、实测 duration、性能知识库命中情况和可替换融合算子挂到计算图节点。点击热点节点时，同时回答“它为什么慢、MindSpeed 有什么实现、预期收益依据是什么”。</p>
+            <div class="scenario-foot">
+              <div class="mini"><span>补强现有工具</span><strong>计算图 / 整网图<br>MFU 分析</strong></div>
+              <div class="mini"><span>仓库依据</span><strong>ops/ + operator_shape_cal.py</strong></div>
+            </div>
+          </article>
+
+          <article class="scenario" data-category="search memory communication">
+            <div class="scenario-top"><span class="index">S07</span><span class="tag">约束真相</span></div>
+            <h3>配置关系规则库</h3>
+            <p>以 MindSpeed 的参数校验、特性条件与真实切分逻辑校准四域配置仿真。每条关系不再只是前端公式，而是带来源、版本、适用硬件和冲突条件的规则，支持“为什么不能这样配”的就地解释。</p>
+            <div class="scenario-foot">
+              <div class="mini"><span>补强现有工具</span><strong>Config & Relation Observer<br>平面视图</strong></div>
+              <div class="mini"><span>仓库依据</span><strong>arguments / features_manager / docs</strong></div>
+            </div>
+          </article>
+
+          <article class="scenario" data-category="search profile">
+            <div class="scenario-top"><span class="index">S08</span><span class="tag">闭环验证</span></div>
+            <h3>优化实验与可审计报告</h3>
+            <p>把推荐参数、执行命令、基线 run、实验 run、收益、代价和异常统一绑定。Task Compare 由“指标对比”升级为“变更—机制—结果”的因果对比，报告可留存每条结论的 Profile 证据。</p>
+            <div class="scenario-foot">
+              <div class="mini"><span>补强现有工具</span><strong>Task Compare<br>性能分析报告</strong></div>
+              <div class="mini"><span>仓库依据</span><strong>Auto Settings 推荐结果 + Profile</strong></div>
+            </div>
+          </article>
+        </div>
+      </div>
+    </section>
+
+    <section aria-labelledby="coverage-title">
+      <div class="shell">
+        <div class="section-head">
+          <div>
+            <p class="eyebrow">Coverage map</p>
+            <h2 id="coverage-title">与现有工具的结合优先级</h2>
+          </div>
+          <p>最优切入点不是新建第十个孤立工具，而是给已有入口补上“真实模型、可执行建议、验证闭环”。</p>
+        </div>
+        <div class="matrix-wrap">
+          <table class="matrix">
+            <thead><tr><th>现有工具</th><th>MindSpeed 最佳增量</th><th>价值密度</th><th>首个可交付物</th></tr></thead>
+            <tbody>
+              <tr><td>Config & Relation Observer</td><td>真实内存 / 性能模型、配置约束、Auto Settings 候选</td><td><span class="level high">最高</span></td><td class="cell-note">可解释的并行配置推荐页</td></tr>
+              <tr><td>Training Run Explainable Twin</td><td>MoE 负载、Swap / 重计算状态、优化动作与前后效果</td><td><span class="level high">最高</span></td><td class="cell-note">问题卡 → MindSpeed 处方卡</td></tr>
+              <tr><td>MindStudioNext v3</td><td>Profile 导入契约、算子知识、通信预测、特性入口</td><td><span class="level high">高</span></td><td class="cell-note">热点节点优化建议抽屉</td></tr>
+              <tr><td>Task Compare</td><td>配置差异、预测 vs 实测、优化实验谱系</td><td><span class="level high">高</span></td><td class="cell-note">因果 diff + 收益守门</td></tr>
+              <tr><td>op-rank-time 3D</td><td>真实并行组、专家迁移、通信域和调度状态</td><td><span class="level mid">中高</span></td><td class="cell-note">专家迁移前后映射回放</td></tr>
+              <tr><td>HiF8 精度工作台</td><td>低精度优化特性与训练配置联动</td><td><span class="level low">后续</span></td><td class="cell-note">精度 / 性能权衡实验卡</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <section id="outbound" aria-labelledby="outbound-title">
+      <div class="shell">
+        <div class="section-head">
+          <div>
+            <p class="eyebrow">05 / Your UX → MindSpeed</p>
+            <h2 id="outbound-title">反过来能给 MindSpeed 做什么 UX？</h2>
+          </div>
+          <p>MindSpeed 当前强项在代码、参数与文档；UX 的核心贡献，是把专家才会走的命令链路，压缩成普通训练工程师也能完成的“选择—理解—执行—复验”任务流。</p>
+        </div>
+
+        <div class="ux-intro">
+          <div class="ux-axiom"><span>UX PRINCIPLE 01</span><strong>任何建议都必须解释“为什么”与“依据什么”。</strong></div>
+          <div class="ux-axiom"><span>UX PRINCIPLE 02</span><strong>任何可视化最终都要落到参数、命令或下一次实验。</strong></div>
+        </div>
+
+        <div class="ux-list">
+          <article class="ux-item">
+            <span class="priority p0">P0</span>
+            <div><h3>Auto Settings Studio</h3><p>自动并行策略搜索的主界面</p></div>
+            <p>可视化搜索空间从“全部候选 → 约束淘汰 → 模型预测 → Profile 复核 → Top-3”的漏斗；对每个候选显示吞吐、峰值显存、通信占比、置信度、数据覆盖率与推荐原因。</p>
+            <div class="deliverable"><strong>关键产物</strong>搜索漏斗<br>Pareto 前沿<br>候选证据抽屉</div>
+          </article>
+          <article class="ux-item">
+            <span class="priority p0">P0</span>
+            <div><h3>Profile Recipe Builder</h3><p>按诊断目标生成采集命令</p></div>
+            <p>用户选择“查 OOM / 通信等待 / 算子热点 / 跨卡不均”，系统自动选择采集等级、step 窗口、ranks、memory / shapes / stack 开关，并预估采集开销与磁盘量。</p>
+            <div class="deliverable"><strong>关键产物</strong>问题模板<br>数据充分性门禁<br>命令复制</div>
+          </article>
+          <article class="ux-item">
+            <span class="priority p0">P0</span>
+            <div><h3>配置预检与容量沙盘</h3><p>训练启动前排除无效方案</p></div>
+            <p>联动模型结构、集群拓扑和 DP / TP / PP / CP / EP / VPP / MBS 等参数，实时展示 world size 分解、各 stage 峰值显存、首尾 stage 偏差、冲突特性和 OOM 风险。</p>
+            <div class="deliverable"><strong>关键产物</strong>四域配置<br>约束解释<br>峰值分解</div>
+          </article>
+          <article class="ux-item">
+            <span class="priority p1">P1</span>
+            <div><h3>Optimization Advisor</h3><p>从瓶颈到可执行处方</p></div>
+            <p>把诊断结论绑定 MindSpeed 特性：显示适用条件、预期收益区间、显存 / 精度 / 通信代价、版本配套、互斥关系，并直接生成 CLI / YAML diff，而不是只给一段建议文本。</p>
+            <div class="deliverable"><strong>关键产物</strong>处方卡<br>风险徽标<br>配置 diff</div>
+          </article>
+          <article class="ux-item">
+            <span class="priority p1">P1</span>
+            <div><h3>Run Evidence Twin</h3><p>把配置、图、Rank、时间串起来</p></div>
+            <p>以一次训练 run 为中心，把模型节点、并行组、Profile 事件、HBM、专家负载和优化动作放进同一语义层。任一异常都能追到原始证据，任一配置变化都能看到影响域。</p>
+            <div class="deliverable"><strong>关键产物</strong>定位链<br>跨视图联动<br>时光回看</div>
+          </article>
+          <article class="ux-item">
+            <span class="priority p2">P2</span>
+            <div><h3>Experiment Ledger</h3><p>优化实验账本与回归守门</p></div>
+            <p>自动记录基线、推荐、人工修改、实际运行和最终采用方案；用指标门禁标记“吞吐提升但显存恶化”等隐性代价，并输出可审计、可分享的性能报告。</p>
+            <div class="deliverable"><strong>关键产物</strong>实验谱系<br>因果对比<br>报告导出</div>
+          </article>
+        </div>
+      </div>
+    </section>
+
+    <section aria-labelledby="prototype-title">
+      <div class="shell">
+        <div class="section-head">
+          <div>
+            <p class="eyebrow">Concept interface</p>
+            <h2 id="prototype-title">首个 UX 原型建议：寻优驾驶舱</h2>
+          </div>
+          <p>这是投入产出比最高的入口：底层已有搜索与预测能力，前端已有配置观察和任务对比经验，二者对接后即可形成明确的用户任务闭环。</p>
+        </div>
+
+        <div class="prototype-prompts" aria-label="寻优驾驶舱的三个用户问题">
+          <article class="prototype-prompt">
+            <div class="prompt-person"><span class="avatar" style="--avatar:#c9f45f">张</span><div><strong>张启明 · 训练工程师</strong><span>搜索开始前</span></div></div>
+            <h3>“几百种配置，我该从哪几组开始？”</h3>
+            <p>64 卡只有两天调优窗口，手工枚举会浪费大量卡时；他需要先排除必然 OOM 和结构上无效的组合。</p>
+            <div class="want">EXPECT · 看见搜索空间如何被剪到可执行范围</div>
+          </article>
+          <article class="prototype-prompt">
+            <div class="prompt-person"><span class="avatar" style="--avatar:#ffc76b">王</span><div><strong>王哲 · 性能负责人</strong><span>推荐生成后</span></div></div>
+            <h3>“为什么推荐 #1，而不是更省显存的 #3？”</h3>
+            <p>一个黑盒排名不足以让他批准大规模实验；他要理解算子、通信、Pipeline bubble 和显存余量分别贡献了什么。</p>
+            <div class="want">EXPECT · 每个排名都有依据、置信度和风险</div>
+          </article>
+          <article class="prototype-prompt">
+            <div class="prompt-person"><span class="avatar" style="--avatar:#61dfbd">李</span><div><strong>李媛 · 平台运维</strong><span>推荐采用前</span></div></div>
+            <h3>“怎么用最小代价证明它真的不会 OOM？”</h3>
+            <p>推荐 #1 距显存上限很近。她希望系统生成短步数、指定 ranks 的复核采集方案，并保留与基线的可比较记录。</p>
+            <div class="want">EXPECT · 一键生成验证命令并进入任务对比</div>
+          </article>
+        </div>
+
+        <div class="prototype" aria-label="Auto Settings Studio 概念线框图">
+          <aside class="proto-side">
+            <div class="proto-title"><strong>Search setup</strong><span>EDITING</span></div>
+            <div class="form-group"><label>Model</label><div class="fake-input">openPangu · 46 layers</div></div>
+            <div class="form-group"><label>Cluster</label><div class="fake-input">64 × Ascend NPU</div></div>
+            <div class="form-group"><label>Search dimensions</label><div class="fake-input">TP · PP · CP · EP · MBS</div></div>
+            <div class="form-group"><label>Memory cap</label><div class="fake-input">≤ 58.0 GiB / rank</div></div>
+            <div class="form-group"><label>Objective</label><div class="fake-input">Min. iteration time</div></div>
+          </aside>
+          <div class="proto-main">
+            <div class="proto-title"><strong>Search funnel</strong><span>126 → 3 CANDIDATES</span></div>
+            <div class="search-funnel" aria-label="候选搜索漏斗">
+              <div class="funnel-col"><span>全空间 126</span></div>
+              <div class="funnel-col"><span>约束后 74</span></div>
+              <div class="funnel-col"><span>模型后 21</span></div>
+              <div class="funnel-col"><span>Top 3</span></div>
+            </div>
+            <div class="candidate"><span class="candidate-rank">01</span><div><strong>TP8 · PP2 · EP4 · MBS2</strong><small> 57.2 GiB peak · confidence 92%</small></div><span class="score">1.21s</span></div>
+            <div class="candidate"><span class="candidate-rank">02</span><div><strong>TP4 · PP4 · EP4 · MBS2</strong><small> 53.8 GiB peak · confidence 88%</small></div><span class="score">1.29s</span></div>
+            <div class="candidate"><span class="candidate-rank">03</span><div><strong>TP8 · PP4 · EP2 · MBS1</strong><small> 46.1 GiB peak · confidence 95%</small></div><span class="score">1.36s</span></div>
+          </div>
+          <aside class="proto-inspector">
+            <div class="proto-title"><strong>Why #1?</strong><span>EXPLAIN</span></div>
+            <div class="form-group"><label>Memory headroom</label><div class="gauge"></div></div>
+            <div class="evidence"><strong>+ 计算</strong><br>TP8 降低热点 MatMul 单 rank shape，算子知识库覆盖 94%。</div>
+            <div class="evidence"><strong>+ 通信</strong><br>TP 域内预测优于增加 PP 后的 bubble 代价。</div>
+            <div class="evidence"><strong>! 风险</strong><br>峰值距上限仅 0.8 GiB，建议先用 8 steps 复核。</div>
+            <div class="form-group"><label>Next action</label><div class="fake-input" style="color:var(--lime)">生成复核 Profile 命令 →</div></div>
+          </aside>
+        </div>
+      </div>
+    </section>
+
+    <section id="roadmap" aria-labelledby="roadmap-title">
+      <div class="shell">
+        <div class="section-head">
+          <div>
+            <p class="eyebrow">06 / Delivery roadmap</p>
+            <h2 id="roadmap-title">建议的三阶段落地顺序</h2>
+          </div>
+          <p>先打通静态输入输出和解释层，再做真实 Profile 联动，最后才做持续运行中的实时闭环。这样能尽早验证用户价值，也避免一开始陷入平台工程。</p>
+        </div>
+        <div class="roadmap">
+          <article class="phase">
+            <span class="phase-time">PHASE 01 · 2–4 WEEKS</span>
+            <h3>静态决策 MVP</h3>
+            <ul><li>定义模型 / 集群 / 并行配置 schema</li><li>接入 Auto Settings 结果 JSON</li><li>完成搜索漏斗与 Top-3 解释卡</li><li>输出启动参数与 Profile recipe</li></ul>
+          </article>
+          <article class="phase">
+            <span class="phase-time">PHASE 02 · 4–8 WEEKS</span>
+            <h3>Profile 证据联动</h3>
+            <ul><li>接入算子、通信、内存解析结果</li><li>图 / Rank / Timeline 跨视图联动</li><li>建议绑定证据与适用条件</li><li>基线与实验 run 因果对比</li></ul>
+          </article>
+          <article class="phase">
+            <span class="phase-time">PHASE 03 · 8+ WEEKS</span>
+            <h3>持续优化闭环</h3>
+            <ul><li>训练中异常与策略状态回放</li><li>MoE 专家迁移、Swap 可视化</li><li>回归守门与批量实验管理</li><li>团队级知识沉淀与报告审计</li></ul>
+          </article>
+        </div>
+        <div class="principles">
+          <article class="principle"><strong>先定义数据契约</strong><p>前端不要直读散落 CSV。用稳定 schema 表达 config、candidate、evidence、action、result。</p></article>
+          <article class="principle"><strong>区分预测与实测</strong><p>所有数字必须标注来源、版本、置信度；预测值与 Profile 实测值不可混成同一口径。</p></article>
+          <article class="principle"><strong>建议必须可回滚</strong><p>每个优化动作都保留原配置、变更 diff、风险和验证门槛，避免“黑盒一键优化”。</p></article>
+        </div>
+      </div>
+    </section>
+
+    <section id="sources" class="sources" aria-labelledby="sources-title">
+      <div class="shell">
+        <div class="section-head">
+          <div>
+            <p class="eyebrow">Evidence & scope</p>
+            <h2 id="sources-title">分析依据与边界</h2>
+          </div>
+          <p>本页基于本地仓库代码与文档做静态分析，没有把尚未存在的 UI / API 写成现有能力。页面中的原型数据仅用于说明交互结构。</p>
+        </div>
+        <div class="source-grid">
+          <article class="source-card">
+            <h3>MindSpeed 侧</h3>
+            <ul>
+              <li><code>README.md</code> — 仓库定位、七类特性与版本信息</li>
+              <li><code>docs/zh/overview.md</code> — MindSpeed 体系与四维优化能力</li>
+              <li><code>docs/zh/user-guide/profile.md</code> — Profile 采集参数</li>
+              <li><code>docs/zh/user-guide/megatron_performance_optimization.md</code> — MindStudio Insight 可视化路径</li>
+              <li><code>docs/zh/features/auto_settings.md</code> — 以小仿大与三类搜索</li>
+              <li><code>docs/zh/features/Automatic_Parallelism.md</code> — 自动并行策略</li>
+              <li><code>mindspeed/auto_settings/auto_settings.py</code> — Top-3 推荐的终端日志输出</li>
+              <li><code>mindspeed/auto_settings/</code> — 解析、算子 / 通信 / 内存建模与搜索实现</li>
+              <li><code>docs/zh/features/smart_swap.md</code>、<code>moe_expert_load_balance_placeemnt.md</code>、<code>aiqos.md</code></li>
+            </ul>
+          </article>
+          <article class="source-card">
+            <h3>现有工具侧</h3>
+            <ul>
+              <li><code>D:/Projects/compute-graph-viewer-wzh/Profiling_Insight_and_Tool/工具矩阵.md</code></li>
+              <li>Training Run Explainable Twin — 监控、热力、MoE 与定位链</li>
+              <li>Config & Relation Observer — 四域配置、容量仿真、数据流</li>
+              <li>MindStudioNext v3 — 图、HBM、Timeline、MFU 综合分析</li>
+              <li>Task Compare / profileCompare — 任务与泳道对比</li>
+              <li>op-rank-time — 算子 × 硬件 × 时间统一映射</li>
+              <li>HiF8 Precision Workbench — 低精度量化诊断</li>
+            </ul>
+          </article>
+        </div>
+        <div class="caveat"><strong>关键边界：</strong>Auto Settings、Profile 解析器和各优化特性是可被产品化的能力基础，但是否已有稳定对外 API、统一结果 schema、跨版本兼容保证，仍需在实施前做接口盘点。建议第一阶段只读接入结果文件，不直接改写训练任务。</div>
+      </div>
+    </section>
+  </main>
+
+  <footer>
+    <div class="shell footer-row">
+      <span>MindSpeed × Profiling Insight / Opportunity Map</span>
+      <span>本地静态分析 · 2026-09-16</span>
+    </div>
+  </footer>
+
+  <script>
+    const voiceTrack = document.querySelector('#voice-track');
+    const voiceCards = [...document.querySelectorAll('.voice-card')];
+    const voicePosition = document.querySelector('#voice-position');
+    const voiceProgress = document.querySelector('#voice-progress');
+    const voiceToggle = document.querySelector('#voice-toggle');
+    const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)');
+    let userPaused = reduceMotion.matches;
+    let interactionPaused = false;
+    let interactionTimer;
+
+    const clonedVoiceCards = voiceCards.map((card) => {
+      const clone = card.cloneNode(true);
+      clone.setAttribute('aria-hidden', 'true');
+      voiceTrack.appendChild(clone);
+      return clone;
+    });
+
+    function voiceStride() {
+      const gap = parseFloat(getComputedStyle(voiceTrack).columnGap) || 0;
+      return voiceCards[0].offsetWidth + gap;
+    }
+
+    function voiceLoopDistance() {
+      return clonedVoiceCards[0].offsetLeft - voiceCards[0].offsetLeft;
+    }
+
+    function voiceIndex() {
+      if (!voiceCards.length) return 0;
+      return Math.round(voiceTrack.scrollLeft / voiceStride()) % voiceCards.length;
+    }
+
+    function updateVoiceProgress() {
+      const index = voiceIndex();
+      voicePosition.textContent = String(index + 1).padStart(2, '0');
+      voiceProgress.style.width = `${((index + 1) / voiceCards.length) * 100}%`;
+    }
+
+    function moveVoices(direction) {
+      temporarilyPauseVoices(1400);
+      const next = (voiceIndex() + direction + voiceCards.length) % voiceCards.length;
+      voiceTrack.scrollTo({left: next * voiceStride(), behavior: 'smooth'});
+    }
+
+    function temporarilyPauseVoices(duration = 1200) {
+      interactionPaused = true;
+      clearTimeout(interactionTimer);
+      interactionTimer = setTimeout(() => { interactionPaused = false; }, duration);
+    }
+
+    function syncVoiceToggle() {
+      voiceToggle.textContent = userPaused ? '▶' : 'Ⅱ';
+      voiceToggle.setAttribute('aria-pressed', String(userPaused));
+      voiceToggle.setAttribute('aria-label', userPaused ? '开始自动滚动' : '暂停自动滚动');
+    }
+
+    document.querySelector('#voice-prev').addEventListener('click', () => moveVoices(-1));
+    document.querySelector('#voice-next').addEventListener('click', () => moveVoices(1));
+    voiceToggle.addEventListener('click', () => {
+      userPaused = !userPaused;
+      syncVoiceToggle();
+    });
+    voiceTrack.addEventListener('pointerdown', () => temporarilyPauseVoices(1800));
+    voiceTrack.addEventListener('wheel', () => temporarilyPauseVoices(1200), {passive: true});
+    voiceTrack.addEventListener('scroll', updateVoiceProgress, {passive: true});
+    voiceTrack.addEventListener('keydown', (event) => {
+      if (event.key === 'ArrowLeft') { event.preventDefault(); moveVoices(-1); }
+      if (event.key === 'ArrowRight') { event.preventDefault(); moveVoices(1); }
+    });
+    reduceMotion.addEventListener('change', (event) => {
+      userPaused = event.matches;
+      syncVoiceToggle();
+    });
+
+    let previousFrame = performance.now();
+    function autoScrollVoices(now) {
+      const elapsed = Math.min(now - previousFrame, 50);
+      previousFrame = now;
+      if (!userPaused && !interactionPaused) {
+        voiceTrack.scrollLeft += elapsed * 0.032;
+        const loopDistance = voiceLoopDistance();
+        if (loopDistance > 0 && voiceTrack.scrollLeft >= loopDistance) {
+          voiceTrack.scrollLeft -= loopDistance;
+        }
+      }
+      requestAnimationFrame(autoScrollVoices);
+    }
+
+    syncVoiceToggle();
+    updateVoiceProgress();
+    requestAnimationFrame(autoScrollVoices);
+
+    const filters = [...document.querySelectorAll('.filter')];
+    const scenarios = [...document.querySelectorAll('.scenario')];
+
+    filters.forEach((button) => {
+      button.addEventListener('click', () => {
+        const selected = button.dataset.filter;
+        filters.forEach((item) => item.classList.toggle('active', item === button));
+        scenarios.forEach((card) => {
+          const categories = card.dataset.category.split(' ');
+          card.hidden = selected !== 'all' && !categories.includes(selected);
+        });
+      });
+    });
+  </script>
+</body>
+</html>

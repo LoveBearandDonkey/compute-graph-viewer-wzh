@@ -180,10 +180,12 @@
      （整片赋值 + 末尾配平一次），不是逐个 set —— 理由见那个函数的注释。 */
   const CONFIG_PRESETS = {
     "openpangu-flash": [
-      /* ⚠️ **排在第一位的那一档就是这一页打开时的配置**（defaultConfigPresetId 取
-         的是数组首元素，首帧的种子由 configSeed 按它落地）。cinnnnnndy 放首位是
-         一次刻意的选择：这一页最常被用来看这份 128 卡的实跑配置，而 2048 卡的
-         参考配置一屏根本铺不完，开局就要缩到 6% 才看得见全貌。
+      /* ⚠️ **排在第一位的那一档是页面没指定时打开的配置**（defaultConfigPresetId 取
+         的是数组首元素，首帧的种子由 configSeed 按它落地；页面可用
+         <body data-cro-preset> 指定别的档，见 boot）。cinnnnnndy 放首位是给
+         plane 页的：那一页最常被用来看这份 128 卡的实跑配置，而 2048 卡的参考配置
+         在无限画布上一屏铺不完，开局就要缩到 6% 才看得见全貌。observer 页则
+         显式开在 2048 卡的参考配置上 —— 那一页的集群矩阵本来就是按 2048 格设计的。
          cinnnnnndy 配置：DP16 × PP4 × TP2 × CP1 = 128 卡（切出档下 EP 不进乘积），
          EP=8 → EDP = DP/EP = 2，集群矩阵两行。三条硬约束都对得上：
            world 128 = 16×4×2×1 · DP % EP = 16 % 8 = 0 · 专家 256 % EP 8 = 0
@@ -7610,7 +7612,10 @@
   /* ── 页面接线 ─────────────────────────────────────────────────────────── */
   function boot() {
     installTipLayer();
-    const controller = createController();
+    /* 开局落哪一档由页面自己说（<body data-cro-preset="…">）：observer 页要开在
+       2048 卡的参考配置上，plane 页要开在 128 卡的 cinnnnnndy 上 —— 两页共用这份
+       JS，档位不能写死在 CONFIG_PRESETS 的排序里。没写就取数组首元素。 */
+    const controller = createController({ configPreset: document.body.dataset.croPreset || undefined });
     controller.mount(document.getElementById("croParallelSteppers"), "parallel");
     controller.mount(document.getElementById("croMoeSteppers"), "moe");
     controller.mount(document.getElementById("croClusterSteppers"), "cluster");
