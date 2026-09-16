@@ -1195,7 +1195,8 @@
   leftHead.append(leftTitle, leftClose);
 
   const leftIntro = el("div", "crop-left__intro");
-  if (modelStepper) leftIntro.appendChild(modelStepper);
+  /* 模型下拉不留在左栏：它升到工具栏最左端、页签之前，兼做这一页的标题
+     （见下面 toolbar.append 那一行与 css 的 .crop-model）—— 左栏只留配置预设。 */
   if (presetStepper) leftIntro.appendChild(presetStepper);
 
   /* 三档：表单 / 代码 / 整网图。
@@ -1240,17 +1241,25 @@
   ai.id = "cropAi";
   ai.setAttribute("aria-label", "AI 配置助手");
   ai.addEventListener("submit", (e) => e.preventDefault());
+  /* 版式照 insight2.0 右侧助手的输入栏（.wzh-chat-input-bar）：两行高的输入区在上，
+     下面一条工具行 —— 左端是助手身份胶囊，右端是圆形品牌蓝发送键。 */
   const aiInput = el("textarea", "crop-ai__input");
   aiInput.id = "cropAiInput";
-  aiInput.rows = 1;
+  aiInput.rows = 2;
   aiInput.placeholder = "改成1024张32G的卡，请给出推荐配置方案";
   aiInput.setAttribute("aria-label", "描述你想要的配置改动");
-  const aiSend = el("button", "btn btn-icon btn-sm crop-ai__send");
+  const aiBar = el("div", "crop-ai__bar");
+  const aiAgent = el("button", "crop-ai__tool");
+  aiAgent.type = "button";
+  aiAgent.title = "配置助手（功能待接入）";
+  aiAgent.innerHTML = '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3l1.8 4.6L18.5 9.4l-4.7 1.8L12 16l-1.8-4.8L5.5 9.4l4.7-1.8z"></path><path d="M19 15l.8 2 2 .8-2 .8-.8 2-.8-2-2-.8 2-.8z"></path></svg><span>配置助手</span>';
+  const aiSend = el("button", "crop-ai__send");
   aiSend.type = "submit";
   aiSend.title = "发送（功能待接入）";
   aiSend.setAttribute("aria-label", "发送");
   aiSend.innerHTML = '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 19V5M5 12l7-7 7 7"></path></svg>';
-  ai.append(aiInput, aiSend);
+  aiBar.append(aiAgent, aiSend);
+  ai.append(aiInput, aiBar);
 
   left.append(leftHead, leftIntro, leftBody, ai);
 
@@ -1705,7 +1714,29 @@
      露出来（css 控制），画布拿回了原先被独立一整条工具带占掉的高度。 */
   const toolbar = el("div", "crop-toolbar");
   toolbar.id = "cropToolbar";
-  toolbar.append(modeTabs, commNote, heatExtra, commExtra);
+
+  /* 模型下拉升到工具栏最左端，兼做这一页的标题：不套底框，只留 18px 粗体的模型名
+     加一枚下拉箭头（css 的 .crop-model）。搬的是原来那枚 .cro-stepper 整壳（label 由
+     css 藏起），#croModelSelect 仍是同一个节点，主脚本挂在它上面的 change 监听原样有效。 */
+  const modelTitle = el("div", "crop-model");
+  modelTitle.id = "cropModel";
+  /* 左栏收起之后，标题左侧多出一枚「三横」菜单键：点一下把「模型与训练配置」栏
+     开回来，键随之消失（css 只在 board.is-left-collapsed 时显示它）。
+     显隐按 left 的 is-collapsed 同步，见下面那个 IIFE 里的 sync。 */
+  const menuBtn = el("button", "btn btn-icon btn-ghost btn-sm crop-model__menu");
+  menuBtn.type = "button";
+  menuBtn.title = "打开配置栏";
+  menuBtn.setAttribute("aria-label", "打开模型与训练配置栏");
+  menuBtn.innerHTML = '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16"></path></svg>';
+  modelTitle.appendChild(menuBtn);
+  if (modelStepper) {
+    modelTitle.appendChild(modelStepper);
+    const caret = el("span", "crop-model__caret");
+    caret.setAttribute("aria-hidden", "true");
+    caret.innerHTML = '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"></path></svg>';
+    modelTitle.appendChild(caret);
+  }
+  toolbar.append(modelTitle, modeTabs, commNote, heatExtra, commExtra);
 
   center.append(comm, stage);
 
@@ -1741,12 +1772,16 @@
     const rb = mk("显示 / 收起详情栏", "right");
     host.prepend(lb, rb);
     const sync = () => {
-      lb.setAttribute("aria-pressed", String(!left.classList.contains("is-collapsed")));
+      const leftClosed = left.classList.contains("is-collapsed");
+      lb.setAttribute("aria-pressed", String(!leftClosed));
       rb.setAttribute("aria-pressed", String(!right.classList.contains("is-collapsed")));
+      // 标题左侧那枚「三横」菜单键只在左栏收起时露出
+      board.classList.toggle("is-left-collapsed", leftClosed);
     };
     // 别处（setMode）也会收放这两栏，那两枚键的按下态得跟着走
     syncPanelButtons = sync;
     lb.addEventListener("click", () => { left.classList.toggle("is-collapsed"); sync(); scheduleRender(); });
+    menuBtn.addEventListener("click", () => { left.classList.remove("is-collapsed"); sync(); scheduleRender(); });
     rb.addEventListener("click", () => {
       right.classList.toggle("is-collapsed");
       rightPinnedClosed = right.classList.contains("is-collapsed");
@@ -1793,8 +1828,25 @@
     const view = btn.dataset.observerView;
     if (view === "yaml") setPane("code");
     else if (left.dataset.pane === "code") setPane("form");
+    syncDocEntry();
     scheduleRender();
   });
+
+  /* 顶栏正中那组「关系视图 / YAML / 文档」页签在这一页不再露出（css 藏起，DOM
+     留着 —— 它仍是 config-relation-yaml.js 唯一的开关入口）：关系视图与 YAML 视图
+     已经由左栏「表单 / 代码」两档接管，只剩「文档」没有落点，于是在右上角补一枚
+     入口 #croDocEntry。它是个开关：在文档档里再点一次就回到关系视图。 */
+  const docEntry = doc.getElementById("croDocEntry");
+  function syncDocEntry() {
+    if (!docEntry) return;
+    const on = board.classList.contains("is-doc");
+    docEntry.classList.toggle("is-selected", on);
+    docEntry.setAttribute("aria-pressed", String(on));
+  }
+  docEntry?.addEventListener("click", () => {
+    clickViewTab(board.classList.contains("is-doc") ? "relation" : "doc");
+  });
+  syncDocEntry();
 
   /* ══ 三、画布状态 ════════════════════════════════════════════════════════ */
   let topology = null;

@@ -21,6 +21,7 @@
     --card-front:rgba(255,255,255,.62); --card-right:rgba(236,239,244,.70); --card-top:rgba(247,248,251,.85);
     --tile:#fff;   /* 第 10 步展平格子的底色：浅色是白瓷砖，深色换成比底板略亮一档的石板灰 */
     --tp:#22D3EE; --pp:#FFAA3B; --dp:#4369EF; --ep:#9B3CF6;
+    --red:220,38,38;   /* 实战场景里四档红的基色（rgb 三元，靠 alpha 分档） */
     --sans:-apple-system,"Segoe UI","PingFang SC","Microsoft YaHei",Roboto,Helvetica,Arial,sans-serif;
     --mono:ui-monospace,"SFMono-Regular",Menlo,Consolas,monospace;
   }
@@ -31,7 +32,7 @@
     --bg:#080a0f; --bg2:rgba(255,255,255,.075); --fg:rgba(255,255,255,.92); --fg2:rgba(255,255,255,.66);
     --fg3:rgba(255,255,255,.46); --fgrgb:255,255,255; --line:rgba(var(--fgrgb),.16); --bad:#ff6b6b;
     --card-front:rgba(255,255,255,.07); --card-right:rgba(255,255,255,.10); --card-top:rgba(255,255,255,.14);
-    --tile:#1a1e28;
+    --tile:#1a1e28; --red:255,107,107;
   }
   *{box-sizing:border-box}
   html,body{height:100%;margin:0}
@@ -41,7 +42,131 @@
         grid-template-areas:"top top" "side stage" "foot foot"}
 
   .top{grid-area:top;display:flex;align-items:center;justify-content:space-between;padding:22px 36px 0 36px}
-  .top .brand{font-weight:700;font-size:13px;letter-spacing:.02em}
+  /* 左上角是两枚页签，不是一枚 brand：当前这套分步入门是第一页，「实战场景」先留空位 */
+  .top .tabs{display:flex;align-items:flex-end;gap:22px}
+  .top .tabs button{font:inherit;font-weight:600;font-size:13px;letter-spacing:.02em;color:var(--fg3);background:none;border:0;
+                    padding:0 0 6px;cursor:pointer;position:relative;white-space:nowrap}
+  .top .tabs button:hover{color:var(--fg2)}
+  .top .tabs button[aria-selected="true"]{color:var(--fg);font-weight:700}
+  .top .tabs button[aria-selected="true"]::after{content:"";position:absolute;left:0;right:0;bottom:0;height:2px;background:var(--fg);border-radius:1px}
+  /* ── 实战场景：左边一列案例，右边一张图 + 最多两行字 ───────────────────
+     图全是 DOM（不是 canvas）：一张展平图，横轴 48 层按 PP 段分 4 块，
+     纵轴是一段里的 32 张卡（k = dp·2 + tp），一格 = 这张卡的一层。
+     格子尺寸由 fit() 按可用空间算，图居中撑满；四档红分四批亮起（背景色过渡，
+     格与格之间按列错开 30ms，扫一遍过去）。 */
+  .scene{grid-area:2 / 1 / 4 / 3;display:none;grid-template-columns:208px minmax(0,1fr);min-width:0;min-height:0;overflow:hidden}
+  .page[data-tab="scene"] .scene{display:grid}
+  .page[data-tab="scene"] .side,.page[data-tab="scene"] .stage,.page[data-tab="scene"] .foot{display:none}
+
+  .cs-rail{padding:40px 12px 24px 36px;display:flex;flex-direction:column;gap:2px;min-height:0;overflow:auto}
+  .cs-rail button{font:inherit;width:100%;text-align:left;background:none;border:0;border-radius:8px;padding:7px 9px;
+                  cursor:pointer;color:var(--fg3);font-size:12px;line-height:1.5}
+  .cs-rail button .n{font-family:var(--mono);font-size:10.5px;margin-right:6px;opacity:.8}
+  .cs-rail button:hover{background:rgba(var(--fgrgb),.05);color:var(--fg2)}
+  .cs-rail button[aria-current="true"]{background:rgba(var(--fgrgb),.07);color:var(--fg);font-weight:600}
+
+  .cs-main{min-width:0;min-height:0;overflow:hidden;display:flex;flex-direction:column;padding:32px 36px 24px 12px}
+  .cs-head{flex:none;text-align:center}
+  .cs-head h1{font-size:19px;line-height:1.35;margin:0;font-weight:700}
+  /* 段控顶在标题下面，那句话跟在段控之后，图占掉剩下的空间、横竖都居中 */
+  .cs-cap{margin:23px auto 0;max-width:980px;min-height:26px;font-size:13.5px;line-height:1.7;color:var(--fg2)}
+  .cs-figwrap{flex:1;min-height:0;min-width:0;display:flex;align-items:center;justify-content:center;padding:14px 0 4px;overflow:hidden}
+  .cs-cap b{color:var(--fg);font-weight:600}
+  .cs-cap .k{font-weight:700;color:rgb(var(--red))}
+  .cs-cap code{font-family:var(--mono);font-size:12px;background:rgba(var(--fgrgb),.05);padding:1px 5px;border-radius:4px;color:var(--fg)}
+  /* 四段段控：照分步入门那条 steps 的样子；条只用中性灰阶——走过的段实一点，当前段最深，颜色留给图 */
+  .cs-steps{display:grid;grid-template-columns:repeat(4,minmax(0,1fr)) auto;gap:10px;width:100%;max-width:760px;margin:25px auto 0}
+  .cs-steps button{font:inherit;background:none;border:0;padding:0;cursor:pointer;text-align:left;color:var(--fg3);min-width:0}
+  .cs-steps .lbl{display:block;font-size:11px;line-height:1.3;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-bottom:6px}
+  .cs-steps .bar{display:block;height:3px;border-radius:2px;background:rgba(var(--fgrgb),.08)}
+  .cs-steps button:hover .lbl{color:var(--fg2)}
+  .cs-steps button.done .lbl{color:var(--fg2)}
+  .cs-steps button.done .bar{background:rgba(var(--fgrgb),.35)}
+  .cs-steps button.cur .bar{background:var(--fg)}
+  .cs-steps button.cur .lbl{color:var(--fg);font-weight:700}
+  .cs-steps .rep{align-self:end;font-size:12px;color:var(--fg3);border:1px solid var(--line);border-radius:6px;padding:3px 8px;line-height:1.2}
+  .cs-steps .rep:hover{color:var(--fg);border-color:rgba(var(--fgrgb),.3)}
+
+  /* 展平图本体 */
+  .cs-plane{--cw:15px;--ch:12px;--cg:1px;--pad:3px}
+  .cs-ptop{display:flex}
+  .cs-bwrap{display:flex;gap:12px;position:relative}
+  .cs-bh{position:relative;height:34px;flex:none}
+  .cs-bh .pp{position:absolute;left:0;right:0;top:0;text-align:center;font-size:11px;font-weight:600;color:var(--fg2)}
+  .cs-bh .tk{position:absolute;top:18px;font-family:var(--mono);font-size:9px;color:rgba(var(--fgrgb),.28);text-align:center;white-space:nowrap}
+  .cs-bh .tk.hot{color:rgba(var(--red),.85);font-weight:600}
+  .cs-pbody{display:flex}
+  .cs-lr{position:relative;flex:none}
+  .cs-lr .dp{position:absolute;right:8px;font-family:var(--mono);font-size:9px;color:rgba(var(--fgrgb),.28);display:flex;align-items:center;white-space:nowrap}
+  .cs-lr .dp.hot{color:rgba(var(--red),.85);font-weight:600}
+  .cs-block{position:relative;flex:none;background:rgba(var(--fgrgb),.05);border-radius:2px}
+  .cs-row{position:absolute;display:flex;gap:var(--cg);height:var(--ch)}
+  .cs-cell{width:var(--cw);height:100%;background:var(--tile);transition:background-color .55s ease,box-shadow .55s ease}
+  /* 一行里从左到右错开一点，红就是扫过去的，不是整块一下子跳出来 */
+  .cs-row .cs-cell:nth-child(2){transition-delay:25ms}
+  .cs-row .cs-cell:nth-child(3){transition-delay:50ms}
+  .cs-row .cs-cell:nth-child(4){transition-delay:75ms}
+  .cs-row .cs-cell:nth-child(5){transition-delay:100ms}
+  .cs-row .cs-cell:nth-child(6){transition-delay:125ms}
+  .cs-row .cs-cell:nth-child(7){transition-delay:150ms}
+  .cs-row .cs-cell:nth-child(8){transition-delay:175ms}
+  .cs-row .cs-cell:nth-child(9){transition-delay:200ms}
+  .cs-row .cs-cell:nth-child(10){transition-delay:225ms}
+  .cs-row .cs-cell:nth-child(11){transition-delay:250ms}
+  .cs-row .cs-cell:nth-child(12){transition-delay:275ms}
+  /* 四档红：累进，走到第几段就填到第几档 */
+  .cs-cell.hot{--f:rgba(var(--red),.95)}
+  .cs-cell.l2{--f:rgba(var(--red),.44)}
+  .cs-cell.l3{--f:rgba(var(--red),.25)}
+  .cs-cell.l4{--f:rgba(var(--red),.12)}
+  .cs-plane.s1 .cs-cell.l1,
+  .cs-plane.s2 .cs-cell:is(.l1,.l2),
+  .cs-plane.s3 .cs-cell:is(.l1,.l2,.l3),
+  .cs-plane.s4 .cs-cell{background:var(--f, var(--tile))}
+  .cs-plane .cs-cell.hot{box-shadow:0 0 0 1.5px rgb(var(--red));position:relative;z-index:3}
+  .cs-plane.s1 .cs-cell.hot{animation:csPulse 1.5s ease-out infinite}
+  @keyframes csPulse{0%{box-shadow:0 0 0 1.5px rgb(var(--red))}60%{box-shadow:0 0 0 5px rgba(var(--red),0)}100%{box-shadow:0 0 0 1.5px rgba(var(--red),0)}}
+  @media (prefers-reduced-motion:reduce){
+    .cs-cell{transition:none}
+    .cs-plane.s1 .cs-cell.hot{animation:none}
+  }
+  /* ── 热力案例（案例二）：格子的底色由 JS 逐格写 inline（照 config-relation-plane 的色阶），
+     不走上面那套四档红；整机横带外面一圈虚线框，横带显形那一段才亮出来 */
+  .cs-cap .t{font-family:var(--mono);font-weight:700;font-size:12.5px;color:var(--fg)}
+  .cs-nb{position:absolute;border:1.5px dashed rgba(var(--fgrgb),.75);border-radius:3px;pointer-events:none;z-index:3;
+         opacity:0;transition:opacity .6s ease .3s}
+  .cs-nb.on{opacity:1}
+  .cs-plane.nt .cs-cell{transition:none!important}
+  /* 热力案例不要逐列错开：每一格自己从上一状态的颜色渐到下一状态，整幅同时变 */
+  .cs-plane.heat .cs-cell{transition-delay:0ms;transition-duration:.9s}
+  /* 框大到装得下小牌时（.in）就把牌收进框里左上角，免得牌伸到图外面被裁掉；
+     只圈一格的那枚（.up）把牌挂到框正上方，不然会压住同一行右边那串红格子 */
+  .cs-nb.in span{left:4px;top:4px;transform:none;margin:0}
+  .cs-nb.up span{left:50%;top:auto;bottom:100%;transform:translateX(-50%);margin:0 0 5px}
+  .cs-nb span{position:absolute;left:100%;top:50%;transform:translateY(-50%);margin-left:7px;white-space:nowrap;
+              font-family:var(--mono);font-size:10px;font-weight:600;color:var(--fg);background:var(--bg);padding:1px 5px;border-radius:4px;
+              border:1px solid var(--line)}
+  /* 胶囊段控：两枚等宽页签压在一条槽里，选块（.knob）是一块滑动的底色 —— 第四段它从左滑到右，
+     读的人看得出「图变了是因为换了度量」而不是数据变了 */
+  .cs-vtabs{display:grid;grid-template-columns:1fr 1fr;position:relative;width:max-content;margin:0 auto 10px;height:24px;
+            padding:2px;border-radius:12px;background:rgba(var(--fgrgb),.06);isolation:isolate}
+  .cs-vtabs button{font:inherit;font-size:11px;font-weight:600;color:var(--fg3);background:none;border:0;padding:0 12px;
+                   cursor:pointer;position:relative;z-index:1;white-space:nowrap;line-height:20px;border-radius:10px;transition:color .3s ease}
+  .cs-vtabs button:hover{color:var(--fg2)}
+  .cs-vtabs button[aria-selected="true"]{color:var(--fg)}
+  .cs-vtabs .knob{position:absolute;top:2px;bottom:2px;left:2px;width:calc(50% - 2px);border-radius:10px;background:var(--bg);
+                  box-shadow:0 1px 2px rgba(0,0,0,.12);transition:transform .45s cubic-bezier(.4,0,.2,1)}
+  .cs-vtabs.idle .knob{transform:translateX(100%)}
+  html[data-theme="dark"] .cs-vtabs .knob{background:rgba(255,255,255,.14);box-shadow:none}
+  .cs-legend{display:flex;align-items:center;justify-content:center;gap:8px;margin-top:10px;height:20px;
+             font-family:var(--mono);font-size:10px;color:var(--fg3)}
+  .cs-legend .nm{color:var(--fg2);font-family:var(--sans);font-size:11px;font-weight:600;margin-right:4px}
+  .cs-legend .bar{width:160px;height:8px;border-radius:4px}
+  .cs-legend .hi{color:var(--fg2)}
+
+  .cs-todo{margin:auto;max-width:520px;text-align:center;color:var(--fg3);font-size:13px;line-height:1.75}
+  .cs-todo .tag{display:inline-block;font-family:var(--mono);font-size:10.5px;letter-spacing:.08em;
+                border:1px solid var(--line);border-radius:5px;padding:1px 7px;margin-bottom:10px}
   .top a{color:var(--fg2);text-decoration:none;font-size:12px;border:1px solid var(--line);border-radius:6px;padding:4px 10px}
   .top a:hover{color:var(--fg);border-color:rgba(var(--fgrgb),.3)}
   .top .r{display:flex;align-items:center;gap:8px}
@@ -158,6 +283,12 @@
     body{overflow:auto}
     .page{height:auto;min-height:100%;grid-template-columns:1fr;grid-template-areas:"top" "side" "stage" "foot"}
     .top{padding:16px 16px 0}
+    .scene{grid-area:2 / 1 / 5 / 2;grid-template-columns:1fr;overflow:auto}   /* 窄屏单列：占 side + stage + foot 三行 */
+    .cs-rail{padding:16px 16px 4px;flex-direction:row;overflow:auto hidden;gap:6px}
+    .cs-rail button{width:auto;flex:none;max-width:210px;white-space:nowrap}
+    .cs-main{padding:16px 16px 22px;overflow:auto}
+    .cs-figwrap{min-height:52vh;overflow:auto;justify-content:flex-start}
+    .cs-cap{font-size:12.5px;text-align:left}
     .side{padding:20px 16px 8px}
     .stage{height:62vh;padding:8px 16px}
     .foot{padding:8px 16px 20px;flex-direction:column;align-items:stretch;gap:12px}
@@ -173,7 +304,10 @@
 <body>
 <div class="page">
   <div class="top">
-    <div class="brand">Rank 的设计表达</div>
+    <div class="tabs" id="tabs" role="tablist">
+      <button type="button" role="tab" data-tab="intro" aria-selected="true">Rank 的设计表达</button>
+      <button type="button" role="tab" data-tab="scene" aria-selected="false">实战场景</button>
+    </div>
     <div class="r">
       <a id="openPat" href="./demo.html?view=chain&card=1&vtab=3d&preset=default128&sel=23" target="_blank" rel="noopener">打开原 pattern ↗</a>
       <button class="theme" id="themeBtn" type="button" title="切换深色 / 浅色" aria-label="切换深色 / 浅色">
@@ -203,6 +337,11 @@
         <button id="pzFit" type="button" title="适配屏幕">适配</button>
       </div>
     </div>
+  </div>
+
+  <div class="scene" id="scene" role="tabpanel">
+    <nav class="cs-rail" id="csRail" aria-label="案例"></nav>
+    <div class="cs-main" id="csMain"></div>
   </div>
 
   <div class="foot">
@@ -1657,15 +1796,376 @@
   document.getElementById('next').addEventListener('click', function(){ go(step + 1); });
   document.addEventListener('keydown', function(e){
     if(e.target && /INPUT|TEXTAREA/.test(e.target.tagName)) return;
+    if(pageEl.dataset.tab === 'scene') return;
     if(e.key === 'ArrowRight' || e.key === 'ArrowDown' || e.key === ' '){ go(step + 1); e.preventDefault(); }
     else if(e.key === 'ArrowLeft' || e.key === 'ArrowUp'){ go(step - 1); e.preventDefault(); }
     else if(e.key === '0'){ go(0); }
   });
   window.addEventListener('resize', resize);
 
+  /* ── 页签：intro 是这套分步入门，scene 先空着。状态写进 ?tab=，刷新还在同一页 ── */
+  var pageEl = document.querySelector('.page'), tabsEl = document.getElementById('tabs');
+  function setTab(id){
+    if(id !== 'scene') id = 'intro';
+    pageEl.dataset.tab = id;
+    Array.prototype.forEach.call(tabsEl.children, function(b){ b.setAttribute('aria-selected', String(b.dataset.tab === id)); });
+    try{ var q = new URLSearchParams(location.search); if(id === 'intro') q.delete('tab'); else q.set('tab', id);
+         var qs = q.toString(); history.replaceState(null, '', location.pathname + (qs ? '?' + qs : '')); }catch(e){}
+    if(id === 'intro') resize();          /* 画布刚从 display:none 回来，尺寸要重新量 */
+  }
+  tabsEl.addEventListener('click', function(e){ var b = e.target.closest('button[data-tab]'); if(b) setTab(b.dataset.tab); });
+
   resize();
-  var st = parseInt(new URLSearchParams(location.search).get('step'), 10);
+  var q0 = new URLSearchParams(location.search), st = parseInt(q0.get('step'), 10);
   go(isFinite(st) && st >= 1 ? st - 1 : 0);
+  setTab(q0.get('tab'));
+})();
+</script>
+<script>
+/* ── 实战场景：一个案例一张图，一段一行字 ──────────────────────────────
+   案例一的原型：openPangu-2.0-Flash，2048 NPU，EP64 / TP1 / PP4 / DP8，FP8，step 15203
+   被 NCCL timeout 打断（出处：定位链-openPangu-2.0-Flash.md「问题影响 2」）。四段传播的
+   数量级一律照真实现场那套 1 → 64 → 256 → 2048 来写；图是拿本页那套 128 rank
+   （tp2·pp4·dp16·ep8，48 层）缩小一号画的替身——每一跳撞的还是同三道边界
+   （EP 组 → 模型副本 → DP 全局）。四段各一档红，分四批亮起。
+
+   案例二是 infra 视角：同一幅展平图不再填「传播到哪」，而是当热力图填一个度量 ——
+   取 config-relation-plane「负载热力」六个度量里的**计算时间**（这张卡在这一层上算一个
+   micro-batch 用了多少 ms）。选它是因为它对应的故障形状是 infra 最高频要认的那一种：
+   一台机器降频 / ECC 退化 / 风扇故障 → 算力打折 → 8 张卡 8 行整体抬起来，横带正好一台
+   整机宽。四段是一根时间轴：日常分布（横向无结构）→ 苗头（降 6%，肉眼将将可辨）→
+   横带显形（0.68 倍算力，config-relation-plane 里 FAULT.slowFactor 的取值）→ 换成互补的
+   「空闲时间」看谁在为它买单。色阶照那页的 HEAT_RAMP（冷蓝 → 火红，中途绕开绿），
+   浅色主题把冷端换成淡蓝灰，格子在白底上才不会一片墨。
+
+   图的口径照第 10 步那张展平视图：横轴 48 层按 PP 段切 4 块（每块 12 层），纵轴 32 行 =
+   一段里的 32 张卡（k = dp·2 + tp，两行一个 DP、8 行一台整机、16 行一个 EDP 副本），
+   一格 = 一张卡的一层，整幅 4 × 32 = 128 张卡。差别只有两处：这里是 DOM 不是 canvas；
+   两端的 Emb / Norm / Head 列省掉，只留 48 个 Transformer 层，让 4 块一样宽。
+   格子尺寸由 fit() 按可用空间现算，图居中放到最大。 */
+(function(){
+  var railEl = document.getElementById('csRail'), mainEl = document.getElementById('csMain');
+  if(!railEl || !mainEl) return;
+  var pageEl = document.querySelector('.page'), tabsEl = document.getElementById('tabs');
+
+  var G = {cols:12, rows:32, cw:15, ch:12, cg:1, pad:3, bgap:12, lw:46, ruler:34, legend:30, vtabs:30};
+  function egap(){ return Math.max(8, Math.round(G.ch*1.1)); }     /* 副本缝 */
+  function ngap(){ return Math.max(4, Math.round(G.ch*0.5)); }     /* 整机缝 */
+  function rowTop(k){
+    var y = 0, eg = egap(), ng = ngap();
+    for(var i = 1; i <= k; i++){ y += G.ch + G.cg; if(i === 16) y += eg; else if(i % 8 === 0) y += ng; }
+    return y;
+  }
+  function clamp(v, lo, hi){ return Math.min(hi, Math.max(lo, v)); }
+  function isDark(){ return document.documentElement.getAttribute('data-theme') === 'dark'; }
+  /* 按 .cs-figwrap 量出来的空间定格子大小：先按宽度给列宽，再按高度给行高，
+     行高不超过列宽的 .85（格子偏方），列宽也不许比行高的 1.6 倍还宽。
+     热力案例图下面多一条色阶图例，高度先扣掉。 */
+  function fit(legend){
+    var box = document.getElementById('csFig'); if(!box) return;
+    var aw = box.clientWidth, ah = box.clientHeight - (legend ? G.legend + G.vtabs : 0);
+    if(aw < 40 || ah < 40) return;
+    var cw = Math.floor((aw - G.lw - 3*G.bgap - 4*(11*G.cg + 2*G.pad) - 2)/48);
+    G.cw = clamp(cw, 7, 26);
+    var slack = ah - G.ruler - 2*G.pad - 31*G.cg - 4;
+    var ch = Math.floor((slack - Math.max(8, Math.round(G.cw*0.9)) - 2*Math.max(4, Math.round(G.cw*0.42)))/32);
+    G.ch = clamp(Math.min(ch, Math.round(G.cw*0.85)), 6, 24);
+    G.cw = Math.min(G.cw, Math.round(G.ch*1.6));
+    G.bgap = clamp(Math.round(G.cw*0.8), 6, 14);
+  }
+
+  /* opt: {cls: 'sN' | 'heat', cell(rank, layer) → 档位 class（传播案例）, hotLayer, hotDP,
+           band: {stage, k0, k1, label}（热力案例给整机横带画的虚线框，先藏着，sync 再亮）,
+           marks: [{stage, s0, s1, ci0, ci1, k0, k1, label, inside, up}]（传播案例每段那枚黑标，
+                   坐标按「第几块 + 块内第几列 / 第几行」给，一枚可横跨多块）} */
+  function planeHTML(opt){
+    var BW = G.cols*G.cw + (G.cols - 1)*G.cg, BOXW = BW + 2*G.pad, BOXH = rowTop(G.rows - 1) + G.ch + 2*G.pad;
+    var h = ['<div class="cs-plane ' + opt.cls + '" id="csPlane" style="--cw:' + G.cw + 'px;--ch:' + G.ch + 'px">'], s, k, ci;
+    h.push('<div class="cs-ptop"><div style="flex:none;width:' + G.lw + 'px"></div><div class="cs-bwrap" style="gap:' + G.bgap + 'px">');
+    for(s = 0; s < 4; s++){
+      h.push('<div class="cs-bh" style="width:' + BOXW + 'px"><span class="pp">PP Stage ' + s + '</span>');
+      for(ci = 0; ci < G.cols; ci++){
+        var L = s*12 + ci, isHot = L === opt.hotLayer;
+        if(L % 4 !== 2) continue;          /* 节奏取 L2 / L6 / L10 …：四块一样齐，案发的 L38 正好在节奏上 */
+        h.push('<span class="tk' + (isHot ? ' hot' : '') + '" style="left:' + (G.pad + ci*(G.cw + G.cg) + G.cw/2 - 17)
+               + 'px;width:34px">L' + L + '</span>');
+      }
+      h.push('</div>');
+    }
+    h.push('</div></div><div class="cs-pbody"><div class="cs-lr" style="width:' + G.lw + 'px;height:' + BOXH + 'px">');
+    /* DP 门牌也标齐：每 4 个一枚（DP3 / 7 / 11 / 15），案发的 DP11 正好在这个节奏上 */
+    for(var d = 0; d < 16; d++){
+      if(d % 4 !== 3) continue;
+      var a = G.pad + rowTop(2*d), b = G.pad + rowTop(2*d + 1) + G.ch;
+      h.push('<div class="dp' + (opt.hotDP === d ? ' hot' : '') + '" style="top:' + a + 'px;height:' + (b - a) + 'px">DP ' + d + '</div>');
+    }
+    h.push('</div><div class="cs-bwrap" style="gap:' + G.bgap + 'px">');
+    for(s = 0; s < 4; s++){
+      h.push('<div class="cs-block" style="width:' + BOXW + 'px;height:' + BOXH + 'px">');
+      for(k = 0; k < G.rows; k++){
+        h.push('<div class="cs-row" style="left:' + G.pad + 'px;top:' + (G.pad + rowTop(k)) + 'px" title="rank ' + (s*32 + k)
+               + ' · PP' + s + ' · DP' + (k>>1) + ' · TP' + (k&1) + ' · node ' + (s*4 + (k>>3)) + '">');
+        for(ci = 0; ci < G.cols; ci++) h.push('<div class="cs-cell' + (opt.cell ? ' ' + opt.cell(s*32 + k, s*12 + ci) : '') + '"></div>');
+        h.push('</div>');
+      }
+      if(opt.band && opt.band.stage === s){
+        var t0 = G.pad + rowTop(opt.band.k0) - 2, t1 = G.pad + rowTop(opt.band.k1) + G.ch + 2;
+        h.push('<div class="cs-nb" id="csBand" style="left:' + (G.pad - 2) + 'px;width:' + (BW + 4) + 'px;top:' + t0 + 'px;height:' + (t1 - t0) + 'px">'
+             + '<span>' + opt.band.label + '</span></div>');
+      }
+      h.push('</div>');
+    }
+    (opt.marks || []).forEach(function(mk){
+      var pitchX = BOXW + G.bgap, cEnd = (mk.ci1 == null ? G.cols - 1 : mk.ci1);
+      var x0 = mk.s0*pitchX + G.pad + (mk.ci0 || 0)*(G.cw + G.cg) - 2;
+      var x1 = mk.s1*pitchX + G.pad + (cEnd + 1)*(G.cw + G.cg) - G.cg + 2;
+      var y0 = G.pad + rowTop(mk.k0) - 2, y1 = G.pad + rowTop(mk.k1) + G.ch + 2;
+      h.push('<div class="cs-nb' + (mk.inside ? ' in' : '') + (mk.up ? ' up' : '') + '" data-mk="' + mk.stage + '" style="left:' + x0 + 'px;width:'
+             + (x1 - x0) + 'px;top:' + y0 + 'px;height:' + (y1 - y0) + 'px"><span>' + mk.label + '</span></div>');
+    });
+    h.push('</div></div></div>');
+    return h.join('');
+  }
+
+  /* ── 案例一：案发卡 R119 = PP3 · DP11 · TP1，案发层 layer 38（MoE 层，落在 PP stage 3）── */
+  var F = 119, FL = 38;
+  /* 一格红 = 这张卡在这一层上停住了：
+       ① 案发格（R119 × L38）最深 —— 卡在这一层的 all-to-all 里，L39 之后没执行到，所以不上色；
+       ② 同一列 L38 上的另外 15 格 = EP 组另外 7 张 + 各自的 TP 对片，全停在同一层；
+       ③ 同副本另外三段 48 张、④ 另一个副本 64 张：整卡停摆，所以是整行。 */
+  function cell1(r, L){
+    var edp = ((r >> 1) & 15) >> 3;
+    if((r >> 5) === 3 && edp === 1) return L === FL ? (r === F ? 'l1 hot' : 'l2') : '';
+    return edp === 1 ? 'l3' : 'l4';
+  }
+  var ST1 = [
+    {lbl:'1 · 一层一卡：数值溢出', c:'rgba(var(--red),.95)',
+     cap:'<span class="k">1 张卡</span>　R119 的 layer 38 溢出成 NaN，counts 算成 <code>send=0</code>，卡死在这一层的 all-to-all 里 —— L39 之后没被执行到。'},
+    {lbl:'2 · EP 组：卡在 barrier', c:'rgba(var(--red),.62)',
+     cap:'<span class="k">16 张卡</span>　一次 all-to-all 只发生在一层之内：同组另外 7 张加各自的 TP 对片，全停在同一层 L38 上（所以是竖的一条）。'},
+    {lbl:'3 · 模型副本：流水僵住', c:'rgba(var(--red),.40)',
+     cap:'<span class="k">64 张卡</span>　stage 3 不动，1F1B 一环扣一环，同副本另外三段整卡停摆 —— 换成横的整行：PP 的契约按卡走，不按层。'},
+    {lbl:'4 · 全集群：超时抛错', c:'rgba(var(--red),.22)',
+     cap:'<span class="k">128 张卡</span>　梯度 all-reduce 少一个参与者，没坏的副本也停；30s 超时，NCCL 抛错。'}
+  ];
+
+  /* 每一段一枚黑标，圈出这一段讲的是图上哪一块（照案例二 node 横带那只框的样子）：
+     ① 案发的那一格 ② EP 组 = stage 3 里 16 行 ③ 一个模型副本 = 这 16 行横跨 4 段
+     ④ 全集群 = 整幅。只有当前这一段那枚亮着。 */
+  var MK1 = [
+    {stage:1, s0:3, s1:3, ci0:2, ci1:2, k0:23, k1:23, label:'R119 · layer 38', up:true},
+    {stage:2, s0:3, s1:3, ci0:2, ci1:2, k0:16, k1:31, label:'EP 组 · 一次 all-to-all', up:true},
+    {stage:3, s0:0, s1:3, k0:16, k1:31, label:'一个模型副本', inside:true},
+    {stage:4, s0:0, s1:3, k0:0,  k1:31, label:'全集群', inside:true}
+  ];
+
+  /* ── 案例二：node 5（PP1 的第 2 台整机 = stage 1 的第 8–15 行）降频 ─────────────
+     格子填「计算时间」ms。结构那一半是确定的：每层一个基准（层与层之间本来就有细微
+     差别，所以有淡淡的竖纹）；位置那一半是模型：每张卡 ±6% 的确定性抖动（hash，不是
+     随机数，同一格每次一样）。慢机器的算力打折按段走：1 → 0.94 → 0.68。
+     第四段换成「空闲时间」：等出来的时间 = 同一列里最重的那张卡拖出的差值 + 一道 PP 气泡
+     的阶梯 —— 慢卡自己不等人，所以它反而最暗。 */
+  var SLOW_NODE = 5, SLOW_S = 1, SLOW_K0 = 8, SLOW_K1 = 15;
+  var SLOW_F = [1, 1, 0.94, 0.68, 0.68];          /* 按段索引（0 = 空图）*/
+  var BUSY_RANGE = [0.8, 2.0], IDLE_RANGE = [0, 0.9];   /* 色阶两端定死，四段之间颜色才可比 */
+  function hash01(a, b){ var x = Math.sin(a*127.1 + b*311.7 + 74.7)*43758.5453; return x - Math.floor(x); }
+  function baseOf(L){ return 1.12 + 0.08*Math.sin(L*0.9) + (L % 3 === 1 ? 0.06 : 0); }
+  function onSlow(r){ return (r >> 5) === SLOW_S && (r & 31) >= SLOW_K0 && (r & 31) <= SLOW_K1; }
+  function busy(r, L, st){
+    var v = baseOf(L)*(0.94 + 0.12*hash01(r, L));
+    return onSlow(r) ? v/SLOW_F[st] : v;
+  }
+  function idle(r, L, st){
+    var bubble = 0.04 + 0.05*(r >> 5);                    /* PP 气泡：越靠后的 stage 泡越大 */
+    if(onSlow(r)) return bubble;                          /* 慢卡自己不等人 */
+    return bubble + baseOf(L)*(1/SLOW_F[st] - 1) + 0.03*hash01(L, r);
+  }
+  /* 色阶照 config-relation-plane 的 HEAT_RAMP：冷蓝 → 火红，中途绕开绿。
+     浅色主题下冷端换成淡蓝灰，白底上才不会一片墨；热端两档不变，两个主题读数一致。 */
+  var RAMP_D = [[0,13,30,66],[.22,38,86,178],[.44,104,78,196],[.64,176,66,148],[.82,226,68,84],[1,255,124,46]];
+  var RAMP_L = [[0,226,232,244],[.22,166,186,230],[.44,160,130,210],[.64,196,88,158],[.82,226,68,84],[1,255,124,46]];
+  function heatColor(u){
+    var R = isDark() ? RAMP_D : RAMP_L, t = clamp(u, 0, 1), i = 1;
+    while(i < R.length - 1 && t > R[i][0]) i++;
+    var a = R[i-1], b = R[i], f = (t - a[0])/((b[0] - a[0]) || 1);
+    return 'rgb(' + Math.round(a[1] + (b[1]-a[1])*f) + ',' + Math.round(a[2] + (b[2]-a[2])*f) + ',' + Math.round(a[3] + (b[3]-a[3])*f) + ')';
+  }
+  function rampCSS(){
+    var R = isDark() ? RAMP_D : RAMP_L;
+    return 'linear-gradient(90deg,' + R.map(function(s){ return 'rgb(' + s[1] + ',' + s[2] + ',' + s[3] + ') ' + Math.round(s[0]*100) + '%'; }).join(',') + ')';
+  }
+  /* 第 st 段这一格的颜色；st = 0 是空图（素底） */
+  function fill2(r, L, st){
+    if(!st) return '';
+    var v, rg;
+    if(st === 4){ v = idle(r, L, st); rg = IDLE_RANGE; } else { v = busy(r, L, st); rg = BUSY_RANGE; }
+    return heatColor((v - rg[0])/(rg[1] - rg[0]));
+  }
+  /* 一段一行字（案例一是两行，这里的 .cs-cap 留着同样的 min-height，段控条的位置两案例一致）；
+     band 是横带虚线框上那枚黑标，第二段起就标出来 —— 苗头那一段正是要读的人去看那 8 行 */
+  var ST2 = [
+    {lbl:'1 · 健康运行中', c:heatColor(.28), metric:'计算时间', unit:'ms', rg:BUSY_RANGE, view:'busy',
+     cap:'<span class="t">step 15100</span>　格子填<b>计算时间</b>：一张卡在一层上用了多少 ms。层间有淡淡竖纹，<b>横向没有任何结构</b> —— 这就是健康的样子。'},
+    {lbl:'2 · 苗头', c:heatColor(.48), metric:'计算时间', unit:'ms', rg:BUSY_RANGE, view:'busy', band:'node 5 · 主频 −6%',
+     cap:'<span class="t">step 15140</span>　node 5 温度过阈值、主频降 6%：那 8 行只比邻居暖一点，却已<b>横着占满 12 列</b> —— 横向的形状只能来自机器。'},
+    {lbl:'3 · 横带显形', c:heatColor(.85), metric:'计算时间', unit:'ms', rg:BUSY_RANGE, view:'busy', band:'node 5 · 0.68× 算力',
+     cap:'<span class="t">step 15180</span>　降到 0.68 倍算力，8 行整体抬起，宽度恰好一台整机 —— <b>整机横带 = 硬件问题</b>，直接查这台机器的频率 / ECC / 风扇。'},
+    {lbl:'4 · 换个视图验证', c:heatColor(.62), metric:'空闲时间', unit:'ms', rg:IDLE_RANGE, view:'idle', band:'node 5 · 不等人',
+     cap:'<span class="t">切到空闲时间</span>　慢的 8 张卡反而最暗（它不等人），其余 120 张全在等它 —— 两幅图互补，一台机器把一步拖长到 <b>1.47 倍</b>。'}
+  ];
+
+  var CASES = [
+    {t:'一个 Rank 出错，四步拖停整个集群',
+     rail:'一个 Rank 拖停全集群', st:ST1},
+    {t:'集群状态全景，看形状就知道谁在拖后腿',
+     rail:'集群状态全景', st:ST2, heat:true},
+    {rail:'1F1B 的空泡', t:'PP 空泡把整网 MFU 拉到 38%', todo:true,
+     plan:'纵轴按 4 个 PP 段各画一条时间条，末级 stage 的泡最大 —— 为什么加卡不涨吞吐。'},
+    {rail:'总是 stage 0 先 OOM', t:'激活没开 checkpoint，碎片触发 OOM', todo:true,
+     plan:'每一行的格子换成显存柱：1F1B 稳态里越靠前的 stage 压着越多在途微批，所以 stage 0 第一个炸。'},
+    {rail:'均匀一片 = 不是坏卡', t:'q_b_proj FP8 溢出：所有 rank 同一个模式', todo:true,
+     plan:'这张图要表达的恰恰是「没有形状」：不沿任何 PP / EP / DP 边界聚集，才判得出是全局精度问题。'},
+    {rail:'单卡就能复现的那一类', t:'算子带宽瓶颈 + AICPU 回退，步耗时超标 40%', todo:true,
+     plan:'按 rank 铺算子耗时占比，齐刷刷一致 —— 「图上有没有结构」本身就是第一道分叉判据。'}
+  ];
+
+  var cur = 0, stage = 4, timer = null;
+  function active(){ return pageEl.dataset.tab === 'scene'; }
+  function steps(){ return CASES[cur].st; }
+
+  function railHTML(){
+    return CASES.map(function(c, i){
+      return '<button type="button" data-i="' + i + '" aria-current="' + (i === cur) + '">'
+           + '<span class="n">' + (i + 1) + '</span>' + c.rail + (c.todo ? ' · 待补' : '') + '</button>';
+    }).join('');
+  }
+  function stepsHTML(){
+    var ST = steps();
+    return ST.map(function(s, i){
+      return '<button type="button" data-s="' + (i + 1) + '" style="--fc:' + s.c + '" class="'
+           + (i + 1 <= stage ? 'done ' : '') + (i + 1 === stage ? 'cur' : '') + '">'
+           + '<span class="lbl">' + s.lbl + '</span><span class="bar"></span></button>';
+    }).join('') + '<button type="button" class="rep" data-rep="1" title="重播">↻</button>';
+  }
+
+  function render(){
+    railEl.innerHTML = railHTML();
+    var c = CASES[cur];
+    if(c.todo){
+      mainEl.innerHTML = '<div class="cs-head"><h1>' + c.t + '</h1></div>'
+        + '<div class="cs-todo"><span class="tag">待补 · 这张图打算怎么画</span><div>' + c.plan + '</div></div>';
+      return;
+    }
+    mainEl.innerHTML = '<div class="cs-head"><h1>' + c.t + '</h1><div class="cs-steps" id="csSteps"></div>'
+      + '<p class="cs-cap" id="csCap"></p></div>'
+      + '<div class="cs-figwrap' + (c.heat ? ' heat' : '') + '" id="csFig"></div>';
+    paint();
+    if(active()) play();
+  }
+  /* 图重画（尺寸变了要重排），文字与段控只换内容 */
+  function paint(){
+    var fig = document.getElementById('csFig'), c = CASES[cur]; if(!fig) return;
+    fit(c.heat);
+    if(c.heat){
+      fig.innerHTML = '<div><div class="cs-vtabs" id="csVtabs" role="tablist" aria-label="热力度量">'
+        + '<button type="button" role="tab" data-v="busy">按计算时间</button><button type="button" role="tab" data-v="idle">按空闲时间</button><span class="knob" aria-hidden="true"></span></div>'
+        + planeHTML({cls:'heat', band:{stage:SLOW_S, k0:SLOW_K0, k1:SLOW_K1, label:''}})
+        + '<div class="cs-legend" id="csLegend"></div></div>';
+    }else{
+      fig.innerHTML = planeHTML({cls:'s' + stage, cell:cell1, hotLayer:FL, hotDP:11, marks:MK1});
+    }
+    sync();
+  }
+  /* 热力案例：每一段重算 1536 格的底色（inline style），每一格自己从旧色渐到新色（不逐列错开，
+     扫描是传播案例的语言，这里变的是读数）；色阶图例跟着这一段的度量换文字 */
+  function fillHeat(){
+    var p = document.getElementById('csPlane'), lg = document.getElementById('csLegend'), band = document.getElementById('csBand');
+    if(!p) return;
+    var cells = p.querySelectorAll('.cs-cell'), i = 0;
+    for(var s = 0; s < 4; s++) for(var k = 0; k < G.rows; k++) for(var ci = 0; ci < G.cols; ci++)
+      cells[i++].style.background = fill2(s*32 + k, s*12 + ci, stage);
+    var m = stage ? ST2[stage - 1] : null;
+    if(band){ band.classList.toggle('on', !!(m && m.band)); if(m && m.band) band.firstChild.textContent = m.band; }
+    /* 集群图上方那两枚视图页签：播到第四段时它自己切到「空闲时间」，示意这是换了个视图 */
+    var vt = document.getElementById('csVtabs');
+    if(vt){
+      vt.classList.toggle('idle', !!m && m.view === 'idle');
+      vt.querySelectorAll('button').forEach(function(b){ b.setAttribute('aria-selected', String(!!m && b.dataset.v === m.view)); });
+    }
+    if(lg){
+      lg.innerHTML = m ? '<span class="nm">' + m.metric + '</span><span class="lo">' + m.rg[0].toFixed(1) + '</span>'
+        + '<span class="bar" style="background:' + rampCSS() + '"></span><span class="hi">' + m.rg[1].toFixed(1) + ' ' + m.unit + '</span>' : '';
+    }
+  }
+  function sync(){
+    var p = document.getElementById('csPlane'), cap = document.getElementById('csCap'), st = document.getElementById('csSteps'), c = CASES[cur];
+    if(c.heat) fillHeat();
+    else if(p){
+      p.className = 'cs-plane s' + stage;
+      Array.prototype.forEach.call(p.querySelectorAll('[data-mk]'), function(el){ el.classList.toggle('on', +el.dataset.mk === stage); });
+    }
+    if(cap) cap.innerHTML = stage ? c.st[stage - 1].cap : '';
+    if(st) st.innerHTML = stepsHTML();
+  }
+  function stop(){ if(timer){ clearTimeout(timer); timer = null; } }
+  /* 分段动效：传播案例从空图开始一段一段亮起来；热力案例直接站在「健康运行中」那一幅上
+     （第一幅是日常态，不该有从左铺到右的扫描——扫描是留给「问题出现」的），从第二段起才过渡 */
+  function play(){
+    stop();
+    var heat = CASES[cur].heat, i, n = steps().length;
+    if(heat){ stage = 1; syncInstant(); i = 2; } else { stage = 0; sync(); i = 1; }
+    (function nextStep(){
+      timer = setTimeout(function(){ stage = i; sync(); if(++i <= n) nextStep(); else timer = null; }, i === 1 ? 420 : (heat ? 2100 : 1700));
+    })();
+  }
+  /* 关掉背景色过渡填一遍，下一帧再把过渡打开 */
+  function syncInstant(){
+    var p = document.getElementById('csPlane');
+    if(p) p.classList.add('nt');
+    sync();
+    requestAnimationFrame(function(){ requestAnimationFrame(function(){ if(p) p.classList.remove('nt'); }); });
+  }
+
+  railEl.addEventListener('click', function(e){
+    var b = e.target.closest('button[data-i]'); if(!b) return;
+    stop(); cur = +b.dataset.i; stage = (CASES[cur].st || []).length; render(); writeQ();
+  });
+  mainEl.addEventListener('click', function(e){
+    if(e.target.closest('button[data-rep]')){ play(); return; }
+    var v = e.target.closest('button[data-v]');
+    if(v){ stop(); stage = v.dataset.v === 'idle' ? 4 : Math.min(Math.max(stage, 1), 3); sync(); return; }
+    var b = e.target.closest('button[data-s]');
+    if(b){ stop(); stage = +b.dataset.s; sync(); }
+  });
+  function writeQ(){
+    try{ var q = new URLSearchParams(location.search);
+      if(cur) q.set('case', String(cur + 1)); else q.delete('case');
+      var s = q.toString(); history.replaceState(null, '', location.pathname + (s ? '?' + s : ''));
+    }catch(e){}
+  }
+  /* 页签切回来 / 窗口变化都要重量一次尺寸；不在这一页时不跑动效 */
+  if(tabsEl) tabsEl.addEventListener('click', function(){
+    setTimeout(function(){ if(active()){ paint(); play(); } else stop(); }, 0);
+  });
+  var rz = null;
+  window.addEventListener('resize', function(){
+    if(!active()) return;
+    clearTimeout(rz); rz = setTimeout(paint, 120);
+  });
+  /* 热力的色阶分主题，切主题后把当前这一段重填一遍（段控条的颜色也随之换） */
+  var themeBtn = document.getElementById('themeBtn');
+  if(themeBtn) themeBtn.addEventListener('click', function(){
+    setTimeout(function(){
+      if(!CASES[cur].heat) return;
+      ST2.forEach(function(s, i){ s.c = heatColor([.28, .48, .85, .62][i]); });
+      sync();
+    }, 0);
+  });
+
+  var q0 = new URLSearchParams(location.search), ci = parseInt(q0.get('case'), 10);
+  if(isFinite(ci) && ci >= 1 && ci <= CASES.length) cur = ci - 1;
+  if(CASES[cur].st) stage = CASES[cur].st.length;
+  render();
 })();
 </script>
 </body>
