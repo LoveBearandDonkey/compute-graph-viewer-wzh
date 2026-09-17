@@ -19,7 +19,7 @@
     --bg:#fff; --bg2:#f4f5f8; --fg:#131a2a; --fg2:#5b6472; --fg3:#9aa3b2; --fgrgb:19,26,42;
     --line:rgba(var(--fgrgb),.10); --bad:#c0392b;
     --card-front:rgba(255,255,255,.62); --card-right:rgba(236,239,244,.70); --card-top:rgba(247,248,251,.85);
-    --tile:#fff;   /* 第 10 步展平格子的底色：浅色是白瓷砖，深色换成比底板略亮一档的石板灰 */
+    --tile:var(--card-front);   /* 第 10 步 / 案例一二展平格子的底色：直接用 3D 柱子正面那档半透明填充，两处看着是同一块料 */
     --tp:#22D3EE; --pp:#FFAA3B; --dp:#4369EF; --ep:#9B3CF6;
     --red:220,38,38;   /* 实战场景里四档红的基色（rgb 三元，靠 alpha 分档） */
     --sans:-apple-system,"Segoe UI","PingFang SC","Microsoft YaHei",Roboto,Helvetica,Arial,sans-serif;
@@ -32,7 +32,7 @@
     --bg:#080a0f; --bg2:rgba(255,255,255,.075); --fg:rgba(255,255,255,.92); --fg2:rgba(255,255,255,.66);
     --fg3:rgba(255,255,255,.46); --fgrgb:255,255,255; --line:rgba(var(--fgrgb),.16); --bad:#ff6b6b;
     --card-front:rgba(255,255,255,.07); --card-right:rgba(255,255,255,.10); --card-top:rgba(255,255,255,.14);
-    --tile:#1a1e28; --red:255,107,107;
+    --tile:var(--card-front); --red:255,107,107;
   }
   *{box-sizing:border-box}
   html,body{height:100%;margin:0}
@@ -113,7 +113,7 @@
   .cs-steps .rep:hover{color:var(--fg);border-color:rgba(var(--fgrgb),.3)}
 
   /* 展平图本体 */
-  .cs-plane{--cw:15px;--ch:12px;--cg:1px;--pad:3px}
+  .cs-plane{--cw:15px;--ch:12px;--cg:3px;--pad:3px}
   .cs-ptop{display:flex}
   .cs-bwrap{display:flex;gap:12px;position:relative}
   .cs-bh{position:relative;height:34px;flex:none}
@@ -124,7 +124,9 @@
   .cs-lr{position:relative;flex:none}
   .cs-lr .dp{position:absolute;right:8px;font-family:var(--mono);font-size:9px;color:rgba(var(--fgrgb),.28);display:flex;align-items:center;white-space:nowrap}
   .cs-lr .dp.hot{color:rgba(var(--red),.85);font-weight:600}
-  .cs-block{position:relative;flex:none;background:rgba(var(--fgrgb),.05);border-radius:2px}
+  /* 每块 PP stage 的底板：案例一不垫色，格子直接落在页面底上（同第 10 步展平画布）；热力案例（案例二）留一层浅灰当框 */
+  .cs-block{position:relative;flex:none;border-radius:2px}
+  .cs-plane.heat .cs-block{background:rgba(var(--fgrgb),.05)}
   .cs-row{position:absolute;display:flex;gap:var(--cg);height:var(--ch)}
   .cs-cell{width:var(--cw);height:100%;background:var(--tile);transition:background-color .55s ease,box-shadow .55s ease}
   /* 一行里从左到右错开一点，红就是扫过去的，不是整块一下子跳出来 */
@@ -1992,7 +1994,8 @@
   if(!railEl || !mainEl) return;
   var pageEl = document.querySelector('.page'), tabsEl = document.getElementById('tabs');
 
-  var G = {cols:12, rows:32, cw:15, ch:12, cg:1, pad:3, bgap:12, lw:46, ruler:34, legend:30, vtabs:30};
+  /* cg 取 3：照第 10 步展平画布 PL.CELL_GAP 的格缝，两幅图的格子疏密一致 */
+  var G = {cols:12, rows:32, cw:15, ch:12, cg:3, pad:3, bgap:12, lw:46, ruler:34, legend:30, vtabs:30};
   function egap(){ return Math.max(8, Math.round(G.ch*1.1)); }     /* 副本缝 */
   function ngap(){ return Math.max(4, Math.round(G.ch*0.5)); }     /* 整机缝 */
   function rowTop(k){
@@ -2004,10 +2007,11 @@
   function isDark(){ return document.documentElement.getAttribute('data-theme') === 'dark'; }
   /* 按 .cs-figwrap 量出来的空间定格子大小：先按宽度给列宽，再按高度给行高，
      行高不超过列宽的 .85（格子偏方），列宽也不许比行高的 1.6 倍还宽。
-     热力案例图下面多一条色阶图例，高度先扣掉。 */
-  function fit(legend){
+     热力案例图上下各多一条（页签、色阶图例），高度先扣掉；案例一没这两条，也扣同样的一份——
+     两案的图一样大，案例一不因为少了两条就把集群撑满整屏。 */
+  function fit(){
     var box = document.getElementById('csFig'); if(!box) return;
-    var aw = box.clientWidth, ah = box.clientHeight - (legend ? G.legend + G.vtabs : 0);
+    var aw = box.clientWidth, ah = box.clientHeight - (G.legend + G.vtabs);
     if(aw < 40 || ah < 40) return;
     var cw = Math.floor((aw - G.lw - 3*G.bgap - 4*(11*G.cg + 2*G.pad) - 2)/48);
     G.cw = clamp(cw, 7, 26);
@@ -2024,7 +2028,7 @@
                    坐标按「第几块 + 块内第几列 / 第几行」给，一枚可横跨多块）} */
   function planeHTML(opt){
     var BW = G.cols*G.cw + (G.cols - 1)*G.cg, BOXW = BW + 2*G.pad, BOXH = rowTop(G.rows - 1) + G.ch + 2*G.pad;
-    var h = ['<div class="cs-plane ' + opt.cls + '" id="csPlane" style="--cw:' + G.cw + 'px;--ch:' + G.ch + 'px">'], s, k, ci;
+    var h = ['<div class="cs-plane ' + opt.cls + '" id="csPlane" style="--cw:' + G.cw + 'px;--ch:' + G.ch + 'px;--cg:' + G.cg + 'px">'], s, k, ci;
     h.push('<div class="cs-ptop"><div style="flex:none;width:' + G.lw + 'px"></div><div class="cs-bwrap" style="gap:' + G.bgap + 'px">');
     for(s = 0; s < 4; s++){
       h.push('<div class="cs-bh" style="width:' + BOXW + 'px"><span class="pp">PP Stage ' + s + '</span>');
@@ -2813,7 +2817,7 @@
       else fig.innerHTML = '<div class="cs-todo">这一案要借「Rank 的设计表达」那套卡阵，它没加载出来。</div>';
       return;
     }
-    fit(c.heat);
+    fit();
     if(c.heat){
       fig.innerHTML = '<div><div class="cs-vtabs" id="csVtabs" role="tablist" aria-label="热力度量">'
         + '<button type="button" role="tab" data-v="busy">按计算时间</button><button type="button" role="tab" data-v="idle">按空闲时间</button><span class="knob" aria-hidden="true"></span></div>'
