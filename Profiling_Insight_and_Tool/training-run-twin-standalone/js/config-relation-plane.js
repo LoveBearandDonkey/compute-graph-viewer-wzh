@@ -45,6 +45,8 @@
   /* 行高的**下界**。真值由 buildLayout 按「专家标签折成几行」算（layout.cellH），
      一行胶囊时就是这个数。 */
   const CELL_H = 22;
+  const CELL_GAP_PX = 3;         // rank × layer 格子横纵间距（屏幕像素，不随缩放变细）
+  const CELL_BODY_MIN_PX = 1;    // 极限缩小时仍给格子本体留下的最小可见尺寸
   /* ── stage 块之间那条缝（同时是行标写字的地方，下称「行标道」）─────────────
      宽度**不是常量**，由 laneWorldAt(k) 每帧按两种情形给（都以屏幕像素为准）：
        · 行标画得出来 —— 恰好够写下最长的那串（"整机 1024" / "rank 2047"）再加
@@ -854,9 +856,15 @@
       return (hw.rdma / hops) * rack * (0.7 + 0.5 * hash01(node, 23));
     }
 
+    /* 路由专家的 TP 分母（ETP），与 capacity 的 paramsOfStage 同一条判据：默认 1
+       （专家只做 EP、整份持有），「专家切 TP」开着才 ÷TP，mf 档固定 1。共享专家
+       与 dense FFN 同形，仍随 TP 切。计算量那一段**不**跟着变：ETP = 1 时 token 在
+       TP×EP 域里重新分发，每卡拿到 1/TP 的 token 配整份专家，FLOPs 到头来是同一个数。 */
+    const expertTp = Boolean(cfg.expertTp) && tp > 1 && c.epMode !== "mf";
+    const etp = expertTp ? tp : 1;
     const attnParams = 4 * H * H / tp;
     const denseFfn = 3 * H * iDense / tp;
-    const moeFfn = 3 * H * iMoe * (epr + shared) / tp;
+    const moeFfn = 3 * H * iMoe * (epr / etp + shared / tp);
     const embParams = V * H / (cfg.vocabEmbDp ? 1 : tp);
     const headParams = V * H / tp;
     const lastLayerOf = t.stages.map((s) => s.hi);
@@ -951,8 +959,9 @@
         comm += ms;
         if (span > rpn) commCross += ms;
       }
-      // 每层两次 TP All-Reduce（attention 出口 + FFN 出口），前反向各一遍
-      if (isLayer && tp > 1) add(4 * tokens * H * 2 * 2 * (tp - 1) / tp, tp);
+      // 每层两次 TP All-Reduce（attention 出口 + FFN 出口），前反向各一遍。
+      // 专家不切 TP 时 MoE 层少掉 FFN 出口那一次 —— 那正是 ETP = 1 省下的通信
+      if (isLayer && tp > 1) add((moe && !expertTp ? 2 : 4) * tokens * H * 2 * 2 * (tp - 1) / tp, tp);
       // MoE 的 dispatch + combine，前反向各一遍：每个 token 复制 topK 份送出去
       if (moe && ep > 1) add(4 * tokens * topK * H * 2 * skew, c.ranksPerDp);
       // 梯度归约一个 step 只做一次，摊到每个 micro-batch 上
@@ -1241,25 +1250,19 @@
   ai.id = "cropAi";
   ai.setAttribute("aria-label", "AI 配置助手");
   ai.addEventListener("submit", (e) => e.preventDefault());
-  /* 版式照 insight2.0 右侧助手的输入栏（.wzh-chat-input-bar）：两行高的输入区在上，
-     下面一条工具行 —— 左端是助手身份胶囊，右端是圆形品牌蓝发送键。 */
-  const aiInput = el("textarea", "crop-ai__input");
+  /* 单行输入：提示文字与发送键并排。「配置助手」身份已经由这一栏的位置和渐变描边
+     表达，不再重复放一枚占空间的身份胶囊。 */
+  const aiInput = el("input", "crop-ai__input");
+  aiInput.type = "text";
   aiInput.id = "cropAiInput";
-  aiInput.rows = 2;
   aiInput.placeholder = "改成1024张32G的卡，请给出推荐配置方案";
   aiInput.setAttribute("aria-label", "描述你想要的配置改动");
-  const aiBar = el("div", "crop-ai__bar");
-  const aiAgent = el("button", "crop-ai__tool");
-  aiAgent.type = "button";
-  aiAgent.title = "配置助手（功能待接入）";
-  aiAgent.innerHTML = '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3l1.8 4.6L18.5 9.4l-4.7 1.8L12 16l-1.8-4.8L5.5 9.4l4.7-1.8z"></path><path d="M19 15l.8 2 2 .8-2 .8-.8 2-.8-2-2-.8 2-.8z"></path></svg><span>配置助手</span>';
   const aiSend = el("button", "crop-ai__send");
   aiSend.type = "submit";
   aiSend.title = "发送（功能待接入）";
   aiSend.setAttribute("aria-label", "发送");
   aiSend.innerHTML = '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 19V5M5 12l7-7 7 7"></path></svg>';
-  aiBar.append(aiAgent, aiSend);
-  ai.append(aiInput, aiBar);
+  ai.append(aiInput, aiSend);
 
   left.append(leftHead, leftIntro, leftBody, ai);
 
@@ -1267,6 +1270,17 @@
   if (archRegion) paneForm.appendChild(archRegion);
   if (clusterRegion) paneForm.appendChild(clusterRegion);
   if (moeRegion) paneForm.appendChild(moeRegion);
+
+  /* 阻断错误说的是整份配置，不属于 Architecture 单一区域。把原节点提升为表单页的
+     第一个直属子项，CSS sticky 才能跨过 Architecture / Cluster / MoE 全程吸顶；
+     节点本身不重建，observer 里的渲染、按钮事件与 aria-live 都原样保留。 */
+  function mountConfigError() {
+    const configError = doc.getElementById("croConfigError");
+    if (configError && configError.parentElement !== paneForm) {
+      paneForm.insertBefore(configError, paneForm.firstChild);
+    }
+  }
+  mountConfigError();
 
   /* EP 口径那三档（切出 / 正交 / MindFormers）原先挂在 MoE 区标题的右边 ——
      在原版那种「区标题横贯一行」的版式里说得通，搬进 344px 的左栏之后就成了
@@ -1286,8 +1300,19 @@
     if (!epField) {
       epField = el("div", "cro-stepper crop-field crop-field--wide");
       epField.id = "cropEpField";
-      const label = el("span", "cro-stepper__label", "EP 口径");
-      label.title = "EP 从哪个域里切 —— 它决定 world 的公式，也决定下面这些数字怎么读";
+      const options = Array.from(epMode.querySelectorAll("[data-ep-mode]"));
+      /* 三枚页签原先各自带一大段 data-hint，鼠标横向经过控件时会连续弹三次。把原文
+         按选项名合并进标题问号，再删掉页签上的触发属性：内容一字不丢，入口收成与
+         其它 stepper 完全相同的「字段名 + ?」。 */
+      const epHelp = "EP 口径：三种配置记法怎么选\n\n"
+        + options.map((button) => `【${button.textContent.trim()}】\n${button.dataset.hint || ""}`)
+          .join("\n\n");
+      options.forEach((button) => { delete button.dataset.hint; delete button.dataset.hintReason; });
+      const label = el("span", "cro-stepper__label");
+      label.append(
+        el("span", "cro-stepper__label-text", "EP 口径"),
+        gradeHint(epHelp),
+      );
       epField.append(label, epMode);
     }
     /* ⚠️ controller.mount() 每次都 `innerHTML = ""` 重建这一行，而它在 boot 里跑、
@@ -1317,6 +1342,9 @@
   const rulerLeft = el("div", "crop-ruler crop-ruler--left");
   rulerLeft.setAttribute("aria-label", "数据并行副本位置尺");
   const rulerCorner = el("div", "crop-ruler__corner");
+  const layerGuide = el("div", "crop-layer-guide");
+  layerGuide.hidden = true;
+  layerGuide.setAttribute("aria-hidden", "true");
 
   const tools = el("div", "crop-tools");
   const mkTool = (title, svg) => {
@@ -1390,7 +1418,9 @@
   });
 
   tools.append(tpBtn, paintBtn, unitTabs, zoomOut, readout, zoomIn, fitBtn);
-  stage.append(world, rulerTop, rulerLeft, rulerCorner, tools);
+  /* 阴影必须在集群世界下面：DOM 顺序先 guide、后 world，即使格子使用透明底色也会
+     保留一层淡淡的纵向定位，而不会盖住格子文本、边框与点击。 */
+  stage.append(layerGuide, world, rulerTop, rulerLeft, rulerCorner, tools);
 
   /* ── 右栏：选中详情 ── */
   /* 默认把静息态的「当前配置评估」收起，把宽度先还给主画布；用户点中具体对象时，
@@ -1787,7 +1817,18 @@
       rightPinnedClosed = right.classList.contains("is-collapsed");
       sync(); scheduleRender();
     });
-    leftClose.addEventListener("click", () => { left.classList.add("is-collapsed"); sync(); scheduleRender(); });
+    leftClose.addEventListener("click", () => {
+      /* 代码档把 YAML 铺满了工作区；只给 left 加 is-collapsed 会留下一个仍处于
+         is-yaml、却没有内容的空板。关闭应与表单档完全等价：先回到关系视图，
+         再把配置栏收起，让中间画布接回这块空间。 */
+      if (left.dataset.pane === "code") {
+        setPane("form");
+        clickViewTab("relation");
+      }
+      left.classList.add("is-collapsed");
+      sync();
+      scheduleRender();
+    });
     rightClose.addEventListener("click", () => {
       right.classList.add("is-collapsed");
       rightPinnedClosed = true;
@@ -2382,7 +2423,8 @@
      顶部双层「PP | Layer」、左侧双层「EDP | DP」。它们**不跟着缩放变字号**：
      刻度是用来读位置的，字必须始终一样大、始终贴着边 —— 所以量尺里的元素按
      屏幕坐标摆（world→screen 自己换算），而不是丢进那个被 transform 的世界里。
-     刻度密度也跟着缩放变（niceStep）：一格挤不下就每 2 / 5 / 10 格标一次。 */
+     左侧行刻度的密度跟着缩放走 niceStep；顶部 Layer 不抽样，缩小时改成连续 L0、
+     L1、L2……并隐藏 Dense / MoE，优先保证层号定位不断档。 */
   function renderRulers(unit) {
     const v = viewport();
     const k = view.k;
@@ -2396,6 +2438,9 @@
     const p = rel ? rel.primary : null;
     const c = topology.counts;
     const cellW = layout.cellW;
+    /* 再小一档时不把 L23 拆成两行，而是把共同的 Layer 语义提到轴名前缀，刻度只
+       留数字。门槛沿用原先触发分行的 15px，因此换档时机与上一版完全一致。 */
+    const numberOnlyLayers = cellW * k < 15;
 
     rulerTop.style.left = `${v.x0}px`;
     /* 高度也由这里写：css 里那条只是兜底。刻度盒是 overflow:hidden 的，两个数
@@ -2411,10 +2456,45 @@
        不必在 css 里按最宽的那一档写死一个永远偏右的内衬。 */
     stage.style.setProperty("--crop-ruler-left", `${v.x0}px`);
 
+    /* 只有直接选中 Layer 刻度时才投下定位阴影。x / width 与下面刻度使用同一个
+       世界→屏幕换算，因此无论缩放、平移或左右栏改变宽度，都严格对齐该 Layer 列。 */
+    layerGuide.hidden = true;
+    if (p && p.kind === "layer") {
+      const selectedLayer = Number(p.layer);
+      for (const block of layout.blocks) {
+        const ci = block.cols.findIndex((col) => col.type === "layer" && col.layer === selectedLayer);
+        if (ci < 0) continue;
+        const x = view.x + (block.x + ci * cellW) * k;
+        const w = cellW * k;
+        /* 顶尺现在有完整外框，绝对定位子元素的原点在其 1px 边框内侧；阴影不在
+           顶尺里面，需补上同一份 clientLeft，才能与可见刻度格像素级重合。 */
+        layerGuide.style.left = `${x + rulerTop.clientLeft}px`;
+        layerGuide.style.width = `${Math.max(0, w)}px`;
+        layerGuide.style.top = `${v.y0}px`;
+        layerGuide.hidden = false;
+        break;
+      }
+    }
+
     /* ── 顶部：第一层 PP stage，第二层列（Emb / Layer / Norm / Head）── */
     // 通信行程正扫在哪一列（只在通信档有值），下面每一格都要和它比一次
     const beatCol = center.dataset.mode === "comm" ? flowBeat : null;
     const topFrag = doc.createDocumentFragment();
+    if (numberOnlyLayers) {
+      /* Emb 只在第一个 PP block 出现。Layer 与 Emb 同为顶尺子元素，坐标原点一致；
+         轴名右缘到 Emb 左缘固定留 24px，顶尺自身的 1px 外框会同时作用于两者。 */
+      const firstBlock = layout.blocks[0];
+      const embIndex = firstBlock
+        ? firstBlock.cols.findIndex((col) => col.type === "unit" && col.id === "emb") : -1;
+      if (embIndex >= 0) {
+        const embX = view.x + (firstBlock.x + embIndex * cellW) * k;
+        const labelW = Math.max(1, measure(probeLabel, "Layer"));
+        const layerAxis = el("span", "crop-ruler__layer-axis", "Layer");
+        layerAxis.style.left = `${embX - offX - 24 - labelW}px`;
+        layerAxis.style.width = `${labelW}px`;
+        topFrag.appendChild(layerAxis);
+      }
+    }
     layout.blocks.forEach((block) => {
       const sx = view.x + block.x * k;
       const sw = block.w * k;
@@ -2439,7 +2519,12 @@
       bar.style.height = `${RULER_PP_H}px`;
       topFrag.appendChild(bar);
 
-      const step = niceStep(cellW * k, RULER_COL_MIN);
+      const screenCellW = cellW * k;
+      /* 一旦列宽进入原本需要 2/5/10 抽样的区间，就换成连续短标签档：隐藏第二行
+         Dense / MoE，每一层都写 L0、L1、L2……。这比“每隔几层取一个值”更适合
+         层号量尺——层号首先负责定位，FFN 类型在放大后再补回来。 */
+      const compactLayers = screenCellW < RULER_COL_MIN + 12;
+      const step = compactLayers ? 1 : niceStep(screenCellW, RULER_COL_MIN);
       block.cols.forEach((col, ci) => {
         const x = view.x + (block.x + ci * cellW) * k;
         const w = cellW * k;
@@ -2450,23 +2535,28 @@
           && (beatCol.wide || beatCol.ci === ci));
         // 疏刻度档下也要留住正在演的那一格：它是这一帧唯一"必须写出来"的位置
         if (col.type === "layer" && step > 1 && (col.layer % step !== 0) && !flowing) return;
-        /* 全名，不简写：刻度是用来对位置的，"L0" 与 "Layer0 / MoE" 差的正是
-           「这一层是 Dense 还是 MoE」——那是这一列最该先读到的一件事。
-           但一行写不下 —— 列宽只有几十像素，"Layer45 · Dense" 被截掉的恰好是后
-           半截那个 Dense/MoE。所以拆成**两行**：层号一行、FFN 类型一行。列宽因此
-           也只需按较长的那一行留（见 buildLayout 里的 nameW），整幅平面跟着窄一截。
+        /* 放大档用两行全名（Layer45 / Dense），缩小档只用连续短名（L45）：有限
+           空间先交给不跳号的层定位，Dense / MoE 等放大后再补回。列宽仍按全名档
+           两行里较长的一行留（见 buildLayout 里的 nameW）。
            ⚠️ 这一格**不挂 data-tip**：名字已经把该说的说完，气泡里剩下的那句专家
            均分口径在右栏与格子的气泡里都答得出，而横向扫这一排刻度时每划过一格
            就弹一次，是纯粹的干扰。 */
         const tick = el("div", "crop-tick crop-tick--col");
-        /* 缩到列宽写不下全名时改用短名（"L3"）：一格只有几十像素，"Layer3" 被
-           省略号截成 "Lay…" 之后既读不出层号、也没省下地方。短名换来的那点宽度
-           正好留给第二行的 Dense/MoE —— 那是这一列更该先读到的一件事。 */
-        const narrow = cellW * k < RULER_COL_MIN + 12;
         if (col.type === "layer") {
-          tick.appendChild(el("span", "crop-tick__name",
-            narrow ? (col.short || `L${col.layer}`) : `Layer${col.layer}`));
-          tick.appendChild(el("span", "crop-tick__ffn", col.moe ? "MoE" : "Dense"));
+          const short = col.short || `L${col.layer}`;
+          const name = compactLayers ? short : `Layer${col.layer}`;
+          if (compactLayers) {
+            tick.classList.add("is-compact");
+            const compactName = numberOnlyLayers ? String(col.layer) : name;
+            tick.appendChild(el("span", "crop-tick__name", compactName));
+            const labelW = Math.max(1, measure(probeLabel, compactName));
+            const labelScale = Math.min(1, Math.max(0.04, (w - 1) / labelW));
+            tick.style.setProperty("--crop-layer-label-w", `${labelW}px`);
+            tick.style.setProperty("--crop-layer-label-scale", labelScale.toFixed(4));
+          } else {
+            tick.appendChild(el("span", "crop-tick__name", name));
+            tick.appendChild(el("span", "crop-tick__ffn", col.moe ? "MoE" : "Dense"));
+          }
           tick.dataset.kind = "layer";
           tick.dataset.layer = String(col.layer);
           tick.dataset.moe = col.moe ? "1" : "0";
@@ -2484,7 +2574,7 @@
            它盖过选中/牵连两态 —— 播放期间这一格答的是"当前"，不是"你选过什么"。 */
         if (flowing) tick.classList.add("is-flowing");
         tick.style.left = `${x - offX}px`;
-        tick.style.width = `${Math.max(w, step > 1 ? RULER_COL_MIN : 0)}px`;
+        tick.style.width = `${compactLayers ? Math.max(0, w) : Math.max(w, step > 1 ? RULER_COL_MIN : 0)}px`;
         tick.style.top = `${RULER_PP_H}px`;
         tick.style.height = `${RULER_TOP_H - RULER_PP_H}px`;
         topFrag.appendChild(tick);
@@ -2495,6 +2585,8 @@
     /* ── 左侧：第一层 EDP 副本，第二层它对应的那段 DP 号 ── */
     const leftFrag = doc.createDocumentFragment();
     const outerW = layout.twoLevelRow ? RULER_EDP_W : v.x0;
+    rulerLeft.classList.toggle("is-two-level", layout.twoLevelRow);
+    rulerLeft.style.setProperty("--crop-edp-divider", `${outerW}px`);
     /* 外层的名字只看 EDP 与 DP 是否真的是两个量 —— 与「内层在不在」无关：
        正交档两层都在，外层却仍该叫 DP。 */
     const dName = layout.innerIsDp ? "EDP" : "DP";
@@ -2549,8 +2641,9 @@
     }
     rulerLeft.replaceChildren(leftFrag);
 
-    rulerCorner.textContent = layout.twoLevelRow
+    const cornerText = layout.twoLevelRow
       ? (layout.innerIsDp ? "EDP | DP" : "DP | EP") : dName;
+    rulerCorner.textContent = cornerText;
     rulerCorner.dataset.tip = layout.twoLevelRow
       ? (layout.innerIsDp
         ? `纵轴两层：外层 EDP ${c.edp}（矩阵真正的行数），内层是它对应的 DP 号`
@@ -2879,8 +2972,17 @@
        两道闸都按「这一格在屏幕上有多大」判，理由见 BLOCK_MIN_H 那一段。
        字号那一档（两段块）与行标同一套做法：世界字号取 BAND_FONT_MIN / k，
        屏幕上因此恒定 9px；格子太矮时再让位给 rowH / 5.6，宁可小也不撑破。 */
-    const cellPxW = cellW * k;
-    const cellPxH = rowH * k;
+    /* 间距按屏幕像素反算回世界坐标，避免缩小时 3px 跟着 scale 变成小数像素。
+       极限档位下优先保留 1px 的格子本体，余下空间才作为间距。 */
+    const cellGapWorld = Math.max(0, Math.min(
+      CELL_GAP_PX / k,
+      cellW - CELL_BODY_MIN_PX / k,
+      rowH - CELL_BODY_MIN_PX / k,
+    ));
+    const cellBodyW = cellW - cellGapWorld;
+    const cellBodyH = rowH - cellGapWorld;
+    const cellPxW = cellBodyW * k;
+    const cellPxH = cellBodyH * k;
     /* ⚠️ 格内有内容的那两档（两段块 / 详情面板）**只在卡粒度成立** —— 它们答的是
        「一张卡在这一层里的活」，整机行一格是 span 张卡，那里没有单一答案。整机档
        只有「一块颜色」这一档，再要细就该换粒度（自适应正是在同一个门槛上换的，
@@ -2899,7 +3001,7 @@
     const chipRows = layout.chipRows || 1;
     const detailTallest = panelH(
       { type: "layer", moe: Boolean(topology.hasMoe) }, chipRows);
-    const detailS = detailScale(cellW, rowH, detailTallest);
+    const detailS = detailScale(cellBodyW + 1, cellBodyH + 1, detailTallest);
     // 与两段块同一条：整机行一格是 span 张卡，一份算子链在那里没有单一答案
     const detailOn = cellIsRank && detailS * k >= DETAIL_MIN_S;
     const detailCache = new Map();
@@ -3133,7 +3235,8 @@
           /* 整机档的格子不再让出顶上那条标签带（已撤），整行都归格子。
              两段块那一档要给格子写一个世界字号（带子的字继承它），最细那一档不写
              —— 面板内部一律用设计像素，再由 transform 整体缩放。 */
-          place(cell, block.x + ci * cellW, y, cellW - 1, rowH - 1,
+          place(cell, block.x + ci * cellW, y,
+            cellBodyW, cellBodyH,
             showSegs ? bandFontWorld : 0);
           /* ⚠️ 必须排在 place 之后：place 写的是整条 cssText，会把先设的
              自定义属性一起冲掉。 */
@@ -3803,7 +3906,11 @@
       splits.push(`Ring 档：Seq ${cfg.seqLen} ÷ 2×CP ${2 * c.cp} = ${cfg.seqLen / (2 * c.cp)}`);
     }
     if (preset.denseIntermediate) splits.push(`Dense intermediate ${preset.denseIntermediate} ÷ TP ${c.tp}`);
-    if (c.moeLayers && preset.moeIntermediate) splits.push(`MoE intermediate ${preset.moeIntermediate} ÷ TP ${c.tp}`);
+    if (c.moeLayers && preset.moeIntermediate) {
+      splits.push(cfg.expertTp && c.tp > 1 && c.epMode !== "mf"
+        ? `MoE intermediate ${preset.moeIntermediate} ÷ TP ${c.tp}（「专家切 TP」开着，ETP = TP）`
+        : `MoE 专家不切 TP（ETP = 1）：intermediate ${preset.moeIntermediate} 整份持有`);
+    }
     splits.push(`${c.totalLayer} 层分 ${c.pp} 个 PP stage`
       + (c.vpp > 1 ? `，再按 VPP ${c.vpp} 交错（层数须被 PP×VPP = ${c.pp * c.vpp} 整除）` : "（本页允许不均分）"));
     if (c.moeLayers) {
@@ -4594,6 +4701,12 @@
     // 优化器状态切没切，决定更新阶段有没有那一趟参数 All-Gather（见下面最后一条）
     const shardMode = (topology && topology.config && topology.config.shardMode) || "none";
     const sharded = shardMode !== "none";
+    /* 路由专家切没切 TP（MoE 区的「专家切 TP」开关，ETP = TP）。判据与 buildHeat 同一条：
+       开关开着、TP > 1、不是 mf 档。开着时一个专家被切在 TP 组的几张卡上，MoE 层要
+       多出前反向各一次 TP All-Reduce —— 那正是业界默认 ETP = 1 省下的通信；关着时
+       路由专家的 FFN 只走 Dispatch / Combine 那条路，与此前的清单逐条相同。 */
+    const expertTp = Boolean(topology && topology.config && topology.config.expertTp)
+      && c.tp > 1 && c.epMode !== "mf";
     /* 每条都带两件事，浮卡直接照读：
          why    传的这份东西是**给谁用的、用来做什么** —— 只写"传部分和"答不了
                 「为什么非传不可」，而那才是并行策略贵在哪儿的解释
@@ -4625,6 +4738,12 @@
         payload: "token 隐状态 + 路由信息，从原始 rank 发往专家所在 rank",
         kind: "activation",
         why: "专家只在自己那张卡上，token 必须先送到它那儿才算得了",
+        per: "每个 MoE 层 1 次" },
+      /* 只在「专家切 TP」开着时存在：专家 down 也是行切的，各 TP rank 手里是部分和，
+         要先加起来才是这个专家的完整输出，然后才能 Combine 送回 token 原始 rank。 */
+      { phase: "fwd", when: moe && expertTp, dom: "tp", module: "Routed Expert", event: "TP All-Reduce",
+        payload: "专家 down 行切后，各 TP rank 算出的部分和", kind: "activation",
+        why: "「专家切 TP」开着（ETP = TP）：一个专家被切在 TP 组的几张卡上，几份部分和相加才是这个专家的完整输出，之后才能 Combine。关掉开关（ETP = 1）这一条整条消失 —— 这正是业界默认不给专家切 TP 省下的那次通信",
         per: "每个 MoE 层 1 次" },
       { phase: "fwd", when: moe, dom: "ep", module: "Routed MoE", event: "Combine All-to-All",
         payload: "专家输出从专家 rank 返回 token 原始 rank", kind: "activation",
@@ -4662,6 +4781,11 @@
       { phase: "bwd", when: moe, dom: "ep", module: "Routed MoE", event: "Combine 反向 All-to-All",
         payload: "输出梯度从 token 原始 rank 发回专家 rank", kind: "gradient",
         why: "专家要拿到自己那份输出梯度，才算得出它自己的权重梯度",
+        per: "每个 MoE 层 1 次" },
+      // 与前向那条严格镜像：专家 gate/up 列切，反向里输入梯度是部分和，加齐了才能沿 Dispatch 反向发回去
+      { phase: "bwd", when: moe && expertTp, dom: "tp", module: "Routed Expert", event: "TP All-Reduce",
+        payload: "专家 gate/up 列切产生的输入梯度部分和", kind: "gradient",
+        why: "相加才是这个专家输入的完整梯度，之后才能沿 Dispatch 反向发回 token 原始 rank。ETP = 1 时没有这一条",
         per: "每个 MoE 层 1 次" },
       { phase: "bwd", when: moe, dom: "ep", module: "Routed MoE", event: "Dispatch 反向 All-to-All",
         payload: "专家算出的输入梯度发回 token 原始 rank", kind: "gradient",
@@ -5295,7 +5419,8 @@
     }
     const info = topology.layers[layer];
     const moe = Boolean(info && info.ffn === "moe");
-    if (s.dom === "ep" || s.dom === "edp" || s.module === "Shared Expert") return moe;
+    // Routed Expert 的 TP All-Reduce（「专家切 TP」开着才有）与 EP / EDP 那几条一样只落在 MoE 层
+    if (s.dom === "ep" || s.dom === "edp" || s.module === "Shared Expert" || s.module === "Routed Expert") return moe;
     if (s.module === "MLP（Dense）") return !moe;
     return true;
   }
@@ -5524,8 +5649,9 @@
     if (s.dom === "ep") {
       return { seg: "ffn", at: /Dispatch/.test(e) ? "a2a_dispatch" : "a2a_combine" };
     }
-    // 专家权重的梯度归约：落在 Expert Compute 那个盒子上，那才是这些权重所在处
-    if (s.dom === "edp") return { seg: "ffn", at: "experts" };
+    // 专家权重的梯度归约、以及专家切 TP 时的部分和归约：都落在 Expert Compute 那个盒子上，
+    // 那才是这些权重（与被切开的专家）所在处
+    if (s.dom === "edp" || s.module === "Routed Expert") return { seg: "ffn", at: "experts" };
     if (s.module === "MLP（Dense）") return { seg: "ffn", at: "tail" };
     // 共享专家与路由专家并联，面板里没有单独一枚；落到 FFN 那一组上
     if (s.module === "Shared Expert") return { seg: "ffn", at: null };
@@ -6379,7 +6505,12 @@
     });
   }
 
-  doc.addEventListener("cro:change", (event) => onChange(event.detail));
+  doc.addEventListener("cro:change", (event) => {
+    /* observer.mount() 在 DOMContentLoaded 才完成。首次与后续配置事件都重新确认横幅
+       的稳定挂载点，避免初始化重排把它留回 Architecture 区而失去全表单吸顶范围。 */
+    mountConfigError();
+    onChange(event.detail);
+  });
   doc.addEventListener("cro:select", (event) => {
     relation = event.detail || null;
     board.classList.toggle("is-focused", Boolean(relation));

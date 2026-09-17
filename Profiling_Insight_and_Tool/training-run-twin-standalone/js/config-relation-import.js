@@ -282,6 +282,12 @@
       to: (v) => Boolean(v) },
     { field: "vocabEmbDp", label: "词表走 DP",
       keys: ["parallel_config.vocab_emb_dp", "vocab_emb_dp"], to: (v) => Boolean(v) },
+    /* 专家张量并行：Megatron / MindSpeed 的 --expert-tensor-parallel-size。页面只有
+       「切 / 不切」两档（切 = ETP 跟 TP 走），所以 > 1 折成开、1 折成关；MindFormers
+       侧没有对应键，读不到就留默认（关，ETP = 1）。 */
+    { field: "expertTp", label: "专家切 TP",
+      keys: ["expert-tensor-parallel-size", "expert_tensor_parallel_size"],
+      to: (v) => Number(v) > 1 },
     /* 微批数（行 22）。MindFormers 与 HF 各有一个直接的键，Megatron 那支要反推，
        在 DERIVED 里。顺序即优先级：文件里明写的数永远赢反推的。 */
     { field: "microBatchNum", label: "micro_batch_num",
@@ -1043,10 +1049,36 @@
      ⚠️ 模型不换。importConfig 只收 FIELD/FLAG 认得的字段，MAP 里根本没有 model ——
      样例的结构常量（hidden / layers / 专家数）一律不覆盖，那是计算图那条路线的活。 */
   function bootYamlPicker() {
-    const trigger = doc.getElementById("croYamlPickerBtn");
+    const legacyTrigger = doc.getElementById("croYamlPickerBtn");
+    /* 平面页把样例文件并入「配置」选择器；原 observer 页仍保留文件名按钮。
+       原生 select 继续留作 observer 的状态接口，但前台换成同尺寸按钮：原生 option
+       弹层无法承载右侧兼容度栏，也无法稳定控制 Windows 的 hover 样式。 */
+    const mergedSelect = doc.querySelector(".cro-board.is-plane #croConfigPresetSelect");
+    let mergedTrigger = null;
+    if (mergedSelect) {
+      mergedTrigger = doc.getElementById("croConfigPresetTrigger");
+      if (!mergedTrigger) {
+        mergedTrigger = doc.createElement("button");
+        mergedTrigger.id = "croConfigPresetTrigger";
+        mergedTrigger.type = "button";
+        mergedTrigger.className = "cro-select cro-config-picker__trigger";
+        mergedTrigger.setAttribute("aria-label", "配置");
+        mergedTrigger.setAttribute("aria-haspopup", "dialog");
+        mergedTrigger.setAttribute("aria-expanded", "false");
+        mergedSelect.insertAdjacentElement("afterend", mergedTrigger);
+      }
+      mergedSelect.hidden = true;
+    }
+    const trigger = mergedTrigger || legacyTrigger;
     const menu = doc.getElementById("croYamlMenu");
     const options = doc.getElementById("croYamlOptions");
     if (!trigger || !menu || !options) return;
+    if (mergedSelect) {
+      /* 原 picker 会在 plane 页隐藏；把预览浮层移到 body，避免一起被 display:none，
+         同时也不受代码栏 overflow 裁切。 */
+      doc.body.appendChild(menu);
+      menu.classList.remove("is-merged-select");
+    }
     const el = {
       tag: doc.getElementById("croYamlPickedTag"),
       name: doc.getElementById("croPreviewName"),
@@ -1056,8 +1088,64 @@
       cancel: doc.getElementById("croPreviewCancel"),
     };
     const DEFAULT_FILE = "__default__";
+    const SAMPLE_PREFIX = "__yaml_sample__:";
+    const PRESET_PREFIX = "__config_preset__:";
     let pending = null;   // 当前预览的那一份：{ meta, partial, adjustedNote }
     let previewToken = 0; // 连续点不同卡片时，较早返回的 fetch 不得覆盖当前报告
+    let activeSampleFile = null;
+    let applyingSample = false;
+
+    const sampleValue = (file) => SAMPLE_PREFIX + file;
+    const sampleFile = (value) => String(value || "").startsWith(SAMPLE_PREFIX)
+      ? String(value).slice(SAMPLE_PREFIX.length) : null;
+    const presetId = (value) => String(value || "").startsWith(PRESET_PREFIX)
+      ? String(value).slice(PRESET_PREFIX.length) : null;
+
+    function syncMergedTrigger() {
+      if (!mergedSelect || !mergedTrigger) return;
+      const selected = mergedSelect.selectedOptions && mergedSelect.selectedOptions[0];
+      mergedTrigger.textContent = selected ? selected.textContent : "选择配置";
+      mergedTrigger.title = selected ? selected.textContent : "选择配置";
+    }
+
+    /* 保留 observer 写入的内置预设（含默认 cinnnnnndy 与「自定义」），只在末尾追加
+       样例 optgroup。observer 在换模型 / 进入自定义状态时会重建 select，因此本函数
+       是幂等的，并在每次 cro:change 后补挂。 */
+    function syncMergedOptions() {
+      if (!mergedSelect) return;
+      const current = mergedSelect.value;
+      const preset = global.croObserver && global.croObserver.config.configPreset;
+      const selected = activeSampleFile ? sampleValue(activeSampleFile)
+        : (sampleFile(current) ? (preset || "__custom__") : current);
+      mergedSelect.querySelectorAll('optgroup[data-cro-yaml-samples="true"]').forEach((group) => group.remove());
+      SAMPLES.forEach((group) => {
+        const optgroup = doc.createElement("optgroup");
+        optgroup.label = group.group;
+        optgroup.dataset.croYamlSamples = "true";
+        group.items.forEach((item) => {
+          const option = doc.createElement("option");
+          option.value = sampleValue(item.file);
+          option.textContent = item.label;
+          optgroup.appendChild(option);
+        });
+        mergedSelect.appendChild(optgroup);
+      });
+      if (selected && Array.from(mergedSelect.options).some((option) => option.value === selected)) {
+        mergedSelect.value = selected;
+      }
+      syncMergedTrigger();
+    }
+
+    function restoreMergedSelection() {
+      if (!mergedSelect) return;
+      syncMergedOptions();
+      const preset = global.croObserver && global.croObserver.config.configPreset;
+      const target = activeSampleFile ? sampleValue(activeSampleFile) : (preset || "__custom__");
+      if (Array.from(mergedSelect.options).some((option) => option.value === target)) {
+        mergedSelect.value = target;
+      }
+      syncMergedTrigger();
+    }
 
     const presetNow = () => {
       const presets = (global.CroTopology && global.CroTopology.MODEL_PRESETS) || {};
@@ -1081,6 +1169,37 @@
     const sampleOf = (file) => SAMPLES.reduce((hit, g) =>
       hit || g.items.find((i) => i.file === file), null);
 
+    function presetMeta(id) {
+      if (!mergedSelect) return null;
+      const option = Array.from(mergedSelect.options).find((item) => item.value === id);
+      if (!option) return null;
+      if (id === "__custom__") {
+        return {
+          file: PRESET_PREFIX + id,
+          label: option.textContent,
+          source: "当前表单",
+          note: "当前配置已经手动调整，不对应一份可重新套用的预设；右侧只做当前状态说明。",
+        };
+      }
+      const topology = global.CroTopology || {};
+      const preset = typeof topology.configPresetOf === "function" ? topology.configPresetOf(id) : null;
+      const model = preset && topology.MODEL_PRESETS && topology.MODEL_PRESETS[preset.model];
+      const current = (global.croObserver && global.croObserver.config) || {};
+      const target = Object.assign({}, current, (model && model.defaults) || {}, (preset && preset.overrides) || {});
+      const orthogonal = target.epMode === "orthogonal" || target.moeOrthogonal === true;
+      const world = target.dp && target.pp && target.tp && target.cp
+        ? target.dp * target.pp * target.tp * target.cp * (orthogonal ? (target.ep || 1) : 1) : null;
+      return {
+        file: PRESET_PREFIX + id,
+        label: option.textContent,
+        source: `${(model && model.label) || "当前模型"} · 内置预设`,
+        note: world
+          ? `${world} 卡 · DP ${target.dp} × PP ${target.pp} × TP ${target.tp} × CP ${target.cp}`
+            + (target.ep ? ` · EP ${target.ep}` : "")
+          : "由当前模型内置参数生成，字段可完整落入本页表单。",
+      };
+    }
+
     /* 卡片两行：第一行「名字 + 来源」，第二行「选它能看到什么」。
        不用 title —— 代表性是**选之前**要读到的东西，藏进悬浮里等于没写。 */
     const card = (meta) => `<button class="cro-yaml__opt" type="button" role="option"`
@@ -1090,8 +1209,17 @@
       + `<span class="cro-yaml__opt-note">${rich(meta.note)}</span></button>`;
 
     function fillMenu() {
-      const rows = [`<p class="cro-yaml__menu-head">换一份配置：先给解析报告，看完再决定应不应用。`
-        + `模型与结构常量不跟着换。</p>`, card(defaultMeta())];
+      const rows = [`<p class="cro-yaml__menu-head">换一份配置：左侧选择，右侧先看兼容度与字段调整，再决定是否应用。</p>`];
+      if (mergedSelect) {
+        rows.push(`<div class="cro-yaml__opt-group">当前模型预设</div>`);
+        Array.from(mergedSelect.options)
+          .filter((option) => !sampleFile(option.value))
+          .map((option) => presetMeta(option.value))
+          .filter(Boolean)
+          .forEach((meta) => rows.push(card(meta)));
+      } else {
+        rows.push(card(defaultMeta()));
+      }
       SAMPLES.forEach((g) => {
         rows.push(`<div class="cro-yaml__opt-group">${escapeHtml(g.group)}</div>`);
         g.items.forEach((i) => rows.push(card(i)));
@@ -1112,21 +1240,43 @@
     function positionMenu() {
       const margin = 16;
       const anchor = trigger.getBoundingClientRect();
-      const availableWidth = Math.max(280, global.innerWidth - anchor.left - margin);
-      menu.style.width = `${Math.min(920, availableWidth)}px`;
+      if (mergedSelect) {
+        /* 配置弹层与触发框建立稳定的左上锚点：永远从框的左边缘向下展开，不因
+           视口高度不足翻到上方。下方空间不够时收高度、让两栏各自滚动。 */
+        const width = Math.min(920, Math.max(280, global.innerWidth - anchor.left - margin));
+        const availableH = Math.max(180, global.innerHeight - anchor.bottom - margin - 4);
+        const height = Math.min(600, availableH);
+        menu.style.position = "fixed";
+        menu.style.width = `${width}px`;
+        menu.style.height = `${height}px`;
+        menu.style.minHeight = availableH < 360 ? "0" : "360px";
+        menu.style.left = `${anchor.left}px`;
+        menu.style.top = `${anchor.bottom + 4}px`;
+      } else {
+        const availableWidth = Math.max(280, global.innerWidth - anchor.left - margin);
+        menu.style.width = `${Math.min(920, availableWidth)}px`;
+      }
     }
 
-    function openMenu() {
+    function currentMenuKey() {
+      if (!mergedSelect) return null;
+      const file = activeSampleFile || sampleFile(mergedSelect.value);
+      return file || (PRESET_PREFIX + (mergedSelect.value || "__custom__"));
+    }
+
+    function openMenu(file) {
       fillMenu();                       // 每次重建：模型可能已经切过，默认那张卡要换名字
       resetPreview();
       menu.hidden = false;
       trigger.setAttribute("aria-expanded", "true");
       positionMenu();
+      if (file) choose(file);
     }
-    function closeMenu() {
+    function closeMenu(keepMergedSelection) {
       menu.hidden = true;
       trigger.setAttribute("aria-expanded", "false");
       resetPreview();
+      if (mergedSelect && !keepMergedSelection) restoreMergedSelection();
     }
 
     function showPreview(meta, html, canApply) {
@@ -1159,12 +1309,65 @@
         true);
     }
 
+    function previewPreset(id) {
+      previewToken += 1;
+      const meta = presetMeta(id);
+      if (!meta || !global.croObserver) return;
+      if (id === "__custom__") {
+        pending = null;
+        showPreview(meta,
+          `<div class="cro-import__block is-warn"><h4>当前为自定义配置</h4>`
+          + `<p class="cro-import__hint">这不是一份可应用的目标预设。请选择左侧其它配置，`
+          + `右侧会列出它与当前表单之间的差异。</p></div>`, false);
+        return;
+      }
+      const topologyApi = global.CroTopology || {};
+      const preset = typeof topologyApi.configPresetOf === "function"
+        ? topologyApi.configPresetOf(id) : null;
+      const model = preset && topologyApi.MODEL_PRESETS && topologyApi.MODEL_PRESETS[preset.model];
+      if (!preset || !model) return;
+      const current = global.croObserver.config || {};
+      const target = Object.assign({}, current, { model: preset.model }, model.defaults || {}, preset.overrides || {});
+      const orthogonal = target.epMode === "orthogonal" || target.moeOrthogonal === true;
+      const world = target.dp * target.pp * target.tp * target.cp * (orthogonal ? (target.ep || 1) : 1);
+      const ranksPerNode = current.node > 0 && current.totalRank > 0
+        ? Math.max(1, Math.round(current.totalRank / current.node)) : 8;
+      target.totalRank = world;
+      target.node = Math.ceil(world / ranksPerNode);
+      const keys = Array.from(new Set([
+        ...Object.keys(topologyApi.FIELD_SPECS || {}),
+        ...Object.keys(topologyApi.FLAG_SPECS || {}),
+        "epMode",
+      ]));
+      const rows = keys.filter((key) => target[key] !== undefined && current[key] !== target[key])
+        .map((key) => `<li><code>${escapeHtml(key)}</code>`
+          + `<span class="cro-import__diff">${fmt(current[key])} → ${fmt(target[key])}</span></li>`);
+      const derived = typeof topologyApi.derive === "function" ? topologyApi.derive(target) : null;
+      const valid = !derived || derived.valid !== false;
+      const warnings = derived && derived.warnings ? derived.warnings : [];
+      pending = valid ? { kind: "preset", meta, presetId: id } : null;
+      const headline = valid ? "兼容度 100%" : "预设与当前模型不兼容";
+      const cls = valid ? "" : " is-gap";
+      const errors = !valid && derived.errors && derived.errors.length
+        ? `<p class="cro-import__hint">${escapeHtml(derived.errors.join("；"))}</p>` : "";
+      const warningText = warnings.length
+        ? `<p class="cro-import__hint">性能提示：${escapeHtml(warnings.join("；"))}</p>` : "";
+      showPreview(meta,
+        `<div class="cro-import__block${cls}"><h4>${headline} <span>${rows.length} 项变化</span></h4>`
+        + `<p class="cro-import__hint">内置预设的字段均由本页直接建模，不需要丢弃或猜测配置键。`
+        + (rows.length ? `应用后会修改：` : `当前表单已经是这一档。`) + `</p>`
+        + errors + warningText + (rows.length ? `<ul>${rows.join("")}</ul>` : "") + `</div>`,
+        valid);
+    }
+
     function choose(file) {
       options.querySelectorAll(".cro-yaml__opt").forEach((cardEl) => {
         const selected = cardEl.dataset.file === file;
         cardEl.classList.toggle("is-selected", selected);
         cardEl.setAttribute("aria-selected", String(selected));
       });
+      const preset = presetId(file);
+      if (preset) { previewPreset(preset); return; }
       if (file === DEFAULT_FILE) { previewDefault(); return; }
       const meta = sampleOf(file);
       if (!meta) return;
@@ -1199,9 +1402,29 @@
         });
     }
 
+    if (mergedSelect) {
+      /* 捕获阶段先接住样例值，避免 observer 的冒泡监听把它当成内置 preset id。
+         内置选项不拦截，仍完整走原来的 setConfigPreset 通路。 */
+      mergedSelect.addEventListener("change", (event) => {
+        const file = sampleFile(mergedSelect.value);
+        if (!file) { activeSampleFile = null; return; }
+        event.preventDefault();
+        event.stopImmediatePropagation();
+        openMenu(file);
+      }, true);
+      syncMergedOptions();
+      doc.addEventListener("cro:change", () => {
+        if (!applyingSample) activeSampleFile = null;
+        global.queueMicrotask(() => {
+          syncMergedOptions();
+          if (activeSampleFile) mergedSelect.value = sampleValue(activeSampleFile);
+          syncMergedTrigger();
+        });
+      });
+    }
     trigger.addEventListener("click", (event) => {
       event.stopPropagation();
-      if (menu.hidden) openMenu(); else closeMenu();
+      if (menu.hidden) openMenu(mergedSelect ? currentMenuKey() : null); else closeMenu();
     });
     options.addEventListener("click", (event) => {
       const btn = event.target.closest && event.target.closest(".cro-yaml__opt");
@@ -1211,7 +1434,8 @@
       if (!menu.hidden && !menu.contains(event.target) && !trigger.contains(event.target)) closeMenu();
     });
 
-    el.cancel.addEventListener("click", closeMenu);
+    /* 直接把 closeMenu 当 listener 会把 MouseEvent 误当成 keepMergedSelection=true。 */
+    el.cancel.addEventListener("click", () => closeMenu());
     doc.addEventListener("keydown", (event) => {
       if (event.key !== "Escape") return;
       if (!menu.hidden) closeMenu();
@@ -1219,9 +1443,20 @@
     global.addEventListener("resize", () => { if (!menu.hidden) positionMenu(); });
 
     el.apply.addEventListener("click", () => {
-      if (!pending || !global.croObserver || !global.croObserver.importConfig) return;
+      if (!pending || !global.croObserver) return;
+      if (pending.kind === "preset") {
+        activeSampleFile = null;
+        global.croObserver.setConfigPreset(pending.presetId);
+        syncMergedOptions();
+        closeMenu(true);
+        return;
+      }
+      if (!global.croObserver.importConfig) return;
       const meta = pending.meta;
+      applyingSample = Boolean(mergedSelect);
+      if (mergedSelect) activeSampleFile = meta.file === DEFAULT_FILE ? null : meta.file;
       const result = global.croObserver.importConfig(pending.partial);
+      applyingSample = false;
       // 配平改掉的那几项：表单上会闪，这里再记进文件名旁的角标，免得一闪就没了
       const adjusted = diffApplied(pending.partial, result.before, result.after);
 
@@ -1241,7 +1476,11 @@
       } : null;
       doc.dispatchEvent(new CustomEvent("cro:source", { detail }));
 
-      closeMenu();
+      if (mergedSelect) {
+        syncMergedOptions();
+        if (activeSampleFile) mergedSelect.value = sampleValue(activeSampleFile);
+      }
+      closeMenu(Boolean(mergedSelect));
       if (el.tag) {
         // hidden 由 yaml 模块按「此刻显示的是不是原文」定（见那里的 render）
         el.tag.dataset.name = meta.file === DEFAULT_FILE ? "页面默认" : meta.file;

@@ -103,6 +103,10 @@
            那一档生效，取 MindFormers 文档里那个 recompute: [4,4,4,4] 的 4 作种子。 */
         recomputeMode: "full", recomputeLayers: 4, seqParallel: false,
         shardMode: "zero1", vocabEmbDp: true,
+        /* 专家张量并行：默认 ETP = 1（专家只做 EP、不切 TP），见 FLAG_SPECS.expertTp。
+           ⚠️ 这一枚改变了 TP > 1 配置下路由专家的分母 —— cinnnnnndy（TP 2）的
+           容量柱与热力自此按整份专家算，比原先 ÷TP 那一档高。 */
+        expertTp: false,
         /* LoRA（行 18）。默认关 —— 本页两个预设写的都是**预训练**配置，
            而 LoRA 是微调侧的东西：开着它 yaml 会多出一段 pet_config，
            容量柱的梯度段与优化器段几乎归零，那不是这两份参考配置在说的事。 */
@@ -156,7 +160,7 @@
         routedExpert: 1, topK: 1, sharedExpert: 0, ep: 1,
         totalRank: 8, node: 1, card: "910b-64",   // 8 卡 = 910B 整机一台
         recomputeMode: "full", recomputeLayers: 4, seqParallel: false,
-        shardMode: "zero1", vocabEmbDp: true,
+        shardMode: "zero1", vocabEmbDp: true, expertTp: false,
         cpMode: "ulysses",
         lora: false, loraRank: 16,
       },
@@ -617,6 +621,58 @@
         + "「各 PP Stage 峰值」那排小柱首尾更高，就是它。\n"
         + "TP=1 时两档数字相同（÷1），此时开关置灰。",
     },
+    /* ── 专家张量并行 ETP：路由专家要不要也跟着 TP 切一刀 ────────────────
+       页面此前对路由专家无条件 ÷TP（等价于 ETP = TP），只有 mf 档例外。但业界的
+       常见做法是 **ETP = 1**：专家只做 EP、不做 TP，TP 只留给 attention 与 dense
+       部分（Megatron-Core 的 --expert-tensor-parallel-size 早期为兼容默认跟 TP 走，
+       后来的版本默认已改成 1；MindSpeed 同样默认 1；DeepSeek-V2/V3 训练用 EP + PP、
+       完全不用 TP）。所以这一枚默认**关**，开着才是原先那条 ÷TP 的口径。
+       它只改路由专家的分母：capacity 的 paramsOfStage 与 plane 热力的 moeFfn 两处，
+       以及 TP 对 MoE intermediate 的整除校验（关着时那条校验不成立，见 expertTpOf）。
+       共享专家不跟它走 —— 那一份与 dense FFN 同形，仍随 TP 切。
+       ⚠️ 切出档下关着它，本页只改分母、不重排 EP 组（专家在 TP 组内整份复制，EDP
+       读数不变）；Megatron / MindSpeed 里 ETP = 1 时专家侧的并行域是 TP×DP 合起来
+       重新划分（EP 组横跨 TP rank，EDP = DP×TP/EP）—— 那正是 mf 档的读法。 */
+    expertTp: {
+      group: "moe",
+      label: "专家切 TP",
+      /* TP=1 时没有 TP 组，切与不切同一个数；mf 档的 EP 在 dp×mp 域上已经吃掉了 mp
+         那一维，该档固定按 ETP = 1 建模（ETP > 1 的 (DP×TP) % (EP×ETP) 那一套没建）。
+         两种情形都停在 false —— 它本来就是默认值，yaml 里不会多出一行要解释的字。 */
+      enabledWhen: (config) => config.tp > 1 && !epIsMf(config),
+      disabledValue: false,
+      disabledReason: "TP = 1 时没有 TP 组，专家切不切都是同一个数；MindFormers 档的 EP 在 dp×mp 域上切、已经吃掉了 mp 那一维，本页该档固定按 ETP = 1 建模 —— 把 TP 调大并选切出 / 正交档后它才可拨。",
+      title: "专家张量并行 ETP（expert_tensor_parallel_size）：路由专家要不要也跟着 TP 再切一刀\n\n"
+        + "关 = ETP = 1（业界常见默认）：专家只做 EP、不做 TP，每张卡持有**整份**专家，"
+        + "TP 只留给 attention 与 dense 部分。路由专家的权重只 ÷EP。\n"
+        + "开 = ETP = TP：专家和 dense FFN 一样沿 intermediate 维切成 TP 份，路由专家的权重 ÷EP 再 ÷TP，"
+        + "每个 MoE 层多一次 TP 的 all-reduce / reduce-scatter，且 MoE intermediate 必须被 TP 整除。\n\n"
+        + "── 为什么默认不切 ──\n"
+        + "· 专家矩阵本来就小（moe_intermediate 常比 dense 的小一个数量级），再按 TP 切成几份，"
+        + "GEMM 变得更碎、算力利用率下降，而每层还要多付一次 TP 集合通信。"
+        + "EP 已经用 all-to-all 把 token 分发出去了，专家内部再切纯粹是多付通信。\n"
+        + "· grouped GEMM / 融合算子都按「整份专家」组织，ETP > 1 会把这条快路径打断。\n"
+        + "· 显存上 ETP 省的只是专家权重，而专家本来就按 EP 分摊了（256 个专家分到 64 张卡，"
+        + "每张只剩 4 个），再省一半收益有限；激活、优化器状态那一头 ETP 并不省。\n"
+        + "· 实际案例：DeepSeek-V2 / V3 训练用 EP 64 + PP，完全不用 TP；Mixtral、Qwen-MoE、Grok "
+        + "的公开训练配置都由 EP 承担专家并行；推理侧 vLLM / SGLang 的 MoE 内核同样是整专家 + EP。"
+        + "Megatron-Core 的 MoE 文档明确建议 MoE 层优先用 EP 而不是 TP，"
+        + "--expert-tensor-parallel-size 早期为了兼容默认跟 TP 走，后来的版本默认已改成 1；"
+        + "MindSpeed 同样默认 ETP = 1。\n\n"
+        + "── 什么时候要开 ──\n"
+        + "专家很大、数量很少的模型（dense 改 MoE、只有 4–8 个巨型专家），单张卡装不下一个整专家，"
+        + "或者卡数不够开足 EP 时，才会把专家再 TP 切一刀。\n\n"
+        + "── 本页怎么算 ──\n"
+        + "开关动三处：① 路由专家的分母（容量栏「路由专家」一行、平面视图热力的 MoE 层权重）；"
+        + "② TP 对 MoE intermediate 的整除红线 / 切碎黄线（关着时 TP 切不到专家，两条只看 dense）；"
+        + "③ 运行观测的事件清单 —— 开着时每个 MoE 层多出路由专家前反向各一次 TP All-Reduce"
+        + "（画布上 TP 组内的连线），关着时路由专家只走 Dispatch / Combine 那两次 All-to-All。"
+        + "共享专家与 dense FFN 同形，仍随 TP 切、仍有自己那次 TP All-Reduce。"
+        + "切出 / 正交档下关着它，本页只改分母、不重排 EP 组；"
+        + "Megatron / MindSpeed 里 ETP = 1 时 EP 组会横跨 TP rank（EDP = DP×TP/EP），"
+        + "那正是「MindFormers」档的读法 —— 该档固定 ETP = 1，这枚开关置灰。\n"
+        + "TP = 1 时两档数字相同，此时开关置灰。",
+    },
     /* ── 三档，不是开关（升级计划行 15）─────────────────────────────────
        原先这里是一枚布尔 parallelOptimizer，正文里顺口写着「ZeRO-1 / FSDP 一类」——
        但那两者切的段数根本不同：ZeRO-1 只切优化器状态，FSDP2 是 ZeRO-3 口径，
@@ -979,7 +1035,11 @@
     const preset = presetOf(config);
     let basis = preset.heads || 1;
     if (preset.denseIntermediate) basis = gcd(basis, preset.denseIntermediate);
-    if (!preset.noMoe && preset.moeIntermediate) basis = gcd(basis, preset.moeIntermediate);
+    /* 专家不切 TP（ETP = 1，默认）时 MoE intermediate 不进公约数：那一刀根本没切在它身上。
+       读原始开关而不是 expertTpOf：后者带着 tp > 1 的判断，而这里正在算 TP 能爬到哪。 */
+    if (!preset.noMoe && preset.moeIntermediate && config.expertTp && !epIsMf(config)) {
+      basis = gcd(basis, preset.moeIntermediate);
+    }
     return Math.max(1, basis);
   }
 
@@ -1171,7 +1231,9 @@
          否则用户对着 48 头想不通「16 之后为什么没有 32」（真正卡住的是那个公约数 16）。 */
       const divisors = [`注意力头 ${preset.heads}`];
       if (preset.denseIntermediate) divisors.push(`Dense intermediate ${preset.denseIntermediate}`);
-      if (!preset.noMoe && preset.moeIntermediate) divisors.push(`MoE intermediate ${preset.moeIntermediate}`);
+      if (!preset.noMoe && preset.moeIntermediate && config.expertTp && !epIsMf(config)) {
+        divisors.push(`MoE intermediate ${preset.moeIntermediate}（「专家切 TP」开着）`);
+      }
       /* Ulysses 档下 CP 也在切同一批头，此时这一头卡住未必怪模型 —— 尾句要跟着换：
          头数确实改不了，但 CP 是可调的，得把这条出路说出来。 */
       const tail = cpIsUlysses(config) && config.cp > 1
@@ -1256,6 +1318,16 @@
 
   const epIsOrthogonal = (config) => epModeOf(config) === "orthogonal";
   const epIsMf = (config) => epModeOf(config) === "mf";
+
+  /* 路由专家此刻**真的**被 TP 切了吗。整页只此一处判断：capacity / plane 热力 /
+     validate 的整除校验 / warn 的切碎警告都读它（TP 的档位公约数读原始开关，见
+     tpShardBasis）。三个条件缺一不可：开关开着、TP > 1（否则 ÷1 没有意义）、不是
+     mf 档（那一档的 EP 已吃掉 mp 维，固定 ETP = 1）—— 后两条与
+     FLAG_SPECS.expertTp.enabledWhen 同形，reconcile 会在不可用时把它停回 false，
+     这里再判一遍只是不依赖那个时序。 */
+  function expertTpOf(config) {
+    return Boolean(config && config.expertTp) && Math.max(1, config.tp || 1) > 1 && !epIsMf(config);
+  }
 
   /* EP 从哪个域里切出来（正交档没有「切出」这回事，返回 dp 只是为了让
      gcd 那几处不必分支 —— 正交档的 epBasis 本来就只看专家数）。 */
@@ -1418,8 +1490,9 @@
     if (preset.denseIntermediate && preset.denseIntermediate % tp !== 0) {
       errors.push(`Dense FFN 的 intermediate ${preset.denseIntermediate} 不能被 TP ${tp} 整除`);
     }
-    if (!preset.noMoe && preset.moeIntermediate && preset.moeIntermediate % tp !== 0) {
-      errors.push(`MoE 区专家的 intermediate ${preset.moeIntermediate} 不能被 TP ${tp} 整除`);
+    /* 只在「专家切 TP」开着时才是约束：ETP = 1（默认）下专家整份持有，TP 切不到它。 */
+    if (expertTpOf(config) && !preset.noMoe && preset.moeIntermediate && preset.moeIntermediate % tp !== 0) {
+      errors.push(`MoE 区专家的 intermediate ${preset.moeIntermediate} 不能被 TP ${tp} 整除（「专家切 TP」开着）`);
     }
     /* CP 的硬约束**跟着口径走**（升级计划行 16）—— 两档拦的根本不是同一个字段：
          Ulysses  沿头维 all-to-all，而 TP 已切过一轮头 → TP×CP 必须整除 num_heads
@@ -1546,7 +1619,7 @@
     /* 除得尽不等于切得动：1024 的 intermediate 被 TP16 切成每卡 64，GroupedMatMul
        的 N 维只剩 64 —— 这正是升级计划行 8 说的「切碎」。它是性能问题不是功能
        问题，所以在这里而不在 validate 里（除不尽的那一半仍是硬错误）。 */
-    if (!preset.noMoe && preset.moeIntermediate
+    if (expertTpOf(config) && !preset.noMoe && preset.moeIntermediate
       && preset.moeIntermediate % config.tp === 0
       && preset.moeIntermediate / config.tp < MOE_SHARD_MIN) {
       warnings.push(`MoE 专家的 intermediate ${preset.moeIntermediate} 被 TP ${config.tp}`

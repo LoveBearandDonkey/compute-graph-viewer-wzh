@@ -785,13 +785,20 @@
    四者等分宽度一起收缩（而不是各自占固定宽再换行），控件本身也解除最小宽，
    这样无论列宽怎么变都不会掉到第二行。 */
 .cro-region--moe .cro-stepper-row {
-  flex-wrap: nowrap;
+  flex-wrap: wrap;
   gap: var(--space-2);
 }
 
 .cro-region--moe .cro-stepper {
   flex: 1 1 0;
   min-width: 0;
+}
+
+/* 第五枚是「专家切 TP」开关：塞进四等分那一行会把 Routed / Top-K 的标签压成省略号，
+   让它独占第二行。四枚 stepper 的 basis 仍是 0，wrap 打开后它们也不会掉行。
+   plane 页的左栏是两列网格（config-relation-plane.css），这条在那里不生效。 */
+.cro-region--moe .cro-stepper--switch {
+  flex: 0 0 100%;
 }
 
 /* 省略号已由 .cro-stepper__label-text 统一负责（标签本身是 flex 容器，
@@ -1124,6 +1131,9 @@
    且不描边，这里照抄：8px 圆角 + 1px 描边的原样式在它旁边显得像另一套表单。 */
 .cro-select {
   appearance: none;
+  /* 让原生下拉面板也跟随页面主题。仅给 select 本体换底色不够：Chromium / Edge
+     会按 color-scheme 决定弹出的 option 列表使用亮色还是暗色系统面板。 */
+  color-scheme: dark;
   width: 100%;
   height: 32px;
   /* 右侧留出箭头的位置，否则长选项文本会压在箭头上。左侧给 pill 圆角留出弧度，
@@ -1146,6 +1156,38 @@
   background-repeat: no-repeat;
   background-position: right var(--space-2) center;
   background-size: 11px 11px;
+}
+
+:root[data-theme="light"] .cro-select,
+[data-theme="light"] .cro-select { color-scheme: light; }
+
+/* 原生 option 不可靠地继承 select 的字号和配色，尤其工具栏里的模型 select 会被
+   放大到 18px。这里显式钉回密集表单字号，避免展开后选项跟标题一样大。 */
+.cro-select option,
+.cro-select optgroup {
+  background: var(--surface-2);
+  color: var(--foreground);
+  font-family: var(--font-sans);
+  font-size: var(--font-size-body-sm);
+}
+
+/* PTO 的 hover 是覆盖在原 surface 上的中性 --state-hover，不使用操作系统原生的
+   高饱和蓝。background-image 同时照顾 Chromium / Edge 的原生 option 弹层；
+   :checked 规则排在其后，当前项被悬浮时仍保持主色选中语义。 */
+.cro-select option:hover,
+.cro-select option:focus {
+  background-color: var(--surface-2);
+  background-image: linear-gradient(var(--state-hover), var(--state-hover));
+  color: var(--foreground);
+}
+
+/* 原生下拉里当前选中的 option 使用 PTO 主色。background-image 是给 Chromium / Edge
+   原生弹层的兼容写法：部分 Windows 版本会忽略 option 的 background-color，却会
+   接受同色渐变；两者都只引用设计系统 token，不引入模块私色。 */
+.cro-select option:checked {
+  background-color: var(--primary);
+  background-image: linear-gradient(var(--primary), var(--primary));
+  color: var(--primary-foreground);
 }
 
 .cro-select:focus-visible {

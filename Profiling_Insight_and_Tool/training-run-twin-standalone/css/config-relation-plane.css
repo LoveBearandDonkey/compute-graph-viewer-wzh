@@ -153,6 +153,16 @@ body:has(.cro-board.is-plane) .cro-link-layer { display: none; }
 .crop-left[data-pane="net"]  .crop-pane--net,
 .crop-left[data-pane="code"] .crop-pane--code { display: flex; }
 
+/* 阻断错误是整份表单的全局状态：静止在顶部时仍按普通文档流排版；表单一滚动，
+   它就停在滚动区的上内边距处，并压在后续 stepper 上方。只吸附 is-blocking，性能
+   警告仍随所属内容正常滚走，避免低优先级提示长期占用狭窄侧栏。 */
+.cro-board.is-plane .crop-pane--form > .cro-config-error.is-blocking {
+  position: sticky;
+  top: var(--space-3);
+  z-index: var(--z-raised);
+  box-shadow: var(--shadow-md);
+}
+
 /* ── 纵向不许被压：谁高谁自己撑着，栏体滚动 ─────────────────────────────────
    .cro-region / .cro-section 自带 min-height:0（原版要它们在 grid 里能收），
    搬进这两条**纵向 flex** 的栏之后，同一条属性变成了「可以被压到比内容还矮」：
@@ -240,12 +250,35 @@ body:has(.cro-board.is-plane) .cro-link-layer { display: none; }
 .cro-board.is-plane .crop-pane--code .cro-region--yaml { height: 100%; }
 .cro-board.is-plane.is-yaml .crop-left {
   grid-column: 1 / -1;
-  grid-row: 1 / -1;
+  /* 工具栏仍占第 1 行；代码内容只接管下方工作区。 */
+  grid-row: 2;
   flex: 1 1 auto;
   width: auto;
 }
 .cro-board.is-plane.is-yaml .crop-stage,
 .cro-board.is-plane.is-yaml .crop-right { display: none; }
+
+/* 代码页变宽后不能让「配置」select 与页签一起拉到整板宽。两者仍从左侧起排，
+   控件保持侧栏语境下的可读尺寸，剩余宽度留给代码区。 */
+.cro-board.is-plane.is-yaml .crop-left__intro {
+  flex-direction: row;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  justify-content: flex-start;
+}
+
+.cro-board.is-plane.is-yaml .crop-left__intro > .cro-stepper {
+  flex: 0 1 360px;
+  width: min(360px, 42vw);
+}
+
+.cro-board.is-plane.is-yaml .crop-left__intro > .crop-tabs {
+  flex: 0 0 300px;
+  width: 300px;
+}
+
+/* 文件样例已经并入上面的配置 select，代码标题里不再重复放第二个下拉入口。 */
+.cro-board.is-plane #croYamlPicker { display: none; }
 
 /* 文档档：整板让位，三栏一起收起 */
 .cro-board.is-plane.is-doc .crop-left,
@@ -378,6 +411,18 @@ body:has(.cro-board.is-plane) .cro-link-layer { display: none; }
   will-change: transform;
 }
 
+/* 点中顶部 Layer 刻度后，用一条与该列等宽的暗影把位置投到画布底部。它放在
+   crop-world 之前，格子、块底板和热力色仍画在它上面；这里只负责提供纵向参照。 */
+.crop-layer-guide {
+  position: absolute;
+  bottom: 0;
+  box-sizing: border-box;
+  /* 这里只标位置，不表达业务选择语义：使用随主题反转的中性前景灰阶，避免与真正
+     的蓝色选中态、通信流或热力颜色混为一谈。 */
+  background: color-mix(in srgb, var(--foreground) 10%, transparent);
+  pointer-events: none;
+}
+
 /* 画布上的每一类对象都是绝对定位的方块，坐标由 js 按世界坐标写 */
 .crop-node {
   position: absolute;
@@ -393,9 +438,12 @@ body:has(.cro-board.is-plane) .cro-link-layer { display: none; }
    而量尺的职责恰恰是在看不清内容时也要答得出「这是哪一段、第几个副本」。 */
 .crop-ruler {
   position: absolute;
+  box-sizing: border-box;
   overflow: hidden;
   z-index: var(--z-raised);
   background: var(--surface-1);
+  /* 顶尺与左尺都作为完整的量尺框出现，不再只画朝向画布内容的内侧边。 */
+  border: 1px solid var(--border-default);
   pointer-events: none;             /* 只有刻度本身可点，底板不挡画布 */
 }
 
@@ -407,13 +455,36 @@ body:has(.cro-board.is-plane) .cro-link-layer { display: none; }
      60 之后盒子还是 46，刻度里第二行（MoE / Dense）就被这条 overflow:hidden 裁掉了。
      两个数各写各的迟早会再错开一次，所以改由 js 单点驱动。 */
   height: 60px;
-  border-bottom: 1px solid var(--border-default);
+}
+
+/* 两级量尺不仅要有外框，两层之间也要有一条连续分界；不能只给每个 PP 格描底边，
+   否则 stage 间隙与平移后露出的空段会断线。 */
+.crop-ruler--top::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 21px;
+  height: 1px;
+  background: var(--border-default);
+  pointer-events: none;
 }
 
 .crop-ruler--left {
   left: 0;
   bottom: 0;
-  border-right: 1px solid var(--border-default);
+}
+
+
+.crop-ruler--left.is-two-level::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: calc(var(--crop-edp-divider, 42px) - 1px);
+  width: 1px;
+  background: var(--border-default);
+  pointer-events: none;
 }
 
 /* 两条尺交汇的那个角：写纵轴的口径（EDP | DP 还是 DP） */
@@ -433,6 +504,25 @@ body:has(.cro-board.is-plane) .cro-link-layer { display: none; }
   color: var(--foreground-secondary);
   letter-spacing: var(--letter-spacing-label);
   white-space: nowrap;
+}
+
+/* 极小缩放档在顶尺第二层增加一个公共 Layer 轴名。它与 Emb 使用同一个量尺坐标
+   系，右缘由 JS 固定在 Emb 左缘之前 24px；后面的层刻度因此只需写 0 / 1 / 2…。 */
+.crop-ruler__layer-axis {
+  position: absolute;
+  top: 22px;
+  height: 38px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+  font-family: var(--font-sans);
+  font-size: var(--font-size-label-xs);
+  font-weight: var(--font-weight-medium);
+  color: var(--foreground-secondary);
+  letter-spacing: var(--letter-spacing-label);
+  white-space: nowrap;
+  pointer-events: none;
 }
 
 /* 一枚刻度。四种（PP / 列 / EDP / DP）只差在字号、对齐与分隔线的方向。 */
@@ -459,7 +549,7 @@ body:has(.cro-board.is-plane) .cro-link-layer { display: none; }
 .crop-tick--pp {
   justify-content: center;
   padding: 0 var(--space-3);
-  background: var(--surface-3);
+  background: transparent;
   color: var(--foreground-secondary);
   font-weight: var(--font-weight-medium);
   letter-spacing: var(--letter-spacing-label);
@@ -467,11 +557,12 @@ body:has(.cro-board.is-plane) .cro-link-layer { display: none; }
   border-left: 1px solid var(--border-subtle);
 }
 
-.crop-tick--pp:hover { background: var(--state-hover); color: var(--foreground); }
-.crop-tick--pp.is-related { background: var(--state-selected); color: var(--foreground); }
+.crop-tick--pp:hover { background: transparent; color: var(--foreground); }
+.crop-tick--pp.is-related { background: transparent; color: var(--foreground); }
 .crop-tick--pp.is-selected {
-  background: color-mix(in srgb, var(--primary) 30%, var(--surface-3));
-  color: var(--foreground);
+  background: transparent;
+  color: var(--primary);
+  box-shadow: inset 0 -2px 0 var(--primary);
 }
 
 /* 顶部第二层：列名。左边一道竖线是刻度线本身 —— 它对齐的就是那一列的左缘。
@@ -498,6 +589,28 @@ body:has(.cro-board.is-plane) .cro-link-layer { display: none; }
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+
+/* 缩小后的连续层号档：Dense / MoE 让位，只保留 L0、L1、L2……且不再隔层抽样。
+   JS 按当前列宽给层号做水平压缩；span 自身保持正常字号和完整文本，压缩后的视觉宽
+   才落进对应列里，避免浏览器先把它裁成 “L…” 再缩。 */
+.crop-tick--col.is-compact {
+  flex-direction: row;
+  gap: 0;
+  padding-inline: 0;
+}
+
+.crop-tick--col.is-compact .crop-tick__name {
+  flex: 0 0 auto;
+  width: var(--crop-layer-label-w);
+  max-width: none;
+  overflow: visible;
+  text-overflow: clip;
+  text-align: center;
+  transform: scaleX(var(--crop-layer-label-scale));
+  transform-origin: center;
+}
+
+.crop-tick--col.is-compact .crop-tick__ffn { display: none; }
 
 /* 第二行比层号轻一档：它是这一列的属性，不是它的名字 */
 .crop-tick__ffn {
@@ -544,7 +657,7 @@ body:has(.cro-board.is-plane) .cro-link-layer { display: none; }
 /* 左侧第一层：EDP 副本 */
 .crop-tick--edp {
   justify-content: center;
-  background: var(--surface-3);
+  background: transparent;
   color: var(--foreground-secondary);
   font-weight: var(--font-weight-medium);
   border-top: 1px solid var(--border-subtle);
@@ -1550,7 +1663,6 @@ body:has(.cro-board.is-plane) .cro-link-layer { display: none; }
 .cro-board.is-plane.is-yaml .crop-center,
 .cro-board.is-plane.is-doc .crop-center { display: none; }
 
-.cro-board.is-plane.is-yaml .crop-toolbar,
 .cro-board.is-plane.is-doc .crop-toolbar { display: none; }
 
 /* 页签与热力工具合成一行：.crop-toolbar 是 board 第一行，跨过下方全部栏位；
@@ -3017,14 +3129,13 @@ body:has(.cro-board.is-plane) .cro-link-layer { display: none; }
 .cro-board.is-plane .crop-left .cro-stepper .cro-switch { width: 100%; }
 .cro-board.is-plane .crop-left .cro-stepper .cro-flag-choice > .btn { flex: 1; min-width: 0; }
 
-/* ── ⑤ AI 输入框：照 insight2.0 的 .wzh-chat-input-bar ──────────────────────
-   24px 大圆角、蓝紫渐变描边、面色不透明；输入区两行高在上，工具行在下 ——
-   左端一枚助手身份胶囊，右端 32px 圆形品牌蓝发送键。 */
+/* ── ⑤ AI 输入框：单行提示文字 + 发送键 ────────────────────────────────────
+   24px 大圆角、蓝紫渐变描边、面色不透明；输入与 32px 发送键同排。 */
 .crop-ai {
-  flex-direction: column;
-  align-items: stretch;
-  gap: var(--space-1);
-  padding: var(--space-2) var(--space-2) var(--space-2);
+  flex-direction: row;
+  align-items: center;
+  gap: var(--space-2);
+  padding: 6px var(--space-2);
   border-width: 1.5px;
   border-radius: 24px;
   background:
@@ -3050,53 +3161,20 @@ body:has(.cro-board.is-plane) .cro-link-layer { display: none; }
 }
 
 .crop-ai__input {
-  flex: 0 0 auto;
-  width: 100%;
-  box-sizing: border-box;
-  min-height: 44px;
-  max-height: 126px;
-  margin: 0;
-  padding: 4px 8px 0;
-  font-size: 14px;
-  line-height: 1.5;
-  overflow-y: auto;
-  scrollbar-width: none;
-}
-
-.crop-ai__input::-webkit-scrollbar { width: 0; height: 0; }
-
-.crop-ai__bar {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-}
-
-.crop-ai__tool {
+  flex: 1 1 auto;
+  width: auto;
   box-sizing: border-box;
   height: 32px;
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  padding: 0 10px;
-  border: none;
-  border-radius: var(--radius-pill);
-  background: transparent;
-  cursor: pointer;
-  font: 12px / 1.4 var(--font-sans);
-  color: var(--foreground);
-  transition: background var(--duration-fast, 140ms) var(--easing-default, ease);
+  min-height: 32px;
+  max-height: 32px;
+  margin: 0;
+  padding: 0 var(--space-2);
+  font-size: var(--font-size-body-sm);
+  line-height: 32px;
+  overflow: hidden;
 }
-
-.crop-ai__tool:hover,
-.crop-ai__tool:focus-visible {
-  outline: none;
-  background: var(--state-hover);
-}
-
-.crop-ai__tool svg { color: var(--ark-blue-500); }
 
 .crop-ai__send {
-  margin-left: auto;
   width: 32px;
   height: 32px;
   padding: 0;
@@ -3114,8 +3192,8 @@ body:has(.cro-board.is-plane) .cro-link-layer { display: none; }
 .crop-ai__send:hover { background: color-mix(in srgb, var(--ark-blue-500) 84%, #000); }
 .crop-ai__send:focus-visible { outline: none; box-shadow: var(--focus-ring); }
 
-/* 输入框长高了（两行输入区 + 工具行 ≈ 104px），表单底部的呼吸位跟着加 */
-.cro-board.is-plane .crop-left__body { padding-bottom: calc(var(--space-3) + 124px); }
+/* 单行输入栏约 47px 高，给表单底部留出栏高与一段呼吸位。 */
+.cro-board.is-plane .crop-left__body { padding-bottom: calc(var(--space-3) + 60px); }
 
 /* 左栏收起时，模型标题左侧露出一枚「三横」菜单键（点它开回配置栏）；
    左栏在的时候它没有意义，整个不占位。 */
