@@ -5,6 +5,26 @@
 
 ---
 
+## 2026-09-17 — 配置关系平面·MoE 区新增「专家切 TP」（ETP）开关
+
+- MoE 区新增布尔开关「专家切 TP」（`FLAG_SPECS.expertTp`，带问号解释）：关 = ETP = 1（专家只做 EP、整份持有，TP 只切 attention 与 dense，Megatron-Core / MindSpeed 默认），开 = ETP = TP（原先无条件 ÷TP 的口径）。**默认关** —— TP > 1 的配置（如 cinnnnnndy TP 2）路由专家的容量柱与平面热力自此按整份专家算。TP = 1 与 MindFormers 档置灰并停回关。
+- 分母跟着开关走：`config-relation-capacity.js` 的 `paramsOfStage`（路由专家 ÷EP×ETP，FSDP 分片单元也按落卡量取）与 `config-relation-plane.js` 热力的 `moeFfn`；关着时 MoE 层少掉 FFN 出口那一次 TP all-reduce。运行观测的事件清单同步：开着时每个 MoE 层多出「Routed Expert · TP All-Reduce」前反向各一条（落在 Expert Compute 盒子上，TP 组内连线），关着时路由专家只有 Dispatch / Combine。`moe_intermediate % TP` 的红线、切碎黄线与 TP 档位公约数只在开关开着时才把 MoE intermediate 算进去。
+- YAML 视图 `expert_parallel` 行注释带上 ETP 口径；导入识别 Megatron / MindSpeed 的 `--expert-tensor-parallel-size`（> 1 折成开）。文档视图三处「本页按 ETP=1 建模」的说法改为指向这枚开关。观察台页 MoE stepper 行改为可换行，开关独占第二行。
+
+## 2026-09-17 — 配置关系平面·代码页签与配置选择器修订
+
+- `croConfigPresetSelect` 恢复为原 YAML 配置选择器的双栏弹层：左侧统一列出当前模型预设、自定义状态及公开样例，右侧显示兼容度、字段变化和未支持内容；面板固定在触发框下方并与其左边缘对齐，原生 select 保留为状态接口，默认仍为 `cinnnnnndy 配置`。
+- Layer 纵向定位暗影由蓝色改为随深浅主题反转的中性黑白灰，并移除左右白色描边，避免与业务选中态混淆；`cro-select` 未选中选项的悬浮态改用 PTO `--state-hover` 覆盖层，当前选中项仍保持 `--primary` 深蓝。
+- EP 口径三枚页签不再各自触发长篇悬浮提示；三段原说明合并到“EP 口径”标题右侧的标准问号中，交互与其它表单字段一致。
+- `cro-config-error.is-blocking` 提升为表单页的全局首项；`crop-left__body` 滚动后吸附在表单区顶部，并跨越 Architecture / Cluster / MoE 全程保持可见，警告态仍正常随内容滚动。
+- `crop-center` 量尺在极小缩放档改用独立 `Layer` 轴名 + 纯数字层号：轴名位于 Emb 左侧并固定间隔 24px，层刻度直接显示 `23`，撤销原 `L` / `23` 两行方案；同时补上 PP Stage/Layer 与 EDP/DP 两级之间的连续分割线，点选 Layer 后在画布底层显示等宽纵向定位暗影。
+- `cro-select` 原生下拉中当前选项的高亮改用 PTO `--primary` 深蓝与 `--primary-foreground` 文字色，并补 Chromium/Edge 原生弹层兼容写法。
+- `crop-ai` 改为单行的提示文字 + 发送按钮，移除左下角“配置助手”身份胶囊，并收回原两行布局占用的底部空间。
+- `crop-center` 两条量尺补齐四周边框，移除 PP Stage / EDP 格子的常态与选中填色；缩小后 Layer 量尺切换为无 Dense/MoE 的连续 `L0 L1 L2…` 短标签，不再按 2/5/10 层抽样。
+- `config-relation-plane.html`：原 `cro-yaml__file` 的 11 份公开样例按来源分组并入「配置」`cro-select`，保留内置预设且默认仍为 `cinnnnnndy 配置`；样例仍先显示兼容度报告、确认后再应用。
+- `cro-select` 的原生下拉面板接入深浅主题，选项字号统一为 12px；代码页签保留 `crop-toolbar`，配置选择器限制为 360px，并移除重复的文件下拉入口。
+- 代码页签的关闭键改为先回到关系/表单视图再收起 `crop-left`，与表单页签关闭行为一致。已通过 `node --check`、`git diff --check` 与 Chrome 无头交互回归。
+
 ## 2026-09-15 — Router logits 张量计算可视化（training-run-twin-standalone/router-logits-viz.html）
 - 新增交互页：x · W_gate → logits → FP8 E4M3 cast → softmax → probs，四张量联动（x 按行、W_gate 按列、logits/probs 按格选中），三情景切换（step ~10000 / 15200 / 15203）。
 - 数值按定位链文档 365~597 行构造：x 行与 W 列为 2560 维真实向量，logits 为真实点积，probs 为真实 softmax；193 列范数 2→50，token 0 在 15203 步 cosθ 0.74 → 1846 撞 448 → 整行 NaN。

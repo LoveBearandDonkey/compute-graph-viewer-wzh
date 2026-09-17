@@ -15,7 +15,8 @@
    （256 路由专家 × 3 × H × I_moe ≈ 2.0B/层 × 44 层 ≈ 89B），套 dense 公式会算出
    一个完全错的数。所以这里逐层分算 attention / dense-MLP / 路由专家 / 共享专家 /
    router / emb / head 六项，各自除以真正切它的那一维：
-       路由专家  ÷ EP × TP      ← MoE 下减容器的主力
+       路由专家  ÷ EP × ETP     ← MoE 下减容器的主力。ETP 默认 1（专家只做 EP、不切 TP，
+                                业界常见默认），MoE 区的「专家切 TP」拨开才 = TP；mf 档固定 1
        其余权重  ÷ TP
        词表 Emb/Head  vocab_emb_dp 开着时**不切 TP**，每卡背满（升级计划行 11）
        所有权重  ÷ PP（体现为「这张卡只背本 stage 那几层」）
@@ -551,8 +552,14 @@
 
     const H = preset.hidden;
     const tp = Math.max(1, counts.tp);
+    /* 路由专家自己的 TP 分母（ETP）。默认 1：专家只做 EP、整份持有，TP 只切 attention
+       与 dense（业界常见默认，Megatron-Core / MindSpeed 的 expert_tensor_parallel_size
+       都已默认 1）。「专家切 TP」开关开着才回到 ÷TP —— 那是本页此前无条件走的口径。
+       mf 档固定 1：EP 在 DP×MP 域上切、已经吃掉了 mp 那一维，再 ÷TP 就是把同一刀切
+       两遍（ETP > 1 的 (DP×TP) % (EP×ETP) 那一套本页没建）。 */
+    const etp = counts.epMode === "mf" || !cfg.expertTp ? 1 : tp;
     let sharded = 0;      // 沿 h / intermediate 被 TP 切的部分
-    let expert = 0;       // 路由专家：同样被 TP 切，但优化器分片的域是 EDP 而非整个 DP
+    let expert = 0;       // 路由专家：÷ETP 而不是 ÷TP，且优化器分片的域是 EDP 而非整个 DP
     let intact = 0;       // router 这类不切的小项
     let replicated = 0;   // vocab_emb_dp 下**不被 TP 切**的词表矩阵
     let layerMax = 0;     // 单层在这张卡上的参数量（取本 stage 里最大的一层）
@@ -560,7 +567,7 @@
     for (let l = seg.lo; l <= seg.hi; l += 1) {
       const layer = layers[l];
       if (!layer) continue;
-      const before = sharded + expert + intact;
+      const before = sharded / tp + expert / etp + intact;
       // Attention：q/k/v/o 四个 [H,H]。TP 切头，PP 已经体现在「只遍历本 stage 的层」。
       sharded += 4 * H * H;
       if (layer.ffn === "dense") {
@@ -572,8 +579,9 @@
         sharded += counts.sharedExpert * 3 * H * preset.moeIntermediate;
         intact += H * counts.routedExpert;             // router / gate，量级可忽略但别漏
       }
-      // MoE 层比 dense 层重得多，混合 stage 里 all-gather 的峰值由重的那种定
-      layerMax = Math.max(layerMax, sharded + expert + intact - before);
+      // MoE 层比 dense 层重得多，混合 stage 里 all-gather 的峰值由重的那种定。
+      // 按**落到这张卡上**的量比（各段已除以自己的分母）：专家不切 TP 时 MoE 层更重
+      layerMax = Math.max(layerMax, sharded / tp + expert / etp + intact - before);
     }
     /* Embedding 落在 stage0，LM Head 落在末 stage —— 首尾两段天然比中间重。
        切不切 TP 由 vocab_emb_dp 决定（升级计划行 11）：开着时词表在 TP 组内整份
@@ -583,10 +591,7 @@
       + (stage === counts.pp - 1 ? preset.vocab * H : 0);
     if (cfg.vocabEmbDp) replicated += embHead; else sharded += embHead;
 
-    /* mf 档（行 23）：EP 是在 DP×MP 域上切的 —— 它**已经吃掉了 mp 那一维**，
-       再 ÷TP 就是把同一刀切两遍。本页按 ETP=1 建模（MindFormers 的专家张量并行
-       未建模，那时严格式是 (DP×TP) % (EP×ETP) == 0）。另两档逐位不变。 */
-    const expertOnCard = expert / (counts.epMode === "mf" ? 1 : tp);
+    const expertOnCard = expert / etp;
     /* 词表那一块自成一个 FSDP 单元，且往往比一层还大（388M vs 一层几十 M）——
        首尾两个 stage 的 all-gather 峰值由它定，不是由 transformer 层定。
        vocab_emb_dp 开着时它不被 TP 切，这里跟着 embHead 的去向走。 */
@@ -594,7 +599,7 @@
     return {
       total: sharded / tp + intact + replicated + expertOnCard,
       expert: expertOnCard,
-      unit: Math.max(layerMax / tp, embOnCard),
+      unit: Math.max(layerMax, embOnCard),
     };
   }
 
@@ -1054,9 +1059,13 @@
             + `但<b>本栏两档逐位相同</b> —— 两种算法都让每张卡只留 S/CP 份激活，`
             + `差别在通信（Ulysses 一次 all-to-all / Ring 逐块轮转 KV）与硬约束，不在显存`
           : ``))
+      /* 分母跟着「专家切 TP」走（FLAG_SPECS.expertTp）：默认 ETP = 1，专家整份持有；
+         mf 档固定 1。三种说法各说各的理由，用户拨一下开关要能在这一行看到数字为什么变。 */
       + row("路由专家", c.epMode === "mf"
-        ? `÷ EP(${c.ep})，<b>不再另 ÷ TP</b> —— MindFormers 档的 EP 在 DP×MP 域上切，已经吃掉了 mp 那一维（本页按专家张量并行 ETP=1 建模）`
-        : `÷ EP(${c.ep}) × TP(${c.tp})，是 MoE 下减容器的主力`)
+        ? `÷ EP(${c.ep})，<b>不再另 ÷ TP</b> —— MindFormers 档的 EP 在 DP×MP 域上切，已经吃掉了 mp 那一维（该档固定按专家张量并行 ETP = 1 建模）`
+        : cfg.expertTp && c.tp > 1
+          ? `÷ EP(${c.ep}) × TP(${c.tp}) —— 「专家切 TP」开着（ETP = TP），专家沿 intermediate 维再切 ${c.tp} 份`
+          : `÷ EP(${c.ep})，<b>不切 TP</b>（ETP = 1，业界常见默认）：专家只做 EP、每卡整份持有，TP 只切 attention 与 dense${c.tp > 1 ? " —— 拨开 MoE 区的「专家切 TP」才会再 ÷ TP" : ""}`)
       + row("共享专家", `在 EP 域内复制，每张卡各持一份`)
       + row("其余权重", `÷ TP(${c.tp})；全部 ÷ PP(${c.pp})，体现为这张卡只背本 stage 那几层`)
       + row("DP", plan.mode === "fsdp2"

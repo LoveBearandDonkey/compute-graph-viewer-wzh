@@ -279,14 +279,22 @@
             ? "Ring：沿序列维轮转 KV，与头数无关（MindSpeed 侧 --context-parallel-algo megatron_cp_algo）"
             : "Ulysses：沿头维 all-to-all（MindSpeed 侧 --context-parallel-algo ulysses_cp_algo）"),
       ] : []),
+      /* ETP 没有自己的 yaml 键（MindFormers 侧没有这一项），口径写进 EP 那一行的注释：
+         用户拨了 MoE 区那枚「专家切 TP」，要在这里看得见它落到了哪。mf 档固定 ETP = 1，
+         TP = 1 时切不切同一个数，两种情形都不写。 */
       L("  expert_parallel: " + c.ep, "ep",
         c.ep <= 1 ? "即 EP"
-          : orthogonal ? "即 EP，与 DP 正交，独占自己的 rank"
+          : (orthogonal ? "即 EP，与 DP 正交，独占自己的 rank"
             : mfDomain
               ? "即 EP。MindFormers 在 **dp×mp 域**上切它：" + c.dp + "×" + c.tp
                 + " = " + (c.dp * c.tp) + " 须被 " + c.ep + " 整除，EDP = " + c.edp
-                + "（本页按专家张量并行 ETP=1 建模；ETP>1 时严格式是 (dp×mp) % (ep×etp) == 0）"
-            : "即 EP，从 DP 内切出：EDP = DP/EP = " + c.edp),
+                + "（该档固定按专家张量并行 ETP=1 建模；ETP>1 时严格式是 (dp×mp) % (ep×etp) == 0）"
+            : "即 EP，从 DP 内切出：EDP = DP/EP = " + c.edp)
+            + (!mfDomain && c.tp > 1
+              ? (cfg.expertTp
+                ? "；专家再沿 TP 切（ETP = TP = " + c.tp + "，Megatron 侧 --expert-tensor-parallel-size " + c.tp + "）"
+                : "；专家不切 TP（ETP = 1，Megatron / MindSpeed 默认）")
+              : "")),
       /* 行 22：这一格从派生值变成输入 —— 注释也跟着换，不能再写「本页未建模」。
          够不够灌满流水线由页面的软警告说，这里只如实报出此刻的账。 */
       L("  micro_batch_num: " + microBatchNum, "microBatchNum",

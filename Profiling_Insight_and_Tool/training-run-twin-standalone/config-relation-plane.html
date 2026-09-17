@@ -25,17 +25,17 @@
   <!-- 集群热力图样式（复用 training-monitoring-v2 的 .twin-heat* 视觉） -->
   <link rel="stylesheet" href="./css/training-run-twin.css">
   <!-- 本页模块私有 layout -->
-  <link rel="stylesheet" href="./css/config-relation-observer.css?v=20260904-mech-all">
+  <link rel="stylesheet" href="./css/config-relation-observer.css?v=20260917-etp-switch">
   <!-- 单卡容量（Cluster 区右栏）：容量是「卡」的属性，与集群矩阵同区并排 -->
   <link rel="stylesheet" href="./css/config-relation-capacity.css?v=20260820-spread-head">
   <!-- 顶栏视图页签 / 导出配置键 / YAML 代码框 -->
-  <link rel="stylesheet" href="./css/config-relation-yaml.css?v=20260831-flat-picker">
+  <link rel="stylesheet" href="./css/config-relation-yaml.css?v=20260917-config-picker-split">
   <!-- 文档视图（顶栏第三档）：章节目录 + 800px 正文栏 -->
   <link rel="stylesheet" href="./css/config-relation-doc.css?v=20260821-doc-arrow">
   <!-- 平面视图（本页专属）：把四域重排成「左配置 / 中无限画布 / 右详情」三栏。
        只加规则、不改上面任何一份 —— 与 config-relation-observer.html 共用同一套
        CSS/JS，视图差异全部收在这一份与 js/config-relation-plane.js 里。 -->
-  <link rel="stylesheet" href="./css/config-relation-plane.css?v=20260916-left-menu">
+  <link rel="stylesheet" href="./css/config-relation-plane.css?v=20260917-flat-layer-guide">
 </head>
 <body data-theme="dark">
   <section class="pto-ide-frame" data-ide-frame data-host="standalone" aria-label="Config and Relation Observer">
@@ -432,7 +432,7 @@
                        没有它，config-test/ 里那份 mf_pretrain_deepseek3_671b.yaml
                        （dp:4 / mp:8 / pp:8 / ep:32）两档都接不住 —— 而 README 说它「最贴页面口径」。 -->
                   <button class="btn btn-sm" type="button" data-ep-mode="mf" aria-pressed="false"
-                          data-hint="读 MindFormers 的配置时用这一档。MindSpore / MindFormers 的 expert_parallel 是在 dp × mp 域上切的：一个 EP 组的成员既跨数据并行、也跨张量并行。&#10;&#10;认它的办法：配置里 dp 明显小于 ep（比如 dp:4 / mp:8 / ep:32），按切出档算 4 % 32 除不尽、按正交档算总卡数又对不上 —— 而 dp×mp = 32 正好整除。&#10;&#10;world = DP×PP×TP×CP（ep 不进乘积，与切出档相同） · 要求 (DP × TP) % EP == 0 · EDP = DP×TP/EP&#10;集群矩阵的行数因此比切出档多 TP 倍：域大了 TP 倍，一整套专家仍由横着的 EP 张卡合持。&#10;&#10;⚠️ 本页按专家张量并行 ETP=1 建模：这一档下路由专家只 ÷EP、不再另 ÷TP（EP 已经吃掉了 mp 那一维）。真实 MindFormers 里 ETP>1 时，严格式是 (DP×TP) % (EP×ETP) == 0，专家还要再 ÷ETP —— 那一档本页没建。">MindFormers（DP×MP）</button>
+                          data-hint="读 MindFormers 的配置时用这一档。MindSpore / MindFormers 的 expert_parallel 是在 dp × mp 域上切的：一个 EP 组的成员既跨数据并行、也跨张量并行。&#10;&#10;认它的办法：配置里 dp 明显小于 ep（比如 dp:4 / mp:8 / ep:32），按切出档算 4 % 32 除不尽、按正交档算总卡数又对不上 —— 而 dp×mp = 32 正好整除。&#10;&#10;world = DP×PP×TP×CP（ep 不进乘积，与切出档相同） · 要求 (DP × TP) % EP == 0 · EDP = DP×TP/EP&#10;集群矩阵的行数因此比切出档多 TP 倍：域大了 TP 倍，一整套专家仍由横着的 EP 张卡合持。&#10;&#10;⚠️ 这一档固定按专家张量并行 ETP=1 建模：路由专家只 ÷EP、不再另 ÷TP（EP 已经吃掉了 mp 那一维），MoE 区那枚「专家切 TP」开关在此档置灰。真实 MindFormers 里 ETP>1 时，严格式是 (DP×TP) % (EP×ETP) == 0，专家还要再 ÷ETP —— 那一档本页没建。">MindFormers</button>
                 </div>
               </div>
 
@@ -2347,7 +2347,8 @@ t  TP 序号              c  CP 序号      n  物理节点号</div>
                     而路由专家<b>只 ÷EP、不再另 ÷TP</b> —— EP 已经吃掉了 mp 那一维。
                   </p>
                   <p>
-                    ⚠️ 本页按<b>专家张量并行 ETP = 1</b> 建模。真实 MindFormers 里专家自身还能再切 TP，
+                    ⚠️ 这一档固定按<b>专家张量并行 ETP = 1</b> 建模（MoE 区的「专家切 TP」开关在此档置灰）。
+                    真实 MindFormers 里专家自身还能再切 TP，
                     那时严格的约束是 <code>(DP × TP) % (EP × ETP) == 0</code>，专家权重还要再 ÷ETP ——
                     那一档本页没有建模，遇到写了 <code>expert_model_parallel</code> 的配置要自己折算。
                   </p>
@@ -2518,6 +2519,7 @@ t  TP 序号              c  CP 序号      n  物理节点号</div>
                     </p>
                     <p class="cro-doc__effect">即使整除得开，切得过碎也会让矩阵乘掉出高效区间，性能先垮在切分粒度上。</p>
                     <p class="cro-doc__effect">本页两条都已落地：除不尽是红色报错（<code>TP</code> 的可选档位因此收成 <code>gcd(头数, intermediate)</code> 的因子），每卡分片薄于 256 是黄色性能提示。</p>
+                    <p class="cro-doc__effect">MoE 那一条只在 MoE 区的「专家切 TP」开着时才算数：默认 ETP = 1，专家整份持有、TP 根本切不到 <code>moe_intermediate_size</code>，红线与黄线都只看 dense 的那个 —— 这正是业界不给专家切 TP 的原因之一（切得碎、还多付一次 TP 集合通信）。</p>
                   </div>
 
                   <div class="cro-doc__rule" data-kind="hard">
@@ -2725,7 +2727,7 @@ t  TP 序号              c  CP 序号      n  物理节点号</div>
                         <tr><th>这一项</th><th>被谁切</th></tr>
                       </thead>
                       <tbody>
-                        <tr><td>路由专家</td><td>÷ EP，再 ÷ ETP（若有）　← MoE 下减容器的主力</td></tr>
+                        <tr><td>路由专家</td><td>÷ EP，默认<b>不再 ÷ TP</b>（ETP = 1：专家只做 EP，TP 只留给 attention 与 dense —— Megatron-Core / MindSpeed 的默认）；MoE 区那枚「专家切 TP」拨开才再 ÷ TP　← MoE 下减容器的主力</td></tr>
                         <tr><td>共享专家</td><td>÷ TP。在 EP 域内每卡复制一份完整的，EP 帮不上忙</td></tr>
                         <tr><td>Attention / Dense MLP</td><td>÷ TP</td></tr>
                         <tr><td>router / gate</td><td>不切。量级小，但逐层累加不完全可忽略</td></tr>
@@ -2924,19 +2926,19 @@ t  TP 序号              c  CP 序号      n  物理节点号</div>
   <script src="./js/ide-frame-pattern.js"></script>
   <script src="./js/model-graphviz-pattern.js"></script>
   <script src="./js/model-architecture-3d-deck-pattern.js"></script>
-  <script src="./js/config-relation-observer.js?v=20260916-page-preset"></script>
+  <script src="./js/config-relation-observer.js?v=20260917-etp-switch"></script>
   <!-- 单卡容量：必须排在主脚本之后（要读它导出的 croObserver / croSelect） -->
-  <script src="./js/config-relation-capacity.js?v=20260908-assess"></script>
+  <script src="./js/config-relation-capacity.js?v=20260917-etp-switch"></script>
   <!-- YAML 视图：同样排在主脚本之后（要读它导出的 croObserver.topology）。
        它同时是 #croViewTabs 三档切换的唯一监听方。 -->
-  <script src="./js/config-relation-yaml.js?v=20260821-ep-mode"></script>
+  <script src="./js/config-relation-yaml.js?v=20260917-etp-switch"></script>
   <!-- 文档视图：只从正文的章节标题建目录 + 滚动高亮，不依赖 croObserver，
        所以排在哪里都行；跟着另两个视图模块放在一起便于对照。 -->
   <script src="./js/config-relation-doc.js?v=20260821-doc-arrow"></script>
   <!-- 导入配置（行 20）：同样排在主脚本之后（要用它导出的 croObserver.importConfig）。
        解析层与 DOM 无关、整块导出到 croImport，好让 tools/cro-selfcheck.js
        拿 config-test/ 那 11 份样本直接撞它。 -->
-  <script src="./js/config-relation-import.js?v=20260831-flat-picker"></script>
+  <script src="./js/config-relation-import.js?v=20260917-etp-switch"></script>
   <script>
     // 主题切换：与 training-monitoring-v2.html 同款单图标按钮，只改 data-theme。
     (() => {
@@ -3024,6 +3026,6 @@ t  TP 序号              c  CP 序号      n  物理节点号</div>
        排在最后：它要把已经解析完的四个 .cro-region 搬进新的三栏骨架，而主脚本
        挂在 DOMContentLoaded 上、此刻尚未 boot —— 搬完再 boot，所有 getElementById
        拿到的还是同一批节点，配置 / 校验 / 关系解析一行逻辑都没动。 -->
-  <script src="./js/config-relation-plane.js?v=20260916-left-menu"></script>
+  <script src="./js/config-relation-plane.js?v=20260917-screen-cell-gap"></script>
 </body>
 </html>
