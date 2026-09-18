@@ -3,18 +3,19 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Router Logits 张量计算 · openPangu-2.0-Flash</title>
+<title>Router 溢出四步 · openPangu-2.0-Flash</title>
 <link rel="stylesheet" href="./css/foundation.css">
 <link rel="stylesheet" href="./css/semantic.css">
 <link rel="stylesheet" href="./css/components.css">
 <link rel="stylesheet" href="./css/style.css">
 <style>
-  /* 四个角色色：x=violet / W_gate=success / logits=primary / probs=warning，越界=danger */
+  /* 角色色：x=violet / W_gate=success / logits=primary / probs=warning / 梯度=accent，越界=danger */
   :root{
     --rl-x: var(--highlight-l0a-violet-500);
     --rl-w: var(--success);
     --rl-l: var(--primary);
     --rl-p: var(--warning);
+    --rl-g: var(--accent);
     --rl-bad: var(--danger);
   }
   html,body{ background:var(--background); color:var(--foreground); font-family:var(--font-sans); }
@@ -22,14 +23,134 @@
   .rl-page{ max-width:1720px; margin:0 auto; display:flex; flex-direction:column; gap:var(--space-5); }
 
   /* 头部 */
-  .rl-head{ display:flex; flex-wrap:wrap; align-items:center; gap:var(--space-4); justify-content:space-between; }
-  .rl-title{ margin:0; font-size:var(--font-size-display-lg); font-weight:var(--font-weight-bold); letter-spacing:-.01em; display:flex; align-items:baseline; gap:.35em; flex-wrap:wrap; }
-  .rl-title .k{ padding:0 .3em; border-radius:var(--radius-sm); }
+  .rl-head{ display:flex; flex-direction:column; gap:var(--space-1); align-items:center; text-align:center; }
+  .rl-title{ margin:0; font-size:var(--font-size-display-lg); font-weight:var(--font-weight-bold); letter-spacing:-.01em; display:flex; align-items:baseline; gap:.35em; flex-wrap:wrap; justify-content:center; }
+  .rl-sub{ margin:0; color:var(--foreground-secondary); font-size:var(--font-size-body-sm); }
+  .k{ padding:0 .3em; border-radius:var(--radius-sm); }
   .k-l{ background:color-mix(in srgb,var(--rl-l) 22%,transparent); color:var(--foreground); }
   .k-x{ background:color-mix(in srgb,var(--rl-x) 22%,transparent); color:var(--foreground); }
   .k-w{ background:color-mix(in srgb,var(--rl-w) 22%,transparent); color:var(--foreground); }
   .k-p{ background:color-mix(in srgb,var(--rl-p) 22%,transparent); color:var(--foreground); }
+  .k-g{ background:color-mix(in srgb,var(--rl-g) 28%,transparent); color:var(--foreground); }
   .k-bad{ background:color-mix(in srgb,var(--rl-bad) 22%,transparent); color:var(--foreground); }
+
+  /* 步骤条：照 rank-intro 案例那条段控的样子，走过的段实一点、当前段最深，颜色留给图 */
+  .rl-steps{ display:flex; gap:var(--space-3); align-items:flex-end; width:100%; max-width:1120px; margin:0 auto; }
+  .rl-steps .st{ font:inherit; background:none; border:0; padding:0; cursor:pointer; text-align:left; color:var(--foreground-muted); min-width:0; flex:1 1 0; }
+  .rl-steps .lbl{ display:block; font-size:var(--font-size-body-sm); line-height:1.3; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; margin-bottom:6px; }
+  .rl-steps .bar{ display:block; height:3px; border-radius:2px; background:var(--surface-3); }
+  .rl-steps .st:hover .lbl, .rl-steps .st.done .lbl{ color:var(--foreground-secondary); }
+  .rl-steps .st.done .bar{ background:var(--border-strong); }
+  .rl-steps .st.cur .bar{ background:var(--foreground); }
+  .rl-steps .st.cur .lbl{ color:var(--foreground); font-weight:var(--font-weight-bold); }
+  /* 播放键：全流程播着 → 两竖；停着 / 单段循环 → 三角 */
+  .rl-steps .rep{ flex:none; display:inline-flex; align-items:center; justify-content:center; width:34px; height:34px; border:1px solid var(--border-default); border-radius:50%; background:none; color:var(--foreground-secondary); cursor:pointer; padding:0; margin-right:var(--space-2); }
+  .rl-steps .rep svg{ width:14px; height:14px; fill:currentColor; }
+  .rl-steps .rep .ic-pause{ display:none; }
+  .rl-steps[data-play="full"] .rep .ic-pause{ display:block; }
+  .rl-steps[data-play="full"] .rep .ic-play{ display:none; }
+  .rl-steps .rep:hover{ color:var(--foreground); border-color:var(--border-strong); }
+  .rl-cap{ width:100%; max-width:1120px; margin:0 auto; min-height:3.4em; font-size:var(--font-size-body-md); line-height:1.75; color:var(--foreground-secondary); text-align:center; }
+  .rl-cap b{ color:var(--foreground); font-weight:var(--font-weight-semibold); }
+  .rl-cap .t{ font-family:var(--font-mono); font-size:.92em; color:var(--foreground); background:var(--surface-2); padding:0 .35em; border-radius:var(--radius-sm); margin-right:.3em; }
+
+  /* 场景容器：四步各一块，只显示当前那块 */
+  .rl-fig{ min-height:420px; }
+  .rl-scene{ display:none; }
+  .rl-scene.on{ display:block; }
+  .rl-scene.nt *{ transition:none !important; }
+
+  /* ── 第 1 步：W_gate 变大，两条路一起涨，梯度先碰顶 ─────────────── */
+  .f1{ display:grid; grid-template-columns:220px 150px auto auto 270px; align-items:center; justify-content:center; gap:var(--space-4); max-width:1120px; margin:0 auto; padding-top:var(--space-4); }
+  .f1-src{ background:var(--surface-1); border:1px solid var(--border-subtle); border-radius:var(--radius-md); padding:var(--space-3) var(--space-4); }
+  .f1-src h3{ margin:0; font-size:var(--font-size-body-sm); font-weight:var(--font-weight-semibold); display:flex; align-items:center; gap:var(--space-1); }
+  .f1-src .dot{ width:8px; height:8px; border-radius:50%; background:var(--rl-w); }
+  .f1-src .num{ font-family:var(--font-mono); font-size:30px; font-weight:var(--font-weight-bold); color:var(--rl-w); line-height:1.2; margin-top:var(--space-1); }
+  .f1-src .num small{ font-size:11px; color:var(--foreground-muted); font-weight:var(--font-weight-medium); margin-left:.4em; }
+  .f1-src .wbar{ height:6px; border-radius:var(--radius-pill); background:var(--surface-3); overflow:hidden; margin:var(--space-2) 0; }
+  .f1-src .wbar i{ display:block; height:100%; width:4%; background:var(--rl-w); border-radius:var(--radius-pill); }
+  .f1-src .why{ font-size:11px; color:var(--foreground-secondary); line-height:1.6; }
+  .f1-arrows{ display:flex; flex-direction:column; gap:var(--space-5); font-size:11px; color:var(--foreground-secondary); }
+  .f1-arrows div{ display:flex; flex-direction:column; align-items:center; text-align:center; gap:2px; }
+  .f1-arrows .ar{ font-size:18px; color:var(--foreground-muted); line-height:1; }
+  .f1-arrows b{ color:var(--foreground); font-weight:var(--font-weight-semibold); }
+  .f1-arrows code{ font-family:var(--font-mono); font-size:10px; color:var(--foreground-muted); }
+  /* 温度计：天花板画在 85% 高，越界那截可以冒出来变红 */
+  .g{ display:flex; flex-direction:column; align-items:center; gap:var(--space-2); width:170px; }
+  .g-name{ font-size:var(--font-size-body-sm); font-weight:var(--font-weight-semibold); text-align:center; line-height:1.3; }
+  .g-name small{ display:block; font-size:10px; font-weight:var(--font-weight-medium); color:var(--foreground-muted); font-family:var(--font-mono); margin-top:2px; }
+  .g-bar{ position:relative; width:64px; height:240px; background:var(--surface-2); border:1px solid var(--border-subtle); border-radius:var(--radius-md); }
+  .g-fill{ position:absolute; left:0; right:0; bottom:0; height:0; background:var(--c); border-radius:0 0 var(--radius-md) var(--radius-md); opacity:.85; }
+  .g-ceil{ position:absolute; left:-10px; right:-10px; top:15%; border-top:2px dashed var(--rl-bad); }
+  .g-ceil span{ position:absolute; left:calc(100% + 6px); top:-8px; font-size:10px; white-space:nowrap; color:var(--rl-bad); font-family:var(--font-mono); }
+  .g-val{ position:absolute; left:50%; transform:translate(-50%,-100%); bottom:0; font-family:var(--font-mono); font-size:12px; font-weight:var(--font-weight-semibold); color:var(--foreground); white-space:nowrap; padding-bottom:3px; }
+  .g-foot{ font-size:11px; color:var(--foreground-secondary); text-align:center; min-height:2.8em; line-height:1.4; }
+  .g-foot b{ color:var(--foreground); font-weight:var(--font-weight-semibold); }
+  .g.hit .g-fill{ background:var(--rl-bad); opacity:1; }
+  .g.hit .g-bar{ box-shadow:0 0 0 3px color-mix(in srgb,var(--rl-bad) 30%,transparent); border-color:var(--rl-bad); }
+  .g.hit .g-val{ color:var(--rl-bad); }
+  .g.hit .g-foot{ color:var(--rl-bad); }
+  .f1-amp{ background:var(--surface-1); border:1px solid var(--border-subtle); border-radius:var(--radius-md); padding:var(--space-3) var(--space-4); align-self:center; }
+  .f1-amp h3{ margin:0 0 var(--space-2); font-size:var(--font-size-body-sm); font-weight:var(--font-weight-semibold); }
+  .f1-amp h3 small{ display:block; font-family:var(--font-mono); font-size:10px; color:var(--foreground-muted); font-weight:var(--font-weight-medium); }
+  .f1-amp .ln{ font-size:12px; line-height:1.6; color:var(--foreground-secondary); opacity:.35; transform:translateX(-4px); transition:opacity .35s, transform .35s, color .35s; padding:2px 0; }
+  .f1-amp .ln.on{ opacity:1; transform:none; color:var(--foreground); }
+  .f1-amp .ln b{ font-family:var(--font-mono); font-weight:var(--font-weight-semibold); }
+  .f1-amp .ln.on b.bad{ color:var(--rl-bad); }
+  .f1-amp .ln.ok{ opacity:1; transform:none; color:var(--foreground-muted); }
+  .f1-amp .ln.ok.off{ display:none; }
+  .f1-amp .ln .skip{ display:inline-block; font-family:var(--font-mono); font-size:10px; padding:0 .4em; border-radius:var(--radius-sm); background:color-mix(in srgb,var(--rl-bad) 14%,transparent); color:var(--rl-bad); margin-left:.3em; }
+
+  /* ── 第 2 步：200 步曲线 ─────────────────────────────────────────── */
+  .f2{ max-width:1120px; margin:0 auto; display:flex; flex-direction:column; gap:var(--space-2); }
+  .f2-read{ display:flex; flex-wrap:wrap; gap:var(--space-4); justify-content:center; font-family:var(--font-mono); font-size:12px; color:var(--foreground-secondary); }
+  .f2-read b{ color:var(--foreground); font-weight:var(--font-weight-semibold); }
+  .f2-read b.bad{ color:var(--rl-bad); }
+  .f2 svg{ width:100%; height:auto; display:block; font-family:var(--font-mono); }
+  .f2 .ttl{ font-family:var(--font-sans); font-size:11px; fill:var(--foreground-secondary); }
+  .f2 .tk{ font-size:10px; fill:var(--foreground-muted); }
+  .f2 .ceil{ stroke:var(--rl-bad); stroke-dasharray:4 4; stroke-width:1; }
+  .f2 .ceil-t{ font-size:10px; fill:var(--rl-bad); }
+  .f2 .over{ fill:color-mix(in srgb,var(--rl-bad) 7%,transparent); }
+  .f2 .lane{ fill:var(--surface-1); stroke:var(--border-subtle); }
+  .f2 .ln-g{ fill:none; stroke:var(--rl-g); stroke-width:2; }
+  .f2 .ln-l{ fill:none; stroke:var(--rl-l); stroke-width:2; }
+  .f2 .ln-c{ fill:none; stroke:var(--foreground-muted); stroke-width:1.5; }
+  .f2 .lab{ font-size:10px; fill:var(--foreground-secondary); }
+  .f2 .lab.ok{ fill:var(--rl-w); font-weight:600; }
+  .f2 .cur{ stroke:var(--foreground); stroke-width:1; opacity:.6; }
+  .f2 .mk{ opacity:0; transition:opacity .3s; }
+  .f2 .mk.on{ opacity:1; }
+  .f2 .mk circle{ fill:var(--rl-bad); }
+  .f2 .mk line{ stroke:var(--rl-bad); stroke-dasharray:2 3; stroke-width:1; opacity:.6; }
+  .f2 .mk text{ font-size:10px; fill:var(--rl-bad); font-weight:600; }
+  .f2 .spike{ opacity:0; transition:opacity .4s; }
+  .f2 .spike.on{ opacity:1; }
+  .f2 .spike line{ stroke:var(--rl-bad); stroke-width:2.5; }
+  .f2 .spike text{ font-size:11px; fill:var(--rl-bad); font-weight:700; }
+
+  /* ── 第 3 步：张量计算（原页内容）+ 趋势图 ───────────────────────── */
+  .f3-top{ display:grid; grid-template-columns:480px minmax(0,1fr); gap:var(--space-4); align-items:start; }
+  .f3-trend{ background:var(--surface-1); border:1px solid var(--border-subtle); border-radius:var(--radius-lg); padding:var(--space-2) var(--space-3); }
+  .f3-trend h3{ margin:0 0 var(--space-1); font-size:var(--font-size-body-sm); font-weight:var(--font-weight-semibold); display:flex; justify-content:space-between; align-items:center; gap:var(--space-2); }
+  .f3-trend h3 span{ font-family:var(--font-mono); font-size:11px; font-weight:var(--font-weight-medium); color:var(--foreground-secondary); }
+  .f3-trend h3 span.bad{ color:var(--rl-bad); }
+  .f3-trend svg{ width:100%; height:auto; display:block; font-family:var(--font-mono); }
+  .f3-trend .tk{ font-size:10px; fill:var(--foreground-muted); }
+  .f3-trend .ceil{ stroke:var(--rl-bad); stroke-dasharray:4 4; }
+  .f3-trend .ceil-t{ font-size:10px; fill:var(--rl-bad); }
+  .f3-trend .over{ fill:color-mix(in srgb,var(--rl-bad) 7%,transparent); }
+  .f3-trend .ln{ fill:none; stroke:var(--rl-l); stroke-width:2; }
+  .f3-trend .spk{ stroke:var(--rl-bad); stroke-width:2.5; }
+  .f3-trend .spk-t{ font-size:11px; fill:var(--rl-bad); font-weight:700; }
+  .f3-trend .pt{ fill:var(--surface-1); stroke:var(--rl-l); stroke-width:2; cursor:pointer; }
+  .f3-trend .pt.bad{ stroke:var(--rl-bad); }
+  .f3-trend .pt.cur{ fill:var(--rl-l); r:6; }
+  .f3-trend .pt.cur.bad{ fill:var(--rl-bad); }
+  .f3-trend .pl{ font-size:10px; fill:var(--foreground-secondary); cursor:pointer; }
+  .f3-trend .pl.cur{ fill:var(--foreground); font-weight:600; }
+  .f3-tools{ display:flex; align-items:center; gap:var(--space-3); flex-wrap:wrap; margin-top:var(--space-3); }
+  .f3-tools .hint{ font-size:11px; color:var(--foreground-muted); }
 
   /* 公式区 */
   .rl-formulas{ background:var(--surface-1); border:1px solid var(--border-subtle); border-radius:var(--radius-lg); padding:var(--space-3) var(--space-5); font-family:var(--font-mono); font-size:12px; line-height:1.8; overflow-x:auto; }
@@ -41,21 +162,20 @@
   .rl-formulas > div{ display:flex; flex-direction:column; gap:var(--space-2); }
   .rl-formula{ display:flex; flex-wrap:wrap; align-items:center; gap:.45em; white-space:nowrap; }
   .rl-formula .lbl{ font-family:var(--font-sans); color:var(--foreground-secondary); min-width:12em; }
-  .rl-formula .k{ padding:0 .3em; border-radius:var(--radius-sm); }
   .rl-formula .eq{ color:var(--foreground-muted); }
-  .rl-formula .neg{ color:var(--foreground-secondary); }
   .rl-formula .val{ font-weight:var(--font-weight-semibold); }
-  .rl-note{ font-family:var(--font-sans); color:var(--foreground-secondary); font-size:var(--font-size-body-sm); line-height:1.7; }
-  .rl-note b{ color:var(--foreground); font-weight:var(--font-weight-semibold); }
+  .rl-formula .note{ font-family:var(--font-sans); color:var(--foreground-secondary); }
+  .rl-cast{ display:flex; flex-wrap:wrap; align-items:center; gap:.45em; white-space:nowrap; color:var(--rl-bad); }
+  .rl-cast .lbl{ font-family:var(--font-sans); color:var(--foreground-secondary); min-width:12em; }
 
-  /* 张量区 */
-  /* 第一行 x × W = logits；softmax 在 logits 正下方向下转到 probs */
+  /* 张量区：第一行 x × W = logits；softmax 在 logits 正下方向下转到 probs */
   .rl-stage{ display:grid; grid-template-columns:repeat(5, auto); column-gap:var(--space-3); row-gap:var(--space-2); justify-content:start; align-items:start; overflow-x:auto; padding-block:var(--space-2); }
   .rl-op-down{ grid-column:5; grid-row:2; }
   .rl-probs{ grid-column:5; grid-row:3; }
   .rl-op{ align-self:center; font-size:var(--font-size-title-sm); font-weight:var(--font-weight-bold); color:var(--foreground-secondary); padding:0 var(--space-1); margin-top:36px; text-align:center; white-space:nowrap; }
   .rl-op-down{ margin-top:0; justify-self:center; display:flex; align-items:center; gap:var(--space-2); }
-  .rl-op small{ display:block; font-size:10px; font-weight:var(--font-weight-medium); color:var(--foreground-muted); }
+  .rl-op-down .cast{ font-size:10px; font-weight:var(--font-weight-medium); color:var(--foreground-muted); font-family:var(--font-mono); }
+  .rl-op-down .cast.bad{ color:var(--rl-bad); font-weight:var(--font-weight-semibold); }
   .rl-op .arrow{ display:block; font-size:12px; }
   .rl-tensor{ background:var(--surface-1); border:1px solid var(--border-subtle); border-radius:var(--radius-md); padding:var(--space-2) var(--space-3) var(--space-3); }
   .rl-tensor h3{ margin:0; font-size:var(--font-size-body-sm); font-weight:var(--font-weight-semibold); display:flex; align-items:center; gap:var(--space-1); }
@@ -64,25 +184,50 @@
   table.rl-grid{ border-collapse:collapse; border-spacing:0; font-family:var(--font-mono); font-size:10px; }
   .rl-grid th{ font-weight:var(--font-weight-medium); color:var(--foreground-muted); font-size:10px; padding:1px 3px; text-align:center; white-space:nowrap; }
   .rl-grid th.rh{ text-align:right; padding-right:5px; }
-  .rl-grid td{ min-width:42px; height:24px; text-align:center; border:1px solid var(--border-subtle); background:var(--surface-2); padding:0 4px; white-space:nowrap; box-sizing:border-box; }
+  .rl-grid td{ min-width:42px; height:24px; text-align:center; border:1px solid var(--border-subtle); background:var(--surface-2); padding:0 4px; white-space:nowrap; box-sizing:border-box; transition:background .3s, color .3s; }
   .rl-grid td.ell{ color:var(--foreground-muted); background:transparent; border-color:transparent; min-width:20px; }
   .rl-grid td.ell-r{ color:var(--foreground-muted); background:transparent; border-color:transparent; height:16px; }
-  .rl-grid td.clk{ cursor:pointer; transition:background .12s; }
+  .rl-grid td.clk{ cursor:pointer; }
   .rl-grid td.clk:hover{ background:var(--state-hover); }
   .rl-grid td.faint{ background:color-mix(in srgb,var(--c) 10%,var(--surface-2)); }
-  /* 选中格用共享边框描边（collapse 后相邻选中格边框合并，行/列选中无缝） */
   .rl-grid td.sel{ background:color-mix(in srgb,var(--c) 18%,var(--surface-2)); border:1.5px solid var(--c); color:var(--foreground); font-weight:var(--font-weight-semibold); }
   .rl-grid td.bad{ --c:var(--rl-bad); color:var(--rl-bad); font-weight:var(--font-weight-semibold); background:color-mix(in srgb,var(--rl-bad) 10%,var(--surface-2)); }
   .rl-grid td.nan{ --c:var(--rl-bad); color:var(--rl-bad); background:color-mix(in srgb,var(--rl-bad) 10%,var(--surface-2)); }
   .rl-grid th.sel{ color:var(--c); }
-
-  /* 天花板条 */
   .rl-gauge{ display:inline-flex; align-items:center; gap:var(--space-2); margin-left:auto; white-space:nowrap; }
   .rl-gauge .bar{ position:relative; width:110px; height:6px; border-radius:var(--radius-pill); background:var(--surface-3); overflow:hidden; }
   .rl-gauge .bar i{ position:absolute; left:0; top:0; bottom:0; border-radius:var(--radius-pill); background:var(--rl-l); }
   .rl-gauge .bar i.warn{ background:var(--rl-p); }
   .rl-gauge .bar i.bad{ background:var(--rl-bad); }
 
+  /* ── 第 4 步：一个 inf 的传染 ─────────────────────────────────────── */
+  .f4{ display:grid; grid-template-columns:auto 28px auto 28px auto 28px auto; align-items:center; justify-content:center; gap:var(--space-3); max-width:1240px; margin:0 auto; padding-top:var(--space-3); }
+  .f4-p{ background:var(--surface-1); border:1px solid var(--border-subtle); border-radius:var(--radius-md); padding:var(--space-3) var(--space-4); display:flex; flex-direction:column; align-items:center; gap:var(--space-2); opacity:.4; transition:opacity .4s, border-color .4s; }
+  .f4-p.on{ opacity:1; border-color:color-mix(in srgb,var(--rl-bad) 45%,var(--border-subtle)); }
+  .f4-p h3{ margin:0; font-size:var(--font-size-body-sm); font-weight:var(--font-weight-semibold); text-align:center; }
+  .f4-p h3 small{ display:block; font-family:var(--font-mono); font-size:10px; font-weight:var(--font-weight-medium); color:var(--foreground-muted); margin-top:2px; }
+  .f4-p .cnt{ font-size:11px; color:var(--foreground-secondary); text-align:center; line-height:1.5; min-height:3em; }
+  .f4-p .cnt b{ color:var(--rl-bad); font-weight:var(--font-weight-semibold); }
+  .f4-grid{ display:grid; gap:1px; }
+  .f4-grid i{ display:block; width:7px; height:7px; background:color-mix(in srgb,var(--c) 30%,var(--surface-2)); transition:background .45s ease; }
+  .f4-p.on .f4-grid i{ background:var(--rl-bad); }
+  .f4-p.on .f4-grid i.src{ background:var(--rl-bad); transition-delay:0s !important; box-shadow:0 0 0 1px var(--rl-bad); }
+  .f4-ar{ font-size:18px; color:var(--foreground-muted); text-align:center; opacity:.3; transition:opacity .4s, color .4s; }
+  .f4-ar.on{ opacity:1; color:var(--rl-bad); }
+  .f4-read{ display:flex; flex-direction:column; gap:var(--space-1); font-family:var(--font-mono); font-size:13px; }
+  .f4-read div{ display:flex; align-items:baseline; gap:.5em; }
+  .f4-read .nm{ color:var(--foreground-secondary); min-width:6.5em; }
+  .f4-read .old{ color:var(--foreground); transition:color .3s, text-decoration-color .3s; }
+  .f4-read .new{ color:var(--rl-bad); font-weight:var(--font-weight-bold); opacity:0; transition:opacity .35s; }
+  .f4-read div.on .old{ color:var(--foreground-muted); text-decoration:line-through; }
+  .f4-read div.on .new{ opacity:1; }
+
+  @media (max-width:1100px){
+    .f1{ grid-template-columns:1fr 1fr; }
+    .f3-top{ grid-template-columns:1fr; }
+    .f4{ grid-template-columns:1fr; }
+    .f4-ar{ transform:rotate(90deg); }
+  }
   @media (max-width:900px){ body{ padding-inline:var(--space-4); } .rl-formula .lbl{ min-width:auto; } }
 </style>
 </head>
@@ -90,228 +235,576 @@
 <div class="rl-page">
 
   <div class="rl-head">
-    <div>
-      <h1 class="rl-title"><span class="k k-l">Router logits</span><span>=</span><span class="k k-x">x</span><span>·</span><span class="k k-w">W_gate</span><span style="color:var(--foreground-muted)">→ softmax →</span><span class="k k-p">Router probs</span></h1>
-    </div>
-    <div class="segmented-control segmented-control-muted" id="scen"></div>
+    <h1 class="rl-title"><span class="k k-w">W_gate</span><span>变大</span><span style="color:var(--foreground-muted)">→</span><span class="k k-g">梯度</span><span>先碰顶</span><span style="color:var(--foreground-muted)">→</span><span class="k k-l">logits</span><span>再碰顶</span><span style="color:var(--foreground-muted)">→</span><span class="k k-bad">loss NaN</span></h1>
+    <p class="rl-sub">openPangu-2.0-Flash · 问题影响 1 · step 15000 → 15203 · 一个张量里的一个数，怎么把整次训练的 loss 算成 NaN</p>
   </div>
 
-  <details class="rl-formulas" open><summary>计算公式</summary><div id="formulas"></div></details>
+  <div class="rl-steps" id="steps"></div>
+  <p class="rl-cap" id="cap"></p>
 
-  <div class="rl-stage">
-    <section class="rl-tensor" style="--c:var(--rl-x)">
-      <h3><span class="dot"></span>x 输入张量</h3>
-      <div class="meta"><span>[8192, 2560]</span><span id="x-mag"></span></div>
-      <table class="rl-grid" id="tx"></table>
+  <div class="rl-fig" id="fig">
+
+    <!-- 第 1 步 -->
+    <section class="rl-scene" data-step="1">
+      <div class="f1">
+        <div class="f1-src">
+          <h3><span class="dot"></span>W_gate 第 193 列</h3>
+          <div class="num"><span id="f1-w">2</span><small>列范数 ‖W[:,193]‖</small></div>
+          <div class="wbar"><i id="f1-wbar"></i></div>
+          <div class="why">softmax 只奖励"再自信一点"，没有 z-loss 拦着，这一列的数就一直往大了长。它是根因，前向、反向两条路都跟着它涨。</div>
+        </div>
+        <div class="f1-arrows">
+          <div><b>前向</b><code>logits = x · W_gate</code><span class="ar">→</span><span>涨多少算多少<br>存成 FP8 E4M3</span></div>
+          <div><b>反向</b><code>grad × loss_scale 65536</code><span class="ar">→</span><span>先放大 65536 倍<br>再存成 FP8 E5M2</span></div>
+        </div>
+        <div class="g" id="f1-gl" style="--c:var(--rl-l)">
+          <div class="g-name">Router logits<small>max|logit| · FP8 E4M3</small></div>
+          <div class="g-bar"><div class="g-ceil"><span>上界 448</span></div><div class="g-fill" id="f1-lfill"></div><div class="g-val" id="f1-lval">30</div></div>
+          <div class="g-foot" id="f1-lfoot">离天花板还有 15 倍</div>
+        </div>
+        <div class="g" id="f1-gg" style="--c:var(--rl-g)">
+          <div class="g-name">梯度 × 65536<small>max|g| × scale · FP8 E5M2</small></div>
+          <div class="g-bar"><div class="g-ceil"><span>上界 57344</span></div><div class="g-fill" id="f1-gfill"></div><div class="g-val" id="f1-gval">2000</div></div>
+          <div class="g-foot" id="f1-gfoot">真实 max|g| 0.03 × 65536</div>
+        </div>
+        <div class="f1-amp">
+          <h3>AMP 只检查缩放后的梯度<small>found_inf = any(isinf(grad × scale))</small></h3>
+          <div class="ln ok" id="f1-ok">found_inf = <b>False</b> · 正常更新</div>
+          <div class="ln" id="f1-l1">found_inf = <b class="bad">True</b> · 张量里出现了 inf</div>
+          <div class="ln" id="f1-l2">① 这一步的更新<b class="bad">整个丢掉</b><span class="skip">step 15000 跳过</span></div>
+          <div class="ln" id="f1-l3">② loss_scale <b>65536</b> → <b class="bad">32768</b>，下一步腾出一半余量</div>
+        </div>
+      </div>
     </section>
-    <div class="rl-op">×</div>
-    <section class="rl-tensor" style="--c:var(--rl-w)">
-      <h3><span class="dot"></span>W_gate</h3>
-      <div class="meta"><span>[2560, 256]</span><span id="w-mag"></span></div>
-      <table class="rl-grid" id="tw"></table>
+
+    <!-- 第 2 步 -->
+    <section class="rl-scene" data-step="2">
+      <div class="f2">
+        <div class="f2-read" id="f2-read"></div>
+        <div id="f2-svg"></div>
+      </div>
     </section>
-    <div class="rl-op">=</div>
-    <section class="rl-tensor" style="--c:var(--rl-l)">
-      <h3><span class="dot"></span>Router logits</h3>
-      <div class="meta"><span>[8192, 256]</span><span class="rl-gauge" id="gauge"></span></div>
-      <table class="rl-grid" id="tl"></table>
+
+    <!-- 第 3 步 -->
+    <section class="rl-scene" data-step="3">
+      <div class="f3-top">
+        <div class="f3-trend">
+          <h3>max|logit| 随 step 的走势 <span id="f3-cur"></span></h3>
+          <div id="f3-svg"></div>
+        </div>
+        <details class="rl-formulas" open><summary>计算公式</summary><div id="formulas"></div></details>
+      </div>
+      <div class="f3-tools">
+        <div class="segmented-control segmented-control-muted" id="scen"></div>
+        <span class="hint">点任意一格可换选中的 token / expert</span>
+      </div>
+      <div class="rl-stage">
+        <section class="rl-tensor" style="--c:var(--rl-x)">
+          <h3><span class="dot"></span>x 输入张量</h3>
+          <div class="meta"><span>[8192, 2560]</span><span id="x-mag"></span></div>
+          <table class="rl-grid" id="tx"></table>
+        </section>
+        <div class="rl-op">×</div>
+        <section class="rl-tensor" style="--c:var(--rl-w)">
+          <h3><span class="dot"></span>W_gate</h3>
+          <div class="meta"><span>[2560, 256]</span><span id="w-mag"></span></div>
+          <table class="rl-grid" id="tw"></table>
+        </section>
+        <div class="rl-op">=</div>
+        <section class="rl-tensor" style="--c:var(--rl-l)">
+          <h3><span class="dot"></span>Router logits</h3>
+          <div class="meta"><span>[8192, 256]</span><span class="rl-gauge" id="gauge"></span></div>
+          <table class="rl-grid" id="tl"></table>
+        </section>
+        <div class="rl-op rl-op-down"><span>Softmax</span><span class="arrow">▼</span><span class="cast" id="cast-note">先 cast 成 FP8 E4M3</span></div>
+        <section class="rl-tensor rl-probs" style="--c:var(--rl-p)">
+          <h3><span class="dot"></span>Router probs</h3>
+          <div class="meta"><span>[8192, 256]</span><span>0~1</span></div>
+          <table class="rl-grid" id="tp"></table>
+        </section>
+      </div>
     </section>
-    <div class="rl-op rl-op-down"><span>Softmax</span><span class="arrow">▼</span></div>
-    <section class="rl-tensor rl-probs" style="--c:var(--rl-p)">
-      <h3><span class="dot"></span>Router probs</h3>
-      <div class="meta"><span>[8192, 256]</span><span>0~1</span></div>
-      <table class="rl-grid" id="tp"></table>
+
+    <!-- 第 4 步 -->
+    <section class="rl-scene" data-step="4">
+      <div class="f4" id="f4">
+        <div class="f4-p" data-p="1" style="--c:var(--rl-p)">
+          <h3>① 一行概率<small>probs[token 0, 0..255]</small></h3>
+          <div class="f4-grid" id="f4-g1" style="grid-template-columns:repeat(16,7px)"></div>
+          <div class="cnt">第 193 格是 NaN → 分母的 sum 含 NaN<br><b>256 个概率全部 NaN</b></div>
+        </div>
+        <div class="f4-ar">→</div>
+        <div class="f4-p" data-p="2" style="--c:var(--rl-x)">
+          <h3>② 一个 token<small>hidden[token 0] · 2560 维</small></h3>
+          <div class="f4-grid" id="f4-g2" style="grid-template-columns:repeat(8,7px)"></div>
+          <div class="cnt">top-k 权重 NaN × expert 输出<br>残差相加后 <b>整条 2560 维 NaN</b></div>
+        </div>
+        <div class="f4-ar">→</div>
+        <div class="f4-p" data-p="3" style="--c:var(--rl-l)">
+          <h3>③ 一条序列<small>下一层 attention · 4096 token</small></h3>
+          <div class="f4-grid" id="f4-g3" style="grid-template-columns:repeat(32,7px)"></div>
+          <div class="cnt">每个 query 都对全部 value 加权求和<br>只要有一个 NaN → <b>4096 个 token 全 NaN</b></div>
+        </div>
+        <div class="f4-ar">→</div>
+        <div class="f4-p" data-p="4" style="--c:var(--rl-g)">
+          <h3>④ 全局<small>loss = mean(全部 token) · 反向 · allreduce</small></h3>
+          <div class="f4-read" id="f4-read">
+            <div data-r="1"><span class="nm">loss</span><span class="old">3.1</span><span class="new">NaN</span></div>
+            <div data-r="2"><span class="nm">grad_norm</span><span class="old">12.4</span><span class="new">inf</span></div>
+          </div>
+          <div class="f4-grid" id="f4-g4" style="grid-template-columns:repeat(8,7px)"></div>
+          <div class="cnt">mean 里一项 NaN 全 NaN；梯度全 NaN<br>allreduce 摊到 <b>DP 组每一个 rank</b></div>
+        </div>
+      </div>
     </section>
+
   </div>
-
 </div>
 
 <script>
 (function(){
   'use strict';
-  const H = 2560, E = 256;
-  const TOKENS  = [0, 1, 8190, 8191];        // 展示的 token 行
-  const EXPERTS = [0, 1, 193, 254, 255];     // 展示的 expert 列
-  const HIDS    = [0, 1, 2558, 2559];        // 展示的 hidden 维
-  const FP8_MAX = 448;
 
-  // ---- 确定性随机 ----
-  function rng(seed){ let a = seed >>> 0; return function(){ a += 0x6D2B79F5; let t = a; t = Math.imul(t ^ (t >>> 15), t | 1); t ^= t + Math.imul(t ^ (t >>> 7), t | 61); return ((t ^ (t >>> 14)) >>> 0) / 4294967296; }; }
-  function normal(r){ const u = 1 - r(), v = r(); return Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * v); }
-  function vec(seed, n){ const r = rng(seed), o = new Float64Array(n); for (let i = 0; i < n; i++) o[i] = normal(r); return o; }
-  const dot  = (a, b) => { let s = 0; for (let i = 0; i < a.length; i++) s += a[i] * b[i]; return s; };
-  const norm = a => Math.sqrt(dot(a, a));
-
-  // ---- x：RMSNorm 后 ±1 量级，行范数 ≈ √2560 ≈ 50 ----
-  const xBase = {}; TOKENS.forEach(t => xBase[t] = vec(1000 + t, H));
-
-  // ---- W_gate 列：w_j = Σ_t (target[t,j]/‖x_t‖²)·x_t + ε·r，使 x_t·w_j ≈ target 且 ‖w_j‖ = 列范数 ----
-  function makeCol(j, targets, colNorm){
-    const w = new Float64Array(H);
-    TOKENS.forEach(t => { const x = xBase[t], c = targets[t] / dot(x, x); for (let i = 0; i < H; i++) w[i] += c * x[i]; });
-    // 噪声先对展示的 x 行做正交化，保证展示格的 logits 精确等于 target
-    const r = vec(5000 + j, H);
-    TOKENS.forEach(t => { const x = xBase[t], c = dot(r, x) / dot(x, x); for (let i = 0; i < H; i++) r[i] -= c * x[i]; });
-    const a2 = dot(w, w), eps = Math.sqrt(Math.max(colNorm * colNorm - a2, 0)) / norm(r);
-    for (let i = 0; i < H; i++) w[i] += eps * r[i];
-    return w;
+  /* ================= 计时器：每一步的动画都挂在一只 clock 上，stop 一把清光 ================= */
+  function makeClock(){
+    const timers = [], rafs = [];
+    const ease = t => t < .5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2;
+    return {
+      at(ms, fn){ timers.push(setTimeout(fn, ms)); },
+      tween(ms, dur, fn, easing){
+        timers.push(setTimeout(() => {
+          const t0 = performance.now();
+          const step = now => { const t = Math.min(1, (now - t0) / dur); fn((easing || ease)(t)); if (t < 1) rafs.push(requestAnimationFrame(step)); };
+          rafs.push(requestAnimationFrame(step));
+        }, ms));
+      },
+      stop(){ timers.forEach(clearTimeout); rafs.forEach(cancelAnimationFrame); timers.length = 0; rafs.length = 0; }
+    };
   }
-  // 正常态：256 列范数都 ≈ 2，logits ≈ 30 量级
-  const T = t => ({ 0: t[0], 1: t[1], 8190: t[2], 8191: t[3] });
-  const normalTargets = { 0: T([27, 12, -24, 36]), 1: T([-8, 22, 9, -15]), 193: T([31, 18, 15, 7]), 254: T([14, -21, 25, 3]), 255: T([19, -21, 16, 30]) };
-  const wNormal = {}; EXPERTS.forEach(j => wNormal[j] = makeCol(j, normalTargets[j], 2));
-  // 塌缩前夕：只有 193 列涨到范数 50（元素 ±1），趋势项 ≈ 410
-  const wGrown = Object.assign({}, wNormal, { 193: makeCol(193, T([410, 395, 418, 402]), 50) });
-  // 溢出那一步：W 不变，某个 token 的 x 恰好和 193 列对齐（cosθ 0.16 → 0.74）→ 1846
-  function alignRow(x, w, target){
-    const wn = norm(w), xn = norm(x), cos = target / (xn * wn);
-    const wh = Float64Array.from(w, v => v / wn);
-    const p = new Float64Array(H); const xw = dot(x, wh);
-    for (let i = 0; i < H; i++) p[i] = x[i] - xw * wh[i];
-    const pn = norm(p), s = Math.sqrt(1 - cos * cos);
-    return Float64Array.from(wh, (v, i) => xn * (cos * v + s * p[i] / pn));
-  }
-  const xOverflow = Object.assign({}, xBase, { 0: alignRow(xBase[0], wGrown[193], 1846) });
+  const $ = id => document.getElementById(id);
+  const fmtInt = v => Math.round(v).toLocaleString('en-US');
 
-  const SCEN = [
-    { id:'normal',   label:'step ~10000 · 正常态',   x:xBase,     w:wNormal, },
-    { id:'grown',    label:'step 15200 · 塌缩前夕',  x:xBase,     w:wGrown,  },
-    { id:'overflow', label:'step 15203 · 溢出',      x:xOverflow, w:wGrown,  },
-  ];
+  /* ================= 第 1 步：三根温度计 ================= */
+  const F1 = (function(){
+    const clock = makeClock();
+    const CEIL = .85;                         // 天花板画在 85% 高
+    function setGauge(fill, val, ratio, text){ fill.style.height = Math.min(1, ratio * CEIL) * 100 + '%'; val.style.bottom = Math.min(1, ratio * CEIL) * 100 + '%'; val.textContent = text; }
+    function reset(){
+      clock.stop();
+      $('f1-gg').classList.remove('hit');
+      $('f1-ok').classList.remove('off');
+      ['f1-l1', 'f1-l2', 'f1-l3'].forEach(id => $(id).classList.remove('on'));
+      $('f1-w').textContent = '2'; $('f1-wbar').style.width = '4%';
+      setGauge($('f1-lfill'), $('f1-lval'), 30 / 448, '30');
+      $('f1-lfoot').innerHTML = '离天花板还有 <b>15 倍</b>';
+      setGauge($('f1-gfill'), $('f1-gval'), 2000 / 57344, '2000');
+      $('f1-gfoot').innerHTML = '真实 max|g| <b>0.03</b> × 65536';
+    }
+    function start(done){
+      reset();
+      const grow = t => Math.pow(t, 1.7);       // 指数式增长：前慢后快
+      clock.tween(200, 2600, t => {
+        const w = 2 + 33 * t, L = 30 + 260 * t, gReal = 0.03 + 0.845 * t;
+        $('f1-w').textContent = w.toFixed(0); $('f1-wbar').style.width = (4 + 66 * t) + '%';
+        setGauge($('f1-lfill'), $('f1-lval'), L / 448, Math.round(L));
+        $('f1-lfoot').innerHTML = '离天花板还有 <b>' + (448 / L).toFixed(1) + ' 倍</b>';
+        const gs = gReal * 65536;
+        setGauge($('f1-gfill'), $('f1-gval'), gs / 57344, fmtInt(gs));
+        $('f1-gfoot').innerHTML = '真实 max|g| <b>' + gReal.toFixed(3) + '</b> × 65536';
+      }, grow);
+      clock.at(2850, () => {
+        $('f1-gg').classList.add('hit');
+        $('f1-gfill').style.height = '92%'; $('f1-gval').style.bottom = '92%'; $('f1-gval').textContent = 'inf';
+        $('f1-gfoot').innerHTML = '0.875 × 65536 = 57344 <b>装不下了</b>';
+        $('f1-ok').classList.add('off'); $('f1-l1').classList.add('on');
+      });
+      clock.at(3700, () => $('f1-l2').classList.add('on'));
+      clock.at(4500, () => $('f1-l3').classList.add('on'));
+      clock.tween(4900, 700, t => {
+        $('f1-gg').classList.remove('hit');
+        const gs = 57344 - (57344 - 28672) * t;
+        setGauge($('f1-gfill'), $('f1-gval'), gs / 57344, fmtInt(gs));
+        $('f1-gfoot').innerHTML = '同样的梯度 × <b>32768</b>，回到一半';
+      });
+      clock.at(6600, done);
+    }
+    return { start, reset, stop: () => clock.stop() };
+  })();
 
-  // ---- 展示外 expert 的 logits（三情景相同）----
-  const otherLogits = {}; TOKENS.forEach(t => { const r = rng(9000 + t); otherLogits[t] = Array.from({ length: E }, () => 18 + 4 * normal(r)); });
+  /* ================= 第 2 步：200 步曲线 ================= */
+  const F2 = (function(){
+    const clock = makeClock();
+    const W = 1100, H = 400, X0 = 60, X1 = 1000, S0 = 14960, S1 = 15230, SEND = 15202;
+    const xs = s => X0 + (s - S0) / (S1 - S0) * (X1 - X0);
+    const LA = { y0: 30, y1: 170, max: 64000 }, LB = { y0: 196, y1: 300, max: 500 }, LC = { y0: 326, y1: 386 };
+    const HITS = [15005, 15055, 15105, 15155];
+    const CEIL_G = 57344, CEIL_L = 448;
+    const gReal = s => 0.875 * Math.pow(2, (s - HITS[0]) / 50);
+    const scaleAt = s => 65536 / Math.pow(2, HITS.filter(h => h < s).length);
+    const noise = s => Math.sin(s * 0.9) * Math.sin(Math.PI * (s - HITS[0]) / 50);   // 碰顶那一步噪声恰好为 0
+    const scaled = s => gReal(s) * scaleAt(s) * (1 + 0.04 * noise(s));
+    const logit = s => 410 * Math.pow(2, (s - 15200) / 400) * (1 + 0.01 * Math.sin(s * 0.7));
+    const yA = v => LA.y1 - v / LA.max * (LA.y1 - LA.y0);
+    const yB = v => LB.y1 - v / LB.max * (LB.y1 - LB.y0);
+    const path = (fn, y) => { let d = ''; for (let s = S0; s <= SEND; s++) d += (s === S0 ? 'M' : 'L') + xs(s).toFixed(1) + ' ' + y(fn(s)).toFixed(1) + ' '; return d; };
+    const yLoss = s => LC.y0 + (LC.y1 - LC.y0) * .38 + 2 * Math.sin(s * 1.3);
+    const yGN = s => LC.y0 + (LC.y1 - LC.y0) * .74 + 3 * Math.sin(s * .8 + 1);
 
-  // ---- 计算一个情景下全部展示值 ----
-  function compute(s){
-    const logits = {}, cast = {}, probs = {}, rows = {};
-    TOKENS.forEach(t => {
-      const full = otherLogits[t].slice();
-      EXPERTS.forEach(j => full[j] = dot(s.x[t], s.w[j]));
-      logits[t] = {}; EXPERTS.forEach(j => logits[t][j] = full[j]);
-      // cast 到 FP8 E4M3：|v| > 448 → inf（非有限值）
-      const c = full.map(v => Math.abs(v) > FP8_MAX ? (v > 0 ? Infinity : -Infinity) : v);
-      cast[t] = {}; EXPERTS.forEach(j => cast[t][j] = c[j]);
-      const mx = Math.max(...c);
-      const ex = c.map(v => Math.exp(v - mx));          // inf - inf = NaN，整行传染
-      const sum = ex.reduce((a, b) => a + b, 0);
-      probs[t] = {}; EXPERTS.forEach(j => probs[t][j] = ex[j] / sum);
-      rows[t] = { max: mx, sum, ex: j => ex[j], full };
-    });
-    return { logits, cast, probs, rows };
-  }
+    function build(){
+      const lane = (L, title) => `<rect class="lane" x="${X0}" y="${L.y0}" width="${X1 - X0}" height="${L.y1 - L.y0}"/><text class="ttl" x="${X0 + 8}" y="${L.y0 + 14}">${title}</text>`;
+      let s = `<svg viewBox="0 0 ${W} ${H}" xmlns="http://www.w3.org/2000/svg">`;
+      s += `<defs><clipPath id="f2clip"><rect id="f2cliprect" x="${X0}" y="0" width="0" height="${H}"/></clipPath></defs>`;
+      s += lane(LA, '① 缩放后的梯度 max|g| × loss_scale（存成 FP8 E5M2，上界 57344）');
+      s += lane(LB, '② 前向 Router logits max|logit|（存成 FP8 E4M3，上界 448）');
+      s += lane(LC, '③ 监控面板看到的：loss 与 grad_norm');
+      // 天花板 + 越界区
+      s += `<rect class="over" x="${X0}" y="${LA.y0}" width="${X1 - X0}" height="${yA(CEIL_G) - LA.y0}"/><line class="ceil" x1="${X0}" x2="${X1}" y1="${yA(CEIL_G)}" y2="${yA(CEIL_G)}"/><text class="ceil-t" x="${X1 + 6}" y="${yA(CEIL_G) + 4}">57344</text>`;
+      s += `<rect class="over" x="${X0}" y="${LB.y0}" width="${X1 - X0}" height="${yB(CEIL_L) - LB.y0}"/><line class="ceil" x1="${X0}" x2="${X1}" y1="${yB(CEIL_L)}" y2="${yB(CEIL_L)}"/><text class="ceil-t" x="${X1 + 6}" y="${yB(CEIL_L) + 4}">448</text>`;
+      // 曲线（受 clip 控制逐步露出）
+      s += `<g clip-path="url(#f2clip)">`;
+      s += `<path class="ln-g" d="${path(scaled, yA)}"/>`;
+      s += `<path class="ln-l" d="${path(logit, yB)}"/>`;
+      s += `<path class="ln-c" d="${path(s => s, yLoss)}"/><path class="ln-c" d="${path(s => s, yGN)}"/>`;
+      s += `</g>`;
+      // 曲线尾部标注
+      s += `<g class="mk" data-at="${SEND}"><text class="lab" x="${xs(SEND) + 8}" y="${yB(logit(SEND)) + 4}" style="fill:var(--rl-l);font-weight:600">410 · 占 448 的 92%</text></g>`;
+      s += `<text class="lab" x="${xs(SEND) + 8}" y="${yLoss(SEND) + 4}">loss 3.1</text><text class="lab" x="${xs(SEND) + 8}" y="${yGN(SEND) + 4}">grad_norm 12.4</text>`;
+      s += `<g class="mk" data-at="${SEND}"><text class="lab ok" x="${X1 - 8}" y="${LC.y0 + 14}" text-anchor="end">全程平稳 —— 看不出任何异常</text></g>`;
+      // 碰顶标记：红点 + 竖虚线 + 标签
+      HITS.forEach((h, i) => {
+        const sc = 65536 / Math.pow(2, i);
+        s += `<g class="mk" data-at="${h}"><line x1="${xs(h)}" x2="${xs(h)}" y1="${yA(CEIL_G)}" y2="${LC.y1}"/><circle cx="${xs(h)}" cy="${yA(CEIL_G)}" r="5"/>`
+           + `<text x="${xs(h)}" y="${LA.y0 - 8}" text-anchor="middle">✗ 跳过更新 · scale ${sc} → ${sc / 2}</text></g>`;
+      });
+      // 15203 尖峰
+      s += `<g class="spike" id="f2-spike"><line x1="${xs(15203)}" x2="${xs(15203)}" y1="${yB(410)}" y2="${LB.y0 + 4}"/><text x="${xs(15203) + 8}" y="${LB.y0 + 32}">step 15203 → 1846，越界 4 倍</text></g>`;
+      // 光标 + 轴
+      s += `<line class="cur" id="f2-cur" x1="${X0}" x2="${X0}" y1="${LA.y0 - 4}" y2="${LC.y1 + 4}"/>`;
+      [15000, 15050, 15100, 15150, 15200].forEach(t => s += `<text class="tk" x="${xs(t)}" y="${H - 2}" text-anchor="middle">step ${t}</text>`);
+      s += `</svg>`;
+      $('f2-svg').innerHTML = s;
+    }
+    function readout(s){
+      const hits = HITS.filter(h => h <= s).length;
+      $('f2-read').innerHTML = `<span>step <b>${Math.round(s)}</b></span><span>loss_scale <b class="${hits ? 'bad' : ''}">${scaleAt(s + .5)}</b></span><span>已碰顶 <b class="${hits ? 'bad' : ''}">${hits}</b> 次</span><span>loss <b>3.1</b></span><span>grad_norm <b>12.4</b></span><span>max|logit| <b>${Math.round(logit(Math.min(s, SEND)))}</b></span>`;
+    }
+    function setCursor(s){
+      $('f2cliprect').setAttribute('width', Math.max(0, xs(s) - X0));
+      $('f2-cur').setAttribute('x1', xs(s)); $('f2-cur').setAttribute('x2', xs(s));
+      document.querySelectorAll('#f2-svg .mk').forEach(m => m.classList.toggle('on', +m.dataset.at <= s));
+      readout(s);
+    }
+    function reset(){ clock.stop(); if (!$('f2cliprect')) build(); $('f2-spike').classList.remove('on'); setCursor(S0); }
+    function start(done){
+      reset();
+      clock.tween(300, 6800, t => setCursor(S0 + (SEND - S0) * t), t => t);
+      clock.at(7300, () => $('f2-spike').classList.add('on'));
+      clock.at(8800, done);
+    }
+    return { start, reset, stop: () => clock.stop() };
+  })();
 
-  // ---- 状态 ----
-  let si = 0, selT = 0, selJ = 193, R = compute(SCEN[0]);
+  /* ================= 第 3 步：张量计算（x × W = logits → softmax → probs）+ 趋势图 ================= */
+  const F3 = (function(){
+    const clock = makeClock();
+    const H = 2560, E = 256;
+    const TOKENS  = [0, 1, 8190, 8191];        // 展示的 token 行
+    const EXPERTS = [0, 1, 193, 254, 255];     // 展示的 expert 列
+    const HIDS    = [0, 1, 2558, 2559];        // 展示的 hidden 维
+    const FP8_MAX = 448;
 
-  // ---- 格式化 ----
-  const f2 = v => (Math.abs(v) < 10 ? v.toFixed(2) : v.toFixed(1));
-  const fx = v => v.toFixed(2);
-  const fw = (v, big) => big ? v.toFixed(2) : v.toFixed(4);
-  const fl = v => !isFinite(v) ? (v > 0 ? 'inf' : '-inf') : String(Math.round(v));
-  const fp = v => Number.isNaN(v) ? 'NaN' : (v < 0.005 && v > 0 ? '0.00' : v.toFixed(2));
-  const paren = v => v < 0 ? '(' + v + ')' : v;
-  const esc = s => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;');
+    // ---- 确定性随机 ----
+    function rng(seed){ let a = seed >>> 0; return function(){ a += 0x6D2B79F5; let t = a; t = Math.imul(t ^ (t >>> 15), t | 1); t ^= t + Math.imul(t ^ (t >>> 7), t | 61); return ((t ^ (t >>> 14)) >>> 0) / 4294967296; }; }
+    function normal(r){ const u = 1 - r(), v = r(); return Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * v); }
+    function vec(seed, n){ const r = rng(seed), o = new Float64Array(n); for (let i = 0; i < n; i++) o[i] = normal(r); return o; }
+    const dot  = (a, b) => { let s = 0; for (let i = 0; i < a.length; i++) s += a[i] * b[i]; return s; };
+    const norm = a => Math.sqrt(dot(a, a));
 
-  // ---- 渲染表格 ----
-  function head(cols, label, fmt){
-    return '<tr><th class="rh"></th>' + cols.map((c, i) => {
-      const sep = (i > 0 && cols[i] - cols[i - 1] > 1) ? '<th>···</th>' : '';
-      return sep + `<th data-col="${c}">${fmt(c)}</th>`;
-    }).join('') + '</tr>';
-  }
-  function ellRow(n){ return `<tr><td class="ell-r rh"></td>${'<td class="ell-r">···</td>'.repeat(n)}</tr>`; }
-  function body(rows, cols, cell, rowLabel){
-    let out = '';
-    rows.forEach((r, ri) => {
-      if (ri > 0 && rows[ri] - rows[ri - 1] > 1) out += ellRow(cols.length + cols.filter((c, i) => i > 0 && cols[i] - cols[i - 1] > 1).length);
-      out += `<tr><th class="rh" data-row="${r}">${rowLabel(r)}</th>` + cols.map((c, i) => {
-        const sep = (i > 0 && cols[i] - cols[i - 1] > 1) ? '<td class="ell">···</td>' : '';
-        return sep + cell(r, c);
+    // ---- x：RMSNorm 后 ±1 量级，行范数 ≈ √2560 ≈ 50 ----
+    const xBase = {}; TOKENS.forEach(t => xBase[t] = vec(1000 + t, H));
+
+    // ---- W_gate 列：w_j = Σ_t (target[t,j]/‖x_t‖²)·x_t + ε·r，使 x_t·w_j ≈ target 且 ‖w_j‖ = 列范数 ----
+    function makeCol(j, targets, colNorm){
+      const w = new Float64Array(H);
+      TOKENS.forEach(t => { const x = xBase[t], c = targets[t] / dot(x, x); for (let i = 0; i < H; i++) w[i] += c * x[i]; });
+      const r = vec(5000 + j, H);
+      TOKENS.forEach(t => { const x = xBase[t], c = dot(r, x) / dot(x, x); for (let i = 0; i < H; i++) r[i] -= c * x[i]; });
+      const a2 = dot(w, w), eps = Math.sqrt(Math.max(colNorm * colNorm - a2, 0)) / norm(r);
+      for (let i = 0; i < H; i++) w[i] += eps * r[i];
+      return w;
+    }
+    const T = t => ({ 0: t[0], 1: t[1], 8190: t[2], 8191: t[3] });
+    const normalTargets = { 0: T([27, 12, -24, 36]), 1: T([-8, 22, 9, -15]), 193: T([31, 18, 15, 7]), 254: T([14, -21, 25, 3]), 255: T([19, -21, 16, 30]) };
+    const wNormal = {}; EXPERTS.forEach(j => wNormal[j] = makeCol(j, normalTargets[j], 2));
+    const wGrown = Object.assign({}, wNormal, { 193: makeCol(193, T([410, 395, 418, 402]), 50) });
+    function alignRow(x, w, target){
+      const wn = norm(w), xn = norm(x), cos = target / (xn * wn);
+      const wh = Float64Array.from(w, v => v / wn);
+      const p = new Float64Array(H); const xw = dot(x, wh);
+      for (let i = 0; i < H; i++) p[i] = x[i] - xw * wh[i];
+      const pn = norm(p), s = Math.sqrt(1 - cos * cos);
+      return Float64Array.from(wh, (v, i) => xn * (cos * v + s * p[i] / pn));
+    }
+    const xOverflow = Object.assign({}, xBase, { 0: alignRow(xBase[0], wGrown[193], 1846) });
+
+    const SCEN = [
+      { id:'normal',   label:'step ~10000 · 正常态',   step:10000, peak:30,   x:xBase,     w:wNormal },
+      { id:'grown',    label:'step 15200 · 塌缩前夕',  step:15200, peak:410,  x:xBase,     w:wGrown  },
+      { id:'overflow', label:'step 15203 · 溢出',      step:15203, peak:1846, x:xOverflow, w:wGrown  },
+    ];
+
+    const otherLogits = {}; TOKENS.forEach(t => { const r = rng(9000 + t); otherLogits[t] = Array.from({ length: E }, () => 18 + 4 * normal(r)); });
+
+    function compute(s){
+      const logits = {}, cast = {}, probs = {}, rows = {};
+      TOKENS.forEach(t => {
+        const full = otherLogits[t].slice();
+        EXPERTS.forEach(j => full[j] = dot(s.x[t], s.w[j]));
+        logits[t] = {}; EXPERTS.forEach(j => logits[t][j] = full[j]);
+        const c = full.map(v => Math.abs(v) > FP8_MAX ? (v > 0 ? Infinity : -Infinity) : v);   // cast 到 FP8 E4M3：|v| > 448 → inf
+        cast[t] = {}; EXPERTS.forEach(j => cast[t][j] = c[j]);
+        const mx = Math.max(...c);
+        const ex = c.map(v => Math.exp(v - mx));          // inf - inf = NaN，整行传染
+        const sum = ex.reduce((a, b) => a + b, 0);
+        probs[t] = {}; EXPERTS.forEach(j => probs[t][j] = ex[j] / sum);
+        rows[t] = { max: mx, sum, ex: j => ex[j], full };
+      });
+      return { logits, cast, probs, rows };
+    }
+
+    let si = 0, selT = 0, selJ = 193, R = compute(SCEN[0]);
+
+    const fx = v => v.toFixed(2);
+    const fw = (v, big) => big ? v.toFixed(2) : v.toFixed(4);
+    const fl = v => !isFinite(v) ? (v > 0 ? 'inf' : '-inf') : String(Math.round(v));
+    const fp = v => Number.isNaN(v) ? 'NaN' : (v < 0.005 && v > 0 ? '0.00' : v.toFixed(2));
+
+    function head(cols, fmt){
+      return '<tr><th class="rh"></th>' + cols.map((c, i) => {
+        const sep = (i > 0 && cols[i] - cols[i - 1] > 1) ? '<th>···</th>' : '';
+        return sep + `<th data-col="${c}">${fmt(c)}</th>`;
       }).join('') + '</tr>';
-    });
-    return out;
+    }
+    function ellRow(n){ return `<tr><td class="ell-r rh"></td>${'<td class="ell-r">···</td>'.repeat(n)}</tr>`; }
+    function body(rows, cols, cell, rowLabel){
+      let out = '';
+      rows.forEach((r, ri) => {
+        if (ri > 0 && rows[ri] - rows[ri - 1] > 1) out += ellRow(cols.length + cols.filter((c, i) => i > 0 && cols[i] - cols[i - 1] > 1).length);
+        out += `<tr><th class="rh" data-row="${r}">${rowLabel(r)}</th>` + cols.map((c, i) => {
+          const sep = (i > 0 && cols[i] - cols[i - 1] > 1) ? '<td class="ell">···</td>' : '';
+          return sep + cell(r, c);
+        }).join('') + '</tr>';
+      });
+      return out;
+    }
+
+    function render(){
+      const s = SCEN[si], big = si > 0;
+      $('x-mag').textContent = '±1 量级';
+      { const w = s.w[selJ], rms = Math.sqrt(dot(w, w) / H); $('w-mag').textContent = 'E ' + selJ + ' 列 ±' + (rms < 0.1 ? rms.toFixed(2) : rms.toFixed(1)) + ' 量级'; }
+      $('tx').innerHTML = head(HIDS, h => 'h ' + h) +
+        body(TOKENS, HIDS, (t, h) => `<td class="clk ${t === selT ? 'sel' : ''}" data-t="${t}">${fx(s.x[t][h])}</td>`, t => 'token ' + t);
+      $('tw').innerHTML = head(EXPERTS, e => 'E ' + e) +
+        body(HIDS, EXPERTS, (h, j) => `<td class="clk ${j === selJ ? 'sel' : ''}" data-j="${j}">${fw(s.w[j][h], big && j === 193)}</td>`, h => 'h ' + h);
+      $('tl').innerHTML = head(EXPERTS, e => 'E ' + e) +
+        body(TOKENS, EXPERTS, (t, j) => {
+          const v = R.logits[t][j], bad = Math.abs(v) > FP8_MAX;
+          const cls = ['clk', bad ? 'bad' : '', (t === selT && j === selJ) ? 'sel' : (t === selT || j === selJ) ? 'faint' : ''].join(' ');
+          return `<td class="${cls}" data-t="${t}" data-j="${j}">${fl(v)}</td>`;
+        }, t => 'token ' + t);
+      $('tp').innerHTML = head(EXPERTS, e => 'E ' + e) +
+        body(TOKENS, EXPERTS, (t, j) => {
+          const v = R.probs[t][j];
+          const cls = ['clk', Number.isNaN(v) ? 'nan' : '', (t === selT && j === selJ) ? 'sel' : (t === selT || j === selJ) ? 'faint' : ''].join(' ');
+          return `<td class="${cls}" data-t="${t}" data-j="${j}">${fp(v)}</td>`;
+        }, t => 'token ' + t);
+      document.querySelectorAll('#tw th[data-col]').forEach(th => th.classList.toggle('sel', +th.dataset.col === selJ));
+      document.querySelectorAll('#tl th[data-col],#tp th[data-col]').forEach(th => th.classList.toggle('sel', +th.dataset.col === selJ));
+      document.querySelectorAll('#tx th[data-row],#tl th[data-row],#tp th[data-row]').forEach(th => th.classList.toggle('sel', +th.dataset.row === selT));
+
+      renderFormulas(s, big);
+      renderGauge();
+      renderTrend();
+      document.querySelectorAll('#scen .btn').forEach((b, i) => b.classList.toggle('is-selected', i === si));
+    }
+
+    function renderFormulas(s, big){
+      const t = selT, j = selJ, x = s.x[t], w = s.w[j];
+      const logit = R.logits[t][j], castV = R.cast[t][j], prob = R.probs[t][j], row = R.rows[t];
+      const bad = !isFinite(castV);
+      const wf = v => fw(v, big && j === 193);
+      const terms = HIDS.map(h => `<span class="k k-x">${fx(x[h])}</span>×<span class="k k-w">${wf(w[h])}</span>`);
+      const expand = `${terms[0]} + ${terms[1]} + … + ${terms[3]}`;
+      const sym = HIDS.map(h => `<span class="k k-x">x[${t},${h}]</span>·<span class="k k-w">W[${h},${j}]</span>`);
+      const symExpand = `${sym[0]} + ${sym[1]} + … + ${sym[3]}`;
+      const sumS = row.sum < 1e6 ? row.sum.toFixed(2) : row.sum.toExponential(2);
+
+      const logitLine = `<span class="lbl">token ${t} 选专家 ${j} 的 logits</span><span class="k k-l val">${fl(logit)}</span><span class="eq">=</span> logits[${t},${j}] <span class="eq">=</span> ${symExpand} <span class="eq">=</span> ${expand}`;
+      const castLine = bad
+        ? `<span class="lbl">cast 成 FP8 E4M3</span><span class="k k-l val">${Math.round(logit)}</span> &gt; 448 <span class="eq">→</span> 装不下 <span class="eq">→</span> <span class="k k-bad val">inf</span><span class="note">（数字没了，只剩一个"无穷大"）</span>`
+        : `<span class="lbl" style="color:var(--foreground-secondary)">cast 成 FP8 E4M3</span><span class="note">|${Math.round(logit)}| ≤ 448，装得下，还是 <span class="k k-l">${fl(castV)}</span></span>`;
+      const probLine = bad
+        ? `<span class="lbl">token ${t} 选专家 ${j} 的概率</span><span class="k k-bad val">NaN</span><span class="eq">=</span> exp(<span class="k k-l">inf</span> − max_t) / Σ_k exp(logits[${t},k] − max_t) <span class="eq">=</span> exp(inf − inf) / (… + NaN + …) <span class="eq">=</span> NaN`
+        : (Number.isNaN(prob)
+          ? `<span class="lbl">token ${t} 选专家 ${j} 的概率</span><span class="k k-bad val">NaN</span><span class="eq">=</span> exp(<span class="k k-l">${fl(castV)}</span> − <span class="k k-bad">inf</span>) / Σ_k(含 NaN) <span class="eq">=</span> 0 / NaN <span class="eq">=</span> NaN <span class="note">（本行别的 expert 越界，整行 256 个概率一起坏）</span>`
+          : `<span class="lbl">token ${t} 选专家 ${j} 的概率</span><span class="k k-p val">${fp(prob)}</span><span class="eq">=</span> exp(<span class="k k-l">logits[${t},${j}]</span> − max_t) / Σ_k exp(logits[${t},k] − max_t) <span class="eq">=</span> exp(<span class="k k-l">${fl(castV)}</span> − ${fl(row.max)}) / ${sumS} <span class="eq">=</span> ${row.ex(j).toExponential(2)} / ${sumS}`);
+
+      $('formulas').innerHTML = `<div class="rl-formula">${logitLine}</div><div class="${bad ? 'rl-cast' : 'rl-formula'}">${castLine}</div><div class="rl-formula">${probLine}</div>`;
+    }
+
+    function renderGauge(){
+      let mx = 0; TOKENS.forEach(t => EXPERTS.forEach(j => mx = Math.max(mx, Math.abs(R.logits[t][j]))));
+      const pct = Math.min(100, 100 * mx / FP8_MAX);
+      const over = mx > FP8_MAX;
+      const cls = over ? 'bad' : mx > 0.8 * FP8_MAX ? 'warn' : '';
+      $('gauge').innerHTML = `<span>max|logit| <b style="color:var(--foreground)">${Math.round(mx)}</b></span><span class="bar"><i class="${cls}" style="width:${pct}%"></i></span>${over ? '<span style="color:var(--rl-bad)">超出 E4M3 上界 448</span>' : '<span>低于 E4M3 上界 448</span>'}`;
+      const cn = $('cast-note'); cn.classList.toggle('bad', over); cn.textContent = over ? '1846 > 448 → cast 成 inf' : '先 cast 成 FP8 E4M3';
+    }
+
+    // ---- 趋势图：max|logit| 从 step 10000 的 30 爬到 15200 的 410，15203 一步顶到 1846 ----
+    const TR = { W: 460, H: 190, X0: 40, X1: 396, S0: 10000, S1: 15400, y0: 22, y1: 160, max: 520 };
+    const tx = s => TR.X0 + (s - TR.S0) / (TR.S1 - TR.S0) * (TR.X1 - TR.X0);
+    const ty = v => TR.y1 - Math.min(v, TR.max) / TR.max * (TR.y1 - TR.y0);
+    const trendL = s => 30 * Math.pow(410 / 30, (s - 10000) / 5200);
+    function buildTrend(){
+      let d = ''; for (let s = TR.S0; s <= 15200; s += 20) d += (s === TR.S0 ? 'M' : 'L') + tx(s).toFixed(1) + ' ' + ty(trendL(s)).toFixed(1) + ' ';
+      let h = `<svg viewBox="0 0 ${TR.W} ${TR.H}" xmlns="http://www.w3.org/2000/svg">`;
+      h += `<rect class="over" x="${TR.X0}" y="${TR.y0}" width="${TR.X1 - TR.X0}" height="${ty(448) - TR.y0}"/>`;
+      h += `<line class="ceil" x1="${TR.X0}" x2="${TR.X1}" y1="${ty(448)}" y2="${ty(448)}"/><text class="ceil-t" x="${TR.X1 + 4}" y="${ty(448) + 4}">448</text>`;
+      h += `<text class="tk" x="${TR.X0 - 4}" y="${ty(0) + 4}" text-anchor="end">0</text><text class="tk" x="${TR.X0 - 4}" y="${ty(448) + 4}" text-anchor="end">上界</text>`;
+      h += `<path class="ln" d="${d}"/>`;
+      h += `<line class="spk" x1="${tx(15203)}" x2="${tx(15203)}" y1="${ty(410)}" y2="${TR.y0}"/>`;
+      SCEN.forEach((s, i) => {
+        const bad = s.peak > 448, y = bad ? TR.y0 : ty(s.peak);
+        const anchor = i === 0 ? 'start' : 'end', lx = i === 0 ? tx(s.step) + 10 : tx(s.step) - 10, ly = i === 2 ? y + 4 : y - 10;
+        h += `<circle class="pt ${bad ? 'bad' : ''}" data-i="${i}" cx="${tx(s.step)}" cy="${y}" r="4.5"/>`;
+        h += `<text class="pl ${bad ? 'spk-t' : ''}" data-i="${i}" x="${lx}" y="${ly}" text-anchor="${anchor}">${s.step} · ${s.peak}</text>`;
+      });
+      [10000, 12000, 14000, 15200].forEach(t => h += `<text class="tk" x="${tx(t)}" y="${TR.H - 6}" text-anchor="middle">${t}</text>`);
+      h += `</svg>`;
+      $('f3-svg').innerHTML = h;
+      $('f3-svg').addEventListener('click', e => { const el = e.target.closest('[data-i]'); if (el) setScen(+el.dataset.i); });
+    }
+    function renderTrend(){
+      if (!$('f3-svg').firstChild) buildTrend();
+      document.querySelectorAll('#f3-svg [data-i]').forEach(el => el.classList.toggle('cur', +el.dataset.i === si));
+      const s = SCEN[si], bad = s.peak > 448;
+      const c = $('f3-cur'); c.className = bad ? 'bad' : '';
+      c.textContent = `step ${s.step} · max|logit| ${s.peak} · ${bad ? '越界 ' + (s.peak / 448).toFixed(1) + ' 倍' : '占上界 ' + Math.round(100 * s.peak / 448) + '%'}`;
+    }
+
+    function setScen(i){ si = i; R = compute(SCEN[si]); render(); }
+
+    // ---- 交互 ----
+    const scen = $('scen');
+    SCEN.forEach((s, i) => { const b = document.createElement('button'); b.className = 'btn btn-sm'; b.textContent = s.label; b.onclick = () => { Driver.userTouched(); setScen(i); }; scen.appendChild(b); });
+    $('tx').addEventListener('click', e => { const td = e.target.closest('td[data-t]'); if (td) { selT = +td.dataset.t; render(); } });
+    $('tw').addEventListener('click', e => { const td = e.target.closest('td[data-j]'); if (td) { selJ = +td.dataset.j; render(); } });
+    ['tl', 'tp'].forEach(id => $(id).addEventListener('click', e => { const td = e.target.closest('td[data-t]'); if (td) { selT = +td.dataset.t; selJ = +td.dataset.j; render(); } }));
+
+    // 动画：正常态 → 塌缩前夕 → 溢出，趋势图上的点跟着走
+    function reset(){ clock.stop(); selT = 0; selJ = 193; setScen(0); }
+    function start(done){
+      reset();
+      clock.at(1600, () => setScen(1));
+      clock.at(3400, () => setScen(2));
+      clock.at(6000, done);
+    }
+    return { start, reset, stop: () => clock.stop(), setScen };
+  })();
+
+  /* ================= 第 4 步：一个 inf 的传染 ================= */
+  const F4 = (function(){
+    const clock = makeClock();
+    function fillGrid(id, cols, rows, delayFn, srcIdx){
+      let h = '';
+      for (let i = 0; i < cols * rows; i++) h += `<i style="transition-delay:${delayFn(i % cols, Math.floor(i / cols), i)}ms" ${i === srcIdx ? 'class="src"' : ''}></i>`;
+      $(id).innerHTML = h;
+    }
+    function build(){
+      fillGrid('f4-g1', 16, 16, (c, r, i) => 500 + i * 3, 193);                                           // 一行 256 个概率，193 先坏
+      fillGrid('f4-g2', 8, 32, (c, r, i) => r * 22 + c * 6, -1);                                            // 一条 2560 维向量从上往下
+      fillGrid('f4-g3', 32, 16, (c, r) => 350 + Math.hypot(c - 3, r - 2) * 45, 2 * 32 + 3);                // 4096 token 从一格向外扩
+      fillGrid('f4-g4', 8, 8, (c, r, i) => i * 18, -1);                                                     // DP 组里的 rank
+    }
+    function panels(){ return Array.from(document.querySelectorAll('#f4 .f4-p')); }
+    function reset(){
+      clock.stop();
+      if (!$('f4-g1').firstChild) build();
+      const sc = document.querySelector('.rl-scene[data-step="4"]'); sc.classList.add('nt');
+      panels().forEach(p => p.classList.remove('on'));
+      document.querySelectorAll('#f4 .f4-ar').forEach(a => a.classList.remove('on'));
+      document.querySelectorAll('#f4-read div').forEach(d => d.classList.remove('on'));
+      void sc.offsetWidth; requestAnimationFrame(() => sc.classList.remove('nt'));
+    }
+    function on(k){ panels()[k - 1].classList.add('on'); if (k > 1) document.querySelectorAll('#f4 .f4-ar')[k - 2].classList.add('on'); }
+    function start(done){
+      reset();
+      clock.at(200, () => on(1));
+      clock.at(1900, () => on(2));
+      clock.at(3200, () => on(3));
+      clock.at(5000, () => on(4));
+      clock.at(5300, () => document.querySelector('#f4-read [data-r="1"]').classList.add('on'));
+      clock.at(5900, () => document.querySelector('#f4-read [data-r="2"]').classList.add('on'));
+      clock.at(7600, done);
+    }
+    return { start, reset, stop: () => clock.stop() };
+  })();
+
+  /* ================= 段控 + 播放：全流程一段接一段；点某段 = 反复播那一段 ================= */
+  const STEPS = [
+    { lbl:'1 · W_gate 变大，梯度先碰顶', fig:F1,
+      cap:'<span class="t">step 15000</span>W_gate 没人约束地变大，前向的 logits 和反向的梯度一起跟着涨。但梯度被 loss_scale 放大了 <b>65536 倍</b>、贴着 FP8 E5M2 的天花板 57344 住，又有几百亿个元素去撞它——所以是<b>它先碰顶</b>。AMP 一看见 inf：① 这一步的更新整个丢掉 ② scale 减半 65536 → 32768。' },
+    { lbl:'2 · 200 步里碰顶 4 次，scale 减半 4 次', fig:F2,
+      cap:'<span class="t">step 15000 → 15202</span>scale 减半只是给下一步腾出表示余量，W_gate 还在长。于是每 ~50 步再碰一次顶，<b>65536 → 4096</b>。而 unscale 和 Adam 归一化让真实更新幅度几乎没变，loss 3.1、grad_norm 12.4 全程平稳——<b>监控面板一片祥和，logits 却已悄悄爬到 410</b>，占 448 上界的 92%。' },
+    { lbl:'3 · logits 碰顶 448，算出 inf', fig:F3,
+      cap:'<span class="t">step 15203</span>某个 micro-batch 里 token 0 的 x 恰好和 W_gate 第 193 列同向，2560 项乘积抵消不掉，logits[0,193] 一口气堆到 <b>1846</b>。cast 成 FP8 E4M3 时 1846 > 448，这个数没了，变成 <b>inf</b>；softmax 里 exp(inf − inf) = NaN，分母含 NaN，<b>token 0 这一行 256 个概率全坏</b>。' },
+    { lbl:'4 · 一个 inf 传染全局：loss NaN、grad_norm inf', fig:F4,
+      cap:'<span class="t">step 15203</span>NaN 和任何数运算还是 NaN。一行概率 NaN → token 0 的 hidden 2560 维 NaN → 下一层 attention 里 4096 个 token 都要对它加权求和，整条序列 NaN → loss 是全 token 的 mean，一项 NaN 全 NaN；反向梯度全 NaN，allreduce 摊到 DP 组每个 rank。这一步 <b>loss 3.1 → NaN，grad_norm 12.4 → inf</b>。' },
+  ];
+  const HOLD = 1200;
+  let cur = 1, mode = 'idle', hold = null;
+  const stepsEl = $('steps'), capEl = $('cap');
+
+  function drawSteps(){
+    stepsEl.dataset.play = mode;
+    stepsEl.innerHTML = '<button type="button" class="rep" title="播放 / 暂停" aria-label="播放 / 暂停">'
+      + '<svg class="ic-play" viewBox="0 0 24 24" aria-hidden="true"><path d="m7 3 14 9-14 9z"/></svg>'
+      + '<svg class="ic-pause" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 4h4v16H6zM14 4h4v16h-4z"/></svg></button>'
+      + STEPS.map((s, i) => `<button type="button" class="st ${i + 1 <= cur ? 'done ' : ''}${i + 1 === cur ? 'cur' : ''}" data-s="${i + 1}"><span class="lbl">${s.lbl}</span><span class="bar"></span></button>`).join('');
+    capEl.innerHTML = STEPS[cur - 1].cap;
+    document.querySelectorAll('.rl-scene').forEach(sc => sc.classList.toggle('on', +sc.dataset.step === cur));
   }
+  function stopAll(){ if (hold) { clearTimeout(hold); hold = null; } STEPS.forEach(s => s.fig.stop()); }
+  function setMode(m){ mode = m; stepsEl.dataset.play = m; }
+  function show(s){ cur = s; drawSteps(); }
 
-  function render(){
-    const s = SCEN[si], big = si > 0;
-    document.getElementById('x-mag').textContent = '±1 量级';
-    { const w = s.w[selJ], rms = Math.sqrt(dot(w, w) / H); document.getElementById('w-mag').textContent = 'E ' + selJ + ' 列 ±' + (rms < 0.1 ? rms.toFixed(2) : rms.toFixed(1)) + ' 量级'; }
-
-    // x：按行
-    document.getElementById('tx').innerHTML =
-      head(HIDS, '', h => 'h ' + h) +
-      body(TOKENS, HIDS, (t, h) => `<td class="clk ${t === selT ? 'sel' : ''}" data-t="${t}">${fx(s.x[t][h])}</td>`, t => 'token ' + t);
-    // W_gate：按列
-    document.getElementById('tw').innerHTML =
-      head(EXPERTS, '', e => 'E ' + e) +
-      body(HIDS, EXPERTS, (h, j) => `<td class="clk ${j === selJ ? 'sel' : ''}" data-j="${j}">${fw(s.w[j][h], big && j === 193)}</td>`, h => 'h ' + h);
-    // logits：按格
-    document.getElementById('tl').innerHTML =
-      head(EXPERTS, '', e => 'E ' + e) +
-      body(TOKENS, EXPERTS, (t, j) => {
-        const v = R.logits[t][j], bad = Math.abs(v) > FP8_MAX;
-        const cls = ['clk', bad ? 'bad' : '', (t === selT && j === selJ) ? 'sel' : (t === selT || j === selJ) ? 'faint' : ''].join(' ');
-        return `<td class="${cls}" data-t="${t}" data-j="${j}">${fl(v)}</td>`;
-      }, t => 'token ' + t);
-    // probs：按格
-    document.getElementById('tp').innerHTML =
-      head(EXPERTS, '', e => 'E ' + e) +
-      body(TOKENS, EXPERTS, (t, j) => {
-        const v = R.probs[t][j];
-        const cls = ['clk', Number.isNaN(v) ? 'nan' : '', (t === selT && j === selJ) ? 'sel' : (t === selT || j === selJ) ? 'faint' : ''].join(' ');
-        return `<td class="${cls}" data-t="${t}" data-j="${j}">${fp(v)}</td>`;
-      }, t => 'token ' + t);
-    // 表头高亮
-    document.querySelectorAll('#tw th[data-col]').forEach(th => th.classList.toggle('sel', +th.dataset.col === selJ));
-    document.querySelectorAll('#tl th[data-col],#tp th[data-col]').forEach(th => th.classList.toggle('sel', +th.dataset.col === selJ));
-    document.querySelectorAll('#tx th[data-row],#tl th[data-row],#tp th[data-row]').forEach(th => th.classList.toggle('sel', +th.dataset.row === selT));
-
-    renderFormulas(s, big);
-    renderGauge();
-    document.querySelectorAll('#scen .btn').forEach((b, i) => b.classList.toggle('is-selected', i === si));
+  function playFrom(s){
+    stopAll(); setMode('full'); show(s);
+    (function go(k){
+      STEPS[k - 1].fig.start(() => {
+        if (k >= STEPS.length) { setMode('idle'); return; }
+        hold = setTimeout(() => { show(k + 1); go(k + 1); }, HOLD);
+      });
+    })(s);
   }
-
-  function renderFormulas(s, big){
-    const t = selT, j = selJ, x = s.x[t], w = s.w[j];
-    const logit = R.logits[t][j], castV = R.cast[t][j], prob = R.probs[t][j], row = R.rows[t];
-    const bad = !isFinite(castV);
-    const wf = v => fw(v, big && j === 193);
-
-    // 逐项展开：取展示的 4 个维度
-    const terms = HIDS.map(h => `<span class="k k-x">${fx(x[h])}</span>×<span class="k k-w">${wf(w[h])}</span>`);
-    const expand = `${terms[0]} + ${terms[1]} + … + ${terms[3]}`;
-    const sym = HIDS.map(h => `<span class="k k-x">x[${t},${h}]</span>·<span class="k k-w">W[${h},${j}]</span>`);
-    const symExpand = `${sym[0]} + ${sym[1]} + … + ${sym[3]}`;
-
-    const probLine = bad
-      ? `<span class="lbl">token ${t} 选专家 ${j} 的概率</span><span class="k k-bad val">NaN</span><span class="eq">=</span> exp(<span class="k k-l">inf</span> − max_t) / Σ_k exp(logits[${t},k] − max_t) <span class="eq">=</span> exp(inf − inf) / (… + NaN + …) <span class="eq">=</span> NaN`
-      : (Number.isNaN(prob)
-        ? `<span class="lbl">token ${t} 选专家 ${j} 的概率</span><span class="k k-bad val">NaN</span><span class="eq">=</span> exp(<span class="k k-l">${fl(castV)}</span> − <span class="k k-bad">inf</span>) / Σ_k(含 NaN) <span class="eq">=</span> 0 / NaN <span class="eq">=</span> NaN <span class="note">（本行别的 expert 越界，整行 256 个概率一起坏）</span>`
-        : `<span class="lbl">token ${t} 选专家 ${j} 的概率</span><span class="k k-p val">${fp(prob)}</span><span class="eq">=</span> exp(<span class="k k-l">logits[${t},${j}]</span> − max_t) / Σ_k exp(logits[${t},k] − max_t) <span class="eq">=</span> exp(<span class="k k-l">${fl(castV)}</span> − ${fl(row.max)}) / ${row.sum < 1e6 ? row.sum.toFixed(2) : row.sum.toExponential(2)} <span class="eq">=</span> ${row.ex(j).toExponential(2)} / ${row.sum < 1e6 ? row.sum.toFixed(2) : row.sum.toExponential(2)}`);
-
-    const logitLine = `<span class="lbl">token ${t} 选专家 ${j} 的 logits</span><span class="k k-l val">${fl(logit)}</span><span class="eq">=</span> logits[${t},${j}] <span class="eq">=</span> ${symExpand} <span class="eq">=</span> ${expand}`;
-
-    document.getElementById('formulas').innerHTML =
-      `<div class="rl-formula">${probLine}</div><div class="rl-formula">${logitLine}</div>`;
+  function loopStep(s){
+    stopAll(); setMode('loop'); show(s);
+    (function cycle(){ STEPS[s - 1].fig.start(() => { hold = setTimeout(cycle, HOLD + 800); }); })();
   }
+  function pause(){ stopAll(); setMode('idle'); }
 
-  function renderGauge(){
-    let mx = 0; TOKENS.forEach(t => EXPERTS.forEach(j => mx = Math.max(mx, Math.abs(R.logits[t][j]))));
-    const pct = Math.min(100, 100 * mx / FP8_MAX);   // 整条进度条 = 448
-    const cls = mx > FP8_MAX ? 'bad' : mx > 0.8 * FP8_MAX ? 'warn' : '';
-    document.getElementById('gauge').innerHTML =
-      `<span>max|logit| <b style="color:var(--foreground)">${Math.round(mx)}</b></span><span class="bar"><i class="${cls}" style="width:${pct}%"></i></span>${mx > FP8_MAX ? '<span style="color:var(--rl-bad)">超出 E4M3 上界 448</span>' : '<span>低于 E4M3 上界 448</span>'}`;
-  }
+  const Driver = { userTouched(){ if (mode !== 'idle') pause(); } };
+  window.__rlDriver = Driver;
 
-  // ---- 交互 ----
-  const scen = document.getElementById('scen');
-  SCEN.forEach((s, i) => { const b = document.createElement('button'); b.className = 'btn btn-sm'; b.textContent = s.label; b.onclick = () => { si = i; R = compute(SCEN[si]); render(); }; scen.appendChild(b); });
-  document.getElementById('tx').addEventListener('click', e => { const td = e.target.closest('td[data-t]'); if (td) { selT = +td.dataset.t; render(); } });
-  document.getElementById('tw').addEventListener('click', e => { const td = e.target.closest('td[data-j]'); if (td) { selJ = +td.dataset.j; render(); } });
-  ['tl', 'tp'].forEach(id => document.getElementById(id).addEventListener('click', e => { const td = e.target.closest('td[data-t]'); if (td) { selT = +td.dataset.t; selJ = +td.dataset.j; render(); } }));
+  stepsEl.addEventListener('click', e => {
+    if (e.target.closest('.rep')) { if (mode === 'full') pause(); else playFrom(1); return; }
+    const b = e.target.closest('button[data-s]'); if (b) loopStep(+b.dataset.s);
+  });
 
-  render();
+  // 第 3 步初始化一次（张量表要先渲染出来，别的步都是空壳就够了）
+  F3.reset();
+  playFrom(1);
 })();
 </script>
 </body>

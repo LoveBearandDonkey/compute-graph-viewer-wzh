@@ -5,6 +5,11 @@
 
 ---
 
+## 2026-09-18 — 训练孪生·Router logits 页改为「问题影响 1」四步动画
+
+- `router-logits-viz.html` 从单场景张量演示重构为四步分段动画（照 rank-intro 案例段控：播放键 + 段条 + 段文案，点段单段循环，全流程自动串播）：① W_gate 变大，三根温度计同时上涨，被 loss_scale 放大的梯度率先撞 E5M2 上界 57344，AMP 卡片逐行亮出 found_inf → 丢弃本 step → scale 减半；② step 15000→15202 三泳道曲线（缩放后梯度锯齿撞顶四次、logits 悄悄爬到 410、loss / grad_norm 全程平稳）随光标逐步露出，末尾亮出 15203 尖峰；③ 原张量计算区保留，左上新增 max|logit| 走势图（30 → 410 → 1846 vs 448 上界），三情景自动依次切换，公式区补一行「cast 成 FP8 E4M3 → inf」；④ 传染四格：一行 256 概率 → 一个 token 2560 维 → 一条序列 4096 token → 全局 loss NaN / grad_norm inf 与 DP 组 rank 逐格变红。
+- 对应 `定位链-openPangu-2.0-Flash.md`「问题影响 1」一节；影响 2（all-to-all 死锁）仍在 rank-intro 案例一。
+
 ## 2026-09-17 — 配置关系平面·MoE 区新增「专家切 TP」（ETP）开关
 
 - MoE 区新增布尔开关「专家切 TP」（`FLAG_SPECS.expertTp`，带问号解释）：关 = ETP = 1（专家只做 EP、整份持有，TP 只切 attention 与 dense，Megatron-Core / MindSpeed 默认），开 = ETP = TP（原先无条件 ÷TP 的口径）。**默认关** —— TP > 1 的配置（如 cinnnnnndy TP 2）路由专家的容量柱与平面热力自此按整份专家算。TP = 1 与 MindFormers 档置灰并停回关。

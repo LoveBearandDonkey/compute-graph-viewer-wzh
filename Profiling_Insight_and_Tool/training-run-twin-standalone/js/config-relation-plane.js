@@ -208,11 +208,11 @@
   const EXPERT_GAP = 3;          // 与 css 里 .crop-cell 的 gap 同值（行、列同值）
   const CELL_PAD = 10;           // 格子左右描边 + 呼吸位
   const CELL_VPAD = 6;           // 格子上下描边 + 呼吸位（折行后按它给行高留边）
-  /* 「一套完整专家」的配色循环长度（与 --crop-set-0..3 对应）。
-     着色的单位是**一套完整专家** = 一个 MoE 层 × 一个 EDP 副本：那一块矩形里的
-     卡各持一片，合起来正好是 routedExpert 个专家的一整套。相邻两套要换色，
-     而相邻有两个方向 —— 左右是换层、上下是换副本 —— 所以索引取
-     (层号 + 2×副本号) % 4，两个方向的邻居都必定落到不同色上。 */
+  /* 专家权重着色的配色循环长度（与 --crop-set-0..3 对应）。
+     颜色说的是**这一层的专家权重是哪一份**：索引只取 层号 % 4，左右相邻换层就换色。
+     副本号**不参与**——上下两个 EDP 副本持的是同一份权重（步末在 EDP 组里 all-reduce
+     对齐），换色会被读成「两套不同的专家」。副本之间的边界交给 DP_GAP 那道缝与
+     左量尺去分，颜色只管权重身份。 */
   const SET_TINTS = 4;
   /* auto 粒度的切换判据：**整机格子还只够铺一块颜色吗**（见 currentUnit）。
      整机行的高度恰好是它那 span 行卡之和，所以一格长到 BLOCK_MIN_H —— 格内本该
@@ -1133,6 +1133,12 @@
   /* 热力档自己的交叉格选择。主脚本的 relation 只表达单一对象（rank 或 layer），
      不能表达 rank × layer；这里单独保存，右栏与白框都读这一份。 */
   let heatPick = null;
+  /* 最近一次点到的 rank × layer 格子所在的层号：配置档点格子发的是 rank 选择（relation 里没有层），
+     热力档点格子走 heatPick（不发 relation）——两条路都把层号记在这里，定位阴影据此贯穿该列。
+     任何一次 emit 都会重写它（点刻度 / 行标 / 清空时为 null），所以永远是「最近一击」说了算。 */
+  let pickedLayer = null;
+  // emit() 正在同步派发 cro:select 时为 true（见 emit 与 cro:select 监听器）
+  let selfEmitting = false;
 
   function heatModel() {
     if (!topology) return null;
@@ -1342,7 +1348,9 @@
   const rulerLeft = el("div", "crop-ruler crop-ruler--left");
   rulerLeft.setAttribute("aria-label", "数据并行副本位置尺");
   const rulerCorner = el("div", "crop-ruler__corner");
-  const layerGuide = el("div", "crop-layer-guide");
+  /* 定位阴影的宿主：里面一层一条 .crop-layer-guide。点整网图 / 结构条上的算子会一次
+     选中一批层（rel.layers），阴影要在每一列都贯穿画布，所以不是单个元素而是一组。 */
+  const layerGuide = el("div", "crop-layer-guides");
   layerGuide.hidden = true;
   layerGuide.setAttribute("aria-hidden", "true");
 
@@ -1391,12 +1399,13 @@
      但它同时也是最占视觉带宽的一层，比对高亮、看 PP 分段时关掉更清爽，
      所以给一枚常驻开关而不是藏进设置。 */
   /* 名字写全：「专家着色」四个字读起来像「给专家上色」（一个专家一个色），
-     而它其实是「一整套专家一个色」—— 着色的单位是**一套**，那正是这幅图要人
-     一眼看出的分块。名字里带上单位，开关就不必靠悬浮提示才说得清。 */
-  const paintBtn = el("button", "btn btn-sm crop-paint is-selected", "按完整一套专家区分着色");
+     而它其实是「一层的专家权重一个色」—— 着色的单位是**一份权重**：同一层的几个
+     EDP 副本同色（它们就是同一份）。原名「按完整一套专家区分着色」里的「区分」会把
+     上下两个副本读成两套不同的专家，改掉。 */
+  const paintBtn = el("button", "btn btn-sm crop-paint is-selected", "按层给专家权重着色");
   paintBtn.type = "button";
   paintBtn.setAttribute("aria-pressed", "true");
-  paintBtn.title = "同色的一块 = 一整套专家（一个 MoE 层 × 一个副本）。关掉则只留结构与高亮。";
+  paintBtn.title = "同色 = 同一份专家权重（一个 MoE 层的一整套）；上下几块是它的 EDP 副本，EDP 1 起同色加斜纹——权重一致，步末在 EDP 组里 all-reduce 对齐。关掉则只留结构与高亮。";
   paintBtn.addEventListener("click", () => {
     paintExperts = !paintExperts;
     paintBtn.classList.toggle("is-selected", paintExperts);
@@ -2328,6 +2337,8 @@
        用缩放倒数抵消 transform，二者在任何缩放级别都保持同样的 2px / 5px 线宽。 */
     world.style.setProperty("--crop-cell-focus-line", `${2 / view.k}px`);
     world.style.setProperty("--crop-cell-focus-halo", `${5 / view.k}px`);
+    // 副本斜纹同理：整格底那一档的条纹画在 world 里，按倒数抵消后屏幕上恒为 3px / 9px
+    world.style.setProperty("--crop-stripe-unit", `${1 / view.k}`);
     world.style.transform = `translate(${view.x}px, ${view.y}px) scale(${view.k})`;
     readout.textContent = `${Math.round(view.k * 100)}%`;
   }
@@ -2456,25 +2467,40 @@
        不必在 css 里按最宽的那一档写死一个永远偏右的内衬。 */
     stage.style.setProperty("--crop-ruler-left", `${v.x0}px`);
 
-    /* 只有直接选中 Layer 刻度时才投下定位阴影。x / width 与下面刻度使用同一个
-       世界→屏幕换算，因此无论缩放、平移或左右栏改变宽度，都严格对齐该 Layer 列。 */
-    layerGuide.hidden = true;
-    if (p && p.kind === "layer") {
-      const selectedLayer = Number(p.layer);
+    /* 定位阴影跟着「最近一次点到的层」走：直接点 Layer 刻度是一种，点一个 rank × layer 格子
+       （pickedLayer）也算——格子本身就坐在那一列上，阴影把它所在的列贯穿全图，行与列一起读。
+       x / width 与下面刻度使用同一个世界→屏幕换算，因此无论缩放、平移或左右栏改变宽度，
+       都严格对齐该 Layer 列。 */
+    /* 哪些层要投阴影：
+         · 最近点过的格子 / Layer 刻度 —— 就那一层；
+         · 点整网图或结构条上的一个算子（kind:"segment"）—— 该算子所在的整批层
+           （rel.layers；先选层再点算子时主脚本已收敛成一层），每一列都贯穿。
+       点 rank / stage / 专家这类对象不投：那时列上的相关性由 is-related 带表达。 */
+    let guideLayers = [];
+    if (pickedLayer != null) guideLayers = [pickedLayer];
+    else if (p && p.kind === "layer") guideLayers = [Number(p.layer)];
+    else if (p && p.kind === "segment" && rel.layers && rel.layers.size) guideLayers = [...rel.layers];
+    const guideSet = new Set(guideLayers);
+    const guideFrag = doc.createDocumentFragment();
+    if (guideSet.size) {
       for (const block of layout.blocks) {
-        const ci = block.cols.findIndex((col) => col.type === "layer" && col.layer === selectedLayer);
-        if (ci < 0) continue;
-        const x = view.x + (block.x + ci * cellW) * k;
-        const w = cellW * k;
-        /* 顶尺现在有完整外框，绝对定位子元素的原点在其 1px 边框内侧；阴影不在
-           顶尺里面，需补上同一份 clientLeft，才能与可见刻度格像素级重合。 */
-        layerGuide.style.left = `${x + rulerTop.clientLeft}px`;
-        layerGuide.style.width = `${Math.max(0, w)}px`;
-        layerGuide.style.top = `${v.y0}px`;
-        layerGuide.hidden = false;
-        break;
+        block.cols.forEach((col, ci) => {
+          if (col.type !== "layer" || !guideSet.has(col.layer)) return;
+          const x = view.x + (block.x + ci * cellW) * k;
+          const w = cellW * k;
+          if (x + w < v.x0 || x > v.x1) return;   // 视口外的列不建元素
+          const g = el("div", "crop-layer-guide");
+          /* 顶尺现在有完整外框，绝对定位子元素的原点在其 1px 边框内侧；阴影不在
+             顶尺里面，需补上同一份 clientLeft，才能与可见刻度格像素级重合。 */
+          g.style.left = `${x + rulerTop.clientLeft}px`;
+          g.style.width = `${Math.max(0, w)}px`;
+          guideFrag.appendChild(g);
+        });
       }
     }
+    layerGuide.replaceChildren(guideFrag);
+    layerGuide.style.top = `${v.y0}px`;
+    layerGuide.hidden = !layerGuide.childElementCount;
 
     /* ── 顶部：第一层 PP stage，第二层列（Emb / Layer / Norm / Head）── */
     // 通信行程正扫在哪一列（只在通信档有值），下面每一格都要和它比一次
@@ -2603,7 +2629,10 @@
       const cy0 = Math.max(y, v.y0 - 1);
       const cy1 = Math.min(y + h, v.y1);
       const band = el("div", "crop-tick crop-tick--edp", `${dName} ${g}`);
+      // 副本带下补一行小字「≡ EDP 0」：画布上同色的上下几块是同一份专家权重，这里把关系写出来（带太矮就不写）
+      if (g > 0 && cy1 - cy0 > 44) band.appendChild(el("small", "crop-tick__sub", `≡ ${dName} 0`));
       band.dataset.tip = `${dName}${g} · 一个完整模型副本`
+        + (g > 0 ? `\n专家权重与 ${dName} 0 是同一份，步末在 EDP 组里 all-reduce 对齐` : "")
         + (layout.innerIsDp
           ? `\nEDP = ${c.edp}（DP ${c.dp} ÷ EP ${c.ep}）—— 与表单里那个 DP 不是同一个量`
             + `\n这一段对应 DP ${g * layout.dpPerEdp}–${(g + 1) * layout.dpPerEdp - 1}`
@@ -3068,8 +3097,9 @@
           : Boolean(rel) && rel.units.has(col.id);
         if (!hit) continue;
         const band = el("div", "crop-node crop-band");
-        if (p && ((p.kind === "layer" && p.layer === col.layer)
-          || (p.kind === "segment" && p.segment === col.id))) {
+        /* 白色选中框只给 Emb / Norm / Head 这类端点列。层列不描白边：选中的层由
+           贯穿画布的定位阴影（layerGuides）表达，再叠一圈白框是两套语义抢同一列。 */
+        if (p && p.kind === "segment" && p.segment === col.id) {
           band.classList.add("crop-band--selected");
         }
         place(band, block.x + ci * cellW, 0, cellW, layout.worldH);
@@ -3182,12 +3212,12 @@
           // 写在这里是 1 次属性写，写在胶囊上是 epr 次。pick() 顺着格子读。
           if (moe) ds.epRank = epLo;
 
-          /* ── 着色 = 「一套完整专家」──────────────────────────────────────
-             一套完整专家 = **一个 MoE 层 × 一个 EDP 副本**：那一列一段里的
-             ranksPerDp 张卡各持一片，合起来正好是 routedExpert 个专家的一整套。
-             所以整块矩形一个颜色，相邻的两套换色：左右相邻是换了一层（层号 +1），
-             上下相邻是换了一个副本（副本号 +1）。索引取 (层号 + 2×副本号) % 4，
-             两个方向的邻居因此一定不同色。
+          /* ── 着色 = 「这一层的专家权重」────────────────────────────────
+             一列一段里 ranksPerDp 张卡各持一片，合起来是这一层 routedExpert 个专家的
+             一整套；同一层的几个 EDP 副本各持一套**同样的**权重。所以颜色只按层号
+             取（层号 % 4），左右相邻换层就换色，上下相邻的副本同色——同色读作
+             「同一份权重」；EDP 1 起在同色上再铺一层斜纹（data-replica，css 里三档
+             各接一条），把「一套完整专家」的块界留住而不改口成「另一套」。
              ⚠️ 这不是 EP 的颜色 —— EP 是这一套内部的分片，同一套里的每张卡颜色
              相同、编号不同，那才是「一套被切开」该有的读法。 */
           /* ── 这一格落在三档里的哪一档 ────────────────────────────────────
@@ -3215,6 +3245,7 @@
              ⚠️ --crop-set 无论哪一档都要写：后两档靠它给带子和胶囊上色。 */
           const paint = paintExperts && moe && !heatOn;
           if (paint && !showDetail && !showSegs) ds.paint = "bg";
+          if (paint && co.dpIdx > 0) ds.replica = "1";
 
           const colHit = col.type === "layer"
             ? Boolean(rel) && rel.layers.has(col.layer)
@@ -3242,7 +3273,7 @@
              自定义属性一起冲掉。 */
           if (paint) {
             cell.style.setProperty("--crop-set",
-              `var(--crop-set-${(col.layer + 2 * co.dpIdx) % SET_TINTS})`);
+              `var(--crop-set-${col.layer % SET_TINTS})`);
           }
           /* 热力：一格一个颜色，冷蓝到火红。值写不进 dataset（一帧几千次字符串
              转换），气泡要用时由 cellTip 按同一个模型现算一遍。 */
@@ -3493,11 +3524,16 @@
      问的是一台机器」，好让右栏把标题和读数按整机口径写，而不是冒充成一张卡。 */
   let pickedNode = null;
 
-  function emit(payload, nodeId = null) {
+  function emit(payload, nodeId = null, layerNo = null) {
     const select = global.croSelect;
     if (typeof select !== "function") return;
     pickedNode = nodeId;
-    select(payload);
+    pickedLayer = layerNo;
+    /* cro:select 是在 select() 里同步派发的：标一下「这一次是画布自己发的」，
+       监听器据此区分外部选择（整网图 / 结构条 / Layer 导航），那些要把 pickedLayer
+       清掉 —— 否则上一次点格子记下的层号会一直压着外部选择该投的那批阴影。 */
+    selfEmitting = true;
+    try { select(payload); } finally { selfEmitting = false; }
   }
 
   function rankPayload(rank) {
@@ -3544,9 +3580,11 @@
       emit({ kind: "segment", segment: target.dataset.unit, wholeColumn: true, layers: [] });
       return;
     }
-    if (kind === "rank" || kind === "cell") { emit(rankPayload(Number(target.dataset.rank))); return; }
+    // 格子（单卡格 / 整机行格）带层号，行标不带：层号顺手交给 emit 记成 pickedLayer，定位阴影跟着亮
+    const cellLayer = target.dataset.layer == null ? null : Number(target.dataset.layer);
+    if (kind === "rank" || kind === "cell") { emit(rankPayload(Number(target.dataset.rank)), null, cellLayer); return; }
     if (kind === "node") {
-      emit(rankPayload(Number(target.dataset.rank)), Number(target.dataset.node));
+      emit(rankPayload(Number(target.dataset.rank)), Number(target.dataset.node), cellLayer);
       return;
     }
     if (kind === "expert") {
@@ -4194,6 +4232,12 @@
       if (c.cp > 1) pos.push(chip(`CP ${co.cpIdx}`, `序列的第 ${co.cpIdx + 1}/${c.cp} 段`));
       pos.push(chip(`Node ${co.node}`, `整机 ${c.ranksPerNode} 卡`));
       base.appendChild(kvRow("并行结构位置", pos));
+      /* 专家权重的副本关系写成一句：展平图上同色的上下几块是同一份权重，别让颜色去暗示 */
+      if (c.edp > 1 && layout && c.expertsPerEpRank > 0) {
+        const other = (co.dpIdx + 1) % c.edp;
+        const twin = p.rank + (other - co.dpIdx) * layout.ranksPerDp;
+        base.appendChild(kvRow("专家权重", `与 ${dName} ${other} 的 rank ${twin} 是同一份（副本，步末在 EDP 组 all-reduce 对齐）`, true));
+      }
       base.appendChild(kvRow("所在模型层", chipRun(rel.layers, "Layer",
         select ? (l) => select({ kind: "layer", layer: l }) : null)));
       if (c.expertsPerEpRank > 0 && rel.experts.size) {
@@ -4302,6 +4346,7 @@
 
   function selectHeatCell(cell) {
     heatPick = heatPickFromCell(cell);
+    pickedLayer = heatPick && heatPick.layer != null ? heatPick.layer : null;   // 热力格不发 relation，层号直接记下
     renderHeatDetail();
     scheduleRender();
   }
@@ -4351,6 +4396,7 @@
 
   function selectHeatWorst() {
     heatPick = heatWorstPick();
+    pickedLayer = heatPick && heatPick.layer != null ? heatPick.layer : null;
     renderHeatDetail();
   }
 
@@ -6513,6 +6559,8 @@
   });
   doc.addEventListener("cro:select", (event) => {
     relation = event.detail || null;
+    // 外部发起的选择：画布上「最近点到的格子」已经不是当前选择，定位阴影改由 relation 决定
+    if (!selfEmitting) pickedLayer = null;
     board.classList.toggle("is-focused", Boolean(relation));
     const selected = relation && relation.primary;
     const forceConfigDetail = center.dataset.mode === "config" && selected

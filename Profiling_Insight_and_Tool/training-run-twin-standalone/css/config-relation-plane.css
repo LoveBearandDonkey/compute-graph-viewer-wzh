@@ -412,9 +412,20 @@ body:has(.cro-board.is-plane) .cro-link-layer { display: none; }
 }
 
 /* 点中顶部 Layer 刻度后，用一条与该列等宽的暗影把位置投到画布底部。它放在
-   crop-world 之前，格子、块底板和热力色仍画在它上面；这里只负责提供纵向参照。 */
+   crop-world 之前，格子、块底板和热力色仍画在它上面；这里只负责提供纵向参照。
+   宿主 .crop-layer-guides 从顶尺下缘铺到画布底，里面一层一条：点整网图 / 结构条
+   上的算子会一次选中一批层，每一列都要各自贯穿。 */
+.crop-layer-guides {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  pointer-events: none;
+}
+
 .crop-layer-guide {
   position: absolute;
+  top: 0;
   bottom: 0;
   box-sizing: border-box;
   /* 这里只标位置，不表达业务选择语义：使用随主题反转的中性前景灰阶，避免与真正
@@ -656,12 +667,21 @@ body:has(.cro-board.is-plane) .cro-link-layer { display: none; }
 
 /* 左侧第一层：EDP 副本 */
 .crop-tick--edp {
+  flex-direction: column;
   justify-content: center;
   background: transparent;
   color: var(--foreground-secondary);
   font-weight: var(--font-weight-medium);
   border-top: 1px solid var(--border-subtle);
   cursor: default;
+}
+/* 副本带下那行小字：「≡ EDP 0」—— 同色的几块是同一份专家权重，关系写在量尺上 */
+.crop-tick--edp .crop-tick__sub {
+  font-size: 9px;
+  font-weight: var(--font-weight-regular, 400);
+  opacity: .6;
+  line-height: 1.2;
+  white-space: nowrap;
 }
 
 /* 左侧第二层：这个副本里的 DP 号 */
@@ -787,9 +807,12 @@ body:has(.cro-board.is-plane) .cro-link-layer { display: none; }
   opacity: 1 !important;
 }
 
-/* ── stage 块底板：一段 PP 的 layer × rank 全在这一块里 ── */
+/* ── stage 块底板：一段 PP 的 layer × rank 全在这一块里 ──
+   不垫底色：格子自己已经把这一块的范围铺满，再垫一层灰只是在每个格子后面多一道
+   整列的底纹，PP 分段的边界由顶尺的 stage 刻度与块间留白给出。元素仍保留 ——
+   它是 renderTpGroups / 高亮带的定位参照，只是不着色。 */
 .crop-block {
-  background: color-mix(in srgb, var(--foreground) 6%, transparent);
+  background: transparent;
   border-radius: var(--radius-sm);
 }
 
@@ -875,8 +898,47 @@ body:has(.cro-board.is-plane) .cro-link-layer { display: none; }
   background: color-mix(in srgb, var(--crop-set, var(--foreground)) 42%, transparent);
 }
 
+/* 着色开着时，关系三态**不夺底色**：底色答的是「哪一份权重」，关系由压暗无关格
+   （.is-focused 那条 opacity）、行列高亮带与描边去答。三态只把同一个色加深一档。
+   ⚠️ 必须写：下面 .crop-cell.is-related / .is-cross / .is-selected 用的是 background
+   短手（蓝底），同特异度靠后赢，会把 EDP 0 的整格底色冲成蓝；EDP 1 起靠更高特异度的
+   斜纹 background-image 侥幸留住颜色 —— 于是同一批层里 EDP 0 掉色、EDP 1 正常。 */
+.crop-cell[data-paint="bg"].is-related {
+  background: color-mix(in srgb, var(--crop-set, var(--foreground)) 42%, transparent);
+}
+
+.crop-cell[data-paint="bg"].is-cross {
+  background: color-mix(in srgb, var(--crop-set, var(--foreground)) 62%, transparent);
+}
+
+.crop-cell[data-paint="bg"].is-selected {
+  background: color-mix(in srgb, var(--crop-set, var(--foreground)) 78%, transparent);
+}
+
 .crop-cell[data-paint="bg"]:hover {
   background: color-mix(in srgb, var(--crop-set, var(--foreground)) 62%, transparent);
+}
+
+/* EDP 1 起的副本：同色 + 45° 斜纹（由 js 写 data-replica）。色相说「哪一份权重」，
+   斜纹说「这是它的一个副本」——块界留住，身份不改口。三档各接一条：整格底、
+   MoE 带、编号胶囊。只写 background-image 长手，颜色仍由上面各档的 background 给；
+   放在 :hover 那条之后，同特异度靠后者赢，悬浮时条纹不掉。 */
+/* 条纹用**前景色**而不是同一个专家色：同色只差一档透明度，叠在 42% 的底上几乎看
+   不出来。前景随主题反转（暗色下是浅纹、亮色下是深纹），在四种专家色上都有对比。
+   整格底那一档画在随画布缩放的 world 里，条纹宽度乘 --crop-stripe-unit（= 1/k，
+   applyTransform 每帧写）抵消缩放，屏幕上恒为 3px 纹 / 9px 周期；MoE 带与编号
+   胶囊住在按设计像素排的面板里，直接写屏幕像素。 */
+.crop-cell[data-replica="1"][data-paint="bg"] {
+  background-image: repeating-linear-gradient(45deg,
+    color-mix(in srgb, var(--foreground) 30%, transparent) 0 calc(3px * var(--crop-stripe-unit, 1)),
+    transparent calc(3px * var(--crop-stripe-unit, 1)) calc(9px * var(--crop-stripe-unit, 1)));
+}
+
+.crop-cell[data-replica="1"] .crop-seg[data-seg="moe"],
+.crop-cell[data-replica="1"] .crop-expert {
+  background-image: repeating-linear-gradient(45deg,
+    color-mix(in srgb, var(--foreground) 30%, transparent) 0 2.5px,
+    transparent 2.5px 7px);
 }
 
 /* 关系集里的格子：行相关（这张卡） / 列相关（这一层） / 交叉（两者都在）。
