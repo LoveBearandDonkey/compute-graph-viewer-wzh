@@ -1198,24 +1198,43 @@
   const left = el("aside", "crop-left");
   left.id = "cropLeft";
   left.dataset.pane = "form";
-  left.setAttribute("aria-label", "模型与训练配置");
+  left.setAttribute("aria-label", "训练配置 / 整网查询");
 
+  /* 栏顶不再放「模型与训练配置」这行标题，换成一对下划线页签（照 rank-intro.html
+     案例四那栏 .cs4-head）：训练配置 = 配置预设 + 「表单 / 代码」两档；整网查询 =
+     整网 3D deck，占掉表单的位置。整网图入口从下面那组三档里上移到这里，
+     于是它与配置表单成了互斥关系，而不是表单的第三档。 */
   const leftHead = el("div", "crop-left__head");
-  const leftTitle = el("h2", "crop-left__title", "模型与训练配置");
+  const headTabs = el("div", "crop-left__tabs");
+  headTabs.id = "cropLeftHeadTabs";
+  headTabs.setAttribute("role", "tablist");
+  headTabs.setAttribute("aria-label", "配置栏视图");
+  [
+    ["form", "训练配置", "按域拨配置：Model Architecture / Cluster / MoE，并可切到 yaml 代码"],
+    ["net", "整网查询", "整网 3D deck 正视图"],
+  ].forEach(([id, label, tip], i) => {
+    const btn = el("button", `crop-left__tab${i === 0 ? " is-selected" : ""}`, label);
+    btn.type = "button";
+    btn.dataset.pane = id;
+    btn.title = tip;
+    btn.setAttribute("role", "tab");
+    btn.setAttribute("aria-selected", i === 0 ? "true" : "false");
+    headTabs.appendChild(btn);
+  });
   const leftClose = el("button", "btn btn-icon btn-ghost btn-sm");
   leftClose.type = "button";
   leftClose.title = "收起配置栏";
   leftClose.setAttribute("aria-label", "收起配置栏");
   leftClose.innerHTML = '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12"></path></svg>';
-  leftHead.append(leftTitle, leftClose);
+  leftHead.append(headTabs, leftClose);
 
   const leftIntro = el("div", "crop-left__intro");
   /* 模型下拉不留在左栏：它升到工具栏最左端、页签之前，兼做这一页的标题
      （见下面 toolbar.append 那一行与 css 的 .crop-model）—— 左栏只留配置预设。 */
   if (presetStepper) leftIntro.appendChild(presetStepper);
 
-  /* 三档：表单 / 代码 / 整网图。
-     「代码」不是本文件自己实现的第三块内容 —— 它直接去点顶栏那枚「YAML 视图」，
+  /* 两档：表单 / 代码（整网图已上移到栏顶那对页签里，见 headTabs）。
+     「代码」不是本文件自己实现的第二块内容 —— 它直接去点顶栏那枚「YAML 视图」，
      于是 yaml 区的显隐仍旧只有 config-relation-yaml.js 一个来源（board 上的
      is-yaml 类），这里不再造第二套开关。板面因此顺带整块让位给代码，
      那也正是一份 yaml 该有的宽度。 */
@@ -1224,9 +1243,8 @@
   tabs.setAttribute("role", "tablist");
   tabs.setAttribute("aria-label", "配置栏内容");
   [
-    ["form", "表单", "按域拨配置：Model Architecture / Cluster / MoE"],
-    ["code", "代码", "按当前配置实时生成的训练启动 yaml（整板让位）"],
-    ["net", "整网图", "整网 3D deck 正视图"],
+    ["form", "表单视图", "按域拨配置：Model Architecture / Cluster / MoE"],
+    ["code", "代码视图", "按当前配置实时生成的训练启动 yaml（整板让位）"],
   ].forEach(([id, label, tip], i) => {
     const btn = el("button", `btn btn-sm${i === 0 ? " is-selected" : ""}`, label);
     btn.type = "button";
@@ -1759,13 +1777,13 @@
      css 藏起），#croModelSelect 仍是同一个节点，主脚本挂在它上面的 change 监听原样有效。 */
   const modelTitle = el("div", "crop-model");
   modelTitle.id = "cropModel";
-  /* 左栏收起之后，标题左侧多出一枚「三横」菜单键：点一下把「模型与训练配置」栏
+  /* 左栏收起之后，标题左侧多出一枚「三横」菜单键：点一下把配置栏
      开回来，键随之消失（css 只在 board.is-left-collapsed 时显示它）。
      显隐按 left 的 is-collapsed 同步，见下面那个 IIFE 里的 sync。 */
   const menuBtn = el("button", "btn btn-icon btn-ghost btn-sm crop-model__menu");
   menuBtn.type = "button";
   menuBtn.title = "打开配置栏";
-  menuBtn.setAttribute("aria-label", "打开模型与训练配置栏");
+  menuBtn.setAttribute("aria-label", "打开配置栏");
   menuBtn.innerHTML = '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16"></path></svg>';
   modelTitle.appendChild(menuBtn);
   if (modelStepper) {
@@ -1846,9 +1864,21 @@
     sync();
   })();
 
-  /* ══ 二、左栏三档 ════════════════════════════════════════════════════════ */
+  /* ══ 二、左栏两级页签 ════════════════════════════════════════════════════
+     栏顶一对：训练配置 / 整网查询（互斥）；训练配置之下再分 表单 / 代码。
+     left.dataset.pane 仍是三个值之一（form / code / net），css 靠它显隐；
+     两组按钮的选中态都从这一个值推出来，不另存状态。 */
+  // 「训练配置」被点回来时，回到上次停的那一档（表单或代码），而不是一律回表单
+  let lastFormPane = "form";
   function setPane(pane) {
     left.dataset.pane = pane;
+    if (pane !== "net") lastFormPane = pane;
+    const headOn = pane === "net" ? "net" : "form";
+    headTabs.querySelectorAll("[data-pane]").forEach((btn) => {
+      const on = btn.dataset.pane === headOn;
+      btn.classList.toggle("is-selected", on);
+      btn.setAttribute("aria-selected", String(on));
+    });
     tabs.querySelectorAll("[data-pane]").forEach((btn) => {
       const on = btn.dataset.pane === pane;
       btn.classList.toggle("is-selected", on);
@@ -1860,16 +1890,19 @@
     viewTabs?.querySelector(`[data-observer-view="${view}"]`)?.click();
   }
 
-  tabs.addEventListener("click", (event) => {
+  function onPaneTabClick(event) {
     const btn = event.target.closest("[data-pane]");
     if (!btn) return;
-    const pane = btn.dataset.pane;
+    // 栏顶「训练配置」= 回到上次那档（表单 / 代码）；其余按钮的 data-pane 就是目标档
+    const pane = btn.dataset.pane === "form" && btn.parentElement === headTabs ? lastFormPane : btn.dataset.pane;
     setPane(pane);
     // 代码档 = 顶栏的「YAML 视图」；另两档回到「关系视图」。开关只有一处。
     clickViewTab(pane === "code" ? "yaml" : "relation");
     if (pane === "net") global.requestAnimationFrame(() => global.croDeckController?.fit?.());
     scheduleRender();
-  });
+  }
+  headTabs.addEventListener("click", onPaneTabClick);
+  tabs.addEventListener("click", onPaneTabClick);
 
   // 顶栏三档也可能被直接点（或深链接切过去）：让左栏页签跟着它走，别对不上
   viewTabs?.addEventListener("click", (event) => {

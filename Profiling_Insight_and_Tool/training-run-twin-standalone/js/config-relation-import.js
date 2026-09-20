@@ -997,13 +997,9 @@
     if (r.structural.length) {
       out.push(`<div class="cro-import__block is-struct"><h4>结构常量 · 未覆盖（由计算图给）</h4>`
         + `<p class="cro-import__hint">这些是模型自身的形状，不是并行配置，本页<b>一个都不改</b> ——`
-        + `它们由计算图那条路线给。<b>后果要当面说清：</b>把别人的并行度导到当前预设的结构上，`
-        + `算出来的容量<b>不是那份配置的容量</b>。差多少见下表。</p><ul>`
-        + r.structural.map((s) => `<li><b>${escapeHtml(s.label)}</b> 配置 <b>${fmt(s.value)}</b>`
-          + ` · 当前预设 <b>${s.preset === undefined ? "—" : fmt(s.preset)}</b>`
-          + (s.preset !== undefined && String(s.preset) !== String(s.value)
-            ? ` <span class="cro-import__diff">不一致</span>` : "")
-          + `</li>`).join("")
+        + `它们由计算图那条路线给。把别人的并行度导到当前预设的结构上，`
+        + `算出来的容量<b>不是那份配置的容量</b>。</p><ul>`
+        + r.structural.map((s) => `<li><b>${escapeHtml(s.label)}</b> = <b>${fmt(s.value)}</b></li>`).join("")
         + `</ul></div>`);
     }
 
@@ -1147,6 +1143,22 @@
       syncMergedTrigger();
     }
 
+    /* 预览右栏按字段中文名 + 取值列出；旋钮字段名取自 FIELD_SPECS / FLAG_SPECS，
+       开关类取值用 flagText 转成「开 / 关」或选项名，epMode 不在两张表里单独兜底。 */
+    const fieldLabel = (key) => {
+      const t = global.CroTopology || {};
+      const spec = (t.FIELD_SPECS && t.FIELD_SPECS[key]) || (t.FLAG_SPECS && t.FLAG_SPECS[key]);
+      if (spec && spec.label) return spec.label;
+      return key === "epMode" ? "EP 口径" : key;
+    };
+    const fieldValue = (key, value) => {
+      const t = global.CroTopology || {};
+      if (t.FLAG_SPECS && t.FLAG_SPECS[key] && typeof t.flagText === "function") {
+        return escapeHtml(t.flagText(key, value));
+      }
+      return fmt(value);
+    };
+
     const presetNow = () => {
       const presets = (global.CroTopology && global.CroTopology.MODEL_PRESETS) || {};
       const id = (global.croObserver && global.croObserver.config.model) || "openpangu-flash";
@@ -1209,7 +1221,7 @@
       + `<span class="cro-yaml__opt-note">${rich(meta.note)}</span></button>`;
 
     function fillMenu() {
-      const rows = [`<p class="cro-yaml__menu-head">换一份配置：左侧选择，右侧先看兼容度与字段调整，再决定是否应用。</p>`];
+      const rows = [`<p class="cro-yaml__menu-head">换一份配置：左侧选择，右侧先看兼容度与各项取值，再决定是否应用。</p>`];
       if (mergedSelect) {
         rows.push(`<div class="cro-yaml__opt-group">当前模型预设</div>`);
         Array.from(mergedSelect.options)
@@ -1230,7 +1242,7 @@
     function resetPreview() {
       pending = null;
       previewToken += 1;
-      el.name.textContent = "请选择左侧配置文件";
+      setScore("—");
       el.source.textContent = "";
       el.report.innerHTML = `<p class="cro-import__empty">选择一份配置后，这里会显示它能落到当前表单的配置项、页面配平会调整的数值，以及未建模或尚未支持的内容。</p>`;
       el.report.scrollTop = 0;
@@ -1279,8 +1291,24 @@
       if (mergedSelect && !keepMergedSelection) restoreMergedSelection();
     }
 
-    function showPreview(meta, html, canApply) {
-      el.name.textContent = meta.label;
+    /* 标题行右侧那格（#croPreviewName）不再重复配置名 —— 名字已经写在左侧选中的
+       卡片和触发框上；这里放兼容度评估：百分数 + 一句它是怎么算的。 */
+    function setScore(text) { el.name.textContent = text; }
+
+    /* 样例文件的兼容度：落到表单的键 ÷ 需要页面认领的键。「读到但不建模」
+       （通信、融合、数据流程侧）是本页故意不收的，不算进分母，否则几十个
+       日志 / 数据键会把一份完全能落地的配置压到一二成。 */
+    function sampleScore(r) {
+      const c = r.counts;
+      const relevant = c.used + c.gaps + c.structural + c.unknown;
+      if (!relevant) return "— · 没有读到可落地的键";
+      const pct = Math.round(c.used / relevant * 100);
+      return `${pct}% · 落到表单 ${c.used} / ${relevant} 键`
+        + (c.ignored ? `（不计不建模的 ${c.ignored} 键）` : "");
+    }
+
+    function showPreview(meta, html, canApply, score) {
+      setScore(score || "—");
       el.source.innerHTML = `<b>来源</b> ${escapeHtml(meta.source)}　·　${rich(meta.note)}`;
       el.report.innerHTML = html;
       el.report.scrollTop = 0;
@@ -1295,18 +1323,16 @@
       if (!p) return;
       previewToken += 1;
       const meta = defaultMeta();
-      const now = (global.croObserver && global.croObserver.config) || {};
+      /* 只如实列这份默认配置的各项取值，不和当前表单比「改了什么」——
+         右栏回答的是「这份配置是什么」，不是「应用会动哪几项」。 */
       const rows = Object.keys(p.defaults || {})
-        .filter((k) => now[k] !== p.defaults[k])
-        .map((k) => `<li><code>${escapeHtml(k)}</code>`
-          + `<span class="cro-import__diff">${fmt(now[k])} → ${fmt(p.defaults[k])}</span></li>`);
+        .map((k) => `<li><b>${escapeHtml(fieldLabel(k))}</b> = <b>${fieldValue(k, p.defaults[k])}</b></li>`);
       pending = { meta, partial: p.defaults };
       showPreview(meta,
-        `<div class="cro-import__block is-warn"><h4>恢复页面默认配置 <span>${rows.length}</span></h4>`
-        + `<p class="cro-import__hint">${escapeHtml(p.label || "")} 的内置参考配置。`
-        + (rows.length ? `应用会改回下面这几项：` : `表单现在就停在默认档位，应用不会动任何数。`)
-        + `</p>` + (rows.length ? `<ul>${rows.join("")}</ul>` : "") + `</div>`,
-        true);
+        `<div class="cro-import__block"><h4>页面默认配置 <span>${rows.length} 项</span></h4>`
+        + `<p class="cro-import__hint">${escapeHtml(p.label || "")} 的内置参考配置，各项取值如下。</p>`
+        + (rows.length ? `<ul>${rows.join("")}</ul>` : "") + `</div>`,
+        true, `100% · ${rows.length} 项全部落入表单`);
     }
 
     function previewPreset(id) {
@@ -1318,7 +1344,7 @@
         showPreview(meta,
           `<div class="cro-import__block is-warn"><h4>当前为自定义配置</h4>`
           + `<p class="cro-import__hint">这不是一份可应用的目标预设。请选择左侧其它配置，`
-          + `右侧会列出它与当前表单之间的差异。</p></div>`, false);
+          + `右侧会列出它的各项取值。</p></div>`, false, "— · 当前表单，无需评估");
         return;
       }
       const topologyApi = global.CroTopology || {};
@@ -1339,25 +1365,25 @@
         ...Object.keys(topologyApi.FLAG_SPECS || {}),
         "epMode",
       ]));
-      const rows = keys.filter((key) => target[key] !== undefined && current[key] !== target[key])
-        .map((key) => `<li><code>${escapeHtml(key)}</code>`
-          + `<span class="cro-import__diff">${fmt(current[key])} → ${fmt(target[key])}</span></li>`);
+      /* 同 previewDefault：列的是这份预设各项的取值本身，不做与当前表单的对比。 */
+      const rows = keys.filter((key) => target[key] !== undefined)
+        .map((key) => `<li><b>${escapeHtml(fieldLabel(key))}</b> = <b>${fieldValue(key, target[key])}</b></li>`);
       const derived = typeof topologyApi.derive === "function" ? topologyApi.derive(target) : null;
       const valid = !derived || derived.valid !== false;
       const warnings = derived && derived.warnings ? derived.warnings : [];
       pending = valid ? { kind: "preset", meta, presetId: id } : null;
-      const headline = valid ? "兼容度 100%" : "预设与当前模型不兼容";
+      const headline = valid ? "预设取值" : "预设与当前模型不兼容";
       const cls = valid ? "" : " is-gap";
       const errors = !valid && derived.errors && derived.errors.length
         ? `<p class="cro-import__hint">${escapeHtml(derived.errors.join("；"))}</p>` : "";
       const warningText = warnings.length
         ? `<p class="cro-import__hint">性能提示：${escapeHtml(warnings.join("；"))}</p>` : "";
       showPreview(meta,
-        `<div class="cro-import__block${cls}"><h4>${headline} <span>${rows.length} 项变化</span></h4>`
+        `<div class="cro-import__block${cls}"><h4>${headline} <span>${rows.length} 项</span></h4>`
         + `<p class="cro-import__hint">内置预设的字段均由本页直接建模，不需要丢弃或猜测配置键。`
-        + (rows.length ? `应用后会修改：` : `当前表单已经是这一档。`) + `</p>`
+        + (rows.length ? `这份预设的各项取值：` : ``) + `</p>`
         + errors + warningText + (rows.length ? `<ul>${rows.join("")}</ul>` : "") + `</div>`,
-        valid);
+        valid, valid ? `100% · ${rows.length} 项全部落入表单` : "0% · 与当前模型冲突，不能应用");
     }
 
     function choose(file) {
@@ -1373,7 +1399,7 @@
       if (!meta) return;
       const token = ++previewToken;
       pending = null;
-      showPreview(meta, `<p class="cro-import__empty">正在读取 <code>config-test/${escapeHtml(file)}</code> …</p>`, false);
+      showPreview(meta, `<p class="cro-import__empty">正在读取 <code>config-test/${escapeHtml(file)}</code> …</p>`, false, "读取中…");
       /* 走 fetch 读同目录下的文件：这一页本来就必须用 http 打开（见 CLAUDE.md，
          整页到处 fetch json / 嵌 iframe），file:// 下会被拦掉，如实说清楚。 */
       global.fetch(`./config-test/${file}`)
@@ -1388,12 +1414,14 @@
               field: m.field, token: String(m.from || "").split(".").pop(),
               label: m.label, value: m.value, got: null,
             })) };
+          setScore(sampleScore(r));
           el.report.innerHTML = renderReport(r, null);
           el.report.scrollTop = 0;
           el.apply.disabled = !r.mapped.length;
         })
         .catch((err) => {
           if (token !== previewToken) return;
+          setScore("— · 读取失败");
           el.apply.disabled = true;
           el.report.innerHTML = `<p class="cro-import__empty">读不到 <code>config-test/${escapeHtml(file)}</code>`
             + `（${escapeHtml(err.message)}）。<br>这一页需要用 http 打开`

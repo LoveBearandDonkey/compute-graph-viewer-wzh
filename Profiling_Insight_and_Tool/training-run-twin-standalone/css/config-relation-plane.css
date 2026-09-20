@@ -105,28 +105,73 @@ body:has(.cro-board.is-plane) .cro-link-layer { display: none; }
 
 .crop-left__head {
   display: flex;
-  align-items: center;
+  align-items: flex-end;
   gap: var(--space-2);
-  padding: var(--space-3) var(--space-3) var(--space-2);
+  padding: var(--space-3) var(--space-3) 0;
 }
 
-.crop-left__title {
+/* 栏顶那对下划线页签：训练配置 / 整网查询（照 rank-intro.html 案例四的 .cs4-head）。
+   不用胶囊段控是为了和下面「表单 / 代码」那组分出层级 —— 这一对决定左栏整块
+   放什么，那一组只是训练配置之内的两种读法。选中态是一条 2px 的主色下划线。 */
+.crop-left__tabs {
+  display: flex;
   flex: 1;
   min-width: 0;
-  margin: 0;
-  font-size: var(--font-size-body-md);
-  font-weight: var(--font-weight-semibold);
-  color: var(--foreground);
+  gap: var(--space-1);
 }
 
-/* 模型下拉 + 三档页签：两者都是「你在看哪一份配置」的前提，贴在标题下成一组 */
+.crop-left__tab {
+  position: relative;
+  padding: 0 var(--space-2) var(--space-2);
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: var(--foreground-secondary);
+  font: var(--button-font);
+  font-weight: var(--font-weight-semibold);
+  line-height: 20px;
+  white-space: nowrap;
+  cursor: pointer;
+  appearance: none;
+  -webkit-appearance: none;
+  transition: color var(--duration-fast) var(--easing-default);
+}
+
+.crop-left__tab::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: -1px;
+  height: 2px;
+  border-radius: 2px 2px 0 0;
+  background: var(--primary);
+  transform: scaleX(0);
+  transform-origin: center;
+  transition: transform var(--duration-base) var(--easing-default);
+}
+
+.crop-left__tab:hover { color: var(--foreground); }
+.crop-left__tab.is-selected { color: var(--foreground); }
+.crop-left__tab.is-selected::after { transform: scaleX(1); }
+.crop-left__tab:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px var(--button-focus-ring);
+}
+
+/* 收起键随页签底边对齐，别悬在页签文字上方 */
+.crop-left__head > .btn { margin-bottom: var(--space-1); }
+
+/* 配置预设下拉 + 「表单 / 代码」两档：只属于「训练配置」这一页。
+   整网查询把它们连同表单一起顶掉 —— 那一档只有 deck。 */
 .crop-left__intro {
   display: flex;
   flex-direction: column;
   gap: var(--space-2);
-  padding: 0 var(--space-3) var(--space-3);
-  border-bottom: 1px solid var(--border-subtle);
+  padding: var(--space-3) var(--space-3);
 }
+
+.crop-left[data-pane="net"] .crop-left__intro { display: none; }
 
 .crop-left__intro .cro-stepper { width: 100%; }
 .crop-left__intro .cro-select { width: 100%; }
@@ -145,13 +190,19 @@ body:has(.cro-board.is-plane) .cro-link-layer { display: none; }
   gap: calc(var(--space-4) * 1.5);
 }
 
-/* 三个内容档：表单 / 代码 / 整网图。当前档之外的整块不渲染。
+/* 三个内容档：表单 / 代码 / 整网图（前两档挂在「训练配置」之下，整网图是栏顶另一页）。当前档之外的整块不渲染。
    代码档的显隐额外由 config-relation-yaml.css 的 .cro-board:not(.is-yaml) 把关，
    两条规则方向一致（代码档 = 顶栏切到 YAML 视图），不会打架。 */
 .crop-pane { display: none; flex-direction: column; gap: calc(var(--space-4) * 1.5); min-height: 0; }
 .crop-left[data-pane="form"] .crop-pane--form,
 .crop-left[data-pane="net"]  .crop-pane--net,
 .crop-left[data-pane="code"] .crop-pane--code { display: flex; }
+
+/* Model Architecture / MoE / Cluster 之间在原 24px 基础上再增加 8px；
+   只作用于相邻配置组，不拉大顶部提示横幅与首组的距离。 */
+.cro-board.is-plane .crop-pane--form > .cro-region + .cro-region {
+  margin-top: var(--space-2);
+}
 
 /* 阻断错误是整份表单的全局状态：静止在顶部时仍按普通文档流排版；表单一滚动，
    它就停在滚动区的上内边距处，并压在后续 stepper 上方。只吸附 is-blocking，性能
@@ -273,9 +324,33 @@ body:has(.cro-board.is-plane) .cro-link-layer { display: none; }
 }
 
 .cro-board.is-plane.is-yaml .crop-left__intro > .crop-tabs {
-  flex: 0 0 300px;
-  width: 300px;
+  flex: 0 0 200px;
+  width: 200px;
 }
+
+/* 代码档右上角那两枚「复制」键只留图标（yaml 全文 / 启动命令各一枚）：
+   文字 label 收成读屏文案；点完 1.6s 内 data-copy-state 由 config-relation-yaml.js
+   挂上 —— ok 换成对勾并染成功色，fail 留原图标、染危险色。 */
+.cro-board.is-plane .cro-yaml__copy {
+  position: relative;
+  width: var(--button-height-sm);
+  min-width: var(--button-height-sm);
+  padding: 0;
+}
+.cro-board.is-plane .cro-yaml__copy .cro-yaml__copy-label {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+.cro-board.is-plane .cro-yaml__copy-icon { flex: none; }
+.cro-board.is-plane .cro-yaml__copy-icon--done { display: none; }
+.cro-board.is-plane .cro-yaml__copy[data-copy-state="ok"] { color: var(--success); }
+.cro-board.is-plane .cro-yaml__copy[data-copy-state="ok"] .cro-yaml__copy-icon--copy { display: none; }
+.cro-board.is-plane .cro-yaml__copy[data-copy-state="ok"] .cro-yaml__copy-icon--done { display: block; }
+.cro-board.is-plane .cro-yaml__copy[data-copy-state="fail"] { color: var(--danger); }
 
 /* 文件样例已经并入上面的配置 select，代码标题里不再重复放第二个下拉入口。 */
 .cro-board.is-plane #croYamlPicker { display: none; }
