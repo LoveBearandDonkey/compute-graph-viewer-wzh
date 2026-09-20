@@ -818,12 +818,7 @@
   flex: 1 1 auto;
 }
 
-/* 校验失败时用 danger 描边提示，不新造 error 视觉 */
-/* 派生读数也要能标红：横幅列出「Node 256 → 128」时，红圈的名单必须与横幅一致，
-   否则会读成横幅算错了。 */
-/* 开关也要能红：横幅的改动清单里含布尔开关时（建议「TP → 1」会连带关掉 SP），
-   红圈的名单必须与横幅列的名单一致，否则用户会以为横幅算错了。
-   药丸形状的轨道用 outline 而不是 inset 阴影 —— 里面那颗圆点会盖住内描边。 */
+/* 配置校验异常统一用 danger 描边；横幅是否有自动方案不改变字段的异常语义。 */
 .cro-stepper.is-invalid .cro-stepper__control,
 .cro-stepper.is-invalid .cro-stepper__derived {
   box-shadow: inset 0 0 0 1px var(--danger);
@@ -1049,11 +1044,12 @@
   display: none;
 }
 
-/* 有话要说时它从一行文字升格成横幅。两档共用同一副几何 —— 都是「先读这一条」，
+/* 有话要说时它从一行文字升格成横幅。各状态共用同一副几何 —— 都是「先读这一条」，
    横幅的形状不该因为严重程度而变；分色只落在描边与底色上。
    底色 / 描边与 .cro-incident-banner 逐条对齐 —— 页面里这类横幅的视觉已经由
    事件横幅定下，这里不另起一套。 */
 .cro-config-error.is-blocking,
+.cro-config-error.is-guidance,
 .cro-config-error.is-warning {
   display: flex;
   flex-direction: column;
@@ -1063,13 +1059,25 @@
   line-height: 1.45;
 }
 
-/* 红：参数不兼容，整页图形已停更，需要足够分量让人注意到。 */
+/* 默认红色：参数不兼容且无建议方案；建议态在后面改写为双色渐变。 */
 .cro-config-error.is-blocking {
   border: 1px solid color-mix(in srgb, var(--danger) 28%, transparent);
   background: linear-gradient(
     90deg,
     color-mix(in srgb, var(--danger) 16%, var(--surface-1)),
     color-mix(in srgb, var(--danger) 5%, var(--surface-1))
+  );
+}
+
+/* 蓝 → 蓝绿：系统已有可直接应用的配平方案，语义是协助实现用户的修改。 */
+.cro-config-error.is-guidance {
+  color: var(--foreground);
+  border-color: color-mix(in srgb, var(--primary) 34%, transparent);
+  background: linear-gradient(
+    105deg,
+    color-mix(in srgb, var(--primary) 17%, var(--surface-1)) 0%,
+    color-mix(in srgb, var(--primary) 7%, var(--surface-1)) 52%,
+    color-mix(in srgb, var(--success) 14%, var(--surface-1)) 100%
   );
 }
 
@@ -1088,6 +1096,36 @@
 .cro-config-error__msg {
   margin: 0;
   color: var(--danger);
+}
+
+.cro-config-error.is-blocking:not(.is-guidance) .cro-config-error__msg {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  color: var(--foreground);
+}
+
+.cro-config-error.is-guidance .cro-config-error__msg {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  color: var(--foreground);
+}
+
+.cro-config-error__title {
+  width: max-content;
+  color: transparent;
+  background: linear-gradient(90deg, var(--primary), var(--success));
+  background-clip: text;
+  -webkit-background-clip: text;
+}
+
+.cro-config-error__title.is-error {
+  background-image: linear-gradient(
+    90deg,
+    color-mix(in srgb, var(--danger) 72%, #ff8a80),
+    var(--danger)
+  );
 }
 
 /* 软警告正文。与红字同一个容器，容器本身的 color 是 --danger，这里必须显式改写。 */
