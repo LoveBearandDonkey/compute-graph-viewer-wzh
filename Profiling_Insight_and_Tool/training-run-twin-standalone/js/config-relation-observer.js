@@ -2993,7 +2993,7 @@
       return result;
     }
 
-    /* 报错横幅：错在哪 → 建议怎么改 → 两个出口。
+    /* 配置状态横幅：无方案时解释错误，有方案时给协同建议，再提供两个出口。
        ⚠️ 设计系统没有 alert / banner 组件（css/style.css 里只有 .btn 系列），
        这里用 tokens 拼一个最小实现，按钮复用 .btn / .btn-sm / .btn-ghost；
        与本文件的 select 同属「缺失样式」，待批准后应吸收进共享系统。 */
@@ -3002,8 +3002,10 @@
       if (!el) return;
       el.textContent = "";
       const warnings = topology.valid ? (topology.warnings || []) : [];
-      /* 两档互斥：冻结态下不说软警告，所以一个横幅要么是红的要么是黄的。 */
+      const proposal = !topology.valid && invalidTyped && invalidTyped.proposal;
+      /* 三档互斥：无解是红色，有配平方案是蓝绿色，自洽但性能欠佳是黄色。 */
       el.classList.toggle("is-blocking", !topology.valid);
+      el.classList.toggle("is-guidance", !!proposal);
       el.classList.toggle("is-warning", warnings.length > 0);
 
       if (rangeHint) {
@@ -3022,20 +3024,6 @@
          之后它自己就出来了。 */
       if (topology.valid) { renderWarnings(el, topology); return; }
 
-      const msg = document.createElement("p");
-      msg.className = "cro-config-error__msg";
-      msg.textContent = topology.errors.join("；");
-      /* 停更接在错误文字后面同一行：它是这条错误的**后果**，不是第二条错误，
-         另起一行会读成并列的两件事。 */
-      const frozen = document.createElement("span");
-      frozen.className = "cro-config-error__frozen";
-      frozen.textContent = "图形已暂停更新，仍显示上一组自洽的参数";
-      msg.appendChild(frozen);
-      el.appendChild(msg);
-
-      const fix = document.createElement("div");
-      fix.className = "cro-config-error__fix";
-      const proposal = invalidTyped && invalidTyped.proposal;
       if (proposal) {
         const label = FIELD_SPECS[invalidTyped.field].label;
         /* 布尔开关也进清单：建议里若含「TP 降到 1」，SP 会被一并关掉，
@@ -3048,13 +3036,39 @@
           .concat(Object.keys(FLAG_SPECS)
             .filter((f) => proposal[f] !== config[f])
             .map((f) => `${FLAG_SPECS[f].label} ${flagText(f, config[f])} → ${flagText(f, proposal[f])}`));
-        fix.textContent = changes.length
-          ? `为了兼容 ${label} = ${invalidTyped.value}，建议把 ${changes.join("、")}`
-          : `为了兼容 ${label} = ${invalidTyped.value}，无需改动其它字段`;
+        const msg = document.createElement("p");
+        msg.className = "cro-config-error__msg";
+        const heading = document.createElement("b");
+        heading.className = "cro-config-error__title";
+        heading.textContent = "配置建议";
+        const guidance = changes.length
+          ? `为了实现将 ${label} 调整为 ${invalidTyped.value}，我建议同步调整 ${changes.join("、")}`
+          : `为了实现将 ${label} 调整为 ${invalidTyped.value}，无需联动调整其他字段`;
+        const body = document.createElement("span");
+        body.textContent = guidance;
+        msg.append(heading, body);
+        el.appendChild(msg);
       } else {
+        const msg = document.createElement("p");
+        msg.className = "cro-config-error__msg";
+        const heading = document.createElement("b");
+        heading.className = "cro-config-error__title is-error";
+        heading.textContent = "配置出错";
+        const body = document.createElement("span");
+        body.textContent = topology.errors.join("；");
+        /* 无解时保留明确的错误与停更说明，让用户知道为什么无法继续。 */
+        const frozen = document.createElement("span");
+        frozen.className = "cro-config-error__frozen";
+        frozen.textContent = "图形已暂停更新，仍显示上一组自洽的参数";
+        body.appendChild(frozen);
+        msg.append(heading, body);
+        el.appendChild(msg);
+
+        const fix = document.createElement("div");
+        fix.className = "cro-config-error__fix";
         fix.textContent = "没能算出兼容这个数的改法 —— 换一个值，或退回上一组参数";
+        el.appendChild(fix);
       }
-      el.appendChild(fix);
 
       const actions = document.createElement("div");
       actions.className = "cro-config-error__actions";
@@ -3062,7 +3076,7 @@
         const applyBtn = document.createElement("button");
         applyBtn.type = "button";
         applyBtn.className = "btn btn-sm";
-        applyBtn.textContent = "一键应用";
+        applyBtn.textContent = "应用";
         applyBtn.addEventListener("click", () => {
           const before = { ...config };
           const anchor = invalidTyped.field;
@@ -3192,7 +3206,7 @@
           setHint(btn, "", stepBlockReason(field, dir, config));
         });
       });
-      // 校验失败时给出提示：把相关 stepper 标红，并在 #croConfigError 写出原因
+      // 配置校验异常统一标红；有无自动方案只改变横幅的表达方式。
       const badFields = new Set();
       if (!topology.valid) {
         topology.errors.forEach((message) => {
@@ -3202,11 +3216,6 @@
         });
         // 手输的那一枚一定标红：错误文案里未必出现它的 label（比如 Total Rank）
         if (invalidTyped) badFields.add(invalidTyped.field);
-        /* 横幅建议要改的那几枚也一起标红。只靠错误文案的 label 匹配会漏一大片：
-           「Routed 232 不能被 EP 53 整除」只点了 Routed 与 EP 的名，可 DP 与
-           Total Rank 同样与这个输入值不兼容，一个字都没出现。
-           **红圈的名单必须与横幅列的名单一致** —— 否则用户看到横幅让改三个数、
-           页面只红了一个，会以为横幅算错了。 */
         if (invalidTyped && invalidTyped.proposal) {
           Object.keys(FIELD_SPECS).concat(Object.keys(FLAG_SPECS)).forEach((field) => {
             if (invalidTyped.proposal[field] !== config[field]) badFields.add(field);
@@ -3215,11 +3224,7 @@
       }
       if (rangeHint) badFields.add(rangeHint.field);
       wraps.forEach((el, field) => el.classList.toggle("is-invalid", badFields.has(field)));
-      /* 被标红的字段正收在「高级」里就先掀开面板 —— 「红圈的名单必须与横幅列的名单
-         一致」这条，在折叠出现之后要多守一步：横幅让改 VPP，页面却红在一个看不见的
-         地方，读起来就是横幅算错了。与联动高亮同一路，同样不写回用户偏好。
-         （VPP 进折叠之后这条才真正必要：手输它得先展开，但**别的字段**手输后的建议
-         修法里可以带上它。） */
+      /* 校验态涉及的字段若收在「高级」里就先展开，不能把红框藏起来。 */
       badFields.forEach((field) => {
         const holder = advancedPanelOf(wraps.get(field));
         if (holder && holder.panel.hidden) setAdvancedOpen(holder, true, false);

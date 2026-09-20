@@ -3,11 +3,12 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Router 溢出四步 · openPangu-2.0-Flash</title>
+<title>Router 溢出六章 · openPangu-2.0-Flash</title>
 <link rel="stylesheet" href="./css/foundation.css">
 <link rel="stylesheet" href="./css/semantic.css">
 <link rel="stylesheet" href="./css/components.css">
 <link rel="stylesheet" href="./css/style.css">
+<link rel="stylesheet" href="./css/model-architecture-3d-deck-pattern.css">
 <style>
   /* 角色色：x=violet / W_gate=success / logits=primary / probs=warning / 梯度=accent，越界=danger */
   :root{
@@ -19,8 +20,8 @@
     --rl-bad: var(--danger);
   }
   html,body{ background:var(--background); color:var(--foreground); font-family:var(--font-sans); }
-  body{ margin:0; padding-block:var(--space-6); padding-inline:var(--space-6); }
-  .rl-page{ max-width:1720px; margin:0 auto; display:flex; flex-direction:column; gap:var(--space-5); }
+  body{ margin:0; padding-block:var(--space-6); padding-inline:var(--space-6); height:auto; min-height:100vh; overflow:auto; display:block; }
+  .rl-page{ width:100%; margin:0 auto; display:flex; flex-direction:column; gap:var(--space-5); }
 
   /* 头部 */
   .rl-head{ display:flex; flex-direction:column; gap:var(--space-1); align-items:center; text-align:center; }
@@ -52,37 +53,128 @@
   .rl-steps .rep:hover{ color:var(--foreground); border-color:var(--border-strong); }
   .rl-cap{ width:100%; max-width:1120px; margin:0 auto; min-height:3.4em; font-size:var(--font-size-body-md); line-height:1.75; color:var(--foreground-secondary); text-align:center; }
   .rl-cap b{ color:var(--foreground); font-weight:var(--font-weight-semibold); }
+
+  /* step 路标：六个关键节点，游标跟着下方动画走 */
+  .rl-road{ position:relative; width:100%; max-width:1120px; margin:var(--space-2) auto 0; height:60px; }
+  .rl-road .track{ position:absolute; left:0; right:0; top:26px; height:3px; border-radius:2px; background:var(--surface-3); }
+  .rl-road .fill{ position:absolute; left:0; top:26px; height:3px; width:0; border-radius:2px; background:var(--foreground); transition:width .1s linear; }
+  .rl-road .node{ position:absolute; top:21px; z-index:1; transform:translateX(-50%); display:flex; flex-direction:column; align-items:center; gap:3px; font-family:var(--font-mono); font-size:10px; color:var(--foreground-muted); white-space:nowrap; }
+  .rl-road .node i{ display:block; width:11px; height:11px; border-radius:50%; background:var(--surface-1); border:2px solid var(--border-strong); box-sizing:border-box; }
+    .rl-road .node.done{ color:var(--foreground); }
+  .rl-road .node.done i{ background:var(--rl-bad); border-color:var(--rl-bad); }
+    .rl-road .cur{ position:absolute; top:21px; width:13px; height:13px; border-radius:50%; background:var(--foreground); transform:translateX(-50%); transition:left .1s linear; box-shadow:0 0 0 3px var(--background); }
+  .rl-road .node.up{ flex-direction:column-reverse; top:auto; bottom:28px; }
+  .rl-road.hide{ visibility:hidden; }
+  .rl-road .cur b{ position:absolute; top:0; right:calc(100% + 7px); font-family:var(--font-mono); font-size:10px; font-weight:var(--font-weight-semibold); color:var(--foreground); white-space:nowrap; }
   .rl-cap .t{ font-family:var(--font-mono); font-size:.92em; color:var(--foreground); background:var(--surface-2); padding:0 .35em; border-radius:var(--radius-sm); margin-right:.3em; }
 
-  /* 场景容器：四步各一块，只显示当前那块 */
-  .rl-fig{ min-height:420px; }
+  /* 场景容器：六章各一块，只显示当前那块；张量区 data-step="2 5" 两章共用 */
+  .rl-fig{ width:100%; min-height:420px; }
   .rl-scene{ display:none; }
   .rl-scene.on{ display:block; }
   .rl-scene.nt *{ transition:none !important; }
 
-  /* ── 第 1 步：W_gate 变大，两条路一起涨，梯度先碰顶 ─────────────── */
-  .f1{ display:grid; grid-template-columns:220px 150px auto auto 270px; align-items:center; justify-content:center; gap:var(--space-4); max-width:1120px; margin:0 auto; padding-top:var(--space-4); }
+  /* ── 第 1 章：Layer 38 在整网中的位置 + 三条物理计算流 ─────────────── */
+  .rl-net{ width:100%; margin:0 auto; display:flex; flex-direction:column; gap:var(--space-3); }
+  .rl-net-legend{ display:flex; align-items:center; justify-content:center; gap:var(--space-2); flex-wrap:wrap; }
+  .rl-net-legend .btn{ display:inline-flex; align-items:center; gap:7px; color:var(--foreground-secondary); }
+  .rl-net-legend .btn i{ width:22px; height:5px; border-radius:var(--radius-pill); background:var(--c); }
+  .rl-net-legend .btn.is-selected{ color:var(--foreground); background:var(--surface-4); box-shadow:inset 0 0 0 1px color-mix(in srgb,var(--c) 56%,var(--border-default)); }
+  .rl-net-body{ display:flex; flex-direction:column; gap:var(--space-3); }
+  .rl-net-deck{ position:relative; height:660px; overflow:hidden; border-radius:var(--radius-lg); background:var(--surface-1); }
+  .rl-net-deck .pto-model-deck__static,
+  .rl-net-deck .pto-model-deck__interlayer-spine,
+  .rl-net-deck .pto-model-deck__side-guides,
+  .rl-net-deck .pto-model-deck__pp-groups,
+  .rl-net-deck .pto-model-deck__side-labels{ display:none; }
+  /* pattern 默认把 frontLayer(L23) 以 opacity 1 摆在正中；三张展开卡整体右移后它会从 L37 背后露出来，这里把非展开层全部隐藏。 */
+  .rl-net-deck[data-view="front"] .pto-model-deck__layer:not(.rl-focus-layer){ display:none; }
+  .rl-net-deck[data-view="front"] .pto-model-deck__layer.rl-focus-layer{ display:block; pointer-events:none; border:1px solid var(--border-default); border-radius:var(--radius-lg); background:color-mix(in srgb,var(--surface-1) 94%,transparent); box-shadow:0 12px 34px color-mix(in srgb,var(--foreground) 10%,transparent); transition:opacity .35s,filter .35s,box-shadow .35s; }
+  .rl-net-deck[data-view="front"] .pto-model-deck__layer.rl-focus-layer.is-context{ opacity:.2; filter:grayscale(.88) brightness(.72); box-shadow:none; }
+  .rl-net-deck[data-view="front"] .pto-model-deck__layer.rl-focus-layer.is-context.is-boundary-complete{ opacity:.46; filter:grayscale(.55) brightness(.86); }
+  .rl-net-deck[data-view="front"] .pto-model-deck__layer.rl-focus-layer.is-center{ opacity:1; z-index:2; border-color:color-mix(in srgb,var(--rl-p) 54%,var(--border-default)); box-shadow:0 18px 42px color-mix(in srgb,var(--foreground) 15%,transparent),0 0 0 2px color-mix(in srgb,var(--rl-p) 18%,transparent); }
+  .rl-net-deck .pto-model-deck__viewport{ z-index:1; }
+  /* pattern 在非 right 视图里把 mHC state 节点 display:none，导致它的 offset / rect 全为 0，
+     所有以它为端点的连线（层内 in→norm、merge→out，以及跨层 out→in）都被拉到卡片左上角乱走。
+     本章的叙事就是 X_l 进 / X_{l+1} 出，这里恢复显示。 */
+  .rl-net-deck.pto-model-deck[data-view] .pto-model-deck__node[data-op="mhc-state"]{ display:flex; }
+  .rl-net-deck.pto-model-deck[data-view="front"] .pto-model-deck__layer .pto-model-deck__edges path[data-kind="state-spine"]{ display:block; }
+  .rl-net-deck .rl-flow-pipes{ position:absolute; inset:0; width:720px; height:1180px; overflow:visible; pointer-events:none; z-index:20; }
+  .rl-net-deck .rl-flow-pipe{ fill:none; stroke:var(--c); stroke-width:10; stroke-linecap:round; opacity:.08; stroke-dasharray:1; stroke-dashoffset:1; transition:opacity .2s,filter .2s,stroke-dashoffset .18s linear; }
+  .rl-net-deck .rl-flow-pipe.is-current{ opacity:.9; animation:rl-segment .24s linear forwards; }
+  .rl-net-deck .rl-flow-pipe.is-complete{ opacity:.64; stroke-dashoffset:0; }
+  .rl-net-deck .rl-stream-node{ z-index:30; opacity:.34; filter:grayscale(1); box-shadow:none; transition:opacity .18s,filter .18s,box-shadow .18s,background .18s,border-color .18s,color .18s; }
+  .rl-net-deck .rl-stream-node:not(.is-current):not(.is-complete):not(.is-active):not(.is-related){ background:var(--surface-3) !important; border-color:var(--border-default) !important; color:var(--foreground-muted) !important; }
+  .rl-net-deck .rl-stream-node.is-current{ opacity:.72; filter:saturate(.65); }
+  .rl-net-deck .rl-stream-node.is-complete{ opacity:1; filter:none; box-shadow:0 0 0 4px color-mix(in srgb,var(--stream-color) 72%,transparent),inset 0 0 8px rgba(255,255,255,.25); }
+  .rl-net-deck .rl-handoffs{ position:absolute; inset:0; z-index:100; width:100%; height:100%; pointer-events:none; overflow:visible; }
+  .rl-net-deck .rl-handoff{ fill:none; stroke:var(--rl-l); stroke-width:5; stroke-linecap:round; opacity:.08; stroke-dasharray:1; stroke-dashoffset:1; transition:opacity .2s,filter .2s,stroke-dashoffset .24s linear; }
+  .rl-net-deck .rl-handoff.is-current{ opacity:.96; animation:rl-segment .32s linear forwards; }
+  .rl-net-deck .rl-handoff.is-complete{ opacity:.78; stroke-dashoffset:0; }
+  .rl-net-deck .rl-handoff-label{ fill:var(--foreground); stroke:var(--surface-1); stroke-width:5px; paint-order:stroke; font:700 11px/1 var(--font-mono); text-anchor:middle; opacity:.58; }
+  .rl-net-deck .rl-handoff-label.is-complete{ opacity:1; }
+  .rl-net-deck .rl-folded-layer{ fill:none; stroke:var(--foreground-muted); stroke-width:1; rx:5; }
+  .rl-net-deck .rl-folded-caption{ fill:var(--foreground-muted); stroke:var(--surface-1); stroke-width:4px; paint-order:stroke; font:600 10px/1 var(--font-mono); text-anchor:middle; }
+  .rl-flow-index-layer{ position:absolute; inset:0; z-index:120; pointer-events:none; }
+  .rl-flow-index{ position:absolute; display:flex; align-items:center; justify-content:center; width:24px; height:24px; box-sizing:border-box; border:2px solid var(--surface-1); border-radius:50%; background:var(--c,var(--foreground-secondary)); color:#fff; box-shadow:0 0 0 2px color-mix(in srgb,var(--c,var(--foreground-secondary)) 26%,transparent),0 4px 12px color-mix(in srgb,var(--c,var(--foreground-secondary)) 24%,transparent); font:700 11px/1 var(--font-mono); opacity:0; transform:translate(-50%,-50%) scale(.45); transition:opacity .18s,transform .24s cubic-bezier(.2,.8,.2,1),filter .2s; }
+  .rl-flow-index.is-complete{ opacity:1; transform:translate(-50%,-50%) scale(1); }
+  .rl-net.is-flow-filtered .rl-flow-index.is-related{ opacity:.45; filter:saturate(.45); }
+  .rl-net.is-flow-filtered .rl-flow-index.is-active{ opacity:1; filter:none; }
+  .rl-net-deck.is-pinpoint .rl-handoffs,
+  .rl-net-deck.is-pinpoint .rl-flow-index-layer,
+  .rl-net-deck.is-pinpoint .rl-focus-layer:not(.is-center){ opacity:.08; transition:opacity .45s; }
+  .rl-net-deck .is-drill-target{ z-index:140 !important; opacity:1 !important; filter:none !important; box-shadow:0 0 0 5px color-mix(in srgb,var(--rl-bad) 34%,transparent),0 0 24px color-mix(in srgb,var(--rl-bad) 45%,transparent) !important; }
+  .rl-net-deck .is-drill-target::after{ content:""; position:absolute; left:50%; top:50%; width:22px; height:22px; box-sizing:border-box; border:5px solid var(--rl-bad); border-radius:50%; background:color-mix(in srgb,var(--rl-bad) 20%,transparent); transform:translate(-50%,-50%); animation:rl-drill-ring .75s ease-out infinite alternate; pointer-events:none; }
+  .rl-drill-label{ position:absolute; left:50%; top:50%; z-index:150; display:flex; align-items:center; gap:10px; padding:10px 14px; border:1px solid color-mix(in srgb,var(--rl-bad) 55%,var(--border-default)); border-radius:var(--radius-pill); background:color-mix(in srgb,var(--surface-1) 94%,transparent); color:var(--foreground); box-shadow:0 12px 36px color-mix(in srgb,var(--rl-bad) 22%,transparent); font-size:13px; font-weight:var(--font-weight-semibold); white-space:nowrap; opacity:0; transform:translate(-50%,18px) scale(.86); transition:opacity .35s,transform .55s cubic-bezier(.2,.8,.2,1); pointer-events:none; }
+  .rl-drill-label i{ width:12px; height:12px; border-radius:50%; background:var(--rl-bad); box-shadow:0 0 0 5px color-mix(in srgb,var(--rl-bad) 18%,transparent); }
+  .rl-net-deck.is-drilldown .rl-drill-label{ opacity:1; transform:translate(calc(-100% - 34px),-50%) scale(1); }
+  @keyframes rl-drill-ring{ from{ width:20px; height:20px; opacity:1; } to{ width:48px; height:48px; opacity:.45; } }
+  .rl-deliveries{ min-width:0; box-sizing:border-box; padding:var(--space-4); border-radius:var(--radius-lg); background:var(--surface-1); overflow:hidden; }
+  .rl-deliveries h3{ margin:0; font-size:var(--font-size-body-md); }
+  .rl-deliveries > p{ margin:4px 0 var(--space-3); color:var(--foreground-muted); font-size:11px; line-height:1.45; }
+  .rl-delivery-list{ display:grid; grid-template-columns:minmax(0,1fr); gap:var(--space-2); margin:0; padding:0; list-style:none; }
+  .rl-delivery{ display:grid; grid-template-columns:28px 36px 28px minmax(0,1fr) 28px 36px; gap:0; align-items:center; opacity:0; transform:translateY(8px); transition:opacity .22s,transform .22s,filter .2s; }
+  .rl-delivery.is-delivered{ opacity:1; transform:none; }
+  .rl-delivery-index{ display:flex; align-items:center; justify-content:center; width:24px; height:24px; border-radius:50%; background:var(--c,var(--foreground-secondary)); color:#fff; font:700 11px/1 var(--font-mono); box-shadow:0 0 0 2px color-mix(in srgb,var(--c,var(--foreground-secondary)) 18%,transparent); }
+  .rl-party{ display:flex; align-items:center; justify-content:center; width:36px; height:36px; box-sizing:border-box; border:1px solid color-mix(in srgb,var(--c) 52%,var(--border-default)); border-radius:50%; background:color-mix(in srgb,var(--c) 10%,var(--surface-2)); color:var(--foreground); font:700 9px/1.05 var(--font-mono); text-align:center; }
+  .rl-delivery-link{ position:relative; display:block; height:1px; background:color-mix(in srgb,var(--c) 62%,var(--border-default)); }
+  .rl-delivery-link::after{ content:""; position:absolute; right:-1px; top:50%; width:0; height:0; border-top:4px solid transparent; border-bottom:4px solid transparent; border-left:6px solid color-mix(in srgb,var(--c) 72%,var(--border-strong)); transform:translateY(-50%); }
+  .rl-delivery-card{ min-width:0; min-height:54px; box-sizing:border-box; padding:8px 9px; border-radius:var(--radius-md); background:var(--surface-2); box-shadow:inset 0 0 0 1px color-mix(in srgb,var(--c) 30%,var(--border-subtle)); }
+  .rl-delivery strong{ display:block; color:var(--foreground); font-size:11px; line-height:1.25; }
+  .rl-delivery small{ display:block; margin-top:3px; color:var(--foreground-secondary); font:9px/1.3 var(--font-mono); }
+  .rl-net.is-flow-filtered .is-center .pto-model-deck__node,
+  .rl-net.is-flow-filtered .is-center .pto-model-deck__experts{ opacity:.12; filter:grayscale(.85); box-shadow:none; }
+  .rl-net.is-flow-filtered [data-rl-flow]{ opacity:.12; filter:grayscale(.85); }
+  .rl-net.is-flow-filtered [data-rl-flow].is-related{ opacity:.42; filter:saturate(.45); }
+  .rl-net.is-flow-filtered [data-rl-flow].is-active{ opacity:1; filter:none; }
+  .rl-net.is-flow-filtered .is-center .pto-model-deck__node.is-active,
+  .rl-net.is-flow-filtered .is-center .pto-model-deck__experts.is-active{ opacity:1; filter:none; box-shadow:0 0 0 5px color-mix(in srgb,var(--stream-color) 84%,transparent),0 0 18px color-mix(in srgb,var(--stream-color) 48%,transparent); }
+  .rl-delivery:not(.is-delivered){ opacity:0 !important; }
+  @keyframes rl-segment{ from{ stroke-dashoffset:1; } to{ stroke-dashoffset:0; } }
+
+  /* ── 第 3 章：W_gate 变大，两条路一起涨，梯度先碰顶（根因 / 前向 / 反向 三列） ── */
+  .f1{ display:grid; grid-template-columns:260px auto auto; align-items:stretch; justify-content:center; gap:var(--space-7); max-width:1120px; margin:0 auto; padding-top:var(--space-2); }
+  .f1-col{ display:flex; flex-direction:column; align-items:center; gap:var(--space-2); }
+  .f1-col > .f1-src{ width:100%; box-sizing:border-box; flex:1; }
+  .f1-col > .g{ flex:1; justify-content:space-between; }
+  .f1-eb{ font-size:11px; font-weight:var(--font-weight-semibold); color:var(--foreground-muted); letter-spacing:.06em; }
   .f1-src{ background:var(--surface-1); border:1px solid var(--border-subtle); border-radius:var(--radius-md); padding:var(--space-3) var(--space-4); }
   .f1-src h3{ margin:0; font-size:var(--font-size-body-sm); font-weight:var(--font-weight-semibold); display:flex; align-items:center; gap:var(--space-1); }
   .f1-src .dot{ width:8px; height:8px; border-radius:50%; background:var(--rl-w); }
-  .f1-src .num{ font-family:var(--font-mono); font-size:30px; font-weight:var(--font-weight-bold); color:var(--rl-w); line-height:1.2; margin-top:var(--space-1); }
-  .f1-src .num small{ font-size:11px; color:var(--foreground-muted); font-weight:var(--font-weight-medium); margin-left:.4em; }
+  .f1-src .num{ font-family:var(--font-mono); font-size:30px; font-weight:var(--font-weight-bold); color:var(--foreground); line-height:1.2; margin-top:var(--space-1); }
+  .f1-src .num small{ display:block; font-size:11px; color:var(--foreground-muted); font-weight:var(--font-weight-medium); font-family:var(--font-sans); }
   .f1-src .wbar{ height:6px; border-radius:var(--radius-pill); background:var(--surface-3); overflow:hidden; margin:var(--space-2) 0; }
   .f1-src .wbar i{ display:block; height:100%; width:4%; background:var(--rl-w); border-radius:var(--radius-pill); }
   .f1-src .why{ font-size:11px; color:var(--foreground-secondary); line-height:1.6; }
-  .f1-arrows{ display:flex; flex-direction:column; gap:var(--space-5); font-size:11px; color:var(--foreground-secondary); }
-  .f1-arrows div{ display:flex; flex-direction:column; align-items:center; text-align:center; gap:2px; }
-  .f1-arrows .ar{ font-size:18px; color:var(--foreground-muted); line-height:1; }
-  .f1-arrows b{ color:var(--foreground); font-weight:var(--font-weight-semibold); }
-  .f1-arrows code{ font-family:var(--font-mono); font-size:10px; color:var(--foreground-muted); }
   /* 温度计：天花板画在 85% 高，越界那截可以冒出来变红 */
   .g{ display:flex; flex-direction:column; align-items:center; gap:var(--space-2); width:170px; }
   .g-name{ font-size:var(--font-size-body-sm); font-weight:var(--font-weight-semibold); text-align:center; line-height:1.3; }
   .g-name small{ display:block; font-size:10px; font-weight:var(--font-weight-medium); color:var(--foreground-muted); font-family:var(--font-mono); margin-top:2px; }
-  .g-bar{ position:relative; width:64px; height:240px; background:var(--surface-2); border:1px solid var(--border-subtle); border-radius:var(--radius-md); }
+  .g-bar{ position:relative; width:56px; height:150px; background:var(--surface-2); border:1px solid var(--border-subtle); border-radius:var(--radius-md); }
   .g-fill{ position:absolute; left:0; right:0; bottom:0; height:0; background:var(--c); border-radius:0 0 var(--radius-md) var(--radius-md); opacity:.85; }
   .g-ceil{ position:absolute; left:-10px; right:-10px; top:15%; border-top:2px dashed var(--rl-bad); }
-  .g-ceil span{ position:absolute; left:calc(100% + 6px); top:-8px; font-size:10px; white-space:nowrap; color:var(--rl-bad); font-family:var(--font-mono); }
+  .g-ceil span{ position:absolute; left:calc(100% + 6px); top:-20px; font-size:10px; line-height:1.3; white-space:nowrap; color:var(--rl-bad); font-family:var(--font-mono); }
+  .g-ceil span em{ display:block; font-style:normal; font-weight:var(--font-weight-semibold); color:var(--rl-bad); }
   .g-val{ position:absolute; left:50%; transform:translate(-50%,-100%); bottom:0; font-family:var(--font-mono); font-size:12px; font-weight:var(--font-weight-semibold); color:var(--foreground); white-space:nowrap; padding-bottom:3px; }
   .g-foot{ font-size:11px; color:var(--foreground-secondary); text-align:center; min-height:2.8em; line-height:1.4; }
   .g-foot b{ color:var(--foreground); font-weight:var(--font-weight-semibold); }
@@ -90,7 +182,9 @@
   .g.hit .g-bar{ box-shadow:0 0 0 3px color-mix(in srgb,var(--rl-bad) 30%,transparent); border-color:var(--rl-bad); }
   .g.hit .g-val{ color:var(--rl-bad); }
   .g.hit .g-foot{ color:var(--rl-bad); }
-  .f1-amp{ background:var(--surface-1); border:1px solid var(--border-subtle); border-radius:var(--radius-md); padding:var(--space-3) var(--space-4); align-self:center; }
+  /* ── 第 4 章：AMP 卡（左）+ 200 步三泳道曲线（右） ─────────────────── */
+  .c3{ display:grid; grid-template-columns:280px minmax(0,1fr); gap:var(--space-4); align-items:start; max-width:1120px; margin:0 auto; padding-top:var(--space-2); }
+  .f1-amp{ background:var(--surface-1); border:1px solid var(--border-subtle); border-radius:var(--radius-md); padding:var(--space-3) var(--space-4); }
   .f1-amp h3{ margin:0 0 var(--space-2); font-size:var(--font-size-body-sm); font-weight:var(--font-weight-semibold); }
   .f1-amp h3 small{ display:block; font-family:var(--font-mono); font-size:10px; color:var(--foreground-muted); font-weight:var(--font-weight-medium); }
   .f1-amp .ln{ font-size:12px; line-height:1.6; color:var(--foreground-secondary); opacity:.35; transform:translateX(-4px); transition:opacity .35s, transform .35s, color .35s; padding:2px 0; }
@@ -99,10 +193,10 @@
   .f1-amp .ln.on b.bad{ color:var(--rl-bad); }
   .f1-amp .ln.ok{ opacity:1; transform:none; color:var(--foreground-muted); }
   .f1-amp .ln.ok.off{ display:none; }
+  .f1-amp .ln .skip{ transition:background .3s; }
   .f1-amp .ln .skip{ display:inline-block; font-family:var(--font-mono); font-size:10px; padding:0 .4em; border-radius:var(--radius-sm); background:color-mix(in srgb,var(--rl-bad) 14%,transparent); color:var(--rl-bad); margin-left:.3em; }
 
-  /* ── 第 2 步：200 步曲线 ─────────────────────────────────────────── */
-  .f2{ max-width:1120px; margin:0 auto; display:flex; flex-direction:column; gap:var(--space-2); }
+  .f2{ min-width:0; display:flex; flex-direction:column; gap:var(--space-2); }
   .f2-read{ display:flex; flex-wrap:wrap; gap:var(--space-4); justify-content:center; font-family:var(--font-mono); font-size:12px; color:var(--foreground-secondary); }
   .f2-read b{ color:var(--foreground); font-weight:var(--font-weight-semibold); }
   .f2-read b.bad{ color:var(--rl-bad); }
@@ -124,13 +218,20 @@
   .f2 .mk circle{ fill:var(--rl-bad); }
   .f2 .mk line{ stroke:var(--rl-bad); stroke-dasharray:2 3; stroke-width:1; opacity:.6; }
   .f2 .mk text{ font-size:10px; fill:var(--rl-bad); font-weight:600; }
-  .f2 .spike{ opacity:0; transition:opacity .4s; }
-  .f2 .spike.on{ opacity:1; }
-  .f2 .spike line{ stroke:var(--rl-bad); stroke-width:2.5; }
-  .f2 .spike text{ font-size:11px; fill:var(--rl-bad); font-weight:700; }
 
-  /* ── 第 3 步：张量计算（原页内容）+ 趋势图 ───────────────────────── */
-  .f3-top{ display:grid; grid-template-columns:480px minmax(0,1fr); gap:var(--space-4); align-items:start; }
+  /* ── 第 5 章：max|logit| 走势图（左）+ 三情景对照表（右） ─────────────── */
+  .f3-top{ display:grid; grid-template-columns:480px minmax(0,1fr); gap:var(--space-4); align-items:stretch; max-width:1120px; margin:0 auto; padding-top:var(--space-2); }
+  .rl-cmp-wrap{ background:var(--surface-1); border:1px solid var(--border-subtle); border-radius:var(--radius-lg); padding:var(--space-2) var(--space-3); overflow-x:auto; display:flex; align-items:center; }
+  table.rl-cmp{ border-collapse:collapse; width:100%; font-size:12px; }
+  .rl-cmp th, .rl-cmp td{ padding:5px 8px; text-align:center; border-bottom:1px solid var(--border-subtle); white-space:nowrap; transition:background .2s; }
+  .rl-cmp tr:last-child th, .rl-cmp tr:last-child td{ border-bottom:0; }
+  .rl-cmp th{ font-weight:var(--font-weight-semibold); color:var(--foreground); cursor:pointer; }
+  .rl-cmp th small{ display:block; font-family:var(--font-mono); font-size:10px; font-weight:var(--font-weight-medium); color:var(--foreground-muted); }
+  .rl-cmp th.rh{ text-align:left; font-weight:var(--font-weight-medium); color:var(--foreground-secondary); cursor:default; }
+  .rl-cmp td{ font-family:var(--font-mono); color:var(--foreground-secondary); cursor:pointer; }
+  .rl-cmp td b.bad{ color:var(--rl-bad); font-weight:var(--font-weight-semibold); }
+  .rl-cmp th.cur, .rl-cmp td.cur{ background:color-mix(in srgb,var(--rl-l) 10%,transparent); color:var(--foreground); }
+  .rl-cmp td.cur{ font-weight:var(--font-weight-semibold); }
   .f3-trend{ background:var(--surface-1); border:1px solid var(--border-subtle); border-radius:var(--radius-lg); padding:var(--space-2) var(--space-3); }
   .f3-trend h3{ margin:0 0 var(--space-1); font-size:var(--font-size-body-sm); font-weight:var(--font-weight-semibold); display:flex; justify-content:space-between; align-items:center; gap:var(--space-2); }
   .f3-trend h3 span{ font-family:var(--font-mono); font-size:11px; font-weight:var(--font-weight-medium); color:var(--foreground-secondary); }
@@ -149,11 +250,20 @@
   .f3-trend .pt.cur.bad{ fill:var(--rl-bad); }
   .f3-trend .pl{ font-size:10px; fill:var(--foreground-secondary); cursor:pointer; }
   .f3-trend .pl.cur{ fill:var(--foreground); font-weight:600; }
-  .f3-tools{ display:flex; align-items:center; gap:var(--space-3); flex-wrap:wrap; margin-top:var(--space-3); }
+  /* ── 张量计算区（第 2、5 章共用）：情景切换只在第 5 章露出 ────────────── */
+  .rl-calc{ position:relative; width:100%; margin:0 auto; }
+  .rl-calc.is-bridge-enter::before{ content:"同一个红点展开：Router 内部的  x × W_gate = logits"; position:absolute; left:50%; top:-8px; z-index:20; padding:8px 14px 8px 34px; border:1px solid color-mix(in srgb,var(--rl-bad) 50%,var(--border-default)); border-radius:var(--radius-pill); background:radial-gradient(circle at 17px 50%,var(--rl-bad) 0 5px,transparent 6px),var(--surface-1); color:var(--foreground); box-shadow:0 8px 28px color-mix(in srgb,var(--rl-bad) 18%,transparent); font-size:12px; font-weight:var(--font-weight-semibold); white-space:nowrap; animation:rl-bridge-caption 1.8s ease both; }
+  .rl-calc.is-bridge-enter .rl-stage{ transform-origin:78% 42%; animation:rl-calc-enter .72s cubic-bezier(.2,.8,.2,1) both; }
+  .rl-calc.is-bridge-enter #tl td.sel{ animation:rl-logit-arrival 1.5s .2s ease both; }
+  @keyframes rl-calc-enter{ from{ opacity:.15; transform:scale(1.12); filter:blur(5px); } to{ opacity:1; transform:scale(1); filter:none; } }
+  @keyframes rl-bridge-caption{ 0%{ opacity:0; transform:translate(-50%,-8px) scale(.85); } 18%,72%{ opacity:1; transform:translate(-50%,0) scale(1); } 100%{ opacity:0; transform:translate(-50%,5px) scale(.96); } }
+  @keyframes rl-logit-arrival{ 0%,100%{ box-shadow:none; } 24%,72%{ color:var(--rl-bad); border-color:var(--rl-bad); box-shadow:0 0 0 5px color-mix(in srgb,var(--rl-bad) 22%,transparent),0 0 22px color-mix(in srgb,var(--rl-bad) 35%,transparent); } }
+  .f3-tools{ display:flex; align-items:center; gap:var(--space-3); flex-wrap:wrap; margin:var(--space-3) 0 var(--space-2); }
+  body[data-cur="2"] #scen{ display:none; }
   .f3-tools .hint{ font-size:11px; color:var(--foreground-muted); }
 
   /* 公式区 */
-  .rl-formulas{ background:var(--surface-1); border:1px solid var(--border-subtle); border-radius:var(--radius-lg); padding:var(--space-3) var(--space-5); font-family:var(--font-mono); font-size:12px; line-height:1.8; overflow-x:auto; }
+  .rl-formulas{ margin-top:var(--space-3); background:var(--surface-1); border:1px solid var(--border-subtle); border-radius:var(--radius-lg); padding:var(--space-3) var(--space-5); font-family:var(--font-mono); font-size:12px; line-height:1.8; overflow-x:auto; }
   .rl-formulas > summary{ cursor:pointer; list-style:none; font-family:var(--font-sans); font-size:var(--font-size-body-sm); font-weight:var(--font-weight-semibold); color:var(--foreground); display:flex; align-items:center; gap:var(--space-2); user-select:none; }
   .rl-formulas > summary::-webkit-details-marker{ display:none; }
   .rl-formulas > summary::before{ content:"▸"; font-size:10px; color:var(--foreground-muted); transition:transform .15s; }
@@ -169,7 +279,7 @@
   .rl-cast .lbl{ font-family:var(--font-sans); color:var(--foreground-secondary); min-width:12em; }
 
   /* 张量区：第一行 x × W = logits；softmax 在 logits 正下方向下转到 probs */
-  .rl-stage{ display:grid; grid-template-columns:repeat(5, auto); column-gap:var(--space-3); row-gap:var(--space-2); justify-content:start; align-items:start; overflow-x:auto; padding-block:var(--space-2); }
+  .rl-stage{ width:100%; box-sizing:border-box; display:grid; grid-template-columns:auto auto auto auto auto; column-gap:var(--space-3); row-gap:var(--space-2); justify-content:center; align-items:start; overflow-x:auto; padding-block:var(--space-2); }
   .rl-op-down{ grid-column:5; grid-row:2; }
   .rl-probs{ grid-column:5; grid-row:3; }
   .rl-op{ align-self:center; font-size:var(--font-size-title-sm); font-weight:var(--font-weight-bold); color:var(--foreground-secondary); padding:0 var(--space-1); margin-top:36px; text-align:center; white-space:nowrap; }
@@ -180,7 +290,7 @@
   .rl-tensor{ background:var(--surface-1); border:1px solid var(--border-subtle); border-radius:var(--radius-md); padding:var(--space-2) var(--space-3) var(--space-3); }
   .rl-tensor h3{ margin:0; font-size:var(--font-size-body-sm); font-weight:var(--font-weight-semibold); display:flex; align-items:center; gap:var(--space-1); }
   .rl-tensor h3 .dot{ width:8px; height:8px; border-radius:50%; background:var(--c); }
-  .rl-tensor .meta{ font-family:var(--font-mono); font-size:10px; color:var(--foreground-secondary); margin:1px 0 var(--space-2); display:flex; gap:var(--space-2); }
+  .rl-tensor .meta{ font-family:var(--font-mono); font-size:10px; color:var(--foreground-secondary); margin:1px 0 var(--space-2); display:flex; flex-wrap:wrap; gap:var(--space-2); }
   table.rl-grid{ border-collapse:collapse; border-spacing:0; font-family:var(--font-mono); font-size:10px; }
   .rl-grid th{ font-weight:var(--font-weight-medium); color:var(--foreground-muted); font-size:10px; padding:1px 3px; text-align:center; white-space:nowrap; }
   .rl-grid th.rh{ text-align:right; padding-right:5px; }
@@ -200,7 +310,7 @@
   .rl-gauge .bar i.warn{ background:var(--rl-p); }
   .rl-gauge .bar i.bad{ background:var(--rl-bad); }
 
-  /* ── 第 4 步：一个 inf 的传染 ─────────────────────────────────────── */
+  /* ── 第 6 章：一个 inf 的传染 ─────────────────────────────────────── */
   .f4{ display:grid; grid-template-columns:auto 28px auto 28px auto 28px auto; align-items:center; justify-content:center; gap:var(--space-3); max-width:1240px; margin:0 auto; padding-top:var(--space-3); }
   .f4-p{ background:var(--surface-1); border:1px solid var(--border-subtle); border-radius:var(--radius-md); padding:var(--space-3) var(--space-4); display:flex; flex-direction:column; align-items:center; gap:var(--space-2); opacity:.4; transition:opacity .4s, border-color .4s; }
   .f4-p.on{ opacity:1; border-color:color-mix(in srgb,var(--rl-bad) 45%,var(--border-subtle)); }
@@ -223,7 +333,9 @@
   .f4-read div.on .new{ opacity:1; }
 
   @media (max-width:1100px){
-    .f1{ grid-template-columns:1fr 1fr; }
+    .rl-net-deck{ height:580px; }
+    .f1{ grid-template-columns:1fr 1fr; align-items:start; gap:var(--space-4); }
+    .c3{ grid-template-columns:1fr; }
     .f3-top{ grid-template-columns:1fr; }
     .f4{ grid-template-columns:1fr; }
     .f4-ar{ transform:rotate(90deg); }
@@ -236,64 +348,105 @@
 
   <div class="rl-head">
     <h1 class="rl-title"><span class="k k-w">W_gate</span><span>变大</span><span style="color:var(--foreground-muted)">→</span><span class="k k-g">梯度</span><span>先碰顶</span><span style="color:var(--foreground-muted)">→</span><span class="k k-l">logits</span><span>再碰顶</span><span style="color:var(--foreground-muted)">→</span><span class="k k-bad">loss NaN</span></h1>
-    <p class="rl-sub">openPangu-2.0-Flash · 问题影响 1 · step 15000 → 15203 · 一个张量里的一个数，怎么把整次训练的 loss 算成 NaN</p>
+    <p class="rl-sub">openPangu-2.0-Flash · 问题影响 1 · 六章讲清：Layer 38 在整网哪里，一个数又怎么把整次训练的 loss 算成 NaN</p>
   </div>
 
   <div class="rl-steps" id="steps"></div>
   <p class="rl-cap" id="cap"></p>
+  <div class="rl-road" id="road"></div>
 
   <div class="rl-fig" id="fig">
 
-    <!-- 第 1 步 -->
+    <!-- 第 1 章 · 全局定位：复用整网 3D deck，展开 L37 / L38 / L39，在 L38 上叠加物理 stream -->
     <section class="rl-scene" data-step="1">
+      <div class="rl-net">
+        <div class="rl-net-legend" aria-label="计算流图例">
+          <button type="button" class="btn btn-sm" data-flow-control="compute" aria-pressed="false" style="--c:var(--rl-l)"><i></i>主 compute stream · Attention + Router + Expert FFN</button>
+          <button type="button" class="btn btn-sm" data-flow-control="tp" aria-pressed="false" style="--c:var(--pto-model-deck-comm,#06B6D4)"><i></i>TP communication stream · AllGather / Reduce-Scatter</button>
+          <button type="button" class="btn btn-sm" data-flow-control="ep" aria-pressed="false" style="--c:var(--rl-p)"><i></i>EP communication stream · Dispatch / Combine A2A</button>
+        </div>
+        <div class="rl-net-body">
+          <div class="rl-net-deck" id="rl-net-deck" aria-label="openPangu 2.0 Flash 整网图，展开 Layer 37、38、39，聚焦 Layer 38 计算流"></div>
+          <aside class="rl-deliveries" aria-label="Layer 38 过程交付件">
+            <h3>Layer 38 · 数据交付</h3>
+            <p>每完成一段计算，就生成一张“谁 → 交付什么 → 给谁”；点击上方 stream 可聚焦该流及其主计算依赖。</p>
+            <ol class="rl-delivery-list">
+              <li class="rl-delivery is-boundary" data-delivery="0" data-rl-flow="compute" style="--c:var(--rl-l)"><span class="rl-delivery-index">1</span><span class="rl-party">L37</span><span class="rl-delivery-link"></span><span class="rl-delivery-card"><strong>X₃₈ · mHC state</strong><small>上一层完成的 hidden</small></span><span class="rl-delivery-link"></span><span class="rl-party">38 In</span></li>
+              <li class="rl-delivery" data-delivery="1" data-rl-flow="compute" style="--c:var(--rl-l)"><span class="rl-delivery-index">2</span><span class="rl-party">Proj</span><span class="rl-delivery-link"></span><span class="rl-delivery-card"><strong>Q / K / V</strong><small>Sparse MLA 三路输入</small></span><span class="rl-delivery-link"></span><span class="rl-party">Attn</span></li>
+              <li class="rl-delivery" data-delivery="2" data-rl-flow="tp" style="--c:var(--pto-model-deck-comm,#06B6D4)"><span class="rl-delivery-index">3</span><span class="rl-party">Attn</span><span class="rl-delivery-link"></span><span class="rl-delivery-card"><strong>Attention output</strong><small>Reduce-Scatter 后的分片结果</small></span><span class="rl-delivery-link"></span><span class="rl-party">Post</span></li>
+              <li class="rl-delivery" data-delivery="3" data-rl-flow="compute" style="--c:var(--rl-l)"><span class="rl-delivery-index">4</span><span class="rl-party">Gate</span><span class="rl-delivery-link"></span><span class="rl-delivery-card"><strong>Top-8 路由表</strong><small>expert ids + weights</small></span><span class="rl-delivery-link"></span><span class="rl-party">Disp</span></li>
+              <li class="rl-delivery" data-delivery="4" data-rl-flow="ep" style="--c:var(--rl-p)"><span class="rl-delivery-index">5</span><span class="rl-party">Disp</span><span class="rl-delivery-link"></span><span class="rl-delivery-card"><strong>Dispatched tokens</strong><small>按专家切开的 token 分片</small></span><span class="rl-delivery-link"></span><span class="rl-party">FFN</span></li>
+              <li class="rl-delivery" data-delivery="5" data-rl-flow="compute" style="--c:var(--rl-l)"><span class="rl-delivery-index">6</span><span class="rl-party">FFN</span><span class="rl-delivery-link"></span><span class="rl-delivery-card"><strong>Expert activations</strong><small>专家本地 SwiGLU 输出</small></span><span class="rl-delivery-link"></span><span class="rl-party">Comb</span></li>
+              <li class="rl-delivery" data-delivery="6" data-rl-flow="ep" style="--c:var(--rl-p)"><span class="rl-delivery-index">7</span><span class="rl-party">Comb</span><span class="rl-delivery-link"></span><span class="rl-delivery-card"><strong>Combined hidden</strong><small>恢复 token 原顺序</small></span><span class="rl-delivery-link"></span><span class="rl-party">Merge</span></li>
+              <li class="rl-delivery is-boundary" data-delivery="7" data-rl-flow="compute" style="--c:var(--rl-l)"><span class="rl-delivery-index">8</span><span class="rl-party">38 Out</span><span class="rl-delivery-link"></span><span class="rl-delivery-card"><strong>X₃₉ · mHC state</strong><small>本层最终 hidden</small></span><span class="rl-delivery-link"></span><span class="rl-party">L39</span></li>
+            </ol>
+          </aside>
+        </div>
+      </div>
+    </section>
+
+    <!-- 第 2 章 · 背景：一个分数是怎么算出来的 —— 张量区与第 5 章共用，见下方 data-step="2 5" -->
+
+    <!-- 第 3 章 · 根因：W_gate 越长越大，前向 / 反向两条路一起涨，梯度先碰顶 -->
+    <section class="rl-scene" data-step="3">
       <div class="f1">
+        <div class="f1-col"><div class="f1-eb">根因</div>
         <div class="f1-src">
-          <h3><span class="dot"></span>W_gate 第 193 列</h3>
+          <h3><span class="dot"></span>Layer 38 · W_gate 第 193 列</h3>
           <div class="num"><span id="f1-w">2</span><small>列范数 ‖W[:,193]‖</small></div>
           <div class="wbar"><i id="f1-wbar"></i></div>
           <div class="why">softmax 只奖励"再自信一点"，没有 z-loss 拦着，这一列的数就一直往大了长。它是根因，前向、反向两条路都跟着它涨。</div>
         </div>
-        <div class="f1-arrows">
-          <div><b>前向</b><code>logits = x · W_gate</code><span class="ar">→</span><span>涨多少算多少<br>存成 FP8 E4M3</span></div>
-          <div><b>反向</b><code>grad × loss_scale 65536</code><span class="ar">→</span><span>先放大 65536 倍<br>再存成 FP8 E5M2</span></div>
         </div>
+        <div class="f1-col"><div class="f1-eb">前向</div>
         <div class="g" id="f1-gl" style="--c:var(--rl-l)">
-          <div class="g-name">Router logits<small>max|logit| · FP8 E4M3</small></div>
-          <div class="g-bar"><div class="g-ceil"><span>上界 448</span></div><div class="g-fill" id="f1-lfill"></div><div class="g-val" id="f1-lval">30</div></div>
+          <div class="g-name">Router logits<small>logits = x · W_gate</small></div>
+          <div class="g-bar"><div class="g-ceil"><span><em>FP8 E4M3</em>上界 448</span></div><div class="g-fill" id="f1-lfill"></div><div class="g-val" id="f1-lval">30</div></div>
           <div class="g-foot" id="f1-lfoot">离天花板还有 15 倍</div>
         </div>
+        </div>
+        <div class="f1-col"><div class="f1-eb">反向</div>
         <div class="g" id="f1-gg" style="--c:var(--rl-g)">
-          <div class="g-name">梯度 × 65536<small>max|g| × scale · FP8 E5M2</small></div>
-          <div class="g-bar"><div class="g-ceil"><span>上界 57344</span></div><div class="g-fill" id="f1-gfill"></div><div class="g-val" id="f1-gval">2000</div></div>
+          <div class="g-name">梯度 × 65536<small>grad × loss_scale 65536</small></div>
+          <div class="g-bar"><div class="g-ceil"><span><em>FP8 E5M2</em>上界 57344</span></div><div class="g-fill" id="f1-gfill"></div><div class="g-val" id="f1-gval">2000</div></div>
           <div class="g-foot" id="f1-gfoot">真实 max|g| 0.03 × 65536</div>
         </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 第 4 章 · 反向：AMP 丢步 + 减半，每 ~50 步一次；监控面板全程平稳 -->
+    <section class="rl-scene" data-step="4">
+      <div class="c3">
         <div class="f1-amp">
           <h3>AMP 只检查缩放后的梯度<small>found_inf = any(isinf(grad × scale))</small></h3>
           <div class="ln ok" id="f1-ok">found_inf = <b>False</b> · 正常更新</div>
           <div class="ln" id="f1-l1">found_inf = <b class="bad">True</b> · 张量里出现了 inf</div>
-          <div class="ln" id="f1-l2">① 这一步的更新<b class="bad">整个丢掉</b><span class="skip">step 15000 跳过</span></div>
-          <div class="ln" id="f1-l3">② loss_scale <b>65536</b> → <b class="bad">32768</b>，下一步腾出一半余量</div>
+          <div class="ln" id="f1-l2">① 这一步的更新<b class="bad">整个丢掉</b><span class="skip" id="f1-skip">step 15000 跳过</span></div>
+          <div class="ln" id="f1-l3">② loss_scale <b id="f1-sc0">65536</b> → <b class="bad" id="f1-sc1">32768</b>，下一步腾出一半余量</div>
+        </div>
+        <div class="f2">
+          <div class="f2-read" id="f2-read"></div>
+          <div id="f2-svg"></div>
         </div>
       </div>
     </section>
 
-    <!-- 第 2 步 -->
-    <section class="rl-scene" data-step="2">
-      <div class="f2">
-        <div class="f2-read" id="f2-read"></div>
-        <div id="f2-svg"></div>
-      </div>
-    </section>
-
-    <!-- 第 3 步 -->
-    <section class="rl-scene" data-step="3">
+    <!-- 第 5 章 · 前向：logits 30 → 410 → 1846，一格算成 inf（上半：走势 + 三情景对照） -->
+    <section class="rl-scene" data-step="5">
       <div class="f3-top">
         <div class="f3-trend">
           <h3>max|logit| 随 step 的走势 <span id="f3-cur"></span></h3>
           <div id="f3-svg"></div>
         </div>
-        <details class="rl-formulas" open><summary>计算公式</summary><div id="formulas"></div></details>
+        <div class="rl-cmp-wrap">
+          <table class="rl-cmp" id="cmp"></table>
+        </div>
       </div>
+    </section>
+
+    <!-- 张量计算区：第 2 章讲「一个分数怎么算」，第 5 章讲「怎么算成 inf」，同一块 DOM -->
+    <section class="rl-scene rl-calc" data-step="2 5">
       <div class="f3-tools">
         <div class="segmented-control segmented-control-muted" id="scen"></div>
         <span class="hint">点任意一格可换选中的 token / expert</span>
@@ -323,10 +476,11 @@
           <table class="rl-grid" id="tp"></table>
         </section>
       </div>
+      <details class="rl-formulas" open><summary>选中这一格是怎么算出来的</summary><div id="formulas"></div></details>
     </section>
 
-    <!-- 第 4 步 -->
-    <section class="rl-scene" data-step="4">
+    <!-- 第 6 章 · 传染：一个 NaN 到全局 -->
+    <section class="rl-scene" data-step="6">
       <div class="f4" id="f4">
         <div class="f4-p" data-p="1" style="--c:var(--rl-p)">
           <h3>① 一行概率<small>probs[token 0, 0..255]</small></h3>
@@ -361,11 +515,13 @@
   </div>
 </div>
 
+<script src="./js/model-graphviz-pattern.js"></script>
+<script src="./js/model-architecture-3d-deck-pattern.js"></script>
 <script>
 (function(){
   'use strict';
 
-  /* ================= 计时器：每一步的动画都挂在一只 clock 上，stop 一把清光 ================= */
+  /* ================= 计时器：每一章的动画都挂在一只 clock 上，stop 一把清光 ================= */
   function makeClock(){
     const timers = [], rafs = [];
     const ease = t => t < .5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2;
@@ -383,135 +539,421 @@
   }
   const $ = id => document.getElementById(id);
   const fmtInt = v => Math.round(v).toLocaleString('en-US');
+  const CEIL_G = 57344, CEIL_L = 448;
 
-  /* ================= 第 1 步：三根温度计 ================= */
-  const F1 = (function(){
+  /* ================= step 路标：按真实 step 距离线性布置，15200 与 15203 挨得很近 ================= */
+  const Road = (function(){
+    const NODES = [{ s:15000 }, { s:15050 }, { s:15100 }, { s:15150 }, { s:15200, up:true }, { s:15203 }];
+    const S0 = 14960, S1 = 15215;
+    const pos = s => Math.max(0, Math.min(100, (s - S0) / (S1 - S0) * 100));
+    const el = $('road');
+    el.innerHTML = '<div class="track"></div><div class="fill" id="road-fill"></div>'
+      + NODES.map(n => `<div class="node${n.up ? ' up' : ''}" data-s="${n.s}" style="left:${pos(n.s)}%"><i></i><span>${n.s}</span></div>`).join('')
+      + '<div class="cur" id="road-cur"><b id="road-lbl"></b></div>';
+    function set(s){
+      const p = pos(s);
+      $('road-fill').style.width = p + '%'; $('road-cur').style.left = p + '%';
+      $('road-lbl').textContent = 'step ' + Math.round(s);
+      el.querySelectorAll('.node').forEach(nd => nd.classList.toggle('done', +nd.dataset.s <= s + 1e-6));
+    }
+    function hide(v){ el.classList.toggle('hide', !!v); }
+    set(S0);
+    return { set, hide };
+  })();
+
+  /* ================= 第 1 章 · 整网定位：复用 3D deck，只把 L37 / L38 / L39 展开 ================= */
+  const Net = (function(){
     const clock = makeClock();
-    const CEIL = .85;                         // 天花板画在 85% 高
-    function setGauge(fill, val, ratio, text){ fill.style.height = Math.min(1, ratio * CEIL) * 100 + '%'; val.style.bottom = Math.min(1, ratio * CEIL) * 100 + '%'; val.textContent = text; }
+    let deck = null;
+    let baseZoom = .45;
+    const host = $('rl-net-deck');
+    const focus = [37, 38, 39];
+    const streamColor = {
+      compute: 'var(--rl-l)',
+      tp: 'var(--pto-model-deck-comm,#06B6D4)',
+      ep: 'var(--rl-p)',
+    };
+
+    let activeFlow = null;
+    let internalTimeline = [];
+    let internalSteps = [];          // 每一步是一组并行推进的 item（Q/KV 双支、Router/Shared Expert 双支）
+    let boundaryTimeline = [];
+    const fold = { unit:8, gap:5, shift:0 };   // 折叠层的统一宽度 / 间距，以及三张展开卡相对居中的右移量（pattern px）
+    const SVG_NS = 'http://www.w3.org/2000/svg';
+    const FOLD_GROUP_GAP = 26;       // 折叠层组与展开卡之间的留白（px）
+
+    function markNodes(card, ids, flow){
+      ids.forEach(id => {
+        const node = card.querySelector(`[data-node="${id}"]`);
+        if (!node) return;
+        node.classList.add('rl-stream-node');
+        node.dataset.rlFlow = flow;
+        node.style.setProperty('--stream-color', streamColor[flow]);
+      });
+    }
+
+    function nodePoint(node, side){
+      const x = node.offsetLeft, y = node.offsetTop, w = node.offsetWidth, h = node.offsetHeight;
+      if (side === 'top') return { x:x + w / 2, y, nx:0, ny:-1 };
+      if (side === 'left') return { x, y:y + h / 2, nx:-1, ny:0 };
+      if (side === 'right') return { x:x + w, y:y + h / 2, nx:1, ny:0 };
+      return { x:x + w / 2, y:y + h, nx:0, ny:1 };
+    }
+
+    /* 控制点沿节点外法线展开：曲线在流出 / 流入处的切线天然垂直于节点边缘。 */
+    function bezierBetween(source, target, fromSide = 'bottom', toSide = 'top'){
+      const a = nodePoint(source, fromSide), b = nodePoint(target, toSide);
+      const distance = Math.hypot(b.x - a.x, b.y - a.y);
+      const reach = Math.max(18, Math.min(92, distance * .34));
+      return `M${a.x} ${a.y}C${a.x + a.nx * reach} ${a.y + a.ny * reach},${b.x + b.nx * reach} ${b.y + b.ny * reach},${b.x} ${b.y}`;
+    }
+
+    function addCurve(svg, card, sourceId, targetId, flow, delivery = null, skipTarget = false){
+      const source = card.querySelector(`[data-node="${sourceId}"]`);
+      const target = card.querySelector(`[data-node="${targetId}"]`);
+      if (!source || !target) return null;
+      const path = document.createElementNS(SVG_NS, 'path');
+      path.setAttribute('class', 'rl-flow-pipe');
+      path.setAttribute('pathLength', '1');
+      path.setAttribute('d', bezierBetween(source, target));
+      path.dataset.rlFlow = flow;
+      path.style.setProperty('--c', streamColor[flow]);
+      svg.appendChild(path);
+      const item = { path, source, target, flow, delivery, skipTarget };
+      internalTimeline.push(item);
+      return item;
+    }
+
+    function addFlows(card){
+      const graph = card.querySelector('.pto-model-deck__graph');
+      const svg = document.createElementNS(SVG_NS, 'svg');
+      svg.setAttribute('class', 'rl-flow-pipes');
+      svg.setAttribute('viewBox', '0 0 720 1180');
+      svg.setAttribute('aria-hidden', 'true');
+      graph.insertBefore(svg, graph.firstChild);
+
+      internalTimeline = [];
+      internalSteps = [];
+      const edge = (flow, a, b, delivery = null, skipTarget = false) => addCurve(svg, card, a, b, flow, delivery, skipTarget);
+      const step = (...items) => { const list = items.filter(Boolean); if (list.length) internalSteps.push(list); };
+
+      step(edge('compute','mhc_state_in','attn_norm'));
+      step(edge('tp','attn_norm','attn_all_gather'));
+      /* Q 支与 KV 支同源于 AllGather，互不依赖：两条链并行推进，最后在 attention core 汇合。 */
+      step(edge('compute','attn_all_gather','q_a_proj'),      edge('compute','attn_all_gather','kv_a_proj'));
+      step(edge('compute','q_a_proj','q_causal_conv'),        edge('compute','kv_a_proj','kv_causal_conv'));
+      step(edge('compute','q_causal_conv','q_residual_add'),  edge('compute','kv_causal_conv','kv_residual_add'));
+      step(edge('compute','q_residual_add','q_a_norm'),       edge('compute','kv_residual_add','kv_a_norm'));
+      step(edge('compute','q_a_norm','q_b_proj'),             edge('compute','kv_a_norm','kv_b_proj'));
+      step(edge('compute','q_b_proj','query_tensor'),         edge('compute','kv_b_proj','key_tensor'));
+      step(edge('compute','query_tensor','attention_core'),   edge('compute','key_tensor','attention_core',1));
+      step(edge('compute','attention_core','o_causal_conv'));
+      step(edge('compute','o_causal_conv','o_residual_add'));
+      step(edge('compute','o_residual_add','o_proj'));
+      step(edge('tp','o_proj','attn_reduce_scatter'));
+      step(edge('tp','attn_reduce_scatter','post_attention_norm',2));
+      step(edge('compute','post_attention_norm','mhc_attention_post'));
+      step(edge('compute','mhc_attention_post','pre_mlp_norm'));
+      /* Router → EP dispatch → Expert Pool → EP combine 这条路由支，与 Shared Expert 支并行：
+         Shared Expert 的计算通常与 A2A 通信重叠，两支最后在 moe_branch_add 汇合。 */
+      step(edge('compute','pre_mlp_norm','gate',3),           edge('compute','pre_mlp_norm','shared_expert'));
+      step(edge('ep','gate','a2a_dispatch'),                  edge('compute','shared_expert','moe_branch_add'));
+      step(edge('ep','a2a_dispatch','expert_pool',4,true));
+      const expertPool = card.querySelector('[data-node="expert_pool"]');
+      const poolItem = { node:expertPool, source:expertPool, target:expertPool, flow:'compute', delivery:5 };
+      internalTimeline.push(poolItem);
+      step(poolItem);
+      step(edge('ep','expert_pool','a2a_combine'));
+      step(edge('ep','a2a_combine','moe_branch_add',6));
+      step(edge('compute','moe_branch_add','post_mlp_norm'));
+      step(edge('compute','post_mlp_norm','ffn_residual_add'));
+      step(edge('compute','ffn_residual_add','mhc_state_out'));
+
+      markNodes(card, ['mhc_state_in','attn_norm','q_a_proj','q_causal_conv','q_residual_add','q_a_norm','q_b_proj','query_tensor','kv_a_proj','kv_causal_conv','kv_residual_add','kv_a_norm','kv_b_proj','key_tensor','attention_core','o_causal_conv','o_residual_add','o_proj','post_attention_norm','mhc_attention_post','pre_mlp_norm','gate','expert_pool','shared_expert','moe_branch_add','post_mlp_norm','ffn_residual_add','mhc_state_out'], 'compute');
+      markNodes(card, ['attn_all_gather','attn_reduce_scatter'], 'tp');
+      markNodes(card, ['a2a_dispatch','a2a_combine'], 'ep');
+    }
+
+    /* pattern 把 mHC state 节点放在卡片右侧（x=500）以对齐 right 视图的残差轨；
+       本章是正视图叙事，把首尾两个节点居中到主干（x 中心 360），并同步修正 pattern 自带边的端点。 */
+    function centerMhcNodes(card){
+      const point = (node, side) => {
+        const x = node.offsetLeft, y = node.offsetTop, w = node.offsetWidth, h = node.offsetHeight;
+        if (side === 'right') return { x:x + w, y:y + h / 2 };
+        if (side === 'top') return { x:x + w / 2, y };
+        return { x:x + w / 2, y:y + h };
+      };
+      ['mhc_state_in','mhc_state_out'].forEach(id => {
+        const node = card.querySelector(`[data-node="${id}"]`);
+        if (node) node.style.left = `${(720 - node.offsetWidth) / 2}px`;
+      });
+      card.querySelectorAll('.pto-model-deck__edges path[data-source^="mhc_state"],.pto-model-deck__edges path[data-target^="mhc_state"]').forEach(path => {
+        const source = card.querySelector(`[data-node="${path.dataset.source}"]`);
+        const target = card.querySelector(`[data-node="${path.dataset.target}"]`);
+        if (!source || !target) return;
+        if (path.dataset.kind === 'residual') {
+          const p = point(source, 'right');
+          path.setAttribute('d', path.getAttribute('d').replace(/^M[\d.]+ [\d.]+/, `M${p.x} ${p.y}`));
+          return;
+        }
+        const p0 = point(source, 'bottom'), p1 = point(target, 'top');
+        path.setAttribute('d', `M${p0.x} ${p0.y}L${p1.x} ${p1.y}`);
+      });
+    }
+
+    function foldedLayer(svg, x, y, w, h, opacity){
+      const rect = document.createElementNS(SVG_NS, 'rect');
+      rect.setAttribute('class', 'rl-folded-layer');
+      rect.setAttribute('x', x); rect.setAttribute('y', y);
+      rect.setAttribute('width', w); rect.setAttribute('height', h);
+      rect.style.opacity = opacity;
+      svg.appendChild(rect);
+    }
+
+    function foldedCaption(svg, x, y, text){
+      const label = document.createElementNS(SVG_NS, 'text');
+      label.setAttribute('class', 'rl-folded-caption');
+      label.setAttribute('x', x); label.setAttribute('y', y);
+      label.textContent = text;
+      svg.appendChild(label);
+    }
+
+    function drawFoldedLayers(svg, base){
+      const leftCard = host.querySelector('.pto-model-deck__layer[data-layer="37"]')?.getBoundingClientRect();
+      const rightCard = host.querySelector('.pto-model-deck__layer[data-layer="39"]')?.getBoundingClientRect();
+      if (!leftCard || !rightCard) return;
+      const y = leftCard.top - base.top, h = leftCard.height;
+      const { unit, gap } = fold, pitch = unit + gap, groupGap = FOLD_GROUP_GAP;
+      /* 左侧 37 层：从 L37 卡左缘向左依次排开；右侧 6 层：从 L39 卡右缘向右排开。
+         每层同宽同距，离展开卡越远越淡，不再用重叠矩形拼成一个大框。 */
+      const leftEnd = leftCard.left - base.left - groupGap;
+      for (let i = 0; i < 37; i += 1) foldedLayer(svg, leftEnd - (i + 1) * pitch + gap, y, unit, h, .42 - .30 * (i / 36));
+      foldedCaption(svg, leftEnd - (37 * pitch - gap) / 2, Math.max(14, y - 10), 'L0–L36 · 37 layers');
+      const rightStart = rightCard.right - base.left + groupGap;
+      for (let i = 0; i < 6; i += 1) foldedLayer(svg, rightStart + i * pitch, y, unit, h, .42 - .30 * (i / 5));
+      foldedCaption(svg, rightStart + (6 * pitch - gap) / 2, Math.max(14, y - 10), 'L40–L45 · 6 layers');
+    }
+
+    function renderHandoffs(){
+      const svg = host.querySelector('.rl-handoffs');
+      if (!svg) return;
+      svg.querySelectorAll('.rl-handoff,.rl-handoff-label,.rl-folded-layer,.rl-folded-caption').forEach(el => el.remove());
+      const base = host.getBoundingClientRect();
+      svg.setAttribute('viewBox', `0 0 ${base.width} ${base.height}`);
+      boundaryTimeline = [];
+      drawFoldedLayers(svg, base);
+      [[37,38,0],[38,39,7]].forEach(([fromLayer,toLayer,delivery]) => {
+        const sourceCard = host.querySelector(`.pto-model-deck__layer[data-layer="${fromLayer}"]`);
+        const targetCard = host.querySelector(`.pto-model-deck__layer[data-layer="${toLayer}"]`);
+        const source = host.querySelector(`.pto-model-deck__layer[data-layer="${fromLayer}"] [data-node="mhc_state_out"]`);
+        const target = host.querySelector(`.pto-model-deck__layer[data-layer="${toLayer}"] [data-node="mhc_state_in"]`);
+        if (!sourceCard || !targetCard || !source || !target) return;
+        const sr = sourceCard.getBoundingClientRect(), tr = targetCard.getBoundingClientRect();
+        const s = source.getBoundingClientRect(), t = target.getBoundingClientRect();
+        /* 直接连 mHC output → 下一层 mHC input，一条正交折线：
+           从 output 右侧出、走两张卡之间的缝隙向上、贴着卡顶横过去、从 input 顶部进入。
+           不穿过任何一张卡的节点区域；每个跨层交付只有这一条 path。 */
+        const a = { x:s.right - base.left, y:s.top - base.top + s.height / 2 };
+        const b = { x:t.left - base.left + t.width / 2, y:t.top - base.top };
+        const gapX = (sr.right + tr.left) / 2 - base.left;
+        const topY = Math.max(8, tr.top - base.top - 16);
+        const r = Math.max(2, Math.min(10, gapX - a.x - 2));
+        const d = [
+          `M${a.x} ${a.y}`,
+          `H${gapX - r} Q${gapX} ${a.y} ${gapX} ${a.y - r}`,
+          `V${topY + r} Q${gapX} ${topY} ${gapX + r} ${topY}`,
+          `H${b.x - r} Q${b.x} ${topY} ${b.x} ${topY + r}`,
+          `V${b.y}`,
+        ].join('');
+        const path = document.createElementNS(SVG_NS, 'path');
+        path.setAttribute('class', 'rl-handoff');
+        path.setAttribute('pathLength', '1');
+        path.setAttribute('d', d);
+        path.dataset.rlFlow = 'compute';
+        path.setAttribute('aria-label', `Layer ${fromLayer} 输出进入 Layer ${toLayer}`);
+        svg.appendChild(path);
+        const label = document.createElementNS(SVG_NS, 'text');
+        label.setAttribute('class', 'rl-handoff-label');
+        label.setAttribute('x', (gapX + b.x) / 2);
+        label.setAttribute('y', topY - 7);
+        label.textContent = fromLayer === 37 ? 'L37 输出 X₃₈ → L38 输入' : 'L38 输出 X₃₉ → L39 输入';
+        label.dataset.rlFlow = 'compute';
+        svg.appendChild(label);
+        boundaryTimeline.push({ path, source, target, label, flow:'compute', delivery });
+      });
+      renderFlowIndices();
+      syncFlow();
+    }
+
+    function renderFlowIndices(){
+      const layer = host.querySelector('.rl-flow-index-layer');
+      if (!layer) return;
+      layer.replaceChildren();
+      const base = host.getBoundingClientRect();
+      [...boundaryTimeline, ...internalTimeline]
+        .filter(item => item.delivery != null)
+        .sort((a, b) => a.delivery - b.delivery)
+        .forEach(item => {
+          const anchor = item.target || item.node || item.source;
+          if (!anchor) return;
+          const rect = anchor.getBoundingClientRect();
+          const badge = document.createElement('span');
+          badge.className = 'rl-flow-index';
+          badge.textContent = String(item.delivery + 1);
+          badge.dataset.rlFlow = item.flow;
+          badge.dataset.deliveryBadge = String(item.delivery);
+          badge.style.setProperty('--c', streamColor[item.flow]);
+          badge.style.left = `${rect.right - base.left + 7}px`;
+          badge.style.top = `${rect.top - base.top - 3}px`;
+          layer.appendChild(badge);
+          item.badge = badge;
+        });
+    }
+
+    function addOuterLayers(){
+      host.insertAdjacentHTML('beforeend', `
+        <svg class="rl-handoffs" aria-hidden="true"></svg>
+        <div class="rl-flow-index-layer" aria-hidden="true"></div>
+        <div class="rl-drill-label" aria-hidden="true"><i></i><span>Router 内部：x × W_gate = logits</span></div>`);
+    }
+
+    function syncFlow(){
+      const root = host.closest('.rl-net');
+      root.classList.toggle('is-flow-filtered', Boolean(activeFlow));
+      root.querySelectorAll('[data-flow-control]').forEach(button => {
+        const on = button.dataset.flowControl === activeFlow;
+        button.classList.toggle('is-selected', on);
+        button.setAttribute('aria-pressed', String(on));
+      });
+      root.querySelectorAll('[data-rl-flow]').forEach(el => {
+        const flows = (el.dataset.rlFlow || '').split(/\s+/);
+        const selected = Boolean(activeFlow) && flows.includes(activeFlow);
+        const dependency = Boolean(activeFlow && activeFlow !== 'compute') && flows.includes('compute');
+        el.classList.toggle('is-active', selected);
+        el.classList.toggle('is-related', !selected && dependency);
+      });
+    }
+
+    function resetProgress(){
+      host.closest('.rl-net').querySelectorAll('.is-current,.is-complete,.is-delivered').forEach(el => el.classList.remove('is-current','is-complete','is-delivered'));
+      host.querySelectorAll('.rl-focus-layer.is-context').forEach(card => card.classList.remove('is-boundary-complete'));
+    }
+
+    function finishItem(item){
+      item.path?.classList.remove('is-current');
+      item.path?.classList.add('is-complete');
+      item.source?.classList.remove('is-current');
+      item.source?.classList.add('is-complete');
+      if (!item.skipTarget) item.target?.classList.add('is-complete');
+      item.dots?.forEach(dot => dot.classList.add('is-complete'));
+      item.label?.classList.add('is-complete');
+      item.badge?.classList.add('is-complete');
+      if (item.delivery != null) host.closest('.rl-net').querySelector(`[data-delivery="${item.delivery}"]`)?.classList.add('is-delivered');
+      if (item.delivery === 0) host.querySelector('.pto-model-deck__layer[data-layer="37"]')?.classList.add('is-boundary-complete');
+      if (item.delivery === 7) host.querySelector('.pto-model-deck__layer[data-layer="39"]')?.classList.add('is-boundary-complete');
+    }
+
+    function runTimeline(done){
+      const steps = [[boundaryTimeline[0]], ...internalSteps, [boundaryTimeline[1]]].map(list => list.filter(Boolean)).filter(list => list.length);
+      const SEGMENT_MS = 190;
+      steps.forEach((items, index) => {
+        const at = index * SEGMENT_MS;
+        clock.at(at, () => items.forEach(item => {
+          item.path?.classList.add('is-current');
+          item.source?.classList.add('is-current');
+          item.node?.classList.add('is-current');
+        }));
+        clock.at(at + SEGMENT_MS - 12, () => items.forEach(finishItem));
+      });
+      const end = steps.length * SEGMENT_MS;
+      clock.at(end + 420, () => {
+        host.classList.add('is-pinpoint');
+        const gate = host.querySelector('.pto-model-deck__layer[data-layer="38"] [data-node="gate"]');
+        gate?.classList.add('is-drill-target');
+        const label = host.querySelector('.rl-drill-label');
+        if (gate && label) {
+          const base = host.getBoundingClientRect(), rect = gate.getBoundingClientRect();
+          label.style.left = `${rect.left - base.left + rect.width / 2}px`;
+          label.style.top = `${rect.top - base.top + rect.height / 2}px`;
+        }
+      });
+      clock.at(end + 1120, () => {
+        host.classList.add('is-drilldown');
+      });
+      clock.at(end + 2450, done);
+    }
+
+    function bindLegend(){
+      host.closest('.rl-net').querySelector('.rl-net-legend').addEventListener('click', event => {
+        const button = event.target.closest('[data-flow-control]');
+        if (!button) return;
+        window.__rlDriver?.userTouched();
+        activeFlow = activeFlow === button.dataset.flowControl ? null : button.dataset.flowControl;
+        syncFlow();
+      });
+    }
+
+    function mount(){
+      if (deck || !window.PtoModelArchitecture3dDeck) return;
+      deck = window.PtoModelArchitecture3dDeck.render(host, {
+        preset:'openpangu-flash',
+        initialView:'front',
+        initialTheme:document.documentElement.dataset.theme === 'light' ? 'light' : 'dark',
+        showChrome:false,
+        externallyManaged:true,
+      });
+      baseZoom = Math.min(.45, Math.max(.27, host.clientWidth / 1120 * .45));
+      deck.setPose({ view:'front', zoom:baseZoom, panX:0, panY:0, pivot:{ x:0, y:0, z:0 } });
+      /* 折叠层布局：三张展开卡（含两道 30px 卡缝，共 2220 pattern px）居中后，左边要放 37 层、右边只放 6 层，
+         所以按两组折叠层的宽度差把三张卡整体右移，让两侧留白对称。 */
+      {
+        const span = 2220 * baseZoom, margin = 16;
+        const free = Math.max(120, host.clientWidth - span - 2 * margin - 2 * FOLD_GROUP_GAP);
+        fold.unit = Math.min(12, free / (43 + 41 * .6));
+        fold.gap = fold.unit * .6;
+        const left = 37 * fold.unit + 36 * fold.gap, right = 6 * fold.unit + 5 * fold.gap;
+        fold.shift = (left - right) / 2 / baseZoom;
+      }
+      focus.forEach((layer, i) => {
+        const card = host.querySelector(`.pto-model-deck__layer[data-layer="${layer}"]`);
+        if (!card) return;
+        card.classList.add('rl-focus-layer', layer === 38 ? 'is-center' : 'is-context');
+        card.style.transform = `translate3d(${(i - 1) * 750 + fold.shift}px,0,0)`;
+        centerMhcNodes(card);
+        if (layer === 38) addFlows(card);
+        if (layer === 37) markNodes(card, ['mhc_state_out'], 'compute');
+        if (layer === 39) markNodes(card, ['mhc_state_in'], 'compute');
+      });
+      addOuterLayers();
+      bindLegend();
+    }
+
     function reset(){
       clock.stop();
-      $('f1-gg').classList.remove('hit');
-      $('f1-ok').classList.remove('off');
-      ['f1-l1', 'f1-l2', 'f1-l3'].forEach(id => $(id).classList.remove('on'));
-      $('f1-w').textContent = '2'; $('f1-wbar').style.width = '4%';
-      setGauge($('f1-lfill'), $('f1-lval'), 30 / 448, '30');
-      $('f1-lfoot').innerHTML = '离天花板还有 <b>15 倍</b>';
-      setGauge($('f1-gfill'), $('f1-gval'), 2000 / 57344, '2000');
-      $('f1-gfoot').innerHTML = '真实 max|g| <b>0.03</b> × 65536';
+      mount();
+      host.classList.remove('is-pinpoint','is-drilldown');
+      host.querySelector('.is-drill-target')?.classList.remove('is-drill-target');
+      const drillLabel = host.querySelector('.rl-drill-label');
+      if (drillLabel) { drillLabel.style.removeProperty('left'); drillLabel.style.removeProperty('top'); }
+      deck?.setPose({ view:'front', zoom:baseZoom, panX:0, panY:0, pivot:{ x:0, y:0, z:0 } });
+      renderHandoffs();
+      resetProgress();
+      void host.offsetWidth;
     }
     function start(done){
       reset();
-      const grow = t => Math.pow(t, 1.7);       // 指数式增长：前慢后快
-      clock.tween(200, 2600, t => {
-        const w = 2 + 33 * t, L = 30 + 260 * t, gReal = 0.03 + 0.845 * t;
-        $('f1-w').textContent = w.toFixed(0); $('f1-wbar').style.width = (4 + 66 * t) + '%';
-        setGauge($('f1-lfill'), $('f1-lval'), L / 448, Math.round(L));
-        $('f1-lfoot').innerHTML = '离天花板还有 <b>' + (448 / L).toFixed(1) + ' 倍</b>';
-        const gs = gReal * 65536;
-        setGauge($('f1-gfill'), $('f1-gval'), gs / 57344, fmtInt(gs));
-        $('f1-gfoot').innerHTML = '真实 max|g| <b>' + gReal.toFixed(3) + '</b> × 65536';
-      }, grow);
-      clock.at(2850, () => {
-        $('f1-gg').classList.add('hit');
-        $('f1-gfill').style.height = '92%'; $('f1-gval').style.bottom = '92%'; $('f1-gval').textContent = 'inf';
-        $('f1-gfoot').innerHTML = '0.875 × 65536 = 57344 <b>装不下了</b>';
-        $('f1-ok').classList.add('off'); $('f1-l1').classList.add('on');
-      });
-      clock.at(3700, () => $('f1-l2').classList.add('on'));
-      clock.at(4500, () => $('f1-l3').classList.add('on'));
-      clock.tween(4900, 700, t => {
-        $('f1-gg').classList.remove('hit');
-        const gs = 57344 - (57344 - 28672) * t;
-        setGauge($('f1-gfill'), $('f1-gval'), gs / 57344, fmtInt(gs));
-        $('f1-gfoot').innerHTML = '同样的梯度 × <b>32768</b>，回到一半';
-      });
-      clock.at(6600, done);
+      requestAnimationFrame(() => { renderHandoffs(); resetProgress(); runTimeline(done); });
     }
-    return { start, reset, stop: () => clock.stop() };
+    return { start, reset, stop:() => clock.stop() };
   })();
 
-  /* ================= 第 2 步：200 步曲线 ================= */
-  const F2 = (function(){
-    const clock = makeClock();
-    const W = 1100, H = 400, X0 = 60, X1 = 1000, S0 = 14960, S1 = 15230, SEND = 15202;
-    const xs = s => X0 + (s - S0) / (S1 - S0) * (X1 - X0);
-    const LA = { y0: 30, y1: 170, max: 64000 }, LB = { y0: 196, y1: 300, max: 500 }, LC = { y0: 326, y1: 386 };
-    const HITS = [15005, 15055, 15105, 15155];
-    const CEIL_G = 57344, CEIL_L = 448;
-    const gReal = s => 0.875 * Math.pow(2, (s - HITS[0]) / 50);
-    const scaleAt = s => 65536 / Math.pow(2, HITS.filter(h => h < s).length);
-    const noise = s => Math.sin(s * 0.9) * Math.sin(Math.PI * (s - HITS[0]) / 50);   // 碰顶那一步噪声恰好为 0
-    const scaled = s => gReal(s) * scaleAt(s) * (1 + 0.04 * noise(s));
-    const logit = s => 410 * Math.pow(2, (s - 15200) / 400) * (1 + 0.01 * Math.sin(s * 0.7));
-    const yA = v => LA.y1 - v / LA.max * (LA.y1 - LA.y0);
-    const yB = v => LB.y1 - v / LB.max * (LB.y1 - LB.y0);
-    const path = (fn, y) => { let d = ''; for (let s = S0; s <= SEND; s++) d += (s === S0 ? 'M' : 'L') + xs(s).toFixed(1) + ' ' + y(fn(s)).toFixed(1) + ' '; return d; };
-    const yLoss = s => LC.y0 + (LC.y1 - LC.y0) * .38 + 2 * Math.sin(s * 1.3);
-    const yGN = s => LC.y0 + (LC.y1 - LC.y0) * .74 + 3 * Math.sin(s * .8 + 1);
-
-    function build(){
-      const lane = (L, title) => `<rect class="lane" x="${X0}" y="${L.y0}" width="${X1 - X0}" height="${L.y1 - L.y0}"/><text class="ttl" x="${X0 + 8}" y="${L.y0 + 14}">${title}</text>`;
-      let s = `<svg viewBox="0 0 ${W} ${H}" xmlns="http://www.w3.org/2000/svg">`;
-      s += `<defs><clipPath id="f2clip"><rect id="f2cliprect" x="${X0}" y="0" width="0" height="${H}"/></clipPath></defs>`;
-      s += lane(LA, '① 缩放后的梯度 max|g| × loss_scale（存成 FP8 E5M2，上界 57344）');
-      s += lane(LB, '② 前向 Router logits max|logit|（存成 FP8 E4M3，上界 448）');
-      s += lane(LC, '③ 监控面板看到的：loss 与 grad_norm');
-      // 天花板 + 越界区
-      s += `<rect class="over" x="${X0}" y="${LA.y0}" width="${X1 - X0}" height="${yA(CEIL_G) - LA.y0}"/><line class="ceil" x1="${X0}" x2="${X1}" y1="${yA(CEIL_G)}" y2="${yA(CEIL_G)}"/><text class="ceil-t" x="${X1 + 6}" y="${yA(CEIL_G) + 4}">57344</text>`;
-      s += `<rect class="over" x="${X0}" y="${LB.y0}" width="${X1 - X0}" height="${yB(CEIL_L) - LB.y0}"/><line class="ceil" x1="${X0}" x2="${X1}" y1="${yB(CEIL_L)}" y2="${yB(CEIL_L)}"/><text class="ceil-t" x="${X1 + 6}" y="${yB(CEIL_L) + 4}">448</text>`;
-      // 曲线（受 clip 控制逐步露出）
-      s += `<g clip-path="url(#f2clip)">`;
-      s += `<path class="ln-g" d="${path(scaled, yA)}"/>`;
-      s += `<path class="ln-l" d="${path(logit, yB)}"/>`;
-      s += `<path class="ln-c" d="${path(s => s, yLoss)}"/><path class="ln-c" d="${path(s => s, yGN)}"/>`;
-      s += `</g>`;
-      // 曲线尾部标注
-      s += `<g class="mk" data-at="${SEND}"><text class="lab" x="${xs(SEND) + 8}" y="${yB(logit(SEND)) + 4}" style="fill:var(--rl-l);font-weight:600">410 · 占 448 的 92%</text></g>`;
-      s += `<text class="lab" x="${xs(SEND) + 8}" y="${yLoss(SEND) + 4}">loss 3.1</text><text class="lab" x="${xs(SEND) + 8}" y="${yGN(SEND) + 4}">grad_norm 12.4</text>`;
-      s += `<g class="mk" data-at="${SEND}"><text class="lab ok" x="${X1 - 8}" y="${LC.y0 + 14}" text-anchor="end">全程平稳 —— 看不出任何异常</text></g>`;
-      // 碰顶标记：红点 + 竖虚线 + 标签
-      HITS.forEach((h, i) => {
-        const sc = 65536 / Math.pow(2, i);
-        s += `<g class="mk" data-at="${h}"><line x1="${xs(h)}" x2="${xs(h)}" y1="${yA(CEIL_G)}" y2="${LC.y1}"/><circle cx="${xs(h)}" cy="${yA(CEIL_G)}" r="5"/>`
-           + `<text x="${xs(h)}" y="${LA.y0 - 8}" text-anchor="middle">✗ 跳过更新 · scale ${sc} → ${sc / 2}</text></g>`;
-      });
-      // 15203 尖峰
-      s += `<g class="spike" id="f2-spike"><line x1="${xs(15203)}" x2="${xs(15203)}" y1="${yB(410)}" y2="${LB.y0 + 4}"/><text x="${xs(15203) + 8}" y="${LB.y0 + 32}">step 15203 → 1846，越界 4 倍</text></g>`;
-      // 光标 + 轴
-      s += `<line class="cur" id="f2-cur" x1="${X0}" x2="${X0}" y1="${LA.y0 - 4}" y2="${LC.y1 + 4}"/>`;
-      [15000, 15050, 15100, 15150, 15200].forEach(t => s += `<text class="tk" x="${xs(t)}" y="${H - 2}" text-anchor="middle">step ${t}</text>`);
-      s += `</svg>`;
-      $('f2-svg').innerHTML = s;
-    }
-    function readout(s){
-      const hits = HITS.filter(h => h <= s).length;
-      $('f2-read').innerHTML = `<span>step <b>${Math.round(s)}</b></span><span>loss_scale <b class="${hits ? 'bad' : ''}">${scaleAt(s + .5)}</b></span><span>已碰顶 <b class="${hits ? 'bad' : ''}">${hits}</b> 次</span><span>loss <b>3.1</b></span><span>grad_norm <b>12.4</b></span><span>max|logit| <b>${Math.round(logit(Math.min(s, SEND)))}</b></span>`;
-    }
-    function setCursor(s){
-      $('f2cliprect').setAttribute('width', Math.max(0, xs(s) - X0));
-      $('f2-cur').setAttribute('x1', xs(s)); $('f2-cur').setAttribute('x2', xs(s));
-      document.querySelectorAll('#f2-svg .mk').forEach(m => m.classList.toggle('on', +m.dataset.at <= s));
-      readout(s);
-    }
-    function reset(){ clock.stop(); if (!$('f2cliprect')) build(); $('f2-spike').classList.remove('on'); setCursor(S0); }
-    function start(done){
-      reset();
-      clock.tween(300, 6800, t => setCursor(S0 + (SEND - S0) * t), t => t);
-      clock.at(7300, () => $('f2-spike').classList.add('on'));
-      clock.at(8800, done);
-    }
-    return { start, reset, stop: () => clock.stop() };
-  })();
-
-  /* ================= 第 3 步：张量计算（x × W = logits → softmax → probs）+ 趋势图 ================= */
-  const F3 = (function(){
-    const clock = makeClock();
+  /* ================= 张量计算（第 2、5 章共用）：x × W = logits → softmax → probs + 走势图 + 三情景对照 ================= */
+  const Tensor = (function(){
     const H = 2560, E = 256;
     const TOKENS  = [0, 1, 8190, 8191];        // 展示的 token 行
     const EXPERTS = [0, 1, 193, 254, 255];     // 展示的 expert 列
     const HIDS    = [0, 1, 2558, 2559];        // 展示的 hidden 维
-    const FP8_MAX = 448;
+    const FP8_MAX = CEIL_L;
 
     // ---- 确定性随机 ----
     function rng(seed){ let a = seed >>> 0; return function(){ a += 0x6D2B79F5; let t = a; t = Math.imul(t ^ (t >>> 15), t | 1); t ^= t + Math.imul(t ^ (t >>> 7), t | 61); return ((t ^ (t >>> 14)) >>> 0) / 4294967296; }; }
@@ -547,10 +989,11 @@
     }
     const xOverflow = Object.assign({}, xBase, { 0: alignRow(xBase[0], wGrown[193], 1846) });
 
+    // 三情景：对照表的每一行也从这里取
     const SCEN = [
-      { id:'normal',   label:'step ~10000 · 正常态',   step:10000, peak:30,   x:xBase,     w:wNormal },
-      { id:'grown',    label:'step 15200 · 塌缩前夕',  step:15200, peak:410,  x:xBase,     w:wGrown  },
-      { id:'overflow', label:'step 15203 · 溢出',      step:15203, peak:1846, x:xOverflow, w:wGrown  },
+      { id:'normal',   label:'step ~10000 · 正常态',  short:'正常态',   step:10000, peak:30,   x:xBase,     w:wNormal, elem:'±0.04', norm:2,  cos:0.3,  margin:'15 倍余量' },
+      { id:'grown',    label:'step 15200 · 塌缩前夕', short:'塌缩前夕', step:15200, peak:410,  x:xBase,     w:wGrown,  elem:'±1',    norm:50, cos:0.16, margin:'8% 余量' },
+      { id:'overflow', label:'step 15203 · 溢出',     short:'溢出',     step:15203, peak:1846, x:xOverflow, w:wGrown,  elem:'±1',    norm:50, cos:0.74, margin:'越界 4 倍 → inf' },
     ];
 
     const otherLogits = {}; TOKENS.forEach(t => { const r = rng(9000 + t); otherLogits[t] = Array.from({ length: E }, () => 18 + 4 * normal(r)); });
@@ -625,6 +1068,7 @@
       renderFormulas(s, big);
       renderGauge();
       renderTrend();
+      renderCmp();
       document.querySelectorAll('#scen .btn').forEach((b, i) => b.classList.toggle('is-selected', i === si));
     }
 
@@ -661,7 +1105,21 @@
       const cn = $('cast-note'); cn.classList.toggle('bad', over); cn.textContent = over ? '1846 > 448 → cast 成 inf' : '先 cast 成 FP8 E4M3';
     }
 
-    // ---- 趋势图：max|logit| 从 step 10000 的 30 爬到 15200 的 410，15203 一步顶到 1846 ----
+    // ---- 三情景对照表：点列头 / 任意格切情景 ----
+    function renderCmp(){
+      const ROWS = [
+        ['W_gate[:,193] 典型元素', s => s.elem],
+        ['列范数 ‖w‖（其它 255 列）', s => `${s.norm}（2）`],
+        ['x 与这一列的夹角 cos', s => s.cos],
+        ['logit[token 0, 193]', s => s.peak > 448 ? `<b class="bad">${s.peak}</b>` : `~${s.peak}`],
+        ['距 E4M3 上界 448', s => s.peak > 448 ? `<b class="bad">${s.margin}</b>` : s.margin],
+      ];
+      let h = '<tr><th></th>' + SCEN.map((s, i) => `<th data-i="${i}" class="${i === si ? 'cur' : ''}">${s.short}<small>step ${s.step === 10000 ? '~10000' : s.step}</small></th>`).join('') + '</tr>';
+      ROWS.forEach(([lbl, f]) => { h += `<tr><th class="rh">${lbl}</th>` + SCEN.map((s, i) => `<td data-i="${i}" class="${i === si ? 'cur' : ''}">${f(s)}</td>`).join('') + '</tr>'; });
+      $('cmp').innerHTML = h;
+    }
+
+    // ---- 走势图：max|logit| 从 step 10000 的 30 爬到 15200 的 410，15203 一步顶到 1846 ----
     const TR = { W: 460, H: 190, X0: 40, X1: 396, S0: 10000, S1: 15400, y0: 22, y1: 160, max: 520 };
     const tx = s => TR.X0 + (s - TR.S0) / (TR.S1 - TR.S0) * (TR.X1 - TR.X0);
     const ty = v => TR.y1 - Math.min(v, TR.max) / TR.max * (TR.y1 - TR.y0);
@@ -683,7 +1141,6 @@
       [10000, 12000, 14000, 15200].forEach(t => h += `<text class="tk" x="${tx(t)}" y="${TR.H - 6}" text-anchor="middle">${t}</text>`);
       h += `</svg>`;
       $('f3-svg').innerHTML = h;
-      $('f3-svg').addEventListener('click', e => { const el = e.target.closest('[data-i]'); if (el) setScen(+el.dataset.i); });
     }
     function renderTrend(){
       if (!$('f3-svg').firstChild) buildTrend();
@@ -693,28 +1150,162 @@
       c.textContent = `step ${s.step} · max|logit| ${s.peak} · ${bad ? '越界 ' + (s.peak / 448).toFixed(1) + ' 倍' : '占上界 ' + Math.round(100 * s.peak / 448) + '%'}`;
     }
 
-    function setScen(i){ si = i; R = compute(SCEN[si]); render(); }
+    function setScen(i){ si = i; R = compute(SCEN[si]); render(); Road.set(SCEN[si].step); }
 
     // ---- 交互 ----
     const scen = $('scen');
     SCEN.forEach((s, i) => { const b = document.createElement('button'); b.className = 'btn btn-sm'; b.textContent = s.label; b.onclick = () => { Driver.userTouched(); setScen(i); }; scen.appendChild(b); });
+    const pick = e => { const el = e.target.closest('[data-i]'); if (el) { Driver.userTouched(); setScen(+el.dataset.i); } };
+    $('f3-svg').addEventListener('click', pick);
+    $('cmp').addEventListener('click', pick);
     $('tx').addEventListener('click', e => { const td = e.target.closest('td[data-t]'); if (td) { selT = +td.dataset.t; render(); } });
     $('tw').addEventListener('click', e => { const td = e.target.closest('td[data-j]'); if (td) { selJ = +td.dataset.j; render(); } });
     ['tl', 'tp'].forEach(id => $(id).addEventListener('click', e => { const td = e.target.closest('td[data-t]'); if (td) { selT = +td.dataset.t; selJ = +td.dataset.j; render(); } }));
 
-    // 动画：正常态 → 塌缩前夕 → 溢出，趋势图上的点跟着走
-    function reset(){ clock.stop(); selT = 0; selJ = 193; setScen(0); }
-    function start(done){
-      reset();
-      clock.at(1600, () => setScen(1));
-      clock.at(3400, () => setScen(2));
-      clock.at(6000, done);
-    }
-    return { start, reset, stop: () => clock.stop(), setScen };
+    function reset(i){ selT = 0; selJ = 193; setScen(i || 0); }
+    return { reset, setScen };
   })();
 
-  /* ================= 第 4 步：一个 inf 的传染 ================= */
-  const F4 = (function(){
+  /* ================= 第 2 章 · 背景：正常态的四张表，停一会儿就往下走 ================= */
+  const C1 = (function(){
+    const clock = makeClock();
+    const scene = document.querySelector('.rl-scene.rl-calc');
+    function reset(){ clock.stop(); scene.classList.remove('is-bridge-enter'); Tensor.reset(0); }
+    function start(done){
+      reset();
+      void scene.offsetWidth;
+      scene.classList.add('is-bridge-enter');
+      clock.at(1850, () => scene.classList.remove('is-bridge-enter'));
+      clock.at(5000, done);
+    }
+    return { start, reset, stop: () => clock.stop() };
+  })();
+
+  /* ================= 第 3 章 · 根因：W_gate 2 → 30，两支温度计一起涨，梯度先碰顶 ================= */
+  const C2 = (function(){
+    const clock = makeClock();
+    const S0 = 10000, S1 = 15000, CEIL = .85;                 // 温度计天花板画在 85% 高，越界那截可以冒出来变红
+    const geo = (a, b, p) => a * Math.pow(b / a, p);          // 指数式增长：W 2→30，logits 30→290，缩放后梯度 2000→57344
+    function setGauge(fill, val, ratio, text){ const hgt = Math.min(1.08, ratio * CEIL) * 100; fill.style.height = hgt + '%'; val.style.bottom = hgt + '%'; val.textContent = text; }
+    function at(p){
+      const w = geo(2, 30, p), L = geo(30, 290, p), gs = geo(2000, CEIL_G, p);
+      $('f1-w').textContent = w < 10 ? w.toFixed(1) : w.toFixed(0); $('f1-wbar').style.width = (w / 50 * 100) + '%';
+      setGauge($('f1-lfill'), $('f1-lval'), L / CEIL_L, Math.round(L));
+      $('f1-lfoot').innerHTML = '离天花板还有 <b>' + (CEIL_L / L).toFixed(1) + ' 倍</b>';
+      setGauge($('f1-gfill'), $('f1-gval'), gs / CEIL_G, fmtInt(gs));
+      $('f1-gfoot').innerHTML = '真实 max|g| <b>' + (gs / 65536).toFixed(3) + '</b> × 65536';
+      Road.set(S0 + (S1 - S0) * p);
+    }
+    function hit(){
+      $('f1-gg').classList.add('hit');
+      $('f1-gfill').style.height = '92%'; $('f1-gval').style.bottom = '92%'; $('f1-gval').textContent = 'inf';
+      $('f1-gfoot').innerHTML = '0.875 × 65536 = 57344 <b>装不下了</b> → 交给 AMP';
+    }
+    function reset(){ clock.stop(); $('f1-gg').classList.remove('hit'); at(0); }
+    function start(done){ reset(); clock.tween(300, 6000, at, x => x); clock.at(6300, hit); clock.at(8200, done); }
+    return { start, reset, stop: () => clock.stop() };
+  })();
+
+  /* ================= 第 4 章 · 反向：AMP 卡 + 三泳道曲线，同一根游标从 14960 推到 15202 ================= */
+  const C3 = (function(){
+    const clock = makeClock();
+    const W = 1100, H = 400, X0 = 60, X1 = 1000, S0 = 14960, S1 = 15230, SEND = 15202;
+    const xs = s => X0 + (s - S0) / (S1 - S0) * (X1 - X0);
+    const LA = { y0: 30, y1: 170, max: 64000 }, LB = { y0: 196, y1: 300, max: 500 }, LC = { y0: 326, y1: 386 };
+    const HITS = [15000, 15050, 15100, 15150];
+    const scaleAt = s => 65536 / Math.pow(2, HITS.filter(h => h < s).length);
+    const noise = s => Math.sin(s * 0.9) * Math.sin(Math.PI * (s - HITS[0]) / 50);   // 碰顶那一步噪声恰好为 0
+    // 每次减半后从 28672 起再往上翻倍，~50 步又碰顶；最后一段稍慢一点（56 步翻倍），到 15202 停在 95%
+    const scaled = s => { const k = HITS.filter(h => h < s).length - 1; const h0 = k < 0 ? HITS[0] : HITS[k], base = k < 0 ? CEIL_G : CEIL_G / 2; return base * Math.pow(2, (s - h0) / (k === HITS.length - 1 ? 56 : 50)) * (1 + 0.04 * noise(s)); };
+    const logit = s => 410 * Math.pow(2, (s - 15200) / 400) * (1 + 0.01 * Math.sin(s * 0.7));
+    const yA = v => LA.y1 - v / LA.max * (LA.y1 - LA.y0);
+    const yB = v => LB.y1 - v / LB.max * (LB.y1 - LB.y0);
+    const path = (fn, y) => { let d = ''; for (let s = S0; s <= SEND; s++) d += (s === S0 ? 'M' : 'L') + xs(s).toFixed(1) + ' ' + y(fn(s)).toFixed(1) + ' '; return d; };
+    const jit = (s, seed) => { const v = Math.sin(s * 12.9898 + seed) * 43758.5453; return (v - Math.floor(v)) * 2 - 1; };   // 逐步的确定性抖动，不是正弦波
+    const yLoss = s => LC.y0 + (LC.y1 - LC.y0) * .38 + 2.5 * jit(s, 7.1) + 1.2 * jit(Math.floor(s / 6), 3.3);
+    const yGN = s => LC.y0 + (LC.y1 - LC.y0) * .74 + 3.5 * jit(s, 1.7) + 1.5 * jit(Math.floor(s / 5), 9.2);
+
+    function build(){
+      const lane = (L, title) => `<rect class="lane" x="${X0}" y="${L.y0}" width="${X1 - X0}" height="${L.y1 - L.y0}"/><text class="ttl" x="${X0 + 8}" y="${L.y0 + 14}">${title}</text>`;
+      let s = `<svg viewBox="0 0 ${W} ${H}" xmlns="http://www.w3.org/2000/svg">`;
+      s += `<defs><clipPath id="f2clip"><rect id="f2cliprect" x="${X0}" y="0" width="0" height="${H}"/></clipPath></defs>`;
+      s += lane(LA, '① 缩放后的梯度 max|g| × loss_scale（存成 FP8 E5M2，上界 57344）');
+      s += lane(LB, '② 前向 Router logits max|logit|（存成 FP8 E4M3，上界 448）');
+      s += lane(LC, '③ 监控面板看到的：loss 与 grad_norm');
+      s += `<rect class="over" x="${X0}" y="${LA.y0}" width="${X1 - X0}" height="${yA(CEIL_G) - LA.y0}"/><line class="ceil" x1="${X0}" x2="${X1}" y1="${yA(CEIL_G)}" y2="${yA(CEIL_G)}"/><text class="ceil-t" x="${X1 + 6}" y="${yA(CEIL_G) + 4}">57344</text>`;
+      s += `<rect class="over" x="${X0}" y="${LB.y0}" width="${X1 - X0}" height="${yB(CEIL_L) - LB.y0}"/><line class="ceil" x1="${X0}" x2="${X1}" y1="${yB(CEIL_L)}" y2="${yB(CEIL_L)}"/><text class="ceil-t" x="${X1 + 6}" y="${yB(CEIL_L) + 4}">448</text>`;
+      s += `<g clip-path="url(#f2clip)">`;
+      s += `<path class="ln-g" d="${path(scaled, yA)}"/>`;
+      s += `<path class="ln-l" d="${path(logit, yB)}"/>`;
+      s += `<path class="ln-c" d="${path(s => s, yLoss)}"/><path class="ln-c" d="${path(s => s, yGN)}"/>`;
+      s += `</g>`;
+      s += `<g class="mk" data-at="${SEND}"><text class="lab" x="${xs(SEND) + 8}" y="${yB(logit(SEND)) + 4}" style="fill:var(--rl-l);font-weight:600">410 · 占 448 的 92%</text></g>`;
+      s += `<text class="lab" x="${xs(SEND) + 8}" y="${yLoss(SEND) + 4}">loss 3.1</text><text class="lab" x="${xs(SEND) + 8}" y="${yGN(SEND) + 4}">grad_norm 12.4</text>`;
+      s += `<g class="mk" data-at="${SEND}"><text class="lab ok" x="${X1 - 8}" y="${LC.y0 + 14}" text-anchor="end">全程平稳 —— 看不出任何异常</text></g>`;
+      HITS.forEach((h, i) => {
+        const sc = 65536 / Math.pow(2, i);
+        s += `<g class="mk" data-at="${h}"><line x1="${xs(h)}" x2="${xs(h)}" y1="${yA(CEIL_G)}" y2="${LC.y1}"/><circle cx="${xs(h)}" cy="${yA(CEIL_G)}" r="5"/>`
+           + `<text x="${xs(h)}" y="${LA.y0 - 8}" text-anchor="middle">✗ 跳过更新 · scale ${sc} → ${sc / 2}</text></g>`;
+      });
+      s += `<line class="cur" id="f2-cur" x1="${X0}" x2="${X0}" y1="${LA.y0 - 4}" y2="${LC.y1 + 4}"/>`;
+      [15000, 15050, 15100, 15150, 15200].forEach(t => s += `<text class="tk" x="${xs(t)}" y="${H - 2}" text-anchor="middle">step ${t}</text>`);
+      s += `</svg>`;
+      $('f2-svg').innerHTML = s;
+    }
+    function readout(s){
+      const hits = HITS.filter(h => h <= s).length;
+      $('f2-read').innerHTML = `<span>step <b>${Math.round(s)}</b></span><span>loss_scale <b class="${hits ? 'bad' : ''}">${scaleAt(s + .5)}</b></span><span>已碰顶 <b class="${hits ? 'bad' : ''}">${hits}</b> 次</span><span>loss <b>3.1</b></span><span>grad_norm <b>12.4</b></span><span>max|logit| <b>${Math.round(logit(Math.min(s, SEND)))}</b></span>`;
+    }
+    function all(s){
+      $('f2cliprect').setAttribute('width', Math.max(0, xs(s) - X0));
+      $('f2-cur').setAttribute('x1', xs(s)); $('f2-cur').setAttribute('x2', xs(s));
+      document.querySelectorAll('#f2-svg .mk').forEach(m => m.classList.toggle('on', +m.dataset.at <= s));
+      readout(s); Road.set(s);
+    }
+    // 碰顶那一刻：AMP 卡片换成当次的数
+    function hit(h, k){
+      const sc = 65536 / Math.pow(2, k);
+      $('f1-ok').classList.add('off');
+      $('f1-skip').textContent = 'step ' + h + ' 跳过';
+      $('f1-sc0').textContent = sc; $('f1-sc1').textContent = sc / 2;
+    }
+    function reset(){
+      clock.stop();
+      if (!$('f2cliprect')) build();
+      $('f1-ok').classList.remove('off');
+      ['f1-l1', 'f1-l2', 'f1-l3'].forEach(id => $(id).classList.remove('on'));
+      $('f1-skip').textContent = 'step 15000 跳过'; $('f1-sc0').textContent = '65536'; $('f1-sc1').textContent = '32768';
+      all(S0);
+    }
+    // 游标匀速一路推到 15202，不在节点停；每次碰顶 AMP 卡片换成当次的数
+    function start(done){
+      reset();
+      const DUR = 8000;
+      let passed = 0;
+      clock.tween(300, DUR, x => {
+        const s = S0 + (SEND - S0) * x;
+        all(s);
+        while (passed < HITS.length && HITS[passed] <= s){
+          const k = passed++;
+          hit(HITS[k], k);
+          if (k === 0){ $('f1-l1').classList.add('on'); clock.at(500, () => $('f1-l2').classList.add('on')); clock.at(1000, () => $('f1-l3').classList.add('on')); }
+        }
+      }, x => x);
+      clock.at(300 + DUR + 1800, done);
+    }
+    return { start, reset, stop: () => clock.stop() };
+  })();
+
+  /* ================= 第 5 章 · 前向：15200 塌缩前夕 → 15203 溢出，走势图与张量表一起切 ================= */
+  const C4 = (function(){
+    const clock = makeClock();
+    function reset(){ clock.stop(); document.querySelector('.rl-scene.rl-calc').classList.remove('is-bridge-enter'); Tensor.reset(1); }
+    function start(done){ reset(); clock.at(3000, () => Tensor.setScen(2)); clock.at(8500, done); }
+    return { start, reset, stop: () => clock.stop() };
+  })();
+
+  /* ================= 第 6 章 · 传染：一个 inf 到全局 ================= */
+  const C5 = (function(){
     const clock = makeClock();
     function fillGrid(id, cols, rows, delayFn, srcIdx){
       let h = '';
@@ -731,11 +1322,12 @@
     function reset(){
       clock.stop();
       if (!$('f4-g1').firstChild) build();
-      const sc = document.querySelector('.rl-scene[data-step="4"]'); sc.classList.add('nt');
+      const sc = document.querySelector('.rl-scene[data-step="6"]'); sc.classList.add('nt');
       panels().forEach(p => p.classList.remove('on'));
       document.querySelectorAll('#f4 .f4-ar').forEach(a => a.classList.remove('on'));
       document.querySelectorAll('#f4-read div').forEach(d => d.classList.remove('on'));
       void sc.offsetWidth; requestAnimationFrame(() => sc.classList.remove('nt'));
+      Road.set(15203);
     }
     function on(k){ panels()[k - 1].classList.add('on'); if (k > 1) document.querySelectorAll('#f4 .f4-ar')[k - 2].classList.add('on'); }
     function start(done){
@@ -751,15 +1343,19 @@
     return { start, reset, stop: () => clock.stop() };
   })();
 
-  /* ================= 段控 + 播放：全流程一段接一段；点某段 = 反复播那一段 ================= */
+  /* ================= 段控 + 播放：六章一章接一章；点某章 = 反复播那一章 ================= */
   const STEPS = [
-    { lbl:'1 · W_gate 变大，梯度先碰顶', fig:F1,
-      cap:'<span class="t">step 15000</span>W_gate 没人约束地变大，前向的 logits 和反向的梯度一起跟着涨。但梯度被 loss_scale 放大了 <b>65536 倍</b>、贴着 FP8 E5M2 的天花板 57344 住，又有几百亿个元素去撞它——所以是<b>它先碰顶</b>。AMP 一看见 inf：① 这一步的更新整个丢掉 ② scale 减半 65536 → 32768。' },
-    { lbl:'2 · 200 步里碰顶 4 次，scale 减半 4 次', fig:F2,
-      cap:'<span class="t">step 15000 → 15202</span>scale 减半只是给下一步腾出表示余量，W_gate 还在长。于是每 ~50 步再碰一次顶，<b>65536 → 4096</b>。而 unscale 和 Adam 归一化让真实更新幅度几乎没变，loss 3.1、grad_norm 12.4 全程平稳——<b>监控面板一片祥和，logits 却已悄悄爬到 410</b>，占 448 上界的 92%。' },
-    { lbl:'3 · logits 碰顶 448，算出 inf', fig:F3,
-      cap:'<span class="t">step 15203</span>某个 micro-batch 里 token 0 的 x 恰好和 W_gate 第 193 列同向，2560 项乘积抵消不掉，logits[0,193] 一口气堆到 <b>1846</b>。cast 成 FP8 E4M3 时 1846 > 448，这个数没了，变成 <b>inf</b>；softmax 里 exp(inf − inf) = NaN，分母含 NaN，<b>token 0 这一行 256 个概率全坏</b>。' },
-    { lbl:'4 · 一个 inf 传染全局：loss NaN、grad_norm inf', fig:F4,
+    { lbl:'1 · 全局定位：Layer 38 在整网哪里', fig:Net,
+      cap:'<span class="t">openPangu 2.0 Flash · PP3 · Layer 38</span>先把局部计算放回整网：展开 <b>Layer 37 → 38 → 39</b> 三层，两侧按真实数量折叠其余 43 层。一次前向从 L37 output 进入 L38 input，沿<b>主 compute stream</b>依次调用 TP / EP 通信，最后把 X₃₉ 交给 L39；每完成一段，底部就生成一张“谁 → 交付什么 → 给谁”。' },
+    { lbl:'2 · 背景：一个分数是怎么算出来的', fig:C1,
+      cap:'<span class="t">step ~10000 · 正常</span>每个 token 要给 256 个专家各打一个分。token 0 给专家 193 的分 = <b>x 第 0 行的 2560 个数</b>和<b>W_gate 第 193 列的 2560 个数</b>一对一相乘再加起来，就是 logits 里的一格；分数再过 softmax 变成 0~1 的概率。正常时分数约 30，离 FP8 E4M3 能存的最大值 448 还有 <b>15 倍余量</b>。x 过了 RMSNorm 全程稳定，本案例里在变的只有 W_gate。' },
+    { lbl:'3 · 根因：W_gate 越长越大，梯度先碰顶', fig:C2,
+      cap:'<span class="t">step 10000 → 15000</span>softmax 只奖励「再自信一点」，本该拦着的 z-loss 没开，W_gate 第 193 列就一直往大了长（列范数 <b>2 → 30</b>）。它一涨，前向的 logits 和反向的梯度两条路都跟着涨。梯度被 loss_scale 放大了 <b>65536 倍</b>、贴着 FP8 E5M2 的天花板 57344——所以是<b>它先碰顶</b>；logits 这时才 290，离 448 还有余量。' },
+    { lbl:'4 · 反向：AMP 捂住症状，监控一片祥和', fig:C3,
+      cap:'<span class="t">step 15000 → 15202</span>AMP 只检查缩放后的梯度：一看到 inf 就把<b>这一步的更新整个丢掉</b>，再把 loss_scale 减半给下一步腾余量。可 W_gate 还在长，于是每 ~50 步再碰一次，<b>65536 → 4096 减半 4 次</b>。监控面板上 loss 3.1、grad_norm 12.4 全程平稳——<b>症状被捂住了</b>，而 logits 已经悄悄爬到 410，占 448 的 92%。' },
+    { lbl:'5 · 前向：logits 碰顶，一个分数算成 inf', fig:C4,
+      cap:'<span class="t">step 15200 → 15203</span>W_gate 列范数涨到 50 后，只要某个 token 的 x 恰好和第 193 列同向，2560 项乘积抵消不掉，一口气堆到 <b>1846</b>。这个数要先存成 FP8 E4M3 再算 softmax，448 装不下，变成 <b>inf</b>；softmax 里 exp(inf − inf) = NaN，<b>这一行 256 个概率全坏</b>。' },
+    { lbl:'6 · 传染：一个 NaN 到全局', fig:C5,
       cap:'<span class="t">step 15203</span>NaN 和任何数运算还是 NaN。一行概率 NaN → token 0 的 hidden 2560 维 NaN → 下一层 attention 里 4096 个 token 都要对它加权求和，整条序列 NaN → loss 是全 token 的 mean，一项 NaN 全 NaN；反向梯度全 NaN，allreduce 摊到 DP 组每个 rank。这一步 <b>loss 3.1 → NaN，grad_norm 12.4 → inf</b>。' },
   ];
   const HOLD = 1200;
@@ -773,7 +1369,9 @@
       + '<svg class="ic-pause" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 4h4v16H6zM14 4h4v16h-4z"/></svg></button>'
       + STEPS.map((s, i) => `<button type="button" class="st ${i + 1 <= cur ? 'done ' : ''}${i + 1 === cur ? 'cur' : ''}" data-s="${i + 1}"><span class="lbl">${s.lbl}</span><span class="bar"></span></button>`).join('');
     capEl.innerHTML = STEPS[cur - 1].cap;
-    document.querySelectorAll('.rl-scene').forEach(sc => sc.classList.toggle('on', +sc.dataset.step === cur));
+    document.body.dataset.cur = cur;
+    Road.hide(cur <= 2);                                    // 全局定位与正常态计算都没有 step 时间线
+    document.querySelectorAll('.rl-scene').forEach(sc => sc.classList.toggle('on', sc.dataset.step.split(' ').includes(String(cur))));
   }
   function stopAll(){ if (hold) { clearTimeout(hold); hold = null; } STEPS.forEach(s => s.fig.stop()); }
   function setMode(m){ mode = m; stepsEl.dataset.play = m; }
@@ -784,7 +1382,7 @@
     (function go(k){
       STEPS[k - 1].fig.start(() => {
         if (k >= STEPS.length) { setMode('idle'); return; }
-        hold = setTimeout(() => { show(k + 1); go(k + 1); }, HOLD);
+        hold = setTimeout(() => { show(k + 1); go(k + 1); }, k === 1 ? 180 : HOLD);
       });
     })(s);
   }
@@ -802,10 +1400,11 @@
     const b = e.target.closest('button[data-s]'); if (b) loopStep(+b.dataset.s);
   });
 
-  // 第 3 步初始化一次（张量表要先渲染出来，别的步都是空壳就够了）
-  F3.reset();
+  // 张量表先渲染一次
+  Tensor.reset(0);
   playFrom(1);
 })();
 </script>
+
 </body>
 </html>

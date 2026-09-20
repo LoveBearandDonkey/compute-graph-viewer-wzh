@@ -612,9 +612,14 @@
       const raw = doc.getElementById(codeId)?.dataset.raw || "";
       const label = btn.querySelector(".cro-yaml__copy-label");
       const done = (ok) => {
-        if (!label) return;
-        label.textContent = ok ? "已复制" : "复制失败";
-        setTimeout(() => { label.textContent = "复制"; }, 1600);
+        /* 文案与状态属性各走一路：文字版按钮读 label，图标版按钮（plane 页）读
+           data-copy-state 切成对勾 / 失败色，1.6s 后都复位 */
+        btn.dataset.copyState = ok ? "ok" : "fail";
+        if (label) label.textContent = ok ? "已复制" : "复制失败";
+        setTimeout(() => {
+          delete btn.dataset.copyState;
+          if (label) label.textContent = "复制";
+        }, 1600);
       };
       if (global.navigator?.clipboard?.writeText) {
         global.navigator.clipboard.writeText(raw).then(() => done(true), () => done(false));
