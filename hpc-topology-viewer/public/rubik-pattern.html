@@ -1,0 +1,196 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="light">
+<head>
+<meta charset="UTF-8">
+<meta name="author" content="王欣迪" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="robots" content="noindex, nofollow">
+<title>逻辑魔方 Pattern · TP×PP×DP=rank · EP 折入 DP（默认 128 卡 2·4·16·8）</title>
+<link rel="icon" type="image/svg+xml" href="./vendor/rubik-cube/favicon.svg">
+<script src="./vendor/three-r128.min.js"></script>
+<!-- PTO Design System：唯一 token/类实现入口（上游快照，见 vendor/pto-design-system/README.md） -->
+<link rel="stylesheet" href="./vendor/pto-design-system/styles.css">
+<link rel="stylesheet" href="./vendor/rubik-cube/pattern.css">
+<script src="./vendor/rubik-cube/pattern.js"></script>
+<style>
+  /* 页面外壳：只做布局，视觉一律取自设计系统 token */
+  html, body { margin: 0; width: 100%; height: 100%; overflow: hidden; background: var(--background); }
+  #app { width: 100%; height: 100%; }
+  /* 主题按钮由 pattern 的工具插槽收纳（见下方 mount 后的 appendChild）；
+     插槽不存在时（旧版 pattern）退回右上角绝对定位。 */
+  #themeBtn.is-floating { position: absolute; top: var(--space-3); right: var(--space-3); z-index: 20; }
+</style>
+</head>
+<body>
+<div id="app"></div>
+<button id="themeBtn" class="btn btn-sm prc-iconbtn" type="button" aria-label="切换明暗主题"></button>
+<script>
+/* 逻辑魔方 pattern 的独立迭代页：全屏挂载，主题支持 ?theme= 初始值与宿主 postMessage 联动
+   （与 cube-cockpit.html 同一套约定，之后可被宿主以 iframe 嵌入）。 */
+(function(){
+  /* ── URL 即状态：链接本身就能带着一个具体视图发出去 ─────────────────────
+     ?theme=light|dark
+     ?mode=std|dp|ep|tp|pp|phys（或 0-5）  形态
+     ?view=3d|top|front|side（或 0-3）    视角
+     ?tp= &cp= &pp= &dp= &ep=            并行度（给几个改几个）· cp=上下文并行（真实维、与 TP 共轴，默认 1）
+     ?color=load|tp|pp|dp|ep|host|pod     着色镜头（另有 neutral = 素色，只看阵列形状）
+     ?groupgap=<1..6>                     分组间距放大倍数（默认 1 = 原样）。放大的是卡与卡
+                                          之间的**缝**、不是卡本身，块与块的空档跟着等比变宽，
+                                          4000 卡这种规模下「这是几段 / 几片」才读得出来。
+                                          |w|act|grad|opt（内存构成：权重/激活/梯度/优化器态占比）
+     ?chrome=0                            收起 pattern 自带的整套顶栏（形态/视角按钮、更多抽屉、
+                                          图例、选中卡详情侧栏 .prc-info）——宿主想在它外面另起
+                                          一套自己的 chrome（rank-topology-lite 就是这样：右上角
+                                          briefCard 已经说了选中卡是谁，.prc-info 会在窄屏媒体
+                                          查询下挪到画面底部，跟宿主自己的浮卡/角标叠在一起，
+                                          还会挡住舞台盖住点击）时才传。默认不传，跟改动前一样。
+     ?anom=none|tp|pp|dp|ep               异常注入
+     ?phase=TP|PP|EP|DP  或 ?t=0..1       时间轴位置
+     ?play=0|1                            是否自动播放
+     ?sel=<rank>                          直接选中某张卡
+     ?obj=<对象 id>                       整网对象透镜（embedding/qkv/attn_core/o_proj/norm/
+                                          dense_ffn/router/experts/shared_expert/lm_head/
+                                          c_tp/c_sp/c_ep/c_pp/c_dp）——看这个对象怎么切、落在哪些卡
+     ?v=<任意串>                          版本戳，仅用于跳过缓存，页面忽略它
+     不认识的参数一律忽略；参数非法时退回默认值，不报错。 */
+  var qs = new URLSearchParams(location.search);
+  var theme = qs.get('theme') === 'dark' ? 'dark' : 'light';   // 默认浅色
+  var num = function(k){ var v = parseInt(qs.get(k), 10); return isFinite(v) && v > 0 ? v : null; };
+  var pick = function(k, map, dflt){
+    var v = (qs.get(k) || '').toLowerCase();
+    if (v === '') return dflt;
+    if (map[v] != null) return map[v];
+    var n = parseInt(v, 10);
+    return isFinite(n) ? n : dflt;
+  };
+  var MODES = { std: 0, standard: 0, dp: 1, dpt: 1, ep: 2, tp: 3, tps: 3, pp: 4, ppf: 4, phys: 5, physical: 5 };
+  var VIEWS = { '3d': 0, iso: 0, top: 1, front: 2, side: 3 };
+  var cfg = { tp: 2, pp: 4, dp: 16, ep: 8 };   // 默认 = 128 卡小规格（看得清每一张卡）
+  ['tp', 'cp', 'pp', 'dp', 'ep'].forEach(function(k){ if (num(k)) cfg[k] = num(k); });   // cp：上下文并行（真实 rank 维、与 TP 共轴），不给则 1，与改动前逐位相同
+  /* 分组间距（?groupgap=）：跟 tp/pp/dp/ep 一样属于**布局模型**的输入，所以走
+     cfg 而不是 mount 之后的 setter——setConfig 重建模型时 Object.assign 会把它
+     一起带过去，换预置（比如工具栏那颗「盘古ProMoE」）不会把它丢掉。
+     不给或给非法值就是 1，整套布局与改动前逐位相同。 */
+  var ggap = parseFloat(qs.get('groupgap'));
+  if (isFinite(ggap) && ggap > 1) cfg.groupGap = Math.min(6, ggap);
+
+  var handle = window.PtoRubikCubePattern.mount(document.getElementById('app'), {
+    theme: theme,
+    mode: pick('mode', MODES, 4),        // 落地 = PP流水（能直接读出「哪一段慢」；标准是基准投影，排在最后）
+    // 全局字牌字号（?label=16）：整套 3D 标注只此一个入口，越界回落 16
+    labelPx: num('label'),
+    // 卡内魔方的两枚 3D 字牌（?cclabels=0 收起）：默认画，宿主自己的详情侧栏
+    // 与它说的是同一句话时才用得上这个参数，见 pattern.js 里的注释。
+    cardCubeLabels: qs.get('cclabels') === '0' ? false : undefined,
+    // 选中一张卡时画布里整块"卡内魔方"彩色格子都不画（?cc=0）——不是收字牌，是整个
+    // 组件都不摆；宿主自己的详情卡已经把同一句话说清楚时用，见 pattern.js 里的注释。
+    cardCube: qs.get('cc') === '0' ? false : undefined,
+    // 选中一张卡时收起"贴在几何体上"的那类轴刻度字牌（TP0/PP3 这种，世界
+    // 尺寸固定，镜头贴近一张卡时会占满大半个画布）——?axsel=0，默认画。
+    axisLabelsOnSelect: qs.get('axsel') === '0' ? false : undefined,
+    // 顶栏那块"逻辑魔方"招牌换名字（?brand=）：默认不传，就是这个 pattern
+    // 自己的名字——只有宿主想把它认成别的东西（比如 rank-topology-lite
+    // 把它接进真实模型的三档取景，招牌该写模型名而不是 pattern 名）时才用。
+    brandName: qs.get('brand') || undefined,
+    // 选中之后插在"模型名"和"rank N"中间的第三段面包屑（?tierlabel=）：
+    // 宿主自己的取景档位名字（比如 rank-topology-lite 第二档的"选中+
+    // 兄弟"），默认不传，面包屑仍是"模型名 / rank N"两段，跟改动前一样。
+    brandTierLabel: qs.get('tierlabel') || undefined,
+    // 选中一张卡时镜头往那张卡推近一档（?zoomsel=0.5，取消选中飞回原机位）：
+    // 默认不传，选中不动镜头，跟改动前一样——规模大的预置（比如盘古 4000 卡）
+    // 选中的那一列在满屏阵列里只占几个像素时才用得上这个参数。
+    zoomOnSelect: (function () { var z = parseFloat(qs.get('zoomsel')); return isFinite(z) && z > 0 && z < 1 ? z : undefined; })(),
+    // ?chrome=0：整套自带 UI（顶栏/更多抽屉/图例/选中卡侧栏）都不画，宿主自己接管——
+    // 见上面参数表。默认不传，跟改动前逐位相同。
+    chrome: qs.get('chrome') === '0' ? false : undefined,
+    // 并行度配置（默认值，工具栏「并行」输入排可随时改）：128 卡小规格
+    // rank = tp×pp×dp = 2×4×16 = 128（EP 不参与乘法，折入 DP 轴：ep8 把 16 副本
+    // 分成 8 桶 × 2 个 A2A 域）。落地这一档是因为每张卡看得清、每一段数得出，
+    // 四种形态的差别当场成立；真实体量用工具栏的「盘古ProMoE 8·5·100·2」预设。
+    config: cfg,
+    /* 整网对象透镜（?obj=）。这里只在**同时显式给了 ?mode=** 时才由 mount 直接设状态；
+       否则留到 mount 之后调 selectObject()，让它飞到该对象的主屏——
+       理由是分享链接的用途：`?obj=experts` 想说的是「看路由专家怎么切」，
+       而分片只有在 EP聚簇 下才 snap 成 8 面墙；停在默认形态等于把话说了一半。
+       显式写了 mode 的链接则以 mode 为准（作者已经指明了要哪一屏）。 */
+    obj: qs.get('mode') ? (qs.get('obj') || null) : null,
+    onSelectObject: function(id, o){
+      try { parent.postMessage({ type: 'rubik-object', obj: id, band: o && o.band }, '*'); } catch(e) {}
+    },
+    onSelect: function(sel){
+      // 联动挂点：选中 rank 的多维身份回报宿主（整网图/专家图结合时使用）
+      try { parent.postMessage({ type: 'rubik-select', sel: sel }, '*'); } catch(e) {}
+    },
+    /* 再点一次已经选中的那张卡：宿主想接的话自己听 rubik-drill；这个 postMessage
+       始终发，不监听它的宿主不受影响（点已选中的卡本来就是空操作，多发一条
+       没人听的消息不改变任何看得见的行为）。 */
+    onDrill: function(sel){
+      try { parent.postMessage({ type: 'rubik-drill', sel: sel }, '*'); } catch(e) {}
+    },
+    onSelectEdge: function(edge){
+      // 联动挂点：点中一条通信边 → 谁到谁、哪一维、哪种原语、跨了哪层物理链路。
+      // 驾驶舱可据此点亮自己那套物理路径（本 pattern 不搬运物理拓扑几何）。
+      try { parent.postMessage({ type: 'rubik-edge', edge: edge }, '*'); } catch(e) {}
+    },
+  });
+  window.rubik = handle;   // 控制台可直接迭代调试：rubik.setMode(2) / rubik.selectBucket(3) …
+
+  // 把余下的 URL 参数落到句柄上（mount 之后依次应用，非法值由各 setter 自行忽略）
+  var view = pick('view', VIEWS, null);
+  if (view != null) handle.setView(view);
+  if (qs.get('color')) handle.setColorBy(qs.get('color').toLowerCase());
+  if (qs.get('anom')) handle.setAnomaly(qs.get('anom').toLowerCase());
+  if (qs.get('phase')) handle.setTime({ phase: qs.get('phase').toUpperCase() });
+  else if (qs.get('t') != null) handle.setTime(parseFloat(qs.get('t')));
+  if (qs.get('play') != null) handle.setPlaying(qs.get('play') !== '0' && qs.get('play') !== 'false');
+  if (qs.get('sel') != null) {
+    var r = parseInt(qs.get('sel'), 10);
+    if (isFinite(r) && r >= 0 && r < handle.model.N) handle.select(r);
+  }
+  // 没显式写 mode 的 ?obj= 链接：飞到该对象的主屏（见上方 mount 里的说明）
+  if (qs.get("obj") && !qs.get("mode")) handle.selectObject(qs.get("obj"));
+  // ?tour=1 直接进缩放穿梭导览（从 DP 复制一路下钻到 CP 序列线）
+  if (qs.get("tour") && qs.get("tour") !== "0") handle.tour(0);
+
+  // 把主题按钮放进 pattern 顶栏的工具插槽，和「更多」等按钮成套。chrome=0 时顶栏
+  // 整个不存在，这颗按钮也没地方摆——宿主（比如 rank-topology-lite）的 theme=dark
+  // 是钉死的，不需要它，直接不画，不再退回浮在右上角（那儿是宿主自己 briefCard
+  // 的地盘，floating 会跟它叠在一起）。
+  var slot = document.querySelector('.prc-toolslot');
+  var themeBtn = document.getElementById('themeBtn');
+  if (slot) slot.appendChild(themeBtn);
+  else if (qs.get('chrome') === '0') themeBtn.style.display = 'none';   // 留在 DOM 里（applyTheme 还会摸它），只是不画
+  else themeBtn.classList.add('is-floating');
+
+  // Lucide 风格线性图标（stroke=currentColor · 24×24 viewBox · stroke-width 2），不用 emoji
+  var ICON_SUN = '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M6.3 17.7l-1.4 1.4M19.1 4.9l-1.4 1.4"/></svg>';
+  var ICON_MOON = '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></svg>';
+
+  function applyTheme(t){
+    theme = t === 'light' ? 'light' : 'dark';
+    document.documentElement.setAttribute('data-theme', theme);   // token 随之切换，按钮/底色走 CSS 变量
+    var tb = document.getElementById('themeBtn');
+    tb.innerHTML = (theme === 'light' ? ICON_MOON : ICON_SUN);   // 只要图标，不要文字
+    tb.title = theme === 'light' ? '切换到深色' : '切换到浅色';
+    tb.setAttribute('aria-label', tb.title);
+    handle.setTheme(theme);
+  }
+  applyTheme(theme);
+  document.getElementById('themeBtn').addEventListener('click', function(){
+    applyTheme(theme === 'light' ? 'dark' : 'light');
+  });
+  window.addEventListener('message', function(e){
+    var d = e.data || {};
+    if (d.type === 'rubik-theme' || d.type === 'cockpit-theme') applyTheme(d.theme);
+    if (d.type === 'rubik-cmd'){                   // 宿主 → pattern 指令桥（与 cockpit-cmd 同思路）
+      if (d.cmd === 'mode') handle.setMode(d.value|0);
+      else if (d.cmd === 'layer') handle.selectLayer(d.value == null ? null : d.value|0);
+      else if (d.cmd === 'bucket') handle.selectBucket(d.value == null ? null : d.value|0);
+      else if (d.cmd === 'anom') handle.setAnomaly(d.value || 'none');
+      else if (d.cmd === 'time') handle.setTime(d.value);
+    }
+  });
+})();
+</script>
+</body>
+</html>

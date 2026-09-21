@@ -1,0 +1,591 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="author" content="王欣迪" />
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex, nofollow">
+<link rel="icon" href="../favicon.svg" type="image/svg+xml">
+<title>并行拓扑 · 驾驶舱（组合已有 pattern）</title>
+<link rel="stylesheet" href="../vendor/pto-design-system/styles.css">
+<link rel="stylesheet" href="../vendor/rubik-cube/pattern.css">
+<link rel="stylesheet" href="../vendor/model-graphviz/pattern.css">
+<link rel="stylesheet" href="../vendor/net-sharding/pattern.css">
+<style>
+/* ════════════════════════════════════════════════════════════════════
+   并行拓扑 · 驾驶舱 —— 把仓库里**已有的 pattern 真挂进来**，用一条状态总线串起来。
+   不是文档、不是路由页：逻辑魔方与 rank 卡是 mount() 出来的真组件，
+   切分链 / 时间·流 / 纠正版 rank-deck 是 iframe 里的真页面。
+
+   一块大画布 + 切换轨（不是四分格：每个组件都值得整屏，挤成 1/4 谁都看不清）：
+     A 刀对整网    切分链 · 单维切分（iframe · postMessage 驱动）
+     B 刀对卡空间  逻辑魔方（mount）· 合成卡阵
+     C 映射        rank 卡（mount）· 纠正版 rank-deck · 卡内解剖 · 训练语义 sidecar（mount）
+     D 时间        时间·流
+   切走的组件只 hidden 不 destroy——重挂一次 3D 场景的代价远大于留着，
+   而且切回来时选中卡与视角都还在。隐藏着的组件依然在总线上（换刀/换卡照样跟）。
+
+   总线纪律：一处选中，全格跟随；**能驱动的直接调 handle，只能重载的如实标注**。
+   rubik 的 onSelect 与 demo 的 pto:select 都会回灌总线，所以联动是双向的；
+   net-sharding 的 onSelectRank 在它自己那版里没接线（pattern.json 写了但没调），
+   所以 C 格是单向的——这行注释比一句「全部联动」值钱。
+   ════════════════════════════════════════════════════════════════════ */
+:root{ --ck-gut:6px; }
+.ck-root{
+  --ck-tp: var(--dim-tp, #22d3ee);
+  --ck-pp: var(--warning, #ffaa3b);
+  --ck-dp: var(--primary, #4369ef);
+  --ck-ep: var(--highlight-l0a-violet-400, #9b3cf6);
+  --ck-cp: var(--highlight-ub-green-600, #86c70f);
+  --ck-bg: var(--background, #f6f7f9);
+  --ck-s1: var(--surface-1, #ffffff);
+  --ck-s2: var(--surface-2, #eef0f3);
+  --ck-fg: var(--foreground, rgba(10,14,20,.92));
+  --ck-fg2: var(--foreground-secondary, rgba(10,14,20,.62));
+  --ck-fg3: var(--foreground-muted, rgba(10,14,20,.42));
+  --ck-bd: var(--border-default, rgba(10,14,20,.14));
+  --ck-bds: var(--border-strong, rgba(10,14,20,.26));
+  --ck-ok: var(--success, #04a878);
+  --ck-danger: var(--danger, #d1242f);
+  --ck-mono: var(--font-mono, ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace);
+  --ck-sans: var(--font-sans, -apple-system, "PingFang SC", "Source Han Sans SC", "Noto Sans CJK SC", sans-serif);
+  position:fixed; inset:0; display:flex; flex-direction:column; overflow:hidden;
+  background:var(--ck-bg); color:var(--ck-fg); font-family:var(--ck-sans); font-size:13px;
+}
+.ck-root *{box-sizing:border-box}
+
+/* 顶栏 */
+.ck-top{display:flex; align-items:center; gap:8px; flex-wrap:wrap; padding:7px 12px;
+  border-bottom:1px solid var(--ck-bd); background:var(--ck-s1); flex:0 0 auto}
+.ck-title{font-weight:800; font-size:14px; letter-spacing:.01em; white-space:nowrap}
+.ck-title small{display:block; font-size:10px; font-weight:400; color:var(--ck-fg3); letter-spacing:0}
+.ck-cap{font-family:var(--ck-mono); font-size:9.5px; letter-spacing:.1em; text-transform:uppercase; color:var(--ck-fg3)}
+.ck-b{font:inherit; font-family:var(--ck-mono); font-size:11px; padding:3px 9px; border:1px solid var(--ck-bd);
+  border-radius:7px; background:var(--ck-s2); color:var(--ck-fg2); cursor:pointer; white-space:nowrap}
+.ck-b:hover{border-color:var(--ck-bds); color:var(--ck-fg)}
+.ck-b.on{background:var(--ck-fg); border-color:var(--ck-fg); color:var(--ck-bg); font-weight:700}
+.ck-top input[type=number]{font-family:var(--ck-mono); font-size:11px; width:66px; padding:2.5px 7px;
+  border:1px solid var(--ck-bd); border-radius:6px; background:var(--ck-s2); color:var(--ck-fg)}
+.ck-quint{font-family:var(--ck-mono); font-size:10.5px; color:var(--ck-fg2); white-space:nowrap;
+  overflow:hidden; text-overflow:ellipsis; max-width:38vw}
+.ck-quint b{color:var(--ck-fg)}
+.ck-sep{width:1px; align-self:stretch; background:var(--ck-bd); margin:0 2px}
+.ck-spacer{margin-left:auto}
+
+/* 切换轨：按段分组的组件标签（一次只看一个，但都常驻不销毁） */
+.ck-rail{display:flex; align-items:stretch; gap:2px; flex-wrap:wrap; padding:0 10px;
+  border-bottom:1px solid var(--ck-bd); background:var(--ck-s1); flex:0 0 auto}
+.ck-rgrp{display:flex; align-items:center; gap:2px; padding:4px 8px 3px; border-right:1px dashed var(--ck-bd)}
+.ck-rgrp:last-child{border-right:0}
+.ck-rk{font-family:var(--ck-mono); font-weight:800; font-size:11px; margin-right:3px; opacity:.85}
+.ck-tab{font:inherit; font-size:11.5px; padding:5px 10px 6px; border:0; border-bottom:2px solid transparent;
+  background:none; color:var(--ck-fg2); cursor:pointer; white-space:nowrap; border-radius:6px 6px 0 0}
+.ck-tab:hover{color:var(--ck-fg); background:var(--ck-s2)}
+.ck-tab.on{color:var(--ck-fg); font-weight:750; border-bottom-color:currentColor; background:var(--ck-s2)}
+.ck-rgrp[data-band=a]{color:var(--ck-pp)} .ck-rgrp[data-band=b]{color:var(--ck-dp)}
+.ck-rgrp[data-band=c]{color:var(--ck-ep)} .ck-rgrp[data-band=d]{color:var(--ck-cp)}
+.ck-rgrp .ck-tab{color:var(--ck-fg2)} .ck-rgrp .ck-tab.on{color:inherit}
+
+/* 单画布：一整块，组件叠在里面，非当前的 hidden（保状态、不重挂） */
+.ck-stage{flex:1 1 auto; position:relative; min-height:0; margin:8px; overflow:hidden;
+  background:var(--ck-s1); border:1px solid var(--ck-bd); border-radius:12px}
+.ck-pane{position:absolute; inset:0; min-width:0; min-height:0; display:flex; flex-direction:column;
+  background:var(--ck-s1); overflow:hidden}
+.ck-pane[hidden]{display:none}
+.ck-pane[data-band=a]{border-top:3px solid var(--ck-pp)}
+.ck-pane[data-band=b]{border-top:3px solid var(--ck-dp)}
+.ck-pane[data-band=c]{border-top:3px solid var(--ck-ep)}
+.ck-pane[data-band=d]{border-top:3px solid var(--ck-cp)}
+.ck-ph{display:flex; align-items:center; gap:7px; padding:5px 9px; flex:0 0 auto;
+  border-bottom:1px solid var(--ck-bd); background:var(--ck-s2)}
+.ck-band{font-family:var(--ck-mono); font-weight:800; font-size:13px; line-height:1}
+.ck-pane[data-band=a] .ck-band{color:var(--ck-pp)} .ck-pane[data-band=b] .ck-band{color:var(--ck-dp)}
+.ck-pane[data-band=c] .ck-band{color:var(--ck-ep)} .ck-pane[data-band=d] .ck-band{color:var(--ck-cp)}
+.ck-pn{font-weight:700; font-size:12px; white-space:nowrap}
+.ck-pq{font-size:10.5px; color:var(--ck-fg3); white-space:nowrap; overflow:hidden; text-overflow:ellipsis}
+.ck-ph select{font-family:var(--ck-mono); font-size:10.5px; padding:2px 5px; border:1px solid var(--ck-bd);
+  border-radius:6px; background:var(--ck-s1); color:var(--ck-fg2); max-width:150px}
+.ck-link{font-family:var(--ck-mono); font-size:10px; text-decoration:none; color:var(--ck-fg3);
+  border:1px solid var(--ck-bd); border-radius:6px; padding:2px 6px; white-space:nowrap}
+.ck-link:hover{color:var(--ck-fg); border-color:var(--ck-bds)}
+.ck-body{flex:1 1 auto; position:relative; min-height:0; overflow:hidden}
+.ck-body > iframe{width:100%; height:100%; border:0; display:block}
+.ck-body > .ck-mountpt{position:absolute; inset:0}
+.ck-note{position:absolute; inset:0; display:flex; align-items:center; justify-content:center;
+  text-align:center; padding:18px; font-size:12px; color:var(--ck-fg2); line-height:1.7}
+.ck-note b{color:var(--ck-fg)}
+
+/* 底栏 */
+.ck-bot{flex:0 0 auto; display:flex; gap:10px; align-items:center; flex-wrap:wrap;
+  padding:6px 12px; border-top:1px solid var(--ck-bd); background:var(--ck-s1); font-size:11px; color:var(--ck-fg2)}
+.ck-bot b{color:var(--ck-fg)}
+.ck-tag{font-family:var(--ck-mono); font-size:9.5px; padding:1px 6px; border-radius:5px;
+  border:1px solid var(--ck-bd); color:var(--ck-fg2)}
+.ck-tag.ok{border-color:color-mix(in srgb, var(--ck-ok) 42%, transparent); color:var(--ck-ok)}
+.ck-tag.no{border-color:color-mix(in srgb, var(--ck-danger) 36%, transparent); color:var(--ck-danger)}
+@media (max-width:900px){ .ck-stage{margin:4px} .ck-rgrp{padding:3px 5px} }
+</style>
+</head>
+<body>
+<div class="ck-root" id="root">
+  <div class="ck-top">
+    <div class="ck-title">并行拓扑 · 驾驶舱<small>已有 pattern 真挂载 · 一条状态总线</small></div>
+    <span class="ck-sep"></span>
+    <span class="ck-cap">配置</span>
+    <button class="ck-b" data-preset="default128" type="button">128 卡</button>
+    <button class="ck-b" data-preset="moe64" type="button">MoE 64</button>
+    <button class="ck-b" data-preset="pangu" type="button">盘古 4000</button>
+    <span class="ck-sep"></span>
+    <span class="ck-cap">当前刀</span>
+    <button class="ck-b" data-cut="tp" type="button">TP</button>
+    <button class="ck-b" data-cut="pp" type="button">PP</button>
+    <button class="ck-b" data-cut="cp" type="button">CP</button>
+    <button class="ck-b" data-cut="dp" type="button">DP</button>
+    <button class="ck-b" data-cut="ep" type="button">EP</button>
+    <span class="ck-sep"></span>
+    <span class="ck-cap">选中卡 g</span>
+    <input id="selIn" type="number" min="0" step="1" value="21">
+    <span class="ck-quint" id="quint"></span>
+    <span class="ck-spacer"></span>
+    <button class="ck-b on" id="linkBtn" type="button">联动 ✓</button>
+    <button class="ck-b" id="themeBtn" type="button">明/暗</button>
+    <a class="ck-link" href="./atlas.html">组合总图</a>
+    <a class="ck-link" href="./">目录页</a>
+  </div>
+
+  <div class="ck-rail" id="rail"></div>
+  <div class="ck-stage" id="stage"></div>
+
+  <div class="ck-bot">
+    <span><b id="botCfg">—</b></span>
+    <span class="ck-sep"></span>
+    <span id="botLink">—</span>
+    <span class="ck-spacer"></span>
+    <span id="botDiag" class="ck-tag">—</span>
+  </div>
+</div>
+
+<script src="../vendor/three-r128.min.js"></script>
+<script src="../vendor/model-graphviz/graph.js"></script>
+<script src="../vendor/model-graphviz/pattern.js"></script>
+<script src="../vendor/rubik-cube/pattern.js"></script>
+<script src="../vendor/net-sharding/pattern.js"></script>
+<script>
+(function(){
+'use strict';
+/* ── 预置：一处定义，各组件按自己的字段名取用（三套 API 的参数名并不一致） ── */
+var PRESETS = {
+  default128:{label:'默认 128 卡', world:128, tp:2, cp:1, pp:4, dp:16, ep:8, etp:1,
+    layers:32, hidden:4096, heads:32, experts:64, seq:8192, note:'tp2·cp1·pp4·dp16·ep8（EP 折入 DP）'},
+  moe64:{label:'MoE 折叠 64 卡', world:64, tp:2, cp:1, pp:4, dp:8, ep:8, etp:1,
+    layers:32, hidden:4096, heads:32, experts:64, seq:8192, note:'tp2·cp1·pp4·dp8·ep8'},
+  pangu:{label:'盘古 Pro MoE 4000 卡', world:4000, tp:8, cp:1, pp:5, dp:100, ep:2, etp:1,
+    layers:40, hidden:5120, heads:40, experts:64, seq:4096, note:'tp8·cp1·pp5·dp100·ep2'}
+};
+var q = new URLSearchParams(location.search);
+var S = {
+  preset: PRESETS[q.get('preset')] ? q.get('preset') : 'default128',
+  sel: (function(v){ var n = parseInt(v,10); return isFinite(n)&&n>=0 ? n : 21; })(q.get('sel')),
+  cut: ['tp','pp','cp','dp','ep'].indexOf(q.get('cut'))>=0 ? q.get('cut') : 'dp',
+  theme: q.get('theme')==='dark' ? 'dark' : 'light',
+  link: q.get('link') !== '0'
+};
+/* 刀 → 各组件的「维」参数名/取值域都不一样，翻译表集中在这里：
+   · 魔方 setMode 是形态序号（MODES: std0 dp1 ep2 tp3 pp4），没有 cp 形态
+   · 3d-deck/sidecar setParallelMode 只认 {pp,tp,ep,dp,none}，同样没有 cp
+   两处都缺 CP 不是巧合：CP 是第四维的另一种（切 s 轴不切 b 轴），谁都没给它一根轴。 */
+var RUBIK_MODE = {dp:1, ep:2, tp:3, pp:4};           /* cp → 无形态，退回 std(0) */
+var DECK_MODE  = {tp:'tp', pp:'pp', ep:'ep', dp:'dp'}; /* cp → 'none' */
+function P(){ return PRESETS[S.preset]; }
+function esc(s){ return String(s).replace(/[&<>"]/g, function(c){
+  return ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'})[c]; }); }
+var diag = [];                       /* 挂载/驱动诊断：底栏如实报，不吞异常 */
+function safe(label, fn){
+  try { return fn(); }
+  catch(e){ diag.push(label+' 失败: '+(e && e.message ? e.message : e)); return null; }
+}
+/* 五元组：驾驶舱自己算一遍（各组件的 rank 分解口径必须一致，这是对账用的） */
+function coordsOf(g, p){
+  var t = g % p.tp, c = Math.floor(g/p.tp) % p.cp,
+      d = Math.floor(g/(p.tp*p.cp)) % p.dp, pp = Math.floor(g/(p.tp*p.cp*p.dp));
+  return {t:t, c:c, d:d, p:pp};
+}
+function epOf(co, p){
+  var qq = (co.d*p.cp + co.c)*p.tp + co.t;
+  return {etp: qq % p.etp, ep: Math.floor(qq/p.etp) % p.ep};
+}
+
+/* ── 格位定义：每格可选的组件。mount 型直接调 handle，iframe 型走 postMessage 或 src ── */
+var COMPS = {
+  story:{band:'a', name:'一个 step · 五幕', q:'跟住一张卡走完一个 step：只做一次（开机/报到/备料）vs 每 micro-batch 重来（进料/开算/接力）。第 2 幕放大的是 openPangu 真图。',
+    kind:'demo', view:'story', drive:'post'},
+  chain:{band:'a', name:'刀序 · 切分链', q:'五刀按嵌套序串成一条链（A 段主图）',
+    kind:'demo', view:'chain', drive:'post'},
+  dim:{band:'a', name:'单维切分（真算子）', q:'一把刀一个视图 · 容器柱 + 面积守恒 · 算子取 openPangu 真图与真切分标注',
+    kind:'demo', view:'dim', drive:'post'},
+  rubik:{band:'b', name:'逻辑魔方（mount）', q:'谁和谁一组 —— 卡空间的形状',
+    kind:'mount', drive:'handle'},
+  netsh:{band:'c', name:'rank 卡（mount）', q:'这一组各自装了什么 —— 算子/张量轴粒度',
+    kind:'mount', drive:'handle-oneway'},
+  deck:{band:'c', name:'纠正版 rank-deck', q:'交集载荷（层段×TP片×EP桶），非缩小整网',
+    kind:'ds', path:'../pto-ds/patterns/model-parallel-rank-deck/pattern.html', drive:'reload'},
+  solid:{band:'c', name:'映射 · 双链', q:'哪一级映到哪一级 —— 两条包含链级与级不对齐，四条并行映射的落点全是「卡」；第二视角『交集腔』答这张卡装了哪一块',
+    kind:'demo', view:'solid', drive:'post'},
+  anatomy:{band:'c', name:'卡内解剖', q:'外壳=显存 · 底部流=时间 · 算子↔kernel 同号',
+    kind:'demo', view:'anatomy', drive:'post'},
+  sidecar:{band:'c', name:'训练语义 sidecar（mount）', q:'真整网按当前刀切 + 权重/梯度/优化器态的字节去向',
+    kind:'ds-mount', drive:'handle'},
+  time:{band:'d', name:'时间 · 流', q:'1F1B + 谁在等谁（A5 归因）',
+    kind:'demo', view:'time', drive:'post'},
+  /* 这里原来还有「合成·卡阵」与我一时加的「真整网算子」，两处都去掉了：
+     · 卡阵与逻辑魔方答同一个问题（卡空间落位），魔方那份更成熟 → 重复
+     · 「真整网算子」= view:'dim' 且跟总线的刀走，和上面的「单维切分」逐字一样 → 也是重复
+     demo 里 ?view=compose 的视图本体保留（老链接不能失效，且它是单文件时唯一不依赖 three 的卡空间视图）。 */
+};
+/* 一次只看一个组件（?tab=）。旧的 ?slots=a,b,c,d 取第一个——发出去的链接不该失效。 */
+var TAB = 'chain';
+(function(){
+  var t = q.get('tab');
+  if(COMPS[t]){ TAB = t; return; }
+  var s = (q.get('slots')||'').split(',').filter(function(k){ return COMPS[k]; });
+  if(s.length) TAB = s[0];
+})();
+/* 组件常驻：切走只 hidden，不 destroy——重挂一次 3D 场景的代价远大于留着 */
+var panes = {};                                  /* key → 运行时记录 */
+
+/* 喂给 sidecar 的拓扑串（它按标签级消费，不做几何切分） */
+function dimSummary(){
+  var p = P();
+  return 'TP'+p.tp+' · CP'+p.cp+' · PP'+p.pp+' · DP'+p.dp+' · EP'+p.ep
+    + '　当前刀 '+S.cut.toUpperCase()+(DECK_MODE[S.cut]?'':'（本组件无 CP 模式）');
+}
+function rankGroupsByStage(){
+  /* 每个 stage 由 TP×DP 张卡共同持有；这里给前若干个真实 rank，让它显示的组不是编的 */
+  var p = P(), out = {}, cap = 6;
+  for(var st=0; st<p.pp; st++){
+    var arr = [];
+    for(var d=0; d<p.dp && arr.length<cap; d++)
+      for(var t=0; t<p.tp && arr.length<cap; t++)
+        arr.push(((st*p.dp + d)*p.cp + 0)*p.tp + t);
+    out['pp'+st] = arr.length < p.tp*p.dp ? arr.concat(['…共 '+(p.tp*p.dp)+' 张']) : arr;
+  }
+  return out;
+}
+/* 跨仓库件（sidecar / 3d-deck / graphviz）的脚本按需加载一次。
+   放在这里而不是 <head>：本地没有 /pto-ds/ 时不该让整个驾驶舱的首屏跟着 404。 */
+var dsReady = null;
+function ensureDs(){
+  if(dsReady) return dsReady;
+  var B = '../pto-ds/';
+  var css = ['tokens/foundation.css','tokens/semantic.css','tokens/components.css','css/style.css',
+             'patterns/model-architecture-3d-deck/pattern.css','patterns/model-architecture-training-sidecar/pattern.css'];
+  css.forEach(function(u){
+    var l = document.createElement('link'); l.rel='stylesheet'; l.href=B+u; document.head.appendChild(l);
+  });
+  var js = ['patterns/model-graphviz/pattern.js','patterns/model-architecture-3d-deck/pattern.js',
+            'patterns/model-architecture-training-sidecar/pattern.js'];
+  dsReady = js.reduce(function(chain, u){
+    return chain.then(function(){
+      return new Promise(function(res, rej){
+        var s = document.createElement('script'); s.src = B+u;
+        s.onload = res; s.onerror = function(){ rej(new Error('取不到 '+u+'（跨仓库件由发布流程叠加到 /pto-ds/）')); };
+        document.head.appendChild(s);
+      });
+    });
+  }, Promise.resolve());
+  return dsReady;
+}
+/* sidecar 的模型是它自己的 openPangu-2.0-Flash（46 层），层号口径与我们的预置不同：
+   只把「第几段的第一层」按比例映到它的层号上，并在格头写清这是相对位置而非同一模型。 */
+function deckLayer(){
+  var p = P(), co = coordsOf(Math.min(S.sel, p.world-1), p);
+  var lps = p.layers / p.pp;
+  return Math.max(0, Math.min(45, Math.round(co.p * lps * (46 / p.layers))));
+}
+function demoSrc(c){
+  var p = P();
+  return './demo.html?preset='+S.preset+'&sel='+S.sel+'&view='+c.view
+    + '&cut='+(c.view==='dim' ? S.cut : (c.cut || S.cut))
+    + (S.theme==='dark'?'&theme=dark':'') + '&host=cockpit';
+}
+function deckSrc(){
+  var p = P(), okCfg = (p.world===128 && p.tp===2 && p.pp===4 && p.ep===8);
+  return '../pto-ds/patterns/model-parallel-rank-deck/pattern.html?rank='
+    + (okCfg ? S.sel : 0) + '&scene=rank&theme=' + S.theme;
+}
+function standaloneHref(key){
+  var c = COMPS[key];
+  if(c.kind==='demo') return demoSrc(c);
+  if(c.kind==='ds') return deckSrc();
+  if(key==='rubik') return '../rubik/?tp='+P().tp+'&pp='+P().pp+'&dp='+P().dp+'&ep='+P().ep;
+  if(key==='netsh') return '../rank-card/?rank='+S.sel;
+  return './';
+}
+
+/* ── 切换轨 ── */
+function buildRail(){
+  var rail = document.getElementById('rail'), byBand = {a:[], b:[], c:[], d:[]};
+  Object.keys(COMPS).forEach(function(k){ byBand[COMPS[k].band].push(k); });
+  var BANDN = {a:'A 刀对整网', b:'B 刀对卡空间', c:'C 映射', d:'D 时间'};
+  rail.innerHTML = ['a','b','c','d'].map(function(bd){
+    return '<div class="ck-rgrp" data-band="'+bd+'" title="'+BANDN[bd]+'">'
+      + '<span class="ck-rk">'+bd.toUpperCase()+'</span>'
+      + byBand[bd].map(function(k){
+          return '<button class="ck-tab" data-tab="'+k+'" type="button" title="'+esc(COMPS[k].q)+'">'
+            + esc(COMPS[k].name.replace('（mount）','').replace('（路由表）',''))+'</button>';
+        }).join('') + '</div>';
+  }).join('');
+}
+/* ── 建格：一次只建当前那个；建过的留着（hidden），切回来即时且状态还在 ── */
+function showTab(key){
+  TAB = COMPS[key] ? key : 'chain';
+  var stage = document.getElementById('stage');
+  Object.keys(panes).forEach(function(k){ if(panes[k]) panes[k].el.hidden = (k !== TAB); });
+  Array.prototype.forEach.call(document.querySelectorAll('[data-tab]'), function(b){
+    b.classList.toggle('on', b.getAttribute('data-tab') === TAB);
+  });
+  if(!panes[TAB]) buildPane(stage, TAB);
+  else{
+    /* 切回来：尺寸可能变过（曾在隐藏中），让 3D 场景重新量一次 */
+    var rec = panes[TAB];
+    if(rec.handle && rec.handle.resize) safe('resize', function(){ rec.handle.resize(); });
+    if(rec.handle && rec.handle.fit) safe('fit', function(){ rec.handle.fit(); });
+    pushAll(null);
+  }
+  paintTop(); paintBottom(); pushURL();
+}
+function buildPane(stage, key){
+  var c = COMPS[key];
+  var el = document.createElement('div');
+  el.className = 'ck-pane'; el.setAttribute('data-band', c.band); el.setAttribute('data-tab-pane', key);
+  stage.appendChild(el);
+  var ph = document.createElement('div'); ph.className = 'ck-ph';
+  ph.innerHTML = '<span class="ck-band">'+c.band.toUpperCase()+'</span>'
+    + '<span class="ck-pn">'+esc(c.name)+'</span><span class="ck-pq">'+esc(c.q)+'</span>';
+  var open = document.createElement('a');
+  open.className = 'ck-link'; open.target = '_blank'; open.rel = 'noopener';
+  open.textContent = '单独打开 ↗'; open.style.marginLeft = 'auto';
+  ph.appendChild(open);
+  el.appendChild(ph);
+  var body = document.createElement('div'); body.className = 'ck-body';
+  el.appendChild(body);
+  var rec = {key:key, comp:c, el:el, body:body, open:open, handle:null, frame:null, lastLayer:null};
+  panes[key] = rec;
+  open.href = standaloneHref(key);
+  Object.keys(panes).forEach(function(k){ if(panes[k]) panes[k].el.hidden = (k !== TAB); });
+
+  if(c.kind === 'demo'){
+    var f = document.createElement('iframe');
+    f.src = demoSrc(c); f.setAttribute('title', c.name);
+    body.appendChild(f); rec.frame = f;
+  }else if(c.kind === 'ds'){
+    /* 跨仓库件：路径由发布流程叠加出来。**始终照常加载**——早先按 location.protocol
+       粗暴挡掉 file:，结果连本地按发布布局摆好的镜像也被挡了；那种守卫会替浏览器
+       说谎。加载不到就让这一格如实显示浏览器的错误页，另加一条提示说明原因。 */
+    var f2 = document.createElement('iframe');
+    f2.src = deckSrc(); f2.setAttribute('title', c.name);
+    body.appendChild(f2); rec.frame = f2;
+    if(location.protocol === 'file:'){
+      var hint = document.createElement('div');
+      hint.style.cssText = 'position:absolute;left:0;right:0;bottom:0;padding:4px 8px;font-size:10.5px;'
+        + 'background:var(--ck-s2);border-top:1px solid var(--ck-bd);color:var(--ck-fg3)';
+      hint.textContent = '跨仓库件（pto-design-system → /pto-ds/）：本地 file:// 打开时需按发布布局摆好才在，发布站上一直在';
+      body.appendChild(hint);
+    }
+  }else if(c.kind === 'ds-mount'){
+    var mp0 = document.createElement('div'); mp0.className = 'ck-mountpt'; body.appendChild(mp0);
+    var wait = document.createElement('div'); wait.className = 'ck-note';
+    wait.innerHTML = '<div>正在取跨仓库件…</div>'; body.appendChild(wait);
+    ensureDs().then(function(){
+      if(!window.PtoModelArchitectureTrainingSidecar) throw new Error('sidecar 全局挂点缺失');
+      wait.remove();
+      rec.handle = window.PtoModelArchitectureTrainingSidecar.render(mp0, {
+        theme:S.theme, initialLayer:deckLayer(),
+        topology:{rank:S.sel, parallelGroups:dimSummary(), rankGroups:rankGroupsByStage(),
+                  gradientSync:'all-reduce'},
+        /* 正常事件不进诊断（诊断只留给异常）；层号回灌到底栏读数 */
+        onLayerSelect:function(l){
+          var n = (l && typeof l === 'object') ? (l.layer != null ? l.layer : l.index) : l;
+          rec.lastLayer = (typeof n === 'number') ? n : null;
+          paintBottom();
+        }
+      });
+      safe('sidecar setParallelMode', function(){ rec.handle.setParallelMode(DECK_MODE[S.cut] || 'none'); });
+      paintBottom();
+    }).catch(function(e){
+      diag.push('sidecar: '+e.message);
+      body.innerHTML = '<div class="ck-note"><div><b>训练语义 sidecar 未就绪</b><br>'
+        + esc(e.message) + '<br>发布站上 /pto-ds/ 由流程叠加，这一格是活的。</div></div>';
+      paintBottom();
+    });
+  }else if(key === 'rubik'){
+    var mp = document.createElement('div'); mp.className = 'ck-mountpt'; body.appendChild(mp);
+    rec.handle = safe('逻辑魔方 mount', function(){
+      if(!window.THREE) throw new Error('window.THREE 未加载');
+      return window.PtoRubikCubePattern.mount(mp, {
+        theme:S.theme, mode:(RUBIK_MODE[S.cut] !== undefined ? RUBIK_MODE[S.cut] : 0),
+        /* 层数/专家数也要给：不给的话魔方用自己默认的 48 层，同一舱里
+           就出现两个模型形状（魔方说 L0–L9、demo 说 L0–L7），对不上账 */
+        config:{tp:P().tp, cp:P().cp, pp:P().pp, dp:P().dp, ep:P().ep,
+                layers:P().layers, experts:P().experts},
+        onSelect:function(o){ if(o && typeof o.rank === 'number') onPick(o.rank, 'rubik'); }
+      });
+    });
+    if(!rec.handle) body.innerHTML = '<div class="ck-note"><div><b>逻辑魔方挂载失败</b><br>见底栏诊断</div></div>';
+  }else if(key === 'netsh'){
+    var mp2 = document.createElement('div'); mp2.className = 'ck-mountpt'; body.appendChild(mp2);
+    rec.handle = safe('rank 卡 mount', function(){
+      return window.PtoNetShardingPattern.mount(mp2, {
+        theme:S.theme, axis:'tp', rank:S.sel,
+        config:{tp:P().tp, cp:P().cp, pp:P().pp, ep:P().ep, dp:P().dp,
+                layers:P().layers, heads:P().heads, experts:P().experts, seqLen:P().seq}
+      });
+    });
+    if(!rec.handle) body.innerHTML = '<div class="ck-note"><div><b>rank 卡挂载失败</b><br>见底栏诊断</div></div>';
+  }
+  pushAll(null);
+  paintBottom();
+}
+
+/* ── 状态总线：一处变，全格跟 ── */
+function pushAll(origin){
+  var p = P();
+  Object.keys(panes).forEach(function(pk){
+    var rec = panes[pk];
+    if(!rec || pk === origin) return;
+    var c = rec.comp;
+    if(c.kind === 'demo' && rec.frame && rec.frame.contentWindow){
+      safe(c.name+' postMessage', function(){
+        rec.frame.contentWindow.postMessage({type:'pto:state', preset:S.preset, sel:S.sel,
+          view:c.view, cut:(c.view==='dim' ? S.cut : c.cut), theme:S.theme}, '*');
+      });
+    }else if(c.kind === 'ds' && rec.frame){
+      var want = deckSrc();
+      if(rec.frame.src.indexOf(want) < 0) rec.frame.src = want;   /* 只读 URL → 只能重载 */
+    }else if(c.kind === 'ds-mount' && rec.handle){
+      /* 这就是「用单维切分的逻辑去切真整网」：它自己支持按维切，只是从来没人从外面驱动 */
+      safe('sidecar setParallelMode', function(){ rec.handle.setParallelMode(DECK_MODE[S.cut] || 'none'); });
+      safe('sidecar selectLayer', function(){ rec.handle.selectLayer(deckLayer()); });
+      safe('sidecar setTheme', function(){ rec.handle.setTheme(S.theme); });
+    }else if(rec.key === 'rubik' && rec.handle){
+      safe('魔方 setConfig', function(){ rec.handle.setConfig({tp:p.tp, cp:p.cp, pp:p.pp, dp:p.dp, ep:p.ep,
+        layers:p.layers, experts:p.experts}); });
+      safe('魔方 select', function(){ rec.handle.select(S.sel < p.world ? S.sel : null); });
+      safe('魔方 setTheme', function(){ rec.handle.setTheme(S.theme); });
+      /* 刀 → 形态：把「这一刀是谁和谁一组」在卡空间里直接摆出来（A 段 ↔ B 段的桥） */
+      safe('魔方 setMode', function(){ rec.handle.setMode(RUBIK_MODE[S.cut] !== undefined ? RUBIK_MODE[S.cut] : 0); });
+      safe('魔方 高亮本刀通信组', function(){
+        rec.handle.setColorBy(RUBIK_MODE[S.cut] !== undefined ? S.cut : 'load');
+        rec.handle.setWire({members:true, outline:true, focus:true});
+      });
+    }else if(rec.key === 'netsh' && rec.handle){
+      safe('rank卡 setConfig', function(){ rec.handle.setConfig({tp:p.tp, cp:p.cp, pp:p.pp, ep:p.ep, dp:p.dp,
+        layers:p.layers, heads:p.heads, experts:p.experts, seqLen:p.seq}); });
+      safe('rank卡 selectRank', function(){ rec.handle.selectRank(S.sel < p.world ? S.sel : 0); });
+      safe('rank卡 setTheme', function(){ rec.handle.setTheme(S.theme); });
+    }
+    rec.open.href = standaloneHref(rec.key);
+  });
+  paintTop(); paintBottom(); pushURL();
+}
+function onPick(rank, from){
+  if(!S.link){ paintBottom(); return; }
+  if(rank === S.sel) return;
+  S.sel = rank;
+  document.getElementById('selIn').value = rank;
+  pushAll(null);
+}
+function paintTop(){
+  var p = P(), co = coordsOf(Math.min(S.sel, p.world-1), p), me = epOf(co, p);
+  document.getElementById('quint').innerHTML = 'tp<b>'+co.t+'</b> cp<b>'+co.c+'</b> dp<b>'+co.d
+    + '</b> pp<b>'+co.p+'</b> ep<b>'+me.ep+'</b> · ℓ<b>L'+(co.p*(p.layers/p.pp))+'–L'
+    + ((co.p+1)*(p.layers/p.pp)-1)+'</b>';
+  Array.prototype.forEach.call(document.querySelectorAll('[data-preset]'), function(b){
+    b.classList.toggle('on', b.getAttribute('data-preset') === S.preset);
+  });
+  Array.prototype.forEach.call(document.querySelectorAll('[data-cut]'), function(b){
+    var d = b.getAttribute('data-cut');
+    b.classList.toggle('on', d === S.cut);
+    b.title = DECK_MODE[d] ? '' : 'CP：魔方与 3d-deck 都没有这一形态（它是第四维的另一种）';
+  });
+  var lb = document.getElementById('linkBtn');
+  lb.classList.toggle('on', S.link); lb.textContent = S.link ? '联动 ✓' : '联动 ✗';
+  document.documentElement.setAttribute('data-theme', S.theme);
+}
+function paintBottom(){
+  var p = P();
+  document.getElementById('botCfg').textContent = p.label + ' · ' + p.note + ' · 全量 ' + p.world + ' 卡 · 选中 g=' + S.sel;
+  var vals = Object.keys(panes).map(function(k){ return panes[k]; }).filter(Boolean);
+  var mounted = vals.filter(function(r){ return r.handle; }).length;
+  var frames  = vals.filter(function(r){ return r.frame; }).length;
+  document.getElementById('botLink').innerHTML =
+    '<span class="ck-tag ok">mount ×'+mounted+'（直接调 handle）</span> '
+    + '<span class="ck-tag ok">iframe ×'+frames+'（postMessage 驱动）</span> '
+    + '<span class="ck-tag no">rank-deck 只读 URL → 换选中要重载</span> '
+    + '<span class="ck-tag no">rank 卡单向（它的 onSelectRank 未接线）</span>'
+    + (DECK_MODE[S.cut] ? '' : ' <span class="ck-tag no">CP：魔方与 3d-deck 都无此形态 → 两格退回默认</span>');
+  var sc = vals.filter(function(r){ return r.comp.kind==='ds-mount' && r.handle; })[0];
+  if(sc){
+    document.getElementById('botLink').innerHTML +=
+      ' <span class="ck-tag ok">sidecar：真整网按 '+S.cut.toUpperCase()+(DECK_MODE[S.cut]?'':'→none')
+      + ' 切 · 层 '+deckLayer()+'/46'+(sc.lastLayer!=null?'（已打开 '+sc.lastLayer+'）':'')+'</span>';
+  }
+  var d = document.getElementById('botDiag');
+  d.textContent = diag.length ? ('诊断：' + diag.slice(-2).join(' · ')) : '诊断：无异常';
+  d.className = 'ck-tag' + (diag.length ? ' no' : ' ok');
+}
+function pushURL(){
+  history.replaceState(null, '', '?preset='+S.preset+'&sel='+S.sel+'&cut='+S.cut+'&tab='+TAB
+    + (S.theme==='dark'?'&theme=dark':'') + (S.link?'':'&link=0'));
+}
+
+/* ── 顶栏交互 ── */
+document.addEventListener('click', function(e){
+  var b = e.target.closest && e.target.closest('[data-preset]');
+  if(b){
+    S.preset = b.getAttribute('data-preset');
+    if(S.sel >= P().world) S.sel = P().world - 1;
+    document.getElementById('selIn').value = S.sel;
+    pushAll(null); return;
+  }
+  var k = e.target.closest && e.target.closest('[data-cut]');
+  if(k){ S.cut = k.getAttribute('data-cut'); pushAll(null); return; }
+  if(e.target.id === 'themeBtn'){ S.theme = S.theme==='dark' ? 'light' : 'dark'; pushAll(null); return; }
+  if(e.target.id === 'linkBtn'){ S.link = !S.link; paintTop(); paintBottom(); pushURL(); }
+});
+document.getElementById('selIn').addEventListener('change', function(e){
+  var n = parseInt(e.target.value, 10), p = P();
+  S.sel = isFinite(n) && n>=0 ? Math.min(n, p.world-1) : 0;
+  e.target.value = S.sel;
+  pushAll(null);
+});
+/* iframe 回灌：demo 页点选卡 → 总线 → 其余格跟随（A8 的跨组件版） */
+window.addEventListener('message', function(ev){
+  var d = ev && ev.data; if(!d || typeof d !== 'object') return;
+  if(d.type === 'pto:select' && typeof d.sel === 'number') onPick(d.sel, 'demo');
+  if(d.type === 'rubik-select' && typeof d.rank === 'number') onPick(d.rank, 'rubik-frame');
+});
+
+/* ── 轨：切组件 ── */
+document.getElementById('rail').addEventListener('click', function(e){
+  var b = e.target.closest && e.target.closest('[data-tab]');
+  if(b) showTab(b.getAttribute('data-tab'));
+});
+window.addEventListener('resize', function(){
+  var r = panes[TAB];
+  if(r && r.handle && r.handle.resize) safe('resize', function(){ r.handle.resize(); });
+  if(r && r.handle && r.handle.fit) safe('fit', function(){ r.handle.fit(); });
+});
+
+/* ── 起飞 ── */
+document.documentElement.setAttribute('data-theme', S.theme);
+buildRail();
+showTab(TAB);
+paintTop(); paintBottom(); pushURL();
+/* iframe 要等自己加载完才吃 postMessage：装载后补一次推送 */
+setTimeout(function(){ pushAll(null); }, 900);
+window.ptoCockpit = {state:S, panes:panes, tab:function(){ return TAB; }, show:showTab, diag:diag, pushAll:pushAll};
+})();
+</script>
+</body>
+</html>

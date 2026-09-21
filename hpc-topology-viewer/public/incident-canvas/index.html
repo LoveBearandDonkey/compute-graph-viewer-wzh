@@ -1,0 +1,3510 @@
+<!doctype html>
+<html lang="zh-CN" data-theme="light">
+<head>
+<meta charset="UTF-8" />
+<meta name="author" content="王欣迪" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<!-- 入口 HTML 不进浏览器缓存：资源已带 ?v=，但页面本身没有这层保护，
+     收藏过的旧链接会一直拿旧副本（与 combo-workbench/index.html 同一处理）。 -->
+<meta http-equiv="Cache-Control" content="no-cache, must-revalidate">
+<meta http-equiv="Pragma" content="no-cache">
+<meta name="robots" content="noindex, nofollow, noarchive, nosnippet, noimageindex" />
+<meta name="googlebot" content="noindex, nofollow" />
+<meta name="referrer" content="no-referrer" />
+<title>故障故事线 · 无限画布</title>
+<link rel="icon" href="./favicon.svg" type="image/svg+xml" />
+<!--
+  ══════════════════════════════════════════════════════════════════════
+  故障故事线 · 无限画布
+
+  **主视图永远是并行拓扑 pattern 本体**（/patterns/net-slicing/pattern.html），
+  就是组合工作台舞台上那一格、你打开 /combo-workbench/ 看到的那张
+  「模型分片与训练设备映射」——不是另画一份像它的图。画布围着它长。
+
+  合的是三份东西：
+    · /patterns/net-slicing/（本仓）—— **主视图**，以及左边那格「整网 · 真图展开」。
+      两格是同一个 pattern 的两份配置：主视图五刀全落并进卡维度（问「切完之后
+      落成 world 张卡」），整网那格独独不落 DP、不进卡维度（问「一张整网被切成什么」）。
+    · /combo-workbench/swimlane.html（本仓）—— 「泳道 · 微批次生命周期」那一格，
+      compute-graph-viewer 的上游拷贝，原样嵌入。
+    · config-relation-observer（compute-graph-viewer）—— 故事线与全部数值：
+      两条问题线、11 个运行事件、传播源→受影响、5 套机制相位、11 张证据图。
+      数值逐条照搬，一个没改。
+    · pangu_sophon_pytorch —— 训推大盘那一格的指标口径（只取口径，不取值）。
+
+  「无限画布」在这里是字面意思：**下钻 = 在画布上把一格展开出来**。
+  主视图钉在原点、永远在；别的格子（整网 / 泳道 / 故事线 / 事件传播 / 机制舞台 /
+  证据 / 单卡解剖 / 训推大盘）按需展开，各自落在画布上自己那个位置，用一条贝塞尔
+  连回主视图。展开得越多，画布越大——缩小就看见自己摊开了哪几格。收起就是那格的 ×。
+
+  被嵌的三份都是**规范路径上的本体**，不是拷贝：
+    · BASE + /patterns/net-slicing/pattern.html
+    · BASE + /combo-workbench/swimlane.html
+  BASE 由发布步骤按入口改写（/incident-canvas/ 是 '..'，/patterns/incident-canvas/
+  是 '../..'）。所以「画布里的那一份」和「直接打开那条链接」永远是同一个文件、
+  同一个版本。本地直接开 public/ 时它们不存在（是构建期产物），那几格显示兜底文案。
+  ══════════════════════════════════════════════════════════════════════
+-->
+<style>
+/* ═══ ① Foundation —— 与 combo-workbench 同一套底 ═══════════════════ */
+:root{
+  --ark-blue-500:#4369EF; --ark-blue-600:#5A92E6;
+  --ark-green-500:#04D793; --ark-orange-500:#FFAA3B; --ark-red-500:#FF4B7B;
+  --font-sans:'Inter','Source Han Sans SC','PingFang SC','Noto Sans SC',sans-serif;
+  --font-mono:'JetBrains Mono','Fira Code','Consolas',monospace;
+  --radius-sm:6px; --radius-md:8px; --radius-lg:12px; --radius-pill:999px;
+  --duration-fast:120ms;
+}
+/* ② Semantic —— 浅色（默认） */
+:root, :root[data-theme="light"]{
+  --background:#F5F5F5; --surface-1:#FFFFFF; --surface-2:#F2F2F2; --surface-3:#E6E6E6;
+  --foreground:rgba(0,0,0,.90); --foreground-secondary:rgba(0,0,0,.55); --foreground-muted:rgba(0,0,0,.38);
+  --border-subtle:rgba(0,0,0,.07); --border-default:rgba(0,0,0,.12); --border-strong:rgba(0,0,0,.18);
+  --primary:var(--ark-blue-500); --primary-hover:var(--ark-blue-600);
+  --success:var(--ark-green-500); --warning:var(--ark-orange-500); --danger:var(--ark-red-500);
+  --focus-ring:rgba(67,105,239,.36);
+  --state-hover:rgba(0,0,0,.05); --state-press:rgba(0,0,0,.09);
+  --state-selected:rgba(67,105,239,.10);
+  --shadow-sm:0 1px 3px rgba(0,0,0,.10); --shadow-md:0 6px 18px rgba(0,0,0,.12);
+  --shadow-lg:0 18px 44px rgba(0,0,0,.16);
+  --grid-dot:rgba(19,26,42,.13);
+  --cell-base:#dfe3ea; --cell-mid:#9aa6bf;
+}
+/* ② Semantic —— 深色（单块覆盖） */
+:root[data-theme="dark"]{
+  --background:#101010; --surface-1:#161616; --surface-2:#1c1c1c; --surface-3:#262626;
+  --foreground:rgba(255,255,255,.90); --foreground-secondary:rgba(255,255,255,.60); --foreground-muted:rgba(255,255,255,.40);
+  --border-subtle:rgba(255,255,255,.07); --border-default:rgba(255,255,255,.12); --border-strong:rgba(255,255,255,.18);
+  --focus-ring:rgba(67,105,239,.42);
+  --state-hover:rgba(255,255,255,.06); --state-press:rgba(255,255,255,.10);
+  --state-selected:rgba(67,105,239,.16);
+  --shadow-sm:0 1px 3px rgba(0,0,0,.30); --shadow-md:0 6px 18px rgba(0,0,0,.36);
+  --shadow-lg:0 18px 44px rgba(0,0,0,.46);
+  --grid-dot:rgba(255,255,255,.10);
+  --cell-base:#262a33; --cell-mid:#525d74;
+}
+/* ③ ide-frame —— 四团光晕压在一条竖向渐变上（照 combo-workbench） */
+:root{
+  --ide-bg-start:#fdfdff; --ide-bg-mid:#f6f7fb; --ide-bg-end:#eceff6;
+  --ide-glow-left:155 96 170; --ide-glow-right:24 99 220;
+  --ide-glow-center:20 184 166; --ide-glow-lower:245 158 11;
+  --ide-a-left:.16; --ide-a-right:.14; --ide-a-center:.08; --ide-a-lower:.06;
+  --page-bg:
+    radial-gradient(circle at top left,  rgb(var(--ide-glow-left)   / var(--ide-a-left)),   transparent 28%),
+    radial-gradient(circle at top right, rgb(var(--ide-glow-right)  / var(--ide-a-right)),  transparent 30%),
+    radial-gradient(circle at 48% 6%,    rgb(var(--ide-glow-center) / var(--ide-a-center)), transparent 34%),
+    radial-gradient(circle at 18% 86%,   rgb(var(--ide-glow-lower)  / var(--ide-a-lower)),  transparent 34%),
+    linear-gradient(180deg, var(--ide-bg-start) 0%, var(--ide-bg-mid) 42%, var(--ide-bg-end) 100%);
+}
+:root[data-theme="dark"]{
+  --ide-bg-start:#17181d; --ide-bg-mid:#101114; --ide-bg-end:#0c0d10;
+  --ide-glow-right:67 105 239;
+  --ide-a-left:.12; --ide-a-right:.12; --ide-a-center:.06; --ide-a-lower:.05;
+}
+
+*{box-sizing:border-box}
+html,body{height:100%}
+body{
+  margin:0; overflow:hidden;
+  font:400 14px/1.55 var(--font-sans);
+  color:var(--foreground);
+  background:var(--page-bg) fixed;
+  -webkit-font-smoothing:antialiased;
+}
+button{font:inherit; color:inherit; cursor:pointer}
+::-webkit-scrollbar{width:6px;height:6px}
+::-webkit-scrollbar-thumb{background:var(--border-strong);border-radius:99px}
+::-webkit-scrollbar-track{background:transparent}
+
+/* ═══ 应用外壳 ═══════════════════════════════════════════════════════ */
+#app{position:fixed;inset:0;display:grid;grid-template-rows:auto minmax(0,1fr)}
+body[data-embed="1"] #topbar{display:none}
+body[data-embed="1"] #app{grid-template-rows:minmax(0,1fr)}
+
+@media (max-width:1440px){ #srcWorkbench, #srcUpstream{display:none} }
+@media (max-width:1180px){ #autoBtn span{display:none} }
+#topbar{
+  display:flex;align-items:center;gap:10px;overflow:hidden;
+  height:46px;padding:0 14px;
+  border-bottom:1px solid var(--border-subtle);
+  background:color-mix(in srgb, var(--surface-1) 72%, transparent);
+  backdrop-filter:blur(18px) saturate(1.18);
+  -webkit-backdrop-filter:blur(18px) saturate(1.18);
+  position:relative;z-index:40;
+}
+.brand{display:flex;align-items:center;gap:9px;min-width:0}
+.brand svg{width:20px;height:20px;flex:none;color:var(--primary)}
+.brand b{font:600 13px/1.2 var(--font-sans);white-space:nowrap}
+.brand span{font:400 11.5px/1.2 var(--font-sans);color:var(--foreground-secondary);white-space:nowrap}
+a.btn{text-decoration:none}
+a.btn sup{font-size:9px;line-height:1;color:var(--foreground-muted);margin-left:1px}
+.spacer{flex:1 1 auto}
+
+.btn{
+  display:inline-flex;align-items:center;gap:6px;
+  height:28px;padding:0 10px;border-radius:var(--radius-md);
+  border:1px solid var(--border-default);background:var(--surface-1);
+  font:500 12px/1 var(--font-sans);color:var(--foreground);
+  transition:background var(--duration-fast),border-color var(--duration-fast),color var(--duration-fast);
+  white-space:nowrap;
+}
+.btn:hover{background:var(--state-hover);border-color:var(--border-strong)}
+.btn:active{background:var(--state-press)}
+.btn:focus-visible{outline:2px solid var(--focus-ring);outline-offset:1px}
+.btn--ghost{background:transparent;border-color:transparent}
+.btn--ghost:hover{background:var(--state-hover)}
+.btn--icon{width:28px;padding:0;justify-content:center}
+.btn--icon svg{width:15px;height:15px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+.btn[aria-pressed="true"]{background:var(--state-selected);border-color:color-mix(in srgb,var(--primary) 38%,transparent);color:var(--primary)}
+.btn--sm{height:24px;padding:0 8px;font-size:11.5px}
+
+/* 故事线选择：顶栏正中的段控 */
+.seg{display:inline-flex;padding:2px;gap:2px;border-radius:var(--radius-md);
+  background:var(--surface-2);border:1px solid var(--border-subtle)}
+.seg button{
+  height:24px;padding:0 11px;border:0;border-radius:6px;background:transparent;
+  font:500 12px/1 var(--font-sans);color:var(--foreground-secondary);
+  transition:background var(--duration-fast),color var(--duration-fast);
+}
+.seg button:hover{background:var(--state-hover);color:var(--foreground)}
+.seg button[aria-pressed="true"]{background:var(--surface-1);color:var(--foreground);box-shadow:var(--shadow-sm)}
+
+/* ═══ 画布视口 ═══════════════════════════════════════════════════════ */
+#viewport{
+  position:relative;overflow:hidden;
+  cursor:grab;touch-action:none;
+  background-image:radial-gradient(var(--grid-dot) 1px, transparent 1px);
+  background-size:var(--dot,26px) var(--dot,26px);
+  background-position:var(--dotx,0) var(--doty,0);
+}
+#viewport.is-panning{cursor:grabbing}
+#world{position:absolute;left:0;top:0;transform-origin:0 0;will-change:transform}
+#conns{position:absolute;pointer-events:none;overflow:visible}
+
+/* ═══ 面板（中心舞台与卫星同一套壳）══════════════════════════════════ */
+/* hidden 属性的 UA 样式是 display:none，但 .panel 自己写了 display:flex，
+   同特异性下后者赢——收起来的格子照样画在画布上（实机：一进来八格全摊开）。
+   这一条必须显式压过去。 */
+.panel[hidden]{display:none!important}
+.panel{
+  position:absolute;display:flex;flex-direction:column;
+  border-radius:var(--radius-lg);
+  border:1px solid var(--ide-frame-pane-border,var(--border-subtle));
+  background:color-mix(in srgb, var(--surface-1) 88%, transparent);
+  backdrop-filter:blur(18px) saturate(1.18);
+  -webkit-backdrop-filter:blur(18px) saturate(1.18);
+  box-shadow:var(--shadow-md);
+  overflow:hidden;
+}
+.panel--stage{box-shadow:var(--shadow-lg);border-color:var(--border-default)}
+.panel--sat{background:color-mix(in srgb, var(--surface-1) 82%, transparent)}
+.panel.is-linked{border-color:color-mix(in srgb,var(--primary) 42%,transparent)}
+.panel__head{
+  display:flex;align-items:center;gap:8px;flex:none;
+  height:34px;padding:0 12px;
+  border-bottom:1px solid var(--border-subtle);
+  background:color-mix(in srgb, var(--surface-2) 55%, transparent);
+}
+.panel__dot{width:6px;height:6px;border-radius:99px;background:var(--primary);flex:none}
+.panel__title{flex:1 1 auto;min-width:64px;font:600 13px/1.2 var(--font-sans);
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.panel__sub{flex:0 1 auto;min-width:0;font:400 11.5px/1.2 var(--font-sans);color:var(--foreground-muted);
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.panel__acts{margin-left:auto;display:flex;gap:4px;flex:none}
+.panel__body{flex:1 1 auto;min-height:0;overflow:auto;padding:12px 14px}
+.panel__body--flush{padding:0}
+
+/* 卫星面板的方位徽标 */
+/* 格内工具条：主视图的七个视图挤不进格头（那儿还有标题和副标题），
+   所以单独占一条，压在画布上方。 */
+.ptoolbar{
+  display:flex;align-items:center;gap:8px;flex:none;
+  padding:7px 12px;border-bottom:1px solid var(--border-subtle);
+  background:color-mix(in srgb, var(--surface-2) 46%, transparent);
+  overflow-x:auto;
+}
+.ptoolbar .k{flex:none}
+.framewrap{position:relative;flex:1 1 auto;min-height:0}
+.ptabs{display:inline-flex;padding:2px;gap:2px;flex:none;
+  border-radius:var(--radius-md);background:var(--surface-2);border:1px solid var(--border-subtle)}
+.ptabs button{
+  height:23px;padding:0 10px;border:0;border-radius:6px;background:transparent;
+  font:500 11.5px/1 var(--font-sans);color:var(--foreground-secondary);white-space:nowrap;
+  transition:background var(--duration-fast),color var(--duration-fast);
+}
+.ptabs button:hover{background:var(--state-hover);color:var(--foreground)}
+.ptabs button[aria-pressed="true"]{background:var(--surface-1);color:var(--foreground);box-shadow:var(--shadow-sm)}
+.tsep{flex:none;width:1px;height:18px;background:var(--border-default)}
+.xp{display:flex;align-items:center;gap:7px;flex:none}
+.xp input[type=range]{width:150px;accent-color:var(--primary);cursor:pointer}
+.xp b{font:600 11px/1 var(--font-mono);min-width:52px;color:var(--foreground-secondary)}
+/* 游标叠在泳道 iframe 上的一层，不改那份逐字节拷贝来的上游文件 */
+.xcursor{position:absolute;inset:0;pointer-events:none;overflow:hidden;z-index:3}
+.xcursor i{position:absolute;top:0;bottom:0;width:2px;background:var(--danger);
+  box-shadow:0 0 0 1px color-mix(in srgb,var(--danger) 30%,transparent);font-style:normal}
+.xcursor i::before{content:'';position:absolute;top:0;left:-4px;border:5px solid transparent;
+  border-top-color:var(--danger)}
+
+/* 画布右上角那排「展开 ▸」筹码（#panelshud）：管的是这张画布上摊开了哪几格 */
+.exp{display:flex;gap:5px;align-items:center;flex-wrap:wrap}
+.expb{
+  display:inline-flex;align-items:center;gap:5px;height:23px;padding:0 9px;
+  border-radius:var(--radius-pill);border:1px solid var(--border-default);
+  background:var(--surface-2);font:500 11.5px/1 var(--font-sans);
+  color:var(--foreground-secondary);white-space:nowrap;
+  transition:background var(--duration-fast),border-color var(--duration-fast),color var(--duration-fast);
+}
+.expb:hover{background:var(--state-hover);border-color:var(--border-strong);color:var(--foreground)}
+.expb[aria-pressed="true"]{background:var(--state-selected);color:var(--primary);
+  border-color:color-mix(in srgb,var(--primary) 42%,transparent)}
+.expb i{width:6px;height:6px;border-radius:99px;background:currentColor;flex:none;font-style:normal;opacity:.7}
+
+/* 内嵌 pattern 的那几格：iframe 铺满格身，装配好之前先不画，免得闪一下白 */
+.frame{display:block;width:100%;height:100%;border:0;background:transparent;
+  opacity:0;transition:opacity 220ms}
+.panel[data-ready="1"] .frame{opacity:1}
+.fallback{
+  position:absolute;inset:0;display:grid;place-items:center;padding:22px;text-align:center;
+  font:400 12.5px/1.7 var(--font-sans);color:var(--foreground-muted);pointer-events:none;
+}
+.fallback b{color:var(--foreground-secondary);font-weight:600}
+.panel[data-ready="1"] .fallback{display:none}
+
+.sat-badge{
+  flex:none;padding:1px 7px;border-radius:var(--radius-pill);
+  border:1px solid var(--border-default);background:var(--surface-2);
+  font:600 10px/1.6 var(--font-mono);letter-spacing:.05em;
+  color:var(--foreground-muted);white-space:nowrap;
+}
+.panel.is-linked .sat-badge{color:var(--primary);border-color:color-mix(in srgb,var(--primary) 40%,transparent)}
+
+/* ═══ 通用零件 ═══════════════════════════════════════════════════════ */
+.k{font:600 11px/1.4 var(--font-mono);letter-spacing:.04em;color:var(--foreground-muted);
+   text-transform:uppercase}
+.muted{color:var(--foreground-secondary)}
+.mono{font-family:var(--font-mono)}
+.hr{height:1px;background:var(--border-subtle);margin:11px 0}
+
+.chip{
+  display:inline-flex;align-items:center;gap:5px;
+  padding:2px 8px;border-radius:var(--radius-pill);
+  border:1px solid var(--border-default);background:var(--surface-2);
+  font:500 11.5px/1.5 var(--font-sans);color:var(--foreground-secondary);
+  white-space:nowrap;
+}
+.chip--act{cursor:pointer;transition:background var(--duration-fast),border-color var(--duration-fast),color var(--duration-fast)}
+.chip--act:hover{background:var(--state-hover);border-color:var(--border-strong);color:var(--foreground)}
+.chip--on{background:var(--state-selected);border-color:color-mix(in srgb,var(--primary) 42%,transparent);color:var(--primary)}
+.chip--danger{background:color-mix(in srgb,var(--danger) 12%,transparent);
+  border-color:color-mix(in srgb,var(--danger) 40%,transparent);color:var(--danger)}
+.chip--warn{background:color-mix(in srgb,var(--warning) 16%,transparent);
+  border-color:color-mix(in srgb,var(--warning) 46%,transparent);
+  color:color-mix(in srgb,var(--warning) 76%,var(--foreground))}
+.chip i{width:6px;height:6px;border-radius:99px;background:currentColor;flex:none;font-style:normal}
+.chips{display:flex;flex-wrap:wrap;gap:5px}
+
+.tone-danger{color:var(--danger)}
+.tone-warning{color:color-mix(in srgb,var(--warning) 78%,var(--foreground))}
+.tone-good{color:color-mix(in srgb,var(--success) 74%,var(--foreground))}
+
+/* 读数格 */
+.mgrid{display:grid;grid-template-columns:1fr;gap:7px}
+.mrow{
+  display:flex;align-items:baseline;justify-content:space-between;gap:10px;
+  padding:7px 10px;border-radius:var(--radius-md);
+  background:var(--surface-2);border:1px solid var(--border-subtle);
+}
+.mrow__l{font:400 11.5px/1.35 var(--font-sans);color:var(--foreground-secondary)}
+.mrow__v{font:600 13px/1.3 var(--font-mono);text-align:right}
+
+/* 结论 / 根因 / 影响 三段 */
+.facts{display:grid;gap:9px}
+.fact{display:grid;grid-template-columns:52px 1fr;gap:9px;align-items:start}
+.fact__k{font:600 11px/1.6 var(--font-mono);color:var(--foreground-muted);letter-spacing:.04em}
+.fact__v{font:400 12.5px/1.55 var(--font-sans)}
+.fact--hi .fact__v{color:var(--danger);font-weight:500}
+
+/* ═══ 卫星 · 故事线时间轴 ═══════════════════════════════════════════ */
+.tl{position:relative;padding:8px 6px 6px;height:100%;display:flex;flex-direction:column}
+.tl__spine{position:absolute;left:14px;right:14px;top:44px;height:2px;
+  background:linear-gradient(90deg,var(--border-subtle),var(--border-strong),var(--border-subtle));border-radius:2px}
+.tl__row{display:flex;gap:8px;align-items:stretch;flex:1 1 auto;min-height:0}
+.tlc{
+  position:relative;flex:1 1 0;min-width:0;
+  display:flex;flex-direction:column;gap:6px;
+  padding:8px 9px 9px;border-radius:var(--radius-md);
+  border:1px solid var(--border-subtle);background:var(--surface-2);
+  text-align:left;cursor:pointer;
+  transition:background var(--duration-fast),border-color var(--duration-fast),transform var(--duration-fast);
+}
+.tlc:hover{background:var(--state-hover);border-color:var(--border-strong);transform:translateY(-1px)}
+.tlc[aria-pressed="true"]{background:var(--state-selected);
+  border-color:color-mix(in srgb,var(--primary) 50%,transparent);box-shadow:var(--shadow-sm)}
+.tlc__top{display:flex;align-items:center;gap:6px}
+.tlc__pin{width:9px;height:9px;border-radius:99px;flex:none;
+  background:var(--cell-mid);box-shadow:0 0 0 2px var(--surface-1)}
+.tlc[data-sev="danger"] .tlc__pin{background:var(--danger)}
+.tlc[data-sev="warning"] .tlc__pin{background:var(--warning)}
+.tlc__t{font:600 11px/1.2 var(--font-mono);color:var(--foreground-muted)}
+.tlc__title{font:600 12.5px/1.35 var(--font-sans);
+  display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.tlc__dim{font:400 10.5px/1.3 var(--font-sans);color:var(--foreground-muted)}
+.tlc__mech{position:absolute;top:7px;right:8px;font:600 9.5px/1.4 var(--font-mono);
+  padding:0 5px;border-radius:var(--radius-pill);
+  background:color-mix(in srgb,var(--primary) 14%,transparent);color:var(--primary)}
+
+/* ═══ 各格正文的骨架（panelShell 填的就是这一副）═══════════════════ */
+.stagewrap{position:relative;width:100%;height:100%;display:flex;flex-direction:column}
+.stagebar{
+  display:flex;align-items:center;gap:8px;flex-wrap:wrap;flex:none;
+  padding:9px 14px;border-bottom:1px solid var(--border-subtle);
+  background:color-mix(in srgb,var(--surface-2) 40%,transparent);
+}
+.stagebar__t{font:600 13.5px/1.2 var(--font-sans)}
+.stagebar__s{font:400 11.5px/1.2 var(--font-sans);color:var(--foreground-secondary)}
+.stagecanvas{flex:1 1 auto;min-height:0;position:relative;padding:12px 14px}
+.stagenote{
+  flex:none;padding:9px 14px;border-top:1px solid var(--border-subtle);
+  font:400 12px/1.5 var(--font-sans);color:var(--foreground-secondary);
+  background:color-mix(in srgb,var(--surface-2) 40%,transparent);
+}
+.stagenote b{color:var(--foreground);font-weight:600}
+
+
+/* ═══ 主视图 · 传播图 ═══════════════════════════════════════════════ */
+.objcard{cursor:pointer}
+.objcard rect{transition:opacity var(--duration-fast)}
+.objcard:hover rect.objbg{opacity:.92}
+
+/* ═══ 主视图 · 机制舞台 ═════════════════════════════════════════════ */
+.phaserow{display:flex;align-items:center;gap:6px;flex-wrap:wrap}
+.phase{
+  display:inline-flex;align-items:center;gap:6px;
+  height:26px;padding:0 10px;border-radius:var(--radius-pill);
+  border:1px solid var(--border-default);background:var(--surface-2);
+  font:500 11.5px/1 var(--font-sans);color:var(--foreground-secondary);
+  transition:background var(--duration-fast),color var(--duration-fast),border-color var(--duration-fast);
+}
+.phase:hover{background:var(--state-hover);color:var(--foreground)}
+.phase[aria-pressed="true"]{background:var(--primary);border-color:var(--primary);color:#fff}
+.phase__clock{font:600 10.5px/1 var(--font-mono);opacity:.78}
+
+/* ═══ 卫星 · 证据图 ═════════════════════════════════════════════════ */
+.chartwrap{width:100%;height:190px}
+.chartwrap svg{display:block;width:100%;height:100%;overflow:visible}
+.cnote{margin:9px 0 0;font:400 11.5px/1.55 var(--font-sans);color:var(--foreground-secondary)}
+
+/* ═══ HUD（屏幕坐标，不随画布缩放）═══════════════════════════════════ */
+.hud{position:absolute;z-index:20;display:flex;align-items:center;gap:6px;
+  padding:5px;border-radius:var(--radius-md);
+  border:1px solid var(--border-subtle);
+  background:color-mix(in srgb,var(--surface-1) 84%, transparent);
+  backdrop-filter:blur(14px) saturate(1.15);
+  -webkit-backdrop-filter:blur(14px) saturate(1.15);
+  box-shadow:var(--shadow-sm);
+}
+/* 悬浮告警层：钉在视口上，不在 #world 里，所以不跟着画布缩放平移。
+   pointer-events 只给真正的那块牌子，层本身放行——否则它会盖住整张画布，
+   拖不动也点不着。
+   画布顶上那一带整条都归它：格子筹码已经挪进顶栏，这里不再有第二个住户，
+   所以收起态与摊开态都直接居中贴顶，没有让位规则。 */
+#floatlayer{position:absolute;inset:0;pointer-events:none;z-index:6}
+/* 收起时留在画布上的那一条：告警的入口 + 问题段控，两件事合成一件。
+   居中而不是靠左：它是这一页唯一的入口，居中才是入口该在的地方；靠左会读成
+   「角落里的一个附件」。缩到最小——不写当前选中的那件事（那是抽屉里的内容，
+   写在这儿只会把条子撑成半屏），只留红点、事件数，和你此刻在看哪一个问题。
+
+   问题段控从顶栏挪了进来：它选的是**哪一条告警**，本来就属于告警这一块；
+   长在顶栏时，告警收起之后顶栏还替它留着一排按钮，两处各说各的。 */
+#alertbar{
+  position:absolute;left:50%;transform:translateX(-50%);top:12px;
+  display:inline-flex;align-items:center;gap:8px;
+  padding:3px;border-radius:999px;
+  border:1px solid var(--danger);background:var(--background);
+  box-shadow:0 8px 22px -8px rgba(220,38,38,.42),0 1px 3px rgba(15,23,42,.1)}
+/* 自己写了 display 就得自己把 hidden 挡回来：inline-flex 比 UA 的
+   [hidden]{display:none} 更具体，不写这一条，条子在抽屉摊开之后还会留在原地。 */
+#alertbar[hidden]{display:none!important}
+/* 问题即告警：每一条问题自己带严重度点和事件数，不再是「一枚计数按钮 + 一组页签」
+   拼在一起。拼的那版读起来是两样东西——那颗 ● 6 说的到底是哪条问题的 6，要想一下
+   才知道；现在每条自己说自己的，active 那条就是你正在看的这条告警。 */
+.seg--alert button{
+  display:inline-flex;align-items:center;gap:7px;height:28px;padding:0 11px;border-radius:999px}
+.seg--alert .dot{width:7px;height:7px;border-radius:50%;background:var(--danger);flex:none}
+/* 只有 active 那条的点会呼吸：两颗一起跳是噪音，而「你在这条上、它还活着」
+   才是这颗点要说的话。没在看的那条留一颗静止的点——它有告警，但此刻不是主语。 */
+.seg--alert button[aria-pressed="true"] .dot{animation:apulse 1.9s ease-in-out infinite}
+.seg--alert .n{
+  color:var(--foreground-muted);font-variant-numeric:tabular-nums;
+  font-size:11px;padding:0 5px;border-radius:999px;background:var(--surface-2)}
+.seg--alert button[aria-pressed="true"] .n{background:var(--state-hover)}
+/* 只有 active 那条给一枚折叠角标：点它开合抽屉。没在看的那条点了是「切过去」，
+   没有开合可言，给了角标反而像在说它也能开。 */
+.seg--alert .caret{width:9px;height:9px;flex:none;opacity:.5}
+#alertbar .seg{border:0;background:transparent;padding:0}
+@keyframes apulse{0%,100%{opacity:1}50%{opacity:.32}}
+@media (prefers-reduced-motion:reduce){.seg--alert .dot{animation:none}}
+/* 摊开之后段控挪进抽屉的格头，格头那条本来就窄，给它压一档字号 */
+.panel__acts .seg{border:0;background:transparent;padding:0}
+.panel__acts .seg button{height:22px;padding:0 9px;font-size:11.5px}
+.panel__acts .seg--alert .n{font-size:10.5px}
+#floatlayer > *{pointer-events:auto}
+/* 抽屉也居中，跟收起态那条对齐——两个形态是同一块东西，不该一个居中一个靠左。
+   贴着画布顶上 12px：格子筹码挪进顶栏之后这一带不再有别人，它不用再往下让一行。
+   1000 × 144 是**两条问题线一起量出来的下限**。宽度的紧约束在问题1 而不是问题2：
+   问题2 六张卡（卡宽 144）880 就开始截「Router FP8 溢出，E193 吸收 98% token」，
+   而问题1 只有五张卡、卡反而更宽（191），却卡在更长的那条标题上——
+   「EP rank 17（global rank 1553）触顶并发生碎片 OOM」要到 1000 才不被 line-clamp 截。
+   高度 144 是下限：138 会一次截掉 5 条标题。
+   原先是 1180 × 238——卡片在行里是 stretch 撑满的，多出来的高度全变成卡片下半截的
+   空白，看着像留白，其实只是没人要的那截。 */
+.panel--float{
+  position:absolute;left:50%;transform:translateX(-50%);
+  top:12px;width:min(1000px,calc(100% - 28px));height:144px;
+  box-shadow:0 18px 44px -12px rgba(15,23,42,.28),0 2px 8px rgba(15,23,42,.08)}
+/* 格子控制挪进顶栏，挨着「适配全部 / 回主视图」：这三样管的是同一件事——镜头与
+   画布的整体状态，本来就该待在一处。原先它浮在画布右上角，于是画布顶上那一带成了
+   它一个人的地盘：告警条要躲它、摊开的抽屉也要躲它，两条避让规则都是为它加的。
+   挪走之后那一带整个腾给告警，规则跟着删掉，不是留着不用。
+   不给底色也不给边框：顶栏本来就是一条底，再套一层白底会变成「条里又有一条」。 */
+#panelshud{display:flex;align-items:center;gap:6px;flex:0 1 auto;min-width:0;overflow:hidden}
+#panelshud .k{flex:none}
+#zoomhud{right:14px;bottom:14px}
+#legendhud{left:14px;bottom:14px;gap:10px;padding:7px 11px;flex-wrap:wrap;max-width:calc(100% - 220px)}
+.crumb{
+  display:inline-flex;align-items:center;gap:6px;height:24px;padding:0 9px;
+  border-radius:var(--radius-sm);border:1px solid transparent;background:transparent;
+  font:500 12px/1 var(--font-sans);color:var(--foreground-secondary);white-space:nowrap;
+}
+.crumb:hover{background:var(--state-hover);color:var(--foreground)}
+.crumb[aria-current="true"]{background:var(--state-selected);color:var(--primary);
+  border-color:color-mix(in srgb,var(--primary) 34%,transparent);cursor:default}
+.crumb__sep{color:var(--foreground-muted);font-size:11px;padding:0 1px;user-select:none}
+.zoomv{font:600 11.5px/1 var(--font-mono);min-width:42px;text-align:center;color:var(--foreground-secondary)}
+.lg{display:inline-flex;align-items:center;gap:5px;font:400 11px/1.4 var(--font-sans);color:var(--foreground-secondary)}
+.lg i{width:9px;height:9px;border-radius:2px;flex:none;font-style:normal}
+
+/* 悬浮提示 */
+#tip{
+  position:fixed;z-index:90;pointer-events:none;opacity:0;
+  max-width:300px;padding:7px 10px;border-radius:var(--radius-md);
+  border:1px solid var(--border-default);
+  background:color-mix(in srgb,var(--surface-1) 96%, transparent);
+  backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);
+  box-shadow:var(--shadow-md);
+  font:400 11.5px/1.55 var(--font-sans);white-space:pre-line;
+  transition:opacity var(--duration-fast);
+}
+#tip[data-on="1"]{opacity:1}
+
+/* 连线 */
+.link{fill:none;stroke:var(--border-strong);stroke-width:1.4;opacity:.5;vector-effect:non-scaling-stroke}
+.link.is-on{stroke:var(--primary);stroke-width:2;opacity:.85;vector-effect:non-scaling-stroke;
+  stroke-dasharray:7 6;animation:flow 1.1s linear infinite}
+@keyframes flow{to{stroke-dashoffset:-13}}
+
+/* 窄屏提示 */
+#narrow{display:none;position:fixed;inset:0;z-index:200;place-items:center;padding:28px;
+  background:var(--background);text-align:center}
+@media (max-width:720px){
+  #narrow{display:grid}
+}
+#narrow p{max-width:340px;font:400 13.5px/1.7 var(--font-sans);color:var(--foreground-secondary)}
+</style>
+</head>
+<body>
+<div id="narrow"><p><strong>这一页是给宽屏用的。</strong><br>主视图坐在无限画布正中、四周摞着五块联动卫星，窄屏一次只放得下其中一块，读不出「联动」本身。请换宽一点的窗口打开。</p></div>
+
+<div id="app">
+  <header id="topbar">
+    <div class="brand">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <circle cx="12" cy="12" r="3"></circle>
+        <circle cx="4.5" cy="5.5" r="2"></circle><circle cx="19.5" cy="5.5" r="2"></circle>
+        <circle cx="4.5" cy="18.5" r="2"></circle><circle cx="19.5" cy="18.5" r="2"></circle>
+        <path d="M6 7 10 10M18 7l-4 3M6 17l4-3M18 17l-4-3"></path>
+      </svg>
+      <b>故障故事线 · 无限画布</b>
+      <span id="brandSub">一个主视图 · 四周联动 · 逐级下钻</span>
+    </div>
+    <span class="spacer"></span>
+    <button class="btn btn--sm" id="autoBtn" type="button" aria-pressed="false" title="按故事线顺序自动走一遍：每 4 秒推进一个事件，机制相位自己播">
+      <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 3 14 9-14 9z"></path></svg>
+      <span id="autoLbl">自动播放</span>
+    </button>
+    <button class="btn btn--sm" id="fitBtn" type="button" title="缩到能看见摊开的所有格子——展开得越多画布越大">适配全部</button>
+    <button class="btn btn--sm" id="focusBtn" type="button" title="镜头回到主视图（并行拓扑）">回主视图</button>
+    <div id="panelshud" aria-label="画布上摊开了哪几格"></div>
+    <a class="btn btn--sm btn--ghost" id="srcWorkbench" href="../combo-workbench/" title="出处之一：本仓的组合工作台——这一页的 token、外壳骨架与 URL 约定都来自它">组合工作台<sup>°</sup></a>
+    <a class="btn btn--sm btn--ghost" id="srcUpstream" href="https://yinyucheng0601.github.io/compute-graph-viewer/Profiling_Insight_and_Tool/training-run-twin-standalone/config-relation-observer.html" target="_blank" rel="noopener" title="出处之二：config-relation-observer——两条故事线、11 个事件与全部数值都来自它">原页 · 配置关系观测<sup>°</sup></a>
+    <button class="btn btn--icon btn--ghost" id="themeBtn" type="button" title="切换明暗：与被嵌页面一起换" aria-label="切换明暗">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79Z"></path></svg>
+    </button>
+  </header>
+
+  <div id="viewport">
+    <div id="world">
+      <svg id="conns" aria-hidden="true"></svg>
+    </div>
+
+    <div id="floatlayer" aria-label="悬浮告警">
+      <div id="alertbar" hidden>
+        <div class="seg seg--alert" id="lineSeg" role="group" aria-label="告警 · 选择问题线"></div>
+      </div>
+    </div>
+
+    <div class="hud" id="legendhud" aria-label="图例"></div>
+
+    <div class="hud" id="zoomhud" aria-label="画布缩放">
+      <button class="btn btn--icon btn--ghost" id="zOut" type="button" aria-label="缩小" title="缩小"><svg viewBox="0 0 24 24"><path d="M5 12h14"/></svg></button>
+      <span class="zoomv" id="zVal">100%</span>
+      <button class="btn btn--icon btn--ghost" id="zIn" type="button" aria-label="放大" title="放大"><svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg></button>
+    </div>
+  </div>
+</div>
+<div id="tip" role="tooltip"></div>
+
+<script>
+(function () {
+'use strict';
+/* ══════════════════════════════════════════════════════════════════════
+   ① 故事线数据
+   逐条取自 compute-graph-viewer / training-run-twin-standalone 的
+   js/config-relation-observer.js 里的 INCIDENT_GROUPS：两条问题线、11 个
+   运行事件，连同每个事件的 conclusion / root / path / impact、机制相位
+   （mechanism.phases）、证据图（evidence.chart）与读数（evidence.metrics）。
+   **数值一个没改**——这一页换的是编排方式，不是结论。
+   ══════════════════════════════════════════════════════════════════════ */
+var GROUPS = [
+  {
+    id: 'problem-2',
+    name: '问题2 · Router 溢出与通信死锁',
+    lede: '报错点在 HCCL 通信超时，震中却在 Layer 38 的 Router——一次 FP8 数值溢出，经 EP barrier 与 PP 依赖扩散成 2048 卡停摆。',
+    context: { layers: [38], experts: [193], ranks: [1559], segments: ['moe'] },
+    events: [
+      {
+        id: 'p1-warning', time: '15k', dimension: '数值 · 预警', sev: 'warning',
+        title: 'Loss scale 连续衰减',
+        lineage: { operator: 'Layer 38 Router', layer: 38, segment: 'moe', bar: 'gate', stages: ['model'] },
+        focus: { kind: 'layer', layer: 38 },
+        origin: { layers: [38], segments: ['moe'] },
+        victim: { layers: [38], segments: ['moe'] },
+        scope: { kind: 'layer', layers: [38] },
+        conclusion: 'Layer 38 的数值健康已提前恶化，AMP scaler 从 65536 衰减到 4096。',
+        root: 'Router 输出的数值分布右移，AMP scaler 连续四次减半',
+        path: 'Layer 38 → AMP scaler 三级预警',
+        impact: '异常仍关在本层内，还没传到通信侧——距离崩溃尚有 53 step',
+        chart: {
+          kind: 'line', title: 'AMP loss scale 逐次减半', unit: '',
+          x: ['step 14800', '14900', '15000', '15100', '15150'],
+          threshold: { value: 8192, label: '三级预警 · 8192', direction: 'below' },
+          values: [65536, 65536, 32768, 32768, 16384, 8192, 8192, 4096],
+          mark: { index: 7, label: '4096 · 三级预警', tone: 'warning' },
+          note: 'scale 每减半一次，就是一次梯度溢出后的回退；连续 4 次说明数值分布已整体右移，不是偶发。'
+        },
+        metrics: [
+          { label: '衰减级数', value: '4 级（65536 → 4096）' },
+          { label: '观察窗口', value: '400 step' },
+          { label: '相对崩溃的提前量', value: '53 step' }
+        ]
+      },
+      {
+        id: 'p1-nan', time: '15203', dimension: '耗时 · 数值', sev: 'danger',
+        title: 'Loss NaN / grad_norm Inf',
+        lineage: { operator: 'Layer 38 Router', layer: 38, segment: 'moe', bar: 'gate', stages: ['model'] },
+        focus: { kind: 'layer', layer: 38 },
+        origin: { layers: [38], segments: ['moe'] },
+        propagation: { stages: [3] },
+        victim: { layers: [34,35,36,37,38,39,40,41,42,43,44,45], ranks: 'stage' },
+        scope: { kind: 'stage', stage: 3 },
+        conclusion: '异常只在多卡复现，Layer 38 是首个数值病灶候选。',
+        root: 'Router logits 越界成 Inf，反向传播时梯度随之溢出',
+        path: 'Layer 38 → 梯度 Inf → Loss NaN',
+        impact: '本轮迭代的梯度整段作废，训练无法继续收敛',
+        chart: {
+          kind: 'line', title: 'grad_norm 末段指数级发散', unit: '',
+          x: ['step 15196', '15198', '15200', '15202', '15203'],
+          threshold: { value: 10, label: '正常波动上界 · 10' },
+          values: [1.2, 1.3, 1.6, 2.4, 4.1, 12.7, 86, 860],
+          mark: { index: 7, label: '860 → 下一步 Inf', tone: 'danger' },
+          note: '最后 4 个 step 每步涨约一个数量级，越界发生在同一层的反向传播里。'
+        },
+        metrics: [
+          { label: 'loss', value: 'NaN', tone: 'danger' },
+          { label: 'grad_norm', value: 'Inf', tone: 'danger' },
+          { label: '多卡复现', value: '8 / 8 次' },
+          { label: '单卡复现', value: '0 / 8 次' }
+        ]
+      },
+      {
+        id: 'p1-log', time: '+8ms', dimension: '通信 · 日志', sev: 'danger',
+        title: 'Plog 暴露 buffer 失配',
+        lineage: { operator: 'EP Dispatch / All-to-All', layer: 38, segment: 'moe', bar: 'a2a_dispatch', rank: 1559,
+                    stages: ['runtime', 'kernel'], originNode: { stage: 'runtime', index: 0 } },
+        focus: { kind: 'rank', rank: 1559 },
+        origin: { ranks: [1559] },
+        propagation: { layers: [38], experts: [193], segments: ['moe'] },
+        victim: { ranks: [1559] },
+        scope: { kind: 'rank', rank: 1559 },
+        conclusion: '运行时 EP rank 23 的 send=0、recv=9832；通信报错同时携带 router_logits Inf 证据。',
+        root: 'all-to-all 的收发量对不上：send=0、recv=9832',
+        path: 'Rank 1559 buffer 失配 → 通信阻塞',
+        impact: '第一个卡住的就是它自己（PP3 / EP23），此刻尚未波及同组其他卡',
+        chart: {
+          kind: 'bars', title: 'rank 1559 的 all-to-all 收发量', unit: ' token',
+          items: [
+            { label: 'send（本卡发出）', value: 0 },
+            { label: 'recv（本卡待收）', value: 9832, tone: 'danger' },
+            { label: '同组正常卡均值', value: 154 }
+          ],
+          note: '一发一收本该同量级。send 归零、recv 堆到 60 倍，说明这张卡被路由指定成了唯一收方。'
+        },
+        metrics: [
+          { label: '运行时 EP rank', value: '23' },
+          { label: 'global rank', value: '1559（PP3 / EP23）' },
+          { label: '日志同时携带', value: 'router_logits = Inf', tone: 'danger' }
+        ]
+      },
+      {
+        id: 'p1-a2a', time: '+30s', dimension: '通信 · 耗时', sev: 'danger',
+        title: 'All-to-all 超时，63 rank 空等',
+        lineage: { operator: 'HCCL All-to-All', layer: 38, segment: 'moe', bar: 'a2a_dispatch', rank: 1559,
+                    stages: ['runtime', 'kernel'] },
+        focus: { kind: 'rank', rank: 1559 },
+        origin: { ranks: [1559] },
+        propagation: { layers: [38], experts: [193], segments: ['moe'], ranks: 'ep-stage' },
+        victim: { ranks: 'ep-stage-peers' },
+        scope: { kind: 'epgroup', stage: 3, edp: 0 },
+        conclusion: 'EP rank 23 是首个阻塞者，其余 63 个 EP rank 是 barrier 受害者，不应被判为 64 个独立根因。',
+        root: 'recv 过载，迟迟进不了 all-to-all barrier',
+        path: 'Rank 1559 → All-to-all barrier → 63 rank 空等',
+        impact: '同组其余成员在 barrier 上空等 30 s，整个 EP 通信组停止前进',
+        mechanism: {
+          kind: 'barrier-wait', name: 'barrier 语义',
+          phases: [
+            { tag: '① 进入 dispatch', clock: 't = 0 ms',
+              caption: 'EP 通信组 64 张卡同时进入 Layer 38 的 all-to-all dispatch。每张卡先把本地 token 按目标专家分箱，再向 barrier 推进——这一步各卡是并行的，互不等待。' },
+            { tag: '② rank 1559 卡住', clock: 't = +8 ms',
+              caption: 'rank 1559（EP r23）的 recv 量对不上：send=0 而 recv=9832，收侧被 E193 的 token 灌爆，迟迟凑不齐自己那一份，进度条停在半路。其余 63 张卡毫无察觉，继续推进。' },
+            { tag: '③ 63 卡到达 barrier', clock: 't = +2 s',
+              caption: 'all-to-all 是同步集合操作：任何一张卡没到齐，barrier 就不放行。63 张卡先后抵达后全部转入空等——它们的算力从这一刻起是零产出，但日志上什么都不会报。' },
+            { tag: '④ HCCL 30 s 超时', clock: 't = +30 s',
+              caption: '等满 HCCL 超时阈值，64 张卡同时抛 timeout。此刻 63 张是结果、1 张是原因，而报错数完全反过来——按报错数排根因会把结论整个搞反。累计空转 63 × 30 s ≈ 1890 卡·秒。' }
+          ]
+        },
+        chart: {
+          kind: 'stack', title: 'EP 通信组 64 张卡的角色构成', unit: ' 卡',
+          items: [
+            { label: '阻塞者（rank 1559）', value: 1, tone: 'danger' },
+            { label: 'barrier 空等', value: 63, tone: 'warning' }
+          ],
+          note: '64 张卡同时报 timeout，但只有 1 张是原因、63 张是结果——按报错数排根因会把结论整个搞反。'
+        },
+        metrics: [
+          { label: 'HCCL 超时阈值', value: '30 s' },
+          { label: '空等卡数', value: '63 / 64' },
+          { label: '误判为独立根因', value: '64 个', tone: 'warning' }
+        ]
+      },
+      {
+        id: 'p1-root', time: '-30s', dimension: '数值 · 负载', sev: 'danger', isRoot: true,
+        title: 'Router FP8 溢出，E193 吸收 98% token',
+        lineage: { operator: 'Layer 38 Router', layer: 38, segment: 'moe', bar: 'gate', rank: 1559,
+                    stages: ['model', 'fx', 'ge', 'runtime', 'kernel'],
+                    originNode: { stage: 'model', index: 0 }, victimStage: 'runtime' },
+        focus: { kind: 'expert', expert: 193 },
+        origin: { layers: [38], segments: ['moe'] },
+        propagation: { ranks: [1559] },
+        victim: { experts: 'all' },
+        scope: { kind: 'layer', layers: [38] },
+        conclusion: '这是问题2的根因事件：FP8 softmax 溢出导致路由塌缩，而不是 HCCL 自身故障。',
+        root: 'Router 的 max(logits)=1846，FP8 下 exp() 直接溢出成 Inf',
+        path: 'Router → Expert 193（98% token）→ EP rank 23',
+        impact: '路由塌缩，98% token 全压到 E193，其余 247 个再没收到过 token',
+        mechanism: {
+          kind: 'router-collapse', name: '路由塌缩',
+          phases: [
+            { tag: '① 正常路由', clock: 'max(logits) = 12.4',
+              caption: 'Top-2 gate 给 256 个专家打分，负载均衡损失把分布压平：每个专家拿到 0.3%~0.6% 的 token，扇出是发散的，dispatch 流量均摊在 EP 组的 64 张卡上。' },
+            { tag: '② logits 越界', clock: 'max(logits) = 1846 › FP8 448',
+              caption: '上游数值漂移把 Router 线性层的输出整体推高，最大 logit 冲到 1846——已经越过 FP8 E4M3 能表示的 448。此刻路由结果还没变，图上扇出仍是发散的，异常只存在于数值里。' },
+            { tag: '③ softmax 塌成 one-hot', clock: 'exp(1846) = Inf',
+              caption: 'softmax 先算 exp()：Inf 同时进了分子和分母，归一化结果退化成 one-hot——E193 的概率变成 1.0，其余 255 个专家全是 0。这一步是纯数值事故，不是路由策略做出的决定。' },
+            { tag: '④ 路由塌缩', clock: 'E193 98% · dead 247',
+              caption: '此后每个 step 的 token 都被送往同一个专家。E193 的 dispatch buffer 被撑爆，247 个专家再没收到过 token——下游 rank 1559 那句 send=0 / recv=9832 的收发失配，源头就在这里。' }
+          ]
+        },
+        chart: {
+          kind: 'bars', title: 'Layer 38 本 step 的 token 路由份额', unit: '%',
+          threshold: { value: 20, label: '单专家健康上限 · 20%' },
+          items: [
+            { label: 'E193', value: 98, tone: 'danger' },
+            { label: '其余 8 个活跃专家', value: 2 },
+            { label: '247 个 dead expert', value: 0 }
+          ],
+          note: '在一个 batch / 观测窗口内，负载均衡应避免 token 长期塌缩到单个专家；softmax 出现 Inf 后，路由选择持续落在 E193。'
+        },
+        metrics: [
+          { label: 'max(router logits)', value: '1846', tone: 'danger' },
+          { label: 'FP8 E4M3 可表示上限', value: '448' },
+          { label: 'exp(logits)', value: 'Inf → softmax 塌缩', tone: 'danger' },
+          { label: 'dead expert', value: '247 / 256' }
+        ]
+      },
+      {
+        id: 'p1-spread', time: '+30.1s', dimension: '通信 · 扩散', sev: 'danger',
+        title: 'PP3 断裂，2048 NPU hang',
+        lineage: { operator: 'EP Barrier / PP3 等待链', layer: 38, segment: 'moe', bar: 'a2a_dispatch', rank: 1559,
+                    stages: ['runtime', 'kernel'] },
+        focus: { kind: 'stage', stage: 3 },
+        origin: { ranks: [1559] },
+        propagation: { stages: [3], ranks: 'stage' },
+        victim: { ranks: 'all' },
+        scope: { kind: 'all' },
+        conclusion: '报错点是通信 timeout，异常震中却在 Layer 38 Router；单点经 EP barrier 和 PP 依赖扩散至整网。',
+        root: 'all-to-all 就阻塞在这里，它是整网停摆的起点',
+        path: 'Expert 193 过载 → Rank 1559 阻塞 → EP barrier → PP3 断裂 → 全网等待',
+        impact: '沿 EP barrier 与 PP 依赖逐级传导，4 个 stage 全部停在等待上',
+        mechanism: {
+          kind: 'pp-cascade', name: '依赖链回压',
+          phases: [
+            { tag: '① 震中', clock: '1 / 2048 卡',
+              caption: 'rank 1559 停在 all-to-all 上。此刻 PP3 整段仍在正常推进——停的只有这一张卡，泳道上那道红线就是它。这也是全网唯一一个「自己出了问题」的对象。' },
+            { tag: '② EP 组停摆', clock: '64 / 2048 卡',
+              caption: 'all-to-all 是同步集合操作，同组另外 63 张卡在 barrier 上空等。第一个倍数是 EP=64：它不是扩散出来的，是这张卡所在通信组的大小。' },
+            { tag: '③ PP3 整段断裂', clock: '512 / 2048 卡',
+              caption: 'EP 组停住，这一段流水线就交不出激活。同 stage 的其余 7 个 EDP 副本随后也停在依赖上——第二个倍数是 EDP=8，512 = 64 × 8 正是一个 PP stage 的卡数。' },
+            { tag: '④ 依赖环闭合', clock: '2048 / 2048 卡',
+              caption: '上游 PP2 送不出激活、PP1 与 PP0 依次回压；而 PP0 的下一个 micro-batch 又在等 PP3 的梯度回来——这是一条闭环，断一处就整条停。第三个倍数是 PP=4。99.95% 的卡只是被链条拖住的，它们的 timeout 日志与根因无关。' }
+          ]
+        },
+        chart: {
+          kind: 'stack', title: '2048 张卡按「离震中多远」的构成', unit: ' 卡',
+          items: [
+            { label: '直接阻塞', value: 1, tone: 'danger' },
+            { label: '同 EP 组空等', value: 63, tone: 'warning' },
+            { label: '同 stage 其余', value: 448 },
+            { label: '其他 stage 等待', value: 1536, tone: 'good' }
+          ],
+          note: '99.95% 的卡是被依赖链拖住的，它们的 timeout 日志与根因无关——扩散范围大不等于根因分散。'
+        },
+        metrics: [
+          { label: '受影响 PP stage', value: '4 / 4' },
+          { label: '受影响 NPU', value: '2048' },
+          { label: '首个阻塞卡', value: 'global rank 1559', tone: 'danger' },
+          { label: '震中', value: 'Layer 38 Router（非 HCCL）' }
+        ]
+      }
+    ]
+  },
+  {
+    id: 'problem-1',
+    name: '问题1 · 显存峰值与碎片 OOM',
+    lede: '显存从 55 GB 一路爬到顶：12 层激活的存活区间在前向末尾全部重叠，叠上 LM Head 的 logits 把 64 GB 顶满，最后死在一次 0.5 GB 的临时申请上。',
+    context: { layers: [34,35,36,37,38,39,40,41,42,43,44,45], stages: [3], ranks: 'stage', segments: ['moe','head'] },
+    events: [
+      {
+        id: 'p2-rise', time: '8000+', dimension: '显存 · 趋势', sev: 'warning',
+        title: '显存从 55 GB 持续爬升',
+        lineage: { operator: 'PP3 激活生命周期', layer: 38, stages: ['model'] },
+        focus: { kind: 'stage', stage: 3 },
+        origin: { layers: [34,35,36,37,38,39,40,41,42,43,44,45], segments: ['moe'] },
+        victim: { layers: [34,35,36,37,38,39,40,41,42,43,44,45], segments: ['head'] },
+        scope: { kind: 'stage', stage: 3 },
+        conclusion: 'PP stage 3 的显存不再回落，吞吐同期下降 12.5%。',
+        root: '这一段的激活自前向起就常驻不释放，显存只涨不落',
+        path: '46 层激活常驻 → 显存持续爬升',
+        impact: '叠上 LM Head 的 logits 后，本 stage 的显存余量被吃到见底',
+        chart: {
+          kind: 'line', title: 'PP stage 3 显存占用（step 8000 → 12000）', unit: ' GB',
+          x: ['step 8000', '9000', '10000', '11000', '12000'],
+          threshold: { value: 60.8, label: '95% 阈值 · 60.8 GB' },
+          values: [55, 56.2, 57.9, 59.4, 60.8, 62.1, 63, 63.7],
+          note: '每个 step 之间不再回落到基线——说明被留住的不是临时 buffer，而是一直活着的激活。'
+        },
+        metrics: [
+          { label: '起始 / 当前', value: '55 → 63.7 GB' },
+          { label: '吞吐', value: '3200 → 2800 tokens/s（−12.5%）', tone: 'warning' },
+          { label: '未回落持续', value: '4000 step' }
+        ]
+      },
+      {
+        id: 'p2-cost', time: '12000', dimension: '耗时 · 显存', sev: 'warning',
+        title: '分配/释放 API 占时 7.4%',
+        lineage: { operator: '显存分配 / 释放 API', stages: ['runtime'] },
+        focus: { kind: 'stage', stage: 3 },
+        origin: { layers: [38], segments: ['moe'] },
+        propagation: { layers: [34,35,36,37,38,39,40,41,42,43,44,45] },
+        victim: { ranks: 'stage' },
+        scope: { kind: 'stage', stage: 3 },
+        conclusion: '显存管理耗时 890 ms，明显高于正常值 2%；带宽利用率 78%，可排除纯带宽瓶颈。',
+        root: '分配器在这一层反复做碎片整理与换页',
+        path: '碎片整理 / 换页 → step 耗时增加',
+        impact: '每个 step 多花 890 ms 在显存管理上，吞吐从 3200 掉到 2800 tokens/s',
+        chart: {
+          kind: 'stack', title: '单 step 12.0 s 的耗时构成', unit: ' s',
+          items: [
+            { label: '计算', value: 8.9 },
+            { label: '通信', value: 2.21, tone: 'alt' },
+            { label: '显存分配 / 释放', value: 0.89, tone: 'danger' }
+          ],
+          note: '分配释放本该是 2% 量级的边角开销，这里占到 7.4%——多出来的那一截就是碎片整理与换页。'
+        },
+        metrics: [
+          { label: '显存管理耗时', value: '890 ms（7.4%）', tone: 'danger' },
+          { label: '正常水位', value: '约 2%' },
+          { label: 'HBM 带宽利用率', value: '78%（非带宽瓶颈）' }
+        ]
+      },
+      {
+        id: 'p2-peak', time: '12000', dimension: '显存 · 容量', sev: 'danger',
+        title: '激活值占用 36.2 GB',
+        lineage: { operator: 'PP3 激活值生命周期', layer: 38, stages: ['model'] },
+        focus: { kind: 'stage', stage: 3 },
+        origin: { layers: [38], segments: ['moe'] },
+        propagation: { segments: ['moe','head'] },
+        victim: { segments: ['moe','head'] },
+        scope: { kind: 'stage', stage: 3 },
+        conclusion: '激活值占峰值的 56.6%，是唯一可大幅缩减的组成。',
+        root: '激活在反向用到之前一直留在显存里，逐层累加不释放',
+        path: '逐层激活累积 → Stage 3 叠加 LM Head logits',
+        impact: '两段合计 36.2 GB 激活，占满 64 GB 峰值的 56.6%，容量再无余量',
+        mechanism: {
+          kind: 'activation-lifetime', name: '存活区间叠加',
+          phases: [
+            { tag: '① 前向起步', clock: 'L34 → L37',
+              caption: '常驻段（权重 14.1 + 优化器 9.8 + 碎片 3.9 = 27.8 GB）一开始就在。前向每算完一层，就往显存里压进一份激活——它不能释放，因为反向算梯度时还要用。' },
+            { tag: '② 12 层累完', clock: '激活 9.0 GB',
+              caption: 'L34~L45 每层约 0.71 GB，只有 L38 是 1.2 GB（expert dispatch buffer 让它比同段普通层高 1.7 倍）。12 条存活区间此刻全部在线，叠出 9.0 GB。' },
+            { tag: '③ LM Head 叠上', clock: '激活 36.2 GB · 64/64',
+              caption: 'LM Head 的 logits 存活极短（前向算完紧接着反向就用掉），体量却是 27.2 GB——它落在 12 层激活全都还没释放的那一刻，两段合计 36.2 GB，把 64 GB 顶满。峰值就出现在这一个槽位上。' },
+            { tag: '④ 释放要等到反向', clock: '安全余量 0 GB',
+              caption: '此刻余量为零，而这 12 层的激活各自还要活到反向用到它的那一步才被释放。能靠重计算换回来的正是这 36.2 GB——权重与优化器状态由并行切分固定，改不动。' }
+          ]
+        },
+        chart: {
+          kind: 'capacity', title: '64 GB 显存峰值的构成', unit: ' GB', cap: 64,
+          items: [
+            { label: '权重', value: 14.1 },
+            { label: '优化器状态', value: 9.8, tone: 'good' },
+            { label: '激活值', value: 36.2, tone: 'warning' },
+            { label: '碎片空洞', value: 3.9, tone: 'danger', void: true }
+          ],
+          note: '权重与优化器状态由并行切分固定，改不动；能靠重计算换回来的只有那 36.2 GB 激活。'
+        },
+        metrics: [
+          { label: '峰值 / 容量', value: '64.0 / 64 GB', tone: 'danger' },
+          { label: '激活占比', value: '56.6%' },
+          { label: '安全余量', value: '0 GB', tone: 'danger' }
+        ]
+      },
+      {
+        id: 'p2-layer', time: '12000', dimension: '显存 · Layer', sev: 'warning',
+        title: 'L38 单层激活达到 1.2 GB',
+        lineage: { operator: 'Layer 38 Expert Dispatch Buffer', layer: 38, segment: 'moe', bar: 'a2a_dispatch', stages: ['model'] },
+        focus: { kind: 'layer', layer: 38 },
+        origin: { layers: [38], segments: ['moe'] },
+        propagation: { stages: [3] },
+        victim: { layers: [34,35,36,37,38,39,40,41,42,43,44,45], segments: ['head'] },
+        scope: { kind: 'layer', layers: [38] },
+        conclusion: 'Layer 38 比普通 Dense 层高 1.7 倍，额外占用来自 expert dispatch buffer。',
+        root: 'expert dispatch buffer 让它的激活比同段普通层高 1.7 倍，单层 1.2 GB',
+        path: 'Layer 38 → PP stage 3 → 峰值叠加',
+        impact: '连同 LM Head 一起，把这个 stage 顶成全网最重的一段',
+        chart: {
+          kind: 'bars', title: 'PP stage 3 逐层激活占用', unit: ' GB',
+          threshold: { value: 1, label: '异常线 · 1.0 GB' },
+          items: [
+            { label: 'L34', value: 0.7 }, { label: 'L35', value: 0.72 },
+            { label: 'L36', value: 0.69 }, { label: 'L37', value: 0.71 },
+            { label: 'L38', value: 1.2, tone: 'danger' },
+            { label: 'L39', value: 0.73 }, { label: 'L40', value: 0.7 },
+            { label: 'L41', value: 0.72 }, { label: 'L42', value: 0.71 },
+            { label: 'L43', value: 0.7 }, { label: 'L44', value: 0.73 },
+            { label: 'L45', value: 0.71 }
+          ],
+          note: '12 层里只有 L38 突出，其余层彼此在 ±3% 内——多出来的 0.5 GB 有明确出处，不是统计噪声。'
+        },
+        metrics: [
+          { label: 'L38 / 同段普通层', value: '1.20 vs 0.71 GB（×1.7）', tone: 'danger' },
+          { label: '额外占用来源', value: 'expert dispatch buffer' },
+          { label: '本段 12 层合计', value: '9.0 GB' }
+        ]
+      },
+      {
+        id: 'p2-oom', time: '12003', dimension: '显存 · OOM', sev: 'danger', isRoot: true,
+        title: 'EP rank 17（global rank 1553）触顶并发生碎片 OOM',
+        lineage: { operator: '0.5 GB 临时 Buffer 申请', rank: 1553, stages: ['runtime'],
+                    originNode: { stage: 'runtime', index: 0 }, victimStage: 'runtime' },
+        focus: { kind: 'rank', rank: 1553 },
+        origin: { ranks: [1553] },
+        propagation: { stages: [3], ranks: 'stage' },
+        victim: { ranks: 'all' },
+        scope: { kind: 'rank', rank: 1553 },
+        conclusion: '64/64 GB 容量不足是主因，83% 碎片率让 0.5 GB 临时 buffer 更早申请失败。',
+        root: '64 GB 占满，0.5 GB 的临时 buffer 申请失败',
+        path: 'Rank 1553 OOM → PP3 中断 → 全网等待',
+        impact: '它一崩 PP3 就断，全网跟着停在等待上',
+        mechanism: {
+          kind: 'fragmented-oom', name: '碎片',
+          phases: [
+            { tag: '① 看总量还有余', clock: '已分配 60.1 / 空闲 3.9 GB',
+              caption: '64 GB 里已分配 60.1 GB，空闲 3.9 GB。只看这两个数，一次 0.5 GB 的临时 buffer 申请没有任何理由失败——这正是把 OOM 归因成「容量刚好不够」的由来。' },
+            { tag: '② 空闲不是一整块', clock: '碎片率 83%',
+              caption: '把 3.9 GB 空闲摊回地址空间：它散成二十多个洞，夹在已分配块之间。反复的分配 / 释放（还有换页与碎片整理）把连续空间切碎了，碎片率 83%。' },
+            { tag: '③ 逐个洞试放', clock: '申请 0.5 GB',
+              caption: '分配器要的是一段**连续**地址。0.5 GB 的申请块沿着这些洞一个个试过去——图上那个红框就是它，每停一个洞都装不下。' },
+            { tag: '④ 连最大的洞也放不下', clock: '0.32 GB < 0.5 GB',
+              caption: '最大连续块只有 0.32 GB，小于申请量 0.5 GB，申请失败。决定成败的从来不是空闲总量，而是最大连续块——所以「再省 0.5 GB 就好了」这个结论是错的，真正要治的是碎片本身（或把峰值降下来让洞变大）。' }
+          ]
+        },
+        chart: {
+          kind: 'capacity', title: 'rank 1553 触顶时的 64 GB 分布', unit: ' GB', cap: 64,
+          items: [
+            { label: '已分配', value: 60.1 },
+            { label: '碎片空洞 · 零碎', value: 3.58, tone: 'danger', void: true },
+            { label: '碎片空洞 · 最大连续块', value: 0.32, tone: 'warning', void: true }
+          ],
+          note: '空闲共 3.9 GB（3.58 零碎 + 0.32 最大连续块）＞ 申请量 0.5 GB，申请照样失败——决定成败的是最大连续块，不是空闲总量。'
+        },
+        metrics: [
+          { label: '容量', value: '64 / 64 GB', tone: 'danger' },
+          { label: '碎片率', value: '83%', tone: 'danger' },
+          { label: '失败的申请', value: '0.5 GB 临时 buffer' },
+          { label: '首个失败卡', value: 'global rank 1553（EP17）' }
+        ]
+      }
+    ]
+  }
+];
+
+/* ══════════════════════════════════════════════════════════════════════
+   ①′ 训推指标口径（pangu_sophon_pytorch 侧）
+   上面那份 GROUPS 是**观测台原页的故事线**，逐字照搬；这一份是另一头的
+   东西：真实训练框架里**每个 log_interval 真的会被打印、写进 TensorBoard /
+   Prometheus 的那些指标**，以及触发异常检测的那几个钩子。
+
+   两份为什么要分开放、而不是把值塞进事件里：
+     · GROUPS 的每一个数都是原页给的，不能动，动了两处结论就会各说各的；
+     · 这一份给的是**口径**（这个量叫什么、由哪段代码算出来、往哪个方向才算好），
+       值仍旧只引用 GROUPS 里已有的那几个。凡是故事线没采到的格子一律写「—」，
+       不替它编一个——大盘上最容易骗人的正是「看起来每格都有数」。
+   所以下面 BOARD 里出现的每一个 v，都能在上面那份 GROUPS 的同一个事件里找到原文。
+   ══════════════════════════════════════════════════════════════════════ */
+/* 「关键少数」：实际写在日志里、画成曲线的就这几条 */
+var TRAIN_METRICS = [
+  { k: 'loss',    name: 'lm loss',            want: '↓',    src: 'loss_func() → training_log()',            note: '主语言模型损失，最核心' },
+  { k: 'gnorm',   name: 'grad_norm',          want: '稳定',  src: 'training_log()',                          note: '梯度范数，监控爆炸 / 消失' },
+  { k: 'lscale',  name: 'loss_scale',         want: '不触发', src: 'logger_and_track_metrics_callback.py:74', note: 'fp16 / AMP 动态 scale，每减半一次就是一次溢出回退' },
+  { k: 'zeros',   name: 'num_zeros_in_grad',  want: '↓',    src: 'training_log()',                          note: '梯度中零值比例，检测死神经元 / 死专家' },
+  { k: 'tflops',  name: 'throughput',         unit: ' TFLOP/s/GPU', want: '↑', src: 'PretrainMetricConfig._compute_throughput', note: '每 GPU 每秒 TFLOPS' },
+  { k: 'mfu',     name: 'MFU',                unit: ' %',   want: '↑',    src: 'PretrainMetricConfig._compute_mfu',       note: '算力利用率：占 NPU 峰值算力的百分比' },
+  { k: 'tokday',  name: 'throughput_per_day', unit: ' B tokens/day', want: '↑', src: '_build_log_dict:1505',              note: '业务交付指标' },
+  { k: 'steptime',name: 'elapsed time / iter',unit: ' ms',  want: '↓',    src: '_build_log_dict:1491',                    note: '每迭代耗时；golden indicator 的 step_time_seconds 同源' },
+  { k: 'lr',      name: 'learning_rate',      want: '按计划', src: 'lr scheduler（cosine / WSD）',            note: '调度策略是否走在预定轨道上' },
+  { k: 'mem',     name: 'mem_reserved_bytes', unit: ' GB',  want: '平稳',  src: 'NPU 保留显存 / theoretical_memory',        note: '持续只涨不落就是 OOM 前兆' }
+];
+/* 异常检测与早停的钩子。dataspeed 在这两条故事线里一次都没触发——
+   大盘上把「没触发」也画出来，比只画触发的更有信息量。 */
+var TRAIN_HOOKS = [
+  { k: 'nan',       name: 'NaN / Inf 检测',   src: 'check_for_nan_in_loss_and_grad', act: '任一 rank 的 loss 出现 NaN 直接报错退出' },
+  { k: 'spike',     name: 'Loss Spike 监控',  src: 'loss_spike_monitor_callback',    act: '损失突然飙升时触发回调' },
+  { k: 'heartbeat', name: 'Heartbeat 监控',   src: 'init_heartbeat_monitor_pid',     act: '训练进程无响应则重启' },
+  { k: 'dataspeed', name: '数据生产速度告警', src: '_warn_data_production_speed',    act: '数据加载速度接近训练速度时告警' },
+  { k: 'oom',       name: 'OOM 前兆',         src: 'mem_reserved_bytes 增长趋势',    act: '保留显存持续增长，容量见底' }
+];
+/* 事件 → 这一刻大盘上哪几格会动。v 一律引用 GROUPS 里同一事件的原文，
+   没采到就整格不写（渲染成「—」），不替它编。 */
+var BOARD = {
+  'p1-warning': { hooks: ['spike'], m: {
+    lscale:{ v:'65536 → 4096', s:'warn', why:'连续四次减半，越过三级预警线 8192' },
+    loss:{ v:'仍在正常区间', s:'ok', why:'距崩溃尚有 53 step——这正是它作为预警的价值' } } },
+  'p1-nan': { hooks: ['nan','spike'], m: {
+    loss:{ v:'NaN', s:'bad', why:'本轮梯度整段作废' },
+    gnorm:{ v:'Inf', s:'bad', why:'末段每 step 涨约一个数量级，越界在同层反向' },
+    lscale:{ v:'已退到 4096', s:'warn', why:'再退也救不回来，溢出的是 logits 不是梯度尺度' } } },
+  'p1-log': { hooks: [], m: {
+    steptime:{ v:'+8 ms 起', s:'warn', why:'收发失配刚发生，还没变成等待' } } },
+  'p1-a2a': { hooks: ['heartbeat'], m: {
+    steptime:{ v:'+30 000', s:'bad', why:'等满 HCCL 超时阈值 30 s' },
+    tflops:{ v:'0（63 卡）', s:'bad', why:'空等期间算力零产出，而日志上什么都不报' },
+    mfu:{ v:'0', s:'bad', why:'同上——这正是「看起来通信很慢」最容易骗人的地方' },
+    tokday:{ v:'0', s:'bad', why:'累计空转 63 × 30 s ≈ 1890 卡·秒' } } },
+  'p1-root': { hooks: [], m: {
+    zeros:{ v:'247 / 256 专家无梯度', s:'bad', why:'路由塌缩后它们再没收到过 token' },
+    loss:{ v:'—', s:'na', why:'本事件采的是路由份额与 logits，不在这十格里' } } },
+  'p1-spread': { hooks: ['heartbeat'], m: {
+    steptime:{ v:'hang', s:'bad', why:'依赖环闭合，4 个 stage 全停在等待上' },
+    tflops:{ v:'0（2048 卡）', s:'bad', why:'99.95% 的卡只是被链条拖住的' },
+    mfu:{ v:'0', s:'bad' }, tokday:{ v:'0', s:'bad' } } },
+  'p2-rise': { hooks: ['oom'], m: {
+    mem:{ v:'55 → 63.7', s:'bad', why:'4000 step 未回落，被留住的是一直活着的激活' },
+    tokday:{ v:'3200 → 2800 tokens/s', s:'warn', why:'同期吞吐下降 12.5%' },
+    tflops:{ v:'同比 −12.5%', s:'warn', why:'原文给的是 tokens/s，这一格按同一口径读' } } },
+  'p2-cost': { hooks: [], m: {
+    steptime:{ v:'12 000', s:'warn', why:'其中 890 ms（7.4%）花在显存分配 / 释放上，正常水位约 2%' },
+    mem:{ v:'HBM 带宽 78%', s:'ok', why:'可排除纯带宽瓶颈——贵在碎片整理与换页，不在搬数据' } } },
+  'p2-peak': { hooks: ['oom'], m: {
+    mem:{ v:'64.0 / 64', s:'bad', why:'激活占 56.6%，安全余量 0 GB' } } },
+  'p2-layer': { hooks: [], m: {
+    mem:{ v:'L38 单层 1.2', s:'warn', why:'同段普通层 0.71 GB，多出来的 0.5 GB 来自 expert dispatch buffer' } } },
+  'p2-oom': { hooks: ['oom'], m: {
+    mem:{ v:'已分配 60.1 / 64', s:'bad', why:'碎片率 83%，最大连续块只有 0.32 GB' },
+    steptime:{ v:'中断', s:'bad', why:'它一崩 PP3 就断，全网跟着停在等待上' } } }
+};
+var STATEC = { ok:'var(--success)', warn:'var(--warning)', bad:'var(--danger)', na:'var(--cell-mid)' };
+var STATEN = { ok:'正常', warn:'预警', bad:'告警', na:'本事件未采' };
+
+/* ══════════════════════════════════════════════════════════════════════
+   ② 拓扑模型
+   2048 卡 = PP4 × EDP8 × EP64。global rank = stage×512 + edp×64 + ep，
+   这条式子同时解释了故事线里那两个门牌：1559 = 3×512 + 0×64 + 23（PP3/EP23），
+   1553 = 3×512 + 0×64 + 17（PP3/EP17）——问题2 与问题1 的首个失败卡各一张。
+   46 层按 PP 分四段，L38 落在 PP3（两条故事线的病灶都在这一层）。
+   ══════════════════════════════════════════════════════════════════════ */
+var TOPO = {
+  pp: 4, edp: 8, ep: 64, world: 2048,
+  layers: 46, experts: 256, topK: 2,
+  stageRange: [[0,11],[12,23],[24,33],[34,45]],
+  rank: function (stage, edp, ep) { return stage * 512 + edp * 64 + ep; },
+  decode: function (r) { return { stage: (r / 512) | 0, edp: ((r % 512) / 64) | 0, ep: r % 64 }; },
+  stageOfLayer: function (l) {
+    for (var i = 0; i < 4; i++) if (l >= TOPO.stageRange[i][0] && l <= TOPO.stageRange[i][1]) return i;
+    return 3;
+  }
+};
+
+
+/* ══════════════════════════════════════════════════════════════════════
+   ③ 画布编排 —— 主视图钉在原点，别的格子按需展开在它四周
+   改这张表就是改编排，别处不用动。box 是世界坐标（画布自己的坐标系，
+   与缩放无关）。main.always=1：它是这一页的主语，不提供收起。
+   ══════════════════════════════════════════════════════════════════════ */
+/* 一进来就摊开的那几格：与右上角那排「展开」筹码一一对应。
+   它们是常备面——故事线给时间，整网 / 单维切分 / 卡内解剖给结构的三个粒度，
+   泳道给时序，大盘给读数。
+   事件相关的几格（传播 / 机制 / 证据 / 血缘 / 单卡）不在这里：
+   没有选中的事件它们就是空的，默认开出来是几块空板。
+   实测五格 iframe 全部就位约 2.6 s——四份嵌的是同一个 pattern 文件，
+   浏览器只下一次，所以多开两格几乎不额外花钱。 */
+/* 告警（story）**不在**这张表里：它是悬浮的一块，摊开时要占掉三分之一视口，
+   默认铺开会把主视图压到 54%——而主视图才是这一页的主语。所以默认是收起的
+   一枚告警牌，点它（或右上角那枚「告警」筹码）才铺成事件链。 */
+var DEFAULT_OPEN = ['netgraph', 'dim', 'anatomy', 'swimlane', 'board'];
+
+var PANELS = [
+  /* ── 原点 · 主语。always=1，不提供收起 ──────────────────────────── */
+  { id:'main',     always:1, kind:'frame', box:{ x:0,     y:0,    w:1340, h:840 },
+    title:'并行拓扑 · 模型分片与训练设备映射',
+    sub:'/patterns/net-slicing/ 本体 · 五刀全落并进卡维度' },
+
+  /* ── 悬浮 · 告警。float=1：它不占画布的地，钉在视口上，不跟着缩放平移。
+         理由是它压根不是一个「视图」——别的格子都在答「这件事落在结构的哪儿」，
+         它答的是「出了什么事、怎么一步步推过来的」。把这条链子绑进画布，等于
+         逼读者每次想回头看一眼时间线都得先把镜头挪回去；而且镜头一缩到 26%，
+         它就跟着糊成一条看不清的细带。所以它单独一块，从右上角那排筹码（告警）
+         或顶栏的问题页签开，随时压在画布上方，关掉画布也不少一块地。 */
+  { id:'story',    float:1, kind:'native',
+    exp:'告警', title:'告警 · 运行事件链', sub:'点任一枚事件下钻' },
+
+  /* ── 左 · 结构。三格一行，粒度由粗到细一路往外走：
+         整网（整张图）→ 单维切分（连接两端的那根粒度轴）→ 卡内解剖（一张卡里面）。
+         三格与主视图垂直居中对齐，看上去就是「把主视图这件事在结构上摊开三档」。 */
+  { id:'netgraph', kind:'frame',  box:{ x:-940,  y:20,   w:860,  h:800 },
+    exp:'整网', title:'整网 · 真图展开',
+    sub:'同一个 pattern 的另一份配置 · 不落 DP、不进卡维度' },
+
+  { id:'dim',      kind:'frame',  box:{ x:-1880, y:10,   w:860,  h:820 },
+    exp:'单维切分', title:'单维切分 · 五级粒度轴',
+    sub:'一次只看一把刀：整网 → 层 → 算子 → kernel → 卡' },
+
+  { id:'anatomy',  kind:'frame',  box:{ x:-3300, y:20,   w:1340, h:800 },
+    exp:'卡内解剖', title:'卡内解剖',
+    sub:'一张卡里：层段 → 算子片 → kernel → 流' },
+
+  /* ── 右 · 事件下钻。两行的分法就是「怎么来的」：
+         上行是点一枚事件时**一起**摊开的（传播关系 + 支撑它的那张图），
+         下行是再从传播那一格里点出来的分支（看机制 ▸ / 点一个 rank 对象）。 */
+  { id:'event',    kind:'native', box:{ x:1420,  y:20,   w:820,  h:620 },
+    title:'事件 · 传播关系', sub:'传播源 → 途经 → 受影响' },
+
+  { id:'evidence', kind:'native', box:{ x:2320,  y:20,   w:540,  h:620 },
+    title:'证据 · 图表', sub:'支撑这条结论的那张图' },
+
+  { id:'mech',     kind:'native', box:{ x:1420,  y:720,  w:860,  h:510 },
+    title:'机制舞台', sub:'范围图答「打到了谁」，这里答「凭什么传过去」' },
+
+  { id:'rank',     kind:'native', box:{ x:2320,  y:720,  w:540,  h:570 },
+    title:'单卡解剖', sub:'这张卡装了什么、此刻在干什么' },
+
+  /* ── 下 · 时序。两条横带，都是「展开成一条线」的形状，所以并排叠在主视图脚下：
+         泳道答「这一个 step 里先后发生了什么」，血缘答「同一个算子怎么一路降下去」。 */
+  { id:'swimlane', kind:'frame',  box:{ x:100,   y:920,  w:1140, h:320 },
+    exp:'泳道', title:'泳道 · 微批次生命周期',
+    sub:'/combo-workbench/swimlane.html 本体 · MB07 · step 18420' },
+
+  { id:'lineage',  kind:'native', box:{ x:20,    y:1320, w:1300, h:430 },
+    title:'计算血缘', sub:'同一个算子，从模型语义一路降到 Kernel' },
+
+  /* ── 右下 · 读数。试过把它摆到主视图正上方（告警挪成悬浮之后那一带空了出来），
+         行不通：画布顶上那一条是**悬浮告警的地盘**，告警一摊开就压住大盘的格头，
+         切换问题之后大盘明明更新了，人却看不见自己在看哪条问题、数据变成了什么。
+         这不是时机问题，绕不开——悬浮层盖住底下的东西是它的定义。
+         所以「上」这个方位就归告警，别的格子不进去；大盘回到右下角。 */
+  { id:'board',    kind:'native', box:{ x:1420,  y:1320, w:1180, h:440 },
+    exp:'大盘', title:'训推大盘 · 关键少数',
+    sub:'口径取自 pangu_sophon_pytorch' }
+];
+var P = {};                       // id → { def, root, body, head, … }
+PANELS.forEach(function (d) { P[d.id] = { def: d }; });
+/* 哪几格此刻摊开着。主视图不在这张表里——它永远在。 */
+var open = {};
+function isOpen(id) { return id === 'main' || !!open[id]; }
+
+var vp = document.getElementById('viewport');
+var world = document.getElementById('world');
+var conns = document.getElementById('conns');
+var tip = document.getElementById('tip');
+var view = { x: 0, y: 0, k: 1 };
+var MINK = 0.12, MAXK = 2.4;
+
+function applyView() {
+  world.style.transform = 'translate(' + view.x + 'px,' + view.y + 'px) scale(' + view.k + ')';
+  vp.style.setProperty('--dot', (26 * view.k) + 'px');
+  vp.style.setProperty('--dotx', view.x + 'px');
+  vp.style.setProperty('--doty', view.y + 'px');
+  var z = document.getElementById('zVal');
+  if (z) z.textContent = Math.round(view.k * 100) + '%';
+}
+function clampK(k) { return Math.max(MINK, Math.min(MAXK, k)); }
+function zoomAt(cx, cy, nk) {
+  lastFit = 'free';
+  nk = clampK(nk);
+  var wx = (cx - view.x) / view.k, wy = (cy - view.y) / view.k;
+  view.k = nk; view.x = cx - wx * nk; view.y = cy - wy * nk;
+  applyView();
+}
+function unionBox(list) {
+  var x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+  list.forEach(function (b) {
+    x0 = Math.min(x0, b.x); y0 = Math.min(y0, b.y);
+    x1 = Math.max(x1, b.x + b.w); y1 = Math.max(y1, b.y + b.h);
+  });
+  return { x: x0, y: y0, w: x1 - x0, h: y1 - y0 };
+}
+/* 此刻摊开的那一片画布。展开得越多它越大——「无限画布」在这一页就是这个意思。 */
+function openBox() {
+  /* 悬浮格（告警）不算在内：它钉在视口上，不占画布的地，
+     把它算进来会让「适配全部」去框一块根本不存在的区域。 */
+  return unionBox(PANELS.filter(function (d) { return !d.float && isOpen(d.id); })
+                        .map(function (d) { return d.box; }));
+}
+
+/* 镜头此刻停在哪一档：main / all / free。改窗口大小时按这一档重新落位，
+   free（读者自己滚过、拖过、或者下钻飞过去了）就不动它——那一屏是他自己摆的。 */
+var lastFit = 'main';
+
+/* 带缓动的镜头。展开一格时「走过去」而不是瞬移——瞬移看不出新格子落在哪儿。 */
+var flyRAF = null;
+/* 告警那块牌子是不透明的、又钉在视口顶上，所以它盖住的那一带不算可用画布。
+   镜头落位时把它让出来——不让的话默认那一屏正好被它啃掉主视图顶上一截。
+   按元素实测位置算，不写死：窄屏时它自己会下移一档。 */
+function topInset() {
+  var f = P.story && P.story.root;
+  if (!f || f.hidden) return 0;
+  var vr = vp.getBoundingClientRect(), fr = f.getBoundingClientRect();
+  return Math.max(0, fr.bottom - vr.top + 12);
+}
+function flyTo(box, pad, ms) {
+  lastFit = 'free';               // fitAll / fitMain 会在调用之后把档位盖回去
+  var r = vp.getBoundingClientRect();
+  pad = pad == null ? 44 : pad;
+  var top = topInset(), H = r.height - top;
+  var k = clampK(Math.min((r.width - pad * 2) / box.w, (H - pad * 2) / box.h));
+  var tx = (r.width - box.w * k) / 2 - box.x * k;
+  var ty = top + (H - box.h * k) / 2 - box.y * k;
+  cancelAnimationFrame(flyRAF);
+  if (!ms) { view.k = k; view.x = tx; view.y = ty; applyView(); return; }
+  var f = { x: view.x, y: view.y, k: view.k }, t0 = performance.now();
+  var step = function (now) {
+    var q = Math.min(1, (now - t0) / ms);
+    var e = q < .5 ? 2 * q * q : 1 - Math.pow(-2 * q + 2, 2) / 2;   // easeInOutQuad
+    view.x = f.x + (tx - f.x) * e; view.y = f.y + (ty - f.y) * e;
+    view.k = f.k + (k - f.k) * e;
+    applyView();
+    if (q < 1) flyRAF = requestAnimationFrame(step);
+  };
+  flyRAF = requestAnimationFrame(step);
+}
+function fitAll(ms) { flyTo(openBox(), 44, ms == null ? 420 : ms); lastFit = 'all'; }
+/* 主视图这一档故意留 90 的边：正好让四周那几格各露出一条边——
+   读者一进来就知道「外面还有」，而不用先缩小一次才发现。 */
+function fitMain(ms) { flyTo(P.main.def.box, 90, ms == null ? 420 : ms); lastFit = 'main'; }
+/* 按当前档位重新落位（让出的带子变了、窗口变了都走这儿）。free 就不动它。 */
+function refit(ms) {
+  if (lastFit === 'main') fitMain(ms == null ? 260 : ms);
+  else if (lastFit === 'all') fitAll(ms == null ? 260 : ms);
+}
+/* 展开一格之后镜头框住「主视图 + 这一格」：只框新格子会把主语挤出画面，
+   框整张画布又会因为别的格子已经摊开而缩得太小。 */
+function fitPair(id, ms) {
+  if (P[id] && P[id].def.float) return;   // 悬浮格不在画布上，没有「飞过去」这回事
+  if (id === 'main') return fitMain(ms);
+  flyTo(unionBox([P.main.def.box, P[id].def.box]), 44, ms == null ? 480 : ms);
+}
+
+/* 平移：在空白处或格头上按下拖动。格身里的滚动、点击、iframe 交互不受影响。 */
+(function () {
+  var down = null;
+  vp.addEventListener('pointerdown', function (e) {
+    if (e.button !== 0) return;
+    if (e.target.closest('.hud')) return;
+    /* 只有空白与格头可以起拖。格身里可能是 iframe（拖它是 pattern 自己的平移），
+       也可能是可滚动的正文，都不该被画布抢走。 */
+    if (e.target.closest('.panel') && !e.target.closest('.panel__head')) return;
+    if (e.target.closest('button, a, input')) return;
+    down = { x: e.clientX, y: e.clientY, vx: view.x, vy: view.y };
+    vp.classList.add('is-panning');
+    vp.setPointerCapture(e.pointerId);
+  });
+  vp.addEventListener('pointermove', function (e) {
+    if (!down) return;
+    lastFit = 'free';
+    view.x = down.vx + (e.clientX - down.x); view.y = down.vy + (e.clientY - down.y);
+    applyView();
+  });
+  var up = function (e) {
+    if (!down) return;
+    down = null; vp.classList.remove('is-panning');
+    try { vp.releasePointerCapture(e.pointerId); } catch (err) {}
+  };
+  vp.addEventListener('pointerup', up);
+  vp.addEventListener('pointercancel', up);
+
+  vp.addEventListener('wheel', function (e) {
+    /* iframe 内部的滚轮事件不冒泡到这里（它在自己的文档里），所以主视图里
+       转 pattern 的镜头与画布缩放不打架。 */
+    e.preventDefault();
+    var r = vp.getBoundingClientRect();
+    zoomAt(e.clientX - r.left, e.clientY - r.top, view.k * Math.exp(-e.deltaY / 380));
+  }, { passive: false });
+
+  vp.addEventListener('dblclick', function (e) {
+    if (e.target.closest('.panel') || e.target.closest('.hud')) return;
+    fitAll();
+  });
+})();
+
+document.getElementById('zIn').addEventListener('click', function () {
+  var r = vp.getBoundingClientRect(); zoomAt(r.width / 2, r.height / 2, view.k * 1.25);
+});
+document.getElementById('zOut').addEventListener('click', function () {
+  var r = vp.getBoundingClientRect(); zoomAt(r.width / 2, r.height / 2, view.k / 1.25);
+});
+document.getElementById('fitBtn').addEventListener('click', function () { fitAll(); });
+document.getElementById('focusBtn').addEventListener('click', function () { fitMain(); });
+
+/* ══════════════════════════════════════════════════════════════════════
+   ④ 悬浮提示（一处实现，全页共用 data-tip）
+   ══════════════════════════════════════════════════════════════════════ */
+function bindTip(el, text) { el.setAttribute('data-tip', text); }
+document.addEventListener('pointerover', function (e) {
+  var t = e.target.closest ? e.target.closest('[data-tip]') : null;
+  if (!t) return;
+  tip.textContent = t.getAttribute('data-tip');
+  tip.setAttribute('data-on', '1');
+});
+document.addEventListener('pointermove', function (e) {
+  if (tip.getAttribute('data-on') !== '1') return;
+  var w = tip.offsetWidth, h = tip.offsetHeight;
+  var x = e.clientX + 14, y = e.clientY + 16;
+  if (x + w > window.innerWidth - 8) x = e.clientX - w - 14;
+  if (y + h > window.innerHeight - 8) y = e.clientY - h - 14;
+  tip.style.left = x + 'px'; tip.style.top = y + 'px';
+});
+document.addEventListener('pointerout', function (e) {
+  var t = e.target.closest ? e.target.closest('[data-tip]') : null;
+  if (t) tip.removeAttribute('data-on');
+});
+
+
+/* ══════════════════════════════════════════════════════════════════════
+   ⑥ 格子骨架 + 连线
+   DOM 只建一次，展开/收起只切 hidden——重建会把 iframe 整个重载一遍，
+   格子里选中的那张卡、视角、缩放全没了。
+   ══════════════════════════════════════════════════════════════════════ */
+var el = function (tag, cls, txt) {
+  var n = document.createElement(tag);
+  if (cls) n.className = cls;
+  if (txt != null) n.textContent = txt;
+  return n;
+};
+function svgEl(tag, attrs) {
+  var n = document.createElementNS('http://www.w3.org/2000/svg', tag);
+  if (attrs) for (var k in attrs) if (attrs[k] != null) n.setAttribute(k, attrs[k]);
+  return n;
+}
+function esc(s) { return String(s).replace(/[&<>"]/g, function (c) {
+  return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]; }); }
+function bindTip(e, t) { e.setAttribute('data-tip', t); }
+
+PANELS.forEach(function (d) {
+  var box = d.box;
+  var root = el('div', 'panel ' + (d.id === 'main' ? 'panel--stage'
+                                 : d.float ? 'panel--float' : 'panel--sat'));
+  root.id = 'pane-' + d.id;
+  if (!d.float) {
+    root.style.left = box.x + 'px'; root.style.top = box.y + 'px';
+    root.style.width = box.w + 'px'; root.style.height = box.h + 'px';
+  }
+
+  var head = el('div', 'panel__head');
+  head.appendChild(el('span', 'panel__dot'));
+  var title = el('span', 'panel__title', d.title);
+  var sub = el('span', 'panel__sub', d.sub || '');
+  head.appendChild(title); head.appendChild(sub);
+  var acts = el('div', 'panel__acts'); head.appendChild(acts);
+  root.appendChild(head);
+
+  var body = el('div', 'panel__body' + (d.kind === 'frame' || d.id === 'story' ? ' panel__body--flush' : ''));
+  var mount = body;
+  if (d.kind === 'frame') {
+    body.style.display = 'flex';
+    body.style.flexDirection = 'column';
+    var wrap = el('div', 'framewrap');
+    var fb = el('div', 'fallback');
+    fb.innerHTML = '<span><b>' + esc(d.title) + '</b><br>这一格嵌的是规范路径上的 pattern 本体，'
+      + '它是<b>构建期产物</b>——本地直接开 public/ 时不存在。<br>要看真样子请打开发布后的站点。</span>';
+    wrap.appendChild(fb);
+    body.appendChild(wrap);
+    mount = wrap;
+  }
+  root.appendChild(body);
+  P[d.id] = P[d.id] || {};
+  P[d.id].mount = mount;
+  (d.float ? document.getElementById('floatlayer') : world).appendChild(root);
+
+  /* 除主视图外都给一颗收起键：展开是可逆的，否则画布只会越摊越大 */
+  if (!d.always) {
+    var x = el('button', 'btn btn--icon btn--ghost');
+    x.type = 'button';
+    x.innerHTML = '<svg viewBox="0 0 24 24"><path d="M18 6 6 18M6 6l12 12"/></svg>';
+    bindTip(x, '收起这一格');
+    x.addEventListener('click', function () { collapse(d.id); });
+    acts.appendChild(x);
+    root.hidden = true;
+  }
+  P[d.id].root = root; P[d.id].head = head; P[d.id].title = title;
+  P[d.id].sub = sub; P[d.id].acts = acts; P[d.id].body = body;
+  P[d.id].def = d;
+});
+
+/* 右上角那排格子开关 —— 页面级的常驻控制，不随画布缩放平移 */
+(function () {
+  var bar = el('div', 'exp');
+  PANELS.filter(function (d) { return d.exp; }).forEach(function (d) {
+    var b = el('button', 'expb');
+    b.type = 'button'; b.dataset.exp = d.id;
+    b.appendChild(el('i'));
+    b.appendChild(el('span', null, d.exp));
+    bindTip(b, d.title + '\n' + (d.sub || '') + '\n\n点一下在画布上展开这一格');
+    b.addEventListener('click', function () { toggle(d.id); });
+    bar.appendChild(b);
+  });
+  var hud = document.getElementById('panelshud');
+  hud.appendChild(el('span', 'k', '格子'));
+  hud.appendChild(bar);
+})();
+
+/* 主视图的视图段控：并行拓扑本来就有七个视图，钉死在「整网切分」一档
+   等于把它砍掉六分之五。放在格内工具条而不是格头——格头那条还得装标题和
+   副标题，七枚按钮挤不下。 */
+function buildToolbars() {
+  var bar = el('div', 'ptoolbar');
+  bar.appendChild(el('span', 'k', '走带'));
+  var xp = el('div', 'xp');
+  var play = el('button', 'btn btn--icon btn--ghost');
+  play.type = 'button'; play.id = 'xpPlay'; play.setAttribute('aria-pressed', 'false');
+  play.innerHTML = '<svg viewBox="0 0 24 24"><path d="m6 3 14 9-14 9z"/></svg>';
+  bindTip(play, '播放一个训练步：游标走一遍泳道，两格 pattern 里每张卡的激活体\n跟着这一刻的 1F1B 在途份数变化。收回走带回到峰值。');
+  play.addEventListener('click', function () { xpPlay(!xpPlaying); });
+  xp.appendChild(play);
+  var sl = el('input'); sl.type = 'range'; sl.id = 'xpT';
+  sl.min = '0'; sl.max = '1000'; sl.value = '0';
+  bindTip(sl, '拖到这一步的任意时刻');
+  sl.addEventListener('input', function () { xpPlay(false); xpApply(parseInt(sl.value, 10) / 1000, true); });
+  xp.appendChild(sl);
+  xp.appendChild(el('b', null, '峰值')).id = 'xpPct';
+  var off = el('button', 'btn btn--sm btn--ghost'); off.type = 'button';
+  off.textContent = '收回';
+  bindTip(off, '收回走带，回到峰值——那才是「一张卡要多少显存」的默认答案');
+  off.addEventListener('click', function () { xpPlay(false); xpApply(null, true); });
+  xp.appendChild(off);
+  bar.appendChild(xp);
+  P.main.body.insertBefore(bar, P.main.body.firstChild);
+
+  /* 泳道的三段。它一直认 ?range=，但此前没有 UI——只能手改链接才切得动，
+     等于有半条腿。 */
+  P.swimlane.syncTabs = mkTabs(P.swimlane.acts, LANE_RANGES, function () { return S.range; }, function (v) {
+    if (S.range === v) return;
+    S.range = v;
+    syncSwimlane();
+    render();
+  });
+  /* 收起键是建格子时先加的，把它挪到段控右边 */
+  P.swimlane.acts.appendChild(P.swimlane.acts.firstChild);
+}
+
+/* 连线：主视图边缘 → 每一格摊开的边缘。只画摊开着的那几条。 */
+var OFF = { x: 1200, y: 600 };
+conns.style.left = (-OFF.x) + 'px'; conns.style.top = (-OFF.y) + 'px';
+function edge(box, tx, ty) {
+  var cx = box.x + box.w / 2, cy = box.y + box.h / 2;
+  var dx = tx - cx, dy = ty - cy;
+  if (!dx && !dy) return { x: cx, y: cy };
+  if (Math.abs(dx) / (box.w / 2) > Math.abs(dy) / (box.h / 2)) {
+    return { x: cx + (dx > 0 ? box.w / 2 : -box.w / 2), y: cy + dy * (box.w / 2 / Math.abs(dx)) };
+  }
+  return { x: cx + dx * (box.h / 2 / Math.abs(dy)), y: cy + (dy > 0 ? box.h / 2 : -box.h / 2) };
+}
+function drawConns() {
+  conns.innerHTML = '';
+  var b = openBox(), pad = 400;
+  conns.style.left = (b.x - pad) + 'px'; conns.style.top = (b.y - pad) + 'px';
+  conns.setAttribute('width', b.w + pad * 2); conns.setAttribute('height', b.h + pad * 2);
+  var lx = function (x) { return x - b.x + pad; }, ly = function (y) { return y - b.y + pad; };
+  var m = P.main.def.box, mcx = m.x + m.w / 2, mcy = m.y + m.h / 2;
+  PANELS.forEach(function (d) {
+    if (d.id === 'main' || d.float || !isOpen(d.id)) return;
+    var t = d.box, tcx = t.x + t.w / 2, tcy = t.y + t.h / 2;
+    var a = edge(m, tcx, tcy), z = edge(t, mcx, mcy);
+    var mx = (a.x + z.x) / 2;
+    conns.appendChild(svgEl('path', {
+      class: 'link is-on',
+      d: 'M' + lx(a.x) + ' ' + ly(a.y) + ' C' + lx(mx) + ' ' + ly(a.y) +
+         ' ' + lx(mx) + ' ' + ly(z.y) + ' ' + lx(z.x) + ' ' + ly(z.y) }));
+    conns.appendChild(svgEl('circle', { cx: lx(a.x), cy: ly(a.y), r: 4.5,
+      fill: 'var(--primary)', opacity: .8 }));
+  });
+}
+
+/* 展开 / 收起。展开是真的「在画布上多出一块地方」，所以镜头要跟过去。 */
+function expand(id, fly) {
+  if (id === 'main' || open[id]) { if (fly) fitPair(id); return; }
+  open[id] = 1;
+  var i0 = P[id].def.float ? topInset() : 0;
+  P[id].root.hidden = false;
+  if (P[id].def.kind === 'frame') loadFrame(id);
+  render();
+  if (P[id].def.float) { nudgeForFloat(i0); return; }
+  if (fly !== false) fitPair(id);
+}
+function collapse(id) {
+  if (id === 'main' || !open[id]) return;
+  var fl = P[id].def.float, i0 = fl ? topInset() : 0;
+  delete open[id];
+  P[id].root.hidden = true;
+  render();
+  if (fl) nudgeForFloat(i0);
+}
+
+/* 告警一开一关，它盖住的那一带就变了，画布得交代一下。
+   镜头还停在 main / all 档 → 按那一档重新落位。
+   读者自己摊过、拖过（free）→ **只平移让出的那点差值**，不动他的缩放和构图。
+   为什么要这一下：悬浮层盖住底下的东西是必然的，而正上方那一格恰恰是大盘——
+   切换问题之后大盘更新了，人却看不见，因为它的格头正压在告警底下。
+   refit 在 free 档上什么都不做（那是故意的，不能把读者摆好的那一屏抢走），
+   所以这里给一个更轻的手法：只把被盖住的那点挪出来。 */
+function nudgeForFloat(before) {
+  var after = topInset();
+  if (lastFit === 'free') { view.y += (after - before); applyView(); }
+  else refit();
+}
+function toggle(id) { if (open[id]) collapse(id); else expand(id, true); }
+
+/* ══════════════════════════════════════════════════════════════════════
+   ⑤ 状态：选中什么 + 摊开了哪几格
+   没有「下钻栈」了——这一页的下钻是**空间上的展开**，不是一层盖一层。
+   所以状态只有两件事：当前选中（故事线/事件/相位/卡），以及 open 里有谁。
+   ══════════════════════════════════════════════════════════════════════ */
+var S = {
+  group: GROUPS[0].id,
+  eventId: null,
+  phase: 0,
+  rank: null,
+  range: 'global',    // 泳道那一格看哪一段
+  auto: false
+};
+function curGroup() { return GROUPS.filter(function (g) { return g.id === S.group; })[0] || GROUPS[0]; }
+function curEvent() {
+  if (!S.eventId) return null;
+  return curGroup().events.filter(function (e) { return e.id === S.eventId; })[0] || null;
+}
+
+/* 选一个事件：把相关的几格一起摊开。这就是「下钻」——
+   不是把主视图换掉，是在它旁边多摆几块证据，主视图自己被点亮。 */
+function selectEvent(id, fly) {
+  S.eventId = id; S.phase = 0;
+  var ev = curEvent();
+  open.story = 1; P.story.root.hidden = false;
+  open.event = 1; P.event.root.hidden = false;
+  open.evidence = 1; P.evidence.root.hidden = false;
+  if (!ev || !ev.mechanism) { delete open.mech; P.mech.root.hidden = true; }
+  if (!ev || !ev.lineage) { delete open.lineage; P.lineage.root.hidden = true; }
+  render();
+  if (fly !== false) flyTo(unionBox([P.main.def.box, P.event.def.box, P.evidence.def.box]), 44, 480);
+}
+function selectRank(r, fly) {
+  S.rank = r;
+  open.rank = 1; P.rank.root.hidden = false;
+  render();
+  if (fly !== false) fitPair('rank');
+}
+
+/* ══════════════════════════════════════════════════════════════════════
+   ⑧ URL 即这一屏 —— 连「摊开了哪几格」一起写进去
+   ══════════════════════════════════════════════════════════════════════ */
+var booting = true;
+function writeURL() {
+  if (booting) return;
+  var q = new URLSearchParams(location.search);
+  q.set('g', S.group);
+  if (S.eventId) q.set('e', S.eventId); else q.delete('e');
+  if (open.mech) q.set('ph', String(S.phase + 1)); else q.delete('ph');
+  if (S.rank != null) q.set('r', String(S.rank)); else q.delete('r');
+  var on = PANELS.filter(function (d) { return !d.always && open[d.id]; })
+                 .map(function (d) { return d.id; });
+  /* 一格不剩时写 none，而不是把 open 删掉：删掉的话下次打开这条链接会被当成
+     「没指定」，六格默认又全回来——读者刚把它们一个个关掉，刷新一下全长回来，
+     那是 bug 不是默认值。 */
+  if (on.length) q.set('open', on.join(',')); else q.set('open', 'none');
+  if (S.range !== 'global') q.set('range', S.range); else q.delete('range');
+  q.set('theme', themeNow());
+  history.replaceState(null, '', location.pathname + '?' + q.toString());
+}
+function readURL() {
+  var q = new URLSearchParams(location.search);
+  if (q.get('embed') === '1') document.body.dataset.embed = '1';
+  var th = q.get('theme');
+  if (th === 'dark' || th === 'light') document.documentElement.dataset.theme = th;
+  var g = q.get('g');
+  if (g && GROUPS.some(function (x) { return x.id === g; })) S.group = g;
+  var e = q.get('e');
+  if (e && curGroup().events.some(function (x) { return x.id === e; })) S.eventId = e;
+  var r = parseInt(q.get('r'), 10);
+  if (isFinite(r) && r >= 0 && r < TOPO.world) S.rank = r;
+  var rg = q.get('range');
+  if (rg && LANE_RANGES.some(function (x) { return x.v === rg; })) S.range = rg;
+  var openParam = q.get('open');
+  (openParam || '').split(',').forEach(function (id) {
+    if (id && P[id] && !P[id].def.always) open[id] = 1;
+  });
+  /* 显式的「一格不剩」：不能再落回默认 */
+  if (openParam === 'none') return;
+  /* 选了事件却没写 open：给它该有的那几格，免得链接只带 ?e= 时点开一片空 */
+  if (S.eventId && !q.has('open')) { open.story = 1; open.event = 1; open.evidence = 1; }
+  if (S.rank != null && !q.has('open')) open.rank = 1;
+  var ph = parseInt(q.get('ph'), 10);
+  var ev = curEvent();
+  if (ev && ev.mechanism && ph >= 1 && ph <= ev.mechanism.phases.length) {
+    S.phase = ph - 1; open.mech = 1;
+  }
+  if (open.mech && !(ev && ev.mechanism)) delete open.mech;
+  /* 默认那一屏：右上角那排筹码代表的六格**一进来就是摊开的**——它们是这一页
+     的常备面（故事线给时间，整网 / 单维切分 / 卡内解剖给结构的三个粒度，
+     泳道给时序，大盘给读数），不该让人
+     先去点一遍才看得见。事件相关的那几格（传播 / 机制 / 证据 / 血缘 / 单卡）
+     仍然按需展开：它们得先有一个选中的事件才有内容。 */
+  if (!Object.keys(open).length) DEFAULT_OPEN.forEach(function (id) { open[id] = 1; });
+}
+
+/* ══════════════════════════════════════════════════════════════════════
+   ⑦ 内嵌被复用的三份 pattern
+   嵌的是**规范路径上的本体**，不是拷贝——所以「画布里的那一份」和「直接打开
+   那条链接」永远是同一个文件、同一个版本。
+   BASE 由发布步骤按入口改写：/incident-canvas/ 是 '..'，
+   /patterns/incident-canvas/ 是 '../..'。整页只有这一处知道相对深度。
+   ══════════════════════════════════════════════════════════════════════ */
+var BASE = '..';
+
+/* 并行拓扑的配置口径照抄组合工作台的缺省（CloudMatrix384 那一套），
+   两边因此讲的是同一批机器；改这里等于改这一页讲的是哪个集群。 */
+var CFG = { world:128, tp:2, cp:1, pp:4, ep:8, perNode:8, nodeRack:4, podCards:384 };
+function cfgQuery(q, includeDp) {
+  ['world','tp','cp','pp','ep'].forEach(function (k) { q.set(k, String(CFG[k])); });
+  ['perNode','nodeRack','podCards'].forEach(function (k) { q.set(k, String(CFG[k])); });
+  /* cuts：d(dp) p(pp) c(cp) t(tp·sp) e(ep)。主视图五刀全落，整网那格独独不落 DP
+     ——「复印几份」对「一张整网被切成什么」这一问没有信息量，落下来只会把同一张图
+     重复 16 遍。 */
+  q.set('cuts', (includeDp ? 'd' : '') + 'pcte');
+}
+function themeNow() { return document.documentElement.dataset.theme === 'dark' ? 'dark' : 'light'; }
+
+var LANE_RANGES = [
+  { v:'global', t:'训练步全貌',   d:'MB07 从 PP0 前向到 PP0 反向的完整链路' },
+  { v:'pp2',    t:'PP2 生命周期', d:'PP2 的等待 / 计算 / 通信 / 激活驻留' },
+  { v:'l34',    t:'L34 对象链',   d:'L34 模块与保存激活的生产—消费关系' }
+];
+/* 泳道那格的三段。并行拓扑的七个视图不在这里——它们不做成页签：
+   这一页的机制是「四周点击展开」，页签是第二套并行机制，同页摆两套只会让人
+   分不清哪些屏是格子、哪些屏是页签。要用到的那两屏（单维切分 / 卡内解剖）
+   已经各自成格，跟整网、泳道、大盘一样从四周展开。 */
+var FRAMESRC = {
+  /* 主视图：就是组合工作台舞台上那一格。不传 stitle，用 pattern 自己的题面
+     「模型分片与训练设备映射」——那正是它要回答的问题。 */
+  main: function () {
+    var q = new URLSearchParams();
+    q.set('theme', themeNow());
+    q.set('view', 'chain');
+    cfgQuery(q, true);
+    return BASE + '/patterns/net-slicing/pattern.html?' + q.toString();
+  },
+  /* 整网：同一份实现的另一份配置。rank=0 不进卡维度，vtab=side 落侧视
+     ——这一屏把每个算子被哪把刀沿哪根轴切标在旁边。 */
+  netgraph: function () {
+    var q = new URLSearchParams();
+    q.set('theme', themeNow());
+    q.set('view', 'chain');
+    q.set('rank', '0');
+    q.set('vtab', 'side');
+    q.set('stitle', '模型整网视图 · 真图展开');
+    cfgQuery(q, false);
+    return BASE + '/patterns/net-slicing/pattern.html?' + q.toString();
+  },
+  /* 单维切分：l5=1 才有那根五级粒度轴（整网 → 层 → 算子 → kernel → 卡）。
+     不带它这一屏只剩卡一级，读不出「同一把刀在五个粒度上各切成什么」，
+     而那正是这一屏的题面。 */
+  dim: function () {
+    var q = new URLSearchParams();
+    q.set('theme', themeNow());
+    q.set('view', 'dim');
+    q.set('l5', '1');
+    q.set('stitle', '单维切分 · 五级粒度轴');
+    cfgQuery(q, true);
+    return BASE + '/patterns/net-slicing/pattern.html?' + q.toString();
+  },
+  /* 卡内解剖：主视图答「落到哪张卡」，这一屏答「那张卡里面长什么样」 */
+  anatomy: function () {
+    var q = new URLSearchParams();
+    q.set('theme', themeNow());
+    q.set('view', 'anatomy');
+    q.set('stitle', '卡内解剖');
+    cfgQuery(q, true);
+    return BASE + '/patterns/net-slicing/pattern.html?' + q.toString();
+  },
+  /* 泳道：compute-graph-viewer 的上游拷贝，原样嵌入。chrome=0 收它自带的顶栏。 */
+  swimlane: function () {
+    var q = new URLSearchParams();
+    q.set('chrome', '0');
+    q.set('theme', themeNow());
+    q.set('range', S.range || 'global');
+    return BASE + '/combo-workbench/swimlane.html?' + q.toString();
+  }
+};
+
+/* 把被这一页接管的控件从格子里藏掉。走 CSS 而不是内联样式：pattern 每次改状态
+   都重画工具条，内联的会被冲掉。这几条与组合工作台同源，理由见那边的注释。 */
+var HIDECSS = {
+  main:
+    /* 数据标注那组：:not(.pt-disp) 是必须的——⚙（显示设置）跟它共用 .pt-mv
+       那层排版壳，光写 .pt-mv 会把 ⚙ 一起按掉，而它管的图例/通信再也开不出来。 */
+    '.pt-mv:not(.pt-disp){display:none!important}',
+  netgraph:
+    '.pt-mv:not(.pt-disp){display:none!important}' +
+    /* 名字归格头，藏掉它画布左上角那一枚；只藏标题那一枚，不是整条——
+       「＋ 搜索」就长在同一行里，整条藏掉会把搜索一起按没。 */
+    '#stageTitle .pt-stagecopy{display:none!important}' +
+    /* 这一格是跟随视图，不是第二个操作台：选中由主视图发起。 */
+    '#qbar{display:none!important}' +
+    '#revbox{display:none!important}' +
+    '.pt-cfgpanel .cg:has([data-act="knifetoggle"]){display:none!important}' +
+    '.pt-cfgpanel .cg:has([data-cfgd]){display:none!important}' +
+    /* 立身之本就是「不进卡维度」，给个入口等于邀请人把它变成第二个并行拓扑 */
+    '.pt-cfgpanel .cg:has([data-act="rankmode"]){display:none!important}' +
+    '#zoomHud{display:none!important}' +
+    '.pt-grid-title{display:none!important}' +
+    '[data-act="persp"]{display:none!important}',
+  /* 这两屏与整网同为跟随视图：名字归格头、选中由主视图发起，所以藏同一批
+     被这一页接管的控件。机位段控与刀键不藏——那是它们各自屏内的读法。 */
+  dim:
+    '.pt-mv:not(.pt-disp){display:none!important}' +
+    '#stageTitle .pt-stagecopy{display:none!important}' +
+    '#qbar{display:none!important}' +
+    '#revbox{display:none!important}' +
+    '#zoomHud{display:none!important}',
+  anatomy:
+    '.pt-mv:not(.pt-disp){display:none!important}' +
+    '#stageTitle .pt-stagecopy{display:none!important}' +
+    '#qbar{display:none!important}' +
+    '#revbox{display:none!important}' +
+    '#zoomHud{display:none!important}',
+  swimlane:
+    /* 名字归格头；整条藏掉之后**网格轨还占着 42px**，不收轨就会在格头与泳道之间
+       空出一条横贯整格的白带（组合工作台踩过一次，这里一并收掉）。 */
+    '.timeline-pane .pane__header{display:none!important}' +
+    '.timeline-pane{grid-template-rows:0 minmax(0,1fr)!important}' +
+    '.pto-ide-frame__standalone-chrome{display:none!important}'
+};
+/* 等谁按格子来：并行拓扑那两格的控件都带 [data-act]，泳道那份是上游拷贝、
+   一个 data-act 都没有——写死 [data-act] 的话它永远等不到，只能一路耗到超时
+   才放行（白等一次，还不报错，最难查的那种）。 */
+var READYSEL = { main: '[data-act]', netgraph: '[data-act]', dim: '[data-act]', anatomy: '[data-act]',
+                 swimlane: '.timeline-pane .pane__header, .timeline-scroll' };
+
+function frameOf(id) { return P[id] && P[id].body.querySelector('iframe'); }
+/* 一段可复用的段控：主视图的七个视图、泳道的三段，都是「换的是同一份文档的
+   一个状态」——所以一律走 postMessage，不重载。重载一次要几百毫秒，还会把格子里
+   的视角、缩放、选中卡全丢掉。 */
+function mkTabs(host, items, getCur, onPick) {
+  var box = el('div', 'ptabs');
+  items.forEach(function (t) {
+    var b = el('button', null, t.t);
+    b.type = 'button'; b.dataset.v = t.v;
+    if (t.d) bindTip(b, t.t + '\n' + t.d);
+    b.addEventListener('click', function () { onPick(t.v); });
+    box.appendChild(b);
+  });
+  host.appendChild(box);
+  return function sync() {
+    var cur = getCur();
+    Array.prototype.forEach.call(box.querySelectorAll('button'), function (b) {
+      b.setAttribute('aria-pressed', String(b.dataset.v === cur));
+    });
+  };
+}
+
+function loadFrame(id) {
+  var pane = P[id];
+  if (pane.frame) return;
+  var f = el('iframe', 'frame');
+  f.setAttribute('data-slot', id);
+  f.setAttribute('loading', 'eager');
+  f.src = FRAMESRC[id]();
+  (pane.mount || pane.body).appendChild(f);
+  pane.frame = f;
+  f.addEventListener('load', function () { settleFrame(id, f); });
+}
+
+/* 装配：pattern 的工具条是 JS 后建的，load 那一刻多半还不在，所以轮询等它出来，
+   再一次性把「藏控件 / 推状态」做完，最后才让这一格淡入。等不到就到点放行——
+   宁可样式没接管，也不能白屏。 */
+function settleFrame(id, f) {
+  var tries = 0;
+  function ready() {
+    try {
+      var doc = f.contentDocument;
+      if (!doc || doc.readyState === 'loading') return false;
+      return !!doc.querySelector(READYSEL[id] || '*');
+    } catch (err) { return true; }          // 跨源：没什么可等的
+  }
+  function done() {
+    try {
+      var doc = f.contentDocument;
+      if (doc && doc.head && HIDECSS[id] && !doc.getElementById('ic-hide')) {
+        var st = doc.createElement('style');
+        st.id = 'ic-hide'; st.textContent = HIDECSS[id];
+        doc.head.appendChild(st);
+      }
+      if (id === 'netgraph') wireOpToMain(f);
+    } catch (err) { /* 跨源 */ }
+    P[id].root.dataset.ready = '1';
+    pushSelection();                        // 刚装配好的这一格补一份当前选中
+    if (id === 'swimlane') { syncSwimlane(); xpPlaceCursor(); }
+  }
+  (function poll() {
+    if (ready() || ++tries > 40) { done(); return; }   // 40 × 150ms ≈ 6s 封顶
+    setTimeout(poll, 150);
+  })();
+}
+
+/* 往某一格推一份**过路的高亮**。走 pattern 的 pto:state.hl —— 它不落标签、
+   不浮读出卡，读者点一下那格的画布空白就散。
+   为什么不替对面落一枚搜索标签：标签是读者在那一屏**自己下的条件**（带 ×、
+   一直在），而这只是「别处点了什么」的回声。两件事混成一件之后，画面上就分不出
+   「我筛的」和「它照过来的」，也没有一个自然的收手动作。 */
+function pushHL(id, obj) {
+  var f = frameOf(id);
+  if (!f || !f.contentWindow || !isOpen(id)) return;
+  try { f.contentWindow.postMessage({ type: 'pto:state', hl: obj }, '*'); } catch (e) {}
+}
+/* 当前选中照给两格 pattern —— **只推层号，不推 rank**。
+   为什么：故事线讲的是一个 2048 卡的实跑（PP4 × EDP8 × EP64，rank 1559 /
+   1553 是那个集群里的门牌）；而被嵌的 pattern 画的是它自己那个 128 卡的演示
+   集群（world 128 · TP2 × PP4 × DP16 · EP8，与组合工作台同一套缺省）。
+   两边卡数不同，rank 号天然对不上——把 1559 推过去要么无声无息（它那儿只有
+   R0–R127），要么照亮一张**根本不是那张**的卡，后者比不亮更坏。
+   试过让 pattern 直接画 2048 卡：DP 512 行会退化成一条看不清的斜线，
+   还要 12 秒才画完，那不是「更真」，是把主视图毁了。
+
+   层号则是两边**都成立**的主键：L38 在故事线里落在 PP3（L34–L45），
+   在 pattern 的 48 层口径里也落在 PP3（L36–L47）——同一段流水线。
+   所以桥就搭在层上：选中一个事件，主视图点亮**承载这一层的那些卡**。
+   rank 只从 pattern 流回来（读者在整网那格点算子），不往它那儿推。 */
+function pushSelection() {
+  var ev = curEvent();
+  var L = ev ? eventLayer(ev) : null;
+  var hl = { layer: L };
+  ['main', 'netgraph', 'dim', 'anatomy'].forEach(function (id) { pushHL(id, hl); });
+  pushHL('swimlane', { rank: laneRankForStage(eventStage(ev)) });
+}
+
+/* 泳道那一格接的是 hl.rank，不是 hl.layer——它那边的主键是「哪一行」。
+   同样对不上号：泳道只模拟 32 卡里的**一个 DP 副本**（dp2 × pp4 × tp2 × ep2，
+   activeDp=1 → Rank 16–31），故事线的 rank 1559 在它那儿不存在。直接推过去
+   不会出错——泳道自己会在状态行里写「Rank 1559 不在这份 32 Rank 模拟拓扑里，
+   泳道未移动」——诚实，但也就到此为止，点了等于没点。
+
+   所以这条桥和主视图那条**同一个主键：层号**。L38 在泳道的分段口径里落在
+   stage 3（它写的是 L35–L45），stage 3 在 activeDp=1 下是 Rank 28–31，
+   取这一段的头一张（tp0 / ep0）。推过去泳道会逐级展开父链、把那一行滚进视野，
+   于是「点一枚事件」这一下同时落到三个地方：主视图点亮承载这层的那些卡、
+   整网点亮这一层、泳道滚到这一段流水线。
+
+   要说清的是：落到「哪一段流水线」是真的，落到「具体哪一张卡」不是——
+   那一行只是这段的代表。所以格头副标题写 PP 段，不写 rank 号。 */
+var LANE_STAGE_LAYERS = [[0, 11], [12, 22], [23, 34], [35, 45]];  // 抄自 swimlane.html 的 rankStageScopes
+var LANE_DP = 1, LANE_PP = 4, LANE_TP = 2, LANE_EP = 2;           // 抄自它的 PARALLEL_WORLD（activeDp=1）
+function laneStageForLayer(L) {
+  if (L == null) return -1;
+  for (var i = 0; i < LANE_STAGE_LAYERS.length; i++) {
+    if (L >= LANE_STAGE_LAYERS[i][0] && L <= LANE_STAGE_LAYERS[i][1]) return i;
+  }
+  return -1;
+}
+/* 事件落在哪一段流水线。有的事件自己就写明了段（focus.kind==='stage'，
+   比如「PP3 断裂」），那就直接用它，不必再从层号反推——反推是退路，不是首选。 */
+function eventStage(ev) {
+  if (!ev) return -1;
+  if (ev.focus && ev.focus.kind === 'stage') return ev.focus.stage;
+  return laneStageForLayer(eventLayer(ev));
+}
+function laneRankForStage(st) {
+  if (st == null || st < 0 || st >= LANE_PP) return null;
+  /* rankAt(dp, stage, tp, ep) = ((dp * pp + stage) * tp + t) * ep + e，取 tp0 / ep0 */
+  return ((LANE_DP * LANE_PP + st) * LANE_TP) * LANE_EP;
+}
+/* 事件落在哪一层 / 哪张卡——只读事件自己写的 focus 与 origin，不另算一套 */
+function eventLayer(ev) {
+  if (ev.focus && ev.focus.kind === 'layer') return ev.focus.layer;
+  /* lineage.layer 是这条事件的**震中层**，也是最常填全的一处：像「PP3 断裂，
+     2048 NPU hang」这种，focus 写的是 stage、scope 写的是 all，层号只在血缘里
+     （L38 Router）。漏掉这一路，点中它时主视图和整网都不会亮——而它恰恰是
+     故事线的最后一枚、最该看清震中在哪儿的那一枚。 */
+  if (ev.lineage && ev.lineage.layer != null) return ev.lineage.layer;
+  if (ev.origin && ev.origin.layers && ev.origin.layers.length === 1) return ev.origin.layers[0];
+  if (ev.scope && ev.scope.layers && ev.scope.layers.length === 1) return ev.scope.layers[0];
+  return null;
+}
+/* 只给叙事面板用（单卡解剖读它）——不推给 pattern，理由见 pushSelection */
+function eventRank(ev) {
+  if (ev.focus && ev.focus.kind === 'rank') return ev.focus.rank;
+  if (ev.origin && Array.isArray(ev.origin.ranks)) return ev.origin.ranks[0];
+  return null;
+}
+
+/* 整网那格点了一个**算子** → 主视图照亮持有它的那些卡。
+   算子的命中区自带 data-li（它属于第几层），层号就是两边共同的主键。
+   为什么不另造一套「算子 → rank」的算法：那等于在这一页重写一遍它的坐标算术，
+   而层号这条路它本来就懂。只旁听、不拦截。 */
+function wireOpToMain(f) {
+  try {
+    var doc = f.contentDocument;
+    if (!doc || doc.__icOpLink) return;
+    doc.__icOpLink = 1;
+    doc.addEventListener('click', function (ev) {
+      var hit = ev.target && ev.target.closest && ev.target.closest('[data-act="opdetail"]');
+      if (!hit) return;
+      var li = parseInt(hit.getAttribute('data-li'), 10);
+      if (isFinite(li)) pushHL('main', { layer: li });
+    }, true);
+  } catch (err) { /* 跨源 */ }
+}
+
+/* ══ 走带：一个训练步的进度 ═══════════════════════════════════════════
+   泳道是一张**静态**甘特图——上游那份没有游标、没有播放。而「这一步走到此刻，
+   每张卡手上压着多少激活」正是它和拓扑之间还没接上的那条线：泳道画的是什么时候
+   在算什么，拓扑画的是那一刻显存里装着什么，本来就是同一件事的两面。
+   所以走带长在这一页上：进度 t（0–1）推给两格 pattern（pto:state 的 step），
+   游标是叠在泳道 iframe 上的一层 div，不改上游那个逐字节拷贝来的文件。
+   收回走带（t=null）就回到峰值——那才是「一张卡要多少显存」的默认答案。 */
+var XP_GUTTER = 236, XP_PAD_R = 16;   /* 抄自 swimlane.html 的 draw()：左边那栏泳道名 */
+var XP_DUR_MS = 7000;                 /* 真实是 315.61ms，放慢到看得清 */
+var XP_PUSH_MS = 90;                  /* 每次推送两格各重画一次 SVG，按挂钟节流 */
+var xpT = null, xpPlaying = false, xpRAF = 0, xpLast = 0, xpPushedAt = 0;
+
+function xpPush(force) {
+  var now = performance.now();
+  if (!force && now - xpPushedAt < XP_PUSH_MS) return;
+  xpPushedAt = now;
+  ['main', 'netgraph', 'dim', 'anatomy'].forEach(function (id) {
+    var f = frameOf(id);
+    if (!f || !f.contentWindow || !isOpen(id)) return;
+    try { f.contentWindow.postMessage({ type: 'pto:state', step: xpT }, '*'); } catch (e) {}
+  });
+}
+/* 游标贴到泳道那根时间轴上。缩放与横向滚动都是**实时状态**，必须读而不是假定：
+     内容坐标 = gutter + t · (width − 16 − gutter)   —— width 已经吃了 zoom
+     屏幕坐标 = 内容坐标 − scrollLeft
+   width 写在 #timelineSurface 的内联宽度里，与 #timelineScroll.scrollLeft 一样，
+   都是同源、可读的渲染结果，不是要猜的内部状态。 */
+function xpPlaceCursor() {
+  var pane = P.swimlane, f = frameOf('swimlane');
+  if (!pane || !pane.mount) return;
+  var cur = pane.mount.querySelector('.xcursor');
+  if (xpT === null || !isOpen('swimlane') || !f) { if (cur) cur.hidden = true; return; }
+  var doc = null;
+  try { doc = f.contentDocument; } catch (e) {}
+  var scrollEl = doc && doc.getElementById('timelineScroll');
+  var surfaceEl = doc && doc.getElementById('timelineSurface');
+  if (!scrollEl || !surfaceEl) { if (cur) cur.hidden = true; return; }
+  if (!cur) {
+    cur = el('div', 'xcursor'); cur.appendChild(el('i'));
+    pane.mount.appendChild(cur);
+  }
+  /* 用户直接拖泳道自己的横向滚动条时也要跟着挪；iframe 重载会换一个新的
+     scrollEl，标记跟着没，不会重复绑。 */
+  if (!scrollEl.__xpBound) { scrollEl.__xpBound = true; scrollEl.addEventListener('scroll', xpPlaceCursor); }
+  var width = surfaceEl.getBoundingClientRect().width;
+  var l = XP_GUTTER, r = Math.max(l + 1, width - XP_PAD_R);
+  cur.hidden = false;
+  cur.firstElementChild.style.left = (l + (r - l) * xpT - scrollEl.scrollLeft) + 'px';
+}
+function xpApply(t, push) {
+  xpT = t;
+  var sl = document.getElementById('xpT'), rd = document.getElementById('xpPct');
+  if (sl && t !== null) sl.value = String(Math.round(t * 1000));
+  if (rd) rd.textContent = t === null ? '峰值' : (Math.round(t * 100) + '%');
+  xpPush(push);
+  xpPlaceCursor();
+}
+function xpTick(ts) {
+  if (!xpPlaying) return;
+  var dt = xpLast ? ts - xpLast : 16; xpLast = ts;
+  var t = (xpT === null ? 0 : xpT) + dt / XP_DUR_MS;
+  if (t >= 1) { xpApply(1, true); xpPlay(false); return; }
+  xpApply(t);
+  xpRAF = requestAnimationFrame(xpTick);
+}
+function xpPlay(on) {
+  xpPlaying = on;
+  var btn = document.getElementById('xpPlay');
+  if (btn) btn.setAttribute('aria-pressed', String(on));
+  cancelAnimationFrame(xpRAF); xpLast = 0;
+  if (on) { if (xpT === null || xpT >= 1) xpApply(0, true); xpRAF = requestAnimationFrame(xpTick); }
+}
+
+/* ══ 双向层联动 ═══════════════════════════════════════════════════════
+   两格是同一个 pattern 的两份配置：整网那格问「第 ℓ 层长什么样、被哪几刀切开」，
+   主视图问「第 ℓ 层落在哪些 rank 上」。层号是两边共同的主键，而且同源、天然一致。
+
+   读的是那一格**自己的搜索标签**，推出去的是**高亮**——两者不同源，所以不会回声：
+   高亮不产生标签，下一轮读到的还是读者自己那枚，边沿不会被自己的推送重新触发。
+   （先前两边都落标签时才需要那套「谁先变」的仲裁，那条路还有回声竞态。）
+
+   为什么轮询而不是监听点击：一格里改「看哪一层」的路子不止一条（点侧视的逐层
+   命中区、手填搜索框、点 × 摘标签、正视那组换层步进），盯住**结果**比盯住每一条
+   入口可靠——按入口写迟早漏掉一条。 */
+function paneLayerChip(doc) {
+  var dels = doc.querySelectorAll('[data-act="chipdel"]');
+  for (var i = 0; i < dels.length; i++) {
+    var chip = dels[i].parentElement;
+    var tag = chip && chip.querySelector('i');
+    if (!tag || (tag.textContent || '').trim() !== '层') continue;
+    var m = (chip.textContent || '').match(/(\d+)/);
+    return m ? +m[1] : null;
+  }
+  return null;
+}
+function paneDoc(id) {
+  var f = frameOf(id);
+  if (!f || !isOpen(id)) return null;
+  try { return f.contentDocument || null; } catch (err) { return null; }   // 跨源
+}
+var seenLayer = { main: undefined, netgraph: undefined };
+function wireLinkage() {
+  setInterval(function () {
+    ['main', 'netgraph'].forEach(function (id) {
+      var doc = paneDoc(id); if (!doc) return;
+      var v = paneLayerChip(doc);
+      if (v === seenLayer[id]) return;
+      seenLayer[id] = v;
+      pushHL(id === 'main' ? 'netgraph' : 'main', { layer: v });
+    });
+  }, 300);
+}
+
+/* 主题换了要把三格一起换——换主题不重载（重载会丢掉格子里选中的那张卡） */
+function pushTheme() {
+  ['main', 'netgraph', 'dim', 'anatomy', 'swimlane'].forEach(function (id) {
+    var f = frameOf(id);
+    if (f && f.contentWindow) {
+      try { f.contentWindow.postMessage({ type: 'pto:state', theme: themeNow() }, '*'); } catch (e) {}
+    }
+  });
+}
+
+/* ══════════════════════════════════════════════════════════════════════
+   ⑨ 主视图各档自己的版式
+   这一段 CSS 从脚本里注入，不是随手为之：<head> 那份是**外壳**的样式
+   （token、面板、HUD），改它影响整页；下面这些只服务于五档主视图，
+   与画它们的代码写在一起，加一档视图时样式与渲染函数一并加、一并删，
+   不必在文件两头来回找。注入点仍是 <head>，层叠顺序与写在那里一致。
+   ══════════════════════════════════════════════════════════════════════ */
+document.head.insertAdjacentHTML('beforeend', '<style>' + [
+/* 传播图 */
+'.flow{display:grid;grid-template-columns:1fr 250px 1fr;gap:14px;height:100%;align-items:stretch}',
+'.fcol{display:flex;flex-direction:column;gap:8px;min-height:0}',
+'.fcol__h{display:flex;align-items:center;gap:7px;flex:none}',
+'.fcol__badge{padding:2px 9px;border-radius:999px;font:600 11px/1.5 var(--font-sans)}',
+'.fcol__badge--o{background:color-mix(in srgb,var(--danger) 14%,transparent);color:var(--danger);border:1px solid color-mix(in srgb,var(--danger) 38%,transparent)}',
+'.fcol__badge--v{background:color-mix(in srgb,var(--warning) 18%,transparent);color:color-mix(in srgb,var(--warning) 78%,var(--foreground));border:1px solid color-mix(in srgb,var(--warning) 44%,transparent)}',
+'.fcol__n{font:400 11px/1.4 var(--font-mono);color:var(--foreground-muted)}',
+'.fcol__list{display:flex;flex-direction:column;gap:7px;overflow:auto;min-height:0;padding-right:2px}',
+'.ocard{display:flex;flex-direction:column;gap:3px;padding:9px 11px;border-radius:8px;text-align:left;',
+'  border:1px solid var(--border-default);background:var(--surface-2);cursor:pointer;',
+'  transition:background 120ms,border-color 120ms,transform 120ms}',
+'.ocard:hover{background:var(--state-hover);border-color:var(--border-strong);transform:translateX(2px)}',
+'.ocard__t{display:flex;align-items:baseline;gap:7px}',
+'.ocard__k{font:600 9.5px/1.5 var(--font-mono);letter-spacing:.06em;color:var(--foreground-muted);text-transform:uppercase}',
+'.ocard__n{font:600 13.5px/1.3 var(--font-sans)}',
+'.ocard__d{font:400 11.5px/1.45 var(--font-sans);color:var(--foreground-secondary)}',
+'.ocard--o{border-left:3px solid var(--danger)}',
+'.ocard--v{border-left:3px solid var(--warning)}',
+'.fmid{display:flex;flex-direction:column;justify-content:center;align-items:stretch;gap:7px;min-height:0;overflow:auto}',
+'.fmid__k{text-align:center}',
+'.fstep{display:flex;align-items:center;gap:8px;padding:6px 9px;border-radius:8px;',
+'  background:color-mix(in srgb,var(--primary) 8%,transparent);',
+'  border:1px solid color-mix(in srgb,var(--primary) 26%,transparent);',
+'  font:500 11.5px/1.4 var(--font-sans)}',
+'.fstep b{font:700 10px/1 var(--font-mono);color:var(--primary);flex:none}',
+'.farrow{display:block;flex:none;width:16px;height:15px;margin:0 auto;color:var(--primary);opacity:.6}',
+/* 机制舞台 */
+'.mech{display:flex;flex-direction:column;height:100%;gap:10px}',
+'.mech__scene{flex:1 1 auto;min-height:0;position:relative}',
+'.mech__scene svg{display:block;width:100%;height:100%;overflow:visible}',
+'.mech__cap{flex:none;padding:10px 12px;border-radius:8px;background:var(--surface-2);',
+'  border:1px solid var(--border-subtle);font:400 12.5px/1.65 var(--font-sans);',
+'  color:var(--foreground-secondary);max-height:104px;overflow:auto}',
+'.mech__cap b{color:var(--foreground);font-weight:600}',
+/* 单卡解剖 */
+'.rk{display:grid;grid-template-columns:190px 1fr;gap:16px;height:100%;min-height:0}',
+'.cap{display:flex;flex-direction:column;height:100%;min-height:0}',
+'.cap__box{flex:1 1 auto;min-height:0;display:flex;flex-direction:column-reverse;',
+'  border:1.5px solid var(--border-strong);border-radius:8px;overflow:hidden;background:var(--surface-2)}',
+'.cap__seg{display:flex;align-items:center;justify-content:center;position:relative;min-height:0;',
+'  font:600 11px/1.2 var(--font-mono);color:#fff;cursor:default}',
+'.cap__seg[data-void="1"]{background-image:repeating-linear-gradient(45deg,transparent 0 5px,rgba(255,255,255,.34) 5px 10px)}',
+'.cap__cap{flex:none;display:flex;justify-content:space-between;font:600 11px/1.8 var(--font-mono);color:var(--foreground-muted)}',
+'.rk__right{display:flex;flex-direction:column;gap:11px;min-height:0;overflow:auto}',
+'.blk{border:1px solid var(--border-subtle);border-radius:8px;background:var(--surface-2);padding:10px 12px}',
+'.blk__h{display:flex;align-items:baseline;gap:8px;margin-bottom:7px}',
+'.blk__t{font:600 12px/1.3 var(--font-sans)}',
+'.blk__s{font:400 11px/1.3 var(--font-sans);color:var(--foreground-muted)}',
+'.layerstrip{display:flex;gap:2px;flex-wrap:wrap}',
+'.lseg{flex:1 1 auto;min-width:20px;height:26px;border-radius:4px;display:grid;place-items:center;',
+'  font:600 9.5px/1 var(--font-mono);background:var(--cell-base);color:var(--foreground-secondary)}',
+'.lseg[data-hot="1"]{background:var(--danger);color:#fff}',
+'.portrow{display:grid;grid-template-columns:104px 1fr 128px;gap:9px;align-items:center;margin-bottom:7px}',
+'.portbar{height:9px;border-radius:99px;background:var(--surface-3);overflow:hidden}',
+'.portbar i{display:block;height:100%;border-radius:99px;font-style:normal}',
+/* 泳道 */
+'.lane{display:flex;flex-direction:column;height:100%;gap:8px}',
+'.lane__grid{flex:1 1 auto;min-height:0;overflow:auto;display:flex;align-items:center}',
+'.lane__grid svg{display:block;width:100%;overflow:visible}',
+'.lane__lg{flex:none;display:flex;flex-wrap:wrap;gap:10px}',
+/* 训推大盘 */
+'.bd{display:flex;flex-direction:column;height:100%;gap:12px;min-height:0;justify-content:center}',
+'.bd__grid{flex:0 1 auto;min-height:0;display:grid;grid-template-columns:repeat(5,minmax(0,1fr));',
+'  grid-auto-rows:minmax(0,150px);gap:8px}',
+'.tile{display:flex;flex-direction:column;gap:3px;padding:8px 10px;border-radius:8px;text-align:left;',
+'  border:1px solid var(--border-subtle);background:var(--surface-2);overflow:hidden;',
+'  border-top:2.5px solid var(--tone,var(--cell-mid));cursor:pointer;',
+'  transition:background 120ms,border-color 120ms,transform 120ms}',
+'.tile:hover{background:var(--state-hover);transform:translateY(-1px)}',
+/* 此刻有读数的那几格：除了顶边的色条，再给一层同色的极淡底与描边。
+   原先只靠顶边那 2.5px 区分，十格里挑出两格全靠扫——「哪几格动了」是这一屏
+   最该一眼看见的事，不该要人找。 */
+'.tile[data-live="1"]{background:color-mix(in srgb,var(--tone) 9%,var(--surface-2));',
+'  border-color:color-mix(in srgb,var(--tone) 32%,var(--border-subtle))}',
+'.tile[data-live="1"]:hover{background:color-mix(in srgb,var(--tone) 15%,var(--surface-2))}',
+/* 没采到的压得更暗一档（.62 → .44）：让亮的那几格靠对比跳出来，
+   而不是靠自己更花。 */
+'.tile[data-na="1"]{cursor:default;opacity:.44}',
+'.tile[data-na="1"]:hover{transform:none;background:var(--surface-2)}',
+/* 栅格上方那一行：先回答「这一刻哪几格有读数」，再回答「为什么别的没有」。
+   这两句原先只在最底下那行小字里说过一半，而人是在盯着某一格发灰时才产生疑问的。 */
+'.bd__now{flex:none;display:flex;align-items:center;gap:6px;flex-wrap:wrap;',
+'  font:400 10.5px/1.5 var(--font-sans);color:var(--foreground-muted)}',
+'.bd__now b{font:700 10.5px/1.5 var(--font-sans);color:var(--foreground)}',
+'.bd__now .lit{font:600 10px/1.5 var(--font-mono);padding:1px 6px;border-radius:999px;',
+'  background:color-mix(in srgb,var(--danger) 12%,transparent);color:var(--danger)}',
+'.bd__now .dash{font:600 10px/1.5 var(--font-mono);padding:1px 6px;border-radius:999px;',
+'  background:var(--surface-2);color:var(--foreground-muted)}',
+'.tile__n{display:flex;align-items:baseline;gap:5px}',
+'.tile__name{font:600 11.5px/1.3 var(--font-mono);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}',
+'.tile__want{font:600 9.5px/1.3 var(--font-sans);color:var(--foreground-muted);flex:none}',
+'.tile__v{font:700 15px/1.25 var(--font-mono);color:var(--tone,var(--foreground));',
+'  white-space:nowrap;overflow:hidden;text-overflow:ellipsis}',
+'.tile__why{font:400 10.5px/1.4 var(--font-sans);color:var(--foreground-secondary);',
+'  display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden}',
+'.tile__src{margin-top:auto;font:400 9px/1.3 var(--font-mono);color:var(--foreground-muted);',
+'  white-space:nowrap;overflow:hidden;text-overflow:ellipsis}',
+'.bd__hooks{flex:none;display:flex;gap:7px;flex-wrap:wrap;align-items:stretch}',
+'.hook{display:flex;flex-direction:column;gap:3px;padding:9px 11px;border-radius:8px;flex:1 1 0;min-width:0;',
+'  border:1px solid var(--border-subtle);background:var(--surface-2);opacity:.5}',
+'.hook[data-on="1"]{opacity:1;border-color:var(--danger);',
+'  background:color-mix(in srgb,var(--danger) 10%,transparent)}',
+'.hook__n{font:600 11px/1.3 var(--font-sans);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}',
+'.hook[data-on="1"] .hook__n{color:var(--danger)}',
+'.hook__s{font:400 9px/1.3 var(--font-mono);color:var(--foreground-muted);',
+'  white-space:nowrap;overflow:hidden;text-overflow:ellipsis}',
+'.hook__dots{display:flex;gap:3px;margin-top:2px}',
+'.hook__dots i{width:7px;height:7px;border-radius:99px;background:var(--cell-base);font-style:normal;flex:none}',
+'.hook__dots i[data-f="1"]{background:var(--danger)}',
+/* 计算血缘：五层横向轨 */
+'.lin{display:flex;align-items:stretch;gap:0;overflow-x:auto;padding-bottom:4px}',
+'.lin__st{flex:1 1 0;min-width:132px;display:flex;flex-direction:column;gap:7px;',
+'  padding:10px 11px;border-radius:8px;border:1px solid var(--border-subtle);background:var(--surface-2)}',
+'.lin__st[data-got="0"]{opacity:.45;border-style:dashed}',
+'.lin__hd{display:flex;align-items:baseline;gap:6px}',
+'.lin__i{width:17px;height:17px;border-radius:99px;display:grid;place-items:center;flex:none;',
+'  font:700 10px/1 var(--font-mono);background:var(--primary);color:#fff}',
+'.lin__st[data-got="0"] .lin__i{background:var(--cell-mid)}',
+'.lin__t{font:600 12px/1.3 var(--font-sans)}',
+'.lin__nodes{display:flex;flex-direction:column;gap:5px}',
+'.lin__n{position:relative;padding:6px 8px;border-radius:6px;background:var(--surface-1);',
+'  border:1px solid var(--border-default);font:500 10.5px/1.4 var(--font-mono);word-break:break-all}',
+'.lin__n[data-role="origin"]{border-color:var(--danger);',
+'  background:color-mix(in srgb,var(--danger) 10%,transparent)}',
+'.lin__n[data-role="victim"]{border-color:var(--warning);',
+'  background:color-mix(in srgb,var(--warning) 14%,transparent)}',
+'.lin__tag{display:block;margin-top:3px;font:600 9px/1.4 var(--font-sans);letter-spacing:.04em}',
+'.lin__n[data-role="origin"] .lin__tag{color:var(--danger)}',
+'.lin__n[data-role="victim"] .lin__tag{color:color-mix(in srgb,var(--warning) 78%,var(--foreground))}',
+'.lin__none{font:400 11px/1.4 var(--font-mono);color:var(--foreground-muted)}',
+'.lin__arrow{flex:none;width:62px;display:flex;flex-direction:column;align-items:center;',
+'  justify-content:center;gap:3px;color:var(--foreground-muted)}',
+'.lin__arrow span:first-child{font:400 15px/1 var(--font-sans)}',
+'.lin__arrow-l{font:500 9.5px/1.3 var(--font-sans);text-align:center}'
+].join('') + '</style>');
+
+/* ══════════════════════════════════════════════════════════════════════
+   ⑩ 作用域展开：把事件里那几个描述符翻成「一串看得见的对象」
+   ══════════════════════════════════════════════════════════════════════ */
+var SEGNAME = { moe: 'MoE 段', head: 'LM Head', dense: 'Dense 段', emb: 'Embedding', norm: 'Norm' };
+function rangeText(arr) {
+  if (!arr || !arr.length) return '';
+  if (arr.length === 1) return 'L' + arr[0];
+  return 'L' + arr[0] + '~L' + arr[arr.length - 1] + '（' + arr.length + ' 层）';
+}
+function expandScope(d, ev) {
+  if (!d) return [];
+  var out = [], st = ev && ev.focus && ev.focus.stage != null ? ev.focus.stage
+          : (ev && ev.scope && ev.scope.stage != null ? ev.scope.stage : 3);
+  if (d.layers && d.layers.length) out.push({
+    kind: '层', name: rangeText(d.layers),
+    desc: d.layers.length === 1 ? ('PP stage ' + TOPO.stageOfLayer(d.layers[0]) + ' 的第 ' + d.layers[0] + ' 层')
+                                : ('整段落在 PP stage ' + TOPO.stageOfLayer(d.layers[0])),
+    go: { layer: d.layers[0] }
+  });
+  if (d.experts) out.push(d.experts === 'all'
+    ? { kind: '专家', name: TOPO.experts + ' 个路由专家', desc: 'Top-' + TOPO.topK + ' 路由，EP 组 64 张卡合持一整套', go: { expert: -1 } }
+    : { kind: '专家', name: 'Expert ' + d.experts[0], desc: '由 EP rank 23 持有（故事线给定）', go: { expert: d.experts[0] } });
+  if (d.segments && d.segments.length) out.push({
+    kind: '结构段', name: d.segments.map(function (s) { return SEGNAME[s] || s; }).join(' + '),
+    desc: '这一层里出问题的那一段'
+  });
+  if (d.stages && d.stages.length) out.push({
+    kind: 'stage', name: 'PP stage ' + d.stages.join(' / '),
+    desc: '一段流水线 = ' + (TOPO.edp * TOPO.ep) + ' 张卡', go: { stage: d.stages[0] }
+  });
+  if (d.ranks) {
+    if (Array.isArray(d.ranks)) d.ranks.forEach(function (r) {
+      var p = TOPO.decode(r);
+      out.push({ kind: 'rank', name: 'global rank ' + r,
+        desc: 'PP' + p.stage + ' / EDP' + p.edp + ' / EP' + p.ep, go: { rank: r } });
+    });
+    else if (d.ranks === 'stage') out.push({ kind: 'rank 集合', name: 'PP' + st + ' 整段 512 卡', desc: 'EDP 8 × EP 64', go: { stage: st } });
+    else if (d.ranks === 'ep-stage') out.push({ kind: 'rank 集合', name: '同 EP 组 64 卡', desc: '一次 all-to-all 的全部成员', go: { stage: st } });
+    else if (d.ranks === 'ep-stage-peers') out.push({ kind: 'rank 集合', name: '同组另外 63 卡', desc: '它们是 barrier 受害者，不是根因', go: { stage: st } });
+    else if (d.ranks === 'all') out.push({ kind: 'rank 集合', name: '全网 2048 卡', desc: 'PP4 × EDP8 × EP64', go: { all: true } });
+  }
+  return out;
+}
+
+/* 一张卡离震中多远：0 无关 / 1 同 stage / 2 同 EP 组 / 3 震中本身。
+   单卡解剖与构成图都读它，判据只写一遍。 */
+function impactTier(r) {
+  var ev = curEvent(), g = curGroup();
+  var focusRank = null, stage = null;
+  if (ev) {
+    if (ev.focus.kind === 'rank') focusRank = ev.focus.rank;
+    else if (ev.origin && Array.isArray(ev.origin.ranks)) focusRank = ev.origin.ranks[0];
+    if (ev.focus.kind === 'stage') stage = ev.focus.stage;
+    else if (ev.focus.kind === 'layer') stage = TOPO.stageOfLayer(ev.focus.layer);
+    else if (ev.scope && ev.scope.stage != null) stage = ev.scope.stage;
+  } else {
+    focusRank = (g.context.ranks && Array.isArray(g.context.ranks)) ? g.context.ranks[0] : null;
+    stage = g.context.stages ? g.context.stages[0]
+          : (g.context.layers ? TOPO.stageOfLayer(g.context.layers[0]) : 3);
+  }
+  if (focusRank == null && stage == null) return 0;
+  if (focusRank != null && r === focusRank) return 3;
+  var p = TOPO.decode(r);
+  if (focusRank != null) {
+    var f = TOPO.decode(focusRank);
+    if (p.stage === f.stage && p.edp === f.edp) return 2;
+    if (p.stage === f.stage) return 1;
+    return 0;
+  }
+  return p.stage === stage ? 1 : 0;
+}
+var TIERC = ['var(--cell-base)', 'var(--cell-mid)',
+             'color-mix(in srgb,var(--warning) 82%,transparent)', 'var(--danger)'];
+var TIERN = ['其他 stage', '同 stage', '同 EP 组（barrier 空等）', '震中 / 首个失败卡'];
+
+
+/* ══════════════════════════════════════════════════════════════════════
+   ⑪ 各格自己的内容
+   一格一个函数，都往同一副骨架（panelShell）里填。骨架写进 RT 指的那一格，
+   所以从旧版「主视图换一张图」搬过来的那几个渲染函数一个字没动就能用。
+   ══════════════════════════════════════════════════════════════════════ */
+var RT = 'event';                 // 当前这一次 panelShell 往哪一格写
+function stageShell(title, sub, noteHTML) {
+  var pane = P[RT];
+  pane.title.textContent = title;
+  pane.sub.textContent = sub || '';
+  var b = pane.body;
+  b.innerHTML = '';
+  var wrap = el('div', 'stagewrap');
+  var canvas = el('div', 'stagecanvas');
+  wrap.appendChild(canvas);
+  if (noteHTML) {
+    var note = el('div', 'stagenote');
+    note.innerHTML = noteHTML;
+    wrap.appendChild(note);
+  }
+  b.appendChild(wrap);
+  return { canvas: canvas };
+}
+/* 连线现在由 open 推出来（drawConns），不再由各档自己声明谁该亮。
+   保留这个空壳是为了让搬过来的渲染函数一个字不用改。 */
+function setLinked() {}
+
+/* ── 故事线 ───────────────────────────────────────────────────────── */
+/* 告警收起时画布上留下的那一条，和抽屉互斥。
+   问题段控只此一份，在两个宿主之间**搬家**而不是各建一套：收起时挂在这条上，
+   摊开时挂进抽屉的格头。两套的话「哪个是真的」这个问题就永远要回答一次。 */
+function renderAlertBar() {
+  var bar = document.getElementById('alertbar');
+  var seg = document.getElementById('lineSeg');
+  var open = isOpen('story');
+  if (open) { if (seg.parentNode !== P.story.acts) P.story.acts.insertBefore(seg, P.story.acts.firstChild); }
+  else      { if (seg.parentNode !== bar) bar.appendChild(seg); }
+  bar.hidden = open;
+}
+
+function renderStory() {
+  var g = curGroup(), pane = P.story;
+  pane.title.textContent = '告警 · ' + g.name;
+  pane.sub.textContent = g.events.length + ' 个事件 · 点任一枚下钻';
+  var b = pane.body; b.innerHTML = '';
+  var tl = el('div', 'tl');
+  tl.appendChild(el('div', 'tl__spine'));
+  var row = el('div', 'tl__row');
+  g.events.forEach(function (ev) {
+    var c = el('button', 'tlc'); c.type = 'button';
+    c.dataset.sev = ev.sev;
+    c.setAttribute('aria-pressed', String(ev.id === S.eventId));
+    var top = el('div', 'tlc__top');
+    top.appendChild(el('span', 'tlc__pin'));
+    top.appendChild(el('span', 'tlc__t', ev.time));
+    c.appendChild(top);
+    c.appendChild(el('div', 'tlc__title', ev.title));
+    c.appendChild(el('div', 'tlc__dim', ev.dimension + (ev.isRoot ? ' · 根因' : '')));
+    if (ev.mechanism) c.appendChild(el('span', 'tlc__mech', '机制'));
+    bindTip(c, ev.title + '\n' + ev.conclusion
+      + (ev.mechanism ? '\n\n带机制图：点进去可以按相位看它是怎么传的' : ''));
+    c.addEventListener('click', function () { selectEvent(ev.id); });
+    row.appendChild(c);
+  });
+  tl.appendChild(row);
+  b.appendChild(tl);
+}
+
+/* ── 证据 · 图表 + 读数 + 根因/影响 ───────────────────────────────── */
+function renderEvidence() {
+  var ev = curEvent(), pane = P.evidence, b = pane.body;
+  b.innerHTML = '';
+  if (!ev) {
+    pane.title.textContent = '证据 · 图表';
+    pane.sub.textContent = '先在故事线上选一个事件';
+    var e0 = el('div');
+    e0.style.cssText = 'display:grid;place-items:center;height:100%;text-align:center';
+    e0.innerHTML = '<p class="cnote" style="max-width:260px">上面那条<b>故事线</b>里点任一个事件，'
+      + '这里就换成支撑它那条结论的图。<br><br>两条线一共 11 个事件、11 张图，'
+      + '全部取自 config-relation-observer 原页，数值一个没改。</p>';
+    b.appendChild(e0);
+    return;
+  }
+  pane.title.textContent = '证据 · ' + ev.title;
+  pane.sub.textContent = ev.dimension;
+  renderChart(b, ev.chart);
+  b.appendChild(el('div', 'hr'));
+  var mg = el('div', 'mgrid');
+  (ev.metrics || []).forEach(function (r) {
+    var row = el('div', 'mrow');
+    row.appendChild(el('span', 'mrow__l', r.label));
+    row.appendChild(el('span', 'mrow__v' + (r.tone ? ' tone-' + r.tone : ''), r.value));
+    mg.appendChild(row);
+  });
+  b.appendChild(mg);
+  b.appendChild(el('div', 'hr'));
+  var facts = el('div', 'facts');
+  [['根因', ev.root, 1], ['影响', ev.impact, 0]].forEach(function (f) {
+    var d = el('div', 'fact' + (f[2] ? ' fact--hi' : ''));
+    d.appendChild(el('div', 'fact__k', f[0]));
+    d.appendChild(el('div', 'fact__v', f[1]));
+    facts.appendChild(d);
+  });
+  b.appendChild(facts);
+}
+
+/* ── 机制舞台 ─────────────────────────────────────────────────────── */
+function renderMech() {
+  var ev = curEvent();
+  if (!ev || !ev.mechanism) {
+    P.mech.title.textContent = '机制舞台';
+    P.mech.sub.textContent = '这个事件没有机制图';
+    P.mech.body.innerHTML = '<p class="cnote">11 个事件里有 5 个带机制图'
+      + '（路由塌缩 / barrier 语义 / 依赖链回压 / 存活区间叠加 / 碎片）。'
+      + '在故事线上挑一枚带「机制」角标的。</p>';
+    return;
+  }
+  var m = ev.mechanism, ph = Math.max(0, Math.min(m.phases.length - 1, S.phase));
+  S.phase = ph;
+  var p = m.phases[ph];
+  RT = 'mech';
+  var sh = stageShell('机制 · ' + m.name, ev.title + ' · ' + ev.time, null);
+  var box = el('div', 'mech');
+
+  var row = el('div', 'phaserow');
+  var play = el('button', 'btn btn--icon btn--ghost'); play.type = 'button';
+  play.innerHTML = '<svg viewBox="0 0 24 24"><path d="m6 3 14 9-14 9z"/></svg>';
+  bindTip(play, '把四相连着播一遍');
+  play.addEventListener('click', function () { playPhases(); });
+  row.appendChild(play);
+  m.phases.forEach(function (x, i) {
+    var b2 = el('button', 'phase'); b2.type = 'button';
+    b2.setAttribute('aria-pressed', String(i === ph));
+    b2.appendChild(el('span', null, x.tag));
+    b2.appendChild(el('span', 'phase__clock', x.clock));
+    b2.addEventListener('click', function () { S.phase = i; render(); });
+    row.appendChild(b2);
+  });
+  box.appendChild(row);
+
+  var scene = el('div', 'mech__scene');
+  var W = 900, H = 330;
+  var svg = svgEl('svg', { viewBox: '0 0 ' + W + ' ' + H, preserveAspectRatio: 'xMidYMid meet' });
+  (MECH[m.kind] || function () {})(svg, ph, W, H);
+  scene.appendChild(svg);
+  box.appendChild(scene);
+
+  var cap = el('div', 'mech__cap');
+  cap.innerHTML = '<b>' + esc(p.tag) + '　' + esc(p.clock) + '</b>　'
+    + esc(p.caption).replace(/\*\*(.+?)\*\*/g, '<b>$1</b>');
+  box.appendChild(cap);
+
+  sh.canvas.appendChild(box);
+  sh.canvas.style.overflow = 'hidden';
+}
+
+/* ── 主视图格头：把当前选中报出来，并同步右上角那排展开筹码 ─────────── */
+function renderMain() {
+  var ev = curEvent();
+  var dp = CFG.world / (CFG.tp * CFG.cp * CFG.pp);
+  var shape = 'world ' + CFG.world + ' · TP' + CFG.tp + ' × PP' + CFG.pp + ' × DP' + dp + ' · EP' + CFG.ep;
+  var L = ev ? eventLayer(ev) : null;
+  P.main.sub.textContent = L != null ? ('已照亮 L' + L + ' · ' + shape) : shape;
+  bindTip(P.main.head, '主视图就是 /patterns/net-slicing/ 本体，与组合工作台舞台上那一格'
+    + '是同一个文件、同一份配置：' + shape + '。\n\n它画的是**这套并行策略长什么样**；'
+    + '故事线讲的是另一跑（2048 卡 · PP4 × EDP8 × EP64）。两边卡数不同、rank 号对不上，'
+    + '所以联动搭在**层号**上——选中事件，这里点亮承载那一层的卡。');
+  Array.prototype.forEach.call(document.querySelectorAll('[data-exp]'), function (b) {
+    b.setAttribute('aria-pressed', String(!!open[b.dataset.exp]));
+  });
+}
+
+/* ══════════════════════════════════════════════════════════════════════
+   ⑭ 一次 render 把摊开的每一格刷一遍
+   主视图是 iframe，不归这里画——它只收一份高亮（pushSelection）。
+   ══════════════════════════════════════════════════════════════════════ */
+function render() {
+  renderMain();
+  renderAlertBar();
+  if (isOpen('story')) renderStory();
+  if (isOpen('event')) { RT = 'event'; if (curEvent()) viewFlow(); else emptyEvent(); }
+  if (isOpen('evidence')) renderEvidence();
+  if (isOpen('mech')) renderMech();
+  if (isOpen('lineage')) renderLineage();
+  if (isOpen('rank')) { RT = 'rank'; if (S.rank != null) viewRank(); else emptyRank(); }
+  if (isOpen('board')) { RT = 'board'; viewBoard(); }
+  if (isOpen('swimlane')) syncSwimlane();
+  xpPlaceCursor();
+  drawConns();
+  renderLegend();
+  syncTop();
+  pushSelection();
+  writeURL();
+}
+function emptyEvent() {
+  P.event.title.textContent = '事件 · 传播关系';
+  P.event.sub.textContent = '先在故事线上选一个事件';
+  P.event.body.innerHTML = '<p class="cnote">范围图答「打到了谁」。'
+    + '在故事线里点一枚事件，这里就摊开它的传播源 → 途经 → 受影响。</p>';
+}
+function emptyRank() {
+  P.rank.title.textContent = '单卡解剖';
+  P.rank.sub.textContent = '先选一张卡';
+  P.rank.body.innerHTML = '<p class="cnote">在<b>主视图</b>里点一张卡，'
+    + '或从事件的传播源里点一个 rank 对象。</p>';
+}
+/* 泳道那一格换段不重载：range 走 pto:state，选中的那条事件、缩放都留在原地 */
+function syncSwimlane() {
+  var cur = LANE_RANGES.filter(function (x) { return x.v === S.range; })[0];
+  /* 选中事件时把桥写在副标题上：泳道自己动了一下，得说清是凭什么动的、
+     落到了哪一段——不说的话读者只会看见它莫名其妙滚了一下。 */
+  var ev = curEvent(), L = ev ? eventLayer(ev) : null, st = eventStage(ev);
+  var why = L != null ? 'L' + L : (ev ? '这条事件' : '');
+  P.swimlane.sub.textContent = (cur ? cur.d : '')
+    + (st >= 0 ? '　· 已随 ' + why + ' 定位到 PP' + st + '（这一段的代表行）' : '');
+  if (P.swimlane.syncTabs) P.swimlane.syncTabs();
+  var f = frameOf('swimlane');
+  if (f && f.contentWindow) {
+    try { f.contentWindow.postMessage({ type: 'pto:state', range: S.range }, '*'); } catch (e) {}
+  }
+}
+
+function renderLegend() {
+  var host = document.getElementById('legendhud');
+  host.innerHTML = '';
+  host.appendChild(el('span', 'k', '读法'));
+  var n = PANELS.filter(function (d) { return !d.always && !d.float && open[d.id]; }).length;
+  var say = el('span', 'lg');
+  say.textContent = '主视图是并行拓扑 pattern 本体，永远在；'
+    + (n ? ('已摊开 ' + n + ' 格') : '右上角那排筹码把别的格子展开到画布上');
+  host.appendChild(say);
+  var hint = el('span', 'lg');
+  hint.style.color = 'var(--foreground-muted)';
+  hint.textContent = '滚轮缩放 · 拖空白平移 · 双击空白适配全部';
+  host.appendChild(hint);
+}
+function syncTop() {
+  var g = curGroup(), ev = curEvent();
+  document.getElementById('brandSub').textContent =
+    ev ? (ev.time + ' · ' + ev.title) : (g.events.length + ' 个事件 · 展开下钻');
+  var drawer = isOpen('story');
+  Array.prototype.forEach.call(document.querySelectorAll('#lineSeg button'), function (b) {
+    var on = b.dataset.g === S.group;
+    b.setAttribute('aria-pressed', String(on));
+    var car = b.querySelector('.caret');
+    /* 角标只长在正在看的那条上：另一条点了是「切过去」，没有开合可言。
+       朝向跟着抽屉走——摊开时朝上（点它收起），收起时朝下（点它摊开）。 */
+    car.style.display = on ? '' : 'none';
+    car.style.transform = on && drawer ? 'rotate(180deg)' : '';
+    var n = GROUPS.filter(function (x) { return x.id === b.dataset.g; })[0].events.length;
+    bindTip(b, on ? ((drawer ? '收起' : '摊开') + '这条告警的事件链——' + n + ' 个事件，点任一枚下钻')
+                  : ('换看这条告警：' + n + ' 个事件\n' + GROUPS.filter(function (x) { return x.id === b.dataset.g; })[0].lede));
+  });
+}
+
+/* 告警段控：问题与告警是**同一件东西**，所以每一条问题自己带点和事件数。
+   点已经在看的那条 = 开合事件链；点另一条 = 换过去看。两种点击语义不同，
+   但都只落在「这条告警」这一个对象上——不需要旁边再摆一枚「打开」按钮。 */
+function buildAlertSeg() {
+  var host = document.getElementById('lineSeg');
+  GROUPS.forEach(function (g) {
+    var b = el('button', null);
+    b.type = 'button'; b.dataset.g = g.id;
+    b.appendChild(el('span', 'dot'));
+    b.appendChild(el('span', 'nm', g.name));
+    b.appendChild(el('span', 'n', g.events.length));
+    var car = svgEl('svg', { class: 'caret', viewBox: '0 0 24 24', fill: 'none',
+      stroke: 'currentColor', 'stroke-width': '3', 'stroke-linecap': 'round',
+      'stroke-linejoin': 'round', 'aria-hidden': 'true' });
+    car.appendChild(svgEl('path', { d: 'm6 9 6 6 6-6' }));
+    b.appendChild(car);
+    b.addEventListener('click', function () {
+      if (S.group === g.id) { toggle('story'); return; }
+      S.group = g.id; S.eventId = null; S.phase = 0; S.rank = null;
+      delete open.mech; P.mech.root.hidden = true;
+      render();
+    });
+    host.appendChild(b);
+  });
+}
+/* ── 档 2 · 传播图 ──────────────────────────────────────────────────
+   「传播源 → 途经 → 受影响」。中间那栏是 event.path 拆出来的链路步骤，
+   这条链是事件自己写的，不是我们按范围反推的——反推只答得出「打到了谁」，
+   答不出「怎么传的」。 */
+function viewFlow() {
+  var ev = curEvent();
+  var sh = stageShell(ev.title, ev.time + ' · ' + ev.dimension,
+    '<b>结论</b> · ' + esc(ev.conclusion));
+  var flow = el('div', 'flow');
+
+  function col(kind, title, list, badgeCls) {
+    var c = el('div', 'fcol');
+    var h = el('div', 'fcol__h');
+    var b = el('span', 'fcol__badge ' + badgeCls, title); h.appendChild(b);
+    h.appendChild(el('span', 'fcol__n', list.length + ' 个对象'));
+    c.appendChild(h);
+    var box = el('div', 'fcol__list');
+    if (!list.length) {
+      var em = el('div', 'ocard'); em.style.cursor = 'default';
+      em.appendChild(el('div', 'ocard__d', '这一侧本事件没有列出对象。'));
+      box.appendChild(em);
+    }
+    list.forEach(function (o) {
+      var card = el('button', 'ocard ocard--' + kind);
+      card.type = 'button';
+      var t = el('div', 'ocard__t');
+      t.appendChild(el('span', 'ocard__k', o.kind));
+      t.appendChild(el('span', 'ocard__n', o.name));
+      card.appendChild(t);
+      card.appendChild(el('div', 'ocard__d', o.desc));
+      card.addEventListener('click', function () {
+        if (!o.go) return;
+        /* 「往这个对象里走」= 在画布上把承载它的那一格展开出来。
+           rank 类对象进单卡解剖；别的暂时只把主视图的高亮换过去
+           （pushSelection 在 render 里统一推）。 */
+        if (o.go.rank != null) { selectRank(o.go.rank); return; }
+        if (o.go.stage != null) { selectRank(TOPO.rank(o.go.stage, 0, 0)); return; }
+        if (ev.mechanism) { S.phase = ev.mechanism.phases.length - 1; expand('mech', true); }
+      });
+      bindTip(card, o.go ? '点一下在画布上展开这个对象' : '本事件在这一侧列出的对象');
+      box.appendChild(card);
+    });
+    c.appendChild(box);
+    return c;
+  }
+
+  flow.appendChild(col('o', '传播源', expandScope(ev.origin, ev), 'fcol__badge--o'));
+
+  var mid = el('div', 'fmid');
+  var k = el('div', 'k fmid__k', '途经 · ' + esc(ev.path.split('→').length) + ' 步'); mid.appendChild(k);
+  ev.path.split('→').map(function (s) { return s.trim(); }).forEach(function (s, i, a) {
+    var st = el('div', 'fstep');
+    var n = el('b', null, String(i + 1)); st.appendChild(n);
+    st.appendChild(el('span', null, s));
+    mid.appendChild(st);
+    if (i < a.length - 1) {
+      var ar = svgEl('svg', { class: 'farrow', width: 16, height: 15, viewBox: '0 0 16 15' });
+      ar.appendChild(svgEl('path', { d: 'M8 1v12M3.5 9 8 13.6 12.5 9', fill: 'none',
+        stroke: 'currentColor', 'stroke-width': '1.8', 'stroke-linecap': 'round', 'stroke-linejoin': 'round' }));
+      mid.appendChild(ar);
+    }
+  });
+  var via = expandScope(ev.propagation, ev);
+  if (via.length) {
+    mid.appendChild(el('div', 'k fmid__k', '途经范围'));
+    var chips = el('div', 'chips'); chips.style.justifyContent = 'center';
+    via.forEach(function (o) { chips.appendChild(el('span', 'chip', o.name)); });
+    mid.appendChild(chips);
+  }
+  if (ev.mechanism) {
+    var mb = el('button', 'btn btn--sm');
+    mb.type = 'button';
+    mb.style.margin = '4px auto 0';
+    mb.textContent = '看机制 · ' + ev.mechanism.name + ' ▸';
+    bindTip(mb, '范围图答「打到了谁」，机制图答「凭什么传过去」——后者要让时间跑起来才成立');
+    mb.addEventListener('click', function () { S.phase = 0; expand('mech', true); });
+    mid.appendChild(mb);
+  }
+  if (ev.lineage) {
+    var lb = el('button', 'btn btn--sm');
+    lb.type = 'button';
+    lb.style.margin = '4px auto 0';
+    lb.textContent = '计算血缘 ▸';
+    bindTip(lb, '报错点在 Kernel 层，能改的东西在模型语义层——中间隔着三道转换，\n名字每过一道就换一次。这一格把那条链摆出来。');
+    lb.addEventListener('click', function () { expand('lineage', true); });
+    mid.appendChild(lb);
+  }
+  flow.appendChild(mid);
+
+  flow.appendChild(col('v', '受影响', expandScope(ev.victim, ev), 'fcol__badge--v'));
+  sh.canvas.appendChild(flow);
+  sh.canvas.style.overflow = 'hidden';
+  setLinked(['north', 'west', 'east', 'sedge']);
+}
+
+/* ── 档 3 · 机制舞台 ────────────────────────────────────────────────
+   一个事件一张按相位推进的机制图。为什么值得单开一档：范围图（档 2）
+   画得出「63 张卡受影响」，画不出「它们在等、等了多久、凭什么等」——
+   后者只有让时间跑起来才成立。五种 kind 各自一套自绘 SVG，没有共用
+   一张「通用示意图」：五条机制本来就不是同一件事。 */
+var MECH = {};
+function T(x, y, s, o) {
+  o = o || {};
+  var t = svgEl('text', { x: x, y: y, fill: o.fill || 'var(--foreground-secondary)',
+    'font-size': o.size || 11, 'font-weight': o.w || 500,
+    'font-family': o.mono ? 'var(--font-mono)' : 'var(--font-sans)',
+    'text-anchor': o.anchor || 'start' });
+  t.textContent = s; return t;
+}
+
+/* ① 路由塌缩：同一张扇出图的四个状态。前两相是健康态，正好当后两相的对照。 */
+MECH['router-collapse'] = function (svg, ph, W, H) {
+  var gx = 40, gy = H / 2, gw = 150, gh = 76;
+  svg.appendChild(svgEl('rect', { x: gx, y: gy - gh / 2, width: gw, height: gh, rx: 9,
+    fill: 'var(--surface-2)', stroke: ph >= 1 ? 'var(--danger)' : 'var(--border-strong)',
+    'stroke-width': ph >= 1 ? 2 : 1.2 }));
+  svg.appendChild(T(gx + gw / 2, gy - 8, 'Layer 38 Router', { anchor: 'middle', w: 700, size: 13, fill: 'var(--foreground)' }));
+  svg.appendChild(T(gx + gw / 2, gy + 10, 'Top-2 gate · 256 专家', { anchor: 'middle', size: 11 }));
+  var logit = ph === 0 ? 'max(logits) 12.4' : 'max(logits) 1846';
+  svg.appendChild(T(gx + gw / 2, gy + 28, logit, { anchor: 'middle', size: 11, mono: true,
+    fill: ph >= 1 ? 'var(--danger)' : 'var(--foreground-muted)', w: 700 }));
+
+  /* 256 个专家：32 × 8 的点阵，E193 落在第 6 行第 2 列（193 = 6×32 + 1） */
+  var ox = 420, oy = 42, dx = 15, dy = 30, R = 4.6;
+  var HOT = 193;
+  for (var i = 0; i < 256; i++) {
+    var cx = ox + (i % 32) * dx, cy = oy + ((i / 32) | 0) * dy;
+    var hot = i === HOT, dead = ph >= 3 && !hot;
+    var c = svgEl('circle', { cx: cx, cy: cy, r: hot && ph >= 3 ? 9 : R,
+      fill: hot && ph >= 2 ? 'var(--danger)' : (dead ? 'var(--cell-base)' : 'var(--cell-mid)'),
+      opacity: dead ? 0.55 : 1 });
+    if (hot) c.setAttribute('data-tip', 'Expert 193 —— 此刻吸收 98% token 的那一个');
+    svg.appendChild(c);
+  }
+  svg.appendChild(T(ox, oy - 16, '256 个路由专家（32 × 8）', { size: 11 }));
+
+  /* 扇出：健康态抽 24 条均匀的样，塌缩态只剩一条粗的 */
+  var sx = gx + gw, sy = gy;
+  if (ph <= 1) {
+    for (var j = 0; j < 24; j++) {
+      var k = Math.floor(j * 256 / 24);
+      var tx = ox + (k % 32) * dx, ty = oy + ((k / 32) | 0) * dy;
+      svg.appendChild(svgEl('path', { d: 'M' + sx + ' ' + sy + ' C' + (sx + 110) + ' ' + sy + ' ' + (tx - 110) + ' ' + ty + ' ' + tx + ' ' + ty,
+        fill: 'none', stroke: 'var(--primary)', 'stroke-width': 1.1, opacity: .34 }));
+    }
+    svg.appendChild(T((sx + ox) / 2, gy + 96, ph === 0 ? '扇出发散 · 每个专家 0.3%~0.6%' : '数值已越界，但路由结果还没变',
+      { anchor: 'middle', size: 11.5, fill: ph === 1 ? 'var(--danger)' : 'var(--foreground-muted)' }));
+  } else {
+    var hx = ox + (HOT % 32) * dx, hy = oy + ((HOT / 32) | 0) * dy;
+    svg.appendChild(svgEl('path', { d: 'M' + sx + ' ' + sy + ' C' + (sx + 130) + ' ' + sy + ' ' + (hx - 130) + ' ' + hy + ' ' + hx + ' ' + hy,
+      fill: 'none', stroke: 'var(--danger)', 'stroke-width': ph === 3 ? 9 : 5, opacity: .85, 'stroke-linecap': 'round' }));
+    svg.appendChild(T((sx + ox) / 2, gy + 96, ph === 2 ? 'exp(1846) = Inf → softmax 退化成 one-hot' : '98% token 全压 E193 · 其余 247 个 dead',
+      { anchor: 'middle', size: 12, fill: 'var(--danger)', w: 600 }));
+  }
+  if (ph === 1) {
+    svg.appendChild(svgEl('rect', { x: gx, y: gy + 44, width: 230, height: 26, rx: 6,
+      fill: 'color-mix(in srgb,var(--danger) 14%,transparent)', stroke: 'var(--danger)', 'stroke-width': 1 }));
+    svg.appendChild(T(gx + 10, gy + 61, 'FP8 E4M3 可表示上限 448 < 1846', { size: 11, mono: true, fill: 'var(--danger)', w: 600 }));
+  }
+};
+
+/* ② barrier 语义：64 条泳道向同一条竖线推进，一条停在半路。 */
+MECH['barrier-wait'] = function (svg, ph, W, H) {
+  var x0 = 74, x1 = W - 150, bar = x0 + (x1 - x0) * 0.8;
+  var n = 64, lh = (H - 46) / n;
+  var STUCK = 23;
+  var prog = [0.34, 0.62, 1, 1][ph];          // 正常卡推进到哪儿
+  var sprog = [0.34, 0.45, 0.45, 0.45][ph];   // 卡住那条
+  for (var i = 0; i < n; i++) {
+    var y = 22 + i * lh, stuck = i === STUCK;
+    svg.appendChild(svgEl('rect', { x: x0, y: y, width: bar - x0, height: Math.max(1.6, lh - 1.4),
+      rx: 1.5, fill: 'var(--cell-base)', opacity: .55 }));
+    var p = stuck ? sprog : prog;
+    /* 抖一点，免得 63 条齐刷刷像一块实心板 */
+    if (!stuck && ph < 2) p = Math.max(.1, p + ((i * 37) % 11 - 5) / 90);
+    svg.appendChild(svgEl('rect', { x: x0, y: y, width: (bar - x0) * Math.min(1, p), height: Math.max(1.6, lh - 1.4),
+      rx: 1.5, fill: stuck ? 'var(--danger)' : 'var(--primary)', opacity: stuck ? 1 : .72,
+      'data-tip': stuck ? 'EP rank 23（global rank 1559）· send=0 / recv=9832，凑不齐自己那一份'
+                        : ('EP rank ' + i + (ph >= 2 ? ' · 已到 barrier，空等中' : ' · 推进中')) }));
+    if (ph >= 2 && !stuck) {
+      svg.appendChild(svgEl('rect', { x: bar + 3, y: y, width: (x1 - bar) - 6, height: Math.max(1.6, lh - 1.4),
+        rx: 1.5, fill: 'var(--warning)', opacity: ph === 3 ? .5 : .28 }));
+    }
+  }
+  svg.appendChild(svgEl('line', { x1: bar, y1: 10, x2: bar, y2: H - 20,
+    stroke: 'var(--foreground)', 'stroke-width': 2, 'stroke-dasharray': '6 4', opacity: .75 }));
+  svg.appendChild(T(bar + 6, H - 6, 'all-to-all barrier（同步点）', { size: 11, w: 600, fill: 'var(--foreground)' }));
+  svg.appendChild(T(0, 14, 'EP 组 64 张卡', { size: 11, w: 600 }));
+  svg.appendChild(T(0, 28 + STUCK * lh + 4, 'r23', { size: 10, mono: true, fill: 'var(--danger)', w: 700 }));
+  var tags = ['各卡并行推进 · 互不等待', 'r23 停在半路，其余 63 张毫无察觉',
+              '63 张到齐转入空等 · 日志上什么都不报', '64 张同时抛 timeout · 累计空转 1890 卡·秒'];
+  svg.appendChild(T(x1 - 4, 14, tags[ph], { anchor: 'end', size: 11.5, w: 600,
+    fill: ph >= 2 ? 'var(--danger)' : 'var(--foreground-secondary)' }));
+};
+
+/* ③ 依赖链回压：一条可验算的乘法链 1 →×EP64→ 64 →×EDP8→ 512 →×PP4→ 2048。 */
+MECH['pp-cascade'] = function (svg, ph, W, H) {
+  var steps = [
+    { n: 1, t: '震中 · rank 1559', why: '唯一「自己出了问题」的对象', mul: '' },
+    { n: 64, t: 'EP 通信组', why: 'all-to-all 是同步集合操作', mul: '× EP 64' },
+    { n: 512, t: 'PP3 整段', why: '交不出激活，同 stage 其余 EDP 副本停在依赖上', mul: '× EDP 8' },
+    { n: 2048, t: '全网', why: 'PP 依赖成环，断一处就整条停', mul: '× PP 4' }
+  ];
+  var cx = W / 2, cy = H / 2 + 4, maxR = Math.min(W, H) / 2 - 26;
+  for (var i = steps.length - 1; i >= 0; i--) {
+    var on = i <= ph;
+    var r = maxR * (0.3 + 0.7 * (i / (steps.length - 1)));
+    svg.appendChild(svgEl('circle', { cx: cx, cy: cy, r: r,
+      fill: on ? (i === 0 ? 'var(--danger)' : 'color-mix(in srgb,var(--danger) ' + (20 - i * 4) + '%,transparent)') : 'transparent',
+      stroke: on ? 'var(--danger)' : 'var(--border-default)', 'stroke-width': on ? 1.8 : 1,
+      'stroke-dasharray': on ? '' : '4 4', opacity: on ? 1 : .55,
+      'data-tip': steps[i].t + ' · ' + steps[i].n + ' 卡\n' + steps[i].why }));
+    svg.appendChild(T(cx, cy - r + 16, steps[i].n + ' 卡', { anchor: 'middle', size: i === 0 ? 12 : 13,
+      mono: true, w: 700, fill: on ? (i === 0 ? '#fff' : 'var(--danger)') : 'var(--foreground-muted)' }));
+  }
+  /* 右侧把乘法链逐条列出来：图上是同心圆，读者要的是「凭什么是这几个数」 */
+  var lx = W - 268, ly = 26;
+  steps.forEach(function (s, i) {
+    var on = i <= ph;
+    var y = ly + i * 46;
+    svg.appendChild(svgEl('circle', { cx: lx + 7, cy: y - 4, r: 5,
+      fill: on ? 'var(--danger)' : 'var(--cell-base)' }));
+    svg.appendChild(T(lx + 22, y, s.n + ' 卡' + (s.mul ? '　' + s.mul : ''),
+      { size: 12.5, w: 700, mono: true, fill: on ? 'var(--foreground)' : 'var(--foreground-muted)' }));
+    svg.appendChild(T(lx + 22, y + 15, s.t + ' · ' + s.why, { size: 10.5,
+      fill: on ? 'var(--foreground-secondary)' : 'var(--foreground-muted)' }));
+    if (i) svg.appendChild(svgEl('line', { x1: lx + 7, y1: y - 40, x2: lx + 7, y2: y - 11,
+      stroke: on ? 'var(--danger)' : 'var(--border-default)', 'stroke-width': 1.4 }));
+  });
+  svg.appendChild(T(lx, H - 8, '99.95% 的卡只是被链条拖住的', { size: 11, w: 600, fill: 'var(--foreground-muted)' }));
+};
+
+/* ④ 存活区间叠加：上半是 12 条区间条，下半那条占用曲线就是它们的竖向计数。
+   「激活值占 36.2 GB」本身不解释任何东西，能解释的是生命周期——一层的激活
+   在前向产生、要等反向用到它才能释放，于是区间在前向末尾全部重叠。 */
+MECH['activation-lifetime'] = function (svg, ph, W, H) {
+  var SLOTS = 16, x0 = 54, x1 = W - 128, sw = (x1 - x0) / SLOTS;
+  var topY = 16, topH = H * 0.48, botY = topH + 44, botH = H - botY - 22;
+  var CAP = 64, RESID = 27.8;
+  var nLayer = ph === 0 ? 4 : 12;
+  var bars = [];
+  for (var i = 0; i < nLayer; i++) bars.push({ L: 34 + i, from: i, gb: (34 + i) === 38 ? 1.2 : [0.7,0.72,0.69,0.71,0,0.73,0.7,0.72,0.71,0.7,0.73,0.71][i] || 0.71 });
+  var bh = Math.max(5, (topH - 18) / 13 - 2.4);
+  bars.forEach(function (b, i) {
+    var y = topY + 16 + i * (bh + 2.4);
+    svg.appendChild(svgEl('rect', { x: x0 + b.from * sw, y: y, width: (12 - b.from) * sw, height: bh, rx: 2,
+      fill: b.L === 38 ? 'var(--danger)' : 'var(--warning)', opacity: b.L === 38 ? .92 : .62,
+      'data-tip': 'L' + b.L + ' 的激活 · ' + b.gb + ' GB\n前向第 ' + b.from + ' 槽产生，要活到反向用到它才释放' }));
+    if (ph >= 3) svg.appendChild(svgEl('rect', { x: x0 + 12 * sw, y: y, width: 3.2 * sw, height: bh, rx: 2,
+      fill: 'var(--warning)', opacity: .2, 'stroke-dasharray': '3 3', stroke: 'var(--warning)', 'stroke-width': .8 }));
+    svg.appendChild(T(x0 - 6, y + bh - 1, 'L' + b.L, { anchor: 'end', size: 9.5, mono: true }));
+  });
+  if (ph >= 2) {
+    var hy = topY + 16 + 12 * (bh + 2.4);
+    svg.appendChild(svgEl('rect', { x: x0 + 12 * sw, y: hy, width: sw * 1.1, height: bh, rx: 2,
+      fill: 'var(--danger)', 'data-tip': 'LM Head 的 logits · 27.2 GB\n存活极短，体量却最大——它落在 12 层激活都还没释放的那一刻' }));
+    svg.appendChild(T(x0 + 12 * sw + sw * 1.4, hy + bh - 1, 'LM Head logits 27.2 GB（存活极短、体量最大）',
+      { size: 10.5, fill: 'var(--danger)', w: 600 }));
+    svg.appendChild(T(x0 - 6, hy + bh - 1, 'Head', { anchor: 'end', size: 9.5, mono: true, fill: 'var(--danger)' }));
+  }
+  svg.appendChild(T(x0, topY + 8, '存活区间（前向产生 → 反向释放）', { size: 11, w: 600 }));
+
+  /* 下半：占用 = 常驻 27.8 + 当前在线的那些区间之和 */
+  var pts = [], lab = '';
+  for (var s = 0; s <= SLOTS; s++) {
+    var act = 0;
+    bars.forEach(function (b) { if (s > b.from && s <= (ph >= 3 ? 15.2 : 12)) act += b.gb; });
+    if (ph >= 2 && s >= 12 && s <= 13.2) act += 27.2;
+    pts.push({ s: s, v: Math.min(CAP, RESID + act) });
+  }
+  var vy = function (v) { return botY + botH - (v / CAP) * botH; };
+  var d = 'M' + x0 + ' ' + vy(0);
+  pts.forEach(function (p) { d += ' L' + (x0 + p.s * sw) + ' ' + vy(p.v); });
+  d += ' L' + (x0 + SLOTS * sw) + ' ' + vy(0) + ' Z';
+  svg.appendChild(svgEl('rect', { x: x0, y: botY, width: x1 - x0, height: botH, fill: 'var(--surface-2)', rx: 4 }));
+  svg.appendChild(svgEl('path', { d: d, fill: 'color-mix(in srgb,var(--primary) 26%,transparent)',
+    stroke: 'var(--primary)', 'stroke-width': 1.8 }));
+  svg.appendChild(svgEl('line', { x1: x0, y1: vy(RESID), x2: x1, y2: vy(RESID),
+    stroke: 'var(--foreground-muted)', 'stroke-width': 1, 'stroke-dasharray': '4 4' }));
+  svg.appendChild(T(x1 + 5, vy(RESID) + 4, '常驻 27.8', { size: 10, mono: true }));
+  svg.appendChild(svgEl('line', { x1: x0, y1: vy(CAP), x2: x1, y2: vy(CAP),
+    stroke: 'var(--danger)', 'stroke-width': 1.6 }));
+  svg.appendChild(T(x1 + 5, vy(CAP) + 4, '64 GB 顶', { size: 10, mono: true, fill: 'var(--danger)', w: 700 }));
+  var peak = Math.max.apply(null, pts.map(function (p) { return p.v; }));
+  svg.appendChild(T(x0 + 4, botY + 14, '显存占用 · 峰值 ' + peak.toFixed(1) + ' / 64 GB' +
+    (ph >= 3 ? '　安全余量 0 GB' : ''), { size: 11.5, w: 600,
+    fill: peak >= 63.9 ? 'var(--danger)' : 'var(--foreground-secondary)' }));
+  svg.appendChild(T(x0, H - 4, '横轴：前向的逐层槽位 →', { size: 10, fill: 'var(--foreground-muted)' }));
+};
+
+/* ⑤ 碎片：把 64 GB 摊回真实地址空间才看得见「为什么放不下」。
+   空闲 3.9 > 申请 0.5，可申请照样失败——决定成败的是最大连续块。 */
+MECH['fragmented-oom'] = function (svg, ph, W, H) {
+  var ROWS = 4, GBROW = 16, x0 = 46, x1 = W - 176, rw = x1 - x0;
+  var pxGB = rw / GBROW, gap = 22;
+  var rh = Math.max(24, Math.min(56, (H - 96 - (ROWS - 1) * gap) / ROWS));
+  var rowY = function (r) { return 52 + r * (rh + gap); };
+
+  /* 确定性地造一份布局：22 个洞（其中最大的 0.32），与 23 段已分配交替 */
+  var holes = [], rest = 3.58;
+  for (var i = 0; i < 21; i++) holes.push(0.08 + ((i * 7) % 13) / 13 * 0.18);
+  var sum = holes.reduce(function (a, b) { return a + b; }, 0);
+  holes = holes.map(function (h) { return h * rest / sum; });
+  var MAXHOLE = 0.32;
+  holes.splice(14, 0, MAXHOLE);                     // 最大的那个洞排在中段
+  var segs = [];
+  if (ph === 0) {
+    segs.push({ gb: 60.1, kind: 'alloc' });
+    segs.push({ gb: 3.9, kind: 'hole' });
+  } else {
+    var allocEach = 60.1 / (holes.length + 1);
+    for (var j = 0; j < holes.length; j++) {
+      segs.push({ gb: allocEach, kind: 'alloc' });
+      segs.push({ gb: holes[j], kind: 'hole', hi: j, max: holes[j] === MAXHOLE });
+    }
+    segs.push({ gb: allocEach, kind: 'alloc' });
+  }
+  /* 铺进 4 行 × 16 GB，跨行的段自动截断续画 */
+  var cur = 0, tried = ph >= 2 ? (ph === 2 ? 8 : holes.length) : 0;
+  var holePos = [], maxPos = null;
+  segs.forEach(function (sg) {
+    var left = sg.gb;
+    while (left > 1e-6) {
+      var r = Math.floor(cur / GBROW), off = cur - r * GBROW;
+      if (r >= ROWS) break;
+      var take = Math.min(left, GBROW - off);
+      var isMax = sg.max, isHole = sg.kind === 'hole';
+      var rect = svgEl('rect', { x: x0 + off * pxGB, y: rowY(r), width: Math.max(1, take * pxGB), height: rh, rx: 2,
+        fill: isHole ? (isMax && ph >= 3 ? 'var(--warning)' : 'var(--surface-3)') : 'var(--primary)',
+        opacity: isHole ? (isMax && ph >= 3 ? .95 : .9) : .55,
+        stroke: isMax && ph >= 2 ? 'var(--warning)' : 'none', 'stroke-width': isMax && ph >= 2 ? 1.4 : 0,
+        'data-tip': isHole ? ('空洞 ' + sg.gb.toFixed(2) + ' GB' + (isMax ? '（全场最大连续块）' : ''))
+                           : ('已分配块 ' + sg.gb.toFixed(2) + ' GB') });
+      svg.appendChild(rect);
+      if (isHole && sg.hi != null && holePos[sg.hi] == null) {
+        holePos[sg.hi] = { x: x0 + off * pxGB, w: take * pxGB, r: r };
+        if (isMax) maxPos = holePos[sg.hi];
+      }
+      if (isHole && ph >= 2 && sg.hi != null && sg.hi < tried && !isMax) {
+        svg.appendChild(T(x0 + (off + take / 2) * pxGB, rowY(r) + rh / 2 + 4, '✕',
+          { anchor: 'middle', size: 10, fill: 'var(--danger)', w: 700 }));
+      }
+      cur += take; left -= take;
+    }
+  });
+  for (var r2 = 0; r2 < ROWS; r2++) {
+    svg.appendChild(T(x0 - 6, rowY(r2) + rh / 2 + 4, (r2 * GBROW) + 'G', { anchor: 'end', size: 9.5, mono: true }));
+  }
+  /* 那块要放进去的 0.5 GB —— 骑在它此刻正在试的那个洞的正上方 */
+  if (ph >= 2) {
+    var reqW = 0.5 * pxGB;
+    var at = ph === 2 ? (holePos[7] || holePos[0]) : (maxPos || holePos[0]);
+    if (at) {
+      var rx = Math.max(x0, Math.min(x1 - reqW, at.x + at.w / 2 - reqW / 2));
+      var ry = rowY(at.r) - rh - 7;
+      svg.appendChild(svgEl('rect', { x: rx, y: ry, width: reqW, height: rh, rx: 2,
+        fill: 'color-mix(in srgb,var(--danger) 14%,transparent)',
+        stroke: 'var(--danger)', 'stroke-width': 2, 'stroke-dasharray': '5 3',
+        'data-tip': '这次申请的 0.5 GB 临时 buffer' }));
+      svg.appendChild(svgEl('line', { x1: rx + reqW / 2, y1: ry + rh, x2: at.x + at.w / 2, y2: rowY(at.r),
+        stroke: 'var(--danger)', 'stroke-width': 1.2, 'stroke-dasharray': '3 3' }));
+      /* 写在申请框正上方：写在旁边会压在蓝色已分配块上，红字压蓝底读不清 */
+      svg.appendChild(T(Math.max(x0 + 60, Math.min(x1 - 60, rx + reqW / 2)), ry - 7,
+        ph === 2 ? '申请 0.5 GB · 逐个洞试放' : '最大连续块 0.32 ＜ 申请 0.5 → 失败',
+        { size: 11.5, w: 700, fill: 'var(--danger)', anchor: 'middle' }));
+    }
+  }
+  /* 右栏三行读数：这张图要说的话全在这三个数的对比里 */
+  var lx = x1 + 22, ly = 46;
+  [['已分配', '60.1 GB', 'var(--primary)'],
+   ['空闲合计', '3.9 GB', 'var(--foreground)'],
+   ['最大连续块', ph === 0 ? '—' : '0.32 GB', ph >= 1 ? 'var(--warning)' : 'var(--foreground-muted)'],
+   ['本次申请', ph >= 2 ? '0.5 GB' : '—', ph >= 2 ? 'var(--danger)' : 'var(--foreground-muted)'],
+   ['碎片率', ph === 0 ? '—' : '83%', ph >= 1 ? 'var(--danger)' : 'var(--foreground-muted)']
+  ].forEach(function (row, i) {
+    svg.appendChild(T(lx, ly + i * 30, row[0], { size: 10.5, fill: 'var(--foreground-muted)' }));
+    svg.appendChild(T(lx, ly + i * 30 + 15, row[1], { size: 13, mono: true, w: 700, fill: row[2] }));
+  });
+  svg.appendChild(T(x0, rowY(ROWS - 1) + rh + 30, ph === 0 ? '只看这两个数，0.5 GB 的申请没有任何理由失败'
+    : '空闲 3.9 GB 散成 ' + holes.length + ' 个洞，夹在已分配块之间',
+    { size: 11, fill: ph === 0 ? 'var(--foreground-muted)' : 'var(--danger)', w: 600 }));
+};
+
+var playTimer = null;
+function playPhases() {
+  var ev = curEvent(); if (!ev || !ev.mechanism) return;
+  clearInterval(playTimer);
+  S.phase = 0; render();
+  playTimer = setInterval(function () {
+    if (S.phase >= ev.mechanism.phases.length - 1) { clearInterval(playTimer); return; }
+    S.phase++; render();
+  }, 2100);
+}
+
+/* ── 档 4 · 单卡解剖 ────────────────────────────────────────────────
+   主视图回答「是哪张卡」，这一格回答「这张卡里装了什么、此刻在干什么」。
+   容量分段取 p2-peak 那张 64 GB 构成图，不另编一套。 */
+var CAPSEG = [
+  { label: '权重', gb: 14.1, color: 'var(--primary)' },
+  { label: '优化器状态', gb: 9.8, color: 'color-mix(in srgb,var(--success) 76%,transparent)' },
+  { label: '激活值', gb: 36.2, color: 'color-mix(in srgb,var(--warning) 86%,transparent)' },
+  { label: '碎片空洞', gb: 3.9, color: 'var(--danger)', vd: 1 }
+];
+function viewRank() {
+  var r = S.rank, p = TOPO.decode(r), ev = curEvent(), tier = impactTier(r);
+  var range = TOPO.stageRange[p.stage];
+  var sh = stageShell('global rank ' + r,
+    'PP' + p.stage + ' / EDP' + p.edp + ' / EP' + p.ep + ' · ' + r + ' = ' + p.stage + '×512 + ' + p.edp + '×64 + ' + p.ep,
+    '<b>' + esc(TIERN[tier]) + '</b> · ' + (tier === 3
+      ? esc(ev ? ev.root : '这张卡是当前故事线的震中')
+      : tier === 2 ? '它自己没问题，是在 all-to-all barrier 上空等同组那张卡'
+      : tier === 1 ? '同一段流水线，被依赖链拖住' : '与当前故事线无关的那一批'));
+  var box = el('div', 'rk');
+
+  /* 左：64 GB 容量柱 */
+  var cap = el('div', 'cap');
+  var head = el('div', 'blk__h');
+  head.appendChild(el('span', 'blk__t', '单卡容量'));
+  head.appendChild(el('span', 'blk__s', '昇腾 910B · 64 GB HBM'));
+  cap.appendChild(head);
+  var cbox = el('div', 'cap__box');
+  CAPSEG.forEach(function (s) {
+    var seg = el('div', 'cap__seg');
+    seg.style.flex = s.gb + ' 0 0';
+    seg.style.background = s.color;
+    if (s.vd) seg.dataset.void = '1';
+    seg.textContent = s.gb >= 6 ? (s.label + ' ' + s.gb) : '';
+    bindTip(seg, s.label + ' · ' + s.gb + ' GB（占 ' + (s.gb / 64 * 100).toFixed(1) + '%）');
+    cbox.appendChild(seg);
+  });
+  cap.appendChild(cbox);
+  var cc = el('div', 'cap__cap');
+  cc.appendChild(el('span', null, '0'));
+  cc.appendChild(el('span', null, '64 GB · 余量 0'));
+  cap.appendChild(cc);
+  box.appendChild(cap);
+
+  /* 右：装了哪几层 / 持有哪几个专家 / 四条通信端口 */
+  var right = el('div', 'rk__right');
+
+  var b1 = el('div', 'blk');
+  var h1 = el('div', 'blk__h');
+  h1.appendChild(el('span', 'blk__t', '装了哪几层'));
+  h1.appendChild(el('span', 'blk__s', 'PP' + p.stage + ' = L' + range[0] + '~L' + range[1] + '（' + (range[1] - range[0] + 1) + ' 层）'));
+  b1.appendChild(h1);
+  var strip = el('div', 'layerstrip');
+  for (var L = range[0]; L <= range[1]; L++) {
+    var s2 = el('div', 'lseg', 'L' + L);
+    if (L === 38) { s2.dataset.hot = '1'; bindTip(s2, 'Layer 38 —— 两条故事线的病灶都在这一层'); }
+    strip.appendChild(s2);
+  }
+  b1.appendChild(strip);
+  right.appendChild(b1);
+
+  var b2 = el('div', 'blk');
+  var h2 = el('div', 'blk__h');
+  h2.appendChild(el('span', 'blk__t', '持有哪几个专家'));
+  h2.appendChild(el('span', 'blk__s', 'EP' + p.ep + ' · 256 ÷ 64 = 4 个 / 卡'));
+  b2.appendChild(h2);
+  var chips = el('div', 'chips');
+  [0, 1, 2, 3].forEach(function (i) {
+    var isHot = (p.ep === 23 && i === 1);
+    var c = el('span', 'chip' + (isHot ? ' chip--danger' : ''), isHot ? 'E193' : ('E· 第 ' + (i + 1) + ' 片'));
+    if (isHot) bindTip(c, 'E193 —— 路由塌缩后吸收 98% token 的那个专家（故事线给定它由 EP rank 23 持有）');
+    chips.appendChild(c);
+  });
+  b2.appendChild(chips);
+  right.appendChild(b2);
+
+  var b3 = el('div', 'blk');
+  var h3 = el('div', 'blk__h');
+  h3.appendChild(el('span', 'blk__t', '四条通信端口'));
+  h3.appendChild(el('span', 'blk__s', '此刻各自在做什么'));
+  b3.appendChild(h3);
+  var stall = tier >= 2;
+  [['TP · AllReduce', 22, 'var(--primary)', '组内 2 卡，正常'],
+   ['EP · All-to-All', stall ? 100 : 31, stall ? 'var(--danger)' : 'var(--primary)',
+     tier === 3 ? 'send=0 / recv=9832 · 阻塞 30 s' : (tier === 2 ? 'barrier 空等 30 s' : '正常 dispatch / combine')],
+   ['PP · P2P Send/Recv', stall ? 74 : 18, stall ? 'var(--warning)' : 'var(--primary)', stall ? '上游交不出激活' : '正常'],
+   ['DP · AllReduce', stall ? 0 : 14, 'var(--cell-mid)', stall ? '这一步没轮到' : '梯度同步']
+  ].forEach(function (row) {
+    var pr = el('div', 'portrow');
+    pr.appendChild(el('span', 'mrow__l', row[0]));
+    var bar = el('div', 'portbar');
+    var fill = el('i'); fill.style.width = row[1] + '%'; fill.style.background = row[2];
+    bar.appendChild(fill); pr.appendChild(bar);
+    var v = el('span', 'mrow__l', row[3]); v.style.fontSize = '10.5px'; v.style.textAlign = 'right';
+    pr.appendChild(v);
+    bindTip(pr, row[0] + ' · ' + row[3]);
+    b3.appendChild(pr);
+  });
+  right.appendChild(b3);
+
+  var go = el('button', 'btn btn--sm'); go.type = 'button';
+  go.style.alignSelf = 'flex-start';
+  go.textContent = '把这张卡放到时间轴上 ▸';
+  bindTip(go, '同一件事落在一个 step 的哪一刻——在画布上展开泳道那一格\n（嵌的是 /combo-workbench/swimlane.html 本体）');
+  go.addEventListener('click', function () { expand('swimlane', true); });
+  right.appendChild(go);
+
+  box.appendChild(right);
+  sh.canvas.appendChild(box);
+  sh.canvas.style.overflow = 'hidden';
+  setLinked(['west', 'east', 'south']);
+}
+
+/* ── 档 6 · 训推大盘 ────────────────────────────────────────────────
+   前五档讲的是**这次故障**；这一档把同一时刻摆回**训练框架真的在盯的那块表**：
+   pangu_sophon_pytorch 每个 log_interval 打印、写进 TensorBoard / Prometheus
+   的那十条「关键少数」，加上触发早停的五个钩子。
+   十格里凡是故事线没采到的一律写「—」——大盘上最容易骗人的正是「看起来每格都有数」。
+   点任一格跳到本线里这个指标最差的那个事件。 */
+function viewBoard() {
+  var g = curGroup(), ev = curEvent();
+  var b = ev ? (BOARD[ev.id] || { hooks: [], m: {} }) : { hooks: [], m: {} };
+  var sh = stageShell('训推大盘 · 关键少数',
+    ev ? (ev.time + ' · ' + ev.title) : (g.name + ' · 先在故事线上选一个事件'),
+    '<b>口径来自 pangu_sophon_pytorch</b> · 这十条是真的会被打印、画成曲线的那几个；'
+    + '值一律引用左边那条故事线的原文，没采到就写「—」，不替它编一个。');
+  var box = el('div', 'bd');
+
+  /* 先把「这一刻有读数的是哪几格」摆在栅格上方。
+     十格里通常只有两三格有值——不是页面没加载，是这一跑的这一件事只打印了那几条。
+     不说清楚的话，满屏的「—」会被读成「数据挂了」。 */
+  var live = TRAIN_METRICS.filter(function (mt) {
+    var c = b.m[mt.k]; return c && c.s !== 'na';
+  });
+  var firedHooks = (b.hooks || []).length;
+  var now = el('div', 'bd__now');
+  if (ev) {
+    now.appendChild(el('span', '', '这一刻'));
+    now.appendChild(el('span', 'lit', live.length + ' / ' + TRAIN_METRICS.length + ' 有读数'));
+    if (live.length) {
+      var nm = el('b', '', live.map(function (mt) { return mt.name; }).join('、'));
+      now.appendChild(nm);
+    }
+    if (firedHooks) now.appendChild(el('span', '', '· ' + firedHooks + ' 个钩子会触发'));
+    now.appendChild(el('span', 'dash', '其余 ' + (TRAIN_METRICS.length - live.length) + ' 格写「—」'));
+    now.appendChild(el('span', '', '＝这一事件没采到，不是 0，也不是没加载'));
+  } else {
+    now.appendChild(el('span', '', '先在告警里点一个事件——十格读数按那一刻的原文填，没采到的写「—」'));
+  }
+  box.appendChild(now);
+
+  var grid = el('div', 'bd__grid');
+  TRAIN_METRICS.forEach(function (mt) {
+    var cell = b.m[mt.k];
+    var st = cell ? cell.s : 'na';
+    var t = el('button', 'tile'); t.type = 'button';
+    t.style.setProperty('--tone', STATEC[st]);
+    if (!cell || st === 'na') t.dataset.na = '1'; else t.dataset.live = '1';
+    var n = el('div', 'tile__n');
+    n.appendChild(el('span', 'tile__name', mt.name));
+    n.appendChild(el('span', 'tile__want', mt.want));
+    t.appendChild(n);
+    t.appendChild(el('div', 'tile__v', cell ? cell.v : '—'));
+    if (cell && cell.why) t.appendChild(el('div', 'tile__why', cell.why));
+    t.appendChild(el('div', 'tile__src', mt.src));
+    bindTip(t, mt.name + (mt.unit || '') + '　期望 ' + mt.want + '\n' + mt.note
+      + '\n出处：' + mt.src + '\n\n此刻：' + (cell ? cell.v + '（' + STATEN[st] + '）' : '本事件未采到这一格')
+      + '\n点一下跳到本线里这一格最差的那个事件');
+    /* 跳到本线里这个指标最差的事件：bad > warn > ok，同级取先出现的那个 */
+    var rank = { bad: 3, warn: 2, ok: 1, na: 0 }, best = null, bestS = 0;
+    g.events.forEach(function (e2) {
+      var c2 = (BOARD[e2.id] || { m: {} }).m[mt.k];
+      var s2 = c2 ? rank[c2.s] || 0 : 0;
+      if (s2 > bestS) { bestS = s2; best = e2; }
+    });
+    if (best) t.addEventListener('click', function () { selectEvent(best.id, false); render(); });
+    else t.dataset.na = '1';
+    grid.appendChild(t);
+  });
+  box.appendChild(grid);
+
+  var hooks = el('div', 'bd__hooks');
+  TRAIN_HOOKS.forEach(function (hk) {
+    var on = b.hooks.indexOf(hk.k) >= 0;
+    var d = el('div', 'hook');
+    if (on) d.dataset.on = '1';
+    d.appendChild(el('div', 'hook__n', hk.name));
+    d.appendChild(el('div', 'hook__s', hk.src));
+    /* 一排小点 = 本线的事件序列，在哪个事件上会触发就点亮哪一颗。
+       一颗都不亮也是信息：这两条线里「数据生产速度告警」一次都没响过。 */
+    var dots = el('div', 'hook__dots');
+    var fired = 0;
+    g.events.forEach(function (e2) {
+      var f = ((BOARD[e2.id] || { hooks: [] }).hooks || []).indexOf(hk.k) >= 0;
+      if (f) fired++;
+      var i = el('i'); if (f) i.dataset.f = '1';
+      dots.appendChild(i);
+    });
+    d.appendChild(dots);
+    bindTip(d, hk.name + '\n' + hk.src + '\n动作：' + hk.act
+      + '\n\n本条故事线里' + (fired ? ('有 ' + fired + ' 个事件会触发它') : '一次都不触发'));
+    hooks.appendChild(d);
+  });
+  box.appendChild(hooks);
+
+  sh.canvas.appendChild(box);
+  sh.canvas.style.overflow = 'hidden';
+  setLinked(['north', 'west', 'east', 'sedge']);
+}
+
+/* ══════════════════════════════════════════════════════════════════════
+   计算血缘 —— 同一个算子在五层里各叫什么名字
+   这是观测台那一页的一项独门内容：一次故障报在 Kernel 层（比如
+   「HCCL AllToAll executor」），而人能改的东西在模型语义层（Router 的 Top-2 gate）。
+   中间隔着 FX 捕获、GE 融合、Runtime 下发三道转换，名字每过一道就换一次——
+   不把这条链摆出来，「报错点」和「震中」就永远对不上号。
+   下面三张表逐字取自原页的 LINEAGE_LOWERING / LINEAGE_STAGE_META：
+   只收本页 11 个事件真正用到的那两个 op（gate / comm）加一个兜底。
+   ══════════════════════════════════════════════════════════════════════ */
+var LIN_STAGES = [
+  { id:'model',   title:'模型语义',        system:'模型语义层，用于定位用户模型中的结构与算子意图' },
+  { id:'fx',      title:'FX Graph',        system:'PyTorch FX 图层，用于记录框架捕获后的算子级表达' },
+  { id:'ge',      title:'GE Graph',        system:'GE 图编译层，用于呈现昇腾侧 Lowering、融合与图优化结果' },
+  { id:'runtime', title:'Runtime',         system:'CANN 运行时层，用于展示任务下发、Stream 与 Rank 执行位置' },
+  { id:'kernel',  title:'Kernel / Executor', system:'Kernel 执行层，用于说明最终 Kernel、通信执行器与 Tiling 选择' }
+];
+/* lineage.bar 是结构条的 id，降级表按它的 op 查——本页只用到这两条 */
+var LIN_BAR_OP = { gate: 'gate', a2a_dispatch: 'comm' };
+var LIN_LOWERING = {
+  gate: { fx:['aten.linear.default', 'aten.softmax.int', 'aten.topk.default'],
+          ge:['MatMul', 'SoftmaxV2', 'TopK'],
+          runtime:['Router MatMul task', 'Router select task'],
+          kernel:['router_matmul_cube_v3', 'softmax_topk_vector_v4'] },
+  comm: { fx:['call_function.npu_all_to_all'], ge:['HcomAllToAll'],
+          runtime:['HCCL collective task'], kernel:['HCCL AllToAll executor'] }
+};
+var LIN_DEFAULT = { fx:['call_function.custom_op'], ge:['CustomOp'],
+                    runtime:['Custom operator task'], kernel:['custom_aicore_kernel'] };
+/* 两层之间发生了什么：节点数变少是融合、变多是拆分，其余按层各有定名 */
+function linTransition(stageId, a, b) {
+  if (stageId === 'model')   return a < b ? '捕获展开' : '捕获';
+  if (stageId === 'fx')      return a > b ? '融合' : (a < b ? '拆分' : 'Lowering');
+  if (stageId === 'ge')      return a > b ? '任务聚合' : '任务下发';
+  if (stageId === 'runtime') return a > b ? '执行器合并' : 'Kernel 选择';
+  return '';
+}
+function renderLineage() {
+  var ev = curEvent(), pane = P.lineage, b = pane.body;
+  b.innerHTML = '';
+  if (!ev || !ev.lineage) {
+    pane.title.textContent = '计算血缘';
+    pane.sub.textContent = '先在故事线上选一个事件';
+    b.innerHTML = '<p class="cnote">一次故障报在 Kernel 层，而人能改的东西在模型语义层，'
+      + '中间隔着 FX 捕获、GE 融合、Runtime 下发三道转换——名字每过一道就换一次。'
+      + '选一个事件，这里把那条链摆出来。</p>';
+    return;
+  }
+  var L = ev.lineage;
+  var low = LIN_LOWERING[LIN_BAR_OP[L.bar]] || LIN_DEFAULT;
+  pane.title.textContent = '计算血缘 · ' + L.operator;
+  pane.sub.textContent = [L.layer != null ? 'L' + L.layer : '',
+                          L.segment ? SEGNAME[L.segment] || L.segment : '',
+                          L.rank != null ? 'rank ' + L.rank : ''].filter(Boolean).join(' · ');
+  var nodesOf = function (sid) { return sid === 'model' ? [L.operator] : (low[sid] || []); };
+  var track = el('div', 'lin');
+  LIN_STAGES.forEach(function (st, i) {
+    var got = L.stages.indexOf(st.id) >= 0;
+    var col = el('div', 'lin__st');
+    col.dataset.got = got ? '1' : '0';
+    var hd = el('div', 'lin__hd');
+    hd.appendChild(el('span', 'lin__i', String(i + 1)));
+    hd.appendChild(el('span', 'lin__t', st.title));
+    col.appendChild(hd);
+    bindTip(col, st.title + '\n' + st.system
+      + (got ? '\n\n本事件在这一层采到了证据' : '\n\n本事件没有采到这一层——不是它不存在，是这一跑没留下这一层的记录'));
+    var list = el('div', 'lin__nodes');
+    nodesOf(st.id).forEach(function (n, idx) {
+      var node = el('div', 'lin__n', n);
+      if (L.originNode && L.originNode.stage === st.id && L.originNode.index === idx) {
+        node.dataset.role = 'origin';
+        node.appendChild(el('span', 'lin__tag', '传播源'));
+      } else if (L.victimStage === st.id && idx === 0 && !(L.originNode && L.originNode.stage === st.id)) {
+        node.dataset.role = 'victim';
+        node.appendChild(el('span', 'lin__tag', '受影响'));
+      }
+      list.appendChild(node);
+    });
+    if (!nodesOf(st.id).length) list.appendChild(el('div', 'lin__none', '—'));
+    col.appendChild(list);
+    track.appendChild(col);
+    if (i < LIN_STAGES.length - 1) {
+      var arr = el('div', 'lin__arrow');
+      arr.appendChild(el('span', null, '→'));
+      var lb = linTransition(st.id, nodesOf(st.id).length, nodesOf(LIN_STAGES[i + 1].id).length);
+      if (lb) arr.appendChild(el('span', 'lin__arrow-l', lb));
+      track.appendChild(arr);
+    }
+  });
+  b.appendChild(track);
+  var note = el('p', 'cnote');
+  note.innerHTML = '本事件采到的是 <b>' + L.stages.map(function (s) {
+      var m = LIN_STAGES.filter(function (x) { return x.id === s; })[0];
+      return m ? m.title : s; }).join(' / ')
+    + '</b> 这几层；灰掉的那几层不是不存在，是这一跑没留下它们的记录。'
+    + '降级口径逐字取自 config-relation-observer 的 <span class="mono">LINEAGE_LOWERING</span>。';
+  b.appendChild(note);
+}
+
+/* ══════════════════════════════════════════════════════════════════════
+   ⑫ 证据图 —— line / bars / stack / capacity 四种，取自事件自带的 chart
+   量纲差几个数量级的两条读数不并到一根轴上（原页的规矩），所以这里
+   一张图只画一种量，另一种进右边的读数区。
+   ══════════════════════════════════════════════════════════════════════ */
+var TONEC = {
+  danger: 'var(--danger)', warning: 'color-mix(in srgb,var(--warning) 86%,transparent)',
+  good: 'color-mix(in srgb,var(--success) 76%,transparent)', alt: 'var(--cell-mid)',
+  base: 'var(--primary)'
+};
+function tc(t) { return TONEC[t] || TONEC.base; }
+function renderChart(host, c) {
+  host.innerHTML = '';
+  if (!c) { host.appendChild(el('p', 'cnote', '这一级没有单独的证据图。')); return; }
+  var t = el('div'); t.style.cssText = 'font:600 12px/1.4 var(--font-sans);margin-bottom:8px';
+  t.textContent = c.title; host.appendChild(t);
+  var wrap = el('div', 'chartwrap');
+  var W = 380, H = 190;
+  var svg = svgEl('svg', { viewBox: '0 0 ' + W + ' ' + H, preserveAspectRatio: 'none' });
+
+  if (c.kind === 'line') {
+    var L = 44, R = 8, TP = 14, B = 26;
+    var vs = c.values, n = vs.length;
+    var hi = Math.max.apply(null, vs), lo = Math.min.apply(null, vs.concat([0]));
+    if (c.threshold) { hi = Math.max(hi, c.threshold.value); lo = Math.min(lo, c.threshold.value); }
+    var span = hi - lo || 1;
+    var X = function (i) { return L + i * (W - L - R) / (n - 1); };
+    var Y = function (v) { return TP + (1 - (v - lo) / span) * (H - TP - B); };
+    svg.appendChild(svgEl('rect', { x: L, y: TP, width: W - L - R, height: H - TP - B, fill: 'var(--surface-2)', rx: 3 }));
+    if (c.threshold) {
+      svg.appendChild(svgEl('line', { x1: L, y1: Y(c.threshold.value), x2: W - R, y2: Y(c.threshold.value),
+        stroke: 'var(--warning)', 'stroke-width': 1.3, 'stroke-dasharray': '5 4' }));
+      svg.appendChild(T(W - R, Y(c.threshold.value) - 4, c.threshold.label,
+        { anchor: 'end', size: 9, fill: 'color-mix(in srgb,var(--warning) 80%,var(--foreground))', w: 600 }));
+    }
+    var d = '', area = '';
+    vs.forEach(function (v, i) { d += (i ? ' L' : 'M') + X(i) + ' ' + Y(v); });
+    area = d + ' L' + X(n - 1) + ' ' + (H - B) + ' L' + X(0) + ' ' + (H - B) + ' Z';
+    svg.appendChild(svgEl('path', { d: area, fill: 'color-mix(in srgb,var(--primary) 18%,transparent)' }));
+    svg.appendChild(svgEl('path', { d: d, fill: 'none', stroke: 'var(--primary)', 'stroke-width': 2 }));
+    vs.forEach(function (v, i) {
+      var isMark = c.mark && c.mark.index === i;
+      svg.appendChild(svgEl('circle', { cx: X(i), cy: Y(v), r: isMark ? 4.4 : 2.6,
+        fill: isMark ? tc(c.mark.tone) : 'var(--primary)',
+        'data-tip': '第 ' + (i + 1) + ' 个采样点 · ' + v + (c.unit || '') }));
+    });
+    if (c.mark) svg.appendChild(T(Math.min(W - R, X(c.mark.index) + 6), Y(vs[c.mark.index]) - 8,
+      c.mark.label, { anchor: 'end', size: 9.5, w: 700, fill: tc(c.mark.tone) }));
+    svg.appendChild(T(L, H - 8, c.x[0], { size: 9, mono: true, fill: 'var(--foreground-muted)' }));
+    svg.appendChild(T(W - R, H - 8, c.x[c.x.length - 1], { anchor: 'end', size: 9, mono: true, fill: 'var(--foreground-muted)' }));
+    svg.appendChild(T(0, Y(hi) + 4, String(hi), { size: 9, mono: true, fill: 'var(--foreground-muted)' }));
+    svg.appendChild(T(0, Y(lo) + 4, String(lo), { size: 9, mono: true, fill: 'var(--foreground-muted)' }));
+
+  } else if (c.kind === 'bars') {
+    var items = c.items, L2 = 112, rh = Math.min(20, (H - 10) / items.length - 3);
+    var mx = Math.max.apply(null, items.map(function (i) { return i.value; }).concat(c.threshold ? [c.threshold.value] : []));
+    items.forEach(function (it, i) {
+      var y = 6 + i * ((H - 10) / items.length);
+      svg.appendChild(T(L2 - 6, y + rh / 2 + 3.5, it.label, { anchor: 'end', size: 10, fill: 'var(--foreground-secondary)' }));
+      svg.appendChild(svgEl('rect', { x: L2, y: y, width: W - L2 - 42, height: rh, rx: 2, fill: 'var(--surface-2)' }));
+      var w = Math.max(1.5, (it.value / (mx || 1)) * (W - L2 - 42));
+      svg.appendChild(svgEl('rect', { x: L2, y: y, width: w, height: rh, rx: 2, fill: tc(it.tone),
+        'data-tip': it.label + ' · ' + it.value + (c.unit || '') }));
+      svg.appendChild(T(W - 38, y + rh / 2 + 3.5, it.value + (c.unit || ''),
+        { size: 9.5, mono: true, w: 700, fill: it.tone ? tc(it.tone) : 'var(--foreground)' }));
+    });
+    if (c.threshold) {
+      var tx = L2 + (c.threshold.value / (mx || 1)) * (W - L2 - 42);
+      svg.appendChild(svgEl('line', { x1: tx, y1: 2, x2: tx, y2: H - 14,
+        stroke: 'var(--warning)', 'stroke-width': 1.3, 'stroke-dasharray': '5 4' }));
+      svg.appendChild(T(tx + 3, H - 4, c.threshold.label, { size: 9,
+        fill: 'color-mix(in srgb,var(--warning) 80%,var(--foreground))', w: 600 }));
+    }
+
+  } else if (c.kind === 'stack') {
+    var tot = c.items.reduce(function (a, b) { return a + b.value; }, 0);
+    var x = 8, bw = W - 16, by = 12, bh = 34;
+    c.items.forEach(function (it) {
+      var w = it.value / tot * bw;
+      svg.appendChild(svgEl('rect', { x: x, y: by, width: Math.max(1, w - 1), height: bh,
+        rx: 2, fill: tc(it.tone), 'data-tip': it.label + ' · ' + it.value + (c.unit || '') +
+          '（' + (it.value / tot * 100).toFixed(it.value / tot < .01 ? 2 : 1) + '%）' }));
+      x += w;
+    });
+    var ly = by + bh + 20;
+    c.items.forEach(function (it, i) {
+      svg.appendChild(svgEl('rect', { x: 8, y: ly + i * 22 - 8, width: 9, height: 9, rx: 2, fill: tc(it.tone) }));
+      svg.appendChild(T(23, ly + i * 22, it.label, { size: 10.5, fill: 'var(--foreground-secondary)' }));
+      svg.appendChild(T(W - 8, ly + i * 22, it.value + (c.unit || '') + '　' +
+        (it.value / tot * 100).toFixed(it.value / tot < .01 ? 2 : 1) + '%',
+        { anchor: 'end', size: 10, mono: true, w: 700, fill: it.tone ? tc(it.tone) : 'var(--foreground)' }));
+    });
+
+  } else if (c.kind === 'capacity') {
+    /* 等距容器而不是构成条：这张图的分母是一张卡的 64 GB，装满了就是 OOM，
+       平面色条表达不了「框满了」这件事。自底向上摞。 */
+    var cap = c.cap, bx = 96, bw2 = 92, byy = 8, bhh = H - 26;
+    svg.appendChild(svgEl('rect', { x: bx, y: byy, width: bw2, height: bhh, rx: 4,
+      fill: 'var(--surface-2)', stroke: 'var(--border-strong)', 'stroke-width': 1.5 }));
+    var acc = 0, labels = [];
+    c.items.forEach(function (it) {
+      var h = it.value / cap * bhh, y = byy + bhh - (acc + it.value) / cap * bhh;
+      var rect = svgEl('rect', { x: bx + 1.5, y: y, width: bw2 - 3, height: Math.max(1, h),
+        fill: tc(it.tone), opacity: it.void ? .5 : .9,
+        'data-tip': it.label + ' · ' + it.value + (c.unit || '') + '（占 ' + (it.value / cap * 100).toFixed(1) + '%）' });
+      svg.appendChild(rect);
+      if (it.void) {
+        var hatch = svgEl('rect', { x: bx + 1.5, y: y, width: bw2 - 3, height: Math.max(1, h),
+          fill: 'url(#vd)', opacity: .8 });
+        svg.appendChild(hatch);
+      }
+      labels.push({ y: y + h / 2, h: h, label: it.label,
+        v: it.value + (c.unit || ''), tone: it.tone });
+      acc += it.value;
+    });
+    /* 自顶向下推挤：上一条标签底下至少留 13px 再放下一条 */
+    labels.sort(function (a, b) { return a.y - b.y; });
+    var lastY = -99;
+    labels.forEach(function (L) {
+      var ly2 = Math.max(L.y, lastY + 13);
+      lastY = ly2;
+      if (Math.abs(ly2 - L.y) > 2.5) svg.appendChild(svgEl('line',
+        { x1: bx - 5, y1: L.y, x2: bx - 5, y2: ly2 - 3, stroke: 'var(--border-strong)', 'stroke-width': .9 }));
+      svg.appendChild(T(bx - 7, ly2 + 3.5, L.label, { anchor: 'end', size: 9.5,
+        fill: L.tone ? tc(L.tone) : 'var(--foreground-secondary)' }));
+      svg.appendChild(T(bx + bw2 + 7, ly2 + 3.5, L.v,
+        { size: 9.5, mono: true, w: 700, fill: L.tone ? tc(L.tone) : 'var(--foreground)' }));
+    });
+    var defs = svgEl('defs');
+    var pat = svgEl('pattern', { id: 'vd', width: 8, height: 8, patternUnits: 'userSpaceOnUse', patternTransform: 'rotate(45)' });
+    pat.appendChild(svgEl('rect', { width: 4, height: 8, fill: 'var(--surface-1)', opacity: .55 }));
+    defs.appendChild(pat); svg.appendChild(defs);
+    svg.appendChild(T(bx + bw2 / 2, H - 6, cap + ' GB 容量', { anchor: 'middle', size: 9.5, mono: true, fill: 'var(--foreground-muted)' }));
+  }
+  wrap.appendChild(svg);
+  host.appendChild(wrap);
+  if (c.note) host.appendChild(el('p', 'cnote', c.note));
+}
+
+
+/* ══════════════════════════════════════════════════════════════════════
+   ⑮ 主题桥 —— 认 ?theme=，也认 pto:state（与 combo-workbench 同一套约定，
+   这一页因此可以直接当成那块台面上的一格嵌进去）
+   ══════════════════════════════════════════════════════════════════════ */
+function setTheme(t) {
+  document.documentElement.dataset.theme = t;
+  document.body.dataset.theme = t;
+  pushTheme();                 /* 三格内嵌 pattern 跟着换，不重载 */
+  var b = document.getElementById('themeBtn');
+  b.title = t === 'dark' ? '切回浅色' : '切换到深色';
+  writeURL();
+}
+document.getElementById('themeBtn').addEventListener('click', function () {
+  setTheme(document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark');
+});
+window.addEventListener('message', function (e) {
+  var d = e.data;
+  if (!d || d.type !== 'pto:state') return;
+  if (d.theme === 'dark' || d.theme === 'light') setTheme(d.theme);
+  if (d.group && GROUPS.some(function (g) { return g.id === d.group; })) { S.group = d.group; S.eventId = null; render(); }
+  if (d.event) {
+    var hit = null;
+    GROUPS.forEach(function (g) { g.events.forEach(function (ev) { if (ev.id === d.event) { hit = g.id; } }); });
+    if (hit) { S.group = hit; S.rank = null; selectEvent(d.event, false); }
+  }
+  if (typeof d.rank === 'number' && d.rank >= 0 && d.rank < TOPO.world) selectRank(d.rank, false);
+});
+
+/* ══════════════════════════════════════════════════════════════════════
+   ⑯ 自动播放 —— 按故事线顺序走一遍，带机制图的事件在原地把相位播完
+   给的是「第一次打开这一页的人」一条不用动手的完整路径。
+   ══════════════════════════════════════════════════════════════════════ */
+var autoTimer = null;
+function autoStop() {
+  S.auto = false; clearInterval(autoTimer); clearInterval(playTimer);
+  document.getElementById('autoBtn').setAttribute('aria-pressed', 'false');
+  document.getElementById('autoLbl').textContent = '自动播放';
+}
+function autoStart() {
+  var g = curGroup();
+  S.auto = true;
+  document.getElementById('autoBtn').setAttribute('aria-pressed', 'true');
+  document.getElementById('autoLbl').textContent = '停止';
+  var i = 0;
+  var step = function () {
+    if (!S.auto) return;
+    var ev = g.events[i % g.events.length];
+    S.rank = null;
+    selectEvent(ev.id, false);
+    if (ev.mechanism) { S.phase = 0; expand('mech', false); playPhases(); }
+    else { collapse('mech'); }
+    i++;
+  };
+  step();
+  autoTimer = setInterval(step, 9000);
+}
+document.getElementById('autoBtn').addEventListener('click', function () {
+  if (S.auto) autoStop(); else autoStart();
+});
+/* 手动操作即停：自动播放与人抢方向盘是最讨厌的一种交互 */
+['pointerdown', 'wheel', 'keydown'].forEach(function (t) {
+  vp.addEventListener(t, function () { if (S.auto) autoStop(); }, { passive: true });
+});
+document.getElementById('lineSeg').addEventListener('click', function () { if (S.auto) autoStop(); });
+
+/* 键盘：← → 在事件间走，Esc 退一级，0 总览，F 回中心 */
+window.addEventListener('keydown', function (e) {
+  if (e.target && /input|textarea/i.test(e.target.tagName)) return;
+  var g = curGroup(), idx = g.events.map(function (x) { return x.id; }).indexOf(S.eventId);
+  if (e.key === 'ArrowRight' || e.key === 'ArrowLeft') {
+    e.preventDefault();
+    var n = idx + (e.key === 'ArrowRight' ? 1 : -1);
+    if (n < 0) n = g.events.length - 1;
+    if (n >= g.events.length) n = 0;
+    S.rank = null; selectEvent(g.events[n].id);
+  } else if (e.key === 'Escape') {
+    /* 没有「栈」可退了，收起就是退——所以先退下钻，再拆常备格：
+       ① 从传播里分出去的三格（单卡 / 机制 / 血缘）
+       ② 点事件时一起来的那两格（证据 + 传播）
+       ③ 常备格从最靠外的一圈往里收
+       原先这张表按纯几何排，最靠外的卡内解剖排在最前——结果刚点完一个事件
+       按 Esc，收掉的是画布最左边那一格，而不是刚刚点出来的下钻。 */
+    var order = ['rank', 'mech', 'lineage', 'evidence', 'event',
+                 'anatomy', 'dim', 'netgraph', 'board', 'swimlane', 'story'];
+    for (var i = 0; i < order.length; i++) {
+      if (open[order[i]]) { collapse(order[i]); return; }
+    }
+  } else if (e.key === '0') { fitAll(); }
+  else if (e.key === 'f' || e.key === 'F') { fitMain(); }
+});
+
+
+/* ══════════════════════════════════════════════════════════════════════
+   ⑰ 启动
+   ══════════════════════════════════════════════════════════════════════ */
+readURL();
+setTheme(document.documentElement.dataset.theme || 'light');
+/* 主视图先装：它是这一页的主语，别的格子等它就位再补高亮（settleFrame 会补） */
+loadFrame('main');
+Object.keys(open).forEach(function (id) {
+  P[id].root.hidden = false;
+  if (P[id].def.kind === 'frame') loadFrame(id);
+});
+buildAlertSeg();
+buildToolbars();
+wireLinkage();
+booting = false;
+render();
+/* 第一屏停在**主视图**，不是适配全部。
+   适配全部要把六格常备面全框进来，落在 26% 上——那一屏好看，但主视图小到读不出
+   一张卡，而并行拓扑恰恰是这一页的主语。所以开场就把镜头钉在它身上（约九成），
+   四周各格只露一条边当路标；要看全貌按「适配全部」或双击空白，一次点击的事。 */
+requestAnimationFrame(function () { fitMain(0); });
+window.addEventListener('resize', function () {
+  clearTimeout(window.__rz);
+  window.__rz = setTimeout(function () {
+    refit(0);
+  }, 160);
+});
+})();
+</script>
+</body>
+</html>

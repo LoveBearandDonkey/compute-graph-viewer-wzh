@@ -1,0 +1,826 @@
+name: Deploy to GitHub Pages
+
+# 部署策略：站点框架（工作台/驾驶舱）永远从 main 构建，两个 pattern 分支都不进框架，
+# 各自只贡献一个自包含的静态子目录，叠加在 main 构建产物之上一起发布：
+#   · claude/rubik-view-pattern-extraction-7pk0qt
+#       → /rubik/ 与 /patterns/rubik-cube-logical/（逻辑魔方 pattern 本体）
+#   · claude/logic-cube-pattern-spec-3oycmv
+#       → /rubik-spec/（逻辑魔方的设计 Pattern 规范页，自包含、不进框架）
+#   · claude/rank-view-network-analysis-htowfc
+#       → /patterns/rubik-cube-netobj/ 与 /rubik-netobj/（逻辑魔方 + 整网对象透镜）
+#       → /patterns/rank-card-expansion/ 与 /rank-card/（rank 卡 = 整网的并行化展开）
+#   · claude/parallel-topology-html-demo-ff10w3
+#       → /parallel-topology/（参照系 + PRD + Demo + 组合总图 + 驾驶舱）
+#       → /patterns/parallel-topology-demo/（Demo 的规范入口，自带依赖副本）
+#       → /patterns/net-slicing/（只交付「整网切分」那一屏，全屏画布、自包含）
+#       → /patterns/rank-topology-3d/（切完之后落到哪张卡：3D 卡阵那一屏）
+#       → /patterns/model-netgraph/（整网真图展开、按层深铺开的侧视那一屏）
+#         后两个与 net-slicing 同源同实现，区别只在默认落在哪一屏；各自带 pattern.json
+#         与 README.md（使用场景与细节约束）。
+#       → dist/launch.html 里插五张卡 + 顶栏两枚 pill（片段本体在该分支的
+#         public/parallel-topology/launch-card*.html，见下面那一步）
+#       这三个目录与三张卡，main 这份工作流已经全部自己产出——2026-08 之前
+#       main 只做了其中一部分（缺 /patterns/net-slicing/ 与它那张卡），于是每次
+#       推 main 都会把它打掉、必须手动补跑那个分支。现在推 main 一次即完整。
+#   · claude/topology-swimlane-card-layout-fdrgiq
+#       → /combo-workbench/（组合工作台：三格台面——训练语义 sidecar ｜ 并行拓扑
+#         pattern ｜ 微批次生命周期泳道；泳道那份是 compute-graph-viewer 的上游拷贝）
+#       → dist/launch.html 里插一张卡 + 顶栏一枚 pill（片段本体在该分支的
+#         public/combo-workbench/launch-card.html，见下面那一步）
+#       源码已经进 main（/public/combo-workbench/），下面的 "Checkout combo-workbench
+#       branch" 那一步现在从 main 自己取，不再指向这条分支——原来指向 fdrgiq 分支时，
+#       main 上那份 /public/combo-workbench/ 只是历史 PR 合并进来的镜像，谁改了 fdrgiq
+#       忘记合回 main，线上内容就悄悄落后于 main 且不报错（parallel-topology 当年也是
+#       同一类问题，「推 main」与「推分支」谁最后跑谁赢，链接内容随机跳）。分支本身还在，
+#       继续用于开发；只是发布这一步现在只认 main。
+#   · claude/compassionate-volta-09jc46
+#       → /incident-canvas/ 与 /patterns/incident-canvas/（故障故事线 · 无限画布：
+#         一个主视图坐在无限画布正中、五块卫星围着它联动，点主视图里的东西逐级下钻，
+#         下钻即在画布上再铺一站，退回原路留着虚线轨迹卡。故事线与全部数值取自
+#         compute-graph-viewer 的 config-relation-observer，形制与 token 取自本仓
+#         /combo-workbench/，训推指标口径取自 pangu_sophon_pytorch。整页自包含单文件、
+#         零外部依赖。）
+#       → dist/launch.html 里插一张卡 + 顶栏一枚 pill（片段本体在该分支的
+#         public/incident-canvas/launch-card.html，见下面那一步）
+#       源码已经进 main（/public/incident-canvas/），下面的 "Checkout incident-canvas
+#       branch" 那一步现在从 main 自己取，不再指向这条分支——与 combo-workbench /
+#       parallel-topology 当年的迁法一样：分支本身还在，继续用于开发；只是发布这一步
+#       现在只认 main，避免「推 main」与「推分支」谁最后跑谁赢、线上内容悄悄落后的老问题。
+#   · Cinnnnnnndy/pto-design-system @ claude/rank-deck-intersection-payload（跨仓库）
+#       → /parallel-topology/atlas.html（组合总图：哪个问题谁来答；深链带住配置与选中卡）
+#       → /pto-ds/（纠正版 rank-deck + 训练语义 sidecar；Rank 装的是层段×TP片×EP桶的交集）
+# push 任一分支即刷新它自己的目录。
+#
+# 为什么整网对象那版单独占一条路径、而不是覆盖 /patterns/rubik-cube-logical/：
+# 那条链接已经发出去了，且由 rubik-view-pattern-extraction 分支持有——两个分支
+# 各自的 workflow 都写同一个目录的话，谁最后跑谁赢，已发出的链接内容会随机变。
+# 所以新能力走新 id（rubik-cube-netobj，契约里用 variantOf 标明它是谁的变体），
+# 老链接保持指向老分支那一版，互不相干。
+# 注意：Pages 每次部署**整体替换**站点。main 这份工作流叠加**全部**分支的目录，所以
+# 从 main 发布是安全的、不会打掉谁；但各 pattern 分支自己的 workflow 只叠加自己那份，
+# 所以某个分支一发布，其它分支的目录会暂时消失——重跑受影响分支的 workflow，或者干脆
+# 重跑 main（一次补齐所有目录）即可找回。新增一条分支目录时，请同时补到这份文件里，
+# 否则它会在下一次 main 发布时被抹掉（2026-07-30 的 /parallel-topology/ 404 就是这样来的）。
+# 另注意：deploy 这一步走 github-pages environment，**只有被该 environment 允许的
+# 分支才能部署**。新分支第一次跑会在 build 成功之后、deploy 秒失败且没有日志——
+# 那不是构建有问题，是分支没在允许列表里。到
+# Settings → Environments → github-pages → Deployment branches and tags
+# 把分支名加进去，再重跑本次 run 即可。
+# 发布口子只留 main 一处。以前每条 pattern 分支都能触发这份工作流，而它每次都是
+# **整站替换**——三条分支交替推送时，谁最后跑谁赢，已经发出去的链接内容会在几版
+# 之间来回跳（实机一小时内发生三次）。各分支的内容仍然照常进站：下面每一步都按
+# ref 去对应分支取源，推 main 一次即可把所有人的最新版一起发出去。
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+# Allow the workflow to publish to Pages.
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# Only one concurrent deployment; don't cancel an in-progress one.
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout main (site framework)
+        uses: actions/checkout@v4
+        with:
+          ref: main
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build
+        run: npm run build
+
+      - name: Checkout rubik pattern branch
+        uses: actions/checkout@v4
+        with:
+          ref: claude/rubik-view-pattern-extraction-7pk0qt
+          path: rubik-src
+
+      - name: Overlay rubik pattern at /rubik/ and /patterns/rubik-cube-logical/
+        # 两个入口，同一份内容：
+        #  · /rubik/                       —— 老链接，保持可用（自包含子目录）
+        #  · /patterns/rubik-cube-logical/ —— 设计系统 pattern 库的规范位置：
+        #    pattern.html 与 pattern.css / pattern.js / pattern.json 同级，
+        #    别人可以直接 <script src=".../pattern.js"> 复用，或读 pattern.json 契约。
+        # 资源链接统一打上 ?v=<短 SHA>：分享出去的链接不会吃到旧缓存。
+        run: |
+          SHA=$(git -C rubik-src rev-parse --short HEAD)
+          SRC=rubik-src/public/vendor/rubik-cube
+
+          # ① 老入口 /rubik/（结构不变）
+          mkdir -p dist/rubik/vendor/rubik-cube
+          sed -e "s#\(\./vendor/[a-z0-9./-]*\.\(js\|css\|svg\)\)#\1?v=$SHA#g" \
+              rubik-src/public/rubik-pattern.html > dist/rubik/index.html
+          cp dist/vendor/three-r128.min.js dist/rubik/vendor/three-r128.min.js
+          cp -r dist/vendor/pto-tokens dist/rubik/vendor/pto-tokens
+          cp -r rubik-src/public/vendor/pto-design-system dist/rubik/vendor/pto-design-system
+          cp $SRC/pattern.js $SRC/pattern.css $SRC/pattern.json $SRC/favicon.svg dist/rubik/vendor/rubik-cube/
+
+          # ② 规范入口 /patterns/rubik-cube-logical/（pattern.* 同级）
+          PAT=dist/patterns/rubik-cube-logical
+          mkdir -p $PAT/vendor
+          sed -e 's#\./vendor/rubik-cube/#./#g' \
+              -e "s#\(\./\(pattern\.\(js\|css\)\|favicon\.svg\|vendor/[a-z0-9./-]*\.\(js\|css\)\)\)#\1?v=$SHA#g" \
+              rubik-src/public/rubik-pattern.html > $PAT/pattern.html
+          cp $SRC/pattern.js $SRC/pattern.css $SRC/pattern.json $SRC/favicon.svg $PAT/
+          cp dist/vendor/three-r128.min.js $PAT/vendor/three-r128.min.js
+          cp -r rubik-src/public/vendor/pto-design-system $PAT/vendor/pto-design-system
+          # 版本落到契约里，方便对方核对拿到的是哪一版
+          node -e "const f='$PAT/pattern.json',j=require('fs');const o=JSON.parse(j.readFileSync(f,'utf8'));o.version='$SHA';j.writeFileSync(f,JSON.stringify(o,null,2)+'\n')"
+          echo "published: /patterns/rubik-cube-logical/pattern.html?v=$SHA"
+
+      - name: Checkout spec branch
+        uses: actions/checkout@v4
+        with:
+          ref: claude/logic-cube-pattern-spec-3oycmv
+          path: spec-src
+
+      - name: Overlay pattern spec at /rubik-spec/
+        # 规范页自己一条链接，不并进 /patterns/ 那套目录：那里放的是「可复用的
+        # pattern 本体」（pattern.html/css/js/json 同级），规范页是讲这套 pattern
+        # 怎么用的文档，混在一起会让 <script src=".../pattern.js"> 该引哪个变得含糊。
+        # 目录自包含（自带 vendor 依赖），页面里指向 pattern 的那几条链接改写到
+        # /patterns/rubik-cube-logical/ 的规范位置——文档告诉读者去哪儿取，
+        # 取的就是别人能直接引用的那一份。
+        # 资源链接统一打上 ?v=<短 SHA>（代码示例那几行含 &lt; 的不动）。
+        run: |
+          SHA=$(git -C spec-src rev-parse --short HEAD)
+          SPEC=dist/rubik-spec
+          mkdir -p $SPEC/vendor/rubik-cube
+          cp spec-src/public/vendor/three-r128.min.js $SPEC/vendor/three-r128.min.js
+          cp -r spec-src/public/vendor/pto-design-system $SPEC/vendor/pto-design-system
+          cp spec-src/public/vendor/rubik-cube/pattern.js \
+             spec-src/public/vendor/rubik-cube/pattern.css \
+             spec-src/public/vendor/rubik-cube/pattern.json \
+             spec-src/public/vendor/rubik-cube/favicon.svg \
+             $SPEC/vendor/rubik-cube/
+          sed -e 's#class="res-card" href="\./vendor/rubik-cube/#class="res-card" href="../patterns/rubik-cube-logical/#g' \
+              -e 's#class="res-card" href="\./vendor/pto-design-system/#class="res-card" href="../patterns/rubik-cube-logical/vendor/pto-design-system/#g' \
+              -e 's#href="\./rubik-pattern\.html"#href="../patterns/rubik-cube-logical/pattern.html"#g' \
+              -e '/&lt;/!s#\(\(src\|href\)="\)\(\.\./patterns/[A-Za-z0-9._/-]*\|\./vendor/[A-Za-z0-9._/-]*\)\(\.\(js\|css\|svg\|json\|html\)\)"#\1\3\4?v='"$SHA"'"#g' \
+              spec-src/public/rubik-pattern-spec.html > $SPEC/index.html
+          echo "published: /rubik-spec/?v=$SHA"
+
+      - name: Checkout netobj branch
+        uses: actions/checkout@v4
+        with:
+          ref: claude/rank-view-network-analysis-htowfc
+          path: netobj-src
+
+      - name: Overlay 整网对象透镜版 at /patterns/rubik-cube-netobj/ 与 /rubik-netobj/
+        # 逻辑魔方 + 整网对象透镜（选一个整网对象 → 承载它的卡按「持有第几片」着色，
+        # 切到该对象的主屏后分片 snap 成整块/整墙）。自成一条链接的理由见文件头注释。
+        # 两个入口同一份内容：
+        #  · /patterns/rubik-cube-netobj/ —— 规范位置，pattern.html 与 pattern.css /
+        #    pattern.js / pattern.json 同级，别人可直接 <script src> 复用或先读契约；
+        #  · /rubik-netobj/               —— 短链接，好念、好发。
+        # 目录自包含（自带 three 与设计系统快照），不依赖 main 构建产物里有什么。
+        run: |
+          set -euo pipefail
+          SHA=$(git -C netobj-src rev-parse --short HEAD)
+          SRC=netobj-src/public/vendor/rubik-cube
+
+          # ① 规范入口：pattern.* 同级（把 ./vendor/rubik-cube/ 拍平成 ./）
+          PAT=dist/patterns/rubik-cube-netobj
+          mkdir -p $PAT/vendor
+          sed -e 's#\./vendor/rubik-cube/#./#g' \
+              -e "s#\(\./\(pattern\.\(js\|css\)\|favicon\.svg\|vendor/[a-z0-9./-]*\.\(js\|css\)\)\)#\1?v=$SHA#g" \
+              netobj-src/public/rubik-pattern.html > $PAT/pattern.html
+          cp $SRC/pattern.js $SRC/pattern.css $SRC/pattern.json $SRC/favicon.svg $PAT/
+          cp netobj-src/public/vendor/three-r128.min.js $PAT/vendor/three-r128.min.js
+          cp -r netobj-src/public/vendor/pto-design-system $PAT/vendor/pto-design-system
+          # 契约落地：version 供对账；id 与所在路径一致（否则读契约的人拿到的 id
+          # 指向另一条链接）；variantOf 保留血缘，说明它是 rubik-cube-logical 的变体。
+          node -e "
+            const fs=require('fs'), f='$PAT/pattern.json';
+            const o=JSON.parse(fs.readFileSync(f,'utf8'));
+            o.variantOf=o.id; o.id='rubik-cube-netobj'; o.version='$SHA';
+            o.name=(o.name||'')+' + 整网对象透镜';
+            fs.writeFileSync(f, JSON.stringify(o,null,2)+'\n');
+          "
+
+          # ② 短链接别名：同一份内容，保持 ./vendor/rubik-cube/ 结构
+          ALIAS=dist/rubik-netobj
+          mkdir -p $ALIAS/vendor/rubik-cube
+          sed -e "s#\(\./vendor/[a-z0-9./-]*\.\(js\|css\|svg\)\)#\1?v=$SHA#g" \
+              netobj-src/public/rubik-pattern.html > $ALIAS/index.html
+          cp $SRC/pattern.js $SRC/pattern.css $SRC/favicon.svg $ALIAS/vendor/rubik-cube/
+          cp $PAT/pattern.json $ALIAS/vendor/rubik-cube/pattern.json
+          cp netobj-src/public/vendor/three-r128.min.js $ALIAS/vendor/three-r128.min.js
+          cp -r netobj-src/public/vendor/pto-design-system $ALIAS/vendor/pto-design-system
+
+          echo "published: /patterns/rubik-cube-netobj/pattern.html?v=$SHA"
+          echo "published: /rubik-netobj/?v=$SHA"
+
+      - name: Overlay rank 卡（并行化展开）at /patterns/rank-card-expansion/ 与 /rank-card/
+        # rank 卡 = 整网图的**并行化展开**（共享布局 + 差分着色的 small multiples）。
+        # 与逻辑魔方是互补的两个 pattern，各自一条链接：魔方讲「谁和谁一组」，
+        # 这张讲「一张卡里的算子图相对逻辑整网既减了什么、又增了什么」。
+        # 依赖 model-graphviz 的预定位图数据（graph.js 里的 window.OPENPANGU_GRAPH）。
+        run: |
+          set -euo pipefail
+          SHA=$(git -C netobj-src rev-parse --short HEAD)
+          SRC=netobj-src/public/vendor/net-sharding
+
+          PAT=dist/patterns/rank-card-expansion
+          mkdir -p $PAT/vendor/model-graphviz
+          sed -e 's#\./vendor/net-sharding/#./#g' \
+              -e "s#\(\./\(pattern\.\(js\|css\)\|favicon\.svg\|vendor/[a-z0-9./-]*\.\(js\|css\)\)\)#\1?v=$SHA#g" \
+              netobj-src/public/net-sharding-pattern.html > $PAT/pattern.html
+          cp $SRC/pattern.js $SRC/pattern.css $SRC/pattern.json $SRC/favicon.svg $PAT/
+          cp netobj-src/public/vendor/model-graphviz/graph.js \
+             netobj-src/public/vendor/model-graphviz/pattern.js \
+             netobj-src/public/vendor/model-graphviz/pattern.css $PAT/vendor/model-graphviz/
+          cp -r netobj-src/public/vendor/pto-design-system $PAT/vendor/pto-design-system
+          node -e "
+            const fs=require('fs'), f='$PAT/pattern.json';
+            const o=JSON.parse(fs.readFileSync(f,'utf8'));
+            o.id='rank-card-expansion'; o.version='$SHA';
+            fs.writeFileSync(f, JSON.stringify(o,null,2)+'\n');
+          "
+
+          ALIAS=dist/rank-card
+          mkdir -p $ALIAS/vendor/net-sharding
+          sed -e "s#\(\./vendor/[a-z0-9./-]*\.\(js\|css\|svg\)\)#\1?v=$SHA#g" \
+              netobj-src/public/net-sharding-pattern.html > $ALIAS/index.html
+          cp -r netobj-src/public/vendor/model-graphviz $ALIAS/vendor/model-graphviz
+          cp -r netobj-src/public/vendor/pto-design-system $ALIAS/vendor/pto-design-system
+          cp $SRC/pattern.js $SRC/pattern.css $SRC/favicon.svg $ALIAS/vendor/net-sharding/
+          cp $PAT/pattern.json $ALIAS/vendor/net-sharding/pattern.json
+
+          echo "published: /patterns/rank-card-expansion/pattern.html?v=$SHA"
+          echo "published: /rank-card/?v=$SHA"
+
+      - name: Checkout parallel-topology branch
+        uses: actions/checkout@v4
+        with:
+          # 源码已经进 main（/public/parallel-topology/ 与它的 vendor），所以从 main
+          # 自己取——原来指向 ff10w3 分支，于是「推 main」与「推 ff10w3」谁最后跑谁赢，
+          # 同一条 /patterns/net-slicing/ 链接的内容会随机在两版之间跳（实机反复发生）。
+          # 现在这套内容只有一个来源：main。
+          ref: main
+          path: ptopo-src
+
+      - name: Overlay 并行拓扑（参照系/PRD/Demo）at /parallel-topology/ 与 /patterns/parallel-topology-demo/
+        # 三页一套：concept-map、prd、demo（应用形态，单文件、CSS/JS 内联）。
+        # concept-map.html 自 2026-09 起只是一个**跳转桩**——参照系正本合并进了
+        # /parallel-reference/（原来两份副本并存、章节号还差一位）。桩必须继续发布：
+        # 这条路径已经发出去过（PRD、组合总图、demo 顶栏历史版本都链过它），删掉就是 404。
+        # 两个入口：
+        #  · /parallel-topology/            —— README 与站内一直写的目录路径，整套照搬；
+        #    demo 的设计系统链接是 ../vendor/pto-design-system/…，恰好落在 main 构建
+        #    产物已有的 /vendor/ 上，只补 ?v= 版本戳。
+        #  · /patterns/parallel-topology-demo/ —— 规范入口，pattern.html 与 pattern.json
+        #    同级、自带依赖副本；文档链接改指 /parallel-topology/ 那份（同一次发布同一版）。
+        run: |
+          set -euo pipefail
+          SHA=$(git -C ptopo-src rev-parse --short HEAD)
+          SRC=ptopo-src/public/parallel-topology
+
+          # ⓪ 本分支新引入的 vendor 依赖补进 dist/vendor/。
+          # demo 里写的是 ../vendor/…，落在 main 构建产物已有的 /vendor/ 上——
+          # 但 main 那份只有老几样，本分支新加的目录它没有，不补就是三个 404，
+          # sidecar 挂不上，正视/侧视会**静默**退回旧 SVG（页面不报错，最难查）。
+          for v in model-architecture-3d-deck model-architecture-training-sidecar; do
+            rm -rf dist/vendor/$v
+            mkdir -p dist/vendor/$v
+            cp -r ptopo-src/public/vendor/$v/. dist/vendor/$v/
+          done
+
+          # ① 目录入口 /parallel-topology/
+          DIR=dist/parallel-topology
+          mkdir -p $DIR
+          cp $SRC/index.html $SRC/concept-map.html $SRC/prd.html $SRC/prd.md $DIR/
+          # 逐页列举（不是 cp -r）——新增页面必须加到这一行，否则线上 404。
+          # demo 与 atlas 都引 ../vendor/… ，统一打 ?v= 版本戳。
+          # card-container 是「卡=容器」合并图的独立原型页（自包含，无 vendor 引用，
+          # sed 对它是空转）——确认满意后并入 demo 的 Rank 视图，页留作出处。
+          for page in demo atlas cockpit card-container; do
+            sed -e "s#\(\.\./vendor/[A-Za-z0-9./_-]*\.\(css\|js\)\)#\1?v=$SHA#g" \
+                $SRC/$page.html > $DIR/$page.html
+          done
+          node -e "
+            const fs=require('fs');
+            const o=JSON.parse(fs.readFileSync('$SRC/pattern.json','utf8'));
+            o.version='$SHA';
+            fs.writeFileSync('$DIR/pattern.json', JSON.stringify(o,null,2)+'\n');
+          "
+
+          # ② 规范入口 /patterns/parallel-topology-demo/（自包含）
+          PAT=dist/patterns/parallel-topology-demo
+          mkdir -p $PAT/vendor
+          # ../vendor/ 一律拍平成 ./vendor/：规范入口在 dist/patterns/<id>/ 下，
+          # ../vendor 指向的 dist/patterns/vendor/ 根本不存在——这份要自包含。
+          sed -e 's#\.\./vendor/#./vendor/#g' \
+              -e 's#href="\.\./favicon\.svg"#href="./favicon.svg"#g' \
+              -e 's#href="\./\(prd\|concept-map\|index\)\.html"#href="../../parallel-topology/\1.html"#g' \
+              -e 's#href="\.\./parallel-reference/"#href="../../parallel-reference/"#g' \
+              -e "s#\(\./vendor/[A-Za-z0-9./_-]*\.\(css\|js\)\)#\1?v=$SHA#g" \
+              $SRC/demo.html > $PAT/pattern.html
+          # demo.html 引到的 vendor 全套照搬。新增依赖必须加进这两行，否则线上 404。
+          # rubik-cube 与 three 是「关闭整网」时才 loadOnce 进来的，静态扫 <script> 看不见它们
+          # ——漏了不会在首屏报错，只在用户按下那颗开关时才 404，所以更要显式列上。
+          for v in pto-design-system pto-tokens model-graphviz net-sharding \
+                   model-architecture-3d-deck model-architecture-training-sidecar rubik-cube; do
+            cp -r ptopo-src/public/vendor/$v $PAT/vendor/$v
+          done
+          cp ptopo-src/public/vendor/three-r128.min.js $PAT/vendor/three-r128.min.js
+          cp ptopo-src/public/favicon.svg $PAT/favicon.svg
+          cp $DIR/pattern.json $PAT/pattern.json
+
+          # ③ 单视图 pattern /patterns/net-slicing/（全屏画布，自包含）
+          # 只交付「整网切分」这一屏：同一份实现，但默认落在 chain 视图、embed 形态
+          # （顶栏页脚全收），一条链接就是一张可转的图。三个 vendor 依赖比 ② 多不了，
+          # 直接把 ② 那份 vendor 硬链过来，省一次拷贝。
+          NS=dist/patterns/net-slicing
+          mkdir -p $NS
+          # 换页面标题那条不能写成通配的 <title>[^<]*</title>：demo.html 里这串
+          # 五个字不是唯一出现的地方——画布上几十处悬浮提示（PP 边界 Send/Recv、
+          # rank 门牌、层反查……）都是拿 JS 拼出一枚 <title>算子读数</title> 塞进
+          # SVG 元素，源码里逐条独立成行。sed 没有 g 标记时默认每行只替换第一处，
+          # 而这些行里除了那一对 <title>…</title> 再没有别的 < 字符，[^<]* 于是
+          # 从每一行自己的 <title> 一路吃到 </title>——把「点开看完整读数」那些
+          # 动态文本全部换成了这句写死的页面标题，成片提示语失效（2026-08 发现，
+          # 起因是这条 sed 本意只想改 <head> 里那一条）。
+          # 改成精确匹配 demo.html 源码里那一条的**原文**：那对 SVG 提示永远不会
+          # 拼出这五个字，天然不会误中；<head> 里的原文变了这条也会静默失手，
+          # 所以下面另加一道断言兜底。
+          sed -e 's#\.\./vendor/#./vendor/#g' \
+              -e 's#href="\.\./favicon\.svg"#href="./favicon.svg"#g' \
+              -e 's#href="\./\(prd\|concept-map\|index\)\.html"#href="../../parallel-topology/\1.html"#g' \
+              -e 's#href="\.\./parallel-reference/"#href="../../parallel-reference/"#g' \
+              -e "s#\(\./vendor/[A-Za-z0-9./_-]*\.\(css\|js\)\)#\1?v=$SHA#g" \
+              -e 's#<title>并行拓扑 · PRD Demo（应用形态）</title>#<title>并行拓扑 Pattern —— 从一张网到 world 张卡</title>#' \
+              $SRC/demo.html > $NS/pattern.html
+          # 断言只中了一处：中 0 处说明源码那句标题原文变了、这条 sed 没打中
+          # （<head> 里还留着旧标题）；中 ≥2 处说明又变回了会误伤悬浮提示的
+          # 通配写法。两种情况都不该让这一步悄悄过去。
+          TCOUNT=$(grep -c '并行拓扑 Pattern —— 从一张网到 world 张卡' $NS/pattern.html)
+          if [ "$TCOUNT" -ne 1 ]; then
+            echo "❌ 页面标题替换异常：命中 $TCOUNT 处（应为 1，只改 <head> 里那一条，画布上的悬浮提示不该被碰到）"
+            exit 1
+          fi
+          # 没带参数打开时也要落在这一屏：把默认值直接写进页面，而不是靠使用者补 query
+          node -e "
+            const fs=require('fs');
+            const f='$NS/pattern.html';
+            let h=fs.readFileSync(f,'utf8');
+            const inject=\"<script>(function(){var q=new URLSearchParams(location.search);\"
+              + \"if(!q.has('view'))q.set('view','chain');\"
+              + \"if(!q.has('embed'))q.set('embed','1');\"
+              + \"var t=location.pathname+'?'+q.toString()+location.hash;\"
+              + \"if(t!==location.pathname+location.search+location.hash)history.replaceState(null,'',t);\"
+              + \"})();</script>\";
+            h=h.replace('</head>', inject+'\\n</head>');
+            fs.writeFileSync(f,h);
+          "
+          cp -r $PAT/vendor $NS/vendor
+          cp ptopo-src/public/favicon.svg $NS/favicon.svg
+          node -e "
+            const fs=require('fs');
+            const o=JSON.parse(fs.readFileSync('$SRC/net-slicing.json','utf8'));
+            o.version='$SHA';
+            fs.writeFileSync('$NS/pattern.json', JSON.stringify(o,null,2)+'\n');
+          "
+          echo "published: /patterns/net-slicing/pattern.html?v=$SHA"
+
+          # ④⑤ 另外两份单视图 pattern：/patterns/rank-topology-3d/ 与 /patterns/model-netgraph/
+          # 三份 pattern 同源同实现（都是这一份 demo.html），区别只在**默认落在哪一屏**：
+          #   net-slicing      —— 一张整网怎么被切开（工作台右栏与左格共用的那一份）
+          #   rank-topology-3d —— 切完之后落到哪张卡上（工作台左上那张卡）
+          #   model-netgraph   —— 整网真图展开、按层深铺开的侧视（工作台右侧那一栏）
+          # 默认值不写在 URL 里让使用者自己补，而是注进页面本身——「一条链接就是一屏」
+          # 这个承诺，只有页面自带默认值才成立。注入器抽成了文件（inject-pattern-defaults.cjs），
+          # 免得再在 YAML 里叠一层 shell 引号转义。
+          for SPEC in "rank-topology-3d|模型分片与训练设备映射（3D 拓扑）|view=chain&card=1&vtab=3d&stitle=模型分片与训练设备映射" \
+                      "model-netgraph|模型整网视图（真图展开）|view=chain&cuts=pcte&rank=0&vtab=side&stitle=模型整网视图 · 真图展开"; do
+            PID="${SPEC%%|*}"; PREST="${SPEC#*|}"; PTITLE="${PREST%%|*}"; PQ="${PREST#*|}"
+            PD=dist/patterns/$PID
+            mkdir -p $PD
+            # 标题那条与 ③ 同理：必须精确匹配 <head> 里那一条原文，不能写 <title>[^<]*</title>
+            # 的通配（画布上几十处 SVG 悬浮提示也是逐行独立的一对 <title>…</title>，
+            # 通配会把它们成片换掉）。下面同样加一道命中数断言兜底。
+            sed -e 's#\.\./vendor/#./vendor/#g' \
+                -e 's#href="\.\./favicon\.svg"#href="./favicon.svg"#g' \
+                -e 's#href="\./\(prd\|concept-map\|index\)\.html"#href="../../parallel-topology/\1.html"#g' \
+                -e 's#href="\.\./parallel-reference/"#href="../../parallel-reference/"#g' \
+                -e "s#\(\./vendor/[A-Za-z0-9./_-]*\.\(css\|js\)\)#\1?v=$SHA#g" \
+                -e "s#<title>并行拓扑 · PRD Demo（应用形态）</title>#<title>$PTITLE</title>#" \
+                $SRC/demo.html > $PD/pattern.html
+            PTCOUNT=$(grep -c "<title>$PTITLE</title>" $PD/pattern.html)
+            if [ "$PTCOUNT" -ne 1 ]; then
+              echo "❌ $PID 页面标题替换异常：命中 $PTCOUNT 处（应为 1）"
+              exit 1
+            fi
+            node ptopo-src/public/parallel-topology/inject-pattern-defaults.cjs "$PD/pattern.html" "$PQ"
+            cp -r $PAT/vendor $PD/vendor
+            cp ptopo-src/public/favicon.svg $PD/favicon.svg
+            # 契约与使用文档跟着产物一起发：卡片上「使用文档 / 契约」两条链接指的就是它们
+            node -e "
+              const fs=require('fs');
+              const o=JSON.parse(fs.readFileSync('$SRC/$PID.json','utf8'));
+              o.version='$SHA';
+              fs.writeFileSync('$PD/pattern.json', JSON.stringify(o,null,2)+'\n');
+            "
+            cp $SRC/$PID.md $PD/README.md
+            echo "published: /patterns/$PID/pattern.html?v=$SHA"
+          done
+
+          echo "published: /parallel-topology/demo.html?v=$SHA"
+          echo "published: /patterns/parallel-topology-demo/pattern.html?v=$SHA"
+
+      - name: Overlay 并行拓扑卡片 into /launch.html
+        # 启动页（main 的 public/launch.html）里补三张卡 + 顶栏两枚 pill。
+        # 片段本体在 ptopo 分支的 public/parallel-topology/launch-card*.html
+        #（可评审、可本地渲染），这里只做定位插入。
+        # 三张卡各归各组，因为它们是三种不同的东西：
+        #   · demo（原型形态，看的是它长成什么样）→ 「原型 · 版本脉络」
+        #   · net-slicing（自包含 pattern，可嵌）  → 「独立迭代 Pattern」
+        #   · atlas（整族组件的地图）             → 「参照系 · 文档」组的头
+        # 锚点找不到就抛异常让整步失败——绝不静默发布一张没打上补丁的总页面。
+        run: |
+          set -euo pipefail
+          SHA=$(git -C ptopo-src rev-parse --short HEAD)
+          python3 - "$SHA" <<'PY'
+          import sys, pathlib
+          sha = sys.argv[1]
+          launch = pathlib.Path('dist/launch.html')
+          html = launch.read_text(encoding='utf-8')
+          frag = lambda n: pathlib.Path(
+              'ptopo-src/public/parallel-topology/' + n).read_text(encoding='utf-8').replace('__SHA__', sha)
+          if 'parallel-topology/demo.html' in html:
+              raise SystemExit('launch.html 已含并行拓扑链接——main 自己加过了，请改为直接维护 main 的卡片，别叠加出两张')
+
+          def append_to_group(html, next_group_marker, card):
+              """插到某一组 card-grid 的末尾：下一组注释往前找最近的 </div></section>。"""
+              nxt = html.index(next_group_marker)
+              close = html.rindex('      </div>\n    </section>\n', 0, nxt)
+              return html[:close] + card.rstrip('\n') + '\n\n' + html[close:]
+
+          # ① Demo 本体进「原型 · 版本脉络」——它是原型形态，不是拿去嵌的零件。
+          #    原型是最后一组，往后没有下一组注释了，用页脚当界标。
+          html = append_to_group(html, '<footer class="foot">', frag('launch-card.html'))
+          # ② 抽出来的 /patterns/net-slicing/ 进「独立迭代 Pattern」组末尾
+          html = append_to_group(html, '<!-- ═══ 参照系 · 文档与研究报告 ═══ -->', frag('launch-card-net-slicing.html'))
+          # ②′ 从同一份实现里抽出来的另外两屏，也各领一张卡进同一组：
+          #     rank-topology-3d = 工作台左上那张卡（切完落到哪张卡）
+          #     model-netgraph   = 工作台右侧那一栏（整网真图展开）
+          html = append_to_group(html, '<!-- ═══ 参照系 · 文档与研究报告 ═══ -->', frag('launch-card-rank-topology-3d.html'))
+          html = append_to_group(html, '<!-- ═══ 参照系 · 文档与研究报告 ═══ -->', frag('launch-card-model-netgraph.html'))
+          # ③ 组合总图那张卡插到「参照系 · 文档与研究报告」组的**最前面**——它是整族组件
+          #    的地图，该领这一组的头
+          atlas = frag('launch-card-atlas.html')
+          gdoc = html.index('<h2 class="group-title" id="g-doc">')
+          grid = html.index('      <div class="card-grid">\n', gdoc) + len('      <div class="card-grid">\n')
+          html = html[:grid] + '\n' + atlas.rstrip('\n') + '\n' + html[grid:]
+          # ④ 顶栏 pill：紧跟在参照系那枚后面——组合总图（整族入口）与并行拓扑 Pattern（一条链接一屏）
+          pill = '<a class="pill" href="./parallel-reference/">分布式训练参照系</a>'
+          at = html.index(pill) + len(pill)
+          html = (html[:at]
+                  + '\n      <a class="pill" href="./parallel-topology/atlas.html?v=' + sha + '">并行拓扑 · 组合总图</a>'
+                  + '\n      <a class="pill" href="./patterns/net-slicing/pattern.html">并行拓扑 Pattern</a>'
+                  + html[at:])
+          launch.write_text(html, encoding='utf-8')
+          print('patched dist/launch.html: +5 cards +2 pills @ ' + sha)
+          PY
+          grep -c 'parallel-topology/atlas.html' dist/launch.html
+          grep -c 'patterns/net-slicing/pattern.html' dist/launch.html
+          # 三张卡必须各落各组，且落的是**指定的**那一组。
+          # 判定方式：按文档顺序切出所有 <!-- ═══ 组名 ═══ --> 的区间，看卡片落在哪个区间里。
+          # 不能只比先后（主线那张卡的链接里也含 net-slicing 的地址，「第一次出现」会误判），
+          # 也不能只判「在不在某两个界标之间」——启动页新增一个分组就会把卡挤进那个新组，
+          # 而区间判定照样通过。要的是「实际落在哪一组」和「应该落在哪一组」逐一对上。
+          python3 - <<'PY'
+          import pathlib, re, sys
+          html = pathlib.Path('dist/launch.html').read_text(encoding='utf-8')
+          marks = [(m.start(), m.group(1)) for m in re.finditer(r'<!-- ═══ (.+?) ═══ -->', html)]
+          marks.append((len(html), None))
+          def group_of(pos):
+              for i, (off, name) in enumerate(marks):
+                  if off <= pos < marks[i + 1][0]:
+                      return name
+              return None
+          EXPECT = [
+              ('Demo',        './parallel-topology/demo.html',       '原型 · 版本脉络'),
+              ('net-slicing', './patterns/net-slicing/pattern.html', '独立迭代 Pattern'),
+              ('rank-topology-3d', './patterns/rank-topology-3d/pattern.html', '独立迭代 Pattern'),
+              ('model-netgraph',   './patterns/model-netgraph/pattern.html',   '独立迭代 Pattern'),
+              ('组合总图',     './parallel-topology/atlas.html',      '参照系 · 文档与研究报告'),
+          ]
+          bad = 0
+          for name, href, want in EXPECT:
+              at = html.find('<h3 class="card-title"><a href="' + href)
+              if at < 0:
+                  print(f'  {name} 卡：没找到！'); bad += 1; continue
+              got = group_of(at)
+              ok = (got == want)
+              print(f'  {name} 卡 in「{got}」' + ('' if ok else f'   ← 应该在「{want}」'))
+              bad += 0 if ok else 1
+          sys.exit(1 if bad else 0)
+          PY
+          test -s dist/parallel-topology/atlas.html
+          test -s dist/parallel-topology/cockpit.html
+          # 三个入口引到的每个 vendor 文件都得真的在 dist 里躺着。少一个不会让页面报错，
+          # 只会让正视/侧视静默退回旧 SVG、或者按下「关闭整网」时才 404——那种坏法从线上
+          # 看不出来，必须在这里拦住。注意扫的是全文而不是 <script> 标签：rubik 与 three
+          # 是运行时 loadOnce 进来的，只在 JS 字符串里出现。
+          python3 - <<'PY'
+          import re, pathlib, sys
+          # (页面, vendor 前缀正则, 解析根) —— 目录入口共用 dist/vendor/，两个 pattern 各自自包含
+          targets = [
+              ('dist/parallel-topology/demo.html',                 r'\.\./(vendor/', 'dist'),
+              ('dist/patterns/parallel-topology-demo/pattern.html', r'\./(vendor/',  'dist/patterns/parallel-topology-demo'),
+              ('dist/patterns/net-slicing/pattern.html',            r'\./(vendor/',  'dist/patterns/net-slicing'),
+              ('dist/patterns/rank-topology-3d/pattern.html',        r'\./(vendor/',  'dist/patterns/rank-topology-3d'),
+              ('dist/patterns/model-netgraph/pattern.html',          r'\./(vendor/',  'dist/patterns/model-netgraph'),
+          ]
+          bad = 0
+          for page, prefix, root in targets:
+              html = pathlib.Path(page).read_text(encoding='utf-8')
+              refs = sorted(set(re.findall(prefix + r"[A-Za-z0-9./_-]+\.(?:css|js))(?:\?[^\"']*)?", html)))
+              missing = [r for r in refs if not pathlib.Path(root, r).is_file()]
+              print(f'{page} 引用 {len(refs)} 个 vendor 文件，缺 {len(missing)} 个')
+              for m in missing:
+                  print('  MISSING ' + root + '/' + m)
+              bad += len(missing)
+              # 下限原本是 15。正视/侧视改成原生重绘之后，3d-deck 与 training-sidecar
+              # 的 css+js、以及 model-graphviz/pattern.js 一共 5 个引用被正当地删掉了，
+              # 剩下的 10 个才是当前真实闭包。低于 10 说明正则没匹配上或产物不对。
+              if len(refs) < 10:
+                  print(f'  ← 只扫到 {len(refs)} 个引用，少于预期 10：正则或产物不对')
+                  bad += 1
+          sys.exit(1 if bad else 0)
+          PY
+
+      - name: Checkout combo-workbench branch
+        uses: actions/checkout@v4
+        with:
+          # 源码已经进 main（/public/combo-workbench/），所以从 main 自己取——原来
+          # 指向 fdrgiq 分支，main 上那份只是历史 PR 合并进来的镜像，改 fdrgiq 忘了
+          # 合回 main 时，发布内容悄悄落后于 main 且没有任何报错。跟 parallel-topology
+          # 当年从 ff10w3 迁到 main 是同一个修法、同一个理由（见本文件顶部注释）。
+          ref: main
+          path: combo-src
+
+      - name: Overlay 组合工作台 at /combo-workbench/
+        # 台面本体（index.html）是自包含单文件，色板照抄 launch.html，不引外部样式；
+        # 它靠 iframe 摞两张卡：
+        #   · ../parallel-topology/demo.html —— 上一步刚叠好的那份，不复制第二份；
+        #   · ./swimlane.html               —— compute-graph-viewer 的上游拷贝，
+        #     连同 ./vendor/swimlane-task/ 一起搬过来；它的 ../vendor/pto-design-system/
+        #     恰好落在 main 构建产物已有的 /vendor/ 上，路径原样保留。
+        # iframe 的 src 是 JS 拼的，没法像别处那样给 href/src 打版本戳，所以把 SHA
+        # 塞进 index.html 里的 var BUILD——拼 URL 时自己带上 ?v=，不吃旧缓存。
+        # 逐页列举（不是 cp -r）：新增页面必须补到这一步，否则线上 404。
+        run: |
+          set -euo pipefail
+          SHA=$(git -C combo-src rev-parse --short HEAD)
+          SRC=combo-src/public/combo-workbench
+          DST=dist/combo-workbench
+          mkdir -p $DST/vendor/swimlane-task
+
+          sed -e "s#^var BUILD = '';#var BUILD = '$SHA';#" $SRC/index.html > $DST/index.html
+          grep -q "var BUILD = '$SHA';" $DST/index.html   # 锚点没打中就让这一步失败，别静默发一份没戳的
+
+          sed -e 's#\(\(href\|src\)="\)\(\.\{1,2\}/[A-Za-z0-9./_-]*\.\(css\|js\)\)"#\1\3?v='"$SHA"'"#g' \
+              $SRC/swimlane.html > $DST/swimlane.html
+          cp $SRC/favicon.svg $SRC/embed.css $SRC/embed-bridge.js $DST/
+          cp $SRC/vendor/swimlane-task/pattern.css $SRC/vendor/swimlane-task/pattern.js $DST/vendor/swimlane-task/
+
+          # 通信观测台（dock 第四个 tab）：自包含子目录（自带 vendor/pto-design-system
+          # 的钉版拷贝，钉在上游子模块指的 d58dd4eb），整目录搬——它内部三十几个文件
+          # 全是相对引用，逐页列举反而容易漏；子目录整搬不会打到别人的路径。
+          cp -r $SRC/observatory $DST/observatory
+          test -f $DST/observatory/index.html   # 空目录/搬歪了就地失败，别静默发一个 404 的 tab
+
+          echo "published: /combo-workbench/?v=$SHA"
+
+      - name: Overlay 组合工作台卡片 into /launch.html
+        # 与并行拓扑那张卡同一套做法：站点框架永远从 main 构建，本分支不进 main，
+        # 所以卡片走叠加。片段本体在 public/combo-workbench/launch-card.html（可评审、
+        # 可本地渲染），这里只做定位插入。锚点找不到就抛异常让整步失败——
+        # 绝不静默发布一张没打上补丁的总页面。
+        run: |
+          set -euo pipefail
+          SHA=$(git -C combo-src rev-parse --short HEAD)
+          python3 - "$SHA" <<'PY'
+          import sys, pathlib
+          sha = sys.argv[1]
+          launch = pathlib.Path('dist/launch.html')
+          html = launch.read_text(encoding='utf-8')
+          card = pathlib.Path('combo-src/public/combo-workbench/launch-card.html').read_text(encoding='utf-8')
+          card = card.replace('__SHA__', sha)
+          if 'combo-workbench' in html:
+              raise SystemExit('launch.html 已含组合工作台链接——main 自己加过了，请改为直接维护 main 的卡片，别叠加出两张')
+          # ① 卡片插进「工作台 · 主线」组的**最前面**：它是台面，不是可嵌的 pattern，
+          #    而且后续的工作台组合都往它上面摞——该领这一组的头。
+          gapp = html.index('<h2 class="group-title" id="g-app">')
+          grid = html.index('      <div class="card-grid">\n', gapp) + len('      <div class="card-grid">\n')
+          html = html[:grid] + '\n' + card.rstrip('\n') + '\n' + html[grid:]
+          # ② 顶栏 pill：跟在驾驶舱那枚后面（都是「进来是用的」那一类入口）
+          pill = '<a class="pill" href="./cube-cockpit.html">AI Infra 驾驶舱 v22</a>'
+          at = html.index(pill) + len(pill)
+          html = html[:at] + '\n      <a class="pill" href="./combo-workbench/?v=' + sha + '">组合工作台</a>' + html[at:]
+          launch.write_text(html, encoding='utf-8')
+          print('patched dist/launch.html: +1 card +1 pill @ ' + sha)
+          PY
+          grep -c 'combo-workbench' dist/launch.html
+          test -s dist/combo-workbench/index.html
+          test -s dist/combo-workbench/swimlane.html
+          test -s dist/combo-workbench/vendor/swimlane-task/pattern.js
+
+      - name: Checkout incident-canvas branch
+        uses: actions/checkout@v4
+        with:
+          # 源码已经进 main（/public/incident-canvas/），所以从 main 自己取——与
+          # combo-workbench / parallel-topology 当年的迁法一样：原来按 ref 指向
+          # 分支时，谁改了分支忘记合回 main，线上内容就悄悄落后于 main 且不报错。
+          ref: main
+          path: canvas-src
+
+      - name: Overlay 故障故事线 at /incident-canvas/ 与 /patterns/incident-canvas/
+        # 一个主视图 + 五块卫星的无限画布：故事线与数据来自 compute-graph-viewer 的
+        # config-relation-observer，形制与 token 来自本仓 /combo-workbench/。
+        # 页面自身是单文件（样式、数据、图元全在里面），但它**内嵌三份被复用的
+        # pattern 本体**：主视图与「整网」那格都是 /patterns/net-slicing/pattern.html
+        # 的两份配置，「泳道」那格是 /combo-workbench/swimlane.html。嵌的是规范路径上
+        # 的本体、不是拷贝，所以「画布里的那一份」与「直接打开那条链接」永远同版本。
+        # 这一步因此要改三处：
+        #  · favicon 打 ?v=<短SHA>（页面本身带 no-cache meta，不需要戳）；
+        #  · var BASE —— 整页只有这一处知道自己离站点根有多深：
+        #    /incident-canvas/ 是 '..'，/patterns/incident-canvas/ 要多退一级；
+        #  · 顶栏那条指向组合工作台的出处链接，同理多退一级。
+        # 两个入口同一份内容：
+        #  · /incident-canvas/                  —— 短链接，好念、好发；
+        #  · /patterns/incident-canvas/         —— 规范位置，pattern.html 与 pattern.json 同级。
+        run: |
+          set -euo pipefail
+          SHA=$(git -C canvas-src rev-parse --short HEAD)
+          SRC=canvas-src/public/incident-canvas
+
+          # ① 短链接入口
+          DIR=dist/incident-canvas
+          mkdir -p $DIR
+          sed -e "s#href=\"./favicon.svg\"#href=\"./favicon.svg?v=$SHA\"#" \
+              $SRC/index.html > $DIR/index.html
+          cp $SRC/favicon.svg $SRC/README.md $DIR/
+          node -e "
+            const fs=require('fs');
+            const o=JSON.parse(fs.readFileSync('$SRC/pattern.json','utf8'));
+            o.version='$SHA';
+            fs.writeFileSync('$DIR/pattern.json', JSON.stringify(o,null,2)+'\n');
+          "
+
+          # ② 规范入口（pattern.* 同级）
+          PAT=dist/patterns/incident-canvas
+          mkdir -p $PAT
+          sed -e "s#href=\"./favicon.svg\"#href=\"./favicon.svg?v=$SHA\"#" \
+              -e "s#^var BASE = '\.\.';#var BASE = '../..';#" \
+              -e 's#href="\.\./combo-workbench/"#href="../../combo-workbench/"#' \
+              $SRC/index.html > $PAT/pattern.html
+          cp $SRC/favicon.svg $PAT/favicon.svg
+          cp $SRC/README.md $PAT/README.md
+          cp $DIR/pattern.json $PAT/pattern.json
+
+          # 断言：两条相对路径在规范入口下都必须已经多退一级。
+          # 漏改不会让页面报错——BASE 错了只是三格 iframe 静默 404、显示兜底文案，
+          # 出处链接错了只是那一条 404。都是从线上看不出来的坏法，必须在这里拦住。
+          # 待比的两串里都带单引号，所以既不能用单引号裹、也不要在 "$( )" 里写 \" ——
+          # 后者会被重新解析成一个**字面的引号字符**传给 grep（grep 把它当成 pattern，
+          # 把真正的 pattern 当成文件名，报 "No such file or directory" 并返回空，
+          # 于是 test '' = 1 失败）。2026-09-14 这一版就是这么挂的。
+          # 改成变量 + grep -F（定长匹配，连正则转义也省了）。
+          BASE_SUB="var BASE = '../..';"
+          BASE_TOP="var BASE = '..';"
+          test "$(grep -cF "$BASE_SUB" $PAT/pattern.html)" = "1"
+          test "$(grep -cF "$BASE_TOP" $PAT/pattern.html)" = "0"
+          test "$(grep -cF "$BASE_TOP" $DIR/index.html)" = "1"
+          test "$(grep -c 'href="../../combo-workbench/"' $PAT/pattern.html)" = "1"
+          test "$(grep -c 'href="../combo-workbench/"' $PAT/pattern.html)" = "0"
+          test "$(grep -c 'href="../combo-workbench/"' $DIR/index.html)" = "1"
+          # 不引任何外部主机：页面自己的样式/数据/图元都在文件里，三格内嵌走的是
+          # 站内相对路径。多出一条 http(s) 资源就说明有人加了 CDN 依赖，而这一步
+          # 并不拷贝任何 vendor 目录——那会是一条静默的 404。
+          test "$(grep -Ec 'src="https?://|href="https?://[^"]*\.(css|js)' $DIR/index.html || true)" = "0"
+          test -s $DIR/index.html
+          test -s $PAT/pattern.html
+
+          echo "published: /incident-canvas/?v=$SHA"
+          echo "published: /patterns/incident-canvas/pattern.html?v=$SHA"
+
+      - name: Overlay 故障故事线卡片 into /launch.html
+        # 与组合工作台那张卡同一套做法：站点框架永远从 main 构建，本分支不进 main，
+        # 所以卡片走叠加。片段本体在 public/incident-canvas/launch-card.html（可评审、
+        # 可本地渲染），这里只做定位插入。锚点找不到就抛异常让整步失败——
+        # 绝不静默发布一张没打上补丁的总页面。
+        run: |
+          set -euo pipefail
+          SHA=$(git -C canvas-src rev-parse --short HEAD)
+          python3 - "$SHA" <<'PY'
+          import sys, pathlib
+          sha = sys.argv[1]
+          launch = pathlib.Path('dist/launch.html')
+          html = launch.read_text(encoding='utf-8')
+          card = pathlib.Path('canvas-src/public/incident-canvas/launch-card.html').read_text(encoding='utf-8')
+          card = card.replace('__SHA__', sha)
+          if 'incident-canvas' in html:
+              raise SystemExit('launch.html 已含故障故事线链接——main 自己加过了，请改为直接维护 main 的卡片，别叠加出两张')
+          # ① 插进「工作台 · 主线」组、**紧跟在组合工作台那张卡后面**：它是那块台面的
+          #    下一步形态（摞格子 → 主视图 + 四周卫星），排在它旁边读者才看得出这层关系。
+          #    定位方式是「该组第一张卡的 </article> 之后」，而不是数第几个 </article>——
+          #    别的组先插了卡也不会把这张挤到别人组里去。
+          gapp = html.index('<h2 class="group-title" id="g-app">')
+          grid = html.index('      <div class="card-grid">\n', gapp)
+          first_end = html.index('</article>', grid) + len('</article>')
+          html = html[:first_end] + '\n\n' + card.rstrip('\n') + html[first_end:]
+          # ② 顶栏 pill：跟在组合工作台那枚后面（都是「进来是用的」那一类入口）
+          pill = '<a class="pill" href="./combo-workbench/?v='
+          at = html.index(pill)
+          end = html.index('</a>', at) + len('</a>')
+          html = html[:end] + '\n      <a class="pill" href="./incident-canvas/?v=' + sha + '">故障故事线画布</a>' + html[end:]
+          launch.write_text(html, encoding='utf-8')
+          print('patched dist/launch.html: +1 card +1 pill @ ' + sha)
+          PY
+          grep -c 'incident-canvas' dist/launch.html
+          # 卡必须真的落在「工作台 · 主线」那一组里，不能只是「在某两个界标之间」——
+          # 启动页新增一个分组就会把卡挤进那个新组，而区间判定照样通过。
+          python3 - <<'PY'
+          import pathlib, re, sys
+          html = pathlib.Path('dist/launch.html').read_text(encoding='utf-8')
+          marks = [(m.start(), m.group(1)) for m in re.finditer(r'<!-- ═══ (.+?) ═══ -->', html)]
+          marks.append((len(html), None))
+          at = html.find('<h3 class="card-title"><a href="./incident-canvas/')
+          if at < 0:
+              print('  故障故事线卡：没找到！'); sys.exit(1)
+          got = next((n for i, (o, n) in enumerate(marks) if o <= at < marks[i + 1][0]), None)
+          print(f'  故障故事线卡 in「{got}」')
+          sys.exit(0 if got == '工作台 · 主线' else 1)
+          PY
+          test -s dist/incident-canvas/index.html
+          test -s dist/patterns/incident-canvas/pattern.html
+
+      - name: Checkout pto-design-system（rank-deck 交集载荷分支，公开仓库）
+        uses: actions/checkout@v4
+        with:
+          repository: Cinnnnnnndy/pto-design-system
+          ref: claude/rank-deck-intersection-payload
+          path: ptods-src
+
+      - name: Overlay 纠正版 rank-deck at /pto-ds/
+        # 载荷原子修正版（Rank 装的是交集片，不是缩小的整网）。pattern.html 的相对引用
+        # （../../tokens、../model-graphviz、./vendor/three）要求保持原目录结构，
+        # 所以按原树叠加最小依赖闭包：tokens/ + css/ + 三个 pattern 目录（含 pinned three）。
+        # 不做任何 sed 改写——发布件与 fork 分支逐字节一致，方便对账。
+        run: |
+          set -euo pipefail
+          SHA=$(git -C ptods-src rev-parse --short HEAD)
+          DST=dist/pto-ds
+          mkdir -p $DST/patterns
+          cp -r ptods-src/tokens $DST/tokens
+          cp -r ptods-src/css $DST/css
+          cp -r ptods-src/patterns/model-graphviz $DST/patterns/model-graphviz
+          cp -r ptods-src/patterns/model-architecture-3d-deck $DST/patterns/model-architecture-3d-deck
+          cp -r ptods-src/patterns/model-parallel-rank-deck $DST/patterns/model-parallel-rank-deck
+          # 训练语义 sidecar：组合总图 C 段引用它；依赖恰好是上面已拷的 tokens/css/3d-deck/graphviz
+          cp -r ptods-src/patterns/model-architecture-training-sidecar $DST/patterns/model-architecture-training-sidecar
+          echo "published: /pto-ds/patterns/model-parallel-rank-deck/pattern.html (rank-deck@$SHA)"
+          echo "published: /pto-ds/patterns/model-architecture-training-sidecar/pattern.html (sidecar@$SHA)"
+
+      - name: Setup Pages
+        uses: actions/configure-pages@v5
+        with:
+          # Auto-enable Pages (Source = GitHub Actions) on first run if possible.
+          enablement: true
+
+      - name: Upload artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: dist
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4

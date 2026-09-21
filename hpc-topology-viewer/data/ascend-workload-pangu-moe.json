@@ -1,0 +1,249 @@
+{
+  "meta": {
+    "title": "昇腾超节点 真实工作负载数据 · 盘古 Pro MoE + 同类来源",
+    "version": "1.0",
+    "date": "2026-07-01",
+    "purpose": "为可视化项目补充『真实可引用』的模型/硬件/并行/推理性能数据。可作为拓扑图上叠加的运行时数值、面板指标、对比条形图等的输入，让 demo 从『结构示意』升级为『带真实数字』。",
+    "how_to_use": "① inference_performance / kernel_optimizations → 拓扑图节点/链路旁的实时指标标注(吞吐/时延/利用率)。② parallel_mapping_runtime → 与现有 parallel_mappings(tp/ep/pp/dp/sp) 对应，给出盘古 Pro MoE 的真实并行数字。③ benchmarks → 雷达图/对比条形图。④ external_references → 规模更大(718B/671B)场景的对照数据。所有数值均带 source + confidence。",
+    "confidence_legend": { "A": "论文/官方一手数据", "B": "媒体或社区交叉验证一致", "C": "单一来源解读，引用需标注" },
+    "primary_source": {
+      "title": "Pangu Pro MoE: Mixture of Grouped Experts for Efficient Sparsity",
+      "org": "Pangu Team, Huawei",
+      "arxiv": "2505.21411v2",
+      "url": "https://arxiv.org/abs/2505.21411",
+      "code": "https://gitcode.com/ascend-tribe/pangu-pro-moe",
+      "confidence": "A"
+    }
+  },
+
+  "model_pangu_pro_moe": {
+    "architecture": "MoGE (Mixture of Grouped Experts)",
+    "total_params_b": 71.99,
+    "activated_params_b": 16.50,
+    "sparsity_note": "专家模块占总参数 95%，注意力仅占 5%",
+    "config": {
+      "vocabulary_size": 153376,
+      "hidden_size": 5120,
+      "intermediate_size": 1344,
+      "query_heads": 40,
+      "kv_heads": 8,
+      "head_size": 128,
+      "layers": 48,
+      "routed_experts": 64,
+      "activated_experts": 8,
+      "shared_experts": 4
+    },
+    "moge_routing": {
+      "idea": "N 个专家均分到 M 组(每组常映射到 1 个设备)，每组固定激活 K'=K/M 个专家 → 设备间负载天然均衡",
+      "pangu_setting": "每组 Top-1 选择(K'=1)",
+      "imbalance_score": "MoGE 设计上 IS=0(完美均衡)；传统 Top-K 路由 IS>0 概率≈1",
+      "measured_gain": "跨设备计算负载不均衡降低 >50%(以 permute / gmm_up 算子执行时间最大差衡量)",
+      "illustration_example": "论文 Fig.2 示例: 24 专家分 4 组、每组选 2；对比传统 Top-K 会出现某设备 0 专家、某设备 4 专家",
+      "confidence": "A"
+    },
+    "training_corpus": {
+      "total_tokens_trillion": 13,
+      "phases": [
+        { "name": "通用 general", "tokens_trillion": 9.6, "seq_len": "4K" },
+        { "name": "推理 reasoning", "tokens_trillion": 3.0, "seq_len": "32K" },
+        { "name": "退火 annealing", "tokens_trillion": 0.4, "seq_len": "32K", "note": "指令数据升至约 20%，高阶 STEM 占 18%" }
+      ],
+      "data_categories": 188,
+      "confidence": "A"
+    },
+    "confidence": "A"
+  },
+
+  "hardware_platforms": [
+    {
+      "id": "ascend_800t_a2", "role": "训练", "name": "昇腾 800T A2",
+      "fp16_tflops_per_accelerator": 256, "int8_tops_per_accelerator": 512,
+      "power_max_w": 310, "power_design_w": 350, "uarch": "达芬奇",
+      "note": "本论文训练与评测平台", "confidence": "A"
+    },
+    {
+      "id": "ascend_800i_a2", "role": "推理(高吞吐)", "name": "昇腾 800I A2",
+      "quantization": "W8A8", "decode_accelerators": 4,
+      "note": "对应可视化输入规格中的 A2 系列高带宽推理域", "confidence": "A"
+    },
+    {
+      "id": "ascend_300i_duo", "role": "推理(高性价比)", "name": "昇腾 300I Duo",
+      "topology_note": "每 1 CPU 控 4 芯片；大 L1 缓存可单次载入整块矩阵",
+      "note": "SwiftGMM/MulAttention 主要面向此平台优化", "confidence": "A"
+    }
+  ],
+
+  "parallel_mapping_runtime": {
+    "training": {
+      "TP": 8, "EP": 2, "CP": 1, "PP": 5, "VPP": 5,
+      "layers_effective": 50, "layers_note": "48 层 + 2 层 no-op → 5×5 PP-VPP 均衡切分",
+      "mfu_gain": "相对 +35%(分层 EP All-to-All + 自适应流水重叠 + 融合算子)",
+      "npus_used": "预训练使用 4K 昇腾 NPU",
+      "maps_to_spec": { "tp": "TP=8", "ep": "EP=2", "pp": "PP=5", "sp": "含于 CP=1" },
+      "confidence": "A"
+    },
+    "inference_h2p": {
+      "strategy": "H²P 分层混合并行",
+      "attention": "DP2 + TP4(减少跨 CPU 通信)",
+      "routed_experts": "TP2 + EP4(带宽与负载折中)",
+      "shared_experts": "TP8(稠密均衡)",
+      "comm_opt": {
+        "allreduce_to_rs_ag": "AllReduce 拆为 Reduce-Scatter+AllGather，通信量 −50%",
+        "rmsnorm_reorder": "AllGather 移到 RMSNorm 之后，计算量 −75%",
+        "fused_ops": ["GMMRS (GroupedMatMul+ReduceScatter)", "AGMM (AllGather+MatMul)"],
+        "expert_comm_share": "Expert 的 all-gather/reduce-scatter 约占总网络时延 8%"
+      },
+      "confidence": "A"
+    }
+  },
+
+  "inference_performance": {
+    "ascend_800i_a2": {
+      "prefill": { "batch_size": 2, "seq_len": 2048, "input_throughput_tokens_s_per_card": 4828, "note": "相对 72B/32B Dense 时延更低、输入吞吐更高" },
+      "decode": {
+        "accelerators": 4, "latency_constraint_ms": 100,
+        "output_throughput_tokens_s_per_card": 1148,
+        "output_throughput_with_mtp_tokens_s_per_card": 1528,
+        "low_concurrency": "batch=1、2k 序列时时延仅数十 ms；权重搬运约 16B",
+        "weight_transfer_share": "权重搬运仅占总时延 29%"
+      },
+      "confidence": "A"
+    },
+    "ascend_300i_duo": {
+      "prefill": { "accelerators": 2, "batch_size": 2, "seq_len": 2048, "latency_s": 1.94, "input_throughput_tokens_s_per_card": 1055 },
+      "decode": {
+        "accelerators": 4,
+        "low_concurrency": "batch=1、2k 序列约 50 ms 时延",
+        "high_concurrency": { "batch_size": 80, "latency_ms": 99.5, "output_throughput_tokens_s_per_card": 201, "with_mtp_tokens_s_per_card": 321 }
+      },
+      "positioning": "sub-100B 模型高性价比推理",
+      "confidence": "A"
+    }
+  },
+
+  "kernel_optimizations": {
+    "prefill_sparsity": "Prefill 每 token 仅激活 Top-8 专家 → 等效 16B Dense 模型",
+    "attention_cost": "注意力占推理时延 30%–50%；其中 KV 数据搬运约占注意力计算时间 70%",
+    "mul_attention": { "end2end_attention_speedup": "4.5×", "mte2_utilization": ">89%", "target": "解码阶段融合注意力算子" },
+    "swift_gmm": { "gmm_share_high_concurrency": ">50% 端到端时延", "mte2_utilization": "up to 95%", "note": "接近权重搬运带宽约束的理论上限" },
+    "matmul_cache": { "cube_util_gain": ">10%", "hbm_bw_op_gain": "5%–10%" },
+    "confidence": "A"
+  },
+
+  "benchmarks": {
+    "note": "EM=Exact Match, F1, Pass@1。粗体在原论文中表示每行最优；此处保留盘古 Pro MoE 与主要对手数值，可做雷达/对比图。",
+    "base_models_table3": {
+      "columns": ["Qwen2.5-32B", "GLM4-32B", "Gemma3-27B", "Llama4-Scout(17B/109B MoE)", "Pangu Pro MoE(16B/72B MoE)"],
+      "rows": {
+        "MMLU": [84.2, 82.0, 78.6, 78.3, 87.4],
+        "MMLU-Pro": [58.0, 55.8, 50.3, 50.3, 63.5],
+        "BBH": [82.4, 83.3, 77.7, 79.5, 81.2],
+        "DROP": [79.2, 86.2, 77.2, 77.5, 81.1],
+        "HellaSwag": [93.1, 92.6, 84.1, 81.9, 93.5],
+        "C-Eval": [87.7, 84.1, 69.4, 74.8, 90.6],
+        "CMMLU": [88.9, 83.8, 70.4, 76.8, 89.0],
+        "GSM8K": [83.0, 85.4, 82.6, 79.2, 86.5],
+        "HumanEval": [57.9, 59.1, 48.8, 54.6, 63.7],
+        "MATH": [57.9, 46.7, 50.0, 52.7, 55.9]
+      },
+      "confidence": "A"
+    },
+    "instruct_models_table4_partial": {
+      "columns": ["Qwen3-32B", "GLM-Z1-32B", "Gemma3-27B", "Llama4-Scout", "Pangu Pro MoE"],
+      "rows": {
+        "MMLU": [89.2, null, 77.6, 79.4, 89.3],
+        "MMLU-Pro": [78.6, null, 67.5, 73.8, 82.6],
+        "DROP": [91.3, null, 88.4, 89.3, 91.2],
+        "CLUEWSC": [94.6, 93.6, 91.3, 87.6, 94.7]
+      },
+      "confidence": "A"
+    }
+  },
+
+  "external_references": [
+    {
+      "id": "pangu_ultra_moe_718b",
+      "title": "Pangu Ultra MoE: How to Train Your Big MoE on Ascend NPUs",
+      "arxiv": "2505.04519",
+      "url": "https://arxiv.org/abs/2505.04519",
+      "use_as": "更大规模训练对照(超节点满载场景)",
+      "data": {
+        "total_params_b": 718, "experts_per_layer": 256, "activated_experts": 8,
+        "mfu_optimized_pct": 30.0, "throughput_optimized_Mtokens_s": 1.46, "npus_optimized": 6000,
+        "mfu_baseline_pct": 18.9, "throughput_baseline_Mtokens_s": 0.61, "npus_baseline": 4000,
+        "dynamic_expert_placement_gain": "设备级负载均衡带来相对 +10% MFU"
+      },
+      "confidence": "A"
+    },
+    {
+      "id": "cloudmatrix384_deepseek",
+      "title": "Serving Large Language Models on Huawei CloudMatrix384",
+      "arxiv": "2506.12708",
+      "url": "https://arxiv.org/abs/2506.12708",
+      "use_as": "超节点推理服务对照(DeepSeek-R1 671B on CloudMatrix384)",
+      "data": {
+        "model": "DeepSeek-R1 671B MoE", "npu_count": 384,
+        "prefill_throughput_tokens_s_per_npu": 6688,
+        "decode_throughput_tokens_s_per_npu": 1943, "decode_tpot_ms": "<50",
+        "compute_eff_prefill_tokens_s_tflops": 4.45,
+        "compute_eff_decode_tokens_s_tflops": 1.29
+      },
+      "confidence": "A"
+    },
+    {
+      "id": "xdeepserve_cloudmatrix384",
+      "title": "xDeepServe: Model-as-a-Service on Huawei CloudMatrix384",
+      "arxiv": "2508.02520",
+      "url": "https://arxiv.org/abs/2508.02520",
+      "use_as": "超节点生产级 MaaS 服务对照(华为云 CloudMatrix384 上线多模型)",
+      "data": {
+        "superpod": "48 服务器 / 384 颗昇腾 910C / UB 全互联 + 全局共享内存",
+        "served_models": ["DeepSeek", "Kimi", "GLM", "Qwen", "MiniMax"],
+        "throughput_tokens_s_per_npu": 2400, "tpot_sla_ms": 50,
+        "prefill_tokens_s_per_npu": 6688, "decode_tokens_s_per_npu": 1943,
+        "system_total_dp288_tokens_s": 345000
+      },
+      "confidence": "A"
+    },
+    {
+      "id": "pangu_ultra_135b_dense",
+      "title": "Pangu Ultra: Pushing the Limits of Dense LLMs on Ascend NPUs",
+      "arxiv": "2504.07866",
+      "url": "https://arxiv.org/abs/2504.07866",
+      "use_as": "超节点满载稠密模型训练对照(8192 卡量级)",
+      "data": {
+        "total_params_b": 135, "architecture": "Dense Transformer",
+        "npus_used": 8192, "train_tokens_trillion": 13.2,
+        "key_tech": "depth-scaled sandwich normalization(消除深层模型 loss 尖峰)",
+        "parallelism": ["DP", "TP", "SP", "PP"],
+        "positioning": "对标 Llama 405B / Mistral Large 2，接近 DeepSeek-R1"
+      },
+      "confidence": "A"
+    },
+    {
+      "id": "mindvl_multimodal",
+      "title": "MindVL: Training Multimodal LLMs on Ascend NPUs",
+      "arxiv": "2509.11662",
+      "url": "https://arxiv.org/abs/2509.11662",
+      "use_as": "超节点多模态训练对照 + 强扩展效率曲线(可做 scaling 折线图)",
+      "data": {
+        "framework": "Mindspeed-MLLM(面向昇腾的分布式多模态训练框架)",
+        "vision": "native-resolution ViT(原生分辨率)",
+        "train_tokens_b": 447, "data_efficiency": "约为 Qwen2.5-VL 的 1/10 数据量",
+        "strong_scaling_efficiency": ">94% (1 → 128 NPU)",
+        "pipeline": ["warm-up", "multitask", "instruction tuning"]
+      },
+      "confidence": "A"
+    }
+  ],
+
+  "sources": [
+    { "label": "Pangu Pro MoE 技术报告 (arXiv 2505.21411v2)", "url": "https://arxiv.org/abs/2505.21411", "confidence": "A" },
+    { "label": "盘古 Pro MoE 代码 (ascend-tribe)", "url": "https://gitcode.com/ascend-tribe/pangu-pro-moe", "confidence": "A" },
+    { "label": "Pangu Ultra MoE 718B (arXiv 2505.04519)", "url": "https://arxiv.org/abs/2505.04519", "confidence": "A" },
+    { "label": "Serving LLMs on CloudMatrix384 (arXiv 2506.12708)", "url": "https://arxiv.org/abs/2506.12708", "confidence": "A" },
+    { "label": "xDeepServe MaaS on CloudMatrix384 (arXiv 2508.02520)", "url": "https://arxiv.org/abs/2508.02520", "confidence": "A" },
+    { "label": "Pangu Ultra 135B Dense (arXiv 2504.07866)", "url": "https://arxiv.org/abs/2504.07866", "confidence": "A" },
+    { "label": "MindVL 多模态 on Ascend (arXiv 2509.11662)", "url": "https://arxiv.org/abs/2509.11662", "confidence": "A" }
+  ]
+}

@@ -1,0 +1,45 @@
+{
+  "id": "parallel-topology-demo",
+  "name": "并行拓扑可视化工具 · Demo",
+  "description": "按《并行拓扑可视化工具 PRD》与《分布式训练参照系》落地的应用形态 demo。主视图「单维切分」以参照系总图为模板：粒度做竖轴（输入→整网→层→算子→kernel），rank 柱（容器）贯穿全高，块的横跨=共有、归属边界线随维移动、索引五元组条常驻；另有合成·卡阵 / 卡内解剖（容器+流）/ 时间·流三个视图。默认 128 卡（tp2·cp1·pp4·dp16·ep8，EP 折入 DP）。",
+  "version": "dev",
+  "entry": "pattern.html",
+  "selfContained": true,
+  "upstream": {
+    "prd": "../../parallel-topology/prd.html",
+    "conceptMap": "../../parallel-reference/",
+    "source": "public/parallel-topology/demo.html"
+  },
+  "urlParams": {
+    "view": "story|dim|chain|compose|anatomy|solid|time —— 视图（一个step五幕/单维切分/刀序·切分链/合成卡阵/卡内解剖/交集腔/时间·流）；旧值 v1..v5 仍兼容（v4→dim&cut=dp、v5→dim&cut=cp）",
+    "preset": "default128|dense64|longcp|moe64|story128|pangu|bad —— 预置配置（默认 default128；longcp 长序列且照旧是 MoE：tp4·cp4·pp2·ep8，CP 与 EP 两刀并存；story128 是五幕故事那一套 tp2·cp1·pp4·dp16 / 48 层 / H=8192 / MBS4·GA8 → GBS512；bad 为 A6 非法示例）",
+    "sel": "整数 global_rank —— 直接选中某张卡（跨视图保持，A8）",
+    "dim": "tp|cp|pp|dp|ep —— L5 通信维度（谁跟谁一组）",
+    "prim": "p2p|allgather|reducescatter|allreduce|alltoall —— L5 原语（怎么连线），与 dim 正交",
+    "l5": "1 —— 打开通信图层",
+    "q": "全局搜索：L29（层住在哪几张卡）· r41（选中一张卡）· tp/sp/cp/pp/dp/ep（这一刀谁跟谁一组）· E12（专家在哪）",
+    "layer": "整数 ℓ —— 层反查（刀序·切分链）：第 ℓ 层住在哪几张卡上。层板在每一份复印件上都描出来，并拆解 PP/TP/EP/DP 各决定了什么 = 共 world/PP 张卡与它有关",
+    "knife": "0..4 —— 刀序视图停在第几刀（0 整网 / 1 DP 复印 / 2 PP 切段 / 3 TP 锯片 / 4 EP 分桶）；每一刀切的是上一刀的产物，缺省切完",
+    "stack": "1 —— 刀序视图里 DP 复印件改成「叠」（默认展开：并排放好，看得清有几份、每份一模一样）",
+    "yaw": "弧度 —— 刀序视图里整网 3D 场景的转台偏航角（默认 0.42，也可直接拖动画面）",
+    "pitch": "弧度 —— 同上，俯仰角（默认 0.30，夹在 [-0.9, 1.15]）",
+    "act": "0..5 —— 故事视图看第几幕（0 开机 / 1 报到 / 2 备料 / 3 进料 / 4 开算 / 5 接力与收束）",
+    "act2": "1 —— 交集腔里展开激活体（第二视角；默认只画权重体）",
+    "p": "map|cav —— 映射视图的视角（map 双链映射=哪一级映到哪一级，默认；cav 交集腔=这张卡装了哪一块）",
+    "axis": "tp|pp|dp|ep —— L4 axis 高亮（取值域不含 cp，A4）",
+    "facet": "整数 cp_rank —— CP 分面",
+    "skew": "0 —— 关闭 V2 的偏斜注入（默认开）",
+    "theme": "light|dark —— 主题；也接受宿主 postMessage {type:'theme', value}",
+    "world|tp|cp|pp|ep|etp|layers|hidden|heads|kv|ffn|vocab|seq|experts|topk|mbs|ga|hbm": "整数 —— 逐项覆盖配置（DP 恒为 world/(TP·CP·PP) 推导，不可传入）",
+    "v": "任意串 —— 版本戳，仅用于跳过缓存，页面忽略",
+    "cut": "tp|pp|cp|dp|ep —— 单维切分视图当前看哪一维",
+    "zero": "0|1|2|3 —— 模型态沿 DP 存几份（0 关：各卡一份完整；1 只切优化器态，即 Megatron 分布式优化器；2 再切梯度；3 连参数也切，即 FSDP FULL_SHARD）。不是并行维度、不参与整除约束，只改显存构成与生命周期：拨到 1 以上后 DP 从「只买吞吐」变成「也买余量」；拨到 3 还会多出一格「AllGather 窗口」——计算那一刻必须拼回的一个 wrap 单元的完整参数，它不是省下来的、是这一档的代价。默认 0，语义见 /parallel-reference/ §14。",
+    "fill": "comp —— 整网切分视图「卡片内容」的第三态「层构成」：卡里逐层画一排算子方块（体积∝字节 · 切法看颜色 · 随层内容变化，解剖图的算子带按层折回卡壳），需与 net=1 同用（模型分片/显存占用仍走 net=1/net=0）"
+  },
+  "notes": [
+    "不认识的参数一律忽略，非法值退回默认，不报错。",
+    "rank 是地址不是容器：容器只有两个——卡（容量=显存）与流（容量=时间），据参照系 §08/§10/§15。",
+    "配置不合法时舞台封锁（DP-5 宁缺毋误），错误各带最近合法值。",
+    "显存四档现在分两类读：模型态（权重/梯度/优化器态）问「哪一段归我」，执行态（激活/优化器步临时区/碎片）问「什么时候生、什么时候死」。宿主用 postMessage {type:'pto:state', step} 推进训练步时，每一档跟着报出当前相位（含本卡相位差——「此刻」对整网无定义，只对某张卡有定义）。据 /parallel-reference/ §14。"
+  ]
+}

@@ -80,6 +80,7 @@ git submodule update --init --recursive
 | 源码流 | `source-flow/index.html` | 源码计算流实验入口 |
 | 图原型实验室 | `graph-prototype-lab/index.html` | 通用图布局、方向切换、分组和检查器实验室 |
 | 竞品分析 | `计算领域竞分/index.html` | CUDA / ROCm / Triton 等算子开发体验竞品分析 |
+| HPC 拓扑查看器 | [launch.html](https://cinnnnnnndy.github.io/hpc-topology-viewer/launch.html) | 昇腾超节点集群拓扑可视化工作台——七平面网络拓扑下钻、并行策略逻辑魔方、rank 级并行化展开、执行故障复盘画布。`hpc-topology-viewer/` 目录是独立仓库 [Cinnnnnnndy/hpc-topology-viewer](https://github.com/Cinnnnnnndy/hpc-topology-viewer) 的源码镜像，是 Vite + React 项目，需要自行 `npm install && npm run build` 才能在本地跑起来；线上入口以上面的链接为准，随源仓库持续更新 |
 
 ---
 
@@ -131,6 +132,7 @@ pto/
 ├── HNSW/                               # HNSW 白皮书资料和页面
 ├── PycPlacer/                          # H-Anchor / PycPlacer 白皮书页面
 ├── vlsi-placement-whitepaper/          # VLSI 布局白皮书页面
+├── hpc-topology-viewer/                # 昇腾超节点拓扑可视化工作台，独立仓库源码镜像（见「核心模块」表）
 └── 业务理解/                           # PRD、研究笔记、迁移方案和项目索引
 ```
 

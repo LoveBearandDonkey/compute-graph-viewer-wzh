@@ -1,0 +1,2484 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="dark">
+<head>
+<meta charset="UTF-8">
+<meta name="author" content="王欣迪" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AI Infra 可视化原型 v22 · 统一 3D 拓扑驾驶舱 · 软硬结合连线镜头 · 明暗双主题</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<style>
+/* ============================================================
+   设计系统 · 四层 token 架构（替换其他设计系统只需覆盖 ①②）
+   ① 语义 token（--sys-*）：表面/文字/边框/强调/告警，明暗各一套
+   ② 数据编码 token（--dv-*）：状态三色 + 并行维度四色，跨主题恒定
+   ③ 别名层（--bg 等历史变量）：重映射到 ①②，存量样式零改动
+   ④ JS 主题映射（THEMES/TH）：canvas·three.js 等拿不到 CSS 变量的场合
+   ============================================================ */
+:root{
+  /* ② 数据编码色：状态（空闲<40 / 中40-70 / 繁忙>70）与维度（TP/PP/DP/EP）不随明暗切换 */
+  --dv-state-idle:#3fb950; --dv-state-mid:#d29922; --dv-state-busy:#f85149;
+  --dv-tp:#39c5cf; --dv-pp:#d29922; --dv-dp:#58a6ff; --dv-ep:#a371f7;
+}
+:root[data-theme="dark"]{
+  --sys-bg:#0d1117; --sys-surface:#161b22; --sys-sunken:#010409;
+  --sys-raised:#21262d; --sys-raised-hover:#30363d;
+  --sys-border:#30363d; --sys-border-strong:#484f58;
+  --sys-text:#c9d1d9; --sys-text-dim:#8b949e; --sys-text-bright:#ffffff;
+  --sys-accent:#58a6ff; --sys-accent-strong:#1f6feb;
+  --sys-danger:#f85149; --sys-danger-bg:#67060c;
+  --sys-overlay:rgba(1,4,9,.88);
+  --sys-stage-bg:radial-gradient(ellipse at 50% 30%,#0f1626 0%,#010409 75%);
+}
+:root[data-theme="light"]{
+  --sys-bg:#f6f8fa; --sys-surface:#ffffff; --sys-sunken:#eaeef2;
+  --sys-raised:#eef1f4; --sys-raised-hover:#dde3e9;
+  --sys-border:#d0d7de; --sys-border-strong:#afb8c1;
+  --sys-text:#1f2328; --sys-text-dim:#59636e; --sys-text-bright:#000000;
+  --sys-accent:#0969da; --sys-accent-strong:#0969da;
+  --sys-danger:#d1242f; --sys-danger-bg:#ffebe9;
+  --sys-overlay:rgba(255,255,255,.93);
+  --sys-stage-bg:radial-gradient(ellipse at 50% 30%,#eef2f8 0%,#d9e1ec 75%);
+}
+/* ③ 别名层：历史局部变量 → 语义/数据 token */
+:root{
+  --bg:var(--sys-bg); --panel:var(--sys-surface); --panel2:var(--sys-sunken);
+  --border:var(--sys-border); --border2:var(--sys-border-strong);
+  --txt:var(--sys-text); --dim:var(--sys-text-dim);
+  --blue:var(--sys-accent); --dblue:var(--sys-accent-strong);
+  --purple:var(--dv-ep); --green:var(--dv-state-idle); --red:var(--dv-state-busy);
+  --orange:var(--dv-state-mid); --teal:var(--dv-tp);
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%}
+body{background:var(--bg);color:var(--txt);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;overflow:hidden;font-size:13px}
+#app{display:flex;flex-direction:column;height:100vh}
+/* ===== 顶栏 ===== */
+#topbar{height:50px;flex-shrink:0;display:flex;align-items:center;gap:10px;padding:0 14px;background:var(--panel);border-bottom:1px solid var(--border)}
+#topbar .title{font-size:15px;font-weight:700;background:linear-gradient(90deg,var(--blue),var(--purple));-webkit-background-clip:text;background-clip:text;color:transparent;margin-right:8px;white-space:nowrap}
+#topbar .grp{display:flex;align-items:center;gap:5px}
+#topbar .grplab{font-size:11px;color:var(--dim);margin-right:2px}
+button{cursor:pointer;background:var(--sys-raised);color:var(--txt);border:1px solid var(--border2);border-radius:6px;padding:4px 10px;font-size:12px;transition:.2s;white-space:nowrap}
+button:hover{background:var(--sys-raised-hover)}
+button.on{background:var(--dblue);border-color:var(--blue);color:#fff}
+button.lens-TP.on{background:#0f4a50;border-color:var(--teal)}
+button.lens-PP.on{background:#5a4310;border-color:var(--orange)}
+button.lens-DP.on{background:#173a6b;border-color:var(--blue)}
+button.lens-EP.on{background:#3c2a63;border-color:var(--purple)}
+button.lens-SP.on{background:#0d4536;border-color:#2ea27a}
+button.lens-CP.on{background:#3a2440;border-color:#c586d6}
+button.lens-JOB.on{background:#1a3a5c;border-color:#58a6ff}
+button.warn.on{background:#67060c;border-color:var(--red)}
+/* ---- v20：按钮分组折叠（页面收齐）---- */
+.fold{position:relative;display:inline-flex}
+.foldhead{background:var(--sys-raised)}
+.foldhead b{color:#9ecbff;font-weight:600}
+.fold.open .foldhead{background:var(--dblue);border-color:var(--blue);color:#fff}
+.fold.open .foldhead b{color:#fff}
+.fold .fbody{display:none;position:absolute;top:30px;left:0;z-index:40;background:var(--panel);border:1px solid var(--border2);border-radius:8px;padding:6px;box-shadow:0 8px 24px rgba(0,0,0,.55)}
+.fold.open .fbody{display:flex;align-items:center;flex-wrap:wrap;gap:4px;min-width:max-content;max-width:440px}
+.foldhead.warn{border-color:#6e2c2c}
+.foldhead.warn.on{background:#67060c;border-color:var(--red);color:#ffdcd7}
+/* 视图配置面板：着色/连线/形态 同层级集体配置，展开不自动收起 */
+.fold.open .vpanel{flex-direction:column;align-items:stretch;max-width:none;min-width:478px;gap:7px;padding:9px 10px}
+.vrow{display:flex;align-items:center;gap:4px;flex-wrap:wrap}
+.vrow .vlab{width:64px;flex-shrink:0;font-size:10.5px;color:var(--dim);text-align:right;padding-right:2px}
+#topbar #alertbar{max-width:280px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+#alertbar{display:none;margin-left:auto;background:#67060c;border:1px solid var(--red);color:#ffdcd7;border-radius:6px;padding:3px 10px;font-size:12px}
+#alertbar.show{display:block;animation:pulse 1.4s infinite}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.45}}
+/* ===== 场景剧本栏 ===== */
+#scenbar{height:34px;flex-shrink:0;display:flex;align-items:center;gap:6px;padding:0 14px;background:#0b0f14;border-bottom:1px solid var(--border);font-size:11px;color:var(--dim)}
+#scenbar .grplab{margin-right:4px}
+#scenbar button{padding:3px 10px;font-size:11px}
+#scenbar .sep{flex:1 1 auto}
+/* ===== 主区 ===== */
+#main{flex:1;display:flex;min-height:0}
+/* ---- 左 ---- */
+#left{width:430px;flex-shrink:0;border-right:1px solid var(--border);background:var(--panel2);overflow-y:auto;position:relative;padding:10px 12px 16px}
+#lefttabs{display:flex;gap:6px;margin-bottom:10px;position:relative;z-index:6}
+#lefttabs button{flex:1}
+.pane{display:none}
+.pane.show{display:block}
+#left h3{font-size:12px;color:var(--dim);font-weight:400;margin-bottom:8px}
+#left h3 b{color:var(--sys-text-bright)}
+.lvrow{position:relative;border:1px solid var(--border);border-radius:8px;background:var(--panel);padding:6px 8px;cursor:pointer;transition:border-color .2s, box-shadow .2s}
+.lvrow:hover{border-color:var(--border2)}
+.lvrow.focus{border-color:var(--blue);box-shadow:0 0 10px rgba(88,166,255,.35)}
+.lvrow .hd{display:flex;align-items:baseline;gap:6px}
+.lvrow .lv{font-size:11px;font-weight:700;color:var(--blue);width:24px;flex-shrink:0}
+.lvrow .nm{font-size:12px;color:var(--sys-text-bright)}
+.lvrow .ct{font-size:11px;color:var(--dim);margin-left:auto;font-family:ui-monospace,monospace}
+.lvrow .kpi{font-size:10px;color:var(--dim);margin-top:3px;font-family:ui-monospace,monospace}
+.lvrow .kpi b{font-weight:600}
+.lvrow.ghost{opacity:.75}
+.lvrow .body{margin-top:5px}
+.gap{position:relative;height:26px;display:flex;align-items:center;justify-content:flex-end;gap:6px;padding-right:4px}
+.badge{font-size:10px;padding:1px 8px;border-radius:9px;border:1px solid var(--border2);color:var(--dim);background:var(--panel);transition:.25s;position:relative;z-index:5}
+.badge.b-TP{border-color:#1b7c86;color:#7ee0e8}
+.badge.b-PP{border-color:#8a6416;color:#e3b341}
+.badge.b-DP{border-color:#1f6feb;color:#9ecbff}
+.badge.b-EP{border-color:#6e40c9;color:#d2a8ff}
+.badge.b-ANOM{border-color:var(--red);color:#ffdcd7;display:none}
+.badge.live{box-shadow:0 0 10px currentColor;color:#fff}
+.badge.b-ANOM.show{display:inline-block;animation:pulse 1.2s infinite}
+canvas.strip{display:block;width:100%;image-rendering:pixelated;border-radius:4px}
+.inset{display:flex;gap:8px;align-items:center;margin-top:5px}
+.inset .zoom{display:flex;gap:3px}
+.inset .zoom i{display:block;width:16px;height:16px;border-radius:3px;border:1px solid var(--border2);background:var(--sys-raised);cursor:pointer}
+.inset .lab{font-size:10px;color:var(--dim)}
+.ph{display:flex;gap:6px;align-items:center}
+.ph .die{flex:1;border:1px dashed var(--border2);border-radius:6px;padding:4px 8px;font-size:10px;color:var(--dim);text-align:center}
+.ph .cg{border:1px solid;border-radius:4px;font-size:10px;padding:3px 8px}
+.cg.v{border-color:var(--purple);color:#d2a8ff;background:#1c1333}
+.cg.c{border-color:var(--red);color:#ffb3ac;background:#2d0f0e}
+.cg.u{border-color:var(--orange);color:#e3b341;background:#2b2008}
+#commsvg{position:absolute;top:0;left:0;pointer-events:none;z-index:4}
+@keyframes dashmove{to{stroke-dashoffset:-22}}
+.flow{stroke-dasharray:7 4;animation:dashmove .9s linear infinite;fill:none}
+/* ---- 筛选栏（Smartscape 式下钻） ---- */
+#filterbar{display:flex;align-items:center;gap:4px;flex-wrap:wrap;margin-bottom:8px;position:relative;z-index:6;background:var(--panel);border:1px solid var(--border);border-radius:8px;padding:5px 8px;font-size:11px;color:var(--dim)}
+#filterbar b{color:var(--sys-text-bright)}
+#filterbar button{padding:2px 7px;font-size:10.5px}
+#topn{display:flex;gap:5px;flex-wrap:wrap;align-items:center;margin-bottom:8px;position:relative;z-index:6;font-size:10px}
+#topn button{padding:2px 7px;font-size:10px;border-color:var(--red);color:var(--red)}
+#topn button.on{background:#67060c;border-color:var(--red);color:#fff}
+/* ---- 整网映射页签 ---- */
+#mmcv{display:block;width:100%;border-radius:4px;cursor:crosshair;border:1px solid var(--border)}
+#mmdesc{font-size:11px;color:var(--dim);margin-top:7px;line-height:1.55;min-height:46px}
+#mmdesc b{color:var(--sys-text-bright)}
+#memPanel{margin-top:9px;background:var(--panel);border:1px solid var(--border);border-radius:8px;padding:8px 10px;display:none}
+#memPanel.show{display:block}
+#memPanel h4{font-size:11px;color:var(--sys-text-bright);font-weight:600;margin-bottom:6px}
+#memPanel .membar{display:flex;height:18px;border-radius:5px;overflow:hidden;border:1px solid var(--border)}
+#memPanel .memleg{margin-top:6px;display:flex;flex-wrap:wrap;gap:4px 12px;font-size:10px;color:var(--dim)}
+#memPanel .memleg i{display:inline-block;width:8px;height:8px;border-radius:2px;margin-right:4px}
+#memPanel .note{font-size:10px;color:var(--teal);margin-top:6px}
+/* ---- 右：3D ---- */
+#right{flex:1;position:relative;min-width:0;background:var(--sys-stage-bg)}
+#stage{position:absolute;inset:0;width:100%;height:100%;display:block;touch-action:none}
+#formctl{position:absolute;top:10px;right:12px;display:flex;gap:6px;z-index:5;align-items:center}
+#formctl .hint{font-size:10px;color:var(--dim);margin-right:4px}
+#viewlab{position:absolute;top:12px;left:14px;z-index:5;font-size:12px;color:var(--dim);pointer-events:none}
+#viewlab b{color:var(--sys-text-bright)}
+#probe{position:absolute;left:14px;bottom:12px;z-index:5;background:var(--sys-overlay);border:1px solid var(--border);border-radius:8px;padding:8px 12px;font-size:11px;color:var(--dim);min-width:230px;max-width:340px;pointer-events:none}
+#probe b{color:var(--sys-text-bright)}
+#probe .lg{color:var(--teal);font-family:ui-monospace,monospace}
+#hud{position:absolute;right:12px;bottom:12px;z-index:5;background:var(--sys-overlay);border:1px solid var(--border);border-radius:8px;padding:8px 12px;font-size:11px;color:var(--dim);width:238px;pointer-events:auto}
+#hud .busbar{height:7px;background:var(--sys-raised);border-radius:4px;overflow:hidden;margin-top:2px}
+#hud .busbar i{display:block;height:100%;border-radius:4px;transition:width .4s}
+.hudrow{display:flex;align-items:center;gap:6px;margin-top:3px;cursor:pointer;border-radius:4px;padding:1px 3px}
+.hudrow:hover{background:var(--sys-raised);outline:1px solid var(--border)}
+.hudrow .hl{width:104px;flex-shrink:0;font-size:10px}
+.hudrow .hb{flex:1;height:6px;background:var(--sys-raised);border-radius:3px;overflow:hidden}
+.hudrow .hb i{display:block;height:100%;border-radius:3px}
+.hudrow .hv{width:28px;text-align:right;font-family:ui-monospace,monospace;font-size:10px}
+/* ---- 3D 舞台叠加：互联矩阵卡（不新增布局面板，浮在场景上） ---- */
+#mxcard{position:absolute;top:44px;right:12px;z-index:6;width:256px;background:var(--sys-overlay);border:1px solid var(--border);border-radius:8px;padding:8px 10px;display:none;font-size:11px;color:var(--dim)}
+#mxcard.show{display:block}
+#mxcard h4{font-size:11px;color:var(--sys-text-bright);font-weight:600;display:flex;align-items:center;gap:6px;margin-bottom:5px}
+#mxcard h4 .x{margin-left:auto;cursor:pointer;color:var(--dim);padding:0 4px}
+#mxcard h4 .x:hover{color:var(--sys-text-bright)}
+.mrow{display:flex;align-items:center;gap:6px;margin:3px 0;cursor:pointer;border-radius:4px;padding:1px 3px}
+.mrow:hover{background:var(--sys-raised)}
+.mrow.sel{background:var(--sys-raised);outline:1px solid var(--dblue)}
+.mrow .ml{width:96px;flex-shrink:0;font-size:10px}
+.mrow .mb{flex:1;height:7px;background:var(--sys-raised);border-radius:4px;overflow:hidden}
+.mrow .mb i{display:block;height:100%;border-radius:4px}
+.mrow .mv{width:30px;text-align:right;font-family:ui-monospace,monospace;font-size:10px}
+#mxcv{display:block;width:100%;border:1px solid var(--border);border-radius:4px;cursor:crosshair;margin-top:5px}
+#mxinfo{font-size:10px;line-height:1.5;margin-top:5px;min-height:30px}
+#mxinfo b{color:var(--sys-text-bright)}
+#stageleg{position:absolute;left:50%;transform:translateX(-50%);bottom:12px;z-index:5;display:flex;gap:12px;background:var(--sys-overlay);border:1px solid var(--border);border-radius:14px;padding:4px 14px;font-size:10px;color:var(--dim);pointer-events:none;white-space:nowrap}
+#stageleg i{display:inline-block;width:9px;height:9px;border-radius:2px;margin-right:4px;vertical-align:-1px}
+/* ===== 模式 B 抽屉 ===== */
+#drawer{display:none;height:248px;flex-shrink:0;background:var(--panel2);border-top:1px solid var(--border);flex-direction:column;padding:8px 14px 10px}
+#drawer.show{display:flex}
+#drawer .drhead{display:flex;align-items:center;gap:6px;margin-bottom:6px}
+#drawer .drtitle{font-size:12px;color:var(--orange);font-weight:600;margin-right:8px}
+#drawer canvas{flex:1;width:100%;min-height:0;border:1px solid var(--border);border-radius:6px;background:var(--panel2)}
+/* ===== 底部时间轴 ===== */
+#footer{height:58px;flex-shrink:0;display:flex;align-items:center;gap:12px;padding:0 14px;background:var(--panel);border-top:1px solid var(--border)}
+#phasetrack{flex:1;display:flex;height:26px;border-radius:6px;overflow:hidden;position:relative;cursor:pointer}
+.pseg{flex:1;display:flex;align-items:center;justify-content:center;font-size:11px;color:#fff;opacity:.35;transition:opacity .3s;border-right:1px solid var(--sys-bg)}
+.pseg.on{opacity:1}
+.pseg.s-TP{background:#0f4a50}.pseg.s-PP{background:#5a4310}.pseg.s-EP{background:#3c2a63}.pseg.s-DP{background:#173a6b}
+#playhead{position:absolute;top:-4px;bottom:-4px;width:2px;background:#fff;box-shadow:0 0 8px #fff;pointer-events:none}
+#phaselab{font-size:12px;color:var(--orange);width:210px;text-align:right}
+</style>
+</head>
+<body>
+<div id="app">
+  <div id="topbar">
+    <span class="title">AI Infra 统一驾驶舱 v20</span>
+    <span class="grp"><span class="grplab">场景剧本</span>
+      <button id="scPatrol">🩺 巡检大盘</button>
+      <button id="scMoe">🚨 MoE 越界</button>
+      <button id="scSlow">🐢 慢 DP 副本</button>
+      <button id="scDeep">🔬 单机深潜</button>
+      <button id="scDeploy">📦 部署审视</button>
+    </span>
+    <span class="grp fold" id="foldView">
+      <button class="foldhead" id="fhView">🎛 视图 ▾</button>
+      <div class="fbody vpanel">
+        <div class="vrow"><span class="vlab">着色·透镜</span>
+          <button class="lensbtn on" data-lens="NONE">健康度</button>
+          <button class="lensbtn lens-TP" data-lens="TP">TP×8</button>
+          <button class="lensbtn lens-PP" data-lens="PP">PP×16</button>
+          <button class="lensbtn lens-DP" data-lens="DP">DP×64</button>
+          <button class="lensbtn lens-EP" data-lens="EP">EP·MoE</button>
+          <button class="lensbtn lens-SP" data-lens="SP">SP·序列</button>
+          <button class="lensbtn lens-CP" data-lens="CP">CP·上下文</button>
+          <button class="lensbtn lens-JOB" data-lens="JOB">任务·部署</button>
+        </div>
+        <div class="vrow"><span class="vlab">连线·镜头</span>
+          <button class="wirebtn on" data-wire="AUTO">自动·随阶段</button>
+          <button class="wirebtn" data-wire="COMM">通信域</button>
+          <button class="wirebtn" data-wire="FLOW">互联流量</button>
+          <button class="wirebtn" data-wire="LINK">物理链路</button>
+          <button class="wirebtn" data-wire="PATH">消息路径</button>
+          <button id="btnMx">▦ 矩阵</button>
+        </div>
+        <div class="vrow"><span class="vlab">3D·形态</span>
+          <button id="btnPhys" class="on">物理层级</button>
+          <button id="btnCube">逻辑魔方</button>
+          <button id="btnStack">层级堆叠</button>
+        </div>
+        <div class="vrow" id="cubeModes" style="display:none"><span class="vlab">魔方排列</span>
+          <button id="cm0" class="on">标准</button>
+          <button id="cm1">DP平铺</button>
+          <button id="cm2">EP聚簇</button>
+          <button id="cm3">TP切片</button>
+          <button id="cm4">PP流水</button>
+        </div>
+      </div>
+    </span>
+    <span class="grp fold" id="foldScen">
+      <button class="foldhead warn" id="fhScen">🧪 演练 ▾</button>
+      <span class="fbody">
+        <button id="btnAnom" class="warn">注入 EP 跨超节点异常</button>
+        <button id="btnScatter" style="display:none">散射跨域路由</button>
+      </span>
+    </span>
+    <button id="scReset" title="重置全部视图">⟲ 重置</button>
+    <span id="alertbar">⚠ EP AllToAll 越界：8 个专家组成员被越区调度至相邻超节点，跨 Pod 光链路拥塞</span>
+    <span class="grp" style="margin-left:auto"><canvas id="sparks" width="340" height="36" style="width:255px;height:27px"></canvas></span>
+  </div>
+  <div id="main">
+    <div id="left">
+      <svg id="commsvg"></svg>
+      <div id="lefttabs">
+        <button id="tabHier" class="on">层级剖面 L7→L0</button>
+        <button id="tabModel">整网分隔映射</button>
+      </div>
+      <!-- ============ 页签 1：物理层级剖面 ============ -->
+      <div class="pane show" id="paneHier">
+      <h3><b>2D 层级剖面</b> · 点击实体下钻筛选（Smartscape 式）</h3>
+      <div id="filterbar">
+        <span id="fbCrumb">未筛选：点击任意 Host / 3D 方块下钻</span>
+        <span style="flex:1 1 auto"></span>
+        <button class="relbtn on" data-rel="AUTO">跟随阶段</button>
+        <button class="relbtn lens-TP" data-rel="TP">TP组</button>
+        <button class="relbtn lens-PP" data-rel="PP">PP链</button>
+        <button class="relbtn lens-DP" data-rel="DP">DP环</button>
+        <button class="relbtn lens-EP" data-rel="EP">EP对端</button>
+        <button id="fbClear">✕ 清除</button>
+      </div>
+      <div id="topn"></div>
+      <div class="lvrow ghost" data-level="L7"><div class="hd"><span class="lv">L7</span><span class="nm">Global</span><span class="ct">全球调度域 · 缩略</span></div></div>
+      <div class="gap" data-gap="L7L6"></div>
+      <div class="lvrow ghost" data-level="L6"><div class="hd"><span class="lv">L6</span><span class="nm">Cluster · SuperCluster</span><span class="ct" id="ctL6">×64 超节点 · 缩略</span></div><div class="kpi" id="kpiL6"></div>
+        <div class="body" id="l6body"></div></div>
+      <div class="gap" data-gap="L6L5"></div>
+      <div class="lvrow ghost" data-level="L5"><div class="hd"><span class="lv">L5</span><span class="nm">Service Pool · 服务池（组）</span><span class="ct" id="ctL5">本池 8 超节点 · 缩略</span></div><div class="kpi" id="kpiL5"></div>
+        <div class="body" id="l5body"></div></div>
+      <div class="gap" data-gap="L5L4">
+        <span class="badge b-ANOM" id="bdAnom">EP·AllToAll 越界 ↑</span>
+        <span class="badge b-DP" id="bdDPx">DP·跨超节点同步(多Pod作业)</span>
+      </div>
+      <div class="lvrow focus" data-level="L4"><div class="hd"><span class="lv">L4</span><span class="nm">Pod · Atlas 950 超节点（=SN0，池内成员之一）</span><span class="ct">8192 NPU · UB 16PB/s</span></div><div class="kpi" id="kpiL4"></div>
+        <div class="body" id="l4body"></div></div>
+      <div class="gap" data-gap="L4L3">
+        <span class="badge b-PP" id="bdPP">PP·接力 ×16 段</span>
+        <span class="badge b-DP" id="bdDP">DP·梯度同步 ×64 副本</span>
+        <span class="badge b-EP" id="bdEP">EP·AllToAll 浪涌</span>
+      </div>
+      <div class="lvrow" data-level="L3"><div class="hd"><span class="lv">L3</span><span class="nm">Host · 计算节点</span><span class="ct" id="ctL3">×1024 · 每节点 8 NPU</span></div><div class="kpi" id="kpiL3"></div>
+        <div class="body"><canvas class="strip" id="cvL3" width="404" height="104"></canvas></div></div>
+      <div class="gap" data-gap="L3L2">
+        <span class="badge b-TP" id="bdTP">TP·AllReduce ×8 · 节点内 UB</span>
+      </div>
+      <div class="lvrow" data-level="L2"><div class="hd"><span class="lv">L2</span><span class="nm">Chip · NPU 昇腾950DT</span><span class="ct" id="ctL2">×8192</span></div><div class="kpi" id="kpiL2"></div>
+        <div class="body">
+          <canvas class="strip" id="cvL2" width="404" height="112"></canvas>
+          <div class="inset"><span class="lab">焦点 Host 放大 ×8：</span><span class="zoom" id="chipZoom"></span></div>
+        </div></div>
+      <div class="gap" data-gap="L2L1"></div>
+      <div class="lvrow ghost" data-level="L1"><div class="hd"><span class="lv">L1</span><span class="nm">Die（可选）</span><span class="ct">结构占位 · 950DT 未公开</span></div>
+        <div class="body ph"><span class="die">Die 0 · 占位</span><span class="die">Die 1 · 占位</span></div></div>
+      <div class="gap" data-gap="L1L0"></div>
+      <div class="lvrow ghost" data-level="L0"><div class="hd"><span class="lv">L0</span><span class="nm">Core-Group</span><span class="ct">结构占位</span></div>
+        <div class="body ph"><span class="cg v">V · Vector</span><span class="cg c">C · Cube</span><span class="cg u">CPU · 调度</span></div></div>
+      </div>
+      <!-- ============ 页签 2：整网分隔映射（v2 第十组件融合） ============ -->
+      <div class="pane" id="paneModel">
+        <h3><b>模型侧 · 整网分隔映射</b>（拼图原图 ⇄ 3D 货架 双向索引）<br>
+        行=整网 48 层（<b>Pangu Pro MoE 72B-A16B</b> · arXiv:2505.21411）· 列=一个 DP 副本 128 芯片（PP16×TP8）· 每层含 64 路由专家(8 组·MoGE)+4 共享</h3>
+        <div style="display:flex;gap:6px;margin-bottom:8px">
+          <button id="btnDPring" class="on">DP×64 整网复制 · 外圈</button>
+          <button id="btnClearSel">清除选择</button>
+        </div>
+        <canvas id="mmcv" width="404" height="400"></canvas>
+        <div id="mmdesc">点<b>行</b>=整网的一层 → 右侧 3D 亮起承载它的卡（含全部 64 个 DP 副本；魔方形态下是一整个水平切片）。点<b>格/列</b>=一张卡 → 反查它装了整网哪些片 + 显存构成。TP/PP/EP=真·裁切整网（紫色裁切线）；DP 不切、是整网复制（绿色虚线外圈）。</div>
+        <div id="memPanel"></div>
+      </div>
+    </div>
+    <div id="right">
+      <canvas id="stage"></canvas>
+      <div id="formctl">
+        <span class="hint">拖拽旋转 · 滚轮缩放 · 选层=相机飞行 · 着色/连线/形态 → 顶栏「🎛 视图」</span>
+      </div>
+      <div id="viewlab"></div>
+      <div id="probe"></div>
+      <div id="hud"></div>
+      <div id="mxcard">
+        <h4>Pod0 · 互联矩阵（Host×Host 采样）<span class="x" id="mxClose">✕</span></h4>
+        <div id="mxmedia"></div>
+        <canvas id="mxcv" width="232" height="232"></canvas>
+        <div id="mxinfo"></div>
+      </div>
+      <div id="stageleg"></div>
+    </div>
+  </div>
+  <div id="drawer">
+    <div class="drhead">
+      <span class="drtitle">模式 B · 离线深潜 · Triggered Dump（Step 1284-1288）</span>
+      <button id="drTabLane" class="on">泳道 Trace 回放</button>
+      <button id="drTabBw">busbw 基线</button>
+      <button id="drTabMx">通信矩阵</button>
+      <span id="laneCtl" style="display:flex;gap:5px;margin-left:10px">
+        <button id="laneTopk" class="on">传统 Top-K</button>
+        <button id="laneMoge">MoGE 均衡</button>
+      </span>
+      <span id="laneCtx" style="font-size:11px;color:var(--dim);margin-left:10px"></span>
+      <span style="flex:1 1 auto"></span>
+      <button id="drClose">✕ 关闭</button>
+    </div>
+    <canvas id="cvLane" width="1000" height="206"></canvas>
+    <canvas id="cvBw" width="1000" height="206" style="display:none"></canvas>
+  <canvas id="cvMx" width="1000" height="206" style="display:none"></canvas>
+  </div>
+  <div id="footer">
+    <button id="btnPlay">▶ 播放</button>
+    <button id="btnModeB" title="离线深潜：泳道 Trace / busbw 基线 / 通信矩阵">📊 泳道回放</button>
+    <div id="phasetrack">
+      <div class="pseg s-TP" data-ph="0">TP · 前向 AllReduce</div>
+      <div class="pseg s-PP" data-ph="1">PP · 阶段接力</div>
+      <div class="pseg s-EP" data-ph="2">EP · MoE AllToAll</div>
+      <div class="pseg s-DP" data-ph="3">DP · 梯度同步</div>
+      <div id="playhead" style="left:0"></div>
+    </div>
+    <div id="phaselab"></div>
+  </div>
+</div>
+<script>
+/* ================= 数据模型：一个 Atlas 950 超节点（真实数量） =================
+   8192 NPU = 1024 Host × 8 芯片；128 计算柜(每柜 8 Host，16 列×8 排) + 互联柜示意
+   逻辑切分：TP=8(节点内) × PP=16 × DP=64；整网 48 层（每段 3 层）
+   模型数据：Pangu Pro MoE 72B-A16B（arXiv:2505.21411）——48 层 · hidden 5120 ·
+   64 路由专家 = 8 组 × 组内 top-1（MoGE，IS=0）+ 4 共享专家 · 激活 16.5B/共 72B */
+const N_HOST = 1024, N_CHIP = 8192, TP = 8, PP = 16, DP = 64, N_LAYER = 48, N_EXP = 64;
+const COL = { TP:'#39c5cf', PP:'#d29922', DP:'#58a6ff', EP:'#a371f7', RED:'#f85149', GREEN:'#3fb950', DIM:'#30363d' };
+const PHASES = [
+  { id:'TP', name:'TP · 前向 AllReduce', bus:'节点内 UB 铜缆/光 · 高频', load:.92 },
+  { id:'PP', name:'PP · 阶段接力 Send/Recv', bus:'Pod 内跨节点 UB · 中频', load:.45 },
+  { id:'EP', name:'EP · MoE AllToAll 浪涌', bus:'Pod 内全互联 · 浪涌', load:.88 },
+  { id:'DP', name:'DP · 梯度 AllReduce', bus:'Pod 内 + 跨 Pod(多作业) · 低频大包', load:.60 },
+];
+const S = {
+  lens:'NONE', form:'phys', morph:0,
+  level:'L4', focusHost:137, focusChip:137*8+3,
+  phase:0, t:0, playing:false, anomaly:false,
+  hoverHost:-1, hoverSide:'',
+  tab:'hier',
+  filterHost:null, rel:'AUTO', focusPod:0, wire:'AUTO', scatter:false,
+  mxShow:false, mxPin:null, mxHover:null, mxMedium:null, hudEmph:null,   // v20：矩阵叠加卡 / HUD 联动
+  selLayer:null, selCard:null            // 整网映射选择：selCard={pp,tp|null}
+};
+const rng = (i)=>{ let x = Math.sin(i*127.1+311.7)*43758.5453; return x-Math.floor(x); };
+const health = new Float32Array(N_HOST);
+for(let h=0;h<N_HOST;h++){ health[h] = .25 + .5*rng(h); }
+[311,312,313,570,571].forEach(h=>health[h]=.97);
+const expertHosts = []; for(let e=0;e<N_EXP;e++) expertHosts.push((e*16+5)%N_HOST);
+const hotExperts = new Set([5,21]);            // 对照示意：传统 Top-K 的热点（MoGE 本身 IS=0，最热≈12.5%）
+const anomExperts = [3,11,19,27,35,43,51,59];  // 每组 1 个成员被越区调度（异常注入场景）
+const isExpertHost = new Int8Array(N_HOST);
+expertHosts.forEach((h,e)=>{ isExpertHost[h] = hotExperts.has(e)?2:1; });
+const isAnomHost = new Int8Array(N_HOST);
+anomExperts.forEach(e=>{ isAnomHost[expertHosts[e]]=1; });
+const hostExpertIdx = new Int16Array(N_HOST).fill(-1);
+expertHosts.forEach((h,e)=>{ hostExpertIdx[h]=e; });
+/* 任务/作业部署（框架 → 物理映射）：哪些机器部署了哪些计算任务 */
+const jobOf = h => h<768 ? 0 : (h<960 ? 1 : 2);
+const JOBS = [
+  { name:'训练 · Pangu Pro MoE 72B-A16B', fw:'MindSpeed + CANN · 13T tokens · TP8/EP2/PP5' },
+  { name:'推理 · Pangu Pro MoE W8A8', fw:'MindIE · 1148 tok/s/卡@100ms（MTP 1528）' },
+  { name:'空闲 / 维护', fw:'—' } ];
+const memLevel = new Float32Array(N_HOST);
+for(let h=0;h<N_HOST;h++){ const m = jobOf(h)===2? .06 : .42+.42*rng(h*7.3)+(health[h]>.95?.14:0);
+  memLevel[h] = Math.min(1,m); }
+const hostOf = c => c>>3, slotOf = c => c&7;
+const ppOf = h => h%16, dpOf = h => (h/16)|0;
+const cabOf = h => (h/8)|0;
+const stageOfLayer = l => (l/3)|0;              // 48 层 → 16 段（每段 3 层）
+const isMoELayer = l => true;                   // Pangu Pro MoE：每层均含 64 路由专家 + 4 共享
+/* ============ 整网选择 → 承载判定（跨三个视图共用） ============ */
+function carrierHost(h){
+  if(S.selLayer!=null) return ppOf(h)===stageOfLayer(S.selLayer);
+  if(S.selCard) return ppOf(h)===S.selCard.pp;
+  return true;
+}
+function carrierChip(c){
+  if(S.selCard && S.selCard.tp!=null)
+    return ppOf(hostOf(c))===S.selCard.pp && slotOf(c)===S.selCard.tp;
+  return carrierHost(hostOf(c));
+}
+/* ============ 透镜配色（选中整网片段时非承载者压暗） ============ */
+function baseHostColor(h){
+  const L = S.lens;
+  if(S.anomaly && isAnomHost[h] && (L==='EP'||L==='NONE')) return COL.RED;
+  if(L==='NONE'){ const v = health[h];
+    if(v>.95) return COL.RED;
+    const g = 40+Math.floor(v*140); return `rgb(${30+g*.3|0},${g},${90+g*.5|0})`; }
+  if(L==='TP') return '#1b7c86';
+  if(L==='SP') return '#1e7a5a';
+  if(L==='CP') return '#233043';
+  if(L==='JOB'){ const j=jobOf(h);
+    if(j===2) return '#1a2029';
+    const v=(h%16)/16;
+    return j===0 ? `hsl(212,68%,${26+v*14|0}%)` : `hsl(174,60%,${22+v*12|0}%)`; }
+  if(L==='PP'){ const p = ppOf(h); return `hsl(${30+p*11},72%,${34+(p%4)*7}%)`; }
+  if(L==='DP'){ const d = dpOf(h); return `hsl(${205+(d%8)*6},68%,${30+((d/8)|0)*4}%)`; }
+  if(L==='EP'){ if(!isExpertHost[h]) return '#21262d';
+    return isExpertHost[h]===2 ? '#e3b341' : COL.EP; }
+  return COL.DIM;
+}
+function hostColor(h){ if(!carrierHost(h) || !filterPassHost(h)) return '#151b23'; return baseHostColor(h); }
+function chipColor(c){
+  if(!carrierChip(c) || !filterPassHost(hostOf(c))) return '#141a21';
+  const h = hostOf(c), s = slotOf(c);
+  if(S.lens==='TP'){ const base=[26,124,134];
+    const k = .75 + .35*(s/7); return `rgb(${base[0]*k|0},${base[1]*k|0},${base[2]*k|0})`; }
+  if(S.lens==='SP'){ const k = .7 + .4*(s/7);
+    return `rgb(${30*k|0},${122*k|0},${90*k|0})`; }
+  return baseHostColor(h);
+}
+/* ============ 当前阶段的参与者（左侧弧线 / 画布描边 / 3D 通信线共用） ============ */
+function phaseSets(){
+  const ph = PHASES[S.phase].id;
+  const dpF = dpOf(S.focusHost), ppF = ppOf(S.focusHost);
+  if(ph==='TP') return { hosts:[S.focusHost],
+    desc:`Host ${S.focusHost} 内 8×NPU 环状 AllReduce（节点内 UB）` };
+  if(ph==='PP'){ const hs=[]; for(let k=0;k<16;k++) hs.push(dpF*16+k);
+    return { hosts:hs, chain:true, desc:`DP 副本 ${dpF}：Stage0 → … → Stage15 逐段接力` }; }
+  if(ph==='EP'){ const hub = expertHosts[5], hs=[hub];
+    for(let e=1;e<N_EXP;e+=5){ const h=expertHosts[e]; if(h!==hub) hs.push(h); }
+    return { hosts:hs, hub, desc:`热点专家 Host ${hub} ⇄ 各专家 Host · AllToAll 双向` }; }
+  const hs=[]; for(let d=0;d<64;d+=8) hs.push(d*16+ppF);
+  return { hosts:hs, ring:true, desc:`PP Stage${ppF} 的 DP 梯度环（示 8/64 副本）` };
+}
+/* ============ Smartscape 式筛选下钻：点实体 → 关联集合 → 各层折叠 ============ */
+function activeRel(){ return S.rel==='AUTO' ? PHASES[S.phase].id : S.rel; }
+function relSet(h){
+  const r = activeRel();
+  if(r==='TP') return { hosts:[h], color:COL.TP, label:`TP 组：Host ${h} 节点内 8×NPU` };
+  if(r==='PP'){ const dp=dpOf(h), hs=[]; for(let k=0;k<16;k++) hs.push(dp*16+k);
+    return { hosts:hs, color:COL.PP, label:`PP 链：DP 副本 ${dp} 的 16 段接力` }; }
+  if(r==='DP'){ const pp=ppOf(h), hs=[]; for(let d=0;d<64;d++) hs.push(d*16+pp);
+    return { hosts:hs, color:COL.DP, label:`DP 环：Stage${pp} 的 64 个同位副本` }; }
+  if(!isExpertHost[h]) return { hosts:[h], color:COL.EP, label:`Host ${h} 非专家节点，无 EP 对端`, empty:true };
+  const hs=[h]; for(let e=0;e<N_EXP;e+=3){ const x=expertHosts[e]; if(x!==h&&hs.indexOf(x)<0) hs.push(x); }
+  return { hosts:hs, color:COL.EP, label:`EP 对端：专家互联（示 ${hs.length-1} 个）` };
+}
+let relCache = null;
+function invalidateRel(){ relCache = null; }
+function filterInfo(){
+  if(S.filterHost==null) return null;
+  if(!relCache){ relCache = relSet(S.filterHost);
+    relCache.set = new Set(relCache.hosts); relCache.set.add(S.filterHost); }
+  return relCache;
+}
+function filterPassHost(h){ const f = filterInfo(); return !f || f.set.has(h); }
+function setFilter(h){
+  if(S.filterHost===h){ S.filterHost=null; }
+  else { S.filterHost=h; S.focusHost=h; S.focusChip=h*8; }
+  invalidateRel(); renderFilterBar(); updateCounts();
+  if(S.filterHost!=null && S.level!=='L3' && S.level!=='L2') setLevel('L3');
+  touchLeft();
+}
+function renderFilterBar(){
+  const f = filterInfo();
+  $('#fbCrumb').innerHTML = f
+    ? `已下钻 <b>Host ${S.filterHost}</b> · <span style="color:${f.color}">${f.label}</span>`
+    : '未筛选：点击任意 Host / 3D 方块下钻';
+}
+function updateLevelKPI(){
+  let sum=0, red=0, peak=0;
+  for(let h=0;h<N_HOST;h++){ const u = 40+health[h]*55;
+    sum+=u; if(u>peak) peak=u;
+    if(health[h]>.95 || (S.anomaly&&isAnomHost[h])) red++; }
+  const typ=(sum/N_HOST)|0, redP=(red/N_HOST*100).toFixed(1);
+  const html = `典型 <b style="color:#c9d1d9">${typ}%</b> · 红 <b style="color:${red>5?'#f85149':'#8b949e'}">${redP}%</b> · 峰 <b style="color:#e3b341">${peak|0}%</b>`;
+  ['kpiL6','kpiL5','kpiL4','kpiL3','kpiL2'].forEach(id=>{
+    const el=document.getElementById(id); if(el) el.innerHTML=html; });
+}
+function renderTopN(){
+  const el = document.getElementById('topn'); if(!el) return;
+  if(!el._wired){ el._wired = true;
+    el.addEventListener('click', ev=>{ const h = ev.target.dataset && ev.target.dataset.h;
+      if(h!=null) setFilter(+h); }); }
+  const list = [];
+  if(S.anomaly) anomExperts.slice(0,3).forEach(e=>list.push([expertHosts[e],'EP越界']));
+  const idx = Array.from({length:N_HOST},(_,i)=>i).sort((a,b)=>health[b]-health[a]);
+  for(const h of idx){ if(list.length>=5) break;
+    if(!list.some(x=>x[0]===h)) list.push([h, ((40+health[h]*55)|0)+'%']); }
+  el.innerHTML = '<span style="color:#8b949e">🔥 快速分诊 Top5</span>' +
+    list.map(x=>`<button data-h="${x[0]}"${S.filterHost===x[0]?' class="on"':''}>Host${x[0]} · ${x[1]}</button>`).join('');
+}
+function updateCounts(){
+  const f = filterInfo();
+  const set = (id,txt)=>{ const el=$(id); if(el) el.textContent=txt; };
+  set('#ctL6', f? '关联 1/64 · 本超节点' : '×64 超节点 · 缩略');
+  set('#ctL5', f? '关联 1/8 · SN0' : '池内 8 超节点 SN0-7 · 缩略');
+  set('#ctL3', f? `关联 ${f.set.size}/1024` : '×1024 · 每节点 8 NPU');
+  set('#ctL4', f? `关联 ${new Set([...f.set].map(cabOf)).size}/128 柜` : '128 计算柜（16×8 · 每柜 8 槽）+ 32 互联柜');
+  set('#ctL2', f? `已筛 8/8192 · Host ${S.filterHost}` : '×8192');
+  if(S.focusPod>0){ set('#ctL6', `已选超节点 ${S.focusPod}/64 · 缩略`);
+    if(S.focusPod<8) set('#ctL5', `已选 SN${S.focusPod} · 缩略`); }
+}
+/* ================= 左侧页签 1：2D 层级剖面 ================= */
+const $ = s => document.querySelector(s), $$ = s => document.querySelectorAll(s);
+const left = $('#left'), commsvg = $('#commsvg');
+/* HiDPI：画布按设备像素比渲染，逻辑坐标系不变（修正 Retina 模糊） */
+function hidpi(cv, W, H){
+  const d = Math.min(window.devicePixelRatio||1, 2);
+  if(cv.width !== (W*d|0) || cv.height !== (H*d|0)){ cv.width = W*d|0; cv.height = H*d|0; }
+  cv.getContext('2d').setTransform(d,0,0,d,0,0);
+}
+(function(){ const b = $('#l6body'); let html='<div style="display:flex;gap:2px;flex-wrap:wrap">';
+  for(let i=0;i<64;i++) html += `<i id="sn${i}" style="width:9px;height:9px;border-radius:2px;background:${i===0?'#1f6feb':'#21262d'};border:1px solid ${i===0?'#58a6ff':(i<8?'#2a4f8a':'#30363d')}" title="超节点 ${i}${i<8?' · 本服务池成员':''}"></i>`;
+  b.innerHTML = html+'</div>'; })();
+(function(){ const b = $('#l5body'); let html='<div style="display:flex;gap:5px">';
+  for(let i=0;i<8;i++) html += `<span id="pod5-${i}" style="flex:1;text-align:center;font-size:10px;padding:3px 0;border-radius:4px;border:1px solid ${i===0?'#58a6ff':'#30363d'};background:${i===0?'#173a6b':'#161b22'};color:${i===0?'#fff':'#8b949e'}">SN${i}${i===0?' ·本(=L4)':''}</span>`;
+  b.innerHTML = html+'</div>'; })();
+$('#l4body').innerHTML =
+  `<div style="display:flex;gap:8px;align-items:center;font-size:11px;color:var(--dim)">
+     <span id="ctL4">128 计算柜（16×8 · 每柜 8 槽）+ 32 互联柜</span>
+     <span style="margin-left:auto">MFU <b style="color:#fff">54.2%</b></span>
+   </div>
+   <canvas class="strip" id="cvL4" width="404" height="86" style="margin-top:5px"></canvas>`;
+$$('#l5body span').forEach((el,i)=>{ el.style.cursor='pointer';
+  el.addEventListener('click', e=>{ e.stopPropagation(); setPod(i,'L5'); }); });
+$$('#l6body i').forEach((el,i)=>{ el.style.cursor='pointer';
+  el.addEventListener('click', e=>{ e.stopPropagation(); setPod(i,'L6'); }); });
+function setPod(i,lv){ S.focusPod = (S.focusPod===i && S.level===lv)? 0 : i;
+  renderPodRows(); colorsDirty = true; updateCounts(); setLevel(lv); drawArcs(); }
+function renderPodRows(){
+  // 选中态完全由 S.focusPod 驱动：切换即迁移，SN0 不再常亮（仅保留"本池"弱标识）
+  $$('#l5body span').forEach((el,i)=>{
+    const sel = S.focusPod===i;
+    el.style.outline = 'none';
+    el.style.borderColor = sel? '#58a6ff' : (i===0? '#2a4f8a' : '#30363d');
+    el.style.background = sel? '#173a6b' : '#161b22';
+    el.style.color = sel? '#fff' : '#8b949e';
+    el.style.fontWeight = sel? '600' : '400';
+  });
+  $$('#l6body i').forEach((el,i)=>{
+    const sel = S.focusPod===i;
+    el.style.outline = 'none';
+    el.style.background = sel? '#1f6feb' : '#21262d';
+    el.style.borderColor = sel? '#58a6ff' : (i<8? '#2a4f8a' : '#30363d');
+  });
+}
+(function(){ const z = $('#chipZoom'); let html='';
+  for(let s=0;s<8;s++) html += `<i data-slot="${s}" title="NPU slot ${s}"></i>`;
+  z.innerHTML = html;
+  z.querySelectorAll('i').forEach(el=>el.onclick = e=>{ e.stopPropagation();
+    S.focusChip = S.focusHost*8 + (+el.dataset.slot); setLevel('L2'); }); })();
+function renderChipZoom(){
+  $('#chipZoom').querySelectorAll('i').forEach((el,s)=>{
+    const c = S.focusHost*8+s;
+    el.style.background = chipColor(c);
+    el.style.outline = (S.level==='L2'&&c===S.focusChip)?'2px solid #fff':'none'; });
+}
+const cvL3 = $('#cvL3'), g3 = cvL3.getContext('2d');
+const L3C = { cols:64, rows:16, cw:404/64, ch:104/16 };
+function cellRectL3(h){ return [(h%64)*L3C.cw, ((h/64)|0)*L3C.ch, L3C.cw, L3C.ch]; }
+function renderL3(){
+  hidpi(cvL3,404,104);
+  g3.clearRect(0,0,404,104);
+  for(let h=0;h<N_HOST;h++){
+    const [x,y,w,hh] = cellRectL3(h);
+    g3.fillStyle = hostColor(h);
+    g3.fillRect(x+.5, y+.5, w-1, hh-1);
+  }
+  // 描边：筛选模式画关联集合，否则画当前阶段参与者
+  const flt = filterInfo(); g3.lineWidth = 1;
+  if(flt){ g3.strokeStyle = flt.color;
+    flt.set.forEach(h=>{ const [x,y,w,hh]=cellRectL3(h); g3.strokeRect(x+.5,y+.5,w-1,hh-1); });
+  } else {
+    const ps = phaseSets();
+    g3.strokeStyle = COL[PHASES[S.phase].id];
+    ps.hosts.forEach(h=>{ const [x,y,w,hh]=cellRectL3(h); g3.strokeRect(x+.5,y+.5,w-1,hh-1); });
+    if(ps.hub!=null){ const [x,y,w,hh]=cellRectL3(ps.hub); g3.lineWidth=2; g3.strokeRect(x,y,w,hh); g3.lineWidth=1; }
+  }
+  if(S.hoverHost>=0){ const [x,y,w,hh]=cellRectL3(S.hoverHost);
+    g3.strokeStyle='#fff'; g3.strokeRect(x+.5,y+.5,w-1,hh-1); }
+  const [fx,fy,fw,fh] = cellRectL3(S.focusHost);
+  g3.strokeStyle='#58a6ff'; g3.lineWidth=1.5; g3.strokeRect(fx,fy,fw,fh);
+}
+const cvL2 = $('#cvL2'), g2 = cvL2.getContext('2d');
+const L2C = { cols:256, rows:32, cw:404/256, ch:112/32 };
+const L2F = { cells:[] };
+function renderL2(){
+  hidpi(cvL2,404,112);
+  g2.clearRect(0,0,404,112);
+  const flt = filterInfo();
+  if(flt){                              // 筛选模式：折叠为选中 Host 的 8 颗大芯片（Dynatrace 折叠行）
+    L2F.cells.length = 0;
+    const cw=40, gap=7, x0=(404-(8*cw+7*gap))/2, y0=25, hg=58;
+    g2.fillStyle='#8b949e'; g2.font='10px sans-serif'; g2.textAlign='left';
+    g2.fillText(`Host ${S.filterHost} 的 8×NPU · 其余 8184 颗已折叠`, x0, 13);
+    for(let s=0;s<8;s++){ const c=S.filterHost*8+s, x=x0+s*(cw+gap);
+      g2.fillStyle = chipColor(c); g2.fillRect(x,y0,cw,hg);
+      g2.strokeStyle = c===S.focusChip ? '#fff' : '#484f58';
+      g2.lineWidth = c===S.focusChip ? 2 : 1;
+      g2.strokeRect(x+.5,y0+.5,cw-1,hg-1);
+      g2.fillStyle='#c9d1d9'; g2.font='9px ui-monospace,monospace'; g2.textAlign='center';
+      g2.fillText('TP'+s, x+cw/2, y0+hg+12);
+      L2F.cells.push({x,y:y0,w:cw,h:hg,c});
+    }
+    return;
+  }
+  for(let c=0;c<N_CHIP;c++){
+    const x = (c%256)*L2C.cw, y = ((c/256)|0)*L2C.ch;
+    g2.fillStyle = chipColor(c);
+    g2.fillRect(x, y, L2C.cw-.3, L2C.ch-.6);
+  }
+  if(S.hoverHost>=0){ for(let s=0;s<8;s++){ const c=S.hoverHost*8+s;
+      g2.strokeStyle='#fff'; g2.lineWidth=.8;
+      g2.strokeRect((c%256)*L2C.cw, ((c/256)|0)*L2C.ch, L2C.cw, L2C.ch); } }
+  for(let s=0;s<8;s++){ const c=S.focusHost*8+s;
+    g2.strokeStyle = PHASES[S.phase].id==='TP' ? COL.TP : '#58a6ff'; g2.lineWidth=1;
+    g2.strokeRect((c%256)*L2C.cw, ((c/256)|0)*L2C.ch, L2C.cw, L2C.ch); }
+}
+function pickL3(ev){ const r = cvL3.getBoundingClientRect();
+  const x=(ev.clientX-r.left)/r.width*404, y=(ev.clientY-r.top)/r.height*104;
+  const col=Math.min(63,Math.max(0,(x/L3C.cw)|0)), row=Math.min(15,Math.max(0,(y/L3C.ch)|0)); return row*64+col; }
+function pickL2(ev){ const r = cvL2.getBoundingClientRect();
+  const x=(ev.clientX-r.left)/r.width*404, y=(ev.clientY-r.top)/r.height*112;
+  if(filterInfo()){
+    for(const cell of L2F.cells)
+      if(x>=cell.x&&x<=cell.x+cell.w&&y>=cell.y-2&&y<=cell.y+cell.h+2) return cell.c;
+    return S.filterHost*8; }
+  const col=Math.min(255,Math.max(0,(x/L2C.cw)|0)), row=Math.min(31,Math.max(0,(y/L2C.ch)|0)); return row*256+col; }
+/* L4 画布：128 计算柜（每柜 8 槽细条 = 单个 Host）+ 32 互联柜 */
+const cvL4 = $('#cvL4'), gL4 = cvL4.getContext('2d');
+const L4C = { cw:404/16, ch:64/8, icY:70, icH:12 };
+function renderL4(){
+  hidpi(cvL4,404,86);
+  gL4.clearRect(0,0,404,86);
+  for(let cab=0;cab<128;cab++){
+    const x=(cab%16)*L4C.cw, y=((cab/16)|0)*L4C.ch;
+    for(let s=0;s<8;s++){
+      gL4.fillStyle = hostColor(cab*8+s);
+      gL4.fillRect(x+1+s*(L4C.cw-2)/8, y+1, (L4C.cw-2)/8-.6, L4C.ch-2); }
+    gL4.strokeStyle='#21262d'; gL4.lineWidth=1; gL4.strokeRect(x+.5,y+.5,L4C.cw-1,L4C.ch-1);
+  }
+  const fc = cabOf(S.focusHost);
+  gL4.strokeStyle='#58a6ff'; gL4.lineWidth=1.5;
+  gL4.strokeRect((fc%16)*L4C.cw+.5, ((fc/16)|0)*L4C.ch+.5, L4C.cw-1, L4C.ch-1);
+  if(S.hoverHost>=0){ const hc=cabOf(S.hoverHost);
+    gL4.strokeStyle='#fff'; gL4.lineWidth=1;
+    gL4.strokeRect((hc%16)*L4C.cw+.5, ((hc/16)|0)*L4C.ch+.5, L4C.cw-1, L4C.ch-1); }
+  for(let i=0;i<32;i++){
+    const x = 6+i*12.3;
+    gL4.fillStyle = (S.anomaly && i%8===1) ? '#67060c' : '#21262d';
+    gL4.fillRect(x, L4C.icY, 10, L4C.icH);
+    gL4.strokeStyle='#30363d'; gL4.strokeRect(x+.5, L4C.icY+.5, 9, L4C.icH-1); }
+  gL4.fillStyle='#6e7681'; gL4.font='8px sans-serif'; gL4.textAlign='left';
+  gL4.fillText('互联柜 ×32', 6, L4C.icY-2);
+}
+function pickL4(ev){ const r=cvL4.getBoundingClientRect();
+  const x=(ev.clientX-r.left)/r.width*404, y=(ev.clientY-r.top)/r.height*86;
+  if(y>=64) return -1;
+  const col=Math.min(15,Math.max(0,(x/L4C.cw)|0)), row=Math.min(7,Math.max(0,(y/L4C.ch)|0));
+  const cab=row*16+col, s=Math.min(7,Math.max(0,((x-col*L4C.cw-1)/((L4C.cw-2)/8))|0));
+  return cab*8+s; }
+cvL4.addEventListener('mousemove', ev=>{ const h=pickL4(ev); if(h>=0) setHover(h,'L4'); else setHover(-1,''); });
+cvL4.addEventListener('mouseleave', ()=>setHover(-1,''));
+cvL4.addEventListener('click', ev=>{ ev.stopPropagation(); const h=pickL4(ev); if(h>=0) setFilter(h); });
+cvL3.addEventListener('mousemove', ev=>{ setHover(pickL3(ev),'L3'); });
+cvL3.addEventListener('mouseleave', ()=>setHover(-1,''));
+cvL3.addEventListener('click', ev=>{ setFilter(pickL3(ev)); });
+cvL2.addEventListener('mousemove', ev=>{ setHover(hostOf(pickL2(ev)),'L2'); });
+cvL2.addEventListener('mouseleave', ()=>setHover(-1,''));
+cvL2.addEventListener('click', ev=>{ const c=pickL2(ev); S.focusChip=c; S.focusHost=hostOf(c); touchLeft(); });
+function setHover(h,side){ if(S.hoverHost===h&&S.hoverSide===side) return;
+  S.hoverHost=h; S.hoverSide=side;
+  if(S.tab==='hier'){ renderL3(); renderL2(); renderL4(); } renderProbe(); }
+$$('.lvrow').forEach(row=>row.addEventListener('click', ()=>setLevel(row.dataset.level)));
+function setLevel(lv){ S.level=lv;
+  $$('.lvrow').forEach(r=>r.classList.toggle('focus', r.dataset.level===lv));
+  commDirty = true;                  // 连线元素随层级自适应缩放/换粒度，需重建
+  renderViewlab(); renderChipZoom(); renderProbe(); }
+/* ---- 通信弧线：端点锚定真实单元 ---- */
+function anchorL3(h){ const r=cvL3.getBoundingClientRect(), L=left.getBoundingClientRect();
+  return { x: r.left-L.left + (h%64+.5)/64*r.width,
+           y: r.top-L.top+left.scrollTop + (((h/64)|0)+.5)/16*r.height }; }
+function anchorL2(c){ const r=cvL2.getBoundingClientRect(), L=left.getBoundingClientRect();
+  const flt=filterInfo();
+  if(flt && hostOf(c)===S.filterHost && L2F.cells.length===8){
+    const cell = L2F.cells[slotOf(c)];
+    return { x: r.left-L.left + (cell.x+cell.w/2)/404*r.width,
+             y: r.top-L.top+left.scrollTop + cell.y/112*r.height }; }
+  return { x: r.left-L.left + (c%256+.5)/256*r.width,
+           y: r.top-L.top+left.scrollTop + (((c/256)|0)+.5)/32*r.height }; }
+function anchorL4cab(cab){ const r=cvL4.getBoundingClientRect(), L=left.getBoundingClientRect();
+  return { x: r.left-L.left + ((cab%16)+.5)/16*r.width,
+           y: r.top-L.top + left.scrollTop + (((cab/16)|0)+.5)*8/86*r.height }; }
+function anchorEl(sel,bottom){ const el=$(sel); if(!el) return {x:0,y:0};
+  const r=el.getBoundingClientRect(), L=left.getBoundingClientRect();
+  return { x:r.left-L.left+r.width/2, y:r.top-L.top+left.scrollTop+(bottom?r.height:r.height/2) }; }
+function arcPath(a,b,bow){ const mx=(a.x+b.x)/2, my=(a.y+b.y)/2 - bow;
+  return `M${a.x.toFixed(1)} ${a.y.toFixed(1)} Q ${mx.toFixed(1)} ${my.toFixed(1)} ${b.x.toFixed(1)} ${b.y.toFixed(1)}`; }
+function drawArcs(){
+  if(S.tab!=='hier'){ commsvg.innerHTML=''; return; }
+  commsvg.setAttribute('width', left.clientWidth);
+  commsvg.setAttribute('height', left.scrollHeight);
+  const ph = PHASES[S.phase].id, ps = phaseSets();
+  const out = [`<defs>${['TP','PP','DP','EP','RED'].map(k=>
+    `<marker id="arr${k}" viewBox="0 0 8 8" refX="6.5" refY="4" markerWidth="4.5" markerHeight="4.5" orient="auto"><path d="M0 0 L8 4 L0 8 z" fill="${COL[k]}"/></marker>`).join('')}</defs>`];
+  const dot = (p,c)=>out.push(`<circle cx="${p.x.toFixed(1)}" cy="${p.y.toFixed(1)}" r="2.4" fill="${c}"/>`);
+  const lab = (x,y,c,t,anchor)=>out.push(`<text x="${x.toFixed(0)}" y="${y.toFixed(0)}" fill="${c}" font-size="10" text-anchor="${anchor||'middle'}" style="paint-order:stroke;stroke:#010409;stroke-width:3px">${t}</text>`);
+  const arc = (a,b,bow,color,wd,mk)=>out.push(`<path class="flow" d="${arcPath(a,b,bow)}" stroke="${color}" stroke-width="${wd}"${mk?` marker-end="url(#arr${mk})"`:''}/>`);
+  const podSel = ()=>{ if(!S.focusPod) return;
+    const i = S.focusPod, si = anchorEl('#sn'+i);
+    dot(si,'#9ecbff');
+    if(i<8){ const pi = anchorEl('#pod5-'+i);
+      out.push(`<path d="${arcPath(si,pi,-12)}" stroke="#9ecbff" stroke-width="1.2" fill="none" stroke-dasharray="4 3"/>`);
+      dot(pi,'#9ecbff');
+      lab(pi.x, pi.y+15, '#9ecbff', `已选 SN${i} · 缩略超节点（未下钻 · 点 SN0 返回）`); }
+    else lab(si.x+8, si.y+3, '#9ecbff', `已选超节点 ${i} · 不在本服务池（缩略）`, 'start');
+  };
+  const flt = filterInfo();
+  if(flt){                                   // ==== Smartscape 下钻模式 ====
+    const hp = anchorL3(S.filterHost);
+    dot(hp,'#fff'); lab(hp.x, hp.y-8, '#fff', `Host ${S.filterHost}`);
+    for(let s=0;s<8;s++){ const p=anchorL2(S.filterHost*8+s);   // ① 纵向下钻：Host → 8 芯片
+      out.push(`<path d="${arcPath(hp,p,-10)}" stroke="#58a6ff" stroke-width="1" fill="none" opacity=".7"/>`);
+      dot(p,'#58a6ff'); }
+    if(!flt.empty){                                             // ② 关联集合（当前关系）
+      const others = flt.hosts.filter(x=>x!==S.filterHost).slice(0,14);
+      others.forEach(h=>{ const p=anchorL3(h);
+        arc(hp,p, 16+((h*11)%14), flt.color, 1.2, activeRel()); dot(p,flt.color); });
+      const extra = flt.set.size-1-others.length;
+      if(extra>0) lab(hp.x, hp.y+15, flt.color, `+${extra} 个关联已在网格中描边`);
+    }
+    const ups = [anchorL4cab(cabOf(S.filterHost)), anchorEl('#pod5-0'), anchorEl('#sn0')];
+    let prev = hp;                                              // ③ 向上归属链：Host→Pod→Pool→SuperCluster
+    ups.forEach(p=>{ out.push(`<path d="${arcPath(prev,p,0)}" stroke="#3d444d" stroke-width="1" fill="none"/>`); dot(p,'#3d444d'); prev=p; });
+    lab(ups[0].x+4, ups[0].y-6, '#9ecbff', `柜${cabOf(S.filterHost)}`, 'start');
+    lab(ups[1].x, ups[1].y-9, '#9ecbff', 'SN0·本');
+    lab(ups[2].x+7, ups[2].y+3, '#9ecbff', 'SN0', 'start');
+    podSel();
+    commsvg.innerHTML = out.join('');
+    const map = { TP:'#bdTP', PP:'#bdPP', EP:'#bdEP', DP:'#bdDP' };
+    $$('.badge').forEach(b=>b.classList.remove('live'));
+    const rb = map[activeRel()]; if(rb) $(rb).classList.add('live');
+    $('#bdAnom').classList.toggle('show', S.anomaly);
+    return;
+  }
+  if(ph==='TP'){
+    const fh=S.focusHost, hp=anchorL3(fh);
+    const chips=[]; for(let s=0;s<8;s++) chips.push(anchorL2(fh*8+s));
+    for(let s=0;s<7;s++) arc(chips[s],chips[s+1], 9, COL.TP, 1.6, s===6?'TP':null);
+    arc(chips[7],chips[0], -13, COL.TP, 1.6, 'TP');          // 环收口
+    chips.forEach(p=>dot(p,COL.TP));
+    dot(hp,'#fff'); lab(hp.x, hp.y-8, '#fff', `Host ${fh}`, 'middle');
+    const gEl = document.querySelector('.gap[data-gap="L3L2"]'), gL = left.getBoundingClientRect(), gR = gEl.getBoundingClientRect();
+    lab(12, gR.top-gL.top+left.scrollTop+gR.height/2+3, COL.TP, `Host ${fh} → 自身 8×NPU 环状 AllReduce（下方高亮）`, 'start');
+  }
+  if(ph==='PP'){
+    const pts = ps.hosts.map(anchorL3);
+    for(let k=0;k<15;k++) arc(pts[k],pts[k+1], 8+(k%2)*4, COL.PP, 1.7, 'PP');
+    dot(pts[0],'#fff'); dot(pts[15],'#fff');
+    lab(pts[0].x, pts[0].y-9, COL.PP, 'S0', 'middle');
+    lab(pts[15].x, pts[15].y-9, COL.PP, 'S15', 'middle');
+    lab((pts[0].x+pts[15].x)/2, pts[0].y-20, COL.PP, `DP 副本 ${dpOf(S.focusHost)} · 16 段流水线接力 →`);
+  }
+  if(ph==='EP'){
+    const hub = anchorL3(ps.hub);
+    ps.hosts.forEach(h=>{ if(h===ps.hub) return;
+      const p = anchorL3(h); arc(hub,p, 22+((h*7)%18), COL.EP, 1.3, 'EP'); dot(p,COL.EP); });
+    dot(hub,'#e3b341');
+    lab(hub.x, hub.y-9, '#e3b341', `热点专家 Host ${ps.hub} ⇄ 各专家 · AllToAll`);
+    if(S.anomaly){
+      const pod1 = anchorEl('#pod5-1', true);
+      arc(hub, pod1, -60, COL.RED, 2.2, 'RED');
+      lab((hub.x+pod1.x)/2, (hub.y+pod1.y)/2-6, COL.RED, '8 专家越界 → SN1（跨超节点光链路）');
+    }
+  }
+  if(ph==='DP'){
+    const pts = ps.hosts.map(anchorL3);
+    for(let k=0;k<pts.length;k++) arc(pts[k], pts[(k+1)%pts.length], 14+(k%3)*8, COL.DP, 1.5, 'DP');
+    pts.forEach(p=>dot(p,COL.DP));
+    lab(pts[0].x+8, pts[0].y-10, COL.DP, `Stage${ppOf(S.focusHost)} 的 DP 梯度环（示 8/64 副本）`, 'start');
+    const pod2 = anchorEl('#pod5-2', true);
+    arc(pts[0], pod2, -55, COL.DP, 1.2, 'DP');
+    lab(pod2.x, pod2.y+14, COL.DP, '跨超节点 DP 同步（多 Pod 作业）');
+  }
+  podSel();
+  commsvg.innerHTML = out.join('');
+  const map = { TP:'#bdTP', PP:'#bdPP', EP:'#bdEP', DP:'#bdDP' };
+  $$('.badge').forEach(b=>b.classList.remove('live'));
+  $(map[ph]).classList.add('live');
+  if(ph==='DP') $('#bdDPx').classList.add('live');
+  $('#bdAnom').classList.toggle('show', S.anomaly);
+  if(S.anomaly && ph==='EP') $('#bdAnom').classList.add('live');
+  const p1 = $('#pod5-1');
+  if(p1 && S.focusPod!==1){                     // 选中态优先于异常染色
+    p1.style.borderColor = S.anomaly?'#f85149':'#30363d';
+    p1.style.color = S.anomaly?'#ffdcd7':'#8b949e';
+    p1.style.background = S.anomaly?'#3d0c0e':'#161b22'; }
+}
+function touchLeft(){
+  if(S.tab==='hier'){ renderL3(); renderL2(); renderL4(); drawArcs(); } else renderMM();
+  renderChipZoom(); renderProbe(); updateFoldHeads();
+  try{ if(drawer.classList.contains('show')) syncDrawer(); }catch(e){}
+  updateLevelKPI(); renderTopN();
+  colorsDirty = true; commDirty = true;
+}
+/* ================= 左侧页签 2：整网分隔映射（48 层 × 128 卡 · Pangu Pro MoE） ================= */
+const mmcv = $('#mmcv'), gm = mmcv.getContext('2d');
+const MM = { X0:36, Y0:24, W:404-36-2, H:400-24-4, get cw(){return this.W/128}, get ch(){return this.H/48} };
+let mmHover = null;   // {r,c}
+function renderMM(){
+  if(S.tab!=='model') return;
+  hidpi(mmcv,404,400);
+  gm.clearRect(0,0,404,400);
+  const {X0,Y0,cw,ch} = MM;
+  const ph = PHASES[S.phase].id;
+  let sweepStage = -1, epFlash = false, dpPulse = false;
+  if(S.playing){ const k=(S.t*4)%1;
+    if(ph==='TP'||ph==='PP') sweepStage = Math.min(15,(k*16)|0);
+    if(ph==='EP') epFlash = Math.sin(performance.now()/140)>0;
+    if(ph==='DP'){ dpPulse = true; sweepStage = 15-Math.min(15,(k*16)|0); } }
+  const anySel = S.selLayer!=null || S.selCard;
+  for(let r=0;r<N_LAYER;r++){ const st=stageOfLayer(r);
+    for(let c=0;c<128;c++){ const pc=c>>3, tp=c&7;
+      const x=X0+c*cw, y=Y0+r*ch;
+      if(st!==pc){ gm.fillStyle='#0e1218'; gm.fillRect(x,y,cw-.35,ch-.5); continue; }
+      let col = `hsl(212,68%,${28+tp*3}%)`;
+      const hit = (S.selLayer===r) ||
+        (S.selCard && pc===S.selCard.pp && (S.selCard.tp==null || tp===S.selCard.tp));
+      if(anySel && !hit) col = '#16233a';
+      if(sweepStage===st) col = (ph==='DP' && r%2===1) ? '#7ee787' : '#dde7f5';
+      if(epFlash && tp===7) col = '#ffdf5d';   // EP 阶段：各层专家路由示意闪烁
+      if(dpPulse) col = col;                               // DP：整图外圈闪烁，见下
+      gm.fillStyle = col; gm.fillRect(x,y,cw-.35,ch-.5);
+    } }
+  // PP 裁切线（紫色）：列组之间 + 层段之间
+  gm.strokeStyle = COL.EP; gm.lineWidth = 1; gm.globalAlpha=.85;
+  for(let k=1;k<16;k++){
+    const x = X0+k*8*cw; gm.beginPath(); gm.moveTo(x,Y0); gm.lineTo(x,Y0+MM.H); gm.stroke();
+    const y = Y0+k*3*ch; gm.beginPath(); gm.moveTo(X0,y); gm.lineTo(X0+MM.W,y); gm.stroke(); }
+  gm.globalAlpha=1;
+  // 重算层（Activation Checkpointing）：绿色虚线，反向(DP)扫过时闪绿=在线重算
+  gm.strokeStyle='rgba(63,185,80,.45)'; gm.setLineDash([3,3]); gm.lineWidth=1;
+  for(let r2=1;r2<N_LAYER;r2+=2){ const y=Y0+r2*ch+ch*.5;
+    gm.beginPath(); gm.moveTo(X0,y); gm.lineTo(X0+MM.W,y); gm.stroke(); }
+  gm.setLineDash([]);
+  // DP 复制外圈（绿色虚线）
+  if(mmShowDP){ gm.setLineDash([5,4]);
+    gm.strokeStyle = (dpPulse && Math.sin(performance.now()/200)>0) ? '#7ee787' : COL.GREEN;
+    gm.lineWidth = 1.6; gm.strokeRect(X0-2,Y0-2,MM.W+4,MM.H+4); gm.setLineDash([]);
+    gm.fillStyle = COL.GREEN; gm.font='9px sans-serif'; gm.textAlign='right';
+    gm.fillText('×64 DP 副本（整网复制，不裁切）', X0+MM.W, 400-6); }
+  // 左侧层标签（每段一枚）
+  gm.font='9px ui-monospace,monospace'; gm.textAlign='right';
+  for(let s=0;s<16;s++){ const y = Y0+(s*3+1.5)*ch;
+    const selSt = S.selLayer!=null && stageOfLayer(S.selLayer)===s;
+    gm.fillStyle = selSt ? '#fff' : (s%2?'#8b949e':'#6e7681');
+    gm.fillText(`L${s*3+1}-${s*3+3}`, X0-4, y+3); }
+  // 顶部列组标签
+  gm.textAlign='center'; gm.font='8.5px ui-monospace,monospace';
+  for(let s=0;s<16;s++){ const x = X0+(s*8+4)*cw;
+    const selPp = S.selCard && S.selCard.pp===s;
+    gm.fillStyle = selPp ? '#fff' : '#6e7681';
+    gm.fillText('P'+s, x, Y0-12); }
+  gm.fillStyle='#39c5cf'; gm.fillText('← 列 = PP16 段 × TP8 片 →', X0+MM.W/2, Y0-2);
+  gm.save(); gm.translate(9,Y0+MM.H/2); gm.rotate(-Math.PI/2);
+  gm.fillStyle='#8b949e'; gm.font='9px sans-serif'; gm.textAlign='center';
+  gm.fillText('整网 48 层 →（每层含 64 路由专家 · MoGE）',0,0); gm.restore();
+  // 选择高亮框
+  if(S.selLayer!=null){ gm.strokeStyle='#fff'; gm.lineWidth=1.4;
+    gm.strokeRect(X0, Y0+S.selLayer*ch-.5, MM.W, ch+1); }
+  if(S.selCard){ const x0 = X0+(S.selCard.pp*8+(S.selCard.tp==null?0:S.selCard.tp))*cw;
+    const w = (S.selCard.tp==null?8:1)*cw;
+    gm.strokeStyle='#fff'; gm.lineWidth=1.4; gm.strokeRect(x0, Y0, w, MM.H); }
+  if(mmHover){ gm.strokeStyle='rgba(255,255,255,.55)'; gm.lineWidth=1;
+    gm.strokeRect(X0+mmHover.c*cw, Y0+mmHover.r*ch, cw, ch); }
+}
+let mmShowDP = true;
+$('#btnDPring').onclick = ()=>{ mmShowDP=!mmShowDP;
+  $('#btnDPring').classList.toggle('on',mmShowDP); renderMM(); };
+$('#btnClearSel').onclick = ()=>{ setModelSel(null,null); };
+function pickMM(ev){ const r = mmcv.getBoundingClientRect();
+  const x=(ev.clientX-r.left)/r.width*404, y=(ev.clientY-r.top)/r.height*400;
+  return { x, y,
+    r: Math.min(47,Math.max(0,((y-MM.Y0)/MM.ch)|0)),
+    c: Math.min(127,Math.max(0,((x-MM.X0)/MM.cw)|0)),
+    inGrid: x>=MM.X0 && y>=MM.Y0, inRowHd: x<MM.X0 && y>=MM.Y0, inColHd: y<MM.Y0 && x>=MM.X0 };
+}
+mmcv.addEventListener('mousemove', ev=>{ const p=pickMM(ev);
+  mmHover = p.inGrid ? {r:p.r,c:p.c} : null; renderMM();
+  if(p.inGrid){ const st=stageOfLayer(p.r), pc=p.c>>3;
+    $('#mmdesc').innerHTML = st===pc
+      ? `L${p.r+1}（含 64 路由专家·8 组）× 卡 PP${pc}·TP${p.c&7} —— 该卡持有此层的第 ${(p.c&7)+1}/8 TP 切片 + 所辖组专家。点击选中反查。`
+      : `L${p.r+1} 属 PP 段${st}，而这一列是 PP 段${pc} 的卡 —— <b>PP 裁切</b>使该卡不承载该层（空格）。`; } });
+mmcv.addEventListener('mouseleave', ()=>{ mmHover=null; renderMM(); });
+mmcv.addEventListener('click', ev=>{ const p=pickMM(ev);
+  if(p.inRowHd){ setModelSel(p.r, null); return; }
+  if(p.inColHd){ setModelSel(null, {pp:p.c>>3, tp:null}); return; }
+  if(p.inGrid){ if(stageOfLayer(p.r)===(p.c>>3)) setModelSel(null, {pp:p.c>>3, tp:p.c&7});
+                else setModelSel(p.r, null); } });
+function setModelSel(layer, card){
+  const same = (layer!=null && S.selLayer===layer) ||
+               (card && S.selCard && S.selCard.pp===card.pp && S.selCard.tp===card.tp);
+  S.selLayer = same? null : layer;
+  S.selCard  = same? null : card;
+  describeModelSel(); renderMemPanel();
+  renderMM(); renderL3(); renderL2(); renderChipZoom(); renderProbe();
+  colorsDirty = true;
+  if((S.selLayer!=null||S.selCard) && S.morph<0.5 && !['L4','L3'].includes(S.level)) setLevel('L4');
+}
+function describeModelSel(){
+  const d = $('#mmdesc');
+  if(S.selLayer!=null){ const st=stageOfLayer(S.selLayer);
+    d.innerHTML = `选中 <b>L${S.selLayer+1}</b>（PP 段${st} · 每层含 64 路由专家+4 共享）→
+      Attention/共享权重被 <b style="color:${COL.TP}">TP</b> 切 8 片；64 路由专家按 <b style="color:${COL.PP}">EP</b> 分 8 组派发（MoGE 组内 top-1 · IS=0）；
+      承载它的物理卡 = <b>PP${st} 的 64 台 Host（每 DP 副本 1 台）× 8 芯片</b>。
+      右侧 3D 已亮起这批卡——魔方形态下正是 <b>Y=PP${st} 的一整个水平切片</b>。`; }
+  else if(S.selCard){ const {pp,tp}=S.selCard, l0=pp*3+1;
+    d.innerHTML = `选中卡 <b>PP${pp}${tp!=null?'·TP'+tp:'（整段 8 卡）'}</b> → 它承载 <b>L${l0}-L${l0+2}</b>
+      ${tp!=null?`各层的第 ${tp+1}/8 TP 切片，须与同 Host 另 7 卡 <b>AllReduce</b> 拼回完整权重`:'（每层含 64 路由专家 · MoGE 分组）'}；
+      全 Pod 共 <b>64 个 DP 同位卡</b>（每副本一张）已在 3D 中亮起。下方为显存构成反查。`; }
+  else d.innerHTML = '点<b>行</b>=整网的一层 → 右侧 3D 亮起承载它的卡；点<b>格/列</b>=一张卡 → 反查它装了整网哪些片 + 显存构成。TP/PP/EP=真·裁切（紫线）；DP=整网复制（绿虚线外圈）；行上绿虚线=重算层，反向(DP)扫过时闪绿=在线重算。';
+}
+function renderMemPanel(){
+  const el = $('#memPanel');
+  if(!S.selCard){ el.classList.remove('show'); return; }
+  const {pp,tp} = S.selCard;
+  const segs = [ ['专家权重分片（占权重 95%）',24,'#1f6feb'], ['注意力权重（5%）',2,'#58a6ff'],
+    ['优化器 m',16,'#6e40c9'], ['优化器 v',16,'#8957e5'], ['激活值',27,'#3fb950'], ['KV·其他',15,'#8b949e'] ];
+  el.innerHTML = `<h4>单卡显存构成 · PP${pp}${tp!=null?'·TP'+tp:''}</h4>
+    <div class="membar">${segs.map(s=>`<div title="${s[0]} ${s[1]}%" style="width:${s[1]}%;background:${s[2]}"></div>`).join('')}</div>
+    <div class="memleg">${segs.map(s=>`<span><i style="background:${s[2]}"></i>${s[0]} ${s[1]}%</span>`).join('')}</div>
+    <div class="note">优化器状态(m+v)≈权重的 2-4×；激活占大头可用重算换回。${tp!=null?`该卡持有权重列切第 ${tp+1}/8 片。`:''}</div>
+    <div class="note" style="color:#d2a8ff">参数组绑定：<b style="color:#9ecbff">W</b> ⇄ <b style="color:#ffa198">∇W</b> ⇄ <b style="color:#d2a8ff">m,v</b> 同卡同组 · 更新式 W ← W − lr·m̂/(√v̂+ε)</div>`;
+  el.classList.add('show');
+}
+/* ---- 页签切换 ---- */
+$('#tabHier').onclick = ()=>setTab('hier');
+$('#tabModel').onclick = ()=>setTab('model');
+function setTab(t){ S.tab=t;
+  $('#tabHier').classList.toggle('on',t==='hier');
+  $('#tabModel').classList.toggle('on',t==='model');
+  $('#paneHier').classList.toggle('show',t==='hier');
+  $('#paneModel').classList.toggle('show',t==='model');
+  commsvg.style.display = t==='hier'?'block':'none';
+  if(t==='hier'){ renderL3(); renderL2(); requestAnimationFrame(drawArcs); }
+  else renderMM();
+}
+/* ================= 右侧：统一 3D 拓扑（Three.js · 单场景单相机） ================= */
+const right = $('#right'), stage = $('#stage');
+let W=0,H=0;
+const renderer = new THREE.WebGLRenderer({canvas:stage, antialias:true, alpha:true});
+renderer.setPixelRatio(Math.min(window.devicePixelRatio||1,2));
+const scene = new THREE.Scene();
+scene.fog = new THREE.Fog(0x010409, 300, 1600);
+const camera = new THREE.PerspectiveCamera(40, 1, .05, 3000);
+scene.add(new THREE.AmbientLight(0x93a4c0, .95));
+const dl = new THREE.DirectionalLight(0xffffff, .7); dl.position.set(120,300,180); scene.add(dl);
+const dl2 = new THREE.DirectionalLight(0x5878ff, .3); dl2.position.set(-100,80,-120); scene.add(dl2);
+const V3 = (x,y,z)=>new THREE.Vector3(x,y,z);
+const dummy = new THREE.Object3D(), cTmp = new THREE.Color();
+const vA = new THREE.Vector3(), vB = new THREE.Vector3(), vT = new THREE.Vector3();
+/* ---- 世界坐标：一切都在同一坐标系 ---- */
+const podXZ = p => ({ x:(p%8)*36, z:((p/8)|0)*30 });          // 64 超节点场地，Pod0=原点
+const FIELD = { x:126, z:105 };
+function hostPos(h,out){ const cab=h>>3, slot=h&7;
+  out = out||new THREE.Vector3();
+  out.set((cab%16-7.5)*1.8, .5+slot*.38, ((cab>>4)-3.5)*2.4); return out; }
+function chipPhys(c,out){ const i=c&7; out = hostPos(c>>3,out);
+  out.x += (i%4-1.5)*.24; out.y += .14; out.z += ((i>>2)-.5)*.34; return out; }
+const CUBE = { cx:0, cy:17, cz:0, sx:1.6, sy:1.15, sz:.75 };
+function chipCubeM(c,mode,out){ const h=c>>3, tp=c&7, pp=h%16, dp=h>>4;
+  out = out||new THREE.Vector3();
+  if(mode===1){                    // DP 平铺：64 副本 8×8 排开，每副本一块直立 TP×PP 板（找慢副本）
+    const gx=dp%8, gz=(dp/8)|0;
+    return out.set((gx-3.5)*13+(tp-3.5)*1.3, 10+(7.5-pp)*.9, (gz-3.5)*11); }
+  if(mode===2){                    // EP 聚簇：64 专家抽出成 8×8 专家墙（= MoGE 8 组结构），其余压成致密块
+    const e = hostExpertIdx[h];
+    if(e>=0) return out.set(15+((e%8)-3.5)*2.4+(tp%4)*.45,
+                            16+(3.5-((e/8)|0))*2.4+((tp>>2)-.5)*.9, 0);
+    return out.set(-14+(tp-3.5)*.9, 16+(7.5-pp)*.8, (dp-31.5)*.5); }
+  if(mode===3)                     // TP 切片：8 片"权重墙"沿 X 拉开，一面墙=全 Pod 同槽位切片（查同槽位系统性问题）
+    return out.set((tp-3.5)*7, 17+(7.5-pp)*1.15, (dp-31.5)*.75);
+  if(mode===4)                     // PP 流水：16 段横向展开成流水线（找慢段/气泡）
+    return out.set((pp-7.5)*6.2, 12+(tp-3.5)*1.2, (dp-31.5)*.75);
+  return out.set(CUBE.cx+(tp-3.5)*CUBE.sx, CUBE.cy+(7.5-pp)*CUBE.sy, CUBE.cz+(dp-31.5)*CUBE.sz);
+}
+function chipCube(c,out){ return chipCubeM(c, cubeMode, out); }
+/* ---- 场景静态物 ---- */
+const physGroup = new THREE.Group(); scene.add(physGroup);
+function reg(mat, base){ mat.userData.base = base; mat.transparent = true; mat.opacity = base; return mat; }
+const grid = new THREE.GridHelper(760, 76, 0x243147, 0x131a26);
+grid.position.set(FIELD.x, -.02, FIELD.z); reg(grid.material,.85); physGroup.add(grid);
+// 其余 63 个超节点（L6/L5 · 缩略体块）
+const podGeo = new THREE.BoxGeometry(31,6.5,22);
+const podMat = reg(new THREE.MeshLambertMaterial({color:0xffffff, depthWrite:false}), .20);
+const pods = new THREE.InstancedMesh(podGeo, podMat, 63);
+{ const tr=[]; for(let i=0;i<63;i++){ const p=podXZ(i+1);
+    dummy.position.set(p.x,3.25,p.z); dummy.rotation.set(0,0,0); dummy.scale.set(1,1,1);
+    dummy.updateMatrix(); pods.setMatrixAt(i,dummy.matrix);
+    pods.setColorAt(i, cTmp.set(0x1c232e)); tr.push({x:p.x,y:3.25,z:p.z}); }
+  physGroup.add(pods);
+  physGroup.add(mergedEdges(podGeo, tr, 0x2d3644, .5)); }
+function mergedEdges(geo, translations, color, opacity){
+  const e = new THREE.EdgesGeometry(geo), src = e.attributes.position.array, n = src.length;
+  const all = new Float32Array(n*translations.length);
+  translations.forEach((t,k)=>{ for(let i=0;i<n;i+=3){
+    all[k*n+i]=src[i]+t.x; all[k*n+i+1]=src[i+1]+t.y; all[k*n+i+2]=src[i+2]+t.z; } });
+  const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.BufferAttribute(all,3));
+  return new THREE.LineSegments(g, reg(new THREE.LineBasicMaterial({color}), opacity));
+}
+// Service Pool 框（L5：Pod0-7 一排）
+var poolLine, podBaseEdges;
+{ const pts=[V3(-19,.05,-14),V3(271,.05,-14),V3(271,.05,14),V3(-19,.05,14),V3(-19,.05,-14)];
+  const g=new THREE.BufferGeometry().setFromPoints(pts);
+  poolLine = new THREE.Line(g, reg(new THREE.LineBasicMaterial({color:0x58a6ff}), .55));
+  physGroup.add(poolLine); }
+// 本超节点底座（L4）
+{ const base=new THREE.Mesh(new THREE.BoxGeometry(31,.24,22),
+    reg(new THREE.MeshLambertMaterial({color:0x0f2038}), .9));
+  base.position.y=-.12; physGroup.add(base);
+  podBaseEdges = mergedEdges(new THREE.BoxGeometry(31,.24,22),[{x:0,y:-.12,z:0}],0x1f6feb,.8);
+  physGroup.add(podBaseEdges); }
+// 128 计算柜（16 列 × 8 排）
+const cabGeo = new THREE.BoxGeometry(1.32,3.5,1.06);
+const cabMat = reg(new THREE.MeshLambertMaterial({color:0x1a2029, depthWrite:false}), .45);
+const cabs = new THREE.InstancedMesh(cabGeo, cabMat, 128);
+{ const tr=[]; for(let cab=0;cab<128;cab++){
+    const x=(cab%16-7.5)*1.8, z=((cab>>4)-3.5)*2.4;
+    dummy.position.set(x,1.85,z); dummy.rotation.set(0,0,0); dummy.scale.set(1,1,1);
+    dummy.updateMatrix(); cabs.setMatrixAt(cab,dummy.matrix); tr.push({x,y:1.85,z}); }
+  physGroup.add(cabs);
+  cabEdges = mergedEdges(cabGeo, tr, 0x2d3644, .6); physGroup.add(cabEdges); }
+var cabEdges;
+// 32 互联柜（示意 · 场地两翼）
+{ const icGeo=new THREE.BoxGeometry(.8,2.6,.8);
+  const icMat=reg(new THREE.MeshLambertMaterial({color:0x30363d, depthWrite:false}),.4);
+  const ics=new THREE.InstancedMesh(icGeo,icMat,32);
+  for(let i=0;i<32;i++){ const side=i<16?-1:1, k=i%16;
+    dummy.position.set(side*15.4, 1.3, (k-7.5)*1.35); dummy.updateMatrix(); ics.setMatrixAt(i,dummy.matrix); }
+  physGroup.add(ics); }
+// 1024 Host 托盘（InstancedMesh + 逐实例色）
+const hostGeo = new THREE.BoxGeometry(1.05,.16,.9);
+const hostMat = new THREE.MeshLambertMaterial({color:0xffffff, transparent:true}); hostMat.userData.base=1;
+const hostsMesh = new THREE.InstancedMesh(hostGeo, hostMat, N_HOST);
+for(let h=0;h<N_HOST;h++){ hostPos(h,vA); dummy.position.copy(vA);
+  dummy.rotation.set(0,0,0); dummy.scale.set(1,1,1);
+  dummy.updateMatrix(); hostsMesh.setMatrixAt(h,dummy.matrix);
+  hostsMesh.setColorAt(h, cTmp.set(0x334455)); }
+scene.add(hostsMesh);
+// 8192 芯片（可 Morph 到魔方 → 不放入 physGroup）
+const chipGeo = new THREE.BoxGeometry(.18,.12,.26);
+const chipMat = new THREE.MeshLambertMaterial({color:0xffffff, transparent:true}); chipMat.userData.base=1;
+const chipsMesh = new THREE.InstancedMesh(chipGeo, chipMat, N_CHIP);
+scene.add(chipsMesh);
+/* 深下钻时其余 Host/芯片整体淡化 → 焦点对象用独立不透明网格保持清晰 */
+const focusHostMesh = new THREE.Mesh(hostGeo, new THREE.MeshLambertMaterial({color:0xffffff}));
+const focusChipsMesh = new THREE.InstancedMesh(chipGeo, new THREE.MeshLambertMaterial({color:0xffffff}), 8);
+focusHostMesh.visible = focusChipsMesh.visible = false;
+for(let s=0;s<8;s++) focusChipsMesh.setColorAt(s, new THREE.Color(0x334455));
+scene.add(focusHostMesh, focusChipsMesh);
+/* 显存水位条：每 Host 左侧竖条，高度=水位（形变通道，独立于着色透镜） */
+const memMat = new THREE.MeshLambertMaterial({color:0xffffff, transparent:true});
+const memMesh = new THREE.InstancedMesh(new THREE.BoxGeometry(.1,1,.86), memMat, N_HOST);
+for(let h=0;h<N_HOST;h++){ hostPos(h,vA);
+  const bh = .05 + memLevel[h]*.26;
+  dummy.position.set(vA.x-.62, vA.y-.08+bh/2, vA.z);
+  dummy.rotation.set(0,0,0); dummy.scale.set(1,bh,1); dummy.updateMatrix();
+  memMesh.setMatrixAt(h,dummy.matrix);
+  memMesh.setColorAt(h, cTmp.set(memLevel[h]>.92?0xf85149: memLevel[h]>.75?0xd29922:0x39c5cf)); }
+scene.add(memMesh);
+// 场地文字标牌
+function makeLabel(text, color, w){
+  const cv=document.createElement('canvas'); cv.width=512; cv.height=96;
+  const c=cv.getContext('2d'); c.font='600 40px sans-serif'; c.fillStyle=color;
+  c.textAlign='center'; c.fillText(text,256,62);
+  const sp=new THREE.Sprite(new THREE.SpriteMaterial({map:new THREE.CanvasTexture(cv),transparent:true,depthTest:false}));
+  sp.scale.set(w,w*96/512,1); return sp;
+}
+{ const l1=makeLabel('SN0 · 本超节点 8192 NPU','#9ecbff',26); l1.position.set(0,9.5,0); physGroup.add(l1);
+  const l2=makeLabel('Service Pool · SN0-7','#58a6ff',22); l2.position.set(126,7.5,-19); physGroup.add(l2);
+  const l3=makeLabel('SuperCluster ×64 超节点','#6e7681',40); l3.position.set(FIELD.x,13,FIELD.z+30); physGroup.add(l3); }
+/* ---- 形态 3：层级堆叠（与左侧 L7→L0 对齐的 3D 分层视图） ---- */
+const STACK = { L7:30, L6:26, L5:22, L4:18.5, L3:13.5, L2:8, L1:4, L0:1 };
+const stackGroup = new THREE.Group(); stackGroup.visible = false; scene.add(stackGroup);
+function hostStack(h,out){ const col=h%32, row=(h/32)|0;
+  (out=out||new THREE.Vector3()).set((col-15.5)*.55, STACK.L3, (row-15.5)*.55); return out; }
+function chipStack(c,out){ const h=c>>3, s=c&7;
+  (out=out||new THREE.Vector3()).set(
+    (h%32-15.5)*.62 + (s%4-1.5)*.135, STACK.L2,
+    (((h/32)|0)-15.5)*.62 + ((s>>2)-.5)*.21); return out; }
+var stackL5, stackL4, stackPath; const stackPlats = {};
+{
+  const plat = (lv,y,sx,sz,label)=>{
+    const g = new THREE.BoxGeometry(sx,.06,sz);
+    const p = new THREE.Mesh(g, reg(new THREE.MeshLambertMaterial({color:0x10161f, depthWrite:false}),.5));
+    p.position.y = y-.24; stackGroup.add(p);
+    const ed = mergedEdges(g,[{x:0,y:y-.24,z:0}],0x30363d,.7); stackGroup.add(ed);
+    const lb = makeLabel(label,'#ffffff',Math.max(6,sx*.55));
+    lb.material.color.set(0x8b949e);
+    lb.position.set(-sx/2-Math.max(3,sx*.3), y+.6, 0); stackGroup.add(lb);
+    stackPlats[lv] = { edges:ed, label:lb }; };
+  plat('L7',STACK.L7, 5,5,'L7 · Global ×1');
+  plat('L6',STACK.L6, 15,15,'L6 · SuperCluster ×64');
+  plat('L5',STACK.L5, 22,4,'L5 · Pool · SN0-7');
+  plat('L4',STACK.L4, 8.5,5.5,'L4 · Pod ×1 · 128+32 柜');
+  plat('L3',STACK.L3, 19.5,19.5,'L3 · Host ×1024');
+  plat('L2',STACK.L2, 21.5,21.5,'L2 · Chip ×8192');
+  plat('L1',STACK.L1, 7,3,'L1 · Die 占位');
+  plat('L0',STACK.L0, 9.5,3,'L0 · Core 占位');
+  const g7 = new THREE.Mesh(new THREE.BoxGeometry(2.2,.3,2.2),
+    reg(new THREE.MeshLambertMaterial({color:0x21262d}),.95));
+  g7.position.y = STACK.L7; stackGroup.add(g7);
+  const t6 = new THREE.InstancedMesh(new THREE.BoxGeometry(1.3,.22,1.3),
+    reg(new THREE.MeshLambertMaterial({color:0xffffff}),1), 64);
+  for(let i=0;i<64;i++){ dummy.position.set(((i%8)-3.5)*1.7, STACK.L6, (((i/8)|0)-3.5)*1.7);
+    dummy.rotation.set(0,0,0); dummy.scale.set(1,1,1); dummy.updateMatrix();
+    t6.setMatrixAt(i,dummy.matrix); t6.setColorAt(i, cTmp.set(i===0?0x1f6feb:0x21262d)); }
+  stackGroup.add(t6);
+  stackL5 = new THREE.InstancedMesh(new THREE.BoxGeometry(2,.28,1.5),
+    reg(new THREE.MeshLambertMaterial({color:0xffffff}),1), 8);
+  for(let i=0;i<8;i++){ dummy.position.set((i-3.5)*2.5, STACK.L5, 0);
+    dummy.rotation.set(0,0,0); dummy.scale.set(1,1,1); dummy.updateMatrix();
+    stackL5.setMatrixAt(i,dummy.matrix); stackL5.setColorAt(i, cTmp.set(i===0?0x1f6feb:0x21262d)); }
+  stackGroup.add(stackL5);
+  const g4s = new THREE.BoxGeometry(7.5,.2,4.9);
+  const s4 = new THREE.Mesh(g4s, reg(new THREE.MeshLambertMaterial({color:0x0f2038}),.95));
+  s4.position.y = STACK.L4; stackGroup.add(s4);
+  stackGroup.add(mergedEdges(g4s,[{x:0,y:STACK.L4,z:0}],0x1f6feb,.9));
+  stackL4 = new THREE.InstancedMesh(new THREE.BoxGeometry(.4,.22,.48),
+    reg(new THREE.MeshLambertMaterial({color:0xffffff}),1), 128);
+  for(let i=0;i<128;i++){ dummy.position.set(((i%16)-7.5)*.46, STACK.L4+.24, (((i/16)|0)-3.5)*.6);
+    dummy.rotation.set(0,0,0); dummy.scale.set(1,1,1); dummy.updateMatrix();
+    stackL4.setMatrixAt(i,dummy.matrix); stackL4.setColorAt(i,cTmp.set(0x21262d)); }
+  stackGroup.add(stackL4);
+  const icm = new THREE.InstancedMesh(new THREE.BoxGeometry(.3,.18,.3),
+    reg(new THREE.MeshLambertMaterial({color:0x30363d}),.9), 32);
+  for(let i=0;i<32;i++){ dummy.position.set(((i%16)-7.5)*.46, STACK.L4+.22, (i<16?-2.28:2.28));
+    dummy.updateMatrix(); icm.setMatrixAt(i,dummy.matrix); }
+  stackGroup.add(icm);
+  const wf=(x,z,sx,sz,color,y)=>stackGroup.add(mergedEdges(new THREE.BoxGeometry(sx,.5,sz),[{x,y,z}],color,.8));
+  wf(-1.6,0,2.6,1.6,0x8b949e,STACK.L1); wf(1.6,0,2.6,1.6,0x8b949e,STACK.L1);
+  wf(-2.9,0,2.2,1.6,0xa371f7,STACK.L0); wf(0,0,2.2,1.6,0xf85149,STACK.L0); wf(2.9,0,2.2,1.6,0xd29922,STACK.L0);
+  const pg = new THREE.BufferGeometry().setFromPoints([...Array(8)].map(()=>new THREE.Vector3()));
+  stackPath = new THREE.Line(pg, reg(new THREE.LineBasicMaterial({color:0x58a6ff}),.85));
+  stackGroup.add(stackPath);
+}
+/* ---- 魔方形态附属物：轴标 / 切分刀面 / 层段标尺 / 选层切片 ---- */
+const cubeGroup = new THREE.Group(); scene.add(cubeGroup);
+{ const ox=CUBE.cx-4.6*CUBE.sx, oy=CUBE.cy-8.6*CUBE.sy, oz=CUBE.cz-33*CUBE.sz;
+  const axis=(a,b,color)=>{ const g=new THREE.BufferGeometry().setFromPoints([a,b]);
+    cubeGroup.add(new THREE.Line(g, reg(new THREE.LineBasicMaterial({color}),.9))); };
+  axis(V3(ox,oy,oz), V3(ox+9.2*CUBE.sx,oy,oz), 0x39c5cf);
+  axis(V3(ox,oy,oz), V3(ox,oy+17.2*CUBE.sy,oz), 0xd29922);
+  axis(V3(ox,oy,oz), V3(ox,oy,oz+66*CUBE.sz), 0x58a6ff);
+  const lx=makeLabel('X = TP×8','#39c5cf',9); lx.position.set(ox+10.5*CUBE.sx,oy,oz); cubeGroup.add(lx);
+  const ly=makeLabel('Y = PP×16 = 模型深度','#d29922',14); ly.position.set(ox,oy+18.6*CUBE.sy,oz); cubeGroup.add(ly);
+  const lz=makeLabel('Z = DP×64','#58a6ff',9); lz.position.set(ox,oy,oz+69*CUBE.sz); cubeGroup.add(lz); }
+// 层段标尺：每个 PP 段挂 "S0·L1-4"
+const rulerSprites = [];
+for(let s2=0;s2<16;s2++){
+  const sp = makeLabel(`S${s2}·L${s2*3+1}-${s2*3+3}`, '#d29922', 7.5);
+  sp.position.set(CUBE.cx+5.4*CUBE.sx, CUBE.cy+(7.5-s2)*CUBE.sy, CUBE.cz-35*CUBE.sz);
+  rulerSprites.push(sp); cubeGroup.add(sp);
+}
+// 切分刀面（透镜联动：TP 竖切 / PP 横切 / DP 纵切）
+const sliceGroup = new THREE.Group(); cubeGroup.add(sliceGroup);
+const slices = { TP:[], PP:[], DP:[] };
+{ const mk=(geo,color)=>{ const m=new THREE.Mesh(geo,
+    reg(new THREE.MeshBasicMaterial({color, side:THREE.DoubleSide, depthWrite:false}),.10));
+    sliceGroup.add(m); return m; };
+  for(let k=0;k<7;k++){ const g=new THREE.PlaneGeometry(66*CUBE.sz+2,17.6*CUBE.sy); g.rotateY(Math.PI/2);
+    const m=mk(g,0x39c5cf); m.position.set(CUBE.cx+(k-3)*CUBE.sx,CUBE.cy,CUBE.cz); slices.TP.push(m); }
+  for(let k=0;k<15;k++){ const g=new THREE.PlaneGeometry(9.2*CUBE.sx,66*CUBE.sz+2); g.rotateX(Math.PI/2);
+    const m=mk(g,0xd29922); m.position.set(CUBE.cx,CUBE.cy+(7-k)*CUBE.sy,CUBE.cz); slices.PP.push(m); }
+  for(let k=1;k<8;k++){ const g=new THREE.PlaneGeometry(9.2*CUBE.sx,17.6*CUBE.sy);
+    const m=mk(g,0x58a6ff); m.position.set(CUBE.cx,CUBE.cy,CUBE.cz+(k*8-32)*CUBE.sz); slices.DP.push(m); } }
+// 选中整网层 → 魔方水平切片
+const selSlab = new THREE.Mesh(new THREE.BoxGeometry(9.4*CUBE.sx, CUBE.sy*.96, 66*CUBE.sz),
+  reg(new THREE.MeshBasicMaterial({color:0xa371f7, depthWrite:false}),.16));
+selSlab.visible=false; cubeGroup.add(selSlab);
+/* ---- 焦点/悬停指示 & 芯片下钻细节（L1/L0） ---- */
+function edgeBox(color){ const g=new THREE.EdgesGeometry(new THREE.BoxGeometry(1,1,1));
+  return new THREE.LineSegments(g,new THREE.LineBasicMaterial({color,transparent:true,opacity:.95})); }
+const hoverBox = edgeBox(0x9ecbff), focusHostBox = edgeBox(0xffffff), focusChipBox = edgeBox(0xffffff);
+const focusCabBox = edgeBox(0x58a6ff);
+scene.add(hoverBox,focusHostBox,focusChipBox,focusCabBox);
+const detail = new THREE.Group(); scene.add(detail);
+{ const dieMat = new THREE.MeshLambertMaterial({color:0x2a3038});
+  [[-.05,0],[.05,0]].forEach(p=>{ const d=new THREE.Mesh(new THREE.BoxGeometry(.075,.02,.11),dieMat);
+    d.position.set(p[0],.09,p[1]); detail.add(d); });
+  [[0xa371f7,-.028],[0xf85149,0],[0xd29922,.028]].forEach(cc=>{
+    const m=new THREE.Mesh(new THREE.BoxGeometry(.03,.016,.022),
+      new THREE.MeshLambertMaterial({color:cc[0]}));
+    m.position.set(-.05,.104,cc[1]); detail.add(m); });
+  const dl_=makeLabel('Die×2 + V/C/CPU Core-Group（占位）','#8b949e',.42);
+  dl_.position.set(0,.15,0); detail.add(dl_); }
+/* ---- 3D 通信线（随阶段重建） ---- */
+const commGroup = new THREE.Group(); scene.add(commGroup);
+const cubeComm = new THREE.Group(); scene.add(cubeComm);
+function cubeLine(points,color,base){ const g=new THREE.BufferGeometry().setFromPoints(points);
+  const m=new THREE.LineBasicMaterial({color,transparent:true,opacity:base}); m.userData.base=base;
+  const l=new THREE.Line(g,m); cubeComm.add(l); return l; }
+function commLine(points, color, base, width){
+  const g = new THREE.BufferGeometry().setFromPoints(points);
+  const m = new THREE.LineBasicMaterial({color, transparent:true, opacity:base});
+  m.userData.base = base;
+  const l = new THREE.Line(g,m); commGroup.add(l); return l;
+}
+function bez(a,b,lift){ const mid=a.clone().add(b).multiplyScalar(.5);
+  mid.y = Math.max(a.y,b.y)+lift;
+  return new THREE.QuadraticBezierCurve3(a,mid,b).getPoints(22); }
+function buildComm(){
+  for(let i=commGroup.children.length-1;i>=0;i--){ const o=commGroup.children[i];
+    if(o.geometry) o.geometry.dispose(); if(o.material){ if(o.material.map) o.material.map.dispose(); o.material.dispose(); } commGroup.remove(o); }
+  for(let i=cubeComm.children.length-1;i>=0;i--){ const o=cubeComm.children[i];
+    o.geometry.dispose(); o.material.dispose(); cubeComm.remove(o); }
+  const ph = PHASES[S.phase].id, ps = phaseSets();
+  { // —— 魔方内逻辑通信线（标准排列坐标系） ——
+    const fh=S.focusHost, dpF=dpOf(fh), ppF=ppOf(fh);
+    if(ph==='TP'){ const pts=[]; for(let s=0;s<8;s++) pts.push(chipCubeM(fh*8+s,0,new THREE.Vector3()));
+      const back = pts.slice().reverse().map(p=>p.clone().setY(p.y+.55));
+      cubeLine(pts.concat(back,[pts[0].clone()]), 0x39c5cf, .95); }
+    if(ph==='PP'){ const pts=[]; for(let k=0;k<16;k++) pts.push(chipCubeM((dpF*16+k)*8+3,0,new THREE.Vector3()));
+      cubeLine(pts, 0xd29922, .9); }
+    if(ph==='EP'){ const hub=expertHosts[5], a=chipCubeM(hub*8+4,0,new THREE.Vector3());
+      for(let e=1;e<N_EXP;e+=5){ const h2=expertHosts[e]; if(h2===hub) continue;
+        cubeLine([a.clone(), chipCubeM(h2*8+4,0,new THREE.Vector3())], 0xa371f7, .5); }
+      if(S.anomaly) for(let k2=0;k2<4;k2++){ const h2=expertHosts[anomExperts[k2*2]];
+        cubeLine([chipCubeM(h2*8+4,0,new THREE.Vector3()), V3(16,17-k2,2)], 0xf85149, .95); } }
+    if(ph==='DP'){ const pts=[]; for(let d=0;d<64;d+=4) pts.push(chipCubeM((d*16+ppF)*8+3,0,new THREE.Vector3()));
+      pts.push(pts[0].clone().add(V3(0,.6,0)));
+      cubeLine(pts, 0x58a6ff, .7); }
+  }
+  clearMovers();
+  const wire = S.wire || 'AUTO';
+  if(wire==='AUTO') buildPhaseLines(ph);
+  else if(wire==='COMM') buildDomainLines(['TP','PP','DP','EP'].includes(S.lens)? S.lens : ph);
+  else if(wire==='FLOW') buildFlowLines();
+  else if(wire==='LINK') buildLinkLines();
+  else if(wire==='PATH') buildPathLines();
+  renderMxHi();
+  if(S.mxShow) renderMxCard();
+}
+/* ================= v20 连线镜头公共设施 =================
+   原则（源自浅色 2D 版）：① 统一状态色 绿<40% 黄40-70% 红>70%；
+   ② 连线按选区层级聚合（L5 以上 → Pod↔Pod 粗流）；③ 宽度=占用量；
+   ④ 方向粒子=流向；⑤ 每束流挂语义标签（算子/介质/量），软硬同框 */
+const stateHex = v => v>.7? 0xf85149 : v>.4? 0xd29922 : 0x3fb950;
+const stateCss = v => v>.7? '#f85149' : v>.4? '#d29922' : '#3fb950';
+/* 层级自适应：下钻越深，管径/粒子/标签越小（避免 L2 时连线盖住芯片） */
+function lvlScale(){ return ({L4:1, L3:.4, L2:.12, L1:.07, L0:.06})[S.level] || 1; }
+function flowTube(pts, color, load, base, medium){       // 粗管：半径=负载×层级比例
+  const curve = new THREE.CatmullRomCurve3(pts);
+  const g = new THREE.TubeGeometry(curve, Math.max(8,Math.min(64,pts.length*3)), (.05+(load||0)*.16)*lvlScale(), 5, false);
+  const m = new THREE.MeshBasicMaterial({color, transparent:true, opacity:base, depthWrite:false});
+  m.userData.base = base; m.userData.medium = medium||null;
+  const mesh = new THREE.Mesh(g,m); commGroup.add(mesh); return mesh;
+}
+let movers = [];
+function clearMovers(){ movers.length = 0; }             // 网格随 commGroup 一并销毁
+function addMover(pts, color, speed, size, medium){      // 方向粒子：沿线移动=流向
+  const mesh = new THREE.Mesh(new THREE.SphereGeometry((size||.13)*lvlScale(),8,8),
+    new THREE.MeshBasicMaterial({color, transparent:true, opacity:.95, depthWrite:false}));
+  mesh.material.userData.base = .95; mesh.material.userData.medium = medium||null;
+  mesh.material.userData.noPulse = true;
+  commGroup.add(mesh);
+  movers.push({pts, mesh, speed:speed||.5, off:rng(movers.length*7.7)});
+}
+function tickMovers(now){
+  const t0 = now/1000;
+  for(const mv of movers){
+    const f = (t0*mv.speed + mv.off)%1, n = mv.pts.length-1;
+    const i = Math.min(n-1, (f*n)|0), k = f*n-i;
+    mv.mesh.position.lerpVectors(mv.pts[i], mv.pts[i+1], k);
+  }
+}
+function wireLab(text, color, w, pos){                   // 语义标签（不随脉冲闪烁）
+  const l = makeLabel(text, color, w*lvlScale());
+  l.material.userData.base = 1; l.material.userData.noPulse = true;
+  l.position.copy(pos); commGroup.add(l); return l;
+}
+function dotAt(p, color, r){
+  const s = new THREE.Mesh(new THREE.SphereGeometry((r||.2)*lvlScale(),10,10),
+    new THREE.MeshBasicMaterial({color, transparent:true, opacity:.9, depthWrite:false}));
+  s.material.userData.base = .9; s.position.copy(p); commGroup.add(s); return s;
+}
+/* 粒度带（LOD）：每个下钻层级回答自己的问题
+   pod(L7-L5)=Pod↔Pod 聚合 · field(L4)=柜/Host 全景 · cab(L3)=本机直接对端 ·
+   chip(L2)=本卡在算子中的角色 · die(L1/L0)=片上占位、不画跨卡连线 */
+function levelBand(){
+  if(S.level==='L7'||S.level==='L6'||S.level==='L5') return 'pod';
+  if(S.level==='L4') return 'field';
+  if(S.level==='L3') return 'cab';
+  if(S.level==='L2') return 'chip';
+  return 'die';
+}
+function chipRingCtx(fh){                     // 芯片级上下文：暗色 8×NPU 环
+  const pts=[]; for(let s=0;s<8;s++){ const p=chipPhys(fh*8+s,new THREE.Vector3()); p.y+=.09; pts.push(p); }
+  pts.push(pts[0].clone()); flowTube(pts,0x39c5cf,.3,.18,'UB');
+}
+/* 通信单元（矩阵行列）：64 单元 × 16 Host（=2 柜） */
+const N_UNIT = 64;
+function unitPos(u,out){ out = hostPos(u*16+8, out); out.y = 1.3; return out; }
+function mxVal(i,j){                                     // 单元 i⇄j 占用（随阶段/异常联动）
+  if(i===j) return 0;
+  const ph = PHASES[S.phase].id;
+  let v = .08 + .2*rng(i*64+j+S.phase*11);
+  const d = Math.abs(i-j);
+  if(ph==='TP') v += .8*Math.exp(-d*d/3);                // 近对角软带：柜内/邻柜 UB
+  if(ph==='PP') v += (d===1?.62:0) + .28*Math.exp(-d*d/8);
+  if(ph==='EP'){ const hubU=(expertHosts[5]/16)|0;
+    if(i===hubU||j===hubU) v+=.55;
+    if(isExpertHost[i*16+5]||isExpertHost[j*16+5]) v+=.22;
+    if(rng(i*7+j*13)>.78) v+=.2; }                       // 散点浪涌纹理
+  if(ph==='DP'){ if((i%4)===(j%4)) v+=.5; }              // 同位副本条纹
+  if(S.anomaly && ph==='EP' && (i===63||j===63)) v+=.45; // 跨 Pod 出口单元打爆
+  return Math.min(1,v);
+}
+function mediaStats(){                                   // 四介质占用（同浅色版四条）
+  const ph = PHASES[S.phase].id;
+  const b = { TP:[.67,.22,.12,.08], PP:[.49,.38,.15,.09],
+              EP:[.62,.49,.21,.12], DP:[.41,.35,.52,.17] }[ph].slice();
+  if(S.anomaly && ph==='EP'){ b[1]=Math.min(1,b[1]+.3); b[2]=Math.min(1,b[2]+.25); }
+  return [ ['UB','UB · 节点/柜间',b[0]], ['RDMA','RDMA · 参数面',b[1]],
+           ['DP','集群 DP AllReduce',b[2]], ['VPC','VPC · 管理面',b[3]] ];
+}
+function buildPodAgg(dim){        // 选区在 Pod 之上 → 聚合为 Pod↔Pod 粗流（回答"在哪"）
+  const o=V3(0,4,0);
+  const n = dim==='DP'?9 : dim==='EP'?7 : 5;
+  for(let k=1;k<=n;k++){ const p=podXZ((k*7)%63+1);
+    const load=.25+rng(k*31+S.phase*7)*.65;
+    const pts=bez(o.clone(),V3(p.x,4,p.z),12+k);
+    flowTube(pts, stateHex(load), load, .75, dim==='DP'?'DP':'RDMA');
+    addMover(pts, 0xffffff, .3+load*.3, .16);
+  }
+  wireLab(`选区 ${S.level} · Pod↔Pod 聚合流 · 颜色=状态 宽度=占用 · 下钻 L4 展开柜级`, '#8b949e', 30, V3(0,14,0));
+}
+/* ======== 镜头① 自动·随阶段：当前算子 = 聚合流带 + 方向粒子 + 语义标签 ======== */
+function buildPhaseLines(dim){
+  const band = levelBand();
+  if(band==='pod'){ buildPodAgg(dim); return; }
+  if(band==='die'){
+    const p=chipPhys(S.focusChip,new THREE.Vector3());
+    wireLab('L1/L0 · Die/Core 结构占位 · 通信不出卡（片上 NoC）· 跨卡连线请回 L2 以上','#8b949e',34,p.clone().add(V3(0,.5,0)));
+    return; }
+  const fh=S.focusHost, dpF=dpOf(fh), ppF=ppOf(fh);
+  if(dim==='TP'){
+    const deep = band==='chip';
+    if(deep){                        // 芯片级视角：画真实 8×NPU 环（逐颗连线 + TP 槽位标注）
+      const pts=[]; for(let s=0;s<8;s++){ const p=chipPhys(fh*8+s,new THREE.Vector3()); p.y+=.09; pts.push(p); }
+      pts.push(pts[0].clone());
+      flowTube(pts, 0x39c5cf, .5, .95, 'UB');
+      addMover(pts, 0xffffff, .4, .13, 'UB');
+      for(let s=0;s<8;s++)
+        wireLab('TP'+s, (fh*8+s)===S.focusChip?'#ffffff':'#7ee0e8', 2.4, pts[s].clone().add(V3(0,.1,0)));
+      hostPos(fh,vA);
+      wireLab(`Host ${fh} · 8×NPU Ring AllReduce · 节点内 UB · 粒子=环传方向`, '#7ee0e8', 16, V3(vA.x, vA.y+.9, vA.z));
+    } else {                         // 全景视角：主机级环 + 说明
+      hostPos(fh,vA);
+      const ring=[]; for(let k=0;k<=24;k++){ const a=k/24*Math.PI*2;
+        ring.push(V3(vA.x+Math.cos(a)*.62, vA.y+.16, vA.z+Math.sin(a)*.52)); }
+      flowTube(ring, 0x39c5cf, .5, .95, 'UB');
+      addMover(ring, 0xffffff, .55, .1, 'UB');
+      wireLab(`TP·AllReduce ×8 rank · Host ${fh} · 节点内 UB`, '#7ee0e8', 13, V3(vA.x,vA.y+2.2,vA.z));
+      wireLab('全 Pod 1024 台同构发生（示焦点 1 台 · 下钻 L2 看芯片环）', '#8b949e', 11, V3(vA.x,vA.y+1.5,vA.z));
+    }
+  }
+  if(dim==='PP'){
+    if(band==='chip'){                         // 卡级：本卡的段角色 + 去向
+      chipRingCtx(fh);
+      const p=chipPhys(S.focusChip,new THREE.Vector3());
+      const nxt=hostPos(dpF*16+(ppF+1)%16,new THREE.Vector3());
+      const arc=bez(p.clone(),nxt,1.2);
+      flowTube(arc,0xd29922,3,.9,'UB'); addMover(arc,0xffe08a,.4,.5,'UB');
+      wireLab(`本卡持有 L${ppF*3+1}-${ppF*3+3} 的 TP${slotOf(S.focusChip)} 切片 · 激活经 UB → S${(ppF+1)%16}`,'#ffd28a',26,p.clone().add(V3(0,.65,0)));
+    } else if(band==='cab'){                   // 本机视角：只画上下游
+      const prev=(ppF+15)%16, next=(ppF+1)%16;
+      const hp=hostPos(fh,new THREE.Vector3()).add(V3(0,.12,0));
+      const pPrev=hostPos(dpF*16+prev,new THREE.Vector3()).add(V3(0,.12,0));
+      const pNext=hostPos(dpF*16+next,new THREE.Vector3()).add(V3(0,.12,0));
+      const a1=bez(pPrev.clone(),hp.clone(),1.6), a2=bez(hp.clone(),pNext.clone(),1.6);
+      flowTube(a1,0xd29922,1.2,.85,'UB'); addMover(a1,0xffe08a,.35,.3,'UB');
+      flowTube(a2,0xd29922,1.2,.85,'UB'); addMover(a2,0xffe08a,.35,.3,'UB');
+      dotAt(pPrev,0xd29922,.5); dotAt(pNext,0xd29922,.5);
+      wireLab(`S${prev} → 接收激活`,'#ffd28a',9,pPrev.clone().add(V3(0,.8,0)));
+      wireLab(`发送 → S${next}`,'#ffd28a',9,pNext.clone().add(V3(0,.8,0)));
+      wireLab(`Host ${fh} = DP${dpF} 链的 S${ppF} 段 · 承载 L${ppF*3+1}-${ppF*3+3}`,'#ffd28a',15,hp.clone().add(V3(0,1.5,0)));
+      const ctx=[]; for(let k=0;k<16;k++) ctx.push(hostPos(dpF*16+k,new THREE.Vector3()).add(V3(0,.1,0)));
+      flowTube(ctx,0xd29922,.3,.15,'UB');      // 整链弱上下文
+    } else {                                   // 全景：完整 16 段接力
+      const pts=[]; for(let k=0;k<16;k++) pts.push(hostPos(dpF*16+k,new THREE.Vector3()).add(V3(0,.14,0)));
+      flowTube(pts, 0xd29922, .4, .9, 'UB');
+      addMover(pts, 0xffffff, .22, .12, 'UB'); addMover(pts, 0xffe08a, .22, .1, 'UB');
+      dotAt(pts[0],0xffffff,.16); dotAt(pts[15],0xffffff,.16);
+      wireLab('S0·L1-3','#ffe08a',6,pts[0].clone().add(V3(0,.9,0)));
+      wireLab('S15·L46-48','#ffe08a',7,pts[15].clone().add(V3(0,.9,0)));
+      for(let k=4;k<15;k+=5) wireLab('S'+k,'#d29922',3.5,pts[k].clone().add(V3(0,.6,0)));
+      flowTube(bez(pts[15].clone(),pts[0].clone(),2.4), 0xd29922, .08, .3, 'UB');
+      wireLab(`PP·接力 Send/Recv · DP副本${dpF} · 16 段=整网48层 · 粒子=激活流向`, '#ffd28a', 17, pts[7].clone().add(V3(0,2.8,0)));
+    }
+  }
+  if(dim==='EP'){
+    if(band==='chip'){                         // 卡级：本机专家身份 + 一条对端示意
+      chipRingCtx(fh);
+      const p=chipPhys(S.focusChip,new THREE.Vector3());
+      const e=hostExpertIdx[fh];
+      wireLab(e>=0? `本机 = 专家 E${e}（G${e>>3} 组）· token 经 UB AllToAll 汇入本卡`
+                  : '本机非专家节点 · EP 流量路由转发、不落地', e>=0?'#d2a8ff':'#8b949e', 26, p.clone().add(V3(0,.7,0)));
+      if(e>=0){ const peer=hostPos(expertHosts[(e+8)%64],new THREE.Vector3());
+        const arc=bez(p.clone(),peer,2); flowTube(arc,0xa371f7,2,.8,'UB'); addMover(arc,0xd2a8ff,.4,.5,'UB'); }
+      return; }
+    if(band==='cab'){                          // 本机视角：与所属组/邻组对端
+      const e=hostExpertIdx[fh];
+      const hp=hostPos(fh,new THREE.Vector3()).add(V3(0,.15,0));
+      if(e>=0){
+        for(let k=1;k<=4;k++){ const pe=expertHosts[(e+k*8)%64];
+          const arc=bez(hp.clone(),hostPos(pe,new THREE.Vector3()).add(V3(0,.15,0)),2+k*.4);
+          flowTube(arc,0xa371f7,1,.7,'UB'); addMover(arc,0xd2a8ff,.4,.3,'UB');
+          addMover(arc.slice().reverse(),0xd2a8ff,.4,.24,'UB'); }
+        wireLab(`Host ${fh} = 专家 E${e}（G${e>>3} 组）⇄ 对端专家 AllToAll 双向`,'#d2a8ff',17,hp.clone().add(V3(0,1.7,0)));
+      } else {
+        const arc=bez(hp.clone(),hostPos(expertHosts[5],new THREE.Vector3()).add(V3(0,.15,0)),2.4);
+        flowTube(arc,0xa371f7,.6,.4,'UB');
+        wireLab(`Host ${fh} 非专家 · token 发往专家节点（示热点 Host ${expertHosts[5]}）`,'#8b949e',17,hp.clone().add(V3(0,1.5,0)));
+      }
+      return; }
+    const hub0=expertHosts[5];
+    const hub=hostPos(hub0,new THREE.Vector3()).add(V3(0,.15,0));
+    const byCab=new Map();
+    for(let e=0;e<N_EXP;e++){ const h2=expertHosts[e]; if(h2===hub0) continue;
+      const cb=cabOf(h2); if(!byCab.has(cb)) byCab.set(cb,[]); byCab.get(cb).push(e); }
+    let i=0;
+    byCab.forEach((es,cb)=>{ if(i++%2) return;           // 按柜聚合 + 采样，避免糊成毛线球
+      const p=hostPos(expertHosts[es[0]],new THREE.Vector3()).add(V3(0,.15,0));
+      const load=Math.min(.9,.3+es.length*.15+rng(cb)*.2);
+      const pts=bez(hub.clone(),p,1.6+((cb*13)%30)/12);
+      flowTube(pts,0xa371f7,load*.6,.5,'UB');
+      addMover(pts,0xd2a8ff,.45+rng(cb)*.4,.09,'UB');
+      addMover(pts.slice().reverse(),0xd2a8ff,.45,.07,'UB');   // AllToAll 双向
+    });
+    dotAt(hub,0xe3b341,.3);
+    wireLab(`EP·AllToAll · 热点专家 Host ${hub0} ⇄ 63 专家（按柜聚合）· 粒子双向=浪涌`,'#d2a8ff',18,hub.clone().add(V3(0,3,0)));
+    if(S.anomaly){ const p1=podXZ(1);
+      if(!S.scatter){
+        const exit=hostPos(expertHosts[anomExperts[0]],new THREE.Vector3());
+        for(let k2=1;k2<4;k2++){ const h2=expertHosts[anomExperts[k2*2]];
+          flowTube(bez(hostPos(h2,new THREE.Vector3()),exit.clone().add(V3(0,.6,0)),1.4),0xf85149,.4,.6,'RDMA'); }
+        const cr=bez(exit.clone(),V3(p1.x,6.8,p1.z),10);
+        flowTube(cr,0xf85149,.95,.95,'RDMA'); addMover(cr,0xffffff,.65,.15,'RDMA');
+        wireLab('⚠ 8 专家越界→SN1 · 4 条环共用单出口 = 单链路 4× 带宽','#ffa198',20,V3(p1.x*.5,9.5,p1.z*.5));
+      } else {
+        for(let k2=0;k2<4;k2++){ const h2=expertHosts[anomExperts[k2*2]];
+          const cr=bez(hostPos(h2,new THREE.Vector3()),V3(p1.x+(k2-1.5)*5,6.8,p1.z),9);
+          flowTube(cr,0xd29922,.4,.8,'RDMA'); addMover(cr,0xffe08a,.55,.1,'RDMA'); }
+        wireLab('已散射 SCATTER_XDC：4 环独立出口 · 单链路峰值 ↓75%','#7ee787',20,V3(p1.x*.5,9.5,p1.z*.5));
+      } }
+  }
+  if(dim==='DP'){
+    if(band==='chip'){                         // 卡级：本卡梯度分桶 + 环邻示意
+      chipRingCtx(fh);
+      const p=chipPhys(S.focusChip,new THREE.Vector3());
+      wireLab(`本卡梯度分桶 · 与 63 张同位卡 Ring AllReduce（DP${dpF} · S${ppF}）`,'#9ecbff',26,p.clone().add(V3(0,.6,0)));
+      const nb=hostPos(((dpF+1)%64)*16+ppF,new THREE.Vector3());
+      const arc=bez(p.clone(),nb,2); flowTube(arc,0x58a6ff,2,.8,'DP'); addMover(arc,0x9ecbff,.35,.5,'DP');
+    } else if(band==='cab'){                   // 本机视角：环上左右邻
+      const hp=hostPos(fh,new THREE.Vector3()).add(V3(0,.1,0));
+      [[(dpF+63)%64,'in'],[(dpF+1)%64,'out']].forEach(([d2,dir])=>{
+        const pn=hostPos(d2*16+ppF,new THREE.Vector3()).add(V3(0,.1,0));
+        const arc = dir==='out'? bez(hp.clone(),pn.clone(),2.2) : bez(pn.clone(),hp.clone(),2.2);
+        flowTube(arc,0x58a6ff,1,.8,'DP'); addMover(arc,0x9ecbff,.35,.3,'DP');
+        dotAt(pn,0x58a6ff,.5);
+        wireLab(`DP${d2}·S${ppF}${dir==='out'?' →':' ←'}`,'#9ecbff',9,pn.clone().add(V3(0,.8,0))); });
+      wireLab(`Host ${fh} 在 DP 梯度环中的左右邻（共 64 副本 · 2 Channels）`,'#9ecbff',16,hp.clone().add(V3(0,1.7,0)));
+    } else {                                   // 全景：采样环 + 跨 Pod
+      const pts=[]; for(let d=0;d<64;d+=8) pts.push(hostPos(d*16+ppF,new THREE.Vector3()));
+      for(let k=0;k<pts.length;k++){
+        const a2=pts[k].clone().add(V3(0,.1,0)), b2=pts[(k+1)%pts.length].clone().add(V3(0,.1,0));
+        const seg=bez(a2,b2,3.2);
+        flowTube(seg,0x58a6ff,.45,.6,'DP'); addMover(seg,0x9ecbff,.4,.1,'DP');
+        flowTube(bez(a2.clone().add(V3(0,.5,0)),b2.clone().add(V3(0,.5,0)),3.2),0x58a6ff,.15,.25,'DP'); }
+      pts.forEach(p=>dotAt(p.clone().add(V3(0,.15,0)),0x58a6ff,.13));
+      wireLab(`DP·梯度 AllReduce · Stage${ppF} 环（示 8/64 副本）· 双股=2 Channels`,'#9ecbff',17,V3(0,6.6,0));
+      const p2=podXZ(2), cr=bez(pts[0].clone(),V3(p2.x,6.8,p2.z),10);
+      flowTube(cr,0x58a6ff,.25,.4,'DP');
+      wireLab('跨超节点 DP 同步（多 Pod 作业）→ SN2','#9ecbff',13,V3(p2.x*.55,8.8,p2.z*.55));
+    }
+  }
+}
+/* ======== 镜头② 通信域：域轮廓 + 成员标记（谁属于一个通信组，一眼可见） ======== */
+function buildDomainLines(dim){
+  const fh=S.focusHost, dpF=dpOf(fh), ppF=ppOf(fh);
+  const band = levelBand();
+  if(dim==='TP' && (band==='chip'||band==='die')){   // 卡级：本 Host 即 1 个 TP 域
+    hostPos(fh,vA); const y=vA.y+.09;
+    const box=[V3(vA.x-.62,y,vA.z-.52),V3(vA.x+.62,y,vA.z-.52),V3(vA.x+.62,y,vA.z+.52),V3(vA.x-.62,y,vA.z+.52),V3(vA.x-.62,y,vA.z-.52)];
+    flowTube(box,0x39c5cf,.6,.9,'UB');
+    wireLab('本 Host = 1 个 TP 通信域（8×NPU · 域内 UB 环 · 不出节点）','#7ee0e8',22,V3(vA.x,vA.y+.85,vA.z));
+    return; }
+  if(dim==='TP'){
+    const cab=cabOf(fh);
+    for(let s=0;s<8;s++){ const h=cab*8+s; hostPos(h,vA);
+      const ring=[]; for(let k=0;k<=20;k++){ const a=k/20*Math.PI*2;
+        ring.push(V3(vA.x+Math.cos(a)*.68, vA.y+.1, vA.z+Math.sin(a)*.56)); }
+      flowTube(ring,0x39c5cf,.1,h===fh?.9:.4,'UB'); }
+    hostPos(fh,vA);
+    wireLab(`TP 通信域 = 1 台 Host（8×NPU）· 全 Pod 1024 个域 · 示焦点柜${cab} 的 8 个`,'#7ee0e8',19,V3(vA.x,vA.y+2.5,vA.z));
+  }
+  if(dim==='PP'){
+    [0,8,16,24].forEach((off,i)=>{ const d=(dpF+off)%64, pts=[];
+      for(let k=0;k<16;k++) pts.push(hostPos(d*16+k,new THREE.Vector3()).add(V3(0,.12,0)));
+      flowTube(pts,0xd29922,i===0?.35:.08,i===0?.9:.22,'UB');
+      if(i===0){ dotAt(pts[0],0xffffff,.15); dotAt(pts[15],0xffffff,.15); } });
+    wireLab(`PP 通信域 = 1 条 16 段接力链 · 共 64 条（示 4 条）· 亮=焦点 DP副本${dpF}`,'#ffd28a',19,V3(0,5.4,0));
+  }
+  if(dim==='DP'){
+    const pts=[];
+    for(let d=0;d<64;d++){ const p=hostPos(d*16+ppF,new THREE.Vector3());
+      dotAt(p.clone().add(V3(0,.2,0)),0x58a6ff,.09);
+      if(d%8===0) pts.push(p.clone().add(V3(0,.15,0))); }
+    for(let k=0;k<pts.length;k++) flowTube(bez(pts[k],pts[(k+1)%pts.length],2.8),0x58a6ff,.2,.5,'DP');
+    wireLab(`DP 通信域 = Stage${ppF} 的 64 台同位副本（点=成员）· 共 16 个域`,'#9ecbff',19,V3(0,6,0));
+  }
+  if(dim==='EP'){
+    const eF = hostExpertIdx[fh];
+    if((band==='cab'||band==='chip') && eF<0)
+      wireLab('焦点 Host 非专家节点 · 无所属 EP 域（8 组全景见 L4）','#8b949e',20,
+        hostPos(fh,new THREE.Vector3()).add(V3(0,1.3,0)));
+    for(let g=0;g<8;g++){
+      if((band==='cab'||band==='chip') && (eF<0 || (eF>>3)!==g)) continue;   // 下钻只画所属组
+      const ps=[]; let cx=0,cz=0, anomG=false;
+      for(let e=g*8;e<g*8+8;e++){ const p=hostPos(expertHosts[e],new THREE.Vector3());
+        ps.push(p); cx+=p.x/8; cz+=p.z/8;
+        if(S.anomaly&&anomExperts.indexOf(e)>=0) anomG=true; }
+      ps.sort((a,b)=>Math.atan2(a.z-cz,a.x-cx)-Math.atan2(b.z-cz,b.x-cx));
+      const loop=ps.map(p=>V3(p.x,.12,p.z)); loop.push(loop[0].clone());
+      flowTube(loop, anomG?0xf85149:0xa371f7, .08, anomG?.85:.45, 'UB');
+      ps.forEach(p=>dotAt(V3(p.x,.35,p.z), anomG?0xf85149:0xa371f7, .12));
+      wireLab('G'+g+(anomG?'·含越界⚠':''), anomG?'#ffa198':'#d2a8ff', anomG?7:3.5, V3(cx,1.9,cz));
+    }
+    if(band==='field'||band==='pod')
+      wireLab('EP 通信域 = MoGE 专家组 ×8（地面轮廓=组边界 · 组内 top-1 · 组间 AllToAll）','#d2a8ff',22,V3(0,7.6,0));
+  }
+}
+/* ======== 镜头③ 互联流量：有序走线 · 状态色=占用 · 与矩阵叠加卡双向联动 ======== */
+function buildFlowLines(){
+  const ph = PHASES[S.phase].id;
+  const band = levelBand();
+  if(band==='pod'){ buildPodAgg(ph); return; }
+  const med = S.mxMedium;
+  const dimK = m => (med && m!==med) ? .08 : 1;
+  const stats = mediaStats();
+  if(band!=='field'){                          // 局部粒度：焦点柜所在行（chip/die 仅本柜）
+    const fc=cabOf(S.focusHost), row=fc>>4, z=(row-3.5)*2.4;
+    flowTube([V3(-13.5,3.0,z),V3(13.5,3.0,z)],0x2ea043,.2,.25,'UB');
+    for(let col=0;col<16;col++){ const cab=row*16+col;
+      if(band!=='cab' && cab!==fc) continue;
+      const x=(col-7.5)*1.8, side=cab%2?15.4:-15.4;
+      const load=Math.min(1,.1+rng(cab*3+S.phase*7)*.85*(stats[0][2]+.35));
+      const pts=[V3(x,3.55,z),V3(x,4.1,z),V3(side*.55,4.1,z*.8),V3(side,1.5,z*.4)];
+      flowTube(pts,stateHex(load),load*1.2,(.3+load*.5)*dimK('UB'),'UB');
+      if(cab===fc){ addMover(pts,0xffffff,.5,.3,'UB');
+        wireLab(`柜${cab}（焦点）上联 ${(load*100)|0}%`, stateCss(load), 12, V3(x,4.9,z)); }
+      else if(load>.7) wireLab(`柜${cab} ${(load*100)|0}%`, stateCss(load), 8, V3(x,4.5,z)); }
+    wireLab(`行${row} 上联流量 · 跨柜骨干/跨 Pod 汇总见 L4 全景`,'#8b949e',18,V3(0,6.2,z));
+    return; }
+  const hot=[];
+  for(let cab=0;cab<128;cab++){                          // ① UB：128 柜上联（平行有序走线）
+    const x=(cab%16-7.5)*1.8, z=((cab>>4)-3.5)*2.4;
+    const side=cab%2?15.4:-15.4;
+    const load=Math.min(1,.1+rng(cab*3+S.phase*7)*.85*(stats[0][2]+.35));
+    const pts=[V3(x,3.55,z), V3(x,4.1,z), V3(side*.55,4.1,z*.8), V3(side,1.5,z*.4)];
+    flowTube(pts, stateHex(load), load*.45, (.22+load*.5)*dimK('UB'), 'UB');
+    hot.push([load,cab,pts]);
+  }
+  hot.sort((a,b)=>b[0]-a[0]);
+  hot.slice(0,3).forEach(([ld,cab,pts])=>{
+    addMover(pts, 0xffffff, .5, .1, 'UB');
+    wireLab(`柜${cab} 上联 ${(ld*100)|0}%`, stateCss(ld), 7, pts[1].clone().add(V3(0,.8,0))); });
+  for(let i=0;i<8;i++){ const z=(i*2-7)*1.35;            // ② RDMA 参数面：两翼横向骨干
+    const load=Math.min(1,.15+rng(i*17+S.phase*5)*.8*(stats[1][2]+.3));
+    flowTube(bez(V3(-15.4,2.8,z),V3(15.4,2.8,z),2.2+i*.15),stateHex(load),load*.45,(.18+load*.5)*dimK('RDMA'),'RDMA'); }
+  for(let k=1;k<=5;k++){ const p=podXZ(k*11%63+1);       // ③ 集群 DP AllReduce：跨 Pod 粗弧
+    const load=Math.min(1,.15+rng(k*29+S.phase*3)*.75*(stats[2][2]+.3));
+    const pts=bez(V3(0,4.5,0),V3(p.x,4.5,p.z),10+k*1.5);
+    flowTube(pts,stateHex(load),load*.55,(.28+load*.5)*dimK('DP'),'DP');
+    addMover(pts,0xffffff,.28,.13,'DP'); }
+  for(let k=0;k<3;k++)                                   // ④ VPC/管理面：细线出场地
+    flowTube(bez(V3((k-1)*9,3.2,-8.4),V3((k-1)*22,1.2,-38),4),0x39c5cf,.04,.3*dimK('VPC'),'VPC');
+  if(S.anomaly){ const p1=podXZ(1);
+    const pts=bez(V3(15.4,1.5,0),V3(p1.x-16,6,p1.z),8);
+    flowTube(pts,0xf85149,.95,.95*dimK('RDMA'),'RDMA'); addMover(pts,0xffffff,.6,.15,'RDMA');
+    wireLab('⚠ 跨 Pod 光链路拥塞（EP 越界流量落此）','#ffa198',17,V3(p1.x*.45,8.4,p1.z*.45)); }
+  wireLab(`互联流量 · 绿<40% 黄40-70% 红>70% · 宽度=占用 · ${med?'已按介质过滤：'+med:'右上矩阵卡：格=单元对 · 介质条可过滤'}`,'#8b949e',28,V3(0,12,0));
+}
+/* ======== 镜头④ 物理链路：Manhattan 走线（柜↑行母线→两翼）· 健康三色 ======== */
+function buildLinkLines(){
+  const band = levelBand();
+  if(band==='cab'||band==='chip'||band==='die'){    // 局部粒度：焦点行链路健康
+    const fc=cabOf(S.focusHost), row=fc>>4, z=(row-3.5)*2.4;
+    flowTube([V3(-13.5,3.0,z),V3(13.5,3.0,z)],0x2ea043,.2,.3,'UB');
+    for(let col=0;col<16;col++){ const cab=row*16+col;
+      if(band!=='cab' && cab!==fc) continue;
+      const x=(col-7.5)*1.8, st=cab===41?2:(cab%13===0?1:0);
+      const c2=st===2?0xf85149:st===1?0xd29922:0x2ea043;
+      if(st===2){ flowTube([V3(x,3.55,z),V3(x,3.25,z)],c2,.5,.95,'UB'); dotAt(V3(x,3.1,z),c2,.4);
+        wireLab(`✂ 柜${cab} 中断`,'#ffa198',10,V3(x,4.6,z)); }
+      else flowTube([V3(x,3.55,z),V3(x,3.0,z)],c2,st===1?.4:.15,st===1?.85:.35,'UB');
+      if(cab===fc) wireLab(`柜${fc}（焦点）上联${st===2?'中断':st===1?'降级·CRC重传↑':'正常'}`,
+        st===2?'#ffa198':st===1?'#ffe08a':'#7ee787', 13, V3(x,5.3,z)); }
+    wireLab(`行${row} 母线 → 两翼互联柜 · 全 Pod 链路汇总见 L4`,'#8b949e',18,V3(0,6.4,z));
+    return; }
+  let ok=0, deg=0, brk=0;
+  for(let row=0;row<8;row++){ const z=(row-3.5)*2.4;
+    flowTube([V3(-13.5,3.0,z),V3(13.5,3.0,z)],0x2ea043,.03,.16,'UB');
+    flowTube([V3(-13.5,3.0,z),V3(-15.4,1.6,z*.5)],0x2ea043,.03,.2,'UB');
+    flowTube([V3(13.5,3.0,z),V3(15.4,1.6,z*.5)],0x2ea043,.03,.2,'UB'); }
+  for(let cab=0;cab<128;cab++){
+    const x=(cab%16-7.5)*1.8, z=((cab>>4)-3.5)*2.4;
+    const st = cab===41?2 : (cab%13===0?1:0);
+    if(st===2){ brk++;
+      flowTube([V3(x,3.55,z),V3(x,3.25,z)],0xf85149,.18,.95,'UB');   // 上半截+缺口
+      dotAt(V3(x,3.1,z),0xf85149,.15);
+      wireLab(`✂ 柜${cab} 上联中断 · 影响 8 Host / 64 NPU`,'#ffa198',13,V3(x,5.3,z)); }
+    else if(st===1){ deg++;
+      flowTube([V3(x,3.55,z),V3(x,3.0,z)],0xd29922,.1,.85,'UB');
+      if(deg<=2) wireLab(`柜${cab} 降级·CRC 重传↑`,'#ffe08a',8,V3(x,4.7,z)); }
+    else { ok++;
+      flowTube([V3(x,3.55,z),V3(x,3.0,z)],0x2ea043,.02,.18,'UB'); }
+  }
+  wireLab(`物理链路 · 正常 ${ok}（暗绿）· 降级 ${deg}（黄）· 中断 ${brk}（红✂）· 走线：柜↑行母线→两翼互联柜`,'#8b949e',28,V3(0,10.8,0));
+}
+/* ======== 镜头⑤ 消息路径·PXN：交换节点显名 + hop 计数 + 粒子速度=时延对比 ======== */
+function buildPathLines(){
+  const srcH=S.focusHost, dstH=(srcH+517)%N_HOST;
+  const a=hostPos(srcH,new THREE.Vector3()), b=hostPos(dstH,new THREE.Vector3());
+  const leafA=V3(a.x*.72,5.6,a.z*.72), leafB=V3(b.x*.72,5.6,b.z*.72), spine=V3(0,9.6,0);
+  [[leafA,'Leaf-A'],[spine,'Spine'],[leafB,'Leaf-B']].forEach(([p,t])=>{
+    dotAt(p,0xf85149,.3); wireLab(t,'#e6edf3',6,p.clone().add(V3(0,.9,0))); });
+  const segs=[[a,leafA],[leafA,spine],[spine,leafB],[leafB,b]], redPts=[];
+  segs.forEach((sg,i)=>{ const pts=bez(sg[0].clone(),sg[1].clone(),.7);
+    flowTube(pts,0xf85149,.2,.8,'RDMA'); redPts.push(...pts);
+    if(i<3) wireLab(['①','②','③'][i]+' hop','#ffa198',4.5,sg[1].clone().add(V3(.9,.5,0))); });
+  addMover(redPts,0xffa198,.15,.13,'RDMA');              // 慢
+  wireLab('跨轨 3-hop：NIC→Leaf→Spine→Leaf→NIC ≈3.2μs · 穿越二层脊交换','#f85149',21,V3(0,11.6,0));
+  const mid=hostPos(srcH^1,new THREE.Vector3());
+  const g1=bez(a.clone(),mid.clone(),.5), g2=bez(mid.clone(),b.clone(),2.4);
+  flowTube(g1,0x3fb950,.25,.95,'UB'); flowTube(g2,0x3fb950,.25,.95,'RDMA');
+  addMover(g1.concat(g2),0x7ee787,.48,.13);              // 快 ≈3×
+  dotAt(mid,0x3fb950,.22); wireLab('挪轨 GPU','#7ee787',6,mid.clone().add(V3(0,.8,0)));
+  wireLab('PXN 1-hop：UB 挪轨→同轨 NIC 直达 ≈1.1μs（-66%）· 支持 8 消息聚合','#3fb950',20,V3((a.x+b.x)/2,3.6,(a.z+b.z)/2));
+  wireLab(`Host ${srcH} → Host ${dstH} · 粒子速度=实际时延对比`,'#e6edf3',13,V3(a.x,a.y+1.5,a.z));
+}
+/* ======== 互联矩阵叠加卡：浅色 2D 版 Host×Host 的 3D 联动版 ======== */
+const mxcv = $('#mxcv'), gmx = mxcv.getContext('2d');
+const mxHiGroup = new THREE.Group(); scene.add(mxHiGroup);
+function syncMxCard(){
+  $('#mxcard').classList.toggle('show', S.mxShow);
+  $('#btnMx').classList.toggle('on', S.mxShow);
+  if(S.mxShow) renderMxCard();
+}
+function renderMxCard(){
+  if(!S.mxShow) return;
+  hidpi(mxcv,232,232);
+  $('#mxmedia').innerHTML = mediaStats().map(([k,lab,v])=>
+    `<div class="mrow${S.mxMedium===k?' sel':''}" data-med="${k}">
+       <span class="ml">${lab}</span>
+       <span class="mb"><i style="width:${(v*100)|0}%;background:${stateCss(v)}"></i></span>
+       <span class="mv">${(v*100)|0}%</span></div>`).join('');
+  const cs=232/N_UNIT;
+  gmx.clearRect(0,0,232,232);
+  for(let i=0;i<N_UNIT;i++) for(let j=0;j<N_UNIT;j++){
+    const v=mxVal(i,j);
+    gmx.fillStyle = i===j? '#0d1117' : stateCss(v);
+    gmx.globalAlpha = i===j? 1 : .25+v*.75;
+    gmx.fillRect(j*cs,i*cs,cs-.3,cs-.3); }
+  gmx.globalAlpha=1;
+  const box=(pr,col)=>{ if(!pr) return; gmx.strokeStyle=col; gmx.lineWidth=1.2;
+    gmx.strokeRect(pr[1]*cs-1,pr[0]*cs-1,cs+2,cs+2);
+    gmx.strokeRect(pr[0]*cs-1,pr[1]*cs-1,cs+2,cs+2); };   // 对称格一起框
+  box(S.mxPin,'#58a6ff'); box(S.mxHover,'#ffffff');
+  if(levelBand()==='cab'||levelBand()==='chip'){   // 下钻时标出焦点 Host 所在通信单元行/列
+    const fu=(S.focusHost/16)|0;
+    gmx.strokeStyle='rgba(158,203,255,.75)'; gmx.lineWidth=1;
+    gmx.strokeRect(0,fu*cs-.5,232,cs+1); gmx.strokeRect(fu*cs-.5,0,cs+1,232); }
+  const pr = S.mxHover||S.mxPin;
+  $('#mxinfo').innerHTML = pr
+    ? `单元 <b>${pr[0]}</b>（Host ${pr[0]*16}-${pr[0]*16+15}·柜${pr[0]*2}-${pr[0]*2+1}）⇄ 单元 <b>${pr[1]}</b> · 占用 <b style="color:${stateCss(mxVal(pr[0],pr[1]))}">${(mxVal(pr[0],pr[1])*100)|0}%</b><br>3D 已点亮此对 · ${S.mxPin&&!S.mxHover?'已钉住（再点取消）':'点击钉住'}`
+    : '行/列 = 64 通信单元（1 单元=16 Host=2 柜）· 色=状态 · 悬停格→3D 点亮该对 · 点介质条→过滤 3D 流量';
+}
+function renderMxHi(){                                    // 矩阵 → 3D 交叉高亮
+  for(let i=mxHiGroup.children.length-1;i>=0;i--){ const o=mxHiGroup.children[i];
+    if(o.geometry) o.geometry.dispose();
+    if(o.material){ if(o.material.map) o.material.map.dispose(); o.material.dispose(); }
+    mxHiGroup.remove(o); }
+  const pr = S.mxHover||S.mxPin; if(!pr||!S.mxShow) return;
+  const a=unitPos(pr[0],new THREE.Vector3()), b=unitPos(pr[1],new THREE.Vector3());
+  const v=mxVal(pr[0],pr[1]);
+  const tube=new THREE.Mesh(
+    new THREE.TubeGeometry(new THREE.CatmullRomCurve3(bez(a,b,2.6)),24,.09+v*.15,5,false),
+    new THREE.MeshBasicMaterial({color:stateHex(v),transparent:true,opacity:.95,depthWrite:false}));
+  mxHiGroup.add(tube);
+  [a,b].forEach(p=>{ const m=new THREE.Mesh(new THREE.SphereGeometry(.26,10,10),
+    new THREE.MeshBasicMaterial({color:0xffffff,transparent:true,opacity:.9}));
+    m.position.copy(p); mxHiGroup.add(m); });
+  const l=makeLabel(`单元${pr[0]} ⇄ 单元${pr[1]} · ${(v*100)|0}%`, stateCss(v), 10);
+  l.position.copy(a.clone().add(b).multiplyScalar(.5).add(V3(0,2.4,0))); mxHiGroup.add(l);
+}
+$('#btnMx').onclick = ()=>{ S.mxShow=!S.mxShow; syncMxCard(); renderMxHi(); };
+$('#mxClose').onclick = ()=>{ S.mxShow=false; syncMxCard(); renderMxHi(); };
+$('#mxmedia').addEventListener('click', ev=>{ const r=ev.target.closest('.mrow'); if(!r) return;
+  S.mxMedium = S.mxMedium===r.dataset.med? null : r.dataset.med;
+  renderMxCard(); commDirty=true; });
+mxcv.addEventListener('mousemove', ev=>{ const r=mxcv.getBoundingClientRect();
+  const j=Math.min(63,Math.max(0,((ev.clientX-r.left)/r.width*64)|0));
+  const i=Math.min(63,Math.max(0,((ev.clientY-r.top)/r.height*64)|0));
+  const nh = i===j? null : [i,j];
+  if(JSON.stringify(nh)!==JSON.stringify(S.mxHover)){ S.mxHover=nh; renderMxCard(); renderMxHi(); } });
+mxcv.addEventListener('mouseleave', ()=>{ S.mxHover=null; renderMxCard(); renderMxHi(); });
+mxcv.addEventListener('click', ()=>{ if(!S.mxHover) return;
+  S.mxPin = (S.mxPin&&S.mxPin[0]===S.mxHover[0]&&S.mxPin[1]===S.mxHover[1])? null : S.mxHover.slice();
+  renderMxCard(); renderMxHi(); });
+/* ---- 颜色 / Morph / 指示器 ---- */
+let colorsDirty = true, commDirty = true, morphDirty = true;
+const WHITE = new THREE.Color(0xffffff);
+function hostActive(h){ const ph = PHASES[S.phase].id;
+  if(!S.playing) return false;
+  if(ph==='TP') return true;
+  if(ph==='PP') return ppOf(h) === (((S.t*4%1)*16)|0);
+  if(ph==='EP') return !!isExpertHost[h];
+  if(ph==='DP') return dpOf(h)%8 === (((S.t*4%1)*8)|0);
+  return false; }
+function pulseK(){ return S.playing ? .5+.5*Math.sin(performance.now()/180) : 0; }
+function applyColors(chipsToo){
+  const pk = pulseK();
+  for(let h=0;h<N_HOST;h++){ cTmp.setStyle(hostColor(h));
+    if(S.playing && hostActive(h)) cTmp.lerp(WHITE, pk*.55);
+    hostsMesh.setColorAt(h,cTmp); }
+  hostsMesh.instanceColor.needsUpdate = true;
+  if(chipsToo){
+    for(let c=0;c<N_CHIP;c++){ cTmp.setStyle(chipColor(c)); chipsMesh.setColorAt(c,cTmp); }
+    chipsMesh.instanceColor.needsUpdate = true;
+    for(let i=0;i<63;i++){ let cc = S.anomaly&&i===0 ? 0x8b1a1a : 0x1c232e;
+      if(S.focusPod===i+1) cc = 0x2d4a77;
+      pods.setColorAt(i, cTmp.set(cc)); }
+    pods.instanceColor.needsUpdate = true;
+    if(stackL5){ stackL5.setColorAt(1, cTmp.set(S.anomaly?0x8b1a1a:0x21262d));
+      stackL5.instanceColor.needsUpdate = true; }
+    if(stackL4){ for(let cab=0;cab<128;cab++){ let hot=cab*8;
+        for(let s=1;s<8;s++) if(health[cab*8+s]>health[hot]) hot=cab*8+s;
+        stackL4.setColorAt(cab, cTmp.setStyle(hostColor(hot))); }
+      stackL4.instanceColor.needsUpdate = true; } }
+}
+const ease = k => k<.5 ? 2*k*k : 1-Math.pow(-2*k+2,2)/2;
+function applyMorph(){
+  const wC = ease(Wgt.cube), wS = Wgt.stack;
+  const sum = Wgt.phys + wC + wS || 1;
+  const wP = Wgt.phys/sum, wCn = wC/sum, wSn = wS/sum;
+  const s1 = wP + 5*wCn + 1.25*wSn, s3 = wP + 2.6*wCn + 1.1*wSn;
+  for(let c=0;c<N_CHIP;c++){
+    chipPhys(c,vA).multiplyScalar(wP);
+    chipCubeM(c,cubeMode,vB);
+    if(cubeBlend<1){ chipCubeM(c,cubePrev,vT); vB.lerpVectors(vT,vB,ease(cubeBlend)); }
+    vA.addScaledVector(vB, wCn);
+    vA.addScaledVector(chipStack(c,vB), wSn);
+    dummy.position.copy(vA); dummy.rotation.set(0,0,0); dummy.scale.set(s1,s1,s3);
+    dummy.updateMatrix(); chipsMesh.setMatrixAt(c,dummy.matrix); }
+  chipsMesh.instanceMatrix.needsUpdate = true;
+  const hw = Wgt.phys + wS || 1, aP = Wgt.phys/hw, aS = wS/hw;
+  for(let h=0;h<N_HOST;h++){
+    hostPos(h,vA).multiplyScalar(aP);
+    vA.addScaledVector(hostStack(h,vB), aS);
+    const hs = aP + .5*aS;
+    dummy.position.copy(vA); dummy.rotation.set(0,0,0); dummy.scale.set(hs,hs,hs);
+    dummy.updateMatrix(); hostsMesh.setMatrixAt(h,dummy.matrix); }
+  hostsMesh.instanceMatrix.needsUpdate = true;
+  hostsMesh.visible = wC<0.98;
+  memMesh.visible = Wgt.phys>0.6;
+  physGroup.traverse(o=>{ if(o.material&&o.material.userData.base!=null)
+    o.material.opacity = o.material.userData.base*Wgt.phys; });
+  physGroup.visible = Wgt.phys>0.01;
+  cubeGroup.visible = wC>0.05 && cubeMode===0;
+  cubeGroup.traverse(o=>{ if(o.material){ o.material.transparent=true;
+    const b=o.material.userData.base!=null?o.material.userData.base:1;
+    o.material.opacity = b*wC; } });
+  stackGroup.visible = wS>0.01;
+  stackGroup.traverse(o=>{ if(o.material){ o.material.transparent=true;
+    const b=o.material.userData.base!=null?o.material.userData.base:1;
+    o.material.opacity = b*wS; } });
+  commGroup.visible = Wgt.phys>0.6;
+  mxHiGroup.visible = Wgt.phys>0.6;
+  cubeComm.visible = wC>0.5 && cubeMode===0 && S.wire==='AUTO';
+}
+function updateSlices(){
+  slices.TP.forEach(p=>p.visible = S.lens==='TP');
+  slices.PP.forEach(p=>p.visible = S.lens==='PP');
+  slices.DP.forEach(p=>p.visible = S.lens==='DP');
+  if(S.selLayer!=null){ selSlab.visible = true;
+    selSlab.position.set(CUBE.cx, CUBE.cy+(7.5-stageOfLayer(S.selLayer))*CUBE.sy, CUBE.cz); }
+  else if(S.selCard){ selSlab.visible = true;
+    selSlab.position.set(CUBE.cx, CUBE.cy+(7.5-S.selCard.pp)*CUBE.sy, CUBE.cz); }
+  else selSlab.visible = false;
+  rulerSprites.forEach((sp,s2)=>{ const sel = (S.selLayer!=null&&stageOfLayer(S.selLayer)===s2) ||
+      (S.selCard&&S.selCard.pp===s2);
+    sp.material.color.set(sel?0xffffff:0xd29922); });
+}
+function updateIndicators(){
+  const wC = ease(Wgt.cube), wS = Wgt.stack, wP = Wgt.phys;
+  const sum = wP+wC+wS||1, nP=wP/sum, nC=wC/sum, nS=wS/sum;
+  const bl = (fP,fC,fS)=>fP*nP+fC*nC+fS*nS;
+  if(S.hoverHost>=0 && nC<0.5){ const a = nP/((nP+nS)||1);
+    hoverBox.visible=true;
+    hostPos(S.hoverHost,vA).multiplyScalar(a);
+    vA.addScaledVector(hostStack(S.hoverHost,vB), 1-a);
+    hoverBox.position.copy(vA);
+    hoverBox.scale.set(.7+.65*a, .32+.23*a, .7+.5*a); }
+  else hoverBox.visible=false;
+  // 焦点 Host：物理托盘 / 魔方 TP 行 / 堆叠瓦片
+  hostPos(S.focusHost,vA).multiplyScalar(nP);
+  chipCube(S.focusHost*8,vB); const rowC = vB.clone(); chipCube(S.focusHost*8+7,vB); rowC.lerp(vB,.5);
+  vA.addScaledVector(rowC,nC).addScaledVector(hostStack(S.focusHost,vB),nS);
+  focusHostBox.position.copy(vA);
+  focusHostBox.scale.set(bl(1.35,12.6,.7), bl(.55,1.3,.32), bl(1.2,1.3,.7));
+  // 焦点芯片
+  chipPhys(S.focusChip,vA).multiplyScalar(nP);
+  vA.addScaledVector(chipCube(S.focusChip,vB),nC).addScaledVector(chipStack(S.focusChip,vB),nS);
+  focusChipBox.position.copy(vA);
+  focusChipBox.scale.set(bl(.26,1.2,.3), bl(.2,.9,.26), bl(.34,.7,.36));
+  // L1/L0 下钻细节（仅物理形态）
+  detail.visible = (S.level==='L1'||S.level==='L0') && nP>0.7;
+  if(detail.visible){ chipPhys(S.focusChip,vA); detail.position.copy(vA); }
+  // 深下钻时机柜淡化 → 用焦点机柜线框保留空间参照
+  const cabLv = S.level==='L3'||S.level==='L2'||S.level==='L1'||S.level==='L0';
+  focusCabBox.visible = cabLv && nP>0.5;
+  if(focusCabBox.visible){ const cab = cabOf(S.focusHost);
+    focusCabBox.position.set((cab%16-7.5)*1.8, 1.85, ((cab>>4)-3.5)*2.4);
+    focusCabBox.scale.set(1.5,3.72,1.28); }
+  const showFocus = cabLv && nP>0.5;
+  focusHostMesh.visible = focusChipsMesh.visible = showFocus;
+  if(showFocus){
+    hostPos(S.focusHost, focusHostMesh.position);
+    focusHostMesh.material.color.setStyle(hostColor(S.focusHost));
+    for(let s2=0;s2<8;s2++){ chipPhys(S.focusHost*8+s2, vA);
+      dummy.position.copy(vA); dummy.rotation.set(0,0,0); dummy.scale.set(1,1,1); dummy.updateMatrix();
+      focusChipsMesh.setMatrixAt(s2, dummy.matrix);
+      focusChipsMesh.setColorAt(s2, cTmp.setStyle(chipColor(S.focusHost*8+s2))); }
+    focusChipsMesh.instanceMatrix.needsUpdate = true;
+    focusChipsMesh.instanceColor.needsUpdate = true;
+  }
+  // 堆叠形态：焦点垂链 L7→L0
+  if(stackPath){ stackPath.visible = nS>0.05;
+    if(stackPath.visible){ const P = stackPath.geometry.attributes.position;
+      const pts = [[0,STACK.L7,0],[-5.95,STACK.L6,-5.95],[-8.75,STACK.L5,0],[0,STACK.L4,0]];
+      hostStack(S.focusHost,vA); pts.push([vA.x,vA.y,vA.z]);
+      chipStack(S.focusChip,vA); pts.push([vA.x,vA.y,vA.z]);
+      pts.push([0,STACK.L1,0],[0,STACK.L0,0]);
+      pts.forEach((p,i)=>P.setXYZ(i,p[0],p[1],p[2])); P.needsUpdate = true; } }
+  // 层级选中反馈：堆叠平台描边高亮 / 物理形态边界高亮
+  if(nS>0.02){ for(const lv in stackPlats){ const sel = S.level===lv, o = stackPlats[lv];
+      o.edges.material.color.set(sel?0x58a6ff:0x30363d);
+      o.edges.material.opacity = (sel?1:.4)*Wgt.stack;
+      o.label.material.color.set(sel?0xffffff:0x8b949e); } }
+  if(poolLine){ poolLine.material.color.set(S.level==='L5'?0x9ecbff:0x58a6ff);
+    poolLine.material.opacity = (S.level==='L5'?1:.5)*Wgt.phys; }
+  if(podBaseEdges){ podBaseEdges.material.color.set(S.level==='L4'?0x58a6ff:0x1f6feb);
+    podBaseEdges.material.opacity = (S.level==='L4'?1:.75)*Wgt.phys; }
+}
+function updateCommPulse(now){
+  const k = S.playing ? .45+.55*Math.abs(Math.sin(now/260)) : .8;
+  const emph = S.hudEmph;                         // HUD step 分解 hover → 软硬联动
+  commGroup.children.forEach(o=>{ const m=o.material;
+    if(!m || m.userData.base==null) return;
+    let kk = m.userData.noPulse ? 1 : k;
+    if(emph) kk = emph==='comm' ? Math.min(1.4, kk*1.6) : .08;
+    m.opacity = Math.min(1, m.userData.base*kk); });
+  cubeComm.children.forEach(o=>{ o.material.opacity = o.material.userData.base*k; });
+  tickMovers(now);
+}
+/* ---- 相机：单一视角 + 层级驱动飞行缩放 ---- */
+let yaw = .82, pitch = .58, zoomBias = 1;
+const camCur = { t:V3(0,2,0), d:52 };
+function camGoal(){
+  if(S.form==='cube' || Wgt.cube>0.5){
+    if(cubeMode===1) return { t:V3(0,10,0), d:150 };
+    if(cubeMode===2) return { t:V3(0,16,0), d:95 };
+    if(cubeMode===3) return { t:V3(0,17,0), d:118 };
+    if(cubeMode===4) return { t:V3(0,12,0), d:152 };
+    return { t:V3(CUBE.cx,CUBE.cy,CUBE.cz), d:82 }; }
+  if(S.form==='stack' || Wgt.stack>0.5){
+    const ST = { L7:[15,58], L6:[STACK.L6,32], L5:[STACK.L5,26], L4:[STACK.L4,18],
+                 L3:[STACK.L3,30], L2:[STACK.L2,32], L1:[STACK.L1,14], L0:[STACK.L0,14] };
+    const s = ST[S.level]||ST.L4; return { t:V3(0,s[0],0), d:s[1] }; }
+  const hp = hostPos(S.focusHost,new THREE.Vector3());
+  const cp = chipPhys(S.focusChip,new THREE.Vector3());
+  switch(S.level){
+    case 'L7': return { t:V3(FIELD.x,3,FIELD.z), d:640 };
+    case 'L6': { if(!S.focusPod) return { t:V3(FIELD.x,3,FIELD.z), d:400 };
+      const p=podXZ(S.focusPod); return { t:V3(p.x,3,p.z), d:230 }; }
+    case 'L5': { const c0=Math.min(S.focusPod||0,7), p=podXZ(c0);
+      return { t:V3((p.x+126)/2,2,p.z), d:240 }; }
+    case 'L4': return { t:V3(0,1.8,0), d:52 };
+    case 'L3': return { t:V3(hp.x,1.8,hp.z), d:13 };
+    case 'L2': return { t:hp, d:3.2 };
+    case 'L1': return { t:cp, d:1.0 };
+    case 'L0': return { t:cp, d:.42 };
+  }
+  return { t:V3(0,1.8,0), d:52 };
+}
+function updateCamera(dt){
+  const g = camGoal();
+  const k = 1-Math.exp(-dt*3.4);
+  camCur.t.lerp(g.t,k); camCur.d += (g.d*zoomBias-camCur.d)*k;
+  const cp = Math.cos(pitch);
+  camera.position.set(
+    camCur.t.x + cp*Math.sin(yaw)*camCur.d,
+    camCur.t.y + Math.sin(pitch)*camCur.d,
+    camCur.t.z + cp*Math.cos(yaw)*camCur.d);
+  camera.lookAt(camCur.t);
+  camera.near = Math.max(.02, camCur.d*.02);
+  camera.far = camCur.d*30+900;
+  camera.updateProjectionMatrix();
+  // 深下钻时机柜自动变透明，避免遮挡
+  const zoomLv = ({L3:.13, L2:.06, L1:.05, L0:.05})[S.level];
+  const deepZoom = zoomLv!=null && S.morph<.5;
+  const tgt = deepZoom? zoomLv : .45;
+  cabMat.opacity += (tgt*Wgt.phys-cabMat.opacity)*k;
+  if(cabEdges) cabEdges.material.opacity += ((deepZoom?.16:.6)*Wgt.phys-cabEdges.material.opacity)*k;
+  // 下钻时其余 Host/芯片同步淡化（焦点对象由独立网格保持不透明）
+  const hostTgt = (deepZoom? (S.level==='L3'? .22 : .10) : 1) * (1-Wgt.cube);
+  hostMat.opacity += (hostTgt - hostMat.opacity)*k;
+  hostMat.depthWrite = hostMat.opacity > .5;
+  memMat.opacity = hostMat.opacity; memMat.depthWrite = hostMat.depthWrite;
+  const chipTgt = (deepZoom && S.level!=='L3' && Wgt.phys>.5) ? .15 : 1;
+  chipMat.opacity += (chipTgt - chipMat.opacity)*k;
+  chipMat.depthWrite = chipMat.opacity > .5;
+}
+/* ---- 交互：拖拽旋转 / 滚轮 / 拾取 ---- */
+let dragging=false, dragMoved=false, px=0, py=0;
+stage.addEventListener('pointerdown', e=>{ dragging=true; dragMoved=false; px=e.clientX; py=e.clientY; });
+window.addEventListener('pointermove', e=>{ if(!dragging) return;
+  const dx=e.clientX-px, dy=e.clientY-py; px=e.clientX; py=e.clientY;
+  if(Math.abs(dx)+Math.abs(dy)>2) dragMoved=true;
+  yaw -= dx*.005; pitch = Math.min(1.35, Math.max(.12, pitch+dy*.004)); });
+window.addEventListener('pointerup', ()=>{
+  if(dragging && !dragMoved && S.hoverHost>=0){
+    S.focusHost=S.hoverHost; S.focusChip=S.focusHost*8;
+    if(S.tab==='model'){ S.selCard={pp:ppOf(S.focusHost),tp:null}; S.selLayer=null;
+      describeModelSel(); renderMemPanel(); renderMM(); touchLeft(); }
+    else { if(S.morph>0.5 && ['TP','PP','DP','EP'].includes(S.lens)){
+        S.rel = S.lens;                     // 魔方内点选 = 选中该芯片所在的"透镜组"
+        $$('.relbtn').forEach(x=>x.classList.toggle('on', x.dataset.rel===S.lens)); }
+      setFilter(S.focusHost); } }
+  dragging=false; });
+stage.addEventListener('wheel', e=>{ e.preventDefault();
+  zoomBias = Math.min(3.2, Math.max(.3, zoomBias*Math.exp(e.deltaY*.001))); }, {passive:false});
+const raycaster = new THREE.Raycaster(), mouseV = new THREE.Vector2();
+stage.addEventListener('mousemove', ev=>{
+  if(dragging) return;
+  const r = stage.getBoundingClientRect();
+  mouseV.set(((ev.clientX-r.left)/r.width)*2-1, -((ev.clientY-r.top)/r.height)*2+1);
+  raycaster.setFromCamera(mouseV, camera);
+  const target = S.morph>0.5 ? chipsMesh : hostsMesh;
+  const hit = raycaster.intersectObject(target)[0];
+  if(hit && hit.instanceId!=null){
+    setHover(S.morph>0.5 ? hostOf(hit.instanceId) : hit.instanceId, '3D');
+    stage.style.cursor='pointer'; }
+  else { setHover(-1,''); stage.style.cursor='default'; } });
+stage.addEventListener('mouseleave', ()=>setHover(-1,''));
+/* ================= 全局状态机 ================= */
+$$('.lensbtn').forEach(b=>b.onclick = ()=>{
+  S.lens = b.dataset.lens;
+  $$('.lensbtn').forEach(x=>x.classList.toggle('on', x===b));
+  updateSlices(); touchLeft(); });
+$$('.relbtn').forEach(b=>b.onclick = ()=>{
+  S.rel = b.dataset.rel;
+  $$('.relbtn').forEach(x=>x.classList.toggle('on', x===b));
+  invalidateRel(); renderFilterBar(); updateCounts(); touchLeft(); });
+$('#fbClear').onclick = ()=>{ if(S.filterHost!=null) setFilter(S.filterHost); };
+$$('.wirebtn').forEach(b=>b.onclick = ()=>{ S.wire = b.dataset.wire;
+  $$('.wirebtn').forEach(x=>x.classList.toggle('on', x===b));
+  if(S.wire==='FLOW' && !S.mxShow){ S.mxShow=true; syncMxCard(); }   // 互联流量 → 自动挂出矩阵卡
+  commDirty = true; renderViewlab(); });
+/* ---- v20：控件层级整理 ----
+   顶栏三层：任务入口（场景剧本）｜视图配置（着色+连线+形态 同层级 → 一个面板集体配置）｜演练注入
+   视图面板展开后不自动收起，便于多行连续调整；收起名=当前组合摘要 */
+$$('.fold .foldhead').forEach(h=>h.addEventListener('click', ev=>{ ev.stopPropagation();
+  const f=h.parentElement, was=f.classList.contains('open');
+  $$('.fold').forEach(x=>x.classList.remove('open'));
+  if(!was) f.classList.add('open'); }));
+document.addEventListener('click', ev=>{
+  if(!ev.target.closest('.fold')) $$('.fold').forEach(x=>x.classList.remove('open')); });
+function updateFoldHeads(){
+  const lensS = {NONE:'健康度',TP:'TP',PP:'PP',DP:'DP',EP:'EP',SP:'SP',CP:'CP',JOB:'任务'}[S.lens]||S.lens;
+  const wireS = {AUTO:'自动',COMM:'通信域',FLOW:'流量',LINK:'链路',PATH:'路径'}[S.wire]||S.wire;
+  const formS = {phys:'物理',cube:'魔方'+(cubeMode?('·'+['','DP','EP','TP','PP'][cubeMode]):''),stack:'堆叠'}[S.form]||S.form;
+  const fv=document.getElementById('fhView');
+  if(fv) fv.innerHTML = `🎛 视图 · 着色 <b>${lensS}</b> · 连线 <b>${wireS}</b> · 形态 <b>${formS}</b> ▾`;
+  const fs=document.getElementById('fhScen');
+  if(fs){ fs.classList.toggle('on', S.anomaly);
+    fs.innerHTML = S.anomaly? '🧪 演练 · <b style="color:#ffdcd7">EP 异常注入中</b> ▾' : '🧪 演练 ▾'; }
+}
+const Wgt = { phys:1, cube:0, stack:0 };
+let formTarget = 'phys';
+$('#btnPhys').onclick = ()=>{ formTarget='phys'; formBtns(); };
+$('#btnCube').onclick = ()=>{ formTarget='cube'; formBtns(); };
+$('#btnStack').onclick = ()=>{ formTarget='stack'; formBtns(); };
+function formBtns(){ $('#btnPhys').classList.toggle('on', formTarget==='phys');
+  $('#btnCube').classList.toggle('on', formTarget==='cube');
+  $('#btnStack').classList.toggle('on', formTarget==='stack');
+  $('#cubeModes').style.display = formTarget==='cube' ? 'flex' : 'none';
+  S.form = formTarget; renderViewlab(); }
+let cubeMode = 0, cubePrev = 0, cubeBlend = 1;
+[0,1,2,3,4].forEach(k=>{ $('#cm'+k).onclick = ()=>{ if(cubeMode===k) return;
+  cubePrev = cubeMode; cubeMode = k; cubeBlend = 0;
+  [0,1,2,3,4].forEach(i=>$('#cm'+i).classList.toggle('on', i===k));
+  renderViewlab(); }; });
+$('#btnAnom').onclick = ()=>{ S.anomaly=!S.anomaly;
+  $('#btnAnom').classList.toggle('on', S.anomaly);
+  $('#alertbar').classList.toggle('show', S.anomaly);
+  if(S.anomaly) $('#alertbar').innerHTML =
+    '⚠ EP AllToAll 越界：8 个专家组成员被越区调度 · <b style="text-decoration:underline;cursor:pointer">已自动抓拍 Step 1284-88 → 点击回放</b>';
+  $('#btnScatter').style.display = S.anomaly ? 'inline-block' : 'none';
+  if(!S.anomaly){ S.scatter = false; $('#btnScatter').classList.remove('on'); }
+  if($('#drawer').classList.contains('show')) syncDrawer();
+  touchLeft(); };
+$('#btnScatter').onclick = ()=>{ S.scatter = !S.scatter;
+  $('#btnScatter').classList.toggle('on', S.scatter);
+  commDirty = true; renderHUD(); };
+$('#alertbar').style.cursor = 'pointer';
+$('#alertbar').onclick = ()=>{ if(S.anomaly) scenario('moe'); };
+$('#btnPlay').onclick = ()=>{ S.playing=!S.playing;
+  $('#btnPlay').textContent = S.playing?'⏸ 暂停':'▶ 播放';
+  $('#btnPlay').classList.toggle('on', S.playing); };
+$('#phasetrack').addEventListener('click', ev=>{
+  const r = $('#phasetrack').getBoundingClientRect();
+  S.t = Math.min(.999, Math.max(0,(ev.clientX-r.left)/r.width)); syncPhase(); });
+function syncPhase(){
+  const p = Math.min(3, (S.t*4)|0);
+  if(p!==S.phase){ S.phase=p; if(S.rel==='AUTO'){ invalidateRel(); renderFilterBar(); updateCounts(); } touchLeft();
+    if(S.mxShow){ renderMxCard(); renderMxHi(); } }
+  $('#playhead').style.left = (S.t*100)+'%';
+  $$('.pseg').forEach((el,i)=>el.classList.toggle('on', i===S.phase));
+  $('#phaselab').textContent = PHASES[S.phase].name;
+  renderHUD(); }
+/* ---- 信息面板 ---- */
+function renderViewlab(){
+  const t = { L7:'L7 · Global', L6:'L6 · SuperCluster ×64', L5:'L5 · Service Pool（8 超节点 SN0-7）',
+    L4:'L4 · Atlas 950 超节点（8192 NPU）', L3:'L3 · Host（焦点机柜）', L2:'L2 · Chip ×8',
+    L1:'L1 · Die（占位）', L0:'L0 · Core-Group（占位）' };
+  const vtxt = S.form==='cube'
+    ? `统一 3D 拓扑 · <b>逻辑魔方 · ${['标准 X=TP Y=PP(模型深度) Z=DP','DP 平铺：64 副本各自成板（找慢副本）','EP 聚簇：64 专家=8 组抽出成墙（MoGE 组结构）','TP 切片：8 片权重墙 · 一面墙=全 Pod 同槽位切片（查同槽位系统性故障）','PP 流水：16 段横向展开 · 左=Stage0 右=Stage15（找慢段/气泡）'][cubeMode]}</b>${S.selLayer!=null?` · 高亮 L${S.selLayer+1} 切片`:''}`
+    : S.form==='stack'
+    ? `统一 3D 拓扑 · <b>层级堆叠形态</b> · 与左侧 L7→L0 对齐 · 聚焦 <b>${t[S.level]}</b>`
+    : `统一 3D 拓扑 · 单相机 · 聚焦 <b>${t[S.level]}</b>（左侧选层=飞行缩放）`;
+  const lensNote = {
+    TP:'<br><span style="color:#39c5cf">TP 张量并行：层内矩阵切 8 片 = 魔方 X 轴（节点内 8×NPU）· UB 高频 AllReduce（可切\u201cTP切片\u201d排列）</span>',
+    PP:'<br><span style="color:#d29922">PP 流水线：48 层切 16 段（每段 3 层）= 魔方 Y 轴（模型深度）· 相邻段接力 Send/Recv（可切\u201cPP流水\u201d排列）</span>',
+    DP:'<br><span style="color:#58a6ff">DP 数据并行：整网复制 64 副本 = 魔方 Z 轴 · 步末梯度 AllReduce（可切"DP平铺"排列找慢副本）</span>',
+    EP:'<br><span style="color:#a371f7">EP 专家并行：64 专家=MoGE 8 组散布晶格 · AllToAll 浪涌 · IS=0（可切"EP聚簇"排列）</span>',
+    SP:'<br><span style="color:#2ea27a">SP 与 TP 绑定同域：LayerNorm/Dropout 按序列切分 · 节点内通信</span>',
+    CP:'<br><span style="color:#c586d6">CP 上下文并行：本作业未启用（长序列场景）· Ring Attention 跨节点环形传递</span>',
+    JOB:'<br><span style="color:#58a6ff">任务透镜：框架（MindSpeed/vLLM）编译整网→按 P 策略切分→调度到物理卡 · 蓝=训练 768 台 · 青=推理 192 台 · 暗=空闲 64 台</span>' }[S.lens]||'';
+  const wireNote = S.wire && S.wire!=='AUTO'
+    ? `<br><span style="color:#8b949e">连线镜头：${({COMM:'通信域 · 域轮廓+成员标记（TP=1 Host · PP=16 段链 · DP=64 同位副本 · EP=MoGE 8 组地面轮廓）',FLOW:'互联流量 · 有序走线 颜色=状态 宽度=占用 · 右上矩阵卡联动（悬停格⇄3D 点亮 · 介质条=过滤）',LINK:'物理链路 · Manhattan 走线（柜↑行母线→两翼互联柜）· 绿=正常 黄=降级 红✂=中断',PATH:'消息路径（PXN）· 红=跨轨 3-hop 经 Spine · 绿=挪轨 1-hop · 粒子速度=时延对比'})[S.wire]}</span>` : '';
+  const granNote = `<br><span style="color:#6e7681">粒度：${({
+    pod:'Pod↔Pod 聚合流（下钻 L4 展开柜级）', field:'柜/Host 级全景',
+    cab:'本机视角 · 焦点 Host 的直接对端', chip:'卡级 · 本卡在算子中的角色',
+    die:'片上占位 · 无跨卡连线'})[levelBand()]}</span>`;
+  $('#viewlab').innerHTML = vtxt + lensNote + wireNote + granNote;
+  renderStageLeg(); updateFoldHeads(); }
+function renderStageLeg(){                    // 舞台底部编码图例（随镜头切换）
+  const w = S.wire||'AUTO';
+  const chip=(c,t)=>`<span><i style="background:${c}"></i>${t}</span>`;
+  let html='';
+  if(w==='FLOW') html=chip('#3fb950','空闲 <40%')+chip('#d29922','中 40-70%')+chip('#f85149','繁忙 >70%')+'<span>宽度=占用 · 粒子=方向</span>';
+  else if(w==='LINK') html=chip('#2ea043','正常')+chip('#d29922','降级')+chip('#f85149','中断 ✂');
+  else if(w==='PATH') html=chip('#f85149','跨轨 3-hop ≈3.2μs')+chip('#3fb950','PXN 1-hop ≈1.1μs')+'<span>粒子速度=时延</span>';
+  else html=chip('#39c5cf','TP')+chip('#d29922','PP')+chip('#58a6ff','DP')+chip('#a371f7','EP')
+    +'<span>'+(w==='COMM'?'轮廓=通信域边界 · 点=成员':'流带=当前阶段算子 · 粒子=方向')+'</span>';
+  $('#stageleg').innerHTML = html;
+}
+function renderProbe(){
+  const h = S.hoverHost>=0 ? S.hoverHost : S.focusHost;
+  const exp = isExpertHost[h] ? (isExpertHost[h]===2?' · 热点专家⚠':' · MoE 专家') : '';
+  const an = (S.anomaly && isAnomHost[h]) ? ' · <b style="color:#f85149">EP 越界成员</b>' : '';
+  const st = ppOf(h), lys = `L${st*3+1}-L${st*3+3}`;
+  const sel = (S.selLayer!=null||S.selCard)
+    ? `<br><span style="color:${carrierHost(h)?'#d2a8ff':'#6e7681'}">${carrierHost(h)?'✔ 承载当前选中的整网片段':'✘ 不承载选中片段（已压暗）'}</span>` : '';
+  $('#probe').innerHTML =
+    `<b>Host ${h}</b>${S.hoverHost>=0?'（悬停）':'（焦点）'} · 计算柜 ${cabOf(h)} / 槽位 ${h%8}${exp}${an}<br>
+     逻辑坐标 <span class="lg">[DP${dpOf(h)}, PP${st}, TP0-7]</span> · 承载整网 <span class="lg">${lys}</span> · 健康度 ${(100-health[h]*40).toFixed(0)}% · 显存 ${(memLevel[h]*100)|0}%<br>
+     部署 <b>${JOBS[jobOf(h)].name}</b> · ${JOBS[jobOf(h)].fw}${jobOf(h)===0?'（整网切分见左侧"整网分隔映射"）':''}<br>
+     当前算子：${S.playing? (PHASES[S.phase].id==='TP'?'MatMul + AllReduce(UB)':PHASES[S.phase].id==='PP'?'Send/Recv 激活接力':PHASES[S.phase].id==='EP'?'Top-K 路由 + AllToAll':'梯度 AllReduce'):'空闲 / 未播放'}${sel}`; }
+function stepBreakdown(){                     // 工况 step 时间分解（软件侧，随阶段/异常联动）
+  const ph = PHASES[S.phase].id;
+  let b = { TP:[62,26,12], PP:[70,14,16], EP:[54,34,12], DP:[58,30,12] }[ph];
+  if(S.anomaly && ph==='EP') b=[42,46,12];
+  return b;
+}
+function renderHUD(){
+  const ph = PHASES[S.phase];
+  const load = S.playing ? ph.load*(0.85+0.3*Math.abs(Math.sin(performance.now()/700))) : 0.08;
+  const anomX = S.anomaly && ph.id==='EP';
+  const bd = stepBreakdown();
+  const opName = {TP:'TP AllReduce',PP:'PP Send/Recv',EP:'EP All-to-All',DP:'DP AllReduce'}[ph.id];
+  const row = (k,lab,v,col)=>`<div class="hudrow" data-emph="${k}">
+      <span class="hl">${lab}</span><span class="hb"><i style="width:${v}%;background:${col}"></i></span><span class="hv">${v}%</span></div>`;
+  $('#hud').innerHTML =
+    `<b style="color:#fff">工况 · Pangu Pro MoE 72BA16B</b><br>
+     <span style="font-size:10px">TP8 · PP16 · DP64 · EP(64专家/MoGE 8组) · 整网48层</span>
+     <div style="margin-top:4px">${ph.bus}${anomX?' + <span style="color:#f85149">跨 Pod 光链路(越界)</span>':''}
+       <div class="busbar"><i style="width:${Math.min(100,load*100)|0}%;background:${anomX?'#f85149':'#39c5cf'}"></i></div>
+       <div style="margin-top:3px">带宽占用 ${Math.min(100,(load*100)|0)}%${anomX?' · 拥塞告警':''}</div>
+     </div>
+     <div style="margin-top:6px;color:#fff">step 时间分解 · <span style="color:#7ee0e8">hover 行 ⇄ 3D 连线联动</span></div>
+     ${row('calc','计算 · Cube GEMM',bd[0],'#39c5cf')}
+     ${row('comm','通信 · '+opName,bd[1],COL[ph.id])}
+     ${row('mem','访存 · KV/权重',bd[2],'#a371f7')}
+     <div style="margin-top:4px;color:#7ee0e8;font-size:10px">${({TP:'Ring AllReduce · 8 rank · busbw=algbw×2(n-1)/n',PP:'P2P Send/Recv 接力 · 无集合算法',EP:'AllToAll · O(N²) 消息 · PXN 可 3hop→1hop（镜头⑤）',DP:'Ring/Tree · 2 Channels · 跨域边=2·(n域-1)'})[ph.id]||''}</div>
+     ${anomX?(S.scatter
+       ?'<div style="margin-top:3px;color:#7ee787;font-size:10px">已散射（SCATTER_XDC）：单链路峰值 ↓75%</div>'
+       :'<div style="margin-top:3px;color:#ffa198;font-size:10px">跨 Pod 单出口 = 4× 带宽需求 · 点顶栏"散射跨域路由"对比</div>'):''}`; }
+$('#hud').addEventListener('mouseover', ev=>{ const r=ev.target.closest('.hudrow');
+  S.hudEmph = r ? r.dataset.emph : null; });
+$('#hud').addEventListener('mouseleave', ()=>{ S.hudEmph=null; });
+/* ================= 模式 B：泳道 Trace 回放 + busbw 基线（v2 组件三/八） ================= */
+const drawer = $('#drawer');
+let drawerTab = 'lane', laneMode = 'topk';
+function openDrawer(tab){ drawerTab = tab||'lane'; drawer.classList.add('show');
+  resize(); syncDrawer(); requestAnimationFrame(drawArcs); }
+function closeDrawer(){ drawer.classList.remove('show');
+  resize(); requestAnimationFrame(drawArcs); }
+$('#btnModeB').onclick = ()=>{ drawer.classList.contains('show')? closeDrawer() : openDrawer('lane'); };
+$('#drClose').onclick = closeDrawer;
+$('#drTabLane').onclick = ()=>{ drawerTab='lane'; syncDrawer(); };
+$('#drTabBw').onclick = ()=>{ drawerTab='bw'; syncDrawer(); };
+$('#drTabMx').onclick = ()=>{ drawerTab='mx'; syncDrawer(); };
+$('#laneTopk').onclick = ()=>{ laneMode='topk'; syncDrawer(); };
+$('#laneMoge').onclick = ()=>{ laneMode='moge'; syncDrawer(); };
+function syncDrawer(){
+  $('#drTabLane').classList.toggle('on', drawerTab==='lane');
+  $('#drTabBw').classList.toggle('on', drawerTab==='bw');
+  $('#drTabMx').classList.toggle('on', drawerTab==='mx');
+  $('#laneTopk').classList.toggle('on', laneMode==='topk');
+  $('#laneMoge').classList.toggle('on', laneMode==='moge');
+  $('#laneCtl').style.display = drawerTab==='lane'?'flex':'none';
+  $('#cvLane').style.display = drawerTab==='lane'?'block':'none';
+  $('#cvBw').style.display = drawerTab==='bw'?'block':'none';
+  $('#cvMx').style.display = drawerTab==='mx'?'block':'none';
+  $('#laneCtx').textContent = drawerTab==='lane'
+    ? `对象：Host ${laneHost()} · 8×NPU(TP0-7) + 硬件计数器轨 · 随下钻联动`
+    : drawerTab==='mx' ? '对象：EP 64 专家 ÷ 8 组（MoGE）· 行=源组 列=目的组 · 随异常联动'
+    : '对象：本超节点 UB 平面 · 随异常注入联动';
+  if(drawerTab==='lane') renderLane();
+  else if(drawerTab==='mx') renderMx();
+  else renderBw();
+}
+function laneHost(){ return S.filterHost!=null ? S.filterHost : S.focusHost; }
+function fitCanvas(cv){ const dpr = Math.min(window.devicePixelRatio||1, 2);
+  const w = cv.clientWidth||1000, h = cv.clientHeight||200;
+  if(cv.width !== (w*dpr|0) || cv.height !== (h*dpr|0)){ cv.width = w*dpr|0; cv.height = h*dpr|0; }
+  const c = cv.getContext('2d'); c.setTransform(dpr,0,0,dpr,0,0); c.clearRect(0,0,w,h);
+  return { c, W:w, H:h };
+}
+function laneLayout(Hh){                      // 确定性伪 Trace：随 Host / 模式 / 异常变化
+  const exp = !!isExpertHost[Hh];
+  const hotSet = laneMode==='moge' ? [] : (exp? [1,3,6] : [2,5]);
+  const cyc=[]; let total=0;
+  for(let b=0;b<5;b++){ let mx=0; const row=[], cm=[];
+    for(let r=0;r<8;r++){ const hot=hotSet.includes(r);
+      const L = laneMode==='moge' ? 88+rng(Hh+b)*8
+        : (hot? 112+rng(Hh*31+r*7+b*13)*44 : 52+rng(Hh*17+r*11+b*5)*34);
+      const CL = (laneMode==='moge'?20:26) + rng(Hh*7+r*3+b*11)*(laneMode==='moge'?6:16);
+      row.push(L); cm.push(CL); mx=Math.max(mx,L); }
+    const anomX = (S.anomaly && laneMode==='topk' && b===2) ? (isAnomHost[Hh]?34:14) : 0;
+    cyc.push({row,cm,mx,anomX,start:total});
+    total += mx + Math.max(...cm) + anomX; }
+  return {cyc,total,hotSet,exp};
+}
+function renderLane(){
+  const {c,W,H} = fitCanvas($('#cvLane'));
+  const Hh = laneHost();
+  const {cyc,total,hotSet,exp} = laneLayout(Hh);
+  const x0=64, w=W-x0-16, top=15;
+  const laneH = H-104, rowH = laneH/8, cY = top+laneH+6;
+  const u = w/total;
+  const tx = x0 + Math.min(1,Math.max(0,S.t))*w;
+  c.font='9px ui-monospace,monospace';
+  for(let t=0;t<=7;t++){ const x=x0+t*w/7;
+    c.fillStyle='#1b212b'; c.fillRect(x,top-4,1,cY+40-top);
+    c.fillStyle='#6e7681'; c.textAlign='left'; c.fillText((t*50)+'μs', x+2, 9); }
+  const seg=(x,y,ww,hh,col)=>{ c.globalAlpha=(x+ww<=tx)?1:(x<tx?.9:.26);
+    c.fillStyle=col; c.fillRect(x,y,Math.max(ww,1),hh); c.globalAlpha=1; };
+  for(let r=0;r<8;r++){
+    const yC=top+r*rowH, yM=yC+rowH*.46, bh=Math.max(4,rowH*.34);
+    c.fillStyle=hotSet.includes(r)?'#e3b341':'#8b949e'; c.textAlign='right';
+    c.fillText('TP'+r, x0-6, yC+bh);
+    for(const cy of cyc){
+      const s=x0+cy.start*u, L=cy.row[r], CL=cy.cm[r];
+      seg(s,yC,L*u,bh,'#1f6feb');
+      if(L<cy.mx-1) seg(s+L*u,yC,(cy.mx-L)*u,bh,'rgba(248,81,73,.6)');
+      seg(s+cy.mx*u,yM,CL*u,bh, laneMode==='moge'?'#2ea043':'#a371f7');
+      if(cy.anomX) seg(s+(cy.mx+CL)*u,yM,cy.anomX*u,bh,'rgba(248,81,73,.95)');
+    } }
+  // —— 硬件计数器轨：与软件泳道同轴（Perfetto counter track / Vampir Performance Radar 范式）——
+  const NB=160, busy=new Float32Array(NB), bw2=new Float32Array(NB);
+  for(let r=0;r<8;r++) for(const cy of cyc){
+    const a1=(cy.start/total*NB)|0, b1=Math.min(NB-1,((cy.start+cy.row[r])/total*NB)|0);
+    for(let i=a1;i<=b1;i++) busy[i]+=1/8;
+    const c0=((cy.start+cy.mx)/total*NB)|0,
+          c1=Math.min(NB-1,((cy.start+cy.mx+cy.cm[r]+cy.anomX)/total*NB)|0);
+    for(let i=c0;i<=c1;i++) bw2[i]+=1/8; }
+  const track=(data,y,h2,col,label)=>{
+    c.font='9px ui-monospace,monospace';
+    c.fillStyle='#8b949e'; c.textAlign='right'; c.fillText(label, x0-6, y+h2-3);
+    c.strokeStyle='#1b212b'; c.strokeRect(x0,y,w,h2);
+    c.fillStyle=col; c.beginPath(); c.moveTo(x0,y+h2);
+    for(let i=0;i<NB;i++) c.lineTo(x0+(i+.5)/NB*w, y+h2-data[i]*h2*.94);
+    c.lineTo(x0+w,y+h2); c.closePath(); c.globalAlpha=.45; c.fill(); c.globalAlpha=1; };
+  track(busy, cY, 17, '#3fb950', 'Cube利用率');
+  track(bw2, cY+21, 17, '#a371f7', 'UB带宽');
+  c.strokeStyle='#fff'; c.lineWidth=1;
+  c.beginPath(); c.moveTo(tx,top-6); c.lineTo(tx,cY+38); c.stroke();
+  c.fillStyle='#fff'; c.textAlign='center'; c.font='9px ui-monospace,monospace';
+  c.fillText('▶ '+PHASES[S.phase].id+' · '+((S.t*350)|0)+'μs', Math.min(W-60,Math.max(x0+40,tx)), cY+48);
+  c.textAlign='left'; c.font='10px sans-serif';
+  c.fillStyle = laneMode==='moge' ? '#3fb950' : '#f85149';
+  c.fillText(laneMode==='moge'
+    ? `Host ${Hh} · MoGE 均衡：Compute 齐整 · AllToAll 全掩盖 · IS=0（组内 top-1 强制均衡 · 最热专家≈12.5%）`
+    : `Host ${Hh}${exp?'（MoE 专家节点）':''} · Top-K：热点 ${hotSet.map(r=>'TP'+r).join('/')} 拖长 → Bubble 处利用率轨同步塌陷（对照：Top-K 最热专家可占 30% token）${S.anomaly?' · 第3周期跨超节点加时':''}`,
+    x0, H-4);
+  const lg=[['#1f6feb','Compute'],['#a371f7','AllToAll'],['rgba(248,81,73,.7)','Bubble/越界'],['#3fb950','下方=硬件计数器(同轴)']];
+  let lx=Math.max(x0+440, W-480); c.font='9px sans-serif';
+  lg.forEach(g2=>{ c.fillStyle=g2[0]; c.fillRect(lx,H-12,10,7);
+    c.fillStyle='#8b949e'; c.fillText(g2[1], lx+13, H-5); lx+=c.measureText(g2[1]).width+26; });
+}
+$('#cvLane').addEventListener('click', ev=>{
+  const r = $('#cvLane').getBoundingClientRect();
+  const x0=64, w=r.width-x0-16, x=ev.clientX-r.left;
+  S.t = Math.min(.999, Math.max(0, (x-x0)/w)); syncPhase(); renderLane(); });
+function renderBw(){
+  const {c,W,H} = fitCanvas($('#cvBw'));
+  const x0=60, y0=H-28, w=W-x0-30, h=H-54;
+  const X=k=>x0+(k-9)/(34-9)*w, Y=v=>y0-v/210*h;
+  c.strokeStyle='#30363d'; c.strokeRect(x0,y0-h,w,h);
+  c.font='9px ui-monospace,monospace'; c.textAlign='center';
+  [['512B',9],['16KB',14],['512KB',19],['16MB',24],['512MB',29],['16GB',34]].forEach(t2=>{
+    c.fillStyle='#21262d'; c.fillRect(X(t2[1]),y0-h,1,h);
+    c.fillStyle='#6e7681'; c.fillText(t2[0], X(t2[1]), y0+12); });
+  c.textAlign='right'; [0,50,100,150,195].forEach(v=>{ c.fillStyle='#6e7681'; c.fillText(v, x0-4, Y(v)+3); });
+  const base = k=>195/(1+Math.exp(-(k-17)/2.6));
+  c.fillStyle='rgba(139,148,158,.14)'; c.beginPath();
+  for(let k=9;k<=34;k+=.5){ const y=Y(base(k)*1.08); k===9?c.moveTo(X(k),y):c.lineTo(X(k),y); }
+  for(let k=34;k>=9;k-=.5) c.lineTo(X(k),Y(base(k)*.92));
+  c.closePath(); c.fill();
+  c.strokeStyle = S.anomaly?'#f85149':'#39c5cf'; c.lineWidth=1.8; c.beginPath();
+  for(let k=9;k<=34;k+=.5){
+    let v = base(k)*.97;
+    if(S.anomaly && k>27) v = base(27)*.97*Math.max(.52, 1-(k-27)*.12);
+    const y=Y(v); k===9?c.moveTo(X(k),y):c.lineTo(X(k),y); }
+  c.stroke();
+  c.textAlign='left'; c.font='10px sans-serif';
+  if(S.anomaly){ c.fillStyle='#f85149';
+    c.fillText('峰值(≈256MB)后回落 → 大象流哈希不均 / 跨Pod拥塞指纹 · 自动告警', X(24.5), Y(base(27))-12); }
+  else { c.fillStyle='#39c5cf'; c.fillText('平台区贴合直连基线 ≈195GB/s · 健康', X(27), Y(195)+16); }
+  c.fillStyle='#8b949e';
+  c.fillText('busbw–消息大小基线（类 nccl-tests/hccl_test 常态化采集 · 灰带=历史基线±8% · 判读看峰值与平台区）', x0+4, y0-h+14);
+}
+let mxHover = null;
+function renderMx(){
+  const {c,W,H} = fitCanvas($('#cvMx'));
+  const N=8, cs=Math.max(12,Math.min((H-52)/N, 20)), x0=110, y0=28;
+  const hotG = new Set([...hotExperts].map(e=>e>>3));
+  const anomG = new Set(anomExperts.map(e=>e>>3));
+  let vmax=0; const vol=[];
+  for(let i=0;i<N;i++){ vol.push([]);
+    for(let j=0;j<N;j++){ let v = i===j? 0 : .15+rng(i*8+j)*.5;
+      if(hotG.has(j)) v*=2.6; if(hotG.has(i)) v*=1.4;
+      vol[i][j]=v; if(v>vmax) vmax=v; } }
+  for(let i=0;i<N;i++) for(let j=0;j<N;j++){
+    const v = vol[i][j]/vmax;
+    c.fillStyle = i===j? '#10141b' : (v>.8? `rgba(248,113,73,${.5+v*.45})` : `rgba(88,166,255,${.08+v*.8})`);
+    c.fillRect(x0+j*cs, y0+i*cs, cs-1, cs-1);
+    if(S.anomaly && anomG.has(i)){ c.strokeStyle='rgba(248,81,73,.85)';
+      c.strokeRect(x0+j*cs+.5, y0+i*cs+.5, cs-2, cs-2); } }
+  c.font='8px ui-monospace,monospace'; c.fillStyle='#6e7681';
+  for(let i=0;i<N;i++){ c.textAlign='right'; c.fillText('G'+i, x0-3, y0+i*cs+cs*.7);
+    c.textAlign='center'; c.fillText('G'+i, x0+i*cs+cs/2, y0-4); }
+  const ix = x0+N*cs+18;
+  c.textAlign='left'; c.font='10px sans-serif'; c.fillStyle='#c9d1d9';
+  c.fillText('EP AllToAll 消息矩阵 · Pangu Pro MoE 8 组（Vampir/Paraver 范式）', ix, y0+8);
+  c.fillStyle='#8b949e';
+  c.fillText('行=源专家组 · 列=目的组 · 亮度=消息量 · 对角线=组内不跨卡', ix, y0+24);
+  c.fillText('橙红竖条=热点组被路由打爆（各源都在给它发）→ 负载失衡指纹', ix, y0+40);
+  if(S.anomaly){ c.fillStyle='#f85149';
+    c.fillText('红框行=含越界专家的组：这些流量实际落在跨 Pod 光链路（理论应为 0）', ix, y0+58); }
+  if(mxHover){ const {i,j}=mxHover; c.fillStyle='#e6edf3';
+    c.fillText(`G${i} → G${j}：${(vol[i][j]*37).toFixed(1)} GB/step${hotG.has(j)?' · 目的=热点组⚠':''}`, ix, y0+78); }
+}
+$('#cvMx').addEventListener('mousemove', ev=>{
+  const r = $('#cvMx').getBoundingClientRect();
+  const cs = Math.max(12,Math.min((r.height-52)/8, 20));
+  const i = ((ev.clientY-r.top-28)/cs)|0, j = ((ev.clientX-r.left-110)/cs)|0;
+  const nh = (i>=0&&i<8&&j>=0&&j<8&&i!==j)? {i,j} : null;
+  if(JSON.stringify(nh)!==JSON.stringify(mxHover)){ mxHover=nh; renderMx(); } });
+$('#cvMx').addEventListener('mouseleave', ()=>{ mxHover=null; renderMx(); });
+/* ================= 场景剧本：任务驱动的一键状态编排 ================= */
+function setLens(l){ S.lens=l;
+  $$('.lensbtn').forEach(x=>x.classList.toggle('on', x.dataset.lens===l)); updateSlices(); }
+function setRel(r){ S.rel=r;
+  $$('.relbtn').forEach(x=>x.classList.toggle('on', x.dataset.rel===r)); invalidateRel(); }
+function setPlay(on){ S.playing=on;
+  $('#btnPlay').textContent = on?'⏸ 暂停':'▶ 播放';
+  $('#btnPlay').classList.toggle('on', on); }
+function scenario(k){
+  S.selLayer=null; S.selCard=null; renderMemPanel(); describeModelSel();
+  setTab('hier');
+  if(k==='patrol' || k==='reset'){                 // 巡检：健康度热力 + 整 Pod 俯视 + 播放
+    S.filterHost=null; setLens('NONE'); setRel('AUTO');
+    S.focusPod=0; renderPodRows(); closeDrawer();
+    S.wire='AUTO'; $$('.wirebtn').forEach(x=>x.classList.toggle('on', x.dataset.wire==='AUTO'));
+    S.mxShow=false; S.mxPin=null; S.mxHover=null; S.mxMedium=null; S.hudEmph=null;
+    syncMxCard(); renderMxHi();
+    if(S.anomaly && k==='reset') $('#btnAnom').onclick();
+    formTarget='phys'; formBtns();
+    if(k==='reset'){ setPlay(false); S.t=0; yaw=.82; pitch=.58; zoomBias=1; }
+    else setPlay(true);
+    setLevel('L4');
+  }
+  if(k==='moe'){                                   // 告警定位：EP 透镜 + 下钻越界专家 + 泳道抓拍
+    if(!S.anomaly) $('#btnAnom').onclick();
+    setLens('EP'); setRel('EP');
+    S.filterHost = expertHosts[anomExperts[0]]; invalidateRel();
+    S.focusHost = S.filterHost; S.focusChip = S.filterHost*8;
+    formTarget='phys'; formBtns();
+    S.t=.62; setPlay(false); syncPhase();
+    setLevel('L4'); openDrawer('lane');
+  }
+  if(k==='slowdp'){                                // 找慢副本：魔方 DP 平铺 + DP 阶段
+    S.filterHost=null; setLens('DP'); setRel('DP'); closeDrawer();
+    formTarget='cube'; formBtns();
+    if(cubeMode!==1){ cubePrev=cubeMode; cubeMode=1; cubeBlend=0;
+      [0,1,2,3,4].forEach(i=>$('#cm'+i).classList.toggle('on', i===1)); }
+    S.t=.9; setPlay(true); syncPhase();
+  }
+  if(k==='deep'){                                  // 单机深潜：当前焦点 Host 下钻 + 泳道
+    S.filterHost=S.focusHost; setRel('TP'); invalidateRel();
+    formTarget='phys'; formBtns(); setLevel('L2'); openDrawer('lane');
+  }
+  if(k==='deploy'){                                // 部署审视：任务透镜
+    S.filterHost=null; setLens('JOB'); closeDrawer();
+    formTarget='phys'; formBtns(); setLevel('L4');
+  }
+  renderFilterBar(); updateCounts(); touchLeft(); renderViewlab();
+}
+[['scPatrol','patrol'],['scMoe','moe'],['scSlow','slowdp'],['scDeep','deep'],
+ ['scDeploy','deploy'],['scReset','reset']].forEach(p=>{
+  const el=$('#'+p[0]); if(el) el.onclick=()=>scenario(p[1]); });
+/* ---- 全局标量迷你曲线（v2 组件〇：Loss / LR / MFU · LossScale 溢出红点） ---- */
+const sparkCv = $('#sparks'), sg = sparkCv ? sparkCv.getContext('2d') : null;
+const SD = { loss:[], lr:[], mfu:[], dots:[31], n:64, t:0, lastTick:-1 };
+for(let i=0;i<SD.n;i++){ SD.loss.push(6*Math.exp(-i/22)+2.6+Math.sin(i*1.7)*.15);
+  SD.lr.push(i<10? i/10*3 : 3*Math.pow(.985,i-10));
+  SD.mfu.push(52+Math.sin(i/6)*3); }
+function stepSparks(){ SD.t++;
+  SD.loss.push(Math.max(2.2, SD.loss[SD.loss.length-1]*.999+(Math.random()-.5)*.1)); SD.loss.shift();
+  SD.lr.push(SD.lr[SD.lr.length-1]*.999); SD.lr.shift();
+  SD.mfu.push(52+Math.sin(SD.t/6)*3+(S.anomaly?-9:0)+Math.random()); SD.mfu.shift();
+  SD.dots = SD.dots.map(d=>d-1).filter(d=>d>2);
+  if(S.anomaly && SD.t%24===0) SD.dots.push(SD.n-2);
+  renderSparks(); }
+function renderSparks(){ if(!sg) return;
+  hidpi(sparkCv,340,36);
+  sg.clearRect(0,0,340,36);
+  const draw=(pts,x0,color,name,dots)=>{ const w=100,h=24,y0=9;
+    const mn=Math.min(...pts), mx=Math.max(...pts);
+    sg.strokeStyle=color; sg.lineWidth=1.2; sg.beginPath();
+    pts.forEach((v,i)=>{ const x=x0+i*w/(pts.length-1), y=y0+h-(v-mn)/(mx-mn||1)*h;
+      i?sg.lineTo(x,y):sg.moveTo(x,y); });
+    sg.stroke();
+    (dots||[]).forEach(d=>{ if(d<0||d>=pts.length) return;
+      const x=x0+d*w/(pts.length-1), y=y0+h-(pts[d]-mn)/(mx-mn||1)*h;
+      sg.fillStyle='#f85149'; sg.beginPath(); sg.arc(x,y,2.5,0,7); sg.fill(); });
+    sg.fillStyle='#6e7681'; sg.font='9px sans-serif'; sg.textAlign='left'; sg.fillText(name,x0,7); };
+  draw(SD.loss,2,'#f85149','Loss · Scale溢出=红点',SD.dots);
+  draw(SD.lr,118,'#d29922','LR');
+  draw(SD.mfu,234,'#3fb950','MFU'+(S.anomaly?' ↓':''));
+}
+/* ---- 尺寸 / 主循环 ---- */
+function resize(){ const r = right.getBoundingClientRect();
+  W = r.width; H = r.height;
+  renderer.setSize(W,H,false);
+  camera.aspect = W/H; camera.updateProjectionMatrix(); }
+window.addEventListener('resize', ()=>{ resize(); drawArcs();
+  try{ if(drawer.classList.contains('show')) syncDrawer(); }catch(e){} });
+let last = performance.now();
+function loop(now){
+  const dt = Math.min(.1,(now-last)/1000); last = now;
+  if(S.playing){ S.t = (S.t + dt/16) % 1; syncPhase();
+    if(S.tab==='model') renderMM();
+    const tick = (S.t*48)|0;
+    if(tick!==SD.lastTick){ SD.lastTick=tick; stepSparks(); }
+    try{ if(drawer.classList.contains('show') && drawerTab==='lane') renderLane(); }catch(e){} }
+  { let moving=false;
+    ['phys','cube','stack'].forEach(fm=>{ const tgt = formTarget===fm?1:0, d = tgt-Wgt[fm];
+      if(Math.abs(d)>0.001){ Wgt[fm]+=Math.sign(d)*Math.min(dt/0.9,Math.abs(d)); moving=true; }
+      else Wgt[fm]=tgt; });
+    if(moving){ S.morph=Wgt.cube; morphDirty=true; } }
+  if(cubeBlend<1){ cubeBlend=Math.min(1,cubeBlend+dt/0.8); morphDirty=true; }
+  if(morphDirty){ applyMorph(); morphDirty=false; }
+  if(commDirty){ buildComm(); commDirty=false; }
+  if(colorsDirty){ applyColors(true); colorsDirty=false; }
+  else if(S.playing) applyColors(false);
+  updateIndicators(); updateCommPulse(now); updateCamera(dt);
+  renderer.render(scene, camera);
+  requestAnimationFrame(loop);
+}
+/* ---- 初始化 ---- */
+resize();
+applyMorph(); applyColors(true); buildComm(); updateSlices();
+setLevel('L4'); formBtns(); syncPhase();
+renderL3(); renderL2(); renderL4(); renderChipZoom(); renderProbe(); renderHUD(); renderSparks(); renderPodRows(); updateLevelKPI(); renderTopN();
+describeModelSel(); renderMM(); renderFilterBar(); updateCounts();
+{ const g = camGoal(); camCur.t.copy(g.t); camCur.d = g.d; }
+requestAnimationFrame(drawArcs);
+requestAnimationFrame(loop);
+</script>
+<div aria-hidden="true" style="position:fixed;right:12px;bottom:10px;z-index:2147483647;font:11px/1.4 ui-monospace,'SF Mono','Consolas',monospace;color:#8b95ab;opacity:.65;pointer-events:none;user-select:none;">王欣迪</div>
+</body>
+</html>

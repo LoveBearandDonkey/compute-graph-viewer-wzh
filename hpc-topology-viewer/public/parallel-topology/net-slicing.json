@@ -1,0 +1,56 @@
+{
+  "id": "net-slicing",
+  "name": "并行拓扑 Pattern —— 从一张网到 world 张卡",
+  "description": "一个可转动的三维场景，把并行切分讲成一条连续的链：整网 → DP 复印 → PP 切段 → CP 切序列 → TP 锯片（带着 SP）→ EP 分桶 → 五刀的交集恰好是一张卡 → 清空卡里的载荷，剩下的排列本身就是逻辑魔方。刀痕的**方向**本身就是读数：竖切=特征维 h，横切=序列维 s。五把刀各自独立开关（叠加而非切换），视角在 3D / 正视 / 侧视 / 顶视之间切换——正视与侧视由本页自己的 SVG 渲染器重画（同一份 OPENPANGU_GRAPH 真图 + net-sharding 真切分表，不再嵌 sidecar，加载因此轻了三份 vendor 脚本）：正视清晰标注 TP/SP/CP/DP/EP 落在哪个算子的哪根轴上，侧视清晰标注 PP 分段（附各段因子与卡数）；打开 Rank 后两张图都显示卡的层级（正视 = DP/CP 列 × TP·SP 行 × EP 组框的方阵门牌，侧视 = 段 → 卡架点阵）。魔方形态直接复用 rubik-cube pattern。",
+  "version": "dev",
+  "entry": "pattern.html",
+  "selfContained": true,
+  "canvas": "full-bleed",
+  "upstream": {
+    "source": "public/parallel-topology/demo.html",
+    "fullTool": "../../parallel-topology/demo.html",
+    "prd": "../../parallel-topology/prd.html",
+    "conceptMap": "../../parallel-reference/"
+  },
+  "reuses": [
+    "model-graphviz —— openPangu 真图（55 个节点，算子布局与层级）；两头那两段按 model-architecture-3d-deck 的 staticHtml 补齐（Position IDs / Attention Context / Logits All-Gather / 展开的 MTP 尾巴——真图里没有，位置与次序照抄它，切法按同类算子的规则推）",
+    "net-sharding —— 纯数据层 SHARD 表：每个算子被哪把刀沿哪根张量轴切",
+    "正视（完整主线：输入段 + 一层的算子 DAG + 输出与 MTP 尾巴）与侧视（全部层沿层深 + PP Stage 分段 + Dense/MoE 换挡带 + mHC residual 主干）由本页 frontScene / sideScene 用同一份真图原生重画——内容对齐 model-architecture-training-sidecar 那两张，但不再嵌它",
+    "rubik-cube —— 关闭整网后的魔方形态（three.js，按需加载）"
+  ],
+  "urlParams": {
+    "cuts": "d/p/c/t/e 的任意组合 —— 哪几把刀是落下的（如 cuts=dpt 表示 DP+PP+TP，CP/EP 不切）；缺省五把全落。c 只在 cp>1 时有意义；SP 没有自己的字母——它复用 TP 组，跟着 t 一起落下",
+    "vtab": "3d|front|side|top —— 视角，机位跟着一起落（front/side/top 是真正的正交投影，只有 3d 带透视）。显式给了 yaw/pitch 时以它们为准",
+    "card": "1 —— 打开 Rank（卡维度）：四刀的交集收进 world 只卡壳，每只装它自己那份",
+    "net": "0 —— 仅在 card=1 时生效。关掉整网：卡里不画算子，只剩 world 只方块，直接切到 rubik-cube pattern",
+    "sel": "整数 global_rank —— 选中某张卡；不给就是未选中态（此时整网照常看得见，没有主角要衬托）",
+    "comm": "1 —— 算子级通信图层：TP 的 AllGather(s→h) / Reduce-Scatter(h→s)（TP=SP 组的换轴器，锚在 TP 区出口）、CP 的 AllGather(KV)（锚在 K/V，CP 这一维**只有这一处**通信）、EP 的 AllToAll ×2（锚在 dispatch，对端=EP 组）、PP 的 P2P（锚在段内最后一个算子）、DP 的梯度 AllReduce（反向，虚线）。刀关着就没有那一维的通信；焦点=选中的卡，未选中用 rank 0 当代表",
+    "embed": "1 —— 嵌入形态：收起顶栏与页脚，整页只剩画布与它自己的工具条",
+    "theme": "light|dark",
+    "preset": "default128|dense64|longcp|moe64|pangu —— 预置并行度",
+    "tp / cp / pp / dp / ep": "整数 —— 直接指定并行度（覆盖 preset）",
+    "yaw / pitch / zoom / px / py": "浮点 —— 机位（yaw/pitch 只在 3D/顶视生效）与缩放平移（四个视角通用）；vtab 切换会覆盖 yaw/pitch 并把缩放平移归位",
+    "q": "搜索框原样带上：L29（层住在哪几张卡）· r41（选中一张卡）· tp/sp/cp/pp/dp/ep（这一刀谁跟谁一组）· E12（专家在哪个桶、哪几张卡）。层查另有 layer= 兼容老链接；别的问法的效果本来就落在 sel= / axis= 上，q= 只是让打开时搜索框里还是你发出去时的那句话",
+    "layer": "整数 ℓ —— 层反查：第 ℓ 层住在哪几张卡上（正向那一问的逆命题）。那一层的层板在**每一份复印件**上都描出来（同一张平面横穿这些卡），并给出拆解：PP 决定它去哪几张卡 · TP/EP 决定它在那几张卡里怎么碎 · DP 决定这套安排复制几遍 = 共 world/PP 张卡与它有关，TP 或 EP 只要落下就无一张持有完整的它。超出层数范围时忽略",
+    "legend": "1 —— 打开图例：画面上每种形状代表什么（竖切/横切、实心/纹路、卡壳、胶囊门牌、EP 组框、弧线与虚线、越远越淡）。只列这一屏此刻真有的——刀抬起来了、模型不是 MoE、通信关着，对应那几行就不出现"
+  },
+  "interactions": [
+    "拖拽 = 转台；Ctrl / ⌘ / Shift / 中键 = 平移；滚轮 = 缩放。2D 视角下拖拽只平移——转台一动就离开了正交机位。",
+    "点卡壳选中该 rank，点画布空白取消选中。悬停「入口」/「出口」那两枚路标看这一头到底有哪些算子、各被哪把刀切——图上只留两个字，细节问了才给。",
+    "正视方阵按 DP·CP 铺开、Rank 下再按 TP·SP 摊成行，默认一屏摆完；滚轮放大只动一条合成器变换（不重建场景），停手后按新缩放补一帧清晰的并解锁更多标签（LOD）——放大是真的更清楚。右下角有缩放 HUD：±、比例读数、居中、复位。",
+    "工具条上的「图例」是一张对照表，不是正文：每行的小图用画布上同一套颜色与描边画，对得上才叫对照表。默认收着，点开才占地方；关闭整网之后整屏交给魔方，它也跟着收起。"
+  ],
+  "notes": [
+    "不认识的参数一律忽略，非法值退回默认，不报错。",
+    "rank 是地址不是容器：容器只有两个——卡（容量=显存）与流（容量=时间）。",
+    "刀痕方向即轴，这是这一屏最省力的读法：**竖切 = h**（TP 的 head/hidden/ffn/vocab、EP 的 expert，斜纹）、**横切 = s**（CP 的 ctx、SP 的 token，横纹）。attention 那几个算子是唯一**两把刀都过**的地方（head 归 TP、ctx 归 CP），所以画成一张网格，本卡拿其中一格——那就是 [·, S/CP, H/TP] 的形状本身。片薄到亚像素时不逐片画：把「不归我」的两截各并成一块斜纹（我的那片照旧精确画出来），片数另有出处——轴上的刻度带和算子标签里的 SP0/131072。",
+    "SP 不是第五根轴，但它在图上必须有自己的方向。它复用 TP 组（同域、同大小、不占乘数），却切在 s 上：TP 区里每张卡持 [B, S, H/TP]，TP 区之外（norm / 逐元素）持 [B, S/TP, H]，AllGather 与 Reduce-Scatter 就是这两种布局之间的**换轴器**，总通信量与纯 TP 的一次 AllReduce 完全相同。CP 也开着时层边界那根 s 轴上有**两个除号**：S/(CP×TP)。除号能在同一根轴上相乘，正是「SP 与 CP 切的是同一根轴」最硬的证据，也是中文里两个都叫「序列并行」的根源——但通信域不同、乘数地位不同、嵌套位置不同，所以本页一律分开命名。",
+    "CP 占一根真轴：world = TP × CP × PP × DP。Rank 打开时它和 TP 一样要占一个空间方向，并进列轴（col = cp·DP + dp，row = tp）——同一段序列上的那几列 DP 副本挨在一起，底下一排 CP 门牌横跨整块。不这么画的话长序列那个预置（tp4·cp4·pp2·dp2 = 64 卡）只会画出 16 只，剩下 48 只凭空消失。EP 组框在 CP 也展开时只画选中那张卡所在的那条 c 带：一组专家是在固定 (pp, cp) 的那张平面里折出来的，跨到别的 c 带就不是同一组了——宁可少画，不画错。",
+    "层与层并不一样，重复的只有 attn 与 ffn/moe 那一段：词嵌入（TP 切 vocab）只落在第 0 层之前、Final RMSNorm（SP 切 seq）与 LM Head（TP 切 vocab）只落在最后一层之后——这两头正是入口与出口，也是 SP 那一刀在整张图上唯一露头的地方；FFN 前 firstMoeLayer 层是 Dense，之后才换成 MoE，所以 Dense 层根本没有 EP 那一刀。口径取 openpangu-flash 预设那一族（firstMoeLayer=2），层数按本页配置。",
+    "通信不是又一张图，是切分的推论：算子被哪把刀切开，就在哪儿欠一次那种通信——行切的 o_proj 欠一次归约、专家桶欠一对 AllToAll、段边界欠一次 P2P、副本欠一次梯度 AllReduce。弧线全部锚在产生它的那个算子上（数据来自 net-sharding 的 flowOf/ADDED）。",
+    "EP 不是独立轴：桶号由 (tp, cp, dp) 导出，所以每张卡的桶必须按它自己的坐标算。Rank 里因此给它两样东西——每张卡写着自己的桶号，外面套一只「EP 组」框（框住的那几张卡合起来正好凑齐全部专家，也就是 all-to-all 的对端）。折叠发生在**一个 PP 段之内**的那张平面上，所以框是按段画的，不跨段。同一只桶的复本落在别的组里、列上跳着走，框不到一起——那一半靠桶号去认（选中一张卡时同桶的号会加重）。",
+    "顶视看不到 TP 的两层是对的：三个正交视图各看一个平面——正视 DP×TP、侧视 PP×TP、顶视 DP×PP，被压掉的那根轴落在深度方向。",
+    "配置不合法时舞台封锁（宁缺毋误），错误各带最近合法值。",
+    "SP 在工具条上没有自己的开关，但按钮上写着 TP·SP。它复用 TP 组、同域同大小、不占乘数，所以 TP 一落它也落——写成光秃秃的 TP 的话，「那些横着裂开的 norm 是谁切的」在界面上就没有出处了。与图上通信算子的写法一致：画的就是 TP/SP AllGather、TP/SP Reduce-Scatter。"
+  ]
+}

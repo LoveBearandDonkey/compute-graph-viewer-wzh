@@ -1,0 +1,34 @@
+{
+  "id": "model-netgraph",
+  "name": "模型整网视图（真图展开）",
+  "description": "工作台右侧那一栏单拎出来的自包含 pattern：一张整网怎么被切开。PP / TP·SP / EP 都落下、**不落 DP**、不进卡维度——画的是切分本身，不是切完之后的 world 张卡。默认侧视：全部层沿层深铺开、PP Stage 分段、Dense→MoE 换挡带、mHC residual 主干，每个算子旁标着它被哪把刀沿哪根张量轴切，以及这一层这一算子的读数（字节 / 耗时 / 通信量）。",
+  "version": "dev",
+  "entry": "pattern.html",
+  "selfContained": true,
+  "canvas": "full-bleed",
+  "builtFrom": {
+    "source": "public/parallel-topology/demo.html",
+    "defaults": "view=chain · cuts=pcte · rank=0 · vtab=side · embed=1",
+    "note": "与 /patterns/net-slicing/、/patterns/rank-topology-3d/ 同源同实现。三份的区别只在默认落在哪一屏：整网切分 / 整网怎么被切 / 切完落到哪张卡。"
+  },
+  "urlParams": {
+    "cuts": "pcte —— 本 pattern 的默认：PP+CP+TP+EP 落下、DP 不落。加 d 就把 DP 也落下（那时它讲的就不再是「一张整网」了）",
+    "vtab": "side|front|3d|top —— 默认侧视（按层深）；正视是一层之内的算子 DAG",
+    "rank": "0 —— 不进卡维度（本 pattern 的默认）。给 1 会退化成 rank-topology-3d 那一屏",
+    "mods": "0|1 —— 模块视图：逐算子明细 ⇄ attn.qkv / attn.core / attn.out / router / experts 五六个功能块",
+    "mv": "n/g/p/m/t 的子集 —— 数据标注开着哪几类（数值 / 梯度 / 性能 / MoE / 训练）；空串=只看结构",
+    "layer": "整数 ℓ —— 层反查：第 ℓ 层住在哪几张卡上",
+    "q": "搜索框原样带上：L29 / r41 / tp / E12 …",
+    "preset": "default128|dense64|longcp|moe64|pangu —— 预置并行度",
+    "embed": "1 —— 嵌入形态",
+    "theme": "light|dark"
+  },
+  "constraints": [
+    "算子清单、切法、轴名、注解、通信原语来自 openPangu 真图 + net-sharding 的切分表（真数据）；**算子宽度**是按类别的粗略权重（线性层 ≫ norm/逐元素），图上标明口径。",
+    "读数（σ / Amax / ms / GB/s）是示意口径，用于表达量级与相对关系，不是实测 profiling。",
+    "标注按可读性分档出现：框窄到装不下名字时**优先写值**（名字在悬停与明细卡里都有，数值不画在图上就看不到）；再窄就只剩形状。",
+    "不落 DP 是这一屏的题面。要看「同一份被复印了多少遍」，去 rank-topology-3d 那一份。",
+    "层数很多时（48 层以上）侧视按层深铺开会超出画布宽度，需要横向拖动——这是取景，不是渲染缺陷。"
+  ],
+  "embedding": "<iframe src=\"/patterns/model-netgraph/pattern.html?embed=1&vtab=side\" style=\"width:100%;height:100%;border:0\"></iframe> —— 宿主可用 postMessage({type:'pto:state', …}) 推 view / sel / theme。"
+}

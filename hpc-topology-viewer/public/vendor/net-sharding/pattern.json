@@ -1,0 +1,67 @@
+{
+  "id": "net-sharding",
+  "name": "整网切分 · rank 装载 (Whole-Graph Sharding → Rank Payload)",
+  "type": "renderer",
+  "version": "0.1.0",
+  "description": "以**模型计算图**（不是物理互联网络）为坐标系理解 rank 的组件：把 openPangu 整网图的每个算子标注成「被哪个并行维、沿张量的哪根轴切成几份」，据此算出任意一个 rank 到底装了什么（层段 / 注意力头片 / FFN 中间维 / 词表片 / 专家桶 / 上下文段 / 序列片 / 数据副本），并把 HCCL 集合原语呈现为**分片状态的转换器**——AllGather / ReduceScatter / AllToAll / AllReduce / P2P 各自把张量从一种分片状态搬到另一种。支持 6 维：TP·CP·SP·PP·EP·DP。",
+  "source": {
+    "visualContract": [
+      "src/vendor/model-graphviz/openpangu-graph.json（= public/vendor/model-graphviz/graph.js 的 window.OPENPANGU_GRAPH）—— openPangu-2.0-Flash 的已定位计算图：55 节点 / 61 边 / 5 cluster（Causal LM → Decoder Layer → Sparse MLA Attention / Dense+MoE FFN → 算子）",
+      "src/scene/data.ts parallelMap（groupOf / peersOf / collectiveOf 的落位教义：TP=节点内 · PP=副本内跨节点 · DP=副本间 · EP 折入 DP 轴 · SP 与 TP 同域）与 PARTITION_META",
+      "src/scene/deployment.ts sliceOf / stageLayerRange —— 层段余数摊给前段的口径，本 pattern 逐位沿用",
+      "data/ascend-workload-pangu-moe.json —— 盘古 Pro MoE 真实并行策略（TP8 · EP2 · PP5 · 4K NPU · 48 层 · 64 路由专家 + 4 共享专家）",
+      "public/vendor/pto-design-system/（PTO Design System 上游快照）—— 颜色/圆角/阴影/间距一律 var(--token)，控件复用 .btn / .panel-shell / .stat-chip",
+      "public/vendor/rubik-cube/ —— 维度签名色（TP/PP/DP/EP）与之逐位相同，两个 pattern 并排看时同一维必须同一色"
+    ],
+    "patternHtml": "public/net-sharding-pattern.html",
+    "patternCss": "public/vendor/net-sharding/pattern.css",
+    "renderScript": "public/vendor/net-sharding/pattern.js",
+    "defaultPreset": "盘古 Pro MoE 真实策略 tp8 · cp1 · pp5 · ep2 · dp100 = 4000 rank；48 层 · 64 头 · 64 路由专家 · seq 4096",
+    "designSystem": "PTO Design System · https://github.com/yinyucheng0601/pto-design-system"
+  },
+  "useWhen": [
+    "需要回答「这个 rank 里到底装了什么」——不是它跟谁通信，而是整网被切开之后落到它手上的那一份",
+    "需要把一个算子的切分讲清楚到**张量轴**这一级：不是「这个算子归 TP」，而是「Q 升维投影沿注意力头轴切成 8 份，本 rank 持有 h0–h7」",
+    "需要让 HCCL 集合原语的存在理由自解释：AllGather/ReduceScatter/AllToAll 各自把张量从哪种分片状态搬到哪种，为什么非它不可",
+    "需要 CP（上下文并行）/ SP（序列并行）参与建模——现有的 NODE_DIM 只有 TP/PP/DP/EP 四维，答不了长上下文与 norm 区的切分",
+    "需要按维反查：点 EP → 整网图上被专家并行切开的那几个算子亮起，其余压暗",
+    "需要与逻辑魔方（rubik-cube）互为反查：魔方答「谁和谁一组」，本 pattern 答「这一组各自装了什么」"
+  ],
+  "requiredApis": [
+    "window.PtoNetShardingPattern.createModel(config) → 纯数据层（无 DOM / 无渲染依赖，可单测、可被别的视图复用）：coordOf(rank) / rankOf(coord) / payloadOf(rank) / shardOfNode(nodeId, rank) / groupOf(rank, dim, cap) / stageLayers(stage) / flowOf() / primaryDim(nodeId) / dimNodes / SHARD",
+    "window.PtoNetShardingPattern.mount(container, opts) → handle",
+    "handle.setConfig({tp,cp,pp,ep,dp,layers,heads,experts,seqLen,...}) → {ok} | {ok:false,error}",
+    "handle.selectRank(rank) —— 选中一个 rank，右侧装载卡整片更新",
+    "handle.selectNode(nodeId) —— 选中整网图上的一个算子，报出它的切分规格与本 rank 持有的那一片",
+    "handle.highlightDim('tp'|'cp'|'sp'|'pp'|'ep'|'dp'|null) —— 高亮被该维切开的算子",
+    "handle.setTheme('dark'|'light') / handle.toolSlot() / handle.destroy()",
+    "只读：handle.model（同 createModel 的返回）、handle.state（{rank,node,dim,theme}）",
+    "opts.onSelectRank(rank, payload) / opts.onSelectNode(nodeId, dim) —— 反向抛给宿主"
+  ],
+  "layoutRules": [
+    "rank 分解顺序 TP 最内 → CP → PP → DP 最外：`tp=k%TP · cp=⌊k/TP⌋%CP · pp=⌊k/(TP·CP)⌋%PP · dp=⌊k/(TP·CP·PP)⌋`。CP=1 时与仓库现有约定（data.ts parallelMap）逐位相同，是它的推广而非另一套。",
+    "SP 不是独立的 rank 维：序列并行复用 TP 组（Megatron 口径，与 data.ts「SP 与 TP 同域」一致），所以 rank 总数只乘 TP·CP·PP·DP。",
+    "EP 折入 DP 轴：相邻 EP 个副本构成一个 AllToAll 域，`ep = dp % EP`。因此 EP 不进 rank 乘法，只要求整除 DP。",
+    "轴的等分一律「不能整除时前面的片多拿一个」（slice/stageLayers 同一个函数口径），与 deployment.ts stageLayerRange 一致。",
+    "SP 的分片在 CP 段之内再切一次：先按 CP 把序列切成段，段内再按 TP(=SP) 切成 token 片。所以 spTokens ⊂ ctx，不是两个平行的切法。",
+    "维度签名色 TP/PP/DP/EP 与 rubik-cube 逐位相同；CP/SP 是本 pattern 新增的两维，取色卡里未被占用且与四维拉得开的两族。红黄绿一律留给状态（负载/异常），签名色不碰。"
+  ],
+  "allowedOverrides": [
+    "并行度 tp / cp / pp / ep / dp（约束：均 ≥1、ep 整除 dp、rank 总数 ≤65536）",
+    "模型规格 layers / heads / experts / sharedExperts / seqLen / hidden / ffnHidden / vocab",
+    "theme（'light' | 'dark'）、初始 rank / node / dim",
+    "URL 参数：?tp= &cp= &pp= &ep= &dp= &rank= &node= &dim= &layers= &heads= &experts= &seq= &theme= &v="
+  ],
+  "forbiddenOverrides": [
+    "不得改动切分规格 SHARD 里已声明的「维 × 轴」语义——它是本 pattern 的事实源；要扩只能新增节点或新增轴，不能把某个算子改挂到另一根轴上而不说明理由。",
+    "不得用红/黄/绿表达并行维——那三色在本仓库全站是状态色（负载 / 异常）专用。",
+    "不得把 SP 建成独立的 rank 维（会让 rank 总数凭空乘一遍 TP，与 data.ts 的落位教义冲突）。",
+    "不得在 .ns-graph 上继承上游 `pto-model-graphviz-pattern-page` 的 min-height:100vh —— 那是整页容器用的，嵌进 flex 会把图撑出父容器盖住流水带；我们只借它的 CSS 变量。"
+  ],
+  "integrationHooks": [
+    "与 rubik-cube 互为反查：rubik 的 opts.onSelect({rank,...}) → 本 pattern handle.selectRank(rank)，即可看「魔方里选中的那张卡装了什么」；反向 onSelectRank → rubik handle.select(rank)。",
+    "与 cube-cockpit 的整网分隔映射（renderMM，48 层 × 128 卡）同源但更细：那份是层粒度，本 pattern 是算子/张量轴粒度，可作为它的下钻层。",
+    "postMessage 桥（与 rubik-pattern.html 同一套约定）：收 net-sharding-cmd {rank,node,dim,config} 与 net-sharding-theme；回报 net-sharding-rank / net-sharding-node / net-sharding-theme。宿主可直接 iframe 嵌入。"
+  ],
+  "agentReuseRule": "改动或复用前先读本文件与同级 README.md。切分规格表（pattern.js 的 SHARD）是本 pattern 的智力核心：每条都写了「为什么是这样切」，新增算子必须同样给出判据（依据是张量的哪根轴上有可分的份数，不是算子长什么样）。与 src/vendor/model-graphviz/graph-meta.ts 的 NODE_DIM 是细化关系而非替代：那份是「一算子一维」的粗标签、用于整网图↔魔方着色联动，本 pattern 升级为「维 × 轴 × 份数 × 本 rank 持有区间」。两处若对同一算子给出不同的维，以本文件为准并回补 graph-meta.ts。"
+}

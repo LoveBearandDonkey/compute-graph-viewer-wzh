@@ -1,0 +1,1172 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="author" content="王欣迪" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<!-- 入口 HTML 一律不进浏览器缓存。
+     资源引用已经带 ?v=<短SHA>，改了内容就换 URL、自然绕开缓存；但**页面本身**
+     没有这层保护——链接一旦被收藏（尤其是带着某次构建的 ?v= 旧戳那种），
+     查询串算进缓存键，浏览器就一直拿那份旧副本，页面在 Pages 上早就更新了也看不见。
+     实际发生过：启动页给的链接是最新戳，手里那条旧戳链接却停在几周前的构建。
+     这几个文件都是几十到几百 KB 的单文件入口，每次回源重新校验的代价可以忽略，
+     换来的是「点开就是最新」。GitHub Pages 不让自定义响应头，只能走 meta。 -->
+<meta http-equiv="Cache-Control" content="no-cache, must-revalidate">
+<meta http-equiv="Pragma" content="no-cache">
+<meta name="robots" content="noindex, nofollow, noarchive, nosnippet, noimageindex" />
+<meta name="googlebot" content="noindex, nofollow" />
+<meta name="referrer" content="no-referrer" />
+<title>HPC Topology Viewer · 项目启动页</title>
+<link rel="icon" href="./favicon.svg" type="image/svg+xml" />
+<!--
+  项目启动页：把本仓库的工作台 / 驾驶舱 / 独立 pattern / 文档 / research 研究报告
+  整合成一页入口（浅色）。每张卡底部附它在仓库里的路径，直链 GitHub。
+  自包含单文件，无外部依赖；色板取自
+  vendor/pto-design-system tokens（ark-blue #4369ef）与场景七平面色。
+  · dev:  /hpc-topology-viewer/launch.html
+  · 「研究报告」区链接的 /research/*.html 由 vite.config.ts 在构建时从仓库根
+    research/ 目录带入 dist（dev server 亦按需直读），仓库不存第二份。
+  · 标 ° 的链接是各 pattern 分支 workflow 的发布叠加目录，main 重新部署后可能
+    暂时 404，重跑对应分支的 Deploy workflow 即可找回（见 .github/workflows/deploy.yml）。
+  · 「图元库 · 跨仓」那组指向另一个仓库 hpc-topology-node 的 Pages 站点，本仓不复制
+    它的任何文件，也不参与本仓的构建——那边更新即时生效，这边只是一条外链。
+-->
+<style>
+:root {
+  --blue: #4369ef;
+  --violet: #9d7bff;
+  --orange: #ffaa3b;
+  --green: #04d793;
+  --cyan: #4ad9e7;
+  --slate: #7c8db8;
+  --pink: #ff4b7b;
+
+  --ink: #131a2a;
+  --ink-2: #47526b;
+  --ink-3: #8b95ab;
+  --line: rgba(19, 26, 42, 0.10);
+  --line-strong: rgba(19, 26, 42, 0.18);
+  --bg: #f4f6fb;
+  --card: #ffffff;
+  --pv-a: #f8fafe;
+  --pv-b: #edf1f9;
+  --shadow: 0 1px 2px rgba(19, 26, 42, 0.04), 0 8px 24px rgba(19, 26, 42, 0.06);
+  --shadow-hover: 0 2px 4px rgba(19, 26, 42, 0.05), 0 14px 36px rgba(31, 51, 122, 0.12);
+  --font: -apple-system, 'Segoe UI', 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', 'Noto Sans SC', sans-serif;
+  --mono: ui-monospace, 'SF Mono', 'Cascadia Code', 'Consolas', monospace;
+}
+
+* { box-sizing: border-box; }
+html, body { margin: 0; width: 100%; min-height: 100%; }
+
+body {
+  font-family: var(--font);
+  color: var(--ink);
+  background:
+    radial-gradient(90rem 40rem at 110% -10%, rgba(67, 105, 239, 0.07), transparent 60%),
+    radial-gradient(70rem 36rem at -15% 8%, rgba(4, 215, 147, 0.06), transparent 55%),
+    radial-gradient(60rem 40rem at 50% 115%, rgba(157, 123, 255, 0.06), transparent 60%),
+    var(--bg);
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+.page {
+  min-height: 100vh;
+  padding: 44px 24px 56px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 34px;
+}
+
+/* ── header ── */
+.hero { width: min(1600px, 100%); display: grid; gap: 14px; }
+
+.plane-strip { display: flex; gap: 6px; }
+.plane-strip i { width: 26px; height: 6px; border-radius: 3px; }
+.plane-strip i:nth-child(1) { background: var(--blue); }
+.plane-strip i:nth-child(2) { background: var(--cyan); }
+.plane-strip i:nth-child(3) { background: var(--green); }
+.plane-strip i:nth-child(4) { background: var(--orange); }
+.plane-strip i:nth-child(5) { background: var(--pink); }
+.plane-strip i:nth-child(6) { background: var(--violet); }
+.plane-strip i:nth-child(7) { background: var(--slate); }
+
+.hero h1 {
+  margin: 0;
+  font-size: 30px;
+  font-weight: 800;
+  letter-spacing: 0.005em;
+  line-height: 1.15;
+}
+.hero h1 small { font-weight: 650; font-size: 17px; color: var(--ink-3); margin-left: 12px; letter-spacing: 0.02em; }
+
+.hero-sub { margin: 0; max-width: 72ch; color: var(--ink-2); font-size: 14.5px; line-height: 1.65; }
+.hero-sub .mono { font-family: var(--mono); font-size: 12.5px; background: rgba(19, 26, 42, 0.05); padding: 1px 6px; border-radius: 6px; }
+
+.hero-actions { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 4px; }
+.pill {
+  height: 40px;
+  padding: 0 22px;
+  border-radius: 999px;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 14px;
+  font-weight: 650;
+  text-decoration: none;
+  border: 1px solid var(--line-strong);
+  color: var(--ink);
+  background: var(--card);
+  box-shadow: var(--shadow);
+  transition: transform 150ms ease, box-shadow 150ms ease, border-color 150ms ease, filter 150ms ease;
+}
+.pill:hover { transform: translateY(-1px); box-shadow: var(--shadow-hover); border-color: rgba(67, 105, 239, 0.45); }
+.pill--primary { color: #fff; background: linear-gradient(135deg, var(--blue), #3453c8); border-color: transparent; }
+.pill--primary:hover { filter: brightness(1.06); }
+
+/* ── groups ── */
+.launcher-groups { width: min(1600px, 100%); display: grid; gap: 30px; }
+.card-group { display: grid; gap: 13px; }
+
+.group-header { display: flex; align-items: baseline; gap: 12px; padding: 0 2px; }
+.group-title { margin: 0; font-size: 15.5px; font-weight: 750; letter-spacing: 0.05em; color: var(--ink); }
+.group-note { font-size: 12px; color: var(--ink-3); white-space: nowrap; }
+.group-rule { flex: 1; height: 1px; background: var(--line); align-self: center; }
+
+.card-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 16px;
+}
+
+/* ── card ── */
+.card {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--line);
+  border-radius: 20px;
+  background: var(--card);
+  box-shadow: var(--shadow);
+  overflow: hidden;
+  transition: transform 170ms ease, box-shadow 170ms ease, border-color 170ms ease;
+}
+.card:hover { transform: translateY(-2px); box-shadow: var(--shadow-hover); border-color: rgba(67, 105, 239, 0.35); }
+
+.card-head { padding: 16px 18px 10px; }
+.card-title { margin: 0; font-size: 16.5px; font-weight: 700; line-height: 1.3; }
+/* 整卡可点：标题即主链接，::after 铺满卡片；链接条 z-index 抬高在其上 */
+.card-title a { color: inherit; text-decoration: none; }
+.card-title a::after { content: ''; position: absolute; inset: 0; }
+.card:hover .card-title a { color: var(--blue); }
+
+.card-tags { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 8px; }
+.tag {
+  display: inline-flex;
+  align-items: center;
+  height: 19px;
+  padding: 0 7px;
+  border-radius: 5px;
+  font-size: 10.5px;
+  font-weight: 650;
+  letter-spacing: 0.04em;
+  border: 1px solid var(--line);
+  background: rgba(19, 26, 42, 0.03);
+  color: var(--ink-3);
+}
+.tag--k-app    { background: rgba(67, 105, 239, 0.10); border-color: rgba(67, 105, 239, 0.28); color: #3050c9; }
+.tag--k-pat    { background: rgba(157, 123, 255, 0.12); border-color: rgba(157, 123, 255, 0.34); color: #7a55d6; }
+.tag--k-doc    { background: rgba(4, 168, 120, 0.10); border-color: rgba(4, 168, 120, 0.30); color: #058a64; }
+.tag--k-report { background: rgba(255, 143, 15, 0.12); border-color: rgba(255, 143, 15, 0.32); color: #bb6a05; }
+.tag--k-ext    { background: rgba(74, 217, 231, 0.14); border-color: rgba(74, 217, 231, 0.46); color: #0b7f90; }
+
+.card-preview {
+  margin: 4px 12px 0;
+  border: 1px solid var(--line);
+  border-radius: 13px;
+  background: linear-gradient(180deg, var(--pv-a), var(--pv-b));
+  overflow: hidden;
+}
+.card-preview svg { display: block; width: 100%; height: auto; }
+
+.card-desc {
+  margin: 11px 18px 0;
+  color: var(--ink-2);
+  font-size: 12.8px;
+  line-height: 1.62;
+  flex: 1;
+}
+.card-desc .mono { font-family: var(--mono); font-size: 11.5px; }
+
+.card-links { display: flex; flex-wrap: wrap; gap: 7px; padding: 12px 16px; position: relative; z-index: 1; }
+
+/* 卡片页脚：这张卡对应的仓库路径（点进去就是源） */
+.card-src {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 9px 16px 12px;
+  border-top: 1px solid var(--line);
+  position: relative;
+  z-index: 1;
+}
+.src {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-family: var(--mono);
+  font-size: 11px;
+  line-height: 1.45;
+  color: var(--ink-3);
+  text-decoration: none;
+  word-break: break-all;
+  transition: color 130ms ease;
+}
+.src:hover { color: var(--blue); }
+.src svg { width: 12px; height: 12px; flex: none; opacity: .8; }
+.card-by {
+  font-family: var(--mono);
+  font-size: 10.5px;
+  color: var(--ink-3);
+  opacity: .7;
+}
+.lnk {
+  display: inline-flex;
+  align-items: center;
+  height: 27px;
+  padding: 0 12px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 650;
+  text-decoration: none;
+  color: var(--ink-2);
+  border: 1px solid var(--line-strong);
+  background: var(--card);
+  transition: color 130ms ease, border-color 130ms ease, background 130ms ease, transform 130ms ease;
+}
+.lnk:hover { color: var(--blue); border-color: rgba(67, 105, 239, 0.55); background: rgba(67, 105, 239, 0.06); transform: translateY(-1px); }
+.lnk--primary { color: #fff; background: var(--blue); border-color: var(--blue); }
+.lnk--primary:hover { color: #fff; background: #3453c8; border-color: #3453c8; }
+.lnk sup { font-size: 9px; margin-left: 2px; color: var(--orange); }
+.lnk--primary sup { color: #ffd9a1; }
+
+/* ── svg 预览小图公共笔触 ── */
+.pv-box   { fill: #ffffff; stroke: rgba(19, 26, 42, 0.30); stroke-width: 1.4; }
+.pv-soft  { fill: #eef2f9; stroke: rgba(19, 26, 42, 0.16); stroke-width: 1.2; }
+.pv-line  { fill: none; stroke: rgba(19, 26, 42, 0.22); stroke-width: 1.4; }
+.pv-text  { fill: rgba(19, 26, 42, 0.22); }
+
+/* ── footer ── */
+.foot { width: min(1600px, 100%); display: grid; gap: 5px; color: var(--ink-3); font-size: 12px; line-height: 1.7; }
+.foot .mono { font-family: var(--mono); font-size: 11px; }
+
+@media (max-width: 1360px) { .card-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+@media (max-width: 1020px) { .card-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 640px)  {
+  .page { padding: 30px 14px 40px; }
+  .card-grid { grid-template-columns: 1fr; }
+  .hero h1 { font-size: 24px; }
+  .hero h1 small { display: block; margin: 6px 0 0; }
+}
+</style>
+</head>
+<body>
+<main class="page">
+
+  <header class="hero">
+    <div class="plane-strip" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
+    <h1>HPC Topology Viewer<small>项目启动页</small></h1>
+    <p class="hero-sub">
+      仓库里的工作台、驾驶舱、独立迭代 pattern、参照系与研究文档、历史原型，加上邻仓的硬件图元库，
+      按组整合在这一页，点开即看。标 <b>°</b> 的链接来自 pattern 分支的发布叠加目录，说明见页尾。
+    </p>
+    <div class="hero-actions">
+      <a class="pill pill--primary" href="./">进入统一工作台</a>
+      <a class="pill" href="./cube-cockpit.html">AI Infra 驾驶舱 v22</a>
+      <a class="pill" href="./parallel-reference/">分布式训练参照系</a>
+      <a class="pill" href="https://github.com/Cinnnnnnndy/hpc-topology-viewer" target="_blank" rel="noopener">GitHub 仓库</a>
+    </div>
+  </header>
+
+  <section class="launcher-groups" aria-label="项目入口导航">
+
+    <!-- ═══ 工作台 · 主线 ═══ -->
+    <section class="card-group" aria-labelledby="g-app">
+      <div class="group-header">
+        <h2 class="group-title" id="g-app">工作台 · 主线</h2>
+        <span class="group-note">站点框架，从 main 构建</span>
+        <div class="group-rule" aria-hidden="true"></div>
+      </div>
+      <div class="card-grid">
+
+        <article class="card">
+          <div class="card-head">
+            <h3 class="card-title"><a href="./">统一工作台</a></h3>
+            <div class="card-tags">
+              <span class="tag tag--k-app">工作台</span>
+              <span class="tag">React · Three.js</span>
+              <span class="tag">四视图</span>
+              <span class="tag">七平面</span>
+            </div>
+          </div>
+          <div class="card-preview" aria-hidden="true">
+            <svg viewBox="0 0 320 160">
+              <rect class="pv-box" x="72" y="16" width="62" height="26" rx="6"/>
+              <rect class="pv-box" x="188" y="16" width="62" height="26" rx="6"/>
+              <path d="M56 108 C 60 70, 90 60, 98 42"  fill="none" stroke="#4369ef" stroke-width="1.8"/>
+              <path d="M60 108 C 70 76, 110 62, 112 42" fill="none" stroke="#4ad9e7" stroke-width="1.8"/>
+              <path d="M130 108 C 128 80, 120 60, 118 42" fill="none" stroke="#04d793" stroke-width="1.8"/>
+              <path d="M134 108 C 150 80, 200 62, 208 42" fill="none" stroke="#ffaa3b" stroke-width="1.8"/>
+              <path d="M204 108 C 200 78, 216 60, 219 42" fill="none" stroke="#ff4b7b" stroke-width="1.8"/>
+              <path d="M208 108 C 220 82, 232 62, 231 42" fill="none" stroke="#9d7bff" stroke-width="1.8"/>
+              <path d="M276 108 C 268 72, 246 60, 240 42" fill="none" stroke="#7c8db8" stroke-width="1.8"/>
+              <rect class="pv-box" x="34"  y="108" width="46" height="36" rx="5"/>
+              <rect class="pv-box" x="108" y="108" width="46" height="36" rx="5"/>
+              <rect class="pv-box" x="182" y="108" width="46" height="36" rx="5"/>
+              <rect class="pv-box" x="256" y="108" width="46" height="36" rx="5"/>
+              <rect class="pv-soft" x="40"  y="116" width="34" height="5" rx="2"/>
+              <rect class="pv-soft" x="40"  y="126" width="34" height="5" rx="2"/>
+              <rect class="pv-soft" x="114" y="116" width="34" height="5" rx="2"/>
+              <rect class="pv-soft" x="114" y="126" width="34" height="5" rx="2"/>
+              <rect class="pv-soft" x="188" y="116" width="34" height="5" rx="2"/>
+              <rect class="pv-soft" x="262" y="116" width="34" height="5" rx="2"/>
+            </svg>
+          </div>
+          <p class="card-desc">主入口：总览 / 机柜 / 节点 / 拓扑四级下钻，两级无阻塞 Clos · 七个独立交换平面各配一色；联动控制台集成时空折叠魔方、动态监控双模式与集合通信深潜。</p>
+          <div class="card-links">
+            <a class="lnk lnk--primary" href="./">打开工作台</a>
+          </div>
+          <div class="card-src">
+            <span class="card-by">署名 · 王欣迪</span>
+            <a class="src" href="https://github.com/Cinnnnnnndy/hpc-topology-viewer/tree/main/src" target="_blank" rel="noopener">
+              <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M6 4.5 2.5 8 6 11.5M10 4.5 13.5 8 10 11.5" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>src/
+            </a>
+          </div>
+        </article>
+
+        <article class="card">
+          <div class="card-head">
+            <h3 class="card-title"><a href="./cube-cockpit.html">AI Infra 统一驾驶舱 v22</a></h3>
+            <div class="card-tags">
+              <span class="tag tag--k-app">工作台</span>
+              <span class="tag">单文件</span>
+              <span class="tag">明暗双主题</span>
+              <span class="tag">场景剧本</span>
+            </div>
+          </div>
+          <div class="card-preview" aria-hidden="true">
+            <svg viewBox="0 0 320 160">
+              <rect x="14" y="12" width="292" height="136" rx="10" fill="#10141b"/>
+              <g>
+                <rect x="34" y="38" width="15" height="15" rx="2" fill="#04d793" opacity=".85"/>
+                <rect x="52" y="38" width="15" height="15" rx="2" fill="#04d793" opacity=".55"/>
+                <rect x="70" y="38" width="15" height="15" rx="2" fill="#4369ef" opacity=".8"/>
+                <rect x="34" y="56" width="15" height="15" rx="2" fill="#4369ef" opacity=".55"/>
+                <rect x="52" y="56" width="15" height="15" rx="2" fill="#ff4b7b" opacity=".95"/>
+                <rect x="70" y="56" width="15" height="15" rx="2" fill="#04d793" opacity=".5"/>
+                <rect x="34" y="74" width="15" height="15" rx="2" fill="#7c8db8" opacity=".5"/>
+                <rect x="52" y="74" width="15" height="15" rx="2" fill="#4369ef" opacity=".7"/>
+                <rect x="70" y="74" width="15" height="15" rx="2" fill="#04d793" opacity=".8"/>
+              </g>
+              <g fill="none" stroke-width="1.6">
+                <path d="M126 88 L158 74 L190 88 L158 102 Z" stroke="#4ad9e7" opacity=".9"/>
+                <path d="M126 66 L158 52 L190 66 L158 80 Z" stroke="#4369ef" opacity=".9"/>
+                <path d="M126 44 L158 30 L190 44 L158 58 Z" stroke="#9d7bff" opacity=".9"/>
+                <path d="M85 46 C 104 46, 108 40, 126 42" stroke="#ffaa3b" opacity=".85"/>
+                <path d="M85 64 C 104 64, 110 62, 126 64" stroke="#04d793" opacity=".7"/>
+              </g>
+              <g>
+                <rect x="214" y="40" width="62" height="7" rx="3.5" fill="#04d793" opacity=".85"/>
+                <rect x="214" y="54" width="44" height="7" rx="3.5" fill="#ffaa3b" opacity=".9"/>
+                <rect x="214" y="68" width="54" height="7" rx="3.5" fill="#4369ef" opacity=".85"/>
+                <rect x="214" y="82" width="30" height="7" rx="3.5" fill="#7c8db8" opacity=".8"/>
+              </g>
+              <line x1="34" y1="124" x2="286" y2="124" stroke="rgba(255,255,255,.22)" stroke-width="1.5"/>
+              <line x1="34" y1="124" x2="192" y2="124" stroke="rgba(74,217,231,.55)" stroke-width="2.5"/>
+              <circle cx="196" cy="124" r="4" fill="#4ad9e7"/>
+            </svg>
+          </div>
+          <p class="card-desc">单文件驾驶舱原型：物理集群 ⇄ 逻辑魔方 ⇄ 层级堆叠统一 3D + 软硬结合连线镜头（互联矩阵联动）+ 模式 B 深潜（泳道 / busbw / 通信矩阵），内置巡检、MoE 越界、找慢副本、单机深潜四个场景剧本。</p>
+          <div class="card-links">
+            <a class="lnk lnk--primary" href="./cube-cockpit.html">打开驾驶舱</a>
+          </div>
+          <div class="card-src">
+            <span class="card-by">署名 · 王欣迪</span>
+            <a class="src" href="https://github.com/Cinnnnnnndy/hpc-topology-viewer/blob/main/public/cube-cockpit.html" target="_blank" rel="noopener">
+              <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M6 4.5 2.5 8 6 11.5M10 4.5 13.5 8 10 11.5" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>public/cube-cockpit.html
+            </a>
+          </div>
+        </article>
+
+      </div>
+    </section>
+
+    <!-- ═══ 独立迭代 Pattern ═══ -->
+    <section class="card-group" aria-labelledby="g-pat">
+      <div class="group-header">
+        <h2 class="group-title" id="g-pat">独立迭代 Pattern</h2>
+        <span class="group-note">自包含子目录，可被外部直接复用</span>
+        <div class="group-rule" aria-hidden="true"></div>
+      </div>
+      <div class="card-grid">
+
+        <article class="card">
+          <div class="card-head">
+            <h3 class="card-title"><a href="./rubik-pattern.html">逻辑魔方 Pattern</a></h3>
+            <div class="card-tags">
+              <span class="tag tag--k-pat">Pattern</span>
+              <span class="tag">TP×PP×DP=rank</span>
+              <span class="tag">5 形态</span>
+            </div>
+          </div>
+          <div class="card-preview" aria-hidden="true">
+            <svg viewBox="0 0 320 160">
+              <!-- 轴对测立方：top=DP(绿) left=PP(橙) right=TP(蓝) -->
+              <g stroke="rgba(19,26,42,.35)" stroke-width="1.2">
+                <polygon points="160,26 214,53 160,80 106,53" fill="#d9f7ec"/>
+                <polygon points="106,53 160,80 160,140 106,113" fill="#ffe9cc"/>
+                <polygon points="160,80 214,53 214,113 160,140" fill="#dbe4fd"/>
+                <line x1="124" y1="44" x2="178" y2="71"/><line x1="142" y1="35" x2="196" y2="62"/>
+                <line x1="124" y1="62" x2="178" y2="35"/><line x1="142" y1="71" x2="196" y2="44"/>
+                <line x1="124" y1="62" x2="124" y2="122"/><line x1="142" y1="71" x2="142" y2="131"/>
+                <line x1="106" y1="73" x2="160" y2="100"/><line x1="106" y1="93" x2="160" y2="120"/>
+                <line x1="178" y1="71" x2="178" y2="131"/><line x1="196" y1="62" x2="196" y2="122"/>
+                <line x1="160" y1="100" x2="214" y2="73"/><line x1="160" y1="120" x2="214" y2="93"/>
+              </g>
+              <polygon points="160,80 178,71 178,91 160,100" fill="#4369ef" opacity=".85"/>
+              <polygon points="142,35 160,26 178,35 160,44" fill="#04d793" opacity=".85"/>
+              <polygon points="124,102 142,111 142,131 124,122" fill="#ffaa3b" opacity=".9"/>
+              <path d="M160,18 L160,4 M98,57 L84,64 M222,57 L236,64" stroke="rgba(19,26,42,.3)" stroke-width="1.3"/>
+              <circle cx="160" cy="8" r="3.4" fill="#04d793"/><circle cx="80" cy="66" r="3.4" fill="#ffaa3b"/><circle cx="240" cy="66" r="3.4" fill="#4369ef"/>
+              <rect x="252" y="104" width="46" height="12" rx="6" class="pv-soft"/>
+              <rect x="252" y="122" width="46" height="12" rx="6" class="pv-soft"/>
+              <rect x="22" y="104" width="46" height="12" rx="6" class="pv-soft"/>
+            </svg>
+          </div>
+          <p class="card-desc">并行超立方本体：5 种形态重排 · 轴标注 · 正交 2D / 剖面 · 四维通信组，答「谁和谁一组」。主线版默认 128 卡（2·4·16·8），发布版迭代至盘古 Pro MoE 真实策略 TP8×PP5×DP100 = 4000 rank。</p>
+          <div class="card-links">
+            <a class="lnk lnk--primary" href="./rubik-pattern.html">主线版</a>
+            <a class="lnk" href="./patterns/rubik-cube-logical/pattern.html">发布 pattern<sup>°</sup></a>
+            <a class="lnk" href="./rubik/">/rubik/<sup>°</sup></a>
+            <a class="lnk" href="./rubik-spec/">规范页<sup>°</sup></a>
+          </div>
+          <div class="card-src">
+            <span class="card-by">署名 · 王欣迪</span>
+            <a class="src" href="https://github.com/Cinnnnnnndy/hpc-topology-viewer/tree/main/public/vendor/rubik-cube" target="_blank" rel="noopener">
+              <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M6 4.5 2.5 8 6 11.5M10 4.5 13.5 8 10 11.5" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>public/vendor/rubik-cube/
+            </a>
+            <a class="src" href="https://github.com/Cinnnnnnndy/hpc-topology-viewer/tree/claude/rubik-view-pattern-extraction-7pk0qt/public/vendor/rubik-cube" target="_blank" rel="noopener">
+              <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M6 4.5 2.5 8 6 11.5M10 4.5 13.5 8 10 11.5" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>° 分支 rubik-view-pattern-extraction-7pk0qt
+            </a>
+          </div>
+        </article>
+
+        <article class="card">
+          <div class="card-head">
+            <h3 class="card-title"><a href="./rubik-netobj/">逻辑魔方 · 整网对象透镜</a></h3>
+            <div class="card-tags">
+              <span class="tag tag--k-pat">Pattern</span>
+              <span class="tag">变体 variantOf</span>
+              <span class="tag">分片 snap</span>
+            </div>
+          </div>
+          <div class="card-preview" aria-hidden="true">
+            <svg viewBox="0 0 320 160">
+              <g stroke="rgba(19,26,42,.35)" stroke-width="1.1">
+                <polygon points="72,42 108,60 72,78 36,60" fill="#eef2f9"/>
+                <polygon points="36,60 72,78 72,118 36,100" fill="#e3e9f4"/>
+                <polygon points="72,78 108,60 108,100 72,118" fill="#f6f8fc"/>
+              </g>
+              <polygon points="72,78 96,66 96,93 72,105" fill="#04d793" opacity=".9"/>
+              <polygon points="48,66 72,78 72,105 48,93" fill="#04d793" opacity=".45"/>
+              <path d="M126 80 H 168 M 160 72 L 172 80 L 160 88" fill="none" stroke="#4369ef" stroke-width="2"/>
+              <g stroke="rgba(19,26,42,.28)" stroke-width="1.1">
+                <rect x="188" y="36" width="26" height="20" fill="#04d793" opacity=".95"/>
+                <rect x="216" y="36" width="26" height="20" fill="#04d793" opacity=".72"/>
+                <rect x="244" y="36" width="26" height="20" fill="#04d793" opacity=".5"/>
+                <rect x="272" y="36" width="26" height="20" fill="#04d793" opacity=".3"/>
+                <rect x="188" y="58" width="26" height="20" fill="#eef2f9"/>
+                <rect x="216" y="58" width="26" height="20" fill="#eef2f9"/>
+                <rect x="244" y="58" width="26" height="20" fill="#eef2f9"/>
+                <rect x="272" y="58" width="26" height="20" fill="#eef2f9"/>
+                <rect x="188" y="80" width="26" height="20" fill="#eef2f9"/>
+                <rect x="216" y="80" width="26" height="20" fill="#eef2f9"/>
+                <rect x="244" y="80" width="26" height="20" fill="#eef2f9"/>
+                <rect x="272" y="80" width="26" height="20" fill="#eef2f9"/>
+              </g>
+              <rect x="188" y="112" width="110" height="10" rx="5" class="pv-soft"/>
+              <rect x="36" y="130" width="72" height="10" rx="5" class="pv-soft"/>
+            </svg>
+          </div>
+          <p class="card-desc">逻辑魔方的整网对象变体：选一个整网对象，承载它的卡按「持有第几片」着色；切到该对象主屏后，分片 snap 成整块 / 整墙。契约里以 <span class="mono">variantOf</span> 标明与 rubik-cube-logical 的血缘。</p>
+          <div class="card-links">
+            <a class="lnk lnk--primary" href="./rubik-netobj/">/rubik-netobj/<sup>°</sup></a>
+            <a class="lnk" href="./patterns/rubik-cube-netobj/pattern.html">规范位置<sup>°</sup></a>
+          </div>
+          <div class="card-src">
+            <span class="card-by">署名 · 王欣迪</span>
+            <a class="src" href="https://github.com/Cinnnnnnndy/hpc-topology-viewer/tree/claude/rank-view-network-analysis-htowfc/public/vendor/rubik-cube" target="_blank" rel="noopener">
+              <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M6 4.5 2.5 8 6 11.5M10 4.5 13.5 8 10 11.5" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>° 分支 rank-view-network-analysis-htowfc
+            </a>
+          </div>
+        </article>
+
+        <article class="card">
+          <div class="card-head">
+            <h3 class="card-title"><a href="./net-sharding-pattern.html">rank 卡 · 整网的并行化展开</a></h3>
+            <div class="card-tags">
+              <span class="tag tag--k-pat">Pattern</span>
+              <span class="tag">6 维 TP·CP·SP·PP·EP·DP</span>
+              <span class="tag">small multiples</span>
+            </div>
+          </div>
+          <div class="card-preview" aria-hidden="true">
+            <svg viewBox="0 0 320 160">
+              <g>
+                <rect class="pv-box" x="22" y="16" width="130" height="60" rx="8"/>
+                <circle cx="48" cy="36" r="5" fill="#4369ef"/><circle cx="86" cy="30" r="5" fill="#4369ef"/><circle cx="124" cy="38" r="5" fill="#4369ef" opacity=".45"/><circle cx="86" cy="58" r="5" fill="#4369ef"/>
+                <path class="pv-line" d="M52 38 L81 32 M91 32 L119 37 M86 35 L86 53"/>
+              </g>
+              <g>
+                <rect class="pv-box" x="168" y="16" width="130" height="60" rx="8"/>
+                <circle cx="194" cy="36" r="5" fill="#ffaa3b"/><circle cx="232" cy="30" r="5" fill="#ffaa3b"/><circle cx="270" cy="38" r="5" fill="none" stroke="#7c8db8" stroke-dasharray="2 2"/><circle cx="232" cy="58" r="5" fill="#ffaa3b"/>
+                <path class="pv-line" d="M198 38 L227 32 M237 32 L265 37 M232 35 L232 53"/>
+              </g>
+              <g>
+                <rect class="pv-box" x="22" y="84" width="130" height="60" rx="8"/>
+                <circle cx="48" cy="104" r="5" fill="#04d793"/><circle cx="86" cy="98" r="5" fill="#04d793"/><circle cx="124" cy="106" r="5" fill="#04d793"/><circle cx="86" cy="126" r="5" fill="none" stroke="#7c8db8" stroke-dasharray="2 2"/>
+                <path class="pv-line" d="M52 106 L81 100 M91 100 L119 105 M86 103 L86 121"/>
+              </g>
+              <g>
+                <rect class="pv-box" x="168" y="84" width="130" height="60" rx="8"/>
+                <circle cx="194" cy="104" r="5" fill="#9d7bff"/><circle cx="232" cy="98" r="5" fill="#9d7bff" opacity=".5"/><circle cx="270" cy="106" r="5" fill="#9d7bff"/><circle cx="232" cy="126" r="5" fill="#9d7bff"/>
+                <path class="pv-line" d="M198 106 L227 100 M237 100 L265 105 M232 103 L232 121"/>
+              </g>
+            </svg>
+          </div>
+          <p class="card-desc">坐标系是模型计算图：标注每个算子被哪个并行维、沿哪根轴切成几份，算出任意 rank 装了什么；HCCL 集合原语呈现为分片状态的转换器。与魔方互为反查——它答「这一组各自装了什么」。</p>
+          <div class="card-links">
+            <a class="lnk lnk--primary" href="./net-sharding-pattern.html">主线版</a>
+            <a class="lnk" href="./rank-card/">/rank-card/<sup>°</sup></a>
+            <a class="lnk" href="./patterns/rank-card-expansion/pattern.html">规范位置<sup>°</sup></a>
+          </div>
+          <div class="card-src">
+            <span class="card-by">署名 · 王欣迪</span>
+            <a class="src" href="https://github.com/Cinnnnnnndy/hpc-topology-viewer/tree/main/public/vendor/net-sharding" target="_blank" rel="noopener">
+              <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M6 4.5 2.5 8 6 11.5M10 4.5 13.5 8 10 11.5" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>public/vendor/net-sharding/
+            </a>
+          </div>
+        </article>
+
+        <article class="card">
+          <div class="card-head">
+            <h3 class="card-title"><a href="./patterns/rank-topology-lite/pattern.html">模型分片与训练设备映射 · 简洁版</a></h3>
+            <div class="card-tags">
+              <span class="tag tag--k-pat">Pattern</span>
+              <span class="tag">变体 variantOf</span>
+              <span class="tag">全屏矩阵</span>
+            </div>
+          </div>
+          <div class="card-preview" aria-hidden="true">
+            <svg viewBox="0 0 320 160">
+              <defs>
+                <pattern id="rtl-cubetex" width="6" height="6" patternUnits="userSpaceOnUse">
+                  <rect width="6" height="6" fill="#eef2f9"/>
+                  <rect x="0.5" y="0.5" width="5" height="5" rx="1" fill="#e2e8f4" stroke="rgba(19,26,42,.18)" stroke-width="0.6"/>
+                </pattern>
+              </defs>
+              <rect x="8" y="8" width="304" height="144" fill="url(#rtl-cubetex)" stroke="rgba(19,26,42,.32)" stroke-width="1.4"/>
+              <rect x="246" y="18" width="58" height="34" rx="6" fill="#ffffff" stroke="rgba(19,26,42,.3)" stroke-width="1.2"/>
+              <rect x="252" y="27" width="14" height="5" rx="1.5" fill="#4369ef"/>
+              <rect x="269" y="27" width="14" height="5" rx="1.5" fill="#ff4b7b"/>
+              <rect x="246" y="60" width="58" height="34" rx="6" fill="#4369ef" stroke="#131a2a" stroke-width="1.4"/>
+            </svg>
+          </div>
+          <p class="card-desc">/patterns/rank-topology-3d/ 的简洁版：两个本体各管一半，都是同源 iframe、都不改功能。未点开任何一张卡时是逻辑魔方（WebGL 实例化网格，盘古 ProMoE 预置 4000 卡全量，天然没有密度/性能问题）；点开一张方块后按坐标换算切到并行拓扑矩阵本体，真实坐标、内存/容量读出、六档通信原样接管。两个 iframe 都铺满整个视口，边到边，不缩小。</p>
+          <div class="card-links">
+            <a class="lnk lnk--primary" href="./patterns/rank-topology-lite/pattern.html">发布 pattern</a>
+            <a class="lnk" href="./patterns/rank-topology-3d/pattern.html">完整版 · 3D<sup>°</sup></a>
+          </div>
+          <div class="card-src">
+            <span class="card-by">署名 · 王欣迪</span>
+            <a class="src" href="https://github.com/Cinnnnnnndy/hpc-topology-viewer/tree/main/public/patterns/rank-topology-lite" target="_blank" rel="noopener">
+              <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M6 4.5 2.5 8 6 11.5M10 4.5 13.5 8 10 11.5" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>public/patterns/rank-topology-lite/
+            </a>
+          </div>
+        </article>
+
+      </div>
+    </section>
+
+    <!-- ⚠ 上面这个 </div></section> 是构建期的插入锚点，别在它和下面那行注释之间塞新的组。
+         pattern 分支的 deploy.yml 用「从『参照系』注释往前找最近的一组闭合」来把卡片追加进
+         「独立迭代 Pattern」组末尾（append_to_group）；中间一旦多出一个组，卡就落进那个新组，
+         而且它按 g-pat → g-doc 的字节区间自检，新组正好在区间内 —— 检查会通过、错误不报。
+         新增分组请放到「参照系」组之后（「图元库 · 跨仓」就在那儿）。 -->
+
+    <!-- ═══ 参照系 · 文档与研究报告 ═══ -->
+    <section class="card-group" aria-labelledby="g-doc">
+      <div class="group-header">
+        <h2 class="group-title" id="g-doc">参照系 · 文档与研究报告</h2>
+        <span class="group-note">概念 · 规格 · 研究结论</span>
+        <div class="group-rule" aria-hidden="true"></div>
+      </div>
+      <div class="card-grid">
+
+        <article class="card">
+          <div class="card-head">
+            <h3 class="card-title"><a href="./supernode-intro/">超节点集群 · 八步</a></h3>
+            <div class="card-tags">
+              <span class="tag tag--k-doc">讲解</span>
+              <span class="tag">一步一张简图</span>
+              <span class="tag">?step= 可分享</span>
+            </div>
+          </div>
+          <div class="card-preview" aria-hidden="true">
+            <svg viewBox="0 0 320 160">
+              <rect x="0" y="0" width="320" height="160" fill="#111111"/>
+              <!-- 一张卡 → 一台节点 → 一个超节点：三级包含，逐级放大 -->
+              <rect x="22" y="58" width="26" height="26" fill="#242424" stroke="#ffffff" stroke-width="1.5"/>
+              <g stroke="#3a3a3a" fill="#242424">
+                <rect x="78" y="48" width="11" height="11"/><rect x="93" y="48" width="11" height="11"/>
+                <rect x="108" y="48" width="11" height="11"/><rect x="123" y="48" width="11" height="11"/>
+                <rect x="78" y="63" width="11" height="11"/><rect x="93" y="63" width="11" height="11"/>
+                <rect x="108" y="63" width="11" height="11"/><rect x="123" y="63" width="11" height="11"/>
+              </g>
+              <rect x="73" y="43" width="66" height="36" fill="none" stroke="#7fc9d6" stroke-width="1.2"/>
+              <g fill="#1e1e1e" stroke="#333333">
+                <rect x="170" y="44" width="16" height="16"/><rect x="190" y="44" width="16" height="16"/>
+                <rect x="210" y="44" width="16" height="16"/><rect x="230" y="44" width="16" height="16"/>
+                <rect x="170" y="64" width="16" height="16"/><rect x="190" y="64" width="16" height="16"/>
+                <rect x="210" y="64" width="16" height="16"/><rect x="230" y="64" width="16" height="16"/>
+              </g>
+              <rect x="165" y="39" width="86" height="46" fill="none" stroke="#7fc9d6" stroke-width="1.2"/>
+              <!-- 只有最外那一跳是跨域 -->
+              <path d="M256 62 H298" stroke="#d9a441" stroke-width="2"/>
+              <rect x="160" y="34" width="138" height="56" fill="none" stroke="#d9a441" stroke-width="1" stroke-dasharray="3 4"/>
+              <!-- 下沿：八步 -->
+              <g fill="#3a3a3a"><rect x="22" y="126" width="30" height="2"/><rect x="60" y="126" width="30" height="2"/>
+                <rect x="98" y="126" width="30" height="2"/><rect x="136" y="126" width="30" height="2"/>
+                <rect x="174" y="126" width="30" height="2"/><rect x="212" y="126" width="30" height="2"/>
+                <rect x="250" y="126" width="30" height="2"/></g>
+              <rect x="288" y="125" width="10" height="4" fill="#e8e8e8"/>
+            </svg>
+          </div>
+          <p class="card-desc">一张卡怎么长成一个 8,192 卡的集群，以及哪一层才是换挡点。八步各一张简图：卡 · 节点 · 超节点 · 边界 · 集群 · 盘古 Pro MoE 4,000 卡配置 · 一张卡的四类通信关系 · 跑起来的八级读数。只讲结构，不放大段说明。</p>
+          <div class="card-links">
+            <a class="lnk lnk--primary" href="./supernode-intro/">打开</a>
+            <a class="lnk" href="./supernode-intro/?step=4">换挡点在哪</a>
+            <a class="lnk" href="./supernode-intro/?step=6">盘古 4,000 卡配置</a>
+          </div>
+          <div class="card-src">
+            <span class="card-by">署名 · 王欣迪</span>
+            <a class="src" href="https://github.com/Cinnnnnnndy/hpc-topology-viewer/blob/main/public/supernode-intro/index.html" target="_blank" rel="noopener">
+              <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M6 4.5 2.5 8 6 11.5M10 4.5 13.5 8 10 11.5" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+              public/supernode-intro/index.html
+            </a>
+          </div>
+        </article>
+
+        <article class="card">
+          <div class="card-head">
+            <h3 class="card-title"><a href="./parallel-reference/">分布式训练参照系</a></h3>
+            <div class="card-tags">
+              <span class="tag tag--k-doc">文档</span>
+              <span class="tag">五根轴</span>
+              <span class="tag">可交互示意图</span>
+            </div>
+          </div>
+          <div class="card-preview" aria-hidden="true">
+            <svg viewBox="0 0 320 160">
+              <g stroke-width="2" fill="none">
+                <path d="M64 132 L64 30"   stroke="#4369ef"/>
+                <path d="M64 132 L128 44"  stroke="#04d793"/>
+                <path d="M64 132 L176 70"  stroke="#ffaa3b"/>
+                <path d="M64 132 L204 102" stroke="#9d7bff"/>
+                <path d="M64 132 L212 132" stroke="#7c8db8"/>
+              </g>
+              <circle cx="64" cy="30" r="4" fill="#4369ef"/><circle cx="128" cy="44" r="4" fill="#04d793"/><circle cx="176" cy="70" r="4" fill="#ffaa3b"/><circle cx="204" cy="102" r="4" fill="#9d7bff"/><circle cx="212" cy="132" r="4" fill="#7c8db8"/>
+              <circle cx="64" cy="132" r="5" fill="#131a2a"/>
+              <circle cx="258" cy="46" r="15" fill="none" stroke="rgba(19,26,42,.4)" stroke-width="1.6"/>
+              <rect x="244" y="86" width="28" height="28" rx="5" fill="none" stroke="rgba(19,26,42,.4)" stroke-width="1.6"/>
+              <path d="M258 63 L258 84" stroke="rgba(19,26,42,.3)" stroke-width="1.4" stroke-dasharray="3 3"/>
+              <rect x="236" y="126" width="62" height="10" rx="5" class="pv-soft"/>
+            </svg>
+          </div>
+          <p class="card-desc">《分布式训练参照系——五根轴 · 两个对象 · 三组坐标》：术语、基数、切分、映射、通信、编号、运行时的完整参照系，配可交互示意图与勘误。与 PRD 各占一条顶层链接，打开即正文。</p>
+          <div class="card-links">
+            <a class="lnk lnk--primary" href="./parallel-reference/">打开参照系</a>
+          </div>
+          <div class="card-src">
+            <span class="card-by">署名 · 王欣迪</span>
+            <a class="src" href="https://github.com/Cinnnnnnndy/hpc-topology-viewer/blob/main/public/parallel-reference/index.html" target="_blank" rel="noopener">
+              <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M6 4.5 2.5 8 6 11.5M10 4.5 13.5 8 10 11.5" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>public/parallel-reference/index.html
+            </a>
+          </div>
+        </article>
+
+        <article class="card">
+          <div class="card-head">
+            <h3 class="card-title"><a href="./pp-pipeline/">PP 的两张脸 · 用 rank 看流水线</a></h3>
+            <div class="card-tags">
+              <span class="tag tag--k-doc">研究</span>
+              <span class="tag">可交互</span>
+              <span class="tag">Stage × 时间</span>
+              <span class="tag">PP 链</span>
+            </div>
+          </div>
+          <div class="card-preview" aria-hidden="true">
+            <svg viewBox="0 0 320 160">
+              <!-- 时间脸：1F1B 的阶梯 + 两角气泡 -->
+              <g>
+                <rect x="26"  y="118" width="17" height="17" rx="3" fill="#ffaa3b" opacity=".9"/>
+                <rect x="46"  y="118" width="17" height="17" rx="3" fill="#ffaa3b" opacity=".55"/>
+                <rect x="46"  y="98"  width="17" height="17" rx="3" fill="#ffaa3b" opacity=".9"/>
+                <rect x="66"  y="98"  width="17" height="17" rx="3" fill="#ffaa3b" opacity=".55"/>
+                <rect x="66"  y="78"  width="17" height="17" rx="3" fill="#ffaa3b" opacity=".9"/>
+                <rect x="86"  y="78"  width="17" height="17" rx="3" fill="#ffaa3b" opacity=".55"/>
+                <rect x="86"  y="58"  width="17" height="17" rx="3" fill="#ffaa3b" opacity=".9"/>
+                <rect x="106" y="58"  width="17" height="17" rx="3" fill="#b3603a"/>
+                <rect x="106" y="78"  width="17" height="17" rx="3" fill="#b3603a" opacity=".8"/>
+                <rect x="126" y="98"  width="17" height="17" rx="3" fill="#b3603a" opacity=".8"/>
+                <rect x="146" y="118" width="17" height="17" rx="3" fill="#b3603a" opacity=".8"/>
+              </g>
+              <g fill="none" stroke="rgba(19,26,42,.16)" stroke-width="1.2" stroke-dasharray="3 3">
+                <rect x="26" y="58" width="17" height="55" rx="3"/>
+                <rect x="146" y="58" width="17" height="55" rx="3"/>
+              </g>
+              <!-- 展开面：并排 Stage + PP 链 -->
+              <g>
+                <rect class="pv-box" x="196" y="30" width="26" height="106" rx="5"/>
+                <rect class="pv-box" x="234" y="30" width="26" height="106" rx="5"/>
+                <rect class="pv-box" x="272" y="30" width="26" height="106" rx="5"/>
+                <rect x="201" y="74" width="16" height="16" rx="4" fill="none" stroke="#b3603a" stroke-width="2.2"/>
+                <rect x="239" y="74" width="16" height="16" rx="4" fill="none" stroke="#b3603a" stroke-width="2.2"/>
+                <rect x="277" y="74" width="16" height="16" rx="4" fill="none" stroke="#b3603a" stroke-width="2.2"/>
+                <path d="M219 82 L236 82" stroke="#b3603a" stroke-width="1.8"/>
+                <path d="M257 82 L274 82" stroke="#b3603a" stroke-width="1.8"/>
+                <path d="M233 79 L237 82 L233 85" fill="#b3603a"/>
+                <path d="M271 79 L275 82 L271 85" fill="#b3603a"/>
+              </g>
+            </svg>
+          </div>
+          <p class="card-desc">把流水并行摊成 <span class="mono">Stage × 时间</span> 网格：<span class="mono">F0/B0</span> 是同一 micro-batch 的一去一回，斜线是因果链、重叠是并行、两角空白是气泡。点任一 Stage 可把折叠的卡全摊开，再点一格即<b>画出它的 PP 链</b>——每跳一次 P2P、<span class="mono">global_rank +32</span>。回答「有序维为什么不能折叠」与「轴和 rank 是什么关系」。</p>
+          <div class="card-links">
+            <a class="lnk lnk--primary" href="./pp-pipeline/">打开原型</a>
+            <a class="lnk" href="./parallel-reference/#s6">对应 §12 运行时</a>
+          </div>
+          <div class="card-src">
+            <span class="card-by">署名 · 王欣迪</span>
+            <a class="src" href="https://github.com/Cinnnnnnndy/hpc-topology-viewer/blob/main/public/pp-pipeline/index.html" target="_blank" rel="noopener">
+              <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M6 4.5 2.5 8 6 11.5M10 4.5 13.5 8 10 11.5" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>public/pp-pipeline/index.html
+            </a>
+          </div>
+        </article>
+
+        <article class="card">
+          <div class="card-head">
+            <h3 class="card-title"><a href="./parallel-prd/">并行拓扑可视化工具 PRD</a></h3>
+            <div class="card-tags">
+              <span class="tag tag--k-doc">文档</span>
+              <span class="tag">v0.1</span>
+              <span class="tag">md 构建产物</span>
+            </div>
+          </div>
+          <div class="card-preview" aria-hidden="true">
+            <svg viewBox="0 0 320 160">
+              <rect class="pv-box" x="38" y="16" width="132" height="128" rx="9"/>
+              <rect x="52" y="30" width="72" height="8" rx="4" fill="#4369ef" opacity=".85"/>
+              <rect x="52" y="48" width="104" height="5" rx="2.5" class="pv-text"/>
+              <rect x="52" y="60" width="96"  height="5" rx="2.5" class="pv-text"/>
+              <rect x="52" y="72" width="102" height="5" rx="2.5" class="pv-text"/>
+              <rect x="52" y="90" width="58" height="5" rx="2.5" fill="#04d793" opacity=".7"/>
+              <rect x="52" y="102" width="104" height="5" rx="2.5" class="pv-text"/>
+              <rect x="52" y="114" width="88"  height="5" rx="2.5" class="pv-text"/>
+              <g stroke-width="1.6">
+                <rect x="196" y="28" width="13" height="13" rx="3.5" fill="none" stroke="#04d793"/>
+                <path d="M199 34 L202 38 L207 30" fill="none" stroke="#04d793" stroke-width="2"/>
+                <rect x="196" y="52" width="13" height="13" rx="3.5" fill="none" stroke="#04d793"/>
+                <path d="M199 58 L202 62 L207 54" fill="none" stroke="#04d793" stroke-width="2"/>
+                <rect x="196" y="76" width="13" height="13" rx="3.5" fill="none" stroke="rgba(19,26,42,.35)"/>
+                <rect x="196" y="100" width="13" height="13" rx="3.5" fill="none" stroke="rgba(19,26,42,.35)"/>
+              </g>
+              <rect x="218" y="31" width="76" height="6" rx="3" class="pv-text"/>
+              <rect x="218" y="55" width="64" height="6" rx="3" class="pv-text"/>
+              <rect x="218" y="79" width="72" height="6" rx="3" class="pv-text"/>
+              <rect x="218" y="103" width="56" height="6" rx="3" class="pv-text"/>
+              <g>
+                <rect x="196" y="124" width="70" height="7" rx="3" fill="#9d7bff" opacity=".28"/>
+                <rect x="202" y="131" width="70" height="7" rx="3" fill="#9d7bff" opacity=".45"/>
+                <rect x="208" y="138" width="70" height="7" rx="3" fill="#9d7bff" opacity=".65"/>
+              </g>
+            </svg>
+          </div>
+          <p class="card-desc">把参照系直接落成信息架构：四类结构性错误、五条设计原则、五个视图族与五个图层、可直接测的验收标准。<span class="mono">docs/parallel-topology-prd.md</span> 的构建产物，与参照系是视觉同源的一对文档。</p>
+          <div class="card-links">
+            <a class="lnk lnk--primary" href="./parallel-prd/">打开 PRD</a>
+          </div>
+          <div class="card-src">
+            <span class="card-by">署名 · 王欣迪</span>
+            <a class="src" href="https://github.com/Cinnnnnnndy/hpc-topology-viewer/blob/main/docs/parallel-topology-prd.md" target="_blank" rel="noopener">
+              <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M6 4.5 2.5 8 6 11.5M10 4.5 13.5 8 10 11.5" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>docs/parallel-topology-prd.md<span style="opacity:.7">（源）</span>
+            </a>
+            <a class="src" href="https://github.com/Cinnnnnnndy/hpc-topology-viewer/blob/main/scripts/build-prd-page.mjs" target="_blank" rel="noopener">
+              <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M6 4.5 2.5 8 6 11.5M10 4.5 13.5 8 10 11.5" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>scripts/build-prd-page.mjs
+            </a>
+          </div>
+        </article>
+
+        <article class="card">
+          <div class="card-head">
+            <h3 class="card-title"><a href="./nccl-ascend-map.html">NCCL → 昇腾超节点 映射简图</a></h3>
+            <div class="card-tags">
+              <span class="tag tag--k-doc">分析</span>
+              <span class="tag">概念对照</span>
+            </div>
+          </div>
+          <div class="card-preview" aria-hidden="true">
+            <svg viewBox="0 0 320 160">
+              <g stroke-width="1.4">
+                <rect x="30" y="22"  width="96" height="28" rx="7" fill="#e6f9f1" stroke="rgba(4,168,120,.5)"/>
+                <rect x="30" y="66"  width="96" height="28" rx="7" fill="#e6f9f1" stroke="rgba(4,168,120,.5)"/>
+                <rect x="30" y="110" width="96" height="28" rx="7" fill="#e6f9f1" stroke="rgba(4,168,120,.5)"/>
+                <rect x="194" y="22"  width="96" height="28" rx="7" fill="#e8edfd" stroke="rgba(67,105,239,.5)"/>
+                <rect x="194" y="66"  width="96" height="28" rx="7" fill="#e8edfd" stroke="rgba(67,105,239,.5)"/>
+                <rect x="194" y="110" width="96" height="28" rx="7" fill="#e8edfd" stroke="rgba(67,105,239,.5)"/>
+              </g>
+              <rect x="42" y="32" width="66" height="7" rx="3.5" fill="rgba(4,120,90,.35)"/>
+              <rect x="42" y="76" width="54" height="7" rx="3.5" fill="rgba(4,120,90,.35)"/>
+              <rect x="42" y="120" width="60" height="7" rx="3.5" fill="rgba(4,120,90,.35)"/>
+              <rect x="206" y="32" width="60" height="7" rx="3.5" fill="rgba(48,80,201,.35)"/>
+              <rect x="206" y="76" width="68" height="7" rx="3.5" fill="rgba(48,80,201,.35)"/>
+              <rect x="206" y="120" width="52" height="7" rx="3.5" fill="rgba(48,80,201,.35)"/>
+              <g fill="none" stroke="#ffaa3b" stroke-width="1.8">
+                <path d="M130 36 C 156 36, 164 36, 188 36 M182 31 L 190 36 L 182 41"/>
+                <path d="M130 80 C 152 80, 158 122, 188 123 M182 118 L 190 124 L 181 128"/>
+                <path d="M130 124 C 152 124, 158 82, 188 81 M182 76 L 190 81 L 181 86"/>
+              </g>
+            </svg>
+          </div>
+          <p class="card-desc">把 NCCL / NVIDIA 侧的拓扑概念（communicator · channel · ring / tree · PXN …）逐项映射到超节点互联结构的对照简图，配套图分析落点笔记存于 <span class="mono">docs/</span>。</p>
+          <div class="card-links">
+            <a class="lnk lnk--primary" href="./nccl-ascend-map.html">打开简图</a>
+          </div>
+          <div class="card-src">
+            <span class="card-by">署名 · 王欣迪</span>
+            <a class="src" href="https://github.com/Cinnnnnnndy/hpc-topology-viewer/blob/main/public/nccl-ascend-map.html" target="_blank" rel="noopener">
+              <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M6 4.5 2.5 8 6 11.5M10 4.5 13.5 8 10 11.5" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>public/nccl-ascend-map.html
+            </a>
+            <a class="src" href="https://github.com/Cinnnnnnndy/hpc-topology-viewer/blob/main/docs/nccl-%E5%9B%BE%E5%88%86%E6%9E%90%E4%B8%8E%E8%90%BD%E7%82%B9.md" target="_blank" rel="noopener">
+              <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M6 4.5 2.5 8 6 11.5M10 4.5 13.5 8 10 11.5" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>docs/nccl-图分析与落点.md
+            </a>
+          </div>
+        </article>
+
+        <article class="card">
+          <div class="card-head">
+            <h3 class="card-title"><a href="./research/3D可视化-概念解码器.html">概念解码器</a></h3>
+            <div class="card-tags">
+              <span class="tag tag--k-report">报告</span>
+              <span class="tag">五条轴 × 五种画法</span>
+            </div>
+          </div>
+          <div class="card-preview" aria-hidden="true">
+            <svg viewBox="0 0 320 160">
+              <path d="M36 36 H 284" stroke="rgba(19,26,42,.2)" stroke-width="1.4"/>
+              <g stroke-width="2">
+                <line x1="44"  y1="30" x2="44"  y2="42" stroke="#4369ef"/>
+                <line x1="104" y1="30" x2="104" y2="42" stroke="#04d793"/>
+                <line x1="164" y1="30" x2="164" y2="42" stroke="#ffaa3b"/>
+                <line x1="224" y1="30" x2="224" y2="42" stroke="#9d7bff"/>
+                <line x1="284" y1="30" x2="284" y2="42" stroke="#ff4b7b"/>
+              </g>
+              <g stroke="rgba(19,26,42,.16)" stroke-width="1.2" fill="none">
+                <path d="M44 42 L44 66 M104 42 L104 66 M164 42 L164 66 M224 42 L224 66 M284 42 L284 66"/>
+              </g>
+              <rect class="pv-box" x="20"  y="66" width="48" height="48" rx="7"/>
+              <rect x="27" y="76" width="34" height="6" rx="3" fill="#4369ef" opacity=".75"/>
+              <rect x="27" y="88" width="26" height="6" rx="3" fill="#4369ef" opacity=".5"/>
+              <rect x="27" y="100" width="30" height="6" rx="3" fill="#4369ef" opacity=".6"/>
+              <rect class="pv-box" x="80" y="66" width="48" height="48" rx="7"/>
+              <g stroke="#04d793" stroke-width="1.5" fill="none">
+                <polygon points="104,74 118,81 104,88 90,81"/>
+                <polygon points="90,81 104,88 104,106 90,99"/>
+                <polygon points="104,88 118,81 118,99 104,106"/>
+              </g>
+              <rect class="pv-box" x="140" y="66" width="48" height="48" rx="7"/>
+              <rect x="150" y="74" width="28" height="32" rx="3" fill="none" stroke="#ffaa3b" stroke-width="1.5"/>
+              <line x1="150" y1="84" x2="178" y2="84" stroke="#ffaa3b" stroke-width="1.3"/>
+              <line x1="150" y1="94" x2="178" y2="94" stroke="#ffaa3b" stroke-width="1.3"/>
+              <rect class="pv-box" x="200" y="66" width="48" height="48" rx="7"/>
+              <g fill="none" stroke="#9d7bff" stroke-width="1.5">
+                <rect x="209" y="75" width="13" height="13" rx="2"/><rect x="226" y="75" width="13" height="13" rx="2"/>
+                <rect x="209" y="92" width="13" height="13" rx="2"/><rect x="226" y="92" width="13" height="13" rx="2"/>
+              </g>
+              <rect class="pv-box" x="260" y="66" width="48" height="48" rx="7"/>
+              <g fill="#ff4b7b">
+                <circle cx="272" cy="79" r="3"/><circle cx="284" cy="79" r="3" opacity=".45"/><circle cx="296" cy="79" r="3" opacity=".7"/>
+                <circle cx="272" cy="91" r="3" opacity=".5"/><circle cx="284" cy="91" r="3"/><circle cx="296" cy="91" r="3" opacity=".35"/>
+                <circle cx="272" cy="103" r="3" opacity=".7"/><circle cx="284" cy="103" r="3" opacity=".4"/><circle cx="296" cy="103" r="3"/>
+              </g>
+              <rect x="20" y="128" width="150" height="10" rx="5" class="pv-soft"/>
+            </svg>
+          </div>
+          <p class="card-desc">「同一批卡，五条轴、五种画法，各司其职」：把概念过载拆成两件事——轴 = 读哪个事实（五种读法），形式 = 用什么承载（泳道 / 立方体 / 写实 / 平面 / 矩阵）。</p>
+          <div class="card-links">
+            <a class="lnk lnk--primary" href="./research/3D可视化-概念解码器.html">打开报告</a>
+          </div>
+          <div class="card-src">
+            <span class="card-by">署名 · 王欣迪</span>
+            <a class="src" href="https://github.com/Cinnnnnnndy/hpc-topology-viewer/blob/main/research/3D%E5%8F%AF%E8%A7%86%E5%8C%96-%E6%A6%82%E5%BF%B5%E8%A7%A3%E7%A0%81%E5%99%A8.html" target="_blank" rel="noopener">
+              <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M6 4.5 2.5 8 6 11.5M10 4.5 13.5 8 10 11.5" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>research/3D可视化-概念解码器.html
+            </a>
+          </div>
+        </article>
+
+        <article class="card">
+          <div class="card-head">
+            <h3 class="card-title"><a href="./research/昇腾超节点-3D可视化报告.html">昇腾超节点 3D 可视化报告</a></h3>
+            <div class="card-tags">
+              <span class="tag tag--k-report">报告</span>
+              <span class="tag">灵衢 UnifiedBus</span>
+              <span class="tag">three.js CDN</span>
+            </div>
+          </div>
+          <div class="card-preview" aria-hidden="true">
+            <svg viewBox="0 0 320 160">
+              <g stroke="rgba(19,26,42,.35)" stroke-width="1.3" fill="#fff">
+                <polygon points="46,48 88,48 100,38 58,38"/>
+                <polygon points="46,48 88,48 88,120 46,120"/>
+                <polygon points="88,48 100,38 100,110 88,120"/>
+              </g>
+              <rect x="52" y="56" width="30" height="8" rx="2" class="pv-soft"/>
+              <rect x="52" y="70" width="30" height="8" rx="2" class="pv-soft"/>
+              <rect x="52" y="84" width="30" height="8" rx="2" class="pv-soft"/>
+              <g stroke="rgba(19,26,42,.35)" stroke-width="1.3" fill="#fff">
+                <polygon points="150,70 196,70 206,62 160,62"/>
+                <polygon points="150,70 196,70 196,104 150,104"/>
+                <polygon points="196,70 206,62 206,96 196,104"/>
+              </g>
+              <rect x="157" y="78" width="14" height="18" rx="2" fill="#dbe4fd" stroke="rgba(67,105,239,.55)" stroke-width="1.2"/>
+              <rect x="175" y="78" width="14" height="18" rx="2" fill="#dbe4fd" stroke="rgba(67,105,239,.55)" stroke-width="1.2"/>
+              <g stroke="rgba(19,26,42,.35)" stroke-width="1.2" fill="#fff">
+                <polygon points="248,84 284,84 292,78 256,78"/>
+                <polygon points="248,84 284,84 284,106 248,106"/>
+                <polygon points="284,84 292,78 292,100 284,106"/>
+              </g>
+              <rect x="254" y="90" width="10" height="10" rx="2" fill="#04d793" opacity=".8"/>
+              <rect x="268" y="90" width="10" height="10" rx="2" fill="#04d793" opacity=".5"/>
+              <g fill="none" stroke="#04d793" stroke-width="2">
+                <path d="M100 84 C 122 84, 128 84, 148 84"/>
+                <path d="M206 88 C 224 88, 228 92, 246 93"/>
+              </g>
+              <circle cx="124" cy="84" r="3" fill="#04d793"/>
+              <circle cx="226" cy="90.5" r="3" fill="#04d793"/>
+              <rect x="46" y="132" width="120" height="10" rx="5" class="pv-soft"/>
+            </svg>
+          </div>
+          <p class="card-desc">机柜 → 计算节点 → NPU 刀片 / Die → UB 各级互联 → 进程 / 线程映射的 3D 视图报告；数据源自 HC2025、昇腾社区与 UB-Mesh 公开资料（需联网加载 three.js CDN）。</p>
+          <div class="card-links">
+            <a class="lnk lnk--primary" href="./research/昇腾超节点-3D可视化报告.html">打开报告</a>
+          </div>
+          <div class="card-src">
+            <span class="card-by">署名 · 王欣迪</span>
+            <a class="src" href="https://github.com/Cinnnnnnndy/hpc-topology-viewer/blob/main/research/%E6%98%87%E8%85%BE%E8%B6%85%E8%8A%82%E7%82%B9-3D%E5%8F%AF%E8%A7%86%E5%8C%96%E6%8A%A5%E5%91%8A.html" target="_blank" rel="noopener">
+              <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M6 4.5 2.5 8 6 11.5M10 4.5 13.5 8 10 11.5" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>research/昇腾超节点-3D可视化报告.html
+            </a>
+          </div>
+        </article>
+
+        <article class="card">
+          <div class="card-head">
+            <h3 class="card-title"><a href="./ub-reference/">灵衢 UnifiedBus 参考手册</a></h3>
+            <div class="card-tags">
+              <span class="tag tag--k-doc">文档</span>
+              <span class="tag">v0.5</span>
+              <span class="tag">19 节</span>
+              <span class="tag">已核实 / 推断 / 待核实</span>
+            </div>
+          </div>
+          <div class="card-preview" aria-hidden="true">
+            <svg viewBox="0 0 320 160">
+              <!-- 左：目录侧栏 -->
+              <rect class="pv-soft" x="14" y="14" width="76" height="132" rx="9"/>
+              <rect x="24" y="25" width="44" height="5" rx="2.5" fill="rgba(19,26,42,.32)"/>
+              <rect x="24" y="42" width="30" height="4" rx="2" fill="rgba(19,26,42,.14)"/>
+              <rect x="24" y="54" width="52" height="4" rx="2" fill="rgba(19,26,42,.14)"/>
+              <rect x="24" y="66" width="44" height="4" rx="2" fill="#4369ef"/>
+              <rect x="24" y="78" width="48" height="4" rx="2" fill="rgba(19,26,42,.14)"/>
+              <rect x="24" y="92" width="30" height="4" rx="2" fill="rgba(19,26,42,.14)"/>
+              <rect x="24" y="104" width="50" height="4" rx="2" fill="rgba(19,26,42,.14)"/>
+              <rect x="24" y="116" width="38" height="4" rx="2" fill="rgba(19,26,42,.14)"/>
+              <rect x="24" y="128" width="46" height="4" rx="2" fill="rgba(19,26,42,.14)"/>
+              <!-- 右：报文逐层封装，每下一层多贴一张头 -->
+              <rect class="pv-soft" x="106" y="20" width="200" height="26" rx="4"/>
+              <rect x="106" y="54" width="34" height="26" rx="4" fill="#dfe6ff" stroke="#4369ef" stroke-width="1.3"/>
+              <rect class="pv-soft" x="140" y="54" width="166" height="26" rx="4"/>
+              <rect x="106" y="88" width="34" height="26" rx="4" fill="#dfe6ff" stroke="#4369ef" stroke-width="1.3"/>
+              <rect x="140" y="88" width="34" height="26" rx="4" fill="#d9f6fa" stroke="#2fb9c9" stroke-width="1.3"/>
+              <rect class="pv-soft" x="174" y="88" width="132" height="26" rx="4"/>
+              <rect x="106" y="122" width="34" height="26" rx="4" fill="#dfe6ff" stroke="#4369ef" stroke-width="1.3"/>
+              <rect x="140" y="122" width="34" height="26" rx="4" fill="#d9f6fa" stroke="#2fb9c9" stroke-width="1.3"/>
+              <rect x="174" y="122" width="34" height="26" rx="4" fill="#ece3ff" stroke="#9d7bff" stroke-width="1.3"/>
+              <rect class="pv-soft" x="208" y="122" width="98" height="26" rx="4"/>
+            </svg>
+          </div>
+          <p class="card-desc">面向超节点交付工具链的 UB 底稿：报文与逐层封装 → 协议栈分层 · Jetty 与 TP Channel → 柜 / 节点 / L1 / L2 · 平面 · 亚健康定位 → 资源池化 · Load/Store 与 URMA · HCCL↔NCCL 对照 → 23 步交付旅程与工具链草案。每条事实标「已核实 / 推断 / 待核实」，开篇先纠正三处常见误认。</p>
+          <div class="card-links">
+            <a class="lnk lnk--primary" href="./ub-reference/">打开手册</a>
+            <a class="lnk" href="./ub-reference/#s01">§01 报文与分层</a>
+            <a class="lnk" href="./ub-reference/#s14">§14 交付 23 步</a>
+          </div>
+          <div class="card-src">
+            <span class="card-by">署名 · 王欣迪</span>
+            <a class="src" href="https://github.com/Cinnnnnnndy/hpc-topology-viewer/blob/main/public/ub-reference/index.html" target="_blank" rel="noopener">
+              <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M6 4.5 2.5 8 6 11.5M10 4.5 13.5 8 10 11.5" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>public/ub-reference/index.html
+            </a>
+          </div>
+        </article>
+
+      </div>
+    </section>
+
+    <!-- ═══ 图元库 · 跨仓 ═══ -->
+    <section class="card-group" aria-labelledby="g-ext">
+      <div class="group-header">
+        <h2 class="group-title" id="g-ext">图元库 · 跨仓</h2>
+        <span class="group-note">另一个仓库 hpc-topology-node 的发布页</span>
+        <div class="group-rule" aria-hidden="true"></div>
+      </div>
+      <div class="card-grid">
+
+        <article class="card">
+          <div class="card-head">
+            <h3 class="card-title"><a href="https://cinnnnnnndy.github.io/hpc-topology-node/硬件图元库.dc.html" target="_blank" rel="noopener">硬件图元库</a></h3>
+            <div class="card-tags">
+              <span class="tag tag--k-ext">邻仓</span>
+              <span class="tag">13 图元</span>
+              <span class="tag">L7 → L1</span>
+              <span class="tag">3D / 2D / 连线</span>
+            </div>
+          </div>
+          <div class="card-preview" aria-hidden="true">
+            <svg viewBox="0 0 320 160">
+              <!-- 左：SuperPoD → tile 的图元逐级嵌套 -->
+              <rect class="pv-soft" x="14" y="14" width="152" height="132" rx="13"/>
+              <rect class="pv-box"  x="26" y="26" width="128" height="108" rx="11"/>
+              <rect class="pv-soft" x="38" y="38" width="104" height="84"  rx="9"/>
+              <rect x="50" y="50" width="80" height="60" rx="7" fill="#ffffff" stroke="#4369ef" stroke-width="1.5"/>
+              <rect x="62" y="62" width="56" height="36" rx="5" fill="#fff8ec" stroke="#ffaa3b" stroke-width="1.4"/>
+              <rect x="72" y="71" width="36" height="18" rx="3.5" fill="#e6fbf3" stroke="#04d793" stroke-width="1.3"/>
+              <rect x="78" y="76" width="8" height="8" rx="2" fill="#04d793"/>
+              <!-- 右：四类连线，白色 casing + 彩色核心 + 流动暗点 -->
+              <g>
+                <rect class="pv-box" x="180" y="25.5" width="9" height="9" rx="2"/>
+                <rect class="pv-box" x="295" y="25.5" width="9" height="9" rx="2"/>
+                <path d="M191 30 H293" stroke="#ffffff" stroke-width="6.5" stroke-linecap="round"/>
+                <path d="M191 30 H293" stroke="#ffaa3b" stroke-width="2.8" stroke-linecap="round"/>
+                <circle cx="226" cy="30" r="1.9" fill="rgba(19,26,42,.42)"/><circle cx="262" cy="30" r="1.9" fill="rgba(19,26,42,.42)"/>
+              </g>
+              <g>
+                <rect class="pv-box" x="180" y="61.5" width="9" height="9" rx="2"/>
+                <rect class="pv-box" x="295" y="61.5" width="9" height="9" rx="2"/>
+                <path d="M191 66 H293" stroke="#ffffff" stroke-width="6.5" stroke-linecap="round"/>
+                <path d="M191 66 H293" stroke="#4369ef" stroke-width="2.4" stroke-dasharray="7 5"/>
+                <circle cx="240" cy="66" r="1.9" fill="rgba(19,26,42,.42)"/>
+              </g>
+              <g>
+                <rect class="pv-box" x="180" y="97.5" width="9" height="9" rx="2"/>
+                <rect class="pv-box" x="295" y="97.5" width="9" height="9" rx="2"/>
+                <path d="M191 102 H293" stroke="#ffffff" stroke-width="6.5" stroke-linecap="round"/>
+                <path d="M191 102 H293" stroke="#2fb9c9" stroke-width="2.2" stroke-dasharray="4 7"/>
+                <circle cx="252" cy="102" r="1.7" fill="rgba(19,26,42,.34)"/>
+              </g>
+              <g>
+                <rect class="pv-box" x="180" y="133.5" width="9" height="9" rx="2"/>
+                <rect class="pv-box" x="295" y="133.5" width="9" height="9" rx="2"/>
+                <path d="M191 138 H293" stroke="#ffffff" stroke-width="6.5" stroke-linecap="round"/>
+                <path d="M191 138 H293" stroke="#04d793" stroke-width="3.4" stroke-linecap="round"/>
+                <circle cx="216" cy="138" r="2" fill="rgba(19,26,42,.42)"/><circle cx="246" cy="138" r="2" fill="rgba(19,26,42,.42)"/><circle cx="276" cy="138" r="2" fill="rgba(19,26,42,.42)"/>
+              </g>
+            </svg>
+          </div>
+          <p class="card-desc">13 个硬件图元按 L7 → L1 逐级拆开：SuperPoD → 机柜 → 刀片 → 昇腾 950 NPU → die+HBM → 达芬奇 AI Core → tile，另有 UB Switch / 鲲鹏 CPU / LPO 800G / 擎天 NIC，各备 3D 模型与 2D 图标两套画法；第三个页签是 6 轮连线样式探索——铜缆 LQC · 光纤 UB · 长距 UBoE · D2D 片内。</p>
+          <div class="card-links">
+            <a class="lnk lnk--primary" href="https://cinnnnnnndy.github.io/hpc-topology-node/硬件图元库.dc.html" target="_blank" rel="noopener">打开图元库</a>
+          </div>
+          <div class="card-src">
+            <span class="card-by">署名 · 王欣迪</span>
+            <a class="src" href="https://github.com/Cinnnnnnndy/hpc-topology-node" target="_blank" rel="noopener">
+              <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M6 4.5 2.5 8 6 11.5M10 4.5 13.5 8 10 11.5" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>Cinnnnnnndy/hpc-topology-node
+            </a>
+          </div>
+        </article>
+
+      </div>
+    </section>
+
+    <!-- ═══ 原型 · 版本脉络 ═══ -->
+    <section class="card-group" aria-labelledby="g-proto">
+      <div class="group-header">
+        <h2 class="group-title" id="g-proto">原型 · 版本脉络</h2>
+        <span class="group-note">历史快照，非当前版本</span>
+        <div class="group-rule" aria-hidden="true"></div>
+      </div>
+      <div class="card-grid">
+
+        <article class="card">
+          <div class="card-head">
+            <h3 class="card-title"><a href="./research/ai_infra_可视化原型_v20.html">AI Infra 可视化原型 · 版本脉络</a></h3>
+            <div class="card-tags">
+              <span class="tag tag--k-report">原型</span>
+              <span class="tag">历史快照</span>
+              <span class="tag">v1 → v22</span>
+            </div>
+          </div>
+          <div class="card-preview" aria-hidden="true">
+            <svg viewBox="0 0 320 160">
+              <path d="M28 116 C 100 112, 200 108, 296 96" fill="none" stroke="rgba(19,26,42,.25)" stroke-width="1.6"/>
+              <path d="M288 91 L 298 96 L 289 102" fill="none" stroke="rgba(19,26,42,.25)" stroke-width="1.6"/>
+              <circle cx="58"  cy="114" r="6"  fill="#fff" stroke="#7c8db8" stroke-width="2"/>
+              <circle cx="118" cy="112" r="7.5" fill="#fff" stroke="#04d793" stroke-width="2"/>
+              <circle cx="178" cy="108" r="9"  fill="#fff" stroke="#4369ef" stroke-width="2"/>
+              <circle cx="248" cy="102" r="11" fill="#10141b" stroke="#9d7bff" stroke-width="2"/>
+              <circle cx="248" cy="102" r="4" fill="#9d7bff"/>
+              <rect x="40"  y="58" width="36" height="16" rx="8" class="pv-soft"/>
+              <rect x="100" y="50" width="36" height="16" rx="8" class="pv-soft"/>
+              <rect x="160" y="42" width="36" height="16" rx="8" class="pv-soft"/>
+              <rect x="226" y="34" width="44" height="16" rx="8" fill="#e9e1ff" stroke="rgba(157,123,255,.5)" stroke-width="1.2"/>
+              <path d="M58 74 V106 M118 66 V102 M178 58 V96 M248 50 V88" stroke="rgba(19,26,42,.18)" stroke-width="1.2" stroke-dasharray="3 3"/>
+            </svg>
+          </div>
+          <p class="card-desc">驾驶舱的来路：v1 设计白皮书（Gemini）→ v2 整网数据流 / 六维切分 → v3 单超节点统一视图 → v20 深色分支（v19→v22 迭代，会话交付名）。完整 v2–v22 历史与各版决策存于 <span class="mono">research/</span> 会话档案。</p>
+          <div class="card-links">
+            <a class="lnk" href="./research/ai_infra_可视化原型_v1_gemini.html">v1 白皮书</a>
+            <a class="lnk" href="./research/ai_infra_可视化原型_v2.html">v2</a>
+            <a class="lnk" href="./research/ai_infra_可视化原型_v3.html">v3</a>
+            <a class="lnk lnk--primary" href="./research/ai_infra_可视化原型_v20.html">v20 深色分支</a>
+          </div>
+          <div class="card-src">
+            <span class="card-by">署名 · 王欣迪</span>
+            <a class="src" href="https://github.com/Cinnnnnnndy/hpc-topology-viewer/tree/main/research" target="_blank" rel="noopener">
+              <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M6 4.5 2.5 8 6 11.5M10 4.5 13.5 8 10 11.5" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>research/
+            </a>
+          </div>
+        </article>
+
+      </div>
+    </section>
+
+  </section>
+
+  <footer class="foot">
+    <div>° 标记的链接由对应 pattern 分支的 Deploy workflow 叠加发布；main 重新部署后可能暂时 404，重跑该分支的 workflow 即可找回（见 <span class="mono">.github/workflows/deploy.yml</span> 头注）。</div>
+    <div>每张卡片底部的灰色路径是它在仓库里的位置，点击直达 GitHub 上对应的文件或目录（未标分支的都在 <span class="mono">main</span> 上）。「图元库 · 跨仓」那组不在本仓，路径写的是它所属的仓库，链接也指向那个仓库自己的 Pages 站点。</div>
+    <div>本页与全站均为 noindex；页面内容基于公开资料的示意抽象，不代表真实工程布局。</div>
+  </footer>
+
+</main>
+</body>
+</html>

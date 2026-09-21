@@ -1,0 +1,587 @@
+<meta name="author" content="王欣迪" />
+<title>HPC 拓扑查看器 · 概念解码器</title>
+<style>
+  :root {
+    --bg: #f4f6f9;
+    --surface: #ffffff;
+    --surface-2: #eef1f6;
+    --ink: #131922;
+    --ink-2: #454f5e;
+    --ink-3: #78828f;
+    --line: #dde2ea;
+    --line-strong: #c6cdd8;
+    --neutral: #6b7686;
+    --neutral-2: #9aa3b1;
+    --hw: #16a394;
+    --sw: #4369ef;
+    --state-idle: #06b981;
+    --state-mid: #d99a1a;
+    --state-busy: #f0356b;
+    --state-off: #8b93a3;
+    --plane-ub: #06a37e;
+    --plane-rdma: #d98424;
+    --plane-vpc: #8b63e6;
+    --shadow: 0 1px 2px rgba(19,25,34,.06), 0 8px 24px -12px rgba(19,25,34,.14);
+    --mono: ui-monospace, 'JetBrains Mono', 'SFMono-Regular', Menlo, Consolas, monospace;
+    --sans: ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', sans-serif;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #0e1116; --surface: #161b22; --surface-2: #1c222c; --ink: #e9edf3;
+      --ink-2: #a6b0be; --ink-3: #6b7581; --line: #262d38; --line-strong: #333c48;
+      --neutral: #8b95a5; --neutral-2: #626b79; --hw: #2dd4bf; --sw: #6b8bff;
+      --state-idle: #04d793; --state-mid: #fbbf24; --state-busy: #ff4b7b; --state-off: #8b93a3;
+      --plane-ub: #04d793; --plane-rdma: #ffaa3b; --plane-vpc: #9d7bff;
+      --shadow: 0 1px 2px rgba(0,0,0,.4), 0 10px 30px -14px rgba(0,0,0,.6);
+    }
+  }
+  :root[data-theme="light"] {
+    --bg: #f4f6f9; --surface: #ffffff; --surface-2: #eef1f6; --ink: #131922;
+    --ink-2: #454f5e; --ink-3: #78828f; --line: #dde2ea; --line-strong: #c6cdd8;
+    --neutral: #6b7686; --neutral-2: #9aa3b1; --hw: #16a394; --sw: #4369ef;
+    --state-idle: #06b981; --state-mid: #d99a1a; --state-busy: #f0356b; --state-off: #8b93a3;
+    --plane-ub: #06a37e; --plane-rdma: #d98424; --plane-vpc: #8b63e6;
+    --shadow: 0 1px 2px rgba(19,25,34,.06), 0 8px 24px -12px rgba(19,25,34,.14);
+  }
+  :root[data-theme="dark"] {
+    --bg: #0e1116; --surface: #161b22; --surface-2: #1c222c; --ink: #e9edf3;
+    --ink-2: #a6b0be; --ink-3: #6b7581; --line: #262d38; --line-strong: #333c48;
+    --neutral: #8b95a5; --neutral-2: #626b79; --hw: #2dd4bf; --sw: #6b8bff;
+    --state-idle: #04d793; --state-mid: #fbbf24; --state-busy: #ff4b7b; --state-off: #8b93a3;
+    --plane-ub: #04d793; --plane-rdma: #ffaa3b; --plane-vpc: #9d7bff;
+    --shadow: 0 1px 2px rgba(0,0,0,.4), 0 10px 30px -14px rgba(0,0,0,.6);
+  }
+
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--ink); font-family: var(--sans); line-height: 1.6; -webkit-font-smoothing: antialiased; }
+  .wrap { max-width: 1000px; margin: 0 auto; padding: clamp(20px, 4vw, 56px) clamp(16px, 4vw, 40px) 90px; }
+
+  .eyebrow { font-family: var(--mono); font-size: 11.5px; letter-spacing: .16em; text-transform: uppercase; color: var(--ink-3); margin: 0 0 14px; }
+  h1 { font-size: clamp(26px, 4.4vw, 40px); line-height: 1.12; margin: 0 0 16px; letter-spacing: -.01em; text-wrap: balance; font-weight: 680; }
+  h1 .accent { color: var(--sw); }
+  .lede { font-size: clamp(15px, 1.6vw, 17.5px); color: var(--ink-2); max-width: 64ch; margin: 0; }
+  .lede strong { color: var(--ink); font-weight: 620; }
+
+  .rule { height: 1px; background: var(--line); border: 0; margin: clamp(36px, 5vw, 56px) 0; }
+
+  h2 { font-size: 12px; font-family: var(--mono); letter-spacing: .13em; text-transform: uppercase; color: var(--ink-3); margin: 0 0 4px; font-weight: 600; }
+  .h2-title { font-size: clamp(19px, 2.4vw, 24px); font-weight: 640; margin: 0 0 18px; letter-spacing: -.005em; text-wrap: balance; }
+  .h2-title .n { color: var(--neutral); font-family: var(--mono); font-size: .7em; font-weight: 500; margin-right: 10px; }
+
+  p.body { color: var(--ink-2); max-width: 68ch; margin: 0 0 16px; }
+  p.body strong { color: var(--ink); font-weight: 600; }
+  code { font-family: var(--mono); font-size: .86em; background: var(--surface-2); padding: 1px 6px; border-radius: 5px; color: var(--ink); border: 1px solid var(--line); }
+
+  .reframe { background: var(--surface); border: 1px solid var(--line); border-radius: 16px; padding: clamp(18px, 3vw, 28px); box-shadow: var(--shadow); margin-top: 26px; }
+  .reframe-head { font-size: 15px; color: var(--ink-2); margin: 0 0 18px; }
+  .reframe-head b { color: var(--ink); }
+  .chips { display: flex; flex-wrap: wrap; gap: 8px; }
+  .chip { appearance: none; border: 1px solid var(--line-strong); background: var(--surface-2); color: var(--ink-2); font-family: var(--mono); font-size: 12.5px; padding: 7px 13px; border-radius: 999px; cursor: pointer; display: inline-flex; align-items: center; gap: 8px; transition: transform .12s ease, border-color .12s ease, background .12s ease, color .12s ease; }
+  .chip:hover { transform: translateY(-1px); }
+  .chip:focus-visible { outline: 2px solid var(--sw); outline-offset: 2px; }
+  .chip .dot { width: 9px; height: 9px; border-radius: 3px; flex: 0 0 auto; }
+  .chip[aria-selected="true"] { color: #fff; border-color: transparent; }
+  .chip[aria-selected="true"].sel-struct { background: var(--neutral); }
+  .chip[aria-selected="true"].sel-par { background: var(--sw); }
+  .chip[aria-selected="true"].sel-plane { background: var(--plane-ub); }
+  .chip[aria-selected="true"].sel-time { color: var(--ink); background: var(--surface-2); border-color: var(--ink-3); }
+  .chip[aria-selected="true"].sel-state { background: var(--state-busy); }
+  .chip[aria-selected="true"].sel-form { background: var(--sw); }
+
+  .panel { margin-top: 18px; border: 1px solid var(--line); border-radius: 14px; overflow: hidden; background: var(--surface); }
+  .panel-top { padding: 18px clamp(16px,3vw,24px) 4px; border-left: 3px solid var(--neutral); }
+  .panel-kicker { font-family: var(--mono); font-size: 11px; letter-spacing: .12em; text-transform: uppercase; color: var(--ink-3); margin: 0 0 6px; display: flex; align-items: center; gap: 8px; }
+  .panel-kicker .swatch { width: 10px; height: 10px; border-radius: 3px; }
+  .panel-title { font-size: 20px; font-weight: 650; margin: 0 0 4px; letter-spacing: -.005em; }
+  .panel-q { font-size: 13.5px; color: var(--ink-2); margin: 0 0 16px; }
+  .panel-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0; border-top: 1px solid var(--line); }
+  @media (max-width: 640px) { .panel-grid { grid-template-columns: 1fr; } }
+  .cell { padding: 16px clamp(16px,3vw,24px); }
+  .cell + .cell { border-left: 1px solid var(--line); }
+  @media (max-width: 640px) { .cell + .cell { border-left: 0; border-top: 1px solid var(--line); } }
+  .cell.full { grid-column: 1 / -1; border-top: 1px solid var(--line); border-left: 0; background: var(--surface-2); }
+  .cell h4 { font-family: var(--mono); font-size: 10.5px; letter-spacing: .11em; text-transform: uppercase; color: var(--ink-3); margin: 0 0 10px; font-weight: 600; }
+  .members { display: flex; flex-wrap: wrap; gap: 6px; }
+  .mem { font-family: var(--mono); font-size: 11.5px; padding: 4px 9px; border-radius: 6px; background: var(--surface); border: 1px solid var(--line-strong); color: var(--ink-2); }
+  .mem .tag { color: var(--neutral); font-weight: 600; }
+  .mem.off { opacity: .55; text-decoration: line-through; text-decoration-color: var(--state-off); }
+  .mem.good .tag { color: var(--state-idle); }
+  .mem.bad .tag { color: var(--state-busy); }
+  .cell p { margin: 0; font-size: 13.5px; color: var(--ink-2); }
+  .cell p + p { margin-top: 9px; }
+  .cell .why { color: var(--ink); }
+  .codelist { display: flex; flex-wrap: wrap; gap: 6px; }
+  .codelist code { font-size: 11.5px; }
+  .channel-badge { display: inline-flex; align-items: center; gap: 7px; font-size: 13px; color: var(--ink); font-weight: 560; }
+  .channel-badge .ci { padding: 3px 8px; border-radius: 6px; flex: 0 0 auto; font-family: var(--mono); font-size: 11px; font-weight: 700; }
+
+  /* ── five-level chain ── */
+  .chain { display: grid; grid-template-columns: repeat(5, 1fr); gap: 0; border: 1px solid var(--line); border-radius: 14px; overflow: hidden; background: var(--surface); box-shadow: var(--shadow); }
+  @media (max-width: 780px) { .chain { grid-template-columns: 1fr; } }
+  .clink { padding: 15px 15px 16px; position: relative; }
+  .clink + .clink { border-left: 1px solid var(--line); }
+  @media (max-width: 780px) { .clink + .clink { border-left: 0; border-top: 1px solid var(--line); } }
+  .clink .cn { font-family: var(--mono); font-size: 10.5px; color: var(--neutral); font-weight: 600; }
+  .clink .ct { font-size: 14.5px; font-weight: 640; margin: 3px 0 5px; letter-spacing: -.005em; }
+  .clink .cd { font-size: 11.5px; color: var(--ink-2); line-height: 1.5; }
+  .clink .cax { display: inline-block; margin-top: 9px; font-family: var(--mono); font-size: 10px; padding: 2px 7px; border-radius: 999px; font-weight: 600; }
+  .cax.ax1 { color: var(--neutral); background: color-mix(in srgb, var(--neutral) 15%, transparent); }
+  .cax.ax2 { color: var(--sw); background: color-mix(in srgb, var(--sw) 15%, transparent); }
+  .clink.is-fw { background: var(--surface-2); }
+  .clink.is-fw .ct { color: var(--sw); }
+
+  /* ── encoding gallery (replaces the fuzzy table) ── */
+  .gallery { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  @media (max-width: 720px) { .gallery { grid-template-columns: 1fr; } }
+  .enc { border: 1px solid var(--line); border-radius: 13px; background: var(--surface); padding: 16px 16px 15px; box-shadow: var(--shadow); display: grid; grid-template-columns: 92px 1fr; gap: 15px; align-items: start; }
+  .enc .demo { width: 92px; height: 72px; border-radius: 9px; background: var(--surface-2); border: 1px solid var(--line); display: grid; place-items: center; overflow: hidden; flex: 0 0 auto; }
+  .enc .txt h5 { margin: 0 0 3px; font-size: 14px; font-weight: 640; }
+  .enc .txt .owner { font-family: var(--mono); font-size: 10.5px; letter-spacing: .04em; margin: 0 0 8px; font-weight: 600; }
+  .enc .txt p { margin: 0; font-size: 12.5px; color: var(--ink-2); line-height: 1.55; }
+  .enc .txt p b { color: var(--ink); }
+  .o-struct { color: var(--neutral); } .o-state { color: var(--state-busy); } .o-hwsw1 { color: var(--hw); } .o-plane { color: var(--plane-ub); } .o-par { color: var(--sw); } .o-time { color: var(--ink-3); }
+  /* demo glyphs */
+  .g-nest { position: relative; width: 60px; height: 48px; }
+  .g-nest i { position: absolute; border: 1.5px solid var(--neutral); border-radius: 3px; }
+  .g-nest i:nth-child(1){ inset: 0; opacity:.4 } .g-nest i:nth-child(2){ inset: 9px; opacity:.65 } .g-nest i:nth-child(3){ inset: 18px; background: var(--neutral); opacity:.9 }
+  .g-dots { display: flex; gap: 7px; }
+  .g-dots i { width: 15px; height: 15px; border-radius: 4px; }
+  .g-grey { display: flex; gap: 6px; align-items: center; }
+  .g-grey i { width: 14px; height: 26px; border-radius: 3px; }
+  .g-hwsw { display: flex; gap: 8px; }
+  .g-hwsw i { width: 30px; height: 30px; border-radius: 6px; display: grid; place-items: center; font-family: var(--mono); font-size: 9px; font-weight: 700; color: #fff; }
+  .g-lines { display: flex; flex-direction: column; gap: 7px; width: 62px; }
+  .g-lines i { height: 4px; border-radius: 2px; }
+  .g-par { display: flex; gap: 6px; align-items: center; }
+  .g-par i { width: 13px; height: 13px; border-radius: 4px; opacity: .45; }
+  .g-time { width: 66px; }
+  .g-time .track { height: 6px; border-radius: 3px; background: var(--line-strong); position: relative; }
+  .g-time .cur { position: absolute; top: -4px; width: 2px; height: 14px; background: var(--ink-3); left: 58%; border-radius: 1px; }
+  .g-time .tk { display:flex; gap:4px; margin-top:8px; }
+  .g-time .tk i { flex:1; height: 10px; border-radius: 2px; }
+
+  /* ── future structure ── */
+  .planes { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; }
+  @media (max-width: 720px) { .planes { grid-template-columns: 1fr; } }
+  .plane { border: 1px solid var(--line); border-radius: 14px; background: var(--surface); padding: 18px 18px 20px; box-shadow: var(--shadow); position: relative; overflow: hidden; }
+  .plane::before { content: ""; position: absolute; inset: 0 auto 0 0; width: 3px; }
+  .plane.p-struct::before { background: var(--neutral); }
+  .plane.p-flow::before { background: var(--sw); }
+  .plane.p-state::before { background: var(--state-busy); }
+  .plane .pk { font-family: var(--mono); font-size: 10.5px; letter-spacing: .1em; text-transform: uppercase; color: var(--ink-3); margin: 0 0 8px; }
+  .plane .pt { font-size: 16.5px; font-weight: 640; margin: 0 0 4px; }
+  .plane .pch { font-family: var(--mono); font-size: 11.5px; color: var(--ink-2); margin: 0 0 10px; }
+  .plane p { margin: 0; font-size: 13px; color: var(--ink-2); }
+  .ironrule { margin-top: 16px; border: 1px dashed var(--line-strong); border-radius: 12px; padding: 15px 18px; background: var(--surface-2); font-size: 14px; color: var(--ink); }
+  .ironrule b { color: var(--state-busy); }
+
+  /* ── two compact concept cards (macro/micro + moe) ── */
+  .twocard { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-top: 16px; }
+  @media (max-width: 720px) { .twocard { grid-template-columns: 1fr; } }
+  .ccard { border: 1px solid var(--line); border-radius: 14px; background: var(--surface); padding: 18px 18px 20px; box-shadow: var(--shadow); }
+  .ccard h4 { margin: 0 0 3px; font-size: 15.5px; font-weight: 650; }
+  .ccard .cc-sub { font-family: var(--mono); font-size: 10.5px; color: var(--ink-3); margin: 0 0 12px; letter-spacing: .04em; }
+  .ccard p { margin: 0; font-size: 13px; color: var(--ink-2); line-height: 1.6; }
+  .ccard p + p { margin-top: 8px; }
+  .ccard b { color: var(--ink); }
+  .split { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin: 4px 0 10px; }
+  .split .s { border-radius: 9px; padding: 9px 11px; font-size: 12px; }
+  .split .s.macro { background: color-mix(in srgb, var(--neutral) 12%, transparent); border: 1px solid color-mix(in srgb, var(--neutral) 30%, transparent); }
+  .split .s.micro { background: color-mix(in srgb, var(--sw) 10%, transparent); border: 1px solid color-mix(in srgb, var(--sw) 28%, transparent); }
+  .split .s .st { font-family: var(--mono); font-size: 10px; font-weight: 700; margin-bottom: 3px; }
+  .split .s.macro .st { color: var(--neutral); } .split .s.micro .st { color: var(--sw); }
+  .split .s .sd { color: var(--ink-2); line-height: 1.45; }
+
+  .callout { border: 1px solid var(--line); border-left: 3px solid var(--state-busy); background: var(--surface); border-radius: 12px; padding: 15px 18px; box-shadow: var(--shadow); font-size: 13.5px; color: var(--ink-2); }
+  .callout b { color: var(--ink); }
+  .callout .tag { display: inline-block; font-family: var(--mono); font-size: 10px; letter-spacing: .1em; text-transform: uppercase; color: var(--state-busy); font-weight: 700; margin-bottom: 6px; }
+
+  .foot { margin-top: 44px; font-size: 12.5px; color: var(--ink-3); font-family: var(--mono); line-height: 1.7; }
+
+  @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+</style>
+
+<div class="wrap">
+  <p class="eyebrow">HPC 拓扑查看器 · 心智模型 · v2</p>
+  <h1>同一批卡，<span class="accent">五条轴</span>、<span class="accent">五种画法</span>，各司其职</h1>
+  <p class="lede">"概念太多"其实是两件事叠在一起没拆开：<strong>五条正交的轴</strong>（同一批卡的五种读法）和<strong>五种表达形式</strong>（泳道 / 立方体 / 写实 / 平面 / 矩阵）。看懂的诀窍：<strong>轴 = 读哪个事实，形式 = 用什么承载。轴决定"读什么"，问题的形状决定"用哪种画法"。</strong></p>
+
+  <!-- ─────────── §1 five axes ─────────── -->
+  <hr class="rule" />
+  <h2>第一层 · 读什么</h2>
+  <p class="h2-title"><span class="n">◱</span>五条正交的轴：同一批卡的五种读法</p>
+  <p class="body">这五条轴互相独立、互不替代。任何一张图，都是在读其中<strong>一到两条</strong>轴。点一条看它是什么、代码里叫什么、用什么视觉通道、为什么这么选。</p>
+
+  <div class="reframe">
+    <p class="reframe-head">点一条轴，看它<b>怎么读同一批卡</b>：</p>
+    <div class="chips" role="tablist" aria-label="五条轴">
+      <button class="chip sel-struct" role="tab" data-axis="struct" aria-selected="true"><span class="dot" style="background:var(--neutral)"></span>① 物理容纳</button>
+      <button class="chip sel-par" role="tab" data-axis="par" aria-selected="false"><span class="dot" style="background:var(--sw)"></span>② 并行拆分</button>
+      <button class="chip sel-plane" role="tab" data-axis="plane" aria-selected="false"><span class="dot" style="background:var(--plane-ub)"></span>③ 通信平面</button>
+      <button class="chip sel-time" role="tab" data-axis="time" aria-selected="false"><span class="dot" style="background:var(--ink-3)"></span>④ 时间动态</button>
+      <button class="chip sel-state" role="tab" data-axis="state" aria-selected="false"><span class="dot" style="background:var(--state-busy)"></span>⑤ 运行状态</button>
+    </div>
+    <div class="panel" id="axisPanel" role="tabpanel"></div>
+  </div>
+
+  <!-- ─────────── §2 five-level chain ─────────── -->
+  <hr class="rule" />
+  <h2>轴从哪来</h2>
+  <p class="h2-title"><span class="n">→</span>五级翻译链：模型怎么一步步变成机器</p>
+  <p class="body">轴①（物理）和轴②（并行）不是凭空并列的——它们是<strong>一条翻译链的两端</strong>。中间的"框架"（MindSpeed / PyTorch）是翻译器，把逻辑模型一步步翻成物理放置。看懂这条链，就知道每条轴站在哪。</p>
+
+  <div class="chain">
+    <div class="clink">
+      <div class="cn">① 模型</div>
+      <div class="ct">算子图</div>
+      <div class="cd">embedding → 48×[Attn·MoE] → norm → LMHead。"算了什么"。</div>
+      <span class="cax ax2">轴② 源头</span>
+    </div>
+    <div class="clink is-fw">
+      <div class="cn">② 框架</div>
+      <div class="ct">并行拆解</div>
+      <div class="cd">TP·PP·EP·DP·SP 把每个算子切 / 复制。"怎么分"。</div>
+      <span class="cax ax2">轴②</span>
+    </div>
+    <div class="clink is-fw">
+      <div class="cn">③ 框架</div>
+      <div class="ct">逻辑 mesh</div>
+      <div class="cd">多维网格，每格 1 rank，组内 = 1 个通信域。"谁和谁一组"。</div>
+      <span class="cax ax2">轴② / 轴③</span>
+    </div>
+    <div class="clink is-fw">
+      <div class="cn">④ 框架</div>
+      <div class="ct">物理放置</div>
+      <div class="cd">placement 把 rank r → Pod/Host/NPU 坐标。"跑在哪台机器"。</div>
+      <span class="cax ax1">轴①</span>
+    </div>
+    <div class="clink">
+      <div class="cn">⑤ 硬件</div>
+      <div class="ct">物理阵列</div>
+      <div class="cd">全部卡 + 卡间通信链。右侧 3D 全景。"机器长什么样"。</div>
+      <span class="cax ax1">轴①</span>
+    </div>
+  </div>
+  <p class="body" style="margin-top:14px; font-size:13px;"><code>parallelMap()</code> 现在一口气压缩了 ②③④ 三步；改进方案要把它们<b style="color:var(--ink)">显式拆开</b>——让你看清"框架把一个算子切成 8 份 TP、摆到这台 Host 的 8 张卡上"。</p>
+
+  <!-- ─────────── §3 one card five readings ─────────── -->
+  <hr class="rule" />
+  <h2>五条轴怎么融合</h2>
+  <p class="h2-title"><span class="n">↕</span>一张卡，五个同时成立的事实</p>
+  <p class="body">"融合"的真意：随便挑一张卡（<code>rank 5000</code>），它<strong>同时</strong>是一个物理位置、一组并行角色、几条通信平面、一段随时间的计算、一个当下的健康状态。五条轴各答一问，合起来才是全貌。</p>
+
+  <div class="example">
+    <div style="display:grid; grid-template-columns:200px 1fr; gap:0; border:1px solid var(--line); border-radius:14px; overflow:hidden; background:var(--surface); box-shadow:var(--shadow)" class="ex-wrap">
+      <div style="background:linear-gradient(160deg,var(--surface-2),var(--surface)); padding:22px; display:flex; flex-direction:column; gap:10px; justify-content:center; border-right:1px solid var(--line)" class="ex-card">
+        <span style="align-self:flex-start; font-family:var(--mono); font-size:12px; font-weight:700; color:#fff; background:var(--sw); padding:5px 11px; border-radius:7px">rank 5000</span>
+        <div style="width:74px; height:74px; border-radius:12px; background:var(--state-busy); display:grid; place-items:center; box-shadow:0 0 0 4px color-mix(in srgb,var(--state-busy) 22%,transparent); margin:4px 0"><span style="font-family:var(--mono); font-size:10px; color:#fff; font-weight:700; text-align:center; line-height:1.3">92%<br>繁忙</span></div>
+        <div style="font-size:12px; color:var(--ink-2)">1 张 <b style="color:var(--ink)">Chip·NPU</b> = 1 个 rank<br>（device ↔ rank 1:1）</div>
+      </div>
+      <div style="display:flex; flex-direction:column" class="ex-readings"></div>
+    </div>
+  </div>
+
+  <!-- ─────────── §4 encoding gallery ─────────── -->
+  <hr class="rule" />
+  <h2>为什么这么表达 · 通道分工</h2>
+  <p class="h2-title"><span class="n">◆</span>编码信条：每个视觉通道只归一件事，且能一眼看见</p>
+  <p class="body">"概念清晰"的另一半是<strong>看图不费劲</strong>。<code>data.ts</code> 写死了一套铁律：谁用位置、谁用颜色、谁用形状，一一分工。下面每格<strong>直接画出这个通道长什么样</strong>——记住这套编码，任何一张图你都能一眼拆开。</p>
+
+  <div class="gallery">
+    <div class="enc">
+      <div class="demo"><div class="g-nest"><i></i><i></i><i></i></div></div>
+      <div class="txt"><h5>空间位置 / 嵌套</h5><p class="owner o-struct">→ 结构（物理容纳）</p><p>"谁装在谁里面"本身就是空间关系，且<b>静态不变</b>——位置留给它最省脑。</p></div>
+    </div>
+    <div class="enc">
+      <div class="demo"><div class="g-dots"><i style="background:var(--state-idle)"></i><i style="background:var(--state-mid)"></i><i style="background:var(--state-busy)"></i><i style="background:var(--state-off)"></i></div></div>
+      <div class="txt"><h5>红 / 黄 / 绿 + 灰</h5><p class="owner o-state">→ 运行状态（唯一一套）</p><p><b style="color:var(--state-busy)">铁律</b>：一个状态 = 一个固定色、无渐变。状态最需一眼抓到，独占最扎眼的红黄绿。</p></div>
+    </div>
+    <div class="enc">
+      <div class="demo"><div class="g-grey"><i style="background:var(--neutral);opacity:.9"></i><i style="background:var(--neutral);opacity:.6"></i><i style="background:var(--neutral);opacity:.35"></i></div></div>
+      <div class="txt"><h5>中性蓝灰</h5><p class="owner o-struct">→ 结构 / 类型</p><p>层级、器件类型退成没有色相的蓝灰，<b>主动让出红黄绿</b>，不跟状态抢眼睛。</p></div>
+    </div>
+    <div class="enc">
+      <div class="demo"><div class="g-hwsw"><i style="background:var(--hw)">die</i><i style="background:var(--sw)">rank</i></div></div>
+      <div class="txt"><h5>青 teal / 靛 indigo</h5><p class="owner o-hwsw1">→ 硬件域 / 软件（rank）</p><p>硬件用青、软件 rank 用靛，<b>刻意两种色相</b>，让硬件和软件永远不糊在一起。</p></div>
+    </div>
+    <div class="enc">
+      <div class="demo"><div class="g-lines"><i style="background:var(--plane-ub)"></i><i style="background:var(--plane-rdma)"></i><i style="background:var(--plane-vpc)"></i></div></div>
+      <div class="txt"><h5>平面签名色</h5><p class="owner o-plane">→ 三通信平面</p><p>一根"全互联"逻辑线其实骑<b>三个真实物理平面</b>（UB 绿 / RDMA 橙 / VPC 紫），各一色才能分开。</p></div>
+    </div>
+    <div class="enc">
+      <div class="demo"><div class="g-par"><i style="background:var(--sw)"></i><i style="background:var(--state-idle)"></i><i style="background:var(--state-mid)"></i><i style="background:var(--state-busy)"></i></div></div>
+      <div class="txt"><h5>并行签名色（默认关）</h5><p class="owner o-par">→ 并行维（opt-in）</p><p>TP/PP/DP/EP 签名色和状态色<b>会撞</b>（PP 绿 ≈ 状态绿），默认不显、只在"通信域"镜头里开，PP 改青避让。</p></div>
+    </div>
+    <div class="enc" style="grid-column:1/-1">
+      <div class="demo"><div class="g-time"><div class="track"><div class="cur"></div></div><div class="tk"><i style="background:var(--state-idle)"></i><i style="background:var(--state-mid)"></i><i style="background:var(--state-busy)"></i><i style="background:var(--state-idle)"></i><i style="background:var(--state-mid)"></i></div></div></div>
+      <div class="txt"><h5>时间轴 + 游标</h5><p class="owner o-time">→ 时间动态</p><p>计算是动态的，但<b>动态只改颜色、绝不动位置</b>——否则位置通道被两件事抢，图就读不懂了。游标扫过 → 卡的颜色变、位置不动。</p></div>
+    </div>
+  </div>
+
+  <!-- ─────────── §5 form selector ─────────── -->
+  <hr class="rule" />
+  <h2>第二层 · 用什么画</h2>
+  <p class="h2-title"><span class="n">▦</span>五种表达形式：问题的"形状"决定用哪种</p>
+  <p class="body"><strong>表达形式不是审美偏好，是被问题的形状逼出来的。</strong> 问题长什么形状，就用能承载那个形状的形式——认物用写实、看分布用立方体、看树状包含用平面、看两两关系用矩阵、看时间用泳道。点一种形式，看它答什么问题、什么时候用、什么时候<em>别</em>用。</p>
+
+  <div class="reframe">
+    <p class="reframe-head">点一种形式，看它<b>该在什么时候用</b>：</p>
+    <div class="chips" role="tablist" aria-label="五种形式">
+      <button class="chip sel-form" role="tab" data-form="real" aria-selected="true">写实 3D 模型</button>
+      <button class="chip sel-form" role="tab" data-form="cube" aria-selected="false">抽象立方体阵</button>
+      <button class="chip sel-form" role="tab" data-form="plane" aria-selected="false">2D 平面</button>
+      <button class="chip sel-form" role="tab" data-form="matrix" aria-selected="false">矩阵</button>
+      <button class="chip sel-form" role="tab" data-form="swim" aria-selected="false">泳道</button>
+    </div>
+    <div class="panel" id="formPanel" role="tabpanel"></div>
+  </div>
+
+  <div class="callout" style="margin-top:18px; border-left-color:var(--sw)">
+    <span class="tag" style="color:var(--sw)">一句话记法</span>
+    <b>认物 → 写实</b>　·　<b>看几千个的分布 / 形状 → 立方体</b>　·　<b>树状包含 + 精确点选 → 平面</b>　·　<b>两两全对全关系 → 矩阵</b>　·　<b>时间上的事（顺序 / 重叠 / 掩盖）→ 泳道</b>。形式选错，不是不好看，是那个形状根本装不进去。
+  </div>
+
+  <!-- ─────────── §6 future structure ─────────── -->
+  <hr class="rule" />
+  <h2>之后的结构怎么摆</h2>
+  <p class="h2-title"><span class="n">▤</span>三个平面分工 + 一条铁律</p>
+  <p class="body">把五条轴 + 五种形式归拢，未来结构就三层，每层只用一种通道。这也是改进方案文档（<code>research/</code>）的骨架。上面的"形式"都归到"结构面"（除了泳道属于流动面）。</p>
+
+  <div class="planes">
+    <div class="plane p-struct">
+      <p class="pk">静态 · 空间</p><p class="pt">结构面</p><p class="pch">通道 = 位置 / 嵌套</p>
+      <p>卡在哪、谁和谁一组、部署成什么样。写实 / 立方体 / 平面 / 矩阵都在这。<b style="color:var(--ink)">切视图 = 换一种堆法</b>，让异常显出形状。</p>
+    </div>
+    <div class="plane p-flow">
+      <p class="pk">动态 · 时间</p><p class="pt">流动面</p><p class="pch">通道 = 时间轴（泳道）</p>
+      <p>每时刻算什么 / 通信什么、bubble、通信有没有被计算"掩盖"。泳道在这，计算与通信上下双轨、时间对齐。</p>
+    </div>
+    <div class="plane p-state">
+      <p class="pk">动态 · 叠加</p><p class="pt">状态面</p><p class="pch">通道 = 颜色 / 辉光</p>
+      <p>把红黄绿叠在结构面上，由流动面的游标驱动。运维"看清楚"的落点——热在哪、慢在哪。</p>
+    </div>
+  </div>
+
+  <div class="ironrule">
+    <b>铁律</b>：动态（时间、状态）只能改<strong style="color:var(--ink)">颜色 / 辉光 / 游标位置</strong>，<em>永远不能改卡的空间位置</em>。位置这个通道被结构面独占——守住这条，五条轴叠在一起也不会糊。
+  </div>
+
+  <!-- ─────────── §7 md-derived: macro/micro + moe ─────────── -->
+  <hr class="rule" />
+  <h2>方案里三个最容易混的点</h2>
+  <p class="h2-title"><span class="n">⊞</span>"整网"是两件事 · MoE 是"静态骨架+动态强度" · 魔方不是严格立方体</p>
+
+  <div class="twocard">
+    <div class="ccard">
+      <h4>"整网" = 两件正交的事</h4>
+      <p class="cc-sub">宏观物理网络 ≠ 微观算子网络</p>
+      <div class="split">
+        <div class="s macro"><div class="st">宏观 · 立方体</div><div class="sd">全部卡（8192+），按视图重排、按状态上色。<b style="color:var(--ink)">无算子细节</b>。</div></div>
+        <div class="s micro"><div class="st">微观 · 代表单元</div><div class="sd">一个选中单元（1 副本 / 1 EP 域）画全算子 + 时间，旁边标 <b style="color:var(--ink)">×N 广播</b>。</div></div>
+      </div>
+      <p>不傻画 8192 份算子。整网感靠"一份 × N 副本"的<b>乘法关系</b>传达。在宏观里选一个单元 → 驱动微观详情，这就是宏观↔微观的桥。</p>
+    </div>
+    <div class="ccard">
+      <h4>MoE：别把它画错</h4>
+      <p class="cc-sub">专家不是立方体坐标</p>
+      <p><b>专家住哪张卡 = 静态</b>（部署定死）→ 是卡上的一个<b>标注</b>，不是子立方体（专家是 HBM 里一块权重，不是电路）。</p>
+      <p><b>哪些专家被选中、传多少 token = 动态</b>（routing 决定）→ 进泳道（expert-GEMM 段）+ 辉光。</p>
+      <p><b>卡间 A2A</b>：能跟谁通信是<b>静态</b>（EP 域内固定骨架），通信多大是<b>动态</b>（只调线宽 / 辉光）。</p>
+    </div>
+  </div>
+
+  <div class="ccard" style="margin-top:14px; border-left:3px solid var(--hw)">
+    <div style="display:flex; align-items:baseline; gap:10px; flex-wrap:wrap; margin-bottom:2px">
+      <h4 style="margin:0">魔方不是严格立方体（塌缩轴）</h4>
+      <span style="font-family:var(--mono); font-size:10px; letter-spacing:.08em; color:var(--hw); font-weight:700; border:1px solid color-mix(in srgb,var(--hw) 45%,var(--line-strong)); border-radius:999px; padding:2px 8px">已由代码验证抓到</span>
+    </div>
+    <p class="cc-sub">并行维不是互相正交的 —— EP 会「折进」别的轴</p>
+    <p>把并行配置想成魔方时，容易默认它是个<b>干净的立方体</b>：边长相乘 = 卡数。<b>但会算错。</b> 落地写 <code>deployment.ts</code> 时，运行时验证立刻抓到：<span style="font-family:var(--mono); color:var(--state-busy)">tp8 × dp1024 × ep4 × tp8 = 32768 ≠ 8192</span>。</p>
+    <p style="margin-top:9px">原因：<b>EP 不是独立的空间轴</b>——推理时它折在 TP 域内（节点内路由）、训练时折在 DP 轴内。硬把它当一条边，就把同一批卡<b>重复计数</b>了。</p>
+    <div class="split" style="grid-template-columns:1fr 1fr 1fr; margin:12px 0 4px">
+      <div class="s" style="background:color-mix(in srgb,var(--hw) 12%,transparent); border:1px solid color-mix(in srgb,var(--hw) 30%,transparent)"><div class="st" style="color:var(--hw)">spatial 空间轴</div><div class="sd"><b style="color:var(--ink)">tp · pp · dp</b>：三者乘积 = N，可给独立空间维度。</div></div>
+      <div class="s" style="background:color-mix(in srgb,var(--state-busy) 10%,transparent); border:1px solid color-mix(in srgb,var(--state-busy) 28%,transparent)"><div class="st" style="color:var(--state-busy)">collapsed 塌缩轴</div><div class="sd"><b style="color:var(--ink)">ep</b>：折入 DP(训练)/TP(推理)，<b>不再乘进 N</b>。</div></div>
+      <div class="s" style="background:color-mix(in srgb,var(--neutral) 12%,transparent); border:1px solid color-mix(in srgb,var(--neutral) 30%,transparent)"><div class="st" style="color:var(--neutral)">virtual 虚轴</div><div class="sd"><b style="color:var(--ink)">sp</b>：与 TP 同域，无独立体量。</div></div>
+    </div>
+    <p style="margin-top:9px">修法：给每个维度标 <code>kind</code>（spatial / collapsed / virtual），<b>保证空间轴乘积 = N</b>，让代码<b>诚实反映"不是严格立方体"</b>，而不是假装成干净魔方。这也印证了方案里的漏洞 #14——早验证早暴露，留到画立方体重排才发现返工会大得多。</p>
+  </div>
+
+  <div class="callout" style="margin-top:16px">
+    <span class="tag">监控优先 · 已定</span>
+    首要任务是 <b>B 运维监控</b>。并行如何映射硬件不是为了教学，是<b>为了把监控看清楚</b>——8192+ 卡的红绿平铺读不懂，<b>按并行维重排后异常会显出"形状"</b>：TP 组整块红 = 该 Host 拖累 AllReduce；DP 副本整块红 = 数据管道；PP 竖板慢 = bubble；EP 域几张热 = 专家倾斜。<b>形状直接对应根因类别</b>——这就是"看清楚"。
+  </div>
+
+  <!-- ─────────── §8 CubeView 现状 ─────────── -->
+  <hr class="rule" />
+  <h2>方案落地 · 已建</h2>
+  <p class="h2-title"><span class="n">▶</span>新视图 <code>CubeView</code>：把三个平面做成一个可运行的新工作区（实验）</p>
+  <p class="body">按"新视图做全、成熟再取代旧视图"的策略，新建了独立视图 <b>立方重排(实验)</b>（工作台 3D 对象菜单里），<strong>全程加法</strong>——<code>FullPodScene</code> 和现有视图一行没动。方案的<b>三个平面</b>现在都立起来了，由<b>一个选区 + 一个游标</b>联动。</p>
+
+  <div class="planes">
+    <div class="plane p-struct">
+      <p class="pk">结构面 · 已建</p><p class="pt">立方体重排</p><p class="pch">layout.ts · 飞行动画</p>
+      <p>同一批 8192 卡按 物理/TP/PP/DP/EP <b>换堆法</b>，带飞行动画 + 自适应相机。<b>异常显形状</b>：注入异常→物理散布、切到对应维度 snap 成块。双射不变量单测守门。</p>
+    </div>
+    <div class="plane p-flow">
+      <p class="pk">流动面 · 已建</p><p class="pt">泳道 + PP 甘特</p><p class="pch">op-schedule.ts · 真实算子时序</p>
+      <p>层内算子泳道（计算/通信/访存三轨）+ <b>掩盖 vs 暴露</b>（通信被计算盖住=掩盖、露出=暴露开销标红）。切 <b>PP 流水甘特</b>（1F1B · stage×microbatch · bubble%）。数据锚定盘古论文 + PTO 参考。</p>
+    </div>
+    <div class="plane p-state">
+      <p class="pk">状态面 · 已建</p><p class="pt">热力 + 部署反查</p><p class="pch">loadRGB · deployment</p>
+      <p>红黄绿状态色叠在立方体上。<b>点一张卡</b>→反查它部署了什么任务（物理位置 + TP切片/PP级/DP副本/EP组）。<b>游标↔3D打通</b>：扫到通信算子→高亮该卡此刻的通信对端（EP/DP…）。</p>
+    </div>
+  </div>
+
+  <div style="margin-top:16px; display:flex; flex-wrap:wrap; gap:6px; align-items:center">
+    <span style="font-family:var(--mono); font-size:10px; letter-spacing:.08em; text-transform:uppercase; color:var(--ink-3); margin-right:4px">已推送</span>
+    <span class="mem good"><span class="tag">P0</span> deployment + ingest 契约</span>
+    <span class="mem good"><span class="tag">P1</span> layout 引擎 + CubeView + 飞行动画</span>
+    <span class="mem good"><span class="tag">数据</span> op-schedule 真实算子时序</span>
+    <span class="mem good"><span class="tag">#1</span> 点选反查 + 游标↔3D</span>
+    <span class="mem good"><span class="tag">#2</span> 掩盖/暴露</span>
+    <span class="mem good"><span class="tag">#3</span> 散布维/结构维</span>
+    <span class="mem good"><span class="tag">L4</span> PP 1F1B 甘特</span>
+  </div>
+
+  <div class="callout" style="margin-top:16px; border-left-color:var(--sw)">
+    <span class="tag" style="color:var(--sw)">还剩</span>
+    <b>接真实遥测</b>让状态色成为真监控——契约已对齐真实格式（<code>rank_table_file</code> 放置 · <code>npu-smi</code>/<code>msprof</code> 遥测 · <code>parallel_state</code> 配置 · <code>fidelity</code> 标注实测/仿真），但逐卡实时数据需真集群，论文替代不了。<b>诚实边界</b>：论文给作业级真值（算子/时序/吞吐，已入库）；监控热力必须来自集群。之后新视图成熟即取代 阵列全景/工作台。
+  </div>
+
+  <p class="foot">锚定代码：HW_LEVELS · PARTITION_META / parallelMap · deployment / layout / op-schedule · PLANES · loadState / loadColor ｜ 视图：overview·rack·node（写实）· fullpod（立方体）· plane（平面）· comm（矩阵）· <b>cube（立方重排·新）</b> · status（泳道·状态）<br>配套文档：research/3D可视化-算子并行框架融合改进方案.md</p>
+</div>
+
+<script>
+  const AXES = {
+    struct: { sel:'sel-struct', color:'var(--neutral)', kicker:'轴 ①', title:'物理容纳层级', q:'这张卡「在哪」——谁装在谁里面（WHERE）',
+      members:[['L7','全球调度'],['L6','集群'],['L5','服务池'],['L4','Pod'],['L3','Host'],['L2','Chip·NPU = rank'],['L1','Die 可选'],['L0','核组']],
+      off:['机柜 = Pod 内物理分组','Tile = L0 内部粒度'], code:['HW_LEVELS','LevelKey','BAND_PHYS_KEY'], chan:['位','空间位置 + 嵌套'],
+      why:'容纳关系天生是空间的，所以用位置和层层嵌套画。严格 8 级——机柜、Tile 不算层级，否则层数就对不上了。关键锚点：L2 的 Chip·NPU 就是一个 rank（device ↔ rank 1:1），再往下的 Die/核组不增加 rank。' },
+    par: { sel:'sel-par', color:'var(--sw)', kicker:'轴 ②', title:'逻辑并行拆分', q:'模型被「怎么切」到这张卡上（HOW split）',
+      members:[['TP','张量并行 → Host 内 8 卡'],['SP','序列并行 → 与 TP 同域'],['PP','流水并行 → Pod 内跨 Host'],['VPP','虚拟流水 → 只在时间里'],['DP','数据并行 → 跨 Pod'],['EP','专家并行 → Pod 内']],
+      off:[], code:['PARTITION_META','parallelMap','groupOf / peersOf'], chan:['软','分组上色（opt-in）+ peer 连线'],
+      why:'并行是「逻辑映射」，不是物理位置——一张卡同时属于好几个并行组（既在某 TP 组、又在某 DP 副本…）。这就是"魔方"的由来：同一批卡，按不同并行轴分组，就堆成不同视图。用软件靛色系，签名色默认不显（避免和状态抢色）。真值只有一处：parallelMap。' },
+    plane: { sel:'sel-plane', color:'var(--plane-ub)', kicker:'轴 ③', title:'通信平面 / 织物', q:'这张卡的线「物理上怎么连」（HOW connected）',
+      members:[['UB','Scale-up · 绿 → TP·EP·SP'],['RDMA','Scale-out · 橙 → DP·PP'],['VPC','南北向 · 紫 → 管理/存储']],
+      off:[], code:['PLANES','LEVEL_PHYS','PHYS_CHAINS','UB_LEVEL_META'], chan:['面','平面签名色 + 器件链'],
+      why:'一根"NPU 全互联"的逻辑线，其实骑三个真实物理平面：每个 NPU 有两组不同端口（UB 口走 scale-up、RDMA 口走 scale-out），CPU 的 NIC 走第三个平面 VPC。这解释了为什么 TP 快（SU 超低延迟窄域 ≤128 卡）、DP 省（SO 广域）——策略放哪条平面，性能就不同。' },
+    time: { sel:'sel-time', color:'var(--ink-3)', kicker:'轴 ④', title:'时间 / 动态', q:'这张卡「什么时候在算什么」（WHEN）',
+      members:[['工况','预训练 / Prefill / Decode'],['step','回放时刻'],['相位','load·compute·comm·store'],['算子','GEMM / attn / A2A / P2P']],
+      off:[], code:['STEP_DECOMP','TRACE_SCHED','REPLAY','cardLoad01'], chan:['时','时间轴（泳道）+ 游标'],
+      why:'计算是动态的——同一张卡不同时刻在算不同东西，MoE 的通信、流水线的 bubble、通信有没有被"掩盖"，这些只存在于时间里，空间图看不到。所以时间必须单独一条轴（泳道），且铁律：动态只改颜色 / 辉光，绝不挪卡的位置。' },
+    state: { sel:'sel-state', color:'var(--state-busy)', kicker:'轴 ⑤', title:'运行状态 / 健康', q:'这张卡此刻「好不好」（HOW WELL）',
+      members:[['绿','空闲 <40%'],['黄','中 40–70%'],['红','繁忙 >70%'],['灰','离线 / 无数据']],
+      off:[], code:['loadState','loadColor','cardMetric01','STATE_LABELS'], chan:['态','红黄绿 + 灰（唯一一套）'],
+      why:'这是运维"看清楚"的落点：热在哪、慢在哪、掉队 / 故障在哪。指标有利用率 / 掉队率 / 故障度三种，但配色永远是同一套红黄绿+灰。铁律独占这套色——所以其它四条轴都要退成中性或软件色，把红黄绿让给状态。' },
+  };
+
+  const FORMS = {
+    real: { color:'var(--hw)', kicker:'形式 · 写实', title:'写实 3D 模型', q:'需要「辨认这是个什么东西」时',
+      shape:['认物','低密度、高辨识：一次就看一两个真实器件'],
+      use:[['✓','定位/科普硬件本体：这是计算刀片、这是 NIC 卡、这是电源架'],['✓','回答"它长什么样、装在机柜哪一格"']],
+      avoid:[['✗','有几千个相同单元时——写实太重，看不出分布'],['✗','看关系/趋势时——写实不承载抽象信息']],
+      code:['GLB 模型：compute-blade / dpu-nic-card / psu-crps-shelf','视图：overview · rack · node'],
+      why:'写实模型的长处是"辨认真实物体"，代价是信息密度低。所以它只在"认识硬件本体"时用，一旦要看几千张卡的分布就必须换成抽象立方体。' },
+    cube: { color:'var(--neutral)', kicker:'形式 · 抽象', title:'抽象立方体阵', q:'看「几千个单元里的分布 / 形状」时',
+      shape:['分布 / 形状','大量相同单元的空间格局、异常成不成组'],
+      use:[['✓','8192 卡满阵列热力——一眼看全局哪里红'],['✓','按并行维重排（TP/PP/DP/EP 视图），让异常显出形状']],
+      avoid:[['✗','只看一两个对象——杀鸡用牛刀，用写实或平面'],['✗','全对全关系——3D 连线会糊成一团，用矩阵']],
+      code:['FullPodScene bands · InstancedMesh','视图：fullpod · console 右侧全景'],
+      why:'立方体牺牲"写实辨识"，换来"上万单元的空间分布一眼可见"。位置编码分组、颜色编码状态。这是监控的主战场——异常的"形状"就在这里显现。' },
+    plane: { color:'var(--sw)', kicker:'形式 · 平面', title:'2D 平面', q:'看「树状包含」+ 需要精确点选时',
+      shape:['树 / 包含','层层包含的树结构；需要精确点击；3D 遮挡碍事'],
+      use:[['✓','层级漏斗（控制器）：点一级驱动右侧 3D'],['✓','顶视图布局、器件互联接线图——精确、无遮挡']],
+      avoid:[['✗','需要三维空间直觉时——平面丢了高度信息'],['✗','关系是全对全时——仍应用矩阵']],
+      code:['PlaneView：器件互联 / 层级图 / 顶视图','Smartscape 漏斗（ConsoleView 左侧）'],
+      why:'平面去掉一个维度，换来"无遮挡 + 精确点选 + 树状包含清晰"。所以它常做"控制器"：在平面上点，驱动 3D 立方体高亮。二者分工——平面控制、立方体呈现。' },
+    matrix: { color:'var(--plane-rdma)', kicker:'形式 · 矩阵', title:'矩阵', q:'看「两两全对全关系」时',
+      shape:['N×N 全对全','谁和谁通信——两两之间的关系，不是包含'],
+      use:[['✓','rank×rank 通信矩阵：格(i,j) 颜色=维度、亮度=流量'],['✓','一眼读通信足迹：块对角=TP · 阶梯=PP · 密块=EP · 远带=DP']],
+      avoid:[['✗','关系稀疏或纯树状——矩阵大片空白浪费'],['✗','要看物理位置——矩阵没有空间语义']],
+      code:['CommView · tcell','视图：comm · matrix'],
+      why:'树和 3D 都画不清 N² 条关系（连线爆炸）。矩阵用"一格一对"把全对全关系摊平，是通信关系唯一读得清的形式。这就是为什么通信要单独一块矩阵画布，不塞进物理层级。' },
+    swim: { color:'var(--ink-3)', kicker:'形式 · 时间', title:'泳道', q:'看「时间上发生的事」时',
+      shape:['时间','顺序、时长、重叠、掩盖——只存在于时间里的东西'],
+      use:[['✓','计算/通信 overlap：通信被计算盖住 = 掩盖成功'],['✓','流水线 bubble、算子时序、每级一套泳道语义']],
+      avoid:[['✗','静态结构——时间轴对不变的东西没意义'],['✗','空间分布——那是立方体的活']],
+      code:['TRACE_SCHED（雏形）· 规划中的 schedule','视图：trace · 规划中的泳道面板'],
+      why:'bubble、掩盖、routing 这些是纯时间现象，静态空间图根本看不到。泳道把时间摊成横轴、上下双轨（计算/通信）对齐，是唯一能回答"这套切法跑得好不好"的形式。它属于"流动面"，与立方体（结构面）共用一个游标联动。' },
+  };
+
+  // one-card-five-readings data
+  const READINGS = [
+    ['① 物理在哪','var(--neutral)','Pod α · Host 3 · <span class="mn">Chip·NPU</span> · 内含 2 计算 Die × ~16 核组'],
+    ['② 并行角色','var(--sw)','<span class="mn">TP 切片 5/8</span>（本 Host）· <span class="mn">PP 级 2/5</span> · <span class="mn">DP 副本 40</span> · <span class="mn">EP 组 1</span>'],
+    ['③ 走哪条线','var(--plane-ub)','TP 走 <b style="color:var(--plane-ub)">UB·Scale-up</b>（柜内 mesh，窄而快）· DP 走 <b style="color:var(--plane-rdma)">RDMA·Scale-out</b>（跨 Pod）'],
+    ['④ 此刻在算','var(--ink-3)','<span class="mn">t=42</span> 正在跑 MoE <span class="mn">expert-GEMM</span>，随后 EP <span class="mn">All-to-All</span>'],
+    ['⑤ 好不好','var(--state-busy)','繁忙 <span class="mn">92%</span> → <b style="color:var(--state-busy)">红</b>（此刻是热点，值得排查）'],
+  ];
+  (function renderReadings(){
+    const box = document.querySelector('.ex-readings');
+    box.innerHTML = READINGS.map((r,i) => `
+      <div style="display:grid; grid-template-columns:130px 1fr; gap:14px; padding:13px clamp(14px,2.5vw,20px); align-items:start; ${i>0?'border-top:1px solid var(--line)':''}">
+        <div style="display:flex; align-items:center; gap:8px; font-size:12.5px; font-weight:600; color:var(--ink)"><span style="width:9px;height:9px;border-radius:3px;flex:0 0 auto;background:${r[1]}"></span>${r[0]}</div>
+        <div style="font-size:13px; color:var(--ink-2)">${r[2]}</div>
+      </div>`).join('');
+    box.querySelectorAll('.mn').forEach(el => { el.style.fontFamily='var(--mono)'; el.style.color='var(--ink)'; el.style.fontSize='12.5px'; });
+  })();
+
+  function memberHTML(list, cls){ return list.map(([t,n]) => `<span class="mem ${cls||''}"><span class="tag">${t}</span> ${n}</span>`).join(''); }
+
+  function renderAxis(key){
+    const a = AXES[key], p = document.getElementById('axisPanel');
+    p.innerHTML = `
+      <div class="panel-top" style="border-left-color:${a.color}">
+        <p class="panel-kicker"><span class="swatch" style="background:${a.color}"></span>${a.kicker} · ${a.chan[0]}通道</p>
+        <p class="panel-title">${a.title}</p><p class="panel-q">${a.q}</p>
+      </div>
+      <div class="panel-grid">
+        <div class="cell"><h4>成员 / 层级</h4><div class="members">${memberHTML(a.members)}${a.off.map(n=>`<span class="mem off">${n}</span>`).join('')}</div></div>
+        <div class="cell"><h4>代码里叫什么</h4><div class="codelist">${a.code.map(c=>`<code>${c}</code>`).join('')}</div>
+          <p style="margin-top:14px"><span class="channel-badge"><span class="ci" style="background:color-mix(in srgb,${a.color} 16%,transparent);color:${a.color}">${a.chan[0]}</span>用「${a.chan[1]}」画</span></p></div>
+        <div class="cell full"><h4>为什么这么选</h4><p class="why">${a.why}</p></div>
+      </div>`;
+  }
+
+  function renderForm(key){
+    const f = FORMS[key], p = document.getElementById('formPanel');
+    p.innerHTML = `
+      <div class="panel-top" style="border-left-color:${f.color}">
+        <p class="panel-kicker"><span class="swatch" style="background:${f.color}"></span>${f.kicker}</p>
+        <p class="panel-title">${f.title}</p><p class="panel-q">${f.q}</p>
+      </div>
+      <div class="panel-grid">
+        <div class="cell"><h4>问题的形状</h4>
+          <p style="font-size:15px;font-weight:640;color:var(--ink);margin-bottom:4px">${f.shape[0]}</p>
+          <p>${f.shape[1]}</p></div>
+        <div class="cell"><h4>代码 / 视图</h4><div class="codelist">${f.code.map(c=>`<code>${c}</code>`).join('')}</div></div>
+        <div class="cell"><h4>什么时候用</h4><div class="members" style="flex-direction:column;align-items:stretch;gap:5px">${f.use.map(([m,t])=>`<span class="mem good" style="border-color:color-mix(in srgb,var(--state-idle) 40%,var(--line-strong))"><span class="tag">${m}</span> ${t}</span>`).join('')}</div></div>
+        <div class="cell"><h4>什么时候别用</h4><div class="members" style="flex-direction:column;align-items:stretch;gap:5px">${f.avoid.map(([m,t])=>`<span class="mem bad" style="border-color:color-mix(in srgb,var(--state-busy) 35%,var(--line-strong))"><span class="tag">${m}</span> ${t}</span>`).join('')}</div></div>
+        <div class="cell full"><h4>为什么是这个形式</h4><p class="why">${f.why}</p></div>
+      </div>`;
+  }
+
+  function wire(selector, renderFn, attr){
+    const chips = Array.from(document.querySelectorAll(selector));
+    chips.forEach((chip,i) => {
+      chip.addEventListener('click', () => {
+        chips.forEach(c => c.setAttribute('aria-selected','false'));
+        chip.setAttribute('aria-selected','true');
+        renderFn(chip.dataset[attr]);
+      });
+      chip.addEventListener('keydown', (e) => {
+        if (e.key!=='ArrowRight' && e.key!=='ArrowLeft') return;
+        e.preventDefault();
+        const dir = e.key==='ArrowRight'?1:-1;
+        const next = chips[(i+dir+chips.length)%chips.length];
+        next.focus(); next.click();
+      });
+    });
+  }
+
+  wire('[data-axis]', renderAxis, 'axis');
+  wire('[data-form]', renderForm, 'form');
+  renderAxis('struct');
+  renderForm('real');
+</script>
+<div aria-hidden="true" style="position:fixed;right:12px;bottom:10px;z-index:2147483647;font:11px/1.4 ui-monospace,'SF Mono','Consolas',monospace;color:#8b95ab;opacity:.65;pointer-events:none;user-select:none;">王欣迪</div>

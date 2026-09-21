@@ -1,0 +1,217 @@
+/* rank-topology-lite · 两个本体各管一半，边到边铺满整个视口，不加框、不缩小。
+   没点开卡：逻辑魔方（WebGL 实例化网格，素块、无标签、无性能问题）。
+   点开一张卡：并行拓扑矩阵本体自己的选中态渲染接管。谁在最上层用 opacity+
+   pointer-events 切，不销毁 iframe——切回去不用重新加载逻辑魔方那份场景。 */
+
+* { box-sizing: border-box; }
+
+html, body {
+  margin: 0; padding: 0; width: 100%; height: 100%;
+  background: #111111; overflow: hidden;
+  font-family: Inter, -apple-system, "Segoe UI", "PingFang SC", "Source Han Sans SC", sans-serif;
+  color: #E8E8E8;
+}
+
+/* ── 两个本体舞台：都铺满整个视口，边到边，不加框、不缩小。
+   切层不是平板 crossfade：退场那个放大+模糊+淡出（像镜头从它面前飞过去），
+   进场那个反过来从放大+模糊状态收回到 scale(1) 清晰——两句话共用同一条
+   .is-hidden 规则，谁在这一刻被换下去就套这条，方向自然由「加/摘 class」
+   决定，不用两套规则。呼应参考视频里"层层递进、在一张画布上"的那种
+   连续变焦感，而不是硬切。矩阵那边选中卡之后自己的 focusCardCamera 飞焦
+   动画会接着这一棒，两段动画首尾相连。 ──────────────────────────────── */
+.stage-frame {
+  position: fixed; inset: 0; width: 100%; height: 100%;
+  border: 0; display: block;
+  opacity: 1; filter: blur(0); transform: scale(1); transform-origin: 50% 50%;
+  transition: opacity .5s ease, filter .5s ease, transform .5s ease;
+}
+.stage-frame.is-hidden {
+  opacity: 0; filter: blur(14px); transform: scale(1.5);
+  pointer-events: none;
+}
+
+/* ── 悬浮数据卡：只在第二/三档出现，钉在视口右上角、让开顶栏一档（不跟画布
+   缩放平移）——档位读法交给面包屑（逻辑魔方顶栏的模型名+rank 后缀、矩阵
+   自己的画布名字），这颗卡不用再跟一颗"返回"按钮分地盘；右下角在第二档
+   （逻辑魔方）是它自己图例的地盘（.prc-legend，同一角落），第三档（矩阵）
+   右上角只有一颗小齿轮、这颗卡让开一档就不会压到它——两档统一走右上，
+   不必按档位换位置。配色贴 compute-graph-viewer 抽象图网页 prompt 的深色
+   卡片令牌：surface #1F1F1F、主文字 #E8E8E8、次文字 #A0A0A0——不描边
+   （"无边框灰卡"，区域靠色差/间距分，不靠框线）、不用玻璃模糊（prompt 明确
+   避免玻璃效果），浮卡本身也不例外于"默认只有黑白"：容量告警只靠说法/
+   字重分挡，不引入色相。 ──────────────────────────────────────────── */
+.brief-card {
+  position: fixed; right: 16px; top: 60px; z-index: 6;
+  min-width: 200px; max-width: 260px;
+  background: #1F1F1F; border-radius: 12px; padding: 12px 14px;
+  font-size: 12px; line-height: 1.6; color: #A0A0A0;
+  transition: opacity .2s ease, transform .2s ease;
+}
+.brief-card.is-hidden { opacity: 0; transform: translateY(-6px); pointer-events: none; }
+.brief-h {
+  display: flex; align-items: center; gap: 8px;
+  font-size: 13px; font-weight: 700; color: #E8E8E8; margin-bottom: 2px;
+}
+.brief-badge {
+  font-size: 10px; font-weight: 600; color: #A0A0A0;
+  background: #2B2B2B; border-radius: 999px; padding: 1px 8px;
+}
+.brief-badge.is-alert { color: #111111; background: #E8E8E8; }
+.brief-sub { color: #6E6E6E; margin-bottom: 8px; }
+.brief-row { display: flex; justify-content: space-between; gap: 12px; }
+.brief-row span { color: #A0A0A0; }
+.brief-row b { color: #E8E8E8; font-weight: 600; }
+.brief-total { margin-top: 4px; padding-top: 6px; border-top: 1px solid #2B2B2B; }
+
+/* 第二档的浮卡是一句邀请（"↓ 单卡下钻"），不是数据行——按钮撑满卡宽，
+   跟下面第三档摆的数据行区分开：那时读者不是在读数，是在决定要不要往里走。 */
+.brief-card.is-cta { padding-bottom: 10px; }
+.brief-cta {
+  display: block; width: 100%; margin-top: 8px;
+  background: #2B2B2B; color: #E8E8E8; border: 0; border-radius: 8px;
+  font: inherit; font-size: 12px; font-weight: 600; padding: 7px 10px;
+  cursor: pointer; transition: background .2s ease;
+}
+.brief-cta:hover { background: #3A3A3A; }
+
+/* ── 集群聚合角标：常驻左上角，两个本体各自的招牌/工具栏都在这一格顶栏，
+   top:60 让开一行（跟右上角 .brief-card 的让法一样）。默认态（level 全 ok）
+   跟 brief-card 未告警时同一路配色——暗灰底、灰字，只在有容量告警时才翻成
+   高对比（跟 .brief-badge.is-alert 同一条規則：告警只靠反色/说法分挡，不
+   引入色相）。按钮而不是纯文字：点它直接下钻到最惨那张卡。 ──────────── */
+.cluster-badge {
+  position: fixed; left: 16px; top: 60px; z-index: 6;
+  font: inherit; font-size: 12px; font-weight: 600; color: #A0A0A0;
+  background: #1F1F1F; border: 0; border-radius: 999px; padding: 6px 14px;
+  cursor: pointer; transition: opacity .2s ease, transform .2s ease, background .2s ease, color .2s ease;
+}
+.cluster-badge.is-hidden { opacity: 0; transform: translateY(-6px); pointer-events: none; }
+.cluster-badge.is-alert { color: #111111; background: #E8E8E8; }
+.cluster-badge:hover { background: #3A3A3A; }
+.cluster-badge.is-alert:hover { background: #FFFFFF; }
+
+/* ── 真实故障复盘面板：任何预置打开都有（原来只在 incident2048 才渲染，
+   反馈「不希望问题定位跟拓扑分离」之后挪到 world≤64 分流之前，见 pattern.js
+   顶部注释），钉在视口底部，跨三档常驻。默认**展开**（is-collapsed 只在读者
+   点了折叠钮之后才加上）——反馈「默认展开数据只展开有的数据」：时间线本身
+   随时都是真数据（11 个真实事件），默认就该露出来，不必先点一下才看得见；
+   但十格指标卡在没选中具体事件之前一格数字都没有，展开了也只是十个「—」
+   占位，不算"有数据"，所以那块由 renderIncidentPanel() 按有没有选中事件
+   决定画不画（见 pattern.js），不是靠这里的 CSS 折叠。时间线（事件按问题
+   分组、圆点按严重度着色）+ 十格指标卡（读数/为什么），配色沿用
+   incident-canvas 自己的严重度三色（ok 绿 / warn 橙 / bad 红——JS 里按事件
+   写进 --ip-sevc 这个自定义属性），这是唯一一处主动引入色相的地方：这个
+   面板讲的是别人的真实告警，不是本页默认"只有黑白"那条规则要管的容量态。
+   ──────────────────────────────────────────────────────────────────── */
+.incident-panel {
+  position: fixed; left: 0; right: 0; bottom: 0; z-index: 7;
+  max-height: 46vh; overflow-y: auto;
+  background: #17171A; padding: 10px 16px 12px; font-size: 12px; color: #A0A0A0;
+  transition: opacity .2s ease, transform .2s ease;
+}
+.incident-panel.is-hidden { opacity: 0; transform: translateY(12px); pointer-events: none; }
+.incident-panel.is-collapsed .ip-conc,
+.incident-panel.is-collapsed .ip-timeline,
+.incident-panel.is-collapsed .ip-cards,
+.incident-panel.is-collapsed .ip-foot { display: none; }
+.ip-hd { display: flex; align-items: center; gap: 10px; margin-bottom: 6px; }
+.ip-evtitle { font-size: 13px; font-weight: 700; color: #E8E8E8; }
+.ip-evtitle-empty { font-size: 12px; font-weight: 400; color: #6E6E6E; }
+.ip-evsev { font-size: 10px; font-weight: 600; padding: 1px 8px; border-radius: 999px; color: #111; background: var(--ip-sevc); }
+.ip-drill {
+  margin-left: auto; font: inherit; font-size: 11px; font-weight: 600; color: #E8E8E8;
+  background: #2B2B2B; border: 0; border-radius: 999px; padding: 4px 10px; cursor: pointer;
+}
+.ip-drill:hover { background: #3A3A3A; }
+.ip-collapse {
+  margin-left: auto; font: inherit; font-size: 11px; color: #6E6E6E;
+  background: transparent; border: 0; padding: 2px 6px; cursor: pointer;
+}
+.ip-hd .ip-drill + .ip-collapse { margin-left: 4px; }
+.ip-conc { color: #A0A0A0; margin-bottom: 8px; line-height: 1.5; }
+.ip-timeline { display: flex; flex-direction: column; gap: 4px; margin-bottom: 10px; }
+.ip-prob { display: flex; align-items: center; gap: 10px; }
+.ip-probname { flex: 0 0 auto; width: 200px; font-size: 11px; color: #6E6E6E; }
+.ip-events { display: flex; gap: 6px; flex-wrap: wrap; }
+.ip-dot {
+  display: flex; align-items: center; gap: 5px; font: inherit; font-size: 10px; color: #A0A0A0;
+  background: #232326; border: 1px solid transparent; border-radius: 999px; padding: 3px 8px 3px 6px; cursor: pointer;
+}
+.ip-dotmark { width: 7px; height: 7px; border-radius: 50%; background: var(--ip-sevc); flex: none; }
+.ip-dot:hover { background: #2E2E32; }
+.ip-dot.is-on { border-color: var(--ip-sevc); color: #E8E8E8; background: #2E2E32; }
+.ip-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 8px; }
+.ip-card { background: #1F1F1F; border-left: 3px solid var(--ip-sevc); border-radius: 6px; padding: 8px 10px; }
+.ip-k { display: flex; justify-content: space-between; align-items: baseline; gap: 6px; font-size: 11px; color: #6E6E6E; margin-bottom: 3px; }
+.ip-want { font-size: 10px; color: #6E6E6E; white-space: nowrap; }
+.ip-v { font-size: 13px; font-weight: 700; color: #E8E8E8; margin-bottom: 3px; }
+.ip-why, .ip-src { font-size: 10.5px; color: #6E6E6E; line-height: 1.4; }
+.ip-foot { margin-top: 10px; padding-top: 8px; border-top: 1px solid #2B2B2B; font-size: 10.5px; color: #6E6E6E; }
+body:has(.incident-panel:not(.is-hidden)) .corner-link { display: none; }
+
+/* ── 角标：极小、不占视野，唯一常驻的外层 chrome。放在下边正中——两个本体
+   各自的标题/设置按钮都占了上半区，这是唯一稳定空着的一角。 ──────────── */
+.corner-link {
+  position: fixed; left: 50%; bottom: 10px; transform: translateX(-50%); z-index: 5;
+  font-size: 11px; color: #A0A0A0; text-decoration: none;
+  background: #1F1F1F; padding: 4px 10px; border-radius: 999px;
+  pointer-events: auto;
+  transition: color .2s ease;
+}
+.corner-link:hover { color: #E8E8E8; }
+
+/* ── 宇宙视图切换钮：第一档的第二种画法（内联 SVG 径向星图，替掉逻辑魔方
+   那个 iframe），跟聚合角标/故障入口同一种胶囊形制，摆右上角——那一角在
+   briefCard（top:60）出现之前是空的，不跟任何常驻控件抢地。只在 world>64
+   的三档取景才显示（world≤64 那条早退分支没有逻辑魔方可换）。 ─────────── */
+.universe-toggle {
+  position: fixed; right: 16px; top: 16px; z-index: 6;
+  font: inherit; font-size: 12px; font-weight: 600; color: #A0A0A0;
+  background: #1F1F1F; border: 0; border-radius: 999px; padding: 6px 14px;
+  cursor: pointer; transition: opacity .2s ease, transform .2s ease, background .2s ease, color .2s ease;
+}
+.universe-toggle.is-hidden { opacity: 0; transform: translateY(-6px); pointer-events: none; }
+.universe-toggle:hover { background: #3A3A3A; color: #E8E8E8; }
+.universe-toggle.is-on { color: #111111; background: #E8E8E8; }
+.universe-toggle.is-on:hover { background: #FFFFFF; }
+
+/* ── 宇宙视图本体：中心=模型 · 一圈=PP 流水线段（沿用这个仓库里"PP流水=段"
+   的既有心智模型，不是另起一套分类）· 每段外沿撒开一批采样出的真实 rank
+   当叶子点。深色径向底 + 稀疏星点，是这一档唯一主动引入"宇宙感"氛围的
+   地方——其余 chrome（briefCard/角标/故障面板）配色不变，呼应参考图那种
+   "黑底+发光轨道+暖金中心"的读法，但连线角度/坐标全部来自真实的 tp/cp/
+   pp/rep，不是摆拍。 ────────────────────────────────────────────────── */
+.universe-stage {
+  background:
+    radial-gradient(ellipse 70% 55% at 50% 46%, rgba(232,196,104,.07), transparent 60%),
+    radial-gradient(ellipse 120% 90% at 50% 50%, #14151A 0%, #0A0A0C 70%, #060607 100%);
+  cursor: pointer;
+}
+.universe-stage svg { display: block; width: 100%; height: 100%; }
+.u-star { fill: #ffffff; opacity: .35; }
+.u-ray, .u-thread { stroke-opacity: .28; stroke-width: 1; fill: none; transition: opacity .25s ease; }
+.u-thread { stroke-opacity: .16; }
+.u-ray.is-dim, .u-thread.is-dim { opacity: .12; }
+.u-hubcore { transition: r .15s ease; }
+.u-hub { cursor: pointer; }
+.u-hub:hover .u-hubcore { r: 15; }
+.u-hubglow { opacity: .22; }
+.u-hub.is-dim { opacity: .25; }
+.u-hublabel {
+  font-size: 15px; font-weight: 700; fill: #E8E8E8; pointer-events: none;
+  font-family: Inter, -apple-system, "Segoe UI", "PingFang SC", "Source Han Sans SC", sans-serif;
+}
+/* 段内 TP×CP 子组（子 hub）：比外圈 PP hub 小一号，没有独立发光圈——它只是
+   一层结构标记（讲清"这一撮叶子是同一个 tp/cp"），不是第二个可下钻的锚点，
+   视觉上不该跟外圈 hub 抢重量。 */
+.u-subhub { transition: r .15s ease, opacity .25s ease; }
+.u-subhub:hover { r: 6; }
+.u-ray.is-sub { stroke-opacity: .2; }
+.u-leaf { cursor: pointer; transition: r .15s ease, opacity .25s ease; }
+.u-leaf:hover { r: 7; }
+.u-leaf.is-dim { opacity: .15; }
+.u-core { pointer-events: none; }
+.u-corelabel { font-size: 22px; font-weight: 800; fill: #F5EBD1; pointer-events: none;
+  font-family: Inter, -apple-system, "Segoe UI", "PingFang SC", "Source Han Sans SC", sans-serif; }
+.u-coresub { font-size: 13px; fill: #A0A0A0; pointer-events: none;
+  font-family: Inter, -apple-system, "Segoe UI", "PingFang SC", "Source Han Sans SC", sans-serif; }
