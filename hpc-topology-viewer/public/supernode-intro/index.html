@@ -1,0 +1,506 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="author" content="王欣迪" />
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="robots" content="noindex, nofollow">
+<title>超节点集群 · 六步</title>
+<link rel="icon" href="data:,">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+/* ══════════════════════════════════════════════════════════════════════
+   超节点集群 · 六步 —— 一页讲清「一张卡怎么长成一个集群，以及哪一层是换挡点」。
+
+   独立页面，不依赖仓库里任何别的东西（无 vendor、无 iframe），也不改动任何
+   现有 demo。讲的是 /#/cube 驾驶舱那一页的题材，口径也照它：
+   8192 卡 = 64 超节点 × 128 卡 = 1024 节点 × 8 卡。
+
+   形制：一个主可视化区居中，标题与图例贴上沿、读数贴右沿、步骤条贴下沿，
+   四周留白。URL 带步号（?step=N），所以任何一步都能单独发出去。
+   ══════════════════════════════════════════════════════════════════════ */
+:root{
+  color-scheme:dark;
+  --bg:#111111;
+  --fg:#e8e8e8;          /* 主要文字 */
+  --fg2:#a0a0a0;         /* 次要文字 */
+  --fg3:#6e6e6e;         /* 再次一级：单位、脚注 */
+  --line:#2e2e2e;
+  --line2:#434343;
+  --sel:#ffffff;         /* 只给当前选中对象的边框与关键高亮 */
+  /* 必要的两支颜色：这一页全部的意义都压在「域内 / 跨域」这一个对比上，
+     所以只保留它，别的一律中性灰。 */
+  --ub:#7fc9d6;          /* 域内 UB：非阻塞全互联 */
+  --out:#d9a441;         /* 跨超节点：RDMA / UBoE */
+  --mono:'JetBrains Mono',ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+}
+*{box-sizing:border-box}
+html,body{height:100%}
+body{
+  margin:0; background:var(--bg); color:var(--fg);
+  font-family:Inter,ui-sans-serif,-apple-system,BlinkMacSystemFont,'Segoe UI','PingFang SC','Source Han Sans SC',sans-serif;
+  font-size:13px; font-weight:400; line-height:1.5;
+  -webkit-font-smoothing:antialiased;
+  font-variant-numeric:tabular-nums;
+}
+#page{height:100%; display:grid; grid-template-rows:auto 1fr auto; gap:0; padding:34px 44px 22px}
+
+/* ── 上沿：标题（左） / 图例（右） ──────────────────────────────────── */
+header{display:flex; align-items:flex-start; justify-content:space-between; gap:32px}
+h1{margin:0; font-size:25px; font-weight:500; letter-spacing:-.6px}
+h1 span{color:var(--fg3); font-weight:400; font-size:15px; letter-spacing:0; margin-left:4px}
+#sub{margin-top:7px; color:var(--fg2); font-size:13px; max-width:52ch}
+#legend{display:flex; gap:16px; align-items:center; font-size:12px; color:var(--fg2); white-space:nowrap; opacity:0; transition:opacity .18s}
+#legend.on{opacity:1}
+#legend i{display:inline-block; width:14px; height:0; border-top:2px solid currentColor; margin-right:7px; vertical-align:3px}
+.k-ub{color:var(--ub)} .k-out{color:var(--out)}
+
+/* ── 中间：主可视化区 + 贴右沿的读数 ────────────────────────────────── */
+#stage{position:relative; min-height:0; display:flex; align-items:center; justify-content:center; padding:26px 0}
+#scene{display:block; width:100%; height:100%; max-height:100%; overflow:visible}
+#figs{
+  position:absolute; right:0; top:50%; transform:translateY(-50%);
+  display:flex; flex-direction:column; gap:15px; text-align:right; min-width:104px;
+}
+.fig b{display:block; font-family:var(--mono); font-size:19px; font-weight:500; color:var(--fg); letter-spacing:-.3px}
+.fig span{display:block; margin-top:2px; font-size:11px; color:var(--fg3)}
+.fig.k b{color:var(--sel)}
+
+/* ── 下沿：紧凑步骤条 ───────────────────────────────────────────────── */
+nav{display:flex; align-items:stretch; gap:0; border-top:1px solid var(--line); padding-top:0}
+nav button{
+  flex:1 1 0; min-width:0; appearance:none; background:transparent; border:0;
+  border-top:1px solid transparent; margin-top:-1px;
+  padding:13px 4px 2px; text-align:left; cursor:pointer; color:var(--fg3);
+  font:inherit; font-variant-numeric:tabular-nums;
+  transition:color .15s, border-color .15s;
+}
+nav button:hover{color:var(--fg)}
+nav button[aria-current="true"]{color:var(--fg); border-top-color:var(--sel)}
+nav .n{font-family:var(--mono); font-size:11px; color:var(--fg3); margin-right:8px}
+nav button[aria-current="true"] .n{color:var(--sel)}
+nav .t{font-size:13px}
+button:focus-visible{outline:2px solid var(--line2); outline-offset:2px}
+
+/* ── 画布里的文字：一律走这三档，不另起字号 ─────────────────────────── */
+text{font-family:Inter,sans-serif; font-size:12px; font-weight:400; fill:var(--fg2)}
+text.lead{fill:var(--fg); font-size:13px}
+text.num{font-family:var(--mono); font-size:11px; fill:var(--fg3)}
+text.tag{font-family:var(--mono); font-size:10px; fill:var(--fg3); letter-spacing:.04em}
+
+@media (max-width:900px){
+  #page{padding:22px 18px 14px}
+  #figs{position:static; transform:none; flex-direction:row; gap:22px; text-align:left; justify-content:flex-start; margin-top:10px}
+  #stage{flex-direction:column; padding:14px 0}
+  h1{font-size:21px}
+  nav .t{display:none}
+  nav button{flex:0 0 auto; padding:12px 12px 2px}
+}
+@media (prefers-reduced-motion:reduce){*{transition:none !important}}
+</style>
+</head>
+<body>
+<div id="page">
+  <header>
+    <div>
+      <h1 id="title"></h1>
+      <div id="sub"></div>
+    </div>
+    <div id="legend">
+      <span class="k-ub"><i></i>域内 UB</span>
+      <span class="k-out"><i></i>跨超节点</span>
+    </div>
+  </header>
+
+  <div id="stage">
+    <svg id="scene" viewBox="0 0 900 460" role="img" aria-labelledby="title"></svg>
+    <div id="figs"></div>
+  </div>
+
+  <nav id="nav" aria-label="步骤"></nav>
+</div>
+
+<script>
+(function(){
+'use strict';
+var NS='http://www.w3.org/2000/svg';
+function el(t,a,txt){var n=document.createElementNS(NS,t);if(a)for(var k in a)n.setAttribute(k,a[k]);if(txt!==undefined)n.textContent=txt;return n}
+function g(){return el('g')}
+
+/* 一套尺寸口径，六步共用：改这里就整页跟着改，不在各步里各写各的。
+   数字取 /#/cube 驾驶舱那一页的模型（它画的就是这套集群）。 */
+var M = {
+  cardsPerNode : 8,
+  nodesPerPod  : 16,
+  podsInCluster: 64,
+  get cardsPerPod(){ return this.cardsPerNode * this.nodesPerPod; },   // 128
+  get nodes(){ return this.nodesPerPod * this.podsInCluster; },        // 1024
+  get cards(){ return this.cardsPerPod * this.podsInCluster; }         // 8192
+};
+
+/* ── 画布基元：整页只有三种形（方块 / 框 / 线），靠明暗与包含关系分层 ──
+   方块＝一个实体，框＝一层容器，线＝一次互联。不加阴影、渐变、圆角。 */
+function cell(x,y,w,h,o){
+  o = o || {};
+  return el('rect',{x:x, y:y, width:w, height:h,
+    fill:o.fill||'#1c1c1c', stroke:o.stroke||'#3a3a3a',
+    'stroke-width':o.sw||1, 'vector-effect':'non-scaling-stroke'});
+}
+function frame(x,y,w,h,o){
+  o = o || {};
+  return el('rect',{x:x, y:y, width:w, height:h, fill:o.fill||'none',
+    stroke:o.stroke||'#434343', 'stroke-width':o.sw||1.5,
+    'stroke-dasharray':o.dash||'none', 'vector-effect':'non-scaling-stroke'});
+}
+/* 一格「节点」＝ 8 张卡的 2×4 小阵。三步里反复出现，所以只写一次。 */
+function nodeBlock(x,y,u,gap,o){
+  o = o || {};
+  var n = g(), c, r, i=0;
+  for(r=0;r<2;r++) for(c=0;c<4;c++){
+    n.appendChild(cell(x+c*(u+gap), y+r*(u+gap), u, u,
+      {fill:o.fill||'#242424', stroke:o.stroke||'#3a3a3a', sw:o.sw||1}));
+    i++;
+  }
+  return n;
+}
+function label(x,y,t,cls,anchor){
+  return el('text',{x:x, y:y, 'class':cls||'', 'text-anchor':anchor||'start'}, t);
+}
+
+/* ══ 六步 ══════════════════════════════════════════════════════════════
+   每一步只讲一件事：一句副标题、若干读数、一张图。
+   白色只出现在「这一步新说的那个对象」的边框上——它是全页唯一的选中语汇。 */
+var STEPS = [
+{
+  key:'card', tab:'卡',
+  title:'卡', titleSub:'NPU · 1 rank',
+  sub:'通信域里的最小参与者是一张卡。die 与 core 是卡内结构，不单独参与通信。',
+  figs:[{v:'8,192', k:'全集群卡数'},{v:'128', k:'HBM GB / 卡', key:true}],
+  draw:function(s){
+    var w=250, h=250, x=(900-w)/2, y=(460-h)/2-4;
+    s.appendChild(cell(x,y,w,h,{fill:'#191919', stroke:'#ffffff', sw:1.5}));
+    /* 卡内结构画得极淡：它在这一页里只是「不算节点」的注脚，不是主角 */
+    var i, dw=46, dg=12, dx=x+(w-(4*dw+3*dg))/2;
+    for(i=0;i<4;i++) s.appendChild(cell(dx+i*(dw+dg), y+34, dw, 86, {fill:'#202020', stroke:'#2e2e2e'}));
+    s.appendChild(cell(dx, y+142, 4*dw+3*dg, 74, {fill:'#202020', stroke:'#2e2e2e'}));
+    s.appendChild(label(x+w/2, y+186, 'HBM 128 GB', 'tag', 'middle'));
+    s.appendChild(label(x+w/2, y+24, '4 × die', 'tag', 'middle'));
+    s.appendChild(label(x+w/2, y-20, 'rank', 'lead', 'middle'));
+  }
+},
+{
+  key:'node', tab:'节点',
+  title:'节点', titleSub:'8 卡 · 节点内交换',
+  sub:'8 张卡加节点内交换，任意两卡直通，不经过谁当中心。',
+  figs:[{v:'1,024', k:'全集群节点'},{v:'8', k:'卡 / 节点', key:true}],
+  draw:function(s){
+    /* 环形排布 + 两两连弦：全互联画在网格里会在方块缝隙织出杂乱的 X，
+       排成环之后 28 条弦是干净的、而且一眼看得出「没有中心」。 */
+    var cx=450, cy=222, R=142, u=52, n=8, pts=[], i, a;
+    for(i=0;i<n;i++){ a=-Math.PI/2 + i*2*Math.PI/n; pts.push([cx+R*Math.cos(a), cy+R*Math.sin(a)]); }
+    var lines=g(); lines.setAttribute('opacity','.55');
+    for(i=0;i<n;i++) for(var j=i+1;j<n;j++)
+      lines.appendChild(el('line',{x1:pts[i][0],y1:pts[i][1],x2:pts[j][0],y2:pts[j][1],
+        stroke:'var(--ub)','stroke-width':.9}));
+    s.appendChild(lines);
+    for(i=0;i<n;i++)
+      s.appendChild(cell(pts[i][0]-u/2, pts[i][1]-u/2, u, u,
+        {fill:'#1c1c1c', stroke: i===0 ? '#ffffff' : '#3a3a3a', sw: i===0 ? 1.5 : 1}));
+    s.appendChild(frame(cx-R-u/2-26, cy-R-u/2-26, 2*(R+u/2+26), 2*(R+u/2+26), {stroke:'#434343'}));
+    s.appendChild(label(cx-R-u/2-26, cy-R-u/2-38, '节点', 'lead'));
+    s.appendChild(label(cx+R+u/2+26, cy-R-u/2-38, '任意两卡直通', 'tag', 'end'));
+  }
+},
+{
+  key:'pod', tab:'超节点',
+  title:'超节点', titleSub:'16 节点 · 128 卡',
+  sub:'16 台节点合成一个超节点，全互联从节点内延伸到整个超节点，1:1 无收敛。',
+  figs:[{v:'64', k:'全集群超节点'},{v:'128', k:'卡 / 超节点', key:true},{v:'<1', k:'跨节点 μs'}],
+  draw:function(s){
+    var u=18, gp=4, nw=4*u+3*gp, nh=2*u+gp, padX=36, padY=46;
+    var cols=4, rows=4;
+    var bw=cols*(nw+padX)-padX, bh=rows*(nh+padY)-padY;
+    var x=(900-bw)/2, y=(460-bh)/2-2;
+    for(var r=0;r<rows;r++) for(var c=0;c<cols;c++){
+      var nx=x+c*(nw+padX), ny=y+r*(nh+padY), first=(r===0&&c===0);
+      s.appendChild(nodeBlock(nx, ny, u, gp, {fill:'#242424', stroke:'#3a3a3a'}));
+      s.appendChild(frame(nx-6, ny-6, nw+12, nh+12,
+        {stroke: first ? '#ffffff' : '#333333', sw: first ? 1.5 : 1}));
+    }
+    s.appendChild(frame(x-30, y-30, bw+60, bh+60, {stroke:'var(--ub)', sw:1.5}));
+    s.appendChild(label(x-30, y-42, '超节点 · UB 全互联', 'lead'));
+    s.appendChild(label(x+bw+30, y-42, '1:1 无收敛', 'tag', 'end'));
+    s.appendChild(label(x+bw+30, y+bh+50, '16 节点 × 8 = 128 卡', 'num', 'end'));
+  }
+},
+{
+  key:'edge', tab:'边界',
+  title:'边界', titleSub:'换挡点在这里',
+  sub:'超节点内一律走 UB，跨出去才落到 RDMA。换挡点是超节点边界，不是节点边界。',
+  figs:[{v:'196', k:'UB GB/s · 卡', key:true},{v:'400', k:'RDMA Gbps · 卡'}],
+  draw:function(s){
+    var u=15, gp=3, nw=4*u+3*gp, nh=2*u+gp, padX=26, padY=34;
+    var cols=2, rows=4;
+    var bw=cols*(nw+padX)-padX, bh=rows*(nh+padY)-padY;
+    var gapX=214, x0=(900-(bw*2+gapX))/2, y=(460-bh)/2-6;
+    [0,1].forEach(function(p){
+      var bx=x0+p*(bw+gapX);
+      for(var r=0;r<rows;r++) for(var c=0;c<cols;c++)
+        s.appendChild(nodeBlock(bx+c*(nw+padX), y+r*(nh+padY), u, gp, {fill:'#242424'}));
+      s.appendChild(frame(bx-26, y-26, bw+52, bh+52, {stroke:'var(--ub)', sw:1.5}));
+      s.appendChild(label(bx-26, y-38, '超节点 '+p, 'tag'));
+    });
+    /* 域内：短程线落在两列节点**之间**的空档里，不压在方块上 */
+    var iy=y+nh+padY/2-2;
+    s.appendChild(el('line',{x1:x0+4, y1:iy, x2:x0+bw-4, y2:iy,
+      stroke:'var(--ub)', 'stroke-width':1.5, opacity:.85}));
+    s.appendChild(label(x0+bw/2, iy-8, 'UB · 域内', 'tag', 'middle'));
+    /* 跨域：穿过两个框的琥珀线，粗一档——它是这一页唯一的「换挡」 */
+    var cy=y+2*(nh+padY)+nh/2, xa=x0+bw+26, xb=x0+bw+gapX-26;
+    s.appendChild(el('line',{x1:xa, y1:cy, x2:xb, y2:cy, stroke:'var(--out)', 'stroke-width':2}));
+    s.appendChild(label((xa+xb)/2, cy-11, 'RDMA · 跨超节点', 'tag', 'middle'));
+    s.appendChild(label((xa+xb)/2, cy+21, '3–7 μs', 'num', 'middle'));
+    s.appendChild(label(x0-26, y+bh+50, '节点边界在域内不是降速点', 'tag'));
+  }
+},
+{
+  key:'cluster', tab:'集群',
+  title:'集群', titleSub:'64 超节点 · 8,192 卡',
+  sub:'超节点之上再拼成集群。这一层的连接全部走跨域那条通道。',
+  figs:[{v:'8,192', k:'卡', key:true},{v:'1,024', k:'节点'},{v:'64', k:'超节点'}],
+  draw:function(s){
+    /* 64 个超节点排成 16 × 4：方阵在宽画布上撑不开，铺成扁的才占得住中心 */
+    var u=40, gap=13, cols=16, rows=4;
+    var bw=cols*(u+gap)-gap, bh=rows*(u+gap)-gap;
+    var x=(900-bw)/2, y=(460-bh)/2-4;
+    for(var r=0;r<rows;r++) for(var c=0;c<cols;c++){
+      var px=x+c*(u+gap), py=y+r*(u+gap), first=(r===0&&c===0);
+      /* 每个超节点里的 128 卡不再逐张画：这一层要读的是「有 64 个这样的东西」，
+         纹理只提示它内部是满的。 */
+      s.appendChild(cell(px, py, u, u, {fill:'#1e1e1e', stroke: first?'#ffffff':'#333333', sw: first?1.5:1}));
+      for(var i=0;i<3;i++)
+        s.appendChild(el('line',{x1:px+5, y1:py+11+i*9, x2:px+u-5, y2:py+11+i*9,
+          stroke:'var(--ub)', 'stroke-width':1, opacity:.30}));
+    }
+    s.appendChild(frame(x-28, y-28, bw+56, bh+56, {stroke:'var(--out)', sw:1.5, dash:'3 4'}));
+    s.appendChild(label(x-28, y-40, '集群', 'lead'));
+    s.appendChild(label(x+bw+28, y-40, '超节点之间：跨域', 'tag', 'end'));
+    s.appendChild(label(x+bw+28, y+bh+48, '64 × 128 = 8,192', 'num', 'end'));
+  }
+},
+{
+  key:'pangu', tab:'盘古 4000',
+  title:'盘古 Pro MoE', titleSub:'4,000 卡 · 8 × 5 × 100',
+  sub:'TP8 恰好一台节点，一个副本 40 卡装得进一个超节点——所以只有 DP 跨域。',
+  figs:[{v:'4,000', k:'卡', key:true},{v:'40', k:'卡 / 副本'},{v:'100', k:'DP 副本'},{v:'50', k:'EP 域'}],
+  draw:function(s){
+    /* 左边把「一个 DP 副本」摊开画：8 列 = TP、5 行 = PP，交点就是一张卡。
+       右边用 100 根细条代表 100 个副本（真画 100 根，不写「…」糊弄），
+       一条琥珀线横穿它们 = DP 每步一次的那次归约。 */
+    var u=32, gp=7, cols=8, rows=5;
+    var gw=cols*(u+gp)-gp, gh=rows*(u+gp)-gp;
+    var x=78, y=(460-gh)/2+6;
+
+    for(var r=0;r<rows;r++){
+      for(var c=0;c<cols;c++)
+        s.appendChild(cell(x+c*(u+gp), y+r*(u+gp), u, u, {fill:'#242424', stroke:'#3a3a3a'}));
+      /* 一行 8 张 = 一台节点：TP 这一刀不出节点，框出来说明它 */
+      s.appendChild(frame(x-5, y+r*(u+gp)-5, gw+10, u+10, {stroke:'var(--ub)', sw:1}));
+      s.appendChild(label(x-14, y+r*(u+gp)+u/2+4, 'PP'+r, 'tag', 'end'));
+    }
+    s.appendChild(frame(x-13, y-13, gw+26, gh+26, {stroke:'#ffffff', sw:1.5}));
+    s.appendChild(label(x-13, y-26, '副本 0 · 40 卡 = 完整模型一份', 'lead'));
+    s.appendChild(label(x+gw+13, y-26, 'TP 0–7 · 一行 = 一台节点', 'tag', 'end'));
+    s.appendChild(label(x-13, y+gh+34, '40 层 ÷ PP5 = 8 层每段', 'num'));
+
+    /* 100 根细条：第 0 根对应左边摊开的那个副本 */
+    var sx=x+gw+64, bw=2.2, bg=1.7, n=100;
+    var sw2=n*(bw+bg)-bg, sy=y+8, sh=gh-16;
+    for(var i=0;i<n;i++)
+      s.appendChild(el('rect',{x:sx+i*(bw+bg), y:sy, width:bw, height:sh,
+        fill: i===0 ? '#ffffff' : '#2b2b2b', stroke:'none'}));
+    s.appendChild(label(sx, sy-14, '× 100 副本', 'lead'));
+    s.appendChild(label(sx+sw2, sy-14, '4,000 卡', 'num', 'end'));
+
+    /* DP：横穿全部副本的那一条 —— 这一页唯一跨出超节点的通信 */
+    var dy=sy+sh+18;
+    s.appendChild(el('line',{x1:sx, y1:dy, x2:sx+sw2, y2:dy, stroke:'var(--out)', 'stroke-width':2}));
+    s.appendChild(label(sx, dy+16, 'DP  每步一次 → 跨超节点', 'tag'));
+    /* 从摊开的副本牵一条淡线到细条阵，说明「左边这个就是其中第 0 个」 */
+    s.appendChild(el('line',{x1:x+gw+13, y1:y+gh/2, x2:sx-6, y2:sy+sh/2,
+      stroke:'#434343', 'stroke-width':1, 'stroke-dasharray':'3 4'}));
+
+    s.appendChild(label(x-13, y+gh+56, 'EP 2 折入 DP → 50 个 EP 域', 'tag'));
+  }
+}
+,
+{
+  key:'rel', tab:'通信关系',
+  title:'通信关系', titleSub:'一张卡跟谁来往',
+  sub:'同一张卡同时属于四个组。组落在哪一层，决定了它走 UB 还是跨域。',
+  figs:[{v:'4', k:'它同时属于的组', key:true},{v:'1', k:'其中跨域'}],
+  draw:function(s){
+    /* 左：全景里先把它定位出来——64 个超节点里的一个 */
+    var u=17, gap=6, cols=8, rows=8;
+    var pw=cols*(u+gap)-gap, ph=rows*(u+gap)-gap;
+    var px=58, py=(460-ph)/2-6;
+    for(var r=0;r<rows;r++) for(var c=0;c<cols;c++){
+      var hit=(r===2&&c===3);
+      s.appendChild(cell(px+c*(u+gap), py+r*(u+gap), u, u,
+        {fill: hit?'#2a2a2a':'#1c1c1c', stroke: hit?'#ffffff':'#2e2e2e', sw: hit?1.5:1}));
+    }
+    s.appendChild(label(px, py-16, '全景 · 64 超节点', 'tag'));
+    s.appendChild(label(px, py+ph+22, '选中一张卡', 'tag'));
+    s.appendChild(el('line',{x1:px+pw+14, y1:py+ph/2, x2:px+pw+52, y2:py+ph/2,
+      stroke:'#434343','stroke-width':1,'stroke-dasharray':'3 4'}));
+
+    /* 右：四个组从这张卡辐射出去。方向只用来分开它们，不编码别的意思。 */
+    var cx=610, cy=py+ph/2, k=30;
+    var REL=[
+      {a:-90,  n:'TP 组',   d:'本节点 8 卡',      f:'每层',      c:'var(--ub)'},
+      {a:0,    n:'EP 组',   d:'All-to-All',       f:'每 MoE 层', c:'var(--ub)'},
+      {a:90,   n:'DP 副本', d:'跨超节点',         f:'每步一次',  c:'var(--out)'},
+      {a:180,  n:'上联',    d:'卡 → 节点 → 超节点', f:'UB',      c:'#5a5a5a'}
+    ];
+    REL.forEach(function(R){
+      var rad=R.a*Math.PI/180, ex=cx+Math.cos(rad)*118, ey=cy+Math.sin(rad)*104;
+      s.appendChild(el('line',{x1:cx+Math.cos(rad)*26, y1:cy+Math.sin(rad)*26,
+        x2:ex-Math.cos(rad)*20, y2:ey-Math.sin(rad)*18,
+        stroke:R.c, 'stroke-width': R.c==='var(--out)' ? 2 : 1.4}));
+      s.appendChild(cell(ex-k/2, ey-k/2, k, k, {fill:'#1e1e1e', stroke:R.c, sw:1}));
+      var ax = R.a===180 ? 'end' : (R.a===0 ? 'start' : 'middle');
+      var lx = R.a===180 ? ex-k/2-10 : (R.a===0 ? ex+k/2+10 : ex);
+      /* 朝上那一支要往上堆，否则三行会压在方块上 */
+      var up = R.a===-90;
+      var ly = up ? ey-k/2-44 : (R.a===90 ? ey+k/2+20 : ey-16);
+      s.appendChild(label(lx, ly, R.n, 'lead', ax));
+      s.appendChild(label(lx, ly+15, R.d, 'tag', ax));
+      s.appendChild(label(lx, ly+29, R.f, 'num', ax));
+    });
+    s.appendChild(cell(cx-24, cy-24, 48, 48, {fill:'#242424', stroke:'#ffffff', sw:1.5}));
+    s.appendChild(label(cx, cy+5, 'r0', 'lead', 'middle'));
+  }
+},
+{
+  key:'run', tab:'运行状态',
+  title:'运行状态', titleSub:'跑起来是什么读数',
+  sub:'同一套结构，八级各读各的。越往下利用率越低——一步里访存比计算还多。',
+  figs:[{v:'48', k:'访存 %', key:true},{v:'40', k:'计算 %'},{v:'12', k:'通信 %'}],
+  draw:function(s){
+    /* 左：L7 → L0 八级，每级一条细横条 = 典型利用率。
+       下两级掉到个位数，这正是这一屏最该被读到的那件事。 */
+    var LV=[['L7','全球',52],['L6','集群',52],['L5','服务池',52],['L4','Pod',52],
+            ['L3','Host',53],['L2','Chip',52],['L1','Die',2],['L0','Core-Group',5]];
+    var x=64, y=(460-8*30)/2+4, bw=250;
+    LV.forEach(function(L,i){
+      var by=y+i*30, low=L[2]<20;
+      s.appendChild(label(x, by+10, L[0], 'num'));
+      s.appendChild(label(x+30, by+10, L[1], low?'lead':''));
+      s.appendChild(el('rect',{x:x+126, y:by+2, width:bw, height:10, fill:'#1c1c1c'}));
+      s.appendChild(el('rect',{x:x+126, y:by+2, width:bw*L[2]/100, height:10,
+        fill: low ? '#ffffff' : '#565656'}));
+      s.appendChild(label(x+126+bw+12, by+11, L[2]+'%', 'num'));
+    });
+    s.appendChild(label(x, y-20, '八级 · 典型利用率', 'tag'));
+
+    /* 右：一步的时间去了哪 —— 三段，一条条堆起来 */
+    var sx=560, sw2=270, sy=y+42;
+    var SEG=[['计算',40,'#8c8c8c'],['通信',12,'var(--out)'],['访存',48,'#ffffff']];
+    var acc=0;
+    s.appendChild(label(sx, sy-20, 'Decode 一步 · 时间分解', 'tag'));
+    SEG.forEach(function(g2){
+      var w=sw2*g2[1]/100;
+      s.appendChild(el('rect',{x:sx+acc, y:sy, width:w, height:34, fill:g2[2]}));
+      acc+=w;
+    });
+    acc=0;
+    SEG.forEach(function(g2,i){
+      var w=sw2*g2[1]/100, mid=sx+acc+w/2;
+      s.appendChild(label(mid, sy+58, g2[0], 'lead', 'middle'));
+      s.appendChild(label(mid, sy+76, g2[1]+'%', 'num', 'middle'));
+      acc+=w;
+    });
+    s.appendChild(label(sx, sy+112, '瓶颈不在算力，在把数据搬到核里', 'tag'));
+
+    /* 右下：热力三档 —— 这一屏满屏格子的唯一图例 */
+    var ly=sy+150;
+    s.appendChild(label(sx, ly, '状态', 'tag'));
+    [['空闲 <40%','#3a3a3a'],['中 40–70%','#8c8c8c'],['繁忙 >70%','#e8e8e8']].forEach(function(t,i){
+      s.appendChild(cell(sx+34+i*92, ly-9, 11, 11, {fill:t[1], stroke:'none'}));
+      s.appendChild(label(sx+50+i*92, ly, t[0], 'tag'));
+    });
+  }
+}
+];
+
+/* ── 状态：步号写进 URL，任何一步都能单独发出去 ─────────────────────── */
+var scene=document.getElementById('scene'), figsEl=document.getElementById('figs'),
+    navEl=document.getElementById('nav'), legend=document.getElementById('legend');
+var cur=0;
+
+function readStep(){
+  var q=new URLSearchParams(location.search), n=parseInt(q.get('step'),10);
+  if(!isFinite(n)) return 0;
+  return Math.max(0, Math.min(STEPS.length-1, n-1));   /* 链接里从 1 数起 */
+}
+function writeStep(){
+  var q=new URLSearchParams(location.search);
+  q.set('step', String(cur+1));
+  var t=location.pathname+'?'+q.toString()+location.hash;
+  if(t!==location.pathname+location.search+location.hash){
+    try{ history.replaceState(null,'',t); }catch(e){}
+  }
+}
+function render(){
+  var st=STEPS[cur];
+  document.getElementById('title').innerHTML = st.title+' <span>'+st.titleSub+'</span>';
+  document.getElementById('sub').textContent = st.sub;
+  document.title = '超节点集群 · '+st.title;
+
+  scene.replaceChildren();
+  var layer=g(); scene.appendChild(layer);
+  st.draw(layer);
+
+  figsEl.replaceChildren();
+  st.figs.forEach(function(f){
+    var d=document.createElement('div'); d.className='fig'+(f.key?' k':'');
+    var b=document.createElement('b'); b.textContent=f.v;
+    var sp=document.createElement('span'); sp.textContent=f.k;
+    d.append(b,sp); figsEl.appendChild(d);
+  });
+
+  /* 图例只在「域内 / 跨域」这个对比真的出现在图上时才出现 */
+  legend.classList.toggle('on', cur>=3);
+
+  Array.prototype.forEach.call(navEl.children, function(b,i){
+    b.setAttribute('aria-current', String(i===cur));
+  });
+  writeStep();
+}
+function go(i){ cur=Math.max(0, Math.min(STEPS.length-1, i)); render(); }
+
+STEPS.forEach(function(st,i){
+  var b=document.createElement('button');
+  b.type='button';
+  b.innerHTML='<span class="n">'+String(i+1).padStart(2,'0')+'</span><span class="t">'+st.tab+'</span>';
+  b.setAttribute('aria-label','第 '+(i+1)+' 步：'+st.tab);
+  b.addEventListener('click', function(){ go(i); });
+  navEl.appendChild(b);
+});
+document.addEventListener('keydown', function(e){
+  if(e.key==='ArrowRight'||e.key==='ArrowDown'||e.key===' '){ e.preventDefault(); go(cur+1); }
+  else if(e.key==='ArrowLeft'||e.key==='ArrowUp'){ e.preventDefault(); go(cur-1); }
+  else if(e.key==='Home'){ e.preventDefault(); go(0); }
+  else if(e.key==='End'){ e.preventDefault(); go(STEPS.length-1); }
+});
+window.addEventListener('popstate', function(){ cur=readStep(); render(); });
+
+cur=readStep();
+render();
+})();
+</script>
+<div aria-hidden="true" style="position:fixed;right:12px;bottom:10px;z-index:2147483647;font:11px/1.4 ui-monospace,'SF Mono','Consolas',monospace;color:#8b95ab;opacity:.65;pointer-events:none;user-select:none;">王欣迪</div>
+</body>
+</html>

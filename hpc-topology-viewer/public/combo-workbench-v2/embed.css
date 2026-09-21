@@ -1,0 +1,57 @@
+/* ══════════════════════════════════════════════════════════════════════
+   ① 跨仓类名撞车修复（**不分内嵌与否，一直生效**）
+
+   本仓 public/vendor/pto-design-system 这份快照里有一条给「色板面板」用的
+   .legend —— flex-direction:column + padding + max-height:200px + 滚动条。
+   泳道页自己也叫 .legend（底部那排图例），它只声明了 display/align-items/
+   gap/flex-wrap，**没有声明 flex-direction**，于是快照那条 column 赢了：
+   五个图例竖着摞成 138px 高，撞穿只有 38px 的 .timeline-footer，
+   压在状态栏上。上游那边引的是 pto-design-system 子模块的另一版，撞不上。
+
+   所以这不是内嵌形态的事，独立打开 swimlane.html 一样是坏的——修在这里，
+   并且限定在 .timeline-footer 之下，不去动色板面板那个真正的 .legend。
+   ══════════════════════════════════════════════════════════════════════ */
+
+.timeline-footer .legend {
+  flex-direction: row;
+  padding: 0;
+  max-height: none;
+  overflow: visible;
+}
+
+/* ══════════════════════════════════════════════════════════════════════
+   ② swimlane.html 的**卡片内嵌形态**（只在 ?chrome=0 下生效）。
+
+   为什么要一层：上游那份是整屏应用，自带顶栏（MB07 生命周期 + 时间范围段控 +
+   主题按钮），而在组合工作台里这些位置已经被卡片头占了——同一排控件出现两次，
+   用户不知道该点哪一个。所以内嵌时藏掉它自带的顶栏，段控由卡片头代管
+   （embed-bridge.js 把点击转发回来，见那边注释）。
+
+   不改上游文件本体，是为了它还能被重新拷贝、跟上游 diff 得干净。
+   ══════════════════════════════════════════════════════════════════════ */
+
+html[data-chrome='0'] body {
+  /* 原本是 toolbar / 主区 / statusbar 三行，藏掉那两条就只剩主区一行 */
+  grid-template-rows: minmax(0, 1fr);
+  /* 原值 720px：格子高度由宿主决定，留着它会在矮格子上顶出一条外层滚动条。
+     泳道自己有 .timeline-scroll 负责纵向滚动，不需要 body 撑高。 */
+  min-height: 0;
+}
+
+/* 顶栏：段控归宿主的格头，同一排控件出现两次没人知道该点哪个。
+   状态栏：那两句是「点了会怎样」和数据出处的说明，格子里再占一行不划算——
+   出处该写在文档和文件头，不该长期占着界面。
+   底部图例那一行同理：五个色块的含义看一眼就够，长期占着 38px 不值——
+   台面上这一格是「什么时候动」，纵向每一像素都该给泳道本身。 */
+html[data-chrome='0'] .toolbar,
+html[data-chrome='0'] .statusbar,
+html[data-chrome='0'] .timeline-footer { display: none; }
+
+/* display:none 只是不画，**轨还占着**：.timeline-pane 是 `42px / 1fr / 38px`
+   三条固定轨，第三条是留给图例页脚的。上面藏掉页脚之后那 38px 没人认领，
+   于是泳道最后一条（PP3）底下平白多出一条空白带——横贯整格，下沿还压着卡片
+   自己的圆角与投影，看上去像一条浮在泳道上的挡板。轨一起收掉才算真藏干净。
+   （body 那三行同理，第 33 行已经收过一次。） */
+html[data-chrome='0'] .timeline-pane {
+  grid-template-rows: 42px minmax(0, 1fr);
+}

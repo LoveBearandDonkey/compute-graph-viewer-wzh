@@ -1,0 +1,844 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="author" content="王欣迪" />
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex, nofollow">
+<title>PP 的两张脸 · 用 rank 看流水线 —— 分布式训练参照系 · 配套原型</title>
+<link rel="icon" href="../favicon.svg">
+<style>
+*,*::before,*::after{box-sizing:border-box}
+html{-webkit-text-size-adjust:100%}
+</style>
+<style>
+:root{
+  --bg:#EEF1F3; --paper:#FFFFFF; --panel:#F6F8F9;
+  --ink:#0E1418; --ink-2:#3D4B55; --ink-3:#6B7B86;
+  --rule:#D2DADF; --rule-2:#E2E8EC;
+  --pp:#B3603A; --fwd:#C2703F; --bwd:#7C3F24;
+  --dp:#2E6E8E; --tp:#A8404A; --cp:#3E7D5E; --ep:#6A5A9B;
+  --bubble:#EAEEF0; --bubble-line:#CFD8DD;
+  --sans:-apple-system,BlinkMacSystemFont,"PingFang SC","Hiragino Sans GB","Microsoft YaHei",sans-serif;
+  --mono:ui-monospace,SFMono-Regular,"SF Mono",Menlo,Consolas,monospace;
+}
+@media (prefers-color-scheme:dark){
+  :root{
+    --bg:#0F1519; --paper:#161E24; --panel:#1B242B;
+    --ink:#E7EDF1; --ink-2:#AEBCC5; --ink-3:#7C8B95;
+    --rule:#2A353D; --rule-2:#222C33;
+    --pp:#D07F52; --fwd:#D98A5B; --bwd:#B26236;
+    --dp:#4E93B4; --tp:#CE5E68; --cp:#5A9E7C; --ep:#8B7CBE;
+    --bubble:#1A232A; --bubble-line:#2C3841;
+  }
+}
+:root[data-theme="light"]{
+  --bg:#EEF1F3; --paper:#FFFFFF; --panel:#F6F8F9;
+  --ink:#0E1418; --ink-2:#3D4B55; --ink-3:#6B7B86;
+  --rule:#D2DADF; --rule-2:#E2E8EC;
+  --pp:#B3603A; --fwd:#C2703F; --bwd:#7C3F24;
+  --bubble:#EAEEF0; --bubble-line:#CFD8DD;
+}
+:root[data-theme="dark"]{
+  --bg:#0F1519; --paper:#161E24; --panel:#1B242B;
+  --ink:#E7EDF1; --ink-2:#AEBCC5; --ink-3:#7C8B95;
+  --rule:#2A353D; --rule-2:#222C33;
+  --pp:#D07F52; --fwd:#D98A5B; --bwd:#B26236;
+  --bubble:#1A232A; --bubble-line:#2C3841;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans);
+  line-height:1.6;-webkit-font-smoothing:antialiased;padding:clamp(20px,4vw,52px)}
+.wrap{max-width:1120px;margin:0 auto}
+.eyebrow{font-family:var(--mono);font-size:11px;letter-spacing:.24em;text-transform:uppercase;
+  color:var(--ink-3);margin:0 0 10px}
+h1{font-size:clamp(24px,3.4vw,34px);line-height:1.15;margin:0 0 12px;font-weight:760;text-wrap:balance;
+  letter-spacing:-.01em}
+h1 .thin{font-weight:300;color:var(--ink-2)}
+.thesis{color:var(--ink-2);max-width:66ch;margin:0;font-size:15.5px}
+.thesis b{color:var(--ink);font-weight:650}
+.backnav{margin:0 0 12px;font-family:var(--mono);font-size:11.5px;display:flex;flex-wrap:wrap;gap:9px;align-items:center}
+.backnav a{color:var(--dp);text-decoration:none;border-bottom:1px solid transparent}
+.backnav a:hover{border-bottom-color:currentColor}
+.backnav a:focus-visible{outline:2px solid var(--pp);outline-offset:2px}
+.backnav span{color:var(--ink-3);opacity:.6}
+.themebtn{position:fixed;top:14px;right:14px;font-family:var(--mono);font-size:11px;
+  background:var(--paper);color:var(--ink-2);border:1px solid var(--rule);border-radius:6px;
+  padding:6px 10px;cursor:pointer;z-index:10}
+.themebtn:focus-visible{outline:2px solid var(--pp);outline-offset:2px}
+
+.panel{background:var(--paper);border:1px solid var(--rule);border-radius:10px;
+  padding:clamp(14px,2vw,22px);margin-top:22px}
+
+/* ---- controls ---- */
+.controls{display:flex;flex-wrap:wrap;gap:18px 26px;align-items:flex-end}
+.ctl{display:flex;flex-direction:column;gap:6px}
+.ctl>label{font-family:var(--mono);font-size:10.5px;letter-spacing:.1em;text-transform:uppercase;
+  color:var(--ink-3)}
+.stepper{display:flex;align-items:center;gap:2px}
+.stepper button{width:28px;height:30px;border:1px solid var(--rule);background:var(--panel);
+  color:var(--ink);font-size:15px;cursor:pointer;line-height:1}
+.stepper button:first-child{border-radius:6px 0 0 6px}
+.stepper button:last-child{border-radius:0 6px 6px 0}
+.stepper button:hover{background:var(--rule-2)}
+.stepper button:focus-visible{outline:2px solid var(--pp);outline-offset:1px;z-index:1}
+.stepper .val{min-width:40px;height:30px;display:flex;align-items:center;justify-content:center;
+  border-top:1px solid var(--rule);border-bottom:1px solid var(--rule);background:var(--paper);
+  font-family:var(--mono);font-size:14px;font-weight:650;font-variant-numeric:tabular-nums}
+.seg{display:inline-flex;border:1px solid var(--rule);border-radius:6px;overflow:hidden}
+.seg button{border:0;background:var(--panel);color:var(--ink-2);font-family:var(--mono);font-size:12px;
+  padding:7px 12px;cursor:pointer}
+.seg button+button{border-left:1px solid var(--rule)}
+.seg button[aria-pressed="true"]{background:var(--pp);color:#fff}
+.seg button:focus-visible{outline:2px solid var(--pp);outline-offset:-2px}
+.fold-note{font-family:var(--mono);font-size:11.5px;color:var(--ink-3);align-self:flex-end;
+  padding-bottom:6px;max-width:22ch;line-height:1.45}
+.fold-note b{color:var(--pp);font-weight:650}
+
+/* ---- hinge layout ---- */
+.hinge{display:flex;gap:0;margin-top:20px;align-items:stretch;border:1px solid var(--rule);
+  border-radius:10px;overflow:hidden;background:var(--paper)}
+.face-head{font-family:var(--mono);font-size:10.5px;letter-spacing:.12em;text-transform:uppercase;
+  color:var(--ink-3);padding:10px 12px 8px;border-bottom:1px solid var(--rule-2)}
+.face-head b{color:var(--ink-2);font-weight:650;letter-spacing:0;text-transform:none;font-size:12.5px;
+  display:block;margin-top:2px}
+.spatial{flex:0 0 auto;min-width:172px;border-right:2px solid var(--ink);display:flex;flex-direction:column}
+.spatial .rows{display:grid}
+.stagebox{display:flex;flex-direction:column;justify-content:center;gap:1px;padding:5px 11px;
+  border-bottom:1px solid var(--rule-2);position:relative}
+.stagebox:last-child{border-bottom:0}
+.stagebox>span{flex:none;line-height:1.35;max-width:calc(100% - 12px);
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.stagebox .sname{font-family:var(--mono);font-size:11px;color:var(--pp);font-weight:700}
+.stagebox .sname em{font-style:normal;font-weight:400;color:var(--ink-3)}
+.stagebox .srange{font-size:12px;color:var(--ink);font-weight:600}
+.stagebox .srange em{font-style:normal;font-weight:400;font-size:9.5px;font-family:var(--mono);color:var(--ink-3)}
+.stagebox .fold{position:absolute;right:9px;top:50%;transform:translateY(-50%);font-family:var(--mono);
+  font-size:9px;color:var(--ink-3);text-align:right;line-height:1.25;opacity:.85}
+.p2p{position:absolute;right:9px;top:0;transform:translateY(-50%);font-size:9px;color:var(--dp);
+  background:var(--paper);padding:0 6px;font-family:var(--mono);border:1px solid var(--rule-2);
+  border-radius:8px;white-space:nowrap;z-index:3;letter-spacing:.02em}
+
+.time{flex:1 1 auto;display:flex;flex-direction:column;min-width:0}
+.gridscroll{overflow-x:auto;padding:0 0 6px}
+.grid-inner{padding:6px 10px 4px}
+.grid{display:grid;gap:2px;width:max-content}
+.cell{border-radius:3px;font-family:var(--mono);font-size:9.5px;font-weight:650;
+  display:flex;align-items:center;justify-content:center;color:#fff;cursor:pointer;
+  font-variant-numeric:tabular-nums;user-select:none;transition:opacity .1s,box-shadow .1s}
+.cell.bubble{background:var(--bubble);
+  background-image:repeating-linear-gradient(45deg,transparent 0 3px,var(--bubble-line) 3px 4px);
+  cursor:default}
+.cell.f{background:var(--fwd)}
+.cell.b{background:var(--bwd)}
+.cell .lb{opacity:.92}
+.dimmed .cell.f:not(.sel),.dimmed .cell.b:not(.sel){opacity:.26}
+.cell.sel{box-shadow:0 0 0 2px var(--ink),0 0 0 3px var(--paper);z-index:2}
+.cell.tcol{outline:2px solid var(--dp);outline-offset:-2px}
+.axis-x{font-family:var(--mono);font-size:10px;color:var(--ink-3);padding:2px 10px 8px;
+  border-top:1px solid var(--rule-2);display:flex;justify-content:space-between}
+.axis-x span{letter-spacing:.05em}
+
+/* ---- readouts ---- */
+.readouts{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:14px;margin-top:18px}
+.stat{background:var(--panel);border:1px solid var(--rule);border-radius:9px;padding:13px 15px}
+.stat .k{font-family:var(--mono);font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--ink-3)}
+.stat .v{font-size:23px;font-weight:730;margin-top:5px;font-variant-numeric:tabular-nums;
+  display:flex;align-items:baseline;gap:5px}
+.stat .v small{font-size:12px;font-weight:500;color:var(--ink-3)}
+.stat .sub{font-family:var(--mono);font-size:10.5px;color:var(--ink-3);margin-top:4px}
+.stat.accent .v{color:var(--pp)}
+
+/* ---- legend + mb chips + scrubber ---- */
+.toolrow{display:flex;flex-wrap:wrap;gap:14px 26px;align-items:center;margin-top:18px}
+.legend{display:flex;flex-wrap:wrap;gap:6px 16px;font-size:12px;color:var(--ink-2)}
+.legend span{display:inline-flex;align-items:center;gap:6px}
+.legend i{width:14px;height:14px;border-radius:3px;display:inline-block}
+.legend i.f{background:var(--fwd)} .legend i.b{background:var(--bwd)}
+.legend i.bub{background:var(--bubble);background-image:repeating-linear-gradient(45deg,transparent 0 3px,var(--bubble-line) 3px 4px);border:1px solid var(--bubble-line)}
+.legend i.selmark{background:transparent;box-shadow:0 0 0 2px var(--ink) inset;border-radius:3px}
+
+.mbpick{display:flex;flex-wrap:wrap;align-items:center;gap:8px}
+.mbpick .lab{font-family:var(--mono);font-size:11px;color:var(--ink-3)}
+.chip{font-family:var(--mono);font-size:11px;border:1px solid var(--rule);background:var(--paper);
+  color:var(--ink-2);border-radius:20px;padding:3px 9px;cursor:pointer;font-variant-numeric:tabular-nums}
+.chip:hover{border-color:var(--pp)}
+.chip[aria-pressed="true"]{background:var(--pp);color:#fff;border-color:var(--pp)}
+.chip.clear{border-style:dashed}
+
+.scrub{display:flex;align-items:center;gap:12px;margin-top:16px;flex-wrap:wrap}
+.scrub label{font-family:var(--mono);font-size:11px;color:var(--ink-3);white-space:nowrap}
+.scrub input[type=range]{flex:1 1 240px;accent-color:var(--dp)}
+.scrub .status{font-family:var(--mono);font-size:12px;color:var(--ink);min-width:0;flex:1 1 100%;
+  background:var(--panel);border:1px solid var(--rule);border-radius:7px;padding:8px 12px;line-height:1.5}
+.scrub .status b.f{color:var(--fwd)} .scrub .status b.b{color:var(--bwd)}
+.scrub .status .bub{color:var(--ink-3)}
+
+/* ---- reading notes ---- */
+.notes{margin-top:26px;display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:16px}
+.note{border-left:3px solid var(--pp);padding:2px 0 2px 15px}
+.note h3{margin:0 0 5px;font-size:13.5px;font-weight:700}
+.note p{margin:0;font-size:13px;color:var(--ink-2)}
+.note code{font-family:var(--mono);font-size:.86em;background:var(--rule-2);padding:1px 4px;border-radius:3px}
+.foot{margin-top:30px;padding-top:16px;border-top:1px solid var(--rule);font-size:12px;color:var(--ink-3);
+  max-width:76ch}
+.foot code{font-family:var(--mono);background:var(--rule-2);padding:1px 4px;border-radius:3px}
+.tip{position:fixed;pointer-events:none;background:var(--ink);color:var(--bg);font-family:var(--mono);
+  font-size:11px;line-height:1.5;padding:7px 9px;border-radius:6px;max-width:240px;z-index:20;
+  opacity:0;transition:opacity .1s;box-shadow:0 6px 20px rgba(0,0,0,.25)}
+
+/* ---- stage boxes are clickable (unfold) ---- */
+.stagebox{cursor:pointer}
+.stagebox:hover{background:var(--rule-2)}
+.stagebox:focus-visible{outline:2px solid var(--pp);outline-offset:-2px;z-index:2}
+.stagebox.usel{background:var(--rule-2);box-shadow:inset 3px 0 0 var(--pp)}
+.stagebox .exp{position:absolute;right:9px;bottom:5px;font-family:var(--mono);font-size:9px;
+  color:var(--pp);background:var(--paper);padding:0 3px;border-radius:3px;opacity:0;transition:opacity .12s}
+.stagebox:hover .exp,.stagebox:focus-visible .exp,.stagebox.usel .exp{opacity:1}
+
+/* ---- unfold panel ---- */
+.unfold{margin-top:16px}
+.unfold-hint{font-size:12.5px;color:var(--ink-3);background:var(--panel);border:1px dashed var(--rule);
+  border-radius:8px;padding:10px 14px}
+.unfold-hint b{color:var(--pp)}
+.unfold-body{background:var(--panel);border:1px solid var(--rule);border-radius:10px;padding:14px 16px;margin-top:10px}
+.unfold-head{display:flex;justify-content:space-between;align-items:baseline;gap:12px;flex-wrap:wrap;margin-bottom:4px}
+.unfold-head .t{font-size:14px;font-weight:700}
+.unfold-head .t b{color:var(--pp)}
+.unfold-head .close{font-family:var(--mono);font-size:11px;background:var(--paper);color:var(--ink-2);
+  border:1px solid var(--rule);border-radius:6px;padding:5px 10px;cursor:pointer}
+.unfold-head .close:hover{border-color:var(--pp);color:var(--pp)}
+.unfold-cap{font-size:12px;color:var(--ink-2);margin:0 0 12px;max-width:78ch}
+.unfold-cap code{font-family:var(--mono);font-size:.86em;background:var(--rule-2);padding:1px 4px;border-radius:3px}
+.stripscroll{overflow-x:auto;padding:2px 0 8px}
+.ppstrip{position:relative;display:flex;gap:52px;width:max-content;padding-top:2px}
+.chainsvg{position:absolute;left:0;top:0;z-index:0;pointer-events:none;overflow:visible;color:var(--pp)}
+.ppcol{position:relative;z-index:1;flex:0 0 auto}
+.ppcol .colhead{font-family:var(--mono);font-size:10.5px;font-weight:700;color:var(--pp);margin-bottom:6px;
+  white-space:nowrap;line-height:1.35}
+.ppcol .colhead em{display:block;font-style:normal;font-weight:400;font-size:9px;color:var(--ink-3)}
+/* 与时间滑块联动：整列显示这一刻它在算谁 */
+.ppcol .stchip{display:inline-block;margin-left:6px;font-size:9px;font-weight:700;padding:1px 6px;
+  border-radius:9px;border:1px solid var(--rule);color:var(--ink-3);vertical-align:1.5px;letter-spacing:.02em}
+.ppcol .stchip[data-empty]{display:none}
+.ppcol .rankgrid{transition:background .12s,opacity .12s;border-radius:6px}
+.ppcol.st-f .rankgrid{background:rgba(210,130,70,.10)}
+.ppcol.st-b .rankgrid{background:rgba(140,75,45,.13)}
+.ppcol.st-bub .rankgrid{opacity:.42}
+/* 卡片本身也要亮——否则「整列 32 张都在算」在视觉上不成立 */
+.ppcol.st-f .rk.card{background:rgba(210,130,70,.30);border-color:rgba(194,112,63,.55)}
+.ppcol.st-b .rk.card{background:rgba(140,75,45,.34);border-color:rgba(124,63,36,.55)}
+/* 链上那张：即使整列已染色也要压得住（放在染色规则之后） */
+.ppcol .rk.card.inchain{border-color:var(--pp);color:var(--pp);font-weight:750;
+  box-shadow:0 0 0 2px var(--pp),0 0 0 4px var(--panel)}
+.ppcol.st-f .stchip{background:var(--fwd);border-color:var(--fwd);color:#fff}
+.ppcol.st-b .stchip{background:var(--bwd);border-color:var(--bwd);color:#fff}
+.ppcol.st-bub .stchip{background:var(--bubble);border-style:dashed;
+  background-image:repeating-linear-gradient(45deg,transparent 0 3px,var(--bubble-line) 3px 4px)}
+.nowline{font-family:var(--mono);font-size:11px;color:var(--ink-3);margin:0 0 9px}
+.nowline b{color:var(--ink-2)}
+.ulegend{display:flex;flex-wrap:wrap;gap:6px 22px;margin:0 0 11px;font-size:11.5px;color:var(--ink-2)}
+.ulegend span{display:inline-flex;align-items:center;gap:7px}
+.ulegend b{color:var(--ink);font-weight:650}
+.ulegend i{width:16px;height:16px;border-radius:4px;flex:none;display:inline-block}
+.ulegend i.lg-ring{background:var(--paper);border:1px solid var(--rule);box-shadow:0 0 0 2px var(--pp)}
+.ulegend i.lg-lit{background:rgba(210,130,70,.30);border:1px solid rgba(194,112,63,.55)}
+.tbl-td{width:100%;border-collapse:collapse;margin-top:12px;font-size:11.5px}
+.tbl-td caption{text-align:left;font-size:11.5px;color:var(--ink-2);padding-bottom:7px}
+.tbl-td th,.tbl-td td{border:1px solid var(--rule);padding:6px 9px;text-align:left;vertical-align:top;
+  background:var(--paper);line-height:1.5}
+.tbl-td th{font-weight:700;background:var(--panel);white-space:nowrap}
+.ppcol.emph .colhead{color:var(--ink)}
+.ppcol.emph .rankgrid{box-shadow:0 0 0 2px var(--rule);border-radius:6px}
+.rk.inchain{border-color:var(--pp);background:var(--paper);color:var(--pp);font-weight:750;
+  box-shadow:0 0 0 2px var(--pp)}
+.cppick{display:flex;align-items:center;gap:7px;flex-wrap:wrap;margin:0 0 10px}
+.cppick span{font-family:var(--mono);font-size:11px;color:var(--ink-3)}
+.chainout{font-family:var(--mono);font-size:11.5px;color:var(--ink-2);background:var(--paper);
+  border:1px solid var(--rule);border-radius:7px;padding:8px 12px;margin-top:2px;overflow-x:auto;white-space:nowrap}
+.chainout .cr{color:var(--pp);font-weight:750}
+.chainout .ar{color:var(--dp);opacity:.85}
+.chainout .dim{color:var(--ink-3)}
+.rankgrid{display:grid;gap:3px}
+.rk{border-radius:4px;background:var(--paper);border:1px solid var(--rule);font-family:var(--mono);
+  display:flex;align-items:center;justify-content:center;color:var(--ink-2);
+  font-variant-numeric:tabular-nums;cursor:default}
+.rk.axh{background:transparent;border:0;color:var(--ink-3);font-size:9.5px}
+.rk.axh.tp{color:var(--tp)} .rk.axh.dp{color:var(--dp)}
+.rk.card{transition:box-shadow .1s;cursor:pointer}
+.rk.card:hover{box-shadow:0 0 0 2px var(--ink);z-index:2}
+.rk.sample{border-color:var(--pp);box-shadow:0 0 0 1px var(--pp)}
+.unfold-note{font-family:var(--mono);font-size:11px;color:var(--ink-3);margin-top:10px;line-height:1.5}
+.unfold-note b{color:var(--ink-2)}
+@media (max-width:680px){
+  .spatial{min-width:150px}
+  .stagebox .fold{display:none}
+}
+@media (prefers-reduced-motion:reduce){*{transition:none!important}}
+</style>
+</head>
+<body>
+
+<button class="themebtn" id="themebtn">◐ 主题</button>
+
+<div class="wrap">
+  <p class="eyebrow">HPC TOPOLOGY · 参照系配套原型 · FIG 15/16 的可动版</p>
+  <p class="backnav"><a href="../launch.html">← 启动页</a><span>·</span><a href="../parallel-reference/#s6">参照系 §12 运行时</a><span>·</span><a href="../parallel-reference/#s-chain">§07 双链映射</a></p>
+  <h1>PP 的两张脸 <span class="thin">—— 用 rank 看流水线</span></h1>
+  <p class="thesis">流水并行（PP）是四个切分维里<b>唯一有序、不能折叠</b>的那根轴——它本质是被空间化的时间。
+  一张 rank×时间的网格就能同时说清三件事：<b class="j-diag">一个 micro-batch 的因果链是一条斜线</b>、
+  <b>不同 micro-batch 错开重叠就是并行</b>、<b>两角的空白就是气泡</b>。左边空间脸回答「谁装哪几层」，
+  右边时间脸回答「谁在什么时候算」——两张脸唯一共享的轴，就是 <b>pp_rank</b>：rank 门牌号
+  <code>(pp,dp,cp,tp)</code> 里的 PP 那一位。<b>这张图不画单张 rank</b>——每一格是 pp_rank 相同的一整组卡
+  （下面默认 128 张）锁步做同一件事，另外三位 TP/DP/CP 折进了每一格。停在格子上能看到其中一张的完整门牌号。</p>
+
+  <div class="panel">
+    <div class="controls">
+      <div class="ctl">
+        <label>PP · stage 数</label>
+        <div class="stepper" data-k="pp">
+          <button data-d="-1" aria-label="减小 PP">−</button>
+          <div class="val" id="v-pp">4</div>
+          <button data-d="1" aria-label="增大 PP">+</button>
+        </div>
+      </div>
+      <div class="ctl">
+        <label>micro-batch 数（= GA）</label>
+        <div class="stepper" data-k="mb">
+          <button data-d="-1" aria-label="减少 micro-batch">−</button>
+          <div class="val" id="v-mb">8</div>
+          <button data-d="1" aria-label="增加 micro-batch">+</button>
+        </div>
+      </div>
+      <div class="ctl">
+        <label>调度</label>
+        <div class="seg" id="mode">
+          <button data-m="1f1b" aria-pressed="true">1F1B</button>
+          <button data-m="gpipe" aria-pressed="false">GPipe</button>
+        </div>
+      </div>
+      <div class="ctl">
+        <label>每格折叠的卡数 · TP × DP × CP</label>
+        <div style="display:flex;gap:6px">
+          <div class="stepper" data-k="tp" style="transform:scale(.92);transform-origin:left">
+            <button data-d="-1">−</button><div class="val" id="v-tp" title="TP">2</div><button data-d="1">+</button>
+          </div>
+          <div class="stepper" data-k="dp" style="transform:scale(.92);transform-origin:left">
+            <button data-d="-1">−</button><div class="val" id="v-dp" title="DP">16</div><button data-d="1">+</button>
+          </div>
+          <div class="stepper" data-k="cp" style="transform:scale(.92);transform-origin:left">
+            <button data-d="-1">−</button><div class="val" id="v-cp" title="CP">1</div><button data-d="1">+</button>
+          </div>
+        </div>
+      </div>
+      <div class="fold-note">每个格子 = 一个 Stage = <b id="foldn">32</b> 张卡（TP×DP×CP，= world_size÷PP）</div>
+    </div>
+
+    <div class="hinge" id="hinge">
+      <div class="spatial">
+        <div class="face-head">空间脸<b>谁装哪几层</b></div>
+        <div class="rows" id="spatial-rows"></div>
+      </div>
+      <div class="time">
+        <div class="face-head">时间脸<b>谁在什么时候算</b></div>
+        <div class="gridscroll">
+          <div class="grid-inner">
+            <div class="grid" id="grid"></div>
+          </div>
+          <div class="axis-x"><span>← Stage 0 / pp_rank 0 在底　·　时间 →</span><span id="ax-t"></span></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="unfold">
+      <div class="unfold-hint">点左边任一 <b>Stage</b> 盒子 → 把每个 Stage 折叠的卡都摊开（<b>TP×DP×CP</b> 张真实 rank / Stage）；再点任意一格，<b>画出它的 PP 链</b>。</div>
+      <div class="unfold-body" id="unfold-body" hidden></div>
+    </div>
+
+    <div class="readouts" id="readouts"></div>
+
+    <div class="toolrow">
+      <div class="legend">
+        <span><i class="f"></i>Forward（前向）</span>
+        <span><i class="b"></i>Backward（反向）</span>
+        <span><i class="bub"></i>气泡（空转）</span>
+        <span><i class="selmark"></i>选中的 micro-batch</span>
+      </div>
+    </div>
+    <div class="mbpick" id="mbpick" style="margin-top:12px"></div>
+
+    <div class="scrub">
+      <label for="tscrub">扫过时间轴 →</label>
+      <input type="range" id="tscrub" min="-1" max="0" value="-1">
+      <div class="status" id="tstatus">拖动滑块，看某一时刻各 stage 谁在算、谁在空转 —— 通信这时候就成了脉冲。</div>
+    </div>
+  </div>
+
+  <div class="notes">
+    <div class="note">
+      <h3>为什么这根轴不能折</h3>
+      <p>TP/DP 组内成员可互换、锁步做同样的事，画一个代表就够。PP 三条都不成立：每个 stage 装<b>不同的层</b>、
+      是<b>有向链</b>（同一 micro-batch 必须 stage k 先于 k+1）、任一时刻处于流水线<b>不同位置</b>。折了，斜线、气泡就都没了。</p>
+    </div>
+    <div class="note">
+      <h3>F0 / B0 怎么读</h3>
+      <p><b>F = 前向、B = 反向；数字是 micro-batch 编号</b>（不是 stage 号、不是层号）。所以 <code>F0</code> 与 <code>B0</code>
+      是<b>同一批数据的一去一回</b>：F0 沿 stage 往上爬，到顶算完 loss，B0 再一路往下——点 <code>mb 0</code> 高亮出来是个
+      <b>先上后下的 Λ</b>。同一个 F0 在每个 stage 各出现一次，那就是它在流水线里走。</p>
+    </div>
+    <div class="note">
+      <h3>重叠 = 并行；空白 = 气泡</h3>
+      <p>不同 micro-batch 的斜线在横轴上错开重叠，重叠处就是流水线的并行。左下 warmup、右上 cooldown 两片空白是气泡，
+      占比随 <code>micro-batch / PP</code> 变化——把 GA 拉大，气泡就变小。</p>
+      <p style="margin-top:8px"><b>注意 1F1B 和 GPipe 的气泡完全一样。</b>切换调度，makespan 与气泡占比一个都不变——
+      1F1B 省的是<b>显存</b>：看「峰值在飞 micro-batch」从 micro-batch 数掉到 PP。</p>
+    </div>
+    <div class="note">
+      <h3>这里面有没有单张 rank？</h3>
+      <p>没有。每一格是 <b>Stage s</b> = <code>pp_rank</code> 相同的<b>一整组卡</b>（默认 128 张真实 rank）锁步做同一件事。
+      图上唯一的 rank 信息是 <code>pp_rank</code> 这<b>一位</b>——门牌号 <code>(pp,dp,cp,tp)</code> 里的 PP；
+      另外三位 TP/DP/CP 折进了每一格（调上面三个数看折了多少）。<b>点左边任一 Stage 盒子</b>，就能把那组卡摊成 <code>dp×tp</code> 网格、看到每张的完整门牌号与 global_rank。</p>
+    </div>
+  </div>
+
+  <p class="foot">读法约定：y 轴是 <code>pp_rank</code>（0 在底，向上递增），x 轴是时间（每格 1 个时间单位，
+  这里把反向也简化成 1 个单位；真实反向约为前向的 2 倍）。气泡比取自实际排布 <code>(T−2M)/T</code>，
+  与参照系里的经验式 <code>(PP−1)/GA</code> 是同一件事的精确版与口算版。对应参照系 FIG 15（多 rank 时间线）与
+  FIG 16（PP 铰链）。</p>
+</div>
+
+<div class="tip" id="tip"></div>
+
+<script>
+const CFG={pp:4,mb:8,mode:'1f1b',tp:2,dp:16,cp:1,L:48,sel:null,tcur:-1,unfold:null,
+  chain:{dp:0,cp:0,tp:0}};
+const CLAMP={pp:[2,8],mb:[1,16],tp:[1,64],dp:[1,512],cp:[1,16]};
+
+function buildSchedule(P,M,mode){
+  const order=[];
+  for(let s=0;s<P;s++){
+    const arr=[];
+    if(mode==='gpipe'){
+      for(let m=0;m<M;m++) arr.push({type:'F',m});
+      for(let m=0;m<M;m++) arr.push({type:'B',m});
+    }else{
+      let w=Math.min(P-1-s,M);
+      for(let i=0;i<w;i++) arr.push({type:'F',m:i});
+      let f=w,b=0;
+      while(f<M){arr.push({type:'F',m:f});arr.push({type:'B',m:b});f++;b++;}
+      while(b<M){arr.push({type:'B',m:b});b++;}
+    }
+    order.push(arr);
+  }
+  const posOf=order.map(a=>{const o={};a.forEach((t,i)=>o[t.type+':'+t.m]=i);return o;});
+  const st=order.map(a=>a.map(()=>0));
+  const endOf=(s,p)=>st[s][p]+1;
+  let changed=true,guard=0;
+  while(changed&&guard++<100000){
+    changed=false;
+    for(let s=0;s<P;s++)for(let i=0;i<order[s].length;i++){
+      const t=order[s][i];let est=0;
+      if(i>0)est=Math.max(est,endOf(s,i-1));
+      if(t.type==='F'&&s>0){const d=posOf[s-1]['F:'+t.m];if(d!==undefined)est=Math.max(est,endOf(s-1,d));}
+      if(t.type==='B'){
+        const fp=posOf[s]['F:'+t.m];if(fp!==undefined)est=Math.max(est,endOf(s,fp));
+        if(s<P-1){const d=posOf[s+1]['B:'+t.m];if(d!==undefined)est=Math.max(est,endOf(s+1,d));}
+      }
+      if(est!==st[s][i]){st[s][i]=est;changed=true;}
+    }
+  }
+  let T=0;
+  for(let s=0;s<P;s++)for(let i=0;i<order[s].length;i++)T=Math.max(T,st[s][i]+1);
+  const grid=Array.from({length:P},()=>Array.from({length:T},()=>null));
+  for(let s=0;s<P;s++)for(let i=0;i<order[s].length;i++){const t=order[s][i];grid[s][st[s][i]]={type:t.type,m:t.m};}
+  // 峰值在飞 micro-batch：F 做完但 B 还没来，激活值就得留着
+  let peak=0, peakStage=0;
+  for(let s=0;s<P;s++){
+    let cur=0,mx=0;
+    for(let t=0;t<T;t++){
+      const c=grid[s][t]; if(!c) continue;
+      cur += c.type==='F'?1:-1;
+      if(cur>mx) mx=cur;
+    }
+    if(mx>peak){peak=mx;peakStage=s;}
+  }
+  return {grid,T,peak,peakStage};
+}
+
+let STATE={grid:[],T:0};
+const $=id=>document.getElementById(id);
+
+function layerRange(s){
+  const P=CFG.pp,L=CFG.L;
+  const a=Math.floor(s*L/P), b=Math.floor((s+1)*L/P);
+  return [a,b];
+}
+
+function render(){
+  const P=CFG.pp,M=CFG.mb;
+  if(CFG.unfold!==null && CFG.unfold>=P) CFG.unfold=null;
+  STATE=buildSchedule(P,M,CFG.mode);
+  const {grid,T,peak,peakStage}=STATE;
+  const fold=CFG.tp*CFG.dp*CFG.cp;
+
+  // cell sizing: shrink a touch when T is large
+  const cw=T>34?20:(T>24?23:26);
+  const H=Math.max(46, cw+14);
+
+  // spatial rows (top = stage P-1, bottom = stage 0)
+  const sp=$('spatial-rows'); sp.style.gridTemplateRows=`repeat(${P},${H}px)`;
+  let sh='';
+  for(let r=0;r<P;r++){
+    const s=P-1-r;
+    const [a,b]=layerRange(s);
+    let tags=[];
+    if(s===0) tags.push('embedding');
+    if(s===P-1) tags.push('lm_head');
+    const tagstr=tags.length?('＋'+tags.join('＋')):'';
+    const p2p = r>0?`<span class="p2p" title="Stage ${s-1} → ${s} 的 P2P：${fold} 对独立的 Send/Recv，各自配对门牌号其余三位相同的那张卡（global_rank +${fold}）">↑ P2P ×${fold}</span>`:'';
+    const usel = CFG.unfold===s?' usel':'';
+    sh+=`<div class="stagebox${usel}" style="height:${H}px" data-s="${s}" role="button" tabindex="0"
+      aria-label="展开 Stage ${s} 折叠的卡" aria-pressed="${CFG.unfold===s}">${p2p}
+      <span class="sname">Stage ${s} <em>= pp_rank ${s}</em></span>
+      <span class="srange">L ${a}–${b-1}${tagstr?` <em>${tagstr}</em>`:''}</span>
+      <span class="exp">展开 ⤢</span></div>`;
+  }
+  sp.innerHTML=sh;
+
+  // grid (rows top=stage P-1 .. bottom=stage 0)
+  const g=$('grid');
+  g.style.gridTemplateColumns=`repeat(${T},${cw}px)`;
+  g.style.gridTemplateRows=`repeat(${P},${H}px)`;
+  let gh='';
+  for(let r=0;r<P;r++){
+    const s=P-1-r;
+    for(let t=0;t<T;t++){
+      const c=grid[s][t];
+      if(!c){ gh+=`<div class="cell bubble" data-s="${s}" data-t="${t}"></div>`; }
+      else{
+        const cls=c.type==='F'?'f':'b';
+        gh+=`<div class="cell ${cls}" data-s="${s}" data-t="${t}" data-m="${c.m}" data-ty="${c.type}">
+          <span class="lb">${c.type}${c.m}</span></div>`;
+      }
+    }
+  }
+  g.innerHTML=gh;
+
+  $('ax-t').textContent='T = '+T+' 步';
+  $('foldn').textContent=fold;
+
+  // readouts
+  const busy=2*M;
+  const bubblePct=Math.round((T-busy)/T*100);
+  const ruleThumb=Math.round((P-1)/M*100);
+  const totalRanks=P*fold;
+  $('readouts').innerHTML=`
+    <div class="stat accent"><div class="k">气泡占比（实测）</div>
+      <div class="v">${bubblePct}<small>%</small></div>
+      <div class="sub">(T−2M)/T · 口算式 (PP−1)/GA ≈ ${ruleThumb}%</div></div>
+    <div class="stat"><div class="k">makespan</div>
+      <div class="v">${T}<small>步</small></div>
+      <div class="sub">忙 ${busy} + 气泡 ${T-busy}</div></div>
+    <div class="stat"><div class="k">峰值在飞 micro-batch</div>
+      <div class="v">${peak}<small>个</small></div>
+      <div class="sub">Stage ${peakStage} 上 F 做完等 B ⇒ 激活值留着<br>${CFG.mode==='1f1b'?`= PP，<b>1F1B 的全部意义</b>`:`= micro-batch 数，<b>GPipe 的代价</b>`}</div></div>
+    <div class="stat"><div class="k">PP 轴长度</div>
+      <div class="v">${P}<small>stage</small></div>
+      <div class="sub">唯一保留不折的轴</div></div>
+    <div class="stat"><div class="k">总卡数 · world_size</div>
+      <div class="v">${totalRanks.toLocaleString()}</div>
+      <div class="sub">TP·CP·PP·DP = ${CFG.tp}×${CFG.cp}×${P}×${CFG.dp}　·　每 Stage ${fold} 张（÷PP）</div></div>`;
+
+  // mb chips
+  let ch='<span class="lab">高亮一个 micro-batch 的斜线：</span>';
+  for(let m=0;m<M;m++) ch+=`<button class="chip" data-m="${m}" aria-pressed="${CFG.sel===m}">mb ${m}</button>`;
+  ch+=`<button class="chip clear" data-m="-1">清除</button>`;
+  $('mbpick').innerHTML=ch;
+
+  // scrubber
+  const ts=$('tscrub'); ts.min=-1; ts.max=T-1; if(CFG.tcur>T-1)CFG.tcur=-1; ts.value=CFG.tcur;
+
+  applySel(); applyTcol(); updateStatus(); renderUnfold();
+}
+
+// ---- unfold: 展开一个 Stage 折叠的那组卡 ----
+function renderUnfold(){
+  const box=$('unfold-body');
+  const sSel=CFG.unfold;
+  if(sSel===null){ box.hidden=true; box.innerHTML=''; return; }
+  const TP=CFG.tp, DP=CFG.dp, CP=CFG.cp, P=CFG.pp;
+  const stageSize=TP*DP*CP;          // 一个 Stage 的卡数，也是 PP 链的步长
+  // global_rank = tp + cp·TP + dp·(TP·CP) + pp·(TP·CP·DP)   (order tp-cp-ep-dp-pp, ep=1)
+  const gr=(pp,dp,cp,tp)=>tp + cp*TP + dp*(TP*CP) + pp*stageSize;
+  // display caps（并排 P 列，所以每列比单列版收窄）
+  const TPn=Math.min(TP,8), DPn=Math.min(DP,12);
+  const truncTP=TP>TPn, truncDP=DP>DPn;
+  const cs = TPn<=2?34:(TPn<=4?31:27);
+  const HDR=17;
+  // 链坐标：夹进可见窗口
+  const cpSel=Math.min(CFG.chain.cp,CP-1);
+  const cdp=Math.min(CFG.chain.dp,DPn-1), ctp=Math.min(CFG.chain.tp,TPn-1);
+
+  let colsHtml='';
+  for(let pp=0;pp<P;pp++){
+    let cells='';
+    cells+=`<div class="rk axh" style="width:${cs}px;height:${HDR}px"></div>`;
+    for(let tp=0;tp<TPn;tp++) cells+=`<div class="rk axh tp" style="width:${cs}px;height:${HDR}px">tp${tp}</div>`;
+    for(let dp=0;dp<DPn;dp++){
+      cells+=`<div class="rk axh dp" style="width:${cs}px;height:${cs}px">dp${dp}</div>`;
+      for(let tp=0;tp<TPn;tp++){
+        const g=gr(pp,dp,cpSel,tp);
+        const inch=(dp===cdp&&tp===ctp);
+        cells+=`<div class="rk card${inch?' inchain':''}" style="width:${cs}px;height:${cs}px;font-size:${cs<=27?8:9}px"
+          data-pp="${pp}" data-dp="${dp}" data-cp="${cpSel}" data-tp="${tp}" data-g="${g}">${g}</div>`;
+      }
+    }
+    if(truncDP){
+      cells+=`<div class="rk axh" style="width:${cs}px;height:15px">⋮</div>`;
+      for(let tp=0;tp<TPn;tp++) cells+=`<div class="rk axh" style="width:${cs}px;height:15px">⋮</div>`;
+    }
+    const [la,lb]=layerRange(pp);
+    colsHtml+=`<div class="ppcol${pp===sSel?' emph':''}" data-pp="${pp}">
+      <div class="colhead">Stage ${pp}<span class="stchip" data-empty="1"></span><em>pp_rank ${pp} · L ${la}–${lb-1}</em></div>
+      <div class="rankgrid" style="grid-template-columns:repeat(${TPn+1},${cs}px)">${cells}</div></div>`;
+  }
+
+  const shown=`${DPn}×${TPn}`;
+  const truncNote=(truncTP||truncDP)
+    ? `　<b>（每列只画了 ${shown} = ${DPn*TPn} 张，其余同理）</b>` : '';
+  const cpChips = CP>1
+    ? `<div class="cppick"><span>看哪一段序列：</span>`
+      + Array.from({length:CP},(_,c)=>`<button class="chip cpchip" data-cp="${c}" aria-pressed="${c===cpSel}">cp ${c}</button>`).join('')
+      + `</div>` : '';
+
+  const chainRanks=Array.from({length:P},(_,pp)=>gr(pp,cdp,cpSel,ctp));
+  // 被选中那个 Stage 装几层（供下方通信频率说明用；层数可能不整除，取该 stage 实际值）
+  const [selA,selB]=layerRange(sSel), selL=selB-selA;
+
+  box.hidden=false;
+  box.innerHTML=`
+    <div class="unfold-head">
+      <div class="t">展开全部 <b>${P}</b> 个 Stage · 每个 <b>${stageSize.toLocaleString()}</b> 张卡
+        <span style="font-weight:400;color:var(--ink-3);font-size:12px">= TP ${TP} × DP ${DP}${CP>1?` × CP ${CP}`:''}　合计 ${(stageSize*P).toLocaleString()}</span></div>
+      <button class="close" id="unfold-close">收起 ✕</button>
+    </div>
+    <p class="unfold-cap"><b>点任意一格 → 画出它的 PP 链。</b>链上每一跳都是 <b style="color:var(--dp)">一次 P2P</b>：
+    <code>dp/cp/tp</code> 三位不变、只有 <code>pp</code> +1，所以 global_rank <b>+${stageSize}</b>。
+    每一列内部：横看 <b>+1</b>（tp 连续 ⇒ 机内），纵看 <b>+${TP*CP}</b>（换 dp 副本 ⇒ 可能跨机）——
+    这套进位就是 Megatron 的 <code>order="tp-cp-ep-dp-pp"</code>。${truncNote}</p>
+    ${cpChips}
+    <p class="nowline">拖下方<b>时间滑块</b> → 每列头上显示<b>这一刻它在算谁</b>。注意整列是<b>一起亮，不是依次亮</b>：
+    <code>dp/cp/tp</code> 是空间维，这 ${stageSize.toLocaleString()} 张卡<b>同时</b>在做同一件事，只是各吃自己的样本与权重分片（SPMD）——
+    这正是时间脸能把它们折成一格的理由。<b>依次来的是 <code>mb</code> 号</b>：同一张卡先算 mb0 再算 mb1，所以拖滑块时变的是<b>芯片内容</b>，不是亮起的卡。</p>
+    <div class="ulegend">
+      <span><i class="lg-ring"></i><b>橙色环</b>＝你点选的 <b>PP 链</b>，每个 Stage <b>只有一张</b>（链的定义就是 dp/cp/tp 固定、只变 pp）</span>
+      <span><i class="lg-lit"></i><b>整列卡片变色</b>＝这一刻该 Stage 在算什么，<b>全部 ${stageSize.toLocaleString()} 张一起</b></span>
+    </div>
+    <div class="stripscroll"><div class="ppstrip">
+      <svg class="chainsvg" id="chainsvg" aria-hidden="true"></svg>${colsHtml}
+    </div></div>
+    <div class="chainout">当前链　<b>(dp=${cdp}, cp=${cpSel}, tp=${ctp})</b>　:
+      ${chainRanks.map((r,i)=>`<b class="cr">${r}</b>${i<P-1?` <span class="ar">─P2P→</span> `:''}`).join('')}
+      　<span class="dim">每跳 +${stageSize}</span></div>
+    <div class="unfold-note">竖着看是<b>行 = TP 组</b>（每层两次 AllReduce，必须机内）、<b>列 = DP 组</b>（step 末一次梯度 AllReduce，可跨机）；
+    横着穿过去的这条就是 <b>PP 组 = 一条链</b>。一共有 <b>${stageSize.toLocaleString()}</b> 条这样的链（每格一条），每条长 ${P}。<br>
+    <b>三种「顺序」别混：</b>沿 <code>dp</code>／<code>tp</code> <b>没有</b>顺序（全并行）；沿 <code>mb</code> 有（同一张卡先后）；固定一个 <code>mb</code> 沿 <code>pp</code> 有（主网格上那条斜线，一个 Stage 一个 Stage 地走）。<br>
+    <b>口径：</b>横轴是<b>调度步</b>不是墙上时钟。真实运行中 TP 组内近乎锁步，但不同 DP 副本<b>同构而异步</b>——各跑各的，到 step 末梯度 AllReduce 才对齐，中途会因变长序列与 padding 漂移。</div>
+    <table class="tbl-td">
+      <caption><b>tp 与 dp：三件事分开看</b>（问「什么时候亮」时，两者没有区别；有区别的是另外两项）</caption>
+      <tr><th>问的是</th><th style="color:var(--tp)">tp</th><th style="color:var(--dp)">dp</th></tr>
+      <tr><td>什么时候<b>算</b></td><td colspan="2" style="text-align:center"><b>一起</b> —— 整列同时，都是空间维</td></tr>
+      <tr><td>global_rank <b>步长</b></td><td><b>连续 +1</b> ⇒ 组落机内（高带宽域）</td><td><b>跳 +${TP*CP}</b>（=TP·CP）⇒ 可能跨机</td></tr>
+      <tr><td><b>通信</b>多久一次</td><td><b>每层两次</b> AllReduce —— Stage ${sSel} 有 ${selL} 层，一格里就 ${selL}×2 = <b>${selL*2}</b> 次，<b>比一格还细，本图看不见</b></td><td><b>每 step 一次</b>梯度 AllReduce —— 全图仅一次，在最右侧所有 B 之后</td></tr>
+    </table>`;
+  $('unfold-close').addEventListener('click',()=>{ CFG.unfold=null; render(); });
+  box.querySelectorAll('.cpchip').forEach(b=>b.addEventListener('click',()=>{
+    CFG.chain.cp=+b.dataset.cp; renderUnfold();
+  }));
+  drawChain();
+  applyUnfoldTime();
+}
+
+// 时间滑块 ↔ 展开面联动：把 t 时刻各 Stage 的状态打到对应的列上
+function applyUnfoldTime(){
+  const strip=document.querySelector('.ppstrip'); if(!strip) return;
+  const t=CFG.tcur;
+  strip.querySelectorAll('.ppcol').forEach(col=>{
+    const pp=+col.dataset.pp, chip=col.querySelector('.stchip');
+    col.classList.remove('st-f','st-b','st-bub');
+    if(t<0){ if(chip){chip.textContent=''; chip.setAttribute('data-empty','1');} return; }
+    const c=STATE.grid[pp] && STATE.grid[pp][t];
+    if(chip) chip.removeAttribute('data-empty');
+    if(!c){ col.classList.add('st-bub'); if(chip){chip.textContent='气泡'; chip.title=`t=${t}：这 ${CFG.tp*CFG.dp*CFG.cp} 张卡都在空转`;} }
+    else{
+      col.classList.add(c.type==='F'?'st-f':'st-b');
+      if(chip){ chip.textContent=c.type+c.m;
+        chip.title=`t=${t}：这 ${CFG.tp*CFG.dp*CFG.cp} 张卡都在算 micro-batch ${c.m} 的${c.type==='F'?'前向':'反向'}`; }
+    }
+  });
+}
+
+// 把 PP 链画出来：一条穿过各列同一格的线 + 每个间隙一个箭头与 +stride 标注
+function drawChain(){
+  const strip=document.querySelector('.ppstrip'), svg=$('chainsvg');
+  if(!strip||!svg) return;
+  const sr=strip.getBoundingClientRect();
+  const W=Math.round(strip.scrollWidth||sr.width), H=Math.round(sr.height);
+  svg.setAttribute('viewBox',`0 0 ${W} ${H}`);
+  svg.setAttribute('width',W); svg.setAttribute('height',H);
+  // 每一列取「链上那张卡」的 y，以及该列的左右边界——箭头只走列间空隙，不压到 dp 标签上
+  const pts=[];
+  strip.querySelectorAll('.ppcol').forEach(col=>{
+    const el=col.querySelector('.rk.card.inchain'); if(!el) return;
+    const r=el.getBoundingClientRect(), cr=col.getBoundingClientRect();
+    pts.push({pp:+el.dataset.pp, cl:cr.left-sr.left, cr:cr.right-sr.left,
+      x1:r.left-sr.left, x2:r.right-sr.left, y:(r.top+r.bottom)/2-sr.top});
+  });
+  pts.sort((a,b)=>a.pp-b.pp);
+  if(pts.length<2){ svg.innerHTML=''; return; }
+  const stride=CFG.tp*CFG.dp*CFG.cp, y=Math.round(pts[0].y);
+  let s=`<defs><marker id="chev" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="5.5" markerHeight="5.5" orient="auto">`
+       +`<path d="M0 0 L10 5 L0 10 z" fill="currentColor"/></marker></defs>`;
+  for(let i=0;i<pts.length-1;i++){
+    const a=pts[i], b=pts[i+1];
+    const from=Math.max(a.x2,a.cr)+5, to=b.cl-7, mid=(from+to)/2;
+    s+=`<line x1="${from}" y1="${y}" x2="${to}" y2="${y}" stroke="currentColor" stroke-width="1.9" marker-end="url(#chev)"/>`;
+    s+=`<text x="${mid}" y="${y-7}" text-anchor="middle" font-size="9.5" font-weight="650"
+         font-family="ui-monospace,SFMono-Regular,Menlo,monospace" fill="currentColor">+${stride}</text>`;
+    s+=`<text x="${mid}" y="${y+14}" text-anchor="middle" font-size="8.5"
+         font-family="ui-monospace,SFMono-Regular,Menlo,monospace" fill="currentColor" opacity=".7">P2P</text>`;
+  }
+  svg.innerHTML=s;
+}
+
+function applySel(){
+  const g=$('grid');
+  g.classList.toggle('dimmed',CFG.sel!==null);
+  g.querySelectorAll('.cell').forEach(el=>{
+    const m=el.dataset.m;
+    el.classList.toggle('sel', CFG.sel!==null && m!==undefined && +m===CFG.sel && !el.classList.contains('bubble'));
+  });
+  document.querySelectorAll('.chip').forEach(c=>c.setAttribute('aria-pressed', (+c.dataset.m===CFG.sel)+''));
+}
+
+function applyTcol(){
+  $('grid').querySelectorAll('.cell').forEach(el=>{
+    el.classList.toggle('tcol', CFG.tcur>=0 && +el.dataset.t===CFG.tcur);
+  });
+}
+
+function updateStatus(){
+  const st=$('tstatus');
+  if(CFG.tcur<0){ st.innerHTML='拖动滑块，看某一时刻各 stage 谁在算、谁在空转 —— 通信这时候就成了脉冲。'; return; }
+  const P=CFG.pp,t=CFG.tcur,grid=STATE.grid;
+  let busyParts=[],idle=[];
+  for(let s=P-1;s>=0;s--){
+    const c=grid[s][t];
+    if(c){ const cls=c.type==='F'?'f':'b'; busyParts.push(`s${s}:<b class="${cls}">${c.type}${c.m}</b>`); }
+    else idle.push('s'+s);
+  }
+  let msg=`<b>t=${t}</b>　`;
+  msg+= busyParts.length?('在算 '+busyParts.join('　')):'';
+  if(idle.length) msg+=`　<span class="bub">气泡：${idle.join(' ')}（${idle.length}/${P} 空转）</span>`;
+  st.innerHTML=msg;
+}
+
+// ---- interactions ----
+function step(k,d){
+  let v=CFG[k]+d, [lo,hi]=CLAMP[k];
+  v=Math.max(lo,Math.min(hi,v));
+  CFG[k]=v;
+  $('v-'+k).textContent=v;
+  if(k==='mb'&&CFG.sel!==null&&CFG.sel>=v)CFG.sel=null;
+  render();
+}
+document.querySelectorAll('.stepper').forEach(sp=>{
+  const k=sp.dataset.k;
+  sp.querySelectorAll('button').forEach(b=>b.addEventListener('click',()=>step(k,+b.dataset.d)));
+});
+$('mode').querySelectorAll('button').forEach(b=>b.addEventListener('click',()=>{
+  CFG.mode=b.dataset.m;
+  $('mode').querySelectorAll('button').forEach(x=>x.setAttribute('aria-pressed',(x===b)+''));
+  render();
+}));
+$('mbpick').addEventListener('click',e=>{
+  const c=e.target.closest('.chip'); if(!c)return;
+  const m=+c.dataset.m; CFG.sel=(m<0||m===CFG.sel)?null:m; applySel();
+});
+
+// stage box → toggle unfold (click or Enter/Space)
+function toggleUnfold(el){
+  const s=+el.dataset.s; CFG.unfold=(CFG.unfold===s)?null:s; render();
+  if(CFG.unfold!==null) $('unfold-body').scrollIntoView({behavior:'smooth',block:'nearest'});
+}
+$('spatial-rows').addEventListener('click',e=>{
+  const el=e.target.closest('.stagebox'); if(el) toggleUnfold(el);
+});
+$('spatial-rows').addEventListener('keydown',e=>{
+  const el=e.target.closest('.stagebox'); if(!el)return;
+  if(e.key==='Enter'||e.key===' '){ e.preventDefault(); toggleUnfold(el); }
+});
+
+const grid=$('grid'), tip=$('tip');
+// 点一格 → 换一条 PP 链
+$('unfold-body').addEventListener('click',e=>{
+  const el=e.target.closest('.rk.card'); if(!el)return;
+  CFG.chain={dp:+el.dataset.dp, cp:+el.dataset.cp, tp:+el.dataset.tp};
+  renderUnfold();
+});
+addEventListener('resize',()=>{ if(CFG.unfold!==null) drawChain(); });
+// tooltip for unfolded rank cards
+$('unfold-body').addEventListener('mousemove',e=>{
+  const el=e.target.closest('.rk.card'); if(!el){tip.style.opacity=0;return;}
+  const g=+el.dataset.g, dp=+el.dataset.dp, cp=+el.dataset.cp, tp=+el.dataset.tp, pp=+el.dataset.pp;
+  const stageSize=CFG.tp*CFG.dp*CFG.cp, base=g-pp*stageSize;
+  const chain=Array.from({length:CFG.pp},(_,p)=>base+p*stageSize);
+  tip.innerHTML=`真实 rank · global_rank = <b>${g}</b>`
+    +`<br>门牌号 (pp=${pp}, dp=${dp}, cp=${cp}, tp=${tp})`
+    +`<br><span style="opacity:.75">它的 PP 链：${chain.map(r=>r===g?`<b>${r}</b>`:r).join(' → ')}<br>每跳 +${stageSize} · 点一下把这条链画出来</span>`;
+  tip.style.opacity=1;
+  let x=e.clientX+14,y=e.clientY+14;
+  if(x+270>innerWidth)x=e.clientX-270; if(y+110>innerHeight)y=e.clientY-110;
+  tip.style.left=x+'px'; tip.style.top=y+'px';
+});
+$('unfold-body').addEventListener('mouseleave',()=>tip.style.opacity=0);
+grid.addEventListener('click',e=>{
+  const el=e.target.closest('.cell'); if(!el||el.classList.contains('bubble'))return;
+  const m=+el.dataset.m; CFG.sel=(CFG.sel===m)?null:m; applySel();
+});
+grid.addEventListener('mousemove',e=>{
+  const el=e.target.closest('.cell'); if(!el){tip.style.opacity=0;return;}
+  const s=el.dataset.s,t=el.dataset.t;
+  const fold=CFG.tp*CFG.dp*CFG.cp;
+  if(el.classList.contains('bubble')){
+    tip.innerHTML=`Stage ${s} · t=${t}<br>气泡：这一刻这 ${fold} 张卡都在空转`;
+  }else{
+    const ty=el.dataset.ty==='F'?'Forward 前向':'Backward 反向';
+    tip.innerHTML=`Stage ${s} · t=${t} · ${ty} mb${el.dataset.m}`
+      +`<br>这一格 = pp_rank ${s} 的 ${fold} 张卡在同步做同一件事`
+      +`<br><span style="opacity:.72">其中一张 rank：(pp=${s}, dp=0, cp=0, tp=0)<br>换 dp/cp/tp → 另一张卡，时序一模一样</span>`;
+  }
+  tip.style.opacity=1;
+  const pad=14; let x=e.clientX+pad, y=e.clientY+pad;
+  if(x+250>innerWidth)x=e.clientX-250;
+  if(y+70>innerHeight)y=e.clientY-70;
+  tip.style.left=x+'px'; tip.style.top=y+'px';
+});
+grid.addEventListener('mouseleave',()=>tip.style.opacity=0);
+
+$('tscrub').addEventListener('input',e=>{CFG.tcur=+e.target.value;applyTcol();updateStatus();applyUnfoldTime();});
+
+// theme
+const root=document.documentElement, tb=$('themebtn');
+tb.addEventListener('click',()=>{
+  const cur=root.getAttribute('data-theme')
+    || (matchMedia('(prefers-color-scheme:dark)').matches?'dark':'light');
+  root.setAttribute('data-theme', cur==='dark'?'light':'dark');
+});
+
+render();
+</script>
+
+<div aria-hidden="true" style="position:fixed;right:12px;bottom:10px;z-index:2147483647;font:11px/1.4 ui-monospace,'SF Mono','Consolas',monospace;color:#8b95ab;opacity:.65;pointer-events:none;user-select:none;">王欣迪</div>
+</body>
+</html>

@@ -1,0 +1,74 @@
+<!-- 启动页「独立迭代 Pattern」组里代表 /patterns/rank-topology-3d/ 的那张卡。
+     片段，不是独立页面：deploy.yml 的「Overlay 并行拓扑卡片」一步插进 dist/launch.html。
+     它与 net-slicing 那张是同一份实现的两种交付——那一份的题面是「一张整网怎么被切开」，
+     这一份的题面是「切完之后落到哪张卡上」。 -->
+        <article class="card">
+          <div class="card-head">
+            <h3 class="card-title"><a href="./patterns/rank-topology-3d/pattern.html">模型分片与训练设备映射</a></h3>
+            <div class="card-tags">
+              <span class="tag tag--k-pat">Pattern</span>
+              <span class="tag">3D 卡阵</span>
+              <span class="tag">选中三档</span>
+              <span class="tag">通信分层</span>
+            </div>
+          </div>
+          <div class="card-preview" aria-hidden="true">
+            <svg viewBox="0 0 320 160">
+              <g class="pv-text" font-family="ui-monospace, monospace" font-size="7.5">
+                <text x="12" y="18">五刀的交集 = 一张卡 · 每只装它自己那一份</text>
+              </g>
+              <!-- 卡阵：一排卡壳，选中那只描粗、兄弟卡默认、其余淡去 -->
+              <g stroke-width="1.1" fill="#fbfcfe">
+                <rect x="12"  y="30" width="26" height="34" rx="3" stroke="rgba(19,26,42,.16)"/>
+                <rect x="44"  y="30" width="26" height="34" rx="3" stroke="rgba(19,26,42,.16)"/>
+                <rect x="76"  y="30" width="26" height="34" rx="3" stroke="rgba(19,26,42,.34)"/>
+                <rect x="108" y="30" width="26" height="34" rx="3" stroke="rgba(19,26,42,.85)" stroke-width="2"/>
+                <rect x="140" y="30" width="26" height="34" rx="3" stroke="rgba(19,26,42,.34)"/>
+                <rect x="172" y="30" width="26" height="34" rx="3" stroke="rgba(19,26,42,.16)"/>
+              </g>
+              <!-- 卡里的层构成：体积∝字节、颜色=切它那把刀 -->
+              <g opacity=".85">
+                <rect x="80"  y="46" width="5" height="16" fill="#22d3ee"/><rect x="87"  y="52" width="5" height="10" fill="#9b3cf6"/>
+                <rect x="112" y="42" width="5" height="20" fill="#22d3ee"/><rect x="119" y="48" width="5" height="14" fill="#9b3cf6"/>
+                <rect x="144" y="46" width="5" height="16" fill="#22d3ee"/><rect x="151" y="52" width="5" height="10" fill="#9b3cf6"/>
+              </g>
+              <!-- 通信边：连到块上，不是连到卡心；EP 星形带重复痕 -->
+              <g fill="none" stroke="#9b3cf6" stroke-width="1">
+                <path d="M118 50 L88 46"/><path d="M118 50 L150 46"/>
+              </g>
+              <g fill="none" stroke="#9b3cf6" stroke-width=".6" opacity=".3">
+                <path d="M120 54 L90 50"/><path d="M120 54 L152 50"/>
+                <path d="M116 46 L86 42"/><path d="M116 46 L148 42"/>
+              </g>
+              <path d="M121 62 L172 78" fill="none" stroke="#4369ef" stroke-width="1.4"/>
+              <path d="M134 40 L176 26" fill="none" stroke="#ffaa3b" stroke-width="1.4"/>
+              <g font-family="ui-monospace, monospace" font-size="7">
+                <text x="176" y="24" fill="#b06a05">PP · 每 μb</text>
+                <text x="176" y="82" fill="#3050c9">DP · 步末一次</text>
+                <text x="150" y="40" fill="#7a3fd0">EP · 每层×2</text>
+              </g>
+              <!-- 三种卡片内容 -->
+              <g class="pv-text" font-family="ui-monospace, monospace" font-size="7.5">
+                <text x="12" y="106">卡片内容：模型分片 · 层构成 · 显存占用（三种共用同一套点选状态）</text>
+                <text x="12" y="122">选中 = 选中态 · 兄弟卡 = 默认态 · 其余 = 隐去</text>
+                <text x="12" y="138">通信一次只画一层：rank / 张量 / 路由 / 时序 / 影响 / rank 内</text>
+                <text x="12" y="152">边连的是块与块（TP→attn.out · EP→experts），不是卡与卡</text>
+              </g>
+            </svg>
+          </div>
+          <p class="card-desc">把工作台左上那张卡单拎出来的自包含 pattern：<strong>五刀切完之后落到哪张卡上</strong>。world 只卡壳排成三维阵列，每只装它自己那一份；卡里能换三种内容——<strong>模型分片</strong>（层与算子归属）/ <strong>层构成</strong>（逐层一排方块，体积∝字节、颜色=切它那把刀）/ <strong>显存占用</strong>（HBM 五档色带，顶出壳外即超容），三者共用同一套点选状态：<strong>选中的 rank 选中态、兄弟 rank 默认态、其余隐去</strong>。通信按「看哪一层」一次只画一层（rank / 张量 / 路由 / 时序 / 影响 / rank 内），而且<strong>边连的是块与块</strong>——TP 的归约连 attn.out（行切算出的是部分和）、EP 的 All-to-All 连 experts；每层都发生的维画出淡淡的重复痕，PP（段边界一次）与 DP（步末一次）没有。标签上只写关键值（<code>34MB · 0.23ms</code>），名称与整句读法一律走悬停。<strong>不选中就不画通信</strong>——没有主语就没有「它跟谁来往」这个答案。</p>
+          <div class="card-links">
+            <a class="lnk lnk--primary" href="./patterns/rank-topology-3d/pattern.html">打开 Pattern<sup>°</sup></a>
+            <a class="lnk" href="./patterns/rank-topology-3d/pattern.html?sel=23&amp;fill=comp">层构成 · 选中 r23<sup>°</sup></a>
+            <a class="lnk" href="./patterns/rank-topology-3d/pattern.html?sel=23&amp;cgrain=route">路由 · token 去哪了<sup>°</sup></a>
+            <a class="lnk" href="./patterns/rank-topology-3d/pattern.html?sel=23&amp;net=0">显存占用<sup>°</sup></a>
+            <a class="lnk" href="./patterns/rank-topology-3d/README.md">使用文档<sup>°</sup></a>
+            <a class="lnk" href="./patterns/rank-topology-3d/pattern.json">契约 pattern.json<sup>°</sup></a>
+          </div>
+          <div class="card-src">
+            <span class="card-by">署名 · 王欣迪</span>
+            <a class="src" href="https://github.com/Cinnnnnnndy/hpc-topology-viewer/blob/main/public/parallel-topology/rank-topology-3d.json" target="_blank" rel="noopener">
+              <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M6 4.5 2.5 8 6 11.5M10 4.5 13.5 8 10 11.5" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>° main · rank-topology-3d.json（构建自 demo.html）
+            </a>
+          </div>
+        </article>

@@ -1,0 +1,93 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="light">
+<head>
+<meta charset="UTF-8">
+<meta name="author" content="王欣迪" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="robots" content="noindex, nofollow">
+<title>rank 卡 = 整网的并行化展开 —— 共享布局 + 差分着色（small multiples）</title>
+<link rel="icon" type="image/svg+xml" href="./vendor/net-sharding/favicon.svg">
+<link rel="stylesheet" href="./vendor/pto-design-system/styles.css">
+<link rel="stylesheet" href="./vendor/model-graphviz/pattern.css">
+<link rel="stylesheet" href="./vendor/net-sharding/pattern.css">
+<script src="./vendor/model-graphviz/graph.js"></script>
+<script src="./vendor/model-graphviz/pattern.js"></script>
+<script src="./vendor/net-sharding/pattern.js"></script>
+<style>
+  html, body { margin: 0; width: 100%; height: 100%; overflow: hidden; background: var(--background); }
+  #app { width: 100%; height: 100%; position: relative; }
+</style>
+</head>
+<body>
+<div id="app"></div>
+<script>
+/* 整网切分 pattern 的独立迭代页。
+   URL 即状态 —— 链接本身带着一个具体视图，发出去对方打开就是那一屏：
+     ?theme=light|dark
+     ?tp= &cp= &pp= &ep= &dp=     并行度（给几个改几个）
+     ?rank=<n>                    直接选中某个 rank
+     ?axis=tp|pp|ep               并排比较哪一维（决定三张卡选谁）
+     ?layers= &heads= &experts= &seq=   模型规格
+     ?v=<短SHA>                   版本戳，页面忽略它，只用来跳过缓存
+   不认识的参数一律忽略，非法值退回默认，不报错。 */
+(function () {
+  var q = new URLSearchParams(location.search);
+  var num = function (k, d) { var v = parseInt(q.get(k), 10); return isFinite(v) && v > 0 ? v : d; };
+
+  var theme = q.get('theme') === 'dark' ? 'dark' : 'light';
+  document.documentElement.setAttribute('data-theme', theme);
+
+  var cfg = {
+    tp: num('tp', 8), cp: num('cp', 1), pp: num('pp', 5), ep: num('ep', 2), dp: num('dp', 100),
+    layers: num('layers', 48), heads: num('heads', 64), experts: num('experts', 64),
+    seqLen: num('seq', 4096),
+  };
+  /* ep 必须整除 dp，否则退回默认那一组（不报错，链接照常打开） */
+  if (cfg.dp % cfg.ep !== 0) { cfg.tp = 8; cfg.cp = 1; cfg.pp = 5; cfg.ep = 2; cfg.dp = 100; }
+
+  var DIMS = ['tp', 'cp', 'sp', 'pp', 'ep', 'dp'];
+  var dim = DIMS.indexOf(q.get('dim')) >= 0 ? q.get('dim') : null;
+  var rank = parseInt(q.get('rank'), 10);
+
+  var handle = window.PtoNetShardingPattern.mount(document.getElementById('app'), {
+    config: cfg,
+    theme: theme,
+    axis: ['tp','pp','ep'].indexOf(q.get('axis'))>=0 ? q.get('axis') : 'tp',
+    rank: isFinite(rank) && rank >= 0 ? rank : undefined,
+  });
+  window.ns = handle;   // 控制台句柄：ns.setAxis('pp') / ns.selectRank(37) / ns.setConfig({cp:2})
+
+  /* 主题按钮：渲染层重写成 small multiples 后不再有工具插槽 → 固定在右上角 */
+  var btn = document.createElement('button');
+  btn.className = 'btn btn-sm';
+  btn.type = 'button';
+  btn.style.cssText = 'position:absolute;top:10px;right:14px;z-index:20';
+  btn.setAttribute('aria-label', '切换明暗主题');
+  var paint = function () { btn.textContent = theme === 'dark' ? '\u2600' : '\u263e'; };
+  paint();
+  btn.onclick = function () {
+    theme = theme === 'dark' ? 'light' : 'dark';
+    document.documentElement.setAttribute('data-theme', theme);
+    handle.setTheme(theme); paint();
+  };
+  document.getElementById('app').appendChild(btn);
+
+  /* 宿主可 iframe 嵌入：与 rubik-pattern.html 同一套 postMessage 约定 */
+  function post(msg) { try { if (parent !== window) parent.postMessage(msg, '*'); } catch (e) {} }
+  window.addEventListener('message', function (e) {
+    var d = e && e.data; if (!d || typeof d !== 'object') return;
+    if (d.type === 'net-sharding-theme' && d.theme) {
+      theme = d.theme === 'dark' ? 'dark' : 'light';
+      document.documentElement.setAttribute('data-theme', theme);
+      handle.setTheme(theme);
+    }
+    if (d.type === 'net-sharding-cmd') {
+      if (d.rank != null) handle.selectRank(+d.rank);
+      if (d.axis) handle.setAxis(d.axis);
+      if (d.config) handle.setConfig(d.config);
+    }
+  });
+})();
+</script>
+</body>
+</html>

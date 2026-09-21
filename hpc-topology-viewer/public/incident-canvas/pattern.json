@@ -1,0 +1,199 @@
+{
+  "id": "incident-canvas",
+  "name": "故障故事线 · 无限画布",
+  "version": "dev",
+  "summary": "主视图永远是并行拓扑 pattern 本体（/patterns/net-slicing/，就是组合工作台舞台上那一格）；画布围着它长——下钻 = 在画布上把一格展开出来，展开得越多画布越大。整网与泳道复用的也是规范路径上的本体（net-slicing 的另一份配置 / combo-workbench 的 swimlane.html），不是拷贝。故事线与全部数值取自 config-relation-observer，训推大盘的指标口径取自 pangu_sophon_pytorch。",
+  "entry": "pattern.html",
+  "selfContained": false,
+  "externalDependencies": [],
+  "integrates": [
+    {
+      "source": "yinyucheng0601/compute-graph-viewer",
+      "path": "Profiling_Insight_and_Tool/training-run-twin-standalone/config-relation-observer.html",
+      "takes": "两条问题线、11 个运行事件、传播源→受影响、5 套机制相位、11 张证据图与全部读数（数值逐条照搬，未改）"
+    },
+    {
+      "source": "Cinnnnnnndy/hpc-topology-viewer",
+      "path": "public/combo-workbench/",
+      "takes": "PTO token 与 ide-frame 的渐变光晕底/磨砂面板、顶栏 + 舞台骨架、URL 即这一屏、pto:state 主题桥"
+    },
+    {
+      "source": "pangu_sophon_pytorch-master",
+      "path": "megatron 侧的 training_log / PretrainMetricConfig / 各监控回调",
+      "takes": "「关键少数」十条指标的口径与出处（lm loss / grad_norm / loss_scale / num_zeros_in_grad / throughput TFLOP/s/GPU / MFU / throughput_per_day / elapsed time per iter / learning_rate / mem_reserved_bytes），以及五个异常检测钩子（check_for_nan_in_loss_and_grad、loss_spike_monitor_callback、init_heartbeat_monitor_pid、_warn_data_production_speed、mem_reserved_bytes 增长趋势）。只取口径，值仍旧只引用故事线原文，没采到的格子写「—」。"
+    }
+  ],
+  "views": [
+    {
+      "id": "main",
+      "name": "并行拓扑（主视图）",
+      "answers": "这套并行策略长什么样——切完之后落成 world 张卡",
+      "always": true
+    },
+    {
+      "id": "story",
+      "name": "故事线 · 运行事件",
+      "answers": "这条问题线上依次发生了什么"
+    },
+    {
+      "id": "netgraph",
+      "name": "整网 · 真图展开",
+      "answers": "一张整网被哪把刀沿哪根轴切成什么"
+    },
+    {
+      "id": "swimlane",
+      "name": "泳道 · 微批次生命周期",
+      "answers": "同一件事落在一个 step 的哪一刻"
+    },
+    {
+      "id": "event",
+      "name": "事件 · 传播关系",
+      "answers": "传播源 → 途经 → 受影响"
+    },
+    {
+      "id": "mech",
+      "name": "机制舞台",
+      "answers": "凭什么传过去——按相位推进，5 种机制各一套图"
+    },
+    {
+      "id": "evidence",
+      "name": "证据 · 图表",
+      "answers": "支撑这条结论的那张图 + 读数 + 根因/影响"
+    },
+    {
+      "id": "rank",
+      "name": "单卡解剖",
+      "answers": "这张卡装了什么、此刻在干什么"
+    },
+    {
+      "id": "board",
+      "name": "训推大盘",
+      "answers": "十条关键少数 + 五个早停钩子"
+    },
+    {
+      "id": "lineage",
+      "name": "计算血缘",
+      "answers": "同一个算子从模型语义一路降到 Kernel，五层各叫什么名字"
+    },
+    {
+      "id": "dim",
+      "name": "单维切分 · 五级粒度轴",
+      "answers": "一把刀在五个粒度上各切成什么：整网 → 层 → 算子 → kernel → 卡"
+    },
+    {
+      "id": "anatomy",
+      "name": "卡内解剖",
+      "answers": "那张卡里面长什么样：层段 → 算子片 → kernel → 流"
+    }
+  ],
+  "topology": {
+    "world": 2048,
+    "pp": 4,
+    "edp": 8,
+    "ep": 64,
+    "layers": 46,
+    "experts": 256,
+    "topK": 2,
+    "rankFormula": "global rank = stage×512 + edp×64 + ep"
+  },
+  "urlState": {
+    "g": "故事线 id（problem-1 / problem-2）",
+    "e": "事件 id（p1-warning … p2-oom）",
+    "ph": "机制相位，1 起数（同时意味着机制那格是摊开的）",
+    "r": "单卡解剖看哪张卡（故事线那个 2048 卡集群的门牌）",
+    "open": "摊开了哪几格，逗号分隔；一格不剩时写 none（写 none 而不是删参数，否则刷新会落回默认）",
+    "range": "泳道那格看哪一段（global / pp2 / l34）",
+    "theme": "light / dark",
+    "embed": "1 = 收起顶栏（被嵌形态）"
+  },
+  "postMessage": {
+    "accepts": "pto:state",
+    "fields": [
+      "theme",
+      "group",
+      "event",
+      "rank"
+    ],
+    "note": "与 combo-workbench 同一套约定，所以这一页可以直接当成那块台面上的一格嵌进去"
+  },
+  "keyboard": {
+    "←/→": "在事件间走",
+    "Esc": "收起最外面那一格",
+    "0": "适配全部",
+    "F": "回主视图"
+  },
+  "canvas": {
+    "model": "主视图钉在原点、永远在；别的格子按需展开，各自落在画布上自己的位置，用贝塞尔连回主视图。四个方位各管一件事：上=告警（悬浮居中，不占画布的地，别的格子不进这一带——悬浮层一摊开就会压住它下面的格头）；左=结构（整网→单维切分→卡内解剖，由粗到细一路往外）；右=事件下钻（上行是点事件时一起来的传播+证据，下行是再从传播点出来的机制+单卡）；下=时序（泳道、计算血缘两条横带）；右下=读数（训推大盘）。",
+    "zoom": {
+      "min": 0.12,
+      "max": 2.4
+    },
+    "collapse": "每格一颗 ×；Esc 先退下钻（单卡→机制→血缘→证据→传播），再从最外圈拆常备格",
+    "defaultOpen": [
+      "netgraph",
+      "dim",
+      "anatomy",
+      "swimlane",
+      "board"
+    ],
+    "defaultOpenWhy": "画布上的五格常备面：大盘给读数，整网/单维切分/卡内解剖给结构的三个粒度，泳道给时序。告警不在其中——它是悬浮的一块，默认收成一枚牌子；事件相关的几格按需展开，得先有选中的事件才有内容。",
+    "noTabs": "并行拓扑的七个视图不做成页签：页签会成为第二套并行机制，同页摆两套人就分不清哪些屏是画布上的格子、哪些屏是某一格里的页签。要用到的那两屏各自成格，从四周展开。",
+    "camera": "开场停在主视图（约 85%），不是适配全部（26%）——适配全部那一屏好看，但主视图小到读不出一张卡，而并行拓扑是这一页的主语。镜头记着自己停在哪一档（main/all/free），改窗口大小时按那一档重新落位；读者自己滚过拖过就是 free，那时不动它。",
+    "floatAlert": "故事线不占画布的地（float=1），钉在视口上不跟着缩放平移：它不是一个「视图」，别的格子答「落在结构的哪儿」，它答「出了什么事、怎么推过来的」。默认收成画布正上方居中的一条。问题即告警是同一件东西：每条问题自带严重度点与事件数，不是「计数按钮＋页签」两样拼在一起；点已在看的那条=开合它的事件链，点另一条=换过去看，所以不需要另一枚「打开」按钮。折叠角标与呼吸的点只给 active 那条。居中因为它是这一页唯一的入口；缩到最小（不写当前选中的那件事，那是抽屉里的内容），条宽不随选中变长。问题段控从顶栏挪进来，且只此一份、在条与抽屉格头之间搬家，不各建一套。摊开时不透明，所以镜头落位会让出它盖住的那一带，一开一关都重新落位。视口窄于 1400 时条子下移一档，避开右上角的格子筹码。 摊开态同样居中、贴顶 12px；尺寸 1000×144 是两条问题线一起量出来的下限——紧约束在问题1（卡少反而卡宽大，但最长标题「EP rank 17（global rank 1553）触顶并发生碎片 OOM」要 1000 才不被截），问题2 的下限是 880，高度下限 138。开合时画布会让开它盖住的那一带：main/all 档重新落位，free 档只平移差值。",
+    "chips": "格子筹码在顶栏，挨着「适配全部 / 回主视图」——都管镜头与画布的整体状态；无底色无边框（顶栏本身就是一条底）。挪走之后画布顶上那一带整条归告警，没有让位规则。"
+  },
+  "embeds": [
+    {
+      "path": "<BASE>/patterns/net-slicing/pattern.html",
+      "as": [
+        "主视图 view=chain（五刀全落并进卡维度）",
+        "整网 · 真图展开 view=chain&rank=0&vtab=side（不落 DP、不进卡维度）",
+        "单维切分 view=dim&l5=1（五级粒度轴）",
+        "卡内解剖 view=anatomy"
+      ]
+    },
+    {
+      "path": "<BASE>/combo-workbench/swimlane.html",
+      "as": [
+        "泳道 · 微批次生命周期"
+      ]
+    }
+  ],
+  "basePath": {
+    "var": "var BASE",
+    "values": {
+      "/incident-canvas/": "..",
+      "/patterns/incident-canvas/": "../.."
+    },
+    "note": "整页只有这一处知道相对深度；发布步骤按入口 sed 并用断言兜住"
+  },
+  "linkage": {
+    "key": "layer",
+    "why": "故事线讲的是 2048 卡的实跑，被嵌 pattern 画的是它自己 128 卡的演示集群，rank 号天然对不上——推过去要么无声无息，要么照亮一张根本不是那张的卡。层号两边都成立（L38 两处都落在 PP3），所以桥搭在层上。",
+    "direction": "事件 → 主视图 / 整网 / 单维切分 / 卡内解剖（推 hl.layer）；事件 → 泳道（推 hl.rank，见 lane）；两格之间双向层联动（读各自的搜索标签、推对方的高亮，不同源所以无回声）；rank 不往 pattern 推",
+    "layerSources": "focus.kind===layer → lineage.layer → origin.layers → scope.layers。lineage.layer 这一路不能少：像「PP3 断裂」这种 focus 写 stage、scope 写 all 的事件，层号只在血缘里（L38 Router），漏掉它点中时主视图和整网都不亮。",
+    "lane": "泳道认的主键是「哪一行」（hl.rank），而它只模拟 32 卡里的一个 DP 副本（dp2×pp4×tp2×ep2，activeDp=1 → Rank 16–31），故事线的 rank 1559 在它那儿不存在。所以桥仍搭在层上：事件 → PP 段（事件写明 stage 就直接用，否则从层号反推）→ 该段在 activeDp=1 下的头一张（tp0/ep0）。落到「哪一段流水线」是真的，落到「哪一张卡」不是，所以格头副标题写 PP 段不写 rank 号。"
+  },
+  "mechanisms": [
+    "router-collapse",
+    "barrier-wait",
+    "pp-cascade",
+    "activation-lifetime",
+    "fragmented-oom"
+  ],
+  "laneRanges": [
+    "global",
+    "pp2",
+    "l34"
+  ],
+  "transport": {
+    "what": "走带：进度 t 推给两格 pattern 的 pto:state.step，游标叠在泳道 iframe 上",
+    "why": "泳道画什么时候在算什么，拓扑画那一刻显存里装着什么，本来是同一件事的两面",
+    "default": "收回走带 = 回到峰值"
+  },
+  "board": {
+    "emptyCells": "十格里通常只有两三格有值，是规则的结果不是没加载：那一刻的日志只打印了那几条，没采到就写「—」，不替它编一个。",
+    "nowLine": "栅格上方一行先说「这一刻 N / 10 有读数」并列出是哪几格，再说「其余 M 格写「—」＝这一事件没采到，不是 0，也不是没加载」——这句话原先只在页脚，而人是在盯着发灰的格子时才有疑问的。",
+    "litTile": "有读数的格子除顶边色条外再加一层同色极淡底与描边，没采到的透明度从 .62 压到 .44：靠对比让亮的跳出来，而不是让亮的自己更花。"
+  }
+}
