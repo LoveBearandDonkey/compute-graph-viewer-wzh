@@ -1,0 +1,159 @@
+/* ============================================================================
+ * PTO Design Tokens — self-contained token layer for the HPC topology viewer
+ * ----------------------------------------------------------------------------
+ * Three tiers, in cascade order:
+ *   1. FOUNDATION  — raw, theme-independent primitives (palette, scale, type).
+ *   2. SEMANTIC    — role tokens that flip per theme via [data-theme="…"].
+ *   3. COMPONENT   — component-scoped tokens that compose semantic tokens.
+ *
+ * Themes: data-theme="dark" (default) · "light" · "glass".
+ * The app's React views set data-theme on their root and bridge their legacy
+ * CSS vars (--bg / --tx / --btn …) onto these semantic tokens, so the whole UI
+ * re-themes from this one file.
+ * ========================================================================== */
+
+/* ── 1 · FOUNDATION ───────────────────────────────────────────────────────
+ * Raw values that never change between themes. Semantic tokens reference these
+ * where it keeps a single source of truth (brand colour, type scale, motion). */
+:root {
+  /* brand / accent ramp */
+  --pto-blue-400: #5b82ff;
+  --pto-blue-500: #4369ef;
+  --pto-blue-600: #3454d4;
+
+  /* status ramp (idle → busy) — mirrors STATE_RGB in scene/data.ts */
+  --pto-green-500: #22c55e;
+  --pto-amber-500: #facc15;
+  --pto-red-500:   #ef4444;
+
+  /* pure ink endpoints used to derive translucent neutrals */
+  --pto-ink:  0, 0, 0;
+  --pto-snow: 255, 255, 255;
+
+  /* type — families come from index.html :root; scale lives here */
+  --pto-font-sans: var(--font-sans);
+  --pto-font-mono: var(--font-mono);
+  --pto-label-size: 11px;          /* control-group / section caption */
+  --pto-label-weight: 500;
+  --pto-label-tracking: 0.5px;
+  --pto-label-transform: uppercase;
+
+  /* radii */
+  --pto-radius-sm: 8px;            /* buttons */
+  --pto-radius-md: 10px;
+  --pto-radius-lg: 14px;           /* floating panels */
+
+  /* motion */
+  --pto-lift: -1px;                /* active-state translateY nudge */
+
+  /* component metrics */
+  --pto-toolbar-height: 44px;
+}
+
+/* ── 2 · SEMANTIC (per theme) ─────────────────────────────────────────────── */
+
+/* dark — default (aligned to the PTO reference: #101010 stage, #141414 elevated
+ * cards, low-contrast hairline borders, darker top chrome) */
+[data-theme="dark"] {
+  --background:          #101010;
+  --background-subtle:   #0d0d0d;   /* side rails */
+  --background-elevated: #141414;   /* floating cards / inspector (LIGHTER than stage) */
+  --surface-overlay:     #141414;   /* solid floating card (reference uses no frost) */
+  --surface-sunken:      #0a0a0a;   /* top chrome (slightly darker than stage) */
+
+  --foreground:          rgba(var(--pto-snow), 0.90);
+  --foreground-muted:    rgba(var(--pto-snow), 0.65);
+  --foreground-subtle:   rgba(var(--pto-snow), 0.40);
+
+  --border:          rgba(var(--pto-snow), 0.08);   /* hairline divider */
+  --border-strong:   rgba(var(--pto-snow), 0.13);
+  --border-emphasis: rgba(var(--pto-snow), 0.10);
+
+  --primary:            var(--pto-blue-500);
+  --primary-foreground: #ffffff;
+
+  --button-secondary-bg:     rgba(var(--pto-snow), 0.06);
+  --button-secondary-border: rgba(var(--pto-snow), 0.09);
+
+  --shadow-sm: 0 4px 14px rgba(0, 0, 0, 0.42);
+  --shadow-md: 0 12px 30px rgba(0, 0, 0, 0.45);
+
+  --grid:           rgba(var(--pto-snow), 0.09);
+  --state-selected: rgba(67, 105, 239, 0.16);
+  --focus-ring:     rgba(67, 105, 239, 0.42);
+}
+
+/* light */
+[data-theme="light"] {
+  --background:          #f5f5f5;
+  --background-subtle:   #f3f4f7;
+  --background-elevated: #ffffff;
+  --surface-overlay:     #ffffff;   /* solid floating card */
+  --surface-sunken:      #ffffff;   /* top chrome */
+
+  --foreground:          rgba(var(--pto-ink), 0.88);
+  --foreground-muted:    rgba(var(--pto-ink), 0.58);
+  --foreground-subtle:   rgba(var(--pto-ink), 0.45);
+
+  --border:          rgba(var(--pto-ink), 0.12);
+  --border-strong:   rgba(var(--pto-ink), 0.18);
+  --border-emphasis: rgba(var(--pto-ink), 0.18);
+
+  --primary:            var(--pto-blue-500);
+  --primary-foreground: #ffffff;
+
+  --button-secondary-bg:     rgba(var(--pto-ink), 0.045);
+  --button-secondary-border: rgba(var(--pto-ink), 0.07);
+
+  --shadow-sm: 0 4px 14px rgba(17, 24, 39, 0.09);
+  --shadow-md: 0 10px 28px rgba(17, 24, 39, 0.12);
+
+  --grid:           rgba(67, 105, 239, 0.11);
+  --state-selected: rgba(67, 105, 239, 0.10);
+  --focus-ring:     rgba(67, 105, 239, 0.36);
+}
+
+/* glass — translucent, blur-friendly chrome on a deep field */
+[data-theme="glass"] {
+  --background:          #0b0f17;
+  --background-subtle:   #080b11;
+  --background-elevated: rgba(20, 24, 33, 0.55);
+  --surface-overlay:     rgba(18, 22, 31, 0.55);   /* frosted floating card */
+  --surface-sunken:      rgba(14, 18, 26, 0.60);   /* top chrome */
+
+  --foreground:          rgba(var(--pto-snow), 0.92);
+  --foreground-muted:    rgba(var(--pto-snow), 0.66);
+  --foreground-subtle:   rgba(var(--pto-snow), 0.44);
+
+  --border:          rgba(var(--pto-snow), 0.16);
+  --border-strong:   rgba(var(--pto-snow), 0.26);
+  --border-emphasis: rgba(var(--pto-snow), 0.20);
+
+  --primary:            var(--pto-blue-400);
+  --primary-foreground: #ffffff;
+
+  --button-secondary-bg:     rgba(var(--pto-snow), 0.10);
+  --button-secondary-border: rgba(var(--pto-snow), 0.16);
+
+  --shadow-sm: 0 4px 18px rgba(0, 0, 0, 0.50);
+  --shadow-md: 0 12px 40px rgba(0, 0, 0, 0.60);
+
+  --grid:           rgba(var(--pto-snow), 0.07);
+  --state-selected: rgba(91, 130, 255, 0.18);
+  --focus-ring:     rgba(91, 130, 255, 0.48);
+}
+
+/* ── 3 · COMPONENT ────────────────────────────────────────────────────────
+ * Component tokens compose semantic tokens, so they re-theme automatically. */
+[data-theme] {
+  /* toolbar — solid top chrome (slightly sunken vs the stage) */
+  --comp-toolbar-bg:     var(--surface-sunken);
+  --comp-toolbar-border: var(--border);
+  --comp-toolbar-height: var(--pto-toolbar-height);
+
+  /* panel shell — floating on-canvas overlay cards (frosted) */
+  --panel-shell-bg:     var(--surface-overlay);
+  --panel-shell-border: var(--border);
+  --panel-shell-shadow: var(--shadow-md);
+  --panel-shell-radius: var(--pto-radius-lg);
+}

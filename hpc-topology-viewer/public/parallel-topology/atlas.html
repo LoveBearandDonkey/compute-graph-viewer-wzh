@@ -1,0 +1,376 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="author" content="王欣迪" />
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<!-- 入口 HTML 一律不进浏览器缓存。
+     资源引用已经带 ?v=<短SHA>，改了内容就换 URL、自然绕开缓存；但**页面本身**
+     没有这层保护——链接一旦被收藏（尤其是带着某次构建的 ?v= 旧戳那种），
+     查询串算进缓存键，浏览器就一直拿那份旧副本，页面在 Pages 上早就更新了也看不见。
+     实际发生过：启动页给的链接是最新戳，手里那条旧戳链接却停在几周前的构建。
+     这几个文件都是几十到几百 KB 的单文件入口，每次回源重新校验的代价可以忽略，
+     换来的是「点开就是最新」。GitHub Pages 不让自定义响应头，只能走 meta。 -->
+<meta http-equiv="Cache-Control" content="no-cache, must-revalidate">
+<meta http-equiv="Pragma" content="no-cache">
+<meta name="robots" content="noindex, nofollow">
+<link rel="icon" href="../favicon.svg" type="image/svg+xml">
+<title>并行拓扑 · 组合总图（哪个问题谁来答）</title>
+<link rel="stylesheet" href="../vendor/pto-design-system/styles.css">
+<style>
+/* ════════════════════════════════════════════════════════════════════
+   组合总图 —— 不是又一个可视化，是一张**路由表**。
+   仓库里已经有一族组件各答一个问题（魔方答「谁和谁一组」、rank 卡答「这一组各自
+   装了什么」、pp-pipeline 答「时间上谁在等谁」…），缺的从来不是图，是一句
+   「哪个问题该看哪张图」。本页用我们讨论出的参照系框架把它们摆到位：
+     A 刀对整网的作用   —— 只涉及 ℓ/h/e/b/s 五根轴与两个对象，不涉及卡
+     B 刀对卡空间的作用 —— 只涉及 g=((p·DP+d)·CP+c)·TP+t 这个编号空间，不涉及模型多大
+     C 映射             —— A ∩ B 落到一张卡：装了什么、多少字节、什么时候算
+     D 时间             —— 流（容量=时间）里的排队与等待
+   纪律：每格必须写清「谁来答」和「深链能不能带住状态」。带不住就标 ✗，
+   不假装整套状态都能传过去——那正是把一族组件拼成系统时最容易撒的谎。
+   ════════════════════════════════════════════════════════════════════ */
+.at-root{
+  --at-tp: var(--dim-tp, #22d3ee);
+  --at-pp: var(--warning, #ffaa3b);
+  --at-dp: var(--primary, #4369ef);
+  --at-ep: var(--highlight-l0a-violet-400, #9b3cf6);
+  --at-cp: var(--highlight-ub-green-600, #86c70f);
+  --at-bg: var(--background, #f6f7f9);
+  --at-s1: var(--surface-1, #ffffff);
+  --at-s2: var(--surface-2, #eef0f3);
+  --at-fg: var(--foreground, rgba(10,14,20,.92));
+  --at-fg2: var(--foreground-secondary, rgba(10,14,20,.62));
+  --at-fg3: var(--foreground-muted, rgba(10,14,20,.42));
+  --at-bd: var(--border-default, rgba(10,14,20,.14));
+  --at-bds: var(--border-strong, rgba(10,14,20,.26));
+  --at-ok: var(--success, #04a878);
+  --at-danger: var(--danger, #d1242f);
+  --at-mono: var(--font-mono, ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace);
+  --at-sans: var(--font-sans, -apple-system, "PingFang SC", "Source Han Sans SC", "Noto Sans CJK SC", sans-serif);
+  min-height:100vh; background:var(--at-bg); color:var(--at-fg);
+  font-family:var(--at-sans); font-size:13.5px; line-height:1.62;
+}
+.at-root *{box-sizing:border-box}
+.wrap{max-width:1240px; margin:0 auto; padding:26px 22px 60px}
+header.top{display:flex; align-items:flex-end; gap:14px; flex-wrap:wrap; margin-bottom:6px}
+h1{margin:0; font-size:21px; font-weight:800; letter-spacing:.01em}
+.sub{color:var(--at-fg2); font-size:12.5px}
+.crumb{margin-left:auto; display:flex; gap:8px; align-items:center; font-size:12px}
+.crumb a{color:var(--at-fg2); text-decoration:none; border-bottom:1px solid var(--at-bd)}
+.crumb a:hover{color:var(--at-fg); border-color:var(--at-bds)}
+button.tg{font:inherit; font-size:12px; padding:3px 10px; border:1px solid var(--at-bd);
+  border-radius:7px; background:var(--at-s1); color:var(--at-fg2); cursor:pointer}
+button.tg:hover{border-color:var(--at-bds); color:var(--at-fg)}
+
+/* 配置条：改这里，全页深链跟着变（URL 即状态） */
+.cfgbar{display:flex; gap:8px; align-items:center; flex-wrap:wrap; margin:16px 0 6px;
+  padding:11px 13px; border:1px solid var(--at-bd); border-radius:11px; background:var(--at-s1)}
+.cap{font-family:var(--at-mono); font-size:10px; letter-spacing:.1em; text-transform:uppercase; color:var(--at-fg3)}
+.pb{font:inherit; font-family:var(--at-mono); font-size:11.5px; padding:3.5px 10px; border:1px solid var(--at-bd);
+  border-radius:8px; background:var(--at-s2); color:var(--at-fg2); cursor:pointer}
+.pb:hover{border-color:var(--at-bds); color:var(--at-fg)}
+.pb.on{background:var(--at-fg); border-color:var(--at-fg); color:var(--at-bg); font-weight:700}
+.cfgbar input{font-family:var(--at-mono); font-size:11.5px; width:74px; padding:3px 8px;
+  border:1px solid var(--at-bd); border-radius:7px; background:var(--at-s2); color:var(--at-fg)}
+.cfgnow{font-family:var(--at-mono); font-size:11.5px; color:var(--at-fg2)}
+.cfgnow b{color:var(--at-fg)}
+
+/* 框架说明 */
+.frame{margin:18px 0 4px; padding:14px 16px; border:1px solid var(--at-bd); border-radius:12px;
+  background:linear-gradient(180deg, color-mix(in srgb, var(--at-s1) 96%, var(--at-fg) 4%), var(--at-s1))}
+.frame h2{margin:0 0 6px; font-size:14.5px; font-weight:750}
+.frame p{margin:0 0 8px; color:var(--at-fg2); font-size:12.8px}
+.axes{display:flex; gap:6px; flex-wrap:wrap; margin-top:4px}
+.ax{font-family:var(--at-mono); font-size:11px; padding:2.5px 9px; border-radius:7px;
+  border:1px solid var(--at-bd); background:var(--at-s2); color:var(--at-fg2)}
+.ax b{color:var(--at-fg)}
+.warnrow{margin-top:10px; padding:9px 12px; border-radius:9px; font-size:12.4px;
+  border:1px solid color-mix(in srgb, var(--at-danger) 34%, transparent);
+  background:color-mix(in srgb, var(--at-danger) 7%, transparent)}
+.warnrow b{color:var(--at-danger)}
+
+/* 四段 */
+section.band{margin-top:24px}
+.bandhead{display:flex; align-items:baseline; gap:11px; flex-wrap:wrap; margin-bottom:4px}
+.bk{font-family:var(--at-mono); font-size:19px; font-weight:800; line-height:1; color:var(--at-fg3)}
+.bandhead h2{margin:0; font-size:16px; font-weight:800}
+.bandhead .q{color:var(--at-fg2); font-size:12.6px}
+.bandrule{height:1px; background:linear-gradient(90deg, var(--at-bds), transparent); margin:7px 0 13px}
+.band.a .bk{color:var(--at-pp)} .band.b .bk{color:var(--at-dp)}
+.band.c .bk{color:var(--at-ep)} .band.d .bk{color:var(--at-cp)}
+
+.grid{display:grid; grid-template-columns:repeat(auto-fill, minmax(288px, 1fr)); gap:13px}
+article.cd{border:1px solid var(--at-bd); border-radius:12px; background:var(--at-s1);
+  padding:13px 14px 12px; display:flex; flex-direction:column; gap:7px}
+article.cd.gapcard{border-style:dashed; background:transparent}
+.cd h3{margin:0; font-size:13.8px; font-weight:750}
+.cd .who{font-family:var(--at-mono); font-size:10.8px; color:var(--at-fg3)}
+.cd .ask{font-size:12.4px; color:var(--at-fg2); flex:1}
+.tags{display:flex; gap:5px; flex-wrap:wrap}
+.tg2{font-family:var(--at-mono); font-size:10px; padding:1.5px 7px; border-radius:6px;
+  border:1px solid var(--at-bd); background:var(--at-s2); color:var(--at-fg2)}
+.tg2.st{border-color:color-mix(in srgb, var(--at-ok) 40%, transparent); color:var(--at-ok)}
+.tg2.no{border-color:color-mix(in srgb, var(--at-danger) 34%, transparent); color:var(--at-danger)}
+.go{display:flex; gap:7px; flex-wrap:wrap; margin-top:1px}
+.go a{font-family:var(--at-mono); font-size:11.3px; padding:4px 11px; border-radius:8px;
+  text-decoration:none; border:1px solid var(--at-bd); background:var(--at-s2); color:var(--at-fg2)}
+.go a:hover{border-color:var(--at-bds); color:var(--at-fg)}
+.go a.pri{background:var(--at-fg); border-color:var(--at-fg); color:var(--at-bg); font-weight:700}
+.src{font-family:var(--at-mono); font-size:10px; color:var(--at-fg3); word-break:break-all}
+footer.foot{margin-top:34px; padding-top:14px; border-top:1px solid var(--at-bd);
+  color:var(--at-fg3); font-size:12px}
+footer.foot b{color:var(--at-fg2)}
+@media (max-width:620px){ .wrap{padding:18px 14px 44px} h1{font-size:18px} }
+</style>
+</head>
+<body>
+<div class="at-root">
+<div class="wrap">
+  <header class="top">
+    <div>
+      <h1>并行拓扑 · 组合总图</h1>
+      <div class="sub">一族组件各答一个问题——这页只回答「哪个问题该看哪张图」，并把配置与选中卡沿深链传下去。</div>
+    </div>
+    <div class="crumb">
+      <a href="./cockpit.html"><b>驾驶舱</b></a><span style="color:var(--at-fg3)">·</span>
+      <a href="./">目录页</a><span style="color:var(--at-fg3)">·</span>
+      <a href="../parallel-reference/">参照系</a><span style="color:var(--at-fg3)">·</span>
+      <a href="./prd.html">PRD</a><span style="color:var(--at-fg3)">·</span>
+      <a href="../launch.html">工作台总页</a>
+      <button class="tg" id="themeBtn" type="button">明/暗</button>
+    </div>
+  </header>
+
+  <div class="cfgbar">
+    <span class="cap">配置</span>
+    <button class="pb" data-preset="default128" type="button">默认 128 卡</button>
+    <button class="pb" data-preset="moe64" type="button">MoE 折叠 64 卡</button>
+    <button class="pb" data-preset="longcp" type="button">长序列 CP 64 卡</button>
+    <button class="pb" data-preset="pangu" type="button">盘古 Pro MoE 4000 卡</button>
+    <span class="cap" style="margin-left:6px">选中卡</span>
+    <input id="selIn" type="number" min="0" step="1" value="21">
+    <span class="cfgnow" id="cfgNow"></span>
+  </div>
+
+  <div class="frame">
+    <h2>框架：一把刀有两个作用面，落位是第三件事</h2>
+    <p>这是把散件拼成系统的那根轴。同一把刀，问「它对整网做了什么」和问「它对卡空间做了什么」，
+       答案的维数都不一样——<b>刀有 6 把（TP·PP·CP·DP·EP·ETP），卡空间只有 4 根轴（TP·CP·DP·PP）</b>。
+       EP 与 ETP 在整网侧是真刀，在卡空间里<b>没有自己的轴</b>，只是对 stage 平面的重新分组。</p>
+    <div class="axes">
+      <span class="ax"><b>ℓ</b> 层号→PP</span><span class="ax"><b>h</b> 隐藏/头→TP</span>
+      <span class="ax"><b>e</b> 专家号→EP</span><span class="ax"><b>b</b> 样本号→DP</span>
+      <span class="ax"><b>s</b> 序列位→CP</span>
+      <span class="ax">对象①<b>权重体</b></span><span class="ax">对象②<b>激活体</b></span>
+      <span class="ax">容器只有两个：<b>卡</b>（容量=显存）·<b>流</b>（容量=时间）</span>
+      <span class="ax">rank=<b>地址</b>，不是容器</span>
+    </div>
+    <div class="warnrow">
+      <b>这条不对称是一族历史 bug 的共同根源</b>：把 EP 当成第五个乘数 → rank 数算错；
+      把 rank 当容器 → 以为一张卡装的是「缩小的整网」；把复制当共有 → 以为加 DP 能省显存。
+      三个都能在下面 A / B / C 三段里各自看到被修正后的画法。
+    </div>
+  </div>
+
+  <section class="band a">
+    <div class="bandhead"><span class="bk">A</span><h2>刀对「整网」的作用</h2>
+      <span class="q">切哪根轴 · 什么动词 · 尺寸怎么变。<b>不涉及卡</b>。</span></div>
+    <div class="bandrule"></div>
+    <div class="grid" id="gridA"></div>
+  </section>
+
+  <section class="band b">
+    <div class="bandhead"><span class="bk">B</span><h2>刀对「卡空间」的作用</h2>
+      <span class="q">谁和谁一组 · 通信落在哪 · 亲和性。<b>不涉及模型多大</b>。</span></div>
+    <div class="bandrule"></div>
+    <div class="grid" id="gridB"></div>
+  </section>
+
+  <section class="band c">
+    <div class="bandhead"><span class="bk">C</span><h2>映射：A ∩ B 落到一张卡</h2>
+      <span class="q">这张卡装了什么 · 多少字节 · 谁的功劳。</span></div>
+    <div class="bandrule"></div>
+    <div class="grid" id="gridC"></div>
+  </section>
+
+  <section class="band d">
+    <div class="bandhead"><span class="bk">D</span><h2>时间：流里的排队与等待</h2>
+      <span class="q">流是第二个容器，容量是时间。空间折叠掉，只剩 PP 与 μbatch。</span></div>
+    <div class="bandrule"></div>
+    <div class="grid" id="gridD"></div>
+  </section>
+
+  <section class="band gaps">
+    <div class="bandhead"><span class="bk">⌷</span><h2>缺口 · 尚未接入</h2>
+      <span class="q">列出来而不是绕过去——拼系统时最贵的谎是「看起来都连上了」。</span></div>
+    <div class="bandrule"></div>
+    <div class="grid" id="gridGap"></div>
+  </section>
+
+  <footer class="foot">
+    <div><b>状态传递</b>：<span class="tg2 st">带配置</span> 表示深链把并行配置传过去了；
+      <span class="tg2 st">带选中卡</span> 表示选中的 global_rank 也传过去了；
+      <span class="tg2 no">不读 URL</span> 表示该组件只能打开到默认态——想对齐得手动点。不夸大，是因为拼系统时这里最容易撒谎。</div>
+    <div style="margin-top:7px"><b>出处</b>：本仓库 <code>public/parallel-topology/</code> 与 <code>public/vendor/</code>；
+      跨仓库件来自 <code>Cinnnnnnndy/pto-design-system</code> 的
+      <code>claude/rank-deck-intersection-payload</code> 分支，发布在 <code>/pto-ds/</code> 下。</div>
+    <div style="margin-top:7px" id="stamp"></div>
+  </footer>
+</div>
+</div>
+<script>
+/* URL 即状态：?preset= &sel= &theme=；改配置条即重写全页深链并同步地址栏。 */
+var PRESETS = {
+  default128:{label:'默认 128 卡', world:128, tp:2, cp:1, pp:4, dp:16, ep:8, layers:32, note:'tp2·cp1·pp4·dp16·ep8（EP 折入 DP）'},
+  moe64:     {label:'MoE 折叠 64 卡', world:64, tp:2, cp:1, pp:4, dp:8, ep:8, layers:32, note:'tp2·cp1·pp4·dp8·ep8'},
+  longcp:    {label:'长序列 CP 64 卡', world:64, tp:4, cp:4, pp:2, dp:2, ep:8, layers:32, note:'tp4·cp4·pp2·dp2·ep8（EP 组跨 TP×CP）'},
+  pangu:     {label:'盘古 Pro MoE 4000 卡', world:4000, tp:8, cp:1, pp:5, dp:100, ep:2, layers:40, note:'tp8·cp1·pp5·dp100·ep2'}
+};
+var q = new URLSearchParams(location.search);
+var state = {
+  preset: PRESETS[q.get('preset')] ? q.get('preset') : 'default128',
+  sel: (function(v){ var n = parseInt(v,10); return isFinite(n) && n>=0 ? n : 21; })(q.get('sel')),
+  theme: q.get('theme')==='dark' ? 'dark' : 'light'
+};
+function P(){ return PRESETS[state.preset]; }
+function clampSel(){ if(state.sel >= P().world) state.sel = P().world - 1; if(state.sel < 0) state.sel = 0; }
+function esc(s){ return String(s).replace(/[&<>"]/g, function(c){ return ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'})[c]; }); }
+
+/* 深链拼装。demo 与 rank-deck 各有自己的参数名，这里做一次翻译，别让读者去猜。 */
+function demoLink(extra){
+  var s = '?preset='+state.preset+'&sel='+state.sel+(state.theme==='dark'?'&theme=dark':'');
+  return './demo.html'+s+(extra?'&'+extra:'');
+}
+function rankDeckLink(){
+  /* rank-deck 只吃 rank/layer/scene/topology/theme；它自己钉死 128 卡 tp2·pp4·ep8，
+     所以只有默认预置下两边的 rank 编号才对得上——非默认时如实标注。 */
+  var p = P(), r = (p.world===128 && p.tp===2 && p.pp===4 && p.ep===8) ? state.sel : 0;
+  return '../pto-ds/patterns/model-parallel-rank-deck/pattern.html?rank='+r+'&scene=rank&theme='+state.theme;
+}
+function CARDS(){ return {
+  A:[
+    {t:'刀序 · 切分链', who:'本仓库 · demo.html?view=chain',
+     ask:'五把刀按嵌套序串成一条链：DP 复印整网（等大成叠）→ PP 切层段（面积守恒）→ 放大到算子级 → TP 锯片 / EP 分桶；输入侧 DP 真切样本 → CP 双段。决策序反向（§11）。',
+     tags:['尺寸纪律','嵌套序 vs 决策序'], state:['cfg','sel'],
+     go:[['刀序·切分链', demoLink('view=chain'), 1]]},
+    {t:'单维切分 ×5', who:'本仓库 · demo.html?view=dim&cut=…',
+     ask:'一把刀一个视图：粒度做竖轴（输入→整网→层→算子→kernel），容器柱贯穿全高，块的横跨=共有。切得越多每份越小（面积守恒），全量卡不折叠。',
+     tags:['每刀一个动词','容量归因'], state:['cfg','sel'],
+     go:[['DP（一刀两动作）', demoLink('view=dim&cut=dp'), 1], ['TP', demoLink('view=dim&cut=tp')], ['PP', demoLink('view=dim&cut=pp')], ['EP', demoLink('view=dim&cut=ep')], ['CP', demoLink('view=dim&cut=cp')]]},
+    {t:'真实整网图', who:'本仓库 · /rank-card/（net-sharding + model-graphviz）',
+     ask:'坐标系换成模型计算图本身：每个算子标注被哪个并行维、沿张量哪根轴切成几份，HCCL 集合原语呈现为分片状态的转换器。',
+     tags:['算子级','6 维 TP·CP·SP·PP·EP·DP'], state:[],
+     go:[['整网 · rank 卡', '../rank-card/'], ['规范入口', '../patterns/rank-card-expansion/pattern.html']]}
+  ],
+  B:[
+    {t:'逻辑魔方', who:'本仓库 · /rubik/（逻辑魔方 pattern）',
+     ask:'并行超立方本体，答「谁和谁一组」：5 种形态重排 · 轴标注 · 正交 2D/剖面 · 四维通信组。这就是 B 段的主图——卡空间的形状。',
+     tags:['谁和谁一组','已比较完整'], state:[],
+     go:[['逻辑魔方', '../rubik/', 1], ['整网对象透镜版', '../rubik-netobj/'], ['规范页', '../rubik-spec/']]},
+    {t:'合成 · 卡阵', who:'本仓库 · demo.html?view=compose',
+     ask:'五维相乘后的全局落位（TP×PP×DP 三轴，CP 分面）+ 通信图层 + 训练步动画。魔方讲关系，这里讲编号：g=((p·DP+d)·CP+c)·TP+t。',
+     tags:['编号公式','L5 通信'], state:['cfg','sel'],
+     go:[['合成·卡阵', demoLink('view=compose&l5=1'), 1]]},
+    {t:'EP 组跨了哪几根轴', who:'本仓库 · demo.html?view=dim&cut=ep',
+     ask:'EP 在卡空间里没有自己的轴——它是 q=(d·CP+c)·TP+t 上一段连续位置。判据只有一个大小比较：EP·ETP ≤ TP·CP 时整组落在同一份 DP 副本里；不跨 PP 恒成立。',
+     tags:['勘误 K','实算不靠印象'], state:['cfg','sel'],
+     go:[['跨 DP 的情形', demoLink('view=dim&cut=ep&l5=1'), 1], ['不跨 DP 的反例', './demo.html?view=dim&cut=ep&world=128&tp=8&cp=1&pp=4&ep=4&etp=1']]}
+  ],
+  C:[
+    {t:'纠正版 rank-deck', who:'跨仓库 · /pto-ds/…/model-parallel-rank-deck',
+     ask:'一张卡装的是「层段 × TP片 × EP桶」的交集载荷，不是缩小的整网。含索引五元组区间 / 持有占比 / 归属边界检查器；载荷原子按 1/count 片渲染。',
+     tags:['交集载荷','Three.js 单场景'], state:['sel*'],
+     go:[['rank-deck', rankDeckLink(), 1]]},
+    {t:'双链映射（FIG 09 的三维化）', who:'本仓库 · demo.html?view=solid',
+     ask:'两条包含链各 5 级、级与级不对齐，所以连线是斜的——斜不是画风。四条并行映射的源头在逻辑侧四个不同层级（层 ℓ / expert e / 算子 / 张量），落点全是「卡」；world_size=TP×CP×PP×DP 是计数恒等式不是刀，落在集群。上两级只决定拓扑与带宽，下两级（算子融合 / tiling）与并行完全无关。「卡」画成整个平面（机内 8 卡 × N 台机，全量），于是 TP 必须机内 / PP 可跨机当场可验。',
+     tags:['FIG 09','四维全收在卡','TP 机内可验'], state:['cfg','sel'],
+     go:[['双链映射', demoLink('view=solid'), 1], ['TP=16 违反机内约束的样子（固定配置示范，不随状态走）', './demo.html?view=solid&sel=0&world=128&tp=16&cp=1&pp=4&ep=1&heads=32&layers=32']]},
+    {t:'交集腔', who:'本仓库 · demo.html?view=solid&p=cav',
+     ask:'C 段本身那张图：两个对象各有自己的索引空间（权重体 ℓ×h×e 三轴 / 激活体 ℓ×h×b×s 四轴），每把刀是一整片板，三片板相交剁出一个腔——体积∶全盒 = 持有占比。DP 在权重体上没有轴，腔的三条边长里没有 d ⇒ 体积不变 ⇒ A3 的几何证明；EP 在激活体上没有轴（路由是动作）。',
+     tags:['一轴一刀 §03','A3 几何证明','两个对象轴数不同'], state:['cfg','sel'],
+     go:[['交集腔', demoLink('view=solid')+'&p=cav', 1], ['展开激活体（第二视角）', demoLink('view=solid')+'&p=cav&act2=1']]},
+    {t:'卡内解剖', who:'本仓库 · demo.html?view=anatomy',
+     ask:'钻进一张卡：外壳=显存容器，层→算子（体积∝字节），底部流=时间容器装 kernel。L 是整网全局层号，算子↔kernel 同号对应（N:M 融合/分段）。',
+     tags:['两个容器','算子↔kernel'], state:['cfg','sel'],
+     go:[['卡内解剖', demoLink('view=anatomy'), 1]]},
+    {t:'训练语义 sidecar', who:'跨仓库 · /pto-ds/…/model-architecture-training-sidecar',
+     ask:'在 3D deck 右视图上叠训练语义：四流 mHC 状态流、反向激活梯度、microbatch/step 的参数-梯度生命周期、优化器同步、loss 组成与指标条。它是「为什么复印不省显存」的字节级证据（权重+梯度+优化器态）。',
+     tags:['训练语义叠加','算子级指标'], state:[],
+     go:[['training sidecar', '../pto-ds/patterns/model-architecture-training-sidecar/pattern.html', 1], ['底座 3D deck', '../pto-ds/patterns/model-architecture-3d-deck/pattern.html']]}
+  ],
+  D:[
+    {t:'PP 流水线', who:'本仓库 · /pp-pipeline/',
+     ask:'1F1B 排布、气泡、warmup/steady/cooldown 的完整时间图。这一段已经比较完整，不重复造。',
+     tags:['1F1B','已比较完整'], state:[],
+     go:[['pp-pipeline', '../pp-pipeline/', 1]]},
+    {t:'时间 · 流（含归因）', who:'本仓库 · demo.html?view=time',
+     ask:'空间折叠到只剩 PP，▲=P2P recv 进入时刻，气泡率≈(PP−1)/GA。放大 AllReduce 看「谁在等谁」：段最短=最后进入的副本是嫌疑人，等最久的是受害者不是根因（A5）。',
+     tags:['归因陷阱','A5'], state:['cfg','sel'],
+     go:[['时间·流', demoLink('view=time'), 1]]}
+  ]
+}; }
+var GAPS = [
+  {t:'EP 折叠那一步仍无专图', ask:'原来那条「6 刀 → 4 轴」的缺口已经补上了：「交集腔」画 6 把刀落到两个对象的 5 根索引轴（ETP 是第六把刀却不认领新轴），「双链映射」画这些刀最终全部收在物理侧的「卡」这一级。真正还缺的只剩最后一小步——EP/ETP 靠折叠 q=(d·CP+c)·TP+t 在 stage 内平面上占位的那个重排，目前仍只有文字与一个整除判据（EP·ETP vs TP·CP），没有专门的图。'},
+  {t:'sidecar / 3d-deck 不读 URL', ask:'两者都不解析查询串，深链只能打开到默认态。要对齐得进去手动点层。接上 URL 契约（像 rank-deck 那样）就能纳入同一条状态链。'},
+  {t:'真实整网图未接我们的刀', ask:'model-graphviz 有预定位的 openPangu 整网图，但还没按当前配置着色刀口——接上之后 A 段就能从示意图升级成真图。'}
+];
+function tagStates(st){
+  var out = '';
+  if(st.indexOf('cfg')>=0) out += '<span class="tg2 st">带配置</span>';
+  if(st.indexOf('sel')>=0) out += '<span class="tg2 st">带选中卡</span>';
+  if(st.indexOf('sel*')>=0) out += '<span class="tg2 st">带 rank（仅默认预置对得上）</span>';
+  if(!st.length) out += '<span class="tg2 no">不读 URL</span>';
+  return out;
+}
+function cardHTML(c){
+  return '<article class="cd"><h3>'+esc(c.t)+'</h3><div class="who">'+esc(c.who)+'</div>'
+    + '<div class="ask">'+esc(c.ask)+'</div>'
+    + '<div class="tags">'+c.tags.map(function(t){ return '<span class="tg2">'+esc(t)+'</span>'; }).join('')+tagStates(c.state)+'</div>'
+    + '<div class="go">'+c.go.map(function(g){ return '<a class="'+(g[2]?'pri':'')+'" href="'+esc(g[1])+'">'+esc(g[0])+'</a>'; }).join('')+'</div></article>';
+}
+function render(){
+  clampSel();
+  var p = P();
+  document.documentElement.setAttribute('data-theme', state.theme);
+  Array.prototype.forEach.call(document.querySelectorAll('[data-preset]'), function(b){
+    b.classList.toggle('on', b.getAttribute('data-preset')===state.preset);
+  });
+  document.getElementById('selIn').value = state.sel;
+  document.getElementById('selIn').max = p.world - 1;
+  document.getElementById('cfgNow').innerHTML = '当前：<b>'+esc(p.label)+'</b> · '+esc(p.note)
+    + ' · 全量 <b>'+p.world+'</b> 卡 · 选中 <b>r'+state.sel+'</b>';
+  /* 每次重算：链接里的 preset/sel 必须跟着配置条走，否则页面会指向另一套状态 */
+  var cards = CARDS();
+  ['A','B','C','D'].forEach(function(k){
+    document.getElementById('grid'+k).innerHTML = cards[k].map(cardHTML).join('');
+  });
+  document.getElementById('gridGap').innerHTML = GAPS.map(function(g){
+    return '<article class="cd gapcard"><h3>缺口 · '+esc(g.t)+'</h3>'
+      + '<div class="who">尚未接入——标出来，不假装有</div>'
+      + '<div class="ask">'+esc(g.ask)+'</div></article>';
+  }).join('');
+  document.getElementById('stamp').textContent = '本页只做路由与状态传递，不重复实现任何一张图；'
+    + '魔方与 PP 时间两段已比较完整，直接指过去。';
+  var u = '?preset='+state.preset+'&sel='+state.sel+(state.theme==='dark'?'&theme=dark':'');
+  history.replaceState(null, '', u);
+}
+document.addEventListener('click', function(e){
+  var b = e.target.closest && e.target.closest('[data-preset]');
+  if(b){ state.preset = b.getAttribute('data-preset'); render(); return; }
+  if(e.target.id === 'themeBtn'){ state.theme = state.theme==='dark' ? 'light' : 'dark'; render(); }
+});
+document.getElementById('selIn').addEventListener('change', function(e){
+  var n = parseInt(e.target.value, 10);
+  state.sel = isFinite(n) && n>=0 ? n : 0;
+  render();
+});
+/* 宿主可以像其它 pattern 一样用 postMessage 翻主题 */
+window.addEventListener('message', function(ev){
+  var d = ev && ev.data;
+  if(d && d.type==='theme' && (d.value==='light'||d.value==='dark')){ state.theme = d.value; render(); }
+});
+render();
+</script>
+</body>
+</html>

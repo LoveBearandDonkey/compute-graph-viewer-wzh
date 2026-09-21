@@ -1,0 +1,122 @@
+{
+  "meta": {
+    "title": "昇腾超节点 可视化输入规格 (Visualization Input Spec)",
+    "version": "1.0",
+    "date": "2026-06-15",
+    "purpose": "自描述的结构化数据模型，作为下游 code 生成 2D/3D 可视化的唯一输入。所有实体、层级、互联、并行映射均带属性与数据可信度标注。",
+    "consumer_hint": "code 可按 abstraction_layers 建立层级容器，用 entities 定义构件外观，用 interconnect_levels + parallel_mappings 生成连线，用 topology_scales 做规模切换，用 view_presets 定义可切换视图。",
+    "units": { "bandwidth": "GB/s（除非注 PB/s, TB/s）", "latency": "ns 或 µs", "compute": "PFLOPS/EFLOPS" },
+    "confidence_legend": { "A": "华为官方一手(官网/昇腾社区/HC2025 keynote/官方文档)", "B": "媒体/社区交叉验证一致", "C": "厂商公开解读/媒体口径，正式引用需标注" }
+  },
+
+  "errata_2026_06": "950 视角修正：① 950PR/950DT 内存规格疑被互换，新料(指令级拆解)显示 950DT=144GB/4TB·训练解码(HiZQ2.0)、950PR=128GB/1.6TB·推理推荐(HiBL1.0)，已据此更新并标待核(来源冲突)；② 910C 单卡 FP16 由误值 6.4 更正为 ~0.8 PFLOPS(307.2/384)；③ rank↔device：910C 每 die 即一 device(一卡=2 rank)，950 双计算 Die UMA→整卡=1 device=1 rank；④ 950 微架构 SIMD/SIMT 双模、4-Die 合封(2计算+2 IO)、约32 AI Core/卡、Cube:Vector 算力比~8:1(待核)。",
+  "color_tokens": {
+    "bg": "#070b16", "panel": "#0e1526", "ink": "#e8eefc", "sub": "#93a4c8",
+    "npu": "#36e0c4", "cpu": "#4a8cff", "switch": "#ffb454", "hbm": "#6f7cff",
+    "cube_aic": "#36e0c4", "vector_aiv": "#ffb454", "d2d": "#ff5d8f",
+    "tp": "#36e0c4", "sp": "#36e0c4", "ep": "#ff5d8f", "pp": "#ffd54a", "dp": "#9d7bff"
+  },
+
+  "abstraction_layers": [
+    { "id": "cluster",  "order": 0, "name_cn": "跨超节点集群", "name_en": "SuperCluster", "parent": null,        "child": "superpod", "desc": "多超节点经 UBoE(推荐)/RoCE 互联，可达百万卡", "scale_example": "Atlas 950 SuperCluster=64×950=524288 卡" },
+    { "id": "superpod", "order": 1, "name_cn": "超节点",       "name_en": "SuperPoD",     "parent": "cluster",   "child": "rack",     "desc": "UB 全互联/UB-Mesh，'万卡如一台计算机'", "scale_example": "A3=384卡 / A5(950)=8192卡 / A6(960)=15488卡" },
+    { "id": "rack",     "order": 2, "name_cn": "机柜",         "name_en": "Rack",         "parent": "superpod",  "child": "node",     "desc": "计算柜(液冷)+总线设备柜(风冷)；柜内 2D-FullMesh", "scale_example": "A3=12 计算柜+4 总线柜=16 柜" },
+    { "id": "node",     "order": 3, "name_cn": "计算节点",     "name_en": "Compute Node", "parent": "rack",      "child": "blade",    "desc": "1 鲲鹏 CPU + 8 NPU + L1 交换芯片", "scale_example": "A3=48 节点" },
+    { "id": "blade",    "order": 4, "name_cn": "NPU 刀片",     "name_en": "NPU Blade",    "parent": "node",      "child": "die",      "desc": "单 NPU 封装 + 本地 HBM", "scale_example": "每节点 8 刀片" },
+    { "id": "die",      "order": 5, "name_cn": "NPU Die",      "name_en": "Die",          "parent": "blade",     "child": "core",     "desc": "达芬奇分离架构；相邻 Die 经 D2D 互联", "scale_example": "D2D 双向 784 GB/s" },
+    { "id": "core",     "order": 6, "name_cn": "AI Core",      "name_en": "AI Core",      "parent": "die",       "child": null,       "desc": "AIC(Cube 矩阵) + AIV(Vector 矢量) + Scalar；SPMD by block_idx", "scale_example": "核间经 Global Memory + CrossCoreFlag 同步" }
+  ],
+
+  "chips": [
+    { "id": "910c", "name": "昇腾 910C", "status": "已商用", "launch": "2025", "uarch": "达芬奇", "fp8_pflops": null, "fp4_pflops": null, "fp16_pflops_per_card": 0.8, "mem_gb": 128, "mem_type": "HBM", "mem_bw_tbs": 3.2, "interconnect_d2d_gbs": 784, "used_by": "A3", "confidence": "A" },
+    { "id": "950pr", "name": "昇腾 950PR", "status": "路标", "launch": "2026 Q1", "uarch": "SIMD/SIMT", "fp8_pflops": 1, "fp4_pflops": 2, "mem_gb": 128, "mem_type": "自研HBM HiBL 1.0", "mem_bw_tbs": 1.6, "interconnect_tbs": 2.0, "used_by": "推理/推荐(算力倾向·待核)", "confidence": "A" },
+    { "id": "950dt", "name": "昇腾 950DT", "status": "路标", "launch": "2026 Q4", "uarch": "SIMD/SIMT", "fp8_pflops": 1, "fp4_pflops": 2, "mem_gb": 144, "mem_type": "自研HBM HiZQ 2.0", "mem_bw_tbs": 4.0, "interconnect_tbs": 2.0, "used_by": "A5 (Atlas 950)·训练/解码(带宽倾向·待核)", "confidence": "A" },
+    { "id": "960", "name": "昇腾 960", "status": "路标", "launch": "2027 Q4", "uarch": "SIMD/SIMT", "fp8_pflops": 2, "fp4_pflops": 4, "mem_gb": 288, "mem_type": "自研HBM", "mem_bw_tbs": 9.6, "interconnect_tbs": 2.2, "used_by": "A6 (Atlas 960)", "confidence": "A" },
+    { "id": "970", "name": "昇腾 970", "status": "路标", "launch": "2028 Q4", "uarch": "—", "fp8_pflops": null, "fp4_pflops": null, "mem_gb": null, "mem_type": "—", "mem_bw_tbs": null, "interconnect_tbs": 4.0, "used_by": "—", "confidence": "A" }
+  ],
+
+  "products": [
+    { "id": "A3",  "alias": "用户口径 A3", "name": "Atlas 900 A3 SuperPoD", "ub_version": "灵衢 1.0", "cards": 384,   "chip": "910c",  "cpu": "鲲鹏 920 ×192", "nodes": 48, "racks": "12 计算+4 总线=16", "compute": "FP16 307.2/288.7 PFLOPS", "mem_unified": "48 TB 统一编址", "d2d_gbs": 784, "hop_latency_ns": 200, "convergence": "1:1 无收敛", "logical_sizes": [16,32,64,128,256,384], "status": "已商用 300+ 套", "confidence": "A" },
+    { "id": "A5",  "alias": "用户口径 A5", "name": "Atlas 950 SuperPoD", "ub_version": "灵衢 2.0", "cards": 8192, "chip": "950dt", "racks": "128 计算+32 互联=160 (~1000㎡)", "compute": "FP8 8 / FP4 16 EFLOPS", "mem_total_tb": 1152, "interconnect_total": "16 PB/s", "cross_rack_rtt_us": 3, "hop_latency_ns": 200, "launch": "2026 Q4", "confidence": "A" },
+    { "id": "A6",  "alias": "用户口径 A6", "name": "Atlas 960 SuperPoD", "ub_version": "灵衢 2.0", "cards": 15488, "chip": "960", "racks": "176 计算+44 互联=220 (~2200㎡)", "compute": "FP8 30 / FP4 60 EFLOPS", "mem_total_tb": 4460, "interconnect_total": "34 PB/s", "launch": "2027 Q4", "confidence": "A" }
+  ],
+
+  "entities": [
+    { "type": "compute_cabinet", "layer": "rack", "label_cn": "计算柜", "color": "#12c08e", "cooling": "液冷", "holds": "4 节点 / 32 NPU", "shape": "tall_box", "confidence": "A" },
+    { "type": "bus_cabinet", "layer": "rack", "label_cn": "总线设备柜", "color": "#ffb454", "cooling": "风冷", "holds": "56 总线设备 / 7 交换平面 (A3 共 4 柜)", "shape": "tall_box", "confidence": "A" },
+    { "type": "compute_node", "layer": "node", "label_cn": "计算节点", "color": "#10331f", "holds": "1 CPU + 8 NPU + 1 L1 交换", "confidence": "A" },
+    { "type": "npu_blade", "layer": "blade", "label_cn": "NPU 刀片", "color": "#36e0c4", "chip": "910c", "hbm_gb": 128, "uplink": "8×56G LQC → L1", "confidence": "A" },
+    { "type": "cpu", "layer": "node", "label_cn": "鲲鹏 920 CPU", "color": "#4a8cff", "role": "与 NPU 平等互联/统一编址", "uplink": "8×30G LQC → L1", "confidence": "A" },
+    { "type": "l1_switch", "layer": "node", "label_cn": "L1 交换芯片", "color": "#ffb454", "role": "节点内全互联", "uplink": "光纤 → L2", "confidence": "A" },
+    { "type": "l2_switch", "layer": "rack", "label_cn": "L2 总线交换", "color": "#ffce7a", "role": "跨节点全互联 (总线柜)", "planes": 7, "confidence": "A" },
+    { "type": "hbm", "layer": "blade", "label_cn": "自研 HBM 堆栈", "color": "#6f7cff", "variants": "HiBL 1.0(128GB/1.6TBs) · HiZQ 2.0(144GB/4TBs)", "confidence": "A" },
+    { "type": "aic_cube", "layer": "core", "label_cn": "AIC · Cube 核", "color": "#36e0c4", "role": "矩阵计算 GEMM", "onchip": "L0A/L0B/L0C", "tilelang": "T.Scope(\"C\")", "confidence": "A" },
+    { "type": "aiv_vector", "layer": "core", "label_cn": "AIV · Vector 核", "color": "#ffb454", "role": "矢量/逐元素", "onchip": "Unified Buffer(UB)", "tilelang": "T.Scope(\"V\")", "confidence": "A" }
+,
+    { "type": "npu_ub_port", "layer": "blade", "label_cn": "NPU UB端口(scale-up)", "color": "#36e0c4", "role": "SerDes/LQC → 铜(柜内)/LPO(柜间) → L1/L2 UB交换", "bandwidth": ">392 GB/s 单向(CM384)", "plane": "UB", "confidence": "B" },
+    { "type": "npu_rdma_port", "layer": "blade", "label_cn": "NPU RDMA端口(scale-out)", "color": "#ff5d8f", "role": "RoCE → LPO → scale-out 交换 → 其它超节点", "bandwidth": "400 Gbps 单向/NPU", "plane": "RDMA", "confidence": "B" },
+    { "type": "lpo_module", "layer": "rack", "label_cn": "LPO 光模块(线性直驱)", "color": "#ffb454", "role": "柜间光介质·去DSP(信号调理交 host/交换机 SerDes)", "spec": "功耗7-8.5W(↓35-50%)·时延<3ns; CM384=400G×6912(5376 up/1536 out); 800G=下一代/950趋势", "confidence": "B/C" },
+    { "type": "nic_qingtian", "layer": "node", "label_cn": "擎天 NIC(VPC)", "color": "#9d7bff", "role": "CPU侧网卡→数据中心/存储/管理(南北向); 注: scale-out RDMA 在 NPU 上,不走此 NIC", "plane": "VPC", "confidence": "B" }
+  ],
+
+  "planes": [
+    { "id": "ub", "name_cn": "UB 平面 · Scale-up", "role": "超节点内全互联 NPU↔NPU↔CPU", "participants": "NPU + CPU", "chain": "NPU UB端口 → 铜/LPO → L1/L2 UB交换", "scope": "超节点内 SU", "parallel": "TP/EP/SP", "metrics": "2.8 Tbps卡间·<1µs(CM384)", "color": "#36e0c4", "confidence": "A/B" },
+    { "id": "rdma", "name_cn": "RDMA 平面 · Scale-out", "role": "跨超节点 / 外部 RDMA", "participants": "仅 NPU(RoCE)", "chain": "NPU RDMA端口(400G) → LPO → scale-out 交换", "scope": "跨超节点 SO", "parallel": "DP/PP", "metrics": "400 Gbps 单向/NPU", "color": "#ff5d8f", "confidence": "B" },
+    { "id": "vpc", "name_cn": "VPC 平面", "role": "接入数据中心/存储/管理(南北向)", "participants": "CPU + 擎天 NIC", "chain": "CPU → 擎天 NIC → 数据中心网络", "scope": "南北向", "parallel": "—", "color": "#9d7bff", "confidence": "B" }
+  ],
+
+  "interconnect_levels": [
+    { "id": "ic_d2d",   "from": "die",  "to": "die",  "name_cn": "Die 间 D2D", "medium": "片内 D2D", "bandwidth": "双向 784 GB/s", "latency": null, "convergence": null, "color": "#ff5d8f", "confidence": "A", "source": "Atlas 900 A3 规格表" },
+    { "id": "ic_npu_l1","from": "npu_blade", "to": "l1_switch", "name_cn": "NPU→L1", "medium": "8×56G LQC", "bandwidth": "节点内全互联", "latency": null, "convergence": "1:1", "color": "#36e0c4", "confidence": "A", "source": "A3 网络架构" },
+    { "id": "ic_cpu_l1","from": "cpu", "to": "l1_switch", "name_cn": "CPU→L1", "medium": "8×30G LQC", "bandwidth": "平等编址", "latency": null, "color": "#4a8cff", "confidence": "A", "source": "A3 网络架构" },
+    { "id": "ic_l1_l2", "from": "l1_switch", "to": "l2_switch", "name_cn": "L1→L2 (跨节点)", "medium": "光纤 UB", "bandwidth": "节点内167 / 跨节点164 GB/s (NPU↔NPU)", "latency": "单跳 200 ns", "convergence": "1:1 无收敛", "color": "#ffb454", "confidence": "B", "source": "CloudMatrix384 解读(厂商口径)" },
+    { "id": "ic_ub_mesh","from": "npu_blade", "to": "npu_blade", "name_cn": "超节点内 UB 全互联", "medium": "UB / UB-Mesh (柜内 2D-FullMesh)", "bandwidth": "any-to-any，衰减<2%", "latency": "<1 µs (跨节点)", "convergence": "1:1", "color": "#4a8cff", "confidence": "B", "source": "廖恒 UB-Mesh / CM384" },
+    { "id": "ic_cluster","from": "superpod", "to": "superpod", "name_cn": "跨超节点", "medium": "UBoE(推荐) / RoCE", "bandwidth": "集群级", "latency": "集群级", "color": "#9d7bff", "confidence": "A", "source": "HC2025 keynote" }
+  ],
+
+  "topology_scales": {
+    "16":  { "label": "16p 小超节点", "nodes": 2,  "npus": 16,  "semantics": "A3 逻辑切分", "note": "跨柜跳数最少，时延最优", "confidence": "A(档位)/C(分档细节)" },
+    "32":  { "label": "32p 小超节点", "nodes": 4,  "npus": 32,  "semantics": "A3 逻辑切分", "confidence": "A(档位)/C(分档细节)" },
+    "64":  { "label": "64p 小超节点", "nodes": 8,  "npus": 64,  "semantics": "A3 逻辑切分 / A5 单柜物理积木", "note": "A5(950) 基本组网单元=单柜 64 卡", "confidence": "A" },
+    "384": { "label": "384p 全超节点", "nodes": 48, "npus": 384, "semantics": "A3 满配", "note": "56 总线设备×7 交换平面，全互联直达", "confidence": "A" }
+  },
+  "topology_data_gap": "16/32/64p 逐档的交换层数 / Spine-Leaf / 铜光占比 / 各档精确时延，华为公开渠道未给完整分档表，需查《Atlas 900 A3 SuperPoD 技术白皮书》原文。",
+
+  "parallel_mappings": [
+    { "id": "tp", "name_cn": "TP 张量并行", "split": "权重矩阵", "collective": "AllReduce ×4/层", "traffic": "频繁/量大/关键路径", "placement": "超节点内高带宽域", "domain_scope": "node|superpod", "edge": { "color": "#36e0c4", "width": 3, "style": "solid" }, "confidence": "B" },
+    { "id": "sp", "name_cn": "SP 序列并行", "split": "激活沿序列维", "collective": "2×AllGather + 2×ReduceScatter", "traffic": "与 TP 同域", "placement": "与 TP 绑定", "domain_scope": "node|superpod", "edge": { "color": "#36e0c4", "width": 2, "style": "solid" }, "confidence": "B" },
+    { "id": "ep", "name_cn": "EP 专家并行(MoE)", "split": "专家分布到不同卡", "collective": "AllToAll (dispatch/combine)", "traffic": "突发/对带宽压力最大", "placement": "超节点内大规模 EP", "domain_scope": "superpod", "edge": { "color": "#ff5d8f", "width": 4, "style": "dense_mesh" }, "confidence": "B", "example": "华为准万亿 MoE: 32 路 EP" },
+    { "id": "pp", "name_cn": "PP 流水并行", "split": "按层切 stage", "collective": "P2P send/recv", "traffic": "量小/点对点", "placement": "可跨节点/跨超节点", "domain_scope": "cross_node", "edge": { "color": "#ffd54a", "width": 1.5, "style": "solid" }, "confidence": "B" },
+    { "id": "dp", "name_cn": "DP 数据并行", "split": "batch", "collective": "AllReduce ×1/step", "traffic": "可与反向重叠", "placement": "最外层/跨超节点", "domain_scope": "cross_superpod", "edge": { "color": "#9d7bff", "width": 1, "style": "dashed" }, "confidence": "B" }
+  ],
+
+  "process_thread_model": {
+    "process_level": { "def": "1 NPU = 1 进程 = 1 rank", "library": "HCCL", "concepts": ["rank_id", "world_size", "通信域 communication domain", "ranktable"] },
+    "thread_level": { "def": "昇腾无 GPU 式 thread 抽象", "realization": "核间(多 AI Core, SPMD by block_idx) + 核内流水(TQue/TPipe)", "note": "可视化'线程级'应画为核间并行+核内流水，而非 warp/thread" },
+    "tilelang": { "repo": "https://github.com/tile-ai/tilelang", "ascend_repo": "https://github.com/tile-ai/tilelang-ascend", "concepts": { "grid_block": "T.Kernel(...) as (bx,by) → block→计算核", "thread": "threads=N (NPU 降级为 AscendC 向量指令)", "tile": "block_M/N/K 切分粒度", "pipeline": "T.Pipelined(num_stages) 搬运/计算重叠", "scope": "T.Scope(\"C\")=Cube / T.Scope(\"V\")=Vector" } },
+    "pto_note": "'pypto' 无独立项目，最接近为 tilelang-ascend 的 ascendc_pto (Ascend C & PTO) 后端代码生成路线。",
+    "ascendc": { "paradigm": "SPMD", "id_fn": "GetBlockIdx()", "onchip_mgmt": "TPipe", "queue": "TQue", "hardware": "AIC(Cube)+AIV(Vector) 分离架构，经 Global Memory 通信" }
+  },
+
+  "view_presets": [
+    { "id": "rack", "name_cn": "机柜全景", "layer_focus": "rack", "instantiate": { "compute_cabinet": 12, "bus_cabinet": 4, "layout": "两排×6 + 总线柜一侧" }, "show_edges": [], "camera": "俯视环绕" },
+    { "id": "node", "name_cn": "计算节点", "layer_focus": "node", "instantiate": { "cpu": 1, "npu_blade": 8, "l1_switch": 1, "layout": "L1 居中顶部, 8 NPU 环形, CPU 底部" }, "show_edges": ["ic_npu_l1", "ic_cpu_l1"], "camera": "斜俯视" },
+    { "id": "die", "name_cn": "NPU 刀片 & Die", "layer_focus": "core", "instantiate": { "die": 2, "core_grid": "4×4 棋盘 AIC/AIV", "hbm": 4 }, "show_edges": ["ic_d2d"], "camera": "近景" },
+    { "id": "ub", "name_cn": "UB 互联拓扑", "layer_focus": "superpod", "instantiate": { "by_scale": true, "nodes_from": "topology_scales", "l2_switch": 1 }, "show_edges": ["ic_npu_l1", "ic_l1_l2", "ic_ub_mesh"], "scale_selector": [16, 32, 64, 384], "camera": "全景" },
+    { "id": "parallel", "name_cn": "进程/线程映射", "layer_focus": "process", "instantiate": { "rank_grid": "TP(x) × (DP·PP)(z)", "tp": 8, "color_by": "parallel_mappings" }, "show_edges": ["tp", "ep", "pp", "dp"], "scale_selector": [16, 32, 64, 384], "camera": "斜俯视" }
+  ],
+
+  "sources": [
+    { "label": "华为 HC2025 徐直军 keynote", "url": "https://www.huawei.com/cn/news/2025/9/hc-xu-keynote-speech", "confidence": "A" },
+    { "label": "华为企业业务 Atlas 900 A3 规格", "url": "https://e.huawei.com/cn/products/computing/ascend/atlas-900-a3-superpod", "confidence": "A" },
+    { "label": "昇腾社区 A3 三大优势", "url": "https://www.hiascend.com/activities/dynamic-news/523", "confidence": "A" },
+    { "label": "openEuler 灵衢软件架构白皮书 2.0", "url": "https://www.openeuler.org/projects/ub-service-core/white-paper/UB-Service-Core-SW-Arch-RD-2.0-zh.pdf", "confidence": "A" },
+    { "label": "OFweek 廖恒 UB-Mesh HotChips2025", "url": "https://ee.ofweek.com/2025-09/ART-8500-2809-30669910.html", "confidence": "B" },
+    { "label": "电子创新网 昇腾950/960/970 规格", "url": "https://www.eetrend.com/content/2025/100594934.html", "confidence": "B" },
+    { "label": "InfoQ CloudMatrix384 解读", "url": "https://www.infoq.cn/article/lzg1tvcl4by65xpd9ftb", "confidence": "C" },
+    { "label": "TileLang", "url": "https://github.com/tile-ai/tilelang", "confidence": "A" },
+    { "label": "tilelang-ascend", "url": "https://github.com/tile-ai/tilelang-ascend", "confidence": "A" },
+    { "label": "昇腾 AscendC SPMD 文档", "url": "https://www.hiascend.com/document/detail/zh/CANNCommunityEdition/83RC1alpha001/opdevg/Ascendcopdevg/atlas_ascendc_10_0013.html", "confidence": "A" },
+    { "label": "HCCL 集合通信库", "url": "https://www.hiascend.com/developer/techArticles/20240809-1", "confidence": "A" }
+  ]
+}

@@ -1,0 +1,43 @@
+{
+  "id": "rank-topology-3d",
+  "name": "模型分片与训练设备映射（3D 拓扑）",
+  "description": "工作台左上那张卡单拎出来的自包含 pattern：一个可转动的三维阵列，把「五刀切完之后落到哪张卡上」画成 world 只卡壳，每只装它自己那一份。卡里能换三种内容——模型分片（层与算子归属）/ 层构成（逐层一排算子方块，体积∝字节、颜色=切它那把刀）/ 显存占用（HBM 五档色带）。点一张卡进入三档选中态：选中卡是选中态、沿任一把落下的刀与它同组的兄弟卡是默认态、其余卡隐去；通信按「看哪一层」一次只画一层（rank / 张量 / 路由 / 时序 / 影响 / rank 内），边连的是块与块，不是卡与卡。",
+  "version": "dev",
+  "entry": "pattern.html",
+  "selfContained": true,
+  "canvas": "full-bleed",
+  "builtFrom": {
+    "source": "public/parallel-topology/demo.html",
+    "defaults": "view=chain · card=1 · vtab=3d · embed=1",
+    "note": "与 /patterns/net-slicing/ 同源同实现，区别只在**默认落在哪一屏**：那一份的题面是「一张整网怎么被切开」，这一份的题面是「切完之后落到哪张卡上」。"
+  },
+  "urlParams": {
+    "card": "1 —— 卡维度（本 pattern 的默认）。给 0 退回逻辑切分那一屏",
+    "fill": "comp —— 卡片内容切到「层构成」；缺省是「模型分片」，net=0 是「显存占用」",
+    "net": "0 —— 卡里不画算子，改画 HBM 五档色带（显存占用）",
+    "sel": "整数 global_rank —— 选中某张卡；不给就是未选中态（此时不画任何通信）",
+    "cgrain": "rank|tensor|route|time|cost|intra|fabric —— 通信看哪一层，一次只画一层；fabric 是物理侧那一层：这条边走 UB 还是 RoCE",
+    "commk": "tp,cp,pp,dp,ep 的子集 —— 只画这几维的通信边",
+    "cuts": "d/p/c/t/e 的任意组合 —— 哪几把刀是落下的；缺省五把全落",
+    "vtab": "3d|front|side|top —— 机位；front/side/top 是真正的正交投影",
+    "zero": "0|1|2|3 —— ZeRO 档位，改的是权重/梯度/优化器态三档在卡上的形态",
+    "preset": "default128|dense64|longcp|moe64|pangu —— 预置并行度",
+    "tp / cp / pp / dp / ep": "整数 —— 直接指定并行度（覆盖 preset）",
+    "embed": "1 —— 嵌入形态：收起顶栏与页脚，只剩画布与它自己的工具条",
+    "theme": "light|dark",
+    "perNode / nodeRack / podCards": "物理链尺寸 —— 一台 node 几张卡 / 一个机柜几台 node / 一个超节点几张卡。缺省 8 / 4 / 384（CloudMatrix384 公开口径）。改 podCards 就能看出哪些通信边会跨超节点、从 UB 掉到 RoCE",
+    "phys": "1 —— 物理平铺：卡按 (超节点, 机柜, node, 槽位) 摆，机柜画成地面底带、超节点围成青色的盒子（UB 的边界）。与 cgrain=fabric 合看就是「哪条边跨了这只盒子」"
+  },
+  "constraints": [
+    "world = TP × CP × PP × DP 必须整除；不合法时舞台封锁并列出最近合法值（宁缺毋误），不静默取整。",
+    "通信只在**选中一张卡**之后出现。没有主语就没有「它跟谁来往」这个答案——这是刻意的，不是漏画。",
+    "通信字节按配置真算：TP/PP 是 mbs×(seq/CP)×hidden×2B、DP 是 2×本卡参数量，并在标签上带量词（×2/层 · /μb · /步）；CP 逐跳一块 KV、EP 各边由 top-k 路由当场决定，两者**不给数**。耗时仍是示意口径（按算子类别估的量级，非实测），只服务「影响」那一档的相对比较，图上一律带 ≈。",
+    "「时序 / 影响」两层只写在边上（何时 / 代价）；一步里 F/B/AllReduce 的排布归「时间·流」那一屏，本 pattern 不重画时间轴。",
+    "路由那一层只有 MoE + EP 落刀时可用，其余配置下按钮置灰——不适用不等于缺。",
+    "128 卡以上的规模默认全量绘制；4000 卡级别请显式关掉整网（net=0）或降低并行度，否则单帧要画上万个 SVG 图元。",
+    "物理链（die ⊂ NPU ⊂ node ⊂ 机柜 ⊂ 超节点 ⊂ 集群）与并行坐标是两套坐标，卡同时挂在两边。载体判定：通信域全在一个超节点内走 UB（灵衢 UnifiedBus，非阻塞全互联），跨超节点走 RoCE。**口径假设：超节点内一律按 UB 同一档算，不区分板内 / 板间 / 机架间**——公开资料是「单板内、单板间、机架间 NPU 全互联」，读起来同一档；板间与机架间是否降速待灵衢团队确认，真有差异只需改判定与带宽表，图与读数结构不动。",
+    "「影响」那一档的读数是**传输时间下界** = 载荷 ÷ 本条边的带宽（UB 196 GB/s / RoCE 400 Gbps）。它不是实测耗时：没算拓扑跳数、没算集合通信算法的系数（环形 AllReduce 要搬 2(N−1)/N 份）、没算争用与协议开销，所以图上一律写「≥」。算不出字节的两维（CP / EP）退回示意 ms 并写「≈」。",
+    "UB 内部再分三档（同 node / 同机柜 / 跨机柜同超节点），**当前三档同带宽**——公开资料是「单板内、单板间、机架间 NPU 全互联」，读起来同一档。分档先建好，真有差异时只改 UB_TIERS9 那三个 bps，判定 / 着色 / 代价换算 / 图上读数全部自动跟着走。"
+  ],
+  "embedding": "<iframe src=\"/patterns/rank-topology-3d/pattern.html?embed=1&card=1&sel=23\" style=\"width:100%;height:100%;border:0\"></iframe> —— 宿主可用 postMessage({type:'pto:state', …}) 推 view / sel / theme / step。"
+}

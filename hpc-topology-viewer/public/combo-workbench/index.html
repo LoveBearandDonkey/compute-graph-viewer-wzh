@@ -1,0 +1,2287 @@
+<!doctype html>
+<html lang="zh-CN" data-theme="light">
+<head>
+<meta charset="UTF-8" />
+<meta name="author" content="王欣迪" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<!-- 入口 HTML 一律不进浏览器缓存。
+     资源引用已经带 ?v=<短SHA>，改了内容就换 URL、自然绕开缓存；但**页面本身**
+     没有这层保护——链接一旦被收藏（尤其是带着某次构建的 ?v= 旧戳那种），
+     查询串算进缓存键，浏览器就一直拿那份旧副本，页面在 Pages 上早就更新了也看不见。
+     实际发生过：启动页给的链接是最新戳，手里那条旧戳链接却停在几周前的构建。
+     这几个文件都是几十到几百 KB 的单文件入口，每次回源重新校验的代价可以忽略，
+     换来的是「点开就是最新」。GitHub Pages 不让自定义响应头，只能走 meta。 -->
+<meta http-equiv="Cache-Control" content="no-cache, must-revalidate">
+<meta http-equiv="Pragma" content="no-cache">
+<meta name="robots" content="noindex, nofollow, noarchive, nosnippet, noimageindex" />
+<meta name="googlebot" content="noindex, nofollow" />
+<meta name="referrer" content="no-referrer" />
+<title>组合工作台 · 并行拓扑 × 微批次生命周期</title>
+<link rel="icon" href="./favicon.svg" type="image/svg+xml" />
+<link rel="stylesheet" href="../vendor/pto-design-system/styles.css" />
+<link rel="stylesheet" href="./observatory/vendor/pto-design-system/patterns/workbench-shell/pattern.css" />
+<link rel="stylesheet" href="./observatory/vendor/pto-design-system/patterns/ide-frame/pattern.css" />
+<!--
+  ══════════════════════════════════════════════════════════════════════
+  组合工作台 —— 一块可以往上摞卡片的台面。
+
+  形态是**应用外壳**，不是文档页：顶栏 + 一整块舞台 + 底部抽屉，铺满视口、
+  自己不滚动（滚动都发生在格子里面）。视觉语言照抄 cube-cockpit.html：
+  同一套 PTO token（浅色优先、[data-theme=dark] 单块覆盖）、同一种面板圆角与
+  段控、底部抽屉就是它那张「Profiling 视图」卡（标题的琥珀色 #8a5f00 也照搬）。
+  外壳仍保留驾驶舱的语义 token 别名；Button / Menu 组件则直接引用共享
+  vendor/pto-design-system，避免继续在页面里复制控件样式。
+
+  和已有那两个工作台/驾驶舱的分工：
+    · /            统一工作台   —— React 应用，一个主视图
+    · /parallel-topology/cockpit.html  并行拓扑驾驶舱 —— 一块大画布 + 切换轨，
+      一次只看一个组件（切走的只 hidden 不 destroy）
+    · 本页          组合工作台   —— **同屏上下摞多个格子**，每格是一个完整的
+      已有页面，格头统一收编它的视图切换。为的是把「同一件事的不同层」上下
+      对齐着看：上面回答「这张卡装的是模型的哪一块」（空间），下面回答
+      「这块东西在一个 step 里什么时候动」（时间）。
+
+  现在台面上两格（后续往 SLOTS 里加即可，格头、段控、折叠/关闭、URL 状态
+  都是按 N 格写的，不是硬编两格）：
+    ① 舞台 · 并行拓扑     iframe → ../patterns/net-slicing/pattern.html
+       放的是 pattern（为「被嵌」抽出来的那一屏），不是并行拓扑的工作台整页：
+       产品名/面包屑/配置那条应用顶栏收起，只剩画布与画布上的控件。名字与
+       「＋ 搜索」由 pattern 自己在画布左上角出，所以这一格没有我们的格头。
+       七个视图的段控先不放（要慢慢加），但 ?a=<视图> 一直认，启动页那几条
+       深链就靠它。
+       注意：/patterns/net-slicing/ 是构建期产物，仓库里没有——本地开 public/
+       时这一格是空的（有兜底文案说明），要看真样子得看发布后的站点。
+    ② 抽屉 · 微批次生命周期泳道  iframe → ./swimlane.html?chrome=0
+       上游拷贝（见 swimlane.html 顶部说明），同一套 pto:state 约定。
+  舞台与抽屉之间是可拖的分隔条；抽屉高度、各格看哪个视图都写进 URL。
+
+  依赖（都由发布流水线叠加，本目录不复制第二份）：
+    · /patterns/net-slicing/         —— pattern 分支的 workflow 产出，自带 vendor
+    · /vendor/pto-design-system/     —— swimlane.html 的 ../vendor/ 落在这上面
+  本页自身是自包含单文件，上面两条哪条 404 都只坏那一格，外壳还在。
+  ══════════════════════════════════════════════════════════════════════
+-->
+<style>
+/* ① Foundation —— 外壳兼容别名；控件尺寸与状态由 vendor design system 提供 */
+:root{
+  --ark-neutral-1:#F5F5F5; --ark-neutral-2:#FFFFFF;
+  --ark-blue-500:#4369EF; --ark-blue-600:#5A92E6;
+  --ark-green-500:#04D793; --ark-orange-500:#FFAA3B; --ark-red-500:#FF4B7B;
+  --font-sans:'Inter','Source Han Sans SC','PingFang SC','Noto Sans SC',sans-serif;
+  --font-mono:'JetBrains Mono','Fira Code','Consolas',monospace;
+  --radius-md:8px; --radius-lg:12px; --radius-pill:999px;
+  --duration-fast:100ms;
+  --scrollbar-w:5px;
+}
+/* ② Semantic —— 浅色（默认） */
+:root, :root[data-theme="light"]{
+  --background:var(--ark-neutral-1); --surface-1:#FFFFFF; --surface-2:#F2F2F2; --surface-3:#E6E6E6;
+  --foreground:rgba(0,0,0,.90); --foreground-secondary:rgba(0,0,0,.55); --foreground-muted:rgba(0,0,0,.38);
+  --border-subtle:rgba(0,0,0,.07); --border-default:rgba(0,0,0,.12); --border-strong:rgba(0,0,0,.18);
+  --primary:var(--ark-blue-500); --primary-hover:var(--ark-blue-600);
+  --success:var(--ark-green-500); --warning:var(--ark-orange-500); --danger:var(--ark-red-500);
+  --focus-ring:rgba(67,105,239,.36);
+  --state-hover:rgba(0,0,0,.05); --state-press:rgba(0,0,0,.09);
+  --state-muted:rgba(0,0,0,.05); --state-selected:rgba(67,105,239,.10);
+  --shadow-sm:0 1px 3px rgba(0,0,0,.10); --shadow-md:0 6px 18px rgba(0,0,0,.12);
+}
+/* ② Semantic —— 深色（单块覆盖） */
+:root[data-theme="dark"]{
+  --background:#101010; --surface-1:#161616; --surface-2:#1c1c1c; --surface-3:#262626;
+  --foreground:rgba(255,255,255,.90); --foreground-secondary:rgba(255,255,255,.60); --foreground-muted:rgba(255,255,255,.40);
+  --border-subtle:rgba(255,255,255,.06); --border-default:rgba(255,255,255,.10); --border-strong:rgba(255,255,255,.16);
+  --focus-ring:rgba(67,105,239,.42);
+  --state-hover:rgba(255,255,255,.06); --state-press:rgba(255,255,255,.10);
+  --state-muted:rgba(255,255,255,.06); --state-selected:rgba(67,105,239,.14);
+  --shadow-sm:0 1px 3px rgba(0,0,0,.28); --shadow-md:0 6px 18px rgba(0,0,0,.34);
+}
+/* ═══ ide-frame 层 ═══════════════════════════════════════════════════
+   背景、面板描边、标题字号字色照 pto-design-system 的 ide-frame pattern
+   （参考页：compute-graph-viewer/distributed-communication-observatory-3d-traffic）。
+   三件事：
+     · 页面底不是一块纯色，是**四团光晕压在一条竖向渐变上**（左上紫、右上蓝、
+       中上青、左下琥珀）；面板浮在它上面，所以面板必须半透明+磨砂，否则
+       等于拿几块不透明的板把底下的渐变全糊死，这套语言就白搭了；
+     · 面板描边用 --border-subtle（比 --border-default 更淡）+ radius-md 8px，
+       不是我先前那套 12/14px 的厚圆角；
+     · 标题统一 600 12.5px：顶栏那条用 --foreground-secondary（它是路径/身份，
+       不该抢戏），格头那条用 --foreground。
+   注意面板里塞的是 iframe（不透明），磨砂只在格头那一条和边缘读得出来——
+   这是内嵌整页的必然代价，不是没生效。
+   ══════════════════════════════════════════════════════════════════ */
+:root{
+  --ide-bg-start:#fdfdff; --ide-bg-mid:#f6f7fb; --ide-bg-end:#eceff6;
+  --ide-glow-left:155 96 170; --ide-glow-right:24 99 220;
+  --ide-glow-center:20 184 166; --ide-glow-lower:245 158 11;
+  --ide-a-left:.16; --ide-a-right:.14; --ide-a-center:.08; --ide-a-lower:.06;
+  /* 卡片底色取 --background：两个内嵌页（demo / swimlane）的 body 底色正是它
+     （浅 #F5F5F5 / 深 #101010）。取一致的值，格头与画布才是同一张卡的同一个面，
+     中间不会横着一道色差缝。 */
+  --ide-frame-pane-bg:var(--background);
+  --ide-frame-pane-fill:color-mix(in srgb, var(--ide-frame-pane-bg) 80%, transparent);
+  --ide-frame-pane-backdrop-filter:blur(18px) saturate(1.18);
+  --ide-frame-pane-shadow:0 12px 30px color-mix(in srgb, var(--background) 10%, transparent);
+  --ide-frame-pane-border:var(--border-subtle);
+  --ide-frame-header-height:32px;
+  --ide-frame-title-font:600 12.5px/1.2 var(--font-sans);
+  --ide-frame-page-bg:
+    radial-gradient(circle at top left,  rgb(var(--ide-glow-left)   / var(--ide-a-left)),   transparent 28%),
+    radial-gradient(circle at top right, rgb(var(--ide-glow-right)  / var(--ide-a-right)),  transparent 30%),
+    radial-gradient(circle at 48% 6%,    rgb(var(--ide-glow-center) / var(--ide-a-center)), transparent 34%),
+    radial-gradient(circle at 18% 86%,   rgb(var(--ide-glow-lower)  / var(--ide-a-lower)),  transparent 34%),
+    linear-gradient(180deg, var(--ide-bg-start) 0%, var(--ide-bg-mid) 42%, var(--ide-bg-end) 100%);
+}
+:root[data-theme="dark"]{
+  --ide-bg-start:#17181d; --ide-bg-mid:#101114; --ide-bg-end:#0c0d10;
+  --ide-glow-right:67 105 239;
+  --ide-a-left:.12; --ide-a-right:.12; --ide-a-center:.06; --ide-a-lower:.05;
+}
+/* ③ 兼容别名 —— 与驾驶舱同名，方便两边互看 */
+:root{
+  --sys-border:var(--border-default); --sys-border-strong:var(--border-strong);
+  --sys-raised:var(--surface-2); --sys-raised-hover:var(--surface-3);
+  --bg:var(--background); --panel:var(--surface-1);
+  --border:var(--border-default); --txt:var(--foreground); --dim:var(--foreground-secondary);
+}
+
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%}
+body{background:var(--ide-frame-page-bg);color:var(--txt);font-family:var(--font-sans);font-size:13px;overflow:hidden}
+*{scrollbar-width:thin;scrollbar-color:rgba(127,127,127,.28) transparent}
+::-webkit-scrollbar{width:var(--scrollbar-w);height:var(--scrollbar-w)}
+::-webkit-scrollbar-track{background:transparent}
+::-webkit-scrollbar-thumb{background:rgba(127,127,127,.28);border-radius:var(--radius-pill)}
+
+button{font:inherit}
+button:focus-visible{outline:none;box-shadow:0 0 0 3px var(--focus-ring)}
+button.on{background:var(--state-selected);border-color:color-mix(in srgb,var(--primary) 45%,var(--sys-border-strong));color:var(--primary)}
+a.btn{text-decoration:none}
+
+#app{display:flex;flex-direction:column;width:100%;height:100vh;aspect-ratio:auto;border-radius:0}
+
+/* ═══ 顶栏 ═══ */
+/* 顶栏坐在页面底色上：不铺自己的底色、不画下边框（照 HPC 拓扑查看器那条）。
+   面板是浮在这层底色之上的圆角块，顶栏再来一条横线会把它切成上下两片。 */
+/* 顶栏压到 34px：上面只有一个名字和一颗明暗，48px 是给「产品名 + 面包屑 +
+   一排窗口按钮」那种顶栏留的，这里撑那么高等于白扔一条 14px 的空带。 */
+#topbar{min-height:48px;flex-shrink:0;display:flex;align-items:center;gap:12px;padding:0 14px;z-index:100}
+#topbar .title{font:var(--ide-frame-title-font);font-weight:700;color:var(--foreground-secondary);
+  white-space:nowrap;display:inline-flex;align-items:center}
+#topbar .spacer{flex:1 1 auto}
+#topbar .sep{width:1px;height:16px;background:var(--border-default);flex:0 0 auto}
+
+/* 框架层控件：数据标注（两个 pattern 都有、分类相同，所以由台面统一出） */
+.dmenu{position:relative}
+.topbar-action-btn{min-height:36px;padding:0 12px;font-size:12px;gap:6px}
+.topbar-action-btn > *{line-height:1;display:inline-flex;align-items:center}
+.topbar-action-btn b{font-weight:700;color:var(--primary);font-variant-numeric:tabular-nums}
+.topbar-action-btn .cv{width:12px;height:12px;opacity:.55;stroke-width:2;pointer-events:none;transition:transform 140ms ease}
+.topbar-action-btn[aria-expanded="true"] .cv{transform:rotate(180deg)}
+.topbar-action-btn[aria-expanded="true"],.topbar-action-btn[aria-expanded="true"]:hover,.dmenu.open > .topbar-action-btn,.dmenu.open > .topbar-action-btn:hover{border-color:var(--foreground);background:var(--foreground);color:var(--background)}
+.topbar-action-btn[aria-expanded="true"] b{color:inherit}
+/* 浅色下这两颗控制钮铺白底实心：三格视窗在浅色里都是白的，顶栏这两颗也填白，
+   跟右侧白色视窗连成一片。展开态（aria-expanded）仍走上面那套深色高对比，
+   不被这条盖掉。 */
+:root[data-theme="light"] .topbar-action-btn:not([aria-expanded="true"]){background:#ffffff}
+:root[data-theme="light"] .topbar-action-btn:not([aria-expanded="true"]):hover{background:var(--state-hover)}
+.dmenu-pop{position:absolute;top:calc(100% + 6px);right:0;z-index:120;display:none;min-width:220px}
+.dmenu.open .dmenu-pop{display:block}
+.dmenu-acts{display:flex;gap:4px;padding:2px 2px 6px;border-bottom:1px solid var(--border-subtle);margin-bottom:4px}
+.dmenu-acts button{flex:1 1 0;font-size:12px}
+.dmenu-pop .opt{justify-content:flex-start}
+.dmenu-pop .opt i{width:8px;height:8px;border-radius:2px;background:var(--c);flex:0 0 auto}
+.dmenu-pop .opt .tick{display:inline-flex;margin-left:auto;color:var(--primary)}
+.dmenu-pop .opt .tick svg{width:14px;height:14px;stroke-width:2.5;pointer-events:none}
+.dmenu-pop .opt[aria-checked="false"]{color:var(--foreground-muted)}
+.dmenu-pop .opt[aria-checked="false"] .tick{color:transparent}
+.dmenu-pop .opt[aria-checked="false"] i{opacity:.3}
+#klegend .dmenu-pop{top:auto;bottom:calc(100% + 6px);max-height:min(480px,calc(100vh - 96px));overflow:auto}
+
+/* ═══ 全局配置：IDE Frame 的一级右侧 pane，不归任何一个业务视图 ═══ */
+.global-config{
+  --config-description:var(--foreground-secondary);
+  /* 原来 top+bottom 两头卡死，面板永远撑满整个工作台高度——「观察方式」那节
+     搬走之后内容变短，底下就空出一大截。改成只卡 top，靠内容撑高度，
+     max-height 兜住 8px 底边距，内容真的长到装不下时 __body 自己滚动。 */
+  position:absolute;right:8px;top:48px;max-height:calc(100% - 56px);z-index:70;width:min(420px,calc(100vw - 32px));
+  background:var(--ide-frame-pane-fill);border-color:var(--ide-frame-pane-border);
+  transform:translateX(calc(100% + 16px));opacity:0;pointer-events:none;
+  transition:transform 180ms ease,opacity 140ms ease;
+}
+.global-config[aria-hidden="false"]{transform:translateX(0);opacity:1;pointer-events:auto}
+.global-config__head{flex:0 0 auto;min-height:52px;display:flex;align-items:center;gap:8px;padding:0 12px;border-bottom:1px solid var(--border-subtle)}
+.global-config__head h2{margin:0;font:var(--ide-frame-title-font);font-size:14px;color:var(--foreground)}
+.global-config__head .btn{margin-left:auto}
+.global-config__body{min-height:0;overflow:auto;padding:0 14px}
+.global-config__section{padding:14px 0;border-top:1px solid var(--border-subtle)}
+.global-config__section:first-child{border-top:0}
+.global-config__section h3{margin:0;color:var(--foreground);font-size:13px;line-height:1.4;font-weight:700}
+.global-config__section-intro{margin:3px 0 11px;color:var(--config-description);font-size:12px;line-height:1.45}
+.parallel-list{display:flex;flex-direction:column;gap:6px}
+.parallel-field{display:grid;grid-template-columns:minmax(0,1fr) 116px;align-items:center;gap:12px;min-height:52px;padding:7px 9px;border:0;border-radius:var(--radius-md);background:var(--state-muted)}
+.parallel-field__meta{min-width:0}
+.parallel-field__meta strong{display:flex;align-items:baseline;gap:7px;color:var(--foreground);font-size:12px;line-height:1.3}
+.parallel-field__meta strong b{color:var(--parallel-color,var(--foreground));font:700 12px/1 var(--font-mono)}
+.parallel-field__meta span{display:block;margin-top:3px;color:var(--config-description);font-size:12px;line-height:1.35}
+.number-stepper{width:116px;height:34px;display:grid;grid-template-columns:32px minmax(0,1fr) 32px;align-items:stretch;overflow:hidden;border:1px solid var(--input-border);border-radius:var(--input-radius);background:var(--input-bg);transition:border-color 120ms ease,box-shadow 120ms ease}
+.number-stepper:focus-within{border-color:var(--foreground);box-shadow:0 0 0 3px color-mix(in srgb,var(--foreground) 16%,transparent)}
+.number-stepper button{min-width:0;min-height:0;padding:0;border:0;border-radius:0;background:transparent;color:var(--foreground-secondary);font:500 16px/1 var(--font-sans)}
+.number-stepper button:first-child{border-right:1px solid var(--border-subtle)}
+.number-stepper button:last-child{border-left:1px solid var(--border-subtle)}
+.number-stepper button:hover{background:var(--state-hover);color:var(--foreground)}
+.number-stepper button:disabled{background:transparent;color:var(--foreground-muted);opacity:.35;cursor:not-allowed}
+.number-stepper input{min-width:0;width:100%;height:32px;padding:0 4px;border:0;border-radius:0;background:transparent;color:var(--input-fg);font:600 13px/1 var(--font-mono);text-align:center;appearance:textfield;-moz-appearance:textfield}
+.number-stepper input::-webkit-inner-spin-button,.number-stepper input::-webkit-outer-spin-button{-webkit-appearance:none;margin:0}
+.number-stepper input:focus-visible{outline:none;box-shadow:none}
+.global-config__world{margin-top:8px;padding:10px 11px;border:0;border-radius:var(--radius-md);background:var(--state-muted)}
+.global-config__world-head{display:flex;align-items:baseline;justify-content:space-between;gap:12px}
+.global-config__world-head span{color:var(--foreground-secondary);font-size:12px;font-weight:600}
+.global-config__world-head strong{color:var(--foreground);font:700 18px/1 var(--font-mono)}
+.global-config__world-head strong small{margin-left:4px;color:var(--config-description);font:500 12px/1 var(--font-sans)}
+.global-config__formula{margin-top:6px;color:var(--foreground-secondary);font:500 12px/1.45 var(--font-mono)}
+.global-config__note{margin:7px 0 0;color:var(--config-description);font-size:12px;line-height:1.5}
+.global-config__choice-label{display:block;margin:11px 0 6px;color:var(--foreground-secondary);font-size:12px;font-weight:600}
+.global-config__choice-label:first-of-type{margin-top:0}
+.global-config__choice-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:6px}
+.global-config__choice{min-height:50px;display:flex;flex-direction:column;align-items:flex-start;justify-content:center;gap:3px;padding:7px 9px;border:0;border-radius:var(--radius-md);background:var(--state-muted);color:var(--foreground-secondary);text-align:left}
+.global-config__choice:hover{background:var(--state-hover);color:var(--foreground)}
+.global-config__choice[aria-pressed="true"]{background:var(--foreground);color:var(--background)}
+.global-config__choice:disabled{opacity:.45;cursor:not-allowed}
+.global-config__choice strong{font-size:12px;line-height:1.25}
+.global-config__choice small{color:var(--config-description);font-size:12px;line-height:1.3;font-weight:400}
+.global-config__choice[aria-pressed="true"] small{color:inherit;opacity:.72}
+.global-config__advanced{border-top:1px solid var(--border-subtle)}
+.global-config__advanced summary{display:flex;align-items:center;gap:7px;padding:13px 0;color:var(--foreground-secondary);font-size:12px;font-weight:700;cursor:pointer;list-style:none}
+.global-config__advanced summary::-webkit-details-marker{display:none}
+.global-config__advanced summary::before{content:"›";font-size:17px;line-height:1;transition:transform 120ms ease}
+.global-config__advanced[open] summary::before{transform:rotate(90deg)}
+.global-config__advanced-body{padding:0 0 14px}
+.global-config__cuts{display:flex;gap:6px;flex-wrap:wrap}
+.global-config__cuts button{min-height:28px;padding:0 10px;border:0;border-radius:var(--radius-sm);background:var(--state-muted);color:var(--foreground-secondary);font-size:12px;font-weight:600}
+.global-config__cuts button:hover{background:var(--state-hover);color:var(--foreground)}
+.global-config__cuts button[aria-pressed="true"]{background:color-mix(in srgb,var(--cut-color,var(--primary)) 14%,var(--state-muted));color:var(--cut-color,var(--primary))}
+.global-config__cuts button:disabled{opacity:.4;cursor:not-allowed}
+.global-config__footer{flex:0 0 auto;padding:10px 12px 12px;border-top:1px solid var(--border-subtle);background:var(--ide-frame-pane-fill)}
+.global-config__status{min-height:17px;margin-bottom:7px;color:var(--danger);font-size:12px;line-height:1.4}
+.global-config__actions{display:flex;justify-content:flex-end;gap:8px}
+#globalConfigBtn.is-selected,#globalConfigBtn.is-selected:hover{background:var(--foreground);border-color:var(--foreground);color:var(--background)}
+
+/* ═══ 并行配置：所有宽度下都是「顶栏按钮 + 右侧抽屉」，不再有常驻横栏 ═══
+   曾经有过一版：≥1440px 时把这块面板摊平成舞台正上方一条常驻横栏（五把并行度
+   ＋总卡数＋切分标记＋应用/重置横着排一行）。它占掉舞台顶部一整条，而这一屏
+   真正要看的是下面那两格；配置又不是每分钟都在改的东西，常驻的收益抵不上那条高度。
+   所以整块 @media 规则删掉——宽屏与窄屏走同一套：顶栏那颗「并行配置」按钮点开，
+   抽屉从右边滑进来。
+
+   注意不能写成「宽屏下 .global-config{display:none}」：那会把抽屉本体也一起隐藏，
+   按钮还在、点了却什么都不出来，宽屏上并行度就彻底改不了了。删规则、让它回落到
+   默认的抽屉形态，才是「去掉横栏」而不是「去掉配置」。 */
+#dmenu.open #dmenuBtn,#dmenu.open #dmenuBtn:hover{background:var(--foreground);border-color:var(--foreground);color:var(--background)}
+#dmenu.open #dmenuBtn b{color:inherit}
+
+/* ═══ 并行对象筛选：顶栏按钮 + 下拉浮层（原来是舞台底部的 Hover Bar）═══
+   收起时就是顶栏上一颗普通按钮，与「并行配置」「数据标注」同形制；展开落下一张
+   浮层，四组胶囊在里面换行排。选中数量写在按钮上那颗徽标里——收起状态下也得
+   看得出「现在筛着东西」，否则读者会对着一屏收窄过的画面找不到开关在哪。 */
+.global-filter{position:relative;flex:0 0 auto}
+.global-filter__toggle b{min-width:16px;height:16px;padding:0 4px;border-radius:8px;background:var(--primary);color:#fff;font:700 10px/16px var(--font-mono);text-align:center}
+.global-filter__pop{
+  /* fixed 而不是 absolute：浮层锚在按钮右缘、向**左**长，而按钮在顶栏中段——
+     absolute + right:0 时只要内容比按钮左边的空地宽，左半截就顶出屏幕外拿不回来
+     （DP 一组 16 颗，最宽的时候必然超）。改成 fixed，打开时按按钮的实际位置算
+     top / right / max-width（见 setFilterOpen），怎么摆都在屏内。 */
+  position:fixed;z-index:80;
+  display:flex;flex-direction:column;gap:8px;width:max-content;
+  padding:10px;border:1px solid var(--border-strong);border-radius:12px;
+  background:var(--surface-1);box-shadow:var(--shadow-lg);
+}
+.global-filter[data-collapsed="true"] .global-filter__pop{display:none}
+.global-filter__groups{display:flex;align-items:center;gap:6px;flex-wrap:wrap;max-width:100%}
+.global-filter__group{display:inline-flex;align-items:center;gap:2px;flex:0 0 auto;padding:2px;border-radius:var(--radius-pill);background:var(--state-muted)}
+.global-filter__group b{padding:0 4px;color:var(--filter-color);font:700 11px/1 var(--font-mono);white-space:nowrap}
+.global-filter__group button{min-width:22px;height:24px;padding:0 5px;border:0;border-radius:var(--radius-pill);background:transparent;color:var(--foreground-secondary);font-size:11px;font-weight:600;white-space:nowrap}
+.global-filter__group button:hover{background:var(--state-hover);color:var(--foreground)}
+.global-filter__group button[aria-pressed="true"]{background:var(--foreground);color:var(--background)}
+.global-filter__clear{align-self:flex-end;height:26px;padding:0 10px;border:1px solid var(--border-subtle);border-radius:var(--radius-pill);background:transparent;color:var(--foreground-muted);font-size:12px}
+.global-filter__clear:hover:not(:disabled){background:var(--state-hover);color:var(--foreground)}
+.global-filter__clear:disabled{opacity:.45}
+
+/* ═══ 舞台：左 整网图 ｜ 右 并行拓扑（同一个 pattern 的两份配置） ═══ */
+#stage{flex:1 1 auto;min-height:0;display:flex;flex-direction:row;gap:0;padding:8px 8px 0}
+#slot-netgraph{flex:0 0 var(--side-w,460px);min-width:240px}
+/* 收起 = 整格关闭（开关在底部工具栏，随时能开回来），不是塌成格头一条 */
+#slot-netgraph[data-folded="1"]{display:none}
+/* 第三格 · 层级剖面：引自 cube-cockpit.html 的 #left（见 SLOTS 里 hierarchy 那条的
+   注释）。定宽、不接拖拽分隔条——它是参考面板，不是要天天调宽的主工作区，
+   跟整网图那格「可能要腾更多屏幕」不是一回事，少写一条 vsplit 逻辑不算偷懒。 */
+#slot-hierarchy{flex:0 0 380px;min-width:260px;margin-left:8px}
+/* 右侧格头覆盖在画布上：第一行是正式标题与说明，第二行的视角 Tab 在格子内
+   水平居中。只有 Tab 接事件，其余不吃事件，免得挡住画布拖拽。 */
+#slot-netgraph .slot-head{position:absolute;top:10px;left:16px;right:10px;z-index:5;
+  display:block;min-height:82px;padding:0;background:transparent;pointer-events:none}
+#slot-netgraph .slot-heading{display:flex;align-items:center;gap:6px;max-width:calc(100% - 54px)}
+#slot-netgraph .slot-title{font-size:15px;font-weight:800;letter-spacing:-.01em;color:var(--foreground)}
+/* 原来常驻一行小字复述这句话，占着标题下方一整行；收进标题后面这颗「？」徽标，
+   悬停/聚焦才看到，原生 title 属性做提示。 */
+/* .slot-head button 有条通用规则给 min-height:28px（配 Tab/收起那些正常尺寸的按钮），
+   这颗徽标要更小，得把 min-height 也一起覆盖掉，只设 height 拉不动它——那条规则
+   赢的正是 min-height，不然椭圆而不是圆就是这么来的。 */
+#slot-netgraph .slot-help{flex:none;width:15px;height:15px;min-height:15px;min-width:15px;border-radius:50%;padding:0;
+  border:1px solid var(--border-subtle);background:var(--surface-2);color:var(--foreground-muted);
+  font-size:10px;font-weight:700;line-height:1;display:inline-flex;align-items:center;justify-content:center;cursor:help}
+#slot-netgraph .slot-help:hover{color:var(--foreground);border-color:var(--foreground-muted)}
+#slot-netgraph .slot-head button{pointer-events:auto}
+/* Tab 独立占第二行并按整个右侧视图居中，不跟标题宽度一起参与 flex 分配。 */
+#slot-netgraph .slot-head .tabs{position:absolute;top:48px;left:50%;transform:translateX(-50%);width:max-content;pointer-events:auto}
+#slot-topology{flex:1 1 auto;min-width:0}
+/* 竖分隔条：与舞台/抽屉之间那条同一套做法，只是换了轴 */
+#vsplit{flex:0 0 10px;align-self:stretch;cursor:ew-resize;display:grid;place-items:center;touch-action:none}
+#vsplit::after{content:"";width:3px;height:52px;border-radius:2px;background:var(--border-strong);opacity:.5}
+#vsplit:hover::after{background:var(--primary);opacity:1}
+body.is-resizing-x{user-select:none;cursor:ew-resize}
+body.is-resizing-x iframe{pointer-events:none}
+
+/* 面板 = 一格。舞台格铺满剩余高度，抽屉格定高可拖。 */
+.slot{position:relative;display:flex;flex-direction:column;min-height:0;overflow:hidden;
+  background:var(--ide-frame-pane-fill);background-clip:padding-box;
+  border:1px solid var(--ide-frame-pane-border);border-radius:var(--radius-md);
+  box-shadow:var(--ide-frame-pane-shadow);
+  backdrop-filter:var(--ide-frame-pane-backdrop-filter);
+  -webkit-backdrop-filter:var(--ide-frame-pane-backdrop-filter)}
+.slot[hidden]{display:none}
+#slot-topology{flex:1 1 auto}
+.slot[data-folded="1"]{display:none}
+
+/* 格头：标题 + 段控 + 动作，就是驾驶舱抽屉那一排 */
+.slot-head{flex:0 0 auto;min-height:var(--ide-frame-header-height);display:flex;align-items:center;gap:8px;
+  padding:3px 10px;border-bottom:0;background:transparent}
+/* 格头里的控件按 32px 那条基线收一号，否则一排 28px 的按钮把头撑成 40px */
+.slot-head button{min-height:28px;padding:0 9px;font-size:12px}
+.slot-title{margin-right:2px;color:var(--foreground);font:var(--ide-frame-title-font);white-space:nowrap;
+  display:flex;align-items:center;gap:6px}
+.slot-head .spacer{flex:1 1 auto}
+/* ═══ 底部工具栏：浮动胶囊，画布正下方居中（仿 Figma 画布下方那条）═══
+   整网图 / 层级图 / 泳道图 三格现在默认收起（见 readURL 的 foldDefault），
+   这颗胶囊是打开它们的唯一入口——原先顶栏那两颗 window-action 开关拿掉了，
+   同一件事两个入口正是这份文件其它地方一直在避免的那种界面（顶栏「数据
+   标注」那条注释也是同一个理由）。「配置」额外给一个入口，代理的还是同一个
+   #globalConfig 抽屉（见 .global-config-toggle）；「并行对象/数据标注」
+   留在顶栏不搬——它们问的是「看哪个对象/哪类读数」，跟「开哪张图」不是
+   一回事，硬凑进同一条胶囊只会更难找。
+   fixed 定位、不进 #app 的 flex 流：抽屉开多高、整网图拖多宽都不会把它推走，
+   这也是唯一一处**没有**跟着开关收起的控件——它自己就是开关。 */
+.wb-dock{
+  position:fixed;left:50%;bottom:14px;transform:translateX(-50%);z-index:110;
+  display:flex;align-items:center;gap:3px;padding:5px;
+  border:1px solid var(--ide-frame-pane-border);border-radius:var(--radius-pill);
+  background:var(--ide-frame-pane-fill);box-shadow:var(--shadow-md);
+  backdrop-filter:var(--ide-frame-pane-backdrop-filter);
+  -webkit-backdrop-filter:var(--ide-frame-pane-backdrop-filter);
+}
+.wb-dock__btn{
+  display:flex;flex-direction:column;align-items:center;gap:2px;min-width:52px;
+  border:0;border-radius:calc(var(--radius-pill) - 3px);padding:6px 10px 5px;
+  background:transparent;color:var(--foreground-secondary);font-size:10.5px;font-weight:600;
+  transition:background var(--duration-fast) ease,color var(--duration-fast) ease;
+}
+.wb-dock__btn svg{width:18px;height:18px;stroke-width:1.8}
+.wb-dock__btn:hover{background:var(--state-hover);color:var(--foreground)}
+.wb-dock__btn[aria-pressed="true"],.wb-dock__btn[aria-expanded="true"]{background:var(--state-selected);color:var(--primary)}
+.wb-dock__sep{width:1px;height:26px;background:var(--border-default);flex:0 0 auto;margin:0 2px}
+@media (max-width:1080px){ .wb-dock{bottom:8px} }
+
+/* ── 走带 + 游标 ─────────────────────────────────────────────────────────
+   走带长在泳道的格头里（它量的是泳道那根时间轴），游标叠在泳道画布上。
+   两者都归台面所有：上游那份 swimlane.html 是逐字节拷贝，不碰。 */
+.xport{display:flex;align-items:center;gap:6px}
+.xport button{min-width:26px;padding:0 8px;font-family:var(--font-family-mono, monospace)}
+.xport .slider{width:132px}
+/* 缩放代理组：钮长在台面、事件打进泳道 iframe（同源，直接够得到它的控件）。
+   形制照走带那排——同一条格头上的两组小件，不该各长各的。 */
+.zctl{display:flex;align-items:center;gap:5px}
+.zctl button{min-width:26px;padding:0 8px;font-family:var(--font-family-mono, monospace)}
+.zctl .slider{width:96px}
+.zctl b{min-width:30px;font-family:var(--font-family-mono, monospace);font-size:12px;color:var(--foreground-muted);font-weight:600}
+.xport b{min-width:42px;font-family:var(--font-family-mono, monospace);font-size:12px;
+  font-weight:700;color:var(--foreground-secondary);text-align:right}
+/* 游标：容器铺满 iframe 但不吃点击（改时间的入口是走带，不是画布——画布上的点击
+   在泳道里另有含义）；真正画出来的是里面那根 <i>。 */
+.xcursor{position:absolute;inset:0;pointer-events:none;z-index:4}
+.xcursor[hidden]{display:none}
+/* 从泳道自己那条 42px 表头**下面**起画：表头上没有时间轴，线压上去只是挡字 */
+.xcursor > i{position:absolute;top:42px;bottom:0;width:0;border-left:1.5px solid var(--primary);
+  opacity:.85;transform:translateX(-.75px)}
+.xcursor > i::before{content:'';position:absolute;top:-3px;left:-3.5px;width:8px;height:8px;border-radius:50%;
+  background:var(--primary)}
+#dock .slot-body{position:relative}
+
+/* 段控：灰轨 + 白色活动块（驾驶舱 .drtabs 同款） */
+.tabs{display:flex;gap:3px;background:var(--state-muted);border-radius:var(--radius-md);padding:2px}
+.tabs[hidden]{display:none}
+.tabs button{border:none;background:transparent;box-shadow:none;border-radius:calc(var(--radius-md) - 2px);
+  padding:3px 9px;color:var(--dim);font-weight:500;min-height:28px;font-size:12px}
+.tabs button:hover{background:var(--state-hover);border-color:transparent;color:var(--txt)}
+.tabs button[aria-selected="true"]{background:var(--panel);color:var(--txt);font-weight:600;box-shadow:var(--shadow-sm)}
+
+.slot-body{flex:1 1 auto;position:relative;min-height:0;background:var(--ide-frame-pane-fill)}
+.slot-body > iframe{display:block;width:100%;height:100%;border:0;
+  opacity:0;transition:opacity 140ms ease}
+/* 装配完成才淡入。pattern 的工具条是 JS 后建的，我们要等它出来才能藏控件、
+   对主题、点适配；不挡这一下，用户就会先看到它自己的默认样子（深色、控件没藏、
+   没适配）再被我们改掉——那正是「有一个闪动」。 */
+.slot[data-ready="1"] .slot-body > iframe{opacity:1}
+.slot-fallback{position:absolute;inset:0;display:none;place-content:center;text-align:center;padding:24px;
+  font-size:12px;line-height:1.8;color:var(--dim)}
+.slot[data-broken="1"] .slot-fallback{display:grid}
+.slot[data-broken="1"] .slot-body > iframe{visibility:hidden}
+.slot-fallback b{color:var(--txt)}
+.slot-fallback code{font-family:var(--font-mono);font-size:12px;background:var(--state-muted);padding:1px 5px;border-radius:4px}
+
+/* ═══ 抽屉（下面那格）—— 驾驶舱 #drawer 的形制 ═══ */
+#dock{flex:0 0 auto;height:var(--dock-h,340px);min-height:120px;margin:0 8px 8px}
+#dock[hidden]{display:none}
+
+/* 舞台与抽屉之间的分隔条 */
+#splitter{flex:0 0 auto;height:10px;margin:0 8px;cursor:ns-resize;display:grid;place-items:center;touch-action:none}
+#splitter::after{content:"";width:52px;height:3px;border-radius:2px;background:var(--border-strong);opacity:.5}
+#splitter:hover::after{background:var(--primary);opacity:1}
+#splitter[hidden]{display:none}
+body.is-resizing{user-select:none;cursor:ns-resize}
+body.is-resizing iframe{pointer-events:none}
+
+@media (max-width:1080px){
+  .slot-head{flex-wrap:wrap}
+}
+
+/* D3：390px 手机宽度下实测过——主视图被挤出视口，只剩右边那格读不了的整网图，
+   是个渲染出来但用不了的半成品。三格横排 + 底部抽屉这个形制本来就要那么宽的
+   台面，不是拖一拖分隔条就能救的，跟 D1/D2（pattern 自己的字号/工具条挤压）
+   不是同一类问题——这条不用等 patterns/net-slicing 那边，直接在这收口。
+   断点定在 720px：1080px 那条已有的 .slot-head 换行，能扛到平板宽度；
+   720px 以下換成一句明确的话，好过一个看起来能用、点不动的界面。 */
+#tooNarrow{display:none}
+@media (max-width:720px){
+  #app{display:none}
+  #tooNarrow{
+    display:flex; min-height:100vh; align-items:center; justify-content:center;
+    flex-direction:column; gap:10px; padding:32px; text-align:center;
+    background:var(--background); color:var(--foreground);
+    font:14px/1.6 var(--font-sans);
+  }
+  #tooNarrow b{font-size:15px}
+  #tooNarrow p{color:var(--foreground-secondary); max-width:38em; margin:0}
+  #tooNarrow a{color:var(--primary)}
+}
+</style>
+</head>
+<body>
+<div id="tooNarrow">
+  <b>组合工作台需要更宽的屏幕</b>
+  <p>三格横排 + 底部抽屉这个形制，在手机宽度下没法既保留三格又读得清——与其给一个
+     点不动的半成品，不如直说：请换成平板或桌面浏览器打开（建议宽度 ≥ 720px）。
+     只想看并行拓扑那一屏，也可以直接打开
+     <a href="../patterns/net-slicing/pattern.html">这条单屏链接</a>。</p>
+</div>
+<div id="app" class="pto-ide-frame" data-ide-frame data-host="standalone" data-surface="solid" data-hide-activity-rail="true">
+
+  <!-- ═══ 顶栏 ═══ -->
+  <header id="topbar" class="pto-ide-frame__topbar pto-ide-frame__standalone-chrome">
+    <img src="./favicon.svg" alt="" width="22" height="22" style="border-radius:5px;vertical-align:middle;margin-right:6px"/>
+    <span class="title">分布式训练拓扑分析工作台</span>
+
+    <span class="spacer"></span>
+
+    <!-- 并行对象筛选：原来是浮在舞台底部的一条 Hover Bar，横着摊开 TP·SP / EP / PP / DP
+         四组胶囊，最宽的时候几乎占满整屏底边、压着画布。它和「并行配置」问的是同一类
+         问题（这一屏看哪一套并行、看其中哪一个对象），却分居屏幕上下两端。
+         挪到顶栏「并行配置」旁边、默认收起：常态只是一颗按钮，点开才落下一张浮层。
+         浮层而不是就地展开——四组胶囊里 DP 一组就有 16 颗，就地展开会把顶栏撑爆。 -->
+    <div class="global-filter" id="globalFilter" data-collapsed="true">
+      <button class="btn btn-outline btn-compact topbar-action-btn global-filter__toggle" id="globalFilterToggle" type="button"
+              aria-expanded="false" aria-controls="globalFilterPop"
+              aria-label="并行对象筛选" title="并行对象筛选：选中某一维的某一个对象，两格一起收窄到它">
+        <span>并行对象</span><b id="globalFilterCount" hidden></b>
+        <svg class="cv" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg>
+      </button>
+      <div class="global-filter__pop" id="globalFilterPop" role="toolbar" aria-label="选择并查看并行对象">
+        <div class="global-filter__groups" id="globalFilterGroups"></div>
+        <button class="global-filter__clear" id="globalFilterClear" type="button" aria-label="清除全局筛选" title="清除筛选">清除</button>
+      </div>
+    </div>
+
+    <button class="btn btn-outline btn-compact topbar-action-btn global-config-toggle" id="globalConfigBtn" type="button" aria-label="打开并行配置" aria-controls="globalConfig" aria-expanded="false" aria-pressed="false" title="并行配置：统一设置并行策略与观察方式">
+      <span>并行配置</span><svg class="cv" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg>
+    </button>
+
+    <!-- 框架层：管整块台面的开关。本来长在各个 pattern 自己身上，提上来统一出，
+         格子里那份藏掉——同一排控件出现两次、两格各调各的，是最容易看错的一种界面。 -->
+    <div class="dmenu" id="dmenu">
+      <button class="btn btn-outline btn-compact topbar-action-btn" id="dmenuBtn" aria-haspopup="menu" aria-controls="dmenuContent" aria-expanded="false" title="数据标注：图上读数分五类，可逐类显示或隐藏（同时作用于两格）"><span>数据标注</span><b id="dmenuCount">5</b><svg class="cv" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg></button>
+      <div class="dmenu-pop menu-content" id="dmenuContent" role="menu">
+        <div class="dmenu-acts">
+          <button class="btn btn-ghost btn-compact" type="button" data-dact="all">全选</button>
+          <button class="btn btn-ghost btn-compact" type="button" data-dact="none">全部隐藏</button>
+        </div>
+        <div id="dmenuOpts"></div>
+      </div>
+    </div>
+
+    <!-- 面板开关（整网图/层级图/底部泳道）挪到画布正下方那条浮动胶囊了，见
+         #app 末尾的 .wb-dock——三格现在默认收起，开关理应挨着它们要出现的
+         画布，而不是留在顶栏这条跟画布本身隔着一整个舞台的窄条上。 -->
+
+    <button class="btn btn-ghost btn-icon btn-compact" id="themeBtn" type="button" data-state="inactive" title="切换到深色主题：外壳与三格里的页面一起换" aria-label="切换到深色主题">
+      <svg class="btn-state-icon--default" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79Z"/></svg>
+      <svg class="btn-state-icon--alternate" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41"/></svg>
+    </button>
+  </header>
+
+  <aside class="pto-ide-frame__pane global-config" id="globalConfig" aria-hidden="true" aria-label="并行配置">
+    <header class="global-config__head">
+      <h2>并行配置</h2>
+      <button class="btn btn-ghost btn-icon btn-compact" id="globalConfigClose" type="button" aria-label="关闭全局配置" title="关闭">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12"/></svg>
+      </button>
+    </header>
+    <div class="global-config__body">
+      <section class="global-config__section">
+        <h3>并行策略</h3>
+        <p class="global-config__section-intro">设置各并行维度。数值 1 表示该维度不进行切分或复制。</p>
+        <div class="parallel-list">
+          <div class="parallel-field" style="--parallel-color:#21c4db" title="张量并行：划分注意力头与隐藏维度">
+            <span class="parallel-field__meta"><strong><b>TP</b><span class="pf-name">张量并行</span></strong><span>划分注意力头与隐藏维度</span></span>
+            <div class="number-stepper" role="group" aria-label="TP 张量并行度">
+              <button type="button" data-number-step="-1" aria-label="减少 TP 张量并行度">−</button><input type="number" min="1" step="1" value="2" data-global-cfg="tp" aria-label="TP 张量并行度"><button type="button" data-number-step="1" aria-label="增加 TP 张量并行度">+</button>
+            </div>
+          </div>
+          <div class="parallel-field" style="--parallel-color:#7cc510" title="上下文并行：划分输入序列长度">
+            <span class="parallel-field__meta"><strong><b>CP</b><span class="pf-name">上下文并行</span></strong><span>划分输入序列长度</span></span>
+            <div class="number-stepper" role="group" aria-label="CP 上下文并行度">
+              <button type="button" data-number-step="-1" aria-label="减少 CP 上下文并行度">−</button><input type="number" min="1" step="1" value="1" data-global-cfg="cp" aria-label="CP 上下文并行度"><button type="button" data-number-step="1" aria-label="增加 CP 上下文并行度">+</button>
+            </div>
+          </div>
+          <div class="parallel-field" style="--parallel-color:#ff9f2d" title="流水线并行：将模型层划分为多个阶段">
+            <span class="parallel-field__meta"><strong><b>PP</b><span class="pf-name">流水线并行</span></strong><span>将模型层划分为多个阶段</span></span>
+            <div class="number-stepper" role="group" aria-label="PP 流水线并行度">
+              <button type="button" data-number-step="-1" aria-label="减少 PP 流水线并行度">−</button><input type="number" min="1" step="1" value="4" data-global-cfg="pp" aria-label="PP 流水线并行度"><button type="button" data-number-step="1" aria-label="增加 PP 流水线并行度">+</button>
+            </div>
+          </div>
+          <div class="parallel-field" style="--parallel-color:#4369ef" title="数据并行：复制模型分片并处理不同数据批次">
+            <span class="parallel-field__meta"><strong><b>DP</b><span class="pf-name">数据并行</span></strong><span>复制模型分片并处理不同数据批次</span></span>
+            <div class="number-stepper" role="group" aria-label="DP 数据并行度">
+              <button type="button" data-number-step="-1" aria-label="减少 DP 数据并行度">−</button><input type="number" min="1" step="1" value="16" data-global-cfg="dp" aria-label="DP 数据并行度"><button type="button" data-number-step="1" aria-label="增加 DP 数据并行度">+</button>
+            </div>
+          </div>
+          <div class="parallel-field" style="--parallel-color:#9236ed" title="专家并行：划分 MoE 专家集合">
+            <span class="parallel-field__meta"><strong><b>EP</b><span class="pf-name">专家并行</span></strong><span>划分 MoE 专家集合</span></span>
+            <div class="number-stepper" role="group" aria-label="EP 专家并行度">
+              <button type="button" data-number-step="-1" aria-label="减少 EP 专家并行度">−</button><input type="number" min="1" step="1" value="8" data-global-cfg="ep" aria-label="EP 专家并行度"><button type="button" data-number-step="1" aria-label="增加 EP 专家并行度">+</button>
+            </div>
+          </div>
+        </div>
+        <div class="global-config__world" aria-live="polite">
+          <div class="global-config__world-head"><span>总设备数（WORLD）</span><strong id="globalWorld">128<small>张卡</small></strong></div>
+          <div class="global-config__formula" id="globalFormula">TP 2 × CP 1 × PP 4 × DP 16</div>
+          <p class="global-config__note">EP 为 MoE 层内的专家分组约束，不作为独立乘数重复计入总设备数。</p>
+        </div>
+      </section>
+      <!-- 物理拓扑：上面那一节答「模型怎么切」，这一节答「机器怎么摆」。
+           两套坐标的交叉决定每条通信边走哪张网——同一个超节点内走 UB（灵衢
+           UnifiedBus，非阻塞全互联），跨超节点才换 RoCE，那才是真正的降速点。
+           这三个数不参与整除校验：world 不被「node 几张卡」整除，只意味着最后
+           一台机没插满，不是配置非法。 -->
+      <section class="global-config__section">
+        <h3>物理拓扑 · 灵衢 UnifiedBus</h3>
+        <p class="global-config__section-intro">卡插在哪。缺省照 CloudMatrix384 的公开口径：1 node = 8 NPU + 4 CPU + 7 颗板载 UB 交换芯片，48 node = 1 超节点 = 384 卡（16 机柜）。</p>
+        <div class="parallel-list">
+          <div class="parallel-field" style="--parallel-color:#0ea5b7" title="一台 node 装几张卡：板载 UB 交换芯片把它们直连">
+            <span class="parallel-field__meta"><strong><b>node</b><span class="pf-name">每 node 卡数</span></strong><span>板内直连，板载 UB 交换芯片</span></span>
+            <div class="number-stepper" role="group" aria-label="每 node 卡数">
+              <button type="button" data-number-step="-1" aria-label="减少每 node 卡数">−</button><input type="number" min="1" step="1" value="8" data-global-cfg="perNode" aria-label="每 node 卡数"><button type="button" data-number-step="1" aria-label="增加每 node 卡数">+</button>
+            </div>
+          </div>
+          <div class="parallel-field" style="--parallel-color:#0ea5b7" title="一个机柜装几台 node">
+            <span class="parallel-field__meta"><strong><b>机柜</b><span class="pf-name">每机柜 node 数</span></strong><span>板间，经机柜内 UB 交换</span></span>
+            <div class="number-stepper" role="group" aria-label="每机柜 node 数">
+              <button type="button" data-number-step="-1" aria-label="减少每机柜 node 数">−</button><input type="number" min="1" step="1" value="4" data-global-cfg="nodeRack" aria-label="每机柜 node 数"><button type="button" data-number-step="1" aria-label="增加每机柜 node 数">+</button>
+            </div>
+          </div>
+          <div class="parallel-field" style="--parallel-color:#e0562b" title="一个超节点几张卡——这就是 UB 的边界：组内全在一个超节点里走 UB，跨了换 RoCE">
+            <span class="parallel-field__meta"><strong><b>超节点</b><span class="pf-name">每超节点卡数</span></strong><span>UB 的边界，跨了换 RoCE</span></span>
+            <div class="number-stepper" role="group" aria-label="每超节点卡数">
+              <button type="button" data-number-step="-1" aria-label="减少每超节点卡数">−</button><input type="number" min="1" step="1" value="384" data-global-cfg="podCards" aria-label="每超节点卡数"><button type="button" data-number-step="1" aria-label="增加每超节点卡数">+</button>
+            </div>
+          </div>
+        </div>
+        <!-- 开关下面原来跟着两段字：一段讲「会变成什么样」，一段是口径假设。
+             按下去两秒就看见的事不必先用三行字说一遍；口径假设也不该常驻在
+             配置面板里——它在 pattern 自己的齿轮面板、pattern.json 的约束条、
+             README 与代码注释里都写着，这儿收进悬停就够。 -->
+        <div class="global-config__world">
+          <label style="display:flex;gap:8px;align-items:center;cursor:help;font-size:13px"
+                 title="两格拓扑图的通信边改按「走哪张网」上色：超节点内 UB 青、跨超节点 RoCE 橙；物理平铺下还会画出机柜底带与超节点框。&#10;&#10;⚠ 口径假设：超节点内一律按 UB 同一档算，不区分板内 / 板间 / 机架间。公开资料是「单板内、单板间、机架间 NPU 全互联」，读起来同一档；板间与机架间是否降速待灵衢团队确认。">
+            <input type="checkbox" id="globalFabric">
+            <span><strong>按载体着色（UB / RoCE）</strong> <span style="opacity:.55">ⓘ</span></span>
+          </label>
+        </div>
+      </section>
+      <!-- 「观察方式」（观察层级 / 卡片内容 / 设备排列）原来在这里，现已移到
+           并行拓扑那一格自己的配置面板（机位与通信连线之间）——它答的是「主视图
+           这张图现在怎么摆」，是那一格自己的事，不是跨格的全局并行策略；挪过去
+           后台面这边不用再转发 rank/net/phys 这三个状态，见下面 spatialPayload
+           与 appendGlobalQuery 的注释。 -->
+      <details class="global-config__advanced" open>
+        <summary>高级显示选项</summary>
+        <div class="global-config__advanced-body">
+          <p class="global-config__section-intro">选择需要显示的切分标记；该设置不会修改并行度。</p>
+          <div class="global-config__cuts" id="globalCuts">
+            <button type="button" data-global-cut="dp" aria-pressed="true" style="--cut-color:#4369ef">DP</button>
+            <button type="button" data-global-cut="pp" aria-pressed="true" style="--cut-color:#ff9f2d">PP</button>
+            <button type="button" data-global-cut="cp" aria-pressed="true" style="--cut-color:#7cc510">CP</button>
+            <button type="button" data-global-cut="tp" aria-pressed="true" style="--cut-color:#21c4db">TP·SP</button>
+            <button type="button" data-global-cut="ep" aria-pressed="true" style="--cut-color:#9236ed">EP</button>
+          </div>
+        </div>
+      </details>
+    </div>
+    <footer class="global-config__footer">
+      <div class="global-config__status" id="globalConfigStatus" role="status"></div>
+      <div class="global-config__actions">
+        <button class="btn btn-outline" id="globalConfigReset" type="button">恢复默认</button>
+        <button class="btn btn-solid" id="globalConfigApply" type="button">应用并更新视图</button>
+      </div>
+    </footer>
+  </aside>
+
+  <!-- ═══ 舞台：并行拓扑 ═══ -->
+  <main id="stage" class="pto-ide-frame__pane pto-ide-frame__pane--stack" data-ide-pane="topology-workspace">
+    <!-- 左：并行拓扑——**主视图**，占满舞台剩下的宽度，控件一个不藏。
+         这一格不放我们的格头：pattern 在画布左上角自己写「并行拓扑」，
+         「＋ 搜索」也长在那一行里。 -->
+    <section class="slot" id="slot-topology">
+      <div class="slot-body">
+        <iframe data-slot="topology" title="并行拓扑 Demo" allow="fullscreen"></iframe>
+        <div class="slot-fallback">
+          <p><b>这一格没能加载。</b><br />
+            它引的是 <code>/patterns/net-slicing/pattern.html</code>——那是**构建期产物**，
+            由 pattern 分支的 workflow 叠加发布，仓库里没有这份文件，<br />
+            所以本地直接开 <code>public/</code> 时这一格必然是空的，看发布后的站点才对。<br />
+            线上仍为空的话，多半是别的分支刚发布过把它冲掉了，重跑一次对应分支的 Deploy 即可找回。</p>
+        </div>
+      </div>
+    </section>
+    <div id="vsplit" role="separator" aria-orientation="vertical" aria-label="拖动调整左右两格宽度"></div>
+
+    <!-- 右：整网图——**同一个并行拓扑 pattern 的第二份**，配置成「不落 DP 这一刀、
+         PP/TP·SP/EP 都落下」，于是画的是一张整网怎么被切开，而不是切完之后的
+         world 张卡。两格同源同一份实现，所以两边讲的是同一套话，不会各说各的。
+         它是**跟随视图**：搜索/Rank/刀 三组控件都藏掉（见 hideCss），选中跟着
+         左边那格走，自己不另开一套入口。 -->
+    <section class="slot" id="slot-netgraph">
+      <header class="slot-head">
+        <div class="slot-heading">
+          <span class="slot-title">模型整网视图</span>
+          <button type="button" class="slot-help" aria-label="说明" title="从整网结构与分片总览两个视角查看模型切分。">?</button>
+        </div>
+        <div class="tabs" role="tablist" aria-label="整网视角" data-tabs="netgraph"></div>
+      </header>
+      <div class="slot-body">
+        <iframe data-slot="netgraph" title="并行拓扑 · 整网图（不落 DP）"></iframe>
+        <div class="slot-fallback">
+          <p><b>这一格没能加载。</b><br />
+            它引的是 <code>/patterns/net-slicing/pattern.html</code>——那是<b>构建期产物</b>，
+            由发布流水线叠加，<br />仓库里没有这份文件，本地开 <code>public/</code> 时这一格必然是空的。</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- 第三格：层级剖面——引自 cube-cockpit.html 的 #left（Global → Cluster →
+         Service Pool → Pod → Host → Chip → Die → Core-Group，另有「整网分隔
+         映射」页签，切页签就在这一格里点，不归台面管）。整块 iframe 嵌入：
+         cube-cockpit.html 现成、已验证过，没有必要为「借它这一块面板」重写
+         一遍同样的 L0-L7 渲染逻辑。跟右边那格是同一种做法（hideCss 精确藏掉
+         不要的部分），但**不接语义联动**——它是一份独立的物理参考面板，答的是
+         「这张卡插在机房哪个物理层级」，不像整网图那样与左边主视图共享同一套
+         rank 选中状态，没有必要为了这个把它接进 wireOpToRank/pushHL 那一整套。 -->
+    <section class="slot" id="slot-hierarchy">
+      <header class="slot-head">
+        <div class="slot-heading">
+          <span class="slot-title">层级剖面</span>
+          <button type="button" class="slot-help" aria-label="说明" title="Global → Cluster → Service Pool → Pod → Host → Chip → Die → Core-Group 的物理层级剖面；格子内自带「整网分隔映射」页签可切。引自 cube-cockpit.html，独立参考面板，不与左侧主视图联动选中。">?</button>
+        </div>
+      </header>
+      <div class="slot-body">
+        <iframe data-slot="hierarchy" title="AI Infra 层级剖面 · 整网分隔映射"></iframe>
+        <div class="slot-fallback">
+          <p><b>这一格没能加载。</b><br />
+            它引的是 <code>../cube-cockpit.html</code>。</p>
+        </div>
+      </div>
+    </section>
+
+  </main>
+
+  <div id="splitter" role="separator" aria-orientation="horizontal" aria-label="拖动调整下方抽屉高度"></div>
+
+  <!-- ═══ 抽屉：微批次生命周期泳道（驾驶舱「Profiling 视图」那张卡的形制） ═══ -->
+  <section class="slot" id="dock">
+    <header class="slot-head">
+      <span class="slot-title">训练运行时视图</span>
+      <div class="tabs" role="tablist" aria-label="泳道时间范围" data-tabs="swimlane"></div>
+      <!-- 走带：泳道本身是一张**静态**的甘特图（上游那份没有游标、没有播放），
+           而「这一步走到此刻，每张卡手上压着多少激活」正是它与拓扑那两格之间
+           唯一还没接上的那条线。走带因此长在台面上：游标是叠在泳道上的一层
+           （overlay，不碰上游那个文件），进度同时推给两格 pattern（pto:state 的
+           step），它们按 1F1B 的形状把逐卡的激活体算到那一刻。 -->
+      <div class="xport" id="xport">
+        <button class="btn btn-ghost btn-icon btn-compact" data-act="play" type="button" data-state="inactive" aria-label="播放一个训练步" title="播放一个训练步：游标走一遍，两格里每张卡的激活体跟着这一刻的 1F1B 在途份数变化">
+          <svg class="btn-state-icon--default" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 3 14 9-14 9z"/></svg>
+          <svg class="btn-state-icon--alternate" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 5v14M16 5v14"/></svg>
+        </button>
+        <input class="slider" id="xpT" type="range" min="0" max="1000" value="0" aria-label="训练步进度" aria-valuetext="峰值" title="拖动到这一步的任意时刻" />
+        <b id="xpPct">峰值</b>
+      </div>
+      <!-- 缩放（代理）：泳道自己的那条格头整条藏掉了（见 hideCss——名字归格头后
+           它只剩右端一组缩放钮，单独占一行 32px），钮搬到这儿，点击打回 iframe 里
+           原来的控件。i（对象层级）也一并代理：它的弹层锚点藏了会退到框内角落，可用。 -->
+      <div class="zctl" id="zctl">
+        <button class="btn btn-ghost btn-icon btn-compact" data-zc="out" type="button" title="缩小时间轴" aria-label="缩小时间轴"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" aria-hidden="true"><path d="M5 12h14"/></svg></button>
+        <input class="slider" id="zcs" type="range" min="0" max="6" step="1" value="0" aria-label="时间轴缩放" aria-valuetext="1 倍" title="离散缩放：1× – 64×">
+        <button class="btn btn-ghost btn-icon btn-compact" data-zc="in" type="button" title="放大时间轴" aria-label="放大时间轴"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg></button>
+        <b id="zcv">1×</b>
+        <button class="btn btn-ghost btn-icon btn-compact" data-zc="info" type="button" title="对象层级" aria-label="查看对象层级"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 11v6M12 7h.01"/></svg></button>
+      </div>
+      <!-- kernel 分段图例：泳道自己那条常驻图例（.timeline-footer）在卡片内嵌形态下
+           被 embed.css 整行 display:none（那 38px 留给泳道本身），色带含义因此只剩
+           悬浮 tooltip 能看到——一格一格试才发现，反馈是"看不懂"。这颗按钮长在台面
+           自己（不是 iframe 里），不占泳道一像素，点开是常驻可查的图例，弹层复用
+           顶栏"数据"下拉那一套 .dmenu/.dmenu-pop 样式，不用另起一套面板视觉语言。 -->
+      <div class="dmenu" id="klegend">
+        <button class="btn btn-outline btn-compact" id="klegendBtn" aria-haspopup="menu" aria-controls="klegendContent" aria-expanded="false" title="前向/反向条内色带 = kernel 分段，含义见此">
+          <span>图例</span><svg class="cv" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg>
+        </button>
+        <div class="dmenu-pop menu-content" id="klegendContent" role="menu" style="min-width:190px">
+          <!-- 泳道自带的那行常驻图例（.timeline-footer）在内嵌形态下被 embed.css
+               藏掉了（纵向每一像素都给泳道本身），于是**条本身**那几种颜色——前向/
+               反向/等待/通信/驻留——在台面上一处说明都没有，只剩 kernel 分段那三条，
+               读者看到的是「解释了条里面的色带，却没解释条本身」。把主图例一并搬进
+               这颗浮层：颜色取的是泳道那份同名 CSS 变量（--viz-*），不另抄一套色值，
+               上游改色这里跟着变。 -->
+          <div class="prc-lgrow" style="display:flex;align-items:center;gap:6px;padding:4px 8px;font-size:12px;color:var(--txt)">
+            <i style="width:8px;height:8px;border-radius:2px;background:#38bdf8;flex:0 0 auto" data-viz="--viz-forward"></i>前向计算
+          </div>
+          <div class="prc-lgrow" style="display:flex;align-items:center;gap:6px;padding:4px 8px;font-size:12px;color:var(--txt)">
+            <i style="width:8px;height:8px;border-radius:2px;background:#a855f7;flex:0 0 auto" data-viz="--viz-backward"></i>反向计算
+          </div>
+          <div class="prc-lgrow" style="display:flex;align-items:center;gap:6px;padding:4px 8px;font-size:12px;color:var(--txt)">
+            <i style="width:8px;height:8px;border-radius:2px;background:#94a3b8;flex:0 0 auto" data-viz="--viz-wait"></i>依赖等待（不是异常）
+          </div>
+          <div class="prc-lgrow" style="display:flex;align-items:center;gap:6px;padding:4px 8px;font-size:12px;color:var(--txt)">
+            <i style="width:8px;height:8px;border-radius:2px;background:#22c55e;flex:0 0 auto" data-viz="--viz-comm"></i>通信事务（PP send/recv）
+          </div>
+          <div class="prc-lgrow" style="display:flex;align-items:center;gap:6px;padding:4px 8px;font-size:12px;color:var(--txt)">
+            <i style="width:8px;height:8px;border-radius:2px;background:#c4b5fd;flex:0 0 auto" data-viz="--viz-hold"></i>激活驻留
+          </div>
+          <div style="padding:6px 8px 2px;font-size:12px;color:var(--dim);border-top:1px solid var(--border-subtle);margin-top:4px">
+            以下是<b>条内部</b>的半透明色带（kernel 分段），不是新的事件类别：
+          </div>
+          <div class="prc-lgrow" style="display:flex;align-items:center;gap:6px;padding:4px 8px;font-size:12px;color:var(--txt)">
+            <i style="width:8px;height:8px;border-radius:2px;background:#06B6D4;flex:0 0 auto"></i>TP 切分（列切/头切）
+          </div>
+          <div class="prc-lgrow" style="display:flex;align-items:center;gap:6px;padding:4px 8px;font-size:12px;color:var(--txt)">
+            <i style="width:8px;height:8px;border-radius:2px;background:#A855F7;flex:0 0 auto"></i>EP 切分（桶切）
+          </div>
+          <div class="prc-lgrow" style="display:flex;align-items:center;gap:6px;padding:4px 8px;font-size:12px;color:var(--txt)">
+            <i style="width:8px;height:8px;border-radius:2px;background:var(--foreground-muted);flex:0 0 auto"></i>不切分（无参数，如 attn.core）
+          </div>
+          <div style="padding:6px 8px 2px;font-size:12px;color:var(--dim);border-top:1px solid var(--border-subtle);margin-top:4px">
+            段够宽会刻 TP/EP 字样；窄段悬浮看具体是哪个 kernel。"等待"类条本来就不参与分段，不是漏画。
+          </div>
+        </div>
+      </div>
+      <span class="spacer"></span>
+    </header>
+    <div class="slot-body">
+      <iframe data-slot="swimlane" title="MB07 微批次生命周期泳道"></iframe>
+      <!-- 游标：贴在泳道上的一条竖线。不吃点击（拖动走带才是改时间的入口），
+           位置按泳道自己那套画布几何算（见 applyXport 的注释）。 -->
+      <div class="xcursor" id="xcursor" hidden><i></i></div>
+      <div class="slot-fallback">
+        <p><b>这一格没能加载。</b><br />
+          它引的是同目录的 <code>./swimlane.html</code> 与 <code>/vendor/pto-design-system/</code>。</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- ═══ 底部工具栏（浮动胶囊）══════════════════════════════════════════
+       整网图 / 层级图 / 泳道图默认收起（见 readURL 的 foldDefault），这是
+       打开它们的唯一入口——按钮复用的还是既有的 data-fold-toggle 机制
+       （wirePanelToggles 通吃，见下方 JS），只是把开关从顶栏搬到了画布
+       正下方、换成更贴近「工具栏」的胶囊形制。「配置」代理的是同一个
+       #globalConfig 抽屉（见 .global-config-toggle），不是另开一份状态。 -->
+  <div class="wb-dock" role="toolbar" aria-label="视图面板">
+    <button class="wb-dock__btn" type="button" data-fold-toggle="netgraph" aria-controls="slot-netgraph" aria-expanded="false" aria-pressed="false" title="整网图：一张整网怎么被切开（PP/TP·SP/EP 都落下，不落 DP）">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M15 3v18"/></svg>
+      <span>整网</span>
+    </button>
+    <button class="wb-dock__btn" type="button" data-fold-toggle="hierarchy" aria-controls="slot-hierarchy" aria-expanded="false" aria-pressed="false" title="层级图：Global→Cluster→Service Pool→Pod→Host→Chip→Die→Core-Group 物理层级剖面（引自 cube-cockpit.html）">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
+      <span>层级图</span>
+    </button>
+    <button class="wb-dock__btn" type="button" data-fold-toggle="swimlane" aria-controls="dock" aria-expanded="false" aria-pressed="false" title="泳道图：微批次生命周期的甘特时间线">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 15h18"/></svg>
+      <span>泳道图</span>
+    </button>
+    <span class="wb-dock__sep" aria-hidden="true"></span>
+    <button class="wb-dock__btn global-config-toggle" type="button" id="wbConfigBtn" aria-controls="globalConfig" aria-expanded="false" aria-pressed="false" title="并行配置：统一设置并行策略与观察方式">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 6h10M4 12h16M4 18h10"/><circle cx="17" cy="6" r="2"/><circle cx="9" cy="18" r="2"/></svg>
+      <span>配置</span>
+    </button>
+  </div>
+
+</div>
+
+<script src="./observatory/vendor/pto-design-system/patterns/workbench-shell/pattern.js"></script>
+<script src="./observatory/vendor/pto-design-system/patterns/ide-frame/pattern.js"></script>
+<script>
+(function () {
+'use strict';
+
+/* ══════════════════════════════════════════════════════════════════════
+   台面逻辑。按 **N 格** 写：加第三格只需要往 SLOTS 里加一条 + 照抄一节
+   <section class="slot">，下面这些（段控、折叠、关闭、URL 状态）都不用改。
+   ══════════════════════════════════════════════════════════════════════ */
+
+/* 发布时由 deploy.yml 的「Overlay 组合工作台」一步 sed 成本分支短 SHA。
+   iframe 的 src 是 JS 拼的，没法像别处那样在构建时给 href/src 打版本戳——
+   不带它的话 ./swimlane.html?chrome=0&theme=light&range=global 这条 URL
+   逐字不变，重新发布后浏览器照旧吃缓存里那一份。本地开发时是空串，不加参数。
+
+   **只给本目录自己的文件打**（swimlane.html）。另外两格嵌的是别人发布的成品
+   （/patterns/net-slicing/、/pto-ds/…），拿我们的 SHA 去戳它们是反效果：
+     · 它们更新、我们没动 → 戳不变，URL 逐字不变，照样吃缓存 —— 该刷的没刷；
+     · 我们改了台面、它们没动 → 戳变了，白白重下一遍 —— 不该刷的刷了。
+   所以那两格用规范路径本身，版本由它们各自的发布流水线负责（它们的 pattern.html
+   里对 vendor 的引用就带着自己那一版的 ?v=）。这样「工作台里的并行拓扑」和
+   「直接打开 /patterns/net-slicing/」永远是同一份文件、同一个版本。 */
+var BUILD = '';
+
+/* 一份全局拓扑状态，两个空间视图只负责用不同问法投影它。
+   观察层级/卡片内容/设备排列（原来的 globalMode.rank/cardView 与
+   globalCuts.phys）不在这份状态里了——那三件事挪进了主视图自己的
+   「观察方式」面板，由用户直接在格子里点，台面不再代管、也不再转发，
+   见 appendGlobalQuery 与 spatialPayload 里对应去掉的那几行。 */
+var GLOBAL_MODEL_LAYERS = 48;
+/* 物理三件（perNode / nodeRack / podCards）跟并行度放在同一份 globalCfg 里，
+   于是两格拓扑图永远读到同一套物理坐标——分开存迟早会一格 384、一格 64。
+   缺省照 CloudMatrix384 的公开口径。 */
+var GLOBAL_CFG_DEFAULT = { world:128, tp:2, cp:1, pp:4, dp:16, ep:8, perNode:8, nodeRack:4, podCards:384 };
+var globalFabric = false;      /* 两格是否按「走哪张网」着色（cgrain=fabric） */
+var globalCfg = Object.assign({}, GLOBAL_CFG_DEFAULT);
+var globalCuts = { dp:true, pp:true, cp:true, tp:true, ep:true };
+var globalFilter = { t:null, e:null, p:null, d:null };
+function globalCutsString(includeDp) {
+  return (includeDp && globalCuts.dp ? 'd' : '') + (globalCuts.pp ? 'p' : '') +
+    (globalCuts.cp ? 'c' : '') + (globalCuts.tp ? 't' : '') + (globalCuts.ep ? 'e' : '');
+}
+function appendGlobalQuery(q, options) {
+  ['world','tp','cp','pp','ep'].forEach(function (k) { q.set(k, String(globalCfg[k])); });
+  /* 物理三件也一起推：不推的话两格各用各的缺省，「这条边跨不跨超节点」会在两格
+     给出不同答案——而它们讲的本来就是同一套机器。 */
+  ['perNode','nodeRack','podCards'].forEach(function (k) { q.set(k, String(globalCfg[k])); });
+  /* 载体着色是台面级的一个取景选择，开着就推 cgrain=fabric；关着**不推**，
+     让格子里读者自己选的那一层留着（推一个 rank 回去等于每次改配置都把他的
+     选择清掉）。 */
+  if (globalFabric) q.set('cgrain', 'fabric');
+  q.set('cuts', globalCutsString(options && options.includeDp));
+}
+
+var SLOTS = [
+  {
+    /* 整网图。**当成一格独立的「整网」来看**，不是「并行拓扑的某个状态」——
+       它回答的是「一张整网怎么被切开」，主视图回答的是「切完之后落成 world 张卡」，
+       两个问题、两格各管一个。
+
+       实现上目前是从 /patterns/net-slicing/ 抽出来的一份配置（不落 DP、Rank 关掉），
+       **这是权宜**：后续可以像并行拓扑当初那样，把这一屏单独抽成自己的 pattern
+       （仓库里 vendor/model-graphviz 就是它的渲染器本体）。抽走那天，这一格只要
+       换掉 src 与下面 hideCss 那几条，台面别的地方不用动——因为两格之间**只走语义
+       消息**，不共享配置：
+         · 主视图选中一张卡 → 转 `sel`（见 message 监听）→ 这边亮起那张卡装的那段层，
+           算子旁的切分读数也跟着那张卡变（TP0/32 ↔ TP16/32，实测）
+         · 这边点一个算子 → 把它所在的层号转给主视图（见 wireOpToRank）→ 主视图
+           高亮持有这一层的那些卡
+         · 层选中两边互相同步（见 wireLinkage）
+       换成别的 pattern 时要保住的就是这三条语义，而不是某一套 query 参数。
+
+       先前这一格挂的是 pto-design-system 的 training-sidecar，换掉是因为它**一次
+       只能选中一层**（公开接口只有 selectLayer(单个层号)），接不住「一张卡装的那
+       十几层」；而且它是 46 层、主视图是 48 层，层号对不齐。 */
+    id: 'netgraph',
+    el: 'slot-netgraph',
+    key: 'n',              // URL：?n=cav 打开「全局切分」，默认 net（整网图）不写
+    def: 'net',
+    foldable: true,        // 格头上有「收起」，与抽屉那格同一套
+    foldDefault: true,     // 默认收起，靠底部工具栏「整网」按钮展开
+    /* 只藏两样：
+       ① .pt-mv（数据标注）——归框架层了，与右边那格共用顶栏那颗，藏掉格子里这份；
+       ② .pt-stagetitle 里 pattern 自己那条名字——名字由格头出（见 HTML），
+          两个名字挤同一个左上角谁也读不清。注意只藏**标题那一枚**，不是整条：
+          「＋ 搜索」就长在同一行里，先前整条 display:none 连搜索一起按没了。 */
+    /* 这一格是**跟随视图**，不是第二个操作台。除了数据标注（归框架层）和它自己
+       那个名字（名字由格头出），再藏三组：
+         · #qbar（＋ 搜索与标签）—— 选中由主视图发起，这一格跟着走；两个搜索框
+           摆在同一屏，用户不知道该点哪一个。台面驱动它落标签仍走同一条路
+           （dispatch 到 [data-act=qopen]），藏起来的节点照样收事件。
+         · Rank —— 这一格的立身之本就是「不进卡维度」（rank=0），给个开关等于
+           邀请人把它变成第二个并行拓扑。
+         · 四把刀 —— 同理，cuts=pcte 是这一格的定义（独独不落 DP），不是可调项。
+       用 :has() 精确圈住刀那一组：.pt-seg 机位段控（3D/正视/侧视/顶视）也用它，
+       整类藏掉会把机位一起按没——机位是要留给用户换的。
+       「全局切分」自己那颗「？」说明按钮不在这条规则的射程里：它现在借的是
+       .pt-cfg/.pt-cfgbtn 那副壳（与舞台上「配置」黑圆钮同款），不是 .pt-mv，
+       天然不会被这条 :not(.pt-disp) 连坐，不用单独放过。 */
+    hideCss: '.pt-mv:not(.pt-disp){display:none!important}' +
+             '#stageTitle .pt-stagecopy{display:none!important}' +
+             '#qbar{display:none!important}' +
+             '.pt-cfgpanel .pt-cfgsearch{display:none!important}' +
+             '.pt-cfgpanel .cg:has([data-act="knifetoggle"]){display:none!important}' +
+             '.pt-cfgpanel .cg:has([data-cfgd]){display:none!important}' +
+             /* 「观察方式」（逻辑切分/设备视图·卡片内容·设备排列）也要藏：这一格的
+                立身之本就是「不进卡维度」（rank=0），给个入口等于邀请人把它变成
+                第二个并行拓扑，跟上面「Rank」曾经被藏掉是同一个理由。 */
+             '.pt-cfgpanel .cg:has([data-act="rankmode"]){display:none!important}' +
+             '#groupHud{display:none!important}' +
+             /* 搜索结果那块浮层也藏掉：标签由主视图落，这块面板逐字复读主视图
+                那一块，同一屏出现两遍，还压住半张画布。 */
+             '#revbox{display:none!important}' +
+             /* 顶视：那个机位是拿来看 DP×PP 的卡阵的，而这一格既不落 DP 也没有卡
+                （cuts=pcte + rank=0）——实测它在这一格只画得出 28 个有面积的图元，
+                主视图同机位是 344 个，基本是一张空图。留着是一颗点了没反应的按钮。 */
+             '[data-act="viewtab"][data-tab="top"]{display:none!important}' +
+             /* 选组 HUD（TP·SP / EP / PP 看哪一组）一度也藏了，理由是「两份摆在同一屏
+                各调各的，图上会出现两个当前组」。现在两格的 rank 是**双向**互转的
+                （见下面 pushHL），两份 HUD 读的是同一个选择，不会各走各的——而
+                「这张整网被切成这么多份，我要看哪一份」正是这一格自己的问题，
+                连问都不让问就不成其为一格独立的整网了。所以放出来。
+                默认态它一格都不点亮（pattern 那边 cur=-1）：切分在，但没替读者选。 */
+             /* 缩放 HUD（− 100% ＋ 居中 复位）：这一格只留**机位**一组控件，别的一律
+                由主视图那边操纵。藏的是那排按钮，不是能力——滚轮缩放、拖动平移
+                照旧（都是画布上的手势，不经过这排按钮）。 */
+             '#zoomHud{display:none!important}' +
+             /* 格头已经用段控明确写出「整网图 / 全局切分」。全局切分 SVG 内原有的
+                两行标题在嵌入态会与这枚段控占同一个左上角，保留只会叠字；独立打开
+                demo 时不注入本规则，所以原有标题仍正常显示。 */
+             '.pt-grid-title{display:none!important}' +
+             /* 「全局切分」tab 打开的是 view=solid 的 grid 子视角。它的 stagebar 上
+                有整排子视角按钮（双链映射/交集腔/全局切分）——在这一格里，看哪个
+                答法由格头的 tab 说了算，格子里再放一排会出现两套互相打架的切换器；
+                双链映射/交集腔是「单卡」的问法，归左边主视图的「交集腔」tab 管。 */
+             '[data-act="persp"]{display:none!important}',
+    src: function (s) {
+      var q = new URLSearchParams();
+      q.set('theme', shellDark ? 'dark' : 'light');
+      /* cuts=pcte：p(pp) c(cp) t(tp·sp) e(ep) 都落下，**独独没有 d(dp)**——
+         这一格问的是「一张整网被切成什么」，DP 是「整套安排复印几份」，
+         复印件对这一问没有信息量，落下来只会把同一张图重复 16 遍。
+         「全局切分」tab 用不到这几个参数，但**两个 tab 共一份文档**：从 cav 起步、
+         再 postMessage 切回 chain 时（不重载），chain 读的还是首载 URL 里的这套值，
+         所以两个分支都带上，谁先谁后都落到同一张整网图。 */
+      q.set('cuts', 'pcte');
+      /* rank=0：不进卡维度。卡是「切完之后落到哪张卡上」，那是右边那格的事。
+         （全局切分那页是个例外：它的每一格本来就是「点了定位到卡」，那是它的题面。） */
+      q.set('rank', '0');
+      appendGlobalQuery(q, { includeDp:false });
+      /* 默认落侧视：这一屏把每个算子被哪把刀沿哪根轴切标在旁边
+         （SP 切 seq、TP 切 hidden、EP 切 expert），正是这一格要回答的
+         「一张整网被切成什么」。
+         中间一度改过 3D：那时侧视在 620px 宽的格子里有 48 对文字互相重叠，
+         糊得没法读。根子是字号反除（fsBase）把字钉在恒定屏幕尺寸上——画面
+         等比缩了字不缩。反除上限收到 1.4 之后字跟着画面一起缩，重叠没了，
+         这条理由就不成立，于是改回侧视。（2026-08 又往回抬了一步：1.4 换来
+         的「不重叠」是拿「读不出来」买的——400px 宽的格子里正文只有 4px。
+         上限抬到 2.6、同时把段头横幅/顶边距/层刻度/右上角三行那四处版面缺陷
+         各自修掉之后，侧视在 400/1180/1680 三档实测 0 对重叠、620px 4 对，
+         而正文中位字号 400px 4→7、620px 6→11 像素。见 demo.html 里
+         FS_GAIN_MAX 那段注释。）
+         四个机位一个没拿掉，pattern 自己那排段控点一下就换。 */
+      q.set('vtab', 'side');
+      /* 画布左上角那句题面归这一格自己：pattern 缺省报的是「模型分片与训练设备映射」，
+         那是右边那格的题面；这一格问的是「一张整网被切成什么」。 */
+      q.set('stitle', '模型整网视图 · 真图展开');
+      if (s.value === 'cav') { q.set('view', 'solid'); q.set('p', 'grid'); }
+      else q.set('view', 'chain');
+      /* 不打 BUILD 戳：这是并行拓扑那条线发布的成品，版本归它自己管（见 BUILD 那段） */
+      return '../patterns/net-slicing/pattern.html?' + q.toString();
+    },
+    /* 换 tab 不重载（同一份文档）：pto:state 带 view（既有白名单）+ persp
+       （demo 那边为这一格新开的白名单字段），选中卡/主题都留在原地。 */
+    msg: function (v) {
+      return v === 'cav' ? { type: 'pto:state', view: 'solid', persp: 'grid' }
+                         : { type: 'pto:state', view: 'chain' };
+    },
+    /* 「全局切分」（v:'cav'）先不放出来：段控只留「整网图」一个选项时不必要地
+       长得像个可切的控件，容易让人以为还有别的看法。src/msg 里 cav 分支的代码
+       原样留着（没删），是有意的——哪天要放回来，加回这一条 tabs 项即可，
+       不用重新接线。 */
+    tabs: [
+      { v: 'net', t: '整网图',   d: '一张整网怎么被切开：PP/TP·SP/EP 都落下、不落 DP、不进卡维度' }
+    ]
+  },
+  {
+    id: 'topology',
+    el: 'slot-topology',
+    key: 'a',                  // URL 里代表「这一格当前看哪个视图」的参数名
+    def: 'chain',
+    /* 放的是**并行拓扑 pattern**（/patterns/net-slicing/），不是它的工作台整页。
+       两者同源，但 pattern 这一份自带 view=chain&embed=1 的默认值、自带 vendor
+       依赖，就是为「被嵌」抽出来的那一屏——收起了产品名/面包屑/配置那条应用
+       顶栏（.pt-bar），只剩画布与画布上的控件。
+       这一格不放我们自己的格头：pattern 在画布左上角自己写「并行拓扑」，
+       而且**「＋ 搜索」就长在那一行里**——先前我为了去重把 .pt-stagetitle
+       整条 display:none，连搜索一起按没了，那是个错。名字让它自己报，
+       搜索就跟着回来了，pattern 一个字不用改。 */
+    src: function (s) {
+      var q = new URLSearchParams();
+      q.set('theme', shellDark ? 'dark' : 'light');
+      q.set('view', s.value);        // pattern 只在参数缺席时才填 chain，显式传就认
+      appendGlobalQuery(q, { includeDp:true });
+      /* 不打 BUILD 戳：并行拓扑由它自己那条分支发布，版本归它自己管（见 BUILD 那段）。
+         这一格嵌的就是 /patterns/net-slicing/pattern.html 本体，没有第二份拷贝——
+         那边一更新，这里跟着就是新的。 */
+      return '../patterns/net-slicing/pattern.html?' + q.toString();
+    },
+    /* 只藏数据标注那一组（它归框架层了）。刀键留在格子里——它讲的是这张图
+       怎么切，是并行拓扑自己的事，提到台面反而离它要影响的画面更远。
+       用 CSS 而不是内联样式：这个 pattern 每次改状态都重画工具条，内联的会被冲掉。
+       :not(.pt-disp) 是必须的——⚙（显示设置：图例 / 通信）在 demo 里是
+       `<span class="pt-mv pt-disp">`，跟数据标注**共用 .pt-mv 那层排版壳**。
+       光写 .pt-mv 会把 ⚙ 一起按掉，而它管的图例/通信并没有提到框架层，
+       藏了就再也开不出来（2026-08 实机丢失，右上角只剩机位段控）。
+       「交集腔」tab 里能点到「全局切分」子视角，它自己的「？」说明按钮借的是
+       .pt-cfg/.pt-cfgbtn（与舞台「配置」黑圆钮同款），不是 .pt-mv，同样不受
+       这条规则影响，不用放过。 */
+    hideCss: '.pt-mv:not(.pt-disp){display:none!important}' +
+             '.pt-cfgpanel .cg:has([data-act="knifetoggle"]){display:none!important}' +
+             '.pt-cfgpanel .cg:has([data-cfgd]){display:none!important}' +
+             '#groupHud{display:none!important}',
+    /* 「观察方式」（逻辑切分/设备视图、卡片内容、设备排列）不在藏的名单里：
+       它答的是「这张图现在怎么摆」，是主视图自己的事，不像并行度/切分刀那样
+       在台面顶栏「并行配置」里还有一份——台面那份已经删掉了，见 globalMode
+       那段注释，这里留着让用户点。 */
+    /* 不重载也能换视图：demo.html 的 pto:state 白名单里就有 view */
+    msg: function (v) { return { type: 'pto:state', view: v }; },
+    tabs: [
+      { v: 'chain',   t: '整网切分',   d: '五把刀按嵌套序串成一条链' },
+      { v: 'story',   t: '一个 step',  d: '五幕：前向 / 反向 / 通信 / 更新' },
+      { v: 'dim',     t: '单维切分',   d: '一次只看一把刀' },
+      { v: 'compose', t: '合成·卡阵',  d: '全部卡摆成阵列' },
+      { v: 'anatomy', t: '卡内解剖',   d: '层 → 算子 → kernel → 流' },
+      { v: 'solid',   t: '交集腔',     d: '权重体 ∩ 激活体 = 这张卡的那一腔' },
+      { v: 'time',    t: '时间·流',    d: '时间轴与通信流' }
+    ]
+  },
+  {
+    id: 'swimlane',
+    el: 'dock',
+    key: 'b',
+    def: 'global',
+    foldable: true,        // 见下面 readURL 里 !c.foldable 那条守卫
+    foldDefault: true,     // 默认收起，靠底部工具栏「泳道图」按钮展开
+    src: function (s) {
+      var q = new URLSearchParams();
+      /* 通信观测：另一份文档（3D Rank Deck + 地面 Ribbon + 时间轴，上游拷贝自
+         compute-graph-viewer/distributed-communication-observatory-3d-traffic，
+         vendor 钉在它子模块指的 pto-design-system@d58dd4eb）。它和泳道共用这一格：
+         都是「时间/通信」侧的证据视图，一格多页比再开第四个格子省一条分隔条。 */
+      if (s.value === 'obs') {
+        q.set('theme', theme());
+        q.set('sankey', '1');
+        if (BUILD) q.set('v', BUILD);
+        return './observatory/?' + q.toString();
+      }
+      q.set('chrome', '0');                       // 藏掉上游自带的顶栏，段控归格头
+      q.set('theme', theme());
+      q.set('range', s.value);
+      if (BUILD) q.set('v', BUILD);
+      return './swimlane.html?' + q.toString();
+    },
+    /* 上游那份自己还带一行标题（「生命周期泳道」+ 灰色的「32 Rank · MB07 → DP1」），
+       和格头那枚「微批次生命周期泳道」摞成两行标题，说的是同一件事。
+       藏掉里面那一行，名字统一由格头出——与并行拓扑那格 `#stageTitle > b` 同一处置。
+       只藏标题与灰注，**不动整条 .timeline-toolbar**：缩放那组控件长在同一行里，
+       整条藏掉会把它一起按没（并行拓扑那格先前正是这么踩过一次）。 */
+    /* 名字归格头之后，上游那条格头行里就只剩右端的缩放组了——42px 高、还带一条
+       分隔线，读起来是「第二条空标题栏」。把它压到贴着缩放钮的高度（28px 的钮 +
+       上下各 2px），去掉分隔线与左padding，一条细带收着走。
+       为什么不干脆藏掉整条：缩放钮长在里面，藏了就没法缩放了；真要并进格头那一行，
+       得给 embed-bridge 的 pto:state 加一个 zoom 字段、把钮搬到宿主去代理——
+       那是另一件事（现在的契约只走 range / theme）。 */
+    /* 两份文档的选择器互不命中（泳道那几条在观测台文档里查无此类，反之亦然），
+       所以拼在同一份 hideCss 里是安全的——settleFrame 不区分当前是哪一页。
+       观测台藏的是它 standalone 形态的三件套（顶栏/活动轨/状态条）：
+       进了格子，身份与开关归格头，双份 chrome 摞着只会挤掉画布。 */
+    /* 泳道自己的格头**整条**藏掉：名字归格头、缩放钮已代理到台面（#zctl），
+       这条里没有剩下要看的东西了。之前收窄到 32px 是因为缩放钮还长在里面。 */
+    /* ⚠ display:none 只是不画，**网格轨还占着**——.timeline-pane 是
+       `42px / 1fr`（内嵌形态下 embed.css 已经把第三条页脚轨收掉了），第一条
+       42px 就是这里藏掉的这条格头。光藏内容不收轨，那 42px 没人认领，于是
+       卡片头与「泳道/对象 + 时间刻度」之间平白空出一条横贯整格的白带——
+       实机反馈「标题到泳道间的空白」正是它。embed.css 里给页脚收轨那段注释
+       写的是同一个坑，这里补上同一处理：谁藏了轨里的东西，谁负责收轨。
+       用 !important 是因为要盖过 embed.css 那条同名规则（同选择器同特异性，
+       只靠注入顺序赢不稳）。
+       ⚠ 是把第一条轨**压成 0**，不是把它整条删掉：泳道那边给三个子元素写死了
+       `grid-row: 1/2/3`（swimlane.html 163–165 行），删成单轨的话 .timeline-scroll
+       仍然被 grid-row:2 摁在第二行，浏览器给它现开一条隐式轨，空白照旧在——
+       实测过一次，computed 是 `46px 170px`。留着轨、把它压到 0 才真的收干净。 */
+    hideCss: '.timeline-pane .pane__header{display:none!important}' +
+             '.timeline-pane{grid-template-rows:0 minmax(0,1fr)!important}' +
+             '.pto-ide-frame__standalone-chrome{display:none!important}',
+    /* 逗号选择器：两份文档各等各的锚点，谁在场等谁 */
+    readySel: '.timeline-pane .pane__header, .pto-ide-frame__workbench, .observatory-pane-header',
+    msg: function (v) { return { type: 'pto:state', range: v }; },
+    tabs: [
+      { v: 'global', t: '训练步全貌',   d: 'MB07 从 PP0 前向到 PP0 反向的完整链路' },
+      { v: 'pp2',    t: 'PP2 生命周期', d: 'PP2 的等待 / 计算 / 通信 / 激活驻留' },
+      { v: 'l34',    t: 'L34 对象链',   d: 'L34 模块与保存激活的生产—消费关系' },
+      { v: 'obs',    t: '通信观测',     d: '3D Rank Deck + 地面 Rank→Rank 流量带 + 通信时间轴（Mock Scenario）' }
+    ]
+  },
+  {
+    /* 层级剖面。整块引自 cube-cockpit.html 的 #left（层级剖面/整网分隔映射
+       两个页签），不是抽出来的独立 pattern——它是那一整个「AI Infra 统一
+       驾驶舱」页面的一部分，#left 与 #right（它自己的 3D 主画布）、#footer
+       （播放条）同属一个 #main。这里只要 #left，其余用 hideCss 精确藏掉，
+       跟右边整网图那格「精确藏掉不要的部分」是同一种做法，只是这次要藏的
+       是**另一整块面板**而不是几颗按钮。
+       #topbar/#scenbar 不用我们藏：cube-cockpit.html 自己的 #host-fusion
+       样式块已经无条件藏掉了它们（它本来就是照「被嵌」的样子在维护），我们
+       只需要再藏 #footer（52px 高的常驻播放条，跟层级剖面无关）与 #right
+       （它自己的 3D 主画布——这一格只要 2D 的层级剖面，不需要在小小一格
+       侧栏里重复摆一份 3D 场景），并把 #left 从固定 430px 撑开到占满剩余
+       空间。 */
+    id: 'hierarchy',
+    el: 'slot-hierarchy',
+    foldable: true,
+    foldDefault: true,     // 默认收起，靠底部工具栏「层级图」按钮展开
+    src: function () {
+      var q = new URLSearchParams();
+      q.set('theme', shellDark ? 'dark' : 'light');
+      return '../cube-cockpit.html?' + q.toString();
+    },
+    hideCss: '#footer{display:none!important}' +
+             '#right{display:none!important}' +
+             '#left{flex:1 1 auto!important;width:auto!important;border-right:0!important}',
+    /* #tabHier 是静态标记（层级剖面页签按钮），DOM 一解析出来就在，不用等
+       cube-cockpit.html 自己的 JS 把 KPI 数字填完——用它当 readySel 比落回
+       默认的 [data-act]（这份页面压根不用这个属性）快得多，不用等到 6s
+       超时兜底才淡入。 */
+    readySel: '#tabHier',
+    /* cube-cockpit.html 的主题桥走的是 {type:'cockpit-theme',theme} 这个
+       专属消息（见它自己文件里 parent.postMessage 那段），不是台面其余三格
+       共用的 pto:state——applyShellTheme 按格子取 themeMsg，没有就退回默认。 */
+    themeMsg: function () { return { type: 'cockpit-theme', theme: theme() }; }
+  }
+];
+
+var BY_ID = {};
+SLOTS.forEach(function (s) { BY_ID[s.id] = s; });
+
+/* 框架层：这两组开关管的是整块台面（落哪几把刀、看哪几类数据标注），
+   不是某一格的私事，所以提到顶栏统一出，格子里那份藏掉。
+   驱动一律「点它自己的控件」：同源翻进去按按钮，不碰任何内部状态——
+   pattern 换了实现只要按钮还在就不散架，也不用它们为我们加 API。 */
+/* 五类数据标注。两格是同一个 pattern 的两份配置，所以键名同一套，
+   顶栏那颗一次管两格。 */
+var DATAK = [
+  { k: 'num',   t: '数值', c: '#38bdf8' },
+  { k: 'grad',  t: '梯度', c: '#8b5cf6' },
+  { k: 'perf',  t: '性能', c: '#ea580c' },
+  { k: 'moe',   t: 'MoE',  c: '#04d793' },
+  { k: 'train', t: '训练', c: '#ff4b7b' }
+];
+var dataOn = DATAK.map(function (x) { return x.k; });
+
+/* 抽屉默认高度：默认那一屏（训练步全貌）只有 5 条泳道，340px 有一大截是空的。
+   压到 288——正好装下表头 + 时间轴 + 5 条，既不留白也不夹掉行；要看展开后的 32 个 rank，拖分隔条即可。
+   再减 38 到 250：embed.css 把内嵌形态下那条空着的图例页脚轨也收了，泳道底下
+   那截空白带没了。这 38px 是被挡板占着的，不是泳道要的——所以从格子总高里一起
+   扣掉，可见的泳道面积跟之前一模一样，只是矮了一条挡板。 */
+var DEFAULT_DOCK_H = 250;
+/* 整网图那格的默认宽度：视口的 42%（460–900 夹紧），左右大约 58:42。 */
+/* 左 60 : 右 40（原为 58:42）——用户直接指定的目标比例。 */
+var DEFAULT_SIDE_W = Math.max(460, Math.min(900, Math.round(window.innerWidth * 0.40)));
+var state = {};      // id → { value, folded, loaded }
+var dockH = DEFAULT_DOCK_H;
+var sideW = DEFAULT_SIDE_W;
+var shellDark = false;
+
+var $ = function (sel, root) { return (root || document).querySelector(sel); };
+var theme = function () { return shellDark ? 'dark' : 'light'; };
+var tabsOf = function (c) { return c.tabs || []; };   // 有的格子没有段控，也没有 ?key=
+var slotEl = function (id) { return document.getElementById(BY_ID[id].el); };
+
+/* ── URL ⇄ 状态 ──────────────────────────────────────────────────────
+   URL 即这一屏：?a=solid&b=pp2&w=520&h=460&m=perf&fold=netgraph&ui=dark
+   off/fold/bar/dark 都是「格子 id 的逗号表」，加第三第四格 URL 不会膨胀；
+   只写非默认值，链接才不会一眼全是噪声。 */
+/* fold= 是「格子 id 的逗号表」，加第三格 URL 不会膨胀。
+   没有 closed/off：界面上已经没有关闭入口，留着它只会让 ?off=topology
+   关掉一格却没有任何一颗按钮能放回来——一条打不开的死链。
+   也没有 bar=：舞台现在整页嵌入，那条顶栏一直在，没有可切的东西。 */
+var FLAGS = { folded: 'fold' };
+
+function readURL() {
+  var q = new URLSearchParams(location.search);
+  var gc = (q.get('gc') || '').split(',').map(function (v) { return parseInt(v, 10); });
+  if (gc.length === 5 && gc.every(function (v) { return isFinite(v) && v >= 1; })) {
+    ['world','tp','cp','pp','ep'].forEach(function (k, i) { globalCfg[k] = gc[i]; });
+    var gcBase = globalCfg.tp * globalCfg.cp * globalCfg.pp;
+    globalCfg.dp = gcBase > 0 && globalCfg.world % gcBase === 0 ? globalCfg.world / gcBase : GLOBAL_CFG_DEFAULT.dp;
+  }
+  if (q.has('cuts')) {
+    var cuts = q.get('cuts') || '';
+    ['dp','pp','cp','tp','ep'].forEach(function (k) { globalCuts[k] = cuts.indexOf(k.charAt(0)) >= 0; });
+  }
+  /* 物理三件与载体开关（见 writeURL）。三个数一起给或一起不给——只给一半会
+     摆出一套半新半旧的物理坐标，比缺省还难读。 */
+  var phy = (q.get('phy') || '').split(',').map(function (v) { return parseInt(v, 10); });
+  if (phy.length === 3 && phy.every(function (v) { return isFinite(v) && v >= 1; })) {
+    ['perNode','nodeRack','podCards'].forEach(function (k, i) { globalCfg[k] = phy[i]; });
+  }
+  if (q.get('fab') === '1') globalFabric = true;
+  var has = {}, present = {};
+  Object.keys(FLAGS).forEach(function (f) { present[f] = q.has(FLAGS[f]); has[f] = (q.get(FLAGS[f]) || '').split(','); });
+  SLOTS.forEach(function (c) {
+    var v = c.key ? q.get(c.key) : null;
+    var s = { value: tabsOf(c).some(function (t) { return t.v === v; }) ? v : c.def, loaded: false };
+    /* fold= 没出现在链接里（没人明确收放过）时落回每格自己的 foldDefault——
+       整网图/层级图/泳道图三格现在缺省就是收起的（画布正下方那颗胶囊才是
+       打开它们的入口），跟「链接里明写了 fold=」是两件事：后者是读者发出去
+       的那一屏，必须逐位照办，哪怕写的是「什么都别收」（fold= 空串）。 */
+    Object.keys(FLAGS).forEach(function (f) { s[f] = present[f] ? (has[f].indexOf(c.id) >= 0) : !!c.foldDefault; });
+    /* 格头上没有「收起」的格子不认 fold=：否则 ?fold=topology 这种链接会把舞台
+       折起来、而页面上没有任何一颗按钮能再把它展开——一条打不开的死链。 */
+    if (!c.foldable) s.folded = false;
+    state[c.id] = s;
+  });
+  var h = parseInt(q.get('h'), 10);
+  dockH = (isFinite(h) && h >= 120 && h <= 1600) ? h : DEFAULT_DOCK_H;
+  var w = parseInt(q.get('w'), 10);
+  sideW = (isFinite(w) && w >= 240 && w <= 2000) ? w : DEFAULT_SIDE_W;
+  /* 默认全开，所以只有**关掉过**的链接才带 m=；空串表示一类都不显示 */
+  dataOn = q.has('m') ? q.get('m').split(',').filter(function (x) { return DATAK.some(function (y) { return y.k === x; }); })
+                      : DATAK.map(function (x) { return x.k; });
+  shellDark = q.get('ui') === 'dark';
+}
+
+function writeURL() {
+  var q = new URLSearchParams();
+  var bags = {};
+  Object.keys(FLAGS).forEach(function (f) { bags[f] = []; });
+  SLOTS.forEach(function (c) {
+    var s = state[c.id];
+    /* s.auto = 这一格现在停在哪个 tab 不是读者选的，是台面替他切的（上方拓扑一
+       开通信层就把抽屉切到「通信观测」，见下面 pto:comm 那段）。这种「替他切的」
+       不写进链接：链接是「你发出去的那一屏」，而不是台面顺手做过的动作——否则
+       它会一路粘住，下次打开落在通信观测上，再也回不到第一个 tab（读者反馈：
+       「默认打开第一个 tab」）。读者自己点过段控就清掉这个记号，那才是选择。 */
+    if (c.key && s.value !== c.def && !s.auto) q.set(c.key, s.value);
+    Object.keys(FLAGS).forEach(function (f) { if (s[f]) bags[f].push(c.id); });
+  });
+  Object.keys(FLAGS).forEach(function (f) { if (bags[f].length) q.set(FLAGS[f], bags[f].join(',')); });
+  if (dockH !== DEFAULT_DOCK_H) q.set('h', String(dockH));
+  if (sideW !== DEFAULT_SIDE_W) q.set('w', String(sideW));
+  if (dataOn.length !== DATAK.length) q.set('m', dataOn.join(','));
+  if (shellDark) q.set('ui', 'dark');
+  var cfgChanged = ['world','tp','cp','pp','dp','ep'].some(function (k) { return globalCfg[k] !== GLOBAL_CFG_DEFAULT[k]; });
+  if (cfgChanged) q.set('gc', ['world','tp','cp','pp','ep'].map(function (k) { return globalCfg[k]; }).join(','));
+  /* 物理三件与载体开关也进链接：换了它们，「这条边跨不跨超节点」就变了——
+     跟换并行度一样是「这一屏在讲什么」，必须能一条链接发出去。 */
+  var phyChanged = ['perNode','nodeRack','podCards'].some(function (k) { return globalCfg[k] !== GLOBAL_CFG_DEFAULT[k]; });
+  if (phyChanged) q.set('phy', ['perNode','nodeRack','podCards'].map(function (k) { return globalCfg[k]; }).join(','));
+  if (globalFabric) q.set('fab', '1');
+  var cutsNow = globalCutsString(true);
+  if (cutsNow !== 'dpcte') q.set('cuts', cutsNow);
+  var qs = q.toString();
+  history.replaceState(null, '', location.pathname + (qs ? '?' + qs : ''));
+}
+
+/* ── 段控 ─────────────────────────────────────────────────────────── */
+function buildTabs(slot) {
+  var host = $('[data-tabs="' + slot.id + '"]');
+  if (!host) return;          // 格头上没放段控 —— tabs 仍用于校验 URL 的 ?a=/?b= 与回灌
+  var tabs = tabsOf(slot);
+  host.hidden = tabs.length < 2;   // 只剩一个选项时不必要地长得像可切的控件，藏掉
+  host.innerHTML = tabs.map(function (t) {
+    return '<button type="button" role="tab" data-v="' + t.v + '" title="' + t.d + '" aria-selected="false">' + t.t + '</button>';
+  }).join('');
+  host.addEventListener('click', function (ev) {
+    var btn = ev.target.closest('button[data-v]');
+    if (btn) { state[slot.id].auto = false; select(slot.id, btn.dataset.v, true); }
+  });
+}
+
+function syncTabs(id) {
+  var v = state[id].value;
+  var host = $('[data-tabs="' + id + '"]');
+  if (!host) return;
+  Array.prototype.forEach.call(host.querySelectorAll('button[data-v]'), function (b) {
+    b.setAttribute('aria-selected', String(b.dataset.v === v));
+  });
+}
+
+/* 驱动优先走 postMessage（不重载 = 不丢格子里的选中态）；
+   iframe 还没 load 完就退回重载，让 src 参数把状态带进去。 */
+function select(id, value, push) {
+  var slot = BY_ID[id], s = state[id];
+  if (!tabsOf(slot).some(function (t) { return t.v === value; })) return;
+  s.value = value;
+  var frame = $('iframe[data-slot="' + id + '"]');
+  /* 同一份文档内换 tab 走 postMessage（不重载 = 不丢格子里的状态）；
+     tab 换到**另一份文档**（泳道 ↔ 通信观测：src 的路径都变了）只能重载——
+     postMessage 发给旧文档，它认不得也换不成。按路径比，query 变不算换文档。 */
+  var next = slot.src(s);
+  var cur = frame.getAttribute('src') || '';
+  if (s.loaded && frame.contentWindow && cur.split('?')[0] === next.split('?')[0])
+    frame.contentWindow.postMessage(slot.msg(value), '*');
+  else load(id);
+  syncTabs(id);
+  if (id === 'swimlane') applyDockAux();
+  if (push) writeURL();
+}
+
+/* ── iframe ───────────────────────────────────────────────────────── */
+function load(id) {
+  var frame = $('iframe[data-slot="' + id + '"]');
+  var next = BY_ID[id].src(state[id]);
+  if (frame.getAttribute('src') === next) return;
+  state[id].loaded = false;
+  delete slotEl(id).dataset.ready;
+  frame.setAttribute('src', next);
+}
+
+function wireFrame(slot) {
+  var frame = $('iframe[data-slot="' + slot.id + '"]');
+  var host = slotEl(slot.id);
+  var timer = setTimeout(function () {
+    /* 没 load 事件 = 大概率 404 / 被挡。别把一片空白留给用户，说清是哪一条链接。 */
+    if (!state[slot.id].loaded) host.dataset.broken = '1';
+  }, 12000);
+  frame.addEventListener('load', function () {
+    clearTimeout(timer);
+    state[slot.id].loaded = true;
+    delete host.dataset.broken;
+    settleFrame(slot, frame);
+  });
+}
+
+/* ── 显隐 / 折叠 / 抽屉高度 ───────────────────────────────────────── */
+function applySlotVisibility() {
+  SLOTS.forEach(function (c) {
+    var host = slotEl(c.id);
+    if (state[c.id].folded) host.dataset.folded = '1'; else delete host.dataset.folded;
+    var toggle = document.querySelector('[data-fold-toggle="' + c.id + '"]');
+    if (toggle) {
+      toggle.classList.toggle('is-selected', !state[c.id].folded);
+      toggle.setAttribute('aria-expanded', String(!state[c.id].folded));
+      toggle.setAttribute('aria-pressed', String(!state[c.id].folded));
+    }
+  });
+  /* 收起来的格子，旁边那条分隔条也没意义了 */
+  $('#splitter').hidden = state.swimlane.folded;
+  $('#vsplit').hidden = state.netgraph.folded;
+}
+
+function applyDockH() {
+  document.getElementById('dock').style.setProperty('--dock-h', dockH + 'px');
+}
+
+function applySideW() {
+  document.getElementById('slot-netgraph').style.setProperty('--side-w', sideW + 'px');
+}
+
+/* 主题桥：一颗月亮同时管外壳和两格里的页面（与驾驶舱嵌进宿主时那套约定一样）。
+   格子已经装载好就 postMessage 过去——重载一次要几百毫秒，还会把用户在里面
+   选中的卡 / 事件清掉；没装载好的下一次 load 会从 src 的 ?theme= 带进去。 */
+function applyShellTheme() {
+  document.documentElement.setAttribute('data-theme', theme());
+  var themeBtn = $('#themeBtn');
+  themeBtn.dataset.state = shellDark ? 'active' : 'inactive';
+  themeBtn.setAttribute('aria-label', shellDark ? '切换到浅色主题' : '切换到深色主题');
+  themeBtn.title = (shellDark ? '切换到浅色主题' : '切换到深色主题') + '：外壳与三格里的页面一起换';
+  SLOTS.forEach(function (slot) {
+    var frame = $('iframe[data-slot="' + slot.id + '"]');
+    if (!frame || !state[slot.id] || !state[slot.id].loaded) return;
+    /* 大多数格子共用 pto:state 那份契约；层级图那格接的是另一个页面
+       （cube-cockpit.html），主题消息的形状不一样，见它 SLOT 定义里的
+       themeMsg。 */
+    var msg = slot.themeMsg ? slot.themeMsg() : { type: 'pto:state', theme: theme() };
+    if (frame.contentWindow) frame.contentWindow.postMessage(msg, '*');
+  });
+}
+
+/* ── 全局配置与双视图 Hover Bar ───────────────────────────────────
+   两颗触发钮（顶栏「并行配置」+ 底部工具栏「配置」）代理的是同一个抽屉，
+   同一个 .global-config-toggle class 通吃，不用各写各的开合状态。 */
+function setGlobalConfigOpen(open) {
+  var panel = $('#globalConfig');
+  if (open) {
+    var dataMenu = $('#dmenu'), dataBtn = $('#dmenuBtn');
+    dataMenu.classList.remove('open');
+    dataBtn.setAttribute('aria-expanded', 'false');
+  }
+  panel.setAttribute('aria-hidden', String(!open));
+  document.querySelectorAll('.global-config-toggle').forEach(function (btn) {
+    btn.classList.toggle('is-selected', open);
+    btn.setAttribute('aria-expanded', String(open));
+    btn.setAttribute('aria-pressed', String(open));
+    btn.setAttribute('aria-label', open ? '关闭并行配置' : '打开并行配置');
+  });
+  if (open) setTimeout(function () { var f = panel.querySelector('input'); if (f) f.focus(); }, 190);
+}
+
+function syncGlobalConfigUI() {
+  document.querySelectorAll('[data-global-cfg]').forEach(function (input) { input.value = String(globalCfg[input.dataset.globalCfg]); });
+  document.querySelectorAll('[data-global-cut]').forEach(function (b) { b.setAttribute('aria-pressed', String(!!globalCuts[b.dataset.globalCut])); });
+  var fb9 = $('#globalFabric'); if (fb9) fb9.checked = globalFabric;
+  updateGlobalWorld();
+}
+
+function globalDraft() {
+  var out = {};
+  document.querySelectorAll('[data-global-cfg]').forEach(function (input) { out[input.dataset.globalCfg] = parseInt(input.value, 10); });
+  out.world = out.tp * out.cp * out.pp * out.dp;
+  return out;
+}
+
+function validateGlobalConfig(c) {
+  if (['tp','cp','pp','dp','ep'].some(function (k) { return !isFinite(c[k]) || c[k] < 1; })) return '所有并行度必须是大于 0 的整数。';
+  if (32 % c.tp !== 0 || 4096 % c.tp !== 0) return '当前模型的 heads=32、hidden=4096，必须能被 TP 整除。';
+  if (48 % c.pp !== 0) return '当前模型共 48 层，必须能被 PP 均分。';
+  if (64 % c.ep !== 0) return '当前模型共 64 个专家，必须能被 EP 整除。';
+  if ((c.tp * c.cp * c.dp) % c.ep !== 0) return 'TP × CP × DP 必须能被 EP 整除，以形成完整的专家并行组。';
+  return '';
+}
+
+function updateGlobalWorld() {
+  var c = globalDraft();
+  var valid = ['tp','cp','pp','dp'].every(function (k) { return isFinite(c[k]) && c[k] >= 1; });
+  $('#globalWorld').innerHTML = (valid ? String(c.world) : '—') + '<small>张卡</small>';
+  $('#globalFormula').textContent = valid
+    ? 'TP ' + c.tp + ' × CP ' + c.cp + ' × PP ' + c.pp + ' × DP ' + c.dp
+    : '完成 TP、CP、PP 与 DP 设置后自动计算';
+  /* 宽屏横栏里公式/备注两行都藏了（见 1180px 断点），用 title 兜住：
+     鼠标悬停总卡数那颗胶囊还能看到完整算式，不是彻底丢掉。 */
+  $('.global-config__world').title = $('#globalFormula').textContent + '。EP 为 MoE 层内的专家分组约束，不作为独立乘数重复计入总设备数。';
+  document.querySelectorAll('[data-global-cut]').forEach(function (b) {
+    var degree = c[b.dataset.globalCut];
+    b.disabled = !isFinite(degree) || degree <= 1;
+  });
+  document.querySelectorAll('.number-stepper').forEach(function (group) {
+    var input = group.querySelector('input'), value = parseInt(input.value, 10);
+    var min = input.min === '' ? -Infinity : parseInt(input.min, 10);
+    var max = input.max === '' ? Infinity : parseInt(input.max, 10);
+    group.querySelector('[data-number-step="-1"]').disabled = !isFinite(value) || value <= min;
+    group.querySelector('[data-number-step="1"]').disabled = !isFinite(value) || value >= max;
+  });
+  var status = $('#globalConfigStatus');
+  if (status && status.style.color && status.textContent) status.textContent = '';
+}
+
+function spatialPayload(id) {
+  return {
+    type:'pto:state',
+    config:Object.assign({}, globalCfg),
+    /* topology 的观察层级/卡片内容/设备排列现在归它自己的「观察方式」面板管——
+       台面不再持有 globalMode，也就不再有值可推，mode 干脆不写（pattern 那边
+       的白名单遇到没有 mode 字段会跳过，不动 ui.cardMode/netOff，见 demo.html
+       message 监听）。netgraph 仍然强制 rank:false/cardView:'net'：它是跟随
+       视图，不该有进设备视图的路，这条不受这次改动影响。 */
+    mode:id === 'netgraph' ? {rank:false,cardView:'net'} : null,
+    knives:{
+      dp:id === 'topology' ? globalCuts.dp : false,
+      pp:globalCuts.pp, cp:globalCuts.cp, tp:globalCuts.tp, ep:globalCuts.ep,
+      phys:false
+    },
+    /* 「按载体着色」是台面级的取景选择，两格一起切。关掉时推回 rank——这是一颗
+       明确的开关，读者按下它就是要两格都换回去；不推的话关掉之后画面不动，
+       开关看起来像坏的。 */
+    grain: globalFabric ? 'fabric' : 'rank',
+    theme:theme()
+  };
+}
+
+function applyGlobalStateToFrame(id) {
+  if (id !== 'topology' && id !== 'netgraph') return;
+  var frame = $('iframe[data-slot="' + id + '"]');
+  if (frame && frame.contentWindow) frame.contentWindow.postMessage(spatialPayload(id), '*');
+}
+
+function broadcastGlobalState() {
+  applyGlobalStateToFrame('topology');
+  applyGlobalStateToFrame('netgraph');
+}
+
+function renderGlobalFilter() {
+  var groups = [];
+  if (globalCuts.tp && globalCfg.tp > 1) groups.push({k:'t',name:'TP·SP',n:globalCfg.tp,color:'#21c4db'});
+  if (globalCuts.ep && globalCfg.ep > 1) groups.push({k:'e',name:'EP',n:globalCfg.ep,color:'#9236ed'});
+  if (globalCuts.pp && globalCfg.pp > 1) groups.push({k:'p',name:'PP',n:globalCfg.pp,color:'#ff9f2d'});
+  if (globalCuts.dp && globalCfg.dp > 1) groups.push({k:'d',name:'DP',n:globalCfg.dp,color:'#4369ef'});
+  $('#globalFilterGroups').innerHTML = groups.map(function (g) {
+    var cells = '';
+    for (var i = 0; i < g.n; i++) {
+      var layerStart = Math.floor(i * GLOBAL_MODEL_LAYERS / g.n);
+      var layerEnd = Math.floor((i + 1) * GLOBAL_MODEL_LAYERS / g.n) - 1;
+      var label = g.k === 'p' ? i + '·L' + layerStart + '–' + layerEnd : String(i);
+      cells += '<button type="button" data-global-filter="' + g.k + '" data-index="' + i + '" aria-pressed="' + String(globalFilter[g.k] === i) + '">' + label + '</button>';
+    }
+    return '<span class="global-filter__group" style="--filter-color:' + g.color + '"><b>' + g.name + '</b>' + cells + '</span>';
+  }).join('');
+  var hasSelection = groups.some(function (g) { return globalFilter[g.k] !== null; });
+  $('#globalFilterClear').disabled = !hasSelection;
+  /* 收起之后按钮就是这个功能在屏上的全部痕迹——选中几维得写在它身上，
+     否则读者面对一屏被收窄过的画面，找不到是谁收窄的、也不知道去哪儿撤销。 */
+  var nSel = groups.filter(function (g) { return globalFilter[g.k] !== null; }).length;
+  var badge = $('#globalFilterCount');
+  if (badge) { badge.hidden = nSel === 0; badge.textContent = String(nSel); }
+  var tg = $('#globalFilterToggle');
+  if (tg) tg.classList.toggle('is-selected', nSel > 0);
+}
+
+function sendGlobalFilters() {
+  ['topology','netgraph','swimlane'].forEach(function (id) {
+    var frame = $('iframe[data-slot="' + id + '"]');
+    if (frame && frame.contentWindow) frame.contentWindow.postMessage({type:'pto:state',filters:Object.assign({},globalFilter)}, '*');
+  });
+}
+
+function clearGlobalFilter() {
+  globalFilter = {t:null,e:null,p:null,d:null};
+  renderGlobalFilter();
+  sendGlobalFilters();
+  pushHL('swimlane', 'rank', null);
+}
+
+function wireGlobalControls() {
+  document.querySelectorAll('.global-config-toggle').forEach(function (btn) {
+    btn.addEventListener('click', function () { setGlobalConfigOpen($('#globalConfig').getAttribute('aria-hidden') === 'true'); });
+  });
+  $('#globalConfigClose').addEventListener('click', function () { setGlobalConfigOpen(false); });
+  $('#globalCuts').addEventListener('click', function (ev) {
+    var b = ev.target.closest('[data-global-cut]'); if (!b) return;
+    globalCuts[b.dataset.globalCut] = !globalCuts[b.dataset.globalCut];
+    syncGlobalConfigUI(); renderGlobalFilter(); broadcastGlobalState(); writeURL();
+  });
+  document.querySelectorAll('.number-stepper').forEach(function (group) {
+    group.addEventListener('click', function (ev) {
+      var button = ev.target.closest('[data-number-step]'); if (!button || button.disabled) return;
+      var input = group.querySelector('input'), value = parseInt(input.value, 10);
+      var min = input.min === '' ? -Infinity : parseInt(input.min, 10);
+      var max = input.max === '' ? Infinity : parseInt(input.max, 10);
+      var step = input.step === '' ? 1 : parseInt(input.step, 10);
+      if (!isFinite(value)) value = isFinite(min) ? min : 0;
+      input.value = String(Math.min(max, Math.max(min, value + (+button.dataset.numberStep * step))));
+      input.dispatchEvent(new Event('input', {bubbles:true}));
+      input.focus();
+    });
+  });
+  document.querySelectorAll('[data-global-cfg]').forEach(function (input) { input.addEventListener('input', updateGlobalWorld); });
+  var fabBox = $('#globalFabric');
+  if (fabBox) fabBox.addEventListener('change', function () {
+    globalFabric = fabBox.checked;
+    broadcastGlobalState(); writeURL();
+  });
+  $('#globalConfigApply').addEventListener('click', function () {
+    var next = globalDraft(), error = validateGlobalConfig(next), status = $('#globalConfigStatus');
+    if (error) { status.style.color = 'var(--danger)'; status.textContent = error; return; }
+    globalCfg = next; globalFilter = {t:null,e:null,p:null,d:null};
+    status.style.color = 'var(--success)'; status.textContent = '配置已应用，三个视图已同步更新。';
+    renderGlobalFilter(); broadcastGlobalState(); pushHL('swimlane','rank',null); writeURL();
+  });
+  $('#globalConfigReset').addEventListener('click', function () {
+    globalCfg = Object.assign({}, GLOBAL_CFG_DEFAULT);
+    globalCuts = {dp:true,pp:true,cp:true,tp:true,ep:true};
+    globalFilter = {t:null,e:null,p:null,d:null};
+    globalFabric = false; if (fabBox) fabBox.checked = false;
+    $('#globalConfigStatus').textContent = '';
+    syncGlobalConfigUI(); renderGlobalFilter(); broadcastGlobalState(); pushHL('swimlane','rank',null); writeURL();
+  });
+  $('#globalFilterGroups').addEventListener('click', function (ev) {
+    var b = ev.target.closest('[data-global-filter]'); if (!b) return;
+    var dim = b.dataset.globalFilter, index = +b.dataset.index;
+    globalFilter[dim] = globalFilter[dim] === index ? null : index;
+    renderGlobalFilter(); sendGlobalFilters();
+  });
+  $('#globalFilterClear').addEventListener('click', clearGlobalFilter);
+  $('#globalFilterToggle').addEventListener('click', function (ev) {
+    ev.stopPropagation();                 /* 别让下面那条「点外面收起」立刻又把它关上 */
+    setFilterOpen($('#globalFilter').getAttribute('data-collapsed') === 'true');
+  });
+  /* 浮层落在画布上方，得有「不用瞄准就能关掉」的两条退路：点浮层外面、按 Esc。
+     少了它们，读者只能回头去点那颗按钮——而按钮此刻正被自己弹出的浮层挤在边上。 */
+  function setFilterOpen(open) {
+    $('#globalFilter').setAttribute('data-collapsed', String(!open));
+    $('#globalFilterToggle').setAttribute('aria-expanded', String(open));
+    if (!open) return;
+    /* 按按钮的实际位置摆：右缘对齐按钮右缘、往下 6px；宽度上限取「按钮右缘到屏幕
+       左边距之间的空地」，所以再宽也长不出屏外。窗口尺寸变了要重算，见下面 resize。 */
+    var r = $('#globalFilterToggle').getBoundingClientRect();
+    var pop = $('#globalFilterPop');
+    pop.style.top = (r.bottom + 6) + 'px';
+    pop.style.right = Math.max(12, window.innerWidth - r.right) + 'px';
+    pop.style.maxWidth = Math.max(240, Math.min(880, r.right - 16)) + 'px';
+  }
+  window.addEventListener('resize', function () {
+    if ($('#globalFilter').getAttribute('data-collapsed') === 'false') setFilterOpen(true);
+  });
+  document.addEventListener('click', function (ev) {
+    if ($('#globalFilter').getAttribute('data-collapsed') === 'true') return;
+    if (ev.target.closest('#globalFilter')) return;
+    setFilterOpen(false);
+  });
+  document.addEventListener('keydown', function (ev) {
+    if (ev.key !== 'Escape') return;
+    if ($('#globalFilter').getAttribute('data-collapsed') === 'false') setFilterOpen(false);
+    if ($('#globalConfig').getAttribute('aria-hidden') === 'false') setGlobalConfigOpen(false);
+  });
+  syncGlobalConfigUI(); renderGlobalFilter();
+}
+
+/* ── 框架层：刀键 / 数据标注 ─────────────────────────────────────────
+   一律「点它自己的控件」。同源翻进去，比对当前状态、只在不一致时点一下；
+   点完由 pattern 自己的处理器去改自己的状态（它换实现也不怕，只要按钮还在）。
+   跨源就够不着——静默跳过，不让一格的隔离把整页拖垮。 */
+function eachFrameDoc(fn) {
+  SLOTS.forEach(function (slot) {
+    var frame = $('iframe[data-slot="' + slot.id + '"]');
+    if (!frame || !state[slot.id] || !state[slot.id].loaded) return;
+    try { var doc = frame.contentDocument; if (doc) fn(doc, slot); } catch (err) { /* 跨源 */ }
+  });
+}
+
+function applyData() {
+  eachFrameDoc(function (doc) {
+    /* net-slicing：选项只在菜单展开时才进 DOM，所以开→改→关。
+       每次都重新查一次节点：它每改一次状态就重画一遍工具条，缓存下来的会失效。 */
+    if (doc.querySelector('[data-act="mvmenu"]')) {
+      var opened = !!doc.querySelector('[data-act="mvpick"]');
+      if (!opened) doc.querySelector('[data-act="mvmenu"]').click();
+      DATAK.forEach(function (x) {
+        var el = doc.querySelector('[data-act="mvpick"][data-k="' + x.k + '"]');
+        if (!el) return;
+        if (el.classList.contains('is-on') !== (dataOn.indexOf(x.k) >= 0)) el.click();
+      });
+      if (!opened) { var m = doc.querySelector('[data-act="mvmenu"]'); if (m) m.click(); }
+    }
+  });
+  var opts = document.querySelectorAll('#dmenuOpts .opt');
+  Array.prototype.forEach.call(opts, function (b) {
+    b.setAttribute('aria-checked', String(dataOn.indexOf(b.dataset.k) >= 0));
+  });
+  $('#dmenuCount').textContent = String(dataOn.length);
+}
+
+/* 把被框架层接管的那几个控件从格子里藏掉。走 CSS 而不是内联样式：
+   pattern 每次改状态都重画工具条，内联的会被冲掉。 */
+function hideTakenOver(slot, frame) {
+  try {
+    var doc = frame.contentDocument;
+    if (!doc || !doc.head) return;
+    if (slot.hideCss && !doc.getElementById('wb-hide')) {
+      var st = doc.createElement('style');
+      st.id = 'wb-hide';
+      st.textContent = slot.hideCss;
+      doc.head.appendChild(st);
+    }
+  } catch (err) { /* 跨源 */ }
+}
+
+/* 装配：pattern 的工具条是 JS 后建的，load 事件那一刻多半还不在，
+   所以轮询等它出来，再一次性把「藏控件 / 落框架层状态」做完，最后才让这一格
+   淡入。等不到就到点放行——宁可样式没接管，也不能白屏。 */
+function settleFrame(slot, frame) {
+  var host = slotEl(slot.id), tries = 0;
+  function ready() {
+    try {
+      var doc = frame.contentDocument;
+      if (!doc || doc.readyState === 'loading') return false;
+      /* 工具条建出来了才算装配好：hideCss 藏的就是它里面的控件，
+         数据标注那组也要等它在了才点得着。
+         等谁**按格子来**：并行拓扑那两格的控件都带 [data-act]，泳道那份是上游
+         拷贝、一个 data-act 都没有——写死 [data-act] 的话它永远等不到，只能一路
+         耗到超时才放行（白等一次，还不报错，最难查的那种）。 */
+      if (slot.hideCss) return !!doc.querySelector(slot.readySel || '[data-act]');
+      return true;
+    } catch (err) { return true; }   // 跨源：没什么可等的
+  }
+  function done() {
+    hideTakenOver(slot, frame);
+    applyData();
+    applyGlobalStateToFrame(slot.id);
+    if (frame.contentWindow && (slot.id === 'topology' || slot.id === 'netgraph' || slot.id === 'swimlane'))
+      frame.contentWindow.postMessage({type:'pto:state',filters:Object.assign({},globalFilter)}, '*');
+    if (slot.id === 'netgraph') wireOpToRank(frame);
+    if (slot.id === 'swimlane') { applyDockAux(); zctlSync(); }
+    host.dataset.ready = '1';
+  }
+  (function poll() {
+    if (ready() || ++tries > 40) { done(); return; }   // 40 × 150ms ≈ 6s 封顶
+    setTimeout(poll, 150);
+  })();
+}
+
+/* ══ 联动：两格是同一个 pattern 的两份配置，所以用它自己那套搜索标签对齐 ══
+   左格（整网图）问「第 ℓ 层长什么样、被哪几刀切开」，右格（并行拓扑）问
+   「第 ℓ 层落在哪些 rank 上」。层号是两边共同的主键——而且现在两边同源，
+   层号天然一致（先前挂 training-sidecar 时是 46 层 vs 48 层，对不齐）。
+
+   两边都用**它自己那套属性搜索**（画布左上角那颗「＋ 搜索」）落一枚
+   `层 · Ln` 标签：
+     · 语义由 pattern 自己出，台面没有重算一遍「哪些 rank」——那种重算迟早
+       和它对不上；
+     · 「关闭整网」进卡阵那个模式一样有效，因为高亮的是**卡**不是算子；
+     · 不重载 iframe——一重载，选中的卡、视角、缩放全没了。
+
+   为什么不走 postMessage：它 `pto:state` 的白名单里只有 view/cut/sel/preset/
+   l5/theme，没有搜索标签，chips 关在它那个 IIFE 里够不着。同源，所以按**它
+   自己的控件**走——点「＋ 搜索」→ 点「层」→ 填数字 → 回车，全程是它自己的
+   事件处理器在改它自己的状态。与泳道那座桥同一条纪律，一个字没改它。 */
+
+/* 某一格当前挂着的「层」标签的值（没有则 null）。
+   入口选的是每枚标签自带的那颗「×」（data-act=chipdel）而不是标签的 class：
+   那颗按钮本来就是我们摘标签要点的东西，拿它当锚点，class 改了也不受影响。 */
+function paneLayerChip(doc) {
+  var dels = doc.querySelectorAll('[data-act="chipdel"]');
+  for (var i = 0; i < dels.length; i++) {
+    var chip = dels[i].parentElement;
+    var tag = chip && chip.querySelector('i');
+    if (!tag || (tag.textContent || '').trim() !== '层') continue;
+    var m = (chip.textContent || '').match(/(\d+)/);
+    return { del: dels[i], v: m ? +m[1] : null };
+  }
+  return null;
+}
+
+function click(el) {
+  if (!el) return false;
+  /* SVG 元素没有 .click()，统一派发——反正都是交给它自己的处理器 */
+  el.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, view: el.ownerDocument.defaultView }));
+  return true;
+}
+
+function paneDoc(id) {
+  var frame = $('iframe[data-slot="' + id + '"]');
+  if (!frame || !state[id] || !state[id].loaded) return null;
+  try { return frame.contentDocument || null; } catch (err) { return null; }   // 跨源
+}
+
+/* 往某一格推一份**过路的高亮**（层 / 卡）。n 为 null 就把它散掉。
+   走 pattern 的 `pto:state` 里那条 `hl` —— 它不落标签、不浮读出卡、读者点一下
+   那格的画布空白就散。
+
+   先前这里是「替对面落一枚 `层 · Ln` 标签」（模拟点它自己的搜索控件）。那条路
+   语义是错的：**标签是读者在那一屏自己下的条件**（带 ×、进 URL、一直在），
+   而这只是「另一格点了什么」的回声——读者从没在那一屏下过这句话，凭什么留一枚
+   带 × 的标签在那儿等他去摘。两件事混成一件之后，画面上就分不出「我筛的」和
+   「它照过来的」，也没有一个自然的收手动作。现在分开：筛选归标签，高亮归 hl。 */
+function pushHL(id, kind, n) {
+  var f = $('iframe[data-slot="' + id + '"]');
+  if (!f || !state[id] || !state[id].loaded || !f.contentWindow) return;
+  var hl = {};
+  hl[kind] = (n === null || n === undefined) ? null : n;
+  f.contentWindow.postMessage({ type: 'pto:state', hl: hl }, '*');
+}
+
+/* 整网图那格点了一个**算子** → 主视图照亮持有它的那些卡。
+   算子的命中区自带 data-li（它属于第几层），层号就是两边共同的主键：把它当成
+   一份层高亮推给主视图，pattern 自己会算出「共几张卡与这一层有关」并点亮。
+   为什么不另造一套「算子 → rank」的算法：那等于在台面上重写一遍它的坐标算术，
+   而层号这条路它本来就懂。
+
+   只旁听、不拦截（捕获期只读，点击照样交给它自己的处理器去开明细卡）。
+   挂在 document 上而不是每个命中区上：它每改一次状态就重画一遍画布，
+   挂在节点上的监听会跟着节点一起没。 */
+function wireOpToRank(frame) {
+  try {
+    var doc = frame.contentDocument;
+    if (!doc || doc.__wbOpLink) return;
+    doc.__wbOpLink = 1;
+    doc.addEventListener('click', function (ev) {
+      var t = ev.target;
+      var hit = t && t.closest && t.closest('[data-act="opdetail"]');
+      if (!hit) return;
+      var li = parseInt(hit.getAttribute('data-li'), 10);
+      if (!isFinite(li)) return;
+      pushHL('topology', 'layer', li);
+    }, true);
+  } catch (err) { /* 跨源 */ }
+}
+
+/* 轮询而不是监听点击：一格里改「看哪一层」的路子不止一条（点侧视的逐层命中区、
+   手填搜索框、点「×」摘标签、正视那组换层步进），盯住**结果**比盯住每一条入口
+   可靠——之前按入口写测试就吃过亏：合成点击打在根本不在视口内的那批命中区上，
+   测过了，真用鼠标点却什么也不发生。
+
+   读的是那一格**自己的标签**（paneLayerChip），推出去的是**高亮**（pushHL）。
+   两者不同源，所以不会回声：高亮不产生标签，下一轮读到的还是读者自己那枚，
+   边沿不会被自己的推送重新触发。先前两边都落标签才需要那套「谁先变」的仲裁。 */
+var seenLayer = { netgraph: undefined, topology: undefined };
+function wireLinkage() {
+  setInterval(function () {
+    ['netgraph', 'topology'].forEach(function (id) {
+      var doc = paneDoc(id); if (!doc) return;
+      var c = paneLayerChip(doc), v = c ? c.v : null;
+      if (v === seenLayer[id]) return;
+      seenLayer[id] = v;
+      pushHL(id === 'netgraph' ? 'topology' : 'netgraph', 'layer', v);
+    });
+  }, 300);
+}
+
+/* ══ 走带：一个训练步的进度 ═════════════════════════════════════════════
+   泳道是一张**静态**的甘特图——上游那份没有游标、没有播放。而「这一步走到此刻，
+   每张卡手上压着多少激活」正是它和拓扑那两格之间还没接上的那条线：泳道画的是
+   什么时候在算什么，拓扑画的是那一刻显存里装着什么，本来就是同一件事的两面。
+
+   所以走带长在台面上：
+     · 进度 t（0–1）推给两格 pattern（pto:state 的 step），它们按 1F1B 的形状
+       把**逐卡**的激活体算到那一刻（聚合口径不动，见那边 memParts 的注释）；
+     · 游标是叠在泳道 iframe 上的一层 div，不改上游那个逐字节拷贝来的文件。
+   收回走带（t=null）就回到峰值——那才是「一张卡要多少显存」的默认答案。 */
+
+/* 泳道画布的取景常数，抄自 swimlane.html 的 draw()：左边 236px 是泳道名那一栏
+   （时间轴从它右边起算，画布重置 transform 单独重画这一块，滚动/缩放都不挪它），
+   右边留 16px。这两个数是那份上游拷贝里的字面量，改不了也读不到，只能在这儿
+   复述一遍——所以下面拿轴上的 0ms 刻度做过校验（见测试）。
+   **缩放和滚动这两样不是字面量，是实时状态，能读、也必须读**：见 xpPlaceCursor
+   里对 #timelineSurface / #timelineScroll 的跨帧读取。 */
+var XP_GUTTER = 236, XP_PAD_R = 16;
+var xpT = null;          /* null = 不看时间，按峰值 */
+var xpPlaying = false, xpRAF = 0, xpLast = 0, xpPushed = -1;
+var XP_DUR_MS = 7000;    /* 一个训练步播一遍要多久（真实是 315.61ms，放慢到看得清） */
+
+function xpPushStep() {
+  /* 两格 pattern 都要跟着走：它们各自画的是同一批卡的不同侧面。
+     真正的节流在 applyXport 里按挂钟时间做（见 XP_PUSH_INTERVAL_MS）——这里
+     原来只写了「节流到 ~12fps」，但下面 applyXport 那句量化只挡到 0.5%
+     一格，dt≈16.7ms 的 rAF 帧率下大约每 2 帧就跨一格，实测推送频率接近
+     28fps，不是 12fps；每次推送两格各触发一次全量 SVG 重画（实测 158ms/次），
+     28fps × 158ms 远超 1000ms 预算，播放时宿主掉到 4–5fps。 */
+  ['topology', 'netgraph'].forEach(function (id) {
+    var f = $('iframe[data-slot="' + id + '"]');
+    if (!f || !state[id] || !state[id].loaded || !f.contentWindow) return;
+    f.contentWindow.postMessage({ type: 'pto:state', step: xpT }, '*');
+  });
+}
+
+/* 游标贴到泳道那根时间轴上。之前这里假定缩放恒为 1×、横向滚动恒为 0——1× 且
+   没滚动时凑巧对，一旦用户点了 #zctl 的缩放钮或拖了泳道自己的横向滚动条，游标
+   就停在旧位置不动，读数（xpPct 那个百分比）和线的实际位置对不上（实测 4× 缩放
+   下差出一整屏三分之一还多）。
+
+   泳道的 draw() 把「内容坐标 → 屏幕坐标」这一步拆成两条（swimlane.html 的
+   x(ms) 与外层的 ctx.translate(-scroll.scrollLeft,0)）：
+     内容坐标 = gutter + t · (width − 16 − gutter)      —— width 已经吃了 zoom
+     屏幕坐标 = 内容坐标 − scrollLeft                     —— 缩放不影响这一步
+   width 不用去解 zoom 数值（那是泳道 IIFE 里的私有变量，够不着也不该碰）——
+   它已经写进 #timelineSurface 的内联样式宽度里，跟 #timelineScroll 的 scrollLeft
+   一样，都是**同源、可读的渲染结果**，不是要「猜」的内部状态，读它们和读
+   #zoomValue/#zoomSlider（见 zctlSync）是同一类操作。 */
+function xpPlaceCursor() {
+  var cur = document.getElementById('xcursor');
+  var frame = $('iframe[data-slot="swimlane"]');
+  if (!cur || !frame) return;
+  if (xpT === null) { cur.hidden = true; return; }
+  var doc;
+  try { doc = frame.contentDocument; } catch (e) { doc = null; }
+  var scrollEl = doc && doc.getElementById('timelineScroll');
+  var surfaceEl = doc && doc.getElementById('timelineSurface');
+  if (!scrollEl || !surfaceEl) { cur.hidden = true; return; }   // 还没加载完，或者不同源
+  /* 用户直接拖泳道自己的横向滚动条（不经过 #zctl）时也要跟着挪，这里只挂一次：
+     iframe 重新加载会换一个新的 scrollEl，标记也跟着没了，不会重复绑。 */
+  if (!scrollEl.__xpBound) { scrollEl.__xpBound = true; scrollEl.addEventListener('scroll', xpPlaceCursor); }
+  var width = surfaceEl.getBoundingClientRect().width;   // 含 gutter，已经按当前 zoom 算好
+  var plotLeft = XP_GUTTER, plotRight = Math.max(plotLeft + 1, width - XP_PAD_R);
+  var screenX = plotLeft + (plotRight - plotLeft) * xpT - scrollEl.scrollLeft;
+  cur.hidden = false;
+  cur.firstElementChild.style.left = screenX + 'px';
+}
+
+/* 按挂钟时间节流推送，量化（0.5% 一格）单独挡不住：rAF 在 dt≈16.7ms 时几乎
+   每帧都跨一格，实测推送逼近 28fps，两格各 110–124ms 的全量重画根本追不上，
+   宿主播放时掉到 4–5fps（见 xpPushStep 的注释）。
+
+   间隔数值是照实测数据定的，不是拍脑袋：两格各自的单次重画都在 110–124ms，
+   两格合计约 230ms——间隔定得比这个数小（试过 100ms）等于让浏览器永远欠账，
+   实测反而只有 6fps，比不节流好一点但好得有限。把间隔提到贴近 230ms 这个
+   实测成本（250ms）之后，浏览器基本能在下一次推送前把上一次画完，实测回升到
+   16fps。仍然不是 60fps——真正补齐这个差距要动 pattern 自己的重画逻辑（不重画
+   整页、只 diff 变化的节点），是另一件工作量大得多的事（见开发计划里的
+   「C1 长期」）。这里只做「浏览器追得上节流节奏」这一件事。
+   游标/百分比/滑杆这几个便宜的 DOM 更新不受这条线节流——只挡 xpPushStep
+   这一件贵的事，界面本身该多跟手还是多跟手。 */
+var XP_PUSH_INTERVAL_MS = 250;
+var xpLastPushTs = 0;
+
+function applyXport(push) {
+  var pct = document.getElementById('xpPct');
+  var rng = document.getElementById('xpT');
+  var btn = document.querySelector('#xport [data-act="play"]');
+  if (pct) pct.textContent = xpT === null ? '峰值' : Math.round(xpT * 100) + '%';
+  if (rng) {
+    var sliderValue = Math.round((xpT || 0) * 1000);
+    if (document.activeElement !== rng) rng.value = String(sliderValue);
+    rng.style.setProperty('--slider-progress', (sliderValue / 10) + '%');
+    rng.setAttribute('aria-valuetext', xpT === null ? '峰值' : Math.round(xpT * 100) + '%');
+  }
+  if (btn) {
+    btn.dataset.state = xpPlaying ? 'active' : 'inactive';
+    btn.setAttribute('aria-label', xpPlaying ? '暂停训练步播放' : '播放一个训练步');
+  }
+  xpPlaceCursor();
+  if (push !== false) {
+    var q = xpT === null ? -1 : Math.round(xpT * 200);   /* 推送量化到 0.5%，省掉无意义的重画 */
+    var now = (window.performance && performance.now) ? performance.now() : Date.now();
+    var due = now - xpLastPushTs >= XP_PUSH_INTERVAL_MS;
+    if (q !== xpPushed && due) { xpPushed = q; xpLastPushTs = now; xpPushStep(); }
+  }
+}
+
+function xpTick(ts) {
+  if (!xpPlaying) return;
+  if (!xpLast) xpLast = ts;
+  var dt = ts - xpLast; xpLast = ts;
+  xpT = (xpT === null ? 0 : xpT) + dt / XP_DUR_MS;
+  if (xpT >= 1) { xpT = 1; xpPlaying = false; }    /* 走到头就停在末尾，不自动循环 */
+  applyXport();
+  if (xpPlaying) xpRAF = requestAnimationFrame(xpTick);
+  else applyXport(false);
+}
+
+function xpPlay(on) {
+  xpPlaying = on;
+  cancelAnimationFrame(xpRAF); xpLast = 0;
+  if (on) {
+    if (xpT === null || xpT >= 1) xpT = 0;         /* 从头播；停在末尾时再按就重来 */
+    xpRAF = requestAnimationFrame(xpTick);
+  }
+  applyXport();
+}
+
+document.addEventListener('click', function (ev) {
+  var b = ev.target.closest && ev.target.closest('#xport [data-act="play"]');
+  if (!b) return;
+  xpPlay(!xpPlaying);
+});
+
+/* ── 缩放代理：台面上的钮，事件打进泳道 iframe ─────────────────────────
+   同源，直接 click 它原来的控件、改它原来的 slider——不加消息契约，
+   泳道文件一个字不动（它是上游拷贝，改了下次同步就冲掉）。
+   打完立刻读回 #zoomValue/#zoomSlider 对齐台面显示：真值在里面，台面只是遥控器。 */
+function zctlDoc() {
+  if (state.swimlane.value === 'obs') return null;
+  var f = $('iframe[data-slot="swimlane"]');
+  try { return f && f.contentDocument; } catch (e) { return null; }
+}
+function zctlSync() {
+  var doc = zctlDoc(), v = $('#zcv'), sl = $('#zcs');
+  if (!doc || !v) return;
+  var iv = doc.getElementById('zoomValue'), isl = doc.getElementById('zoomSlider');
+  if (iv) v.textContent = iv.textContent;
+  if (isl && sl) {
+    sl.value = isl.value;
+    sl.style.setProperty('--slider-progress', (+isl.value / 6 * 100) + '%');
+    sl.setAttribute('aria-valuetext', iv ? iv.textContent.replace('×', ' 倍') : isl.value);
+  }
+}
+document.addEventListener('click', function (ev) {
+  var b = ev.target.closest && ev.target.closest('#zctl [data-zc]');
+  if (!b) return;
+  var doc = zctlDoc(); if (!doc) return;
+  var id = { out: 'zoomOut', 'in': 'zoomIn', info: 'objectInfoBtn' }[b.dataset.zc];
+  var t = id && doc.getElementById(id);
+  if (t) t.click();
+  zctlSync();
+  xpPlaceCursor();   // 缩放会改 #timelineSurface 的宽度，游标跟着重算一次
+});
+document.addEventListener('input', function (ev) {
+  if (ev.target.id !== 'zcs') return;
+  var doc = zctlDoc(); if (!doc) return;
+  var isl = doc.getElementById('zoomSlider');
+  if (!isl) return;
+  isl.value = ev.target.value;
+  isl.dispatchEvent(new Event('input', { bubbles: true }));
+  zctlSync();
+  xpPlaceCursor();   // 同上：拖滑杆也是缩放
+});
+
+/* 走带/游标/缩放都是**泳道的**器官：dock 换到通信观测那页时一起收起来——
+   游标那条竖线叠在观测台画布上是一条来历不明的线，走带推的 step 它也不认。 */
+function applyDockAux() {
+  var obs = state.swimlane.value === 'obs';
+  var z = $('#zctl'), x = $('#xport');
+  if (z) z.hidden = obs;
+  if (x) x.hidden = obs;
+  if (obs) { var c = $('#xcursor'); if (c) c.hidden = true; }
+  else xpPlaceCursor();
+}
+document.addEventListener('input', function (ev) {
+  if (!ev.target || ev.target.id !== 'xpT') return;
+  xpPlaying = false; cancelAnimationFrame(xpRAF); xpLast = 0;
+  xpT = (+ev.target.value) / 1000;
+  applyXport();
+});
+/* 双击走带 = 收回游标，回到峰值（默认那个问法） */
+document.addEventListener('dblclick', function (ev) {
+  if (!ev.target.closest || !ev.target.closest('#xport')) return;
+  /* 别在这儿重置 xpPushed：它的「没有时间」哨兵值也是 -1，先清成 -1 会让下面那次
+     推送被当成「和上次一样」跳掉，两格就停在最后那一帧的读数上，回不到峰值。 */
+  xpPlaying = false; cancelAnimationFrame(xpRAF); xpT = null;
+  applyXport();
+});
+window.addEventListener('resize', xpPlaceCursor);
+
+/* ── 格头动作 ─────────────────────────────────────────────────────── */
+function wireHead(slot) {
+  var head = slotEl(slot.id).querySelector('.slot-head');
+  if (!head) return;          // 这一格整页嵌入，名字与控件都由它自己那条顶栏出
+  head.addEventListener('click', function (ev) {
+    var btn = ev.target.closest('button[data-act]');
+    if (!btn) return;
+    if (btn.dataset.act !== 'fold') return;
+    state[slot.id].folded = !state[slot.id].folded;
+    applySlotVisibility();
+    writeURL();
+  });
+}
+
+/* 顶栏两个面板开关：整网图 / 底部泳道。与格头折叠同一套 state、URL 与 CSS 开关，
+   入口在页面右上角（收起后整格关闭，开关得留在屏上）。 */
+function wirePanelToggles() {
+  document.querySelectorAll('[data-fold-toggle]').forEach(function (btn) {
+    btn.addEventListener('click', function () {
+      var target = btn.dataset.foldToggle;
+      state[target].folded = !state[target].folded;
+      applySlotVisibility();
+      writeURL();
+    });
+  });
+}
+
+/* ── 框架层控件的 UI ──────────────────────────────────────────────── */
+function buildFrameControls() {
+  $('#dmenuOpts').innerHTML = DATAK.map(function (x) {
+    return '<button type="button" class="menu-checkbox-item opt" role="menuitemcheckbox" data-k="' + x.k + '" style="--c:' + x.c + '" aria-checked="true">'
+      + '<i aria-hidden="true"></i>' + x.t + '<span class="tick" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path d="m20 6-11 11-5-5"/></svg></span></button>';
+  }).join('');
+  var menu = $('#dmenu'), btn = $('#dmenuBtn');
+  btn.addEventListener('click', function (ev) {
+    ev.stopPropagation();
+    var open = !menu.classList.contains('open');
+    if (open) setGlobalConfigOpen(false);
+    menu.classList.toggle('open', open);
+    btn.setAttribute('aria-expanded', String(open));
+  });
+  document.addEventListener('click', function (ev) {
+    if (!menu.contains(ev.target)) { menu.classList.remove('open'); btn.setAttribute('aria-expanded', 'false'); }
+  });
+  // kernel 分段图例：纯展示，没有可勾选的项，开合逻辑照抄上面这颗但不用挂状态。
+  var klegend = $('#klegend'), klegendBtn = $('#klegendBtn');
+  /* 主图例那几块色（前向/反向/等待/通信/驻留）的真值是泳道文档里的 --viz-*，
+     而这颗浮层长在**宿主文档**上——跨文档 CSS 变量不继承，直接写 var(--viz-…)
+     在这边解析不到，只会掉回 fallback，主题一切换就跟里面对不上。
+     所以打开时去 iframe 里把这几个变量的**计算值**读回来刷上：与泳道画布用的
+     是同一个来源，不另抄一套色，明暗主题也自动跟随。iframe 没就绪/跨源就保持
+     标签里那份 fallback，不至于空着。 */
+  function syncLegendSwatches() {
+    var doc = paneDoc('swimlane'); if (!doc) return;
+    var cs = doc.defaultView.getComputedStyle(doc.documentElement);
+    klegend.querySelectorAll('[data-viz]').forEach(function (el) {
+      var v = cs.getPropertyValue(el.dataset.viz).trim();
+      if (v) el.style.background = v;
+    });
+  }
+  klegendBtn.addEventListener('click', function (ev) {
+    ev.stopPropagation();
+    var open = !klegend.classList.contains('open');
+    klegend.classList.toggle('open', open);
+    klegendBtn.setAttribute('aria-expanded', String(open));
+    if (open) syncLegendSwatches();
+  });
+  document.addEventListener('click', function (ev) {
+    if (!klegend.contains(ev.target)) { klegend.classList.remove('open'); klegendBtn.setAttribute('aria-expanded', 'false'); }
+  });
+  menu.addEventListener('click', function (ev) {
+    var act = ev.target.closest('[data-dact]');
+    if (act) {
+      dataOn = act.dataset.dact === 'all' ? DATAK.map(function (x) { return x.k; }) : [];
+      applyData(); writeURL(); return;
+    }
+    var opt = ev.target.closest('.opt[data-k]');
+    if (!opt) return;
+    var k = opt.dataset.k, i = dataOn.indexOf(k);
+    if (i >= 0) dataOn.splice(i, 1); else dataOn.push(k);
+    applyData();
+    writeURL();
+  });
+}
+
+/* ── 分隔条（横竖共用一套） ───────────────────────────────────────── */
+/* 监听挂在 window 上而不是分隔条上：指针一旦滑进 iframe，事件就归 iframe 的
+   文档了，挂在元素上的 pointermove 会断（setPointerCapture 跨文档也不成立）。
+   拖动期间给 body 打 .is-resizing*，把 iframe 的 pointer-events 关掉。 */
+function wireSplit(sel, cls, onMove) {
+  var grip = $(sel);
+  if (!grip) return;
+  grip.addEventListener('pointerdown', function (ev) {
+    ev.preventDefault();
+    var start = { x: ev.clientX, y: ev.clientY, h0: dockH, w0: sideW };
+    document.body.classList.add(cls);
+    function move(e) { onMove(start, e); }
+    function up() {
+      window.removeEventListener('pointermove', move);
+      window.removeEventListener('pointerup', up);
+      window.removeEventListener('pointercancel', up);
+      document.body.classList.remove(cls);
+      writeURL();
+    }
+    window.addEventListener('pointermove', move);
+    window.addEventListener('pointerup', up);
+    window.addEventListener('pointercancel', up);
+  });
+}
+
+function wireSplitters() {
+  /* 横条：往下拖 = 抽屉变矮，所以是 h0 - clientY；上限留 180px 给舞台 */
+  wireSplit('#splitter', 'is-resizing', function (start, e) {
+    var max = Math.max(160, window.innerHeight - 180);
+    dockH = Math.max(120, Math.min(max, Math.round(start.h0 - (e.clientY - start.y))));
+    applyDockH();
+  });
+  /* 竖条：定宽的那一格在**右边**（整网图），所以往右拖 = 它变窄，是 w0 - dx；
+     左边至少留 320px 给主视图。 */
+  wireSplit('#vsplit', 'is-resizing-x', function (start, e) {
+    var max = Math.max(240, window.innerWidth - 320);
+    sideW = Math.max(240, Math.min(max, Math.round(start.w0 - (e.clientX - start.x))));
+    applySideW();
+  });
+}
+
+/* ── 回灌：格子里自己换了视图/范围，段控要跟上 ───────────────────── */
+window.addEventListener('message', function (ev) {
+  var d = ev && ev.data;
+  if (!d || (d.type !== 'pto:state-ack' && d.type !== 'pto:select' && d.type !== 'pto:comm' && d.type !== 'pto:swimlane-select')) return;
+  SLOTS.forEach(function (c) {
+    var frame = $('iframe[data-slot="' + c.id + '"]');
+    if (!frame || frame.contentWindow !== ev.source) return;
+    var v = d.view || d.range;
+    if (v && v !== state[c.id].value && tabsOf(c).some(function (t) { return t.v === v; })) {
+      state[c.id].value = v;
+      syncTabs(c.id);
+      writeURL();
+    }
+    /* 一格里选中了一张卡 / 挑中了一份切分 → 另一格**照亮**对应的那一片。
+       主视图 → 整网图：那边不进卡维度（rank=0），一个 rank 的意思是「本卡」，
+       于是照亮的正好是「这张卡装的那十几层」。
+       整网图 → 主视图：图内那些 TP/EP/PP 轨、门牌、选组 HUD 走的都是 chainpick，
+       落点同样是一个 rank，转回来主视图就照亮持有那一份的卡。
+
+       推的是 hl 不是 sel：另一格的点击在这一格是**过路的高亮**，不该在这儿变成
+       一次「选中」——选中会浮出「rank N 装了什么」那张读出卡，而此刻亮着的常常是
+       一整片卡，一张写死某个 rank 的读数摆在那儿只会误导。高亮点画布空白就散。
+       hl 不会让对面回报 pto:select，所以两格之间不存在回声，不需要仲裁。
+
+       为什么不自己算层区间：层一次只表达一层，而一张卡装的是一整段；rank 是
+       pattern 自己就懂的话，段的边界由它按 layersPerStage 自己算，台面不必复制
+       一份 tp‑cp‑dp‑pp 的坐标算术（复制的那份迟早和它对不上）。
+       只认 pto:select（读者在那一格真的点了什么），不认 pto:state-ack —— 后者是
+       我们自己推过去之后的回执，拿它当输入就是自己跟自己转。 */
+    if (d.type === 'pto:select') {
+      var rankSel = (typeof d.sel === 'number' && d.sel >= 0) ? d.sel : null;
+      if (c.id === 'topology' || c.id === 'netgraph') {
+        globalFilter = d.groups ? {t:d.groups.t,e:d.groups.e,p:d.groups.p,d:d.groups.d} : {t:null,e:null,p:null,d:null};
+        renderGlobalFilter();
+      }
+      var peer = c.id === 'topology' ? 'netgraph' : (c.id === 'netgraph' ? 'topology' : '');
+      if (peer) pushHL(peer, 'rank', rankSel);
+      /* 同一条 rank 高亮再顺手递给泳道那格——它没有「卡」的概念，接的是
+         embed-bridge.js 里新增的一小段（不碰 swimlane.html 正文），只在页面角落
+         浮一枚会自己淡出的小徽标，不去挪读者在泳道里的当前范围/展开状态，见那边
+         注释。null 就是把徽标收回去，跟两格互相照亮时「点空白就散」一个道理。 */
+      if (c.id === 'topology' || c.id === 'netgraph') pushHL('swimlane', 'rank', rankSel);
+    }
+    /* 反方向：泳道点了一个带 rank 归属的事件 → 两格拓扑照亮同一个 rank。
+       swimlane.html「⑤ 本仓新增」区块负责从 metrics.rankId 里抠出这个数（抠不出来
+       就报 null），这里只管转发，不重复它的判定逻辑。走的还是 pushHL 那条"过路高亮"
+       通道，跟 wireOpToRank/wireLinkage 用的是同一件事，只是触发源换成了泳道的
+       postMessage 而不是轮询。 */
+    if (d.type === 'pto:swimlane-select' && c.id === 'swimlane') {
+      var swRank = (typeof d.rank === 'number' && d.rank >= 0) ? d.rank : null;
+      var swGroups = d.groups && typeof d.groups === 'object'
+        ? {t:Number.isInteger(d.groups.t)?d.groups.t:null,
+           e:Number.isInteger(d.groups.e)?d.groups.e:null,
+           p:Number.isInteger(d.groups.p)?d.groups.p:null,
+           d:null}
+        : {t:null,e:null,p:null,d:null};
+      var hasSwGroup = swGroups.t !== null || swGroups.e !== null || swGroups.p !== null;
+      /* 有唯一 Rank 就按 Rank 联动；没有唯一 Rank 的 Stage/组事件改用它自己的
+         PP/TP/EP 归属。此前一律转 null，等于明确通知上面两格“取消高亮”。
+         泳道事件报不出 DP 归属（它按 Rank/PP 组事件走，不区分 DP 副本），d 恒 null。 */
+      globalFilter = swRank === null && hasSwGroup ? swGroups : {t:null,e:null,p:null,d:null};
+      renderGlobalFilter();
+      sendGlobalFilters();
+      pushHL('topology', 'rank', swRank);
+      pushHL('netgraph', 'rank', swRank);
+      /* kernel 分段逐节可点之后，泳道还报得出「点的是哪一节」（d.block，形如
+         'attn.qkv'——与 parallel-topology 模块视图 MODULE_BLOCKS 的 id 同一张表，
+         swimlane.html 的 KERNEL_SEG_BLOCK 就是照那张表配的）。没选中某一节、或
+         选中的是反向那组不挂功能块的真实子阶段时报 null，跟 rank 报 null 同一条
+         规矩——转发照旧不重复判定逻辑，走的还是 pushHL 这条"过路高亮"通道，只是
+         kind 换成 'block'。 */
+      var swBlock = (typeof d.block === 'string' && d.block) ? d.block : null;
+      pushHL('topology', 'block', swBlock);
+      pushHL('netgraph', 'block', swBlock);
+    }
+    /* 上方拓扑开了通信层 → 下方抽屉联动切到「通信观测」：上面看现象（地面流量带），
+       下面看量化与归因（Sankey / Model & Routing / 时间轴）。只在**开**的时候联动，
+       关掉不切回——读者可能正在下面看时间轴，替他关掉是抢操作。折叠着就先展开。 */
+    if (d.type === 'pto:comm' && d.on && c.id === 'topology') {
+      if (state.swimlane.folded) { state.swimlane.folded = false; applySlotVisibility(); }
+      if (state.swimlane.value !== 'obs') { state.swimlane.auto = true; select('swimlane', 'obs', true); }
+    }
+  });
+});
+
+/* ── 起步 ─────────────────────────────────────────────────────────── */
+readURL();
+document.documentElement.setAttribute('data-theme', theme());  /* 首帧就落主题，别闪 */
+wireGlobalControls();
+wirePanelToggles();
+applyDockH();
+applySideW();
+SLOTS.forEach(function (slot) {
+  buildTabs(slot);
+  syncTabs(slot.id);
+  wireFrame(slot);
+  wireHead(slot);
+  load(slot.id);
+});
+applySlotVisibility();
+buildFrameControls();
+applyData();
+applyShellTheme();
+wireSplitters();
+wireLinkage();
+
+$('#themeBtn').addEventListener('click', function () {
+  shellDark = !shellDark;
+  applyShellTheme();
+  writeURL();
+});
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,891 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="author" content="王欣迪" />
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<!-- 入口 HTML 一律不进浏览器缓存。
+     资源引用已经带 ?v=<短SHA>，改了内容就换 URL、自然绕开缓存；但**页面本身**
+     没有这层保护——链接一旦被收藏（尤其是带着某次构建的 ?v= 旧戳那种），
+     查询串算进缓存键，浏览器就一直拿那份旧副本，页面在 Pages 上早就更新了也看不见。
+     实际发生过：启动页给的链接是最新戳，手里那条旧戳链接却停在几周前的构建。
+     这几个文件都是几十到几百 KB 的单文件入口，每次回源重新校验的代价可以忽略，
+     换来的是「点开就是最新」。GitHub Pages 不让自定义响应头，只能走 meta。 -->
+<meta http-equiv="Cache-Control" content="no-cache, must-revalidate">
+<meta http-equiv="Pragma" content="no-cache">
+<meta name="robots" content="noindex, nofollow">
+<link rel="icon" href="../favicon.svg" type="image/svg+xml">
+<title>并行拓扑可视化工具 PRD</title>
+<style>
+:root{
+  --bg:#EEF1F3; --paper:#FFFFFF; --ink:#0E1418; --ink-2:#3D4B55; --ink-3:#6B7B86;
+  --rule:#D2DADF; --rule-2:#E4EAEE;
+  --dp:#2E6E8E; --pp:#B3603A; --cp:#3E7D5E; --tp:#A8404A; --ep:#6A5A9B;
+  --mono: ui-monospace, "SFMono-Regular", "JetBrains Mono", Menlo, Consolas, monospace;
+  --sans: -apple-system, BlinkMacSystemFont, "PingFang SC", "Hiragino Sans GB", "Source Han Sans SC", "Noto Sans CJK SC", "Microsoft YaHei", sans-serif;
+}
+*{box-sizing:border-box}
+html{scroll-behavior:smooth}
+body{
+  margin:0; background:var(--bg); color:var(--ink);
+  font-family:var(--sans); font-size:15.5px; line-height:1.78;
+  -webkit-font-smoothing:antialiased;
+  background-image:
+    linear-gradient(115deg, rgba(14,20,24,.022) 1px, transparent 1px),
+    linear-gradient(65deg, rgba(14,20,24,.022) 1px, transparent 1px);
+  background-size:34px 20px, 34px 20px;
+}
+.wrap{max-width:1120px; margin:0 auto; padding:0 28px 140px}
+
+header{padding:74px 0 30px; border-bottom:2px solid var(--ink)}
+.eyebrow{font-family:var(--mono); font-size:11.5px; letter-spacing:.22em; color:var(--ink-3); text-transform:uppercase}
+h1{margin:16px 0 10px; font-size:clamp(30px,4.6vw,50px); line-height:1.1; font-weight:800; letter-spacing:-.022em}
+.sub{color:var(--ink-2); max-width:62ch; margin:0}
+.meta{margin-top:22px; display:flex; flex-wrap:wrap; gap:8px 22px; font-family:var(--mono); font-size:11.5px; color:var(--ink-3)}
+.meta b{color:var(--ink-2); font-weight:700}
+
+.pair{
+  margin-top:26px; display:inline-flex; align-items:center; gap:10px;
+  font-family:var(--mono); font-size:11.5px; color:var(--ink-3);
+  background:var(--paper); border:1px solid var(--rule); border-radius:5px; padding:9px 14px;
+}
+.pair a{color:var(--dp); font-weight:700; text-decoration:none; border-bottom:1px solid transparent}
+.pair a:hover{border-bottom-color:var(--dp)}
+
+section{padding-top:64px; scroll-margin-top:20px}
+.sec-head{display:flex; align-items:baseline; gap:16px; border-bottom:1px solid var(--ink); padding-bottom:9px; margin-bottom:26px}
+.sec-num{font-family:var(--mono); font-size:12px; font-weight:600; color:var(--ink-3); letter-spacing:.08em; white-space:nowrap}
+h2{margin:0; font-size:clamp(20px,2.5vw,26px); font-weight:750; letter-spacing:-.012em}
+h3{margin:38px 0 12px; font-size:17.5px; font-weight:700; letter-spacing:-.005em}
+h4{margin:26px 0 8px; font-size:15px; font-weight:700; color:var(--ink-2)}
+p{margin:0 0 15px; max-width:74ch}
+ul,ol{margin:0 0 15px; padding-left:20px; max-width:74ch}
+li{margin-bottom:7px}
+code{font-family:var(--mono); font-size:.885em; background:#E2E8EC; padding:1.5px 5px; border-radius:3px; color:var(--ink)}
+strong{font-weight:700}
+a{color:var(--dp)}
+hr{display:none}
+
+pre{
+  background:var(--paper); border:1px solid var(--rule); border-radius:5px;
+  padding:14px 16px; overflow-x:auto; font-family:var(--mono); font-size:12.5px;
+  line-height:1.72; margin:18px 0; color:var(--ink);
+}
+pre code{background:none; padding:0; font-size:1em}
+
+.tblbox{margin:20px 0 24px}
+.tblbox .tblscroll{overflow-x:auto; -webkit-overflow-scrolling:touch}
+.tbl{width:100%; border-collapse:collapse; margin:0; font-size:13.5px}
+.tbl th,.tbl td{border-bottom:1px solid var(--rule-2); padding:9px 12px; text-align:left; vertical-align:top; line-height:1.6}
+.tbl th{background:#F7F9FA; font-weight:700; font-size:12.5px; color:var(--ink-2); border-bottom:1.5px solid var(--rule)}
+.tbl td:first-child{font-family:var(--mono); font-weight:650; white-space:nowrap}
+.tbl tr:hover td{background:#F9FBFC}
+
+.note{border-left:3px solid var(--ink-3); background:var(--paper); padding:14px 18px; margin:22px 0; border-radius:0 4px 4px 0}
+.note p:last-child{margin-bottom:0}
+
+nav.rail{
+  position:fixed; left:max(12px, calc(50vw - 640px)); top:50%; transform:translateY(-50%);
+  display:flex; flex-direction:column; gap:2px; z-index:20;
+}
+nav.rail a{
+  font-family:var(--mono); font-size:10.5px; color:var(--ink-3); text-decoration:none;
+  padding:5px 10px; border-left:2px solid var(--rule); transition:.15s; white-space:nowrap;
+  cursor:pointer; display:block;
+}
+nav.rail a:hover{color:var(--ink); border-left-color:var(--ink); background:rgba(255,255,255,.75)}
+nav.rail a:focus-visible{outline:2px solid var(--ink); outline-offset:1px}
+nav.rail a.on{color:var(--ink); font-weight:700; border-left-color:var(--ink); background:rgba(255,255,255,.9)}
+@media (max-width:1360px){ nav.rail{display:none} }
+
+@media print{
+  body{background:#fff}
+  nav.rail,.pair{display:none}
+  section{padding-top:28px; break-inside:avoid}
+}
+</style>
+</head>
+<body>
+
+<nav class="rail" aria-label="章节">
+  <a href="#s0">00 一句话</a>
+  <a href="#s1">01 背景与问题定义</a>
+  <a href="#s2">02 目标与非目标</a>
+  <a href="#s3">03 目标用户与场景</a>
+  <a href="#s4">04 设计原则</a>
+  <a href="#s5">05 信息架构</a>
+  <a href="#s6">06 功能需求</a>
+  <a href="#s7">07 关键交互</a>
+  <a href="#s8">08 视觉编码规范</a>
+  <a href="#s9">09 验收标准</a>
+  <a href="#s10">10 分期</a>
+  <a href="#s11">11 度量</a>
+  <a href="#s12">12 风险与开放问题</a>
+  <a href="#sA">App A 需求溯源表</a>
+  <a href="#sB">App B 术语</a>
+</nav>
+
+<div class="wrap">
+
+<header>
+  <div class="eyebrow">Product Requirements</div>
+  <h1>并行拓扑可视化工具</h1>
+  <p class="sub"><b>范围假设</b> 本文按「为 HPC topology viewer 写产品需求」来写。若你要的是别的对象（例如体验治理平台、或「配置→图」的 AI 技能），结构可复用，内容需替换——告诉我即可。</p>
+  <div class="meta"><span><b>版本</b> v0.1 · 2026-07</span><span><b>依据</b> 《分布式训练参照系 —— 五根轴 · 两个对象 · 三组坐标》（下称「参照系」）</span></div>
+  <div class="pair">配套阅读 · <a href="../parallel-reference/">分布式训练参照系 —— 五根轴 · 两个对象 · 三组坐标</a></div>
+</header>
+
+<section id="s0">
+  <div class="sec-head"><span class="sec-num">00</span><h2>一句话</h2></div>
+<div class="note">
+<p>让工具的<strong>信息架构与概念本体同构</strong>：五类对象各有各的视觉语法，三组坐标各有各的视图，基数关系一律不压平。</p>
+</div>
+
+</section>
+
+<section id="s1">
+  <div class="sec-head"><span class="sec-num">01</span><h2>背景与问题定义</h2></div>
+<h3>1.1 现状</h3>
+<p>并行训练的配置空间是六维的（TP / SP / CP / PP / DP / EP），而人只能在三维里看东西。现有的拓扑可视化普遍采取「硬塞」策略，由此产生四类<strong>结构性错误</strong>——它们不是美观问题，是<strong>信息编码错误</strong>，会直接导致用户误判。</p>
+<div class="tblbox"><div class="tblscroll"><table class="tbl">
+<thead>
+<tr>
+<th>#</th>
+<th>现象</th>
+<th>本质</th>
+<th>后果</th>
+<th>依据</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>P1</td>
+<td>把并行维度与通信原语一一绑定</td>
+<td>把 <strong>N:M 关系编码成 1:1</strong></td>
+<td>看到 All-to-All 就以为是 MoE，而它同样可能是 Ulysses CP</td>
+<td>参照系 §09、§13 勘误 K/L</td>
+</tr>
+<tr>
+<td>P2</td>
+<td>把 CP 硬加成卡网格的一根轴</td>
+<td>混淆了两种「第四维」——切分维与时间轴</td>
+<td>CP 与 DP 在卡网格上长得一样，用户分不清</td>
+<td>§05、§12</td>
+</tr>
+<tr>
+<td>P3</td>
+<td>把 rank 画成容器</td>
+<td><strong>地址被当成了形状</strong></td>
+<td>让人以为 rank「装着」东西，一卡多 device 时彻底对不上</td>
+<td>§15</td>
+</tr>
+<tr>
+<td>P4</td>
+<td>只呈现单卡时间线</td>
+<td>丢掉了跨 rank 的相对关系</td>
+<td>把「等待」误判为「链路慢」，归因方向完全反了</td>
+<td>§12 诊断陷阱</td>
+</tr>
+</tbody></table></div></div>
+<h3>1.2 机会</h3>
+<p>参照系已经把这套概念梳理成一个<strong>可直接映射到 IA 的框架</strong>：</p>
+<ul>
+<li><strong>五根轴</strong>（<code>ℓ h e b s</code>）—— 决定有哪些可切维度</li>
+<li><strong>两个对象</strong>（权重体 / 激活体）—— 决定被切的是什么</li>
+<li><strong>三组坐标</strong>（空间 4 维 · 时间 · 粒度）—— 决定需要几个视图族</li>
+<li><strong>五类对象</strong>（结构 / 内容 / 容器 / 地址 / 动作）—— 决定视觉语法</li>
+</ul>
+<p><strong>产品主张：把这四层直接落成 IA，而不是先画图再补概念。</strong></p>
+
+</section>
+
+<section id="s2">
+  <div class="sec-head"><span class="sec-num">02</span><h2>目标与非目标</h2></div>
+<h3>2.1 目标</h3>
+<div class="tblbox"><div class="tblscroll"><table class="tbl">
+<thead>
+<tr>
+<th>优先级</th>
+<th>目标</th>
+<th>可判定的成功标志</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>G1</td>
+<td><strong>让配置可见</strong> —— 给定一份并行配置，看清每张卡持有什么</td>
+<td>用户能在 30 秒内答出「第 37 层在哪几张卡上、单卡权重 shape 是多少」</td>
+</tr>
+<tr>
+<td>G2</td>
+<td><strong>让通信可见</strong> —— 看清什么时候、谁跟谁、用什么原语通信</td>
+<td>用户能区分「同步」与「转发」两类通信，且不把原语与维度绑死</td>
+</tr>
+<tr>
+<td>G3</td>
+<td><strong>不制造错误认知</strong> —— 宁可不画，不可画错</td>
+<td>上表 P1–P4 四类结构性错误一条都不出现</td>
+</tr>
+<tr>
+<td>G4</td>
+<td><strong>可用于诊断</strong> —— 从图能导向可行动的判断</td>
+<td>用户能据图区分 OOM 类与利用率类问题，并定位到具体 rank</td>
+</tr>
+</tbody></table></div></div>
+<h3>2.2 非目标</h3>
+<ul>
+<li><strong>不做性能预测。</strong> 参照系只给了「计算密集 / 访存密集」的定性判据，没有 roofline 这类可算模型（§16）。工具不承诺吞吐数字。</li>
+<li><strong>不做配置推荐。</strong> §11 只给了决策<strong>顺序</strong>，没给数值方法。工具做<strong>校验</strong>（这配置合不合法）与<strong>诊断</strong>（哪里可能有问题），不做「你应该配 TP=8」。</li>
+<li><strong>不覆盖推理。</strong> 全文是训练视角，推理的并行语义相当不同（§16）。</li>
+<li><strong>不绑定具体框架。</strong> 概念中立；框架差异只体现在导入配置的适配层。</li>
+</ul>
+
+</section>
+
+<section id="s3">
+  <div class="sec-head"><span class="sec-num">03</span><h2>目标用户与场景</h2></div>
+<div class="tblbox"><div class="tblscroll"><table class="tbl">
+<thead>
+<tr>
+<th>用户</th>
+<th>场景</th>
+<th>核心诉求</th>
+<th>对应目标</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><strong>U1 训练工程师</strong></td>
+<td>调一版新配置，想确认切分是否如预期</td>
+<td>「我以为 TP 在机内，实际是不是」</td>
+<td>G1、G4</td>
+</tr>
+<tr>
+<td><strong>U2 性能分析师</strong></td>
+<td>profiling 显示某卡 AllReduce 40ms，判断根因</td>
+<td>「这是链路慢，还是它在等别人」</td>
+<td>G4</td>
+</tr>
+<tr>
+<td><strong>U3 框架 / 算子开发者</strong></td>
+<td>排查某个算子在切分后行为异常</td>
+<td>「这个算子被切成了什么样，通信插在哪」</td>
+<td>G1、G2</td>
+</tr>
+<tr>
+<td><strong>U4 新人 / 跨团队沟通</strong></td>
+<td>理解一套并行配置在讲什么</td>
+<td>「TP 和 DP 到底差在哪」</td>
+<td>G2、G3</td>
+</tr>
+</tbody></table></div></div>
+<p><strong>主场景（P0）</strong>：U1 输入一份配置 → 看到卡网格 → 点某张卡 → 读出它的多重 rank 坐标与持有内容 → 切换通信图层确认原语与落位。</p>
+
+</section>
+
+<section id="s4">
+  <div class="sec-head"><span class="sec-num">04</span><h2>设计原则</h2></div>
+<p>以下五条全部从参照系直接推出，是后面所有需求的裁决依据。<strong>当需求与原则冲突时，以原则为准。</strong></p>
+<h3>DP-1 · 基数不压平</h3>
+<div class="note">
+<p>任何 <strong>N:M</strong> 的关系，界面上不得呈现为 <strong>1:1</strong>。</p>
+</div>
+<p>最典型的是「并行维度 → 通信原语」。压平会制造 P1 类错误。（§01、§09）</p>
+<h3>DP-2 · 五类对象，五种语法</h3>
+<div class="note">
+<p>结构画成拓扑、内容画成体积、容器画成边界、<strong>地址只标不画</strong>、动作画成连线。</p>
+</div>
+<p><strong>地址不画成形状</strong>是这条里最硬的一款——它直接否决「把 rank 画成柱子/盒子」。（§15）</p>
+<h3>DP-3 · 有序维优先上轴，对称维可折叠</h3>
+<div class="note">
+<p><code>pp_rank</code> 的大小有意义，必须占一根轴；<code>tp_rank</code> / <code>dp_rank</code> 只是标签，折叠了不丢信息（看一个组等于看全部）；CP 视实现而定。</p>
+</div>
+<p>这把「画哪三根轴」从主观选择变成由配置决定的推导。（§12）</p>
+<h3>DP-4 · 视图按坐标组划分，图层按对象类别划分，二者正交</h3>
+<div class="note">
+<p>任一视图上都能独立开关任一图层。</p>
+</div>
+<p>这是 DP-1 在交互上的落地：维度决定<strong>哪些卡在一组</strong>，原语决定<strong>组内怎么连线</strong>，两者不得耦合。（§14 推论 4）</p>
+<h3>DP-5 · 宁缺毋误</h3>
+<div class="note">
+<p>画不下的东西就不画，并<strong>明确告知为什么画不下</strong>，而不是找个近似塞进去。</p>
+</div>
+<p>三维只有三根空间轴而坐标系有三组，轴不够是硬约束。（§15）</p>
+
+</section>
+
+<section id="s5">
+  <div class="sec-head"><span class="sec-num">05</span><h2>信息架构</h2></div>
+<h3>5.1 视图族（对应三组坐标）</h3>
+<div class="tblbox"><div class="tblscroll"><table class="tbl">
+<thead>
+<tr>
+<th>视图</th>
+<th>展开的轴</th>
+<th>冻结/折叠的轴</th>
+<th>回答什么问题</th>
+<th>对应参照系</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><strong>V1 卡网格</strong>（空间）</td>
+<td>TP × PP × DP</td>
+<td>时间冻结；CP 分面；粒度固定在「卡」</td>
+<td>谁和谁在一个通信域</td>
+<td>FIG 06</td>
+</tr>
+<tr>
+<td><strong>V2 时间线</strong>（时间）</td>
+<td>时间 × rank</td>
+<td>空间折叠到只剩 PP</td>
+<td>什么时候谁在算什么</td>
+<td>FIG 15</td>
+</tr>
+<tr>
+<td><strong>V3 粒度链</strong>（粒度）</td>
+<td>整网 → 层 → 算子 → kernel</td>
+<td>空间折叠</td>
+<td>某个东西被切在哪一级</td>
+<td>FIG 01、04</td>
+</tr>
+<tr>
+<td><strong>V4 单卡容器</strong>（内容）</td>
+<td>显存构成</td>
+<td>折叠为一张卡</td>
+<td>容器里装了什么、还剩多少</td>
+<td>FIG 11</td>
+</tr>
+<tr>
+<td><strong>V5 输入分布</strong>（正交）</td>
+<td>DP × CP</td>
+<td>——</td>
+<td>输入怎么分布（<strong>与 V1 分开</strong>）</td>
+<td>§05</td>
+</tr>
+</tbody></table></div></div>
+<div class="note">
+<p><strong>V5 单独立出来是 P2 类错误的解法</strong>：卡网格回答「模型怎么分布」，CP 属于另一个问题——「输入怎么分布」。两个问题各配一张图，比塞进同一张更清楚。</p>
+</div>
+<h3>5.2 图层（对应五类对象）</h3>
+<div class="tblbox"><div class="tblscroll"><table class="tbl">
+<thead>
+<tr>
+<th>图层</th>
+<th>内容</th>
+<th>默认</th>
+<th>可开关</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>L1 结构层</td>
+<td>图 / 层 / 算子的拓扑</td>
+<td>V3 开，其余关</td>
+<td>✔</td>
+</tr>
+<tr>
+<td>L2 内容层</td>
+<td>权重体 / 激活体的体积</td>
+<td>V4 开</td>
+<td>✔</td>
+</tr>
+<tr>
+<td>L3 容器层</td>
+<td>卡边界、流</td>
+<td>常开</td>
+<td>✔</td>
+</tr>
+<tr>
+<td>L4 地址层</td>
+<td>rank 标注</td>
+<td>常开</td>
+<td>可切换显示哪一组坐标</td>
+</tr>
+<tr>
+<td>L5 动作层</td>
+<td>通信连线</td>
+<td>按需</td>
+<td>✔ <strong>且与维度选择解耦</strong></td>
+</tr>
+</tbody></table></div></div>
+<p><strong>L5 与维度选择解耦是 DP-4 的硬性落地</strong>，也是修正 P1 的关键。</p>
+<h3>5.3 坐标读出规范（修正 P3）</h3>
+<ul>
+<li><code>global_rank</code> <strong>常驻</strong>显示，任何视图任何时候都不变</li>
+<li>域内 rank（<code>tp_rank</code> / <code>pp_rank</code> / …）随当前 axis <strong>高亮</strong>，不替换全局号</li>
+<li>rank 一律以<strong>标注</strong>形式贴在卡（容器）上，<strong>不得</strong>渲染为独立的几何体</li>
+</ul>
+<div class="note">
+<p>编号不变、只是当前生效的那一维被点亮。这样跨 axis 切换时用户不会觉得「卡的编号变了」。（§14 推论 5）</p>
+</div>
+
+</section>
+
+<section id="s6">
+  <div class="sec-head"><span class="sec-num">06</span><h2>功能需求</h2></div>
+<h3>P0 —— 不做就不成立</h3>
+<div class="tblbox"><div class="tblscroll"><table class="tbl">
+<thead>
+<tr>
+<th>ID</th>
+<th>需求</th>
+<th>验收要点</th>
+<th>依据</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><strong>FR-1</strong></td>
+<td><strong>配置输入与合法性校验</strong></td>
+<td>校验 <code>heads % TP</code>、<code>experts % EP</code>、<code>layers % PP</code>、<code>seq % (2·CP)</code>；<code>DP</code> 由 <code>world_size/(TP·CP·PP)</code> <strong>自动算出</strong>，不可手填；MoE 最小卡数按 <code>PP × max(TP·CP, EP·ETP)</code> 校验，<strong>禁止</strong>用各维连乘</td>
+<td>§11</td>
+</tr>
+<tr>
+<td><strong>FR-2</strong></td>
+<td><strong>V1 卡网格</strong>：TP/PP/DP 三轴，CP 以分面或选择器呈现</td>
+<td>CP <strong>不得</strong>作为卡网格的第四根轴出现</td>
+<td>§05、§12</td>
+</tr>
+<tr>
+<td><strong>FR-3</strong></td>
+<td><strong>点卡读出多重坐标</strong>：<code>global_rank</code> + 各域内 rank + 该卡持有的权重/激活 shape</td>
+<td>坐标读出必须可逆：点卡得区间，点区间得卡</td>
+<td>§07、§10</td>
+</tr>
+<tr>
+<td><strong>FR-4</strong></td>
+<td><strong>L5 通信图层</strong>：三种原语三种线型——P2P 有向链、AllReduce 无向闭合、All-to-All 各边载荷不同的多对多</td>
+<td>三者视觉语义<strong>必须不同</strong>；且线型由<strong>原语</strong>决定，不由维度决定</td>
+<td>§09、§14 推论 5</td>
+</tr>
+<tr>
+<td><strong>FR-5</strong></td>
+<td><strong>维度与原语解耦选择器</strong>：维度与原语各自独立选择</td>
+<td>选 CP 时，原语可选 Ring(P2P) / Ulysses(All-to-All) / 朴素(AllGather)，<strong>不得</strong>固定为其一</td>
+<td>§09 解绑、§13 勘误 L</td>
+</tr>
+</tbody></table></div></div>
+<h3>P1 —— 决定它是玩具还是工具</h3>
+<div class="tblbox"><div class="tblscroll"><table class="tbl">
+<thead>
+<tr>
+<th>ID</th>
+<th>需求</th>
+<th>验收要点</th>
+<th>依据</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><strong>FR-6</strong></td>
+<td><strong>V4 容器视图</strong>：可调 TP/PP/CP/DP，实时显示单卡显存构成</td>
+<td>调 DP 时容器<strong>必须纹丝不动</strong>（这是最反直觉也最有价值的一条）</td>
+<td>§08、§03</td>
+</tr>
+<tr>
+<td><strong>FR-7</strong></td>
+<td><strong>V2 多 rank 时间线</strong>：多 rank 时间轴叠在同一坐标上，标出通信算子的进入/退出时刻</td>
+<td>必须能看出「谁在等谁」——修正 P4</td>
+<td>§12</td>
+</tr>
+<tr>
+<td><strong>FR-8</strong></td>
+<td><strong>归因提示</strong>：通信耗时不均时提示「短的那几张是嫌疑人」</td>
+<td>不得暗示「等待时间长 = 该卡慢」</td>
+<td>§12 诊断陷阱</td>
+</tr>
+<tr>
+<td><strong>FR-9</strong></td>
+<td><strong>V5 输入分布视图</strong>：DP × CP 独立成图</td>
+<td>与 V1 并列，不嵌套</td>
+<td>§05</td>
+</tr>
+<tr>
+<td><strong>FR-10</strong></td>
+<td><strong>时间轴驱动动画</strong>：用时间推进静态网格，通信呈现为脉冲</td>
+<td>TP 每层闪两下、PP 沿轴上行、DP 整步静默末尾闪一次、MoE 层 All-to-All 成片爆发</td>
+<td>§12</td>
+</tr>
+</tbody></table></div></div>
+<h3>P2 —— 加分项</h3>
+<div class="tblbox"><div class="tblscroll"><table class="tbl">
+<thead>
+<tr>
+<th>ID</th>
+<th>需求</th>
+<th>依据</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>FR-11</td>
+<td><strong>配置诊断</strong>：气泡率估算 <code>(PP−1)/GA</code>、<code>GA ≥ PP</code> 校验、stage 0 显存偏高提示</td>
+<td>§12</td>
+</tr>
+<tr>
+<td>FR-12</td>
+<td><strong>V3 粒度链 / 归属边界视图</strong>：显示当前配置下归属边界落在哪一级</td>
+<td>§02</td>
+</tr>
+<tr>
+<td>FR-13</td>
+<td><strong><code>order</code> 字符串可视化</strong>：同一配置在不同 rank 排布下，哪些通信落机内 / 跨机</td>
+<td>§11</td>
+</tr>
+<tr>
+<td>FR-14</td>
+<td>配置对比（两份配置并排 diff）、导出、分享链接</td>
+<td>——</td>
+</tr>
+</tbody></table></div></div>
+
+</section>
+
+<section id="s7">
+  <div class="sec-head"><span class="sec-num">07</span><h2>关键交互</h2></div>
+<h3>7.1 主流程</h3>
+<pre><code>输入配置 ──▶ 合法性校验 ──▶ V1 卡网格
+                 │              │
+                 │              ├─ 点卡 ──▶ 坐标读出 + 持有内容
+                 │              ├─ 开 L5 ─▶ 选维度 ⊗ 选原语（正交）
+                 │              └─ 切视图 ─▶ V2 / V3 / V4 / V5
+                 │
+                 └─ 不合法 ──▶ 指出违反了哪条整除约束 + 给出最近的合法值
+</code></pre>
+<h3>7.2 交互细则</h3>
+<ul>
+<li><strong>视图切换保持选中状态</strong>：在 V1 选中 rank 5，切到 V2 后仍高亮 rank 5 的时间线</li>
+<li><strong>CP 切换是视图开关，不是 axis 值</strong>：<code>axis=</code> 参数的取值域只含 <code>tp|pp|dp|ep</code>，CP 走独立入口（§05）</li>
+<li><strong>默认视角可复位</strong>：三维视角允许旋转，但必须有「回到标准等轴测」</li>
+<li><strong>遮挡处理</strong>：连线在三维中易被遮挡，需支持「只看连线」的抽离模式（对应 FIG 12 单独画拓扑形态的做法）</li>
+</ul>
+
+</section>
+
+<section id="s8">
+  <div class="sec-head"><span class="sec-num">08</span><h2>视觉编码规范</h2></div>
+<div class="tblbox"><div class="tblscroll"><table class="tbl">
+<thead>
+<tr>
+<th>对象类别</th>
+<th>几何</th>
+<th>禁止</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>结构</td>
+<td>节点 + 边，<strong>无厚度</strong></td>
+<td>画成实心块（会被误读为占显存）</td>
+</tr>
+<tr>
+<td>内容</td>
+<td>实心块，<strong>体积 ∝ 字节数</strong></td>
+<td>体积与实际量级脱钩</td>
+</tr>
+<tr>
+<td>容器</td>
+<td>线框盒，有明确容量边界</td>
+<td>与内容用同一种填充</td>
+</tr>
+<tr>
+<td><strong>地址</strong></td>
+<td><strong>文字标注</strong></td>
+<td><strong>任何几何体</strong></td>
+</tr>
+<tr>
+<td>动作</td>
+<td>连线 / 箭头</td>
+<td>赋予体积</td>
+</tr>
+</tbody></table></div></div>
+<p><strong>通道色彩</strong>：TP / PP / DP / CP / EP 各占一个固定色相，全局一致，跨视图不变。</p>
+<p><strong>线型语义</strong>：</p>
+<ul>
+<li>有方向 → 实线 + 箭头（P2P）</li>
+<li>无方向对称 → 实线闭合，无箭头（AllReduce）</li>
+<li>多对多且各边载荷不同 → 细线全连接（All-to-All）</li>
+</ul>
+
+</section>
+
+<section id="s9">
+  <div class="sec-head"><span class="sec-num">09</span><h2>验收标准</h2></div>
+<p>以下每条都可以直接测：</p>
+<div class="tblbox"><div class="tblscroll"><table class="tbl">
+<thead>
+<tr>
+<th>#</th>
+<th>验收项</th>
+<th>判定</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>A1</td>
+<td>选 CP 维度时，能显示三种不同原语中的任一种</td>
+<td>通过 = 不被固定为 Ring</td>
+</tr>
+<tr>
+<td>A2</td>
+<td>在任一视图中，找不到任何一个代表 rank 的几何体</td>
+<td>通过 = 地址只以标注出现</td>
+</tr>
+<tr>
+<td>A3</td>
+<td>把 DP 从 2 调到 8，V4 容器视图无任何变化</td>
+<td>通过 = 正确表达了「加 DP 不买余量」</td>
+</tr>
+<tr>
+<td>A4</td>
+<td>卡网格的 axis 取值域不含 CP</td>
+<td>通过 = 未混淆两种「第四维」</td>
+</tr>
+<tr>
+<td>A5</td>
+<td>通信耗时不均场景下，工具提示指向耗时<strong>短</strong>的 rank</td>
+<td>通过 = 归因方向正确</td>
+</tr>
+<tr>
+<td>A6</td>
+<td>输入 <code>heads=33, TP=16</code> 时报错并指出具体约束</td>
+<td>通过 = 校验有效</td>
+</tr>
+<tr>
+<td>A7</td>
+<td>MoE 配置的最小卡数提示等于 <code>PP × max(TP·CP, EP·ETP)</code></td>
+<td>通过 = 未用连乘式</td>
+</tr>
+<tr>
+<td>A8</td>
+<td>切换视图后选中的 rank 保持高亮</td>
+<td>通过 = 状态连续</td>
+</tr>
+</tbody></table></div></div>
+
+</section>
+
+<section id="s10">
+  <div class="sec-head"><span class="sec-num">10</span><h2>分期</h2></div>
+<div class="tblbox"><div class="tblscroll"><table class="tbl">
+<thead>
+<tr>
+<th>阶段</th>
+<th>内容</th>
+<th>产出</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><strong>M1 骨架</strong></td>
+<td>FR-1 ~ FR-5（P0 全部）</td>
+<td>能正确表达一份配置的空间结构与通信，且不犯 P1–P4 四类错误</td>
+</tr>
+<tr>
+<td><strong>M2 诊断</strong></td>
+<td>FR-6 ~ FR-10</td>
+<td>从「看得懂」升级到「查得出」</td>
+</tr>
+<tr>
+<td><strong>M3 深化</strong></td>
+<td>FR-11 ~ FR-14</td>
+<td>配置诊断与排布可视化</td>
+</tr>
+</tbody></table></div></div>
+<p><strong>M1 的完成定义</strong>：验收项 A1、A2、A4、A6、A7 全部通过。这五条恰好对应四类结构性错误加配置校验——<strong>它们是这个产品与现有方案的全部差别所在</strong>。</p>
+
+</section>
+
+<section id="s11">
+  <div class="sec-head"><span class="sec-num">11</span><h2>度量</h2></div>
+<div class="tblbox"><div class="tblscroll"><table class="tbl">
+<thead>
+<tr>
+<th>指标</th>
+<th>定义</th>
+<th>为什么选它</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><strong>任务完成率</strong></td>
+<td>目标用户在无指导下完成主场景的比例</td>
+<td>直接对应 G1</td>
+</tr>
+<tr>
+<td><strong>误判率</strong></td>
+<td>给定一组带陷阱的配置（如 Ulysses CP），用户判断错误的比例</td>
+<td>直接对应 G3，是本产品的核心差异点</td>
+</tr>
+<tr>
+<td><strong>首次正确归因时长</strong></td>
+<td>U2 场景下从打开到给出正确根因的时间</td>
+<td>直接对应 G4</td>
+</tr>
+<tr>
+<td>满意度</td>
+<td>常规主观评分</td>
+<td>辅助</td>
+</tr>
+</tbody></table></div></div>
+<div class="note">
+<p>建议把<strong>误判率</strong>作为北极星指标。它是唯一能证明「结构正确」有价值的量化证据——否则「不犯 P1–P4」这件事在评审里很难被看见。</p>
+</div>
+
+</section>
+
+<section id="s12">
+  <div class="sec-head"><span class="sec-num">12</span><h2>风险与开放问题</h2></div>
+<div class="tblbox"><div class="tblscroll"><table class="tbl">
+<thead>
+<tr>
+<th>#</th>
+<th>风险</th>
+<th>影响</th>
+<th>应对</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>R1</td>
+<td><strong>配置空间过大，UI 失控</strong></td>
+<td>参数一多，界面变成表单地狱</td>
+<td>按 §11 的五步决策顺序组织输入（TP→PP→CP→EP→DP 自动），而非平铺所有参数</td>
+</tr>
+<tr>
+<td>R2</td>
+<td><strong>三维遮挡</strong></td>
+<td>连线与块互相遮挡，信息读不出</td>
+<td>提供连线抽离模式；等轴测固定视角作为默认</td>
+</tr>
+<tr>
+<td>R3</td>
+<td><strong>定位摇摆：教学工具还是诊断工具</strong></td>
+<td>两者对精度与简化的要求相反</td>
+<td><strong>建议先定位教学 / 沟通</strong>（G1–G3），诊断（G4）作为 M2 目标；不要在 M1 同时追</td>
+</tr>
+<tr>
+<td>R4</td>
+<td><strong>EP 语义随框架版本变动大</strong></td>
+<td>经典 EP / ETP / MoE Parallel Folding 三种语义并存</td>
+<td>配置里显式要求版本；不同版本走不同渲染分支（§13 勘误 M）</td>
+</tr>
+<tr>
+<td>R5</td>
+<td>与真实 profiling 数据对接的成本</td>
+<td>FR-7、FR-8 依赖真实时间线数据</td>
+<td>M1 先用合成数据验证视觉编码，M2 再接真实数据</td>
+</tr>
+</tbody></table></div></div>
+<h3>开放问题</h3>
+<ol>
+<li><strong>数据来源</strong>：配置是手输，还是从训练脚本 / 框架配置文件导入？后者需要适配层，且要处理版本差异。</li>
+<li><strong>是否需要多配置对比</strong>？（FR-14）——如果主要场景是「调参时确认」，对比价值很高；如果是教学，价值低。</li>
+<li><strong><code>ETP</code> 是否进入 M1</strong>？它让 EP 的表达完整，但也让配置空间又多一维。</li>
+<li><strong>时间线数据的粒度</strong>：到 kernel 还是到层？到 kernel 数据量大但能定位算子；到层足够做 PP 诊断。</li>
+</ol>
+
+</section>
+
+<section id="sA">
+  <div class="sec-head"><span class="sec-num">附录 A</span><h2>需求溯源表</h2></div>
+<div class="tblbox"><div class="tblscroll"><table class="tbl">
+<thead>
+<tr>
+<th>需求</th>
+<th>源自参照系</th>
+<th>源自哪条结论</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>FR-1</td>
+<td>§11</td>
+<td>整除约束链、DP 是残差维、最小卡数公式</td>
+</tr>
+<tr>
+<td>FR-2</td>
+<td>§05、§12</td>
+<td>CP 需要正交视图；两种「第四维」不能混</td>
+</tr>
+<tr>
+<td>FR-3</td>
+<td>§07、§10</td>
+<td>逻辑索引 ↔ 卡坐标是可逆的纯算术</td>
+</tr>
+<tr>
+<td>FR-4</td>
+<td>§09、§14</td>
+<td>三种原语视觉语义本不相同</td>
+</tr>
+<tr>
+<td>FR-5</td>
+<td>§09、§13 K/L</td>
+<td>维度与原语是 N:M</td>
+</tr>
+<tr>
+<td>FR-6</td>
+<td>§03、§08</td>
+<td><code>GBS = MBS × GA × DP</code>；加 DP 不减容器</td>
+</tr>
+<tr>
+<td>FR-7/8</td>
+<td>§12</td>
+<td>等待长的是受害者，等待短的是嫌疑人</td>
+</tr>
+<tr>
+<td>FR-10</td>
+<td>§12</td>
+<td>时间不是切分维，是让网格动起来的轴</td>
+</tr>
+<tr>
+<td>FR-11</td>
+<td>§12</td>
+<td>气泡率 <code>(PP−1)/GA</code></td>
+</tr>
+<tr>
+<td>FR-13</td>
+<td>§11</td>
+<td><code>order</code> 字符串决定物理落位</td>
+</tr>
+<tr>
+<td>DP-1~5</td>
+<td>§01/§09/§12/§14/§15</td>
+<td>基数、解绑、有序维、图层正交、五类对象</td>
+</tr>
+</tbody></table></div></div>
+
+</section>
+
+<section id="sB">
+  <div class="sec-head"><span class="sec-num">附录 B</span><h2>术语</h2></div>
+<p>一律以参照系 §00 规范术语表为准。特别注意三条：</p>
+<ul>
+<li><strong>SP</strong> 必须区分 Megatron 语义与 Ulysses 语义（后者一律写 CP）</li>
+<li><strong>rank</strong> 必须带域限定（<code>global_rank</code> / <code>tp_rank</code> / …）</li>
+<li><strong>层</strong> 与 <strong>stage</strong> 不可混用</li>
+</ul>
+
+</section>
+
+</div>
+
+<script>
+(function(){
+/* 左侧章节标尺：预览沙箱常拦 href="#..." 的原生锚点跳转，这里自己滚 */
+function setupRail(){
+  var links = [].slice.call(document.querySelectorAll('nav.rail a'));
+  var items = [];
+  links.forEach(function(a){
+    var el = document.getElementById((a.getAttribute('href')||'').replace(/^#/,''));
+    if(!el) return;
+    items.push({a:a, el:el});
+    a.addEventListener('click', function(ev){
+      ev.preventDefault();
+      try{ el.scrollIntoView({behavior:'smooth', block:'start'}); }
+      catch(e){ window.scrollTo(0, el.offsetTop); }
+    });
+  });
+  function spy(){
+    var y = window.scrollY + 140, cur = items[0];
+    items.forEach(function(it){ if(it.el.offsetTop <= y) cur = it; });
+    items.forEach(function(it){ it.a.classList.toggle('on', it === cur); });
+  }
+  window.addEventListener('scroll', spy, {passive:true});
+  window.addEventListener('resize', spy);
+  spy();
+}
+if(document.readyState === 'loading'){
+  document.addEventListener('DOMContentLoaded', setupRail);
+}else{ setupRail(); }
+})();
+</script>
+</body>
+</html>

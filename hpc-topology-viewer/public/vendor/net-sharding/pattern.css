@@ -1,0 +1,86 @@
+/* ════════════════════════════════════════════════════════════════════════════
+   net-sharding —— rank 卡 = 整网的并行化展开（small multiples）
+   显示形式：**共享布局 + 差分着色**。图是预定位的（55 节点各带 x/y），三张卡用
+   同一份坐标渲染、位置逐点对齐，于是「哪儿一样、哪儿不一样」靠眼睛比对就成立，
+   不靠文字。所以这里的样式纪律只有一条：**除了状态，什么都不许变**——
+   卡的尺寸、节点的位置与形状三张完全一致，变化只能落在颜色/存在与否上。
+   ════════════════════════════════════════════════════════════════════════════ */
+.ns-root {
+  --ns-tp: var(--dim-tp, #22d3ee);
+  --ns-pp: var(--warning, #ffaa3b);
+  --ns-dp: var(--primary, #4369ef);
+  --ns-ep: var(--highlight-l0a-violet-400, #9b3cf6);
+  --ns-cp: var(--highlight-ub-green-600, #86c70f);
+  --ns-sp: var(--highlight-mte-amber-500, #eab308);
+  --ns-full: var(--foreground-secondary, #8b949e);
+  --ns-absent: var(--border-default, #d0d7de);
+  --ns-added: var(--danger, #d1242f);
+  display: flex; flex-direction: column; width: 100%; height: 100%; overflow: hidden;
+  background: var(--background); color: var(--foreground);
+  font-family: var(--font-sans, ui-sans-serif, system-ui, sans-serif);
+}
+.ns-bar {
+  display: flex; align-items: center; gap: var(--space-4, 14px); flex-wrap: wrap; flex: none;
+  padding: var(--space-3, 10px) var(--space-4, 14px);
+  border-bottom: 1px solid var(--border-default); background: var(--surface-1, var(--background));
+}
+.ns-title b { font-size: 14px; }
+.ns-title .ns-sub { display: block; font-size: 11.5px; color: var(--foreground-secondary); margin-top: 1px; }
+.ns-axis { display: flex; gap: 4px; margin-left: auto; }
+.ns-axbtn {
+  min-height: 28px; padding: 0 12px; font-size: 12px; font-weight: 600; cursor: pointer;
+  color: var(--foreground-secondary); background: transparent;
+  border: 1px solid var(--border-default); border-radius: var(--radius-pill, 999px);
+}
+.ns-axbtn:hover { border-color: var(--c); color: var(--foreground); }
+.ns-axbtn.is-on { background: var(--c); border-color: var(--c); color: var(--background); }
+.ns-chip {
+  font-family: var(--font-mono, monospace); font-size: 11px; padding: 3px 9px;
+  border-radius: var(--radius-pill, 999px); border: 1px solid var(--border-default);
+  color: var(--foreground-secondary);
+}
+
+/* 三张卡并排：等宽、等高、同一 viewBox —— 位置对齐是这套读法的全部前提 */
+.ns-mult { flex: 1 1 auto; min-height: 0; display: grid; grid-template-columns: repeat(3, 1fr); gap: 1px;
+  background: var(--border-default); overflow: hidden; }
+.ns-card { margin: 0; display: flex; flex-direction: column; min-width: 0; background: var(--background); overflow: hidden; }
+.ns-card figcaption {
+  display: flex; align-items: baseline; gap: 7px; flex: none;
+  padding: 6px 10px; border-bottom: 1px solid var(--border-default);
+  font-size: 12px; background: var(--surface-1, var(--background));
+}
+.ns-card figcaption b { font-family: var(--font-mono, monospace); }
+.ns-card figcaption em { font-style: normal; font-size: 11px; color: var(--foreground-secondary); margin-left: auto;
+  font-family: var(--font-mono, monospace); }
+.ns-badge {
+  font-family: var(--font-mono, monospace); font-size: 10.5px; font-weight: 700;
+  padding: 1px 7px; border-radius: var(--radius-pill, 999px);
+  background: color-mix(in srgb, var(--c) 18%, transparent); color: var(--c);
+  border: 1px solid color-mix(in srgb, var(--c) 45%, transparent);
+}
+.ns-card svg { flex: 1 1 auto; min-height: 0; width: 100%; display: block; }
+
+/* 节点：形状/位置三张一致，只有状态在变 */
+.ns-n { fill: color-mix(in srgb, var(--c) 20%, transparent); stroke: var(--c); stroke-width: 3; }
+.ns-n.is-full { fill: color-mix(in srgb, var(--c) 12%, transparent); stroke-width: 2; }
+/* 「这张卡上根本不存在」——不是画淡，是画成空缺：虚线空框，一眼看出是**没有**而不是**弱** */
+.ns-n.is-absent { fill: none; stroke-dasharray: 10 8; stroke-width: 2; opacity: .5; }
+/* 并行化新增的 HCCL：逻辑图里没有这些节点，所以给它一个明确「外来」的样子 */
+.ns-n.is-added { fill: color-mix(in srgb, var(--c) 26%, transparent); stroke-width: 4; }
+.ns-e { stroke: var(--border-strong, #8b949e); stroke-width: 2; opacity: .45; }
+.ns-e.is-gone { stroke-dasharray: 8 8; opacity: .14; }
+.ns-e.is-added { stroke: var(--ns-added); stroke-width: 3; stroke-dasharray: 6 6; opacity: .8; }
+
+.ns-foot {
+  flex: none; padding: var(--space-2, 8px) var(--space-4, 14px) var(--space-3, 11px);
+  border-top: 1px solid var(--border-default); background: var(--surface-1, var(--background));
+}
+.ns-say { font-size: 12px; line-height: 1.6; color: var(--foreground-secondary); }
+.ns-say b { color: var(--foreground); }
+.ns-key { display: flex; flex-wrap: wrap; gap: 6px 16px; margin-top: 6px; font-size: 11px; color: var(--foreground-secondary); }
+.ns-k { display: inline-flex; align-items: center; gap: 6px; }
+.ns-k i { width: 12px; height: 12px; border-radius: 3px; display: block; }
+.ns-k i.is-absent { border: 1.5px dashed var(--ns-absent); background: none; }
+.ns-k i.is-added { border: 2px solid var(--ns-added); }
+.ns-empty { display: grid; place-content: center; height: 100%; color: var(--foreground-secondary); font-size: 13px; }
+@media (max-width: 900px) { .ns-mult { grid-template-columns: 1fr; } }

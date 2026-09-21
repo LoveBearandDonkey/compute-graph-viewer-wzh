@@ -1,0 +1,426 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="author" content="王欣迪" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>大模型 AI Infra 训练监控与可视化设计白皮书</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<style>
+body { background-color: #0d1117; color: #c9d1d9; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; }
+.glass-panel { background: rgba(22, 27, 34, 0.8); border: 1px solid #30363d; border-radius: 12px; backdrop-filter: blur(10px); }
+.gradient-text { background: linear-gradient(90deg, #58a6ff, #a371f7); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
+
+/* Component 1 & 2 Animations */
+.glow-active { box-shadow: 0 0 15px rgba(88, 166, 255, 0.6); border-color: #58a6ff !important; }
+.warning-stripe { background: repeating-linear-gradient(45deg, #791e22, #791e22 10px, #a42e2e 10px, #a42e2e 20px); box-shadow: 0 0 10px rgba(255,0,0,0.5); }
+.safe-green { background-color: #238636; }
+.compute-blue { background-color: #1f6feb; }
+.transition-all { transition: all 0.4s ease; }
+
+/* Component 3: 3D Cube & Racks */
+.grid-layer { display: grid; grid-template-columns: repeat(3, 1fr); gap: 4px; margin-bottom: 20px; transform: rotateX(60deg) rotateZ(-45deg); transform-style: preserve-3d; }
+.cube-block { width: 40px; height: 40px; background: #21262d; border: 1px solid #484f58; position: relative; transition: all 0.3s; }
+.cube-block::before { content: ''; position: absolute; top: 100%; left: 0; width: 100%; height: 10px; background: #161b22; transform-origin: top; transform: rotateX(-90deg); border: 1px solid #484f58; transition: all 0.3s; }
+.cube-block::after { content: ''; position: absolute; top: 0; left: 100%; width: 10px; height: 100%; background: #0d1117; transform-origin: left; transform: rotateY(90deg); border: 1px solid #484f58; transition: all 0.3s; }
+
+.cube-block.highlight { background: #a371f7; border-color: #d2a8ff; box-shadow: 0 0 15px rgba(163, 113, 247, 0.8); z-index: 10; transform: translateZ(10px); }
+.cube-block.highlight::before { background: #8957e5; border-color: #d2a8ff; }
+.cube-block.highlight::after { background: #713fc9; border-color: #d2a8ff; }
+
+.rack-server { height: 12px; background: #21262d; border: 1px solid #30363d; margin-bottom: 3px; border-radius: 2px; transition: all 0.3s; }
+.rack-server.highlight { background: #a371f7; border-color: #d2a8ff; box-shadow: 0 0 10px rgba(163, 113, 247, 0.6); }
+
+/* Scrollbar */
+::-webkit-scrollbar { width: 8px; height: 8px; }
+::-webkit-scrollbar-track { background: #0d1117; }
+::-webkit-scrollbar-thumb { background: #30363d; border-radius: 4px; }
+::-webkit-scrollbar-thumb:hover { background: #484f58; }
+</style>
+</head>
+<body class="p-4 md:p-8">
+
+<div class="max-w-6xl mx-auto space-y-12">
+<!-- Header -->
+<header class="text-center space-y-4 mb-16">
+<h1 class="text-4xl md:text-5xl font-bold gradient-text pb-2">大模型 AI Infra 训练监控与可视化设计指南</h1>
+<p class="text-gray-400 text-lg">从逻辑拓扑、物理机架到性能优化的全栈 UI/UX 设计白皮书</p>
+</header>
+
+<!-- Section 1: 概念解析 -->
+<section class="glass-panel p-6 md:p-10 space-y-6">
+<h2 class="text-2xl font-semibold text-white border-b border-gray-700 pb-2">一、 核心训练对象：“超级面包厂”隐喻</h2>
+<p class="text-gray-300 leading-relaxed">
+在设计 UI 时，我们需要通过色彩与形态为抽象概念建立视觉锚点。大模型训练可以比作一家生产完美面包的超级工厂：
+</p>
+<div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+<div class="bg-gray-800 p-4 rounded-lg border border-gray-700">
+<h3 class="text-blue-400 font-bold mb-2">Weight / Bias (权重/偏置)</h3>
+<p class="text-sm text-gray-400">机器人的配方旋钮。UI 表现为稳重的深蓝色矩阵块。</p>
+</div>
+<div class="bg-gray-800 p-4 rounded-lg border border-gray-700">
+<h3 class="text-green-400 font-bold mb-2">Activations (激活值)</h3>
+<p class="text-sm text-gray-400">流水线上的半成品面团。占用显存大头，UI 表现为带方向的流动管道。</p>
+</div>
+<div class="bg-gray-800 p-4 rounded-lg border border-gray-700">
+<h3 class="text-purple-400 font-bold mb-2">Gradients (梯度)</h3>
+<p class="text-sm text-gray-400">经理给出的修改意见。反向传播时激活，UI 表现为伴随权重的闪烁影子。</p>
+</div>
+<div class="bg-gray-800 p-4 rounded-lg border border-gray-700">
+<h3 class="text-orange-400 font-bold mb-2">Loss / LR (损失/学习率)</h3>
+<p class="text-sm text-gray-400">顾客差评与听劝程度。全局监控标量，常驻顶部警戒线。</p>
+</div>
+</div>
+<p class="text-gray-300 text-sm mt-4">
+<strong>💡 从逻辑到物理的映射：</strong> 模型(灵魂) 包含 整网(骨架)，整网由 算子(细胞) 组成。框架(厂长) 负责将这些算子分配到 物理集群(肉身) 上执行。
+</p>
+</section>
+
+<!-- Section 2: 交互视图 1 - 并行策略 -->
+<section class="glass-panel p-6 md:p-10 space-y-6">
+<h2 class="text-2xl font-semibold text-white border-b border-gray-700 pb-2">二、 交互工具 1：多维并行策略 (P) 切分探究器</h2>
+<p class="text-gray-400">理解 TP、PP、DP、SP、CP 在空间上是如何“切蛋糕”的。</p>
+
+<div class="flex flex-col lg:flex-row gap-6">
+<!-- Controls -->
+<div class="lg:w-1/3 space-y-4">
+<div class="flex flex-col gap-2" id="parallel-controls">
+<button onclick="setParallelMode('TP')" class="p-3 text-left bg-gray-800 hover:bg-gray-700 border-l-4 border-blue-500 rounded-r shadow transition-colors">张量并行 (TP) - 切分层内算子</button>
+<button onclick="setParallelMode('PP')" class="p-3 text-left bg-gray-800 hover:bg-gray-700 border-l-4 border-transparent rounded-r shadow transition-colors">流水线并行 (PP) - 切分层间网络</button>
+<button onclick="setParallelMode('DP')" class="p-3 text-left bg-gray-800 hover:bg-gray-700 border-l-4 border-transparent rounded-r shadow transition-colors">数据并行 (DP) - 切分输入数据</button>
+<button onclick="setParallelMode('SP')" class="p-3 text-left bg-gray-800 hover:bg-gray-700 border-l-4 border-transparent rounded-r shadow transition-colors">序列/上下文并行 (SP/CP) - 切分长文本</button>
+</div>
+<div id="parallel-desc" class="p-4 bg-[#161b22] border border-gray-700 rounded text-sm text-gray-300">
+点击上方策略查看详细映射。
+</div>
+</div>
+
+<!-- Visualization -->
+<div class="lg:w-2/3 bg-[#010409] border border-gray-800 rounded-lg p-6 flex flex-col items-center justify-center min-h-[300px]" id="parallel-vis">
+<!-- Dynamic content injected via JS -->
+</div>
+</div>
+</section>
+
+<!-- Section 3: 交互视图 2 - 时序泳道与 MoE -->
+<section class="glass-panel p-6 md:p-10 space-y-6">
+<h2 class="text-2xl font-semibold text-white border-b border-gray-700 pb-2">三、 交互工具 2：时序泳道诊断仪 (Overlap 分析)</h2>
+<p class="text-gray-400">对比传统 MoE 与 盘古 MoGE 架构，观察“通信如何被掩盖 (Overlap)”，这也是微观性能 Profiler 的核心。</p>
+
+<div class="flex justify-center gap-4 mb-4">
+<button onclick="setTimelineMode('TRADITIONAL')" id="btn-trad" class="px-6 py-2 bg-gray-700 text-white rounded-full transition-colors border border-gray-500">传统 Top-K MoE (存在热点拥堵)</button>
+<button onclick="setTimelineMode('MOGE')" id="btn-moge" class="px-6 py-2 bg-blue-600 text-white rounded-full transition-colors shadow-[0_0_15px_rgba(37,99,235,0.5)]">盘古 MoGE (完全物理均衡)</button>
+</div>
+
+<div class="overflow-x-auto bg-[#0d1117] border border-gray-700 rounded-lg p-4 relative">
+<!-- Timeline Grid -->
+<div class="min-w-[700px]">
+<!-- Time Axis -->
+<div class="flex border-b border-gray-700 mb-2 pb-2 text-xs text-gray-500">
+<div class="w-24 shrink-0">Device</div>
+<div class="flex-1 flex justify-between"><span>0ms</span><span>10ms</span><span>20ms</span><span>30ms</span><span>40ms</span></div>
+</div>
+
+<!-- GPU 0 -->
+<div class="mb-4">
+<div class="text-xs text-gray-400 mb-1">GPU 0 (Node A)</div>
+<div class="flex h-6 mb-1 items-center">
+<div class="w-24 text-xs text-gray-500 shrink-0">Compute</div>
+<div class="relative flex-1 bg-gray-800 rounded">
+<div id="g0-comp" class="absolute left-0 h-full compute-blue rounded transition-all flex items-center justify-center text-[10px] text-white">Forward / MatMul</div>
+</div>
+</div>
+<div class="flex h-6 items-center">
+<div class="w-24 text-xs text-gray-500 shrink-0">Comm</div>
+<div class="relative flex-1 bg-gray-800 rounded">
+<div id="g0-comm" class="absolute left-[10%] h-full rounded transition-all flex items-center px-1 text-[10px] text-white whitespace-nowrap overflow-hidden">AllToAll</div>
+</div>
+</div>
+</div>
+
+<!-- GPU 1 -->
+<div>
+<div class="text-xs text-gray-400 mb-1">GPU 1 (Node B)</div>
+<div class="flex h-6 mb-1 items-center">
+<div class="w-24 text-xs text-gray-500 shrink-0">Compute</div>
+<div class="relative flex-1 bg-gray-800 rounded">
+<div id="g1-comp" class="absolute left-0 h-full compute-blue rounded transition-all flex items-center justify-center text-[10px] text-white">Forward / MatMul</div>
+</div>
+</div>
+<div class="flex h-6 items-center">
+<div class="w-24 text-xs text-gray-500 shrink-0">Comm</div>
+<div class="relative flex-1 bg-gray-800 rounded">
+<div id="g1-comm" class="absolute left-[10%] h-full rounded transition-all flex items-center px-1 text-[10px] text-white whitespace-nowrap overflow-hidden">AllToAll</div>
+</div>
+</div>
+</div>
+</div>
+</div>
+<div id="timeline-desc" class="text-sm text-gray-300 bg-gray-800 p-3 rounded border border-gray-700"></div>
+</section>
+
+<!-- Section 4: 交互视图 3 - 终极魔方联动 -->
+<section class="glass-panel p-6 md:p-10 space-y-6">
+<h2 class="text-2xl font-semibold text-white border-b border-gray-700 pb-2">四、 交互工具 3：双生视界 - 逻辑魔方与物理机架联动仪</h2>
+<p class="text-gray-400">业界最难的可视化挑战：“维度爆炸”。解决方案是以**物理机房为绝对基准**，将逻辑上的抽象 3D 魔方作为透镜控制器，实现正交维度的映射联动排查。</p>
+
+<div class="flex justify-center gap-2 mb-6">
+<button onclick="highlightTwin('TP')" class="px-4 py-1 text-sm bg-gray-800 hover:bg-gray-700 border border-gray-600 rounded shadow">透视 TP (X轴切片: 同机柜高频)</button>
+<button onclick="highlightTwin('PP')" class="px-4 py-1 text-sm bg-gray-800 hover:bg-gray-700 border border-gray-600 rounded shadow">透视 PP (Y轴切片: 跨机柜串联)</button>
+<button onclick="highlightTwin('DP')" class="px-4 py-1 text-sm bg-gray-800 hover:bg-gray-700 border border-gray-600 rounded shadow">透视 DP (Z轴切片: 完整模型副本)</button>
+<button onclick="highlightTwin('NONE')" class="px-4 py-1 text-sm bg-gray-900 hover:bg-gray-800 border border-gray-600 rounded shadow text-gray-500">清除高亮</button>
+</div>
+
+<div class="flex flex-col xl:flex-row gap-8 bg-[#010409] p-8 rounded-lg border border-gray-800 items-center justify-center">
+
+<!-- Left: Logical Cube (Represented by 3 isometric layers) -->
+<div class="flex-1 flex flex-col items-center">
+<h3 class="text-blue-400 font-semibold mb-12">左脑：逻辑抽象 (3x3x3 并行魔方)</h3>
+<div class="relative w-full flex flex-col items-center justify-center space-y-[-60px]" id="logical-cube">
+<!-- Rendered by JS -->
+</div>
+</div>
+
+<!-- Divider -->
+<div class="hidden xl:flex text-gray-600 text-2xl font-light">映射 ➔</div>
+
+<!-- Right: Physical Racks -->
+<div class="flex-1 flex flex-col items-center">
+<h3 class="text-green-400 font-semibold mb-6">右脑：实体物理 (3 个机柜，共27节点)</h3>
+<div class="flex gap-4" id="physical-racks">
+<!-- Rendered by JS -->
+</div>
+</div>
+</div>
+<div id="twin-desc" class="text-center text-sm text-gray-400 mt-2">点击上方按钮，观察高频的数学算子是如何散落在真实的物理机柜中的。</div>
+</section>
+
+</div>
+
+<!-- Application Logic -->
+<script>
+// ==========================================
+// Component 1: Parallelism Mode Logic
+// ==========================================
+const parallelData = {
+'TP': {
+title: "张量并行 (Tensor Parallelism)",
+desc: "把某一层里的巨型矩阵横竖切开。机器必须合力画一张图。通信极高频（每算一步就要交换数据），所以必须挤在同一个服务器（超节点）内使用 NVLink 互联。",
+html: `
+<div class="flex gap-1 mb-2 text-sm text-gray-400">完整巨大矩阵</div>
+<div class="flex gap-1 w-full max-w-sm h-32 mb-4">
+<div class="flex-1 bg-purple-600 border border-purple-400 flex items-center justify-center text-xs text-white">GPU 0 算左半边</div>
+<div class="flex-1 bg-purple-800 border border-purple-600 flex items-center justify-center text-xs text-white">GPU 1 算右半边</div>
+</div>
+<div class="text-xs text-red-400 animate-pulse mt-2">⚡ 算完立刻执行 All-Reduce 同步 (NVLink)</div>
+`
+},
+'PP': {
+title: "流水线并行 (Pipeline Parallelism)",
+desc: "模型太深，按层切断。GPU 0 负责 1-10层，GPU 1负责 11-20层。像接力赛一样。通信低频（只需传边界数据），可以跨机柜通过网线相连。",
+html: `
+<div class="flex flex-col gap-2 w-full max-w-xs">
+<div class="bg-blue-800 p-2 border border-blue-500 rounded text-center text-sm text-white relative">
+GPU 0 (Layer 1-10)
+<div class="absolute -bottom-4 left-1/2 w-0.5 h-3 bg-blue-500 animate-bounce"></div>
+</div>
+<div class="bg-blue-900 p-2 border border-blue-700 rounded text-center text-sm text-white opacity-80 mt-2">GPU 1 (Layer 11-20)</div>
+</div>
+<div class="text-xs text-blue-300 mt-6">⏳ 数据流像水流一样单向接力，易产生流水线气泡 (Bubble)</div>
+`
+},
+'DP': {
+title: "数据并行 (Data Parallelism)",
+desc: "每个人手里的模型一模一样，但处理不同的输入数据订单。只在最后时刻同步梯度（修改意见）。",
+html: `
+<div class="flex gap-6">
+<div class="flex flex-col items-center">
+<div class="w-8 h-8 rounded-full bg-green-500 mb-2 flex items-center justify-center text-xs text-black">图1</div>
+<div class="w-24 h-32 border-2 border-gray-500 bg-gray-800 rounded flex items-center justify-center text-xs text-gray-300 text-center">完整模型副本<br>(GPU 0)</div>
+</div>
+<div class="flex flex-col items-center">
+<div class="w-8 h-8 rounded-full bg-yellow-500 mb-2 flex items-center justify-center text-xs text-black">图2</div>
+<div class="w-24 h-32 border-2 border-gray-500 bg-gray-800 rounded flex items-center justify-center text-xs text-gray-300 text-center">完整模型副本<br>(GPU 1)</div>
+</div>
+</div>
+`
+},
+'SP': {
+title: "序列并行 / 上下文并行 (SP/CP)",
+desc: "为了对付极其长的一本书（长文本）。不再切模型，而是把超长的上下文序列切断，GPU 0 读前半本，GPU 1读后半本，利用 Ring Attention 轮流比对。",
+html: `
+<div class="flex flex-col items-center w-full max-w-lg">
+<div class="text-xs text-gray-400 mb-1">128k 超长输入序列</div>
+<div class="flex w-full h-8 mb-6 border border-gray-600 rounded overflow-hidden">
+<div class="flex-1 bg-teal-700 flex items-center justify-center text-xs text-white">GPU 0 (Tokens 0-64k)</div>
+<div class="flex-1 bg-teal-900 flex items-center justify-center text-xs text-white border-l border-gray-600">GPU 1 (Tokens 64k-128k)</div>
+</div>
+<div class="text-xs text-teal-300 flex items-center gap-2">
+<span>🔄 Ring Attention 环形通信传递 Token</span>
+</div>
+</div>
+`
+}
+};
+
+function setParallelMode(mode) {
+// Update buttons
+const controls = document.getElementById('parallel-controls').children;
+Array.from(controls).forEach(btn => {
+if (btn.innerText.includes(mode)) {
+btn.classList.replace('border-transparent', 'border-blue-500');
+btn.classList.replace('bg-gray-800', 'bg-gray-700');
+} else {
+btn.classList.replace('border-blue-500', 'border-transparent');
+btn.classList.replace('bg-gray-700', 'bg-gray-800');
+}
+});
+// Update desc
+document.getElementById('parallel-desc').innerHTML = `<strong class="text-white">${parallelData[mode].title}</strong><br>${parallelData[mode].desc}`;
+// Update vis
+document.getElementById('parallel-vis').innerHTML = parallelData[mode].html;
+}
+
+// Initialize Component 1
+setParallelMode('TP');
+
+// ==========================================
+// Component 2: Timeline Trace Logic
+// ==========================================
+function setTimelineMode(mode) {
+const g0comp = document.getElementById('g0-comp');
+const g0comm = document.getElementById('g0-comm');
+const g1comp = document.getElementById('g1-comp');
+const g1comm = document.getElementById('g1-comm');
+const desc = document.getElementById('timeline-desc');
+const btnTrad = document.getElementById('btn-trad');
+const btnMoge = document.getElementById('btn-moge');
+
+if (mode === 'TRADITIONAL') {
+btnTrad.className = "px-6 py-2 bg-red-900 text-white rounded-full transition-colors border border-red-500 shadow-[0_0_15px_rgba(239,68,68,0.4)]";
+btnMoge.className = "px-6 py-2 bg-gray-800 text-gray-400 rounded-full transition-colors border border-gray-600";
+
+// GPU 0 is fast, GPU 1 is slow (Hotspot)
+g0comp.style.width = '30%';
+g1comp.style.width = '70%';
+
+// Comm waits for all to finish, so comm extends beyond GPU 0 compute
+g0comm.style.width = '40%';
+g0comm.style.left = '10%';
+g0comm.className = "absolute h-full rounded transition-all flex items-center px-1 text-[10px] text-white whitespace-nowrap overflow-hidden warning-stripe"; // Warning red stripes
+g0comm.innerHTML = "AllToAll (暴露的气泡 Bubble!)";
+
+g1comm.style.width = '20%';
+g1comm.style.left = '10%';
+g1comm.className = "absolute h-full rounded transition-all flex items-center px-1 text-[10px] text-white whitespace-nowrap overflow-hidden warning-stripe";
+
+desc.innerHTML = "<strong class='text-red-400'>[诊断告警]</strong> 传统 MoE 贪心路由导致严重负载不均。GPU 1 专家被挤爆计算极慢，导致 GPU 0 算完后必须干等着。GPU 0 的通信轨道出现了未被掩盖的 <strong>红色气泡 (Pipeline Bubble)</strong>，极大拖慢全局吞吐！";
+} else {
+btnTrad.className = "px-6 py-2 bg-gray-800 text-gray-400 rounded-full transition-colors border border-gray-600";
+btnMoge.className = "px-6 py-2 bg-blue-600 text-white rounded-full transition-colors shadow-[0_0_15px_rgba(37,99,235,0.5)]";
+
+// Perfectly balanced
+g0comp.style.width = '60%';
+g1comp.style.width = '60%';
+
+// Comm is perfectly overlapped
+g0comm.style.width = '45%';
+g0comm.style.left = '5%';
+g0comm.className = "absolute h-full rounded transition-all flex items-center px-1 text-[10px] text-white whitespace-nowrap overflow-hidden safe-green";
+g0comm.innerHTML = "AllToAll (完美掩盖 Overlap)";
+
+g1comm.style.width = '45%';
+g1comm.style.left = '5%';
+g1comm.className = "absolute h-full rounded transition-all flex items-center px-1 text-[10px] text-white whitespace-nowrap overflow-hidden safe-green";
+g1comm.innerHTML = "AllToAll (完美掩盖 Overlap)";
+
+desc.innerHTML = "<strong class='text-green-400'>[诊断正常]</strong> 盘古 MoGE 分组专家机制强制了物理均衡。两张卡的计算任务完全等量。通信块 (绿色) 完美落入计算块 (蓝色) 的投影阴影范围内，实现了 <strong class='text-white'>100% 的通信掩盖 (Communication Overlap)</strong>。";
+}
+}
+
+// Initialize Component 2
+setTimelineMode('TRADITIONAL');
+
+// ==========================================
+// Component 3: Digital Twin (Cube vs Racks)
+// ==========================================
+const GRID_SIZE = 3; // 3x3x3 = 27 nodes
+
+function initDigitalTwin() {
+const cubeContainer = document.getElementById('logical-cube');
+const racksContainer = document.getElementById('physical-racks');
+
+cubeContainer.innerHTML = '';
+racksContainer.innerHTML = '';
+
+// Build Racks (3 Racks, 9 Servers each)
+for(let r=0; r<3; r++) {
+let rackHtml = `<div class="w-16 bg-[#161b22] border border-gray-700 rounded p-1 flex flex-col justify-end relative shadow-[0_4px_20px_rgba(0,0,0,0.5)]">
+<div class="text-[9px] text-gray-500 text-center mb-1">Rack ${r+1}</div>`;
+for(let s=8; s>=0; s--) {
+// ID mapping: Z determines Rack. X,Y determine Server in rack.
+// Let's say Z (DP) = r. Y (PP) = floor(s/3). X (TP) = s%3.
+let x = s % 3;
+let y = Math.floor(s / 3);
+let z = r;
+rackHtml += `<div class="rack-server" id="server-${x}-${y}-${z}" title="DP:${z}, PP:${y}, TP:${x}"></div>`;
+}
+rackHtml += `</div>`;
+racksContainer.innerHTML += rackHtml;
+}
+
+// Build Cube (3 Layers of Z)
+for(let z=2; z>=0; z--) { // Top layer first for correct CSS stacking
+let layerHtml = `<div class="grid-layer" style="z-index: ${z}">`;
+for(let y=0; y<3; y++) {
+for(let x=0; x<3; x++) {
+layerHtml += `<div class="cube-block" id="cube-${x}-${y}-${z}" title="DP:${z}, PP:${y}, TP:${x}"></div>`;
+}
+}
+layerHtml += `</div>`;
+cubeContainer.innerHTML += layerHtml;
+}
+}
+
+function highlightTwin(mode) {
+// Clear all
+document.querySelectorAll('.cube-block, .rack-server').forEach(el => el.classList.remove('highlight'));
+let desc = "";
+
+if (mode === 'TP') {
+// Highlight a specific X slice (e.g., y=0, z=0, all x) -> A TP group
+for(let x=0; x<3; x++) {
+document.getElementById(`cube-${x}-0-0`).classList.add('highlight');
+document.getElementById(`server-${x}-0-0`).classList.add('highlight');
+}
+desc = "<strong class='text-purple-400'>张量并行透镜：</strong> 你看到魔方上连续的3个块（组成算子），在右侧物理机房中，它们<strong class='text-white'>被紧紧塞在同一个机架的最底端。</strong>这印证了 TP 极速 NVLink 的机内通信需求。";
+} else if (mode === 'PP') {
+// Highlight a specific Y slice (e.g., x=0, z=0, all y) -> A PP group
+for(let y=0; y<3; y++) {
+document.getElementById(`cube-0-${y}-0`).classList.add('highlight');
+document.getElementById(`server-0-${y}-0`).classList.add('highlight');
+}
+desc = "<strong class='text-purple-400'>流水线并行透镜：</strong> 魔方纵向的3个块（代表不同的网络层阶段），在右侧<strong class='text-white'>虽然在同一个机架，但散布在不同高度的服务器中。</strong>它们通过机柜内的交换机进行接力。";
+} else if (mode === 'DP') {
+// Highlight a specific Z slice (e.g., z=1, all x,y) -> A DP group
+for(let x=0; x<3; x++) {
+for(let y=0; y<3; y++) {
+document.getElementById(`cube-${x}-${y}-1`).classList.add('highlight');
+document.getElementById(`server-${x}-${y}-1`).classList.add('highlight');
+}
+}
+desc = "<strong class='text-purple-400'>数据并行透镜：</strong> 你切下了魔方中间完整的一层切面（包含完整的模型骨架）。而在右侧物理视图中，你会惊讶地发现，<strong class='text-white'>整个 Rack 2 机柜全部亮起！</strong>不同的 Rack 正在吃不同的数据。";
+} else {
+desc = "点击上方按钮，观察高频的数学算子是如何散落在真实的物理机柜中的。";
+}
+
+document.getElementById('twin-desc').innerHTML = desc;
+}
+
+// Initialize Component 3
+initDigitalTwin();
+
+</script>
+<div aria-hidden="true" style="position:fixed;right:12px;bottom:10px;z-index:2147483647;font:11px/1.4 ui-monospace,'SF Mono','Consolas',monospace;color:#8b95ab;opacity:.65;pointer-events:none;user-select:none;">王欣迪</div>
+</body>
+</html>
