@@ -6,6 +6,12 @@
 <title>Rank 的设计表达 · 分步入门</title>
 <link rel="stylesheet" href="./vendor/model-graphviz-pattern.css">
 <link rel="stylesheet" href="./vendor/model-architecture-3d-deck-pattern.css">
+<!-- 展平视图的**规则层**（与 training-run-twin-standalone/config-relation-plane.html 共用一份）：
+     EP 三档口径的换算、EDP / world / 行列数、约束谓词、专家四色、热力色阶、量尺的 1/2/5 梯子、
+     字段量程。那页的画布是 DOM、本页是 canvas（第 10 步要做「3D 压成平面」的逐格插值），
+     两套渲染有意分开、不合并；能合的是这些与画法无关、两页语义必须一致的规则 ——
+     改一处两页同时生效。见 ../shared/plane-rules.js 顶部的说明与准入条件。 -->
+<script src="../shared/plane-rules.js"></script>
 <!-- 面向小白的 rank 分步讲解页，十步，每一步的图都长在上一步的图上：
      一张卡 → 一台机器 8 张 → 128 张等距矩阵 → PP 分四组（拉开、黄闪）→ DP 标 16 组（蓝闪）
      → TP 变形成上下两层（青闪）→ EP 标组（紫闪）→ 空框装进显存五档 → 选中 R23，
@@ -14,7 +20,7 @@
      顶 PP|Layer 与左 EDP|DP 两条量尺、滚轮缩放拖拽平移）。
      十步全是本页自己用 canvas 画的卡阵，样式照 rank-topology-3d 那份 pattern 的 3D 卡壳
      （灰边、灰白面、玻璃），编号照 demo 的 rankOf：rank = (pp·16 + dp)·2 + tp（tp 变得
-     最快），右上角「打开原 pattern」过去时 R 号一一对得上。
+     最快），右上角「视图」入口可切机位、叠加并行维度并定位 Rank / Layer。
      部署：deploy.yml「① 目录入口」那一行按页名列举，本页已加进去。 -->
 <style>
   :root{
@@ -54,7 +60,7 @@
   .page{height:100%;display:grid;grid-template-rows:auto 1fr auto;grid-template-columns:340px 1fr;
         grid-template-areas:"top top" "side stage" "foot foot"}
 
-  .top{grid-area:top;display:flex;align-items:center;justify-content:space-between;padding:22px 36px 0 36px}
+  .top{grid-area:top;position:relative;z-index:30;display:flex;align-items:center;justify-content:space-between;padding:22px 36px 0 36px}
   /* 左上角是两枚页签，不是一枚 brand：当前这套分步入门是第一页，「实战场景」先留空位 */
   .top .tl{display:flex;align-items:flex-end;gap:16px}
   /* 页签左边那枚 IDE 式的侧栏开关：图标是一只框、里面一道竖线分出左栏；开着时左栏填色，收起时留空。
@@ -142,7 +148,7 @@
   }
 
   /* 展平图本体 */
-  .cs-plane{--cw:15px;--ch:12px;--cg:3px;--pad:3px}
+  .cs-plane{--cw:12px;--ch:12px;--cg:3px;--pad:3px}
   .cs-ptop{display:flex}
   .cs-bwrap{display:flex;gap:12px;position:relative}
   .cs-bh{position:relative;height:34px;flex:none}
@@ -302,8 +308,43 @@
   /* 三个配置大组沿用原 16px 基础间距，再额外拉开 8px；不影响提示横幅与首组的距离。 */
   .cs4-form > .cs4-reg + .cs4-reg{margin-top:8px}
   .cs4-form[hidden],.cs4-netwrap[hidden]{display:none}
-  .cs4-netwrap{position:relative;width:100%;height:620px;min-height:620px;overflow:hidden;border-radius:8px}
-  .cs4-netwrap.pto-model-deck{background:var(--bg)}
+  .cs4-netwrap{position:relative;width:100%;height:620px;min-height:620px;overflow:hidden;border-radius:8px;display:flex;flex-direction:column;background:var(--bg)}
+  /* 整网查询的二级导航：第一行用胶囊段控切分析语义，和栏顶下划线页签拉开层级；
+     第二行只负责在「全部」与相邻 Layer 间翻页。 */
+  .cs4-nethead{position:relative;z-index:8;flex:none;display:flex;flex-direction:column;gap:8px;padding:2px 2px 9px;background:var(--bg);border-bottom:1px solid var(--line)}
+  .cs4-subtabs.cs-vtabs{width:100%;height:26px;margin:0;padding:2px;border-radius:14px}
+  .cs4-subtabs.cs-vtabs button{padding:0 8px;line-height:22px;border-radius:12px}
+  .cs4-subtabs.cs-vtabs .knob{border-radius:12px}
+  .cs4-layerpager{display:grid;grid-template-columns:1fr auto 26px 1fr 1fr 26px;align-items:center;gap:3px}
+  .cs4-layerpager button{height:25px;min-width:0;border:0;border-radius:6px;background:none;color:var(--fg3);font:600 10.5px/1 var(--sans);cursor:pointer;padding:0 4px;white-space:nowrap}
+  .cs4-layerpager button:hover{background:rgba(var(--fgrgb),.06);color:var(--fg2)}
+  .cs4-layerpager button[aria-pressed="true"]{background:rgba(var(--fgrgb),.09);color:var(--fg)}
+  .cs4-layerpager button:disabled{opacity:.28;cursor:not-allowed;background:none}
+  .cs4-layerpager .sep{color:var(--fg3);font-size:10px;opacity:.55}
+  .cs4-netdeck{position:relative;flex:1;min-height:0;overflow:hidden}
+  .cs4-netdeck.pto-model-deck{background:var(--bg)}
+  /* 整网查询选定一层 / 一个端点后，只留该列涉及的那部分（口径同 config-relation-plane「典型 Layer」的
+     Emb / Dense / MoE / Norm / Head 五列）：层 → 只有这张层卡（Attention + 本层那种 FFN，Dense 或 MoE
+     由卡自己决定）；Emb → 只有输入端点卡；Norm → 输出端点卡里只留 Final RMSNorm；Head → 输出端点卡去掉
+     Final RMSNorm。「全部」是整条 Emb → 层 → Head 的正视（性能分析不做 3D 翻转）。取景由 deck 的 setFocusBox 配合。 */
+  #c4net[data-net-scope="layer"] .pto-model-deck__static{display:none}
+  #c4net[data-net-scope="emb"] .pto-model-deck__layer.is-front-layer,#c4net[data-net-scope="emb"] .pto-model-deck__static--output,
+  #c4net[data-net-scope="norm"] .pto-model-deck__layer.is-front-layer,#c4net[data-net-scope="norm"] .pto-model-deck__static--input,
+  #c4net[data-net-scope="head"] .pto-model-deck__layer.is-front-layer,#c4net[data-net-scope="head"] .pto-model-deck__static--input{display:none}
+  #c4net[data-net-scope="norm"] .pto-model-deck__static--output :is(.pto-model-deck__node:not([data-node="final_norm"]),.pto-model-deck__cluster,.pto-model-deck__edges){display:none}
+  #c4net[data-net-scope="head"] .pto-model-deck__static--output :is([data-node="final_norm"],.pto-model-deck__edges path[data-source="final_norm"],.pto-model-deck__edges path[data-target="final_norm"]){display:none}
+  /* 端点卡与层卡之间那段主干线：另一头已经不在画面里，不画半截 */
+  #c4net[data-net-scope="emb"] .pto-model-deck__edges path[data-kind="model-spine-front"]{display:none}
+  /* 图例在耗时整网图上方居中：标题降为辅助标签，与渐变条并排；量程只对齐渐变条。 */
+  .cs4-perf-legend{position:relative;z-index:1;flex:none;align-self:center;display:grid;grid-template-columns:auto 176px;grid-template-areas:"title bar" ". range";align-items:center;column-gap:8px;row-gap:3px;width:max-content;margin:8px auto 2px;color:var(--fg3);font:10px/1.25 var(--mono);pointer-events:none}
+  .cs4-perf-legend[hidden],.cs4-train-strip[hidden]{display:none}
+  .cs4-perf-legend .label{grid-area:title;color:var(--fg3);font:400 10px/1.2 var(--sans);white-space:nowrap}
+  .cs4-perf-legend .bar{grid-area:bar;height:8px;border-radius:999px;background:linear-gradient(90deg,#30123b 0%,#4145ab 11.111%,#4675ed 22.222%,#39a2fc 33.333%,#1bcfd4 44.444%,#45f884 55.556%,#a4fc3c 66.667%,#e8d721 77.778%,#fa8c19 88.889%,#da3907 100%)}
+  .cs4-perf-legend .range{grid-area:range;display:flex;justify-content:space-between}
+  .cs4-train-strip{position:absolute;z-index:9;left:8px;right:8px;bottom:8px;display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:6px;padding:8px;border-radius:8px;background:color-mix(in srgb,var(--bg) 94%,transparent);border:1px solid var(--line);pointer-events:none}
+  .cs4-train-strip div{min-width:0;padding:5px 6px;border-radius:6px;background:rgba(var(--fgrgb),.05)}
+  .cs4-train-strip span{display:block;color:var(--fg3);font-size:10px;white-space:nowrap}
+  .cs4-train-strip b{display:block;margin-top:1px;color:var(--fg);font:600 11px/1.3 var(--mono);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
   /* 一行两格、撑满行宽：每格是一枚 stepper（照 .cro-stepper：标签在上、胶囊控件在下——减号 / 读数 / 加号），
      派生读数同一副壳、没有加减键；卡型号是下拉；EP 口径是两档二选一（照那页的 .cro-stepper--choice） */
   .cs4-row{display:grid;grid-template-columns:1fr 1fr;gap:8px 10px;align-items:start}
@@ -363,6 +404,8 @@
   /* 右列就是案例三那栏（.cs3-side，M3.makeSide 造）：没选中时读数区只放一句话、大卡藏起 */
   .cs3-side canvas.big[hidden]{display:none}
   .cs-side-empty{margin:auto 0;text-align:center;color:var(--fg3);font-size:12px;line-height:1.7;padding:0 6px;font-family:var(--sans)}
+  /* 通用读数面（sideP.panel）：没有大卡，读数从顶上排起、占满整栏 */
+  .cs3-side.is-panel .cs3-rd{margin-top:0;flex:1 1 auto;min-height:0;overflow:auto}
   @media (max-width:1180px){ .cs4-conf{width:250px} .cs-main.cfg .cs3-side{width:220px} }
   @media (max-width:860px){ .cs-work.cfg{flex-direction:column} .cs4-conf{width:100%;overflow:visible} .cs4-stage{min-height:360px} }
 
@@ -453,11 +496,102 @@
   /* 舞台：一块 canvas，十步全在上面变形 */
   .stage{grid-area:stage;position:relative;padding:12px 36px 12px 12px;min-width:0;min-height:0}
   .stage .box{position:relative;width:100%;height:100%;overflow:hidden}
-  .stage canvas{position:absolute;inset:0;width:100%;height:100%;display:block}
-  /* 第 10 步的画布缩放控件（照 config-relation-plane 的 .cro-stage-zoom）：右下角一小条 */
+  .stage canvas{position:absolute;inset:0;width:100%;height:100%;display:block;touch-action:none}
+  /* 画布工具照组合工作台里的 parallel-topology-v2：stagebar 放在页头原 pattern 入口的位置，
+     左下 zoomhud 管缩放 / 居中 / 复位。这里保留同一组 pt-* 类名，业务项换成 rank 入门画布自己的能力。 */
+  .pt-stagebar{position:relative;z-index:31;display:flex;gap:6px;align-items:center;justify-content:flex-end}
+  .page[data-tab="scene"] .pt-stagebar{display:none}
+  .pt-cfg{position:relative;display:inline-flex}
+  .pt-cfgbtn{height:28px;padding:0 10px;border-radius:6px;display:inline-flex;gap:6px;align-items:center;justify-content:center;
+             border:1px solid var(--line);background:var(--bg);color:var(--fg2);cursor:pointer;font:600 12px/1 var(--sans)}
+  .pt-cfgbtn:hover{background:var(--bg2);border-color:rgba(var(--fgrgb),.28);color:var(--fg)}
+  .pt-cfgbtn.is-on{background:var(--fg);border-color:var(--fg);color:var(--bg)}
+  .pt-cfgpanel{display:none}
+  .pt-cfgpanel.is-open{display:block;position:absolute;top:36px;right:0;z-index:22;width:min(430px,calc(100vw - 48px));
+                      max-height:calc(100vh - 80px);overflow:auto;scrollbar-gutter:stable;background:var(--bg);
+                      border:1px solid var(--line);border-radius:14px;padding:14px 16px;box-shadow:0 12px 34px rgba(var(--fgrgb),.16)}
+  .pt-cfgpanel .cg{padding:12px 0;border-top:1px solid var(--line);display:flex;flex-wrap:wrap;gap:8px}
+  .pt-cfgpanel .cg:first-child{border-top:0;padding-top:0}
+  .pt-cfgpanel .cg:last-child{padding-bottom:0}
+  .pt-cfgpanel .cg>h6,.pt-cfgpanel .cg>.cgrow,.pt-cfgpanel .cg>.pt-find,.pt-cfgpanel .cg>.cnote,.pt-cfgpanel .cg>.acts{flex:1 1 100%}
+  .pt-cfgpanel h6{margin:0;font:600 12px/1.2 var(--sans);letter-spacing:.04em;color:var(--fg3)}
+  .pt-cfgpanel .cgrow{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+  .pt-seg{display:inline-flex;gap:2px;padding:3px;border:1px solid var(--line);border-radius:999px;background:var(--bg2)}
+  .pt-seg button,.pb{height:28px;padding:0 11px;border:0;border-radius:999px;background:transparent;color:var(--fg2);
+                     font:600 12px/1 var(--sans);cursor:pointer}
+  .pt-seg button:hover,.pb:hover{color:var(--fg);background:rgba(var(--fgrgb),.06)}
+  .pt-seg button.is-on,.pb.is-on{background:var(--fg);color:var(--bg)}
+  .pt-seg button:disabled{opacity:.36;cursor:not-allowed}
+  .pb{border:1px solid var(--line);background:var(--bg)}
+  .pb.mono{font-family:var(--mono)}
+  .dim-prefix .pb.is-on{background:var(--c,var(--fg));border-color:var(--c,var(--fg));color:#fff}
+  .pt-find{display:flex;gap:7px;align-items:center}
+  .pt-find input{width:88px;height:30px;padding:0 9px;border:1px solid var(--line);border-radius:7px;background:var(--bg2);
+                   color:var(--fg);font:500 12px var(--mono)}
+  .pt-find input:focus-visible{outline:none;box-shadow:0 0 0 3px rgba(67,105,239,.22);border-color:var(--dp)}
+  .pt-cfgpanel .cnote{font-size:11.5px;line-height:1.5;color:var(--fg3)}
+  .pt-cfgpanel button.mvi{display:flex;flex:1 1 calc(50% - 4px);min-height:30px;align-items:center;gap:8px;text-align:left;
+                          border:0;background:none;padding:0 8px;border-radius:7px;color:var(--fg);font:500 12px var(--sans);cursor:pointer}
+  .pt-cfgpanel button.mvi:hover{background:var(--bg2)}
+  .pt-cfgpanel button.mvi s{flex:none;width:15px;height:15px;border-radius:4px;border:1px solid var(--line);text-decoration:none;
+                            color:transparent;font-size:11px;line-height:13px;text-align:center}
+  .pt-cfgpanel button.mvi.is-on s{background:var(--fg);border-color:var(--fg);color:var(--bg)}
+  .pt-cfgpanel button.mvi em{margin-left:auto;font:400 10.5px var(--mono);color:var(--fg3)}
+  .pt-cfgpanel button.mvi:disabled{opacity:.38;cursor:not-allowed}
+  .pt-cfgpanel .acts{display:flex;gap:8px}
+  .pt-cfgpanel .acts button{flex:1;height:28px;border:1px solid var(--line);border-radius:7px;background:var(--bg);color:var(--fg2);font:500 12px var(--sans);cursor:pointer}
+  .pt-cfgpanel .acts button:hover{background:var(--bg2);color:var(--fg)}
+  .pt-zoomhud{position:absolute;left:14px;bottom:12px;z-index:7;display:flex;align-items:center;gap:4px;padding:4px;
+              border-radius:999px;border:1px solid var(--line);background:color-mix(in srgb,var(--bg) 88%,transparent);
+              backdrop-filter:blur(6px);box-shadow:0 1px 4px rgba(var(--fgrgb),.06)}
+  .pt-zoomhud[hidden]{display:none}
+  .pt-zoomhud button{min-width:26px;height:26px;padding:0 8px;border:0;border-radius:999px;background:transparent;
+                     color:var(--fg2);font:700 13px/1 var(--sans);cursor:pointer}
+  .pt-zoomhud button:hover{background:var(--bg2);color:var(--fg)}
+  .pt-zoomhud .zpct{min-width:52px;text-align:center;color:var(--fg);font:700 12px/1 var(--mono)}
+  .pt-zoomhud .zsep{width:1px;height:16px;background:var(--line);margin:0 2px}
+  .pt-zoomhud .zicon{width:26px;min-width:26px;padding:0;display:inline-flex;align-items:center;justify-content:center}
+  .pt-zoomhud .zicon svg{width:16px;height:16px;display:block;pointer-events:none}
+  /* 实战案例四仍使用自己的紧凑 pzoom；主画布已经改用上面的 pt-zoomhud。 */
   .pzoom{position:absolute;right:10px;bottom:10px;display:flex;align-items:center;gap:2px;padding:3px;
          background:var(--bg);border:1px solid var(--line);border-radius:6px;box-shadow:0 1px 4px rgba(var(--fgrgb),.06)}
   .pzoom[hidden]{display:none}
+  /* ── 右栏「Layer x · 各域计算耗时差异」（sideP.panel 的内容）──────────────────
+     原先是浮在画布左上的一块卡片，遮住矩阵；搬到右栏后既不挡图，也放得下四个维度各自摊开。
+     每个 --dom-c 由行内 style 下发，用的是第 9 步那套域色（TP 青 / EP 紫 / DP 蓝 / EDP 粉）。 */
+  .c4dm{font-family:var(--sans);color:var(--fg2)}
+  .c4dm-top{margin:0;font:400 10.5px/1.4 var(--sans);color:var(--fg3)}
+  .c4dm-top b{font-family:var(--mono);color:var(--fg2);font-weight:600}
+  .c4dm-scale{display:flex;align-items:center;gap:5px;margin:6px 0 3px}
+  .c4dm-scale i{flex:1;height:6px;border-radius:999px;
+    background:linear-gradient(90deg,#30123b 0%,#4145ab 11.111%,#4675ed 22.222%,#39a2fc 33.333%,#1bcfd4 44.444%,#45f884 55.556%,#a4fc3c 66.667%,#e8d721 77.778%,#fa8c19 88.889%,#da3907 100%)}
+  .c4dm-scale u{font:400 9.5px/1 var(--mono);color:var(--fg3);text-decoration:none}
+  .c4dm-cap{margin:0 0 9px;font:400 9.5px/1.35 var(--sans);color:var(--fg3)}
+  .c4dm-lead{margin:0 0 9px;padding:6px 8px;border-left:2px solid var(--dom-c);border-radius:0 4px 4px 0;
+             background:rgba(var(--fgrgb),.05);font:400 10.5px/1.45 var(--sans);color:var(--fg2)}
+  .c4dm-lead b{font-weight:600;color:var(--fg)}
+  .c4dm-blk{margin:0 0 8px}
+  .c4dm-blk h4{display:flex;align-items:baseline;gap:5px;margin:0 0 3px;font:600 11px/1.3 var(--sans);color:var(--dom-c)}
+  .c4dm-blk h4 em{width:6px;height:6px;border-radius:2px;background:currentColor;flex:none}
+  .c4dm-blk h4 span{margin-left:auto;font:400 9.5px/1.3 var(--mono);color:var(--fg3)}
+  .c4dm-blk.is-off h4{opacity:.5}
+  /* 一条 = 一个可点的组：点它，矩阵就标出这一组的成员卡。颜色只是暗示，必须真的点得动 */
+  .c4dm-line{display:grid;grid-template-columns:auto 1fr auto;align-items:baseline;gap:4px 6px;
+             padding:3px 5px;border-radius:4px;cursor:pointer;font:400 10px/1.35 var(--mono)}
+  .c4dm-line .k{font-family:var(--sans);font-size:10px;color:var(--fg3)}
+  .c4dm-line .g{color:var(--fg2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .c4dm-line .v{font-weight:600;color:var(--fg2);font-variant-numeric:tabular-nums}
+  .c4dm-line .nt{grid-column:2/4;font:400 9.5px/1.35 var(--sans);color:var(--fg3)}
+  .c4dm-line:hover{background:rgba(var(--fgrgb),.06)}
+  .c4dm-line:focus-visible{outline:2px solid var(--dom-c);outline-offset:-2px}
+  .c4dm-line.is-bad .v{color:#DA3907}
+  .c4dm-line.is-on{background:color-mix(in srgb,var(--dom-c) 16%,transparent);box-shadow:inset 2px 0 0 var(--dom-c)}
+  .c4dm-note{margin:9px 0 0;padding-top:7px;border-top:1px solid rgba(var(--fgrgb),.09);font:400 10.5px/1.5 var(--sans);color:var(--fg3)}
+  .c4dm-note b{color:var(--fg2);font-weight:600}
+  .c4dm-hint{margin:6px 0 0;font:400 9.5px/1.4 var(--sans);color:var(--fg3)}
+  .pzoom button{font:inherit;font-size:12px;line-height:1;color:var(--fg2);background:none;border:0;border-radius:4px;padding:5px 8px;cursor:pointer}
+  .pzoom button:hover{background:rgba(var(--fgrgb),.06);color:var(--fg)}
+  .pzoom .rd{font-family:var(--mono);font-size:11px;color:var(--fg3);min-width:40px;text-align:center}
   /* 第 9 步：ETP 开关（传统滑块），坐在右上角「前向 / 反向 / 更新」图例的左边 */
   .ctog{position:absolute;top:22px;right:224px;display:flex;align-items:center;gap:8px;padding:0;border:0;background:none;
         font:inherit;font-size:12px;color:var(--fg2);cursor:pointer;user-select:none}
@@ -468,14 +602,6 @@
   .ctog[aria-checked="true"]{color:var(--fg)}
   .ctog[aria-checked="true"] .sw{background:var(--tp)}
   .ctog[aria-checked="true"] .sw::after{left:16px}
-  .pzoom button{font:inherit;font-size:12px;line-height:1;color:var(--fg2);background:none;border:0;border-radius:4px;padding:5px 8px;cursor:pointer}
-  .pzoom button:hover{background:rgba(var(--fgrgb),.06);color:var(--fg)}
-  .pzoom .rd{font-family:var(--mono);font-size:11px;color:var(--fg3);min-width:40px;text-align:center}
-  /* 两枚开关（照原画布的 tpBtn / paintBtn）：亮着 = 开 */
-  .pzoom .tg{border:1px solid var(--line);color:var(--fg3)}
-  .pzoom .tg.on{color:var(--fg);border-color:rgba(var(--fgrgb),.3);background:rgba(var(--fgrgb),.05)}
-  .pzoom .sep{width:1px;height:16px;background:var(--line);margin:0 4px}
-
   .foot{grid-area:foot;padding:8px 36px 26px 36px;display:flex;align-items:flex-end;gap:28px}
   .nav{display:flex;gap:8px;flex:none}
   .nav button{font:inherit;font-size:12px;color:var(--fg);background:var(--bg);border:1px solid var(--line);border-radius:6px;padding:6px 12px;cursor:pointer}
@@ -505,6 +631,7 @@
     .cs-cap{text-align:left}
     .side{padding:20px 16px 8px}
     .stage{height:62vh;padding:8px 16px}
+    .pt-cfgpanel.is-open{width:min(410px,calc(100vw - 32px));max-height:calc(100vh - 68px)}
     .foot{padding:8px 16px 20px;flex-direction:column;align-items:stretch;gap:12px}
     .steps{grid-auto-flow:row;grid-template-columns:repeat(3,1fr)}
   }
@@ -528,7 +655,40 @@
       </div>
     </div>
     <div class="r">
-      <a id="openPat" href="./demo.html?view=chain&card=1&vtab=3d&preset=default128&sel=23" target="_blank" rel="noopener">打开原 pattern ↗</a>
+      <div class="pt-stagebar" id="stagebar" aria-label="画布配置">
+        <span class="pt-cfg">
+          <button class="pt-cfgbtn" id="stageCfgBtn" type="button" aria-label="视图与配置" aria-expanded="false" title="视图与配置：机位 / 并行维度 / Rank 与 Layer 定位 / 通信连线 / 数据标注">
+            <svg viewBox="0 0 20 20" width="17" height="17" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M3 6h5M12 6h5M3 14h9M16 14h1"/><circle cx="10" cy="6" r="2"/><circle cx="14" cy="14" r="2"/></svg><span>视图</span>
+          </button>
+          <div class="pt-cfgpanel" id="stageCfgPanel">
+            <div class="cg"><h6>机位</h6><div class="cgrow"><span class="pt-seg">
+              <button type="button" data-pose="3d">3D</button><button type="button" data-pose="front">正视</button><button type="button" data-pose="side">侧视</button><button type="button" data-pose="top">顶视</button>
+            </span></div><div class="cnote">机位作用于 3D 卡阵；展平视图使用独立的平面相机。</div></div>
+            <div class="cg"><h6>并行维度</h6><div class="cgrow dim-prefix">
+              <button class="pb mono" style="--c:var(--pp)" type="button" data-dim-step="3">PP ×4</button><button class="pb mono" style="--c:var(--dp)" type="button" data-dim-step="4">DP ×16</button>
+              <button class="pb mono" style="--c:var(--tp)" type="button" data-dim-step="5">TP ×2</button><button class="pb mono" style="--c:var(--ep)" type="button" data-dim-step="6">EP ×8</button>
+            </div><div class="cnote">按 PP → DP → TP → EP 累积叠加；点某项会同时选中它及左侧维度。</div></div>
+            <div class="cg"><h6>Rank 定位</h6><div class="pt-find">
+              <input id="rankFind" type="number" min="0" max="127" step="1" value="23" aria-label="Rank 编号">
+              <button class="pb" id="rankFindBtn" type="button" aria-pressed="false">定位</button><button class="pb" id="rankClearBtn" type="button">清除</button>
+            </div></div>
+            <div class="cg"><h6>Layer 定位</h6><div class="pt-find">
+              <input id="layerFind" type="number" min="0" max="47" step="1" value="7" aria-label="Layer 编号">
+              <button class="pb" id="layerFindBtn" type="button" aria-pressed="false">定位</button><button class="pb" id="layerClearBtn" type="button">清除</button>
+            </div><div class="cnote">保持当前视图、缩放和画面位置不动，高亮持有目标 Layer 的 Rank；展平视图中高亮对应列。</div></div>
+            <div class="cg" id="commControls"><h6>通信连线</h6><div class="acts"><button type="button" data-comm-all="1">全选</button><button type="button" data-comm-all="0">全部隐藏</button></div>
+              <button class="mvi is-on" type="button" data-comm="tp"><s>✓</s>TP<em>机内</em></button><button class="mvi is-on" type="button" data-comm="ep"><s>✓</s>EP<em>All-to-All</em></button>
+              <button class="mvi is-on" type="button" data-comm="dp"><s>✓</s>DP<em>更新</em></button><button class="mvi is-on" type="button" data-comm="edp"><s>✓</s>EDP<em>专家梯度</em></button>
+              <button class="mvi is-on" type="button" data-comm="pp"><s>✓</s>PP<em>P2P</em></button>
+            </div>
+            <div class="cg"><h6>数据标注</h6>
+              <button class="mvi is-on" type="button" data-mark="rank"><s>✓</s>Rank 编号</button><button class="mvi is-on" type="button" data-mark="label"><s>✓</s>分组门牌</button>
+              <button class="mvi is-on" type="button" data-mark="memory"><s>✓</s>显存填充</button><button class="mvi is-on" type="button" data-mark="tp"><s>✓</s>展平 TP 分组</button>
+              <button class="mvi" type="button" data-mark="paint"><s>✓</s>专家权重着色</button>
+            </div>
+          </div>
+        </span>
+      </div>
       <button class="theme" id="themeBtn" type="button" title="切换深色 / 浅色" aria-label="切换深色 / 浅色">
         <svg class="moon" viewBox="0 0 24 24"><path d="M20 14.5A8.5 8.5 0 0 1 9.5 4a8.5 8.5 0 1 0 10.5 10.5z"/></svg>
         <svg class="sun" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M12 2.5v2.5M12 19v2.5M2.5 12H5M19 12h2.5M5.3 5.3l1.8 1.8M16.9 16.9l1.8 1.8M5.3 18.7l1.8-1.8M16.9 7.1l1.8-1.8"/></svg>
@@ -547,14 +707,12 @@
     <div class="box">
       <canvas id="cv"></canvas>
       <button class="ctog" id="etpTog" type="button" role="switch" aria-checked="false" hidden title="开：专家也按 TP 切成两半（ETP = TP = 2）；关：专家整份、只做 EP（ETP = 1，业界默认）。开关只改连线与门牌，不改卡阵"><span class="sw" aria-hidden="true"></span>按 TP 切分专家（ETP）</button>
-      <div class="pzoom" id="pzoom" hidden aria-label="画布工具">
-        <button class="tg on" id="pzTp" type="button" title="显示每个 PP Stage 内的 TP×2 rank 分组">TP 分组</button>
-        <button class="tg" id="pzPaint" type="button" title="同色 = 同一份专家权重（一个 MoE 层的一整套）；上下两块是它的两个 EDP 副本，EDP 1 同色加斜纹——权重一致，步末在 EDP 组里 all-reduce 对齐。关掉则只留结构与高亮。">按层给专家权重着色</button>
-        <span class="sep"></span>
-        <button id="pzOut" type="button" title="缩小">−</button>
-        <span class="rd" id="pzRead">100%</span>
-        <button id="pzIn" type="button" title="放大">+</button>
-        <button id="pzFit" type="button" title="适配屏幕">适配</button>
+      <div class="pt-zoomhud" id="zoomHud" aria-label="画布缩放">
+        <button type="button" data-zoom="out" title="缩小（滚轮/触控板同样可用）">−</button>
+        <button class="zpct" id="zoomPct" type="button" data-zoom="fit" title="适应画布，完整显示当前视图">Fit</button>
+        <button type="button" data-zoom="in" title="放大">＋</button><span class="zsep"></span>
+        <button class="zicon" type="button" data-zoom="center" aria-label="居中" title="平移归零，把场景拉回画面中央（缩放不变）"><svg viewBox="0 0 16 16" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="8" cy="8" r="3.1"/><path d="M8 1.5v2.3M8 12.2v2.3M1.5 8h2.3M12.2 8h2.3"/></svg></button>
+        <button class="zicon" type="button" data-zoom="reset" aria-label="复位" title="缩放、平移全部回到当前步骤的标准画面"><svg viewBox="0 0 16 16" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M1.52 3.29v3.53h3.53"/><path d="M3.2 10.24A5.3 5.3 0 1 0 5.76 3.2L1.52 6.82"/></svg></button>
       </div>
     </div>
   </div>
@@ -582,6 +740,9 @@
 <script src="./vendor/model-architecture-3d-deck-pattern.js"></script>
 <script>
 (function(){
+  /* 共享规则层（../shared/plane-rules.js，与 config-relation-plane 同一份）：
+     口径换算、约束谓词、专家四色、热力色阶、量尺梯子、字段量程全从它读 */
+  var PR = window.PTOPlaneRules;
   var VC = {tp:'#22D3EE', pp:'#FFAA3B', dp:'#4369EF', ep:'#9B3CF6', edp:'#E04FA8'};   /* edp：专家参数的副本组，只在第 9 步的连线里用 */
   /* 画布用的中性色全从 CSS token 读，切主题时重读一遍再重画 */
   var TH = {};
@@ -780,18 +941,42 @@
   /* ── 投影与相机 ──────────────────────────────────────────────────── */
   var cv = document.getElementById('cv'), ctx = cv.getContext('2d');
   var W = 0, H = 0, DPR = 1;
-  function U(x, y, z){ return [0.95*x + 0.5*z, 0.25*x - 0.42*z - y]; }
-  var cam = {s:40, ox:0, oy:0}, camF = null, camT = null;
+  var viewPose = '3d';
+  function U3D(x, y, z){ return [0.95*x + 0.5*z, 0.25*x - 0.42*z - y]; }
+  function U(x, y, z){
+    if(viewPose === 'front') return [x, -y];
+    if(viewPose === 'side') return [z, -y];
+    if(viewPose === 'top') return [x, z];
+    return U3D(x, y, z);
+  }
+  /* 每个机位都要按自己的视线方向排远近，否则正交机位下重叠卡片会穿插。 */
+  function cardPaintOrder(a, b){
+    if(viewPose === 'front') return (b.z - a.z) || (a.x - b.x) || (a.y - b.y);
+    if(viewPose === 'side') return (a.x - b.x) || (b.z - a.z) || (a.y - b.y);
+    if(viewPose === 'top') return (a.y - b.y) || (b.z - a.z) || (a.x - b.x);
+    return (b.z - a.z) || (a.x - b.x) || (a.y - b.y);
+  }
+  var cam = {s:40, ox:0, oy:0}, camF = null, camT = null, camHome = null;
   function P(x, y, z){ var u = U(x, y, z); return [cam.ox + cam.s*u[0], cam.oy + cam.s*u[1]]; }
   /* i 是这套排布对应的步号（0 起）。第 6 步（i=5）TP 把一行 32 只叠成两层 16 只，卡阵横向
-     缩了一半，按空间适配的话卡会跟着放大一截，之后 6–9 四步都撑满屏幕；所以从 i=5 起把比例
-     封顶在第 5 步（i=4，最宽那版）适配出来的值——卡的尺寸从第 5 步往后不再变大，只重新居中 */
-  var CAM_HOLD_FROM = 5, CAM_HOLD_LAY = 4;
+     缩了一半，图形该跟着放大一截；但 6–9 四步（i=5..8）之间卡的尺寸要保持一致，只重新居中，
+     不能每换一步就跳一次大小。所以这四步共用一个比例：取四套排布里各自适配值的最小者
+     （最挤的那版刚好撑满，其余几版自然留白），再乘 CAM_HOLD_K 留一点呼吸空间 */
+  var CAM_HOLD_FROM = 5, CAM_HOLD_TO = 8, CAM_HOLD_K = 0.95;
+  var camHoldS = 0;                              /* 缓存：只跟画布尺寸有关，resize 时清零重算 */
+  function camHoldScale(){
+    if(!camHoldS){
+      camHoldS = 1e9;
+      for(var j = CAM_HOLD_FROM; j <= CAM_HOLD_TO; j++) camHoldS = Math.min(camHoldS, fitCamRaw(layoutOf(j)).s);
+      camHoldS *= CAM_HOLD_K;
+    }
+    return camHoldS;
+  }
   function fitCam(lay, i){
     var c1 = fitCamRaw(lay);
-    if(i >= CAM_HOLD_FROM){
-      var cap = fitCamRaw(layoutOf(CAM_HOLD_LAY)).s;
-      if(c1.s > cap){ var b = camBounds(lay); c1 = {s:cap, ox:(W + b.padL - b.padR)/2 - cap*(b.u0+b.u1)/2, oy:H/2 - cap*(b.v0+b.v1)/2}; }
+    if(i >= CAM_HOLD_FROM && i <= CAM_HOLD_TO){
+      var s = camHoldScale(), b = camBounds(lay);
+      c1 = {s:s, ox:(W + b.padL - b.padR)/2 - s*(b.u0+b.u1)/2, oy:H/2 - s*(b.v0+b.v1)/2};
     }
     return c1;
   }
@@ -814,7 +999,8 @@
     var box = cv.parentNode; DPR = window.devicePixelRatio || 1;
     W = box.clientWidth; H = box.clientHeight;
     cv.width = Math.round(W*DPR); cv.height = Math.round(H*DPR);
-    if(lay){ cam = fitCam(lay, step); camF = camT = null; }
+    camHoldS = 0;
+    if(lay){ camHome = fitCam(lay, step); cam = {s:camHome.s, ox:camHome.ox, oy:camHome.oy}; camF = camT = null; }
     if(plane && step === 9) fitPlane();
     needDraw = true; tick();
   }
@@ -825,6 +1011,8 @@
   var GREY = '#8a93a3', SEL = 23, comm = null, labs = {};
   var REDUCED = !!(window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches);   /* 关了动效：线上的点不跑 */
   var selRank = null;          /* 内存分配 / 跨机通信两步里手动选中的卡；读出卡跟着它走 */
+  var markOn = {rank:true, label:true, memory:true};
+  var commOn = {tp:true, ep:true, dp:true, edp:true, pp:true};
   var etpOn = false;           /* 第 9 步的开关：专家也按 TP 切（ETP = TP）。只影响连线 / 门牌 / 读出卡里的通信行 */
   /* 通信：选中 R23，五个维度各连到它的兄弟卡。同一台机器（node 相同）走机内互联画实线，
      出了机器画虚线。顺序 TP → EP → DP → EDP → PP：先机内后跨机，先勤后疏。
@@ -878,6 +1066,7 @@
     });
     Object.keys(labs).forEach(function(k){ if(!seen[k]){ var L = labs[k]; L.fx = L.tx = L.x; L.fy = L.ty = L.y; L.fz = L.tz = L.z; L.fa = L.a; L.ta = 0; } });
     camT = fitCam(lay, i);
+    camHome = {s:camT.s, ox:camT.ox, oy:camT.oy};
     if(step0){ cam = {s:camT.s, ox:camT.ox, oy:camT.oy}; step0 = false; }   /* 首帧直接落位，不从假机位飞过来 */
     camF = {s:cam.s, ox:cam.ox, oy:cam.oy};
     var tn = now();
@@ -900,7 +1089,8 @@
          带贯穿暗影，让「横轴是层」一进来就有个抓手；点别的刻度换列，点空白清掉 */
       if(!selLayer){ var sc = cards[selRank !== null ? selRank : SEL], sl = sc.pp*LPS + (LPS>>1); selLayer = {type:'layer', layer:sl, label:'Layer' + sl, short:'L' + sl}; layerGuide = true; }
     } else selLayer = null;
-    pzoomEl.hidden = i !== 9; etpTogEl.hidden = i !== 8;
+    etpTogEl.hidden = i !== 8;
+    syncStagebar(); syncZoomHud();
     renderRankMem();
     /* 正在闪的高亮不能被下一步硬生生掐掉——把此刻的颜色留成余晖，300ms 内退掉 */
     cards.forEach(function(c){
@@ -927,7 +1117,7 @@
       cards.forEach(function(c){
         c.x = c.fx + (c.tx - c.fx)*e; c.y = c.fy + (c.ty - c.fy)*e; c.z = c.fz + (c.tz - c.fz)*e; c.a = c.fa + (c.ta - c.fa)*e;
       });
-      if(camF && camT){ cam.s = camF.s + (camT.s - camF.s)*e; cam.ox = camF.ox + (camT.ox - camF.ox)*e; cam.oy = camF.oy + (camT.oy - camF.oy)*e; }
+      if(camF && camT){ cam.s = camF.s + (camT.s - camF.s)*e; cam.ox = camF.ox + (camT.ox - camF.ox)*e; cam.oy = camF.oy + (camT.oy - camF.oy)*e; syncZoomHud(); }
       /* 门牌：位置随卡一起滑；淡出的在前 40% 走完，淡入的在后 40% 才开始 */
       var aOut = 1 - Math.min(1, k/0.4), aIn = Math.max(0, (k - 0.6)/0.4);
       Object.keys(labs).forEach(function(kk){
@@ -947,6 +1137,7 @@
     if(flatF !== flatT){
       var df = Math.min(1, (t - flatAt)/FLAT_DUR);
       flatF = df >= 1 ? flatT : flatFrom + (flatT - flatFrom)*ease(df);
+      syncZoomHud();
       busy = true;
     }
     if(pulses.length && t < pulses[pulses.length-1].at + 1100) busy = true;
@@ -987,9 +1178,14 @@
     if(pick.off) a *= Math.max(0, 1 - (t - pick.off)/260);
     return a;
   }
+  function layerRankMatch(c){ return !!(selLayer && selLayer.type === 'layer' && c.pp === Math.floor(selLayer.layer/LPS)); }
   function tintOf(c, t){
     var pa = pulseAlpha(c, t), ga = ghostAlpha(c, t), ka = pickAlpha(c, t);
-    if(ka >= pa && ka >= ga) return ka > 0.01 ? {a:ka, c:pick.c} : null;
+    /* Layer 定位在 3D 视图里对应一个 PP stage：该层由这一段的全部 Rank 共同持有。
+       这里只叠一层稳定蓝色，不改相机、不改步骤，也不压掉更强的门牌选中态。 */
+    var la = layerRankMatch(c) ? .42 : 0;
+    if(ka >= pa && ka >= ga && ka >= la) return ka > 0.01 ? {a:ka, c:pick.c} : null;
+    if(la >= pa && la >= ga) return la > 0.01 ? {a:la, c:VC.dp} : null;
     if(pa >= ga) return pa > 0.01 ? {a:pa, c:pulses[0].c} : null;
     return ga > 0.01 ? {a:ga, c:c.ghost.c} : null;
   }
@@ -1040,7 +1236,7 @@
     var a3 = c.a * (1 - flatF);
     if(a3 <= 0.01) return;
     var role = roleOf(c), fade = commFade(t);
-    ctx.globalAlpha = a3 * (role === 'dim' ? 1 - 0.82*fade : 1);
+    ctx.globalAlpha = a3 * (role === 'dim' && !layerRankMatch(c) ? 1 - 0.82*fade : 1);
     var tint = tintOf(c, t), ha = tint ? tint.a : 0, hc = tint ? tint.c : null;
     /* 前排遮后排：卡按远→近的画家序画，但壳面半透明，后排整张（尤其 TP 摞成两层、EP 分桶、
        装上五档显存柱之后）都从前排身上透出来，几排一叠就花。所以每张卡先用页面底色把自己
@@ -1052,7 +1248,7 @@
     drawBox(c.x, c.y, c.z, CW, CH, CD, null, null, 'rgba(' + TH.rgb + ',.10)');
     /* 通信那一步：跟主语没话说的卡不只淡掉，显存填充也随发射线一起缩没——这一步只看谁跟谁说话 */
     var mf = memF * (c.memHold ? 0 : role === 'dim' ? 1 - fade : 1);
-    if(mf > 0){
+    if(markOn.memory && mf > 0){
       /* 五档按字节 ÷ HBM 容量折成高度，从底往上垒；顶出壳外就是超容 */
       var ins = 0.08, yy = c.y + ins, iw = CW - 2*ins, id = CD - 2*ins, cap = CFG.hbm*GiB;
       c.mem.forEach(function(m){
@@ -1073,11 +1269,13 @@
       if(sibD) drawBox(c.x, c.y, c.z, CW, CH, CD, null, VC[sibD], null, 1.5);
     }
     /* 顶面上的 R 号：随柱体连续缩小，不再因小屏 / 第 5 步缩放跌破阈值而整批消失。 */
-    var fs = Math.max(5.5, Math.min(11, cam.s*0.26));
-    ctx.font = '500 ' + fs + 'px ' + getComputedStyle(document.body).getPropertyValue('--mono');
-    ctx.fillStyle = 'rgba(' + TH.rgb + ',.72)'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-    var mx = (k.D[0] + k.G[0])/2, my = (k.D[1] + k.G[1])/2;
-    ctx.fillText('R' + c.r, mx, my);
+    if(markOn.rank){
+      var fs = Math.max(5.5, Math.min(11, cam.s*0.26));
+      ctx.font = '500 ' + fs + 'px ' + getComputedStyle(document.body).getPropertyValue('--mono');
+      ctx.fillStyle = 'rgba(' + TH.rgb + ',.72)'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      var mx = (k.D[0] + k.G[0])/2, my = (k.D[1] + k.G[1])/2;
+      ctx.fillText('R' + c.r, mx, my);
+    }
     ctx.globalAlpha = 1;
   }
 
@@ -1188,6 +1386,7 @@
     drawPhaseLegend(W - 12, legendY, fade, ph);
     legendY += 42;   /* 阶段行到底下那叠维度芯片：原来 26，再让开 16——进度线压在芯片头上太挤 */
     comm.dims.forEach(function(d){
+      if(commOn[d.k] === false) return;
       var k = Math.max(0, Math.min(1, (t - comm.at - d.at)/420)); if(k <= 0) return;
       var col = VC[d.k], n = d.to.length, st = dimState(d, ph), on = st === 2;
       d.to.forEach(function(c, i){
@@ -1248,7 +1447,7 @@
   function cardAt(mx, my){
     /* 展平之后 3D 包围盒是陈的：改按平面上的行去找；压平的半路上什么都不认 */
     if(flatF > 0) return flatF >= 1 ? planeRowAt(mx, my) : null;
-    var order = cards.slice().sort(function(a, b){ return (a.z - b.z) || (b.x - a.x) || (b.y - a.y); });
+    var order = cards.slice().sort(function(a, b){ return -cardPaintOrder(a, b); });
     for(var i = 0; i < order.length; i++){
       var c = order[i], b = c.bb;
       if(c.a > 0.01 && b && mx >= b[0] && mx <= b[2] && my >= b[1] && my <= b[3]) return c;
@@ -1260,16 +1459,22 @@
     if(pan){
       var dx = e.clientX - pan.sx, dy = e.clientY - pan.sy;
       if(Math.abs(dx) > 3 || Math.abs(dy) > 3) pan.moved = true;
-      if(pan.moved){ view.x = pan.vx + dx; view.y = pan.vy + dy; clampPan(); cv.style.cursor = 'grabbing'; needDraw = true; tick(); }
+      if(pan.moved){
+        if(pan.kind === 'plane'){ view.x = pan.vx + dx; view.y = pan.vy + dy; clampPan(); }
+        else { cam.ox = pan.vx + dx; cam.oy = pan.vy + dy; }
+        cv.style.cursor = 'grabbing'; syncZoomHud(); needDraw = true; tick();
+      }
       return;
     }
     if(planeActive()){ cv.style.cursor = (planeTickAt(mx, my) || planeHit(mx, my)) ? 'pointer' : 'grab'; return; }
-    cv.style.cursor = (chipAt(mx, my) || cardAt(mx, my)) ? 'pointer' : 'default';
+    cv.style.cursor = (chipAt(mx, my) || cardAt(mx, my)) ? 'pointer' : 'grab';
   });
-  /* 展平画布：按住拖拽平移（挪超过 3px 才算拖，否则仍是一次点击）、滚轮绕鼠标缩放 */
+  /* 与 pt-zoomhud 共用一套手势：展平图改 view，3D 卡阵改 cam；都绕光标缩放、拖动画布平移。 */
   cv.addEventListener('mousedown', function(e){
-    if(!planeActive() || e.button !== 0) return;
-    pan = {sx:e.clientX, sy:e.clientY, vx:view.x, vy:view.y, moved:false};
+    if(e.button !== 0 || animating || (flatF > 0 && !planeActive())) return;
+    pan = planeActive()
+      ? {kind:'plane', sx:e.clientX, sy:e.clientY, vx:view.x, vy:view.y, moved:false}
+      : {kind:'camera', sx:e.clientX, sy:e.clientY, vx:cam.ox, vy:cam.oy, moved:false};
   });
   window.addEventListener('mouseup', function(){
     if(!pan) return;
@@ -1277,11 +1482,39 @@
     pan = null; cv.style.cursor = planeActive() ? 'grab' : 'default';
   });
   cv.addEventListener('wheel', function(e){
-    if(!planeActive()) return;
+    if(animating || (flatF > 0 && !planeActive())) return;
     e.preventDefault();
     var r = cv.getBoundingClientRect();
-    zoomAt(e.clientX - r.left, e.clientY - r.top, view.k*Math.exp(-e.deltaY*0.0015));
+    var mx = e.clientX - r.left, my = e.clientY - r.top, factor = Math.exp(-e.deltaY*0.0015);
+    if(planeActive()) zoomAt(mx, my, view.k*factor);
+    else zoomCameraAt(mx, my, factor);
   }, {passive:false});
+  var pinch = null;
+  cv.addEventListener('touchstart', function(e){
+    if(e.touches.length < 2 || animating || (flatF > 0 && !planeActive())) return;
+    e.preventDefault();
+    var r = cv.getBoundingClientRect(), a = e.touches[0], b = e.touches[1];
+    pinch = {mx:(a.clientX+b.clientX)/2-r.left, my:(a.clientY+b.clientY)/2-r.top,
+             dist:Math.hypot(b.clientX-a.clientX,b.clientY-a.clientY), plane:planeActive(),
+             vx:view.x, vy:view.y, vk:view.k, ox:cam.ox, oy:cam.oy, cs:cam.s};
+  }, {passive:false});
+  cv.addEventListener('touchmove', function(e){
+    if(!pinch || e.touches.length < 2) return;
+    e.preventDefault();
+    var r = cv.getBoundingClientRect(), a = e.touches[0], b = e.touches[1];
+    var mx = (a.clientX+b.clientX)/2-r.left, my = (a.clientY+b.clientY)/2-r.top;
+    var factor = Math.hypot(b.clientX-a.clientX,b.clientY-a.clientY)/Math.max(1,pinch.dist);
+    if(pinch.plane){
+      view.x = pinch.vx; view.y = pinch.vy; view.k = pinch.vk; syncGeom(view.k);
+      zoomAtRaw(pinch.mx, pinch.my, pinch.vk*factor); view.x += mx-pinch.mx; view.y += my-pinch.my; clampPan();
+    }else{
+      cam.s = pinch.cs; cam.ox = pinch.ox; cam.oy = pinch.oy;
+      var next = clamp((pinch.cs/(camHome ? camHome.s : pinch.cs))*factor, .2, 20)*(camHome ? camHome.s : pinch.cs), z = next/pinch.cs;
+      cam.ox = pinch.mx-(pinch.mx-pinch.ox)*z+(mx-pinch.mx); cam.oy = pinch.my-(pinch.my-pinch.oy)*z+(my-pinch.my); cam.s = next;
+    }
+    syncZoomHud(); needDraw = true; tick();
+  }, {passive:false});
+  cv.addEventListener('touchend', function(e){ if(pinch && e.touches.length < 2) pinch = null; });
   cv.addEventListener('click', function(e){
     if(suppressClick){ suppressClick = false; return; }
     var r = cv.getBoundingClientRect(), mx = e.clientX - r.left, my = e.clientY - r.top, tn = now();
@@ -1296,7 +1529,7 @@
       }
       else if(ph) selRank = selRank === ph.c.r ? null : ph.c.r;
       else if(mx >= PL.RULER_LEFT_W && my >= PL.RULER_TOP_H){ selRank = null; selLayer = null; layerGuide = false; }
-      renderRankMem(); needDraw = true; tick(); return;
+      syncStagebar(); renderRankMem(); needDraw = true; tick(); return;
     }
     var hit = chipAt(mx, my), hc = hit ? null : cardAt(mx, my);
     if(hit && !(pick && !pick.off && pick.key === hit.key)) pick = {key:hit.key, c:hit.c, sel:hit.sel, on:tn};
@@ -1304,7 +1537,7 @@
       if(comm && !comm.off){ if(hc.r !== comm.sel){ comm = commOf(hc.r); comm.at = tn; selRank = hc.r; } }
       else selRank = selRank === hc.r ? null : hc.r;        /* 内存分配：再点一次取消 */
       if(pick && !pick.off) pick.off = tn;
-      renderRankMem();
+      syncStagebar(); renderRankMem();
     }
     else if(pick && !pick.off) pick.off = tn;
     tick();
@@ -1315,7 +1548,7 @@
   /* 点开的那一块（五档之一或权重带里某一块 'w:xxx'）；只属于点开它时那张卡，换卡就清 */
   var memSel = null, memSelR = null;
   rankMemEl.addEventListener('click', function(e){
-    if(e.target.classList.contains('rm-x')){ selRank = null; memSel = null; renderRankMem(); needDraw = true; tick(); return; }
+    if(e.target.classList.contains('rm-x')){ selRank = null; memSel = null; syncStagebar(); renderRankMem(); needDraw = true; tick(); return; }
     var t = e.target.closest ? e.target.closest('[data-mk]') : null;
     if(t){ var mk = t.getAttribute('data-mk'); memSel = (mk && mk !== memSel) ? mk : null; renderRankMem(); needDraw = true; tick(); }
   });
@@ -1642,18 +1875,23 @@
             CHIP_COLS:4, CHIP_GAP:3, CELL_PAD:10, CELL_VPAD:6, CELL_GAP:3, FIT_SHRINK:0.85};
   /* 详情面板的设计像素（照 D_* 那组）：先按这套排版，再整体缩进格子 */
   var DP = {W:132, PILL:11, GAP:2, TITLE:9, PAD:3, CHIP:8, RES:10};
-  var SETC = ['#3B82F6', '#F59E0B', '#10B981', '#8B5CF6'], SET_NEUTRAL = '#64748B', BLUE = '#3B82F6';
+  /* 专家权重的四色与中性灰从共享规则层读（与 config-relation-plane.css 的
+     --crop-set-0..3 / --crop-set-neutral 同一份色值，索引同样只取 层号 % 4） */
+  var SETC = PR.SET_COLORS, SET_NEUTRAL = PR.SET_NEUTRAL, BLUE = '#3B82F6';
   var ATTN_ROWS = [['Input RMSNorm'], ['Q LayerNorm', 'KV LayerNorm'], ['Q Up Linear', 'KV Up Linear'], ['Sparse FlashAttention'], ['Output Projection']];
   var MOE_ROWS = [['Pre-MLP RMSNorm'], ['Router'], ['EP Dispatch'], null, ['EP Combine']];
   /* Dense 层（实战案例四的模型前两层）：MoE 那组换成一条普通 MLP，没有路由、没有专家 */
   var MLP_ROWS = [['Pre-MLP RMSNorm'], ['Gate Linear', 'Up Linear'], ['SwiGLU'], ['Down Linear']];
   var UNIT_ROWS = {emb:[['Token Embedding']], norm:[['Final RMSNorm']], head:[['LM Head'], ['Logits']]};
-  var plane = null, view = {x:0, y:0, k:1};
+  var plane = null, view = {x:0, y:0, k:1}, flatHome = null;
   var flatF = 0, flatT = 0, flatFrom = 0, flatAt = 0, FLAT_DUR = 900;
   var pan = null, suppressClick = false, tpOn = true, paintOn = false;   /* 着色默认关：先读结构，要看「哪一套」再开 */
-  var selLayer = null;         /* 第 10 步里选中的列（layer 或 Emb / Norm / Head）：点顶部刻度或点格子 */
+  var selLayer = null;         /* Layer 定位在 3D 中标出所属 PP 段；第 10 步里同时作为选中列（也可为 Emb / Norm / Head） */
   var layerGuide = false;      /* 选中列要不要投贯穿画布的暗影：点顶部刻度、点 rank × layer 格子、进场默认列都投；只在清空时收 */
-  var hiCols = null;           /* 一批同时亮着的列（{colKey:true}）：案例四「点一个算子，含它的层全亮」；本页第 10 步不用 */
+  var hiCols = null;           /* 由外部查询高亮的列（{colKey:true}）；案例四按当前算子实例只亮一个 Layer 列，本页第 10 步不用 */
+  /* 选中列里逐格的底色：借方给一个 (rank, col) → 颜色串 的函数，就把那一列的蓝色平涂换成逐格热力
+     （案例四的「这一层在每张卡上各跑多久」）。不给就是原来的蓝——本页第 10 步、案例一二三都不给。 */
+  var cellHeat = null;
   var chipPaint = false;       /* 只给「计算图」那一档里的专家胶囊上色（不管着色开关）：案例四要的——矩阵本身素着，放大到专家编号时才有色 */
   function colKey(col){ return col.type === 'layer' ? 'L' + col.layer : col.id; }
   /* 展平视图的拓扑口径。第 10 步就是本页的 CFG（pp4 · tp2 · dp16 · ep8，每机 8 卡，每卡 8 个专家，没有 Dense 层）；
@@ -1662,17 +1900,22 @@
        mode：'split' 切出口径（EP 组从 DP 里切，一组 = ep·tp 行）/ 'ortho' 正交（DP 是字面的副本数，
              每副本横跨全部 EP rank，几何与切出一样，只是左尺的字换成 DP | EP）/ 'mf' MindFormers（EP 在 dp×tp 域上切，一组 = ep 行）；
        dp 一律记成切出口径的数（每段行数 ÷ tp），正交口径传进来的 D.dp 是副本数，这里乘回去。 */
+  /* ⚠️ 口径换算（dpS / rows / groupRows / groups）已搬进共享规则层
+     ../shared/plane-rules.js 的 PR.topology()，与 config-relation-plane 同一份 ——
+     「正交口径的 DP 要乘回 EP」「mf 档一组是 ep 行而不是 ep×tp 行」这类判据以后只在
+     那里改。留在本函数里的是**本页展平画布自己的几何**（每段几层 lps、每机几卡 rpn、
+     每卡几个专家 epr、前几层是 Dense），那页不需要、也不该塞进共享层。
+     mode 仍收本页的 'ortho' 写法：共享层认 'ortho' 与 'orthogonal' 两种拼写。 */
   function topoOf(D, o){
     o = o || {};
-    var mode = o.mode || 'split', dpS = mode === 'ortho' ? D.dp*D.ep : D.dp, rows = dpS*D.tp;
-    var groupRows = mode === 'mf' ? D.ep : D.ep*D.tp;
-    return {pp:D.pp, tp:D.tp, dp:dpS, ep:D.ep, mode:mode, ortho:mode === 'ortho', lps:D.layers/D.pp, layers:D.layers,
-            rows:rows, groupRows:groupRows, groups:Math.max(1, Math.round(rows/groupRows)), rpn:o.rpn || 8,
+    var T = PR.topology({mode:o.mode || 'split', dp:D.dp, pp:D.pp, tp:D.tp, cp:1, ep:D.ep, layers:D.layers});
+    return {pp:T.pp, tp:T.tp, dp:T.dp, ep:T.ep, mode:T.mode === 'orthogonal' ? 'ortho' : T.mode,
+            ortho:T.orthogonal, lps:D.layers/D.pp, layers:D.layers,
+            rows:T.rows, groupRows:T.groupRows, groups:T.groups, rpn:o.rpn || 8,
             epr:Math.max(1, Math.round(D.experts/D.ep)), dense:o.dense || 0};
   }
   var TOPO = topoOf(CFG), PC = cards;
   function groupOf(c){ return Math.floor(c.k/TOPO.groupRows); }   /* 这张卡在第几个副本组（EDP / 正交口径下的 DP） */
-  var pzoomEl = document.getElementById('pzoom');
   var etpTogEl = document.getElementById('etpTog');
   /* 切 ETP：连线不重长（线的 at 沿用），只换兄弟集合与门牌文字；读出卡里「梯度」那档的通信行也跟着变 */
   etpTogEl.addEventListener('click', function(){
@@ -1781,7 +2024,7 @@
     view.x = v.x0 + (v.x1 - v.x0 - plane.worldW*k)/2;
     view.y = v.y0 + (v.y1 - v.y0 - plane.worldH*k)/2;
   }
-  function fitPlane(){ fitPlaneRaw(); syncZoomRead(); }
+  function fitPlane(){ fitPlaneRaw(); flatHome = {x:view.x, y:view.y, k:view.k}; syncZoomHud(); }
   function clampPan(){
     var v = viewport(), m = PL.PAN_MARGIN;
     view.x = clamp(view.x, v.x0 + m - plane.worldW*view.k, v.x1 - m);
@@ -1806,9 +2049,136 @@
     clampPan();
     return true;
   }
-  function zoomAt(mx, my, nk){ if(zoomAtRaw(mx, my, nk)){ syncZoomRead(); needDraw = true; tick(); } }
-  function syncZoomRead(){ document.getElementById('pzRead').textContent = Math.round(view.k*100) + '%'; }
+  function zoomAt(mx, my, nk){ if(zoomAtRaw(mx, my, nk)){ syncZoomHud(); needDraw = true; tick(); } }
   function planeActive(){ return step === 9 && flatF >= 1; }
+  function centerCamera(){
+    if(!lay) return;
+    var b = camBounds(lay);
+    cam.ox = (W + b.padL - b.padR)/2 - cam.s*(b.u0 + b.u1)/2;
+    cam.oy = H/2 - cam.s*(b.v0 + b.v1)/2;
+  }
+  function centerPlane(){
+    if(!plane) return;
+    var v = viewport();
+    view.x = v.x0 + (v.x1 - v.x0 - plane.worldW*view.k)/2;
+    view.y = v.y0 + (v.y1 - v.y0 - plane.worldH*view.k)/2;
+    clampPan();
+  }
+  function zoomCameraAt(mx, my, factor){
+    if(!camHome) return;
+    var ratio = clamp((cam.s/camHome.s)*factor, 0.2, 20), ns = camHome.s*ratio, r = ns/cam.s;
+    cam.ox = mx - (mx - cam.ox)*r; cam.oy = my - (my - cam.oy)*r; cam.s = ns;
+    syncZoomHud(); needDraw = true; tick();
+  }
+  function syncZoomHud(){
+    var el = document.getElementById('zoomPct'); if(!el) return;
+    var base = planeActive() ? (flatHome && flatHome.k) : (camHome && camHome.s);
+    var cur = planeActive() ? view.k : cam.s, ratio = base ? cur/base : 1;
+    el.textContent = Math.abs(ratio - 1) < .001 ? 'Fit' : Math.round(ratio*100) + '%';
+  }
+  function zoomBy(factor){
+    if(planeActive()) zoomAt((PL.RULER_LEFT_W + W)/2, (PL.RULER_TOP_H + H)/2, view.k*factor);
+    else zoomCameraAt(W/2, H/2, factor);
+  }
+  function fitViewport(){
+    if(planeActive()) fitPlane();
+    else if(lay){ camHome = fitCam(lay, step); cam = {s:camHome.s, ox:camHome.ox, oy:camHome.oy}; camF = camT = null; }
+    syncZoomHud(); needDraw = true; tick();
+  }
+  function fitZoomOnly(){
+    if(planeActive()){
+      if(!flatHome) return;
+      zoomAt((PL.RULER_LEFT_W + W)/2, (PL.RULER_TOP_H + H)/2, flatHome.k);
+    } else if(camHome) zoomCameraAt(W/2, H/2, camHome.s/cam.s);
+  }
+  function centerViewport(){
+    if(planeActive()) centerPlane(); else centerCamera();
+    syncZoomHud(); needDraw = true; tick();
+  }
+
+  function setViewPose(pose){
+    if(step === 9 || ['3d','front','side','top'].indexOf(pose) < 0 || pose === viewPose) return;
+    viewPose = pose; camHoldS = 0;
+    if(lay){ camHome = fitCam(lay, step); cam = {s:camHome.s, ox:camHome.ox, oy:camHome.oy}; camF = camT = null; }
+    syncStagebar(); syncZoomHud(); needDraw = true; tick();
+  }
+
+  /* stagebar 是源页面配置面板在本画布上的业务适配：不复制源页面的模型配置器，
+     只暴露这张教学图真实具备的控制；不提供“图层”显示开关，但保留 Layer 定位。 */
+  var stageCfgBtn = document.getElementById('stageCfgBtn'), stageCfgPanel = document.getElementById('stageCfgPanel');
+  function setStageCfgOpen(open){
+    stageCfgPanel.classList.toggle('is-open', open); stageCfgBtn.classList.toggle('is-on', open);
+    stageCfgBtn.setAttribute('aria-expanded', String(open));
+  }
+  function syncStagebar(){
+    if(!stageCfgPanel) return;
+    Array.prototype.forEach.call(stageCfgPanel.querySelectorAll('[data-dim-step]'), function(b){
+      var on = step >= +b.dataset.dimStep; b.classList.toggle('is-on', on); b.setAttribute('aria-pressed', String(on));
+    });
+    Array.prototype.forEach.call(stageCfgPanel.querySelectorAll('[data-pose]'), function(b){
+      var on = b.dataset.pose === viewPose; b.classList.toggle('is-on', on); b.setAttribute('aria-pressed', String(on)); b.disabled = step === 9;
+    });
+    Array.prototype.forEach.call(stageCfgPanel.querySelectorAll('[data-comm]'), function(b){ b.classList.toggle('is-on', commOn[b.dataset.comm] !== false); b.disabled = step !== 8; });
+    Array.prototype.forEach.call(stageCfgPanel.querySelectorAll('[data-comm-all]'), function(b){ b.disabled = step !== 8; });
+    Array.prototype.forEach.call(stageCfgPanel.querySelectorAll('[data-mark]'), function(b){
+      var k = b.dataset.mark, on = k === 'tp' ? tpOn : k === 'paint' ? paintOn : markOn[k] !== false;
+      b.classList.toggle('is-on', on);
+    });
+    var rankFindBtn = document.getElementById('rankFindBtn'), layerFindBtn = document.getElementById('layerFindBtn');
+    var rankOn = selRank !== null, layerOn = !!(selLayer && selLayer.type === 'layer');
+    rankFindBtn.classList.toggle('is-on', rankOn); rankFindBtn.setAttribute('aria-pressed', String(rankOn));
+    layerFindBtn.classList.toggle('is-on', layerOn); layerFindBtn.setAttribute('aria-pressed', String(layerOn));
+    if(rankOn) document.getElementById('rankFind').value = selRank;
+    if(layerOn) document.getElementById('layerFind').value = selLayer.layer;
+  }
+  stageCfgBtn.addEventListener('click', function(e){ e.stopPropagation(); setStageCfgOpen(!stageCfgPanel.classList.contains('is-open')); });
+  stageCfgPanel.addEventListener('click', function(e){
+    e.stopPropagation();
+    var dimBtn = e.target.closest('[data-dim-step]');
+    if(dimBtn){ go(+dimBtn.dataset.dimStep); return; }
+    var poseBtn = e.target.closest('[data-pose]');
+    if(poseBtn && !poseBtn.disabled){ setViewPose(poseBtn.dataset.pose); return; }
+    var all = e.target.closest('[data-comm-all]');
+    if(all){ Object.keys(commOn).forEach(function(k){ commOn[k] = all.dataset.commAll === '1'; }); syncStagebar(); needDraw = true; tick(); return; }
+    var cb = e.target.closest('[data-comm]');
+    if(cb && !cb.disabled){ commOn[cb.dataset.comm] = !commOn[cb.dataset.comm]; syncStagebar(); needDraw = true; tick(); return; }
+    var mb = e.target.closest('[data-mark]');
+    if(mb){
+      var k = mb.dataset.mark;
+      if(k === 'tp'){ tpOn = !tpOn; if(plane){ syncGeom(view.k); clampPan(); } }
+      else if(k === 'paint') paintOn = !paintOn;
+      else markOn[k] = !markOn[k];
+      syncStagebar(); needDraw = true; tick();
+    }
+  });
+  document.addEventListener('click', function(){ setStageCfgOpen(false); });
+  document.getElementById('rankFindBtn').addEventListener('click', function(){
+    var input = document.getElementById('rankFind'), r = parseInt(input.value, 10);
+    if(!isFinite(r)) return; r = clamp(r, 0, cards.length - 1); input.value = r;
+    if(step < 2) go(2);
+    selRank = r;
+    if(step === 8){ comm = commOf(r); comm.at = now(); }
+    syncStagebar(); renderRankMem(); needDraw = true; tick();
+  });
+  document.getElementById('rankClearBtn').addEventListener('click', function(){
+    selRank = null; if(comm && !comm.off) comm.off = now(); syncStagebar(); renderRankMem(); needDraw = true; tick();
+  });
+  document.getElementById('rankFind').addEventListener('keydown', function(e){ if(e.key === 'Enter') document.getElementById('rankFindBtn').click(); });
+  document.getElementById('layerFindBtn').addEventListener('click', function(){
+    var input = document.getElementById('layerFind'), layer = parseInt(input.value, 10);
+    if(!isFinite(layer)) return; layer = clamp(layer, 0, TOPO.layers - 1); input.value = layer;
+    selLayer = {type:'layer', layer:layer, label:'Layer' + layer, short:'L' + layer, dense:layer < TOPO.dense};
+    layerGuide = step === 9; syncStagebar(); renderRankMem(); needDraw = true; tick();
+  });
+  document.getElementById('layerClearBtn').addEventListener('click', function(){
+    selLayer = null; layerGuide = false; syncStagebar(); renderRankMem(); needDraw = true; tick();
+  });
+  document.getElementById('layerFind').addEventListener('keydown', function(e){ if(e.key === 'Enter') document.getElementById('layerFindBtn').click(); });
+  document.getElementById('zoomHud').addEventListener('click', function(e){
+    var b = e.target.closest('[data-zoom]'); if(!b) return;
+    var a = b.dataset.zoom;
+    if(a === 'in') zoomBy(1.25); else if(a === 'out') zoomBy(1/1.25); else if(a === 'center') centerViewport(); else if(a === 'fit') fitZoomOnly(); else fitViewport();
+  });
   /* 点行：块本体加它左边的行标道都算这一行 */
   function planeRowAt(mx, my){ var h = planeHit(mx, my); return h ? h.c : null; }
   /* 点中了哪一行、哪一格：{c, col}，col 为 null 表示点在行标道上 */
@@ -1833,12 +2203,8 @@
     return null;
   }
   /* 刻度密度：一格在屏幕上不足 minPx 就每隔 n 格标一次，n 走 1 / 2 / 5 / 10 / 20… */
-  function niceStep(unitPx, minPx){
-    if(!(unitPx > 0)) return 1;
-    var step = 1, ladder = [1, 2, 5], decade = 1, i = 0;
-    while(step*unitPx < minPx && step < 100000){ i += 1; if(i % 3 === 0) decade *= 10; step = ladder[i % 3]*decade; }
-    return step;
-  }
+  /* 刻度的 1/2/5 梯子：与 config-relation-plane 同一份（共享规则层） */
+  var niceStep = PR.niceStep;
   function rrect(x, y, w, h, r){
     if(w <= 0 || h <= 0) return;
     ctx.beginPath();
@@ -1875,13 +2241,6 @@
     }
     return null;
   }
-  var pzTp = document.getElementById('pzTp'), pzPaint = document.getElementById('pzPaint');
-  pzTp.addEventListener('click', function(){ tpOn = !tpOn; pzTp.classList.toggle('on', tpOn); syncGeom(view.k); clampPan(); needDraw = true; tick(); });
-  pzPaint.addEventListener('click', function(){ paintOn = !paintOn; pzPaint.classList.toggle('on', paintOn); needDraw = true; tick(); });
-  document.getElementById('pzOut').addEventListener('click', function(){ zoomAt((PL.RULER_LEFT_W + W)/2, (PL.RULER_TOP_H + H)/2, view.k/1.25); });
-  document.getElementById('pzIn').addEventListener('click', function(){ zoomAt((PL.RULER_LEFT_W + W)/2, (PL.RULER_TOP_H + H)/2, view.k*1.25); });
-  document.getElementById('pzFit').addEventListener('click', function(){ fitPlane(); needDraw = true; tick(); });
-
   /* 一格的颜色 = 这一层的专家权重身份：层号 % 4。副本号**不参与色相**——EDP 0 / EDP 1 持的是同一份权重，
      换色会被读成「两套不同的专家」；副本用斜纹区分（见 fillSet），块界仍在、身份不变。着色关掉时退到中性灰 */
   function setColorOf(col, c){ return paintOn && !col.dense ? SETC[col.layer % 4] : SET_NEUTRAL; }
@@ -1974,13 +2333,17 @@
     var showDetail = f >= 1 && detailS*k >= PL.DETAIL_MIN_S;
     var tier = showDetail ? 3 : (showBands ? 2 : 1);
     /* 选中的那一列（点顶部 Layer 刻度、或点了一个 rank × layer 格子）：先在世界底下投一条与该列等宽、从量尺一直贯到画布底的
-       暗影（照原画布 .crop-layer-guide：中性前景灰 10%，不用蓝——它只标位置、不表达选中）。
-       格子、底板都画在它上面，它从格缝、行标道和世界外的空白里透出来，作纵向参照 */
+       暗影（照原画布 .crop-layer-guide：中性前景灰，不用蓝——它只标位置、不表达选中）。
+       格子、底板都画在它上面，它从格缝、行标道和世界外的空白里透出来，作纵向参照。
+       浓度 6%（原先 10%）：这条影子是**纵向参照**而不是选中态——选中态由格子自己的
+       高亮去表达。10% 时它在格缝与行标道里显得比格子本身还抢眼，一整列从顶尺压到
+       画布底，读一行 rank 时眼睛总被它拽走；压到 6% 仍看得出「选的是这一列」，但退回
+       了背景层。⚠️ 与 DOM 那页的 .crop-layer-guide 保持同值，两页看着才是同一块料。 */
     if(f >= 1){
       var guideKeys = {};
       if(layerGuide && selKey !== null) guideKeys[selKey] = true;
       if(hiCols) for(var hiKey in hiCols) if(hiCols[hiKey]) guideKeys[hiKey] = true;
-      ctx.globalAlpha = late; ctx.fillStyle = 'rgba(' + FG + ',.10)';
+      ctx.globalAlpha = late; ctx.fillStyle = 'rgba(' + FG + ',.06)';
       for(var guideKey in guideKeys){
         var gd = colScreenX(guideKey);
         if(gd && gd.x + gd.w > v.x0 && gd.x < v.x1) ctx.fillRect(gd.x, v.y0, gd.w, H - v.y0);
@@ -2011,7 +2374,15 @@
         /* 底色：最粗档落那一套的颜色（着色开着时）；其余一律是瓷砖色（--tile，随主题）+ 细描边——
            灰底叠灰底会粘成一片，瓷砖面靠描边分格，缩得只剩几个像素时描边就是格线本身 */
         var paintBg = tier === 1 && col.type === 'layer' && paintOn, rad = 0;   /* 方块，不带圆角 */
-        if(rowHit && colHit){ ctx.fillStyle = hexA(BLUE, .62); rrect(x, yy, w, h, rad); }
+        /* 借方给了逐格热力：铺的是读数，不是一片同色的蓝。哪一格该有颜色**全由 cellHeat 自己判**
+           （案例四：选中列时沿列铺、选中卡时沿行铺、什么都没选时整张铺满），所以这里不预先按行列命中过滤。
+           行列交叉的那一格仍要认得出来，改用蓝描边而不是蓝填充去标它——填充已经被读数占用了。 */
+        var heat = cellHeat ? cellHeat(c.r, col) : null;
+        if(heat){
+          ctx.fillStyle = heat; rrect(x, yy, w, h, rad);
+          if(rowHit && colHit && w >= 5 && h >= 5){ ctx.strokeStyle = BLUE; ctx.lineWidth = 1.5; ctx.strokeRect(x + 0.75, yy + 0.75, w - 1.5, h - 1.5); }
+        }
+        else if(rowHit && colHit){ ctx.fillStyle = hexA(BLUE, .62); rrect(x, yy, w, h, rad); }
         else if(rowHit || colHit){ ctx.fillStyle = hexA(BLUE, colHit ? .22 : .16); rrect(x, yy, w, h, rad); }
         else if(paintBg){ fillSet(x, yy, w, h, rad, setColorOf(col, c), c, .42); }
         else if(w >= 4 && h >= 4){
@@ -2024,7 +2395,9 @@
       });
       if(f < 1) return;
       if(isSel){
-        ctx.globalAlpha = 1; ctx.fillStyle = hexA(BLUE, .12); rrect(rx, ry, rw, rh, 0);
+        ctx.globalAlpha = 1;
+        /* 铺了逐格热力就不再罩这层蓝——12% 的蓝会把整行读数的颜色染偏，只留描边标「选的是这一行」 */
+        if(!cellHeat){ ctx.fillStyle = hexA(BLUE, .12); rrect(rx, ry, rw, rh, 0); }
         ctx.strokeStyle = BLUE; ctx.lineWidth = 1.5; ctx.strokeRect(rx + 0.5, ry + 0.5, rw - 1, rh - 1);
       }
       if(m.show){
@@ -2124,9 +2497,11 @@
       var cy0 = Math.max(y, v.y0 - 1), cy1 = Math.min(y + h, v.y1);
       ctx.strokeStyle = SUB; ctx.beginPath(); ctx.moveTo(0, cy0 + 0.5); ctx.lineTo(PL.RULER_EDP_W, cy0 + 0.5); ctx.stroke();
       ctx.font = fontOf('500', 11, '--sans'); ctx.fillStyle = 'rgba(' + FG + ',.55)'; ctx.textAlign = 'center';
-      if(cy1 - cy0 > 14) ctx.fillText(outer + g, PL.RULER_EDP_W/2, (cy0 + cy1)/2 + 0.5 - (g && cy1 - cy0 > 44 ? 6 : 0));
-      /* 副本带下面补一行小字「≡ EDP 0」：同色的两块是同一份权重，这里把关系写出来 */
-      if(g && cy1 - cy0 > 44){ ctx.font = fontOf('400', 9, '--sans'); ctx.fillStyle = 'rgba(' + FG + ',.4)'; ctx.fillText('≡ ' + outer + '0', PL.RULER_EDP_W/2, (cy0 + cy1)/2 + 8); }
+      /* 带子下面原先还有一行小字「≡ EDP 0」（同色的两块是同一份权重），已删：
+         这层关系画布上本来就由**颜色**（同色 = 同一份权重）和 DP_GAP 那道宽缝在说，
+         量尺上只留副本号读起来更干净；要一句话解释的人去看着色开关的悬浮说明。
+         删掉之后主标签也不必再为它上移 6px —— 每条带子的标签一律居中。 */
+      if(cy1 - cy0 > 14) ctx.fillText(outer + g, PL.RULER_EDP_W/2, (cy0 + cy1)/2 + 0.5);
       for(var e = 0; e < perG; e += rowStep){
         var r = g*T.groupRows + e*T.tp, rEnd = Math.min((g + 1)*T.groupRows, r + T.tp*rowStep);
         var ty = view.y + plane.rowY(r)*k, th = (plane.rowY(rEnd - 1) + cellH - plane.rowY(r))*k;
@@ -2159,9 +2534,9 @@
   function draw(t){
     ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
     ctx.clearRect(0, 0, W, H);
-    var order = cards.slice().sort(function(a, b){ return (b.z - a.z) || (a.x - b.x) || (a.y - b.y); });
+    var order = cards.slice().sort(cardPaintOrder);
     order.forEach(function(c){ drawCard(c, t); });
-    Object.keys(labs).forEach(function(kk){ var L = labs[kk]; if(L.a > 0.01) drawChip(L, L.a); });
+    if(markOn.label) Object.keys(labs).forEach(function(kk){ var L = labs[kk]; if(L.a > 0.01) drawChip(L, L.a); });
     if(comm) drawComm(t);
     if(flatF > 0) drawPlane(t, flatF);
   }
@@ -2215,7 +2590,9 @@
   document.addEventListener('keydown', function(e){
     if(e.target && /INPUT|TEXTAREA/.test(e.target.tagName)) return;
     if(pageEl.dataset.tab === 'scene') return;
-    if(e.key === 'ArrowRight' || e.key === 'ArrowDown' || e.key === ' '){ go(step + 1); e.preventDefault(); }
+    if(e.key === '+' || e.key === '='){ zoomBy(1.25); e.preventDefault(); }
+    else if(e.key === '-' || e.key === '_'){ zoomBy(1/1.25); e.preventDefault(); }
+    else if(e.key === 'ArrowRight' || e.key === 'ArrowDown' || e.key === ' '){ go(step + 1); e.preventDefault(); }
     else if(e.key === 'ArrowLeft' || e.key === 'ArrowUp'){ go(step - 1); e.preventDefault(); }
     else if(e.key === '0'){ go(0); }
   });
@@ -2225,6 +2602,7 @@
   var pageEl = document.querySelector('.page'), tabsEl = document.getElementById('tabs');
   function setTab(id){
     if(id !== 'scene') id = 'intro';
+    if(id === 'scene') setStageCfgOpen(false);
     pageEl.dataset.tab = id;
     Array.prototype.forEach.call(tabsEl.children, function(b){ b.setAttribute('aria-selected', String(b.dataset.tab === id)); });
     try{ var q = new URLSearchParams(location.search); if(id === 'intro') q.delete('tab'); else q.set('tab', id);
@@ -2252,7 +2630,7 @@
 
   /* 留给「实战场景」案例三：它要在自己的画布上再画一遍第 8 步那套卡阵（只亮一张），
      排布、投影、显存账、主题色都从这里拿，不另抄一份。TH / MEMC 是同一个对象，切主题后自动是新的 */
-  window.RI = {cards:cards, layoutOf:layoutOf, U:U, TH:TH, MEMC:MEMC, VC:VC, CFG:CFG, GiB:GiB, shade:shade, hexA:hexA, dims:{CW:CW, CH:CH, CD:CD}};
+  window.RI = {cards:cards, layoutOf:layoutOf, U:U3D, TH:TH, MEMC:MEMC, VC:VC, CFG:CFG, GiB:GiB, shade:shade, hexA:hexA, dims:{CW:CW, CH:CH, CD:CD}, OCC:OCC, BG_FACE:BG_FACE};
 
   /* 留给案例四：第 10 步那块展平画布整套借出去画到它自己的 canvas 上。
      画法全是本页闭包里的 drawPlane / drawRulers / planeHit…，它们读的是闭包里的 ctx / W / H / view /
@@ -2262,13 +2640,14 @@
      build / fit / zoom 会写回 env.plane / env.view。 */
   function planeEnv(env, fn){
     var o = {ctx:ctx, W:W, H:H, DPR:DPR, tag:ctxTag, PC:PC, TOPO:TOPO, plane:plane, view:view, selRank:selRank, selLayer:selLayer,
-             layerGuide:layerGuide, tpOn:tpOn, paintOn:paintOn, hiCols:hiCols, chipPaint:chipPaint};
+             layerGuide:layerGuide, tpOn:tpOn, paintOn:paintOn, hiCols:hiCols, chipPaint:chipPaint, cellHeat:cellHeat};
     ctx = env.ctx; W = env.W; H = env.H; DPR = env.DPR; ctxTag = env.tag || 1; PC = env.PC; TOPO = env.TOPO; plane = env.plane; view = env.view;
     selRank = env.selRank; selLayer = env.selLayer; layerGuide = env.layerGuide; tpOn = env.tpOn; paintOn = env.paintOn; hiCols = env.hiCols || null; chipPaint = !!env.chipPaint;
+    cellHeat = typeof env.cellHeat === 'function' ? env.cellHeat : null;
     try{ return fn(); }
     finally{
       ctx = o.ctx; W = o.W; H = o.H; DPR = o.DPR; ctxTag = o.tag; PC = o.PC; TOPO = o.TOPO; plane = o.plane; view = o.view;
-      selRank = o.selRank; selLayer = o.selLayer; layerGuide = o.layerGuide; tpOn = o.tpOn; paintOn = o.paintOn; hiCols = o.hiCols; chipPaint = o.chipPaint;
+      selRank = o.selRank; selLayer = o.selLayer; layerGuide = o.layerGuide; tpOn = o.tpOn; paintOn = o.paintOn; hiCols = o.hiCols; chipPaint = o.chipPaint; cellHeat = o.cellHeat;
     }
   }
   /* 一格 / 一行在屏幕上的矩形（借方画自己的叠加层要用：超容格填色、缩放动画要对准的那一格） */
@@ -2320,6 +2699,9 @@
    两端的 Emb / Norm / Head 列省掉，只留 48 个 Transformer 层，让 4 块一样宽。
    格子尺寸由 fit() 按可用空间现算，图居中放到最大。 */
 (function(){
+  /* 共享规则层（../shared/plane-rules.js）：案例二的热力色阶、案例四的口径换算与
+     约束谓词、字段量程都从它读 —— 与 config-relation-plane 同一份 */
+  var PR = window.PTOPlaneRules;
   var railEl = document.getElementById('csRail'), mainEl = document.getElementById('csMain');
   if(!railEl || !mainEl) return;
   var pageEl = document.querySelector('.page'), tabsEl = document.getElementById('tabs');
@@ -2413,7 +2795,7 @@
     var slack = ah - G.ruler - 2*G.pad - 31*G.cg - 4;
     var ch = Math.floor((slack - Math.max(8, Math.round(G.cw*0.9)) - 2*Math.max(4, Math.round(G.cw*0.42)))/32);
     G.ch = clamp(Math.min(ch, Math.round(G.cw*0.85)), 6, 16);
-    G.cw = Math.min(G.cw, Math.round(G.ch*1.6));
+    G.cw = G.ch;                            /* 案例一、二的 rank × layer 小格保持正方形 */
     G.bgap = clamp(Math.round(G.cw*0.8), 6, 14);
   }
 
@@ -2525,18 +2907,13 @@
   }
   /* 色阶照 config-relation-plane 的 HEAT_RAMP：冷蓝 → 火红，中途绕开绿。
      浅色主题下冷端换成淡蓝灰，白底上才不会一片墨；热端两档不变，两个主题读数一致。 */
-  var RAMP_D = [[0,13,30,66],[.22,38,86,178],[.44,104,78,196],[.64,176,66,148],[.82,226,68,84],[1,255,124,46]];
+  /* 深色那张就是共享规则层里的 HEAT_RAMP（与 config-relation-plane 同一份，改一处两页同变）；
+     浅色那张是本页独有的 —— 那页固定深色主题，没有这一档，故留在本地。
+     插值与图例的拼法也都走共享层，只是把要用的那张表传进去。 */
+  var RAMP_D = PR.HEAT_RAMP;
   var RAMP_L = [[0,226,232,244],[.22,166,186,230],[.44,160,130,210],[.64,196,88,158],[.82,226,68,84],[1,255,124,46]];
-  function heatColor(u){
-    var R = isDark() ? RAMP_D : RAMP_L, t = clamp(u, 0, 1), i = 1;
-    while(i < R.length - 1 && t > R[i][0]) i++;
-    var a = R[i-1], b = R[i], f = (t - a[0])/((b[0] - a[0]) || 1);
-    return 'rgb(' + Math.round(a[1] + (b[1]-a[1])*f) + ',' + Math.round(a[2] + (b[2]-a[2])*f) + ',' + Math.round(a[3] + (b[3]-a[3])*f) + ')';
-  }
-  function rampCSS(){
-    var R = isDark() ? RAMP_D : RAMP_L;
-    return 'linear-gradient(90deg,' + R.map(function(s){ return 'rgb(' + s[1] + ',' + s[2] + ',' + s[3] + ') ' + Math.round(s[0]*100) + '%'; }).join(',') + ')';
-  }
+  function heatColor(u){ return PR.heatColor(u, isDark() ? RAMP_D : RAMP_L); }
+  function rampCSS(){ return PR.heatRampCss(isDark() ? RAMP_D : RAMP_L); }
   /* 第 st 段这一格的颜色；st = 0 是空图（素底） */
   function fill2(r, L, st){
     if(!st) return '';
@@ -2928,6 +3305,9 @@
       order.forEach(function(c){
         var p = lay.pos[c.r], isSel = c.r === sel;
         ctx.globalAlpha = isSel ? 1 : 0.18;                 /* 照第 9 步「跟主语没话说」的那一档 */
+        /* 照主画布 drawCard：壳面半透明，后排整张会从前排透出来叠成重影——先用页面底色把三个面垫实一层再画壳 */
+        ctx.globalAlpha *= RI.OCC; box(ctx, cam, p.x, p.y, p.z, CW, CH, CD, RI.BG_FACE(), null, null);
+        ctx.globalAlpha = isSel ? 1 : 0.18;
         box(ctx, cam, p.x, p.y, p.z, CW, CH, CD, null, null, 'rgba(' + rgb + ',.10)');
         if(isSel) fillMem(ctx, cam, p.x, p.y, p.z, mem, CAP);
         var k = box(ctx, cam, p.x, p.y, p.z, CW, CH, CD, TH.face, 'rgba(' + rgb + ',.34)', null);
@@ -2998,7 +3378,7 @@
           return '<div class="r" data-k="' + m.k + '"><span class="sw" style="background:' + m.c + '"></span><span class="l">' + m.label + '</span><span class="n"></span></div>';
         }).join('');
         ttl.textContent = 'R' + c.r;   /* 右列标题就是选中那张的名字 */
-        cvS.hidden = false;
+        cvS.hidden = false; el.classList.remove('is-panel');
         /* 头部：R 号跟合计同一行（合计用下面每档 xx GB 的那种字），第二行是坐标；底下不再摆合计条 / 进度条 / 步内 % */
         rd.innerHTML = '<div class="h"><div class="hr"><b>R' + c.r + '</b><span class="n tot"></span></div><span>' + sub + '</span></div>' + rows;
       }
@@ -3014,7 +3394,9 @@
         if(te){ te.textContent = (tot > cap ? 'OOM · ' : '') + fmt(tot) + ' GB'; te.classList.toggle('over', tot > cap); }
         draw();
       }
-      function empty(html){ last = null; ttl.textContent = '选中 Rank'; cvS.hidden = true; rd.innerHTML = '<div class="cs-side-empty">' + html + '</div>'; }
+      function empty(html){ last = null; ttl.textContent = '选中 Rank'; cvS.hidden = true; el.classList.remove('is-panel'); rd.innerHTML = '<div class="cs-side-empty">' + html + '</div>'; }
+      /* 通用读数面：整块让给调用方自己的内容，标题也由它给。案例四选中 Layer 列时用它放各域计算耗时差异 */
+      function panel(title, html){ last = null; ttl.textContent = title; cvS.hidden = true; el.classList.add('is-panel'); rd.innerHTML = html; }
       /* 开回来：hidden 一去掉画布的 CSS 尺寸就从 0 变回来，ResizeObserver 会接着 size()+draw()；没有它的环境自己补一次 */
       function open(){ if(!el.hidden) return; el.hidden = false; if(!window.ResizeObserver){ size(); draw(); } }
       if(window.ResizeObserver){
@@ -3026,7 +3408,7 @@
         ro.observe(cvS);
       }
       size();
-      return {el:el, size:size, draw:draw, head:head, update:update, empty:empty, open:open, hide:function(){ el.hidden = true; }};
+      return {el:el, size:size, draw:draw, head:head, update:update, empty:empty, panel:panel, open:open, hide:function(){ el.hidden = true; }};
     }
     function buildRd(){
       var c = card();
@@ -3204,7 +3586,7 @@
          每格的「高级选项」折叠、「配置」预设下拉、底部的对话输入框都不要；
        · 图就是第 10 步那块展平画布（RI.plane 借出来画到本案例自己的 canvas 上，画法一行没抄），
          左栏「训练配置 / 整网图」页签中的整网图则直接挂载那页的 model-architecture-3d-deck 组件，
-         点一个结点，右边矩阵里含它的那批列亮起——整网图与矩阵同时在屏上；
+         点一个结点，右边矩阵里该实例所属的单个 Layer 列亮起——整网图与矩阵同时在屏上；
        · 右栏就是案例三那栏（M3.makeSide 造的放大那张 + 读数），容量随卡型号换。
      配置 → 图的口径：矩阵画的永远是**最近一组自洽的配置**（lastValid）；校验不过就升红横幅、图停更
      （照那页 renderConfigError 的「图形已暂停更新，仍显示上一组自洽的参数」），横幅给建议修法与
@@ -3215,8 +3597,8 @@
           Total Rank / World Size 由 128 实时变为 256，矩阵同步重排，最后 PP 8 → 4 回到 128；
        ② 内存可视：选中 R23，先把 Micro Batch 1 → 2，展示激活与总占用本身上涨；再把卡型号切到 32 GB——
           账不再变化、容量框变矮，柱子涨过容量线，矩阵上装不下的格子填浅红，取消后回到 64 GB；
-       ③ 算子查询：左栏切到整网图，先点 Final RMSNorm，只亮输出端 Norm；再点 EP Combine，扩展到 46 个 MoE Layer；
-       ④ 专家查询：先从这批 Layer 中点回 R23 × L7 单格，再放大到「计算图」那一档，Expert Compute 里是 E24–E31；
+       ③ 算子查询：左栏切到整网图，先点 Final RMSNorm，只亮输出端 Norm；再点 EP Combine，只亮当前实例所在的 Layer 24；
+       ④ 专家查询：从 Layer 24 单列点到 R23 × L7 单格，再放大到「计算图」那一档，Expert Compute 里是 E24–E31；
        ⑤ 配置校验：DP 手输 4，4 除不尽 EP 8 → 红横幅、DP / EP / Total Rank 三格描红、图停更；
           建议稿不只求合法还要装得下：EP 8 → 4 每卡专家翻倍会撑过 64 GB，所以联动 PP 4 → 8 分摊层数；
           开始时延续 R23 × L7，一键应用后 EP 4、PP 8、Total Rank 64，清掉 Layer 7 选择并按 8 段 × 8 行整体重画。 */
@@ -3227,33 +3609,59 @@
     var CARD_ORDER = ['910b-32', '910b-64', '950'];
     var BASE = {layers:48, dp:16, pp:4, tp:2, cp:1, mode:'split', routed:64, topk:8, shared:1, ep:8, card:'910b-64', mbs:1, seq:8192, ga:8};
     var HIDDEN = 4096;
-    /* 字段规格（照 FIELD_SPECS）：pow2 = 加减键按 2 的幂走；手输可以是任意整数 */
-    var F = {layers:{lb:'Total Layer', min:1, max:256}, dp:{lb:'DP', min:1, max:8192, pow2:true}, pp:{lb:'PP', min:1, max:128, pow2:true},
-             tp:{lb:'TP', min:1, max:16, pow2:true}, cp:{lb:'CP', min:1, max:16, pow2:true},
-             routed:{lb:'Routed Expert', min:1, max:1024, pow2:true}, topk:{lb:'Top-K', min:1, max:64}, shared:{lb:'Share Expert', min:0, max:8}, ep:{lb:'EP', min:1, max:1024, pow2:true},
-             totalRank:{lb:'Total Rank', min:8, max:65536, pow2:true}, mbs:{lb:'Micro Batch', min:1, max:64}, seq:{lb:'Seq Length', min:128, max:262144, pow2:true}};
+    /* 字段规格：规范值（标签、pow2、量程）来自共享规则层的 FIELD_SPECS —— 与
+       config-relation-plane 同一份，pow2 = 加减键按 2 的幂走，手输可以是任意整数。
+       第二个参数是**本案例刻意的收窄**，写在这里是为了让分歧看得见：本案例是 128 卡
+       量级的缩样，TP / CP 上界收到 16（那页是 64）、Total Rank 下界抬到 8（整机一台）、
+       Seq Length 上界放到 262144。不覆盖的键一律跟着规范值走。
+       ⚠️ 键名仍用本案例的短名（layers / routed / topk / mbs / seq），只有查规范值时
+       映射到共享层的名字；改短名会牵动本案例上百处 data-f。 */
+    function spec(field, lb, over){ var s = PR.specOf(field, over) || {}; return {lb:lb || s.label, min:s.min, max:s.max, pow2:s.pow2}; }
+    var F = {layers:spec('totalLayer'), dp:spec('dp'), pp:spec('pp'),
+             tp:spec('tp', null, {max:16}), cp:spec('cp', null, {max:16}),
+             /* 这两格的标签本页与那页写法不同（那页作 Routed / Shared），故显式传：
+                那页的 label 参与错误文案的标红匹配，不能被本页的写法带走 */
+             routed:spec('routedExpert', 'Routed Expert'), topk:spec('topK'),
+             shared:spec('sharedExpert', 'Share Expert'), ep:spec('ep'),
+             totalRank:spec('totalRank', null, {min:8}), mbs:spec('microBatch'), seq:spec('seqLen', null, {max:262144})};
     var MODES = [['split', '切出（主流）'], ['ortho', '正交']];   /* MindFormers 那档（dp×mp 域）本案例不摆；画布那边仍认 'mf' */
     var cfg = copy(BASE), lastValid = copy(BASE), pending = null, oomAdvice = null;   /* pending：参数校验失败；oomAdvice：换卡后容量不足，等用户确认或放弃 */
     function copy(o){ var r = {}; for(var k in o) r[k] = o[k]; return r; }
     function sameConfig(a, b){ for(var k in BASE) if(a[k] !== b[k]) return false; return true; }
-    function dpS(c){ return c.mode === 'ortho' ? c.dp*c.ep : c.dp; }       /* 切出口径的 DP（含 EP 组）= 每段行数 ÷ TP */
-    function world(c){ return dpS(c)*c.tp*c.pp*c.cp; }
-    function perRank(c){ return c.tp*c.pp*c.cp*(c.mode === 'ortho' ? c.ep : 1); }   /* Total Rank 每动一档，DP 动几 */
+    /* 三个口径换算都走共享规则层（与 config-relation-plane 同一份）：
+         dpS     切出口径的 DP（含 EP 组）= 每段行数 ÷ TP
+         world   Total Rank —— 只有正交档的 EP 进乘积
+         perRank Total Rank 每动一档 DP 动几（= world ÷ dpS） */
+    function dpS(c){ return PR.dpReplica(c); }
+    function world(c){ return PR.parallelWorld(c); }
+    function perRank(c){ return c.tp*c.pp*c.cp*PR.epInWorld(c); }
     function gbatch(c){ return c.mbs*dpS(c)*c.ga; }
-    function gcd(a, b){ return b ? gcd(b, a % b) : a; }
+    var gcd = PR.gcd;
     function fmt(b){ return (b/GiB).toFixed(1); }
     function esc(s){ return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;'); }
     function isDark(){ return document.documentElement.getAttribute('data-theme') === 'dark'; }
     function redRGB(){ return getComputedStyle(document.documentElement).getPropertyValue('--red').trim() || '220,38,38'; }
-    /* ── 校验（照那页 validate 的硬约束里与本案例有关的几条）── */
+    /* ── 校验（照那页 validate 的硬约束里与本案例有关的几条）───────────────
+       **判据**走共享规则层的 PR.RULES（与 config-relation-plane 同一套谓词：
+       三档 EP 的域怎么取、哪几格该标红，以后只在那里改）；**文案**仍在本页写 ——
+       那页的错误文案要靠字段 label 的子串去标红 stepper，两页措辞不能合并。
+       ⚠️ 层数与 PP 这条两页本来就不同：那页允许不均分（46 层配 PP 4 摆成
+       12,12,11,11），本案例的展平图按等长分块画、必须整除，所以这里调用的是
+       layersDivisibleByPp 而不是那页的 layersAtLeastPp。 */
+    var BAD_KEY = {totalLayer:'layers', routedExpert:'routed', topK:'topk'};   /* 共享层字段名 → 本案例的 bad 键 */
     function validate(c){
-      var errs = [], bad = {};
-      if(c.layers % c.pp){ errs.push('Total Layer ' + c.layers + ' 必须被 PP ' + c.pp + ' 整除'); bad.layers = bad.pp = true; }
-      if(c.mode === 'split' && c.dp % c.ep){ errs.push('DP ' + c.dp + ' 必须被 EP ' + c.ep + ' 整除（切出口径：EP 组是从 DP 里切出来的）'); bad.dp = bad.ep = true; }
-      if(c.mode === 'mf' && (c.dp*c.tp) % c.ep){ errs.push('DP × TP = ' + c.dp*c.tp + ' 必须被 EP ' + c.ep + ' 整除（MindFormers：EP 在 dp × mp 域上切）'); bad.dp = bad.tp = bad.ep = true; }
-      if(c.routed % c.ep){ errs.push('Routed Expert ' + c.routed + ' 必须被 EP ' + c.ep + ' 整除'); bad.routed = bad.ep = true; }
-      if(c.topk > c.routed){ errs.push('Top-K ' + c.topk + ' 不能超过 Routed Expert ' + c.routed); bad.topk = bad.routed = true; }
-      if(world(c) % 8){ errs.push('Total Rank ' + world(c) + ' 不是整机 8 卡的整数倍'); bad.totalRank = true; }
+      var errs = [], bad = {}, R = PR.RULES, h;
+      function mark(hit){ hit.fields.forEach(function(f){ bad[BAD_KEY[f] || f] = true; }); }
+      if((h = R.layersDivisibleByPp(c))){ errs.push('Total Layer ' + h.layers + ' 必须被 PP ' + h.pp + ' 整除'); mark(h); }
+      if((h = R.epDomainDivisibleByEp(c))){
+        errs.push(h.mode === 'mf'
+          ? 'DP × TP = ' + h.domain + ' 必须被 EP ' + h.ep + ' 整除（MindFormers：EP 在 dp × mp 域上切）'
+          : 'DP ' + h.dp + ' 必须被 EP ' + h.ep + ' 整除（切出口径：EP 组是从 DP 里切出来的）');
+        mark(h);
+      }
+      if((h = R.routedDivisibleByEp(c))){ errs.push('Routed Expert ' + h.routed + ' 必须被 EP ' + h.ep + ' 整除'); mark(h); }
+      if((h = R.topKWithinRouted(c))){ errs.push('Top-K ' + h.topk + ' 不能超过 Routed Expert ' + h.routed); mark(h); }
+      if((h = R.worldMultipleOfNode(c, 8))){ errs.push('Total Rank ' + h.world + ' 不是整机 8 卡的整数倍'); mark(h); }
       return {ok:!errs.length, errs:errs, bad:bad};
     }
     /* 建议修法：锚住用户刚改的那一格（f），把别的字段挪到最近的合法值；算不出就 null（横幅只剩「取消修改」）。
@@ -3262,11 +3670,19 @@
       var p = copy(c);
       for(var i = 0; i < 6; i++){
         if(validate(p).ok) return fitCapacity(p, f);
-        if(p.layers % p.pp){ if(f === 'pp') p.layers = Math.ceil(p.layers/p.pp)*p.pp; else p.pp = gcd(p.layers, p.pp); }
-        else if(p.mode === 'split' && p.dp % p.ep){ if(f === 'ep') p.dp = Math.max(p.ep, Math.round(p.dp/p.ep)*p.ep); else p.ep = gcd(p.dp, p.ep); }
-        else if(p.mode === 'mf' && (p.dp*p.tp) % p.ep){ p.ep = gcd(p.dp*p.tp, p.ep); }
-        else if(p.routed % p.ep){ if(f === 'ep') p.routed = Math.ceil(p.routed/p.ep)*p.ep; else p.ep = gcd(p.routed, p.ep); }
-        else if(p.topk > p.routed){ if(f === 'routed') p.topk = p.routed; else p.routed = p.topk; }
+        /* 每轮只修一条（判据同样走共享规则层，修法留在本页 —— 该挪哪个字段是本案例
+           自己的策略，不是两页共有的口径）。分支顺序与原先逐条对应：
+           层数/PP → EP 域（split 与 mf 由 hit.mode 分派，正交档这条返回 null 自动跳过）
+           → 专家数/EP → Top-K。 */
+        var R = PR.RULES, h;
+        if((h = R.layersDivisibleByPp(p))){ if(f === 'pp') p.layers = Math.ceil(p.layers/p.pp)*p.pp; else p.pp = gcd(p.layers, p.pp); }
+        else if((h = R.epDomainDivisibleByEp(p))){
+          if(h.mode === 'mf') p.ep = gcd(p.dp*p.tp, p.ep);
+          else if(f === 'ep') p.dp = Math.max(p.ep, Math.round(p.dp/p.ep)*p.ep);
+          else p.ep = gcd(p.dp, p.ep);
+        }
+        else if((h = R.routedDivisibleByEp(p))){ if(f === 'ep') p.routed = Math.ceil(p.routed/p.ep)*p.ep; else p.ep = gcd(p.routed, p.ep); }
+        else if((h = R.topKWithinRouted(p))){ if(f === 'routed') p.topk = p.routed; else p.routed = p.topk; }
         else return null;
       }
       return validate(p).ok ? fitCapacity(p, f) : null;
@@ -3373,15 +3789,39 @@
       if(!pending || !pending.proposal) return;
       var before = copy(cfg), anchor = pending.field, p = pending.proposal, ch = changesOf(p, before, anchor).map(function(x){ return x.f; });
       cfg = copy(p); lastValid = copy(p); pending = null;
-      E.selLayer = null; E.layerGuide = false;
+      E.selLayer = null; E.layerGuide = false; netLayer = 'all';   /* 列选择清掉，整网查询同步回「全部」 */
       applyTopo(); syncConf(); renderSide(); redraw(); flash(ch);
     }
     function cancelFix(){ cfg = copy(lastValid); pending = null; syncConf(); renderSide(); redraw(); }
 
     /* ── 配置 → 拓扑 → 画布上的那批卡、每张卡的账 ── */
     var R23 = 23;
-    var E = {ctx:null, W:0, H:0, DPR:1, tag:4, PC:[], TOPO:null, plane:null, view:{x:0, y:0, k:1}, selRank:R23, selLayer:null, layerGuide:false, tpOn:true, paintOn:false, hiCols:null, chipPaint:true};   /* 案例四始终以 R23 为主语；chipPaint：放大到计算图那档时专家胶囊带色，矩阵本身不按专家上色 */
+    var E = {ctx:null, W:0, H:0, DPR:1, tag:4, PC:[], TOPO:null, plane:null, view:{x:0, y:0, k:1}, selRank:R23, selLayer:null, layerGuide:false, tpOn:true, paintOn:false, hiCols:null, hiDomain:null, cellHeat:null, chipPaint:true};   /* 案例四始终以 R23 为主语；chipPaint：放大到计算图那档时专家胶囊带色，矩阵本身不按专家上色 */
     var MEM = [], CAP = 0, over = [], overA = 0, rulerFlash = 0, hiOp = null, panelTab = 'form';   /* panelTab：左栏在「表单」还是「整网图」页签 */
+    var netMode = 'perf', netLayer = 1, layerPageStart = 1;   /* 整网查询默认：性能分析 · Layer 1 */
+    /* netLayer 的取值：'all'（整条链正视）| 层号 | 'emb' / 'norm' / 'head'（端点列）。它与画布顶尺的列选择
+       （E.selLayer）是同一件事的两个入口：翻页选层 ⇒ 画布选中同一列；画布点列 ⇒ 翻页跟到同一层；画布清空 ⇒ 回到「全部」。
+       端点列只能从画布点进来（翻页器只翻 Layer），选中时翻页器没有一枚亮着。 */
+    var NET_UNITS = {emb:'Emb', norm:'Norm', head:'Head'};
+    /* 正视取景框（deck 场景坐标，层卡中心为原点）：层卡 720×1180 居中；输入端点卡 y -700～-522；输出端点卡从 y 520 起，
+       Final RMSNorm 在 +34～+66，其后 LM Head → MTP Logits 到 +484。宽度一律 850，留出与原正视相同的左右余量。 */
+    var NET_FOCUS = {layer:{width:850, height:1260, centerX:0, centerY:0}, emb:{width:850, height:268, centerX:0, centerY:-611},
+                     norm:{width:850, height:140, centerX:0, centerY:570}, head:{width:850, height:492, centerX:0, centerY:803}};
+    function netScope(){ return netLayer === 'all' ? 'all' : (NET_UNITS[netLayer] ? netLayer : 'layer'); }
+    /* 耗时按哪一层取：「全部」时画面里仍只有一张层卡（正视一次只画一层），读数就跟着那张卡，别用另一层的数去染它 */
+    function netMetricLayer(){
+      if(netLayer !== 'all') return netLayer;
+      var card = netHost && netHost.querySelector('.pto-model-deck__layer.is-front-layer');
+      var l = card ? Number(card.dataset.layer) : NaN;
+      return isFinite(l) ? l : 'all';
+    }
+    /* 整网查询的当前项 ⇄ 画布列：列对象照 PLN 里 cols 的形状（layer 列带 dense 标记，端点列带 id） */
+    function netKeyOf(col){ return !col ? 'all' : (col.type === 'layer' ? col.layer : col.id); }
+    function colOfNet(key){
+      if(key === 'all') return null;
+      if(NET_UNITS[key]) return {type:'unit', id:key, label:NET_UNITS[key]};
+      var l = Number(key); return {type:'layer', layer:l, label:'Layer' + l, short:'L' + l, dense:l < (E.TOPO ? E.TOPO.dense : DENSE)};
+    }
     function memCfg(c){ return {tp:c.tp, cp:c.cp, pp:c.pp, dp:c.dp, ep:c.ep, etp:1, layers:c.layers, hidden:HIDDEN, heads:32, kv:8, ffn:2048,
                                 vocab:128256, seq:c.seq, experts:c.routed, mbs:c.mbs, ga:c.ga, hbm:CARDS[c.card].hbm}; }
     function cardsOf(T){ var a = [], r = 0; for(var p = 0; p < T.pp; p++) for(var d = 0; d < T.dp; d++) for(var t = 0; t < T.tp; t++, r++) a.push({r:r, pp:p, dp:d, tp:t, k:d*T.tp + t, x:0, y:0, z:0}); return a; }
@@ -3392,7 +3832,13 @@
       MEM = E.PC.map(function(c){ return PLN.memWith(D, c); });
       if(E.selRank !== null && E.selRank >= E.PC.length) E.selRank = null;
       if(E.selLayer && E.selLayer.type === 'layer' && E.selLayer.layer >= T.layers) E.selLayer = null;
-      hiOp = null; E.hiCols = null;
+      hiOp = null; E.hiCols = null; E.hiDomain = null;
+      /* 算子高亮清掉之后，整网查询停着的那一层 / 端点降格为画布上的列选择（两边仍指同一列，翻页器不跳走）；
+         那一层已经不存在（层数缩到它之下）则回「全部」 */
+      if(!E.selLayer){
+        if(typeof netLayer === 'number' && netLayer >= T.layers) netLayer = 'all';
+        if(netLayer !== 'all'){ E.selLayer = colOfNet(netLayer); E.layerGuide = true; } else layerPageStart = 0;
+      }
       if(E.ctx){ PLN.build(E); PLN.fit(E); zoomRead(); }
       recalcOver();
       mountNet();
@@ -3417,7 +3863,14 @@
       /* 一对页签：训练配置（下面三个区）/ 整网查询（一块画布，换掉配置表单） */
       return '<div class="cs4-head"><div class="cs-vtabs' + (panelTab === 'net' ? ' idle' : '') + '" id="c4pt" role="tablist" aria-label="配置视图">'
         + '<button type="button" role="tab" data-pt="form" aria-selected="' + (panelTab === 'form') + '">训练配置</button><button type="button" role="tab" data-pt="net" aria-selected="' + (panelTab === 'net') + '">整网查询</button><span class="knob" aria-hidden="true"></span></div></div>'
-        + '<div class="cs4-netwrap" id="c4netwrap"' + (panelTab === 'net' ? '' : ' hidden') + ' aria-label="整网模型结构"></div>'
+        + '<div class="cs4-netwrap" id="c4netwrap"' + (panelTab === 'net' ? '' : ' hidden') + ' aria-label="整网模型结构">'
+        + '<div class="cs4-nethead"><div class="cs-vtabs cs4-subtabs" role="tablist" aria-label="整网查询类型">'
+        + '<button type="button" role="tab" data-net-mode="perf" aria-selected="true">性能分析</button><button type="button" role="tab" data-net-mode="monitor" aria-selected="false">训练监控</button><span class="knob" aria-hidden="true"></span></div>'
+        + '<div class="cs4-layerpager" id="c4layerpager" role="group" aria-label="模型 Layer 翻页"><button type="button" data-layer-select="all" aria-pressed="false">全部</button><span class="sep">|</span>'
+        + '<button type="button" data-layer-shift="-1" aria-label="上一组 Layer">‹</button><button type="button" data-layer-slot="0" aria-pressed="true">Layer 1</button><button type="button" data-layer-slot="1" aria-pressed="false">Layer 2</button><button type="button" data-layer-shift="1" aria-label="下一组 Layer">›</button></div></div>'
+        + '<div class="cs4-perf-legend" id="c4perflegend"><span class="label">算子耗时</span><div class="bar" aria-hidden="true"></div><div class="range"><span id="c4perfmin">0.04 ms</span><span id="c4perfmax">3.84 ms</span></div></div>'
+        + '<div class="cs4-netdeck" id="c4net" aria-label="openPangu 整网性能结构"></div>'
+        + '<div class="cs4-train-strip" id="c4trainstrip" hidden><div><span>训练步</span><b>Step 18,240</b></div><div><span>状态</span><b>稳定运行</b></div><div><span>吞吐</span><b>4,096 tok/s</b></div><div><span id="c4trainscope">Layer 1 · MFU</span><b>52.6%</b></div></div></div>'
         + '<div class="cs4-form" id="c4form"' + (panelTab === 'form' ? '' : ' hidden') + '>'
         + '<div class="cro-config-error" id="c4err" role="status" aria-live="polite"></div>'
         + '<div class="cs4-reg"><h2>Model Architecture</h2><div class="cs4-row">' + ['layers', 'dp', 'pp', 'tp', 'cp'].map(stepperHTML).join('') + '</div></div>'
@@ -3502,6 +3955,10 @@
         if(b.dataset.d){ var w = b.closest('.c4s'); if(b.getAttribute('aria-disabled') !== 'true') stepField(w.dataset.f, +b.dataset.d); }
         else if(b.dataset.m) setMode(b.dataset.m);
         else if(b.dataset.pt) setPanel(b.dataset.pt);
+        else if(b.dataset.netMode) setNetMode(b.dataset.netMode);
+        else if(b.hasAttribute('data-layer-select')) selectNetLayer(b.dataset.layerSelect);
+        else if(b.hasAttribute('data-layer-slot')) selectNetLayer(+b.dataset.layerSelect);
+        else if(b.dataset.layerShift) shiftLayerPage(+b.dataset.layerShift);
         else if(b.dataset.act === 'apply') applyFix();
         else if(b.dataset.act === 'cancel') cancelFix();
         else if(b.dataset.act === 'apply-oom') applyOomFix();
@@ -3525,16 +3982,16 @@
       stageEl = document.getElementById('c4stage'); cv = document.getElementById('c4cv'); cx = cv.getContext('2d');
       E.ctx = cx;
       /* 左栏的壳（#cs4conf）是 render 摆的、窗口变化时 paint → mount 会再进来：内容重建，监听只挂一次 */
-      if(conf){ conf.innerHTML = confHTML(); netHost = document.getElementById('c4netwrap'); if(!conf.dataset.bound){ conf.dataset.bound = '1'; bindConf(); } }
-      if(side && SIDE) sideP = SIDE(side);
-      if(!E.TOPO) applyTopo();
+      if(conf){ conf.innerHTML = confHTML(); netHost = document.getElementById('c4net'); if(!conf.dataset.bound){ conf.dataset.bound = '1'; bindConf(); } }
+      if(side && SIDE){ sideP = SIDE(side); bindDomPanel(sideP.el); }
+      if(!E.TOPO) applyTopo();   /* 整网查询默认停在 Layer 1，applyTopo 会让画布选中同一列 */
       mountNet();
       bindCanvas();
       if(ro) ro.disconnect();
       ro = new ResizeObserver(function(){ size(); });
       ro.observe(stageEl);
       size();
-      syncConf(); renderSide();
+      syncConf(); syncNetControls(); renderSide();
     }
     function size(){
       if(!stageEl) return;
@@ -3550,11 +4007,78 @@
     function setPanel(v){
       if(v === panelTab) return;
       panelTab = v;
+      if(v === 'net' && netMode === 'perf') E.selRank = null;   /* 性能分析从无 Rank 选择开始，不沿用训练配置里的 R23。 */
       var pt = document.getElementById('c4pt'), fm = document.getElementById('c4form'), nw = document.getElementById('c4netwrap');
       if(pt){ pt.classList.toggle('idle', v === 'net'); pt.querySelectorAll('button').forEach(function(b){ b.setAttribute('aria-selected', String(b.dataset.pt === v)); }); }
       if(fm) fm.hidden = v !== 'form'; if(nw) nw.hidden = v !== 'net';
       if(v === 'net') requestAnimationFrame(function(){ mountNet(); if(netDeck) netDeck.fit(); });
+      renderSide();   /* 表单 ⇄ 整网查询之间右栏要换内容：显存账 ⇄ 各域计算耗时差异 */
       redraw();
+    }
+    function syncNetControls(){
+      if(!conf) return;
+      conf.querySelectorAll('[data-net-mode]').forEach(function(b){ b.setAttribute('aria-selected', String(b.dataset.netMode === netMode)); });
+      var subTabs = conf.querySelector('.cs4-subtabs'); if(subTabs) subTabs.classList.toggle('idle', netMode === 'monitor');
+      var pager = document.getElementById('c4layerpager');
+      if(pager){
+        pager.querySelector('[data-layer-select="all"]').setAttribute('aria-pressed', String(netLayer === 'all'));
+        var slots = pager.querySelectorAll('[data-layer-slot]');
+        slots.forEach(function(b, i){
+          var layer = layerPageStart + i;
+          b.dataset.layerSelect = String(layer); b.textContent = 'Layer ' + layer; b.disabled = !E.TOPO || layer >= E.TOPO.layers;
+          b.setAttribute('aria-pressed', String(netLayer === layer));
+        });
+        var prev = pager.querySelector('[data-layer-shift="-1"]'), next = pager.querySelector('[data-layer-shift="1"]');
+        if(prev) prev.disabled = layerPageStart <= 0;
+        if(next) next.disabled = !E.TOPO || layerPageStart + 2 >= E.TOPO.layers;
+      }
+      var legend = document.getElementById('c4perflegend'), strip = document.getElementById('c4trainstrip');
+      if(legend) legend.hidden = netMode !== 'perf'; if(strip) strip.hidden = netMode !== 'monitor';
+      var scope = document.getElementById('c4trainscope'); if(scope) scope.textContent = (netLayer === 'all' ? '整网' : NET_UNITS[netLayer] || 'Layer ' + netLayer) + ' · MFU';
+    }
+    /* 把 netLayer 铺到 deck。性能分析只用正视，不做 3D 翻转：「全部」是整条链（输入端点卡 + 当前层卡 + 输出端点卡）；
+       选了层 / 端点则只留那一块（CSS 按 data-net-scope 藏掉其余，取景框让 deck 按留下的那一块适配，而不是仍按整条链的高度缩小）。
+       取景框要先于 setView 设好——setView 内部会 fit。 */
+    function applyNetView(){
+      if(!netDeck) return;
+      var scope = netScope();
+      if(netHost) netHost.dataset.netScope = scope;
+      netDeck.setFocusBox(scope === 'all' ? null : NET_FOCUS[scope]);
+      netDeck.setView('front');
+      if(scope === 'layer') netDeck.setFrontLayer(netLayer);
+      netDeck.setPerformanceMetrics(netMode === 'perf' ? performanceMetrics(netMetricLayer()) : null);
+      updatePerfLegend();
+    }
+    function setNetMode(mode){
+      netMode = mode === 'monitor' ? 'monitor' : 'perf';
+      if(netMode === 'perf') E.selRank = null;   /* 从训练监控进入性能分析时也不继承已有 Rank。 */
+      syncNetControls(); applyNetView(); renderSide(); redraw();
+    }
+    /* 算子高亮（点整网图里的一个计算节点）与列选择（点画布顶尺 / 翻页选层）互斥：任一方生效时先清掉另一方 */
+    function clearOpPick(){
+      E.hiDomain = null;   /* 撤掉即可：表里点的那一维会在下一帧由 syncDomain 按新锚点重建 */
+      if(!hiOp && !E.hiCols) return;
+      hiOp = null; E.hiCols = null;
+      if(netDeck){ deckMuted = true; try{ netDeck.selectNode(''); } finally { deckMuted = false; } }
+    }
+    /* fromCanvas：画布已经改好了 E.selLayer，这里只让整网查询跟上；否则是翻页器发起的，反过来把画布选到同一列 */
+    function selectNetLayer(layer, fromCanvas){
+      if(layer !== 'all' && !NET_UNITS[layer]) layer = clamp(Number(layer) || 0, 0, Math.max(0, E.TOPO.layers - 1));
+      netLayer = layer;
+      if(typeof layer === 'number' && (layer < layerPageStart || layer > layerPageStart + 1)) layerPageStart = clamp(layer, 0, Math.max(0, E.TOPO.layers - 2));
+      if(!fromCanvas){
+        clearOpPick(); E.selLayer = colOfNet(layer); E.layerGuide = !!E.selLayer;
+        /* 翻页器是**列**控件：用它就不是在看某一张卡了。选「全部」时连列也没有——
+           那正是「什么都不选、整张矩阵铺满热力」的那一档，所以这里无条件清掉卡的选中。 */
+        if(perfMode()) E.selRank = null;
+        renderSide();
+      }
+      syncNetControls(); applyNetView(); redraw();
+    }
+    function syncNetFromCanvas(){ var next = netKeyOf(E.selLayer); if(next !== netLayer) selectNetLayer(next, true); }
+    function shiftLayerPage(dir){
+      layerPageStart = clamp(layerPageStart + dir, 0, Math.max(0, E.TOPO.layers - 2));
+      selectNetLayer(layerPageStart);
     }
     var pan = null, suppress = false;
     function bindCanvas(){
@@ -3589,23 +4113,34 @@
         var r = cv.getBoundingClientRect(), mx = e.clientX - r.left, my = e.clientY - r.top;
         userStop();
         var tk = PLN.tick(E, mx, my), ph = tk ? null : PLN.hit(E, mx, my);
-        if(tk){ var off = E.selLayer && PLN.colKey(E.selLayer) === PLN.colKey(tk); E.selLayer = off ? null : tk; E.layerGuide = !off; }
+        /* 画布上的任何一次点击都是「选列 / 选卡」手势，与整网图的算子高亮互斥：统一先清一次。
+           放在分支之前是因为点空白处也要清——否则选中没了、通信域却还挂着上一张卡的成员名单。 */
+        clearOpPick();
+        if(tk){ var off = E.selLayer && PLN.colKey(E.selLayer) === PLN.colKey(tk); E.selLayer = off ? null : tk; E.layerGuide = !off; if(perfMode()) E.selRank = null; }
         else if(ph && ph.col){
-          var same = E.selRank === ph.c.r && E.selLayer && PLN.colKey(E.selLayer) === PLN.colKey(ph.col);
-          E.selRank = same ? null : ph.c.r; E.selLayer = same ? null : ph.col; E.layerGuide = !same;
-          if(!same && sideP) sideP.open();
+          /* 性能分析下「列」和「行」是两种问法，不能同时成立（见 perfMode 处的说明）：
+             点格子 = 挑这张卡（沿行看它各层的表现），列选择让位；选列要走顶尺或翻页器。
+             显存那边不受影响——那儿的问题本来就是「这张卡的这一层装了什么」，天然是一格。 */
+          if(perfMode()){
+            E.selRank = E.selRank === ph.c.r ? null : ph.c.r; E.selLayer = null; E.layerGuide = false;
+            if(E.selRank !== null && sideP) sideP.open();
+          } else {
+            var same = E.selRank === ph.c.r && E.selLayer && PLN.colKey(E.selLayer) === PLN.colKey(ph.col);
+            E.selRank = same ? null : ph.c.r; E.selLayer = same ? null : ph.col; E.layerGuide = !same;
+            if(!same && sideP) sideP.open();
+          }
         }
         else if(ph){ E.selRank = E.selRank === ph.c.r ? null : ph.c.r; if(E.selRank !== null && sideP) sideP.open(); }
         else if(mx >= PLC.RULER_LEFT_W && my >= PLC.RULER_TOP_H){ E.selRank = null; E.selLayer = null; E.layerGuide = false; }
-        renderSide(); redraw();
+        syncNetFromCanvas(); renderSide(); redraw();
       });
     }
     function selectCell(r, key){
-      E.selRank = r; E.layerGuide = true; E.selLayer = null;
+      E.selRank = r; E.layerGuide = true; E.selLayer = null; clearOpPick();
       var T = E.TOPO, l = parseInt(key.slice(1), 10);
       if(key.charAt(0) === 'L' && isFinite(l)) E.selLayer = {type:'layer', layer:l, label:'Layer' + l, short:'L' + l, dense:l < T.dense};
       if(sideP) sideP.open();
-      renderSide(); redraw();
+      syncNetFromCanvas(); renderSide(); redraw();
     }
     function matrixTarget(r, key){
       return function(){
@@ -3619,8 +4154,11 @@
     function redraw(){ if(!raf) raf = requestAnimationFrame(function(){ raf = 0; if(cx) drawMatrix(); if(netDeck) netDeck.refresh(); }); }
     function drawMatrix(){
       cx.setTransform(E.DPR, 0, 0, E.DPR, 0, 0); cx.clearRect(0, 0, E.W, E.H);
+      syncHeat();   /* 这一帧要不要铺逐格热力、按哪一层的中位数铺——PLN.draw 里的 cellHeat 钩子读的就是这两个 */
+      syncDomain();
       PLN.draw(E);
       var x0 = PLC.RULER_LEFT_W, y0 = PLC.RULER_TOP_H, RED = redRGB(), t = performance.now();
+      drawCommDomain();
       /* 超容只给格子铺一层浅红，不再给整行描红框；保留格缝，避免看成全网告警。 */
       if(overA > 0.005){
         cx.save(); cx.beginPath(); cx.rect(x0, y0, E.W - x0, E.H - y0); cx.clip(); cx.globalAlpha = overA;
@@ -3636,6 +4174,9 @@
         });
         cx.restore();
       }
+      /* 性能分析打开时，每个 Layer 列只在顶部标一枚耗时点；它是 Layer 级汇总，
+         不落进 Rank × Layer 单元格，避免被误读成逐 Rank 指标。 */
+      if(perfMode()) drawLayerPerformanceDots();
       /* 切口径那一下：左尺闪一层蓝——「变的是这两层字」 */
       if(rulerFlash > t){
         var a = Math.min(1, (rulerFlash - t)/700);
@@ -3643,8 +4184,430 @@
         redraw();
       }
     }
+    /* ══ 逐 Rank 逐 Layer 的耗时（构造数据）══════════════════════════════════════
+       口径：一张卡跑完这一层前反向 kernel 的**纯计算**时间，**不含**它在同步点上的等待。
+       等待是被别人拖出来的——混进来就再也分不清「谁慢」和「谁被拖慢」，而这张矩阵唯一
+       值得答的就是这个区别。等待的代价单独算，见 columnDomainStats() 里每组的 waste。
+
+       不用随机噪声：一幅处处均匀的热力图什么也教不了人。按并行维度分层构造，并刻意埋
+       两处**形态不同**的典型故障，能不能被一眼分开正是这张矩阵存在的理由：
+         · 掉队卡：一张卡全程慢 38%（降频 / 坏件），与层类型无关 → **一整行**发烫；
+         · 热 EP 组：路由偏爱这一组的专家，只在 MoE 层慢 26%、dense 层完全正常
+           → **隔行成组**（EP 成员在 rank 序里按 TP 跨步排列，不是连续的一块）。
+       而且掉队卡就落在 R23 所在的那个 EP 组里：组内 a2a 是同步点，于是「一张卡的毛病」
+       会变成「八张卡的代价」——这一笔由域聚合面板算给你看。 */
+    function stragglerRank(){
+      var T = E.TOPO; if(!T) return -1;
+      return (Math.floor(T.dp/2) + 1)*T.tp + (T.tp - 1);   /* BASE 下 = R19：PP0 · DP9 · TP1，与 R23 同一个 EP 组 */
+    }
+    function hotEpGroup(){
+      var T = E.TOPO; if(!T) return null;
+      return {pp:Math.min(2, T.pp - 1), tp:0, g:0};
+    }
+    /* 一个 EP 组横跨几台机器：组员 r 在一段里按 TP 跨步排列，首尾一算就知道，不必扫全表 */
+    function epNodeSpan(c){
+      var T = E.TOPO, g = Math.floor(c.dp/T.ep), rpn = T.rpn || 8;
+      var first = c.pp*T.dp*T.tp + g*T.ep*T.tp + c.tp, last = first + (T.ep - 1)*T.tp;
+      return Math.floor(last/rpn) - Math.floor(first/rpn) + 1;
+    }
+    function rankLayerMs(r, layer){
+      var T = E.TOPO, c = E.PC[r];
+      if(!T || !c || !isFinite(Number(layer))) return 0;
+      var moe = layer >= T.dense, f = 0.97 + ((r*37 + layer*11) % 13)/200;   /* 同型号卡之间 ±3% 的常态离散 */
+      if(r === stragglerRank()) f *= 1.38;
+      var hot = hotEpGroup();
+      if(moe && hot && c.pp === hot.pp && c.tp === hot.tp && Math.floor(c.dp/T.ep) === hot.g) f *= 1.26;
+      if(moe && epNodeSpan(c) > 1) f *= 1.05;   /* a2a 出机器，走机间网络 */
+      return layerPerformanceMs(layer)*f;
+    }
+
+    /* ══ 并行域：谁和谁在同一个同步点上 ══════════════════════════════════════════
+       成员判据照本页第 9 步 commOf() 那套（同一页里「TP / EP / DP / EDP 各是哪些卡」
+       只能有一个说法），差别只有两处：这里把 (dp>>3) 参数化成 (dp / T.ep)，并且**含自己**
+       —— 域聚合要把选中的这张卡也算进分布里。 */
+    /* at：这个同步点多久撞一次。层级（每层 / 每 MoE 层）的域才谈得上「这一层白等多少」；
+       DP / EDP 是步末各一次的梯度 All-Reduce，把它按层记就是虚报，所以只报倾斜、不报代价。 */
+    var DOMAINS = [
+      {k:'tp', name:'TP 组', at:'每层', perLayer:true},
+      {k:'ep', name:'EP 组', at:'每 MoE 层', perLayer:true, moeOnly:true},
+      {k:'dp', name:'DP 组', at:'步末'},
+      {k:'edp', name:'EDP 组', at:'步末', moeOnly:true},
+    ];
+    /* ══ 整列口径的域聚合 ════════════════════════════════════════════════════════
+       选中一列（而不是一张卡）时，右栏那块读数没有锚点可依：这一列里 EP 组有 16 个，
+       问「EP 组慢不慢」得把 16 个组都算一遍，再回答两件事——
+         · 最热的是哪一组（组间差异：整组摊到的活多）；
+         · 组内倾斜最大的是哪一组（组内差异：有人掉队，同步点在等他）。
+       这两件事的处方相反，所以分开报、也分开给点击入口：点哪一行就在矩阵里标出哪一组。 */
+    /* 成员判据照本页第 9 步 commOf() 那套（同一页里「TP / EP / DP / EDP 各是哪些卡」只能有一个说法），
+       差别只有一处：那里的 (dp>>3) 在这里参数化成 (dp / T.ep)。 */
+    function groupKeyOf(kind, c){
+      var T = E.TOPO;
+      return kind === 'tp' ? c.pp + '/' + c.dp
+        : kind === 'ep' ? c.pp + '/' + c.tp + '/' + Math.floor(c.dp/T.ep)
+        : kind === 'dp' ? c.pp + '/' + c.tp
+        : c.pp + '/' + (c.dp % T.ep);   /* edp：持有同一片专家的那几张，跨 TP 片 */
+    }
+    function groupLabel(kind, c){
+      var T = E.TOPO;
+      return kind === 'tp' ? 'PP' + c.pp + '·DP' + c.dp
+        : kind === 'ep' ? 'PP' + c.pp + '·TP' + c.tp + '·组' + Math.floor(c.dp/T.ep)
+        : kind === 'dp' ? 'PP' + c.pp + '·TP' + c.tp
+        : 'PP' + c.pp + '·片' + (c.dp % T.ep);
+    }
+    function columnDomainStats(kind, layer){
+      if(!E.TOPO || !E.PC.length) return null;
+      var byKey = {}, order = [];
+      E.PC.forEach(function(c){
+        var k = groupKeyOf(kind, c);
+        if(!byKey[k]){ byKey[k] = {key:k, label:groupLabel(kind, c), anchor:c, ranks:[]}; order.push(byKey[k]); }
+        byKey[k].ranks.push(c.r);
+      });
+      order.forEach(function(g){
+        var v = g.ranks.map(function(x){ return rankLayerMs(x, layer); }).sort(function(a, b){ return a - b; });
+        g.med = medianOf(v); g.max = v[v.length - 1];
+        /* 组内倾斜。组里不足 4 张时中位数说明不了问题（两三个样本，中位紧挨着最大值），
+           改用「最大 / 最小」的全幅：两张卡里有一张慢 38%，该读成组内差 38%，不是整组偏重。 */
+        g.skew = g.ranks.length >= 4 ? (g.med > 0 ? g.max/g.med - 1 : 0) : (v[0] > 0 ? g.max/v[0] - 1 : 0);
+        g.rel = heatMed > 0 ? g.med/heatMed - 1 : 0;
+        g.waste = (g.max - g.med)*(g.ranks.length - 1);
+        var best = -1;
+        g.ranks.forEach(function(x){ var q = rankLayerMs(x, layer); if(q > best){ best = q; g.slowRank = x; } });
+      });
+      var hot = order[0], lag = order[0];
+      order.forEach(function(g){ if(g.med > hot.med) hot = g; if(g.skew > lag.skew) lag = g; });
+      return {kind:kind, groups:order.length, size:order[0].ranks.length,
+              nodes:kind === 'ep' ? epNodeSpan(order[0].anchor) : 0, hot:hot, lag:lag};
+    }
+
+    /* ══ ① 选中列的逐格热力 ═════════════════════════════════════════════════════
+       量程是**相对本列中位数**的 −8%～+45%，不是这一列的 min–max：后者会让一列健康的卡
+       （彼此差 2%）里最慢的那张也烧成全红，纯属吓人。相对量程下，均匀的一列整体停在色阶
+       中段、看着就是均匀，只有真掉队的那张才冲到红端。
+       跨层比较不归它管——那是顶尺那排耗时点的事（固定量程 4.5 ms），两种量程的分工写在域面板表头。 */
+    /* 色阶落点：**中位数固定落在色带正中**（Turbo 的青绿档 = 「正常」），两侧各占半条。
+       慢的一侧量程 +40%、快的一侧 −20%：卡只会被别的事拖慢，不会莫名快出一大截，两侧不必对称。
+       为什么不按这一列的 min–max 归一：那会让一列健康的卡（彼此差 3%）里最慢的那张也烧成全红，纯属吓人。 */
+    var HEAT_DOWN = .20, HEAT_UP = .40;
+    function heatPos(ratio){
+      return ratio < 1 ? clamp(.5*(1 - (1 - ratio)/HEAT_DOWN), 0, .5) : clamp(.5 + .5*(ratio - 1)/HEAT_UP, .5, 1);
+    }
+    /* 真·中位数（偶数个取中间两个的平均）。不能用「四舍五入取一个下标」那种近似：
+       两张卡的 TP 组里那样取到的就是**最大值**，一张掉队卡会被读成「整组偏重」，归因正好反了。 */
+    function medianOf(sorted){
+      var n = sorted.length; if(!n) return 0;
+      return n % 2 ? sorted[(n - 1)/2] : (sorted[n/2 - 1] + sorted[n/2])/2;
+    }
+    /* 每一层的全列中位数：两种模式都以它为基准，所以按层缓存一份（拓扑一变就作废）。 */
+    /* 「全部」档一次要铺满整张矩阵（128 行 × 五十来列），rankLayerMs 每帧会被调用几千次；
+       它是 (rank, layer, 拓扑) 的纯函数，连同每层的中位数一起按拓扑签名缓存，拓扑一变整份作废。 */
+    var perfCache = {sig:'', med:null, cell:null};
+    function perfCacheOf(){
+      var sig = E.TOPO ? [E.TOPO.layers, E.TOPO.pp, E.TOPO.dp, E.TOPO.tp, E.TOPO.ep, E.TOPO.dense].join('/') : '';
+      if(perfCache.sig !== sig) perfCache = {sig:sig, med:{}, cell:{}};
+      return perfCache;
+    }
+    function msAt(r, layer){
+      var c = perfCacheOf().cell, k = r + ':' + layer;
+      if(c[k] === undefined) c[k] = rankLayerMs(r, layer);
+      return c[k];
+    }
+    function colMedAt(layer){
+      var m = perfCacheOf().med;
+      if(m[layer] === undefined){
+        var vals = E.PC.map(function(c){ return msAt(c.r, layer); }).sort(function(a, b){ return a - b; });
+        m[layer] = medianOf(vals);
+      }
+      return m[layer];
+    }
+    /* 三种模式，同一套色义 —— 一格的颜色永远是「它比**同一层**的其他卡快还是慢」：
+         全部（什么都没选）：整张矩阵铺满 → 答「全网的热点分布在哪」，一眼看出是一整行、
+                            还是隔行成组、还是某几列整体偏深；
+         列模式（选中一列）：固定层、沿列比 128 张卡 → 答「这一层谁慢」；
+         行模式（选中一张卡）：固定卡、沿行走 48 层，每层各按自己那一列的中位数归一
+                              → 答「这张卡在哪些层上落后于同侪」。
+       行模式不用「这张卡各层的绝对耗时」上色，是因为那条信息顶尺那排耗时点已经在说了（固定量程 4.5 ms），
+       而且各层绝对值的高低主要来自层本身贵不贵，与这张卡好不好无关。改成相对同层中位后：
+       一张健康的卡整行是齐的中段色，掉队卡整行发烫，热 EP 组里的卡则 dense 层正常、MoE 层发烫——
+       毛病的**形状**直接读得出来，这才是选中一张卡时真正想问的。 */
+    /* 性能分析下，「选一列」和「选一张卡」是两种互斥的问法，不能同时成立：
+         选列 → 固定层、沿列比 128 张卡，问「这一层谁慢」，读数在右栏（各域计算耗时差异）；
+         选卡 → 固定卡、沿行走各层，问「这张卡在哪些层落后」，读数还是右栏那本显存账。
+       两个都选着的话，矩阵上一行一列同时高亮，色阶却只能表达一个方向，读的人无从知道
+       眼前这片颜色到底在比什么。显存那边不互斥——那儿的问题本来就落在一格上（这张卡的这一层装了什么）。 */
+    function perfMode(){ return panelTab === 'net' && netMode === 'perf'; }
+    var heatMode = null, heatLayer = null, heatRank = null, heatMed = 0;
+    function heatColumnLayer(){
+      /* 点算子 → 看它命中的那一列；否则看选中的 Layer 列。端点列（Emb/Norm/Head）不铺：它们不是重复层，没有「跨 rank 分布」可言 */
+      if(E.hiCols){
+        for(var k in E.hiCols){
+          if(!E.hiCols[k] || k.charAt(0) !== 'L') continue;
+          var l = parseInt(k.slice(1), 10); if(isFinite(l)) return l;
+        }
+        return null;
+      }
+      return E.selLayer && E.selLayer.type === 'layer' ? E.selLayer.layer : null;
+    }
+    function syncHeat(){
+      heatMode = null; heatLayer = null; heatRank = null; heatMed = 0; E.cellHeat = null;
+      if(!perfMode() || !E.TOPO || !E.PC.length) return;
+      var l = heatColumnLayer();
+      if(l !== null){ heatMode = 'col'; heatLayer = l; heatMed = colMedAt(l); if(!heatMed) return; }
+      else if(E.selRank !== null){ heatMode = 'row'; heatRank = E.selRank; }
+      /* 性能分析下什么都没选（左栏翻页停在「全部」）＝ 要的是全景，整张矩阵铺满，而不是一片空白 */
+      else heatMode = 'all';
+      E.cellHeat = cellHeatOf;
+    }
+    function cellHeatOf(r, col){
+      if(col.type !== 'layer') return null;   /* Emb / Norm / Head 不是重复层，没有「同层的其他卡」可比 */
+      if(heatMode === 'col') return col.layer === heatLayer ? performanceColor(heatPos(msAt(r, heatLayer)/heatMed), 1) : null;
+      if(heatMode === 'row' && r !== heatRank) return null;
+      var med = colMedAt(col.layer);   /* 行模式与全部档都是逐层按各自那一列的中位数归一 */
+      return med ? performanceColor(heatPos(msAt(r, col.layer)/med), 1) : null;
+    }
+
+    /* ══ ③ 算子 → 通信域 ════════════════════════════════════════════════════════
+       点一枚集合通信算子，问的是「这一次通信把哪些卡拴在了一起」。答案是一个 rank 集合，
+       正是矩阵里那一批行——这也是这张矩阵上「这么多格子」最直接的用处：它们是域的**成员名单**。
+       梯度 All-Reduce（DP / EDP）不在前向图里，没有可点的节点，只出现在域聚合表里。 */
+    /* 从域聚合表里点中的那一维（'tp'|'ep'|'dp'|'edp'）。它与算子驱动的通信域是同一块叠加层的两个入口：
+       算子那条自带锚点与文案、优先级更高；这条**跟着选中卡走**——换一张卡就按新锚点重算成员，
+       不必回表里再点一次（「给我看这张卡的 EP 组」本来就是一条持续的诉求，不是一次性查询）。 */
+    var domPick = null;
+    function syncDomain(){
+      if(!domPick || heatLayer === null || !E.TOPO){ E.hiDomain = null; return; }
+      /* 'auto'（由点算子进来的）在这里落实成具体的一组，落实后写回 domPick —— 面板的选中态要认它 */
+      if(domPick.which === 'auto'){
+        var probe = columnDomainStats(domPick.kind, heatLayer);
+        domPick.which = probe && probe.lag.skew > .1 ? 'lag' : 'hot';
+      }
+      /* 「最热组 / 倾斜最大的组」是跟着层走的（换一层就可能是另一组），所以每次按当前层现解析，
+         不把成员名单存进 domPick —— 存了就会在翻层之后指着一组过时的卡。 */
+      var cs = columnDomainStats(domPick.kind, heatLayer), g = cs && cs[domPick.which];
+      if(!g){ E.hiDomain = null; return; }
+      domPick.label = g.label; domPick.n = g.ranks.length;
+      E.hiDomain = {kind:domPick.kind, ranks:g.ranks};
+    }
+    var COMM_DOMAIN = {a2a_dispatch:'ep', a2a_combine:'ep', expert_pool:'ep',
+                       moe_all_gather:'tp', moe_reduce_scatter:'tp',
+                       attn_all_gather:'tp', attn_reduce_scatter:'tp', logits_allgather:'tp'};
+    function layerPerformanceMs(layer){
+      var wave = ((layer + 3)*17 % 29)/28, base = layer < E.TOPO.dense ? 2.46 : 3.18;
+      return base*(.72 + .42*wave);
+    }
+    function drawLayerPerformanceDots(){
+      if(!E.plane || !E.TOPO) return;
+      var x0 = PLC.RULER_LEFT_W, y0 = PLC.RULER_TOP_H, cellW = E.plane.cellW*E.view.k;
+      cx.save(); cx.beginPath(); cx.rect(x0, 0, E.W - x0, y0); cx.clip();
+      E.plane.blocks.forEach(function(block){
+        if(!block) return;
+        block.cols.forEach(function(col, ci){
+          if(col.type !== 'layer') return;
+          var x = E.view.x + (block.x + ci*E.plane.cellW)*E.view.k, r = clamp(cellW*.1, 1.5, 3);
+          if(x + cellW < x0 || x > E.W) return;
+          cx.beginPath(); cx.arc(x + cellW/2, y0 - r - 2, r, 0, Math.PI*2);
+          cx.fillStyle = performanceColor(layerPerformanceMs(col.layer), 4.5); cx.globalAlpha = .95; cx.fill();
+          cx.strokeStyle = isDark() ? 'rgba(8,10,15,.72)' : 'rgba(255,255,255,.82)'; cx.lineWidth = Math.max(.75, r*.38); cx.stroke();
+        });
+      });
+      cx.restore();
+    }
+    /* ③ 通信域的成员名单铺在画布上：每个成员一条淡底 + 左尺边上一枚色签（域色照第 9 步的 VC，
+       同一页里 TP 青 / EP 紫 / DP 蓝 / EDP 粉只有一套说法）。选中的那张卡的签更实，它是域的锚点。 */
+    function drawCommDomain(){
+      var d = E.hiDomain;
+      if(!d || !d.ranks || !d.ranks.length || !E.plane) return;
+      var x0 = PLC.RULER_LEFT_W, y0 = PLC.RULER_TOP_H, col = (RI.VC && RI.VC[d.kind]) || BLUE;
+      cx.save(); cx.beginPath(); cx.rect(0, y0, E.W, E.H - y0); cx.clip();
+      d.ranks.forEach(function(r){
+        var row = PLN.cellRect(E, r, null);
+        if(!row || row.y + row.h < y0 || row.y > E.H) return;
+        var me = r === E.selRank;
+        cx.fillStyle = RI.hexA(col, me ? .18 : .10);
+        cx.fillRect(x0, row.y, E.W - x0, Math.max(1, row.h - 1));
+        cx.fillStyle = RI.hexA(col, me ? 1 : .68);
+        cx.fillRect(x0 - 4, row.y + 1, 3, Math.max(2, row.h - 3));
+      });
+      cx.restore();
+    }
+    /* ② 域聚合读数。三种状态：点了集合通信算子 → 那一个域的名单与代价；只选了 Layer 列 →
+       四个域各自的分布；其余（没在性能分析、或选的是端点列）→ 收起。
+       签名去重：redraw 是按帧跑的，状态没变就不碰 DOM。 */
+    function fmtMs(v){ return v.toFixed(2); }
+    function pct(v){ return (v >= 0 ? '+' : '−') + Math.round(Math.abs(v)*100) + '%'; }
+    function domainDef(kind){ return DOMAINS.filter(function(d){ return d.k === kind; })[0] || {}; }
+    function domainColor(kind){ return (RI.VC && RI.VC[kind]) || BLUE; }
+    /* 选中列时右栏的一块：这一维在整列上分成多少组、最热的是哪一组、组内倾斜最大的是哪一组。
+       两条各自可点——点谁就在矩阵里标出谁的成员，这是把「+26%」变成「这 8 张卡」的唯一通道。 */
+    function domainBlockHtml(cs, moe){
+      var def = domainDef(cs.kind), c = domainColor(cs.kind);
+      var line = function(which, g, label, val, bad, note){
+        var on = domPick && domPick.kind === cs.kind && domPick.which === which;
+        return '<div class="c4dm-line' + (on ? ' is-on' : '') + (bad ? ' is-bad' : '') + '"'
+          + ' data-dom="' + cs.kind + '" data-which="' + which + '" tabindex="0" role="button"'
+          + ' aria-pressed="' + (on ? 'true' : 'false') + '" title="在矩阵里标出这 ' + g.ranks.length + ' 张卡">'
+          + '<span class="k">' + label + '</span><span class="g">' + esc(g.label) + '</span>'
+          + '<span class="v">' + val + '</span>'
+          + (note ? '<span class="nt">' + note + '</span>' : '') + '</div>';
+      };
+      return '<section class="c4dm-blk" style="--dom-c:' + c + '">'
+        + '<h4><em></em>' + esc(def.name) + '<span>' + cs.groups + ' 组 × ' + cs.size + ' 张'
+        + (cs.kind === 'ep' && cs.nodes > 1 ? ' · 跨 ' + cs.nodes + ' 机' : '') + ' · ' + esc(def.at) + '</span></h4>'
+        + line('hot', cs.hot, '最热组', pct(cs.hot.rel), cs.hot.rel > .1 && cs.hot.skew <= .1,
+               cs.hot.rel > .1 && cs.hot.skew <= .1 ? '整组偏重 → 调负载' : '')
+        + line('lag', cs.lag, '组内倾斜', pct(cs.lag.skew), cs.lag.skew > .1,
+               cs.lag.skew > .1 ? 'R' + cs.lag.slowRank + ' 掉队'
+                 + (def.perLayer ? ' · 余 ' + (cs.lag.ranks.length - 1) + ' 张白等 ' + fmtMs(cs.lag.waste) + ' 卡·ms' : '') : '')
+        + '</section>';
+    }
+    function domainOffHtml(kind){
+      var def = domainDef(kind);
+      return '<section class="c4dm-blk is-off" style="--dom-c:' + domainColor(kind) + '">'
+        + '<h4><em></em>' + esc(def.name) + '<span>dense 层没有专家</span></h4></section>';
+    }
+    /* 整列口径的一句结论。优先级与逐卡口径那版一致：先组内掉队（有人拖着大家），再整组偏热（活分得不均）。 */
+    function columnVerdict(all, moe){
+      var lag = null, heavy = null;
+      all.forEach(function(cs){
+        if(!cs) return;
+        if(cs.lag.skew > .1 && domainDef(cs.kind).perLayer && (!lag || cs.lag.waste > lag.lag.waste)) lag = cs;
+        /* 组之所以热是因为组里混了一张掉队卡的话，它不是「负载不均」——要求组内齐平才算 */
+        if(cs.hot.rel > .1 && cs.hot.skew <= .1 && (!heavy || cs.hot.rel > heavy.hot.rel)) heavy = cs;
+      });
+      if(lag){
+        return '<b>' + esc(domainDef(lag.kind).name) + ' ' + esc(lag.lag.label) + '</b> 里 <b>R' + lag.lag.slowRank
+          + '</b> 比组内中位慢 ' + pct(lag.lag.skew) + '：同步点要等它，其余 ' + (lag.lag.ranks.length - 1)
+          + ' 张每过一次这一层白等约 <b>' + fmtMs(lag.lag.waste) + ' 卡·ms</b>。查的是<b>那一张卡</b>，不是这一层。';
+      }
+      if(heavy){
+        return '<b>' + esc(domainDef(heavy.kind).name) + ' ' + esc(heavy.hot.label) + '</b> 组内齐平（'
+          + pct(heavy.hot.skew) + '），但整组比全列中位重 <b>' + pct(heavy.hot.rel) + '</b>：没人在等谁，'
+          + '是这一组摊到的活本来就多'
+          + (heavy.kind === 'ep' ? '（路由偏爱它持有的那批专家）' : '') + '。要动的是<b>负载分配</b>，不是查硬件。';
+      }
+      return '各维的组间差异与组内倾斜都在 ±10% 内，这一层没有木桶，也没有偏重的组。';
+    }
+    function toggleDomPick(kind, which){
+      if(!kind || !which) return;
+      userStop();
+      var same = domPick && domPick.kind === kind && domPick.which === which;
+      domPick = same ? null : {kind:kind, which:which, label:'', n:0};
+      sideDomSig = '';   /* 选中态写在面板里，强制重写一次 */
+      renderSide(); redraw();
+    }
+    /* 委托绑在右栏壳上，绑一次 —— panel() 每次都重写内部 innerHTML，监听挂在行上会被冲掉 */
+    function bindDomPanel(el){
+      if(!el || el.dataset.domBound) return;
+      el.dataset.domBound = '1';
+      el.addEventListener('click', function(e){
+        var row = e.target.closest('.c4dm-line'); if(row) toggleDomPick(row.dataset.dom, row.dataset.which);
+      });
+      el.addEventListener('keydown', function(e){
+        if(e.key !== 'Enter' && e.key !== ' ') return;
+        var row = e.target.closest('.c4dm-line'); if(!row) return;
+        e.preventDefault(); toggleDomPick(row.dataset.dom, row.dataset.which);
+      });
+    }
+    /* 「全部」档的全景读数：哪张卡整体落后于同侪、哪一层最贵。
+       每张卡取它在各层「相对同层中位」比值的中位数——用中位而不是均值，免得少数几层的抖动决定排名。 */
+    function overviewStats(){
+      var L = E.TOPO.layers, worstRank = null, worstRatio = 0;
+      E.PC.forEach(function(c){
+        var rs = [];
+        for(var l = 0; l < L; l++){ var m = colMedAt(l); if(m) rs.push(msAt(c.r, l)/m); }
+        rs.sort(function(a, b){ return a - b; });
+        var v = medianOf(rs);
+        if(v > worstRatio){ worstRatio = v; worstRank = c.r; }
+      });
+      var hotLayer = 0, hotMs = 0, loMs = Infinity;
+      for(var l = 0; l < L; l++){
+        var m = colMedAt(l);
+        if(m > hotMs){ hotMs = m; hotLayer = l; }
+        if(m && m < loMs) loMs = m;
+      }
+      return {worstRank:worstRank, worstRatio:worstRatio - 1, hotLayer:hotLayer, hotMs:hotMs, loMs:loMs};
+    }
+    function overviewPanelHtml(){
+      var o = overviewStats(), T = E.TOPO, bad = o.worstRatio > .1;
+      return '<div class="c4dm">'
+        + '<p class="c4dm-top">' + E.PC.length + ' 张 × ' + T.layers + ' 层 · 逐层中位 <b>'
+        + fmtMs(o.loMs) + ' – ' + fmtMs(o.hotMs) + ' ms</b></p>'
+        + '<div class="c4dm-scale"><u>−20%</u><i></i><u>+40%</u></div>'
+        + '<p class="c4dm-cap"><b>口径</b>：每格是那张卡跑完那一层前反向 kernel 的<b>纯计算</b>时间，<b>不含</b>集合通信本身，也不含在同步点上的等待；颜色是它相对<b>同一层</b>全列中位的快慢。</p>'
+        + '<p class="c4dm-cap">所以看的是<b>形状</b>：一整行发烫 = 那张卡全程掉队；隔行成组 = 某个 EP 组摊到的活多（组员按 TP 跨步排列，不是连续的一块）；整列偏深只说明那一层本来就贵，不是毛病。</p>'
+        + '<section class="c4dm-blk" style="--dom-c:' + BLUE + '">'
+        + '<h4><em></em>全网热点<span>相对同层中位</span></h4>'
+        + '<div class="c4dm-line' + (bad ? ' is-bad' : '') + '"><span class="k">最慢的卡</span><span class="g">R'
+        + o.worstRank + '</span><span class="v">' + pct(o.worstRatio) + '</span>'
+        + (bad ? '<span class="nt">各层普遍高出同侪 → 整行发烫的就是它</span>' : '') + '</div>'
+        + '<div class="c4dm-line"><span class="k">最贵的层</span><span class="g">L' + o.hotLayer
+        + '</span><span class="v">' + fmtMs(o.hotMs) + ' ms</span>'
+        + '<span class="nt">绝对耗时最高，与快慢无关</span></div>'
+        + '</section>'
+        + '<p class="c4dm-hint">点顶尺或用左栏翻页选一层，看它的各域差异；点一格看那张卡的显存账。</p>'
+        + '</div>';
+    }
+    function domainPanelHtml(){
+      var moe = heatLayer >= E.TOPO.dense;
+      var all = DOMAINS.map(function(def){ return (def.moeOnly && !moe) ? null : columnDomainStats(def.k, heatLayer); });
+      var lead = hiOp && COMM_DOMAIN[hiOp]
+        ? '<p class="c4dm-lead" style="--dom-c:' + domainColor(COMM_DOMAIN[hiOp]) + '"><b>' + esc(opLabel(hiOp))
+          + '</b> 跑在 <b>' + esc(domainDef(COMM_DOMAIN[hiOp]).name) + '</b> 上，这一层共 '
+          + (columnDomainStats(COMM_DOMAIN[hiOp], heatLayer) || {}).groups + ' 组。</p>'
+        : '';
+      return '<div class="c4dm">'
+        + '<p class="c4dm-top">全列 ' + E.PC.length + ' 张 · 中位 <b>' + fmtMs(heatMed) + ' ms</b> · '
+        + (moe ? 'MoE' : 'Dense') + ' 层</p>'
+        + '<div class="c4dm-scale"><u>−20%</u><i></i><u>+40%</u></div>'
+        + '<p class="c4dm-cap"><b>口径</b>：各卡跑完本层前反向 kernel 的<b>纯计算</b>时间，<b>不含</b>集合通信本身，也不含在同步点上的等待。矩阵格子按它相对全列中位上色。</p>'
+        + '<p class="c4dm-cap">下面按四个<b>同步域</b>分组看它的差异：同域的卡要在同一个 barrier 会合，计算上的快慢差就在那里变成别人的等待。</p>'
+        + lead
+        + all.map(function(cs, i){ return cs ? domainBlockHtml(cs, moe) : domainOffHtml(DOMAINS[i].k); }).join('')
+        + '<p class="c4dm-note">' + columnVerdict(all, moe) + '</p>'
+        + '<p class="c4dm-hint">' + (domPick
+            ? '矩阵里标出的是 <b style="color:' + domainColor(domPick.kind) + '">' + esc(domPick.label || '')
+              + '</b> 的 ' + domPick.n + ' 张卡 · 再点一次收起'
+            : '点上面任一行，矩阵标出那一组的成员卡') + '</p>'
+        + '</div>';
+    }
+    /* 算子 id → 面板上的中文名：取整网图里那枚节点的文案，两边叫法一致 */
+    function opLabel(id){
+      var node = netHost && netHost.querySelector('[data-node="' + id + '"]');
+      var txt = node ? (node.getAttribute('aria-label') || node.textContent || '').trim() : '';
+      /* 只取 · 前的主名：节点文案是「EP Combine · fused A2A」这种带限定的全称，挂进面板标题会折行 */
+      return (txt || String(id).replace(/_/g, ' ')).split(' · ')[0];
+    }
     /* 整网图直接挂载 config-relation-plane 使用的 model-architecture-3d-deck 组件。
        这里仅把当前案例的拓扑配置喂给组件，并把组件节点的选择翻译成矩阵列集合；DOM、投影、配色和交互均由组件自身负责。 */
+    var PERFORMANCE_BASE = {
+      embedding:.42, final_norm:.18, lm_head:1.64, logits_allgather:.72,
+      attn_norm:.09, attn_all_gather:.46, q_a_proj:.64, kv_a_proj:.82, q_causal_conv:.17, kv_causal_conv:.21,
+      q_residual_add:.06, kv_residual_add:.07, q_a_norm:.08, kv_a_norm:.09, q_b_proj:.71, kv_b_proj:.94,
+      query_tensor:.05, key_tensor:.06, attention_core:3.84, o_causal_conv:.22, o_residual_add:.05, o_proj:.88,
+      attn_reduce_scatter:.53, post_attention_norm:.08, mhc_attention_post:.14, pre_mlp_norm:.08,
+      moe_all_gather:.44, dense_gate_up:2.12, dense_silu:.38, dense_down:1.76, moe_reduce_scatter:.48,
+      gate:.31, a2a_dispatch:1.88, expert_pool:3.26, shared_expert:1.22, a2a_combine:1.67, moe_branch_add:.11,
+      post_mlp_norm:.08, ffn_residual_add:.15, block_post_norm:.07, mtp_input_norms:.09, mtp_eh_proj:.74,
+      mtp_decoder_layer:2.34, mtp_shared_head:1.28
+    };
+    function performanceMetrics(layer){
+      var out = {}, index = layer === 'all' ? 0 : Number(layer) || 0;
+      for(var id in PERFORMANCE_BASE){
+        var salt = 0; for(var i = 0; i < id.length; i++) salt = (salt + id.charCodeAt(i)*(i + 3)) % 31;
+        out[id] = +(PERFORMANCE_BASE[id]*(.91 + ((salt + index*7)%19)/100)).toFixed(3);
+      }
+      return out;
+    }
+    function performanceColor(value, max){
+      return window.PtoModelArchitecture3dDeck && window.PtoModelArchitecture3dDeck.performanceColor
+        ? window.PtoModelArchitecture3dDeck.performanceColor(value, max)
+        : PR.heatColor(value/max, PR.HEAT_RAMP);
+    }
+    function updatePerfLegend(){
+      var metrics = performanceMetrics(netMetricLayer()), values = Object.keys(metrics).map(function(k){ return metrics[k]; }), lo = Math.min.apply(null, values), hi = Math.max.apply(null, values);
+      var minEl = document.getElementById('c4perfmin'), maxEl = document.getElementById('c4perfmax');
+      if(minEl) minEl.textContent = lo.toFixed(2) + ' ms'; if(maxEl) maxEl.textContent = hi.toFixed(2) + ' ms';
+    }
     var DENSE_OPS = {moe_all_gather:1, dense_gate_up:1, dense_silu:1, dense_down:1, moe_reduce_scatter:1};
     var MOE_OPS = {gate:1, a2a_dispatch:1, expert_pool:1, shared_expert:1, a2a_combine:1, moe_branch_add:1};
     var EMB_OPS = {token_ids:1, positions:1, attention_context:1, embedding_weight:1, embedding:1};
@@ -3658,10 +4621,14 @@
       if(MOE_OPS[id]) return 'moe';
       return 'all';
     }
-    function setCols(set){
-      var T = E.TOPO, o = {};
+    function columnForOp(id, layer){
+      var set = opSet(id), o = {};
       if(set === 'emb') o.emb = true; else if(set === 'norm') o.norm = true; else if(set === 'head') o.head = true;
-      else for(var l = 0; l < T.layers; l++){ var dn = l < T.dense; if((set === 'moe' && dn) || (set === 'dense' && !dn)) continue; o['L' + l] = true; }
+      else {
+        var target = layer !== null && layer !== undefined && isFinite(Number(layer)) ? Number(layer)
+          : (netLayer !== 'all' ? Number(netLayer) : deckLayerFor(id));
+        if(target !== null && isFinite(target)) o['L' + target] = true;
+      }
       return o;
     }
     function deckConfig(){
@@ -3689,46 +4656,92 @@
     function mountNet(){
       if(!netHost || !E.TOPO || !window.PtoModelArchitecture3dDeck) return;
       var sig = deckSignature(), theme = isDark() ? 'dark' : 'light';
-      if(netDeck && netDeck.root === netHost && sig === netSig){ netDeck.setTheme(theme); return; }
+      if(netDeck && netDeck.root === netHost && sig === netSig){
+        netDeck.setTheme(theme);
+        netDeck.setPerformanceMetrics(netMode === 'perf' ? performanceMetrics(netMetricLayer()) : null);
+        updatePerfLegend(); syncNetControls(); return;
+      }
       if(netDeck) netDeck.destroy();
       netHost.innerHTML = ''; netSig = sig;
       netDeck = window.PtoModelArchitecture3dDeck.render(netHost, {
         config:deckConfig(), initialView:'front', showChrome:false, initialTheme:theme,
+        performanceMetrics:netMode === 'perf' ? performanceMetrics(netMetricLayer()) : null,
         onNodeSelect:function(selected){
           if(deckMuted || !selected) return;
-          userStop(); pickOp(selected.nodeId, true);
+          userStop(); pickOp(selected.nodeId, true, selected.layer);
         }
       });
-      if(netDeck) netDeck.setPose({panY:-18});
+      if(netDeck) applyNetView();   /* 视图 / 取景框 / data-net-scope 一并按当前 netLayer 铺好 */
+      updatePerfLegend(); syncNetControls();
       if(panelTab === 'net') requestAnimationFrame(function(){ if(netDeck) netDeck.fit(); });
     }
-    /* 点组件中的一个算子：它在哪些层里出现，矩阵里那批列同时投下暗影并高亮。 */
-    function pickOp(id, fromDeck){
+    /* 点组件中的一个算子：矩阵只高亮当前节点实例所属的那一个 Layer 列；
+       Embedding / Norm / Head 这类整网首尾节点仍对应各自的独立列。 */
+    function pickOp(id, fromDeck, selectedLayer){
       hiOp = id || null;
-      E.hiCols = id ? setCols(opSet(id)) : null;
+      var layer = selectedLayer !== null && selectedLayer !== undefined && isFinite(Number(selectedLayer))
+        ? Number(selectedLayer) : (netLayer === 'all' ? deckLayerFor(id) : netLayer);
       if(id && netDeck && !fromDeck){
-        var layer = deckLayerFor(id);
+        /* 当前 Layer 没有这个分支（例如 L1 是 Dense、EP Combine 只在 MoE 层）时，
+           自动翻到该算子真实存在的代表层，避免查询命中一张空卡。 */
+        if(layer !== null && !netHost.querySelector('.pto-model-deck__layer[data-layer="' + layer + '"] [data-node="' + id + '"]')) layer = deckLayerFor(id);
+        /* 端点算子（Emb / Norm / Head）没有所属层：「全部」里直接选；只留一块时若当前不是它那块端点卡，切到那块 */
+        var unit = layer === null ? opSet(id) : null, next = layer !== null ? layer : (NET_UNITS[unit] && netLayer !== 'all' && netLayer !== unit ? unit : null);
         deckMuted = true;
         try{
-          if(layer !== null) netDeck.setFrontLayer(layer);
+          if(next !== null){ netLayer = next; if(typeof next === 'number') layerPageStart = clamp(next, 0, Math.max(0, E.TOPO.layers - 2)); syncNetControls(); applyNetView(); }
           netDeck.selectNode(id, layer === null ? undefined : layer);
         } finally { deckMuted = false; }
       }
-      redraw();
+      /* 与画布的选择互斥：算子高亮一生效，顶尺那一列、以及选中的那张卡都退掉——
+         算子问的是「它落在哪些卡上」，答案铺在一整列上，这时再留一行选中只会两头打架 */
+      if(id){ E.selLayer = null; E.layerGuide = false; if(perfMode()) E.selRank = null; }
+      E.hiCols = id ? columnForOp(id, layer) : null;
+      /* ③ 点的若是一枚集合通信算子，再把它的通信域（一批 rank）锁出来铺到矩阵上 */
+      /* 点的若是一枚集合通信算子：整列里这一维有十几组，全亮等于没亮，所以自动挑**当下最值得看**的
+         那一组（有人掉队就挑掉队那组，否则挑最热那组）。具体挑哪个要等 heatLayer 定下来才知道，
+         这里先记 'auto'，由 syncDomain 落实成 hot / lag。 */
+      var kind = id ? COMM_DOMAIN[id] : null;
+      domPick = kind ? {kind:kind, which:'auto', label:'', n:0} : null;
+      sideDomSig = '';
+      renderSide(); redraw();
     }
     function netTarget(op){
       return function(){
         if(!netHost) return null;
-        var node = netHost.querySelector('.pto-model-deck__layer.is-front-layer [data-node="' + op + '"]')
-          || netHost.querySelector('[data-node="' + op + '"]');
+        var node = netHost.querySelector('.pto-model-deck__layer.is-front-layer [data-node="' + op + '"]');
+        if(!node){
+          var layer = deckLayerFor(op);
+          if(layer !== null && netDeck){ netLayer = layer; layerPageStart = clamp(layer, 0, Math.max(0, E.TOPO.layers - 2)); syncNetControls(); applyNetView(); node = netHost.querySelector('.pto-model-deck__layer.is-front-layer [data-node="' + op + '"]'); }
+        }
+        node = node || netHost.querySelector('[data-node="' + op + '"]');
         return node ? {element:node} : null;
       };
     }
     /* ── 右列：案例三那栏（放大的那张 + 读数），账不随时间走、容量随卡型号 ── */
+    var sideDomSig = '';
     function renderSide(){
       if(!sideP) return;
+      /* 面板内容依赖热力状态（选的是列还是卡、基准中位是多少），它平时在 drawMatrix 里算；
+         renderSide 会被同步调用（点击、翻页），所以这里先自己算一遍，拿的才是当前值。两处都算不冲突：colMedAt 有缓存。 */
+      syncHeat(); syncDomain();
       var r = E.selRank;
-      if(r === null){ sideP.empty('点矩阵里的一格，这里列出那张卡的显存账：五档各多少、合计装不装得下。点顶部刻度只选一层。'); return; }
+      /* 选中一列 → 右栏是这一层的各域计算耗时差异（标题带层号）。它取代了原先浮在画布左上的那块卡片：
+         同样的内容放到右栏，既不遮挡矩阵，也有地方把四个维度摊开写。 */
+      /* 「全部」档：什么都没选、整张矩阵铺满热力，右栏给全景读数（不能还写着「点一格…」） */
+      if(perfMode() && heatMode === 'all'){
+        var osig = ['all', E.TOPO ? [E.TOPO.layers, E.TOPO.pp, E.TOPO.dp, E.TOPO.tp, E.TOPO.ep].join('/') : ''].join('|');
+        if(osig !== sideDomSig){ sideDomSig = osig; sideP.panel('全部 · 计算耗时全景', overviewPanelHtml()); sideP.open(); }
+        return;
+      }
+      if(perfMode() && heatMode === 'col' && heatLayer !== null){
+        var sig = ['dom', heatLayer, hiOp || '', domPick ? domPick.kind + domPick.which : '',
+                   E.TOPO ? [E.TOPO.layers, E.TOPO.pp, E.TOPO.dp, E.TOPO.tp, E.TOPO.ep].join('/') : ''].join('|');
+        if(sig !== sideDomSig){ sideDomSig = sig; sideP.panel('Layer ' + heatLayer + ' · 各域计算耗时差异', domainPanelHtml()); sideP.open(); }
+        return;
+      }
+      sideDomSig = '';
+      if(r === null){ sideP.empty('点矩阵里的一格看那张卡的显存账；点顶部刻度或用左栏翻页选一层，这里给出那一层各卡计算耗时在四个同步域上的差异。'); return; }
       var c = E.PC[r], m = MEM[r], T = E.TOPO, tot = total(m);
       var sub = 'PP' + c.pp + ' · ' + (T.ortho ? 'DP ' + Math.floor(c.dp/T.ep) + ' · EP ' + (c.dp % T.ep) : 'DP' + c.dp + ' · EP 组 ' + (c.dp % T.ep)) + ' · TP' + c.tp + ' · node ' + Math.floor(r/8);
       sideP.head(c, sub, m);
@@ -3771,7 +4784,7 @@
       }, function(){ zooming = false; PLN.fit(E); zoomRead(); redraw(); });
     }
 
-    /* ── 剧本：五段。步骤三的批量 Layer 在步骤四收束到 R23 × L7，步骤五沿用到 Rank 总量刷新 ── */
+    /* ── 剧本：五段。步骤三的单个 Layer 列在步骤四收束到 R23 × L7，步骤五沿用到 Rank 总量刷新 ── */
     var SEG = [{lbl:'1 · 配置联动与World Size实时可视', c:'#9B3CF6'}, {lbl:'2 · 预览 Rank 内存受配置的影响', c:'#8FBB7A'},
                {lbl:'3 · 查询计算节点分布', c:'#3B82F6'}, {lbl:'4 · 查看 Layer x Rank 的计算图和持有专家', c:'#F59E0B'},
                {lbl:'5 · 为配置变化推荐适配方案或危险拦截', c:'#c0392b'}];
@@ -3782,16 +4795,23 @@
       DemoPointer.stop();
       cancelAnim();
       var topologyChanged = !E.TOPO || !sameConfig(lastValid, BASE);
-      /* 步骤四先保留算子查询的批量 Layer，再点回单格；步骤五沿用这个单格，应用新配置时才清除。 */
+      /* 步骤四先保留算子查询命中的单个 Layer 列，再点回单格；步骤五沿用这个单格，应用新配置时才清除。 */
       var keptLayer = nextStage === 5
         ? (E.selLayer && E.selLayer.type === 'layer' ? E.selLayer : {type:'layer', layer:7, label:'Layer7', short:'L7', dense:false})
         : null;
-      var keptCols = nextStage === 4 ? (E.hiCols || setCols(opSet('a2a_combine'))) : null;
+      var keptCols = nextStage === 4 ? (E.hiCols || columnForOp('a2a_combine', deckLayerFor('a2a_combine'))) : null;
       cfg = copy(BASE); lastValid = copy(BASE); pending = null; oomAdvice = null;
       E.selRank = R23; E.selLayer = keptLayer; E.layerGuide = !!keptLayer;
       E.hiCols = keptCols; hiOp = keptCols ? 'a2a_combine' : null; overA = 0; rulerFlash = 0;
+      /* 整网查询跟着留下来的选择走：步骤五留 L7 列 → Layer 7；其余段先回「全部」（步骤三要在整条链上先点 Final RMSNorm，
+         再由 EP Combine 翻到 L24）。步骤四那一列是算子高亮而不是列选择，applyTopo 会把它清掉、又会把停着的层降格成列选择，
+         所以等它过后再把高亮和 Layer 24 一起补回来。 */
+      netLayer = keptLayer ? keptLayer.layer : 'all';
       /* 配置本来就在基线时不重建同一张矩阵，避免步骤交界处无意义地闪一下。 */
       if(topologyChanged || nextStage === 5) applyTopo(); else recalcOver();
+      if(keptCols){ E.hiCols = keptCols; hiOp = 'a2a_combine'; netLayer = deckLayerFor('a2a_combine'); }
+      layerPageStart = typeof netLayer === 'number' ? clamp(netLayer, 0, Math.max(0, E.TOPO.layers - 2)) : 0;
+      syncNetControls(); applyNetView();
       if(nextStage === 4 && E.ctx){ PLN.fit(E); zoomRead(); }
       setPanel('form'); if(sideP) sideP.open(); syncConf(); renderSide(); redraw();
       if(conf) conf.scrollTop = 0;
@@ -3799,8 +4819,8 @@
     function baseCaps(){
       CAPS = ['同一批 128 张卡，EP 与 DP 有两种记法。现在是<b>切出口径</b>：DP 16 里含着 EP 组（16 = 2 个副本 × 8 个 EP rank），矩阵左尺读作 EDP | DP。',
               '点 R23（stage 0 · DP 11）：右栏列出它的显存账——权重 / 梯度 / 优化器态 / 激活 / 预留五档，放大的那张按 64 GB 的壳画、大字是占容量的百分比。',
-              '左栏切到<b>整网查询</b>：从 Token Embedding 到 LM Head 的一条计算流，中间那块是一层的算子图——Pre-MLP RMSNorm 之后分两条道，左 Dense FFN 只有 L0–L1 走、右 MoE 是 L2–L47 走。',
-              '沿用上一步高亮的 <b>46 个 MoE Layer</b>：先点回其中的 <b>R23 × L7</b> 单格，再把它放大到计算图。',
+              '左栏切到<b>整网查询</b>：从 Token Embedding 到 LM Head 的一条计算流，中间那块是当前层的算子图——Pre-MLP RMSNorm 之后走哪条 FFN 由层类型决定：L0–L1 是 Dense FFN，L2 起是 MoE。点一枚算子，矩阵回答的是「它落在哪些卡上、这些卡里谁慢」。',
+              '沿用上一步高亮的 <b>Layer 24 单列</b>：再点 <b>R23 × L7</b> 单格，把它放大到计算图。',
               '延续步骤四选中的 <b>R23 × L7</b>，最后再把 DP 手输成 <b>4</b>：切出口径下 EP 还是 8，4 除不尽 8……'];
     }
     var BEATS = [
@@ -3818,9 +4838,9 @@
       {end:10300, b:[
         {at:300, fn:function(){ DemoPointer.click(function(){ return conf && conf.querySelector('[data-pt="net"]'); }, function(){ setPanel('net'); }, '切到整网查询'); }},
         {at:1900, fn:function(){ DemoPointer.click(netTarget('final_norm'), function(){ pickOp('final_norm'); cap(3, '先点输出端的 <b>Final RMSNorm</b>：它不属于重复的 Transformer Layer，只对应矩阵中的单独 <b>Norm</b> 列，因此当前只高亮这一列。'); }, '点 Final RMSNorm'); }},
-        {at:5600, fn:function(){ DemoPointer.click(netTarget('a2a_combine'), function(){ pickOp('a2a_combine'); cap(3, '再点 <b>EP Combine</b>：选中范围从单独的 Norm 列扩展到 <b>46 个 MoE Layer（L2–L47）</b>；L0、L1 是 Dense，没有路由与 Combine。不同节点对应的 Layer 分布差异一眼可见。'); }, '点 EP Combine'); }}]},
+        {at:5600, fn:function(){ DemoPointer.click(netTarget('a2a_combine'), function(){ pickOp('a2a_combine'); cap(3, '再点 <b>EP Combine</b>：整网视图自动翻到包含该节点的 <b>Layer 24</b>，矩阵那一列改按<b>每张卡跑这一层的耗时</b>上色（相对全列中位）——一眼看出谁慢；右栏换成 <b>Layer 24 · 各域计算耗时差异</b>（口径是纯计算，不含通信与等待），把 TP / EP / DP / EDP 四维各自的「最热组」与「组内倾斜最大的组」摊开，并自动在矩阵里标出 EP 这一维当下最值得看的那一组。'); }, '点 EP Combine'); }}]},
       {end:10300, b:[
-        {at:300, fn:function(){ DemoPointer.click(matrixTarget(R23, 'L7'), function(){ E.hiCols = null; hiOp = null; selectCell(R23, 'L7'); cap(4, '从上一步高亮的 <b>46 个 MoE Layer</b> 收束到一个格子：选中 <b>R23 × L7</b>，接下来只查看这张卡在这一层里的专家。'); }, '点 R23 × L7'); }},
+        {at:300, fn:function(){ DemoPointer.click(matrixTarget(R23, 'L7'), function(){ selectCell(R23, 'L7'); cap(4, '从上一步高亮的 <b>L24 单列</b> 切到一个格子：选中 <b>R23 × L7</b>，接下来只查看这张卡在这一层里的专家。'); }, '点 R23 × L7'); }},
         {at:2200, fn:function(){
           var home = {x:E.view.x, y:E.view.y, k:E.view.k};
           zoomTo(R23, 'L7', 1900, function(){ at(2000, function(){ zoomBack(home, 1900); }); });

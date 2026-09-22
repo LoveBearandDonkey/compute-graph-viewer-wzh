@@ -1,0 +1,200 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="MindSpeed 仓库内置 Demo、系统测试与模型基准目录">
+  <title>MindSpeed · 内置 Demo 与可执行用例</title>
+  <style>
+    :root { --bg:#07100f; --panel:#0f1e1b; --line:rgba(190,229,216,.14); --line-strong:rgba(190,229,216,.28); --text:#eef8f4; --muted:#a8bdb6; --dim:#6f8780; --lime:#c9f45f; --lime-soft:rgba(201,244,95,.13); --mint:#61dfbd; --mint-soft:rgba(97,223,189,.12); --amber:#ffc76b; --amber-soft:rgba(255,199,107,.12); --max:1120px; }
+    * { box-sizing:border-box; }
+    html { scroll-behavior:smooth; }
+    body { margin:0; color:var(--text); background:radial-gradient(circle at 84% 8%,rgba(97,223,189,.12),transparent 28rem),var(--bg); font-family:Inter,ui-sans-serif,system-ui,-apple-system,"Segoe UI","Microsoft YaHei",sans-serif; line-height:1.65; }
+    a { color:inherit; }
+    .shell { width:min(calc(100% - 40px),var(--max)); margin-inline:auto; }
+    header { position:sticky; top:0; z-index:10; border-bottom:1px solid var(--line); background:rgba(7,16,15,.86); backdrop-filter:blur(16px); }
+    .nav { min-height:64px; display:flex; align-items:center; justify-content:space-between; gap:20px; }
+    .brand { font-weight:850; text-decoration:none; }
+    .back { padding:8px 12px; border:1px solid var(--line-strong); border-radius:10px; color:var(--lime); text-decoration:none; font-size:12px; }
+    main { padding-bottom:70px; }
+    .hero { padding:84px 0 52px; }
+    .eyebrow { color:var(--lime); font:800 11px/1 ui-monospace,monospace; letter-spacing:.12em; text-transform:uppercase; }
+    h1,h2,h3,p { margin-top:0; }
+    h1,h2,h3 { line-height:1.16; letter-spacing:-.025em; }
+    h1 { max-width:850px; margin:18px 0 22px; font-size:clamp(40px,6vw,68px); }
+    h2 { margin-bottom:12px; font-size:clamp(28px,4vw,42px); }
+    h3 { font-size:19px; }
+    .lede { max-width:800px; color:var(--muted); font-size:18px; }
+    .notice { margin-top:28px; padding:18px 20px; border-left:3px solid var(--amber); background:var(--amber-soft); color:#ead8b9; font-size:13px; }
+    .case { overflow:hidden; margin-bottom:16px; border:1px solid var(--line-strong); border-radius:22px; background:var(--panel); }
+    .case-head { display:grid; grid-template-columns:1fr auto; gap:24px; align-items:start; padding:24px; border-bottom:1px solid var(--line); background:linear-gradient(120deg,var(--lime-soft),transparent 64%); }
+    .case-head h3 { margin:8px 0 6px; font-size:25px; }
+    .case-head p { margin:0; color:var(--muted); font-size:13px; }
+    .case-badge { padding:7px 10px; border-radius:999px; color:var(--lime); background:rgba(201,244,95,.1); font:800 10px/1 ui-monospace,monospace; }
+    .case-body { display:grid; grid-template-columns:minmax(0,1.25fr) minmax(260px,.75fr); }
+    .code-panel { padding:22px; border-right:1px solid var(--line); }
+    .code-panel > strong,.facts > strong { display:block; margin-bottom:12px; color:var(--mint); font-size:12px; }
+    pre { margin:0; padding:18px; overflow-x:auto; border-radius:12px; color:#cce7dd; background:rgba(0,0,0,.28); font:11px/1.7 ui-monospace,monospace; }
+    .facts { padding:22px; }
+    .fact { padding:11px 0; border-top:1px solid var(--line); }
+    .fact:first-of-type { border-top:0; }
+    .fact span { display:block; color:var(--dim); font:800 9px/1 ui-monospace,monospace; letter-spacing:.08em; }
+    .fact b { display:block; margin-top:6px; font-size:12px; }
+    .case-foot { padding:16px 22px; border-top:1px solid var(--line); color:var(--muted); font-size:12px; }
+    section { padding:50px 0; }
+    .section-head { display:grid; grid-template-columns:1fr minmax(280px,430px); gap:40px; align-items:end; margin-bottom:28px; }
+    .section-head p { margin:0; color:var(--muted); font-size:14px; }
+    .grid { display:grid; grid-template-columns:repeat(4,1fr); gap:14px; }
+    .card { min-height:245px; padding:22px; border:1px solid var(--line); border-radius:18px; background:var(--panel); }
+    .card .num { display:block; margin-bottom:30px; color:var(--lime); font:850 11px/1 ui-monospace,monospace; }
+    .card p { color:var(--muted); font-size:13px; }
+    .card code,.path { color:#c7d9d2; font:10px/1.5 ui-monospace,monospace; overflow-wrap:anywhere; }
+    .table-wrap { overflow-x:auto; border:1px solid var(--line); border-radius:18px; background:var(--panel); }
+    table { width:100%; min-width:820px; border-collapse:collapse; }
+    th,td { padding:16px 18px; border-bottom:1px solid var(--line); text-align:left; vertical-align:top; }
+    th { color:var(--dim); font:800 10px/1.4 ui-monospace,monospace; letter-spacing:.08em; }
+    td { color:var(--muted); font-size:12px; }
+    td strong { display:block; color:var(--text); font-size:13px; }
+    tr:last-child td { border-bottom:0; }
+    .status { display:inline-flex; padding:5px 8px; border-radius:999px; color:var(--amber); background:var(--amber-soft); font-size:10px; font-weight:850; }
+    .checklist { display:grid; grid-template-columns:repeat(4,1fr); gap:14px; }
+    .check { padding:20px; border:1px dashed var(--line-strong); border-radius:16px; }
+    .check strong { display:block; margin-bottom:7px; color:var(--mint); }
+    .check span { color:var(--muted); font-size:12px; }
+    footer { padding:26px 0 44px; border-top:1px solid var(--line); color:var(--dim); font-size:11px; }
+    @media(max-width:900px){ .grid,.checklist{grid-template-columns:1fr 1fr}.section-head{grid-template-columns:1fr}.case-body{grid-template-columns:1fr}.code-panel{border-right:0;border-bottom:1px solid var(--line)} }
+    @media(max-width:620px){ .shell{width:min(calc(100% - 24px),var(--max))}.grid,.checklist{grid-template-columns:1fr}.hero{padding-top:58px}.nav{min-height:58px} }
+  </style>
+</head>
+<body>
+  <header>
+    <div class="shell nav">
+      <a class="brand" href="mindspeed-tool-matrix-analysis.html">MindSpeed × Insight</a>
+      <a class="back" href="mindspeed-tool-matrix-analysis.html#examples">← 返回样例资产楼层</a>
+    </div>
+  </header>
+  <main>
+    <section class="hero">
+      <div class="shell">
+        <p class="eyebrow">Drill-down 01 · Demo catalog</p>
+        <h1>内置 Demo 与<br>可执行用例</h1>
+        <p class="lede">下面不再只列目录，而是直接拆开仓库里的真实脚本：卡数、模型规模、并行参数、优化开关、启动命令和需要替换的路径都能看到。</p>
+        <div class="notice"><strong>使用边界：</strong>这些内容不是浏览器里即可运行的独立 Demo，也不是自带数据的最小沙盒；脚本中的数据路径、软件版本和卡数需要按真实环境修改。</div>
+      </div>
+    </section>
+
+    <section>
+      <div class="shell">
+        <div class="section-head"><div><p class="eyebrow">Case 01 · ready-made script</p><h2>8 卡跑 Llama3-8B</h2></div><p>这是仓库最完整、最容易代入的训练案例：单机 8 卡、TP=8、PP=1、8K 序列，并已打开多项 MindSpeed 融合优化。</p></div>
+        <article class="case">
+          <div class="case-head"><div><span class="eyebrow">REPOSITORY SCRIPT</span><h3>你只需要替换三个路径</h3><p>脚本本身已经写好 torchrun、模型结构、并行和优化参数。</p></div><span class="case-badge">LLAMA3 · 8 NPU</span></div>
+          <div class="case-body">
+            <div class="code-panel"><strong>仓库中的真实参数节选</strong><pre>NPUS_PER_NODE=8
+CKPT_SAVE_DIR="your model save ckpt path"
+DATA_PATH="your data path"
+TOKENIZER_MODEL="your tokenizer path"
+
+TP=8
+PP=1
+
+--micro-batch-size 2
+--global-batch-size 16
+--seq-length 8192
+--num-layers 32
+--hidden-size 4096
+--bf16
+--sequence-parallel
+--use-flash-attn
+--use-fused-rotary-pos-emb
+--use-fused-rmsnorm
+--use-fused-swiglu</pre></div>
+            <div class="facts"><strong>这份实例具体到什么程度</strong>
+              <div class="fact"><span>启动入口</span><b>torchrun ... pretrain_gpt.py</b></div>
+              <div class="fact"><span>训练规模</span><b>32 层 · 4096 hidden · 8192 sequence</b></div>
+              <div class="fact"><span>并行策略</span><b>TP8 · PP1 · Sequence Parallel</b></div>
+              <div class="fact"><span>内置输出</span><b>每步日志、吞吐、Checkpoint 保存入口</b></div>
+              <div class="fact"><span>你仍需提供</span><b>预处理数据、Tokenizer、保存目录</b></div>
+            </div>
+          </div>
+          <div class="case-foot"><strong>直接查看：</strong> <span class="path">tests_extend/system_tests/llama3/pretrain_llama3_8b_ptd.sh</span>；配套准备步骤与 2474 tokens/s/p 记录位于同目录 README。</div>
+        </article>
+
+        <article class="case">
+          <div class="case-head"><div><span class="eyebrow">CASE 02 · COMPLEX STACK</span><h3>8 卡验证 DeepSeek-V3 的 MLA + MoE + DualPipeV</h3><p>这不是伪代码：仓库提供了一份 4 层裁剪网络、15 次迭代的系统测试，用小规模任务验证复杂特性组合。</p></div><span class="case-badge">DEEPSEEK · 15 ITERS</span></div>
+          <div class="case-body">
+            <div class="code-panel"><strong>实际脚本中的核心组合</strong><pre>NPUS_PER_NODE=8
+TP=2
+PP=2
+EP=4
+CP=1
+NUM_LAYERS=4
+SEQ_LEN=4096
+MBS=1
+GBS=8
+
+--multi-latent-attention
+--num-experts 16
+--moe-router-topk 8
+--moe-token-dispatcher-type alltoall
+--moe-fb-overlap
+--schedules-method dualpipev
+--swap-optimizer
+--moe-zero-memory level0
+--train-iters 15</pre></div>
+            <div class="facts"><strong>为什么它有代入感</strong>
+              <div class="fact"><span>用途</span><b>先验证复杂执行链能否跑通，而非完整预训练</b></div>
+              <div class="fact"><span>覆盖机制</span><b>MLA、16 Experts、All-to-All、MTP、DualPipeV</b></div>
+              <div class="fact"><span>显存动作</span><b>Swap Optimizer、MLA Swap、MoE Zero Memory</b></div>
+              <div class="fact"><span>外部依赖</span><b>MindSpeed-LLM、DeepSeek Tokenizer 与 Alpaca 数据</b></div>
+            </div>
+          </div>
+          <div class="case-foot"><strong>直接查看：</strong> <span class="path">tests_extend/system_tests/deepseek/pretrain_deepseek_v3_ptd_dualpipev.sh</span></div>
+        </article>
+      </div>
+    </section>
+
+    <section>
+      <div class="shell">
+        <div class="section-head"><div><p class="eyebrow">Built-in inventory</p><h2>仓库内置了什么</h2></div><p>从“先跑通”到“验证特性与大模型配置”，仓库提供四层递进资产。</p></div>
+        <div class="grid">
+          <article class="card"><span class="num">01 / STARTER</span><h3>分布式入门脚本</h3><p>提供 PyTorch 与 MindSpore 两类基础分布式训练入口。</p><code>tests_extend/example/train_distributed.sh<br>tests_extend/example/train_distributed_ms.sh</code></article>
+          <article class="card"><span class="num">02 / CONFIG</span><h3>YAML 参数样例</h3><p>展示模型结构、并行、优化器与 MindSpeed 特性参数如何组织。</p><code>system_tests/yaml_args_example/example.yaml</code></article>
+          <article class="card"><span class="num">03 / FEATURE</span><h3>特性系统测试</h3><p>覆盖 FSDP2、DualPipeV、Ring/Ulysses、2D-TP、CoC、Hybrid CP 等。</p><code>tests_extend/system_tests/feature_tests/</code></article>
+          <article class="card"><span class="num">04 / BENCHMARK</span><h3>模型基准脚本</h3><p>包含 GPT-175B、GPT-MoE、Llama2-70B 的 8K–128K 配置。</p><code>tests_extend/model_tests/benchmark_model/</code></article>
+        </div>
+      </div>
+    </section>
+
+    <section>
+      <div class="shell">
+        <div class="section-head"><div><p class="eyebrow">Runnable cases</p><h2>主要模型用例</h2></div><p>下面列出仓库中最接近“真实训练案例”的入口，以及复现前必须补齐的内容。</p></div>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>案例</th><th>内置入口</th><th>文档标注硬件</th><th>仍需准备</th></tr></thead>
+            <tbody>
+              <tr><td><strong>Llama3-8B</strong><span class="status">完整指导</span></td><td><span class="path">system_tests/llama3/<br>pretrain_llama3_8b_ptd.sh</span></td><td>8 × Ascend NPU</td><td>模型权重、Tokenizer、Alpaca 数据、Megatron-LM</td></tr>
+              <tr><td><strong>DeepSeek-V3</strong><span class="status">完整指导</span></td><td><span class="path">system_tests/deepseek/<br>pretrain_deepseek_v3_ptd_dualpipev.sh</span></td><td>8 × Ascend NPU</td><td>MindSpeed-LLM、Megatron-LM、权重、Tokenizer、Alpaca 数据</td></tr>
+              <tr><td><strong>Mixtral-8×7B</strong><span class="status">系统测试</span></td><td><span class="path">system_tests/mixtral/<br>pretrain_mixtral.sh</span></td><td>16 × Ascend NPU</td><td>Tokenizer、Alpaca 数据、训练与保存路径</td></tr>
+              <tr><td><strong>Qwen3-30B-A3B RL</strong><span class="status">双机案例</span></td><td><span class="path">system_tests/verl/<br>qw3-30bmoe-grpo-2node_base.sh</span></td><td>32 × Ascend NPU</td><td>Qwen 权重、GSM8K、verl 环境；文档注明 A2 双机可能 OOM</td></tr>
+              <tr><td><strong>Core model 矩阵</strong><span class="status">参数组合</span></td><td><span class="path">system_tests/core_model/<br>gpt-usecase.yaml</span></td><td>按 TP / PP 用例变化</td><td>外部数据集与 Tokenizer；YAML 展开后批量运行参数组合</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <section>
+      <div class="shell">
+        <div class="section-head"><div><p class="eyebrow">Before running</p><h2>复现依赖清单</h2></div><p>四项缺一不可；仓库只负责其中的 MindSpeed 代码、文档与脚本部分。</p></div>
+        <div class="checklist">
+          <div class="check"><strong>01 · 软件配套</strong><span>匹配的 CANN、PyTorch、TorchNPU、Python 与 Megatron 分支。</span></div>
+          <div class="check"><strong>02 · 训练资产</strong><span>模型权重、Tokenizer、数据集与预处理后的 bin / idx。</span></div>
+          <div class="check"><strong>03 · NPU 资源</strong><span>按案例准备卡数、节点网络、Host 内存与共享数据路径。</span></div>
+          <div class="check"><strong>04 · 参数适配</strong><span>修改 DATA_PATH、TOKENIZER、CKPT、MASTER_ADDR 与并行配置。</span></div>
+        </div>
+      </div>
+    </section>
+  </main>
+  <footer><div class="shell">MindSpeed repository reading · Demo catalog · 2026-09-21</div></footer>
+</body>
+</html>

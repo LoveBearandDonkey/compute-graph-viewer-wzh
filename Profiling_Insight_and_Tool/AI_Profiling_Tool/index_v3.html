@@ -3336,26 +3336,54 @@
       syncPaneGrow(_ideFrame && _ideFrame.dataset.inspectorOpen === 'true');
     });
 
-    /* ── Analysis Progress Animation (Demo Mode) ── */
+    /* ── Analysis Progress Animation (Demo Mode) ──
+       两套落盘数据的分析过程各一条动画，点一次放一条、交替轮换：
+         第 1 次点 → V1  MultiProfLevel2MemoryUB_db（3.43 GB）  16 卡 / DB 导出 / msprof-analyze 全路径
+         第 2 次点 → V2  level2（66.4 MB）                      4 卡 / text 导出 / 无 msprof-analyze
+       之后循环。步骤文案与 MindStudioNext/V{1,2} Analysis Process-*.md 一一对应。 */
     (function () {
-      const DEMO_FILENAME  = 'MultiProfLevel2MemoryUB_db（3.43 GB）';
-      const DEMO_REPORT_ID = 'r20260602multi';
-
-      const STEPS = [
-        { title: '数据识别与格式确认',        dur: 1000, desc: '读取 profiler_info.json，识别 PyTorch 框架 profiler（*_ascend_pt），确认 Level2 DB 格式，按决策树判断走集群分析路径' },
-        { title: '集群拓扑映射（16卡/2节点）', dur: 1000, desc: '枚举所有 profiler 目录，发现 2 节点（node1/node2），建立 Rank 0–7 → node1、Rank 8–15 → node2 映射，确认 16 个 .db 文件完整' },
-        { title: 'msprof-analyze 8 模式集群分析', dur: 5667, desc: '依次执行：cluster_time_summary → slow_rank → cann_api_sum → compute_op_sum → hccl_sum → free_analysis → freq_analysis → communication_time_sum，诊断并处理 exit code 49 假报错' },
-        { title: 'Schema 探查 + SQL 查询（13 张表）', dur: 3000, desc: '对每张表运行 PRAGMA table_info() 获取真实列名，查询 ClusterTimeSummary / SlowRank / SlowOpStats / CannApiSum / ComputeOp / HcclStat / FreeAnalysis / FreqAnalysis / CommunicationBandwidth 等核心表' },
-        { title: '慢卡根因调查（多轮推理）',   dur: 5000, desc: '第1轮 ClusterTimeSummary → Rank 15 free=40.3% 异常；第2轮 HCCL 对比排除通信型慢卡假设；第3轮 compute_op + FreeAnalysis → 8390 次 JIT 编译异常，五层证据锁定根因' },
-        { title: '通信分析（HCCL / 跨节点）', dur: 2000, desc: '分析 RDMA 小包（71.43% < 1 MB），解释 node1/node2 通信等待不对称（架构特性），评估 HCCS 节点内带宽效率 43–66%' },
-        { title: 'UB 内存 PMU 分析',          dur: 1000, desc: '查询 TASK_PMU_INFO 12 种 UB 带宽计数器，确认 AI_CPU 算子 PMU 字段为 0，HBM 带宽两节点均 ~20.4 GB/s，排除内存硬件差异' },
-        { title: 'PHS 评分计算',              dur: 667,  desc: '集群慢卡场景权重：计算 0.20 / 通信 0.30 / 调度 0.30 / 内存 0.10 / 均衡 0.10，子项归一化得 PHS = 62/100 (B+)，优化后预估 72/100' },
-        { title: '诊断报告生成（5 章骨架）',   dur: 667,  desc: '按结论速览 / 行动清单 / 问题详情 / 已确认无问题 / 数据与方法 5 章组织报告，输出 7 项行动清单（2×P0 / 3×P1 / 2×P2），写入 report.md' }
+      const DEMOS = [
+        {
+          key: 'ub',
+          filename: 'MultiProfLevel2MemoryUB_db（3.43 GB）',
+          reportId: 'r20260602multi',
+          tokens: 8749079,
+          realSecs: 52 * 60 + 18,        // 52分18秒（映射真实耗时 ~45-60 min）
+          steps: [
+            { title: '数据识别与格式确认',        dur: 1000, desc: '读取 profiler_info.json，识别 PyTorch 框架 profiler（*_ascend_pt），确认 Level2 DB 格式，按决策树判断走集群分析路径' },
+            { title: '集群拓扑映射（16卡/2节点）', dur: 1000, desc: '枚举所有 profiler 目录，发现 2 节点（node1/node2），建立 Rank 0–7 → node1、Rank 8–15 → node2 映射，确认 16 个 .db 文件完整' },
+            { title: 'msprof-analyze 8 模式集群分析', dur: 5667, desc: '依次执行：cluster_time_summary → slow_rank → cann_api_sum → compute_op_sum → hccl_sum → free_analysis → freq_analysis → communication_time_sum，诊断并处理 exit code 49 假报错' },
+            { title: 'Schema 探查 + SQL 查询（13 张表）', dur: 3000, desc: '对每张表运行 PRAGMA table_info() 获取真实列名，查询 ClusterTimeSummary / SlowRank / SlowOpStats / CannApiSum / ComputeOp / HcclStat / FreeAnalysis / FreqAnalysis / CommunicationBandwidth 等核心表' },
+            { title: '慢卡根因调查（多轮推理）',   dur: 5000, desc: '第1轮 ClusterTimeSummary → Rank 15 free=40.3% 异常；第2轮 HCCL 对比排除通信型慢卡假设；第3轮 compute_op + FreeAnalysis → 8390 次 JIT 编译异常，五层证据锁定根因' },
+            { title: '通信分析（HCCL / 跨节点）', dur: 2000, desc: '分析 RDMA 小包（71.43% < 1 MB），解释 node1/node2 通信等待不对称（架构特性），评估 HCCS 节点内带宽效率 43–66%' },
+            { title: 'UB 内存 PMU 分析',          dur: 1000, desc: '查询 TASK_PMU_INFO 12 种 UB 带宽计数器，确认 AI_CPU 算子 PMU 字段为 0，HBM 带宽两节点均 ~20.4 GB/s，排除内存硬件差异' },
+            { title: 'PHS 评分计算',              dur: 667,  desc: '集群慢卡场景权重：计算 0.20 / 通信 0.30 / 调度 0.30 / 内存 0.10 / 均衡 0.10，子项归一化得 PHS = 62/100 (B+)，优化后预估 72/100' },
+            { title: '诊断报告生成（5 章骨架）',   dur: 667,  desc: '按结论速览 / 行动清单 / 问题详情 / 已确认无问题 / 数据与方法 5 章组织报告，输出 7 项行动清单（2×P0 / 3×P1 / 2×P2），写入 report.md' }
+          ],
+        },
+        {
+          key: 'level2',
+          filename: 'level2（66.4 MB）',
+          reportId: 'r20260921level2',
+          tokens: 255000,                // 本环境未暴露 token 计量，为按轮次与读入规模的估算（0.21M~0.30M 取中值）
+          realSecs: 15 * 60,             // 15分00秒（映射真实耗时 ~12-18 min，含 66 MB 举证文件复制）
+          steps: [
+            { title: '数据识别与完整性校验',        dur: 1200, desc: '读取 profiler_info_{0..3}.json 与 profiler_metadata.json，判定为 PyTorch 框架 profiler 多卡；抽取配置 Level2 / text 导出 / record_shapes / profile_memory；发现 schedule skip_first=12,warmup=1,active=1 → 只有 1 个 step（无法算抖动），且 rank1/rank3 缺 text 导出件' },
+            { title: '工具链可用性排查（Python 缺失）', dur: 960, desc: 'python 返回 exit 49 → 确认只是 Windows Store 执行别名、无真实解释器，sqlite3 CLI 也不存在；AscendProfKit 全部 scripts/*.py 与 msprof-analyze / advisor 本次全不可用 → 改道 Node 24 内置 node:sqlite，按 db-explorer 的表结构与 CTE 宏自写等效查询' },
+            { title: '框架与模型来源识别（shape 反推）', dur: 960, desc: 'vllm/verl 打点均无命中 → 从 PYTORCH_API 热点反推：LinearWithGradAccumulationAndAsyncCommunication 命中 Megatron 系（MindSpeed）；由 MatMul/FA 的 Input Shapes 反推 28 层 / hidden 1024 / GQA 16-8 头 / ffn 3072 / vocab 151936 ≈ 0.6B；P2P 载荷 8.39 MB = 4096×1024×2B → mbs=1、micro-batch 数=2' },
+            { title: '全局阶段拆解（自建泳道几何）',   dur: 2160, desc: '从 COMPUTE_TASK_INFO ⋈ TASK 与 COMMUNICATION_OP 取区间，按 ProfilerStep#13 归一化后做区间并集 → 计算忙/通信忙/重叠/空闲 + 空挡分级直方图。踩坑：ns 时间戳 1.76e18 超出 JS double 安全范围导致分区统计全零，改 BigInt 归一化后与 step_trace 交叉校验一致。得出重叠恒为 0、空挡由 926 段 50µs–1ms 碎片构成' },
+            { title: '通信侧下钻（传输 / 等待拆分）',   dur: 1680, desc: '解析 4 卡 communication.json 的 Elapse/Transit/Wait/Synchronization/Idle + 分链路带宽，把每个算子拆成「按实测带宽折算的真实传输」与「等待」；用 parallel_group_info 把 group_name_* 映射回 pp/dp_cp/embd 语义。得出 rank0 两次 batchSendRecv 共 313.5 ms 中 99.7% 是空等、embd 组 622.3 MB AllReduce 在 rank2 上多等 ~88 ms' },
+            { title: '计算侧下钻（kernel 效率 + vocab 专项）', dur: 1680, desc: '流式聚合 kernel_details.csv，按耗时加权平均 aic_mac_ratio / cube_utilization / aiv_mte2_ratio，再按 (Type, 输入/输出 shape) 细分并筛出含 151936 的 kernel。得出 cube 算子本身正常（cube_util 93.5%/96.7%），末级 vocab kernel 合计 167.2 ms、mte2 0.95~1.00、BlockDim 40 已饱和 → 纯 HBM bound；167.2 ≈ 末级−首级 169.1 ms' },
+            { title: 'MFU 精算（逐 kernel shape 求 FLOPs）', dur: 960, desc: '不套 6·N·tokens 经验式，改为逐 MatMul 从 shape 解出 (M,N,K) 求 2·M·N·K（含 NZ 分形格式还原），FA 按 causal 折半解析式、反向取 2.5× 前向；子型号未知故按 910B1/B3 给区间。得出 4 卡均值 26.4 TFLOPS → MFU 7.0%，但 cube 窗口内达成 120 TFLOPS（峰值 32~41%）' },
+            { title: '显存 / HBM / host 同步 / 下发间隙', dur: 960, desc: 'memory_record 取 Allocated/Reserved 峰值与碎片率；HBM 表按 hbmId 求和后再对时间取均值（首版只按行取均值少算 4 倍，已修正）；查 PYTORCH_API 阻塞型 API 并定位 step 内偏移。得出峰值 Reserved 仅 11.93/12.68 GB（batch 严重欠配）、rank2 aten::is_nonzero 8 次共 109.4 ms 强制 D2H 同步' },
+            { title: 'PHS 评分 + 视图映射 + 产物落盘',  dur: 840, desc: '按大模型多卡训练权重 0.40/0.30/0.20/0.10 算四子项，计算子项因 FLOPs 可算故走 MFU 而非 AI Core 占用率 → PHS 32/100 (C)；新建报告目录并复制 66 MB 举证进 evidence/；写 chart-spec.json 跑 gen-report-charts.mjs 出 chart-data.json。两处按 skill 硬规则不编：缺 cgroup/cpuset 不给 CPU range、缺 cluster_analysis.db 的 3 类图表不声明' },
+            { title: '报告撰写与自检',                dur: 600, desc: '按 5 章骨架对齐 9 个问题点，行动清单标题与 3.x 小节标题一字不差，逐项补齐 证据/影响/修复建议/验证方式/举证视图 五个必填字段（自检 9×5 全齐）；耗时统一到 ms 并标单位，6 条不确定项集中写进低置信度清单' }
+          ],
+        },
       ];
 
-      const TOTAL_DUR       = STEPS.reduce((s, x) => s + x.dur, 0); // ~20 000ms
-      const TOTAL_TOKENS    = 8749079;
-      const TOTAL_REAL_SECS = 52 * 60 + 18; // 52分18秒 (映射真实耗时 ~45-60 min)
+      let demoIdx = 0;               // 下一次点击要放的那条（0=UB，1=level2，交替）
+      let CUR = DEMOS[0];            // 当前正在播放的配置；runAnimation 开头赋值
       let animating = false;
 
       function fmtTokens(n) {
@@ -3397,7 +3425,7 @@
       }
 
       function buildCard(filename) {
-        const stepsHtml = STEPS.map((s, i) => `
+        const stepsHtml = CUR.steps.map((s, i) => `
           <div class="apc-step" id="apcStep${i}" data-state="pending">
             <div class="apc-step-icon" id="apcIcon${i}"><div class="apc-step-dot"></div></div>
             <div class="apc-step-body">
@@ -3449,9 +3477,9 @@
         stepEl.dataset.state = 'running';
         stepEl.dataset.open  = 'true';
         iconEl.innerHTML = '<div class="apc-step-spinner"></div>';
-        barEl.style.animationDuration = STEPS[i].dur + 'ms';
+        barEl.style.animationDuration = CUR.steps[i].dur + 'ms';
         barEl.style.animationPlayState = 'running';
-        await wait(STEPS[i].dur);
+        await wait(CUR.steps[i].dur);
         stepEl.dataset.state = 'done';
         stepEl.dataset.open  = isLast ? 'true' : 'false';
         iconEl.innerHTML = `<span class="apc-step-check"><svg width="12" height="12" viewBox="0 0 12 12" fill="none">
@@ -3461,14 +3489,18 @@
       }
 
       // displayName: filename shown in card header
+      // displayName 省略时用当前这条 demo 自带的文件名；每次调用取 DEMOS 里的下一条并轮换
       async function runAnimation(displayName) {
         if (animating) return;
         animating = true;
+        CUR = DEMOS[demoIdx];
+        demoIdx = (demoIdx + 1) % DEMOS.length;
+        const totalDur = CUR.steps.reduce((s, x) => s + x.dur, 0);
 
         const histList = document.getElementById('historyList');
         if (!histList) { animating = false; return; }
 
-        const card = buildCard(displayName);
+        const card = buildCard(displayName || CUR.filename);
         histList.insertBefore(card, histList.firstChild);
         card.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
 
@@ -3483,22 +3515,22 @@
         const t0 = Date.now();
         let rafId;
         (function tick() {
-          const pct  = Math.min((Date.now() - t0) / TOTAL_DUR, 1);
+          const pct  = Math.min((Date.now() - t0) / totalDur, 1);
           const e    = pct * pct * (3 - 2 * pct); // smoothstep easing
           const tokEl  = document.getElementById('apcTokensVal');
           const timeEl = document.getElementById('apcTimeVal');
-          if (tokEl)  tokEl.textContent  = fmtTokens(TOTAL_TOKENS * e);
-          if (timeEl) timeEl.textContent = fmtTime(TOTAL_REAL_SECS * e);
+          if (tokEl)  tokEl.textContent  = fmtTokens(CUR.tokens * e);
+          if (timeEl) timeEl.textContent = fmtTime(CUR.realSecs * e);
           if (pct < 1) rafId = requestAnimationFrame(tick);
         })();
 
-        for (let i = 0; i < STEPS.length; i++) await runStep(i, i === STEPS.length - 1);
+        for (let i = 0; i < CUR.steps.length; i++) await runStep(i, i === CUR.steps.length - 1);
         cancelAnimationFrame(rafId);
 
         const tokEl  = document.getElementById('apcTokensVal');
         const timeEl = document.getElementById('apcTimeVal');
-        if (tokEl)  tokEl.textContent  = fmtTokens(TOTAL_TOKENS);
-        if (timeEl) timeEl.textContent = fmtTime(TOTAL_REAL_SECS);
+        if (tokEl)  tokEl.textContent  = fmtTokens(CUR.tokens);
+        if (timeEl) timeEl.textContent = fmtTime(CUR.realSecs);
 
         const hrow = document.getElementById('apcHrow');
         if (hrow) hrow.innerHTML = `<span class="apc-done-icon">✓</span><span class="apc-label done-label">分析完成</span>`;
@@ -3525,16 +3557,17 @@
       const _demoFi = document.getElementById('fileInput');
       if (_demoFi) _demoFi.style.display = 'none';
 
-      // Click on drop zone → demo animation, no file picker
+      // Click on drop zone → demo animation, no file picker；不传名字，用当前轮到的那条 demo 自己的文件名
       window._onDropZoneClick = function () {
-        runAnimation(DEMO_FILENAME);
+        runAnimation();
         return true;
       };
 
       // Drag-and-drop → also demo animation (use dragged filename for realism)
+      // 拖入时只借用真实文件名显示，步骤内容仍按轮换取 DEMOS 里的下一条
       window._onFileDrop = function (files) {
         const f = Array.from(files).find(x => x.name.endsWith('.md'));
-        runAnimation(f ? f.name : DEMO_FILENAME);
+        runAnimation(f ? f.name : null);
         return true;
       };
     }());

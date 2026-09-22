@@ -64,7 +64,7 @@
   .rl-road .node.done i{ background:var(--rl-bad); border-color:var(--rl-bad); }
     .rl-road .cur{ position:absolute; top:21px; width:13px; height:13px; border-radius:50%; background:var(--foreground); transform:translateX(-50%); transition:left .1s linear; box-shadow:0 0 0 3px var(--background); }
   .rl-road .node.up{ flex-direction:column-reverse; top:auto; bottom:28px; }
-  .rl-road.hide{ visibility:hidden; }
+  .rl-road.hide{ display:none; }
   .rl-road .cur b{ position:absolute; top:0; right:calc(100% + 7px); font-family:var(--font-mono); font-size:10px; font-weight:var(--font-weight-semibold); color:var(--foreground); white-space:nowrap; }
   .rl-cap .t{ font-family:var(--font-mono); font-size:.92em; color:var(--foreground); background:var(--surface-2); padding:0 .35em; border-radius:var(--radius-sm); margin-right:.3em; }
 
@@ -252,14 +252,13 @@
   .f3-trend .pl.cur{ fill:var(--foreground); font-weight:600; }
   /* ── 张量计算区（第 2、5 章共用）：情景切换只在第 5 章露出 ────────────── */
   .rl-calc{ position:relative; width:100%; margin:0 auto; }
-  .rl-calc.is-bridge-enter::before{ content:"同一个红点展开：Router 内部的  x × W_gate = logits"; position:absolute; left:50%; top:-8px; z-index:20; padding:8px 14px 8px 34px; border:1px solid color-mix(in srgb,var(--rl-bad) 50%,var(--border-default)); border-radius:var(--radius-pill); background:radial-gradient(circle at 17px 50%,var(--rl-bad) 0 5px,transparent 6px),var(--surface-1); color:var(--foreground); box-shadow:0 8px 28px color-mix(in srgb,var(--rl-bad) 18%,transparent); font-size:12px; font-weight:var(--font-weight-semibold); white-space:nowrap; animation:rl-bridge-caption 1.8s ease both; }
   .rl-calc.is-bridge-enter .rl-stage{ transform-origin:78% 42%; animation:rl-calc-enter .72s cubic-bezier(.2,.8,.2,1) both; }
   .rl-calc.is-bridge-enter #tl td.sel{ animation:rl-logit-arrival 1.5s .2s ease both; }
   @keyframes rl-calc-enter{ from{ opacity:.15; transform:scale(1.12); filter:blur(5px); } to{ opacity:1; transform:scale(1); filter:none; } }
-  @keyframes rl-bridge-caption{ 0%{ opacity:0; transform:translate(-50%,-8px) scale(.85); } 18%,72%{ opacity:1; transform:translate(-50%,0) scale(1); } 100%{ opacity:0; transform:translate(-50%,5px) scale(.96); } }
   @keyframes rl-logit-arrival{ 0%,100%{ box-shadow:none; } 24%,72%{ color:var(--rl-bad); border-color:var(--rl-bad); box-shadow:0 0 0 5px color-mix(in srgb,var(--rl-bad) 22%,transparent),0 0 22px color-mix(in srgb,var(--rl-bad) 35%,transparent); } }
   .f3-tools{ display:flex; align-items:center; gap:var(--space-3); flex-wrap:wrap; margin:var(--space-3) 0 var(--space-2); }
   body[data-cur="2"] #scen{ display:none; }
+  body[data-cur="5"] .rl-calc-guide{ display:none; }
   .f3-tools .hint{ font-size:11px; color:var(--foreground-muted); }
 
   /* 公式区 */
@@ -278,25 +277,24 @@
   .rl-cast{ display:flex; flex-wrap:wrap; align-items:center; gap:.45em; white-space:nowrap; color:var(--rl-bad); }
   .rl-cast .lbl{ font-family:var(--font-sans); color:var(--foreground-secondary); min-width:12em; }
 
-  /* 张量区：第一行 x × W = logits；softmax 在 logits 正下方向下转到 probs */
-  .rl-stage{ width:100%; box-sizing:border-box; display:grid; grid-template-columns:auto auto auto auto auto; column-gap:var(--space-3); row-gap:var(--space-2); justify-content:center; align-items:start; overflow-x:auto; padding-block:var(--space-2); }
-  .rl-op-down{ grid-column:5; grid-row:2; }
-  .rl-probs{ grid-column:5; grid-row:3; }
-  .rl-op{ align-self:center; font-size:var(--font-size-title-sm); font-weight:var(--font-weight-bold); color:var(--foreground-secondary); padding:0 var(--space-1); margin-top:36px; text-align:center; white-space:nowrap; }
-  .rl-op-down{ margin-top:0; justify-self:center; display:flex; align-items:center; gap:var(--space-2); }
-  .rl-op-down .cast{ font-size:10px; font-weight:var(--font-weight-medium); color:var(--foreground-muted); font-family:var(--font-mono); }
+  /* 张量区：x × W = logits → softmax → probs 全部保持在同一条水平流水线上。 */
+  .rl-stage{ width:100%; box-sizing:border-box; display:grid; grid-template-columns:auto auto auto auto auto auto auto; column-gap:var(--space-1); justify-content:center; align-items:start; overflow-x:auto; padding-block:var(--space-1); }
+  .rl-op-down,.rl-probs{ grid-column:auto; grid-row:auto; }
+  .rl-op{ align-self:center; font-size:var(--font-size-title-sm); font-weight:var(--font-weight-bold); color:var(--foreground-secondary); padding:0 2px; margin-top:30px; text-align:center; white-space:nowrap; }
+  .rl-op-down{ justify-self:center; display:flex; flex-direction:column; align-items:center; gap:2px; }
+  .rl-op-down .cast{ max-width:76px; white-space:normal; font-size:8px; line-height:1.25; font-weight:var(--font-weight-medium); color:var(--foreground-muted); font-family:var(--font-mono); }
   .rl-op-down .cast.bad{ color:var(--rl-bad); font-weight:var(--font-weight-semibold); }
-  .rl-op .arrow{ display:block; font-size:12px; }
-  .rl-tensor{ background:var(--surface-1); border:1px solid var(--border-subtle); border-radius:var(--radius-md); padding:var(--space-2) var(--space-3) var(--space-3); }
-  .rl-tensor h3{ margin:0; font-size:var(--font-size-body-sm); font-weight:var(--font-weight-semibold); display:flex; align-items:center; gap:var(--space-1); }
-  .rl-tensor h3 .dot{ width:8px; height:8px; border-radius:50%; background:var(--c); }
-  .rl-tensor .meta{ font-family:var(--font-mono); font-size:10px; color:var(--foreground-secondary); margin:1px 0 var(--space-2); display:flex; flex-wrap:wrap; gap:var(--space-2); }
-  table.rl-grid{ border-collapse:collapse; border-spacing:0; font-family:var(--font-mono); font-size:10px; }
-  .rl-grid th{ font-weight:var(--font-weight-medium); color:var(--foreground-muted); font-size:10px; padding:1px 3px; text-align:center; white-space:nowrap; }
-  .rl-grid th.rh{ text-align:right; padding-right:5px; }
-  .rl-grid td{ min-width:42px; height:24px; text-align:center; border:1px solid var(--border-subtle); background:var(--surface-2); padding:0 4px; white-space:nowrap; box-sizing:border-box; transition:background .3s, color .3s; }
-  .rl-grid td.ell{ color:var(--foreground-muted); background:transparent; border-color:transparent; min-width:20px; }
-  .rl-grid td.ell-r{ color:var(--foreground-muted); background:transparent; border-color:transparent; height:16px; }
+  .rl-op .arrow{ display:block; font-size:11px; transform:rotate(-90deg); }
+  .rl-tensor{ background:var(--surface-1); border:1px solid var(--border-subtle); border-radius:var(--radius-md); padding:6px var(--space-2) var(--space-2); }
+  .rl-tensor h3{ margin:0; font-size:11px; font-weight:var(--font-weight-semibold); display:flex; align-items:center; gap:var(--space-1); }
+  .rl-tensor h3 .dot{ width:7px; height:7px; border-radius:50%; background:var(--c); }
+  .rl-tensor .meta{ font-family:var(--font-mono); font-size:8px; color:var(--foreground-secondary); margin:1px 0 var(--space-1); display:flex; flex-wrap:wrap; gap:var(--space-1); }
+  table.rl-grid{ border-collapse:collapse; border-spacing:0; font-family:var(--font-mono); font-size:8px; }
+  .rl-grid th{ font-weight:var(--font-weight-medium); color:var(--foreground-muted); font-size:8px; padding:1px 2px; text-align:center; white-space:nowrap; }
+  .rl-grid th.rh{ text-align:right; padding-right:3px; }
+  .rl-grid td{ min-width:34px; height:20px; text-align:center; border:1px solid var(--border-subtle); background:var(--surface-2); padding:0 2px; white-space:nowrap; box-sizing:border-box; transition:background .3s, color .3s; }
+  .rl-grid td.ell{ color:var(--foreground-muted); background:transparent; border-color:transparent; min-width:14px; }
+  .rl-grid td.ell-r{ color:var(--foreground-muted); background:transparent; border-color:transparent; height:12px; }
   .rl-grid td.clk{ cursor:pointer; }
   .rl-grid td.clk:hover{ background:var(--state-hover); }
   .rl-grid td.faint{ background:color-mix(in srgb,var(--c) 10%,var(--surface-2)); }
@@ -305,10 +303,44 @@
   .rl-grid td.nan{ --c:var(--rl-bad); color:var(--rl-bad); background:color-mix(in srgb,var(--rl-bad) 10%,var(--surface-2)); }
   .rl-grid th.sel{ color:var(--c); }
   .rl-gauge{ display:inline-flex; align-items:center; gap:var(--space-2); margin-left:auto; white-space:nowrap; }
-  .rl-gauge .bar{ position:relative; width:110px; height:6px; border-radius:var(--radius-pill); background:var(--surface-3); overflow:hidden; }
+  .rl-gauge .bar{ position:relative; width:70px; height:5px; border-radius:var(--radius-pill); background:var(--surface-3); overflow:hidden; }
   .rl-gauge .bar i{ position:absolute; left:0; top:0; bottom:0; border-radius:var(--radius-pill); background:var(--rl-l); }
   .rl-gauge .bar i.warn{ background:var(--rl-p); }
   .rl-gauge .bar i.bad{ background:var(--rl-bad); }
+
+  /* 第 2 章逐项乘加：复制当前可见的 x / W 格子飞向目标 logits，不挪动原表格。 */
+  .rl-calc-guide{ min-height:2.1em; display:flex; align-items:center; justify-content:center; padding-inline:var(--space-3); color:var(--foreground-secondary); font-size:var(--font-size-body-sm); text-align:center; }
+  .rl-calc-guide b{ color:var(--foreground); font-weight:var(--font-weight-semibold); }
+  .rl-calc-guide .x{ color:var(--rl-x); }
+  .rl-calc-guide .w{ color:var(--rl-w); }
+  .rl-calc-guide .l{ color:var(--rl-l); }
+  .rl-calc-guide .p{ color:var(--rl-p); }
+  .rl-math-fx{ position:absolute; inset:0; z-index:40; overflow:visible; pointer-events:none; }
+  .rl-fly-cell{ position:absolute; display:flex; align-items:center; justify-content:center; box-sizing:border-box; min-width:34px; height:20px; padding:0 2px; border:1.5px solid var(--fly-color); border-radius:2px; background:color-mix(in srgb,var(--fly-color) 24%,var(--surface-1)); color:var(--foreground); box-shadow:0 7px 20px color-mix(in srgb,var(--fly-color) 32%,transparent); font:var(--font-weight-semibold) 8px/1 var(--font-mono); white-space:nowrap; will-change:transform,opacity; }
+  .rl-calc.rl-explain-running #tx td.sel:not(.rl-source-done),
+  .rl-calc.rl-explain-running #tw td.sel:not(.rl-source-done){ background:var(--surface-2); border-color:var(--border-subtle); color:var(--foreground); font-weight:var(--font-weight-regular); }
+  .rl-calc.rl-explain-running #tx td.rl-source-done,
+  .rl-calc.rl-explain-running #tw td.rl-source-done{ background:color-mix(in srgb,var(--c) 18%,var(--surface-2)); border:1.5px solid var(--c); color:var(--foreground); font-weight:var(--font-weight-semibold); }
+  .rl-grid td.rl-logit-hit{ animation:rl-logit-hit .56s ease both; }
+  .rl-grid td.rl-await-value{ color:transparent !important; text-shadow:none !important; }
+  .rl-grid td.rl-partial-value{ color:rgb(0 0 0 / .42) !important; }
+  .rl-grid td.rl-final-value{ color:rgb(0 0 0) !important; }
+  .rl-grid td.rl-value-reveal{ animation:rl-value-reveal .82s cubic-bezier(.2,.8,.2,1) both; }
+  #tl tr.rl-logits-row-launch td:not(.ell):not(.ell-r){ background:color-mix(in srgb,var(--rl-l) 24%,var(--surface-2)); border-color:color-mix(in srgb,var(--rl-l) 62%,var(--border-subtle)); }
+  .rl-fly-logits-row{ position:absolute; z-index:2; pointer-events:none; will-change:transform,opacity; }
+  .rl-fly-logits-row .cell{ position:absolute; display:flex; align-items:center; justify-content:center; box-sizing:border-box; border:1px solid color-mix(in srgb,var(--rl-l) 62%,var(--border-subtle)); background:color-mix(in srgb,var(--rl-l) 30%,var(--surface-1)); color:rgb(0 0 0 / .76); box-shadow:0 8px 20px color-mix(in srgb,var(--rl-l) 24%,transparent); font:var(--font-weight-semibold) 8px/1 var(--font-mono); white-space:nowrap; }
+  .rl-fly-logits-row .cell.is-label{ justify-content:flex-end; padding-right:5px; border-color:transparent; background:transparent; color:var(--rl-l); box-shadow:none; }
+  .rl-fly-logits-row .cell.is-ellipsis{ border-color:transparent; background:transparent; color:var(--foreground-muted); box-shadow:none; }
+  #tp tr.rl-softmax-reveal td:not(.ell):not(.ell-r){ animation:rl-softmax-row .9s ease both; }
+  @keyframes rl-logit-hit{ 0%,100%{ box-shadow:none; } 46%{ border-color:var(--rl-l); box-shadow:0 0 0 5px color-mix(in srgb,var(--rl-l) 22%,transparent),0 0 20px color-mix(in srgb,var(--rl-l) 34%,transparent); } }
+  @keyframes rl-value-reveal{ 0%{ transform:scale(.76); } 52%{ transform:scale(1.12); box-shadow:0 0 0 6px color-mix(in srgb,var(--rl-l) 23%,transparent),0 0 22px color-mix(in srgb,var(--rl-l) 34%,transparent); } 100%{ transform:scale(1); } }
+  @keyframes rl-softmax-row{ 0%{ background:var(--surface-2); } 45%{ background:color-mix(in srgb,var(--rl-p) 28%,var(--surface-2)); box-shadow:0 0 12px color-mix(in srgb,var(--rl-p) 22%,transparent); } 100%{ box-shadow:none; } }
+
+  @media (prefers-reduced-motion:reduce){
+    .rl-fly-cell{ display:none; }
+    .rl-fly-logits-row{ display:none; }
+    .rl-grid td.rl-logit-hit,.rl-grid td.rl-value-reveal,#tp tr.rl-softmax-reveal td{ animation:none !important; }
+  }
 
   /* ── 第 6 章：一个 inf 的传染 ─────────────────────────────────────── */
   .f4{ display:grid; grid-template-columns:auto 28px auto 28px auto 28px auto; align-items:center; justify-content:center; gap:var(--space-3); max-width:1240px; margin:0 auto; padding-top:var(--space-3); }
@@ -451,6 +483,7 @@
         <div class="segmented-control segmented-control-muted" id="scen"></div>
         <span class="hint">点任意一格可换选中的 token / expert</span>
       </div>
+      <div class="rl-calc-guide" id="calc-guide" role="status" aria-live="polite"></div>
       <div class="rl-stage">
         <section class="rl-tensor" style="--c:var(--rl-x)">
           <h3><span class="dot"></span>x 输入张量</h3>
@@ -1020,7 +1053,7 @@
     const fx = v => v.toFixed(2);
     const fw = (v, big) => big ? v.toFixed(2) : v.toFixed(4);
     const fl = v => !isFinite(v) ? (v > 0 ? 'inf' : '-inf') : String(Math.round(v));
-    const fp = v => Number.isNaN(v) ? 'NaN' : (v < 0.005 && v > 0 ? '0.00' : v.toFixed(2));
+    const fp = v => Number.isNaN(v) ? 'NaN' : (v < 0.005 && v > 0 ? '&lt;0.01' : v.toFixed(2));
 
     function head(cols, fmt){
       return '<tr><th class="rh"></th>' + cols.map((c, i) => {
@@ -1033,7 +1066,7 @@
       let out = '';
       rows.forEach((r, ri) => {
         if (ri > 0 && rows[ri] - rows[ri - 1] > 1) out += ellRow(cols.length + cols.filter((c, i) => i > 0 && cols[i] - cols[i - 1] > 1).length);
-        out += `<tr><th class="rh" data-row="${r}">${rowLabel(r)}</th>` + cols.map((c, i) => {
+        out += `<tr data-row="${r}"><th class="rh" data-row="${r}">${rowLabel(r)}</th>` + cols.map((c, i) => {
           const sep = (i > 0 && cols[i] - cols[i - 1] > 1) ? '<td class="ell">···</td>' : '';
           return sep + cell(r, c);
         }).join('') + '</tr>';
@@ -1046,19 +1079,19 @@
       $('x-mag').textContent = '±1 量级';
       { const w = s.w[selJ], rms = Math.sqrt(dot(w, w) / H); $('w-mag').textContent = 'E ' + selJ + ' 列 ±' + (rms < 0.1 ? rms.toFixed(2) : rms.toFixed(1)) + ' 量级'; }
       $('tx').innerHTML = head(HIDS, h => 'h ' + h) +
-        body(TOKENS, HIDS, (t, h) => `<td class="clk ${t === selT ? 'sel' : ''}" data-t="${t}">${fx(s.x[t][h])}</td>`, t => 'token ' + t);
+        body(TOKENS, HIDS, (t, h) => `<td class="clk ${t === selT ? 'sel' : ''}" data-t="${t}" data-h="${h}">${fx(s.x[t][h])}</td>`, t => 'token ' + t);
       $('tw').innerHTML = head(EXPERTS, e => 'E ' + e) +
-        body(HIDS, EXPERTS, (h, j) => `<td class="clk ${j === selJ ? 'sel' : ''}" data-j="${j}">${fw(s.w[j][h], big && j === 193)}</td>`, h => 'h ' + h);
+        body(HIDS, EXPERTS, (h, j) => `<td class="clk ${j === selJ ? 'sel' : ''}" data-h="${h}" data-j="${j}">${fw(s.w[j][h], big && j === 193)}</td>`, h => 'h ' + h);
       $('tl').innerHTML = head(EXPERTS, e => 'E ' + e) +
         body(TOKENS, EXPERTS, (t, j) => {
           const v = R.logits[t][j], bad = Math.abs(v) > FP8_MAX;
-          const cls = ['clk', bad ? 'bad' : '', (t === selT && j === selJ) ? 'sel' : (t === selT || j === selJ) ? 'faint' : ''].join(' ');
+          const cls = ['clk', bad ? 'bad' : '', (t === selT && j === selJ) ? 'sel' : t === selT ? 'faint' : ''].join(' ');
           return `<td class="${cls}" data-t="${t}" data-j="${j}">${fl(v)}</td>`;
         }, t => 'token ' + t);
       $('tp').innerHTML = head(EXPERTS, e => 'E ' + e) +
         body(TOKENS, EXPERTS, (t, j) => {
           const v = R.probs[t][j];
-          const cls = ['clk', Number.isNaN(v) ? 'nan' : '', (t === selT && j === selJ) ? 'sel' : (t === selT || j === selJ) ? 'faint' : ''].join(' ');
+          const cls = ['clk', Number.isNaN(v) ? 'nan' : '', (t === selT && j === selJ) ? 'sel' : t === selT ? 'faint' : ''].join(' ');
           return `<td class="${cls}" data-t="${t}" data-j="${j}">${fp(v)}</td>`;
         }, t => 'token ' + t);
       document.querySelectorAll('#tw th[data-col]').forEach(th => th.classList.toggle('sel', +th.dataset.col === selJ));
@@ -1070,6 +1103,149 @@
       renderTrend();
       renderCmp();
       document.querySelectorAll('#scen .btn').forEach((b, i) => b.classList.toggle('is-selected', i === si));
+    }
+
+    // ---- 小白向逐项乘加动画：4 组可见项飞入 logits，再揭示 softmax 整行 ----
+    const explainClock = makeClock();
+    const flying = [];
+    const fxLayer = document.createElement('div');
+    fxLayer.className = 'rl-math-fx';
+    fxLayer.setAttribute('aria-hidden', 'true');
+    document.querySelector('.rl-scene.rl-calc').appendChild(fxLayer);
+
+    function clearExplain(){
+      explainClock.stop();
+      flying.splice(0).forEach(a => a.cancel());
+      fxLayer.replaceChildren();
+      document.querySelector('.rl-scene.rl-calc').classList.remove('rl-explain-running');
+      document.querySelectorAll('#tl td[data-rl-final-value]').forEach(td => { td.textContent = td.dataset.rlFinalValue; delete td.dataset.rlFinalValue; });
+      document.querySelectorAll('.rl-source-done,.rl-logit-hit,.rl-value-reveal,.rl-partial-value,.rl-final-value').forEach(el => el.classList.remove('rl-source-done','rl-logit-hit','rl-value-reveal','rl-partial-value','rl-final-value'));
+      document.querySelectorAll('#tl tr.rl-logits-row-launch').forEach(el => el.classList.remove('rl-logits-row-launch'));
+      document.querySelectorAll('.rl-await-value').forEach(el => el.classList.remove('rl-await-value'));
+      document.querySelectorAll('#tp tr.rl-softmax-reveal').forEach(el => el.classList.remove('rl-softmax-reveal'));
+    }
+
+    function guide(html){ $('calc-guide').innerHTML = html; }
+
+    function flyCell(source, target, color){
+      const scene = document.querySelector('.rl-scene.rl-calc');
+      const sr = source.getBoundingClientRect(), tr = target.getBoundingClientRect(), cr = scene.getBoundingClientRect();
+      const chip = document.createElement('span');
+      chip.className = 'rl-fly-cell';
+      chip.textContent = source.textContent;
+      chip.style.cssText = `--fly-color:${color};left:${sr.left - cr.left}px;top:${sr.top - cr.top}px;width:${sr.width}px`;
+      fxLayer.appendChild(chip);
+      const dx = tr.left + tr.width / 2 - (sr.left + sr.width / 2);
+      const dy = tr.top + tr.height / 2 - (sr.top + sr.height / 2);
+      const arc = Math.min(34, Math.max(12, Math.abs(dx) * .08));
+      const animation = chip.animate([
+        { transform:'translate(0,0) scale(1)', opacity:1 },
+        { transform:`translate(${dx * .52}px,${dy * .42 - arc}px) scale(.9)`, opacity:1, offset:.56 },
+        { transform:`translate(${dx}px,${dy}px) scale(.55)`, opacity:0 }
+      ], { duration:1400, easing:'cubic-bezier(.2,.72,.2,1)', fill:'forwards' });
+      flying.push(animation);
+      animation.finished.then(() => chip.remove()).catch(() => {});
+    }
+
+    function flyLogitsRow(sourceRow, targetRow){
+      const scene = document.querySelector('.rl-scene.rl-calc');
+      const sr = sourceRow.getBoundingClientRect(), tr = targetRow.getBoundingClientRect(), cr = scene.getBoundingClientRect();
+      const ghost = document.createElement('div');
+      ghost.className = 'rl-fly-logits-row';
+      ghost.style.cssText = `left:${sr.left - cr.left}px;top:${sr.top - cr.top}px;width:${sr.width}px;height:${sr.height}px`;
+      Array.from(sourceRow.children).forEach((cell, index) => {
+        const rect = cell.getBoundingClientRect();
+        const clone = document.createElement('span');
+        clone.className = 'cell' + (cell.tagName === 'TH' ? ' is-label' : '') + (cell.classList.contains('ell') || cell.classList.contains('ell-r') ? ' is-ellipsis' : '');
+        clone.textContent = cell.textContent;
+        clone.style.cssText = `left:${rect.left - sr.left}px;top:${rect.top - sr.top}px;width:${rect.width}px;height:${rect.height}px`;
+        ghost.appendChild(clone);
+      });
+      fxLayer.appendChild(ghost);
+      const dx = tr.left - sr.left, dy = tr.top - sr.top;
+      const animation = ghost.animate([
+        { transform:'translate(0,0) scale(1)', opacity:.96 },
+        { transform:'translate(0,-10px) scale(1.02)', opacity:1, offset:.2 },
+        { transform:`translate(${dx}px,${dy - 9}px) scale(.99)`, opacity:.9, offset:.82 },
+        { transform:`translate(${dx}px,${dy}px) scale(.98)`, opacity:0 }
+      ], { duration:1400, easing:'cubic-bezier(.2,.72,.2,1)', fill:'forwards' });
+      flying.push(animation);
+      animation.finished.then(() => ghost.remove()).catch(() => {});
+    }
+
+    function playExplain(delay = 0){
+      clearExplain();
+      const scene = document.querySelector('.rl-scene.rl-calc');
+      const target = document.querySelector(`#tl td[data-t="${selT}"][data-j="${selJ}"]`);
+      const probRow = document.querySelector(`#tp tr[data-row="${selT}"]`);
+      if (!target || !probRow || document.body.dataset.cur !== '2') return;
+
+      const logitRow = target.closest('tr');
+      const probCells = Array.from(probRow.querySelectorAll('td:not(.ell):not(.ell-r)'));
+      const finalLogitText = target.textContent;
+      target.dataset.rlFinalValue = finalLogitText;
+      scene.classList.add('rl-explain-running');
+      target.classList.add('rl-await-value');
+      probCells.forEach(td => td.classList.add('rl-await-value'));
+      guide(`这里只算选中的一个分数：<b>x 的一行</b>与<b> W 的一列</b>按 hidden 位置一一配对；每次飞行代表一批乘积，蓝格显示这一批结束后的真实累计值`);
+
+      if (matchMedia('(prefers-reduced-motion:reduce)').matches){
+        document.querySelectorAll(`#tx td[data-t="${selT}"][data-h],#tw td[data-j="${selJ}"][data-h]`).forEach(td => td.classList.add('rl-source-done'));
+        target.classList.remove('rl-await-value');
+        target.classList.add('rl-final-value');
+        probCells.forEach(td => td.classList.remove('rl-await-value'));
+        guide(`<b>一个专家分数中每个 x 只乘一次</b>；计算全部 256 个专家时，同一个 x 会再分别乘 W 对应行的 256 列`);
+        return;
+      }
+
+      const INTRO_MS = 520, PAIR_GAP_MS = 1500, FLIGHT_MS = 1400;
+      const checkpointEnds = HIDS.map((_, i) => Math.round(H * (i + 1) / HIDS.length));
+      const cumulativeLogits = [];
+      let exactSubtotal = 0, checkpoint = 0;
+      for (let hidden = 0; hidden < H; hidden++){
+        exactSubtotal += SCEN[si].x[selT][hidden] * SCEN[si].w[selJ][hidden];
+        if (hidden + 1 === checkpointEnds[checkpoint]){
+          cumulativeLogits.push(exactSubtotal);
+          checkpoint++;
+        }
+      }
+      HIDS.forEach((h, i) => explainClock.at(delay + INTRO_MS + i * PAIR_GAP_MS, () => {
+        const xCell = document.querySelector(`#tx td[data-t="${selT}"][data-h="${h}"]`);
+        const wCell = document.querySelector(`#tw td[data-h="${h}"][data-j="${selJ}"]`);
+        if (!xCell || !wCell) return;
+        guide(`第 <b>${i + 1} / ${HIDS.length}</b> 批正在计算；用可见格示意：<b class="x">x[${selT},${h}] = ${xCell.textContent}</b> × <b class="w">W[${h},${selJ}] = ${wCell.textContent}</b>`);
+        xCell.classList.add('rl-source-done');
+        wCell.classList.add('rl-source-done');
+        flyCell(xCell, target, 'var(--rl-x)');
+        flyCell(wCell, target, 'var(--rl-w)');
+        explainClock.at(FLIGHT_MS, () => {
+          target.classList.remove('rl-await-value','rl-partial-value','rl-final-value','rl-value-reveal');
+          if (i < HIDS.length - 1){
+            const cumulative = cumulativeLogits[i];
+            const abs = Math.abs(cumulative);
+            target.textContent = abs >= 10 ? cumulative.toFixed(1) : abs >= 1 ? cumulative.toFixed(2) : cumulative.toFixed(3);
+            target.classList.add('rl-partial-value');
+          } else {
+            target.textContent = finalLogitText;
+            target.classList.add('rl-final-value','rl-value-reveal');
+            guide(`<b>第 4 批累计完成：</b>2560 项已全部计入，<b class="l">logits[${selT},${selJ}] = ${finalLogitText}</b>`);
+          }
+          target.classList.remove('rl-logit-hit'); void target.offsetWidth; target.classList.add('rl-logit-hit');
+        });
+      }));
+
+      const pairsDone = delay + INTRO_MS + (HIDS.length - 1) * PAIR_GAP_MS + FLIGHT_MS;
+      explainClock.at(pairsDone + 900, () => {
+        logitRow.classList.add('rl-logits-row-launch');
+        guide(`最终 logits 已算完：现在把 <b class="l">token ${selT} 的整条蓝色行</b>送入 Softmax`);
+        flyLogitsRow(logitRow, probRow);
+      });
+      explainClock.at(pairsDone + 2300, () => {
+        logitRow.classList.remove('rl-logits-row-launch');
+        probCells.forEach(td => td.classList.remove('rl-await-value'));
+        probRow.classList.add('rl-softmax-reveal');
+        guide(`蓝色 logits 行抵达后完成 Softmax，显示 token ${selT} 的整行 <b class="p">概率分数</b>`);
+      });
     }
 
     function renderFormulas(s, big){
@@ -1150,7 +1326,7 @@
       c.textContent = `step ${s.step} · max|logit| ${s.peak} · ${bad ? '越界 ' + (s.peak / 448).toFixed(1) + ' 倍' : '占上界 ' + Math.round(100 * s.peak / 448) + '%'}`;
     }
 
-    function setScen(i){ si = i; R = compute(SCEN[si]); render(); Road.set(SCEN[si].step); }
+    function setScen(i){ clearExplain(); si = i; R = compute(SCEN[si]); render(); Road.set(SCEN[si].step); }
 
     // ---- 交互 ----
     const scen = $('scen');
@@ -1158,27 +1334,28 @@
     const pick = e => { const el = e.target.closest('[data-i]'); if (el) { Driver.userTouched(); setScen(+el.dataset.i); } };
     $('f3-svg').addEventListener('click', pick);
     $('cmp').addEventListener('click', pick);
-    $('tx').addEventListener('click', e => { const td = e.target.closest('td[data-t]'); if (td) { selT = +td.dataset.t; render(); } });
-    $('tw').addEventListener('click', e => { const td = e.target.closest('td[data-j]'); if (td) { selJ = +td.dataset.j; render(); } });
-    ['tl', 'tp'].forEach(id => $(id).addEventListener('click', e => { const td = e.target.closest('td[data-t]'); if (td) { selT = +td.dataset.t; selJ = +td.dataset.j; render(); } }));
+    $('tx').addEventListener('click', e => { const td = e.target.closest('td[data-t]'); if (td) { Driver.userTouched(); selT = +td.dataset.t; render(); playExplain(80); } });
+    $('tw').addEventListener('click', e => { const td = e.target.closest('td[data-j]'); if (td) { Driver.userTouched(); selJ = +td.dataset.j; render(); playExplain(80); } });
+    ['tl', 'tp'].forEach(id => $(id).addEventListener('click', e => { const td = e.target.closest('td[data-t]'); if (td) { Driver.userTouched(); selT = +td.dataset.t; selJ = +td.dataset.j; render(); playExplain(80); } }));
 
     function reset(i){ selT = 0; selJ = 193; setScen(i || 0); }
-    return { reset, setScen };
+    return { reset, setScen, playExplain, stopExplain:clearExplain };
   })();
 
   /* ================= 第 2 章 · 背景：正常态的四张表，停一会儿就往下走 ================= */
   const C1 = (function(){
     const clock = makeClock();
     const scene = document.querySelector('.rl-scene.rl-calc');
-    function reset(){ clock.stop(); scene.classList.remove('is-bridge-enter'); Tensor.reset(0); }
+    function reset(){ clock.stop(); Tensor.stopExplain(); scene.classList.remove('is-bridge-enter'); Tensor.reset(0); }
     function start(done){
       reset();
       void scene.offsetWidth;
       scene.classList.add('is-bridge-enter');
+      Tensor.playExplain(640);
       clock.at(1850, () => scene.classList.remove('is-bridge-enter'));
-      clock.at(5000, done);
+      clock.at(11200, done);
     }
-    return { start, reset, stop: () => clock.stop() };
+    return { start, reset, stop: () => { clock.stop(); Tensor.stopExplain(); } };
   })();
 
   /* ================= 第 3 章 · 根因：W_gate 2 → 30，两支温度计一起涨，梯度先碰顶 ================= */
@@ -1386,9 +1563,9 @@
       });
     })(s);
   }
-  function loopStep(s){
-    stopAll(); setMode('loop'); show(s);
-    (function cycle(){ STEPS[s - 1].fig.start(() => { hold = setTimeout(cycle, HOLD + 800); }); })();
+  function playStepOnce(s){
+    stopAll(); setMode('step'); show(s);
+    STEPS[s - 1].fig.start(() => setMode('idle'));
   }
   function pause(){ stopAll(); setMode('idle'); }
 
@@ -1397,7 +1574,7 @@
 
   stepsEl.addEventListener('click', e => {
     if (e.target.closest('.rep')) { if (mode === 'full') pause(); else playFrom(1); return; }
-    const b = e.target.closest('button[data-s]'); if (b) loopStep(+b.dataset.s);
+    const b = e.target.closest('button[data-s]'); if (b) playStepOnce(+b.dataset.s);
   });
 
   // 张量表先渲染一次

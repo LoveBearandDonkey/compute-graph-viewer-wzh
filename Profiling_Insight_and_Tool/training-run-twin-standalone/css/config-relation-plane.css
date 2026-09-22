@@ -504,8 +504,12 @@ body:has(.cro-board.is-plane) .cro-link-layer { display: none; }
   bottom: 0;
   box-sizing: border-box;
   /* 这里只标位置，不表达业务选择语义：使用随主题反转的中性前景灰阶，避免与真正
-     的蓝色选中态、通信流或热力颜色混为一谈。 */
-  background: color-mix(in srgb, var(--foreground) 10%, transparent);
+     的蓝色选中态、通信流或热力颜色混为一谈。
+     浓度 6%（原先 10%）：这条影子是**纵向参照**而不是选中态——选中态由格子自己的
+     高亮去表达。10% 时它在格缝与行标道里比格子本身还抢眼，一整列从顶尺压到画布底，
+     读一行 rank 时眼睛总被它拽走；压到 6% 仍看得出「选的是这一列」，但退回了背景层。
+     ⚠️ 与 rank-intro 那页 canvas 里画这条影子的 alpha 保持同值（搜 layerGuide）。 */
+  background: color-mix(in srgb, var(--foreground) 6%, transparent);
   pointer-events: none;
 }
 
@@ -750,14 +754,11 @@ body:has(.cro-board.is-plane) .cro-link-layer { display: none; }
   border-top: 1px solid var(--border-subtle);
   cursor: default;
 }
-/* 副本带下那行小字：「≡ EDP 0」—— 同色的几块是同一份专家权重，关系写在量尺上 */
-.crop-tick--edp .crop-tick__sub {
-  font-size: 9px;
-  font-weight: var(--font-weight-regular, 400);
-  opacity: .6;
-  line-height: 1.2;
-  white-space: nowrap;
-}
+/* 原先这里有 .crop-tick--edp .crop-tick__sub —— 副本带下那行小字「≡ EDP 0」的样式。
+   那行小字已删（见 config-relation-plane.js 建 band 处的说明：同色与 DP_GAP 那道缝
+   已经在说这件事，量尺上只留副本号），故样式一并去掉，不留没人用的规则。
+   上面 .crop-tick--edp 的 flex-direction:column 保留：只剩一行时它与 center 配合
+   仍是居中，且量尺换成两层读法时还要靠它。 */
 
 /* 左侧第二层：这个副本里的 DP 号 */
 .crop-tick--dp {
@@ -895,11 +896,17 @@ body:has(.cro-board.is-plane) .cro-link-layer { display: none; }
    着色的单位是**一套完整专家** = 一个 MoE 层 × 一个 DP/EDP 副本：那一块矩形里的
    卡各持一片，合起来正好是 routedExpert 个专家的一整套。整块一个颜色，读的人因此
    一眼看得出「这一片就是一整套」。
-   相邻两套要换色，而相邻有两个方向 —— 左右是换了一层、上下是换了一个副本 ——
-   所以 js 那边取 (层号 + 2×副本号) % 4，两个方向的邻居都必定落到不同色上。
+   js 那边取 **层号 % 4**：颜色说的是「这一层的专家权重是哪一份」，左右相邻换层就
+   换色。副本号**不参与** —— 上下两个 EDP 副本持的是同一份权重（步末在 EDP 组里
+   all-reduce 对齐），换色会被读成「两套不同的专家」；副本之间的边界交给行距那道缝
+   与左量尺去分。
    ⚠️ 这**不是** EP 的颜色：EP 是同一套内部的分片，同一套里的每张卡同色、编号不同，
    那才是「一整套被切开」该有的读法。EP 归属去看格子里的编号与悬浮提示。
-   色值取 training-run-twin.css 里 .ep-tint-N 那套的前四色，不另造一套色板。 */
+   色值取 training-run-twin.css 里 .ep-tint-N 那套的前四色，不另造一套色板。
+   ⚠️ 下面这五行是**留痕**：真值在 ../../shared/plane-rules.js 的 SET_COLORS /
+   SET_NEUTRAL（与 rank-intro 共用一份），由 config-relation-plane.js 在挂载时写成
+   board 的行内变量盖过这里。要改颜色请改那一处，两页同时生效；这里保持同值，
+   为的是脚本没跑起来时样式仍兜得住。 */
 .cro-board.is-plane {
   --crop-set-0: #3B82F6;
   --crop-set-1: #F59E0B;
@@ -2894,68 +2901,6 @@ body:has(.cro-board.is-plane) .cro-link-layer { display: none; }
   color: var(--foreground-secondary);
 }
 
-/* ══ 左栏底部：AI 配置输入框（外观件，功能待接入）═══════════════════════════
-   浮在配置流之上、贴着左栏底边，而不是排在表单末尾 —— 左栏能滚很长，排在末尾
-   等于「拨到底才看得见」，而这一格恰恰是拨不动那十几个数时才想用的东西。
-   绝对定位而不是 flex 末项：那样它会挤掉表单的高度，而它是「盖在上面」的一层。
-   构建见 js/config-relation-plane.js（left.append 那一行）。 ═════════════════ */
-.cro-board.is-plane .crop-left { position: relative; }
-
-/* 输入框实高约 76px（含内外边距），加一段呼吸位 —— 底下最后一枚 stepper
-   得能滚到它上面来，否则永远压着一格拨不到。 */
-.cro-board.is-plane .crop-left__body { padding-bottom: calc(var(--space-3) + 96px); }
-
-.crop-ai {
-  position: absolute;
-  left: var(--space-3);
-  right: var(--space-3);
-  bottom: var(--space-3);
-  z-index: 3;
-  display: flex;
-  align-items: flex-end;
-  gap: var(--space-2);
-  padding: var(--space-2);
-  /* 蓝紫渐变描边：两层背景（padding-box 铺面色、border-box 铺渐变），
-     border 本身设成透明 —— 单靠 border-color 给不了渐变。这一枚是全页唯一
-     一处渐变，它标的正是「这里接的不是一个表单控件，是模型」。 */
-  border: 1px solid transparent;
-  border-radius: var(--radius-md);
-  background:
-    linear-gradient(var(--surface-2), var(--surface-2)) padding-box,
-    linear-gradient(96deg, var(--ark-blue-500), var(--highlight-l0a-violet-400)) border-box;
-  /* 下面是会滚动的表单，不给阴影就会读成表单的一部分 */
-  box-shadow: 0 6px 20px color-mix(in srgb, var(--foreground) 12%, transparent);
-  transition: box-shadow 140ms ease;
-}
-
-/* 落焦时渐变不变（那是它的身份色），只把光晕铺开一圈 —— 换色会让人以为
-   状态变了，而实际上只是光标进来了。 */
-.crop-ai:focus-within {
-  box-shadow:
-    0 6px 20px color-mix(in srgb, var(--foreground) 12%, transparent),
-    0 0 0 3px color-mix(in srgb, var(--ark-blue-500) 18%, transparent);
-}
-
-.crop-ai__input {
-  flex: 1 1 auto;
-  min-width: 0;
-  /* 两行封顶：它是一句需求不是一篇文档，长到第三行就该滚而不是把配置栏吃掉 */
-  max-height: 3.6em;
-  padding: 2px var(--space-1);
-  border: none;
-  background: transparent;
-  resize: none;
-  font-family: inherit;
-  font-size: var(--font-size-body-sm);
-  line-height: var(--line-height-body);
-  color: var(--foreground);
-}
-
-.crop-ai__input:focus { outline: none; }
-.crop-ai__input::placeholder { color: var(--foreground-muted); }
-
-.crop-ai__send { flex: 0 0 auto; }
-
 /* ══ 巡检色点：每行指标行首那一枚 ═══════════════════════════════════════════
    绿通过 / 黄偏紧 / 红越界 / 灰未知。整栏纵向扫一遍就是一份 checklist，
    不必逐行读数字才看得出这一层有没有事。等级由 js 写在 data-level 上。 */
@@ -3265,72 +3210,6 @@ body:has(.cro-board.is-plane) .cro-link-layer { display: none; }
 .cro-board.is-plane .crop-left .cro-stepper .cro-flag-choice,
 .cro-board.is-plane .crop-left .cro-stepper .cro-switch { width: 100%; }
 .cro-board.is-plane .crop-left .cro-stepper .cro-flag-choice > .btn { flex: 1; min-width: 0; }
-
-/* ── ⑤ AI 输入框：单行提示文字 + 发送键 ────────────────────────────────────
-   24px 大圆角、蓝紫渐变描边、面色不透明；输入与 32px 发送键同排。 */
-.crop-ai {
-  flex-direction: row;
-  align-items: center;
-  gap: var(--space-2);
-  padding: 6px var(--space-2);
-  border-width: 1.5px;
-  border-radius: 24px;
-  background:
-    linear-gradient(var(--surface-1), var(--surface-1)) padding-box,
-    linear-gradient(90deg, var(--ark-blue-500) 0%, var(--highlight-l0a-violet-400) 100%) border-box;
-  box-shadow: 0 6px 20px color-mix(in srgb, var(--foreground) 10%, transparent);
-}
-
-/* 深色底上满色渐变描边太扎眼，往面板底色里兑到 60%（同 insight2.0） */
-:root[data-theme="dark"] .crop-ai,
-[data-theme="dark"] .crop-ai {
-  background:
-    linear-gradient(var(--surface-1), var(--surface-1)) padding-box,
-    linear-gradient(90deg,
-      color-mix(in srgb, var(--ark-blue-500) 60%, var(--surface-1)) 0%,
-      color-mix(in srgb, var(--highlight-l0a-violet-400) 60%, var(--surface-1)) 100%) border-box;
-}
-
-.crop-ai:focus-within {
-  box-shadow:
-    0 6px 20px color-mix(in srgb, var(--foreground) 10%, transparent),
-    0 0 0 3px color-mix(in srgb, var(--ark-blue-500) 8%, transparent);
-}
-
-.crop-ai__input {
-  flex: 1 1 auto;
-  width: auto;
-  box-sizing: border-box;
-  height: 32px;
-  min-height: 32px;
-  max-height: 32px;
-  margin: 0;
-  padding: 0 var(--space-2);
-  font-size: var(--font-size-body-sm);
-  line-height: 32px;
-  overflow: hidden;
-}
-
-.crop-ai__send {
-  width: 32px;
-  height: 32px;
-  padding: 0;
-  border: none;
-  border-radius: 50%;
-  background: var(--ark-blue-500);
-  color: var(--primary-foreground, #fff);
-  cursor: pointer;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  transition: background var(--duration-fast, 140ms) var(--easing-default, ease);
-}
-
-.crop-ai__send:hover { background: color-mix(in srgb, var(--ark-blue-500) 84%, #000); }
-.crop-ai__send:focus-visible { outline: none; box-shadow: var(--focus-ring); }
-
-/* 单行输入栏约 47px 高，给表单底部留出栏高与一段呼吸位。 */
-.cro-board.is-plane .crop-left__body { padding-bottom: calc(var(--space-3) + 60px); }
 
 /* 左栏收起时，模型标题左侧露出一枚「三横」菜单键（点它开回配置栏）；
    左栏在的时候它没有意义，整个不占位。 */
