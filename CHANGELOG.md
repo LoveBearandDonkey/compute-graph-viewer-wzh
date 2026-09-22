@@ -5,10 +5,86 @@
 
 ---
 
+## 2026-09-22 — rank-intro·案例四性能分析：列/卡选择互斥，域内耗时分布移入右栏
+
+- 性能分析下 **Layer 列与 Rank 卡的选择互斥**：点顶尺或用左栏翻页选列，点格子选卡，两者互相让位。理由是色阶只能表达一个方向，两个都选着时读者无从知道眼前这片颜色在比什么。显存页签不受影响——那儿的问题本来就落在一格上。
+- 选中一张卡时，**那一行按各层耗时上色**；与列模式同一套色义：一格的颜色永远是「它比同一层的其他卡快还是慢」。于是健康卡整行是齐的中段色、掉队卡整行发烫、热 EP 组里的卡 dense 层正常而 MoE 层发烫——毛病的形状直接读得出来。
+- 「域内耗时分布」从浮在画布左上的卡片**移入右栏**（`sideP.panel()`，标题 `Layer x · 域内耗时分布`），不再遮挡矩阵，也放得下四个维度摊开。读数改为**整列口径**：这一维在整列上分成多少组、最热的是哪一组（组间差异）、组内倾斜最大的是哪一组（组内差异），两条各自可点，点谁就在矩阵里标出谁的成员卡。
+- 修正两处统计归因错误：组内中位改用真·中位数（偶数取中间两个的平均，原先四舍五入取下标会让两张卡的 TP 组取到最大值）；不足 4 张的组改用「最大/最小」全幅衡量倾斜；并且「整组偏重」必须同时满足组内齐平——组之所以热是因为混了一张掉队卡时，处方是查卡而不是调负载。
+- 左栏翻页选「全部」时，画布**不再选中任何 rank 或 layer**，改为把整张矩阵铺满热力（第三档 `heatMode = 'all'`，与另两档同一套色义：每格相对**同一层**全列中位的快慢）。这一档看的是形状——一整行发烫＝那张卡全程掉队；隔行成组＝某个 EP 组摊到的活多；整列偏深只说明那一层本来就贵。右栏同步换成 `全部 · 计算耗时全景`（最慢的卡 / 最贵的层），不再显示「点一格…」这种与满屏着色自相矛盾的提示。
+- 逐格耗时与逐层中位加了按拓扑签名的缓存（`perfCache`）：铺满档每帧要取六千多格，原先每格现算。
+- 该面板改名为 **`Layer x · 各域计算耗时差异`**（原「域内耗时分布」）：旧名会被读成「这个域的通信花了多少」，而面板里一秒通信都没算——`rankLayerMs` 全部是纯计算耗时，同步域只是分组方式。同时把口径写进面板正文：不含集合通信本身，也不含在同步点上的等待。
+- `makeSide` 增加 `panel(title, html)`：把右栏整块让给调用方，标题自定；`head()` / `empty()` 负责复位，案例三不受影响。
+
+## 2026-09-21 — MindSpeed Agent 产品介绍与双向切换入口
+
+- 新增 `training-run-twin-standalone/mindspeed-agent-overview.html`：沿用 MindSpeed × Insight 机会地图的信息结构与视觉语言，以构造问题墙、确定性路由链、插件能力地图和 Plugin → Agent → Skill 三层架构介绍 MindSpeed Agent；构造场景均显式标注为非真实访谈。
+- `mindspeed-tool-matrix-analysis.html` 左上角新增 MindSpeed Agent 切换入口，两页支持双向切换；窄屏优先保留产品切换并收起右侧导航，避免顶栏与正文横向溢出。
+
+## 2026-09-21 — rank-intro·案例四整网查询只用正视；矩阵补上逐卡耗时、域聚合与通信域
+
+- 性能分析的整网图去掉 3D 翻转：`applyNetView()` 一律 `setView('front')`，「全部」是输入端点卡 + 当前层卡 + 输出端点卡的一条正视链，选定层 / 端点时只留那一块。
+- ① 选中的 Layer 列改按**逐 Rank 耗时**上色（原来整列一片平涂蓝）：色阶以本列中位数为正中、慢侧 +40% / 快侧 −20%，一列健康的卡看着仍是齐的，只有真掉队的那张冲到红端。为此给共用平面模块加了一个可选 env 钩子 `cellHeat(rank, col)`，其余用它的页面不传即维持原样。
+- ② 画布左下新增域聚合读数：选中卡所在的 TP / EP / DP / EDP 四个同步域各自的组中位、**组内倾斜**（有人掉队）与 **vs 全列**（整组偏重），两个读数指认的毛病不同、处方相反，并把倾斜折算成「其余 N 张每步白等多少卡·ms」。
+- 域聚合表的四行改成**可点控件**（原先只有颜色暗示、点了没反应）：点 TP / EP / DP / EDP 任一行，矩阵即按该维的域色标出成员 rank，再点一次收起；行带选中态与键盘操作，且**跟着选中卡走**——换一张卡就按新锚点重算成员，不必回表里重点。面板整体保持 `pointer-events:none`（画布仍可在它底下拖动），只放开这四行。
+- ③ 点整网图里的集合通信算子（EP Dispatch/Combine、Expert Pool、各 TP AllGather/Reduce-Scatter）时，矩阵按第 9 步那套域色标出该次通信的**成员名单**（EP 紫 / TP 青），并报出组规模与跨机台数。
+- 构造数据刻意埋两处形态不同的典型故障：掉队卡 R19（全程慢 38%，一整行发烫，且落在 R23 的 EP 组里）与热 EP 组（只在 MoE 层慢 26%、组内齐平，隔行成组）——前者是同步木桶要查硬件，后者是负载不均要调路由。
+
+## 2026-09-21 — level2 0921 报告独立单文件包
+
+- 新增 `AI_Profiling_Tool/report-level2-0921-standalone.html`：把 index_v3 中 `r20260921level2` 这份最新数据的报告形态打包成零外链单文件（内联 design tokens + report.css + chart-data.js + app.js + report-render.js），可直接双击打开 / 转发 / 打印导出 PDF。
+- 该独立包相对 report.html 的三点裁剪：去掉顶栏报告下拉 `rpSelect`（固定只渲染 0921 这一份）、去掉「附录 B 数据来源与可复现信息」整页、封面事实表去掉「分析技能链」一行（封面页脚也不再指向附录 B）。
+
+
+## 2026-09-21 — rank-intro·案例四整网查询按层收窄范围并与画布双向同步
+
+- `rank-intro.html` 案例四「整网查询」选定一层后只显示该层涉及的那部分（口径同 config-relation-plane「典型 Layer」五列）：Dense/MoE 层只留层卡、Emb 只留输入端点卡、Norm/Head 分别只留输出端点卡里各自那段；「全部」是整条链的正视；性能分析不再做 3D 翻转，只保留正视。
+- 画布顶尺 / 格子的列选择与整网查询的 Layer 翻页双向同步（画布清空 ⇔「全部」，端点列可从画布点进整网查询）；点击整网图计算节点的列高亮与列选择互斥，任一方生效即清掉另一方，不再双选中。
+- `rank-intro/vendor/model-architecture-3d-deck-pattern.js` 增加正视取景框 `setFocusBox()`：宿主只留场景一部分时按那一块适配缩放与平移，resize 同样生效。
+
+## 2026-09-21 — rank-intro·案例四整网查询补齐性能分析价值
+
+- `rank-intro.html` 的「整网查询」新增胶囊式「性能分析 / 训练监控」二级页签和 `全部 | < Layer 1 | Layer 2 >` 翻页，默认进入性能分析的 Layer 1；Layer 翻页会切换 openPangu 前景层，「全部」回到整网 3D 视图。
+- 性能分析按参考 Profiling 报告「模型架构」的 Turbo 耗时色阶给 openPangu 算子节点着色，并在面板底部独立展示算子耗时图例；集群画布只在每个 Layer 列顶部展示一个同色阶的 Layer 级耗时点。点击整网计算节点时，矩阵只高亮该节点实例所属的单个 Layer 列。训练监控切回模型语义色，并展示训练步、运行状态、吞吐与当前 Layer MFU。
+- `rank-intro/vendor/model-architecture-3d-deck-pattern.{js,css}` 增加可选 `performanceMetrics` / `setPerformanceMetrics()` 能力；无性能数据时保持原有语义配色与交互不变。
+
+---
+
+## 2026-09-21 — rank-intro 画布控制补齐机位与 Layer 定位
+
+- `rank-intro.html` 的 `.pt-stagebar` 从画布右上角移到页头原「打开原 pattern」位置，并移除原 pattern 入口；第 9 步通信视图的 ETP 开关和通信图例不再与配置入口抢占右上角空间。
+- 配置面板新增可实际切换投影与重算适配的 `3D / 正视 / 侧视 / 顶视` 机位；展平视图会禁用 3D 机位控制。后续移除面板内重复的「视图」步骤切换组，只保留页头入口与业务控制。
+- Layer 定位改为不跳步骤、不重新适配、不平移也不缩放：3D 视图原地高亮该 Layer 所属 PP stage 的全部 Rank，展平视图原地高亮对应列。Rank / Layer 定位生效后，定位按钮保持选中态，清除选择后恢复。
+- `PP / DP / TP / EP` 改为前缀累积选择：点击任一维度会选中本项及其左侧所有维度，并用各维度语义色呈现叠加状态。
+
+---
+
+## 2026-09-20 — rank-intro 画布接入 stagebar 与 zoomhud
+
+- `rank-intro.html`「Rank 的设计表达」画布接入组合工作台同款 `.pt-stagebar` / `.pt-zoomhud`：右上配置面板可切换结构 / 显存 / 通信 / 展平视图、跳转 PP / DP / TP / EP 维度、定位 Rank、过滤五类通信并控制数据标注；按需求不提供「图层」分组。左下缩放 HUD 统一接管 3D 与展平画布的步进缩放、Fit、居中和复位，并补齐滚轮、拖拽、双指与键盘 `+/-` 控制。
+
+---
+
+## 2026-09-20 — rank-intro 第 6–9 步卡阵放大并统一尺寸
+
+- `rank-intro.html`「Rank 的设计表达」：原来第 6 步（TP 叠层）起把相机比例封顶在第 5 步的适配值，卡阵偏小。改为第 6–9 步（i=5..8）共用一个比例：取这四套排布各自全屏适配值的最小者 × `CAM_HOLD_K`（0.95），第 6 步随之放大，7/8/9 步与它同尺寸只重新居中；缓存随 resize 重算。
+
+---
+
+## 2026-09-20 — 展平视图的规则层抽成共享组件 `shared/plane-rules.js`
+
+- 新增 `Profiling_Insight_and_Tool/shared/plane-rules.js`：`rank-intro.html` 与 `config-relation-plane.html` 两页「展平 rank×layer + 左侧配置面板 + 联动」共用的**规则层**——EP 三档口径换算（`epDomain` / EDP / `dpReplica` / `world` / d 轴命名 / DP 换算）、几条整除约束的判据（`RULES`）、专家权重四色、热力色阶、量尺的 1/2/5 梯子、字段量程。改一处两页同时生效。
+- **渲染不合并**：那页的展平画布是 DOM（长在 `config-relation-observer.js` 上）、rank-intro 是 canvas（第 10 步要做「3D 卡阵压成平面」的逐格插值），两套有意分开；合的只是与画法无关的规则，两页呈现逐位不变。
+- 两页本来就不同的规则不合并而是并排具名：层数与 PP 那条，observer 侧调 `layersAtLeastPp`（允许不均分，46 层配 PP 4 摆成 12,12,11,11）、rank-intro 案例四调 `layersDivisibleByPp`（展平图按等长分块画）。字段量程与 label 的分歧改为 `specOf(field, overrides)` 显式覆盖。
+- `js/config-relation-observer.js` / `js/config-relation-plane.js` / `rank-intro.html` 改为读共享层（各自留 `PR` 绑定，observer 侧另加 `prCfg` 把老字段 `moeOrthogonal` 先归一，判断顺序与改动前逐位一致）；`config-relation-plane.css` 里 `--crop-set-0..3` 降为留痕、真值由 plane.js 写成行内变量（并修正该段注释里与代码矛盾的「(层号 + 2×副本号) % 4」，实际是 `层号 % 4`）。
+- `config-relation-observer.html` 也补引该脚本——observer.js 把它当硬依赖，该页自己没有展平画布，引它只为 observer.js 跑得起来。
+- 自检：`tools/plane-rules-selfcheck.js`（不入库）拿两页改动前的实现快照对拍共享层约 23 万项，含错误文案与标红字段逐字对拍，全部一致。
+
 ## 2026-09-20 — rank-intro·案例四第 5 步建议稿改为「合法且装得下」
 
 - `Profiling_Insight_and_Tool/rank-intro/rank-intro.html`：案例四参数校验失败后的建议修法（`propose`）原来只保证整除关系合法，DP 手输 4 时建议 EP 8 → 4，应用后每卡专家翻倍、峰值约 89.5 GB 撑过 64 GB 容量线反而 OOM。现在合法稿再过一遍容量关（新增模块级 `peakGB` / `fitCapacity`）：装不下就逐档抬 PP（锚点是 PP 时改抬 TP）让更多卡分摊层数，取第一组能装进当前卡的；横幅建议文案追加「预计峰值 X GB/卡」。第 5 步旁白同步改为 EP 8 → 4、PP 4 → 8、Total Rank 128 → 64（8 段 × 8 行，峰值约 52 GB）。
 - `training-run-twin-standalone/config-relation-observer.html` / `config-relation-plane.html`：「Rank 入门」按钮改指向 `../rank-intro/rank-intro.html`；删除 `training-run-twin-standalone/rank-intro.html` 旧副本。
+- `rank-intro.html` 案例三 3D 卡阵（`draw3`）同步主画布 `drawCard` 的去重影做法：壳面半透明，后排整张会从前排透出来叠成重影，现在每张卡先按 `OCC`（0.85）浓度用页面底色把三个可见面垫实一层再画壳；`RI` 导出 `OCC` / `BG_FACE` 供案例复用。
 
 ## 2026-09-20 — 配置关系平面·「配置」下拉右栏改为如实列取值
 

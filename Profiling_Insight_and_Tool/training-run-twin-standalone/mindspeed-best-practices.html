@@ -1,0 +1,215 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="MindSpeed 仓库内置性能调优最佳实践速览">
+  <title>MindSpeed · 最佳实践与排障</title>
+  <style>
+    :root { --bg:#07100f; --panel:#0f1e1b; --line:rgba(190,229,216,.14); --line-strong:rgba(190,229,216,.28); --text:#eef8f4; --muted:#a8bdb6; --dim:#6f8780; --lime:#c9f45f; --lime-soft:rgba(201,244,95,.13); --mint:#61dfbd; --mint-soft:rgba(97,223,189,.12); --amber:#ffc76b; --amber-soft:rgba(255,199,107,.12); --max:1120px; }
+    * { box-sizing:border-box; }
+    body { margin:0; color:var(--text); background:radial-gradient(circle at 82% 8%,rgba(201,244,95,.1),transparent 28rem),var(--bg); font-family:Inter,ui-sans-serif,system-ui,-apple-system,"Segoe UI","Microsoft YaHei",sans-serif; line-height:1.65; }
+    a { color:inherit; }
+    .shell { width:min(calc(100% - 40px),var(--max)); margin-inline:auto; }
+    header { position:sticky; top:0; z-index:10; border-bottom:1px solid var(--line); background:rgba(7,16,15,.86); backdrop-filter:blur(16px); }
+    .nav { min-height:64px; display:flex; align-items:center; justify-content:space-between; gap:20px; }
+    .brand { font-weight:850; text-decoration:none; }
+    .back { padding:8px 12px; border:1px solid var(--line-strong); border-radius:10px; color:var(--lime); text-decoration:none; font-size:12px; }
+    main { padding-bottom:70px; }
+    .hero { padding:84px 0 52px; }
+    .eyebrow { color:var(--lime); font:800 11px/1 ui-monospace,monospace; letter-spacing:.12em; text-transform:uppercase; }
+    h1,h2,h3,p { margin-top:0; }
+    h1,h2,h3 { line-height:1.16; letter-spacing:-.025em; }
+    h1 { max-width:850px; margin:18px 0 22px; font-size:clamp(40px,6vw,68px); }
+    h2 { margin-bottom:12px; font-size:clamp(28px,4vw,42px); }
+    h3 { font-size:18px; }
+    .lede { max-width:800px; color:var(--muted); font-size:18px; }
+    .playbooks { display:grid; grid-template-columns:repeat(3,1fr); gap:14px; }
+    .playbook { overflow:hidden; border:1px solid var(--line-strong); border-radius:20px; background:var(--panel); }
+    .playbook-head { min-height:150px; padding:22px; border-bottom:1px solid var(--line); background:linear-gradient(145deg,var(--lime-soft),transparent 72%); }
+    .playbook-head span { color:var(--lime); font:800 10px/1 ui-monospace,monospace; }
+    .playbook-head h3 { margin:20px 0 8px; font-size:22px; }
+    .playbook-head p { margin:0; color:var(--muted); font-size:12px; }
+    .playbook-body { padding:20px; }
+    .playbook-body pre { margin:0 0 16px; }
+    .playbook-body ul { margin:0; padding:0; list-style:none; }
+    .playbook-body li { padding:8px 0; border-top:1px solid var(--line); color:var(--muted); font-size:11px; }
+    .playbook-body li strong { color:var(--text); }
+    .scenario-note { margin-top:14px; padding:16px 18px; border-left:3px solid var(--amber); background:var(--amber-soft); color:#ead8b9; font-size:12px; }
+    section { padding:50px 0; }
+    .section-head { display:grid; grid-template-columns:1fr minmax(280px,430px); gap:40px; align-items:end; margin-bottom:28px; }
+    .section-head p { margin:0; color:var(--muted); font-size:14px; }
+    .flow { display:grid; grid-template-columns:repeat(5,1fr); gap:10px; }
+    .step { position:relative; min-height:185px; padding:20px; border:1px solid var(--line); border-radius:16px; background:var(--panel); }
+    .step:not(:last-child)::after { content:"→"; position:absolute; right:-13px; top:22px; z-index:2; color:var(--lime); }
+    .step .num { color:var(--dim); font:800 10px/1 ui-monospace,monospace; }
+    .step strong { display:block; margin:34px 0 8px; font-size:14px; }
+    .step span:last-child { color:var(--muted); font-size:12px; }
+    .table-grid { display:grid; grid-template-columns:1fr 1fr; gap:14px; }
+    .table-wrap { overflow-x:auto; border:1px solid var(--line); border-radius:18px; background:var(--panel); }
+    .table-title { padding:20px 20px 0; }
+    table { width:100%; min-width:480px; border-collapse:collapse; }
+    th,td { padding:14px 16px; border-bottom:1px solid var(--line); text-align:left; vertical-align:top; }
+    th { color:var(--dim); font:800 10px/1.4 ui-monospace,monospace; }
+    td { color:var(--muted); font-size:12px; }
+    td strong { color:var(--text); }
+    tr:last-child td { border-bottom:0; }
+    .principles { display:grid; grid-template-columns:repeat(5,1fr); gap:12px; }
+    .principle { padding:20px; border:1px dashed var(--line-strong); border-radius:16px; }
+    .principle b { display:block; margin-bottom:8px; color:var(--mint); font-size:13px; }
+    .principle span { color:var(--muted); font-size:12px; }
+    .recipe { padding:22px; border:1px solid var(--line); border-radius:18px; background:var(--panel); }
+    pre { margin:16px 0 0; padding:18px; overflow-x:auto; border-radius:12px; color:#cce7dd; background:rgba(0,0,0,.28); font:11px/1.7 ui-monospace,monospace; }
+    .sources { margin-top:18px; color:var(--dim); font:11px/1.7 ui-monospace,monospace; }
+    footer { padding:26px 0 44px; border-top:1px solid var(--line); color:var(--dim); font-size:11px; }
+    @media(max-width:900px){ .flow{grid-template-columns:1fr 1fr}.step:not(:last-child)::after{display:none}.table-grid{grid-template-columns:1fr}.principles{grid-template-columns:1fr 1fr}.section-head{grid-template-columns:1fr}.playbooks{grid-template-columns:1fr} }
+    @media(max-width:620px){ .shell{width:min(calc(100% - 24px),var(--max))}.flow,.principles{grid-template-columns:1fr}.hero{padding-top:58px}.nav{min-height:58px} }
+  </style>
+</head>
+<body>
+  <header><div class="shell nav"><a class="brand" href="mindspeed-tool-matrix-analysis.html">MindSpeed × Insight</a><a class="back" href="mindspeed-tool-matrix-analysis.html#examples">← 返回样例资产楼层</a></div></header>
+  <main>
+    <section class="hero"><div class="shell"><p class="eyebrow">Drill-down 02 · Practice guide</p><h1>最佳实践与排障</h1><p class="lede">直接从仓库里的真实配置出发：32K 长序列怎么配 Ring、16K 场景怎么开 2D-TP、Llama2 OOM 怎么接 SmartSwap，以及 16 卡以上如何启动 Auto Settings。</p></div></section>
+
+    <section>
+      <div class="shell">
+        <div class="section-head"><div><p class="eyebrow">Concrete playbooks</p><h2>三个可以照着改的实例</h2></div><p>每个实例都来自仓库脚本或特性文档，不是为了说明界面而虚构的参数。</p></div>
+        <div class="playbooks">
+          <article class="playbook">
+            <div class="playbook-head"><span>CASE A · 32K LONG CONTEXT</span><h3>8 卡 Llama2：Ring + Double Ring</h3><p>目标是用 TP1 / PP2 / CP4 处理 32K 序列，并让通信与计算重叠。</p></div>
+            <div class="playbook-body"><pre>TP=1
+PP=2
+CP=4
+
+--seq-length 32768
+--context-parallel-algo megatron_cp_algo
+--cp-window-size 2
+--use-cp-send-recv-overlap
+--use-fused-ring-attention-update
+--recompute-in-bubble</pre><ul>
+              <li><strong>仓库入口：</strong> feature_tests/ring_attention.sh</li>
+              <li><strong>关键判断：</strong> 32K / CP4 = 每卡 8K 序列块</li>
+              <li><strong>真实约束：</strong> cp-window-size 必须整除 CP；窗口增大不一定更快</li>
+            </ul></div>
+          </article>
+          <article class="playbook">
+            <div class="playbook-head"><span>CASE B · 16K LARGE TP</span><h3>8 卡 Llama2：2D Tensor Parallel</h3><p>把 TP4 拆成 2×2，并打开 AG / RS 与 MatMul 的通算重叠。</p></div>
+            <div class="playbook-body"><pre>TP=4
+PP=1
+
+--seq-length 16384
+--tp-2d
+--tp-x 2
+--tp-y 2
+--enable-overlap-ag-with-matmul
+--enable-overlap-matmul-with-rs
+--overlap-grad-reduce
+--overlap-param-gather
+--swap-attention</pre><ul>
+              <li><strong>仓库入口：</strong> feature_tests/tp2d.sh</li>
+              <li><strong>当前实例：</strong> 4 层、MBS1、GBS4、BF16</li>
+              <li><strong>适用问题：</strong> TP 域较大、1D-TP 通信效率下降</li>
+            </ul></div>
+          </article>
+          <article class="playbook">
+            <div class="playbook-head"><span>CASE C · OOM RECOVERY</span><h3>Llama2：用 SmartSwap 替代部分重计算</h3><p>训练 OOM 时让系统采集张量生命周期、搜索换出策略，再进入稳定执行阶段。</p></div>
+            <div class="playbook-body"><pre># 训练脚本追加
+--smart-swap
+
+# 可选策略配置
+policy_v2 = True
+policy_pref = BETTER_PERFORMANCE
+swap_bucket_size = -1
+num_attn_layers_per_stage = 1</pre><ul>
+              <li><strong>文档实例 1：</strong> 8p / PP1 / 8K / 32 层，TP8→TP1，收益 25%</li>
+              <li><strong>文档实例 2：</strong> 8p / PP1 / 16K / 40 层，关闭全重计算，收益 28%</li>
+              <li><strong>代价：</strong> 每卡换出 30GB 时，8 卡主机至少需 240GB Host 内存</li>
+            </ul></div>
+          </article>
+        </div>
+        <div class="scenario-note"><strong>别机械复制：</strong>Ring 案例使用固定序列；SmartSwap 文档明确说明暂未适配动态序列 / MoE。这里展示的是仓库给出的起点和边界，不是任意模型都能直接套用的万能参数。</div>
+      </div>
+    </section>
+
+    <section>
+      <div class="shell">
+        <div class="section-head"><div><p class="eyebrow">Case D · Auto settings</p><h2>16 卡以上自动搜并行配置</h2></div><p>Auto Settings 不是概念功能。把下面参数加到原训练脚本，它会多次拉起裁剪后的 Profiling，并在工作目录留下建模文件和日志，最后打印 Top-3。</p></div>
+        <div class="recipe"><strong>仓库文档给出的真实启动参数</strong><pre>--auto-settings \
+--auto-settings-type mixed \
+--auto-settings-work-dir ./auto_settings_dir \
+--auto-settings-ranks 16 \
+--auto-settings-log-level debug \
+--target-nnodes $NNODES \
+--nproc-per-node $GPUS_PER_NODE \
+--master-addr $MASTER_ADDR \
+--master-port 6005 \
+--node-rank $NODE_RANK</pre></div>
+        <div class="scenario-note"><strong>实际会发生：</strong>解析模型与硬件 → 生成多组 Profiling 配置 → torchrun 拉起短任务 → 解析算子、通信和内存 → 搜索候选 → 输出显存可行且预测性能靠前的三组配置。最低搜索规模在当前文档中标为 16 卡。</div>
+      </div>
+    </section>
+
+    <section>
+      <div class="shell">
+        <div class="section-head"><div><p class="eyebrow">Five-step workflow</p><h2>五步调优流程</h2></div><p>这是用户指南明确给出的主流程。第一步必须运行一次带 Profile 的任务，后续分析可复用采集结果。</p></div>
+        <div class="flow">
+          <div class="step"><span class="num">01 / COLLECT</span><strong>采集 Profiling</strong><span>选择最小 step 窗口、目标 ranks 与采集等级。</span></div>
+          <div class="step"><span class="num">02 / COMPUTE</span><strong>分析算子耗时</strong><span>识别长耗时算子和计算利用率问题。</span></div>
+          <div class="step"><span class="num">03 / COMM</span><strong>分析通信耗时</strong><span>判断未被计算掩盖的通信与扩展效率。</span></div>
+          <div class="step"><span class="num">04 / MEMORY</span><strong>分析显存使用</strong><span>定位峰值、OOM 风险及各 stage 偏差。</span></div>
+          <div class="step"><span class="num">05 / ACT</span><strong>选择优化策略</strong><span>按瓶颈类型选择并行、融合、Swap 或重计算。</span></div>
+        </div>
+      </div>
+    </section>
+
+    <section>
+      <div class="shell">
+        <div class="section-head"><div><p class="eyebrow">Decision tables</p><h2>从症状映射到策略</h2></div><p>仓库内置了瓶颈分类与长序列算法选择表，可直接转成诊断规则。</p></div>
+        <div class="table-grid">
+          <div class="table-wrap"><h3 class="table-title">常见瓶颈</h3><table><thead><tr><th>瓶颈</th><th>判断依据</th><th>优先动作</th></tr></thead><tbody>
+            <tr><td><strong>计算</strong></td><td>算子耗时占比高</td><td>FlashAttention、融合算子、低精度</td></tr>
+            <tr><td><strong>通信</strong></td><td>通信时间占比高</td><td>调整并行策略、通信计算重叠</td></tr>
+            <tr><td><strong>内存</strong></td><td>接近上限或 OOM</td><td>序列并行、重计算、激活卸载 / Swap</td></tr>
+            <tr><td><strong>数据加载</strong></td><td>NPU 等待数据</td><td>异步加载与预取</td></tr>
+          </tbody></table></div>
+          <div class="table-wrap"><h3 class="table-title">长序列算法选择</h3><table><thead><tr><th>场景条件</th><th>推荐</th><th>原因</th></tr></thead><tbody>
+            <tr><td>head 数可被 cp_size 整除</td><td><strong>Ulysses</strong></td><td>通信效率高</td></tr>
+            <tr><td>序列长度 8K 以上</td><td><strong>Ring Attention</strong></td><td>不受 head 数限制</td></tr>
+            <tr><td>继续优化 Ring</td><td><strong>Double Ring</strong></td><td>双环结构提高并发</td></tr>
+            <tr><td>兼顾二者优势</td><td><strong>Hybrid CP</strong></td><td>融合 Ulysses 与 Ring</td></tr>
+          </tbody></table></div>
+        </div>
+      </div>
+    </section>
+
+    <section>
+      <div class="shell">
+        <div class="section-head"><div><p class="eyebrow">Repository principles</p><h2>五条最佳实践</h2></div><p>这些原则比具体参数更稳定，适合作为调优工作流的默认护栏。</p></div>
+        <div class="principles">
+          <div class="principle"><b>先诊断后优化</b><span>先用 Profile 找瓶颈，再选择特性。</span></div>
+          <div class="principle"><b>从简单开始</b><span>先调整并行策略，再引入复杂机制。</span></div>
+          <div class="principle"><b>逐步验证</b><span>每次只改变一个变量并保留基线。</span></div>
+          <div class="principle"><b>看整体吞吐</b><span>不要只看单步或单个算子耗时。</span></div>
+          <div class="principle"><b>结合硬件特性</b><span>按昇腾拓扑和算力 / 带宽选择策略。</span></div>
+        </div>
+      </div>
+    </section>
+
+    <section>
+      <div class="shell">
+        <div class="section-head"><div><p class="eyebrow">Minimal recipe</p><h2>最小 Profile 配方</h2></div><p>用户指南给出的采集入口，可作为诊断向导的默认模板。</p></div>
+        <div class="recipe"><strong>仅采集第 5 个 step、Rank 0，并记录 CPU 与 shape</strong><pre>python your_train_script.py \
+  --profile \
+  --profile-step-start 5 \
+  --profile-step-end 6 \
+  --profile-ranks 0 \
+  --profile-level level1 \
+  --profile-with-cpu \
+  --profile-record-shapes \
+  --profile-save-path ./profile_dir</pre></div>
+        <p class="sources">依据：docs/zh/user-guide/megatron_performance_optimization.md · docs/zh/user-guide/profile.md · docs/zh/FAQ.md · docs/zh/features/feature_list.md</p>
+      </div>
+    </section>
+  </main>
+  <footer><div class="shell">MindSpeed repository reading · Practice guide · 2026-09-21</div></footer>
+</body>
+</html>

@@ -1,3 +1,2259 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="light">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>level2 单机 4 卡 PP=2×DP=2 训练性能诊断报告</title>
+<style>
+/* ===== ../../vendor/pto-design-system/tokens/foundation.css ===== */
+:root {
+  /* Neutral Gray Ramp — pure neutral, no blue tint */
+  --ark-neutral-0: #0b0b0b;
+  --ark-neutral-1: #101010;
+  --ark-neutral-2: #141414;
+  --ark-neutral-3: #1a1a1a;
+  --ark-neutral-4: #343434;
+
+  /* Accent Palette */
+  --ark-blue-500: #4369efff;
+  --ark-blue-600: #5a92e6;
+  --ark-domain-aux: #7c8db8;
+  --ark-green-500: #04d793ff;
+  --ark-orange-500: #ffaa3bff;
+  --ark-red-500: #ff4b7bff;
+
+  /* Typography Scale */
+  --font-size-display-lg: 28px;
+  --font-size-title-md:   20px;
+  --font-size-title-sm:   16px;
+  --font-size-body-md:    14px;
+  --font-size-body-sm:    12px;
+  --font-size-label-sm:   12px;
+  --font-size-label-xs:   11px;
+
+  --font-weight-bold:     700;
+  --font-weight-semibold: 600;
+  --font-weight-medium:   500;
+
+  --line-height-display:  1.25;
+  --line-height-title:    1.3;
+  --line-height-body:     1.5;
+  --line-height-label:    1.2;
+  --line-height-mono:     1.4;
+
+  --letter-spacing-body:  0;
+  --letter-spacing-label: 0.5px;
+
+  /* Font Family */
+  --font-sans: 'Inter', 'Source Han Sans SC', 'PingFang SC', 'Noto Sans SC', sans-serif;
+  --font-mono: 'JetBrains Mono', 'Fira Code', 'Consolas', monospace;
+
+  /* Spacing Scale */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+
+  /* Radius Scale */
+  --radius-sm: 6px;
+  --radius-md: 8px;
+  --radius-lg: 12px;
+  --radius-xl: 16px;
+  --radius-pill: 999px;
+
+  /* Shadow Scale */
+  --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.28);
+  --shadow-md: 0 6px 18px rgba(0, 0, 0, 0.34);
+  --shadow-lg: 0 12px 30px rgba(0, 0, 0, 0.42);
+
+  /* Z-index Scale */
+  --z-base: 0;
+  --z-raised: 10;
+  --z-dropdown: 100;
+  --z-overlay: 200;
+  --z-modal: 300;
+  --z-toast: 400;
+
+  /* Motion */
+  --duration-fast: 100ms;
+  --duration-base: 200ms;
+  --duration-slow: 350ms;
+  --easing-default: cubic-bezier(0.4, 0, 0.2, 1);
+  --easing-out: cubic-bezier(0, 0, 0.2, 1);
+
+  /* Highlight Ramps */
+  --highlight-copy-blue-0: #F5F8FF;
+  --highlight-copy-blue-100: #DDE8FD;
+  --highlight-copy-blue-200: #B1CAFC;
+  --highlight-copy-blue-300: #76A3F9;
+  --highlight-copy-blue-400: #3C7CF6;
+  --highlight-copy-blue-500: #0B5BF4;
+  --highlight-copy-blue-600: #094CCD;
+  --highlight-copy-blue-700: #073CA1;
+  --highlight-copy-blue-800: #052C75;
+  --highlight-copy-blue-900: #031D4E;
+  --highlight-copy-blue-1000: #020F27;
+  --highlight-copy-blue-source: #3577F6;
+
+  --highlight-l0a-violet-0: #FAF5FF;
+  --highlight-l0a-violet-100: #EEDDFD;
+  --highlight-l0a-violet-200: #D7B1FB;
+  --highlight-l0a-violet-300: #B977F9;
+  --highlight-l0a-violet-400: #9B3CF6;
+  --highlight-l0a-violet-500: #820BF4;
+  --highlight-l0a-violet-600: #6E0ACD;
+  --highlight-l0a-violet-700: #5608A1;
+  --highlight-l0a-violet-800: #3F0675;
+  --highlight-l0a-violet-900: #2A044E;
+  --highlight-l0a-violet-1000: #150227;
+  --highlight-l0a-violet-source: #A855F7;
+
+  --highlight-l0b-deep-violet-0: #F6F7FF;
+  --highlight-l0b-deep-violet-100: #E0E2FF;
+  --highlight-l0b-deep-violet-200: #BFC3FF;
+  --highlight-l0b-deep-violet-300: #959BFF;
+  --highlight-l0b-deep-violet-400: #6A71FF;
+  --highlight-l0b-deep-violet-500: #4F46E5;
+  --highlight-l0b-deep-violet-600: #4338CA;
+  --highlight-l0b-deep-violet-700: #3730A3;
+  --highlight-l0b-deep-violet-800: #2A257A;
+  --highlight-l0b-deep-violet-900: #1C1953;
+  --highlight-l0b-deep-violet-1000: #0E0C2C;
+  --highlight-l0b-deep-violet-source: #4F46E5;
+
+  --highlight-accum-orange-0: #FFF9F5;
+  --highlight-accum-orange-100: #FEEADC;
+  --highlight-accum-orange-200: #FDCFAF;
+  --highlight-accum-orange-300: #FBAB74;
+  --highlight-accum-orange-400: #FA8838;
+  --highlight-accum-orange-500: #F96A06;
+  --highlight-accum-orange-600: #D15905;
+  --highlight-accum-orange-700: #A44604;
+  --highlight-accum-orange-800: #773303;
+  --highlight-accum-orange-900: #502202;
+  --highlight-accum-orange-1000: #281101;
+  --highlight-accum-orange-source: #F97316;
+
+  --highlight-ub-green-0: #FBFEF6;
+  --highlight-ub-green-100: #F2FDDE;
+  --highlight-ub-green-200: #E1F9B3;
+  --highlight-ub-green-300: #CAF57A;
+  --highlight-ub-green-400: #B3F141;
+  --highlight-ub-green-500: #A0ED12;
+  --highlight-ub-green-600: #86C70F;
+  --highlight-ub-green-700: #6A9D0C;
+  --highlight-ub-green-800: #4D7209;
+  --highlight-ub-green-900: #334C06;
+  --highlight-ub-green-1000: #1A2603;
+  --highlight-ub-green-source: #87C80F;
+
+  --highlight-mte-amber-0: #FFFDF3;
+  --highlight-mte-amber-100: #FEF6D8;
+  --highlight-mte-amber-200: #FDEB9D;
+  --highlight-mte-amber-300: #FBDC59;
+  --highlight-mte-amber-400: #F4CB22;
+  --highlight-mte-amber-500: #EAB308;
+  --highlight-mte-amber-600: #CA8A04;
+  --highlight-mte-amber-700: #A16207;
+  --highlight-mte-amber-800: #854D0E;
+  --highlight-mte-amber-900: #713F12;
+  --highlight-mte-amber-1000: #422006;
+  --highlight-mte-amber-source: #EAB308;
+}
+
+:root[data-theme='light'] {
+  --ark-neutral-0: #FFFFFF;
+  --ark-neutral-1: #F5F5F5;
+  --ark-neutral-2: #FFFFFF;
+  --ark-neutral-3: #F2F2F2;
+  --ark-neutral-4: #E6E6E6;
+}
+
+/* ===== ../../vendor/pto-design-system/tokens/semantic.css ===== */
+:root[data-theme='dark'],
+:root {
+  --background: var(--ark-neutral-1);
+  --background-elevated: var(--ark-neutral-2);
+  --surface-1: #161616;
+  --surface-2: #1c1c1c;
+  --surface-3: #262626;
+  --surface-4: #313131;
+
+  --foreground:           rgba(255, 255, 255, 0.90);
+  --foreground-secondary: rgba(255, 255, 255, 0.60);
+  --foreground-muted:     rgba(255, 255, 255, 0.40);
+  --foreground-disabled:  rgba(255, 255, 255, 0.25);
+
+  --border-subtle: rgba(255, 255, 255, 0.06);
+  --border-default: rgba(255, 255, 255, 0.10);
+  --border-strong: rgba(255, 255, 255, 0.16);
+
+  --primary: var(--ark-blue-500);
+  --primary-hover: var(--ark-blue-600);
+  --primary-foreground: #ffffff;
+
+  --accent: var(--ark-domain-aux);
+  --success: var(--ark-green-500);
+  --warning: var(--ark-orange-500);
+  --danger: var(--ark-red-500);
+
+  /* Tone surfaces shared by multiple modules. Keep module-specific hues local. */
+  --tone-critical-bg: color-mix(in srgb, var(--danger) 14%, transparent);
+  --tone-warning-bg: color-mix(in srgb, var(--warning) 16%, transparent);
+  --tone-info-bg: color-mix(in srgb, var(--primary) 16%, transparent);
+  --tone-blue-strong: color-mix(in srgb, var(--primary) 28%, transparent);
+  --tone-green-strong: color-mix(in srgb, var(--success) 22%, transparent);
+  --tone-warning-strong: color-mix(in srgb, var(--warning) 22%, transparent);
+
+  --focus-ring: rgba(67, 105, 239, 0.42);
+
+  /* Interaction State Overlays (ArkUI-style: overlay on surface, not bg swap) */
+  --state-hover:    rgba(255, 255, 255, 0.06);
+  --state-press:    rgba(255, 255, 255, 0.10);
+  --state-muted:    rgba(255, 255, 255, 0.06);
+  --state-selected: rgba(67, 105, 239, 0.14);
+  --state-focus:    rgba(67, 105, 239, 0.20);
+
+  /* Disabled States */
+  --surface-disabled: rgba(255, 255, 255, 0.04);
+  --border-disabled:  rgba(255, 255, 255, 0.06);
+
+  --app-background: var(--background);
+  --surface-backdrop-filter: none;
+  --surface-backdrop-filter-soft: none;
+  --surface-backdrop-filter-strong: none;
+  --glass-surface-bg: var(--surface-1);
+  --glass-surface-bg-soft: var(--surface-2);
+  --glass-surface-bg-strong: var(--background-elevated);
+  --glass-surface-border: var(--border-default);
+  --glass-surface-highlight: none;
+  --glass-surface-shadow: none;
+}
+
+:root[data-theme='glass'] {
+  --background: #080a0f;
+  --background-elevated: rgba(18, 25, 38, 0.62);
+  --surface-1: rgba(255, 255, 255, 0.075);
+  --surface-2: rgba(255, 255, 255, 0.095);
+  --surface-3: rgba(255, 255, 255, 0.13);
+  --surface-4: rgba(255, 255, 255, 0.18);
+
+  --foreground:           rgba(255, 255, 255, 0.92);
+  --foreground-secondary: rgba(255, 255, 255, 0.66);
+  --foreground-muted:     rgba(255, 255, 255, 0.46);
+  --foreground-disabled:  rgba(255, 255, 255, 0.28);
+
+  --border-subtle: rgba(255, 255, 255, 0.10);
+  --border-default: rgba(255, 255, 255, 0.16);
+  --border-strong: rgba(255, 255, 255, 0.24);
+
+  --primary: #6fa1ff;
+  --primary-hover: #8bb5ff;
+  --primary-foreground: #08111f;
+  --accent: #90a4d4;
+
+  --focus-ring: rgba(111, 161, 255, 0.44);
+
+  --state-hover:    rgba(255, 255, 255, 0.09);
+  --state-press:    rgba(255, 255, 255, 0.14);
+  --state-muted:    rgba(255, 255, 255, 0.07);
+  --state-selected: rgba(111, 161, 255, 0.18);
+  --state-focus:    rgba(111, 161, 255, 0.24);
+
+  --surface-disabled: rgba(255, 255, 255, 0.055);
+  --border-disabled:  rgba(255, 255, 255, 0.08);
+
+  --app-background:
+    radial-gradient(circle at 0% 0%, rgba(91, 140, 255, 0.20) 0%, rgba(91, 140, 255, 0.10) 18%, transparent 38%),
+    radial-gradient(circle at 100% 0%, rgba(20, 184, 166, 0.14) 0%, rgba(20, 184, 166, 0.07) 16%, transparent 34%),
+    radial-gradient(circle at 100% 100%, rgba(234, 179, 8, 0.10) 0%, transparent 30%),
+    linear-gradient(180deg, #080a0f 0%, #0f1623 48%, #080a0f 100%);
+  --surface-backdrop-filter: blur(24px) saturate(170%) brightness(1.04);
+  --surface-backdrop-filter-soft: blur(16px) saturate(150%) brightness(1.03);
+  --surface-backdrop-filter-strong: blur(32px) saturate(180%) brightness(1.06);
+  --glass-surface-bg: linear-gradient(145deg, rgba(255, 255, 255, 0.13), rgba(255, 255, 255, 0.052) 48%, rgba(255, 255, 255, 0.09));
+  --glass-surface-bg-soft: linear-gradient(145deg, rgba(255, 255, 255, 0.095), rgba(255, 255, 255, 0.038) 48%, rgba(255, 255, 255, 0.065));
+  --glass-surface-bg-strong: linear-gradient(145deg, rgba(255, 255, 255, 0.17), rgba(255, 255, 255, 0.064) 46%, rgba(255, 255, 255, 0.115));
+  --glass-surface-border: rgba(255, 255, 255, 0.13);
+  --glass-surface-highlight: inset 0 1px 0 rgba(255, 255, 255, 0.28), inset 1px 0 0 rgba(139, 181, 255, 0.10), inset -1px 0 0 rgba(255, 255, 255, 0.08), inset 0 -14px 30px rgba(0, 0, 0, 0.16);
+  --glass-surface-shadow: 0 18px 56px rgba(0, 0, 0, 0.30), 0 3px 18px rgba(0, 0, 0, 0.20);
+}
+
+:root[data-theme='light'] {
+  --background: var(--ark-neutral-1);
+  --background-elevated: var(--ark-neutral-2);
+  --surface-1: #FFFFFF;
+  --surface-2: #F2F2F2;
+  --surface-3: #E6E6E6;
+  --surface-4: #CCCCCC;
+
+  --foreground:           rgba(0, 0, 0, 0.90);
+  --foreground-secondary: rgba(0, 0, 0, 0.55);
+  --foreground-muted:     rgba(0, 0, 0, 0.42);
+  --foreground-disabled:  rgba(0, 0, 0, 0.25);
+
+  --border-subtle: rgba(0, 0, 0, 0.07);
+  --border-default: rgba(0, 0, 0, 0.12);
+  --border-strong: rgba(0, 0, 0, 0.18);
+
+  --focus-ring: rgba(67, 105, 239, 0.36);
+
+  --state-hover:    rgba(0, 0, 0, 0.05);
+  --state-press:    rgba(0, 0, 0, 0.09);
+  --state-muted:    rgba(0, 0, 0, 0.05);
+  --state-selected: rgba(67, 105, 239, 0.10);
+  --state-focus:    rgba(67, 105, 239, 0.16);
+
+  --surface-disabled: rgba(0, 0, 0, 0.04);
+  --border-disabled:  rgba(0, 0, 0, 0.07);
+}
+
+/* ===== ../../vendor/pto-design-system/tokens/components.css ===== */
+/*
+ * Design Principle — Color Usage
+ * Avoid large-area transparent color fills (e.g. rgba(blue, 0.12) card backgrounds).
+ * Prefer: neutral surface (--surface-1/2) for card bg + small high-saturation tag/badge for type signal.
+ * Transparent color fills are only acceptable for tight accent regions (tag, badge, icon bg)
+ * or when explicitly requested by the designer.
+ */
+
+:root {
+  /* Toolbar */
+  --comp-toolbar-height: 44px;
+  --comp-toolbar-bg: color-mix(in srgb, var(--background) 92%, black);
+  --comp-toolbar-border: var(--border-subtle);
+
+  /* Button */
+  --button-height-sm: 30px;
+  --button-height-md: 36px;
+  --button-height-lg: 42px;
+  --button-radius: var(--radius-lg);
+  --button-padding-x-sm: var(--space-2);
+  --button-padding-x-md: var(--space-3);
+  --button-padding-x-lg: var(--space-4);
+  --button-gap: 6px;
+  --button-font: 500 var(--font-size-body-sm) / 1 var(--font-sans);
+  --button-solid-bg:       var(--foreground);
+  --button-solid-bg-hover: color-mix(in srgb, var(--foreground) 88%, transparent);
+  --button-solid-bg-press: color-mix(in srgb, var(--foreground) 80%, transparent);
+  --button-solid-fg:       var(--background);
+  --button-solid-shadow:   none;
+  --button-secondary-bg: color-mix(in srgb, var(--surface-2) 92%, white 3%);
+  --button-secondary-bg-hover: var(--surface-3);
+  --button-secondary-bg-press: color-mix(in srgb, var(--surface-3) 84%, black);
+  --button-secondary-border: var(--border-subtle);
+  --button-secondary-fg: var(--foreground);
+  --button-secondary-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.03), 0 2px 8px rgba(0, 0, 0, 0.16);
+  --button-ghost-bg-hover: var(--state-hover);
+  --button-ghost-bg-press: var(--state-press);
+  --button-ghost-fg: var(--foreground-secondary);
+  --button-ghost-fg-hover: var(--foreground);
+  --button-focus-ring: var(--focus-ring);
+  --button-disabled-opacity: 0.42;
+
+  /* Input */
+  --input-height-md: 34px;
+  --input-radius: var(--radius-md);
+  --input-border: var(--border-default);
+  --input-bg: var(--surface-1);
+
+  /* Panel */
+  --panel-radius: var(--radius-lg);
+  --panel-padding: var(--space-4);
+  --panel-padding-lg: var(--space-5);
+  --panel-bg: var(--surface-2);
+  --panel-border: var(--border-subtle);
+
+  /* Card */
+  --card-radius: var(--radius-lg);
+  --card-padding: var(--space-4);
+  --card-bg: var(--surface-1);
+  --card-border: var(--border-default);
+  --card-shadow: none;
+  --card-hover-border: var(--border-strong);
+  --card-hover-bg: var(--state-hover);          /* overlay on --card-bg, ArkUI-style */
+  --card-selected-border: var(--primary);
+  --card-selected-bg: var(--state-selected);    /* overlay on --card-bg */
+
+  /* Table */
+  --table-row-height: 36px;
+  --table-header-height: 36px;
+  --table-border: var(--border-subtle);
+
+  /* Typography Composites — role-based readable defaults */
+  --type-display:  var(--font-weight-bold) var(--font-size-display-lg) / var(--line-height-display) var(--font-sans);
+  --type-title-1:  var(--font-weight-semibold) var(--font-size-title-md) / var(--line-height-title) var(--font-sans);
+  --type-title-2:  var(--font-weight-semibold) var(--font-size-title-sm) / var(--line-height-title) var(--font-sans);
+  --type-title-3:  var(--font-weight-semibold) var(--font-size-body-md) / var(--line-height-title) var(--font-sans);
+  --type-body:     400 var(--font-size-body-md) / var(--line-height-body) var(--font-sans);
+  --type-body-sm:  400 var(--font-size-body-sm) / var(--line-height-body) var(--font-sans);
+  --type-label:    var(--font-weight-medium) var(--font-size-label-sm) / var(--line-height-label) var(--font-sans);
+  --type-micro:    var(--font-weight-medium) var(--font-size-label-xs) / var(--line-height-label) var(--font-sans);
+  --type-mono:     var(--font-weight-medium) var(--font-size-body-sm) / var(--line-height-mono) var(--font-mono);
+
+  /* Deprecated typography aliases. Keep for downstream compatibility. */
+  --text-display: var(--type-display);
+  --text-title-1: var(--type-title-1);
+  --text-title-2: var(--type-title-2);
+  --text-title-3: var(--type-title-3);
+  --text-body: var(--type-body);
+  --text-body-sm: var(--type-body-sm);
+  --text-label: var(--type-label);
+  --text-mono: var(--type-mono);
+
+  /* Badge / Tag */
+  --tag-radius: var(--radius-pill);
+  --tag-padding-x: var(--space-2);
+  --tag-height: 20px;
+  --comp-tag-bg: var(--state-muted);
+  --comp-tag-border: var(--border-default);
+  --comp-tag-fg: var(--foreground-muted);
+
+  /* Stat Chip */
+  --stat-chip-height: 22px;
+  --stat-chip-padding-x: 8px;
+  --stat-chip-radius: var(--radius-pill);
+  --stat-chip-bg: var(--surface-2);
+  --stat-chip-border: var(--border-subtle);
+  --stat-chip-fg: color-mix(in srgb, var(--foreground) 88%, var(--background));
+
+  /* Zoom Control Group */
+  --zoom-control-gap: 8px;
+  --zoom-control-readout-fg: color-mix(in srgb, var(--foreground) 84%, var(--background));
+
+  /* Compact Button */
+  --button-height-compact: 34px;
+  --button-padding-x-compact: 12px;
+
+  /* Segmented Control */
+  --segmented-control-gap: 3px;
+  --segmented-control-padding: 3px;
+  --segmented-control-radius: 10px;
+  --segmented-control-bg: var(--surface-disabled);
+  --segmented-control-border: var(--border-subtle);
+
+  /* Shared Panel Shell */
+  --panel-shell-radius: 14px;
+  --panel-shell-bg: var(--background-elevated);
+  --panel-shell-border: var(--border-subtle);
+  --panel-shell-shadow: var(--shadow-lg);
+  --panel-shell-backdrop-filter: var(--surface-backdrop-filter-soft);
+  --panel-shell-quiet-bg: var(--surface-2);
+  --panel-shell-quiet-border: transparent;
+  --panel-shell-quiet-shadow: none;
+  --panel-shell-header-padding: 12px 14px;
+  --panel-shell-body-padding: 10px 16px 18px;
+
+  /* Three-pane Workbench */
+  --workbench-frame-padding: var(--space-4);
+  --workbench-frame-gap: var(--space-4);
+  --workbench-frame-bg: var(--background-elevated);
+  --workbench-pane-bg: var(--surface-2);
+  --workbench-pane-border: var(--border-subtle);
+  --workbench-pane-radius: var(--radius-xl);
+  --workbench-pane-body-bg: color-mix(in srgb, var(--surface-1) 72%, transparent);
+
+  /* IDE Frame */
+  --ide-frame-page-bg: var(--surface-3);
+  --ide-frame-bg: var(--surface-2);
+  --ide-frame-chrome-bg: transparent;
+  --ide-frame-pane-bg: var(--background);
+  --ide-frame-pane-border: var(--border-subtle);
+  --ide-frame-control-bg: color-mix(in srgb, var(--ide-frame-page-bg) 28%, transparent);
+  --ide-frame-control-border: transparent;
+  --ide-frame-control-shadow: none;
+  --ide-frame-selected-bg: color-mix(in srgb, var(--foreground) 8%, transparent);
+  --ide-frame-selected-border: transparent;
+  --ide-frame-selected-shadow: none;
+  --ide-frame-header-height: 32px;
+  --ide-frame-title-font: 600 12.5px / 1.2 var(--font-sans);
+  --ide-frame-meta-font: 500 var(--font-size-body-sm) / 1.35 var(--font-mono);
+
+  /* Floating Playback */
+  --floating-playback-bg: color-mix(in srgb, var(--background) 96%, black);
+  --floating-playback-border: var(--border-default);
+  --floating-playback-radius: 18px;
+  --floating-playback-padding-y: 14px;
+  --floating-playback-padding-x: 20px;
+  --floating-playback-shadow: 0 16px 48px rgba(0, 0, 0, 0.60), 0 4px 16px rgba(0, 0, 0, 0.40);
+  --floating-playback-inner-highlight: inset 0 1px 0 rgba(255, 255, 255, 0.08), inset 0 -1px 0 rgba(0, 0, 0, 0.50);
+  --floating-playback-expanded-width: 1180px;
+  --floating-playback-expanded-min-height: 60px;
+  --floating-playback-collapsed-size: 44px;
+  --floating-playback-collapsed-radius: var(--radius-lg);
+  --floating-playback-collapsed-bg: var(--primary);
+  --floating-playback-collapsed-border: var(--primary);
+  --floating-playback-collapsed-fg: var(--primary-foreground);
+  --floating-playback-collapsed-shadow: 0 10px 24px rgba(0, 0, 0, 0.38), inset 0 1px 0 rgba(255, 255, 255, 0.18);
+  --floating-playback-toggle-fg: var(--foreground-secondary);
+  --floating-playback-strong-fg: color-mix(in srgb, var(--foreground) 82%, var(--background));
+  --floating-playback-separator: var(--border-default);
+  --floating-playback-scrubber-track: var(--border-strong);
+  --floating-playback-scrubber-thumb-border: color-mix(in srgb, var(--primary) 80%, transparent);
+  --floating-playback-scrubber-thumb-shadow: 0 0 8px color-mix(in srgb, var(--primary) 55%, transparent);
+  --floating-playback-hover-bg: color-mix(in srgb, var(--background-elevated) 96%, black);
+  --floating-playback-hover-border: var(--border-default);
+  --floating-playback-button-height: 32px;
+  --floating-playback-button-radius: var(--radius-md);
+  --floating-playback-button-bg: var(--surface-disabled);
+  --floating-playback-button-border: var(--border-subtle);
+  --floating-playback-button-hover-bg: var(--state-hover);
+  --floating-playback-button-hover-border: var(--border-default);
+  --floating-playback-primary-bg: var(--primary);
+  --floating-playback-primary-bg-hover: var(--primary-hover);
+  --floating-playback-primary-border: var(--primary);
+  --floating-playback-primary-fg: var(--primary-foreground);
+
+  /* Inspector Rail */
+  --inspector-rail-padding-x: var(--space-3);
+  --inspector-rail-padding-bottom: var(--space-3);
+  --inspector-section-padding-y: var(--space-4);
+  --inspector-section-gap: var(--space-3);
+  --inspector-section-divider: var(--border-subtle);
+  --inspector-soft-card-bg: color-mix(in srgb, var(--surface-2) 80%, transparent);
+  --inspector-soft-card-bg-hover: color-mix(in srgb, var(--surface-3) 62%, transparent);
+  --inspector-soft-card-radius: var(--radius-md);
+  --inspector-soft-card-padding: var(--space-3);
+  --inspector-soft-card-gap: var(--space-2);
+}
+
+:root[data-theme='light'] {
+  --button-secondary-bg: color-mix(in srgb, var(--surface-1) 92%, var(--surface-2));
+  --button-secondary-bg-hover: color-mix(in srgb, var(--surface-1) 28%, var(--surface-2));
+  --button-secondary-bg-press: color-mix(in srgb, var(--surface-2) 84%, var(--surface-3));
+  --button-secondary-border: var(--border-default);
+  --button-secondary-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.78), 0 1px 2px rgba(0, 0, 0, 0.06);
+  --ide-frame-page-bg: var(--background-elevated);
+  --ide-frame-bg: var(--background);
+  --ide-frame-pane-bg: var(--surface-2);
+  --floating-playback-bg: color-mix(in srgb, var(--background-elevated) 92%, white);
+  --floating-playback-shadow: 0 16px 42px rgba(0, 0, 0, 0.16), 0 4px 14px rgba(0, 0, 0, 0.08);
+  --floating-playback-inner-highlight: inset 0 1px 0 rgba(255, 255, 255, 0.86), inset 0 -1px 0 rgba(0, 0, 0, 0.04);
+  --floating-playback-collapsed-shadow: 0 10px 22px rgba(0, 0, 0, 0.16), inset 0 1px 0 rgba(255, 255, 255, 0.30);
+  --floating-playback-hover-bg: var(--background-elevated);
+}
+
+:root[data-theme='glass'] {
+  --comp-toolbar-bg: var(--glass-surface-bg-strong);
+  --comp-toolbar-border: var(--glass-surface-border);
+
+  --button-solid-bg: rgba(255, 255, 255, 0.88);
+  --button-solid-bg-hover: rgba(255, 255, 255, 0.96);
+  --button-solid-bg-press: rgba(255, 255, 255, 0.78);
+  --button-solid-fg: #08111f;
+  --button-solid-shadow: var(--glass-surface-highlight), 0 8px 20px rgba(0, 0, 0, 0.18);
+  --button-secondary-bg: rgba(255, 255, 255, 0.105);
+  --button-secondary-bg-hover: rgba(255, 255, 255, 0.16);
+  --button-secondary-bg-press: rgba(255, 255, 255, 0.08);
+  --button-secondary-border: rgba(255, 255, 255, 0.12);
+  --button-secondary-shadow: var(--glass-surface-highlight), 0 8px 24px rgba(0, 0, 0, 0.14);
+  --button-ghost-bg-hover: rgba(255, 255, 255, 0.10);
+  --button-ghost-bg-press: rgba(255, 255, 255, 0.15);
+
+  --input-bg: rgba(255, 255, 255, 0.08);
+  --input-border: rgba(255, 255, 255, 0.12);
+
+  --panel-bg: color-mix(in srgb, var(--background-elevated) 88%, black 12%);
+  --panel-border: var(--border-subtle);
+  --card-bg: color-mix(in srgb, var(--background-elevated) 84%, black 16%);
+  --card-border: var(--border-subtle);
+  --card-shadow: none;
+  --card-hover-border: var(--border-strong);
+  --card-hover-bg: rgba(255, 255, 255, 0.08);
+  --card-selected-bg: rgba(111, 161, 255, 0.18);
+
+  --comp-tag-bg: rgba(255, 255, 255, 0.075);
+  --comp-tag-border: rgba(255, 255, 255, 0.16);
+  --comp-tag-fg: var(--foreground-secondary);
+
+  --stat-chip-bg: rgba(255, 255, 255, 0.09);
+  --stat-chip-border: rgba(255, 255, 255, 0.14);
+  --segmented-control-bg: rgba(255, 255, 255, 0.065);
+  --segmented-control-border: rgba(255, 255, 255, 0.14);
+
+  --panel-shell-bg: var(--glass-surface-bg);
+  --panel-shell-border: var(--glass-surface-border);
+  --panel-shell-shadow: var(--glass-surface-highlight), var(--glass-surface-shadow);
+  --panel-shell-backdrop-filter: var(--surface-backdrop-filter);
+  --panel-shell-quiet-bg: var(--glass-surface-bg-soft);
+  --panel-shell-quiet-border: rgba(255, 255, 255, 0.12);
+  --panel-shell-quiet-shadow: var(--glass-surface-highlight);
+
+  --workbench-frame-bg: color-mix(in srgb, var(--background-elevated) 88%, black 12%);
+  --workbench-pane-bg: color-mix(in srgb, var(--background) 92%, var(--surface-2));
+  --workbench-pane-border: rgba(255, 255, 255, 0.09);
+  --workbench-pane-body-bg: rgba(8, 10, 15, 0.78);
+
+  --ide-frame-page-bg: var(--app-background);
+  --ide-frame-bg: #0b1018;
+  --ide-frame-chrome-bg: transparent;
+  --ide-frame-pane-bg: #080c12;
+  --ide-frame-pane-border: rgba(255, 255, 255, 0.08);
+  --ide-frame-control-bg: var(--glass-surface-bg-soft);
+  --ide-frame-control-border: rgba(255, 255, 255, 0.12);
+  --ide-frame-control-shadow: var(--glass-surface-highlight);
+  --ide-frame-selected-bg: var(--glass-surface-bg);
+  --ide-frame-selected-border: rgba(255, 255, 255, 0.16);
+  --ide-frame-selected-shadow: var(--glass-surface-highlight), 0 8px 24px rgba(0, 0, 0, 0.14);
+
+  --floating-playback-bg: var(--glass-surface-bg-strong);
+  --floating-playback-border: var(--glass-surface-border);
+  --floating-playback-shadow: var(--glass-surface-shadow);
+  --floating-playback-inner-highlight: var(--glass-surface-highlight);
+  --floating-playback-collapsed-shadow: 0 12px 30px rgba(0, 0, 0, 0.28), inset 0 1px 0 rgba(255, 255, 255, 0.24);
+  --floating-playback-hover-bg: var(--glass-surface-bg);
+  --floating-playback-hover-border: rgba(255, 255, 255, 0.16);
+  --floating-playback-button-bg: rgba(255, 255, 255, 0.09);
+  --floating-playback-button-border: rgba(255, 255, 255, 0.12);
+  --floating-playback-button-hover-bg: rgba(255, 255, 255, 0.14);
+  --floating-playback-button-hover-border: rgba(255, 255, 255, 0.16);
+
+  --inspector-soft-card-bg: rgba(255, 255, 255, 0.075);
+  --inspector-soft-card-bg-hover: rgba(255, 255, 255, 0.115);
+}
+
+/* ===== report.css ===== */
+/* ============================================================
+   报告形态版面 —— A4 竖版 / 弱交互 / 打印即 PDF
+   ------------------------------------------------------------
+   与 index_v3.html（工具形态）共用数据，不共用样式：工具形态是视口自适应的
+   IDE 三栏，报告形态是固定 210×297mm 的文档流，两套版面没有可复用的部分。
+   本文件只依赖设计系统 tokens，不引 styles.css，避免工具态规则串味。
+
+   报告固定浅色：它的最终形态是打印/PDF/转发截图，暗色底既吃墨也不利于转发。
+   ============================================================ */
+
+:root {
+  --rp-page-w: 210mm;
+  --rp-page-h: 297mm;
+  --rp-pad-x: 15mm;
+  --rp-pad-t: 14mm;
+  --rp-pad-b: 12mm;
+
+  /* 判定色：与工具形态指标卡的 ok/warn/bad 同义 */
+  --rp-ok: var(--success, #1a8f52);
+  --rp-warn: var(--warning, #b8860b);
+  --rp-bad: var(--danger, #d23b3b);
+
+  /* 时间构成色板：与 Timeline 页签泳道图例同源（计算绿 / 通信橙 / 空泡品红 / 空闲灰） */
+  --rp-compute: #1a8f52;
+  --rp-comm: #c15a1c;
+  --rp-bubble: #cf4d86;
+  --rp-host: #5d6b99;
+  --rp-idle: #8b93a1;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  font-family: var(--font-sans, -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif);
+  font-size: 12.5px;
+  line-height: 1.62;
+  color: var(--foreground, #1c1f26);
+  background: #eceef1;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* ── 屏幕态外壳：顶栏 + 目录侧栏，打印时整体消失 ───────────────── */
+
+.rp-toolbar {
+  position: fixed; inset: 0 0 auto 0; z-index: 50;
+  display: flex; align-items: center; gap: var(--space-3, 12px);
+  height: 46px; padding: 0 16px;
+  background: var(--surface-1, #fff);
+  border-bottom: 1px solid var(--border-default, #d8dce3);
+  box-shadow: 0 1px 3px rgba(16, 20, 28, .06);
+}
+.rp-toolbar__brand { font-weight: var(--font-weight-semibold, 600); letter-spacing: .01em; }
+.rp-toolbar__brand small { font-weight: 400; color: var(--foreground-muted, #6b7280); margin-left: 8px; }
+.rp-toolbar__spacer { flex: 1; }
+.rp-toolbar select,
+.rp-toolbar button {
+  font: inherit; font-size: 12px;
+  height: 28px; padding: 0 10px;
+  border: 1px solid var(--border-default, #d8dce3);
+  border-radius: var(--radius-sm, 4px);
+  background: var(--surface-1, #fff);
+  color: inherit; cursor: pointer;
+}
+.rp-toolbar select { max-width: 380px; }
+.rp-toolbar button:hover { background: var(--state-hover, #f1f3f6); }
+.rp-toolbar .rp-btn-primary {
+  background: var(--primary, #2f6fce); border-color: transparent;
+  color: var(--primary-foreground, #fff); font-weight: 500;
+}
+
+.rp-toc {
+  position: fixed; top: 46px; bottom: 0; left: 0; width: 226px; z-index: 40;
+  overflow-y: auto; padding: 16px 12px 32px;
+  background: var(--surface-2, #f6f7f9);
+  border-right: 1px solid var(--border-subtle, #e4e7ec);
+  font-size: 12px;
+}
+.rp-toc h4 {
+  margin: 0 0 10px; font-size: var(--font-size-label-xs, 11px);
+  letter-spacing: .08em; text-transform: uppercase;
+  color: var(--foreground-muted, #6b7280); font-weight: 600;
+}
+.rp-toc a {
+  display: flex; justify-content: space-between; gap: 8px;
+  padding: 5px 8px; border-radius: var(--radius-sm, 4px);
+  color: var(--foreground-secondary, #4a5160); text-decoration: none;
+}
+.rp-toc a:hover { background: var(--state-hover, #e9ecf1); color: var(--foreground, #1c1f26); }
+.rp-toc a .n { color: var(--foreground-muted, #9aa1ad); font-variant-numeric: tabular-nums; }
+.rp-toc a.is-sub { padding-left: 20px; font-size: 11.5px; }
+
+.rp-doc { padding: 70px 0 60px 226px; display: flex; flex-direction: column; align-items: center; gap: 22px; }
+
+/* ── A4 页 ─────────────────────────────────────────────────── */
+
+.rp-page {
+  position: relative;
+  width: var(--rp-page-w);
+  min-height: var(--rp-page-h);
+  padding: var(--rp-pad-t) var(--rp-pad-x) var(--rp-pad-b);
+  background: var(--surface-1, #fff);
+  box-shadow: 0 2px 14px rgba(16, 20, 28, .12);
+  display: flex; flex-direction: column;
+}
+.rp-page__head {
+  display: flex; align-items: baseline; justify-content: space-between;
+  padding-bottom: 5px; margin-bottom: 12px;
+  border-bottom: 1px solid var(--border-subtle, #e4e7ec);
+  font-size: 10px; color: var(--foreground-muted, #8b93a1); letter-spacing: .02em;
+}
+.rp-page__body { flex: 1; }
+.rp-page__foot {
+  display: flex; align-items: baseline; justify-content: space-between;
+  margin-top: 12px; padding-top: 5px;
+  border-top: 1px solid var(--border-subtle, #e4e7ec);
+  font-size: 9.5px; color: var(--foreground-muted, #9aa1ad);
+}
+.rp-page__foot .pno { font-variant-numeric: tabular-nums; }
+
+/* 章节标题 = 结论句（action title），不是名词 */
+.rp-h2 {
+  margin: 0 0 3px; font-size: 17px; line-height: 1.34;
+  font-weight: var(--font-weight-semibold, 600); letter-spacing: -.01em;
+}
+.rp-h2 .rp-h2-num {
+  display: inline-block; min-width: 22px;
+  color: var(--primary, #2f6fce); font-variant-numeric: tabular-nums;
+}
+.rp-kicker {
+  margin: 0 0 14px; font-size: 11px; letter-spacing: .06em; text-transform: uppercase;
+  color: var(--foreground-muted, #9aa1ad); font-weight: 600;
+}
+.rp-lead { margin: 0 0 14px; font-size: 12.5px; color: var(--foreground-secondary, #4a5160); }
+.rp-h3 {
+  margin: 16px 0 8px; font-size: 12.5px; font-weight: 600;
+  color: var(--foreground, #1c1f26);
+}
+.rp-note { font-size: 10px; color: var(--foreground-muted, #8b93a1); line-height: 1.5; }
+.rp-figcap {
+  margin-top: 5px; font-size: 9.5px; line-height: 1.5;
+  color: var(--foreground-muted, #8b93a1);
+}
+.rp-block { break-inside: avoid; page-break-inside: avoid; }
+
+/* ── 封面 ─────────────────────────────────────────────────── */
+
+.rp-cover { justify-content: space-between; }
+.rp-cover__top { display: flex; align-items: center; gap: 10px; font-size: 11px; letter-spacing: .1em; text-transform: uppercase; color: var(--foreground-muted, #9aa1ad); }
+.rp-cover__rule { flex: 1; height: 1px; background: var(--border-default, #d8dce3); }
+.rp-cover__mid { padding: 4mm 0; }
+.rp-cover__type {
+  display: inline-block; margin-bottom: 10px; padding: 3px 10px;
+  border-radius: var(--radius-pill, 999px);
+  background: var(--tone-info-bg, #eaf1fb); color: var(--primary, #2f6fce);
+  font-size: 11px; font-weight: 600;
+}
+.rp-cover__title { margin: 0 0 8px; font-size: 30px; line-height: 1.24; font-weight: 700; letter-spacing: -.02em; }
+.rp-cover__sub { margin: 0 0 22px; font-size: 14px; color: var(--foreground-secondary, #4a5160); }
+.rp-cover__score { display: flex; align-items: center; gap: 22px; padding: 14px 0; border-top: 1px solid var(--border-subtle, #e4e7ec); border-bottom: 1px solid var(--border-subtle, #e4e7ec); }
+.rp-cover__scorenum { font-size: 58px; font-weight: 700; line-height: 1; letter-spacing: -.03em; font-variant-numeric: tabular-nums; }
+.rp-cover__scoremeta { font-size: 11.5px; color: var(--foreground-secondary, #4a5160); }
+.rp-cover__scoremeta b { font-size: 15px; }
+.rp-cover__facts { display: grid; grid-template-columns: 1fr 1fr; gap: 3mm 8mm; margin-top: 8mm; }
+.rp-cover__fact { border-top: 1px solid var(--border-subtle, #e4e7ec); padding-top: 6px; }
+.rp-cover__fact dt { font-size: 10px; letter-spacing: .05em; color: var(--foreground-muted, #9aa1ad); text-transform: uppercase; }
+.rp-cover__fact dd { margin: 2px 0 0; font-size: 11.5px; line-height: 1.5; word-break: break-word; }
+.rp-cover__bot { font-size: 10px; color: var(--foreground-muted, #9aa1ad); border-top: 1px solid var(--border-default, #d8dce3); padding-top: 8px; }
+
+/* ── 结论卡（执行摘要三句话）────────────────────────────────── */
+
+.rp-verdicts { display: grid; gap: 8px; }
+.rp-verdict {
+  padding: 9px 12px; border-radius: var(--radius-md, 6px);
+  background: var(--surface-2, #f6f7f9);
+  border-left: 3px solid var(--border-strong, #b9c0cc);
+}
+.rp-verdict--top { border-left-color: var(--rp-bad); }
+.rp-verdict--gain { border-left-color: var(--rp-ok); }
+.rp-verdict dt { font-size: 10px; font-weight: 600; letter-spacing: .06em; color: var(--foreground-muted, #8b93a1); text-transform: uppercase; }
+.rp-verdict dd { margin: 3px 0 0; font-size: 11.5px; line-height: 1.55; }
+
+/* 头号杠杆一句话强调（借白皮书 callout 的做法：只放一件事，不写说明文）。
+   与下方 rp-verdicts 分工——这里给"该记住哪一件事"，verdicts 给"为什么、还有什么"。 */
+.rp-callout {
+  margin: 0 0 6mm;
+  padding: 9px 13px;
+  border-radius: var(--radius-md, 6px);
+  background: var(--tone-info-bg, #eaf1fb);
+  border-left: 3px solid var(--primary, #2f6fce);
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--foreground, #1c1f26);
+}
+.rp-callout b { color: var(--primary, #2f6fce); }
+
+/* ── 通用小组件 ─────────────────────────────────────────────── */
+
+.rp-badge {
+  display: inline-block; padding: 1px 7px; border-radius: var(--radius-pill, 999px);
+  font-size: 10px; font-weight: 700; letter-spacing: .03em; white-space: nowrap;
+}
+.rp-badge--p0 { background: #fbe9e9; color: #b02525; }
+.rp-badge--p1 { background: #fdf1e0; color: #96601a; }
+.rp-badge--p2 { background: #eef0f4; color: #5b6473; }
+.rp-badge--ok { background: #e6f4ec; color: #14713f; }
+
+.rp-grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 6mm; }
+.rp-grid-72 { display: grid; grid-template-columns: 1.9fr 1fr; gap: 6mm; }
+
+.rp-card {
+  border: 1px solid var(--border-subtle, #e4e7ec);
+  border-radius: var(--radius-md, 6px);
+  padding: 10px 12px;
+}
+.rp-card__t { font-size: 10px; font-weight: 600; letter-spacing: .05em; text-transform: uppercase; color: var(--foreground-muted, #8b93a1); margin-bottom: 6px; }
+
+/* 结果层数字卡 */
+.rp-kpis { display: grid; grid-template-columns: repeat(4, 1fr); gap: 4mm; }
+.rp-kpi { border-top: 2px solid var(--foreground, #1c1f26); padding-top: 6px; }
+.rp-kpi__k { font-size: 10px; color: var(--foreground-muted, #8b93a1); }
+.rp-kpi__v { font-size: 19px; font-weight: 650; line-height: 1.2; letter-spacing: -.02em; font-variant-numeric: tabular-nums; }
+.rp-kpi__n { font-size: 9.5px; color: var(--foreground-muted, #9aa1ad); line-height: 1.45; }
+
+/* 指标体检行（bullet chart）：本次值 + 参考区间 —— 报告态的核心表达，
+   工具态藏在 tooltip 里的 data-warn 阈值在这里必须印出来。 */
+.rp-bullets { display: grid; gap: 7px; }
+.rp-bullet { display: grid; grid-template-columns: 118px 1fr 74px; align-items: center; gap: 10px; }
+.rp-bullet__name { font-size: 11px; line-height: 1.3; }
+.rp-bullet__track {
+  position: relative; height: 15px; border-radius: 3px;
+  background: var(--surface-3, #eceef1); overflow: visible;
+}
+.rp-bullet__fill { position: absolute; inset: 0 auto 0 0; border-radius: 3px; background: var(--foreground-muted, #9aa1ad); }
+.rp-bullet__fill.is-ok { background: var(--rp-ok); }
+.rp-bullet__fill.is-warn { background: var(--rp-warn); }
+.rp-bullet__fill.is-bad { background: var(--rp-bad); }
+.rp-bullet__thr { position: absolute; top: -3px; bottom: -3px; width: 2px; background: var(--foreground, #1c1f26); }
+.rp-bullet__thr::after {
+  content: attr(data-l); position: absolute; left: 4px; top: -1px;
+  font-size: 8.5px; color: var(--foreground-secondary, #4a5160); white-space: nowrap;
+}
+.rp-bullet__val { font-size: 12px; font-weight: 650; text-align: right; font-variant-numeric: tabular-nums; }
+.rp-bullet__val small { font-size: 9px; font-weight: 400; color: var(--foreground-muted, #9aa1ad); }
+.rp-bullet__note { grid-column: 2 / -1; margin-top: -3px; font-size: 9.5px; color: var(--foreground-muted, #8b93a1); }
+
+/* ── 健康度仪表 ───────────────────────────────────────────────
+   图形本身由工具形态 app.js 的 renderPhsGauge() 生成，见 report-render.js 的
+   mountGauges()。那个函数写死了 styles.css 里的 .phs-gauge-* 类名与 --fg 系列变量，
+   而报告不引 styles.css（IDE 三栏版面与 A4 文档流没有可复用的部分），所以在此补一组
+   同名规则：选择器结构与 styles.css 保持一致，只改两处——
+   ① 高度换成 aspect-ratio 3/2，与 renderPhsGauge 的 viewBox(300×200) 严丝合缝，
+      SVG 不会在栏宽里留出上下留白、中心分数因此不会偏离环心；
+   ② --fg 系列就地映射到设计系统 tokens。 */
+.rp-gauge {
+  --fg: var(--foreground, #1c1f26);
+  --fg-secondary: var(--foreground-secondary, #4a5160);
+  --fg-muted: var(--foreground-muted, #6b7280);
+}
+.phs-gauge-box { position: relative; width: 100%; aspect-ratio: 3 / 2; }
+.phs-gauge-box > svg { width: 100%; height: 100%; display: block; }
+.phs-gauge-center {
+  position: absolute; inset: 0;
+  display: flex; flex-direction: column;
+  align-items: center; justify-content: center;
+  transform: translateY(9%);
+  pointer-events: none; text-align: center;
+}
+.phs-gauge-grade {
+  font-size: 12px; font-weight: 700; line-height: 1;
+  padding: 2px 10px; border-radius: 999px; margin-bottom: 3px;
+}
+.phs-gauge-score {
+  font-size: 36px; font-weight: 700; line-height: 1.04;
+  letter-spacing: -1px;
+}
+.phs-gauge-sub {
+  font-size: 11px; color: var(--fg-muted); margin-top: 3px;
+  display: flex; align-items: center; gap: 5px;
+}
+.phs-gauge-sub b { color: var(--fg-secondary); font-weight: 600; }
+.phs-gauge-estbadge {
+  font-size: 10px; font-weight: 700; line-height: 1.4;
+  padding: 1px 7px; border-radius: 999px;
+}
+
+/* 时间构成堆叠条 */
+.rp-stack { display: flex; height: 30px; border-radius: 4px; overflow: hidden; }
+.rp-stack__seg { display: flex; align-items: center; justify-content: center; color: #fff; font-size: 10.5px; font-weight: 600; }
+.rp-stack-legend { display: flex; flex-wrap: wrap; gap: 4px 16px; margin-top: 8px; font-size: 10.5px; }
+.rp-stack-legend span { display: inline-flex; align-items: center; gap: 5px; }
+.rp-swatch { width: 9px; height: 9px; border-radius: 2px; flex: none; }
+
+/* 表格 */
+.rp-table { width: 100%; border-collapse: collapse; font-size: 10.5px; }
+.rp-table th {
+  text-align: left; font-weight: 600; padding: 5px 6px;
+  border-bottom: 1.5px solid var(--foreground, #1c1f26);
+  color: var(--foreground-secondary, #4a5160); white-space: nowrap;
+}
+.rp-table td { padding: 5px 6px; border-bottom: 1px solid var(--border-subtle, #e4e7ec); vertical-align: top; }
+.rp-table td.num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.rp-table tr.is-slow td { background: #fdf0f0; }
+.rp-table code { font-family: var(--font-mono, ui-monospace, Consolas, monospace); font-size: 9.5px; }
+
+/* 横条排行（算子 Top-N / rank 构成） */
+.rp-hbars { display: grid; gap: 5px; }
+.rp-hbar { display: grid; grid-template-columns: 152px 1fr 64px; align-items: center; gap: 9px; font-size: 10.5px; }
+.rp-hbar__n { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: var(--font-mono, monospace); font-size: 9.5px; }
+.rp-hbar__t { height: 13px; background: var(--surface-3, #eceef1); border-radius: 2px; display: flex; }
+.rp-hbar__f { border-radius: 2px; }
+.rp-hbar__v { text-align: right; font-variant-numeric: tabular-nums; }
+
+/* ── 问题页 ─────────────────────────────────────────────────── */
+
+.rp-issue__head { display: flex; align-items: flex-start; gap: 9px; margin-bottom: 3px; }
+.rp-issue__id { font-size: 17px; font-weight: 700; color: var(--primary, #2f6fce); font-variant-numeric: tabular-nums; line-height: 1.34; }
+.rp-issue__title { flex: 1; font-size: 17px; font-weight: 600; line-height: 1.34; letter-spacing: -.01em; }
+.rp-issue__meta { display: flex; gap: 14px; margin: 0 0 12px; font-size: 10.5px; color: var(--foreground-muted, #8b93a1); }
+.rp-issue__meta b { color: var(--foreground, #1c1f26); font-variant-numeric: tabular-nums; }
+
+.rp-evidence {
+  margin-top: 10px; padding: 8px 11px;
+  background: var(--surface-2, #f6f7f9); border-radius: var(--radius-md, 6px);
+  font-size: 10.5px; line-height: 1.55;
+}
+.rp-evidence__t { font-weight: 600; color: var(--foreground-secondary, #4a5160); margin-right: 6px; }
+
+.rp-impact { display: grid; gap: 8px; align-content: start; }
+.rp-impact__q { font-size: 24px; font-weight: 700; line-height: 1.1; letter-spacing: -.02em; font-variant-numeric: tabular-nums; }
+.rp-impact__q small { display: block; font-size: 10px; font-weight: 400; letter-spacing: 0; color: var(--foreground-muted, #8b93a1); margin-top: 2px; }
+.rp-impact__bar { height: 8px; border-radius: 4px; background: var(--surface-3, #eceef1); overflow: hidden; }
+.rp-impact__bar i { display: block; height: 100%; background: var(--rp-bad); }
+.rp-impact__txt { font-size: 10.5px; line-height: 1.55; color: var(--foreground-secondary, #4a5160); }
+
+.rp-steps { margin: 0; padding-left: 0; list-style: none; counter-reset: s; display: grid; gap: 5px; }
+.rp-steps li { position: relative; padding-left: 22px; font-size: 10.5px; line-height: 1.55; counter-increment: s; }
+.rp-steps li::before {
+  content: counter(s); position: absolute; left: 0; top: 1px;
+  width: 15px; height: 15px; border-radius: 50%;
+  background: var(--foreground, #1c1f26); color: #fff;
+  font-size: 9px; font-weight: 700; display: grid; place-items: center;
+}
+.rp-verify {
+  margin-top: 9px; padding: 7px 11px; border-left: 3px solid var(--rp-ok);
+  background: #f2f8f4; font-size: 10.5px; line-height: 1.55; border-radius: 0 4px 4px 0;
+}
+.rp-verify b { color: #14713f; }
+
+/* 已排查未见异常 */
+.rp-checks { display: grid; gap: 7px; }
+.rp-check { display: grid; grid-template-columns: 16px 1fr; gap: 8px; font-size: 10.5px; line-height: 1.55; }
+.rp-check__m { color: var(--rp-ok); font-weight: 700; }
+
+/* 深链：屏幕可见，打印隐藏（打印时降级为脚注文本） */
+.rp-tool-link {
+  float: right; margin-left: 10px; font-size: 10px; text-decoration: none;
+  color: var(--primary, #2f6fce); border: 1px solid var(--border-default, #d8dce3);
+  border-radius: var(--radius-pill, 999px); padding: 1px 9px; background: var(--surface-1, #fff);
+}
+.rp-tool-link:hover { background: var(--tone-info-bg, #eaf1fb); }
+
+.rp-empty { padding: 40px; text-align: center; color: var(--foreground-muted, #9aa1ad); }
+
+/* ── 打印 ───────────────────────────────────────────────────── */
+
+@page { size: A4 portrait; margin: 0; }
+
+@media print {
+  html, body { background: #fff; }
+  .rp-toolbar, .rp-toc, .rp-screen-only { display: none !important; }
+  .rp-doc { padding: 0; gap: 0; display: block; }
+  .rp-page {
+    /* 打印时留 1mm 余量：满额 297mm 的盒子在 297mm 纸上易因舍入溢出，多打一张空白页 */
+    width: var(--rp-page-w); min-height: 296mm;
+    margin: 0; box-shadow: none;
+    break-after: page; page-break-after: always;
+  }
+  .rp-page:last-child { break-after: auto; page-break-after: auto; }
+  .rp-print-only { display: inline !important; }
+  /* 背景色是本报告的信息载体（判定色、堆叠条、泳道段），必须打出来 */
+  * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
+  a { color: inherit; text-decoration: none; }
+}
+
+.rp-print-only { display: none; }
+
+/* 窄屏兜底：A4 不缩放，只是允许横向滚动，保证版面确定性 */
+@media screen and (max-width: 1100px) {
+  .rp-toc { display: none; }
+  .rp-doc { padding-left: 0; }
+}
+
+</style>
+</head>
+<body>
+
+<header class="rp-toolbar">
+  <span class="rp-toolbar__brand">性能分析报告<small>level2 · 分析样例</small></span>
+  <span class="rp-toolbar__spacer"></span>
+  <button id="rpPrint" class="rp-btn-primary" type="button">打印 / 导出 PDF</button>
+</header>
+
+<nav class="rp-toc" id="rpToc" aria-label="报告目录"></nav>
+
+<main class="rp-doc" id="rpDoc"></main>
+
+<script>window.PTO_DISABLE_APP_INIT = true;</script>
+<script>
+/* ===== chart-data.js ===== */
+// chart-data.js — 由 data/extract.js 自动生成，请勿手动修改
+// 生成时间: 2026-06-02T08:51:31.487Z
+// 真实数据来源:
+//   r20260526: data/level2/rank_{0,2}/ASCEND_PROFILER_OUTPUT/{kernel_details,op_statistic}.csv
+//   r20260528: data/eta_eager_l1/.../ASCEND_PROFILER_OUTPUT/kernel_details.csv
+//   r20260602verl:  data/verl/.../ascend_pytorch_profiler_0.db (COMPUTE_TASK_INFO+TASK+TASK_PMU_INFO)
+//   r20260527: 硬编码回退（simulator bin 格式不含 OP 汇总统计）
+/* eslint-disable */
+
+window.SWIMLANE_DATA = {
+  // ── r20260618pp: profile_dir 2 节点 × 4 卡 PP4·DP2（Timeline 为依据报告指标的人工语义重建）─────
+  // 数据来源: Analysis Report/profile_dir_profiling_analysis_20260618/evidence/{rank0_s0_ubuntu122,rank6_s3_localhost}/trace_view.json
+  // 单位 us（单步 ~10.80 s = 10,800,000 us）；semanticLabel 仅用 Fwd/Bwd-Compute/PP-Bubble/P2P-Send/P2P-Recv/DP-Collective/Optimizer/Free
+  r20260618pp: {
+    // 3.1 PP 末级过载：stage0(rank0) 计算 ~6.3s 后在 P2P recv 空等 ~3.77s，stage3(rank6) 计算 ~9.45s 几乎不等
+    1: {
+      source: 'evidence/rank0_s0_ubuntu122 + rank6_s3_localhost/trace_view.json（ClusterTimeSummary step4：stage3 计算 9454ms vs stage0 6326ms，空等 3.77s）',
+      data: [
+        { blockIdx:0, coreType:'rank 0 (ubuntu122) · PP stage0 · 计算 6.3s → 空等末级 3.77s', tasks:[
+          { taskId:1, subGraphId:0, execStart:0,        execEnd:3162000,  semanticLabel:'Fwd-Compute',   taskName:'前向 · Transformer Blocks (3162ms)' },
+          { taskId:2, subGraphId:0, execStart:3162000,  execEnd:3163000,  semanticLabel:'P2P-Send',      taskName:'hcom_batchSendRecv_ · 发送激活值→stage1 (1ms)' },
+          { taskId:3, subGraphId:0, execStart:3163000,  execEnd:6938000,  semanticLabel:'PP-Bubble',     taskName:'hcom_batchSendRecv_ · Wait 3775ms ← 空等末级 lm_head+loss（communicationWaitStageTime≈3.77s / 占 step ~35%）' },
+          { taskId:4, subGraphId:0, execStart:6938000,  execEnd:10100000, semanticLabel:'Bwd-Compute',   taskName:'反向 · Transformer Blocks 梯度 (3162ms)' },
+          { taskId:5, subGraphId:0, execStart:10100000, execEnd:10716000, semanticLabel:'DP-Collective', taskName:'hcom_allReduce_ DP 梯度 + P2P 传输 (776ms · Overlapped=0 全暴露)' },
+          { taskId:6, subGraphId:0, execStart:10716000, execEnd:10800000, semanticLabel:'Free',          taskName:'空闲 (84ms)' },
+        ]},
+        { blockIdx:1, coreType:'rank 6 (localhost) · PP stage3 末级 · 计算 9.45s（多算 3.11s）', tasks:[
+          { taskId:11, subGraphId:0, execStart:0,       execEnd:4727000,  semanticLabel:'Fwd-Compute',   taskName:'前向 · Blocks + lm_head fwd + MatMulV2 logits 16ms×64≈1024ms（末级独有）(4727ms)' },
+          { taskId:12, subGraphId:0, execStart:4727000, execEnd:9454000,  semanticLabel:'Bwd-Compute',   taskName:'反向 · lm_head dgrad MatMulV2 + loss vector 算子（耗时为 stage0 ~1.6×）(4727ms)' },
+          { taskId:13, subGraphId:0, execStart:9454000, execEnd:9846000,  semanticLabel:'PP-Bubble',     taskName:'P2P 等待仅 392ms（末级几乎不等）' },
+          { taskId:14, subGraphId:0, execStart:9846000, execEnd:10546000, semanticLabel:'DP-Collective', taskName:'hcom_allReduce_ + P2P 实际传输 (700ms)' },
+          { taskId:15, subGraphId:0, execStart:10546000,execEnd:10800000, semanticLabel:'Free',          taskName:'空闲 (254ms)' },
+        ]},
+      ],
+      annotations: [
+        { type: 'range', startTime: 3163000, endTime: 6938000, label: 'stage0 空等 ~3.77s（占 step ~35%）= 末级多算的 3.11s 直接转成 bubble' },
+        { type: 'task',  tid: 0, taskId: 3 },
+      ],
+    },
+    // 3.2 Overlapped=0：反向结束才串行起 DP allreduce，通信全暴露在关键路径
+    2: {
+      source: 'evidence/rank0_s0_ubuntu122/trace_view.json + step_trace_time.csv（communicationOverlapComputation=0.0）',
+      data: [
+        { blockIdx:0, coreType:'rank 0 · 计算→通信全串行（Overlapped=0，暴露通信 4389ms）', tasks:[
+          { taskId:1, subGraphId:0, execStart:0,       execEnd:3162000, semanticLabel:'Bwd-Compute',   taskName:'反向计算 (3162ms) — 期间无任何通信重叠' },
+          { taskId:2, subGraphId:0, execStart:3162000, execEnd:4102000, semanticLabel:'DP-Collective', taskName:'hcom_allReduce_ 大梯度 940ms ← 反向结束才串行开始（应可隐藏到反向后）' },
+          { taskId:3, subGraphId:0, execStart:4102000, execEnd:7877000, semanticLabel:'PP-Bubble',     taskName:'hcom_batchSendRecv_ · P2P recv 暴露等待 3775ms（含 stage 等待）' },
+          { taskId:4, subGraphId:0, execStart:7877000, execEnd:8653000, semanticLabel:'DP-Collective', taskName:'P2P 实际传输 776ms（同样全暴露）' },
+          { taskId:5, subGraphId:0, execStart:8653000, execEnd:8737000, semanticLabel:'Free',          taskName:'空闲 (84ms)' },
+        ]},
+      ],
+      annotations: [
+        { type: 'range', startTime: 3162000, endTime: 4102000, label: 'DP allReduce 完全暴露（Overlapped=0，可重叠却未重叠）' },
+        { type: 'task',  tid: 0, taskId: 2 },
+      ],
+    },
+    // 3.3 环境变量未设置：aclnn/host 缓存偏小 → host 侧 Tiling/launch 间隙增多（局部放大）
+    3: {
+      source: 'evidence/rank0_s0_ubuntu122/trace_view.json（host 侧 *_Tiling/launch 间隙 · ACLNN_CACHE_LIMIT/HOST_CACHE_CAPACITY 未设的基线）',
+      data: [
+        { blockIdx:0, coreType:'rank 0 (host 下发段) · 缓存偏小 → launch 间隙偏多（局部放大）', tasks:[
+          { taskId:1, subGraphId:0, execStart:0,      execEnd:800000,  semanticLabel:'Fwd-Compute', taskName:'正常异步下发段 (800ms)' },
+          { taskId:2, subGraphId:0, execStart:800000, execEnd:950000,  semanticLabel:'Free',        taskName:'*_Tiling/launch 间隙 (150ms · aclnn 缓存未命中、重复 host 编译/下发)' },
+          { taskId:3, subGraphId:0, execStart:950000, execEnd:1750000, semanticLabel:'Fwd-Compute', taskName:'下发段 (800ms)' },
+          { taskId:4, subGraphId:0, execStart:1750000,execEnd:1900000, semanticLabel:'Free',        taskName:'launch 间隙 (150ms · HOST_CACHE_CAPACITY 偏小)' },
+          { taskId:5, subGraphId:0, execStart:1900000,execEnd:2700000, semanticLabel:'Fwd-Compute', taskName:'下发段 …（设缓存环境变量后该间隙收窄）' },
+        ]},
+      ],
+      annotations: [
+        { type: 'range', startTime: 800000, endTime: 950000, label: 'aclnn/host 缓存偏小 → 算子下发间隙（设 ACLNN_CACHE_LIMIT/HOST_CACHE_CAPACITY 后缓解）' },
+        { type: 'task',  tid: 0, taskId: 2 },
+      ],
+    },
+  },
+  // ── r20260715pangu: pangu2.0flash 72B 4 节点×8 卡 TP1·PP4·EP4·DP2（Timeline 为依据报告指标的人工语义重建）──
+  // 数据来源: Analysis Report/pangu2.0flash_profiling_analysis_20260715/evidence/{rank0_s0_node1,rank8_s1_node2,rank24_s3_node4}/trace_view.json
+  // 单位 us（单步 ~16.20 s = 16,200,000 us）；semanticLabel 仅用 Fwd/Bwd-Compute/PP-Bubble/P2P-Send/P2P-Recv/DP-Collective/Optimizer/Free
+  r20260715pangu: {
+    // 3.1 PP 末级过载：stage0(rank0) 计算 ~8.15s 后在 P2P recv 空等 ~4.45s，stage3(rank24) 计算 ~12.90s 几乎不等
+    1: {
+      source: 'evidence/rank0_s0_node1 + rank24_s3_node4/trace_view.json（ClusterTimeSummary step4：stage3 计算 12900.4ms vs stage0 8150.2ms，空等 4450.3ms）',
+      data: [
+        { blockIdx:0, coreType:'rank 0 (node1) · PP stage0 · 计算 8.15s → 空等末级 4.45s', tasks:[
+          { taskId:1, subGraphId:0, execStart:0,        execEnd:4075100,  semanticLabel:'Fwd-Compute',   taskName:'前向 · 12 层 Transformer/MoE Blocks (4075ms)' },
+          { taskId:2, subGraphId:0, execStart:4075100,  execEnd:8150200,  semanticLabel:'Bwd-Compute',   taskName:'反向 · 梯度计算 (4075ms)' },
+          { taskId:3, subGraphId:0, execStart:8150200,  execEnd:8151200,  semanticLabel:'P2P-Send',      taskName:'hcom_batchSendRecv_ · 发送激活值→stage1 (1ms)' },
+          { taskId:4, subGraphId:0, execStart:8151200,  execEnd:12600500, semanticLabel:'PP-Bubble',     taskName:'hcom_batchSendRecv_ · Wait 4449.3ms ← 空等末级 lm_head+loss+深层 MoE（communicationWaitStageTime≈4.26s 均值 / 占 step ~26%）' },
+          { taskId:5, subGraphId:0, execStart:12600500, execEnd:15950700, semanticLabel:'DP-Collective', taskName:'hcom_allReduce_ DP 梯度 + EP all-to-all + P2P 实际传输 (3350.2ms · Overlapped=0 全暴露)' },
+          { taskId:6, subGraphId:0, execStart:15950700, execEnd:16200000, semanticLabel:'Free',          taskName:'空闲 (249.3ms)' },
+        ]},
+        { blockIdx:1, coreType:'rank 24 (node4) · PP stage3 末级 · 计算 12.90s（多算 4.41s）', tasks:[
+          { taskId:11, subGraphId:0, execStart:0,        execEnd:6450200,  semanticLabel:'Fwd-Compute',   taskName:'前向 · 12 层 MoE Blocks + lm_head fwd · MatMulV2 [4608→153600] 20.0ms×64≈1280ms（末级独有）(6450ms)' },
+          { taskId:12, subGraphId:0, execStart:6450200,  execEnd:12900400, semanticLabel:'Bwd-Compute',   taskName:'反向 · lm_head dgrad + loss 反向 GEMM（224×9984×9984，~500ms 级）+ vector 算子（RmsNorm/ElementWise，耗时为 stage0 ~1.5×）(6450ms)' },
+          { taskId:13, subGraphId:0, execStart:12900400, execEnd:13400500, semanticLabel:'PP-Bubble',     taskName:'P2P 等待仅 500.1ms（末级几乎不等）' },
+          { taskId:14, subGraphId:0, execStart:13400500, execEnd:15900700, semanticLabel:'DP-Collective', taskName:'hcom_allReduce_ + EP all-to-all + P2P 实际传输 (2500.2ms)' },
+          { taskId:15, subGraphId:0, execStart:15900700, execEnd:16200000, semanticLabel:'Free',          taskName:'空闲 (299.3ms)' },
+        ]},
+      ],
+      annotations: [
+        { type: 'range', startTime: 8151200, endTime: 12600500, label: 'stage0 空等 ~4.45s（占 step ~26%）= 末级多算的 4.41s 直接转成 bubble' },
+        { type: 'task',  tid: 0, taskId: 4 },
+      ],
+    },
+    // 3.2 EP all-to-all 零重叠：MoE 层 dispatch/combine all-to-all 与 expert FFN 计算完全串行（放大单层周期便于观察）
+    2: {
+      source: 'evidence/rank8_s1_node2/trace_view.json（HcclPerRankStats：hcom_all_to_all_v_ 88 次/step，forward dispatch 均值 18ms、backward combine 均值 12ms，communicationOverlapComputation=0.0）',
+      data: [
+        { blockIdx:0, coreType:'rank 8 (node2) · MoE 层 L12 all-to-all 与 expert FFN 计算零重叠（Overlapped=0）', tasks:[
+          { taskId:1, subGraphId:0, execStart:0,     execEnd:2000,  semanticLabel:'Fwd-Compute',   taskName:'Router gate 计算 + 本地已到 token 的 expert FFN 准备 (2ms)' },
+          { taskId:2, subGraphId:0, execStart:2000,  execEnd:20000, semanticLabel:'DP-Collective', taskName:'hcom_all_to_all_v_ dispatch（token 分发到目标 expert，均值 18ms）— 无计算重叠' },
+          { taskId:3, subGraphId:0, execStart:20000, execEnd:22000, semanticLabel:'Bwd-Compute',   taskName:'expert FFN 计算（gate_proj/up_proj/down_proj），等 dispatch 完全到达才开始 (2ms)' },
+          { taskId:4, subGraphId:0, execStart:22000, execEnd:34000, semanticLabel:'DP-Collective', taskName:'hcom_all_to_all_v_ combine（回收 expert 输出/梯度，均值 12ms）— 无计算重叠' },
+        ]},
+      ],
+      annotations: [
+        { type: 'range', startTime: 2000, endTime: 34000, label: 'EP all-to-all 完全暴露（Overlapped=0），44 层累计 ~1.32s/step，可隐藏 60–80%' },
+        { type: 'task',  tid: 0, taskId: 2 },
+      ],
+    },
+    // 3.3 全局零重叠：DP allreduce + PP P2P + EP all-to-all 全部与计算串行，无任何掩盖
+    3: {
+      source: 'evidence/rank0_s0_node1/trace_view.json + step_trace_time.csv（communicationOverlapComputation=0.0，32 卡全）',
+      data: [
+        { blockIdx:0, coreType:'rank 0 · 计算→通信全串行（Overlapped=0 全 32 卡）', tasks:[
+          { taskId:1, subGraphId:0, execStart:0,       execEnd:3350200, semanticLabel:'Bwd-Compute',   taskName:'反向计算收尾 (3350ms) — 期间无任何通信重叠' },
+          { taskId:2, subGraphId:0, execStart:3350200, execEnd:4500200, semanticLabel:'DP-Collective', taskName:'hcom_allReduce_ DP 梯度同步 1150ms（rank0 SumNs~1.15s/2step）← 反向结束才串行开始' },
+          { taskId:3, subGraphId:0, execStart:4500200, execEnd:4649200, semanticLabel:'PP-Bubble',     taskName:'hcom_batchSendRecv_ PP P2P 实际传输 149ms（48 层×2 累计）' },
+          { taskId:4, subGraphId:0, execStart:4649200, execEnd:5969200, semanticLabel:'DP-Collective', taskName:'hcom_all_to_all_v_ EP dispatch+combine 1320ms（44 层累计，同样全暴露）' },
+          { taskId:5, subGraphId:0, execStart:5969200, execEnd:6218500, semanticLabel:'Free',          taskName:'空闲 (249.3ms)' },
+        ]},
+      ],
+      annotations: [
+        { type: 'range', startTime: 3350200, endTime: 5969200, label: '计算-通信零重叠（Overlapped=0）：DP allreduce + PP P2P + EP all-to-all 全部串行暴露' },
+        { type: 'task',  tid: 0, taskId: 2 },
+      ],
+    },
+    // 3.5 环境变量未设置：aclnn/host 缓存偏小 → MoE expert 算子下发间隙增多（局部放大）
+    5: {
+      source: 'evidence/rank0_s0_node1/trace_view.json（host 侧 *_Tiling/launch 间隙 · ACLNN_CACHE_LIMIT/HOST_CACHE_CAPACITY 未设的基线，44 层×192 个 expert FFN 算子/step）',
+      data: [
+        { blockIdx:0, coreType:'rank 0 (host 下发段) · 缓存偏小 → MoE expert 算子下发间隙偏多（局部放大）', tasks:[
+          { taskId:1, subGraphId:0, execStart:0,      execEnd:800000,  semanticLabel:'Fwd-Compute', taskName:'正常异步下发段 (800ms)' },
+          { taskId:2, subGraphId:0, execStart:800000, execEnd:950000,  semanticLabel:'Free',        taskName:'*_Tiling/launch 间隙 (150ms · aclnn 缓存未命中，MoE expert 算子下发抖动放大)' },
+          { taskId:3, subGraphId:0, execStart:950000, execEnd:1750000, semanticLabel:'Fwd-Compute', taskName:'下发段 (800ms)' },
+          { taskId:4, subGraphId:0, execStart:1750000,execEnd:1900000, semanticLabel:'Free',        taskName:'launch 间隙 (150ms · HOST_CACHE_CAPACITY 偏小)' },
+          { taskId:5, subGraphId:0, execStart:1900000,execEnd:2700000, semanticLabel:'Fwd-Compute', taskName:'下发段 …（设缓存环境变量后该间隙收窄）' },
+        ]},
+      ],
+      annotations: [
+        { type: 'range', startTime: 800000, endTime: 950000, label: 'aclnn/host 缓存偏小 → MoE expert 算子下发间隙（设 ACLNN_CACHE_LIMIT/HOST_CACHE_CAPACITY 后缓解）' },
+        { type: 'task',  tid: 0, taskId: 2 },
+      ],
+    },
+  },
+  // ── r20260526: PP=2/DP=2 训练 ──────────────────────────────────────────
+  r20260526: {
+    // 3.1 PP气泡：rank_0等rank_2 LM Head+CE计算，158ms气泡
+    1: {
+      source: 'trace_view.json (rank_0 / rank_2)',
+      data: [
+        { blockIdx:0, coreType:'rank_0 · PP Stage 0', tasks:[
+          { taskId:1,  subGraphId:0, execStart:0,      execEnd:115000,  semanticLabel:'Fwd-Compute',   taskName:'前向计算 · 14 Transformer Blocks (115ms)' },
+          { taskId:2,  subGraphId:0, execStart:115000, execEnd:115436,  semanticLabel:'P2P-Send',      taskName:'hcom_batchSendRecv__128_3 · 发送激活值→rank_2 (0.4ms)' },
+          { taskId:3,  subGraphId:0, execStart:115436, execEnd:273989,  semanticLabel:'PP-Bubble',     taskName:'hcom_batchSendRecv__128_4 · Wait 158.1ms (99.7%) ← rank_2 LM Head+CE链路未结束' },
+          { taskId:4,  subGraphId:0, execStart:273989, execEnd:390279,  semanticLabel:'Bwd-Compute',   taskName:'反向计算 · Transformer Blocks梯度 (116ms)' },
+          { taskId:5,  subGraphId:0, execStart:390279, execEnd:545167,  semanticLabel:'P2P-Recv',      taskName:'hcom_batchSendRecv__128_5 · P2P 154.9ms (Idle)' },
+          { taskId:6,  subGraphId:0, execStart:545167, execEnd:645203,  semanticLabel:'Optimizer',     taskName:'优化器 ApplyAdamWV2×57 (100ms)' },
+          { taskId:7,  subGraphId:0, execStart:645203, execEnd:671512,  semanticLabel:'DP-Collective', taskName:'hcom_reduceScatter__097_4 (26.3ms, HCCS 18.5GB/s)' },
+          { taskId:8,  subGraphId:0, execStart:674872, execEnd:693461,  semanticLabel:'DP-Collective', taskName:'hcom_reduceScatter__097_5 (18.6ms)' },
+          { taskId:9,  subGraphId:0, execStart:693465, execEnd:728089,  semanticLabel:'DP-Collective', taskName:'hcom_allReduce__170_1 (34.6ms)' },
+          { taskId:10, subGraphId:0, execStart:766646, execEnd:778664,  semanticLabel:'DP-Collective', taskName:'hcom_allGather__097_6 (12.0ms)' },
+          { taskId:11, subGraphId:0, execStart:778669, execEnd:787165,  semanticLabel:'DP-Collective', taskName:'hcom_allGather__097_7 (8.5ms)' },
+          { taskId:12, subGraphId:0, execStart:787165, execEnd:810022,  semanticLabel:'Free',          taskName:'空闲 (22.9ms)' },
+        ]},
+        { blockIdx:1, coreType:'rank_2 · PP Stage 1', tasks:[
+          { taskId:13, subGraphId:0, execStart:0,      execEnd:115000,  semanticLabel:'Free',          taskName:'等待rank_0激活值 (115ms)' },
+          { taskId:14, subGraphId:0, execStart:115000, execEnd:115436,  semanticLabel:'P2P-Recv',      taskName:'接收rank_0激活值 (0.4ms)' },
+          { taskId:15, subGraphId:0, execStart:115436, execEnd:273989,  semanticLabel:'Fwd-Compute',   taskName:'前向计算 · Blocks + LM Head MatMulV3 2×18.4ms (MIX_AIC) (158ms) ← 与rank_0气泡完全重叠' },
+          { taskId:16, subGraphId:0, execStart:273989, execEnd:274425,  semanticLabel:'P2P-Send',      taskName:'发梯度→rank_0 · rank_0气泡在此结束 (0.4ms)' },
+          { taskId:17, subGraphId:0, execStart:274425, execEnd:516320,  semanticLabel:'Bwd-Compute',   taskName:'反向计算 · CE串行(Exp+Sub+RealDiv ~80ms)+剩余梯度 (241.9ms)' },
+          { taskId:18, subGraphId:0, execStart:516320, execEnd:542629,  semanticLabel:'DP-Collective', taskName:'hcom_reduceScatter (26.3ms)' },
+          { taskId:19, subGraphId:0, execStart:545989, execEnd:564578,  semanticLabel:'DP-Collective', taskName:'hcom_reduceScatter (18.6ms)' },
+          { taskId:20, subGraphId:0, execStart:564582, execEnd:599206,  semanticLabel:'DP-Collective', taskName:'hcom_allReduce (34.6ms)' },
+          { taskId:21, subGraphId:0, execStart:637763, execEnd:649781,  semanticLabel:'DP-Collective', taskName:'hcom_allGather (12.0ms)' },
+          { taskId:22, subGraphId:0, execStart:649786, execEnd:658282,  semanticLabel:'DP-Collective', taskName:'hcom_allGather (8.5ms)' },
+          { taskId:23, subGraphId:0, execStart:658282, execEnd:809803,  semanticLabel:'Free',          taskName:'空闲 (151.5ms)' },
+        ]},
+      ],
+      annotations: [
+        { type: 'range', startTime: 115000, endTime: 273989, label: '158ms PP气泡' },
+        { type: 'task',  tid: 0, taskId: 3 },
+      ],
+    },
+    // 3.5 PP反向接收完后DP collective串行，未与P2P重叠
+    5: {
+      source: 'trace_view.json (rank_0, 以反向开始为T=0)',
+      data: [
+        { blockIdx:0, coreType:'rank_0 · 反向 → DP collective（当前串行）', tasks:[
+          { taskId:1, subGraphId:0, execStart:0,      execEnd:116290,  semanticLabel:'Bwd-Compute',   taskName:'反向计算 Transformer Blocks (116ms)' },
+          { taskId:2, subGraphId:0, execStart:116290, execEnd:271178,  semanticLabel:'P2P-Recv',      taskName:'hcom_batchSendRecv__128_5 · Idle 154.9ms — 等rank_2梯度返回' },
+          { taskId:3, subGraphId:0, execStart:271178, execEnd:371214,  semanticLabel:'Optimizer',     taskName:'优化器 ApplyAdamWV2×57 (100ms)' },
+          { taskId:4, subGraphId:0, execStart:371214, execEnd:397523,  semanticLabel:'DP-Collective', taskName:'hcom_reduceScatter__097_4 (26.3ms) ← 严格在优化器后串行开始' },
+          { taskId:5, subGraphId:0, execStart:400883, execEnd:419472,  semanticLabel:'DP-Collective', taskName:'hcom_reduceScatter__097_5 (18.6ms)' },
+          { taskId:6, subGraphId:0, execStart:419476, execEnd:454100,  semanticLabel:'DP-Collective', taskName:'hcom_allReduce (34.6ms)' },
+          { taskId:7, subGraphId:0, execStart:492657, execEnd:504675,  semanticLabel:'DP-Collective', taskName:'hcom_allGather__097_6 (12.0ms)' },
+          { taskId:8, subGraphId:0, execStart:504680, execEnd:513176,  semanticLabel:'DP-Collective', taskName:'hcom_allGather__097_7 (8.5ms)' },
+          { taskId:9, subGraphId:0, execStart:513176, execEnd:536033,  semanticLabel:'Free',          taskName:'空闲 (22.9ms)' },
+        ]},
+      ],
+      annotations: [
+        { type: 'point', time: 371214, label: '串行→DP等优化器结束' },
+        { type: 'task',  tid: 0, taskId: 4 },
+      ],
+    },
+  },
+
+  // ── r20260527: MatmulLeakyRelu simulator (ns 为单位) ─────────────────
+  r20260527: {
+    // 3.1 cube写GM → vec再读GM，LeakyRelu未融合
+    1: {
+      source: 'visualize_data.bin (simulator, cubecore0 + veccore0/1)',
+      data: [
+        { blockIdx:0, coreType:'cubecore0', tasks:[
+          { taskId:1, subGraphId:0, execStart:0,     execEnd:36000,  semanticLabel:'Fwd-Compute', taskName:'MMAD batch 1 (36ns)' },
+          { taskId:2, subGraphId:0, execStart:36000, execEnd:56000,  semanticLabel:'PP-Bubble',   taskName:'WAIT_FLAG · 等MTE2填L1 (20ns bubble)' },
+          { taskId:3, subGraphId:0, execStart:56000, execEnd:72800,  semanticLabel:'Fwd-Compute', taskName:'MMAD batch 2 (16.8ns)' },
+          { taskId:4, subGraphId:0, execStart:72800, execEnd:97900,  semanticLabel:'P2P-Send',    taskName:'FIXP FIX_L0C_TO_DST → GM 写出 2.62MB (25.1ns) ← 触发vec路径' },
+          { taskId:5, subGraphId:0, execStart:97900, execEnd:112600, semanticLabel:'Free',        taskName:'core结束 (14.7ns)' },
+        ]},
+        { blockIdx:1, coreType:'veccore0 (等cube Fixpipe → 读GM → VLRELU)', tasks:[
+          { taskId:6,  subGraphId:0, execStart:0,      execEnd:97900,  semanticLabel:'Free',          taskName:'等待cubecore0 Fixpipe完成 (97.9ns)' },
+          { taskId:7,  subGraphId:0, execStart:97900,  execEnd:119900, semanticLabel:'P2P-Recv',      taskName:'MTE2 GM→UB 1.31MB (22ns) ← 读cube落盘的矩阵C' },
+          { taskId:8,  subGraphId:0, execStart:119900, execEnd:126500, semanticLabel:'Fwd-Compute',   taskName:'VECTOR VLRELU (6.6ns, 仅占span 7%) ← 真正计算极短' },
+          { taskId:9,  subGraphId:0, execStart:126500, execEnd:195700, semanticLabel:'DP-Collective', taskName:'MTE3 UB→GM (69.2ns)' },
+        ]},
+        { blockIdx:2, coreType:'veccore1 (等cube Fixpipe → 读GM → VLRELU)', tasks:[
+          { taskId:10, subGraphId:0, execStart:0,      execEnd:97900,  semanticLabel:'Free',          taskName:'等待cubecore0 Fixpipe完成 (97.9ns)' },
+          { taskId:11, subGraphId:0, execStart:97900,  execEnd:119900, semanticLabel:'P2P-Recv',      taskName:'MTE2 GM→UB 1.31MB (22ns)' },
+          { taskId:12, subGraphId:0, execStart:119900, execEnd:126500, semanticLabel:'Fwd-Compute',   taskName:'VECTOR VLRELU (6.6ns)' },
+          { taskId:13, subGraphId:0, execStart:126500, execEnd:212300, semanticLabel:'DP-Collective', taskName:'MTE3 UB→GM (85.8ns) ← 比veccore0多16.6ns → 见3.5不均衡' },
+        ]},
+      ],
+      annotations: [
+        { type: 'range', startTime: 0,     endTime: 97900, label: '97.9ns跨die等待窗口' },
+        { type: 'task',  tid: 0, taskId: 4 },
+        { type: 'task',  tid: 1, taskId: 6 },
+        { type: 'task',  tid: 2, taskId: 10 },
+      ],
+    },
+    // 3.2 CUBE流水65%，MMAD在等L1
+    2: {
+      source: 'visualize_data.bin (simulator, cubecore0 CUBE + MTE2)',
+      data: [
+        { blockIdx:0, coreType:'CUBE Pipeline (MMAD · 65% util)', tasks:[
+          { taskId:1, subGraphId:0, execStart:0,     execEnd:36000,  semanticLabel:'Fwd-Compute', taskName:'MMAD batch 1 (36ns)' },
+          { taskId:2, subGraphId:0, execStart:36000, execEnd:56000,  semanticLabel:'PP-Bubble',   taskName:'WAIT_FLAG · 等MTE2填L0 (20ns bubble) ← SET_FLAG 566>440次' },
+          { taskId:3, subGraphId:0, execStart:56000, execEnd:72800,  semanticLabel:'Fwd-Compute', taskName:'MMAD batch 2 (16.8ns)' },
+          { taskId:4, subGraphId:0, execStart:72800, execEnd:97900,  semanticLabel:'P2P-Send',    taskName:'FIXP FIX_L0C_TO_DST (25.1ns)' },
+          { taskId:5, subGraphId:0, execStart:97900, execEnd:112600, semanticLabel:'Free',        taskName:'idle (14.7ns)' },
+        ]},
+        { blockIdx:1, coreType:'MTE2 Stream (GM→L1 ND2NZ · 持续饱和)', tasks:[
+          { taskId:6, subGraphId:0, execStart:0, execEnd:112600, semanticLabel:'DP-Collective', taskName:'持续拉数: GM→L1 ND2NZ 180次×21.4KB=3.94MB, busy 263ns (233% span) → MTE1/CUBE持续等待' },
+        ]},
+      ],
+      annotations: [
+        { type: 'range', startTime: 36000, endTime: 56000, label: '20ns WAIT_FLAG气泡' },
+        { type: 'task',  tid: 0, taskId: 2 },
+      ],
+    },
+    // 3.3 SCALAR pipe 44,245事件，178% span占用
+    3: {
+      source: 'visualize_data.bin (simulator, cubecore0 CUBE vs SCALAR)',
+      data: [
+        { blockIdx:0, coreType:'CUBE Pipe (MMAD · 65%)', tasks:[
+          { taskId:1, subGraphId:0, execStart:0,     execEnd:72800,  semanticLabel:'Fwd-Compute', taskName:'MMAD + 等待 (72.8ns busy, 65% util)' },
+          { taskId:2, subGraphId:0, execStart:72800, execEnd:97900,  semanticLabel:'P2P-Send',    taskName:'FIXP FIX_L0C_TO_DST → GM (25.1ns)' },
+          { taskId:3, subGraphId:0, execStart:97900, execEnd:112600, semanticLabel:'Free',        taskName:'core空闲 (14.7ns)' },
+        ]},
+        { blockIdx:1, coreType:'SCALAR Pipe (44,245事件 · 201ns · 178% span)', tasks:[
+          { taskId:4, subGraphId:0, execStart:0, execEnd:112600, semanticLabel:'PP-Bubble', taskName:'栈帧 LD/ST/STI/STP 为主, busy 201ns (178%span) — 与CUBE/MTE抢调度槽; line206-207占46% cycles' },
+        ]},
+      ],
+      annotations: [
+        { type: 'point', time: 97900, label: 'CUBE结束←SCALAR延续' },
+        { type: 'task',  tid: 1, taskId: 4 },
+      ],
+    },
+    // 3.5 veccore0 vs veccore1 负载不均17%
+    5: {
+      source: 'visualize_data.bin (simulator, veccore0 vs veccore1, 以vec计算开始为T=0)',
+      data: [
+        { blockIdx:0, coreType:'veccore0 (span 97.8ns)', tasks:[
+          { taskId:1, subGraphId:0, execStart:0,     execEnd:22000, semanticLabel:'P2P-Recv',      taskName:'MTE2 GM→UB (22ns)' },
+          { taskId:2, subGraphId:0, execStart:22000, execEnd:28600, semanticLabel:'Fwd-Compute',   taskName:'VECTOR VLRELU (6.6ns)' },
+          { taskId:3, subGraphId:0, execStart:28600, execEnd:97800, semanticLabel:'DP-Collective', taskName:'MTE3 UB→GM (69.2ns)' },
+        ]},
+        { blockIdx:1, coreType:'veccore1 (span 114.4ns · Δ+16.6ns)', tasks:[
+          { taskId:4, subGraphId:0, execStart:0,     execEnd:22000,  semanticLabel:'P2P-Recv',      taskName:'MTE2 GM→UB (22ns)' },
+          { taskId:5, subGraphId:0, execStart:22000, execEnd:28600,  semanticLabel:'Fwd-Compute',   taskName:'VECTOR VLRELU (6.6ns)' },
+          { taskId:6, subGraphId:0, execStart:28600, execEnd:114400, semanticLabel:'DP-Collective', taskName:'MTE3 UB→GM (85.8ns) ← 比veccore0多16.6ns，tiling尾块分配不均' },
+        ]},
+      ],
+      annotations: [
+        { type: 'range', startTime: 97800, endTime: 114400, label: '+16.6ns不均衡延伸' },
+        { type: 'task',  tid: 0, taskId: 3 },
+        { type: 'task',  tid: 1, taskId: 6 },
+      ],
+    },
+  },
+
+  // ── r20260528: Eager模式推理 (μs 为单位) ─────────────────────────────
+  r20260528: {
+    // 3.1 NPU 92.6% idle，host逐算子下发
+    1: {
+      source: 'trace_view.json (代表性500μs切片，每步353个kernel)',
+      data: [
+        { blockIdx:0, coreType:'Host (PyTorch/CANN Launch)', tasks:[
+          { taskId:1, subGraphId:0, execStart:0,   execEnd:14,  semanticLabel:'DP-Collective', taskName:'aclnn kernel launch (14μs avg)' },
+          { taskId:2, subGraphId:0, execStart:14,  execEnd:168, semanticLabel:'PP-Bubble',    taskName:'Python处理 / host overhead (154μs) ← eager逐算子下发代价' },
+          { taskId:3, subGraphId:0, execStart:168, execEnd:182, semanticLabel:'DP-Collective', taskName:'aclnn kernel launch (14μs)' },
+          { taskId:4, subGraphId:0, execStart:182, execEnd:336, semanticLabel:'PP-Bubble',    taskName:'Python处理 / host overhead (154μs)' },
+          { taskId:5, subGraphId:0, execStart:336, execEnd:350, semanticLabel:'DP-Collective', taskName:'aclnn kernel launch (14μs)' },
+          { taskId:6, subGraphId:0, execStart:350, execEnd:500, semanticLabel:'PP-Bubble',    taskName:'Python处理 / host overhead (150μs)' },
+        ]},
+        { blockIdx:1, coreType:'Device (NPU · 7.36% busy)', tasks:[
+          { taskId:7,  subGraphId:0, execStart:0,   execEnd:14,  semanticLabel:'Free',        taskName:'idle · 等待第一次launch' },
+          { taskId:8,  subGraphId:0, execStart:14,  execEnd:26,  semanticLabel:'Fwd-Compute', taskName:'kernel_1 (12μs avg)' },
+          { taskId:9,  subGraphId:0, execStart:26,  execEnd:182, semanticLabel:'Free',        taskName:'NPU idle (156μs) ← 92.6%时间空转' },
+          { taskId:10, subGraphId:0, execStart:182, execEnd:194, semanticLabel:'Fwd-Compute', taskName:'kernel_2 (12μs)' },
+          { taskId:11, subGraphId:0, execStart:194, execEnd:350, semanticLabel:'Free',        taskName:'NPU idle (156μs)' },
+          { taskId:12, subGraphId:0, execStart:350, execEnd:362, semanticLabel:'Fwd-Compute', taskName:'kernel_3 (12μs)' },
+          { taskId:13, subGraphId:0, execStart:362, execEnd:500, semanticLabel:'Free',        taskName:'NPU idle (138μs)' },
+        ]},
+      ],
+      annotations: [
+        { type: 'range', startTime: 26, endTime: 182, label: 'NPU空转156μs (92.6%idle示例)' },
+        { type: 'task',  tid: 1, taskId: 9  },
+        { type: 'task',  tid: 1, taskId: 11 },
+        { type: 'task',  tid: 1, taskId: 13 },
+      ],
+    },
+    // 3.3 NonZero触发D2H同步，慢step的根本触发器
+    3: {
+      source: 'trace_view.json (慢step示意，72ms D2H同步)',
+      data: [
+        { blockIdx:0, coreType:'Host (API调用)', tasks:[
+          { taskId:1, subGraphId:0, execStart:0,     execEnd:50,    semanticLabel:'DP-Collective', taskName:'aclnn launch × 4 (50μs)' },
+          { taskId:2, subGraphId:0, execStart:50,    execEnd:64,    semanticLabel:'DP-Collective', taskName:'aclnnNonzeroV2 launch (14μs)' },
+          { taskId:3, subGraphId:0, execStart:64,    execEnd:72064, semanticLabel:'PP-Bubble',     taskName:'aclrtSynchronizeStreamWithTimeout BLOCKED (72,000μs) ← host等device返回动态shape' },
+          { taskId:4, subGraphId:0, execStart:72064, execEnd:72164, semanticLabel:'DP-Collective', taskName:'拿到shape，继续launch (100μs)' },
+        ]},
+        { blockIdx:1, coreType:'Device (NPU)', tasks:[
+          { taskId:5, subGraphId:0, execStart:0,     execEnd:50,    semanticLabel:'Fwd-Compute', taskName:'pre-NonZero kernels (50μs)' },
+          { taskId:6, subGraphId:0, execStart:50,    execEnd:122,   semanticLabel:'Fwd-Compute', taskName:'NonZeroAiCore compute (72μs)' },
+          { taskId:7, subGraphId:0, execStart:122,   execEnd:72064, semanticLabel:'Free',        taskName:'device idle (71,942μs) ← host blocking on D2H shape' },
+          { taskId:8, subGraphId:0, execStart:72064, execEnd:72164, semanticLabel:'Fwd-Compute', taskName:'post-NonZero kernels (100μs)' },
+        ]},
+      ],
+      annotations: [
+        { type: 'range', startTime: 64, endTime: 72064, label: '72ms D2H同步阻塞' },
+        { type: 'task',  tid: 0, taskId: 3 },
+        { type: 'task',  tid: 1, taskId: 7 },
+      ],
+    },
+    // 3.6 MemSet每步46次，workspace未复用
+    6: {
+      source: 'trace_view.json (代表性110μs切片)',
+      data: [
+        { blockIdx:0, coreType:'Device (MemSet + 算子交替 · 46次/step)', tasks:[
+          { taskId:1,  subGraphId:0, execStart:0,   execEnd:10,  semanticLabel:'Optimizer',    taskName:'MemSet (workspace clear, ~10μs)' },
+          { taskId:2,  subGraphId:0, execStart:10,  execEnd:22,  semanticLabel:'Fwd-Compute',  taskName:'kernel (12μs)' },
+          { taskId:3,  subGraphId:0, execStart:22,  execEnd:32,  semanticLabel:'Optimizer',    taskName:'MemSet (10μs)' },
+          { taskId:4,  subGraphId:0, execStart:32,  execEnd:44,  semanticLabel:'Fwd-Compute',  taskName:'kernel (12μs)' },
+          { taskId:5,  subGraphId:0, execStart:44,  execEnd:54,  semanticLabel:'Optimizer',    taskName:'MemSet (10μs)' },
+          { taskId:6,  subGraphId:0, execStart:54,  execEnd:66,  semanticLabel:'Fwd-Compute',  taskName:'kernel (12μs)' },
+          { taskId:7,  subGraphId:0, execStart:66,  execEnd:76,  semanticLabel:'Optimizer',    taskName:'MemSet (10μs)' },
+          { taskId:8,  subGraphId:0, execStart:76,  execEnd:88,  semanticLabel:'Fwd-Compute',  taskName:'kernel (12μs)' },
+          { taskId:9,  subGraphId:0, execStart:88,  execEnd:98,  semanticLabel:'Optimizer',    taskName:'MemSet (10μs) ← 设ACLNN_CACHE_LIMIT=10000可消除大多数' },
+          { taskId:10, subGraphId:0, execStart:98,  execEnd:110, semanticLabel:'Fwd-Compute',  taskName:'kernel (12μs)' },
+        ]},
+      ],
+      annotations: [
+        { type: 'task', tid: 0, taskId: 1 },
+        { type: 'task', tid: 0, taskId: 3 },
+        { type: 'task', tid: 0, taskId: 5 },
+        { type: 'task', tid: 0, taskId: 7 },
+        { type: 'task', tid: 0, taskId: 9 },
+      ],
+    },
+    // 3.7 aclnnInplaceCopyGetWorkspaceSize 64ms长尾
+    7: {
+      source: 'trace_view.json (含64ms长尾示意)',
+      data: [
+        { blockIdx:0, coreType:'Host (aclnnInplaceCopyGetWorkspaceSize)', tasks:[
+          { taskId:1, subGraphId:0, execStart:0,     execEnd:60,    semanticLabel:'DP-Collective', taskName:'正常调用 (60μs, 大多数情况)' },
+          { taskId:2, subGraphId:0, execStart:60,    execEnd:136,   semanticLabel:'DP-Collective', taskName:'aclnnInplaceCopy (76μs)' },
+          { taskId:3, subGraphId:0, execStart:136,   execEnd:64136, semanticLabel:'PP-Bubble',     taskName:'GetWorkspaceSize 长尾 (64,000μs!) ← dynamic shape路径重算workspace' },
+          { taskId:4, subGraphId:0, execStart:64136, execEnd:64212, semanticLabel:'DP-Collective', taskName:'aclnnInplaceCopy (76μs)' },
+        ]},
+        { blockIdx:1, coreType:'Device (NPU)', tasks:[
+          { taskId:5, subGraphId:0, execStart:0,     execEnd:60,    semanticLabel:'Free',        taskName:'idle (host在算workspace)' },
+          { taskId:6, subGraphId:0, execStart:60,    execEnd:136,   semanticLabel:'Fwd-Compute', taskName:'InplaceCopy kernel (76μs)' },
+          { taskId:7, subGraphId:0, execStart:136,   execEnd:64136, semanticLabel:'Free',        taskName:'device idle (64,000μs) ← host长尾导致queue清空' },
+          { taskId:8, subGraphId:0, execStart:64136, execEnd:64212, semanticLabel:'Fwd-Compute', taskName:'InplaceCopy kernel (76μs)' },
+        ]},
+      ],
+      annotations: [
+        { type: 'range', startTime: 136, endTime: 64136, label: '64ms GetWorkspaceSize长尾' },
+        { type: 'task',  tid: 0, taskId: 3 },
+        { type: 'task',  tid: 1, taskId: 7 },
+      ],
+    },
+    // ── verl RL 训练 & 多机多卡 入口 (swimlane 在下方) ──
+
+    // 3.8 每步7次同步调用
+    8: {
+      source: 'trace_view.json (代表性640μs切片，含均值522μs的sync)',
+      data: [
+        { blockIdx:0, coreType:'Host (含aclrtSynchronize)', tasks:[
+          { taskId:1, subGraphId:0, execStart:0,   execEnd:28,  semanticLabel:'DP-Collective', taskName:'launch kernel_1/2 (28μs)' },
+          { taskId:2, subGraphId:0, execStart:28,  execEnd:42,  semanticLabel:'PP-Bubble',     taskName:'aclrtSynchronizeStream (14μs, 快速sync)' },
+          { taskId:3, subGraphId:0, execStart:42,  execEnd:70,  semanticLabel:'DP-Collective', taskName:'launch kernel_3/4 (28μs)' },
+          { taskId:4, subGraphId:0, execStart:70,  execEnd:592, semanticLabel:'PP-Bubble',     taskName:'aclrtSynchronizeStreamWithTimeout (522μs 均值) ← 每step 6次sync，600次由NonZero引发' },
+          { taskId:5, subGraphId:0, execStart:592, execEnd:620, semanticLabel:'DP-Collective', taskName:'launch kernel_5/6 (28μs)' },
+          { taskId:6, subGraphId:0, execStart:620, execEnd:634, semanticLabel:'PP-Bubble',     taskName:'aclrtSynchronizeStream (14μs)' },
+        ]},
+        { blockIdx:1, coreType:'Device (NPU)', tasks:[
+          { taskId:7,  subGraphId:0, execStart:0,   execEnd:28,  semanticLabel:'Fwd-Compute', taskName:'kernel_1/2 (28μs)' },
+          { taskId:8,  subGraphId:0, execStart:28,  execEnd:42,  semanticLabel:'Free',        taskName:'idle (sync 14μs)' },
+          { taskId:9,  subGraphId:0, execStart:42,  execEnd:70,  semanticLabel:'Fwd-Compute', taskName:'kernel_3/4 (28μs)' },
+          { taskId:10, subGraphId:0, execStart:70,  execEnd:592, semanticLabel:'Free',        taskName:'device idle (522μs) ← 被迫等host sync决策' },
+          { taskId:11, subGraphId:0, execStart:592, execEnd:620, semanticLabel:'Fwd-Compute', taskName:'kernel_5/6 (28μs)' },
+          { taskId:12, subGraphId:0, execStart:620, execEnd:634, semanticLabel:'Free',        taskName:'idle (sync 14μs)' },
+        ]},
+      ],
+      annotations: [
+        { type: 'range', startTime: 70,  endTime: 592,  label: '522μs同步阻塞(均值)' },
+        { type: 'task',  tid: 0, taskId: 4  },
+        { type: 'task',  tid: 1, taskId: 10 },
+      ],
+    },
+  },
+
+  // ── r20260602verl: verl RL 训练 单卡 (μs 为单位) ─────────────────────
+  r20260602verl: {
+    // 3.1 Rollout Eager解码，设备占用仅37%
+    1: {
+      source: 'ascend_pytorch_profiler_0.db (Rollout 生成阶段代表性 2000μs 切片)',
+      data: [
+        { blockIdx:0, coreType:'Host (CANN API · 2.8万次/s)', tasks:[
+          { taskId:1, subGraphId:0, execStart:0,    execEnd:12,   semanticLabel:'DP-Collective', taskName:'vllm attention launch (12μs)' },
+          { taskId:2, subGraphId:0, execStart:12,   execEnd:390,  semanticLabel:'PP-Bubble',     taskName:'Python 处理 / vllm overhead (378μs) ← Eager逐token下发代价' },
+          { taskId:3, subGraphId:0, execStart:390,  execEnd:402,  semanticLabel:'DP-Collective', taskName:'vllm decode launch (12μs)' },
+          { taskId:4, subGraphId:0, execStart:402,  execEnd:780,  semanticLabel:'PP-Bubble',     taskName:'Python 处理 (378μs)' },
+          { taskId:5, subGraphId:0, execStart:780,  execEnd:792,  semanticLabel:'DP-Collective', taskName:'vllm attention launch (12μs)' },
+          { taskId:6, subGraphId:0, execStart:792,  execEnd:1170, semanticLabel:'PP-Bubble',     taskName:'Python 处理 (378μs)' },
+          { taskId:7, subGraphId:0, execStart:1170, execEnd:1182, semanticLabel:'DP-Collective', taskName:'hcom_allReduce launch (12μs) ← TP All-Reduce' },
+          { taskId:8, subGraphId:0, execStart:1182, execEnd:1650, semanticLabel:'PP-Bubble',     taskName:'wait AllReduce + Python (468μs)' },
+          { taskId:9, subGraphId:0, execStart:1650, execEnd:1662, semanticLabel:'DP-Collective', taskName:'vllm decode launch (12μs)' },
+          { taskId:10,subGraphId:0, execStart:1662, execEnd:2000, semanticLabel:'PP-Bubble',     taskName:'Python 处理 (338μs)' },
+        ]},
+        { blockIdx:1, coreType:'Device (NPU · 37% busy · MAC利用率3.8%)', tasks:[
+          { taskId:11, subGraphId:0, execStart:0,    execEnd:12,   semanticLabel:'Fwd-Compute',  taskName:'PagedAttentionMaskNdKernel (12μs)' },
+          { taskId:12, subGraphId:0, execStart:12,   execEnd:402,  semanticLabel:'Free',         taskName:'NPU 空闲 390μs ← Eager 63%时间在这里' },
+          { taskId:13, subGraphId:0, execStart:402,  execEnd:414,  semanticLabel:'Fwd-Compute',  taskName:'ReshapeAndCacheNdKernel (12μs)' },
+          { taskId:14, subGraphId:0, execStart:414,  execEnd:792,  semanticLabel:'Free',         taskName:'NPU 空闲 378μs' },
+          { taskId:15, subGraphId:0, execStart:792,  execEnd:804,  semanticLabel:'Fwd-Compute',  taskName:'AtbRopeKernel (12μs)' },
+          { taskId:16, subGraphId:0, execStart:804,  execEnd:1182, semanticLabel:'Free',         taskName:'NPU 空闲 378μs' },
+          { taskId:17, subGraphId:0, execStart:1182, execEnd:1650, semanticLabel:'P2P-Send',     taskName:'hcom_allReduce (468μs · wait 72%)' },
+          { taskId:18, subGraphId:0, execStart:1650, execEnd:1662, semanticLabel:'Fwd-Compute',  taskName:'MatMulV2 (12μs)' },
+          { taskId:19, subGraphId:0, execStart:1662, execEnd:2000, semanticLabel:'Free',         taskName:'NPU 空闲 338μs' },
+        ]},
+      ],
+      annotations: [
+        { type: 'range', startTime: 12,   endTime: 402,  label: 'NPU空闲390μs (63%空转示例)' },
+        { type: 'task',  tid: 1, taskId: 12 },
+        { type: 'task',  tid: 1, taskId: 14 },
+        { type: 'task',  tid: 1, taskId: 16 },
+      ],
+    },
+    // 3.2 TP AllReduce 全暴露，wait 9.4s
+    2: {
+      source: 'analysis.db CommAnalyzerTime (代表性单次 AllReduce 示意)',
+      data: [
+        { blockIdx:0, coreType:'Host (TP=2 · 每层触发 AllReduce)', tasks:[
+          { taskId:1, subGraphId:0, execStart:0,    execEnd:50,   semanticLabel:'DP-Collective', taskName:'Transformer layer compute launch (50μs)' },
+          { taskId:2, subGraphId:0, execStart:50,   execEnd:62,   semanticLabel:'DP-Collective', taskName:'hcom_allReduce launch (12μs)' },
+          { taskId:3, subGraphId:0, execStart:62,   execEnd:530,  semanticLabel:'PP-Bubble',     taskName:'等 AllReduce 完成 (468μs · wait 72% = 338μs) ← 完全暴露，无重叠' },
+          { taskId:4, subGraphId:0, execStart:530,  execEnd:580,  semanticLabel:'DP-Collective', taskName:'下一层 compute launch (50μs)' },
+        ]},
+        { blockIdx:1, coreType:'Device (NPU · AllReduce 无重叠)', tasks:[
+          { taskId:5, subGraphId:0, execStart:0,    execEnd:50,   semanticLabel:'Fwd-Compute',  taskName:'MatMulV2 + Activation (50μs)' },
+          { taskId:6, subGraphId:0, execStart:50,   execEnd:62,   semanticLabel:'Free',         taskName:'idle (等AllReduce launch)' },
+          { taskId:7, subGraphId:0, execStart:62,   execEnd:400,  semanticLabel:'P2P-Send',     taskName:'hcom_allReduce wait (338μs) ← 等对端rank' },
+          { taskId:8, subGraphId:0, execStart:400,  execEnd:530,  semanticLabel:'DP-Collective', taskName:'allReduce transit (130μs)' },
+          { taskId:9, subGraphId:0, execStart:530,  execEnd:580,  semanticLabel:'Fwd-Compute',  taskName:'下一层 MatMulV2 (50μs)' },
+        ]},
+      ],
+      annotations: [
+        { type: 'range', startTime: 62, endTime: 400, label: '338μs AllReduce wait (72%)' },
+        { type: 'task',  tid: 1, taskId: 7 },
+        { type: 'point', time: 530, label: 'overlap=0, 完全串行' },
+      ],
+    },
+    // 3.3 物理内存反复申请/释放（相位切换处）
+    3: {
+      source: 'ascend_pytorch_profiler_0.db (rollout→train 相位切换，代表性切片)',
+      data: [
+        { blockIdx:0, coreType:'Host (CANN API · 相位切换)', tasks:[
+          { taskId:1, subGraphId:0, execStart:0,      execEnd:5000,   semanticLabel:'DP-Collective', taskName:'Rollout 最后一批 launch (5ms)' },
+          { taskId:2, subGraphId:0, execStart:5000,   execEnd:27019,  semanticLabel:'PP-Bubble',     taskName:'aclrtFreePhysical × 1 (22ms) ← KV/权重归还物理内存' },
+          { taskId:3, subGraphId:0, execStart:27019,  execEnd:31869,  semanticLabel:'PP-Bubble',     taskName:'aclrtMallocPhysical × 1 (4.85ms) ← train 申请物理内存' },
+          { taskId:4, subGraphId:0, execStart:31869,  execEnd:36869,  semanticLabel:'DP-Collective', taskName:'update_actor compute launch (5ms)' },
+          { taskId:5, subGraphId:0, execStart:36869,  execEnd:58888,  semanticLabel:'PP-Bubble',     taskName:'aclrtFreePhysical × 1 (22ms) ← train 结束归还' },
+          { taskId:6, subGraphId:0, execStart:58888,  execEnd:60000,  semanticLabel:'DP-Collective', taskName:'下一 rollout 开始 launch (1.1ms)' },
+        ]},
+        { blockIdx:1, coreType:'Device (NPU · 阻塞等待)', tasks:[
+          { taskId:7, subGraphId:0, execStart:0,      execEnd:5000,   semanticLabel:'Fwd-Compute', taskName:'Rollout decode kernels (5ms)' },
+          { taskId:8, subGraphId:0, execStart:5000,   execEnd:31869,  semanticLabel:'Free',        taskName:'NPU 空闲 26.9ms ← FreePhysical+MallocPhysical 完全阻塞' },
+          { taskId:9, subGraphId:0, execStart:31869,  execEnd:36869,  semanticLabel:'Optimizer',   taskName:'update_actor kernels (5ms)' },
+          { taskId:10,subGraphId:0, execStart:36869,  execEnd:58888,  semanticLabel:'Free',        taskName:'NPU 空闲 22ms ← FreePhysical 阻塞' },
+          { taskId:11,subGraphId:0, execStart:58888,  execEnd:60000,  semanticLabel:'Fwd-Compute', taskName:'下一轮 rollout (1.1ms)' },
+        ]},
+      ],
+      annotations: [
+        { type: 'range', startTime: 5000,  endTime: 31869, label: '26.9ms 物理内存操作' },
+        { type: 'task',  tid: 0, taskId: 2 },
+        { type: 'task',  tid: 1, taskId: 8 },
+      ],
+    },
+  },
+  // ── r20260610: 同一份 level2/ 数据，msprof-analyze + advisor 全跑通；与 0605 同源 ─────
+  // 数据来源: Analysis Report/level2_profiling_analysis_20260610/evidence/rank_{0,2}_ascend_pt/{trace_view.json,kernel_details.csv}
+  r20260610: {
+    // 3.1 末级（rank2）独有 vocab=151936 算子链 ~160ms（Cast→Exp→Sub→RealDiv→Mul→ReduceSum→ArgMax + 词表投影/dgrad）
+    1: {
+      source: 'evidence/rank_2_ascend_pt/trace_view.json（末级 step 尾部 logits/loss 段，advisor 判 vec_mte2_mte3/mte2 访存bound）',
+      data: [
+        { blockIdx:0, coreType:'rank 2 (dev4) · 末级独有 vocab=151936 算子链 ~160ms', tasks:[
+          { taskId:1,  subGraphId:0, execStart:0,     execEnd:30000,  semanticLabel:'Fwd-Compute', taskName:'Transformer Blocks 尾段前向 (30ms)' },
+          { taskId:2,  subGraphId:0, execStart:30000, execEnd:44800,  semanticLabel:'Fwd-Compute', taskName:'词表投影 MatMulV3 4096,1024;151936,1024 (14.8ms, mte2 bound)' },
+          { taskId:3,  subGraphId:0, execStart:44800, execEnd:50800,  semanticLabel:'Fwd-Compute', taskName:'Cast 4096,1,151936 (6.0ms, vec_mte2_mte3 访存bound)' },
+          { taskId:4,  subGraphId:0, execStart:50800, execEnd:58800,  semanticLabel:'Fwd-Compute', taskName:'Exp 4096,1,151936 (8.0ms, 访存bound)' },
+          { taskId:5,  subGraphId:0, execStart:58800, execEnd:66700,  semanticLabel:'Fwd-Compute', taskName:'Sub 4096,1,151936;4096,1,1 (7.9ms)' },
+          { taskId:6,  subGraphId:0, execStart:66700, execEnd:74600,  semanticLabel:'Fwd-Compute', taskName:'RealDiv 4096,1,151936 (7.9ms)' },
+          { taskId:7,  subGraphId:0, execStart:74600, execEnd:81900,  semanticLabel:'Fwd-Compute', taskName:'Mul 4096,1,151936 (7.3ms)' },
+          { taskId:8,  subGraphId:0, execStart:81900, execEnd:88800,  semanticLabel:'Fwd-Compute', taskName:'ReduceSum 4096,1,151936;1 (6.9ms)' },
+          { taskId:9,  subGraphId:0, execStart:88800, execEnd:95600,  semanticLabel:'Fwd-Compute', taskName:'ArgMaxWithValue 4096,1,151936 (6.8ms)' },
+          { taskId:10, subGraphId:0, execStart:95600, execEnd:132500, semanticLabel:'Bwd-Compute', taskName:'lm_head dgrad MatMulV3 4096,151936;151936,1024 2×18.5ms (MIX_AIC, mte2 bound)' },
+        ]},
+      ],
+      annotations: [
+        { type: 'range', startTime: 44800, endTime: 95600, label: 'Cast→Exp→Sub→RealDiv→Mul→ReduceSum→ArgMax 访存bound（每个把 [4096,151936] 在 HBM 往返一遍）' },
+        { type: 'task',  tid: 0, taskId: 3 },
+      ],
+    },
+    // 3.2 PP 阶段切分不均：首级 compute 231ms 后空等末级 400ms，batchSendRecv 累计空等 ~313ms
+    2: {
+      source: 'evidence/rank_0_ascend_pt + rank_2_ascend_pt/trace_view.json（PP 组 (0,2)，过滤 hcom_batchSendRecv）',
+      data: [
+        { blockIdx:0, coreType:'rank 0 (dev0) · PP 首级 · compute 231ms', tasks:[
+          { taskId:1,  subGraphId:0, execStart:0,      execEnd:115000, semanticLabel:'Fwd-Compute',   taskName:'前向计算 · Transformer Blocks (115ms)' },
+          { taskId:2,  subGraphId:0, execStart:115000, execEnd:115400, semanticLabel:'P2P-Send',      taskName:'hcom_batchSendRecv__128_3 · 发送激活值→rank2 (0.4ms)' },
+          { taskId:3,  subGraphId:0, execStart:115400, execEnd:273900, semanticLabel:'PP-Bubble',     taskName:'hcom_batchSendRecv__128_4 · Wait 158.5ms ← 等末级 lm_head + 交叉熵链路' },
+          { taskId:4,  subGraphId:0, execStart:273900, execEnd:389900, semanticLabel:'Bwd-Compute',   taskName:'反向计算 · Transformer Blocks 梯度 (116ms)' },
+          { taskId:5,  subGraphId:0, execStart:389900, execEnd:544800, semanticLabel:'PP-Bubble',     taskName:'hcom_batchSendRecv__128_5 · Wait 154.9ms ← 等末级反向 loss/dgrad（首级累计空等 ~313ms / 占单步 39%）' },
+          { taskId:6,  subGraphId:0, execStart:544800, execEnd:571100, semanticLabel:'DP-Collective', taskName:'hcom_reduceScatter (26.3ms)' },
+          { taskId:7,  subGraphId:0, execStart:574500, execEnd:593100, semanticLabel:'DP-Collective', taskName:'hcom_reduceScatter (18.6ms)' },
+          { taskId:8,  subGraphId:0, execStart:593100, execEnd:627700, semanticLabel:'DP-Collective', taskName:'hcom_allReduce__170 共享词嵌入 (34.6ms, 622MB)' },
+          { taskId:9,  subGraphId:0, execStart:666300, execEnd:678300, semanticLabel:'DP-Collective', taskName:'hcom_allGather (12.0ms)' },
+          { taskId:10, subGraphId:0, execStart:678300, execEnd:810000, semanticLabel:'Free',          taskName:'空闲 (131.7ms, 含 host/optimizer 间隙)' },
+        ]},
+        { blockIdx:1, coreType:'rank 2 (dev4) · PP 末级 · compute 400ms', tasks:[
+          { taskId:11, subGraphId:0, execStart:0,      execEnd:115000, semanticLabel:'Free',          taskName:'等 rank0 激活值 (115ms)' },
+          { taskId:12, subGraphId:0, execStart:115000, execEnd:115400, semanticLabel:'P2P-Recv',      taskName:'接收 rank0 激活值 (0.4ms)' },
+          { taskId:13, subGraphId:0, execStart:115400, execEnd:273900, semanticLabel:'Fwd-Compute',   taskName:'前向 · Blocks + lm_head fwd + Cast/Exp/Sub(vocab=151936) 末级独有 ~160ms ← 与首级气泡完全重叠' },
+          { taskId:14, subGraphId:0, execStart:273900, execEnd:274300, semanticLabel:'P2P-Send',      taskName:'发送→rank0 (0.4ms)' },
+          { taskId:15, subGraphId:0, execStart:274300, execEnd:516200, semanticLabel:'Bwd-Compute',   taskName:'反向 · lm_head dgrad MatMulV3 2×18.5ms(MIX_AIC) + 交叉熵 Sub/RealDiv dgrad (241.9ms)' },
+          { taskId:16, subGraphId:0, execStart:516200, execEnd:542500, semanticLabel:'DP-Collective', taskName:'hcom_reduceScatter (26.3ms)' },
+          { taskId:17, subGraphId:0, execStart:545900, execEnd:564500, semanticLabel:'DP-Collective', taskName:'hcom_reduceScatter (18.6ms)' },
+          { taskId:18, subGraphId:0, execStart:564500, execEnd:685500, semanticLabel:'DP-Collective', taskName:'hcom_allReduce__170 共享词嵌入 (121.0ms, 同 622MB)' },
+          { taskId:19, subGraphId:0, execStart:685500, execEnd:697500, semanticLabel:'DP-Collective', taskName:'hcom_allGather (12.0ms)' },
+          { taskId:20, subGraphId:0, execStart:697500, execEnd:809800, semanticLabel:'Free',          taskName:'空闲 (112.3ms)' },
+        ]},
+      ],
+      annotations: [
+        { type: 'range', startTime: 115400, endTime: 273900, label: '~158ms PP 级间气泡（首级空等末级 vocab loss）' },
+        { type: 'task',  tid: 0, taskId: 3 },
+      ],
+    },
+    // 3.3 Overlapped=0：DP 集合通信完全暴露在关键路径（末级反向后串行）
+    3: {
+      source: 'evidence/rank_2_ascend_pt/trace_view.json + step_trace_time.csv（Overlapped=0.0）',
+      data: [
+        { blockIdx:0, coreType:'rank 2 · 反向 → DP 集合通信（Overlapped=0，全暴露）', tasks:[
+          { taskId:1, subGraphId:0, execStart:0,      execEnd:241900, semanticLabel:'Bwd-Compute',   taskName:'反向计算 (241.9ms) — 期间无任何通信重叠' },
+          { taskId:2, subGraphId:0, execStart:241900, execEnd:268200, semanticLabel:'DP-Collective', taskName:'hcom_reduceScatter (26.3ms) ← 反向结束才串行开始' },
+          { taskId:3, subGraphId:0, execStart:271600, execEnd:290200, semanticLabel:'DP-Collective', taskName:'hcom_reduceScatter (18.6ms)' },
+          { taskId:4, subGraphId:0, execStart:290200, execEnd:302200, semanticLabel:'DP-Collective', taskName:'hcom_allGather (12.0ms)' },
+          { taskId:5, subGraphId:0, execStart:302200, execEnd:310700, semanticLabel:'DP-Collective', taskName:'hcom_allGather (8.5ms)' },
+          { taskId:6, subGraphId:0, execStart:310700, execEnd:333600, semanticLabel:'Free',          taskName:'空闲 (22.9ms)' },
+        ]},
+      ],
+      annotations: [
+        { type: 'range', startTime: 241900, endTime: 310700, label: '~72ms 纯传输完全暴露（Overlapped=0，可重叠却未重叠）' },
+        { type: 'task',  tid: 0, taskId: 2 },
+      ],
+    },
+    // 3.4 micro-batch 数偏少：warmup/cooldown 三角空泡未被摊薄（首级视角）
+    4: {
+      source: 'evidence/rank_0_ascend_pt/trace_view.json（首级 P2P 仅 __*_3/_4/_5 三段，bubble 呈大块）',
+      data: [
+        { blockIdx:0, coreType:'rank 0 (dev0) · PP 首级 · micro-batch 少 → bubble 占比偏高', tasks:[
+          { taskId:1, subGraphId:0, execStart:0,      execEnd:115000, semanticLabel:'Fwd-Compute',   taskName:'warmup · micro-batch 前向 (115ms)' },
+          { taskId:2, subGraphId:0, execStart:115000, execEnd:273500, semanticLabel:'PP-Bubble',     taskName:'warmup 三角空泡 158.5ms ← (p-1)/(p-1+m)，pp=2 且 m 小时偏大' },
+          { taskId:3, subGraphId:0, execStart:273500, execEnd:389800, semanticLabel:'Bwd-Compute',   taskName:'稳态反向 (116ms)' },
+          { taskId:4, subGraphId:0, execStart:389800, execEnd:544700, semanticLabel:'PP-Bubble',     taskName:'cooldown 三角空泡 154.9ms ← 同因 micro-batch 少' },
+          { taskId:5, subGraphId:0, execStart:544700, execEnd:600000, semanticLabel:'DP-Collective', taskName:'DP 集合通信 (55ms)' },
+          { taskId:6, subGraphId:0, execStart:600000, execEnd:810000, semanticLabel:'Free',          taskName:'空闲 (210ms)' },
+        ]},
+      ],
+      annotations: [
+        { type: 'range', startTime: 115000, endTime: 273500, label: 'warmup 空泡（增大 micro-batch 数可摊薄）' },
+        { type: 'range', startTime: 389800, endTime: 544700, label: 'cooldown 空泡' },
+        { type: 'task',  tid: 0, taskId: 2 },
+      ],
+    },
+    // 3.5 动态 shape 算子 NonZero 触发 host 强制同步（局部放大，打断异步下发）
+    5: {
+      source: 'evidence/rank_2_ascend_pt/trace_view.json（aclnnNonzeroV2 count 96 · 同步类 API ~46%，局部放大）',
+      data: [
+        { blockIdx:0, coreType:'rank 2 (dev4) · NonZero 强制 host 同步（局部放大段）', tasks:[
+          { taskId:1, subGraphId:0, execStart:0,     execEnd:15000, semanticLabel:'Fwd-Compute', taskName:'正常异步下发段 (15ms)' },
+          { taskId:2, subGraphId:0, execStart:15000, execEnd:15281, semanticLabel:'Free',        taskName:'NonZero → aclrtSynchronizeDevice 强制同步 (0.28ms · host 回读、打断下发)' },
+          { taskId:3, subGraphId:0, execStart:15281, execEnd:30000, semanticLabel:'Fwd-Compute', taskName:'下发段 (14.7ms)' },
+          { taskId:4, subGraphId:0, execStart:30000, execEnd:30359, semanticLabel:'Free',        taskName:'NonZero host 同步 (0.36ms)' },
+          { taskId:5, subGraphId:0, execStart:30359, execEnd:45000, semanticLabel:'Fwd-Compute', taskName:'下发段 (14.6ms)' },
+          { taskId:6, subGraphId:0, execStart:45000, execEnd:45281, semanticLabel:'Free',        taskName:'StreamSynchronize 阻塞 (0.28ms)' },
+          { taskId:7, subGraphId:0, execStart:45281, execEnd:60000, semanticLabel:'Fwd-Compute', taskName:'下发段 …（96 次 NonZero 累积放大 bubble）' },
+        ]},
+      ],
+      annotations: [
+        { type: 'range', startTime: 15000, endTime: 15281, label: 'NonZero 同步打断异步下发（×96，叠加在 bubble 上）' },
+        { type: 'task',  tid: 0, taskId: 2 },
+      ],
+    },
+    // 3.6 亲和 API 未用：optimizer 段 ApplyAdamWV2 非融合实现，kernel 数/下发偏多
+    6: {
+      source: 'evidence/rank_2_ascend_pt/trace_view.json（optimizer 段 ApplyAdamWV2 · AI_VECTOR_CORE ~9ms/step）',
+      data: [
+        { blockIdx:0, coreType:'rank 2 (dev4) · optimizer 段（可换 NpuFusedAdamW 融合接口）', tasks:[
+          { taskId:1, subGraphId:0, execStart:0,     execEnd:30000, semanticLabel:'Bwd-Compute', taskName:'反向尾段 (30ms)' },
+          { taskId:2, subGraphId:0, execStart:30000, execEnd:39000, semanticLabel:'Optimizer',   taskName:'ApplyAdamWV2 ×N (AI_VECTOR_CORE, 9ms) — 未用融合优化器' },
+          { taskId:3, subGraphId:0, execStart:39000, execEnd:41000, semanticLabel:'Free',        taskName:'host launch 间隙 (2ms)' },
+          { taskId:4, subGraphId:0, execStart:41000, execEnd:44000, semanticLabel:'Optimizer',   taskName:'TransData/Cast 非亲和实现 (3ms)' },
+          { taskId:5, subGraphId:0, execStart:44000, execEnd:45500, semanticLabel:'Free',        taskName:'launch 间隙 (1.5ms)' },
+        ]},
+      ],
+      annotations: [
+        { type: 'task',  tid: 0, taskId: 2 },
+      ],
+    },
+  },
+};
+
+window.OP_VIEW_DATA = {
+  r20260526: {
+    2: {
+      source: "rank_2/kernel_details.csv",
+      chartType: "table",
+      rows: [
+        {
+          name: "aclnnMatmul_MatMulV3Common_MatMulV3",
+          type: "MatMulV3",
+          acceleratorCore: "MIX_AIC",
+          duration: 18432.1,
+          waitTime: 1.25,
+          blockDim: 20,
+          inputShapes: "4096,151936;151936,1024",
+          inputDataTypes: "DT_BF16;DT_BF16",
+          inputFormats: "ND;ND",
+          highlight: true
+        },
+        {
+          name: "aclnnMatmul_MatMulV3Common_MatMulV3",
+          type: "MatMulV3",
+          acceleratorCore: "MIX_AIC",
+          duration: 18386.52,
+          waitTime: 1.52,
+          blockDim: 20,
+          inputShapes: "4096,151936;151936,1024",
+          inputDataTypes: "DT_BF16;DT_BF16",
+          inputFormats: "ND;ND",
+          highlight: true
+        },
+        {
+          name: "aclnnMatmul_MatMulV3Common_MatMulV3",
+          type: "MatMulV3",
+          acceleratorCore: "AI_CORE",
+          duration: 7415.54,
+          waitTime: 283.46,
+          blockDim: 20,
+          inputShapes: "4096,1024;151936,1024",
+          inputDataTypes: "DT_BF16;DT_BF16",
+          inputFormats: "ND;ND"
+        },
+        {
+          name: "aclnnMatmul_MatMulV3Common_MatMulV3",
+          type: "MatMulV3",
+          acceleratorCore: "AI_CORE",
+          duration: 7389.68,
+          waitTime: 294.62,
+          blockDim: 20,
+          inputShapes: "4096,1024;151936,1024",
+          inputDataTypes: "DT_BF16;DT_BF16",
+          inputFormats: "ND;ND"
+        },
+        {
+          name: "RmsNormGrad",
+          type: "RmsNormGrad",
+          acceleratorCore: "MIX_AIV",
+          duration: 148.16,
+          waitTime: 1.52,
+          blockDim: 40,
+          inputShapes: "4096,1,16,128;4096,1,16,128;4096,1,16,1;128",
+          inputDataTypes: "DT_BF16;DT_BF16;FLOAT;DT_BF16",
+          inputFormats: "ND;ND;ND;ND"
+        },
+        {
+          name: "RmsNormGrad",
+          type: "RmsNormGrad",
+          acceleratorCore: "MIX_AIV",
+          duration: 147.62,
+          waitTime: 1.4,
+          blockDim: 40,
+          inputShapes: "4096,1,16,128;4096,1,16,128;4096,1,16,1;128",
+          inputDataTypes: "DT_BF16;DT_BF16;FLOAT;DT_BF16",
+          inputFormats: "ND;ND;ND;ND"
+        }
+      ]
+    },
+    3: {
+      source: "rank_2/kernel_details.csv (step 13)",
+      byType: [
+        {
+          name: "Exp",
+          value: 16052
+        },
+        {
+          name: "RealDiv",
+          value: 15706
+        },
+        {
+          name: "ReduceSum",
+          value: 6892
+        },
+        {
+          name: "ArgMaxWithValue",
+          value: 6844
+        },
+        {
+          name: "Sub",
+          value: 234
+        },
+        {
+          name: "Mul",
+          value: 117
+        },
+        {
+          name: "Cast",
+          value: 89
+        }
+      ],
+      byCore: [
+        {
+          name: "AI_VECTOR_CORE",
+          value: 103746
+        },
+        {
+          name: "MIX_AIV",
+          value: 6892
+        }
+      ]
+    },
+    6: {
+      source: "rank_0/kernel_details.csv",
+      chartType: "table",
+      rows: [
+        {
+          name: "aclnnApplyAdamWV2_ApplyAdamWV2_ApplyAdamWV2",
+          type: "ApplyAdamWV2",
+          acceleratorCore: "AI_VECTOR_CORE",
+          duration: 3680.76,
+          waitTime: 0.27,
+          blockDim: 40,
+          inputShapes: "77791232;77791232;77791232;77791232;1",
+          inputDataTypes: "FLOAT;FLOAT;FLOAT;FLOAT;INT64",
+          inputFormats: "ND;ND;ND;ND;ND",
+          highlight: true
+        },
+        {
+          name: "aclnnApplyAdamWV2_ApplyAdamWV2_ApplyAdamWV2",
+          type: "ApplyAdamWV2",
+          acceleratorCore: "AI_VECTOR_CORE",
+          duration: 303.2,
+          waitTime: 0.13,
+          blockDim: 40,
+          inputShapes: "6291456;6291456;6291456;6291456;1",
+          inputDataTypes: "FLOAT;FLOAT;FLOAT;FLOAT;INT64",
+          inputFormats: "ND;ND;ND;ND;ND"
+        },
+        {
+          name: "aclnnApplyAdamWV2_ApplyAdamWV2_ApplyAdamWV2",
+          type: "ApplyAdamWV2",
+          acceleratorCore: "AI_VECTOR_CORE",
+          duration: 301.92,
+          waitTime: 0.14,
+          blockDim: 40,
+          inputShapes: "6291456;6291456;6291456;6291456;1",
+          inputDataTypes: "FLOAT;FLOAT;FLOAT;FLOAT;INT64",
+          inputFormats: "ND;ND;ND;ND;ND"
+        },
+        {
+          name: "aclnnApplyAdamWV2_ApplyAdamWV2_ApplyAdamWV2",
+          type: "ApplyAdamWV2",
+          acceleratorCore: "AI_VECTOR_CORE",
+          duration: 300.4,
+          waitTime: 0.12,
+          blockDim: 40,
+          inputShapes: "6291456;6291456;6291456;6291456;1",
+          inputDataTypes: "FLOAT;FLOAT;FLOAT;FLOAT;INT64",
+          inputFormats: "ND;ND;ND;ND;ND"
+        },
+        {
+          name: "aclnnApplyAdamWV2_ApplyAdamWV2_ApplyAdamWV2",
+          type: "ApplyAdamWV2",
+          acceleratorCore: "AI_VECTOR_CORE",
+          duration: 299.04,
+          waitTime: 0.3,
+          blockDim: 40,
+          inputShapes: "6291456;6291456;6291456;6291456;1",
+          inputDataTypes: "FLOAT;FLOAT;FLOAT;FLOAT;INT64",
+          inputFormats: "ND;ND;ND;ND;ND"
+        }
+      ]
+    }
+  },
+  r20260528: {
+    2: {
+      source: "kernel_details.csv",
+      chartType: "table",
+      rows: [
+        {
+          name: "aclnnIndexPutImpl_IndexPut_IndexPut",
+          type: "IndexPut",
+          acceleratorCore: "AI_CPU",
+          duration: 234.624,
+          waitTime: 224.749,
+          blockDim: 0,
+          inputShapes: "128,31;;2;3172;3172",
+          inputDataTypes: "INT64;INT64;INT64;INT64;INT64",
+          inputFormats: "ND;ND;ND;ND;ND",
+          highlight: true
+        },
+        {
+          name: "aclnnIndexPutImpl_IndexPut_IndexPut",
+          type: "IndexPut",
+          acceleratorCore: "AI_CPU",
+          duration: 209.044,
+          waitTime: 225.209,
+          blockDim: 0,
+          inputShapes: "128,22;;2;2564;2564",
+          inputDataTypes: "INT64;INT64;INT64;INT64;INT64",
+          inputFormats: "ND;ND;ND;ND;ND",
+          highlight: true
+        },
+        {
+          name: "aclnnIndexPutImpl_IndexPut_IndexPut",
+          type: "IndexPut",
+          acceleratorCore: "AI_CPU",
+          duration: 208.104,
+          waitTime: 221.379,
+          blockDim: 0,
+          inputShapes: "128,31;;2;3172;3172",
+          inputDataTypes: "INT64;INT64;INT64;INT64;INT64",
+          inputFormats: "ND;ND;ND;ND;ND",
+          highlight: true
+        },
+        {
+          name: "aclnnIndexPutImpl_IndexPut_IndexPut",
+          type: "IndexPut",
+          acceleratorCore: "AI_CPU",
+          duration: 207.344,
+          waitTime: 194.879,
+          blockDim: 0,
+          inputShapes: "128,31;;2;3172;3172",
+          inputDataTypes: "INT64;INT64;INT64;INT64;INT64",
+          inputFormats: "ND;ND;ND;ND;ND",
+          highlight: true
+        },
+        {
+          name: "aclnnIndexPutImpl_IndexPutV2_IndexPutV2",
+          type: "IndexPutV2",
+          acceleratorCore: "AI_VECTOR_CORE",
+          duration: 160.103,
+          waitTime: 44.03,
+          blockDim: 48,
+          inputShapes: "128,50;94;2;2;94;94",
+          inputDataTypes: "INT64;INT64;INT64;INT64;INT64;INT64",
+          inputFormats: "ND;ND;ND;ND;ND;ND"
+        },
+        {
+          name: "aclnnIndexPutImpl_IndexPutV2_IndexPutV2",
+          type: "IndexPutV2",
+          acceleratorCore: "AI_VECTOR_CORE",
+          duration: 159.923,
+          waitTime: 28.51,
+          blockDim: 48,
+          inputShapes: "128,50;94;2;2;94;94",
+          inputDataTypes: "INT64;INT64;INT64;INT64;INT64;INT64",
+          inputFormats: "ND;ND;ND;ND;ND;ND"
+        },
+        {
+          name: "aclnnIndexPutImpl_IndexPutV2_IndexPutV2",
+          type: "IndexPutV2",
+          acceleratorCore: "AI_VECTOR_CORE",
+          duration: 159.523,
+          waitTime: 38.55,
+          blockDim: 48,
+          inputShapes: "128,50;94;2;2;94;94",
+          inputDataTypes: "INT64;INT64;INT64;INT64;INT64;INT64",
+          inputFormats: "ND;ND;ND;ND;ND;ND"
+        },
+        {
+          name: "aclnnIndexPutImpl_IndexPutV2_IndexPutV2",
+          type: "IndexPutV2",
+          acceleratorCore: "AI_VECTOR_CORE",
+          duration: 153.323,
+          waitTime: 33.72,
+          blockDim: 48,
+          inputShapes: "128,50;94;2;2;94;94",
+          inputDataTypes: "INT64;INT64;INT64;INT64;INT64;INT64",
+          inputFormats: "ND;ND;ND;ND;ND;ND"
+        }
+      ]
+    },
+    4: {
+      source: "kernel_details.csv",
+      chartType: "table",
+      rows: [
+        {
+          name: "aclnnGather_GatherElements_GatherElements",
+          type: "GatherElements",
+          acceleratorCore: "AI_CPU",
+          duration: 99.962,
+          waitTime: 4.12,
+          blockDim: 0,
+          inputShapes: "128,1,50;128,1,16",
+          inputDataTypes: "BOOL;INT64",
+          inputFormats: "NCL;NCL",
+          highlight: true
+        },
+        {
+          name: "aclnnGather_GatherElements_GatherElements",
+          type: "GatherElements",
+          acceleratorCore: "AI_CPU",
+          duration: 90.402,
+          waitTime: 4.659,
+          blockDim: 0,
+          inputShapes: "128,1,50;128,1,16",
+          inputDataTypes: "BOOL;INT64",
+          inputFormats: "NCL;NCL",
+          highlight: true
+        },
+        {
+          name: "aclnnGather_GatherElements_GatherElements",
+          type: "GatherElements",
+          acceleratorCore: "AI_CPU",
+          duration: 86.342,
+          waitTime: 0.04,
+          blockDim: 0,
+          inputShapes: "128,1,50;128,1,16",
+          inputDataTypes: "BOOL;INT64",
+          inputFormats: "NCL;NCL",
+          highlight: true
+        },
+        {
+          name: "aclnnEmbedding_GatherV2AiCore_GatherV2",
+          type: "GatherV2",
+          acceleratorCore: "AI_VECTOR_CORE",
+          duration: 105.502,
+          waitTime: 0.096,
+          blockDim: 48,
+          inputShapes: "98166,16;128,31;1",
+          inputDataTypes: "FLOAT;INT64;INT64",
+          inputFormats: "ND;ND;ND"
+        },
+        {
+          name: "aclnnEmbedding_GatherV2AiCore_GatherV2",
+          type: "GatherV2",
+          acceleratorCore: "AI_VECTOR_CORE",
+          duration: 105.143,
+          waitTime: 0,
+          blockDim: 48,
+          inputShapes: "98166,16;128,31;1",
+          inputDataTypes: "FLOAT;INT64;INT64",
+          inputFormats: "ND;ND;ND"
+        },
+        {
+          name: "aclnnEmbedding_GatherV2AiCore_GatherV2",
+          type: "GatherV2",
+          acceleratorCore: "AI_VECTOR_CORE",
+          duration: 104.962,
+          waitTime: 0.126,
+          blockDim: 48,
+          inputShapes: "98166,16;128,31;1",
+          inputDataTypes: "FLOAT;INT64;INT64",
+          inputFormats: "ND;ND;ND"
+        }
+      ]
+    }
+  },
+  r20260602verl: {
+    4: {
+      source: "ascend_pytorch_profiler_0.db (COMPUTE_TASK_INFO+TASK)",
+      byType: [
+        {
+          name: "MatMulV2",
+          value: 1636268
+        },
+        {
+          name: "DSARandomUniform",
+          value: 688346
+        },
+        {
+          name: "MatMulV3",
+          value: 505976
+        },
+        {
+          name: "PagedAttentionMaskNdKernel",
+          value: 491026
+        },
+        {
+          name: "SwiGlu",
+          value: 308106
+        },
+        {
+          name: "AddRmsNorm",
+          value: 274318
+        },
+        {
+          name: "Slice",
+          value: 243969
+        },
+        {
+          name: "Other",
+          value: 2324415
+        }
+      ],
+      byCore: [
+        {
+          name: "AI_CORE",
+          value: 3438280
+        },
+        {
+          name: "AI_CPU",
+          value: 690058
+        },
+        {
+          name: "MIX_AIC",
+          value: 2344089
+        }
+      ]
+    },
+    5: {
+      source: "ascend_pytorch_profiler_0.db (TASK_PMU_INFO · ACL_AICORE_PIPE_UTILIZATION)",
+      byType: [
+        {
+          name: "aic_mte2 (搬运)",
+          value: 147000
+        },
+        {
+          name: "aic_scalar",
+          value: 133000
+        },
+        {
+          name: "aiv_scalar",
+          value: 237000
+        },
+        {
+          name: "aic_mac (计算)",
+          value: 38000
+        },
+        {
+          name: "aiv_vec (计算)",
+          value: 49000
+        },
+        {
+          name: "aic_mte3 (写回)",
+          value: 90000
+        },
+        {
+          name: "Other",
+          value: 306000
+        }
+      ],
+      byCore: [
+        {
+          name: "AI_CORE",
+          value: 408000,
+          color: "#3A7BFF"
+        },
+        {
+          name: "AI_VECTOR_CORE",
+          value: 592000,
+          color: "#FF8C42"
+        }
+      ]
+    }
+  },
+  r20260527: {},
+  // 注：r20260610 的算子视图不再手写——由 app.js initAcOpView 运行时读取
+  // evidence/rank_2_ascend_pt/kernel_details.csv 自动聚合（见 §3.1 举证视图路径）
+  // 注：r20260618ub 及之后的报告改用「侧车」——见各报告目录 chart-data.json（app.js loadReportChartData 自动并入）
+};
+
+// ─── 通信视图数据（来自各报告 communication.json / cluster_analysis.db） ─────────
+// 数据来源:
+//   r20260526: communication.json rank_0 hcom_batchSendRecv / op_statistic.csv DP集合通信
+//   r20260602verl: ASCEND_PROFILER_OUTPUT/analysis.db CommAnalyzerMatrix/CommAnalyzerBandwidth
+window.COMM_VIEW_DATA = {
+  // ── r20260526: PP=2/DP=2 Level2 训练 ────────────────────────────────────────
+  r20260526: {
+    // 3.1 PP末级 P2P通信时序极端不对称：rank_0 Wait=158ms(99.7%)，rank_2 Wait≈0
+    1: {
+      source: 'communication.json rank_0 hcom_batchSendRecv wait/transit（Level2 step 13）',
+      chartType: 'p2p-timing',
+      stages: [
+        {
+          stageLabel: 'PP Stage 0',
+          ranks: '0, 1',
+          ops: [
+            { direction: 'FWD Send → Stage 1', opName: 'hcom_batchSendRecv__128_3', transit_ms: 0.40, wait_ms: 0,      waitPct: 0.0,  note: '激活值下传，即时完成' },
+            { direction: 'FWD Recv ← Stage 1', opName: 'hcom_batchSendRecv__128_4', transit_ms: 0.40, wait_ms: 158.10, waitPct: 99.7, note: 'Stage 1 LM Head(36.8ms)+CE(80ms)链路未结束' },
+            { direction: 'BWD Recv ← Stage 1', opName: 'hcom_batchSendRecv__128_5', transit_ms: 0.40, wait_ms: 154.90, waitPct: 99.7, note: '等反向梯度从 Stage 1 回传' },
+          ],
+        },
+        {
+          stageLabel: 'PP Stage 1',
+          ranks: '2, 3',
+          ops: [
+            { direction: 'FWD Recv ← Stage 0', opName: 'hcom_batchSendRecv__128_3', transit_ms: 0.40, wait_ms: 0, waitPct: 0.0, note: '收激活值后即刻开始 LM Head 前向' },
+            { direction: 'FWD Send → Stage 0', opName: 'hcom_batchSendRecv__128_4', transit_ms: 0.40, wait_ms: 0, waitPct: 0.0, note: '此时 rank_0 的 158ms 气泡消除' },
+            { direction: 'BWD Send → Stage 0', opName: 'hcom_batchSendRecv__128_5', transit_ms: 0.40, wait_ms: 0, waitPct: 0.0, note: 'CE 串行链路结束后回传梯度' },
+          ],
+        },
+      ],
+    },
+    // 3.4 DP 集合通信 HCCS 带宽仅18.5 GB/s，利用率62%（4卡单节点）
+    4: {
+      source: 'communication.json rank_0–3 DP集合通信 HCCS（step 13，推断自 op_statistic.csv hcom_ 系列）',
+      chartType: 'bw-table',
+      theoryBw: 30,
+      problemCols: ['rs', 'ar'],
+      probRowThreshold: 15.0,
+      summaryLabel: '4 卡平均',
+      nodeRanges: {},
+      rows: [
+        { rank: 0, node: 'DP Group 0 (PP Stage 0)', ag_avg: 18.52, ag_min: 18.31, rs_avg: 18.47, rs_min: 18.21, ar_avg: 18.50, ar_min: 18.29, bc_avg: 18.48 },
+        { rank: 1, node: 'DP Group 0 (PP Stage 0)', ag_avg: 18.54, ag_min: 18.33, rs_avg: 18.49, rs_min: 18.23, ar_avg: 18.52, ar_min: 18.30, bc_avg: 18.50 },
+        { rank: 2, node: 'DP Group 1 (PP Stage 1)', ag_avg: 18.51, ag_min: 18.30, rs_avg: 18.45, rs_min: 18.20, ar_avg: 18.49, ar_min: 18.28, bc_avg: 18.47 },
+        { rank: 3, node: 'DP Group 1 (PP Stage 1)', ag_avg: 18.53, ag_min: 18.32, rs_avg: 18.47, rs_min: 18.22, ar_avg: 18.51, ar_min: 18.29, bc_avg: 18.49 },
+      ],
+    },
+  },
+
+  // ── r20260602verl: verl RL训练 单卡（rank 0 视角，HCCS 8卡单节点）──────────
+  r20260602verl: {
+    // 3.2 TP All-Reduce 全暴露，9.4s 花在 wait：CommAnalyzerMatrix 带宽矩阵
+    2: {
+      source: 'analysis.db · CommAnalyzerMatrix / CommAnalyzerBandwidth（rank 0 → peer 1–7，HCCS，rollout 48s 窗口）',
+      chartType: 'comm-matrix',
+      srcRank: 0,
+      commGroup: '单节点 8 卡全 HCCS 互联',
+      theoryBw: 30,
+      commSummary: 'hcom_allReduce 27,687 次 · 累计 12,954 ms · Wait 9,355 ms (72%) · 按字节加权带宽 ~10 GB/s · 逐 op 均值 5.9 GB/s（小包 / 延迟受限，通信-计算未重叠）',
+      links: [
+        { peer: 1, group: 'TP', bandwidth_GBps: 14.59, bytes_GB: 15.3,  note: 'TP 组，承载约 5× 字节量；AllReduce wait 72% = 9,355ms' },
+        { peer: 2, group: 'DP', bandwidth_GBps: 7.63,  bytes_GB: 3.12,  note: '小包，延迟受限' },
+        { peer: 3, group: 'DP', bandwidth_GBps: 7.65,  bytes_GB: 3.12,  note: '小包，延迟受限' },
+        { peer: 4, group: 'DP', bandwidth_GBps: 7.64,  bytes_GB: 3.12,  note: '小包，延迟受限' },
+        { peer: 5, group: 'DP', bandwidth_GBps: 7.67,  bytes_GB: 3.12,  note: '小包，延迟受限' },
+        { peer: 6, group: 'DP', bandwidth_GBps: 7.63,  bytes_GB: 3.12,  note: '小包，延迟受限' },
+        { peer: 7, group: 'DP', bandwidth_GBps: 7.66,  bytes_GB: 3.12,  note: '小包，延迟受限' },
+      ],
+    },
+    // 3.6 HCCS 小包通信：链路均衡但带宽利用仅 33%（CommAnalyzerMatrix 链路均衡分析）
+    6: {
+      source: 'analysis.db · CommAnalyzerMatrix / CommAnalyzerBandwidth（rank 0 视角，HCCS 链路均衡分析）',
+      chartType: 'comm-matrix',
+      srcRank: 0,
+      commGroup: '单节点 8 卡全 HCCS 互联',
+      theoryBw: 30,
+      commSummary: 'HCCS 链路均衡（DP 极差 < 1%）但带宽利用仅 33%（~10 GB/s ÷ 30 GB/s）· 逐 op 均值 5.9 GB/s · 典型小包 / 延迟受限 · 需补采其余 7 卡以点名 straggler',
+      links: [
+        { peer: 1, group: 'TP', bandwidth_GBps: 14.59, bytes_GB: 15.3,  note: 'TP 组，承载约 5× 字节量；逐 token AllReduce 串行' },
+        { peer: 2, group: 'DP', bandwidth_GBps: 7.63,  bytes_GB: 3.12,  note: '均衡，极差 < 1%；小包低利用' },
+        { peer: 3, group: 'DP', bandwidth_GBps: 7.65,  bytes_GB: 3.12,  note: '均衡' },
+        { peer: 4, group: 'DP', bandwidth_GBps: 7.64,  bytes_GB: 3.12,  note: '均衡' },
+        { peer: 5, group: 'DP', bandwidth_GBps: 7.67,  bytes_GB: 3.12,  note: '均衡' },
+        { peer: 6, group: 'DP', bandwidth_GBps: 7.63,  bytes_GB: 3.12,  note: '均衡' },
+        { peer: 7, group: 'DP', bandwidth_GBps: 7.66,  bytes_GB: 3.12,  note: '均衡' },
+      ],
+    },
+  },
+
+  // 注：r20260618ub 及之后的报告改用「侧车」——见各报告目录 chart-data.json（app.js loadReportChartData 自动并入）
+};
+
+// ─── FreeAnalysis 空闲段明细（直接来自 .db 文件 FreeAnalysis 表，按 duration 降序） ─────────
+// 数据来源: Analysis Report/ascend_analysis_multi_20260602/free_analysis/cluster_analysis_output/cluster_analysis.db
+window.FREE_ANALYSIS_DATA = {
+
+  // 注：r20260618ub 及之后的报告改用「侧车」——见各报告目录 chart-data.json（app.js loadReportChartData 自动并入）
+};
+
+</script>
+<script>
+/* ===== app.js ===== */
 // ============================================================
 // MindStudioNext — 4 Tab Report Viewer
 // ============================================================
@@ -5037,10 +7293,10 @@ function parseReport(md, filename = '') {
   const summary = { conclusion: getField(md, '结论'), topBottleneck: getField(md, '头号瓶颈'), maxGain: getField(md, '收益上限') };
 
   // 指标看板数据（可选）：优先解析可见的「时序结构指标看板」表格（timeline-swimlane-analyzer
-  // 写入，只列已测得的指标）；旧报告若仍用 <!-- METRICS {json} --> 注释块则回退解析。
+  // 写入，只列已测得的指标）；旧报告若仍用 <\u0021-- METRICS {json} --> 注释块则回退解析。
   let metrics = parseMetricsTable(md);
   if (!metrics) {
-    const metricsM = md.match(/<!--\s*METRICS\s*([\s\S]*?)-->/i);
+    const metricsM = md.match(/<\u0021--\s*METRICS\s*([\s\S]*?)-->/i);
     if (metricsM) {
       try { metrics = JSON.parse(metricsM[1].trim()); }
       catch (e) { console.warn('METRICS 块解析失败，已忽略：', e.message); metrics = null; }
@@ -7016,3 +9272,688 @@ function setupGraphTabPanZoom() {
 // 报告形态（report.html）只复用本文件的 REPORTS 数据与 parseReport()，页面里没有工具形态的
 // DOM，故用该开关跳过 init()。与 PTO_DISABLE_NAV_AUTOLOAD 同类：宿主页面在加载本脚本前置位。
 if (!window.PTO_DISABLE_APP_INIT) init();
+
+</script>
+<script>
+/* ===== report-render.js ===== */
+/* ============================================================
+   report-render.js —— 报告形态渲染器
+   ------------------------------------------------------------
+   报告形态是 app.js 里那个 `r` 对象的第二个 renderer：
+   同源数据、不同读者。工具形态给"正在排查的人"，报告形态给"没跑过这次
+   profiling 的人"——所以这里没有筛选、排序、hover、页签，一切作者先决。
+
+   设计约束（见 REPORT-FORM-PLAN.md）：
+   1. 弱交互：验收标准是"打印出来不丢任何信息"。工具态藏在 tooltip 里的阈值、
+      口径、芯片型号假设，在这里必须印在版面上或进附录。
+   2. 竖版 A4：显式分页容器，不赌 CSS 自动流式分页。
+   3. 图多于字：每页至少一个图形元素；长文本裁剪后全文进附录 C。
+   4. 总分总：执行摘要（结论是什么）→ 分章 → 行动计划（接下来做什么）。
+
+   图表一律自绘 SVG / CSS，不引 echarts：canvas 打印会糊，CDN 依赖在离线
+   归档场景不可靠。
+   ============================================================ */
+(function () {
+  'use strict';
+
+  /* ── 语义色板 ───────────────────────────────────────────────
+     源自 swimlane-skill-pack/js/swimlane.js 的 SEMANTIC_COLORS（该常量是
+     模块内 const，未挂 window）。报告只用到 Timeline/PP 这一组，在此镜像；
+     swimlane.js 若调色，此处需同步。 */
+  const SEM_COLOR = {
+    'Fwd-Compute': '#2f6fce', 'Bwd-Compute': '#8b3fb5', 'PP-Bubble': '#cf4d86',
+    'P2P-Send': '#c15a1c', 'P2P-Recv': '#c15a1c', 'DP-Collective': '#0f9b8e',
+    'Optimizer': '#5d6b99', 'Free': '#566173',
+    'Computing': '#1a8f52', 'Communication': '#c15a1c', 'Comm-Transmit': '#2f6fce',
+    'Comm-Wait': '#d23b3b', 'Comm-Idle': '#6b7280',
+  };
+  const SEM_ZH = {
+    'Fwd-Compute': '前向计算', 'Bwd-Compute': '反向计算', 'PP-Bubble': '流水气泡',
+    'P2P-Send': 'P2P 发送', 'P2P-Recv': 'P2P 接收', 'DP-Collective': 'DP 集合通信',
+    'Optimizer': '优化器', 'Free': '空闲', 'Computing': '计算',
+    'Communication': '通信', 'Comm-Transmit': '通信·传输',
+    'Comm-Wait': '通信·等待', 'Comm-Idle': '通信·空转',
+  };
+
+  /* ── 指标定义表 ────────────────────────────────────────────
+     name/unit/dir/warn 与 index_v3.html 指标卡的 data-* 一致；desc 是工具态
+     tooltip 的压缩版。报告态把它们印成"参考区间"和附录 A —— 读者 hover 不到。 */
+  const METRIC_DEF = {
+    step_cv:               { name: 'step 抖动 (CV)',      unit: '%', dir: 'low',  warn: 10, desc: 'step 耗时离散度（std/mean）。> 10% 说明训练不稳定，应先取典型 step 再分析。' },
+    rank_spread:           { name: 'Rank 间 step 离散度', unit: '%', dir: 'low',  warn: 5,  desc: '(最慢 rank − 最快 rank) ÷ 中位数。集合通信是同步点，慢卡会把所有卡拖到同一时长。> 5% 通常意味着慢卡或负载不均。' },
+    critical_path_ratio:   { name: '关键路径占比',        unit: '%', dir: 'high', warn: 80, desc: '关键路径（最长链路）÷ step 总耗时。< 80% 说明存在可被掩盖的空泡，应优先做重叠/下发优化，而非压单算子。' },
+    op_utilization:        { name: '算子利用率',          unit: '%', dir: 'high', warn: 60, desc: 'AI Core（Cube + Vector）忙时占 step 时长的比例（time-based）。< 60% 通常是调度空泡或访存瓶颈把算力饿死。' },
+    overlap_ratio:         { name: '计算-通信重叠率',     unit: '%', dir: 'high', warn: 70, desc: '通信被计算掩盖的比例。< 70% 表示掩盖不足，暴露通信进入关键路径。' },
+    pp_bubble_ratio:       { name: 'PP 流水线 bubble 率', unit: '%', dir: 'low',  warn: null, desc: '流水线并行 bubble 占 step 比例，需对比理论值 (p−1)/(p−1+m)。实测远大于理论 → micro-batch 少 / stage 不均。' },
+    host_launch_gap_ratio: { name: 'Host 下发间隙占比',   unit: '%', dir: 'low',  warn: 5,  desc: 'device 周期性小间隙中对齐到 host launch/同步 API 的占比。> 5% 判为 Host-bound。' },
+    max_lane_idle:         { name: '最空闲泳道空挡',      unit: '%', dir: 'low',  warn: 10, desc: '最空闲泳道的空挡比例。device 计算泳道空挡 > 10% 通常指向 host 下发跟不上。' },
+    comm_jitter:           { name: '通信抖动 (CV)',       unit: '%', dir: 'low',  warn: 15, desc: '逐 step 通信耗时的变异系数。> 15% 表示时延不稳定，可能有慢链路、拥塞或 HCCL 重传。' },
+    /* mfu / mem_util 的分母是手选的芯片型号假设，不是实测值。工具形态刻意不给这两张卡
+       做 ok/warn 着色以免误导为"健康/越界"，报告形态沿用该判断：neutral 表示不判定，
+       只印数值与折算依据。 */
+    mfu:                   { name: 'MFU（端到端）',       unit: '%', dir: 'high', warn: null, neutral: true, desc: '模型浮点算力利用率。分母为手选芯片峰值算力，本报告按 910B1 BF16 378.88 TF/s 折算，故不做达标判定。' },
+    mem_util:              { name: '显存利用率',          unit: '%', dir: 'low',  warn: null, neutral: true, desc: '显存占用峰值 ÷ 单卡 HBM 容量。本报告按 910B1 单卡 64 GB 折算，故不做达标判定。' },
+    alloc_api_ratio:       { name: '分配 API 占比',       unit: '%', dir: 'low',  warn: 3,  desc: '显存分配/释放 API 耗时占 step 总耗时；> 3% 通常说明碎片整理或频繁换页。' },
+    frag_ratio:            { name: '显存碎片率',          unit: '%', dir: 'low',  warn: 30, desc: '不可用空闲空间 ÷ 总空闲空间；> 30% 需检查分配生命周期与连续空闲块。' },
+  };
+  const METRIC_ORDER = Object.keys(METRIC_DEF);
+
+  /* 报告固化的芯片假设：工具态是标题旁的下拉，报告态必须定死并印在图注里 */
+  const CHIP = { name: '910B1', peakTF: 378.88, hbmGB: 64 };
+
+  /* PHS「当前 / 优化后预估」双色，取自 app.js 的顶层 const（同为经典脚本可读其全局
+     词法绑定，与读 REPORTS 同理），工具态调色报告自动跟随；用 typeof 兜底。 */
+  const C_CUR = (typeof COLOR_CURRENT !== 'undefined' && COLOR_CURRENT) || '#d66f03';
+  const C_EST = (typeof COLOR_ESTIMATED !== 'undefined' && COLOR_ESTIMATED) || '#039c59';
+
+  const RESULT_DEF = {
+    step_time_median: { name: '单步耗时中位数' },
+    step_time_p90:    { name: '单步耗时 P90' },
+    throughput:       { name: '吞吐' },
+    e2e_duration:     { name: '采集窗口时长' },
+  };
+
+  // ── 通用工具 ────────────────────────────────────────────────
+  const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+
+  /** 在句读处截断，避免半个数字被切掉；报告态所有正文块都过这一关 */
+  function clamp(s, n) {
+    const t = String(s ?? '').replace(/\s+/g, ' ').trim();
+    if (t.length <= n) return t;
+    const cut = t.slice(0, n);
+    const at = Math.max(cut.lastIndexOf('。'), cut.lastIndexOf('；'), cut.lastIndexOf('）'), cut.lastIndexOf('，'));
+    return (at > n * 0.55 ? cut.slice(0, at + 1) : cut) + '…';
+  }
+
+  function fmtUs(us) {
+    const a = Math.abs(us);
+    if (a >= 1e6) return (us / 1e6).toFixed(a >= 1e7 ? 1 : 2) + ' s';
+    if (a >= 1e3) return Math.round(us / 1e3) + ' ms';
+    return Math.round(us) + ' µs';
+  }
+  function fmtMs(ms) {
+    return Math.abs(ms) >= 1000 ? (ms / 1000).toFixed(2) + ' s' : Math.round(ms) + ' ms';
+  }
+  const PRIO_RANK = { P0: 0, P1: 1, P2: 2 };
+  const badge = (p) => `<span class="rp-badge rp-badge--${String(p || '').toLowerCase()}">${esc(p || '—')}</span>`;
+
+  /** 指标判定：报告优先用数据里写死的 status，否则按 dir/warn 阈值判 */
+  function metricStatus(key, m) {
+    if (m.status) return m.status;
+    const d = METRIC_DEF[key];
+    if (!d || d.warn == null) return 'na';
+    const v = metricBarValue(key, m);
+    if (v == null) return 'na';
+    return d.dir === 'high' ? (v >= d.warn ? 'ok' : 'bad') : (v <= d.warn ? 'ok' : 'bad');
+  }
+  /** 条形/判定用的百分数。注意 step_cv 存的是分数(0.0002)但 display 是 '0.02%'，以 display 为准 */
+  function metricBarValue(key, m) {
+    if (key === 'mfu') return m.e2e_pct != null ? m.e2e_pct : (m.achieved_tflops != null ? +(m.achieved_tflops / CHIP.peakTF * 100).toFixed(1) : null);
+    if (key === 'mem_util') return m.reserved_gb != null ? +(m.reserved_gb / CHIP.hbmGB * 100).toFixed(1) : null;
+    if (m.display) { const p = parseFloat(m.display); return isNaN(p) ? null : p; }
+    return typeof m.value === 'number' ? m.value : null;
+  }
+  function metricShown(key, m) {
+    const v = metricBarValue(key, m);
+    return v == null ? '—' : (m.display && !['mfu', 'mem_util'].includes(key) ? m.display : v + '%');
+  }
+
+  // ══════════════════════════════════════════════════════════
+  //  图表（全部 SVG / CSS，无外部依赖）
+  // ══════════════════════════════════════════════════════════
+
+  /* ── 健康度仪表 ────────────────────────────────────────────
+     不自绘：直接调用工具形态 app.js 的 `renderPhsGauge()`——分段刻度、等级色渐变、
+     指针、增益弧全部同源，工具态改几何或调色时报告自动跟随，不会再出现两边一张图
+     两个样子。它写的是 DOM 而不是字符串，所以这里只吐容器，由 mountGauges() 在
+     innerHTML 落地之后回填。
+     它内部引用 styles.css 的 `--fg` 系列变量与 `.phs-gauge-*` 类，而报告刻意不引
+     styles.css，故 report.css 里补了一组同名规则并就地映射这几个变量。 */
+  const gaugeBox = () => '<div class="rp-gauge phs-gauge-box" data-rp-gauge></div>';
+
+  function mountGauges(phs) {
+    if (typeof renderPhsGauge !== 'function') return;
+    document.querySelectorAll('[data-rp-gauge]').forEach((el) => renderPhsGauge(el, phs || {}));
+  }
+
+  /* ── 分项雷达 ──────────────────────────────────────────────
+     维度顺序、"预估缺失即回落到当前值"、N/A 记法与工具形态的 subChart 一致，双色也
+     取自同两个常量；但不复用那边的 echarts 实例——echarts 走 CDN（离线归档取不到）
+     且默认 canvas 渲染，按 CSS 像素栅格化，A4 打印必糊。故按同一份配置自绘 SVG。
+     图例挪到 SVG 外的 HTML 行：原先压在 viewBox 底部，与下方两个维度的标签打架。 */
+  function svgRadar(phs) {
+    const items = (phs.subItems || []).filter((s) => s && s.name);
+    const n = items.length;
+    if (n < 3) return '';
+    const estMap = Object.fromEntries((phs.estSubItems || []).map((s) => [s.name, s.value ?? null]));
+    const cur = items.map((s) => (s.value == null ? null : s.value));
+    // 工具态同款：某维度没给预估就沿用当前值，让虚线在该轴上与实线重合而不是塌到 0
+    const est = items.map((s, i) => (estMap[s.name] == null ? cur[i] : estMap[s.name]));
+
+    const W = 300, H = 214, CX = 150, CY = 106, R = 68, LR = R + 25;
+    const ang = (i) => -Math.PI / 2 + (i * 2 * Math.PI) / n;
+    const P = (i, pct, rad) => [CX + (rad || R) * (pct / 100) * Math.cos(ang(i)), CY + (rad || R) * (pct / 100) * Math.sin(ang(i))];
+    const poly = (vals) => vals.map((v, i) => P(i, v == null ? 0 : v).map((k) => k.toFixed(1)).join(',')).join(' ');
+    const ringPts = (p) => poly(items.map(() => p));
+
+    // 隔环底色（工具态 splitArea 的等价物）：由外向内 白 / 淡 / 白 / 淡
+    const bands = `<polygon points="${ringPts(75)}" fill="#f2f4f8"/><polygon points="${ringPts(50)}" fill="#fff"/><polygon points="${ringPts(25)}" fill="#f2f4f8"/>`;
+    const rings = [25, 50, 75, 100].map((p) => `<polygon points="${ringPts(p)}" fill="none" stroke="rgba(33,33,33,.10)" stroke-width="1"/>`).join('');
+    const axes = items.map((_, i) => { const [x, y] = P(i, 100); return `<line x1="${CX}" y1="${CY}" x2="${x.toFixed(1)}" y2="${y.toFixed(1)}" stroke="rgba(33,33,33,.10)"/>`; }).join('');
+    const dots = (vals, c) => vals.map((v, i) => { const [x, y] = P(i, v == null ? 0 : v); return `<circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="2" fill="${c}"/>`; }).join('');
+
+    // 维度名 + 实测值分两行排（工具态 axisName 的 rich 双行）；锚点按象限贴边，
+    // 避免最左/最右的标签被 viewBox 切掉
+    const labels = items.map((s, i) => {
+      const [x, y] = P(i, 100, LR);
+      const dx = Math.cos(ang(i));
+      const anchor = Math.abs(dx) < 0.25 ? 'middle' : dx > 0 ? 'start' : 'end';
+      const val = s.value == null ? 'N/A' : s.value + '%';
+      return `<text x="${x.toFixed(1)}" y="${y.toFixed(1)}" text-anchor="${anchor}" font-size="10" fill="#8a8a96">
+        <tspan x="${x.toFixed(1)}">${esc(s.name)}</tspan>
+        <tspan x="${x.toFixed(1)}" dy="12" font-size="11" font-weight="700" fill="${C_CUR}">${val}</tspan></text>`;
+    }).join('');
+
+    return `<svg viewBox="0 0 ${W} ${H}" width="100%" role="img" aria-label="健康度分项雷达">
+      ${bands}${rings}${axes}
+      <polygon points="${poly(est)}" fill="${C_EST}22" stroke="${C_EST}" stroke-width="1.4" stroke-dasharray="4 3"/>
+      <polygon points="${poly(cur)}" fill="${C_CUR}24" stroke="${C_CUR}" stroke-width="1.4"/>
+      ${dots(est, C_EST)}${dots(cur, C_CUR)}
+      ${labels}
+    </svg>
+    <div class="rp-stack-legend" style="justify-content:center">
+      <span><i class="rp-swatch" style="background:${C_CUR}"></i>当前</span>
+      <span><i class="rp-swatch" style="background:${C_EST}"></i>优化后预估</span>
+      ${items.some((s) => s.value == null) ? '<span>无数据维度记 N/A，在图上按 0 收口</span>' : ''}
+    </div>`;
+  }
+
+  /** step 时间构成堆叠条：一张图回答"时间去哪了" */
+  function stackHtml(bd) {
+    const KEY_COLOR = { compute: 'var(--rp-compute)', comm_exposed: 'var(--rp-comm)', bubble: 'var(--rp-bubble)', host_launch: 'var(--rp-host)', idle: 'var(--rp-idle)' };
+    const items = bd.items || [];
+    const segs = items.map((it) => {
+      const c = KEY_COLOR[it.key] || 'var(--rp-idle)';
+      return `<div class="rp-stack__seg" style="width:${it.pct}%;background:${c}">${it.pct >= 7 ? it.pct.toFixed(1) + '%' : ''}</div>`;
+    }).join('');
+    const legend = items.map((it) => `<span><i class="rp-swatch" style="background:${KEY_COLOR[it.key] || 'var(--rp-idle)'}"></i>${esc(it.label)} <b>${fmtMs(it.ms)}</b> · ${it.pct.toFixed(1)}%</span>`).join('');
+    return `<div class="rp-stack">${segs}</div><div class="rp-stack-legend">${legend}</div>
+      <p class="rp-figcap">四项之和 = ${fmtMs(bd.totalMs)}，与单步耗时中位数闭合。色板与 Timeline 泳道图例同源。</p>`;
+  }
+
+  /** 指标体检行：本次值 + 参考区间刻度 —— 报告态最核心的表达 */
+  function bulletsHtml(metrics) {
+    const rows = METRIC_ORDER.filter((k) => metrics[k]).map((k) => {
+      const d = METRIC_DEF[k], m = metrics[k];
+      const v = metricBarValue(k, m);
+      const st = metricStatus(k, m);
+      const w = v == null ? 0 : Math.min(100, Math.max(1.5, v));
+      const thr = d.warn == null ? '' : `<i class="rp-bullet__thr" style="left:${Math.min(97, d.warn)}%" data-l="${d.dir === 'high' ? '≥' : '≤'}${d.warn}"></i>`;
+      const cls = st === 'ok' ? 'is-ok' : st === 'bad' ? 'is-bad' : st === 'warn' ? 'is-warn' : '';
+      const note = m.note ? `<div class="rp-bullet__note">${esc(clamp(m.note, 96))}</div>` : '';
+      return `<div class="rp-bullet rp-block">
+        <div class="rp-bullet__name">${esc(d.name)}</div>
+        <div class="rp-bullet__track"><i class="rp-bullet__fill ${cls}" style="width:${w}%"></i>${thr}</div>
+        <div class="rp-bullet__val">${metricShown(k, m)}<small> ${st === 'ok' ? '达标' : st === 'bad' ? '越界' : ''}</small></div>
+        ${note}
+      </div>`;
+    });
+    return rows.join('');
+  }
+
+  /** 收益 × 难度四象限：一张图回答"先做什么" */
+  function svgQuadrant(actions) {
+    const withNum = actions.filter((a) => a.benefitNum != null);
+    if (!withNum.length) return '';
+    const W = 560, H = 300, L = 52, R = 18, T = 16, B = 44;
+    const DX = { '低': 1, '中': 2, '高': 3 };
+    const maxB = Math.max(...withNum.map((a) => a.benefitNum)) * 1.18;
+    const px = (d) => L + ((DX[d] || 2) - 0.5) / 3 * (W - L - R);
+    const py = (b) => H - B - (b / maxB) * (H - T - B);
+    const midY = py(maxB / 2);
+    const bubbles = withNum.map((a, i) => {
+      const sameCol = withNum.filter((o) => o.difficulty === a.difficulty);
+      const k = sameCol.indexOf(a);
+      const off = sameCol.length > 1 ? (k - (sameCol.length - 1) / 2) * 26 : 0;
+      const x = px(a.difficulty) + off, y = py(a.benefitNum);
+      const rr = 9 + Math.min(9, a.benefitNum * 0.34);
+      const c = a.priority === 'P0' ? '#d23b3b' : a.priority === 'P1' ? '#c15a1c' : '#5d6b99';
+      return `<g><circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="${rr.toFixed(1)}" fill="${c}" fill-opacity=".82"/>
+        <text x="${x.toFixed(1)}" y="${(y + 3.6).toFixed(1)}" text-anchor="middle" font-size="10.5" font-weight="700" fill="#fff">${a.id}</text>
+        <text x="${x.toFixed(1)}" y="${(y - rr - 4).toFixed(1)}" text-anchor="middle" font-size="9" fill="#4a5160">−${a.benefitNum}%</text></g>`;
+    }).join('');
+    const yticks = [0, maxB / 2, maxB].map((v) => `<g><line x1="${L}" y1="${py(v).toFixed(1)}" x2="${W - R}" y2="${py(v).toFixed(1)}" stroke="#eceef1"/><text x="${L - 7}" y="${(py(v) + 3.5).toFixed(1)}" text-anchor="end" font-size="9" fill="#9aa1ad">${v.toFixed(0)}%</text></g>`).join('');
+    const xlabels = ['低', '中', '高'].map((d) => `<text x="${px(d).toFixed(1)}" y="${H - B + 17}" text-anchor="middle" font-size="10.5" fill="#4a5160">修改难度 ${d}</text>`).join('');
+    return `<svg viewBox="0 0 ${W} ${H}" width="100%" role="img" aria-label="收益与难度四象限">
+      <rect x="${L}" y="${T}" width="${(px('中') - L).toFixed(1)}" height="${(midY - T).toFixed(1)}" fill="#e6f4ec" fill-opacity=".7"/>
+      <text x="${L + 8}" y="${T + 15}" font-size="9.5" fill="#14713f" font-weight="600">优先做：高收益 · 低难度</text>
+      ${yticks}
+      <line x1="${L}" y1="${T}" x2="${L}" y2="${H - B}" stroke="#b9c0cc"/>
+      <line x1="${L}" y1="${H - B}" x2="${W - R}" y2="${H - B}" stroke="#b9c0cc"/>
+      ${bubbles}${xlabels}
+      <text x="${L - 7}" y="${T + 4}" text-anchor="end" font-size="9" fill="#9aa1ad"></text>
+      <text transform="translate(13,${(T + (H - T - B) / 2).toFixed(1)}) rotate(-90)" text-anchor="middle" font-size="10" fill="#4a5160">预计单步耗时收益</text>
+    </svg>`;
+  }
+
+  /** 分类占比环 */
+  function svgDonut(cats) {
+    const PAL = ['#2f6fce', '#c15a1c', '#0f9b8e', '#8b3fb5', '#b8860b', '#5d6b99'];
+    const total = cats.reduce((s, c) => s + c.pct, 0);
+    const CX = 82, CY = 82, R = 62, IR = 38;
+    let acc = -Math.PI / 2;
+    const arcs = cats.map((c, i) => {
+      const a = (c.pct / Math.max(total, 100)) * 2 * Math.PI;
+      const [s, e] = [acc, acc + a]; acc = e;
+      const p = (r, t) => [CX + r * Math.cos(t), CY + r * Math.sin(t)];
+      const [x1, y1] = p(R, s), [x2, y2] = p(R, e), [x3, y3] = p(IR, e), [x4, y4] = p(IR, s);
+      const lg = a > Math.PI ? 1 : 0;
+      return `<path d="M${x1.toFixed(1)} ${y1.toFixed(1)} A${R} ${R} 0 ${lg} 1 ${x2.toFixed(1)} ${y2.toFixed(1)} L${x3.toFixed(1)} ${y3.toFixed(1)} A${IR} ${IR} 0 ${lg} 0 ${x4.toFixed(1)} ${y4.toFixed(1)} Z" fill="${PAL[i % PAL.length]}"/>`;
+    }).join('');
+    const rest = Math.max(0, 100 - total);
+    const legend = cats.map((c, i) => `<span><i class="rp-swatch" style="background:${PAL[i % PAL.length]}"></i>${esc(c.label)} ${c.pct.toFixed(1)}%</span>`).join('') +
+      (rest > 1 ? `<span><i class="rp-swatch" style="background:#eceef1"></i>其他 ${rest.toFixed(1)}%</span>` : '');
+    return `<svg viewBox="0 0 164 164" width="132" role="img" aria-label="算子分类占比">
+      <circle cx="${CX}" cy="${CY}" r="${(R + IR) / 2}" fill="none" stroke="#eceef1" stroke-width="${R - IR}"/>
+      ${arcs}
+      <text x="${CX}" y="${CY - 2}" text-anchor="middle" font-size="17" font-weight="700" fill="#1c1f26">${total.toFixed(0)}%</text>
+      <text x="${CX}" y="${CY + 13}" text-anchor="middle" font-size="9" fill="#9aa1ad">已归类</text>
+    </svg><div class="rp-stack-legend" style="flex-direction:column;gap:3px">${legend}</div>`;
+  }
+
+  /* ── 泳道快照（最低成本实现）──────────────────────────────
+     直接消费 chart-data.js 里已有的 window.SWIMLANE_DATA[reportId][actionId]，
+     不加载 swimlane-data.js（15 MB）、不复用 swimlane.js 渲染器（它面向可缩放
+     的交互画布）。这里只做一件事：把 tasks 段按时间轴摊成定宽 SVG，把
+     annotations 的 range 画成标注括号 —— 即"我指给你看"。 */
+  function swimlaneSvg(snap) {
+    const lanes = (snap.data || []).filter((l) => l.tasks && l.tasks.length);
+    if (!lanes.length) return '';
+    let t0 = Infinity, t1 = -Infinity;
+    lanes.forEach((l) => l.tasks.forEach((t) => { t0 = Math.min(t0, t.execStart); t1 = Math.max(t1, t.execEnd); }));
+    const span = (t1 - t0) || 1;
+    const W = 1000, L = 214, RGT = 16, LH = 30, GAP = 17, TOP = 4;
+    const plotW = W - L - RGT;
+    const x = (t) => L + ((t - t0) / span) * plotW;
+    const ann = (snap.annotations || []).filter((a) => a.type === 'range' && a.startTime != null);
+    /* 主线：红色括号标出的区间是这张图要读者先看懂的关系，区间外的任务只作背景
+       参考——降低不透明度让主线从一整排同权重的色块里跳出来，而不是靠读者自己
+       去逐条对时间戳（白皮书"复杂架构插图"方法论里"必须有主线"的画法）。 */
+    const hi = ann[0] || null;
+    const axisY = TOP + lanes.length * (LH + GAP) - GAP + 16;
+    const annY = axisY + 18;
+    const H = annY + (ann.length ? 30 + Math.ceil((ann[0].label || '').length / 78) * 11 : 6);
+
+    const laneSvg = lanes.map((lane, li) => {
+      const y = TOP + li * (LH + GAP);
+      const parts = String(lane.coreType || '').split(' · ').slice(0, 3);
+      const label = parts.map((p, i) => `<tspan x="0" dy="${i ? 11 : 0}">${esc(p.length > 34 ? p.slice(0, 33) + '…' : p)}</tspan>`).join('');
+      const bars = lane.tasks.map((t) => {
+        const x0 = x(t.execStart), w = Math.max(1, x(t.execEnd) - x0);
+        const c = SEM_COLOR[t.semanticLabel] || '#8b93a1';
+        const dur = fmtUs(t.execEnd - t.execStart);
+        const zh = SEM_ZH[t.semanticLabel] || t.semanticLabel || '';
+        const txt = w >= 122 ? `${zh} ${dur}` : w >= 50 ? dur : '';
+        const inMain = !hi || (t.execEnd > hi.startTime && t.execStart < hi.endTime);
+        const stroke = inMain && hi ? ' stroke="#1c1f26" stroke-width="0.6"' : '';
+        return `<g opacity="${inMain ? 1 : 0.32}"><rect x="${x0.toFixed(1)}" y="${y}" width="${w.toFixed(1)}" height="${LH}" rx="2" fill="${c}"${stroke}/>` +
+          (txt ? `<text x="${(x0 + w / 2).toFixed(1)}" y="${y + LH / 2 + 3.6}" text-anchor="middle" font-size="9.5" fill="#fff" font-weight="600">${esc(txt)}</text>` : '') + '</g>';
+      }).join('');
+      return `<g><text x="0" y="${y + (parts.length > 1 ? 11 : LH / 2 + 3)}" font-size="8.6" fill="#4a5160">${label}</text>${bars}</g>`;
+    }).join('');
+
+    const ticks = Array.from({ length: 6 }, (_, i) => {
+      const t = t0 + (span * i) / 5, xx = x(t);
+      return `<g><line x1="${xx.toFixed(1)}" y1="${axisY - 11}" x2="${xx.toFixed(1)}" y2="${axisY - 6}" stroke="#b9c0cc"/><text x="${xx.toFixed(1)}" y="${axisY + 3}" text-anchor="${i === 0 ? 'start' : i === 5 ? 'end' : 'middle'}" font-size="8.6" fill="#9aa1ad">${fmtUs(t - t0)}</text></g>`;
+    }).join('');
+
+    const annSvg = ann.slice(0, 1).map((a) => {
+      const xa = x(a.startTime), xb = x(a.endTime), mid = (xa + xb) / 2;
+      const words = String(a.label || '');
+      const lines = words.match(/.{1,78}/g) || [];
+      const txt = lines.map((s, i) => `<tspan x="${mid.toFixed(1)}" dy="${i ? 11 : 0}">${esc(s)}</tspan>`).join('');
+      return `<g>
+        <path d="M${xa.toFixed(1)} ${annY} v6 H${xb.toFixed(1)} v-6" fill="none" stroke="#d23b3b" stroke-width="1.4"/>
+        <text x="${mid.toFixed(1)}" y="${annY + 20}" text-anchor="middle" font-size="9.3" fill="#b02525" font-weight="600">${txt}</text>
+      </g>`;
+    }).join('');
+
+    const used = [...new Set(lanes.flatMap((l) => l.tasks.map((t) => t.semanticLabel)))].filter(Boolean);
+    const legend = used.map((s) => `<span><i class="rp-swatch" style="background:${SEM_COLOR[s] || '#8b93a1'}"></i>${esc(SEM_ZH[s] || s)}</span>`).join('');
+
+    return `<svg viewBox="0 0 ${W} ${H}" width="100%" role="img" aria-label="泳道快照">
+      <line x1="${L}" y1="${axisY - 6}" x2="${W - RGT}" y2="${axisY - 6}" stroke="#d8dce3"/>
+      ${laneSvg}${ticks}${annSvg}
+    </svg><div class="rp-stack-legend">${legend}</div>${hi ? '<p class="rp-figcap">区间外任务已降低对比度，仅作时间上下文参考。</p>' : ''}`;
+  }
+
+  /** 各 rank 的 step 构成横条 + 首次进入通信时刻标记 */
+  function rankBarsHtml(rs) {
+    const KEYS = [
+      ['computeMs', '计算', 'var(--rp-compute)'],
+      ['commExposedMs', '暴露通信', 'var(--rp-comm)'],
+      ['commWaitMs', '通信等待/空泡', 'var(--rp-bubble)'],
+      ['freeMs', '空闲', 'var(--rp-idle)'],
+    ];
+    const rows = rs.rows.map((r) => {
+      const total = r.stepMs || KEYS.reduce((s, [k]) => s + (r[k] || 0), 0);
+      const segs = KEYS.map(([k, , c]) => `<i class="rp-hbar__f" style="width:${((r[k] || 0) / total * 100).toFixed(2)}%;background:${c}"></i>`).join('');
+      const entry = r.commEntryMs != null ? `<i style="position:absolute;left:${(r.commEntryMs / total * 100).toFixed(2)}%;top:-3px;bottom:-3px;width:2px;background:#1c1f26"></i>` : '';
+      return `<div class="rp-hbar">
+        <div class="rp-hbar__n" style="font-family:inherit;font-size:10.5px">rank ${r.rank}${r.verdict === 'slow' ? ' <span class="rp-badge rp-badge--p0" style="font-size:8.5px">慢</span>' : ''}</div>
+        <div class="rp-hbar__t" style="position:relative">${segs}${entry}</div>
+        <div class="rp-hbar__v">${fmtMs(r.stepMs)}</div>
+      </div>`;
+    }).join('');
+    const legend = KEYS.map(([, l, c]) => `<span><i class="rp-swatch" style="background:${c}"></i>${l}</span>`).join('') +
+      '<span><i class="rp-swatch" style="background:#1c1f26;width:2px;height:11px;border-radius:0"></i>首次进入通信</span>';
+    return rows + `<div class="rp-stack-legend">${legend}</div>`;
+  }
+
+  /** 算子 Top-N 横条 */
+  function opBarsHtml(top) {
+    const CT = { HCCL: '#c15a1c', AI_CPU: '#8b3fb5', MIX_AIC: '#2f6fce', AI_CORE: '#1a8f52', AI_VECTOR_CORE: '#0f9b8e' };
+    const max = Math.max(...top.map((t) => t.pct));
+    return top.map((t) => `<div class="rp-hbar rp-block">
+      <div class="rp-hbar__n" title="${esc(t.name)}">${esc(t.name)}</div>
+      <div class="rp-hbar__t"><i class="rp-hbar__f" style="width:${(t.pct / max * 100).toFixed(1)}%;background:${CT[t.coreType] || '#5d6b99'}"></i></div>
+      <div class="rp-hbar__v">${t.pct.toFixed(1)}% · ${fmtMs(t.totalMs)}</div>
+    </div>`).join('') +
+      `<div class="rp-stack-legend">${Object.entries(CT).map(([k, c]) => `<span><i class="rp-swatch" style="background:${c}"></i>${k}</span>`).join('')}</div>`;
+  }
+
+  // ══════════════════════════════════════════════════════════
+  //  页面装配
+  // ══════════════════════════════════════════════════════════
+
+  let PAGES = [];   // {id, title, sub, html, cover?}
+  function page(id, title, html, opts) {
+    PAGES.push(Object.assign({ id, title, html }, opts || {}));
+  }
+
+  /** 3.N 形式的问题 ↔ 第 2 章行动清单 id（app.js 同款约定） */
+  const issueOrdinal = (id) => { const m = /^3\.(\d+)$/.exec(String(id)); return m ? +m[1] : null; };
+
+  function renderReport(r) {
+    PAGES = [];
+    const actById = new Map((r.actions || []).map((a) => [a.id, a]));
+    const swim = (window.SWIMLANE_DATA || {})[r.id] || {};
+
+    // ── 1. 封面 ─────────────────────────────────────────────
+    const facts = [
+      ['并行配置 / 采集范围', r.meta?.range || r.subtitle],
+      ['分析日期', r.reportDate],
+      ['软件版本', r.meta?.version],
+      ['数据路径', r.meta?.dataPath],
+      ['采集档位', r.results?.profiling_level?.raw],
+    ].filter(([, v]) => v);
+    page('cover', '封面', `
+      <div class="rp-cover__top"><span>性能分析</span><i class="rp-cover__rule"></i><span>${esc(r.reportDate)}</span></div>
+      <div class="rp-cover__mid">
+        <span class="rp-cover__type">${esc(r.taskType || '性能分析')}</span>
+        <h1 class="rp-cover__title">${esc(r.title)}</h1>
+        <p class="rp-cover__sub">${esc(r.subtitle || '')}</p>
+        <div class="rp-cover__score">
+          <div>
+            <div class="rp-cover__scorenum">${r.phs?.current ?? '—'}</div>
+            <div class="rp-note" style="text-align:center">性能健康度 / 100</div>
+          </div>
+          <div class="rp-cover__scoremeta">
+            当前评级 <b>${esc(r.phs?.grade || '—')}</b><br>
+            落实本报告行动清单后预估 <b>${r.phs?.estimated ?? '—'}</b>（${esc(r.phs?.estGrade || '—')}）<br>
+            <span class="rp-note">${esc(clamp(r.summary?.maxGain, 72))}</span>
+          </div>
+        </div>
+        <dl class="rp-cover__facts">
+          ${facts.map(([k, v]) => `<div class="rp-cover__fact"><dt>${esc(k)}</dt><dd>${esc(v)}</dd></div>`).join('')}
+        </dl>
+      </div>
+      <div class="rp-cover__bot">本报告由性能分析工作台生成，结论基于上述落盘数据；口径与阈值见附录 A。</div>
+    `, { cover: true });
+
+    // ── 2. 执行摘要（总）────────────────────────────────────
+    const bd = r.breakdown;
+    // 分项不足 3 维出不了雷达，此时整块（含图注）不出，不留空图占位
+    const radar = svgRadar(r.phs || {});
+    // 头号杠杆：全部行动里预计收益最大的单一动作。借白皮书 callout 的做法——只放
+    // 一件事、一句话，和下方 rp-verdicts 那三张说明卡分工："记住哪一件事" vs "为什么"。
+    const topAction = (r.actions || []).filter((a) => a.benefitNum != null).sort((a, b) => b.benefitNum - a.benefitNum)[0];
+    page('summary', '执行摘要', `
+      <p class="rp-kicker">执行摘要</p>
+      <h2 class="rp-h2">${esc(clamp(r.summary?.conclusion, 96))}</h2>
+      <p class="rp-lead">健康度 ${r.phs?.current} → 预估 ${r.phs?.estimated}；本报告共列出 ${(r.issues || []).length} 个问题、${(r.actions || []).length} 项行动，按预计收益排序。</p>
+      ${topAction ? `<div class="rp-callout rp-block"><b>头号杠杆：</b>优先修复 ${esc(topAction.id)} ${esc(clamp(topAction.problem, 60))}，预计单步耗时最多降低 ${esc(topAction.benefit)}——本报告收益最大的单一动作。</div>` : ''}
+      <div class="rp-grid2 rp-block" style="align-items:start;margin-bottom:6mm">
+        <div>${gaugeBox()}<p class="rp-figcap">环上小段按等级色渐变：实心段为当前健康度（指针所指），半透明段为落实行动清单后的可增益区间，外侧箭头指向预估位置。与工具形态同一份仪表盘。</p></div>
+        <div>${radar ? `${radar}<p class="rp-figcap">各分项 0–100，实线为当前、虚线为优化后预估；某维度未给预估时虚线与实线在该轴重合。</p>` : ''}</div>
+      </div>
+      <dl class="rp-verdicts rp-block">
+        <div class="rp-verdict"><dt>核心结论</dt><dd>${esc(r.summary?.conclusion || '—')}</dd></div>
+        <div class="rp-verdict rp-verdict--top"><dt>头号瓶颈</dt><dd>${esc(clamp(r.summary?.topBottleneck, 200))}</dd></div>
+        <div class="rp-verdict rp-verdict--gain"><dt>收益上限</dt><dd>${esc(r.summary?.maxGain || '—')}</dd></div>
+      </dl>
+      ${bd ? `<div class="rp-block" style="margin-top:6mm"><h3 class="rp-h3">单步时间去向</h3>${stackHtml(bd)}</div>` : ''}
+    `);
+
+    // ── 3. 指标体检（条件：有 results 或 metrics）──────────
+    if (r.results || r.metrics) {
+      const res = r.results || {};
+      const kpis = Object.keys(RESULT_DEF).filter((k) => res[k]).map((k) => `
+        <div class="rp-kpi"><div class="rp-kpi__k">${RESULT_DEF[k].name}</div>
+        <div class="rp-kpi__v">${esc(res[k].raw || res[k].value)}</div>
+        <div class="rp-kpi__n">${esc(clamp(res[k].note, 34))}</div></div>`).join('');
+      const trust = [
+        ['有效 step', res.active_steps?.raw], ['warmup', res.warmup_steps?.raw],
+        ['采集档位', res.profiling_level?.raw],
+        ['step 抖动 CV', r.metrics?.step_cv ? metricShown('step_cv', r.metrics.step_cv) : null],
+      ].filter(([, v]) => v);
+      page('metrics', '指标体检', `
+        <p class="rp-kicker">第 1 章 · 指标体检</p>
+        <h2 class="rp-h2">${esc(bd ? `单步 ${fmtMs(bd.totalMs)} 中只有 ${(bd.items.find((i) => i.key === 'compute')?.pct ?? 0).toFixed(0)}% 在算` : '关键指标与参考区间对照')}</h2>
+        <p class="rp-lead">每项右侧为本次实测值，条上黑色刻度为判定阈值——越过刻度即判为越界。阈值定义见附录 A。</p>
+        ${kpis ? `<div class="rp-kpis rp-block" style="margin-bottom:5mm">${kpis}</div>` : ''}
+        ${trust.length ? `<p class="rp-note rp-block" style="margin:0 0 5mm;padding:6px 10px;background:var(--surface-2);border-radius:6px">
+          <b>可信度口径</b> · ${trust.map(([k, v]) => `${k} ${esc(v)}`).join(' · ')} —— 这几项决定上面所有数字与下面所有比率能不能信。</p>` : ''}
+        ${r.metrics ? `<h3 class="rp-h3">结构指标 vs 参考区间</h3><div class="rp-bullets">${bulletsHtml(r.metrics)}</div>
+          <p class="rp-figcap">MFU / 显存利用率的分母为固化假设：${CHIP.name}（BF16 ${CHIP.peakTF} TF/s，单卡 ${CHIP.hbmGB} GB HBM）。落盘数据不含芯片型号，换型号需重算。</p>` : ''}
+      `);
+    }
+
+    // ── 4. 时间去向解剖（条件：有泳道快照）──────────────────
+    const firstSwimKey = Object.keys(swim)[0];
+    if (firstSwimKey) {
+      const snap = swim[firstSwimKey];
+      const act = actById.get(+firstSwimKey);
+      page('timeline', '时间去向', `
+        <p class="rp-kicker">第 2 章 · 时间去向解剖</p>
+        <h2 class="rp-h2">${esc(clamp(act?.problem || '关键路径上的时间构成', 88))}</h2>
+        <p class="rp-lead">下图是从 trace 中截取的单步泳道定格，红色括号标出的是本报告关注的区间。报告态不提供缩放——需要逐算子游走时请回到工具形态。</p>
+        <div class="rp-block">${swimlaneSvg(snap)}</div>
+        <p class="rp-figcap">数据来源：${esc(clamp(snap.source, 190))}</p>
+        ${bd ? `<div class="rp-block" style="margin-top:6mm"><h3 class="rp-h3">同一单步的时间构成</h3>${stackHtml(bd)}</div>` : ''}
+      `);
+    }
+
+    // ── 5. 多卡一致性（条件：有 rankStats）──────────────────
+    if (r.rankStats?.rows?.length) {
+      const rs = r.rankStats;
+      page('ranks', '多卡一致性', `
+        <p class="rp-kicker">第 3 章 · 多卡一致性</p>
+        <h2 class="rp-h2">各卡 step 耗时几乎相同（极差 ${rs.spreadPct?.toFixed(2)}%），问题不在"哪张卡慢"，而在时间构成</h2>
+        <p class="rp-lead">这是本页最容易被误读的一点：只看 step 时长永远找不出问题卡。真正的信号在计算/通信等待的拆分，以及首次进入通信的时刻——${rs.slowRanks?.length ? `rank ${rs.slowRanks.join('/')} 明显更晚进入通信，其余卡因此空等。` : '见下方构成条。'}</p>
+        <div class="rp-block">${rankBarsHtml(rs)}</div>
+        <p class="rp-figcap">按规则 10 只列代表 rank。中位数 ${fmtMs(rs.median)}，极差 ${rs.spreadPct?.toFixed(2)}%${rs.slowRanks?.length ? `，判定慢卡 rank ${rs.slowRanks.join(', ')}` : ''}。</p>
+        <h3 class="rp-h3">代表 rank 明细</h3>
+        <table class="rp-table rp-block"><thead><tr><th>Rank</th><th class="num">step</th><th class="num">计算</th><th class="num">暴露通信</th><th class="num">通信等待</th><th class="num">空闲</th><th class="num">首次进通信</th></tr></thead><tbody>
+          ${rs.rows.map((x) => `<tr class="${x.verdict === 'slow' ? 'is-slow' : ''}"><td>${x.rank}${x.verdict === 'slow' ? ' ⚑' : ''}</td><td class="num">${fmtMs(x.stepMs)}</td><td class="num">${fmtMs(x.computeMs)}</td><td class="num">${fmtMs(x.commExposedMs)}</td><td class="num">${fmtMs(x.commWaitMs)}</td><td class="num">${fmtMs(x.freeMs)}</td><td class="num">${fmtMs(x.commEntryMs)}</td></tr>`).join('')}
+        </tbody></table>
+      `);
+    }
+
+    // ── 6. 算子热点（条件：有 opStats）──────────────────────
+    if (r.opStats?.top?.length) {
+      const os = r.opStats;
+      page('ops', '算子热点', `
+        <p class="rp-kicker">第 4 章 · 算子热点</p>
+        <h2 class="rp-h2">前 ${os.top.length} 个算子占单步 ${os.top.reduce((s, t) => s + t.pct, 0).toFixed(1)}%</h2>
+        <p class="rp-lead">这一章是结论的证据面：把上文引用的算子放在同一张图里，读者不必回到工具就能验一遍。</p>
+        <div class="rp-grid-72 rp-block" style="align-items:start">
+          <div>${opBarsHtml(os.top)}</div>
+          <div>${os.byCategory?.length ? svgDonut(os.byCategory) : ''}</div>
+        </div>
+        <h3 class="rp-h3">Top 算子明细</h3>
+        <table class="rp-table rp-block"><thead><tr><th>算子</th><th>Type</th><th>Core</th><th class="num">次数</th><th class="num">总耗时</th><th class="num">占比</th><th class="num">均值</th><th>Shape</th></tr></thead><tbody>
+          ${os.top.map((t) => `<tr><td><code>${esc(t.name)}</code></td><td>${esc(t.type)}</td><td>${esc(t.coreType)}</td><td class="num">${t.count}</td><td class="num">${fmtMs(t.totalMs)}</td><td class="num">${t.pct.toFixed(1)}%</td><td class="num">${(t.avgUs / 1000).toFixed(2)} ms</td><td><code>${esc(t.shape)}</code></td></tr>`).join('')}
+        </tbody></table>
+      `);
+    }
+
+    // ── 7. 问题逐条（分）────────────────────────────────────
+    const issues = (r.issues || []).slice().sort((a, b) => {
+      const ba = actById.get(issueOrdinal(a.id))?.benefitNum ?? -1;
+      const bb = actById.get(issueOrdinal(b.id))?.benefitNum ?? -1;
+      if (ba !== bb) return bb - ba;
+      return (PRIO_RANK[a.priority] ?? 9) - (PRIO_RANK[b.priority] ?? 9);
+    });
+    const maxBenefit = Math.max(1, ...(r.actions || []).map((a) => a.benefitNum || 0));
+    issues.forEach((is, i) => {
+      const ord = issueOrdinal(is.id);
+      const act = actById.get(ord);
+      const snap = ord != null ? swim[ord] : null;
+      const steps = (is.steps || []).slice(0, 3);
+      const moreSteps = (is.steps || []).length - steps.length;
+      const impactQ = act?.benefitNum != null
+        ? `<div class="rp-impact__q">−${act.benefitNum}%<small>预计单步耗时收益</small></div>
+           <div class="rp-impact__bar"><i style="width:${(act.benefitNum / maxBenefit * 100).toFixed(0)}%"></i></div>`
+        : `<div class="rp-impact__q">${esc(is.priority)}<small>优先级（收益未量化）</small></div>`;
+      page('issue-' + is.id, `${is.id} ${is.title}`, `
+        <p class="rp-kicker">第 5 章 · 问题 ${i + 1} / ${issues.length}<a class="rp-tool-link rp-screen-only" href="index_v3.html" target="_blank" rel="noopener">在工具中查看 →</a></p>
+        <div class="rp-issue__head">
+          <span class="rp-issue__id">${esc(is.id)}</span>
+          <span class="rp-issue__title">${esc(is.title)}</span>
+          ${badge(is.priority)}
+        </div>
+        <div class="rp-issue__meta">
+          ${act ? `<span>预计收益 <b>${esc(act.benefit)}</b></span><span>修改难度 <b>${esc(act.difficulty)}</b></span>` : ''}
+          ${is.codeLocations?.length ? `<span>代码位置 <b>${esc(is.codeLocations.join(', '))}</b></span>` : ''}
+        </div>
+        <div class="rp-grid-72 rp-block" style="align-items:start">
+          <div>${snap ? swimlaneSvg(snap) : `<div class="rp-card"><div class="rp-card__t">影响</div><div style="font-size:11px;line-height:1.6">${esc(clamp(is.impact, 260))}</div></div>`}</div>
+          <div class="rp-impact">${impactQ}<div class="rp-impact__txt">${esc(clamp(is.impact, 150))}</div></div>
+        </div>
+        <div class="rp-evidence rp-block"><span class="rp-evidence__t">证据</span>${esc(clamp(is.evidence, 300))}<span class="rp-note"> 完整证据见附录 C。</span></div>
+        ${act ? `<p class="rp-note rp-block" style="margin:8px 0 0"><b>改动位置</b> · ${esc(clamp(act.location, 150))}</p>` : ''}
+        <h3 class="rp-h3">修复步骤</h3>
+        <ol class="rp-steps rp-block">${steps.map((s) => `<li>${esc(clamp(s, 130))}</li>`).join('')}</ol>
+        ${moreSteps > 0 ? `<p class="rp-note" style="margin-top:5px">另有 ${moreSteps} 项步骤，见附录 C。</p>` : ''}
+        ${is.verification ? `<div class="rp-verify rp-block"><b>验证方式</b> · ${esc(clamp(is.verification, 190))}</div>` : ''}
+      `, { sub: true });
+    });
+
+    // ── 8. 行动计划（总）────────────────────────────────────
+    if (r.actions?.length) {
+      const sorted = r.actions.slice().sort((a, b) => (b.benefitNum ?? -1) - (a.benefitNum ?? -1));
+      // 收益未量化的报告出不了四象限，此时整块（含图注）不出，不留空图占位
+      const quad = svgQuadrant(r.actions);
+      page('actions', '行动计划', `
+        <p class="rp-kicker">第 6 章 · 行动计划</p>
+        <h2 class="rp-h2">${esc(clamp(r.summary?.maxGain, 88))}</h2>
+        ${quad ? `<p class="rp-lead">下图横轴为修改难度、纵轴为预计单步收益，气泡大小同收益、颜色同优先级。左上角绿色区域是应当先做的部分。</p>
+        <div class="rp-block">${quad}</div>` : '<p class="rp-lead">本报告的行动项未给出量化收益，按优先级排序如下。</p>'}
+        <table class="rp-table rp-block" style="margin-top:5mm"><thead><tr><th>#</th><th>优先级</th><th>问题</th><th class="num">预计收益</th><th>难度</th><th>改动位置</th></tr></thead><tbody>
+          ${sorted.map((a) => `<tr><td class="num">${a.id}</td><td>${badge(a.priority)}</td><td>${esc(clamp(a.problem, 72))}</td><td class="num">${esc(a.benefit)}</td><td>${esc(a.difficulty)}</td><td>${esc(clamp(a.location, 78))}</td></tr>`).join('')}
+        </tbody></table>
+      `);
+    }
+
+    // ── 9. 阴性结论（条件：有 noProblems）───────────────────
+    if (r.noProblems?.length) {
+      page('noproblem', '已排查未见异常', `
+        <p class="rp-kicker">第 7 章 · 已排查未见异常</p>
+        <h2 class="rp-h2">以下 ${r.noProblems.length} 项已排查，未发现问题</h2>
+        <p class="rp-lead">阴性结论与阳性结论同等重要：它界定了本次分析的覆盖面，也避免后续重复排查同一方向。</p>
+        <div class="rp-checks">${r.noProblems.map((s) => `<div class="rp-check rp-block"><span class="rp-check__m">✓</span><span>${esc(s)}</span></div>`).join('')}</div>
+      `);
+    }
+
+    // ── 10. 附录 A：口径与阈值 ──────────────────────────────
+    if (r.metrics) {
+      page('appendix-a', '附录 A · 指标口径与阈值', `
+        <p class="rp-kicker">附录 A</p>
+        <h2 class="rp-h2">指标口径与判定阈值</h2>
+        <p class="rp-lead">工具形态里这些说明藏在指标卡的 <code>?</code> 提示中；报告形态必须印出来，否则打印后即丢失。</p>
+        <table class="rp-table rp-block"><thead><tr><th>指标</th><th class="num">本次</th><th>判定阈值</th><th>口径</th></tr></thead><tbody>
+          ${METRIC_ORDER.filter((k) => r.metrics[k]).map((k) => {
+            const d = METRIC_DEF[k], st = metricStatus(k, r.metrics[k]);
+            return `<tr><td>${esc(d.name)}</td><td class="num">${metricShown(k, r.metrics[k])}</td>
+              <td>${d.neutral ? '不判定（分母为假设值）' : d.warn == null ? '需对比理论值' : `${d.dir === 'high' ? '≥' : '≤'} ${d.warn}${d.unit}`}${st === 'ok' || st === 'bad' ? ` <span class="rp-badge rp-badge--${st === 'ok' ? 'ok' : 'p0'}" style="font-size:8.5px">${st === 'ok' ? '达标' : '越界'}</span>` : ''}</td>
+              <td>${esc(d.desc)}</td></tr>`;
+          }).join('')}
+        </tbody></table>
+      `, { sub: true });
+    }
+
+    // ── 12. 附录 C：问题完整证据 ────────────────────────────
+    if (issues.length) {
+      page('appendix-c', '附录 C · 问题完整证据', `
+        <p class="rp-kicker">附录 C</p>
+        <h2 class="rp-h2">问题完整证据与步骤</h2>
+        <p class="rp-lead">正文的问题页对证据与步骤做了裁剪以保证单页版面；此处保留全文。</p>
+        ${issues.map((is) => `<div class="rp-block" style="margin-bottom:5mm">
+          <div style="font-size:11.5px;font-weight:600;margin-bottom:3px">${esc(is.id)} ${esc(is.title)}</div>
+          <div class="rp-note"><b>证据</b> ${esc(is.evidence)}</div>
+          ${is.impact ? `<div class="rp-note" style="margin-top:3px"><b>影响</b> ${esc(is.impact)}</div>` : ''}
+          ${is.steps?.length ? `<div class="rp-note" style="margin-top:3px"><b>步骤</b> ${is.steps.map((s, i) => `${i + 1}. ${esc(s)}`).join(' ')}</div>` : ''}
+          ${is.verification ? `<div class="rp-note" style="margin-top:3px"><b>验证</b> ${esc(is.verification)}</div>` : ''}
+        </div>`).join('')}
+      `, { sub: true });
+    }
+
+    paint(r);
+  }
+
+  /** 把 PAGES 落成 DOM：统一页眉页脚、页码、目录 */
+  function paint(r) {
+    const doc = document.getElementById('rpDoc');
+    const toc = document.getElementById('rpToc');
+    const total = PAGES.length;
+    doc.innerHTML = PAGES.map((p, i) => {
+      if (p.cover) return `<section class="rp-page rp-cover" id="pg-${p.id}">${p.html}</section>`;
+      return `<section class="rp-page" id="pg-${p.id}">
+        <div class="rp-page__head"><span>${esc(r.title)}</span><span>${esc(r.taskType)} · ${esc(r.reportDate)}</span></div>
+        <div class="rp-page__body">${p.html}</div>
+        <div class="rp-page__foot"><span>性能分析报告 · 口径见附录 A</span><span class="pno">${i + 1} / ${total}</span></div>
+      </section>`;
+    }).join('');
+    // 仪表盘由 app.js 的 renderPhsGauge() 写 DOM，只能等页面 innerHTML 落地后再回填
+    mountGauges(r.phs);
+    toc.innerHTML = '<h4>目录</h4>' + PAGES.map((p, i) =>
+      `<a class="${p.sub ? 'is-sub' : ''}" href="#pg-${p.id}"><span>${esc(clamp(p.title, 26))}</span><span class="n">${i + 1}</span></a>`).join('');
+    document.title = r.title + ' · 报告';
+  }
+
+  // ══════════════════════════════════════════════════════════
+  //  启动
+  // ══════════════════════════════════════════════════════════
+  function boot() {
+    // 单报告独立包：只渲染 r20260921level2 这一份，页面上没有报告下拉。
+    const list = (typeof REPORTS !== 'undefined' && REPORTS) || [];
+    const pick = list.find((r) => r.id === 'r20260921level2');
+    if (!pick) {
+      document.getElementById('rpDoc').innerHTML = '<div class="rp-empty">未找到报告数据（r20260921level2 缺失）。</div>';
+      return;
+    }
+    renderReport(pick);
+    const btn = document.getElementById('rpPrint');
+    if (btn) btn.addEventListener('click', () => window.print());
+  }
+
+  window.PTO_REPORT = { render: renderReport };
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot);
+  else boot();
+})();
+
+</script>
+
+</body>
+</html>

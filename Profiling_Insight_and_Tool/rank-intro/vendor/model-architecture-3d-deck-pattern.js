@@ -3,6 +3,9 @@
 
   const VIEWS=new Set(['iso','front','right']);
   const THEMES=new Set(['dark','light']);
+  /* Profiling 报告「模型架构」同款 Turbo 耗时色阶。性能数据是可选输入；
+     未提供时仍保持原来的模型语义色，不改变既有消费者。 */
+  const PERFORMANCE_HEAT_STOPS=['#30123B','#4145AB','#4675ED','#39A2FC','#1BCFD4','#45F884','#A4FC3C','#E8D721','#FA8C19','#DA3907'];
   const COLOR_FALLBACKS={
     embedding:'#14B8A6',norm:'#38BDF8',attention:'#3B82F6',linear:'#4F46E5',head:'#7C3AED',mlp:'#A855F7',act:'#8B5CF6',gate:'#F59E0B',moe:'#EA580C',comm:'#06B6D4',decoder:'#0D9488',
     input:'#A855F7',output:'#38BDF8',parameter:'#3B82F6',state:'#8B5CF6'
@@ -53,6 +56,15 @@
   const clamp=(value,min,max)=>Math.max(min,Math.min(max,value));
   const esc=(value)=>String(value??'').replace(/[&<>"']/g,ch=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]));
   const qs=(value,root=document)=>typeof value==='string'?root.querySelector(value):value;
+  const hexRgb=(hex)=>{const value=String(hex).replace('#','');return{r:parseInt(value.slice(0,2),16),g:parseInt(value.slice(2,4),16),b:parseInt(value.slice(4,6),16)};};
+  function performanceColor(value,maxValue){
+    const ratio=clamp(maxValue>0?Number(value)/Number(maxValue):0,0,1),scaled=ratio*(PERFORMANCE_HEAT_STOPS.length-1),lo=Math.floor(scaled),hi=Math.min(PERFORMANCE_HEAT_STOPS.length-1,lo+1),mix=scaled-lo,a=hexRgb(PERFORMANCE_HEAT_STOPS[lo]),b=hexRgb(PERFORMANCE_HEAT_STOPS[hi]);
+    return `rgb(${Math.round(a.r+(b.r-a.r)*mix)},${Math.round(a.g+(b.g-a.g)*mix)},${Math.round(a.b+(b.b-a.b)*mix)})`;
+  }
+  function performanceTextColor(color){
+    const parts=String(color).match(/[\d.]+/g)?.map(Number)||[255,255,255],luma=(parts[0]*.299+parts[1]*.587+parts[2]*.114)/255;
+    return luma>.62?'#0F172A':'#FFFFFF';
+  }
 
   function nodeHtml(node,extra=''){
     const compat=String(extra).split(/\s+/).filter(Boolean).map(name=>name==='is-tiny'?'opv-cssdeck-node--tiny':name==='is-wide'?'opv-cssdeck-node--wide':name==='is-add'?'opv-cssdeck-node--add':name==='is-compact-add'?'opv-cssdeck-node--compact-add':'').filter(Boolean).join(' ');
@@ -231,7 +243,7 @@
     const sideLabels=root.querySelector('.pto-model-deck__side-labels');
     const readout=root.querySelector('[data-deck-readout]');
     const initialTheme=THEMES.has(options.initialTheme)?options.initialTheme:(document.documentElement.dataset.theme==='light'?'light':'dark');
-    const state={view:VIEWS.has(options.initialView)?options.initialView:'iso',theme:initialTheme,zoom:Number(options.initialZoom)||.5,rx:-18,ry:-34,panX:0,panY:0,selected:null};
+    const state={view:VIEWS.has(options.initialView)?options.initialView:'iso',theme:initialTheme,zoom:Number(options.initialZoom)||.5,rx:-18,ry:-34,panX:0,panY:0,selected:null,performanceMetrics:null,focusBox:null};
     let drag=null,raf=0,destroyed=false;
 
     function applySemanticPalette(){
@@ -265,13 +277,50 @@
     function setZoom(value){state.zoom=clamp(Number(value)||state.zoom,.12,1.2);apply();options.onZoomChange?.(state.zoom,api);return api;}
     function fit(){
       const width=Math.max(1,viewport.clientWidth),height=Math.max(1,viewport.clientHeight);
-      const raw=state.view==='front'?Math.min(width/850,height/1810):state.view==='right'?Math.min(width/3000,height/1900):Math.min(width/1850,height/2050);
-      state.zoom=clamp(raw,.12,state.view==='front'?1.05:.86);apply();return api;
+      /* 正视可选一个「取景框」（setFocusBox）：宿主按 CSS 只留下场景的一部分（单张层卡、
+         或输入 / 输出端点卡）时，按那一块的尺寸取缩放、并把它的中心平移到视口中央，
+         而不是仍按整条 Emb → 层 → Head 的 1810px 高去适配。resize 走的也是这条 fit。 */
+      const box=state.view==='front'&&state.focusBox;
+      const raw=box?Math.min(width/box.width,height/box.height):state.view==='front'?Math.min(width/850,height/1810):state.view==='right'?Math.min(width/3000,height/1900):Math.min(width/1850,height/2050);
+      state.zoom=clamp(raw,.12,state.view==='front'?1.05:.86);
+      if(box){state.panX=-(Number(box.centerX)||0)*state.zoom;state.panY=-(Number(box.centerY)||0)*state.zoom;}
+      apply();return api;
+    }
+    function setFocusBox(box){
+      state.focusBox=box&&Number(box.width)>0&&Number(box.height)>0?{width:Number(box.width),height:Number(box.height),centerX:Number(box.centerX)||0,centerY:Number(box.centerY)||0}:null;
+      return api;
     }
     function setFrontLayer(layer){
       const next=clamp(Number(layer)||0,0,config.layerCount-1);
       root.querySelectorAll('.pto-model-deck__layer').forEach(card=>card.classList.toggle('is-front-layer',Number(card.dataset.layer)===next));
       syncExpertExpansion();scheduleOverlay();return api;
+    }
+    function setPerformanceMetrics(metrics){
+      state.performanceMetrics=metrics&&typeof metrics==='object'?metrics:null;
+      const candidates=[];
+      root.querySelectorAll('.pto-model-deck__node,.pto-model-deck__experts').forEach(node=>{
+        node.classList.remove('is-performance-heatmap-node');
+        node.style.removeProperty('--pto-model-deck-performance-fill');
+        node.style.removeProperty('--pto-model-deck-performance-text');
+        node.removeAttribute('data-performance-time-us');
+        node.removeAttribute('title');
+        const op=node.dataset.op;
+        if(!state.performanceMetrics||['input','output','parameter','state','mhc-state'].includes(op))return;
+        const raw=state.performanceMetrics[node.dataset.node],value=Number(raw&&typeof raw==='object'?raw.value:raw);
+        if(Number.isFinite(value))candidates.push({node,value});
+      });
+      const maxValue=candidates.length?Math.max(...candidates.map(item=>item.value)):0;
+      candidates.forEach(({node,value})=>{
+        const fill=performanceColor(value,maxValue);
+        node.classList.add('is-performance-heatmap-node');
+        node.style.setProperty('--pto-model-deck-performance-fill',fill);
+        node.style.setProperty('--pto-model-deck-performance-text',performanceTextColor(fill));
+        node.setAttribute('data-performance-time-us',String(value));
+        node.title=`${node.textContent.trim()} · ${value.toFixed(2)} ms`;
+      });
+      root.classList.toggle('is-performance-heatmap',candidates.length>0);
+      root.dataset.performanceMapped=String(candidates.length);
+      return api;
     }
     function syncExpertEdges(card){
       const svg=card.querySelector('.pto-model-deck__edges');if(!svg)return;
@@ -381,9 +430,9 @@
     if(!externallyManaged){viewport.addEventListener('pointerdown',pointerDown);viewport.addEventListener('pointermove',pointerMove);viewport.addEventListener('pointerup',pointerUp);viewport.addEventListener('pointercancel',pointerUp);viewport.addEventListener('wheel',wheel,{passive:false});scene.addEventListener('click',nodeClick);}
     const resizeObserver=!externallyManaged&&global.ResizeObserver?new ResizeObserver(resize):null;resizeObserver?.observe(root);
     function setPose(pose={}){if(VIEWS.has(pose.view))state.view=pose.view;if(Number.isFinite(Number(pose.rx)))state.rx=Number(pose.rx);if(Number.isFinite(Number(pose.ry)))state.ry=Number(pose.ry);if(Number.isFinite(Number(pose.zoom)))state.zoom=clamp(Number(pose.zoom),.12,1.35);if(Number.isFinite(Number(pose.panX)))state.panX=Number(pose.panX);if(Number.isFinite(Number(pose.panY)))state.panY=Number(pose.panY);if(pose.pivot&&['x','y','z'].every(key=>Number.isFinite(Number(pose.pivot[key]))))state.pivot={x:Number(pose.pivot.x),y:Number(pose.pivot.y),z:Number(pose.pivot.z)};syncButtons();syncExpertExpansion();apply();return api;}
-    const api={root,state,config,setView,setTheme,setZoom,setPose,refresh:scheduleOverlay,fit,setFrontLayer,selectNode,destroy(){destroyed=true;cancelAnimationFrame(raf);resizeObserver?.disconnect();if(!externallyManaged){viewport.removeEventListener('pointerdown',pointerDown);viewport.removeEventListener('pointermove',pointerMove);viewport.removeEventListener('pointerup',pointerUp);viewport.removeEventListener('pointercancel',pointerUp);viewport.removeEventListener('wheel',wheel);scene.removeEventListener('click',nodeClick);}}};
-    setTheme(state.theme);Object.assign(state,VIEW_POSES[state.view]);syncExpertExpansion();if(externallyManaged){syncButtons();apply();}else requestAnimationFrame(fit);return api;
+    const api={root,state,config,setView,setTheme,setZoom,setPose,refresh:scheduleOverlay,fit,setFocusBox,setFrontLayer,setPerformanceMetrics,selectNode,destroy(){destroyed=true;cancelAnimationFrame(raf);resizeObserver?.disconnect();if(!externallyManaged){viewport.removeEventListener('pointerdown',pointerDown);viewport.removeEventListener('pointermove',pointerMove);viewport.removeEventListener('pointerup',pointerUp);viewport.removeEventListener('pointercancel',pointerUp);viewport.removeEventListener('wheel',wheel);scene.removeEventListener('click',nodeClick);}}};
+    setTheme(state.theme);Object.assign(state,VIEW_POSES[state.view]);syncExpertExpansion();setPerformanceMetrics(options.performanceMetrics);if(externallyManaged){syncButtons();apply();}else requestAnimationFrame(fit);return api;
   }
 
-  global.PtoModelArchitecture3dDeck={PRESETS,VIEW_POSES,render:mount,mount};
+  global.PtoModelArchitecture3dDeck={PRESETS,VIEW_POSES,PERFORMANCE_HEAT_STOPS,performanceColor,render:mount,mount};
 })(window);

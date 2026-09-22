@@ -1,0 +1,792 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="MindSpeed Agent 产品介绍：用自然语言把 MindSpeed、昇腾 NPU 与 CANN 开发诉求路由为可执行、可验证的工程流程。">
+  <title>MindSpeed Agent — 从一句问题到可验证交付</title>
+  <style>
+    :root {
+      --bg: #07100f;
+      --bg-soft: #0b1715;
+      --panel: rgba(15, 31, 28, .82);
+      --panel-solid: #0f1e1b;
+      --line: rgba(190, 229, 216, .14);
+      --line-strong: rgba(190, 229, 216, .28);
+      --text: #eef8f4;
+      --muted: #a8bdb6;
+      --dim: #6f8780;
+      --lime: #c9f45f;
+      --lime-soft: rgba(201, 244, 95, .13);
+      --mint: #61dfbd;
+      --mint-soft: rgba(97, 223, 189, .12);
+      --amber: #ffc76b;
+      --amber-soft: rgba(255, 199, 107, .12);
+      --coral: #ff887d;
+      --coral-soft: rgba(255, 136, 125, .1);
+      --blue: #86b7ff;
+      --blue-soft: rgba(134, 183, 255, .11);
+      --max: 1240px;
+      --radius-xl: 28px;
+      --radius-lg: 20px;
+      --radius-md: 14px;
+      --shadow: 0 30px 80px rgba(0, 0, 0, .28);
+    }
+
+    * { box-sizing: border-box; }
+    html { scroll-behavior: smooth; }
+    body {
+      margin: 0;
+      color: var(--text);
+      background:
+        radial-gradient(circle at 82% 9%, rgba(97, 223, 189, .12), transparent 27rem),
+        radial-gradient(circle at 8% 23%, rgba(201, 244, 95, .08), transparent 25rem),
+        var(--bg);
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", "Microsoft YaHei", sans-serif;
+      line-height: 1.65;
+      -webkit-font-smoothing: antialiased;
+    }
+    body::before {
+      content: "";
+      position: fixed;
+      inset: 0;
+      pointer-events: none;
+      opacity: .35;
+      background-image:
+        linear-gradient(rgba(255,255,255,.018) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(255,255,255,.018) 1px, transparent 1px);
+      background-size: 44px 44px;
+      mask-image: linear-gradient(to bottom, black, transparent 75%);
+    }
+
+    a { color: inherit; }
+    ::selection { background: var(--lime); color: #0a120f; }
+    .shell { width: min(calc(100% - 40px), var(--max)); margin-inline: auto; }
+    .eyebrow {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      margin: 0 0 14px;
+      color: var(--lime);
+      font: 700 12px/1.2 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      letter-spacing: .12em;
+      text-transform: uppercase;
+    }
+    .eyebrow::before { content: ""; width: 20px; height: 1px; background: currentColor; }
+    h1, h2, h3, p { margin-top: 0; }
+    h1, h2, h3 { line-height: 1.16; letter-spacing: -.025em; }
+    h1 { max-width: 1040px; margin-bottom: 26px; font-size: clamp(42px, 6vw, 78px); }
+    h2 { margin-bottom: 16px; font-size: clamp(30px, 4.2vw, 52px); }
+    h3 { margin-bottom: 10px; font-size: 20px; }
+    code, .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+    .accent { color: var(--lime); }
+    .muted { color: var(--muted); }
+
+    .topbar {
+      position: sticky;
+      z-index: 30;
+      top: 0;
+      border-bottom: 1px solid var(--line);
+      background: rgba(7, 16, 15, .78);
+      backdrop-filter: blur(18px);
+    }
+    .nav {
+      min-height: 68px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 24px;
+    }
+    .brand-zone, .nav-actions { display: flex; align-items: center; gap: 10px; }
+    .brand-zone { gap: 12px; min-width: 0; }
+    .brand { display: flex; align-items: center; gap: 11px; text-decoration: none; font-weight: 800; }
+    .brand-mark {
+      width: 32px;
+      height: 32px;
+      display: grid;
+      place-items: center;
+      border: 1px solid rgba(201, 244, 95, .55);
+      border-radius: 10px;
+      color: var(--lime);
+      background: var(--lime-soft);
+      font: 800 10px/1 ui-monospace, monospace;
+    }
+    .brand-divider { width: 1px; height: 26px; flex: 0 0 auto; background: var(--line-strong); }
+    .product-switch-link {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      min-height: 36px;
+      padding: 0 12px;
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      color: var(--muted);
+      background: rgba(255,255,255,.025);
+      text-decoration: none;
+      font-size: 12px;
+      font-weight: 800;
+      white-space: nowrap;
+      transition: .2s ease;
+    }
+    .product-switch-link:hover, .product-switch-link:focus-visible {
+      color: var(--text);
+      border-color: rgba(201,244,95,.5);
+      background: var(--lime-soft);
+      outline: none;
+    }
+    .product-switch-link .switch-mark {
+      display: inline-grid;
+      width: 20px;
+      height: 20px;
+      place-items: center;
+      border-radius: 6px;
+      color: var(--lime);
+      background: var(--lime-soft);
+      font: 900 9px/1 ui-monospace, monospace;
+    }
+    .product-switch-link .switch-arrow { color: var(--lime); }
+    .navlinks { display: flex; align-items: center; gap: 6px; }
+    .navlinks a {
+      padding: 8px 12px;
+      border-radius: 999px;
+      color: var(--muted);
+      text-decoration: none;
+      font-size: 13px;
+    }
+    .navlinks a:hover, .navlinks a:focus-visible { color: var(--text); background: rgba(255,255,255,.05); outline: none; }
+    .repo-link {
+      display: inline-flex;
+      align-items: center;
+      gap: 7px;
+      min-height: 36px;
+      padding: 0 12px;
+      border: 1px solid rgba(201,244,95,.35);
+      border-radius: 10px;
+      color: var(--lime);
+      background: var(--lime-soft);
+      text-decoration: none;
+      font-size: 12px;
+      font-weight: 800;
+      white-space: nowrap;
+    }
+    .repo-link:hover, .repo-link:focus-visible { border-color: var(--lime); background: rgba(201,244,95,.18); outline: none; }
+
+    .hero { padding: 102px 0 74px; }
+    .hero-grid { display: grid; grid-template-columns: minmax(0, 1fr) 360px; gap: 56px; align-items: end; }
+    .hero-grid > *, .section-head > * { min-width: 0; }
+    .hero h1 span { color: var(--muted); }
+    .lede { max-width: 840px; margin-bottom: 34px; color: var(--muted); font-size: clamp(17px, 2vw, 21px); }
+    .hero-actions { display: flex; flex-wrap: wrap; gap: 12px; }
+    .button {
+      min-height: 46px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 9px;
+      padding: 0 18px;
+      border: 1px solid var(--line-strong);
+      border-radius: 12px;
+      text-decoration: none;
+      font-size: 14px;
+      font-weight: 750;
+      transition: .2s ease;
+    }
+    .button.primary { color: #0a120f; background: var(--lime); border-color: var(--lime); }
+    .button.secondary { color: var(--text); background: rgba(255,255,255,.035); }
+    .button:hover { transform: translateY(-2px); box-shadow: 0 12px 30px rgba(0,0,0,.2); }
+    .hero-board {
+      padding: 22px;
+      border: 1px solid var(--line);
+      border-radius: var(--radius-xl);
+      background: linear-gradient(145deg, rgba(255,255,255,.045), rgba(255,255,255,.015));
+      box-shadow: var(--shadow);
+    }
+    .hero-board > span { color: var(--dim); font: 700 10px/1 ui-monospace, monospace; letter-spacing: .1em; }
+    .stat-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 18px; }
+    .stat { min-height: 102px; padding: 16px; border: 1px solid var(--line); border-radius: 14px; background: rgba(6, 16, 14, .72); }
+    .stat strong { display: block; color: var(--lime); font-size: 32px; line-height: 1; }
+    .stat span { display: block; margin-top: 10px; color: var(--muted); font-size: 12px; }
+    .hero-route { margin: 16px 0 0; color: var(--muted); font-size: 12px; }
+    .hero-route code { color: var(--mint); }
+
+    section { padding: 92px 0; scroll-margin-top: 64px; }
+    .section-head {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) minmax(280px, 470px);
+      gap: 50px;
+      align-items: end;
+      margin-bottom: 42px;
+    }
+    .section-head p { margin-bottom: 0; color: var(--muted); }
+    .notice {
+      display: grid;
+      grid-template-columns: auto 1fr;
+      gap: 14px;
+      align-items: center;
+      margin-bottom: 18px;
+      padding: 16px 18px;
+      border: 1px solid rgba(255,199,107,.25);
+      border-radius: var(--radius-md);
+      background: var(--amber-soft);
+      color: #ead8ba;
+      font-size: 13px;
+    }
+    .notice strong { color: var(--amber); font: 900 10px/1 ui-monospace, monospace; letter-spacing: .08em; }
+
+    .question-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 14px; }
+    .question-card {
+      min-height: 276px;
+      display: flex;
+      flex-direction: column;
+      padding: 22px;
+      border: 1px solid var(--line);
+      border-radius: var(--radius-lg);
+      background: var(--panel);
+    }
+    .persona { display: flex; align-items: center; gap: 12px; margin-bottom: 24px; }
+    .avatar {
+      width: 42px;
+      height: 42px;
+      flex: 0 0 auto;
+      display: grid;
+      place-items: center;
+      border-radius: 50%;
+      color: #09110f;
+      background: var(--avatar, var(--lime));
+      font: 900 12px/1 ui-monospace, monospace;
+    }
+    .persona strong { display: block; font-size: 14px; }
+    .persona span { display: block; color: var(--dim); font-size: 11px; }
+    .question-card blockquote { margin: 0; font-size: 16px; line-height: 1.58; letter-spacing: -.01em; }
+    .question-card .route-hint {
+      margin: auto 0 0;
+      padding-top: 18px;
+      border-top: 1px solid var(--line);
+      color: var(--mint);
+      font: 700 10px/1.5 ui-monospace, monospace;
+    }
+
+    .thesis {
+      display: grid;
+      grid-template-columns: 1fr auto 1fr;
+      overflow: hidden;
+      border: 1px solid var(--line);
+      border-radius: var(--radius-xl);
+      background: var(--panel);
+      box-shadow: var(--shadow);
+    }
+    .thesis-side { padding: clamp(28px, 5vw, 54px); }
+    .thesis-side:first-child { background: linear-gradient(135deg, var(--coral-soft), transparent 65%); }
+    .thesis-side:last-child { background: linear-gradient(225deg, var(--lime-soft), transparent 65%); }
+    .thesis-side h3 { font-size: clamp(24px, 3vw, 34px); }
+    .thesis-side p { color: var(--muted); }
+    .thesis-side ul { margin: 22px 0 0; padding: 0; list-style: none; }
+    .thesis-side li { display: flex; gap: 10px; padding: 9px 0; border-top: 1px solid var(--line); color: var(--muted); }
+    .thesis-side li::before { content: "↳"; color: var(--lime); }
+    .thesis-bridge { width: 86px; display: grid; place-items: center; border-inline: 1px solid var(--line); color: var(--lime); }
+    .thesis-bridge span { writing-mode: vertical-rl; font: 700 11px/1 ui-monospace, monospace; letter-spacing: .18em; }
+
+    .route-loop {
+      display: grid;
+      grid-template-columns: repeat(6, minmax(0, 1fr));
+      gap: 10px;
+      padding: 14px;
+      border: 1px solid var(--line);
+      border-radius: var(--radius-lg);
+      background: rgba(255,255,255,.018);
+    }
+    .route-step { min-height: 172px; position: relative; padding: 18px; border: 1px solid var(--line); border-radius: 14px; background: var(--panel-solid); }
+    .route-step:not(:last-child)::after { content: "→"; position: absolute; z-index: 2; top: 20px; right: -12px; color: var(--lime); }
+    .route-step:nth-child(-n+2) { box-shadow: inset 0 2px 0 var(--mint); }
+    .route-step:nth-child(n+3):nth-child(-n+4) { box-shadow: inset 0 2px 0 var(--amber); }
+    .route-step:nth-child(n+5) { box-shadow: inset 0 2px 0 var(--lime); }
+    .step-num { display: block; margin-bottom: 26px; color: var(--dim); font: 700 11px/1 ui-monospace, monospace; }
+    .route-step strong { display: block; margin-bottom: 8px; font-size: 15px; }
+    .route-step span:last-child { display: block; color: var(--dim); font-size: 12px; line-height: 1.5; }
+
+    .example-route {
+      display: grid;
+      grid-template-columns: .86fr 1.14fr;
+      gap: 16px;
+      margin-top: 18px;
+    }
+    .prompt-panel, .trace-panel { padding: 26px; border: 1px solid var(--line); border-radius: var(--radius-lg); background: var(--panel); }
+    .prompt-panel { background: linear-gradient(145deg, var(--mint-soft), var(--panel) 70%); }
+    .panel-kicker { display: block; margin-bottom: 22px; color: var(--mint); font: 800 10px/1 ui-monospace, monospace; letter-spacing: .08em; }
+    .prompt-panel blockquote { margin: 0; font-size: 22px; line-height: 1.48; }
+    .prompt-panel p { margin: 22px 0 0; color: var(--muted); font-size: 13px; }
+    .trace-list { margin: 0; padding: 0; list-style: none; }
+    .trace-list li { display: grid; grid-template-columns: 94px 1fr; gap: 14px; padding: 13px 0; border-top: 1px solid var(--line); }
+    .trace-list li:first-child { border-top: 0; padding-top: 0; }
+    .trace-list span { color: var(--dim); font: 700 10px/1.5 ui-monospace, monospace; }
+    .trace-list strong { font-size: 13px; font-weight: 650; }
+
+    .capability-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; }
+    .capability-card {
+      min-height: 324px;
+      display: flex;
+      flex-direction: column;
+      padding: 24px;
+      border: 1px solid var(--line);
+      border-radius: var(--radius-lg);
+      background: var(--panel);
+    }
+    .capability-card.core { grid-column: span 3; min-height: auto; display: grid; grid-template-columns: 150px 1fr 260px; gap: 28px; align-items: center; background: linear-gradient(110deg, var(--lime-soft), var(--panel) 64%); }
+    .unit-id { color: var(--dim); font: 800 10px/1 ui-monospace, monospace; letter-spacing: .08em; }
+    .capability-card h3 { margin-top: 24px; font-size: 24px; }
+    .capability-card.core h3 { margin: 0; color: var(--lime); font-size: 30px; }
+    .capability-card p { color: var(--muted); font-size: 13px; }
+    .capability-card.core p { margin: 0; font-size: 14px; }
+    .capability-list { margin: 16px 0 0; padding: 0; list-style: none; }
+    .capability-list li { padding: 8px 0; border-top: 1px solid var(--line); color: var(--muted); font-size: 12px; }
+    .capability-list strong { color: var(--text); }
+    .ask-example { margin-top: auto; padding-top: 18px; border-top: 1px solid var(--line); color: var(--mint); font-size: 12px; }
+    .ask-example span { display: block; margin-bottom: 7px; color: var(--dim); font: 800 9px/1 ui-monospace, monospace; letter-spacing: .08em; }
+    .unit-meta { display: flex; justify-content: flex-end; gap: 8px; flex-wrap: wrap; }
+    .unit-meta span { padding: 6px 9px; border-radius: 999px; color: var(--lime); background: rgba(0,0,0,.2); font: 800 10px/1 ui-monospace, monospace; }
+
+    .architecture {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      overflow: hidden;
+      border: 1px solid var(--line);
+      border-radius: var(--radius-xl);
+      background: var(--panel);
+    }
+    .layer { min-height: 330px; padding: 30px; border-right: 1px solid var(--line); }
+    .layer:last-child { border-right: 0; }
+    .layer:nth-child(1) { background: linear-gradient(145deg, var(--blue-soft), transparent 70%); }
+    .layer:nth-child(2) { background: linear-gradient(145deg, var(--amber-soft), transparent 70%); }
+    .layer:nth-child(3) { background: linear-gradient(145deg, var(--mint-soft), transparent 70%); }
+    .layer-index { color: var(--dim); font: 800 10px/1 ui-monospace, monospace; }
+    .layer h3 { margin-top: 54px; font-size: 30px; }
+    .layer p { color: var(--muted); font-size: 14px; }
+    .layer ul { margin: 22px 0 0; padding: 0; list-style: none; }
+    .layer li { padding: 8px 0; border-top: 1px solid var(--line); color: var(--muted); font-size: 12px; }
+
+    .principle-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; margin-top: 18px; }
+    .principle { padding: 22px; border: 1px dashed var(--line-strong); border-radius: var(--radius-lg); }
+    .principle strong { display: block; margin-bottom: 7px; }
+    .principle p { margin: 0; color: var(--muted); font-size: 13px; }
+
+    .start-board { display: grid; grid-template-columns: .9fr 1.1fr; overflow: hidden; border: 1px solid var(--line); border-radius: var(--radius-xl); background: var(--panel); }
+    .start-copy { padding: clamp(28px, 5vw, 52px); background: linear-gradient(145deg, var(--lime-soft), transparent 72%); }
+    .start-copy h3 { font-size: clamp(26px, 3vw, 38px); }
+    .start-copy p { color: var(--muted); }
+    .start-code { padding: 26px; border-left: 1px solid var(--line); background: rgba(4, 11, 10, .55); }
+    .platform { padding: 16px 0; border-top: 1px solid var(--line); }
+    .platform:first-child { padding-top: 0; border-top: 0; }
+    .platform span { display: block; margin-bottom: 8px; color: var(--dim); font: 800 10px/1 ui-monospace, monospace; }
+    .platform code { display: block; overflow-x: auto; color: var(--mint); font-size: 12px; white-space: nowrap; }
+    .start-note { margin: 18px 0 0; color: var(--amber); font-size: 12px; }
+
+    .sources { border-top: 1px solid var(--line); }
+    .source-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+    .source-card { padding: 22px; border: 1px solid var(--line); border-radius: var(--radius-lg); background: rgba(255,255,255,.018); }
+    .source-card h3 { font-size: 15px; }
+    .source-card ul { margin: 14px 0 0; padding: 0; list-style: none; }
+    .source-card li { padding: 8px 0; border-top: 1px solid var(--line); color: var(--muted); font-size: 12px; }
+    .source-card code { color: #c6d7d1; overflow-wrap: anywhere; }
+    .scope-note { margin-top: 18px; padding: 18px 20px; border-left: 3px solid var(--amber); background: var(--amber-soft); color: #e9d6b5; font-size: 13px; }
+
+    footer { padding: 38px 0 50px; color: var(--dim); font-size: 12px; }
+    .footer-row { display: flex; justify-content: space-between; gap: 24px; padding-top: 24px; border-top: 1px solid var(--line); }
+
+    @media (max-width: 1080px) {
+      .navlinks { display: none; }
+      .hero-grid, .section-head { grid-template-columns: minmax(0, 1fr); }
+      .hero-board { max-width: 520px; }
+      .question-grid { grid-template-columns: 1fr 1fr; }
+      .route-loop { grid-template-columns: repeat(3, 1fr); }
+      .route-step:nth-child(3)::after { display: none; }
+      .capability-grid { grid-template-columns: 1fr 1fr; }
+      .capability-card.core { grid-column: span 2; grid-template-columns: 120px 1fr; }
+      .capability-card.core .unit-meta { grid-column: 1 / -1; justify-content: flex-start; }
+      .principle-grid { grid-template-columns: 1fr 1fr; }
+    }
+
+    @media (max-width: 720px) {
+      html, body { overflow-x: clip; }
+      .shell { width: min(calc(100% - 24px), var(--max)); }
+      .nav-actions { display: none; }
+      .brand > span:last-child, .brand-divider { display: none; }
+      .brand-zone { gap: 7px; }
+      .product-switch-link { padding-inline: 9px; }
+      .product-switch-link .switch-label { display: none; }
+      .repo-link { display: none; }
+      .hero { padding-top: 72px; }
+      .hero-grid, .hero-grid > *, .hero h1, .lede { width: 100%; max-width: 100%; min-width: 0; }
+      .hero h1, .lede { overflow-wrap: anywhere; word-break: break-word; }
+      .question-grid, .capability-grid, .architecture, .principle-grid, .source-grid, .start-board, .example-route { grid-template-columns: minmax(0, 1fr); }
+      .thesis { grid-template-columns: 1fr; }
+      .thesis-bridge { width: auto; height: 58px; border: 0; border-block: 1px solid var(--line); }
+      .thesis-bridge span { writing-mode: horizontal-tb; }
+      .route-loop { grid-template-columns: minmax(0, 1fr); }
+      .route-step:not(:last-child)::after { content: "↓"; top: auto; right: 18px; bottom: -16px; }
+      .route-step:nth-child(3)::after { display: block; }
+      .capability-card.core { grid-column: auto; grid-template-columns: 1fr; }
+      .capability-card.core .unit-meta { grid-column: auto; }
+      .layer { min-height: auto; border-right: 0; border-bottom: 1px solid var(--line); }
+      .layer:last-child { border-bottom: 0; }
+      .layer h3 { margin-top: 28px; }
+      .start-code { border-left: 0; border-top: 1px solid var(--line); }
+      .footer-row { flex-direction: column; }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      html { scroll-behavior: auto; }
+      *, *::before, *::after { transition-duration: .001ms !important; animation-duration: .001ms !important; }
+    }
+  </style>
+</head>
+<body>
+  <header class="topbar">
+    <div class="shell nav">
+      <div class="brand-zone">
+        <a class="brand" href="#top" aria-label="返回 MindSpeed Agent 页面顶部">
+          <span class="brand-mark">MA</span>
+          <span>MindSpeed Agent</span>
+        </a>
+        <span class="brand-divider" aria-hidden="true"></span>
+        <a class="product-switch-link" href="mindspeed-tool-matrix-analysis.html" aria-label="切换到 MindSpeed 与 Insight 机会地图">
+          <span class="switch-mark" aria-hidden="true">MS</span>
+          <span class="switch-label">MindSpeed × Insight</span>
+          <span class="switch-arrow" aria-hidden="true">→</span>
+        </a>
+      </div>
+      <div class="nav-actions">
+        <nav class="navlinks" aria-label="页面导航">
+          <a href="#questions">用户问题</a>
+          <a href="#route">工作方式</a>
+          <a href="#capabilities">能力地图</a>
+          <a href="#architecture">产品架构</a>
+          <a href="#start">开始使用</a>
+        </nav>
+        <a class="repo-link" href="https://gitcode.com/Ascend/MindSpeed-Agent" target="_blank" rel="noopener noreferrer" aria-label="在新窗口打开 MindSpeed Agent GitCode 源仓">GitCode 源仓 <span aria-hidden="true">↗</span></a>
+      </div>
+    </div>
+  </header>
+
+  <main id="top">
+    <section class="hero">
+      <div class="shell hero-grid">
+        <div>
+          <p class="eyebrow">Intent → Evidence → Delivery</p>
+          <h1>把一句工程问题，<br><span>变成可执行、可验证的交付。</span></h1>
+          <p class="lede">MindSpeed Agent 面向 MindSpeed、昇腾 NPU 与 CANN 开发工作流。你不必先弄清该找哪个仓库、插件或命令：直接描述目标，它会先消歧，再把任务交给对应的 Agent 与 Skill，推进迁移、训练、推理、算子、资料等工程闭环。</p>
+          <div class="hero-actions">
+            <a class="button primary" href="#questions">先看能问什么 <span>↓</span></a>
+            <a class="button secondary" href="#route">看一句话如何落地 <span>↗</span></a>
+          </div>
+        </div>
+        <aside class="hero-board" aria-label="MindSpeed Agent 当前知识图谱规模">
+          <span>CATALOG SNAPSHOT · 2026-09-21</span>
+          <div class="stat-grid">
+            <div class="stat"><strong>13</strong><span>生态仓节点</span></div>
+            <div class="stat"><strong>9</strong><span>任务类型</span></div>
+            <div class="stat"><strong>7</strong><span>插件单元</span></div>
+            <div class="stat"><strong>3</strong><span>支持平台</span></div>
+          </div>
+          <p class="hero-route"><code>repo → plugin → agent → skill</code><br>数字来自当前仓库 catalog，不是产品宣传估算。</p>
+        </aside>
+      </div>
+    </section>
+
+    <section id="questions" aria-labelledby="questions-title">
+      <div class="shell">
+        <div class="section-head">
+          <div>
+            <p class="eyebrow">00 / Ask in your own words</p>
+            <h2 id="questions-title">不用背命令，<br>先把问题说清楚。</h2>
+          </div>
+          <p>这些问题横跨训练框架、推理引擎、算子栈和资料治理。MindSpeed Agent 的第一项价值，是先判断“这件事到底应该落到哪里”，再开始执行。</p>
+        </div>
+        <div class="notice"><strong>SCENARIO NOTE</strong><span>以下人物与问题均为帮助读者理解产品能力而构造，不代表真实客户访谈或已发生项目。</span></div>
+        <div class="question-grid">
+          <article class="question-card">
+            <div class="persona"><span class="avatar" style="--avatar:#c9f45f">训</span><div><strong>训练工程师</strong><span>开源模型迁移</span></div></div>
+            <blockquote>“我要把 Qwen 接入昇腾训练，但 MindSpeed-LLM、MindSpeed-Bridge 和 MindSpeed 到底该选哪个？”</blockquote>
+            <p class="route-hint">ROUTE · 仓库消歧 → 模型迁移路径</p>
+          </article>
+          <article class="question-card">
+            <div class="persona"><span class="avatar" style="--avatar:#61dfbd">精</span><div><strong>精度工程师</strong><span>GPU → NPU 对齐</span></div></div>
+            <blockquote>“同一份 checkpoint 在 GPU 和 NPU 上 loss 开始分叉，能不能定位首个差异并建立精度门禁？”</blockquote>
+            <p class="route-hint">ROUTE · ALIGN → 对齐与验证 Skill</p>
+          </article>
+          <article class="question-card">
+            <div class="persona"><span class="avatar" style="--avatar:#86b7ff">推</span><div><strong>推理部署工程师</strong><span>vLLM-Ascend 服务</span></div></div>
+            <blockquote>“Qwen3 服务已经起来了，但 P99 很高。帮我完成压测、Profiling、寻优和回归验证。”</blockquote>
+            <p class="route-hint">ROUTE · 推理优化状态机流水线</p>
+          </article>
+          <article class="question-card">
+            <div class="persona"><span class="avatar" style="--avatar:#ffc76b">算</span><div><strong>算子开发者</strong><span>Triton-Ascend</span></div></div>
+            <blockquote>“把这个 CUDA Triton 算子迁到昇腾，边界、精度、Profiling 和性能优化一起做完。”</blockquote>
+            <p class="route-hint">ROUTE · DESIGN → IMPLEMENT → OPTIMIZE</p>
+          </article>
+          <article class="question-card">
+            <div class="persona"><span class="avatar" style="--avatar:#ff887d">迁</span><div><strong>迁移负责人</strong><span>仓库级 NPU 迁移</span></div></div>
+            <blockquote>“这个 PyTorch 项目到处写了 CUDA，还有自定义扩展。请先盘清范围，再迁到 NPU 并给出证据报告。”</blockquote>
+            <p class="route-hint">ROUTE · NPU MIGRATE → 真实命令证据</p>
+          </article>
+          <article class="question-card">
+            <div class="persona"><span class="avatar" style="--avatar:#bca7ff">框</span><div><strong>框架适配工程师</strong><span>VeOmni 接入</span></div></div>
+            <blockquote>“把新模型接入 VeOmni：环境、代码、训练验证、并行策略、精度和 MFU 都要有验收结果。”</blockquote>
+            <p class="route-hint">ROUTE · VEOMNI 端到端迁移闭环</p>
+          </article>
+          <article class="question-card">
+            <div class="persona"><span class="avatar" style="--avatar:#f5a6d5">文</span><div><strong>资料维护者</strong><span>生成与质量审查</span></div></div>
+            <blockquote>“为这个昇腾仓库补齐中文资料，并从正确性、完整性、易理解、易获取四个维度审查。”</blockquote>
+            <p class="route-hint">ROUTE · DOC AGENT → 契约与 LINT 门禁</p>
+          </article>
+          <article class="question-card">
+            <div class="persona"><span class="avatar" style="--avatar:#92d9c5">诊</span><div><strong>平台维护者</strong><span>版本与环境诊断</span></div></div>
+            <blockquote>“升级 CANN 后服务变慢了。能否把 torch_npu、vLLM-Ascend 和组件版本逐层二分？”</blockquote>
+            <p class="route-hint">ROUTE · DIAGNOSE → 版本二分与剖析</p>
+          </article>
+        </div>
+      </div>
+    </section>
+
+    <section aria-labelledby="thesis-title">
+      <div class="shell">
+        <div class="thesis">
+          <div class="thesis-side">
+            <p class="eyebrow">Without the agent</p>
+            <h3 id="thesis-title">能力很多，入口却分散。</h3>
+            <p>用户往往先花时间识别仓库、版本、后端和工具边界，真正的工程工作反而排在后面。</p>
+            <ul>
+              <li>同一句“优化”可能指训练、推理或算子</li>
+              <li>仓库别名、历史名称和技术栈容易混淆</li>
+              <li>操作散落在文档、脚本和个人经验里</li>
+              <li>给出建议不等于完成验证与交付</li>
+            </ul>
+          </div>
+          <div class="thesis-bridge"><span>INTENT ROUTING</span></div>
+          <div class="thesis-side">
+            <p class="eyebrow">With MindSpeed Agent</p>
+            <h3>一句话进入正确工作流。</h3>
+            <p>Agent 先用生态知识图谱做确定性消歧，再按任务形态决定调用单点 Skill，还是进入多角色状态机流水线。</p>
+            <ul>
+              <li>歧义时明确反问，不静默猜仓库</li>
+              <li>只按需安装命中的领域插件</li>
+              <li>复杂任务由设计、开发、测试、检视协作</li>
+              <li>用命令、配置、代码与报告形成证据链</li>
+            </ul>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section id="route" aria-labelledby="route-title">
+      <div class="shell">
+        <div class="section-head">
+          <div>
+            <p class="eyebrow">01 / How it works</p>
+            <h2 id="route-title">一句话，怎样走到结果？</h2>
+          </div>
+          <p>路由不是“猜一个最像的 Skill”。它先确定目标仓与任务维度，再结合插件安装状态和执行形态，决定下一步由谁做、做到什么程度。</p>
+        </div>
+        <div class="route-loop" aria-label="MindSpeed Agent 六步工作流">
+          <article class="route-step"><span class="step-num">01 · INTENT</span><strong>接收自然语言</strong><span>模型、目标、现象、环境信息都可以不完整。</span></article>
+          <article class="route-step"><span class="step-num">02 · REPO</span><strong>生态仓消歧</strong><span>按 id 与别名表识别训练框架、推理引擎或工具栈。</span></article>
+          <article class="route-step"><span class="step-num">03 · TASK</span><strong>识别任务类型</strong><span>迁移、性能、精度、部署、诊断、算子、资料或验证。</span></article>
+          <article class="route-step"><span class="step-num">04 · UNIT</span><strong>选择插件单元</strong><span>检查是否已安装；未安装时给出对应平台命令。</span></article>
+          <article class="route-step"><span class="step-num">05 · EXECUTE</span><strong>Agent / Skill 执行</strong><span>单点任务直达 Skill，复杂任务进入多角色流水线。</span></article>
+          <article class="route-step"><span class="step-num">06 · VERIFY</span><strong>证据与验收</strong><span>保留真实命令、配置差异、测试结果和边界结论。</span></article>
+        </div>
+
+        <div class="example-route">
+          <article class="prompt-panel">
+            <span class="panel-kicker">CONSTRUCTED WALKTHROUGH</span>
+            <blockquote>“vLLM-Ascend 上的 Qwen3 服务 P99 太高，帮我完成诊断和优化，并证明没有精度回退。”</blockquote>
+            <p>这不是一个“给几条建议”的问题，而是一条需要设计、实测和回归的端到端任务。</p>
+          </article>
+          <article class="trace-panel">
+            <span class="panel-kicker">ROUTING TRACE</span>
+            <ol class="trace-list">
+              <li><span>REPO</span><strong>vllm-ascend（推理目标仓）</strong></li>
+              <li><span>TASK KIND</span><strong>diagnose + perf-optimize + validate</strong></li>
+              <li><span>PLUGIN</span><strong>inference-model-optimize</strong></li>
+              <li><span>ENTRY</span><strong>orchestrator 状态机入口</strong></li>
+              <li><span>AGENTS</span><strong>architect → developer → tester → reviewer → optimizer</strong></li>
+              <li><span>DELIVERY</span><strong>基线、Profile 证据、配置改动、性能对比、精度验收</strong></li>
+            </ol>
+          </article>
+        </div>
+      </div>
+    </section>
+
+    <section id="capabilities" aria-labelledby="capabilities-title">
+      <div class="shell">
+        <div class="section-head">
+          <div>
+            <p class="eyebrow">02 / Capability map</p>
+            <h2 id="capabilities-title">一个 core，<br>六个按需领域单元。</h2>
+          </div>
+          <p>默认 core 只负责意图路由与知识图谱，不把所有技能一次塞进会话。命中领域后再安装对应 unit，控制上下文规模，也让路由更准确。</p>
+        </div>
+        <div class="capability-grid">
+          <article class="capability-card core">
+            <div><span class="unit-id">CORE · DEFAULT</span><h3>MindSpeed Agent</h3></div>
+            <p><strong style="color:var(--text)">生态知识图谱 + 意图路由入口。</strong><br>覆盖 13 个社区仓别名与 9 类任务；不确定时列出候选并反问，确定后组装 <span class="mono">repo → plugin → agent → skill</span> 调用链。</p>
+            <div class="unit-meta"><span>3 PLATFORMS</span><span>13 REPOS</span><span>9 TASK KINDS</span></div>
+          </article>
+
+          <article class="capability-card">
+            <span class="unit-id">UNIT 01 · MINDSPEED-LLM</span>
+            <h3>LLM 训练迁移与验证</h3>
+            <p>围绕 MindSpeed-LLM、MindSpeed-Bridge、MCore 与 FSDP2 的模型接入、融合算子、精度和训练场景验证。</p>
+            <ul class="capability-list"><li><strong>16 skills</strong> · 纯技能聚合</li><li>开源模型迁移 / FSDP2 适配</li><li>精度对齐 / loss 门禁 / 远端验证</li></ul>
+            <div class="ask-example"><span>TRY ASKING</span>“把这个 HF 模型接到 MindSpeed-Bridge 并跑通验证。”</div>
+          </article>
+
+          <article class="capability-card">
+            <span class="unit-id">UNIT 02 · INFERENCE</span>
+            <h3>推理部署优化闭环</h3>
+            <p>面向 vLLM-Ascend 的环境、服务、显存计算、基准、Profiling、自动寻优、精度验收与版本诊断。</p>
+            <ul class="capability-list"><li><strong>12 skills</strong> · 状态机流水线</li><li>部署 → 基线 → 剖析 → 优化</li><li>多角色设计、开发、测试与检视</li></ul>
+            <div class="ask-example"><span>TRY ASKING</span>“部署 DeepSeek 推理服务，并把吞吐调到目标值。”</div>
+          </article>
+
+          <article class="capability-card">
+            <span class="unit-id">UNIT 03 · OPS</span>
+            <h3>昇腾算子开发</h3>
+            <p>把算子需求从接口与边界分析，推进到 Triton-Ascend 实现、测试生成、Profiling 和多轮性能优化。</p>
+            <ul class="capability-list"><li><strong>5 skills</strong> · Design → Implement → Optimize</li><li>需求详设 / 代码生成 / 边界摸排</li><li>精度测试 / Profiling 驱动优化</li></ul>
+            <div class="ask-example"><span>TRY ASKING</span>“为这个算子做 Triton-Ascend 实现并验证性能。”</div>
+          </article>
+
+          <article class="capability-card">
+            <span class="unit-id">UNIT 04 · DOC AGENT</span>
+            <h3>资料生成与审查</h3>
+            <p>以仓库资料清单、契约 Schema、规则目录和 lint 门禁驱动文档设计、撰写、更新及四维质量审查。</p>
+            <ul class="capability-list"><li><strong>5 skills</strong> · 确定性引擎</li><li>正确性 / 完整性 / 易理解 / 易获取</li><li>人工确认章节，按问题清单修复循环</li></ul>
+            <div class="ask-example"><span>TRY ASKING</span>“生成中文使用指南，并审查代码片段是否可执行。”</div>
+          </article>
+
+          <article class="capability-card">
+            <span class="unit-id">UNIT 05 · NPU MIGRATE</span>
+            <h3>仓库级 NPU 迁移</h3>
+            <p>面向任意 GPU / PyTorch 项目，由 goal 入口自适应编排环境、特性模型、本地资产、修复与交付报告。</p>
+            <ul class="capability-list"><li><strong>8 skills</strong> · 提示词优先</li><li>GPU / CUDA 依赖发现与替换</li><li>真实命令、smoke 与报告证据</li></ul>
+            <div class="ask-example"><span>TRY ASKING</span>“把这个完整仓库迁到昇腾 NPU，保留可复核证据。”</div>
+          </article>
+
+          <article class="capability-card">
+            <span class="unit-id">UNIT 06 · VEOMNI</span>
+            <h3>VeOmni 迁移闭环</h3>
+            <p>从 NPU 环境检查和模型分析，到代码适配、训练验证、并行策略、精度、MFU 与性能优化。</p>
+            <ul class="capability-list"><li><strong>8 skills</strong> · 状态机流水线</li><li>迁移 / 并行 / 精度 / 性能协作</li><li>acceptance_report.json 验收</li></ul>
+            <div class="ask-example"><span>TRY ASKING</span>“把新模型接入 VeOmni，并产出完整验收报告。”</div>
+          </article>
+        </div>
+      </div>
+    </section>
+
+    <section id="architecture" aria-labelledby="architecture-title">
+      <div class="shell">
+        <div class="section-head">
+          <div>
+            <p class="eyebrow">03 / Product architecture</p>
+            <h2 id="architecture-title">不是技能清单，<br>是三层协作架构。</h2>
+          </div>
+          <p>Plugin 负责流程与边界，Agent 负责角色协作和决策，Skill 提供领域知识与工程模板。复杂任务可以稳定编排，单点任务也能直接命中最小能力。</p>
+        </div>
+        <div class="architecture">
+          <article class="layer">
+            <span class="layer-index">LAYER 01 · ORCHESTRATION</span>
+            <h3>Plugin</h3>
+            <p>定义一个领域的入口、安装单元、Agent 协作顺序和状态机工作流。</p>
+            <ul><li>core + 按需 unit</li><li>安装与平台边界</li><li>状态、门禁与交付契约</li></ul>
+          </article>
+          <article class="layer">
+            <span class="layer-index">LAYER 02 · EXECUTION</span>
+            <h3>Agent</h3>
+            <p>承担设计、开发、测试、检视、优化等角色，把需求分解为可检查的阶段。</p>
+            <ul><li>上下文与方案决策</li><li>角色间交接</li><li>失败定位与迭代</li></ul>
+          </article>
+          <article class="layer">
+            <span class="layer-index">LAYER 03 · KNOWLEDGE</span>
+            <h3>Skill</h3>
+            <p>最小知识单元，封装领域步骤、工程约束、工具用法和可复用模板。</p>
+            <ul><li>按场景精确加载</li><li>仓库内单一知识源</li><li>可评审、可演进、可组合</li></ul>
+          </article>
+        </div>
+        <div class="principle-grid">
+          <article class="principle"><strong>不静默猜测</strong><p>仓库或任务不唯一时明确列出差异，请用户确认关键分岔。</p></article>
+          <article class="principle"><strong>按需加载</strong><p>core 保持轻量，只有命中领域才安装对应插件并新开会话。</p></article>
+          <article class="principle"><strong>真实证据优先</strong><p>命令输出、配置 diff、测试与报告优先于无依据的“应该可以”。</p></article>
+          <article class="principle"><strong>边界可见</strong><p>明确区分已有能力、需要环境才能验证的能力与规划中的能力。</p></article>
+        </div>
+      </div>
+    </section>
+
+    <section id="start" aria-labelledby="start-title">
+      <div class="shell">
+        <div class="section-head">
+          <div>
+            <p class="eyebrow">04 / Start small</p>
+            <h2 id="start-title">先装 core，<br>然后直接说需求。</h2>
+          </div>
+          <p>三个平台共享同一套 catalog、Skills 与工作流。路由命中尚未安装的领域时，Agent 会给出按需安装命令；新 unit 安装后需要新开会话加载。</p>
+        </div>
+        <div class="start-board">
+          <div class="start-copy">
+            <h3>最好的入口不是命令，<br>是你的真实问题。</h3>
+            <p>例如：<br><span class="accent">“我想优化 MindSpeed-LLM 的模型，但不知道先看性能、精度还是并行配置。”</span></p>
+            <p>core 会先完成消歧。如果任务仍有多个合理方向，它会展示选项，而不是替你悄悄做决定。</p>
+            <a class="button primary" href="https://gitcode.com/Ascend/MindSpeed-Agent" target="_blank" rel="noopener noreferrer">打开项目仓库 <span>↗</span></a>
+          </div>
+          <div class="start-code" aria-label="三个平台的 core 安装入口">
+            <div class="platform"><span>CLAUDE CODE · CORE</span><code>bash install.sh</code></div>
+            <div class="platform"><span>CODEX · CORE</span><code>bash install.sh codex</code></div>
+            <div class="platform"><span>DSH · CORE</span><code>bash install.sh dsh</code></div>
+            <div class="platform"><span>WINDOWS EXAMPLE · CODEX</span><code>install.bat codex</code></div>
+            <p class="start-note">按需安装领域 unit 后，Claude Code / Codex / DSH 均需新开会话。</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="sources" aria-labelledby="sources-title">
+      <div class="shell">
+        <div class="section-head">
+          <div>
+            <p class="eyebrow">Evidence & scope</p>
+            <h2 id="sources-title">介绍依据与边界</h2>
+          </div>
+          <p>本页描述的是当前本地仓库已经登记的架构与能力。示例问题用于解释路由和交付形态，不等同于性能承诺、客户案例或特定环境下的成功保证。</p>
+        </div>
+        <div class="source-grid">
+          <article class="source-card">
+            <h3>产品与架构依据</h3>
+            <ul>
+              <li><code>README.md</code> — 产品定位、平台、领域能力与安装方式</li>
+              <li><code>AGENTS.md</code> — Plugin → Agent → Skill 三层架构与评审约束</li>
+              <li><code>.claude-plugin/marketplace.json</code> — 7 个已登记插件单元</li>
+              <li><code>docs/install-on-demand-design.md</code> — core + 领域 unit 按需安装</li>
+            </ul>
+          </article>
+          <article class="source-card">
+            <h3>路由与能力依据</h3>
+            <ul>
+              <li><code>catalog/repos.yaml</code> — 13 个生态仓、别名与关联</li>
+              <li><code>catalog/task-kinds.yaml</code> — 9 类任务及触发词</li>
+              <li><code>catalog/plugins.yaml</code> — repo 亲缘、Skills、Agent 与执行形态</li>
+              <li><code>skills/common/common/ecosystem-routing/SKILL.md</code> — R1–R5 路由规则</li>
+            </ul>
+          </article>
+        </div>
+        <div class="scope-note"><strong>关键边界：</strong>Agent 可以分析、修改和验证用户放入作用域的工程资产，但真实训练、推理、Profiling 与 NPU 验收仍依赖匹配的软件栈、硬件、数据、模型权重和访问权限。页面不把这些外部条件包装成“零门槛自动完成”。</div>
+      </div>
+    </section>
+  </main>
+
+  <footer>
+    <div class="shell footer-row">
+      <span>MindSpeed Agent / Product Overview</span>
+      <span>基于本地仓库静态分析 · 更新于 2026-09-21</span>
+    </div>
+  </footer>
+</body>
+</html>

@@ -35,6 +35,12 @@
   const board = doc.getElementById("croBoard");
   if (!board) return;
 
+  /* 共享规则层（../../shared/plane-rules.js，与 rank-intro/rank-intro.html 同一份）：
+     专家着色的循环长度、热力色阶、量尺的 1/2/5 梯子、clamp 都从它读。
+     见它顶部关于「为什么只抽规则、不抽渲染」的说明。 */
+  const PR = global.PTOPlaneRules;
+  if (!PR) throw new Error("config-relation-plane.js 需要先加载 shared/plane-rules.js");
+
   /* ══ 几何常量（世界坐标，单位 px @ scale 1）══════════════════════════════
      格子是横长方形而不是正方形：一行是一张卡（或一台整机）、一列是一层，读的
      时候总是先沿着行扫（这张卡压住哪几层），横向宽一点扫起来省眼力。
@@ -213,7 +219,7 @@
      副本号**不参与**——上下两个 EDP 副本持的是同一份权重（步末在 EDP 组里 all-reduce
      对齐），换色会被读成「两套不同的专家」。副本之间的边界交给 DP_GAP 那道缝与
      左量尺去分，颜色只管权重身份。 */
-  const SET_TINTS = 4;
+  const SET_TINTS = PR.SET_TINTS;   /* 共享规则层（rank-intro 读的是同一个数与同一批色值） */
   /* auto 粒度的切换判据：**整机格子还只够铺一块颜色吗**（见 currentUnit）。
      整机行的高度恰好是它那 span 行卡之和，所以一格长到 BLOCK_MIN_H —— 格内本该
      开始有内容的那个门槛 —— 时，整机档就已经把它能给的都给完了：它给不出格内的
@@ -241,7 +247,7 @@
     return node;
   }
 
-  function clamp(v, lo, hi) { return Math.min(hi, Math.max(lo, v)); }
+  const clamp = PR.clamp;   /* 共享规则层 */
 
   /* 一串连号折成区间：Layer 0–11 比 12 枚胶囊好读得多 */
   function runsOf(list) {
@@ -441,28 +447,11 @@
   /* 冷蓝 → 火红。六段线性插值，亮度单调上升（深色底上「越热越亮」这条不能破）。
      中途绕开绿色：绿在这套色板里是「安全 / 正常」的语义色，热力图的中段出现一片
      绿会被读成一档状态，而它其实只是「不冷不热」。 */
-  const HEAT_RAMP = [
-    [0.00, 13, 30, 66],
-    [0.22, 38, 86, 178],
-    [0.44, 104, 78, 196],
-    [0.64, 176, 66, 148],
-    [0.82, 226, 68, 84],
-    [1.00, 255, 124, 46],
-  ];
-
-  const HEAT_RAMP_CSS = "linear-gradient(90deg, "
-    + HEAT_RAMP.map((s) => `rgb(${s[1]},${s[2]},${s[3]}) ${Math.round(s[0] * 100)}%`).join(", ") + ")";
-
-  function heatColor(u) {
-    const t = clamp(u, 0, 1);
-    let i = 1;
-    while (i < HEAT_RAMP.length - 1 && t > HEAT_RAMP[i][0]) i += 1;
-    const a = HEAT_RAMP[i - 1];
-    const b = HEAT_RAMP[i];
-    const f = (t - a[0]) / ((b[0] - a[0]) || 1);
-    const mix = (j) => Math.round(a[j] + (b[j] - a[j]) * f);
-    return `rgb(${mix(1)},${mix(2)},${mix(3)})`;
-  }
+  /* 色阶表、插值、图例渐变都在共享规则层（rank-intro 案例二读的是同一张表；
+     那页另有一张浅色主题的表，本页固定深色、只用这一张）。 */
+  const HEAT_RAMP = PR.HEAT_RAMP;
+  const HEAT_RAMP_CSS = PR.heatRampCss(HEAT_RAMP);
+  const heatColor = PR.heatColor;
 
   /* ── 硬件常量 ────────────────────────────────────────────────────────────
      CARD_SPECS 里只有 hbmGB 是结构化字段，算力与互联带宽都写在 specs 那句说明
@@ -1262,33 +1251,7 @@
   const paneNet = el("div", "crop-pane crop-pane--net");
   leftBody.append(paneForm, paneCode, paneNet);
 
-  /* ── 左栏底部那枚 AI 输入框（外观件，暂不接功能）──────────────────────
-     它浮在表单之上、贴着左栏底边，而不是排在表单末尾：左栏是一条能滚很长的
-     配置流，排在末尾等于「拨到底才看得见」，而这一格恰恰是拨不动那十几个数时
-     才想用的东西 —— 得一直在手边。
-     占位语写成一句真能提的需求（「改成 1024 张 32G 的卡…」），而不是「问我点什么」：
-     用户看一眼就知道这里能接的是**整份配置的改写**，不是一个搜索框。
-     ⚠️ 输入框已加进 observer 的 SELECTABLE 白名单，否则点进来就被那条
-     「点空白清空选择」把当前选中对象清掉。 */
-  const ai = el("form", "crop-ai");
-  ai.id = "cropAi";
-  ai.setAttribute("aria-label", "AI 配置助手");
-  ai.addEventListener("submit", (e) => e.preventDefault());
-  /* 单行输入：提示文字与发送键并排。「配置助手」身份已经由这一栏的位置和渐变描边
-     表达，不再重复放一枚占空间的身份胶囊。 */
-  const aiInput = el("input", "crop-ai__input");
-  aiInput.type = "text";
-  aiInput.id = "cropAiInput";
-  aiInput.placeholder = "改成1024张32G的卡，请给出推荐配置方案";
-  aiInput.setAttribute("aria-label", "描述你想要的配置改动");
-  const aiSend = el("button", "crop-ai__send");
-  aiSend.type = "submit";
-  aiSend.title = "发送（功能待接入）";
-  aiSend.setAttribute("aria-label", "发送");
-  aiSend.innerHTML = '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 19V5M5 12l7-7 7 7"></path></svg>';
-  ai.append(aiInput, aiSend);
-
-  left.append(leftHead, leftIntro, leftBody, ai);
+  left.append(leftHead, leftIntro, leftBody);
 
   // 表单档的顺序按 pic/新视图.png：Model Architecture → Cluster → MoE
   if (archRegion) paneForm.appendChild(archRegion);
@@ -1802,6 +1765,13 @@
   board.classList.add("is-plane");
   board.dataset.mode = "config";
 
+  /* 「一套完整专家」那四色与中性灰的**单一来源**是共享规则层（rank-intro 读的是
+     同一批色值）。写成 board 上的行内变量而不是只靠 css 里 .cro-board.is-plane 的
+     那几行：行内优先级更高，于是改共享层那一处两页同时变色；css 里那几行因此只是
+     留痕（值与这里逐位相同，且在本脚本没跑起来时仍兜得住样式）。 */
+  PR.SET_COLORS.forEach((hex, i) => board.style.setProperty(`--crop-set-${i}`, hex));
+  board.style.setProperty("--crop-set-neutral", PR.SET_NEUTRAL);
+
   /* 用户**主动**收起右栏之后，再选中别的东西不该把它顶回来 —— 收起是一次表态，
      不是一次临时状态。只有再点开关（或收起键旁那枚）才解除。 */
   let rightPinnedClosed = false;
@@ -1979,19 +1949,8 @@
      一格在屏幕上不足 minPx 时，就每隔 n 格才标一次；n 走 1 / 2 / 5 / 10 / 20…
      这个梯子（与地图、时间轴上的刻度同一套做法），不用任意整数 —— 刻度间隔本身
      要是个好读的数，否则「每 7 层标一次」比不标还费解。 */
-  function niceStep(unitPx, minPx) {
-    if (!(unitPx > 0)) return 1;
-    let step = 1;
-    const ladder = [1, 2, 5];
-    let decade = 1;
-    let i = 0;
-    while (step * unitPx < minPx && step < 100000) {
-      i += 1;
-      if (i % 3 === 0) decade *= 10;
-      step = ladder[i % 3] * decade;
-    }
-    return step;
-  }
+  /* 刻度的 1/2/5 梯子：共享规则层（rank-intro 的左侧 rank 刻度走同一份） */
+  const niceStep = PR.niceStep;
 
   /* 一次布局解算：把 topology 换成「哪些列、哪些行、各在世界坐标的哪儿」。
      行是**一个 stage 内**的 rank 序（ranksPerStage 行），不是全量 rank ——
@@ -2661,9 +2620,11 @@
 
       const cy0 = Math.max(y, v.y0 - 1);
       const cy1 = Math.min(y + h, v.y1);
+      /* 带子下面原先还有一行小字「≡ EDP 0」（同色的上下几块是同一份专家权重），已删：
+         这层关系画布上本来就由**颜色**（同色 = 同一份权重）与 DP_GAP 那道宽缝在说，
+         量尺上只留副本号读起来更干净；要一句话解释的人悬浮到带子上，下面那条 tip
+         的第二行说的正是它。（与 rank-intro 那页同步删除。） */
       const band = el("div", "crop-tick crop-tick--edp", `${dName} ${g}`);
-      // 副本带下补一行小字「≡ EDP 0」：画布上同色的上下几块是同一份专家权重，这里把关系写出来（带太矮就不写）
-      if (g > 0 && cy1 - cy0 > 44) band.appendChild(el("small", "crop-tick__sub", `≡ ${dName} 0`));
       band.dataset.tip = `${dName}${g} · 一个完整模型副本`
         + (g > 0 ? `\n专家权重与 ${dName} 0 是同一份，步末在 EDP 组里 all-reduce 对齐` : "")
         + (layout.innerIsDp

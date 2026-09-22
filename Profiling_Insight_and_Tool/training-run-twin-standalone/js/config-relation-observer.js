@@ -43,6 +43,17 @@
 (function (global) {
   "use strict";
 
+  /* ── 共享规则层 ─────────────────────────────────────────────────────────
+     ../../shared/plane-rules.js —— 与 rank-intro/rank-intro.html 共用一份：
+     EP 三档口径的换算（epDomain / EDP / dpReplica / world / d 轴命名）、几条整除
+     约束的**判据**、专家四色、热力色阶、量尺的 1/2/5 梯子、字段量程。两页的展平
+     画布一个是 DOM、一个是 canvas，渲染有意不合并；合的是这些与画法无关的规则，
+     改一处两页同时生效。文案仍各页自己写（本页要靠字段 label 的子串去标红 stepper）。
+     ⚠️ 硬依赖：加载本文件的页面（config-relation-plane.html /
+     config-relation-observer.html）必须在它之前引入那个脚本。 */
+  const PR = global.PTOPlaneRules;
+  if (!PR) throw new Error("config-relation-observer.js 需要先加载 shared/plane-rules.js");
+
   /* ── 模型预设：非并行的结构常量，来自 openPangu-2.0-Flash 架构参考.md §4 ── */
   const MODEL_PRESETS = {
     "openpangu-flash": {
@@ -493,6 +504,23 @@
        走 stepper 的字段有意义。 */
     node:         { label: "Node",           group: "cluster",  min: 1,  max: 8192 },
   };
+
+  /* ── 量程的**单一来源**：共享规则层 ───────────────────────────────────────
+     下面这一趟把 shared/plane-rules.js 的 FIELD_SPECS 里那 12 个字段的
+     min / max / pow2 盖到上表对应项上 —— rank-intro 读的是同一份，以后调量程只改
+     那里一处，两页同时生效。
+     ⚠️ 只盖这三个键：label 留给上表自己（本页的 label 参与 emit() 的错误文案子串
+     匹配、决定标红哪一枚 stepper，是承重的），group / step / digits / title 同理。
+     ⚠️ 上表里那 12 项的 min/max/pow2 字面量因此只是**留痕**，真值看共享层；
+     不在共享层里的字段（vpp / node / seqLen 之外的 batch 几项…）不受这趟影响。 */
+  Object.keys(PR.FIELD_SPECS).forEach((field) => {
+    const target = FIELD_SPECS[field];
+    if (!target) return;
+    const canon = PR.FIELD_SPECS[field];
+    if (canon.min !== undefined) target.min = canon.min;
+    if (canon.max !== undefined) target.max = canon.max;
+    if (canon.pow2 !== undefined) target.pow2 = canon.pow2;
+  });
 
   /* ── 布尔开关 ─────────────────────────────────────────────────────────────
      没有 min/max/step 的量：不进 world 的乘积、不参与任何配平，拨它们只改
@@ -966,7 +994,7 @@
      减半修不动了 —— 120 减半是 60，仍然不整除 256。所以「把某个字段挪到离现值
      最近的合法值」升格成基本操作：reconcile 的修复分支和报错横幅的建议修法都用
      它。三个纯函数，都不碰 config。 */
-  function gcd(a, b) { return b ? gcd(b, a % b) : a; }
+  const gcd = PR.gcd;   /* 共享规则层（与 rank-intro 同一份） */
 
   function clampToSpec(value, spec) { return Math.min(spec.max, Math.max(spec.min, value)); }
 
@@ -1308,16 +1336,34 @@
      老配置里这枚是布尔 moeOrthogonal（true = 正交）。折算只写在 epModeOf 这一处，
      与 shardMode / recomputeMode 同一条规矩：下游一律读 epModeOf(config)，
      别再各自 `config.moeOrthogonal ? …` 一遍。 */
-  const EP_MODES = ["split", "orthogonal", "mf"];
+  /* 三档的名字取共享规则层那一份（它另认 rank-intro 的 'ortho' 简写）。
+     ⚠️ 判断顺序与改动前逐位一致：epMode 只有**写着三档之一**时才算数，写了别的
+     （或没写）一律退到老字段 moeOrthogonal —— 不能直接把 epMode 丢给 normalizeEpMode，
+     那会让「epMode 是个无效值、而 moeOrthogonal = true」这种旧数据读成 split。
+     slice() 是为了本页改不到共享层那个数组。 */
+  const EP_MODES = PR.EP_MODES.slice();
 
   function epModeOf(config) {
     const mode = config && config.epMode;
-    if (EP_MODES.indexOf(mode) >= 0) return mode;
+    if (EP_MODES.indexOf(mode) >= 0) return PR.normalizeEpMode(mode);
     return config && config.moeOrthogonal ? "orthogonal" : "split";
   }
 
   const epIsOrthogonal = (config) => epModeOf(config) === "orthogonal";
   const epIsMf = (config) => epModeOf(config) === "mf";
+
+  /* 递给共享规则层之前先把口径**归一**。本页的 config 可能只写老字段
+     moeOrthogonal（epMode 缺失或是个无效值），而共享层是照 epMode 读的 ——
+     不先过一遍 epModeOf，那种旧数据到了共享层会被读成 split。
+     凡是调 PR.* 的地方都走它，别直接把 config 递过去。 */
+  function prCfg(config) {
+    const c = config || {};
+    return {
+      epMode: epModeOf(c),
+      dp: c.dp, pp: c.pp, tp: c.tp, cp: c.cp, ep: c.ep,
+      totalLayer: c.totalLayer, routedExpert: c.routedExpert, topK: c.topK,
+    };
+  }
 
   /* 路由专家此刻**真的**被 TP 切了吗。整页只此一处判断：capacity / plane 热力 /
      validate 的整除校验 / warn 的切碎警告都读它（TP 的档位公约数读原始开关，见
@@ -1332,14 +1378,13 @@
   /* EP 从哪个域里切出来（正交档没有「切出」这回事，返回 dp 只是为了让
      gcd 那几处不必分支 —— 正交档的 epBasis 本来就只看专家数）。 */
   function epDomainOf(config) {
-    if (epIsMf(config)) return Math.max(1, config.dp) * Math.max(1, config.tp);
-    return Math.max(1, config.dp);
+    return PR.epDomain(prCfg(config));   /* 共享规则层（与 rank-intro 同一份） */
   }
 
   /* 正交档 EP 独占 rank，进 world 的乘积；另两档 EP 是从已有的卡里再切一刀，
      不进乘积。整页只此一处判断，validate / reconcile / derive / yaml 都走它。 */
   function epInWorld(config) {
-    return epIsOrthogonal(config) ? config.ep : 1;
+    return PR.epInWorld(prCfg(config));   /* 共享规则层 */
   }
 
   /* d 轴（集群矩阵那一行、rank 编址的 dpIdx）的组数：
@@ -1350,8 +1395,9 @@
      整除性由 validate 拦、reconcile 修，除不尽的配置到不了这里；floor 只是
      防御性的兜底，保证万一漏过去几何仍是整数格。 */
   function expertDataParallel(config) {
-    if (epIsOrthogonal(config)) return config.dp;
-    return Math.max(1, Math.floor(epDomainOf(config) / Math.max(1, config.ep)));
+    /* 共享规则层。floor 那档兜底的理由见它的注释（rank-intro 侧取 round，
+       两者只在被校验拦掉的配置上才有差别）。 */
+    return PR.expertDataParallel(prCfg(config));
   }
 
   /* 一份**非专家**权重（已被 TP 切过）在数据并行域里复制了多少份 —— ZeRO / FSDP2
@@ -1361,8 +1407,7 @@
        mf    dp          ← EDP×EP = DP×TP 会把 TP 那一维重复算进来，必须单给
      专家那一段的分母是 EDP（三档同形），见 capacity 的 dpShards。 */
   function dpReplicaOf(config) {
-    if (epIsOrthogonal(config)) return Math.max(1, config.dp) * Math.max(1, config.ep);
-    return Math.max(1, config.dp);
+    return PR.dpReplica(prCfg(config));   /* 共享规则层 */
   }
 
   /* d 轴对人显示的名字。切出档下集群矩阵的每一行是 EDP 而不是 DP —— 表单里
@@ -1370,7 +1415,9 @@
      EP=1（稠密模型）时 EDP ≡ DP，仍叫 DP，不给没有专家的模型平添一个新词。
      凡是要把 dpIdx 写给人看的地方都走这个函数，别再各写各的。 */
   function dAxisName(counts) {
-    return counts.epMode !== "orthogonal" && counts.ep > 1 ? "EDP" : "DP";
+    /* 共享规则层。这里收的是 counts（已派生好的口径，epMode 早已归一），
+       故直接递过去、不必过 prCfg。 */
+    return PR.dAxisName(counts);
   }
 
   /* rank 的坐标一行文案：关系卡片、计算血缘、事件详情三处共用一份 */
@@ -1383,9 +1430,8 @@
   /* 两种口径下 config.dp 记的不是同一个量，切换口径时按 EP 换算，使 Total Rank
      不变（参考配置的 8 与 512 就是同一份卡的两种读法）。 */
   function convertDpAcrossEpMode(dp, ep, toOrthogonal) {
-    const factor = Math.max(1, ep);
-    const next = toOrthogonal ? Math.floor(dp / factor) : dp * factor;
-    return Math.min(FIELD_SPECS.dp.max, Math.max(FIELD_SPECS.dp.min, next || 1));
+    /* 共享规则层（上下界同样夹在 DP 的字段量程内） */
+    return PR.convertDpAcrossEpMode(dp, ep, toOrthogonal);
   }
 
   /* Node 只读读数要说清「这个数是怎么来的」—— 它从一枚能拨的 stepper 变成了一个
@@ -1474,7 +1520,11 @@
     const errors = [];
     const { totalLayer, dp, pp, vpp, tp, cp, seqLen, routedExpert, topK, ep, totalRank, node } = config;
 
-    if (totalLayer < pp) {
+    /* ⚠️ 本页只要求「每个 stage 至少 1 层」，**允许不均分**（openPangu 的 46 层配
+       PP 4 会摆成 12,12,11,11）；rank-intro 的案例四要求整除（那页的展平图按等长
+       分块画）。两条判据都在共享规则层里并排放着，各页调自己那条：
+       本页 layersAtLeastPp / 那页 layersDivisibleByPp。别互换。 */
+    if (PR.RULES.layersAtLeastPp(prCfg(config))) {
       errors.push(`层数 ${totalLayer} 少于 PP ${pp}，至少每个 stage 要有 1 层`);
     }
     /* TP 切的是注意力头，切不整就非法。文案里必须出现 "TP" 且**只**出现 TP ——
@@ -1528,7 +1578,7 @@
           + `，交错式流水要求每一段层数相等（PP 允许不均分，VPP 不允许）`);
       }
     }
-    if (routedExpert % ep !== 0) {
+    if (PR.RULES.routedDivisibleByEp(prCfg(config))) {   /* 判据在共享规则层，文案留在本页 */
       errors.push(`路由专家 ${routedExpert} 不能被 EP ${ep} 整除，专家无法均分到 EP rank`);
     }
     /* 切出档：EDP = DP/EP 必须是整数。这条的业务口径要说准 —— 切出档下**一个 DP
@@ -1544,8 +1594,11 @@
        stepper，这条错是两个字段共同造成的，两个都该红。 */
     /* 行 23：切出档看 DP，mf 档看 DP×MP 域 —— 同一条「凑得齐一个完整 EP 组」，
        只是域不同。正交档仍不受这条管。 */
-    if (!epIsOrthogonal(config) && epDomainOf(config) % ep !== 0) {
-      const domain = epDomainOf(config);
+    /* 判据在共享规则层（三档的域怎么取、正交档为何不受这条管，都在那里一处定义），
+       文案留在本页：DP 与 EP 两个 label 都要出现，emit() 靠它们标红两枚 stepper。 */
+    const epGroupHit = PR.RULES.epDomainDivisibleByEp(prCfg(config));
+    if (epGroupHit) {
+      const domain = epGroupHit.domain;
       errors.push(epIsMf(config)
         ? `DP ${dp} × TP ${tp} = ${domain} 不能被 EP ${ep} 整除`
           + `（MindFormers 档的专家并行在 DP×MP 域上切，EDP = DP×TP ÷ EP 必须是整数），`
@@ -1553,10 +1606,10 @@
         : `DP ${dp} 不能被 EP ${ep} 整除（EDP = DP ÷ EP 必须是整数），`
           + `末尾剩下的 ${domain % ep} 张卡凑不齐一个完整的 EP 组 —— 一套专家要 ${ep} 张卡合持`);
     }
-    if (topK > routedExpert) {
+    if (PR.RULES.topKWithinRouted(prCfg(config))) {   /* 判据在共享规则层 */
       errors.push(`Top-K ${topK} 超过路由专家总数 ${routedExpert}`);
     }
-    const world = dp * pp * tp * cp * epInWorld(config);
+    const world = parallelWorld(config);
     if (world !== totalRank) {
       /* 公式文案跟着口径换：切出档 EP 不占 rank，写进乘积会读成"少算了一维"。
          括注里写「专家并行」而不是「EP」—— emit() 是按 FIELD_SPECS 的 label 在
@@ -1691,9 +1744,10 @@
   }
 
   /* ── 自动配平：保留用户刚调整的字段，只改满足约束所需的最少依赖项 ─────── */
-  /* 展开写而不是对字段表求积：EP 是否进乘积由口径决定，一个 reduce 表达不了。 */
+  /* 共享规则层（与 rank-intro 同一份）。展开写而不是对字段表求积：EP 是否进乘积
+     由口径决定，一个 reduce 表达不了 —— 那段展开现在在共享层里。 */
   function parallelWorld(config) {
-    return config.dp * config.pp * config.tp * config.cp * epInWorld(config);
+    return PR.parallelWorld(prCfg(config));
   }
 
   function isAllowedParallelValue(field, value, config) {
