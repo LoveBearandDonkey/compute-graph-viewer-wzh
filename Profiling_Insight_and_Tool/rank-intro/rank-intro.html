@@ -405,7 +405,13 @@
   .cs3-side canvas.big[hidden]{display:none}
   .cs-side-empty{margin:auto 0;text-align:center;color:var(--fg3);font-size:12px;line-height:1.7;padding:0 6px;font-family:var(--sans)}
   /* 通用读数面（sideP.panel）：没有大卡，读数从顶上排起、占满整栏 */
-  .cs3-side.is-panel .cs3-rd{margin-top:0;flex:1 1 auto;min-height:0;overflow:auto}
+  .cs3-side.is-panel .cs3-rd{margin-top:0;flex:1 1 auto;min-height:0;overflow:auto;scroll-behavior:smooth;overscroll-behavior:contain;
+    scrollbar-width:thin;scrollbar-color:rgba(var(--fgrgb),.18) transparent;scrollbar-gutter:stable}
+  .cs3-side.is-panel .cs3-rd:hover{scrollbar-color:rgba(var(--fgrgb),.32) transparent}
+  .cs3-side.is-panel .cs3-rd::-webkit-scrollbar{width:6px}
+  .cs3-side.is-panel .cs3-rd::-webkit-scrollbar-track{background:transparent}
+  .cs3-side.is-panel .cs3-rd::-webkit-scrollbar-thumb{border-radius:999px;background:rgba(var(--fgrgb),.18)}
+  .cs3-side.is-panel .cs3-rd:hover::-webkit-scrollbar-thumb{background:rgba(var(--fgrgb),.32)}
   @media (max-width:1180px){ .cs4-conf{width:250px} .cs-main.cfg .cs3-side{width:220px} }
   @media (max-width:860px){ .cs-work.cfg{flex-direction:column} .cs4-conf{width:100%;overflow:visible} .cs4-stage{min-height:360px} }
 
@@ -557,37 +563,36 @@
          background:var(--bg);border:1px solid var(--line);border-radius:6px;box-shadow:0 1px 4px rgba(var(--fgrgb),.06)}
   .pzoom[hidden]{display:none}
   /* ── 右栏「Layer x · 各域计算耗时差异」（sideP.panel 的内容）──────────────────
-     原先是浮在画布左上的一块卡片，遮住矩阵；搬到右栏后既不挡图，也放得下四个维度各自摊开。
+     结论复用左栏「配置建议」横幅；每个同步域只保留两张等高指标卡。
      每个 --dom-c 由行内 style 下发，用的是第 9 步那套域色（TP 青 / EP 紫 / DP 蓝 / EDP 粉）。 */
-  .c4dm{font-family:var(--sans);color:var(--fg2)}
-  .c4dm-top{margin:0;font:400 10.5px/1.4 var(--sans);color:var(--fg3)}
+  .c4dm-advice{margin:0 0 10px}
+  .c4dm-advice .cro-config-error__msg{font-family:var(--sans)}
+  .c4dm-advice .cro-config-error__actions button{font:600 12px/1.2 var(--sans)}
+  .c4dm-top{margin:0 0 10px;font:400 10.5px/1.5 var(--sans);color:var(--fg3)}
   .c4dm-top b{font-family:var(--mono);color:var(--fg2);font-weight:600}
-  .c4dm-scale{display:flex;align-items:center;gap:5px;margin:6px 0 3px}
-  .c4dm-scale i{flex:1;height:6px;border-radius:999px;
-    background:linear-gradient(90deg,#30123b 0%,#4145ab 11.111%,#4675ed 22.222%,#39a2fc 33.333%,#1bcfd4 44.444%,#45f884 55.556%,#a4fc3c 66.667%,#e8d721 77.778%,#fa8c19 88.889%,#da3907 100%)}
-  .c4dm-scale u{font:400 9.5px/1 var(--mono);color:var(--fg3);text-decoration:none}
-  .c4dm-cap{margin:0 0 9px;font:400 9.5px/1.35 var(--sans);color:var(--fg3)}
   .c4dm-lead{margin:0 0 9px;padding:6px 8px;border-left:2px solid var(--dom-c);border-radius:0 4px 4px 0;
              background:rgba(var(--fgrgb),.05);font:400 10.5px/1.45 var(--sans);color:var(--fg2)}
   .c4dm-lead b{font-weight:600;color:var(--fg)}
-  .c4dm-blk{margin:0 0 8px}
+  .c4dm-blk{margin:0 0 10px;font-family:var(--sans)}
   .c4dm-blk h4{display:flex;align-items:baseline;gap:5px;margin:0 0 3px;font:600 11px/1.3 var(--sans);color:var(--dom-c)}
   .c4dm-blk h4 em{width:6px;height:6px;border-radius:2px;background:currentColor;flex:none}
   .c4dm-blk h4 span{margin-left:auto;font:400 9.5px/1.3 var(--mono);color:var(--fg3)}
   .c4dm-blk.is-off h4{opacity:.5}
-  /* 一条 = 一个可点的组：点它，矩阵就标出这一组的成员卡。颜色只是暗示，必须真的点得动 */
-  .c4dm-line{display:grid;grid-template-columns:auto 1fr auto;align-items:baseline;gap:4px 6px;
-             padding:3px 5px;border-radius:4px;cursor:pointer;font:400 10px/1.35 var(--mono)}
-  .c4dm-line .k{font-family:var(--sans);font-size:10px;color:var(--fg3)}
-  .c4dm-line .g{color:var(--fg2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-  .c4dm-line .v{font-weight:600;color:var(--fg2);font-variant-numeric:tabular-nums}
-  .c4dm-line .nt{grid-column:2/4;font:400 9.5px/1.35 var(--sans);color:var(--fg3)}
-  .c4dm-line:hover{background:rgba(var(--fgrgb),.06)}
-  .c4dm-line:focus-visible{outline:2px solid var(--dom-c);outline-offset:-2px}
-  .c4dm-line.is-bad .v{color:#DA3907}
-  .c4dm-line.is-on{background:color-mix(in srgb,var(--dom-c) 16%,transparent);box-shadow:inset 2px 0 0 var(--dom-c)}
-  .c4dm-note{margin:9px 0 0;padding-top:7px;border-top:1px solid rgba(var(--fgrgb),.09);font:400 10.5px/1.5 var(--sans);color:var(--fg3)}
-  .c4dm-note b{color:var(--fg2);font-weight:600}
+  .c4dm-cards{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));grid-auto-rows:104px;gap:6px}
+  /* 一张卡 = 一个可点的组：点它，矩阵就标出这一组的成员卡。两张卡固定等高，数值固定落在左下角。 */
+  .c4dm-card{position:relative;min-width:0;height:104px;display:flex;flex-direction:column;align-items:stretch;text-align:left;gap:3px;
+             padding:8px;border:0;border-radius:var(--radius-md);background:var(--bg2);color:var(--fg2);cursor:default;font:400 10px/1.35 var(--sans)}
+  .c4dm-card .hd{display:block}
+  .c4dm-card .k{font-size:10px;color:var(--fg3)}
+  .c4dm-card .g{font:600 10px/1.35 var(--mono);color:var(--fg2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .c4dm-card .v{position:absolute;left:8px;bottom:8px;font:700 24px/1 var(--mono);letter-spacing:-.02em;color:var(--fg2);font-variant-numeric:tabular-nums;white-space:nowrap}
+  button.c4dm-card{cursor:pointer}
+  button.c4dm-card:not(:disabled):hover{background:color-mix(in srgb,var(--dom-c) 9%,var(--bg2))}
+  button.c4dm-card:not(:disabled):focus-visible{outline:2px solid var(--dom-c);outline-offset:1px}
+  button.c4dm-card:disabled{cursor:default;opacity:.42;filter:grayscale(1)}
+  .c4dm-card.is-bad .v{color:var(--bad)}
+  .c4dm-card.is-on{background:color-mix(in srgb,var(--dom-c) 16%,var(--bg2));outline:1px solid color-mix(in srgb,var(--dom-c) 58%,transparent)}
+  .c4dm-off{margin:0;padding:7px 8px;border-radius:var(--radius-md);background:var(--bg2);font:400 10px/1.4 var(--sans);color:var(--fg3)}
   .c4dm-hint{margin:6px 0 0;font:400 9.5px/1.4 var(--sans);color:var(--fg3)}
   .pzoom button{font:inherit;font-size:12px;line-height:1;color:var(--fg2);background:none;border:0;border-radius:4px;padding:5px 8px;cursor:pointer}
   .pzoom button:hover{background:rgba(var(--fgrgb),.06);color:var(--fg)}
@@ -1888,6 +1893,7 @@
   var pan = null, suppressClick = false, tpOn = true, paintOn = false;   /* 着色默认关：先读结构，要看「哪一套」再开 */
   var selLayer = null;         /* Layer 定位在 3D 中标出所属 PP 段；第 10 步里同时作为选中列（也可为 Emb / Norm / Head） */
   var layerGuide = false;      /* 选中列要不要投贯穿画布的暗影：点顶部刻度、点 rank × layer 格子、进场默认列都投；只在清空时收 */
+  var hoverLayer = null;       /* 性能分析里鼠标经过的 Layer 列：只投更淡的预览暗影，不参与选中和焦点降噪 */
   var hiCols = null;           /* 由外部查询高亮的列（{colKey:true}）；案例四按当前算子实例只亮一个 Layer 列，本页第 10 步不用 */
   /* 选中列里逐格的底色：借方给一个 (rank, col) → 颜色串 的函数，就把那一列的蓝色平涂换成逐格热力
      （案例四的「这一层在每张卡上各跑多久」）。不给就是原来的蓝——本页第 10 步、案例一二三都不给。 */
@@ -2202,6 +2208,19 @@
     for(var i = 0; i < t.length; i++){ var r = t[i]; if(mx >= r.x && mx <= r.x + r.w && my >= r.y && my <= r.y + r.h) return r.col; }
     return null;
   }
+  /* 按画布横坐标命中整条列，不要求鼠标恰好落在某个格子或顶部量尺上。块间的行标道不算列。 */
+  function planeColAt(mx){
+    var v = viewport(); if(mx < v.x0 || mx > v.x1) return null;
+    var k = view.k;
+    for(var i = 0; i < plane.blocks.length; i++){
+      var b = plane.blocks[i], bx = view.x + b.x*k, bw = b.w*k;
+      if(mx >= bx && mx < bx + bw){
+        var ci = Math.floor((mx - bx)/(plane.cellW*k));
+        return ci >= 0 && ci < b.cols.length ? b.cols[ci] : null;
+      }
+    }
+    return null;
+  }
   /* 刻度密度：一格在屏幕上不足 minPx 就每隔 n 格标一次，n 走 1 / 2 / 5 / 10 / 20… */
   /* 刻度的 1/2/5 梯子：与 config-relation-plane 同一份（共享规则层） */
   var niceStep = PR.niceStep;
@@ -2321,7 +2340,7 @@
     syncGeom(k);
     var cellW = plane.cellW, cellH = plane.cellH;
     var m = rowMetrics(k), rowFont = m.font*k, sel = selRank, focus = (sel !== null || selLayer !== null || !!hiCols) && f >= 1;
-    var selKey = selLayer ? colKey(selLayer) : null;
+    var selKey = selLayer ? colKey(selLayer) : null, hoverKey = hoverLayer ? colKey(hoverLayer) : null;
     var sans = '--sans', mono = '--mono', FG = TH.rgb;
     function colOn(col){ var key = colKey(col); return (selKey !== null && key === selKey) || !!(hiCols && hiCols[key]); }
     /* 格内选到第几档：两道闸都按「这一格在屏幕上有多大」判 */
@@ -2343,6 +2362,12 @@
       var guideKeys = {};
       if(layerGuide && selKey !== null) guideKeys[selKey] = true;
       if(hiCols) for(var hiKey in hiCols) if(hiCols[hiKey]) guideKeys[hiKey] = true;
+      /* 悬浮预览先画，浓度只有选中暗影的一半；已选中的同一列不重复叠色。 */
+      if(hoverKey !== null && !guideKeys[hoverKey]){
+        var hd = colScreenX(hoverKey);
+        ctx.globalAlpha = late; ctx.fillStyle = 'rgba(' + FG + ',.03)';
+        if(hd && hd.x + hd.w > v.x0 && hd.x < v.x1) ctx.fillRect(hd.x, v.y0, hd.w, H - v.y0);
+      }
       ctx.globalAlpha = late; ctx.fillStyle = 'rgba(' + FG + ',.06)';
       for(var guideKey in guideKeys){
         var gd = colScreenX(guideKey);
@@ -2636,18 +2661,18 @@
      画法全是本页闭包里的 drawPlane / drawRulers / planeHit…，它们读的是闭包里的 ctx / W / H / view /
      selRank / selLayer / TOPO / PC 这些变量——借的办法不是复制一份函数，而是**临时把这些变量换成
      借方的**（env），跑完再换回来。env 是借方自己保管的一个对象：
-       {ctx, W, H, DPR, tag, PC, TOPO, plane, view:{x,y,k}, selRank, selLayer, layerGuide, tpOn, paintOn, hiCols}
+       {ctx, W, H, DPR, tag, PC, TOPO, plane, view:{x,y,k}, selRank, selLayer, layerGuide, hoverLayer, tpOn, paintOn, hiCols}
      build / fit / zoom 会写回 env.plane / env.view。 */
   function planeEnv(env, fn){
     var o = {ctx:ctx, W:W, H:H, DPR:DPR, tag:ctxTag, PC:PC, TOPO:TOPO, plane:plane, view:view, selRank:selRank, selLayer:selLayer,
-             layerGuide:layerGuide, tpOn:tpOn, paintOn:paintOn, hiCols:hiCols, chipPaint:chipPaint, cellHeat:cellHeat};
+             layerGuide:layerGuide, hoverLayer:hoverLayer, tpOn:tpOn, paintOn:paintOn, hiCols:hiCols, chipPaint:chipPaint, cellHeat:cellHeat};
     ctx = env.ctx; W = env.W; H = env.H; DPR = env.DPR; ctxTag = env.tag || 1; PC = env.PC; TOPO = env.TOPO; plane = env.plane; view = env.view;
-    selRank = env.selRank; selLayer = env.selLayer; layerGuide = env.layerGuide; tpOn = env.tpOn; paintOn = env.paintOn; hiCols = env.hiCols || null; chipPaint = !!env.chipPaint;
+    selRank = env.selRank; selLayer = env.selLayer; layerGuide = env.layerGuide; hoverLayer = env.hoverLayer || null; tpOn = env.tpOn; paintOn = env.paintOn; hiCols = env.hiCols || null; chipPaint = !!env.chipPaint;
     cellHeat = typeof env.cellHeat === 'function' ? env.cellHeat : null;
     try{ return fn(); }
     finally{
       ctx = o.ctx; W = o.W; H = o.H; DPR = o.DPR; ctxTag = o.tag; PC = o.PC; TOPO = o.TOPO; plane = o.plane; view = o.view;
-      selRank = o.selRank; selLayer = o.selLayer; layerGuide = o.layerGuide; tpOn = o.tpOn; paintOn = o.paintOn; hiCols = o.hiCols; chipPaint = o.chipPaint; cellHeat = o.cellHeat;
+      selRank = o.selRank; selLayer = o.selLayer; layerGuide = o.layerGuide; hoverLayer = o.hoverLayer; tpOn = o.tpOn; paintOn = o.paintOn; hiCols = o.hiCols; chipPaint = o.chipPaint; cellHeat = o.cellHeat;
     }
   }
   /* 一格 / 一行在屏幕上的矩形（借方画自己的叠加层要用：超容格填色、缩放动画要对准的那一格） */
@@ -2664,6 +2689,7 @@
     draw:function(env){ planeEnv(env, function(){ drawPlane(now(), 1); }); },
     hit:function(env, mx, my){ return planeEnv(env, function(){ return planeHit(mx, my); }); },
     tick:function(env, mx, my){ return planeEnv(env, function(){ return planeTickAt(mx, my); }); },
+    colAt:function(env, mx){ return planeEnv(env, function(){ return planeColAt(mx); }); },
     zoom:function(env, mx, my, nk){ return planeEnv(env, function(){ return zoomAtRaw(mx, my, nk); }); },
     pan:function(env){ planeEnv(env, clampPan); },
     sync:function(env, k){ planeEnv(env, function(){ syncGeom(k); }); },
@@ -3347,9 +3373,9 @@
     function makeSide(el){
       el.innerHTML = '<div class="cs3-sh"><b>选中 Rank</b><button type="button" class="cs3-x" title="关闭（再点图里高亮的那张可重新打开）">✕</button></div>'
         + '<canvas class="big"></canvas><div class="cs3-rd"></div>';
-      var cvS = el.querySelector('canvas.big'), cxS = cvS.getContext('2d'), rd = el.querySelector('.cs3-rd'), ttl = el.querySelector('.cs3-sh b');
-      var WS = 0, HS = 0, DS = 1, camS = {s:1, ox:0, oy:0}, last = null;
-      el.querySelector('.cs3-x').addEventListener('click', function(){ el.hidden = true; });
+      var cvS = el.querySelector('canvas.big'), cxS = cvS.getContext('2d'), rd = el.querySelector('.cs3-rd'), ttl = el.querySelector('.cs3-sh b'), closeBtn = el.querySelector('.cs3-x');
+      var WS = 0, HS = 0, DS = 1, camS = {s:1, ox:0, oy:0}, last = null, closeHandler = null;
+      closeBtn.addEventListener('click', function(){ if(closeHandler && closeHandler()) return; el.hidden = true; });
       function size(){
         DS = window.devicePixelRatio || 1;
         WS = cvS.clientWidth; HS = cvS.clientHeight; cvS.width = Math.round(WS*DS); cvS.height = Math.round(HS*DS);
@@ -3378,6 +3404,7 @@
           return '<div class="r" data-k="' + m.k + '"><span class="sw" style="background:' + m.c + '"></span><span class="l">' + m.label + '</span><span class="n"></span></div>';
         }).join('');
         ttl.textContent = 'R' + c.r;   /* 右列标题就是选中那张的名字 */
+        closeBtn.title = '关闭（再点图里高亮的那张可重新打开）';
         cvS.hidden = false; el.classList.remove('is-panel');
         /* 头部：R 号跟合计同一行（合计用下面每档 xx GB 的那种字），第二行是坐标；底下不再摆合计条 / 进度条 / 步内 % */
         rd.innerHTML = '<div class="h"><div class="hr"><b>R' + c.r + '</b><span class="n tot"></span></div><span>' + sub + '</span></div>' + rows;
@@ -3394,9 +3421,9 @@
         if(te){ te.textContent = (tot > cap ? 'OOM · ' : '') + fmt(tot) + ' GB'; te.classList.toggle('over', tot > cap); }
         draw();
       }
-      function empty(html){ last = null; ttl.textContent = '选中 Rank'; cvS.hidden = true; el.classList.remove('is-panel'); rd.innerHTML = '<div class="cs-side-empty">' + html + '</div>'; }
+      function empty(html){ last = null; ttl.textContent = '选中 Rank'; closeBtn.title = '关闭'; cvS.hidden = true; el.classList.remove('is-panel'); rd.innerHTML = '<div class="cs-side-empty">' + html + '</div>'; }
       /* 通用读数面：整块让给调用方自己的内容，标题也由它给。案例四选中 Layer 列时用它放各域计算耗时差异 */
-      function panel(title, html){ last = null; ttl.textContent = title; cvS.hidden = true; el.classList.add('is-panel'); rd.innerHTML = html; }
+      function panel(title, html){ last = null; ttl.textContent = title; closeBtn.title = '关闭'; cvS.hidden = true; el.classList.add('is-panel'); rd.innerHTML = html; }
       /* 开回来：hidden 一去掉画布的 CSS 尺寸就从 0 变回来，ResizeObserver 会接着 size()+draw()；没有它的环境自己补一次 */
       function open(){ if(!el.hidden) return; el.hidden = false; if(!window.ResizeObserver){ size(); draw(); } }
       if(window.ResizeObserver){
@@ -3408,7 +3435,10 @@
         ro.observe(cvS);
       }
       size();
-      return {el:el, size:size, draw:draw, head:head, update:update, empty:empty, panel:panel, open:open, hide:function(){ el.hidden = true; }};
+      return {el:el, size:size, draw:draw, head:head, update:update, empty:empty, panel:panel, open:open,
+              onClose:function(fn){ closeHandler = typeof fn === 'function' ? fn : null; },
+              closeTitle:function(title){ closeBtn.title = title || '关闭'; },
+              hide:function(){ el.hidden = true; }};
     }
     function buildRd(){
       var c = card();
@@ -3796,7 +3826,7 @@
 
     /* ── 配置 → 拓扑 → 画布上的那批卡、每张卡的账 ── */
     var R23 = 23;
-    var E = {ctx:null, W:0, H:0, DPR:1, tag:4, PC:[], TOPO:null, plane:null, view:{x:0, y:0, k:1}, selRank:R23, selLayer:null, layerGuide:false, tpOn:true, paintOn:false, hiCols:null, hiDomain:null, cellHeat:null, chipPaint:true};   /* 案例四始终以 R23 为主语；chipPaint：放大到计算图那档时专家胶囊带色，矩阵本身不按专家上色 */
+    var E = {ctx:null, W:0, H:0, DPR:1, tag:4, PC:[], TOPO:null, plane:null, view:{x:0, y:0, k:1}, selRank:R23, selLayer:null, layerGuide:false, hoverLayer:null, tpOn:true, paintOn:false, hiCols:null, hiDomain:null, cellHeat:null, chipPaint:true};   /* 案例四始终以 R23 为主语；chipPaint：放大到计算图那档时专家胶囊带色，矩阵本身不按专家上色 */
     var MEM = [], CAP = 0, over = [], overA = 0, rulerFlash = 0, hiOp = null, panelTab = 'form';   /* panelTab：左栏在「表单」还是「整网图」页签 */
     var netMode = 'perf', netLayer = 1, layerPageStart = 1;   /* 整网查询默认：性能分析 · Layer 1 */
     /* netLayer 的取值：'all'（整条链正视）| 层号 | 'emb' / 'norm' / 'head'（端点列）。它与画布顶尺的列选择
@@ -3868,7 +3898,7 @@
         + '<button type="button" role="tab" data-net-mode="perf" aria-selected="true">性能分析</button><button type="button" role="tab" data-net-mode="monitor" aria-selected="false">训练监控</button><span class="knob" aria-hidden="true"></span></div>'
         + '<div class="cs4-layerpager" id="c4layerpager" role="group" aria-label="模型 Layer 翻页"><button type="button" data-layer-select="all" aria-pressed="false">全部</button><span class="sep">|</span>'
         + '<button type="button" data-layer-shift="-1" aria-label="上一组 Layer">‹</button><button type="button" data-layer-slot="0" aria-pressed="true">Layer 1</button><button type="button" data-layer-slot="1" aria-pressed="false">Layer 2</button><button type="button" data-layer-shift="1" aria-label="下一组 Layer">›</button></div></div>'
-        + '<div class="cs4-perf-legend" id="c4perflegend"><span class="label">算子耗时</span><div class="bar" aria-hidden="true"></div><div class="range"><span id="c4perfmin">0.04 ms</span><span id="c4perfmax">3.84 ms</span></div></div>'
+        + '<div class="cs4-perf-legend" id="c4perflegend"><span class="label">整网算子耗时（绝对值）</span><div class="bar" aria-hidden="true"></div><div class="range"><span id="c4perfmin">0.04 ms</span><span id="c4perfmax">3.84 ms</span></div></div>'
         + '<div class="cs4-netdeck" id="c4net" aria-label="openPangu 整网性能结构"></div>'
         + '<div class="cs4-train-strip" id="c4trainstrip" hidden><div><span>训练步</span><b>Step 18,240</b></div><div><span>状态</span><b>稳定运行</b></div><div><span>吞吐</span><b>4,096 tok/s</b></div><div><span id="c4trainscope">Layer 1 · MFU</span><b>52.6%</b></div></div></div>'
         + '<div class="cs4-form" id="c4form"' + (panelTab === 'form' ? '' : ' hidden') + '>'
@@ -3980,10 +4010,16 @@
         + '<button type="button" data-z="in" title="放大">+</button><button type="button" data-z="fit" title="适配屏幕">适配</button></div></div></div>';
       conf = document.getElementById('cs4conf'); side = document.getElementById('cs4side');
       stageEl = document.getElementById('c4stage'); cv = document.getElementById('c4cv'); cx = cv.getContext('2d');
-      E.ctx = cx;
+      E.ctx = cx; E.hoverLayer = null;
       /* 左栏的壳（#cs4conf）是 render 摆的、窗口变化时 paint → mount 会再进来：内容重建，监听只挂一次 */
       if(conf){ conf.innerHTML = confHTML(); netHost = document.getElementById('c4net'); if(!conf.dataset.bound){ conf.dataset.bound = '1'; bindConf(); } }
-      if(side && SIDE){ sideP = SIDE(side); bindDomPanel(sideP.el); }
+      if(side && SIDE){
+        sideP = SIDE(side); bindDomPanel(sideP.el); sideDomSig = '';
+        sideP.onClose(function(){
+          if(!perfMode() || E.selRank === null || !E.selLayer) return false;
+          E.selRank = null; sideDomSig = ''; renderSide(); redraw(); return true;
+        });
+      }
       if(!E.TOPO) applyTopo();   /* 整网查询默认停在 Layer 1，applyTopo 会让画布选中同一列 */
       mountNet();
       bindCanvas();
@@ -4007,7 +4043,9 @@
     function setPanel(v){
       if(v === panelTab) return;
       panelTab = v;
+      E.hoverLayer = null;
       if(v === 'net' && netMode === 'perf') E.selRank = null;   /* 性能分析从无 Rank 选择开始，不沿用训练配置里的 R23。 */
+      if(v === 'form' && E.selRank === null && E.PC.length) E.selRank = Math.min(R23, E.PC.length - 1);   /* 整网查询里可清空 Rank；回训练配置时仍要有默认主语。 */
       var pt = document.getElementById('c4pt'), fm = document.getElementById('c4form'), nw = document.getElementById('c4netwrap');
       if(pt){ pt.classList.toggle('idle', v === 'net'); pt.querySelectorAll('button').forEach(function(b){ b.setAttribute('aria-selected', String(b.dataset.pt === v)); }); }
       if(fm) fm.hidden = v !== 'form'; if(nw) nw.hidden = v !== 'net';
@@ -4051,6 +4089,7 @@
     }
     function setNetMode(mode){
       netMode = mode === 'monitor' ? 'monitor' : 'perf';
+      E.hoverLayer = null;
       if(netMode === 'perf') E.selRank = null;   /* 从训练监控进入性能分析时也不继承已有 Rank。 */
       syncNetControls(); applyNetView(); renderSide(); redraw();
     }
@@ -4081,6 +4120,17 @@
       selectNetLayer(layerPageStart);
     }
     var pan = null, suppress = false;
+    function setLayerHover(col){
+      col = perfMode() && col && col.type === 'layer' ? col : null;
+      var prev = E.hoverLayer ? PLN.colKey(E.hoverLayer) : '', next = col ? PLN.colKey(col) : '';
+      if(prev === next) return;
+      E.hoverLayer = col; redraw();
+    }
+    function canvasLayerAt(mx, my){
+      if(!perfMode() || my < PLC.RULER_TOP_H) return null;
+      var col = PLN.colAt(E, mx);
+      return col && col.type === 'layer' ? col : null;
+    }
     function bindCanvas(){
       stageEl.querySelector('.pzoom').addEventListener('click', function(e){
         var b = e.target.closest('button[data-z]'); if(!b) return;
@@ -4095,11 +4145,15 @@
         if(pan){
           var dx = e.clientX - pan.sx, dy = e.clientY - pan.sy;
           if(Math.abs(dx) > 3 || Math.abs(dy) > 3) pan.moved = true;
-          if(pan.moved){ userStop(); E.view.x = pan.vx + dx; E.view.y = pan.vy + dy; PLN.pan(E); cv.style.cursor = 'grabbing'; redraw(); }
+          if(pan.moved){ userStop(); setLayerHover(null); E.view.x = pan.vx + dx; E.view.y = pan.vy + dy; PLN.pan(E); cv.style.cursor = 'grabbing'; redraw(); }
           return;
         }
-        cv.style.cursor = (PLN.tick(E, mx, my) || PLN.hit(E, mx, my)) ? 'pointer' : 'grab';
+        var tk = PLN.tick(E, mx, my), canvasCol = canvasLayerAt(mx, my);
+        var ph = (tk || canvasCol) ? null : PLN.hit(E, mx, my), col = canvasCol || tk || (ph && ph.col);
+        setLayerHover(col);
+        cv.style.cursor = (canvasCol || tk || ph) ? 'pointer' : 'grab';
       });
+      cv.addEventListener('mouseleave', function(){ if(!pan) setLayerHover(null); });
       if(!bindCanvas.up){ bindCanvas.up = true;   /* 画布每次 mount 都是新的，window 上这一条只挂一次 */
         window.addEventListener('mouseup', function(){ if(!pan) return; if(pan.moved) suppress = true; pan = null; if(cv) cv.style.cursor = 'grab'; });
       }
@@ -4112,14 +4166,19 @@
         if(suppress){ suppress = false; return; }
         var r = cv.getBoundingClientRect(), mx = e.clientX - r.left, my = e.clientY - r.top;
         userStop();
-        var tk = PLN.tick(E, mx, my), ph = tk ? null : PLN.hit(E, mx, my);
+        var tk = PLN.tick(E, mx, my), canvasCol = canvasLayerAt(mx, my);
+        var ph = (tk || canvasCol) ? null : PLN.hit(E, mx, my);
         /* 画布上的任何一次点击都是「选列 / 选卡」手势，与整网图的算子高亮互斥：统一先清一次。
            放在分支之前是因为点空白处也要清——否则选中没了、通信域却还挂着上一张卡的成员名单。 */
         clearOpPick();
-        if(tk){ var off = E.selLayer && PLN.colKey(E.selLayer) === PLN.colKey(tk); E.selLayer = off ? null : tk; E.layerGuide = !off; if(perfMode()) E.selRank = null; }
+        var perfCol = canvasCol || (perfMode() && (tk || (ph && ph.col)));
+        if(perfCol && perfCol.type === 'layer'){
+          var perfOff = E.selLayer && PLN.colKey(E.selLayer) === PLN.colKey(perfCol);
+          E.selLayer = perfOff ? null : perfCol; E.layerGuide = !perfOff; E.selRank = null;
+        }
+        else if(tk){ var off = E.selLayer && PLN.colKey(E.selLayer) === PLN.colKey(tk); E.selLayer = off ? null : tk; E.layerGuide = !off; if(perfMode()) E.selRank = null; }
         else if(ph && ph.col){
-          /* 性能分析下「列」和「行」是两种问法，不能同时成立（见 perfMode 处的说明）：
-             点格子 = 挑这张卡（沿行看它各层的表现），列选择让位；选列要走顶尺或翻页器。
+          /* 性能分析里的 Layer 格子已在上一个分支按整列选择；端点格仍可按 Rank 查看。
              显存那边不受影响——那儿的问题本来就是「这张卡的这一层装了什么」，天然是一格。 */
           if(perfMode()){
             E.selRank = E.selRank === ph.c.r ? null : ph.c.r; E.selLayer = null; E.layerGuide = false;
@@ -4220,6 +4279,13 @@
       if(moe && epNodeSpan(c) > 1) f *= 1.05;   /* a2a 出机器，走机间网络 */
       return layerPerformanceMs(layer)*f;
     }
+    /* 一个 Layer 只由它所属 PP stage 的 Rank 执行。默认 128 Rank、PP=4 时，一层的比较对象是
+       该 stage 内的 32 Rank，而不是全网 128 Rank；所有列中位、域分组与热力基准都共用这份成员集。 */
+    function layerCards(layer){
+      if(!E.TOPO) return [];
+      var stage = clamp(Math.floor(layer/E.TOPO.lps), 0, E.TOPO.pp - 1);
+      return E.PC.filter(function(c){ return c.pp === stage; });
+    }
 
     /* ══ 并行域：谁和谁在同一个同步点上 ══════════════════════════════════════════
        成员判据照本页第 9 步 commOf() 那套（同一页里「TP / EP / DP / EDP 各是哪些卡」
@@ -4234,10 +4300,10 @@
       {k:'edp', name:'EDP 组', at:'步末', moeOnly:true},
     ];
     /* ══ 整列口径的域聚合 ════════════════════════════════════════════════════════
-       选中一列（而不是一张卡）时，右栏那块读数没有锚点可依：这一列里 EP 组有 16 个，
-       问「EP 组慢不慢」得把 16 个组都算一遍，再回答两件事——
-         · 最热的是哪一组（组间差异：整组摊到的活多）；
-         · 组内倾斜最大的是哪一组（组内差异：有人掉队，同步点在等他）。
+       选中一列（而不是一张卡）时，右栏那块读数没有锚点可依：要把该 Layer 所属 PP Stage
+       里的同类组都算一遍，再回答两件事——
+         · 组中位耗时最高的是哪一组（组间差异：整组摊到的活多）；
+         · 组内耗时差最大的是哪一组（组内差异：有人掉队，同步点在等他）。
        这两件事的处方相反，所以分开报、也分开给点击入口：点哪一行就在矩阵里标出哪一组。 */
     /* 成员判据照本页第 9 步 commOf() 那套（同一页里「TP / EP / DP / EDP 各是哪些卡」只能有一个说法），
        差别只有一处：那里的 (dp>>3) 在这里参数化成 (dp / T.ep)。 */
@@ -4258,7 +4324,7 @@
     function columnDomainStats(kind, layer){
       if(!E.TOPO || !E.PC.length) return null;
       var byKey = {}, order = [];
-      E.PC.forEach(function(c){
+      layerCards(layer).forEach(function(c){
         var k = groupKeyOf(kind, c);
         if(!byKey[k]){ byKey[k] = {key:k, label:groupLabel(kind, c), anchor:c, ranks:[]}; order.push(byKey[k]); }
         byKey[k].ranks.push(c.r);
@@ -4266,7 +4332,7 @@
       order.forEach(function(g){
         var v = g.ranks.map(function(x){ return rankLayerMs(x, layer); }).sort(function(a, b){ return a - b; });
         g.med = medianOf(v); g.max = v[v.length - 1];
-        /* 组内倾斜。组里不足 4 张时中位数说明不了问题（两三个样本，中位紧挨着最大值），
+        /* 组内耗时差。组里不足 4 张时中位数说明不了问题（两三个样本，中位紧挨着最大值），
            改用「最大 / 最小」的全幅：两张卡里有一张慢 38%，该读成组内差 38%，不是整组偏重。 */
         g.skew = g.ranks.length >= 4 ? (g.med > 0 ? g.max/g.med - 1 : 0) : (v[0] > 0 ? g.max/v[0] - 1 : 0);
         g.rel = heatMed > 0 ? g.med/heatMed - 1 : 0;
@@ -4298,8 +4364,8 @@
       var n = sorted.length; if(!n) return 0;
       return n % 2 ? sorted[(n - 1)/2] : (sorted[n/2 - 1] + sorted[n/2])/2;
     }
-    /* 每一层的全列中位数：两种模式都以它为基准，所以按层缓存一份（拓扑一变就作废）。 */
-    /* 「全部」档一次要铺满整张矩阵（128 行 × 五十来列），rankLayerMs 每帧会被调用几千次；
+    /* 每一层在所属 PP stage 内的中位数：两种模式都以它为基准，所以按层缓存一份（拓扑一变就作废）。 */
+    /* 「全部」档一次要铺满整张矩阵，rankLayerMs 每帧会被调用几千次；
        它是 (rank, layer, 拓扑) 的纯函数，连同每层的中位数一起按拓扑签名缓存，拓扑一变整份作废。 */
     var perfCache = {sig:'', med:null, cell:null};
     function perfCacheOf(){
@@ -4315,7 +4381,7 @@
     function colMedAt(layer){
       var m = perfCacheOf().med;
       if(m[layer] === undefined){
-        var vals = E.PC.map(function(c){ return msAt(c.r, layer); }).sort(function(a, b){ return a - b; });
+        var vals = layerCards(layer).map(function(c){ return msAt(c.r, layer); }).sort(function(a, b){ return a - b; });
         m[layer] = medianOf(vals);
       }
       return m[layer];
@@ -4323,18 +4389,15 @@
     /* 三种模式，同一套色义 —— 一格的颜色永远是「它比**同一层**的其他卡快还是慢」：
          全部（什么都没选）：整张矩阵铺满 → 答「全网的热点分布在哪」，一眼看出是一整行、
                             还是隔行成组、还是某几列整体偏深；
-         列模式（选中一列）：固定层、沿列比 128 张卡 → 答「这一层谁慢」；
+         列模式（选中一列）：固定层、只比较所属 PP stage 的 Rank → 答「这一层谁慢」；
          行模式（选中一张卡）：固定卡、沿行走 48 层，每层各按自己那一列的中位数归一
                               → 答「这张卡在哪些层上落后于同侪」。
        行模式不用「这张卡各层的绝对耗时」上色，是因为那条信息顶尺那排耗时点已经在说了（固定量程 4.5 ms），
-       而且各层绝对值的高低主要来自层本身贵不贵，与这张卡好不好无关。改成相对同层中位后：
+       而且各层绝对值的高低主要来自层本身耗时高不高，与这张卡好不好无关。改成相对同层中位后：
        一张健康的卡整行是齐的中段色，掉队卡整行发烫，热 EP 组里的卡则 dense 层正常、MoE 层发烫——
        毛病的**形状**直接读得出来，这才是选中一张卡时真正想问的。 */
-    /* 性能分析下，「选一列」和「选一张卡」是两种互斥的问法，不能同时成立：
-         选列 → 固定层、沿列比 128 张卡，问「这一层谁慢」，读数在右栏（各域计算耗时差异）；
-         选卡 → 固定卡、沿行走各层，问「这张卡在哪些层落后」，读数还是右栏那本显存账。
-       两个都选着的话，矩阵上一行一列同时高亮，色阶却只能表达一个方向，读的人无从知道
-       眼前这片颜色到底在比什么。显存那边不互斥——那儿的问题本来就落在一格上（这张卡的这一层装了什么）。 */
+    /* 普通画布手势仍把「选列」和「选卡」当成两种问法；洞察里的「定位 Rank」是例外：保留当前 Layer
+       作为上下文，同时选中异常 Rank。双选时当前列与目标 Rank 整行都铺热力，右栏优先展示 Rank 信息。 */
     function perfMode(){ return panelTab === 'net' && netMode === 'perf'; }
     var heatMode = null, heatLayer = null, heatRank = null, heatMed = 0;
     function heatColumnLayer(){
@@ -4352,7 +4415,11 @@
       heatMode = null; heatLayer = null; heatRank = null; heatMed = 0; E.cellHeat = null;
       if(!perfMode() || !E.TOPO || !E.PC.length) return;
       var l = heatColumnLayer();
-      if(l !== null){ heatMode = 'col'; heatLayer = l; heatMed = colMedAt(l); if(!heatMed) return; }
+      if(l !== null){
+        heatLayer = l; heatMed = colMedAt(l); if(!heatMed) return;
+        if(E.selRank !== null){ heatMode = 'rowcol'; heatRank = E.selRank; }
+        else heatMode = 'col';
+      }
       else if(E.selRank !== null){ heatMode = 'row'; heatRank = E.selRank; }
       /* 性能分析下什么都没选（左栏翻页停在「全部」）＝ 要的是全景，整张矩阵铺满，而不是一片空白 */
       else heatMode = 'all';
@@ -4361,6 +4428,11 @@
     function cellHeatOf(r, col){
       if(col.type !== 'layer') return null;   /* Emb / Norm / Head 不是重复层，没有「同层的其他卡」可比 */
       if(heatMode === 'col') return col.layer === heatLayer ? performanceColor(heatPos(msAt(r, heatLayer)/heatMed), 1) : null;
+      if(heatMode === 'rowcol'){
+        if(r !== heatRank && col.layer !== heatLayer) return null;
+        var bothMed = col.layer === heatLayer ? heatMed : colMedAt(col.layer);
+        return bothMed ? performanceColor(heatPos(msAt(r, col.layer)/bothMed), 1) : null;
+      }
       if(heatMode === 'row' && r !== heatRank) return null;
       var med = colMedAt(col.layer);   /* 行模式与全部档都是逐层按各自那一列的中位数归一 */
       return med ? performanceColor(heatPos(msAt(r, col.layer)/med), 1) : null;
@@ -4381,7 +4453,7 @@
         var probe = columnDomainStats(domPick.kind, heatLayer);
         domPick.which = probe && probe.lag.skew > .1 ? 'lag' : 'hot';
       }
-      /* 「最热组 / 倾斜最大的组」是跟着层走的（换一层就可能是另一组），所以每次按当前层现解析，
+      /* 「组中位耗时最高 / 组内耗时差最大」是跟着层走的（换一层就可能是另一组），所以每次按当前层现解析，
          不把成员名单存进 domPick —— 存了就会在翻层之后指着一组过时的卡。 */
       var cs = columnDomainStats(domPick.kind, heatLayer), g = cs && cs[domPick.which];
       if(!g){ E.hiDomain = null; return; }
@@ -4437,33 +4509,41 @@
     function pct(v){ return (v >= 0 ? '+' : '−') + Math.round(Math.abs(v)*100) + '%'; }
     function domainDef(kind){ return DOMAINS.filter(function(d){ return d.k === kind; })[0] || {}; }
     function domainColor(kind){ return (RI.VC && RI.VC[kind]) || BLUE; }
-    /* 选中列时右栏的一块：这一维在整列上分成多少组、最热的是哪一组、组内倾斜最大的是哪一组。
-       两条各自可点——点谁就在矩阵里标出谁的成员，这是把「+26%」变成「这 8 张卡」的唯一通道。 */
+    function adviceHtml(html, rank){
+      return '<div class="cro-config-error c4dm-advice is-blocking is-guidance">'
+        + '<p class="cro-config-error__msg"><strong class="cro-config-error__title">洞察</strong><span>' + html + '</span></p>'
+        + (rank === null || rank === undefined ? '' : '<div class="cro-config-error__actions"><button type="button" class="pri" data-act="locate-rank" data-rank="' + rank + '" aria-label="定位 R' + rank + '">定位</button></div>')
+        + '</div>';
+    }
+    /* 选中列时右栏的一块：这一维在整列上分成多少组、耗时最高的是哪一组、组内耗时差最大的是哪一组。
+       两张等高卡各自可点——点谁就在矩阵里标出谁的成员。 */
     function domainBlockHtml(cs, moe){
       var def = domainDef(cs.kind), c = domainColor(cs.kind);
-      var line = function(which, g, label, val, bad, note){
-        var on = domPick && domPick.kind === cs.kind && domPick.which === which;
-        return '<div class="c4dm-line' + (on ? ' is-on' : '') + (bad ? ' is-bad' : '') + '"'
-          + ' data-dom="' + cs.kind + '" data-which="' + which + '" tabindex="0" role="button"'
-          + ' aria-pressed="' + (on ? 'true' : 'false') + '" title="在矩阵里标出这 ' + g.ranks.length + ' 张卡">'
-          + '<span class="k">' + label + '</span><span class="g">' + esc(g.label) + '</span>'
-          + '<span class="v">' + val + '</span>'
-          + (note ? '<span class="nt">' + note + '</span>' : '') + '</div>';
+      var card = function(which, g, label, val, bad, basis){
+        var zero = val === '+0%' || val === '−0%';
+        var on = !zero && domPick && domPick.kind === cs.kind && domPick.which === which;
+        return '<button type="button" class="c4dm-card' + (on ? ' is-on' : '') + (bad ? ' is-bad' : '') + (zero ? ' is-zero' : '') + '"'
+          + ' data-dom="' + cs.kind + '" data-which="' + which + '" aria-pressed="' + (on ? 'true' : 'false') + '"'
+          + (zero ? ' disabled aria-disabled="true"' : '')
+          + ' aria-label="' + label + ' ' + esc(g.label) + '：' + basis + ' ' + val + (zero ? '，无明显差异' : '。在矩阵里标出这 ' + g.ranks.length + ' 张卡') + '">'
+          + '<span class="hd"><span class="k">' + label + '</span><span class="v">' + val + '</span></span>'
+          + '<span class="g">' + esc(g.label) + '</span></button>';
       };
       return '<section class="c4dm-blk" style="--dom-c:' + c + '">'
         + '<h4><em></em>' + esc(def.name) + '<span>' + cs.groups + ' 组 × ' + cs.size + ' 张'
         + (cs.kind === 'ep' && cs.nodes > 1 ? ' · 跨 ' + cs.nodes + ' 机' : '') + ' · ' + esc(def.at) + '</span></h4>'
-        + line('hot', cs.hot, '最热组', pct(cs.hot.rel), cs.hot.rel > .1 && cs.hot.skew <= .1,
-               cs.hot.rel > .1 && cs.hot.skew <= .1 ? '整组偏重 → 调负载' : '')
-        + line('lag', cs.lag, '组内倾斜', pct(cs.lag.skew), cs.lag.skew > .1,
-               cs.lag.skew > .1 ? 'R' + cs.lag.slowRank + ' 掉队'
-                 + (def.perLayer ? ' · 余 ' + (cs.lag.ranks.length - 1) + ' 张白等 ' + fmtMs(cs.lag.waste) + ' 卡·ms' : '') : '')
+        + '<div class="c4dm-cards">'
+        + card('hot', cs.hot, '耗时最高组', pct(cs.hot.rel), cs.hot.rel > .1 && cs.hot.skew <= .1,
+               '组中位比本层 PP Stage 中位')
+        + card('lag', cs.lag, '组内耗时差最大', pct(cs.lag.skew), cs.lag.skew > .1,
+               '最慢卡比' + (cs.lag.ranks.length >= 4 ? '组内中位' : '组内最快卡'))
+        + '</div>'
         + '</section>';
     }
     function domainOffHtml(kind){
       var def = domainDef(kind);
       return '<section class="c4dm-blk is-off" style="--dom-c:' + domainColor(kind) + '">'
-        + '<h4><em></em>' + esc(def.name) + '<span>dense 层没有专家</span></h4></section>';
+        + '<h4><em></em>' + esc(def.name) + '</h4><p class="c4dm-off">Dense 层不使用专家同步域</p></section>';
     }
     /* 整列口径的一句结论。优先级与逐卡口径那版一致：先组内掉队（有人拖着大家），再整组偏热（活分得不均）。 */
     function columnVerdict(all, moe){
@@ -4475,17 +4555,18 @@
         if(cs.hot.rel > .1 && cs.hot.skew <= .1 && (!heavy || cs.hot.rel > heavy.hot.rel)) heavy = cs;
       });
       if(lag){
-        return '<b>' + esc(domainDef(lag.kind).name) + ' ' + esc(lag.lag.label) + '</b> 里 <b>R' + lag.lag.slowRank
-          + '</b> 比组内中位慢 ' + pct(lag.lag.skew) + '：同步点要等它，其余 ' + (lag.lag.ranks.length - 1)
-          + ' 张每过一次这一层白等约 <b>' + fmtMs(lag.lag.waste) + ' 卡·ms</b>。查的是<b>那一张卡</b>，不是这一层。';
+        var lagBase = lag.lag.ranks.length >= 4 ? '组内中位' : '组内最快卡';
+        return {html:'<b>' + esc(domainDef(lag.kind).name) + ' ' + esc(lag.lag.label) + '</b> 里 <b>R' + lag.lag.slowRank
+          + '</b> 比' + lagBase + '慢 ' + pct(lag.lag.skew) + '：同步点要等它，其余 ' + (lag.lag.ranks.length - 1)
+          + ' 张每过一次这一层白等约 <b>' + fmtMs(lag.lag.waste) + ' 卡·ms</b>。', rank:lag.lag.slowRank};
       }
       if(heavy){
-        return '<b>' + esc(domainDef(heavy.kind).name) + ' ' + esc(heavy.hot.label) + '</b> 组内齐平（'
-          + pct(heavy.hot.skew) + '），但整组比全列中位重 <b>' + pct(heavy.hot.rel) + '</b>：没人在等谁，'
+        return {html:'<b>' + esc(domainDef(heavy.kind).name) + ' ' + esc(heavy.hot.label) + '</b> 组内齐平（'
+          + pct(heavy.hot.skew) + '），但整组比本层 PP Stage 中位重 <b>' + pct(heavy.hot.rel) + '</b>：没人在等谁，'
           + '是这一组摊到的活本来就多'
-          + (heavy.kind === 'ep' ? '（路由偏爱它持有的那批专家）' : '') + '。要动的是<b>负载分配</b>，不是查硬件。';
+          + (heavy.kind === 'ep' ? '（路由偏爱它持有的那批专家）' : '') + '。要动的是<b>负载分配</b>，不是查硬件。', rank:null};
       }
-      return '各维的组间差异与组内倾斜都在 ±10% 内，这一层没有木桶，也没有偏重的组。';
+      return {html:'各维的组中位耗时差异与组内耗时差都在 ±10% 内，这一层没有木桶，也没有偏重的组。', rank:null};
     }
     function toggleDomPick(kind, which){
       if(!kind || !which) return;
@@ -4500,21 +4581,29 @@
       if(!el || el.dataset.domBound) return;
       el.dataset.domBound = '1';
       el.addEventListener('click', function(e){
-        var row = e.target.closest('.c4dm-line'); if(row) toggleDomPick(row.dataset.dom, row.dataset.which);
-      });
-      el.addEventListener('keydown', function(e){
-        if(e.key !== 'Enter' && e.key !== ' ') return;
-        var row = e.target.closest('.c4dm-line'); if(!row) return;
-        e.preventDefault(); toggleDomPick(row.dataset.dom, row.dataset.which);
+        var locate = e.target.closest('button[data-act="locate-rank"]');
+        if(locate){ locateRank(+locate.dataset.rank); return; }
+        var row = e.target.closest('button.c4dm-card'); if(row) toggleDomPick(row.dataset.dom, row.dataset.which);
       });
     }
-    /* 「全部」档的全景读数：哪张卡整体落后于同侪、哪一层最贵。
+    function locateRank(rank){
+      if(!isFinite(rank) || rank < 0 || rank >= E.PC.length) return;
+      var layer = heatLayer;
+      userStop(); clearOpPick(); domPick = null; E.hiDomain = null;
+      E.selRank = rank;
+      if(layer !== null){ E.selLayer = colOfNet(layer); E.layerGuide = !!E.selLayer; }
+      sideDomSig = '';
+      if(sideP) sideP.open();
+      syncNetFromCanvas(); renderSide(); redraw();
+    }
+    /* 「全部」档的全景读数：哪张卡整体落后于同侪、哪一层耗时最高。
        每张卡取它在各层「相对同层中位」比值的中位数——用中位而不是均值，免得少数几层的抖动决定排名。 */
     function overviewStats(){
       var L = E.TOPO.layers, worstRank = null, worstRatio = 0;
       E.PC.forEach(function(c){
         var rs = [];
-        for(var l = 0; l < L; l++){ var m = colMedAt(l); if(m) rs.push(msAt(c.r, l)/m); }
+        var lo = c.pp*E.TOPO.lps, hi = Math.min(L, lo + E.TOPO.lps);
+        for(var l = lo; l < hi; l++){ var m = colMedAt(l); if(m) rs.push(msAt(c.r, l)/m); }
         rs.sort(function(a, b){ return a - b; });
         var v = medianOf(rs);
         if(v > worstRatio){ worstRatio = v; worstRank = c.r; }
@@ -4529,46 +4618,40 @@
     }
     function overviewPanelHtml(){
       var o = overviewStats(), T = E.TOPO, bad = o.worstRatio > .1;
-      return '<div class="c4dm">'
-        + '<p class="c4dm-top">' + E.PC.length + ' 张 × ' + T.layers + ' 层 · 逐层中位 <b>'
-        + fmtMs(o.loMs) + ' – ' + fmtMs(o.hotMs) + ' ms</b></p>'
-        + '<div class="c4dm-scale"><u>−20%</u><i></i><u>+40%</u></div>'
-        + '<p class="c4dm-cap"><b>口径</b>：每格是那张卡跑完那一层前反向 kernel 的<b>纯计算</b>时间，<b>不含</b>集合通信本身，也不含在同步点上的等待；颜色是它相对<b>同一层</b>全列中位的快慢。</p>'
-        + '<p class="c4dm-cap">所以看的是<b>形状</b>：一整行发烫 = 那张卡全程掉队；隔行成组 = 某个 EP 组摊到的活多（组员按 TP 跨步排列，不是连续的一块）；整列偏深只说明那一层本来就贵，不是毛病。</p>'
+      var advice = bad
+        ? '优先检查 <b>R' + o.worstRank + '</b>：它在各层相对同层中位普遍慢 <b>' + pct(o.worstRatio) + '</b>，先核对频率、温度与硬件状态。'
+        : '暂未发现持续掉队卡；可从耗时最高的 <b>L' + o.hotLayer + '</b> 继续下钻，区分层本身计算量与卡间异常。';
+      return adviceHtml(advice, bad ? o.worstRank : null)
+        + '<p class="c4dm-top">' + E.PC.length + ' 张 × ' + T.layers + ' 层 · 每层取所属 PP Stage 的 ' + T.rows + ' 张卡计算耗时中位，范围 <b>'
+        + fmtMs(o.loMs) + ' – ' + fmtMs(o.hotMs) + ' ms</b>；矩阵显示每张卡相对同层中位的快慢。</p>'
         + '<section class="c4dm-blk" style="--dom-c:' + BLUE + '">'
         + '<h4><em></em>全网热点<span>相对同层中位</span></h4>'
-        + '<div class="c4dm-line' + (bad ? ' is-bad' : '') + '"><span class="k">最慢的卡</span><span class="g">R'
-        + o.worstRank + '</span><span class="v">' + pct(o.worstRatio) + '</span>'
-        + (bad ? '<span class="nt">各层普遍高出同侪 → 整行发烫的就是它</span>' : '') + '</div>'
-        + '<div class="c4dm-line"><span class="k">最贵的层</span><span class="g">L' + o.hotLayer
-        + '</span><span class="v">' + fmtMs(o.hotMs) + ' ms</span>'
-        + '<span class="nt">绝对耗时最高，与快慢无关</span></div>'
+        + '<div class="c4dm-cards">'
+        + '<div class="c4dm-card' + (bad ? ' is-bad' : '') + '"><span class="hd"><span class="k">最慢的卡</span><span class="v">' + pct(o.worstRatio) + '</span></span><span class="g">R'
+        + o.worstRank + '</span></div>'
+        + '<div class="c4dm-card"><span class="hd"><span class="k">耗时最高的层</span><span class="v">' + fmtMs(o.hotMs) + ' ms</span></span><span class="g">L' + o.hotLayer
+        + '</span></div></div>'
         + '</section>'
-        + '<p class="c4dm-hint">点顶尺或用左栏翻页选一层，看它的各域差异；点一格看那张卡的显存账。</p>'
-        + '</div>';
+        + '<p class="c4dm-hint">点顶尺或用左栏翻页选一层，看它的各域差异；点一格看那张卡的显存账。</p>';
     }
     function domainPanelHtml(){
       var moe = heatLayer >= E.TOPO.dense;
+      var peers = layerCards(heatLayer), stage = peers.length ? peers[0].pp : Math.floor(heatLayer/E.TOPO.lps);
       var all = DOMAINS.map(function(def){ return (def.moeOnly && !moe) ? null : columnDomainStats(def.k, heatLayer); });
+      var verdict = columnVerdict(all, moe);
       var lead = hiOp && COMM_DOMAIN[hiOp]
         ? '<p class="c4dm-lead" style="--dom-c:' + domainColor(COMM_DOMAIN[hiOp]) + '"><b>' + esc(opLabel(hiOp))
           + '</b> 跑在 <b>' + esc(domainDef(COMM_DOMAIN[hiOp]).name) + '</b> 上，这一层共 '
           + (columnDomainStats(COMM_DOMAIN[hiOp], heatLayer) || {}).groups + ' 组。</p>'
         : '';
-      return '<div class="c4dm">'
-        + '<p class="c4dm-top">全列 ' + E.PC.length + ' 张 · 中位 <b>' + fmtMs(heatMed) + ' ms</b> · '
-        + (moe ? 'MoE' : 'Dense') + ' 层</p>'
-        + '<div class="c4dm-scale"><u>−20%</u><i></i><u>+40%</u></div>'
-        + '<p class="c4dm-cap"><b>口径</b>：各卡跑完本层前反向 kernel 的<b>纯计算</b>时间，<b>不含</b>集合通信本身，也不含在同步点上的等待。矩阵格子按它相对全列中位上色。</p>'
-        + '<p class="c4dm-cap">下面按四个<b>同步域</b>分组看它的差异：同域的卡要在同一个 barrier 会合，计算上的快慢差就在那里变成别人的等待。</p>'
+      return adviceHtml(verdict.html, verdict.rank)
+        + '<p class="c4dm-top">L' + heatLayer + ' 比较基准 <b>' + fmtMs(heatMed) + ' ms</b>（PP' + stage + ' 内 ' + peers.length
+        + ' 张卡的纯计算耗时中位数，不含通信与等待）</p>'
         + lead
         + all.map(function(cs, i){ return cs ? domainBlockHtml(cs, moe) : domainOffHtml(DOMAINS[i].k); }).join('')
-        + '<p class="c4dm-note">' + columnVerdict(all, moe) + '</p>'
-        + '<p class="c4dm-hint">' + (domPick
-            ? '矩阵里标出的是 <b style="color:' + domainColor(domPick.kind) + '">' + esc(domPick.label || '')
-              + '</b> 的 ' + domPick.n + ' 张卡 · 再点一次收起'
-            : '点上面任一行，矩阵标出那一组的成员卡') + '</p>'
-        + '</div>';
+        + (domPick ? '<p class="c4dm-hint">矩阵里标出的是 <b style="color:' + domainColor(domPick.kind) + '">' + esc(domPick.label || '')
+              + '</b> 的 ' + domPick.n + ' 张卡 · 再点一次收起</p>' : '')
+        ;
     }
     /* 算子 id → 面板上的中文名：取整网图里那枚节点的文案，两边叫法一致 */
     function opLabel(id){
@@ -4726,6 +4809,17 @@
          renderSide 会被同步调用（点击、翻页），所以这里先自己算一遍，拿的才是当前值。两处都算不冲突：colMedAt 有缓存。 */
       syncHeat(); syncDomain();
       var r = E.selRank;
+      /* 洞察定位会同时保留 Layer 与 Rank：Layer 留在矩阵里提供上下文，右栏优先回答 Rank 信息。 */
+      if(r !== null){
+        sideDomSig = '';
+        var c = E.PC[r], m = MEM[r], T = E.TOPO, tot = total(m);
+        var sub = 'PP' + c.pp + ' · ' + (T.ortho ? 'DP ' + Math.floor(c.dp/T.ep) + ' · EP ' + (c.dp % T.ep) : 'DP' + c.dp + ' · EP 组 ' + (c.dp % T.ep)) + ' · TP' + c.tp + ' · node ' + Math.floor(r/8)
+          + (E.selLayer && E.selLayer.type === 'layer' ? ' · ' + E.selLayer.label : '');
+        sideP.head(c, sub, m);
+        if(E.selLayer) sideP.closeTitle('返回 ' + E.selLayer.label + ' 耗时差异');
+        sideP.update(m, tot, CAP, CARDS[lastValid.card].hbm);
+        return;
+      }
       /* 选中一列 → 右栏是这一层的各域计算耗时差异（标题带层号）。它取代了原先浮在画布左上的那块卡片：
          同样的内容放到右栏，既不遮挡矩阵，也有地方把四个维度摊开写。 */
       /* 「全部」档：什么都没选、整张矩阵铺满热力，右栏给全景读数（不能还写着「点一格…」） */
@@ -4741,11 +4835,7 @@
         return;
       }
       sideDomSig = '';
-      if(r === null){ sideP.empty('点矩阵里的一格看那张卡的显存账；点顶部刻度或用左栏翻页选一层，这里给出那一层各卡计算耗时在四个同步域上的差异。'); return; }
-      var c = E.PC[r], m = MEM[r], T = E.TOPO, tot = total(m);
-      var sub = 'PP' + c.pp + ' · ' + (T.ortho ? 'DP ' + Math.floor(c.dp/T.ep) + ' · EP ' + (c.dp % T.ep) : 'DP' + c.dp + ' · EP 组 ' + (c.dp % T.ep)) + ' · TP' + c.tp + ' · node ' + Math.floor(r/8);
-      sideP.head(c, sub, m);
-      sideP.update(m, tot, CAP, CARDS[lastValid.card].hbm);
+      sideP.empty('点矩阵里的一格看那张卡的显存账；点顶部刻度或用左栏翻页选一层，这里给出那一层各卡计算耗时在四个同步域上的差异。');
     }
 
     /* ── 动画：一个「时间片」的动画槽（缩放 / 红行淡入共用，同时只会有一个）── */
@@ -4838,7 +4928,7 @@
       {end:10300, b:[
         {at:300, fn:function(){ DemoPointer.click(function(){ return conf && conf.querySelector('[data-pt="net"]'); }, function(){ setPanel('net'); }, '切到整网查询'); }},
         {at:1900, fn:function(){ DemoPointer.click(netTarget('final_norm'), function(){ pickOp('final_norm'); cap(3, '先点输出端的 <b>Final RMSNorm</b>：它不属于重复的 Transformer Layer，只对应矩阵中的单独 <b>Norm</b> 列，因此当前只高亮这一列。'); }, '点 Final RMSNorm'); }},
-        {at:5600, fn:function(){ DemoPointer.click(netTarget('a2a_combine'), function(){ pickOp('a2a_combine'); cap(3, '再点 <b>EP Combine</b>：整网视图自动翻到包含该节点的 <b>Layer 24</b>，矩阵那一列改按<b>每张卡跑这一层的耗时</b>上色（相对全列中位）——一眼看出谁慢；右栏换成 <b>Layer 24 · 各域计算耗时差异</b>（口径是纯计算，不含通信与等待），把 TP / EP / DP / EDP 四维各自的「最热组」与「组内倾斜最大的组」摊开，并自动在矩阵里标出 EP 这一维当下最值得看的那一组。'); }, '点 EP Combine'); }}]},
+        {at:5600, fn:function(){ DemoPointer.click(netTarget('a2a_combine'), function(){ pickOp('a2a_combine'); cap(3, '再点 <b>EP Combine</b>：整网视图自动翻到包含该节点的 <b>Layer 24</b>，矩阵那一列改按<b>每张卡跑这一层的耗时</b>上色（相对全列中位）——一眼看出谁慢；右栏换成 <b>Layer 24 · 各域计算耗时差异</b>（口径是纯计算，不含通信与等待），把 TP / EP / DP / EDP 四维各自的「组中位耗时最高」与「组内耗时差最大」摊开，并自动在矩阵里标出 EP 这一维当下最值得看的那一组。'); }, '点 EP Combine'); }}]},
       {end:10300, b:[
         {at:300, fn:function(){ DemoPointer.click(matrixTarget(R23, 'L7'), function(){ selectCell(R23, 'L7'); cap(4, '从上一步高亮的 <b>L24 单列</b> 切到一个格子：选中 <b>R23 × L7</b>，接下来只查看这张卡在这一层里的专家。'); }, '点 R23 × L7'); }},
         {at:2200, fn:function(){
