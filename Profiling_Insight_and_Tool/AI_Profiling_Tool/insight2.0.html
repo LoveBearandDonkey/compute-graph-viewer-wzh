@@ -4793,6 +4793,9 @@ html[data-embed-preview="true"][data-frame-ratio="wide"] .pto-ide-frame {
       transition: flex-basis var(--duration-base) var(--easing-default),
                   opacity var(--duration-base) var(--easing-default);
       pointer-events: none;
+      /* 挤入式展开后的宽度。480px 只是初值:拖 #chatShellResizer 会把它改成别的像素值,
+         下限 320px、上限是工作区的一半;窄屏下由下面那条媒体查询换成 46% */
+      --wzh-chat-w: 480px;
       /* 品牌蓝:面板内所有蓝色(发送按钮、标签、描边)统一取这一个值 */
       --mi-brand-blue: var(--brand-blue);
       /* 挤入式贴着内容区,不投影;浮动窗才用 --wzh-chat-shadow */
@@ -4805,13 +4808,15 @@ html[data-embed-preview="true"][data-frame-ratio="wide"] .pto-ide-frame {
       --wzh-chat-shadow: 0 14px 34px rgba(58, 68, 120, 0.14), 0 2px 8px rgba(58, 68, 120, 0.07);
     }
     .wzh-chat-panel.is-open {
-      flex-basis: 480px;
+      flex-basis: var(--wzh-chat-w, 480px);
       opacity: 1;
       pointer-events: auto;
     }
+    /* 拖分隔条时 flex-basis 每帧都在变,留着过渡就会跟不上手 */
+    .wzh-chat-panel.is-resizing { transition: none; }
     /* 挤入式下窗口窄了就别死守 480,给内容区留出可用宽度 */
     @media (max-width: 1080px) {
-      .wzh-chat-panel.is-open:not(.is-floating) { flex-basis: 46%; }
+      .wzh-chat-panel:not(.is-floating) { --wzh-chat-w: 46%; }
     }
 
     /* 「悬浮窗」模式(右上角 #trainChatFloatBtn 切换):贴右侧浮起来的抽屉,不占内容区宽度 */
@@ -6037,14 +6042,63 @@ body.chat-shell-page {
 .pto-ide-frame__topbar-left > .pto-ide-frame__workspace { flex: 0 0 auto; }
 .pto-ide-frame__topbar-right { flex: 0 0 auto; }
 
-/* 工作区:左内容区 + 右对话面板两列(挤入式);面板收起或切成悬浮窗时,内容区自动铺满 */
+/* 工作区:左内容区 + 右对话面板两列(挤入式);面板收起或切成悬浮窗时,内容区自动铺满。
+   两列之间那 8px 不再用 gap,而是交给可拖动的 .msi-resizer--v ——面板收起或切成悬浮窗时
+   分隔条跟着一起隐藏,内容区照样铺满。 */
 .chat-shell-workarea {
   padding: 0 8px 8px 0;
   flex-direction: row;
   align-items: stretch;
-  gap: 8px;
+  gap: 0;
 }
 .chat-shell-pane { flex: 1 1 auto; min-width: 0; border-radius: var(--radius-xl); }
+
+/* ── 窗口控制:两条可拖动的分隔条 ───────────────────────────────────────
+   横条(--h)夹在泳道图和底部详情栏之间,拖它改详情栏高度;竖条(--v)夹在内容区和
+   智能对话面板之间,拖它改面板宽度。两条都只改一个 CSS 变量,布局本身还是原来那套
+   flex/grid;上限统一卡在容器的 50%。拖动逻辑见页尾 initPaneResizers。
+   把手常驻显示:静态取 --border-default(和四周卡片描边同一个灰,浅色 12%、深色 10%,
+   跟着主题走),悬浮/聚焦/拖动时才换成主色,让「能拖」这件事一眼看得出来。
+   主题表里的中性灰 --card-neutral-* 只有 4~5%,压在这么细的一根条上等于没有,所以没用它。 */
+.msi-resizer {
+  position: relative;
+  flex: 0 0 auto;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  touch-action: none;
+  z-index: 3;
+}
+.msi-resizer[hidden] { display: none; }
+.msi-resizer:focus-visible { outline: none; }
+.msi-resizer::before {
+  content: "";
+  position: absolute;
+  top: 50%; left: 50%;
+  transform: translate(-50%, -50%);
+  border-radius: var(--radius-pill, 999px);
+  background: var(--border-default);
+  transition: background var(--duration-fast, 120ms) var(--easing-default, ease);
+}
+.msi-resizer:hover::before,
+.msi-resizer:focus-visible::before,
+.msi-resizer.is-dragging::before {
+  background: color-mix(in srgb, var(--msi-accent) 62%, transparent);
+}
+/* 横条:泳道图 ↕ 底部详情栏。12px 高正好补上原先 .msi-content-foot 的 margin-top */
+.msi-resizer--h { height: 12px; margin: 0 16px; cursor: row-resize; }
+.msi-resizer--h::before { width: 48px; height: 3px; }
+/* 竖条:内容区 ↔ 智能对话面板 */
+.msi-resizer--v { align-self: stretch; width: 8px; cursor: col-resize; }
+.msi-resizer--v::before { width: 3px; height: 48px; }
+
+/* 拖动期间整页锁住选区和光标:划过按钮/文字时光标不跳,也不会顺手把文本选中 */
+body.is-pane-resizing,
+body.is-pane-resizing * { user-select: none; }
+body.is-pane-resizing[data-pane-resize-axis="y"],
+body.is-pane-resizing[data-pane-resize-axis="y"] * { cursor: row-resize !important; }
+body.is-pane-resizing[data-pane-resize-axis="x"],
+body.is-pane-resizing[data-pane-resize-axis="x"] * { cursor: col-resize !important; }
 /* 内容区直接就是 pane 的 body:不再套一层卡片,边框/圆角/底色都由 .pto-ide-frame__pane 提供 */
 .chat-shell-body {
   padding: 0;
@@ -6403,7 +6457,7 @@ body.chat-shell-page {
 .msi-content-foot {
   flex: 0 0 auto;
   display: block;
-  margin: 12px 16px 16px;
+  margin: 8px 16px 16px;
   padding: 0;
   border: 1px solid var(--border-subtle);
   border-radius: var(--radius-md);
@@ -6412,17 +6466,78 @@ body.chat-shell-page {
   overflow: hidden;
   transition: box-shadow var(--duration-base, 200ms) var(--easing-default, ease);
 }
-.msi-foot-tabs {
+/* 收起时 #msiFootResizer 一起藏起来,上面那 12px 间距得由自己补回来 */
+.msi-content-foot.is-collapsed { margin-top: 12px; }
+/* 头部和内容区共用同一套两栏比例,展开时标题正好压在左栏上方 */
+.msi-content-foot { --msi-foot-cols: minmax(240px, 28%) minmax(0, 1fr); }
+.msi-foot-head {
   height: 40px;
+  display: grid;
+  grid-template-columns: var(--msi-foot-cols);
+}
+/* 收起时不分栏:标题和页签挨在一起,按 24px 间距排成一行,看着就是 5 个页签 */
+.msi-content-foot.is-collapsed .msi-foot-head { display: flex; align-items: center; }
+.msi-content-foot.is-collapsed .msi-foot-head-left { padding-right: 0; }
+.msi-content-foot.is-collapsed .msi-foot-tabs { flex: 1 1 auto; padding-left: 24px; border-left: 0; }
+/* 收起时它就是这排页签里的一个,颜色也跟着页签走(收起态页签一律是未选中的灰) */
+.msi-content-foot.is-collapsed .msi-foot-title { color: var(--foreground-muted); }
+.msi-foot-head-left {
+  min-width: 0;
+  display: flex; align-items: center;
+  padding: 0 16px;
+}
+/* 左栏折叠开关贴在这一行最右;面板整体收起时没有 body 可折,按钮也跟着藏起来 */
+.msi-foot-fold { margin-left: auto; }
+.msi-content-foot.is-collapsed .msi-foot-fold { display: none; }
+/* 折起后左栏只剩 48px:头部这一格只放图标(居中),标题挪到下面的 body 里竖着排 */
+.msi-content-foot.is-detail-collapsed { --msi-foot-cols: 48px minmax(0, 1fr); }
+.msi-content-foot.is-detail-collapsed .msi-foot-head-left { padding: 0; justify-content: center; }
+.msi-content-foot.is-detail-collapsed .msi-foot-title { display: none; }
+.msi-content-foot.is-detail-collapsed .msi-foot-fold { margin-left: 0; }
+.msi-content-foot.is-detail-collapsed .msi-foot-fold svg { transform: scaleX(-1); }
+.msi-content-foot.is-detail-collapsed .msi-foot-left { align-items: center; padding: 4px 0 16px; }
+.msi-content-foot.is-detail-collapsed .msi-basic-grid,
+.msi-content-foot.is-detail-collapsed .msi-foot-empty { display: none; }
+/* 竖排标题:中文直接用 vertical-rl 就是正立的,再用 text-orientation 兜一下 */
+.msi-foot-title-vert { display: none; }
+.msi-content-foot.is-detail-collapsed .msi-foot-title-vert {
+  display: block;
+  flex: 0 0 auto;
+  writing-mode: vertical-rl;
+  text-orientation: upright;
+  color: var(--foreground-muted);
+  font-size: 13px;
+  line-height: 1;
+  letter-spacing: 2px;
+}
+/* 和页签用同一套字体/字号/字重(都显式写 font: inherit,免得 button 走 UA 默认字体,
+   同样的颜色值渲染出来一深一浅);收起时点它也能拉开面板,所以做成 button。 */
+.msi-foot-title {
+  margin: 0; padding: 0;
+  border: 0; background: transparent;
+  color: var(--foreground);
+  font: inherit;
+  font-size: 13px; font-weight: 400;
+  cursor: pointer;
+}
+.msi-content-foot:not(.is-collapsed) .msi-foot-title { cursor: default; }
+/* 展开时这条竖线要和下面 .msi-foot-right 的 border-left 接上,
+   两处都落在同一套网格的同一条列线上,整条线从头部一直贯到底、中间不断。 */
+.msi-foot-tabs {
+  min-width: 0;
+  height: 100%;
   display: flex; align-items: center; gap: 24px;
   padding: 0 16px;
+  border-left: 1px solid var(--border-subtle);
 }
 .msi-foot-tab {
   position: relative;
   height: 100%;
   border: 0; background: transparent;
   color: var(--foreground-muted);
-  font-size: 13px; cursor: pointer;
+  font: inherit;
+  font-size: 13px; font-weight: 400;
+  cursor: pointer;
 }
 .msi-foot-tab:hover { color: var(--foreground-secondary); }
 .msi-foot-tab.is-active { color: var(--msi-accent); font-weight: 500; }
@@ -6466,43 +6581,53 @@ body.chat-shell-page {
   font-weight: 400;
 }
 .msi-content-foot.is-collapsed .msi-foot-tab.is-active::after { display: none; }
-/* 左栏基础信息单列竖排,只占 ~24%,横向空间尽量让给右边的调用链;
-   8 行 key-value 单列摞起来比双列高,面板整体加到 232px 才放得下 */
-.msi-selection-detail {
-  height: 232px;
+/* 内容区同样两栏:左「选中详情」只占 ~28%,横向空间尽量留给右边的页签内容(调用链)。
+   8 行 key-value 单列摞起来比双列高,加上 value 换行,面板整体 232px 才放得下。
+   232px 只是初值:拖 #msiFootResizer 会把 --msi-foot-h 改成别的像素值,上限是内容区的一半 */
+.msi-foot-body {
+  height: var(--msi-foot-h, 232px);
   min-height: 160px;
   display: grid;
-  grid-template-columns: minmax(220px, 24%) minmax(0, 1fr);
-  border-top: 1px solid var(--border-subtle);
+  grid-template-columns: var(--msi-foot-cols);
   color: var(--foreground);
   overflow: hidden;
 }
-.msi-selection-detail[hidden] { display: none; }
-.msi-foot-placeholder {
-  height: 232px;
+.msi-content-foot.is-collapsed .msi-foot-body { display: none; }
+.msi-foot-left {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden auto;
+  padding: 4px 16px 16px;
+}
+.msi-foot-left > .msi-basic-grid { flex: 0 0 auto; }
+/* 右栏竖着排:内容吃掉整块高度,链条在剩余空间里居中。
+   横线只画在本栏顶部(把页签和内容分开),左栏标题下方不画,免得像表头。 */
+.msi-foot-right {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: auto;
+  padding: 14px 16px 16px;
+  border-left: 1px solid var(--border-subtle);
+  border-top: 1px solid var(--border-subtle);
+}
+/* 没选中 / 页签未实现时的占位:在本栏里居中,不再自带高度和上边框 */
+.msi-foot-placeholder,
+.msi-foot-empty {
+  flex: 1 1 auto;
+  margin: 0;
   display: flex;
   align-items: center;
   justify-content: center;
-  border-top: 1px solid var(--border-subtle);
   color: var(--foreground-muted);
   font-size: 13px;
 }
-.msi-foot-placeholder[hidden] { display: none; }
-.msi-detail-pane { min-width: 0; overflow: auto; padding: 14px 16px 16px; }
-.msi-detail-pane:first-child { overflow: hidden auto; }
-/* 右栏(调用链)竖着排:标题定高,图形区吃掉剩余高度,好让链条在剩余空间里居中 */
-.msi-detail-pane + .msi-detail-pane {
-  display: flex;
-  flex-direction: column;
-  border-left: 1px solid var(--border-subtle);
-}
-.msi-detail-pane + .msi-detail-pane > .msi-detail-title { flex: 0 0 auto; }
-.msi-detail-title {
-  margin: 0 0 12px;
-  color: var(--foreground);
-  font-size: 13px;
-  font-weight: 600;
-}
+.msi-foot-empty { min-height: 72px; }
+.msi-foot-placeholder[hidden],
+.msi-foot-empty[hidden],
+.msi-basic-grid[hidden],
+.msi-chain-flow[hidden] { display: none; }
 /* 单列:每行一组 key-value,key 按最长的那个(connection_id)定宽,value 吃掉剩余 */
 .msi-basic-grid {
   display: grid;
@@ -6514,18 +6639,33 @@ body.chat-shell-page {
   line-height: 1.45;
 }
 .msi-basic-grid dt { color: var(--foreground-muted); white-space: nowrap; }
+/* value 显示不全就换行,不再省略号——长 id / 长名称要能整段读出来 */
 .msi-basic-grid dd {
   min-width: 0;
   margin: 0;
-  overflow: hidden;
   color: var(--foreground);
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+/* 「标题」的 value:和泳道/调用链上的任务条同一套外观(同底色、圆角矩形、居中小字),
+   底色由 traceTaskColor 内联写入。名称长了跟着换行、条子自动撑高,不截断。 */
+.msi-basic-taskbar {
+  display: inline-block;
+  max-width: 100%;
+  min-height: 24px;
+  padding: 4px 9px;
+  border-radius: 5px;
+  font-size: 10.5px;
+  line-height: 16px;
+  text-align: center;
+  overflow-wrap: anywhere;
 }
 /* 图形区:单列网格,横向主链和纵向尾链是同一列里上下两个格子,整列在区域里水平、垂直都居中。
    justify-items: start 让尾链仍以列左缘为基准算 margin-left(拐点位置),不会因居中错位。
    flex: 1 0 auto 只长不缩——链条比区域高时区域随之撑高,由外层 pane 滚动,不会被裁掉。 */
 .msi-chain-flow {
+  --msi-chain-node-w: 120px;
   width: 100%;
   min-width: 0;
   flex: 1 0 auto;
@@ -6543,7 +6683,7 @@ body.chat-shell-page {
 .msi-chain-row {
   width: auto;
   display: grid;
-  grid-template-rows: auto 24px auto;
+  grid-template-rows: auto auto auto;
   grid-auto-flow: column;
   grid-auto-columns: max-content;
   row-gap: 6px;
@@ -6551,9 +6691,13 @@ body.chat-shell-page {
 }
 .msi-chain-row > .msi-chain-step,
 .msi-chain-row .msi-chain-node { display: contents; }
-.msi-chain-row .msi-chain-path { grid-row: 1; width: 180px; }
-.msi-chain-row .msi-chain-taskbar { grid-row: 2; width: 180px; }
-.msi-chain-row .msi-chain-explain { grid-row: 3; width: 180px; }
+/* 各节点一律等宽(宽度 = JS 按可用宽度均分出来的 --msi-chain-node-w):
+   条子宽窄若跟着内容走,用户会误以为宽的那个耗时长。
+   路径行数各不相同:align-self: end 让它们一律贴着行底,也就是贴着下面的任务条,
+   行数少的不会浮在半空。 */
+.msi-chain-row .msi-chain-path { grid-row: 1; align-self: end; width: var(--msi-chain-node-w); }
+.msi-chain-row .msi-chain-taskbar { grid-row: 2; align-self: center; width: var(--msi-chain-node-w); }
+.msi-chain-row .msi-chain-foot { grid-row: 3; align-self: start; width: var(--msi-chain-node-w); }
 .msi-chain-row .msi-chain-arrow { grid-row: 2; align-self: center; }
 /* 尾部纵向链里的节点仍是普通的列布局 */
 .msi-chain-step {
@@ -6562,7 +6706,8 @@ body.chat-shell-page {
   flex: 0 0 auto;
 }
 .msi-chain-node {
-  width: 180px;
+  width: 100%;
+  min-width: var(--msi-chain-node-w);
   min-height: 72px;
   display: flex;
   flex-direction: column;
@@ -6570,7 +6715,7 @@ body.chat-shell-page {
   justify-content: flex-start;
   gap: 6px;
 }
-/* 路径要完整可读:不截断、不省略号,超出 180px 就换行(节点是 flex 列,自动撑高) */
+/* 路径 / 说明 / 耗时都跟着节点宽度走,文字一律换行,不截断不省略号 */
 .msi-chain-path {
   width: 100%;
   color: var(--foreground-muted);
@@ -6579,33 +6724,49 @@ body.chat-shell-page {
   white-space: normal;
   overflow-wrap: anywhere;
 }
+/* 条子不定高:名称放不下就换行把条撑高,不出省略号。各条高矮不一,一律按 align-self: center
+   居中——箭头也钉在这一行的垂直中点,所以连线照样从中点连到中点。 */
 .msi-chain-taskbar {
   width: 100%;
-  height: 24px;
-  display: block;
-  padding: 0 9px;
-  overflow: hidden;
+  min-height: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 4px 8px;
   border: 1px solid transparent;
   border-radius: 5px;
   color: inherit;
   font: inherit;
   font-size: 10.5px;
-  line-height: 22px;
+  line-height: 15px;
   text-align: center;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  white-space: normal;
+  overflow-wrap: anywhere;
   cursor: pointer;
 }
 .msi-chain-taskbar:hover { filter: brightness(.97); box-shadow: 0 0 0 1px var(--msi-accent); }
 .msi-chain-taskbar.is-current { border-color: var(--msi-accent); box-shadow: 0 0 0 1px var(--msi-accent); }
-.msi-chain-explain {
+/* 说明和耗时打包成一块占一格:说明几行都行,耗时永远紧跟在自己这条说明下面,
+   不会被别的节点的说明行数顶下去。 */
+.msi-chain-foot {
   width: 100%;
-  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.msi-chain-explain {
   color: var(--foreground-secondary);
   font-size: 10.5px;
   line-height: 15px;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+/* 耗时压在说明下面,比说明再弱一档 */
+.msi-chain-dur {
+  color: var(--foreground-muted);
+  font-size: 10px;
+  line-height: 14px;
+  font-variant-numeric: tabular-nums;
 }
 .msi-chain-arrow {
   width: 38px;
@@ -6617,7 +6778,7 @@ body.chat-shell-page {
 .msi-chain-arrow svg { width: 38px; height: 28px; overflow: visible; }
 .msi-chain-arrow path { fill: none; stroke: currentColor; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; }
 .msi-chain-tail {
-  width: 180px;
+  width: var(--msi-chain-tail-w, var(--msi-chain-node-w));
   margin-left: var(--msi-chain-turn-left, 0px);
   display: flex;
   flex-direction: column;
@@ -6840,7 +7001,7 @@ body.chat-shell-page {
               </div>
               <label class="msi-tb-search">
                 <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"></circle><path d="m21 21-4-4"></path></svg>
-                <input type="search" placeholder="搜索关键词" aria-label="搜索关键词">
+                <input type="search" placeholder="搜索" aria-label="搜索">
               </label>
             </div>
 
@@ -6852,35 +7013,59 @@ body.chat-shell-page {
               <div class="msi-swim-body" id="msiSwimBody"></div>
             </div>
 
+            <!-- 泳道图 ↕ 底部详情栏 的分隔条:往上拖把详情栏拉高、往下拖压扁,双击回到 232px。
+                 详情栏收起时这条一起隐藏(见 initPaneResizers)。 -->
+            <div class="msi-resizer msi-resizer--h" id="msiFootResizer" role="separator"
+                 aria-orientation="horizontal" aria-label="调整详情栏高度" tabindex="0" hidden></div>
+
             <!-- 进页面默认收起(is-collapsed 直接写在标记里,首帧就不展开,免得脚本跑完再跳一下);
                  点泳道任务条或点页签才拉开,见 renderSelectionDetail / initSelectionPanel。 -->
             <footer class="msi-content-foot is-collapsed" id="msiSelectionPanel" aria-expanded="false">
-              <div class="msi-foot-tabs" role="tablist" aria-label="底部信息面板">
-                <button class="msi-foot-tab is-active" type="button" role="tab" aria-selected="false" data-foot-tab="detail">选中详情</button>
-                <button class="msi-foot-tab" type="button" role="tab" aria-selected="false" data-foot-tab="list">选中列表</button>
-                <button class="msi-foot-tab" type="button" role="tab" aria-selected="false" data-foot-tab="system">系统视图</button>
-                <button class="msi-foot-tab" type="button" role="tab" aria-selected="false" data-foot-tab="find">查找</button>
-                <button class="msi-foot-close" id="msiDetailClose" type="button" aria-label="展开详情栏" title="展开详情栏" aria-expanded="false">
-                  <svg class="msi-foot-close-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18"></path></svg>
-                  <svg class="msi-foot-expand-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="m6 15 6-6 6 6"></path></svg>
-                </button>
+              <!-- 头部一行两栏:左栏标题「选中详情」,右栏是四个页签(调用链 / 选中列表 / 系统视图 / 查找)
+                   加收起按钮。收起时只留这一行,body 整块隐藏。 -->
+              <div class="msi-foot-head">
+                <div class="msi-foot-head-left">
+                  <button class="msi-foot-title" id="msiDetailTitle" type="button">选中详情</button>
+                  <!-- 折叠左栏:图标里那条竖线画在左边(x=9),左半块就是「选中详情」这一栏,
+                       折起后整个图标水平镜像,方向跟着状态走。 -->
+                  <button class="msi-side-icon msi-foot-fold" id="msiDetailFold" type="button"
+                          aria-expanded="true" aria-controls="msiFootBody" title="折叠选中详情" aria-label="折叠选中详情">
+                    <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2"></rect><path d="M9 4v16"></path></svg>
+                  </button>
+                </div>
+                <div class="msi-foot-tabs" role="tablist" aria-label="底部信息面板">
+                  <button class="msi-foot-tab is-active" type="button" role="tab" aria-selected="false" data-foot-tab="chain">调用链</button>
+                  <button class="msi-foot-tab" type="button" role="tab" aria-selected="false" data-foot-tab="list">选中列表</button>
+                  <button class="msi-foot-tab" type="button" role="tab" aria-selected="false" data-foot-tab="system">系统视图</button>
+                  <button class="msi-foot-tab" type="button" role="tab" aria-selected="false" data-foot-tab="find">查找</button>
+                  <button class="msi-foot-close" id="msiDetailClose" type="button" aria-label="展开详情栏" title="展开详情栏" aria-expanded="false">
+                    <svg class="msi-foot-close-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18"></path></svg>
+                    <svg class="msi-foot-expand-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="m6 15 6-6 6 6"></path></svg>
+                  </button>
+                </div>
               </div>
-              <div class="msi-selection-detail" id="msiSelectionDetail" hidden>
-                <section class="msi-detail-pane" aria-labelledby="msiBasicTitle">
-                  <h3 class="msi-detail-title" id="msiBasicTitle">基础信息</h3>
-                  <dl class="msi-basic-grid" id="msiTaskBasics"></dl>
+              <div class="msi-foot-body" id="msiFootBody">
+                <!-- 左栏:选中详情。key-value 竖排,value 长了就换行,不用省略号。 -->
+                <section class="msi-foot-left" aria-labelledby="msiDetailTitle">
+                  <span class="msi-foot-title-vert" aria-hidden="true">选中详情</span>
+                  <dl class="msi-basic-grid" id="msiTaskBasics" hidden></dl>
+                  <p class="msi-foot-empty" id="msiDetailEmpty">请选择泳道对象</p>
                 </section>
-                <section class="msi-detail-pane" aria-labelledby="msiChainTitle">
-                  <h3 class="msi-detail-title" id="msiChainTitle">Rank0 / 完整调用链</h3>
-                  <div class="msi-chain-flow" id="msiCallChain"></div>
+                <!-- 右栏:页签内容区。「调用链」有选中就画调用流,没选中显示「请选择泳道对象」;
+                     其余三个页签还没做,统一显示「敬请期待」。文案由 activateFootTab 写入。 -->
+                <section class="msi-foot-right">
+                  <div class="msi-chain-flow" id="msiCallChain" hidden></div>
+                  <div class="msi-foot-placeholder" id="msiFootPlaceholder" hidden></div>
                 </section>
               </div>
-              <!-- 面板展开但没有可展示的详情时的占位:「选中详情」无选中显示「请选择泳道对象」,
-                   其余三个页签(选中列表 / 系统视图 / 查找)还没做,统一显示「敬请期待」。文案由 activateFootTab 写入。 -->
-              <div class="msi-foot-placeholder" id="msiFootPlaceholder" hidden></div>
             </footer>
           </section>
         </section>
+      <!-- 内容区 ↔ 智能对话面板 的分隔条:往左拖把对话面板拉宽、往右拖收窄,双击回到 480px。
+           面板收起或切成悬浮窗时这条一起隐藏(见 initPaneResizers)。 -->
+      <div class="msi-resizer msi-resizer--v" id="chatShellResizer" role="separator"
+           aria-orientation="vertical" aria-label="调整智能对话面板宽度" tabindex="0" hidden></div>
+
       <!-- 智能对话:默认「挤入式」——作为 workarea 的第二列,和左边内容区形成左右关系,展开时把内容区
                挤窄而不是盖在上面;点右上角悬浮窗图标(#trainChatFloatBtn)切成浮动抽屉(.is-floating)。
                开关入口是右上角 #trainChatToggle,默认展开。逻辑见页尾内联脚本(原 js/training-chat-panel.js)。 -->
@@ -7982,32 +8167,54 @@ body.chat-shell-page {
     return '<span class="msi-chain-arrow" aria-hidden="true"><svg viewBox="0 0 38 28"><path d="M2 14 H34"></path><path d="m30 10 4 4-4 4"></path></svg></span>';
   }
 
-  // 页签切换 + 内容区取舍:面板展开时内容区一定有东西——「选中详情」有选中就放详情,
-  // 没选中放「请选择泳道对象」;其余页签一律放「敬请期待」。收起时两块都藏。
+  // 左栏「选中详情」和页签无关,只看有没有选中:有就放 key-value,没有放「请选择泳道对象」。
+  function syncFootDetailColumn() {
+    const basics = document.getElementById('msiTaskBasics');
+    const empty = document.getElementById('msiDetailEmpty');
+    const has = !!REAL_TRACE_TASK_BY_ID[selectedTraceTaskId];
+    if (basics) basics.hidden = !has;
+    if (empty) empty.hidden = has;
+  }
+
+  // 右栏页签切换 + 内容区取舍:面板展开时右栏一定有东西——「调用链」有选中就画调用流,
+  // 没选中放「请选择泳道对象」;其余页签一律放「敬请期待」。收起时整块 body 由 CSS 藏掉。
   function activateFootTab(tabName) {
     const panel = document.getElementById('msiSelectionPanel');
-    const detail = document.getElementById('msiSelectionDetail');
+    const chain = document.getElementById('msiCallChain');
     const placeholder = document.getElementById('msiFootPlaceholder');
-    if (!panel || !detail) return;
+    if (!panel) return;
     panel.querySelectorAll('.msi-foot-tab').forEach((tab) => {
       const active = tab.dataset.footTab === tabName;
       tab.classList.toggle('is-active', active);
       tab.setAttribute('aria-selected', active ? 'true' : 'false');
     });
     const collapsed = panel.classList.contains('is-collapsed');
-    const showDetail = !collapsed && tabName === 'detail' && !!selectedTraceTaskId;
-    detail.hidden = !showDetail;
+    const showChain = !collapsed && tabName === 'chain' && !!selectedTraceTaskId;
+    if (chain) chain.hidden = !showChain;
     if (placeholder) {
-      placeholder.textContent = tabName === 'detail' ? '请选择泳道对象' : '敬请期待';
-      placeholder.hidden = collapsed || showDetail;
+      placeholder.textContent = tabName === 'chain' ? '请选择泳道对象' : '敬请期待';
+      placeholder.hidden = collapsed || showChain;
     }
+    syncFootDetailColumn();
+  }
+
+  // 左栏(选中详情)单独折叠:只改左右两栏的宽度比,右栏页签内容不受影响。
+  // 栏宽一变调用链一行能放几个也跟着变,所以收完要重画一次。
+  function setDetailColumnCollapsed(collapsed) {
+    const panel = document.getElementById('msiSelectionPanel');
+    const fold = document.getElementById('msiDetailFold');
+    if (!panel || !fold) return;
+    panel.classList.toggle('is-detail-collapsed', collapsed);
+    fold.setAttribute('aria-expanded', collapsed ? 'false' : 'true');
+    fold.setAttribute('aria-label', collapsed ? '展开选中详情' : '折叠选中详情');
+    fold.title = collapsed ? '展开选中详情' : '折叠选中详情';
+    if (selectedTraceTaskId) requestAnimationFrame(() => renderSelectionDetail());
   }
 
   function setSelectionPanelCollapsed(collapsed) {
     const panel = document.getElementById('msiSelectionPanel');
-    const detail = document.getElementById('msiSelectionDetail');
     const toggle = document.getElementById('msiDetailClose');
-    if (!panel || !detail || !toggle) return;
+    if (!panel || !toggle) return;
     panel.classList.toggle('is-collapsed', collapsed);
     panel.setAttribute('aria-expanded', collapsed ? 'false' : 'true');
     toggle.setAttribute('aria-expanded', collapsed ? 'false' : 'true');
@@ -8015,32 +8222,38 @@ body.chat-shell-page {
     toggle.title = collapsed ? '展开详情栏' : '收起详情栏';
     if (collapsed) {
       panel.querySelectorAll('.msi-foot-tab').forEach((tab) => tab.setAttribute('aria-selected', 'false'));
-      detail.hidden = true;
+      const chain = document.getElementById('msiCallChain');
+      if (chain) chain.hidden = true;
       const placeholder = document.getElementById('msiFootPlaceholder');
       if (placeholder) placeholder.hidden = true;
     } else {
       const activeTab = panel.querySelector('.msi-foot-tab.is-active');
-      activateFootTab(activeTab?.dataset.footTab || 'detail');
+      activateFootTab(activeTab?.dataset.footTab || 'chain');
     }
   }
 
   function renderSelectionDetail() {
-    const detail = document.getElementById('msiSelectionDetail');
     const basics = document.getElementById('msiTaskBasics');
     const chain = document.getElementById('msiCallChain');
     const task = REAL_TRACE_TASK_BY_ID[selectedTraceTaskId];
-    if (!detail || !basics || !chain || !task) {
+    if (!basics || !chain || !task) {
       // 没有选中:按当前页签重算内容区(展开时会落到「请选择泳道对象」占位)
       const activeTab = document.querySelector('#msiSelectionPanel .msi-foot-tab.is-active');
-      activateFootTab(activeTab?.dataset.footTab || 'detail');
+      activateFootTab(activeTab?.dataset.footTab || 'chain');
       return;
     }
-    // 选中了任务条就一定把面板拉开——用户手动收起后再点泳道,也要重新弹出详情
+    // 选中了任务条就一定把面板拉开——用户手动收起后再点泳道,也要重新弹出详情。
+    // 右栏若停在别的页签就切回「调用链」,保证点一下泳道就能看到调用流。
     setSelectionPanelCollapsed(false);
-    activateFootTab('detail');
+    activateFootTab('chain');
     const end = task.start + task.dur;
+    // 「标题」这行不写纯文字:复用泳道/调用链任务条的配色,直接给一个同色的矩形条,
+    // 一眼能和图上那根条对上。第三项 true 表示 value 已经是 HTML,不再转义。
+    const titleColor = traceTaskColor(task);
+    const titleBar = '<span class="msi-basic-taskbar" style="background:' + titleColor.bg +
+      ';color:' + titleColor.fg + '">' + esc(task.name) + '</span>';
     const fields = [
-      ['名称', task.name],
+      ['标题', titleBar, true],
       ['泳道', taskLaneLabel(task)],
       ['类型', task.taskType || taskKindLabel(task)],
       ['开始时间', task.start.toFixed(5) + ' ms'],
@@ -8049,7 +8262,8 @@ body.chat-shell-page {
       ['Task ID', task.taskId ?? '—'],
       ['connection_id', task.connectionId ?? '推断关系'],
     ];
-    basics.innerHTML = fields.map(([key, value]) => '<dt>' + esc(key) + '</dt><dd>' + esc(value) + '</dd>').join('');
+    basics.innerHTML = fields.map(([key, value, isHtml]) =>
+      '<dt>' + esc(key) + '</dt><dd>' + (isHtml ? value : esc(value)) + '</dd>').join('');
 
     const component = orderedTraceComponent(task.id);
     const nodeHtml = (id, arrowRight) => {
@@ -8062,20 +8276,31 @@ body.chat-shell-page {
           '<span class="msi-chain-path" title="' + esc(taskLaneFullPath(node)) + '">' + esc(taskLaneFullPath(node)) + '</span>' +
           '<button class="msi-chain-taskbar' + (id === task.id ? ' is-current' : '') + '" type="button" data-locate-task="' + esc(id) + '"' +
             ' style="background:' + color.bg + ';color:' + color.fg + '" title="定位到 ' + esc(node.name) + '">' + esc(node.name) + '</button>' +
-          '<span class="msi-chain-explain" title="' + esc(taskExplanation(node)) + '">' + esc(taskExplanation(node)) + '</span>' +
+          '<div class="msi-chain-foot">' +
+            '<span class="msi-chain-explain" title="' + esc(taskExplanation(node)) + '">' + esc(taskExplanation(node)) + '</span>' +
+            '<span class="msi-chain-dur">耗时 ' + esc(node.dur.toFixed(3)) + ' ms</span>' +
+          '</div>' +
         '</div>' + arrow + '</div>';
     };
-    const nodeWidth = 180;
+    // 一行放几个:按最小宽度算出上限;剩下的宽度再均分给这几个节点——
+    // 节点一律等宽(宽窄跟内容走的话,用户会把宽的条误读成耗时长),
+    // 上限 220px 兜住只有两三个节点时条子被拉得过长。
+    const nodeMinWidth = 120;
+    const nodeMaxWidth = 220;
     const arrowWidth = 38;
-    const availableWidth = chain.clientWidth || chain.parentElement?.clientWidth || nodeWidth;
+    const availableWidth = chain.clientWidth || chain.parentElement?.clientWidth || nodeMinWidth;
     const fitCount = Math.max(1, Math.min(
       component.ordered.length,
-      Math.floor((availableWidth + arrowWidth) / (nodeWidth + arrowWidth))
+      Math.floor((availableWidth + arrowWidth) / (nodeMinWidth + arrowWidth))
     ));
+    const nodeWidth = Math.min(nodeMaxWidth, Math.max(nodeMinWidth,
+      Math.floor((availableWidth - (fitCount - 1) * arrowWidth) / fitCount)));
     chain.dataset.fitCount = String(fitCount);
+    chain.style.setProperty('--msi-chain-node-w', nodeWidth + 'px');
     const head = component.ordered.slice(0, fitCount);
     const tail = component.ordered.slice(fitCount);
     chain.style.setProperty('--msi-chain-turn-left', ((fitCount - 1) * (nodeWidth + arrowWidth)) + 'px');
+    chain.style.setProperty('--msi-chain-tail-w', nodeWidth + 'px');
     chain.innerHTML = '<div class="msi-chain-row">' +
       head.map((id, index) => nodeHtml(id, index < head.length - 1)).join('') +
       '</div>' +
@@ -8112,9 +8337,9 @@ body.chat-shell-page {
       new ResizeObserver(() => {
         cancelAnimationFrame(resizeFrame);
         resizeFrame = requestAnimationFrame(() => {
-          if (!selectedTraceTaskId || chain.closest('.msi-selection-detail')?.hidden) return;
+          if (!selectedTraceTaskId || chain.hidden) return;
           const count = orderedTraceComponent(selectedTraceTaskId).ordered.length;
-          const nextFit = Math.max(1, Math.min(count, Math.floor((chain.clientWidth + 38) / 218)));
+          const nextFit = Math.max(1, Math.min(count, Math.floor((chain.clientWidth + 38) / 158)));
           if (String(nextFit) !== chain.dataset.fitCount) renderSelectionDetail();
         });
       }).observe(chain);
@@ -8125,6 +8350,10 @@ body.chat-shell-page {
         setSelectionPanelCollapsed(!panel.classList.contains('is-collapsed'));
         return;
       }
+      const fold = event.target.closest('#msiDetailFold');
+      if (fold) { setDetailColumnCollapsed(!panel.classList.contains('is-detail-collapsed')); return; }
+      const title = event.target.closest('#msiDetailTitle');
+      if (title) { setSelectionPanelCollapsed(false); return; }
       const node = event.target.closest('[data-locate-task]');
       if (node) { locateTraceTask(node.dataset.locateTask); return; }
       const tab = event.target.closest('.msi-foot-tab');
@@ -8570,7 +8799,7 @@ body.chat-shell-page {
     const out = document.getElementById('msiZoomOut');
     const inc = document.getElementById('msiZoomIn');
     const real = isRealTraceSelection();
-    if (val) val.textContent = real ? TRACE_WINDOW_MS.toFixed(1) + 'ms · 真实窗口' : fmtSpan(DUR_MS);
+    if (val) val.textContent = real ? TRACE_WINDOW_MS.toFixed(1) + 'ms' : fmtSpan(DUR_MS);
     if (out) out.disabled = real || zoomIdx === 0;
     if (inc) inc.disabled = real || zoomIdx === ZOOM_STEPS.length - 1;
     renderRuler();
@@ -11757,6 +11986,167 @@ ${issuesText || '（暂无）'}
     document.addEventListener('DOMContentLoaded', boot, { once: true });
   } else {
     boot();
+  }
+})();
+  </script>
+
+  <!-- ── 窗口控制:两条分隔条的拖动逻辑 ── -->
+  <script>
+// 两个可拖动的分隔:
+//   1) 泳道图 ↕ 底部详情栏 —— 改 .msi-content-foot 上的 --msi-foot-h(详情栏内容区高度)
+//   2) 内容区 ↔ 智能对话面板 —— 改 .wzh-chat-panel 上的 --wzh-chat-w(面板宽度)
+// 两处都只往元素上写一个 CSS 变量,不碰原来的 flex/grid 结构。上限统一是容器的 50%:
+// 详情栏和对话面板再怎么拖都吃不掉一半以上,内容区始终留得住另一半。
+// 分隔条的显隐不去改别人的 setOpen / setSelectionPanelCollapsed,而是用 MutationObserver
+// 盯 class——那两个函数分别关在各自的 IIFE 里,盯 class 比互相调用少一层耦合。
+(function () {
+  const MAX_RATIO = 0.5;    // 详情栏 / 对话面板各自的占比上限
+  const FOOT_MIN = 160;     // 和 .msi-foot-body 的 min-height 对齐
+  const FOOT_DEFAULT = 232;
+  const CHAT_MIN = 320;     // 再窄消息气泡和输入框就挤变形了
+  const CHAT_DEFAULT = 480;
+  const STEP = 24;          // 键盘方向键一次走多少
+
+  const clamp = (v, lo, hi) => Math.min(Math.max(v, lo), Math.max(lo, hi));
+
+  // 分隔条通用拖动:按下记住起点和当前尺寸,移动时把「朝变大方向的位移」交给 apply。
+  // 两条的变大方向都是「往回拖」(横条往上、竖条往左),所以位移统一取 起点 - 当前。
+  function bindDrag(handle, axis, read, apply, reset) {
+    if (!handle) return;
+    let base = 0;
+    let origin = 0;
+    const key = axis === 'y' ? 'clientY' : 'clientX';
+    const onMove = (e) => apply(base + (origin - e[key]));
+    const onUp = () => {
+      handle.classList.remove('is-dragging');
+      document.body.classList.remove('is-pane-resizing');
+      document.body.removeAttribute('data-pane-resize-axis');
+      window.removeEventListener('pointermove', onMove);
+    };
+    handle.addEventListener('pointerdown', (e) => {
+      if (e.button !== 0) return;
+      e.preventDefault();
+      base = read();
+      origin = e[key];
+      handle.classList.add('is-dragging');
+      document.body.classList.add('is-pane-resizing');
+      document.body.setAttribute('data-pane-resize-axis', axis);
+      window.addEventListener('pointermove', onMove);
+      window.addEventListener('pointerup', onUp, { once: true });
+      window.addEventListener('pointercancel', onUp, { once: true });
+    });
+    // 双击回到默认尺寸:拖歪了不用一点点量回去
+    handle.addEventListener('dblclick', () => reset());
+    // 键盘:焦点落在分隔条上时方向键也能调,一次 24px
+    handle.addEventListener('keydown', (e) => {
+      const dir = axis === 'y'
+        ? (e.key === 'ArrowUp' ? 1 : e.key === 'ArrowDown' ? -1 : 0)
+        : (e.key === 'ArrowLeft' ? 1 : e.key === 'ArrowRight' ? -1 : 0);
+      if (dir) { e.preventDefault(); apply(read() + dir * STEP); return; }
+      if (e.key === 'Home' || e.key === 'End') { e.preventDefault(); reset(); }
+    });
+  }
+
+  // class 变了就同步一次分隔条的显隐(顺带把已经拖过的尺寸重新夹一遍)
+  function watchClass(el, sync) {
+    if (!el || typeof MutationObserver !== 'function') return;
+    new MutationObserver(sync).observe(el, { attributes: true, attributeFilter: ['class'] });
+  }
+
+  function initPaneResizers() {
+    const content = document.getElementById('contentCard');
+    const foot = document.getElementById('msiSelectionPanel');
+    const footBody = document.getElementById('msiFootBody');
+    const footHandle = document.getElementById('msiFootResizer');
+    const workarea = document.querySelector('.chat-shell-workarea');
+    const chat = document.getElementById('trainChatPanel');
+    const chatHandle = document.getElementById('chatShellResizer');
+
+    /* ── 1. 泳道图 ↕ 底部详情栏 ────────────────────────────────── */
+    const footOpen = () => !!foot && !foot.classList.contains('is-collapsed');
+    // --msi-foot-h 管的只是内容区那一块,详情栏外面还有 40px 头部和下边距。
+    // 先量出这部分固定开销,再从「内容区的一半」里刨掉,剩下的才是变量能给到的上限。
+    function footMax() {
+      const extra = foot.getBoundingClientRect().height - footBody.getBoundingClientRect().height;
+      return content.clientHeight * MAX_RATIO - extra;
+    }
+    const footRead = () => footBody.getBoundingClientRect().height || FOOT_DEFAULT;
+    function footApply(px) {
+      if (!footOpen()) return;
+      const h = Math.round(clamp(px, FOOT_MIN, footMax()));
+      foot.style.setProperty('--msi-foot-h', h + 'px');
+      footHandle.setAttribute('aria-valuenow', String(h));
+    }
+    function footReset() {
+      foot.style.removeProperty('--msi-foot-h');
+      footHandle.removeAttribute('aria-valuenow');
+    }
+    // 窗口变小 / 详情栏刚展开时重新夹一遍;没手动拖过就不写死,留着 CSS 里的默认值
+    function footClamp() {
+      const cur = parseFloat(foot.style.getPropertyValue('--msi-foot-h'));
+      if (Number.isFinite(cur) && footOpen()) footApply(cur);
+    }
+    // 收起再展开就回到默认高度:上一轮拖成什么样不带到下一次,重新打开永远是 232px
+    let footWasOpen = false;
+    function footSync() {
+      const open = footOpen();
+      if (open && !footWasOpen) footReset();
+      footWasOpen = open;
+      footHandle.hidden = !open;
+      footClamp();
+    }
+
+    /* ── 2. 内容区 ↔ 智能对话面板 ──────────────────────────────── */
+    // 悬浮窗形态下面板不占列宽,拖了也没意义,所以只在「挤入式且展开」时露出分隔条
+    const chatInline = () => !!chat && chat.classList.contains('is-open') && !chat.classList.contains('is-floating');
+    const chatMax = () => workarea.clientWidth * MAX_RATIO;
+    const chatRead = () => chat.getBoundingClientRect().width || CHAT_DEFAULT;
+    function chatApply(px) {
+      if (!chatInline()) return;
+      const w = Math.round(clamp(px, CHAT_MIN, chatMax()));
+      chat.style.setProperty('--wzh-chat-w', w + 'px');
+      chatHandle.setAttribute('aria-valuenow', String(w));
+    }
+    function chatReset() {
+      chat.style.removeProperty('--wzh-chat-w');
+      chatHandle.removeAttribute('aria-valuenow');
+    }
+    function chatClamp() {
+      const cur = parseFloat(chat.style.getPropertyValue('--wzh-chat-w'));
+      if (Number.isFinite(cur) && chatInline()) chatApply(cur);
+    }
+    // 关掉再打开就回到默认宽度。只认 is-open 的翻转,不认 is-floating——
+    // 切去悬浮窗再切回来算同一次打开,手动拖出来的宽度得留着。
+    let chatWasOpen = false;
+    function chatSync() {
+      const open = !!chat && chat.classList.contains('is-open');
+      if (open && !chatWasOpen) chatReset();
+      chatWasOpen = open;
+      chatHandle.hidden = !chatInline();
+      chatClamp();
+    }
+
+    if (content && foot && footBody && footHandle) {
+      bindDrag(footHandle, 'y', footRead, footApply, footReset);
+      watchClass(foot, footSync);
+      footSync();
+    }
+    if (workarea && chat && chatHandle) {
+      // 拖的时候关掉 flex-basis 过渡,不然面板会慢半拍跟在指针后面
+      chatHandle.addEventListener('pointerdown', () => chat.classList.add('is-resizing'));
+      window.addEventListener('pointerup', () => chat.classList.remove('is-resizing'));
+      bindDrag(chatHandle, 'x', chatRead, chatApply, chatReset);
+      watchClass(chat, chatSync);
+      chatSync();
+    }
+
+    window.addEventListener('resize', () => { footClamp(); chatClamp(); });
+  }
+
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', initPaneResizers, { once: true });
+  } else {
+    initPaneResizers();
   }
 })();
   </script>
