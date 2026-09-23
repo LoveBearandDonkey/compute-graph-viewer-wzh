@@ -251,18 +251,67 @@
   .f3-trend .pl{ font-size:10px; fill:var(--foreground-secondary); cursor:pointer; }
   .f3-trend .pl.cur{ fill:var(--foreground); font-weight:600; }
   /* ── 张量计算区（第 2、5 章共用）：情景切换只在第 5 章露出 ────────────── */
-  .rl-calc{ position:relative; width:100%; margin:0 auto; }
+  .rl-calc{ --rl-pipeline-cols:minmax(230px,.84fr) 24px minmax(270px,1fr) 24px minmax(310px,1.15fr) 72px minmax(310px,1.15fr); position:relative; width:100%; margin:0 auto; }
   .rl-calc.is-bridge-enter .rl-stage{ transform-origin:78% 42%; animation:rl-calc-enter .72s cubic-bezier(.2,.8,.2,1) both; }
   .rl-calc.is-bridge-enter #tl td.sel{ animation:rl-logit-arrival 1.5s .2s ease both; }
   @keyframes rl-calc-enter{ from{ opacity:.15; transform:scale(1.12); filter:blur(5px); } to{ opacity:1; transform:scale(1); filter:none; } }
   @keyframes rl-logit-arrival{ 0%,100%{ box-shadow:none; } 24%,72%{ color:var(--rl-bad); border-color:var(--rl-bad); box-shadow:0 0 0 5px color-mix(in srgb,var(--rl-bad) 22%,transparent),0 0 22px color-mix(in srgb,var(--rl-bad) 35%,transparent); } }
   .f3-tools{ display:flex; align-items:center; gap:var(--space-3); flex-wrap:wrap; margin:var(--space-3) 0 var(--space-2); }
-  body[data-cur="2"] #scen{ display:none; }
-  body[data-cur="5"] .rl-calc-guide{ display:none; }
-  .f3-tools .hint{ font-size:11px; color:var(--foreground-muted); }
+  body[data-cur="2"] .f3-tools{ display:none; }
+
+  /* 第 2 章快速模式：数据集消耗 → 根因 → logits 走势 → expert 负载，沿用后续章节已有卡片与图表语汇。 */
+  .rl-fast-dashboard{ display:grid; grid-template-columns:var(--rl-pipeline-cols); column-gap:var(--space-1); align-items:stretch; width:100%; max-width:1400px; min-width:1240px; margin:0 auto var(--space-3); }
+  body[data-cur="5"] .rl-fast-dashboard{ display:none; }
+  .rl-fast-dashboard > *{ min-width:0; height:132px; min-height:132px; max-height:132px; box-sizing:border-box; overflow:hidden; }
+  .rl-fast-dashboard > :nth-child(1){ grid-column:1; }
+  .rl-fast-dashboard > :nth-child(2){ grid-column:3; }
+  .rl-fast-dashboard > :nth-child(3){ grid-column:5; }
+  .rl-fast-dashboard > :nth-child(4){ grid-column:7; }
+  .rl-fast-dataset h3,.rl-fast-heat h3{ justify-content:space-between; }
+  .rl-fast-dashboard h3 > span:first-child{ display:flex; align-items:center; gap:var(--space-1); }
+  .rl-fast-step{ font:var(--font-weight-semibold) 9px/1.25 var(--font-mono); color:var(--foreground); }
+  .rl-fast-meta{ display:flex; justify-content:space-between; gap:var(--space-1); margin-top:3px; color:var(--foreground-muted); font:8px/1.25 var(--font-mono); white-space:nowrap; }
+  .rl-fast-progress{ margin:4px 0; height:3px; overflow:hidden; border-radius:var(--radius-pill); background:var(--surface-3); }
+  .rl-fast-progress i{ display:block; width:0; height:100%; border-radius:inherit; background:var(--rl-x); transition:width .08s linear; }
+  .rl-batch-pool{ display:grid; grid-template-columns:repeat(40,minmax(2px,1fr)); gap:1px; margin-top:4px; }
+  .rl-batch-pool i{ aspect-ratio:1; min-width:0; border-radius:1px; background:color-mix(in srgb,var(--rl-x) 68%,var(--surface-3)); transition:transform .12s,background .12s; }
+  .rl-batch-pool i.used{ opacity:.14; transform:scale(.7); background:var(--surface-3); }
+  .rl-fast-root{ display:flex; flex-direction:column; }
+  .rl-fast-root .num{ margin-top:2px; font-size:24px; }
+  .rl-fast-root .num small{ font-size:9px; }
+  .rl-fast-root .why{ margin-top:auto; font:9px/1.35 var(--font-mono); }
+  .rl-fast-root.is-rising .num{ color:var(--rl-w); }
+  .rl-fast-charts h3{ margin-bottom:2px; }
+  .rl-fast-chart-grid{ display:grid; grid-template-columns:48px minmax(0,1fr); gap:var(--space-2); align-items:end; }
+  .rl-fast-gauge{ display:flex; flex-direction:column; align-items:center; gap:var(--space-1); }
+  .rl-fast-gauge .g-bar{ width:28px; height:76px; }
+  .rl-fast-gauge .g-ceil{ top:18%; left:-5px; right:-5px; }
+  .rl-fast-gauge .g-ceil span{ left:auto; right:calc(100% + 4px); top:-7px; }
+  .rl-fast-gauge .g-val{ font-size:8px; }
+  .rl-fast-gauge small{ color:var(--foreground-muted); font:8px/1.15 var(--font-mono); text-align:center; }
+  .rl-fast-lines{ min-width:0; }
+  .rl-fast-lines svg{ width:100%; height:82px; display:block; overflow:visible; font-family:var(--font-mono); }
+  .rl-fast-lines .lane{ fill:var(--surface-2); stroke:var(--border-subtle); }
+  .rl-fast-lines .ceil{ stroke:var(--rl-bad); stroke-width:1; stroke-dasharray:3 3; }
+  .rl-fast-lines .ln-l{ fill:none; stroke-width:2; stroke-linecap:round; stroke-linejoin:round; }
+  .rl-fast-lines .ln-l{ stroke:var(--rl-l); }
+  .rl-fast-lines .spike{ stroke:var(--rl-bad); stroke-width:3; opacity:0; transition:opacity .12s; }
+  .rl-fast-lines .cursor{ stroke:var(--foreground); stroke-width:1; opacity:.62; }
+  .rl-fast-lines text{ fill:var(--foreground-muted); font-size:8px; }
+  .rl-fast-lines .legend-l{ fill:var(--rl-l); }
+  .rl-fast-lines .danger{ fill:var(--rl-bad); }
+  .rl-fast-heat{ display:flex; flex-direction:column; }
+  .rl-fast-heat .meta{ justify-content:space-between; }
+  .rl-expert-heat{ display:grid; grid-template-columns:repeat(32,minmax(3px,1fr)); gap:1px; margin:auto 0; }
+  .rl-expert-heat i{ aspect-ratio:1; border-radius:1px; background:color-mix(in srgb,var(--rl-p) calc(var(--load,10) * 1%),var(--surface-2)); transition:background .08s,box-shadow .08s,transform .08s; }
+  .rl-expert-heat i.hot{ box-shadow:0 0 0 1px var(--rl-p); transform:scale(1.06); }
+  .rl-fast-fly-batch{ position:absolute; z-index:55; box-sizing:border-box; border:1px solid color-mix(in srgb,var(--rl-x) 82%,var(--border-default)); border-radius:2px; background:color-mix(in srgb,var(--rl-x) 46%,var(--surface-1)); box-shadow:0 10px 28px color-mix(in srgb,var(--rl-x) 34%,transparent); pointer-events:none; will-change:left,top,width,height,opacity; }
+  .rl-calc.is-fast-mode .f3-tools{ display:none; }
+  .rl-calc.is-fast-mode .rl-tensor{ transition:box-shadow .12s,border-color .12s,transform .12s; }
+  .rl-calc.is-fast-mode .rl-tensor.is-batch-refresh{ border-color:color-mix(in srgb,var(--c) 65%,var(--border-subtle)); box-shadow:0 0 0 3px color-mix(in srgb,var(--c) 15%,transparent); transform:translateY(-2px); }
 
   /* 公式区 */
-  .rl-formulas{ margin-top:var(--space-3); background:var(--surface-1); border:1px solid var(--border-subtle); border-radius:var(--radius-lg); padding:var(--space-3) var(--space-5); font-family:var(--font-mono); font-size:12px; line-height:1.8; overflow-x:auto; }
+  .rl-formulas{ max-width:1400px; box-sizing:border-box; margin:var(--space-3) auto 0; background:var(--surface-1); border:1px solid var(--border-subtle); border-radius:var(--radius-lg); padding:var(--space-3) var(--space-5); font-family:var(--font-mono); font-size:12px; line-height:1.8; overflow-x:auto; }
   .rl-formulas > summary{ cursor:pointer; list-style:none; font-family:var(--font-sans); font-size:var(--font-size-body-sm); font-weight:var(--font-weight-semibold); color:var(--foreground); display:flex; align-items:center; gap:var(--space-2); user-select:none; }
   .rl-formulas > summary::-webkit-details-marker{ display:none; }
   .rl-formulas > summary::before{ content:"▸"; font-size:10px; color:var(--foreground-muted); transition:transform .15s; }
@@ -278,7 +327,7 @@
   .rl-cast .lbl{ font-family:var(--font-sans); color:var(--foreground-secondary); min-width:12em; }
 
   /* 张量区：x × W = logits → softmax → probs 全部保持在同一条水平流水线上。 */
-  .rl-stage{ width:100%; box-sizing:border-box; display:grid; grid-template-columns:auto auto auto auto auto auto auto; column-gap:var(--space-1); justify-content:center; align-items:start; overflow-x:auto; padding-block:var(--space-1); }
+  .rl-stage{ width:100%; max-width:1400px; min-width:1240px; margin:0 auto; box-sizing:border-box; display:grid; grid-template-columns:var(--rl-pipeline-cols); column-gap:var(--space-1); align-items:start; padding-block:var(--space-1); }
   .rl-op-down,.rl-probs{ grid-column:auto; grid-row:auto; }
   .rl-op{ align-self:center; font-size:var(--font-size-title-sm); font-weight:var(--font-weight-bold); color:var(--foreground-secondary); padding:0 2px; margin-top:30px; text-align:center; white-space:nowrap; }
   .rl-op-down{ justify-self:center; display:flex; flex-direction:column; align-items:center; gap:2px; }
@@ -309,12 +358,6 @@
   .rl-gauge .bar i.bad{ background:var(--rl-bad); }
 
   /* 第 2 章逐项乘加：复制当前可见的 x / W 格子飞向目标 logits，不挪动原表格。 */
-  .rl-calc-guide{ min-height:2.1em; display:flex; align-items:center; justify-content:center; padding-inline:var(--space-3); color:var(--foreground-secondary); font-size:var(--font-size-body-sm); text-align:center; }
-  .rl-calc-guide b{ color:var(--foreground); font-weight:var(--font-weight-semibold); }
-  .rl-calc-guide .x{ color:var(--rl-x); }
-  .rl-calc-guide .w{ color:var(--rl-w); }
-  .rl-calc-guide .l{ color:var(--rl-l); }
-  .rl-calc-guide .p{ color:var(--rl-p); }
   .rl-math-fx{ position:absolute; inset:0; z-index:40; overflow:visible; pointer-events:none; }
   .rl-fly-cell{ position:absolute; display:flex; align-items:center; justify-content:center; box-sizing:border-box; min-width:34px; height:20px; padding:0 2px; border:1.5px solid var(--fly-color); border-radius:2px; background:color-mix(in srgb,var(--fly-color) 24%,var(--surface-1)); color:var(--foreground); box-shadow:0 7px 20px color-mix(in srgb,var(--fly-color) 32%,transparent); font:var(--font-weight-semibold) 8px/1 var(--font-mono); white-space:nowrap; will-change:transform,opacity; }
   .rl-calc.rl-explain-running #tx td.sel:not(.rl-source-done),
@@ -339,6 +382,7 @@
   @media (prefers-reduced-motion:reduce){
     .rl-fly-cell{ display:none; }
     .rl-fly-logits-row{ display:none; }
+    .rl-fast-fly-batch{ display:none; }
     .rl-grid td.rl-logit-hit,.rl-grid td.rl-value-reveal,#tp tr.rl-softmax-reveal td{ animation:none !important; }
   }
 
@@ -479,11 +523,42 @@
 
     <!-- 张量计算区：第 2 章讲「一个分数怎么算」，第 5 章讲「怎么算成 inf」，同一块 DOM -->
     <section class="rl-scene rl-calc" data-step="2 5">
+      <div class="rl-fast-dashboard" aria-label="step 15000 到 15203 的 Router 快速演进">
+        <section class="f1-src rl-fast-dataset">
+          <h3><span><span class="dot" style="background:var(--rl-x)"></span>训练数据输入</span><span class="rl-fast-step" id="fast-dataset-step">step 15000</span></h3>
+          <div class="rl-fast-meta"><span id="fast-dataset-meta">本段 0 / 204</span><span>池内 480 batch</span></div>
+          <div class="rl-fast-progress"><i id="fast-dataset-progress"></i></div>
+          <div class="rl-batch-pool" id="fast-batch-pool" aria-label="480 个 micro-batch，本次示意消耗其中 204 个"></div>
+        </section>
+
+        <!-- 直接复用第 3 章根因卡的 f1-src 结构 -->
+        <section class="f1-src rl-fast-root" id="fast-root-card">
+          <h3><span class="dot"></span>Layer 38 · W_gate 第 193 列</h3>
+          <div class="num"><span id="fast-w-norm">30</span><small>‖W[:,193]‖ · 其它 255 列约 2.0</small></div>
+          <div class="why">z-loss=off · clip=off · router lr 未降</div>
+        </section>
+
+        <!-- 左侧量表沿用第 3 章 g-bar；右侧只保留第 4 章的 logits 曲线，避免和根因卡重复表达 W_gate。 -->
+        <section class="f3-trend rl-fast-charts">
+          <h3>Router logits <span id="fast-logit-read">step 15000 · max|logit| 290</span></h3>
+          <div class="rl-fast-chart-grid">
+            <div class="rl-fast-gauge">
+              <div class="g-bar"><div class="g-ceil"><span>448</span></div><div class="g-fill" id="fast-logit-fill" style="--c:var(--rl-l);height:55%"></div><div class="g-val" id="fast-logit-value">290</div></div>
+              <small>当前 max<br>FP8 E4M3</small>
+            </div>
+            <div class="rl-fast-lines" id="fast-lines" aria-label="max logit 随 step 的走势"></div>
+          </div>
+        </section>
+
+        <section class="rl-tensor rl-fast-heat" style="--c:var(--rl-p)">
+          <h3><span><span class="dot"></span>Layer 28 · 专家 token 热力</span><span class="rl-fast-step" id="fast-heat-state">尚均衡</span></h3>
+          <div class="meta"><span>256 experts</span><span id="fast-hot-share">E193 · 1.2%</span></div>
+          <div class="rl-expert-heat" id="fast-expert-heat" aria-label="256 个专家的 token 负载热力图"></div>
+        </section>
+      </div>
       <div class="f3-tools">
         <div class="segmented-control segmented-control-muted" id="scen"></div>
-        <span class="hint">点任意一格可换选中的 token / expert</span>
       </div>
-      <div class="rl-calc-guide" id="calc-guide" role="status" aria-live="polite"></div>
       <div class="rl-stage">
         <section class="rl-tensor" style="--c:var(--rl-x)">
           <h3><span class="dot"></span>x 输入张量</h3>
@@ -509,7 +584,7 @@
           <table class="rl-grid" id="tp"></table>
         </section>
       </div>
-      <details class="rl-formulas" open><summary>选中这一格是怎么算出来的</summary><div id="formulas"></div></details>
+      <details class="rl-formulas" id="formula-details"><summary>选中这一格是怎么算出来的</summary><div id="formulas"></div></details>
     </section>
 
     <!-- 第 6 章 · 传染：一个 NaN 到全局 -->
@@ -999,11 +1074,11 @@
     const xBase = {}; TOKENS.forEach(t => xBase[t] = vec(1000 + t, H));
 
     // ---- W_gate 列：w_j = Σ_t (target[t,j]/‖x_t‖²)·x_t + ε·r，使 x_t·w_j ≈ target 且 ‖w_j‖ = 列范数 ----
-    function makeCol(j, targets, colNorm){
+    function makeCol(j, targets, colNorm, basis = xBase){
       const w = new Float64Array(H);
-      TOKENS.forEach(t => { const x = xBase[t], c = targets[t] / dot(x, x); for (let i = 0; i < H; i++) w[i] += c * x[i]; });
+      TOKENS.forEach(t => { const x = basis[t], c = targets[t] / dot(x, x); for (let i = 0; i < H; i++) w[i] += c * x[i]; });
       const r = vec(5000 + j, H);
-      TOKENS.forEach(t => { const x = xBase[t], c = dot(r, x) / dot(x, x); for (let i = 0; i < H; i++) r[i] -= c * x[i]; });
+      TOKENS.forEach(t => { const x = basis[t], c = dot(r, x) / dot(x, x); for (let i = 0; i < H; i++) r[i] -= c * x[i]; });
       const a2 = dot(w, w), eps = Math.sqrt(Math.max(colNorm * colNorm - a2, 0)) / norm(r);
       for (let i = 0; i < H; i++) w[i] += eps * r[i];
       return w;
@@ -1029,6 +1104,22 @@
       { id:'overflow', label:'step 15203 · 溢出',     short:'溢出',     step:15203, peak:1846, x:xOverflow, w:wGrown,  elem:'±1',    norm:50, cos:0.74, margin:'越界 4 倍 → inf' },
     ];
 
+    // 快速模式按真实 step 生成一批新 x；W_gate 第 193 列从范数 30 长到 50，15203 的 batch 与它突然高度同向。
+    function fastState(step){
+      const s = Math.max(15000, Math.min(15203, Math.round(step)));
+      const p = Math.min(1, (s - 15000) / 202);
+      const peak = s === 15203 ? 1846 : 290 * Math.pow(410 / 290, p);
+      const colNorm = 30 + 20 * p;
+      const x = {};
+      TOKENS.forEach(t => x[t] = vec(200000 + s * 17 + t, H));
+      const steadyPeak = s === 15203 ? 410 : peak;
+      const targets = T([steadyPeak, steadyPeak * .93, steadyPeak * .88, steadyPeak * .96]);
+      const col = makeCol(193, targets, colNorm, x);
+      if (s === 15203) x[0] = alignRow(x[0], col, 1846);
+      const w = Object.assign({}, wNormal, { 193:col });
+      return { id:'fast', label:`step ${s}`, short:'快速模式', step:s, peak, x, w, elem:'增长中', norm:colNorm, cos:s === 15203 ? .74 : peak / (50 * colNorm), margin:peak > 448 ? '越界 4 倍 → inf' : `${Math.max(0, Math.round(100 * (448 - peak) / 448))}% 余量` };
+    }
+
     const otherLogits = {}; TOKENS.forEach(t => { const r = rng(9000 + t); otherLogits[t] = Array.from({ length: E }, () => 18 + 4 * normal(r)); });
 
     function compute(s){
@@ -1048,7 +1139,7 @@
       return { logits, cast, probs, rows };
     }
 
-    let si = 0, selT = 0, selJ = 193, R = compute(SCEN[0]);
+    let si = 0, selT = 0, selJ = 193, activeState = SCEN[0], R = compute(activeState);
 
     const fx = v => v.toFixed(2);
     const fw = (v, big) => big ? v.toFixed(2) : v.toFixed(4);
@@ -1074,8 +1165,8 @@
       return out;
     }
 
-    function render(){
-      const s = SCEN[si], big = si > 0;
+    function render(quick = false){
+      const s = activeState, big = s.norm > 2;
       $('x-mag').textContent = '±1 量级';
       { const w = s.w[selJ], rms = Math.sqrt(dot(w, w) / H); $('w-mag').textContent = 'E ' + selJ + ' 列 ±' + (rms < 0.1 ? rms.toFixed(2) : rms.toFixed(1)) + ' 量级'; }
       $('tx').innerHTML = head(HIDS, h => 'h ' + h) +
@@ -1100,9 +1191,11 @@
 
       renderFormulas(s, big);
       renderGauge();
-      renderTrend();
-      renderCmp();
-      document.querySelectorAll('#scen .btn').forEach((b, i) => b.classList.toggle('is-selected', i === si));
+      if (!quick){
+        renderTrend();
+        renderCmp();
+        document.querySelectorAll('#scen .btn').forEach((b, i) => b.classList.toggle('is-selected', i === si));
+      }
     }
 
     // ---- 小白向逐项乘加动画：4 组可见项飞入 logits，再揭示 softmax 整行 ----
@@ -1125,7 +1218,7 @@
       document.querySelectorAll('#tp tr.rl-softmax-reveal').forEach(el => el.classList.remove('rl-softmax-reveal'));
     }
 
-    function guide(html){ $('calc-guide').innerHTML = html; }
+    function guide(){ /* 逐项乘加继续用飞行动画表达，不再占一整行解释文案。 */ }
 
     function flyCell(source, target, color){
       const scene = document.querySelector('.rl-scene.rl-calc');
@@ -1326,7 +1419,8 @@
       c.textContent = `step ${s.step} · max|logit| ${s.peak} · ${bad ? '越界 ' + (s.peak / 448).toFixed(1) + ' 倍' : '占上界 ' + Math.round(100 * s.peak / 448) + '%'}`;
     }
 
-    function setScen(i){ clearExplain(); si = i; R = compute(SCEN[si]); render(); Road.set(SCEN[si].step); }
+    function setScen(i){ clearExplain(); si = i; activeState = SCEN[si]; R = compute(activeState); render(); Road.set(activeState.step); }
+    function setFastStep(step){ activeState = fastState(step); R = compute(activeState); render(true); Road.set(activeState.step); return activeState; }
 
     // ---- 交互 ----
     const scen = $('scen');
@@ -1339,23 +1433,158 @@
     ['tl', 'tp'].forEach(id => $(id).addEventListener('click', e => { const td = e.target.closest('td[data-t]'); if (td) { Driver.userTouched(); selT = +td.dataset.t; selJ = +td.dataset.j; render(); playExplain(80); } }));
 
     function reset(i){ selT = 0; selJ = 193; setScen(i || 0); }
-    return { reset, setScen, playExplain, stopExplain:clearExplain };
+    return { reset, setScen, setFastStep, playExplain, stopExplain:clearExplain };
   })();
 
-  /* ================= 第 2 章 · 背景：正常态的四张表，停一会儿就往下走 ================= */
+  /* ================= 第 2 章 · 快速模式：从更大的 batch 池中消耗 204 个，四张矩阵与诊断视图同步演进 ================= */
+  const FastFlow = (function(){
+    const clock = makeClock();
+    const scene = document.querySelector('.rl-scene.rl-calc');
+    const WINDOW_TOTAL = 204, POOL_TOTAL = 480, S0 = 15000, S1 = 15203, DURATION = 13200;
+    const animations = [];
+    let built = false, lastStep = -1;
+    const lineGeo = { w:330, h:82, x0:24, x1:316, y0:12, y1:64 };
+    const xAt = s => lineGeo.x0 + (s - S0) / (S1 - S0) * (lineGeo.x1 - lineGeo.x0);
+    const logitAt = s => s === S1 ? 1846 : 290 * Math.pow(410 / 290, Math.min(1, (s - S0) / 202));
+    const yLogit = v => lineGeo.y1 - Math.min(520, v) / 520 * (lineGeo.y1 - lineGeo.y0);
+
+    function build(){
+      if (built) return;
+      built = true;
+      $('fast-batch-pool').innerHTML = Array.from({ length:POOL_TOTAL }, (_, i) => `<i data-batch="${i}" title="${i < WINDOW_TOTAL ? `本次窗口 · step ${S0 + i}` : '后续训练 batch'}"></i>`).join('');
+      $('fast-expert-heat').innerHTML = Array.from({ length:256 }, (_, i) => `<i data-expert="${i}" title="expert ${i}"></i>`).join('');
+      let dl = '';
+      for (let s = S0; s <= S1; s++){
+        const cmd = s === S0 ? 'M' : 'L';
+        dl += `${cmd}${xAt(s).toFixed(1)} ${yLogit(logitAt(s)).toFixed(1)} `;
+      }
+      const ceilY = yLogit(448);
+      $('fast-lines').innerHTML = `<svg viewBox="0 0 ${lineGeo.w} ${lineGeo.h}" xmlns="http://www.w3.org/2000/svg">`
+        + `<defs><clipPath id="fast-line-clip"><rect id="fast-line-clip-rect" x="${lineGeo.x0}" y="0" width="0" height="${lineGeo.h}"/></clipPath></defs>`
+        + `<rect class="lane" x="${lineGeo.x0}" y="${lineGeo.y0}" width="${lineGeo.x1-lineGeo.x0}" height="${lineGeo.y1-lineGeo.y0}"/>`
+        + `<text class="legend-l" x="${lineGeo.x0+5}" y="${lineGeo.y0+10}">max|logit| · 290 → 410 → 1846</text>`
+        + `<line class="ceil" x1="${lineGeo.x0}" x2="${lineGeo.x1}" y1="${ceilY}" y2="${ceilY}"/><text class="danger" x="${lineGeo.x1-2}" y="${ceilY-3}" text-anchor="end">E4M3 448</text>`
+        + `<g clip-path="url(#fast-line-clip)"><path class="ln-l" d="${dl}"/></g>`
+        + `<line class="spike" id="fast-overflow-spike" x1="${lineGeo.x1-3}" x2="${lineGeo.x1-3}" y1="${yLogit(410)}" y2="${lineGeo.y0}"/>`
+        + `<line class="cursor" id="fast-line-cursor" x1="${lineGeo.x0}" x2="${lineGeo.x0}" y1="${lineGeo.y0}" y2="${lineGeo.y1}"/>`
+        + `<text x="${lineGeo.x0}" y="80">15000</text><text x="${xAt(15200)}" y="80" text-anchor="middle">15200</text><text x="${lineGeo.x1}" y="80" text-anchor="end">15203</text></svg>`;
+    }
+
+    function stopAnimations(){ animations.splice(0).forEach(a => a.cancel()); scene.querySelectorAll('.rl-fast-fly-batch').forEach(el => el.remove()); }
+
+    function flyBatch(cell){
+      if (!cell || matchMedia('(prefers-reduced-motion:reduce)').matches) return;
+      const target = document.querySelector('.rl-stage .rl-tensor');
+      const sr = cell.getBoundingClientRect(), tr = target.getBoundingClientRect(), cr = scene.getBoundingClientRect();
+      const tile = document.createElement('i');
+      tile.className = 'rl-fast-fly-batch';
+      Object.assign(tile.style, { left:(sr.left-cr.left)+'px', top:(sr.top-cr.top)+'px', width:sr.width+'px', height:sr.height+'px' });
+      scene.appendChild(tile);
+      const a = tile.animate([
+        { left:(sr.left-cr.left)+'px', top:(sr.top-cr.top)+'px', width:sr.width+'px', height:sr.height+'px', opacity:.95 },
+        { left:(sr.left-cr.left+18)+'px', top:(sr.top-cr.top+20)+'px', width:(sr.width*1.8)+'px', height:(sr.height*1.8)+'px', opacity:1, offset:.28 },
+        { left:(tr.left-cr.left)+'px', top:(tr.top-cr.top)+'px', width:tr.width+'px', height:tr.height+'px', opacity:.16 }
+      ], { duration:240, easing:'cubic-bezier(.2,.75,.2,1)', fill:'forwards' });
+      animations.push(a);
+      a.finished.then(() => tile.remove()).catch(() => {});
+    }
+
+    function pulseTensors(){
+      document.querySelectorAll('.rl-stage .rl-tensor').forEach((panel, i) => {
+        const a = panel.animate([
+          { transform:'translateY(0)', filter:'brightness(1)' },
+          { transform:'translateY(-2px)', filter:'brightness(1.2)', offset:.45 },
+          { transform:'translateY(0)', filter:'brightness(1)' }
+        ], { duration:100, delay:i * 15, easing:'ease-out' });
+        animations.push(a);
+      });
+    }
+
+    function updateHeat(p){
+      const skew = Math.pow(p, 1.45);
+      $('fast-expert-heat').querySelectorAll('i').forEach((cell, i) => {
+        const noise = 5 + 8 * (Math.sin(i * 12.9898 + p * 9.7) * .5 + .5);
+        const load = i === 193 ? 18 + 82 * skew : Math.max(2, noise * (1 - .78 * skew));
+        cell.style.setProperty('--load', load.toFixed(1));
+        cell.classList.toggle('hot', i === 193 && p > .12);
+      });
+      const share = 1.2 + 96.8 * skew;
+      $('fast-hot-share').textContent = `E193 · ${share < 10 ? share.toFixed(1) : share.toFixed(0)}%`;
+      $('fast-heat-state').textContent = p < .2 ? '尚均衡' : p < .72 ? '正在偏斜' : p < 1 ? '严重失衡' : '98% → E193';
+    }
+
+    function updateCharts(step, state){
+      const p = (step - S0) / (S1 - S0), x = xAt(step), logit = state.peak;
+      $('fast-w-norm').textContent = state.norm.toFixed(1).replace('.0','');
+      $('fast-root-card').classList.toggle('is-rising', step > S0);
+      $('fast-logit-read').textContent = `step ${step} · max|logit| ${Math.round(logit)}`;
+      $('fast-logit-read').className = logit > 448 ? 'bad' : '';
+      $('fast-logit-value').textContent = Math.round(logit);
+      $('fast-logit-value').style.bottom = Math.min(100, logit / 448 * 82) + '%';
+      $('fast-logit-fill').style.height = Math.min(100, logit / 448 * 82) + '%';
+      $('fast-logit-fill').style.background = logit > 448 ? 'var(--rl-bad)' : 'var(--rl-l)';
+      $('fast-line-clip-rect').setAttribute('width', Math.max(0, x - lineGeo.x0));
+      $('fast-line-cursor').setAttribute('x1', x); $('fast-line-cursor').setAttribute('x2', x);
+      $('fast-overflow-spike').style.opacity = step === S1 ? '1' : '0';
+      updateHeat(p);
+    }
+
+    function tick(step){
+      if (step === lastStep) return;
+      lastStep = step;
+      const index = step - S0, cells = $('fast-batch-pool').children, cell = cells[index];
+      flyBatch(cell);
+      for (let i = 0; i <= index; i++) cells[i]?.classList.add('used');
+      const done = index + 1, pct = done / WINDOW_TOTAL;
+      $('fast-dataset-step').textContent = `step ${step}${step === S1 ? ' · 总进度 59.8%' : ''}`;
+      $('fast-dataset-meta').textContent = `本段 ${done} / ${WINDOW_TOTAL} · 池内余量 ${POOL_TOTAL - done}`;
+      $('fast-dataset-progress').style.width = (pct * 100) + '%';
+      const state = Tensor.setFastStep(step);
+      updateCharts(step, state);
+      pulseTensors();
+    }
+
+    function reset(){
+      clock.stop(); stopAnimations(); build(); lastStep = -1;
+      scene.classList.remove('is-fast-mode');
+      Array.from($('fast-batch-pool').children).forEach(cell => cell.classList.remove('used'));
+      $('fast-dataset-progress').style.width = '0%';
+      $('fast-dataset-step').textContent = 'step 15000';
+      $('fast-dataset-meta').textContent = `本段 0 / ${WINDOW_TOTAL} · 池内余量 ${POOL_TOTAL}`;
+      const preview = { peak:290, norm:30 };
+      updateCharts(S0, preview);
+      $('fast-line-clip-rect').setAttribute('width','0');
+      updateHeat(0);
+    }
+
+    function start(done){
+      clock.stop(); stopAnimations();
+      Tensor.stopExplain();
+      scene.classList.add('is-fast-mode');
+      tick(S0);
+      clock.tween(100, DURATION, p => {
+        const q = Math.max(0, Math.min(1, p));
+        tick(S0 + Math.min(WINDOW_TOTAL - 1, Math.floor(q * WINDOW_TOTAL)));
+      }, x => x);
+      clock.at(DURATION + 700, done);
+    }
+    return { reset, start, stop(){ clock.stop(); stopAnimations(); scene.classList.remove('is-fast-mode'); } };
+  })();
+
+  /* ================= 第 2 章 · 先慢速讲清一格，再切到 15000 → 15203 快速训练 ================= */
   const C1 = (function(){
     const clock = makeClock();
     const scene = document.querySelector('.rl-scene.rl-calc');
-    function reset(){ clock.stop(); Tensor.stopExplain(); scene.classList.remove('is-bridge-enter'); Tensor.reset(0); }
+    function reset(){ clock.stop(); FastFlow.reset(); Tensor.stopExplain(); scene.classList.remove('is-bridge-enter'); $('formula-details').open = false; Tensor.reset(0); Road.set(15000); }
     function start(done){
       reset();
       void scene.offsetWidth;
       scene.classList.add('is-bridge-enter');
       Tensor.playExplain(640);
       clock.at(1850, () => scene.classList.remove('is-bridge-enter'));
-      clock.at(11200, done);
+      clock.at(10400, () => FastFlow.start(done));
     }
-    return { start, reset, stop: () => { clock.stop(); Tensor.stopExplain(); } };
+    return { start, reset, stop: () => { clock.stop(); FastFlow.stop(); Tensor.stopExplain(); } };
   })();
 
   /* ================= 第 3 章 · 根因：W_gate 2 → 30，两支温度计一起涨，梯度先碰顶 ================= */
@@ -1476,7 +1705,7 @@
   /* ================= 第 5 章 · 前向：15200 塌缩前夕 → 15203 溢出，走势图与张量表一起切 ================= */
   const C4 = (function(){
     const clock = makeClock();
-    function reset(){ clock.stop(); document.querySelector('.rl-scene.rl-calc').classList.remove('is-bridge-enter'); Tensor.reset(1); }
+    function reset(){ clock.stop(); document.querySelector('.rl-scene.rl-calc').classList.remove('is-bridge-enter','is-fast-mode'); $('formula-details').open = true; Tensor.reset(1); }
     function start(done){ reset(); clock.at(3000, () => Tensor.setScen(2)); clock.at(8500, done); }
     return { start, reset, stop: () => clock.stop() };
   })();
@@ -1524,8 +1753,8 @@
   const STEPS = [
     { lbl:'1 · 全局定位：Layer 38 在整网哪里', fig:Net,
       cap:'<span class="t">openPangu 2.0 Flash · PP3 · Layer 38</span>先把局部计算放回整网：展开 <b>Layer 37 → 38 → 39</b> 三层，两侧按真实数量折叠其余 43 层。一次前向从 L37 output 进入 L38 input，沿<b>主 compute stream</b>依次调用 TP / EP 通信，最后把 X₃₉ 交给 L39；每完成一段，底部就生成一张“谁 → 交付什么 → 给谁”。' },
-    { lbl:'2 · 背景：一个分数是怎么算出来的', fig:C1,
-      cap:'<span class="t">step ~10000 · 正常</span>每个 token 要给 256 个专家各打一个分。token 0 给专家 193 的分 = <b>x 第 0 行的 2560 个数</b>和<b>W_gate 第 193 列的 2560 个数</b>一对一相乘再加起来，就是 logits 里的一格；分数再过 softmax 变成 0~1 的概率。正常时分数约 30，离 FP8 E4M3 能存的最大值 448 还有 <b>15 倍余量</b>。x 过了 RMSNorm 全程稳定，本案例里在变的只有 W_gate。' },
+    { lbl:'2 · 从一次 Router 计算跑到失衡', fig:C1,
+      cap:'<span class="t">先慢后快 · step 15000 → 15203</span>先用一行 x 与 W_gate 第 193 列逐项乘加，讲清一个 logit 怎样经过 softmax 变成概率；随后从 480 格 micro-batch 池里连续消耗本窗口的 204 个 batch，四张矩阵按序批量刷新。与此同时复用根因卡、logits 量表与趋势线，并用 <b>Layer 28</b> 的 256 格专家热力图看见负载逐渐偏向 expert 193。' },
     { lbl:'3 · 根因：W_gate 越长越大，梯度先碰顶', fig:C2,
       cap:'<span class="t">step 10000 → 15000</span>softmax 只奖励「再自信一点」，本该拦着的 z-loss 没开，W_gate 第 193 列就一直往大了长（列范数 <b>2 → 30</b>）。它一涨，前向的 logits 和反向的梯度两条路都跟着涨。梯度被 loss_scale 放大了 <b>65536 倍</b>、贴着 FP8 E5M2 的天花板 57344——所以是<b>它先碰顶</b>；logits 这时才 290，离 448 还有余量。' },
     { lbl:'4 · 反向：AMP 捂住症状，监控一片祥和', fig:C3,
@@ -1547,7 +1776,7 @@
       + STEPS.map((s, i) => `<button type="button" class="st ${i + 1 <= cur ? 'done ' : ''}${i + 1 === cur ? 'cur' : ''}" data-s="${i + 1}"><span class="lbl">${s.lbl}</span><span class="bar"></span></button>`).join('');
     capEl.innerHTML = STEPS[cur - 1].cap;
     document.body.dataset.cur = cur;
-    Road.hide(cur <= 2);                                    // 全局定位与正常态计算都没有 step 时间线
+    Road.hide(cur === 1);                                   // 第 2 章快速模式开始进入真实 step 时间线
     document.querySelectorAll('.rl-scene').forEach(sc => sc.classList.toggle('on', sc.dataset.step.split(' ').includes(String(cur))));
   }
   function stopAll(){ if (hold) { clearTimeout(hold); hold = null; } STEPS.forEach(s => s.fig.stop()); }
