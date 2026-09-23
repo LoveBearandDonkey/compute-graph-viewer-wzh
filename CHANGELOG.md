@@ -5,6 +5,11 @@
 
 ---
 
+## 2026-09-23 — rank-intro 切换为 memory-improved 版本
+
+- `Profiling_Insight_and_Tool/rank-intro/rank-intro.html` 改由 memory-improved 版本顶替，原版改存 `rank-intro-old.html`；`config-relation-observer.html` / `config-relation-plane.html` 的「what is rank」入口继续指向 `../rank-intro/rank-intro.html`，自动落到新页面。
+- 新增 `rank-memory-figures-guide.md`（Rank 显存柱右侧三图解读）与 `改进意见.md`（两级显存账本反馈）。
+
 ## 2026-09-23 — 训练监控 v2 顶栏新增 moe load 入口
 
 - `training-run-twin-standalone/training-monitoring-v2.html` 顶栏右侧新增 “moe load” 外链入口（`#navMoeLoad`），新标签页打开 `pangu-moe-trainviz/op-rank-time-wzhBranch.html`；复用 `.twin-problem-link` 样式，与“问题2释义”并排，不新增按钮样式。
