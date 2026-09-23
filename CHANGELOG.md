@@ -5,6 +5,10 @@
 
 ---
 
+## 2026-09-23 — 训练监控 v2 顶栏新增 moe load 入口
+
+- `training-run-twin-standalone/training-monitoring-v2.html` 顶栏右侧新增 “moe load” 外链入口（`#navMoeLoad`），新标签页打开 `pangu-moe-trainviz/op-rank-time-wzhBranch.html`；复用 `.twin-problem-link` 样式，与“问题2释义”并排，不新增按钮样式。
+
 ## 2026-09-22 — Router logits 第二步加入 15000→15203 快速训练视图
 
 - `training-run-twin-standalone/router-logits-viz.html` 的第二步保留单行 x × 单列 W_gate 的逐项乘加讲解，随后切换到 204 个真实 step 的快速播放；micro-batch 从紫色数据池飞入并覆盖 x，四张矩阵按序刷新。
