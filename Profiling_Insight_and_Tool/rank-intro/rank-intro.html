@@ -6,6 +6,8 @@
 <title>Rank 的设计表达 · 分步入门</title>
 <link rel="stylesheet" href="./vendor/model-graphviz-pattern.css">
 <link rel="stylesheet" href="./vendor/model-architecture-3d-deck-pattern.css">
+<link rel="stylesheet" href="../../vendor/pto-design-system/patterns/tensor-volume-canvas/pattern.css">
+<link rel="stylesheet" href="../../vendor/pto-design-system/patterns/matrix-canvas/pattern.css">
 <!-- 展平视图的**规则层**（与 training-run-twin-standalone/config-relation-plane.html 共用一份）：
      EP 三档口径的换算、EDP / world / 行列数、约束谓词、专家四色、热力色阶、量尺的 1/2/5 梯子、
      字段量程。那页的画布是 DOM、本页是 canvas（第 10 步要做「3D 压成平面」的逐格插值），
@@ -455,18 +457,14 @@
   .rankmem table{width:100%;border-collapse:collapse}
   .rankmem td{padding:2px 0;vertical-align:top;line-height:1.5}
   .rankmem td.n{text-align:right;white-space:nowrap}
-  .rankmem tr.k td{padding-top:6px;font-size:10.5px;letter-spacing:.08em;color:var(--fg3);border-top:1px solid var(--line)}
-  .rankmem tr.k:first-child td{border-top:0;padding-top:0}
   .rankmem tr.m td{font-weight:700;color:var(--fg)}
   .rankmem tr.s td{color:var(--fg2)}
-  .rankmem tr.s td:first-child{padding-left:16px}
+  .rankmem tr.s td:first-child{padding-left:16px;box-shadow:inset 1px 0 0 color-mix(in srgb,var(--fg3) 28%,transparent)}
   .rankmem .sw{display:inline-block;width:9px;height:9px;border-radius:2px;vertical-align:middle;margin-right:6px}
   .rankmem .sw.s{width:7px;height:7px;border-radius:1px}
   .rankmem tr.t td{border-top:1px solid var(--line);padding-top:5px;font-weight:800;font-size:13px;color:var(--fg)}
   .rankmem tr.t td.n{font-weight:400;font-size:12px;color:var(--fg3)}
   .rankmem .over{color:var(--bad)}
-  .rankmem .rm-subline{display:block;margin:1px 0 1px 15px;color:var(--fg3);font:400 10.5px/1.35 var(--sans)}
-  .rankmem .rm-cut-zone td{padding:4px 0 3px 14px;background:rgba(var(--fgrgb),.025);color:var(--fg3);font:600 10px/1.35 var(--sans);letter-spacing:.02em}
   .rankmem .rm-axis{display:inline-flex;align-items:center;margin-left:4px;padding:0 4px;border-radius:4px;border:1px solid color-mix(in srgb,var(--axis-c,var(--line)) 45%,transparent);color:var(--axis-c,var(--fg3));font:700 9px/1.5 var(--mono)}
   .rankmem .rm-water{height:7px;margin-top:6px;display:flex;position:relative;overflow:hidden;border-radius:999px;background:var(--bg);outline:1px solid var(--line)}
   .rankmem .rm-water i{display:block;height:100%;flex:none}
@@ -488,11 +486,13 @@
   .rankmem::-webkit-scrollbar-thumb{background:transparent;border-radius:3px}
   .rankmem:hover::-webkit-scrollbar-thumb{background:rgba(var(--fgrgb),.22)}
   .rankmem::-webkit-scrollbar-thumb:hover{background:rgba(var(--fgrgb),.36)}
-  /* 可点的那几行（每一档 / 权重里每一块）：整行都是命中面；选中那行反白一层它自己的颜色（--rmc） */
+  /* 可点的那几行（每一档 / 权重里每一块）：整行都是命中面；子权重的标签保留切分色，选中态统一沿用权重蓝。 */
   .rankmem tr.rm-p{cursor:pointer}
   .rankmem tr.rm-p:hover>td{background:rgba(var(--fgrgb),.05)}
-  .rankmem tr.rm-p.on>td{background:color-mix(in srgb, var(--rmc, var(--fg)) 16%, transparent)}
-  .rankmem tr.rm-p.on>td:first-child{box-shadow:inset 2px 0 0 var(--rmc, var(--fg))}
+  .rankmem tr.rm-p.on{--rm-selected-bg:color-mix(in srgb, var(--rmc, var(--fg)) 16%, var(--rm-surface))}
+  .rankmem tr.rm-p.on>td{background:var(--rm-selected-bg)}
+  .rankmem tr.rm-p.on>td:first-child{box-shadow:inset 2px 0 0 var(--rmc, var(--fg)),-4px 0 0 var(--rm-selected-bg)}
+  .rankmem tr.rm-p.on>td:last-child{box-shadow:4px 0 0 var(--rm-selected-bg)}
   .rankmem tr.d td{padding:0}
   /* 二级读数：点开一块之后跟在那一行下面的那一段（照 demo 的 .rm-d） */
   .rankmem .rm-d{margin:4px 0 6px;padding:7px 8px 6px;border-radius:9px;background:rgba(var(--fgrgb),.04);border:1px solid var(--line);
@@ -527,6 +527,13 @@
   .memdetail .md-title{display:block;margin-top:2px;color:var(--fg);font:700 16px/1.35 var(--sans)}
   .memdetail .md-close{flex:none;border:1px solid var(--line);border-radius:6px;background:none;color:var(--fg3);padding:2px 7px;cursor:pointer;font:12px/1.5 var(--sans)}
   .memdetail .md-close:hover{color:var(--fg);border-color:rgba(var(--fgrgb),.3)}
+  .memdetail.is-memory{padding:10px 12px;display:flex;flex-direction:column;gap:10px;border-radius:10px;overflow-x:hidden;overflow-y:auto}
+  .memdetail.is-memory[hidden]{display:none}
+  .memdetail.is-memory .md-head{position:static;flex:none;align-items:center;min-height:26px;margin:0;padding:0;background:none;border-bottom:0}
+  .memdetail.is-memory .md-kicker{display:none}
+  .memdetail.is-memory .md-title{margin:0;font-size:14px}
+  .memdetail.is-memory .md-close{border-radius:4px;padding:0 6px;line-height:18px}
+  .memdetail.is-memory #memDetailBody{min-height:0;flex:1}
   .memdetail .rm-d{font:400 12px/1.55 var(--mono);color:var(--fg2)}
   .memdetail .rm-d .rm-dh{display:none}
   .memdetail .rm-d dl{display:grid;grid-template-columns:auto minmax(0,1fr);gap:3px 10px;margin:0 0 10px}
@@ -535,8 +542,135 @@
   .memdetail .rm-d dd b{color:var(--fg);font-weight:700}
   .memdetail .rm-note{margin:10px 0 0;padding:9px 10px;border-radius:8px;background:var(--bg2);color:var(--fg2);font:400 12px/1.55 var(--sans)}
   .memdetail .rm-fig{margin:14px 0 0;padding-top:12px;border-top:1px solid var(--line)}
+  .memdetail .rm-fig-title{margin:0 0 8px;color:var(--fg);font:700 12px/1.4 var(--sans)}
   .memdetail .rm-fig svg{display:block;max-width:100%;height:auto}
   .memdetail .rm-cap{margin-top:6px;color:var(--fg3);font:400 11.5px/1.5 var(--sans)}
+  /* 激活切分：方向与主 Rank 画布一致——EP/S 从左到右、TP/H 从上到下、B 朝深度。
+     主立方体只画数据切分，坐标方向与切分颜色统一收在图下图例。 */
+  .memdetail .act-volume-legends{display:flex;flex-direction:column;align-items:center;justify-content:flex-start;gap:6px;margin:2px 0 8px;color:var(--fg3);text-align:center}
+  .memdetail .act-axis-key{display:block;flex:0 0 132px;width:132px;height:60px;overflow:visible}
+  .memdetail .act-axis-key .axis-line{fill:none;stroke:var(--fg2);stroke-width:1.2}
+  .memdetail .act-axis-key .axis-origin{fill:var(--bg);stroke:var(--fg2);stroke-width:1.2}
+  .memdetail .act-axis-key text{fill:var(--fg2);font:700 11px/1 var(--mono)}
+  .memdetail .act-axis-key .axis-value{fill:var(--fg3);font-weight:500}
+  .memdetail .act-cut-key{display:flex;justify-content:center;flex-wrap:wrap;gap:8px 12px;margin:0;color:var(--fg3);font:600 10px/1.3 var(--sans)}
+  .memdetail .act-cut-key span{display:inline-flex;align-items:center;gap:5px}
+  .memdetail .act-cut-key i{display:block;width:15px;height:0;border-top:2px solid var(--cut);border-radius:99px}
+  .memdetail .act-legend-stack{display:flex;flex-direction:column;align-items:flex-end;gap:7px}
+  .memdetail .activation-detail .act-primary-figure{flex:0 0 auto;height:auto}
+  .memdetail .act-layer-context{display:flex;flex-direction:column;align-items:center;gap:2px;width:100%;color:var(--fg3);font:600 10px/1.35 var(--sans);text-align:center}
+  .memdetail .act-layer-context b{color:var(--fg2);font:750 12px/1.35 var(--mono)}
+  .memdetail .act-volume{height:176px;min-height:166px;margin:0 0 8px;overflow:visible}
+  .memdetail .act-volume-stage{position:relative;width:calc(100% - 14px);height:100%;margin:0 auto;transform:rotate(2.5deg);transform-origin:50% 50%;filter:saturate(var(--cycle-saturation,1));transition:filter .12s linear}
+  .memdetail .act-volume .pto-tensor-volume-canvas,.memdetail .act-cut-overlay{position:absolute;inset:0;width:100%;height:100%}
+  .memdetail .act-cut-overlay{pointer-events:none;overflow:visible}
+  .memdetail .act-cut-overlay .outer{fill:none;stroke:rgba(var(--fgrgb),.24);stroke-width:1}
+  .memdetail .act-cut-overlay .ep-cut{fill:none;stroke:var(--ep);stroke-width:1.35}
+  .memdetail .act-cut-overlay .tp-cut{fill:none;stroke:var(--tp);stroke-width:1.35}
+  .memdetail .act-cut-overlay .muted{opacity:.42}
+  .memdetail .act-cut-overlay .active-top{fill:color-mix(in srgb,var(--success) 82%,var(--bg));stroke:color-mix(in srgb,var(--success) 78%,var(--fg));stroke-width:1.2;opacity:var(--cycle-act-opacity,1)}
+  .memdetail .act-cut-overlay .active-east{fill:color-mix(in srgb,var(--success) 65%,var(--bg));stroke:color-mix(in srgb,var(--success) 78%,var(--fg));stroke-width:1.2;opacity:var(--cycle-act-opacity,1)}
+  .memdetail .act-cut-overlay .active-front{fill:color-mix(in srgb,var(--success) 54%,var(--bg));stroke:color-mix(in srgb,var(--success) 78%,var(--fg));stroke-width:1.2;opacity:var(--cycle-act-opacity,1)}
+  .memdetail .act-slice-head{display:flex;align-items:baseline;justify-content:space-between;gap:8px;margin:8px 0 5px;color:var(--fg3);font:500 10.5px/1.35 var(--sans)}
+  .memdetail .act-slice-head b{color:var(--fg2);font-weight:700}
+  .memdetail .act-slice-title{position:relative;display:inline-flex;align-items:center;gap:5px;min-width:0}
+  .memdetail .act-help{flex:none;width:17px;height:17px;border:1px solid var(--line);border-radius:50%;background:none;color:var(--fg3);padding:0;cursor:pointer;font:700 10px/15px var(--sans)}
+  .memdetail .act-help:hover,.memdetail .act-help[aria-expanded="true"]{color:var(--fg);border-color:rgba(var(--fgrgb),.3)}
+  .memdetail .act-help-pop{margin:0 0 7px;padding:8px 9px;border-radius:7px;background:var(--bg2);color:var(--fg2);font:400 11px/1.5 var(--sans)}
+  .memdetail .act-help-pop[hidden]{display:none}
+  .memdetail .act-rank-grid{display:grid;gap:4px;align-items:center;overflow-x:auto;padding-bottom:2px;opacity:var(--cycle-heat-opacity,1);filter:saturate(var(--cycle-saturation,1));transition:opacity .12s linear,filter .12s linear}
+  .memdetail .act-rank-grid .ah{color:var(--fg3);font:600 10px/1.2 var(--mono);text-align:center}
+  .memdetail .act-rank-grid .at{text-align:left;color:var(--ep)}
+  .memdetail .act-rank-grid .ah small{display:block;color:var(--fg3);font:400 8px/1.2 var(--mono)}
+  .memdetail .act-rank{min-width:0;border:1px solid rgba(0,0,0,.18);border-radius:6px;background:var(--act-heat-color,var(--bg));color:var(--fg);padding:5px 2px;cursor:pointer;font:600 10.5px/1.2 var(--mono);text-align:center;box-shadow:inset 0 0 0 1px rgba(0,0,0,.18)}
+  .memdetail .act-rank>span,.memdetail .act-rank>small{display:block;white-space:nowrap}
+  .memdetail .act-rank>small{margin-top:2px;color:inherit;font:600 8px/1 var(--mono);opacity:.82}
+  .memdetail .act-rank:hover{border-color:rgba(var(--fgrgb),.30);color:var(--fg)}
+  .memdetail .act-rank.is-current{border-color:transparent;box-shadow:inset 0 0 0 2px #fff,inset 0 0 0 5px rgba(0,0,0,.38);color:#fff;font-weight:800}
+  .memdetail .rm-fig svg.act-inflight-svg{display:block;width:100%;height:33px;margin:2px 0 1px;overflow:visible}
+  .memdetail .act-inflight-slot{transition:fill-opacity .1s linear,stroke-opacity .1s linear}
+  .memdetail .mem-chain-row{opacity:1;transition:opacity .1s linear}
+  .memdetail .mem-chain-svg.is-cycle-driven .mem-chain-row{opacity:.26}
+  .memdetail .mem-chain-svg.is-cycle-driven .mem-chain-row.is-cycle-current{opacity:1}
+  .memdetail .act-detail{height:100%;display:flex;flex-direction:column;gap:10px;min-height:0}
+  .memdetail .act-primary{flex:1 1 auto;min-height:346px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px}
+  .memdetail .act-big{flex:none;width:100%;margin:0;color:var(--fg);font:800 56px/1 var(--mono);letter-spacing:-.05em;text-align:center}
+  .memdetail .act-primary-figure{flex:0 0 280px;width:100%;min-height:0;display:flex;flex-direction:column}
+  .memdetail .act-primary-figure .act-volume{flex:1 1 auto;height:auto;min-height:210px;margin:0}
+  .memdetail .mem-tensor-identity{width:100%;display:flex;align-items:baseline;justify-content:center;gap:8px;min-width:0;color:var(--fg2);font:600 11px/1.35 var(--mono)}
+  .memdetail .mem-tensor-identity b{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;color:var(--fg);font-weight:800;white-space:nowrap}
+  .memdetail .mem-tensor-identity span{flex:none;color:var(--fg3);white-space:nowrap}
+  .memdetail .mem-cycle-readout{display:inline-flex;align-items:center;gap:6px;min-height:20px;padding:0 8px;border-radius:999px;background:var(--bg2);color:var(--fg3);font:600 10px/1 var(--sans)}
+  .memdetail .mem-cycle-readout i{width:6px;height:6px;border-radius:50%;background:var(--rmc,var(--fg3));opacity:var(--cycle-phase-opacity,.28);box-shadow:0 0 0 3px color-mix(in srgb,var(--rmc,var(--fg3)) 12%,transparent)}
+  .memdetail .mem-tensor-stage{--tensor-focus:var(--rmc,var(--success));filter:saturate(var(--cycle-saturation,1));opacity:var(--cycle-tensor-opacity,1);transition:opacity .12s linear,filter .12s linear}
+  .memdetail .mem-tensor-stage .tensor-cut{fill:none;stroke:var(--tensor-cut,var(--line));stroke-width:1.35}
+  .memdetail .mem-tensor-stage .active-top{fill:color-mix(in srgb,var(--tensor-focus) 78%,var(--bg));stroke:color-mix(in srgb,var(--tensor-focus) 78%,var(--fg));stroke-width:1.2}
+  .memdetail .mem-tensor-stage .active-east{fill:color-mix(in srgb,var(--tensor-focus) 62%,var(--bg));stroke:color-mix(in srgb,var(--tensor-focus) 78%,var(--fg));stroke-width:1.2}
+  .memdetail .mem-tensor-stage .active-front{fill:color-mix(in srgb,var(--tensor-focus) 50%,var(--bg));stroke:color-mix(in srgb,var(--tensor-focus) 78%,var(--fg));stroke-width:1.2}
+  /* 二维参数统一使用 matrix-canvas：真实 shape 留给 extent，每个缩略格固定代表
+     512×512 个源元素；绿色格是本 Rank，粗线是全局切分边界。 */
+  .memdetail .tensor-matrix-stage{position:relative;flex:1 1 auto;min-height:210px;filter:saturate(var(--cycle-saturation,1));opacity:var(--cycle-tensor-opacity,1);transition:opacity .12s linear,filter .12s linear}
+  .memdetail .tensor-matrix-stage .pto-matrix-canvas{position:absolute;inset:0;width:100%;height:100%}
+  .memdetail .tensor-param-detail .act-primary-figure{flex:0 0 auto;height:auto}
+  .memdetail .tensor-param-detail .tensor-matrix-stage{flex:0 0 260px;min-height:260px}
+  .memdetail .tensor-param-detail .tensor-matrix-stage.is-tall{flex-basis:420px;min-height:420px}
+  .memdetail .tensor-matrix-meta{display:flex;flex-direction:column;align-items:center;gap:4px;margin-top:8px;color:var(--fg2);font:600 11px/1.35 var(--mono);text-align:center}
+  .memdetail .tensor-matrix-meta span{display:flex;align-items:center;justify-content:center;gap:6px;width:100%;color:inherit;font:inherit;text-align:center}
+  .memdetail .tensor-matrix-meta .tensor-cut-mark{display:inline-block;flex:none;width:14px;height:0;border-top:2px solid var(--cut,var(--fg3))}
+  .memdetail .tensor-matrix-meta .tensor-cut-mark.is-none{border-top-style:dashed}
+  .memdetail .mem-nontensor{width:100%;padding:18px 0 8px}
+  .memdetail .mem-nontensor-track{height:28px;display:flex;gap:3px;padding:3px;border:1px dashed var(--line);border-radius:8px;background:var(--bg2)}
+  .memdetail .mem-nontensor-track i{display:block;min-width:8px;border-radius:4px;background:var(--rmc,var(--fg3));opacity:var(--cycle-tensor-opacity,.45)}
+  .memdetail .mem-nontensor-label{display:flex;justify-content:space-between;gap:8px;margin-top:7px;color:var(--fg3);font:500 10px/1.35 var(--sans)}
+  /* 参数总览：权重 / 梯度各一列，优化器态是 Master权重 / 一阶动量 m / 二阶矩 v 三列；
+     三类共用参数行、切分矩阵和 Expert 条带。 */
+  .memdetail .opt-full-detail{height:auto;min-height:100%}
+  .memdetail .opt-full-detail .act-primary{flex:none;min-height:0;justify-content:flex-start;gap:12px;padding-top:8px}
+  .memdetail .opt-full-detail .act-primary-figure{flex:0 0 auto;height:auto}
+  .memdetail .opt-atlas{width:100%;display:flex;flex-direction:column;gap:12px;color:var(--fg2);font:500 10px/1.3 var(--mono)}
+  .memdetail .opt-primary-status{display:flex;flex:none;align-items:center;justify-content:center;width:100%}
+  .memdetail .opt-matrix-grid{display:grid;grid-template-columns:minmax(130px,1.25fr) repeat(var(--atlas-columns,3),minmax(0,1fr));gap:3px;align-items:stretch}
+  .memdetail .opt-matrix-grid{transition:filter .12s linear}
+  .memdetail .opt-grid-count,.memdetail .opt-grid-head{display:flex;align-items:center;min-height:22px;color:var(--fg2);font:700 9px/1.2 var(--mono)}
+  .memdetail .opt-grid-count{justify-content:flex-start;padding-left:3px}
+  .memdetail .opt-grid-head{justify-content:center}
+  .memdetail .opt-column-rule{grid-column:1/-1;height:1px;margin:0 0 2px;background:var(--line)}
+  .memdetail .opt-group-head{grid-column:1/-1;display:flex;align-items:center;gap:5px;min-height:22px;margin-top:6px;padding:5px 3px 1px;color:var(--fg3);font:650 9px/1.2 var(--sans)}
+  .memdetail .opt-group-head b{color:var(--group-color,var(--fg2));font-weight:750}
+  .memdetail .opt-group-head--tp{--group-color:var(--tp)}
+  .memdetail .opt-group-head--ep{--group-color:var(--ep)}
+  .memdetail .opt-group-head--full{--group-color:var(--fg2)}
+  .memdetail .opt-param-label{display:flex;flex-direction:column;justify-content:center;min-width:0;padding:4px 5px;border-radius:5px;background:var(--bg2)}
+  .memdetail .opt-param-label b{overflow:hidden;text-overflow:ellipsis;color:var(--fg2);font-size:11px;font-weight:700;white-space:nowrap}
+  .memdetail .opt-param-repeat{display:block;margin-top:2px;color:var(--fg3);font:600 8px/1.2 var(--mono);white-space:nowrap}
+  .memdetail .opt-param-label small{display:grid;gap:1px;margin-top:2px;color:var(--fg3);font:500 8px/1.2 var(--mono)}
+  .memdetail .opt-param-label small span{display:block;min-width:0;overflow-wrap:anywhere}
+  .memdetail .opt-state-cell{min-width:0;padding:3px 3px 2px;border-radius:5px;background:var(--bg2);text-align:center}
+  .memdetail .opt-state-cell .pto-matrix-canvas{display:block;width:100%;height:64px}
+  .memdetail .opt-state-cell>svg{display:block;width:100%;height:64px}
+  .memdetail .opt-matrix-stack .pto-matrix-canvas{height:57px}
+  .memdetail .opt-expert-rail{display:grid;grid-template-columns:repeat(var(--expert-groups),minmax(0,1fr));align-items:center;gap:1px;width:50%;height:4px;margin:0 auto}
+  .memdetail .opt-expert-rail i{height:3px;border:0;background:color-mix(in srgb,var(--fg3) 32%,var(--bg2))}
+  .memdetail .opt-expert-rail i.on{background:color-mix(in srgb,var(--ep) 82%,var(--bg2))}
+  .memdetail .opt-state-cell small{display:block;margin-top:1px;color:var(--fg2);font:500 8px/1 var(--mono);white-space:nowrap}
+  .memdetail .opt-state-cell small b{color:var(--fg3);font-weight:650}
+  .memdetail .opt-vector-cell{fill:color-mix(in srgb,var(--success) 22%,var(--background));fill-opacity:.96;stroke:rgba(var(--fgrgb),.025);stroke-width:.25}
+  .memdetail .opt-vector-frame{fill:none;stroke:rgba(var(--fgrgb),.14);stroke-width:.7}
+  .memdetail .opt-vector-axis{fill:var(--fg2);font:700 11px/1 var(--mono)}
+  .memdetail .opt-full-detail .mem-cycle-readout i{background:var(--fg3);opacity:.72;box-shadow:0 0 0 3px color-mix(in srgb,var(--fg3) 12%,transparent)}
+  .memdetail .opt-full-detail[data-cycle-phase="u"] .mem-cycle-readout i{background:var(--rmc);opacity:var(--cycle-phase-opacity,1);box-shadow:0 0 0 3px color-mix(in srgb,var(--rmc) 12%,transparent)}
+  .memdetail .opt-full-detail[data-cycle-phase="u"] .opt-state-cell{box-shadow:inset 0 0 0 1px color-mix(in srgb,var(--rmc) 38%,var(--line))}
+  .memdetail .tensor-atlas-detail.atlas-w[data-cycle-phase] .opt-state-cell,
+  .memdetail .tensor-atlas-detail.atlas-g[data-cycle-phase="b"] .opt-state-cell,
+  .memdetail .tensor-atlas-detail.atlas-g[data-cycle-phase="u"] .opt-state-cell{box-shadow:inset 0 0 0 1px color-mix(in srgb,var(--rmc) 38%,var(--line))}
+  .memdetail .act-more{flex:none;margin-top:0;border-top:1px solid var(--line)}
+  .memdetail .act-more>summary{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:11px 0 2px;color:var(--fg2);cursor:pointer;list-style:none;font:700 12px/1.4 var(--sans)}
+  .memdetail .act-more>summary::-webkit-details-marker{display:none}
+  .memdetail .act-more>summary::after{content:'＋';color:var(--fg3);font:500 15px/1 var(--sans)}
+  .memdetail .act-more[open]>summary::after{content:'−'}
+  .memdetail .act-more-body{padding-top:10px}
+  .memdetail .act-more-body>dl{padding:9px 10px;margin:0;border-radius:8px;background:var(--bg2)}
+  .memdetail .act-more-body .rm-fig:first-of-type{margin-top:12px}
   .memdetail .c5{margin-top:10px;padding:7px 0 7px 10px;border-left:2px solid var(--c,var(--line))}
   .memdetail .c5.off{opacity:.58;border-left-style:dashed}
   .memdetail .c5h{color:var(--fg);font-weight:700;margin-bottom:3px}
@@ -556,14 +690,95 @@
   .memdetail .opt-plan strong{color:var(--fg);font:800 12px/1.35 var(--mono)}
   .memdetail .opt-plan span{grid-column:1/-1;color:var(--fg3);font:400 11px/1.45 var(--sans)}
 
-  /* 左下工具组：压力场景紧跟在缩放 HUD 右侧。 */
+  /* 左下工具组：内存观测场景紧跟在缩放 HUD 右侧。 */
   .canvas-bottom-tools{position:absolute;left:14px;bottom:12px;z-index:7;display:flex;align-items:center;gap:8px}
   .mem-scenario[hidden]{display:none}
-  .mem-scenario{position:relative;display:flex;align-items:center;gap:2px;padding:3px;border:1px solid var(--line);border-radius:999px;background:var(--bg)}
-  .mem-scenario button{border:0;border-radius:999px;background:none;color:var(--fg3);padding:5px 9px;cursor:pointer;font:600 11px/1 var(--sans)}
+  .mem-scenario{position:relative;display:flex;align-items:center;gap:2px;height:36px;padding:4px;border:1px solid var(--line);border-radius:999px;background:var(--bg)}
+  .mem-scenario button{height:26px;flex:none;border:0;border-radius:999px;background:none;color:var(--fg3);padding:0 9px;cursor:pointer;font:600 11px/1 var(--sans);white-space:nowrap}
   .mem-scenario button:hover{color:var(--fg)}
   .mem-scenario button.is-on{background:var(--fg);color:var(--bg)}
   .mem-scenario button[data-mem-scenario="danger"].is-on{background:var(--bad);color:#fff}
+  .mem-scenario button[data-mem-scenario="peak"].is-on,
+  .mem-scenario button[data-mem-scenario="gap"].is-on{background:var(--bad);color:#fff}
+
+  /* Infra 诊断页签借右侧显存详情面板展示四层内存账与异常 Rank 名单。 */
+  .memdetail.is-observer{padding:14px 16px;display:flex;flex-direction:column;gap:10px;overflow-x:hidden}
+  .memdetail.is-observer .md-head{position:static;flex:none;align-items:center;min-height:28px;margin:0;padding:0 0 10px;background:none}
+  .memdetail.is-observer .md-kicker{display:block}
+  .memdetail.is-observer .md-title{font-size:15px}
+  .mem-observer{display:flex;flex-direction:column;gap:12px;color:var(--fg2);font:400 12px/1.5 var(--sans)}
+  .mem-observer-intro{margin:0;padding:9px 10px;border-radius:8px;background:var(--bg2);color:var(--fg2)}
+  .mem-observer-phase{display:flex;align-items:center;justify-content:space-between;gap:8px;color:var(--fg3);font:600 10px/1.3 var(--mono)}
+  .mem-observer-phase b{color:var(--fg);font-weight:750}
+  .mem-observer-metrics{display:grid;grid-template-columns:1fr 1fr;gap:6px}
+  .mem-observer-metric{display:grid;grid-template-columns:1fr auto;gap:2px 8px;padding:8px 9px;border:1px solid var(--line);border-radius:8px;background:var(--bg)}
+  .mem-observer-metric span{color:var(--fg3);font:600 10px/1.25 var(--sans)}
+  .mem-observer-metric b{color:var(--fg);font:800 13px/1.2 var(--mono);white-space:nowrap}
+  .mem-observer-metric small{grid-column:1/-1;color:var(--fg3);font:500 9.5px/1.3 var(--sans)}
+  .mem-observer-gap{display:grid;grid-template-columns:1fr 1fr;gap:6px}
+  .mem-observer-gap>div{padding:8px 9px;border-radius:8px;background:var(--bg2)}
+  .mem-observer-gap span{display:block;color:var(--fg3);font:600 10px/1.2 var(--sans)}
+  .mem-observer-gap b{display:block;margin-top:3px;color:var(--fg);font:800 13px/1.2 var(--mono)}
+  .mem-observer-ranks{display:grid;gap:5px}
+  .mem-observer-ranks h4{margin:0 0 2px;color:var(--fg);font:700 11px/1.35 var(--sans)}
+  .mem-observer-rank{display:grid;grid-template-columns:42px 1fr auto;gap:8px;align-items:center;width:100%;padding:8px 9px;border:1px solid var(--line);border-radius:8px;background:none;color:var(--fg2);cursor:pointer;text-align:left}
+  .mem-observer-rank:hover{border-color:rgba(var(--fgrgb),.28);background:var(--bg2)}
+  .mem-observer-rank.is-on{border-color:var(--obc,var(--primary));box-shadow:inset 2px 0 0 var(--obc,var(--primary));background:color-mix(in srgb,var(--obc,var(--primary)) 8%,var(--bg))}
+  .mem-observer-rank>b{color:var(--obc,var(--fg));font:800 11px/1 var(--mono)}
+  .mem-observer-rank>span{min-width:0;color:var(--fg2);font:600 10.5px/1.3 var(--sans)}
+  .mem-observer-rank>small{color:var(--fg3);font:600 9px/1.2 var(--mono);white-space:nowrap}
+  .mem-observer-verdict{padding:9px 10px;border-left:2px solid var(--obc,var(--primary));background:var(--bg2);color:var(--fg2)}
+  .mem-observer-verdict b{color:var(--fg);font-weight:750}
+  .mem-observer-section-head{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:6px}
+  .mem-observer-section-head b{color:var(--fg);font:750 11px/1.3 var(--sans)}
+  .mem-observer-section-head span{color:var(--fg3);font:600 9px/1.3 var(--mono)}
+  .mem-observer-results{display:grid;gap:5px}
+  .mem-observer-result{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:12px;align-items:center;width:100%;min-height:52px;padding:8px 10px;border:1px solid var(--line);border-radius:8px;background:var(--bg);color:var(--fg2);cursor:pointer;text-align:left}
+  .mem-observer-result:hover{border-color:rgba(var(--fgrgb),.28);background:var(--bg2)}
+  .mem-observer-result.is-on{border-color:var(--bad);box-shadow:inset 2px 0 0 var(--bad);background:color-mix(in srgb,var(--bad) 7%,var(--bg))}
+  .mem-observer-result-copy{min-width:0}
+  .mem-observer-result-copy>b{display:block;color:var(--fg);font:700 10.5px/1.25 var(--sans)}
+  .mem-observer-result-copy>small{display:block;margin-top:4px;color:var(--fg3);font:500 9.5px/1.3 var(--sans)}
+  .mem-observer-result>strong{align-self:center;color:var(--bad);font:800 11px/1.2 var(--mono);white-space:nowrap}
+  .mem-observer-tabs{display:grid;grid-template-columns:repeat(4,1fr);gap:3px;padding:3px;border:1px solid var(--line);border-radius:9px;background:var(--bg2)}
+  .mem-observer-tab{min-width:0;padding:7px 2px;border:0;border-radius:6px;background:none;color:var(--fg3);cursor:pointer;font:650 9.5px/1 var(--sans);white-space:nowrap}
+  .mem-observer-tab:hover{color:var(--fg)}
+  .mem-observer-tab.is-on{background:var(--bg);box-shadow:0 1px 4px rgba(0,0,0,.14);color:var(--bad)}
+  .mem-observer-heat{display:grid;gap:7px;padding:9px;border:1px solid var(--line);border-radius:9px;background:var(--bg)}
+  .mem-observer-heat-head{display:flex;align-items:flex-start;justify-content:space-between;gap:8px}
+  .mem-observer-heat-head b{color:var(--fg);font:750 11px/1.3 var(--sans)}
+  .mem-observer-heat-head span{color:var(--bad);font:750 9.5px/1.3 var(--mono);text-align:right}
+  .mem-observer-grid{display:grid;grid-template-columns:repeat(16,minmax(0,1fr));gap:2px}
+  .mem-observer-cell{position:relative;display:flex;align-items:center;justify-content:center;aspect-ratio:1.12;border:1px solid color-mix(in srgb,var(--line) 72%,transparent);border-radius:3px;background:rgb(13,30,66);color:rgba(255,255,255,.72);font:650 7px/1 var(--mono)}
+  .mem-observer-cell.is-selected{z-index:1;border-color:var(--fg);box-shadow:0 0 0 1px var(--bg),0 0 0 2px var(--fg)}
+  .mem-observer-cell.is-peak{z-index:2;border-color:var(--bad);box-shadow:0 0 0 1px var(--bg),0 0 0 2px var(--bad);color:#fff;font-weight:850}
+  .mem-observer-heat-legend{display:grid;grid-template-columns:auto 1fr auto;gap:7px;align-items:center;color:var(--fg3);font:600 8.5px/1 var(--sans)}
+  .mem-observer-heat-legend i{height:5px;border-radius:999px;background:linear-gradient(90deg,rgb(13,30,66) 0%,rgb(38,86,178) 22%,rgb(104,78,196) 44%,rgb(176,66,148) 64%,rgb(226,68,84) 82%,rgb(255,124,46) 100%)}
+  .mem-observer-evidence{display:grid;grid-template-columns:repeat(3,1fr);gap:5px}
+  .mem-observer-evidence>div{min-width:0;padding:7px 8px;border-radius:7px;background:var(--bg2)}
+  .mem-observer-evidence span{display:block;color:var(--fg3);font:600 9px/1.25 var(--sans)}
+  .mem-observer-evidence b{display:block;margin-top:3px;overflow:hidden;color:var(--fg);font:800 11px/1.2 var(--mono);text-overflow:ellipsis;white-space:nowrap}
+  .mem-observer-evidence>div.is-gap b{color:var(--bad)}
+
+  /* 第 8 步底部直接复用案例三的 Layer 显存周期图；这里没有视图页签，只留播放/暂停。 */
+  .mem-cycle{position:absolute;left:14px;right:0;bottom:0;z-index:6;height:176px;border:1px solid var(--line);border-radius:10px;overflow:hidden;background:var(--bg)}
+  .mem-cycle[hidden]{display:none}
+  .stage .mem-cycle canvas{position:absolute;inset:0;width:100%;height:100%;display:block;touch-action:none}
+  .mem-cycle-play{position:absolute;left:7px;top:5px;z-index:2;display:inline-flex;align-items:center;justify-content:center;width:28px;height:24px;border:1px solid var(--line);border-radius:999px;background:var(--bg);color:var(--fg2);padding:0;cursor:pointer}
+  .mem-cycle-play:hover{color:var(--fg);border-color:rgba(var(--fgrgb),.3)}
+  .mem-cycle-play svg{width:11px;height:11px;fill:currentColor}
+  .mem-cycle-play .ic-pause{display:none}
+  .mem-cycle-play[aria-pressed="true"] .ic-play{display:none}
+  .mem-cycle-play[aria-pressed="true"] .ic-pause{display:block}
+  .mem-cycle-play.is-oom{border-color:var(--bad);background:color-mix(in srgb,var(--bad) 12%,var(--bg));color:var(--bad)}
+  .lv-bubble-tip{position:fixed;z-index:140;max-width:310px;padding:8px 10px;border:1px solid color-mix(in srgb,var(--warning) 45%,var(--line));border-radius:8px;background:var(--bg);box-shadow:0 10px 28px rgba(0,0,0,.22);color:var(--fg2);pointer-events:none;font:400 11px/1.5 var(--sans)}
+  .lv-bubble-tip[hidden]{display:none}
+  .lv-bubble-tip b{display:block;margin-bottom:2px;color:var(--warning);font-weight:750}
+  .stage.mem-cycle-on #cv{bottom:190px;height:auto}
+  .stage.mem-cycle-on .rankmem{bottom:244px;max-height:calc(100% - 254px)}
+  .stage.mem-cycle-on .canvas-bottom-tools{bottom:198px}
+  /* 详情固定在屏幕右侧；打开后周期面板收窄到它左边，两者保持并列而不覆盖。 */
+  .page.mem-detail-open .stage.mem-cycle-on .mem-cycle{right:390px}
 
   /* 舞台：一块 canvas，十步全在上面变形 */
   .stage{grid-area:stage;position:relative;padding:12px 36px 12px 12px;min-width:0;min-height:0}
@@ -706,12 +921,16 @@
     .foot{padding:8px 16px 20px;flex-direction:column;align-items:stretch;gap:12px}
     .steps{grid-auto-flow:row;grid-template-columns:repeat(3,1fr)}
     .page.mem-detail-open,.page[data-side="off"].mem-detail-open{grid-template-columns:1fr;grid-template-areas:"top" "side" "stage" "foot"}
-    .memdetail{left:10px;right:10px;top:auto;bottom:10px;z-index:80;width:auto;max-height:68vh;padding:12px 16px 18px;border-radius:16px;box-shadow:0 18px 50px rgba(0,0,0,.28)}
+    .memdetail{left:auto;right:10px;top:auto;bottom:10px;z-index:80;width:min(390px,46vw);max-height:68vh;padding:12px 16px 18px;border-radius:16px;box-shadow:0 18px 50px rgba(0,0,0,.28)}
     .memdetail .md-head{top:-12px;margin:0 0 10px;padding:10px 0}
     .rankmem{left:8px;bottom:50px;width:min(340px,calc(100% - 16px));max-height:calc(100% - 60px);padding:12px 14px}
     .canvas-bottom-tools{left:8px;right:8px;bottom:8px;gap:4px}
-    .mem-scenario{padding:2px}
-    .mem-scenario button{padding:5px 6px;font-size:10px}
+    .mem-scenario{height:36px;padding:4px}
+    .mem-scenario button{height:26px;padding:0 6px;font-size:10px}
+    .stage.mem-cycle-on .rankmem{left:8px;bottom:244px;max-height:calc(100% - 254px)}
+    .stage.mem-cycle-on .canvas-bottom-tools{left:8px;bottom:198px}
+    .stage.mem-cycle-on .mem-cycle{left:8px}
+    .page.mem-detail-open .stage.mem-cycle-on .mem-cycle{right:calc(min(390px,46vw) + 18px)}
   }
   @media (min-width:861px) and (max-width:1200px){
     .page.mem-detail-open,.page[data-side="off"].mem-detail-open{grid-template-columns:340px 1fr;grid-template-areas:"top top" "side stage" "foot foot"}
@@ -767,7 +986,7 @@
             <div class="cg"><h6>数据标注</h6>
               <button class="mvi is-on" type="button" data-mark="rank"><s>✓</s>Rank 编号</button><button class="mvi is-on" type="button" data-mark="label"><s>✓</s>分组门牌</button>
               <button class="mvi is-on" type="button" data-mark="memory"><s>✓</s>显存填充</button><button class="mvi is-on" type="button" data-mark="tp"><s>✓</s>展平 TP 分组</button>
-              <button class="mvi" type="button" data-mark="paint"><s>✓</s>专家权重着色</button>
+              <button class="mvi" type="button" data-mark="paint" title="同色表示同一逻辑层；每个 EDP 持有物理独立的完整参数副本"><s>✓</s>专家权重着色</button>
             </div>
           </div>
         </span>
@@ -798,16 +1017,25 @@
           <button class="zicon" type="button" data-zoom="center" aria-label="居中" title="平移归零，把场景拉回画面中央（缩放不变）"><svg viewBox="0 0 16 16" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="8" cy="8" r="3.1"/><path d="M8 1.5v2.3M8 12.2v2.3M1.5 8h2.3M12.2 8h2.3"/></svg></button>
           <button class="zicon" type="button" data-zoom="reset" aria-label="复位" title="缩放、平移全部回到当前步骤的标准画面"><svg viewBox="0 0 16 16" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M1.52 3.29v3.53h3.53"/><path d="M3.2 10.24A5.3 5.3 0 1 0 5.76 3.2L1.52 6.82"/></svg></button>
         </div>
-        <div class="mem-scenario" id="memScenario" hidden aria-label="内存压力场景">
-          <button type="button" data-mem-scenario="base" class="is-on" aria-pressed="true">基线 · MBS 1</button>
-          <button type="button" data-mem-scenario="danger" aria-pressed="false">压力 · MBS 3</button>
+        <div class="mem-scenario" id="memScenario" hidden aria-label="内存观测场景">
+          <button type="button" data-mem-scenario="base" class="is-on" aria-pressed="true">单 Step 周期</button>
+          <button type="button" data-mem-scenario="danger" aria-pressed="false">OOM</button>
+          <button type="button" data-mem-scenario="peak" aria-pressed="false">内存峰值分析</button>
+          <button type="button" data-mem-scenario="gap" aria-pressed="false">GAP 分析</button>
         </div>
       </div>
+      <section class="mem-cycle" id="memCycle" hidden aria-label="Rank 一个 step 的 Layer 显存周期">
+        <button class="mem-cycle-play" id="memCyclePlay" type="button" aria-label="暂停" title="播放 / 暂停" aria-pressed="true">
+          <svg class="ic-play" viewBox="0 0 24 24" aria-hidden="true"><path d="m7 3 14 9-14 9z"/></svg>
+          <svg class="ic-pause" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 4h4v16H6zM14 4h4v16h-4z"/></svg>
+        </button>
+        <canvas id="memCycleCanvas"></canvas>
+      </section>
     </div>
   </div>
 
   <aside class="memdetail" id="memDetail" hidden aria-label="显存块详情">
-    <div class="md-head"><div><span class="md-kicker">Rank 显存 · 二级详情</span><strong class="md-title" id="memDetailTitle"></strong></div><button class="md-close" id="memDetailClose" type="button" aria-label="关闭详情">✕</button></div>
+    <div class="md-head"><div><span class="md-kicker" id="memDetailKicker"></span><strong class="md-title" id="memDetailTitle"></strong></div><button class="md-close" id="memDetailClose" type="button" aria-label="关闭详情">✕</button></div>
     <div id="memDetailBody"></div>
   </aside>
 
@@ -832,11 +1060,19 @@
 <!-- 案例四「整网图」直接使用 config-relation-plane 同款组件，不再用本页 Canvas 复刻。 -->
 <script src="./vendor/model-graphviz-pattern.js"></script>
 <script src="./vendor/model-architecture-3d-deck-pattern.js"></script>
+<script src="../../vendor/pto-design-system/patterns/tensor-volume-canvas/pattern.js"></script>
+<script src="../../vendor/pto-design-system/patterns/matrix-canvas/pattern.js"></script>
+<script src="./vendor/matrix-canvas-compat.js"></script>
 <script>
 (function(){
   /* 共享规则层（../shared/plane-rules.js，与 config-relation-plane 同一份）：
      口径换算、约束谓词、专家四色、热力色阶、量尺梯子、字段量程全从它读 */
   var PR = window.PTOPlaneRules;
+  var ACT_HEAT_LIGHT = [[0,226,232,244],[.22,166,186,230],[.44,160,130,210],[.64,196,88,158],[.82,226,68,84],[1,255,124,46]];
+  function activationHeatColor(u){
+    var dark = document.documentElement.getAttribute('data-theme') === 'dark';
+    return PR.heatColor(u,dark ? PR.HEAT_RAMP : ACT_HEAT_LIGHT);
+  }
   var VC = {tp:'#22D3EE', pp:'#FFAA3B', dp:'#4369EF', ep:'#9B3CF6', edp:'#E04FA8'};   /* edp：专家参数的副本组，只在第 9 步的连线里用 */
   /* 画布用的中性色全从 CSS token 读，切主题时重读一遍再重画 */
   var TH = {};
@@ -904,17 +1140,17 @@
     opBytes().forEach(function(x){ sub.push({id:x.id, cut:x.cut, how:x.how, bytes:x.b*LPS}); });
     if(p === 0)      sub.push({id:'embed',   cut:'tp', how:'词表列切 ×'+D.tp, bytes:2*vOwn*D.hidden});
     if(p === D.pp-1) sub.push({id:'lm_head', cut:'tp', how:'词表列切 ×'+D.tp, bytes:2*D.hidden*vOwn});
-    var ord = {ep:0, tp:1, none:9};
-    sub.sort(function(a, b){ return ord[a.cut] - ord[b.cut]; });
+    var subOrder = {embed:0, 'attn.q':1, 'attn.kv':2, 'attn.out':3, router:4, experts:5, 'norm×2':6, lm_head:7};
+    sub.sort(function(a, b){ return subOrder[a.id] - subOrder[b.id]; });
     var P = sub.reduce(function(a, x){ return a + x.bytes; }, 0)/2;          /* 参数个数 */
     var inflight = Math.max(1, Math.min(D.pp, D.ga) - p);                     /* 1F1B 稳态峰值：越靠前压的微批越多 */
     /* 压力场景只服务这份入门页第 8 步：MBS 1 → 3，让前级 stage 真正越过 64GB。 */
     var effectiveMbs = scenario === 'danger' ? 3 : D.mbs;
     var act = effectiveMbs*(D.seq/D.cp)*D.hidden*LPS*4*inflight*actK;
     return [
-      {k:'w',   label:'权重 (bf16)',      bytes:2*P,  c:MEMC.w, sub:sub, kind:'model'},
-      {k:'g',   label:'梯度 (bf16)',      bytes:2*P,  c:MEMC.g, kind:'model'},
-      {k:'opt', label:'优化器态 (fp32×3)', bytes:12*P, c:MEMC.opt, kind:'model'},
+      {k:'w',   label:'权重',      bytes:2*P,  c:MEMC.w, sub:sub, kind:'model'},
+      {k:'g',   label:'梯度',      bytes:2*P,  c:MEMC.g, kind:'model'},
+      {k:'opt', label:'优化器态', bytes:12*P, c:MEMC.opt, kind:'model'},
       {k:'act', label:'激活', bytes:act, c:MEMC.act, kind:'exec', inflight:inflight, mbs:effectiveMbs},
       {k:'rsv', label:'碎片/预留',        bytes:rsv,  c:MEMC.rsv, kind:'exec'}
     ];
@@ -949,18 +1185,61 @@
       html:'<p>MoE 的 64 个专家分成 8 桶，同一层里横向连着的 8 个 DP 组凑齐全部专家，就是一个 <b>EP 组</b>：<code>R0·R2·…·R14</code> 一组，<code>R1·R3·…·R15</code> 另一组，共 16 组。排布到此和原 pattern 一致。</p>' },
 
     { key:'内存分配', color:null, title:'往框里装内存，识别溢出风险',
-      html:'<p>空框从下往上装入<b>权重、梯度、优化器态、激活、碎片</b>。DP 不改变权重、梯度、优化器态这些常驻账的单卡份量；激活会随路由负载波动，碎片也会因各卡分配历史不同。切换右上角的<b>压力场景</b>观察溢出，再<b>点一张卡</b>核对显存账。</p>' },
+      html:'<p>空框从下往上装入<b>权重、梯度、优化器态、激活、碎片</b>。点一张卡的<b>激活</b>：主卡与同一 EDP 实例、同一 Layer 下的两组 EP Rank 会一起亮起——TP0 / TP1 各一组、每组 8 张。详情中的 <code>[B,S,H]</code> 立体显示各 Rank 实际领取的 token 桶与 H 分片。EDP 各自产生激活、PP 只放置 Layer，都不是这份激活的切分轴。</p>' },
 
     { key:'跨机通信', color:null, title:'训练时：一个 rank 跟谁说话',
       html:'<p>选中的卡向兄弟们<b>发射</b>连线：机内<b>实线</b>，跨机<b>虚线</b>。按<b>前向 / 反向 / 更新</b>三批轮演，<b>一次只亮一维</b>：前向 TP → EP → PP，反向倒回，更新先 <b>DP</b> 再 <b>EDP</b>。<b>点别的卡</b>换主语，右上角切 <b>ETP=2</b> 对比。</p>' },
 
     { key:'展平视图', color:'#3B82F6', title:'展平结构，提供简易的观测视角',
-      html:'<p>3D 卡阵压成一张平面：<b>横轴是层</b>，按 PP 段分 4 块；<b>纵轴是一段里的 32 张卡</b>。<b>点顶部刻度</b>选一列 Layer，<b>滚轮缩放、拖拽平移</b>，放大后格内长出 Attention / MoE 直到计算图。<b>点任意一行</b>看显存账。</p>' }
+      html:'<p>3D 卡阵压成一张平面：<b>横轴是层</b>，按 PP 段分 4 块；每个 <b>EDP 外框</b>都横跨全部 PP Stage，表示一条独立的完整模型流水线。<b>点顶部刻度</b>查看跨 EDP 的同名层集合；<b>点具体格子</b>查看某个 EDP 内的 Layer 实例。滚轮缩放、拖拽平移，放大后格内长出 Attention / MoE 直到计算图。</p>' }
   ];
 
   /* ── 卡阵：128 只，编号照 demo 的 rankOf ─────────────────────────── */
   var CW = 1, CD = 1, CH = 1.6, S0 = 1.45;
   var memScenario = 'base';
+  var MEM_DIAGNOSTICS = {
+    peak:{title:'内存峰值分析', color:'var(--bad)', defaultRank:23, ranks:[
+      {r:23, metric:'allocated', tag:'算子分配峰值', short:'激活 +9.6 GB', cause:'热点专家让前向激活陡增', result:'Operator Allocated 抬高真实峰值；应优先处理 token 路由或激活生命周期。'},
+      {r:54, metric:'app', tag:'进程保留峰值', short:'APP 额外 +18.0 GB', cause:'通信/运行时 buffer 未进入算子账', result:'算子三层账看似正常，但 APP Reserved 已逼近容量线。'},
+      {r:87, metric:'allocated', tag:'更新阶段峰值', short:'临时区 +7.2 GB', cause:'optimizer update workspace 短时出现', result:'只在更新阶段形成尖峰，不能误判为常驻优化器状态。'}
+    ]},
+    gap:{title:'GAP 分析', color:'var(--bad)', defaultRank:23, ranks:[
+      {r:23, metric:'active', tag:'延迟释放', short:'流仍持有', cause:'逻辑释放后仍等待另一条流完成', result:'Activated − Allocated 持续偏大，下一次大块申请可能被挡住。'},
+      {r:54, metric:'reserved', tag:'内存池空闲', short:'池中额外 24.0 GB', cause:'动态 shape 留下多种尺寸的空闲块', result:'Reserved − Activated 偏大；空闲很多不代表能满足连续大块申请。'},
+      {r:87, metric:'allocated', tag:'健康对照', short:'GAP < 3%', cause:'释放及时且缓存很快复用', result:'用同角色正常 Rank 作基线，避免只看绝对保留量误报。'}
+    ]}
+  };
+  var OBSERVER_METRICS = {
+    allocated:{label:'算子分配', definition:'算子仍在使用的真实张量'},
+    active:{label:'算子持有', definition:'算子分配 + 跨流延迟释放'},
+    reserved:{label:'算子保留', definition:'算子持有 + 内存池空闲'},
+    app:{label:'进程保留', definition:'算子保留 + 通信 / runtime'}
+  };
+  var OBSERVER_METRIC_KEYS = ['allocated','active','reserved','app'];
+  var scenarioPanelDismissed = false, memoryDiagnosticState = null, memoryObserverMetric = 'allocated', memoryObserverSyncedRank = null, memoryObserverSkipRankSync = null, oomRankSet = {};
+  function memDiagnostic(){ return MEM_DIAGNOSTICS[memScenario] || null; }
+  function memProblemScenario(){ return memScenario === 'danger' || !!memDiagnostic(); }
+  function memDiagnosticRank(r){
+    var d = memDiagnostic(); if(!d) return null;
+    for(var i=0;i<d.ranks.length;i++) if(d.ranks[i].r === r) return d.ranks[i];
+    return null;
+  }
+  function memoryObserverLeaderMetric(r){
+    var leaders = memoryDiagnosticState && memoryDiagnosticState.analysis && memoryDiagnosticState.analysis.leaders;
+    if(!leaders) return null;
+    for(var i=0;i<OBSERVER_METRIC_KEYS.length;i++){
+      var key = OBSERVER_METRIC_KEYS[i]; if(leaders[key] && leaders[key].r === r) return key;
+    }
+    return null;
+  }
+  function memoryObserverMetricForRank(r){
+    var info = memDiagnosticRank(r); return info && info.metric ? info.metric : memoryObserverLeaderMetric(r);
+  }
+  function memProblemRankAllowed(r){
+    if(memDiagnostic()) return !!memDiagnosticRank(r) || !!memoryObserverLeaderMetric(r);
+    if(memScenario === 'danger') return !!oomRankSet[r] || r === selRank;
+    return true;
+  }
   /* TP 上下两层之间的空隙：原来 0.35，等距视角下上层卡的底棱几乎贴着下层卡的顶棱，两层的
      边线叠在一起像一道虚影；拉到 0.9 两层才断得开 */
   var TPG = 0.9;
@@ -970,24 +1249,60 @@
                 x:0, y:0, z:0, a:0, fx:0, fy:0, fz:0, fa:0, tx:0, ty:0, tz:0, ta:0, hl:null});
   }
   cards.forEach(function(c){ c.mem = memOf(c, memScenario); });
-  var memScenarioEl = document.getElementById('memScenario');
+  var memScenarioEl = document.getElementById('memScenario'), memCycleEl = document.getElementById('memCycle');
   function syncMemScenarioButtons(){
     Array.prototype.forEach.call(memScenarioEl.querySelectorAll('[data-mem-scenario]'), function(b){
       var on = b.dataset.memScenario === memScenario; b.classList.toggle('is-on', on); b.setAttribute('aria-pressed', String(on));
     });
   }
   function setMemScenario(next, quiet){
-    if(next !== 'danger') next = 'base';
-    if(next === memScenario) return;
+    if(next !== 'danger' && next !== 'peak' && next !== 'gap') next = 'base';
+    if(next === memScenario){
+      if(!quiet && next === 'danger' && step === 7){
+        memSel = null;
+        queueRankFocus(MEM_AUTO_RANK, now(), 520);
+      }
+      if(window.RIMemoryCycle && !quiet) window.RIMemoryCycle.replayScenario();
+      return;
+    }
     memScenario = next;
-    cards.forEach(function(c){ c.mem = memOf(c, memScenario); });
+    /* 峰值 / GAP 是同一份 MBS 1 业务负载上的观测异常；只有压力页签真的把 MBS 改成 3。 */
+    cards.forEach(function(c){ c.mem = memOf(c, memScenario === 'danger' ? 'danger' : 'base'); });
+    cycleMem = null; memoryDiagnosticState = null; oomRankSet = {}; scenarioPanelDismissed = false;
+    memoryObserverMetric = 'allocated'; memoryObserverSyncedRank = null; memoryObserverSkipRankSync = null;
+    var diag = memDiagnostic();
+    var diagnosticDefaultRank = diag ? diag.defaultRank : null;
+    if(diag) memoryObserverSkipRankSync = diagnosticDefaultRank;
     syncMemScenarioButtons();
+    if(window.RIMemoryCycle) window.RIMemoryCycle.setScenario(memScenario);
+    if(diag && memoryDiagnosticState && memoryDiagnosticState.analysis && memoryDiagnosticState.analysis.leaders.allocated){
+      diagnosticDefaultRank = memoryDiagnosticState.analysis.leaders.allocated.r;
+      memoryObserverSkipRankSync = diagnosticDefaultRank;
+    }
+    if(!quiet && memProblemScenario()) memSel = null;
+    if(!quiet && step === 7){
+      if(diag) queueRankFocus(diagnosticDefaultRank, now(), 520);
+      else if(memScenario === 'danger') queueRankFocus(MEM_AUTO_RANK, now(), 520);
+    }
     if(!quiet){ renderRankMem(); needDraw = true; tick(); }
   }
   function syncMemStageUi(i){
-    memScenarioEl.hidden = i !== 7;
+    var on = i === 7, intro = document.querySelector('.page').dataset.tab !== 'scene';
+    memScenarioEl.hidden = !on;
+    memCycleEl.hidden = !on;
+    document.getElementById('stage').classList.toggle('mem-cycle-on', on);
+    if(window.RIMemoryCycle) window.RIMemoryCycle.setVisible(on && intro);
     if(i !== 7 && memScenario !== 'base') setMemScenario('base', true);
+    if(cv) resize();
   }
+  window.addEventListener('ri-memory-cycle-ready', function(){
+    syncMemStageUi(step);
+    if(window.RIMemoryCycle){
+      window.RIMemoryCycle.setRank(selRank === null ? MEM_AUTO_RANK : selRank);
+      window.RIMemoryCycle.setScenario(memScenario, true);
+      if(step === 7 && memRankFocused && !rankFocus) window.RIMemoryCycle.startFromWarmup();
+    }
+  });
   memScenarioEl.addEventListener('click', function(e){ var b = e.target.closest('[data-mem-scenario]'); if(b) setMemScenario(b.dataset.memScenario, false); });
 
   /* 每一步的排布：只给目标坐标，动画由外面插值。返回 {pos:[{x,y,z,vis}], labels:[], groups:{color, of(card)}} */
@@ -1129,7 +1444,7 @@
 
   /* ── 动画状态 ────────────────────────────────────────────────────── */
   var lay = null, step = -1, t0 = 0, DUR = 720, animating = false, needDraw = false;
-  var memF = 0, memT = 0, memFrom = 0, memAt = 0, pulses = [], step0 = true;
+  var memF = 0, memT = 0, memFrom = 0, memAt = 0, cycleMem = null, pulses = [], step0 = true;
   var GREY = '#8a93a3', SEL = 23, comm = null, labs = {};
   var REDUCED = !!(window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches);   /* 关了动效：线上的点不跑 */
   var selRank = null;          /* 内存分配 / 跨机通信两步里手动选中的卡；读出卡跟着它走 */
@@ -1170,12 +1485,20 @@
   function ease(t){ return t < .5 ? 4*t*t*t : 1 - Math.pow(-2*t + 2, 3)/2; }
   function now(){ return performance.now(); }
   function rankCameraTarget(rank){
-    var c = cards[rank], s = Math.min((camHome ? camHome.s : cam.s)*2.15, 150);
+    var c = cards[rank];
+    /* 诊断列表与常规/OOM 场景使用同一放大倍率，同时把证据 Rank 放到画布中央。 */
+    if(memDiagnostic() && camHome){
+      var ds = Math.min(camHome.s*2.4, 168), du = U(c.x + CW/2, c.y + CH/2, c.z + CD/2);
+      return {s:ds, ox:W*.5 - ds*du[0], oy:H*.5 - ds*du[1]};
+    }
+    var s = Math.min((camHome ? camHome.s : cam.s)*2.4, 168);
     var u = U(c.x + CW/2, c.y + CH/2, c.z + CD/2);
-    return {s:s, ox:W*.52 - s*u[0], oy:H*.52 - s*u[1]};
+    /* 第 8 步底部多了周期面板、右侧还可能展开详情：主语轻微落在左上，避免视觉重心被两块面板挤住。 */
+    return {s:s, ox:W*.46 - s*u[0], oy:H*.44 - s*u[1]};
   }
-  /* 第 8 步的补充镜头：可延迟到显存涨完再启动；手动换 Rank 时复用同一段平滑运镜。 */
+  /* 第 8 步的补充镜头：与显存增长同时启动；手动换 Rank 时复用同一段平滑运镜。 */
   function queueRankFocus(rank, at, duration){
+    if(step === 7 && window.RIMemoryCycle) window.RIMemoryCycle.prepareWarmup();
     rankFocus = {rank:rank, at:at == null ? now() : at, dur:duration || 680, started:false,
                  fadeFrom:memRankFadeLevel, fadeTo:rank === null ? 0 : 1};
     needDraw = true; if(!animating) tick();
@@ -1209,12 +1532,15 @@
     t0 = tn; animating = true;
     memT = i >= 7 ? 1 : 0; memFrom = memF; memAt = tn + (i === 7 ? DUR : 0);
     if(i === 7){
-      /* 先让 128 张卡完整长出显存，再选中并拉近主语；前序已有选择时沿用它。 */
+      /* 128 张卡长出显存的同时选中并拉近主语；前序已有选择时沿用它。 */
       selRank = null; memSel = null; memRankFocused = false; memRankFadeLevel = 0;
-      queueRankFocus(carriedRank !== null ? carriedRank : MEM_AUTO_RANK, memAt + 900 + 160, 720);
+      queueRankFocus(carriedRank !== null ? carriedRank : MEM_AUTO_RANK, memAt, 900);
     } else {
       rankFocus = null; memRankFocused = false; memRankFadeLevel = 0;
     }
+    /* 第 9 / 10 步的主语分别由通信动画和展平选择表达；进场不继承第 8 步的显存下钻状态。 */
+    var closeRankMemOnEntry = i === 8 || i === 9;
+    if(closeRankMemOnEntry){ memSel = null; memSelR = null; }
     /* 发射线：离开第 9 步时淡出，不是一下子抽掉。主语沿用上一步手动选的卡（没有就 R23） */
     if(i === 8){ if(!comm || comm.off){ comm = commOf(selRank !== null ? selRank : SEL); comm.at = tn + DUR*0.5; } selRank = comm.sel; }
     else if(comm && !comm.off) comm.off = tn;
@@ -1235,6 +1561,7 @@
     etpTogEl.hidden = i !== 8;
     syncStagebar(); syncZoomHud();
     renderRankMem();
+    if(closeRankMemOnEntry){ rankMemEl.hidden = true; syncMemDetail(null, false); }
     /* 正在闪的高亮不能被下一步硬生生掐掉——把此刻的颜色留成余晖，300ms 内退掉 */
     cards.forEach(function(c){
       var pa = pulseAlpha(c, tn), ga = ghostAlpha(c, tn);
@@ -1276,7 +1603,7 @@
       if(t >= memAt){ var dm = Math.min(1, (t - memAt)/(memT === 1 ? 900 : 450)); memF = memFrom + (memT - memFrom)*ease(dm); }
       busy = true;
     }
-    /* 显存涨满后的第二拍：确定主语、弱化其余 Rank，同时把主语平滑拉到镜头中央。 */
+    /* 与显存增长同拍：确定主语、弱化其余 Rank，同时把主语平滑拉到镜头中央。 */
     if(rankFocus && step === 7){
       if(t < rankFocus.at) busy = true;
       else {
@@ -1284,9 +1611,10 @@
           rankFocus.started = true;
           rankFocus.from = {s:cam.s, ox:cam.ox, oy:cam.oy};
           rankFocus.to = rankFocus.rank === null ? {s:camHome.s, ox:camHome.ox, oy:camHome.oy} : rankCameraTarget(rankFocus.rank);
+          var keepMemSelection = rankFocus.rank !== null && (memSel === 'act' || memSel === 'opt');
           selRank = rankFocus.rank;
           memRankFocused = rankFocus.rank !== null;
-          memSel = null;
+          if(!keepMemSelection) memSel = null;
           syncStagebar(); renderRankMem();
         }
         var rk = Math.min(1, (t-rankFocus.at)/rankFocus.dur), re = ease(rk);
@@ -1296,7 +1624,12 @@
         memRankFadeLevel = rankFocus.fadeFrom + (rankFocus.fadeTo-rankFocus.fadeFrom)*re;
         syncZoomHud();
         if(rk < 1) busy = true;
-        else { if(rankFocus.rank === null) memRankFocused = false; rankFocus = null; }
+        else {
+          var focusedRank = rankFocus.rank;
+          if(focusedRank === null) memRankFocused = false;
+          rankFocus = null;
+          if(focusedRank !== null && window.RIMemoryCycle) window.RIMemoryCycle.startFromWarmup();
+        }
       }
     }
     /* 展平：0 → 1 压成平面，1 → 0 立回 3D。缓动在这里做完，drawPlane 拿到的就是插值用的进度 */
@@ -1384,7 +1717,17 @@
   /* 选中态三档（照 demo）：选中的卡 / 沿任一维与它同组的兄弟卡 / 其余淡去 */
   function roleOf(c){
     if(!comm){
-      if(step === 7 && memRankFocused && selRank !== null) return c.r === selRank ? 'sel' : 'dim';
+      if(step === 7 && memRankFocused && selRank !== null){
+        if(c.r === selRank) return 'sel';
+        /* 诊断场景一次保留三张证据卡：主语最实，另外两张仍可读，其余退暗。 */
+        if(memDiagnosticRank(c.r)) return 'sib';
+        if(memSel === 'act' && sameActivationGroup(cards[selRank], c)) return 'sib';
+        if(memSel && memSel !== 'otmp' && memSel !== 'rsv'){
+          var related = memSibDims(memSel).filter(dimLive).some(function(d){ return isSib(cards[selRank],c,d); });
+          if(related) return 'sib';
+        }
+        return 'dim';
+      }
       return (selRank !== null && c.r === selRank) ? 'sel' : 'none';
     }
     if(c.r === comm.sel) return 'sel';
@@ -1405,7 +1748,7 @@
     var a3 = c.a * (1 - flatF);
     if(a3 <= 0.01) return;
     var role = roleOf(c), fade = comm ? commFade(t) : (step === 7 ? memRankFadeLevel : 0);
-    ctx.globalAlpha = a3 * (role === 'dim' && !layerRankMatch(c) ? 1 - 0.82*fade : 1);
+    ctx.globalAlpha = a3 * (role === 'dim' && !layerRankMatch(c) ? 1 - 0.82*fade : (role === 'sib' ? 1 - 0.66*fade : 1));
     var tint = tintOf(c, t), ha = tint ? tint.a : 0, hc = tint ? tint.c : null;
     /* 前排遮后排：卡按远→近的画家序画，但壳面半透明，后排整张（尤其 TP 摞成两层、EP 分桶、
        装上五档显存柱之后）都从前排身上透出来，几排一叠就花。所以每张卡先用页面底色把自己
@@ -1420,8 +1763,9 @@
     if(markOn.memory && mf > 0){
       /* 五档按字节 ÷ HBM 容量折成高度，从底往上垒；顶出壳外就是超容 */
       var ins = 0.08, yy = c.y + ins, iw = CW - 2*ins, id = CD - 2*ins, cap = CFG.hbm*GiB;
-      var memTotal = c.mem.reduce(function(sum, m){ return sum + m.bytes; }, 0);
-      c.mem.forEach(function(m){
+      var shownMem = step === 7 && cycleMem && cycleMem[c.r] ? cycleMem[c.r] : c.mem;
+      var memTotal = shownMem.reduce(function(sum, m){ return sum + m.bytes; }, 0);
+      shownMem.forEach(function(m){
         var hh = (m.bytes/cap)*(CH - 2*ins)*mf; if(hh <= 0.001) return;
         drawBox(c.x + ins, yy, c.z + ins, iw, hh, id, {front:m.c, right:shade(m.c, .82), top:shade(m.c, 1.28)}, null, null);
         yy += hh;
@@ -1439,10 +1783,17 @@
     c.bb = [Math.min.apply(null, xs), Math.min.apply(null, ys), Math.max.apply(null, xs), Math.max.apply(null, ys)];
     if(ha){ drawBox(c.x, c.y, c.z, CW, CH, CD, {front:hexA(hc, ha*.55), right:hexA(hc, ha*.7), top:hexA(hc, ha*.4)}, hexA(hc, Math.min(1, ha*1.6)), null); }
     if(role === 'sel'){ var oa = (comm || step === 7) ? fade : 1; if(oa > 0) drawBox(c.x, c.y, c.z, CW, CH, CD, null, 'rgba(' + TH.rgb + ',' + (0.9*oa) + ')', null, 2); }
+    /* 峰值/GAP 场景描出预设问题 Rank 与整 Step 各口径的真实峰值 Rank。 */
+    var problemRank = step === 7 && (memDiagnosticRank(c.r) || memoryObserverLeaderMetric(c.r) || (memScenario === 'danger' && (oomRankSet[c.r] || c.r === selRank)));
+    if(problemRank){
+      drawBox(c.x, c.y, c.z, CW, CH, CD, null, hexA(TH.bad, c.r === selRank ? .98 : .72), null, c.r === selRank ? 2.4 : 1.5);
+    }
     /* 读出卡里点开了某一块：沿它的兄弟轴与选中卡同组的卡描一圈刀色的棱（通信那一步不叠这一层） */
     if(memSel !== null && selRank !== null && !comm && c.r !== selRank){
-      var sibD = memSibDims(memSel).filter(dimLive).filter(function(d){ return isSib(cards[selRank], c, d); })[0];
-      if(sibD) drawBox(c.x, c.y, c.z, CW, CH, CD, null, VC[sibD], null, 1.5);
+      var actSib = memSel === 'act' && sameActivationGroup(cards[selRank], c);
+      var sibD = actSib ? null : memSibDims(memSel).filter(dimLive).filter(function(d){ return isSib(cards[selRank], c, d); })[0];
+      if(actSib) drawBox(c.x, c.y, c.z, CW, CH, CD, null, hexA(MEMC.act,.46), null, 1.2);
+      else if(sibD) drawBox(c.x, c.y, c.z, CW, CH, CD, null, VC[sibD], null, 1.5);
     }
     /* 顶面上的 R 号：随柱体连续缩小，不再因小屏 / 第 5 步缩放跌破阈值而整批消失。 */
     if(markOn.rank){
@@ -1698,7 +2049,11 @@
        点行标道只选行；点空白清掉。再点一次同一处取消。 */
     if(planeActive()){
       var tk = planeTickAt(mx, my), ph = tk ? null : planeHit(mx, my);
-      if(tk){ var offTk = selLayer && colKey(selLayer) === colKey(tk); selLayer = offTk ? null : tk; layerGuide = !offTk; }
+      if(tk){
+        var offTk = selLayer && colKey(selLayer) === colKey(tk) && selRank === null;
+        selRank = null;   /* 顶尺是公共 Layer 轴：只选列时表示跨全部 EDP 的同名层集合。 */
+        selLayer = offTk ? null : tk; layerGuide = !offTk;
+      }
       else if(ph && ph.col){
         var same = selRank === ph.c.r && selLayer && colKey(selLayer) === colKey(ph.col);
         selRank = same ? null : ph.c.r; selLayer = same ? null : ph.col; layerGuide = !same;   /* 格子坐在那一列上：暗影同步贯穿它所在的列，行与列一起读 */
@@ -1711,7 +2066,11 @@
     if(hit && !(pick && !pick.off && pick.key === hit.key)) pick = {key:hit.key, c:hit.c, sel:hit.sel, on:tn};
     else if(hc){
       if(comm && !comm.off){ if(hc.r !== comm.sel){ comm = commOf(hc.r); comm.at = tn; selRank = hc.r; } }
-      else if(step === 7) queueRankFocus(selRank === hc.r && memRankFocused ? null : hc.r, tn, 620);
+      else if(step === 7){
+        /* 三个异常场景只接受场景已经标出的证据 Rank；点其余卡不改变主语。 */
+        if(memProblemScenario() && !memProblemRankAllowed(hc.r)){ tick(); return; }
+        queueRankFocus(memProblemScenario() ? hc.r : (selRank === hc.r && memRankFocused ? null : hc.r), tn, 620);
+      }
       else selRank = selRank === hc.r ? null : hc.r;
       if(pick && !pick.off) pick.off = tn;
       if(step !== 7){ syncStagebar(); renderRankMem(); }
@@ -1722,50 +2081,269 @@
 
   /* ── 读出卡：这张卡装了什么（照 demo 的 renderRankMem 精简） ─────────── */
   var rankMemEl = document.getElementById('rankMem');
-  var memDetailEl = document.getElementById('memDetail'), memDetailBodyEl = document.getElementById('memDetailBody'), memDetailTitleEl = document.getElementById('memDetailTitle');
-  /* 点开的那一块（五档之一或权重带里某一块 'w:xxx'）；只属于点开它时那张卡，换卡就清 */
+  var memDetailEl = document.getElementById('memDetail'), memDetailBodyEl = document.getElementById('memDetailBody'), memDetailKickerEl = document.getElementById('memDetailKicker'), memDetailTitleEl = document.getElementById('memDetailTitle');
+  var actVolumeController = null, activationCycleState = null;
+  /* 点开的显存块：激活 / 优化器态是跨 Rank 对比口径，换卡时保留；其余具体权重块仍随换卡复位。
+     问题场景里的所有显存分项都是下钻入口：回到单 Step 周期，再读当前 Rank 的对应详情。 */
   var memSel = null, memSelR = null;
   rankMemEl.addEventListener('click', function(e){
     if(e.target.classList.contains('rm-x')){
+      if(memProblemScenario()) return;
       memSel = null;
       if(step === 7) queueRankFocus(null, now(), 520);
       else { selRank = null; syncStagebar(); renderRankMem(); needDraw = true; tick(); }
       return;
     }
     var t = e.target.closest ? e.target.closest('[data-mk]') : null;
-    if(t){ var mk = t.getAttribute('data-mk'); memSel = (mk && mk !== memSel) ? mk : null; renderRankMem(); needDraw = true; tick(); }
+    if(!t) return;
+    var mk = t.getAttribute('data-mk');
+    if(memProblemScenario()){
+      if(!mk) return;
+      setMemScenario('base', false);
+      memSel = mk; memSelR = selRank;
+      renderRankMem(); needDraw = true; tick();
+      return;
+    }
+    memSel = (mk && mk !== memSel) ? mk : null; renderRankMem(); needDraw = true; tick();
   });
   memDetailEl.addEventListener('click', function(e){
-    if(e.target.closest('#memDetailClose')){ memSel = null; renderRankMem(); needDraw = true; tick(); return; }
+    if(e.target.closest('#memDetailClose')){
+      if(memDiagnostic()){ scenarioPanelDismissed = true; syncMemDetail(null, false); }
+      else { memSel = null; renderRankMem(); }
+      needDraw = true; tick(); return;
+    }
+    var observerResult = e.target.closest ? e.target.closest('[data-ob-result]') : null;
+    if(observerResult){
+      var resultMetric = observerResult.getAttribute('data-ob-result'), resultRank = +observerResult.getAttribute('data-ob-result-rank');
+      if(OBSERVER_METRICS[resultMetric]) memoryObserverMetric = resultMetric;
+      if(isFinite(resultRank) && cards[resultRank]){
+        if(window.RIMemoryCycle && window.RIMemoryCycle.setDiagnosticTarget) window.RIMemoryCycle.setDiagnosticTarget(resultMetric,resultRank);
+        memoryObserverSyncedRank = resultRank; memoryObserverSkipRankSync = null; scenarioPanelDismissed = false; memSel = null;
+        queueRankFocus(resultRank, now(), 460);
+      }
+      updateScenarioInsight(memoryDiagnosticState); return;
+    }
+    var observerTab = e.target.closest ? e.target.closest('[data-ob-metric-tab]') : null;
+    if(observerTab){
+      var tabMetric = observerTab.getAttribute('data-ob-metric-tab');
+      if(OBSERVER_METRICS[tabMetric]) memoryObserverMetric = tabMetric;
+      updateScenarioInsight(memoryDiagnosticState); return;
+    }
+    var diagRankButton = e.target.closest ? e.target.closest('[data-diag-rank]') : null;
+    if(diagRankButton){
+      var diagRank = +diagRankButton.getAttribute('data-diag-rank');
+      if(isFinite(diagRank) && cards[diagRank]){ scenarioPanelDismissed = false; memSel = null; queueRankFocus(diagRank, now(), 460); }
+      return;
+    }
+    var help = e.target.closest ? e.target.closest('[data-act-help]') : null;
+    if(help){
+      var pop = document.getElementById(help.getAttribute('aria-controls')), open = help.getAttribute('aria-expanded') !== 'true';
+      help.setAttribute('aria-expanded', String(open)); if(pop) pop.hidden = !open; return;
+    }
+    var ar = e.target.closest ? e.target.closest('[data-act-rank]') : null;
+    if(ar){
+      var nextRank = +ar.getAttribute('data-act-rank');
+      if(isFinite(nextRank) && cards[nextRank] && nextRank !== selRank) queueRankFocus(nextRank, now(), 460);
+      return;
+    }
     var t = e.target.closest ? e.target.closest('[data-mk]') : null;
     if(t){ var mk = t.getAttribute('data-mk'); if(mk){ memSel = mk; renderRankMem(); needDraw = true; tick(); } }
   });
   function detailTitle(c, key){
-    if(key.indexOf('w:') === 0) return key.slice(2) + ' · rank ' + c.r;
+    if(key.indexOf('w:') === 0) return 'rank' + c.r + ' · ' + key.slice(2) + '（bf16）';
     var out = key; c.mem.forEach(function(s){ if(s.k === key) out = s.label; });
-    return out + ' · rank ' + c.r;
+    if(key === 'otmp') out = '优化器步·临时区';
+    var format = key === 'w' || key === 'g' ? '（bf16）' : (key === 'opt' ? '（三份 FP32 张量）' : '');
+    return 'rank' + c.r + ' · ' + out + format;
+  }
+  function scenarioInsightHTML(c){
+    var d = memDiagnostic(); if(!d) return '';
+    var results = OBSERVER_METRIC_KEYS.map(function(key){
+      return '<button type="button" class="mem-observer-result" data-ob-result="' + key + '" data-ob-result-rank="">'
+        + '<span class="mem-observer-result-copy"><b>' + esc(OBSERVER_METRICS[key].label) + '峰值</b><small data-ob-result-note>等待整 Step 扫描</small></span>'
+        + '<strong data-ob-result-value>—</strong></button>';
+    }).join('');
+    var tabs = OBSERVER_METRIC_KEYS.map(function(key){
+      return '<button type="button" class="mem-observer-tab" role="tab" data-ob-metric-tab="' + key + '" aria-selected="false">' + esc(OBSERVER_METRICS[key].label) + '</button>';
+    }).join('');
+    var cells = cards.map(function(card){ return '<span class="mem-observer-cell" data-ob-heat-rank="' + card.r + '">' + card.r + '</span>'; }).join('');
+    return '<div class="mem-observer" data-observer-scenario="' + memScenario + '">'
+      + '<section><div class="mem-observer-section-head"><b>分析结果</b><span>整 Step · 128 Rank</span></div><div class="mem-observer-results">' + results + '</div></section>'
+      + '<div class="mem-observer-phase"><span>当前采样</span><b data-ob-phase>等待 Step 回放</b></div>'
+      + '<div class="mem-observer-tabs" role="tablist" aria-label="内存观测口径">' + tabs + '</div>'
+      + '<section class="mem-observer-heat"><div class="mem-observer-heat-head"><b data-ob-heat-title>算子分配 · 128 Rank</b><span data-ob-heat-peak>峰值 —</span></div>'
+      + '<div class="mem-observer-grid" aria-label="128 Rank 动态内存热力图">' + cells + '</div>'
+      + '<div class="mem-observer-heat-legend"><span>低</span><i></i><span>高</span></div></section>'
+      + '<div class="mem-observer-evidence" data-ob-evidence></div>'
+      + '<div class="mem-observer-verdict" style="--obc:var(--bad)" data-ob-verdict></div></div>';
+  }
+  function observerGB(v){ return isFinite(v) ? (v/GiB).toFixed(1) + ' GB' : '—'; }
+  function observerResultNote(key, r, peaks){
+    var info = memDiagnosticRank(r), p = peaks && peaks[r] ? peaks[r] : null;
+    if(info && info.metric === key) return info.cause;
+    if(key === 'allocated') return '真实张量分配最高；检查激活、梯度或更新临时区';
+    if(key === 'active') return p && p.delayed > 4*GiB ? '比分配多 ' + observerGB(p.delayed) + '，存在跨流延迟释放' : '主要由真实分配推高，未见明显延迟释放';
+    if(key === 'reserved') return p && p.idle > 4*GiB ? '比持有多 ' + observerGB(p.idle) + '，内存池空闲偏大' : '主要由算子持有推高，池内空闲较小';
+    return p && p.other > 4*GiB ? '比算子保留多 ' + observerGB(p.other) + '，来自通信 / runtime' : '进程总保留最高，主要由算子账推高';
+  }
+  function observerEvidenceHTML(key, m){
+    if(!m) return '<div><span>当前 Rank</span><b>等待采样</b></div>';
+    function card(label, value, gap){ return '<div' + (gap ? ' class="is-gap"' : '') + '><span>' + label + '</span><b>' + value + '</b></div>'; }
+    if(key === 'allocated') return card('算子分配',observerGB(m.allocated)) + card('显存占比',Math.round(m.allocated/(CFG.hbm*GiB)*100) + '%') + card('语义','真实张量');
+    if(key === 'active') return card('算子分配',observerGB(m.allocated)) + card('算子持有',observerGB(m.active)) + card('延迟释放 GAP',observerGB(m.delayed),m.delayed>4*GiB);
+    if(key === 'reserved') return card('算子持有',observerGB(m.active)) + card('算子保留',observerGB(m.reserved)) + card('内存池空闲 GAP',observerGB(m.idle),m.idle>4*GiB);
+    return card('算子保留',observerGB(m.reserved)) + card('进程保留',observerGB(m.app)) + card('进程其他',observerGB(m.other || 0),(m.other || 0)>4*GiB);
+  }
+  function updateScenarioInsight(state){
+    var root = memDetailBodyEl.querySelector('[data-observer-scenario]'), d = memDiagnostic();
+    if(!root || !d) return;
+    var r = selRank === null ? d.defaultRank : selRank;
+    if(memoryObserverSyncedRank !== r){
+      if(memoryObserverSkipRankSync !== null){
+        if(memoryObserverSkipRankSync === r){ memoryObserverSkipRankSync = null; memoryObserverSyncedRank = r; }
+      } else {
+        var mappedMetric = memoryObserverMetricForRank(r); if(mappedMetric) memoryObserverMetric = mappedMetric;
+        memoryObserverSyncedRank = r;
+        if(mappedMetric && window.RIMemoryCycle && window.RIMemoryCycle.setDiagnosticTarget) window.RIMemoryCycle.setDiagnosticTarget(memoryObserverMetric,r);
+      }
+    }
+    var m = state && state.byRank ? state.byRank[r] : null;
+    function put(sel, value){ var el = root.querySelector(sel); if(el) el.textContent = value; }
+    if(m) put('[data-ob-phase]',m.phaseLabel + ' · Step ' + Math.round((state.at || 0)*100) + '% · R' + r);
+    var analysis = state && state.analysis, leaders = analysis && analysis.leaders, peaks = analysis && analysis.peakByRank;
+    Array.prototype.forEach.call(root.querySelectorAll('[data-ob-result]'),function(button){
+      var key = button.getAttribute('data-ob-result'), leader = leaders && leaders[key];
+      button.classList.toggle('is-on',key === memoryObserverMetric);
+      if(!leader) return;
+      button.setAttribute('data-ob-result-rank',leader.r);
+      var resultValue = button.querySelector('[data-ob-result-value]'), note = button.querySelector('[data-ob-result-note]');
+      if(resultValue) resultValue.textContent = 'R' + leader.r + ' | ' + observerGB(leader.value);
+      if(note) note.textContent = observerResultNote(key,leader.r,peaks);
+    });
+    Array.prototype.forEach.call(root.querySelectorAll('[data-ob-metric-tab]'),function(button){
+      var on = button.getAttribute('data-ob-metric-tab') === memoryObserverMetric;
+      button.classList.toggle('is-on',on); button.setAttribute('aria-selected',String(on));
+    });
+    var meta = OBSERVER_METRICS[memoryObserverMetric], leader = leaders && leaders[memoryObserverMetric];
+    put('[data-ob-heat-title]',meta.label + ' · 128 Rank');
+    put('[data-ob-heat-peak]',leader ? '整 Step 峰值 R' + leader.r + ' · ' + observerGB(leader.value) : '峰值 —');
+    var heatLegend = root.querySelector('.mem-observer-heat-legend i');
+    if(heatLegend) heatLegend.style.background = PR.heatRampCss(PR.HEAT_RAMP);
+    var heatSig = memoryObserverMetric + ':' + Math.round(((state && state.at) || 0)*80) + ':' + r;
+    if(root.getAttribute('data-ob-heat-sig') !== heatSig && state && state.byRank){
+      root.setAttribute('data-ob-heat-sig',heatSig);
+      var vals = cards.map(function(card){ var row = state.byRank[card.r]; return row ? row[memoryObserverMetric] : 0; });
+      var lo = Math.min.apply(null,vals), hi = Math.max.apply(null,vals), span = Math.max(1,hi-lo);
+      Array.prototype.forEach.call(root.querySelectorAll('[data-ob-heat-rank]'),function(cell){
+        var rank = +cell.getAttribute('data-ob-heat-rank'), value = vals[rank] || 0, heat = (value-lo)/span;
+        cell.style.background = PR.heatColor(heat,PR.HEAT_RAMP);
+        cell.classList.toggle('is-selected',rank === r); cell.classList.toggle('is-peak',!!leader && rank === leader.r);
+        cell.title = 'R' + rank + ' · ' + meta.label + ' ' + observerGB(value);
+      });
+    }
+    var evidence = root.querySelector('[data-ob-evidence]'); if(evidence) evidence.innerHTML = observerEvidenceHTML(memoryObserverMetric,m);
+    var verdict = root.querySelector('[data-ob-verdict]');
+    if(verdict) verdict.innerHTML = '<b>R' + r + ' · ' + esc(meta.label) + '</b><br>' + esc(meta.definition) + '。热力矩阵显示当前采样，红框标出整个 Step 的峰值 Rank；下方只保留组成这一层账所需的相关读数。';
+  }
+  function syncScenarioInsight(c){
+    var d = memDiagnostic(), open = !!(d && !scenarioPanelDismissed && step === 7);
+    if(!open){
+      memDetailEl.classList.remove('is-observer');
+      document.querySelector('.page').classList.remove('mem-detail-open');
+      memDetailEl.hidden = true; memDetailKickerEl.textContent = ''; memDetailTitleEl.textContent = ''; memDetailBodyEl.innerHTML = ''; memDetailBodyEl.removeAttribute('data-observer-sig');
+      return;
+    }
+    if(actVolumeController){ actVolumeController.destroy(); actVolumeController = null; }
+    document.querySelector('.page').classList.add('mem-detail-open');
+    memDetailEl.classList.remove('is-memory'); memDetailEl.classList.add('is-observer'); memDetailEl.hidden = false;
+    memDetailKickerEl.textContent = 'INFRA 观测 · 128 Rank'; memDetailTitleEl.textContent = d.title;
+    var sig = memScenario;
+    if(memDetailBodyEl.getAttribute('data-observer-sig') !== sig){
+      memDetailBodyEl.setAttribute('data-observer-sig',sig); memDetailBodyEl.innerHTML = scenarioInsightHTML(c || cards[d.defaultRank]);
+    }
+    updateScenarioInsight(memoryDiagnosticState);
   }
   function syncMemDetail(c, withMem){
+    if(memDiagnostic()){ syncScenarioInsight(c); return; }
     var page = document.querySelector('.page'), open = !!(c && withMem && memSel);
+    memDetailBodyEl.removeAttribute('data-observer-sig');
+    if(actVolumeController){ actVolumeController.destroy(); actVolumeController = null; }
     page.classList.toggle('mem-detail-open', open);
+    memDetailEl.classList.remove('is-observer'); memDetailEl.classList.toggle('is-memory',open);
     memDetailEl.hidden = !open;
-    if(open){ memDetailTitleEl.textContent = detailTitle(c, memSel); memDetailBodyEl.innerHTML = memBlockDetail(c, memSel); }
-    else { memDetailTitleEl.textContent = ''; memDetailBodyEl.innerHTML = ''; }
+    if(open){
+      memDetailKickerEl.textContent = 'EDP 实例 ' + (c.dp>>3);
+      memDetailTitleEl.textContent = detailTitle(c, memSel); memDetailBodyEl.innerHTML = memBlockDetail(c, memSel);
+      if(memSel === 'act'){
+        mountActivationVolume(c);
+      } else if(memSel === 'w' || memSel === 'g' || memSel === 'opt') mountParameterAtlas(c,memSel);
+      else mountMemoryTensorVolume(c,memSel);
+      if(activationCycleState) updateMemoryDetailCycle(activationCycleState);
+    }
+    else { memDetailKickerEl.textContent = ''; memDetailTitleEl.textContent = ''; memDetailBodyEl.innerHTML = ''; }
   }
   function waterHTML(segs, tot, cap){
-    var bands = segs.map(function(s){ return '<i style="width:' + (s.bytes/cap*100).toFixed(2) + '%;background:' + s.c + '"></i>'; }).join('');
+    var bands = segs.map(function(s){ return '<i data-mem-band="' + s.k + '" style="width:' + (s.bytes/cap*100).toFixed(2) + '%;background:' + s.c + '"></i>'; }).join('');
     var pct = tot/cap*100, rest = cap - tot;
     return '<div class="rm-water' + (tot > cap ? ' is-over' : '') + '">' + bands + '<span class="rm-water-cap" aria-hidden="true"></span></div>'
-      + '<div class="rm-water-meta"><span>' + pct.toFixed(0) + '% 已用</span><span>' + (rest >= 0 ? '余量 ' + fmtGB(rest) + ' GB' : '超出 ' + fmtGB(-rest) + ' GB') + '</span></div>';
+      + '<div class="rm-water-meta"><span data-mem-percent>' + pct.toFixed(0) + '% 已用</span><span data-mem-rest>' + (rest >= 0 ? '余量 ' + fmtGB(rest) + ' GB' : '超出 ' + fmtGB(-rest) + ' GB') + '</span></div>';
+  }
+  function rankMemCycleSegments(c){
+    var live = step === 7 && cycleMem && cycleMem[c.r] ? cycleMem[c.r] : c.mem;
+    var hasTmp = live.some(function(m){ return m.k === 'otmp'; });
+    if(hasTmp) return live;
+    var out = [];
+    live.forEach(function(m){ out.push(m); if(m.k === 'opt') out.push({k:'otmp',label:'优化器步·临时区',bytes:0,c:shade(MEMC.opt,.72),kind:'exec'}); });
+    return out;
+  }
+  function updateRankMemCycle(memByRank){
+    if(step !== 7 || selRank === null || rankMemEl.hidden || !memByRank || !memByRank[selRank]) return;
+    var mem = memByRank[selRank], byKey = {}, cap = CFG.hbm*GiB;
+    mem.forEach(function(m){ byKey[m.k] = m; });
+    var detailBig = memDetailBodyEl.querySelector('[data-detail-memory]');
+    if(detailBig){
+      var detailKey = detailBig.getAttribute('data-detail-memory'), detailBytes = null;
+      if(detailKey && detailKey.indexOf('w:') === 0){
+        var blockId = detailKey.slice(2), weight = cards[selRank] && cards[selRank].mem[0];
+        if(weight && weight.sub) weight.sub.forEach(function(block){ if(block.id === blockId) detailBytes = block.bytes; });
+      } else if(byKey[detailKey]) detailBytes = byKey[detailKey].bytes;
+      if(detailBytes != null) detailBig.textContent = fmtMem(detailBytes);
+    }
+    Array.prototype.forEach.call(rankMemEl.querySelectorAll('[data-mem-value]'),function(el){
+      var m = byKey[el.getAttribute('data-mem-value')]; if(m) el.textContent = fmtMem(m.bytes);
+    });
+    Array.prototype.forEach.call(rankMemEl.querySelectorAll('[data-mem-label]'),function(el){
+      var m = byKey[el.getAttribute('data-mem-label')]; if(m) el.textContent = m.label;
+    });
+    Array.prototype.forEach.call(rankMemEl.querySelectorAll('[data-mem-band]'),function(el){
+      var m = byKey[el.getAttribute('data-mem-band')]; el.style.width = ((m ? m.bytes : 0)/cap*100).toFixed(2)+'%';
+    });
+    var tot = mem.reduce(function(a,m){ return a+m.bytes; },0), rest = cap-tot, summary = rankMemEl.querySelector('.rm-summary-line');
+    if(summary){
+      summary.classList.toggle('over',tot > cap);
+      var totalEl = summary.querySelector('[data-mem-total]'), restEl = summary.querySelector('[data-mem-summary-rest]');
+      if(totalEl) totalEl.textContent = (tot > cap ? 'OOM · ' : '')+fmtGB(tot)+' / '+CFG.hbm+' GB';
+      if(restEl) restEl.textContent = tot > cap ? '超出 '+fmtGB(tot-cap) : '余量 '+fmtGB(cap-tot);
+    }
+    var water = rankMemEl.querySelector('.rm-water'); if(water) water.classList.toggle('is-over',tot > cap);
+    var pctEl = rankMemEl.querySelector('[data-mem-percent]'), restMeta = rankMemEl.querySelector('[data-mem-rest]');
+    if(pctEl) pctEl.textContent = (tot/cap*100).toFixed(0)+'% 已用';
+    if(restMeta) restMeta.textContent = rest >= 0 ? '余量 '+fmtGB(rest)+' GB' : '超出 '+fmtGB(-rest)+' GB';
   }
   function renderRankMem(){
+    if(window.RIMemoryCycle) window.RIMemoryCycle.setRank(selRank === null ? MEM_AUTO_RANK : selRank);
     if(selRank === null){ rankMemEl.hidden = true; memSel = null; memSelR = null; syncMemDetail(null, false); return; }
     /* 内存分配页首次落到一个 Rank 时，默认从最有运行态辨识度的「激活」开始读。 */
-    if(memSelR !== selRank){ memSel = step === 7 ? 'act' : null; memSelR = selRank; }
-    var c = cards[selRank], segs = c.mem, cap = CFG.hbm*GiB;
-    var tot = segs.reduce(function(a, x){ return a + x.bytes; }, 0);
+    if(memSelR !== selRank){
+      if(memProblemScenario()) memSel = null;
+      else if(!(step === 7 && (memSel === 'act' || memSel === 'opt'))) memSel = step === 7 ? 'act' : null;
+      memSelR = selRank;
+    }
+    var c = cards[selRank], segs = c.mem, liveSegs = rankMemCycleSegments(c), cap = CFG.hbm*GiB, liveByKey = {};
+    liveSegs.forEach(function(m){ liveByKey[m.k] = m; });
+    var tot = liveSegs.reduce(function(a, x){ return a + x.bytes; }, 0);
     var g = c.pp*4 + (c.dp>>3)*2 + c.tp;
-    var rows = [], lastKind = null;
+    var rows = [];
     /* 前 7 步框还是空的，读出卡只报切分位置；显存账从第 8 步起才有 */
     var withMem = step >= 7;
     /* 图例按卡上从上往下的顺序：碎片 → 激活 → 优化器态 → 梯度 → 权重（权重下面列它的分块）。
@@ -1773,30 +2351,28 @@
        选中那行反白一层它自己的颜色（--rmc），跟卡上那条带同色 */
     if(!withMem) memSel = null;
     if(withMem) segs.slice().reverse().forEach(function(sg){
-      if(sg.kind !== lastKind){
-        lastKind = sg.kind;
-        rows.push('<tr class="k"><td colspan="2">' + (sg.kind === 'exec' ? '执行态 · 此刻压着什么' : '模型态 · 整步常驻') + '</td></tr>');
-      }
       var onSg = memSel === sg.k;
-      var actWhy = sg.k === 'act' ? '<span class="rm-subline">1F1B · stage ' + c.pp + ' 当前压着 ' + sg.inflight + ' 个 μb · MBS ' + sg.mbs + '<br>PP0→PP3 的在途数依次为 4 / 3 / 2 / 1</span>' : '';
-      rows.push('<tr class="m rm-p' + (onSg ? ' on' : '') + '" data-mk="' + sg.k + '" style="--rmc:' + sg.c + '"><td><span class="sw" style="background:' + sg.c + '"></span>' + sg.label + actWhy + '</td><td class="n">' + fmtMem(sg.bytes) + '</td></tr>');
-      if(sg.sub) rows.push('<tr class="rm-cut-zone"><td colspan="2">权重内部构成 · 轴标记表示切分维度</td></tr>');
+      if(sg.k === 'opt'){
+        var tmp = liveByKey.otmp || {bytes:0,c:shade(MEMC.opt,.72)};
+        rows.push('<tr class="m cycle-mem rm-p' + (memSel === 'otmp' ? ' on' : '') + '" data-mk="otmp" style="--rmc:' + tmp.c + '"><td><span class="sw" style="background:' + tmp.c + '"></span>优化器步·临时区</td><td class="n" data-mem-value="otmp">' + fmtMem(tmp.bytes) + '</td></tr>');
+      }
+      var shown = liveByKey[sg.k] || sg;
+      rows.push('<tr class="m rm-p' + (onSg ? ' on' : '') + '" data-mk="' + sg.k + '" style="--rmc:' + sg.c + '"><td><span class="sw" style="background:' + sg.c + '"></span><span data-mem-label="' + sg.k + '">' + sg.label + '</span></td><td class="n" data-mem-value="' + sg.k + '">' + fmtMem(shown.bytes) + '</td></tr>');
       if(sg.sub) sg.sub.forEach(function(x){
         var col = cutColor(x.cut), mk = 'w:' + x.id, onX = memSel === mk;
         var axis = x.cut === 'none' ? '复制' : DIMN[x.cut] + '×' + CFG[x.cut];
-        rows.push('<tr class="s rm-p' + (onX ? ' on' : '') + '" data-mk="' + mk + '" style="--rmc:' + col + '"><td>' + x.id + '<span class="rm-axis" style="--axis-c:' + col + '">' + axis + '</span></td><td class="n">' + fmtMem(x.bytes) + '</td></tr>');
+        rows.push('<tr class="s rm-p' + (onX ? ' on' : '') + '" data-mk="' + mk + '" style="--rmc:' + MEMC.w + '"><td>' + x.id + '<span class="rm-axis" style="--axis-c:' + col + '">' + axis + '</span></td><td class="n">' + fmtMem(x.bytes) + '</td></tr>');
       });
     });
     rankMemEl.innerHTML =
       '<div class="rm-h"><b>rank ' + c.r + '</b>'
-      + '<button class="rm-x" title="收起（同时取消选中）">✕</button>'
+      + (memProblemScenario() ? '' : '<button class="rm-x" title="收起（同时取消选中）">✕</button>')
       /* 坐标独占第二行（flex 基准 100%，排在 ✕ 之后才会换行） */
-      + '<span>tp' + c.tp + ' dp' + c.dp + ' pp' + c.pp + ' ep' + (c.dp&7) + ' · EP 组 ' + g + ' · stage' + c.pp + ' · L' + (c.pp*LPS) + '–L' + ((c.pp+1)*LPS-1) + ' · node ' + c.node + ' 槽 ' + c.slot + (selLayer ? ' · 选中列 ' + selLayer.label : '') + '</span>'
-      /* 专家权重的副本关系写成一句：展平图上同色的上下两块是同一份权重，别让颜色去暗示 */
-      + '<span>专家权重与 EDP ' + (1 - (c.dp>>3)) + ' 的 rank ' + (c.r ^ 16) + ' 是同一份（副本，步末在 EDP 组 all-reduce 对齐）</span></div>'
+      + '<span>EDP 实例 ' + (c.dp>>3) + ' · EP组' + activationEpGroup(c,c.tp) + ' · 组内位置 ' + (c.dp&7) + ' · TP' + c.tp + ' · 切出口径 DP' + c.dp + ' · PP' + c.pp + ' · stage' + c.pp + ' · L' + (c.pp*LPS) + '–L' + ((c.pp+1)*LPS-1) + ' · node ' + c.node + ' 槽 ' + c.slot + (selLayer ? ' · Layer 实例 ' + selLayer.layer : '') + '</span>'
+      + '</div>'
       + (withMem ? '<table>' + rows.join('') + '</table>'
-      + '<div class="rm-summary"><div class="rm-summary-line' + (tot > cap ? ' over' : '') + '"><b>' + (tot > cap ? 'OOM · ' : '') + fmtGB(tot) + ' / ' + CFG.hbm + ' GB</b><span>' + (tot > cap ? '超出 ' + fmtGB(tot-cap) : '余量 ' + fmtGB(cap-tot)) + '</span></div>'
-      + waterHTML(segs, tot, cap) + '</div>' : '');
+      + '<div class="rm-summary"><div class="rm-summary-line' + (tot > cap ? ' over' : '') + '"><b data-mem-total>' + (tot > cap ? 'OOM · ' : '') + fmtGB(tot) + ' / ' + CFG.hbm + ' GB</b><span data-mem-summary-rest>' + (tot > cap ? '超出 ' + fmtGB(tot-cap) : '余量 ' + fmtGB(cap-tot)) + '</span></div>'
+      + waterHTML(liveSegs, tot, cap) + '</div>' : '');
     rankMemEl.hidden = false;
     syncMemDetail(c, withMem);
   }
@@ -1810,27 +2386,247 @@
      前后 layout 小图和「rank 内搬运」那一块这里没搬——那是参照系那一屏的内容。 */
   function esc(s){ return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
   function fmtN(n){ return Number(n).toLocaleString('en-US'); }
+  function fmtShapeN(n){ return String(Math.round(Number(n))); }
   function cutColor(cut){ return (cut && cut !== 'none' && VC[cut]) ? VC[cut] : MEMC.rsv; }
   var DIMN = {tp:'TP', cp:'CP', pp:'PP', dp:'DP', ep:'EP', edp:'EDP'};
   /* 每一档：sib 是「谁和本卡凑齐一整份」的轴，comm 是「本卡为这一份要跟谁说话」——两件事 */
   var MEM_OBJ = {
-    w:  {sib:['pp','tp','ep'], comm:[{d:'tp', t:'AllGather / Reduce-Scatter · TP 换轴器'}, {d:'ep', t:'AllToAll · EP 分桶'}]},
-    g:  {sib:['pp','tp','ep'], follow:'跟随权重的切法——同一份参数的同一份切分', comm:[{d:'dp', t:'attention / dense 梯度 AllReduce · DP 组（反向末尾一次）'}, {d:'edp', t:function(){ return etpOn ? '专家梯度 AllReduce · EDP 组（ETP=2：专家也切了 TP，副本只在同 TP 片里）' : '专家梯度 AllReduce · EDP 组（ETP=1：TP 对片持有同一份专家，也在组里）'; }}]},
-    opt:{sib:['pp','tp','ep'], follow:'跟随权重的切法', comm:[], silent:'常规 DP 下步内不通信：主参数 / m / v 整份都在本卡，就地更新。'},
-    act:{sib:['pp','cp'], comm:[{d:'pp', t:'P2P · 段→段传的就是它'}, {d:'cp', t:'AllGather(KV) · CP 组（s 被切开，注意力要全局）'}, {d:'tp', t:'AllGather(s→h) / Reduce-Scatter(h→s) · TP=SP 换轴'}]},
+    w:  {sib:['tp','ep'], comm:[{d:'tp', t:'AllGather / Reduce-Scatter · TP 换轴器'}, {d:'ep', t:'AllToAll · EP 分桶'}]},
+    g:  {sib:['tp','ep','dp','edp'], follow:'跟随权重的切法——同一份参数的同一份切分', comm:[{d:'dp', t:'attention / dense 梯度 AllReduce · DP 组（反向末尾一次）'}, {d:'edp', t:function(){ return etpOn ? '专家梯度 AllReduce · EDP 组（ETP=2：专家也切了 TP，副本只在同 TP 片里）' : '专家梯度 AllReduce · EDP 组（ETP=1：TP 对片持有同一份专家，也在组里）'; }}]},
+    opt:{sib:['tp','ep','dp','edp'], follow:'跟随权重的切法', comm:[], silent:'常规 DP 下步内不通信：主参数 / m / v 整份都在本卡，就地更新。'},
+    act:{sib:['tp','ep'], comm:[{d:'tp', t:'AllGather(s→h) / Reduce-Scatter(h→s) · TP=SP 换轴'}, {d:'ep', t:'AllToAll · Router 后按 token 分桶'}, {d:'pp', t:'P2P · Layer 所在 Stage 的边界传递'}, {d:'cp', t:'AllGather(KV) · CP 组（s 被切开，注意力要全局）'}]},
     rsv:{sib:[], comm:[], silent:'不参与任何一把刀，真的不通信。'}
   };
   function memObj(key){
     if(key.indexOf('w:') === 0){
       var id = key.slice(2), cut = (id === 'embed' || id === 'lm_head') ? 'tp' : (({'attn.q':'tp', 'attn.kv':'tp', 'attn.out':'tp', 'router':'none', 'experts':'ep', 'norm×2':'none'})[id] || 'none');
-      /* embed / lm_head 只住一个 stage，ℓ 轴上没有兄弟 */
-      var sib = (id === 'embed' || id === 'lm_head') ? ['tp'] : cut === 'ep' ? ['pp','ep'] : (cut === 'tp' ? ['pp','tp'] : ['pp']);
+      /* 单个张量只高亮真正参与这次切分的 Rank；PP 邻段持有的是别的 Layer，不是这只张量的分片。 */
+      var sib = cut === 'ep' ? ['ep'] : (cut === 'tp' ? ['tp'] : []);
       var cm = cut === 'tp' ? [MEM_OBJ.w.comm[0]] : (cut === 'ep' ? [MEM_OBJ.w.comm[1]] : []);
       return {sib:sib, comm:cm, cut:cut, silent:cm.length ? '' : '这一块一刀没挨（复制或无参），本来就没有「拼回全长」这件事要跟人商量。'};
     }
     return MEM_OBJ[key] || {sib:[], comm:[]};
   }
   function memSibDims(key){ return memObj(key).sib; }
+  /* 一份激活的分析单元是「一个 EDP 实例里的一个 Layer」。本页采用 EP 从 DP 切出的口径：
+     高 1 bit 是 EDP 实例，低 3 bit 是 EP rank；同一份 Layer 激活因此落在 EP8 × TP2
+     的 16 张卡上。PP 只决定 Layer 放在哪段，另一个 EDP 实例则有自己独立的一份激活。 */
+  function sameActivationGroup(a, b){
+    return !!(a && b && a.pp === b.pp && (a.dp>>3) === (b.dp>>3));
+  }
+  function apportion(total, weights, minimum){
+    var n = weights.length, base = minimum || 0, left = Math.max(0,total-base*n), sum = weights.reduce(function(a,x){ return a+x; },0) || 1;
+    var raw = weights.map(function(w){ return left*w/sum; }), out = raw.map(function(x){ return base+Math.floor(x); });
+    var used = out.reduce(function(a,x){ return a+x; },0), order = raw.map(function(x,i){ return {i:i,f:x-Math.floor(x)}; }).sort(function(a,b){ return b.f-a.f || a.i-b.i; });
+    for(var k=0; used<total; k++,used++) out[order[k%order.length].i]++;
+    return out;
+  }
+  function activationPartition(c){
+    var D = CFG, replica = c.dp>>3, weights = [], e;
+    for(e=0;e<D.ep;e++) weights.push(.74 + loadSeed(e,3)*.62);
+    /* 20 个代表格按真实 token 权重线性分配：每个 EP 至少一格，繁忙 EP 会明显更长。 */
+    var tokenCounts = apportion(D.seq,weights,0), visualCounts = apportion(20,weights,1), starts=[], at=0;
+    for(e=0;e<D.ep;e++){ starts.push(at); at += visualCounts[e]; }
+    return {replica:replica, weights:weights, tokens:tokenCounts, cells:visualCounts, starts:starts, visualTotal:at};
+  }
+  /* Router 按每次前向逐步看见 token。每个专家使用不同的单调增长曲线：token 绝对数只增不减，
+     但相对占比允许先大后小、先小后大；最后一拍严格回到 activationPartition() 的最终分布。 */
+  var ACTIVATION_ROUTE_GROWTH = [.58,.92,1.28,.72,1.46,2.15,.84,1.72];
+  function activationPartitionAt(c,forwardProgress){
+    var finalPart = activationPartition(c), p = Math.max(0,Math.min(1,forwardProgress || 0));
+    var raw = finalPart.tokens.map(function(n,e){ return n*Math.pow(p,ACTIVATION_ROUTE_GROWTH[e%ACTIVATION_ROUTE_GROWTH.length]); });
+    var tokens = raw.map(function(n){ return p >= .999999 ? Math.round(n) : Math.floor(n); });
+    var sum = raw.reduce(function(a,n){ return a+n; },0), mix = p <= 0 ? 0 : Math.min(1,p*3);
+    mix = mix*mix*(3-2*mix);
+    var minCell = .65, free = finalPart.visualTotal-minCell*raw.length;
+    var cells = raw.map(function(n){
+      var routedShare = sum > 0 ? n/sum : 1/raw.length;
+      return minCell+free*((1-mix)/raw.length+mix*routedShare);
+    });
+    var starts = [], at = 0; cells.forEach(function(n){ starts.push(at); at += n; });
+    return {replica:finalPart.replica,weights:raw,tokens:tokens,cells:cells,starts:starts,visualTotal:at,progress:p};
+  }
+  /* 每个 F/微批给当前 EP Rank 带来的专家流量不同。用累计曲线在相邻 F 边界的增量
+     还原该微批的相对负载；1 表示八个 EP 桶的平均值，只用于比较在途激活宽度。 */
+  function activationMicrobatchLoad(c,microbatch){
+    var finalPart = activationPartition(c), ep = c.dp & 7, n = Math.max(1,CFG.ga);
+    var p0 = Math.max(0,Math.min(1,microbatch/n)), p1 = Math.max(0,Math.min(1,(microbatch+1)/n));
+    var delta = finalPart.tokens.map(function(tokens,e){
+      var g = ACTIVATION_ROUTE_GROWTH[e%ACTIVATION_ROUTE_GROWTH.length];
+      return tokens*(Math.pow(p1,g)-Math.pow(p0,g));
+    });
+    var avg = delta.reduce(function(a,v){ return a+v; },0)/delta.length || 1;
+    return Math.max(.35,Math.min(2.4,delta[ep]/avg));
+  }
+  function activationMbs(c){
+    var mbs = CFG.mbs;
+    if(c && c.mem) c.mem.forEach(function(s){ if(s.k === 'act' && s.mbs) mbs = s.mbs; });
+    return Math.max(1,mbs);
+  }
+  function activationRank(c, ep, tp){ return c.pp*32 + ((c.dp>>3)*CFG.ep + ep)*CFG.tp + tp; }
+  function activationEpGroup(c, tp){ return c.pp*4 + (c.dp>>3)*2 + tp; }
+  function activationScene(c){
+    var part = activationPartition(c), mbs = activationMbs(c), visualDepth = Math.max(5,mbs);
+    /* Canvas 保留设计系统的尺寸/生命周期；高亮块、框体和切线统一交给同一层 SVG，坐标方向由主图下方的独立等长三轴图例表达。 */
+    return {extent:{columns:part.visualTotal,rows:CFG.tp,depth:visualDepth},
+            axes:{columns:'S/token · '+fmtN(CFG.seq),rows:'H · '+fmtN(CFG.hidden),depth:'B · '+mbs},voxels:[]};
+  }
+  function activationAxisLegendHTML(c){
+    return '<svg class="act-axis-key" viewBox="0 0 132 60" role="img" aria-label="坐标方向与长度：S '+CFG.seq+'，H '+CFG.hidden+'，B '+activationMbs(c)+'">'
+      + '<defs><marker id="actAxisKeyArrow" markerWidth="6" markerHeight="6" refX="5" refY="3" orient="auto" markerUnits="strokeWidth"><path d="M0 0 L6 3 L0 6 Z" fill="var(--fg2)"/></marker></defs>'
+      + '<circle class="axis-origin" cx="17" cy="28" r="2.4"/>'
+      + '<path class="axis-line" marker-end="url(#actAxisKeyArrow)" d="M17 28 L39 28"/><text x="47" y="32"><tspan>S</tspan><tspan class="axis-value"> · '+CFG.seq+'</tspan></text>'
+      + '<path class="axis-line" marker-end="url(#actAxisKeyArrow)" d="M17 28 L17 50"/><text x="26" y="54"><tspan>H</tspan><tspan class="axis-value"> · '+CFG.hidden+'</tspan></text>'
+      + '<path class="axis-line" marker-end="url(#actAxisKeyArrow)" d="M17 28 L32.56 12.44"/><text x="40" y="11"><tspan>B</tspan><tspan class="axis-value"> · '+activationMbs(c)+'</tspan></text>'
+      + '</svg>';
+  }
+  function activationVolumeHTML(c){
+    var part=activationPartition(c),localTokens=part.tokens[c.dp&7],localH=CFG.hidden/CFG.tp;
+    return '<div class="act-volume"><div class="act-volume-stage"><canvas id="actTensorVolume" aria-label="选中 Rank 最终持有的激活 B token H 分片"></canvas><svg class="act-cut-overlay" id="actTensorCuts" aria-hidden="true"></svg></div></div>'
+      + '<div class="act-volume-legends">'+activationAxisLegendHTML(c)
+      + '<div class="act-cut-key"><span style="--cut:var(--ep)"><i></i>EP 切 S/token</span><span style="--cut:var(--tp)"><i></i>TP 切 H</span></div>'
+      + '<span>Rank '+c.r+' 最终持有 · ['+activationMbs(c)+', ≈'+fmtShapeN(localTokens)+' token, '+fmtShapeN(localH)+']</span></div>';
+  }
+  function activationHeatHTML(c){
+    var part = activationPartitionAt(c,0), rows = '';
+    var gridCols = '38px ' + part.cells.map(function(n){ return 'minmax(30px,'+n+'fr)'; }).join(' ');
+    for(var tp=0;tp<CFG.tp;tp++){
+      rows += '<span class="ah at">EP组'+activationEpGroup(c,tp)+'<small>TP'+tp+'</small></span>';
+      for(var ep=0;ep<CFG.ep;ep++){
+        var rank = activationRank(c,ep,tp), on = rank===c.r;
+        rows += '<button type="button" class="act-rank'+(on?' is-current':'')+'" style="--act-heat-color:transparent" data-act-rank="'+rank+'" data-act-ep="'+ep+'" data-act-tp="'+tp+'" aria-pressed="'+on+'" title="EP组'+activationEpGroup(c,tp)+' · TP'+tp+' · 0 token · 0%"><span>R'+rank+'</span><small class="act-token-count">0t</small></button>';
+      }
+    }
+    return '<div class="act-slice-head"><span class="act-slice-title"><b>同实例 Rank 专家 token 热力（EP不等宽切的依据）</b><button type="button" class="act-help" data-act-help aria-expanded="false" aria-controls="actHeatHelp" aria-label="为什么 TP 兄弟 Rank 的专家 token 分布相同" title="解释 TP 兄弟的 Router 与 token 分布">?</button></span></div>'
+      + '<div class="act-help-pop" id="actHeatHelp" hidden>当前 TP=2、ETP=1：r16/r17 这类 TP 兄弟面对同一批逻辑 token；Router 在专家权重分片计算之前产生并在 TP 内保持一致的 Top-K，所以 EP组2/3 虽是两个通信组，同一 EP 位置的 token 数与热度相同。两张卡只分别计算不同的 H 权重分片。只有统计的是 Router 聚合前或 Sequence Parallel 尚未汇聚的本地 token 子集时，本地分布才可能不同。</div>'
+      + '<div class="act-rank-grid" style="grid-template-columns:'+gridCols+'" role="group" aria-label="两组 EP Rank 的 token 热度与 TP 分片">'+rows+'</div>';
+  }
+  function drawActivationCuts(c,routePart){
+    var canvas = document.getElementById('actTensorVolume'), svg = document.getElementById('actTensorCuts');
+    if(!canvas || !svg) return;
+    var rect = canvas.getBoundingClientRect(), width = Math.max(1,rect.width), height = Math.max(1,rect.height);
+    var part = routePart || activationPartition(c), cols = part.visualTotal, rows = CFG.tp, depth = Math.max(5,activationMbs(c));
+    /* 轴名沿线排布，不再为文字单独留出右侧栏，让框体尽量吃满画布。 */
+    var pad = {top:28,right:18,bottom:26,left:22};
+    var innerW = Math.max(1,width-pad.left-pad.right), innerH = Math.max(1,height-pad.top-pad.bottom);
+    var unit = Math.max(3,Math.min(34,innerW/(cols+depth*.52),innerH/(rows+depth*.38)));
+    var dx = unit*.52, dy = unit*.38;
+    var objectW = cols*unit+depth*dx, objectH = rows*unit+depth*dy;
+    var ox = pad.left+Math.max(0,(innerW-objectW)/2), oy = pad.top+depth*dy+Math.max(0,(innerH-objectH)/2);
+    function p(col,row,dep){ return {x:ox+col*unit+dep*dx,y:oy+row*unit-dep*dy}; }
+    function d(points, close){ return points.map(function(q,i){ return (i?'L':'M')+q.x.toFixed(2)+' '+q.y.toFixed(2); }).join(' ')+(close?' Z':''); }
+    var f0=p(0,0,0), f1=p(cols,0,0), f2=p(cols,rows,0), f3=p(0,rows,0);
+    var b0=p(0,0,depth), b1=p(cols,0,depth), b2=p(cols,rows,depth), b3=p(0,rows,depth);
+    var aep = c.dp & 7, s0 = part.starts[aep], s1 = s0+part.cells[aep], h0 = c.tp, h1 = h0+1;
+    /* 高亮块和框线共用 p()：三个可见面正好贴住该 token 段、H 半片与完整 B 深度。 */
+    var out = '<path class="active-top" d="'+d([p(s0,h0,0),p(s1,h0,0),p(s1,h0,depth),p(s0,h0,depth)],true)+'"/>';
+    out += '<path class="active-east" d="'+d([p(s1,h0,0),p(s1,h1,0),p(s1,h1,depth),p(s1,h0,depth)],true)+'"/>';
+    out += '<path class="active-front" d="'+d([p(s0,h0,0),p(s1,h0,0),p(s1,h1,0),p(s0,h1,0)],true)+'"/>';
+    /* 前、上、右三个可见面使用实线；背面/左下隐藏边才降透明度。 */
+    out += '<path class="outer" d="'+d([f0,f1,f2,f3],true)+'"/>';
+    out += '<path class="outer" d="'+d([b0,b1,b2])+'"/><path class="outer muted" d="'+d([b2,b3,b0])+'"/>';
+    out += '<path class="outer" d="'+d([f0,b0])+'"/><path class="outer" d="'+d([f1,b1])+'"/><path class="outer" d="'+d([f2,b2])+'"/><path class="outer muted" d="'+d([f3,b3])+'"/>';
+    for(var ep=1;ep<CFG.ep;ep++){
+      var cut = part.starts[ep];
+      out += '<path class="ep-cut" d="'+d([p(cut,0,0),p(cut,rows,0)])+'"/>';
+      out += '<path class="ep-cut muted" d="'+d([p(cut,0,depth),p(cut,rows,depth)])+'"/>';
+      out += '<path class="ep-cut" d="'+d([p(cut,0,0),p(cut,0,depth)])+'"/>';
+      out += '<path class="ep-cut muted" d="'+d([p(cut,rows,0),p(cut,rows,depth)])+'"/>';
+    }
+    for(var tp=1;tp<CFG.tp;tp++){
+      out += '<path class="tp-cut" d="'+d([p(0,tp,0),p(cols,tp,0)])+'"/>';
+      out += '<path class="tp-cut muted" d="'+d([p(0,tp,depth),p(cols,tp,depth)])+'"/>';
+      out += '<path class="tp-cut muted" d="'+d([p(0,tp,0),p(0,tp,depth)])+'"/>';
+      out += '<path class="tp-cut" d="'+d([p(cols,tp,0),p(cols,tp,depth)])+'"/>';
+    }
+    svg.setAttribute('viewBox','0 0 '+width.toFixed(2)+' '+height.toFixed(2));
+    svg.innerHTML = out;
+  }
+  function mountActivationVolume(c){
+    var canvas = document.getElementById('actTensorVolume');
+    if(!canvas || !window.PtoTensorVolumeCanvas) return;
+    var renderer = window.PtoTensorVolumeCanvas.render(canvas,activationScene(c),{
+      ariaLabel:'EDP 实例 '+(c.dp>>3)+' 的 Layer 激活 [B '+activationMbs(c)+', S '+CFG.seq+', H '+CFG.hidden+']，当前高亮 Rank '+c.r,
+      padding:{top:28,right:18,bottom:26,left:22},showAxes:false,autoLabelDensity:false
+    });
+    function routePart(){ return activationCycleState && activationCycleState.rank === c.r ? activationPartitionAt(c,activationCycleState.forwardProgress) : activationPartition(c); }
+    var cutFrame = requestAnimationFrame(function(){ drawActivationCuts(c,routePart()); }), cutObserver = null;
+    if(typeof ResizeObserver === 'function'){
+      cutObserver = new ResizeObserver(function(){ cancelAnimationFrame(cutFrame); cutFrame = requestAnimationFrame(function(){ drawActivationCuts(c,routePart()); }); });
+      cutObserver.observe(canvas.parentElement);
+    }
+    actVolumeController = {destroy:function(){ renderer.destroy(); if(cutObserver) cutObserver.disconnect(); cancelAnimationFrame(cutFrame); }};
+  }
+  /* 第 8 步右栏与底部 Layer 周期共用同一个时钟。外框 B/S/H 保持固定；每次 F 继续累积
+     Router 已观察到的 token，因此 EP 刀位、Rank 热力与计数只在 F 中发展，B/U 阶段保持。 */
+  function updateActivationCycle(state){
+    activationCycleState = state || null;
+    if(!state || memDetailEl.hidden || memSel !== 'act') return;
+    var total = Math.max(1,state.totalSlots || 1), active = Math.max(0,Math.min(total,state.activeSlots || 0));
+    var level = active/total, progress = Math.max(0,Math.min(1,state.progress || 0));
+    var pulse = state.wait ? 0 : Math.sin(Math.PI*progress);
+    var c = cards[state.rank], route = c ? activationPartitionAt(c,state.forwardProgress) : null;
+    var root = memDetailBodyEl.querySelector('[data-cycle-detail]');
+    if(root){
+      var activeLevel = active > 0 ? .35+.65*level : .08;
+      root.style.setProperty('--cycle-phase-opacity',Math.min(1,activeLevel+.14*pulse).toFixed(3));
+    }
+    var phaseText = memDetailBodyEl.querySelector('[data-cycle-readout] span');
+    if(phaseText) phaseText.textContent = state.wait ? '流水线气泡 · 激活保持' : (state.phase === 'f' ? '前向 · 写入激活' : (state.phase === 'b' ? '反向 · 释放激活' : '更新 · 激活已释放'));
+    var volume = memDetailBodyEl.querySelector('.act-volume-stage');
+    if(volume){
+      volume.style.setProperty('--cycle-act-opacity',(active > 0 ? .3+.7*level : .08).toFixed(3));
+      volume.style.setProperty('--cycle-saturation',(active > 0 ? 1 : .18).toFixed(2));
+      volume.setAttribute('data-cycle-phase',state.phase || 'idle');
+      if(c && route) drawActivationCuts(c,route);
+    }
+    var heat = memDetailBodyEl.querySelector('.act-rank-grid');
+    if(heat && c && route){
+      heat.style.gridTemplateColumns = '38px '+route.cells.map(function(n){ return 'minmax(30px,'+n.toFixed(4)+'fr)'; }).join(' ');
+      heat.style.setProperty('--cycle-heat-opacity','1');
+      heat.style.setProperty('--cycle-saturation','1');
+      heat.setAttribute('data-cycle-phase',state.phase || 'idle');
+      var maxTokens = Math.max.apply(Math,route.tokens.concat([1]));
+      Array.prototype.forEach.call(heat.querySelectorAll('.act-rank'),function(button){
+        var ep = +button.getAttribute('data-act-ep'), tp = +button.getAttribute('data-act-tp'), count = route.tokens[ep] || 0;
+        var pct = count/CFG.seq*100, color = count > 0 ? activationHeatColor(count/maxTokens) : 'transparent';
+        button.style.setProperty('--act-heat-color',color);
+        var countEl = button.querySelector('.act-token-count'); if(countEl) countEl.textContent = fmtN(count)+'t';
+        button.title = 'EP组'+activationEpGroup(c,tp)+' · TP'+tp+' · '+fmtN(count*activationMbs(c))+' token · '+pct.toFixed(1)+'%';
+      });
+    }
+    var slots = memDetailBodyEl.querySelectorAll('.act-inflight-slot'), live = (state.inflight || []).filter(function(x){ return x.occupancy > .001; });
+    if(live.length > total) live = live.slice(live.length-total);
+    var slotLayout = [], slotWeight = 0;
+    for(var si=0;si<total;si++){
+      var mb = live[si] || null, load = mb && c ? activationMicrobatchLoad(c,mb.m) : 1;
+      /* 已填槽宽度 = 专家 token 相对负载 × 当前 F/B 留存比例；空槽保持彼此等宽。 */
+      var weight = mb ? Math.max(.18,load*mb.occupancy) : 1;
+      slotLayout.push({mb:mb,load:load,weight:weight}); slotWeight += weight;
+    }
+    var slotX = 0, slotViewW = 200, dividerXs = [];
+    Array.prototype.forEach.call(slots,function(slot,i){
+      var item = slotLayout[i] || {mb:null,load:1,weight:1}, on = !!item.mb;
+      var sw = slotViewW*item.weight/Math.max(.001,slotWeight);
+      slot.setAttribute('x',(slotX+.5).toFixed(2)); slot.setAttribute('width',Math.max(1,sw-1).toFixed(2)); slotX += sw;
+      if(i < total-1) dividerXs.push(slotX);
+      slot.style.fill = on ? MEMC.act : 'transparent';
+      slot.style.fillOpacity = on ? (.38+.57*item.mb.occupancy).toFixed(2) : '0';
+      slot.style.stroke = 'none';
+      slot.setAttribute('aria-label',on ? 'μb'+item.mb.m+' · 专家流量 '+item.load.toFixed(2)+'× · 留存 '+Math.round(item.mb.occupancy*100)+'%' : '空槽');
+    });
+    Array.prototype.forEach.call(memDetailBodyEl.querySelectorAll('.act-inflight-divider'),function(line,i){
+      var dx = dividerXs[i] == null ? 0 : dividerXs[i]; line.setAttribute('x1',dx.toFixed(2)); line.setAttribute('x2',dx.toFixed(2));
+    });
+    var slotSvg = memDetailBodyEl.querySelector('.act-inflight-svg');
+    if(slotSvg) slotSvg.setAttribute('aria-label','当前 '+live.length+' 份在途激活；填色宽度按各微批专家 token 流量，空槽等宽');
+    var phase = state.phase || 'idle';
+    Array.prototype.forEach.call(memDetailBodyEl.querySelectorAll('.mem-chain-row'),function(row){
+      var current = row.getAttribute('data-cycle-phase') === phase;
+      row.classList.toggle('is-cycle-current',current);
+      row.style.opacity = current ? (.72 + .28*pulse).toFixed(3) : '';
+    });
+  }
   /* 这一维在本配置下有没有落刀：cp=1 那一刀没落下 */
   function dimLive(d){ return (d === 'ep' || d === 'edp') ? CFG.ep > 1 : CFG[d] > 1; }
   /* 本卡沿某根轴的兄弟：同组、不是自己 */
@@ -1852,7 +2648,8 @@
       'g|dp': {grain:'副本之间 · 同一张量的多份', tensor:'本段参数的梯度 ∇W', layout:D.dp + ' 个副本各一份完整的偏导 → 各卡同一份，已求和', effect:'<b>值变（求和），layout 与归属都不变</b>'},
       'act|pp': {grain:'段与段之间 · 换一张卡', tensor:'段边界的激活', layout:'[1, ' + s + ', ' + h + '] 同一个张量，换了张卡', effect:'<b>归属换卡，layout 不变</b>——五条边里唯一不改形状的一条'},
       'act|cp': {grain:'分块之间 · 序列被切开的那几段', tensor:'K / V', layout:'本卡那一段序列的 KV → 全序列 KV', effect:'分片 → 完整；<b>只发生在 attention</b>'},
-      'act|tp': {grain:'分块之间 · 换轴（s ↔ h）', tensor:'层间激活', layout:'SP 段 [1, ' + fmtN(D.seq/D.tp) + ', ' + h + '] → TP 段 [1, ' + s + ', ' + h + ']', effect:'<b>换轴</b>：序列维 ↔ 隐藏维'}
+      'act|tp': {grain:'分块之间 · 换轴（s ↔ h）', tensor:'层间激活', layout:'SP 段 [1, ' + fmtN(D.seq/D.tp) + ', ' + h + '] → TP 段 [1, ' + s + ', ' + h + ']', effect:'<b>换轴</b>：序列维 ↔ 隐藏维'},
+      'act|ep': {grain:'分块之间 · Router 后按 token 重排', tensor:'MoE 输入激活', layout:'[B, S, H] → 按目的专家聚成 ' + D.ep + ' 个不等长 token 桶', effect:'<b>S/token 归属重分配</b>：桶宽由路由结果决定，不由专家数决定'}
     };
     return T[K + '|' + d] || null;
   }
@@ -1901,21 +2698,23 @@
   }
   /* 体腔小图：一格 = 一份，填实的那格就是本卡持有的。ax = {nx, ix, lx, ny, iy, ly, c} */
   function cavityGrid(ax){
-    var BW = 200, BH = 52, PAD = 18, nx = Math.max(1, ax.nx), ny = Math.max(1, ax.ny);
-    var cw = BW/nx, ch = BH/ny, fine = cw >= 3 && ch >= 3, cells = '';
+    var compact = !!ax.compact, BW = 200, BH = compact ? 18 : 52, PAD = compact ? 0 : 18, nx = Math.max(1, ax.nx), ny = Math.max(1, ax.ny);
+    var cw = BW/nx, ch = BH/ny, fine = cw >= 3 && ch >= 3, cells = '', dividers = '';
     if(fine){
       for(var y = 0; y < ny; y++) for(var x = 0; x < nx; x++){
-        var on = (x === ax.ix && y === ax.iy);
-        cells += '<rect x="' + (x*cw + 0.5).toFixed(1) + '" y="' + (y*ch + 0.5).toFixed(1) + '" width="' + (cw - 1).toFixed(1) + '" height="' + (ch - 1).toFixed(1)
-          + '" style="fill:' + (on ? ax.c : 'transparent') + ';stroke:' + (on ? 'none' : 'var(--line)') + ';stroke-width:.5' + (on ? '' : ';stroke-dasharray:2 2') + '"/>';
+        var on = ax.fill != null ? x < ax.fill : (x === ax.ix && y === ax.iy), cycleClass = ax.cycle ? ' class="act-inflight-slot" data-cycle-slot="'+x+'"' : '';
+        cells += '<rect'+cycleClass+' x="' + (x*cw + 0.5).toFixed(1) + '" y="' + (y*ch + 0.5).toFixed(1) + '" width="' + (cw - 1).toFixed(1) + '" height="' + (ch - 1).toFixed(1)
+          + '" style="fill:' + (on ? ax.c : 'transparent') + ';stroke:' + (ax.cycle ? 'none' : (on ? 'none' : 'var(--line)')) + ';stroke-width:.5' + (on || ax.cycle ? '' : ';stroke-dasharray:2 2') + '"/>';
       }
+      if(ax.cycle) for(var cut=1;cut<nx;cut++) dividers += '<line class="act-inflight-divider" x1="'+(cut*cw).toFixed(1)+'" y1="0" x2="'+(cut*cw).toFixed(1)+'" y2="'+BH+'" style="stroke:var(--fg3);stroke-width:.9;stroke-dasharray:3 2"/>';
     } else {
       cells += '<rect x="0.5" y="0.5" width="' + (BW - 1) + '" height="' + (BH - 1) + '" style="fill:none;stroke:var(--line);stroke-width:.5;stroke-dasharray:2 2"/>'
         + '<rect x="' + (ax.ix*cw).toFixed(1) + '" y="' + (ax.iy*ch).toFixed(1) + '" width="' + Math.max(1.5, cw).toFixed(1) + '" height="' + Math.max(1.5, ch).toFixed(1) + '" style="fill:' + ax.c + ';stroke:none"/>';
     }
-    return '<svg width="' + (BW + PAD + 30) + '" height="' + (BH + 15) + '" style="margin:2px 0 1px;overflow:visible"><g transform="translate(1,1)">' + cells
+    var svgW = BW + PAD + 30, svgClass = ax.cycle ? ' class="act-inflight-svg" width="100%" viewBox="0 0 '+(BW+2)+' '+(BH+15)+'" preserveAspectRatio="none"' : ' width="'+svgW+'"';
+    return '<svg'+svgClass+' height="' + (BH + 15) + '" style="margin:2px 0 1px;overflow:visible"><g transform="translate(1,1)">' + cells + dividers
       + '<rect x="0" y="0" width="' + BW + '" height="' + BH + '" style="fill:none;stroke:var(--fg3);stroke-width:.9;stroke-dasharray:3 2"/></g>'
-      + '<text x="' + (BW + 6) + '" y="' + (BH/2 + 4) + '" style="font-size:9.5px;fill:var(--fg3)">' + esc(ax.ly) + (ny > 1 ? '×' + ny : '') + '</text>'
+      + (compact ? '' : '<text x="' + (BW + 6) + '" y="' + (BH/2 + 4) + '" style="font-size:9.5px;fill:var(--fg3)">' + esc(ax.ly) + (ny > 1 ? '×' + ny : '') + '</text>')
       + '<text x="0" y="' + (BH + 13) + '" style="font-size:9.5px;fill:var(--fg3)">' + esc(ax.lx) + (nx > 1 ? '×' + nx : '') + '</text></svg>';
   }
   /* 权重构成改为排序列表：数字保持真实，极小项也有最小可见标记，不再退化成一根 experts 纯色条。 */
@@ -1974,19 +2773,302 @@
       {lab:'更新', a:['opt','优化器态'], o:'+', b:['g','梯度 ∇W'], c:['w','W(t+1)']}
     ].forEach(function(r, i){
       var y = TOP + i*ROW;
-      out += rowLab(y, r.lab) + cell(A, y, Wd, r.a[0], r.a[1]) + op(A + Wd + 7, y, r.o) + cell(B, y, Wd, r.b[0], r.b[1]) + op(B + Wd + 10, y, '→') + cell(Cc, y, Wd + 8, r.c[0], r.c[1]);
+      var ph = i === 0 ? 'f' : (i === 1 ? 'b' : 'u');
+      out += '<g class="mem-chain-row" data-cycle-phase="'+ph+'">' + rowLab(y, r.lab) + cell(A, y, Wd, r.a[0], r.a[1]) + op(A + Wd + 7, y, r.o) + cell(B, y, Wd, r.b[0], r.b[1]) + op(B + Wd + 10, y, '→') + cell(Cc, y, Wd + 8, r.c[0], r.c[1]) + '</g>';
     });
     var yB = TOP + 2*ROW + CH/2, xR = Cc + Wd + 8 + 5, xW = B + Wd/2, yU = 9;
     out += '<path d="M' + xR.toFixed(1) + ' ' + yB + ' H' + (xR + 8).toFixed(1) + ' V' + yU + ' H' + xW.toFixed(1) + ' V' + (TOP - 4) + '" style="fill:none;stroke:var(--fg3);stroke-width:.7;stroke-dasharray:3 2"/>'
       + '<path d="M' + (xW - 2.6).toFixed(1) + ' ' + (TOP - 4.5) + ' L' + xW.toFixed(1) + ' ' + (TOP - 0.5) + ' L' + (xW + 2.6).toFixed(1) + ' ' + (TOP - 4.5) + ' z" style="fill:var(--fg3)"/>'
       + '<text x="' + (xW + 6).toFixed(1) + '" y="' + (yU - 1.5) + '" style="font-size:7.5px;fill:var(--fg3)">下一步的 W</text>';
-    return '<svg width="' + (xR + 12).toFixed(0) + '" height="' + (TOP + 2*ROW + CH + 4) + '" style="margin:2px 0 0;overflow:visible">' + out + '</svg>';
+    return '<svg class="mem-chain-svg is-cycle-driven" width="' + (xR + 12).toFixed(0) + '" height="' + (TOP + 2*ROW + CH + 4) + '" style="margin:2px 0 0;overflow:visible">' + out + '</svg>';
   }
-  function memBlockDetail(c, key){
+  function activationDetailHTML(c){
+    var D = CFG, p = c.pp, sg = null; c.mem.forEach(function(x){ if(x.k === 'act') sg = x; });
+    if(!sg) return '';
+    var live = step === 7 && cycleMem && cycleMem[c.r] ? cycleMem[c.r] : c.mem, actBytes = sg.bytes;
+    live.forEach(function(x){ if(x.k === 'act') actBytes = x.bytes; });
+    var mub = Math.max(1,Math.min(D.pp,D.ga)-p), apart = activationPartition(c), aep = c.dp & 7;
+    var layerStart=p*LPS,layerEnd=(p+1)*LPS-1;
+    var analysis = 'EDP 实例 '+(c.dp>>3)+' · Rank '+c.r+' · PP'+p+' 的 Layer '+layerStart+'–'+layerEnd+' 在途激活汇总';
+    var localTokens=apart.tokens[aep],localH=D.hidden/D.tp;
+    var representative = '立体图高亮选中 Rank 最终持有的本地激活分片 <b>['+sg.mbs+', ≈'+fmtShapeN(localTokens)+' token, '+fmtShapeN(localH)+']</b>；token 数随 Router 分配变化。';
+    var shard = 'EP组'+activationEpGroup(c,c.tp)+' 中本 Rank 收到约 <b>'+fmtN(apart.tokens[aep]*sg.mbs)+' token</b>（'+(apart.tokens[aep]/D.seq*100).toFixed(1)+'%）；TP'+c.tp+' 取得 H['+fmtN(c.tp*(D.hidden/D.tp))+'…'+fmtN((c.tp+1)*(D.hidden/D.tp)-1)+']';
+    var inflight = cavityGrid({nx:mub,ix:0,fill:0,lx:'in-flight μb',ny:1,iy:0,ly:'',c:MEMC.act,compact:true,cycle:true});
+    var chain = memChainFig('act');
+    return '<div class="rm-d act-detail activation-detail" data-cycle-detail style="--rmc:'+MEMC.act+'">'
+      + '<section class="act-primary"><div class="act-layer-context"><b>Layer '+layerStart+'–'+layerEnd+'</b></div><strong class="act-big" data-act-memory data-detail-memory="act">'+fmtGB(actBytes)+' GB</strong><div class="opt-primary-status"><span class="mem-cycle-readout" data-cycle-readout><i></i><span>等待周期</span></span></div><div class="act-primary-figure">'+activationVolumeHTML(c)+'</div></section>'
+      + '<details class="act-more"><summary>更多观测</summary><div class="act-more-body">'
+      + '<dl><dt>汇总口径</dt><dd>'+analysis+'</dd><dt>切分图口径</dt><dd>'+representative+'</dd><dt>本卡分片</dt><dd>'+shard+'</dd></dl>'
+      + '<figure class="rm-fig">'+activationHeatHTML(c)+'</figure>'
+      + '<figure class="rm-fig"><h4 class="rm-fig-title">在途激活/总槽位</h4>'+inflight+'<figcaption class="rm-cap">填色宽度 = 各在途 μb 在本 Rank 的专家激活相对大小；空槽彼此等宽</figcaption></figure>'
+      + '<figure class="rm-fig"><h4 class="rm-fig-title">计算关系链</h4>'+chain+'<figcaption class="rm-cap">前向留下、反向消费；高亮行跟随当前计算阶段。</figcaption></figure>'
+      + '</div></details></div>';
+  }
+  function memoryDetailBytes(c,key){
+    if(key.indexOf('w:') === 0){
+      var block = null, id = key.slice(2), weight = c.mem[0];
+      if(weight && weight.sub) weight.sub.forEach(function(x){ if(x.id === id) block = x; });
+      return block ? block.bytes : 0;
+    }
+    var live = step === 7 && cycleMem && cycleMem[c.r] ? cycleMem[c.r] : c.mem, bytes = 0;
+    live.forEach(function(x){ if(x.k === key) bytes = x.bytes; });
+    return bytes;
+  }
+  /* 二维权重的统一口径：Canvas extent 始终保留全局真实 shape；每个缩略格固定覆盖
+     512×512 个源元素。于是 [4096,2048] 固定得到 8×4 格，不同 tensor 共享同一量尺；
+     若它是全局张量的一半，就在完整格阵里画出切线并只给本 Rank 一侧着绿色。 */
+  function memoryTensorInfo(c,key){
+    var D = CFG, sub = key.indexOf('w:') === 0 ? key.slice(2) : 'experts', base = {
+      'attn.q':  {name:'attn.q.weight',dims:[D.hidden,D.heads*HD],localDims:[D.hidden,D.heads/D.tp*HD],axes:{rows:'输入 H',columns:'Q 输出'},cut:'tp',cutAxis:'columns',splits:D.tp,index:c.tp,rule:'TP 沿 Q 输出列切分'},
+      'attn.kv': {name:'attn.kv.weight',dims:[D.hidden,2*D.kv*HD],localDims:[D.hidden,2*D.kv/D.tp*HD],axes:{rows:'输入 H',columns:'KV 头'},cut:'tp',cutAxis:'columns',splits:D.tp,index:c.tp,rule:'TP 沿 KV 输出列切分'},
+      'attn.out':{name:'attn.out.weight',dims:[D.heads*HD,D.hidden],localDims:[D.heads/D.tp*HD,D.hidden],axes:{rows:'输入分片',columns:'输出 H'},cut:'tp',cutAxis:'rows',splits:D.tp,index:c.tp,rule:'TP 沿输入行切分'},
+      'router':  {name:'router.weight',dims:[D.hidden,D.experts],localDims:[D.hidden,D.experts],axes:{rows:'输入 H',columns:'Expert'},cut:'none',cutAxis:null,splits:1,index:0,rule:'本实例内复制，不切分'},
+      'experts': {name:'experts.Gate.weight · 单 Expert',dims:[D.hidden,D.ffn],localDims:[D.hidden,D.ffn/D.etp],axes:{rows:'输入 H',columns:'FFN'},cut:D.etp>1?'tp':'none',cutAxis:D.etp>1?'columns':null,splits:D.etp,index:D.etp>1?c.tp:0,collectionCut:'ep',logicalShape:'['+D.experts+', 3, '+fmtShapeN(D.hidden)+', '+fmtShapeN(D.ffn)+']',rule:'EP 切的是 Expert 列表；本 Rank 持有 '+(D.experts/D.ep)+' 个 Expert 的 Gate / Up / Down。ETP='+D.etp+(D.etp>1?'，每张矩阵再沿 FFN 列切分':'，每张 [H,F] 矩阵内部不再切')},
+      'norm×2': {name:'norm.weight ×2',dims:[D.hidden],localDims:[D.hidden],axes:{rows:'H',columns:''},cut:'none',cutAxis:null,splits:1,index:0,rule:'两条一维向量在本实例内复制，不切分'},
+      'embed':   {name:'embedding.weight',dims:[D.vocab,D.hidden],localDims:[Math.ceil(D.vocab/D.tp),D.hidden],axes:{rows:'词表',columns:'H'},cut:'tp',cutAxis:'rows',splits:D.tp,index:c.tp,rule:'TP 沿词表行分片'},
+      'lm_head': {name:'lm_head.weight',dims:[D.hidden,D.vocab],localDims:[D.hidden,Math.ceil(D.vocab/D.tp)],axes:{rows:'H',columns:'词表'},cut:'tp',cutAxis:'columns',splits:D.tp,index:c.tp,rule:'TP 沿词表列分片'}
+    }[sub];
+    if(!base) return null;
+    var parent = key.indexOf('w:') !== 0, prefix = key === 'g' ? '∇' : '', suffix = key === 'opt' ? '.m（代表状态张量）' : '';
+    base = Object.assign({},base);
+    base.id = sub;
+    base.name = key === 'opt' ? 'experts.m' : prefix+base.name+suffix;
+    base.dtype = key === 'opt' ? 'fp32' : 'bf16';
+    base.shape='['+base.dims.map(fmtShapeN).join(', ')+']';
+    base.local='['+base.localDims.map(fmtShapeN).join(', ')+']'+(base.collectionCut?' × '+(D.experts/D.ep)+' experts x Gate/Up/Down':'');
+    base.rank=c.r;
+    base.parent = parent;
+    base.parentLabel = key === 'w' ? '权重总量' : (key === 'g' ? '梯度总量' : (key === 'opt' ? '优化器状态总量' : '张量分块'));
+    return base;
+  }
+  function matrixGridPlan(info,unit){
+    if(!info||!info.dims||info.dims.length!==2) return null;
+    var local=info.localDims||info.dims; unit=unit||512;
+    return {unit:unit,
+      localRows:Math.max(1,Math.ceil(local[0]/unit)),localColumns:Math.max(1,Math.ceil(local[1]/unit)),
+      rows:Math.max(1,Math.ceil(info.dims[0]/unit)),columns:Math.max(1,Math.ceil(info.dims[1]/unit))};
+  }
+  function matrixCutTone(cut){return cut==='ep'?'fusion':cut==='pp'?'compute':'input';}
+  function matrixAxisSpans(length,unit,boundaries){
+    var points=[0,length],p;
+    for(p=unit;p<length;p+=unit) points.push(p);
+    (boundaries||[]).forEach(function(x){if(x>0&&x<length)points.push(x);});
+    points.sort(function(a,b){return a-b;});
+    var unique=points.filter(function(x,i){return !i||x!==points[i-1];});
+    return unique.slice(0,-1).map(function(x,i){return {at:x,span:unique[i+1]-x};});
+  }
+  function memoryMatrixScene(info,displayExtent,unit){
+    var plan=matrixGridPlan(info,unit),cuts=[],boundaries=[];
+    if(info.cutAxis) for(var i=1;i<info.splits;i++){
+      var at=info.dims[info.cutAxis==='rows'?0:1]*i/info.splits;
+      cuts.push({axis:info.cutAxis,at:at,tone:matrixCutTone(info.cut)}); boundaries.push(at);
+    }
+    var rowUnit=displayExtent?info.dims[0]/displayExtent.rows:plan.unit,columnUnit=displayExtent?info.dims[1]/displayExtent.columns:plan.unit;
+    var rowSpans=matrixAxisSpans(info.dims[0],rowUnit,info.cutAxis==='rows'?boundaries:[]),columnSpans=matrixAxisSpans(info.dims[1],columnUnit,info.cutAxis==='columns'?boundaries:[]),cells=[];
+    var r0=0,r1=info.dims[0],c0=0,c1=info.dims[1];
+    if(info.cutAxis==='rows'){r0=info.dims[0]*info.index/info.splits;r1=info.dims[0]*(info.index+1)/info.splits;}
+    if(info.cutAxis==='columns'){c0=info.dims[1]*info.index/info.splits;c1=info.dims[1]*(info.index+1)/info.splits;}
+    rowSpans.forEach(function(row){columnSpans.forEach(function(column){
+      var midRow=row.at+row.span/2,midColumn=column.at+column.span/2,owned=midRow>=r0&&midRow<r1&&midColumn>=c0&&midColumn<c1;
+      cells.push({row:row.at,column:column.at,rowSpan:row.span,columnSpan:column.span,style:'value',tone:owned?'output':'neutral',states:owned?[]:['muted']});
+    });
+    });
+    return {extent:{rows:info.dims[0],columns:info.dims[1]},axes:info.axes,cells:cells,cuts:cuts};
+  }
+  function memoryTensorHTML(info){
+    if(info.dims.length!==2) return '<div class="mem-nontensor"><div class="mem-nontensor-track"><i style="flex:1"></i></div><div class="mem-nontensor-label"><span>一维张量（向量） · '+esc(info.shape)+'</span></div></div>';
+    var cutSummary='',tall=info.dims[0]/Math.max(1,info.dims[1])>=8?' is-tall':'';
+    if(info.cut!=='none') cutSummary='<span style="--cut:'+VC[info.cut]+'"><i class="tensor-cut-mark"></i>'+DIMN[info.cut]+' 切 '+esc(info.axes[info.cutAxis])+'</span>';
+    else if(info.collectionCut) cutSummary='<span style="--cut:'+VC[info.collectionCut]+'"><i class="tensor-cut-mark"></i>'+DIMN[info.collectionCut]+' 切 Expert 列表 · 矩阵内部不切</span>';
+    else cutSummary='<span style="--cut:var(--fg3)"><i class="tensor-cut-mark is-none"></i>本实例内复制 · 无切线</span>';
+    return '<div class="tensor-matrix-stage'+tall+'"><canvas id="memTensorMatrix" aria-label="'+esc(info.name)+' 二维张量切分"></canvas></div>'
+      +'<div class="tensor-matrix-meta"><span>'+(info.collectionCut?'单专家 ':'全局 ')+esc(info.shape)+'</span>'+cutSummary+'<span>Rank '+info.rank+' · '+esc(info.local)+'</span></div>';
+  }
+  function mountMemoryTensorVolume(c,key){
+    var info=memoryTensorInfo(c,key),canvas=document.getElementById('memTensorMatrix');
+    if(!info||!canvas||!window.PtoMatrixCanvas||info.dims.length!==2)return;
+    var renderer=window.PtoMatrixCanvas.render(canvas,memoryMatrixScene(info,null,256),{ariaLabel:info.name+' '+info.shape+'；Rank '+c.r+' '+info.local,showAxes:true,showGrid:true,interactive:false,showTooltip:false,minZoom:.0001,padding:{top:12,right:16,bottom:30,left:44},cellStrokeAlpha:.12,cutColor:info.cut==='tp'?VC.tp:undefined});
+    canvas.tabIndex=-1; canvas.setAttribute('role','img');
+    actVolumeController=renderer;
+  }
+  function detailPhaseState(key,phase,bytes){
+    var K=key.indexOf('w:')===0?'w':key, active=.24, label='整步常驻';
+    if(K==='w'){ active=phase==='u'?.72:.9; label=phase==='f'?'前向 · 读取权重':(phase==='b'?'反向 · 读取权重':'更新 · 写回下一步权重'); }
+    else if(K==='g'){ active=phase==='b'?1:(phase==='u'?.82:.2); label=phase==='b'?'反向 · 写入梯度':(phase==='u'?'更新 · 消费梯度':'前向 · 缓冲区已预留'); }
+    else if(K==='opt'){ active=phase==='u'?1:.22; label=phase==='u'?'更新中':'等待中'; }
+    else if(K==='otmp'){ active=phase==='u'&&bytes>0?1:.08; label=bytes>0?'更新 · 临时工作区增长':'当前未分配临时区'; }
+    else if(K==='rsv'){ active=.3; label='整步常驻 · 不随算子阶段释放'; }
+    return {active:active,label:label};
+  }
+  function updateMemoryDetailCycle(state){
+    activationCycleState=state||null;
+    if(!state || memDetailEl.hidden || !memSel) return;
+    if(memSel==='act'){ updateActivationCycle(state); return; }
+    var c=cards[state.rank]; if(!c) return;
+    var bytes=memoryDetailBytes(c,memSel), big=memDetailBodyEl.querySelector('[data-detail-memory]');
+    if(big) big.textContent=fmtMem(bytes);
+    var phase=state.phase||'idle', ps=detailPhaseState(memSel,phase,bytes), pulse=state.wait?0:Math.sin(Math.PI*Math.max(0,Math.min(1,state.progress||0)));
+    var root=memDetailBodyEl.querySelector('[data-cycle-detail]');
+    if(root){ root.setAttribute('data-cycle-phase',phase); root.style.setProperty('--cycle-phase-opacity',Math.min(1,ps.active+.16*pulse).toFixed(3)); root.style.setProperty('--cycle-tensor-opacity',(.34+.66*ps.active).toFixed(3)); root.style.setProperty('--cycle-saturation',(.25+.75*ps.active).toFixed(3)); }
+    var readout=memDetailBodyEl.querySelector('[data-cycle-readout] span'); if(readout) readout.textContent=ps.label;
+    Array.prototype.forEach.call(memDetailBodyEl.querySelectorAll('.mem-chain-row'),function(row){ row.classList.toggle('is-cycle-current',row.getAttribute('data-cycle-phase')===phase); });
+  }
+  function parameterTensorRows(c,key){
+    var D=CFG, out=[],expertRows=[],byteScale=key==='opt'?2:1;
+    c.mem[0].sub.forEach(function(block){
+      if(block.id==='experts'){
+        ['gate','up','down'].forEach(function(projection){
+          var info=optimizerExpertInfo(c,'',projection);
+          expertRows.push({id:'experts.'+projection,label:'experts.'+(projection.charAt(0).toUpperCase()+projection.slice(1)),repeat:'× '+(D.experts/D.ep)+'E × '+LPS+' Layer',instances:(D.experts/D.ep)*LPS,dims:info.dims,localDims:info.localDims,shape:info.shape,local:info.local,cut:info.cut,cutAxis:info.cutAxis,splits:info.splits,index:info.index,axes:info.axes,collectionCut:'ep',collectionSplits:D.ep,collectionIndex:c.dp&7,bytes:block.bytes*byteScale/3});
+        });
+        return;
+      }
+      var repeated=block.id!=='embed'&&block.id!=='lm_head', repeat=repeated?'× '+LPS+' Layer':'', instances=repeated?LPS:1, info=memoryTensorInfo(c,'w:'+block.id);
+      if(block.id==='norm×2'){
+        out.push({id:'attn_norm',label:'attn_norm',repeat:repeat,instances:instances,dims:[D.hidden],localDims:[D.hidden],shape:'['+fmtN(D.hidden)+']',local:'['+fmtN(D.hidden)+']',cut:'none',cutAxis:null,splits:1,index:0,axes:{rows:'H',columns:''},bytes:block.bytes*byteScale/2});
+        out.push({id:'ffn_norm',label:'ffn_norm',repeat:repeat,instances:instances,dims:[D.hidden],localDims:[D.hidden],shape:'['+fmtN(D.hidden)+']',local:'['+fmtN(D.hidden)+']',cut:'none',cutAxis:null,splits:1,index:0,axes:{rows:'H',columns:''},bytes:block.bytes*byteScale/2});
+      } else out.push({id:block.id,label:block.id==='embed'?'embedding.weight':block.id,repeat:repeat,instances:instances,dims:info.dims,localDims:info.localDims,shape:info.shape,local:info.local,cut:info.cut,cutAxis:info.cutAxis,splits:info.splits,index:info.index,axes:info.axes,bytes:block.bytes*byteScale});
+    });
+    return out.concat(expertRows);
+  }
+  function optimizerTensorRows(c){ return parameterTensorRows(c,'opt'); }
+  function optimizerAxisNames(row){
+    return {
+      'attn.q':['H','Q'], 'attn.kv':['H','KV'], 'attn.out':['Attn','H'], router:['H','Expert'],
+      embed:['词表','H'], lm_head:['H','词表'], 'experts.gate':['H','FFN'],
+      'experts.up':['H','FFN'], 'experts.down':['H','FFN'], attn_norm:['','H'], ffn_norm:['','H']
+    }[row.id] || [row.axes.rows,row.axes.columns];
+  }
+  function optimizerRowGroup(row){
+    if(row.collectionCut==='ep')return 'ep';
+    return row.cut==='tp'?'tp':'full';
+  }
+  function optimizerShapeText(dims){return '['+dims.map(function(n){return String(Math.round(n));}).join(', ')+']';}
+  function optimizerLocalText(row){
+    return optimizerShapeText(row.localDims)+(row.collectionCut?' × '+(CFG.experts/CFG.ep)+' experts':'');
+  }
+  function optimizerDisplayExtent(row){
+    if(row.id==='embed')return {rows:16,columns:8};
+    if(row.id==='lm_head')return {rows:8,columns:16};
+    return null;
+  }
+  function optimizerVectorHTML(row,state){
+    var cells=Math.max(1,Math.ceil(row.dims[0]/512)),x0=5,w=86/cells,out='';
+    for(var i=0;i<cells;i++) out+='<rect class="opt-vector-cell" x="'+(x0+i*w+.35).toFixed(2)+'" y="26" width="'+Math.max(1,w-.7).toFixed(2)+'" height="11" rx="1.2" ry="1.2"/>';
+    return '<svg viewBox="0 0 96 64" aria-label="'+esc(state+' · '+row.label+' · 一维张量 · '+cells+' 个 512 元素分桶')+'"><text class="opt-vector-axis" x="48" y="12" text-anchor="middle">H</text>'+out+'<rect class="opt-vector-frame" x="5" y="26" width="86" height="11" rx="3" ry="3"/></svg>';
+  }
+  function optimizerExpertRailHTML(row){
+    if(!row.collectionCut)return '';
+    var out='',n=row.collectionSplits||1;
+    for(var i=0;i<n;i++)out+='<i class="'+(i===row.collectionIndex?'on':'')+'"></i>';
+    return '<span class="opt-expert-rail" style="--expert-groups:'+n+'" role="img" title="E'+CFG.experts+' 按 EP'+n+' 等量分为 '+n+' 组；当前 Rank 持有第 '+(row.collectionIndex+1)+' 组。宽度表示 Expert 参数数量，不表示本轮 token 负载" aria-label="EP 将 Expert 列表等量分为 '+n+' 组，当前 Rank 持有第 '+(row.collectionIndex+1)+' 组；条带不编码 token 负载">'+out+'</span>';
+  }
+  function optimizerPlaneHTML(row,state,rowIndex){
+    if(row.dims.length===1)return optimizerVectorHTML(row,state);
+    var canvas='<canvas data-opt-matrix data-opt-row="'+rowIndex+'" data-opt-state="'+state+'" aria-label="'+esc(state+' · '+row.label+' · 全局 '+optimizerShapeText(row.dims)+' · 本 Rank '+optimizerLocalText(row))+'"></canvas>';
+    return row.collectionCut?'<div class="opt-matrix-stack">'+canvas+optimizerExpertRailHTML(row)+'</div>':canvas;
+  }
+  function parameterAtlasStates(key){
+    if(key==='w')return [{k:'weight',t:'BF16 权重'}];
+    if(key==='g')return [{k:'gradient',t:'BF16 梯度'}];
+    return [{k:'master',t:'Master权重'},{k:'m',t:'一阶动量 m'},{k:'v',t:'二阶矩 v'}];
+  }
+  function parameterAtlasHTML(c,key){
+    var rows=parameterTensorRows(c,key),states=parameterAtlasStates(key),kind=key==='w'?'weight':(key==='g'?'gradient':'optimizer');
+    var tensorCount=states.length*rows.reduce(function(sum,row){return sum+(row.instances||1);},0),grid='<span class="opt-grid-count">'+tensorCount+' 张 '+kind+' tensor</span>';
+    states.forEach(function(s){grid+='<span class="opt-grid-head">'+s.t+'</span>';});
+    grid+='<span class="opt-column-rule" aria-hidden="true"></span>';
+    [{k:'tp',title:'TP切',note:'降计算量'},{k:'ep',title:'EP切',note:'独占专家人头'},{k:'full',title:'全量查',note:'不切分'}].forEach(function(group){
+      var groupRows=rows.filter(function(row){return optimizerRowGroup(row)===group.k;});
+      if(!groupRows.length)return;
+      grid+='<span class="opt-group-head opt-group-head--'+group.k+'"><b>'+group.title+'</b><span>· '+group.note+'</span></span>';
+      groupRows.forEach(function(row){
+        var rowIndex=rows.indexOf(row),globalShape=optimizerShapeText(row.dims),localShape=optimizerLocalText(row);
+        grid+='<span class="opt-param-label"><b>'+esc(row.label)+'</b>'+(row.repeat?'<span class="opt-param-repeat">'+esc(row.repeat)+'</span>':'')+'<small><span>本 rank 存 '+esc(localShape)+'</span></small></span>';
+        states.forEach(function(s){grid+='<span class="opt-state-cell" title="'+esc(s.t+' · '+row.label+' · 全局 '+globalShape+' · 本 Rank '+localShape)+'">'+optimizerPlaneHTML(row,s.k,rowIndex)+'<small>'+fmtMem(row.bytes)+'</small></span>';});
+      });
+    });
+    return '<div class="opt-atlas"><div class="opt-matrix-grid" style="--atlas-columns:'+states.length+'">'+grid+'</div></div>';
+  }
+  function optimizerAtlasHTML(c){ return parameterAtlasHTML(c,'opt'); }
+  function optimizerExpertInfo(c,state,projection){
+    return {name:state+'.experts.'+projection,dims:[CFG.hidden,CFG.ffn],localDims:[CFG.hidden,CFG.ffn/CFG.etp],shape:'['+fmtN(CFG.hidden)+', '+fmtN(CFG.ffn)+']',local:'['+fmtN(CFG.hidden)+', '+fmtN(CFG.ffn/CFG.etp)+'] × '+(CFG.experts/CFG.ep)+' experts',
+      axes:{rows:'H',columns:'FFN'},cut:CFG.etp>1?'tp':'none',cutAxis:CFG.etp>1?'columns':null,splits:CFG.etp,index:CFG.etp>1?c.tp:0,collectionCut:'ep',rank:c.r};
+  }
+  function mountParameterAtlas(c,key){
+    var canvases=memDetailBodyEl.querySelectorAll('[data-opt-matrix]'); if(!canvases.length||!window.PtoMatrixCanvas)return;
+    var rows=parameterTensorRows(c,key),controllers=[],sceneCache={},axisColor=getComputedStyle(document.documentElement).getPropertyValue('--fg2').trim();
+    Array.prototype.forEach.call(canvases,function(canvas){
+      var rowIndex=Number(canvas.getAttribute('data-opt-row')),info=rows[rowIndex];
+      if(!info||info.dims.length!==2)return;
+      var axisNames=optimizerAxisNames(info),sceneInfo=Object.assign({},info,{axes:{rows:axisNames[0],columns:axisNames[1]}}),displayExtent=optimizerDisplayExtent(info);
+      var scene=sceneCache[rowIndex]||(sceneCache[rowIndex]=memoryMatrixScene(sceneInfo,displayExtent));
+      var renderer=window.PtoMatrixCanvas.render(canvas,scene,{ariaLabel:canvas.getAttribute('aria-label'),showAxes:true,axisFontSize:11,axisFontWeight:700,axisColor:axisColor,columnAxisPosition:'top',columnAxisGap:7,rowAxisGap:8,displayExtent:displayExtent,showGrid:true,interactive:false,showTooltip:false,minZoom:.0001,padding:{top:15,right:14,bottom:15,left:14},cellStrokeAlpha:.025,cutColor:info.cut==='tp'?VC.tp:undefined});
+      canvas.tabIndex=-1; canvas.setAttribute('role','img'); controllers.push(renderer);
+    });
+    actVolumeController={destroy:function(){controllers.forEach(function(x){x.destroy();});}};
+  }
+  function mountOptimizerAtlas(c){ mountParameterAtlas(c,'opt'); }
+  function optimizerDetailHTML(c){
+    var bytes=memoryDetailBytes(c,'opt'), oneState=bytes/3, chain=memChainFig('opt'), rows=optimizerTensorRows(c);
+    var cur=c.mem.filter(function(x){return x.k==='opt';})[0].bytes, sibDs=memSibDims('opt').filter(dimLive);
+    var extras='<dl><dt>完整口径</dt><dd><b>'+rows.length+' 个展示行</b>；每项展开到对应 Layer / Expert 后，各有 Master权重、一阶动量 m、二阶矩 v 三份 FP32 tensor。</dd><dt>统一量尺</dt><dd>二维张量固定 <b>512×512 个源元素 / 格</b>；一维张量（向量）固定 <b>512 个元素 / 格</b>，所以 [4,096] 显示为 8 格。</dd><dt>每份状态</dt><dd>'+fmtMem(oneState)+'；三份合计 '+fmtMem(bytes)+'。</dd><dt>experts 展开</dt><dd>逻辑 <b>[64,3,H,F]</b> 展成 Gate / Up / Down 三行；每张 [H,F] 矩阵下方的条带把 64 个 Expert 等量分成 8 个 EP 参数组，紫色段是本 Rank 持有的 8 个 Expert。token 分配差异会改变梯度和 m/v 的数值及更新耗时，但不改变这些状态张量的 shape、显存大小或归属，因此条带保持等宽。</dd><dt>切分口径</dt><dd>H、Q、KV、FFN、词表等轴名直接标在矩阵左侧与顶部；粗切线和绿色区域分别表示全局切分边界与本 Rank 分片。</dd></dl>';
+    extras+='<figure class="rm-fig"><h4 class="rm-fig-title">本类参数构成</h4>'+compStrip(c.mem[0].sub)+'</figure>';
+    extras+='<figure class="rm-fig"><h4 class="rm-fig-title">计算关系链</h4>'+chain+'<figcaption class="rm-cap">optimizer update 阶段同时读取梯度、Master、m 和 v，并写回下一步状态。</figcaption></figure>';
+    extras+='<section class="opt-compare"><h4>优化策略预览</h4><div class="opt-plan"><b>当前 · Master + m + v</b><strong>'+fmtMem(cur)+'</strong><span>12 B/参数</span></div><div class="opt-plan"><b>8-bit 状态示意</b><strong>'+fmtMem(cur/2)+'</strong><span>约 6 B/参数；精度与算子支持需实测</span></div><div class="opt-plan"><b>ZeRO-1 · DP '+CFG.dp+' 路</b><strong>'+fmtMem(cur/CFG.dp)+'</strong><span>状态按 DP 组均摊，更新阶段通信增加</span></div></section>';
+    extras+='<div class="rm-note">当前实现是本卡就地更新，optimizer 自身不发起额外通信；主画布仍高亮与这些参数分片/副本相关的 '+sibDs.map(function(dim){return '<b style="color:'+VC[dim]+'">'+DIMN[dim]+'</b>';}).join(' / ')+' Rank。</div>';
+    return '<div class="rm-d act-detail opt-full-detail" data-cycle-detail style="--rmc:'+MEMC.opt+'"><section class="act-primary"><strong class="act-big" data-detail-memory="opt">'+fmtMem(bytes)+'</strong><div class="opt-primary-status"><span class="mem-cycle-readout" data-cycle-readout><i></i><span>等待中</span></span></div><div class="act-primary-figure">'+optimizerAtlasHTML(c)+'</div></section><details class="act-more"><summary>更多观测</summary><div class="act-more-body">'+extras+'</div></details></div>';
+  }
+  function parameterAtlasDetailHTML(c,key){
+    var rows=parameterTensorRows(c,key),bytes=memoryDetailBytes(c,key),tensorCount=rows.reduce(function(sum,row){return sum+(row.instances||1);},0);
+    var isGradient=key==='g',chain=memChainFig(key),sibDs=memSibDims(key).filter(dimLive);
+    var extras='<dl><dt>完整口径</dt><dd><b>'+rows.length+' 个展示行</b>；展开对应 Layer / Expert 后，共 '+tensorCount+' 张 BF16 '+(isGradient?'gradient':'weight')+' tensor。</dd><dt>统一量尺</dt><dd>二维张量固定 <b>512×512 个源元素 / 格</b>；一维张量固定 <b>512 个元素 / 格</b>。</dd><dt>本 Rank 合计</dt><dd>'+fmtMem(bytes)+'；每个可训练参数占 2 B。</dd><dt>experts 展开</dt><dd>逻辑 <b>[64,3,H,F]</b> 展成 Gate / Up / Down 三行；条带把 64 个 Expert 等量分成 8 个 EP 参数组，紫色段是本 Rank 持有的 8 个 Expert。</dd><dt>切分口径</dt><dd>矩阵、粗切线和绿色区域与优化器态使用同一套量尺，分别表达全局 shape、切分边界和本 Rank 分片。</dd></dl>';
+    extras+='<figure class="rm-fig"><h4 class="rm-fig-title">本类参数构成</h4>'+compStrip(c.mem[0].sub)+'</figure>';
+    extras+='<figure class="rm-fig"><h4 class="rm-fig-title">计算关系链</h4>'+chain+'<figcaption class="rm-cap">'+(isGradient?'反向写入梯度，更新阶段读取并消费。':'前向和反向读取权重，更新阶段写回下一步权重。')+'</figcaption></figure>';
+    if(isGradient) extras+='<div class="rm-note"><b style="color:var(--fg)">对应通信</b><br>参数梯度沿用权重的 TP / EP 分片，并在 DP / EDP 副本组中归约；热点只改变数值与耗时，不改变张量 shape 和显存大小。</div>';
+    else extras+='<div class="rm-note">权重与优化器态使用相同的参数行和切分归属；这里展示的是训练实际读取的 BF16 权重，而不是 optimizer 内的 FP32 Master 权重。</div>';
+    if(sibDs.length) extras+='<div class="rm-note">主画布已高亮相关兄弟 Rank：'+sibDs.map(function(dim){return '<b style="color:'+VC[dim]+'">'+DIMN[dim]+' 组</b> '+cards.filter(function(x){return isSib(c,x,dim);}).length+' 张';}).join(' · ')+'</div>';
+    return '<div class="rm-d act-detail opt-full-detail tensor-atlas-detail atlas-'+key+'" data-cycle-detail style="--rmc:'+MEMC[key]+'"><section class="act-primary"><strong class="act-big" data-detail-memory="'+key+'">'+fmtMem(bytes)+'</strong><div class="opt-primary-status"><span class="mem-cycle-readout" data-cycle-readout><i></i><span>'+(isGradient?'前向 · 缓冲区已预留':'整步常驻')+'</span></span></div><div class="act-primary-figure">'+parameterAtlasHTML(c,key)+'</div></section><details class="act-more"><summary>更多观测</summary><div class="act-more-body">'+extras+'</div></details></div>';
+  }
+  function tensorMemoryDetailHTML(c,key){
+    var info=memoryTensorInfo(c,key); if(!info) return '';
+    var bytes=memoryDetailBytes(c,key), mo=memObj(key), sibDs=memSibDims(key).filter(dimLive);
+    var scope=info.parent ? info.parentLabel+'；切分图以占比最大的 '+info.name+' 二维实体为代表' : (info.collectionCut?'选中的参数族；主图是一张真实二维矩阵，倍数见本 Rank 分片':'选中的单个张量块');
+    var rows='<dt>实例单元</dt><dd>PP'+c.pp+' · L'+(c.pp*LPS)+'–L'+((c.pp+1)*LPS-1)+' · EDP '+(c.dp>>3)+'</dd>'
+      +'<dt>张量实体</dt><dd><b>'+esc(info.name)+'</b> · 全局 '+esc(info.shape)+'</dd>'
+      +(info.logicalShape?'<dt>所属逻辑集合</dt><dd>'+esc(info.logicalShape)+'；这里不把 Expert / Projection 集合轴伪装成矩阵内部维度。</dd>':'')
+      +'<dt>本 Rank 分片</dt><dd><b>'+esc(info.local)+'</b> · '+esc(info.rule)+'</dd><dt>大小口径</dt><dd>'+esc(scope)+'</dd>';
+    var extras='';
+    if(key==='w' || key==='g' || key==='opt') extras+='<figure class="rm-fig"><h4 class="rm-fig-title">本类张量构成</h4>'+compStrip(c.mem[0].sub)+'</figure>';
+    var chain=memChainFig(key); if(chain) extras+='<figure class="rm-fig"><h4 class="rm-fig-title">计算关系链</h4>'+chain+'<figcaption class="rm-cap">高亮行跟随底部显存周期的当前阶段。</figcaption></figure>';
+    if(key==='opt'){
+      var cur=c.mem.filter(function(x){return x.k==='opt';})[0].bytes;
+      extras+='<section class="opt-compare"><h4>优化策略预览</h4><div class="opt-plan"><b>当前 · fp32 主参数 + m + v</b><strong>'+fmtMem(cur)+'</strong><span>12 B/参数</span></div><div class="opt-plan"><b>8-bit 状态示意</b><strong>'+fmtMem(cur/2)+'</strong><span>约 6 B/参数；精度与算子支持需实测</span></div><div class="opt-plan"><b>ZeRO-1 · DP '+CFG.dp+' 路</b><strong>'+fmtMem(cur/CFG.dp)+'</strong><span>状态按 DP 组均摊，更新阶段通信增加</span></div></section>';
+    }
+    if(mo.comm&&mo.comm.length) extras+='<div class="rm-note"><b style="color:var(--fg)">对应通信</b><br>只列与这个张量及其真实切分相关的通信。</div>'+mo.comm.map(function(cm){return comm5HTML(c,key,cm);}).join('');
+    else if(mo.silent) extras+='<div class="rm-note">对应通信：<b>无</b>——'+esc(mo.silent)+'</div>';
+    if(sibDs.length) extras+='<div class="rm-note">主画布已高亮相关兄弟 Rank：'+sibDs.map(function(dim){return '<b style="color:'+VC[dim]+'">'+DIMN[dim]+' 组</b> '+cards.filter(function(x){return isSib(c,x,dim);}).length+' 张';}).join(' · ')+'</div>';
+    return '<div class="rm-d act-detail tensor-param-detail" data-cycle-detail style="--rmc:'+(key.indexOf('w:')===0?MEMC.w:MEMC[key])+'"><section class="act-primary"><strong class="act-big" data-detail-memory="'+esc(key)+'">'+fmtMem(bytes)+'</strong><div class="opt-primary-status"><span class="mem-cycle-readout" data-cycle-readout><i></i><span>等待周期</span></span></div><div class="act-primary-figure">'+memoryTensorHTML(info)+'</div></section><details class="act-more"><summary>更多观测</summary><div class="act-more-body"><dl>'+rows+'</dl>'+extras+'</div></details></div>';
+  }
+  function nonTensorMemoryDetailHTML(c,key){
+    var bytes=memoryDetailBytes(c,key), temp=key==='otmp', tint=temp?shade(MEMC.opt,.72):MEMC.rsv;
+    var bars=temp?[1]:[.20,.11,.28,.08,.18], labels=temp?'算子 workspace / optimizer 临时缓冲':'allocator 空洞 · 对齐 · 通信 workspace · 预留';
+    return '<div class="rm-d act-detail" data-cycle-detail style="--rmc:'+tint+'"><section class="act-primary"><strong class="act-big" data-detail-memory="'+key+'">'+fmtMem(bytes)+'</strong><div class="act-primary-figure"><div class="mem-tensor-identity"><b>'+(temp?'临时分配区':'allocator 分配版图')+'</b><span>非张量 · 不画切分立方体</span></div><div class="mem-nontensor"><div class="mem-nontensor-track">'+bars.map(function(w){return '<i style="flex:'+w+'"></i>';}).join('')+'</div><div class="mem-nontensor-label"><span>'+labels+'</span><span data-cycle-readout><span>等待周期</span></span></div></div></div></section><details class="act-more"><summary>更多观测</summary><div class="act-more-body"><dl><dt>归属</dt><dd>Rank '+c.r+' 本地 HBM 分配器</dd><dt>为何不是张量</dt><dd>'+(temp?'生命周期由当前算子 / optimizer kernel 决定，没有 TP / EP 张量切分。':'来自分配历史、对齐与 workspace 预留，不对应某个可命名 tensor。')+'</dd><dt>周期行为</dt><dd>'+(temp?'只在 optimizer update 附近增长并释放。':'整步常驻；周期里作为不可用余量保留。')+'</dd></dl></div></details></div>';
+  }
+  function memBlockDetail(c,key){
+    if(key==='act') return activationDetailHTML(c);
+    if(key==='rsv'||key==='otmp') return nonTensorMemoryDetailHTML(c,key);
+    if(key==='opt') return optimizerDetailHTML(c);
+    if(key==='w'||key==='g') return parameterAtlasDetailHTML(c,key);
+    if(key.indexOf('w:')===0) return tensorMemoryDetailHTML(c,key);
+    return legacyMemBlockDetail(c,key);
+  }
+  function legacyMemBlockDetail(c, key){
+    if(key === 'act') return activationDetailHTML(c);
     var D = CFG, p = c.pp, ep = c.dp & 7, segs = c.mem, wSeg = segs[0], Pn = wSeg.bytes/2;
     var rows = [], title = '', tint = 'var(--fg)', note = '', figs = [];
     function kv(k, v){ rows.push('<dt>' + esc(k) + '</dt><dd>' + v + '</dd>'); }
-    function fig(svg, cap){ figs.push('<figure class="rm-fig">' + svg + (cap ? '<figcaption class="rm-cap">' + esc(cap) + '</figcaption>' : '') + '</figure>'); }
+    function fig(svg, cap, heading){ figs.push('<figure class="rm-fig">' + (heading ? '<h4 class="rm-fig-title">' + esc(heading) + '</h4>' : '') + svg + (cap ? '<figcaption class="rm-cap">' + esc(cap) + '</figcaption>' : '') + '</figure>'); }
     var sub = key.indexOf('w:') === 0 ? key.slice(2) : null;
     if(sub){
       /* ── 权重带里的某一块：只把切它那把刀的那根轴分开 ── */
@@ -2015,8 +3097,8 @@
       if(!sg) return '';
       title = sg.label; tint = key === 'rsv' ? 'var(--fg3)' : MEMC[key];
       var per = {w:2, g:2, opt:12}[key], model = sg.kind === 'model';
-      kv('这一档', fmtMem(sg.bytes) + (model ? ' · ' + fmtN(Math.round(Pn/1e6)) + ' M 参数 × ' + per + ' B' : ''));
       if(model){
+        kv('参数量', fmtN(Math.round(Pn/1e6)) + ' M × ' + per + ' B');
         /* 整条带一起说：谁占多宽、各被哪把刀切；然后是①腔。
            几何方向严格照主 Rank 矩阵：e/EP 横排、h/TP 上下、ℓ/PP 从近到远。 */
         fig(compStrip(wSeg.sub), '宽度=字节占比 · 颜色=切它那把刀');
@@ -2028,11 +3110,15 @@
       if(key === 'g')   note = '每个 DP 副本各吃各的微批、各算出一份偏导，步末归约成同一份——不归约，下一步各副本的权重就漂开了。';
       if(key === 'opt') note = '主参数 fp32 + 动量 m + 二阶矩 v。面积最大的一档，也是「换 optimizer 能省多少」的全部战场。';
       if(key === 'act'){
-        var mub = Math.max(1, Math.min(D.pp, D.ga) - p);
-        /* ②腔同样照主矩阵：b/DP 横排、s/CP 上下、ℓ/PP 从近到远；h 全长（TP 不切它） */
-        fig(cavityBox3D({n:D.dp, dim:'dp', i:c.dp}, {n:D.cp, dim:'cp', i:0}, {n:D.pp, dim:'pp', i:p}, {cell:MEMC.act}), '②激活体 · 横向 b←DP · 竖向 s←CP · 近→远 ℓ←PP（PP0→PP' + (D.pp - 1) + '）· h 全长 ' + fmtN(D.hidden) + '（TP 不切，算子间 AllGather 回全长）');
-        fig(cavityGrid({nx:mub, ix:0, lx:'in-flight μb', ny:1, iy:0, ly:'', c:MEMC.act}), '1F1B：stage ' + p + ' 此刻压着 ' + mub + ' 份');
-        note = '唯一随时间轴动的一档。它不是切出来的常驻账，是流——装满不会崩的是流，装满会崩的是常驻那三档。';
+        var mub = Math.max(1, Math.min(D.pp, D.ga) - p), apart = activationPartition(c), aep = c.dp & 7;
+        var layerNo = selLayer && selLayer.type === 'layer' && Math.floor(selLayer.layer/LPS) === p ? selLayer.layer : p*LPS;
+        kv('分析单元', 'EDP 实例 ' + (c.dp>>3) + ' · Layer ' + layerNo + ' 的一份激活 <b>[' + sg.mbs + ', ' + fmtN(D.seq) + ', ' + fmtN(D.hidden) + ']</b>');
+        kv('本卡分片', 'EP组' + activationEpGroup(c,c.tp) + ' 中本 Rank 收到约 <b>' + fmtN(apart.tokens[aep]*sg.mbs) + ' token</b>（' + (apart.tokens[aep]/D.seq*100).toFixed(1) + '%）；TP' + c.tp + ' 取得 H[' + fmtN(c.tp*(D.hidden/D.tp)) + '…' + fmtN((c.tp+1)*(D.hidden/D.tp)-1) + ']');
+        /* 设计系统 tensor-volume-canvas：S/EP 横向对应主画布从左到右，H/TP 竖向对应
+           TP0 在上、TP1 在下，B 走深度；20 个代表格按 token 份额编码 EP 路由后的不等长桶。
+           图下独立三轴只表达方向；立方体的 B 方向至少画 5 格厚度，使 B=1 时仍能读到上表面。 */
+        fig(activationVolumeHTML(c), '', '激活承载');
+        fig(cavityGrid({nx:mub, ix:0, fill:0, lx:'in-flight μb', ny:1, iy:0, ly:'', c:MEMC.act, compact:true, cycle:true}), '填色宽度 = 各在途 μb 在本 Rank 的专家激活相对大小；空槽彼此等宽', '在途激活/总槽位');
       }
       if(key === 'rsv'){
         fig(cavityGrid({nx:1, ix:0, lx:'没有轴', ny:1, iy:0, ly:'不参与任何一把刀', c:MEMC.rsv}), 'allocator 碎片与 workspace');
@@ -2044,7 +3130,7 @@
     if(chain){
       var CHCAP = {w:'前向要读它、更新要写它——链首链尾同一格，所以它整步都在卡上。', g:'反向由 A 与 ∂L/∂out 生出来，要等更新那一步用完才放得掉；这段时间它和权重同时压着卡。',
                    opt:'只在更新那一步露面，前向反向都用不到它——但它整步都得留着，因为 m/v 是跨步累积的。', act:'前向留下、反向消费——∂L/∂out × A 这一步要用到它，这就是它非占着显存不可的理由。'};
-      fig(chain, (CHCAP[sub ? 'w' : key] || '') + '淡的那几格可点，跳过去。');
+      fig(chain, (CHCAP[sub ? 'w' : key] || '') + '淡的那几格可点，跳过去。', (!sub && key === 'act') ? '计算关系链' : '');
     }
     /* 对应通信：这一档被切开之后，本卡为它跟谁说话 */
     var optLine = '';
@@ -2056,13 +3142,15 @@
         + '<div class="opt-plan"><b>ZeRO-1 · DP ' + D.dp + ' 路分片</b><strong>' + fmtMem(zero1) + '</strong><span>优化器状态按 DP 组均摊；会增加更新阶段通信与状态管理</span></div></section>';
     }
     var mo = memObj(key), commLine = '';
-    if(mo.comm && mo.comm.length){
+    if(key !== 'act' && mo.comm && mo.comm.length){
       commLine = '<div class="rm-note"><b style="color:var(--fg)">对应通信</b><br>每次搬运都按源、张量、前后 layout、并行域、原语和目的卡来读。</div>'
         + mo.comm.map(function(cm){ return comm5HTML(c, key, cm); }).join('');
-    } else if(mo.silent) commLine = '<div class="rm-note">对应通信：<b>无</b>——' + esc(mo.silent) + '</div>';
+    } else if(key !== 'act' && mo.silent) commLine = '<div class="rm-note">对应通信：<b>无</b>——' + esc(mo.silent) + '</div>';
     /* 兄弟卡：阵列上沿这几根轴的同组卡描了刀色的边 */
     var sibDs = memSibDims(key).filter(dimLive), sibLine = '';
-    if(sibDs.length) sibLine = '<div class="rm-note">兄弟卡已点亮：' + sibDs.map(function(d){
+    if(key === 'act'){
+      sibLine = '';
+    } else if(sibDs.length) sibLine = '<div class="rm-note">兄弟卡已点亮：' + sibDs.map(function(d){
       var n = cards.filter(function(x){ return isSib(c, x, d); }).length;
       return '<b style="color:' + VC[d] + '">' + DIMN[d] + ' 组</b> ' + n + ' 张';
     }).join(' · ') + '——沿这几根轴与本卡凑齐一整份（棱色=刀色）</div>';
@@ -2083,8 +3171,8 @@
            ② 两段块（≥ 54×40）—— Attention / MoE 两条横带，MoE 那条带着那一套的颜色；
            ③ 计算图（详情面板缩进格子后放大率 ≥ 1.1）—— Attention 的投影与注意力核、
              MoE 的路由四步，专家编号缩在 Expert Compute 盒子里；
-       · 颜色 = 层号 % 4 那套色，**只跟层走**：上下两个 EDP 副本同色 = 同一份权重；EDP 1 在同色上再
-         铺一层斜纹，把「一套完整专家」的块界留住而不改口成「另一套」；「按层给专家权重着色」关掉就退到中性灰；
+       · 颜色 = 层号 % 4 那套色，**只跟逻辑层走**；每个 EDP 都持有物理独立的完整参数副本，
+         EDP 1 在同色上再铺一层斜纹；「按层给专家权重着色」关掉就退到中性灰；
        · 两条量尺按屏幕坐标铺、字号不随缩放变、四边描框、两层之间一条连续分界；左侧行刻度的疏密走
          niceStep（1/2/5 梯子），顶部层号**不抽样**：缩小进紧凑档改写 L0、L1…并横向压扁、MoE 让位，
          再小只写数字、把「Layer」提到 Emb 左边当轴名；点顶部刻度选中的列在世界底下投一条贯穿的暗影。
@@ -2393,6 +3481,7 @@
   document.getElementById('layerFindBtn').addEventListener('click', function(){
     var input = document.getElementById('layerFind'), layer = parseInt(input.value, 10);
     if(!isFinite(layer)) return; layer = clamp(layer, 0, TOPO.layers - 1); input.value = layer;
+    selRank = null;   /* 按层号定位走公共 Layer 轴，查看跨 EDP 的同名层集合。 */
     selLayer = {type:'layer', layer:layer, label:'Layer' + layer, short:'L' + layer, dense:layer < TOPO.dense};
     layerGuide = step === 9; syncStagebar(); renderRankMem(); needDraw = true; tick();
   });
@@ -2480,8 +3569,8 @@
     }
     return null;
   }
-  /* 一格的颜色 = 这一层的专家权重身份：层号 % 4。副本号**不参与色相**——EDP 0 / EDP 1 持的是同一份权重，
-     换色会被读成「两套不同的专家」；副本用斜纹区分（见 fillSet），块界仍在、身份不变。着色关掉时退到中性灰 */
+  /* 一格的颜色 = 这一层的逻辑权重身份：层号 % 4。副本号**不参与色相**——EDP 0 / EDP 1
+     是逻辑相同、物理独立的参数副本；副本用斜纹与外框区分（见 fillSet）。着色关掉时退到中性灰。 */
   function setColorOf(col, c){ return paintOn && !col.dense ? SETC[col.layer % 4] : SET_NEUTRAL; }
   /* EDP 1 的斜纹：同色 45° 细条，8px 一循环，按屏幕像素铺（ctx 只有 DPR 缩放，图案跟着缩放不随视图缩放）。
      图案按颜色缓存；着色关掉时是中性灰的斜纹，副本关系照样读得出。
@@ -2562,7 +3651,14 @@
     var m = rowMetrics(k), rowFont = m.font*k, sel = selRank, focus = (sel !== null || selLayer !== null || !!hiCols) && f >= 1;
     var selKey = selLayer ? colKey(selLayer) : null, hoverKey = hoverLayer ? colKey(hoverLayer) : null;
     var sans = '--sans', mono = '--mono', FG = TH.rgb;
-    function colOn(col){ var key = colKey(col); return (selKey !== null && key === selKey) || !!(hiCols && hiCols[key]); }
+    /* selRank + selLayer = 一个 EDP 中的 Layer 实例；只有 selLayer = 同名层集合。
+       这里从主 Rank 反推 EDP，不再让实例选择把其他 EDP 的同名格一起照亮。 */
+    var instanceGroup = sel !== null && selLayer && PC[sel] ? groupOf(PC[sel]) : null;
+    function colOn(col, c){
+      var key = colKey(col), layerOn = selKey !== null && key === selKey;
+      if(layerOn && instanceGroup !== null && groupOf(c) !== instanceGroup) layerOn = false;
+      return layerOn || !!(hiCols && hiCols[key]);
+    }
     /* 格内选到第几档：两道闸都按「这一格在屏幕上有多大」判 */
     var cellPxW = cellW*k, cellPxH = cellH*k;
     var showBands = f >= 1 && cellPxH >= PL.BLOCK_MIN_H && cellPxW >= PL.BLOCK_MIN_W;
@@ -2571,8 +3667,26 @@
     var detailS = Math.min((cellW - 2)/DP.W, (cellH - 2)/plane.panels.moe.h);
     var showDetail = f >= 1 && detailS*k >= PL.DETAIL_MIN_S;
     var tier = showDetail ? 3 : (showBands ? 2 : 1);
-    /* 选中的那一列（点顶部 Layer 刻度、或点了一个 rank × layer 格子）：先在世界底下投一条与该列等宽、从量尺一直贯到画布底的
-       暗影（照原画布 .crop-layer-guide：中性前景灰，不用蓝——它只标位置、不表达选中）。
+    /* 每个 EDP 先画成一只贯穿全部 PP Stage 的完整流水线框。颜色仍表示 Layer / 专家
+       身份，EDP 身份只用中性框与左尺编号，避免把物理副本误读成不同参数。 */
+    if(f >= 1 && plane.blocks.length){
+      ctx.save();
+      var fb = plane.blocks[0], lb = plane.blocks[plane.blocks.length - 1];
+      var ex = view.x + (fb.x - 5)*k, ew = (lb.x + lb.w - fb.x + 10)*k;
+      for(var eg = 0; eg < TOPO.groups; eg++){
+        var ey = view.y + (plane.rowY(eg*TOPO.groupRows) - 5)*k, eh = (plane.groupH + 10)*k;
+        if(ey + eh < v.y0 || ey > v.y1 || ex + ew < v.x0 || ex > v.x1) continue;
+        ctx.globalAlpha = late;
+        ctx.fillStyle = eg === instanceGroup ? hexA(BLUE,.035) : 'rgba(' + FG + ',.018)';
+        rrect(ex, ey, ew, eh, 7);
+        ctx.strokeStyle = eg === instanceGroup ? hexA(BLUE,.72) : 'rgba(' + FG + ',.20)';
+        ctx.lineWidth = eg === instanceGroup ? 1.5 : 1;
+        rstroke(ex + .5, ey + .5, ew - 1, eh - 1, 7);
+      }
+      ctx.restore();
+    }
+    /* 选中 Layer 后投一条与该列等宽的定位暗影。实例层只覆盖所属 EDP；顶部刻度
+       选中的同名层集合才贯穿全部 EDP。暗影只标位置，不承担业务颜色。
        格子、底板都画在它上面，它从格缝、行标道和世界外的空白里透出来，作纵向参照。
        浓度 6%（原先 10%）：这条影子是**纵向参照**而不是选中态——选中态由格子自己的
        高亮去表达。10% 时它在格缝与行标道里显得比格子本身还抢眼，一整列从顶尺压到
@@ -2580,7 +3694,6 @@
        了背景层。⚠️ 与 DOM 那页的 .crop-layer-guide 保持同值，两页看着才是同一块料。 */
     if(f >= 1){
       var guideKeys = {};
-      if(layerGuide && selKey !== null) guideKeys[selKey] = true;
       if(hiCols) for(var hiKey in hiCols) if(hiCols[hiKey]) guideKeys[hiKey] = true;
       /* 悬浮预览先画，浓度只有选中暗影的一半；已选中的同一列不重复叠色。 */
       if(hoverKey !== null && !guideKeys[hoverKey]){
@@ -2592,6 +3705,17 @@
       for(var guideKey in guideKeys){
         var gd = colScreenX(guideKey);
         if(gd && gd.x + gd.w > v.x0 && gd.x < v.x1) ctx.fillRect(gd.x, v.y0, gd.w, H - v.y0);
+      }
+      if(layerGuide && selKey !== null){
+        var sd = colScreenX(selKey);
+        if(sd && sd.x + sd.w > v.x0 && sd.x < v.x1){
+          var sy = v.y0, sh = H - v.y0;
+          if(instanceGroup !== null){
+            sy = Math.max(v.y0, view.y + plane.rowY(instanceGroup*TOPO.groupRows)*k);
+            sh = Math.max(0, Math.min(H, sy + plane.groupH*k) - sy);
+          }
+          ctx.fillRect(sd.x, sy, sd.w, sh);
+        }
       }
     }
     /* 四个 PP 块不再各垫一块底板：格子靠自己的描边分格，块与块之间的缝留白就够了 */
@@ -2614,7 +3738,7 @@
         }
         /* 关系三档（照原画布）：行相关（这张卡）/ 列相关（这一层）/ 交叉（两者都在）；
            有选择时关系之外的格子压暗 */
-        var colHit = colOn(col), rowHit = isSel;
+        var colHit = colOn(col, c), rowHit = isSel;
         ctx.globalAlpha = f*(focus && !(rowHit || colHit) ? 0.32 : 1);
         /* 底色：最粗档落那一套的颜色（着色开着时）；其余一律是瓷砖色（--tile，随主题）+ 细描边——
            灰底叠灰底会粘成一片，瓷砖面靠描边分格，缩得只剩几个像素时描边就是格线本身 */
@@ -2681,6 +3805,7 @@
     if(alpha <= 0) return;
     var v = viewport(), k = view.k, FG = TH.rgb, cellW = plane.cellW, cellH = plane.cellH;
     var selPP = sel !== null ? PC[sel].pp : -1, selRow = sel !== null ? PC[sel].k : -1;
+    var instanceGroup = sel !== null && selLayer && PC[sel] ? groupOf(PC[sel]) : null;
     var selKey = selLayer ? colKey(selLayer) : null, ticks = plane.ticks = [];
     var LINE = 'rgba(' + FG + ',.12)', SUB = 'rgba(' + FG + ',.07)';
     ctx.globalAlpha = alpha; ctx.lineWidth = 1;
@@ -2741,11 +3866,11 @@
       var y = view.y + plane.rowY(g*T.groupRows)*k, h = plane.groupH*k; if(y + h < v.y0 || y > v.y1) continue;
       var cy0 = Math.max(y, v.y0 - 1), cy1 = Math.min(y + h, v.y1);
       ctx.strokeStyle = SUB; ctx.beginPath(); ctx.moveTo(0, cy0 + 0.5); ctx.lineTo(PL.RULER_EDP_W, cy0 + 0.5); ctx.stroke();
-      ctx.font = fontOf('500', 11, '--sans'); ctx.fillStyle = 'rgba(' + FG + ',.55)'; ctx.textAlign = 'center';
-      /* 带子下面原先还有一行小字「≡ EDP 0」（同色的两块是同一份权重），已删：
-         这层关系画布上本来就由**颜色**（同色 = 同一份权重）和 DP_GAP 那道宽缝在说，
-         量尺上只留副本号读起来更干净；要一句话解释的人去看着色开关的悬浮说明。
-         删掉之后主标签也不必再为它上移 6px —— 每条带子的标签一律居中。 */
+      var groupOn = instanceGroup === g;
+      ctx.font = fontOf(groupOn ? '600' : '500', 11, '--sans');
+      ctx.fillStyle = groupOn ? BLUE : 'rgba(' + FG + ',.55)'; ctx.textAlign = 'center';
+      /* 量尺只保留 EDP 编号：逻辑同层由颜色表达，物理独立副本由完整外框、组间距
+         与斜纹表达；主标签保持在每条 EDP 带的垂直中心。 */
       if(cy1 - cy0 > 14) ctx.fillText(outer + g, PL.RULER_EDP_W/2, (cy0 + cy1)/2 + 0.5);
       for(var e = 0; e < perG; e += rowStep){
         var r = g*T.groupRows + e*T.tp, rEnd = Math.min((g + 1)*T.groupRows, r + T.tp*rowStep);
@@ -2797,6 +3922,7 @@
     /* 「node 0」那块门牌的颜色是排布时从 TH 抄走的，切主题后补一刀 */
     [labs.node, lay && lay.labels.filter(function(l){ return l.key === 'node'; })[0]].forEach(function(l){ if(l) l.c = TH.fg2; });
     renderRankMem();   /* 读出卡里的色块也跟着显存色板换 */
+    if(window.RIMemoryCycle) window.RIMemoryCycle.redraw();
     needDraw = true; tick();
   });
 
@@ -2850,6 +3976,10 @@
     if(id === 'scene'){ setStageCfgOpen(false); memSel = null; syncMemDetail(null, false); }
     if(id === 'intro') applySide(false, false);
     pageEl.dataset.tab = id;
+    if(window.RIMemoryCycle){
+      window.RIMemoryCycle.setVisible(id === 'intro' && step === 7);
+      if(id === 'intro' && step === 7 && memRankFocused && !rankFocus) window.RIMemoryCycle.startFromWarmup();
+    }
     Array.prototype.forEach.call(tabsEl.children, function(b){ b.setAttribute('aria-selected', String(b.dataset.tab === id)); });
     try{ var q = new URLSearchParams(location.search); if(id === 'intro') q.delete('tab'); else q.set('tab', id);
          var qs = q.toString(); history.replaceState(null, '', location.pathname + (qs ? '?' + qs : '')); }catch(e){}
@@ -2876,7 +4006,24 @@
 
   /* 留给「实战场景」案例三：它要在自己的画布上再画一遍第 8 步那套卡阵（只亮一张），
      排布、投影、显存账、主题色都从这里拿，不另抄一份。TH / MEMC 是同一个对象，切主题后自动是新的 */
-  window.RI = {cards:cards, layoutOf:layoutOf, U:U3D, TH:TH, MEMC:MEMC, VC:VC, CFG:CFG, GiB:GiB, shade:shade, hexA:hexA, dims:{CW:CW, CH:CH, CD:CD}, OCC:OCC, BG_FACE:BG_FACE};
+  window.RI = {cards:cards, layoutOf:layoutOf, U:U3D, TH:TH, MEMC:MEMC, VC:VC, CFG:CFG, GiB:GiB, shade:shade, hexA:hexA, dims:{CW:CW, CH:CH, CD:CD}, OCC:OCC, BG_FACE:BG_FACE,
+    selectMemoryRank:function(r){
+      if(step !== 7 || !isFinite(r) || !cards[r]) return;
+      selRank = +r; memRankFocused = true; memSel = null; memSelR = null;
+      syncStagebar(); renderRankMem(); needDraw = true; tick();
+    },
+    setMemoryCycleFrame:function(memByRank, cycleState, diagnosticState){
+      cycleMem = memByRank;
+      memoryDiagnosticState = diagnosticState || null;
+      oomRankSet = {};
+      if(memScenario === 'danger') memByRank.forEach(function(parts,r){
+        if(parts.reduce(function(sum,m){ return sum + m.bytes; },0) > CFG.hbm*GiB) oomRankSet[r] = true;
+      });
+      updateRankMemCycle(memByRank);
+      updateMemoryDetailCycle(cycleState);
+      updateScenarioInsight(memoryDiagnosticState);
+      needDraw = true; cancelAnimationFrame(rafId); rafId = requestAnimationFrame(tick);
+    }};
 
   /* 留给案例四：第 10 步那块展平画布整套借出去画到它自己的 canvas 上。
      画法全是本页闭包里的 drawPlane / drawRulers / planeHit…，它们读的是闭包里的 ctx / W / H / view /
@@ -3312,6 +4459,19 @@
       }
       return {S:S, N:N, cnt:cnt, gw:gw, opt:opt, pos:pos};
     }
+    /* 当前 Stage 仍保存哪些微批的激活，以及各自还有多少层的激活未被反向释放。
+       F 逐层从 0→1 写入，B 逐层从 1→0 释放；这份明细供右栏比较不同 μb 的实际大小。 */
+    function inflightMicrobatches(st){
+      var live = {}, S = st.S;
+      for(var i=0;i<=S.idx;i++){
+        var op = S.ops[i]; if(op.o) continue;
+        var u = i < S.idx ? 1 : S.u, m = op.m;
+        if(op.f === 1) live[m] = (live[m] || 0)+u;
+        else if(op.f === 0) live[m] = (live[m] == null ? 1 : live[m])-u;
+      }
+      return Object.keys(live).map(function(m){ return {m:+m,occupancy:Math.max(0,Math.min(1,live[m]))}; })
+        .filter(function(x){ return x.occupancy > .001; }).sort(function(a,b){ return a.m-b.m; });
+    }
     /* 热点层在这张卡的层格里是第几格；不持有分片 HOT_EP、或这段没有 L(HOT_L)，就是 −1 */
     function hotSlotOf(c){
       if((c.dp & 7) !== HOT_EP) return -1;
@@ -3320,18 +4480,18 @@
     }
     function isHot(c){ return hotSlotOf(c) >= 0; }
     /* 这张卡一份微批的激活账：第 8 步那本账里的激活档 ÷ 峰值份数 = 一份穿过整段；平摊到每个层格，热点层那格 × HOTK */
-    function perMb(c, fix){
-      var m = c.mem.filter(function(x){ return x.k === 'act'; })[0], N = slotsOf(c.pp).length, hs = hotSlotOf(c);
+    function perMb(c, fix, noHot){
+      var m = c.mem.filter(function(x){ return x.k === 'act'; })[0], N = slotsOf(c.pp).length, hs = noHot ? -1 : hotSlotOf(c);
       var slot = m.bytes/peakOf(c.pp)/N*(fix ? FIXK : 1), hot = hs >= 0 ? slot*HOTK : 0;
       return {slot:slot, hs:hs, hot:hot, tot:slot*(N - (hs >= 0 ? 1 : 0)) + hot};
     }
     /* 这张卡此刻的账：五档照第 8 步，激活按各层此刻压着的份数逐层累加（热点层每份更重），步末加临时区 */
-    function memAt(c, t, fix){
-      var st = lvState(c.pp, t), pm = perMb(c, fix), P = c.mem[0].bytes/2, out = [], n = 0, act = 0;
-      st.cnt.forEach(function(v, j){ n += v; act += v*(j === pm.hs ? pm.hot : pm.slot); }); n /= st.N;
+    function memAt(c, t, fix, noHot){
+      var st = lvState(c.pp, t), pm = perMb(c, fix, noHot), P = c.mem[0].bytes/2, out = [], act = 0;
+      st.cnt.forEach(function(v, j){ act += v*(j === pm.hs ? pm.hot : pm.slot); });
       var u = t > OTMP_AT ? (t - OTMP_AT)/(1 - OTMP_AT) : 0, optK = u > 0 ? Math.sin(Math.PI*Math.min(1, u)) : 0;
       c.mem.forEach(function(m){
-        if(m.k === 'act') out.push({k:'act', label:'激活·in-flight ' + fmtMub(n) + 'μb' + (pm.hs >= 0 ? ' · 含热点专家层' : ''), bytes:act, c:m.c});
+        if(m.k === 'act') out.push({k:'act', label:'激活·in-flight' + (pm.hs >= 0 ? ' · 含热点专家层' : ''), bytes:act, c:m.c});
         else out.push({k:m.k, label:m.label, bytes:m.bytes, c:m.c});
         if(m.k === 'opt') out.push({k:'otmp', label:'优化器步·临时区', bytes:3.2*P*optK, c:RI.shade(RI.MEMC.opt, .72)});
       });
@@ -3339,7 +4499,6 @@
     }
     function totalOf(mem){ return mem.reduce(function(a, m){ return a + m.bytes; }, 0); }
     function fmt(b){ return (b/RI.GiB).toFixed(1); }
-    function fmtMub(n){ return Math.abs(n - Math.round(n)) < 0.05 ? String(Math.round(n)) : n.toFixed(1); }
     function oomSet(t, fix){ return RI.cards.filter(function(c){ return totalOf(memAt(c, t, fix)) > CAP; }); }
     /* 撞顶不是第 4 份存满所有层才发生：F3 走到哪一层、合计一过 64 GB 就卡在那一层。二分找出那一刻 */
     function tOOM(){
@@ -3396,6 +4555,7 @@
     function setView(v){
       if(v === view || !laneEl) return;
       view = v; laneEl.dataset.view = v;
+      if(v !== 'layer') hideLayerBubbleTooltip();
       var vt = document.getElementById('cs3vt');
       if(vt){ vt.classList.toggle('idle', v === 'layer'); vt.querySelectorAll('button').forEach(function(b){ b.setAttribute('aria-selected', String(b.dataset.v === v)); }); }
       size(); frame(true);         /* 换视图只是换画法，播放（全流程或手动单段）照旧走 */
@@ -3437,6 +4597,7 @@
       cv3 = document.getElementById('cs3cv'); cx3 = cv3.getContext('2d');
       frame3 = document.getElementById('cs3if'); cur = document.getElementById('cs3cur'); laneEl = document.getElementById('cs3lane');
       cvL = document.getElementById('cs3lv'); cxL = cvL.getContext('2d');
+      bindLayerBubbleTooltip(cvL);
       var vt = document.getElementById('cs3vt');
       vt.addEventListener('click', function(e){ var b = e.target.closest('button'); if(b) setView(b.dataset.v); });
       /* 点卡：点到别的卡就换主语；点到高亮那张（已选中）不换主语，只把关掉的右列开回来 */
@@ -3673,16 +4834,45 @@
        权重 / 优化器态照梯度的画法：开机就是一条淡带（占位），到 Optimizer step 带子上每层一格一起亮一下（所有层一把更新，没有先后）。
        碎片 / 预留不属于哪一层、一步之内也不动，这里不画——四条线跟泳道视图同高（176px），切视图不抖。 */
     var LV_LANES = [{k:'act', t:'激活·in-flight'}, {k:'g', t:'梯度'}, {k:'w', t:'权重'}, {k:'opt', t:'优化器态'}];
-    function drawLV(oom){
-      if(!cxL || !WL || !HL) return;
-      var ctx = cxL, TH = RI.TH, rgb = TH.rgb, mono = getComputedStyle(document.body).getPropertyValue('--mono'), red = bad();
-      var c = card(), sMe = c.pp;
+    var layerBubbleTip = null;
+    function ensureLayerBubbleTip(){
+      if(layerBubbleTip) return layerBubbleTip;
+      layerBubbleTip = document.createElement('div'); layerBubbleTip.className = 'lv-bubble-tip'; layerBubbleTip.hidden = true;
+      layerBubbleTip.innerHTML = '<b></b><span></span>'; document.body.appendChild(layerBubbleTip); return layerBubbleTip;
+    }
+    function hideLayerBubbleTooltip(){ if(layerBubbleTip) layerBubbleTip.hidden = true; }
+    function bindLayerBubbleTooltip(canvas){
+      if(!canvas || canvas.__lvBubbleBound) return; canvas.__lvBubbleBound = true;
+      canvas.addEventListener('mousemove',function(e){
+        var rect = canvas.getBoundingClientRect(), sx = canvas.clientWidth/Math.max(1,rect.width), sy = canvas.clientHeight/Math.max(1,rect.height);
+        var x = (e.clientX-rect.left)*sx, y = (e.clientY-rect.top)*sy, hit = null, hits = canvas.__lvBubbleHits || [];
+        for(var i=hits.length-1;i>=0;i--) if(x>=hits[i].x && x<=hits[i].x+hits[i].w && y>=hits[i].y && y<=hits[i].y+hits[i].h){ hit=hits[i]; break; }
+        if(!hit){ hideLayerBubbleTooltip(); canvas.style.cursor = ''; return; }
+        var tip = ensureLayerBubbleTip();
+        tip.querySelector('b').textContent = 'PP Stage '+hit.stage+' · 流水线气泡';
+        tip.querySelector('span').textContent = hit.kind === 'f'
+          ? '这个 Stage 还没收到上一段传来的下一份前向激活，手头也没有别的微批可以计算，所以这段时间只能空等。'
+          : '这个 Stage 已把当前前向结果交给下一段，但下一段还没算完、反向梯度也还没传回来；手头又没有别的微批可以计算，所以这段时间只能空等。';
+        tip.hidden = false; canvas.style.cursor = 'help';
+        var tw = tip.offsetWidth, th = tip.offsetHeight, left = Math.min(window.innerWidth-tw-8,e.clientX+12), top = e.clientY+14;
+        if(top+th>window.innerHeight-8) top = Math.max(8,e.clientY-th-12);
+        tip.style.left = Math.max(8,left)+'px'; tip.style.top = top+'px';
+      });
+      canvas.addEventListener('mouseleave',function(){ canvas.style.cursor=''; hideLayerBubbleTooltip(); });
+    }
+    function drawLVTo(targetCtx, targetW, targetH, targetDpr, subject, at, oom, phaseX, noHot, annotation){
+      if(!targetCtx || !targetW || !targetH) return;
+      /* 同一绘制函数同时服务案例三与第 8 步底部：只把画布、主语 Rank 和步内时间作为参数传入。 */
+      var ctx = targetCtx, WL = targetW, HL = targetH, DPR = targetDpr, c = subject, t = at;
+      var TH = RI.TH, rgb = TH.rgb, mono = getComputedStyle(document.body).getPropertyValue('--mono'), red = bad();
+      var warning = getComputedStyle(document.documentElement).getPropertyValue('--warning').trim() || '#f59e0b';
+      var sMe = c.pp;
       var padL = 78, padR = 12, yHead = 17, yPP = 35, yTick = 46, y0 = 54;   /* yHead 对齐左上角那枚页签的中线（top 5 + 24/2） */
       /* 激活那条是唯一按层按份涨落的，给它两倍多的高度；其余三条等分剩下的 */
       var LW = LV_LANES.map(function(L){ return L.k === 'act' ? 2.5 : 0.95; }), LWsum = LW.reduce(function(a, v){ return a + v; }, 0), unit = (HL - y0 - 4)/LWsum;
-      var HOT_VIS = 1.6, hsMe = hotSlotOf(c);            /* 热点层那一摞画成普通层的 1.6 倍高（真实是 38 倍，画不下） */
+      var HOT_VIS = 1.6, hsMe = noHot ? -1 : hotSlotOf(c); /* 热点层那一摞画成普通层的 1.6 倍高（真实是 38 倍，画不下） */
       /* 四块：每块 slotsOf(s) 个格，块间留一道缝（照展平视图的 bgap） */
-      var blocks = [], nAll = 0;
+      var blocks = [], nAll = 0, bubbleHits = [];
       for(var q = 0; q < PP; q++){ var sl = slotsOf(q); blocks.push({s:q, sl:sl, st:lvState(q, t)}); nAll += sl.length; }
       var gap = 10, pitch = (WL - padL - padR - gap*(PP - 1))/nAll, w = Math.max(2, Math.min(9, pitch*0.62));
       var x = padL;
@@ -3702,7 +4892,8 @@
         {ph:2, t:'排空',                sp:spanOf(nOps - kWarm, nOps)},
         {ph:3, t:'优化器更新',          sp:null}
       ].filter(function(tb){ return tb.ph === 3 || tb.sp; });
-      var lh = document.getElementById('cs3lh'), sans = getComputedStyle(document.body).getPropertyValue('--sans'), tabX = lh ? lh.offsetLeft + lh.offsetWidth + 14 : 10;
+      var lh = document.getElementById('cs3lh'), sans = getComputedStyle(document.body).getPropertyValue('--sans');
+      var tabX = typeof phaseX === 'number' ? phaseX : (lh ? lh.offsetLeft + lh.offsetWidth + 14 : 10);
       ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
       tabs.forEach(function(tb){
         var on = tb.ph === S.ph;
@@ -3720,7 +4911,20 @@
         var on = b.s === sMe;
         ctx.globalAlpha = on ? 1 : 0.45;
         ctx.font = (on ? '600' : '500') + ' 9px ' + mono; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-        ctx.fillStyle = on ? TH.fg2 : TH.fg3; ctx.fillText('PP Stage ' + b.s, (b.x0 + b.x1)/2, yPP + 0.5);
+        var stageText = 'PP Stage ' + b.s, stageX = (b.x0 + b.x1)/2;
+        ctx.fillStyle = on ? TH.fg2 : TH.fg3; ctx.fillText(stageText, stageX, yPP + 0.5);
+        if(b.st.S.wait && !b.st.S.done){
+          var pending = b.st.S.ops[b.st.S.idx] || {}, stageTextW = ctx.measureText(stageText).width;
+          var tagText = '气泡中', tagH = 12, tagY = yPP-tagH/2+.5;
+          ctx.font = '700 7.5px ' + sans; var tagW = ctx.measureText(tagText).width+8, tagX = stageX+stageTextW/2+5, tr = 5;
+          ctx.beginPath(); ctx.moveTo(tagX+tr,tagY); ctx.lineTo(tagX+tagW-tr,tagY); ctx.quadraticCurveTo(tagX+tagW,tagY,tagX+tagW,tagY+tr);
+          ctx.lineTo(tagX+tagW,tagY+tagH-tr); ctx.quadraticCurveTo(tagX+tagW,tagY+tagH,tagX+tagW-tr,tagY+tagH);
+          ctx.lineTo(tagX+tr,tagY+tagH); ctx.quadraticCurveTo(tagX,tagY+tagH,tagX,tagY+tagH-tr);
+          ctx.lineTo(tagX,tagY+tr); ctx.quadraticCurveTo(tagX,tagY,tagX+tr,tagY); ctx.closePath();
+          ctx.globalAlpha = .14; ctx.fillStyle = warning; ctx.fill(); ctx.globalAlpha = .88; ctx.strokeStyle = warning; ctx.lineWidth = .8; ctx.stroke();
+          ctx.globalAlpha = 1; ctx.fillStyle = warning; ctx.textAlign = 'center'; ctx.fillText(tagText,tagX+tagW/2,yPP+.5);
+          bubbleHits.push({x:tagX-2,y:tagY-2,w:tagW+4,h:tagH+4,stage:b.s,kind:pending.f === 1 ? 'f' : 'b'});
+        }
         ctx.font = '500 9px ' + mono; ctx.textAlign = 'center'; ctx.fillStyle = TH.fg3;
         b.sl.forEach(function(sl, j){
           var L = sl.u ? -1 : b.s*LPS + (j - (b.s === 0 ? 1 : 0)), hot = on && j === hsMe;
@@ -3731,6 +4935,7 @@
         /* 块底板：比格子再淡一档 */
         ctx.fillStyle = 'rgba(' + rgb + ',.035)'; ctx.fillRect(b.x0 - 2, y0 - 2, b.x1 - b.x0 + 4, HL - y0 - 2);
       });
+      ctx.canvas.__lvBubbleHits = bubbleHits;
       ctx.globalAlpha = 1;
       /* 四条线：每条横贯四块，逐块画各自的状态 */
       var yTop = y0;
@@ -3753,10 +4958,10 @@
             ctx.fillStyle = col;
             if(bs.pos >= 0 && !bop.o){
               /* 当前那份微批：前向从左往右、反向从右往左，在这一条上飞；撞顶那张卡的点描红 */
-              var px = xa + bs.pos*pitch, isOom = on && oom, dc = isOom ? red : (bop.f ? col : RI.MEMC.g);
+              var px = xa + bs.pos*pitch, isOom = on && oom, isAnnotated = on && !!annotation, dc = isOom || isAnnotated ? red : (bop.f ? col : RI.MEMC.g);
               ctx.globalAlpha = dim; ctx.fillStyle = dc; ctx.strokeStyle = dc; ctx.lineWidth = 1.2; ctx.beginPath(); ctx.arc(px, yb - markH - 6, 3, 0, Math.PI*2);
               if(bs.S.wait) ctx.stroke(); else ctx.fill();
-              ctx.font = '700 9px ' + mono; ctx.textAlign = 'center'; ctx.textBaseline = 'alphabetic'; ctx.fillText((isOom ? 'OOM · ' : '') + (bop.f ? 'F' : 'B') + bop.m, px, yb - markH - 11);
+              ctx.font = '700 9px ' + mono; ctx.textAlign = 'center'; ctx.textBaseline = 'alphabetic'; ctx.fillText((isOom ? 'OOM · ' : (isAnnotated ? annotation.short + ' · ' : '')) + (bop.f ? 'F' : 'B') + bop.m, px, yb - markH - 11);
               ctx.strokeStyle = dc; ctx.globalAlpha = 0.5*dim; ctx.beginPath(); ctx.moveTo(px, yb - markH - 3); ctx.lineTo(px, yb); ctx.stroke();
             }
           } else if(L.k === 'g'){
@@ -3780,8 +4985,15 @@
         });
         ctx.globalAlpha = 1;
       });
+      if(annotation){
+        ctx.globalAlpha = 1; ctx.font = '700 9px ' + sans; ctx.textAlign = 'right'; ctx.textBaseline = 'middle';
+        var badgePad = 7, badgeH = 18, badgeW = ctx.measureText(annotation.label).width + badgePad*2, badgeX = WL - padR - badgeW, badgeY = 5;
+        ctx.fillStyle = red; ctx.beginPath(); ctx.roundRect(badgeX,badgeY,badgeW,badgeH,5); ctx.fill();
+        ctx.fillStyle = '#fff'; ctx.fillText(annotation.label,WL-padR-badgePad,badgeY+badgeH/2+.5);
+      }
       ctx.textBaseline = 'alphabetic';
     }
+    function drawLV(oom){ drawLVTo(cxL, WL, HL, DPR, card(), t, oom); }
     function frame(force){
       if(!cv3) return;
       var mem = memAt(card(), t, fix), tot = totalOf(mem), over = oomSet(t, fix);
@@ -3820,9 +5032,206 @@
     }
     /* 点卡换主语：剧本停下，就看这张卡此刻的账 */
     function setSel(r){ if(r === sel) return; stop(); sel = r; buildRd(); frame(); }
+    function makeMemoryCycle(){
+      var host = document.getElementById('memCycle'), canvas = document.getElementById('memCycleCanvas'), button = document.getElementById('memCyclePlay');
+      if(!host || !canvas || !button) return null;
+      var cx = canvas.getContext('2d'), width = 0, height = 0, dpr = 1, rank = 16, at = 0;
+      var active = false, playingCycle = false, cycleRaf = 0, cycleLast = 0, cycleMs = 16000, scenario = 'base', stopReason = '', diagnosticAnalysis = null, diagnosticTarget = null;
+      bindLayerBubbleTooltip(canvas);
+      function sizeCycle(){
+        if(!canvas.clientWidth || !canvas.clientHeight) return;
+        dpr = window.devicePixelRatio || 1; width = canvas.clientWidth; height = canvas.clientHeight;
+        canvas.width = Math.round(width*dpr); canvas.height = Math.round(height*dpr);
+      }
+      function pulseWindow(x,a,b,c,d){
+        if(x <= a || x >= d) return 0;
+        if(x < b) return (x-a)/(b-a);
+        if(x <= c) return 1;
+        return (d-x)/(d-c);
+      }
+      function phaseOf(card,t){
+        var st = lvState(card.pp,t), op = st.S.ops[st.S.idx] || {};
+        return {state:st, key:op.o ? 'u' : (op.f ? 'f' : 'b'), label:st.S.wait ? '流水线气泡' : (op.o ? '更新' : (op.f ? '前向' : '反向'))};
+      }
+      function addTo(mem,key,bytes,label){
+        for(var i=0;i<mem.length;i++) if(mem[i].k === key){ mem[i].bytes += Math.max(0,bytes || 0); if(label) mem[i].label = label; return; }
+      }
+      /* 把每个 Rank 的时间曲线压成四层观测口径；卡壳装的是最外层 APP Reserved，
+         右侧面板同时给出 Allocated / Activated / Reserved / APP Reserved，避免把四条曲线相加。 */
+      function observedFrame(card,t){
+        var mem = memAt(card,t,false,true), ph = phaseOf(card,t), act = 0, baseIdle = 0, delayed = 0, idleExtra = 0, appOther = 0, allocExtra = 0;
+        mem.forEach(function(m){ if(m.k === 'rsv') baseIdle = m.bytes; else act += m.bytes; });
+        if(scenario === 'peak'){
+          if(card.r === 23){
+            var actSeg = mem.filter(function(m){ return m.k === 'act'; })[0], peakAct = card.mem.filter(function(m){ return m.k === 'act'; })[0].bytes || 1;
+            allocExtra = 9.6*RI.GiB*Math.min(1,actSeg.bytes/peakAct); addTo(mem,'act',allocExtra,'激活·热点专家峰值'); act += allocExtra;
+          } else if(card.r === 87){
+            allocExtra = 7.2*RI.GiB*pulseWindow(t,.88,.925,.955,1); addTo(mem,'otmp',allocExtra,'优化器步·峰值临时区'); act += allocExtra;
+          } else if(card.r === 54){
+            appOther = 18*RI.GiB*pulseWindow(t,.08,.18,.82,.98);
+          }
+        } else if(scenario === 'gap'){
+          if(card.r === 23) delayed = 11.2*RI.GiB*pulseWindow(t,.30,.43,.68,.86);
+          else if(card.r === 54) idleExtra = 24*RI.GiB*pulseWindow(t,.18,.30,.78,.98);
+          else if(card.r === 87) baseIdle = Math.min(baseIdle,.8*RI.GiB);
+        }
+        var idle = baseIdle + idleExtra, activeBytes = act + delayed, reserved = activeBytes + idle, app = reserved + appOther;
+        var reserveLabel = '碎片/预留';
+        if(scenario === 'gap' && delayed > .05*RI.GiB) reserveLabel = '待流完成·延迟释放';
+        else if(scenario === 'gap' && idleExtra > .05*RI.GiB) reserveLabel = '内存池空闲·低复用';
+        else if(scenario === 'peak' && appOther > .05*RI.GiB) reserveLabel = '进程其他·通信/runtime';
+        for(var j=0;j<mem.length;j++) if(mem[j].k === 'rsv'){ mem[j].bytes = delayed + idle + appOther; mem[j].label = reserveLabel; }
+        return {mem:mem, metric:{allocated:act,active:activeBytes,reserved:reserved,app:app,delayed:delayed,idle:idle,other:appOther,phase:ph.key,phaseLabel:ph.label}};
+      }
+      function buildDiagnosticAnalysis(){
+        if(scenario !== 'peak' && scenario !== 'gap') return null;
+        var keys = ['allocated','active','reserved','app','delayed','idle','other'], peakByRank = {}, peakAtByRank = {}, leaders = {};
+        RI.cards.forEach(function(card){
+          var peak = {}, peakAt = {}; keys.forEach(function(key){ peak[key] = -1; peakAt[key] = 0; });
+          for(var si=0;si<=80;si++){
+            var metric = observedFrame(card,si/80).metric;
+            keys.forEach(function(key){
+              var value = metric[key] || 0;
+              if(value > peak[key]){ peak[key] = value; peakAt[key] = si/80; }
+            });
+          }
+          peakByRank[card.r] = peak; peakAtByRank[card.r] = peakAt;
+        });
+        ['allocated','active','reserved','app'].forEach(function(key){
+          var best = {r:0,value:-1};
+          RI.cards.forEach(function(card){ var value = peakByRank[card.r][key]; if(value > best.value){ best = {r:card.r,value:value}; } });
+          best.at = peakAtByRank[best.r][key];
+          leaders[key] = best;
+        });
+        return {peakByRank:peakByRank,peakAtByRank:peakAtByRank,leaders:leaders};
+      }
+      var DIAGNOSTIC_METRIC_NAMES = {allocated:'算子分配',active:'算子持有',reserved:'算子保留',app:'进程保留'};
+      function diagnosticPeakTarget(){
+        if(!diagnosticAnalysis || !diagnosticTarget) return null;
+        var metric = diagnosticTarget.metric, targetRank = diagnosticTarget.rank;
+        if(!DIAGNOSTIC_METRIC_NAMES[metric]) return null;
+        if(!isFinite(targetRank) || !diagnosticAnalysis.peakByRank[targetRank]){
+          var leader = diagnosticAnalysis.leaders[metric]; if(!leader) return null; targetRank = leader.r;
+        }
+        return {metric:metric,rank:+targetRank,value:diagnosticAnalysis.peakByRank[targetRank][metric],at:diagnosticAnalysis.peakAtByRank[targetRank][metric]};
+      }
+      function diagnosticCanvasAnnotation(){
+        var peak = diagnosticPeakTarget();
+        if(!peak || at + .0005 < peak.at) return null;
+        return {short:'峰值',label:DIAGNOSTIC_METRIC_NAMES[peak.metric] + '峰值 · R' + peak.rank + ' · ' + (peak.value/RI.GiB).toFixed(1) + ' GB · Step ' + Math.round(peak.at*100) + '%'};
+      }
+      function drawCycle(){
+        if(!width || !height) sizeCycle();
+        /* 入门第 8 步展示正常 step，不继承案例三专属的 Layer 7 热点故障注入。
+           同一份时钟同时产出 128 张卡的账，主画布所有柱子与底部 Layer 图逐帧一致。 */
+        var frames = RI.cards.map(function(card){ return observedFrame(card,at); });
+        var allMem = frames.map(function(frame){
+          return frame.mem.map(function(m){
+            /* 主柱体的 shade() 接受十六进制色；临时区沿用优化器色，以额外一层表达。 */
+            return m.k === 'otmp' ? {k:m.k,label:m.label,bytes:m.bytes,c:RI.MEMC.opt} : m;
+          });
+        });
+        var c = RI.cards[rank] || RI.cards[16], mem = allMem[c.r];
+        var stageState = lvState(c.pp,at), stageOp = stageState.S.ops[stageState.S.idx] || {};
+        var activeSlots = stageState.cnt.reduce(function(mx,n){ return Math.max(mx,n); },0);
+        var forwardDone = 0;
+        for(var oi=0;oi<stageState.S.idx;oi++) if(stageState.S.ops[oi].f === 1) forwardDone++;
+        if(stageOp.f === 1) forwardDone += stageState.S.u;
+        var cycleState = {at:at,rank:c.r,stage:c.pp,phase:stageOp.o ? 'u' : (stageOp.f ? 'f' : 'b'),
+                          progress:stageState.S.u,forwardProgress:Math.max(0,Math.min(1,forwardDone/GA)),
+                          wait:stageState.S.wait,activeSlots:activeSlots,totalSlots:peakOf(c.pp),
+                          inflight:inflightMicrobatches(stageState)};
+        var byRank = {}; frames.forEach(function(frame,i){ byRank[i] = frame.metric; });
+        if(RI.setMemoryCycleFrame) RI.setMemoryCycleFrame(allMem,cycleState,(scenario === 'peak' || scenario === 'gap') ? {scenario:scenario,at:at,byRank:byRank,analysis:diagnosticAnalysis} : null);
+        var canvasAnnotation = diagnosticCanvasAnnotation();
+        if(canvasAnnotation){ canvas.dataset.annotation = canvasAnnotation.label; canvas.setAttribute('aria-label',canvasAnnotation.label); }
+        else { delete canvas.dataset.annotation; canvas.setAttribute('aria-label','Rank ' + c.r + ' 单 Step 内存周期'); }
+        drawLVTo(cx, width, height, dpr, c, at, totalOf(mem) > CAP, 48, true, canvasAnnotation);
+        /* 压力回放在首次 OOM 采样点停表。真实训练无法越过失败的分配继续跑完整个 step；
+           再点播放是从 step 起点重放这份已采集的事故轨迹。 */
+        if(scenario === 'danger' && !stopReason){
+          var worstRank = -1, worstTotal = CAP;
+          allMem.forEach(function(parts,i){ var total = totalOf(parts); if(total > worstTotal){ worstTotal = total; worstRank = i; } });
+          if(worstRank >= 0){
+            stopReason = 'oom'; playingCycle = false; cycleLast = 0; cancelAnimationFrame(cycleRaf); syncButton();
+            rank = worstRank;
+            /* 先让当前帧完整落下，再把主语切到最严重的 OOM Rank；不能在 drawCycle 内同步重入 drawCycle。 */
+            setTimeout(function(){ if(RI.selectMemoryRank) RI.selectMemoryRank(worstRank); },0);
+          }
+        }
+      }
+      function syncButton(){
+        button.setAttribute('aria-pressed', String(playingCycle));
+        button.classList.toggle('is-oom',stopReason === 'oom' || stopReason === 'diagnostic');
+        var stoppedPeak = diagnosticPeakTarget();
+        var label = stopReason === 'oom' ? 'OOM 已停止，点击从头重放'
+          : (stopReason === 'diagnostic' && stoppedPeak ? DIAGNOSTIC_METRIC_NAMES[stoppedPeak.metric] + '峰值已定位 · R' + stoppedPeak.rank + ' · Step ' + Math.round(stoppedPeak.at*100) + '%，点击从头重放'
+          : (stopReason === 'complete' ? 'Step 已完成，点击从头重放' : (playingCycle ? '暂停' : '播放')));
+        button.setAttribute('aria-label',label); button.title = label;
+      }
+      function cycleFrame(ts){
+        if(!active || !playingCycle) return;
+        if(!cycleLast) cycleLast = ts;
+        var next = at + (ts-cycleLast)/cycleMs; cycleLast = ts;
+        var oneShot = scenario === 'peak' || scenario === 'gap';
+        var peakTarget = oneShot ? diagnosticPeakTarget() : null, stopAt = peakTarget ? peakTarget.at : 1;
+        at = scenario === 'danger' || oneShot ? Math.min(stopAt,next) : next % 1; drawCycle();
+        if(oneShot && next >= stopAt && playingCycle){
+          stopReason = peakTarget ? 'diagnostic' : 'complete'; playingCycle = false; cycleLast = 0; cancelAnimationFrame(cycleRaf); syncButton();
+        }
+        if(playingCycle) cycleRaf = requestAnimationFrame(cycleFrame);
+      }
+      function setPlaying(on){
+        on = !!on && active;
+        if(on === playingCycle){ syncButton(); return; }
+        if(on) stopReason = '';
+        playingCycle = on; cycleLast = 0; cancelAnimationFrame(cycleRaf); syncButton();
+        if(playingCycle) cycleRaf = requestAnimationFrame(cycleFrame);
+      }
+      function prepareWarmup(){
+        if(!active) return;
+        stopReason = ''; at = 0; setPlaying(false); drawCycle();
+      }
+      function startFromWarmup(){
+        if(!active) return;
+        stopReason = ''; at = 0; drawCycle(); setPlaying(true);
+      }
+      function setVisible(on){
+        on = !!on;
+        host.hidden = !on;
+        if(on === active){ if(on){ sizeCycle(); drawCycle(); } return; }
+        active = on;
+        if(on){ sizeCycle(); prepareWarmup(); }
+        else { setPlaying(false); hideLayerBubbleTooltip(); }
+      }
+      button.addEventListener('click', function(){ if(stopReason === 'oom' || stopReason === 'complete' || stopReason === 'diagnostic') startFromWarmup(); else setPlaying(!playingCycle); });
+      if(window.ResizeObserver){
+        var cycleRO = new ResizeObserver(function(){ if(!active || !canvas.clientWidth) return; sizeCycle(); drawCycle(); });
+        cycleRO.observe(host);
+      }
+      syncButton();
+      return {
+        setVisible:setVisible,
+        setRank:function(r){ if(isFinite(r) && RI.cards[r]) rank = +r; if(active) drawCycle(); },
+        setScenario:function(next,quiet){
+          scenario = next || 'base'; diagnosticAnalysis = buildDiagnosticAnalysis();
+          diagnosticTarget = diagnosticAnalysis && diagnosticAnalysis.leaders.allocated ? {metric:'allocated',rank:diagnosticAnalysis.leaders.allocated.r} : null;
+          stopReason = ''; at = 0; setPlaying(false); if(active){ drawCycle(); if(!quiet) setPlaying(true); }
+        },
+        setDiagnosticTarget:function(metric,targetRank){ diagnosticTarget = {metric:metric,rank:+targetRank}; if(active) drawCycle(); },
+        replayScenario:startFromWarmup,
+        redraw:function(){ if(active){ sizeCycle(); drawCycle(); } },
+        prepareWarmup:prepareWarmup,
+        startFromWarmup:startFromWarmup,
+        toggle:function(){ setPlaying(!playingCycle); }
+      };
+    }
+    var memoryCycle = makeMemoryCycle();
     return {mount:mount, size:size, play:play, stop:stop, showSeg:showSeg, caps:caps, makeSide:makeSide,
-            redraw:function(){ pushTheme(); buildRd(); frame(true); }, watch:function(f){ onStage = f; }, watchEnd:function(f){ onEnd = f; }};
+            memoryCycle:memoryCycle, redraw:function(){ pushTheme(); buildRd(); frame(true); }, watch:function(f){ onStage = f; }, watchEnd:function(f){ onEnd = f; }};
   })();
+  window.RIMemoryCycle = M3 && M3.memoryCycle;
+  window.dispatchEvent(new Event('ri-memory-cycle-ready'));
   var ST3 = [
     {lbl:'1 · 开机：还没训练就占了大半', c:'#9F93D1'},
     {lbl:'2 · 正向：【涨】仅激活在涨', c:'#8FBB7A'},
@@ -4397,7 +5806,11 @@
           var perfOff = E.selLayer && PLN.colKey(E.selLayer) === PLN.colKey(perfCol);
           E.selLayer = perfOff ? null : perfCol; E.layerGuide = !perfOff; E.selRank = null;
         }
-        else if(tk){ var off = E.selLayer && PLN.colKey(E.selLayer) === PLN.colKey(tk); E.selLayer = off ? null : tk; E.layerGuide = !off; if(perfMode()) E.selRank = null; }
+        else if(tk){
+          var off = E.selLayer && PLN.colKey(E.selLayer) === PLN.colKey(tk) && E.selRank === null;
+          E.selRank = null;   /* 顶尺始终是公共 Layer 轴，不继承之前点中的 EDP / Rank。 */
+          E.selLayer = off ? null : tk; E.layerGuide = !off;
+        }
         else if(ph && ph.col){
           /* 性能分析里的 Layer 格子已在上一个分支按整列选择；端点格仍可按 Rank 查看。
              显存那边不受影响——那儿的问题本来就是「这张卡的这一层装了什么」，天然是一格。 */
@@ -5034,8 +6447,9 @@
       if(r !== null){
         sideDomSig = '';
         var c = E.PC[r], m = MEM[r], T = E.TOPO, tot = total(m);
-        var sub = 'PP' + c.pp + ' · ' + (T.ortho ? 'DP ' + Math.floor(c.dp/T.ep) + ' · EP ' + (c.dp % T.ep) : 'DP' + c.dp + ' · EP 组 ' + (c.dp % T.ep)) + ' · TP' + c.tp + ' · node ' + Math.floor(r/8)
-          + (E.selLayer && E.selLayer.type === 'layer' ? ' · ' + E.selLayer.label : '');
+        var edpNo = Math.floor(c.k/T.groupRows);
+        var sub = 'PP' + c.pp + ' · ' + (T.ortho ? 'DP ' + edpNo + ' · EP ' + (c.dp % T.ep) : 'EDP ' + edpNo + ' · 切出口径 DP' + c.dp + ' · EP ' + (c.dp % T.ep)) + ' · TP' + c.tp + ' · node ' + Math.floor(r/8)
+          + (E.selLayer && E.selLayer.type === 'layer' ? ' · Layer 实例 ' + E.selLayer.layer : '');
         sideP.head(c, sub, m);
         if(E.selLayer) sideP.closeTitle('返回 ' + E.selLayer.label + ' 耗时差异');
         sideP.update(m, tot, CAP, CARDS[lastValid.card].hbm);

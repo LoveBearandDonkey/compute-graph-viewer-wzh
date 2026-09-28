@@ -5065,9 +5065,9 @@
     const allShared = () => { for (let i = 0; i < counts.sharedExpert; i += 1) rel.shared.add(i); };
     // 端点列（Emb / Norm / Head）驻留的 PP stage
     const anchorStage = (col) => (col.stageAnchor === "first" ? 0 : Math.max(0, counts.pp - 1));
-    /* 结构对象（层、典型层算子、Emb / Norm / Head 端点）一律查**全部 DP/EDP**：
-       问的是「这个结构对象落在哪些卡上」，答案本就横跨所有模型副本。
-       只有明确带了 dpIdx 的 payload（点某张 rank 卡）才收窄到那一个副本。
+    /* 结构对象有两种口径：不带 dpIdx 时查全部 EDP 中的同名对象；带 dpIdx 时查
+       一个 EDP 中的具体实例。平面画布点 Layer 格子走实例口径，顶部公共刻度走同名
+       集合口径；其他入口沿用是否携带 dpIdx 的同一条规则。
        不区分「分片 / 副本」：Dense 层与 Emb / Norm / Head 在 EP 维度上确实是
        副本，但副本也是"这张卡上有这一层"，照样要亮 —— 只亮一份会读成"这个 DP
        里其余的卡不含这一层"，那是错的。副本结构本身由斑马纹表达：同一亮度的
