@@ -513,6 +513,20 @@ body:has(.cro-board.is-plane) .cro-link-layer { display: none; }
   pointer-events: none;
 }
 
+/* 一个 EDP = 一条完整专家模型流水线。框贯穿全部 PP Stage，只承担副本边界；
+   Layer / 专家身份继续由格子内容与数据色表达，避免一色多义。 */
+.crop-edp-frame {
+  pointer-events: none;
+  border: var(--crop-edp-line, 1px) solid color-mix(in srgb, var(--foreground) 20%, transparent);
+  background: color-mix(in srgb, var(--foreground) 1.8%, transparent);
+  border-radius: var(--radius-md);
+}
+
+.crop-edp-frame.is-selected {
+  border-color: color-mix(in srgb, var(--primary) 72%, transparent);
+  background: color-mix(in srgb, var(--primary) 3.5%, transparent);
+}
+
 /* 画布上的每一类对象都是绝对定位的方块，坐标由 js 按世界坐标写 */
 .crop-node {
   position: absolute;
@@ -896,10 +910,9 @@ body:has(.cro-board.is-plane) .cro-link-layer { display: none; }
    着色的单位是**一套完整专家** = 一个 MoE 层 × 一个 DP/EDP 副本：那一块矩形里的
    卡各持一片，合起来正好是 routedExpert 个专家的一整套。整块一个颜色，读的人因此
    一眼看得出「这一片就是一整套」。
-   js 那边取 **层号 % 4**：颜色说的是「这一层的专家权重是哪一份」，左右相邻换层就
-   换色。副本号**不参与** —— 上下两个 EDP 副本持的是同一份权重（步末在 EDP 组里
-   all-reduce 对齐），换色会被读成「两套不同的专家」；副本之间的边界交给行距那道缝
-   与左量尺去分。
+   js 那边取 **层号 % 4**：颜色说的是「哪一个逻辑层」，左右相邻换层就换色。
+   副本号**不参与** —— 上下两个 EDP 持有逻辑相同、物理独立的权重副本；副本边界
+   由贯穿全部 PP Stage 的外框、组间距、左量尺和斜纹共同表达。
    ⚠️ 这**不是** EP 的颜色：EP 是同一套内部的分片，同一套里的每张卡同色、编号不同，
    那才是「一整套被切开」该有的读法。EP 归属去看格子里的编号与悬浮提示。
    色值取 training-run-twin.css 里 .ep-tint-N 那套的前四色，不另造一套色板。
