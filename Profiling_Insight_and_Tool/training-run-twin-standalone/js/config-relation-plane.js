@@ -42,16 +42,17 @@
   if (!PR) throw new Error("config-relation-plane.js 需要先加载 shared/plane-rules.js");
 
   /* ══ 几何常量（世界坐标，单位 px @ scale 1）══════════════════════════════
-     格子是横长方形而不是正方形：一行是一张卡（或一台整机）、一列是一层，读的
-     时候总是先沿着行扫（这张卡压住哪几层），横向宽一点扫起来省眼力。
-     ⚠️ 列宽**不是常量** —— 它由 buildLayout 按专家标签的实测宽度定（见那里），
-     这两个只是上下界。 */
+     Rank × Layer 的**可见格子**始终是正方形。逻辑槽位的高度比宽度多出
+     ROW_GAP_PX - CELL_GAP_PX，这份差值只用来拉开 Rank 行；格子本体不再被拉成
+     长方形。⚠️ 基础边长**不是常量** —— 它由 buildLayout 按标签与内容的
+     实测尺寸定，这两个只是上下界。 */
   const CELL_W_MIN = 34;
   const CELL_W_MAX = 260;
   /* 行高的**下界**。真值由 buildLayout 按「专家标签折成几行」算（layout.cellH），
      一行胶囊时就是这个数。 */
   const CELL_H = 22;
   const CELL_GAP_PX = 3;         // rank × layer 格子横纵间距（屏幕像素，不随缩放变细）
+  const ROW_GAP_PX = 6;          // Rank 行距是列距的 2 倍，横向若干格更明确地读成一组
   const CELL_BODY_MIN_PX = 1;    // 极限缩小时仍给格子本体留下的最小可见尺寸
   /* ── stage 块之间那条缝（同时是行标写字的地方，下称「行标道」）─────────────
      宽度**不是常量**，由 laneWorldAt(k) 每帧按两种情形给（都以屏幕像素为准）：
@@ -72,16 +73,18 @@
   const LANE_EDGE = 6;           // 道与块之间那点固定的世界间隙
   /* TP 分组槽始终按屏幕像素留宽：rank 文本会随缩放反向补偿字号，这条槽也必须
      同步反向补偿，否则缩小时括号会挤进 rank 文本、放大时又会留下大片空白。 */
-  const TP_GUTTER_PX = 34;
+  /* TP 括号槽是屏幕像素，不随世界缩放。28px 比上版收紧 6px，使 TP 名
+     贴近它所修饰的 Rank 名；缩小时这份亲密关系也保持不变。 */
+  const TP_GUTTER_PX = 28;
   /* 槽的左侧刻意留白，让 TP 括号靠近它所修饰的 rank，而不是贴着前一块 PP Stage。
      与槽宽一样按屏幕像素折算，任何缩放下亲疏关系都不漂移。 */
   const TP_GUTTER_LEAD_PX = 12;
   /* 纵向的两级缝，都是**分区感**用的 —— 缩小之后格子糊成一片，能读出边界的
      就只剩这两条缝：
-       DP_GAP   EDP 副本组之间（36 = 原先 12 的 3 倍）
+       DP_GAP   EDP 副本组之间（144 = 上一版 36 的 4 倍）
        NODE_GAP 副本内整机与整机之间（原先没有缝，整机档一片连续行读不出机器边界）
-     两者拉开 3 倍差，层级才读得出来：先看到副本、再看到机器。 */
-  const DP_GAP = 36;
+     两者显著拉开，层级才读得出来：先看到副本、再看到机器。 */
+  const DP_GAP = 144;
   const NODE_GAP = 12;
   const ROW_FONT_MIN = 10;       // 行标在屏幕上最小 10px，小于它就不画（而不是画成蚂蚁）
   /* （原先这里还有 NODE_CAP_RATIO / NODE_CAP_MIN_PX 两个常量，管整机行顶上那条
@@ -143,11 +146,12 @@
   // 行标在屏幕上至少要有这么高才写得下字（列名已经交给顶部量尺，不受此限）
 
   /* ── 格内的三档 ──────────────────────────────────────────────────────────
-     一格问的是「这张卡 × 这一层」。它答得多细，该由**这一格在屏幕上有多大**决定，
-     而不是由某个写死的 k 决定 —— 同一个 k 下，每卡 32 个专家的格子有 139px 高、
-     每卡 4 个的只有 22px，两者能写下的东西差着一个数量级。三档从粗到细：
+     一格问的是「这张卡 × 这一层」。首先按用户可见的缩放分档：100% 及以下只保留
+     纯格子，**超过** 100% 后才允许展开结构。过了这道门，再由这一格的屏幕尺寸
+     决定细到什么程度：同一缩放下，不同专家数的格子能容纳的信息量仍然不同。
+     三档从粗到细：
 
-       ① 整格上色 —— 一格不足 BLOCK_MIN_H 高。这时只剩「这是哪一套专家」一件事
+       ① 整格上色 —— 缩放 ≤ 100%，或一格不足 BLOCK_MIN_H 高。这时只剩「这是哪一套专家」一件事
           还答得出，交给底色（与热力档、整机跨 EP 那几档同一个降级方向）。
        ② 两段块 —— Attention / MoE（dense 层写 Dense）两条横带，MoE 那条带着那
           一套专家的颜色。答的是「这一层的活分成哪几块」，还不到算子的粒度；
@@ -1122,10 +1126,11 @@
   /* 热力档自己的交叉格选择。主脚本的 relation 只表达单一对象（rank 或 layer），
      不能表达 rank × layer；这里单独保存，右栏与白框都读这一份。 */
   let heatPick = null;
-  /* 最近一次点到的 EDP × layer 实例。配置档的 Layer 格子发实例层选择；热力档仍由
-     heatPick 表达 rank × layer。pickedEdp 为 null 表示顶部公共刻度选中的同名层集合，
-     有值时定位阴影只落在那个 EDP 框内，不再贯穿所有副本。 */
+  /* 最近一次点到的 EDP × 列实例。Layer 明细打开时由 pickedLayer 表达具体层；
+     关闭时由 pickedStage 表达聚合后的 PP Stage。pickedEdp 为 null 表示顶部公共
+     刻度选中的集合，有值时定位阴影只落在那个 EDP 框内，不再贯穿所有副本。 */
   let pickedLayer = null;
+  let pickedStage = null;
   let pickedEdp = null;
   // emit() 正在同步派发 cro:select 时为 true（见 emit 与 cro:select 监听器）
   let selfEmitting = false;
@@ -1377,15 +1382,14 @@
     scheduleRender();
   });
 
-  /* 专家着色开关。默认开 —— 那是这幅图的主要读法（同色一块 = 同一逻辑层的专家）；
-     但它同时也是最占视觉带宽的一层，比对高亮、看 PP 分段时关掉更清爽，
-     所以给一枚常驻开关而不是藏进设置。 */
+  /* 专家着色开关。默认关，让 Rank / Layer / EDP 的选择层级先成为主视觉；需要辨认
+     专家权重副本时再显式打开。它仍常驻工具栏，不藏进设置。 */
   /* 名字写全：「专家着色」四个字读起来像「给专家上色」（一个专家一个色），
      而它其实是「一个逻辑层的专家权重一个色」。同一层的几个 EDP 副本同色，但各自
      持有物理独立的参数；副本边界由完整 EDP 外框和斜纹表达。 */
-  const paintBtn = el("button", "btn btn-sm crop-paint is-selected", "按层给专家权重着色");
+  const paintBtn = el("button", "btn btn-sm crop-paint", "专家着色");
   paintBtn.type = "button";
-  paintBtn.setAttribute("aria-pressed", "true");
+  paintBtn.setAttribute("aria-pressed", "false");
   paintBtn.title = "同色 = 同一逻辑层的专家权重；每个 EDP 都持有物理独立的完整副本，EDP 1 起同色加斜纹，梯度同步后参数数值一致。关掉则只留结构与高亮。";
   paintBtn.addEventListener("click", () => {
     paintExperts = !paintExperts;
@@ -1396,7 +1400,7 @@
 
   /* TP 是 rank 行之间的关系，开关因此只在 Rank 视角有实际画面；切到整机视角时
      暂时禁用但保留偏好，回到 Rank 视角会恢复。按钮沿用设计系统的 btn.is-selected。 */
-  const tpBtn = el("button", "btn btn-sm crop-tp-toggle is-selected", "TP 分组");
+  const tpBtn = el("button", "btn btn-sm crop-tp-toggle is-selected", "TP标注");
   tpBtn.type = "button";
   tpBtn.setAttribute("aria-pressed", "true");
   tpBtn.addEventListener("click", () => {
@@ -1407,10 +1411,74 @@
     scheduleRender();
   });
 
-  tools.append(tpBtn, paintBtn, unitTabs, zoomOut, readout, zoomIn, fitBtn);
+  /* 与 Rank 入门第 10 步同一语义：打开时展开 Emb / Layer / Norm / Head，关闭时
+     每个 PP Stage 聚合成一列。通信与热力依赖逐 Layer 坐标，因此只在配置寻优档
+     展示这枚开关；切去另外两档时临时展开，回来后恢复用户的选择。 */
+  const layerBtn = el("button", "btn btn-sm crop-layer-toggle is-selected", "Layer标注");
+  layerBtn.type = "button";
+  layerBtn.setAttribute("role", "switch");
+  layerBtn.setAttribute("aria-checked", "true");
+  layerBtn.title = "切换 Layer 明细与 PP Stage 聚合视图";
+  layerBtn.addEventListener("click", () => {
+    if (center.dataset.mode !== "config" || memoryObservation) return;
+    layerDetailVisible = !layerDetailVisible;
+    layerBtn.classList.toggle("is-selected", layerDetailVisible);
+    layerBtn.setAttribute("aria-checked", String(layerDetailVisible));
+    heatPick = null;
+    if (topology) {
+      layout = buildLayout(topology);
+      fit();
+    }
+  });
+
+  const memoryBtn = el("button", "btn btn-sm crop-memory-toggle", "内存观测");
+  memoryBtn.id = "cropMemoryToggle";
+  memoryBtn.type = "button";
+  memoryBtn.setAttribute("role", "switch");
+  memoryBtn.setAttribute("aria-checked", "false");
+  memoryBtn.title = "每个 Rank 聚合成一个格子，按 HBM 容量显示底座、权重、梯度、优化器态、激活与预留占比";
+  memoryBtn.addEventListener("click", () => {
+    if (center.dataset.mode !== "config") return;
+    setMemoryObservation(!memoryObservation);
+  });
+
+  /* 内存观测缩到 100% 以下后改读总占用热力。色条复用“负载热力”
+     的渐变，但它是一个独立浮层：放在 crop-tools 上方而不塞进工具条，
+     才有足够宽度写清最小 / 最大值或单张 Rank 的精确位置。 */
+  const memoryLegend = el("div", "crop-heat__legend crop-memory-legend");
+  memoryLegend.hidden = true;
+  const memoryLegendCaption = el("div", "crop-memory-legend__caption", "Rank HBM 占用");
+  const memoryLegendScale = el("div", "crop-memory-legend__scale");
+  const memoryLegendLo = el("span", "crop-heat__legend-end", "0%");
+  const memoryLegendTrack = el("span", "crop-memory-legend__track");
+  const memoryLegendRamp = el("span", "crop-heat__legend-ramp crop-memory-legend__ramp");
+  /* 冷端先铺一层确定的 0% 深蓝，渐变再盖在上面并被独立内层裁剪。
+     这样圆角的抗锯齿边缘不会从右端采样，消除 0% 侧的红色串色。 */
+  memoryLegendRamp.style.backgroundColor = heatColor(0);
+  memoryLegendRamp.style.backgroundImage = HEAT_RAMP_CSS;
+  memoryLegendRamp.setAttribute("aria-hidden", "true");
+  const memoryLegendShadeLo = el("span", "crop-memory-legend__shade crop-memory-legend__shade--lo");
+  const memoryLegendShadeHi = el("span", "crop-memory-legend__shade crop-memory-legend__shade--hi");
+  const makeMemoryMarker = (kind) => {
+    const marker = el("span", `crop-memory-legend__marker crop-memory-legend__marker--${kind}`);
+    marker.appendChild(el("span", "crop-memory-legend__marker-label"));
+    return marker;
+  };
+  const memoryLegendMin = makeMemoryMarker("min");
+  const memoryLegendMax = makeMemoryMarker("max");
+  const memoryLegendRank = makeMemoryMarker("rank");
+  memoryLegendRank.hidden = true;
+  const memoryLegendHi = el("span", "crop-heat__legend-end", "100%");
+  memoryLegendTrack.append(memoryLegendRamp, memoryLegendShadeLo, memoryLegendShadeHi,
+    memoryLegendMin, memoryLegendMax, memoryLegendRank);
+  memoryLegendScale.append(memoryLegendLo, memoryLegendTrack, memoryLegendHi);
+  memoryLegend.append(memoryLegendCaption, memoryLegendScale);
+
+  tools.append(tpBtn, paintBtn, layerBtn, memoryBtn,
+    unitTabs, zoomOut, readout, zoomIn, fitBtn);
   /* 阴影必须在集群世界下面：DOM 顺序先 guide、后 world，即使格子使用透明底色也会
      保留一层淡淡的纵向定位，而不会盖住格子文本、边框与点击。 */
-  stage.append(layerGuide, world, rulerTop, rulerLeft, rulerCorner, tools);
+  stage.append(layerGuide, world, rulerTop, rulerLeft, rulerCorner, memoryLegend, tools);
 
   /* ── 右栏：选中详情 ── */
   /* 默认把静息态的「当前配置评估」收起，把宽度先还给主画布；用户点中具体对象时，
@@ -1922,9 +1990,139 @@
      切断了哪根通信轴」这件事只有在整机粒度上才画得出来，而这恰好是排查慢 / hang
      时最先要问的。卡多了之后它顺带还压掉 8 倍的行数。 */
   let unitMode = "auto";
-  let paintExperts = true;   // 「专家着色」开关，见右下角那枚按钮
+  let paintExperts = false;  // 「专家着色」默认关闭，与 Rank 入门第 10 步的 paintOn 一致
   let tpGroupsVisible = true;
+  let layerDetailVisible = true; // 配置寻优档的「Layer标注」偏好；另两档始终展开
+  let memoryObservation = false;
+  let memoryPrefs = null;
   let lastUnit = "rank";     // auto 档的迟滞值，见 currentUnit()
+
+  function layerColumnsVisible() {
+    return !memoryObservation && (layerDetailVisible || center.dataset.mode !== "config");
+  }
+
+  function syncMemoryControls() {
+    memoryBtn.hidden = center.dataset.mode !== "config";
+    memoryBtn.classList.toggle("is-selected", memoryObservation);
+    memoryBtn.setAttribute("aria-checked", String(memoryObservation));
+    tpBtn.disabled = memoryObservation;
+    layerBtn.disabled = memoryObservation || center.dataset.mode !== "config";
+    paintBtn.disabled = memoryObservation;
+    tpBtn.classList.toggle("is-selected", tpGroupsVisible);
+    tpBtn.setAttribute("aria-pressed", String(tpGroupsVisible));
+    layerBtn.classList.toggle("is-selected", layerDetailVisible);
+    layerBtn.setAttribute("aria-checked", String(layerDetailVisible));
+    if (!memoryObservation || center.dataset.mode !== "config") memoryLegend.hidden = true;
+  }
+
+  function placeMemoryLegendMarker(marker, ratio, label) {
+    const value = clamp(Number(ratio) || 0, 0, 1);
+    marker.style.left = `${(value * 100).toFixed(3)}%`;
+    marker.dataset.edge = value < 0.10 ? "start" : (value > 0.90 ? "end" : "middle");
+    marker.querySelector(".crop-memory-legend__marker-label").textContent = label;
+  }
+
+  function positionMemoryLegend() {
+    /* 以工具条的真实几何定位，不猜它的高度：按钮文案、字号或窗口改变后，
+       图例仍始终贴在 crop-tools 上方并与它的右边缘对齐。 */
+    const right = Math.max(0, stage.clientWidth - tools.offsetLeft - tools.offsetWidth);
+    const bottom = Math.max(0, stage.clientHeight - tools.offsetTop + 8);
+    memoryLegend.style.right = `${right}px`;
+    memoryLegend.style.bottom = `${bottom}px`;
+  }
+
+  function syncMemoryLegend(heatMode, measures) {
+    memoryLegend.hidden = !heatMode;
+    if (!heatMode) return;
+    positionMemoryLegend();
+
+    const valid = (measures || []).filter((m) => m && Number.isFinite(m.ratio));
+    const primary = relation && relation.primary;
+    const selectedRank = primary && primary.kind === "rank" && Number.isFinite(primary.rank)
+      ? primary.rank : null;
+    let selectedMeasure = null;
+    if (selectedRank != null && topology) {
+      const co = topology.coordsOfRank(selectedRank);
+      selectedMeasure = valid.length && co ? measures[co.stage] : null;
+    }
+
+    const single = Boolean(selectedMeasure && Number.isFinite(selectedMeasure.ratio));
+    memoryLegend.classList.toggle("is-single", single);
+    memoryLegendMin.hidden = single;
+    memoryLegendMax.hidden = single;
+    memoryLegendShadeLo.hidden = single;
+    memoryLegendShadeHi.hidden = single;
+    memoryLegendRank.hidden = !single;
+
+    if (single) {
+      const ratio = clamp(selectedMeasure.ratio, 0, 1);
+      memoryLegendCaption.textContent = `R${selectedRank} · HBM 占用`;
+      placeMemoryLegendMarker(memoryLegendRank, ratio,
+        `R${selectedRank} · ${Math.round(ratio * 100)}%`);
+      memoryLegend.title = `Rank ${selectedRank} 的 HBM 占用为 ${Math.round(ratio * 100)}%`;
+      return;
+    }
+
+    const lo = valid.length ? valid.reduce((a, b) => (b.ratio < a.ratio ? b : a), valid[0]) : null;
+    const hi = valid.length ? valid.reduce((a, b) => (b.ratio > a.ratio ? b : a), valid[0]) : null;
+    const loRatio = lo ? clamp(lo.ratio, 0, 1) : 0;
+    const hiRatio = hi ? clamp(hi.ratio, 0, 1) : 1;
+    memoryLegendTrack.style.setProperty("--memory-min", `${(loRatio * 100).toFixed(3)}%`);
+    memoryLegendTrack.style.setProperty("--memory-max", `${(hiRatio * 100).toFixed(3)}%`);
+    placeMemoryLegendMarker(memoryLegendMin, loRatio, `最小 ${Math.round(loRatio * 100)}%`);
+    placeMemoryLegendMarker(memoryLegendMax, hiRatio, `最大 ${Math.round(hiRatio * 100)}%`);
+    memoryLegendCaption.textContent = "Rank HBM 占用 · 当前范围";
+    memoryLegend.title = `当前 Rank HBM 占用范围 ${Math.round(loRatio * 100)}%–${Math.round(hiRatio * 100)}%`
+      + "；冷蓝 = 占用低，火红 = 占用高";
+  }
+
+  /* 以工具条显示的整数缩放为分档真值：避免内部 99.6% 四舍五入显示为
+     100%，画面却还停在热力档的矛盾。 */
+  function memoryHeatAtScale(scale) {
+    return Math.round(scale * 100) < 100;
+  }
+
+  function setMemoryObservation(on) {
+    on = Boolean(on);
+    if (on === memoryObservation) return;
+    if (on) {
+      memoryPrefs = { tp: tpGroupsVisible, layer: layerDetailVisible, unit: unitMode };
+      memoryObservation = true;
+      tpGroupsVisible = false;
+      layerDetailVisible = false;
+      unitMode = "rank";
+      heatPick = null;
+    } else {
+      memoryObservation = false;
+      if (memoryPrefs) {
+        tpGroupsVisible = memoryPrefs.tp;
+        layerDetailVisible = memoryPrefs.layer;
+        unitMode = memoryPrefs.unit;
+      }
+      memoryPrefs = null;
+    }
+    syncMemoryControls();
+    if (topology) {
+      layout = buildLayout(topology);
+      fit();
+    }
+  }
+
+  /* Layer 标注只改变列的显示粒度，不改变选择语义：具体 Layer 折叠后投影到它所在的
+     Stage；直接点聚合 Stage 时，重新展开则命中该 Stage 的全部明细列。EDP 范围由
+     调用处另外判定，避免同一逻辑列扩散到其他权重副本。 */
+  function hasPickedColumn() {
+    return pickedLayer != null || Number.isFinite(pickedStage);
+  }
+
+  function pickedColumnHit(col) {
+    if (!col || !topology) return false;
+    if (pickedLayer != null) {
+      if (col.type === "layer") return col.layer === pickedLayer;
+      return col.type === "stage" && col.stage === topology.stageOfLayer(pickedLayer);
+    }
+    return Number.isFinite(pickedStage) && col.stage === pickedStage;
+  }
 
   /* 两枚实测探针：列宽要按**真正会画出来的那串标签**定，不能拍脑袋写死。
      探针挂在 stage（未缩放）下，量到的就是 scale=1 时的像素宽；它们各自带着与
@@ -1977,23 +2175,31 @@
        点击发的也是同一种 payload（kind:"segment" + wholeColumn），于是右栏、
        典型 Layer、整网 deck 的联动全都照旧。 */
     const cols = [];
+    const expandLayers = layerColumnsVisible();
     t.stages.forEach((entry) => {
       const list = [];
-      if (entry.stage === 0) {
-        list.push({ type: "unit", id: "emb", label: "Emb", stage: entry.stage });
-      }
-      for (let l = entry.lo; l <= entry.hi; l += 1) {
-        const info = t.layers[l];
-        const moe = Boolean(info && info.ffn === "moe");
+      if (expandLayers) {
+        if (entry.stage === 0) {
+          list.push({ type: "unit", id: "emb", label: "Emb", stage: entry.stage });
+        }
+        for (let l = entry.lo; l <= entry.hi; l += 1) {
+          const info = t.layers[l];
+          const moe = Boolean(info && info.ffn === "moe");
+          list.push({
+            type: "layer", layer: l, moe, stage: entry.stage,
+            label: `Layer${l} · ${moe ? "MoE" : "Dense"}`,
+            short: `L${l}`,
+          });
+        }
+        if (entry.stage === t.stages.length - 1) {
+          list.push({ type: "unit", id: "norm", label: "Norm", stage: entry.stage });
+          list.push({ type: "unit", id: "head", label: "Head", stage: entry.stage });
+        }
+      } else {
         list.push({
-          type: "layer", layer: l, moe, stage: entry.stage,
-          label: `Layer${l} · ${moe ? "MoE" : "Dense"}`,
-          short: `L${l}`,
+          type: "stage", id: `stage${entry.stage}`, stage: entry.stage,
+          label: `PP Stage${entry.stage}`, short: String(entry.stage),
         });
-      }
-      if (entry.stage === t.stages.length - 1) {
-        list.push({ type: "unit", id: "norm", label: "Norm", stage: entry.stage });
-        list.push({ type: "unit", id: "head", label: "Head", stage: entry.stage });
       }
       cols.push(list);
     });
@@ -2046,12 +2252,19 @@
     /* 列名在顶部量尺里是**两行**（"Layer45" / "Dense"），所以列宽只要够写下两行
        里较长的那一行就行 —— 原先按一整串 "Layer45 · Dense" 量，凭空多出快一倍的
        宽度，整幅平面也就跟着横着拉长一倍。 */
-    const nameW = Math.max(
-      measure(probeLabel, `Layer${Math.max(0, c.totalLayer - 1)}`),
-      measure(probeLabel, "Dense"),
-    ) + CELL_PAD;
-    cellW = clamp(Math.ceil(Math.max(cellW, nameW)), CELL_W_MIN, CELL_W_MAX);
-    cellH = Math.ceil(cellH);
+    const nameW = (expandLayers
+      ? Math.max(
+        measure(probeLabel, `Layer${Math.max(0, c.totalLayer - 1)}`),
+        measure(probeLabel, "Dense"),
+      )
+      : measure(probeLabel, `PP Stage${Math.max(0, c.pp - 1)}`)) + CELL_PAD;
+    /* 先取一个能放下内容的正方形边长。cellW / cellH 是槽位 pitch，
+       而不是最终的填充矩形；纵向 pitch 多出的 3px 专门留给 Rank 行距。
+       render 会在任何缩放下以横向可见边长同时给 width / height，
+       所以真正看到的格子始终为正方形。 */
+    const cellSide = clamp(Math.ceil(Math.max(cellW, cellH, nameW)), CELL_W_MIN, CELL_W_MAX);
+    cellW = cellSide;
+    cellH = cellSide + ROW_GAP_PX - CELL_GAP_PX;
     /* ── 交给 css 的两组变量（全局同值，写在 .crop-world 上而不是逐格写）──────
        ① 专家网格的列数：详情面板里那个 Expert Compute 盒子按它排 grid。
        ② 详情面板那一套**设计像素**。面板的实际高度是 css 按这些数堆出来的，而
@@ -2079,10 +2292,12 @@
        探针自己的字号（用来把宽度按真实字号等比换算）。 */
     const maxRank = Math.max(0, (c.totalRank || 1) - 1);
     const maxNode = Math.max(0, Math.ceil((c.totalRank || 1) / rpn) - 1);
-    /* 两档粒度的行标不一样长，各量各的 —— 卡粒度只写一行 "rank 2047"，整机粒度写
+    /* 两档粒度的行标不一样长，各量各的 —— 卡粒度在 Layer 明细下写
+       "rank 2047"，聚合成 PP Stage 列后收紧为 "R2047"；整机粒度写
        两行（"整机 255" + 它含的那段 rank），后者的第二行才是最长的那一串。
        用一个全局最大值会让卡粒度那一档凭空多留一截道宽。 */
-    const labelTextW = measure(probeLabel, `rank ${maxRank}`);
+    const labelTextW = measure(probeLabel,
+      expandLayers ? `rank ${maxRank}` : `R${maxRank}`);
     const labelTextWNode = Math.max(
       measure(probeLabel, `整机 ${maxNode}`),
       measure(probeLabel, `rank ${Math.max(0, maxRank - rpn + 1)}–${maxRank}`),
@@ -2121,6 +2336,7 @@
 
     const layoutOut = {
       blocks,
+      layerColumnsVisible: expandLayers,
       rows,
       cellW,
       cellH,
@@ -2251,7 +2467,7 @@
     if (!layout) return 0;
     const m = rowMetrics(k);
     if (!m.show) return GAP_MIN_PX / Math.max(k, 1e-6);
-    // 两行那一档要按更长的那一行（rank 区间）留，卡粒度只按 "rank N" 留
+    // 两行那一档要按更长的那一行（rank 区间）留，卡粒度按当前实际的 "rank N" / "RN" 留
     const textW = m.span > 1 ? layout.labelTextWNode : layout.labelTextW;
     const tpGutter = tpGroupsVisible && topology && topology.counts.tp > 1 && m.span === 1
       ? TP_GUTTER_PX / Math.max(k, 1e-6) : 0;
@@ -2270,9 +2486,11 @@
       const id = btn.dataset.unit;
       btn.classList.toggle("is-selected", id === unitMode);
       btn.setAttribute("aria-pressed", String(id === unitMode));
-      const off = id === "node" && !allowed;
+      const off = memoryObservation || (id === "node" && !allowed);
       btn.disabled = off;
-      if (off) {
+      if (memoryObservation) {
+        btn.title = "内存观测固定为 Rank 视角：一格对应一张卡";
+      } else if (off) {
         btn.title = `这组配置不给整机视角：一台 ${rpn} 卡的机器会骑在两个副本之间`
           + `（每副本 ${layout ? layout.ranksPerDp : "?"} 卡，除不尽），聚出来的格子会说谎`;
       } else if (id === "auto") {
@@ -2289,7 +2507,7 @@
 
     const tp = topology ? Math.max(1, topology.counts.tp || 1) : 1;
     const rankView = unit === "rank";
-    tpBtn.disabled = tp <= 1 || !rankView;
+    tpBtn.disabled = memoryObservation || tp <= 1 || !rankView;
     tpBtn.classList.toggle("is-selected", tpGroupsVisible);
     tpBtn.setAttribute("aria-pressed", String(tpGroupsVisible));
     if (tp <= 1) tpBtn.title = "当前 TP=1，没有 TP 分组";
@@ -2330,6 +2548,8 @@
     world.style.setProperty("--crop-cell-focus-line", `${2 / view.k}px`);
     world.style.setProperty("--crop-cell-focus-halo", `${5 / view.k}px`);
     world.style.setProperty("--crop-edp-line", `${1 / view.k}px`);
+    world.style.setProperty("--crop-cell-line", `${1 / view.k}px`);
+    world.style.setProperty("--crop-selected-line", `${1.5 / view.k}px`);
     // 副本斜纹同理：整格底那一档的条纹画在 world 里，按倒数抵消后屏幕上恒为 3px / 9px
     world.style.setProperty("--crop-stripe-unit", `${1 / view.k}`);
     world.style.transform = `translate(${view.x}px, ${view.y}px) scale(${view.k})`;
@@ -2442,11 +2662,29 @@
     const p = rel ? rel.primary : null;
     const instanceEdp = p && p.kind === "layer" && Number.isFinite(p.dpIdx)
       ? p.dpIdx : null;
+    const pickedCross = Boolean(p && p.kind === "rank"
+      && hasPickedColumn() && Number.isFinite(pickedEdp));
     const c = topology.counts;
     const cellW = layout.cellW;
+    /* 格子在逻辑槽位里是居中的，Layer 定位带必须与可见格子用同一份
+       屏幕像素间距换算。原先按整个 cellW 画，右侧会多包一整道列缝；
+       缩小时列缝换成世界坐标后更大，偏移就更显眼。 */
+    const guideGapPx = clamp(CELL_GAP_PX * k, CELL_GAP_PX, 3 * CELL_GAP_PX);
+    const guideGapWorld = Math.max(0,
+      Math.min(guideGapPx / k, cellW - CELL_BODY_MIN_PX / k));
+    const guideBody = cellW - guideGapWorld;
+    const guideInsetX = (cellW - guideBody) / 2;
+    const guideSpan = unit === "node" ? layout.ranksPerNode : 1;
+    const guideRowH = layout.cellH * guideSpan;
+    const guideRowGapPx = clamp(ROW_GAP_PX * k, ROW_GAP_PX, 3 * ROW_GAP_PX);
+    const guideRowGapWorld = Math.max(0,
+      Math.min(guideRowGapPx / k, guideRowH - CELL_BODY_MIN_PX / k));
+    const guideOuterYGap = guideSpan === 1
+      ? layout.cellH - guideBody
+      : guideRowGapWorld;
     /* 再小一档时不把 L23 拆成两行，而是把共同的 Layer 语义提到轴名前缀，刻度只
        留数字。门槛沿用原先触发分行的 15px，因此换档时机与上一版完全一致。 */
-    const numberOnlyLayers = cellW * k < 15;
+    const numberOnlyLayers = layout.layerColumnsVisible && cellW * k < 15;
 
     rulerTop.style.left = `${v.x0}px`;
     /* 高度也由这里写：css 里那条只是兜底。刻度盒是 overflow:hidden 的，两个数
@@ -2477,26 +2715,30 @@
     else if (p && p.kind === "segment" && rel.layers && rel.layers.size) guideLayers = [...rel.layers];
     const guideSet = new Set(guideLayers);
     const guideFrag = doc.createDocumentFragment();
-    if (guideSet.size) {
+    if (guideSet.size || pickedCross) {
       for (const block of layout.blocks) {
         block.cols.forEach((col, ci) => {
-          if (col.type !== "layer" || !guideSet.has(col.layer)) return;
-          const x = view.x + (block.x + ci * cellW) * k;
-          const w = cellW * k;
+          const guideHit = pickedCross
+            ? pickedColumnHit(col)
+            : col.type === "layer" && guideSet.has(col.layer);
+          if (!guideHit) return;
+          const x = view.x + (block.x + ci * cellW + guideInsetX) * k;
+          const w = guideBody * k;
           if (x + w < v.x0 || x > v.x1) return;   // 视口外的列不建元素
           const g = el("div", "crop-layer-guide");
-          /* 顶尺现在有完整外框，绝对定位子元素的原点在其 1px 边框内侧；阴影不在
-             顶尺里面，需补上同一份 clientLeft，才能与可见刻度格像素级重合。 */
-          g.style.left = `${x + rulerTop.clientLeft}px`;
+          /* 定位带的宿主是 stage，与 world 共用画布原点。这里直接对齐可见
+             格子，不再补顶尺自己的 1px clientLeft；那个边框只属于刻度容器。 */
+          g.style.left = `${x}px`;
           g.style.width = `${Math.max(0, w)}px`;
           const scopedEdp = pickedEdp != null
             ? pickedEdp
             : (p && p.kind === "layer" && Number.isFinite(p.dpIdx) ? p.dpIdx : null);
           if (scopedEdp != null) {
-            const gy = view.y + layout.rowY(scopedEdp * layout.ranksPerDp) * k;
+            const gy = view.y + (layout.rowY(scopedEdp * layout.ranksPerDp)
+              + guideOuterYGap / 2) * k;
             g.style.top = `${gy - v.y0}px`;
             g.style.bottom = "auto";
-            g.style.height = `${layout.groupH * k}px`;
+            g.style.height = `${Math.max(0, layout.groupH - guideOuterYGap) * k}px`;
             g.classList.add("is-instance");
           }
           guideFrag.appendChild(g);
@@ -2591,15 +2833,33 @@
           tick.dataset.kind = "layer";
           tick.dataset.layer = String(col.layer);
           tick.dataset.moe = col.moe ? "1" : "0";
-          if (p && p.kind === "layer" && p.layer === col.layer) tick.classList.add("is-selected");
-          else if (rel && rel.layers.has(col.layer)) tick.classList.add("is-related");
-        } else {
+          if (pickedCross) {
+            if (pickedColumnHit(col)) tick.classList.add("is-selected");
+          } else if (p && p.kind === "layer" && p.layer === col.layer) {
+            tick.classList.add("is-selected");
+          } else if (rel && rel.layers.has(col.layer)) {
+            tick.classList.add("is-related");
+          }
+        } else if (col.type === "unit") {
           // Emb / Norm / Head 本来就是一个词，不拆行
           tick.appendChild(el("span", "crop-tick__name", col.label));
           tick.dataset.kind = "unit";
           tick.dataset.unit = col.id;
-          if (p && p.kind === "segment" && p.segment === col.id) tick.classList.add("is-selected");
-          else if (rel && rel.units.has(col.id)) tick.classList.add("is-related");
+          if (pickedCross) {
+            if (pickedColumnHit(col)) tick.classList.add("is-selected");
+          } else {
+            if (p && p.kind === "segment" && p.segment === col.id) tick.classList.add("is-selected");
+            else if (rel && rel.units.has(col.id)) tick.classList.add("is-related");
+          }
+        } else {
+          /* Layer 标注关闭后，上层 PP 段已经写了完整名称；聚合列刻度只留
+             段号，避免在同一个竖向尺上重复两次 PP 语义。 */
+          tick.appendChild(el("span", "crop-tick__name", col.short || String(col.stage)));
+          tick.dataset.kind = "stage";
+          tick.dataset.stage = String(col.stage);
+          if (pickedCross && pickedColumnHit(col)) tick.classList.add("is-selected");
+          else if (p && p.kind === "stage" && p.stage === col.stage) tick.classList.add("is-selected");
+          else if (rel && rel.stages.has(col.stage)) tick.classList.add("is-related");
         }
         /* 通信行程扫到的那一列：量尺上标出来，才知道"现在演到模型的哪儿了"。
            它盖过选中/牵连两态 —— 播放期间这一格答的是"当前"，不是"你选过什么"。 */
@@ -2965,6 +3225,30 @@
      世界很大（46 层 × 512 行 = 2 万多格），但一屏永远只看得见几百上千格：每帧
      按当前 transform 反解出可见的行 / 列区间，只铺那一段。再小就走两级降级 ——
      先聚成整机行（8 张卡一格），再退到「只画块与高亮带」。 */
+  const MEMORY_SEGMENTS = [
+    ["base", "底座"], ["weight", "权重"], ["grad", "梯度"],
+    ["optim", "优化器态"], ["act", "激活"], ["reserve", "预留"],
+  ];
+
+  function buildMemoryStack(measure) {
+    const stack = el("div", "crop-memory-stack");
+    if (!measure || !(measure.cap > 0)) return stack;
+    let cursor = 0;
+    MEMORY_SEGMENTS.forEach(([key, label]) => {
+      const value = Math.max(0, measure.values[key] || 0);
+      if (!(value > 0) || cursor >= measure.cap) return;
+      const visible = Math.min(value, measure.cap - cursor);
+      const seg = el("span", "crop-memory-segment");
+      seg.dataset.seg = key;
+      seg.style.bottom = `${(cursor / measure.cap * 100).toFixed(4)}%`;
+      seg.style.height = `${(visible / measure.cap * 100).toFixed(4)}%`;
+      seg.title = `${label} ${(value / HEAT_GIB).toFixed(1)} GB`;
+      stack.appendChild(seg);
+      cursor += value;
+    });
+    return stack;
+  }
+
   function render() {
     if (!topology || !layout) return;
     // 行标道随缩放变宽 → block.x 也随之变，铺任何东西之前先对齐到当前 k
@@ -2988,6 +3272,8 @@
     const p = rel ? rel.primary : null;
     const instanceEdp = p && p.kind === "layer" && Number.isFinite(p.dpIdx)
       ? p.dpIdx : null;
+    const pickedCross = Boolean(p && p.kind === "rank"
+      && hasPickedColumn() && Number.isFinite(pickedEdp));
     // rel.nodes 是主脚本 resolveRelation 已经算好的「这次选择牵连到哪些节点」，
     // 整机档的高亮直接读它，不必自己再 union 一遍
     const relNodes = rel ? new Set(rel.nodes) : null;
@@ -3035,15 +3321,18 @@
        两道闸都按「这一格在屏幕上有多大」判，理由见 BLOCK_MIN_H 那一段。
        字号那一档（两段块）与行标同一套做法：世界字号取 BAND_FONT_MIN / k，
        屏幕上因此恒定 9px；格子太矮时再让位给 rowH / 5.6，宁可小也不撑破。 */
-    /* 间距按屏幕像素反算回世界坐标，避免缩小时 3px 跟着 scale 变成小数像素。
+    /* 对齐 Rank 入门第 10 步：格缝随放大从 3px 增长到 9px，缩小时守住 3px；
        极限档位下优先保留 1px 的格子本体，余下空间才作为间距。 */
-    const cellGapWorld = Math.max(0, Math.min(
-      CELL_GAP_PX / k,
-      cellW - CELL_BODY_MIN_PX / k,
-      rowH - CELL_BODY_MIN_PX / k,
-    ));
+    const cellGapPx = clamp(CELL_GAP_PX * k, CELL_GAP_PX, 3 * CELL_GAP_PX);
+    const rowGapPx = clamp(ROW_GAP_PX * k, ROW_GAP_PX, 3 * ROW_GAP_PX);
+    const cellGapWorld = Math.max(0, Math.min(cellGapPx / k, cellW - CELL_BODY_MIN_PX / k));
+    const rowGapWorld = Math.max(0, Math.min(rowGapPx / k, rowH - CELL_BODY_MIN_PX / k));
     const cellBodyW = cellW - cellGapWorld;
-    const cellBodyH = rowH - cellGapWorld;
+    /* Rank 粒度以横向可见边长同时作为高度，从而在任何缩放下都是
+       真正的正方形。整机粒度一格合并多张卡，仍保留纵向聚合矩形。 */
+    const cellBodyH = span === 1 ? cellBodyW : rowH - rowGapWorld;
+    const cellInsetX = (cellW - cellBodyW) / 2;
+    const cellInsetY = (rowH - cellBodyH) / 2;
     const cellPxW = cellBodyW * k;
     const cellPxH = cellBodyH * k;
     /* ⚠️ 格内有内容的那两档（两段块 / 详情面板）**只在卡粒度成立** —— 它们答的是
@@ -3051,7 +3340,12 @@
        只有「一块颜色」这一档，再要细就该换粒度（自适应正是在同一个门槛上换的，
        见 currentUnit）。理由与那条阶梯见文件开头「格内的三档」末尾。 */
     const cellIsRank = span === 1;
-    const showBands = cellIsRank && cellPxH >= BLOCK_MIN_H && cellPxW >= BLOCK_MIN_W;
+    /* 格内结构的第一道是用户可见的缩放门槛：只有工具条读数**超过**
+       100% 才允许出现 Attention / MoE（或 Dense）分区。用四舍五入后的整数
+       与读数对齐，避免内部 100.4% 显示为 100%，格内却已经展开。 */
+    const cellStructureOn = Math.round(k * 100) > 100;
+    const showBands = cellStructureOn && cellIsRank
+      && cellPxH >= BLOCK_MIN_H && cellPxW >= BLOCK_MIN_W;
     const bandFontWorld = Math.min(rowH / 5.6, BAND_FONT_MIN / k);
     /* ── 最细那一档：整幅**一个**缩放比、**一个**档口 ─────────────────────
        比例按最高的那种面板（有 MoE 层就是 MoE 那一种）算一次，dense 列与端点列
@@ -3066,9 +3360,10 @@
       { type: "layer", moe: Boolean(topology.hasMoe) }, chipRows);
     const detailS = detailScale(cellBodyW + 1, cellBodyH + 1, detailTallest);
     // 与两段块同一条：整机行一格是 span 张卡，一份算子链在那里没有单一答案
-    const detailOn = cellIsRank && detailS * k >= DETAIL_MIN_S;
+    const detailOn = cellStructureOn && cellIsRank && detailS * k >= DETAIL_MIN_S;
     const detailCache = new Map();
     const detailFor = (col) => {
+      if (col.type === "stage") return { h: 0, s: 0, on: false };
       const key = col.type === "unit" ? `u:${col.id}` : (col.moe ? "moe" : "dense");
       let d = detailCache.get(key);
       if (!d) {
@@ -3083,6 +3378,10 @@
     const hm = heatOn ? heatModel() : null;
     const hRange = hm ? hm.range(heatMetric) : null;
     const hSpan = hRange ? Math.max(1e-12, hRange.hi - hRange.lo) : 1;
+    const memoryByStage = memoryObservation && global.croCapacityModel
+      ? global.croCapacityModel.measureAll(topology) : [];
+    const memoryHeatMode = memoryObservation && memoryHeatAtScale(k);
+    syncMemoryLegend(memoryHeatMode && memoryByStage.length > 0, memoryByStage);
     /* （原先整机行顶上还压着一条「整机 N · rank a–b」的标签带。它与左边的行标
        说的是同一件事，同屏出现两次纯属重复 —— 而且那条带横贯整个 stage 块，每 8
        行来一条，把「一整套专家」那层颜色压在下面。现在整机号与 rank 区间都归左边
@@ -3107,7 +3406,8 @@
         c1: clamp(Math.ceil((wx1 - block.x) / cellW) + 1, 0, block.cols.length - 1),
       }));
     const wanted = visible.reduce((n, x) => n + (x.c1 - x.c0 + 1) * rowsVisible, 0);
-    const drawCells = cellW * k >= DETAIL_MIN_W && rowH * k >= DETAIL_MIN_H
+    const drawCells = (memoryHeatMode
+      || (cellW * k >= DETAIL_MIN_W && rowH * k >= DETAIL_MIN_H))
       && wanted <= CELL_BUDGET;
     /* （原先这里还有一条「格子数 × 每卡专家数」的总节点闸。胶囊铺满整格的那一版
        需要它 —— 那时胶囊只受 k ≥ 0.5 一条约束，几千格 × 32 枚一帧真的建不完。
@@ -3126,9 +3426,11 @@
       // 列高亮带：缩到看不见格子时，靠它读出「哪几层被牵连」
       for (let ci = c0; ci <= c1; ci += 1) {
         const col = block.cols[ci];
-        const hit = col.type === "layer"
-          ? Boolean(rel) && rel.layers.has(col.layer)
-          : Boolean(rel) && rel.units.has(col.id);
+        const hit = pickedCross
+          ? pickedColumnHit(col)
+          : col.type === "layer"
+            ? Boolean(rel) && rel.layers.has(col.layer)
+            : Boolean(rel) && rel.units.has(col.id);
         if (!hit) continue;
         const band = el("div", "crop-node crop-band");
         /* 白色选中框只给 Emb / Norm / Head 这类端点列。层列不描白边：选中的层由
@@ -3136,12 +3438,15 @@
         if (p && p.kind === "segment" && p.segment === col.id) {
           band.classList.add("crop-band--selected");
         }
-        if (instanceEdp != null) {
-          place(band, block.x + ci * cellW,
-            layout.rowY(instanceEdp * layout.ranksPerDp), cellW, layout.groupH);
+        const bandEdp = pickedCross ? pickedEdp : instanceEdp;
+        if (bandEdp != null) {
+          place(band, block.x + ci * cellW + cellInsetX,
+            layout.rowY(bandEdp * layout.ranksPerDp) + cellInsetY,
+            cellBodyW, Math.max(0, layout.groupH - 2 * cellInsetY));
           band.classList.add("is-instance");
         } else {
-          place(band, block.x + ci * cellW, 0, cellW, layout.worldH);
+          place(band, block.x + ci * cellW + cellInsetX, cellInsetY,
+            cellBodyW, Math.max(0, layout.worldH - 2 * cellInsetY));
         }
         frag.appendChild(band);
       }
@@ -3210,7 +3515,7 @@
         if (showRowText) {
           const label = el("div", "crop-node crop-rowlabel");
           label.appendChild(el("span", "crop-rowlabel__name",
-            isNode ? `整机 ${nodeId}` : `rank ${rank}`));
+            isNode ? `整机 ${nodeId}` : (layout.layerColumnsVisible ? `rank ${rank}` : `R${rank}`)));
           /* 整机档补第二行：这台机器含哪几张卡。它与整机号右对齐叠在一起，
              是「整机 12 / rank 96–103」这一件事的两半，不再另起一条横贯的标签带。 */
           if (isNode && rowTwoLine) {
@@ -3230,7 +3535,8 @@
         if (rowHit) {
           const band = el("div", "crop-node crop-band");
           if (rowSel) band.classList.add("crop-band--selected");
-          place(band, block.x, y, block.w, rowH);
+          place(band, block.x + cellInsetX, y + cellInsetY,
+            Math.max(0, block.w - 2 * cellInsetX), cellBodyH);
           frag.appendChild(band);
         }
 
@@ -3246,8 +3552,9 @@
           ds.node = nodeId;
           ds.stage = block.stage;
           if (col.type === "layer") ds.layer = col.layer;
-          else ds.unit = col.id;
-          ds.ffn = col.type === "unit" ? "unit" : (moe ? "moe" : "dense");
+          else if (col.type === "unit") ds.unit = col.id;
+          ds.ffn = col.type === "unit" ? "unit" : col.type === "stage" ? "stage" : (moe ? "moe" : "dense");
+          if (col.type === "stage") ds.stageSummary = "1";
           // EP 号挂在格子上而不是每一枚胶囊上：一格里的胶囊全属于同一个 EP rank，
           // 写在这里是 1 次属性写，写在胶囊上是 epr 次。pick() 顺着格子读。
           if (moe) ds.epRank = epLo;
@@ -3264,8 +3571,8 @@
              是「里面有什么」，两套编码叠在同一格上谁也读不清。要看结构就切回配置
              寻优那一档。 */
           const d = detailFor(col);
-          const showDetail = !heatOn && d.on;
-          const showSegs = !heatOn && !showDetail && showBands;
+          const showDetail = !memoryObservation && !heatOn && d.on;
+          const showSegs = !memoryObservation && col.type !== "stage" && !heatOn && !showDetail && showBands;
 
           /* 详情面板里的 Expert Compute 逐个铺得出编号吗？两个条件：每卡专家数没
              超过 EXPERT_CHIP_MAX（超了就是一面编号墙），且这一格只对应**一个**
@@ -3286,13 +3593,19 @@
           if (paint && !showDetail && !showSegs) ds.paint = "bg";
           if (paint && co.dpIdx > 0) ds.replica = "1";
 
-          const colHit = col.type === "layer"
-            ? Boolean(rel) && rel.layers.has(col.layer)
-              && (instanceEdp == null || co.dpIdx === instanceEdp)
-            : Boolean(rel) && rel.units.has(col.id);
+          const colHit = pickedCross
+            ? pickedColumnHit(col) && co.dpIdx === pickedEdp
+            : col.type === "layer"
+              ? Boolean(rel) && rel.layers.has(col.layer)
+                && (instanceEdp == null || co.dpIdx === instanceEdp)
+              : col.type === "unit"
+                ? Boolean(rel) && rel.units.has(col.id)
+                : Boolean(rel) && rel.stages.has(col.stage);
           if (rowSel && colHit) cell.classList.add("is-selected");
           else if (rowHit && colHit) cell.classList.add("is-cross");
-          else if (rowHit || colHit) cell.classList.add("is-related");
+          else if (rowHit || colHit) {
+            cell.classList.add("is-related", rowHit ? "is-row-related" : "is-col-related");
+          }
           if (heatOn && heatPick && heatPick.rank === rank
             && (col.type === "layer"
               ? heatPick.layer === col.layer
@@ -3306,9 +3619,10 @@
           /* 整机档的格子不再让出顶上那条标签带（已撤），整行都归格子。
              两段块那一档要给格子写一个世界字号（带子的字继承它），最细那一档不写
              —— 面板内部一律用设计像素，再由 transform 整体缩放。 */
-          place(cell, block.x + ci * cellW, y,
+          place(cell, block.x + ci * cellW + cellInsetX, y + cellInsetY,
             cellBodyW, cellBodyH,
             showSegs ? bandFontWorld : 0);
+          if (cellPxW < 4 || cellPxH < 4) ds.micro = "1";
           /* ⚠️ 必须排在 place 之后：place 写的是整条 cssText，会把先设的
              自定义属性一起冲掉。 */
           if (paint) {
@@ -3334,7 +3648,17 @@
              顺着 closest("[data-kind]") 往上找的，所以点在算子上等于点在这一格上
              （问的仍是「这张卡 × 这一层」）。唯一例外是专家胶囊 —— 它本来就是一
              个可点的对象，data-kind="expert" 照旧，pick() 顺着父格子取坐标。 */
-          if (showDetail) {
+          if (memoryObservation && col.type === "stage") {
+            cell.classList.add("is-memory");
+            const memoryMeasure = memoryByStage[block.stage];
+            if (memoryHeatMode && memoryMeasure) {
+              ds.heat = "1";
+              ds.memoryHeat = "1";
+              cell.style.setProperty("--crop-heat", heatColor(clamp(memoryMeasure.ratio, 0, 1)));
+            } else {
+              cell.appendChild(buildMemoryStack(memoryMeasure));
+            }
+          } else if (showDetail) {
             /* 铺不出编号时盒子里给区间与个数。整机档一行跨了几个 EP，区间要从首尾
                两个 EP 各取一次 —— 这一步只在真的铺面板的那几十格上做，逐行预算不
                起（与 cellTip 里同一条理由）。 */
@@ -3436,6 +3760,26 @@
       return `${who} × ${label}\n${label} 不是一层，`
         + `是驻留在 PP Stage${stageNo} 这一段卡上的端点结构`
         + heatTip(cell);
+    }
+
+    if (cell.dataset.stageSummary) {
+      const entry = topology.stages[Number(stageNo)];
+      if (memoryObservation && global.croCapacityModel) {
+        const m = global.croCapacityModel.measureAll(topology)[Number(stageNo)];
+        if (m) {
+          const summary = `${who} · 内存观测\nPP Stage${stageNo} · Layer ${entry.lo}–${entry.hi}`
+            + `\n总占用 ${(m.total / HEAT_GIB).toFixed(1)} / ${(m.cap / HEAT_GIB).toFixed(0)} GB`
+            + `（${Math.round(m.ratio * 100)}%）`;
+          /* 100% 以下是总占用热力视角：气泡也不偷渡内部分类和占比细节。 */
+          if (memoryHeatAtScale(view.k)) return summary;
+          return summary
+            + `\n权重 ${(m.values.weight / HEAT_GIB).toFixed(1)} · 梯度 ${(m.values.grad / HEAT_GIB).toFixed(1)}`
+            + ` · 优化器态 ${(m.values.optim / HEAT_GIB).toFixed(1)} GB`
+            + `\n激活 ${(m.values.act / HEAT_GIB).toFixed(1)} · 预留 ${(m.values.reserve / HEAT_GIB).toFixed(1)} GB`;
+        }
+      }
+      return `${who} × PP Stage${stageNo}\nLayer ${entry.lo}–${entry.hi} 的聚合视图`
+        + "\n打开“Layer标注”可逐层查看与选择";
     }
 
     const moe = cell.dataset.ffn === "moe";
@@ -3564,11 +3908,12 @@
      问的是一台机器」，好让右栏把标题和读数按整机口径写，而不是冒充成一张卡。 */
   let pickedNode = null;
 
-  function emit(payload, nodeId = null, layerNo = null, edpNo = null) {
+  function emit(payload, nodeId = null, layerNo = null, edpNo = null, stageNo = null) {
     const select = global.croSelect;
     if (typeof select !== "function") return;
     pickedNode = nodeId;
     pickedLayer = layerNo;
+    pickedStage = stageNo;
     pickedEdp = edpNo;
     /* cro:select 是在 select() 里同步派发的：标一下「这一次是画布自己发的」，
        监听器据此区分外部选择（整网图 / 结构条 / Layer 导航），那些要把 pickedLayer
@@ -3624,13 +3969,22 @@
       emit({ kind: "segment", segment: target.dataset.unit, wholeColumn: true, layers: [] });
       return;
     }
-    // Layer 格子默认问“这个 EDP 里的这个 Layer 实例”；顶部公共刻度才问全部同名层。
-    // 行标与端点格仍按 rank / node 口径走，保留单卡详情入口。
+    // Layer 格子沿用 Rank 入门第 10 步的交互：一击同时保留所在 rank 与 Layer，
+    // 画面因此出现一条横向 rank 带、一条纵向 Layer 阴影，交点就是刚点的小格子。
+    // 主关系仍以 rank 为主语，右栏继续回答单卡详情；pickedLayer 只补充列上下文。
     const cellLayer = target.dataset.layer == null ? null : Number(target.dataset.layer);
     if ((kind === "cell" || kind === "node") && Number.isFinite(cellLayer)) {
       const co = topology.coordsOfRank(Number(target.dataset.rank));
-      emit({ kind: "layer", scope: "instance", layer: cellLayer, dpIdx: co.dpIdx },
-        null, cellLayer, co.dpIdx);
+      const nodeId = kind === "node" ? Number(target.dataset.node) : null;
+      emit(rankPayload(Number(target.dataset.rank)), nodeId, cellLayer, co.dpIdx);
+      return;
+    }
+    const cellStage = target.dataset.stageSummary === "1"
+      ? Number(target.dataset.stage) : null;
+    if ((kind === "cell" || kind === "node") && Number.isFinite(cellStage)) {
+      const co = topology.coordsOfRank(Number(target.dataset.rank));
+      const nodeId = kind === "node" ? Number(target.dataset.node) : null;
+      emit(rankPayload(Number(target.dataset.rank)), nodeId, null, co.dpIdx, cellStage);
       return;
     }
     if (kind === "rank" || kind === "cell") { emit(rankPayload(Number(target.dataset.rank))); return; }
@@ -3921,11 +4275,10 @@
     const bar = el("div", "crop-verdict");
     bar.dataset.level = level;
     const barHead = el("div", "crop-verdict__head");
-    /* 判定语做大（title-sm 一档）并前置一枚同色状态点：这是整栏唯一一句要在一米开外
-       就读得到的话 —— 打开这一页的第一个动机就是它。其余各行仍是正文尺寸，
-       不跟着抬，否则「大」就不再是重点而是噪音。 */
+    /* 判定语做大（title-sm 一档）：这是整栏唯一一句要在一米开外就读得到的话 ——
+       打开这一页的第一个动机就是它。状态已经由整卡渐变、标题色和占用尺共同表达，
+       标题前不再重复放一枚圆点。其余各行仍是正文尺寸。 */
     const badge = el("span", "crop-verdict__badge");
-    badge.appendChild(el("span", "crop-verdict__badge-dot"));
     badge.appendChild(el("span", "crop-verdict__badge-text", HEAD[level] || HEAD.none));
     barHead.appendChild(badge);
     barHead.appendChild(el("span", "crop-verdict__scope",
@@ -4408,6 +4761,7 @@
   function selectHeatCell(cell) {
     heatPick = heatPickFromCell(cell);
     pickedLayer = heatPick && heatPick.layer != null ? heatPick.layer : null;   // 热力格不发 relation，层号直接记下
+    pickedStage = null;
     renderHeatDetail();
     scheduleRender();
   }
@@ -4458,6 +4812,7 @@
   function selectHeatWorst() {
     heatPick = heatWorstPick();
     pickedLayer = heatPick && heatPick.layer != null ? heatPick.layer : null;
+    pickedStage = null;
     renderHeatDetail();
   }
 
@@ -4651,8 +5006,18 @@
     const first = stages[0];
     const last = stages[stages.length - 1];
     const at = { emb: first, norm: last, head: last };
+    /* 右栏在选中 rank 后回答的是“这张卡上有什么”。一张 rank 只属于一个
+       PP stage，因此 Dense / MoE 的层范围必须先与该 stage 求交；不能继续沿用
+       整网范围，否则末段的 R120 会被写成 MoE L2~L45，而它实际只持有 L35~L45。
+       这个上下文里 PP 号也已经由 rank 唯一确定，不再在每一列下重复一遍。 */
+    const selected = relation && relation.primary;
+    const rankStage = selected && selected.kind === "rank" && Number.isFinite(selected.rank)
+      ? topology.coordsOfRank(selected.rank).stage
+      : null;
+    const stageScope = Number.isFinite(rankStage) ? stages[rankStage] : null;
     const layerSpan = (ffn) => {
-      const layers = topology.layers.filter((layer) => layer && layer.ffn === ffn);
+      const layers = topology.layers.filter((layer) => layer && layer.ffn === ffn
+        && (!stageScope || layer.stage === stageScope.stage));
       if (!layers.length) return null;
       const lo = layers[0].index;
       const hi = layers[layers.length - 1].index;
@@ -4672,17 +5037,24 @@
       } : null);
       if (!span) return;
       const name = col.querySelector(".cro-structure__name");
-      const mark = `${segment}:${span.stageLo}-${span.stageHi}:${span.lo}-${span.hi}`;
+      const mark = `${segment}:${span.stageLo}-${span.stageHi}:${span.lo}-${span.hi}`
+        + `:${stageScope ? `rank-stage-${stageScope.stage}` : "global"}`;
       if (!name || name.dataset.cropAnnotated === mark) return;
       const raw = name.dataset.cropBase || name.textContent;
-      const base = raw.replace(/（L\d+~L\d+）$/, "");
-      name.dataset.cropBase = base;
+      const globalBase = raw.replace(/（L\d+~L\d+）$/, "");
+      name.dataset.cropBase = globalBase;
+      // “MoE x44”是整网层数，不是单张 rank 上这个典型计算节点的名字。
+      const base = stageScope && segment === "moe"
+        ? globalBase.replace(/\s*x\d+$/i, "")
+        : globalBase;
       /* 五列都分两行写：第一行负责“是什么 / 有几个”，第二行负责“位于哪里”。
          右栏每列只有几十像素宽，把范围塞在第一行括号里会优先截掉位置信息；拆开后
          也不再需要括号，第二行天然就是第一行的定语。 */
       const stageText = span.stageLo === span.stageHi
         ? `PP${span.stageLo}` : `PP${span.stageLo}~PP${span.stageHi}`;
-      const atText = `${stageText} · L${span.lo}~L${span.hi}`;
+      const atText = stageScope
+        ? `L${span.lo}~L${span.hi}`
+        : `${stageText} · L${span.lo}~L${span.hi}`;
       const text = `${base} ${atText}`;
       name.replaceChildren();
       const top = doc.createElement("span");
@@ -6330,8 +6702,28 @@
 
   /* ── 三档切换 ──────────────────────────────────────────────────────────── */
   function setMode(mode) {
+    const hadLayerColumns = layerColumnsVisible();
+    if (mode !== "config" && memoryObservation) {
+      memoryObservation = false;
+      if (memoryPrefs) {
+        tpGroupsVisible = memoryPrefs.tp;
+        layerDetailVisible = memoryPrefs.layer;
+        unitMode = memoryPrefs.unit;
+      }
+      memoryPrefs = null;
+    }
     center.dataset.mode = mode;
     board.dataset.mode = mode;
+    syncMemoryControls();
+    const hasLayerColumns = layerColumnsVisible();
+    if (topology && hadLayerColumns !== hasLayerColumns) {
+      layout = buildLayout(topology);
+      heatPick = null;
+      pickedLayer = null;
+      pickedStage = null;
+      pickedEdp = null;
+      fit();
+    }
     modeTabs.querySelectorAll("[data-mode]").forEach((btn) => {
       const on = btn.dataset.mode === mode;
       btn.classList.toggle("is-selected", on);
@@ -6638,7 +7030,7 @@
   doc.addEventListener("cro:select", (event) => {
     relation = event.detail || null;
     // 外部发起的选择：画布上「最近点到的格子」已经不是当前选择，定位阴影改由 relation 决定
-    if (!selfEmitting) { pickedLayer = null; pickedEdp = null; }
+    if (!selfEmitting) { pickedLayer = null; pickedStage = null; pickedEdp = null; }
     board.classList.toggle("is-focused", Boolean(relation));
     const selected = relation && relation.primary;
     const forceConfigDetail = center.dataset.mode === "config" && selected

@@ -6,7 +6,7 @@
         pangu-moe-trainviz/microbatch-lifecycle-swimlane-mock.html @ 7ca2142
     连同 ./vendor/swimlane-task/{pattern.css,pattern.js} 一起照搬（那两个文件逐字节一致）。
 
-  相对本仓的五处、且仅有五处改动（保持与上游可 diff）：
+  相对本仓的六处、且仅有六处改动（保持与上游可 diff）：
     ① 本段说明；
     ② <head> 里加一条 ./embed.css   —— 卡片内嵌形态（藏掉它自带的顶栏、放开 min-height）；
     ③ <head> 里加一条 ./embed-bridge.js —— 读 ?theme=/?chrome=/?range= 与宿主 postMessage，
@@ -29,8 +29,9 @@
        `pto:swimlane-select` 消息处理）。新增函数集中在 kernelSegmentTooltipRow 之后
        一个单独的注释区块里（搜「⑤ 本仓新增」），只在 `select()` 里加了一行调用挂
        进去，其余正文没有再动。
-  除了④⑤标注的这两小块新增/三处单行挂钩，正文（DOM、绘制逻辑、模拟数据）一行没动：
-  上游更新时重新拷一遍、再补这五处即可。
+    ⑥ `?chrome=0` 内嵌形态不画重复的左上角表头和交替行底色；独立页面保留原貌。
+       内嵌气泡的实体背景放在 embed.css。
+  除了④⑤⑥标注的新增/挂钩，正文仍保持上游结构；上游更新时重新拷贝后补回这六处即可。
 
   上游依赖 ../vendor/pto-design-system/（tokens + css/style.css）。本仓在 public/vendor/
   下有同名快照，本文件放在 public/combo-workbench/ 恰好让 ../vendor/ 落到它上面，
@@ -1723,6 +1724,7 @@
       function draw() {
         const list = visibleRows();
         const range = ranges[activeRange];
+        const embedded = document.documentElement.dataset.chrome === '0';
         const dpr = Math.min(window.devicePixelRatio || 1, 2);
         const gutter = 236;
         const headerH = 48;
@@ -1774,7 +1776,7 @@
         ctx.textAlign = 'left';
         ctx.fillStyle = text;
         ctx.font = `600 11px ${css('--font-sans') || 'sans-serif'}`;
-        ctx.fillText('泳道 / 对象', 12, 20);
+        if (!embedded) ctx.fillText('泳道 / 对象', 12, 20);
         ctx.fillStyle = muted;
         ctx.font = `500 10px ${css('--font-mono') || 'monospace'}`;
         ctx.fillText(`${range.start.toFixed(2)} ms`, gutter, 38);
@@ -1782,7 +1784,7 @@
         ctx.fillText(`${range.end.toFixed(2)} ms`, plotRight, 38);
 
         laneLayouts.forEach(({ lane, y, rowH }, index) => {
-          if (index % 2) { ctx.fillStyle = css('--surface-disabled'); ctx.fillRect(0, y, width, rowH); }
+          if (!embedded && index % 2) { ctx.fillStyle = css('--surface-disabled'); ctx.fillRect(0, y, width, rowH); }
           ctx.strokeStyle = subtle;
           ctx.beginPath(); ctx.moveTo(0, y + rowH + .5); ctx.lineTo(width, y + rowH + .5); ctx.stroke();
           const expandedRank = lane.rowType === 'rank' && isExpandedRow(lane);
@@ -1878,11 +1880,11 @@
         ctx.textBaseline = 'middle';
         ctx.fillStyle = text;
         ctx.font = `600 11px ${css('--font-sans') || 'sans-serif'}`;
-        ctx.fillText('泳道 / 对象', 12, 20);
+        if (!embedded) ctx.fillText('泳道 / 对象', 12, 20);
         laneLayouts.forEach(({ lane, y, rowH }, index) => {
-          ctx.fillStyle = index % 2
-            ? (css('--surface-1') || surface)
-            : (css('--background') || '#111111');
+          ctx.fillStyle = embedded
+            ? (css('--background') || (document.documentElement.dataset.theme === 'light' ? '#f5f5f5' : '#101010'))
+            : (index % 2 ? (css('--surface-1') || surface) : (css('--background') || '#111111'));
           ctx.fillRect(0, y, gutter, rowH);
           ctx.strokeStyle = subtle;
           ctx.beginPath(); ctx.moveTo(0, y + rowH + .5); ctx.lineTo(gutter, y + rowH + .5); ctx.stroke();

@@ -99,7 +99,8 @@ body:has(.cro-board.is-plane) .cro-link-layer { display: none; }
   width: var(--crop-left-w, 344px);
   min-width: 0;
   border-right: 1px solid var(--border-subtle);
-  background: var(--surface-1);
+  /* 对齐 rank-intro 第 10 步：表单栏与画布共用页面基底，只有字段控件抬到 surface-2。 */
+  background: var(--background);
   overflow: hidden;
 }
 
@@ -925,6 +926,11 @@ body:has(.cro-board.is-plane) .cro-link-layer { display: none; }
   --crop-set-1: #F59E0B;
   --crop-set-2: #10B981;
   --crop-set-3: #8B5CF6;
+  /* Match rank-intro step 10 exactly. Do not derive these from --foreground:
+     that token already carries alpha, so color-mix would make both values dimmer. */
+  --crop-cell-fill: rgb(255 255 255 / 0.07);
+  --crop-cell-stroke: rgb(255 255 255 / 0.34);
+  --crop-cell-micro: rgb(255 255 255 / 0.14);
   /* 着色**关掉**时专家胶囊退到的那一色。必须是真中性的灰蓝 —— 原先退到
      --pto-model-deck-moe（#EA580C，橙红）：那是「MoE」的语义色，关掉着色之后
      满屏橙红读起来像一片告警，而这一档的本意恰恰是「不表达任何分组」。 */
@@ -941,6 +947,12 @@ body:has(.cro-board.is-plane) .cro-link-layer { display: none; }
   --crop-link-inter: #E11D48;
 }
 
+:root[data-theme="light"] .cro-board.is-plane {
+  --crop-cell-fill: rgb(255 255 255 / 0.62);
+  --crop-cell-stroke: rgb(19 26 42 / 0.34);
+  --crop-cell-micro: rgb(19 26 42 / 0.14);
+}
+
 /* ── 交叉格：一张卡（或一台整机）在某一层上的那一份 ── */
 .crop-cell {
   display: flex;
@@ -952,9 +964,10 @@ body:has(.cro-board.is-plane) .cro-link-layer { display: none; }
   padding: 0 2px;
   /* 静息底色是中性的。「一整套专家」的颜色默认落在**标签**上（见 .crop-expert）——
      编号与颜色本来就是同一件事的两半，分开摆等于让底色去和选中高亮抢面积。 */
-  background: color-mix(in srgb, var(--foreground) 9%, transparent);
-  border: 1px solid transparent;
-  border-radius: 2px;
+  /* 对齐 Rank 入门第 10 步 Canvas 的 --tile 与 .34 前景描边。 */
+  background: var(--crop-cell-fill);
+  border: var(--crop-cell-line, 1px) solid var(--crop-cell-stroke);
+  border-radius: 0;
   font-size: 9px;
   line-height: 1;
   color: var(--foreground-muted);
@@ -974,13 +987,22 @@ body:has(.cro-board.is-plane) .cro-link-layer { display: none; }
    原先这里画的是 45° 斜纹（repeating-linear-gradient）。一屏几千个格子、每个都
    要合成一遍渐变，是这幅图上最贵的一笔纯装饰开销；换成一个纯色，绘制几乎不要钱，
    而「这一格是空的」这件事一点没少说。
-   ⚠️ 必须排在 :hover 之前：两条选择器权重相同（都是 0,2,0），靠源码顺序分先后，
-   放在后面会把悬浮反馈盖掉。 */
+   填充与普通格共用 rank-intro 第 10 步的 tile 色；区别由格内内容表达。 */
 .crop-cell[data-ffn="dense"] {
-  background: color-mix(in srgb, var(--foreground) 4%, transparent);
+  background: var(--crop-cell-fill);
 }
 
-.crop-cell:hover { background: color-mix(in srgb, var(--foreground) 20%, transparent); }
+/* Canvas 参考实现缩到格子任一边不足 4px 时不再画 1px 轮廓，改成 .14 的实体点。
+   DOM 版同样切档，避免极小缩放时边框吃掉整格。 */
+.crop-cell[data-micro="1"] {
+  border-width: 0;
+}
+
+.crop-cell[data-micro="1"]:not(.is-related):not(.is-cross):not(.is-selected):not([data-heat="1"]):not([data-paint="bg"]) {
+  background: var(--crop-cell-micro);
+}
+
+.crop-cell.is-memory[data-micro="1"] .crop-memory-stack { inset: 0; }
 
 /* （这里曾有两条规则把「铺满整格的那一行专家胶囊」限宽居中、并让每枚等宽。
    胶囊现在缩进了详情面板的 Expert Compute 盒子里，按设计像素排 grid，两条规则
@@ -993,27 +1015,7 @@ body:has(.cro-board.is-plane) .cro-link-layer { display: none; }
   background: color-mix(in srgb, var(--crop-set, var(--foreground)) 42%, transparent);
 }
 
-/* 着色开着时，关系三态**不夺底色**：底色答的是「哪一份权重」，关系由压暗无关格
-   （.is-focused 那条 opacity）、行列高亮带与描边去答。三态只把同一个色加深一档。
-   ⚠️ 必须写：下面 .crop-cell.is-related / .is-cross / .is-selected 用的是 background
-   短手（蓝底），同特异度靠后赢，会把 EDP 0 的整格底色冲成蓝；EDP 1 起靠更高特异度的
-   斜纹 background-image 侥幸留住颜色 —— 于是同一批层里 EDP 0 掉色、EDP 1 正常。 */
-.crop-cell[data-paint="bg"].is-related {
-  background: color-mix(in srgb, var(--crop-set, var(--foreground)) 42%, transparent);
-}
-
-.crop-cell[data-paint="bg"].is-cross {
-  background: color-mix(in srgb, var(--crop-set, var(--foreground)) 62%, transparent);
-}
-
-.crop-cell[data-paint="bg"].is-selected {
-  background: color-mix(in srgb, var(--crop-set, var(--foreground)) 78%, transparent);
-}
-
-.crop-cell[data-paint="bg"]:hover {
-  background: color-mix(in srgb, var(--crop-set, var(--foreground)) 62%, transparent);
-}
-
+/* 专家着色只负责静息态。进入行 / 列 / 交叉高亮后，和第 10 步一样改由蓝色关系态接管。 */
 /* EDP 1 起的副本：同色 + 45° 斜纹（由 js 写 data-replica）。色相说「哪一份权重」，
    斜纹说「这是它的一个副本」——块界留住，身份不改口。三档各接一条：整格底、
    MoE 带、编号胶囊。只写 background-image 长手，颜色仍由上面各档的 background 给；
@@ -1029,6 +1031,12 @@ body:has(.cro-board.is-plane) .cro-link-layer { display: none; }
     transparent calc(3px * var(--crop-stripe-unit, 1)) calc(9px * var(--crop-stripe-unit, 1)));
 }
 
+/* Step 10 paints relationship states instead of the normal tile, so neither the
+   expert replica stripe nor the normal stroke remains on a highlighted cell. */
+.crop-cell[data-replica="1"][data-paint="bg"]:is(.is-related, .is-cross, .is-selected) {
+  background-image: none;
+}
+
 .crop-cell[data-replica="1"] .crop-seg[data-seg="moe"],
 .crop-cell[data-replica="1"] .crop-expert {
   background-image: repeating-linear-gradient(45deg,
@@ -1040,18 +1048,28 @@ body:has(.cro-board.is-plane) .cro-link-layer { display: none; }
    三档不是同一个亮度 —— 「交叉」才是这一版视图想让人一眼看到的东西。 */
 .crop-cell.is-related {
   background: color-mix(in srgb, var(--ark-blue-500) 22%, transparent);
+  border-color: transparent;
   color: var(--foreground-secondary);
 }
 
+/* 第 10 步的行、列相关态不是同一档：Rank 行 16%，Layer 列 22%。 */
+.crop-cell.is-related.is-row-related {
+  background: color-mix(in srgb, var(--ark-blue-500) 16%, transparent);
+}
+
+.crop-cell.is-related.is-col-related {
+  background: color-mix(in srgb, var(--ark-blue-500) 22%, transparent);
+}
+
 .crop-cell.is-cross {
-  background: color-mix(in srgb, var(--ark-blue-500) 46%, transparent);
-  border-color: color-mix(in srgb, var(--ark-blue-500) 80%, transparent);
+  background: color-mix(in srgb, var(--ark-blue-500) 62%, transparent);
+  border-color: transparent;
   color: var(--foreground);
 }
 
 .crop-cell.is-selected {
   background: color-mix(in srgb, var(--ark-blue-500) 62%, transparent);
-  border-color: var(--ark-blue-500);
+  border-color: transparent;
   color: var(--foreground);
 }
 
@@ -1059,6 +1077,14 @@ body:has(.cro-board.is-plane) .cro-link-layer { display: none; }
 .cro-board.is-plane.is-focused .crop-cell:not(.is-related):not(.is-cross):not(.is-selected) { opacity: 0.32; }
 .cro-board.is-plane.is-focused .crop-tick--col:not(.is-related):not(.is-selected):not(.is-flowing),
 .cro-board.is-plane.is-focused .crop-rowlabel:not(.is-related):not(.is-selected) { opacity: 0.4; }
+
+/* TP 括号和 TP 名是 Rank 行标的组关系补充，不是独立的常亮图层。选中一张
+   Rank 后，非相关组与非相关 Rank 名同步降到 40%；选中组与正在悬浮的
+   peers 保持全亮。 */
+.cro-board.is-plane.is-focused .crop-tp-bracket:not(.is-selected):not(.is-tp-peer),
+.cro-board.is-plane.is-focused .crop-tp-marker:not(.is-selected):not(.is-tp-peer) {
+  opacity: 0.4;
+}
 
 /* ── 热力档的格子 ─────────────────────────────────────────────────────────
    颜色由 js 逐格算好写进 --crop-heat（冷蓝 → 火红，见 HEAT_RAMP）。
@@ -1111,8 +1137,68 @@ body:has(.cro-board.is-plane) .cro-link-layer { display: none; }
    因而内部格线不会变白；量尺仍沿用各自的蓝色 is-selected 样式。 */
 .crop-band--selected {
   z-index: 2;
-  background: transparent;
-  box-shadow: inset 0 0 0 4px #fff;
+  background: color-mix(in srgb, var(--ark-blue-500) 12%, transparent);
+  box-shadow: inset 0 0 0 var(--crop-selected-line, 1.5px) var(--primary);
+}
+
+/* 内存观测：一格就是一张 Rank 卡，段高相对物理 HBM 容量自底向上堆叠。
+   色值直接复用右栏单卡容量的语义变量，主题与口径保持一致。 */
+.crop-cell.is-memory {
+  position: absolute;
+  padding: 0;
+}
+
+.crop-memory-stack {
+  position: absolute;
+  inset: var(--crop-cell-line, 1px);
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.crop-memory-segment {
+  position: absolute;
+  inset-inline: 0;
+  min-height: 0;
+}
+
+.crop-memory-segment[data-seg="base"] { background: var(--cro-cap-base, #55606A); opacity: .72; }
+.crop-memory-segment[data-seg="weight"] { background: var(--cro-cap-weight, var(--pto-model-deck-parameter)); }
+.crop-memory-segment[data-seg="grad"] { background: var(--cro-cap-grad, var(--pto-model-deck-comm)); }
+.crop-memory-segment[data-seg="optim"] { background: var(--cro-cap-optim, var(--pto-model-deck-head)); }
+.crop-memory-segment[data-seg="act"] { background: var(--cro-cap-act, var(--pto-model-deck-embedding)); }
+.crop-memory-segment[data-seg="reserve"] { background: var(--cro-cap-reserve, #8A98A2); opacity: .62; }
+
+/* 100% 以下只看 HBM 总占用：不再生成分段 DOM，整格直接用“负载热力”
+   的 --crop-heat 填充。这条刻意包含 selected / cross，使热力底色不被蓝色选中态
+   整片擦掉；关系语义由下面现有的 ::after 蓝色蒙层表达。 */
+.crop-cell.is-memory[data-memory-heat="1"] {
+  background: var(--crop-heat, transparent);
+  box-shadow: inset 0 0 0 1px rgb(0 0 0 / 0.18);
+  color: var(--foreground);
+}
+
+.crop-cell.is-memory[data-memory-heat="1"]:hover {
+  background: var(--crop-heat, transparent);
+  box-shadow: inset 0 0 0 1px var(--foreground);
+}
+
+.crop-cell.is-memory::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.crop-cell.is-memory.is-related.is-row-related::after {
+  background: color-mix(in srgb, var(--ark-blue-500) 10%, transparent);
+}
+
+.crop-cell.is-memory.is-related.is-col-related::after {
+  background: color-mix(in srgb, var(--ark-blue-500) 16%, transparent);
+}
+
+.crop-cell.is-memory:is(.is-cross, .is-selected)::after {
+  background: color-mix(in srgb, var(--ark-blue-500) 36%, transparent);
 }
 
 /* ── 格内专家胶囊 ──────────────────────────────────────────────────────────
@@ -1396,9 +1482,6 @@ body:has(.cro-board.is-plane) .cro-link-layer { display: none; }
   line-height: 1;
 }
 
-/* （dense 格的样式挪到上面 .crop-cell:hover 之前了 —— 它现在写的是 background
-   而不是 background-image，必须排在 hover 前面才不会盖掉悬浮反馈。） */
-
 /* ── 画布上的浮动控件 ── */
 .crop-tools {
   position: absolute;
@@ -1409,7 +1492,8 @@ body:has(.cro-board.is-plane) .cro-link-layer { display: none; }
   gap: var(--space-1);
   padding: var(--space-1);
   border-radius: var(--radius-md);
-  background: var(--glass-surface-bg, var(--surface-2));
+  /* 第 10 步的 pzoom 使用页面基底色；这里保持同一层级，不再抬成浮层卡片色。 */
+  background: var(--background);
   border: 1px solid var(--border-subtle);
   backdrop-filter: var(--surface-backdrop-filter, none);
   z-index: var(--z-raised);
@@ -1439,7 +1523,7 @@ body:has(.cro-board.is-plane) .cro-link-layer { display: none; }
 .crop-units .btn { min-width: 0; padding-inline: var(--space-2); }
 .crop-units .btn:disabled { opacity: 0.42; cursor: not-allowed; }
 
-/* TP 分组开关与专家着色同属画布叠加层开关，继续使用通用 btn.is-selected 状态。
+/* TP 标注开关与专家着色同属画布叠加层开关，继续使用通用 btn.is-selected 状态。
    前置的小括号直接对应画布中的标记，比再造一枚业务图标更容易辨认。 */
 .crop-tp-toggle::before {
   content: "[";
@@ -1472,6 +1556,140 @@ body:has(.cro-board.is-plane) .cro-link-layer { display: none; }
 }
 
 .crop-paint.is-selected::before { opacity: 1; }
+
+/* Layer 明细 / PP Stage 聚合：与 Rank 入门第 10 步同一个开关语义。开关只属于
+   配置寻优；通信与热力必须保留逐 Layer 坐标，因此另外两档不显示。 */
+.crop-layer-toggle {
+  margin-right: var(--space-1);
+  padding-right: var(--space-2);
+  border-right: 1px solid var(--border-subtle);
+}
+
+/* 内存热力图例是 crop-tools 的独立兄弟，JS 依工具条实际几何把它放在正上方并
+   右对齐。宽度从旧版 84px 色条扩到 240px 左右，才能把 85% / 91% 这类很近的
+   读数分开标注。组合选择器的特异度高于后文通用 .crop-heat__legend，不会被它拉回 flex。 */
+.crop-heat__legend.crop-memory-legend {
+  position: absolute;
+  right: var(--space-3);
+  bottom: 52px;
+  display: block;
+  box-sizing: border-box;
+  width: min(340px, calc(100% - 2 * var(--space-3)));
+  padding: 8px 10px 7px;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  background: var(--background);
+  box-shadow: var(--shadow-sm, 0 2px 8px rgb(0 0 0 / 0.16));
+  z-index: var(--z-raised);
+  pointer-events: none;
+}
+
+.crop-heat__legend.crop-memory-legend[hidden],
+.crop-memory-legend [hidden] { display: none; }
+
+.crop-memory-legend__caption {
+  font-family: var(--font-sans);
+  font-size: var(--font-size-label-xs);
+  font-weight: var(--font-weight-medium);
+  color: var(--foreground-secondary);
+}
+
+.crop-memory-legend__scale {
+  display: grid;
+  grid-template-columns: 30px minmax(180px, 1fr) 36px;
+  align-items: center;
+  gap: 6px;
+  padding-block: 18px 16px;
+}
+
+.crop-memory-legend__scale > .crop-heat__legend-end:first-child { text-align: right; }
+.crop-memory-legend__scale > .crop-heat__legend-end:last-child { text-align: left; }
+
+.crop-memory-legend__track {
+  --memory-min: 0%;
+  --memory-max: 100%;
+  position: relative;
+  display: block;
+  min-width: 0;
+  height: 10px;
+}
+
+/* 渐变只由这一层绘制并强制裁剪，外面的区间与标记不参与圆角采样。
+   background-color 是 0% 的深蓝兜底，即使边缘抗锯齿也不可能露出右端红色。 */
+.crop-memory-legend .crop-memory-legend__ramp {
+  position: absolute;
+  inset: 0;
+  display: block;
+  width: 100%;
+  height: 100%;
+  box-sizing: border-box;
+  overflow: hidden;
+  border-radius: var(--radius-pill);
+  background-repeat: no-repeat;
+  background-size: 100% 100%;
+  background-clip: padding-box;
+  clip-path: inset(0 round var(--radius-pill));
+}
+
+.crop-memory-legend__shade {
+  position: absolute;
+  pointer-events: none;
+}
+
+.crop-memory-legend__shade {
+  top: 1px;
+  bottom: 1px;
+  z-index: 1;
+  background: color-mix(in srgb, var(--background) 68%, transparent);
+}
+
+.crop-memory-legend__shade--lo { left: 1px; width: var(--memory-min); }
+.crop-memory-legend__shade--hi { left: var(--memory-max); right: 1px; }
+
+.crop-memory-legend__marker {
+  position: absolute;
+  top: 50%;
+  z-index: 3;
+  width: 0;
+  height: 0;
+}
+
+.crop-memory-legend__marker::before {
+  content: "";
+  position: absolute;
+  left: -1px;
+  top: -8px;
+  width: 2px;
+  height: 16px;
+  border-radius: 1px;
+  background: #fff;
+  box-shadow: 0 0 0 1px rgb(0 0 0 / 0.42), 0 0 5px rgb(255 255 255 / 0.5);
+}
+
+.crop-memory-legend__marker-label {
+  position: absolute;
+  left: 0;
+  transform: translateX(-50%);
+  color: var(--foreground);
+  font: var(--font-weight-medium) var(--font-size-label-xs) / 1 var(--font-mono);
+  white-space: nowrap;
+}
+
+.crop-memory-legend__marker[data-edge="start"] .crop-memory-legend__marker-label {
+  transform: translateX(0);
+}
+
+.crop-memory-legend__marker[data-edge="end"] .crop-memory-legend__marker-label {
+  transform: translateX(-100%);
+}
+
+.crop-memory-legend__marker--min .crop-memory-legend__marker-label { top: 11px; }
+.crop-memory-legend__marker--max .crop-memory-legend__marker-label,
+.crop-memory-legend__marker--rank .crop-memory-legend__marker-label { bottom: 11px; }
+
+.crop-memory-legend.is-single .crop-memory-legend__ramp { filter: saturate(0.82) brightness(0.82); }
+
+.crop-center:not([data-mode="config"]) .crop-layer-toggle { display: none; }
 
 
 /* ══ 右栏：选中对象详情 ════════════════════════════════════════════════════ */
@@ -1599,7 +1817,11 @@ body:has(.cro-board.is-plane) .cro-link-layer { display: none; }
   padding: var(--space-3);
   border-radius: var(--radius-md);
   border: 1px solid var(--border-subtle);
-  background: var(--surface-2);
+  background: linear-gradient(
+    105deg,
+    color-mix(in srgb, var(--foreground) 4%, var(--surface-1)),
+    var(--surface-1)
+  );
 }
 
 .crop-verdict__head {
@@ -1636,10 +1858,32 @@ body:has(.cro-board.is-plane) .cro-link-layer { display: none; }
   color: var(--foreground-secondary);
 }
 
-.crop-verdict[data-level="tight"] { background: var(--tone-warning-bg); }
+.crop-verdict[data-level="tight"] {
+  border-color: color-mix(in srgb, var(--warning) 28%, transparent);
+  background: linear-gradient(
+    105deg,
+    color-mix(in srgb, var(--warning) 16%, var(--surface-1)),
+    color-mix(in srgb, var(--warning) 5%, var(--surface-1))
+  );
+}
 .crop-verdict[data-level="tight"] .crop-verdict__badge { color: var(--warning); }
 .crop-verdict[data-level="alert"],
-.crop-verdict[data-level="over"] { background: var(--tone-critical-bg); }
+.crop-verdict[data-level="over"] {
+  border-color: color-mix(in srgb, var(--danger) 28%, transparent);
+  background: linear-gradient(
+    105deg,
+    color-mix(in srgb, var(--danger) 16%, var(--surface-1)),
+    color-mix(in srgb, var(--danger) 5%, var(--surface-1))
+  );
+}
+.crop-verdict[data-level="over"] {
+  border-color: color-mix(in srgb, var(--danger) 38%, transparent);
+  background: linear-gradient(
+    105deg,
+    color-mix(in srgb, var(--danger) 22%, var(--surface-1)),
+    color-mix(in srgb, var(--danger) 7%, var(--surface-1))
+  );
+}
 .crop-verdict[data-level="alert"] .crop-verdict__badge,
 .crop-verdict[data-level="over"] .crop-verdict__badge { color: var(--danger); }
 
@@ -2953,42 +3197,38 @@ body:has(.cro-board.is-plane) .cro-link-layer { display: none; }
 .crop-grade[data-pending] .crop-metric:hover { opacity: 1; }
 
 /* ══ 总判定：语义卡 ═════════════════════════════════════════════════════════
-   「预计可跑」抬到 title-sm 并带一枚同色状态点，是整栏唯一一句要在一米开外读得到
-   的话；下面那根占用尺把它的凭据（最紧那张卡装到几成、离波动线多远）画出来 ——
-   判定的颜色于是有个看得见的来处，不再是读完整段文字才成立的断言。 */
+   「预计可跑」抬到 title-sm，是整栏唯一一句要在一米开外读得到的话；状态由整卡
+   渐变与占用尺表达，标题前不再重复放圆点。 */
 .crop-verdict__badge {
   display: flex;
   align-items: center;
-  gap: var(--space-2);
   font-size: var(--font-size-title-sm);
   line-height: 1.3;
 }
 
-.crop-verdict__badge-dot {
-  flex: 0 0 auto;
-  width: 9px;
-  height: 9px;
-  border-radius: var(--radius-pill);
-  background: currentColor;
-}
-
 .crop-verdict__badge-text { font-weight: var(--font-weight-semibold); }
 
-/* 判定为「可跑」时整卡转绿：与偏紧的黄、越界的红同一套铺底逻辑，
-   原先只有后两档有色，绿档反而是唯一读不出语义的一档。 */
+/* 安全态直接复用配置引导横幅的蓝 → 蓝绿配方：蓝色表示系统判断，绿色表示通过。 */
 .crop-verdict[data-level="safe"] {
-  background: color-mix(in srgb, var(--success) 12%, transparent);
-  border-color: color-mix(in srgb, var(--success) 38%, transparent);
+  border-color: color-mix(in srgb, var(--primary) 34%, transparent);
+  background: linear-gradient(
+    105deg,
+    color-mix(in srgb, var(--primary) 17%, var(--surface-1)) 0%,
+    color-mix(in srgb, var(--primary) 7%, var(--surface-1)) 52%,
+    color-mix(in srgb, var(--success) 14%, var(--surface-1)) 100%
+  );
 }
 
-.crop-verdict[data-level="safe"] .crop-verdict__badge { color: var(--success); }
+.crop-verdict[data-level="safe"] .crop-verdict__badge-text {
+  width: max-content;
+  color: transparent;
+  background: linear-gradient(90deg, var(--primary), var(--success));
+  background-clip: text;
+  -webkit-background-clip: text;
+}
 
-/* 未估算时不装样子：灰底灰字，状态点留空心 */
+/* 未估算时不装样子：保持中性灰字与低对比渐变。 */
 .crop-verdict[data-level="none"] .crop-verdict__badge { color: var(--foreground-muted); }
-.crop-verdict[data-level="none"] .crop-verdict__badge-dot {
-  background: transparent;
-  box-shadow: inset 0 0 0 2px var(--border-strong);
-}
 
 /* ── 占用尺：最紧那张卡装了几成 ─────────────────────────────────────────── */
 .crop-verdict__gauge {
