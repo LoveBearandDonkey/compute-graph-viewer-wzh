@@ -70,20 +70,20 @@
   .top.has-open-cfg{z-index:120}
   /* 左上角是两枚页签，不是一枚 brand：当前这套分步入门是第一页，「实战场景」先留空位 */
   .top .tl{display:flex;align-items:flex-end;gap:16px}
-  /* 页签左边那枚 IDE 式的侧栏开关：图标是一只框、里面一道竖线分出左栏；开着时左栏填色，收起时留空。
-     它管两页的左栏——入门页的文字栏、实战页的案例目录 */
+  /* 右上角的 IDE 式栏位开关：竖向分隔控制左栏，横向分隔控制底栏；开着时对应栏位填色。 */
   .sidetg{width:28px;height:28px;display:inline-flex;align-items:center;justify-content:center;color:var(--fg2);
-          background:none;border:1px solid var(--line);border-radius:6px;padding:0;cursor:pointer;margin-bottom:2px}
+          background:none;border:1px solid var(--line);border-radius:6px;padding:0;cursor:pointer}
   .sidetg:hover{color:var(--fg);border-color:rgba(var(--fgrgb),.3)}
   .sidetg svg{width:16px;height:16px;stroke:currentColor;fill:none;stroke-width:1.5;stroke-linejoin:round}
   .sidetg svg .pane{fill:currentColor;stroke:none;opacity:.85}
-  .page[data-side="off"] .sidetg svg .pane{fill:none}
+  .page[data-side="off"] #sideTg svg .pane,.page[data-foot="off"] #footTg svg .pane{fill:none}
   /* 收起：入门页左栏整列归零、画布吃满；实战页案例目录那列归零 */
   .page[data-side="off"]{grid-template-columns:0 1fr}
   .page[data-side="off"] .side{display:none}
   .page[data-side="off"] .stage{padding-left:36px}
   .page[data-side="off"] .scene{grid-template-columns:minmax(0,1fr)}
   .page[data-side="off"] .cs-rail{display:none}
+  .page[data-foot="off"] .foot{display:none}
   .top .tabs{display:flex;align-items:flex-end;gap:22px}
   .top .tabs button{font:inherit;font-weight:600;font-size:13px;letter-spacing:.02em;color:var(--fg3);background:none;border:0;
                     padding:0 0 6px;cursor:pointer;position:relative;white-space:nowrap}
@@ -439,6 +439,7 @@
   .rankmem tr.m td{font-weight:700;color:var(--fg)}
   .rankmem tr.s td{color:var(--fg2)}
   .rankmem tr.s td:first-child{padding-left:16px;box-shadow:inset 1px 0 0 color-mix(in srgb,var(--fg3) 28%,transparent)}
+  .rankmem tr.s.cycle-mem td:first-child{padding-left:16px}
   .rankmem tr.rm-group td{padding:8px 0 3px;color:var(--fg3);font:700 10px/1.35 var(--sans);letter-spacing:.045em}
   .rankmem tr.rm-group:first-child td{padding-top:3px}
   .rankmem .sw{display:inline-block;width:9px;height:9px;border-radius:2px;vertical-align:middle;margin-right:6px}
@@ -509,6 +510,11 @@
   .memdetail .md-close{flex:none;border:1px solid var(--line);border-radius:6px;background:none;color:var(--fg3);padding:2px 7px;cursor:pointer;font:12px/1.5 var(--sans)}
   .memdetail .md-close:hover{color:var(--fg);border-color:rgba(var(--fgrgb),.3)}
   .memdetail.is-memory{margin-bottom:8px;padding:10px 12px;display:flex;flex-direction:column;gap:10px;border-radius:10px;overflow-x:hidden;overflow-y:auto}
+  /* 桌面端底栏收起后释放原先为 foot 预留的高度；内存详情和三类诊断面板都由 top + bottom 自动增高。 */
+  @media (min-width:861px){
+    .page[data-foot="off"] .memdetail.is-memory,
+    .page[data-foot="off"] .memdetail.is-observer{bottom:12px}
+  }
   .memdetail.is-memory[hidden]{display:none}
   .memdetail.is-memory .md-head{position:static;flex:none;align-items:center;min-height:26px;margin:0;padding:0;background:none;border-bottom:0}
   .memdetail.is-memory .md-kicker{display:none}
@@ -532,11 +538,14 @@
   /* 第 9 步通信详情：阶段进度、ETP 开关和五个通信维度统一进入右栏，Canvas 只保留拓扑与连线。 */
   .memdetail.is-communication #memDetailBody{display:flex;flex-direction:column;gap:12px}
   .comm-controls{display:flex;flex-direction:column;gap:8px;padding-bottom:12px;border-bottom:1px solid var(--line)}
-  .comm-timeline{display:flex;min-width:0;flex-direction:column;gap:8px;color:var(--fg3);font:500 9px/1.2 var(--mono)}
-  .comm-timeline__head{display:flex;align-items:center;justify-content:space-between;gap:8px}
+  .comm-timeline{min-width:0;color:var(--fg3);font:500 9px/1.2 var(--mono)}
+  .comm-timeline__head{display:flex;align-items:center;gap:8px;cursor:pointer;list-style:none;user-select:none}
+  .comm-timeline__head::-webkit-details-marker{display:none}
   .comm-timeline__head strong{color:var(--fg2);font:700 11px/1.25 var(--sans)}
-  .comm-timeline__head span{white-space:nowrap}
-  .comm-timeline__axis{--timeline-label:25px;display:flex;min-width:0;flex-direction:column;padding:7px 5px 6px;border:1px solid var(--line);border-radius:var(--radius-md);background:var(--bg2)}
+  .comm-timeline__head span{margin-left:auto;white-space:nowrap}
+  .comm-timeline__head::after{content:'›';color:var(--fg3);font:700 13px/1 var(--mono);transform:rotate(0deg);transition:transform 120ms ease}
+  .comm-timeline[open] .comm-timeline__head::after{transform:rotate(90deg)}
+  .comm-timeline__axis{--timeline-label:25px;display:flex;min-width:0;flex-direction:column;margin-top:8px;padding:7px 5px 6px;border:1px solid var(--line);border-radius:var(--radius-md);background:var(--bg2)}
   .comm-timeline__groups,.comm-timeline__ticks,.comm-timeline__row{display:grid;grid-template-columns:var(--timeline-label) repeat(var(--timeline-cols),minmax(0,1fr));min-width:0}
   .comm-timeline__groups{height:15px;color:var(--fg3);font-family:var(--sans);font-size:8px}
   .comm-timeline__group{min-width:0;text-align:center;white-space:nowrap}
@@ -790,7 +799,7 @@
   .memdetail .opt-plan strong{color:var(--fg);font:800 12px/1.35 var(--mono)}
   .memdetail .opt-plan span{grid-column:1/-1;color:var(--fg3);font:400 11px/1.45 var(--sans)}
 
-  /* 左下工具组：内存观测场景紧跟在缩放 HUD 右侧。 */
+  /* 左下工具组：第 8 / 9 步各自的观测场景紧跟在缩放 HUD 右侧。 */
   .canvas-bottom-tools{position:absolute;left:14px;bottom:12px;z-index:7;display:flex;align-items:center;gap:8px}
   .mem-scenario[hidden]{display:none}
   .mem-scenario{position:relative;display:flex;align-items:center;gap:2px;height:36px;padding:4px;border:1px solid var(--line);border-radius:999px;background:var(--bg)}
@@ -800,6 +809,30 @@
   .mem-scenario button[data-mem-scenario="danger"].is-on{background:var(--bad);color:#fff}
   .mem-scenario button[data-mem-scenario="peak"].is-on,
   .mem-scenario button[data-mem-scenario="gap"].is-on{background:var(--bad);color:#fff}
+  .comm-scenario button[data-comm-scenario]:not([data-comm-scenario="base"]).is-on{background:var(--bad);color:#fff}
+
+  /* 第 9 步问题观测复用内存诊断面板的卡片语汇，证据改为通信量、有效带宽和等待关系。 */
+  .comm-observer{--obc:var(--bad)}
+  .comm-issue-hero{display:grid;grid-template-columns:auto minmax(0,1fr);gap:10px;align-items:center;padding:10px;border:1px solid color-mix(in srgb,var(--bad) 46%,var(--line));border-radius:9px;background:color-mix(in srgb,var(--bad) 6%,var(--bg))}
+  .comm-issue-hero strong{color:var(--bad);font:850 30px/1 var(--mono);letter-spacing:-.04em;white-space:nowrap}
+  .comm-issue-hero b{display:block;color:var(--fg);font:750 11.5px/1.35 var(--sans)}
+  .comm-issue-hero span{display:block;margin-top:3px;color:var(--fg3);font:500 10px/1.35 var(--sans)}
+  .comm-route-chart{display:grid;grid-template-columns:repeat(8,minmax(0,1fr));gap:4px;height:98px;align-items:end;padding-top:4px}
+  .comm-route-col{display:grid;grid-template-rows:1fr auto auto;gap:2px;height:100%;align-items:end;color:var(--fg3);font:600 7.5px/1 var(--mono);text-align:center}
+  .comm-route-bar{position:relative;justify-self:center;width:56%;height:100%;min-height:18px;border-radius:3px 3px 1px 1px;background:rgba(var(--fgrgb),.05);overflow:hidden}
+  .comm-route-bar i{position:absolute;inset:auto 0 0;height:0;border-radius:3px 3px 1px 1px;background:color-mix(in srgb,var(--ep) 78%,var(--fg))}
+  .comm-route-col.is-hot .comm-route-bar{outline:1px solid var(--bad);outline-offset:1px}
+  .comm-route-col.is-hot .comm-route-bar i{background:var(--bad)}
+  .comm-route-col b{color:var(--fg2);font-weight:750}
+  .comm-route-col.is-hot b,.comm-route-col.is-hot span{color:var(--bad)}
+  .comm-link-evidence{display:grid;gap:5px}
+  .comm-link-row{display:grid;grid-template-columns:74px minmax(0,1fr) auto;gap:8px;align-items:center;padding:7px 8px;border-radius:7px;background:var(--bg2)}
+  .comm-link-row>span{color:var(--fg3);font:650 9.5px/1.3 var(--mono)}
+  .comm-link-track{height:7px;overflow:hidden;border-radius:999px;background:rgba(var(--fgrgb),.07)}
+  .comm-link-track i{display:block;width:var(--link-pct);height:100%;border-radius:inherit;background:var(--link-c,var(--dp))}
+  .comm-link-row>b{color:var(--fg);font:750 10px/1.2 var(--mono);white-space:nowrap}
+  .comm-link-row.is-bad{box-shadow:inset 2px 0 0 var(--bad)}
+  .comm-link-row.is-bad .comm-link-track i,.comm-link-row.is-bad>b{--link-c:var(--bad);color:var(--bad)}
 
   /* Infra 诊断页签借右侧显存详情面板展示四层内存账与异常 Rank 名单。 */
   .memdetail.is-observer{padding:14px 16px;display:flex;flex-direction:column;gap:10px;overflow-x:hidden}
@@ -863,36 +896,60 @@
 
   /* OOM 页签的 R23 / L7 热点专家根因面板。 */
   .oom-observer{gap:10px}
-  .oom-overrun{display:flex;align-items:baseline;justify-content:center;gap:3px;margin:32px 0;color:var(--bad);white-space:nowrap}
-  .oom-overrun span{font:750 16px/1 var(--sans)}
-  .oom-overrun b{font:800 56px/1 var(--mono);letter-spacing:-.05em}
-  .oom-overrun em{font:750 18px/1 var(--mono);font-style:normal}
-  .oom-cause{display:grid;gap:7px;padding:9px 10px;border:1px solid var(--line);border-radius:9px;background:var(--bg)}
+  .oom-overrun{display:flex;align-items:baseline;justify-content:center;gap:3px;margin:32px 0 6px;color:var(--bad);white-space:nowrap}
+  .oom-overrun span{font:400 16px/1 var(--sans)}
+  .oom-overrun b{font:800 22px/1 var(--sans);letter-spacing:0}
+  .oom-cause-flow{position:relative;display:grid;gap:24px}
+  .oom-cause{position:relative;z-index:1;display:grid;gap:7px;padding:9px 10px;border:1px solid var(--line);border-radius:9px;background:var(--bg)}
+  .oom-cause:not(:last-child)::before{content:'';position:absolute;z-index:2;left:20.5px;bottom:-24px;width:1px;height:24px;background:color-mix(in srgb,var(--fg3) 52%,var(--line));pointer-events:none}
+  .oom-cause:not(:last-child)::after{content:'';position:absolute;z-index:3;left:17.5px;bottom:-23px;width:6px;height:6px;border:solid color-mix(in srgb,var(--fg3) 76%,var(--line));border-width:0 1.2px 1.2px 0;transform:rotate(45deg);pointer-events:none}
   .oom-cause-head{display:grid;grid-template-columns:20px minmax(0,1fr) auto;gap:7px;align-items:center}
-  .oom-cause-head>i{display:flex;align-items:center;justify-content:center;width:20px;height:20px;border:1px solid var(--line);border-radius:50%;background:transparent;color:var(--fg3);font:750 10px/1 var(--mono)}
+  .oom-cause-head>i{position:relative;z-index:2;display:flex;align-items:center;justify-content:center;width:20px;height:20px;border:1px solid var(--line);border-radius:50%;background:var(--bg);color:var(--fg3);font:750 10px/1 var(--mono)}
   .oom-cause-head b{color:var(--fg);font:750 11px/1.25 var(--sans)}
+  .oom-cause-head .oom-cause-prefix{color:var(--fg3);font-weight:400}
   .oom-cause-head strong{color:var(--fg2);font:750 10.5px/1.2 var(--mono);white-space:nowrap}
   .oom-cause p{margin:0;color:var(--fg3);font:400 10px/1.45 var(--sans)}
-  .oom-bar-chart{display:grid;gap:5px}
-  .oom-bar-row{display:grid;grid-template-columns:42px minmax(0,1fr) 58px;gap:6px;align-items:center;color:var(--fg3);font:600 9px/1.2 var(--mono)}
-  .oom-bar-row>b{color:var(--fg2);font:750 9.5px/1.2 var(--mono);text-align:right}
-  .oom-bar-track{position:relative;height:8px;overflow:hidden;border-radius:999px;background:rgba(var(--fgrgb),.08)}
-  .oom-bar-track i{display:block;height:100%;min-width:2px;border-radius:inherit;background:rgba(var(--fgrgb),.28)}
-  .oom-bar-row.is-danger .oom-bar-track i{background:var(--bad)}
-  .oom-slot-chart{display:grid;grid-template-columns:repeat(4,1fr);gap:5px}
-  .oom-slot{position:relative;height:32px;overflow:hidden;border:1px solid var(--line);border-radius:6px;background:var(--bg2);color:var(--fg3);font:700 9px/30px var(--mono);text-align:center}
-  .oom-slot i{position:absolute;left:0;right:0;bottom:0;height:0;background:rgba(var(--fgrgb),.18);transition:height .14s linear}
-  .oom-slot span{position:relative;z-index:1}
-  .oom-slot.is-on{border-color:rgba(var(--fgrgb),.28);color:var(--fg)}
-  .oom-route-chart{display:grid;grid-template-columns:repeat(8,1fr);gap:4px;height:72px;align-items:end;padding-top:4px}
+  .oom-route-note{display:block;color:var(--fg3);font:400 9px/1.2 var(--sans)}
+  .oom-reserve{display:grid;gap:8px}
+  .oom-reserve-head{display:flex;align-items:baseline;justify-content:flex-start;gap:8px;color:var(--fg2);font:650 9px/1.25 var(--sans)}
+  .oom-reserve-head b{color:inherit;font-weight:650}
+  .oom-reserve-chart{padding:2px 2px 20px}
+  .oom-reserve-track{position:relative;display:flex;align-items:start;gap:4px;height:30px;overflow:visible}
+  .oom-reserve-group{display:grid;grid-template-rows:14px auto;gap:4px;flex:var(--group-mb) 1 0;min-width:0}
+  .oom-reserve-cells{display:flex;gap:1px;height:14px}
+  .oom-reserve-cells i{display:block;flex:var(--cell-mb) 1 0;min-width:0;border:1px solid color-mix(in srgb,var(--success) 42%,var(--line));border-radius:2px;background:color-mix(in srgb,var(--success) 62%,var(--bg))}
+  .oom-reserve-cells i.is-remaining{border-color:color-mix(in srgb,var(--bad) 62%,var(--line));background:repeating-linear-gradient(135deg,color-mix(in srgb,var(--bad) 10%,var(--bg)) 0 3px,color-mix(in srgb,var(--bad) 22%,var(--bg)) 3px 5px)}
+  .oom-reserve-group b{overflow:hidden;color:var(--fg2);font:650 7px/1 var(--mono);text-align:center;text-overflow:ellipsis;white-space:nowrap}
+  .oom-reserve-fail{position:absolute;right:0;top:34px;color:var(--bad);font:700 8px/1 var(--sans);white-space:nowrap}
+  .oom-route-chart{display:grid;grid-template-columns:repeat(var(--oom-cols,8),1fr);gap:4px;height:86px;align-items:end;padding-top:4px}
+  .oom-route-chart.is-layer{gap:2px;height:80px}
+  .oom-expert-map{display:grid;gap:4px}
+  .oom-route-chart.is-expert{position:relative;grid-template-columns:repeat(64,minmax(0,1fr));gap:1px;height:76px;padding-top:15px}
+  .oom-route-chart.is-expert .oom-route-col{display:block;position:relative;height:100%}
+  .oom-route-chart.is-expert .oom-route-bar{width:100%;min-height:8px}
+  .oom-route-chart.is-expert .oom-route-col b,.oom-route-chart.is-expert .oom-route-col small{display:none}
+  .oom-expert-hot-label{position:absolute;z-index:3;left:43%;top:1px;transform:translateX(-50%);color:var(--bad);font:750 7.5px/1 var(--mono);white-space:nowrap}
+  .oom-expert-groups{display:grid;grid-template-columns:repeat(8,minmax(0,1fr));gap:1px}
+  .oom-expert-groups span{display:grid;gap:3px;color:var(--fg3);font:650 7.5px/1 var(--mono);text-align:center}
+  .oom-expert-groups i{display:block;height:4px;border:1px solid color-mix(in srgb,var(--fg3) 52%,var(--line));border-top:0}
   .oom-route-col{display:grid;grid-template-rows:1fr auto auto;gap:2px;height:100%;align-items:end;color:var(--fg3);font:600 7.5px/1 var(--mono);text-align:center}
-  .oom-route-bar{position:relative;justify-self:center;width:50%;height:100%;min-height:20px;border-radius:3px 3px 1px 1px;background:rgba(var(--fgrgb),.05);overflow:hidden}
-  .oom-route-bar i{position:absolute;left:0;right:0;bottom:0;background:rgba(var(--fgrgb),.30);border-radius:3px 3px 1px 1px}
-  .oom-route-col.is-rank .oom-route-bar{outline:1px solid color-mix(in srgb,var(--bad) 72%,var(--line));outline-offset:1px}
-  .oom-route-col.is-rank .oom-route-bar i{background:var(--bad)}
+  .oom-route-chart.is-layer .oom-route-col{font-size:6.5px}
+  .oom-route-bar{position:relative;justify-self:center;width:16.667%;height:100%;min-height:20px;border-radius:3px 3px 1px 1px;background:rgba(var(--fgrgb),.05);overflow:hidden}
+  .oom-route-bar i{position:absolute;left:0;right:0;bottom:0;height:var(--route-h);transform-origin:bottom;background:rgba(var(--fgrgb),.30);border-radius:3px 3px 1px 1px;animation:oom-route-rise 1.2s linear both}
+  .oom-route-col.is-future{opacity:.34}
+  .oom-route-col.is-future .oom-route-bar{border:1px dashed var(--line);background:none}
+  .oom-route-col.is-alert .oom-route-bar{animation:oom-route-outline 1ms step-end var(--route-alert-delay) both}
+  .oom-route-col.is-alert .oom-route-bar i{animation:oom-route-rise 1.2s linear both,oom-route-alert 1ms step-end var(--route-alert-delay) both}
   .oom-route-col b{color:var(--fg2);font:750 7.5px/1 var(--mono)}
-  .oom-route-col.is-rank b{color:var(--bad)}
-  .oom-footnote{margin:0;padding:8px 9px;border-left:2px solid var(--bad);background:var(--bg2);color:var(--fg2);font:400 10px/1.5 var(--sans)}
+  .oom-route-col.is-alert b{animation:oom-route-value-alert 1ms step-end var(--route-alert-delay) both}
+  .oom-route-col small{color:var(--fg3);font:650 7.5px/1 var(--mono)}
+  .oom-route-col.is-alert small{animation:oom-route-value-alert 1ms step-end var(--route-alert-delay) both}
+  @keyframes oom-route-rise{from{transform:scaleY(0)}to{transform:scaleY(1)}}
+  @keyframes oom-route-alert{from{background:rgba(var(--fgrgb),.30)}to{background:var(--bad)}}
+  @keyframes oom-route-outline{from{outline:1px solid transparent;outline-offset:1px}to{outline:1px solid color-mix(in srgb,var(--bad) 72%,var(--line));outline-offset:1px}}
+  @keyframes oom-route-value-alert{from{color:var(--fg2)}to{color:var(--bad)}}
+  @media (prefers-reduced-motion:reduce){.oom-route-bar i,.oom-route-col.is-alert .oom-route-bar,.oom-route-col.is-alert .oom-route-bar i,.oom-route-col.is-alert b,.oom-route-col.is-alert small{animation-duration:1ms;animation-delay:0ms}}
+  .oom-footnote{margin:0 0 22px;padding:0;color:var(--fg2);font:400 10px/1.5 var(--sans)}
   .oom-footnote b{color:var(--fg);font-weight:750}
 
   /* 第 8 / 9 步底部的 mem-cycle 共用一根 step 时钟：Layer 视图看内存生命期，泳道视图看同帧的算子 / 通信执行。 */
@@ -969,7 +1026,6 @@
   .top-play .ic-pause,.top-play .state-pause{display:none}
   .top-play[aria-pressed="true"] .ic-play,.top-play[aria-pressed="true"] .state-play{display:none}
   .top-play[aria-pressed="true"] .ic-pause,.top-play[aria-pressed="true"] .state-pause{display:block}
-  .rank-cycle-play.is-oom{border-color:var(--bad);background:color-mix(in srgb,var(--bad) 12%,var(--bg));color:var(--bad)}
   .pt-cfgpanel{display:none}
   .pt-cfgpanel.is-open{display:block;position:absolute;top:36px;right:0;z-index:22;width:min(322.5px,calc(100vw - 48px));
                       max-height:calc(100vh - 80px);overflow:auto;scrollbar-gutter:stable;background:var(--bg);
@@ -1158,9 +1214,6 @@
 <div class="page" data-side="off">
   <div class="top">
     <div class="tl">
-      <button class="sidetg" id="sideTg" type="button" title="收起 / 展开左侧栏" aria-label="收起 / 展开左侧栏" aria-pressed="false">
-        <svg viewBox="0 0 24 24" aria-hidden="true"><rect class="pane" x="3" y="5" width="7" height="14" rx="1.5"/><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M10 5v14"/></svg>
-      </button>
       <div class="tabs" id="tabs" role="tablist">
         <button type="button" role="tab" data-tab="intro" aria-selected="true">Rank 的设计表达</button>
         <button type="button" role="tab" data-tab="scene" aria-selected="false">实战场景</button>
@@ -1209,6 +1262,12 @@
         <svg class="moon" viewBox="0 0 24 24"><path d="M20 14.5A8.5 8.5 0 0 1 9.5 4a8.5 8.5 0 1 0 10.5 10.5z"/></svg>
         <svg class="sun" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M12 2.5v2.5M12 19v2.5M2.5 12H5M19 12h2.5M5.3 5.3l1.8 1.8M16.9 16.9l1.8 1.8M5.3 18.7l1.8-1.8M16.9 7.1l1.8-1.8"/></svg>
       </button>
+      <button class="sidetg" id="sideTg" type="button" title="收起 / 展开左侧栏" aria-label="收起 / 展开左侧栏" aria-pressed="false">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><rect class="pane" x="3" y="5" width="7" height="14" rx="1.5"/><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M10 5v14"/></svg>
+      </button>
+      <button class="sidetg" id="footTg" type="button" title="收起 / 展开底部导航" aria-label="收起 / 展开底部导航" aria-pressed="true">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><rect class="pane" x="3" y="14" width="18" height="5" rx="1.5"/><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M3 14h18"/></svg>
+      </button>
     </div>
   </div>
 
@@ -1237,6 +1296,11 @@
           <button type="button" data-mem-scenario="danger" aria-pressed="false">OOM</button>
           <button type="button" data-mem-scenario="peak" aria-pressed="false">内存峰值分析</button>
           <button type="button" data-mem-scenario="gap" aria-pressed="false">GAP 分析</button>
+        </div>
+        <div class="mem-scenario comm-scenario" id="commScenario" hidden aria-label="通信观测场景">
+          <button type="button" data-comm-scenario="base" class="is-on" aria-pressed="true">单 Step 周期</button>
+          <button type="button" data-comm-scenario="route" aria-pressed="false">EP 路由倾斜</button>
+          <button type="button" data-comm-scenario="tail" aria-pressed="false">DP 规约长尾</button>
         </div>
       </div>
       <section class="mem-cycle is-collapsed" id="memCycle" data-view="layer" hidden aria-label="Rank 一个 step 的内存与执行周期">
@@ -1336,7 +1400,7 @@
   /* ── 显存账：口径照 demo 的 opBytes / paramsPerCard / memParts / rankLoad 搬过来 ──
      配置就是 default128：tp2·cp1·pp4·dp16·ep8·etp1，48 层，hidden 4096，32 头 / 8 kv 头，
      ffn 2048，vocab 128256，seq 8192，64 专家，mbs 1，ga 8，HBM 64 GB，ZeRO 关。
-     五档颜色照 MEM_BASE（见上面 syncMemPalette，随主题调）。路由不均 / 碎片那两项和 demo 一样是 sin-hash 的确定性合成。 */
+     五档颜色照 MEM_BASE（见上面 syncMemPalette，随主题调）。路由不均 / 缓存预留两项和 demo 一样是 sin-hash 的确定性合成。 */
   var CFG = {tp:2, cp:1, pp:4, dp:16, ep:8, etp:1, layers:48, hidden:4096, heads:32, kv:8, ffn:2048,
              vocab:128256, seq:8192, experts:64, mbs:1, ga:8, hbm:64};
   var GiB = Math.pow(2, 30), LPS = CFG.layers/CFG.pp, HD = CFG.hidden/CFG.heads;
@@ -1374,7 +1438,7 @@
       {k:'g',   label:'梯度',      bytes:2*P,  c:MEMC.g, kind:'model'},
       {k:'opt', label:'优化器态', bytes:12*P, c:MEMC.opt, kind:'model'},
       {k:'act', label:'激活', bytes:act, c:MEMC.act, kind:'exec', inflight:inflight, mbs:effectiveMbs},
-      {k:'rsv', label:'碎片/预留',        bytes:rsv,  c:MEMC.rsv, kind:'exec'}
+      {k:'rsv', label:'缓存/预留',        bytes:rsv,  c:MEMC.rsv, kind:'exec'}
     ];
   }
   /* 换一份配置算同一本账（实战案例四改了 DP / EP / 卡型号之后要重算）：CFG / LPS 临时换成它的，算完换回来 */
@@ -1407,10 +1471,10 @@
       html:'<p>MoE 的 64 个专家分成 8 桶，同一层里横向连着的 8 个 DP 组凑齐全部专家，就是一个 <b>EP 组</b>：<code>R0·R2·…·R14</code> 一组，<code>R1·R3·…·R15</code> 另一组，共 16 组。排布到此和原 pattern 一致。</p>' },
 
     { key:'内存', color:null, title:'往框里装内存，识别溢出风险',
-      html:'<p>空框从下往上装入<b>权重、梯度、优化器态、激活、碎片</b>。点一张卡的<b>激活</b>：主卡与同一 EDP 实例、同一 Layer 下的两组 EP Rank 会一起亮起——TP0 / TP1 各一组、每组 8 张。详情中的 <code>[B,S,H]</code> 立体显示各 Rank 实际领取的 token 桶与 H 分片。切到 <b>OOM</b>，会使用 R23 × L7 热点专家事故，在 Layer 视图中回放到首次越线。</p>' },
+      html:'<p>空框从下往上装入<b>权重、梯度、优化器态、激活、缓存/预留</b>。点一张卡的<b>激活</b>：主卡与同一 EDP 实例、同一 Layer 下的两组 EP Rank 会一起亮起——TP0 / TP1 各一组、每组 8 张。详情中的 <code>[B,S,H]</code> 立体显示各 Rank 实际领取的 token 桶与 H 分片。切到 <b>OOM</b>，会使用 R23 × L7 热点专家事故，在 Layer 视图中回放到后续 L2 申请失败。</p>' },
 
     { key:'通信', color:null, title:'训练时：一个 rank 跟谁说话',
-      html:'<p>每个 Rank 顶部都有平行于顶面的横向<b>收发区</b>；选中 Rank 的桑基带从白色收发区上边缘分槽发出，并渐变为 <b>TP / EP / DP / EDP / PP</b> 主题色。带宽及对端收发区长度都表示一个 Step 内的理论双向通信量，线上直接标注次数与容量。默认静态暂停；点击播放后按前向 TP → EP → PP、反向倒回、更新 DP → EDP 依次强调。</p>' },
+      html:'<p>每个 Rank 顶部都有平行于顶面的横向<b>收发区</b>；选中 Rank 的桑基带从白色收发区上边缘分槽发出，并渐变为 <b>TP / EP / DP / EDP / PP</b> 主题色。带宽及对端收发区长度表示通信量，线上标注次数与容量。默认的<b>单 Step 周期</b>展示理论基线；<b>EP 路由倾斜</b>复用 R23 × L7 OOM，<b>DP 规约长尾</b>复用 R87 的通信/runtime GAP。桑基带始终静态，异常页签再叠加实际 token、有效带宽与等待证据。</p>' },
 
     { key:'展平视图', color:'#3B82F6', title:'配置、矩阵、计算图与显存账联动',
       html:'<p>在同一张展平视图中修改训练配置、查询整网算子、定位 Rank × Layer，并核对显存账与并行域耗时；配置校验失败时保留上一组自洽图形并给出可应用的联动方案。</p>' }
@@ -1418,30 +1482,36 @@
 
   /* ── 卡阵：128 只，编号照 demo 的 rankOf ─────────────────────────── */
   var CW = 1, CD = 1, CH = 1.6, S0 = 1.45;
-  var memScenario = 'base';
+  var memScenario = 'base', commScenario = 'base';
+  var COMM_ROUTE_SOURCE_RANK = 17, COMM_ROUTE_HOT_RANK = 23, COMM_ROUTE_HOT_EP = 3;
+  var COMM_TAIL_RANK = 87, COMM_TAIL_PEER = 65;
   var MEM_DIAGNOSTICS = {
-    peak:{title:'内存峰值分析', color:'var(--bad)', defaultRank:23, ranks:[
-      {r:23, metric:'allocated', tag:'算子分配峰值', short:'激活 +9.6 GB', cause:'热点专家让前向激活陡增', result:'Operator Allocated 抬高真实峰值；应优先处理 token 路由或激活生命周期。'},
-      {r:54, metric:'app', tag:'进程保留峰值', short:'APP 额外 +18.0 GB', cause:'通信/运行时 buffer 未进入算子账', result:'算子三层账看似正常，但 APP Reserved 已逼近容量线。'},
-      {r:87, metric:'allocated', tag:'更新阶段峰值', short:'临时区 +7.2 GB', cause:'optimizer update workspace 短时出现', result:'只在更新阶段形成尖峰，不能误判为常驻优化器状态。'}
+    peak:{title:'内存峰值分析', color:'var(--bad)', defaultRank:54, ranks:[
+      {r:23, metric:'allocated', tag:'真实工作集峰值', short:'激活 +9.6 GB', cause:'热点专家让前向激活陡增', result:'算子分配升高不等于异常；要结合进程峰值余量和同角色 Rank 判断。'},
+      {r:54, metric:'app', tag:'最高容量压力', short:'APP 额外 +18.0 GB', cause:'通信/运行时 buffer 未进入算子账', result:'在进程保留峰值时拆 A / D / I / O，确认风险来自算子账外组件。'},
+      {r:87, metric:'allocated', tag:'更新阶段工作集', short:'临时区 +7.2 GB', cause:'optimizer update workspace 短时出现', result:'短时更新 workspace 是真实工作集，但不等于常驻优化器状态。'}
     ]},
     gap:{title:'GAP 分析', color:'var(--bad)', defaultRank:23, ranks:[
-      {r:23, metric:'delayedRatio', tag:'延迟释放最大占比', short:'流仍持有', cause:'逻辑释放后仍等待另一条流完成', result:'算子持有与算子分配之间的 GAP 占比最高，下一次大块申请可能被挡住。'},
-      {r:54, metric:'idleRatio', tag:'内存池空闲最大占比', short:'池中额外 24.0 GB', cause:'动态 shape 留下多种尺寸的空闲块', result:'算子保留与算子持有之间的 GAP 占比最高；空闲很多不代表能满足连续大块申请。'}
+      {r:23, metric:'delayed', tag:'延迟释放负担', short:'流仍持有', cause:'逻辑释放后仍等待另一条流完成', result:'同时看峰值 GB、持续时间和与进程高水位的重叠，而不是只看占比。'},
+      {r:54, metric:'idle', tag:'池内空闲负担', short:'池中额外 24.0 GB', cause:'动态 shape 留下多种尺寸的空闲块', result:'池内空闲不等于碎片；还要检查复用率、最大连续块和失败申请。'},
+      {r:87, metric:'other', tag:'进程其他负担', short:'通信/runtime +14.0 GB', cause:'算子账外 buffer 在进程高水位持续驻留', result:'用 P - R 定位通信、runtime、图执行器或其他进程级组件。'}
     ]}
   };
   var OBSERVER_METRICS = {
-    allocated:{label:'算子分配', definition:'算子仍在使用的真实张量'},
-    active:{label:'算子持有', definition:'算子分配 + 跨流延迟释放'},
-    reserved:{label:'算子保留', definition:'算子持有 + 内存池空闲'},
-    app:{label:'进程保留', definition:'算子保留 + 通信 / runtime'},
-    delayedRatio:{label:'延迟释放', resultLabel:'延迟释放最大占比', definition:'跨流延迟释放 ÷ 算子保留；用于比较不同内存体量 Rank 的释放滞后程度'},
-    idleRatio:{label:'内存池空闲', resultLabel:'内存池空闲最大占比', definition:'内存池空闲 ÷ 算子保留；用于比较不同内存体量 Rank 的池内闲置程度'}
+    allocated:{label:'算子分配 A', resultLabel:'最大真实工作集', definition:'算子仍在使用的真实业务内存；高不等于坏'},
+    active:{label:'算子持有 H', definition:'算子分配 + 跨流延迟释放'},
+    reserved:{label:'算子保留 R', definition:'算子持有 + 内存池空闲'},
+    app:{label:'进程保留 P', resultLabel:'最高容量压力', definition:'最接近整卡容量压力；应在峰值时刻拆成 A + D + I + O'},
+    delayed:{label:'延迟释放 D', resultLabel:'延迟释放负担', definition:'H - A；逻辑已释放但仍被 Stream / Event 持有'},
+    idle:{label:'池内空闲 I', resultLabel:'池内空闲负担', definition:'R - H；已回到内存池但当前没有被流持有'},
+    other:{label:'进程其他 O', resultLabel:'进程其他负担', definition:'P - R；通信、runtime、图执行器等算子账外占用'},
+    delayedRatio:{label:'延迟释放占比', definition:'D ÷ R；只用于跨体量辅助比较'},
+    idleRatio:{label:'池内空闲占比', definition:'I ÷ R；只用于跨体量辅助比较'}
   };
-  var PEAK_OBSERVER_METRIC_KEYS = ['allocated','active','reserved','app'];
-  var GAP_OBSERVER_METRIC_KEYS = ['delayedRatio','idleRatio'];
+  var PEAK_OBSERVER_METRIC_KEYS = ['app','allocated'];
+  var GAP_OBSERVER_METRIC_KEYS = ['delayed','idle','other'];
   function observerMetricKeys(){ return memScenario === 'gap' ? GAP_OBSERVER_METRIC_KEYS : PEAK_OBSERVER_METRIC_KEYS; }
-  function observerDefaultMetric(){ return memScenario === 'gap' ? 'delayedRatio' : 'allocated'; }
+  function observerDefaultMetric(){ return memScenario === 'gap' ? 'delayed' : 'app'; }
   var scenarioPanelDismissed = false, memoryDiagnosticState = null, memoryObserverMetric = 'allocated', memoryObserverSyncedRank = null, memoryObserverSkipRankSync = null, oomRankSet = {};
   function memDiagnostic(){ return MEM_DIAGNOSTICS[memScenario] || null; }
   function memProblemScenario(){ return memScenario === 'danger' || !!memDiagnostic(); }
@@ -1462,9 +1532,14 @@
   function memoryObserverMetricForRank(r){
     var info = memDiagnosticRank(r); return info && info.metric ? info.metric : memoryObserverLeaderMetric(r);
   }
+  function oomEvidenceGroupRank(r){
+    var c = cards && cards[r], hot = cards && cards[OOM_AUTO_RANK];
+    /* EP组由 PP段、EDP实例和 TP 位置共同确定；组内 EP 位置不同，但这三项坐标相同。 */
+    return !!(c && hot && c.pp === hot.pp && (c.dp>>3) === (hot.dp>>3) && c.tp === hot.tp);
+  }
   function memProblemRankAllowed(r){
     if(memDiagnostic()) return !!memDiagnosticRank(r) || !!memoryObserverLeaderMetric(r);
-    if(memScenario === 'danger') return !!oomRankSet[r] || r === selRank;
+    if(memScenario === 'danger') return oomEvidenceGroupRank(r) || !!oomRankSet[r] || r === selRank;
     return true;
   }
   /* TP 上下两层之间的空隙：原来 0.35，等距视角下上层卡的底棱几乎贴着下层卡的顶棱，两层的
@@ -1476,7 +1551,7 @@
                 x:0, y:0, z:0, a:0, fx:0, fy:0, fz:0, fa:0, tx:0, ty:0, tz:0, ta:0, hl:null});
   }
   cards.forEach(function(c){ c.mem = memOf(c, memScenario); });
-  var memScenarioEl = document.getElementById('memScenario'), memCycleEl = document.getElementById('memCycle'), memCycleToggleEl = document.getElementById('memCycleToggle');
+  var memScenarioEl = document.getElementById('memScenario'), commScenarioEl = document.getElementById('commScenario'), memCycleEl = document.getElementById('memCycle'), memCycleToggleEl = document.getElementById('memCycleToggle');
   function setMemCycleCollapsed(collapsed, skipResize){
     collapsed = !!collapsed;
     memCycleEl.classList.toggle('is-collapsed',collapsed);
@@ -1497,6 +1572,31 @@
       var on = b.dataset.memScenario === memScenario; b.classList.toggle('is-on', on); b.setAttribute('aria-pressed', String(on));
     });
   }
+  function syncCommScenarioButtons(){
+    Array.prototype.forEach.call(commScenarioEl.querySelectorAll('[data-comm-scenario]'), function(b){
+      var on = b.dataset.commScenario === commScenario; b.classList.toggle('is-on',on); b.setAttribute('aria-pressed',String(on));
+    });
+  }
+  function commScenarioRank(key){ return key === 'route' ? COMM_ROUTE_SOURCE_RANK : (key === 'tail' ? COMM_TAIL_RANK : (selRank === null ? SEL : selRank)); }
+  function setCommScenario(next, quiet){
+    if(next !== 'route' && next !== 'tail') next = 'base';
+    var changed = next !== commScenario;
+    commScenario = next; commPanelDismissed = false; rankInfoOpen = false; memSel = null;
+    commCardSelection = next === 'route' ? 'ep' : (next === 'tail' ? 'dp' : null); commCardRestorePose = null;
+    syncCommScenarioButtons();
+    if(step !== 8 || quiet) return;
+    var targetRank = commScenarioRank(next), tn = now();
+    selRank = targetRank; memSelR = targetRank; comm = commOf(targetRank); comm.at = tn;
+    if(window.RIMemoryCycle){
+      window.RIMemoryCycle.setScenario('base', true); window.RIMemoryCycle.setRank(targetRank);
+      if(next === 'route') window.RIMemoryCycle.seekCommunication('ep');
+      else if(next === 'tail') window.RIMemoryCycle.seekCommunication('dp');
+      else window.RIMemoryCycle.startFromWarmup();
+    }
+    setViewPose('front');
+    queueCommRankFocus(targetRank,tn,changed?620:420,false);
+    syncStagebar(); renderRankMem(); needDraw = true; tick();
+  }
   function setMemScenario(next, quiet){
     if(next !== 'danger' && next !== 'peak' && next !== 'gap') next = 'base';
     if(next === memScenario){
@@ -1510,7 +1610,7 @@
     }
     memScenario = next;
     rankInfoOpen = false;
-    /* OOM / 峰值 / GAP 都保持 MBS 1 的基准配置；OOM 只在周期数据中注入 L7 路由倾斜。 */
+    /* OOM / 峰值 / GAP 都保持 MBS 1 的基准配置；OOM 在周期数据中注入 L7 路由倾斜，并在后续 L2 申请处停止。 */
     cards.forEach(function(c){ c.mem = memOf(c, 'base'); });
     cycleMem = null; memoryDiagnosticState = null; oomRankSet = {}; scenarioPanelDismissed = false;
     memoryObserverMetric = observerDefaultMetric(); memoryObserverSyncedRank = null; memoryObserverSkipRankSync = null;
@@ -1537,6 +1637,7 @@
        处理一次尺寸与相机，避免重复 resize 干扰 8 ↔ 9 的镜头继承。 */
     if(on) setMemCycleCollapsed(true, true);
     memScenarioEl.hidden = !memoryStep;
+    commScenarioEl.hidden = i !== 8;
     memCycleEl.hidden = !on;
     document.getElementById('stage').classList.toggle('mem-cycle-on', on);
     if(window.RIMemoryCycle){ window.RIMemoryCycle.setStep(i); window.RIMemoryCycle.setVisible(on && intro); }
@@ -1557,6 +1658,7 @@
     }
   });
   memScenarioEl.addEventListener('click', function(e){ var b = e.target.closest('[data-mem-scenario]'); if(b) setMemScenario(b.dataset.memScenario, false); });
+  commScenarioEl.addEventListener('click', function(e){ var b = e.target.closest('[data-comm-scenario]'); if(b) setCommScenario(b.dataset.commScenario, false); });
 
   /* 每一步的排布：只给目标坐标，动画由外面插值。返回 {pos:[{x,y,z,vis}], labels:[], groups:{color, of(card)}} */
   function layoutOf(i){
@@ -1617,7 +1719,7 @@
       if(i === 6){ title = 'EP = 8 · 还原 view=chain'; groups = {color:VC.ep, n:16, of:epG}; }
     }
     if(i === 7) title = '显存：每只框装着它那一份';
-    if(i === 8) title = 'R23 跟谁说话 · 实线机内 · 虚线跨机';
+    if(i === 8) title = '通信关系 · 实线机内 · 虚线跨机';
     /* 展平：卡的 3D 坐标沿用第 7 步起的排布（飞进平面的起点就是它），门牌全部退场——
        名字改由两条量尺来写 */
     if(i === 9){ title = '展平视图 · 横轴 layer · 纵轴 rank'; labels = []; }
@@ -1724,9 +1826,8 @@
   var lay = null, step = -1, t0 = 0, DUR = 720, animating = false, needDraw = false;
   var memF = 0, memT = 0, memFrom = 0, memAt = 0, cycleMem = null, pulses = [], step0 = true;
   var GREY = '#8a93a3', LABEL_GREY = '#344054', SEL = 23, comm = null, labs = {};
-  var commPaused = false, commPausedAt = 0, commCyclePlaying = false, commCycleState = null, commDetailInset = 0, commPanelDismissed = false;
+  var commCycleState = null, commDetailInset = 0, commPanelDismissed = false;
   var commCardSelection = null, commCardRestorePose = null;
-  var REDUCED = !!(window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches);   /* 关了动效：线上的点不跑 */
   var selRank = null;          /* 内存分配 / 跨机通信两步里手动选中的卡；读出卡跟着它走 */
   var MEM_AUTO_RANK = 23, OOM_AUTO_RANK = 23, rankFocus = null, commRankFocus = null, memRankFocused = false, memRankFadeLevel = 0;
   var markOn = {rank:true, label:true, memory:true};
@@ -1755,18 +1856,24 @@
       {k:'edp', name:'EDP', how:etpOn ? '专家梯度 All-Reduce · 步末 · 半份专家' : '专家梯度 All-Reduce · 步末 · 整份专家', ph:'u', dir:'sym', sib:function(c){ return c.pp===me.pp && (c.dp&7)===(me.dp&7) && (!etpOn || c.tp===me.tp) && c.r!==sel; }},
       {k:'pp', name:'PP', how:'P2P · 只连相邻段 · 每 μb', ph:'fb', dir:'pp', sib:function(c){ return c.dp===me.dp && c.tp===me.tp && Math.abs(c.pp - me.pp) === 1; }}
     ];
-    dims.forEach(function(d, i){
+    dims.forEach(function(d){
       d.to = cards.filter(d.sib);
       d.inN = d.to.filter(function(c){ return c.node === me.node; }).length;
       var volume = communicationVolume(me,d);
       d.peerBytes = volume.peers;
       d.totalBytes = volume.total;
-      d.at = i*320;
+      d.issueObserved = !!volume.issueObserved;
     });
     return {sel:sel, dims:dims, totalBytes:dims.reduce(function(sum,d){ return sum+d.totalBytes; },0), at:0};
   }
   /* 统一按「一个 Step 内发送 + 接收」计理论逻辑流量。集合通信虽然底层可能走 ring / tree，
      这里仍按画布上的逻辑对端均摊，保证桑基带、对端标签与当前通信关系一一对应。 */
+  function communicationRouteTokens(){
+    var hot=Math.round(CFG.seq*.6),rest=CFG.seq-hot,base=Math.floor(rest/(CFG.ep-1)),remain=rest%(CFG.ep-1),cold=0,out=[];
+    for(var ep=0;ep<CFG.ep;ep++) out.push(ep===COMM_ROUTE_HOT_EP?hot:base+(cold++<remain?1:0));
+    return out;
+  }
+  function communicationRouteGroup(c){ return c.pp===0&&c.tp===1&&(c.dp>>3)===1; }
   function communicationVolume(me,d){
     var MiB=Math.pow(2,20), activation=CFG.mbs*(CFG.seq/CFG.cp)*CFG.hidden*2;
     var peers=d.to.map(function(peer){ return {rank:peer.r,bytes:0}; }), total=0, calls=LPS*CFG.ga*2;
@@ -1775,12 +1882,14 @@
       total=collective(activation,CFG.tp)*calls*(etpOn?2:1);
       peers.forEach(function(x){ x.bytes=peers.length?total/peers.length:0; });
     } else if(d.k==='ep'){
-      var part=activationPartition(me), own=part.tokens[me.dp&7]/CFG.seq, multiplier=etpOn?2:1;
+      var routeIssue=commScenario==='route'&&communicationRouteGroup(me),part=activationPartition(me),routeTokens=routeIssue?communicationRouteTokens():part.tokens;
+      var own=routeTokens[me.dp&7]/CFG.seq,multiplier=etpOn?2:1,epCalls=routeIssue?CFG.ga:calls;
       peers.forEach(function(x,i){
-        var peer=d.to[i], remote=part.tokens[peer.dp&7]/CFG.seq;
-        x.bytes=activation*(own+remote)*calls*2*multiplier;
+        var peer=d.to[i], remote=routeTokens[peer.dp&7]/CFG.seq;
+        x.bytes=activation*(own+remote)*epCalls*2*multiplier;
         total+=x.bytes;
       });
+      if(routeIssue)return {peers:peers,total:total,issueObserved:true};
     } else if(d.k==='dp'){
       var attention=opBytes().filter(function(x){ return x.id.indexOf('attn.')===0; }).reduce(function(sum,x){ return sum+x.b; },0)*LPS;
       total=collective(attention,peers.length+1);
@@ -1819,11 +1928,13 @@
     if(memSel==='w'||memSel.indexOf('w:')===0) return {key:memSel,label:memSel==='w'?'权重':'权重 · '+memSel.slice(2),color:MEMC.w,dims:[],factor:0};
     if(memSel==='opt') return {key:'opt',label:'优化器态',color:MEMC.opt,dims:[],factor:0};
     if(memSel==='otmp') return {key:'otmp',label:'优化器步·临时区',color:shade(MEMC.opt,.72),dims:[],factor:0};
-    if(memSel==='rsv') return {key:'rsv',label:'碎片 / 预留',color:MEMC.rsv,dims:[],factor:0};
+    if(memSel==='rsv') return {key:'rsv',label:'缓存 / 预留',color:MEMC.rsv,dims:[],factor:0};
     return {key:memSel,label:memSel,color:MEMC.rsv,dims:[],factor:0};
   }
   function communicationVisibleDims(){
     var filter=communicationMemoryFilter(),dims=comm?comm.dims:[];
+    if(commScenario==='route')dims=dims.filter(function(d){return d.k==='ep';});
+    else if(commScenario==='tail')dims=dims.filter(function(d){return d.k==='dp';});
     if(!filter)return dims;
     return dims.filter(function(d){ return filter.dims.indexOf(d.k)>=0; });
   }
@@ -1850,6 +1961,7 @@
     return value.toFixed(digits).replace(/(\.\d*?[1-9])0+$|\.0+$/,'$1')+' GB';
   }
   function communicationLineCalls(d,filter){
+    if(commScenario==='route'&&d.k==='ep'&&d.issueObserved)return 'L7 · '+CFG.ga+'×2次';
     if(filter&&filter.key==='act'){
       if(d.k==='tp') return (LPS*CFG.ga)+'次';
       if(d.k==='ep') return (LPS*CFG.ga*2)+'次';
@@ -1934,9 +2046,9 @@
       });
       rows+='<div class="comm-timeline__row"><span class="comm-timeline__row-label">μb'+(mb+1)+'</span>'+cells.map(function(cell){ return '<span class="comm-timeline__cell '+(cell.boundary?'is-boundary ':'')+(cell.wait?'is-wait ':'')+(cell.layer?'is-layer':'')+'">'+cell.points+'</span>'; }).join('')+'</div>';
     }
-    return '<div class="comm-timeline" aria-label="单 Step 通信时序坐标；横轴按前向计算、PP 发送、流水线等待、PP 接收梯度、反向计算和更新排列，纵轴为 8 个微批次">'
-      +'<div class="comm-timeline__head"><strong>单 Step 通信时序</strong><span>1 点 = 1 次通信</span></div>'
-      +'<div class="comm-timeline__axis" style="--timeline-cols:'+cols+'"><div class="comm-timeline__groups">'+groups+'</div><div class="comm-timeline__ticks">'+ticks+'</div>'+rows+'</div></div>';
+    return '<details class="comm-timeline" aria-label="单 Step 通信时序坐标；横轴按前向计算、PP 发送、流水线等待、PP 接收梯度、反向计算和更新排列，纵轴为 8 个微批次">'
+      +'<summary class="comm-timeline__head"><strong>单 Step 通信时序</strong><span>展开点阵 · 1 点 = 1 次通信</span></summary>'
+      +'<div class="comm-timeline__axis" style="--timeline-cols:'+cols+'"><div class="comm-timeline__groups">'+groups+'</div><div class="comm-timeline__ticks">'+ticks+'</div>'+rows+'</div></details>';
   }
   function communicationProperty(d){
     var n=d.to.length, out=n-d.inN;
@@ -1970,6 +2082,47 @@
     if(!cards)cards='<div class="comm-empty">该显存项在当前 Step 中没有需要展示的跨 Rank 通信。</div>';
     return '<div class="comm-controls">' + communicationTimelineHTML(me,dims,filter) + '</div><div class="comm-cards">' + cards + '</div><details class="comm-etp-fold"><summary>高级选项 · ETP</summary><div id="commEtpHost"></div></details>';
   }
+  function communicationIssueDimension(kind){
+    if(!comm)return null;
+    for(var i=0;i<comm.dims.length;i++)if(comm.dims[i].k===kind)return comm.dims[i];
+    return null;
+  }
+  function communicationRouteIssueHTML(){
+    var source=cards[COMM_ROUTE_SOURCE_RANK],tokens=communicationRouteTokens(),avg=CFG.seq/CFG.ep,max=Math.max.apply(Math,tokens),d=communicationIssueDimension('ep');
+    var hotBytes=d?communicationPeerBytes(d,COMM_ROUTE_HOT_RANK):0;
+    var bars=tokens.map(function(n,ep){
+      var rank=activationRank(source,ep,source.tp),hot=ep===COMM_ROUTE_HOT_EP;
+      return '<div class="comm-route-col'+(hot?' is-hot':'')+'"><div class="comm-route-bar" title="EP位置 '+ep+' · R'+rank+' · '+fmtN(n)+' token"><i style="height:'+Math.max(5,n/max*100).toFixed(1)+'%"></i></div><b>'+fmtN(n)+'t</b><span>R'+rank+'</span></div>';
+    }).join('');
+    return '<div class="mem-observer comm-observer" data-comm-observer="route">'
+      +'<p class="mem-observer-intro"><b>复用第 8 步 OOM 事故：</b>同一份 R23 × L7 热点专家数据，从通信侧查看 Router 分桶后的 EP All-to-All。当前以同组 R17 为观察源，因此通往 R23 的逻辑边会明显变粗。</p>'
+      +'<div class="comm-issue-hero"><strong>'+(tokens[COMM_ROUTE_HOT_EP]/avg).toFixed(1)+'×</strong><div><b>R23 收到 '+fmtN(tokens[COMM_ROUTE_HOT_EP])+' token</b><span>组均值 '+fmtN(avg)+'；热点专家位于 EP'+COMM_ROUTE_HOT_EP+'</span></div></div>'
+      +'<section class="oom-cause"><div class="mem-observer-section-head"><b>L7 · EP 组内实际 token</b><span>R17 观察源 · TP1</span></div><div class="comm-route-chart" aria-label="L7 的 8 个 EP 位置 token 分布">'+bars+'</div></section>'
+      +'<section><div class="mem-observer-section-head"><b>通信证据</b><span>前向 · L7 · 单 Step</span></div><div class="mem-observer-metrics">'
+      +'<div class="mem-observer-metric"><span>热点逻辑边</span><b>R17 → R23</b><small>Token Dispatch / Combine</small></div>'
+      +'<div class="mem-observer-metric"><span>该边观测流量</span><b>'+fmtCommBytes(hotBytes)+'</b><small>按实际 token 比例估算</small></div>'
+      +'<div class="mem-observer-metric"><span>热点占比</span><b>60.0%</b><small>均衡基线 12.5%</small></div>'
+      +'<div class="mem-observer-metric"><span>关联结果</span><b>R23 OOM</b><small>L7 激活与 dispatch workspace 同时抬升</small></div></div></section>'
+      +'<div class="mem-observer-verdict"><b>结论：</b>这不是并行组接错，而是数据内容造成的通信与计算共同倾斜。粗红边定位“流量去了哪里”，第 8 步 OOM 面板解释“这些 token 为什么又把 R23 显存推过线”。</div></div>';
+  }
+  function communicationTailIssueHTML(){
+    var d=communicationIssueDimension('dp'),total=d?d.totalBytes:0,edge=d?communicationPeerBytes(d,COMM_TAIL_PEER):0;
+    var normalBw=92,slowBw=31,normalMs=total/GiB/normalBw*1000,slowMs=total/GiB/slowBw*1000;
+    function duration(ms){return ms>=1000?(ms/1000).toFixed(2)+' s':Math.round(ms)+' ms';}
+    return '<div class="mem-observer comm-observer" data-comm-observer="tail">'
+      +'<p class="mem-observer-intro"><b>复用 GAP 分析的 R87：</b>该 Rank 在进程高水位留下 14.0 GB 通信/runtime 账外占用；通信侧进一步构造为跨机 DP All-Reduce 慢边，用来观察“单条慢路径拖住整组”的更新长尾。</p>'
+      +'<div class="comm-issue-hero"><strong>'+(normalBw/slowBw).toFixed(1)+'×</strong><div><b>DP 规约耗时被慢路径放大</b><span>R87 ↔ R65 · RoCE · 更新阶段</span></div></div>'
+      +'<section><div class="mem-observer-section-head"><b>链路对比</b><span>有效带宽 · 构造观测</span></div><div class="comm-link-evidence">'
+      +'<div class="comm-link-row"><span>组内中位</span><div class="comm-link-track"><i style="--link-pct:100%"></i></div><b>'+normalBw+' GB/s</b></div>'
+      +'<div class="comm-link-row is-bad"><span>R87 ↔ R65</span><div class="comm-link-track"><i style="--link-pct:'+(slowBw/normalBw*100).toFixed(1)+'%"></i></div><b>'+slowBw+' GB/s</b></div></div></section>'
+      +'<section><div class="mem-observer-section-head"><b>通信证据</b><span>更新 · 单 Step</span></div><div class="mem-observer-metrics">'
+      +'<div class="mem-observer-metric"><span>DP 理论逻辑流量</span><b>'+fmtCommBytes(total)+'</b><small>R87 全部 DP 对端合计</small></div>'
+      +'<div class="mem-observer-metric"><span>慢逻辑边流量</span><b>'+fmtCommBytes(edge)+'</b><small>红边是逻辑对端；物理 ring/tree 需 trace 还原</small></div>'
+      +'<div class="mem-observer-metric"><span>中位耗时</span><b>'+duration(normalMs)+'</b><small>按 '+normalBw+' GB/s 折算</small></div>'
+      +'<div class="mem-observer-metric"><span>长尾耗时</span><b>'+duration(slowMs)+'</b><small>伴随通信/runtime +14.0 GB 高驻留</small></div></div></section>'
+      +'<div class="mem-observer-verdict"><b>结论：</b>All-Reduce 由最慢参与者收尾；红边不一定流量最大，却会让其余 Rank 在更新末尾等待。桑基图负责定位通信域与跨机关系，带宽和耗时证据负责证明它确实是瓶颈。</div></div>';
+  }
+  function communicationIssueHTML(){return commScenario==='route'?communicationRouteIssueHTML():communicationTailIssueHTML();}
   function ease(t){ return t < .5 ? 4*t*t*t : 1 - Math.pow(-2*t + 2, 3)/2; }
   function now(){ return performance.now(); }
   function rankCameraTarget(rank){
@@ -2043,6 +2196,7 @@
     var keepMemCommCamera = previousInMemComm && nextInMemComm && !changedToFront;
     var carriedCamera = keepMemCommCamera ? {s:cam.s, ox:cam.ox, oy:cam.oy} : null;
     var carriedCameraHome = keepMemCommCamera && camHome ? {s:camHome.s, ox:camHome.ox, oy:camHome.oy} : null;
+    if(i === 8 && previousStep !== 8){ commScenario = 'base'; syncCommScenarioButtons(); }
     commRankFocus = null;
     commCardSelection = null; commCardRestorePose = null;
     rankInfoOpen = false;
@@ -2105,7 +2259,6 @@
     /* 发射线：离开第 9 步时淡出，不是一下子抽掉。主语沿用上一步手动选的卡（没有就 R23） */
     if(i === 8){
       commPanelDismissed = false;
-      commPaused = false; commPausedAt = 0;
       if(!comm || comm.off){ comm = commOf(selRank !== null ? selRank : SEL); comm.at = tn + DUR*0.5; }
       selRank = comm.sel;
       /* 记住当前 Rank 的“未选择”状态，避免 renderRankMem 把它解释成首次进入并补默认项。 */
@@ -2119,7 +2272,6 @@
       }else queueCommRankFocus(selRank, keepMemCommCamera?tn:tn+DUR, keepMemCommCamera?620:900, true);
     }
     else {
-      commPaused = false; commPausedAt = 0;
       if(comm && !comm.off) comm.off = tn;
     }
     /* 第 9 → 10 步：压平的时候不通信的卡不把显存长回来——涨内存和切视图是两件不相干的事，
@@ -2244,7 +2396,7 @@
     if(pulses.length && t < pulses[pulses.length-1].at + 1100) busy = true;
     if(t < ghostUntil) busy = true;
     if(comm){
-      /* 通信线本身是静态图；只有离场淡出需要继续请求画面。播放时由共用 Step 时钟主动推帧。 */
+      /* 桑基线本身是静态图；只有离场淡出需要继续请求画面。共用 Step 时钟只更新右栏折叠的时序点阵。 */
       if(comm.off){ if(t < comm.off + 320) busy = true; else comm = null; }
     }
     if(pick){
@@ -2320,6 +2472,9 @@
     if(!comm){
       if(step === 7 && memRankFocused && selRank !== null){
         if(c.r === selRank) return 'sel';
+        /* OOM 根因组既要保留弱红边，也要保留一层可比较的弱显存填充；否则只能看见边框，
+           看不出同组其他 Rank 的柱高明显低于接近 64 GB 的 R23。 */
+        if(memScenario === 'danger' && oomEvidenceGroupRank(c.r)) return 'sib';
         /* 诊断场景一次保留三张证据卡：主语最实，另外两张仍可读，其余退暗。 */
         if(memDiagnosticRank(c.r)) return 'sib';
         if(memSel === 'act' && sameActivationGroup(cards[selRank], c)) return 'sib';
@@ -2335,11 +2490,9 @@
     for(var i = 0; i < comm.dims.length; i++) if(comm.dims[i].sib(c)) return 'sib';
     return 'dim';
   }
-  function commTime(t){ return commPaused ? commPausedAt : t; }
   function commFade(t){
     if(!comm) return 0;
-    t = commTime(t);
-    /* 第 9 步默认暂停并直接呈现完整静态关系，不从半透明 / 半截线开始。 */
+    /* 第 9 步直接呈现完整静态关系，不从半透明 / 半截线开始。 */
     var f = step === 8 && !comm.off ? 1 : Math.max(0, Math.min(1, (t - comm.at + 200)/400));
     if(comm.off) f = Math.min(f, Math.max(0, 1 - (t - comm.off)/320));
     return f;
@@ -2402,9 +2555,12 @@
     if(ha){ drawBox(c.x, c.y, c.z, CW, CH, CD, {front:hexA(hc, ha*.55), right:hexA(hc, ha*.7), top:hexA(hc, ha*.4)}, hexA(hc, Math.min(1, ha*1.6)), null); }
     if(role === 'sel'){ var oa = (comm || step === 7) ? fade : 1; if(oa > 0) drawBox(c.x, c.y, c.z, CW, CH, CD, null, 'rgba(' + TH.rgb + ',' + (0.9*oa) + ')', null, 2); }
     /* 峰值/GAP 场景描出预设问题 Rank 与整 Step 各口径的真实峰值 Rank。 */
-    var problemRank = step === 7 && (memDiagnosticRank(c.r) || memoryObserverLeaderMetric(c.r) || (memScenario === 'danger' && (oomRankSet[c.r] || c.r === selRank)));
+    var commProblemRank=step===8&&((commScenario==='route'&&(c.r===COMM_ROUTE_SOURCE_RANK||c.r===COMM_ROUTE_HOT_RANK))||(commScenario==='tail'&&(c.r===COMM_TAIL_RANK||c.r===COMM_TAIL_PEER)));
+    var oomGroupRank = step === 7 && memScenario === 'danger' && oomEvidenceGroupRank(c.r);
+    var problemRank = (step === 7 && (memDiagnosticRank(c.r) || memoryObserverLeaderMetric(c.r) || (memScenario === 'danger' && (oomGroupRank || oomRankSet[c.r] || c.r === selRank)))) || commProblemRank;
     if(problemRank){
-      drawBox(c.x, c.y, c.z, CW, CH, CD, null, hexA(TH.bad, c.r === selRank ? .98 : .72), null, c.r === selRank ? 2.4 : 1.5);
+      var problemStrong = step === 7 && memScenario === 'danger' ? c.r === OOM_AUTO_RANK : c.r === selRank;
+      drawBox(c.x, c.y, c.z, CW, CH, CD, null, hexA(TH.bad, problemStrong ? .98 : .72), null, problemStrong ? 2.4 : 1.5);
     }
     /* 读出卡里点开了某一块：沿它的兄弟轴与选中卡同组的卡描一圈刀色的棱（通信那一步不叠这一层） */
     if(memSel !== null && selRank !== null && !comm && c.r !== selRank){
@@ -2472,11 +2628,16 @@
     ctx.strokeRect(p[0]-length/2,p[1]-COMM_PORT_H/2,length,COMM_PORT_H);
     ctx.globalAlpha=1;
   }
+  function communicationFlowColor(flow){
+    if(commScenario==='route'&&flow.dim.k==='ep'&&(flow.peer.r===COMM_ROUTE_HOT_RANK||comm.sel===COMM_ROUTE_HOT_RANK))return TH.bad;
+    if(commScenario==='tail'&&flow.dim.k==='dp'&&flow.peer.r===COMM_TAIL_PEER)return TH.bad;
+    return VC[flow.dim.k];
+  }
   function drawCommunicationTargetPort(target,opacity){
     var x=target.center[0]-target.width/2,y=target.center[1]-COMM_PORT_H/2;
     target.flows.forEach(function(flow){
       ctx.globalAlpha=opacity*(commCardSelection&&flow.dim.k!==commCardSelection ? .14 : 1);
-      ctx.fillStyle=VC[flow.dim.k]; ctx.fillRect(flow.portX0,y,flow.width,COMM_PORT_H);
+      ctx.fillStyle=communicationFlowColor(flow); ctx.fillRect(flow.portX0,y,flow.width,COMM_PORT_H);
     });
     ctx.globalAlpha=opacity*(commCardSelection ? .58 : 1); ctx.strokeStyle='rgba('+TH.rgb+',.54)'; ctx.lineWidth=1; ctx.strokeRect(x,y,target.width,COMM_PORT_H); ctx.globalAlpha=1;
   }
@@ -2484,7 +2645,7 @@
     var labelAt={tp:.56,ep:.7,dp:.86,edp:.64,pp:.8}[flow.dim.k]||.78;
     var p=cubicBez(a,curve.c1,curve.c2,b,labelAt), text=communicationLineCalls(flow.dim,flow.filter)+' '+fmtCommLineBytes(flow.bytes);
     ctx.font='650 9px '+mono; var w=ctx.measureText(text).width+10,h=17,x=p[0]-w/2,y=p[1]-h/2;
-    ctx.globalAlpha=Math.max(.72,alpha); ctx.fillStyle=TH.bg; ctx.strokeStyle=hexA(VC[flow.dim.k],.72); ctx.lineWidth=.8;
+    ctx.globalAlpha=Math.max(.72,alpha); ctx.fillStyle=TH.bg; ctx.strokeStyle=hexA(communicationFlowColor(flow),.72); ctx.lineWidth=.8;
     ctx.beginPath(); ctx.roundRect(x,y,w,h,4); ctx.fill(); ctx.stroke();
     ctx.fillStyle=TH.fg2; ctx.textAlign='center'; ctx.textBaseline='middle'; ctx.fillText(text,p[0],p[1]+.5); ctx.globalAlpha=1;
   }
@@ -2520,49 +2681,17 @@
     });
     return {o:o,total:total,left:o[0]-visual/2,right:o[0]+visual/2,top:o[1]-COMM_PORT_H/2,bottom:o[1]+COMM_PORT_H/2,groups:groups,flows:flows,targets:targets};
   }
-  function drawSankeySource(layout,me,fade,mono,ph){
+  function drawSankeySource(layout,me,fade,mono){
     drawCommunicationPort(layout.o,layout.right-layout.left,'#fff',true);
-    var text='R'+comm.sel+' · 总通信 '+fmtCommBytes(layout.total)+' / Step', x=layout.right+8, y=layout.top-6;
+    var text=commScenario==='route'?'R'+comm.sel+' · L7 EP 观测 '+fmtCommBytes(layout.total)+' / Step'
+      :(commScenario==='tail'?'R'+comm.sel+' · DP 逻辑流量 '+fmtCommBytes(layout.total)+' / Step':'R'+comm.sel+' · 总通信 '+fmtCommBytes(layout.total)+' / Step');
+    var x=layout.right+8, y=layout.top-6;
     ctx.globalAlpha=.94*fade; ctx.font='650 10px '+mono;
     var w=ctx.measureText(text).width+12, h=20;
     ctx.fillStyle=TH.bg; ctx.strokeStyle='rgba('+TH.rgb+',.20)'; ctx.lineWidth=1;
     ctx.beginPath(); ctx.roundRect(x,y-h+4,w,h,5); ctx.fill(); ctx.stroke();
     ctx.fillStyle=TH.fg; ctx.textAlign='left'; ctx.textBaseline='bottom'; ctx.fillText(text,x+6,y);
     ctx.globalAlpha=1;
-  }
-  /* 三个阶段轮着演：前向 → 反向 → 同步/更新。一个阶段里的几维**不同时亮**——一张卡上同一时刻只有
-     一个集合通信在跑，顺序照一层里的先后：前向 TP → EP Token Dispatch → EP Expert Output Combine
-     → PP；反向原路倒回 PP → EP 输出梯度 Dispatch → EP Token 梯度 Combine → TP；步末先 DP 再 EDP（两组独立的
-     all-reduce，实现上也是先后发起）。每一维独占 SLOT_MS 一拍，点在自己那一拍里走完一整趟；同阶段
-     候场的维半亮、别的阶段的退成淡线。线全部长完（最后一维的 at + 420）之后才开始计时。 */
-  var SLOT_MS = 1400, PHASES = [{k:'f', t:'前向', seq:['tp', 'ep', 'ep', 'pp']}, {k:'b', t:'反向', seq:['pp', 'ep', 'ep', 'tp']}, {k:'u', t:'更新', seq:['dp', 'edp']}];
-  var CYCLE_MS = PHASES.reduce(function(a, p){ return a + p.seq.length*SLOT_MS; }, 0);
-  /* 返回：i 阶段号、ft 阶段内进度（给阶段行底下的进度线）、k 正在演的那一维、st 这一拍内的进度（给线上的点） */
-  function phaseAt(t){
-    if(REDUCED) return {i:-1, ft:0.5, k:null, st:0.5};          /* 关了动效：三批都静止摆着 */
-    /* 第 9 步直接读取底部 step 进度的当前算子。一次 F / B 算子内部依次映射到三种通信，
-       更新算子依次映射到 DP / EDP，因此上下两块看到的是同一帧，而不是两套各自循环的时钟。 */
-    if(step === 8 && commCycleState){
-      var phaseIndex = commCycleState.phase === 'f' ? 0 : (commCycleState.phase === 'b' ? 1 : 2);
-      var seq = PHASES[phaseIndex].seq, progress = Math.max(0,Math.min(.999999,commCycleState.progress || 0));
-      if(commCycleState.wait) return {i:phaseIndex,ft:progress,k:null,st:progress,wait:true};
-      var pos = progress*seq.length, slot = Math.min(seq.length-1,Math.floor(pos));
-      return {i:phaseIndex,ft:progress,k:seq[slot],st:pos-slot};
-    }
-    var t0 = comm.at + comm.dims[comm.dims.length-1].at + 420;
-    if(t < t0) return {i:-2, ft:0, k:null, st:0};                /* 还在长线，先不演 */
-    var u = (t - t0) % CYCLE_MS;
-    for(var i = 0; i < PHASES.length; i++){
-      var len = PHASES[i].seq.length*SLOT_MS;
-      if(u < len){ var j = Math.floor(u/SLOT_MS); return {i:i, ft:u/len, k:PHASES[i].seq[j], st:(u - j*SLOT_MS)/SLOT_MS}; }
-      u -= len;
-    }
-  }
-  /* 一维此刻的状态：2 正在演（独占这一拍）、1 属于这一阶段但在候场、0 不属于这一阶段。关了动效一律 2 */
-  function dimState(d, ph){
-    if(ph.i < 0) return 2;
-    var inPh = ph.i === 2 ? d.ph === 'u' : d.ph === 'fb';
-    return !inPh ? 0 : (d.k === ph.k ? 2 : 1);
   }
   /* 右侧详情是 fixed 覆盖层，不会改变主 canvas 的尺寸；底部进度看板仍需按真实覆盖宽度避让。 */
   function syncCommDetailInset(){
@@ -2621,23 +2750,22 @@
     }
     syncCommunicationCardSelection(); needDraw=true; tick();
   }
-  function updateCommunicationPanel(ph){
+  function updateCommunicationPanel(){
     if(step !== 8 || !comm || memDetailEl.hidden || !memDetailEl.classList.contains('is-communication')) return;
     updateCommunicationTimeline();
     syncCommunicationCardSelection();
   }
   function drawComm(t){
-    t=commTime(t);
     var me=cards[comm.sel],o=topC(me),mono=getComputedStyle(document.body).getPropertyValue('--mono');
-    var fade=commFade(t),ph=phaseAt(t);
+    var fade=commFade(t);
     if(fade<=0)return;
-    syncCommDetailInset(); updateCommunicationPanel(ph);
+    syncCommDetailInset(); updateCommunicationPanel();
     var layout=communicationSankeyLayout(me,o),labels=[];
     /* 收发区只属于当前通信子图：主语与真实对端保留，未参与通信的 Rank 不再画灰色占位。 */
     if(!layout.flows.length){ drawCommunicationPort(o,12,'#fff',true); return; }
     layout.flows.forEach(function(flow){
-      var d=flow.dim,c=flow.peer,a=flow.a,col=VC[d.k],q=flow.b,same=c.node===me.node,curve=communicationCurve(a,q),st=dimState(d,ph);
-      var alpha=(commCardSelection ? (d.k===commCardSelection ? .96 : .14) : (!commCyclePlaying ? .94 : (st===2 ? .94 : (st===1 ? .62 : .34))))*fade;
+      var d=flow.dim,c=flow.peer,a=flow.a,col=communicationFlowColor(flow),q=flow.b,same=c.node===me.node,curve=communicationCurve(a,q);
+      var alpha=(commCardSelection ? (d.k===commCardSelection ? .96 : .14) : .94)*fade;
       var gradient=ctx.createLinearGradient(a[0],a[1],q[0],q[1]);
       gradient.addColorStop(0,'#fff'); gradient.addColorStop(.16,'#fff'); gradient.addColorStop(.58,hexA(col,.92)); gradient.addColorStop(1,col);
       function path(){ ctx.beginPath(); ctx.moveTo(a[0],a[1]); ctx.bezierCurveTo(curve.c1[0],curve.c1[1],curve.c2[0],curve.c2[1],q[0],q[1]); }
@@ -2653,7 +2781,7 @@
     if(camHome&&cam.s/camHome.s>1.5) labels.forEach(function(item){ drawCommunicationLineLabel(item.a,item.curve,item.b,item.flow,item.alpha,mono); });
     Object.keys(layout.targets).forEach(function(rank){ drawCommunicationTargetPort(layout.targets[rank],.98*fade); });
     ctx.setLineDash([]); ctx.lineCap='butt'; ctx.globalAlpha=1;
-    drawSankeySource(layout,me,fade,mono,ph);
+    drawSankeySource(layout,me,fade,mono);
   }
 
   /* ── 点门牌 ─────────────────────────────────────────────────────── */
@@ -2761,7 +2889,9 @@
     if(hit && !(pick && !pick.off && pick.key === hit.key)) pick = {key:hit.key, c:hit.c, sel:hit.sel, on:tn};
     else if(hc){
       if(comm && !comm.off){
-        if(hc.r !== comm.sel){ comm = commOf(hc.r); comm.at = tn; if(commPaused) commPausedAt = tn; selRank = hc.r; }
+        /* 问题观测固定证据主语，避免切到无事故 Rank 后右栏叙事与画布失配。 */
+        if(step===8&&commScenario!=='base'&&hc.r!==commScenarioRank(commScenario)){tick();return;}
+        if(hc.r !== comm.sel){ comm = commOf(hc.r); comm.at = tn; selRank = hc.r; }
         else selRank = hc.r;
         if(step === 8) commPanelDismissed = false;
         if(step === 8) queueCommRankFocus(hc.r, tn, 620);
@@ -2873,53 +3003,85 @@
     return 'rank' + c.r + ' · ' + out + format;
   }
   function oomInsightHTML(){
-    var c = cards[OOM_AUTO_RANK], hotEp = c.dp & 7, hotTokens = Math.round(CFG.seq*.6), coldTotal = CFG.seq-hotTokens;
-    var coldBase = Math.floor(coldTotal/(CFG.ep-1)), coldRemainder = coldTotal%(CFG.ep-1), coldIndex = 0, routeTokens = [];
-    for(var ep=0;ep<CFG.ep;ep++) routeTokens.push(ep === hotEp ? hotTokens : coldBase + (coldIndex++ < coldRemainder ? 1 : 0));
-    var maxTokens = Math.max.apply(Math,routeTokens), avgTokens = CFG.seq/CFG.ep;
+    var c = cards[OOM_AUTO_RANK], hotEp = c.dp & 7;
+    /* 仍严格守住 8,192 token 总账，只让冷 Rank 带一点自然抖动，避免七根柱子整齐得像刻意构造。 */
+    var routeTokens = [421,492,455,4915,534,398,517,460], hotTokens = routeTokens[hotEp];
+    var maxTokens = Math.max.apply(Math,routeTokens), avgTokens = CFG.seq/CFG.ep, epGroup = activationEpGroup(c,c.tp);
+    var routeDuration = 1200, alertDelay = Math.round(Math.min(1,2*avgTokens/hotTokens)*routeDuration);
     var routeBars = routeTokens.map(function(tokens,ep){
-      var rankBucket = ep === hotEp, height = Math.max(5,tokens/maxTokens*100);
-      return '<div class="oom-route-col' + (rankBucket ? ' is-rank' : '') + '"><div class="oom-route-bar" title="EP' + ep + ' · ' + fmtN(tokens) + ' token"><i style="height:' + height.toFixed(1) + '%"></i></div><b>' + fmtN(tokens) + '</b><span>EP' + ep + '</span></div>';
+      var rankBucket = ep === hotEp, height = Math.max(5,tokens/maxTokens*100), mappedRank = activationRank(c,ep,c.tp);
+      return '<div class="oom-route-col' + (rankBucket ? ' is-alert' : '') + '" style="--route-alert-delay:' + alertDelay + 'ms"><div class="oom-route-bar" title="EP组' + epGroup + ' · EP位置 ' + ep + ' · R' + mappedRank + ' · ' + fmtN(tokens) + ' token"><i style="--route-h:' + height.toFixed(1) + '%"></i></div><b>' + fmtN(tokens) + '</b><small>R' + mappedRank + '</small></div>';
     }).join('');
+    /* 最后一层证据横向比较 R23 的各层单微批总激活：普通层有轻微 shape / workspace 抖动，
+       L7 把常规激活与热点增量合在一起，因此显著高于相邻层。 */
+    var layerNames = ['Emb']; for(var layer=0;layer<12;layer++) layerNames.push('L'+layer);
+    var layerMB = [61,114,121,117,124,116,123,118,246.4,122,115,120,117], hotLayerIndex = 8, layerMax = 246.4;
+    var layerBars = layerNames.map(function(name,index){
+      var alert = index === hotLayerIndex, value = layerMB[index], height = Math.max(5,value/layerMax*100);
+      var tip = alert ? 'L7 · 常规激活约 119.4 MB + 热点增量约 127.0 MB · 总计 246.4 MB' : name + ' · 总激活 ' + value + ' MB';
+      return '<div class="oom-route-col' + (alert ? ' is-alert' : '') + '" style="--route-alert-delay:820ms"><div class="oom-route-bar" title="' + tip + '"><i style="--route-h:' + height.toFixed(1) + '%"></i></div><b>' + value + '</b><small>' + name + '</small></div>';
+    }).join('');
+    /* 64 个专家先按所属 Rank 分 8 组；每组内也带确定性的轻微抖动。每组之和严格等于 routeTokens，
+       所以从 Expert → Rank 的钻取不会改变 token 总账。E27 是唯一热点专家。 */
+    var rankLabels = routeTokens.map(function(_,ep){ return 'R'+activationRank(c,ep,c.tp); });
+    var expertNoise = [.86,1.04,.93,1.10,.89,1.06,.97,1.15];
+    function splitExperts(total,group){
+      if(group === hotEp) return [55,63,58,4505,61,56,60,57];
+      var weights = expertNoise.map(function(_,i){ return expertNoise[(i+group*3)%expertNoise.length]; });
+      var sum = weights.reduce(function(a,v){ return a+v; },0), values = [], fractions = [], used = 0;
+      weights.forEach(function(weight,i){ var raw = total*weight/sum, value = Math.floor(raw); values.push(value); fractions.push({i:i,f:raw-value}); used += value; });
+      fractions.sort(function(a,b){ return b.f-a.f || a.i-b.i; });
+      for(var rest=total-used,ri=0;ri<rest;ri++) values[fractions[ri%fractions.length].i]++;
+      return values;
+    }
+    var expertTokens = [], expertOwners = [];
+    routeTokens.forEach(function(total,group){ splitExperts(total,group).forEach(function(value){ expertTokens.push(value); expertOwners.push(rankLabels[group]); }); });
+    var expertMax = Math.max.apply(Math,expertTokens), expertAvg = CFG.seq/expertTokens.length;
+    var expertDelay = Math.round(Math.min(1,2*expertAvg/expertMax)*routeDuration);
+    var expertBars = expertTokens.map(function(tokens,index){
+      var alert = index === 27, height = Math.max(4,tokens/expertMax*100);
+      return '<div class="oom-route-col' + (alert ? ' is-alert' : '') + '" style="--route-alert-delay:' + expertDelay + 'ms"><div class="oom-route-bar" title="E' + index + ' · ' + expertOwners[index] + ' · ' + fmtN(tokens) + ' token"><i style="--route-h:' + height.toFixed(1) + '%"></i></div><b>' + fmtN(tokens) + '</b><small>E' + index + '</small></div>';
+    }).join('');
+    var expertGroups = rankLabels.map(function(rank){ return '<span><i></i><small>'+rank+'</small></span>'; }).join('');
+    function oomLayerCells(values,names,remainingLast){
+      return values.map(function(value,index){
+        var remaining = remainingLast && index === values.length-1;
+        return '<i' + (remaining ? ' class="is-remaining" data-oom-remaining-cell' : '') + ' style="--cell-mb:' + value + '" title="' + (remaining ? '剩余 70.5 MB' : names[index] + ' · ' + value + ' MB') + '"></i>';
+      }).join('');
+    }
+    var fullMicroMB = layerMB.reduce(function(sum,value){ return sum+value; },0);
+    var currentMicroValues = layerMB.slice(0,3).concat([70.5]), currentMicroMB = currentMicroValues.reduce(function(sum,value){ return sum+value; },0);
+    var fullMicroCells = oomLayerCells(layerMB,layerNames,false), currentMicroCells = oomLayerCells(currentMicroValues,layerNames.slice(0,3),true);
     return '<div class="mem-observer oom-observer" data-oom-observer>'
-      + '<div class="oom-overrun" role="status" aria-label="R23 首次 OOM 超出 0.6 GB"><span>超出</span><b data-oom-overrun>0.6</b><em>GB</em></div>'
-      + '<section class="oom-cause"><div class="oom-cause-head"><i>1</i><b>L7 热点专家路由倾斜</b><strong>EP' + hotEp + ' · ' + (hotTokens/avgTokens).toFixed(1) + '× 均值</strong></div>'
-      + '<p>L7 的一个专家吃到 60% token；R23 持有该专家分片。其余 Layer 的激活 shape 相同，只有 L7 多出路由倾斜异常增量。</p><div class="oom-route-chart" aria-label="8 个 EP Rank 的 token 分配；R23 所在 EP' + hotEp + ' 高亮">' + routeBars + '</div></section>'
-      + '<section class="oom-cause"><div class="oom-cause-head"><i>2</i><b>正常工作集与异常增量分开计账</b><strong data-oom-hot-per-mb>等待 L7</strong></div>'
-      + '<p>每个 MoE Layer 都有正常的路由后中间激活；红条只表示 L7 热点专家额外保留的部分。</p><div class="oom-bar-chart">'
-      + '<div class="oom-bar-row"><span>MoE 中间激活</span><div class="oom-bar-track"><i data-oom-normal-bar></i></div><b data-oom-normal>0.0 GB</b></div>'
-      + '<div class="oom-bar-row is-danger"><span>L7 异常增量</span><div class="oom-bar-track"><i data-oom-hot-bar></i></div><b data-oom-hot>0.0 GB</b></div></div></section>'
-      + '<section class="oom-cause"><div class="oom-cause-head"><i>3</i><b>Stage 0 在途微批叠加</b><strong data-oom-inflight>0 / 4 份</strong></div>'
-      + '<p>1F1B 热身阶段，前级 Stage 会同时保留多份微批激活；第 4 份走到 L7 时跨过 64 GB。</p><div class="oom-slot-chart" data-oom-slots></div></section>'
-      + '<p class="oom-footnote"><b>结论：</b>OOM 主因是 R23 在 L7 保留的热点专家异常激活，不是某层基础 shape 变大。dispatch workspace（<span data-oom-workspace>0.0 GB</span>）是独立的短生命周期临时区；本样本也没有把 allocator 碎片当作主因。</p></div>';
+      + '<div class="oom-overrun" role="status" aria-label="L7 · R23 · E27 热点路由激增内存"><b>L7 · R23 · E27 热点路由激增内存</b></div>'
+      + '<p class="oom-footnote">Rank 23 在 Layer 7 中出现热点专家，token 计算量大，使前三份微批在该层累计占用更多激活内存。当第 4 个微批计算到 Layer 2 时，Rank 23 仅剩 <span data-oom-headroom-note>—</span> 空闲内存，小于本层的 <span data-oom-request-note>—</span> 激活申请，allocator 拒绝整次申请并报 OOM，训练终止。</p>'
+      + '<div class="oom-cause-flow">'
+      + '<section class="oom-cause"><div class="oom-cause-head"><i>1</i><b><span class="oom-cause-prefix">根因：</span>Layer7 的 Expert 27 形成热点路由</b></div>'
+      + '<span class="oom-route-note">L7 · 64 个专家的单微批 token 分配</span><div class="oom-expert-map"><div class="oom-route-chart is-expert" aria-label="L7 的 64 个专家 token 分配；每 8 个专家归属一个 Rank；E27 超过均值 2 倍后标红"><span class="oom-expert-hot-label">E27 · 4,505</span>' + expertBars + '</div><div class="oom-expert-groups">' + expertGroups + '</div></div></section>'
+      + '<section class="oom-cause"><div class="oom-cause-head"><i>2</i><b><span class="oom-cause-prefix">现象：</span>Expert 27 所在的 R23 token 计算量远超 EP3 组其他 rank</b></div>'
+      + '<span class="oom-route-note">单个微批 Router 分配（token）</span><div class="oom-route-chart" aria-label="EP组' + epGroup + ' 的 8 个专家分片所对应的全局 Rank；R' + c.r + ' 超过全组均值 2 倍后标红">' + routeBars + '</div></section>'
+      + '<section class="oom-cause"><div class="oom-cause-head"><i>3</i><b><span class="oom-cause-prefix">复核：</span>R23 仅在 Layer 7 的总激活异常</b></div>'
+      + '<span class="oom-route-note">R23 · 单份微批在各层的激活内存请求（MB）</span><div class="oom-route-chart is-layer" style="--oom-cols:13" aria-label="R23 从 Emb 到 L11 的单微批总激活对比；L7 最高">' + layerBars + '</div></section>'
+      + '<section class="oom-cause"><div class="oom-cause-head"><i>4</i><b><span class="oom-cause-prefix">触发点：</span>第4份微批在 Layer 2 申请普通激活时，R23 空间不足</b></div>'
+      + '<div class="oom-reserve"><div class="oom-reserve-head"><span>R23 · μb3 到达 Layer 2 时的动态内存占用</span></div>'
+      + '<div class="oom-reserve-chart"><div class="oom-reserve-track" aria-label="μb0、μb1、μb2 各保留 13 份激活；μb3 已保留 3 份，最后一格是剩余空间"><span class="oom-reserve-group" style="--group-mb:' + fullMicroMB + '" title="μb0 · Emb + L0–L11 · 13 份"><span class="oom-reserve-cells">' + fullMicroCells + '</span><b>μb0 · 13份</b></span><span class="oom-reserve-group" style="--group-mb:' + fullMicroMB + '" title="μb1 · Emb + L0–L11 · 13 份"><span class="oom-reserve-cells">' + fullMicroCells + '</span><b>μb1 · 13份</b></span><span class="oom-reserve-group" style="--group-mb:' + fullMicroMB + '" title="μb2 · Emb + L0–L11 · 13 份"><span class="oom-reserve-cells">' + fullMicroCells + '</span><b>μb2 · 13份</b></span><span class="oom-reserve-group" data-oom-current-group style="--group-mb:' + currentMicroMB + '" title="μb3 · Emb / L0 / L1 已占用；末格为剩余空间"><span class="oom-reserve-cells">' + currentMicroCells + '</span><b>μb3</b></span><strong class="oom-reserve-fail" data-oom-reserve-fail>μb3 · L2 申请 —</strong></div></div></div></section></div></div>';
   }
   function updateOomInsight(){
     var root = memDetailBodyEl.querySelector('[data-oom-observer]'); if(!root) return;
-    var c = cards[OOM_AUTO_RANK], parts = cycleMem && cycleMem[c.r] ? cycleMem[c.r] : [], state = activationCycleState || {}, byKey = {};
-    parts.forEach(function(part){ byKey[part.k] = part; });
-    var cap = CFG.hbm*GiB, total = parts.reduce(function(sum,m){ return sum + m.bytes; },0);
+    var state = activationCycleState || {};
     function put(sel,value){ var el = root.querySelector(sel); if(el) el.textContent = value; }
-    if(parts.length && total > cap){
-      var overrun = fmtGB(total-cap), overrunEl = root.querySelector('[data-oom-overrun]');
-      if(overrunEl) overrunEl.textContent = overrun;
-      var overrunBox = root.querySelector('.oom-overrun'); if(overrunBox) overrunBox.setAttribute('aria-label','R23 首次 OOM 超出 ' + overrun + ' GB');
+    var evidence = state.oomEvidence;
+    function oomMB(bytes){ return isFinite(bytes) ? (bytes/Math.pow(2,20)).toFixed(1) + ' MB' : '—'; }
+    var microNeed = evidence ? evidence.request : 0;
+    if(evidence){
+      var remainingMB = evidence.headroom/Math.pow(2,20), remainingCell = root.querySelector('[data-oom-remaining-cell]'), currentGroup = root.querySelector('[data-oom-current-group]');
+      if(remainingCell){ remainingCell.style.setProperty('--cell-mb',remainingMB.toFixed(1)); remainingCell.title = '剩余 ' + oomMB(evidence.headroom); }
+      if(currentGroup) currentGroup.style.setProperty('--group-mb',(61+114+121+remainingMB).toFixed(1));
     }
-    var live = state.inflight || [], occupancy = live.reduce(function(sum,x){ return sum + (x.occupancy || 0); },0), totalSlots = state.totalSlots || 4;
-    put('[data-oom-inflight]',(Math.round(occupancy*10)/10) + ' / ' + totalSlots + ' 份');
-    var normal = byKey.xact ? byKey.xact.bytes : 0, hot = byKey.xhot ? byKey.xhot.bytes : 0, workspace = byKey.xtmp ? byKey.xtmp.bytes : 0;
-    put('[data-oom-normal]',fmtGB(normal) + ' GB'); put('[data-oom-hot]',fmtGB(hot) + ' GB'); put('[data-oom-workspace]',fmtGB(workspace) + ' GB');
-    put('[data-oom-hot-per-mb]',hot > .01*GiB ? 'L7 · ' + fmtGB(hot/Math.max(1,occupancy)) + ' GB / 份' : '等待 L7');
-    var barMax = Math.max(normal,hot,.1*GiB), normalBar = root.querySelector('[data-oom-normal-bar]'), hotBar = root.querySelector('[data-oom-hot-bar]');
-    if(normalBar) normalBar.style.width = (normal/barMax*100).toFixed(1) + '%';
-    if(hotBar) hotBar.style.width = (hot/barMax*100).toFixed(1) + '%';
-    var slots = root.querySelector('[data-oom-slots]');
-    if(slots){
-      var slotHTML = '';
-      for(var i=0;i<totalSlots;i++){
-        var item = live[i], fill = item ? Math.max(0,Math.min(1,item.occupancy || 0)) : 0;
-        slotHTML += '<div class="oom-slot' + (fill > .001 ? ' is-on' : '') + '"><i style="height:' + (fill*100).toFixed(1) + '%"></i><span>' + (item ? 'μb' + item.m : '空') + '</span></div>';
-      }
-      slots.innerHTML = slotHTML;
+    put('[data-oom-reserve-fail]',evidence ? '剩余 ' + oomMB(evidence.headroom) + ' < μb3 · L2 申请 ' + oomMB(microNeed) + '：失败' : 'μb3 · L2 申请 —');
+    if(evidence){
+      put('[data-oom-headroom-note]',oomMB(evidence.headroom));
+      put('[data-oom-request-note]',oomMB(evidence.request));
     }
   }
   function syncOomInsight(){
@@ -2931,9 +3093,9 @@
     }
     if(actVolumeController){ actVolumeController.destroy(); actVolumeController = null; }
     document.querySelector('.page').classList.add('mem-detail-open'); memDetailEl.classList.remove('is-memory','is-communication'); memDetailEl.classList.add('is-observer'); memDetailEl.hidden = false;
-    memDetailKickerEl.textContent = ''; memDetailTitleEl.textContent = 'R23 · L7 热点专家 OOM';
-    if(memDetailBodyEl.getAttribute('data-observer-sig') !== 'danger:R23:L7'){
-      memDetailBodyEl.setAttribute('data-observer-sig','danger:R23:L7'); memDetailBodyEl.innerHTML = oomInsightHTML();
+    memDetailKickerEl.textContent = ''; memDetailTitleEl.textContent = 'OOM根因分析';
+    if(memDetailBodyEl.getAttribute('data-observer-sig') !== 'danger:R23:L7:E27:v6'){
+      memDetailBodyEl.setAttribute('data-observer-sig','danger:R23:L7:E27:v6'); memDetailBodyEl.innerHTML = oomInsightHTML();
     }
     updateOomInsight();
   }
@@ -2950,33 +3112,62 @@
     }).join('');
     var cells = cards.map(function(card){ return '<span class="mem-observer-cell" data-ob-heat-rank="' + card.r + '">' + card.r + '</span>'; }).join('');
     return '<div class="mem-observer" data-observer-scenario="' + memScenario + '">'
+      + '<p class="mem-observer-intro">' + (memScenario === 'peak'
+        ? '先用进程保留 P 找容量风险，再在同一峰值时刻拆 A（业务）+ D（延迟释放）+ I（池内空闲）+ O（通信/runtime）。A 高本身不等于异常。'
+        : '分别看 D = H - A、I = R - H、O = P - R；不按占比单独判坏，而是综合峰值 GB、高位持续时间、byte-time，以及它与进程高水位是否重叠。') + '</p>'
       + '<section><div class="mem-observer-section-head"><b>分析结果</b><span>整 Step · 128 Rank</span></div><div class="mem-observer-results">' + results + '</div></section>'
       + '<div class="mem-observer-phase"><span>当前采样</span><b data-ob-phase>等待 Step 回放</b></div>'
       + '<div class="mem-observer-tabs mem-scenario" role="tablist" aria-label="当前采样观测口径">' + tabs + '</div>'
       + '<section class="mem-observer-heat"><div class="mem-observer-heat-head"><b data-ob-heat-title>算子分配 · 128 Rank</b></div>'
       + '<div class="mem-observer-grid" aria-label="128 Rank 动态内存热力图">' + cells + '</div>'
-      + '<div class="mem-observer-heat-legend"><span>低</span><i></i><span>高</span></div></section>'
-      + '<section class="mem-observer-evidence-section"><div class="mem-observer-section-head"><b data-ob-evidence-title>当前 Rank 证据</b><span>当前采样</span></div><div class="mem-observer-evidence" data-ob-evidence></div></section>'
+      + '<div class="mem-observer-heat-legend"><span data-ob-legend-min>0 GB</span><i></i><span data-ob-legend-max>64 GB</span></div></section>'
+      + '<section class="mem-observer-evidence-section"><div class="mem-observer-section-head"><b data-ob-evidence-title>当前 Rank 证据</b><span>整 Step · 同一目标时刻</span></div><div class="mem-observer-evidence" data-ob-evidence></div></section>'
       + '<div class="mem-observer-verdict" style="--obc:var(--bad)" data-ob-verdict></div></div>';
   }
   function observerGB(v){ return isFinite(v) ? (v/GiB).toFixed(1) + ' GB' : '—'; }
   function observerMetricValue(key,v){ return key === 'delayedRatio' || key === 'idleRatio' ? (isFinite(v) ? (v*100).toFixed(1) + '%' : '—') : observerGB(v); }
-  function observerResultNote(key, r, peaks){
-    var info = memDiagnosticRank(r), p = peaks && peaks[r] ? peaks[r] : null;
-    if(info && info.metric === key) return info.cause;
-    if(key === 'allocated') return '真实张量分配最高；检查激活、梯度或更新临时区';
-    if(key === 'active') return p && p.delayed > 4*GiB ? '比分配多 ' + observerGB(p.delayed) + '，存在跨流延迟释放' : '主要由真实分配推高，未见明显延迟释放';
-    if(key === 'reserved') return p && p.idle > 4*GiB ? '比持有多 ' + observerGB(p.idle) + '，内存池空闲偏大' : '主要由算子持有推高，池内空闲较小';
-    if(key === 'delayedRatio') return p ? '跨流待释放 ' + observerGB(p.delayed) + '，占算子保留 ' + observerMetricValue(key,p.delayedRatio) : '跨流延迟释放占算子保留的比例最高';
-    if(key === 'idleRatio') return p ? '池内空闲 ' + observerGB(p.idle) + '，占算子保留 ' + observerMetricValue(key,p.idleRatio) : '内存池空闲占算子保留的比例最高';
-    return p && p.other > 4*GiB ? '比算子保留多 ' + observerGB(p.other) + '，来自通信 / runtime' : '进程总保留最高，主要由算子账推高';
+  function observerPct(v){ return isFinite(v) ? (v*100).toFixed(1) + '%' : '—'; }
+  function observerPeakFrame(analysis,r,key){ return analysis && analysis.peakFrames && analysis.peakFrames[r] ? analysis.peakFrames[r][key] : null; }
+  function observerPeakStat(analysis,r,key){ return analysis && analysis.peakStats && analysis.peakStats[r] ? analysis.peakStats[r][key] : null; }
+  function observerGapStat(analysis,r,key){ return analysis && analysis.gapStats && analysis.gapStats[r] ? analysis.gapStats[r][key] : null; }
+  function observerResultNote(key, r, analysis){
+    var info = memDiagnosticRank(r), frame = observerPeakFrame(analysis,r,key), peakStat = observerPeakStat(analysis,r,key), stat = observerGapStat(analysis,r,key);
+    if(key === 'app' && frame) return '余量 ' + observerGB(CFG.hbm*GiB-frame.app) + ' · 高位 ' + observerPct(peakStat && peakStat.duration) + ' Step · 同角色 ' + observerRoleDelta(analysis,r,key) + ' · A/D/I/O = ' + [frame.allocated,frame.delayed,frame.idle,frame.other].map(function(v){ return (v/GiB).toFixed(1); }).join('/') + ' GB';
+    if(key === 'allocated' && frame) return (info && info.metric === key ? info.cause + '；' : '') + 'A 峰值时 P 为 ' + observerGB(frame.app) + '，余量 ' + observerGB(CFG.hbm*GiB-frame.app) + ' · 高位 ' + observerPct(peakStat && peakStat.duration) + ' Step';
+    if(stat) return (info && info.metric === key ? info.cause + '；' : '') + '峰值占 ' + (key === 'other' ? 'P ' : 'R ') + observerPct(stat.ratioAtMax) + ' · 高位 ' + observerPct(stat.duration) + ' Step · 与 P 高位重叠 ' + observerPct(stat.overlap);
+    return info && info.metric === key ? info.cause : '等待整 Step 扫描';
   }
-  function observerEvidenceHTML(key, m){
+  function observerRoleDelta(analysis,r,key){
+    if(!analysis || !analysis.peakByRank || !cards[r]) return '—';
+    var me = cards[r], vals = cards.filter(function(c){ return c.pp === me.pp && c.tp === me.tp && (c.dp&7) === (me.dp&7); })
+      .map(function(c){ return analysis.peakByRank[c.r] && analysis.peakByRank[c.r][key]; }).filter(isFinite).sort(function(a,b){ return a-b; });
+    if(!vals.length) return '—';
+    var mid = vals.length>>1, median = vals.length%2 ? vals[mid] : (vals[mid-1]+vals[mid])/2, value = analysis.peakByRank[r][key];
+    if(!(median > 0)) return '—';
+    var delta = value/median-1; return (delta >= 0 ? '+' : '') + (delta*100).toFixed(1) + '%';
+  }
+  function observerEvidenceHTML(key, m, analysis, r){
     if(!m) return '<div><span>当前 Rank</span><b>等待采样</b></div>';
     function card(label, value, gap){ return '<div' + (gap ? ' class="is-gap"' : '') + '><span>' + label + '</span><b>' + value + '</b></div>'; }
-    if(key === 'allocated') return card('算子分配',observerGB(m.allocated)) + card('显存占比',Math.round(m.allocated/(CFG.hbm*GiB)*100) + '%') + card('语义','真实张量');
+    var peakAt = analysis && analysis.peakAtByRank && analysis.peakAtByRank[r] ? analysis.peakAtByRank[r][key] : 0, peakStat = observerPeakStat(analysis,r,key);
+    if(key === 'app') return card('进程峰值 P',observerGB(m.app),m.app>CFG.hbm*GiB*.9) + card('安全余量',observerGB(CFG.hbm*GiB-m.app),m.app>CFG.hbm*GiB*.9)
+      + card('业务工作集 A',observerGB(m.allocated)) + card('延迟释放 D',observerGB(m.delayed),m.delayed>CFG.hbm*GiB*.05)
+      + card('池内空闲 I',observerGB(m.idle),m.idle>CFG.hbm*GiB*.05) + card('进程其他 O',observerGB(m.other || 0),(m.other || 0)>CFG.hbm*GiB*.05)
+      + card('峰值位置',(m.phaseLabel || '—') + ' · ' + Math.round(peakAt*100) + '%') + card('P≥90%峰值',peakStat ? observerPct(peakStat.duration) + ' Step' : '—')
+      + card('全局 P95',analysis && analysis.globalP95 ? observerGB(analysis.globalP95.app) : '—');
+    if(key === 'allocated') return card('业务工作集 A',observerGB(m.allocated)) + card('同时刻 P',observerGB(m.app)) + card('安全余量',observerGB(CFG.hbm*GiB-m.app),m.app>CFG.hbm*GiB*.9)
+      + card('A / HBM',observerPct(m.allocated/(CFG.hbm*GiB))) + card('同角色峰值偏离',observerRoleDelta(analysis,r,key)) + card('峰值位置',(m.phaseLabel || '—') + ' · ' + Math.round(peakAt*100) + '%')
+      + card('A≥90%峰值',peakStat ? observerPct(peakStat.duration) + ' Step' : '—') + card('全局 P95',analysis && analysis.globalP95 ? observerGB(analysis.globalP95.allocated) : '—') + card('判断','高不等于坏');
     if(key === 'active') return card('算子分配',observerGB(m.allocated)) + card('算子持有',observerGB(m.active)) + card('延迟释放 GAP',observerGB(m.delayed),m.delayed>4*GiB);
     if(key === 'reserved') return card('算子持有',observerGB(m.active)) + card('算子保留',observerGB(m.reserved)) + card('内存池空闲 GAP',observerGB(m.idle),m.idle>4*GiB);
+    if(key === 'delayed' || key === 'idle' || key === 'other'){
+      var stat = observerGapStat(analysis,r,key), ratio = key === 'delayed' ? m.delayedRatio : (key === 'idle' ? m.idleRatio : (m.app > 0 ? m.other/m.app : 0));
+      var gapLabel = key === 'delayed' ? '延迟释放 D' : (key === 'idle' ? '池内空闲 I' : '进程其他 O');
+      return card(gapLabel,observerGB(m[key]),true) + card(key === 'other' ? '占进程保留 P' : '占算子保留 R',observerPct(ratio))
+        + card('高位持续 ≥5% HBM',stat ? observerPct(stat.duration) + ' Step' : '—') + card('Byte-time',stat ? (stat.byteTime/GiB).toFixed(1) + ' GB·Step' : '—')
+        + card('与 P≥90%峰值重叠',stat ? observerPct(stat.overlap) + ' Step' : '—',stat && stat.overlap>.1) + card('峰值阶段',m.phaseLabel || '—')
+        + card('峰值时刻','Step ' + Math.round((stat ? stat.at : peakAt)*100) + '%');
+    }
     if(key === 'delayedRatio') return card('算子分配',observerGB(m.allocated)) + card('延迟释放',observerGB(m.delayed),m.delayedRatio>.1) + card('延迟释放占比',observerMetricValue(key,m.delayedRatio),m.delayedRatio>.1);
     if(key === 'idleRatio') return card('算子持有',observerGB(m.active)) + card('内存池空闲',observerGB(m.idle),m.idleRatio>.1) + card('池空闲占比',observerMetricValue(key,m.idleRatio),m.idleRatio>.1);
     return card('算子保留',observerGB(m.reserved)) + card('进程保留',observerGB(m.app)) + card('进程其他',observerGB(m.other || 0),(m.other || 0)>4*GiB);
@@ -2997,7 +3188,7 @@
     var m = state && state.byRank ? state.byRank[r] : null;
     function put(sel, value){ var el = root.querySelector(sel); if(el) el.textContent = value; }
     if(m) put('[data-ob-phase]',m.phaseLabel + ' · Step ' + Math.round((state.at || 0)*100) + '% · R' + r);
-    var analysis = state && state.analysis, leaders = analysis && analysis.leaders, peaks = analysis && analysis.peakByRank;
+    var analysis = state && state.analysis, leaders = analysis && analysis.leaders;
     Array.prototype.forEach.call(root.querySelectorAll('[data-ob-result]'),function(button){
       var key = button.getAttribute('data-ob-result'), leader = leaders && leaders[key];
       button.classList.toggle('is-on',key === memoryObserverMetric);
@@ -3005,7 +3196,7 @@
       button.setAttribute('data-ob-result-rank',leader.r);
       var resultValue = button.querySelector('[data-ob-result-value]'), note = button.querySelector('[data-ob-result-note]');
       if(resultValue) resultValue.textContent = 'R' + leader.r + ' | ' + observerMetricValue(key,leader.value);
-      if(note) note.textContent = observerResultNote(key,leader.r,peaks);
+      if(note) note.textContent = observerResultNote(key,leader.r,analysis);
     });
     Array.prototype.forEach.call(root.querySelectorAll('[data-ob-metric-tab]'),function(button){
       var on = button.getAttribute('data-ob-metric-tab') === memoryObserverMetric;
@@ -3019,19 +3210,24 @@
     if(root.getAttribute('data-ob-heat-sig') !== heatSig && state && state.byRank){
       root.setAttribute('data-ob-heat-sig',heatSig);
       var vals = cards.map(function(card){ var row = state.byRank[card.r]; return row ? row[memoryObserverMetric] : 0; });
-      var lo = Math.min.apply(null,vals), hi = Math.max.apply(null,vals), span = Math.max(1,hi-lo);
+      var heatMax = (memoryObserverMetric === 'delayed' || memoryObserverMetric === 'idle' || memoryObserverMetric === 'other') ? CFG.hbm*GiB*.4 : CFG.hbm*GiB;
+      put('[data-ob-legend-min]','0 GB'); put('[data-ob-legend-max]',observerGB(heatMax));
       Array.prototype.forEach.call(root.querySelectorAll('[data-ob-heat-rank]'),function(cell){
-        var rank = +cell.getAttribute('data-ob-heat-rank'), value = vals[rank] || 0, heat = (value-lo)/span;
+        var rank = +cell.getAttribute('data-ob-heat-rank'), value = vals[rank] || 0, heat = Math.max(0,Math.min(1,value/heatMax));
         cell.style.background = PR.heatColor(heat,PR.HEAT_RAMP);
         cell.classList.toggle('is-selected',rank === r); cell.classList.toggle('is-peak',!!leader && rank === leader.r);
         cell.title = 'R' + rank + ' · ' + meta.label + ' ' + observerMetricValue(memoryObserverMetric,value);
       });
     }
     put('[data-ob-evidence-title]','R' + r + ' · ' + meta.label + '证据');
-    var evidence = root.querySelector('[data-ob-evidence]'); if(evidence) evidence.innerHTML = observerEvidenceHTML(memoryObserverMetric,m);
+    var targetFrame = observerPeakFrame(analysis,r,memoryObserverMetric), gapStat = observerGapStat(analysis,r,memoryObserverMetric);
+    if(gapStat && gapStat.frame) targetFrame = gapStat.frame;
+    var evidence = root.querySelector('[data-ob-evidence]'); if(evidence) evidence.innerHTML = observerEvidenceHTML(memoryObserverMetric,targetFrame || m,analysis,r);
     var verdict = root.querySelector('[data-ob-verdict]');
-    var leaderTerm = memoryObserverMetric === 'delayedRatio' || memoryObserverMetric === 'idleRatio' ? '最大占比 Rank' : '峰值 Rank';
-    if(verdict) verdict.innerHTML = '<b>R' + r + ' · ' + esc(meta.label) + '</b><br>' + esc(meta.definition) + '。热力矩阵显示当前采样，红框标出整个 Step 的' + leaderTerm + '；下方只保留解释该口径所需的当前 Rank 读数。';
+    var verdictCopy = memoryObserverMetric === 'app' ? '先看 P / HBM 与安全余量，再在同一峰值时刻拆 A + D + I + O。'
+      : (memoryObserverMetric === 'allocated' ? 'A 是真实工作集，高不等于坏；结合容量余量、同角色偏离和张量构成判断。'
+      : 'GAP 的优先级由绝对 GB、持续时间和与 P 高位的重叠共同决定；占比只作辅助。');
+    if(verdict) verdict.innerHTML = '<b>R' + r + ' · ' + esc(meta.label) + '</b><br>' + esc(verdictCopy) + ' 热力矩阵使用固定量程显示当前采样，红框标出整 Step 分析结果。';
   }
   function syncScenarioInsight(c){
     var d = memDiagnostic(), inIntro = document.querySelector('.page').dataset.tab !== 'scene';
@@ -3112,14 +3308,24 @@
   }
   function syncCommunicationDetail(c){
     var page=document.querySelector('.page'), inIntro=page.dataset.tab!=='scene', open=!!(inIntro&&step===8&&c&&comm&&!commPanelDismissed);
-    var filter=communicationMemoryFilter();
+    var filter=communicationMemoryFilter(),issue=commScenario!=='base';
     memDetailBodyEl.removeAttribute('data-observer-sig');
     if(actVolumeController){ actVolumeController.destroy(); actVolumeController=null; }
     page.classList.toggle('mem-detail-open',open);
-    memDetailEl.classList.remove('is-observer'); memDetailEl.classList.toggle('is-memory',open); memDetailEl.classList.toggle('is-communication',open);
+    memDetailEl.classList.toggle('is-observer',open&&issue); memDetailEl.classList.toggle('is-memory',open); memDetailEl.classList.toggle('is-communication',open);
     memDetailEl.hidden=!open;
     if(!open){
       syncCommunicationFilterTag(null); syncCommunicationTotalMetric(null,false); memDetailKickerEl.textContent=''; memDetailTitleEl.textContent=''; memDetailBodyEl.innerHTML=''; memDetailBodyEl.removeAttribute('data-comm-sig'); syncCommDetailInset(); return;
+    }
+    if(issue){
+      memDetailKickerEl.textContent=commScenario==='route'?'复用 OOM · R23 × L7':'复用 GAP · R87 · O = 14.0 GB';
+      memDetailTitleEl.textContent=commScenario==='route'?'EP 路由倾斜':'DP 规约长尾';
+      syncCommunicationFilterTag(null); syncCommunicationTotalMetric(null,false);
+      var issueSignature='issue:'+commScenario+':'+c.r+':'+(etpOn?2:1);
+      if(memDetailBodyEl.getAttribute('data-comm-sig')!==issueSignature){
+        memDetailBodyEl.setAttribute('data-comm-sig',issueSignature); memDetailBodyEl.innerHTML=communicationIssueHTML();
+      }
+      syncCommDetailInset(); return;
     }
     memDetailKickerEl.textContent='PP' + c.pp + ' · EDP ' + (c.dp>>3) + ' · Node ' + c.node;
     memDetailTitleEl.textContent='Rank ' + c.r + ' · 通信';
@@ -3131,7 +3337,7 @@
       memDetailBodyEl.innerHTML=communicationDetailHTML(c,communicationVisibleDims(),filter);
       var host=document.getElementById('commEtpHost'); if(host&&etpTogEl) host.appendChild(etpTogEl);
     }
-    updateCommunicationPanel(phaseAt(commTime(now()))); syncCommDetailInset();
+    updateCommunicationPanel(); syncCommDetailInset();
   }
   function syncMemDetail(c, withMem){
     if(step===8){ syncCommunicationDetail(c); return; }
@@ -3166,6 +3372,8 @@
     var bands = segs.map(function(s){ return '<i data-mem-band="' + s.k + '" style="width:' + (s.bytes/cap*100).toFixed(2) + '%;background:' + s.c + '"></i>'; }).join('');
     return '<div class="rm-water' + (tot > cap ? ' is-over' : '') + '">' + bands + '<span class="rm-water-cap" aria-hidden="true"></span></div>';
   }
+  /* OOM 账本需要能与 64 GB - 70.5 MB 直接对上；一级 GB 分项保留两位，避免逐项四舍五入后看起来超过总量。 */
+  function rankMemValue(bytes){ return memScenario === 'danger' && bytes >= .1*GiB ? (bytes/GiB).toFixed(2) + ' GB' : fmtMem(bytes); }
   function rankMemCycleSegments(c){
     var live = (step === 7 || step === 8) && cycleMem && cycleMem[c.r] ? cycleMem[c.r] : c.mem;
     var hasTmp = live.some(function(m){ return m.k === 'otmp'; });
@@ -3174,7 +3382,7 @@
     live.forEach(function(m){ out.push(m); if(m.k === 'opt') out.push({k:'otmp',label:'优化器步·临时区',bytes:0,c:shade(MEMC.opt,.72),kind:'exec'}); });
     return out;
   }
-  function updateRankMemCycle(memByRank){
+  function updateRankMemCycle(memByRank, cycleState){
     if((step !== 7 && step !== 8) || selRank === null || rankMemEl.hidden || !memByRank || !memByRank[selRank]) return;
     var mem = memByRank[selRank], byKey = {}, cap = CFG.hbm*GiB;
     mem.forEach(function(m){ byKey[m.k] = m; });
@@ -3188,7 +3396,11 @@
       if(detailBytes != null) detailBig.textContent = fmtMem(detailBytes);
     }
     Array.prototype.forEach.call(rankMemEl.querySelectorAll('[data-mem-value]'),function(el){
-      var m = byKey[el.getAttribute('data-mem-value')]; if(m) el.textContent = fmtMem(m.bytes);
+      var m = byKey[el.getAttribute('data-mem-value')]; if(m) el.textContent = rankMemValue(m.bytes);
+    });
+    Array.prototype.forEach.call(rankMemEl.querySelectorAll('[data-mem-sum]'),function(el){
+      var bytes = el.getAttribute('data-mem-sum').split(',').reduce(function(sum,key){ return sum + (byKey[key] ? byKey[key].bytes : 0); },0);
+      el.textContent = rankMemValue(bytes);
     });
     Array.prototype.forEach.call(rankMemEl.querySelectorAll('[data-mem-label]'),function(el){
       var m = byKey[el.getAttribute('data-mem-label')]; if(m) el.textContent = m.label;
@@ -3197,10 +3409,12 @@
       var m = byKey[el.getAttribute('data-mem-band')]; el.style.width = ((m ? m.bytes : 0)/cap*100).toFixed(2)+'%';
     });
     var tot = mem.reduce(function(a,m){ return a+m.bytes; },0), summary = rankMemEl.querySelector('.rm-summary-line');
+    var failedOom = memScenario === 'danger' && selRank === OOM_AUTO_RANK && cycleState && cycleState.oomTriggered;
     if(summary){
+      /* 原子申请失败时已用量仍低于容量线：保留 OOM 文案，但不要套用“实际越线”的红色样式。 */
       summary.classList.toggle('over',tot > cap);
       var totalEl = summary.querySelector('[data-mem-total]'), usedEl = summary.querySelector('[data-mem-summary-used]');
-      if(totalEl) totalEl.textContent = (tot > cap ? 'OOM · ' : '')+fmtGB(tot)+' / '+CFG.hbm+' GB';
+      if(totalEl) totalEl.textContent = (failedOom || tot > cap ? 'OOM · ' : '')+fmtGB(tot)+' / '+CFG.hbm+' GB';
       if(usedEl) usedEl.textContent = '已用 '+(tot/cap*100).toFixed(1)+'%';
     }
     var water = rankMemEl.querySelector('.rm-water'); if(water) water.classList.toggle('is-over',tot > cap);
@@ -3220,35 +3434,38 @@
     var c = cards[selRank], segs = c.mem, liveSegs = rankMemCycleSegments(c), cap = CFG.hbm*GiB, liveByKey = {};
     liveSegs.forEach(function(m){ liveByKey[m.k] = m; });
     var tot = liveSegs.reduce(function(a, x){ return a + x.bytes; }, 0);
+    var failedOom = memScenario === 'danger' && selRank === OOM_AUTO_RANK && activationCycleState && activationCycleState.oomTriggered;
     var g = c.pp*4 + (c.dp>>3)*2 + c.tp;
     var rows = [];
     /* 前 7 步框还是空的，读出卡只报切分位置；显存账从第 8 步起才有 */
     var withMem = step >= 7;
-    /* 图例按卡上从上往下的顺序：碎片 → 激活 → 优化器态 → 梯度 → 权重（权重下面列它的分块）。
+    /* 图例按卡上从上往下的顺序：缓存/预留 → 激活 → 优化器态 → 梯度 → 权重（权重下面列它的分块）。
        每一行都可点（照 demo 的 tr.rm-p）：点开就在它下面接一段二级读数（memBlockDetail），
        选中那行反白一层它自己的颜色（--rmc），跟卡上那条带同色 */
     if(!withMem) memSel = null;
     if(withMem){
-      rows.push('<tr class="rm-group"><td colspan="2">动态占用容量</td></tr>');
+      rows.push('<tr class="rm-group"><td colspan="2">动态</td></tr>');
       segs.slice().reverse().forEach(function(sg){
       var onSg = memSel === sg.k;
       if(sg.k === 'opt'){
         var tmp = liveByKey.otmp || {bytes:0,c:shade(MEMC.opt,.72)};
-        rows.push('<tr class="m cycle-mem rm-p' + (memSel === 'otmp' ? ' on' : '') + '" data-mk="otmp" style="--rmc:' + tmp.c + '"><td><span class="sw" style="background:' + tmp.c + '"></span>优化器步·临时区</td><td class="n" data-mem-value="otmp">' + fmtMem(tmp.bytes) + '</td></tr>');
-        rows.push('<tr class="rm-group"><td colspan="2">固定占用容量</td></tr>');
+        rows.push('<tr class="m cycle-mem rm-p' + (memSel === 'otmp' ? ' on' : '') + '" data-mk="otmp" style="--rmc:' + tmp.c + '"><td><span class="sw" style="background:' + tmp.c + '"></span>优化器步·临时区</td><td class="n" data-mem-value="otmp">' + rankMemValue(tmp.bytes) + '</td></tr>');
+        rows.push('<tr class="rm-group"><td colspan="2">固定</td></tr>');
       }
       var shown = liveByKey[sg.k] || sg;
-      if(sg.k === 'act' && memScenario === 'danger'){
-        ['xtmp','xhot','xact'].forEach(function(key){
-          var extra = liveByKey[key]; if(!extra) return;
-          rows.push('<tr class="m cycle-mem" style="--rmc:' + extra.c + '"><td><span class="sw" style="background:' + extra.c + '"></span><span data-mem-label="' + key + '">' + extra.label + '</span></td><td class="n" data-mem-value="' + key + '">' + fmtMem(extra.bytes) + '</td></tr>');
-        });
+      if(memScenario === 'danger' && sg.k === 'rsv'){
+        var dispatch = liveByKey.xtmp, reserveTotal = shown.bytes + (dispatch ? dispatch.bytes : 0);
+        rows.push('<tr class="m rm-p' + (onSg ? ' on' : '') + '" data-mk="rsv" style="--rmc:' + sg.c + '"><td><span class="sw" style="background:' + sg.c + '"></span>缓存/预留</td><td class="n" data-mem-sum="rsv,xtmp">' + rankMemValue(reserveTotal) + '</td></tr>');
+      } else if(memScenario === 'danger' && sg.k === 'act'){
+        var activationKeys = ['act','xact','xhot'], activationTotal = activationKeys.reduce(function(sum,key){ return sum + (liveByKey[key] ? liveByKey[key].bytes : 0); },0);
+        rows.push('<tr class="m rm-p' + (onSg ? ' on' : '') + '" data-mk="act" style="--rmc:' + sg.c + '"><td><span class="sw" style="background:' + sg.c + '"></span>激活</td><td class="n" data-mem-sum="act,xact,xhot">' + rankMemValue(activationTotal) + '</td></tr>');
+      } else {
+        rows.push('<tr class="m rm-p' + (onSg ? ' on' : '') + '" data-mk="' + sg.k + '" style="--rmc:' + sg.c + '"><td><span class="sw" style="background:' + sg.c + '"></span><span data-mem-label="' + sg.k + '">' + sg.label + '</span></td><td class="n" data-mem-value="' + sg.k + '">' + rankMemValue(shown.bytes) + '</td></tr>');
       }
-      rows.push('<tr class="m rm-p' + (onSg ? ' on' : '') + '" data-mk="' + sg.k + '" style="--rmc:' + sg.c + '"><td><span class="sw" style="background:' + sg.c + '"></span><span data-mem-label="' + sg.k + '">' + (memScenario === 'danger' ? shown.label : sg.label) + '</span></td><td class="n" data-mem-value="' + sg.k + '">' + fmtMem(shown.bytes) + '</td></tr>');
       if(sg.sub) sg.sub.forEach(function(x){
         var col = cutColor(x.cut), mk = 'w:' + x.id, onX = memSel === mk;
         var axis = x.cut === 'none' ? '复制' : DIMN[x.cut] + '×' + CFG[x.cut];
-        rows.push('<tr class="s rm-p' + (onX ? ' on' : '') + '" data-mk="' + mk + '" style="--rmc:' + MEMC.w + '"><td>' + x.id + '<span class="rm-axis" style="--axis-c:' + col + '">' + axis + '</span></td><td class="n">' + fmtMem(x.bytes) + '</td></tr>');
+        rows.push('<tr class="s rm-p' + (onX ? ' on' : '') + '" data-mk="' + mk + '" style="--rmc:' + MEMC.w + '"><td>' + x.id + '<span class="rm-axis" style="--axis-c:' + col + '">' + axis + '</span></td><td class="n">' + rankMemValue(x.bytes) + '</td></tr>');
       });
       });
     }
@@ -3259,7 +3476,7 @@
       + '<span>EDP 实例 ' + (c.dp>>3) + ' · EP组' + activationEpGroup(c,c.tp) + ' · 组内位置 ' + (c.dp&7) + ' · TP' + c.tp + ' · 切出口径 DP' + c.dp + ' · PP' + c.pp + ' · stage' + c.pp + ' · L' + (c.pp*LPS) + '–L' + ((c.pp+1)*LPS-1) + ' · node ' + c.node + ' 槽 ' + c.slot + (selLayer ? ' · Layer 实例 ' + selLayer.layer : '') + '</span>'
       + '</div>'
       + (withMem ? '<table>' + rows.join('') + '</table>'
-      + '<div class="rm-summary"><div class="rm-summary-line' + (tot > cap ? ' over' : '') + '"><b data-mem-total>' + (tot > cap ? 'OOM · ' : '') + fmtGB(tot) + ' / ' + CFG.hbm + ' GB</b><span data-mem-summary-used>已用 ' + (tot/cap*100).toFixed(1) + '%</span></div>'
+      + '<div class="rm-summary"><div class="rm-summary-line' + (tot > cap ? ' over' : '') + '"><b data-mem-total>' + (failedOom || tot > cap ? 'OOM · ' : '') + fmtGB(tot) + ' / ' + CFG.hbm + ' GB</b><span data-mem-summary-used>已用 ' + (tot/cap*100).toFixed(1) + '%</span></div>'
       + waterHTML(liveSegs, tot, cap) + '</div>' : '');
     rankMemEl.hidden = false;
     syncMemDetail(c, withMem);
@@ -4060,8 +4277,8 @@
         fig(cavityGrid({nx:mub, ix:0, fill:0, lx:'in-flight μb', ny:1, iy:0, ly:'', c:MEMC.act, compact:true, cycle:true}), '填色宽度 = 各在途 μb 在本 Rank 的专家激活相对大小；空槽彼此等宽', '在途激活/总槽位');
       }
       if(key === 'rsv'){
-        fig(cavityGrid({nx:1, ix:0, lx:'没有轴', ny:1, iy:0, ly:'不参与任何一把刀', c:MEMC.rsv}), 'allocator 碎片与 workspace');
-        note = '每张卡的分配历史不同，这一截本来就不是同一个数。';
+        fig(cavityGrid({nx:1, ix:0, lx:'没有轴', ny:1, iy:0, ly:'不参与任何一把刀', c:MEMC.rsv}), 'allocator 缓存与 workspace');
+        note = '每张卡的分配与复用历史不同；没有块级证据时不能直接称为碎片。';
       }
     }
     /* 这一档在关系链上的位置 */
@@ -4444,7 +4661,7 @@
     if(step < 2) go(2);
     if(step === 7){ queueRankFocus(r, now(), 620); return; }
     selRank = r;
-    if(step === 8){ commPanelDismissed = false; comm = commOf(r); comm.at = now(); if(commPaused) commPausedAt = comm.at; queueCommRankFocus(r, comm.at, 620); }
+    if(step === 8){ if(commScenario!=='base')setCommScenario('base',true); commPanelDismissed = false; comm = commOf(r); comm.at = now(); queueCommRankFocus(r, comm.at, 620); }
     syncStagebar(); renderRankMem(); needDraw = true; tick();
   });
   document.getElementById('rankClearBtn').addEventListener('click', function(){
@@ -5061,6 +5278,19 @@
   sideBtn.addEventListener('click', function(){ applySide(!sideOn, true); });
   applySide(sideOn, false);
 
+  /* 底栏默认展开；用户主动切换后记住状态。 */
+  var footBtn = document.getElementById('footTg'), footOn = true;
+  try{ footOn = localStorage.getItem('ri-foot') !== 'off'; }catch(e){}
+  function applyFoot(on, persist){
+    footOn = !!on;
+    if(footOn) delete pageEl.dataset.foot; else pageEl.dataset.foot = 'off';
+    footBtn.setAttribute('aria-pressed', String(footOn));
+    if(persist){ try{ localStorage.setItem('ri-foot', footOn ? 'on' : 'off'); }catch(e){} }
+    window.dispatchEvent(new Event('resize'));
+  }
+  footBtn.addEventListener('click', function(){ applyFoot(!footOn, true); });
+  applyFoot(footOn, false);
+
   resize();
   var q0 = new URLSearchParams(location.search), st = parseInt(q0.get('step'), 10);
   go(isFinite(st) && st >= 1 ? st - 1 : 0);
@@ -5081,20 +5311,11 @@
       if(memScenario === 'danger') memByRank.forEach(function(parts,r){
         if(parts.reduce(function(sum,m){ return sum + m.bytes; },0) > CFG.hbm*GiB) oomRankSet[r] = true;
       });
-      updateRankMemCycle(memByRank);
+      updateRankMemCycle(memByRank, cycleState);
       updateMemoryDetailCycle(cycleState);
       updateOomInsight();
       updateScenarioInsight(memoryDiagnosticState);
       needDraw = true; cancelAnimationFrame(rafId); rafId = requestAnimationFrame(tick);
-    },
-    setMemoryCyclePlayback:function(playing){
-      commCyclePlaying = !!playing;
-      if(step === 8){
-        var tn = now();
-        if(commCyclePlaying && commPaused){ if(comm) comm.at += tn - commPausedAt; commPaused = false; commPausedAt = 0; }
-        else if(!commCyclePlaying && !commPaused){ commPaused = true; commPausedAt = tn; }
-        needDraw = true; tick();
-      }
     }};
 
   /* 留给案例四：第 10 步那块展平画布整套借出去画到它自己的 canvas 上。
@@ -5146,7 +5367,7 @@
 })();
 </script>
 <script src="./rank-intro-swimlane-bundle.js?v=20260929"></script>
-<script src="./rank-intro-config-preview.js?v=20260930-memory-legend-lines"></script>
+<script src="./rank-intro-config-preview.js?v=20261008-playback-side-sync"></script>
 <script>
 /* ── 实战场景：一个案例一张图，一段一行字 ──────────────────────────────
    案例一的原型：openPangu-2.0-Flash，2048 NPU，EP64 / TP1 / PP4 / DP8，FP8，step 15203
@@ -5411,17 +5632,19 @@
      cap:'<span class="t">切到空闲时间</span>　慢的 8 张卡反而最暗（它不等人），其余 120 张全在等它 —— 两幅图互补，一台机器把一步拖长到 <b>1.47 倍</b>。'}
   ];
 
-  /* 第 8 / 9 步共用的内存周期引擎：保留 1F1B 调度、R23 × L7 OOM 数据模型、
+  /* 第 8 / 9 步共用的内存周期引擎：保留 1F1B 调度、R23 × L7 根因 / L2 报错的 OOM 数据模型、
      Layer 进度画布和配置预览使用的通用 Rank 详情侧栏。 */
   var M3 = (function(){
     var RI = window.RI; if(!RI) return null;
     var D = RI.CFG, PP = D.pp, GA = D.ga, CAP = D.hbm*RI.GiB;
-    /* 每个 MoE Layer 都有路由后 expert / FFN 中间激活；热点专家只存在于一层：专家分片 HOT_EP
-       在 L(HOT_L) 上的那个专家吃掉 HOT_SHARE 的 token（均值是 1/experts），capacity factor 放开不丢 token。
-       因此只有「持有 L(HOT_L) 的段 × 持有分片 HOT_EP 的卡」多出异常增量，而不是只有 L7 才有 MoE 中间张量。 */
-    var HOT_EP = 3, HOT_L = 7, HOT_SHARE = 0.6, HOTK = HOT_SHARE*D.experts, FIXK = 0.25;   /* 分片 / 热点层 / token 占比 / 动态专家工作集相对均值 / 重计算后剩几分之一 */
+    /* 每个 MoE Layer 都有路由后 expert / FFN 中间激活；本事故只发生在 EDP1 的 L7：
+       EP3 上的一个专家吃掉 HOT_SHARE 的 token。R22 / R23 是同一 EDP 实例的 TP 对片，
+       共享 Router 结果；R6 / R7 属于 EDP0、处理另一份微批，不自动复制这次批次局部倾斜。 */
+    var HOT_EDP = 1, HOT_EP = 3, HOT_L = 7, OOM_L = 2, OOM_REQUEST_MB = 117, HOT_SHARE = 0.6, FIXK = 0.25;
     var MOE_ACT_SHARE = 0.28, DISPATCH_TMP_SHARE = 2.0; /* 只拆分展示口径：正常 MoE 中间激活占单层激活的比例；workspace 按单层激活量级建模并从预留池借用 */
-    var HOT_R = 23;                                    /* 撞顶那张（stage 0 × 分片 3） */
+    var HOT_R = 23, HOT_GROUP_CACHE = 14.2666*RI.GiB, HOT_R_RESERVE = 0.1*RI.GiB, oomEvidenceCache = null;
+    /* 事故 EDP 内同阶段各 EP Rank 共用同一缓存高水位，R23 只保留小量 rank-local 差异。
+       开场时各 Rank 的灰色区基本对齐，之后由 L7 路由倾斜的激活真正拉开 R23。 */
     var OTMP_AT = 0.88;
     var CW = RI.dims.CW, CH = RI.dims.CH, CD = RI.dims.CD;
     /* ── 1F1B 调度（Layer 视图与在途份数共用一份）──
@@ -5511,20 +5734,44 @@
       return Object.keys(live).map(function(m){ return {m:+m,occupancy:Math.max(0,Math.min(1,live[m]))}; })
         .filter(function(x){ return x.occupancy > .001; }).sort(function(a,b){ return a.m-b.m; });
     }
-    /* 热点层在这张卡的层格里是第几格；不持有分片 HOT_EP、或这段没有 L(HOT_L)，就是 −1 */
-    function hotSlotOf(c){
-      if((c.dp & 7) !== HOT_EP) return -1;
-      var sl = slotsOf(c.pp); for(var j = 0; j < sl.length; j++) if(sl[j].t === 'L' + HOT_L) return j;
+    function layerSlotOf(c, layer){
+      var sl = slotsOf(c.pp); for(var j = 0; j < sl.length; j++) if(sl[j].t === 'L' + layer) return j;
       return -1;
     }
-    /* 这张卡一份微批的运行态账：原激活档拆成等 shape 的基础激活 + 每层都有的 MoE 路由后中间激活，
-       两者之和仍是原 slot；热点路由超出均值的部分另记为 L7 异常增量，维持原故障案例的 OOM 强度。 */
-    function isHot(c){ return hotSlotOf(c) >= 0; }
+    function incidentLayerSlot(c){
+      if((c.dp>>3) !== HOT_EDP) return -1;
+      return layerSlotOf(c,HOT_L);
+    }
+    function triggerLayerSlot(c){ return (c.dp>>3) === HOT_EDP ? layerSlotOf(c,OOM_L) : -1; }
+    function oomSlotOf(c){ return c.r === HOT_R ? triggerLayerSlot(c) : -1; }
+    /* 热点层在这张卡的层格里是第几格；只有事故 EDP 中持有 HOT_EP 的 TP 对片得到正向异常增量。 */
+    function hotSlotOf(c){ return (c.dp & 7) === HOT_EP ? incidentLayerSlot(c) : -1; }
+    /* 运行态账把原激活档拆成基础激活与 MoE 激活。MoE 的均衡基线对同一 PP 段各 Rank 相同；
+       L7 再按实际 token 比例重算，热点 Rank 只把超过 1.0× 的部分单列为异常增量。 */
+    var balancedLayerSlotCache = {};
+    function balancedLayerSlot(c, fix){
+      var key = c.pp + ':' + (fix ? 1 : 0); if(balancedLayerSlotCache[key] != null) return balancedLayerSlotCache[key];
+      var values = RI.cards.filter(function(card){ return card.pp === c.pp; }).map(function(card){
+        var act = card.mem.filter(function(x){ return x.k === 'act'; })[0];
+        return act.bytes/peakOf(card.pp)/slotsOf(card.pp).length*(fix ? FIXK : 1);
+      });
+      return balancedLayerSlotCache[key] = values.reduce(function(sum,value){ return sum+value; },0)/Math.max(1,values.length);
+    }
+    function balancedMoeSlot(c, fix){
+      return balancedLayerSlot(c,fix)*MOE_ACT_SHARE;
+    }
+    function incidentRouteTokens(ep){
+      /* 与右侧 Rank 定位卡共用同一份 8,192-token 事故样本；冷 Rank 有小幅自然抖动。 */
+      return [421,492,455,4915,534,398,517,460][ep];
+    }
     function perMb(c, fix, noHot){
-      var m = c.mem.filter(function(x){ return x.k === 'act'; })[0], N = slotsOf(c.pp).length, hs = noHot ? -1 : hotSlotOf(c);
-      var slot = m.bytes/peakOf(c.pp)/N*(fix ? FIXK : 1), moe = noHot ? 0 : slot*MOE_ACT_SHARE;
-      var base = slot - moe, hotExtra = hs >= 0 ? slot*Math.max(0,HOTK - 1) : 0;
-      return {slot:slot, base:base, moe:moe, hs:hs, hotExtra:hotExtra, tot:slot*N + hotExtra};
+      var m = c.mem.filter(function(x){ return x.k === 'act'; })[0], N = slotsOf(c.pp).length, incidentSlot = noHot ? -1 : incidentLayerSlot(c), hs = noHot ? -1 : hotSlotOf(c);
+      var rawSlot = m.bytes/peakOf(c.pp)/N*(fix ? FIXK : 1);
+      /* 事故组的普通激活使用同角色均值；组内差异只允许来自 L7 Router，不能再叠加合成随机基线。 */
+      var slot = incidentSlot >= 0 ? balancedLayerSlot(c,fix) : rawSlot, moe = noHot ? 0 : balancedMoeSlot(c,fix), base = Math.max(0,slot-moe);
+      var routeRatio = incidentSlot >= 0 ? incidentRouteTokens(c.dp&7)/(D.seq/D.ep) : 1;
+      return {slot:slot, base:base, moe:moe, moeIncident:moe*Math.min(1,routeRatio), incidentSlot:incidentSlot, routeRatio:routeRatio,
+              hs:hs, hotExtra:hs >= 0 ? moe*Math.max(0,routeRatio-1) : 0};
     }
     /* 当前正在执行的 Layer；dispatch workspace 只随当前算子的层内进度出现一次，不随在途微批堆叠。 */
     function runningLayer(s, st){
@@ -5534,14 +5781,25 @@
       var j = op.f ? step : st.N - 1 - step, sl = slotsOf(s)[j];
       if(!sl || sl.u) return null;
       /* workspace 在进入该层时已分配，层中达峰；不用两端归零的纯 sin，否则 OOM 恰好停在层边界时会误画成“没有临时区”。 */
-      return {j:j, pulse:.35 + .65*Math.sin(Math.PI*(z - step)), forward:!!op.f};
+      return {j:j, progress:z-step, pulse:.35 + .65*Math.sin(Math.PI*(z - step)), forward:!!op.f};
     }
     /* 这张卡此刻的账：基础激活与 MoE 中间激活逐层累加；L7 只单列异常增量。
        dispatch / permutation 临时区从既有预留池短暂借用，因此分类会动但总量与 OOM 时刻不变。 */
-    function memAt(c, t, fix, noHot){
+    function memAt(c, t, fix, noHot, interpolateHot){
       var st = lvState(c.pp, t), pm = perMb(c, fix, noHot), P = c.mem[0].bytes/2, out = [];
       var baseAct = 0, moeAct = 0, hotExtra = 0, run = noHot ? null : runningLayer(c.pp, st);
-      st.cnt.forEach(function(v, j){ baseAct += v*pm.base; moeAct += v*pm.moe; if(j === pm.hs) hotExtra += v*pm.hotExtra; });
+      var currentOp = st.S.ops[st.S.idx] || {}, oomSlot = oomSlotOf(c);
+      var atomicPending = !!(interpolateHot && oomSlot >= 0 && run && run.forward && run.j === oomSlot && currentOp.m === 3);
+      st.cnt.forEach(function(v, j){
+        /* μb3 已走过 L0 / L1，但在 L2 的普通激活申请失败；只撤掉尚未成功的 L2 本层。 */
+        var units = atomicPending && j === oomSlot ? Math.max(0,v-1) : v;
+        baseAct += units*pm.base; moeAct += units*(j === pm.incidentSlot ? pm.moeIncident : pm.moe);
+        if(j === pm.hs){
+          var hotUnits = units;
+          if(!atomicPending && interpolateHot && run && run.forward && run.j === pm.hs) hotUnits = Math.max(0,v-1) + run.progress;
+          hotExtra += hotUnits*pm.hotExtra;
+        }
+      });
       var dispatchTmp = run ? pm.slot*DISPATCH_TMP_SHARE*run.pulse : 0;
       var u = t > OTMP_AT ? (t - OTMP_AT)/(1 - OTMP_AT) : 0, optK = u > 0 ? Math.sin(Math.PI*Math.min(1, u)) : 0;
       c.mem.forEach(function(m){
@@ -5549,12 +5807,20 @@
           if(noHot) out.push({k:'act', label:'激活·in-flight', bytes:baseAct, c:m.c});
           else{
             out.push({k:'act', label:'基础激活·in-flight', bytes:baseAct, c:m.c});
-            out.push({k:'xact', label:'MoE 路由后中间激活', bytes:moeAct, c:RI.shade(RI.MEMC.act, 1.18)});
+            out.push({k:'xact', label:pm.hs >= 0 ? 'MoE 中间激活·均衡基线' : 'MoE 路由后中间激活·实际', bytes:moeAct, c:RI.shade(RI.MEMC.act, 1.18)});
             if(pm.hs >= 0) out.push({k:'xhot', label:'L' + HOT_L + ' · 路由倾斜异常增量', bytes:hotExtra, c:bad()});
-            out.push({k:'xtmp', label:'MoE dispatch·临时区', bytes:dispatchTmp, c:RI.shade(RI.MEMC.rsv, .82)});
+            out.push({k:'xtmp', label:'MoE dispatch·临时区（已包含）', bytes:dispatchTmp, c:RI.shade(RI.MEMC.rsv, .82)});
           }
         }
-        else if(m.k === 'rsv' && !noHot) out.push({k:m.k, label:dispatchTmp > .05*RI.GiB ? '碎片/预留（workspace 已借用）' : m.label, bytes:Math.max(0, m.bytes - dispatchTmp), c:m.c});
+        else if(m.k === 'rsv' && !noHot){
+          var inIncidentGroup = incidentLayerSlot(c) >= 0, rankReserve = c.r === HOT_R ? HOT_R_RESERVE : 0;
+          /* 报错点从 L7 前移到 L2 后，时间线上少累计 5 个普通层；把同量放回公共高水位，
+             保持事故前的总内存余量不变，只改变“在哪一层暴露 OOM”。 */
+          var triggerSlot = triggerLayerSlot(c), timingAdjustment = inIncidentGroup && triggerSlot >= 0 ? Math.max(0,pm.incidentSlot-triggerSlot)*pm.slot : 0;
+          var reserveBase = inIncidentGroup ? HOT_GROUP_CACHE+timingAdjustment : m.bytes;
+          var reserveLabel = rankReserve ? '框架/运行时预留·当前不可回收（R23 局部 +0.1 GB）' : (inIncidentGroup ? '框架/运行时预留·当前不可回收（EP 组公共高水位）' : m.label);
+          out.push({k:m.k, label:reserveLabel, bytes:Math.max(0, reserveBase + rankReserve - dispatchTmp), c:m.c});
+        }
         else out.push({k:m.k, label:m.label, bytes:m.bytes, c:m.c});
         if(m.k === 'opt') out.push({k:'otmp', label:'优化器步·临时区', bytes:3.2*P*optK, c:RI.shade(RI.MEMC.opt, .72)});
       });
@@ -5562,12 +5828,29 @@
     }
     function totalOf(mem){ return mem.reduce(function(a, m){ return a + m.bytes; }, 0); }
     function fmt(b){ return (b/RI.GiB).toFixed(1); }
-    /* 撞顶不是第 4 份存满所有层才发生：F3 走到哪一层、合计一过 64 GB 就卡在那一层。二分找出那一刻 */
+    /* L7 是前三份微批留下内存压力的根因层；第 4 份微批走到 L2 时申请普通激活失败。
+       根因层与 allocator 实际报错层刻意分开，避免暗示热点一定在同层暴露 OOM。 */
+    function oomRequestState(t){
+      var hot = RI.cards[HOT_R], st = lvState(hot.pp,t), pm = perMb(hot,false,false), run = runningLayer(hot.pp,st);
+      var total = totalOf(memAt(hot,t,false,false,true));
+      var triggerSlot = oomSlotOf(hot), requesting = !!(run && run.forward && run.j === triggerSlot), request = OOM_REQUEST_MB*Math.pow(2,20);
+      return {before:total,headroom:Math.max(0,CAP-total),request:request,hotRequest:pm.slot+pm.hotExtra,hotLayer:HOT_L,triggerLayer:OOM_L,
+              hotExtra:pm.hotExtra,base:pm.base,moe:pm.moe,progress:requesting ? run.progress : 0,projected:requesting ? total+request : total};
+    }
+    var oomStopCache = null;
     function tOOM(){
-      var hot = RI.cards[HOT_R], lo = 0, hi = peakT(hot.pp);
-      if(totalOf(memAt(hot, hi, false)) <= CAP) return hi;
-      for(var i = 0; i < 40; i++){ var mid = (lo + hi)/2; if(totalOf(memAt(hot, mid, false)) > CAP) hi = mid; else lo = mid; }
-      return hi;
+      if(oomStopCache != null) return oomStopCache;
+      var hot = RI.cards[HOT_R], pm = perMb(hot,false,false), ops = PLAN.ops[hot.pp], opIndex = -1;
+      for(var i=0;i<ops.length;i++) if(ops[i].f === 1 && ops[i].m === 3){ opIndex = i; break; }
+      var triggerSlot = oomSlotOf(hot);
+      if(opIndex < 0 || triggerSlot < 0) return oomStopCache = peakT(hot.pp);
+      var entry = PLAN.P[hot.pp][opIndex], layerShare = triggerSlot/slotsOf(hot.pp).length;
+      /* 固定在 μb3 进入 L2 并发起普通激活申请的边界；极小偏移确保 runningLayer 已切到 L2，
+         同时 L2 这次失败申请尚未计入已占用。 */
+      return oomStopCache = Math.min(peakT(hot.pp),tSlot(entry.a + (entry.b-entry.a)*layerShare) + 1e-9);
+    }
+    function oomCapacityEvidence(t){
+      return oomRequestState(t);
     }
     /* 共享进度看板中的泳道直接加载仓库内已有页面，不再把整份页面快照嵌入本文件。 */
     var HIDE_CSS = '.timeline-pane .pane__header{display:none!important}'
@@ -5682,10 +5965,8 @@
               hide:function(){ el.hidden = true; }};
     }
     var LV_LANES = [
-      {k:'act',  t:'基础激活·in-flight'},
-      {k:'xact', t:'MoE 中间激活', faultOnly:true},
-      {k:'xtmp', t:'dispatch 临时区', faultOnly:true},
-      {k:'g',    t:'梯度'}, {k:'w', t:'权重'}, {k:'opt', t:'优化器态'}
+      {k:'act', t:'激活·in-flight'},
+      {k:'g',   t:'梯度'}, {k:'w', t:'权重'}, {k:'opt', t:'优化器态'}
     ];
     var layerBubbleTip = null;
     function ensureLayerBubbleTip(){
@@ -5724,10 +6005,10 @@
       var warning = getComputedStyle(document.documentElement).getPropertyValue('--warning').trim() || '#f59e0b';
       var sMe = c.pp;
       var padL = 78, padR = 12, yHead = 17, yPP = 35, yTick = 46, y0 = 54;   /* yHead 对齐左上角那枚页签的中线（top 5 + 24/2） */
-      /* 正常周期不拆 MoE 子类；OOM 场景才把正常中间激活、L7 异常增量和短命 workspace 分开。 */
-      var lanes = LV_LANES.filter(function(L){ return !L.faultOnly || !noHot; });
-      var LW = lanes.map(function(L){ return L.k === 'act' ? 2.2 : ((L.k === 'xact' || L.k === 'xtmp') ? 0.72 : 0.9); }), LWsum = LW.reduce(function(a, v){ return a + v; }, 0), unit = (HL - y0 - 4)/LWsum;
-      var hsMe = noHot ? -1 : hotSlotOf(c);
+      /* 画布只保留四条主内存生命线；OOM 的 MoE 子类与异常增量统一交给右侧根因面板解释。 */
+      var lanes = LV_LANES;
+      var LW = lanes.map(function(L){ return L.k === 'act' ? 2.2 : ((L.k === 'xact' || L.k === 'xhot' || L.k === 'xtmp') ? 0.72 : 0.9); }), LWsum = LW.reduce(function(a, v){ return a + v; }, 0), unit = (HL - y0 - 4)/LWsum;
+      var hsMe = noHot ? -1 : hotSlotOf(c), osMe = noHot ? -1 : oomSlotOf(c);
       /* 四块：每块 slotsOf(s) 个格，块间留一道缝（照展平视图的 bgap） */
       var blocks = [], nAll = 0, bubbleHits = [];
       for(var q = 0; q < PP; q++){ var sl = slotsOf(q); blocks.push({s:q, sl:sl, st:lvState(q, t)}); nAll += sl.length; }
@@ -5797,14 +6078,14 @@
       });
       ctx.canvas.__lvBubbleHits = bubbleHits;
       ctx.globalAlpha = 1;
-      /* 六条线：每条横贯四块，逐块画各自的状态 */
+      /* 每类内存一条线：每条横贯四块，逐块画各自的状态。 */
       var yTop = y0;
       lanes.forEach(function(L, i){
         var laneH = LW[i]*unit, yb = yTop + laneH - 5;
-        var col = L.k === 'xact' ? RI.shade(RI.MEMC.act, 1.18) : L.k === 'xtmp' ? RI.shade(RI.MEMC.rsv, .82) : RI.MEMC[L.k]; yTop += laneH;
+        var col = L.k === 'xact' ? RI.shade(RI.MEMC.act, 1.18) : L.k === 'xhot' ? red : L.k === 'xtmp' ? RI.shade(RI.MEMC.rsv, .82) : RI.MEMC[L.k]; yTop += laneH;
         /* 激活条：顶上留 22px 给飞着的那枚点和 F/B 标签；所有 Layer 的基础格严格等高。 */
         var stackMax = laneH - 22, markH = L.k === 'act' ? stackMax : laneH*0.62;
-        var laneTitle = noHot && L.k === 'act' ? '激活·in-flight' : L.t;
+        var laneTitle = L.t;
         ctx.globalAlpha = 1; ctx.font = '500 10px ' + mono; ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic'; ctx.fillStyle = TH.fg2; ctx.fillText(laneTitle, 10, yb);
         blocks.forEach(function(b){
           var on = b.s === sMe, bs = b.st, bop = bs.S.ops[bs.S.idx], dim = on ? 1 : (b.s === waitOn ? 0.75 : 0.28), xa = b.x0, xb = b.x1;
@@ -5814,7 +6095,13 @@
             /* 每层一摞：存着几份就几格，一格一份。基础激活 shape 相同，因此所有 Layer 的格高一致。 */
             var hh = stackMax/PP;
             for(var q = 0; q < bs.N; q++){
-              for(var m = 0; m < bs.cnt[q]; m++){ ctx.globalAlpha = 0.85*dim; ctx.fillStyle = col; ctx.fillRect(b.xOf(q) - w/2, yb - (m + 1)*hh + 1, w, hh - 1); }
+              /* μb3 在 L2 的原子申请失败：L0 / L1 已生成，L2 不生成；L7 仍只保留前三份热点激活。 */
+              var actLive = bs.cnt[q];
+              if(on && oom && bop.f && bop.m === 3 && q === osMe) actLive = Math.max(0,actLive-1);
+              for(var m = 0; m < actLive; m++){
+                var cellX = b.xOf(q) - w/2, cellY = yb - (m + 1)*hh + 1;
+                ctx.globalAlpha = 0.85*dim; ctx.fillStyle = col; ctx.fillRect(cellX, cellY, w, hh - 1);
+              }
             }
             ctx.fillStyle = col;
             if(bs.pos >= 0 && !bop.o){
@@ -5826,20 +6113,27 @@
               ctx.strokeStyle = dc; ctx.globalAlpha = 0.5*dim; ctx.beginPath(); ctx.moveTo(px, yb - markH - 3); ctx.lineTo(px, yb); ctx.stroke();
             }
           } else if(L.k === 'xact'){
-            /* 所有 MoE Layer 都有正常路由后中间激活，跟随在途微批保留；只在热点 Rank 的 L7 叠加红色异常量。 */
+            /* 所有 MoE Layer 都有正常路由后中间激活，跟随在途微批保留；这里只画正常部分。 */
             var bh = Math.max(2, markH/PP);
             for(var mq = 0; mq < bs.N; mq++){
               if(b.sl[mq].u) continue;
-              var live = Math.max(0, bs.cnt[mq] || 0), isHotLayer = on && mq === hsMe;
+              var live = Math.max(0, bs.cnt[mq] || 0);
+              if(on && oom && bop.f && bop.m === 3 && mq === osMe) live = Math.max(0,live-1);
               for(var mi = 0; mi < live; mi++){
                 var cellY = yb - (mi + 1)*bh + 1;
                 ctx.globalAlpha = 0.72*dim; ctx.fillStyle = col; ctx.fillRect(b.xOf(mq) - w/2, cellY, w, bh - 1);
-                if(isHotLayer){
-                  /* 红色细条只代表超出正常中间激活的增量，不覆盖下面的正常格。 */
-                  ctx.globalAlpha = 0.9*dim; ctx.fillStyle = red; ctx.fillRect(b.xOf(mq) + w/2 - Math.max(1, w*.28), cellY, Math.max(1, w*.28), bh - 1);
-                }
               }
-              if(isHotLayer && live){ ctx.globalAlpha = dim; ctx.strokeStyle = red; ctx.lineWidth = 1; ctx.strokeRect(b.xOf(mq) - w/2 - 1, yb - live*bh, w + 2, live*bh); }
+            }
+          } else if(L.k === 'xhot'){
+            /* 路由倾斜增量是同类激活的额外字节，不是正常块的“右半边”。独立成红色一行，避免读成张量切片。 */
+            var xh = Math.max(2, markH/PP);
+            if(on && hsMe >= 0){
+              var hotLive = Math.max(0, bs.cnt[hsMe] || 0), hotRun = runningLayer(b.s,bs), failedCurrent = oom && bop.f && bop.m === 3 && osMe === hsMe;
+              if(failedCurrent) hotLive = Math.max(0,hotLive-1);
+              for(var xi = 0; xi < hotLive; xi++){
+                var hotY = yb - (xi + 1)*xh + 1, hotProgress = !failedCurrent && hotRun && hotRun.forward && hotRun.j === hsMe && xi === hotLive-1 ? hotRun.progress : 1;
+                ctx.globalAlpha = 0.72*dim; ctx.fillStyle = red; ctx.fillRect(b.xOf(hsMe) - w/2, hotY, w*hotProgress, xh - 1);
+              }
             }
           } else if(L.k === 'xtmp'){
             /* dispatch / permutation workspace 只跟随正在执行的一层，不按微批堆叠，也不保留到反向。 */
@@ -5996,7 +6290,8 @@
       /* 把每个 Rank 的时间曲线压成四层观测口径；卡壳装的是最外层 APP Reserved，
          右侧面板同时给出 Allocated / Activated / Reserved / APP Reserved，避免把四条曲线相加。 */
       function observedFrame(card,t){
-        var mem = memAt(card,t,false,scenario !== 'danger'), ph = phaseOf(card,t), act = 0, baseIdle = 0, delayed = 0, idleExtra = 0, appOther = 0, allocExtra = 0;
+        var dangerFrame = scenario === 'danger';
+        var mem = memAt(card,t,false,!dangerFrame,dangerFrame), ph = phaseOf(card,t), act = 0, baseIdle = 0, delayed = 0, idleExtra = 0, appOther = 0, allocExtra = 0;
         mem.forEach(function(m){ if(m.k === 'rsv') baseIdle = m.bytes; else act += m.bytes; });
         if(scenario === 'peak'){
           if(card.r === 23){
@@ -6010,12 +6305,13 @@
         } else if(scenario === 'gap'){
           if(card.r === 23) delayed = 11.2*RI.GiB*pulseWindow(t,.30,.43,.68,.86);
           else if(card.r === 54) idleExtra = 24*RI.GiB*pulseWindow(t,.18,.30,.78,.98);
-          else if(card.r === 87) baseIdle = Math.min(baseIdle,.8*RI.GiB);
+          else if(card.r === 87){ baseIdle = Math.min(baseIdle,.8*RI.GiB); appOther = 14*RI.GiB*pulseWindow(t,.20,.34,.74,.92); }
         }
         var idle = baseIdle + idleExtra, activeBytes = act + delayed, reserved = activeBytes + idle, app = reserved + appOther;
-        var reserveLabel = '碎片/预留';
+        var reserveLabel = '缓存/预留';
         if(scenario === 'gap' && delayed > .05*RI.GiB) reserveLabel = '待流完成·延迟释放';
         else if(scenario === 'gap' && idleExtra > .05*RI.GiB) reserveLabel = '内存池空闲·低复用';
+        else if(scenario === 'gap' && appOther > .05*RI.GiB) reserveLabel = '进程其他·通信/runtime';
         else if(scenario === 'peak' && appOther > .05*RI.GiB) reserveLabel = '进程其他·通信/runtime';
         for(var j=0;j<mem.length;j++) if(mem[j].k === 'rsv'){ mem[j].bytes = delayed + idle + appOther; mem[j].label = reserveLabel; }
         return {mem:mem, metric:{allocated:act,active:activeBytes,reserved:reserved,app:app,delayed:delayed,idle:idle,other:appOther,
@@ -6023,27 +6319,56 @@
       }
       function buildDiagnosticAnalysis(){
         if(scenario !== 'peak' && scenario !== 'gap') return null;
-        var keys = ['allocated','active','reserved','app','delayed','idle','other','delayedRatio','idleRatio'], peakByRank = {}, peakAtByRank = {}, leaders = {};
+        var keys = ['allocated','active','reserved','app','delayed','idle','other','delayedRatio','idleRatio'], peakByRank = {}, peakAtByRank = {}, peakFrames = {}, peakStats = {}, gapStats = {}, leaders = {}, globalP95 = {};
         RI.cards.forEach(function(card){
-          var peak = {}, peakAt = {}; keys.forEach(function(key){ peak[key] = -1; peakAt[key] = 0; });
+          var peak = {}, peakAt = {}, framesAtPeak = {}, samples = []; keys.forEach(function(key){ peak[key] = -1; peakAt[key] = 0; });
           for(var si=0;si<=80;si++){
             var metric = observedFrame(card,si/80).metric;
+            samples.push(metric);
             keys.forEach(function(key){
               var value = metric[key] || 0;
-              if(value > peak[key]){ peak[key] = value; peakAt[key] = si/80; }
+              if(value > peak[key]){ peak[key] = value; peakAt[key] = si/80; framesAtPeak[key] = metric; }
             });
           }
-          peakByRank[card.r] = peak; peakAtByRank[card.r] = peakAt;
+          peakByRank[card.r] = peak; peakAtByRank[card.r] = peakAt; peakFrames[card.r] = framesAtPeak; peakStats[card.r] = {}; gapStats[card.r] = {};
+          ['app','allocated'].forEach(function(key){
+            var duration = 0;
+            samples.forEach(function(metric,index){
+              var weight = (index === 0 || index === samples.length-1) ? .5/80 : 1/80;
+              if(metric[key] >= peak[key]*.9) duration += weight;
+            });
+            peakStats[card.r][key] = {duration:duration};
+          });
+          ['delayed','idle','other'].forEach(function(key){
+            var ratioKey = key === 'delayed' ? 'delayedRatio' : 'idleRatio', threshold = Math.max(RI.GiB, CAP*.05), byteTime = 0, duration = 0, overlap = 0;
+            samples.forEach(function(metric,index){
+              var weight = (index === 0 || index === samples.length-1) ? .5/80 : 1/80, high = metric[key] >= threshold, appHigh = metric.app >= peak.app*.9;
+              byteTime += metric[key]*weight;
+              if(high) duration += weight;
+              if(high && appHigh) overlap += weight;
+            });
+            var frame = framesAtPeak[key];
+            var ratioAtMax = frame ? (key === 'other' ? (frame.app > 0 ? frame.other/frame.app : 0) : frame[ratioKey]) : 0;
+            gapStats[card.r][key] = {maxBytes:peak[key],at:peakAt[key],frame:frame,ratioAtMax:ratioAtMax,duration:duration,byteTime:byteTime,overlap:overlap};
+          });
         });
-        (scenario === 'gap' ? ['delayedRatio','idleRatio'] : ['allocated','active','reserved','app']).forEach(function(key){
+        ['app','allocated'].forEach(function(key){
+          var values = RI.cards.map(function(card){ return peakByRank[card.r][key]; }).sort(function(a,b){ return a-b; });
+          globalP95[key] = values[Math.max(0,Math.ceil(values.length*.95)-1)];
+        });
+        (scenario === 'gap' ? ['delayed','idle','other'] : ['app','allocated']).forEach(function(key){
           var best = {r:0,value:-1};
-          RI.cards.forEach(function(card){ var value = peakByRank[card.r][key]; if(value > best.value){ best = {r:card.r,value:value}; } });
-          best.at = peakAtByRank[best.r][key];
+          RI.cards.forEach(function(card){
+            var value = scenario === 'gap' ? gapStats[card.r][key].byteTime : peakByRank[card.r][key];
+            if(value > best.value) best = {r:card.r,value:value};
+          });
+          best.at = scenario === 'gap' ? gapStats[best.r][key].at : peakAtByRank[best.r][key];
+          if(scenario === 'gap') best.value = gapStats[best.r][key].maxBytes;
           leaders[key] = best;
         });
-        return {peakByRank:peakByRank,peakAtByRank:peakAtByRank,leaders:leaders};
+        return {peakByRank:peakByRank,peakAtByRank:peakAtByRank,peakFrames:peakFrames,peakStats:peakStats,gapStats:gapStats,globalP95:globalP95,leaders:leaders};
       }
-      var DIAGNOSTIC_METRIC_NAMES = {allocated:'算子分配',active:'算子持有',reserved:'算子保留',app:'进程保留',delayedRatio:'延迟释放最大占比',idleRatio:'内存池空闲最大占比'};
+      var DIAGNOSTIC_METRIC_NAMES = {allocated:'算子分配',active:'算子持有',reserved:'算子保留',app:'进程保留',delayed:'延迟释放量',idle:'池内空闲量',other:'进程其他占用',delayedRatio:'延迟释放占比',idleRatio:'内存池空闲占比'};
       function diagnosticMetricLabel(metric){ return DIAGNOSTIC_METRIC_NAMES[metric] + (metric === 'delayedRatio' || metric === 'idleRatio' ? '' : '峰值'); }
       function diagnosticPeakTarget(){
         if(!diagnosticAnalysis || !diagnosticTarget) return null;
@@ -6062,7 +6387,7 @@
       }
       function drawCycle(){
         if(cycleView === 'layer' && (!width || !height)) sizeCycle();
-        /* OOM 页签使用 R23 × L7 热点专家事故；其余页签保持正常 step。
+        /* OOM 页签使用 R23 × L7 热点专家导致后续 L2 申请失败的事故；其余页签保持正常 step。
            同一份时钟同时产出 128 张卡的账，并驱动 Layer 视图、泳道游标和第 9 步通信。 */
         var frames = RI.cards.map(function(card){ return observedFrame(card,at); });
         var allMem = frames.map(function(frame){
@@ -6083,6 +6408,11 @@
                           wait:stageState.S.wait,activeSlots:activeSlots,totalSlots:peakOf(c.pp),
                           inflight:inflightMicrobatches(stageState),
                           timeline:{index:stageState.S.idx,progress:stageState.S.u,wait:stageState.S.wait,done:stageState.S.done,ops:timelineOps}};
+        if(scenario === 'danger'){
+          var oomStop = tOOM();
+          cycleState.oomEvidence = oomEvidenceCache || (oomEvidenceCache = oomCapacityEvidence(oomStop));
+          cycleState.oomTriggered = at >= oomStop - 1e-7;
+        }
         var byRank = {}; frames.forEach(function(frame,i){ byRank[i] = frame.metric; });
         if(RI.setMemoryCycleFrame) RI.setMemoryCycleFrame(allMem,cycleState,(scenario === 'peak' || scenario === 'gap') ? {scenario:scenario,at:at,byRank:byRank,analysis:diagnosticAnalysis} : null);
         var canvasAnnotation = diagnosticCanvasAnnotation();
@@ -6090,19 +6420,17 @@
         else { delete canvas.dataset.annotation; canvas.setAttribute('aria-label','Rank ' + c.r + ' 单 Step 内存周期'); }
         if(cycleView === 'layer'){
           var phaseX = viewTabs ? viewTabs.offsetLeft + viewTabs.offsetWidth + 12 : 48;
-          drawLVTo(cx, width, height, dpr, c, at, totalOf(mem) > CAP, phaseX, scenario !== 'danger', canvasAnnotation);
+          drawLVTo(cx, width, height, dpr, c, at, !!cycleState.oomTriggered, phaseX, scenario !== 'danger', canvasAnnotation);
         }
         placeLaneCursor();
       }
       function syncButton(){
         button.setAttribute('aria-pressed', String(playingCycle));
-        button.classList.toggle('is-oom',stopReason === 'oom' || stopReason === 'diagnostic');
         var stoppedPeak = diagnosticPeakTarget();
         var label = stopReason === 'oom' ? 'OOM 已停止，点击从头重放'
           : (stopReason === 'diagnostic' && stoppedPeak ? diagnosticMetricLabel(stoppedPeak.metric) + '已定位 · R' + stoppedPeak.rank + ' · Step ' + Math.round(stoppedPeak.at*100) + '%，点击从头重放'
           : (stopReason === 'complete' ? 'Step 已完成，点击从头重放' : (playingCycle ? '暂停' : '播放')));
         button.setAttribute('aria-label',label); button.title = label;
-        if(RI.setMemoryCyclePlayback) RI.setMemoryCyclePlayback(playingCycle);
       }
       function cycleFrame(ts){
         if(!active || !playingCycle) return;
@@ -6190,7 +6518,7 @@
         setScenario:function(next,quiet){
           scenario = next || 'base'; diagnosticAnalysis = buildDiagnosticAnalysis();
           if(scenario === 'danger') rank = HOT_R;
-          var defaultMetric = scenario === 'gap' ? 'delayedRatio' : 'allocated';
+          var defaultMetric = scenario === 'gap' ? 'delayed' : 'app';
           diagnosticTarget = diagnosticAnalysis && diagnosticAnalysis.leaders[defaultMetric] ? {metric:defaultMetric,rank:diagnosticAnalysis.leaders[defaultMetric].r} : null;
           stopReason = ''; at = 0; setPlaying(false); if(active){ drawCycle(); if(!quiet) setPlaying(true); }
         },

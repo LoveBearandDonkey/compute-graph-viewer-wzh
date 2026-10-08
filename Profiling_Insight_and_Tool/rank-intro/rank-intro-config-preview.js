@@ -377,18 +377,20 @@ window.createRIConfigPreview = function(deps){
     function bindConf(){
       conf.addEventListener('click', function(e){
         var b = e.target.closest('button'); if(!b) return;
-        userStop();
-        if(b.dataset.d){ var w = b.closest('.c4s'); if(b.getAttribute('aria-disabled') !== 'true') stepField(w.dataset.f, +b.dataset.d); }
-        else if(b.dataset.m) setMode(b.dataset.m);
+        if(b.dataset.d){
+          var w = b.closest('.c4s');
+          if(b.getAttribute('aria-disabled') !== 'true'){ userStop(); stepField(w.dataset.f, +b.dataset.d); }
+        }
+        else if(b.dataset.m){ userStop(); setMode(b.dataset.m); }
         else if(b.dataset.pt) setPanel(b.dataset.pt);
         else if(b.dataset.netMode) setNetMode(b.dataset.netMode);
         else if(b.hasAttribute('data-layer-select')) selectNetLayer(b.dataset.layerSelect);
         else if(b.hasAttribute('data-layer-slot')) selectNetLayer(+b.dataset.layerSelect);
         else if(b.dataset.layerShift) shiftLayerPage(+b.dataset.layerShift);
-        else if(b.dataset.act === 'apply') applyFix();
-        else if(b.dataset.act === 'cancel') cancelFix();
-        else if(b.dataset.act === 'apply-oom') applyOomFix();
-        else if(b.dataset.act === 'discard-card') discardCardChange();
+        else if(b.dataset.act === 'apply'){ userStop(); applyFix(); }
+        else if(b.dataset.act === 'cancel'){ userStop(); cancelFix(); }
+        else if(b.dataset.act === 'apply-oom'){ userStop(); applyOomFix(); }
+        else if(b.dataset.act === 'discard-card'){ userStop(); discardCardChange(); }
       });
       conf.addEventListener('change', function(e){
         var t = e.target;
@@ -422,8 +424,8 @@ window.createRIConfigPreview = function(deps){
       if(side && SIDE){
         sideP = SIDE(side); bindDomPanel(sideP.el); sideDomSig = '';
         sideP.onClose(function(){
-          if(!perfMode() || E.selRank === null || !E.selLayer) return false;
-          E.selRank = null; sideDomSig = ''; renderSide(); redraw(); return true;
+          if(E.selRank === null) return false;
+          E.selRank = null; sideDomSig = ''; redraw(); return false;
         });
       }
       if(!E.TOPO) applyTopo();   /* 整网查询默认停在 Layer 1，applyTopo 会让画布选中同一列 */
@@ -490,6 +492,9 @@ window.createRIConfigPreview = function(deps){
     /* 左栏页签：表单 / 整网图（整网图占掉表单的位置，不并排） */
     function setPanel(v){
       if(v === panelTab) return;
+      /* 整网查询使用算子 / 性能热力口径，不能沿用 Rank HBM 聚合视图。
+         自动播放切页时要保留播放计时，因此这里只静默退出内存观测。 */
+      if(v === 'net' && E.memoryMode) setMemoryMode(false);
       panelTab = v;
       E.hoverLayer = null;
       if(v === 'net' && netMode === 'perf') E.selRank = null;   /* 性能分析从无 Rank 选择开始，不沿用训练配置里的 R23。 */
@@ -593,7 +598,6 @@ window.createRIConfigPreview = function(deps){
     function setMemoryMode(on){
       on = !!on;
       if(on === E.memoryMode) return;
-      userStop();
       if(on){
         memoryPrefs = {tpOn:E.tpOn, layerVisible:E.layerVisible};
         E.memoryMode = true; E.tpOn = false; E.layerVisible = false;
@@ -611,12 +615,12 @@ window.createRIConfigPreview = function(deps){
       var memoryToggle = document.getElementById('c4memoryToggle');
       tpToggle.addEventListener('click', function(){
         if(E.memoryMode) return;
-        userStop(); E.tpOn = !E.tpOn; syncPlaneToggles();
+        E.tpOn = !E.tpOn; syncPlaneToggles();
         PLN.sync(E, E.view.k); PLN.pan(E); redraw();
       });
       layerToggle.addEventListener('click', function(){
         if(E.memoryMode) return;
-        userStop(); E.layerVisible = !E.layerVisible;
+        E.layerVisible = !E.layerVisible;
         E.hoverLayer = null;
         syncPlaneToggles(); rebuildPlane();
       });
@@ -624,7 +628,6 @@ window.createRIConfigPreview = function(deps){
       syncPlaneToggles();
       stageEl.querySelector('.pzoom').addEventListener('click', function(e){
         var b = e.target.closest('button[data-z]'); if(!b) return;
-        userStop();
         var mx = (PLC.RULER_LEFT_W + E.W)/2, my = (PLC.RULER_TOP_H + E.H)/2;
         if(b.dataset.z === 'fit') PLN.fit(E); else PLN.zoom(E, mx, my, E.view.k*(b.dataset.z === 'in' ? 1.25 : 1/1.25));
         zoomRead(); redraw();
@@ -635,7 +638,7 @@ window.createRIConfigPreview = function(deps){
         if(pan){
           var dx = e.clientX - pan.sx, dy = e.clientY - pan.sy;
           if(Math.abs(dx) > 3 || Math.abs(dy) > 3) pan.moved = true;
-          if(pan.moved){ userStop(); setLayerHover(null); E.view.x = pan.vx + dx; E.view.y = pan.vy + dy; PLN.pan(E); cv.style.cursor = 'grabbing'; redraw(); }
+          if(pan.moved){ setLayerHover(null); E.view.x = pan.vx + dx; E.view.y = pan.vy + dy; PLN.pan(E); cv.style.cursor = 'grabbing'; redraw(); }
           return;
         }
         var tk = PLN.tick(E, mx, my), canvasCol = canvasLayerAt(mx, my);
@@ -648,16 +651,17 @@ window.createRIConfigPreview = function(deps){
         window.addEventListener('mouseup', function(){ if(!pan) return; if(pan.moved) suppress = true; pan = null; if(cv) cv.style.cursor = 'grab'; });
       }
       cv.addEventListener('wheel', function(e){
-        e.preventDefault(); userStop();
+        e.preventDefault();
         var r = cv.getBoundingClientRect();
         if(PLN.zoom(E, e.clientX - r.left, e.clientY - r.top, E.view.k*Math.exp(-e.deltaY*0.0015))){ zoomRead(); redraw(); }
       }, {passive:false});
       cv.addEventListener('click', function(e){
         if(suppress){ suppress = false; return; }
         var r = cv.getBoundingClientRect(), mx = e.clientX - r.left, my = e.clientY - r.top;
-        userStop();
         var tk = PLN.tick(E, mx, my), canvasCol = canvasLayerAt(mx, my);
         var ph = (tk || canvasCol) ? null : PLN.hit(E, mx, my);
+        /* 选中 Rank / Layer（以及点空白取消选择）是播放中的辅助查看动作，不终止剧本。
+           后续脚本节点仍可按自己的节奏更新选择，未选中 R23 时播放逻辑也保持完整。 */
         /* 画布上的任何一次点击都是「选列 / 选卡」手势，与整网图的算子高亮互斥：统一先清一次。
            放在分支之前是因为点空白处也要清——否则选中没了、通信域却还挂着上一张卡的成员名单。 */
         clearOpPick();
@@ -1069,7 +1073,6 @@ window.createRIConfigPreview = function(deps){
     }
     function toggleDomPick(kind, which){
       if(!kind || !which) return;
-      userStop();
       var same = domPick && domPick.kind === kind && domPick.which === which;
       domPick = same ? null : {kind:kind, which:which, label:'', n:0};
       sideDomSig = '';   /* 选中态写在面板里，强制重写一次 */
@@ -1088,7 +1091,7 @@ window.createRIConfigPreview = function(deps){
     function locateRank(rank){
       if(!isFinite(rank) || rank < 0 || rank >= E.PC.length) return;
       var layer = heatLayer;
-      userStop(); clearOpPick(); domPick = null; E.hiDomain = null;
+      clearOpPick(); domPick = null; E.hiDomain = null;
       E.selRank = rank;
       if(layer !== null){ E.selLayer = colOfNet(layer); E.layerGuide = !!E.selLayer; }
       sideDomSig = '';
@@ -1250,7 +1253,7 @@ window.createRIConfigPreview = function(deps){
         performanceMetrics:netMode === 'perf' ? performanceMetrics(netMetricLayer()) : null,
         onNodeSelect:function(selected){
           if(deckMuted || !selected) return;
-          userStop(); pickOp(selected.nodeId, true, selected.layer);
+          pickOp(selected.nodeId, true, selected.layer);
         }
       });
       if(netDeck) applyNetView();   /* 视图 / 取景框 / data-net-scope 一并按当前 netLayer 铺好 */
@@ -1336,6 +1339,7 @@ window.createRIConfigPreview = function(deps){
       }
       sideDomSig = '';
       sideP.empty('点矩阵里的一格看那张卡的显存账；点顶部刻度或用左栏翻页选一层，这里给出那一层各卡计算耗时在四个同步域上的差异。');
+      sideP.hide();
     }
 
     /* ── 动画：一个「时间片」的动画槽（缩放 / 红行淡入共用，同时只会有一个）── */
