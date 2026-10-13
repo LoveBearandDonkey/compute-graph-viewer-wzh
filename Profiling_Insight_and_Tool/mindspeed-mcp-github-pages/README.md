@@ -3,6 +3,9 @@
 这个目录可直接作为 GitHub Pages 的发布目录。`index.html` 是自包含文件，不依赖 CDN、
 远程 MCP 服务、NPU、CANN 或 MindSpeed 运行环境。
 
+该目录是一个完整、可独立复制的发布单元。需要同步到其他仓库时，请整体复制目录中的
+`.nojekyll`、`index.html`、`manifest.json`、`README.md` 和 `SHA256SUMS`，不要只复制页面文件。
+
 ## 能体验什么
 
 - 原始 YAML、JSON、Shell 配置解析；
@@ -30,5 +33,6 @@ Settings → Pages 中选择该分支。也可以在 GitHub Actions 中把整个
 npm run package:github-pages
 ```
 
-命令会先生成浏览器本地计算版 `index.html`，写入构建清单和 SHA-256，随后恢复正常的
-MCP App 构建产物，避免服务端资源误用静态体验模式。
+命令会先生成浏览器本地计算版 `index.html`，写入产品版本、构建清单和 SHA-256，随后恢复
+正常的 MCP App 构建产物，避免服务端资源误用静态体验模式。正式腾讯云发布会在发布提交前
+自动执行同一套打包，并要求这个目录和服务端使用相同的产品版本。
