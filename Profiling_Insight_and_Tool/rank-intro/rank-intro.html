@@ -806,10 +806,109 @@
   .mem-scenario button{height:26px;flex:none;border:0;border-radius:999px;background:none;color:var(--fg3);padding:0 9px;cursor:pointer;font:600 11px/1 var(--sans);white-space:nowrap}
   .mem-scenario button:hover{color:var(--fg)}
   .mem-scenario button.is-on{background:var(--fg);color:var(--bg)}
-  .mem-scenario button[data-mem-scenario="danger"].is-on{background:var(--bad);color:#fff}
+  .mem-scenario button[data-mem-scenario="danger"].is-on,
+  .mem-scenario button[data-mem-scenario="danger-v2"].is-on{background:var(--bad);color:#fff}
   .mem-scenario button[data-mem-scenario="peak"].is-on,
   .mem-scenario button[data-mem-scenario="gap"].is-on{background:var(--bad);color:#fff}
   .comm-scenario button[data-comm-scenario]:not([data-comm-scenario="base"]).is-on{background:var(--bad);color:#fff}
+
+  /* OOM v2 第一步：主视图只讲清楚一次失败申请，不叠加原 OOM 的 Rank 阵列、周期条或右侧根因面板。 */
+  .oom-v2-view[hidden]{display:none}
+  .oom-v2-view{position:absolute;inset:0 0 54px;z-index:5;min-width:0;min-height:0;background:var(--bg);overflow:hidden}
+  .oom-v2-scene[hidden]{display:none}
+  .oom-v2-scene{position:absolute;inset:0;display:grid;grid-template-rows:auto minmax(250px,1fr) auto;padding:18px 24px 8px}
+  .stage.oom-v2-on #cv,.stage.oom-v2-on .rankmem,.stage.oom-v2-on .mem-cycle,
+  .stage.oom-v2-on #zoomHud,.stage.oom-v2-on #etpTog{display:none!important}
+  .stage.oom-v2-on .canvas-bottom-tools{bottom:12px}
+  .page.oom-v2-active .pt-stagebar,.page.oom-v2-active #memCyclePlay{display:none!important}
+  .oom-v2-head{text-align:center;align-self:start}
+  .oom-v2-head__meta{margin:0;color:var(--fg2);font:650 13px/1.4 var(--mono);letter-spacing:.015em}
+  .oom-v2-head h2{margin:5px 0 0;color:var(--fg);font:750 clamp(18px,2vw,26px)/1.25 var(--sans);letter-spacing:-.02em}
+  .oom-v2-head h2 em{color:var(--bad);font-style:normal}
+  .oom-v2-visual{display:flex;align-items:center;justify-content:center;min-height:0;padding:102px 120px 10px 34px}
+  .oom-v2-rank-single{--oom-rank-top:78px;--oom-request-left:159px;--oom-request-width:142px;--oom-total-left:230px;
+    --oom-note-left:318px;position:relative;width:min(460px,70vw);height:clamp(230px,34vh,310px);flex:none}
+  .oom-v2-rank-canvas{position:absolute;inset:0;width:100%;height:100%;display:block}
+  .oom-v2-plane__capacity{position:absolute;right:9%;bottom:5px;color:var(--fg3);font:600 10px/1 var(--mono);white-space:nowrap}
+  .oom-v2-request{position:absolute;z-index:2;left:var(--oom-request-left);top:calc(var(--oom-rank-top) - 34px);width:var(--oom-request-width);height:34px;pointer-events:none}
+  .oom-v2-request__label{position:absolute;left:50%;top:-54px;transform:translateX(-50%);color:var(--fg2);
+    font:650 11px/1.3 var(--sans);text-align:center;white-space:nowrap}
+  .oom-v2-request__label::after{content:"";position:absolute;left:50%;top:calc(100% + 7px);height:15px;border-left:1px solid var(--border-strong)}
+  .oom-v2-note{position:absolute;z-index:3;padding:3px 6px;border-radius:var(--radius-sm);background:var(--bg);font:700 11px/1.25 var(--mono);white-space:nowrap}
+  .oom-v2-note::before{content:"";position:absolute;right:100%;top:50%;width:14px;border-top:1px solid currentColor;opacity:.55}
+  .oom-v2-note--total{left:var(--oom-total-left);top:calc(var(--oom-rank-top) - 52px);transform:translateX(-50%);color:var(--fg)}
+  .oom-v2-note--total::before{display:none}
+  .oom-v2-note--total::after{content:"";position:absolute;left:6px;right:6px;top:calc(100% + 3px);height:5px;border:1px solid currentColor;border-top:0;opacity:.42}
+  .oom-v2-note--overflow{left:var(--oom-note-left);top:calc(var(--oom-rank-top) - 32px);color:var(--bad)}
+  .oom-v2-note--remaining{left:var(--oom-note-left);top:calc(var(--oom-rank-top) + 18px);color:var(--success)}
+  .oom-v2-foot{display:flex;align-items:center;justify-content:center;padding-top:4px}
+  .oom-v2-next.btn{display:inline-flex;align-items:center;justify-content:center;gap:var(--space-2);min-height:38px;padding:0 var(--space-4);
+    border:1px solid var(--border-default);border-radius:var(--radius-lg);background:var(--surface-2);color:var(--foreground);
+    font:650 13px/1 var(--sans);cursor:pointer;transition:background var(--duration-fast) var(--easing-default),border-color var(--duration-fast) var(--easing-default),transform var(--duration-fast) var(--easing-default)}
+  .oom-v2-next.btn:hover{background:var(--surface-3);border-color:var(--border-strong);transform:translateY(-1px)}
+  .oom-v2-next.btn:active{transform:translateY(0)}
+  .oom-v2-next.btn:focus-visible{outline:none;box-shadow:0 0 0 3px var(--state-focus)}
+  .oom-v2-next svg{width:15px;height:15px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+
+  /* OOM v2 第二步：同一个 R23 正视 Rank 平面从中心拆成自身与同层均值两份，再用均值线贯穿 R23。 */
+  .oom-v2-head h2[tabindex="-1"]:focus{outline:none}
+  .oom-v2-compare{position:relative;width:min(650px,72vw);height:clamp(190px,31vh,286px);flex:none}
+  .oom-v2-compare__kicker{position:absolute;left:50%;top:-48px;transform:translateX(-50%);color:var(--fg2);font:650 11px/1.3 var(--sans);white-space:nowrap}
+  .oom-v2-compare__plot{--oom-average-line:58%;position:absolute;inset:10px 22px 0;display:grid;grid-template-columns:1fr 1fr;gap:86px;align-items:stretch}
+  .oom-v2-compare-card{position:relative;min-width:0;transform-origin:center bottom;will-change:transform,opacity}
+  .oom-v2-compare-card .oom-v2-rank-canvas{position:absolute;inset:0;width:100%;height:100%}
+  .oom-v2-compare-card__label{position:absolute;z-index:2;left:50%;top:-8px;transform:translateX(-50%);width:max-content;max-width:calc(100% + 34px);
+    color:var(--fg);font:700 12px/1.35 var(--sans);text-align:center;white-space:nowrap}
+  .oom-v2-compare-line{position:absolute;left:-5%;right:-5%;top:var(--oom-average-line);z-index:4;border-top:1.5px solid var(--fg2);transform-origin:right center;will-change:transform,opacity}
+  .oom-v2-compare-line span{position:absolute;right:0;bottom:8px;padding:3px 6px;border-radius:var(--radius-sm);background:var(--bg);color:var(--fg2);font:700 10px/1 var(--mono);white-space:nowrap}
+  .oom-v2-view[data-scene="2"] .oom-v2-compare-card--rank{animation:oomV2SplitLeft .58s cubic-bezier(.22,.78,.25,1) both}
+  .oom-v2-view[data-scene="2"] .oom-v2-compare-card--average{animation:oomV2SplitRight .58s cubic-bezier(.22,.78,.25,1) both}
+  .oom-v2-view[data-scene="2"] .oom-v2-compare-line{animation:oomV2AverageLine .42s cubic-bezier(.25,.7,.25,1) .78s both}
+  @keyframes oomV2SplitLeft{from{opacity:.28;transform:translateX(calc(50% + 43px)) scaleX(.52)}to{opacity:1;transform:none}}
+  @keyframes oomV2SplitRight{from{opacity:.28;transform:translateX(calc(-50% - 43px)) scaleX(.52)}to{opacity:1;transform:none}}
+  @keyframes oomV2AverageLine{from{opacity:0;transform:scaleX(0)}to{opacity:1;transform:scaleX(1)}}
+  @media (prefers-reduced-motion:reduce){
+    .oom-v2-view[data-scene="2"] .oom-v2-compare-card,.oom-v2-view[data-scene="2"] .oom-v2-compare-line{animation:none}
+  }
+
+  /* OOM v2 第三步：只保留一个 R23 三维体块；64 个 Expert 的激活占位从均衡分布演化为 E27 单点极端。 */
+  .oom-v2-scene--expert .oom-v2-head h2 em{color:var(--bad)}
+  .oom-v2-scene--expert .oom-v2-visual{padding:28px 24px 4px}
+  .oom-v2-expert-volume{position:relative;width:min(720px,78vw);height:clamp(280px,43vh,390px);flex:none}
+  .oom-v2-expert-volume__topline{position:absolute;z-index:2;left:50%;top:2px;transform:translateX(-50%);display:flex;align-items:center;gap:10px;
+    color:var(--fg2);font:650 11px/1.25 var(--sans);white-space:nowrap;pointer-events:none}
+  .oom-v2-expert-volume__topline b{color:var(--fg);font:750 12px/1 var(--mono)}
+  .oom-v2-expert-volume__topline i{width:36px;border-top:1px solid var(--border-strong)}
+  .oom-v2-expert-volume__state{color:var(--bad);font:750 11px/1.25 var(--mono)}
+  .oom-v2-expert-rank-canvas{position:absolute;inset:20px 0 0;width:100%;height:calc(100% - 20px);display:block}
+  .oom-v2-expert-volume__legend{position:absolute;z-index:2;right:6%;bottom:10px;display:flex;align-items:center;gap:7px;padding:5px 8px;
+    border:1px solid color-mix(in srgb,var(--bad) 34%,var(--line));border-radius:var(--radius-sm);background:color-mix(in srgb,var(--bg) 90%,transparent);
+    color:var(--fg2);font:650 10.5px/1.2 var(--sans);pointer-events:none}
+  .oom-v2-expert-volume__legend i{width:9px;height:9px;border-radius:2px;background:var(--bad);box-shadow:inset 0 0 0 1px color-mix(in srgb,var(--bad) 58%,var(--fg))}
+  .oom-v2-expert-volume__legend b{color:var(--bad);font-weight:800}
+
+  /* OOM v2 第四步：128 Expert 路由矩阵由空白逐步显色，下方收口为三条直接可执行的优化建议。 */
+  .oom-v2-scene--router{grid-template-rows:auto minmax(220px,1fr) auto}
+  .oom-v2-scene--router .oom-v2-head h2 em{color:var(--bad)}
+  .oom-v2-scene--router .oom-v2-visual{padding:16px 24px 2px}
+  .oom-v2-router-matrix{position:relative;width:min(760px,82vw);height:clamp(230px,34vh,300px);flex:none}
+  .oom-v2-router-matrix__topline{position:absolute;z-index:2;left:50%;top:0;transform:translateX(-50%);display:flex;align-items:center;gap:10px;
+    color:var(--fg2);font:650 11px/1.25 var(--sans);white-space:nowrap;pointer-events:none}
+  .oom-v2-router-matrix__topline b{color:var(--fg);font:750 12px/1 var(--mono)}
+  .oom-v2-router-matrix__topline i{width:36px;border-top:1px solid var(--border-strong)}
+  .oom-v2-router-matrix__state{color:var(--bad);font:750 11px/1.25 var(--mono)}
+  .oom-v2-router-matrix .pto-matrix-canvas{position:absolute;inset:22px 0 0;width:100%;height:calc(100% - 22px)}
+  .oom-v2-router-matrix__hot{position:absolute;z-index:2;right:4%;bottom:2px;color:var(--bad);font:800 11px/1.2 var(--mono);white-space:nowrap;pointer-events:none}
+  .oom-v2-router-matrix__hot::before{content:"";display:inline-block;width:8px;height:8px;margin-right:7px;border-radius:2px;background:var(--bad);vertical-align:0}
+  .oom-v2-advice{width:min(900px,90vw);justify-self:center;padding-top:7px;border-top:1px solid var(--border-default)}
+  .oom-v2-advice__title{display:block;margin-bottom:7px;color:var(--fg);font:750 12px/1.2 var(--sans)}
+  .oom-v2-advice__title em{color:var(--bad);font:800 11px/1 var(--mono);font-style:normal}
+  .oom-v2-advice ol{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:0;margin:0;padding:0;list-style:none}
+  .oom-v2-advice li{display:grid;grid-template-columns:auto minmax(0,1fr);gap:8px;padding:2px 16px;min-width:0}
+  .oom-v2-advice li+li{border-left:1px solid var(--border-subtle)}
+  .oom-v2-advice li>i{color:var(--bad);font:800 11px/1.4 var(--mono);font-style:normal}
+  .oom-v2-advice b{display:block;color:var(--fg);font:750 12px/1.35 var(--sans)}
+  .oom-v2-advice span{display:block;margin-top:2px;color:var(--fg3);font:500 11px/1.35 var(--sans)}
 
   /* 第 9 步问题观测复用内存诊断面板的卡片语汇，证据改为通信量、有效带宽和等待关系。 */
   .comm-observer{--obc:var(--bad)}
@@ -1235,6 +1334,21 @@
     .stage.mem-cycle-on .canvas-bottom-tools{left:8px;bottom:198px}
     .stage.mem-cycle-on .mem-cycle{left:8px}
     .page.mem-detail-open .stage.mem-cycle-on .mem-cycle{right:calc(min(390px,46vw) + 18px)}
+    .oom-v2-view{inset:0 0 50px}
+    .oom-v2-scene{padding:12px 8px 6px;grid-template-rows:auto minmax(230px,1fr) auto}
+    .oom-v2-visual{padding:94px 98px 8px 8px}
+    .oom-v2-rank-single{width:min(420px,80vw);height:clamp(210px,29vh,260px)}
+    .oom-v2-compare{width:min(520px,76vw);height:clamp(175px,28vh,230px)}
+    .oom-v2-compare__plot{inset-inline:8px;gap:42px}
+    .oom-v2-compare-card__label{font-size:10.5px;white-space:normal}
+    .oom-v2-scene--expert .oom-v2-visual{padding:18px 4px 2px}
+    .oom-v2-expert-volume{width:min(590px,88vw);height:clamp(250px,39vh,330px)}
+    .oom-v2-expert-volume__legend{right:2%;bottom:3px}
+    .oom-v2-scene--router .oom-v2-visual{padding:10px 2px 0}
+    .oom-v2-router-matrix{width:min(620px,92vw);height:clamp(210px,31vh,260px)}
+    .oom-v2-advice{width:min(680px,94vw)}
+    .oom-v2-advice li{padding-inline:8px;gap:5px}
+    .oom-v2-advice span{font-size:10px}
   }
   @media (min-width:861px) and (max-width:1200px){
     .page.mem-detail-open,.page[data-side="off"].mem-detail-open{grid-template-columns:340px 1fr;grid-template-areas:"top top" "side stage" "foot foot"}
@@ -1332,6 +1446,7 @@
         <div class="mem-scenario" id="memScenario" hidden aria-label="内存观测场景">
           <button type="button" data-mem-scenario="base" class="is-on" aria-pressed="true">单 Step 周期</button>
           <button type="button" data-mem-scenario="danger" aria-pressed="false">OOM</button>
+          <button type="button" data-mem-scenario="danger-v2" aria-pressed="false">OOM v2</button>
           <button type="button" data-mem-scenario="peak" aria-pressed="false">内存峰值分析</button>
           <button type="button" data-mem-scenario="gap" aria-pressed="false">GAP 分析</button>
         </div>
@@ -1356,6 +1471,91 @@
         <iframe id="memCycleLane" title="Step 算子与通信泳道"></iframe>
         <div class="mem-cycle-cursor" id="memCycleCursor" hidden><i></i></div>
         <canvas id="memCycleCanvas"></canvas>
+      </section>
+      <section class="oom-v2-view" id="oomV2View" data-scene="1" hidden aria-label="OOM v2 分步分析">
+        <div class="oom-v2-scene" data-oom-v2-scene="1">
+          <header class="oom-v2-head">
+            <p class="oom-v2-head__meta">Step 74 · Layer 2 · R23</p>
+            <h2 id="oomV2Title">剩余连续内存不足前向激活申请 <em>· OOM</em></h2>
+          </header>
+          <div class="oom-v2-visual">
+            <div class="oom-v2-rank-single">
+              <canvas class="oom-v2-rank-canvas" id="oomV2RankRequest" aria-label="复用当前正视 Rank 渲染的 R23 64 GB HBM。存量内存按现有 Rank 显存带显示，绿色为可容纳的 70.5 MB 激活，红色 46.5 MB 超出 Rank 并触发 OOM。"></canvas>
+              <span class="oom-v2-plane__capacity">HBM 64 GB</span>
+              <span class="oom-v2-request" aria-hidden="true">
+                <b class="oom-v2-request__label">压倒最后一根稻草的内存申请</b>
+              </span>
+              <span class="oom-v2-note oom-v2-note--total">总申请 117 MB</span>
+              <span class="oom-v2-note oom-v2-note--overflow">超出 46.5 MB</span>
+              <span class="oom-v2-note oom-v2-note--remaining">剩余 70.5 MB</span>
+            </div>
+          </div>
+          <footer class="oom-v2-foot">
+            <button class="btn oom-v2-next" type="button" data-oom-v2-next="2" aria-label="进入根因分析第二步">根因分析<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3 8h9M8.5 4.5 12 8l-3.5 3.5"/></svg></button>
+          </footer>
+        </div>
+        <div class="oom-v2-scene" data-oom-v2-scene="2" hidden>
+          <header class="oom-v2-head">
+            <p class="oom-v2-head__meta">Step 74 · Layer 2 · R23</p>
+            <h2 tabindex="-1">R23激活高于平均值</h2>
+          </header>
+          <div class="oom-v2-visual">
+            <div class="oom-v2-compare" role="img" aria-label="截至 OOM 时的累计激活存储对比。左侧 R23 的激活明显高于右侧本 Layer 其他 Rank 的平均激活；平均线横向贯穿 R23。">
+              <span class="oom-v2-compare__kicker">截至 OOM · 累计激活存储</span>
+              <div class="oom-v2-compare__plot" aria-hidden="true">
+                <div class="oom-v2-compare-card oom-v2-compare-card--rank">
+                  <strong class="oom-v2-compare-card__label">R23的激活</strong>
+                  <canvas class="oom-v2-rank-canvas" id="oomV2RankActivation"></canvas>
+                </div>
+                <div class="oom-v2-compare-card oom-v2-compare-card--average">
+                  <strong class="oom-v2-compare-card__label">本Layer其他Rank的平均激活</strong>
+                  <canvas class="oom-v2-rank-canvas" id="oomV2RankAverage"></canvas>
+                </div>
+                <div class="oom-v2-compare-line"><span>其他Rank平均</span></div>
+              </div>
+            </div>
+          </div>
+          <footer class="oom-v2-foot">
+            <button class="btn oom-v2-next" type="button" data-oom-v2-next="3" aria-label="进入根因分析第三步">根因分析<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3 8h9M8.5 4.5 12 8l-3.5 3.5"/></svg></button>
+          </footer>
+        </div>
+        <div class="oom-v2-scene oom-v2-scene--expert" data-oom-v2-scene="3" hidden>
+          <header class="oom-v2-head">
+            <p class="oom-v2-head__meta">Step 74 · Layer 7 · R23</p>
+            <h2 tabindex="-1"><em>Expert 27</em> 计算产出激活高于其他Expert</h2>
+          </header>
+          <div class="oom-v2-visual">
+            <div class="oom-v2-expert-volume">
+              <div class="oom-v2-expert-volume__topline" aria-hidden="true"><b>R23</b><i></i><span>64 Experts · 累计激活占位</span><span class="oom-v2-expert-volume__state" data-oom-v2-distribution>均衡分布</span></div>
+              <canvas class="oom-v2-expert-rank-canvas" id="oomV2ExpertVolume" aria-label="复用当前 Rank 3D 渲染的 R23。Rank 内 64 个 Expert 的累计激活占位从近似均衡逐步变为极端，最终 Expert 27 明显高于其他 Expert。"></canvas>
+              <span class="oom-v2-expert-volume__legend" aria-hidden="true"><i></i><b>Expert 27</b><span>激活偏大</span></span>
+            </div>
+          </div>
+          <footer class="oom-v2-foot">
+            <button class="btn oom-v2-next" type="button" data-oom-v2-next="4" aria-label="进入根因分析第四步">根因分析<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3 8h9M8.5 4.5 12 8l-3.5 3.5"/></svg></button>
+          </footer>
+        </div>
+        <div class="oom-v2-scene oom-v2-scene--router" data-oom-v2-scene="4" hidden>
+          <header class="oom-v2-head">
+            <p class="oom-v2-head__meta">Layer7 专家token分配布局</p>
+            <h2 tabindex="-1">集中到R23的<em>Expert27</em></h2>
+          </header>
+          <div class="oom-v2-visual">
+            <div class="oom-v2-router-matrix">
+              <div class="oom-v2-router-matrix__topline" aria-hidden="true"><b>128 Experts</b><i></i><span>单微批 Router 分配</span><span class="oom-v2-router-matrix__state" data-oom-v2-router-state>等待填色</span></div>
+              <canvas id="oomV2RouterMatrix" aria-label="Layer 7 的 128 Expert token 分配热力矩阵。矩阵从无填色逐步呈现不均匀热力，Expert 27 最终成为集中到 R23 的显著热点。"></canvas>
+              <span class="oom-v2-router-matrix__hot" aria-hidden="true">E27 · R23 · 4,505 token</span>
+            </div>
+          </div>
+          <footer class="oom-v2-advice" aria-label="优化建议 TOP 3">
+            <strong class="oom-v2-advice__title">优化建议 · <em>TOP 3</em></strong>
+            <ol>
+              <li><i>01</i><div><b>先均衡 Router</b><span>提高负载均衡辅助损失权重，联合观察 Expert 最大值 / 均值与分配熵。</span></div></li>
+              <li><i>02</i><div><b>增加容量护栏</b><span>设置单 Expert token 上限，溢出 token 改投第二选择，避免继续集中到 E27。</span></div></li>
+              <li><i>03</i><div><b>消除热点单点</b><span>对 E27 做副本扩容或重新放置，并为热点率与 R23 激活水位设置告警。</span></div></li>
+            </ol>
+          </footer>
+        </div>
       </section>
     </div>
   </div>
@@ -1552,7 +1752,7 @@
   function observerDefaultMetric(){ return memScenario === 'gap' ? 'delayed' : 'app'; }
   var scenarioPanelDismissed = false, memoryDiagnosticState = null, memoryObserverMetric = 'allocated', memoryObserverSyncedRank = null, memoryObserverSkipRankSync = null, oomRankSet = {};
   function memDiagnostic(){ return MEM_DIAGNOSTICS[memScenario] || null; }
-  function memProblemScenario(){ return memScenario === 'danger' || !!memDiagnostic(); }
+  function memProblemScenario(){ return memScenario === 'danger' || memScenario === 'danger-v2' || !!memDiagnostic(); }
   function memDiagnosticRank(r){
     var d = memDiagnostic(); if(!d) return null;
     for(var i=0;i<d.ranks.length;i++) if(d.ranks[i].r === r) return d.ranks[i];
@@ -1577,7 +1777,7 @@
   }
   function memProblemRankAllowed(r){
     if(memDiagnostic()) return !!memDiagnosticRank(r) || !!memoryObserverLeaderMetric(r);
-    if(memScenario === 'danger') return oomEvidenceGroupRank(r) || !!oomRankSet[r] || r === selRank;
+    if(memScenario === 'danger' || memScenario === 'danger-v2') return oomEvidenceGroupRank(r) || !!oomRankSet[r] || r === selRank;
     return true;
   }
   /* TP 上下两层之间的空隙：原来 0.35，等距视角下上层卡的底棱几乎贴着下层卡的顶棱，两层的
@@ -1590,6 +1790,130 @@
   }
   cards.forEach(function(c){ c.mem = memOf(c, memScenario); });
   var memScenarioEl = document.getElementById('memScenario'), commScenarioEl = document.getElementById('commScenario'), memCycleEl = document.getElementById('memCycle'), memCycleToggleEl = document.getElementById('memCycleToggle');
+  var oomV2ViewEl = document.getElementById('oomV2View');
+  var oomV2ExpertController = null, oomV2ExpertFrame = 0, oomV2RouterController = null, oomV2RouterFrame = 0;
+  var OOM_V2_EXPERT_LEVELS = [3,4,3,4,3,3,4,3,4,3,4,3,3,4,3,4,3,4,3,3,4,3,4,3,3,4,3,10,4,3,3,4,4,3,3,4,3,4,3,3,3,4,3,4,3,3,4,3,4,3,4,3,3,4,3,4,3,3,4,3,4,3,3,4];
+  function stopOomV2ExpertVolume(){
+    if(oomV2ExpertFrame) cancelAnimationFrame(oomV2ExpertFrame);
+    oomV2ExpertFrame = 0;
+    if(oomV2ExpertController) oomV2ExpertController.destroy();
+    oomV2ExpertController = null;
+  }
+  function mountOomV2ExpertVolume(){
+    var canvas = document.getElementById('oomV2ExpertVolume'), state = oomV2ViewEl.querySelector('[data-oom-v2-distribution]');
+    if(!canvas) return;
+    stopOomV2ExpertVolume();
+    var reduced = !!(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches);
+    var progress = reduced ? 1 : 0;
+    oomV2ExpertController = {
+      update:function(next){ progress=next; drawOomV2ExpertRank(canvas,progress); return this; },
+      resize:function(){ drawOomV2ExpertRank(canvas,progress); return this; },
+      destroy:function(){}
+    };
+    oomV2ExpertController.update(progress);
+    if(reduced){ if(state) state.textContent = '极端分布 · E27'; return; }
+    var started = 0, delay = 180, duration = 1450;
+    function animate(now){
+      if(!started) started = now;
+      var elapsed = now-started, next = Math.max(0,Math.min(1,(elapsed-delay)/duration));
+      if(oomV2ExpertController) oomV2ExpertController.update(next);
+      if(state) state.textContent = next < .12 ? '均衡分布' : (next < .86 ? '分布偏移中' : '极端分布 · E27');
+      if(next < 1) oomV2ExpertFrame = requestAnimationFrame(animate); else oomV2ExpertFrame = 0;
+    }
+    oomV2ExpertFrame = requestAnimationFrame(animate);
+  }
+  var OOM_V2_ROUTER_TOKENS = (function(){
+    var values=[];
+    for(var i=0;i<128;i++) values.push(20+((i*29+i*i*7)%76));
+    values[12]=196; values[48]=283; values[76]=174; values[91]=412; values[103]=231; values[27]=4505;
+    return values;
+  })();
+  function stopOomV2RouterMatrix(){
+    if(oomV2RouterFrame) cancelAnimationFrame(oomV2RouterFrame);
+    oomV2RouterFrame = 0;
+    if(oomV2RouterController) oomV2RouterController.destroy();
+    oomV2RouterController = null;
+  }
+  function oomV2RouterScene(progress){
+    var cells=[], maxToken=4505, eased=1-Math.pow(1-Math.max(0,Math.min(1,progress)),3);
+    for(var expert=0;expert<128;expert++){
+      var tokens=OOM_V2_ROUTER_TOKENS[expert], heat=Math.log(1+tokens)/Math.log(1+maxToken), reveal=((expert*37)%128)/128*.38;
+      var shown=eased>reveal, strength=shown?Math.min(1,heat*Math.max(.22,(eased-reveal)/(1-reveal))):0;
+      var states=[], tone='neutral', style=shown?'value':'empty';
+      if(strength>.43) tone='compute';
+      if(strength>.58) states.push('column-focus');
+      if(expert===27 && eased>.62){ tone='compute'; states=['current']; }
+      cells.push({id:'oom-v2-router-e'+expert,row:Math.floor(expert/16),column:expert%16,label:expert===27?'27':'',value:tokens,
+        style:style,tone:tone,states:states});
+    }
+    return {extent:{rows:8,columns:16},axes:{rows:'Expert group',columns:'Expert'},cells:cells};
+  }
+  function mountOomV2RouterMatrix(){
+    var canvas=document.getElementById('oomV2RouterMatrix'), state=oomV2ViewEl.querySelector('[data-oom-v2-router-state]');
+    if(!canvas || !window.PtoMatrixCanvas) return;
+    stopOomV2RouterMatrix();
+    var reduced=!!(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches);
+    oomV2RouterController=window.PtoMatrixCanvas.render(canvas,oomV2RouterScene(reduced?1:0),{
+      ariaLabel:'Layer 7 的 128 Expert token 分配热力矩阵。Expert 27 获得 4,505 token，集中到 R23，明显高于其他 Expert。',
+      showAxes:false,showGrid:true,interactive:false,showTooltip:false,autoFit:true,minZoom:.0001,
+      padding:{top:22,right:30,bottom:24,left:30},cellStrokeAlpha:.11
+    });
+    if(reduced){ if(state) state.textContent='分配不均 · E27 热点'; return; }
+    var started=0, delay=160, duration=1450;
+    function animate(now){
+      if(!started) started=now;
+      var elapsed=now-started, progress=Math.max(0,Math.min(1,(elapsed-delay)/duration));
+      if(oomV2RouterController) oomV2RouterController.update(oomV2RouterScene(progress));
+      if(state) state.textContent=progress<.1?'等待填色':(progress<.88?'热力填色中':'分配不均 · E27 热点');
+      if(progress<1) oomV2RouterFrame=requestAnimationFrame(animate); else oomV2RouterFrame=0;
+    }
+    oomV2RouterFrame=requestAnimationFrame(animate);
+  }
+  function setOomV2Scene(scene, focusTitle){
+    scene = scene === 2 || scene === 3 || scene === 4 ? scene : 1;
+    if(scene !== 3) stopOomV2ExpertVolume();
+    if(scene !== 4) stopOomV2RouterMatrix();
+    oomV2ViewEl.dataset.scene = String(scene);
+    Array.prototype.forEach.call(oomV2ViewEl.querySelectorAll('[data-oom-v2-scene]'),function(panel){
+      panel.hidden = +panel.dataset.oomV2Scene !== scene;
+    });
+    if(scene === 1 || scene === 2) requestAnimationFrame(function(){
+      if(oomV2ViewEl.dataset.scene === String(scene) && !oomV2ViewEl.hidden) drawOomV2RankScene(scene);
+    });
+    if(scene === 3) requestAnimationFrame(function(){
+      if(oomV2ViewEl.dataset.scene === '3' && !oomV2ViewEl.hidden) mountOomV2ExpertVolume();
+    });
+    if(scene === 4) requestAnimationFrame(function(){
+      if(oomV2ViewEl.dataset.scene === '4' && !oomV2ViewEl.hidden) mountOomV2RouterMatrix();
+    });
+    if(focusTitle){
+      var title = oomV2ViewEl.querySelector('[data-oom-v2-scene="' + scene + '"] h2');
+      if(title && title.focus) title.focus({preventScroll:true});
+    }
+  }
+  oomV2ViewEl.addEventListener('click',function(e){
+    var next = e.target.closest ? e.target.closest('[data-oom-v2-next]') : null;
+    if(next) setOomV2Scene(+next.dataset.oomV2Next,true);
+  });
+  function syncOomV2View(){
+    var page = document.querySelector('.page'), stageEl = document.getElementById('stage');
+    var inIntro = page.dataset.tab !== 'scene', inMemComm = step === 7 || step === 8;
+    var active = inIntro && step === 7 && memScenario === 'danger-v2';
+    oomV2ViewEl.hidden = !active;
+    stageEl.classList.toggle('oom-v2-on', active);
+    stageEl.classList.toggle('mem-cycle-on', inMemComm && !active);
+    page.classList.toggle('oom-v2-active', active);
+    memCycleEl.hidden = !inMemComm || active;
+    if(window.RIMemoryCycle) window.RIMemoryCycle.setVisible(inIntro && inMemComm && !active);
+    if(!active){ stopOomV2ExpertVolume(); stopOomV2RouterMatrix(); }
+    if(active){
+      if(actVolumeController){ actVolumeController.destroy(); actVolumeController = null; }
+      page.classList.remove('mem-detail-open');
+      memDetailEl.classList.remove('is-memory','is-observer','is-communication');
+      memDetailEl.hidden = true; memDetailKickerEl.textContent = ''; memDetailTitleEl.textContent = '';
+      memDetailBodyEl.innerHTML = ''; memDetailBodyEl.removeAttribute('data-observer-sig');
+    }
+  }
   function setMemCycleCollapsed(collapsed, skipResize){
     collapsed = !!collapsed;
     memCycleEl.classList.toggle('is-collapsed',collapsed);
@@ -1636,14 +1960,16 @@
     syncStagebar(); renderRankMem(); needDraw = true; tick();
   }
   function setMemScenario(next, quiet){
-    if(next !== 'danger' && next !== 'peak' && next !== 'gap') next = 'base';
+    if(next !== 'danger' && next !== 'danger-v2' && next !== 'peak' && next !== 'gap') next = 'base';
     if(next === memScenario){
       if(!quiet && next === 'danger' && step === 7){
         scenarioPanelDismissed = false;
         memSel = null;
         queueRankFocus(OOM_AUTO_RANK, now(), 520);
       }
-      if(window.RIMemoryCycle && !quiet) window.RIMemoryCycle.replayScenario();
+      if(!quiet && next === 'danger-v2') setOomV2Scene(1,false);
+      syncOomV2View();
+      if(window.RIMemoryCycle && !quiet && next !== 'danger-v2') window.RIMemoryCycle.replayScenario();
       return;
     }
     memScenario = next;
@@ -1656,17 +1982,21 @@
     var diagnosticDefaultRank = diag ? diag.defaultRank : null;
     if(diag) memoryObserverSkipRankSync = diagnosticDefaultRank;
     syncMemScenarioButtons();
-    if(window.RIMemoryCycle) window.RIMemoryCycle.setScenario(memScenario);
+    if(window.RIMemoryCycle) window.RIMemoryCycle.setScenario(memScenario === 'danger-v2' ? 'base' : memScenario);
     var defaultMetric = observerDefaultMetric();
     if(diag && memoryDiagnosticState && memoryDiagnosticState.analysis && memoryDiagnosticState.analysis.leaders[defaultMetric]){
       diagnosticDefaultRank = memoryDiagnosticState.analysis.leaders[defaultMetric].r;
       memoryObserverSkipRankSync = diagnosticDefaultRank;
     }
     if(!quiet && memProblemScenario()) memSel = null;
+    if(memScenario === 'danger-v2'){
+      selRank = OOM_AUTO_RANK; memRankFocused = true; rankFocus = null; scenarioPanelDismissed = true; setOomV2Scene(1,false);
+    }
     if(!quiet && step === 7){
       if(diag) queueRankFocus(diagnosticDefaultRank, now(), 520);
       else if(memScenario === 'danger') queueRankFocus(OOM_AUTO_RANK, now(), 520);
     }
+    syncOomV2View();
     if(!quiet){ renderRankMem(); needDraw = true; tick(); }
   }
   function syncMemStageUi(i, preserveCamera){
@@ -1676,10 +2006,12 @@
     if(on) setMemCycleCollapsed(true, true);
     memScenarioEl.hidden = !memoryStep;
     commScenarioEl.hidden = i !== 8;
-    memCycleEl.hidden = !on;
-    document.getElementById('stage').classList.toggle('mem-cycle-on', on);
-    if(window.RIMemoryCycle){ window.RIMemoryCycle.setStep(i); window.RIMemoryCycle.setVisible(on && intro); }
+    var oomV2 = memoryStep && memScenario === 'danger-v2' && intro;
+    memCycleEl.hidden = !on || oomV2;
+    document.getElementById('stage').classList.toggle('mem-cycle-on', on && !oomV2);
+    if(window.RIMemoryCycle){ window.RIMemoryCycle.setStep(i); window.RIMemoryCycle.setVisible(on && intro && !oomV2); }
     if(i !== 7 && memScenario !== 'base') setMemScenario('base', true);
+    syncOomV2View();
     if(cv) resize(!!preserveCamera);
   }
   window.addEventListener('ri-memory-cycle-ready', function(){
@@ -1687,8 +2019,8 @@
     if(window.RIMemoryCycle){
       window.RIMemoryCycle.setStep(step);
       window.RIMemoryCycle.setRank(selRank === null ? (memScenario === 'danger' ? OOM_AUTO_RANK : MEM_AUTO_RANK) : selRank);
-      window.RIMemoryCycle.setScenario(memScenario, true);
-      if(step === 7 && memRankFocused && !rankFocus) window.RIMemoryCycle.startFromWarmup();
+      window.RIMemoryCycle.setScenario(memScenario === 'danger-v2' ? 'base' : memScenario, true);
+      if(step === 7 && memScenario !== 'danger-v2' && memRankFocused && !rankFocus) window.RIMemoryCycle.startFromWarmup();
       else if(step === 8){
         if(commRankFocus) window.RIMemoryCycle.prepareWarmup();
         else window.RIMemoryCycle.startFromWarmup();
@@ -2550,6 +2882,98 @@
 
   var OCC = 0.85;
   function BG_FACE(){ return {front:TH.bg, right:TH.bg, top:TH.bg}; }
+  /* Rank 壳体是主画布、OOM v2 正视与 OOM v2 3D 的唯一视觉实现：先垫实并画隐边，
+     中间由各场景注入内容，最后统一盖现有三面玻璃壳与编号。 */
+  function drawRankShellBase(c){
+    var ga=ctx.globalAlpha;
+    ctx.globalAlpha=ga*OCC; drawBox(c.x,c.y,c.z,CW,CH,CD,BG_FACE(),null,null);
+    ctx.globalAlpha=ga;
+    drawBox(c.x,c.y,c.z,CW,CH,CD,null,null,'rgba('+TH.rgb+',.10)');
+  }
+  function drawRankShellFaces(c){ return drawBox(c.x,c.y,c.z,CW,CH,CD,TH.face,'rgba('+TH.rgb+',.34)',null); }
+  function drawRankNumber(c,k){
+    if(!markOn.rank||rankLabelFaces&&!rankLabelFaces[c.r]) return;
+    var orthographic=viewPose!=='3d',fs=orthographic?Math.max(8,Math.min(14,cam.s*.32)):Math.max(5.5,Math.min(11,cam.s*.26));
+    ctx.font=(orthographic?'650 ':'500 ')+fs+'px '+getComputedStyle(document.body).getPropertyValue('--mono');
+    ctx.fillStyle='rgba('+TH.rgb+',.72)'; ctx.textAlign='center'; ctx.textBaseline='middle';
+    var mx=(k.D[0]+k.G[0])/2,my=(k.D[1]+k.G[1])/2;
+    if(viewPose==='front'||viewPose==='side') my-=fs*.72+2;
+    ctx.fillText('R'+c.r,mx,my);
+  }
+  function withOomV2RankRenderer(canvas,pose,paint){
+    if(!canvas) return null;
+    /* clientWidth/clientHeight 不受第二画面入场 transform 影响，避免动画首帧把共用 Rank 画布误缩小后再拉伸。 */
+    var width=Math.max(1,canvas.clientWidth),height=Math.max(1,canvas.clientHeight),dpr=Math.max(1,window.devicePixelRatio||1);
+    canvas.width=Math.max(1,Math.floor(width*dpr)); canvas.height=Math.max(1,Math.floor(height*dpr));
+    var saved={ctx:ctx,W:W,H:H,DPR:DPR,viewPose:viewPose,cam:cam,step:step,memF:memF,flatF:flatF,comm:comm,cycleMem:cycleMem,
+      markOn:markOn,rankLabelFaces:rankLabelFaces,selRank:selRank,memRankFocused:memRankFocused,memSel:memSel,pick:pick,selLayer:selLayer,pulses:pulses};
+    try{
+      ctx=canvas.getContext('2d'); W=width; H=height; DPR=dpr; ctx.setTransform(dpr,0,0,dpr,0,0); ctx.clearRect(0,0,width,height);
+      viewPose=pose; step=7; memF=1; flatF=0; comm=null; cycleMem=null; rankLabelFaces=null; selRank=null; memRankFocused=false; pick=null; selLayer=null; pulses=[];
+      markOn={rank:true,label:false,memory:true};
+      var points=[],xs=[0,CW],ys=[0,CH],zs=[0,CD];
+      xs.forEach(function(x){ys.forEach(function(y){zs.forEach(function(z){points.push(U(x,y,z));});});});
+      var u0=Math.min.apply(null,points.map(function(p){return p[0];})),u1=Math.max.apply(null,points.map(function(p){return p[0];}));
+      var v0=Math.min.apply(null,points.map(function(p){return p[1];})),v1=Math.max.apply(null,points.map(function(p){return p[1];}));
+      var pad=pose==='3d'?24:18,scale=Math.min(150,(width-pad*2)/Math.max(.1,u1-u0),(height-pad*2)/Math.max(.1,v1-v0));
+      cam={s:scale,ox:width/2-scale*(u0+u1)/2,oy:height/2-scale*(v0+v1)/2};
+      return paint();
+    } finally {
+      ctx=saved.ctx; W=saved.W; H=saved.H; DPR=saved.DPR; viewPose=saved.viewPose; cam=saved.cam; step=saved.step; memF=saved.memF; flatF=saved.flatF;
+      comm=saved.comm; cycleMem=saved.cycleMem; markOn=saved.markOn; rankLabelFaces=saved.rankLabelFaces; selRank=saved.selRank;
+      memRankFocused=saved.memRankFocused; memSel=saved.memSel; pick=saved.pick; selLayer=saved.selLayer; pulses=saved.pulses;
+    }
+  }
+  function oomV2RankMemory(kind){
+    var cap=CFG.hbm*GiB;
+    if(kind==='request') return [
+      {k:'w',bytes:cap*.22,c:MEMC.w},{k:'g',bytes:cap*.16,c:MEMC.g},{k:'opt',bytes:cap*.25,c:MEMC.opt},{k:'rsv',bytes:cap*.14,c:MEMC.rsv},{k:'act',bytes:cap*.38,c:MEMC.act}
+    ];
+    return [{k:'act',bytes:cap*(kind==='rank'?.86:.58),c:MEMC.act}];
+  }
+  function drawOomV2RankCanvas(canvas,kind,showRank){
+    return withOomV2RankRenderer(canvas,'front',function(){
+      memSel=kind==='request'?'act':null; markOn.rank=showRank!==false;
+      var c=Object.assign({},cards[OOM_AUTO_RANK],{x:0,y:0,z:0,a:1,memHold:false,ghost:null,hl:null,mem:oomV2RankMemory(kind)});
+      drawCard(c,now());
+      return c.bb;
+    });
+  }
+  function drawOomV2RankScene(scene){
+    if(scene===1){
+      var requestCanvas=document.getElementById('oomV2RankRequest'),holder=requestCanvas&&requestCanvas.parentElement,box=drawOomV2RankCanvas(requestCanvas,'request',true);
+      if(holder&&box){
+        var inset=Math.max(2,(box[2]-box[0])*.08),requestLeft=box[0]+inset,requestWidth=box[2]-box[0]-2*inset;
+        holder.style.setProperty('--oom-rank-top',box[1].toFixed(1)+'px');
+        holder.style.setProperty('--oom-request-left',requestLeft.toFixed(1)+'px'); holder.style.setProperty('--oom-request-width',requestWidth.toFixed(1)+'px');
+        holder.style.setProperty('--oom-total-left',(requestLeft+requestWidth/2).toFixed(1)+'px');
+        holder.style.setProperty('--oom-note-left',(box[2]+18).toFixed(1)+'px');
+      }
+      return;
+    }
+    var rankCanvas=document.getElementById('oomV2RankActivation'),avgCanvas=document.getElementById('oomV2RankAverage');
+    var rankBox=drawOomV2RankCanvas(rankCanvas,'rank',false),avgBox=drawOomV2RankCanvas(avgCanvas,'average',false),plot=avgCanvas&&avgCanvas.closest('.oom-v2-compare__plot');
+    if(plot&&avgBox) plot.style.setProperty('--oom-average-line',(avgBox[1]+(avgBox[3]-avgBox[1])*(1-.58)).toFixed(1)+'px');
+  }
+  function drawOomV2ExpertRank(canvas,progress){
+    return withOomV2RankRenderer(canvas,'3d',function(){
+      markOn.rank=true; markOn.memory=false;
+      var c=Object.assign({},cards[OOM_AUTO_RANK],{x:0,y:0,z:0,a:1,memHold:false,ghost:null,hl:null,mem:[]});
+      drawRankShellBase(c);
+      var eased=1-Math.pow(1-Math.max(0,Math.min(1,progress)),3),cell=(CW-.16)/8,depthCell=(CD-.16)/8,hotPoint=null;
+      var experts=[]; for(var expert=0;expert<64;expert++) experts.push(expert);
+      experts.sort(function(a,b){var va=(a+40)%64,vb=(b+40)%64;return Math.floor(vb/8)-Math.floor(va/8)||(va%8)-(vb%8);});
+      experts.forEach(function(expert){
+        var target=OOM_V2_EXPERT_LEVELS[expert],level=Math.max(1,4+(target-4)*eased),visualIndex=(expert+40)%64,col=visualIndex%8,dep=Math.floor(visualIndex/8);
+        var x=.08+col*cell+cell*.12,z=.08+dep*depthCell+depthCell*.12,h=(CH-.16)*level/10,color=expert===27&&eased>.22?TH.bad:MEMC.act;
+        drawBox(x,.08,z,cell*.76,h,depthCell*.76,{front:color,right:shade(color,.82),top:shade(color,1.28)},null,null);
+        if(expert===27&&eased>.22) hotPoint=P(x+cell*.38,.08+h,z+depthCell*.38);
+      });
+      var shell=drawRankShellFaces(c); drawRankNumber(c,shell);
+      if(hotPoint) drawChipXY(hotPoint,{key:'oom-v2-e27',t:'E27',c:TH.bad,an:'center'},1);
+      return shell;
+    });
+  }
   function drawCard(c, t){
     /* 展平进行中 3D 壳子按进度淡出：它的内容正飞去平面上自己那一行 */
     var a3 = c.a * (1 - flatF);
@@ -2561,10 +2985,8 @@
        装上五档显存柱之后）都从前排身上透出来，几排一叠就花。所以每张卡先用页面底色把自己
        三个面垫实一层再画壳——OCC 是垫的浓度：1 = 完全挡住后面，0 = 原来那样全透 */
     var ga = ctx.globalAlpha;
-    ctx.globalAlpha = ga * OCC; drawBox(c.x, c.y, c.z, CW, CH, CD, BG_FACE(), null, null);
-    ctx.globalAlpha = ga;
     /* 玻璃壳：先画背面三条隐边，再装内容，最后盖三个可见面 */
-    drawBox(c.x, c.y, c.z, CW, CH, CD, null, null, 'rgba(' + TH.rgb + ',.10)');
+    drawRankShellBase(c);
     /* 通信那一步：跟主语没话说的卡不只淡掉，显存填充也随发射线一起缩没——这一步只看谁跟谁说话 */
     var mf = memF * (c.memHold ? 0 : role === 'dim' ? 1 - fade : 1);
     if(markOn.memory && mf > 0){
@@ -2586,7 +3008,7 @@
           {front:hexA(TH.bad,.82), right:hexA(TH.bad,.68), top:hexA(TH.bad,.94)}, TH.bad, null, 1.2);
       }
     }
-    var k = drawBox(c.x, c.y, c.z, CW, CH, CD, TH.face, 'rgba(' + TH.rgb + ',.34)', null);
+    var k = drawRankShellFaces(c);
     /* 屏幕包围盒，留给点卡换主语用 */
     var xs = [k.A[0], k.B[0], k.C[0], k.D[0], k.G[0], k.H[0]], ys = [k.A[1], k.B[1], k.C[1], k.D[1], k.G[1], k.H[1]];
     c.bb = [Math.min.apply(null, xs), Math.min.apply(null, ys), Math.max.apply(null, xs), Math.max.apply(null, ys)];
@@ -2610,14 +3032,7 @@
     /* 顶面上的 R 号：随柱体连续缩小，不再因小屏 / 第 5 步缩放跌破阈值而整批消失。
        正视 / 侧视会把顶面压成一条线，编号不能继续落在顶面中心，否则正好骑住柱体上边框；
        这两个正交机位把字抬到柱顶外侧，3D 与顶视仍保留在有面积的顶面中央。 */
-    if(markOn.rank&&(!rankLabelFaces||rankLabelFaces[c.r])){
-      var orthographic=viewPose!=='3d',fs=orthographic?Math.max(8,Math.min(14,cam.s*.32)):Math.max(5.5,Math.min(11,cam.s*.26));
-      ctx.font = (orthographic?'650 ':'500 ') + fs + 'px ' + getComputedStyle(document.body).getPropertyValue('--mono');
-      ctx.fillStyle = 'rgba(' + TH.rgb + ',.72)'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-      var mx = (k.D[0] + k.G[0])/2, my = (k.D[1] + k.G[1])/2;
-      if(viewPose === 'front' || viewPose === 'side') my -= fs*0.72 + 2;
-      ctx.fillText('R' + c.r, mx, my);
-    }
+    drawRankNumber(c,k);
     ctx.globalAlpha = 1;
   }
 
@@ -3439,6 +3854,7 @@
   function syncMemDetail(c, withMem){
     if(step===8){ syncCommunicationDetail(c); return; }
     syncCommunicationFilterTag(null); syncCommunicationTotalMetric(null,false);
+    if(memScenario === 'danger-v2'){ syncOomV2View(); return; }
     if(memScenario === 'danger'){ syncOomInsight(); return; }
     if(memDiagnostic()){ syncScenarioInsight(c); return; }
     var page = document.querySelector('.page'), rankOpen = !!(c && rankInfoOpen && step >= 6 && step <= 9);
@@ -5288,6 +5704,10 @@
     [labs.node, lay && lay.labels.filter(function(l){ return l.key === 'node'; })[0]].forEach(function(l){ if(l) l.c = TH.fg2; });
     renderRankMem();   /* 读出卡里的色块也跟着显存色板换 */
     if(window.RIMemoryCycle) window.RIMemoryCycle.redraw();
+    var activeOomV2Scene=oomV2ViewEl&&!oomV2ViewEl.hidden?Number(oomV2ViewEl.dataset.scene):0;
+    if(activeOomV2Scene===1||activeOomV2Scene===2) requestAnimationFrame(function(){ drawOomV2RankScene(activeOomV2Scene); });
+    if(oomV2ExpertController) oomV2ExpertController.resize();
+    if(oomV2RouterController) oomV2RouterController.resize();
     needDraw = true; tick();
   });
 
@@ -5335,7 +5755,13 @@
     else if(e.key === 'ArrowLeft' || e.key === 'ArrowUp'){ go(step - 1); e.preventDefault(); }
     else if(e.key === '0'){ go(0); }
   });
-  window.addEventListener('resize', resize);
+  window.addEventListener('resize', function(){
+    resize();
+    if(!oomV2ViewEl||oomV2ViewEl.hidden) return;
+    var activeOomV2Scene=Number(oomV2ViewEl.dataset.scene);
+    if(activeOomV2Scene===1||activeOomV2Scene===2) requestAnimationFrame(function(){ drawOomV2RankScene(activeOomV2Scene); });
+    else if(activeOomV2Scene===3&&oomV2ExpertController) oomV2ExpertController.resize();
+  });
 
   /* ── 页签：intro 是这套分步入门，scene 先空着。状态写进 ?tab=，刷新还在同一页 ── */
   var pageEl = document.querySelector('.page'), tabsEl = document.getElementById('tabs');
@@ -5347,9 +5773,10 @@
     if(window.RIConfigPreview){ if(id === 'intro' && step === 9) window.RIConfigPreview.enter(); else window.RIConfigPreview.leave(); }
     if(id === 'scene'){ setStageCfgOpen(false); memSel = null; syncMemDetail(null, false); }
     if(id === 'intro') applySide(false, false);
+    syncOomV2View();
     if(window.RIMemoryCycle){
-      window.RIMemoryCycle.setVisible(id === 'intro' && (step === 7 || step === 8));
-      if(id === 'intro' && step === 7 && memRankFocused && !rankFocus) window.RIMemoryCycle.startFromWarmup();
+      window.RIMemoryCycle.setVisible(id === 'intro' && (step === 7 || step === 8) && memScenario !== 'danger-v2');
+      if(id === 'intro' && step === 7 && memScenario !== 'danger-v2' && memRankFocused && !rankFocus) window.RIMemoryCycle.startFromWarmup();
       else if(id === 'intro' && step === 8){
         if(commRankFocus) window.RIMemoryCycle.prepareWarmup();
         else window.RIMemoryCycle.startFromWarmup();
