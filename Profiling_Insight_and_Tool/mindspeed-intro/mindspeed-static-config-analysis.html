@@ -579,7 +579,7 @@
         <div>
           <p class="eyebrow">Rule kernel · Beyond total rank</p>
           <h1>一条乘法只能算 Rank。<br><span>真正难的是判断这个组合是否合法。</span></h1>
-          <p class="lede"><code>total rank = DP × PP × TP × CP</code> 是行业共有的入门规则，不构成护城河。当前 Demo 已经能进一步区分框架 Profile、并行算法和专家域语义，找出“乘积正确、启动仍会失败”的配置。</p>
+          <p class="lede"><code>total rank = DP × PP × TP × CP</code> 是行业共有的入门规则，不构成护城河。当前 Demo 已将 MindSpeed 高级 CP、昇腾通信特性、MoE overlap 与内存互斥等启动前约束沉淀为确定性规则，并把卡型和 HCCL 建议与合法性结论严格分离。</p>
           <div class="hero-actions">
             <a class="button primary" href="#rule-cases">看具体反例 <span>↓</span></a>
             <a class="button secondary" href="#scorecard">直接看结论 <span>↗</span></a>
@@ -588,12 +588,12 @@
         <aside class="hero-board" aria-label="当前规则内核摘要">
           <span>IMPLEMENTED KERNEL · 2026-10-14</span>
           <div class="stat-grid">
-            <div class="stat"><strong>28</strong><span>结构化诊断代码</span></div>
+            <div class="stat"><strong>82</strong><span>静态诊断码（错误 / 提醒）</span></div>
+            <div class="stat"><strong>6</strong><span>非阻塞策略建议码</span></div>
             <div class="stat"><strong>3</strong><span>EP 域语义：split / orthogonal / mf</span></div>
-            <div class="stat"><strong>3</strong><span>PP 分层口径：uniform / dynamic / offset</span></div>
-            <div class="stat"><strong>2</strong><span>已建模 CP 算法：Ulysses / Ring</span></div>
+            <div class="stat"><strong>5</strong><span>CP：Ulysses / Ring / Hybrid / Adaptive / Hybrid Adaptive</span></div>
           </div>
-          <p class="hero-note"><span class="status done">已实现</span> 数字按当前 <code>config-core</code> 源码统计；规则数量不多于成熟框架自身，只代表已落入纯计算核心的静态规则。</p>
+          <p class="hero-note"><span class="status done">已实现</span> 数字按当前 <code>config-core</code> 与 Golden 基线统计；82 个诊断码承载合法性错误与兼容性提醒，6 个建议码只提供优化方向，不把性能启发式误报为错误。</p>
         </aside>
       </div>
     </section>
@@ -705,6 +705,110 @@
             </div>
             <p class="rule-takeaway">优势：检查字段之间的状态一致性，而非孤立检查数值范围。</p>
           </article>
+
+          <article class="rule-card">
+            <div class="rule-card-head"><span class="kind">R07 · HYBRID CP</span><span class="status done">已实现</span></div>
+            <h3>CP 总度数正确，Hybrid 内部仍可能无法分解</h3>
+            <p>Hybrid CP 不只检查 <code>sequence % CP</code>，还要求 Ulysses degree 能整除 CP、Ring degree 大于 1，并继续联动 Head 与 window。</p>
+            <div class="rule-code">
+              <span>CP=8 · Ulysses degree=3 · TP=2</span>
+              <span class="pass">普通 CP：sequence % 8 = 0 → 可通过</span>
+              <span class="fail">Hybrid：8 % 3 != 0 → 拒绝</span>
+              <span class="profile">MINDSPEED_HYBRID_CP_DEGREES_FORM_CP</span>
+            </div>
+            <p class="rule-takeaway">优势：校验算法内部的二维分解，而不是只认一个 CP 总数。</p>
+          </article>
+
+          <article class="rule-card">
+            <div class="rule-card-head"><span class="kind">R08 · ASCEND MC2 / COC</span><span class="status done">已实现</span></div>
+            <h3>两个开关各自合法，组合起来却互斥</h3>
+            <p>Schema 只能证明布尔值格式正确；规则核心会判断 MC2 与 CoC 不能同时启用，并进一步检查它们与 MoE 的兼容关系。</p>
+            <div class="rule-code">
+              <span>use_ascend_mc2=true · use_ascend_coc=true</span>
+              <span class="pass">字段类型：两个 boolean 都合法</span>
+              <span class="fail">MindSpeed 组合：MC2 ∧ CoC → 拒绝</span>
+              <span class="profile">MINDSPEED_MC2_COC_MUTUALLY_EXCLUSIVE</span>
+            </div>
+            <p class="rule-takeaway">优势：从单字段校验进入昇腾通信特性的组合合法域。</p>
+          </article>
+
+          <article class="rule-card">
+            <div class="rule-card-head"><span class="kind">R09 · AMPIPE PREREQUISITES</span><span class="status done">已实现</span></div>
+            <h3>启用 AMPipe 不是填一个 degree 就够了</h3>
+            <p>核心同时检查 FlashAttention、MoE、EP、deepspeed_moe、序列整除，以及与 MC2、NanoPipe、多个 overlap / recompute 开关的互斥。</p>
+            <div class="rule-code">
+              <span>ampipe_degree=2 · flash_attention=false · EP=1</span>
+              <span class="pass">范围校验：degree ≥ 1</span>
+              <span class="fail">前置条件：缺 FlashAttention 且 EP≤1 → 拒绝</span>
+              <span class="profile">返回两个独立稳定诊断码与关联字段</span>
+            </div>
+            <p class="rule-takeaway">优势：一次判断完整功能开关簇，而不是等到启动路径逐个断言。</p>
+          </article>
+
+          <article class="rule-card">
+            <div class="rule-card-head"><span class="kind">R10 · 2D TP</span><span class="status done">已实现</span></div>
+            <h3>TP=8 合法，不代表 2D TP 的两个维度合法</h3>
+            <p>启用 2D TP 后，必须满足 <code>TP = tp_x × tp_y</code>，并检查 CP 模式及与 MoE、CoC、AMPipe、NanoPipe、Sequence Parallel、Fused RMSNorm 的支持边界。</p>
+            <div class="rule-code">
+              <span>TP=8 · tp_x=2 · tp_y=2</span>
+              <span class="pass">普通 TP：8 是有效并行度</span>
+              <span class="fail">2D TP：8 != 2×2 → 拒绝</span>
+              <span class="profile">MINDSPEED_TP2D_FACTORS_MATCH_TP</span>
+            </div>
+            <p class="rule-takeaway">优势：把特性维度、并行维度和互斥矩阵放在同一次静态求值中。</p>
+          </article>
+
+          <article class="rule-card">
+            <div class="rule-card-head"><span class="kind">R11 · ND MATMUL</span><span class="status done">已实现</span></div>
+            <h3>TP 乘积合法，也可能无法进入 ND MatMul 路径</h3>
+            <p>ND MatMul 还要检查归一化类型、checkpoint 加载状态，以及 TP 能否分别被 ND1 / ND2 的 dim1 切分。</p>
+            <div class="rule-code">
+              <span>TP=8 · ND1 dim1=3 · normalization=layernorm</span>
+              <span class="pass">普通 TP：8 是有效并行度</span>
+              <span class="fail">ND MatMul：8 % 3 != 0 且 LayerNorm 不兼容</span>
+              <span class="profile">返回维度整除与归一化两个独立诊断</span>
+            </div>
+            <p class="rule-takeaway">优势：不仅知道“开了特性”，还知道它能否进入对应算子路径。</p>
+          </article>
+
+          <article class="rule-card">
+            <div class="rule-card-head"><span class="kind">R12 · MOE OVERLAP</span><span class="status done">已实现</span></div>
+            <h3>Overlap 开关为 true，不代表通信重叠链路完整</h3>
+            <p>AllToAll / AllGather overlap 各自绑定 dispatcher，并共同要求异步 permutation 与 grouped GEMM；TP&gt;1 的 AllToAll 还要求 TP extend EP。</p>
+            <div class="rule-code">
+              <span>alltoall_overlap=true · dispatcher=allgather</span>
+              <span class="fail">dispatcher 不匹配 → 拒绝</span>
+              <span class="fail">async permutation=false · grouped GEMM=false → 再拒绝两项</span>
+              <span class="profile">一次输入同时暴露完整前置条件链</span>
+            </div>
+            <p class="rule-takeaway">优势：交叉检查 dispatcher、通信、算子和并行域，不做孤立布尔校验。</p>
+          </article>
+
+          <article class="rule-card">
+            <div class="rule-card-head"><span class="kind">R13 · MEMORY / RECOMPUTE</span><span class="status done">已实现</span></div>
+            <h3>三个“省显存”能力同时打开，反而可能互斥</h3>
+            <p>Adaptive Recompute 不能与静态重计算并用；Adaptive Memory Optimization 又与 AMPipe、Adaptive Recompute 和静态重计算分别互斥。</p>
+            <div class="rule-code">
+              <span>adaptive_memory=true · adaptive_recompute=true · recompute=full</span>
+              <span class="pass">逐字段看：三个枚举 / boolean 都合法</span>
+              <span class="fail">组合语义：同时命中三类互斥关系</span>
+              <span class="profile">诊断定位到 features 与 memory 两个配置域</span>
+            </div>
+            <p class="rule-takeaway">优势：能发现“每个开关都合理、组合却没有合法执行路径”的配置。</p>
+          </article>
+
+          <article class="rule-card">
+            <div class="rule-card-head"><span class="kind">R14 · NON-BLOCKING STRATEGY</span><span class="status done">已实现</span></div>
+            <h3>不推荐，不等于不合法</h3>
+            <p>910B 上 CP=8、序列 32768 时，每个 CP 分片只有 4K tokens，低于 Auto Settings 的 8K 启发式；核心只给降低 CP 的建议，不改变合法性。</p>
+            <div class="rule-code">
+              <span>card=910B · sequence=32768 · CP=8</span>
+              <span class="pass">静态约束全部通过 → valid=true</span>
+              <span class="profile">建议保留 CP 候选：[1,2,4]</span>
+              <span>MINDSPEED_CP_SLICE_BELOW_DEVICE_HEURISTIC</span>
+            </div>
+            <p class="rule-takeaway">优势：把“不能运行”和“可能不优”分成两条输出通道。</p>
+          </article>
         </div>
       </div>
     </section>
@@ -716,13 +820,13 @@
             <p class="eyebrow">02 / Direct answers</p>
             <h2 id="scorecard-title">规则到底强在哪里？<br>先给不绕弯的答案。</h2>
           </div>
-          <p>优势只按当前 Demo 代码认定。上游 MindSpeed 已有但尚未抽取进 <code>config-core</code> 的规则，不计入“已实现”。</p>
+          <p>优势只按当前 Demo 代码、来源引用和 Golden 测试认定。静态合法性与静态策略建议已补全；环境版本兼容和实测性能仍不计入“已实现”。</p>
         </div>
         <div class="truth-strip">
-          <article class="truth-item"><span class="status partial">数量</span><strong class="no">不是更多</strong><p>当前 28 个诊断码，覆盖面小于成熟 MindSpeed / Megatron 启动校验；不能以数量领先为卖点。</p></article>
-          <article class="truth-item"><span class="status done">严谨性</span><strong class="yes">局部更严谨</strong><p>在已建模区域，会同时检查算法、Profile、字段联动和完整候选复验，避免只看整除关系。</p></article>
+          <article class="truth-item"><span class="status done">数量</span><strong class="yes">已扩展到 82 + 6</strong><p>82 个静态诊断码覆盖基础并行和 MindSpeed 高级特性；6 个策略码独立输出。数量用于审计覆盖，不包装成绝对领先。</p></article>
+          <article class="truth-item"><span class="status done">严谨性</span><strong class="yes">组合约束更完整</strong><p>同时检查算法、Profile、前置条件、互斥矩阵和字段联动；修复候选还要经过全量规则复验。</p></article>
           <article class="truth-item"><span class="status done">交叉对比</span><strong class="yes">这是强项</strong><p>同一规范化配置可显式比较 split / orthogonal / mf、uniform / dynamic / offset 等口径。</p></article>
-          <article class="truth-item"><span class="status partial">昇腾栈</span><strong class="some">目前仅部分亲和</strong><p>已有 MindSpeed CP 与动态 PP；卡型、HCCL 算法和 CANN 版本兼容矩阵尚未实现。</p></article>
+          <article class="truth-item"><span class="status done">昇腾栈</span><strong class="yes">静态层已专项建模</strong><p>已覆盖 MC2/CoC、AMPipe、卡型 CP 裁剪与 HCCL Buffer 公式；CANN / 驱动版本矩阵仍属下一层环境兼容能力。</p></article>
         </div>
       </div>
     </section>
@@ -734,7 +838,7 @@
             <p class="eyebrow">03 / Kernel comparison</p>
             <h2 id="comparison-title">把体验与内核分开看，<br>先比较规则本身。</h2>
           </div>
-          <p>直接竞品仍是 MindSpeed / Megatron-Core 自身断言；Schema 与通用大模型是替代方案。当前 Demo 不是靠全量覆盖获胜，而是靠跨口径的独立、确定性诊断形成差异；下一层再保留体验侧对比。</p>
+          <p>直接竞品仍是 MindSpeed / Megatron-Core 自身断言；Schema 与通用大模型是替代方案。当前 Demo 把分散在框架启动路径里的规则抽成开训前可复用内核，并把合法性、兼容性和策略建议拆成稳定输出；下一层再保留体验侧对比。</p>
         </div>
         <div class="matrix-wrap" role="region" aria-label="规则内核竞品对比表" tabindex="0">
           <table class="matrix">
@@ -742,13 +846,15 @@
               <tr><th>内核维度</th><th>框架自身断言</th><th>Schema / IDE</th><th>通用大模型</th><th>当前 Demo</th></tr>
             </thead>
             <tbody>
-              <tr><td>规则广度</td><td>最强，覆盖自身完整参数面</td><td>字段类型、范围、枚举</td><td>知识面广但不保证稳定执行</td><td class="ours">28 个诊断码；当前不领先</td></tr>
+              <tr><td>规则广度</td><td>覆盖自身完整参数面，但分散在各启动路径</td><td>字段类型、范围、枚举</td><td>知识面广但不保证稳定执行</td><td class="ours">82 个静态诊断码 + 6 个建议码，覆盖本轮映射能力</td></tr>
               <tr><td>跨字段代数约束</td><td>强，贴近实际代码路径</td><td>通常较弱</td><td>能解释，不保证每次一致</td><td class="ours">公式化、确定性执行</td></tr>
-              <tr><td>算法级 CP 约束</td><td>自身算法最完整</td><td>通常没有</td><td>取决于提示与上下文</td><td class="ours">已落地 Ulysses / Ring 细分公式</td></tr>
+              <tr><td>算法级 CP 约束</td><td>自身算法最完整</td><td>通常没有</td><td>取决于提示与上下文</td><td class="ours">Ulysses / Ring / Hybrid / Adaptive，含 degree、window、Head 与序列联动</td></tr>
+              <tr><td>昇腾特性组合约束</td><td>源码断言最贴近真实路径</td><td>能约束开关类型，难表达互斥簇</td><td>可解释，执行稳定性依赖上下文</td><td class="ours">MC2/CoC、AMPipe、2D TP、ND MatMul、MoE overlap 确定性执行</td></tr>
+              <tr><td>策略与错误隔离</td><td>校验与 auto settings 分属不同模块</td><td>通常没有性能策略</td><td>容易把经验建议说成必选项</td><td class="ours"><code>errors/warnings</code> 与 <code>suggestions</code> 分离，启发式不改变 valid</td></tr>
               <tr><td>跨框架口径比较</td><td>通常只判本框架</td><td>每套 Schema 独立</td><td>可以讨论但难做稳定基线</td><td class="ours">显式 Profile 与 compatibility-gap</td></tr>
               <tr><td>非均匀 PP 表达</td><td>各框架原生支持自己的形式</td><td>可描述形状，难验证分层语义</td><td>可给建议</td><td class="ours">同时建模 MCore list 与 MindFormers offset</td></tr>
               <tr><td>修复候选正确性</td><td>通常报断言，不负责搜索</td><td>字段级 quick fix</td><td>建议可能引入新冲突</td><td class="ours">1–4 字段候选逐个完整复验</td></tr>
-              <tr><td>昇腾卡型 / HCCL / CANN</td><td>MindSpeed 上游最强</td><td>取决于人工维护</td><td>能引用公开知识</td><td class="ours">仅部分；尚未形成版本兼容矩阵</td></tr>
+              <tr><td>昇腾卡型 / HCCL / CANN</td><td>MindSpeed 上游最强</td><td>取决于人工维护</td><td>能引用公开知识</td><td class="ours">已实现卡型 CP 启发式与 HCCL Buffer 静态复算；CANN 版本矩阵待建</td></tr>
             </tbody>
           </table>
         </div>
@@ -770,23 +876,23 @@
             <div class="product-column-head">
               <div class="product-kicker"><span>PARALLEL TOPOLOGY V2 · INLINE DERIVATION</span><span class="status partial">拓扑解释侧重</span></div>
               <h3>拓扑可视化校验器</h3>
-              <p>与 MCP 一样支持改值即校验和一键修复。不同之处是校验、派生 DP、容量粗估与绘图共用页面内的 <code>derive(c)</code>；阻断错误出现时会清空几何舞台，而不是把错误画到拓扑上。</p>
+              <p>与 MCP 一样支持改值即校验和联动配平。当前源码的 <code>validate()</code> / <code>warn()</code> 已覆盖 13 类阻断判断和 7 类非阻断提醒；校验、容量粗估与绘图仍由页面内逻辑共同驱动。</p>
               <div class="product-metrics">
-                <div class="product-metric"><strong>12</strong><span>独立约束或诊断信号</span></div>
-                <div class="product-metric"><strong>7 + 5</strong><span>阻断错误 + 非阻断提醒</span></div>
-                <div class="product-metric"><strong>6 / 7</strong><span>阻断错误带简单近邻修复</span></div>
+                <div class="product-metric"><strong>20</strong><span>独立约束或诊断信号</span></div>
+                <div class="product-metric"><strong>13 + 7</strong><span>阻断判断 + 非阻断提醒</span></div>
+                <div class="product-metric"><strong>2</strong><span>算法级 CP：Ulysses / Ring</span></div>
               </div>
             </div>
             <div class="product-body">
               <h4>规则覆盖面</h4>
               <ul class="coverage-list">
-                <li><strong>Rank / DP：</strong>从 world 反推 DP，输入更少；相对代价是不能像 MCP 一样显式表达 DP 与多种 EP 域语义。</li>
-                <li><strong>基础整除：</strong>Heads÷TP、Layers÷PP、Sequence÷(2·CP)、Experts÷EP；其中前三类在 MCP 中也有对应或更细的算法分支。</li>
-                <li><strong>相对 MCP 的规则增量：</strong>ETP、MoE 最小卡数与 stage 平面 folding；另有 Hidden÷Heads、KV Heads÷TP 通用提醒，但尚未区分显式 head_dim / qk_head_dim 等模型 Profile。</li>
-                <li><strong>相对 MCP 的诊断增量：</strong>同一抽屉直接显示 GA&lt;PP、流水线气泡率和 stage0 理论显存/HBM，但使用页面级估算口径。</li>
+                <li><strong>基础合法性：</strong>覆盖显式 DP 与三种 EP 域下的 World、层数/PP、Head/TP、Dense/Expert FFN、Ulysses/Ring、VPP、专家/EP、Top-K 和 Total Rank 量程；不是只有 Rank 乘积。</li>
+                <li><strong>EP / ETP：</strong>显式提供 split / orthogonal / mf 三种 EP 域，并用“专家切 TP”控制 Expert FFN 约束和专家权重切分；这一部分比旧对比描述更完整。</li>
+                <li><strong>相对 MCP 的诊断增量：</strong>参考规模超限、TP 跨节点、MoE shard 过窄、KV Head 复制、Ulysses 头切分跨节点、FSDP2 混用、Micro Batch 不足与气泡率，共 7 类性能提醒。</li>
+                <li><strong>MCP 的新增覆盖：</strong>Hybrid/Adaptive CP、MC2/CoC、AMPipe、2D TP、ND MatMul、MoE overlap、重计算互斥，以及卡型 CP / HCCL Buffer 策略，拓扑页当前没有对应规则。</li>
                 <li><strong>相对 MCP 的呈现增量：</strong>配置合法后，提供更专门的逐 Rank、切分刀法和通信几何视角；非法状态本身没有几何解释。</li>
               </ul>
-              <p class="method-note"><strong>相对结论：</strong>“实时提示、修复后重算”不是它独有的优势。它比 MCP 更突出的地方是合法配置下的专门拓扑视角，以及几项 MCP 尚未纳入主校验的 ETP / 性能信号；弱项是非法时不渲染几何、规则与视图耦合，也没有稳定诊断契约和来源版本。</p>
+              <p class="method-note"><strong>相对结论：</strong>拓扑校验器应按 20 个信号评价，而不是旧版的 12 个。它在 ETP 拓扑解释和 7 类性能提醒上仍有独立价值；MCP 在静态规则广度、稳定输出码、来源版本、Golden 与跨入口复用上已经明显扩大领先范围。</p>
             </div>
           </article>
 
@@ -796,8 +902,8 @@
               <h3>MindSpeed Config MCP</h3>
               <p>同样在页面内实时显示错误、关联字段和修复按钮；此外把页面编辑、预置切换预检、YAML / JSON / Shell 导入与 MCP 工具统一到 <code>config-core</code> 契约。</p>
               <div class="product-metrics">
-                <div class="product-metric"><strong>28</strong><span>稳定诊断码</span></div>
-                <div class="product-metric"><strong>4</strong><span>主要规则族</span></div>
+                <div class="product-metric"><strong>82 + 6</strong><span>静态诊断码 + 策略码</span></div>
+                <div class="product-metric"><strong>9</strong><span>清单分组（含策略）</span></div>
                 <div class="product-metric"><strong>1–4</strong><span>字段修复候选并全量复验</span></div>
               </div>
             </div>
@@ -805,12 +911,14 @@
               <h4>规则覆盖面</h4>
               <ul class="coverage-list">
                 <li><strong>相对拓扑页的 PP 增量：</strong>除均匀 PP 外，还覆盖 MindSpeed-LLM 动态列表、MindFormers offset、VPP 及 Profile 适配。</li>
-                <li><strong>算法级 CP：</strong>Ulysses 检查 Heads÷(TP·CP) 与 Sequence÷CP；Ring 单独检查 Sequence÷(2·CP)。</li>
-                <li><strong>相对拓扑页的结构增量：</strong>Heads÷KV Heads、Dense/Expert FFN÷TP、Top-K 和 Dense/MoE 状态一致性。</li>
+                <li><strong>算法级 CP：</strong>除 Ulysses / Ring 外，已覆盖 Hybrid / Adaptive 的 degree、window、Head 和序列联动。</li>
+                <li><strong>昇腾专项特性：</strong>MC2/CoC、AMPipe、2D TP、ND MatMul、MoE dispatcher/overlap 与重计算组合均返回稳定诊断码。</li>
+                <li><strong>静态策略：</strong>910B/A2G、910_93 的 CP 候选裁剪和 HCCL 各通信域 Buffer 复算作为非阻塞 <code>suggestions</code> 返回。</li>
+                <li><strong>结构与 MoE 增量：</strong>双方都有 Dense/Expert FFN÷TP 和 Top-K；MCP 额外覆盖 Heads÷KV Heads、Dense/MoE 状态、dispatcher overlap、TP extend EP 与 BMM MC2。</li>
                 <li><strong>相对拓扑页的 EP 增量：</strong>显式区分 split / orthogonal / mf 三种域语义，而不是固定采用 stage 平面 folding。</li>
                 <li><strong>相对拓扑页的工程增量：</strong>code、fields、formula、sourceRef，字段标记、锁定策略、多候选排序、全量复验及导入/切换校验。</li>
               </ul>
-              <p class="method-note"><strong>相对结论：</strong>MCP 不缺少配置闭环：非法时会标记字段、展开相关面板、保留上一组合法图形，并同时给出页面联动建议和 MCP 多字段修复候选。待补齐项主要是 ETP folding 与 GA/气泡；Attention 结构侧还需按模型 Profile 建模 HeadDim 来源和 KV Head 的 TP 分配策略，容量结果则保持为独立工具输出。</p>
+              <p class="method-note"><strong>相对结论：</strong>MCP 不缺少配置闭环：非法时会标记字段、展开相关面板、保留上一组合法图形，并同时给出页面联动建议和 MCP 多字段修复候选。当前又完成高级静态合法性与非阻塞策略层；相对拓扑页仍应吸收 ETP 几何、跨节点和气泡等性能提醒。</p>
             </div>
           </article>
         </div>
@@ -819,33 +927,33 @@
           <div class="semantic-diff-head"><span>规则主题</span><span>拓扑可视化校验器</span><span>MindSpeed Config MCP</span></div>
           <div class="semantic-diff-row">
             <div class="concept">World / DP / EP</div>
-            <div>从 world 反推 DP；EP 被视为 stage 平面内折叠，不进入 world 乘积。</div>
-            <div>DP 是显式输入；根据 split / orthogonal / mf Profile 决定 EP 域及是否进入 world。<br><span class="caution">结论：概念重叠，但不能直接复用同一公式。</span></div>
+            <div>DP 是显式输入；split / orthogonal / mf 分别决定 EP 的切分域和是否进入 World，且与页面拓扑、容量联动。</div>
+            <div>抽取并复用同一组基础域语义，再增加稳定 code、fields、formula 和 sourceRef。<br><span class="caution">结论：这一项是共同基线，不应再写成 MCP 独有规则。</span></div>
           </div>
           <div class="semantic-diff-row">
             <div class="concept">PP 分层</div>
-            <div>只接受均匀分层：<code>layers % PP === 0</code>。</div>
-            <div>均匀规则相同；额外支持 dynamic list、MindFormers offset、VPP 及其互斥和形状检查。</div>
+            <div>PP 只要求每 Stage 至少一层，无 VPP 时可隐式近均衡分成 12/12/11/11；VPP&gt;1 才要求层数被 PP×VPP 整除。</div>
+            <div>要求把口径显式化：uniform、MindSpeed-LLM dynamic list 或 MindFormers offset；因此能校验列表/矩阵形状、总和、Profile 与 VPP 互斥。</div>
           </div>
           <div class="semantic-diff-row">
             <div class="concept">CP / Sequence</div>
             <div>无论通信原语如何选择，都固定要求 <code>seq % (2·CP) === 0</code>。</div>
-            <div>按算法分派：Ulysses 为 <code>seq % CP</code>，Ring 才是 <code>seq % (2·CP)</code>；Ulysses 还约束 Heads÷(TP·CP)。</div>
+            <div>按算法分派 Ulysses / Ring，并继续覆盖 Hybrid / Adaptive 的 degree、window、Head 与序列联动；不是把所有 CP 都套入同一整除式。</div>
           </div>
           <div class="semantic-diff-row">
             <div class="concept">Attention / FFN</div>
-            <div>Heads÷TP 为错误；Hidden÷Heads、KV Heads÷TP 是不区分模型 Profile 的通用警告；没有 Heads÷KV Heads 与 FFN÷TP。</div>
-            <div>Heads÷TP、Heads÷KV Heads、Dense/Expert FFN÷TP 为错误。待建模的是 Profile 感知的 HeadDim 来源与 KV Head TP 分配，而不是重复增加一条 Heads÷KV Heads 规则。</div>
+            <div>Heads÷TP、Dense FFN÷TP，以及开启专家切 TP 后的 Expert FFN÷TP 都是阻断错误；KV Heads 无法按 TP/TP×CP 均分时按“组内复制”做性能提醒。</div>
+            <div>同样覆盖 Heads÷TP 与 Dense/Expert FFN÷TP；另把 Heads÷KV Heads 固化为结构诊断。两边都仍需要模型 Profile 才能严谨判断显式 HeadDim 来源。</div>
           </div>
           <div class="semantic-diff-row">
             <div class="concept">MoE / ETP</div>
-            <div>强在 ETP、最小卡数与 stage 平面 folding；未检查 Top-K 和 Dense/EP 状态一致性。</div>
-            <div>强在 Top-K、Dense/MoE 状态和三种 EP 域；Expert TP 目前是开关语义，缺少拓扑页的 ETP folding 公式。</div>
+            <div>覆盖专家数÷EP、Top-K、三种 EP 域和 ETP 开关，并把 ETP 映射到专家权重、容量与几何；另有 MoE shard 过窄提醒。</div>
+            <div>覆盖同类基础语义，并新增 Dense/MoE 状态一致性、dispatcher overlap、TP extend EP、BMM MC2 等组合约束；ETP 的几何表达仍不如拓扑页。</div>
           </div>
           <div class="semantic-diff-row">
             <div class="concept">性能 / 容量</div>
-            <div>比 MCP 主校验多 GA、气泡率和 stage0 显存/HBM 标签，查看更集中；但容量是页面级粗估，信号没有稳定诊断码。</div>
-            <div>主校验缺少 GA / 气泡规则；容量由独立工具给出分项、瓶颈 Stage、风险阈值与 theoretical / model-informed 口径，审计信息更完整。</div>
+            <div>提供 7 类非阻断提醒：规模、跨节点、MoE shard、KV 复制、Ulysses 跨节点、FSDP2 混用、Micro Batch/气泡；同时显示 stage0 HBM 粗估。</div>
+            <div>提供卡型 CP 搜索、HCCL Buffer、长序列重计算和优化器分片方向；容量工具给出分项、瓶颈 Stage 和置信口径，但尚未覆盖拓扑页全部 7 类提醒。</div>
           </div>
           <div class="semantic-diff-row">
             <div class="concept">非法状态呈现</div>
@@ -854,7 +962,7 @@
           </div>
           <div class="semantic-diff-row">
             <div class="concept">修复与证据</div>
-            <div>与 MCP 一样可就地应用修复；主要给单字段最近除数/倍数，6/7 类阻断错误有候选，简单直接但没有候选评分、字段锁定与来源版本。</div>
+            <div>多数基础冲突通过邻近因子、倍数和并行度联动配平；TP 手输锚点等无法安全代改的场景保留报错与取消，不提供来源版本和稳定诊断码。</div>
             <div>除页面即时联动建议外，还能搜索 1–4 字段候选、尊重锁定字段、按目标排序并逐个全量复验；能力更完整，交互和计算也更重。</div>
           </div>
         </div>
@@ -862,7 +970,7 @@
         <div class="product-verdicts" aria-label="产品对比结论">
           <article class="product-verdict"><span class="status done">共同基线</span><h3>两边都已形成配置闭环</h3><p>实时提示、错误说明、关联字段、可应用修复和修复后重算是共有能力，不能算作任何一方的相对优势。两边遇到硬错误都会停止使用非法配置更新图形。</p></article>
           <article class="product-verdict recommended"><span class="status done">综合能力</span><h3>MCP 的规则与修复体系更完整</h3><p>相对拓扑页，MCP 覆盖更多框架与算法语义，诊断可追溯，支持导入和预置预检，并提供锁定字段、多目标排序、多字段候选与全量复验，更适合作为共享事实源。</p></article>
-          <article class="product-verdict"><span class="status partial">拓扑页增量</span><h3>优势有限，但边界明确</h3><p>它多出 ETP folding、GA/气泡等信号，也提供通用的 HeadDim 与 KV Head TP 提醒；合法配置下的逐 Rank、切分和通信视角更专门。</p></article>
+          <article class="product-verdict"><span class="status partial">拓扑页增量</span><h3>20 个信号中仍有独有价值</h3><p>ETP 几何、跨节点、MoE shard、KV 复制、FSDP2 混用和 Micro Batch/气泡等提醒尚未全部进入 MCP；合法配置下的逐 Rank、切分和通信视角也更专门。</p></article>
           <article class="product-verdict"><span class="status future">叠加方向</span><h3>以 MCP 为底座吸收增量</h3><p>把拓扑页经过 Profile 澄清后的独有规则抽入 <code>config-core</code>，保留其专门可视化作为结构化结果消费者；先按模型结构与 CP / EP Profile 消歧，再用共享 Golden 样例做差分测试，避免重复规则给出相反结论。</p></article>
         </div>
       </div>
@@ -903,7 +1011,7 @@
             <p class="eyebrow">06 / Ascend affinity audit</p>
             <h2 id="ascend-title">更亲和昇腾、HCCL、CANN？<br>也用输入与结果说话。</h2>
           </div>
-          <p>已实现能力给出可复算案例；只有经验系数的标“部分实现”；当前契约尚不能表达的 CANN 版本关系明确标“尚未实现”。</p>
+          <p>已实现能力给出可复算案例。MindSpeed 静态约束、卡型 CP 启发式和 HCCL Buffer 公式均已进入纯计算核心；当前契约尚不能表达的 CANN 版本关系继续明确标“尚未实现”。</p>
         </div>
         <div class="ascend-grid">
           <article class="ascend-card">
@@ -931,28 +1039,28 @@
             <p class="evidence-note">价值不是“更宽松”，而是准确表达 MindSpeed-LLM 已支持的合法配置域。</p>
           </article>
           <article class="ascend-card">
-            <span class="status partial">部分实现 · HCCL 容量预留</span>
-            <h3>案例：并行域越多，通信预留越高</h3>
-            <p>当前理论容量按活跃通信域计入 HCCL buffer，并对 EP 额外增加一个通信域；系数为每域 <code>0.2 GiB×2</code>。</p>
+            <span class="status done">已实现 · HCCL Buffer 自适应</span>
+            <h3>案例：不再用统一 200 MiB 猜所有通信域</h3>
+            <p>核心按锁定 MindSpeed 公式，结合 sequence、Micro Batch、Hidden、TP/PP/CP/EP、dispatcher 与负载不均衡 factor，分别复算各通信组 Buffer。</p>
             <div class="stack-example">
-              <span>TP=4 · PP=8 · DP=2 · CP=2 · EP=4</span>
-              <span>活跃域 5 个 + EP 额外域 1 个 = 6</span>
-              <span class="partial">communication reserve = 6×0.2×2 = 2.4 GiB / Stage</span>
-              <span>输出位置：reserve_parts_gib.communication</span>
+              <span>sequence=32768 · MBS=1 · hidden=4096 · TP=2 · CP=8</span>
+              <span class="pass">输出 tp / pp / pp_new_stream / exp / cp 等通信域 MiB</span>
+              <span>示例 Golden：tp=32 · pp=16 · exp=32 · cp=16 MiB</span>
+              <span>建议码：MINDSPEED_HCCL_GROUP_BUFFER_ADAPTIVE</span>
             </div>
-            <p class="evidence-note">这是可复算的理论预留，不是 HCCL 算法、拓扑或版本校验。</p>
+            <p class="evidence-note">这是静态公式复算与配置建议，不声称已经证明目标集群上的性能收益。</p>
           </article>
           <article class="ascend-card">
-            <span class="status partial">部分实现 · 显存容量</span>
-            <h3>案例：卡容量会改变风险等级，卡型号暂时不会</h3>
-            <p>估算器使用 <code>card_memory_gib</code> 计算占用比例和 80% / 88% 阈值，但尚未根据卡型号自动带出带宽、算力或特性约束。</p>
+            <span class="status done">已实现 · 昇腾卡型 CP 策略</span>
+            <h3>案例：相同序列长度，不同卡型保留的 CP 候选不同</h3>
+            <p>MindSpeed Auto Settings 的第一阶段裁剪已进入建议层：910B/A2G 每个 CP 分片至少 8K tokens，910_93 至少 4K。</p>
             <div class="stack-example">
-              <span>假设某 Stage 理论总量 = 48 GiB</span>
-              <span class="pass">card_memory=64 GiB → 75% · normal</span>
-              <span class="fail">card_memory=32 GiB → 150% · over</span>
-              <span class="partial">只改 910B / 910_93 名称 → 当前校验结论不变</span>
+              <span>910B · sequence=32768 · total ranks=128 · TP=2</span>
+              <span>可整除候选：[1,2,4,8,16,32,64]</span>
+              <span class="pass">按 8K 阈值保留：[1,2,4]</span>
+              <span>建议码：MINDSPEED_AUTO_SETTINGS_CP_SEARCH_SPACE</span>
             </div>
-            <p class="evidence-note">因此它是“容量参数亲和”，还不是“卡型规则亲和”。</p>
+            <p class="evidence-note">CP=8 会收到非阻塞建议，但配置仍可保持 valid；最终性能排序仍需 Profiling。</p>
           </article>
           <article class="ascend-card">
             <span class="status future">尚未实现 · CANN</span>
@@ -966,15 +1074,40 @@
             <p class="evidence-note">这里没有“已实现案例”可展示，页面不把源仓知识冒充当前能力。</p>
           </article>
           <article class="ascend-card">
-            <span class="status future">待抽取 · 昇腾专项规则</span>
-            <h3>上游已经有证据，当前核心还没有落地</h3>
-            <p>MindSpeed Auto Settings 已按设备类型裁剪 CP 搜索；<code>arguments.py</code> 还包含 MC2 / CoC、Ampipe、Hybrid CP 与自适应 HCCL buffer 等关系。</p>
+            <span class="status done">已实现 · 昇腾特性组合</span>
+            <h3>案例：MC2、CoC、AMPipe 不再只是未知启动参数</h3>
+            <p>统一契约已能表达相关开关，核心按锁定 MindSpeed 版本检查 MC2/CoC 与 MoE、AMPipe、2D TP、dispatcher overlap 等交叉关系。</p>
             <div class="stack-example">
-              <span>910B / A2G：单卡 CP 序列低于 8K 时裁剪</span>
-              <span>910_93：单卡 CP 序列低于 4K 时裁剪</span>
-              <span class="partial">当前 Demo：尚未实现，未分配稳定诊断码</span>
+              <span>MC2=true · CoC=true · routed_experts&gt;0</span>
+              <span class="fail">同时命中互斥 + 两项 MoE 兼容性诊断</span>
+              <span>每项均返回 code / fields / formula / sourceRef</span>
+              <span class="pass">Golden 固定合法与非法组合，防止版本升级静默漂移</span>
             </div>
-            <p class="evidence-note">进入 <code>config-core</code>、补齐来源引用和 Golden 测试后，才会改标“已实现”。</p>
+            <p class="evidence-note">静态规则已落地；真实算子执行、通信性能和版本安装状态仍需环境或实测证据。</p>
+          </article>
+          <article class="ascend-card">
+            <span class="status done">已实现 · AMPipe 完整前置链</span>
+            <h3>案例：一个 degree 会牵动八类功能开关</h3>
+            <p>AMPipe 不只要求 degree 合法，还要联动 FlashAttention、MoE 类型、EP、CP 模式、序列切分，以及 MC2、NanoPipe、通信 overlap 和重计算。</p>
+            <div class="stack-example">
+              <span>ampipe_degree=2 · CP=2 · cp_mode=ulysses</span>
+              <span class="fail">AMPipe 与 CP 同用时要求 Ring → 拒绝</span>
+              <span class="fail">未启用 FlashAttention / EP≤1 时继续给出独立诊断</span>
+              <span>相关能力族共 16 个稳定诊断码</span>
+            </div>
+            <p class="evidence-note">这类交叉约束是昇腾特性开关的核心价值，不是通用 Schema 能完成的字段类型检查。</p>
+          </article>
+          <article class="ascend-card">
+            <span class="status done">已实现 · 2D TP / ND MatMul</span>
+            <h3>案例：校验并行分解是否真的匹配昇腾算子路径</h3>
+            <p>2D TP 会检查 TP 的二维因子和与 CP、MoE、CoC 等特性的支持边界；ND MatMul 会继续检查归一化、checkpoint 与 ND1/ND2 维度。</p>
+            <div class="stack-example">
+              <span>TP=8 · tp_x=2 · tp_y=2 · CoC=true</span>
+              <span class="fail">8 != 2×2 → 因子不匹配</span>
+              <span class="fail">2D TP + CoC → 支持边界冲突</span>
+              <span>相关能力族共 12 个稳定诊断码</span>
+            </div>
+            <p class="evidence-note">结果同时携带字段、公式与锁定 MindSpeed 来源，Agent 无需临时回忆互斥矩阵。</p>
           </article>
         </div>
       </div>
@@ -985,14 +1118,14 @@
         <div class="section-head">
           <div>
             <p class="eyebrow">07 / Rule inventory</p>
-            <h2 id="diagnostics-title">28 个已实现诊断码，<br>模型结构已入列，Profile 规则继续补齐。</h2>
+            <h2 id="diagnostics-title">82 个静态诊断码 + 6 个策略码，<br>当前已入库能力均有稳定输出。</h2>
           </div>
-          <p>清单直接依据当前 <code>validate-parallel-config.js</code>。模型结构校验已计入总数；待实现项只列规则族，不提前伪造诊断码。</p>
+          <p>清单直接依据当前 <code>validate-parallel-config.js</code> 与 <code>static-strategy-suggestions.js</code>。诊断决定合法性；建议独立输出，不参与 <code>valid / invalid</code> 判定。</p>
         </div>
 
         <div class="inventory-note">
           <strong>诊断码 ≠ 严格意义上的“规则条数”</strong>
-          <p>诊断码是稳定输出标识：可以对应硬约束、Profile 兼容差异或告警。同一个能力族常拆成多个判定，例如动态 PP 分别检查“需要列表、列表长度、层数总和、Profile、与 VPP 互斥”。因此页面报告 28 个诊断码，而不包装成 28 条彼此独立的算法定律。</p>
+          <p>诊断码是稳定输出标识：可以对应硬约束、Profile 兼容差异或告警。同一个能力族常拆成多个判定，例如 AMPipe 会分别检查前置条件、序列整除和互斥开关。因此页面报告 82 个静态诊断码，而不包装成 82 条彼此独立的算法定律；另有 6 个非阻塞策略码。</p>
         </div>
 
         <div class="inventory-grid">
@@ -1047,21 +1180,110 @@
               <li><code>PAGE_EP_DOMAIN_DIVISIBLE_BY_EP</code><span>按 split 或 MindFormers 域分别检查 DP / DP×TP 能否被 EP 切分。</span></li>
             </ul>
           </article>
+
+          <article class="inventory-card">
+            <div class="inventory-card-head"><h3>高级 CP</h3><span class="status done">已实现 · 8</span></div>
+            <ul class="diagnostic-list">
+              <li><code>MINDSPEED_HYBRID_CP_REQUIRES_ULYSSES_DEGREE</code><span>Hybrid / Hybrid Adaptive 必须提供 Ulysses degree。</span></li>
+              <li><code>MINDSPEED_HYBRID_CP_DEGREES_FORM_CP</code><span>Ulysses 与 Ring degree 必须能组成 CP。</span></li>
+              <li><code>MINDSPEED_HYBRID_CP_HEADS_DIVISIBLE_BY_ULYSSES_TP</code><span>Attention Heads 必须被 Ulysses degree×TP 整除。</span></li>
+              <li><code>MINDSPEED_HYBRID_CP_WINDOW_DIVIDES_RING_DEGREE</code><span>Hybrid window 必须小于且整除 Ring degree。</span></li>
+              <li><code>MINDSPEED_HYBRID_CP_SEQUENCE_DIVISIBLE_BY_2CP</code><span>Hybrid CP 序列长度必须被 2×CP 整除。</span></li>
+              <li><code>MINDSPEED_HYBRID_ADAPTIVE_CP_SEQUENCE_DIVISIBLE_BY_CP</code><span>Hybrid Adaptive CP 序列长度必须被 CP 整除。</span></li>
+              <li><code>MINDSPEED_ADAPTIVE_CP_SEQUENCE_DIVISIBLE_BY_CP</code><span>Adaptive CP 序列长度必须被 CP 整除。</span></li>
+              <li><code>MINDSPEED_RING_CP_WINDOW_DIVIDES_CP</code><span>Ring window 必须小于且整除 CP。</span></li>
+            </ul>
+          </article>
+
+          <article class="inventory-card">
+            <div class="inventory-card-head"><h3>MC2 / CoC 与 AMPipe</h3><span class="status done">已实现 · 19</span></div>
+            <ul class="diagnostic-list">
+              <li><code>MINDSPEED_MC2_COC_MUTUALLY_EXCLUSIVE</code><span>MC2 与 CoC 不能同时启用。</span></li>
+              <li><code>MINDSPEED_MC2_INCOMPATIBLE_WITH_MOE</code><span>通用 MC2 不支持 MoE。</span></li>
+              <li><code>MINDSPEED_COC_INCOMPATIBLE_WITH_MOE</code><span>CoC 不支持 MoE。</span></li>
+              <li><code>MINDSPEED_AMPIPE_REQUIRES_FLASH_ATTENTION</code><span>AMPipe 要求 FlashAttention。</span></li>
+              <li><code>MINDSPEED_AMPIPE_REQUIRES_MOE</code><span>AMPipe 只支持 MoE。</span></li>
+              <li><code>MINDSPEED_AMPIPE_REQUIRES_EP</code><span>AMPipe 要求 EP&gt;1。</span></li>
+              <li><code>MINDSPEED_AMPIPE_REQUIRES_DEEPSPEED_MOE</code><span>AMPipe 要求 deepspeed_moe。</span></li>
+              <li><code>MINDSPEED_AMPIPE_INCOMPATIBLE_WITH_MC2</code><span>AMPipe 与 MC2 互斥。</span></li>
+              <li><code>MINDSPEED_AMPIPE_INCOMPATIBLE_WITH_BIAS</code><span>AMPipe 与 bias linear 互斥。</span></li>
+              <li><code>MINDSPEED_AMPIPE_INCOMPATIBLE_WITH_GRAD_OVERLAP</code><span>AMPipe 与 grad overlap 互斥。</span></li>
+              <li><code>MINDSPEED_AMPIPE_INCOMPATIBLE_WITH_PARAM_OVERLAP</code><span>AMPipe 与 param overlap 互斥。</span></li>
+              <li><code>MINDSPEED_AMPIPE_INCOMPATIBLE_WITH_NANOPIPE</code><span>AMPipe 与 NanoPipe 互斥。</span></li>
+              <li><code>MINDSPEED_AMPIPE_INCOMPATIBLE_WITH_BUBBLE_RECOMPUTE</code><span>AMPipe 与 bubble recompute 互斥。</span></li>
+              <li><code>MINDSPEED_AMPIPE_INCOMPATIBLE_WITH_ADVANCE_RECOMPUTE</code><span>AMPipe 与 advance recompute 互斥。</span></li>
+              <li><code>MINDSPEED_AMPIPE_INCOMPATIBLE_WITH_ADAPTIVE_RECOMPUTE</code><span>AMPipe 与 adaptive recompute 互斥。</span></li>
+              <li><code>MINDSPEED_AMPIPE_SEQUENCE_DIVISIBLE_BY_DEGREE_TP</code><span>Sequence Parallel 下检查序列÷(degree×TP)。</span></li>
+              <li><code>MINDSPEED_AMPIPE_CP_REQUIRES_RING</code><span>AMPipe 与 CP 同用时只支持 Ring。</span></li>
+              <li><code>MINDSPEED_AMPIPE_CP_REQUIRES_DEGREE_TWO</code><span>AMPipe 与 CP 同用时 degree 必须为 2。</span></li>
+              <li><code>MINDSPEED_AMPIPE_CP_SEQUENCE_DIVISIBILITY</code><span>AMPipe、CP、TP 联合序列整除。</span></li>
+            </ul>
+          </article>
+
+          <article class="inventory-card">
+            <div class="inventory-card-head"><h3>2D TP 与 ND MatMul</h3><span class="status done">已实现 · 12</span></div>
+            <ul class="diagnostic-list">
+              <li><code>MINDSPEED_TP2D_FACTORS_MATCH_TP</code><span>TP 必须等于 tp_x×tp_y。</span></li>
+              <li><code>MINDSPEED_TP2D_CP_MODE_LIMIT</code><span>2D TP 只支持 Ring / Ulysses CP。</span></li>
+              <li><code>MINDSPEED_TP2D_INCOMPATIBLE_WITH_SEQUENCE_PARALLEL</code><span>2D TP 不支持 Sequence Parallel。</span></li>
+              <li><code>MINDSPEED_TP2D_INCOMPATIBLE_WITH_FUSED_RMSNORM</code><span>2D TP 不支持 Fused RMSNorm。</span></li>
+              <li><code>MINDSPEED_TP2D_INCOMPATIBLE_WITH_NANOPIPE</code><span>2D TP 不支持 NanoPipe。</span></li>
+              <li><code>MINDSPEED_TP2D_INCOMPATIBLE_WITH_AMPIPE</code><span>2D TP 不支持 AMPipe。</span></li>
+              <li><code>MINDSPEED_TP2D_INCOMPATIBLE_WITH_COC</code><span>2D TP 不支持 CoC。</span></li>
+              <li><code>MINDSPEED_TP2D_INCOMPATIBLE_WITH_MOE</code><span>2D TP 不支持 MoE / EP。</span></li>
+              <li><code>MINDSPEED_ND_MATMUL_INCOMPATIBLE_WITH_LAYERNORM</code><span>ND MatMul 不支持 LayerNorm。</span></li>
+              <li><code>MINDSPEED_ND_MATMUL_INCOMPATIBLE_WITH_CHECKPOINT_LOAD</code><span>ND MatMul 训练不支持加载 checkpoint。</span></li>
+              <li><code>MINDSPEED_ND_MATMUL_TP_DIVISIBLE_BY_ND1</code><span>TP 必须被 ND1 dim1 整除。</span></li>
+              <li><code>MINDSPEED_ND_MATMUL_TP_DIVISIBLE_BY_ND2</code><span>TP 必须被 ND2 dim1 整除。</span></li>
+            </ul>
+          </article>
+
+          <article class="inventory-card">
+            <div class="inventory-card-head"><h3>MoE overlap 与内存互斥</h3><span class="status done">已实现 · 15</span></div>
+            <ul class="diagnostic-list">
+              <li><code>MINDSPEED_MOE_ALLTOALL_OVERLAP_REQUIRES_ALLTOALL_SEQ</code><span>AllToAll overlap 要求 alltoall_seq dispatcher。</span></li>
+              <li><code>MINDSPEED_MOE_ALLGATHER_OVERLAP_REQUIRES_ALLGATHER</code><span>AllGather overlap 要求 allgather dispatcher。</span></li>
+              <li><code>MINDSPEED_MOE_ADAPTIVE_RECOMPUTE_REQUIRES_ALLGATHER</code><span>MoE adaptive recompute activation 要求 allgather。</span></li>
+              <li><code>MINDSPEED_MOE_OVERLAP_REQUIRES_ASYNC_PERMUTATION</code><span>Dispatcher overlap 要求异步 permutation。</span></li>
+              <li><code>MINDSPEED_MOE_OVERLAP_REQUIRES_GROUPED_GEMM</code><span>Dispatcher overlap 要求 grouped GEMM。</span></li>
+              <li><code>MINDSPEED_MOE_ALLTOALL_OVERLAP_TP_REQUIRES_EXTEND_EP</code><span>TP&gt;1 时 AllToAll overlap 要求 TP extend EP。</span></li>
+              <li><code>MINDSPEED_MOE_TP_EXTEND_EP_EXPERT_DIVISIBILITY</code><span>专家数必须被 TP×EP 整除。</span></li>
+              <li><code>MINDSPEED_MOE_TP_EXTEND_EP_REQUIRES_ASYNC_GROUPED_GEMM</code><span>TP extend EP 要求异步 permutation 与 grouped GEMM。</span></li>
+              <li><code>MINDSPEED_MOE_BMM_MC2_REQUIRES_MCORE_ALLTOALL</code><span>MoE BMM MC2 要求 megatron_moe + alltoall。</span></li>
+              <li><code>MINDSPEED_MOE_BMM_MC2_REQUIRES_GROUPED_GEMM</code><span>MoE BMM MC2 要求 grouped GEMM。</span></li>
+              <li><code>MINDSPEED_MOE_BMM_MC2_OVERLAP_CONFLICT</code><span>MoE BMM MC2 与 TP extend EP / overlap 互斥。</span></li>
+              <li><code>MINDSPEED_ADAPTIVE_RECOMPUTE_CONFLICTS_WITH_STATIC_RECOMPUTE</code><span>Adaptive 与静态重计算互斥。</span></li>
+              <li><code>MINDSPEED_ADAPTIVE_MEMORY_INCOMPATIBLE_WITH_AMPIPE</code><span>自适应内存与 AMPipe 互斥。</span></li>
+              <li><code>MINDSPEED_ADAPTIVE_MEMORY_INCOMPATIBLE_WITH_ADAPTIVE_RECOMPUTE</code><span>自适应内存与 Adaptive Recompute 互斥。</span></li>
+              <li><code>MINDSPEED_ADAPTIVE_MEMORY_INCOMPATIBLE_WITH_STATIC_RECOMPUTE</code><span>自适应内存与静态重计算互斥。</span></li>
+            </ul>
+          </article>
+
+          <article class="inventory-card">
+            <div class="inventory-card-head"><h3>非阻塞静态策略</h3><span class="status done">已实现 · 6</span></div>
+            <ul class="diagnostic-list">
+              <li><code>MINDSPEED_AUTO_SETTINGS_CP_SEARCH_SPACE</code><span>按昇腾卡型阈值返回 CP 候选空间。</span></li>
+              <li><code>MINDSPEED_CP_DIVISIBILITY_SEARCH_SPACE</code><span>未知卡型时仅按整除和 world/TP 上界返回候选。</span></li>
+              <li><code>MINDSPEED_CP_SLICE_BELOW_DEVICE_HEURISTIC</code><span>当前 CP 分片低于卡型启发式阈值时建议降低 CP。</span></li>
+              <li><code>MINDSPEED_HCCL_GROUP_BUFFER_ADAPTIVE</code><span>按通信域返回 HCCL Buffer 静态复算。</span></li>
+              <li><code>CONFIG_LONG_SEQUENCE_RECOMPUTE_CAPACITY_DIRECTION</code><span>长序列未重计算时给出容量对比方向。</span></li>
+              <li><code>CONFIG_DP_OPTIMIZER_SHARD_CAPACITY_DIRECTION</code><span>DP&gt;1 且未分片时给出优化器状态分片方向。</span></li>
+            </ul>
+          </article>
         </div>
 
         <div class="section-head inventory-future-head">
           <div>
-            <p class="eyebrow">Next extraction candidates</p>
-            <h2>待实现规则族，<br>当前尚无稳定诊断码。</h2>
+            <p class="eyebrow">Overall rule integration rate</p>
+            <h2>MindSpeed Agent 规则与检查路线图共 106 项，<br>已接入 88 项，总体进度 83.0%。</h2>
           </div>
-          <p>这些约束在 MindSpeed 上游源码或当前产品边界中已有明确证据，但尚未进入纯计算核心、来源引用与 Golden 测试。</p>
+          <p>统一按可独立验收的规则或检查输出计数：已完成 82 个静态诊断码 + 6 个非阻塞策略码；待完成 3 个模型 Profile 检查 + 5 个环境检查 + 7 个运行时检查 + 3 个拓扑/性能信号。计算式为 <code>88 ÷ (88 + 18) = 83.0%</code>。</p>
         </div>
         <div class="planned-grid">
-          <article class="planned-card"><span class="status future">待实现</span><h3>模型结构 Profile</h3><ul><li>显式 head_dim / qk_head_dim 的来源与投影维度关系</li><li>KV Head 在 TP 内采用切分还是复制</li><li>GQA / MQA 与 TP 组合下的每 Rank 完整性</li><li>不同模型家族的结构字段默认值与适用边界</li></ul></article>
-          <article class="planned-card"><span class="status future">待实现</span><h3>高级 CP</h3><ul><li>Hybrid CP 的 Ulysses / Ring degree</li><li>Double Ring window 范围与整除</li><li>Adaptive / Hybrid Adaptive CP</li><li>DeepSeek-V4 CP 约束</li></ul></article>
-          <article class="planned-card"><span class="status future">待实现</span><h3>昇腾通信特性</h3><ul><li>MC2 与 CoC 互斥</li><li>MC2 / CoC 与 MoE 兼容关系</li><li>Ampipe 前置条件与互斥项</li><li>2D TP 支持边界</li><li>HCCL group buffer 规则</li></ul></article>
-          <article class="planned-card"><span class="status future">待实现</span><h3>卡型与软件版本</h3><ul><li>910B / A2G 的 CP 搜索阈值</li><li>910_93 的 CP 搜索阈值</li><li>CANN / 驱动 / torch_npu / MindSpeed 版本矩阵</li><li>算子特性与卡型支持矩阵</li></ul></article>
-          <article class="planned-card"><span class="status future">待实现</span><h3>MoE 与显存组合</h3><ul><li>MoE dispatcher / overlap 组合</li><li>MoE TP extend EP 前置条件</li><li>重计算、Swap、自适应内存互斥</li><li>HCCL buffer 自适应公式校验</li><li>Profiling 校准后的容量规则</li></ul></article>
+          <article class="planned-card"><span class="status future">待接入 · 3 项</span><h3>模型结构 Profile</h3><ul><li><strong>M01</strong>：显式 head_dim / qk_head_dim 的来源与投影维度关系</li><li><strong>M02</strong>：KV Head 在 TP / TP×CP 内采用切分还是复制</li><li><strong>M03</strong>：不同模型家族字段默认值、覆盖关系与适用边界</li><li>完成条件：版本化 Profile、稳定诊断码、来源引用与 Golden 样例同时落地</li></ul></article>
+          <article class="planned-card"><span class="status future">待接入 · 5 项</span><h3>环境与软件栈检查</h3><ul><li><strong>E01</strong>：NPU 卡型、数量、节点与互联拓扑清单</li><li><strong>E02</strong>：CANN 与驱动版本兼容</li><li><strong>E03</strong>：torch_npu 与 CANN / PyTorch 版本兼容</li><li><strong>E04</strong>：MindSpeed 与 torch_npu / Megatron 版本兼容</li><li><strong>E05</strong>：算子、融合特性与目标卡型支持矩阵</li></ul></article>
+          <article class="planned-card"><span class="status future">待接入 · 7 项</span><h3>运行时与实测检查</h3><ul><li><strong>R01</strong>：受控启动与退出状态</li><li><strong>R02</strong>：目标 CANN 环境中的算子实际执行</li><li><strong>R03</strong>：HCCL 连通性、带宽、拥塞与拓扑效果</li><li><strong>R04</strong>：峰值显存、OOM 与碎片情况</li><li><strong>R05</strong>：Loss / 梯度有限值与短程稳定性</li><li><strong>R06</strong>：吞吐、step time 与气泡实测</li><li><strong>R07</strong>：Profiling 回流和理论模型校准</li></ul></article>
+          <article class="planned-card"><span class="status future">待接入 · 3 项</span><h3>拓扑页信号回收</h3><ul><li><strong>T01</strong>：ETP folding 的 Profile 化结构输出</li><li><strong>T02</strong>：Gradient Accumulation 与 Pipeline 深度关系</li><li><strong>T03</strong>：Pipeline 气泡率及跨节点性能提醒进入稳定建议契约</li><li>完成条件：进入共享核心与 Golden，不在 MCP App 或可视化页复制公式</li></ul></article>
         </div>
       </div>
     </section>
@@ -1076,7 +1298,8 @@
           <li><a href="https://gitee.com/ascend/MindSpeed/blob/master/mindspeed/arguments.py" target="_blank" rel="noopener noreferrer"><strong>MindSpeed arguments.py ↗</strong><span>Ulysses / Ring / Hybrid CP、MC2 / CoC、Ampipe 等规则的上游源码依据。</span></a></li>
           <li><a href="https://gitee.com/ascend/MindSpeed-LLM/blob/master/mindspeed_llm/training/arguments.py" target="_blank" rel="noopener noreferrer"><strong>MindSpeed-LLM arguments.py ↗</strong><span>动态 PP 与 <code>num_layer_list</code> 等配置语义的上游依据。</span></a></li>
           <li><a href="https://docs.nvidia.com/megatron-core/developer-guide/latest/user-guide/parallelism-guide.html" target="_blank" rel="noopener noreferrer"><strong>Megatron-Core Parallelism Guide ↗</strong><span>TP / PP / CP / EP 的公开组合语义与框架基线。</span></a></li>
-          <li><a href="https://gitee.com/ascend/MindSpeed/blob/master/docs/features/auto_settings.md" target="_blank" rel="noopener noreferrer"><strong>MindSpeed Auto Settings ↗</strong><span>Profiling 驱动的策略搜索；属于上游能力，不是当前静态 Demo。</span></a></li>
+          <li><a href="https://gitee.com/ascend/MindSpeed/blob/master/docs/features/auto_settings.md" target="_blank" rel="noopener noreferrer"><strong>MindSpeed Auto Settings ↗</strong><span>卡型 CP 搜索裁剪的上游依据；当前 Demo 已抽取第一阶段静态启发式，最终性能排序仍需 Profiling。</span></a></li>
+          <li><a href="https://gitee.com/ascend/MindSpeed/blob/master/docs/zh/features/hccl-group-buffer-set.md" target="_blank" rel="noopener noreferrer"><strong>MindSpeed HCCL Group Buffer ↗</strong><span>各通信域 Buffer 自适应公式、支持边界和版本要求的上游依据。</span></a></li>
         </ul>
       </div>
     </section>
