@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="description" content="MindSpeed 训练配置静态诊断的规则内核对比：用动态 PP、Ulysses、Ring、MoE/EP 和跨框架 Profile 的具体反例解释已实现优势。">
+  <meta name="description" content="MindSpeed 训练配置静态诊断的规则内核与产品对比：逐项审计拓扑可视化校验器和 Config MCP 的覆盖度、数量、校验方式与融合路径。">
   <title>MindSpeed 静态配置诊断 — 规则内核竞争力</title>
   <style>
     :root {
@@ -141,7 +141,7 @@
     }
     .switch-arrow { color: var(--lime); }
     .navlinks { display: flex; align-items: center; gap: 6px; }
-    .navlinks a { padding: 8px 12px; border-radius: 999px; color: var(--muted); text-decoration: none; font-size: 13px; }
+    .navlinks a { padding: 8px 9px; border-radius: 999px; color: var(--muted); text-decoration: none; font-size: 13px; white-space: nowrap; }
     .navlinks a:hover, .navlinks a:focus-visible { color: var(--text); background: rgba(255,255,255,.05); outline: none; }
     .demo-link {
       display: inline-flex;
@@ -335,6 +335,52 @@
     .truth-item .no { color: var(--coral); }
     .truth-item .some { color: var(--amber); }
 
+    .product-compare-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
+    .product-column {
+      overflow: hidden;
+      border: 1px solid var(--line);
+      border-radius: var(--radius-xl);
+      background: rgba(8, 19, 17, .88);
+      box-shadow: var(--shadow);
+    }
+    .product-column.topology { background: linear-gradient(145deg, var(--amber-soft), rgba(8,19,17,.9) 38%); }
+    .product-column.mcp { background: linear-gradient(145deg, var(--mint-soft), rgba(8,19,17,.9) 38%); }
+    .product-column-head { padding: 28px 28px 22px; border-bottom: 1px solid var(--line); }
+    .product-kicker { display: flex; align-items: center; justify-content: space-between; gap: 14px; margin-bottom: 18px; }
+    .product-kicker span:first-child { color: var(--dim); font: 800 11px/1.4 ui-monospace, monospace; letter-spacing: .1em; }
+    .product-column h3 { margin-bottom: 12px; font-size: clamp(24px, 3vw, 34px); }
+    .product-column-head > p { margin: 0; color: var(--muted); }
+    .product-metrics { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; margin-top: 22px; }
+    .product-metric { min-height: 92px; padding: 14px; border: 1px solid var(--line); border-radius: 12px; background: rgba(3,10,9,.52); }
+    .product-metric strong { display: block; color: var(--amber); font-size: 25px; line-height: 1; }
+    .mcp .product-metric strong { color: var(--mint); }
+    .product-metric span { display: block; margin-top: 9px; color: var(--muted); font-size: 11px; line-height: 1.4; }
+    .product-body { padding: 26px 28px 30px; }
+    .product-body h4 { margin: 0 0 13px; font-size: 14px; }
+    .coverage-list { display: grid; gap: 9px; margin: 0; padding: 0; list-style: none; }
+    .coverage-list li { position: relative; padding: 10px 12px 10px 32px; border: 1px solid var(--line); border-radius: 11px; color: var(--muted); font-size: 13px; background: rgba(3,10,9,.38); }
+    .coverage-list li::before { content: ""; position: absolute; top: 17px; left: 14px; width: 7px; height: 7px; border-radius: 50%; background: var(--amber); box-shadow: 0 0 0 4px var(--amber-soft); }
+    .mcp .coverage-list li::before { background: var(--mint); box-shadow: 0 0 0 4px var(--mint-soft); }
+    .coverage-list strong { color: var(--text); }
+    .method-note { margin: 18px 0 0; padding-top: 18px; border-top: 1px solid var(--line); color: var(--muted); font-size: 13px; }
+    .method-note code { color: var(--mint); font-size: 12px; }
+
+    .semantic-diff { margin-top: 18px; overflow: hidden; border: 1px solid var(--line); border-radius: var(--radius-xl); background: var(--panel); }
+    .semantic-diff-head { display: grid; grid-template-columns: 180px 1fr 1fr; color: var(--dim); background: rgba(255,255,255,.025); font: 800 11px/1.4 ui-monospace, monospace; letter-spacing: .08em; }
+    .semantic-diff-row { display: grid; grid-template-columns: 180px 1fr 1fr; border-top: 1px solid var(--line); }
+    .semantic-diff-head span, .semantic-diff-row > div { padding: 17px 18px; }
+    .semantic-diff-row > div { color: var(--muted); font-size: 13px; }
+    .semantic-diff-row > div + div, .semantic-diff-head span + span { border-left: 1px solid var(--line); }
+    .semantic-diff-row .concept { color: var(--text); font-weight: 800; }
+    .semantic-diff-row code { color: var(--mint); font-size: 11px; overflow-wrap: anywhere; }
+    .semantic-diff-row .caution { color: var(--amber); }
+
+    .product-verdicts { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; margin-top: 18px; }
+    .product-verdict { min-height: 236px; padding: 22px; border: 1px solid var(--line); border-radius: var(--radius-lg); background: rgba(8,19,17,.84); }
+    .product-verdict h3 { margin-top: 18px; font-size: 19px; }
+    .product-verdict p { margin: 0; color: var(--muted); font-size: 13px; }
+    .product-verdict.recommended { background: linear-gradient(145deg, var(--lime-soft), rgba(8,19,17,.88) 52%); }
+
     .ascend-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
     .ascend-card {
       min-height: 240px;
@@ -441,6 +487,7 @@
       .competitor-grid, .advantage-grid, .boundary-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
       .flow { grid-template-columns: repeat(3, minmax(0, 1fr)); }
       .truth-strip { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      .product-verdicts { grid-template-columns: repeat(2, minmax(0, 1fr)); }
       .planned-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
       .truth-item:nth-child(2) { border-right: 0; }
       .truth-item:nth-child(-n+2) { border-bottom: 1px solid var(--line); }
@@ -464,6 +511,15 @@
       .kernel-bridge { height: 58px; border: 0; border-block: 1px solid var(--line); }
       .kernel-bridge span { writing-mode: horizontal-tb; }
       .rule-grid, .ascend-grid, .truth-strip { grid-template-columns: 1fr; }
+      .product-compare-grid, .product-verdicts { grid-template-columns: 1fr; }
+      .product-metrics { grid-template-columns: 1fr; }
+      .semantic-diff-head { display: none; }
+      .semantic-diff-row { grid-template-columns: 1fr; }
+      .semantic-diff-row > div + div { border-left: 0; border-top: 1px solid var(--line); }
+      .semantic-diff-row > div:nth-child(2)::before,
+      .semantic-diff-row > div:nth-child(3)::before { display: block; margin-bottom: 6px; color: var(--dim); font: 800 10px/1.4 ui-monospace, monospace; letter-spacing: .08em; }
+      .semantic-diff-row > div:nth-child(2)::before { content: "拓扑可视化校验器"; }
+      .semantic-diff-row > div:nth-child(3)::before { content: "MindSpeed Config MCP"; }
       .inventory-note, .inventory-grid, .planned-grid { grid-template-columns: 1fr; }
       .diagnostic-list li { grid-template-columns: 1fr; gap: 3px; }
       .truth-item, .truth-item:nth-child(2) { border-right: 0; border-bottom: 1px solid var(--line); }
@@ -507,6 +563,7 @@
           <a href="#rule-cases">规则反例</a>
           <a href="#scorecard">结论记分牌</a>
           <a href="#comparison">内核对比</a>
+          <a href="#product-compare">产品对比</a>
           <a href="#experience">体验对比</a>
           <a href="#ascend">昇腾亲和度</a>
           <a href="#diagnostics">规则清单</a>
@@ -531,7 +588,7 @@
         <aside class="hero-board" aria-label="当前规则内核摘要">
           <span>IMPLEMENTED KERNEL · 2026-10-14</span>
           <div class="stat-grid">
-            <div class="stat"><strong>27</strong><span>结构化诊断代码</span></div>
+            <div class="stat"><strong>28</strong><span>结构化诊断代码</span></div>
             <div class="stat"><strong>3</strong><span>EP 域语义：split / orthogonal / mf</span></div>
             <div class="stat"><strong>3</strong><span>PP 分层口径：uniform / dynamic / offset</span></div>
             <div class="stat"><strong>2</strong><span>已建模 CP 算法：Ulysses / Ring</span></div>
@@ -662,7 +719,7 @@
           <p>优势只按当前 Demo 代码认定。上游 MindSpeed 已有但尚未抽取进 <code>config-core</code> 的规则，不计入“已实现”。</p>
         </div>
         <div class="truth-strip">
-          <article class="truth-item"><span class="status partial">数量</span><strong class="no">不是更多</strong><p>当前 27 个诊断码，覆盖面小于成熟 MindSpeed / Megatron 启动校验；不能以数量领先为卖点。</p></article>
+          <article class="truth-item"><span class="status partial">数量</span><strong class="no">不是更多</strong><p>当前 28 个诊断码，覆盖面小于成熟 MindSpeed / Megatron 启动校验；不能以数量领先为卖点。</p></article>
           <article class="truth-item"><span class="status done">严谨性</span><strong class="yes">局部更严谨</strong><p>在已建模区域，会同时检查算法、Profile、字段联动和完整候选复验，避免只看整除关系。</p></article>
           <article class="truth-item"><span class="status done">交叉对比</span><strong class="yes">这是强项</strong><p>同一规范化配置可显式比较 split / orthogonal / mf、uniform / dynamic / offset 等口径。</p></article>
           <article class="truth-item"><span class="status partial">昇腾栈</span><strong class="some">目前仅部分亲和</strong><p>已有 MindSpeed CP 与动态 PP；卡型、HCCL 算法和 CANN 版本兼容矩阵尚未实现。</p></article>
@@ -685,7 +742,7 @@
               <tr><th>内核维度</th><th>框架自身断言</th><th>Schema / IDE</th><th>通用大模型</th><th>当前 Demo</th></tr>
             </thead>
             <tbody>
-              <tr><td>规则广度</td><td>最强，覆盖自身完整参数面</td><td>字段类型、范围、枚举</td><td>知识面广但不保证稳定执行</td><td class="ours">27 个诊断码；当前不领先</td></tr>
+              <tr><td>规则广度</td><td>最强，覆盖自身完整参数面</td><td>字段类型、范围、枚举</td><td>知识面广但不保证稳定执行</td><td class="ours">28 个诊断码；当前不领先</td></tr>
               <tr><td>跨字段代数约束</td><td>强，贴近实际代码路径</td><td>通常较弱</td><td>能解释，不保证每次一致</td><td class="ours">公式化、确定性执行</td></tr>
               <tr><td>算法级 CP 约束</td><td>自身算法最完整</td><td>通常没有</td><td>取决于提示与上下文</td><td class="ours">已落地 Ulysses / Ring 细分公式</td></tr>
               <tr><td>跨框架口径比较</td><td>通常只判本框架</td><td>每套 Schema 独立</td><td>可以讨论但难做稳定基线</td><td class="ours">显式 Profile 与 compatibility-gap</td></tr>
@@ -698,11 +755,124 @@
       </div>
     </section>
 
+    <section id="product-compare" aria-labelledby="product-compare-title">
+      <div class="shell">
+        <div class="section-head">
+          <div>
+            <p class="eyebrow">04 / Product comparison</p>
+            <h2 id="product-compare-title">两边都有实时诊断与修复，<br>差别在校验边界和结果表达。</h2>
+          </div>
+          <p>共同基线先说清：两边都会随配置变化给出错误说明、定位相关字段、提供可应用的修复，并在修复后重新计算。以下只比较相对增量；数量按“独立约束/信号”和“稳定诊断码”分别统计，不把展示方式误写成规则能力。</p>
+        </div>
+
+        <div class="product-compare-grid">
+          <article class="product-column topology">
+            <div class="product-column-head">
+              <div class="product-kicker"><span>PARALLEL TOPOLOGY V2 · INLINE DERIVATION</span><span class="status partial">拓扑解释侧重</span></div>
+              <h3>拓扑可视化校验器</h3>
+              <p>与 MCP 一样支持改值即校验和一键修复。不同之处是校验、派生 DP、容量粗估与绘图共用页面内的 <code>derive(c)</code>；阻断错误出现时会清空几何舞台，而不是把错误画到拓扑上。</p>
+              <div class="product-metrics">
+                <div class="product-metric"><strong>12</strong><span>独立约束或诊断信号</span></div>
+                <div class="product-metric"><strong>7 + 5</strong><span>阻断错误 + 非阻断提醒</span></div>
+                <div class="product-metric"><strong>6 / 7</strong><span>阻断错误带简单近邻修复</span></div>
+              </div>
+            </div>
+            <div class="product-body">
+              <h4>规则覆盖面</h4>
+              <ul class="coverage-list">
+                <li><strong>Rank / DP：</strong>从 world 反推 DP，输入更少；相对代价是不能像 MCP 一样显式表达 DP 与多种 EP 域语义。</li>
+                <li><strong>基础整除：</strong>Heads÷TP、Layers÷PP、Sequence÷(2·CP)、Experts÷EP；其中前三类在 MCP 中也有对应或更细的算法分支。</li>
+                <li><strong>相对 MCP 的规则增量：</strong>ETP、MoE 最小卡数与 stage 平面 folding；另有 Hidden÷Heads、KV Heads÷TP 通用提醒，但尚未区分显式 head_dim / qk_head_dim 等模型 Profile。</li>
+                <li><strong>相对 MCP 的诊断增量：</strong>同一抽屉直接显示 GA&lt;PP、流水线气泡率和 stage0 理论显存/HBM，但使用页面级估算口径。</li>
+                <li><strong>相对 MCP 的呈现增量：</strong>配置合法后，提供更专门的逐 Rank、切分刀法和通信几何视角；非法状态本身没有几何解释。</li>
+              </ul>
+              <p class="method-note"><strong>相对结论：</strong>“实时提示、修复后重算”不是它独有的优势。它比 MCP 更突出的地方是合法配置下的专门拓扑视角，以及几项 MCP 尚未纳入主校验的 ETP / 性能信号；弱项是非法时不渲染几何、规则与视图耦合，也没有稳定诊断契约和来源版本。</p>
+            </div>
+          </article>
+
+          <article class="product-column mcp">
+            <div class="product-column-head">
+              <div class="product-kicker"><span>MINDSPEED CONFIG MCP · PURE CORE</span><span class="status done">规则与工作流侧重</span></div>
+              <h3>MindSpeed Config MCP</h3>
+              <p>同样在页面内实时显示错误、关联字段和修复按钮；此外把页面编辑、预置切换预检、YAML / JSON / Shell 导入与 MCP 工具统一到 <code>config-core</code> 契约。</p>
+              <div class="product-metrics">
+                <div class="product-metric"><strong>28</strong><span>稳定诊断码</span></div>
+                <div class="product-metric"><strong>4</strong><span>主要规则族</span></div>
+                <div class="product-metric"><strong>1–4</strong><span>字段修复候选并全量复验</span></div>
+              </div>
+            </div>
+            <div class="product-body">
+              <h4>规则覆盖面</h4>
+              <ul class="coverage-list">
+                <li><strong>相对拓扑页的 PP 增量：</strong>除均匀 PP 外，还覆盖 MindSpeed-LLM 动态列表、MindFormers offset、VPP 及 Profile 适配。</li>
+                <li><strong>算法级 CP：</strong>Ulysses 检查 Heads÷(TP·CP) 与 Sequence÷CP；Ring 单独检查 Sequence÷(2·CP)。</li>
+                <li><strong>相对拓扑页的结构增量：</strong>Heads÷KV Heads、Dense/Expert FFN÷TP、Top-K 和 Dense/MoE 状态一致性。</li>
+                <li><strong>相对拓扑页的 EP 增量：</strong>显式区分 split / orthogonal / mf 三种域语义，而不是固定采用 stage 平面 folding。</li>
+                <li><strong>相对拓扑页的工程增量：</strong>code、fields、formula、sourceRef，字段标记、锁定策略、多候选排序、全量复验及导入/切换校验。</li>
+              </ul>
+              <p class="method-note"><strong>相对结论：</strong>MCP 不缺少配置闭环：非法时会标记字段、展开相关面板、保留上一组合法图形，并同时给出页面联动建议和 MCP 多字段修复候选。待补齐项主要是 ETP folding 与 GA/气泡；Attention 结构侧还需按模型 Profile 建模 HeadDim 来源和 KV Head 的 TP 分配策略，容量结果则保持为独立工具输出。</p>
+            </div>
+          </article>
+        </div>
+
+        <div class="semantic-diff" role="region" aria-label="拓扑校验器与 Config MCP 规则语义差异" tabindex="0">
+          <div class="semantic-diff-head"><span>规则主题</span><span>拓扑可视化校验器</span><span>MindSpeed Config MCP</span></div>
+          <div class="semantic-diff-row">
+            <div class="concept">World / DP / EP</div>
+            <div>从 world 反推 DP；EP 被视为 stage 平面内折叠，不进入 world 乘积。</div>
+            <div>DP 是显式输入；根据 split / orthogonal / mf Profile 决定 EP 域及是否进入 world。<br><span class="caution">结论：概念重叠，但不能直接复用同一公式。</span></div>
+          </div>
+          <div class="semantic-diff-row">
+            <div class="concept">PP 分层</div>
+            <div>只接受均匀分层：<code>layers % PP === 0</code>。</div>
+            <div>均匀规则相同；额外支持 dynamic list、MindFormers offset、VPP 及其互斥和形状检查。</div>
+          </div>
+          <div class="semantic-diff-row">
+            <div class="concept">CP / Sequence</div>
+            <div>无论通信原语如何选择，都固定要求 <code>seq % (2·CP) === 0</code>。</div>
+            <div>按算法分派：Ulysses 为 <code>seq % CP</code>，Ring 才是 <code>seq % (2·CP)</code>；Ulysses 还约束 Heads÷(TP·CP)。</div>
+          </div>
+          <div class="semantic-diff-row">
+            <div class="concept">Attention / FFN</div>
+            <div>Heads÷TP 为错误；Hidden÷Heads、KV Heads÷TP 是不区分模型 Profile 的通用警告；没有 Heads÷KV Heads 与 FFN÷TP。</div>
+            <div>Heads÷TP、Heads÷KV Heads、Dense/Expert FFN÷TP 为错误。待建模的是 Profile 感知的 HeadDim 来源与 KV Head TP 分配，而不是重复增加一条 Heads÷KV Heads 规则。</div>
+          </div>
+          <div class="semantic-diff-row">
+            <div class="concept">MoE / ETP</div>
+            <div>强在 ETP、最小卡数与 stage 平面 folding；未检查 Top-K 和 Dense/EP 状态一致性。</div>
+            <div>强在 Top-K、Dense/MoE 状态和三种 EP 域；Expert TP 目前是开关语义，缺少拓扑页的 ETP folding 公式。</div>
+          </div>
+          <div class="semantic-diff-row">
+            <div class="concept">性能 / 容量</div>
+            <div>比 MCP 主校验多 GA、气泡率和 stage0 显存/HBM 标签，查看更集中；但容量是页面级粗估，信号没有稳定诊断码。</div>
+            <div>主校验缺少 GA / 气泡规则；容量由独立工具给出分项、瓶颈 Stage、风险阈值与 theoretical / model-informed 口径，审计信息更完整。</div>
+          </div>
+          <div class="semantic-diff-row">
+            <div class="concept">非法状态呈现</div>
+            <div>清空几何舞台，显示“配置不合法，不渲染视图”；错误与最近合法值留在配置抽屉，冲突不会投射到几何图上。</div>
+            <div>页面手输冲突时暂停更新并保留上一组自洽图形；MCP 结果同时标记关联字段、展开隐藏字段并展示消息与公式。两边都没有把非法拓扑直接画出来。</div>
+          </div>
+          <div class="semantic-diff-row">
+            <div class="concept">修复与证据</div>
+            <div>与 MCP 一样可就地应用修复；主要给单字段最近除数/倍数，6/7 类阻断错误有候选，简单直接但没有候选评分、字段锁定与来源版本。</div>
+            <div>除页面即时联动建议外，还能搜索 1–4 字段候选、尊重锁定字段、按目标排序并逐个全量复验；能力更完整，交互和计算也更重。</div>
+          </div>
+        </div>
+
+        <div class="product-verdicts" aria-label="产品对比结论">
+          <article class="product-verdict"><span class="status done">共同基线</span><h3>两边都已形成配置闭环</h3><p>实时提示、错误说明、关联字段、可应用修复和修复后重算是共有能力，不能算作任何一方的相对优势。两边遇到硬错误都会停止使用非法配置更新图形。</p></article>
+          <article class="product-verdict recommended"><span class="status done">综合能力</span><h3>MCP 的规则与修复体系更完整</h3><p>相对拓扑页，MCP 覆盖更多框架与算法语义，诊断可追溯，支持导入和预置预检，并提供锁定字段、多目标排序、多字段候选与全量复验，更适合作为共享事实源。</p></article>
+          <article class="product-verdict"><span class="status partial">拓扑页增量</span><h3>优势有限，但边界明确</h3><p>它多出 ETP folding、GA/气泡等信号，也提供通用的 HeadDim 与 KV Head TP 提醒；合法配置下的逐 Rank、切分和通信视角更专门。</p></article>
+          <article class="product-verdict"><span class="status future">叠加方向</span><h3>以 MCP 为底座吸收增量</h3><p>把拓扑页经过 Profile 澄清后的独有规则抽入 <code>config-core</code>，保留其专门可视化作为结构化结果消费者；先按模型结构与 CP / EP Profile 消歧，再用共享 Golden 样例做差分测试，避免重复规则给出相反结论。</p></article>
+        </div>
+      </div>
+    </section>
+
     <section id="experience" aria-labelledby="experience-title">
       <div class="shell">
         <div class="section-head">
           <div>
-            <p class="eyebrow">04 / Experience still matters</p>
+            <p class="eyebrow">05 / Experience still matters</p>
             <h2 id="experience-title">内核决定判得准，<br>体验决定能否在开训前用起来。</h2>
           </div>
           <p>规则深度是主竞争力，但原有体验优势仍然保留：不用准备训练环境、能直接读取文件、错误可定位、建议可复验、结果可审计。</p>
@@ -730,7 +900,7 @@
       <div class="shell">
         <div class="section-head">
           <div>
-            <p class="eyebrow">05 / Ascend affinity audit</p>
+            <p class="eyebrow">06 / Ascend affinity audit</p>
             <h2 id="ascend-title">更亲和昇腾、HCCL、CANN？<br>也用输入与结果说话。</h2>
           </div>
           <p>已实现能力给出可复算案例；只有经验系数的标“部分实现”；当前契约尚不能表达的 CANN 版本关系明确标“尚未实现”。</p>
@@ -814,15 +984,15 @@
       <div class="shell">
         <div class="section-head">
           <div>
-            <p class="eyebrow">06 / Rule inventory</p>
-            <h2 id="diagnostics-title">27 个已实现诊断码，<br>以及下一批待实现规则。</h2>
+            <p class="eyebrow">07 / Rule inventory</p>
+            <h2 id="diagnostics-title">28 个已实现诊断码，<br>模型结构已入列，Profile 规则继续补齐。</h2>
           </div>
-          <p>清单直接依据当前 <code>validate-parallel-config.js</code>。已实现项均有稳定代码；待实现项只列规则族，不提前伪造诊断码。</p>
+          <p>清单直接依据当前 <code>validate-parallel-config.js</code>。模型结构校验已计入总数；待实现项只列规则族，不提前伪造诊断码。</p>
         </div>
 
         <div class="inventory-note">
           <strong>诊断码 ≠ 严格意义上的“规则条数”</strong>
-          <p>诊断码是稳定输出标识：可以对应硬约束、Profile 兼容差异或告警。同一个能力族常拆成多个判定，例如动态 PP 分别检查“需要列表、列表长度、层数总和、Profile、与 VPP 互斥”。因此页面报告 27 个诊断码，而不包装成 27 条彼此独立的算法定律。</p>
+          <p>诊断码是稳定输出标识：可以对应硬约束、Profile 兼容差异或告警。同一个能力族常拆成多个判定，例如动态 PP 分别检查“需要列表、列表长度、层数总和、Profile、与 VPP 互斥”。因此页面报告 28 个诊断码，而不包装成 28 条彼此独立的算法定律。</p>
         </div>
 
         <div class="inventory-grid">
@@ -855,9 +1025,10 @@
           </article>
 
           <article class="inventory-card">
-            <div class="inventory-card-head"><h3>TP 与算法级 CP</h3><span class="status done">已实现 · 6</span></div>
+            <div class="inventory-card-head"><h3>模型结构、TP 与算法级 CP</h3><span class="status done">已实现 · 7</span></div>
             <ul class="diagnostic-list">
               <li><code>PAGE_HEADS_DIVISIBLE_BY_TP</code><span>注意力头数必须被 TP 整除。</span></li>
+              <li><code>MODEL_ATTENTION_HEADS_DIVISIBLE_BY_KV_HEADS</code><span>Attention Heads 必须被 KV Heads 整除，保证 GQA / MQA 分组完整。</span></li>
               <li><code>PAGE_DENSE_FFN_DIVISIBLE_BY_TP</code><span>Dense FFN intermediate 必须被 TP 整除。</span></li>
               <li><code>PAGE_EXPERT_FFN_DIVISIBLE_BY_TP</code><span>启用专家张量并行时，Expert FFN 必须被 TP 整除。</span></li>
               <li><code>MINDSPEED_ULYSSES_HEADS_DIVISIBLE_BY_TP_CP</code><span>Ulysses 下 Head 必须被 TP×CP 整除。</span></li>
@@ -886,6 +1057,7 @@
           <p>这些约束在 MindSpeed 上游源码或当前产品边界中已有明确证据，但尚未进入纯计算核心、来源引用与 Golden 测试。</p>
         </div>
         <div class="planned-grid">
+          <article class="planned-card"><span class="status future">待实现</span><h3>模型结构 Profile</h3><ul><li>显式 head_dim / qk_head_dim 的来源与投影维度关系</li><li>KV Head 在 TP 内采用切分还是复制</li><li>GQA / MQA 与 TP 组合下的每 Rank 完整性</li><li>不同模型家族的结构字段默认值与适用边界</li></ul></article>
           <article class="planned-card"><span class="status future">待实现</span><h3>高级 CP</h3><ul><li>Hybrid CP 的 Ulysses / Ring degree</li><li>Double Ring window 范围与整除</li><li>Adaptive / Hybrid Adaptive CP</li><li>DeepSeek-V4 CP 约束</li></ul></article>
           <article class="planned-card"><span class="status future">待实现</span><h3>昇腾通信特性</h3><ul><li>MC2 与 CoC 互斥</li><li>MC2 / CoC 与 MoE 兼容关系</li><li>Ampipe 前置条件与互斥项</li><li>2D TP 支持边界</li><li>HCCL group buffer 规则</li></ul></article>
           <article class="planned-card"><span class="status future">待实现</span><h3>卡型与软件版本</h3><ul><li>910B / A2G 的 CP 搜索阈值</li><li>910_93 的 CP 搜索阈值</li><li>CANN / 驱动 / torch_npu / MindSpeed 版本矩阵</li><li>算子特性与卡型支持矩阵</li></ul></article>
