@@ -6976,8 +6976,8 @@ body.is-pane-resizing[data-pane-resize-axis="x"] * { cursor: col-resize !importa
             </header>
 
             <nav class="msi-tabs" role="tablist" aria-label="分析视图">
-              <button class="msi-tab is-active" type="button" role="tab" aria-selected="true">概览</button>
-              <button class="msi-tab" type="button" role="tab" aria-selected="false">时间线</button>
+              <button class="msi-tab" type="button" role="tab" aria-selected="false">概览</button>
+              <button class="msi-tab is-active" type="button" role="tab" aria-selected="true">时间线</button>
               <button class="msi-tab" type="button" role="tab" aria-selected="false">内存</button>
               <button class="msi-tab" type="button" role="tab" aria-selected="false">通信</button>
               <button class="msi-tab" type="button" role="tab" aria-selected="false">计算图</button>
@@ -10280,26 +10280,26 @@ ${issuesText || '（暂无）'}
       kind: 'thinking', title: '拆解统计诉求', doneTitle: '已拆解统计口径',
       text: '这个问题包含三个口径：模型每一层的 Device Kernel 总耗时、每个 MoE 模块内各框架算子的耗时，' +
         '以及先按层汇总 MoE 耗时、再对所有层求平均。要得到这些结果，数据里必须同时保留 Module 层级、算子与 Kernel 映射及 Kernel 时长。',
-      hold: 360,
+      hold: 240,
     },
     {
       kind: 'usetool', title: '检索领域知识库', doneTitle: '已检索 module_statistic 指导',
       text: 'module_statistic 依赖 nn.Module 的 msTX 层级打点；Profiling 必须开启 mstx，' +
         '导出类型包含 Db。分析后，text 模式应生成 module_statistic_{rank_id}.xlsx，包含 parentModule、module、opName、' +
         'kernelList、totalKernelDuration(ns)、avgKernelDuration(ns)、opCount 和 rankID。',
-      hold: 420,
+      hold: 280,
     },
     {
       kind: 'usetool', title: '扫描当前落盘目录', doneTitle: '已扫描 Profiling 产物',
       text: '逐 Rank 检查当前性能数据目录及 cluster_analysis_output，查找 module_statistic_*.xlsx，' +
         '并核对是否存在等价的 ModuleStatistic 分析结果。',
-      hold: 440,
+      hold: 280,
     },
     {
       kind: 'thinking', title: '校验数据完备性', doneTitle: '确认缺少模型结构统计数据',
       text: '未发现 module_statistic_{rank_id}.xlsx，也没有可替代的 ModuleStatistic 结果。现有 Kernel/算子明细缺少可靠的模型层级边界，' +
         '无法把耗时归属到每一层和 MoE 子模块；继续计算会得到不可验证的伪结果，应明确提示补采。',
-      hold: 360,
+      hold: 240,
     },
   ];
 
@@ -10376,25 +10376,25 @@ ${issuesText || '（暂无）'}
       kind: 'thinking', title: '确认统计口径', doneTitle: '已确认层级与耗时口径',
       text: '需要同时输出三组结果：各 DecoderLayer 的单次调用总耗时、MoE 路径下每个算子的单次耗时，' +
         '以及先按层汇总 MoE、再跨层求平均。DP 副本不能重复相加，所有纳秒字段统一换算为毫秒。',
-      hold: 340,
+      hold: 240,
     },
     {
       kind: 'usetool', title: '扫描模型结构统计文件', doneTitle: '已发现 8 份 module_statistic 文件',
       text: '在重新采集的分析产物中发现 module_statistic_0.xlsx 至 module_statistic_7.xlsx。' +
         '表头包含 Parent Module、Module、Op Name、Kernel List、Total/Avg Kernel Duration(ns) 与 Op Count，字段完整，可以恢复层级并归因耗时。',
-      hold: 420,
+      hold: 280,
     },
     {
       kind: 'usetool', title: '解析层级与 MoE 路径', doneTitle: '已建立 Layer → Module → Op 映射',
       text: '按 Parent Module 提取 DecoderLayer 编号，沿 Module 路径识别 Router、Dispatch、Experts 与 Combine；' +
         '再用 Op Name 聚合其 Kernel List。选择 rank0、2、4、6 作为一个 DP 副本，rank1、3、5、7 用于交叉校验。',
-      hold: 420,
+      hold: 280,
     },
     {
       kind: 'thinking', title: '归一化并验算结果', doneTitle: '已完成跨层汇总',
       text: '用 Avg Kernel Duration 与 Op Count 校验单次调用口径，逐层求和后再计算 MoE 跨层平均。' +
         '两个 DP 副本对应层的偏差均小于 0.8%，汇总结果一致，可输出统计表。',
-      hold: 360,
+      hold: 240,
     },
   ];
 
@@ -10464,7 +10464,7 @@ ${issuesText || '（暂无）'}
       text: '先别急着找瓶颈——得确认这批数据能支撑什么结论：几个 rank、哪个框架采的、DB 还是纯 CSV。\n' +
         '格式直接决定分析路径：**DB 才能走 msprof-analyze 的集群 recipe**，只有单卡 CSV 就只能做到算子级，' +
         '"是不是并行切分的问题"这类跨卡结论根本无从谈起。',
-      hold: 380,
+      hold: 240,
     },
     {
       kind: 'usetool', title: '校验数据完整性与采集配置', doneTitle: '校验数据完整性与采集配置',
@@ -10472,14 +10472,14 @@ ${issuesText || '（暂无）'}
         '按 `profiler_info_{rank}.json` 建好映射：ubuntu122 = rank0–3，localhost = rank4–7。\n' +
         '`profiler_metadata.json`：**TP1·PP4·DP2·CP1**、Level1、`record_shapes=false`、`profile_memory=false`。\n' +
         '两条前提先记下：内存维度这次采不到（PHS 内存子项只能记 N/A）；**PP=4 → bubble 是首要嫌疑**。',
-      hold: 420,
+      hold: 240,
     },
     {
       kind: 'thinking', title: '思考中', doneTitle: '思考完成',
       text: '单步 10.8 秒偏慢，先立三个互斥假设，再拿数据一个个证伪：**硬件型慢卡 / 慢链路 / 结构性负载不均**。\n' +
         '三者在落盘里的指纹完全不同——慢卡看 stepTime 的离散度，慢链路看带宽达成率，' +
         '负载不均看各 stage 的计算时间与 stage 等待。先把集群 recipe 全跑出来，别凭一张表下结论。',
-      hold: 420,
+      hold: 240,
     },
     {
       kind: 'usetool', title: 'msprof-analyze 集群分析 + advisor', doneTitle: 'msprof-analyze 集群分析 + advisor',
@@ -10487,7 +10487,7 @@ ${issuesText || '（暂无）'}
         '`communication_matrix_sum`、`freq_analysis`、`free_analysis`、`cann_api_sum`，每个 mode 单独 `-o` 到子目录，' +
         '避免互相覆盖；同时后台并行跑 `advisor all`。\n' +
         '全部 `cluster_analysis.db` 已落盘；advisor 命中 Environment Variable / Operator Dynamic Shape / Packet 三类。',
-      hold: 400,
+      hold: 240,
     },
     {
       kind: 'usetool', title: '交叉验证集群表', doneTitle: '交叉验证集群表',
@@ -10496,7 +10496,7 @@ ${issuesText || '（暂无）'}
         '空等 `communicationWaitStageTime` 均值 **3.77 s**。\n' +
         '`ClusterCommunicationBandwidth`：跨节点 RDMA 实测 **24.2 GB/s ≈ 理论值的 97%**，包大小 29.36 MB，链路健康。\n' +
         '`free_analysis`：各卡 Free 仅 84–251 ms，host 下发没有饿死 device。',
-      hold: 460,
+      hold: 240,
     },
     {
       kind: 'thinking', title: '思考中', doneTitle: '思考完成',
@@ -10505,7 +10505,7 @@ ${issuesText || '（暂无）'}
         '正是 lm_head / logits 投影；再叠上末级 loss 相关的 vector 算子（比 stage0 重 ~1.6×），' +
         '3110 ms 的差额刚好对得上。四张互相独立的表指向同一个结论，可以定性了。\n' +
         '顺手还捞到第二个 P0：`communicationOverlapComputation` 整列为 0，通信一点都没被计算掩盖。',
-      hold: 480,
+      hold: 240,
     },
     {
       kind: 'usetool', title: '实算 cube 利用率 / MFU / PHS', doneTitle: '实算 cube 利用率 / MFU / PHS',
@@ -10513,7 +10513,7 @@ ${issuesText || '（暂无）'}
         'MatMul 聚合达成 **301.7 TFLOP/s**，已超 910B3/B4 理论峰值 → 判定芯片为 **910B1**（BF16 峰值 378.88 TFLOP/s），' +
         'MFU 以此为分母：rank0 ~80%、rank6 ~64%；端到端 step MFU ≈ **40% 出头**。\n' +
         'PHS 按大模型多卡训练权重算：计算 64 · 通信 93 · 调度 71、内存 N/A 归一化 → **75（A 档下沿）**。可以成文了。',
-      hold: 420,
+      hold: 240,
     },
   ];
 
@@ -10678,7 +10678,7 @@ ${issuesText || '（暂无）'}
     (async () => {
       for (const step of PROFILING_THINK_SCRIPT) {
         think.startNode(step);
-        await think.typeText(step.text, 22);
+        await think.typeText(step.text, 9);
         await chatSleep(step.hold || 300);
         if (epoch !== chatEpoch) return;                            // 这轮已被「新建对话」丢弃
         if (chatStopped) return finalizeStoppedRound(think, bodyEl);
@@ -10739,7 +10739,7 @@ ${issuesText || '（暂无）'}
     (async () => {
       for (const step of KNOWLEDGE_THINK_SCRIPT) {
         think.startNode(step);
-        await think.typeText(step.text, 22);
+        await think.typeText(step.text, 15);
         await chatSleep(step.hold || 300);
         if (epoch !== chatEpoch) return;
         if (chatStopped) return finalizeStoppedRound(think, bodyEl);
@@ -10750,7 +10750,7 @@ ${issuesText || '（暂无）'}
       answer.className = 'wzh-chat-answer';
       bodyEl.appendChild(answer);
       const markdown = buildKnowledgeAnswerMarkdown();
-      await typeMarkdownInto(answer, markdown, 16, 6);
+      await typeMarkdownInto(answer, markdown, 11, 6);
       if (epoch !== chatEpoch) return;
       if (chatStopped) return finalizeStoppedRound(think, bodyEl);
 
@@ -10786,7 +10786,7 @@ ${issuesText || '（暂无）'}
     (async () => {
       for (const step of MODULE_STATISTIC_READY_THINK_SCRIPT) {
         think.startNode(step);
-        await think.typeText(step.text, 22);
+        await think.typeText(step.text, 15);
         await chatSleep(step.hold || 300);
         if (epoch !== chatEpoch) return;
         if (chatStopped) return finalizeStoppedRound(think, bodyEl);
@@ -10797,7 +10797,7 @@ ${issuesText || '（暂无）'}
       answer.className = 'wzh-chat-answer';
       bodyEl.appendChild(answer);
       const markdown = buildModuleStatisticReadyAnswerMarkdown();
-      await typeMarkdownInto(answer, markdown, 16, 6);
+      await typeMarkdownInto(answer, markdown, 11, 6);
       if (epoch !== chatEpoch) return;
       if (chatStopped) return finalizeStoppedRound(think, bodyEl);
 
@@ -11231,7 +11231,7 @@ ${issuesText || '（暂无）'}
       if (ticket !== demoInputEpoch) return false;
       input.value += ch;
       dispatchRecordingInput(input);
-      await recordingWait(ch === '\n' ? 150 : 42);
+      await recordingWait(ch === '\n' ? 75 : 21);
     }
     return ticket === demoInputEpoch;
   }
