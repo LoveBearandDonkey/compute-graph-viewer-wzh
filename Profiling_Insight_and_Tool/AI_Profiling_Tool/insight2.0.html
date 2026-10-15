@@ -4971,6 +4971,7 @@ html[data-embed-preview="true"][data-frame-ratio="wide"] .pto-ide-frame {
     /* 刷新过程中按钮暂时不可点,避免连点重复重建列表 */
     .wzh-chat-agent-foot-btn:disabled { opacity: .6; cursor: default; }
     .wzh-chat-head-actions { display: flex; align-items: center; gap: 2px; flex-shrink: 0; }
+    .wzh-chat-head-menu { position: relative; display: inline-flex; }
     /* 右侧窗口操作:新对话 / 历史 / 设置(= DeepSeek Key) / 悬浮窗 / 关闭,图标取自 src/pic/icon/ */
     .wzh-chat-head-btn {
       position: relative;
@@ -4981,9 +4982,35 @@ html[data-embed-preview="true"][data-frame-ratio="wide"] .pto-ide-frame {
       transition: background var(--duration-fast) var(--easing-default);
     }
     .wzh-chat-head-btn:hover { background: var(--state-hover); }
+    .wzh-chat-head-btn[aria-expanded='true'] { background: var(--state-selected); }
     /* 悬浮窗模式生效时,悬浮窗按钮保持按下态 */
     .wzh-chat-head-btn.is-active { background: var(--state-selected); }
     .wzh-chat-head-btn img { width: 20px; height: 20px; display: block; }
+    /* 历史对话从头部图标正下方展开；记录标题与会话主题保持同一份文案。 */
+    .wzh-chat-history-pop {
+      position: absolute; top: calc(100% + 8px); right: -100px; z-index: 40;
+      box-sizing: border-box; width: 300px; padding: 8px;
+      background: var(--surface-1); border: 1px solid var(--border-default);
+      border-radius: var(--radius-lg); box-shadow: var(--wzh-chat-shadow);
+    }
+    .wzh-chat-history-pop[hidden] { display: none; }
+    .wzh-chat-history-pop-title {
+      margin: 0; padding: 4px 10px 8px;
+      font: 400 13px/1.4 var(--font-sans); color: var(--foreground-placeholder);
+    }
+    .wzh-chat-history-item {
+      display: flex; align-items: center; gap: 10px; width: 100%; box-sizing: border-box;
+      padding: 9px 10px; border: none; border-radius: var(--radius-md, 8px);
+      background: transparent; color: var(--foreground); cursor: pointer; text-align: left;
+      font: 400 14px/1.4 var(--font-sans);
+      transition: background var(--duration-fast) var(--easing-default);
+    }
+    .wzh-chat-history-item:hover,
+    .wzh-chat-history-item:focus-visible { background: var(--state-hover); outline: none; }
+    .wzh-chat-history-item img { width: 18px; height: 18px; flex: 0 0 auto; }
+    .wzh-chat-history-item-text {
+      min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    }
     /* Key 已配置时,齿轮右上角点一个蓝点作为唯一视觉线索(悬浮 title 给出完整文案) */
     #trainChatKeyBtn.is-configured::after {
       content: ''; position: absolute; right: 3px; top: 3px;
@@ -5986,7 +6013,7 @@ html[data-embed-preview="true"][data-frame-ratio="wide"] .pto-ide-frame {
     }
     .wzh-chat-viz-tabs::-webkit-scrollbar { display: none; }
     .wzh-chat-viz-tab {
-      min-width: 112px; max-width: 196px; flex: 0 1 196px;
+      min-width: 0; max-width: 100%; width: max-content; flex: 0 0 auto;
       display: inline-flex; align-items: center; gap: 6px;
       padding: 6px 6px 6px 10px;
       border: 0; border-radius: 7px;
@@ -6024,13 +6051,6 @@ html[data-embed-preview="true"][data-frame-ratio="wide"] .pto-ide-frame {
     .wzh-chat-viz-viewport { min-width: 0; min-height: 0; flex: 1 1 auto; background: var(--background); }
     .wzh-chat-viz-frame { display: block; width: 100%; height: 100%; border: 0; background: var(--background); }
     .wzh-chat-viz-frame[hidden] { display: none; }
-    .wzh-chat-viz-foot {
-      display: flex; align-items: center; justify-content: space-between; gap: 8px;
-      padding: 7px 12px; border-top: 1px solid var(--border-subtle);
-      font-size: 10px; line-height: 1.4; color: var(--foreground-muted);
-    }
-    .wzh-chat-viz-source { font-family: var(--font-mono); }
-
     /* 定位锚点:点一下让左边泳道图跳到对应那一行(见 boot 里的委托 + window.WZH_LOCATE_LANE)。
        右键「置入智能对话」是图 → 对话,这个锚点是对话 → 图,一来一回才算协作。
        外观直接对齐输入框里的 # 上下文标签(.wzh-chat-input-chip):同样的 --mi-brand-blue 12%
@@ -6135,6 +6155,7 @@ html[data-embed-preview="true"][data-frame-ratio="wide"] .pto-ide-frame {
 
     /* 图标 svg 本身是黑色描边,深色主题下整体反相;彩色 PNG(头像/引导卡图标)不参与 */
     :root[data-theme='dark'] .wzh-chat-head-btn img,
+    :root[data-theme='dark'] .wzh-chat-history-item img,
     :root[data-theme='dark'] .wzh-chat-head-caret,
     :root[data-theme='dark'] .wzh-chat-tool img,
     :root[data-theme='dark'] .wzh-chat-mic-btn img,
@@ -6216,20 +6237,29 @@ body.chat-shell-page {
   top: 50%; left: 50%;
   transform: translate(-50%, -50%);
   border-radius: var(--radius-pill, 999px);
-  background: var(--border-default);
-  transition: background var(--duration-fast, 120ms) var(--easing-default, ease);
+  color: var(--border-default);
+  background: currentColor;
+  transition: color var(--duration-fast, 120ms) var(--easing-default, ease);
 }
 .msi-resizer:hover::before,
 .msi-resizer:focus-visible::before,
 .msi-resizer.is-dragging::before {
-  background: color-mix(in srgb, var(--msi-accent) 62%, transparent);
+  color: color-mix(in srgb, var(--msi-accent) 62%, transparent);
 }
 /* 横条:泳道图 ↕ 底部详情栏。12px 高正好补上原先 .msi-content-foot 的 margin-top */
 .msi-resizer--h { height: 12px; margin: 0 16px; cursor: row-resize; }
-.msi-resizer--h::before { width: 48px; height: 3px; }
+.msi-resizer--h::before {
+  width: 3px;
+  height: 3px;
+  box-shadow: -7px 0 0 currentColor, 7px 0 0 currentColor;
+}
 /* 竖条:内容区 ↔ 智能对话面板 */
 .msi-resizer--v { align-self: stretch; width: 8px; cursor: col-resize; }
-.msi-resizer--v::before { width: 3px; height: 48px; }
+.msi-resizer--v::before {
+  width: 3px;
+  height: 3px;
+  box-shadow: 0 -7px 0 currentColor, 0 7px 0 currentColor;
+}
 
 /* 拖动期间整页锁住选区和光标:划过按钮/文字时光标不跳,也不会顺手把文本选中 */
 body.is-pane-resizing,
@@ -6723,7 +6753,7 @@ body.is-pane-resizing[data-pane-resize-axis="x"] * { cursor: col-resize !importa
 .msi-content-foot {
   flex: 0 0 auto;
   display: block;
-  margin: 8px 16px 16px;
+  margin: 0 16px 16px;
   padding: 0;
   border: 1px solid var(--border-subtle);
   border-radius: var(--radius-md);
@@ -7055,9 +7085,59 @@ body.is-pane-resizing[data-pane-resize-axis="x"] * { cursor: col-resize !importa
   flex: 0 0 30px;
   transform: rotate(90deg);
 }
-/* 主色:浅色主题用还原稿的蓝,深色主题下提亮一档 */
-:root, [data-theme="light"] { --msi-accent: var(--brand-accent); }
-[data-theme="dark"] { --msi-accent: var(--brand-accent); }
+/* Trace 任务色参考 Perfetto 的「事件名稳定哈希 + 全色环分类色」策略：
+   18 个色相覆盖暖色、冷色与少量绿色，不再让 device 泳道固定挤在绿色系。
+   选中态仍由 --msi-accent 的描边表达，不占用任务本身的色相语义。
+   时间线 / 选中详情 / 调用链引用同一组变量，切换主题时会同步换色。 */
+:root {
+  --msi-accent: var(--brand-accent);
+  --msi-trace-task-fg: #293347;
+  --msi-metric-fill-strength: 58%;
+  --msi-metric-stroke-strength: 70%;
+  /* 槽位按跨色环顺序排列；即使相近名称哈希到相邻槽位，视觉上也不会扎堆。 */
+  --msi-trace-01-bg: oklch(82% .095 4);
+  --msi-trace-02-bg: oklch(82% .095 155);
+  --msi-trace-03-bg: oklch(82% .095 285);
+  --msi-trace-04-bg: oklch(82% .095 46);
+  --msi-trace-05-bg: oklch(82% .095 212);
+  --msi-trace-06-bg: oklch(82% .095 342);
+  --msi-trace-07-bg: oklch(82% .095 125);
+  --msi-trace-08-bg: oklch(82% .095 265);
+  --msi-trace-09-bg: oklch(82% .095 32);
+  --msi-trace-10-bg: oklch(82% .095 198);
+  --msi-trace-11-bg: oklch(82% .095 325);
+  --msi-trace-12-bg: oklch(82% .095 88);
+  --msi-trace-13-bg: oklch(82% .095 245);
+  --msi-trace-14-bg: oklch(82% .095 18);
+  --msi-trace-15-bg: oklch(82% .095 185);
+  --msi-trace-16-bg: oklch(82% .095 305);
+  --msi-trace-17-bg: oklch(82% .095 58);
+  --msi-trace-18-bg: oklch(82% .095 228);
+}
+:root[data-theme="dark"] {
+  --msi-trace-task-fg: #f5f7fb;
+  --msi-metric-fill-strength: 44%;
+  --msi-metric-stroke-strength: 58%;
+  --msi-trace-01-bg: oklch(42% .085 4);
+  --msi-trace-02-bg: oklch(42% .085 155);
+  --msi-trace-03-bg: oklch(42% .085 285);
+  --msi-trace-04-bg: oklch(42% .085 46);
+  --msi-trace-05-bg: oklch(42% .085 212);
+  --msi-trace-06-bg: oklch(42% .085 342);
+  --msi-trace-07-bg: oklch(42% .085 125);
+  --msi-trace-08-bg: oklch(42% .085 265);
+  --msi-trace-09-bg: oklch(42% .085 32);
+  --msi-trace-10-bg: oklch(42% .085 198);
+  --msi-trace-11-bg: oklch(42% .085 325);
+  --msi-trace-12-bg: oklch(42% .085 88);
+  --msi-trace-13-bg: oklch(42% .085 245);
+  --msi-trace-14-bg: oklch(42% .085 18);
+  --msi-trace-15-bg: oklch(42% .085 185);
+  --msi-trace-16-bg: oklch(42% .085 305);
+  --msi-trace-17-bg: oklch(42% .085 58);
+  --msi-trace-18-bg: oklch(42% .085 228);
+}
+:root[data-theme="dark"] .msi-chain-taskbar:hover { filter: brightness(1.12); }
 
 /* 算子任务条:用 HTML 绝对定位而不是 SVG,条上的算子名才不会被横向拉伸变形 */
 .msi-bar {
@@ -7363,9 +7443,20 @@ body.is-pane-resizing[data-pane-resize-axis="x"] * { cursor: col-resize !importa
             <button class="wzh-chat-head-btn" id="trainChatNewBtn" type="button" aria-label="新建对话" title="新建对话">
               <img src="" data-wzh-icon="newchat.svg" alt="">
             </button>
-            <button class="wzh-chat-head-btn" id="trainChatHistoryBtn" type="button" aria-label="历史对话" title="历史对话">
-              <img src="" data-wzh-icon="history.svg" alt="">
-            </button>
+            <div class="wzh-chat-head-menu" id="trainChatHistoryWrap">
+              <button class="wzh-chat-head-btn" id="trainChatHistoryBtn" type="button" aria-label="历史对话" title="历史对话"
+                      aria-haspopup="menu" aria-expanded="false" aria-controls="trainChatHistoryPop">
+                <img src="" data-wzh-icon="history.svg" alt="">
+              </button>
+              <div class="wzh-chat-history-pop" id="trainChatHistoryPop" role="menu" aria-label="历史对话" hidden>
+                <p class="wzh-chat-history-pop-title">历史对话</p>
+                <button class="wzh-chat-history-item" id="trainChatHistoryProfileBtn" type="button" role="menuitem"
+                        title="profile_dir 单机多卡性能分析">
+                  <img src="" data-wzh-icon="history.svg" alt="">
+                  <span class="wzh-chat-history-item-text">profile_dir 单机多卡性能分析</span>
+                </button>
+              </div>
+            </div>
             <button class="wzh-chat-head-btn" id="trainChatKeyBtn" type="button" aria-label="设置 DeepSeek API Key（未配置）" title="设置 DeepSeek API Key（未配置）">
               <img class="wzh-chat-key-icon" src="" data-wzh-icon="setting.svg" alt="">
             </button>
@@ -7526,10 +7617,6 @@ body.is-pane-resizing[data-pane-resize-axis="x"] * { cursor: col-resize !importa
             </button>
           </header>
           <div class="wzh-chat-viz-viewport" id="trainChatVizViewport"></div>
-          <footer class="wzh-chat-viz-foot">
-            <span>图表与回答共享同一份示意数据</span>
-            <span class="wzh-chat-viz-source">v15-report-modules-pto.html</span>
-          </footer>
         </section>
       </aside>
       </div>
@@ -7953,14 +8040,15 @@ body.is-pane-resizing[data-pane-resize-axis="x"] * { cursor: col-resize !importa
   let zoomIdx = 4;        // 默认 1200ms = 1.2s
   let DUR_MS = ZOOM_STEPS[zoomIdx];   // 时间轴总长,和顶部刻度一致
 
-  // HBM 六条带宽曲线:读三条 / 写三条,配色对齐还原稿。
+  // NPU Metrics 与任务条共用同一套主题色。面积图只保存基色；填充透明度和
+  // 描边明度由 areaTrack 结合当前主题生成，避免深色主题继续使用浅色粉彩。
   const HBM_LANES = [
-    { label: 'HBM 0 read/Bandwidth',  stroke: '#5b8fd4', fill: '#cfe0f7' },
-    { label: 'HBM 1 read/Bandwidth',  stroke: '#d878b4', fill: '#f7cfe6' },
-    { label: 'HBM 2 read/Bandwidth',  stroke: '#8b73cf', fill: '#ddd2f3' },
-    { label: 'HBM 0 write/Bandwidth', stroke: '#5fae6a', fill: '#cfe9d0' },
-    { label: 'HBM 1 write/Bandwidth', stroke: '#4bb8a6', fill: '#c7ece6' },
-    { label: 'HBM 2 write/Bandwidth', stroke: '#dfae43', fill: '#fbe6b8' },
+    { label: 'HBM 0 read/Bandwidth',  color: 'var(--msi-trace-05-bg)' },
+    { label: 'HBM 1 read/Bandwidth',  color: 'var(--msi-trace-11-bg)' },
+    { label: 'HBM 2 read/Bandwidth',  color: 'var(--msi-trace-03-bg)' },
+    { label: 'HBM 0 write/Bandwidth', color: 'var(--msi-trace-07-bg)' },
+    { label: 'HBM 1 write/Bandwidth', color: 'var(--msi-trace-15-bg)' },
+    { label: 'HBM 2 write/Bandwidth', color: 'var(--msi-trace-04-bg)' },
   ];
 
   // 泳道树:group 行可折叠,leaf 行是真正画东西的那一行。
@@ -8021,14 +8109,14 @@ body.is-pane-resizing[data-pane-resize-axis="x"] * { cursor: col-resize !importa
           )) },
           { id: 'acc-pmu', label: 'ACC PMU', group: true, open: true, children: [0, 1, 2, 3].map((i) => ({
             id: 'acc-' + i, label: 'Accelerator ' + i + ' / readBandwidth', track: 'area',
-            area: { stroke: ['#5b8fd4', '#d878b4', '#8b73cf', '#5fae6a'][i], fill: ['#cfe0f7', '#f7cfe6', '#ddd2f3', '#cfe9d0'][i] },
+            area: { color: ['var(--msi-trace-05-bg)', 'var(--msi-trace-11-bg)', 'var(--msi-trace-03-bg)', 'var(--msi-trace-07-bg)'][i] },
           })) },
           { id: 'qos', label: 'QOS', group: true, open: true, children: [
-            { id: 'qos-0', label: 'QoS 0: OTHERS / Bandwidth', track: 'area', area: { stroke: '#8b73cf', fill: '#ddd2f3' } },
-            { id: 'qos-1', label: 'QoS 1: AIC_DAT_QOS / Bandwidth', track: 'area', area: { stroke: '#4bb8a6', fill: '#c7ece6' } },
+            { id: 'qos-0', label: 'QoS 0: OTHERS / Bandwidth', track: 'area', area: { color: 'var(--msi-trace-03-bg)' } },
+            { id: 'qos-1', label: 'QoS 1: AIC_DAT_QOS / Bandwidth', track: 'area', area: { color: 'var(--msi-trace-15-bg)' } },
           ] },
           { id: 'freq', label: 'AI Core Freq', group: true, open: true, children: [
-            { id: 'freq-c', label: 'AI Core Freq (MHz)', track: 'area', area: { stroke: '#dfae43', fill: '#fbe6b8' } },
+            { id: 'freq-c', label: 'AI Core Freq (MHz)', track: 'area', area: { color: 'var(--msi-trace-04-bg)' } },
           ] },
         ] },
       ] },
@@ -8324,47 +8412,24 @@ body.is-pane-resizing[data-pane-resize-axis="x"] * { cursor: col-resize !importa
     return html;
   }
 
-  // 同类任务保留大类色系，但提供多个色阶。按泳道时间顺序分配时，若相邻任务不同名，
-  // 会避开前一任务的实际颜色；同名任务则可以延续同色，便于识别重复调用。
-  const TRACE_KIND_PALETTES = {
-    python: [
-      { bg: '#d9cdf5', fg: '#563a86' }, { bg: '#ead2f5', fg: '#704080' }, { bg: '#fbc3e0', fg: '#8a3d66' },
-    ],
-    cann: [
-      { bg: '#c5d9fb', fg: '#2c5296' }, { bg: '#b9dff5', fg: '#285f83' }, { bg: '#d2d4f7', fg: '#4c4f91' },
-    ],
-    device: [
-      { bg: '#c0e6c7', fg: '#2c6a3d' }, { bg: '#b9f0e3', fg: '#226d5c' }, { bg: '#d5e9b9', fg: '#526d26' },
-    ],
-    communication: [
-      { bg: '#f7d8b5', fg: '#87521e' }, { bg: '#f6c7a8', fg: '#88442a' }, { bg: '#f8e1ad', fg: '#785817' },
-    ],
-    overlap: [
-      { bg: '#b9f0e3', fg: '#226d5c' }, { bg: '#c4e7ef', fg: '#286879' }, { bg: '#c8ead1', fg: '#306943' },
-    ],
-    // Stream 0 虽是 Idle 语义，但它是已展开的真实泳道，不能再使用折叠概览灰。
-    idle: [
-      { bg: '#cbdcf8', fg: '#345d9a' }, { bg: '#d9cdf5', fg: '#563a86' }, { bg: '#c4e7ef', fg: '#286879' },
-    ],
-  };
+  // Perfetto 会把规范化后的 slice name 做稳定哈希，再从覆盖完整色环的调色板取色。
+  // 这里沿用相同原则：颜色表达「是什么任务」，泳道层级负责表达 CPU/CANN/NPU/通信类型。
+  // 去掉名称里的数字后，同一算子的不同序号仍保持同色；18 色也避免高频 device 全挤在绿色。
+  const TRACE_EVENT_PALETTE = Array.from({ length: 18 }, (_, index) => ({
+    bg: 'var(--msi-trace-' + String(index + 1).padStart(2, '0') + '-bg)',
+    fg: 'var(--msi-trace-task-fg)',
+  }));
+  function normalizedTraceTaskName(name) {
+    return String(name).replace(/( )?\d+/g, '').trim() || String(name);
+  }
   const TRACE_TASK_COLOR_BY_ID = new Map();
   function traceTaskColor(task) {
     if (!TRACE_TASK_COLOR_BY_ID.has(task.id)) {
-      const laneTasks = REAL_TRACE_TASKS.filter((item) => item.laneId === task.laneId)
-        .sort((a, b) => a.start - b.start || a.id.localeCompare(b.id));
-      let previous = null;
-      laneTasks.forEach((item) => {
-        const palette = TRACE_KIND_PALETTES[item.kind] || TRACE_KIND_PALETTES.device;
-        let index = hashSeed(item.name + '|' + item.kind) % palette.length;
-        if (previous && previous.name !== item.name && palette[index].bg === previous.color.bg) {
-          index = (index + 1) % palette.length;
-        }
-        const color = palette[index];
-        TRACE_TASK_COLOR_BY_ID.set(item.id, color);
-        previous = { name: item.name, color };
-      });
+      const colorKey = normalizedTraceTaskName(task.name);
+      const index = hashSeed(colorKey) % TRACE_EVENT_PALETTE.length;
+      TRACE_TASK_COLOR_BY_ID.set(task.id, TRACE_EVENT_PALETTE[index]);
     }
-    return TRACE_TASK_COLOR_BY_ID.get(task.id) || TRACE_KIND_PALETTES.device[0];
+    return TRACE_TASK_COLOR_BY_ID.get(task.id) || TRACE_EVENT_PALETTE[0];
   }
   function realTraceTrack(lane) {
     return REAL_TRACE_TASKS.filter((task) => task.laneId === lane.id)
@@ -8388,6 +8453,8 @@ body.is-pane-resizing[data-pane-resize-axis="x"] * { cursor: col-resize !importa
   // 带宽曲线:随机游走 + 几个峰,画成填色面积图。
   function areaTrack(rnd, area) {
     const W = 1000, H = AREA_H, N = 150;
+    const fill = 'color-mix(in srgb, ' + area.color + ' var(--msi-metric-fill-strength), transparent)';
+    const stroke = 'color-mix(in srgb, ' + area.color + ' var(--msi-metric-stroke-strength), var(--foreground))';
     const pts = [];
     let v = 0.35 + rnd() * 0.2;
     const peaks = [0.12 + rnd() * 0.15, 0.4 + rnd() * 0.15, 0.7 + rnd() * 0.2];
@@ -8404,7 +8471,7 @@ body.is-pane-resizing[data-pane-resize-axis="x"] * { cursor: col-resize !importa
     for (let i = 1; i < pts.length; i++) d += ' L' + pts[i][0].toFixed(1) + ',' + pts[i][1].toFixed(1);
     d += ' L' + W + ',' + H + ' Z';
     return '<svg viewBox="0 0 ' + W + ' ' + H + '" preserveAspectRatio="none" aria-hidden="true">' +
-             '<path d="' + d + '" fill="' + area.fill + '" stroke="' + area.stroke + '" stroke-width="1.2"></path>' +
+             '<path d="' + d + '" fill="' + fill + '" stroke="' + stroke + '" stroke-width="1.2"></path>' +
            '</svg>';
   }
 
@@ -10216,7 +10283,7 @@ ${issuesText || '（暂无）'}
 
   // 回答区打字机:按 markdown 源码逐段重渲染，而不是逐个 DOM 节点插入——
   // 列表 / 表格这类块级结构只有整段重渲染才能得到正确的中间态。
-  function typeMarkdownInto(el, text, msPerTick, charsPerTick) {
+  function typeMarkdownInto(el, text, msPerTick, charsPerTick, onRender) {
     const msgEl = $('trainChatMessages');
     const step = msPerTick || 28;
     const chunk = charsPerTick || 2;
@@ -10225,7 +10292,14 @@ ${issuesText || '（暂无）'}
       const timer = setInterval(() => {
         if (chatStopped) { clearInterval(timer); resolve(); return; } // 用户按了停止键
         i = Math.min(text.length, i + chunk);
+        // 可视化卡片是可交互节点。当前段落重绘前先摘下并保留同一批 DOM，
+        // 重绘后再由 onRender 放回新位置，避免动画期间按钮每 16ms 被替换一次。
+        const retainedCards = new Map(Array.from(el.querySelectorAll('.wzh-chat-viz-card')).map((card) => [
+          card.dataset.vizModule,
+          card,
+        ]));
         el.innerHTML = renderMarkdown(text.slice(0, i));
+        if (onRender) onRender(retainedCards);
         scrollChatToBottom(msgEl, { instant: true, onlyIfNearBottom: true });
         if (i >= text.length) { clearInterval(timer); resolve(); }
       }, step);
@@ -10236,15 +10310,15 @@ ${issuesText || '（暂无）'}
   // 数据和绘制逻辑仍全部来自 v15-report-modules-pto.html。
   const ANSWER_VISUALIZATIONS = {
     top1: {
-      title: 'Rank 级横向对比信息可视化',
+      title: 'Rank 级横向对比',
       desc: '对齐 8 张卡的计算、通信、等待与 Free 时间构成',
     },
     top2: {
-      title: '计算-通信重叠率信息可视化',
+      title: '计算-通信重叠率',
       desc: '在同一时间轴上查看计算区间与暴露通信',
     },
     top3: {
-      title: 'PP 流水线 Bubble 信息可视化',
+      title: 'PP 流水线 Bubble',
       desc: '查看 4 个 stage 的 1F1B 调度窗口与空泡分布',
     },
   };
@@ -10282,8 +10356,8 @@ ${issuesText || '（暂无）'}
     return null;
   }
 
-  function addProfilingVisualizationCards(answer) {
-    if (!answer || answer.querySelector('.wzh-chat-viz-card')) return;
+  function addProfilingVisualizationCards(answer, retainedCards) {
+    if (!answer) return;
     const nodes = Array.from(answer.querySelectorAll('h3, li'));
     const bubblePoint = nodes.find((node) => node.tagName === 'LI' && node.textContent.includes('真正的瓶颈是流水线末级过载'));
     const rankHeading = nodes.find((node) => node.tagName === 'H3' && node.textContent.includes('PP 末级计算过载'));
@@ -10294,8 +10368,17 @@ ${issuesText || '（暂无）'}
       { moduleId: 'top2', target: nextAnswerBlock(overlapHeading, 'UL') || overlapHeading },
     ];
     placements.forEach(({ moduleId, target }) => {
-      const card = createAnswerVisualizationCard(moduleId);
-      if (target && card) target.insertAdjacentElement('afterend', card);
+      if (!target || answer.querySelector('.wzh-chat-viz-card[data-viz-module="' + moduleId + '"]')) return;
+      const card = retainedCards?.get(moduleId) || createAnswerVisualizationCard(moduleId);
+      if (!card) return;
+      target.insertAdjacentElement('afterend', card);
+      // 当前段落在打字期间会整段重建。若用户已经打开过这张卡，重建后的新按钮
+      // 继续接管激活态与焦点回退引用，避免下一帧把选中状态一并抹掉。
+      if (chatVizState?.activeModuleId === moduleId) {
+        card.classList.add('is-active');
+        chatVizState.triggers.set(moduleId, card);
+        chatVizState.trigger = card;
+      }
     });
   }
 
@@ -10899,6 +10982,7 @@ ${issuesText || '（暂无）'}
   // 已确认无问题 / 数据与方法)。其中三个关键证据点补轻量可视化入口，正文仍可整段复制。──
   const CHAT_TASK_NAME = 'openPanGu2.0flash预训练_v1';
   const PROFILING_DATA_DIR = 'profile_dir'; // 问题卡片锚点:这次要诊断的落盘目录
+  const PROFILING_SESSION_TITLE = 'profile_dir 单机多卡性能分析';
 
   // 演示流程一分钟不到就跑完,但计时按真实排查节奏展示(实测墙钟约 10~15 分钟),
   // 否则每个节点都是「2s」,看不出"这活确实花了时间"。真实对话不做任何缩放。
@@ -11297,7 +11381,7 @@ ${issuesText || '（暂无）'}
 
     appendQuestionCard(PROFILING_QUESTION, {
       anchor: PROFILING_DATA_DIR,
-      sessionTitle: '诊断 profile_dir 的单步耗时异常',
+      sessionTitle: PROFILING_SESSION_TITLE,
     });
     chatHistory.push({ role: 'user', content: PROFILING_QUESTION.replace(/#\{([^}]+)\}/g, '$1') });
 
@@ -11337,7 +11421,9 @@ ${issuesText || '（暂无）'}
       for (const md of sections) {
         const seg = document.createElement('div');
         answer.appendChild(seg);
-        await typeMarkdownInto(seg, md, 16, 12);
+        await typeMarkdownInto(seg, md, 16, 12, (retainedCards) => {
+          addProfilingVisualizationCards(answer, retainedCards);
+        });
         if (epoch !== chatEpoch) return;                            // 这轮已被「新建对话」丢弃
         if (chatStopped) return finalizeStoppedRound(think, bodyEl);
       }
@@ -11351,6 +11437,49 @@ ${issuesText || '（暂无）'}
       setChatBusy(false);
       scrollChatToBottom(msgEl, { onlyIfNearBottom: true });
     })();
+  }
+
+  // 历史记录恢复的是一轮已经完成的问答：直接拼好全部内容，不重播思考与逐字生成动画。
+  function restoreProfilingHistory() {
+    const msgEl = $('trainChatMessages');
+    if (!msgEl) return;
+
+    resetConversation();
+    appendQuestionCard(PROFILING_QUESTION, {
+      anchor: PROFILING_DATA_DIR,
+      sessionTitle: PROFILING_SESSION_TITLE,
+    });
+
+    const sections = [
+      buildProfilingOverviewMarkdown(),
+      buildProfilingDetailMarkdown(),
+      buildProfilingAppendixMarkdown(),
+      buildProfilingTailMarkdown(),
+    ];
+    const { el: aiDiv, bodyEl } = createAiMessageShell();
+    const answer = document.createElement('div');
+    answer.className = 'wzh-chat-answer';
+    sections.forEach((md) => {
+      const seg = document.createElement('div');
+      seg.innerHTML = renderMarkdown(md);
+      answer.appendChild(seg);
+    });
+    addProfilingVisualizationCards(answer);
+    answer.appendChild(buildAnswerActions());
+    bodyEl.appendChild(answer);
+    msgEl.appendChild(aiDiv);
+
+    chatHistory = [
+      { role: 'user', content: PROFILING_QUESTION.replace(/#\{([^}]+)\}/g, '$1') },
+      { role: 'assistant', content: sections.join('\n') },
+    ];
+    chatStopped = false;
+    setChatBusy(false);
+    stickToBottom = false;
+    requestAnimationFrame(() => {
+      msgEl.scrollTop = 0;
+      updateChatFade(msgEl);
+    });
   }
 
   function runKnowledgeQaScenario() {
@@ -12129,6 +12258,53 @@ ${issuesText || '（暂无）'}
     btn.addEventListener('click', () => apply(!panel.classList.contains('is-floating')));
   }
 
+  function initHistoryMenu() {
+    const wrap = $('trainChatHistoryWrap');
+    const btn = $('trainChatHistoryBtn');
+    const pop = $('trainChatHistoryPop');
+    const profileBtn = $('trainChatHistoryProfileBtn');
+    const panel = $('trainChatPanel');
+    if (!wrap || !btn || !pop || !profileBtn) return;
+
+    function syncPopWidth() {
+      if (!panel) return;
+      pop.style.width = Math.max(180, Math.min(300, panel.clientWidth - 24)) + 'px';
+    }
+
+    function closePop() {
+      if (pop.hidden) return;
+      pop.hidden = true;
+      btn.setAttribute('aria-expanded', 'false');
+    }
+    function openPop() {
+      syncPopWidth();
+      pop.hidden = false;
+      btn.setAttribute('aria-expanded', 'true');
+    }
+
+    btn.addEventListener('click', () => {
+      pop.hidden ? openPop() : closePop();
+    });
+    profileBtn.addEventListener('click', () => {
+      closePop();
+      restoreProfilingHistory();
+    });
+    document.addEventListener('click', (e) => {
+      if (!pop.hidden && !wrap.contains(e.target)) closePop();
+    }, { capture: true });
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape' && !pop.hidden) {
+        e.preventDefault();
+        e.stopPropagation();
+        closePop();
+        btn.focus();
+      }
+    });
+    if (panel && typeof ResizeObserver === 'function') {
+      new ResizeObserver(() => { if (!pop.hidden) syncPopWidth(); }).observe(panel);
+    }
+  }
+
   // ── 切换 Agent(还原稿 src/pic/切换.png) ──────────────────────────────────
   // 这里只是原型:切换后同步左上角的头像/名称和底部工具栏的模型名,不真的换后端。
   // 名单和各自默认模型都放在这个数组里,加一个 Agent 就往里加一条。
@@ -12512,6 +12688,7 @@ ${issuesText || '（暂无）'}
     updateKeyUI();
     initPanelToggle();
     initFloatMode();
+    initHistoryMenu();
     initInput();
     initChatQueue();
     initAnchorChip();
