@@ -7,12 +7,14 @@
   var title=document.getElementById('shardTitle');
   var body=document.getElementById('shardBody');
   var number=document.getElementById('shardStepNumber');
+  var rankQuantifier=document.getElementById('shardRankQuantifier');
   var minRanks=document.getElementById('shardMinRanks');
   var rankBasis=document.getElementById('shardRankBasis');
   var steps=document.getElementById('shardSteps');
   var prev=document.getElementById('shardPrev');
   var next=document.getElementById('shardNext');
   var stage=0;
+  var selectedEpRank=null;
   var controllers=[];
   var activeTransition=null;
   var captions=[
@@ -22,7 +24,7 @@
     {name:'TP × 2：分 hidden',body:'每个 CP 分支再沿 H 维分成 TP0、TP1。八张源矩阵同时纵向划线，再各自展开两支；绿色区域变为原矩阵的四分之一。这里先画 CP 后画 TP 只是讲解顺序：两者分别切 S 和 H，互换先后仍得到同样的八个分片。',fact:'每个 DP×CP×TP：2 × [1024, 1280]'},
     {name:'输入 Rank',body:'每条 DP→CP→TP 路径对应一个 Rank，共 2×2×2=8 个。每个 Rank 接收两个样本在对应 token 区间和 hidden 区间的分片。',fact:'8 个 Rank；每 Rank：2 × [1024, 1280]'},
     {name:'PP × 4：分模型层',body:'DP0、DP1 各自独立运行；每组 DP 都经过 PP0–PP3 四段，每段保留 4 个 CP×TP 坐标。以 48 层为例，PP0 负责 L0–11，PP1 负责 L12–23，依次传递微批激活。',fact:'2 组 DP × 4 段 PP × 4 个 CP×TP Rank = 32 个 Rank'},
-    {name:'EP × 2：分专家',body:'本示例令 EP=2，从 DP=2 的两支切出：固定 PP、CP、TP 后，DP0 与 DP1 两张 Rank 组成一个 EP 组。以每个 MoE 层有 64 个专家、ETP=1 为例，EP0 持有 E0–31，EP1 持有 E32–63。Router 按专家选择动态分发 token；例如 R0 的 token 可以发给 R4 上的专家，计算后再合并回原 token 位置。Dense 层仍按原来的 DP×CP×TP 运行。',fact:'EP=2 从 DP=2 切出 · Rank 总数仍为 32'}
+    {name:'EP × 2：分专家',body:'本示例令 EP=2，从 DP=2 的两支切出：固定 PP、CP、TP 后，DP0 与 DP1 两张 Rank 组成一个 EP 组。PP0 段的四个 EP 组分别是 R0↔R4、R1↔R5、R2↔R6、R3↔R7；其余 PP 段按相同规则配对。以每个 MoE 层有 64 个专家、ETP=1 为例，EP0 持有 E0–31，EP1 持有 E32–63。Router 在所属 EP 组内按专家选择分发 token：可留在本 Rank，也可发往组内对端，结果再返回原 token 位置。分组由 PP、CP、TP、DP 的通信拓扑决定，输入形状相同不代表属于同一 EP 组。Dense 层仍按原来的 DP×CP×TP 运行。',fact:'EP=2 从 DP=2 切出 · Rank 总数仍为 32'}
   ];
 
   function cells(cp,tp){
@@ -91,7 +93,7 @@
   function rankCard(rank,dp,cp,tp,pp,row){
     var local=(dp*2+cp)*2+tp;
     var placement=row==null?'':' style="grid-column:7;grid-row:'+row+'"';
-    return '<div class="shard-rank-slot"'+placement+' role="group" aria-label="Rank '+rank+'，DP'+dp+'，CP'+cp+'，TP'+tp+'，两张输入矩阵分片"><div class="shard-rank-label"><strong>R'+rank+'</strong><span>TP'+tp+'</span></div><div class="shard-tree-node is-rank shard-rank-card" data-rank-local="'+local+'"'+(pp==null?'':' data-pp="'+pp+'"')+'>'+pair(dp,cp,tp)+'</div></div>';
+    return '<div class="shard-rank-slot"'+placement+' data-rank="'+rank+'" role="group" aria-label="Rank '+rank+'，DP'+dp+'，CP'+cp+'，TP'+tp+'，两张输入矩阵分片"><div class="shard-rank-label"><strong>R'+rank+'</strong><span>TP'+tp+'</span></div><div class="shard-tree-node is-rank shard-rank-card" data-rank-local="'+local+'"'+(pp==null?'':' data-pp="'+pp+'"')+'>'+pair(dp,cp,tp)+'</div></div>';
   }
   function tree(){
     var count=stage===1?2:stage===2?4:8;
@@ -141,8 +143,37 @@
     }
     return html+'<div class="shard-pipeline-tail">'+pipelineTail()+'</div></div>';
   }
-  function pipelineIntro(){return stage===6?'同一 PP/CP/TP 位置上，DP0 与 DP1 配成 EP 组；两组 DP 仍各自运行':'两组 DP 独立运行；每组按 PP0→PP3 经过不同模型层';}
-  function pipelineTail(){return stage===6?'例：R0 的 token 可发到 R4 的 E32–63，专家计算后再合并回原 token 位置':'PP 相邻段顺序传递微批激活';}
+  function pipelineIntro(){return stage===6?'DP0、DP1 分别处理各自样本；MoE 层按相同 PP/CP/TP 坐标配成 EP 组':'两组 DP 独立运行；每组按 PP0→PP3 经过不同模型层';}
+  function pipelineTail(){return stage===6?'例：R0 与 R4 同属一个 EP 组；去 E32–63 的 token 发往 R4，结果再返回 R0':'PP 相邻段顺序传递微批激活';}
+  function rankCountGuidance(){
+    return '<p><strong>固定当前所有并行度：</strong>DP 2 × CP 2 × TP 2 × PP 4 恰好需要 32 个 Rank；EP 2 复用 DP，不再额外乘 2。单个作业的 Rank 总数必须与这 32 个并行坐标对应。</p>'+
+      '<p><strong>硬用 48 或 64 Rank？</strong>都不能让额外的 Rank 直接加入同一个、配置不变的作业：48 多出 16 个，64 多出 32 个，它们没有对应的并行坐标。可以只启动 32 个 Rank；64 个可分成两个独立的 32-Rank 作业，但那不是同一个作业。</p>'+
+      '<p><strong>若启动器自动推算 DP：</strong>64 个 Rank 会把 DP 从 2 变为 4，已不再是图中的配置；48 个会推成 DP 3，无法按本图的 EP 2 沿 DP 两两配组。</p>';
+  }
+  function updateEpSelection(){
+    var pipelineView=visual.querySelector('.shard-pipeline');
+    if(!pipelineView)return;
+    pipelineView.querySelectorAll('.shard-rank-slot').forEach(function(slot){
+      var rank=Number(slot.dataset.rank);
+      var partner=rank+(rank%8<4?4:-4);
+      var selected=stage===6&&rank===selectedEpRank;
+      var paired=stage===6&&partner===selectedEpRank;
+      slot.classList.toggle('is-ep-selected',selected);
+      slot.classList.toggle('is-ep-partner',paired);
+      if(!slot.dataset.rankDescription)slot.dataset.rankDescription=slot.getAttribute('aria-label');
+      if(stage===6){
+        slot.setAttribute('role','button');
+        slot.tabIndex=0;
+        slot.setAttribute('aria-pressed',String(selected));
+        slot.setAttribute('aria-label',slot.dataset.rankDescription+'；'+(selected?'当前选中，与 R'+partner+' 同属 EP 组':paired?'与当前选中 R'+selectedEpRank+' 同属 EP 组':'点选查看与 R'+partner+' 的 EP 配对'));
+      }else{
+        slot.setAttribute('role','group');
+        slot.removeAttribute('tabindex');
+        slot.removeAttribute('aria-pressed');
+        slot.setAttribute('aria-label',slot.dataset.rankDescription);
+      }
+    });
+  }
   function render(){
     destroy();
     var current=captions[stage];
@@ -152,10 +183,11 @@
     if(stage>=2){factors.push('CP 2');rankCount*=2;}
     if(stage>=3){factors.push('TP 2');rankCount*=2;}
     if(stage>=5){factors.push('PP 4');rankCount*=4;}
+    rankQuantifier.textContent=stage===6?'要求只能用':'需要至少';
     minRanks.textContent=String(rankCount);
     rankBasis.textContent='（'+(factors.length?factors.join(' × '):'尚未切分')+(stage===6?'；EP 复用 DP':'')+'）';
     title.textContent=current.name;
-    body.innerHTML='<p>'+current.body+'</p><div class="shard-fact">'+current.fact+'</div>';
+    body.innerHTML=(stage===6?'<p>'+pipelineIntro()+'</p>'+rankCountGuidance():'')+'<p>'+current.body+'</p>'+(stage===6?'<p>'+pipelineTail()+'</p><p>点选任意 Rank，可查看它与同组 Rank 的 EP 配对。</p>':'')+'<div class="shard-fact">'+current.fact+'</div>';
     visual.dataset.step=String(stage);
     if(stage>=5){
       var existing=visual.querySelector('.shard-pipeline');
@@ -166,6 +198,7 @@
       }
       else visual.innerHTML=pipeline();
     }else visual.innerHTML=stage===0?input():tree();
+    updateEpSelection();
     var stageColors=['--success','--dp','--cp','--tp','--fg','--pp','--ep'];
     steps.innerHTML=captions.map(function(item,i){return '<button type="button" class="'+(i===stage?'cur':i<stage?'done':'')+'" style="--c:var('+stageColors[i]+')" data-shard-step="'+i+'"'+(i===stage?' aria-current="step"':'')+'><span class="lbl">'+String(i+1).padStart(2,'0')+' · '+item.name+'</span><span class="bar"></span></button>';}).join('');
     prev.disabled=stage===0;
@@ -318,6 +351,7 @@
     var nextStage=Math.max(0,Math.min(captions.length-1,value));
     if(activeTransition)cancelTransition();
     if(nextStage===stage)return;
+    selectedEpRank=nextStage===6?0:null;
     if(stage===4&&nextStage===5&&!window.matchMedia('(prefers-reduced-motion: reduce)').matches){transitionToPP();return;}
     if((stage===0&&nextStage===1)||(stage===1&&nextStage===2)||(stage===2&&nextStage===3)||(stage===3&&nextStage===4)){
       if(!window.matchMedia('(prefers-reduced-motion: reduce)').matches){transitionTo(nextStage);return;}
@@ -327,6 +361,21 @@
   prev.addEventListener('click',function(){setStage(stage-1);});
   next.addEventListener('click',function(){setStage(stage+1);});
   steps.addEventListener('click',function(event){var button=event.target.closest('[data-shard-step]');if(button)setStage(Number(button.dataset.shardStep));});
+  visual.addEventListener('click',function(event){
+    if(stage!==6)return;
+    var slot=event.target.closest('.shard-pipeline .shard-rank-slot');
+    if(!slot||!visual.contains(slot))return;
+    var rank=Number(slot.dataset.rank);
+    selectedEpRank=selectedEpRank===rank?null:rank;
+    updateEpSelection();
+  });
+  visual.addEventListener('keydown',function(event){
+    if(stage!==6||(event.key!=='Enter'&&event.key!==' '))return;
+    var slot=event.target.closest('.shard-pipeline .shard-rank-slot');
+    if(!slot||!visual.contains(slot))return;
+    event.preventDefault();
+    slot.click();
+  });
   window.RIShard={enter:function(){cancelTransition();render();},leave:function(){cancelTransition();destroy();}};
   if(page.dataset.tab==='shard')render();
 })();
