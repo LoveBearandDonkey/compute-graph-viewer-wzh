@@ -30,7 +30,7 @@
     --line:rgba(var(--fgrgb),.10); --bad:#c0392b; --guide-blue:#2563eb; --guide-green:#0f9f92;
     --card-front:rgba(255,255,255,.62); --card-right:rgba(236,239,244,.70); --card-top:rgba(247,248,251,.85);
     --tile:var(--card-front);   /* 第 10 步 / 案例一二展平格子的底色：直接用 3D 柱子正面那档半透明填充，两处看着是同一块料 */
-    --tp:#22D3EE; --pp:#FFAA3B; --dp:#4369EF; --ep:#9B3CF6;
+    --tp:#22D3EE; --pp:#FFAA3B; --dp:#4369EF; --cp:#22c55e; --ep:#9B3CF6;
     --red:220,38,38;   /* 实战场景里四档红的基色（rgb 三元，靠 alpha 分档） */
     --sans:-apple-system,"Segoe UI","PingFang SC","Microsoft YaHei",Roboto,Helvetica,Arial,sans-serif;
     --mono:ui-monospace,"SFMono-Regular",Menlo,Consolas,monospace;
@@ -1350,6 +1350,7 @@
     .memdetail{position:fixed;right:12px;top:66px;bottom:72px;z-index:70;width:390px;padding:14px 18px;border:1px solid var(--line);border-radius:14px;background:var(--bg);box-shadow:0 18px 50px rgba(0,0,0,.24)}
   }
 </style>
+<link rel="stylesheet" href="./rank-intro-shard.css">
 <script>
   (function(){ var t = null; try{ t = localStorage.getItem("ri-theme"); }catch(e){}
     if(t !== "dark" && t !== "light") t = matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
@@ -1362,6 +1363,7 @@
     <div class="tl">
       <div class="tabs" id="tabs" role="tablist">
         <button type="button" role="tab" data-tab="intro" aria-selected="true">Rank 的设计表达</button>
+        <button type="button" role="tab" data-tab="shard" aria-selected="false">Shard（切分）的设计表达</button>
         <button type="button" role="tab" data-tab="scene" aria-selected="false">实战场景</button>
       </div>
     </div>
@@ -1569,6 +1571,23 @@
 
   <section class="intro-config cs-main cfg" id="introConfig" aria-label="展平视图配置预览"></section>
 
+  <section class="shard" id="shard" role="tabpanel" aria-label="Shard 切分的设计表达">
+    <aside class="shard-side" aria-live="polite">
+      <div class="shard-step-number" id="shardStepNumber"></div>
+      <h1 id="shardTitle"></h1>
+      <div id="shardBody"></div>
+    </aside>
+    <div class="shard-main">
+      <div class="shard-heading"><span>一个训练 Step 的输入</span><span id="shardHeadingShape"><strong>[B, S, H]</strong> = <strong>[4, 2048, 2560]</strong></span><span class="shard-rank-required">需要至少 <strong id="shardMinRanks">1</strong> 个 Rank <small id="shardRankBasis">（尚未切分）</small></span></div>
+      <div class="shard-axis-summary">B：矩阵编号　·　S：纵向 token 行　·　H：横向 hidden 列</div>
+      <div class="shard-visual" id="shardVisual" aria-live="polite"></div>
+    </div>
+    <div class="foot shard-foot">
+      <div class="nav"><button type="button" id="shardPrev">← 上一步</button><button type="button" id="shardNext">下一步 →</button></div>
+      <div class="steps" id="shardSteps" aria-label="切分步骤"></div>
+    </div>
+  </section>
+
   <div class="scene" id="scene" role="tabpanel">
     <nav class="cs-rail" id="csRail" aria-label="案例"></nav>
     <div class="cs-main" id="csMain"></div>
@@ -1599,7 +1618,7 @@
     var dark = document.documentElement.getAttribute('data-theme') === 'dark';
     return PR.heatColor(u,dark ? PR.HEAT_RAMP : ACT_HEAT_LIGHT);
   }
-  var VC = {tp:'#22D3EE', pp:'#FFAA3B', dp:'#4369EF', ep:'#9B3CF6', edp:'#E04FA8'};   /* edp：专家参数的副本组，只在第 9 步的连线里用 */
+  var VC = {tp:'#22D3EE', pp:'#FFAA3B', dp:'#4369EF', cp:'#22c55e', ep:'#9B3CF6', edp:'#E04FA8'};   /* edp：专家参数的副本组，只在第 9 步的连线里用 */
   /* 画布用的中性色全从 CSS token 读，切主题时重读一遍再重画 */
   var TH = {};
   /* 显存五档的基准色相照 demo 的 MEM_BASE；最终填色照 demo 的 syncTopologyPalette 按主题调：
@@ -4125,6 +4144,14 @@
     updateCommunicationPanel(); syncCommDetailInset();
   }
   function syncMemDetail(c, withMem){
+    if(document.querySelector('.page').dataset.tab !== 'intro'){
+      if(actVolumeController){ actVolumeController.destroy(); actVolumeController = null; }
+      document.querySelector('.page').classList.remove('mem-detail-open');
+      memDetailEl.hidden = true;
+      memDetailEl.classList.remove('is-memory','is-communication','is-observer');
+      memDetailBodyEl.innerHTML = '';
+      return;
+    }
     if(step===8){ syncCommunicationDetail(c); return; }
     syncCommunicationFilterTag(null); syncCommunicationTotalMetric(null,false);
     if(memScenario === 'danger-v2'){ syncOomV2View(); return; }
@@ -4683,7 +4710,7 @@
     var analysis = 'EDP 实例 '+(c.dp>>3)+' · Rank '+c.r+' · PP'+p+' 的 Layer '+layerStart+'–'+layerEnd+' 在途激活汇总';
     var localTokens=apart.tokens[aep],localH=D.hidden/D.tp;
     var representative = '立体图高亮选中 Rank 最终持有的本地激活分片 <b>['+sg.mbs+', ≈'+fmtShapeN(localTokens)+' token, '+fmtShapeN(localH)+']</b>；token 数随 Router 分配变化。';
-    var shard = 'EP组'+activationEpGroup(c,c.tp)+' 中本 Rank 收到约 <b>'+fmtN(apart.tokens[aep]*sg.mbs)+' token</b>（'+(apart.tokens[aep]/D.seq*100).toFixed(1)+'%）；TP'+c.tp+' 取得 H['+fmtN(c.tp*(D.hidden/D.tp))+'…'+fmtN((c.tp+1)*(D.hidden/D.tp)-1)+']';
+    var shard = 'EP组'+activationEpGroup(c,c.tp)+' 中本 Rank 收到约 <b>'+fmtN(apart.tokens[aep]*sg.mbs)+' token</b>（'+(apart.tokens[aep]/D.seq*100).toFixed(1)+'%）；TP'+c.tp+' 取得 H['+fmtN(c.tp*(D.hidden/D.tp))+'~'+fmtN((c.tp+1)*(D.hidden/D.tp)-1)+']';
     var inflight = cavityGrid({nx:mub,ix:0,fill:0,lx:'in-flight μb',ny:1,iy:0,ly:'',c:MEMC.act,compact:true,cycle:true});
     var chain = memChainFig('act');
     return '<div class="rm-d act-detail activation-detail" data-cycle-detail style="--rmc:'+MEMC.act+'">'
@@ -5055,7 +5082,7 @@
         var mub = Math.max(1, Math.min(D.pp, D.ga) - p), apart = activationPartition(c), aep = c.dp & 7;
         var layerNo = selLayer && selLayer.type === 'layer' && Math.floor(selLayer.layer/LPS) === p ? selLayer.layer : p*LPS;
         kv('分析单元', 'EDP 实例 ' + (c.dp>>3) + ' · Layer ' + layerNo + ' 的一份激活 <b>[' + sg.mbs + ', ' + fmtN(D.seq) + ', ' + fmtN(D.hidden) + ']</b>');
-        kv('本卡分片', 'EP组' + activationEpGroup(c,c.tp) + ' 中本 Rank 收到约 <b>' + fmtN(apart.tokens[aep]*sg.mbs) + ' token</b>（' + (apart.tokens[aep]/D.seq*100).toFixed(1) + '%）；TP' + c.tp + ' 取得 H[' + fmtN(c.tp*(D.hidden/D.tp)) + '…' + fmtN((c.tp+1)*(D.hidden/D.tp)-1) + ']');
+        kv('本卡分片', 'EP组' + activationEpGroup(c,c.tp) + ' 中本 Rank 收到约 <b>' + fmtN(apart.tokens[aep]*sg.mbs) + ' token</b>（' + (apart.tokens[aep]/D.seq*100).toFixed(1) + '%）；TP' + c.tp + ' 取得 H[' + fmtN(c.tp*(D.hidden/D.tp)) + '~' + fmtN((c.tp+1)*(D.hidden/D.tp)-1) + ']');
         /* 设计系统 tensor-volume-canvas：S/EP 横向对应主画布从左到右，H/TP 竖向对应
            TP0 在上、TP1 在下，B 走深度；20 个代表格按 token 份额编码 EP 路由后的不等长桶。
            图下独立三轴只表达方向；立方体的 B 方向至少画 5 格厚度，使 B=1 时仍能读到上表面。 */
@@ -6021,7 +6048,7 @@
   document.getElementById('next').addEventListener('click', function(){ go(step + 1); });
   document.addEventListener('keydown', function(e){
     if(e.target && /INPUT|TEXTAREA|BUTTON|SELECT/.test(e.target.tagName)) return;
-    if(pageEl.dataset.tab === 'scene') return;
+    if(pageEl.dataset.tab !== 'intro') return;
     if(e.key === '+' || e.key === '='){ zoomBy(1.25); e.preventDefault(); }
     else if(e.key === '-' || e.key === '_'){ zoomBy(1/1.25); e.preventDefault(); }
     else if(e.key === 'ArrowRight' || e.key === 'ArrowDown' || e.key === ' '){ go(step + 1); e.preventDefault(); }
@@ -6039,13 +6066,14 @@
   /* ── 页签：intro 是这套分步入门，scene 先空着。状态写进 ?tab=，刷新还在同一页 ── */
   var pageEl = document.querySelector('.page'), tabsEl = document.getElementById('tabs');
   function setTab(id){
-    if(id !== 'scene') id = 'intro';
+    if(id !== 'scene' && id !== 'shard') id = 'intro';
     /* 先落页签状态再同步详情：诊断面板据此判断自己是否仍属于当前页面，
        防止 OOM / 峰值 / GAP 的右栏穿透到「实战场景」。 */
     pageEl.dataset.tab = id;
+    if(id === 'intro' || id === 'shard') applySide(false, false);
+    if(window.RIShard) { if(id === 'shard') window.RIShard.enter(); else window.RIShard.leave(); }
     if(window.RIConfigPreview){ if(id === 'intro' && step === 9) window.RIConfigPreview.enter(); else window.RIConfigPreview.leave(); }
-    if(id === 'scene'){ setStageCfgOpen(false); memSel = null; syncMemDetail(null, false); }
-    if(id === 'intro') applySide(false, false);
+    if(id !== 'intro'){ setStageCfgOpen(false); memSel = null; syncMemDetail(null, false); }
     syncOomV2View();
     if(window.RIMemoryCycle){
       window.RIMemoryCycle.setVisible(id === 'intro' && (step === 7 || step === 8) && memScenario !== 'danger-v2');
@@ -7617,5 +7645,6 @@
   render();
 })();
 </script>
+<script src="./rank-intro-shard.js"></script>
 </body>
 </html>

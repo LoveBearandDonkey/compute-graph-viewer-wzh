@@ -184,7 +184,7 @@
         ctx.lineWidth = 2.4;
         prepared.cuts.forEach(function (cut) {
           var token = TONE_TOKENS[cut.tone] || TONE_TOKENS.input;
-          ctx.strokeStyle = canvasColor(currentOptions.cutColor, token, '#7c6cff');
+          ctx.strokeStyle = canvasColor(cut.color || currentOptions.cutColor, token, '#7c6cff');
           ctx.beginPath();
           if (cut.axis === 'columns') {
             var x = bounds.x + cut.at * BASE_CELL * view.scale;
