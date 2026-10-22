@@ -23,6 +23,7 @@
   var controllers=[];
   var matrixObserver=null;
   var activeTransition=null;
+  var previewCache=new Map();
   var captions=[
     {name:'输入 BSH',body:'一个 Step 的输入是 B=8 个样本。每个样本是一张 S×H = 2048×2560 的矩阵。B：矩阵编号；S：纵向 token 行；H：横向 hidden 列。',fact:'8 × [2048, 2560]'},
     {name:'DP × 4：分样本',body:'沿 B 维把 8 个样本分给四个 DP 分支：DP0 持有 B0、B1，DP1 持有 B2、B3，DP2 持有 B4、B5，DP3 持有 B6、B7；每张矩阵的 S 和 H 不变。',fact:'每个 DP：2 × [2048, 2560]'},
@@ -46,11 +47,58 @@
   var cellCache={'cpnull-tpnull':cells(null,null)};
   function matrixScene(cp,tp){
     var key='cp'+cp+'-tp'+tp;
-    if(!cellCache[key])cellCache[key]=cells(cp,tp);
+    var simplified=stage>=4&&cp!=null&&tp!=null;
+    if(!simplified&&!cellCache[key])cellCache[key]=cells(cp,tp);
     var cuts=[];
     if(cp!=null)cuts.push({axis:'rows',at:1024,tone:'output',color:'--cp'});
     if(tp!=null)cuts.push({axis:'columns',at:1280,tone:'output',color:'--tp'});
-    return {extent:{rows:2048,columns:2560},axes:{rows:'S · token',columns:'H · hidden'},cells:cellCache[key],cuts:cuts};
+    // From the Rank view onward, keep the earlier muted background and owned fill,
+    // but omit the unreadable cell lattice. The semantic CP/TP cuts remain.
+    return {extent:{rows:2048,columns:2560},axes:{rows:'S · token',columns:'H · hidden'},cells:simplified?[{row:0,column:0,rowSpan:2048,columnSpan:2560,style:'value',tone:'neutral',states:['muted']},{row:cp*1024,column:tp*1280,rowSpan:1024,columnSpan:1280,style:'value',tone:'output',states:[]}]:cellCache[key],cuts:cuts};
+  }
+
+  function previewKey(){return document.documentElement.getAttribute('data-theme')+'@'+(window.devicePixelRatio||1);}
+  function previewImages(){
+    var key=previewKey();
+    if(previewCache.has(key))return previewCache.get(key);
+    var promise=new Promise(function(resolve){
+      var hosts=[],samples=[],images={};
+      for(var cp=0;cp<CP;cp++)for(var tp=0;tp<TP;tp++){
+        var host=document.createElement('div');
+        host.className='shard-fragment-host shard-preview-source';
+        var canvas=document.createElement('canvas');
+        host.appendChild(canvas);document.body.appendChild(host);
+        hosts.push(host);
+        samples.push({key:cp+'-'+tp,canvas:canvas,controller:window.PtoMatrixCanvas.render(canvas,matrixScene(cp,tp),{showAxes:false,showGrid:false,interactive:false,showTooltip:false,minZoom:.0001,padding:{top:2,right:2,bottom:2,left:2},cellStrokeAlpha:0})});
+      }
+      // The shared renderer paints on the first frame; its cut overlay paints on the second.
+      requestAnimationFrame(function(){requestAnimationFrame(function(){requestAnimationFrame(function(){
+        samples.forEach(function(sample){
+          var canvas=sample.canvas,overlay=canvas.parentElement.querySelector('.rank-matrix-canvas-compat');
+          var image=document.createElement('canvas');image.width=canvas.width;image.height=canvas.height;
+          var ctx=image.getContext('2d');ctx.drawImage(canvas,0,0);
+          if(overlay)ctx.drawImage(overlay,0,0,image.width,image.height);
+          images[sample.key]=image.toDataURL();
+          sample.controller.destroy();
+        });
+        hosts.forEach(function(host){host.remove();});
+        resolve(images);
+      });});});
+    });
+    previewCache.set(key,promise);
+    return promise;
+  }
+
+  function mountPreviews(){
+    var pipelineView=visual.querySelector('.shard-pipeline');
+    if(!pipelineView||!window.PtoMatrixCanvas)return;
+    var key=previewKey();
+    previewImages().then(function(images){
+      if(!pipelineView.isConnected||key!==previewKey())return;
+      pipelineView.querySelectorAll('img[data-shard-preview]').forEach(function(img){
+        img.src=images[img.dataset.shardPreview];
+      });
+    });
   }
 
   function destroy(){
@@ -74,11 +122,12 @@
         };
         context.__shardCornerScale=true;
       }
-      controllers.push(window.PtoMatrixCanvas.render(canvas,matrixScene(cp,tp),{ariaLabel:canvas.getAttribute('aria-label'),showAxes:false,showGrid:true,interactive:false,showTooltip:false,minZoom:.0001,padding:{top:2,right:2,bottom:2,left:2},cellStrokeAlpha:.12}));
+      controllers.push(window.PtoMatrixCanvas.render(canvas,matrixScene(cp,tp),{ariaLabel:canvas.getAttribute('aria-label'),showAxes:false,showGrid:stage<4,interactive:false,showTooltip:false,minZoom:.0001,padding:{top:2,right:2,bottom:2,left:2},cellStrokeAlpha:stage<4?.12:0}));
       canvas.setAttribute('role','img');
       canvas.tabIndex=-1;
     }
     var canvases=visual.querySelectorAll('canvas[data-shard-matrix]');
+    if(!canvases.length)return;
     if(stage===6&&epMode==='ortho'&&window.IntersectionObserver){
       var observer=new IntersectionObserver(function(entries){
         if(matrixObserver!==observer)return;
@@ -108,7 +157,9 @@
   function fragment(b,cp,tp){
     var key='b'+b+(cp==null?'':'-cp'+cp)+(tp==null?'':'-tp'+tp);
     var rows=cp==null?2048:1024,columns=tp==null?2560:1280;
-    return '<div class="shard-fragment"><span class="shard-fragment-label">B'+b+'</span><div class="shard-fragment-host"><canvas data-shard-matrix="fragment" data-fragment-key="'+key+'"'+(cp==null?'':' data-cp="'+cp+'"')+(tp==null?'':' data-tp="'+tp+'"')+' aria-label="B'+b+'，完整 16×20 网格；持有 S '+rows+' 行、H '+columns+' 列的分片"></canvas></div></div>';
+    var label='B'+b+'，'+(stage>=4?'切分线标出':'完整 16×20 网格；持有')+' S '+rows+' 行、H '+columns+' 列的分片';
+    var graphic=stage>=5?'<img data-shard-preview="'+cp+'-'+tp+'" alt="'+label+'" decoding="async">':'<canvas data-shard-matrix="fragment" data-fragment-key="'+key+'"'+(cp==null?'':' data-cp="'+cp+'"')+(tp==null?'':' data-tp="'+tp+'"')+' aria-label="'+label+'"></canvas>';
+    return '<div class="shard-fragment"><span class="shard-fragment-label">B'+b+'</span><div class="shard-fragment-host">'+graphic+'</div></div>';
   }
   function pair(dp,cp,tp){return '<div class="shard-fragment-pair">'+fragment(dp*2,cp,tp)+fragment(dp*2+1,cp,tp)+'</div>';}
   function rankCard(rank,dp,cp,tp,pp,row,ep){
@@ -141,17 +192,20 @@
     return html+'</div>';
   }
   function pipeline(){
-    var html='<div class="shard-pipeline" data-stage="'+stage+'"><div class="shard-pp-guide">';
+    var orthogonal=stage===6&&epMode==='ortho';
+    var html='<div class="shard-pipeline'+(orthogonal?' is-ep-ortho':'')+'" data-stage="'+stage+'"><div class="shard-pp-guide">';
     for(var pp=0;pp<PP;pp++){
       html+='<div class="shard-pp-heading"><strong>PP'+pp+'</strong><span>L'+pp*12+'–'+(pp*12+11)+'</span></div>';
     }
     html+='</div>';
     for(var dp=0;dp<DP;dp++){
-      var lanes=stage===6&&epMode==='ortho'?epDegree:1;
+      if(orthogonal)html+='<div class="shard-dp-group" role="group" aria-label="DP'+dp+'，包含 EP0 至 EP'+(epDegree-1)+'"><div class="shard-dp-group-heading"><strong>DP'+dp+'</strong><span>B'+(dp*2)+' · B'+(dp*2+1)+'</span><small>EP0–EP'+(epDegree-1)+'</small></div>';
+      var lanes=orthogonal?epDegree:1;
       for(var lane=0;lane<lanes;lane++){
       var ep=epMode==='cut'?dp%epDegree:lane;
       var expertStart=ep*(64/epDegree),expertEnd=expertStart+64/epDegree-1;
-      html+='<div class="shard-dp-lane" role="group" aria-label="DP'+dp+(stage===6?'，EP'+ep:'')+' 的 16 个 Rank"><div class="shard-dp-heading"><strong>DP'+dp+'</strong><span>B'+(dp*2)+' · B'+(dp*2+1)+'</span><small>EP'+ep+' · E'+expertStart+'–'+expertEnd+'</small></div><div class="shard-dp-columns">';
+      var heading=orthogonal?'<div class="shard-dp-heading"><strong>EP'+ep+'</strong><small>E'+expertStart+'–'+expertEnd+'</small></div>':'<div class="shard-dp-heading"><strong>DP'+dp+'</strong><span>B'+(dp*2)+' · B'+(dp*2+1)+'</span><small>EP'+ep+' · E'+expertStart+'–'+expertEnd+'</small></div>';
+      html+='<div class="shard-dp-lane" role="group" aria-label="DP'+dp+(stage===6?'，EP'+ep:'')+' 的 16 个 Rank">'+heading+'<div class="shard-dp-columns">';
       for(var pp=0;pp<PP;pp++){
         html+='<div class="shard-dp-column">';
         for(var cp=0;cp<CP;cp++){
@@ -166,6 +220,7 @@
       }
       html+='</div></div>';
       }
+      if(orthogonal)html+='</div>';
     }
     return html+'<div class="shard-pipeline-tail">'+pipelineTail()+'</div></div>';
   }
@@ -238,6 +293,7 @@
     prev.disabled=stage===0;
     next.disabled=stage===captions.length-1;
     mountCanvases();
+    if(stage>=5)mountPreviews();
   }
   function cancelTransition(){
     if(!activeTransition)return;
@@ -427,6 +483,12 @@
     event.preventDefault();
     slot.click();
   });
+  new MutationObserver(function(){
+    previewCache.clear();
+    if(page.dataset.tab!=='shard')return;
+    if(stage>=5)mountPreviews();
+    else controllers.forEach(function(controller){controller.resize();});
+  }).observe(document.documentElement,{attributes:true,attributeFilter:['data-theme']});
   window.RIShard={enter:function(){cancelTransition();render();},leave:function(){cancelTransition();destroy();}};
   if(page.dataset.tab==='shard')render();
 })();
